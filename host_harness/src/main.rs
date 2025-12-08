@@ -1,5 +1,6 @@
 use userland_rt::HostedSys;
 use abi::KernelRequest;
+use kernel_core::model::dashboard_snapshot;
 
 /// ThingOS Host Harness
 ///
@@ -17,6 +18,30 @@ fn main() {
     // Seed a fake memory graph
     kernel_core::model::create_frame_pool(0x1000, 0x9000, 4096);
     kernel_core::model::create_cpu_core(0);
+
+    // Print dashboard snapshot
+    let snap = dashboard_snapshot();
+
+    println!("Host Dashboard Snapshot:");
+    println!("  Memory: total={} used={} free={}",
+        snap.memory.total_frames,
+        snap.memory.used_frames,
+        snap.memory.free_frames,
+    );
+    println!("  Scheduler: processes={} threads={} runnable={}",
+        snap.scheduler.process_count,
+        snap.scheduler.thread_count,
+        snap.scheduler.runnable_threads,
+    );
+    println!("  Things:");
+    println!("    total       = {}", snap.counts.total_things);
+    println!("    processes   = {}", snap.counts.processes);
+    println!("    threads     = {}", snap.counts.threads);
+    println!("    PhysFrame   = {}", snap.counts.phys_frames);
+    println!("    VirtRegion  = {}", snap.counts.virt_regions);
+    println!("    FramePool   = {}", snap.counts.frame_pools);
+    println!("    AddressSpace= {}", snap.counts.address_spaces);
+    println!("    CpuCore     = {}", snap.counts.cpu_cores);
 
     let sys = HostedSys;
 

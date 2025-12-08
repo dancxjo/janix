@@ -2,6 +2,7 @@
 #![no_main]
 
 mod console;
+mod dashboard;
 mod sys_kernel;
 mod boot_model;
 
@@ -48,21 +49,23 @@ unsafe extern "C" fn kmain() -> ! {
     boot_model::seed_memory_graph_from_limine();
     boot_model::seed_cpu_graph_from_limine();
 
-    // Initialize console and dump logs
+    // Initialize console on the Limine framebuffer
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            // Initialize console
-            unsafe { console::init_global(&framebuffer) };
-            console::clear_screen();
+            let mut console = unsafe { console::Console::from_framebuffer(framebuffer) };
 
-            // Optional: header line
-            console::print("ThingOS kernel log:\n\n");
+            // Render dashboard instead of just raw log dump
+            dashboard::render_dashboard(&mut console);
 
-            // Dump logs
-            for entry in kernel_core::get_logs().iter() {
-                if let Some(msg) = entry {
-                    console::print(msg);
-                    console::print("\n");
+            // Optionally: halt, or spin
+            loop {
+                unsafe {
+                    #[cfg(target_arch = "x86_64")]
+                    asm!("hlt");
+                    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+                    asm!("wfi");
+                    #[cfg(target_arch = "loongarch64")]
+                    asm!("idle 0");
                 }
             }
         }

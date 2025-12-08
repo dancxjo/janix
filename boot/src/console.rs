@@ -139,6 +139,15 @@ impl Console {
     }
 }
 
+use core::fmt;
+
+impl fmt::Write for Console {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.write_str(s);
+        Ok(())
+    }
+}
+
 pub unsafe fn init_global(fb: &Framebuffer) {
     // SAFETY: We are in single-threaded boot context.
     let console = unsafe { Console::from_framebuffer(fb) };

@@ -260,3 +260,63 @@ pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
 
     graph::create_thing("Thread", props)
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct ThingCounts {
+    pub total_things: u64,
+    pub processes: u64,
+    pub threads: u64,
+    pub phys_frames: u64,
+    pub virt_regions: u64,
+    pub frame_pools: u64,
+    pub address_spaces: u64,
+    pub cpu_cores: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DashboardSnapshot {
+    pub memory: MemorySummary,
+    pub scheduler: SchedulerSummary,
+    pub counts: ThingCounts,
+}
+
+pub fn dashboard_snapshot() -> DashboardSnapshot {
+    let memory = compute_memory_summary();
+    let scheduler = compute_scheduler_summary();
+
+    let mut counts = ThingCounts {
+        total_things: 0,
+        processes: 0,
+        threads: 0,
+        phys_frames: 0,
+        virt_regions: 0,
+        frame_pools: 0,
+        address_spaces: 0,
+        cpu_cores: 0,
+    };
+
+    // Walk all Things in the graph
+    for raw_id in 0..crate::graph::MAX_THINGS as u64 {
+        let id = ThingId(raw_id);
+        if let Some((kind, _props)) = crate::graph::get_thing(id) {
+            counts.total_things += 1;
+
+            match kind {
+                "Process" => counts.processes += 1,
+                "Thread" => counts.threads += 1,
+                "PhysFrame" => counts.phys_frames += 1,
+                "VirtRegion" => counts.virt_regions += 1,
+                "FramePool" => counts.frame_pools += 1,
+                "AddressSpace" => counts.address_spaces += 1,
+                "CpuCore" => counts.cpu_cores += 1,
+                _ => {}
+            }
+        }
+    }
+
+    DashboardSnapshot {
+        memory,
+        scheduler,
+        counts,
+    }
+}

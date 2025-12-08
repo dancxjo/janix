@@ -143,18 +143,20 @@ run-hdd-bios: $(IMAGE_NAME).hdd
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
 
-ovmf/ovmf-code-$(KARCH).fd:
+ovmf/edk2-ovmf.tar.gz:
 	mkdir -p ovmf
-	curl -Lo $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/ovmf-code-$(KARCH).fd
+	curl -Lo $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/edk2-ovmf.tar.gz
+
+ovmf/ovmf-code-$(KARCH).fd: ovmf/edk2-ovmf.tar.gz
+	tar -xzf $< -C ovmf --strip-components=1 edk2-ovmf/ovmf-code-$(KARCH).fd
 	case "$(KARCH)" in \
 		aarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=67108864 2>/dev/null;; \
 		loongarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=5242880 2>/dev/null;; \
 		riscv64) dd if=/dev/zero of=$@ bs=1 count=0 seek=33554432 2>/dev/null;; \
 	esac
 
-ovmf/ovmf-vars-$(KARCH).fd:
-	mkdir -p ovmf
-	curl -Lo $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/ovmf-vars-$(KARCH).fd
+ovmf/ovmf-vars-$(KARCH).fd: ovmf/edk2-ovmf.tar.gz
+	tar -xzf $< -C ovmf --strip-components=1 edk2-ovmf/ovmf-vars-$(KARCH).fd
 	case "$(KARCH)" in \
 		aarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=67108864 2>/dev/null;; \
 		loongarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=5242880 2>/dev/null;; \

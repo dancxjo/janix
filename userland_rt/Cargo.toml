@@ -7,3 +7,6 @@ edition.workspace = true
 
 [dependencies]
 abi = { path = "../abi" }
+
+[target.'cfg(not(target_os = "none"))'.dependencies]
+kernel_core = { path = "../kernel_core" }

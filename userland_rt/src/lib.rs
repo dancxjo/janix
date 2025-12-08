@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(target_os = "none", no_std)]
 
 use abi::{KernelRequest, KernelResponse};
 
@@ -13,39 +13,24 @@ pub struct HostedSys;
 
 impl Sys for HostedSys {
     fn syscall(&self, request: KernelRequest) -> KernelResponse {
-        // This is a stub implementation for hosted environments
-        // In a real system, this would make actual system calls
-        match request {
-            KernelRequest::Log { message: _ } => {
-                // On hosted, we can't actually log to kernel
-                KernelResponse::Success { data: None }
+        // In hosted mode, we delegate directly to kernel_core
+        #[cfg(not(target_os = "none"))]
+        {
+            let response = kernel_core::handle_request(request.clone());
+            
+            // For Log requests in hosted mode, also print to stdout
+            if let KernelRequest::Log { message } = request {
+                println!("{}", message);
             }
-            KernelRequest::GraphQuery { node_id } => {
-                // Return stub data
-                KernelResponse::NodeData { node_id, value: node_id.0 * 10 }
-            }
-            KernelRequest::CreateTransaction => {
-                KernelResponse::TransactionCreated { 
-                    tx_id: abi::TransactionId(1) 
-                }
-            }
-            KernelRequest::CommitTransaction { tx_id: _ } => {
-                KernelResponse::Success { data: None }
-            }
-            KernelRequest::ThingCreate { kind: _, props: _ } => {
-                KernelResponse::ThingCreated { id: abi::ThingId(1) }
-            }
-            KernelRequest::ThingGet { id } => {
-                // Return dummy data
-                KernelResponse::ThingData { 
-                    id, 
-                    kind: "StubThing", 
-                    props: &[] 
-                }
-            }
-            KernelRequest::ThingUpdate { id: _, props: _ } => {
-                KernelResponse::Success { data: None }
-            }
+            
+            response
+        }
+        
+        // In bare-metal mode, this would use actual syscall mechanism
+        #[cfg(target_os = "none")]
+        {
+            // Placeholder: This would be the actual syscall instruction
+            KernelResponse::Error { message: "Syscall not implemented for bare metal" }
         }
     }
 }

@@ -1,4 +1,4 @@
-use abi::{ThingId, PropKey, PropValue};
+use abi::{ThingId, PropKey, PropValue, PropType};
 use thing_macros::Thing;
 
 // Manual Thing implementation
@@ -30,6 +30,14 @@ impl userland_std::Thing for ManualCounter {
         }
 
         ManualCounter { count, active }
+    }
+
+    fn schema() -> &'static [(&'static PropKey, PropType)] {
+        static SCHEMA: &[(&'static PropKey, PropType)] = &[
+            (&"count", PropType::U64),
+            (&"active", PropType::Bool),
+        ];
+        SCHEMA
     }
 }
 

@@ -27,6 +27,18 @@ pub enum PropValue {
     Bool(bool),
 }
 
+/// Property type for schema validation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PropType {
+    U64,
+    I64,
+    Bool,
+}
+
+/// Schema identifier
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SchemaId(pub u64);
+
 /// Kernel request from userland
 #[derive(Debug, Clone)]
 pub enum KernelRequest {
@@ -50,6 +62,15 @@ pub enum KernelRequest {
         id: ThingId,
         props: &'static [(PropKey, PropValue)],
     },
+    /// Register a schema
+    SchemaRegister {
+        kind: &'static str,
+        props: &'static [(&'static PropKey, PropType)],
+    },
+    /// Get a schema
+    SchemaGet {
+        kind: &'static str,
+    },
 }
 
 /// Kernel response to userland
@@ -70,5 +91,12 @@ pub enum KernelResponse {
         id: ThingId,
         kind: &'static str,
         props: &'static [Option<(PropKey, PropValue)>],
+    },
+    /// Schema registered
+    SchemaRegistered { kind: &'static str },
+    /// Schema data
+    SchemaData {
+        kind: &'static str,
+        props: &'static [Option<(&'static PropKey, PropType)>],
     },
 }

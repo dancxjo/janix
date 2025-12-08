@@ -1,4 +1,4 @@
-use abi::{KernelRequest, KernelResponse, NodeId, ThingId, PropKey, PropValue};
+use abi::{KernelRequest, KernelResponse, NodeId, ThingId, PropKey, PropValue, PropType};
 
 /// Print a line to the kernel log
 pub fn println(message: &'static str) {
@@ -38,6 +38,9 @@ pub trait Thing: Sized {
     const KIND: &'static str;
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self;
+    
+    /// Static schema for this Thing, used for registration.
+    fn schema() -> &'static [(&'static PropKey, PropType)];
 }
 
 pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {
@@ -67,5 +70,18 @@ pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
             Some(T::from_props(id, props))
         }
         _ => None,
+    }
+}
+
+/// Register a schema for a Thing type
+pub fn register_schema_for<T: Thing>() -> bool {
+    let sys = userland_rt::get_sys();
+    let schema = T::schema();
+    match sys.syscall(KernelRequest::SchemaRegister {
+        kind: T::KIND,
+        props: schema,
+    }) {
+        KernelResponse::SchemaRegistered { .. } => true,
+        _ => false,
     }
 }

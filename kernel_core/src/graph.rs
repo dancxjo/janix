@@ -36,6 +36,9 @@ pub struct Schema {
     pub props: [Option<(&'static PropKey, PropType)>; MAX_SCHEMA_PROPS],
 }
 
+// SAFETY: SCHEMAS is only accessed from single-threaded kernel context.
+// In a multi-threaded environment, this would need atomic operations or locks.
+// We use raw pointers to comply with Rust 2024 edition rules about mutable static references.
 static mut SCHEMAS: [Option<Schema>; MAX_SCHEMAS] = [None; MAX_SCHEMAS];
 
 /// Initialize the graph subsystem

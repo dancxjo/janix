@@ -156,7 +156,7 @@ fn test_thing_creation_with_unknown_property() {
     // Should fail because "extra" is not in schema
     match response {
         KernelResponse::Error { message } => {
-            assert!(message.contains("not in schema") || message.contains("Property not"));
+            assert!(message.contains("Property not"), "Expected 'Property not in schema' error, got: {}", message);
         }
         _ => panic!("Expected error for unknown property"),
     }

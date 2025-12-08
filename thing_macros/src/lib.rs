@@ -77,7 +77,10 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
             "u64" => quote! { ::abi::PropType::U64 },
             "i64" => quote! { ::abi::PropType::I64 },
             "bool" => quote! { ::abi::PropType::Bool },
-            _ => quote! { panic!("Unsupported type for Thing derive schema") },
+            _ => {
+                let error_msg = format!("Unsupported type '{}' for Thing derive schema. Only u64, i64, and bool are supported.", ty_str);
+                quote! { compile_error!(#error_msg) }
+            }
         };
 
         quote! {

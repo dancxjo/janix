@@ -1,0 +1,10 @@
+[package]
+name = "userland_std"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+
+[dependencies]
+abi = { path = "../abi" }
+userland_rt = { path = "../userland_rt" }

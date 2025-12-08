@@ -1,0 +1,12 @@
+[package]
+name = "user_app_hello"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "user_app_hello"
+path = "src/main.rs"
+
+[dependencies]
+abi = { path = "../abi" }
+userland_std = { path = "../userland_std" }

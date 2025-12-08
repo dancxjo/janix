@@ -3,7 +3,6 @@ MAKEFLAGS += -rR
 .SUFFIXES:
 
 # This is the name that our final executable will have.
-# Change as needed.
 override OUTPUT := kernel
 
 # Convenience macro to reliably declare user overridable variables.
@@ -31,13 +30,13 @@ endif
 # Default target.
 .PHONY: all
 all:
-	RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE)
-	cp target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/$$(cd target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR) && find -maxdepth 1 -perm -111 -type f) kernel
+	cd .. && RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) -p boot
+	cp ../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/$$(cd ../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR) && find -maxdepth 1 -perm -111 -type f | grep -v "host_harness\|user_app_hello" | head -1) kernel
 
 # Remove object files and the final executable.
 .PHONY: clean
 clean:
-	cargo clean
+	cd .. && cargo clean
 	rm -rf kernel
 
 .PHONY: distclean

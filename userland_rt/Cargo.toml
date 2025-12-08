@@ -1,0 +1,9 @@
+[package]
+name = "userland_rt"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+
+[dependencies]
+abi = { path = "../abi" }

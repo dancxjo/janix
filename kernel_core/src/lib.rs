@@ -158,6 +158,23 @@ pub fn create_builtin_things() {
 pub fn init_boot_graph() {
     log("Initializing boot graph...");
     
+    // Memory layout constants
+    const FRAME_POOL_START: u64 = 0x100000;      // 1MB
+    const FRAME_POOL_END: u64 = 0x1100000;       // 17MB
+    const FRAME_SIZE: u64 = 4096;                 // 4KB
+    
+    const KERNEL_VIRT_BASE: u64 = 0xFFFF800000000000;  // Canonical higher-half
+    const KERNEL_VIRT_SIZE: u64 = 0x200000;            // 2MB
+    const USER_STACK_BASE: u64 = 0x7FFFFFFFE000;       // Top of user space
+    const USER_STACK_SIZE: u64 = 0x2000;               // 8KB
+    const USER_HEAP_BASE: u64 = 0x400000;              // 4MB
+    const USER_HEAP_SIZE: u64 = 0x100000;              // 1MB
+    
+    // Memory flags
+    const FLAG_RW: u64 = 0x3;   // Read + Write
+    const FLAG_RWX: u64 = 0x7;  // Read + Write + Execute
+    const FLAG_RX: u64 = 0x5;   // Read + Execute
+    
     // Create CPU core
     let cpu_core = model::create_cpu_core(0);
     if cpu_core.is_some() {
@@ -181,10 +198,10 @@ pub fn init_boot_graph() {
         log("Created Thread(1)");
         
         // Update thread state to Running
-        static THREAD_RUNNING: &[(abi::PropKey, abi::PropValue)] = &[
+        let thread_running = [
             ("state", abi::PropValue::U64(model::STATE_RUNNING)),
         ];
-        graph::update_thing(thread_id, THREAD_RUNNING);
+        graph::update_thing(thread_id, &thread_running);
         log("Thread(1) set to Running state");
     } else {
         log("Failed to create Thread");
@@ -200,8 +217,8 @@ pub fn init_boot_graph() {
         return;
     }
     
-    // Create frame pool (16MB pool starting at 0x100000, 4KB frames)
-    let frame_pool = model::create_frame_pool(0x100000, 0x1100000, 4096);
+    // Create frame pool
+    let frame_pool = model::create_frame_pool(FRAME_POOL_START, FRAME_POOL_END, FRAME_SIZE);
     if frame_pool.is_some() {
         log("Created FramePool");
     } else {
@@ -210,15 +227,15 @@ pub fn init_boot_graph() {
     }
     
     // Create a few physical frames
-    let _frame1 = model::create_phys_frame(0x100000, 4096);
-    let _frame2 = model::create_phys_frame(0x101000, 4096);
-    let _frame3 = model::create_phys_frame(0x102000, 4096);
+    let _frame1 = model::create_phys_frame(FRAME_POOL_START, FRAME_SIZE);
+    let _frame2 = model::create_phys_frame(FRAME_POOL_START + FRAME_SIZE, FRAME_SIZE);
+    let _frame3 = model::create_phys_frame(FRAME_POOL_START + 2 * FRAME_SIZE, FRAME_SIZE);
     log("Created 3 PhysFrame nodes");
     
     // Create virtual regions (kernel space, user stack, user heap)
-    let _virt1 = model::create_virt_region(0xFFFF800000000000, 0x200000, 0x3); // kernel, RW
-    let _virt2 = model::create_virt_region(0x7FFFFFFFE000, 0x2000, 0x7); // user stack, RWX
-    let _virt3 = model::create_virt_region(0x400000, 0x100000, 0x5); // user heap, RX
+    let _virt1 = model::create_virt_region(KERNEL_VIRT_BASE, KERNEL_VIRT_SIZE, FLAG_RW);
+    let _virt2 = model::create_virt_region(USER_STACK_BASE, USER_STACK_SIZE, FLAG_RWX);
+    let _virt3 = model::create_virt_region(USER_HEAP_BASE, USER_HEAP_SIZE, FLAG_RX);
     log("Created 3 VirtRegion nodes");
     
     log("Boot graph initialized: 1 process, 1 thread, 1 CPU");

@@ -40,13 +40,13 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
 
         let match_arm = match ty_str.as_str() {
             "u64" => quote! {
-                if let ::abi::PropValue::U64(val) = v { val as #ty } else { panic!("Type mismatch for {}", stringify!(#name)) }
+                if let ::abi::PropValue::U64(val) = *v { val } else { panic!("Type mismatch for {}", stringify!(#name)) }
             },
             "i64" => quote! {
-                if let ::abi::PropValue::I64(val) = v { val as #ty } else { panic!("Type mismatch for {}", stringify!(#name)) }
+                if let ::abi::PropValue::I64(val) = *v { val } else { panic!("Type mismatch for {}", stringify!(#name)) }
             },
             "bool" => quote! {
-                if let ::abi::PropValue::Bool(val) = v { val as #ty } else { panic!("Type mismatch for {}", stringify!(#name)) }
+                if let ::abi::PropValue::Bool(val) = *v { val } else { panic!("Type mismatch for {}", stringify!(#name)) }
             },
             _ => quote! { panic!("Unsupported type for Thing derive") },
         };

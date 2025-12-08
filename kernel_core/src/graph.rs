@@ -24,7 +24,7 @@ pub fn init() {
 /// Add a node to the graph
 pub fn add_node(value: u64) -> Option<NodeId> {
     unsafe {
-        if NEXT_ID as usize >= MAX_NODES {
+        if NEXT_ID >= MAX_NODES as u64 {
             return None;
         }
         let id = NodeId(NEXT_ID);
@@ -37,12 +37,11 @@ pub fn add_node(value: u64) -> Option<NodeId> {
 /// Query a node in the graph
 pub fn query_node(node_id: NodeId) -> Option<u64> {
     unsafe {
-        let idx = node_id.0 as usize;
-        if idx < MAX_NODES {
-            NODES[idx].as_ref().map(|n| n.value)
-        } else {
-            None
+        if node_id.0 >= MAX_NODES as u64 {
+            return None;
         }
+        let idx = node_id.0 as usize;
+        NODES[idx].as_ref().map(|n| n.value)
     }
 }
 

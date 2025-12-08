@@ -14,7 +14,7 @@ fn main() {
     println!("Kernel Logs:");
     for (i, entry) in kernel_core::get_logs().iter().enumerate() {
         if let Some(msg) = entry {
-            println!("  [{:04}] {}", i, msg);
+            println!("  [Entry {:04}] {}", i, msg);
         }
     }
     println!();

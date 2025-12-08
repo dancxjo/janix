@@ -11,4 +11,5 @@ path = "src/main.rs"
 kernel_core = { path = "../kernel_core" }
 abi = { path = "../abi" }
 userland_rt = { path = "../userland_rt" }
+userland_std = { path = "../userland_std" }
 user_app_hello = { path = "../user_app_hello" }

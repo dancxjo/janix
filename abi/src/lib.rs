@@ -106,9 +106,9 @@ pub enum KernelRequest {
     /// Get a schema
     SchemaGet { kind: &'static str },
     /// Get memory summary
-    MemorySummary,
+    GetMemorySummary,
     /// Get scheduler summary
-    SchedulerSummary,
+    GetSchedulerSummary,
 }
 
 /// Kernel response to userland

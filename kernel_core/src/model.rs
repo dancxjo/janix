@@ -113,50 +113,31 @@ pub fn create_cpu_core(index: u64) -> Option<ThingId> {
 }
 
 pub fn compute_memory_summary() -> MemorySummary {
-    let mut total_frames = 0;
-    let mut used_frames = 0;
+    let mut total_frames = 0_u64;
+    let mut used_frames = 0_u64;
 
-    graph::iter_things(|thing| {
-        if thing.kind == "PhysFrame" {
-            total_frames += 1;
-            for p in thing.props.iter().flatten() {
-                if p.0 == "allocated" {
-                    if let PropValue::Bool(true) = p.1 {
-                        used_frames += 1;
+    for raw_id in 0..crate::graph::MAX_THINGS as u64 {
+        let id = ThingId(raw_id);
+        if let Some((kind, props)) = crate::graph::get_thing(id) {
+            if kind == "PhysFrame" {
+                total_frames += 1;
+
+                // look for allocated: bool
+                let mut allocated = false;
+                for p in props.iter().flatten() {
+                    let (key, value) = p;
+                    if *key == "allocated" {
+                        if let PropValue::Bool(b) = value {
+                            allocated = *b;
+                        }
                     }
                 }
-            }
-        } else if thing.kind == "FramePool" {
-            let mut start = 0;
-            let mut end = 0;
-            let mut frame_size = 4096;
-
-            for p in thing.props.iter().flatten() {
-                match p.0 {
-                    "start" => {
-                        if let PropValue::U64(v) = p.1 {
-                            start = v;
-                        }
-                    }
-                    "end" => {
-                        if let PropValue::U64(v) = p.1 {
-                            end = v;
-                        }
-                    }
-                    "frame_size" => {
-                        if let PropValue::U64(v) = p.1 {
-                            frame_size = v;
-                        }
-                    }
-                    _ => {}
+                if allocated {
+                    used_frames += 1;
                 }
-            }
-
-            if frame_size > 0 && end > start {
-                total_frames += (end - start) / frame_size;
             }
         }
-    });
+    }
 
     MemorySummary {
         total_frames,
@@ -166,26 +147,39 @@ pub fn compute_memory_summary() -> MemorySummary {
 }
 
 pub fn compute_scheduler_summary() -> SchedulerSummary {
-    let mut process_count = 0;
-    let mut thread_count = 0;
-    let mut runnable_threads = 0;
+    let mut process_count = 0_u64;
+    let mut thread_count = 0_u64;
+    let mut runnable_threads = 0_u64;
 
-    graph::iter_things(|thing| {
-        if thing.kind == "Process" {
-            process_count += 1;
-        } else if thing.kind == "Thread" {
-            thread_count += 1;
-            for p in thing.props.iter().flatten() {
-                if p.0 == "state" {
-                    if let PropValue::U64(state) = p.1 {
-                        if state == STATE_RUNNING || state == STATE_READY {
-                            runnable_threads += 1;
+    for raw_id in 0..crate::graph::MAX_THINGS as u64 {
+        let id = ThingId(raw_id);
+        if let Some((kind, props)) = crate::graph::get_thing(id) {
+            match kind {
+                "Process" => {
+                    process_count += 1;
+                }
+                "Thread" => {
+                    thread_count += 1;
+
+                    // state == STATE_RUNNING or STATE_READY counts as runnable
+                    let mut state = 0_u64;
+                    for p in props.iter().flatten() {
+                        let (key, value) = p;
+                        if *key == "state" {
+                            if let PropValue::U64(v) = value {
+                                state = *v;
+                            }
                         }
                     }
+
+                    if state == STATE_RUNNING || state == STATE_READY {
+                        runnable_threads += 1;
+                    }
                 }
+                _ => {}
             }
         }
-    });
+    }
 
     SchedulerSummary {
         process_count,

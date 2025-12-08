@@ -52,7 +52,7 @@ unsafe extern "C" fn kmain() -> ! {
     // Initialize console on the Limine framebuffer
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            let mut console = unsafe { console::Console::from_framebuffer(framebuffer) };
+            let mut console = unsafe { console::Console::from_framebuffer(&framebuffer) };
 
             // Render dashboard instead of just raw log dump
             dashboard::render_dashboard(&mut console);

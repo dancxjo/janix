@@ -15,16 +15,16 @@ pub trait Sys {
 pub struct HostedSys;
 
 impl Sys for HostedSys {
-    fn syscall(&self, request: KernelRequest) -> KernelResponse {
+    fn syscall(&self, _request: KernelRequest) -> KernelResponse {
         // In hosted mode, we delegate directly to kernel_core
         #[cfg(not(target_os = "none"))]
         {
             // For Log requests in hosted mode, print to stdout before handling
-            if let KernelRequest::Log { message } = &request {
+            if let KernelRequest::Log { message } = &_request {
                 println!("{}", message);
             }
 
-            kernel_core::handle_request(request)
+            kernel_core::handle_request(_request)
         }
 
         // In bare-metal mode, this would use actual syscall mechanism

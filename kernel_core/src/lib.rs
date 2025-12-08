@@ -88,11 +88,11 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 None => KernelResponse::Error { message: "Schema not found" },
             }
         }
-        KernelRequest::MemorySummary => {
+        KernelRequest::GetMemorySummary => {
             let summary = model::compute_memory_summary();
             KernelResponse::MemorySummary { summary }
         }
-        KernelRequest::SchedulerSummary => {
+        KernelRequest::GetSchedulerSummary => {
             let summary = model::compute_scheduler_summary();
             KernelResponse::SchedulerSummary { summary }
         }

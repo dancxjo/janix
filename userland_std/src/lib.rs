@@ -1,4 +1,4 @@
-use abi::{KernelRequest, KernelResponse, NodeId, ThingId, PropKey, PropValue, PropType};
+use abi::{KernelRequest, KernelResponse, NodeId, ThingId, PropKey, PropValue, PropType, MemorySummary, SchedulerSummary};
 
 /// Print a line to the kernel log
 pub fn println(message: &'static str) {
@@ -83,5 +83,21 @@ pub fn register_schema_for<T: Thing>() -> bool {
     }) {
         KernelResponse::SchemaRegistered { .. } => true,
         _ => false,
+    }
+}
+
+pub fn memory_summary() -> Option<MemorySummary> {
+    let sys = userland_rt::get_sys();
+    match sys.syscall(KernelRequest::GetMemorySummary) {
+        KernelResponse::MemorySummary { summary } => Some(summary),
+        _ => None,
+    }
+}
+
+pub fn scheduler_summary() -> Option<SchedulerSummary> {
+    let sys = userland_rt::get_sys();
+    match sys.syscall(KernelRequest::GetSchedulerSummary) {
+        KernelResponse::SchedulerSummary { summary } => Some(summary),
+        _ => None,
     }
 }

@@ -1,5 +1,4 @@
 use userland_rt::HostedSys;
-use abi::KernelRequest;
 use kernel_core::model::dashboard_snapshot;
 
 /// ThingOS Host Harness
@@ -46,8 +45,23 @@ fn main() {
     let sys = HostedSys;
 
     // Test MemorySummary
-    let resp = kernel_core::handle_request(KernelRequest::MemorySummary);
-    println!("Memory summary (host): {resp:?}");
+    if let Some(mem) = userland_std::memory_summary() {
+        println!(
+            "Memory summary: total={} used={} free={}",
+            mem.total_frames, mem.used_frames, mem.free_frames
+        );
+    } else {
+        println!("Memory summary: unavailable");
+    }
+
+    if let Some(sched) = userland_std::scheduler_summary() {
+        println!(
+            "Scheduler summary: processes={} threads={} runnable={}",
+            sched.process_count, sched.thread_count, sched.runnable_threads
+        );
+    } else {
+        println!("Scheduler summary: unavailable");
+    }
 
     println!("Running user_app_hello with HostedSys...");
     user_app_hello::run(&sys);

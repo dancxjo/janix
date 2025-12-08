@@ -18,9 +18,8 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
 
     let to_props_arms = fields.iter().map(|f| {
         let name = &f.ident;
-        let name_str = name.as_ref().unwrap().to_string();
         let ty = &f.ty;
-        let ty_str = quote::quote!(#ty).to_string();
+        let ty_str = quote!(#ty).to_string();
         
         let val_expr = match ty_str.as_str() {
             "u64" => quote! { ::abi::PropValue::U64(self.#name as u64) },
@@ -30,25 +29,24 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
         };
 
         quote! {
-            out.push((#name_str, #val_expr));
+            out.push((stringify!(#name), #val_expr));
         }
     });
 
     let from_props_arms = fields.iter().map(|f| {
         let name = &f.ident;
-        let name_str = name.as_ref().unwrap().to_string();
         let ty = &f.ty;
-        let ty_str = quote::quote!(#ty).to_string();
+        let ty_str = quote!(#ty).to_string();
 
         let match_arm = match ty_str.as_str() {
             "u64" => quote! {
-                if let ::abi::PropValue::U64(val) = v { *val as #ty } else { panic!("Type mismatch for {}", #name_str) }
+                if let ::abi::PropValue::U64(val) = v { val as #ty } else { panic!("Type mismatch for {}", stringify!(#name)) }
             },
             "i64" => quote! {
-                if let ::abi::PropValue::I64(val) = v { *val as #ty } else { panic!("Type mismatch for {}", #name_str) }
+                if let ::abi::PropValue::I64(val) = v { val as #ty } else { panic!("Type mismatch for {}", stringify!(#name)) }
             },
             "bool" => quote! {
-                if let ::abi::PropValue::Bool(val) = v { *val as #ty } else { panic!("Type mismatch for {}", #name_str) }
+                if let ::abi::PropValue::Bool(val) = v { val as #ty } else { panic!("Type mismatch for {}", stringify!(#name)) }
             },
             _ => quote! { panic!("Unsupported type for Thing derive") },
         };
@@ -58,13 +56,13 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 let mut found = None;
                 for prop in props {
                     if let Some((k, v)) = prop {
-                        if *k == #name_str {
+                        if *k == stringify!(#name) {
                             found = Some(#match_arm);
                             break;
                         }
                     }
                 }
-                found.expect(concat!("Missing property: ", #name_str))
+                found.expect(concat!("Missing property: ", stringify!(#name)))
             }
         }
     });
@@ -78,6 +76,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
             }
 
             fn from_props(id: ::abi::ThingId, props: &[Option<(::abi::PropKey, ::abi::PropValue)>]) -> Self {
+                let _ = id;
                 Self {
                     #(#from_props_arms),*
                 }

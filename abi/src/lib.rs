@@ -16,6 +16,26 @@ pub struct NodeId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ThingId(pub u64);
 
+/// Address Space identifier
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AddressSpaceId(pub u64);
+
+/// Thread identifier
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ThreadId(pub u64);
+
+/// CPU Core identifier
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CpuCoreId(pub u64);
+
+/// Frame identifier
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FrameId(pub u64);
+
+/// Frame Pool identifier
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FramePoolId(pub u64);
+
 /// Simple property key
 pub type PropKey = &'static str;
 
@@ -68,9 +88,11 @@ pub enum KernelRequest {
         props: &'static [(&'static str, PropType)],
     },
     /// Get a schema
-    SchemaGet {
-        kind: &'static str,
-    },
+    SchemaGet { kind: &'static str },
+    /// Get memory summary
+    MemorySummary,
+    /// Get scheduler summary
+    SchedulerSummary,
 }
 
 /// Kernel response to userland
@@ -98,5 +120,18 @@ pub enum KernelResponse {
     SchemaData {
         kind: &'static str,
         props: &'static [Option<(&'static str, PropType)>],
+    },
+    /// Memory summary data
+    MemorySummary {
+        total_frames: u64,
+        free_frames: u64,
+        used_frames: u64,
+        pools: u64,
+    },
+    /// Scheduler summary data
+    SchedulerSummary {
+        processes: u64,
+        threads: u64,
+        runnable_threads: u64,
     },
 }

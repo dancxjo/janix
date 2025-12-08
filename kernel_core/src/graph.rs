@@ -101,6 +101,19 @@ pub fn query_node(node_id: NodeId) -> Option<u64> {
     }
 }
 
+/// Iterate over all things in the graph
+pub fn iter_things<F>(mut f: F)
+where
+    F: FnMut(&ThingNode),
+{
+    unsafe {
+        let things = &raw const THINGS;
+        for slot in (*things).iter().flatten() {
+            f(slot);
+        }
+    }
+}
+
 /// Create a new Thing
 pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Option<ThingId> {
     unsafe {

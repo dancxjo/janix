@@ -1,5 +1,7 @@
 use abi::TransactionId;
 
+// SAFETY: TX_COUNTER is only accessed from single-threaded kernel context.
+// In a multi-threaded environment, this would need atomic operations or locks.
 static mut TX_COUNTER: u64 = 0;
 
 /// Initialize the transaction subsystem

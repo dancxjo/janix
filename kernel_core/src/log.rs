@@ -2,6 +2,8 @@
 const MAX_LOG_ENTRIES: usize = 100;
 
 /// Log entry storage
+// SAFETY: LOG_BUFFER and LOG_INDEX are only accessed from single-threaded kernel context.
+// In a multi-threaded environment, this would need atomic operations or locks.
 static mut LOG_BUFFER: [Option<&str>; MAX_LOG_ENTRIES] = [None; MAX_LOG_ENTRIES];
 static mut LOG_INDEX: usize = 0;
 

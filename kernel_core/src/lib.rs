@@ -74,6 +74,9 @@ pub fn create_builtin_things() {
     
     log("Creating kernel Things...");
     
+    // Number of Things we'll create
+    const BUILTIN_THING_COUNT: u64 = 2;
+    
     // Create a KernelInfo Thing
     let kernel_props: &'static [(abi::PropKey, PropValue)] = &[
         ("version", PropValue::U64(1)),
@@ -87,7 +90,7 @@ pub fn create_builtin_things() {
     // Create a BootStats Thing
     let stats_props: &'static [(abi::PropKey, PropValue)] = &[
         ("boot_time_ms", PropValue::U64(0)),
-        ("things_created", PropValue::U64(2)),
+        ("things_created", PropValue::U64(BUILTIN_THING_COUNT)),
     ];
     
     if let Some(_id) = graph::create_thing("BootStats", stats_props) {

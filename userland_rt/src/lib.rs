@@ -16,14 +16,12 @@ impl Sys for HostedSys {
         // In hosted mode, we delegate directly to kernel_core
         #[cfg(not(target_os = "none"))]
         {
-            let response = kernel_core::handle_request(request.clone());
-            
-            // For Log requests in hosted mode, also print to stdout
-            if let KernelRequest::Log { message } = request {
+            // For Log requests in hosted mode, print to stdout before handling
+            if let KernelRequest::Log { message } = &request {
                 println!("{}", message);
             }
             
-            response
+            kernel_core::handle_request(request)
         }
         
         // In bare-metal mode, this would use actual syscall mechanism

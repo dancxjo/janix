@@ -1,6 +1,6 @@
 use kernel_core::model;
 use kernel_core::log;
-use limine::request::{MemoryMapRequest, MpRequest};
+use limine::request::{MemoryMapRequest, MpRequest, HhdmRequest};
 use limine::memory_map::EntryType;
 
 #[used]
@@ -11,19 +11,48 @@ static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 #[unsafe(link_section = ".requests")]
 static MP_REQUEST: MpRequest = MpRequest::new();
 
+#[used]
+#[unsafe(link_section = ".requests")]
+static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+
 pub fn seed_memory_graph_from_limine() {
     let Some(response) = MEMORY_MAP_REQUEST.get_response() else {
         log("No Limine memory map; skipping memory graph seeding");
         return;
     };
 
+    let hhdm_offset = if let Some(hhdm) = HHDM_REQUEST.get_response() {
+        hhdm.offset()
+    } else {
+        0
+    };
+
+    let mut heap_initialized = false;
+
     for entry in response.entries() {
         if entry.entry_type != EntryType::USABLE {
             continue;
         }
 
-        let base = entry.base;
-        let len  = entry.length;
+        let mut base = entry.base;
+        let mut len  = entry.length;
+        
+        if !heap_initialized && len >= 2 * 1024 * 1024 {
+             let heap_size = 1024 * 1024; // 1 MiB
+             let heap_start_phys = base;
+             let heap_start_virt = (heap_start_phys as u64 + hhdm_offset) as usize;
+             
+             unsafe {
+                 crate::heap::KERNEL_ALLOCATOR.init(heap_start_virt, heap_size);
+             }
+             
+             log("Initialized kernel heap (1MiB)");
+             
+             base += heap_size as u64;
+             len -= heap_size as u64;
+             heap_initialized = true;
+        }
+
         let frame_size = 4096;
 
         // For now: one pool per usable region.

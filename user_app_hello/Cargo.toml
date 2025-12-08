@@ -10,8 +10,6 @@ path = "src/lib.rs"
 [dependencies]
 abi = { path = "../abi" }
 userland_rt = { path = "../userland_rt" }
-
-[target.'cfg(not(target_os = "none"))'.dependencies]
 userland_std = { path = "../userland_std" }
 
 [dev-dependencies]

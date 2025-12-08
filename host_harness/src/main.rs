@@ -1,5 +1,5 @@
-use userland_rt::HostedSys;
 use kernel_core::model::dashboard_snapshot;
+use userland_rt::HostedSys;
 
 /// ThingOS Host Harness
 ///
@@ -18,19 +18,23 @@ fn main() {
     kernel_core::model::create_frame_pool(0x1000, 0x9000, 4096);
     kernel_core::model::create_cpu_core(0);
 
+    let sys = HostedSys;
+
+    println!("Running user_app_hello with HostedSys...");
+    user_app_hello::run(&sys);
+    println!("Finished user_app_hello.");
+
     // Print dashboard snapshot
     let snap = dashboard_snapshot();
 
     println!("Host Dashboard Snapshot:");
-    println!("  Memory: total={} used={} free={}",
-        snap.memory.total_frames,
-        snap.memory.used_frames,
-        snap.memory.free_frames,
+    println!(
+        "  Memory: total={} used={} free={}",
+        snap.memory.total_frames, snap.memory.used_frames, snap.memory.free_frames,
     );
-    println!("  Scheduler: processes={} threads={} runnable={}",
-        snap.scheduler.process_count,
-        snap.scheduler.thread_count,
-        snap.scheduler.runnable_threads,
+    println!(
+        "  Scheduler: processes={} threads={} runnable={}",
+        snap.scheduler.process_count, snap.scheduler.thread_count, snap.scheduler.runnable_threads,
     );
     println!("  Things:");
     println!("    total       = {}", snap.counts.total_things);
@@ -41,57 +45,4 @@ fn main() {
     println!("    FramePool   = {}", snap.counts.frame_pools);
     println!("    AddressSpace= {}", snap.counts.address_spaces);
     println!("    CpuCore     = {}", snap.counts.cpu_cores);
-
-    let sys = HostedSys;
-
-    // Test MemorySummary
-    if let Some(mem) = userland_std::memory_summary() {
-        println!(
-            "Memory summary: total={} used={} free={}",
-            mem.total_frames, mem.used_frames, mem.free_frames
-        );
-    } else {
-        println!("Memory summary: unavailable");
-    }
-
-    if let Some(sched) = userland_std::scheduler_summary() {
-        println!(
-            "Scheduler summary: processes={} threads={} runnable={}",
-            sched.process_count, sched.thread_count, sched.runnable_threads
-        );
-    } else {
-        println!("Scheduler summary: unavailable");
-    }
-
-    println!("Running user_app_hello with HostedSys...");
-    user_app_hello::run(&sys);
-    println!("Finished user_app_hello.");
-
-    println!("=== Memory alloc demo ===");
-    // Create some frames first since the harness only created a pool but no frames
-    kernel_core::model::create_phys_frame(0x1000, 4096);
-    kernel_core::model::create_phys_frame(0x2000, 4096);
-    kernel_core::model::create_phys_frame(0x3000, 4096);
-
-    for _ in 0..3 {
-        if let Some(frame) = userland_std::alloc_frame() {
-            println!("Allocated frame: base=0x{:x}, size=0x{:x}", frame.base, frame.size);
-            userland_std::free_frame(frame.id);
-        } else {
-            println!("No frame available");
-        }
-    }
-
-    println!("=== Scheduler demo ===");
-    userland_std::create_process(1);
-    userland_std::create_thread(1, 1, 10);
-    userland_std::create_thread(1, 2, 10);
-
-    for tick in 0..5 {
-        if let Some(info) = userland_std::scheduler_tick() {
-            println!("Tick {}: running tid={} state={} prio={}", tick, info.tid, info.state, info.priority);
-        } else {
-            println!("Tick {}: idle", tick);
-        }
-    }
 }

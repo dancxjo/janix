@@ -2,43 +2,55 @@
 
 use abi::{KernelRequest, KernelResponse};
 
-/// System call interface trait
 pub trait Sys {
-    /// Make a system call to the kernel
     fn syscall(&self, request: KernelRequest) -> KernelResponse;
 }
 
-/// Hosted implementation of Sys trait (stub for testing on host)
-///
-/// IMPORTANT: This implementation must maintain strict parity with the kernel's `KernelSys`.
-/// Any syscall supported by the kernel must be supported here (typically by delegating to `kernel_core`).
+// Existing HostedSys for host_harness (may be cfg(std) or cfg(feature = "host"))
+#[cfg(feature = "host")]
 pub struct HostedSys;
 
+#[cfg(feature = "host")]
 impl Sys for HostedSys {
-    fn syscall(&self, _request: KernelRequest) -> KernelResponse {
-        // In hosted mode, we delegate directly to kernel_core
+    fn syscall(&self, request: KernelRequest) -> KernelResponse {
+        // existing hosted behavior (possibly forwarding to kernel_core in tests)
         #[cfg(not(target_os = "none"))]
         {
             // For Log requests in hosted mode, print to stdout before handling
-            if let KernelRequest::Log { message } = &_request {
+            if let KernelRequest::Log { message } = &request {
                 println!("{}", message);
             }
-
-            kernel_core::handle_request(_request)
+            kernel_core::handle_request(request)
         }
-
-        // In bare-metal mode, this would use actual syscall mechanism
         #[cfg(target_os = "none")]
         {
-            // Placeholder: This would be the actual syscall instruction
+            // Should not happen if feature=host is only used on host
             KernelResponse::Error {
-                message: "Syscall not implemented for bare metal",
+                message: "HostedSys not supported on bare metal",
             }
         }
     }
 }
 
-/// Get the system call interface
-pub fn get_sys() -> &'static dyn Sys {
-    &HostedSys
+// New KernelSys: used inside the real kernel build
+#[cfg(any(target_os = "none", feature = "kernel"))]
+pub struct KernelSys;
+
+#[cfg(any(target_os = "none", feature = "kernel"))]
+impl Sys for KernelSys {
+    fn syscall(&self, request: KernelRequest) -> KernelResponse {
+        // In-kernel, we just call into kernel_core
+        kernel_core::handle_request(request)
+    }
+}
+
+// Convenience getters so call sites don’t have to worry about cfgs:
+#[cfg(feature = "host")]
+pub fn get_host_sys() -> HostedSys {
+    HostedSys
+}
+
+#[cfg(any(target_os = "none", feature = "kernel"))]
+pub fn get_kernel_sys() -> KernelSys {
+    KernelSys
 }

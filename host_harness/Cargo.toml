@@ -10,6 +10,6 @@ path = "src/main.rs"
 [dependencies]
 kernel_core = { path = "../kernel_core" }
 abi = { path = "../abi" }
-userland_rt = { path = "../userland_rt" }
+userland_rt = { path = "../userland_rt", features = ["host"] }
 userland_std = { path = "../userland_std" }
 user_app_hello = { path = "../user_app_hello" }

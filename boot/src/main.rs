@@ -1,13 +1,14 @@
 #![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
 
+mod boot_model;
 mod console;
 mod dashboard;
-mod sys_kernel;
-mod boot_model;
+mod heap;
 
-use sys_kernel::KernelSys;
 use user_app_hello::run as user_app_hello_run;
+use userland_rt::KernelSys;
 
 use core::arch::asm;
 
@@ -41,10 +42,10 @@ unsafe extern "C" fn kmain() -> ! {
 
     // Log startup message
     kernel_core::log("ThingOS booting...");
-    
+
     // Create builtin kernel Things
     kernel_core::create_builtin_things();
-    
+
     // Initialize boot graph with memory and scheduling Things
     boot_model::seed_memory_graph_from_limine();
     boot_model::seed_cpu_graph_from_limine();
@@ -53,6 +54,12 @@ unsafe extern "C" fn kmain() -> ! {
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             let mut console = unsafe { console::Console::from_framebuffer(&framebuffer) };
+
+            // Run the demo app through the same Sys trait as the host:
+            let sys = KernelSys;
+            kernel_core::log("Launching user_app_hello from kernel...");
+            user_app_hello_run(&sys);
+            kernel_core::log("user_app_hello finished.");
 
             // Render dashboard instead of just raw log dump
             dashboard::render_dashboard(&mut console);
@@ -72,11 +79,6 @@ unsafe extern "C" fn kmain() -> ! {
     }
 
     kernel_core::log("ThingOS started successfully");
-
-    // --- NEW: single-task launch of user_app_hello ---
-    let sys = KernelSys;
-    user_app_hello_run(&sys);
-    kernel_core::log("user_app_hello finished");
 
     hcf();
 }

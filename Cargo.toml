@@ -8,6 +8,7 @@ members = [
     "userland_std",
     "host_harness",
     "user_app_hello",
+    "thing_macros",
 ]
 
 [workspace.package]

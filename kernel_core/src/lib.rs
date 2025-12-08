@@ -46,5 +46,24 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             log::log_message(message);
             KernelResponse::Success { data: None }
         }
+        KernelRequest::ThingCreate { kind, props } => {
+            match graph::create_thing(kind, props) {
+                Some(id) => KernelResponse::ThingCreated { id },
+                None => KernelResponse::Error { message: "Failed to create thing" },
+            }
+        }
+        KernelRequest::ThingGet { id } => {
+            match graph::get_thing(id) {
+                Some((kind, props)) => KernelResponse::ThingData { id, kind, props },
+                None => KernelResponse::Error { message: "Thing not found" },
+            }
+        }
+        KernelRequest::ThingUpdate { id, props } => {
+            if graph::update_thing(id, props) {
+                KernelResponse::Success { data: None }
+            } else {
+                KernelResponse::Error { message: "Failed to update thing" }
+            }
+        }
     }
 }

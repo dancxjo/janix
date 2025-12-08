@@ -32,6 +32,20 @@ impl Sys for HostedSys {
             KernelRequest::CommitTransaction { tx_id: _ } => {
                 KernelResponse::Success { data: None }
             }
+            KernelRequest::ThingCreate { kind: _, props: _ } => {
+                KernelResponse::ThingCreated { id: abi::ThingId(1) }
+            }
+            KernelRequest::ThingGet { id } => {
+                // Return dummy data
+                KernelResponse::ThingData { 
+                    id, 
+                    kind: "StubThing", 
+                    props: &[] 
+                }
+            }
+            KernelRequest::ThingUpdate { id: _, props: _ } => {
+                KernelResponse::Success { data: None }
+            }
         }
     }
 }

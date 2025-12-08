@@ -1,4 +1,4 @@
-use abi::{KernelRequest, KernelResponse, NodeId};
+use abi::{KernelRequest, KernelResponse, NodeId, ThingId, PropKey, PropValue};
 
 /// Print a line to the kernel log
 pub fn println(message: &'static str) {
@@ -32,4 +32,40 @@ pub fn commit_transaction(tx_id: abi::TransactionId) -> bool {
     let sys = userland_rt::get_sys();
     let request = KernelRequest::CommitTransaction { tx_id };
     matches!(sys.syscall(request), KernelResponse::Success { .. })
+}
+
+pub trait Thing: Sized {
+    const KIND: &'static str;
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self;
+}
+
+pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {
+    let sys = userland_rt::get_sys();
+    let mut props_vec = Vec::new();
+    thing.to_props(&mut props_vec);
+    let props_slice = Box::leak(props_vec.into_boxed_slice());
+    
+    let request = KernelRequest::ThingCreate {
+        kind: T::KIND,
+        props: props_slice,
+    };
+    match sys.syscall(request) {
+        KernelResponse::ThingCreated { id } => Some(id),
+        _ => None,
+    }
+}
+
+pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
+    let sys = userland_rt::get_sys();
+    let request = KernelRequest::ThingGet { id };
+    match sys.syscall(request) {
+        KernelResponse::ThingData { id, kind, props } => {
+            if kind != T::KIND {
+                return None;
+            }
+            Some(T::from_props(id, props))
+        }
+        _ => None,
+    }
 }

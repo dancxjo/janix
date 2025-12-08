@@ -1,30 +1,31 @@
-use abi::NodeId;
+use thing_macros::Thing;
+use userland_std::{create_thing, load_thing};
+
+#[derive(Thing)]
+struct DemoCounter {
+    pub count: u64,
+    pub active: bool,
+}
 
 fn main() {
-    // Log a hello message
-    userland_std::println("Hello from user_app_hello!");
-    
-    // Query some nodes in the graph
-    userland_std::println("Querying graph nodes:");
-    for i in 0..5 {
-        let node_id = NodeId(i);
-        match userland_std::graph_query(node_id) {
-            Some(_value) => userland_std::println("  node found"),
-            None => userland_std::println("  node not found"),
-        }
-    }
-    
-    // Create and commit a transaction
-    userland_std::println("Creating transaction...");
-    if let Some(_tx_id) = userland_std::create_transaction() {
-        userland_std::println("  Transaction created");
-        if userland_std::commit_transaction(_tx_id) {
-            userland_std::println("  Transaction committed successfully");
+    userland_std::println("Hello from user_app_hello with Thing!");
+
+    let demo = DemoCounter { count: 42, active: true };
+    if let Some(id) = create_thing(&demo) {
+        userland_std::println("Created DemoCounter Thing");
+        
+        if let Some(loaded) = load_thing::<DemoCounter>(id) {
+             userland_std::println("Loaded DemoCounter Thing");
+             if loaded.count == 42 && loaded.active {
+                 userland_std::println("  Data matches!");
+             } else {
+                 userland_std::println("  Data mismatch!");
+             }
         } else {
-            userland_std::println("  Failed to commit transaction");
+            userland_std::println("Failed to load Thing");
         }
     } else {
-        userland_std::println("  Failed to create transaction");
+        userland_std::println("Failed to create Thing");
     }
     
     userland_std::println("Goodbye from user_app_hello!");

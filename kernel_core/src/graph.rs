@@ -1,22 +1,48 @@
 use abi::NodeId;
 
-/// Initialize the graph subsystem
-pub fn init() {
-    // For now, just a stub
+#[derive(Debug, Clone, Copy)]
+pub struct Node {
+    pub id: NodeId,
+    pub value: u64,
 }
 
-/// Query a node in the graph
-pub fn query_node(node_id: NodeId) -> Option<u64> {
-    // Simple stub implementation - returns a value based on node_id
-    if node_id.0 < 100 {
-        Some(node_id.0 * 10)
-    } else {
-        None
+const MAX_NODES: usize = 128;
+
+// SAFETY: NODES and NEXT_ID are only accessed from single-threaded kernel context.
+// In a multi-threaded environment, this would need atomic operations or locks.
+static mut NODES: [Option<Node>; MAX_NODES] = [None; MAX_NODES];
+static mut NEXT_ID: u64 = 0;
+
+/// Initialize the graph subsystem
+pub fn init() {
+    unsafe {
+        NEXT_ID = 0;
+        // Static init is already None, but being explicit for clarity
     }
 }
 
 /// Add a node to the graph
-pub fn add_node(value: u64) -> NodeId {
-    // Stub implementation
-    NodeId(value / 10)
+pub fn add_node(value: u64) -> Option<NodeId> {
+    unsafe {
+        if NEXT_ID as usize >= MAX_NODES {
+            return None;
+        }
+        let id = NodeId(NEXT_ID);
+        NODES[NEXT_ID as usize] = Some(Node { id, value });
+        NEXT_ID += 1;
+        Some(id)
+    }
 }
+
+/// Query a node in the graph
+pub fn query_node(node_id: NodeId) -> Option<u64> {
+    unsafe {
+        let idx = node_id.0 as usize;
+        if idx < MAX_NODES {
+            NODES[idx].as_ref().map(|n| n.value)
+        } else {
+            None
+        }
+    }
+}
+

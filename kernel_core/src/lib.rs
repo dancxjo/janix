@@ -18,6 +18,11 @@ pub fn log(message: &'static str) {
     log::log_message(message);
 }
 
+/// Get all log entries
+pub fn get_logs() -> &'static [Option<&'static str>] {
+    log::get_logs()
+}
+
 /// Handle a kernel request from userland
 pub fn handle_request(request: KernelRequest) -> KernelResponse {
     match request {

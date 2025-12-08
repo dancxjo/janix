@@ -1,16 +1,22 @@
 fn main() {
     println!("=== ThingOS Host Harness ===");
     println!();
-    println!("This harness simulates kernel log output.");
-    println!();
+
+    // Initialize kernel_core in a "host" simulation
+    kernel_core::init();
+    kernel_core::log("ThingOS booting (host)");
+    kernel_core::log("Initializing kernel core");
+    kernel_core::log("Graph subsystem initialized");
+    kernel_core::log("Transaction subsystem initialized");
+    kernel_core::log("Log subsystem initialized");
+    kernel_core::log("ThingOS started successfully");
+
     println!("Kernel Logs:");
-    println!("  [0.000] ThingOS booting...");
-    println!("  [0.001] Initializing kernel core");
-    println!("  [0.002] Graph subsystem initialized");
-    println!("  [0.003] Transaction subsystem initialized");
-    println!("  [0.004] Log subsystem initialized");
-    println!("  [0.005] ThingOS started successfully");
+    for (i, entry) in kernel_core::get_logs().iter().enumerate() {
+        if let Some(msg) = entry {
+            println!("  [{:04}] {}", i, msg);
+        }
+    }
     println!();
-    println!("In a real implementation, this would read from kernel memory");
-    println!("or use a syscall interface to retrieve kernel logs.");
+    println!("Host harness exercises the same kernel_core logic as the boot path.");
 }

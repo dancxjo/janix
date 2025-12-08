@@ -1,79 +1,206 @@
 # ThingOS
 
-A microkernel operating system built in Rust using Limine bootloader, organized as a Cargo workspace.
+**ThingOS** is an experimental microkernel operating system written in Rust, built around one central idea:
 
-## Architecture
+> **The kernel *is* a graph.**
 
-This repository is structured as a Cargo workspace with the following crates:
+Everything meaningful in the system—processes, resources, windows, transactions, modes—should eventually be represented as nodes and edges in a single transactional graph that forms the heart of the OS.
 
-- **boot/** - Limine bootloader entry point and kernel initialization
-- **kernel_core/** - Core kernel functionality (no_std):
-  - Graph database subsystem
-  - Transaction management
-  - Kernel logging
-- **abi/** - Shared ABI definitions (no_std):
-  - Type definitions (ProcessId, TransactionId, NodeId)
-  - KernelRequest and KernelResponse enums
-- **userland_rt/** - Userland runtime (no_std):
-  - Sys trait for system calls
-  - HostedSys stub implementation for testing
-- **userland_std/** - Userland standard library (std):
-  - `println()` for kernel logging
-  - `graph_query()` for querying the graph database
-  - Transaction creation and commit functions
-- **host_harness/** - Host-side testing harness (std):
-  - Displays simulated kernel logs
-- **user_app_hello/** - Example userland application (std):
-  - Demonstrates using userland_std APIs
+ThingOS boots via the **Limine** bootloader and is structured as a modern Rust **Cargo workspace** with a strict separation between kernel logic, boot code, shared ABI, and userland libraries.
 
-## How to use this?
+This repository currently provides a minimal working skeleton of that system: a booting kernel, a small in-kernel graph stub, logging, transaction stubs, a userland runtime, and a simple “hello” application that runs in hosted mode.
 
-### Dependencies
+---
 
-Any `make` command depends on GNU make (`gmake`) and is expected to be run using it. This usually means using `make` on most GNU/Linux distros, or `gmake` on other non-GNU systems.
+## ✨ Project Goals
 
-All `make all*` targets depend on Rust.
+* **Graph-centric kernel**
+  All kernel state is encoded as graph nodes/edges. Kernel operations are graph transactions.
 
-Additionally, building an ISO with `make all` requires `xorriso`, and building a HDD/USB image with `make all-hdd` requires `sgdisk` (usually from `gdisk` or `gptfdisk` packages) and `mtools`.
+* **Transactional updates**
+  Mutations occur through an atomic transaction API exposed via a small ABI.
 
-### Architectural targets
+* **Separation of concerns**
 
-The `KARCH` make variable determines the target architecture to build the kernel and image for.
+  * `boot` handles hardware + Limine
+  * `kernel_core` holds pure no_std kernel logic
+  * `abi` defines shared types
+  * `userland_rt` exposes a syscall-like trait
+  * `userland_std` gives friendly, std-like APIs to userland programs
 
-The default `KARCH` is `x86_64`. Other options include: `aarch64`, `riscv64`, and `loongarch64`.
+* **Comfortable userland experience**
+  User programs should feel “normallish”—like writing small Rust CLI apps—while still interacting with the kernel via the ABI.
 
-Other architectures will need to be enabled in boot/rust-toolchain.toml
+* **Host-testable kernel logic**
+  Kernel logic runs cleanly in a normal Rust environment (via `host_harness`) without requiring a VM.
 
-### Building individual components
+---
 
-To build and run the host harness:
-```bash
-cargo run -p host_harness
+# 📁 Repository Structure
+
+This project is a Cargo workspace composed of several crates:
+
+```
+thing-os/
+│
+├── boot/               # Limine entrypoint + kernel binary (no_std)
+│   ├── build.rs        # Linker setup
+│   ├── linker-*.ld     # Linker scripts for supported arches
+│   └── src/main.rs     # kmain() → initializes kernel_core
+│
+├── kernel_core/        # Pure kernel logic (no_std)
+│   ├── graph.rs        # Minimal node storage + queries
+│   ├── transaction.rs  # Transaction ID + stub commit
+│   └── log.rs          # Fixed-size kernel log buffer
+│
+├── abi/                # Shared ABI types (no_std)
+│   └── lib.rs          # KernelRequest, KernelResponse, NodeId, etc.
+│
+├── userland_rt/        # no_std runtime / syscall interface
+│   └── lib.rs          # Sys trait + HostedSys stub
+│
+├── userland_std/       # std-like userland library (std)
+│   └── lib.rs          # println(), graph_query(), transaction helpers
+│
+├── host_harness/       # Runs kernel_core in a normal OS (std)
+│   └── main.rs
+│
+└── user_app_hello/     # Example user program (std)
+    └── main.rs
 ```
 
-To build and run the example userland application:
-```bash
-cargo run -p user_app_hello
-```
+---
 
-To build all workspace members (except boot):
+# 🧵 Build and Run
+
+## Build the hosted components (recommended first)
+
 ```bash
 cargo build --workspace --exclude boot
 ```
 
-To build the boot kernel:
+### Run the kernel harness (simulated log output)
+
+```bash
+cargo run -p host_harness
+```
+
+### Run the example user application
+
+```bash
+cargo run -p user_app_hello
+```
+
+---
+
+## Build the bootable kernel image
+
+ThingOS uses **GNUmakefiles** for the boot image builder.
+
+### Build the kernel ELF for Limine:
+
 ```bash
 make kernel
 ```
 
-### Makefile targets
+### Build a bootable ISO:
 
-Running `make all` will compile the kernel (from the `boot/` directory) and then generate a bootable ISO image.
+```bash
+make all
+```
 
-Running `make all-hdd` will compile the kernel and then generate a raw image suitable to be flashed onto a USB stick or hard drive/SSD.
+### Build a raw HDD image (USB/VM):
 
-Running `make run` will build the kernel and a bootable ISO (equivalent to make all) and then run it using `qemu` (if installed).
+```bash
+make all-hdd
+```
 
-Running `make run-hdd` will build the kernel and a raw HDD image (equivalent to make all-hdd) and then run it using `qemu` (if installed).
+Output images appear at:
 
-The `run-uefi` and `run-hdd-uefi` targets are equivalent to their non `-uefi` counterparts except that they boot `qemu` using a UEFI-compatible firmware.
+```
+thing-os.iso
+thing-os.hdd
+```
+
+You may boot these in QEMU, VirtualBox, or on real hardware with appropriate care.
+
+---
+
+# 🧠 Architectural Overview
+
+### Kernel lifetime
+
+1. Limine loads `boot/kernel`
+2. `kmain()` asserts Limine revision → initializes `kernel_core`
+3. `kernel_core::init()` brings up logging, graph, transactions
+4. `kernel_core::boot_sequence()` creates initial kernel graph nodes
+5. Kernel halts in place (more work ahead!)
+
+### ABI
+
+Userland communicates with the kernel via:
+
+```rust
+KernelRequest → KernelResponse
+```
+
+Simple requests currently include:
+
+* `GraphQuery { node_id }`
+* `CreateTransaction`
+* `CommitTransaction`
+* `Log { message }`
+
+This ABI will evolve into a richer transactional graph interface.
+
+### Userland runtime
+
+`userland_rt` defines a `Sys` trait that abstracts the syscall interface:
+
+* Hosted mode: uses `HostedSys` (stub)
+* Kernel mode: future work—e.g. inline assembly or system call gates
+
+`userland_std` provides friendly wrapper functions so programs can write:
+
+```rust
+userland_std::println("Hello!");
+let value = userland_std::graph_query(NodeId(3));
+```
+
+---
+
+# 🚧 Current Status
+
+ThingOS currently **boots successfully via Limine**, initializes a minimal kernel core, writes some pixels to the framebuffer, and logs messages into a kernel-side circular buffer.
+
+Userland applications run in hosted mode using the std-layer.
+
+Next steps include:
+
+* Real graph implementation (edges, attributes, schemas)
+* Real transactions that mutate the graph
+* Process model & scheduler
+* Memory map represented as graph nodes
+* Device drivers as graph-attached components
+* System call mechanism for actual in-kernel userland
+
+---
+
+# 🤝 Contributing
+
+We welcome improvements, experiments, and structural refinements.
+
+Principles for contributions:
+
+* Maintain clean separation between boot, kernel_core, ABI, and userland.
+* Keep kernel_core pure `no_std`.
+* Keep ABI small and stable.
+* Avoid over-engineering until necessary—grow organically.
+* Prefer small, composable changes over monolithic refactors.
+* Document invariants for any unsafe code.
+
+---
+
+# 📜 License
+
+ThingOS is released under the MIT license unless noted otherwise.

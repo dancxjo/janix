@@ -8,10 +8,17 @@ static mut LOG_BUFFER: [Option<&str>; MAX_LOG_ENTRIES] = [None; MAX_LOG_ENTRIES]
 static mut LOG_INDEX: usize = 0;
 
 /// Initialize the log subsystem
+/// This resets all log state for test isolation and kernel boot
 pub fn init() {
-    // Clear the log buffer
     unsafe {
+        // Reset counter
         LOG_INDEX = 0;
+
+        // Clear all log entries
+        let buffer = &raw mut LOG_BUFFER;
+        for slot in (*buffer).iter_mut() {
+            *slot = None;
+        }
     }
 }
 

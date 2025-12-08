@@ -32,10 +32,10 @@ impl userland_std::Thing for ManualCounter {
         ManualCounter { count, active }
     }
 
-    fn schema() -> &'static [(&'static PropKey, PropType)] {
-        static SCHEMA: &[(&'static PropKey, PropType)] = &[
-            (&"count", PropType::U64),
-            (&"active", PropType::Bool),
+    fn schema() -> &'static [(&'static str, PropType)] {
+        static SCHEMA: &[(&'static str, PropType)] = &[
+            ("count", PropType::U64),
+            ("active", PropType::Bool),
         ];
         SCHEMA
     }

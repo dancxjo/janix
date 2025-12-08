@@ -5,8 +5,12 @@ use abi::TransactionId;
 static mut TX_COUNTER: u64 = 0;
 
 /// Initialize the transaction subsystem
+/// This resets all transaction state for test isolation and kernel boot
 pub fn init() {
-    // For now, just a stub
+    unsafe {
+        // Reset transaction counter
+        TX_COUNTER = 0;
+    }
 }
 
 /// Create a new transaction

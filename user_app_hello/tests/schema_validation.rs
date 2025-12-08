@@ -10,10 +10,10 @@ fn test_manual_counter_schema() {
     assert_eq!(schema.len(), 2);
     
     // Verify schema entries
-    assert_eq!(*schema[0].0, "count");
+    assert_eq!(schema[0].0, "count");
     assert_eq!(schema[0].1, PropType::U64);
     
-    assert_eq!(*schema[1].0, "active");
+    assert_eq!(schema[1].0, "active");
     assert_eq!(schema[1].1, PropType::Bool);
 }
 
@@ -25,10 +25,10 @@ fn test_auto_counter_schema() {
     assert_eq!(schema.len(), 2);
     
     // Verify schema entries (note: order matches struct field order)
-    assert_eq!(*schema[0].0, "count");
+    assert_eq!(schema[0].0, "count");
     assert_eq!(schema[0].1, PropType::U64);
     
-    assert_eq!(*schema[1].0, "active");
+    assert_eq!(schema[1].0, "active");
     assert_eq!(schema[1].1, PropType::Bool);
 }
 
@@ -62,7 +62,7 @@ fn test_manual_and_derived_schemas_compatible() {
     
     // Properties should match
     for i in 0..manual_schema.len() {
-        assert_eq!(*manual_schema[i].0, *auto_schema[i].0, "Property names should match");
+        assert_eq!(manual_schema[i].0, auto_schema[i].0, "Property names should match");
         assert_eq!(manual_schema[i].1, auto_schema[i].1, "Property types should match");
     }
 }

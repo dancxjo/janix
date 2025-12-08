@@ -84,7 +84,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
         };
 
         quote! {
-            ( &#name_str, #prop_ty_expr )
+            ( #name_str, #prop_ty_expr )
         }
     });
 
@@ -103,8 +103,8 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 }
             }
 
-            fn schema() -> &'static [(&'static ::abi::PropKey, ::abi::PropType)] {
-                static SCHEMA: &[(&'static ::abi::PropKey, ::abi::PropType)] = &[
+            fn schema() -> &'static [(&'static str, ::abi::PropType)] {
+                static SCHEMA: &[(&'static str, ::abi::PropType)] = &[
                     #(#schema_entries),*
                 ];
                 SCHEMA

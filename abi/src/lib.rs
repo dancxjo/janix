@@ -65,7 +65,7 @@ pub enum KernelRequest {
     /// Register a schema
     SchemaRegister {
         kind: &'static str,
-        props: &'static [(&'static PropKey, PropType)],
+        props: &'static [(&'static str, PropType)],
     },
     /// Get a schema
     SchemaGet {
@@ -97,6 +97,6 @@ pub enum KernelResponse {
     /// Schema data
     SchemaData {
         kind: &'static str,
-        props: &'static [Option<(&'static PropKey, PropType)>],
+        props: &'static [Option<(&'static str, PropType)>],
     },
 }

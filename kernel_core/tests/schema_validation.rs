@@ -6,8 +6,8 @@ fn test_schema_registration() {
     kernel_core::init();
     
     let schema = &[
-        (&"count", PropType::U64),
-        (&"active", PropType::Bool),
+        ("count", PropType::U64),
+        ("active", PropType::Bool),
     ];
     
     let response = kernel_core::handle_request(KernelRequest::SchemaRegister {
@@ -28,7 +28,7 @@ fn test_duplicate_schema_registration() {
     kernel_core::init();
     
     let schema = &[
-        (&"field", PropType::U64),
+        ("field", PropType::U64),
     ];
     
     // Register first time - should succeed
@@ -52,8 +52,8 @@ fn test_thing_creation_with_valid_schema() {
     
     // Register schema
     let schema = &[
-        (&"count", PropType::U64),
-        (&"active", PropType::Bool),
+        ("count", PropType::U64),
+        ("active", PropType::Bool),
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "ValidThing",
@@ -103,7 +103,7 @@ fn test_thing_creation_with_type_mismatch() {
     
     // Register schema expecting U64
     let schema = &[
-        (&"value", PropType::U64),
+        ("value", PropType::U64),
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "TypeMismatchThing",
@@ -135,7 +135,7 @@ fn test_thing_creation_with_unknown_property() {
     
     // Register schema with specific properties
     let schema = &[
-        (&"count", PropType::U64),
+        ("count", PropType::U64),
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "StrictThing",
@@ -168,8 +168,8 @@ fn test_thing_update_with_schema_validation() {
     
     // Register schema
     let schema = &[
-        (&"count", PropType::U64),
-        (&"active", PropType::Bool),
+        ("count", PropType::U64),
+        ("active", PropType::Bool),
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "UpdateTestThing",
@@ -209,7 +209,7 @@ fn test_thing_update_with_invalid_type() {
     
     // Register schema
     let schema = &[
-        (&"count", PropType::U64),
+        ("count", PropType::U64),
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "UpdateTypeThing",
@@ -254,8 +254,8 @@ fn test_schema_get() {
     
     // Register a schema
     let schema = &[
-        (&"field1", PropType::U64),
-        (&"field2", PropType::Bool),
+        ("field1", PropType::U64),
+        ("field2", PropType::Bool),
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "GetTestThing",
@@ -277,11 +277,11 @@ fn test_schema_get() {
             
             // Verify properties
             let prop1 = props[0].unwrap();
-            assert_eq!(*prop1.0, "field1");
+            assert_eq!(prop1.0, "field1");
             assert_eq!(prop1.1, PropType::U64);
             
             let prop2 = props[1].unwrap();
-            assert_eq!(*prop2.0, "field2");
+            assert_eq!(prop2.0, "field2");
             assert_eq!(prop2.1, PropType::Bool);
         }
         _ => panic!("Expected SchemaData response"),

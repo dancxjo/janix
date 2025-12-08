@@ -99,44 +99,44 @@ pub fn create_builtin_things() {
     const BUILTIN_THING_COUNT: u64 = 2;
     
     // Register schema for KernelInfo Thing
-    let kernel_info_schema: &'static [(&'static abi::PropKey, PropType)] = &[
-        (&"version", PropType::U64),
-        (&"booted", PropType::Bool),
+    static KERNEL_INFO_SCHEMA: &[(&str, PropType)] = &[
+        ("version", PropType::U64),
+        ("booted", PropType::Bool),
     ];
     
-    if let Err(e) = graph::register_schema("KernelInfo", kernel_info_schema) {
+    if let Err(e) = graph::register_schema("KernelInfo", KERNEL_INFO_SCHEMA) {
         log("Failed to register KernelInfo schema");
         log(e);
     }
     
     // Register schema for BootStats Thing
-    let boot_stats_schema: &'static [(&'static abi::PropKey, PropType)] = &[
-        (&"boot_time_ms", PropType::U64),
-        (&"things_created", PropType::U64),
+    static BOOT_STATS_SCHEMA: &[(&str, PropType)] = &[
+        ("boot_time_ms", PropType::U64),
+        ("things_created", PropType::U64),
     ];
     
-    if let Err(e) = graph::register_schema("BootStats", boot_stats_schema) {
+    if let Err(e) = graph::register_schema("BootStats", BOOT_STATS_SCHEMA) {
         log("Failed to register BootStats schema");
         log(e);
     }
     
     // Create a KernelInfo Thing
-    let kernel_props: &'static [(abi::PropKey, PropValue)] = &[
+    static KERNEL_PROPS: &[(abi::PropKey, PropValue)] = &[
         ("version", PropValue::U64(1)),
         ("booted", PropValue::Bool(true)),
     ];
     
-    if let Some(_id) = graph::create_thing("KernelInfo", kernel_props) {
+    if let Some(_id) = graph::create_thing("KernelInfo", KERNEL_PROPS) {
         log("Created KernelInfo Thing");
     }
     
     // Create a BootStats Thing
-    let stats_props: &'static [(abi::PropKey, PropValue)] = &[
+    static STATS_PROPS: &[(abi::PropKey, PropValue)] = &[
         ("boot_time_ms", PropValue::U64(0)),
         ("things_created", PropValue::U64(BUILTIN_THING_COUNT)),
     ];
     
-    if let Some(_id) = graph::create_thing("BootStats", stats_props) {
+    if let Some(_id) = graph::create_thing("BootStats", STATS_PROPS) {
         log("Created BootStats Thing");
     }
     

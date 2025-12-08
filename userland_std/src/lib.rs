@@ -40,7 +40,7 @@ pub trait Thing: Sized {
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self;
     
     /// Static schema for this Thing, used for registration.
-    fn schema() -> &'static [(&'static PropKey, PropType)];
+    fn schema() -> &'static [(&'static str, PropType)];
 }
 
 pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {

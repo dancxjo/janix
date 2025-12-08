@@ -1,4 +1,12 @@
-use abi::{NodeId, PropKey, PropValue, PropType, ThingId};
+use abi::{NodeId, PropKey, PropType, PropValue, ThingId};
+
+// Error message constants - these are stable and used by tests
+const ERR_NO_SCHEMA: &str = "No schema registered for this kind";
+const ERR_SCHEMA_ALREADY_REGISTERED: &str = "Schema already registered";
+const ERR_SCHEMA_STORAGE_FULL: &str = "Schema storage full";
+const ERR_TYPE_MISMATCH: &str = "Property type mismatch";
+const ERR_PROPERTY_NOT_IN_SCHEMA: &str = "Property not in schema";
+const ERR_TOO_MANY_SCHEMA_PROPS: &str = "Too many properties in schema";
 
 #[derive(Debug, Clone, Copy)]
 pub struct Node {
@@ -33,7 +41,7 @@ const MAX_SCHEMA_PROPS: usize = 16;
 #[derive(Debug, Clone, Copy)]
 pub struct Schema {
     pub kind: &'static str,
-    pub props: [Option<(&'static PropKey, PropType)>; MAX_SCHEMA_PROPS],
+    pub props: [Option<(&'static str, PropType)>; MAX_SCHEMA_PROPS],
 }
 
 // SAFETY: SCHEMAS is only accessed from single-threaded kernel context.
@@ -42,11 +50,30 @@ pub struct Schema {
 static mut SCHEMAS: [Option<Schema>; MAX_SCHEMAS] = [None; MAX_SCHEMAS];
 
 /// Initialize the graph subsystem
+/// This resets all global state for test isolation and kernel boot
 pub fn init() {
     unsafe {
+        // Reset counters
         NEXT_ID = 0;
         NEXT_THING_ID = 0;
-        // Static init is already None, but being explicit for clarity
+
+        // Clear all node storage
+        let nodes = &raw mut NODES;
+        for slot in (*nodes).iter_mut() {
+            *slot = None;
+        }
+
+        // Clear all Thing storage
+        let things = &raw mut THINGS;
+        for slot in (*things).iter_mut() {
+            *slot = None;
+        }
+
+        // Clear all schema storage
+        let schemas = &raw mut SCHEMAS;
+        for slot in (*schemas).iter_mut() {
+            *slot = None;
+        }
     }
 }
 
@@ -150,31 +177,31 @@ pub fn update_thing(id: ThingId, props: &'static [(PropKey, PropValue)]) -> bool
 /// Register a schema
 pub fn register_schema(
     kind: &'static str,
-    props: &'static [(&'static PropKey, PropType)],
+    props: &'static [(&'static str, PropType)],
 ) -> Result<(), &'static str> {
     unsafe {
         let schemas = &raw mut SCHEMAS;
-        
+
         // Check if schema already exists
         for schema in (*schemas).iter() {
             if let Some(s) = schema {
                 if s.kind == kind {
-                    return Err("Schema already registered");
+                    return Err(ERR_SCHEMA_ALREADY_REGISTERED);
                 }
             }
         }
-        
+
         // Find empty slot
         for slot in (*schemas).iter_mut() {
             if slot.is_none() {
                 let mut schema_props = [None; MAX_SCHEMA_PROPS];
                 for (i, prop) in props.iter().enumerate() {
                     if i >= MAX_SCHEMA_PROPS {
-                        return Err("Too many properties in schema");
+                        return Err(ERR_TOO_MANY_SCHEMA_PROPS);
                     }
                     schema_props[i] = Some(*prop);
                 }
-                
+
                 *slot = Some(Schema {
                     kind,
                     props: schema_props,
@@ -182,15 +209,13 @@ pub fn register_schema(
                 return Ok(());
             }
         }
-        
-        Err("Schema storage full")
+
+        Err(ERR_SCHEMA_STORAGE_FULL)
     }
 }
 
 /// Get a schema (returns static reference to props array)
-pub fn get_schema_props(
-    kind: &'static str,
-) -> Option<&'static [Option<(&'static PropKey, PropType)>]> {
+pub fn get_schema_props(kind: &'static str) -> Option<&'static [Option<(&'static str, PropType)>]> {
     unsafe {
         let schemas = &raw const SCHEMAS;
         for schema in (*schemas).iter() {
@@ -212,23 +237,24 @@ pub fn validate_props(
     unsafe {
         let schemas = &raw const SCHEMAS;
         // Find the schema
-        let schema = (*schemas).iter()
+        let schema = (*schemas)
+            .iter()
             .find_map(|s| s.as_ref().filter(|s| s.kind == kind));
-        
+
         let schema = match schema {
             Some(s) => s,
-            None => return Err("No schema registered for this kind"),
+            None => return Err(ERR_NO_SCHEMA),
         };
-        
+
         // Validate each incoming property
         for (key, value) in props {
             // Find the property in the schema
             let mut found = false;
             for prop_def in schema.props.iter() {
                 if let Some((schema_key, schema_type)) = prop_def {
-                    if **schema_key == *key {
+                    if *schema_key == *key {
                         found = true;
-                        
+
                         // Check type matches
                         let type_matches = match (schema_type, value) {
                             (PropType::U64, PropValue::U64(_)) => true,
@@ -236,20 +262,20 @@ pub fn validate_props(
                             (PropType::Bool, PropValue::Bool(_)) => true,
                             _ => false,
                         };
-                        
+
                         if !type_matches {
-                            return Err("Property type mismatch");
+                            return Err(ERR_TYPE_MISMATCH);
                         }
                         break;
                     }
                 }
             }
-            
+
             if !found {
-                return Err("Property not in schema");
+                return Err(ERR_PROPERTY_NOT_IN_SCHEMA);
             }
         }
-        
+
         Ok(())
     }
 }

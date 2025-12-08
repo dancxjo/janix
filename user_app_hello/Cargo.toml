@@ -3,11 +3,14 @@ name = "user_app_hello"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "user_app_hello"
+path = "src/lib.rs"
+
 [[bin]]
 name = "user_app_hello"
 path = "src/main.rs"
 
 [dependencies]
 abi = { path = "../abi" }
-userland_std = { path = "../userland_std" }
-thing_macros = { path = "../thing_macros" }
+userland_rt = { path = "../userland_rt" }

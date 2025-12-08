@@ -7,6 +7,8 @@ edition.workspace = true
 limine.workspace = true
 kernel_core = { path = "../kernel_core" }
 abi = { path = "../abi" }
+userland_rt = { path = "../userland_rt" }
+user_app_hello = { path = "../user_app_hello" }
 
 [build-dependencies]
 reqwest = { version = "0.12", default-features = false, features = [

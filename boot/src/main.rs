@@ -2,6 +2,10 @@
 #![no_main]
 
 mod console;
+mod sys_kernel;
+
+use sys_kernel::KernelSys;
+use user_app_hello::run as user_app_hello_run;
 
 use core::arch::asm;
 
@@ -55,6 +59,11 @@ unsafe extern "C" fn kmain() -> ! {
     }
 
     kernel_core::log("ThingOS started successfully");
+
+    // --- NEW: single-task launch of user_app_hello ---
+    let sys = KernelSys;
+    user_app_hello_run(&sys);
+    kernel_core::log("user_app_hello finished");
 
     hcf();
 }

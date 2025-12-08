@@ -1,11 +1,11 @@
 //! Kernel data model schemas and creation helpers
-//! 
+//!
 //! This module defines Thing schemas for memory management, scheduling, and
 //! resource tracking. These are graph-only models - no actual hardware or
 //! context switching is implemented here.
 
 use crate::graph;
-use abi::{PropType, PropValue, ThingId};
+use abi::{MemorySummary, PropType, PropValue, SchedulerSummary, ThingId};
 
 // State constants for Process and Thread Things
 pub const STATE_RUNNING: u64 = 1;
@@ -32,9 +32,7 @@ pub fn init_schemas() {
     let _ = graph::register_schema("FramePool", FRAME_POOL_SCHEMA);
 
     // AddressSpace: represents a virtual address space
-    static ADDRESS_SPACE_SCHEMA: &[(&str, PropType)] = &[
-        ("asid", PropType::U64),
-    ];
+    static ADDRESS_SPACE_SCHEMA: &[(&str, PropType)] = &[("asid", PropType::U64)];
     let _ = graph::register_schema("AddressSpace", ADDRESS_SPACE_SCHEMA);
 
     // VirtRegion: represents a virtual memory region
@@ -46,10 +44,8 @@ pub fn init_schemas() {
     let _ = graph::register_schema("VirtRegion", VIRT_REGION_SCHEMA);
 
     // Process: represents a process
-    static PROCESS_SCHEMA: &[(&str, PropType)] = &[
-        ("pid", PropType::U64),
-        ("state", PropType::U64),
-    ];
+    static PROCESS_SCHEMA: &[(&str, PropType)] =
+        &[("pid", PropType::U64), ("state", PropType::U64)];
     let _ = graph::register_schema("Process", PROCESS_SCHEMA);
 
     // Thread: represents a thread
@@ -62,18 +58,16 @@ pub fn init_schemas() {
     let _ = graph::register_schema("Thread", THREAD_SCHEMA);
 
     // CpuCore: represents a CPU core
-    static CPU_CORE_SCHEMA: &[(&str, PropType)] = &[
-        ("index", PropType::U64),
-    ];
+    static CPU_CORE_SCHEMA: &[(&str, PropType)] = &[("index", PropType::U64)];
     let _ = graph::register_schema("CpuCore", CPU_CORE_SCHEMA);
 }
 
 /// Create a PhysFrame Thing
-/// 
+///
 /// # Arguments
 /// * `base` - Base physical address
 /// * `size` - Size in bytes
-/// 
+///
 /// # Returns
 /// ThingId of the created PhysFrame, or None if creation failed
 pub fn create_phys_frame(base: u64, size: u64) -> Option<ThingId> {
@@ -82,17 +76,17 @@ pub fn create_phys_frame(base: u64, size: u64) -> Option<ThingId> {
         ("size", PropValue::U64(size)),
         ("allocated", PropValue::Bool(false)),
     ];
-    
+
     graph::create_thing("PhysFrame", props)
 }
 
 /// Create a FramePool Thing
-/// 
+///
 /// # Arguments
 /// * `start` - Start physical address
 /// * `end` - End physical address
 /// * `frame_size` - Size of each frame
-/// 
+///
 /// # Returns
 /// ThingId of the created FramePool, or None if creation failed
 pub fn create_frame_pool(start: u64, end: u64, frame_size: u64) -> Option<ThingId> {
@@ -101,32 +95,125 @@ pub fn create_frame_pool(start: u64, end: u64, frame_size: u64) -> Option<ThingI
         ("end", PropValue::U64(end)),
         ("frame_size", PropValue::U64(frame_size)),
     ];
-    
+
     graph::create_thing("FramePool", props)
 }
 
+/// Create a CpuCore Thing
+///
+/// # Arguments
+/// * `index` - CPU core index
+///
+/// # Returns
+/// ThingId of the created CpuCore, or None if creation failed
+pub fn create_cpu_core(index: u64) -> Option<ThingId> {
+    let props = &[("index", PropValue::U64(index))];
+
+    graph::create_thing("CpuCore", props)
+}
+
+pub fn compute_memory_summary() -> MemorySummary {
+    let mut total_frames = 0;
+    let mut used_frames = 0;
+
+    graph::iter_things(|thing| {
+        if thing.kind == "PhysFrame" {
+            total_frames += 1;
+            for p in thing.props.iter().flatten() {
+                if p.0 == "allocated" {
+                    if let PropValue::Bool(true) = p.1 {
+                        used_frames += 1;
+                    }
+                }
+            }
+        } else if thing.kind == "FramePool" {
+            let mut start = 0;
+            let mut end = 0;
+            let mut frame_size = 4096;
+
+            for p in thing.props.iter().flatten() {
+                match p.0 {
+                    "start" => {
+                        if let PropValue::U64(v) = p.1 {
+                            start = v;
+                        }
+                    }
+                    "end" => {
+                        if let PropValue::U64(v) = p.1 {
+                            end = v;
+                        }
+                    }
+                    "frame_size" => {
+                        if let PropValue::U64(v) = p.1 {
+                            frame_size = v;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if frame_size > 0 && end > start {
+                total_frames += (end - start) / frame_size;
+            }
+        }
+    });
+
+    MemorySummary {
+        total_frames,
+        used_frames,
+        free_frames: total_frames.saturating_sub(used_frames),
+    }
+}
+
+pub fn compute_scheduler_summary() -> SchedulerSummary {
+    let mut process_count = 0;
+    let mut thread_count = 0;
+    let mut runnable_threads = 0;
+
+    graph::iter_things(|thing| {
+        if thing.kind == "Process" {
+            process_count += 1;
+        } else if thing.kind == "Thread" {
+            thread_count += 1;
+            for p in thing.props.iter().flatten() {
+                if p.0 == "state" {
+                    if let PropValue::U64(state) = p.1 {
+                        if state == STATE_RUNNING || state == STATE_READY {
+                            runnable_threads += 1;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    SchedulerSummary {
+        process_count,
+        thread_count,
+        runnable_threads,
+    }
+}
+
 /// Create an AddressSpace Thing
-/// 
+///
 /// # Arguments
 /// * `asid` - Address space identifier
-/// 
+///
 /// # Returns
 /// ThingId of the created AddressSpace, or None if creation failed
 pub fn create_address_space(asid: u64) -> Option<ThingId> {
-    let props = &[
-        ("asid", PropValue::U64(asid)),
-    ];
-    
+    let props = &[("asid", PropValue::U64(asid))];
+
     graph::create_thing("AddressSpace", props)
 }
 
 /// Create a VirtRegion Thing
-/// 
+///
 /// # Arguments
 /// * `base` - Base virtual address
 /// * `len` - Length in bytes
 /// * `flags` - Memory region flags
-/// 
+///
 /// # Returns
 /// ThingId of the created VirtRegion, or None if creation failed
 pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
@@ -135,15 +222,15 @@ pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
         ("len", PropValue::U64(len)),
         ("flags", PropValue::U64(flags)),
     ];
-    
+
     graph::create_thing("VirtRegion", props)
 }
 
 /// Create a Process Thing
-/// 
+///
 /// # Arguments
 /// * `pid` - Process identifier
-/// 
+///
 /// # Returns
 /// ThingId of the created Process, or None if creation failed
 pub fn create_process(pid: u64) -> Option<ThingId> {
@@ -151,16 +238,16 @@ pub fn create_process(pid: u64) -> Option<ThingId> {
         ("pid", PropValue::U64(pid)),
         ("state", PropValue::U64(STATE_READY)),
     ];
-    
+
     graph::create_thing("Process", props)
 }
 
 /// Create a Thread Thing
-/// 
+///
 /// # Arguments
 /// * `tid` - Thread identifier
 /// * `priority` - Thread priority
-/// 
+///
 /// # Returns
 /// ThingId of the created Thread, or None if creation failed
 pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
@@ -170,21 +257,6 @@ pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
         ("priority", PropValue::U64(priority)),
         ("runtime_ns", PropValue::U64(0)),
     ];
-    
-    graph::create_thing("Thread", props)
-}
 
-/// Create a CpuCore Thing
-/// 
-/// # Arguments
-/// * `index` - CPU core index
-/// 
-/// # Returns
-/// ThingId of the created CpuCore, or None if creation failed
-pub fn create_cpu_core(index: u64) -> Option<ThingId> {
-    let props = &[
-        ("index", PropValue::U64(index)),
-    ];
-    
-    graph::create_thing("CpuCore", props)
+    graph::create_thing("Thread", props)
 }

@@ -59,6 +59,22 @@ pub enum PropType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SchemaId(pub u64);
 
+/// Memory summary statistics
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MemorySummary {
+    pub total_frames: u64,
+    pub used_frames: u64,
+    pub free_frames: u64,
+}
+
+/// Scheduler summary statistics
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SchedulerSummary {
+    pub process_count: u64,
+    pub thread_count: u64,
+    pub runnable_threads: u64,
+}
+
 /// Kernel request from userland
 #[derive(Debug, Clone)]
 pub enum KernelRequest {
@@ -122,16 +138,7 @@ pub enum KernelResponse {
         props: &'static [Option<(&'static str, PropType)>],
     },
     /// Memory summary data
-    MemorySummary {
-        total_frames: u64,
-        free_frames: u64,
-        used_frames: u64,
-        pools: u64,
-    },
+    MemorySummary { summary: MemorySummary },
     /// Scheduler summary data
-    SchedulerSummary {
-        processes: u64,
-        threads: u64,
-        runnable_threads: u64,
-    },
+    SchedulerSummary { summary: SchedulerSummary },
 }

@@ -3,6 +3,7 @@
 
 mod console;
 mod sys_kernel;
+mod boot_model;
 
 use sys_kernel::KernelSys;
 use user_app_hello::run as user_app_hello_run;
@@ -44,7 +45,8 @@ unsafe extern "C" fn kmain() -> ! {
     kernel_core::create_builtin_things();
     
     // Initialize boot graph with memory and scheduling Things
-    kernel_core::init_boot_graph();
+    boot_model::seed_memory_graph_from_limine();
+    boot_model::seed_cpu_graph_from_limine();
 
     // Initialize console and dump logs
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {

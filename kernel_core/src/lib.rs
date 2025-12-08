@@ -5,7 +5,7 @@ pub mod transaction;
 pub mod log;
 pub mod model;
 
-use abi::{KernelRequest, KernelResponse, PropValue};
+use abi::{KernelRequest, KernelResponse};
 
 /// Initialize the kernel core subsystems
 pub fn init() {
@@ -89,66 +89,12 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::MemorySummary => {
-            let mut total_frames = 0;
-            let mut free_frames = 0;
-            let mut used_frames = 0;
-            let mut pools = 0;
-
-            graph::iter_things(|thing| {
-                if thing.kind == "PhysFrame" {
-                    total_frames += 1;
-                    // Check "allocated" property
-                    for prop in thing.props.iter().flatten() {
-                        if prop.0 == "allocated" {
-                            if let PropValue::Bool(allocated) = prop.1 {
-                                if allocated {
-                                    used_frames += 1;
-                                } else {
-                                    free_frames += 1;
-                                }
-                            }
-                        }
-                    }
-                } else if thing.kind == "FramePool" {
-                    pools += 1;
-                }
-            });
-
-            KernelResponse::MemorySummary {
-                total_frames,
-                free_frames,
-                used_frames,
-                pools,
-            }
+            let summary = model::compute_memory_summary();
+            KernelResponse::MemorySummary { summary }
         }
         KernelRequest::SchedulerSummary => {
-            let mut processes = 0;
-            let mut threads = 0;
-            let mut runnable_threads = 0;
-
-            graph::iter_things(|thing| {
-                if thing.kind == "Process" {
-                    processes += 1;
-                } else if thing.kind == "Thread" {
-                    threads += 1;
-                    // Check "state" property
-                    for prop in thing.props.iter().flatten() {
-                        if prop.0 == "state" {
-                            if let PropValue::U64(state) = prop.1 {
-                                if state == model::STATE_READY || state == model::STATE_RUNNING {
-                                    runnable_threads += 1;
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-
-            KernelResponse::SchedulerSummary {
-                processes,
-                threads,
-                runnable_threads,
-            }
+            let summary = model::compute_scheduler_summary();
+            KernelResponse::SchedulerSummary { summary }
         }
     }
 }

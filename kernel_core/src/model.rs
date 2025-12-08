@@ -5,13 +5,26 @@
 //! context switching is implemented here.
 
 use crate::graph;
-use abi::{MemorySummary, PropType, PropValue, SchedulerSummary, ThingId};
+use abi::{
+    FrameId, FrameInfo, MemorySummary, PropType, PropValue, SchedulerSummary, ThingId, ThreadInfo,
+};
 
 // State constants for Process and Thread Things
 pub const STATE_RUNNING: u64 = 1;
 pub const STATE_READY: u64 = 2;
 pub const STATE_BLOCKED: u64 = 3;
 pub const STATE_TERMINATED: u64 = 4;
+
+// SAFETY: single-core, single-thread kernel model for now.
+static mut CURRENT_THREAD: Option<ThingId> = None;
+
+fn is_kind(id: ThingId, expected: &str) -> bool {
+    if let Some((kind, _)) = crate::graph::get_thing(id) {
+        kind == expected
+    } else {
+        false
+    }
+}
 
 /// Initialize all kernel model schemas
 pub fn init_schemas() {
@@ -253,6 +266,205 @@ pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
     ];
 
     graph::create_thing("Thread", props)
+}
+
+pub fn alloc_frame() -> Option<FrameInfo> {
+    // For now, scan all Things for the first PhysFrame with allocated == false
+    for raw_id in 0..crate::graph::MAX_THINGS as u64 {
+        let tid = ThingId(raw_id);
+        if let Some((kind, props)) = crate::graph::get_thing(tid) {
+            if kind != "PhysFrame" {
+                continue;
+            }
+
+            let mut base = 0_u64;
+            let mut size = 0_u64;
+            let mut allocated = false;
+
+            for p in props.iter().flatten() {
+                let (key, value) = p;
+                match *key {
+                    "base" => {
+                        if let PropValue::U64(v) = value {
+                            base = *v;
+                        }
+                    }
+                    "size" => {
+                        if let PropValue::U64(v) = value {
+                            size = *v;
+                        }
+                    }
+                    "allocated" => {
+                        if let PropValue::Bool(v) = value {
+                            allocated = *v;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if !allocated {
+                // mark as allocated
+                let new_props = &[("allocated", PropValue::Bool(true))];
+                crate::graph::update_thing(tid, new_props);
+
+                return Some(FrameInfo {
+                    id: FrameId(raw_id),
+                    base,
+                    size,
+                });
+            }
+        }
+    }
+
+    None
+}
+
+pub fn free_frame(frame_id: FrameId) -> bool {
+    let tid = ThingId(frame_id.0);
+    if !is_kind(tid, "PhysFrame") {
+        return false;
+    }
+
+    let props = &[("allocated", PropValue::Bool(false))];
+    crate::graph::update_thing(tid, props)
+}
+
+pub fn create_process_abi(pid: u64) -> Option<u64> {
+    create_process(pid).map(|id| id.0)
+}
+
+pub fn create_thread_abi(_pid: u64, tid: u64, priority: u64) -> Option<u64> {
+    // For now, we ignore pid in the graph; later we’ll add edges.
+    create_thread(tid, priority).map(|id| {
+        // if there is no current thread yet, make this one current
+        unsafe {
+            // Use raw pointer to avoid creating a reference to mutable static
+            if core::ptr::addr_of!(CURRENT_THREAD).read().is_none() {
+                CURRENT_THREAD = Some(id);
+            }
+        }
+        id.0
+    })
+}
+
+pub fn scheduler_tick() -> Option<ThreadInfo> {
+    unsafe {
+        // 1. If there is a current thread, bump its runtime and mark it READY
+        // Use raw pointer read to avoid reference to mutable static
+        if let Some(cur) = core::ptr::addr_of!(CURRENT_THREAD).read() {
+            if let Some((_kind, props)) = crate::graph::get_thing(cur) {
+                let mut runtime = 0_u64;
+                let mut _priority = 0_u64;
+                let mut _tid = 0_u64;
+
+                for p in props.iter().flatten() {
+                    let (key, value) = p;
+                    match *key {
+                        "runtime_ns" => {
+                            if let PropValue::U64(v) = value {
+                                runtime = *v;
+                            }
+                        }
+                        "priority" => {
+                            if let PropValue::U64(v) = value {
+                                _priority = *v;
+                            }
+                        }
+                        "tid" => {
+                            if let PropValue::U64(v) = value {
+                                _tid = *v;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                runtime = runtime.saturating_add(1); // one “tick”
+
+                let props = &[
+                    ("runtime_ns", PropValue::U64(runtime)),
+                    ("state", PropValue::U64(STATE_READY)),
+                ];
+                crate::graph::update_thing(cur, props);
+
+                // we’ll pick a new current below
+            }
+        }
+
+        // 2. Pick the next runnable thread: smallest runtime_ns among READY/RUNNING
+        let mut best: Option<(ThingId, u64, u64, u64)> = None; // (id, tid, runtime, priority)
+
+        for raw_id in 0..crate::graph::MAX_THINGS as u64 {
+            let id = ThingId(raw_id);
+            if let Some((kind, props)) = crate::graph::get_thing(id) {
+                if kind != "Thread" {
+                    continue;
+                }
+
+                let mut state = 0_u64;
+                let mut runtime = 0_u64;
+                let mut priority = 0_u64;
+                let mut tid = 0_u64;
+
+                for p in props.iter().flatten() {
+                    let (key, value) = p;
+                    match *key {
+                        "state" => {
+                            if let PropValue::U64(v) = value {
+                                state = *v;
+                            }
+                        }
+                        "runtime_ns" => {
+                            if let PropValue::U64(v) = value {
+                                runtime = *v;
+                            }
+                        }
+                        "priority" => {
+                            if let PropValue::U64(v) = value {
+                                priority = *v;
+                            }
+                        }
+                        "tid" => {
+                            if let PropValue::U64(v) = value {
+                                tid = *v;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                if state == STATE_READY || state == STATE_RUNNING {
+                    match best {
+                        None => best = Some((id, tid, runtime, priority)),
+                        Some((_, _, best_runtime, _)) => {
+                            if runtime < best_runtime {
+                                best = Some((id, tid, runtime, priority));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some((id, tid, _runtime, priority)) = best {
+            // mark new current as RUNNING
+            let props = &[("state", PropValue::U64(STATE_RUNNING))];
+            crate::graph::update_thing(id, props);
+
+            CURRENT_THREAD = Some(id);
+
+            Some(ThreadInfo {
+                tid,
+                state: STATE_RUNNING,
+                priority,
+                // we could include runtime+1 but it's not critical
+            })
+        } else {
+            CURRENT_THREAD = None;
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -1,4 +1,7 @@
-use abi::{KernelRequest, KernelResponse, NodeId, ThingId, PropKey, PropValue, PropType, MemorySummary, SchedulerSummary};
+use abi::{
+    FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary, NodeId, PropKey, PropType,
+    PropValue, SchedulerSummary, ThingId, ThreadInfo,
+};
 
 /// Print a line to the kernel log
 pub fn println(message: &'static str) {
@@ -38,7 +41,7 @@ pub trait Thing: Sized {
     const KIND: &'static str;
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self;
-    
+
     /// Static schema for this Thing, used for registration.
     fn schema() -> &'static [(&'static str, PropType)];
 }
@@ -48,7 +51,7 @@ pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {
     let mut props_vec = Vec::new();
     thing.to_props(&mut props_vec);
     let props_slice = Box::leak(props_vec.into_boxed_slice());
-    
+
     let request = KernelRequest::ThingCreate {
         kind: T::KIND,
         props: props_slice,
@@ -98,6 +101,46 @@ pub fn scheduler_summary() -> Option<SchedulerSummary> {
     let sys = userland_rt::get_sys();
     match sys.syscall(KernelRequest::GetSchedulerSummary) {
         KernelResponse::SchedulerSummary { summary } => Some(summary),
+        _ => None,
+    }
+}
+
+pub fn alloc_frame() -> Option<FrameInfo> {
+    let sys = userland_rt::get_sys();
+    match sys.syscall(KernelRequest::AllocFrame { pool_index: 0 }) {
+        KernelResponse::FrameAllocated { frame } => Some(frame),
+        _ => None,
+    }
+}
+
+pub fn free_frame(frame_id: FrameId) -> bool {
+    let sys = userland_rt::get_sys();
+    matches!(
+        sys.syscall(KernelRequest::FreeFrame { frame_id }),
+        KernelResponse::FrameFreed { .. }
+    )
+}
+
+pub fn create_process(pid: u64) -> bool {
+    let sys = userland_rt::get_sys();
+    matches!(
+        sys.syscall(KernelRequest::CreateProcess { pid }),
+        KernelResponse::ProcessCreated { .. }
+    )
+}
+
+pub fn create_thread(pid: u64, tid: u64, priority: u64) -> bool {
+    let sys = userland_rt::get_sys();
+    matches!(
+        sys.syscall(KernelRequest::CreateThread { pid, tid, priority }),
+        KernelResponse::ThreadCreated { .. }
+    )
+}
+
+pub fn scheduler_tick() -> Option<ThreadInfo> {
+    let sys = userland_rt::get_sys();
+    match sys.syscall(KernelRequest::SchedulerTick) {
+        KernelResponse::SchedulerTicked { current } => current,
         _ => None,
     }
 }

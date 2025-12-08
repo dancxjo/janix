@@ -12,7 +12,7 @@ fn test_memory_summary() {
     // Create a FramePool
     let _ = model::create_frame_pool(0x1000, 0x3000, 4096);
     
-    let response = kernel_core::handle_request(KernelRequest::MemorySummary);
+    let response = kernel_core::handle_request(KernelRequest::GetMemorySummary);
     
     if let KernelResponse::MemorySummary { summary } = response {
         assert!(summary.total_frames >= 2, "Expected at least 2 total frames, got {}", summary.total_frames);
@@ -44,7 +44,7 @@ fn test_scheduler_summary() {
     ];
     kernel_core::graph::create_thing("Thread", props);
     
-    let response = kernel_core::handle_request(KernelRequest::SchedulerSummary);
+    let response = kernel_core::handle_request(KernelRequest::GetSchedulerSummary);
     
     if let KernelResponse::SchedulerSummary { summary } = response {
         assert!(summary.process_count >= 1, "Expected at least 1 process, got {}", summary.process_count);

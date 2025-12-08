@@ -66,4 +66,32 @@ fn main() {
     println!("Running user_app_hello with HostedSys...");
     user_app_hello::run(&sys);
     println!("Finished user_app_hello.");
+
+    println!("=== Memory alloc demo ===");
+    // Create some frames first since the harness only created a pool but no frames
+    kernel_core::model::create_phys_frame(0x1000, 4096);
+    kernel_core::model::create_phys_frame(0x2000, 4096);
+    kernel_core::model::create_phys_frame(0x3000, 4096);
+
+    for _ in 0..3 {
+        if let Some(frame) = userland_std::alloc_frame() {
+            println!("Allocated frame: base=0x{:x}, size=0x{:x}", frame.base, frame.size);
+            userland_std::free_frame(frame.id);
+        } else {
+            println!("No frame available");
+        }
+    }
+
+    println!("=== Scheduler demo ===");
+    userland_std::create_process(1);
+    userland_std::create_thread(1, 1, 10);
+    userland_std::create_thread(1, 2, 10);
+
+    for tick in 0..5 {
+        if let Some(info) = userland_std::scheduler_tick() {
+            println!("Tick {}: running tid={} state={} prio={}", tick, info.tid, info.state, info.priority);
+        } else {
+            println!("Tick {}: idle", tick);
+        }
+    }
 }

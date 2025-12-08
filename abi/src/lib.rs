@@ -75,6 +75,20 @@ pub struct SchedulerSummary {
     pub runnable_threads: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FrameInfo {
+    pub id: FrameId,
+    pub base: u64,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ThreadInfo {
+    pub tid: u64,
+    pub state: u64,
+    pub priority: u64,
+}
+
 /// Kernel request from userland
 #[derive(Debug, Clone)]
 pub enum KernelRequest {
@@ -109,6 +123,19 @@ pub enum KernelRequest {
     GetMemorySummary,
     /// Get scheduler summary
     GetSchedulerSummary,
+    /// Allocate a frame
+    AllocFrame {
+        // optional: later we can support multiple pools; for now, use 0
+        pool_index: u64,
+    },
+    /// Free a frame
+    FreeFrame { frame_id: FrameId },
+    /// Create a process
+    CreateProcess { pid: u64 },
+    /// Create a thread
+    CreateThread { pid: u64, tid: u64, priority: u64 },
+    /// Advance scheduler tick
+    SchedulerTick,
 }
 
 /// Kernel response to userland
@@ -141,4 +168,17 @@ pub enum KernelResponse {
     MemorySummary { summary: MemorySummary },
     /// Scheduler summary data
     SchedulerSummary { summary: SchedulerSummary },
+    /// Frame allocated
+    FrameAllocated { frame: FrameInfo },
+    /// Frame freed
+    FrameFreed { frame_id: FrameId },
+    /// Process created
+    ProcessCreated { pid: u64 },
+    /// Thread created
+    ThreadCreated { tid: u64 },
+    /// Scheduler ticked
+    SchedulerTicked {
+        // snapshot of the thread that just ran (or None)
+        current: Option<ThreadInfo>,
+    },
 }

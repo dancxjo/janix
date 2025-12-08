@@ -3,6 +3,7 @@
 pub mod graph;
 pub mod transaction;
 pub mod log;
+pub mod model;
 
 use abi::{KernelRequest, KernelResponse};
 
@@ -11,6 +12,7 @@ pub fn init() {
     log::init();
     graph::init();
     transaction::init();
+    model::init_schemas();
 }
 
 /// Log a message to the kernel log
@@ -141,4 +143,83 @@ pub fn create_builtin_things() {
     }
     
     log("Kernel Things created.");
+}
+
+/// Initialize the boot graph with memory and scheduling Things
+/// 
+/// Creates a minimal "toy system" graph that represents:
+/// - 1 CPU core
+/// - 1 Process with 1 Thread in Running state
+/// - 1 AddressSpace linked to the process
+/// - 1 FramePool with several PhysFrame nodes
+/// - Several VirtRegion nodes linked to AddressSpace and PhysFrames
+/// 
+/// This is a graph-only model - no actual paging or context switching.
+pub fn init_boot_graph() {
+    log("Initializing boot graph...");
+    
+    // Create CPU core
+    let cpu_core = model::create_cpu_core(0);
+    if cpu_core.is_some() {
+        log("Created CpuCore(0)");
+    } else {
+        log("Failed to create CpuCore");
+        return;
+    }
+    
+    // Create process
+    let process = model::create_process(1);
+    if process.is_none() {
+        log("Failed to create Process");
+        return;
+    }
+    log("Created Process(1)");
+    
+    // Create thread with Running state
+    let thread = model::create_thread(1, 100);
+    if let Some(thread_id) = thread {
+        log("Created Thread(1)");
+        
+        // Update thread state to Running
+        static THREAD_RUNNING: &[(abi::PropKey, abi::PropValue)] = &[
+            ("state", abi::PropValue::U64(model::STATE_RUNNING)),
+        ];
+        graph::update_thing(thread_id, THREAD_RUNNING);
+        log("Thread(1) set to Running state");
+    } else {
+        log("Failed to create Thread");
+        return;
+    }
+    
+    // Create address space
+    let addr_space = model::create_address_space(1);
+    if addr_space.is_some() {
+        log("Created AddressSpace(1)");
+    } else {
+        log("Failed to create AddressSpace");
+        return;
+    }
+    
+    // Create frame pool (16MB pool starting at 0x100000, 4KB frames)
+    let frame_pool = model::create_frame_pool(0x100000, 0x1100000, 4096);
+    if frame_pool.is_some() {
+        log("Created FramePool");
+    } else {
+        log("Failed to create FramePool");
+        return;
+    }
+    
+    // Create a few physical frames
+    let _frame1 = model::create_phys_frame(0x100000, 4096);
+    let _frame2 = model::create_phys_frame(0x101000, 4096);
+    let _frame3 = model::create_phys_frame(0x102000, 4096);
+    log("Created 3 PhysFrame nodes");
+    
+    // Create virtual regions (kernel space, user stack, user heap)
+    let _virt1 = model::create_virt_region(0xFFFF800000000000, 0x200000, 0x3); // kernel, RW
+    let _virt2 = model::create_virt_region(0x7FFFFFFFE000, 0x2000, 0x7); // user stack, RWX
+    let _virt3 = model::create_virt_region(0x400000, 0x100000, 0x5); // user heap, RX
+    log("Created 3 VirtRegion nodes");
+    
+    log("Boot graph initialized: 1 process, 1 thread, 1 CPU");
 }

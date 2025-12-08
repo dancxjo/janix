@@ -7,3 +7,4 @@ Cargo.lock
 /iso_root
 /boot/kernel
 /kernel/kernel
+/fonts/

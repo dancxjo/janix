@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+mod console;
+
 use core::arch::asm;
 
 use limine::BaseRevision;
@@ -34,19 +36,18 @@ unsafe extern "C" fn kmain() -> ! {
     // Log startup message
     kernel_core::log("ThingOS booting...");
 
-    // Draw a white diagonal line on the framebuffer
+    // Initialize console and dump logs
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            for i in 0..100_u64 {
-                let pixel_offset = i * framebuffer.pitch() + i * 4;
-                unsafe {
-                    framebuffer
-                        .addr()
-                        .add(pixel_offset as usize)
-                        .cast::<u32>()
-                        .write(0xFFFFFFFF)
-                };
-            }
+            // Initialize console
+            let mut console = unsafe { console::Console::from_framebuffer(&framebuffer) };
+            console.clear();
+
+            // Optional: header line
+            console.write_str("ThingOS kernel log:\n\n");
+
+            // Dump logs
+            console::dump_kernel_logs(&mut console);
         }
     }
 

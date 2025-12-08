@@ -7,3 +7,7 @@ edition.workspace = true
 limine.workspace = true
 kernel_core = { path = "../kernel_core" }
 abi = { path = "../abi" }
+
+[build-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+flate2 = "1.0"

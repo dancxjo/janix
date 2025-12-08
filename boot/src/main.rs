@@ -35,6 +35,9 @@ unsafe extern "C" fn kmain() -> ! {
 
     // Log startup message
     kernel_core::log("ThingOS booting...");
+    
+    // Create builtin kernel Things
+    kernel_core::create_builtin_things();
 
     // Initialize console and dump logs
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {

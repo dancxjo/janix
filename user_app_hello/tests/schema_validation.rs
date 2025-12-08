@@ -1,4 +1,4 @@
-use abi::{ThingId, PropKey, PropValue, PropType};
+use abi::PropType;
 use user_app_hello::{ManualCounter, AutoCounter};
 use userland_std::{Thing, register_schema_for};
 

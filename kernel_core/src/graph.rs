@@ -102,7 +102,7 @@ pub fn query_node(node_id: NodeId) -> Option<u64> {
 }
 
 /// Create a new Thing
-pub fn create_thing(kind: &'static str, props: &'static [(PropKey, PropValue)]) -> Option<ThingId> {
+pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Option<ThingId> {
     unsafe {
         if NEXT_THING_ID >= MAX_THINGS as u64 {
             return None;
@@ -139,7 +139,7 @@ pub fn get_thing(id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey
 }
 
 /// Update a Thing
-pub fn update_thing(id: ThingId, props: &'static [(PropKey, PropValue)]) -> bool {
+pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
     unsafe {
         if id.0 >= MAX_THINGS as u64 {
             return false;

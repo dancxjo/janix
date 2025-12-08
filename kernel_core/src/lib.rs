@@ -67,3 +67,32 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         }
     }
 }
+
+/// Create builtin kernel Things at boot time
+pub fn create_builtin_things() {
+    use abi::PropValue;
+    
+    log("Creating kernel Things...");
+    
+    // Create a KernelInfo Thing
+    let kernel_props: &'static [(abi::PropKey, PropValue)] = &[
+        ("version", PropValue::U64(1)),
+        ("booted", PropValue::Bool(true)),
+    ];
+    
+    if let Some(_id) = graph::create_thing("KernelInfo", kernel_props) {
+        log("Created KernelInfo Thing");
+    }
+    
+    // Create a BootStats Thing
+    let stats_props: &'static [(abi::PropKey, PropValue)] = &[
+        ("boot_time_ms", PropValue::U64(0)),
+        ("things_created", PropValue::U64(2)),
+    ];
+    
+    if let Some(_id) = graph::create_thing("BootStats", stats_props) {
+        log("Created BootStats Thing");
+    }
+    
+    log("Kernel Things created.");
+}

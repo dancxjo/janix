@@ -1,0 +1,10 @@
+[package]
+name = "host_harness"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "host_harness"
+path = "src/main.rs"
+
+[dependencies]

@@ -1,0 +1,9 @@
+[package]
+name = "kernel_core"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+
+[dependencies]
+abi = { path = "../abi" }

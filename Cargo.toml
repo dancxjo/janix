@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "boot",
+    "kernel_core",
+    "abi",
+    "userland_rt",
+    "userland_std",
+    "host_harness",
+    "user_app_hello",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+limine = "0.5"

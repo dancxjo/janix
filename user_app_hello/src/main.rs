@@ -1,5 +1,5 @@
 use thing_macros::Thing;
-use userland_std::{create_thing, load_thing};
+use userland_std::{create_thing, load_thing, register_schema_for};
 
 #[derive(Thing)]
 struct DemoCounter {
@@ -9,6 +9,14 @@ struct DemoCounter {
 
 fn main() {
     userland_std::println("Hello from user_app_hello with Thing!");
+
+    // Register schemas before creating Things
+    userland_std::println("Registering DemoCounter schema...");
+    if register_schema_for::<DemoCounter>() {
+        userland_std::println("  Schema registered successfully");
+    } else {
+        userland_std::println("  Schema registration failed!");
+    }
 
     let demo = DemoCounter { count: 42, active: true };
     if let Some(id) = create_thing(&demo) {

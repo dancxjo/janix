@@ -1,4 +1,4 @@
-use abi::{NodeId, PropKey, PropValue, ThingId};
+use abi::{NodeId, PropKey, PropValue, PropType, ThingId};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Node {
@@ -25,6 +25,18 @@ static mut NEXT_ID: u64 = 0;
 
 static mut THINGS: [Option<ThingNode>; MAX_THINGS] = [None; MAX_THINGS];
 static mut NEXT_THING_ID: u64 = 0;
+
+// Schema storage
+const MAX_SCHEMAS: usize = 64;
+const MAX_SCHEMA_PROPS: usize = 16;
+
+#[derive(Debug, Clone, Copy)]
+pub struct Schema {
+    pub kind: &'static str,
+    pub props: [Option<(&'static PropKey, PropType)>; MAX_SCHEMA_PROPS],
+}
+
+static mut SCHEMAS: [Option<Schema>; MAX_SCHEMAS] = [None; MAX_SCHEMAS];
 
 /// Initialize the graph subsystem
 pub fn init() {
@@ -129,5 +141,112 @@ pub fn update_thing(id: ThingId, props: &'static [(PropKey, PropValue)]) -> bool
         } else {
             false
         }
+    }
+}
+
+/// Register a schema
+pub fn register_schema(
+    kind: &'static str,
+    props: &'static [(&'static PropKey, PropType)],
+) -> Result<(), &'static str> {
+    unsafe {
+        let schemas = &raw mut SCHEMAS;
+        
+        // Check if schema already exists
+        for schema in (*schemas).iter() {
+            if let Some(s) = schema {
+                if s.kind == kind {
+                    return Err("Schema already registered");
+                }
+            }
+        }
+        
+        // Find empty slot
+        for slot in (*schemas).iter_mut() {
+            if slot.is_none() {
+                let mut schema_props = [None; MAX_SCHEMA_PROPS];
+                for (i, prop) in props.iter().enumerate() {
+                    if i >= MAX_SCHEMA_PROPS {
+                        return Err("Too many properties in schema");
+                    }
+                    schema_props[i] = Some(*prop);
+                }
+                
+                *slot = Some(Schema {
+                    kind,
+                    props: schema_props,
+                });
+                return Ok(());
+            }
+        }
+        
+        Err("Schema storage full")
+    }
+}
+
+/// Get a schema (returns static reference to props array)
+pub fn get_schema_props(
+    kind: &'static str,
+) -> Option<&'static [Option<(&'static PropKey, PropType)>]> {
+    unsafe {
+        let schemas = &raw const SCHEMAS;
+        for schema in (*schemas).iter() {
+            if let Some(s) = schema {
+                if s.kind == kind {
+                    return Some(&s.props[..]);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Validate properties against schema
+pub fn validate_props(
+    kind: &'static str,
+    props: &[(PropKey, PropValue)],
+) -> Result<(), &'static str> {
+    unsafe {
+        let schemas = &raw const SCHEMAS;
+        // Find the schema
+        let schema = (*schemas).iter()
+            .find_map(|s| s.as_ref().filter(|s| s.kind == kind));
+        
+        let schema = match schema {
+            Some(s) => s,
+            None => return Err("No schema registered for this kind"),
+        };
+        
+        // Validate each incoming property
+        for (key, value) in props {
+            // Find the property in the schema
+            let mut found = false;
+            for prop_def in schema.props.iter() {
+                if let Some((schema_key, schema_type)) = prop_def {
+                    if **schema_key == *key {
+                        found = true;
+                        
+                        // Check type matches
+                        let type_matches = match (schema_type, value) {
+                            (PropType::U64, PropValue::U64(_)) => true,
+                            (PropType::I64, PropValue::I64(_)) => true,
+                            (PropType::Bool, PropValue::Bool(_)) => true,
+                            _ => false,
+                        };
+                        
+                        if !type_matches {
+                            return Err("Property type mismatch");
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            if !found {
+                return Err("Property not in schema");
+            }
+        }
+        
+        Ok(())
     }
 }

@@ -67,6 +67,24 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
         }
     });
 
+    let schema_entries = fields.iter().map(|f| {
+        let name = &f.ident;
+        let name_str = name.as_ref().unwrap().to_string();
+        let ty = &f.ty;
+        let ty_str = quote!(#ty).to_string();
+
+        let prop_ty_expr = match ty_str.as_str() {
+            "u64" => quote! { ::abi::PropType::U64 },
+            "i64" => quote! { ::abi::PropType::I64 },
+            "bool" => quote! { ::abi::PropType::Bool },
+            _ => quote! { panic!("Unsupported type for Thing derive schema") },
+        };
+
+        quote! {
+            ( &#name_str, #prop_ty_expr )
+        }
+    });
+
     let expanded = quote! {
         impl ::userland_std::Thing for #name {
             const KIND: &'static str = #kind_str;
@@ -80,6 +98,13 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 Self {
                     #(#from_props_arms),*
                 }
+            }
+
+            fn schema() -> &'static [(&'static ::abi::PropKey, ::abi::PropType)] {
+                static SCHEMA: &[(&'static ::abi::PropKey, ::abi::PropType)] = &[
+                    #(#schema_entries),*
+                ];
+                SCHEMA
             }
         }
     };

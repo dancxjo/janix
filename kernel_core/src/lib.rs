@@ -47,6 +47,9 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             KernelResponse::Success { data: None }
         }
         KernelRequest::ThingCreate { kind, props } => {
+            if let Err(e) = graph::validate_props(kind, props) {
+                return KernelResponse::Error { message: e };
+            }
             match graph::create_thing(kind, props) {
                 Some(id) => KernelResponse::ThingCreated { id },
                 None => KernelResponse::Error { message: "Failed to create thing" },
@@ -59,10 +62,28 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::ThingUpdate { id, props } => {
+            // Get the kind first to validate
+            if let Some((kind, _)) = graph::get_thing(id) {
+                if let Err(e) = graph::validate_props(kind, props) {
+                    return KernelResponse::Error { message: e };
+                }
+            }
             if graph::update_thing(id, props) {
                 KernelResponse::Success { data: None }
             } else {
                 KernelResponse::Error { message: "Failed to update thing" }
+            }
+        }
+        KernelRequest::SchemaRegister { kind, props } => {
+            match graph::register_schema(kind, props) {
+                Ok(()) => KernelResponse::SchemaRegistered { kind },
+                Err(e) => KernelResponse::Error { message: e },
+            }
+        }
+        KernelRequest::SchemaGet { kind } => {
+            match graph::get_schema_props(kind) {
+                Some(props) => KernelResponse::SchemaData { kind, props },
+                None => KernelResponse::Error { message: "Schema not found" },
             }
         }
     }

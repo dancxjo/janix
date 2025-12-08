@@ -32,7 +32,7 @@ This repository currently provides a minimal working skeleton of that system: a 
   User programs should feel “normallish”—like writing small Rust CLI apps—while still interacting with the kernel via the ABI.
 
 * **Host-testable kernel logic**
-  Kernel logic runs cleanly in a normal Rust environment (via `host_harness`) without requiring a VM.
+  Kernel logic runs cleanly in a normal Rust environment (via `host_harness`) without requiring a VM. **Crucially, the host harness and kernel must maintain strict feature parity.**
 
 ---
 

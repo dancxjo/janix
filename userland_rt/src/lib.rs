@@ -9,6 +9,9 @@ pub trait Sys {
 }
 
 /// Hosted implementation of Sys trait (stub for testing on host)
+///
+/// IMPORTANT: This implementation must maintain strict parity with the kernel's `KernelSys`.
+/// Any syscall supported by the kernel must be supported here (typically by delegating to `kernel_core`).
 pub struct HostedSys;
 
 impl Sys for HostedSys {
@@ -20,15 +23,17 @@ impl Sys for HostedSys {
             if let KernelRequest::Log { message } = &request {
                 println!("{}", message);
             }
-            
+
             kernel_core::handle_request(request)
         }
-        
+
         // In bare-metal mode, this would use actual syscall mechanism
         #[cfg(target_os = "none")]
         {
             // Placeholder: This would be the actual syscall instruction
-            KernelResponse::Error { message: "Syscall not implemented for bare metal" }
+            KernelResponse::Error {
+                message: "Syscall not implemented for bare metal",
+            }
         }
     }
 }

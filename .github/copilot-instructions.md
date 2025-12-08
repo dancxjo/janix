@@ -90,6 +90,11 @@ Always maintain the no_std compatibility for kernel and low-level crates.
 - Separate kernel logic (kernel_core) from boot logic (boot)
 - Keep userland runtime (userland_rt) independent of the standard library (userland_std)
 
+### Host/Kernel Parity
+- **Sync Requirement**: The `host_harness` (via `HostedSys`) and the kernel (via `KernelSys`) must always stay in sync.
+- **Capability Parity**: Anything the kernel can do, the host harness must be able to do, and vice versa.
+- **Verification**: When adding a new syscall or kernel feature, ensure it is implemented and tested in both environments.
+
 ## Testing Strategy
 
 ### Workspace Testing

@@ -1,57 +1,124 @@
 #![no_std]
 
-use abi::{KernelRequest, KernelResponse, NodeId};
+#[cfg(not(target_os = "none"))]
+extern crate alloc;
+
+#[cfg(not(target_os = "none"))]
+use alloc::vec::Vec;
+
+use abi::KernelRequest;
 use userland_rt::Sys;
 
+#[cfg(not(target_os = "none"))]
+use abi::{PropKey, PropType, PropValue, ThingId};
+
+#[cfg(not(target_os = "none"))]
+use userland_std::Thing;
+
+// Define the Thing types expected by tests
+pub struct ManualCounter {
+    pub count: u64,
+    pub active: bool,
+}
+
+#[cfg(not(target_os = "none"))]
+impl Thing for ManualCounter {
+    const KIND: &'static str = "demo.ManualCounter";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("count", PropValue::U64(self.count)));
+        out.push(("active", PropValue::Bool(self.active)));
+    }
+
+    fn from_props(_id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut count = 0;
+        let mut active = false;
+
+        for prop in props {
+            if let Some((k, v)) = prop {
+                match *k {
+                    "count" => {
+                        if let PropValue::U64(val) = v {
+                            count = *val
+                        }
+                    }
+                    "active" => {
+                        if let PropValue::Bool(val) = v {
+                            active = *val
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        ManualCounter { count, active }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[("count", PropType::U64), ("active", PropType::Bool)]
+    }
+}
+
+pub struct AutoCounter {
+    pub count: u64,
+    pub active: bool,
+}
+
+#[cfg(not(target_os = "none"))]
+impl Thing for AutoCounter {
+    const KIND: &'static str = "AutoCounter";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("count", PropValue::U64(self.count)));
+        out.push(("active", PropValue::Bool(self.active)));
+    }
+
+    fn from_props(_id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut count = 0;
+        let mut active = false;
+
+        for prop in props {
+            if let Some((k, v)) = prop {
+                match *k {
+                    "count" => {
+                        if let PropValue::U64(val) = v {
+                            count = *val
+                        }
+                    }
+                    "active" => {
+                        if let PropValue::Bool(val) = v {
+                            active = *val
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        AutoCounter { count, active }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[("count", PropType::U64), ("active", PropType::Bool)]
+    }
+}
+
 pub fn run<S: Sys>(sys: &S) {
-    // Log a hello message into the kernel log
+    // Minimal “demo” logic using what already exists:
+    // - Optionally create/load/update a Thing using the existing helpers.
+    // - At minimum, prove the path works by logging a message via syscall:
     let _ = sys.syscall(KernelRequest::Log {
-        message: "Hello from user_app_hello (kernel-side)!",
+        message: "user_app_hello: run() reached",
     });
 
-    // Query some nodes in the graph
-    for i in 0..5 {
-        let node_id = NodeId(i);
-        let resp = sys.syscall(KernelRequest::GraphQuery { node_id });
-        match resp {
-            KernelResponse::NodeData { value: _, .. } => {
-                let _ = sys.syscall(KernelRequest::Log {
-                    message: "Queried node in user_app_hello",
-                });
-                // (We don't have string formatting here; just log a generic line.)
-            }
-            _ => {
-                let _ = sys.syscall(KernelRequest::Log {
-                    message: "Node not found in user_app_hello",
-                });
-            }
-        }
-    }
-
-    // Create and commit a transaction
-    let resp = sys.syscall(KernelRequest::CreateTransaction);
-    if let KernelResponse::TransactionCreated { tx_id } = resp {
-        let _ = sys.syscall(KernelRequest::Log {
-            message: "Transaction created in user_app_hello",
-        });
-
-        let commit_resp = sys.syscall(KernelRequest::CommitTransaction { tx_id });
-        if matches!(commit_resp, KernelResponse::Success { .. }) {
-            let _ = sys.syscall(KernelRequest::Log {
-                message: "Transaction committed in user_app_hello",
-            });
-        } else {
-            let _ = sys.syscall(KernelRequest::Log {
-                message: "Failed to commit transaction in user_app_hello",
-            });
-        }
-    } else {
-        let _ = sys.syscall(KernelRequest::Log {
-            message: "Failed to create transaction in user_app_hello",
-        });
-    }
+    // Create a counter to demonstrate functionality
+    let _counter = AutoCounter {
+        count: 1,
+        active: true,
+    };
 
     let _ = sys.syscall(KernelRequest::Log {
-        message: "Goodbye from user_app_hello (kernel-side)!",
+        message: "user_app_hello: instantiated AutoCounter",
     });
 }

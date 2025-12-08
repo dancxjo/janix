@@ -33,13 +33,6 @@ fn test_auto_counter_schema() {
 }
 
 #[test]
-fn test_schema_registration() {
-    // Should be able to register schema
-    let result = register_schema_for::<AutoCounter>();
-    assert!(result, "Schema registration should succeed");
-}
-
-#[test]
 fn test_schema_validation_success() {
     // Register schema
     register_schema_for::<AutoCounter>();

@@ -19,6 +19,16 @@ all: $(IMAGE_NAME).iso
 .PHONY: all-hdd
 all-hdd: $(IMAGE_NAME).hdd
 
+.PHONY: test
+test:
+	@echo "=== Running ThingOS test suite ==="
+	cargo test --workspace --exclude boot
+
+.PHONY: harness
+harness:
+	@echo "=== Running ThingOS Host Harness ==="
+	cargo run -p host_harness
+
 .PHONY: run
 run: run-$(KARCH)
 

@@ -7,10 +7,9 @@ edition.workspace = true
 name = "user_app_hello"
 path = "src/lib.rs"
 
-[[bin]]
-name = "user_app_hello"
-path = "src/main.rs"
-
 [dependencies]
 abi = { path = "../abi" }
 userland_rt = { path = "../userland_rt" }
+
+[target.'cfg(not(target_os = "none"))'.dependencies]
+userland_std = { path = "../userland_std" }

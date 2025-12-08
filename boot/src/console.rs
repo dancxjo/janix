@@ -3,6 +3,8 @@ use limine::framebuffer::Framebuffer;
 // Will be provided by build.rs:
 include!(concat!(env!("OUT_DIR"), "/unifont.rs"));
 
+static mut CONSOLE: Option<Console> = None;
+
 pub struct Console {
     fb_ptr: *mut u8,
     width: u64,
@@ -137,13 +139,28 @@ impl Console {
     }
 }
 
-pub fn dump_kernel_logs(console: &mut Console) {
-    use kernel_core::log::get_logs;
+pub unsafe fn init_global(fb: &Framebuffer) {
+    // SAFETY: We are in single-threaded boot context.
+    let console = unsafe { Console::from_framebuffer(fb) };
+    unsafe { CONSOLE = Some(console) };
+}
 
-    for entry in get_logs().iter() {
-        if let Some(msg) = entry {
-            console.write_str(msg);
-            console.put_char('\n');
+pub fn print(s: &str) {
+    unsafe {
+        // SAFETY: We are in single-threaded boot context.
+        let console_ptr = &raw mut CONSOLE;
+        if let Some(console) = &mut *console_ptr {
+            console.write_str(s);
+        }
+    }
+}
+
+pub fn clear_screen() {
+    unsafe {
+        // SAFETY: We are in single-threaded boot context.
+        let console_ptr = &raw mut CONSOLE;
+        if let Some(console) = &mut *console_ptr {
+            console.clear();
         }
     }
 }

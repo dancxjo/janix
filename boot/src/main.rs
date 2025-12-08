@@ -47,14 +47,19 @@ unsafe extern "C" fn kmain() -> ! {
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             // Initialize console
-            let mut console = unsafe { console::Console::from_framebuffer(&framebuffer) };
-            console.clear();
+            unsafe { console::init_global(&framebuffer) };
+            console::clear_screen();
 
             // Optional: header line
-            console.write_str("ThingOS kernel log:\n\n");
+            console::print("ThingOS kernel log:\n\n");
 
             // Dump logs
-            console::dump_kernel_logs(&mut console);
+            for entry in kernel_core::get_logs().iter() {
+                if let Some(msg) = entry {
+                    console::print(msg);
+                    console::print("\n");
+                }
+            }
         }
     }
 

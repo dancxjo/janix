@@ -89,27 +89,14 @@ impl Console {
 
         unsafe {
             // Move everything up by one row height
-            core::ptr::copy(
-                self.fb_ptr.add(row_bytes),
-                self.fb_ptr,
-                copy_bytes
-            );
-            
+            core::ptr::copy(self.fb_ptr.add(row_bytes), self.fb_ptr, copy_bytes);
+
             // Clear the last row
-            core::ptr::write_bytes(
-                self.fb_ptr.add(copy_bytes),
-                0,
-                row_bytes
-            );
+            core::ptr::write_bytes(self.fb_ptr.add(copy_bytes), 0, row_bytes);
         }
     }
 
-    fn draw_glyph(
-        &mut self,
-        col: u32,
-        row: u32,
-        bitmap: &[u8; GLYPH_HEIGHT as usize],
-    ) {
+    fn draw_glyph(&mut self, col: u32, row: u32, bitmap: &[u8; GLYPH_HEIGHT as usize]) {
         // Convert (col,row) to pixel origin:
         let x0 = col * GLYPH_WIDTH;
         let y0 = row * GLYPH_HEIGHT;

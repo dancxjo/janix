@@ -6,7 +6,10 @@ use std::path::Path;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     // Tell cargo to search for linker scripts in the crate root
-    println!("cargo:rustc-link-search={}", env::var("CARGO_MANIFEST_DIR").unwrap());
+    println!(
+        "cargo:rustc-link-search={}",
+        env::var("CARGO_MANIFEST_DIR").unwrap()
+    );
     // Tell cargo to pass the linker script to the linker..
     println!("cargo:rustc-link-arg=-Tlinker-{arch}.ld");
     // ..and to re-run if it changes.
@@ -24,21 +27,23 @@ fn main() {
     if !unifont_hex.exists() {
         println!("cargo:warning=Downloading Unifont to {:?}", unifont_hex);
         // Using GNU mirror for unifont.hex.gz
-        let url = "https://mirrors.kernel.org/gnu/unifont/unifont-16.0.02/unifont_all-16.0.02.hex.gz";
+        let url =
+            "https://mirrors.kernel.org/gnu/unifont/unifont-16.0.02/unifont_all-16.0.02.hex.gz";
         let client = reqwest::blocking::Client::builder()
             .user_agent("Mozilla/5.0 (compatible; ThingOS-Build/1.0)")
             .build()
             .unwrap();
         let resp = client.get(url).send().expect("Failed to download Unifont");
-        
+
         if !resp.status().is_success() {
             panic!("Failed to download Unifont: status {}", resp.status());
         }
 
         let mut decoder = flate2::read::GzDecoder::new(resp);
         let mut content = String::new();
-        std::io::Read::read_to_string(&mut decoder, &mut content).expect("Failed to decompress Unifont");
-        
+        std::io::Read::read_to_string(&mut decoder, &mut content)
+            .expect("Failed to decompress Unifont");
+
         fs::write(&unifont_hex, content).expect("Failed to write Unifont file");
     }
 
@@ -56,7 +61,7 @@ fn generate_font_source(unifont_path: &Path) {
 
     const GLYPH_WIDTH: u32 = 8;
     const GLYPH_HEIGHT: u32 = 16;
-    
+
     // We only care about ASCII printable range for now: 0x20..=0x7E
     let start_char = 0x20;
     let end_char = 0x7E;
@@ -64,9 +69,22 @@ fn generate_font_source(unifont_path: &Path) {
 
     writeln!(out_file, "pub const GLYPH_WIDTH: u32 = {};", GLYPH_WIDTH).unwrap();
     writeln!(out_file, "pub const GLYPH_HEIGHT: u32 = {};", GLYPH_HEIGHT).unwrap();
-    writeln!(out_file, "/// Glyph bitmaps for codepoints U+0020..=U+007E (ASCII printable).").unwrap();
-    writeln!(out_file, "/// Each glyph is GLYPH_HEIGHT bytes, each byte is one row, MSB = leftmost pixel.").unwrap();
-    writeln!(out_file, "pub static GLYPHS: [[u8; GLYPH_HEIGHT as usize]; {}] = [", count).unwrap();
+    writeln!(
+        out_file,
+        "/// Glyph bitmaps for codepoints U+0020..=U+007E (ASCII printable)."
+    )
+    .unwrap();
+    writeln!(
+        out_file,
+        "/// Each glyph is GLYPH_HEIGHT bytes, each byte is one row, MSB = leftmost pixel."
+    )
+    .unwrap();
+    writeln!(
+        out_file,
+        "pub static GLYPHS: [[u8; GLYPH_HEIGHT as usize]; {}] = [",
+        count
+    )
+    .unwrap();
 
     let mut glyphs = std::collections::HashMap::new();
 
@@ -79,11 +97,11 @@ fn generate_font_source(unifont_path: &Path) {
                     // However, Unifont can be 16x16 (64 hex chars).
                     // We only want 8x16 glyphs. If it's 16 wide, we might skip or take left half.
                     // Unifont standard: 8x16 glyphs have 32 hex digits. 16x16 have 64.
-                    
+
                     if hex_str.len() == 32 {
                         let mut bitmap = [0u8; 16];
                         for i in 0..16 {
-                            let byte_str = &hex_str[i*2..i*2+2];
+                            let byte_str = &hex_str[i * 2..i * 2 + 2];
                             if let Ok(byte) = u8::from_str_radix(byte_str, 16) {
                                 bitmap[i] = byte;
                             }
@@ -106,7 +124,9 @@ fn generate_font_source(unifont_path: &Path) {
 
     writeln!(out_file, "];").unwrap();
 
-    writeln!(out_file, r#"
+    writeln!(
+        out_file,
+        r#"
 #[inline]
 pub fn lookup_glyph(ch: char) -> Option<&'static [u8; GLYPH_HEIGHT as usize]> {{
     let c = ch as u32;
@@ -116,5 +136,7 @@ pub fn lookup_glyph(ch: char) -> Option<&'static [u8; GLYPH_HEIGHT as usize]> {{
         None
     }}
 }}
-"#).unwrap();
+"#
+    )
+    .unwrap();
 }

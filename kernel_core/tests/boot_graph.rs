@@ -1,5 +1,4 @@
 use abi::PropValue;
-use kernel_core;
 
 #[test]
 fn test_boot_graph_initialization() {

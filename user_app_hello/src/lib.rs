@@ -6,7 +6,10 @@ use alloc::vec::Vec;
 
 use abi::{PropKey, PropType, PropValue, ThingId};
 use userland_rt::Sys;
-use userland_std::{println, alloc_frame, free_frame, scheduler_tick, create_process, create_thread, Thing, create_thing, register_schema_for};
+use userland_std::{
+    Thing, alloc_frame, create_process, create_thing, create_thread, free_frame, println,
+    register_schema_for,
+};
 
 pub struct AutoCounter {
     pub count: u64,
@@ -70,21 +73,12 @@ pub fn run<S: Sys>(sys: &S) {
     if create_process(sys, 100) {
         println(sys, "user_app_hello: created process 100");
         if create_thread(sys, 100, 101, 1) {
-             println(sys, "user_app_hello: created thread 101 in process 100");
+            println(sys, "user_app_hello: created thread 101 in process 100");
         } else {
-             println(sys, "user_app_hello: failed to create thread");
+            println(sys, "user_app_hello: failed to create thread");
         }
     } else {
         println(sys, "user_app_hello: failed to create process");
-    }
-
-    // Call scheduler_tick a few times
-    for _ in 0..3 {
-        if let Some(_thread) = scheduler_tick(sys) {
-             println(sys, "user_app_hello: scheduler tick");
-        } else {
-             println(sys, "user_app_hello: scheduler tick (no thread)");
-        }
     }
 
     // Create a counter to demonstrate functionality
@@ -93,12 +87,16 @@ pub fn run<S: Sys>(sys: &S) {
         count: 1,
         active: true,
     };
-    
+
     if let Some(_) = create_thing(sys, &counter) {
         println(sys, "user_app_hello: instantiated AutoCounter");
     } else {
         println(sys, "user_app_hello: failed to instantiate AutoCounter");
     }
 
-    println(sys, "user_app_hello: finished");
+    println(sys, "user_app_hello: finished setup");
+}
+
+pub fn tick<S: Sys>(sys: &S) {
+    println(sys, "user_app_hello: scheduler tick");
 }

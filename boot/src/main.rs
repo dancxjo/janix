@@ -7,7 +7,8 @@ mod console;
 mod dashboard;
 mod heap;
 
-use user_app_hello::run as user_app_hello_run;
+use user_app_heartbeat;
+use user_app_hello;
 use userland_rt::KernelSys;
 
 use core::arch::asm;
@@ -58,8 +59,22 @@ unsafe extern "C" fn kmain() -> ! {
             // Run the demo app through the same Sys trait as the host:
             let sys = KernelSys;
             kernel_core::log("Launching user_app_hello from kernel...");
-            user_app_hello_run(&sys);
-            kernel_core::log("user_app_hello finished.");
+            user_app_hello::run(&sys);
+
+            kernel_core::log("Launching user_app_heartbeat from kernel...");
+            user_app_heartbeat::run(&sys);
+
+            kernel_core::log("Starting scheduler loop...");
+            for _ in 0..100 {
+                if let Some(thread) = kernel_core::model::scheduler_tick() {
+                    match thread.tid {
+                        101 => user_app_hello::tick(&sys),
+                        201 => user_app_heartbeat::tick(&sys),
+                        _ => {}
+                    }
+                }
+            }
+            kernel_core::log("Scheduler loop finished.");
 
             // Render dashboard instead of just raw log dump
             dashboard::render_dashboard(&mut console);

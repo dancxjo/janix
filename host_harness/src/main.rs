@@ -1,8 +1,8 @@
 use kernel_core::model::dashboard_snapshot;
 
 mod frame_pool;
-use frame_pool::{init_host_frame_pool, allocate_frame, free_frame, frame_stats};
-use abi::{KernelRequest, KernelResponse, FrameInfo, FrameId, MemorySummary};
+use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary};
+use frame_pool::{allocate_frame, frame_stats, free_frame, init_host_frame_pool};
 use userland_rt::Sys;
 
 struct HarnessSys;
@@ -12,14 +12,16 @@ impl Sys for HarnessSys {
         match request {
             KernelRequest::AllocFrame { .. } => {
                 if let Some(frame) = allocate_frame() {
-                     let frame_info = FrameInfo {
+                    let frame_info = FrameInfo {
                         id: FrameId(frame.id),
                         base: frame.id,
                         size: 4096,
                     };
                     KernelResponse::FrameAllocated { frame: frame_info }
                 } else {
-                    KernelResponse::Error { message: "Host out of frames" }
+                    KernelResponse::Error {
+                        message: "Host out of frames",
+                    }
                 }
             }
             KernelRequest::FreeFrame { frame_id } => {
@@ -67,7 +69,23 @@ fn main() {
 
     println!("Running user_app_hello with HarnessSys...");
     user_app_hello::run(&sys);
-    println!("Finished user_app_hello.");
+
+    println!("Running user_app_heartbeat with HarnessSys...");
+    user_app_heartbeat::run(&sys);
+
+    println!("Starting scheduler loop...");
+    for _ in 0..20 {
+        if let Some(thread) = userland_std::scheduler_tick(&sys) {
+            match thread.tid {
+                101 => user_app_hello::tick(&sys),
+                201 => user_app_heartbeat::tick(&sys),
+                _ => println!("Unknown thread: {}", thread.tid),
+            }
+        } else {
+            println!("No runnable threads");
+        }
+    }
+    println!("Finished scheduler loop.");
 
     // Print dashboard snapshot
     let snap = dashboard_snapshot();

@@ -4,11 +4,12 @@ pub mod graph;
 pub mod log;
 pub mod model;
 pub mod transaction;
+pub mod memory;
 
-use abi::{KernelRequest, KernelResponse};
+use abi::{KernelRequest, KernelResponse, FrameId, FrameInfo, MemorySummary};
 use crate::model::{
-    alloc_frame, compute_memory_summary, compute_scheduler_summary, create_process_abi,
-    create_thread_abi, free_frame, scheduler_tick,
+    compute_scheduler_summary, create_process_abi,
+    create_thread_abi, scheduler_tick,
 };
 
 /// Initialize the kernel core subsystems
@@ -97,27 +98,35 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             },
         },
         KernelRequest::GetMemorySummary => {
-            let summary = compute_memory_summary();
+            let (total, used, free) = memory::frame_stats();
+            let summary = MemorySummary {
+                total_frames: total,
+                used_frames: used,
+                free_frames: free,
+            };
             KernelResponse::MemorySummary { summary }
         }
         KernelRequest::GetSchedulerSummary => {
             let summary = compute_scheduler_summary();
             KernelResponse::SchedulerSummary { summary }
         }
-        KernelRequest::AllocFrame { pool_index: _ } => match alloc_frame() {
-            Some(frame) => KernelResponse::FrameAllocated { frame },
+        KernelRequest::AllocFrame { pool_index: _ } => match memory::allocate_frame() {
+            Some(frame) => {
+                let frame_info = FrameInfo {
+                    id: FrameId(frame.start_address),
+                    base: frame.start_address,
+                    size: frame.size,
+                };
+                KernelResponse::FrameAllocated { frame: frame_info }
+            },
             None => KernelResponse::Error {
                 message: "Out of frames",
             },
         },
         KernelRequest::FreeFrame { frame_id } => {
-            if free_frame(frame_id) {
-                KernelResponse::FrameFreed { frame_id }
-            } else {
-                KernelResponse::Error {
-                    message: "Invalid frame_id",
-                }
-            }
+            let frame = memory::PhysFrame::from_start_address(frame_id.0, 4096);
+            memory::free_frame(frame);
+            KernelResponse::FrameFreed { frame_id }
         }
         KernelRequest::CreateProcess { pid } => match create_process_abi(pid) {
             Some(pid) => KernelResponse::ProcessCreated { pid },

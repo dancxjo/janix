@@ -1,5 +1,49 @@
 use kernel_core::model::dashboard_snapshot;
-use userland_rt::HostedSys;
+
+mod frame_pool;
+use frame_pool::{init_host_frame_pool, allocate_frame, free_frame, frame_stats};
+use abi::{KernelRequest, KernelResponse, FrameInfo, FrameId, MemorySummary};
+use userland_rt::Sys;
+
+struct HarnessSys;
+
+impl Sys for HarnessSys {
+    fn syscall(&self, request: KernelRequest) -> KernelResponse {
+        match request {
+            KernelRequest::AllocFrame { .. } => {
+                if let Some(frame) = allocate_frame() {
+                     let frame_info = FrameInfo {
+                        id: FrameId(frame.id),
+                        base: frame.id,
+                        size: 4096,
+                    };
+                    KernelResponse::FrameAllocated { frame: frame_info }
+                } else {
+                    KernelResponse::Error { message: "Host out of frames" }
+                }
+            }
+            KernelRequest::FreeFrame { frame_id } => {
+                free_frame(frame_id.0);
+                KernelResponse::FrameFreed { frame_id }
+            }
+            KernelRequest::GetMemorySummary => {
+                let (total, used, free) = frame_stats();
+                let summary = MemorySummary {
+                    total_frames: total,
+                    used_frames: used,
+                    free_frames: free,
+                };
+                KernelResponse::MemorySummary { summary }
+            }
+            _ => {
+                if let KernelRequest::Log { message } = &request {
+                    println!("{}", message);
+                }
+                kernel_core::handle_request(request)
+            }
+        }
+    }
+}
 
 /// ThingOS Host Harness
 ///
@@ -18,19 +62,21 @@ fn main() {
     kernel_core::model::create_frame_pool(0x1000, 0x9000, 4096);
     kernel_core::model::create_cpu_core(0);
 
-    let sys = HostedSys;
+    init_host_frame_pool(128);
+    let sys = HarnessSys;
 
-    println!("Running user_app_hello with HostedSys...");
+    println!("Running user_app_hello with HarnessSys...");
     user_app_hello::run(&sys);
     println!("Finished user_app_hello.");
 
     // Print dashboard snapshot
     let snap = dashboard_snapshot();
+    let (mem_total, mem_used, mem_free) = frame_stats();
 
     println!("Host Dashboard Snapshot:");
     println!(
         "  Memory: total={} used={} free={}",
-        snap.memory.total_frames, snap.memory.used_frames, snap.memory.free_frames,
+        mem_total, mem_used, mem_free,
     );
     println!(
         "  Scheduler: processes={} threads={} runnable={}",

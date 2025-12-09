@@ -7,3 +7,4 @@ edition.workspace = true
 
 [dependencies]
 abi = { path = "../abi" }
+spin = "0.10.0"

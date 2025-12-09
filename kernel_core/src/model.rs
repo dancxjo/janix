@@ -126,36 +126,11 @@ pub fn create_cpu_core(index: u64) -> Option<ThingId> {
 }
 
 pub fn compute_memory_summary() -> MemorySummary {
-    let mut total_frames = 0_u64;
-    let mut used_frames = 0_u64;
-
-    for raw_id in 0..crate::graph::MAX_THINGS as u64 {
-        let id = ThingId(raw_id);
-        if let Some((kind, props)) = crate::graph::get_thing(id) {
-            if kind == "PhysFrame" {
-                total_frames += 1;
-
-                // look for allocated: bool
-                let mut allocated = false;
-                for p in props.iter().flatten() {
-                    let (key, value) = p;
-                    if *key == "allocated" {
-                        if let PropValue::Bool(b) = value {
-                            allocated = *b;
-                        }
-                    }
-                }
-                if allocated {
-                    used_frames += 1;
-                }
-            }
-        }
-    }
-
+    let (total, used, free) = crate::memory::frame_stats();
     MemorySummary {
-        total_frames,
-        used_frames,
-        free_frames: total_frames.saturating_sub(used_frames),
+        total_frames: total,
+        used_frames: used,
+        free_frames: free,
     }
 }
 

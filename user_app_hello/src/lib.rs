@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 
 use abi::{PropKey, PropType, PropValue, ThingId};
 use userland_rt::Sys;
-use userland_std::{println, alloc_frame, free_frame, scheduler_tick, create_process, create_thread, Thing, create_thing};
+use userland_std::{println, alloc_frame, free_frame, scheduler_tick, create_process, create_thread, Thing, create_thing, register_schema_for};
 
 pub struct AutoCounter {
     pub count: u64,
@@ -88,6 +88,7 @@ pub fn run<S: Sys>(sys: &S) {
     }
 
     // Create a counter to demonstrate functionality
+    register_schema_for::<AutoCounter>(sys);
     let counter = AutoCounter {
         count: 1,
         active: true,

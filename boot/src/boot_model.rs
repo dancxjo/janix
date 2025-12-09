@@ -1,5 +1,6 @@
 use kernel_core::model;
 use kernel_core::log;
+use kernel_core::memory::{BootFrameAllocator, init_frame_pool};
 use limine::request::{MemoryMapRequest, MpRequest, HhdmRequest};
 use limine::memory_map::EntryType;
 
@@ -28,6 +29,7 @@ pub fn seed_memory_graph_from_limine() {
     };
 
     let mut heap_initialized = false;
+    let mut boot_allocator = BootFrameAllocator::new();
 
     for entry in response.entries() {
         if entry.entry_type != EntryType::USABLE {
@@ -53,6 +55,8 @@ pub fn seed_memory_graph_from_limine() {
              heap_initialized = true;
         }
 
+        boot_allocator.add_region(base, len);
+
         let frame_size = 4096;
 
         // For now: one pool per usable region.
@@ -60,6 +64,8 @@ pub fn seed_memory_graph_from_limine() {
 
         // In future, you can optionally explode this into many PhysFrame Things.
     }
+
+    init_frame_pool(boot_allocator);
 
     log("Seeded memory graph from Limine memory map");
 }

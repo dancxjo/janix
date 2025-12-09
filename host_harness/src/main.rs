@@ -87,6 +87,10 @@ impl Sys for HarnessSys {
         0
     }
 
+    fn sleep_for_ns(&mut self, delta_ns: u64) {
+        std::thread::sleep(std::time::Duration::from_nanos(delta_ns));
+    }
+
     fn sleep_until_ns(&mut self, _deadline_ns: u64) {
     }
 

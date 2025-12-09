@@ -207,5 +207,6 @@ pub enum SyscallNumber {
     SleepUntil = 16,
     TimeMonotonicNs = 20,
     TimeSystemNs = 21,
+    SleepForNs = 22,
     // Add others as needed
 }

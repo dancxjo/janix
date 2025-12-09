@@ -24,6 +24,8 @@ pub fn schedule_next() -> ! {
     loop {
         let next_tid = {
             let mut sched = SCHEDULER.lock();
+            let now = kernel_core::time::monotonic_now_ns();
+            sched.wake_sleepers(now);
             sched.next_runnable()
         };
 
@@ -61,4 +63,16 @@ pub fn schedule_next() -> ! {
             core::arch::asm!("idle 0");
         };
     }
+}
+
+pub fn sys_sleep_for_ns(delta_ns: u64) -> ! {
+    let now = kernel_core::time::monotonic_now_ns();
+    let wake_at = now.saturating_add(delta_ns);
+
+    {
+        let mut sched = SCHEDULER.lock();
+        sched.sleep_current_thread(wake_at);
+    }
+
+    schedule_next();
 }

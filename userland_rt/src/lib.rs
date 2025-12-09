@@ -14,6 +14,8 @@ pub trait Sys {
     fn time_monotonic_ns(&mut self) -> u64;
     fn time_system_ns(&mut self) -> u64;
 
+    fn sleep_for_ns(&mut self, delta_ns: u64);
+
     fn yield_now(&mut self);
     fn exit_thread(&mut self) -> !;
 }
@@ -102,6 +104,13 @@ impl Sys for HostedSys {
         0
     }
 
+    fn sleep_for_ns(&mut self, delta_ns: u64) {
+        #[cfg(not(target_os = "none"))]
+        {
+            std::thread::sleep(std::time::Duration::from_nanos(delta_ns));
+        }
+    }
+
     fn sleep_until_ns(&mut self, deadline_ns: u64) {
         #[cfg(not(target_os = "none"))]
         {
@@ -139,6 +148,13 @@ impl Sys for KernelSys {
 
     fn time_system_ns(&mut self) -> u64 {
         kernel_core::time::system_time_ns().unwrap_or(0)
+    }
+
+    fn sleep_for_ns(&mut self, delta_ns: u64) {
+        let start = kernel_core::time::monotonic_now_ns();
+        while kernel_core::time::monotonic_now_ns() < start + delta_ns {
+            core::hint::spin_loop();
+        }
     }
 
     fn sleep_until_ns(&mut self, deadline_ns: u64) {
@@ -305,6 +321,10 @@ impl Sys for Ring3Sys {
 
     fn time_system_ns(&mut self) -> u64 {
         unsafe { syscall_stub(SyscallNumber::TimeSystemNs, 0, 0, 0, 0, 0, 0) }
+    }
+
+    fn sleep_for_ns(&mut self, delta_ns: u64) {
+        unsafe { syscall_stub(SyscallNumber::SleepForNs, delta_ns, 0, 0, 0, 0, 0) };
     }
 
     fn sleep_until_ns(&mut self, deadline_ns: u64) {

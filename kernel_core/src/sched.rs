@@ -1,5 +1,3 @@
-#![no_std]
-
 use abi::{ProcessId, ThreadId};
 use heapless::Vec;
 use spin::Mutex;
@@ -13,7 +11,14 @@ pub enum ThreadState {
     Runnable,
     Running,
     Waiting,
+    Sleeping,
     Terminated,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct SleepEntry {
+    pub thread_id: ThreadId,
+    pub wake_at_ns: u64,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -41,6 +46,7 @@ pub struct Scheduler {
     threads: [Option<Thread>; MAX_THREADS],
     processes: [Option<Process>; MAX_PROCESSES],
     current: Option<ThreadId>,
+    sleep_queue: Vec<SleepEntry, MAX_THREADS>,
 }
 
 impl Scheduler {
@@ -50,6 +56,58 @@ impl Scheduler {
             threads: [const { None }; MAX_THREADS],
             processes: [const { None }; MAX_PROCESSES],
             current: None,
+            sleep_queue: Vec::new(),
+        }
+    }
+
+    pub fn sleep_current_thread(&mut self, wake_at_ns: u64) {
+        let tid = self
+            .current
+            .expect("no current thread in sleep_current_thread");
+
+        let thr = self.threads[tid.0 as usize]
+            .as_mut()
+            .expect("sleep_current_thread: missing thread");
+
+        thr.state = ThreadState::Sleeping;
+
+        // Remove from run_queue if it’s there.
+        if let Some(pos) = self.run_queue.iter().position(|&id| id == tid) {
+            self.run_queue.swap_remove(pos);
+        }
+
+        // Register in sleep queue.
+        self.sleep_queue
+            .push(SleepEntry {
+                thread_id: tid,
+                wake_at_ns,
+            })
+            .expect("sleep_queue full");
+
+        self.current = None;
+    }
+
+    pub fn wake_sleepers(&mut self, now_ns: u64) {
+        let mut i = 0;
+        while i < self.sleep_queue.len() {
+            let entry = self.sleep_queue[i];
+            if entry.wake_at_ns <= now_ns {
+                // Wake this thread.
+                if let Some(thr) = self.threads[entry.thread_id.0 as usize].as_mut() {
+                    thr.state = ThreadState::Runnable;
+                }
+
+                // Put back on run queue.
+                self.run_queue
+                    .push(entry.thread_id)
+                    .expect("run_queue full while waking sleeper");
+
+                // Remove this entry from sleep_queue by swap_remove.
+                self.sleep_queue.swap_remove(i);
+                // Do NOT increment i; swapped element needs to be checked.
+            } else {
+                i += 1;
+            }
         }
     }
 

@@ -102,6 +102,20 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         kernel_core::sched::yield_current_thread();
         user::schedule_next();
         0
+    } else if num == SyscallNumber::SleepForNs as u64 {
+        {
+            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            if let Some(tid) = sched.current_id() {
+                if let Some(thread) = sched.thread_mut(tid) {
+                    let regs_ptr = regs as *const SyscallRegs as *const u64;
+                    let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 20) };
+                    thread.context[..20].copy_from_slice(regs_slice);
+                    thread.started = true;
+                }
+            }
+        }
+        user::sys_sleep_for_ns(arg1);
+        0
     } else if num == SyscallNumber::Log as u64 {
         let ptr = arg1 as *const u8;
         let len = arg2 as usize;

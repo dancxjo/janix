@@ -55,3 +55,7 @@ impl SystemTime {
         Duration { nanos: self.ns_since_epoch - earlier.ns_since_epoch }
     }
 }
+
+pub fn sleep<S: Sys>(sys: &mut S, dur: Duration) {
+    sys.sleep_for_ns(dur.as_nanos());
+}

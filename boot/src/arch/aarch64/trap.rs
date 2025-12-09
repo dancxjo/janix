@@ -83,8 +83,15 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) {
+    let esr: u64;
+    let far: u64;
+    unsafe { 
+        core::arch::asm!("mrs {}, esr_el1", out(reg) esr);
+        core::arch::asm!("mrs {}, far_el1", out(reg) far);
+    }
     kernel_core::println!("EXCEPTION: AArch64 Trap");
     kernel_core::println!("Kind: {}, Source: {}", kind, source);
+    kernel_core::println!("ESR: {:#x}, FAR: {:#x}", esr, far);
     kernel_core::println!("{:#?}", tf);
     loop {}
 }
@@ -151,14 +158,19 @@ static mut BOOT_STACK: Stack = Stack([0; STACK_SIZE]);
 /// This is necessary because we cannot return to the caller after switching stacks
 /// (the return address would be on the old stack).
 pub unsafe fn jump_to_el1_stack(entry: unsafe extern "C" fn() -> !) -> ! {
-    let stack_top = unsafe { core::ptr::addr_of!(BOOT_STACK) as u64 + STACK_SIZE as u64 };
+    let current_sp: u64;
+    unsafe { core::arch::asm!("mov {}, sp", out(reg) current_sp) };
+    kernel_core::println!("Switching to SP_EL1 using current SP: {:#x}", current_sp);
     unsafe {
         core::arch::asm!(
             "msr sp_el1, {stack}",
             "msr spsel, #1",
+            "mov x29, xzr", // Clear FP
+            "mov x30, xzr", // Clear LR
             "isb",
-            "br {entry}",
-            stack = in(reg) stack_top,
+            "blr {entry}",
+            "b .",
+            stack = in(reg) current_sp,
             entry = in(reg) entry,
             options(noreturn)
         );

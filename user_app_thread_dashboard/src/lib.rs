@@ -1,23 +1,6 @@
 #![no_std]
 
-extern crate alloc;
-
-use alloc::boxed::Box;
-use alloc::format;
-use alloc::string::String;
-use alloc::vec::Vec;
-
-use abi::{PropKey, PropType, PropValue, ThingId};
-use userland_rt::Sys;
-use userland_std::{Thing, println, register_schema_for};
-
-/// Helper for logging dynamically formatted Strings using the existing
-/// `println(sys, &'static str)` interface.
-fn log_dynamic(sys: &impl Sys, msg: String) {
-    // LEAK: same pattern as user_app_hello; fine for now.
-    let leaked: &'static str = Box::leak(msg.into_boxed_str());
-    println(sys, leaked);
-}
+use userland::prelude::*;
 
 /// A view of what the kernel writes for each thread.
 pub struct ThreadInfo {
@@ -137,8 +120,8 @@ pub fn run<S: Sys>(sys: &mut S) {
             ),
         );
 
-        // Use the helper you just added in userland_std.
-        let threads: Vec<ThreadInfo> = userland_std::list_things_by_kind::<S, ThreadInfo>(sys);
+        // Use the helper via prelude
+        let threads: Vec<ThreadInfo> = list_things_by_kind::<S, ThreadInfo>(sys);
 
         if threads.is_empty() {
             log_dynamic(sys, "  (no ThreadInfo Things found)".into());
@@ -156,9 +139,6 @@ pub fn run<S: Sys>(sys: &mut S) {
             }
         }
 
-        // Don't hog the CPU; either sleep a bit or just yield.
-        // If you have a real sleep syscall, prefer that:
-        // sys.sleep_ms(250);
         sys.yield_now();
     }
 

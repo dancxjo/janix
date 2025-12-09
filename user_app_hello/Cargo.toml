@@ -8,9 +8,7 @@ name = "user_app_hello"
 path = "src/lib.rs"
 
 [dependencies]
-abi = { path = "../abi" }
-userland_rt = { path = "../userland_rt" }
-userland_std = { path = "../userland_std" }
+userland = { path = "../userland" }
 
 [dev-dependencies]
 kernel_core = { path = "../kernel_core" }

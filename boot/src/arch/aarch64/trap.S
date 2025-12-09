@@ -49,18 +49,8 @@
     add sp, sp, #34 * 8
 .endm
 
-.macro SYSCALL_HANDLER
-    .align 7
-    SAVE_REGS
-    mov x0, sp
-    bl syscall_handler_rust
-    str x0, [sp, #0]
-    RESTORE_REGS
-    eret
-.endm
-
-.macro HANDLER source, kind
-    .align 7
+.macro HANDLER_IMPL source, kind, label
+\label:
     SAVE_REGS
     mov x0, sp
     mov x1, \kind
@@ -70,28 +60,64 @@
     eret
 .endm
 
+.macro SYSCALL_HANDLER_IMPL label
+\label:
+    SAVE_REGS
+    mov x0, sp
+    bl syscall_handler_rust
+    str x0, [sp, #0]
+    RESTORE_REGS
+    eret
+.endm
+
+.macro TRAMPOLINE label
+    .align 7
+    b \label
+.endm
+
 .align 11
 exception_vector_table:
     // Current EL with SP0
-    HANDLER 0, 0  // Synchronous
-    HANDLER 0, 1  // IRQ
-    HANDLER 0, 2  // FIQ
-    HANDLER 0, 3  // SError
+    TRAMPOLINE handler_0_0
+    TRAMPOLINE handler_0_1
+    TRAMPOLINE handler_0_2
+    TRAMPOLINE handler_0_3
 
     // Current EL with SPx
-    HANDLER 1, 0
-    HANDLER 1, 1
-    HANDLER 1, 2
-    HANDLER 1, 3
+    TRAMPOLINE handler_1_0
+    TRAMPOLINE handler_1_1
+    TRAMPOLINE handler_1_2
+    TRAMPOLINE handler_1_3
 
     // Lower EL using AArch64
-    SYSCALL_HANDLER // Synchronous (Syscall)
-    HANDLER 2, 1
-    HANDLER 2, 2
-    HANDLER 2, 3
+    TRAMPOLINE handler_syscall
+    TRAMPOLINE handler_2_1
+    TRAMPOLINE handler_2_2
+    TRAMPOLINE handler_2_3
 
     // Lower EL using AArch32
-    HANDLER 3, 0
-    HANDLER 3, 1
-    HANDLER 3, 2
-    HANDLER 3, 3
+    TRAMPOLINE handler_3_0
+    TRAMPOLINE handler_3_1
+    TRAMPOLINE handler_3_2
+    TRAMPOLINE handler_3_3
+
+// Implementations
+HANDLER_IMPL 0, 0, handler_0_0
+HANDLER_IMPL 0, 1, handler_0_1
+HANDLER_IMPL 0, 2, handler_0_2
+HANDLER_IMPL 0, 3, handler_0_3
+
+HANDLER_IMPL 1, 0, handler_1_0
+HANDLER_IMPL 1, 1, handler_1_1
+HANDLER_IMPL 1, 2, handler_1_2
+HANDLER_IMPL 1, 3, handler_1_3
+
+SYSCALL_HANDLER_IMPL handler_syscall
+HANDLER_IMPL 2, 1, handler_2_1
+HANDLER_IMPL 2, 2, handler_2_2
+HANDLER_IMPL 2, 3, handler_2_3
+
+HANDLER_IMPL 3, 0, handler_3_0
+HANDLER_IMPL 3, 1, handler_3_1
+HANDLER_IMPL 3, 2, handler_3_2
+HANDLER_IMPL 3, 3, handler_3_3

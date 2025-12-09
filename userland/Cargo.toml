@@ -1,0 +1,9 @@
+[package]
+name = "userland"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+abi = { path = "../abi" }
+userland_rt = { path = "../userland_rt" }
+userland_std = { path = "../userland_std" }

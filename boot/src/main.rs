@@ -47,8 +47,13 @@ unsafe extern "C" fn kmain() -> ! {
     // We use 0 offset initially; Semihosting doesn't need offset.
     serial::arch::init_serial(0);
 
+    kernel_core::log("Serial initialized. Preparing to switch stack...");
+
     #[cfg(target_arch = "aarch64")]
     {
+        // Initialize exception vector table early
+        arch::aarch64::trap::init();
+        
         // Switch to SP_EL1 for kernel stack
         unsafe { arch::aarch64::trap::jump_to_el1_stack(kmain_inner); }
     }
@@ -60,6 +65,7 @@ unsafe extern "C" fn kmain() -> ! {
 }
 
 unsafe extern "C" fn kmain_inner() -> ! {
+    kernel_core::log("Inside kmain_inner");
     // All limine requests must also be referenced in a called function
     assert!(BASE_REVISION.is_supported());
 

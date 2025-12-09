@@ -1,9 +1,14 @@
 [package]
 name = "user_app_thread_dashboard"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "user_app_thread_dashboard"
+path = "src/lib.rs"
 
 [dependencies]
-userland_rt = { path = "../userland_rt" }
-userland_std = { path = "../userland_std" }
-abi = { path = "../abi" }
+userland = { path = "../userland" }
+
+[dev-dependencies]
+kernel_core = { path = "../kernel_core" }

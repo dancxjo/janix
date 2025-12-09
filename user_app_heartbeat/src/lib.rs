@@ -1,17 +1,6 @@
 #![no_std]
 
-extern crate alloc;
-
-use alloc::boxed::Box;
-use alloc::format;
-use alloc::vec::Vec;
-
-use abi::{PropKey, PropType, PropValue, ThingId};
-use userland_rt::Sys;
-use userland_std::{
-    Thing, create_process, create_thread, println, register_schema_for,
-    time::Instant,
-};
+use userland::prelude::*;
 
 pub struct HeartbeatThing {
     pub counter: u64,
@@ -48,11 +37,9 @@ pub fn run<S: Sys>(sys: &mut S) {
     let start = sys.time_monotonic_ns();
     for _ in 0..10 {
         let now = sys.time_monotonic_ns();
-        let elapsed = now - start;
+        let _elapsed = now - start;
         println(sys, "heartbeat: tick");
         sys.yield_now();
     }
     sys.exit_thread();
 }
-
-

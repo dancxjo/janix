@@ -230,7 +230,8 @@ pub trait Thing: Sized {
     
     /// Get the description for this Thing instance, falling back to the type description.
     /// This can be overridden to check for an instance-specific "description" property.
-    fn get_description(&self) -> &'static str {
-        Self::DESCRIPTION
+    /// Returns an owned String to support runtime instance-specific descriptions.
+    fn get_description(&self) -> String {
+        String::from(Self::DESCRIPTION)
     }
 }

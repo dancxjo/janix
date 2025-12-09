@@ -64,14 +64,99 @@ let description = get_type_description::<AutoCounter>();
 
 #### Get Instance Description
 
+The `get_description()` method returns an owned `String` to support runtime instance-specific descriptions:
+
 ```rust
 let counter = AutoCounter {
     count: 42,
     active: true,
 };
 
-// Falls back to the type description
+// Returns the type description as a String
 let description = counter.get_description();
+// description == "An automatically incrementing counter with active/inactive state"
+```
+
+#### Instance-Specific Descriptions
+
+Things can override `get_description()` to provide instance-specific descriptions. Here's an example:
+
+```rust
+use abi::{Thing, ThingId, PropKey, PropValue, PropType};
+
+pub struct NamedThing {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+impl Thing for NamedThing {
+    const KIND: &'static str = "NamedThing";
+    const DESCRIPTION: &'static str = "A thing with an optional custom description";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("name", PropValue::Str(self.name.clone())));
+        if let Some(ref desc) = self.description {
+            out.push(("description", PropValue::Str(desc.clone())));
+        }
+    }
+
+    fn from_props(_id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut name = String::new();
+        let mut description = None;
+
+        for prop in props {
+            if let Some((k, v)) = prop {
+                match *k {
+                    "name" => {
+                        if let PropValue::Str(val) = v {
+                            name = val.clone();
+                        }
+                    }
+                    "description" => {
+                        if let PropValue::Str(val) = v {
+                            description = Some(val.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        NamedThing { name, description }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            ("name", PropType::Str),
+            ("description", PropType::Str),
+        ]
+    }
+
+    // Override to return instance-specific description if available
+    fn get_description(&self) -> String {
+        self.description.clone().unwrap_or_else(|| String::from(Self::DESCRIPTION))
+    }
+}
+```
+
+Usage:
+
+```rust
+// Thing with custom description
+let custom = NamedThing {
+    name: String::from("MyCustomThing"),
+    description: Some(String::from("This instance has a special purpose")),
+};
+
+assert_eq!(custom.get_description(), "This instance has a special purpose");
+
+// Thing without custom description falls back to type description
+let default = NamedThing {
+    name: String::from("RegularThing"),
+    description: None,
+};
+
+assert_eq!(default.get_description(), "A thing with an optional custom description");
 ```
 
 #### Get Schema Description from Kernel

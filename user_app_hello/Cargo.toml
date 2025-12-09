@@ -12,3 +12,4 @@ userland = { path = "../userland" }
 
 [dev-dependencies]
 kernel_core = { path = "../kernel_core" }
+abi = { path = "../abi" }

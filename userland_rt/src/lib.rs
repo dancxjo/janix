@@ -281,9 +281,11 @@ impl Sys for Ring3Sys {
                     id: abi::ThingId(ret),
                 }
             }
-            KernelRequest::SchemaRegister { kind, props } => {
+            KernelRequest::SchemaRegister { kind, description, props } => {
                 let kind_ptr = kind.as_ptr() as u64;
                 let kind_len = kind.len() as u64;
+                let desc_ptr = description.as_ptr() as u64;
+                let desc_len = description.len() as u64;
                 let props_ptr = props.as_ptr() as u64;
                 let props_len = props.len() as u64;
                 let ret = unsafe {
@@ -291,10 +293,10 @@ impl Sys for Ring3Sys {
                         SyscallNumber::SchemaRegister,
                         kind_ptr,
                         kind_len,
+                        desc_ptr,
+                        desc_len,
                         props_ptr,
                         props_len,
-                        0,
-                        0,
                     )
                 };
                 if ret == 0 {

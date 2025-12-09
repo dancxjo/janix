@@ -12,6 +12,7 @@ fn test_schema_registration() {
     
     let response = kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "TestThing",
+        description: "A test thing for schema registration testing",
         props: schema,
     });
     
@@ -34,6 +35,7 @@ fn test_duplicate_schema_registration() {
     // Register first time - should succeed
     let response1 = kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "DupTest",
+        description: "A duplicate test thing",
         props: schema,
     });
     assert!(matches!(response1, KernelResponse::SchemaRegistered { .. }));
@@ -41,6 +43,7 @@ fn test_duplicate_schema_registration() {
     // Register second time - should fail
     let response2 = kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "DupTest",
+        description: "A duplicate test thing",
         props: schema,
     });
     assert!(matches!(response2, KernelResponse::Error { .. }));
@@ -57,6 +60,7 @@ fn test_thing_creation_with_valid_schema() {
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "ValidThing",
+        description: "A valid test thing",
         props: schema,
     });
     
@@ -107,6 +111,7 @@ fn test_thing_creation_with_type_mismatch() {
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "TypeMismatchThing",
+        description: "A thing for testing type mismatches",
         props: schema,
     });
     
@@ -139,6 +144,7 @@ fn test_thing_creation_with_unknown_property() {
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "StrictThing",
+        description: "A thing with strict schema validation",
         props: schema,
     });
     
@@ -173,6 +179,7 @@ fn test_thing_update_with_schema_validation() {
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "UpdateTestThing",
+        description: "A thing for testing updates",
         props: schema,
     });
     
@@ -213,6 +220,7 @@ fn test_thing_update_with_invalid_type() {
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "UpdateTypeThing",
+        description: "A thing for testing update type validation",
         props: schema,
     });
     
@@ -259,6 +267,7 @@ fn test_schema_get() {
     ];
     kernel_core::handle_request(KernelRequest::SchemaRegister {
         kind: "GetTestThing",
+        description: "A thing for testing schema retrieval",
         props: schema,
     });
     

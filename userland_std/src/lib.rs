@@ -110,6 +110,7 @@ pub fn register_schema_for<T: Thing>(sys: &impl Sys) -> bool {
     let schema = T::schema();
     match sys.syscall(KernelRequest::SchemaRegister {
         kind: T::KIND,
+        description: T::DESCRIPTION,
         props: schema,
     }) {
         KernelResponse::SchemaRegistered { .. } => true,
@@ -142,6 +143,12 @@ pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &mut S) -> Vec<T> {
         }
     }
     results
+}
+
+/// Get the type-level description for a Thing type.
+/// This is a compile-time constant that describes what the type represents.
+pub fn get_type_description<T: Thing>() -> &'static str {
+    T::DESCRIPTION
 }
 
 pub fn update_props(sys: &impl Sys, id: ThingId, props: &[(PropKey, PropValue)]) -> bool {

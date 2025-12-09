@@ -42,6 +42,7 @@ const MAX_SCHEMA_PROPS: usize = 16;
 #[derive(Debug, Clone, Copy)]
 pub struct Schema {
     pub kind: &'static str,
+    pub description: &'static str,
     pub props: [Option<(&'static str, PropType)>; MAX_SCHEMA_PROPS],
 }
 
@@ -203,6 +204,7 @@ pub fn delete_thing(id: ThingId) -> bool {
 /// Register a schema
 pub fn register_schema(
     kind: &'static str,
+    description: &'static str,
     props: &'static [(&'static str, PropType)],
 ) -> Result<(), &'static str> {
     unsafe {
@@ -230,6 +232,7 @@ pub fn register_schema(
 
                 *slot = Some(Schema {
                     kind,
+                    description,
                     props: schema_props,
                 });
                 return Ok(());
@@ -248,6 +251,21 @@ pub fn get_schema_props(kind: &'static str) -> Option<&'static [Option<(&'static
             if let Some(s) = schema {
                 if s.kind == kind {
                     return Some(&s.props[..]);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Get a schema description
+pub fn get_schema_description(kind: &'static str) -> Option<&'static str> {
+    unsafe {
+        let schemas = &raw const SCHEMAS;
+        for schema in (*schemas).iter() {
+            if let Some(s) = schema {
+                if s.kind == kind {
+                    return Some(s.description);
                 }
             }
         }

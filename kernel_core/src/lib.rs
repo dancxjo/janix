@@ -91,8 +91,8 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 }
             }
         }
-        KernelRequest::SchemaRegister { kind, props } => {
-            match graph::register_schema(kind, props) {
+        KernelRequest::SchemaRegister { kind, description, props } => {
+            match graph::register_schema(kind, description, props) {
                 Ok(()) => KernelResponse::SchemaRegistered { kind },
                 Err(e) => KernelResponse::Error { message: e },
             }
@@ -170,7 +170,11 @@ pub fn create_builtin_things() {
     static KERNEL_INFO_SCHEMA: &[(&str, PropType)] =
         &[("version", PropType::U64), ("booted", PropType::Bool)];
 
-    if let Err(e) = graph::register_schema("KernelInfo", KERNEL_INFO_SCHEMA) {
+    if let Err(e) = graph::register_schema(
+        "KernelInfo",
+        "Kernel version and boot status information",
+        KERNEL_INFO_SCHEMA
+    ) {
         log("Failed to register KernelInfo schema");
         log(e);
     }
@@ -181,7 +185,11 @@ pub fn create_builtin_things() {
         ("things_created", PropType::U64),
     ];
 
-    if let Err(e) = graph::register_schema("BootStats", BOOT_STATS_SCHEMA) {
+    if let Err(e) = graph::register_schema(
+        "BootStats",
+        "Statistics about kernel boot process including boot time and initial things created",
+        BOOT_STATS_SCHEMA
+    ) {
         log("Failed to register BootStats schema");
         log(e);
     }

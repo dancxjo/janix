@@ -14,6 +14,7 @@ pub struct ThreadInfo {
 
 impl Thing for ThreadInfo {
     const KIND: &'static str = "ThreadInfo";
+    const DESCRIPTION: &'static str = "Runtime information about a thread including state, execution time, and owning process";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         // The dashboard never *creates* ThreadInfo, but serde must be complete.

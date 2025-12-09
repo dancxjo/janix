@@ -102,7 +102,11 @@ pub fn init_schemas() {
         ("size", PropType::U64),
         ("allocated", PropType::Bool),
     ];
-    let _ = graph::register_schema("PhysFrame", PHYS_FRAME_SCHEMA);
+    let _ = graph::register_schema(
+        "PhysFrame",
+        "A region of physical memory with base address, size, and allocation status",
+        PHYS_FRAME_SCHEMA
+    );
 
     // FramePool: represents a pool of physical frames
     static FRAME_POOL_SCHEMA: &[(&str, PropType)] = &[
@@ -110,11 +114,19 @@ pub fn init_schemas() {
         ("end", PropType::U64),
         ("frame_size", PropType::U64),
     ];
-    let _ = graph::register_schema("FramePool", FRAME_POOL_SCHEMA);
+    let _ = graph::register_schema(
+        "FramePool",
+        "A pool of physical memory frames with defined start, end, and frame size",
+        FRAME_POOL_SCHEMA
+    );
 
     // AddressSpace: represents a virtual address space
     static ADDRESS_SPACE_SCHEMA: &[(&str, PropType)] = &[("asid", PropType::U64)];
-    let _ = graph::register_schema("AddressSpace", ADDRESS_SPACE_SCHEMA);
+    let _ = graph::register_schema(
+        "AddressSpace",
+        "A virtual address space identified by its address space identifier (ASID)",
+        ADDRESS_SPACE_SCHEMA
+    );
 
     // VirtRegion: represents a virtual memory region
     static VIRT_REGION_SCHEMA: &[(&str, PropType)] = &[
@@ -122,12 +134,20 @@ pub fn init_schemas() {
         ("len", PropType::U64),
         ("flags", PropType::U64),
     ];
-    let _ = graph::register_schema("VirtRegion", VIRT_REGION_SCHEMA);
+    let _ = graph::register_schema(
+        "VirtRegion",
+        "A virtual memory region with base address, length, and access flags",
+        VIRT_REGION_SCHEMA
+    );
 
     // Process: represents a process
     static PROCESS_SCHEMA: &[(&str, PropType)] =
         &[("pid", PropType::U64), ("state", PropType::U64)];
-    let _ = graph::register_schema("Process", PROCESS_SCHEMA);
+    let _ = graph::register_schema(
+        "Process",
+        "A process with process identifier (PID) and execution state",
+        PROCESS_SCHEMA
+    );
 
     // Thread: represents a thread
     static THREAD_SCHEMA: &[(&str, PropType)] = &[
@@ -136,11 +156,19 @@ pub fn init_schemas() {
         ("priority", PropType::U64),
         ("runtime_ns", PropType::U64),
     ];
-    let _ = graph::register_schema("Thread", THREAD_SCHEMA);
+    let _ = graph::register_schema(
+        "Thread",
+        "A thread of execution with thread identifier, state, priority, and runtime tracking",
+        THREAD_SCHEMA
+    );
 
     // CpuCore: represents a CPU core
     static CPU_CORE_SCHEMA: &[(&str, PropType)] = &[("index", PropType::U64)];
-    let _ = graph::register_schema("CpuCore", CPU_CORE_SCHEMA);
+    let _ = graph::register_schema(
+        "CpuCore",
+        "A CPU core identified by its index in the system",
+        CPU_CORE_SCHEMA
+    );
 }
 
 /// Create a PhysFrame Thing

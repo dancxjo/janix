@@ -54,3 +54,35 @@ pub fn ns_to_duration(ns: u64) -> Duration {
         nanos: rem as u32,
     }
 }
+
+/// Real-time clock: wall-clock time, ideally UTC since Unix epoch.
+pub trait RealTimeClock: Sync + Send {
+    /// Initialize the RTC hardware / integration.
+    fn init(&self);
+
+    /// Returns (seconds, nanoseconds) since Unix epoch (1970-01-01T00:00:00Z),
+    /// or a best-effort approximation if true UTC time is unavailable.
+    fn now_utc(&self) -> (u64, u32);
+}
+
+static mut RTC: Option<&'static dyn RealTimeClock> = None;
+
+/// Access the global RTC instance.
+pub fn rtc() -> Option<&'static dyn RealTimeClock> {
+    unsafe { RTC }
+}
+
+/// Register the concrete RTC instance (called from arch init).
+pub fn register_rtc(rtc_impl: &'static dyn RealTimeClock) {
+    unsafe {
+        RTC = Some(rtc_impl);
+    }
+}
+
+/// Helper: gets current UTC time in a single u64 ns value.
+pub fn system_time_ns() -> Option<u64> {
+    rtc().map(|r| {
+        let (secs, nanos) = r.now_utc();
+        secs.saturating_mul(1_000_000_000) + nanos as u64
+    })
+}

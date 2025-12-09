@@ -61,6 +61,14 @@ impl Sys for HarnessSys {
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
     }
 
+    fn time_monotonic_ns(&mut self) -> u64 {
+        self.time_now_ns()
+    }
+
+    fn time_system_ns(&mut self) -> u64 {
+        self.time_now_ns()
+    }
+
     fn sleep_until_ns(&mut self, deadline_ns: u64) {
         use std::thread;
         use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -93,7 +101,7 @@ fn main() {
     let mut sys = HarnessSys;
 
     println!("Running user_app_hello with HarnessSys...");
-    user_app_hello::run(&sys);
+    user_app_hello::run(&mut sys);
 
     println!("Running user_app_heartbeat with HarnessSys...");
     user_app_heartbeat::run(&mut sys);

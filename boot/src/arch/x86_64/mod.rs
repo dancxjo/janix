@@ -1,4 +1,5 @@
 pub mod enter;
+pub mod rtc;
 pub mod syscall;
 pub mod time;
 pub mod trap;
@@ -15,6 +16,7 @@ impl Arch for X86Arch {
     fn install_syscall_handler() {
         syscall::install_handler();
         time::init_arch_timer();
+        rtc::init_arch_rtc();
     }
 }
 

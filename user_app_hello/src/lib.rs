@@ -11,7 +11,7 @@ use abi::{PropKey, PropType, PropValue, ThingId};
 use userland_rt::Sys;
 use userland_std::{
     Thing, alloc_frame, create_process, create_thing, create_thread, free_frame, println,
-    register_schema_for, demo_shared::DemoState,
+    register_schema_for, demo_shared::DemoState, time::SystemTime,
 };
 
 fn log_dynamic(sys: &impl Sys, msg: String) {
@@ -63,8 +63,19 @@ impl Thing for AutoCounter {
     }
 }
 
-pub fn run<S: Sys>(sys: &S) {
+pub fn run<S: Sys>(sys: &mut S) {
     println(sys, "user_app_hello: run() reached");
+
+    let sys_time = SystemTime::now(sys);
+    let ns = sys_time.ns_since_epoch;
+    let secs = ns / 1_000_000_000;
+    let millis = (ns / 1_000_000) % 1000;
+
+    let msg = format!(
+        "System time since epoch: {}.{} seconds",
+        secs, millis
+    );
+    log_dynamic(sys, msg);
 
     // Exercise alloc_frame / free_frame
     if let Some(frame) = alloc_frame(sys) {

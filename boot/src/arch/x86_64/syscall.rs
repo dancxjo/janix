@@ -152,6 +152,14 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         }
     } else if num == SyscallNumber::TimeNow as u64 {
         kernel_core::time::monotonic_now_ns()
+    } else if num == SyscallNumber::TimeMonotonicNs as u64 {
+        kernel_core::time::monotonic_now_ns()
+    } else if num == SyscallNumber::TimeSystemNs as u64 {
+        if let Some(ns) = kernel_core::time::system_time_ns() {
+            ns
+        } else {
+            0
+        }
     } else if num == SyscallNumber::SleepUntil as u64 {
         let deadline_ns = arg1;
         while kernel_core::time::monotonic_now_ns() < deadline_ns {

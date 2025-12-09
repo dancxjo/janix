@@ -39,3 +39,19 @@ impl Instant {
             .map(|t| Instant { t_ns: t })
     }
 }
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct SystemTime {
+    pub ns_since_epoch: u64,
+}
+
+impl SystemTime {
+    pub fn now<S: Sys>(sys: &mut S) -> Self {
+        let ns = sys.time_system_ns();
+        SystemTime { ns_since_epoch: ns }
+    }
+
+    pub fn duration_since(&self, earlier: SystemTime) -> Duration {
+        Duration { nanos: self.ns_since_epoch - earlier.ns_since_epoch }
+    }
+}

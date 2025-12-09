@@ -13,7 +13,7 @@ pub use crate::arch::current::{alloc_user_stack, init_user_stack};
 pub extern "C" fn user_thread_main(app_id: u64) -> ! {
     let mut sys = Ring3Sys::new();
     match app_id {
-        1 => user_app_hello::run(&sys),
+        1 => user_app_hello::run(&mut sys),
         2 => {
             user_app_heartbeat::run(&mut sys);
             loop {

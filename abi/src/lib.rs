@@ -205,5 +205,7 @@ pub enum SyscallNumber {
     SchemaRegister = 14,
     TimeNow = 15,
     SleepUntil = 16,
+    TimeMonotonicNs = 20,
+    TimeSystemNs = 21,
     // Add others as needed
 }

@@ -10,6 +10,9 @@ pub trait Sys {
 
     /// Optional: sleep until a monotonic deadline.
     fn sleep_until_ns(&mut self, deadline_ns: u64);
+
+    fn time_monotonic_ns(&mut self) -> u64;
+    fn time_system_ns(&mut self) -> u64;
 }
 
 // Existing HostedSys for host_harness (may be cfg(std) or cfg(feature = "host"))
@@ -47,6 +50,20 @@ impl Sys for HostedSys {
         0
     }
 
+    fn time_monotonic_ns(&mut self) -> u64 {
+        self.time_now_ns()
+    }
+
+    fn time_system_ns(&mut self) -> u64 {
+        #[cfg(not(target_os = "none"))]
+        {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+        }
+        #[cfg(target_os = "none")]
+        0
+    }
+
     fn sleep_until_ns(&mut self, deadline_ns: u64) {
         #[cfg(not(target_os = "none"))]
         {
@@ -73,6 +90,14 @@ impl Sys for KernelSys {
 
     fn time_now_ns(&mut self) -> u64 {
         kernel_core::time::monotonic_now_ns()
+    }
+
+    fn time_monotonic_ns(&mut self) -> u64 {
+        kernel_core::time::monotonic_now_ns()
+    }
+
+    fn time_system_ns(&mut self) -> u64 {
+        kernel_core::time::system_time_ns().unwrap_or(0)
     }
 
     fn sleep_until_ns(&mut self, deadline_ns: u64) {
@@ -222,6 +247,14 @@ impl Sys for Ring3Sys {
 
     fn time_now_ns(&mut self) -> u64 {
         unsafe { syscall_stub(SyscallNumber::TimeNow, 0, 0, 0, 0, 0, 0) }
+    }
+
+    fn time_monotonic_ns(&mut self) -> u64 {
+        unsafe { syscall_stub(SyscallNumber::TimeMonotonicNs, 0, 0, 0, 0, 0, 0) }
+    }
+
+    fn time_system_ns(&mut self) -> u64 {
+        unsafe { syscall_stub(SyscallNumber::TimeSystemNs, 0, 0, 0, 0, 0, 0) }
     }
 
     fn sleep_until_ns(&mut self, deadline_ns: u64) {

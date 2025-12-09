@@ -134,6 +134,6 @@ fn test_instance_vs_type_description() {
     // They should have different descriptions
     assert_ne!(instance_desc.get_description(), type_desc.get_description());
     
-    // But the same type description
-    assert_eq!(DescribableThing::DESCRIPTION, DescribableThing::DESCRIPTION);
+    // The type description should be consistent
+    assert_eq!(DescribableThing::DESCRIPTION, "A thing that supports instance-specific descriptions");
 }

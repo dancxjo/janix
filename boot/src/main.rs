@@ -1,16 +1,18 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
-#![feature(abi_x86_interrupt)]
+#![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 
 mod boot_model;
 mod console;
 mod dashboard;
-mod heap;
+#[cfg(target_arch = "x86_64")]
 mod gdt;
+mod heap;
+#[cfg(target_arch = "x86_64")]
 mod idt;
-mod user;
 mod serial;
+mod user;
 
 use user_app_heartbeat;
 use user_app_hello;
@@ -50,8 +52,11 @@ unsafe extern "C" fn kmain() -> ! {
     serial::arch::init_serial();
 
     // Initialize GDT and IDT
-    gdt::init();
-    idt::init();
+    #[cfg(target_arch = "x86_64")]
+    {
+        gdt::init();
+        idt::init();
+    }
 
     // Initialize user stack mapping
     if let Some(hhdm_response) = boot_model::HHDM_REQUEST.get_response() {

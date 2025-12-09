@@ -1,3 +1,5 @@
+use crate::console;
+
 /// Maximum number of log entries
 const MAX_LOG_ENTRIES: usize = 100;
 
@@ -30,8 +32,8 @@ pub fn log_message(message: &'static str) {
             LOG_INDEX += 1;
         }
     }
-    crate::console::print(message);
-    crate::console::print("\n");
+    console::print(message);
+    console::print("\n");
 }
 
 /// Get all log entries

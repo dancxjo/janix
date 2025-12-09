@@ -10,9 +10,11 @@ abi = { path = "../abi" }
 userland_rt = { path = "../userland_rt", features = ["kernel"] }
 user_app_hello = { path = "../user_app_hello" }
 user_app_heartbeat = { path = "../user_app_heartbeat" }
-x86_64 = "0.14"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 spin = "0.10.0"
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = "0.14"
 
 [build-dependencies]
 reqwest = { version = "0.12", default-features = false, features = [

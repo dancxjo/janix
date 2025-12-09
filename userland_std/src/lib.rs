@@ -145,6 +145,12 @@ pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &mut S) -> Vec<T> {
     results
 }
 
+/// Get the type-level description for a Thing type.
+/// This is a compile-time constant that describes what the type represents.
+pub fn get_type_description<T: Thing>() -> &'static str {
+    T::DESCRIPTION
+}
+
 pub fn update_props(sys: &impl Sys, id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
     // We must leak the props to satisfy the ABI's 'static requirement.
     let props_vec = props.to_vec();

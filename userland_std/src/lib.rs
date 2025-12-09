@@ -14,6 +14,8 @@ use abi::{
 };
 use userland_rt::Sys;
 
+pub mod demo_shared;
+
 /// Print a line to the kernel log
 pub fn println(sys: &impl Sys, message: &'static str) {
     let request = KernelRequest::Log { message };
@@ -91,6 +93,30 @@ pub fn register_schema_for<T: Thing>(sys: &impl Sys) -> bool {
         KernelResponse::SchemaRegistered { .. } => true,
         _ => false,
     }
+}
+
+pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> Option<T> {
+    // Simple scan of the first 128 IDs
+    for i in 0..128 {
+        if let Some(thing) = load_thing::<T>(sys, ThingId(i)) {
+            if predicate(&thing) {
+                return Some(thing);
+            }
+        }
+    }
+    None
+}
+
+pub fn update_props(sys: &impl Sys, id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
+    // We must leak the props to satisfy the ABI's 'static requirement.
+    let props_vec = props.to_vec();
+    let props_slice = Box::leak(props_vec.into_boxed_slice());
+
+    let request = KernelRequest::ThingUpdate {
+        id,
+        props: props_slice,
+    };
+    matches!(sys.syscall(request), KernelResponse::Success { .. })
 }
 
 pub fn memory_summary(sys: &impl Sys) -> Option<MemorySummary> {

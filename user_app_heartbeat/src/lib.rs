@@ -10,6 +10,7 @@ use abi::{PropKey, PropType, PropValue, ThingId};
 use userland_rt::Sys;
 use userland_std::{
     Thing, create_process, create_thing, create_thread, println, register_schema_for,
+    demo_shared::DemoState,
 };
 
 pub struct HeartbeatThing {
@@ -68,9 +69,19 @@ pub fn tick<S: Sys>(sys: &S) {
     unsafe {
         COUNTER += 1;
         let c = COUNTER;
-        let msg = format!("user_app_heartbeat: tick {}", c);
-        let leaked: &'static str = Box::leak(msg.into_boxed_str());
-        println(sys, leaked);
+        
+        if let Some(demo) = DemoState::get_or_create(sys) {
+             if let Some((hello, hb)) = demo.read(sys) {
+                 let new_hb = hb + 1;
+                 demo.update_heartbeat_ticks(sys, new_hb);
+                 
+                 if new_hb % 7 == 0 {
+                     let msg = format!("user_app_heartbeat: shared state -> hello_ticks={} heartbeat_ticks={}", hello, new_hb);
+                     let leaked: &'static str = Box::leak(msg.into_boxed_str());
+                     println(sys, leaked);
+                 }
+             }
+        }
 
         if c % 10 == 0 {
             let thing = HeartbeatThing { counter: c };

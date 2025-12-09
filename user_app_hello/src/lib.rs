@@ -3,13 +3,22 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+use alloc::string::String;
+use alloc::format;
+use alloc::boxed::Box;
 
 use abi::{PropKey, PropType, PropValue, ThingId};
 use userland_rt::Sys;
 use userland_std::{
     Thing, alloc_frame, create_process, create_thing, create_thread, free_frame, println,
-    register_schema_for,
+    register_schema_for, demo_shared::DemoState,
 };
+
+fn log_dynamic(sys: &impl Sys, msg: String) {
+    // LEAK: For demo purposes only. In a real system, we'd fix the ABI to allow non-static strings.
+    let leaked: &'static str = Box::leak(msg.into_boxed_str());
+    println(sys, leaked);
+}
 
 pub struct AutoCounter {
     pub count: u64,
@@ -98,5 +107,20 @@ pub fn run<S: Sys>(sys: &S) {
 }
 
 pub fn tick<S: Sys>(sys: &S) {
-    println(sys, "user_app_hello: scheduler tick");
+    // println(sys, "user_app_hello: scheduler tick");
+
+    if let Some(demo) = DemoState::get_or_create(sys) {
+        if let Some((hello, hb)) = demo.read(sys) {
+            let new_hello = hello + 1;
+            demo.update_hello_ticks(sys, new_hello);
+
+            if new_hello % 10 == 0 {
+                let msg = format!(
+                    "user_app_hello: shared state -> hello_ticks={} heartbeat_ticks={}",
+                    new_hello, hb
+                );
+                log_dynamic(sys, msg);
+            }
+        }
+    }
 }

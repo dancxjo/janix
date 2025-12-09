@@ -1,5 +1,42 @@
 use abi::{NodeId, ProcessId, PropKey, PropType, PropValue, ThingId};
 
+/// A change emitted by the graph when nodes, properties, or edges mutate.
+#[derive(Debug, Clone)]
+pub enum GraphEvent {
+    NodeCreated { id: ThingId, kind: &'static str },
+    NodeDeleted { id: ThingId, kind: &'static str },
+    PropChanged {
+        id: ThingId,
+        kind: &'static str,
+        key: &'static str,
+        old: Option<PropValue>,
+        new: PropValue,
+    },
+    EdgeAdded { from: ThingId, edge_kind: &'static str, to: ThingId },
+    EdgeRemoved { from: ThingId, edge_kind: &'static str, to: ThingId },
+}
+
+pub type GraphListener = fn(&GraphEvent);
+
+#[derive(Clone, Copy)]
+struct NodeListener {
+    kind: &'static str,
+    listener: GraphListener,
+}
+
+#[derive(Clone, Copy)]
+struct PropListener {
+    kind: &'static str,
+    key: &'static str,
+    listener: GraphListener,
+}
+
+#[derive(Clone, Copy)]
+struct EdgeListener {
+    edge_kind: &'static str,
+    listener: GraphListener,
+}
+
 // Error message constants - these are stable and used by tests
 const ERR_NO_SCHEMA: &str = "No schema registered for this kind";
 const ERR_SCHEMA_ALREADY_REGISTERED: &str = "Schema already registered";
@@ -15,6 +52,10 @@ pub struct Node {
 }
 
 const MAX_PROPS_PER_THING: usize = 8;
+const MAX_EDGES: usize = 256;
+const MAX_NODE_LISTENERS: usize = 16;
+const MAX_PROP_LISTENERS: usize = 16;
+const MAX_EDGE_LISTENERS: usize = 16;
 
 #[derive(Debug, Clone)]
 pub struct ThingNode {
@@ -34,6 +75,26 @@ static mut NEXT_ID: u64 = 0;
 
 static mut THINGS: [Option<ThingNode>; MAX_THINGS] = [const { None }; MAX_THINGS];
 static mut NEXT_THING_ID: u64 = 0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Edge {
+    pub from: ThingId,
+    pub edge_kind: &'static str,
+    pub to: ThingId,
+}
+
+static mut EDGES: [Option<Edge>; MAX_EDGES] = [const { None }; MAX_EDGES];
+
+static mut NODE_CREATED_LISTENERS: [Option<NodeListener>; MAX_NODE_LISTENERS] =
+    [const { None }; MAX_NODE_LISTENERS];
+static mut NODE_DELETED_LISTENERS: [Option<NodeListener>; MAX_NODE_LISTENERS] =
+    [const { None }; MAX_NODE_LISTENERS];
+static mut PROP_CHANGED_LISTENERS: [Option<PropListener>; MAX_PROP_LISTENERS] =
+    [const { None }; MAX_PROP_LISTENERS];
+static mut EDGE_ADDED_LISTENERS: [Option<EdgeListener>; MAX_EDGE_LISTENERS] =
+    [const { None }; MAX_EDGE_LISTENERS];
+static mut EDGE_REMOVED_LISTENERS: [Option<EdgeListener>; MAX_EDGE_LISTENERS] =
+    [const { None }; MAX_EDGE_LISTENERS];
 
 // Schema storage
 const MAX_SCHEMAS: usize = 64;
@@ -76,6 +137,34 @@ pub fn init() {
         for slot in (*schemas).iter_mut() {
             *slot = None;
         }
+
+        // Clear all edges
+        let edges = &raw mut EDGES;
+        for slot in (*edges).iter_mut() {
+            *slot = None;
+        }
+
+        // Clear listeners
+        let node_created = &raw mut NODE_CREATED_LISTENERS;
+        for slot in (*node_created).iter_mut() {
+            *slot = None;
+        }
+        let node_deleted = &raw mut NODE_DELETED_LISTENERS;
+        for slot in (*node_deleted).iter_mut() {
+            *slot = None;
+        }
+        let prop_changed = &raw mut PROP_CHANGED_LISTENERS;
+        for slot in (*prop_changed).iter_mut() {
+            *slot = None;
+        }
+        let edge_added = &raw mut EDGE_ADDED_LISTENERS;
+        for slot in (*edge_added).iter_mut() {
+            *slot = None;
+        }
+        let edge_removed = &raw mut EDGE_REMOVED_LISTENERS;
+        for slot in (*edge_removed).iter_mut() {
+            *slot = None;
+        }
     }
 }
 
@@ -116,6 +205,113 @@ where
     }
 }
 
+fn dispatch_event(event: &GraphEvent) {
+    unsafe {
+        match event {
+            GraphEvent::NodeCreated { kind, .. } => {
+                let listeners = &raw const NODE_CREATED_LISTENERS;
+                for slot in (*listeners).iter().flatten() {
+                    if slot.kind == *kind {
+                        (slot.listener)(event);
+                    }
+                }
+            }
+            GraphEvent::NodeDeleted { kind, .. } => {
+                let listeners = &raw const NODE_DELETED_LISTENERS;
+                for slot in (*listeners).iter().flatten() {
+                    if slot.kind == *kind {
+                        (slot.listener)(event);
+                    }
+                }
+            }
+            GraphEvent::PropChanged { kind, key, .. } => {
+                let listeners = &raw const PROP_CHANGED_LISTENERS;
+                for slot in (*listeners).iter().flatten() {
+                    if slot.kind == *kind && slot.key == *key {
+                        (slot.listener)(event);
+                    }
+                }
+            }
+            GraphEvent::EdgeAdded { edge_kind, .. } => {
+                let listeners = &raw const EDGE_ADDED_LISTENERS;
+                for slot in (*listeners).iter().flatten() {
+                    if slot.edge_kind == *edge_kind {
+                        (slot.listener)(event);
+                    }
+                }
+            }
+            GraphEvent::EdgeRemoved { edge_kind, .. } => {
+                let listeners = &raw const EDGE_REMOVED_LISTENERS;
+                for slot in (*listeners).iter().flatten() {
+                    if slot.edge_kind == *edge_kind {
+                        (slot.listener)(event);
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn subscribe_node_created(kind: &'static str, listener: GraphListener) {
+    unsafe {
+        let listeners = &raw mut NODE_CREATED_LISTENERS;
+        for slot in (*listeners).iter_mut() {
+            if slot.is_none() {
+                *slot = Some(NodeListener { kind, listener });
+                return;
+            }
+        }
+    }
+}
+
+pub fn subscribe_node_deleted(kind: &'static str, listener: GraphListener) {
+    unsafe {
+        let listeners = &raw mut NODE_DELETED_LISTENERS;
+        for slot in (*listeners).iter_mut() {
+            if slot.is_none() {
+                *slot = Some(NodeListener { kind, listener });
+                return;
+            }
+        }
+    }
+}
+
+pub fn subscribe_prop_changed(kind: &'static str, key: &'static str, listener: GraphListener) {
+    unsafe {
+        let listeners = &raw mut PROP_CHANGED_LISTENERS;
+        for slot in (*listeners).iter_mut() {
+            if slot.is_none() {
+                *slot = Some(PropListener { kind, key, listener });
+                return;
+            }
+        }
+    }
+}
+
+pub fn subscribe_edge_added(edge_kind: &'static str, listener: GraphListener) {
+    unsafe {
+        let listeners = &raw mut EDGE_ADDED_LISTENERS;
+        for slot in (*listeners).iter_mut() {
+            if slot.is_none() {
+                *slot = Some(EdgeListener { edge_kind, listener });
+                return;
+            }
+        }
+    }
+}
+
+pub fn subscribe_edge_removed(edge_kind: &'static str, listener: GraphListener) {
+    unsafe {
+        let listeners = &raw mut EDGE_REMOVED_LISTENERS;
+        for slot in (*listeners).iter_mut() {
+            if slot.is_none() {
+                *slot = Some(EdgeListener { edge_kind, listener });
+                return;
+            }
+        }
+    }
+}
+
 /// Create a new Thing
 pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Option<ThingId> {
     unsafe {
@@ -138,6 +334,7 @@ pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Optio
             owner_process: None,
         });
         NEXT_THING_ID += 1;
+        dispatch_event(&GraphEvent::NodeCreated { id, kind });
         Some(id)
     }
 }
@@ -162,11 +359,15 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
         }
         if let Some(node) = THINGS[id.0 as usize].as_mut() {
             for (key, value) in props {
+                let mut previous: Option<PropValue> = None;
                 // Find existing key to update
                 let mut found = false;
                 for slot in node.props.iter_mut() {
                     if let Some((k, _)) = slot {
                         if *k == *key {
+                            if let Some((_, old_val)) = slot.clone() {
+                                previous = Some(old_val);
+                            }
                             *slot = Some((*key, value.clone()));
                             found = true;
                             break;
@@ -182,6 +383,13 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
                         }
                     }
                 }
+                dispatch_event(&GraphEvent::PropChanged {
+                    id,
+                    kind: node.kind,
+                    key: *key,
+                    old: previous,
+                    new: value.clone(),
+                });
             }
             true
         } else {
@@ -196,8 +404,30 @@ pub fn delete_thing(id: ThingId) -> bool {
         if id.0 >= MAX_THINGS as u64 {
             return false;
         }
-        THINGS[id.0 as usize] = None;
-        true
+        if let Some(thing) = THINGS[id.0 as usize].take() {
+            // remove edges attached
+            let edges = &raw mut EDGES;
+            for slot in (*edges).iter_mut() {
+                if let Some(edge) = slot {
+                    if edge.from == id || edge.to == id {
+                        let removed = *edge;
+                        *slot = None;
+                        dispatch_event(&GraphEvent::EdgeRemoved {
+                            from: removed.from,
+                            edge_kind: removed.edge_kind,
+                            to: removed.to,
+                        });
+                    }
+                }
+            }
+            dispatch_event(&GraphEvent::NodeDeleted {
+                id,
+                kind: thing.kind,
+            });
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -351,6 +581,7 @@ pub fn kernel_create_user_thing_for_process(
             owner_process: Some(proc),
         });
         NEXT_THING_ID += 1;
+        dispatch_event(&GraphEvent::NodeCreated { id, kind });
         Some(id)
     }
 }
@@ -397,6 +628,74 @@ pub fn kernel_user_update_thing(
     }
 }
 
-pub fn cleanup_process_graph(proc: ProcessId) {
+pub fn cleanup_process_graph(_proc: ProcessId) {
     // TODO: delete or mark Things owned by proc
+}
+
+/// Add an edge between two Things.
+pub fn add_edge(from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
+    unsafe {
+        let edges = &raw mut EDGES;
+        for slot in (*edges).iter_mut() {
+            if let Some(edge) = slot {
+                if edge.from == from && edge.to == to && edge.edge_kind == edge_kind {
+                    return true; // already exists
+                }
+            }
+        }
+        for slot in (*edges).iter_mut() {
+            if slot.is_none() {
+                *slot = Some(Edge {
+                    from,
+                    edge_kind,
+                    to,
+                });
+                dispatch_event(&GraphEvent::EdgeAdded {
+                    from,
+                    edge_kind,
+                    to,
+                });
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Remove an edge; returns true if removed.
+pub fn remove_edge(from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
+    unsafe {
+        let edges = &raw mut EDGES;
+        for slot in (*edges).iter_mut() {
+            if let Some(edge) = slot {
+                if edge.from == from && edge.edge_kind == edge_kind && edge.to == to {
+                    *slot = None;
+                    dispatch_event(&GraphEvent::EdgeRemoved {
+                        from,
+                        edge_kind,
+                        to,
+                    });
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Collect neighbors from outgoing edges of a given kind.
+pub fn neighbors(from: ThingId, edge_kind: &'static str, out: &mut [Option<ThingId>]) {
+    for slot in out.iter_mut() {
+        *slot = None;
+    }
+    unsafe {
+        let edges = &raw const EDGES;
+        let mut idx = 0;
+        for edge in (*edges).iter().flatten() {
+            if edge.from == from && edge.edge_kind == edge_kind && idx < out.len() {
+                out[idx] = Some(edge.to);
+                idx += 1;
+            }
+        }
+    }
 }

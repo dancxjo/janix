@@ -5,14 +5,14 @@ use crate::user_app_heartbeat;
 use crate::user_app_hello;
 use crate::user_app_thread_dashboard;
 use kernel_core::sched::{SCHEDULER, ThreadState};
-use userland_rt::{Ring3Sys, Sys};
+use userland_rt::{Sys, UserlandSys};
 
 // Re-export stack functions from current arch
 pub use crate::arch::current::{alloc_user_stack, init_user_stack};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn user_thread_main(app_id: u64) -> ! {
-    let mut sys = Ring3Sys::new();
+    let mut sys = UserlandSys::new();
     match app_id {
         1 => user_app_hello::run(&mut sys),
         2 => user_app_heartbeat::run(&mut sys),

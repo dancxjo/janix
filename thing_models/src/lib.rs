@@ -2,13 +2,13 @@
 
 extern crate alloc;
 
+use abi::{PropKey, PropType, PropValue, Thing, ThingId};
 use alloc::string::String;
 use alloc::vec::Vec;
-use abi::{PropKey, PropType, PropValue, ThingId, Thing};
 
 pub struct ThreadInfo {
-    pub name: String,          // "hello", "heartbeat", "dashboard"
-    pub state: String,         // "NEW", "RUNNABLE", "RUNNING", "SLEEPING", "TERMINATED"
+    pub name: String,  // "hello", "heartbeat", "dashboard"
+    pub state: String, // "NEW", "RUNNABLE", "RUNNING", "SLEEPING", "TERMINATED"
     pub last_run_ns: i64,
     pub total_run_ns: i64,
     pub process_thing_id: u64,
@@ -24,7 +24,10 @@ impl Thing for ThreadInfo {
         out.push(("last_run_ns", PropValue::I64(self.last_run_ns)));
         out.push(("total_run_ns", PropValue::I64(self.total_run_ns)));
         out.push(("process_thing_id", PropValue::U64(self.process_thing_id)));
-        out.push(("scheduler_thing_id", PropValue::U64(self.scheduler_thing_id)));
+        out.push((
+            "scheduler_thing_id",
+            PropValue::U64(self.scheduler_thing_id),
+        ));
     }
 
     fn from_props(_id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {

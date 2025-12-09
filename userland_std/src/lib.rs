@@ -17,6 +17,11 @@ use userland_rt::Sys;
 pub mod demo_shared;
 pub mod time;
 
+pub extern crate thing_models;
+pub mod thread_info {
+    pub use thing_models::ThreadInfo;
+}
+
 /// Print a line to the kernel log
 pub fn println(sys: &impl Sys, message: &'static str) {
     let request = KernelRequest::Log { message };

@@ -41,6 +41,15 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
+// 1MB static heap
+const HEAP_SIZE: usize = 1024 * 1024;
+static mut HEAP_MEMORY: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
+
+const STACK_SIZE: usize = 16 * 1024; // 16KB
+#[repr(align(16))]
+struct Stack([u8; STACK_SIZE]);
+static mut BOOT_STACK: Stack = Stack([0; STACK_SIZE]);
+
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
     // Initialize serial console first (best effort)
@@ -49,13 +58,31 @@ unsafe extern "C" fn kmain() -> ! {
 
     kernel_core::log("Serial initialized. Preparing to switch stack...");
 
+    unsafe {
+        let heap_addr = core::ptr::addr_of_mut!(HEAP_MEMORY) as usize;
+        kernel_core::println!("HEAP_MEMORY address: {:#x}", heap_addr);
+        kernel_core::println!("Probing HEAP_MEMORY...");
+        // Volatile write to ensure it's not optimized out
+        core::ptr::write_volatile(&mut HEAP_MEMORY[0], 0xAA);
+        core::ptr::write_volatile(&mut HEAP_MEMORY[HEAP_SIZE - 1], 0xBB);
+        kernel_core::println!("HEAP_MEMORY probe successful.");
+    }
+
     #[cfg(target_arch = "aarch64")]
     {
         // Initialize exception vector table early
         arch::aarch64::trap::init();
-        
+
+        let stack_top = core::ptr::addr_of!(BOOT_STACK) as u64 + STACK_SIZE as u64;
+
+        unsafe extern "C" {
+            fn kmain_inner_asm() -> !;
+        }
+
         // Switch to SP_EL1 for kernel stack
-        unsafe { arch::aarch64::trap::jump_to_el1_stack(kmain_inner); }
+        unsafe {
+            arch::aarch64::trap::jump_to_el1_stack(stack_top, kmain_inner_asm);
+        }
     }
 
     #[cfg(not(target_arch = "aarch64"))]
@@ -64,13 +91,39 @@ unsafe extern "C" fn kmain() -> ! {
     }
 }
 
+#[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
-    kernel_core::log("Inside kmain_inner");
+    // Minimal kmain_inner for debugging
+    loop {
+        unsafe {
+            core::arch::asm!("wfi");
+        }
+    }
+}
+
+/*
+#[unsafe(no_mangle)]
+unsafe extern "C" fn kmain_inner() -> ! {
+    kernel_core::log("Entered kmain_inner");
+    // All limine requests must also be referenced in a called function
+    assert!(BASE_REVISION.is_supported());
+    // ... (rest of the function)
+*/
+#[allow(dead_code)]
+unsafe extern "C" fn kmain_inner_original() -> ! {
+    kernel_core::log("Entered kmain_inner");
     // All limine requests must also be referenced in a called function
     assert!(BASE_REVISION.is_supported());
 
+    // Initialize heap
+    unsafe {
+        heap::KERNEL_ALLOCATOR.init(core::ptr::addr_of_mut!(HEAP_MEMORY) as usize, HEAP_SIZE);
+    }
+
+    kernel_core::log("Initializing kernel core...");
     // Initialize kernel core
     kernel_core::init();
+    kernel_core::log("Kernel core initialized.");
 
     // Initialize GDT
     #[cfg(target_arch = "x86_64")]

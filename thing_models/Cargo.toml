@@ -1,0 +1,7 @@
+[package]
+name = "thing_models"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+abi = { path = "../abi" }

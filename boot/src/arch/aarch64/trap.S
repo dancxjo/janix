@@ -101,6 +101,12 @@ exception_vector_table:
     TRAMPOLINE handler_3_2
     TRAMPOLINE handler_3_3
 
+.global kmain_inner_asm
+kmain_inner_asm:
+    wfi
+    b kmain_inner_asm
+
+
 // Implementations
 HANDLER_IMPL 0, 0, handler_0_0
 HANDLER_IMPL 0, 1, handler_0_1

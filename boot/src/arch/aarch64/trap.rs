@@ -1,6 +1,6 @@
-use core::arch::global_asm;
-use abi::{SyscallNumber, KernelRequest, KernelResponse};
 use crate::user;
+use abi::{KernelRequest, KernelResponse, SyscallNumber};
+use core::arch::global_asm;
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::string::ToString;
@@ -12,7 +12,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     let esr: u64;
     unsafe { core::arch::asm!("mrs {}, esr_el1", out(reg) esr) };
     let ec = (esr >> 26) & 0x3F;
-    
+
     if ec != 0x15 {
         kernel_core::println!("EXCEPTION: AArch64 Trap (Not SVC)");
         kernel_core::println!("ESR: {:#x}", esr);
@@ -47,8 +47,8 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let ptr = arg1 as *const u8;
         let len = arg2 as usize;
         if let Ok(s) = unsafe { core::str::from_utf8(core::slice::from_raw_parts(ptr, len)) } {
-             let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
-             kernel_core::log(leaked);
+            let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
+            kernel_core::log(leaked);
         }
         0
     } else if num == SyscallNumber::ExitThread as u64 {
@@ -59,8 +59,10 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     } else if num == SyscallNumber::AllocFrame as u64 {
         let pool_index = arg1;
         let frame_info_ptr = arg2 as *mut abi::FrameInfo;
-        
-        let req = KernelRequest::AllocFrame { pool_index: pool_index };
+
+        let req = KernelRequest::AllocFrame {
+            pool_index: pool_index,
+        };
         match kernel_core::handle_request(req) {
             KernelResponse::FrameAllocated { frame } => {
                 unsafe { *frame_info_ptr = frame };
@@ -85,7 +87,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
 pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) {
     let esr: u64;
     let far: u64;
-    unsafe { 
+    unsafe {
         core::arch::asm!("mrs {}, esr_el1", out(reg) esr);
         core::arch::asm!("mrs {}, far_el1", out(reg) far);
     }
@@ -147,20 +149,14 @@ pub fn init() {
     }
 }
 
-const STACK_SIZE: usize = 16 * 1024; // 16KB
-#[repr(align(16))]
-struct Stack([u8; STACK_SIZE]);
-
-#[unsafe(no_mangle)]
-static mut BOOT_STACK: Stack = Stack([0; STACK_SIZE]);
-
 /// Switches to a dedicated EL1 kernel stack and jumps to the given entry point.
 /// This is necessary because we cannot return to the caller after switching stacks
 /// (the return address would be on the old stack).
-pub unsafe fn jump_to_el1_stack(entry: unsafe extern "C" fn() -> !) -> ! {
-    let current_sp: u64;
-    unsafe { core::arch::asm!("mov {}, sp", out(reg) current_sp) };
-    kernel_core::println!("Switching to SP_EL1 using current SP: {:#x}", current_sp);
+pub unsafe fn jump_to_el1_stack(stack_top: u64, entry: unsafe extern "C" fn() -> !) -> ! {
+    // Ensure stack is 16-byte aligned
+    let stack_top = stack_top & !0xf;
+
+    // kernel_core::println!("Switching to SP_EL1. Stack: {:#x}, Entry: {:#x}", stack_top, entry as usize);
     unsafe {
         core::arch::asm!(
             "msr sp_el1, {stack}",
@@ -168,9 +164,9 @@ pub unsafe fn jump_to_el1_stack(entry: unsafe extern "C" fn() -> !) -> ! {
             "mov x29, xzr", // Clear FP
             "mov x30, xzr", // Clear LR
             "isb",
-            "blr {entry}",
+            "br {entry}",
             "b .",
-            stack = in(reg) current_sp,
+            stack = in(reg) stack_top,
             entry = in(reg) entry,
             options(noreturn)
         );

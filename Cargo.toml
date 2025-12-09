@@ -11,6 +11,7 @@ members = [
     "user_app_heartbeat",
     "user_app_thread_dashboard",
     "thing_macros",
+    "thing_models",
 ]
 
 [workspace.package]

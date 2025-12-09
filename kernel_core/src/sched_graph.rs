@@ -1,20 +1,10 @@
-use abi::{Thing, ThingId, PropValue};
-use thing_macros::Thing;
-use alloc::string::String;
-use alloc::vec::Vec;
 use crate::graph;
 use crate::sched::ThreadState;
-
-#[derive(Thing, Clone, Debug)]
-#[thing(description = "A thread in the scheduler with execution state and timing information")]
-pub struct Thread {
-    pub name: String,
-    pub state: String,
-    pub last_run_ns: i64,
-    pub total_run_ns: i64,
-    pub process_thing_id: u64,
-    pub scheduler_thing_id: u64,
-}
+use abi::{PropValue, Thing, ThingId};
+use alloc::string::String;
+use alloc::vec::Vec;
+use thing_macros::Thing;
+use thing_models::ThreadInfo;
 
 #[derive(Thing, Clone, Debug)]
 #[thing(description = "A scheduled sleep event for a thread to wake at a specific time")]
@@ -50,12 +40,8 @@ impl SchedulerGraphMirror {
         }
     }
 
-    pub fn register_thread(
-        &mut self,
-        process_thing_id: ThingId,
-        name: &'static str,
-    ) -> ThingId {
-        let info = Thread {
+    pub fn register_thread(&mut self, process_thing_id: ThingId, name: &'static str) -> ThingId {
+        let info = ThreadInfo {
             name: String::from(name),
             state: String::from("NEW"),
             last_run_ns: 0,
@@ -63,13 +49,17 @@ impl SchedulerGraphMirror {
             process_thing_id: process_thing_id.0,
             scheduler_thing_id: self.scheduler_thing_id.0,
         };
-        
-        let _ = graph::register_schema(Thread::KIND, Thread::DESCRIPTION, Thread::schema());
+
+        let _ = graph::register_schema(
+            ThreadInfo::KIND,
+            ThreadInfo::DESCRIPTION,
+            ThreadInfo::schema(),
+        );
 
         let mut props = Vec::new();
         info.to_props(&mut props);
-        
-        graph::create_thing(Thread::KIND, &props).expect("Failed to create ThreadInfo")
+
+        graph::create_thing(ThreadInfo::KIND, &props).expect("Failed to create ThreadInfo")
     }
 
     pub fn update_thread_state(
@@ -91,7 +81,7 @@ impl SchedulerGraphMirror {
             ("state", PropValue::Str(String::from(state_str))),
             ("last_run_ns", PropValue::I64(now_ns as i64)),
         ];
-        
+
         graph::update_thing(thread_thing_id, &props);
     }
 
@@ -102,13 +92,11 @@ impl SchedulerGraphMirror {
         run_end_ns: u64,
     ) {
         if let Some((_, props)) = graph::get_thing(thread_thing_id) {
-            let mut info = Thread::from_props(thread_thing_id, props);
+            let mut info = ThreadInfo::from_props(thread_thing_id, props);
             let delta = run_end_ns.saturating_sub(run_start_ns);
             info.total_run_ns += delta as i64;
-            
-            let props = [
-                ("total_run_ns", PropValue::I64(info.total_run_ns)),
-            ];
+
+            let props = [("total_run_ns", PropValue::I64(info.total_run_ns))];
             graph::update_thing(thread_thing_id, &props);
         }
     }
@@ -127,11 +115,15 @@ impl SchedulerGraphMirror {
             scheduler_thing_id: self.scheduler_thing_id.0,
         };
 
-        let _ = graph::register_schema(SleepEvent::KIND, SleepEvent::DESCRIPTION, SleepEvent::schema());
+        let _ = graph::register_schema(
+            SleepEvent::KIND,
+            SleepEvent::DESCRIPTION,
+            SleepEvent::schema(),
+        );
 
         let mut props = Vec::new();
         event.to_props(&mut props);
-        
+
         graph::create_thing(SleepEvent::KIND, &props).expect("Failed to create SleepEvent")
     }
 

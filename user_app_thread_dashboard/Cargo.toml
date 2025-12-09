@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 userland = { path = "../userland" }
+userland_std = { path = "../userland_std" }
 
 [dev-dependencies]
 kernel_core = { path = "../kernel_core" }

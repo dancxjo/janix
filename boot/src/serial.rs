@@ -71,14 +71,16 @@ pub mod arch {
 #[cfg(target_arch = "aarch64")]
 pub mod arch {
     use super::*;
-    
+
     struct Pl011 {
         base: *mut u32,
     }
-    
+
     impl Pl011 {
         const unsafe fn new(base: *mut u8) -> Self {
-            Self { base: base as *mut u32 }
+            Self {
+                base: base as *mut u32,
+            }
         }
 
         fn set_offset(&mut self, offset: u64) {
@@ -102,16 +104,16 @@ pub mod arch {
                 self.base.add(12).write_volatile(0x301);
             }
         }
-        
+
         fn send(&mut self, byte: u8) {
-             unsafe {
+            unsafe {
                 // Wait for TXFF (Transmit FIFO Full) to be clear. FR is at offset 0x18 (6 words)
                 while (self.base.add(6).read_volatile() & 0x20) != 0 {}
                 self.base.write_volatile(byte as u32);
-             }
+            }
         }
     }
-    
+
     struct SerialSink(Mutex<Pl011>);
     unsafe impl Sync for SerialSink {}
     unsafe impl Send for SerialSink {}
@@ -154,7 +156,8 @@ pub mod arch {
         }
     }
 
-    static SERIAL: SerialSink = SerialSink(Mutex::new(unsafe { Pl011::new(0x09000000 as *mut u8) }));
+    static SERIAL: SerialSink =
+        SerialSink(Mutex::new(unsafe { Pl011::new(0x09000000 as *mut u8) }));
     static SEMIHOSTING: SemihostingSink = SemihostingSink;
 
     pub fn init_serial(offset: u64) {
@@ -246,7 +249,11 @@ pub mod arch {
     }
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "riscv64"
+)))]
 pub mod arch {
     pub fn init_serial(_offset: u64) {}
 }

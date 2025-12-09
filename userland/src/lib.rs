@@ -3,3 +3,4 @@
 extern crate alloc;
 
 pub mod prelude;
+pub use userland_std::thread_info;

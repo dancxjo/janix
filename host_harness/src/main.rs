@@ -1,8 +1,15 @@
 use kernel_core::model::dashboard_snapshot;
 use kernel_core::console::{ConsoleSink, register_sink};
+use kernel_core::sched::Scheduler;
+
+use std::thread;
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Sender};
+use std::collections::HashMap;
+use std::cell::RefCell;
 
 mod frame_pool;
-use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary};
+use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary, ThreadId, ProcessId};
 use frame_pool::{allocate_frame, frame_stats, free_frame, init_host_frame_pool};
 use userland_rt::Sys;
 
@@ -17,6 +24,17 @@ impl ConsoleSink for HostConsole {
 }
 
 static HOST_CONSOLE: HostConsole = HostConsole;
+
+thread_local! {
+    static CURRENT_THREAD_ID: RefCell<Option<ThreadId>> = RefCell::new(None);
+}
+
+static SCHED_TX: Mutex<Option<Sender<SchedEvent>>> = Mutex::new(None);
+
+enum SchedEvent {
+    Yield(ThreadId),
+    Exit(ThreadId),
+}
 
 struct HarnessSys;
 
@@ -66,56 +84,99 @@ impl Sys for HarnessSys {
     }
 
     fn time_system_ns(&mut self) -> u64 {
-        self.time_now_ns()
+        0
     }
 
-    fn sleep_until_ns(&mut self, deadline_ns: u64) {
-        use std::thread;
-        use std::time::{Duration, SystemTime, UNIX_EPOCH};
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
-        if deadline_ns > now {
-            thread::sleep(Duration::from_nanos(deadline_ns - now));
+    fn sleep_until_ns(&mut self, _deadline_ns: u64) {
+    }
+
+    fn yield_now(&mut self) {
+        let tid: Option<ThreadId> = CURRENT_THREAD_ID.with(|id| *id.borrow());
+        if let Some(tid) = tid {
+            {
+                if let Some(tx) = SCHED_TX.lock().unwrap().as_ref() {
+                    // println!("Thread {:?} yielding", tid);
+                    tx.send(SchedEvent::Yield(tid)).unwrap();
+                }
+            }
+            thread::park();
+            // println!("Thread {:?} resumed", tid);
         }
+    }
+
+    fn exit_thread(&mut self) -> ! {
+        let tid: Option<ThreadId> = CURRENT_THREAD_ID.with(|id| *id.borrow());
+        if let Some(tid) = tid {
+            {
+                if let Some(tx) = SCHED_TX.lock().unwrap().as_ref() {
+                    tx.send(SchedEvent::Exit(tid)).unwrap();
+                }
+            }
+            thread::park();
+        }
+        loop {}
     }
 }
 
-/// ThingOS Host Harness
-///
-/// This binary simulates the kernel environment for userland applications.
-/// IMPORTANT: This harness must maintain strict feature parity with the actual kernel.
-/// Any syscall or capability available in `boot::sys_kernel::KernelSys` must be mirrored here.
+extern "C" fn dummy_entry(_: u64) -> ! { loop {} }
+
 fn main() {
-    println!("=== ThingOS Host Harness ===");
-    println!();
-
-    // Initialize kernel core (simulated)
-    kernel_core::init();
     register_sink(&HOST_CONSOLE);
-    kernel_core::create_builtin_things();
-
-    // Seed a fake memory graph
-    kernel_core::model::create_frame_pool(0x1000, 0x9000, 4096);
-    kernel_core::model::create_cpu_core(0);
-
     init_host_frame_pool(128);
-    let mut sys = HarnessSys;
-
-    println!("Running user_app_hello with HarnessSys...");
-    user_app_hello::run(&mut sys);
-
-    println!("Running user_app_heartbeat with HarnessSys...");
-    user_app_heartbeat::run(&mut sys);
-
+    
+    let (tx, rx) = channel();
+    *SCHED_TX.lock().unwrap() = Some(tx);
+    
+    let mut sched = Scheduler::new();
+    
+    let p1 = sched.add_process("user_app_hello");
+    let t1 = sched.add_thread(p1, "hello", dummy_entry, 1, 0);
+    
+    let p2 = sched.add_process("user_app_heartbeat");
+    let t2 = sched.add_thread(p2, "heartbeat", dummy_entry, 2, 0);
+    
+    let mut threads = HashMap::new();
+    
+    // Spawn t1
+    let t1_handle = thread::spawn(move || {
+        CURRENT_THREAD_ID.with(|id: &RefCell<Option<ThreadId>>| *id.borrow_mut() = Some(t1));
+        thread::park(); // Wait for scheduler
+        let mut sys = HarnessSys;
+        user_app_hello::run(&mut sys);
+    });
+    threads.insert(t1, t1_handle.thread().clone());
+    
+    // Spawn t2
+    let t2_handle = thread::spawn(move || {
+        CURRENT_THREAD_ID.with(|id: &RefCell<Option<ThreadId>>| *id.borrow_mut() = Some(t2));
+        thread::park(); // Wait for scheduler
+        let mut sys = HarnessSys;
+        user_app_heartbeat::run(&mut sys);
+    });
+    threads.insert(t2, t2_handle.thread().clone());
+    
     println!("Starting scheduler loop...");
-    for _ in 0..20 {
-        if let Some(thread) = userland_std::scheduler_tick(&sys) {
-            match thread.tid {
-                101 => user_app_hello::tick(&sys),
-                201 => user_app_heartbeat::tick(&mut sys),
-                _ => println!("Unknown thread: {}", thread.tid),
+    while !sched.all_done() {
+        if let Some(tid) = sched.next_runnable() {
+            sched.set_current(tid);
+            
+            if let Some(handle) = threads.get(&tid) {
+                handle.unpark();
+            }
+            
+            let event = rx.recv().unwrap();
+            match event {
+                SchedEvent::Yield(t) => {
+                    assert_eq!(t, tid);
+                    sched.mark_yield(tid);
+                }
+                SchedEvent::Exit(t) => {
+                    assert_eq!(t, tid);
+                    sched.mark_terminated(tid);
+                }
             }
         } else {
-            println!("No runnable threads");
+            break;
         }
     }
     println!("Finished scheduler loop.");
@@ -143,3 +204,5 @@ fn main() {
     println!("    AddressSpace= {}", snap.counts.address_spaces);
     println!("    CpuCore     = {}", snap.counts.cpu_cores);
 }
+
+

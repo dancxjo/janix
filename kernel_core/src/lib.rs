@@ -5,6 +5,7 @@ pub mod graph;
 pub mod log;
 pub mod memory;
 pub mod model;
+pub mod sched;
 pub mod time;
 pub mod transaction;
 

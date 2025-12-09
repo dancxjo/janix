@@ -13,6 +13,9 @@ pub trait Sys {
 
     fn time_monotonic_ns(&mut self) -> u64;
     fn time_system_ns(&mut self) -> u64;
+
+    fn yield_now(&mut self);
+    fn exit_thread(&mut self) -> !;
 }
 
 // Existing HostedSys for host_harness (may be cfg(std) or cfg(feature = "host"))
@@ -40,11 +43,43 @@ impl Sys for HostedSys {
         }
     }
 
+    fn yield_now(&mut self) {
+        #[cfg(not(target_os = "none"))]
+        {
+            // In hosted mode, we simulate a syscall.
+            // We need to yield execution back to the scheduler.
+            // Since we are likely running in a thread (or need to be), we can park or panic.
+            // For now, we'll assume the harness handles this via a thread-local or global mechanism
+            // that we can trigger.
+            // But wait, we can just call the kernel function directly?
+            kernel_core::sched::yield_current_thread();
+
+            // Now we need to actually stop execution.
+            // If we are using threads, we park.
+            std::thread::park();
+        }
+    }
+
+    fn exit_thread(&mut self) -> ! {
+        #[cfg(not(target_os = "none"))]
+        {
+            kernel_core::sched::exit_current_thread();
+            // Stop execution
+            std::thread::park();
+            loop {}
+        }
+        #[cfg(target_os = "none")]
+        loop {}
+    }
+
     fn time_now_ns(&mut self) -> u64 {
         #[cfg(not(target_os = "none"))]
         {
             use std::time::{SystemTime, UNIX_EPOCH};
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as u64
         }
         #[cfg(target_os = "none")]
         0
@@ -58,7 +93,10 @@ impl Sys for HostedSys {
         #[cfg(not(target_os = "none"))]
         {
             use std::time::{SystemTime, UNIX_EPOCH};
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as u64
         }
         #[cfg(target_os = "none")]
         0
@@ -69,7 +107,10 @@ impl Sys for HostedSys {
         {
             use std::thread;
             use std::time::{Duration, SystemTime, UNIX_EPOCH};
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as u64;
             if deadline_ns > now {
                 thread::sleep(Duration::from_nanos(deadline_ns - now));
             }
@@ -104,6 +145,15 @@ impl Sys for KernelSys {
         while kernel_core::time::monotonic_now_ns() < deadline_ns {
             core::hint::spin_loop();
         }
+    }
+
+    fn yield_now(&mut self) {
+        kernel_core::sched::yield_current_thread();
+    }
+
+    fn exit_thread(&mut self) -> ! {
+        kernel_core::sched::exit_current_thread();
+        loop {}
     }
 }
 
@@ -259,6 +309,15 @@ impl Sys for Ring3Sys {
 
     fn sleep_until_ns(&mut self, deadline_ns: u64) {
         unsafe { syscall_stub(SyscallNumber::SleepUntil, deadline_ns, 0, 0, 0, 0, 0) };
+    }
+
+    fn yield_now(&mut self) {
+        unsafe { syscall_stub(SyscallNumber::Yield, 0, 0, 0, 0, 0, 0) };
+    }
+
+    fn exit_thread(&mut self) -> ! {
+        unsafe { syscall_stub(SyscallNumber::ExitThread, 0, 0, 0, 0, 0, 0) };
+        loop {}
     }
 }
 

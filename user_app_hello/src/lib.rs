@@ -63,75 +63,17 @@ impl Thing for AutoCounter {
     }
 }
 
+
 pub fn run<S: Sys>(sys: &mut S) {
     println(sys, "user_app_hello: run() reached");
-
-    let sys_time = SystemTime::now(sys);
-    let ns = sys_time.ns_since_epoch;
-    let secs = ns / 1_000_000_000;
-    let millis = (ns / 1_000_000) % 1000;
-
-    let msg = format!(
-        "System time since epoch: {}.{} seconds",
-        secs, millis
-    );
-    log_dynamic(sys, msg);
-
-    // Exercise alloc_frame / free_frame
-    if let Some(frame) = alloc_frame(sys) {
-        println(sys, "user_app_hello: allocated frame");
-        if free_frame(sys, frame.id) {
-            println(sys, "user_app_hello: freed frame");
-        } else {
-            println(sys, "user_app_hello: failed to free frame");
-        }
-    } else {
-        println(sys, "user_app_hello: failed to allocate frame");
+    let start = sys.time_monotonic_ns();
+    for i in 0..10 {
+        let now = sys.time_monotonic_ns();
+        let elapsed = now - start;
+        // Simple log for now
+        println(sys, "hello: tick");
+        sys.yield_now();
     }
-
-    // Create a Process / Thread
-    if create_process(sys, 100) {
-        println(sys, "user_app_hello: created process 100");
-        if create_thread(sys, 100, 101, 1) {
-            println(sys, "user_app_hello: created thread 101 in process 100");
-        } else {
-            println(sys, "user_app_hello: failed to create thread");
-        }
-    } else {
-        println(sys, "user_app_hello: failed to create process");
-    }
-
-    // Create a counter to demonstrate functionality
-    register_schema_for::<AutoCounter>(sys);
-    let counter = AutoCounter {
-        count: 1,
-        active: true,
-    };
-
-    if let Some(_) = create_thing(sys, &counter) {
-        println(sys, "user_app_hello: instantiated AutoCounter");
-    } else {
-        println(sys, "user_app_hello: failed to instantiate AutoCounter");
-    }
-
-    println(sys, "user_app_hello: finished setup");
+    sys.exit_thread();
 }
 
-pub fn tick<S: Sys>(sys: &S) {
-    // println(sys, "user_app_hello: scheduler tick");
-
-    if let Some(demo) = DemoState::get_or_create(sys) {
-        if let Some((hello, hb)) = demo.read(sys) {
-            let new_hello = hello + 1;
-            demo.update_hello_ticks(sys, new_hello);
-
-            if new_hello % 10 == 0 {
-                let msg = format!(
-                    "user_app_hello: shared state -> hello_ticks={} heartbeat_ticks={}",
-                    new_hello, hb
-                );
-                log_dynamic(sys, msg);
-            }
-        }
-    }
-}

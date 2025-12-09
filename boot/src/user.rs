@@ -3,7 +3,7 @@ extern crate alloc;
 use crate::arch::{self, Arch, CurrentArch, UserEntryRegs};
 use crate::user_app_heartbeat;
 use crate::user_app_hello;
-use kernel_core::model::{ThreadState, pick_next_thread};
+use kernel_core::sched::{SCHEDULER, ThreadState};
 use userland_rt::{Ring3Sys, Sys};
 
 // Re-export stack functions from current arch
@@ -14,14 +14,7 @@ pub extern "C" fn user_thread_main(app_id: u64) -> ! {
     let mut sys = Ring3Sys::new();
     match app_id {
         1 => user_app_hello::run(&mut sys),
-        2 => {
-            user_app_heartbeat::run(&mut sys);
-            loop {
-                user_app_heartbeat::tick(&mut sys);
-                let now = sys.time_now_ns();
-                sys.sleep_until_ns(now + 100_000_000); // 100ms
-            }
-        }
+        2 => user_app_heartbeat::run(&mut sys),
         _ => {}
     }
     sys.exit_thread();
@@ -29,19 +22,35 @@ pub extern "C" fn user_thread_main(app_id: u64) -> ! {
 
 pub fn schedule_next() -> ! {
     loop {
-        if let Some(thread) = pick_next_thread() {
-            if thread.state == ThreadState::New {
-                thread.state = ThreadState::Running;
+        let next_tid = {
+            let mut sched = SCHEDULER.lock();
+            sched.next_runnable()
+        };
+
+        if let Some(tid) = next_tid {
+            let (regs, context, started, name) = {
+                let mut sched = SCHEDULER.lock();
+                sched.set_current(tid);
+                let thread = sched.thread_mut(tid).unwrap();
 
                 let regs = UserEntryRegs {
                     entry_point: thread.user_entry.unwrap() as u64,
                     user_stack: thread.user_stack_top,
                     arg0: thread.user_arg,
                 };
+                (regs, thread.context, thread.started, thread.name)
+            };
 
+            if started {
+                // kernel_core::log("Resuming user thread...");
+                CurrentArch::resume_user_mode(&context);
+            } else {
                 kernel_core::log("Entering user thread...");
+                kernel_core::log(name);
                 CurrentArch::enter_user_mode(&regs);
             }
+        } else {
+            kernel_core::log("No runnable threads");
         }
         unsafe {
             #[cfg(target_arch = "x86_64")]

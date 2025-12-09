@@ -17,6 +17,7 @@ pub struct UserEntryRegs {
 
 pub trait Arch {
     fn enter_user_mode(regs: &UserEntryRegs) -> !;
+    fn resume_user_mode(context: &[u64]) -> !;
     fn install_syscall_handler();
     // fn syscall_stub(num: u64, arg0: u64, arg1: u64, arg2: u64) -> u64; // This is for userland, not kernel
 }

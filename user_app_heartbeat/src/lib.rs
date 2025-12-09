@@ -45,37 +45,14 @@ impl Thing for HeartbeatThing {
 
 pub fn run<S: Sys>(sys: &mut S) {
     println(sys, "user_app_heartbeat: run() reached");
-
-    register_schema_for::<HeartbeatThing>(sys);
-    
-    unsafe { START_TIME = Some(Instant::now(sys)); }
-
-    let pid = 200;
-    let tid = 201;
-
-    if create_process(sys, pid) {
-        println(sys, "user_app_heartbeat: created process 200");
-        if create_thread(sys, pid, tid, 1) {
-            println(sys, "user_app_heartbeat: created thread 201 in process 200");
-        } else {
-            println(sys, "user_app_heartbeat: failed to create thread");
-        }
-    } else {
-        println(sys, "user_app_heartbeat: failed to create process");
+    let start = sys.time_monotonic_ns();
+    for _ in 0..10 {
+        let now = sys.time_monotonic_ns();
+        let elapsed = now - start;
+        println(sys, "heartbeat: tick");
+        sys.yield_now();
     }
+    sys.exit_thread();
 }
 
-static mut START_TIME: Option<Instant> = None;
-
-pub fn tick<S: Sys>(sys: &mut S) {
-    let start = unsafe { START_TIME };
-    if let Some(start) = start {
-        let now = Instant::now(sys);
-        let elapsed = now.duration_since(start);
-        
-        let msg = format!("heartbeat: {} ms since start", elapsed.as_nanos() / 1_000_000);
-        let leaked: &'static str = Box::leak(msg.into_boxed_str());
-        println(sys, leaked);
-    }
-}
 

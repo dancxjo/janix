@@ -86,14 +86,24 @@ unsafe extern "C" fn kmain() -> ! {
             kernel_core::log("Launching user_app_hello from kernel...");
             // user_app_hello::run(&sys);
             let stack1 = user::alloc_user_stack();
-            kernel_core::model::create_user_thread_for_app(100, 1, user::user_thread_main, stack1);
+            // kernel_core::model::create_user_thread_for_app(100, 1, user::user_thread_main, stack1);
+            {
+                let mut sched = kernel_core::sched::SCHEDULER.lock();
+                let p1 = sched.add_process("user_app_hello");
+                sched.add_thread(p1, "hello", user::user_thread_main, 1, stack1);
+            }
             kernel_core::log("... created process 100");
             kernel_core::log("... created thread 101 in process 100");
 
             kernel_core::log("Launching user_app_heartbeat from kernel...");
             // user_app_heartbeat::run(&sys);
             let stack2 = user::alloc_user_stack();
-            kernel_core::model::create_user_thread_for_app(200, 2, user::user_thread_main, stack2);
+            // kernel_core::model::create_user_thread_for_app(200, 2, user::user_thread_main, stack2);
+            {
+                let mut sched = kernel_core::sched::SCHEDULER.lock();
+                let p2 = sched.add_process("user_app_heartbeat");
+                sched.add_thread(p2, "heartbeat", user::user_thread_main, 2, stack2);
+            }
             kernel_core::log("... created process 200");
             kernel_core::log("... created thread 201 in process 200");
 

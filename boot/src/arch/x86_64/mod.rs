@@ -13,6 +13,10 @@ impl Arch for X86Arch {
         enter::enter_user_mode(regs)
     }
 
+    fn resume_user_mode(context: &[u64]) -> ! {
+        enter::resume_user_mode(context)
+    }
+
     fn install_syscall_handler() {
         syscall::install_handler();
         time::init_arch_timer();

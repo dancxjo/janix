@@ -1,12 +1,18 @@
+use abi::{KernelRequest, KernelResponse, SyscallNumber};
 use core::arch::global_asm;
-use abi::{SyscallNumber, KernelRequest, KernelResponse};
 extern crate alloc;
+use crate::user;
 use alloc::boxed::Box;
 use alloc::string::ToString;
-use crate::user;
 
 #[repr(C)]
 pub struct SyscallRegs {
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub rbp: u64,
+    pub rbx: u64,
     pub r11: u64,
     pub r10: u64,
     pub r9: u64,
@@ -16,6 +22,11 @@ pub struct SyscallRegs {
     pub rsi: u64,
     pub rdi: u64,
     pub rax: u64,
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
 }
 
 global_asm!(
@@ -31,10 +42,22 @@ syscall_handler_asm:
     push r9
     push r10
     push r11
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
 
     mov rdi, rsp
     call syscall_handler_rust
     
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
     pop r11
     pop r10
     pop r9
@@ -43,7 +66,7 @@ syscall_handler_asm:
     pop rdx
     pop rsi
     pop rdi
-    add rsp, 8 // pop rax
+    pop rax
     
     iretq
 "#
@@ -63,27 +86,42 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     let arg4 = regs.rcx;
     let arg5 = regs.r8;
     let arg6 = regs.r9;
-    
+
     if num == SyscallNumber::Yield as u64 {
+        {
+            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            if let Some(tid) = sched.current_id() {
+                if let Some(thread) = sched.thread_mut(tid) {
+                    let regs_ptr = regs as *const SyscallRegs as *const u64;
+                    let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 20) };
+                    thread.context.copy_from_slice(regs_slice);
+                    thread.started = true;
+                }
+            }
+        }
+        kernel_core::sched::yield_current_thread();
         user::schedule_next();
         0
     } else if num == SyscallNumber::Log as u64 {
         let ptr = arg1 as *const u8;
         let len = arg2 as usize;
         if let Ok(s) = unsafe { core::str::from_utf8(core::slice::from_raw_parts(ptr, len)) } {
-             let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
-             kernel_core::log(leaked);
+            let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
+            kernel_core::log(leaked);
         }
         0
     } else if num == SyscallNumber::ExitThread as u64 {
         kernel_core::log("Thread exited via syscall");
+        kernel_core::sched::exit_current_thread();
         user::schedule_next();
         0
     } else if num == SyscallNumber::AllocFrame as u64 {
         let pool_index = arg1;
         let frame_info_ptr = arg2 as *mut abi::FrameInfo;
-        
-        let req = KernelRequest::AllocFrame { pool_index: pool_index };
+
+        let req = KernelRequest::AllocFrame {
+            pool_index: pool_index,
+        };
         match kernel_core::handle_request(req) {
             KernelResponse::FrameAllocated { frame } => {
                 unsafe { *frame_info_ptr = frame };
@@ -119,34 +157,45 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         let kind_len = arg2 as usize;
         let props_ptr = arg3 as *const (abi::PropKey, abi::PropValue);
         let props_len = arg4 as usize;
-        
-        let kind = unsafe { core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("") };
+
+        let kind = unsafe {
+            core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("")
+        };
         let props = unsafe { core::slice::from_raw_parts(props_ptr, props_len) };
-        
+
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
         let props_vec: alloc::vec::Vec<(abi::PropKey, abi::PropValue)> = props.to_vec();
-        let props_static: &'static [(abi::PropKey, abi::PropValue)] = Box::leak(props_vec.into_boxed_slice());
+        let props_static: &'static [(abi::PropKey, abi::PropValue)] =
+            Box::leak(props_vec.into_boxed_slice());
 
-        let req = KernelRequest::ThingCreate { kind: kind_static, props: props_static };
+        let req = KernelRequest::ThingCreate {
+            kind: kind_static,
+            props: props_static,
+        };
         match kernel_core::handle_request(req) {
             KernelResponse::ThingCreated { id } => id.0,
             _ => 0,
         }
     } else if num == SyscallNumber::SchemaRegister as u64 {
-         let kind_ptr = arg1 as *const u8;
+        let kind_ptr = arg1 as *const u8;
         let kind_len = arg2 as usize;
         let props_ptr = arg3 as *const (&'static str, abi::PropType);
         let props_len = arg4 as usize;
-        
-        let kind = unsafe { core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("") };
-        let props = unsafe { core::slice::from_raw_parts(props_ptr, props_len) };
-        
-        let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
-         let props_vec = props.to_vec();
-         let props_static = Box::leak(props_vec.into_boxed_slice());
 
-        let req = KernelRequest::SchemaRegister { kind: kind_static, props: props_static };
-         match kernel_core::handle_request(req) {
+        let kind = unsafe {
+            core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("")
+        };
+        let props = unsafe { core::slice::from_raw_parts(props_ptr, props_len) };
+
+        let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
+        let props_vec = props.to_vec();
+        let props_static = Box::leak(props_vec.into_boxed_slice());
+
+        let req = KernelRequest::SchemaRegister {
+            kind: kind_static,
+            props: props_static,
+        };
+        match kernel_core::handle_request(req) {
             KernelResponse::SchemaRegistered { .. } => 0,
             _ => 1,
         }

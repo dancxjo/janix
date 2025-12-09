@@ -84,6 +84,24 @@ pub mod arch {
         fn set_offset(&mut self, offset: u64) {
             self.base = ((self.base as u64) + offset) as *mut u32;
         }
+
+        fn init(&mut self) {
+            unsafe {
+                // Disable UART
+                self.base.add(12).write_volatile(0);
+
+                // Disable interrupts (IMSC)
+                self.base.add(14).write_volatile(0x7ff);
+
+                // Enable FIFO and 8-bit data transmission (LCR_H)
+                // WLEN = 0b11 (8 bits), FEN = 1 (FIFO enable)
+                self.base.add(11).write_volatile(0x70);
+
+                // Enable UART, TX, and RX (CR)
+                // UARTEN = 1, TXE = 1, RXE = 1
+                self.base.add(12).write_volatile(0x301);
+            }
+        }
         
         fn send(&mut self, byte: u8) {
              unsafe {
@@ -113,11 +131,45 @@ pub mod arch {
         }
     }
 
+    struct SemihostingSink;
+    unsafe impl Sync for SemihostingSink {}
+    unsafe impl Send for SemihostingSink {}
+
+    impl ConsoleSink for SemihostingSink {
+        fn write_str(&self, s: &str) {
+            for byte in s.bytes() {
+                unsafe {
+                    // SYS_WRITEC = 0x03
+                    // x0 = 0x03
+                    // x1 = &byte
+                    let mut param = byte;
+                    core::arch::asm!(
+                        "hlt #0xF000",
+                        inout("x0") 0x03 => _,
+                        in("x1") &mut param,
+                        options(nostack)
+                    );
+                }
+            }
+        }
+    }
+
     static SERIAL: SerialSink = SerialSink(Mutex::new(unsafe { Pl011::new(0x09000000 as *mut u8) }));
+    static SEMIHOSTING: SemihostingSink = SemihostingSink;
 
     pub fn init_serial(offset: u64) {
+        // Register Semihosting first so we get output even if PL011 fails
+        register_sink(&SEMIHOSTING);
+
+        // FIXME: PL011 might not be mapped in HHDM. Accessing it might crash.
+        // For now, let's try to init it, but if it crashes, we hope Semihosting worked.
+        // Actually, if it crashes, we won't return.
+        // Let's comment out PL011 for now to debug.
+        /*
         SERIAL.set_offset(offset);
+        SERIAL.0.lock().init();
         register_sink(&SERIAL);
+        */
     }
 }
 

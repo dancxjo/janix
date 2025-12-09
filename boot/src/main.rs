@@ -16,6 +16,7 @@ mod user;
 use crate::arch::{Arch, CurrentArch};
 use user_app_heartbeat;
 use user_app_hello;
+use user_app_thread_dashboard;
 use userland_rt::KernelSys;
 
 use core::arch::asm;
@@ -42,6 +43,23 @@ static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
+    // Initialize serial console first (best effort)
+    // We use 0 offset initially; Semihosting doesn't need offset.
+    serial::arch::init_serial(0);
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        // Switch to SP_EL1 for kernel stack
+        unsafe { arch::aarch64::trap::jump_to_el1_stack(kmain_inner); }
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        kmain_inner();
+    }
+}
+
+unsafe extern "C" fn kmain_inner() -> ! {
     // All limine requests must also be referenced in a called function
     assert!(BASE_REVISION.is_supported());
 
@@ -57,13 +75,11 @@ unsafe extern "C" fn kmain() -> ! {
     // Initialize syscall handler (and IDT/traps)
     CurrentArch::install_syscall_handler();
 
-    // Initialize user stack mapping and serial console
+    // Initialize user stack mapping
     if let Some(hhdm_response) = boot_model::HHDM_REQUEST.get_response() {
         let offset = hhdm_response.offset();
-        serial::arch::init_serial(offset);
+        // serial::arch::init_serial(offset); // Already inited
         unsafe { user::init_user_stack(offset) };
-    } else {
-        serial::arch::init_serial(0);
     }
 
     // Log startup message
@@ -106,6 +122,17 @@ unsafe extern "C" fn kmain() -> ! {
             }
             kernel_core::log("... created process 200");
             kernel_core::log("... created thread 201 in process 200");
+
+            kernel_core::log("Launching user_app_thread_dashboard from kernel...");
+            let stack3 = user::alloc_user_stack();
+            {
+                let mut sched = kernel_core::sched::SCHEDULER.lock();
+                let p3 = sched.add_process("user_app_thread_dashboard");
+                // Launch with app_id = 3
+                sched.add_thread(p3, "dashboard", user::user_thread_main, 3, stack3);
+            }
+            kernel_core::log("... created process 300");
+            kernel_core::log("... created thread 301 in process 300");
 
             // TEMPORARY: Test user mode entry
             kernel_core::log("Entering first user thread...");

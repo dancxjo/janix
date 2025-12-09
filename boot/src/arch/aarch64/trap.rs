@@ -123,9 +123,9 @@ pub struct TrapFrame {
     pub x28: u64,
     pub x29: u64,
     pub x30: u64,
+    pub sp_el0: u64,
     pub elr: u64,
     pub spsr: u64,
-    pub sp: u64,
 }
 
 pub fn init() {
@@ -136,6 +136,31 @@ pub fn init() {
         core::arch::asm!(
             "msr vbar_el1, {}",
             in(reg) &exception_vector_table,
+        );
+    }
+}
+
+const STACK_SIZE: usize = 16 * 1024; // 16KB
+#[repr(align(16))]
+struct Stack([u8; STACK_SIZE]);
+
+#[unsafe(no_mangle)]
+static mut BOOT_STACK: Stack = Stack([0; STACK_SIZE]);
+
+/// Switches to a dedicated EL1 kernel stack and jumps to the given entry point.
+/// This is necessary because we cannot return to the caller after switching stacks
+/// (the return address would be on the old stack).
+pub unsafe fn jump_to_el1_stack(entry: unsafe extern "C" fn() -> !) -> ! {
+    let stack_top = unsafe { core::ptr::addr_of!(BOOT_STACK) as u64 + STACK_SIZE as u64 };
+    unsafe {
+        core::arch::asm!(
+            "msr sp_el1, {stack}",
+            "msr spsel, #1",
+            "isb",
+            "br {entry}",
+            stack = in(reg) stack_top,
+            entry = in(reg) entry,
+            options(noreturn)
         );
     }
 }

@@ -1,0 +1,9 @@
+[package]
+name = "user_app_thread_dashboard"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+userland_rt = { path = "../userland_rt" }
+userland_std = { path = "../userland_std" }
+abi = { path = "../abi" }

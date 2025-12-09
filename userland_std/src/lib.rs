@@ -129,6 +129,21 @@ pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> O
     None
 }
 
+/// List all Things of a given `T::KIND`
+///
+/// This currently uses a brute-force scan of IDs 0..256.
+pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &mut S) -> Vec<T> {
+    let mut results = Vec::new();
+    // Scan a reasonable range of IDs. In a real system, we'd have a specific syscall.
+    for i in 0..256 {
+        if let Some(thing) = load_thing::<T>(sys, ThingId(i)) {
+            // load_thing already checks T::KIND
+            results.push(thing);
+        }
+    }
+    results
+}
+
 pub fn update_props(sys: &impl Sys, id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
     // We must leak the props to satisfy the ABI's 'static requirement.
     let props_vec = props.to_vec();

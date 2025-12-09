@@ -3,6 +3,7 @@ extern crate alloc;
 use crate::arch::{self, Arch, CurrentArch, UserEntryRegs};
 use crate::user_app_heartbeat;
 use crate::user_app_hello;
+use crate::user_app_thread_dashboard;
 use kernel_core::sched::{SCHEDULER, ThreadState};
 use userland_rt::{Ring3Sys, Sys};
 
@@ -15,6 +16,7 @@ pub extern "C" fn user_thread_main(app_id: u64) -> ! {
     match app_id {
         1 => user_app_hello::run(&mut sys),
         2 => user_app_heartbeat::run(&mut sys),
+        3 => user_app_thread_dashboard::run(&mut sys),
         _ => {}
     }
     sys.exit_thread();

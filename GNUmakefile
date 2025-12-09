@@ -73,6 +73,7 @@ launch-aarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NA
 		-M virt \
 		-cpu cortex-a72 \
 		-serial stdio \
+		-semihosting \
 		-device ramfb \
 		-device qemu-xhci \
 		-device usb-kbd \

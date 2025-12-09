@@ -1,6 +1,6 @@
+use kernel_core::console::{ConsoleSink, register_sink};
 use limine::framebuffer::Framebuffer;
 use spin::Mutex;
-use kernel_core::console::{ConsoleSink, register_sink};
 
 // Will be provided by build.rs:
 include!(concat!(env!("OUT_DIR"), "/unifont.rs"));

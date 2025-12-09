@@ -1,19 +1,13 @@
-extern crate alloc;
-
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use lazy_static::lazy_static;
 use crate::gdt;
-use crate::user;
-use core::arch::global_asm;
-use abi::SyscallNumber;
-use alloc::string::ToString;
-use alloc::boxed::Box;
+use super::syscall;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
         unsafe {
-            let handler_addr = x86_64::VirtAddr::new(syscall_handler_asm as u64);
+            let handler_addr = x86_64::VirtAddr::new(syscall::syscall_handler_asm as u64);
             idt[0x80].set_handler_addr(handler_addr)
                 .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
         }
@@ -78,79 +72,4 @@ extern "x86-interrupt" fn page_fault_handler(
 
     kernel_core::log("PAGE FAULT");
     loop {}
-}
-
-
-#[repr(C)]
-pub struct SyscallRegs {
-    pub r11: u64,
-    pub r10: u64,
-    pub r9: u64,
-    pub r8: u64,
-    pub rcx: u64,
-    pub rdx: u64,
-    pub rsi: u64,
-    pub rdi: u64,
-    pub rax: u64,
-}
-
-global_asm!(
-    r#"
-.global syscall_handler_asm
-syscall_handler_asm:
-    push rax
-    push rdi
-    push rsi
-    push rdx
-    push rcx
-    push r8
-    push r9
-    push r10
-    push r11
-
-    mov rdi, rsp
-    call syscall_handler_rust
-    
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rcx
-    pop rdx
-    pop rsi
-    pop rdi
-    add rsp, 8 // pop rax
-    
-    iretq
-"#
-);
-
-unsafe extern "C" {
-    fn syscall_handler_asm();
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
-    let regs = unsafe { &mut *regs };
-    let num = regs.rax;
-    let arg1 = regs.rdi;
-    let arg2 = regs.rsi;
-    
-    if num == SyscallNumber::Yield as u64 {
-        0
-    } else if num == SyscallNumber::Log as u64 {
-        let ptr = arg1 as *const u8;
-        let len = arg2 as usize;
-        if let Ok(s) = unsafe { core::str::from_utf8(core::slice::from_raw_parts(ptr, len)) } {
-             let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
-             kernel_core::log(leaked);
-        }
-        0
-    } else if num == SyscallNumber::ExitThread as u64 {
-        kernel_core::log("Thread exited via syscall");
-        user::schedule_next();
-        0
-    } else {
-        0
-    }
 }

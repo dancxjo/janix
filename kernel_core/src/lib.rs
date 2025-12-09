@@ -147,6 +147,9 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             let current = scheduler_tick();
             KernelResponse::SchedulerTicked { current }
         }
+        KernelRequest::ExitThread => {
+            KernelResponse::Success { data: None }
+        }
     }
 }
 

@@ -9,14 +9,14 @@ mod dashboard;
 #[cfg(target_arch = "x86_64")]
 mod gdt;
 mod heap;
-#[cfg(target_arch = "x86_64")]
-mod idt;
 mod serial;
 mod user;
+mod arch;
 
 use user_app_heartbeat;
 use user_app_hello;
 use userland_rt::KernelSys;
+use crate::arch::{Arch, CurrentArch};
 
 use core::arch::asm;
 
@@ -51,12 +51,14 @@ unsafe extern "C" fn kmain() -> ! {
     // Initialize serial console
     serial::arch::init_serial();
 
-    // Initialize GDT and IDT
+    // Initialize GDT
     #[cfg(target_arch = "x86_64")]
     {
         gdt::init();
-        idt::init();
     }
+    
+    // Initialize syscall handler (and IDT/traps)
+    CurrentArch::install_syscall_handler();
 
     // Initialize user stack mapping
     if let Some(hhdm_response) = boot_model::HHDM_REQUEST.get_response() {
@@ -80,16 +82,24 @@ unsafe extern "C" fn kmain() -> ! {
             unsafe { console::init_global(&framebuffer) };
 
             // Run the demo app through the same Sys trait as the host:
-            let sys = KernelSys;
+            // let sys = KernelSys;
             kernel_core::log("Launching user_app_hello from kernel...");
-            user_app_hello::run(&sys);
+            // user_app_hello::run(&sys);
+            let stack1 = user::alloc_user_stack();
+            kernel_core::model::create_user_thread_for_app(100, 1, user::user_thread_main, stack1);
+            kernel_core::log("... created process 100");
+            kernel_core::log("... created thread 101 in process 100");
 
             kernel_core::log("Launching user_app_heartbeat from kernel...");
-            user_app_heartbeat::run(&sys);
+            // user_app_heartbeat::run(&sys);
+            let stack2 = user::alloc_user_stack();
+            kernel_core::model::create_user_thread_for_app(200, 2, user::user_thread_main, stack2);
+            kernel_core::log("... created process 200");
+            kernel_core::log("... created thread 201 in process 200");
 
             // TEMPORARY: Test user mode entry
-            kernel_core::log("Entering user mode test...");
-            user::enter_user(user::user_test_entry);
+            kernel_core::log("Entering first user thread...");
+            user::schedule_next();
 
             /*
             kernel_core::log("Starting scheduler loop...");

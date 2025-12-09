@@ -136,6 +136,8 @@ pub enum KernelRequest {
     CreateThread { pid: u64, tid: u64, priority: u64 },
     /// Advance scheduler tick
     SchedulerTick,
+    /// Exit the current thread
+    ExitThread,
 }
 
 /// Kernel response to userland
@@ -181,4 +183,25 @@ pub enum KernelResponse {
         // snapshot of the thread that just ran (or None)
         current: Option<ThreadInfo>,
     },
+}
+
+/// Syscall numbers for Ring 3 -> Ring 0 communication
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u64)]
+pub enum SyscallNumber {
+    Yield = 1,
+    Log = 2,
+    ExitThread = 3,
+    GraphQuery = 4,
+    CreateTransaction = 5,
+    CommitTransaction = 6,
+    ThingCreate = 7,
+    ThingGet = 8,
+    ThingUpdate = 9,
+    AllocFrame = 10,
+    FreeFrame = 11,
+    CreateProcess = 12,
+    CreateThread = 13,
+    SchemaRegister = 14,
+    // Add others as needed
 }

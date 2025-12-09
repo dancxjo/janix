@@ -6,7 +6,8 @@
 
 use crate::graph;
 use abi::{
-    FrameId, FrameInfo, MemorySummary, PropType, PropValue, SchedulerSummary, ThingId, ThreadInfo,
+    FrameId, FrameInfo, MemorySummary, PropType, PropValue, SchedulerSummary, ThingId, ThreadId,
+    ThreadInfo,
 };
 
 // State constants for Process and Thread Things
@@ -14,6 +15,73 @@ pub const STATE_RUNNING: u64 = 1;
 pub const STATE_READY: u64 = 2;
 pub const STATE_BLOCKED: u64 = 3;
 pub const STATE_TERMINATED: u64 = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreadState {
+    New,
+    Running,
+    Ready,
+    Blocked,
+    Terminated,
+}
+
+#[derive(Clone, Copy)]
+pub struct Thread {
+    pub id: ThreadId,
+    pub process_id: u64,
+    pub state: ThreadState,
+    pub user_entry: Option<extern "C" fn(u64) -> !>,
+    pub user_arg: u64,
+    pub user_stack_top: u64,
+}
+
+pub const MAX_THREADS: usize = 32;
+pub static mut THREAD_TABLE: [Option<Thread>; MAX_THREADS] = [None; MAX_THREADS];
+
+pub fn create_user_thread_for_app(
+    pid: u64,
+    app_id: u64,
+    entry: extern "C" fn(u64) -> !,
+    stack_top: u64,
+) -> Option<ThreadId> {
+    unsafe {
+        for (i, slot) in (*core::ptr::addr_of_mut!(THREAD_TABLE))
+            .iter_mut()
+            .enumerate()
+        {
+            if slot.is_none() {
+                let tid = ThreadId((i as u64) + 100);
+                *slot = Some(Thread {
+                    id: tid,
+                    process_id: pid,
+                    state: ThreadState::New,
+                    user_entry: Some(entry),
+                    user_arg: app_id,
+                    user_stack_top: stack_top,
+                });
+
+                // Sync with graph
+                create_thread_abi(pid, tid.0, 1);
+
+                return Some(tid);
+            }
+        }
+    }
+    None
+}
+
+pub fn pick_next_thread() -> Option<&'static mut Thread> {
+    unsafe {
+        for slot in (*core::ptr::addr_of_mut!(THREAD_TABLE)).iter_mut() {
+            if let Some(thread) = slot {
+                if thread.state == ThreadState::New || thread.state == ThreadState::Ready {
+                    return Some(thread);
+                }
+            }
+        }
+    }
+    None
+}
 
 // SAFETY: single-core, single-thread kernel model for now.
 static mut CURRENT_THREAD: Option<ThingId> = None;

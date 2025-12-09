@@ -4,6 +4,12 @@ use abi::{KernelRequest, KernelResponse, SyscallNumber};
 
 pub trait Sys {
     fn syscall(&self, request: KernelRequest) -> KernelResponse;
+
+    /// Monotonic time, in ns since boot.
+    fn time_now_ns(&mut self) -> u64;
+
+    /// Optional: sleep until a monotonic deadline.
+    fn sleep_until_ns(&mut self, deadline_ns: u64);
 }
 
 // Existing HostedSys for host_harness (may be cfg(std) or cfg(feature = "host"))
@@ -30,6 +36,28 @@ impl Sys for HostedSys {
             }
         }
     }
+
+    fn time_now_ns(&mut self) -> u64 {
+        #[cfg(not(target_os = "none"))]
+        {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+        }
+        #[cfg(target_os = "none")]
+        0
+    }
+
+    fn sleep_until_ns(&mut self, deadline_ns: u64) {
+        #[cfg(not(target_os = "none"))]
+        {
+            use std::thread;
+            use std::time::{Duration, SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
+            if deadline_ns > now {
+                thread::sleep(Duration::from_nanos(deadline_ns - now));
+            }
+        }
+    }
 }
 
 // New KernelSys: used inside the real kernel build
@@ -41,6 +69,16 @@ impl Sys for KernelSys {
     fn syscall(&self, request: KernelRequest) -> KernelResponse {
         // In-kernel, we just call into kernel_core
         kernel_core::handle_request(request)
+    }
+
+    fn time_now_ns(&mut self) -> u64 {
+        kernel_core::time::monotonic_now_ns()
+    }
+
+    fn sleep_until_ns(&mut self, deadline_ns: u64) {
+        while kernel_core::time::monotonic_now_ns() < deadline_ns {
+            core::hint::spin_loop();
+        }
     }
 }
 
@@ -181,6 +219,14 @@ impl Sys for Ring3Sys {
             },
         }
     }
+
+    fn time_now_ns(&mut self) -> u64 {
+        unsafe { syscall_stub(SyscallNumber::TimeNow, 0, 0, 0, 0, 0, 0) }
+    }
+
+    fn sleep_until_ns(&mut self, deadline_ns: u64) {
+        unsafe { syscall_stub(SyscallNumber::SleepUntil, deadline_ns, 0, 0, 0, 0, 0) };
+    }
 }
 
 impl Ring3Sys {
@@ -209,56 +255,64 @@ unsafe fn syscall_stub(
     let mut ret: u64;
 
     #[cfg(target_arch = "x86_64")]
-    core::arch::asm!(
-        "int 0x80",
-        inlateout("rax") num as u64 => ret,
-        in("rdi") arg0,
-        in("rsi") arg1,
-        in("rdx") arg2,
-        in("rcx") arg3,
-        in("r8") arg4,
-        in("r9") arg5,
-        options(nostack, preserves_flags),
-    );
+    unsafe {
+        core::arch::asm!(
+            "int 0x80",
+            inlateout("rax") num as u64 => ret,
+            in("rdi") arg0,
+            in("rsi") arg1,
+            in("rdx") arg2,
+            in("rcx") arg3,
+            in("r8") arg4,
+            in("r9") arg5,
+            options(nostack, preserves_flags),
+        );
+    }
 
     #[cfg(target_arch = "aarch64")]
-    core::arch::asm!(
-        "svc #0",
-        inlateout("x8") num as u64 => ret,
-        inlateout("x0") arg0 => ret,
-        in("x1") arg1,
-        in("x2") arg2,
-        in("x3") arg3,
-        in("x4") arg4,
-        in("x5") arg5,
-        options(nostack, preserves_flags),
-    );
+    unsafe {
+        core::arch::asm!(
+            "svc #0",
+            inlateout("x8") num as u64 => ret,
+            inlateout("x0") arg0 => ret,
+            in("x1") arg1,
+            in("x2") arg2,
+            in("x3") arg3,
+            in("x4") arg4,
+            in("x5") arg5,
+            options(nostack, preserves_flags),
+        );
+    }
 
     #[cfg(target_arch = "riscv64")]
-    core::arch::asm!(
-        "ecall",
-        inlateout("a7") num as u64 => ret,
-        inlateout("a0") arg0 => ret,
-        in("a1") arg1,
-        in("a2") arg2,
-        in("a3") arg3,
-        in("a4") arg4,
-        in("a5") arg5,
-        options(nostack, preserves_flags),
-    );
+    unsafe {
+        core::arch::asm!(
+            "ecall",
+            inlateout("a7") num as u64 => ret,
+            inlateout("a0") arg0 => ret,
+            in("a1") arg1,
+            in("a2") arg2,
+            in("a3") arg3,
+            in("a4") arg4,
+            in("a5") arg5,
+            options(nostack, preserves_flags),
+        );
+    }
 
     #[cfg(target_arch = "loongarch64")]
-    core::arch::asm!(
-        "syscall 0",
-        inlateout("$a7") num as u64 => ret,
-        inlateout("$a0") arg0 => ret,
-        in("$a1") arg1,
-        in("$a2") arg2,
-        in("$a3") arg3,
-        in("$a4") arg4,
-        in("$a5") arg5,
-        options(nostack, preserves_flags),
-    );
+    unsafe {
+        core::arch::asm!(
+            "syscall 0",
+            inlateout("$a7") num as u64 => ret,
+            inlateout("$a0") arg0 => ret,
+            in("$a1") arg1,
+            in("$a2") arg2,
+            in("$a3") arg3,
+            in("$a4") arg4,
+            in("$a5") arg5,
+            options(nostack, preserves_flags),
+        );
+    }
 
     ret
 }

@@ -203,5 +203,7 @@ pub enum SyscallNumber {
     CreateProcess = 12,
     CreateThread = 13,
     SchemaRegister = 14,
+    TimeNow = 15,
+    SleepUntil = 16,
     // Add others as needed
 }

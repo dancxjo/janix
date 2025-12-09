@@ -1,3 +1,5 @@
+pub mod time;
+
 use super::{UserEntryRegs, Arch};
 
 pub struct LoongArch64Arch;
@@ -8,6 +10,7 @@ impl Arch for LoongArch64Arch {
     }
 
     fn install_syscall_handler() {
+        time::init_arch_timer();
     }
 }
 

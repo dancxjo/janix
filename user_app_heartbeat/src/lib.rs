@@ -9,8 +9,8 @@ use alloc::vec::Vec;
 use abi::{PropKey, PropType, PropValue, ThingId};
 use userland_rt::Sys;
 use userland_std::{
-    Thing, create_process, create_thing, create_thread, println, register_schema_for,
-    demo_shared::DemoState,
+    Thing, create_process, create_thread, println, register_schema_for,
+    time::Instant,
 };
 
 pub struct HeartbeatThing {
@@ -43,10 +43,12 @@ impl Thing for HeartbeatThing {
     }
 }
 
-pub fn run<S: Sys>(sys: &S) {
+pub fn run<S: Sys>(sys: &mut S) {
     println(sys, "user_app_heartbeat: run() reached");
 
     register_schema_for::<HeartbeatThing>(sys);
+    
+    unsafe { START_TIME = Some(Instant::now(sys)); }
 
     let pid = 200;
     let tid = 201;
@@ -63,33 +65,17 @@ pub fn run<S: Sys>(sys: &S) {
     }
 }
 
-static mut COUNTER: u64 = 0;
+static mut START_TIME: Option<Instant> = None;
 
-pub fn tick<S: Sys>(sys: &S) {
-    unsafe {
-        COUNTER += 1;
-        let c = COUNTER;
+pub fn tick<S: Sys>(sys: &mut S) {
+    let start = unsafe { START_TIME };
+    if let Some(start) = start {
+        let now = Instant::now(sys);
+        let elapsed = now.duration_since(start);
         
-        if let Some(demo) = DemoState::get_or_create(sys) {
-             if let Some((hello, hb)) = demo.read(sys) {
-                 let new_hb = hb + 1;
-                 demo.update_heartbeat_ticks(sys, new_hb);
-                 
-                 if new_hb % 7 == 0 {
-                     let msg = format!("user_app_heartbeat: shared state -> hello_ticks={} heartbeat_ticks={}", hello, new_hb);
-                     let leaked: &'static str = Box::leak(msg.into_boxed_str());
-                     println(sys, leaked);
-                 }
-             }
-        }
-
-        if c % 10 == 0 {
-            let thing = HeartbeatThing { counter: c };
-            if let Some(id) = create_thing(sys, &thing) {
-                let msg = format!("user_app_heartbeat: recorded heartbeat Thing {:?}", id);
-                let leaked: &'static str = Box::leak(msg.into_boxed_str());
-                println(sys, leaked);
-            }
-        }
+        let msg = format!("heartbeat: {} ms since start", elapsed.as_nanos() / 1_000_000);
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        println(sys, leaked);
     }
 }
+

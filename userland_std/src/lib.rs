@@ -15,6 +15,7 @@ use abi::{
 use userland_rt::Sys;
 
 pub mod demo_shared;
+pub mod time;
 
 /// Print a line to the kernel log
 pub fn println(sys: &impl Sys, message: &'static str) {

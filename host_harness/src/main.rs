@@ -55,6 +55,20 @@ impl Sys for HarnessSys {
             }
         }
     }
+
+    fn time_now_ns(&mut self) -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+    }
+
+    fn sleep_until_ns(&mut self, deadline_ns: u64) {
+        use std::thread;
+        use std::time::{Duration, SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
+        if deadline_ns > now {
+            thread::sleep(Duration::from_nanos(deadline_ns - now));
+        }
+    }
 }
 
 /// ThingOS Host Harness
@@ -76,20 +90,20 @@ fn main() {
     kernel_core::model::create_cpu_core(0);
 
     init_host_frame_pool(128);
-    let sys = HarnessSys;
+    let mut sys = HarnessSys;
 
     println!("Running user_app_hello with HarnessSys...");
     user_app_hello::run(&sys);
 
     println!("Running user_app_heartbeat with HarnessSys...");
-    user_app_heartbeat::run(&sys);
+    user_app_heartbeat::run(&mut sys);
 
     println!("Starting scheduler loop...");
     for _ in 0..20 {
         if let Some(thread) = userland_std::scheduler_tick(&sys) {
             match thread.tid {
                 101 => user_app_hello::tick(&sys),
-                201 => user_app_heartbeat::tick(&sys),
+                201 => user_app_heartbeat::tick(&mut sys),
                 _ => println!("Unknown thread: {}", thread.tid),
             }
         } else {

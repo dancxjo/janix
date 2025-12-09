@@ -4,7 +4,7 @@ use crate::arch::{self, Arch, CurrentArch, UserEntryRegs};
 use crate::user_app_heartbeat;
 use crate::user_app_hello;
 use kernel_core::model::{ThreadState, pick_next_thread};
-use userland_rt::Ring3Sys;
+use userland_rt::{Ring3Sys, Sys};
 
 // Re-export stack functions from current arch
 pub use crate::arch::current::{alloc_user_stack, init_user_stack};
@@ -14,7 +14,14 @@ pub extern "C" fn user_thread_main(app_id: u64) -> ! {
     let mut sys = Ring3Sys::new();
     match app_id {
         1 => user_app_hello::run(&sys),
-        2 => user_app_heartbeat::run(&sys),
+        2 => {
+            user_app_heartbeat::run(&mut sys);
+            loop {
+                user_app_heartbeat::tick(&mut sys);
+                let now = sys.time_now_ns();
+                sys.sleep_until_ns(now + 100_000_000); // 100ms
+            }
+        }
         _ => {}
     }
     sys.exit_thread();

@@ -5,6 +5,7 @@ pub mod graph;
 pub mod log;
 pub mod memory;
 pub mod model;
+pub mod time;
 pub mod transaction;
 
 use crate::model::{
@@ -147,9 +148,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             let current = scheduler_tick();
             KernelResponse::SchedulerTicked { current }
         }
-        KernelRequest::ExitThread => {
-            KernelResponse::Success { data: None }
-        }
+        KernelRequest::ExitThread => KernelResponse::Success { data: None },
     }
 }
 

@@ -150,8 +150,16 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             KernelResponse::SchemaRegistered { .. } => 0,
             _ => 1,
         }
-    } else {
+    } else if num == SyscallNumber::TimeNow as u64 {
+        kernel_core::time::monotonic_now_ns()
+    } else if num == SyscallNumber::SleepUntil as u64 {
+        let deadline_ns = arg1;
+        while kernel_core::time::monotonic_now_ns() < deadline_ns {
+            user::schedule_next();
+        }
         0
+    } else {
+        1 // SYS_ENOSYS or error
     }
 }
 

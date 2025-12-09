@@ -1,3 +1,5 @@
+pub mod time;
+
 use super::{UserEntryRegs, Arch};
 
 pub struct AArch64Arch;
@@ -8,6 +10,7 @@ impl Arch for AArch64Arch {
     }
 
     fn install_syscall_handler() {
+        time::init_arch_timer();
     }
 }
 

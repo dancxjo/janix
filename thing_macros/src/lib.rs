@@ -1,21 +1,18 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Data, DeriveInput, Fields, parse_macro_input, Attribute, Meta};
+use syn::{Data, DeriveInput, Fields, parse_macro_input, Attribute, Meta, Lit, MetaNameValue, Expr};
 
 fn extract_description(attrs: &[Attribute]) -> String {
     for attr in attrs {
         if attr.path().is_ident("thing") {
             if let Meta::List(meta_list) = &attr.meta {
-                let tokens = &meta_list.tokens;
-                let tokens_str = tokens.to_string();
-                
-                // Parse description = "..." from the attribute
-                if let Some(desc_start) = tokens_str.find("description") {
-                    let rest = &tokens_str[desc_start..];
-                    if let Some(quote_start) = rest.find('"') {
-                        let after_quote = &rest[quote_start + 1..];
-                        if let Some(quote_end) = after_quote.find('"') {
-                            return after_quote[..quote_end].to_string();
+                // Parse the tokens properly using syn
+                if let Ok(meta_name_value) = syn::parse2::<MetaNameValue>(meta_list.tokens.clone()) {
+                    if meta_name_value.path.is_ident("description") {
+                        if let Expr::Lit(expr_lit) = &meta_name_value.value {
+                            if let Lit::Str(lit_str) = &expr_lit.lit {
+                                return lit_str.value();
+                            }
                         }
                     }
                 }

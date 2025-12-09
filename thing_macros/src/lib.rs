@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, parse_macro_input, Attribute, Meta, Lit, MetaNameValue, Expr};
 
-fn extract_description(attrs: &[Attribute]) -> String {
+fn extract_description(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
         if attr.path().is_ident("thing") {
             if let Meta::List(meta_list) = &attr.meta {
@@ -11,7 +11,7 @@ fn extract_description(attrs: &[Attribute]) -> String {
                     if meta_name_value.path.is_ident("description") {
                         if let Expr::Lit(expr_lit) = &meta_name_value.value {
                             if let Lit::Str(lit_str) = &expr_lit.lit {
-                                return lit_str.value();
+                                return Some(lit_str.value());
                             }
                         }
                     }
@@ -20,8 +20,8 @@ fn extract_description(attrs: &[Attribute]) -> String {
         }
     }
     
-    // Default description if not provided
-    "No description provided".to_string()
+    // No description found
+    None
 }
 
 #[proc_macro_derive(Thing, attributes(thing))]
@@ -29,7 +29,16 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
     let kind_str = name.to_string();
-    let description = extract_description(&input.attrs);
+    
+    // Extract description and generate compile error if missing
+    let description = match extract_description(&input.attrs) {
+        Some(desc) => desc,
+        None => {
+            return TokenStream::from(quote! {
+                compile_error!("Thing derive requires a #[thing(description = \"...\")] attribute");
+            });
+        }
+    };
 
     let fields = match input.data {
         Data::Struct(ref data) => match data.fields {

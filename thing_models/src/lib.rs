@@ -17,6 +17,8 @@ pub struct ThreadInfo {
 
 impl Thing for ThreadInfo {
     const KIND: &'static str = "ThreadInfo";
+    const DESCRIPTION: &'static str =
+        "Runtime information about a thread including state, execution time, and owning process";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("name", PropValue::Str(self.name.clone())));

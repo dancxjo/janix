@@ -1,3 +1,13 @@
+//! x86_64 syscall handling.
+//!
+//! This module provides the syscall entry point for x86_64. It defines
+//! `SyscallRegs` layout matching the stack-saved registers, an assembly
+//! wrapper `syscall_handler_asm` which saves registers and calls the Rust
+//! handler `syscall_handler_rust`, and the Rust-side dispatcher that decodes
+//! `SyscallNumber` values and forwards requests to `kernel_core` and `user`
+//! helpers. The handler also saves/restores thread contexts and implements
+//! basic syscalls such as yield, sleep, logging, process/thread management,
+//! frame allocation, and time queries.
 use abi::{KernelRequest, KernelResponse, SyscallNumber};
 use core::arch::global_asm;
 extern crate alloc;
@@ -205,8 +215,14 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         let props_vec = props.to_vec();
         let props_static = Box::leak(props_vec.into_boxed_slice());
 
+        // Provide an empty description for schema registrations originating
+        // from userland syscalls (no description argument is passed over
+        // the syscall ABI). Leak to `'static` like `kind` and `props`.
+        let description_static: &'static str = Box::leak("".to_string().into_boxed_str());
+
         let req = KernelRequest::SchemaRegister {
             kind: kind_static,
+            description: description_static,
             props: props_static,
         };
         match kernel_core::handle_request(req) {

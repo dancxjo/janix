@@ -1,4 +1,5 @@
 use abi::{KernelRequest, KernelResponse, PropValue};
+use std::string::String;
 use kernel_core::model;
 
 #[test]
@@ -29,18 +30,16 @@ fn test_scheduler_summary() {
     kernel_core::init();
     
     // Create a Process
-    let props = &[
-        ("pid", PropValue::U64(1)),
-        ("state", PropValue::U64(model::STATE_READY)),
-    ];
+    let props = &[("pid", PropValue::U64(1))];
     kernel_core::graph::create_thing("Process", props);
     
     // Create a Thread
     let props = &[
         ("tid", PropValue::U64(1)),
-        ("state", PropValue::U64(model::STATE_RUNNING)),
+        ("state", PropValue::Str(String::from("Running"))),
         ("priority", PropValue::U64(1)),
         ("runtime_ns", PropValue::U64(0)),
+        ("last_started_ns", PropValue::U64(0)),
     ];
     kernel_core::graph::create_thing("Thread", props);
     

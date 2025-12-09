@@ -1,5 +1,13 @@
 use abi::{NodeId, ProcessId, PropKey, PropType, PropValue, ThingId};
 
+/// Zero-sized marker handle for the global graph state.
+///
+/// The backing storage is kept in module-level statics; this handle exists so
+/// callers can take `&mut Graph` to make data flow explicit (e.g. the
+/// scheduler) without changing the global storage model yet.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct Graph;
+
 /// A change emitted by the graph when nodes, properties, or edges mutate.
 #[derive(Debug, Clone)]
 pub enum GraphEvent {
@@ -166,6 +174,59 @@ pub fn init() {
             *slot = None;
         }
     }
+}
+
+impl Graph {
+    #[inline]
+    pub fn new() -> Self {
+        Graph
+    }
+
+    #[inline]
+    pub fn create_thing(&mut self, kind: &'static str, props: &[(PropKey, PropValue)]) -> Option<ThingId> {
+        create_thing(kind, props)
+    }
+
+    #[inline]
+    pub fn update_thing(&mut self, id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
+        update_thing(id, props)
+    }
+
+    #[inline]
+    pub fn get_thing(&self, id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey, PropValue)>])> {
+        get_thing(id)
+    }
+
+    #[inline]
+    pub fn add_edge(&mut self, from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
+        add_edge(from, edge_kind, to)
+    }
+
+    #[inline]
+    pub fn remove_edge(&mut self, from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
+        remove_edge(from, edge_kind, to)
+    }
+
+    #[inline]
+    pub fn neighbors(&self, from: ThingId, edge_kind: &'static str, out: &mut [Option<ThingId>]) {
+        neighbors(from, edge_kind, out)
+    }
+}
+
+/// Return the kind string for a Thing.
+pub fn thing_kind(id: ThingId) -> Option<&'static str> {
+    get_thing(id).map(|(kind, _)| kind)
+}
+
+/// Fetch a property from a Thing, cloning the stored value.
+pub fn get_prop(id: ThingId, key: PropKey) -> Option<PropValue> {
+    get_thing(id).and_then(|(_, props)| {
+        props
+            .iter()
+            .flatten()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.clone())
+    })
 }
 
 /// Add a node to the graph

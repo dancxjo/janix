@@ -11,6 +11,7 @@ mod dashboard;
 mod gdt;
 mod heap;
 mod serial;
+mod graph_reifier;
 mod user;
 
 use crate::arch::{Arch, CurrentArch};
@@ -93,10 +94,25 @@ unsafe extern "C" fn kmain() -> ! {
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
-    // Minimal kmain_inner for debugging
+    kernel_core::log("Entered kmain_inner");
+    // Initialize heap allocator for kernel_core allocations
+    unsafe {
+        heap::KERNEL_ALLOCATOR.init(core::ptr::addr_of_mut!(HEAP_MEMORY) as usize, HEAP_SIZE);
+    }
+    kernel_core::init();
+    kernel_core::create_builtin_things();
+    kernel_core::init_boot_graph();
+    graph_reifier::init_graph_subscriptions();
+
+    // Minimal kmain_inner loop while we wire up full arch reification.
     loop {
         unsafe {
+            #[cfg(target_arch = "x86_64")]
+            core::arch::asm!("hlt");
+            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
             core::arch::asm!("wfi");
+            #[cfg(target_arch = "loongarch64")]
+            core::arch::asm!("idle 0");
         }
     }
 }
@@ -124,6 +140,7 @@ unsafe extern "C" fn kmain_inner_original() -> ! {
     // Initialize kernel core
     kernel_core::init();
     kernel_core::log("Kernel core initialized.");
+    graph_reifier::init_graph_subscriptions();
 
     // Initialize GDT
     #[cfg(target_arch = "x86_64")]

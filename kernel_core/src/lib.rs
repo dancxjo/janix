@@ -4,24 +4,28 @@ extern crate alloc;
 
 pub mod console;
 pub mod graph;
+pub mod graph_kinds;
 pub mod log;
 pub mod memory;
 pub mod model;
 pub mod sched;
 pub mod sched_graph;
+pub mod sched_types;
 pub mod time;
 pub mod transaction;
 
 use crate::model::{
-    compute_scheduler_summary, create_process_abi, create_thread_abi, scheduler_tick,
+    compute_memory_summary, compute_scheduler_summary, create_process_abi, create_thread_abi,
+    scheduler_tick,
 };
-use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary};
+use crate::sched_types::ThreadState;
+use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse};
+use alloc::string::String;
 
 /// Initialize the kernel core subsystems
 pub fn init() {
     log::init();
     graph::init();
-    sched::SCHEDULER.lock().init_graph_mirror();
     transaction::init();
     model::init_schemas();
 }
@@ -104,12 +108,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             },
         },
         KernelRequest::GetMemorySummary => {
-            let (total, used, free) = memory::frame_stats();
-            let summary = MemorySummary {
-                total_frames: total,
-                used_frames: used,
-                free_frames: free,
-            };
+            let summary = compute_memory_summary();
             KernelResponse::MemorySummary { summary }
         }
         KernelRequest::GetSchedulerSummary => {
@@ -248,21 +247,28 @@ pub fn init_boot_graph() {
     const FLAG_RX: u64 = 0x5; // Read + Execute
 
     // Create CPU core
-    let cpu_core = model::create_cpu_core(0);
-    if cpu_core.is_some() {
-        log("Created CpuCore(0)");
-    } else {
-        log("Failed to create CpuCore");
-        return;
-    }
+    let cpu_core = match model::create_cpu_core(0) {
+        Some(id) => {
+            log("Created CpuCore(0)");
+            id
+        }
+        None => {
+            log("Failed to create CpuCore");
+            return;
+        }
+    };
 
     // Create process
-    let process = model::create_process(1);
-    if process.is_none() {
-        log("Failed to create Process");
-        return;
-    }
-    log("Created Process(1)");
+    let process = match model::create_process(1) {
+        Some(id) => {
+            log("Created Process(1)");
+            id
+        }
+        None => {
+            log("Failed to create Process");
+            return;
+        }
+    };
 
     // Create thread with Running state
     let thread = model::create_thread(1, 100);
@@ -270,8 +276,16 @@ pub fn init_boot_graph() {
         log("Created Thread(1)");
 
         // Update thread state to Running
-        let thread_running = [("state", abi::PropValue::U64(model::STATE_RUNNING))];
+        let thread_running = [
+            (
+                "state",
+                abi::PropValue::Str(String::from(ThreadState::Running.as_str())),
+            ),
+            ("last_started_ns", abi::PropValue::U64(0)),
+        ];
         graph::update_thing(thread_id, &thread_running);
+        let _ = graph::add_edge(process, graph_kinds::EDGE_OWNS_THREAD, thread_id);
+        let _ = graph::add_edge(thread_id, graph_kinds::EDGE_RUNS_ON, cpu_core);
         log("Thread(1) set to Running state");
     } else {
         log("Failed to create Thread");

@@ -1,133 +1,210 @@
-use crate::graph;
-use crate::sched::ThreadState;
-use abi::{PropValue, Thing, ThingId};
+use crate::graph::{self, Graph};
+use crate::graph_kinds;
+use crate::sched_types::{CpuId, ThreadState, TimeNs};
+use abi::{PropValue, ThingId};
 use alloc::string::String;
-use alloc::vec::Vec;
-use thing_macros::Thing;
-use thing_models::ThreadInfo;
 
-#[derive(Thing, Clone, Debug)]
-#[thing(description = "A scheduled sleep event for a thread to wake at a specific time")]
-pub struct SleepEvent {
-    pub wake_at_ns: i64,
-    pub created_at_ns: i64,
-    pub label: String,
-    pub thread_thing_id: u64,
-    pub scheduler_thing_id: u64,
+const TIME_SLICE_NS: TimeNs = 5_000_000;
+const EDGE_BUF: usize = 4;
+
+/// Graph-driven scheduler tick.
+/// Updates runtime accounting for the current thread on `cpu` and selects the
+/// next runnable thread based purely on graph state.
+pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId> {
+    let cpu_node = find_cpu_node(cpu)?;
+    let current = find_current_thread(graph, cpu_node);
+    let mut preempted = None;
+
+    if let Some(tid) = current {
+        let elapsed = update_runtime(graph, tid, now);
+        // If the slice is not exhausted, keep running the same thread.
+        if elapsed < TIME_SLICE_NS {
+            set_last_started(graph, tid, now);
+            return Some(tid);
+        }
+
+        make_runnable(graph, tid, now);
+        graph.remove_edge(tid, graph_kinds::EDGE_RUNS_ON, cpu_node);
+        preempted = Some(tid);
+    }
+
+    let next = match pick_next_runnable(graph, preempted) {
+        Some(n) => n,
+        None => return None,
+    };
+    start_running(graph, next, cpu_node, now);
+    Some(next)
 }
 
-pub struct SchedulerGraphMirror {
-    scheduler_thing_id: ThingId,
+/// Create a SleepEvent node and link it from the thread.
+pub fn create_sleep_event(
+    graph: &mut Graph,
+    thread: ThingId,
+    wake_at_ns: TimeNs,
+    created_at_ns: TimeNs,
+) -> Option<ThingId> {
+    let props = &[
+        ("wake_at_ns", PropValue::U64(wake_at_ns)),
+        ("created_at_ns", PropValue::U64(created_at_ns)),
+    ];
+    let sleep = graph.create_thing(graph_kinds::KIND_SLEEP_EVENT, props)?;
+    graph.add_edge(thread, graph_kinds::EDGE_SLEEPS_UNTIL, sleep);
+    Some(sleep)
 }
 
-impl SchedulerGraphMirror {
-    pub fn new() -> Self {
-        let mut scheduler_id = None;
-        graph::iter_things(|thing| {
-            if thing.kind == "Scheduler" {
-                scheduler_id = Some(thing.id);
+/// Remove the SleepEvent node for a thread, if present.
+pub fn clear_sleep_event(graph: &mut Graph, thread: ThingId) {
+    let mut buf = [None; EDGE_BUF];
+    graph.neighbors(thread, graph_kinds::EDGE_SLEEPS_UNTIL, &mut buf);
+    for ev in buf.into_iter().flatten() {
+        graph.remove_edge(thread, graph_kinds::EDGE_SLEEPS_UNTIL, ev);
+        let _ = graph::delete_thing(ev);
+    }
+}
+
+fn find_cpu_node(cpu_index: CpuId) -> Option<ThingId> {
+    let mut found = None;
+    graph::iter_things(|thing| {
+        if found.is_some() {
+            return;
+        }
+        if thing.kind != graph_kinds::KIND_CPU_CORE {
+            return;
+        }
+        if let Some(PropValue::U64(idx)) = graph::get_prop(thing.id, "index") {
+            if idx == cpu_index {
+                found = Some(thing.id);
             }
-        });
-
-        let id = if let Some(id) = scheduler_id {
-            id
-        } else {
-            graph::create_thing("Scheduler", &[]).expect("Failed to create Scheduler thing")
-        };
-
-        Self {
-            scheduler_thing_id: id,
         }
-    }
+    });
+    found
+}
 
-    pub fn register_thread(&mut self, process_thing_id: ThingId, name: &'static str) -> ThingId {
-        let info = ThreadInfo {
-            name: String::from(name),
-            state: String::from("NEW"),
-            last_run_ns: 0,
-            total_run_ns: 0,
-            process_thing_id: process_thing_id.0,
-            scheduler_thing_id: self.scheduler_thing_id.0,
-        };
-
-        let _ = graph::register_schema(
-            ThreadInfo::KIND,
-            ThreadInfo::DESCRIPTION,
-            ThreadInfo::schema(),
-        );
-
-        let mut props = Vec::new();
-        info.to_props(&mut props);
-
-        graph::create_thing(ThreadInfo::KIND, &props).expect("Failed to create ThreadInfo")
-    }
-
-    pub fn update_thread_state(
-        &mut self,
-        thread_thing_id: ThingId,
-        state: ThreadState,
-        now_ns: u64,
-    ) {
-        let state_str = match state {
-            ThreadState::New => "NEW",
-            ThreadState::Runnable => "RUNNABLE",
-            ThreadState::Running => "RUNNING",
-            ThreadState::Waiting => "WAITING",
-            ThreadState::Sleeping => "SLEEPING",
-            ThreadState::Terminated => "TERMINATED",
-        };
-
-        let props = [
-            ("state", PropValue::Str(String::from(state_str))),
-            ("last_run_ns", PropValue::I64(now_ns as i64)),
-        ];
-
-        graph::update_thing(thread_thing_id, &props);
-    }
-
-    pub fn record_run_slice(
-        &mut self,
-        thread_thing_id: ThingId,
-        run_start_ns: u64,
-        run_end_ns: u64,
-    ) {
-        if let Some((_, props)) = graph::get_thing(thread_thing_id) {
-            let mut info = ThreadInfo::from_props(thread_thing_id, props);
-            let delta = run_end_ns.saturating_sub(run_start_ns);
-            info.total_run_ns += delta as i64;
-
-            let props = [("total_run_ns", PropValue::I64(info.total_run_ns))];
-            graph::update_thing(thread_thing_id, &props);
+fn find_current_thread(graph: &Graph, cpu_node: ThingId) -> Option<ThingId> {
+    let mut current = None;
+    graph::iter_things(|thing| {
+        if current.is_some() || thing.kind != graph_kinds::KIND_THREAD {
+            return;
         }
-    }
+        let mut out = [None; EDGE_BUF];
+        graph.neighbors(thing.id, graph_kinds::EDGE_RUNS_ON, &mut out);
+        if out.into_iter().flatten().any(|cpu| cpu == cpu_node) {
+            current = Some(thing.id);
+        }
+    });
+    current
+}
 
-    pub fn create_sleep_event(
-        &mut self,
-        thread_thing_id: ThingId,
-        wake_at_ns: u64,
-        now_ns: u64,
-    ) -> ThingId {
-        let event = SleepEvent {
-            wake_at_ns: wake_at_ns as i64,
-            created_at_ns: now_ns as i64,
-            label: String::from("sleep_for"),
-            thread_thing_id: thread_thing_id.0,
-            scheduler_thing_id: self.scheduler_thing_id.0,
-        };
+fn thread_state(id: ThingId) -> Option<ThreadState> {
+    graph::get_prop(id, "state").and_then(|v| match v {
+        PropValue::Str(s) => ThreadState::from_str(s.as_str()),
+        _ => None,
+    })
+}
 
-        let _ = graph::register_schema(
-            SleepEvent::KIND,
-            SleepEvent::DESCRIPTION,
-            SleepEvent::schema(),
-        );
+fn read_u64_prop(id: ThingId, key: &'static str) -> Option<u64> {
+    graph::get_prop(id, key).and_then(|v| match v {
+        PropValue::U64(v) => Some(v),
+        _ => None,
+    })
+}
 
-        let mut props = Vec::new();
-        event.to_props(&mut props);
+fn update_runtime(graph: &mut Graph, thread: ThingId, now: TimeNs) -> TimeNs {
+    let runtime = read_u64_prop(thread, "runtime_ns").unwrap_or(0);
+    let last_started = read_u64_prop(thread, "last_started_ns").unwrap_or(now);
+    let delta = now.saturating_sub(last_started);
+    let new_runtime = runtime.saturating_add(delta);
+    graph.update_thing(
+        thread,
+        &[
+            ("runtime_ns", PropValue::U64(new_runtime)),
+            ("last_started_ns", PropValue::U64(now)),
+        ],
+    );
+    delta
+}
 
-        graph::create_thing(SleepEvent::KIND, &props).expect("Failed to create SleepEvent")
-    }
+fn set_last_started(graph: &mut Graph, thread: ThingId, now: TimeNs) {
+    graph.update_thing(
+        thread,
+        &[("last_started_ns", PropValue::U64(now))],
+    );
+}
 
-    pub fn clear_sleep_event(&mut self, sleep_event_id: ThingId) {
-        graph::delete_thing(sleep_event_id);
-    }
+fn make_runnable(graph: &mut Graph, thread: ThingId, now: TimeNs) {
+    graph.update_thing(
+        thread,
+        &[
+            (
+                "state",
+                PropValue::Str(String::from(ThreadState::Runnable.as_str())),
+            ),
+            ("last_started_ns", PropValue::U64(now)),
+        ],
+    );
+}
+
+fn start_running(graph: &mut Graph, thread: ThingId, cpu_node: ThingId, now: TimeNs) {
+    clear_cpu_assignments(graph, cpu_node);
+    graph.update_thing(
+        thread,
+        &[
+            (
+                "state",
+                PropValue::Str(String::from(ThreadState::Running.as_str())),
+            ),
+            ("last_started_ns", PropValue::U64(now)),
+        ],
+    );
+    graph.add_edge(thread, graph_kinds::EDGE_RUNS_ON, cpu_node);
+}
+
+fn clear_cpu_assignments(graph: &mut Graph, cpu_node: ThingId) {
+    graph::iter_things(|thing| {
+        if thing.kind != graph_kinds::KIND_THREAD {
+            return;
+        }
+        let mut out = [None; EDGE_BUF];
+        graph.neighbors(thing.id, graph_kinds::EDGE_RUNS_ON, &mut out);
+        for cpu in out.into_iter().flatten() {
+            if cpu == cpu_node {
+                graph.remove_edge(thing.id, graph_kinds::EDGE_RUNS_ON, cpu_node);
+            }
+        }
+    });
+}
+
+fn pick_next_runnable(_graph: &Graph, skip: Option<ThingId>) -> Option<ThingId> {
+    let mut best: Option<(ThingId, u64, u64)> = None; // (id, priority, runtime)
+
+    graph::iter_things(|thing| {
+        if thing.kind != graph_kinds::KIND_THREAD {
+            return;
+        }
+
+        if let Some(skip_id) = skip {
+            if thing.id == skip_id {
+                return;
+            }
+        }
+
+        match thread_state(thing.id) {
+            Some(ThreadState::Runnable) | Some(ThreadState::New) => {}
+            _ => return,
+        }
+
+        let priority = read_u64_prop(thing.id, "priority").unwrap_or(0);
+        let runtime = read_u64_prop(thing.id, "runtime_ns").unwrap_or(0);
+
+        match best {
+            None => best = Some((thing.id, priority, runtime)),
+            Some((_, best_prio, best_runtime)) => {
+                if priority > best_prio || (priority == best_prio && runtime < best_runtime) {
+                    best = Some((thing.id, priority, runtime));
+                }
+            }
+        }
+    });
+
+    best.map(|(id, _, _)| id)
 }

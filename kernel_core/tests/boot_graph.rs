@@ -1,4 +1,5 @@
 use abi::PropValue;
+use kernel_core::sched_types::ThreadState;
 
 #[test]
 fn test_boot_graph_initialization() {
@@ -35,23 +36,17 @@ fn test_boot_graph_has_process() {
         if let Some((kind, props)) = kernel_core::graph::get_thing(thing_id) {
             if kind == "Process" {
                 found_process = true;
-                
                 // Check that it has a pid property
                 let mut has_pid = false;
-                let mut has_state = false;
                 for prop in props.iter() {
                     if let Some((key, _value)) = prop {
                         if *key == "pid" {
                             has_pid = true;
                         }
-                        if *key == "state" {
-                            has_state = true;
-                        }
                     }
                 }
                 
                 assert!(has_pid, "Process should have pid property");
-                assert!(has_state, "Process should have state property");
                 break;
             }
         }
@@ -67,7 +62,7 @@ fn test_boot_graph_has_thread() {
     
     // Look for Thread Thing
     let mut found_thread = false;
-    let mut thread_state = 0u64;
+    let mut thread_state = None;
     
     for i in 0..20 {
         let thing_id = abi::ThingId(i);
@@ -80,6 +75,7 @@ fn test_boot_graph_has_thread() {
                 let mut has_state = false;
                 let mut has_priority = false;
                 let mut has_runtime = false;
+                let mut has_last_started = false;
                 
                 for prop in props.iter() {
                     if let Some((key, value)) = prop {
@@ -87,12 +83,13 @@ fn test_boot_graph_has_thread() {
                             "tid" => has_tid = true,
                             "state" => {
                                 has_state = true;
-                                if let PropValue::U64(state) = value {
-                                    thread_state = *state;
+                                if let PropValue::Str(state) = value {
+                                    thread_state = Some(state.clone());
                                 }
                             }
                             "priority" => has_priority = true,
                             "runtime_ns" => has_runtime = true,
+                            "last_started_ns" => has_last_started = true,
                             _ => {}
                         }
                     }
@@ -102,13 +99,18 @@ fn test_boot_graph_has_thread() {
                 assert!(has_state, "Thread should have state property");
                 assert!(has_priority, "Thread should have priority property");
                 assert!(has_runtime, "Thread should have runtime_ns property");
+                assert!(has_last_started, "Thread should track last_started_ns");
                 break;
             }
         }
     }
     
     assert!(found_thread, "Boot graph should contain at least one Thread");
-    assert_eq!(thread_state, kernel_core::model::STATE_RUNNING, "Thread should be in Running state");
+    assert_eq!(
+        thread_state.as_deref(),
+        Some(ThreadState::Running.as_str()),
+        "Thread should be in Running state"
+    );
 }
 
 #[test]

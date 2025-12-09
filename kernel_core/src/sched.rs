@@ -25,7 +25,7 @@ pub struct Thread {
     pub user_entry: Option<extern "C" fn(u64) -> !>,
     pub user_arg: u64,
     pub user_stack_top: u64,
-    pub context: [u64; 20],
+    pub context: [u64; 34],
     pub started: bool,
 }
 
@@ -83,7 +83,7 @@ impl Scheduler {
                     user_entry: Some(entry),
                     user_arg: arg,
                     user_stack_top: stack_top,
-                    context: [0; 20],
+                    context: [0; 34],
                     started: false,
                 });
                 // Add to run queue

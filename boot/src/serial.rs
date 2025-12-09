@@ -62,7 +62,7 @@ pub mod arch {
 
     static SERIAL: SerialSink = SerialSink(Mutex::new(unsafe { SerialPort::new(0x3F8) }));
 
-    pub fn init_serial() {
+    pub fn init_serial(_offset: u64) {
         SERIAL.0.lock().init();
         register_sink(&SERIAL);
     }
@@ -80,6 +80,10 @@ pub mod arch {
         const unsafe fn new(base: *mut u8) -> Self {
             Self { base: base as *mut u32 }
         }
+
+        fn set_offset(&mut self, offset: u64) {
+            self.base = ((self.base as u64) + offset) as *mut u32;
+        }
         
         fn send(&mut self, byte: u8) {
              unsafe {
@@ -94,6 +98,12 @@ pub mod arch {
     unsafe impl Sync for SerialSink {}
     unsafe impl Send for SerialSink {}
 
+    impl SerialSink {
+        fn set_offset(&self, offset: u64) {
+            self.0.lock().set_offset(offset);
+        }
+    }
+
     impl ConsoleSink for SerialSink {
         fn write_str(&self, s: &str) {
             let mut port = self.0.lock();
@@ -105,7 +115,8 @@ pub mod arch {
 
     static SERIAL: SerialSink = SerialSink(Mutex::new(unsafe { Pl011::new(0x09000000 as *mut u8) }));
 
-    pub fn init_serial() {
+    pub fn init_serial(offset: u64) {
+        SERIAL.set_offset(offset);
         register_sink(&SERIAL);
     }
 }
@@ -124,6 +135,10 @@ pub mod arch {
     impl Uart16550 {
         const unsafe fn new(base: *mut u8) -> Self {
             Self { base }
+        }
+
+        fn set_offset(&mut self, offset: u64) {
+            self.base = ((self.base as u64) + offset) as *mut u8;
         }
 
         fn init(&mut self) {
@@ -155,6 +170,12 @@ pub mod arch {
     unsafe impl Sync for SerialSink {}
     unsafe impl Send for SerialSink {}
 
+    impl SerialSink {
+        fn set_offset(&self, offset: u64) {
+            self.0.lock().set_offset(offset);
+        }
+    }
+
     impl ConsoleSink for SerialSink {
         fn write_str(&self, s: &str) {
             let mut port = self.0.lock();
@@ -166,7 +187,8 @@ pub mod arch {
 
     static SERIAL: SerialSink = SerialSink(Mutex::new(unsafe { Uart16550::new(UART0) }));
 
-    pub fn init_serial() {
+    pub fn init_serial(offset: u64) {
+        SERIAL.set_offset(offset);
         SERIAL.0.lock().init();
         register_sink(&SERIAL);
     }
@@ -174,5 +196,5 @@ pub mod arch {
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")))]
 pub mod arch {
-    pub fn init_serial() {}
+    pub fn init_serial(_offset: u64) {}
 }

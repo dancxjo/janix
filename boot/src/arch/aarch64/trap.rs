@@ -1,6 +1,85 @@
 use core::arch::global_asm;
+use abi::{SyscallNumber, KernelRequest, KernelResponse};
+use crate::user;
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::string::ToString;
 
 global_asm!(include_str!("trap.S"));
+
+#[unsafe(no_mangle)]
+pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
+    let esr: u64;
+    unsafe { core::arch::asm!("mrs {}, esr_el1", out(reg) esr) };
+    let ec = (esr >> 26) & 0x3F;
+    
+    if ec != 0x15 {
+        kernel_core::println!("EXCEPTION: AArch64 Trap (Not SVC)");
+        kernel_core::println!("ESR: {:#x}", esr);
+        kernel_core::println!("{:#?}", tf);
+        loop {}
+    }
+
+    let num = tf.x8;
+    let arg1 = tf.x0;
+    let arg2 = tf.x1;
+    let arg3 = tf.x2;
+    let arg4 = tf.x3;
+    let arg5 = tf.x4;
+    let arg6 = tf.x5;
+
+    if num == SyscallNumber::Yield as u64 {
+        {
+            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            if let Some(tid) = sched.current_id() {
+                if let Some(thread) = sched.thread_mut(tid) {
+                    let regs_ptr = tf as *const TrapFrame as *const u64;
+                    let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 34) };
+                    thread.context.copy_from_slice(regs_slice);
+                    thread.started = true;
+                }
+            }
+        }
+        kernel_core::sched::yield_current_thread();
+        user::schedule_next();
+        0
+    } else if num == SyscallNumber::Log as u64 {
+        let ptr = arg1 as *const u8;
+        let len = arg2 as usize;
+        if let Ok(s) = unsafe { core::str::from_utf8(core::slice::from_raw_parts(ptr, len)) } {
+             let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
+             kernel_core::log(leaked);
+        }
+        0
+    } else if num == SyscallNumber::ExitThread as u64 {
+        kernel_core::log("Thread exited via syscall");
+        kernel_core::sched::exit_current_thread();
+        user::schedule_next();
+        0
+    } else if num == SyscallNumber::AllocFrame as u64 {
+        let pool_index = arg1;
+        let frame_info_ptr = arg2 as *mut abi::FrameInfo;
+        
+        let req = KernelRequest::AllocFrame { pool_index: pool_index };
+        match kernel_core::handle_request(req) {
+            KernelResponse::FrameAllocated { frame } => {
+                unsafe { *frame_info_ptr = frame };
+                0
+            }
+            _ => 1,
+        }
+    } else if num == SyscallNumber::FreeFrame as u64 {
+        let frame_id = abi::FrameId(arg1);
+        let req = KernelRequest::FreeFrame { frame_id };
+        match kernel_core::handle_request(req) {
+            KernelResponse::FrameFreed { .. } => 0,
+            _ => 1,
+        }
+    } else {
+        kernel_core::log("Unknown syscall");
+        1
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) {

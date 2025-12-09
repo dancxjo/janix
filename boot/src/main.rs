@@ -3,6 +3,7 @@
 #![feature(alloc_error_handler)]
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 
+mod arch;
 mod boot_model;
 mod console;
 mod dashboard;
@@ -11,12 +12,11 @@ mod gdt;
 mod heap;
 mod serial;
 mod user;
-mod arch;
 
+use crate::arch::{Arch, CurrentArch};
 use user_app_heartbeat;
 use user_app_hello;
 use userland_rt::KernelSys;
-use crate::arch::{Arch, CurrentArch};
 
 use core::arch::asm;
 
@@ -48,22 +48,22 @@ unsafe extern "C" fn kmain() -> ! {
     // Initialize kernel core
     kernel_core::init();
 
-    // Initialize serial console
-    serial::arch::init_serial();
-
     // Initialize GDT
     #[cfg(target_arch = "x86_64")]
     {
         gdt::init();
     }
-    
+
     // Initialize syscall handler (and IDT/traps)
     CurrentArch::install_syscall_handler();
 
-    // Initialize user stack mapping
+    // Initialize user stack mapping and serial console
     if let Some(hhdm_response) = boot_model::HHDM_REQUEST.get_response() {
         let offset = hhdm_response.offset();
+        serial::arch::init_serial(offset);
         unsafe { user::init_user_stack(offset) };
+    } else {
+        serial::arch::init_serial(0);
     }
 
     // Log startup message

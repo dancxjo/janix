@@ -49,6 +49,16 @@
     add sp, sp, #34 * 8
 .endm
 
+.macro SYSCALL_HANDLER
+    .align 7
+    SAVE_REGS
+    mov x0, sp
+    bl syscall_handler_rust
+    str x0, [sp, #0]
+    RESTORE_REGS
+    eret
+.endm
+
 .macro HANDLER source, kind
     .align 7
     SAVE_REGS
@@ -75,7 +85,7 @@ exception_vector_table:
     HANDLER 1, 3
 
     // Lower EL using AArch64
-    HANDLER 2, 0
+    SYSCALL_HANDLER // Synchronous (Syscall)
     HANDLER 2, 1
     HANDLER 2, 2
     HANDLER 2, 3

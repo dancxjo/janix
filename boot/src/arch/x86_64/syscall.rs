@@ -94,7 +94,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                 if let Some(thread) = sched.thread_mut(tid) {
                     let regs_ptr = regs as *const SyscallRegs as *const u64;
                     let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 20) };
-                    thread.context.copy_from_slice(regs_slice);
+                    thread.context[..20].copy_from_slice(regs_slice);
                     thread.started = true;
                 }
             }

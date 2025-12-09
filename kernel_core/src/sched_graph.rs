@@ -6,6 +6,7 @@ use crate::graph;
 use crate::sched::ThreadState;
 
 #[derive(Thing, Clone, Debug)]
+#[thing(description = "A thread in the scheduler with execution state and timing information")]
 pub struct Thread {
     pub name: String,
     pub state: String,
@@ -16,6 +17,7 @@ pub struct Thread {
 }
 
 #[derive(Thing, Clone, Debug)]
+#[thing(description = "A scheduled sleep event for a thread to wake at a specific time")]
 pub struct SleepEvent {
     pub wake_at_ns: i64,
     pub created_at_ns: i64,
@@ -62,7 +64,7 @@ impl SchedulerGraphMirror {
             scheduler_thing_id: self.scheduler_thing_id.0,
         };
         
-        let _ = graph::register_schema(Thread::KIND, Thread::schema());
+        let _ = graph::register_schema(Thread::KIND, Thread::DESCRIPTION, Thread::schema());
 
         let mut props = Vec::new();
         info.to_props(&mut props);
@@ -125,7 +127,7 @@ impl SchedulerGraphMirror {
             scheduler_thing_id: self.scheduler_thing_id.0,
         };
 
-        let _ = graph::register_schema(SleepEvent::KIND, SleepEvent::schema());
+        let _ = graph::register_schema(SleepEvent::KIND, SleepEvent::DESCRIPTION, SleepEvent::schema());
 
         let mut props = Vec::new();
         event.to_props(&mut props);

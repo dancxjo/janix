@@ -10,6 +10,7 @@ pub struct ExampleThing {
 
 impl Thing for ExampleThing {
     const KIND: &'static str = "ExampleThing";
+    const DESCRIPTION: &'static str = "An example Thing demonstrating counter and active state tracking";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("counter", PropValue::U64(self.counter)));

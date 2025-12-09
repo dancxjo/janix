@@ -1,12 +1,38 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Data, DeriveInput, Fields, parse_macro_input};
+use syn::{Data, DeriveInput, Fields, parse_macro_input, Attribute, Meta};
 
-#[proc_macro_derive(Thing)]
+fn extract_description(attrs: &[Attribute]) -> String {
+    for attr in attrs {
+        if attr.path().is_ident("thing") {
+            if let Meta::List(meta_list) = &attr.meta {
+                let tokens = &meta_list.tokens;
+                let tokens_str = tokens.to_string();
+                
+                // Parse description = "..." from the attribute
+                if let Some(desc_start) = tokens_str.find("description") {
+                    let rest = &tokens_str[desc_start..];
+                    if let Some(quote_start) = rest.find('"') {
+                        let after_quote = &rest[quote_start + 1..];
+                        if let Some(quote_end) = after_quote.find('"') {
+                            return after_quote[..quote_end].to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Default description if not provided
+    "No description provided".to_string()
+}
+
+#[proc_macro_derive(Thing, attributes(thing))]
 pub fn derive_thing(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
     let kind_str = name.to_string();
+    let description = extract_description(&input.attrs);
 
     let fields = match input.data {
         Data::Struct(ref data) => match data.fields {
@@ -123,6 +149,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl ::abi::Thing for #name {
             const KIND: &'static str = #kind_str;
+            const DESCRIPTION: &'static str = #description;
 
             fn to_props(&self, out: &mut ::alloc::vec::Vec<(::abi::PropKey, ::abi::PropValue)>) {
                 #(#to_props_arms)*

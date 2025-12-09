@@ -9,6 +9,7 @@ pub struct AutoCounter {
 
 impl Thing for AutoCounter {
     const KIND: &'static str = "AutoCounter";
+    const DESCRIPTION: &'static str = "An automatically incrementing counter with active/inactive state";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("count", PropValue::U64(self.count)));

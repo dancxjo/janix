@@ -110,6 +110,7 @@ pub fn register_schema_for<T: Thing>(sys: &impl Sys) -> bool {
     let schema = T::schema();
     match sys.syscall(KernelRequest::SchemaRegister {
         kind: T::KIND,
+        description: T::DESCRIPTION,
         props: schema,
     }) {
         KernelResponse::SchemaRegistered { .. } => true,

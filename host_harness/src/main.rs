@@ -1,9 +1,22 @@
 use kernel_core::model::dashboard_snapshot;
+use kernel_core::console::{ConsoleSink, register_sink};
 
 mod frame_pool;
 use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary};
 use frame_pool::{allocate_frame, frame_stats, free_frame, init_host_frame_pool};
 use userland_rt::Sys;
+
+struct HostConsole;
+unsafe impl Sync for HostConsole {}
+unsafe impl Send for HostConsole {}
+
+impl ConsoleSink for HostConsole {
+    fn write_str(&self, s: &str) {
+        print!("{}", s);
+    }
+}
+
+static HOST_CONSOLE: HostConsole = HostConsole;
 
 struct HarnessSys;
 
@@ -38,9 +51,6 @@ impl Sys for HarnessSys {
                 KernelResponse::MemorySummary { summary }
             }
             _ => {
-                if let KernelRequest::Log { message } = &request {
-                    println!("{}", message);
-                }
                 kernel_core::handle_request(request)
             }
         }
@@ -58,6 +68,7 @@ fn main() {
 
     // Initialize kernel core (simulated)
     kernel_core::init();
+    register_sink(&HOST_CONSOLE);
     kernel_core::create_builtin_things();
 
     // Seed a fake memory graph

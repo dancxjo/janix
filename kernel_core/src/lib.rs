@@ -1,16 +1,16 @@
 #![no_std]
 
+pub mod console;
 pub mod graph;
 pub mod log;
+pub mod memory;
 pub mod model;
 pub mod transaction;
-pub mod memory;
 
-use abi::{KernelRequest, KernelResponse, FrameId, FrameInfo, MemorySummary};
 use crate::model::{
-    compute_scheduler_summary, create_process_abi,
-    create_thread_abi, scheduler_tick,
+    compute_scheduler_summary, create_process_abi, create_thread_abi, scheduler_tick,
 };
+use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary};
 
 /// Initialize the kernel core subsystems
 pub fn init() {
@@ -118,7 +118,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     size: frame.size,
                 };
                 KernelResponse::FrameAllocated { frame: frame_info }
-            },
+            }
             None => KernelResponse::Error {
                 message: "Out of frames",
             },

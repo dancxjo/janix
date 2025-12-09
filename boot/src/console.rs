@@ -1,9 +1,25 @@
 use limine::framebuffer::Framebuffer;
+use spin::Mutex;
+use kernel_core::console::{ConsoleSink, register_sink};
 
 // Will be provided by build.rs:
 include!(concat!(env!("OUT_DIR"), "/unifont.rs"));
 
-static mut CONSOLE: Option<Console> = None;
+static CONSOLE: Mutex<Option<Console>> = Mutex::new(None);
+
+struct FramebufferSink;
+unsafe impl Sync for FramebufferSink {}
+unsafe impl Send for FramebufferSink {}
+
+impl ConsoleSink for FramebufferSink {
+    fn write_str(&self, s: &str) {
+        if let Some(console) = CONSOLE.lock().as_mut() {
+            console.write_str(s);
+        }
+    }
+}
+
+static SINK: FramebufferSink = FramebufferSink;
 
 pub struct Console {
     fb_ptr: *mut u8,
@@ -16,6 +32,9 @@ pub struct Console {
     cols: u32,
     rows: u32,
 }
+
+unsafe impl Send for Console {}
+unsafe impl Sync for Console {}
 
 impl Console {
     pub unsafe fn from_framebuffer(fb: &Framebuffer) -> Self {
@@ -151,25 +170,28 @@ impl fmt::Write for Console {
 pub unsafe fn init_global(fb: &Framebuffer) {
     // SAFETY: We are in single-threaded boot context.
     let console = unsafe { Console::from_framebuffer(fb) };
-    unsafe { CONSOLE = Some(console) };
+    *CONSOLE.lock() = Some(console);
+    register_sink(&SINK);
 }
 
 pub fn print(s: &str) {
-    unsafe {
-        // SAFETY: We are in single-threaded boot context.
-        let console_ptr = &raw mut CONSOLE;
-        if let Some(console) = &mut *console_ptr {
-            console.write_str(s);
-        }
-    }
+    kernel_core::console::print(s);
 }
 
 pub fn clear_screen() {
-    unsafe {
-        // SAFETY: We are in single-threaded boot context.
-        let console_ptr = &raw mut CONSOLE;
-        if let Some(console) = &mut *console_ptr {
-            console.clear();
-        }
+    if let Some(console) = CONSOLE.lock().as_mut() {
+        console.clear();
+    }
+}
+
+pub fn with_console<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Console) -> R,
+{
+    let mut guard = CONSOLE.lock();
+    if let Some(console) = guard.as_mut() {
+        f(console)
+    } else {
+        panic!("Console not initialized");
     }
 }

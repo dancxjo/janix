@@ -30,6 +30,8 @@ pub fn log_message(message: &'static str) {
             LOG_INDEX += 1;
         }
     }
+    crate::console::print(message);
+    crate::console::print("\n");
 }
 
 /// Get all log entries

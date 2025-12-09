@@ -10,6 +10,7 @@ mod heap;
 mod gdt;
 mod idt;
 mod user;
+mod serial;
 
 use user_app_heartbeat;
 use user_app_hello;
@@ -45,6 +46,9 @@ unsafe extern "C" fn kmain() -> ! {
     // Initialize kernel core
     kernel_core::init();
 
+    // Initialize serial console
+    serial::arch::init_serial();
+
     // Initialize GDT and IDT
     gdt::init();
     idt::init();
@@ -68,7 +72,7 @@ unsafe extern "C" fn kmain() -> ! {
     // Initialize console on the Limine framebuffer
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            let mut console = unsafe { console::Console::from_framebuffer(&framebuffer) };
+            unsafe { console::init_global(&framebuffer) };
 
             // Run the demo app through the same Sys trait as the host:
             let sys = KernelSys;
@@ -97,7 +101,9 @@ unsafe extern "C" fn kmain() -> ! {
             */
 
             // Render dashboard instead of just raw log dump
-            dashboard::render_dashboard(&mut console);
+            console::with_console(|console| {
+                dashboard::render_dashboard(console);
+            });
 
             // Optionally: halt, or spin
             loop {

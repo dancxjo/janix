@@ -1,5 +1,6 @@
 pub mod time;
 pub mod rtc;
+pub mod trap;
 
 use super::{UserEntryRegs, Arch};
 
@@ -11,6 +12,7 @@ impl Arch for Riscv64Arch {
     }
 
     fn install_syscall_handler() {
+        trap::init();
         time::init_arch_timer();
         rtc::init_arch_rtc();
     }

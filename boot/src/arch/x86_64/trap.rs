@@ -32,12 +32,16 @@ extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) -> ! {
-    kernel_core::log("DOUBLE FAULT");
+    kernel_core::println!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
     loop {}
 }
 
 extern "x86-interrupt" fn gp_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    kernel_core::log("GENERAL PROTECTION FAULT");
+    kernel_core::println!(
+        "EXCEPTION: GENERAL PROTECTION FAULT\nError Code: {:#x}\n{:#?}",
+        error_code,
+        stack_frame
+    );
     loop {}
 }
 
@@ -84,6 +88,9 @@ extern "x86-interrupt" fn page_fault_handler(
         }
     }
 
-    kernel_core::log("PAGE FAULT");
+    kernel_core::println!("EXCEPTION: PAGE FAULT");
+    kernel_core::println!("Accessed Address: {:?}", addr);
+    kernel_core::println!("Error Code: {:?}", error_code);
+    kernel_core::println!("{:#?}", stack_frame);
     loop {}
 }

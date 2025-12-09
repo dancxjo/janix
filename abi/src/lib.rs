@@ -1,5 +1,9 @@
 #![no_std]
 
+extern crate alloc;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// Process identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProcessId(pub u64);
@@ -40,11 +44,12 @@ pub struct FramePoolId(pub u64);
 pub type PropKey = &'static str;
 
 /// Simple property value
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PropValue {
     U64(u64),
     I64(i64),
     Bool(bool),
+    Str(String),
 }
 
 /// Property type for schema validation
@@ -53,6 +58,7 @@ pub enum PropType {
     U64,
     I64,
     Bool,
+    Str,
 }
 
 /// Schema identifier
@@ -209,4 +215,13 @@ pub enum SyscallNumber {
     TimeSystemNs = 21,
     SleepForNs = 22,
     // Add others as needed
+}
+
+pub trait Thing: Sized {
+    const KIND: &'static str;
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self;
+
+    /// Static schema for this Thing, used for registration.
+    fn schema() -> &'static [(&'static str, PropType)];
 }

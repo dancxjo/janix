@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields};
+use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
 #[proc_macro_derive(Thing)]
 pub fn derive_thing(input: TokenStream) -> TokenStream {
@@ -20,12 +20,19 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
         let name = &f.ident;
         let ty = &f.ty;
         let ty_str = quote!(#ty).to_string();
-        
-        let val_expr = match ty_str.as_str() {
-            "u64" => quote! { ::abi::PropValue::U64(self.#name as u64) },
-            "i64" => quote! { ::abi::PropValue::I64(self.#name as i64) },
-            "bool" => quote! { ::abi::PropValue::Bool(self.#name as bool) },
-            _ => quote! { panic!("Unsupported type for Thing derive") },
+
+        let val_expr = if ty_str == "u64" {
+            quote! { ::abi::PropValue::U64(self.#name as u64) }
+        } else if ty_str == "i64" {
+            quote! { ::abi::PropValue::I64(self.#name as i64) }
+        } else if ty_str == "bool" {
+            quote! { ::abi::PropValue::Bool(self.#name as bool) }
+        } else if ty_str == "alloc :: string :: String" || ty_str == "String" {
+            quote! { ::abi::PropValue::Str(self.#name.clone()) }
+        } else if ty_str == "& 'static str" || ty_str == "&'static str" {
+            quote! { ::abi::PropValue::Str(self.#name.to_string()) }
+        } else {
+            quote! { panic!("Unsupported type for Thing derive: {}", #ty_str) }
         };
 
         quote! {
@@ -38,17 +45,36 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
         let ty = &f.ty;
         let ty_str = quote!(#ty).to_string();
 
-        let match_arm = match ty_str.as_str() {
-            "u64" => quote! {
-                if let ::abi::PropValue::U64(val) = *v { val } else { panic!("Type mismatch for {}", stringify!(#name)) }
-            },
-            "i64" => quote! {
-                if let ::abi::PropValue::I64(val) = *v { val } else { panic!("Type mismatch for {}", stringify!(#name)) }
-            },
-            "bool" => quote! {
-                if let ::abi::PropValue::Bool(val) = *v { val } else { panic!("Type mismatch for {}", stringify!(#name)) }
-            },
-            _ => quote! { panic!("Unsupported type for Thing derive") },
+        let match_arm = if ty_str == "u64" {
+            quote! {
+                if let ::abi::PropValue::U64(val) = *v { val } else {
+                    panic!("Type mismatch for {}", stringify!(#name))
+                }
+            }
+        } else if ty_str == "i64" {
+            quote! {
+                if let ::abi::PropValue::I64(val) = *v { val } else {
+                    panic!("Type mismatch for {}", stringify!(#name))
+                }
+            }
+        } else if ty_str == "bool" {
+            quote! {
+                if let ::abi::PropValue::Bool(val) = *v { val } else {
+                    panic!("Type mismatch for {}", stringify!(#name))
+                }
+            }
+        } else if ty_str == "alloc :: string :: String" || ty_str == "String" {
+            quote! {
+                if let ::abi::PropValue::Str(ref val) = *v {
+                    val.clone()
+                } else {
+                    panic!("Type mismatch for {}", stringify!(#name))
+                }
+            }
+        } else if ty_str == "& 'static str" || ty_str == "&'static str" {
+            quote! { compile_error!("from_props does not support &'static str fields") }
+        } else {
+            quote! { panic!("Unsupported type for Thing derive: {}", #ty_str) }
         };
 
         quote! {
@@ -73,14 +99,20 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
         let ty = &f.ty;
         let ty_str = quote!(#ty).to_string();
 
-        let prop_ty_expr = match ty_str.as_str() {
-            "u64" => quote! { ::abi::PropType::U64 },
-            "i64" => quote! { ::abi::PropType::I64 },
-            "bool" => quote! { ::abi::PropType::Bool },
-            _ => {
-                let error_msg = format!("Unsupported type '{}' for Thing derive schema. Only u64, i64, and bool are supported.", ty_str);
-                quote! { compile_error!(#error_msg) }
-            }
+        let prop_ty_expr = if ty_str == "u64" {
+            quote! { ::abi::PropType::U64 }
+        } else if ty_str == "i64" {
+            quote! { ::abi::PropType::I64 }
+        } else if ty_str == "bool" {
+            quote! { ::abi::PropType::Bool }
+        } else if ty_str == "alloc :: string :: String" || ty_str == "String" {
+            quote! { ::abi::PropType::Str }
+        } else {
+            let error_msg = format!(
+                "Unsupported type '{}' for Thing derive schema. Only u64, i64, bool, and String are supported.",
+                ty_str
+            );
+            quote! { compile_error!(#error_msg) }
         };
 
         quote! {
@@ -89,10 +121,10 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
     });
 
     let expanded = quote! {
-        impl ::userland_std::Thing for #name {
+        impl ::abi::Thing for #name {
             const KIND: &'static str = #kind_str;
 
-            fn to_props(&self, out: &mut ::std::vec::Vec<(::abi::PropKey, ::abi::PropValue)>) {
+            fn to_props(&self, out: &mut ::alloc::vec::Vec<(::abi::PropKey, ::abi::PropValue)>) {
                 #(#to_props_arms)*
             }
 

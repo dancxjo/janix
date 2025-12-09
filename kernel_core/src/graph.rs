@@ -16,7 +16,7 @@ pub struct Node {
 
 const MAX_PROPS_PER_THING: usize = 8;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ThingNode {
     pub id: ThingId,
     pub kind: &'static str,
@@ -32,7 +32,7 @@ pub const MAX_THINGS: usize = 128;
 static mut NODES: [Option<Node>; MAX_NODES] = [None; MAX_NODES];
 static mut NEXT_ID: u64 = 0;
 
-static mut THINGS: [Option<ThingNode>; MAX_THINGS] = [None; MAX_THINGS];
+static mut THINGS: [Option<ThingNode>; MAX_THINGS] = [const { None }; MAX_THINGS];
 static mut NEXT_THING_ID: u64 = 0;
 
 // Schema storage
@@ -122,12 +122,12 @@ pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Optio
             return None;
         }
         let id = ThingId(NEXT_THING_ID);
-        let mut node_props = [None; MAX_PROPS_PER_THING];
+        let mut node_props = [const { None }; MAX_PROPS_PER_THING];
         for (i, prop) in props.iter().enumerate() {
             if i >= MAX_PROPS_PER_THING {
                 break;
             }
-            node_props[i] = Some(*prop);
+            node_props[i] = Some((prop.0, prop.1.clone()));
         }
 
         THINGS[NEXT_THING_ID as usize] = Some(ThingNode {
@@ -166,7 +166,7 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
                 for slot in node.props.iter_mut() {
                     if let Some((k, _)) = slot {
                         if *k == *key {
-                            *slot = Some((*key, *value));
+                            *slot = Some((*key, value.clone()));
                             found = true;
                             break;
                         }
@@ -176,7 +176,7 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
                 if !found {
                     for slot in node.props.iter_mut() {
                         if slot.is_none() {
-                            *slot = Some((*key, *value));
+                            *slot = Some((*key, value.clone()));
                             break;
                         }
                     }
@@ -186,6 +186,17 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
         } else {
             false
         }
+    }
+}
+
+/// Delete a Thing
+pub fn delete_thing(id: ThingId) -> bool {
+    unsafe {
+        if id.0 >= MAX_THINGS as u64 {
+            return false;
+        }
+        THINGS[id.0 as usize] = None;
+        true
     }
 }
 
@@ -275,6 +286,7 @@ pub fn validate_props(
                             (PropType::U64, PropValue::U64(_)) => true,
                             (PropType::I64, PropValue::I64(_)) => true,
                             (PropType::Bool, PropValue::Bool(_)) => true,
+                            (PropType::Str, PropValue::Str(_)) => true,
                             _ => false,
                         };
 
@@ -306,12 +318,12 @@ pub fn kernel_create_user_thing_for_process(
             return None;
         }
         let id = ThingId(NEXT_THING_ID);
-        let mut node_props = [None; MAX_PROPS_PER_THING];
+        let mut node_props = [const { None }; MAX_PROPS_PER_THING];
         for (i, prop) in props.iter().enumerate() {
             if i >= MAX_PROPS_PER_THING {
                 break;
             }
-            node_props[i] = Some(*prop);
+            node_props[i] = Some((prop.0, prop.1.clone()));
         }
 
         THINGS[NEXT_THING_ID as usize] = Some(ThingNode {
@@ -346,7 +358,7 @@ pub fn kernel_user_update_thing(
                 for i in 0..MAX_PROPS_PER_THING {
                     if let Some((k, _)) = thing.props[i] {
                         if k == *key {
-                            thing.props[i] = Some((*key, *value));
+                            thing.props[i] = Some((*key, value.clone()));
                             found = true;
                             break;
                         }
@@ -355,7 +367,7 @@ pub fn kernel_user_update_thing(
                 if !found {
                     for i in 0..MAX_PROPS_PER_THING {
                         if thing.props[i].is_none() {
-                            thing.props[i] = Some((*key, *value));
+                            thing.props[i] = Some((*key, value.clone()));
                             break;
                         }
                     }

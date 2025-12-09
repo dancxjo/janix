@@ -75,14 +75,7 @@ pub fn user_update_thing(
     }
 }
 
-pub trait Thing: Sized {
-    const KIND: &'static str;
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self;
-
-    /// Static schema for this Thing, used for registration.
-    fn schema() -> &'static [(&'static str, PropType)];
-}
+pub use abi::Thing;
 
 pub fn create_thing<T: Thing>(sys: &impl Sys, thing: &T) -> Option<ThingId> {
     let mut props_vec = Vec::new();

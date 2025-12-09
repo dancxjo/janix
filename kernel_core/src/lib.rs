@@ -1,11 +1,14 @@
 #![no_std]
 
+extern crate alloc;
+
 pub mod console;
 pub mod graph;
 pub mod log;
 pub mod memory;
 pub mod model;
 pub mod sched;
+pub mod sched_graph;
 pub mod time;
 pub mod transaction;
 
@@ -18,6 +21,7 @@ use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary};
 pub fn init() {
     log::init();
     graph::init();
+    sched::SCHEDULER.lock().init_graph_mirror();
     transaction::init();
     model::init_schemas();
 }

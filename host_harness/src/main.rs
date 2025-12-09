@@ -126,12 +126,14 @@ extern "C" fn dummy_entry(_: u64) -> ! { loop {} }
 
 fn main() {
     register_sink(&HOST_CONSOLE);
+    kernel_core::graph::init();
     init_host_frame_pool(128);
     
     let (tx, rx) = channel();
     *SCHED_TX.lock().unwrap() = Some(tx);
     
     let mut sched = Scheduler::new();
+    sched.init_graph_mirror();
     
     let p1 = sched.add_process("user_app_hello");
     let t1 = sched.add_thread(p1, "hello", dummy_entry, 1, 0);
@@ -207,6 +209,47 @@ fn main() {
     println!("    FramePool   = {}", snap.counts.frame_pools);
     println!("    AddressSpace= {}", snap.counts.address_spaces);
     println!("    CpuCore     = {}", snap.counts.cpu_cores);
+
+    println!("\nScheduler Graph Snapshot:");
+    println!("  Threads:");
+    kernel_core::graph::iter_things(|thing| {
+        if thing.kind == "Thread" {
+            let mut name = "unknown";
+            let mut state = "unknown";
+            let mut total_run_ns = 0;
+            
+            for prop in thing.props.iter().flatten() {
+                match prop.0 {
+                    "name" => if let abi::PropValue::Str(s) = &prop.1 { name = s },
+                    "state" => if let abi::PropValue::Str(s) = &prop.1 { state = s },
+                    "total_run_ns" => if let abi::PropValue::I64(v) = prop.1 { total_run_ns = v },
+                    _ => {}
+                }
+            }
+            println!("    - {} (id={}): state={} total_run_ns={}", name, thing.id.0, state, total_run_ns);
+        }
+    });
+
+    println!("  SleepEvents:");
+    let mut found_sleep = false;
+    kernel_core::graph::iter_things(|thing| {
+        if thing.kind == "SleepEvent" {
+            found_sleep = true;
+            let mut wake_at = 0;
+            let mut label = "unknown";
+            for prop in thing.props.iter().flatten() {
+                match prop.0 {
+                    "wake_at_ns" => if let abi::PropValue::I64(v) = prop.1 { wake_at = v },
+                    "label" => if let abi::PropValue::Str(s) = &prop.1 { label = s },
+                    _ => {}
+                }
+            }
+            println!("    - wake_at={} label={}", wake_at, label);
+        }
+    });
+    if !found_sleep {
+        println!("    (none)");
+    }
 }
 
 

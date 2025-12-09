@@ -46,6 +46,34 @@ pub fn commit_transaction(sys: &impl Sys, tx_id: abi::TransactionId) -> bool {
     matches!(sys.syscall(request), KernelResponse::Success { .. })
 }
 
+/// Create a new Thing (user wrapper)
+pub fn user_create_thing(
+    sys: &impl Sys,
+    kind: &'static str,
+    props: &'static [(PropKey, PropValue)],
+) -> Result<ThingId, &'static str> {
+    let request = KernelRequest::ThingCreate { kind, props };
+    match sys.syscall(request) {
+        KernelResponse::ThingCreated { id } => Ok(id),
+        KernelResponse::Error { message } => Err(message),
+        _ => Err("Unexpected response"),
+    }
+}
+
+/// Update a Thing (user wrapper)
+pub fn user_update_thing(
+    sys: &impl Sys,
+    id: ThingId,
+    props: &'static [(PropKey, PropValue)],
+) -> Result<(), &'static str> {
+    let request = KernelRequest::ThingUpdate { id, props };
+    match sys.syscall(request) {
+        KernelResponse::Success { .. } => Ok(()),
+        KernelResponse::Error { message } => Err(message),
+        _ => Err("Unexpected response"),
+    }
+}
+
 pub trait Thing: Sized {
     const KIND: &'static str;
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);

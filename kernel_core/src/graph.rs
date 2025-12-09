@@ -1,4 +1,4 @@
-use abi::{NodeId, PropKey, PropType, PropValue, ThingId};
+use abi::{NodeId, ProcessId, PropKey, PropType, PropValue, ThingId};
 
 // Error message constants - these are stable and used by tests
 const ERR_NO_SCHEMA: &str = "No schema registered for this kind";
@@ -21,6 +21,7 @@ pub struct ThingNode {
     pub id: ThingId,
     pub kind: &'static str,
     pub props: [Option<(PropKey, PropValue)>; MAX_PROPS_PER_THING],
+    pub owner_process: Option<ProcessId>,
 }
 
 const MAX_NODES: usize = 128;
@@ -133,6 +134,7 @@ pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Optio
             id,
             kind,
             props: node_props,
+            owner_process: None,
         });
         NEXT_THING_ID += 1;
         Some(id)
@@ -291,4 +293,80 @@ pub fn validate_props(
 
         Ok(())
     }
+}
+
+/// Create a new Thing owned by a process
+pub fn kernel_create_user_thing_for_process(
+    proc: ProcessId,
+    kind: &'static str,
+    props: &[(PropKey, PropValue)],
+) -> Option<ThingId> {
+    unsafe {
+        if NEXT_THING_ID >= MAX_THINGS as u64 {
+            return None;
+        }
+        let id = ThingId(NEXT_THING_ID);
+        let mut node_props = [None; MAX_PROPS_PER_THING];
+        for (i, prop) in props.iter().enumerate() {
+            if i >= MAX_PROPS_PER_THING {
+                break;
+            }
+            node_props[i] = Some(*prop);
+        }
+
+        THINGS[NEXT_THING_ID as usize] = Some(ThingNode {
+            id,
+            kind,
+            props: node_props,
+            owner_process: Some(proc),
+        });
+        NEXT_THING_ID += 1;
+        Some(id)
+    }
+}
+
+/// Update a Thing owned by a process
+pub fn kernel_user_update_thing(
+    proc: ProcessId,
+    id: ThingId,
+    props: &[(PropKey, PropValue)],
+) -> bool {
+    unsafe {
+        if id.0 >= MAX_THINGS as u64 {
+            return false;
+        }
+        if let Some(thing) = &mut THINGS[id.0 as usize] {
+            if thing.owner_process != Some(proc) {
+                return false; // Access denied
+            }
+
+            // Update props logic
+            for (key, value) in props {
+                let mut found = false;
+                for i in 0..MAX_PROPS_PER_THING {
+                    if let Some((k, _)) = thing.props[i] {
+                        if k == *key {
+                            thing.props[i] = Some((*key, *value));
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if !found {
+                    for i in 0..MAX_PROPS_PER_THING {
+                        if thing.props[i].is_none() {
+                            thing.props[i] = Some((*key, *value));
+                            break;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+        false
+    }
+}
+
+pub fn cleanup_process_graph(proc: ProcessId) {
+    // TODO: delete or mark Things owned by proc
 }

@@ -14,7 +14,7 @@ static MP_REQUEST: MpRequest = MpRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
-static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 pub fn seed_memory_graph_from_limine() {
     let Some(response) = MEMORY_MAP_REQUEST.get_response() else {

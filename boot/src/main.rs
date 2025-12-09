@@ -1,11 +1,15 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
+#![feature(abi_x86_interrupt)]
 
 mod boot_model;
 mod console;
 mod dashboard;
 mod heap;
+mod gdt;
+mod idt;
+mod user;
 
 use user_app_heartbeat;
 use user_app_hello;
@@ -14,7 +18,7 @@ use userland_rt::KernelSys;
 use core::arch::asm;
 
 use limine::BaseRevision;
-use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
+use limine::request::{FramebufferRequest, HhdmRequest, RequestsEndMarker, RequestsStartMarker};
 
 /// Sets the base revision to the latest revision supported by the crate.
 #[used]
@@ -41,6 +45,16 @@ unsafe extern "C" fn kmain() -> ! {
     // Initialize kernel core
     kernel_core::init();
 
+    // Initialize GDT and IDT
+    gdt::init();
+    idt::init();
+
+    // Initialize user stack mapping
+    if let Some(hhdm_response) = boot_model::HHDM_REQUEST.get_response() {
+        let offset = hhdm_response.offset();
+        unsafe { user::init_user_stack(offset) };
+    }
+
     // Log startup message
     kernel_core::log("ThingOS booting...");
 
@@ -64,6 +78,11 @@ unsafe extern "C" fn kmain() -> ! {
             kernel_core::log("Launching user_app_heartbeat from kernel...");
             user_app_heartbeat::run(&sys);
 
+            // TEMPORARY: Test user mode entry
+            kernel_core::log("Entering user mode test...");
+            user::enter_user(user::user_test_entry);
+
+            /*
             kernel_core::log("Starting scheduler loop...");
             for _ in 0..100 {
                 if let Some(thread) = kernel_core::model::scheduler_tick() {
@@ -75,6 +94,7 @@ unsafe extern "C" fn kmain() -> ! {
                 }
             }
             kernel_core::log("Scheduler loop finished.");
+            */
 
             // Render dashboard instead of just raw log dump
             dashboard::render_dashboard(&mut console);

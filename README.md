@@ -65,8 +65,11 @@ thing-os/
 ├── host_harness/       # Runs kernel_core in a normal OS (std)
 │   └── main.rs
 │
-└── user_app_hello/     # Example user program (std)
-    └── main.rs
+└── apps/               # User applications compiled to ELF modules
+    ├── hello/
+    ├── heartbeat/
+    ├── init/
+    └── thread_dashboard/
 ```
 
 ---
@@ -84,14 +87,6 @@ cargo build --workspace --exclude boot
 ```bash
 cargo run -p host_harness
 ```
-
-### Run the example user application
-
-```bash
-cargo run -p user_app_hello
-```
-
----
 
 ## Build the bootable kernel image
 

@@ -12,5 +12,5 @@ kernel_core = { path = "../kernel_core" }
 abi = { path = "../abi" }
 userland_rt = { path = "../userland_rt", features = ["host"] }
 userland_std = { path = "../userland_std" }
-user_app_hello = { path = "../user_app_hello" }
-user_app_heartbeat = { path = "../user_app_heartbeat" }
+hello = { path = "../apps/hello" }
+heartbeat = { path = "../apps/heartbeat" }

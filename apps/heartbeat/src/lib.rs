@@ -34,8 +34,8 @@ impl Thing for HeartbeatThing {
     }
 }
 
-pub fn run<S: Sys>(sys: &mut S) {
-    println(sys, "user_app_heartbeat: run() reached");
+pub fn run<S: Sys>(sys: &mut S) -> ! {
+    println(sys, "heartbeat: run() reached");
     let start = sys.time_monotonic_ns();
     for _ in 0..10 {
         let now = sys.time_monotonic_ns();
@@ -43,5 +43,5 @@ pub fn run<S: Sys>(sys: &mut S) {
         println(sys, "heartbeat: tick");
         sys.yield_now();
     }
-    sys.exit_thread();
+    sys.exit_thread()
 }

@@ -106,8 +106,8 @@ fn log_boot_graph_view<S: Sys>(sys: &mut S) {
     }
 }
 
-pub fn run<S: Sys>(sys: &mut S) {
-    println(sys, "user_app_hello: run() reached");
+pub fn run<S: Sys>(sys: &mut S) -> ! {
+    println(sys, "hello: run() reached");
     log_boot_graph_view(sys);
     let start = sys.time_monotonic_ns();
     for _ in 0..10 {
@@ -117,5 +117,5 @@ pub fn run<S: Sys>(sys: &mut S) {
         println(sys, "hello: tick");
         sys.yield_now();
     }
-    sys.exit_thread();
+    sys.exit_thread()
 }

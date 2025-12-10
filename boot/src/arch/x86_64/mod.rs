@@ -22,6 +22,10 @@ impl Arch for X86Arch {
         time::init_arch_timer();
         rtc::init_arch_rtc();
     }
+
+    fn activate_user_address_space(token: Option<u64>) {
+        enter::activate_address_space(token);
+    }
 }
 
 pub use enter::{alloc_user_stack, init_user_stack};

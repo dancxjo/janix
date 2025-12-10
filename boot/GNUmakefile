@@ -31,7 +31,7 @@ endif
 .PHONY: all
 all:
 	cd .. && RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) -p boot
-	cp ../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/$$(cd ../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR) && find -maxdepth 1 -perm -111 -type f | grep -v "host_harness\|user_app_hello" | head -1) kernel
+	cp ../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/boot kernel
 
 # Remove object files and the final executable.
 .PHONY: clean

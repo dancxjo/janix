@@ -102,7 +102,7 @@ pub fn seed_program_images_from_limine() {
     };
 
     for (index, module) in response.modules().iter().enumerate() {
-        let identifier = derive_module_identifier((*module).cmdline(), (*module).path(), index);
+        let identifier = derive_module_identifier((*module).string(), (*module).path(), index);
         let base_phys = (*module).addr() as u64;
         let size = (*module).size() as u64;
         if kernel_core::model::create_program_image(&identifier, index as u64, base_phys, size)
@@ -113,32 +113,13 @@ pub fn seed_program_images_from_limine() {
     }
 }
 
-fn derive_module_identifier(cmdline: &[u8], path: &core::ffi::CStr, index: usize) -> String {
-    if let Ok(line) = core::str::from_utf8(cmdline) {
-        if let Some(arg) = line
-            .split_whitespace()
-            .find(|arg| arg.starts_with("program="))
-        {
-            let ident = arg.trim_start_matches("program=");
-            if !ident.is_empty() {
-                return String::from(ident);
-            }
-        }
-        if !line.is_empty() {
-            return String::from(last_path_component(line));
-        }
+fn derive_module_identifier(cmdline: &core::ffi::CStr, path: &core::ffi::CStr, index: usize) -> String {
+    if let Some(cmd_ident) = parse_identifier_from_cmdline(cmdline) {
+        return cmd_ident;
     }
 
-    if let Ok(pstr) = path.to_str() {
-        let component = last_path_component(pstr);
-        if !component.is_empty() {
-            return String::from(component);
-        }
-    } else if let Ok(s) = core::str::from_utf8(path.to_bytes()) {
-        let component = last_path_component(s);
-        if !component.is_empty() {
-            return String::from(component);
-        }
+    if let Some(path_ident) = parse_identifier_from_path(path) {
+        return path_ident;
     }
 
     let mut s = String::new();
@@ -166,4 +147,55 @@ fn last_path_component(input: &str) -> &str {
         .rsplit_once('/')
         .map(|(_, tail)| tail)
         .unwrap_or(input)
+}
+
+fn parse_identifier_from_cmdline(cmdline: &core::ffi::CStr) -> Option<String> {
+    let bytes = cmdline.to_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+
+    if let Ok(line) = core::str::from_utf8(bytes) {
+        if let Some(result) = parse_program_argument(line) {
+            return Some(result);
+        }
+        if !line.is_empty() {
+            return Some(String::from(last_path_component(line)));
+        }
+    } else {
+        let owned = String::from_utf8_lossy(bytes);
+        let line = owned.as_ref();
+        if let Some(result) = parse_program_argument(line) {
+            return Some(result);
+        }
+        if !line.is_empty() {
+            return Some(String::from(last_path_component(line)));
+        }
+    }
+
+    None
+}
+
+fn parse_identifier_from_path(path: &core::ffi::CStr) -> Option<String> {
+    if let Ok(pstr) = path.to_str() {
+        let component = last_path_component(pstr);
+        if !component.is_empty() {
+            return Some(String::from(component));
+        }
+    } else if let Ok(s) = core::str::from_utf8(path.to_bytes()) {
+        let component = last_path_component(s);
+        if !component.is_empty() {
+            return Some(String::from(component));
+        }
+    }
+    None
+}
+
+fn parse_program_argument(line: &str) -> Option<String> {
+    line.split_whitespace()
+        .find(|arg| arg.starts_with("program="))
+        .and_then(|arg| {
+            let ident = arg.trim_start_matches("program=");
+            (!ident.is_empty()).then(|| String::from(ident))
+        })
 }

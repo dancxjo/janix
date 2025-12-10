@@ -17,8 +17,13 @@ pub mod transaction;
 
 use crate::model::{compute_memory_summary, compute_scheduler_summary, scheduler_tick};
 use crate::sched_types::ThreadState;
-use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, PropValue};
+use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, PropValue, ThingId};
 use alloc::string::String;
+use spin::Mutex;
+
+type SpawnProgramHandler = fn(ThingId) -> Result<(ThingId, ThingId), &'static str>;
+
+static SPAWN_PROGRAM_HANDLER: Mutex<Option<SpawnProgramHandler>> = Mutex::new(None);
 
 /// Initialize the kernel core subsystems
 pub fn init() {
@@ -26,6 +31,15 @@ pub fn init() {
     graph::init();
     transaction::init();
     model::init_schemas();
+}
+
+/// Register the function responsible for spawning programs described by BootProgram Things.
+///
+/// This allows the kernel core to delegate spawning to the architecture-specific
+/// environment (e.g., the boot crate or the host harness). Calling this function
+/// replaces any previously registered handler.
+pub fn register_spawn_program_handler(handler: SpawnProgramHandler) {
+    *SPAWN_PROGRAM_HANDLER.lock() = Some(handler);
 }
 
 /// Log a message to the kernel log
@@ -113,9 +127,22 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         } => KernelResponse::EdgeTarget {
             target: graph::edge_target_at(from, edge_kind, index as usize),
         },
-        KernelRequest::SpawnProgram { .. } => KernelResponse::Error {
-            message: "SpawnProgram unavailable via handle_request",
-        },
+        KernelRequest::SpawnProgram { boot_program_id } => {
+            let handler = SPAWN_PROGRAM_HANDLER.lock().clone();
+            if let Some(spawn_fn) = handler {
+                match spawn_fn(boot_program_id) {
+                    Ok((process_id, thread_id)) => KernelResponse::ProgramSpawned {
+                        process_id,
+                        thread_id,
+                    },
+                    Err(msg) => KernelResponse::Error { message: msg },
+                }
+            } else {
+                KernelResponse::Error {
+                    message: "SpawnProgram handler not registered",
+                }
+            }
+        }
         KernelRequest::SchemaRegister {
             kind,
             description,

@@ -8,6 +8,26 @@ override USER_VARIABLE = $(if $(filter $(origin $(1)),default undefined),$(eval 
 # Target architecture to build for. Default to x86_64.
 $(call USER_VARIABLE,KARCH,x86_64)
 
+# Determine Rust target/profile for artifacts.
+ifeq ($(RUST_TARGET),)
+    override RUST_TARGET := $(KARCH)-unknown-none
+	ifeq ($(KARCH),riscv64)
+    	override RUST_TARGET := riscv64gc-unknown-none-elf
+	endif
+endif
+
+ifeq ($(RUST_PROFILE),)
+    override RUST_PROFILE := dev
+endif
+
+override RUST_PROFILE_SUBDIR := $(RUST_PROFILE)
+ifeq ($(RUST_PROFILE),dev)
+    override RUST_PROFILE_SUBDIR := debug
+endif
+
+APPS := hello heartbeat init thread_dashboard
+APPS_TARGET_DIR := target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)
+
 # Default user QEMU flags. These are appended to the QEMU command calls.
 $(call USER_VARIABLE,QEMUFLAGS,-m 2G)
 
@@ -221,14 +241,22 @@ limine/limine:
 	git clone https://github.com/limine-bootloader/limine.git --branch=v9.x-binary --depth=1
 	$(MAKE) -C limine
 
+.PHONY: apps
+apps:
+	cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
+
 .PHONY: kernel
 kernel:
 	$(MAKE) -C boot
 
-$(IMAGE_NAME).iso: limine/limine kernel
+$(IMAGE_NAME).iso: limine/limine kernel apps
 	rm -rf iso_root
 	mkdir -p iso_root/boot
 	cp -v boot/kernel iso_root/boot/
+	mkdir -p iso_root/boot/apps
+	for app in $(APPS); do \
+		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/apps/$$app; \
+	done
 	mkdir -p iso_root/boot/limine
 	cp -v limine.conf iso_root/boot/limine/
 	mkdir -p iso_root/EFI/BOOT
@@ -269,7 +297,7 @@ ifeq ($(KARCH),loongarch64)
 endif
 	rm -rf iso_root
 
-$(IMAGE_NAME).hdd: limine/limine kernel
+$(IMAGE_NAME).hdd: limine/limine kernel apps
 	rm -f $(IMAGE_NAME).hdd
 	dd if=/dev/zero bs=1M count=0 seek=64 of=$(IMAGE_NAME).hdd
 	sgdisk $(IMAGE_NAME).hdd -n 1:2048 -t 1:ef00
@@ -277,8 +305,11 @@ ifeq ($(KARCH),x86_64)
 	./limine/limine bios-install $(IMAGE_NAME).hdd
 endif
 	mformat -i $(IMAGE_NAME).hdd@@1M
-	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine
+	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine ::/boot/apps
 	mcopy -i $(IMAGE_NAME).hdd@@1M boot/kernel ::/boot
+	for app in $(APPS); do \
+		mcopy -i $(IMAGE_NAME).hdd@@1M $(APPS_TARGET_DIR)/$$app ::/boot/apps; \
+	done
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf ::/boot/limine
 ifeq ($(KARCH),x86_64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/limine-bios.sys ::/boot/limine

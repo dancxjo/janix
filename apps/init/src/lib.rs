@@ -13,7 +13,7 @@ use userland_std::{
 
 const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
 
-pub fn run<S: Sys>(sys: &mut S) {
+pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "init: starting");
 
     let boot_profile = match load_boot_profile(sys) {

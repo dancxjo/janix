@@ -124,11 +124,11 @@ User applications define their own Thing types with descriptions:
 Tests are provided to verify the description functionality:
 
 - `kernel_core/tests/description_test.rs` - Tests for schema descriptions
-- `user_app_hello/tests/description_test.rs` - Tests for Thing trait descriptions
+- `apps/hello/tests/description_test.rs` - Tests for Thing trait descriptions
 
 Run the tests with:
 
 ```bash
 cargo test --package kernel_core --test description_test
-cargo test --package user_app_hello --test description_test
+cargo test --package hello --test description_test
 ```

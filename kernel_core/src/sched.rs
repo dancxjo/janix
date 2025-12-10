@@ -24,7 +24,7 @@ pub struct Thread {
     pub state: ThreadState,
     pub name: &'static str,
     pub priority: u64,
-    pub user_entry: Option<extern "C" fn(u64) -> !>,
+    pub entry_point: u64,
     pub user_arg: u64,
     pub user_stack_top: u64,
     pub context: [u64; 34],
@@ -33,6 +33,7 @@ pub struct Thread {
     pub sleep_event_id: Option<ThingId>,
     pub last_run_start_ns: u64,
     pub total_run_ns: u64,
+    pub address_space_token: Option<u64>,
 }
 
 pub struct ScheduledThread {
@@ -43,6 +44,7 @@ pub struct ScheduledThread {
     pub user_stack_top: u64,
     pub user_arg: u64,
     pub context: [u64; 34],
+    pub address_space_token: Option<u64>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -50,6 +52,7 @@ pub struct Process {
     pub id: ProcessId,
     pub name: &'static str,
     pub thing_id: Option<ThingId>,
+    pub address_space_token: Option<u64>,
 }
 
 pub struct Scheduler {
@@ -182,6 +185,7 @@ impl Scheduler {
                     id: pid,
                     name,
                     thing_id,
+                    address_space_token: None,
                 });
                 if self.graph_enabled {
                     self.ensure_process_thing(i);
@@ -190,6 +194,13 @@ impl Scheduler {
             }
         }
         panic!("Max processes reached");
+    }
+
+    pub fn set_process_address_space(&mut self, pid: ProcessId, token: u64) {
+        let idx = process_index(pid);
+        if let Some(proc_slot) = self.processes.get_mut(idx).and_then(|p| p.as_mut()) {
+            proc_slot.address_space_token = Some(token);
+        }
     }
 
     pub fn add_thread(
@@ -201,9 +212,34 @@ impl Scheduler {
         stack_top: u64,
         priority: u64,
     ) -> ThreadId {
+        let entry_point = entry as u64;
+        self.add_thread_with_entry_point(
+            process_id,
+            name,
+            entry_point,
+            arg,
+            stack_top,
+            priority,
+        )
+    }
+
+    pub fn add_thread_with_entry_point(
+        &mut self,
+        process_id: ProcessId,
+        name: &'static str,
+        entry_point: u64,
+        arg: u64,
+        stack_top: u64,
+        priority: u64,
+    ) -> ThreadId {
         for (i, slot) in self.threads.iter_mut().enumerate() {
             if slot.is_none() {
                 let tid = ThreadId(i as u64 + 1);
+                let address_space_token = self
+                    .processes
+                    .get(process_index(process_id))
+                    .and_then(|p| p.as_ref())
+                    .and_then(|p| p.address_space_token);
 
                 *slot = Some(Thread {
                     id: tid,
@@ -211,7 +247,7 @@ impl Scheduler {
                     state: ThreadState::New,
                     name,
                     priority,
-                    user_entry: Some(entry),
+                    entry_point,
                     user_arg: arg,
                     user_stack_top: stack_top,
                     context: [0; 34],
@@ -220,6 +256,7 @@ impl Scheduler {
                     sleep_event_id: None,
                     last_run_start_ns: 0,
                     total_run_ns: 0,
+                    address_space_token,
                 });
                 if self.graph_enabled {
                     self.ensure_thread_thing(i);
@@ -285,10 +322,7 @@ impl Scheduler {
         let thread = self
             .thread_mut(tid)
             .expect("Scheduled thread missing backing state");
-        let entry_point = thread
-            .user_entry
-            .map(|entry| entry as u64)
-            .expect("Thread missing entry point");
+        let entry_point = thread.entry_point;
 
         Some(ScheduledThread {
             tid,
@@ -298,6 +332,7 @@ impl Scheduler {
             user_stack_top: thread.user_stack_top,
             user_arg: thread.user_arg,
             context: thread.context,
+            address_space_token: thread.address_space_token,
         })
     }
 

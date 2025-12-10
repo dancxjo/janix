@@ -1,5 +1,5 @@
 use abi::PropType;
-use user_app_hello::{AutoCounter, ManualCounter};
+use hello::{AutoCounter, ManualCounter};
 use userland_std::{Thing, register_schema_for};
 
 #[test]

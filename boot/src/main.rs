@@ -3,16 +3,18 @@
 #![feature(alloc_error_handler)]
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 
-extern crate user_app_heartbeat;
-extern crate user_app_hello;
-extern crate user_app_init;
-extern crate user_app_thread_dashboard;
+extern crate alloc;
+extern crate heartbeat;
+extern crate hello;
+extern crate init as init_app;
+extern crate thread_dashboard;
 
 mod arch;
 mod boot_model;
 mod console;
 mod context_switch;
 mod dashboard;
+mod elf_loader;
 mod program;
 #[cfg(target_arch = "x86_64")]
 mod gdt;
@@ -113,6 +115,7 @@ fn init_machine() {
 
     kernel_core::log("Initializing kernel core...");
     kernel_core::init();
+    kernel_core::register_spawn_program_handler(crate::program::spawn_program);
     {
         let mut sched = kernel_core::sched::SCHEDULER.lock();
         sched.init_graph_mirror();

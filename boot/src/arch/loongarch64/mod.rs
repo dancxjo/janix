@@ -20,6 +20,8 @@ impl Arch for LoongArch64Arch {
         time::init_arch_timer();
         rtc::init_arch_rtc();
     }
+
+    fn activate_user_address_space(_token: Option<u64>) {}
 }
 
 pub fn alloc_user_stack() -> u64 {

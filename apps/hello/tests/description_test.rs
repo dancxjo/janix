@@ -1,5 +1,5 @@
 use abi::Thing;
-use user_app_hello::AutoCounter;
+use hello::AutoCounter;
 
 #[test]
 fn test_auto_counter_has_description() {

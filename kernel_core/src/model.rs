@@ -20,9 +20,10 @@ pub struct Thread {
     pub id: ThreadId,
     pub process_id: u64,
     pub state: ThreadState,
-    pub user_entry: Option<extern "C" fn(u64) -> !>,
+    pub entry_point: u64,
     pub user_arg: u64,
     pub user_stack_top: u64,
+    pub address_space_token: Option<u64>,
 }
 
 pub const MAX_THREADS: usize = 32;
@@ -45,9 +46,10 @@ pub fn create_user_thread_for_app(
                     id: tid,
                     process_id: pid,
                     state: ThreadState::New,
-                    user_entry: Some(entry),
+                    entry_point: entry as u64,
                     user_arg: app_id,
                     user_stack_top: stack_top,
+                    address_space_token: None,
                 });
 
                 // Sync with graph

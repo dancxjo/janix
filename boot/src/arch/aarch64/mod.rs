@@ -21,6 +21,8 @@ impl Arch for AArch64Arch {
         time::init_arch_timer();
         rtc::init_arch_rtc();
     }
+
+    fn activate_user_address_space(_token: Option<u64>) {}
 }
 
 pub use enter::{alloc_user_stack, init_user_stack};

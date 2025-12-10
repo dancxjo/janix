@@ -11,6 +11,8 @@ use std::thread;
 mod frame_pool;
 use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary, ThreadId};
 use frame_pool::{allocate_frame, frame_stats, free_frame, init_host_frame_pool};
+use hello;
+use heartbeat;
 use userland_rt::Sys;
 
 struct HostConsole;
@@ -137,10 +139,10 @@ fn main() {
     let mut sched = Scheduler::new();
     sched.init_graph_mirror();
 
-    let p1 = sched.add_process("user_app_hello");
+    let p1 = sched.add_process("hello");
     let t1 = sched.add_thread(p1, "hello", dummy_entry, 1, 0, 0);
 
-    let p2 = sched.add_process("user_app_heartbeat");
+    let p2 = sched.add_process("heartbeat");
     let t2 = sched.add_thread(p2, "heartbeat", dummy_entry, 2, 0, 0);
 
     let mut threads = HashMap::new();
@@ -150,7 +152,7 @@ fn main() {
         CURRENT_THREAD_ID.with(|id: &RefCell<Option<ThreadId>>| *id.borrow_mut() = Some(t1));
         thread::park(); // Wait for scheduler
         let mut sys = HarnessSys;
-        user_app_hello::run(&mut sys);
+        hello::run(&mut sys);
     });
     threads.insert(t1, t1_handle.thread().clone());
 
@@ -159,7 +161,7 @@ fn main() {
         CURRENT_THREAD_ID.with(|id: &RefCell<Option<ThreadId>>| *id.borrow_mut() = Some(t2));
         thread::park(); // Wait for scheduler
         let mut sys = HarnessSys;
-        user_app_heartbeat::run(&mut sys);
+        heartbeat::run(&mut sys);
     });
     threads.insert(t2, t2_handle.thread().clone());
 

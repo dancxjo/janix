@@ -1,6 +1,7 @@
 use super::super::UserEntryRegs;
 use crate::gdt;
 use core::arch::global_asm;
+use core::sync::atomic::{AtomicU64, Ordering};
 use x86_64::structures::paging::{
     Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB,
 };
@@ -8,6 +9,8 @@ use x86_64::{PhysAddr, VirtAddr};
 extern crate alloc;
 use alloc::boxed::Box;
 use x86_64::structures::paging::mapper::MapperAllSizes;
+use x86_64::registers::control::{Cr3, Cr3Flags};
+use x86_64::structures::paging::PhysFrame as X86PhysFrame;
 
 #[repr(C)]
 struct X86UserEntryRegs {
@@ -194,4 +197,30 @@ pub fn alloc_user_stack() -> u64 {
     }
 
     stack_addr + 4096
+}
+
+static KERNEL_CR3: AtomicU64 = AtomicU64::new(0);
+
+fn ensure_kernel_cr3_recorded() -> u64 {
+    let stored = KERNEL_CR3.load(Ordering::SeqCst);
+    if stored != 0 {
+        return stored;
+    }
+    let current = Cr3::read().0.start_address().as_u64();
+    KERNEL_CR3.store(current, Ordering::SeqCst);
+    current
+}
+
+pub fn activate_address_space(token: Option<u64>) {
+    let kernel_cr3 = ensure_kernel_cr3_recorded();
+    let target = token.unwrap_or(kernel_cr3);
+    let current = Cr3::read().0.start_address().as_u64();
+    if current == target {
+        return;
+    }
+    let frame = X86PhysFrame::from_start_address(PhysAddr::new(target))
+        .expect("Invalid CR3 frame address");
+    unsafe {
+        Cr3::write(frame, Cr3Flags::empty());
+    }
 }

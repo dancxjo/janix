@@ -98,8 +98,8 @@ impl Thing for ThreadInfo {
     }
 }
 
-pub fn run<S: Sys>(sys: &mut S) {
-    println(sys, "user_app_thread_dashboard: run() reached");
+pub fn run<S: Sys>(sys: &mut S) -> ! {
+    println(sys, "thread_dashboard: run() reached");
 
     // Let the kernel know the schema if your ABI expects that.
     register_schema_for::<ThreadInfo>(sys);
@@ -139,5 +139,5 @@ pub fn run<S: Sys>(sys: &mut S) {
         sys.yield_now();
     }
 
-    sys.exit_thread();
+    sys.exit_thread()
 }

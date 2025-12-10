@@ -1,0 +1,17 @@
+[package]
+name = "thread_dashboard"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "thread_dashboard"
+path = "src/lib.rs"
+
+[dependencies]
+userland = { path = "../../userland" }
+userland_std = { path = "../../userland_std" }
+userland_rt = { path = "../../userland_rt" }
+userland_alloc = { path = "../../userland_alloc" }
+
+[dev-dependencies]
+kernel_core = { path = "../../kernel_core" }

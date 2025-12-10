@@ -92,5 +92,3 @@ extern "x86-interrupt" fn page_fault_handler(
     kernel_core::log("PAGE FAULT");
     loop {}
 }
-
-

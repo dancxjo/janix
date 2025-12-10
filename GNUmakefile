@@ -146,17 +146,17 @@ run-loongarch64:
 
 .PHONY: launch-loongarch64
 launch-loongarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).iso
-	qemu-system-$(KARCH) 
-		-M virt 
-		-cpu la464 
-		-serial stdio 
-		-device ramfb 
-		-device qemu-xhci 
-		-device usb-kbd 
-		-device usb-mouse 
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on 
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd 
-		-cdrom $(IMAGE_NAME).iso 
+	qemu-system-$(KARCH) \
+		-M virt \
+		-cpu la464 \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd \
+		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)
 
 .PHONY: run-hdd-loongarch64

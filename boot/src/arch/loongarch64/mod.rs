@@ -11,6 +11,10 @@ impl Arch for LoongArch64Arch {
         loop {}
     }
 
+    fn resume_user_mode(_context: &[u64]) -> ! {
+        loop {}
+    }
+
     fn install_syscall_handler() {
         trap::init();
         time::init_arch_timer();

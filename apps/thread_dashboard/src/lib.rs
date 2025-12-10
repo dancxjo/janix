@@ -51,7 +51,7 @@ fn log_thread_snapshot<S: Sys>(sys: &mut S, threads: &[ThreadThing]) {
 #[cfg(test)]
 mod tests {
     use super::log_thread_snapshot;
-    use abi::{KernelRequest, ThingId};
+    use abi::{KernelRequest, KernelResponse, ThingId};
     use alloc::string::ToString;
     use alloc::vec::Vec;
     use userland_std::{ThreadThing, doc_helpers::DocSys};
@@ -69,7 +69,10 @@ mod tests {
 
     #[test]
     fn logs_each_thread_line() {
-        let mut sys = DocSys::with_responses(Vec::new());
+        let mut responses = Vec::new();
+        responses.push(KernelResponse::Success { data: None });
+        responses.push(KernelResponse::Success { data: None });
+        let mut sys = DocSys::with_responses(responses);
         let mut threads = Vec::new();
         threads.push(thread(2, 10, "Running"));
         threads.push(thread(3, 20, "Sleeping"));
@@ -90,7 +93,9 @@ mod tests {
 
     #[test]
     fn reports_missing_threads_gracefully() {
-        let mut sys = DocSys::with_responses(Vec::new());
+        let mut responses = Vec::new();
+        responses.push(KernelResponse::Success { data: None });
+        let mut sys = DocSys::with_responses(responses);
         log_thread_snapshot(&mut sys, &[]);
         let requests = sys.requests.borrow();
         assert!(requests.iter().any(|request| match request {

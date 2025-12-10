@@ -69,17 +69,16 @@ fn syscall_push_pop_disciplined() {
     cpu_pushes(&mut stack);
     let base_depth = stack.len();
     syscall_pushes(&mut stack);
+    // call pushes a return address; model it, then drop it like the asm does (add rsp,8).
+    stack.push("retaddr");
+    assert_eq!(stack.pop(), Some("retaddr"));
 
-    // After pushing, we should have CPU frame + 15 registers.
+    // After dropping retaddr, we should have CPU frame + 15 registers.
     assert_eq!(stack.len(), base_depth + 15);
 
     syscall_pops(&mut stack);
-    // Saved rax is explicitly skipped with an add rsp, 8.
-    assert_eq!(
-        stack.pop(),
-        Some("rax"),
-        "saved rax should be dropped before iret"
-    );
+    // Pop saved rax explicitly like the asm does.
+    assert_eq!(stack.pop(), Some("rax"));
     // iret frame should remain intact before iret executes.
     assert_eq!(stack.len(), base_depth);
     cpu_iret_pops(&mut stack);

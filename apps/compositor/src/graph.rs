@@ -72,3 +72,181 @@ fn set_active_mode<S: Sys>(sys: &mut S, index: u8) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::LayoutPolicy;
+    use crate::test_support::{list_responses, MockSys, success};
+    use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
+    use userland_std::thing_models::ModeSwitchEvent;
+
+    fn mode(id: u64, index: u8, active: bool) -> Mode {
+        Mode {
+            id: ThingId(id),
+            index,
+            name: format!("mode-{index}"),
+            place_id: Some(ThingId(index as u64)),
+            active,
+            layout_policy: None,
+        }
+    }
+
+    fn mouse_event(seq: u64) -> MousePacketEvent {
+        MousePacketEvent {
+            id: ThingId(seq),
+            controller_id: ThingId(1),
+            port_index: 0,
+            sequence_index: seq,
+            timestamp_ticks: seq * 10,
+            buttons: 0,
+            delta_x: 0,
+            delta_y: 0,
+            overflow_x: false,
+            overflow_y: false,
+        }
+    }
+
+    #[test]
+    fn layout_policy_from_mode_defaults_to_free() {
+        let mut m = mode(1, 1, false);
+        assert_eq!(layout_policy_for_mode(&m), LayoutPolicy::Free);
+        m.layout_policy = Some(1);
+        assert_eq!(layout_policy_for_mode(&m), LayoutPolicy::Tiled);
+    }
+
+    #[test]
+    fn collect_windows_for_place_filters_non_matching() {
+        let windows = vec![
+            Window {
+                id: ThingId(1),
+                place_id: ThingId(7),
+                x: 0,
+                y: 0,
+                width: 10,
+                height: 10,
+                z_index: 0,
+                active: false,
+                title: "a".into(),
+            },
+            Window {
+                id: ThingId(2),
+                place_id: ThingId(9),
+                x: 0,
+                y: 0,
+                width: 10,
+                height: 10,
+                z_index: 1,
+                active: false,
+                title: "b".into(),
+            },
+        ];
+        let responses = list_responses(windows);
+        let mut sys = MockSys::with_responses(responses);
+        let collected = collect_windows_for_place(&mut sys, ThingId(7));
+        assert_eq!(collected.len(), 1);
+        assert_eq!(collected[0].id, ThingId(1));
+    }
+
+    #[test]
+    fn collect_surfaces_for_windows_maps_to_ids() {
+        let windows = vec![Window {
+            id: ThingId(1),
+            place_id: ThingId(1),
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+            z_index: 0,
+            active: false,
+            title: "a".into(),
+        }];
+        let surfaces = vec![
+            Surface {
+                id: ThingId(10),
+                window_id: ThingId(1),
+                kind: "text/plain".into(),
+                text: "hello".into(),
+            },
+            Surface {
+                id: ThingId(11),
+                window_id: ThingId(2),
+                kind: "text/plain".into(),
+                text: "ignore".into(),
+            },
+        ];
+        let responses = list_responses(surfaces);
+        let mut sys = MockSys::with_responses(responses);
+        let map = collect_surfaces_for_windows(&mut sys, &windows);
+        assert_eq!(map.len(), 1);
+        assert!(map.contains_key(&ThingId(1)));
+    }
+
+    #[test]
+    fn mouse_packets_sorted_by_sequence_index() {
+        let events = vec![mouse_event(5), mouse_event(2)];
+        let responses = list_responses(events);
+        let mut sys = MockSys::with_responses(responses);
+        let packets = mouse_packets(&mut sys);
+        assert_eq!(packets.len(), 2);
+        assert_eq!(packets[0].sequence_index, 2);
+        assert_eq!(packets[1].sequence_index, 5);
+    }
+
+    #[test]
+    fn current_mode_falls_back_to_default() {
+        let modes = vec![mode(1, 2, false), mode(2, 1, false)];
+        let mut responses = list_responses(modes.clone());
+        responses.extend(list_responses(modes));
+        let mut sys = MockSys::with_responses(responses);
+        let mode = current_mode(&mut sys).expect("expected mode");
+        assert_eq!(mode.index, 1, "default should pick lowest index");
+    }
+
+    #[test]
+    fn handle_mode_switches_applies_latest_request() {
+        let events = vec![
+            ModeSwitchEvent {
+                id: ThingId(1),
+                mode_index: 1,
+                timestamp: 5,
+            },
+            ModeSwitchEvent {
+                id: ThingId(2),
+                mode_index: 2,
+                timestamp: 10,
+            },
+        ];
+        let mut responses = list_responses(events);
+        let modes = vec![mode(10, 1, false), mode(20, 2, false)];
+        responses.extend(list_responses(modes));
+        responses.push(success());
+        responses.push(success());
+
+        let mut sys = MockSys::with_responses(responses);
+        handle_mode_switches(&mut sys);
+        let requests = sys.drain_requests();
+
+        let updates: Vec<_> = requests
+            .iter()
+            .filter_map(|req| {
+                if let KernelRequest::ThingUpdate { id, props } = req {
+                    let active = props
+                        .iter()
+                        .find(|p| p.0 == graph_kinds::PROP_MODE_ACTIVE)
+                        .map(|p| p.1);
+                    Some((*id, active))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            updates,
+            vec![
+                (ThingId(10), Some(PropValue::Bool(false))),
+                (ThingId(20), Some(PropValue::Bool(true)))
+            ]
+        );
+    }
+}

@@ -66,7 +66,8 @@ syscall_handler_asm:
 
     mov rdi, rsp
     call syscall_handler_rust
-    
+    add rsp, 8       // drop the return address pushed by `call`
+
     pop r15
     pop r14
     pop r13
@@ -81,7 +82,7 @@ syscall_handler_asm:
     pop rdx
     pop rsi
     pop rdi
-    add rsp, 8
+    pop rax
 
     iretq
 "#

@@ -154,3 +154,167 @@ impl Compositor {
         let _ = update_props(sys, req_id, &updates);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::StackedWindow;
+    use crate::test_support::{list_responses, FramebufferFixture, MockSys, success};
+    use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
+    use userland_std::thing_models::DisplayPresentRequest;
+
+    fn stacked_window(id: u64, z_index: i64, active: bool) -> StackedWindow {
+        StackedWindow {
+            id: ThingId(id),
+            x: 0,
+            y: 0,
+            width: 50,
+            height: 50,
+            z_index,
+            active,
+        }
+    }
+
+    #[test]
+    fn sync_active_tracks_layout_state() {
+        let fb = FramebufferFixture::new(40, 40);
+        let mut comp = Compositor::new(fb.fb);
+        let stacked = vec![
+            stacked_window(1, 0, true),
+            stacked_window(2, 1, false),
+        ];
+        comp.sync_active_from_layout(&stacked);
+        assert_eq!(comp.active_window, Some(ThingId(1)));
+
+        let stacked = vec![stacked_window(2, 1, false)];
+        comp.sync_active_from_layout(&stacked);
+        assert_eq!(comp.active_window, None);
+    }
+
+    #[test]
+    fn ensure_window_active_updates_previous_and_bumps_z() {
+        let fb = FramebufferFixture::new(60, 60);
+        let mut comp = Compositor::new(fb.fb);
+        comp.active_window = Some(ThingId(1));
+        let stacked = vec![
+            stacked_window(1, 1, true),
+            stacked_window(2, 3, false),
+        ];
+        let mut sys = MockSys::with_responses(vec![success(), success()]);
+
+        comp.ensure_window_active_from_layout(&mut sys, &stacked[1], &stacked);
+        assert_eq!(comp.active_window, Some(ThingId(2)));
+
+        let requests = sys.drain_requests();
+        assert_eq!(requests.len(), 2);
+        if let KernelRequest::ThingUpdate { id, props } = &requests[0] {
+            assert_eq!(*id, ThingId(1));
+            let active = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_WINDOW_ACTIVE)
+                .map(|p| p.1);
+            assert_eq!(active, Some(PropValue::Bool(false)));
+        } else {
+            panic!("expected ThingUpdate");
+        }
+
+        if let KernelRequest::ThingUpdate { id, props } = &requests[1] {
+            assert_eq!(*id, ThingId(2));
+            let active = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_WINDOW_ACTIVE)
+                .map(|p| p.1);
+            let z_index = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_Z_INDEX)
+                .map(|p| p.1);
+            assert_eq!(active, Some(PropValue::Bool(true)));
+            assert_eq!(z_index, Some(PropValue::I64(4)));
+        } else {
+            panic!("expected ThingUpdate for new active window");
+        }
+    }
+
+    #[test]
+    fn ensure_display_contracts_reuses_present_request() {
+        let fb = FramebufferFixture::new(80, 80);
+        let mut comp = Compositor::new(fb.fb);
+        let fb_id = ThingId(10);
+        let present = DisplayPresentRequest {
+            id: ThingId(77),
+            framebuffer_id: fb_id,
+            frame_index: 0,
+            requested_at_ns: 0,
+            presented_at_ns: None,
+            completed: true,
+        };
+
+        let mut responses = vec![
+            KernelResponse::EdgeTarget {
+                target: Some(fb_id),
+            },
+            KernelResponse::EdgeTarget { target: None },
+        ];
+        responses.extend(list_responses(vec![present.clone()]));
+        let mut sys = MockSys::with_responses(responses);
+
+        comp.ensure_display_contracts(&mut sys);
+        assert_eq!(comp.framebuffer_thing_id, Some(fb_id));
+        assert_eq!(comp.present_request_id, Some(present.id));
+    }
+
+    #[test]
+    fn ensure_display_contracts_creates_request_when_missing() {
+        let fb = FramebufferFixture::new(80, 80);
+        let mut comp = Compositor::new(fb.fb);
+        let fb_id = ThingId(5);
+
+        let responses = vec![
+            KernelResponse::EdgeTarget {
+                target: Some(fb_id),
+            },
+            KernelResponse::EdgeTarget { target: None },
+            KernelResponse::ThingListEntry { id: None },
+            KernelResponse::ThingCreated { id: ThingId(44) },
+        ];
+        let mut sys = MockSys::with_responses(responses);
+        comp.ensure_display_contracts(&mut sys);
+        assert_eq!(comp.present_request_id, Some(ThingId(44)));
+        assert_eq!(comp.framebuffer_thing_id, Some(fb_id));
+    }
+
+    #[test]
+    fn publish_present_request_updates_frame_state() {
+        let fb = FramebufferFixture::new(100, 100);
+        let mut comp = Compositor::new(fb.fb);
+        comp.present_request_id = Some(ThingId(30));
+        let mut sys = MockSys::with_responses(vec![success()]);
+        sys.set_time(40);
+
+        comp.publish_present_request(&mut sys);
+        assert_eq!(comp.frame_counter, 1);
+
+        let requests = sys.drain_requests();
+        assert_eq!(requests.len(), 1);
+        if let KernelRequest::ThingUpdate { props, .. } = &requests[0] {
+            let frame_index = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_FRAME_INDEX)
+                .map(|p| p.1);
+            let requested_at = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_REQUESTED_AT_NS)
+                .map(|p| p.1);
+            let completed = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_COMPLETED)
+                .map(|p| p.1);
+
+            assert_eq!(frame_index, Some(PropValue::U64(1)));
+            assert_eq!(requested_at, Some(PropValue::U64(41)));
+            assert_eq!(completed, Some(PropValue::Bool(false)));
+        } else {
+            panic!("expected ThingUpdate for present request");
+        }
+    }
+}

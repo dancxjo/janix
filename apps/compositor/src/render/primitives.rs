@@ -49,3 +49,42 @@ pub fn fill_rect(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_pixel_clamped_ignores_out_of_bounds() {
+        let mut buf = vec![0u32; 16];
+        unsafe {
+            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, -1, 0, 0xAA);
+            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, 0, -1, 0xAA);
+            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, 10, 10, 0xAA);
+            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, 1, 1, 0xBB);
+        }
+        assert_eq!(buf[0], 0);
+        assert_eq!(buf[5], 0xBB);
+    }
+
+    #[test]
+    fn fill_rect_writes_only_inside_bounds() {
+        let mut buf = vec![0u32; 25];
+        fill_rect(
+            buf.as_mut_ptr(),
+            20,
+            5,
+            5,
+            -1,
+            -1,
+            4,
+            4,
+            0xCC,
+        );
+        assert_eq!(buf[0], 0);
+        assert_eq!(buf[1], 0xCC);
+        assert_eq!(buf[6], 0xCC);
+        assert_eq!(buf[12], 0xCC);
+        assert_eq!(buf[24], 0, "should not write past requested area");
+    }
+}

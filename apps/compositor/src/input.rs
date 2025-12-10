@@ -122,3 +122,153 @@ impl Compositor {
         let _ = update_props(sys, drag.window_id, &updates);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::TITLE_BAR_HEIGHT;
+    use crate::layout::StackedWindow;
+    use crate::test_support::{list_responses, FramebufferFixture, MockSys, success};
+    use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
+
+    fn packet(seq: u64, buttons: u8, dx: i16, dy: i16) -> MousePacketEvent {
+        MousePacketEvent {
+            id: ThingId(seq),
+            controller_id: ThingId(1),
+            port_index: 0,
+            sequence_index: seq,
+            timestamp_ticks: seq * 10,
+            buttons,
+            delta_x: dx,
+            delta_y: dy,
+            overflow_x: false,
+            overflow_y: false,
+        }
+    }
+
+    fn stacked_window(id: u64) -> StackedWindow {
+        StackedWindow {
+            id: ThingId(id),
+            x: 10,
+            y: 10,
+            width: 120,
+            height: 90,
+            z_index: 1,
+            active: false,
+        }
+    }
+
+    #[test]
+    fn cursor_apply_packet_clamps_and_tracks_buttons() {
+        let mut cursor = CursorState::new(5, 5);
+        let previous = cursor.apply_packet(&packet(1, 3, -10, 20), 8, 8);
+        assert_eq!(previous, 0);
+        assert_eq!(cursor.x, 0);
+        assert_eq!(cursor.y, 0);
+        assert_eq!(cursor.buttons, 3);
+    }
+
+    #[test]
+    fn left_press_in_title_starts_drag_and_activates_window() {
+        let fb = FramebufferFixture::new(300, 200);
+        let mut comp = Compositor::new(fb.fb);
+        comp.cursor.x = 30;
+        comp.cursor.y = 12;
+        let win = stacked_window(7);
+        let mut sys = MockSys::with_responses(vec![success()]);
+
+        comp.apply_mouse_event(&mut sys, &packet(1, 1, 0, 0), &[win]);
+        assert_eq!(comp.active_window, Some(ThingId(7)));
+        let drag = comp.drag.expect("dragging should start inside title bar");
+        assert_eq!(drag.grab_offset_x, 20);
+        assert_eq!(drag.grab_offset_y, 2);
+
+        let requests = sys.drain_requests();
+        assert_eq!(requests.len(), 1);
+        if let KernelRequest::ThingUpdate { props, .. } = &requests[0] {
+            let active = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_WINDOW_ACTIVE)
+                .map(|p| p.1);
+            let z_index = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_Z_INDEX)
+                .map(|p| p.1);
+            assert_eq!(active, Some(PropValue::Bool(true)));
+            assert_eq!(z_index, Some(PropValue::I64(2)));
+        } else {
+            panic!("expected ThingUpdate request, got {:?}", requests[0]);
+        }
+    }
+
+    #[test]
+    fn dragging_updates_window_position_and_clamps() {
+        let fb = FramebufferFixture::new(120, 100);
+        let mut comp = Compositor::new(fb.fb);
+        comp.cursor.x = 40;
+        comp.cursor.y = 12 + TITLE_BAR_HEIGHT / 2;
+        let win = stacked_window(9);
+        let mut sys = MockSys::with_responses(vec![success(), success()]);
+
+        comp.apply_mouse_event(&mut sys, &packet(1, 1, 0, 0), &[win]);
+        comp.apply_mouse_event(&mut sys, &packet(2, 1, -50, 30), &[stacked_window(9)]);
+
+        assert_eq!(comp.drag.as_ref().map(|d| d.window_id), Some(ThingId(9)));
+        assert_eq!(comp.drag.as_ref().map(|d| d.last_sent_x), Some(0));
+        assert_eq!(comp.drag.as_ref().map(|d| d.last_sent_y), Some(0));
+
+        let requests = sys.drain_requests();
+        assert_eq!(requests.len(), 2);
+        if let KernelRequest::ThingUpdate { props, .. } = &requests[1] {
+            let x = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_WINDOW_X)
+                .map(|p| p.1);
+            let y = props
+                .iter()
+                .find(|p| p.0 == graph_kinds::PROP_WINDOW_Y)
+                .map(|p| p.1);
+            assert_eq!(x, Some(PropValue::I64(0)));
+            assert_eq!(y, Some(PropValue::I64(0)));
+        } else {
+            panic!("expected position update");
+        }
+    }
+
+    #[test]
+    fn process_mouse_packets_skips_stale_sequences() {
+        let fb = FramebufferFixture::new(80, 80);
+        let mut comp = Compositor::new(fb.fb);
+        let events = vec![
+            MousePacketEvent {
+                id: ThingId(1),
+                controller_id: ThingId(1),
+                port_index: 0,
+                sequence_index: 1,
+                timestamp_ticks: 0,
+                buttons: 0,
+                delta_x: 0,
+                delta_y: 0,
+                overflow_x: false,
+                overflow_y: false,
+            },
+            MousePacketEvent {
+                id: ThingId(2),
+                controller_id: ThingId(1),
+                port_index: 0,
+                sequence_index: 1,
+                timestamp_ticks: 1,
+                buttons: 0,
+                delta_x: 0,
+                delta_y: 0,
+                overflow_x: false,
+                overflow_y: false,
+            },
+        ];
+
+        let responses = list_responses(events);
+        let mut sys = MockSys::with_responses(responses);
+        comp.process_mouse_packets(&mut sys, &[]);
+        assert_eq!(comp.last_mouse_seq, 1);
+    }
+}

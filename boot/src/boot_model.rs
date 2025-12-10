@@ -101,9 +101,15 @@ pub fn seed_program_images_from_limine() {
         return;
     };
 
+    let hhdm_offset = HHDM_REQUEST
+        .get_response()
+        .map(|resp| resp.offset())
+        .unwrap_or(0);
+
     for (index, module) in response.modules().iter().enumerate() {
         let identifier = derive_module_identifier((*module).string(), (*module).path(), index);
-        let base_phys = (*module).addr() as u64;
+        let virt_addr = (*module).addr() as u64;
+        let base_phys = virt_addr.saturating_sub(hhdm_offset);
         let size = (*module).size() as u64;
         if kernel_core::model::create_program_image(&identifier, index as u64, base_phys, size)
             .is_none()

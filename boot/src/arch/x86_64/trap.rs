@@ -76,11 +76,9 @@ extern "x86-interrupt" fn page_fault_handler(
 
         let translation = mapper.translate_addr(addr);
         match translation {
-            Some(pa) => kernel_core::println!(
-                "Page fault translation: virt={:?} -> phys={:?}",
-                addr,
-                pa
-            ),
+            Some(pa) => {
+                kernel_core::println!("Page fault translation: virt={:?} -> phys={:?}", addr, pa)
+            }
             None => kernel_core::println!("Page fault translation: virt={:?} unmapped", addr),
         }
 

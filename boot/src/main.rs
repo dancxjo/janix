@@ -183,14 +183,12 @@ fn render_dashboard_and_halt() -> ! {
 }
 
 fn launch_init_process() {
-    kernel_core::log("launch_init_process: allocating stack");
-    let stack = user::alloc_user_stack();
-    kernel_core::log("launch_init_process: stack allocated, creating process");
-    let mut sched = kernel_core::sched::SCHEDULER.lock();
-    let pid = sched.add_process("init");
-    kernel_core::log("launch_init_process: process created, adding thread");
-    let _tid = sched.add_thread(pid, "init", user::user_thread_main, 0, stack, 1);
-    kernel_core::log("launch_init_process: init thread added");
+    kernel_core::log("launch_init_process: spawning init via ProgramImage");
+    if let Err(err) = program::spawn_program_by_identifier("init", "init", 1) {
+        kernel_core::log("launch_init_process: failed to spawn init via ProgramImage");
+        kernel_core::log(err);
+        hcf();
+    }
 }
 
 fn init_console() -> bool {

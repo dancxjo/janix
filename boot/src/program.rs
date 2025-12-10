@@ -30,11 +30,30 @@ pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'s
     spawn_compat_program(&info)
 }
 
+pub fn spawn_program_by_identifier(
+    identifier: &str,
+    name: &str,
+    priority: u64,
+) -> Result<(ThingId, ThingId), &'static str> {
+    let image =
+        find_program_image(identifier).ok_or("ProgramImage Thing not found for identifier")?;
+    let loaded = elf_loader::load_program(&image)?;
+    spawn_loaded_program_named(name, priority, loaded)
+}
+
 fn spawn_loaded_program(
     info: &BootProgramInfo,
     loaded: LoadedElfProgram,
 ) -> Result<(ThingId, ThingId), &'static str> {
-    let leaked_name: &'static str = leak_name(&info.name);
+    spawn_loaded_program_named(&info.name, info.priority, loaded)
+}
+
+fn spawn_loaded_program_named(
+    name: &str,
+    priority: u64,
+    loaded: LoadedElfProgram,
+) -> Result<(ThingId, ThingId), &'static str> {
+    let leaked_name: &'static str = leak_name(name);
     let (process_thing, thread_thing) = {
         let mut sched = SCHEDULER.lock();
         let pid = sched.add_process(leaked_name);
@@ -50,7 +69,7 @@ fn spawn_loaded_program(
             loaded.entry_point,
             0,
             loaded.user_stack_top,
-            info.priority,
+            priority,
         );
         let process_thing = sched
             .process_thing_id(pid)

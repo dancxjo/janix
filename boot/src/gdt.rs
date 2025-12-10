@@ -3,7 +3,9 @@ use x86_64::VirtAddr;
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
 use x86_64::structures::tss::TaskStateSegment;
 
-pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
+// IST index 0 is a special value that means "no IST" in the IDT entry.
+// Use index 1 to reserve the first IST entry for double-fault handling.
+pub const DOUBLE_FAULT_IST_INDEX: u16 = 1;
 
 lazy_static! {
     static ref TSS: TaskStateSegment = {

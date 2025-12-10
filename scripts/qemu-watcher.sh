@@ -5,7 +5,7 @@
 
 set -u
 
-PATTERN="PANIC!|No runnable threads"
+PATTERN="PANIC!|No runnable threads|DOUBLE FAULT"
 
 # Parse args until --
 while [ "$#" -gt 0 ]; do

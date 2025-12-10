@@ -247,7 +247,7 @@ limine/limine:
 
 .PHONY: apps
 apps:
-	cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
+	RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
 
 .PHONY: kernel
 kernel:

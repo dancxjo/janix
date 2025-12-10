@@ -482,3 +482,82 @@ pub trait Thing: Sized {
         Self::DESCRIPTION
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thing_id_invariants() {
+        // ThingId is a transparent wrapper around u64
+        let id_zero = ThingId(0);
+        let id_one = ThingId(1);
+        
+        assert_eq!(id_zero.0, 0);
+        assert_eq!(id_one.0, 1);
+        assert!(id_zero < id_one);
+        
+        // Verify it implements Copy/Clone/Debug/etc
+        let copy_id = id_zero;
+        assert_eq!(copy_id, id_zero);
+    }
+
+    #[test]
+    fn test_syscall_number_encoding() {
+        // Lock in specific syscall numbers to ensure ABI stability
+        assert_eq!(SyscallNumber::Yield as u64, 0);
+        assert_eq!(SyscallNumber::SleepForNs as u64, 1);
+        assert_eq!(SyscallNumber::SleepUntil as u64, 2);
+        assert_eq!(SyscallNumber::TimeMonotonicNs as u64, 3);
+        assert_eq!(SyscallNumber::TimeSystemNs as u64, 4);
+        assert_eq!(SyscallNumber::TimeNow as u64, 5);
+        assert_eq!(SyscallNumber::Log as u64, 6);
+        assert_eq!(SyscallNumber::ExitThread as u64, 7);
+        assert_eq!(SyscallNumber::AllocFrame as u64, 8);
+        assert_eq!(SyscallNumber::FreeFrame as u64, 9);
+        assert_eq!(SyscallNumber::CreateProcess as u64, 10);
+        assert_eq!(SyscallNumber::CreateThread as u64, 11);
+        assert_eq!(SyscallNumber::SpawnProgram as u64, 12);
+        assert_eq!(SyscallNumber::ThingCreate as u64, 13);
+        assert_eq!(SyscallNumber::ThingGet as u64, 14);
+        assert_eq!(SyscallNumber::ThingUpdate as u64, 15);
+        assert_eq!(SyscallNumber::ThingList as u64, 16);
+        assert_eq!(SyscallNumber::AddEdge as u64, 17);
+        assert_eq!(SyscallNumber::EdgeAt as u64, 18);
+        assert_eq!(SyscallNumber::SchemaRegister as u64, 19);
+        assert_eq!(SyscallNumber::GraphQuery as u64, 20);
+        assert_eq!(SyscallNumber::CreateTransaction as u64, 21);
+        assert_eq!(SyscallNumber::CommitTransaction as u64, 22);
+        assert_eq!(SyscallNumber::MapSharedBuffer as u64, 23);
+        assert_eq!(SyscallNumber::CreateSharedBuffer as u64, 24);
+        assert_eq!(SyscallNumber::GetSharedBufferInfo as u64, 25);
+    }
+
+    #[test]
+    fn test_pixel_format_encoding() {
+        assert_eq!(PixelFormat::Rgba8888 as u8, 0);
+        assert_eq!(PixelFormat::Bgra8888 as u8, 1);
+    }
+
+    #[test]
+    fn test_thing_prop_scalar_type_encoding() {
+        assert_eq!(ThingPropScalarType::U64 as u8, 0);
+        assert_eq!(ThingPropScalarType::I64 as u8, 1);
+        assert_eq!(ThingPropScalarType::Bool as u8, 2);
+        assert_eq!(ThingPropScalarType::Str as u8, 3);
+    }
+
+    #[test]
+    fn test_map_flags_invariants() {
+        let read = MapFlags::READ;
+        let write = MapFlags::WRITE;
+        let rw = read.union(write);
+
+        assert_eq!(read.bits(), 1);
+        assert_eq!(write.bits(), 2);
+        assert_eq!(rw.bits(), 3);
+        assert!(rw.contains(read));
+        assert!(rw.contains(write));
+        assert!(!read.contains(write));
+    }
+}

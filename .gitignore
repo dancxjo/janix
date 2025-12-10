@@ -10,3 +10,4 @@ Cargo.lock
 /fonts/
 *.log
 EFI/BOOT/*.EFI
+thing_macros/tests/ui/unsupported_field.stderr

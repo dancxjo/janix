@@ -1,4 +1,5 @@
-use abi::{PropValue, ThingId};
+extern crate alloc;
+use abi::{PropValue, Thing, ThingId};
 use thing_macros::Thing;
 
 #[derive(Clone, Debug, PartialEq, Eq, Thing)]

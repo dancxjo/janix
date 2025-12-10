@@ -261,7 +261,6 @@ impl Scheduler {
         if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
             thread.state = ThreadState::Running;
             thread.last_run_start_ns = self.fake_time_ns;
-            thread.started = true;
         }
         self.graph_update_thread_state(index);
     }

@@ -26,7 +26,7 @@ ifeq ($(RUST_PROFILE),dev)
 endif
 
 ENABLE_ROOTFS ?= 0
-APPS := init hello heartbeat thread_dashboard clock_demo alarm_demo ps2_keyboard_driver ps2_mouse_driver input_logger_demo framebuffer_driver
+APPS := init hello heartbeat thread_dashboard clock_demo alarm_demo ps2_keyboard_driver ps2_mouse_driver input_logger_demo framebuffer_driver compositor window_demo
 ifeq ($(ENABLE_ROOTFS),1)
 APPS := rootfs $(APPS)
 endif

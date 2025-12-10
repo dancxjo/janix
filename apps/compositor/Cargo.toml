@@ -1,10 +1,10 @@
 [package]
-name = "framebuffer_driver"
+name = "compositor"
 version.workspace = true
 edition.workspace = true
 
 [lib]
-name = "framebuffer_driver"
+name = "compositor"
 path = "src/lib.rs"
 
 [dependencies]

@@ -61,7 +61,10 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     let mut driver = match FramebufferDriver::init(sys) {
         Ok(driver) => driver,
         Err(err) => {
-            println(sys, "framebuffer_driver: failed to initialize primary display");
+            println(
+                sys,
+                "framebuffer_driver: failed to initialize primary display",
+            );
             let _ = err;
             sys.exit_thread();
         }
@@ -90,7 +93,10 @@ impl Thing for DisplayFramebufferThing {
     const DESCRIPTION: &'static str = "Userland-published framebuffer";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((abi::graph_kinds::PROP_NAME, PropValue::Str(self.name.clone())));
+        out.push((
+            abi::graph_kinds::PROP_NAME,
+            PropValue::Str(self.name.clone()),
+        ));
         out.push((abi::graph_kinds::PROP_WIDTH, PropValue::U64(self.width)));
         out.push((abi::graph_kinds::PROP_HEIGHT, PropValue::U64(self.height)));
         out.push((abi::graph_kinds::PROP_STRIDE, PropValue::U64(self.stride)));
@@ -98,7 +104,10 @@ impl Thing for DisplayFramebufferThing {
             PixelFormat::Rgba8888 => "Rgba8888",
             PixelFormat::Bgra8888 => "Bgra8888",
         };
-        out.push((abi::graph_kinds::PROP_PIXEL_FORMAT, PropValue::Str(fmt.into())));
+        out.push((
+            abi::graph_kinds::PROP_PIXEL_FORMAT,
+            PropValue::Str(fmt.into()),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {

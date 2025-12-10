@@ -194,15 +194,9 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         tid.0
     } else if num == SyscallNumber::AddEdge as u64 {
         let from = ThingId(arg1);
-        let to = ThingId(arg2);
-        let Some(edge_kind) = leak_user_str(arg3, arg4 as usize) else {
-            return 1;
-        };
-        let req = KernelRequest::AddEdge {
-            from,
-            edge_kind,
-            to,
-        };
+        let pred = abi::EdgePred(arg2);
+        let to = ThingId(arg3);
+        let req = KernelRequest::AddEdge { from, pred, to };
         match kernel_core::handle_request(req) {
             KernelResponse::Success { .. } => 0,
             _ => 1,
@@ -210,14 +204,8 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     } else if num == SyscallNumber::EdgeAt as u64 {
         let from = ThingId(arg1);
         let index = arg2;
-        let Some(edge_kind) = leak_user_str(arg3, arg4 as usize) else {
-            return u64::MAX;
-        };
-        match kernel_core::handle_request(KernelRequest::EdgeAt {
-            from,
-            edge_kind,
-            index,
-        }) {
+        let pred = abi::EdgePred(arg3);
+        match kernel_core::handle_request(KernelRequest::EdgeAt { from, pred, index }) {
             KernelResponse::EdgeTarget { target } => target.map_or(u64::MAX, |id| id.0),
             _ => u64::MAX,
         }
@@ -241,10 +229,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         let flags = MapFlags(arg2);
         let vaddr_out = arg3 as *mut u64;
         let size_out = arg4 as *mut u64;
-        match kernel_core::handle_request(KernelRequest::MapSharedBuffer {
-            buffer_id,
-            flags,
-        }) {
+        match kernel_core::handle_request(KernelRequest::MapSharedBuffer { buffer_id, flags }) {
             KernelResponse::SharedBufferMapped { vaddr, size } => {
                 if !vaddr_out.is_null() {
                     unsafe { *vaddr_out = vaddr };

@@ -13,10 +13,10 @@ use alloc::vec::Vec;
 use std::string::ToString;
 
 use abi::{
-    FrameId, FrameInfo, KernelRequest, KernelResponse, MapFlags, MemorySummary, NodeId, PixelFormat,
-    PropKey, PropType, PropValue, SchedulerSummary, SharedBufferInfo, ThingId, ThreadInfo,
+    FrameId, FrameInfo, KernelRequest, KernelResponse, MapFlags, MemorySummary, NodeId,
+    SchedulerSummary, SharedBufferInfo, ThreadInfo,
 };
-use abi::graph_kinds;
+// `graph_kinds` is re-exported below as `pub use abi::graph_kinds;`
 use userland_rt::Sys;
 
 pub mod alarm;
@@ -26,7 +26,9 @@ pub mod time;
 
 pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
-pub use thing_models::{AlarmEvent, AlarmRequest, TimeSource};
+pub use thing_models::{
+    AlarmEvent, AlarmRequest, Mode, ModeSwitchEvent, Place, Surface, TimeSource, Window,
+};
 
 pub extern crate thing_models;
 pub mod thread_info {
@@ -398,6 +400,10 @@ pub fn user_update_thing(
 }
 
 pub use abi::Thing;
+// Re-export commonly used ABI types for userland consumers
+pub use abi::{EdgePred, PropKey, PropType, PropValue, ThingId};
+// Re-export graph kinds module so consumers can access it as `userland_std::graph_kinds`
+pub use abi::graph_kinds;
 
 pub fn create_thing<T: Thing>(sys: &impl Sys, thing: &T) -> Option<ThingId> {
     let mut props_vec = Vec::new();
@@ -452,16 +458,12 @@ pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> O
     None
 }
 
-/// Return all neighbors reachable from `from` via `edge_kind` in insertion order.
-pub fn edge_targets<S: Sys>(sys: &mut S, from: ThingId, edge_kind: &'static str) -> Vec<ThingId> {
+/// Return all neighbors reachable from `from` via `pred` in insertion order.
+pub fn edge_targets<S: Sys>(sys: &mut S, from: ThingId, pred: EdgePred) -> Vec<ThingId> {
     let mut results = Vec::new();
     let mut index = 0;
     loop {
-        match sys.syscall(KernelRequest::EdgeAt {
-            from,
-            edge_kind,
-            index,
-        }) {
+        match sys.syscall(KernelRequest::EdgeAt { from, pred, index }) {
             KernelResponse::EdgeTarget { target: Some(id) } => {
                 results.push(id);
                 index += 1;
@@ -474,13 +476,9 @@ pub fn edge_targets<S: Sys>(sys: &mut S, from: ThingId, edge_kind: &'static str)
 }
 
 /// Add an edge between Things via the kernel ABI.
-pub fn add_edge(sys: &impl Sys, from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
+pub fn add_edge(sys: &impl Sys, from: ThingId, pred: EdgePred, to: ThingId) -> bool {
     matches!(
-        sys.syscall(KernelRequest::AddEdge {
-            from,
-            edge_kind,
-            to
-        }),
+        sys.syscall(KernelRequest::AddEdge { from, pred, to }),
         KernelResponse::Success { .. }
     )
 }
@@ -604,7 +602,10 @@ pub fn spawn_program(sys: &mut impl Sys, boot_program_id: ThingId) -> Option<(Th
     }
 }
 
-pub fn shared_buffer_info(sys: &impl Sys, buffer_id: ThingId) -> Result<SharedBufferInfo, SysError> {
+pub fn shared_buffer_info(
+    sys: &impl Sys,
+    buffer_id: ThingId,
+) -> Result<SharedBufferInfo, SysError> {
     match sys.syscall(KernelRequest::GetSharedBufferInfo { buffer_id }) {
         KernelResponse::SharedBufferInfoResponse { info } => Ok(info),
         KernelResponse::Error { message } => Err(SysError::Kernel(message)),
@@ -618,9 +619,7 @@ pub fn shared_buffer_map(
     flags: MapFlags,
 ) -> Result<(*mut u8, usize), SysError> {
     match sys.syscall(KernelRequest::MapSharedBuffer { buffer_id, flags }) {
-        KernelResponse::SharedBufferMapped { vaddr, size } => {
-            Ok((vaddr as *mut u8, size as usize))
-        }
+        KernelResponse::SharedBufferMapped { vaddr, size } => Ok((vaddr as *mut u8, size as usize)),
         KernelResponse::Error { message } => Err(SysError::Kernel(message)),
         _ => Err(SysError::Unexpected),
     }
@@ -645,9 +644,7 @@ pub fn open_primary_display_buffer<S: Sys>(sys: &mut S) -> Result<PrimaryDisplay
         .ok_or(SysError::Unexpected)?;
 
     let mut targets = edge_targets(sys, display.id, graph_kinds::EDGE_DISPLAY_SCANOUT);
-    let buffer_id = targets
-        .pop()
-        .ok_or(SysError::Unexpected)?;
+    let buffer_id = targets.pop().ok_or(SysError::Unexpected)?;
 
     let info = shared_buffer_info(sys, buffer_id)?;
     let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER);

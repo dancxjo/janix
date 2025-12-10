@@ -14,13 +14,13 @@ pub mod sched;
 pub mod sched_graph;
 pub mod sched_tick;
 pub mod sched_types;
+pub mod shared_buffer;
 pub mod time;
 pub mod transaction;
-pub mod shared_buffer;
 
 use crate::model::{compute_memory_summary, compute_scheduler_summary, scheduler_tick};
-use crate::shared_buffer::{self, MAX_FRAMES_PER_BUFFER};
 use crate::sched_types::ThreadState;
+use crate::shared_buffer::MAX_FRAMES_PER_BUFFER;
 use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, PropValue, ThingId};
 use alloc::string::String;
 use spin::Mutex;
@@ -115,12 +115,8 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 }
             }
         }
-        KernelRequest::AddEdge {
-            from,
-            edge_kind,
-            to,
-        } => {
-            if graph::add_edge(from, edge_kind, to) {
+        KernelRequest::AddEdge { from, pred, to } => {
+            if graph::add_edge(from, pred, to) {
                 KernelResponse::Success { data: None }
             } else {
                 KernelResponse::Error {
@@ -128,12 +124,8 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 }
             }
         }
-        KernelRequest::EdgeAt {
-            from,
-            edge_kind,
-            index,
-        } => KernelResponse::EdgeTarget {
-            target: graph::edge_target_at(from, edge_kind, index as usize),
+        KernelRequest::EdgeAt { from, pred, index } => KernelResponse::EdgeTarget {
+            target: graph::edge_target_at(from, pred, index as usize),
         },
         KernelRequest::CreateSharedBuffer {
             width,
@@ -152,7 +144,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     None => {
                         return KernelResponse::Error {
                             message: "Out of frames for SharedBuffer",
-                        }
+                        };
                     }
                 };
                 if frames.push(frame).is_err() {
@@ -191,7 +183,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     None => {
                         return KernelResponse::Error {
                             message: "No current process for mapping",
-                        }
+                        };
                     }
                 };
 
@@ -200,7 +192,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     None => {
                         return KernelResponse::Error {
                             message: "Failed to reserve virtual region",
-                        }
+                        };
                     }
                 };
 
@@ -211,10 +203,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 return KernelResponse::Error { message: msg };
             }
 
-            KernelResponse::SharedBufferMapped {
-                vaddr,
-                size,
-            }
+            KernelResponse::SharedBufferMapped { vaddr, size }
         }
         KernelRequest::GetSharedBufferInfo { buffer_id } => {
             let info = shared_buffer::manager()

@@ -14,6 +14,9 @@ pub use abi::{PropKey, PropType, PropValue, ThingId};
 
 pub use userland_rt::Sys;
 
+pub use crate::ui::{
+    WindowHandle, append_window_text, create_window, ensure_ui_schemas, set_window_text,
+};
 pub use userland_std::{
     CpuCoreThing,
     ProcessThing,

@@ -88,7 +88,25 @@ unsafe extern "C" fn kmain() -> ! {
         }
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        // Switch away from the Limine-provided stack into a kernel-owned stack in .bss.
+        // On some machines the boot stack may live in a reserved/unmapped hole, which
+        // causes a page fault once we exhaust the initial stack space.
+        let stack_top = core::ptr::addr_of!(BOOT_STACK) as u64 + STACK_SIZE as u64;
+        unsafe {
+            asm!(
+                "mov rsp, {0}",
+                "xor rbp, rbp",
+                "call {1}",
+                in(reg) stack_top,
+                sym kmain_inner,
+                options(noreturn)
+            );
+        }
+    }
+
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         kmain_inner();
     }

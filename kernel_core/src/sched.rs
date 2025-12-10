@@ -226,13 +226,16 @@ impl Scheduler {
             .map(|t| t.process_id)
     }
 
-    pub fn reserve_user_region(&mut self, pid: ProcessId, size: usize, align: usize) -> Option<u64> {
+    pub fn reserve_user_region(
+        &mut self,
+        pid: ProcessId,
+        size: usize,
+        align: usize,
+    ) -> Option<u64> {
         let idx = process_index(pid);
         let proc_slot = self.processes.get_mut(idx)?.as_mut()?;
         let alignment = if align == 0 { 1 } else { align } as u64;
-        let start = proc_slot
-            .next_map_base
-            .max(USER_HEAP_END as u64);
+        let start = proc_slot.next_map_base.max(USER_HEAP_END as u64);
         let aligned = if start % alignment == 0 {
             start
         } else {

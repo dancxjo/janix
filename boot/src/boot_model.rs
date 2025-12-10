@@ -1,11 +1,11 @@
 extern crate alloc;
 
+use crate::FRAMEBUFFER_REQUEST;
 use abi::{PixelFormat, PropValue, Thing, ThingId};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use kernel_core::memory::{BootFrameAllocator, PhysFrame, init_frame_pool};
 use kernel_core::model;
 use kernel_core::{graph, graph_kinds, log, shared_buffer, time};
-use crate::FRAMEBUFFER_REQUEST;
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
 use thing_models::{AlarmRequest, BootProgram, TimeSource};
@@ -146,7 +146,7 @@ pub fn seed_display_from_limine() {
     let height = fb.height();
     let pitch = fb.pitch();
     let bpp = fb.bpp();
-    let fb_addr = fb.addr();
+    let fb_addr = fb.addr() as u64;
     let size_bytes = pitch as u64 * height as u64;
 
     if bpp != 32 {
@@ -154,10 +154,10 @@ pub fn seed_display_from_limine() {
     }
 
     let start = fb_addr & !(4096 - 1);
-    let end = shared_buffer::align_up(fb_addr + size_bytes, 4096);
+    let end = shared_buffer::align_up(fb_addr.saturating_add(size_bytes), 4096);
 
-    let mut frames: heapless::Vec<PhysFrame, { shared_buffer::MAX_FRAMES_PER_BUFFER }>
-        = heapless::Vec::new();
+    let mut frames: heapless::Vec<PhysFrame, { shared_buffer::MAX_FRAMES_PER_BUFFER }> =
+        heapless::Vec::new();
 
     let mut addr = start;
     while addr < end {
@@ -179,7 +179,13 @@ pub fn seed_display_from_limine() {
         pixel_format,
     };
 
-    match shared_buffer::register_shared_buffer(info.width, info.height, info.stride, pixel_format, frames) {
+    match shared_buffer::register_shared_buffer(
+        info.width,
+        info.height,
+        info.stride,
+        pixel_format,
+        frames,
+    ) {
         Ok(buffer_id) => {
             let _ = shared_buffer::create_display_for_buffer(buffer_id, "display0", &info);
             log("Seeded display0 and SharedBuffer from Limine framebuffer");

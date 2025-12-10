@@ -253,24 +253,9 @@ impl Sys for UserlandSys {
                     }
                 }
             }
-            KernelRequest::AddEdge {
-                from,
-                edge_kind,
-                to,
-            } => {
-                let kind_ptr = edge_kind.as_ptr() as u64;
-                let kind_len = edge_kind.len() as u64;
-                let ret = unsafe {
-                    syscall_stub(
-                        SyscallNumber::AddEdge,
-                        from.0,
-                        to.0,
-                        kind_ptr,
-                        kind_len,
-                        0,
-                        0,
-                    )
-                };
+            KernelRequest::AddEdge { from, pred, to } => {
+                let ret =
+                    unsafe { syscall_stub(SyscallNumber::AddEdge, from.0, pred.0, to.0, 0, 0, 0) };
                 if ret == 0 {
                     KernelResponse::Success { data: None }
                 } else {
@@ -279,24 +264,9 @@ impl Sys for UserlandSys {
                     }
                 }
             }
-            KernelRequest::EdgeAt {
-                from,
-                edge_kind,
-                index,
-            } => {
-                let kind_ptr = edge_kind.as_ptr() as u64;
-                let kind_len = edge_kind.len() as u64;
-                let ret = unsafe {
-                    syscall_stub(
-                        SyscallNumber::EdgeAt,
-                        from.0,
-                        index,
-                        kind_ptr,
-                        kind_len,
-                        0,
-                        0,
-                    )
-                };
+            KernelRequest::EdgeAt { from, pred, index } => {
+                let ret =
+                    unsafe { syscall_stub(SyscallNumber::EdgeAt, from.0, index, pred.0, 0, 0, 0) };
                 if ret == u64::MAX {
                     KernelResponse::EdgeTarget { target: None }
                 } else {

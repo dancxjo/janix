@@ -1,5 +1,7 @@
 //! Shared graph kind and edge identifiers used by both kernel and userland.
 
+use crate::EdgePred;
+
 pub const KIND_THREAD: &str = "Thread";
 pub const KIND_PROCESS: &str = "Process";
 pub const KIND_CPU_CORE: &str = "CpuCore";
@@ -20,16 +22,66 @@ pub const KIND_DISPLAY: &str = "Display";
 pub const KIND_SHARED_BUFFER: &str = "SharedBuffer";
 pub const KIND_DISPLAY_FRAMEBUFFER: &str = "DisplayFramebuffer";
 pub const KIND_DISPLAY_FRAME: &str = "DisplayFrame";
+pub const KIND_MODE: &str = "Mode";
+pub const KIND_MODE_SWITCH_EVENT: &str = "ModeSwitchEvent";
+pub const KIND_PLACE: &str = "Place";
+pub const KIND_WINDOW: &str = "Window";
+pub const KIND_SURFACE: &str = "Surface";
+pub const KIND_EDGE: &str = "EDG";
 
-pub const EDGE_OWNS_THREAD: &str = "proc.owns_thread";
-pub const EDGE_RUNS_ON: &str = "sched.runs_on";
-pub const EDGE_SLEEPS_UNTIL: &str = "sched.sleeps_until";
-pub const EDGE_LAUNCHES: &str = "boot.launches";
-pub const EDGE_SPAWNED: &str = "init.spawned";
-pub const EDGE_DISPLAY_SCANOUT: &str = "display.scanout";
+pub mod canon {
+    use crate::EdgePred;
+
+    pub const P_PROC_OWNS_THREAD: EdgePred = EdgePred(0x0001);
+    pub const P_SCHED_RUNS_ON: EdgePred = EdgePred(0x0002);
+    pub const P_SCHED_SLEEPS_UNTIL: EdgePred = EdgePred(0x0003);
+    pub const P_BOOT_LAUNCHES: EdgePred = EdgePred(0x0004);
+    pub const P_INIT_SPAWNED: EdgePred = EdgePred(0x0005);
+    pub const P_DISPLAY_SCANOUT: EdgePred = EdgePred(0x0006);
+    pub const P_MODE_PLACE: EdgePred = EdgePred(0x0007);
+    pub const P_WINDOW_SURFACE: EdgePred = EdgePred(0x0008);
+    pub const P_PLACE_WINDOW: EdgePred = EdgePred(0x0009);
+
+    pub const P_MODE_HAS_WINDOW: EdgePred = EdgePred(0x0010);
+    pub const P_DISPLAY_FRONT_BUFFER: EdgePred = EdgePred(0x0011);
+    pub const P_DISPLAY_BACK_BUFFER: EdgePred = EdgePred(0x0012);
+    pub const P_WINDOW_HAS_SURFACE: EdgePred = EdgePred(0x0013);
+    pub const P_WIDGET_CHILD: EdgePred = EdgePred(0x0014);
+    pub const P_ACTIVE_MODE: EdgePred = EdgePred(0x0015);
+    pub const P_APP_OWNS_WINDOW: EdgePred = EdgePred(0x0016);
+}
+
+pub const EDGE_OWNS_THREAD: EdgePred = canon::P_PROC_OWNS_THREAD;
+pub const EDGE_RUNS_ON: EdgePred = canon::P_SCHED_RUNS_ON;
+pub const EDGE_SLEEPS_UNTIL: EdgePred = canon::P_SCHED_SLEEPS_UNTIL;
+pub const EDGE_LAUNCHES: EdgePred = canon::P_BOOT_LAUNCHES;
+pub const EDGE_SPAWNED: EdgePred = canon::P_INIT_SPAWNED;
+pub const EDGE_DISPLAY_SCANOUT: EdgePred = canon::P_DISPLAY_SCANOUT;
+pub const EDGE_MODE_PLACE: EdgePred = canon::P_MODE_PLACE;
+pub const EDGE_WINDOW_SURFACE: EdgePred = canon::P_WINDOW_SURFACE;
+pub const EDGE_PLACE_WINDOW: EdgePred = canon::P_PLACE_WINDOW;
 
 pub const PROP_WIDTH: &str = "width";
 pub const PROP_HEIGHT: &str = "height";
 pub const PROP_STRIDE: &str = "stride";
 pub const PROP_PIXEL_FORMAT: &str = "pixel_format";
 pub const PROP_NAME: &str = "name";
+pub const PROP_MODE_INDEX: &str = "mode_index";
+pub const PROP_MODE_PLACE: &str = "mode_place";
+pub const PROP_MODE_ACTIVE: &str = "mode_active";
+pub const PROP_WINDOW_X: &str = "x";
+pub const PROP_WINDOW_Y: &str = "y";
+pub const PROP_WINDOW_WIDTH: &str = "window_width";
+pub const PROP_WINDOW_HEIGHT: &str = "window_height";
+pub const PROP_Z_INDEX: &str = "z_index";
+pub const PROP_WINDOW_ACTIVE: &str = "window_active";
+pub const PROP_TITLE: &str = "title";
+pub const PROP_SURFACE_KIND: &str = "surface_kind";
+pub const PROP_SURFACE_TEXT: &str = "surface_text";
+pub const PROP_WINDOW_ID: &str = "window_id";
+pub const PROP_TIMESTAMP: &str = "timestamp";
+pub const PROP_PLACE_ID: &str = "place_id";
+
+pub const PROP_EDGE_SRC: &str = "src";
+pub const PROP_EDGE_DST: &str = "dst";
+pub const PROP_EDGE_PRED: &str = "pred";

@@ -7,7 +7,7 @@ use alloc::format;
 #[cfg(feature = "rootfs")]
 use alloc::string::String;
 use alloc::vec::Vec;
-use thing_models::{BootProfile, BootProgram, ProgramImage};
+use thing_models::{BootProfile, BootProgram, Mode, Place, ProgramImage};
 use userland::prelude::*;
 use userland_std::{
     ProcessThing, add_edge, edge_targets, find_thing, list_things_by_kind, load_thing,
@@ -21,6 +21,8 @@ const ROOTFS_IDENTIFIER: &str = "rootfs";
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "init: starting");
+
+    seed_modes(sys);
 
     #[cfg(feature = "rootfs")]
     {
@@ -107,6 +109,41 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     log_dynamic(sys, "init: entering supervision loop".into());
     loop {
         sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
+    }
+}
+
+fn seed_modes<S: Sys>(sys: &mut S) {
+    let _ = register_schema_for::<Mode>(sys);
+    let _ = register_schema_for::<Place>(sys);
+
+    let existing: Vec<Mode> = list_things_by_kind(sys);
+    if !existing.is_empty() {
+        return;
+    }
+
+    for idx in 1..=12_u8 {
+        let name = match idx {
+            1 => "Desktop".to_string(),
+            12 => "Console".to_string(),
+            _ => format!("Mode {}", idx),
+        };
+
+        let place = Place {
+            id: ThingId(0),
+            name: format!("place-{}", idx),
+        };
+        let place_id = create_thing(sys, &place).unwrap_or(ThingId(0));
+
+        let mode = Mode {
+            id: ThingId(0),
+            index: idx,
+            name,
+            place_id: Some(place_id),
+            active: idx == 1,
+        };
+        if let Some(mode_id) = create_thing(sys, &mode) {
+            let _ = add_edge(sys, mode_id, graph_kinds::EDGE_MODE_PLACE, place_id);
+        }
     }
 }
 

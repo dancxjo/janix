@@ -22,6 +22,19 @@ pub struct NodeId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ThingId(pub u64);
 
+/// Predicate identifier for an edge between Things.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EdgePred(pub u64);
+
+/// Canonical edge representation inside the graph.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Edge {
+    pub id: ThingId,
+    pub src: ThingId,
+    pub dst: ThingId,
+    pub pred: EdgePred,
+}
+
 pub const USER_HEAP_START: usize = 0x0000_0000_4000_0000;
 pub const USER_HEAP_SIZE: usize = 4 * 1024 * 1024;
 pub const USER_HEAP_END: usize = USER_HEAP_START + USER_HEAP_SIZE;
@@ -149,27 +162,37 @@ pub struct ThreadInfo {
 #[derive(Debug, Clone)]
 pub enum KernelRequest {
     /// Query the graph
-    GraphQuery { node_id: NodeId },
+    GraphQuery {
+        node_id: NodeId,
+    },
     /// Create a transaction
     CreateTransaction,
     /// Commit a transaction
-    CommitTransaction { tx_id: TransactionId },
+    CommitTransaction {
+        tx_id: TransactionId,
+    },
     /// Log a message
-    Log { message: &'static str },
+    Log {
+        message: &'static str,
+    },
     /// Create a new Thing
     ThingCreate {
         kind: &'static str,
         props: &'static [(PropKey, PropValue)],
     },
     /// Spawn a program defined by a BootProgram Thing
-    SpawnProgram { boot_program_id: ThingId },
+    SpawnProgram {
+        boot_program_id: ThingId,
+    },
     /// Enumerate Things of a given kind
     ThingList {
         kind: &'static str,
         start_after: ThingId,
     },
     /// Get a Thing
-    ThingGet { id: ThingId },
+    ThingGet {
+        id: ThingId,
+    },
     /// Update a Thing
     ThingUpdate {
         id: ThingId,
@@ -182,7 +205,9 @@ pub enum KernelRequest {
         props: &'static [(&'static str, PropType)],
     },
     /// Get a schema
-    SchemaGet { kind: &'static str },
+    SchemaGet {
+        kind: &'static str,
+    },
     /// Get memory summary
     GetMemorySummary,
     /// Get scheduler summary
@@ -193,9 +218,13 @@ pub enum KernelRequest {
         pool_index: u64,
     },
     /// Free a frame
-    FreeFrame { frame_id: FrameId },
+    FreeFrame {
+        frame_id: FrameId,
+    },
     /// Create a process
-    CreateProcess { name: &'static str },
+    CreateProcess {
+        name: &'static str,
+    },
     /// Create a thread
     CreateThread {
         pid: u64,
@@ -210,13 +239,13 @@ pub enum KernelRequest {
     /// Add an edge between Things
     AddEdge {
         from: ThingId,
-        edge_kind: &'static str,
+        pred: EdgePred,
         to: ThingId,
     },
     /// Fetch the target of the edge at a specific index.
     EdgeAt {
         from: ThingId,
-        edge_kind: &'static str,
+        pred: EdgePred,
         index: u64,
     },
     CreateSharedBuffer {
@@ -237,15 +266,26 @@ pub enum KernelRequest {
 #[derive(Debug, Clone)]
 pub enum KernelResponse {
     /// Success with optional data
-    Success { data: Option<u64> },
+    Success {
+        data: Option<u64>,
+    },
     /// Error with message
-    Error { message: &'static str },
+    Error {
+        message: &'static str,
+    },
     /// Transaction created
-    TransactionCreated { tx_id: TransactionId },
+    TransactionCreated {
+        tx_id: TransactionId,
+    },
     /// Node data
-    NodeData { node_id: NodeId, value: u64 },
+    NodeData {
+        node_id: NodeId,
+        value: u64,
+    },
     /// Thing created
-    ThingCreated { id: ThingId },
+    ThingCreated {
+        id: ThingId,
+    },
     /// Thing data
     ThingData {
         id: ThingId,
@@ -253,38 +293,56 @@ pub enum KernelResponse {
         props: &'static [Option<(PropKey, PropValue)>],
     },
     /// Schema registered
-    SchemaRegistered { kind: &'static str },
+    SchemaRegistered {
+        kind: &'static str,
+    },
     /// Schema data
     SchemaData {
         kind: &'static str,
         props: &'static [Option<(&'static str, PropType)>],
     },
     /// Memory summary data
-    MemorySummary { summary: MemorySummary },
+    MemorySummary {
+        summary: MemorySummary,
+    },
     /// Scheduler summary data
-    SchedulerSummary { summary: SchedulerSummary },
+    SchedulerSummary {
+        summary: SchedulerSummary,
+    },
     /// Frame allocated
-    FrameAllocated { frame: FrameInfo },
+    FrameAllocated {
+        frame: FrameInfo,
+    },
     /// Frame freed
-    FrameFreed { frame_id: FrameId },
+    FrameFreed {
+        frame_id: FrameId,
+    },
     /// Process created
-    ProcessCreated { pid: u64 },
+    ProcessCreated {
+        pid: u64,
+    },
     /// Thread created
-    ThreadCreated { tid: u64 },
+    ThreadCreated {
+        tid: u64,
+    },
     /// Scheduler ticked
     SchedulerTicked {
         // snapshot of the thread that just ran (or None)
         current: Option<ThreadInfo>,
     },
     /// Result of querying an edge target.
-    EdgeTarget { target: Option<ThingId> },
+    EdgeTarget {
+        target: Option<ThingId>,
+    },
     /// Program spawn result
     ProgramSpawned {
         process_id: ThingId,
         thread_id: ThingId,
     },
     /// Result of Thing enumeration
-    ThingListEntry { id: Option<ThingId> },
+    ThingListEntry {
+        id: Option<ThingId>,
+    },
     SharedBufferCreated {
         buffer_id: ThingId,
     },

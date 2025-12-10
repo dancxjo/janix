@@ -14,21 +14,16 @@ fn cpu_index_from_node(node: ThingId) -> Option<usize> {
 }
 
 fn on_runs_on_edge(event: &GraphEvent) {
-    if let GraphEvent::EdgeAdded {
-        from: thread_id,
-        edge_kind,
-        to: cpu_node,
-    } = event
-    {
-        if *edge_kind != graph_kinds::EDGE_RUNS_ON {
+    if let GraphEvent::EdgeAdded(edge) = event {
+        if edge.pred != graph_kinds::EDGE_RUNS_ON {
             return;
         }
 
-        if let Some(cpu_index) = cpu_index_from_node(*cpu_node) {
+        if let Some(cpu_index) = cpu_index_from_node(edge.dst) {
             let cpu = cpu_index as CpuId;
             let current = arch_current_thread(cpu);
-            if current != Some(*thread_id) {
-                arch_switch_to_thread(cpu, *thread_id);
+            if current != Some(edge.src) {
+                arch_switch_to_thread(cpu, edge.src);
             }
         }
     }

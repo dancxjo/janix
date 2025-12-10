@@ -39,7 +39,7 @@ pub struct SharedBufferManager {
 }
 
 impl SharedBufferManager {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             buffers: BTreeMap::new(),
         }
@@ -89,7 +89,10 @@ pub fn create_shared_buffer_thing(
     props.push((graph_kinds::PROP_WIDTH, PropValue::U64(width as u64)));
     props.push((graph_kinds::PROP_HEIGHT, PropValue::U64(height as u64)));
     props.push((graph_kinds::PROP_STRIDE, PropValue::U64(stride as u64)));
-    props.push((graph_kinds::PROP_PIXEL_FORMAT, PropValue::Str(pf_str.into())));
+    props.push((
+        graph_kinds::PROP_PIXEL_FORMAT,
+        PropValue::Str(pf_str.into()),
+    ));
     let boxed = Box::leak(props.into_boxed_slice());
     graph::create_thing(graph_kinds::KIND_SHARED_BUFFER, boxed)
 }
@@ -131,7 +134,10 @@ pub fn create_display_for_buffer(
         (graph_kinds::PROP_WIDTH, PropValue::U64(info.width as u64)),
         (graph_kinds::PROP_HEIGHT, PropValue::U64(info.height as u64)),
         (graph_kinds::PROP_STRIDE, PropValue::U64(info.stride as u64)),
-        (graph_kinds::PROP_PIXEL_FORMAT, PropValue::Str(pf_str.into())),
+        (
+            graph_kinds::PROP_PIXEL_FORMAT,
+            PropValue::Str(pf_str.into()),
+        ),
     ];
     let display_id = graph::create_thing(graph_kinds::KIND_DISPLAY, props)?;
     let _ = graph::add_edge(display_id, graph_kinds::EDGE_DISPLAY_SCANOUT, buffer_id);
@@ -148,7 +154,10 @@ pub fn map_frames_into_current_as(
         use crate::memory::allocate_frame;
         use x86_64::registers::control::Cr3;
         use x86_64::structures::paging::mapper::MapToError;
-        use x86_64::structures::paging::{FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame as XPhysFrame, Size4KiB};
+        use x86_64::structures::paging::{
+            FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags,
+            PhysFrame as XPhysFrame, Size4KiB,
+        };
         use x86_64::{PhysAddr, VirtAddr};
 
         struct TableFrameAllocator;

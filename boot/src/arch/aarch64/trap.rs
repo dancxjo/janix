@@ -110,15 +110,9 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         tid.0
     } else if num == SyscallNumber::AddEdge as u64 {
         let from = ThingId(arg1);
-        let to = ThingId(arg2);
-        let Some(edge_kind) = leak_user_str(arg3, arg4 as usize) else {
-            return 1;
-        };
-        let req = KernelRequest::AddEdge {
-            from,
-            edge_kind,
-            to,
-        };
+        let pred = abi::EdgePred(arg2);
+        let to = ThingId(arg3);
+        let req = KernelRequest::AddEdge { from, pred, to };
         match kernel_core::handle_request(req) {
             KernelResponse::Success { .. } => 0,
             _ => 1,
@@ -126,14 +120,8 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     } else if num == SyscallNumber::EdgeAt as u64 {
         let from = ThingId(arg1);
         let index = arg2;
-        let Some(edge_kind) = leak_user_str(arg3, arg4 as usize) else {
-            return u64::MAX;
-        };
-        match kernel_core::handle_request(KernelRequest::EdgeAt {
-            from,
-            edge_kind,
-            index,
-        }) {
+        let pred = abi::EdgePred(arg3);
+        match kernel_core::handle_request(KernelRequest::EdgeAt { from, pred, index }) {
             KernelResponse::EdgeTarget { target } => target.map_or(u64::MAX, |id| id.0),
             _ => u64::MAX,
         }
@@ -157,10 +145,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let flags = MapFlags(arg2);
         let vaddr_out = arg3 as *mut u64;
         let size_out = arg4 as *mut u64;
-        match kernel_core::handle_request(KernelRequest::MapSharedBuffer {
-            buffer_id,
-            flags,
-        }) {
+        match kernel_core::handle_request(KernelRequest::MapSharedBuffer { buffer_id, flags }) {
             KernelResponse::SharedBufferMapped { vaddr, size } => {
                 if !vaddr_out.is_null() {
                     unsafe { *vaddr_out = vaddr };
@@ -277,8 +262,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let kind_ptr = arg1 as *const u8;
         let kind_len = arg2 as usize;
         let start_after = ThingId(arg3);
-        let kind =
-            unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
+        let kind = unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
         match kernel_core::handle_request(KernelRequest::ThingList {
             kind: kind_static,
@@ -299,8 +283,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let props_ptr = arg3 as *const (abi::PropKey, abi::PropValue);
         let props_len = arg4 as usize;
 
-        let kind =
-            unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
+        let kind = unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
         let props = unsafe { user_slice(props_ptr, props_len) };
 
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
@@ -340,8 +323,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let props_ptr = arg3 as *const (&'static str, abi::PropType);
         let props_len = arg4 as usize;
 
-        let kind =
-            unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
+        let kind = unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
         let props = unsafe { user_slice(props_ptr, props_len) };
 
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());

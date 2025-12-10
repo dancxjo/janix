@@ -1,4 +1,4 @@
-#![cfg_attr(target_os = "none", no_std)]
+#![cfg_attr(any(target_os = "none", feature = "kernel"), no_std)]
 #![cfg_attr(
     all(target_os = "none", not(feature = "kernel")),
     feature(alloc_error_handler)

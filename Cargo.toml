@@ -17,6 +17,8 @@ members = [
     "apps/ps2_mouse_driver",
     "apps/input_logger_demo",
     "apps/framebuffer_driver",
+    "apps/compositor",
+    "apps/window_demo",
     "apps/rootfs",
     "thing_macros",
     "thing_models",

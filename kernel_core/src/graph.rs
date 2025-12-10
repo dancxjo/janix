@@ -1,4 +1,9 @@
-use abi::{NodeId, ProcessId, PropKey, PropType, PropValue, ThingId};
+extern crate alloc;
+
+use crate::graph_kinds;
+use abi::{Edge, EdgePred, NodeId, ProcessId, PropKey, PropType, PropValue, ThingId};
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 /// Zero-sized marker handle for the global graph state.
 ///
@@ -7,6 +12,20 @@ use abi::{NodeId, ProcessId, PropKey, PropType, PropValue, ThingId};
 /// scheduler) without changing the global storage model yet.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct Graph;
+
+pub trait EdgeStore {
+    fn create_edge(&mut self, src: ThingId, pred: EdgePred, dst: ThingId) -> Option<ThingId>;
+    fn delete_edge(&mut self, id: ThingId) -> bool;
+
+    fn edges_from(&self, src: ThingId) -> &[ThingId];
+    fn edges_to(&self, dst: ThingId) -> &[ThingId];
+    fn edges_with_pred(&self, pred: EdgePred) -> &[ThingId];
+
+    fn edges_from_pred(&self, src: ThingId, pred: EdgePred) -> &[ThingId];
+    fn edges_to_pred(&self, dst: ThingId, pred: EdgePred) -> &[ThingId];
+
+    fn neighbor_dsts(&self, src: ThingId, pred: EdgePred) -> impl Iterator<Item = ThingId> + '_;
+}
 
 /// A change emitted by the graph when nodes, properties, or edges mutate.
 #[derive(Debug, Clone)]
@@ -26,16 +45,8 @@ pub enum GraphEvent {
         old: Option<PropValue>,
         new: PropValue,
     },
-    EdgeAdded {
-        from: ThingId,
-        edge_kind: &'static str,
-        to: ThingId,
-    },
-    EdgeRemoved {
-        from: ThingId,
-        edge_kind: &'static str,
-        to: ThingId,
-    },
+    EdgeAdded(Edge),
+    EdgeRemoved(Edge),
 }
 
 pub type GraphListener = fn(&GraphEvent);
@@ -55,7 +66,7 @@ struct PropListener {
 
 #[derive(Clone, Copy)]
 struct EdgeListener {
-    edge_kind: &'static str,
+    pred: EdgePred,
     listener: GraphListener,
 }
 
@@ -74,7 +85,6 @@ pub struct Node {
 }
 
 const MAX_PROPS_PER_THING: usize = 8;
-const MAX_EDGES: usize = 256;
 const MAX_NODE_LISTENERS: usize = 16;
 const MAX_PROP_LISTENERS: usize = 16;
 const MAX_EDGE_LISTENERS: usize = 16;
@@ -98,14 +108,7 @@ static mut NEXT_ID: u64 = 0;
 static mut THINGS: [Option<ThingNode>; MAX_THINGS] = [const { None }; MAX_THINGS];
 static mut NEXT_THING_ID: u64 = 0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Edge {
-    pub from: ThingId,
-    pub edge_kind: &'static str,
-    pub to: ThingId,
-}
-
-static mut EDGES: [Option<Edge>; MAX_EDGES] = [const { None }; MAX_EDGES];
+static mut EDGE_INDEX: Option<EdgeIndex> = None;
 
 static mut NODE_CREATED_LISTENERS: [Option<NodeListener>; MAX_NODE_LISTENERS] =
     [const { None }; MAX_NODE_LISTENERS];
@@ -134,6 +137,176 @@ pub struct Schema {
 // We use raw pointers to comply with Rust 2024 edition rules about mutable static references.
 static mut SCHEMAS: [Option<Schema>; MAX_SCHEMAS] = [None; MAX_SCHEMAS];
 
+#[derive(Debug, Clone)]
+struct EdgeSlot {
+    edge: Edge,
+    deleted: bool,
+}
+
+#[derive(Default, Debug)]
+pub struct EdgeIndex {
+    edges: BTreeMap<ThingId, EdgeSlot>,
+    by_src: BTreeMap<ThingId, Vec<ThingId>>,
+    by_dst: BTreeMap<ThingId, Vec<ThingId>>,
+    by_pred: BTreeMap<EdgePred, Vec<ThingId>>,
+    by_src_pred: BTreeMap<(ThingId, EdgePred), Vec<ThingId>>,
+    by_dst_pred: BTreeMap<(ThingId, EdgePred), Vec<ThingId>>,
+}
+
+static EMPTY_EDGE_IDS: [ThingId; 0] = [];
+
+impl EdgeIndex {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn clear(&mut self) {
+        self.edges.clear();
+        self.by_src.clear();
+        self.by_dst.clear();
+        self.by_pred.clear();
+        self.by_src_pred.clear();
+        self.by_dst_pred.clear();
+    }
+
+    pub fn insert(&mut self, edge: Edge) {
+        let previous = self
+            .edges
+            .get(&edge.id)
+            .filter(|slot| !slot.deleted)
+            .map(|slot| slot.edge);
+
+        if let Some(existing_edge) = previous {
+            self.remove_from_indexes(edge.id, &existing_edge);
+        }
+
+        let slot = EdgeSlot {
+            edge,
+            deleted: false,
+        };
+        self.add_to_indexes(slot.edge.id, &slot.edge);
+        self.edges.insert(slot.edge.id, slot);
+    }
+
+    pub fn remove(&mut self, id: ThingId) -> bool {
+        if let Some(slot) = self.edges.get_mut(&id) {
+            if slot.deleted {
+                return false;
+            }
+            let edge = slot.edge;
+            slot.deleted = true;
+            self.remove_from_indexes(id, &edge);
+            return true;
+        }
+        false
+    }
+
+    pub fn edge(&self, id: ThingId) -> Option<&Edge> {
+        self.edges
+            .get(&id)
+            .and_then(|slot| (!slot.deleted).then(|| &slot.edge))
+    }
+
+    pub fn edges_from(&self, src: ThingId) -> &[ThingId] {
+        self.slice_for(&self.by_src, &src)
+    }
+
+    pub fn edges_to(&self, dst: ThingId) -> &[ThingId] {
+        self.slice_for(&self.by_dst, &dst)
+    }
+
+    pub fn edges_with_pred(&self, pred: EdgePred) -> &[ThingId] {
+        self.slice_for(&self.by_pred, &pred)
+    }
+
+    pub fn edges_from_pred(&self, src: ThingId, pred: EdgePred) -> &[ThingId] {
+        self.slice_for(&self.by_src_pred, &(src, pred))
+    }
+
+    pub fn edges_to_pred(&self, dst: ThingId, pred: EdgePred) -> &[ThingId] {
+        self.slice_for(&self.by_dst_pred, &(dst, pred))
+    }
+
+    pub fn neighbor_dsts(
+        &self,
+        src: ThingId,
+        pred: EdgePred,
+    ) -> impl Iterator<Item = ThingId> + '_ {
+        self.edges_from_pred(src, pred)
+            .iter()
+            .filter_map(|id| self.edge(*id))
+            .map(|edge| edge.dst)
+    }
+
+    fn slice_for<'a, K: Ord>(
+        &'a self,
+        map: &'a BTreeMap<K, Vec<ThingId>>,
+        key: &K,
+    ) -> &'a [ThingId] {
+        map.get(key)
+            .map(|v| v.as_slice())
+            .unwrap_or(&EMPTY_EDGE_IDS)
+    }
+
+    fn add_to_indexes(&mut self, id: ThingId, edge: &Edge) {
+        Self::push_unique(self.by_src.entry(edge.src).or_default(), id);
+        Self::push_unique(self.by_dst.entry(edge.dst).or_default(), id);
+        Self::push_unique(self.by_pred.entry(edge.pred).or_default(), id);
+        Self::push_unique(
+            self.by_src_pred.entry((edge.src, edge.pred)).or_default(),
+            id,
+        );
+        Self::push_unique(
+            self.by_dst_pred.entry((edge.dst, edge.pred)).or_default(),
+            id,
+        );
+    }
+
+    fn remove_from_indexes(&mut self, id: ThingId, edge: &Edge) {
+        if let Some(v) = self.by_src.get_mut(&edge.src) {
+            v.retain(|e| *e != id);
+        }
+        if let Some(v) = self.by_dst.get_mut(&edge.dst) {
+            v.retain(|e| *e != id);
+        }
+        if let Some(v) = self.by_pred.get_mut(&edge.pred) {
+            v.retain(|e| *e != id);
+        }
+        if let Some(v) = self.by_src_pred.get_mut(&(edge.src, edge.pred)) {
+            v.retain(|e| *e != id);
+        }
+        if let Some(v) = self.by_dst_pred.get_mut(&(edge.dst, edge.pred)) {
+            v.retain(|e| *e != id);
+        }
+    }
+
+    fn push_unique(vec: &mut Vec<ThingId>, id: ThingId) {
+        if !vec.contains(&id) {
+            vec.push(id);
+        }
+    }
+}
+
+fn edge_index_mut() -> &'static mut EdgeIndex {
+    unsafe {
+        let edge_index = &raw mut EDGE_INDEX;
+        if (*edge_index).is_none() {
+            *edge_index = Some(EdgeIndex::new());
+        }
+        (*edge_index).as_mut().unwrap()
+    }
+}
+
+fn edge_index_ref() -> &'static EdgeIndex {
+    unsafe {
+        let edge_index = &raw mut EDGE_INDEX;
+        if (*edge_index).is_none() {
+            *edge_index = Some(EdgeIndex::new());
+        }
+        (*edge_index).as_ref().unwrap()
+    }
+}
+
 /// Initialize the graph subsystem
 /// This resets all global state for test isolation and kernel boot
 pub fn init() {
@@ -160,12 +333,6 @@ pub fn init() {
             *slot = None;
         }
 
-        // Clear all edges
-        let edges = &raw mut EDGES;
-        for slot in (*edges).iter_mut() {
-            *slot = None;
-        }
-
         // Clear listeners
         let node_created = &raw mut NODE_CREATED_LISTENERS;
         for slot in (*node_created).iter_mut() {
@@ -188,6 +355,19 @@ pub fn init() {
             *slot = None;
         }
     }
+
+    edge_index_mut().clear();
+
+    static EDGE_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_EDGE_SRC, PropType::U64),
+        (graph_kinds::PROP_EDGE_DST, PropType::U64),
+        (graph_kinds::PROP_EDGE_PRED, PropType::U64),
+    ];
+    let _ = register_schema(
+        graph_kinds::KIND_EDGE,
+        "A graph edge connecting Things by predicate",
+        EDGE_SCHEMA,
+    );
 }
 
 impl Graph {
@@ -219,24 +399,90 @@ impl Graph {
     }
 
     #[inline]
-    pub fn add_edge(&mut self, from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
-        add_edge(from, edge_kind, to)
+    pub fn add_edge(&mut self, from: ThingId, pred: EdgePred, to: ThingId) -> bool {
+        create_edge(from, pred, to).is_some()
     }
 
     #[inline]
-    pub fn remove_edge(&mut self, from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
-        remove_edge(from, edge_kind, to)
+    pub fn remove_edge(&mut self, from: ThingId, pred: EdgePred, to: ThingId) -> bool {
+        remove_edge(from, pred, to)
     }
 
     #[inline]
-    pub fn neighbors(&self, from: ThingId, edge_kind: &'static str, out: &mut [Option<ThingId>]) {
-        neighbors(from, edge_kind, out)
+    pub fn neighbors(&self, from: ThingId, pred: EdgePred, out: &mut [Option<ThingId>]) {
+        neighbors(from, pred, out)
+    }
+}
+
+impl EdgeStore for Graph {
+    fn create_edge(&mut self, src: ThingId, pred: EdgePred, dst: ThingId) -> Option<ThingId> {
+        create_edge(src, pred, dst)
+    }
+
+    fn delete_edge(&mut self, id: ThingId) -> bool {
+        delete_edge(id)
+    }
+
+    fn edges_from(&self, src: ThingId) -> &[ThingId] {
+        edge_index_ref().edges_from(src)
+    }
+
+    fn edges_to(&self, dst: ThingId) -> &[ThingId] {
+        edge_index_ref().edges_to(dst)
+    }
+
+    fn edges_with_pred(&self, pred: EdgePred) -> &[ThingId] {
+        edge_index_ref().edges_with_pred(pred)
+    }
+
+    fn edges_from_pred(&self, src: ThingId, pred: EdgePred) -> &[ThingId] {
+        edge_index_ref().edges_from_pred(src, pred)
+    }
+
+    fn edges_to_pred(&self, dst: ThingId, pred: EdgePred) -> &[ThingId] {
+        edge_index_ref().edges_to_pred(dst, pred)
+    }
+
+    fn neighbor_dsts(&self, src: ThingId, pred: EdgePred) -> impl Iterator<Item = ThingId> + '_ {
+        edge_index_ref().neighbor_dsts(src, pred)
     }
 }
 
 /// Return the kind string for a Thing.
 pub fn thing_kind(id: ThingId) -> Option<&'static str> {
     get_thing(id).map(|(kind, _)| kind)
+}
+
+fn edge_from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Option<Edge> {
+    let mut src: Option<ThingId> = None;
+    let mut dst: Option<ThingId> = None;
+    let mut pred: Option<EdgePred> = None;
+
+    for (key, value) in props.iter().flatten() {
+        match *key {
+            graph_kinds::PROP_EDGE_SRC => {
+                if let PropValue::U64(v) = value {
+                    src = Some(ThingId(*v));
+                }
+            }
+            graph_kinds::PROP_EDGE_DST => {
+                if let PropValue::U64(v) = value {
+                    dst = Some(ThingId(*v));
+                }
+            }
+            graph_kinds::PROP_EDGE_PRED => {
+                if let PropValue::U64(v) = value {
+                    pred = Some(EdgePred(*v));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    match (src, dst, pred) {
+        (Some(src), Some(dst), Some(pred)) => Some(Edge { id, src, dst, pred }),
+        _ => None,
+    }
 }
 
 /// Fetch a property from a Thing, cloning the stored value.
@@ -334,18 +580,18 @@ fn dispatch_event(event: &GraphEvent) {
                     }
                 }
             }
-            GraphEvent::EdgeAdded { edge_kind, .. } => {
+            GraphEvent::EdgeAdded(edge) => {
                 let listeners = &raw const EDGE_ADDED_LISTENERS;
                 for slot in (*listeners).iter().flatten() {
-                    if slot.edge_kind == *edge_kind {
+                    if slot.pred == edge.pred {
                         (slot.listener)(event);
                     }
                 }
             }
-            GraphEvent::EdgeRemoved { edge_kind, .. } => {
+            GraphEvent::EdgeRemoved(edge) => {
                 let listeners = &raw const EDGE_REMOVED_LISTENERS;
                 for slot in (*listeners).iter().flatten() {
-                    if slot.edge_kind == *edge_kind {
+                    if slot.pred == edge.pred {
                         (slot.listener)(event);
                     }
                 }
@@ -394,30 +640,24 @@ pub fn subscribe_prop_changed(kind: &'static str, key: &'static str, listener: G
     }
 }
 
-pub fn subscribe_edge_added(edge_kind: &'static str, listener: GraphListener) {
+pub fn subscribe_edge_added(pred: EdgePred, listener: GraphListener) {
     unsafe {
         let listeners = &raw mut EDGE_ADDED_LISTENERS;
         for slot in (*listeners).iter_mut() {
             if slot.is_none() {
-                *slot = Some(EdgeListener {
-                    edge_kind,
-                    listener,
-                });
+                *slot = Some(EdgeListener { pred, listener });
                 return;
             }
         }
     }
 }
 
-pub fn subscribe_edge_removed(edge_kind: &'static str, listener: GraphListener) {
+pub fn subscribe_edge_removed(pred: EdgePred, listener: GraphListener) {
     unsafe {
         let listeners = &raw mut EDGE_REMOVED_LISTENERS;
         for slot in (*listeners).iter_mut() {
             if slot.is_none() {
-                *slot = Some(EdgeListener {
-                    edge_kind,
-                    listener,
-                });
+                *slot = Some(EdgeListener { pred, listener });
                 return;
             }
         }
@@ -439,6 +679,12 @@ pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Optio
             node_props[i] = Some((prop.0, prop.1.clone()));
         }
 
+        let edge_for_index = if kind == graph_kinds::KIND_EDGE {
+            edge_from_props(id, &node_props)
+        } else {
+            None
+        };
+
         THINGS[NEXT_THING_ID as usize] = Some(ThingNode {
             id,
             kind,
@@ -447,6 +693,10 @@ pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Optio
         });
         NEXT_THING_ID += 1;
         dispatch_event(&GraphEvent::NodeCreated { id, kind });
+        if let Some(edge) = edge_for_index {
+            edge_index_mut().insert(edge);
+            dispatch_event(&GraphEvent::EdgeAdded(edge));
+        }
         Some(id)
     }
 }
@@ -470,6 +720,13 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
             return false;
         }
         if let Some(node) = THINGS[id.0 as usize].as_mut() {
+            let is_edge = node.kind == graph_kinds::KIND_EDGE;
+            let previous_edge = if is_edge {
+                edge_index_ref().edge(id).copied()
+            } else {
+                None
+            };
+
             for (key, value) in props {
                 let mut previous: Option<PropValue> = None;
                 // Find existing key to update
@@ -503,10 +760,46 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
                     new: value.clone(),
                 });
             }
+            if is_edge {
+                let new_edge = edge_from_props(id, &node.props);
+                match (previous_edge, new_edge) {
+                    (Some(prev), Some(next)) => {
+                        if prev != next {
+                            if edge_index_mut().remove(id) {
+                                dispatch_event(&GraphEvent::EdgeRemoved(prev));
+                            }
+                            edge_index_mut().insert(next);
+                            dispatch_event(&GraphEvent::EdgeAdded(next));
+                        }
+                    }
+                    (Some(prev), None) => {
+                        if edge_index_mut().remove(id) {
+                            dispatch_event(&GraphEvent::EdgeRemoved(prev));
+                        }
+                    }
+                    (None, Some(next)) => {
+                        edge_index_mut().insert(next);
+                        dispatch_event(&GraphEvent::EdgeAdded(next));
+                    }
+                    (None, None) => {}
+                }
+            }
             true
         } else {
             false
         }
+    }
+}
+
+fn remove_incident_edges(id: ThingId) {
+    let mut edges: Vec<ThingId> = Vec::new();
+    edges.extend_from_slice(edge_index_ref().edges_from(id));
+    edges.extend_from_slice(edge_index_ref().edges_to(id));
+    edges.sort_by_key(|t| t.0);
+    edges.dedup();
+
+    for edge_id in edges {
+        let _ = delete_edge(edge_id);
     }
 }
 
@@ -517,20 +810,14 @@ pub fn delete_thing(id: ThingId) -> bool {
             return false;
         }
         if let Some(thing) = THINGS[id.0 as usize].take() {
-            // remove edges attached
-            let edges = &raw mut EDGES;
-            for slot in (*edges).iter_mut() {
-                if let Some(edge) = slot {
-                    if edge.from == id || edge.to == id {
-                        let removed = *edge;
-                        *slot = None;
-                        dispatch_event(&GraphEvent::EdgeRemoved {
-                            from: removed.from,
-                            edge_kind: removed.edge_kind,
-                            to: removed.to,
-                        });
+            if thing.kind == graph_kinds::KIND_EDGE {
+                if let Some(edge) = edge_index_ref().edge(id).copied() {
+                    if edge_index_mut().remove(id) {
+                        dispatch_event(&GraphEvent::EdgeRemoved(edge));
                     }
                 }
+            } else {
+                remove_incident_edges(id);
             }
             dispatch_event(&GraphEvent::NodeDeleted {
                 id,
@@ -686,6 +973,12 @@ pub fn kernel_create_user_thing_for_process(
             node_props[i] = Some((prop.0, prop.1.clone()));
         }
 
+        let edge_for_index = if kind == graph_kinds::KIND_EDGE {
+            edge_from_props(id, &node_props)
+        } else {
+            None
+        };
+
         THINGS[NEXT_THING_ID as usize] = Some(ThingNode {
             id,
             kind,
@@ -694,6 +987,10 @@ pub fn kernel_create_user_thing_for_process(
         });
         NEXT_THING_ID += 1;
         dispatch_event(&GraphEvent::NodeCreated { id, kind });
+        if let Some(edge) = edge_for_index {
+            edge_index_mut().insert(edge);
+            dispatch_event(&GraphEvent::EdgeAdded(edge));
+        }
         Some(id)
     }
 }
@@ -713,14 +1010,29 @@ pub fn kernel_user_update_thing(
                 return false; // Access denied
             }
 
+            let is_edge = thing.kind == graph_kinds::KIND_EDGE;
+            let previous_edge = if is_edge {
+                edge_index_ref().edge(id).copied()
+            } else {
+                None
+            };
+
             // Update props logic
             for (key, value) in props {
                 let mut found = false;
                 for i in 0..MAX_PROPS_PER_THING {
                     if let Some((k, _)) = thing.props[i] {
                         if k == *key {
+                            let old = thing.props[i].as_ref().map(|(_, v)| v.clone());
                             thing.props[i] = Some((*key, value.clone()));
                             found = true;
+                            dispatch_event(&GraphEvent::PropChanged {
+                                id,
+                                kind: thing.kind,
+                                key: *key,
+                                old,
+                                new: value.clone(),
+                            });
                             break;
                         }
                     }
@@ -729,9 +1041,41 @@ pub fn kernel_user_update_thing(
                     for i in 0..MAX_PROPS_PER_THING {
                         if thing.props[i].is_none() {
                             thing.props[i] = Some((*key, value.clone()));
+                            dispatch_event(&GraphEvent::PropChanged {
+                                id,
+                                kind: thing.kind,
+                                key: *key,
+                                old: None,
+                                new: value.clone(),
+                            });
                             break;
                         }
                     }
+                }
+            }
+
+            if is_edge {
+                let new_edge = edge_from_props(id, &thing.props);
+                match (previous_edge, new_edge) {
+                    (Some(prev), Some(next)) => {
+                        if prev != next {
+                            if edge_index_mut().remove(id) {
+                                dispatch_event(&GraphEvent::EdgeRemoved(prev));
+                            }
+                            edge_index_mut().insert(next);
+                            dispatch_event(&GraphEvent::EdgeAdded(next));
+                        }
+                    }
+                    (Some(prev), None) => {
+                        if edge_index_mut().remove(id) {
+                            dispatch_event(&GraphEvent::EdgeRemoved(prev));
+                        }
+                    }
+                    (None, Some(next)) => {
+                        edge_index_mut().insert(next);
+                        dispatch_event(&GraphEvent::EdgeAdded(next));
+                    }
+                    (None, None) => {}
                 }
             }
             return true;
@@ -744,87 +1088,80 @@ pub fn cleanup_process_graph(_proc: ProcessId) {
     // TODO: delete or mark Things owned by proc
 }
 
-/// Add an edge between two Things.
-pub fn add_edge(from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
-    unsafe {
-        let edges = &raw mut EDGES;
-        for slot in (*edges).iter_mut() {
-            if let Some(edge) = slot {
-                if edge.from == from && edge.to == to && edge.edge_kind == edge_kind {
-                    return true; // already exists
-                }
-            }
-        }
-        for slot in (*edges).iter_mut() {
-            if slot.is_none() {
-                *slot = Some(Edge {
-                    from,
-                    edge_kind,
-                    to,
-                });
-                dispatch_event(&GraphEvent::EdgeAdded {
-                    from,
-                    edge_kind,
-                    to,
-                });
-                return true;
-            }
-        }
+/// Create an edge Thing and index it.
+pub fn create_edge(src: ThingId, pred: EdgePred, dst: ThingId) -> Option<ThingId> {
+    if let Some(existing) = edge_index_ref()
+        .edges_from_pred(src, pred)
+        .iter()
+        .copied()
+        .find(|id| match edge_index_ref().edge(*id) {
+            Some(edge) => edge.dst == dst,
+            None => false,
+        })
+    {
+        return Some(existing);
     }
-    false
+
+    let props = &[
+        (graph_kinds::PROP_EDGE_SRC, PropValue::U64(src.0)),
+        (graph_kinds::PROP_EDGE_DST, PropValue::U64(dst.0)),
+        (graph_kinds::PROP_EDGE_PRED, PropValue::U64(pred.0)),
+    ];
+    create_thing(graph_kinds::KIND_EDGE, props)
 }
 
-/// Remove an edge; returns true if removed.
-pub fn remove_edge(from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
-    unsafe {
-        let edges = &raw mut EDGES;
-        for slot in (*edges).iter_mut() {
-            if let Some(edge) = slot {
-                if edge.from == from && edge.edge_kind == edge_kind && edge.to == to {
-                    *slot = None;
-                    dispatch_event(&GraphEvent::EdgeRemoved {
-                        from,
-                        edge_kind,
-                        to,
-                    });
-                    return true;
-                }
-            }
-        }
-    }
-    false
+/// Add an edge between two Things; convenience wrapper returning success.
+pub fn add_edge(from: ThingId, pred: EdgePred, to: ThingId) -> bool {
+    create_edge(from, pred, to).is_some()
 }
 
-/// Collect neighbors from outgoing edges of a given kind.
-pub fn neighbors(from: ThingId, edge_kind: &'static str, out: &mut [Option<ThingId>]) {
+/// Delete an edge Thing by id.
+pub fn delete_edge(id: ThingId) -> bool {
+    unsafe {
+        if id.0 >= MAX_THINGS as u64 {
+            return false;
+        }
+        match THINGS[id.0 as usize].as_ref() {
+            Some(node) if node.kind == graph_kinds::KIND_EDGE => {}
+            _ => return false,
+        }
+    }
+
+    delete_thing(id)
+}
+
+/// Remove an edge by endpoints/predicate; returns true if removed.
+pub fn remove_edge(from: ThingId, pred: EdgePred, to: ThingId) -> bool {
+    let candidate = edge_index_ref()
+        .edges_from_pred(from, pred)
+        .iter()
+        .copied()
+        .find(|id| match edge_index_ref().edge(*id) {
+            Some(edge) => edge.dst == to,
+            None => false,
+        });
+
+    match candidate {
+        Some(id) => delete_edge(id),
+        None => false,
+    }
+}
+
+/// Collect neighbors from outgoing edges of a given predicate.
+pub fn neighbors(from: ThingId, pred: EdgePred, out: &mut [Option<ThingId>]) {
     for slot in out.iter_mut() {
         *slot = None;
     }
-    unsafe {
-        let edges = &raw const EDGES;
-        let mut idx = 0;
-        for edge in (*edges).iter().flatten() {
-            if edge.from == from && edge.edge_kind == edge_kind && idx < out.len() {
-                out[idx] = Some(edge.to);
-                idx += 1;
-            }
-        }
+
+    for (slot, dst) in out
+        .iter_mut()
+        .zip(edge_index_ref().neighbor_dsts(from, pred))
+    {
+        *slot = Some(dst);
     }
 }
 
-/// Return the target ThingId for the edge at `index` with the provided `edge_kind`.
-pub fn edge_target_at(from: ThingId, edge_kind: &'static str, index: usize) -> Option<ThingId> {
-    unsafe {
-        let edges = &raw const EDGES;
-        let mut count = 0;
-        for edge in (*edges).iter().flatten() {
-            if edge.from == from && edge.edge_kind == edge_kind {
-                if count == index {
-                    return Some(edge.to);
-                }
-                count += 1;
-            }
-        }
-    }
-    None
+/// Return the target ThingId for the edge at `index` with the provided predicate.
+pub fn edge_target_at(from: ThingId, pred: EdgePred, index: usize) -> Option<ThingId> {
+    edge_index_ref().neighbor_dsts(from, pred).nth(index)
 }

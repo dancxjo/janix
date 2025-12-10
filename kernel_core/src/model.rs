@@ -281,6 +281,63 @@ pub fn init_schemas() {
         "A single frame produced by a compositor targeting a framebuffer",
         DISPLAY_FRAME_SCHEMA,
     );
+
+    // Mode and windowing schemas
+    static MODE_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_MODE_INDEX, PropType::U64),
+        (graph_kinds::PROP_NAME, PropType::Str),
+        (graph_kinds::PROP_MODE_PLACE, PropType::U64),
+        (graph_kinds::PROP_MODE_ACTIVE, PropType::Bool),
+    ];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_MODE,
+        "Logical system mode (F1-F12)",
+        MODE_SCHEMA,
+    );
+
+    static MODE_SWITCH_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_MODE_INDEX, PropType::U64),
+        (graph_kinds::PROP_TIMESTAMP, PropType::U64),
+    ];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_MODE_SWITCH_EVENT,
+        "Input event requesting a mode change",
+        MODE_SWITCH_SCHEMA,
+    );
+
+    static PLACE_SCHEMA: &[(&str, PropType)] = &[(graph_kinds::PROP_NAME, PropType::Str)];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_PLACE,
+        "Workspace root for windows",
+        PLACE_SCHEMA,
+    );
+
+    static WINDOW_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_PLACE_ID, PropType::U64),
+        (graph_kinds::PROP_WINDOW_X, PropType::I64),
+        (graph_kinds::PROP_WINDOW_Y, PropType::I64),
+        (graph_kinds::PROP_WINDOW_WIDTH, PropType::I64),
+        (graph_kinds::PROP_WINDOW_HEIGHT, PropType::I64),
+        (graph_kinds::PROP_Z_INDEX, PropType::I64),
+        (graph_kinds::PROP_WINDOW_ACTIVE, PropType::Bool),
+        (graph_kinds::PROP_TITLE, PropType::Str),
+    ];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_WINDOW,
+        "Top-level window description",
+        WINDOW_SCHEMA,
+    );
+
+    static SURFACE_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_WINDOW_ID, PropType::U64),
+        (graph_kinds::PROP_SURFACE_KIND, PropType::Str),
+        (graph_kinds::PROP_SURFACE_TEXT, PropType::Str),
+    ];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_SURFACE,
+        "Renderable surface attached to a window",
+        SURFACE_SCHEMA,
+    );
 }
 
 /// Create a PhysFrame Thing

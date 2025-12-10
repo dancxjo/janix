@@ -2,7 +2,7 @@ use core::arch::global_asm;
 
 global_asm!(include_str!("trap.S"));
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn trap_handler(tf: &TrapFrame, scause: u64, stval: u64, sepc: u64, sstatus: u64) {
     kernel_core::println!("EXCEPTION: RISC-V Trap");
     kernel_core::println!(

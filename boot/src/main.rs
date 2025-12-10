@@ -38,19 +38,19 @@ use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker
 
 /// Sets the base revision to the latest revision supported by the crate.
 #[used]
-#[link_section = ".requests"]
+#[unsafe(link_section = ".requests")]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
 
 #[used]
-#[link_section = ".requests"]
+#[unsafe(link_section = ".requests")]
 pub(crate) static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 /// Define the start and end markers for Limine requests.
 #[used]
-#[link_section = ".requests_start_marker"]
+#[unsafe(link_section = ".requests_start_marker")]
 static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[used]
-#[link_section = ".requests_end_marker"]
+#[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 // Early boot heap before we reserve pages from the memory map.
@@ -62,7 +62,7 @@ const STACK_SIZE: usize = 16 * 1024; // 16KB
 struct Stack([u8; STACK_SIZE]);
 static mut BOOT_STACK: Stack = Stack([0; STACK_SIZE]);
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
     // Initialize serial console first (best effort)
     // We use 0 offset initially; Semihosting doesn't need offset.
@@ -121,7 +121,7 @@ unsafe extern "C" fn kmain() -> ! {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
     kernel_core::log("Entered kmain_inner");
     init_machine();

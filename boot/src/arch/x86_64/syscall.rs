@@ -95,7 +95,7 @@ unsafe extern "C" {
     pub fn syscall_handler_asm();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn log_syscall_iret_frame(rsp: *const u64) {
     // Read a few qwords from the stack to see what iret will consume.
     let mut words = [0u64; 8];
@@ -120,7 +120,7 @@ extern "C" fn log_syscall_iret_frame(rsp: *const u64) {
 }
 
 #[allow(unreachable_code, unsafe_op_in_unsafe_fn)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     let regs = unsafe { &mut *regs };
     let num = regs.rax;

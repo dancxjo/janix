@@ -11,19 +11,19 @@ use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
 use thing_models::{AlarmRequest, BootProgram, FontModule, TimeSource};
 
 #[used]
-#[link_section = ".requests"]
+#[unsafe(link_section = ".requests")]
 static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
 #[used]
-#[link_section = ".requests"]
+#[unsafe(link_section = ".requests")]
 static MP_REQUEST: MpRequest = MpRequest::new();
 
 #[used]
-#[link_section = ".requests"]
+#[unsafe(link_section = ".requests")]
 pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 #[used]
-#[link_section = ".requests"]
+#[unsafe(link_section = ".requests")]
 static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
 
 pub fn seed_memory_graph_from_limine() {

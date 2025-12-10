@@ -74,67 +74,104 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
 
     let program_images: Vec<ProgramImage> = list_things_by_kind(sys);
 
-    for program in programs.iter() {
-        if is_rootfs(program) {
-            log_dynamic(
-                sys,
-                "init: skipping rootfs BootProgram entry (already handled)".into(),
-            );
-            continue;
-        }
+    for _ in programs.iter().filter(|program| is_rootfs(program)) {
+        log_dynamic(
+            sys,
+            "init: skipping rootfs BootProgram entry (already handled)".into(),
+        );
+    }
+
+    let (driver_programs, app_programs): (Vec<&BootProgram>, Vec<&BootProgram>) = programs
+        .iter()
+        .filter(|program| !is_rootfs(program))
+        .partition(|program| is_driver(program));
+
+    if !driver_programs.is_empty() {
         log_dynamic(
             sys,
             format!(
-                "init: BootProgram name={} app_id={} priority={} binary={}",
-                program.name, program.app_id, program.priority, program.binary
+                "init: launching {} driver BootProgram(s) before apps",
+                driver_programs.len()
             ),
         );
-        if let Some(image) = program_images
-            .iter()
-            .find(|img| img.identifier == program.binary)
-        {
-            log_dynamic(
-                sys,
-                format!(
-                    "init: BootProgram {} backed by ProgramImage id={} module_index={} base_phys={:#x} size={}",
-                    program.name, image.identifier, image.module_index, image.base_phys, image.size
-                ),
-            );
-        } else {
-            log_dynamic(
-                sys,
-                format!(
-                    "init: WARNING: no ProgramImage found for BootProgram {} (binary={})",
-                    program.name, program.binary
-                ),
-            );
-        }
-        log_dynamic(
-            sys,
-            format!(
-                "init: spawning BootProgram {} (app_id={}, binary={})",
-                program.name, program.app_id, program.binary
-            ),
-        );
-        if let Some((process_id, _thread_id)) = spawn_program(sys, program.id) {
-            if !add_edge(sys, init_process.id, graph_kinds::EDGE_SPAWNED, process_id) {
-                log_dynamic(
-                    sys,
-                    "init: failed to add SPAWNED edge after spawn_program".into(),
-                );
-            }
-        } else {
-            log_dynamic(
-                sys,
-                format!("init: spawn_program failed for {}", program.name),
-            );
-        }
+    }
+
+    for program in driver_programs.iter().copied() {
+        spawn_boot_program(sys, &init_process, &program_images, program);
+    }
+
+    for program in app_programs.iter().copied() {
+        spawn_boot_program(sys, &init_process, &program_images, program);
     }
 
     log_dynamic(sys, "init: entering supervision loop".into());
     loop {
         sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
     }
+}
+
+fn spawn_boot_program<S: Sys>(
+    sys: &mut S,
+    init_process: &ProcessThing,
+    program_images: &[ProgramImage],
+    program: &BootProgram,
+) {
+    log_dynamic(
+        sys,
+        format!(
+            "init: BootProgram name={} app_id={} priority={} binary={}",
+            program.name, program.app_id, program.priority, program.binary
+        ),
+    );
+    if let Some(image) = program_images
+        .iter()
+        .find(|img| img.identifier == program.binary)
+    {
+        log_dynamic(
+            sys,
+            format!(
+                "init: BootProgram {} backed by ProgramImage id={} module_index={} base_phys={:#x} size={}",
+                program.name, image.identifier, image.module_index, image.base_phys, image.size
+            ),
+        );
+    } else {
+        log_dynamic(
+            sys,
+            format!(
+                "init: WARNING: no ProgramImage found for BootProgram {} (binary={})",
+                program.name, program.binary
+            ),
+        );
+    }
+    log_dynamic(
+        sys,
+        format!(
+            "init: spawning BootProgram {} (app_id={}, binary={})",
+            program.name, program.app_id, program.binary
+        ),
+    );
+    if let Some((process_id, _thread_id)) = spawn_program(sys, program.id) {
+        if !add_edge(sys, init_process.id, graph_kinds::EDGE_SPAWNED, process_id) {
+            log_dynamic(
+                sys,
+                "init: failed to add SPAWNED edge after spawn_program".into(),
+            );
+        }
+    } else {
+        log_dynamic(
+            sys,
+            format!("init: spawn_program failed for {}", program.name),
+        );
+    }
+}
+
+fn is_driver(program: &BootProgram) -> bool {
+    looks_like_driver_identifier(&program.name) || looks_like_driver_identifier(&program.binary)
+}
+
+fn looks_like_driver_identifier(identifier: &str) -> bool {
+    // Drivers currently follow a naming convention like "ps2_keyboard_driver".
+    identifier.contains("_driver") || identifier.contains("-driver")
 }
 
 fn load_boot_profile<S: Sys>(sys: &mut S) -> Option<BootProfile> {

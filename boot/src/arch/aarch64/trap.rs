@@ -48,7 +48,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     } else if num == SyscallNumber::Log as u64 {
         let ptr = arg1 as *const u8;
         let len = arg2 as usize;
-        if let Ok(s) = unsafe { core::str::from_utf8(core::slice::from_raw_parts(ptr, len)) } {
+        if let Ok(s) = unsafe { core::str::from_utf8(user_slice(ptr, len)) } {
             let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
             kernel_core::log(leaked);
         }
@@ -230,9 +230,8 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let kind_ptr = arg1 as *const u8;
         let kind_len = arg2 as usize;
         let start_after = ThingId(arg3);
-        let kind = unsafe {
-            core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("")
-        };
+        let kind =
+            unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
         match kernel_core::handle_request(KernelRequest::ThingList {
             kind: kind_static,
@@ -253,10 +252,9 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let props_ptr = arg3 as *const (abi::PropKey, abi::PropValue);
         let props_len = arg4 as usize;
 
-        let kind = unsafe {
-            core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("")
-        };
-        let props = unsafe { core::slice::from_raw_parts(props_ptr, props_len) };
+        let kind =
+            unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
+        let props = unsafe { user_slice(props_ptr, props_len) };
 
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
         let props_vec: alloc::vec::Vec<(abi::PropKey, abi::PropValue)> = props.to_vec();
@@ -276,7 +274,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let props_ptr = arg2 as *const (abi::PropKey, abi::PropValue);
         let props_len = arg3 as usize;
 
-        let props = unsafe { core::slice::from_raw_parts(props_ptr, props_len) };
+        let props = unsafe { user_slice(props_ptr, props_len) };
         let props_vec: alloc::vec::Vec<(abi::PropKey, abi::PropValue)> = props.to_vec();
         let props_static: &'static [(abi::PropKey, abi::PropValue)] =
             Box::leak(props_vec.into_boxed_slice());
@@ -295,10 +293,9 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let props_ptr = arg3 as *const (&'static str, abi::PropType);
         let props_len = arg4 as usize;
 
-        let kind = unsafe {
-            core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("")
-        };
-        let props = unsafe { core::slice::from_raw_parts(props_ptr, props_len) };
+        let kind =
+            unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
+        let props = unsafe { user_slice(props_ptr, props_len) };
 
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
         let props_vec = props.to_vec();
@@ -451,9 +448,21 @@ fn leak_user_str(ptr: u64, len: usize) -> Option<&'static str> {
     if len == 0 {
         return Some("");
     }
-    let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len) };
+    let bytes = unsafe { user_slice(ptr as *const u8, len) };
     core::str::from_utf8(bytes).ok().map(|s| {
         let leaked: &'static mut str = Box::leak(s.to_string().into_boxed_str());
         leaked as &'static str
     })
+}
+
+unsafe fn user_slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    if len == 0 || ptr.is_null() {
+        return &[];
+    }
+    let align = core::mem::align_of::<T>();
+    if align > 1 && (ptr as usize) % align != 0 {
+        &[]
+    } else {
+        core::slice::from_raw_parts(ptr, len)
+    }
 }

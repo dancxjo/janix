@@ -34,7 +34,8 @@ pub fn seed_memory_graph_from_limine() {
 
     let hhdm_offset = if let Some(hhdm) = HHDM_REQUEST.get_response() {
         let offset = hhdm.offset();
-        shared_buffer::set_hhdm_offset(offset);
+        // shared_buffer::set_hhdm_offset(offset); // Removed as shared_buffer now uses kernel_core::memory::hhdm
+        kernel_core::memory::set_hhdm_offset(offset);
         offset
     } else {
         0

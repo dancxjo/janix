@@ -33,18 +33,47 @@ impl Thing for UsbController {
 
         for prop in props.iter().flatten() {
             match prop.0 {
-                "name" => if let PropValue::Str(v) = &prop.1 { name = v.clone(); },
-                "pci_bus" => if let PropValue::U64(v) = prop.1 { pci_bus = v as u8; },
-                "pci_slot" => if let PropValue::U64(v) = prop.1 { pci_slot = v as u8; },
-                "pci_func" => if let PropValue::U64(v) = prop.1 { pci_func = v as u8; },
-                "mmio_base" => if let PropValue::U64(v) = prop.1 { mmio_base = v; },
+                "name" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        name = v.clone();
+                    }
+                }
+                "pci_bus" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        pci_bus = v as u8;
+                    }
+                }
+                "pci_slot" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        pci_slot = v as u8;
+                    }
+                }
+                "pci_func" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        pci_func = v as u8;
+                    }
+                }
+                "mmio_base" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        mmio_base = v;
+                    }
+                }
                 _ => {}
             }
         }
-        Self { id, name, pci_bus, pci_slot, pci_func, mmio_base }
+        Self {
+            id,
+            name,
+            pci_bus,
+            pci_slot,
+            pci_func,
+            mmio_base,
+        }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] { &[] }
+    fn schema() -> &'static [(&'static str, abi::PropType)] {
+        &[]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -87,21 +116,65 @@ impl Thing for UsbDevice {
 
         for prop in props.iter().flatten() {
             match prop.0 {
-                "controller_id" => if let PropValue::U64(v) = prop.1 { controller_id = ThingId(v); },
-                "slot" => if let PropValue::U64(v) = prop.1 { slot = v as u8; },
-                "address" => if let PropValue::U64(v) = prop.1 { address = v as u8; },
-                "vid" => if let PropValue::U64(v) = prop.1 { vid = v as u16; },
-                "pid" => if let PropValue::U64(v) = prop.1 { pid = v as u16; },
-                "class" => if let PropValue::U64(v) = prop.1 { class = v as u8; },
-                "subclass" => if let PropValue::U64(v) = prop.1 { subclass = v as u8; },
-                "protocol" => if let PropValue::U64(v) = prop.1 { protocol = v as u8; },
+                "controller_id" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        controller_id = ThingId(v);
+                    }
+                }
+                "slot" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        slot = v as u8;
+                    }
+                }
+                "address" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        address = v as u8;
+                    }
+                }
+                "vid" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        vid = v as u16;
+                    }
+                }
+                "pid" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        pid = v as u16;
+                    }
+                }
+                "class" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        class = v as u8;
+                    }
+                }
+                "subclass" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        subclass = v as u8;
+                    }
+                }
+                "protocol" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        protocol = v as u8;
+                    }
+                }
                 _ => {}
             }
         }
-        Self { id, controller_id, slot, address, vid, pid, class, subclass, protocol }
+        Self {
+            id,
+            controller_id,
+            slot,
+            address,
+            vid,
+            pid,
+            class,
+            subclass,
+            protocol,
+        }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] { &[] }
+    fn schema() -> &'static [(&'static str, abi::PropType)] {
+        &[]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,10 +212,16 @@ impl Thing for UsbEndpoint {
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("device_id", PropValue::U64(self.device_id.0)));
-        out.push(("endpoint_number", PropValue::U64(self.endpoint_number as u64)));
+        out.push((
+            "endpoint_number",
+            PropValue::U64(self.endpoint_number as u64),
+        ));
         out.push(("direction_in", PropValue::Bool(self.direction_in)));
         out.push(("transfer_type", PropValue::U64(self.transfer_type as u64)));
-        out.push(("max_packet_size", PropValue::U64(self.max_packet_size as u64)));
+        out.push((
+            "max_packet_size",
+            PropValue::U64(self.max_packet_size as u64),
+        ));
         out.push(("interval_ms", PropValue::U64(self.interval_ms as u64)));
     }
 
@@ -156,19 +235,53 @@ impl Thing for UsbEndpoint {
 
         for prop in props.iter().flatten() {
             match prop.0 {
-                "device_id" => if let PropValue::U64(v) = prop.1 { device_id = ThingId(v); },
-                "endpoint_number" => if let PropValue::U64(v) = prop.1 { endpoint_number = v as u8; },
-                "direction_in" => if let PropValue::Bool(v) = prop.1 { direction_in = v; },
-                "transfer_type" => if let PropValue::U64(v) = prop.1 { transfer_type = UsbTransferType::from(v); },
-                "max_packet_size" => if let PropValue::U64(v) = prop.1 { max_packet_size = v as u16; },
-                "interval_ms" => if let PropValue::U64(v) = prop.1 { interval_ms = v as u8; },
+                "device_id" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        device_id = ThingId(v);
+                    }
+                }
+                "endpoint_number" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        endpoint_number = v as u8;
+                    }
+                }
+                "direction_in" => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        direction_in = v;
+                    }
+                }
+                "transfer_type" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        transfer_type = UsbTransferType::from(v);
+                    }
+                }
+                "max_packet_size" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        max_packet_size = v as u16;
+                    }
+                }
+                "interval_ms" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        interval_ms = v as u8;
+                    }
+                }
                 _ => {}
             }
         }
-        Self { id, device_id, endpoint_number, direction_in, transfer_type, max_packet_size, interval_ms }
+        Self {
+            id,
+            device_id,
+            endpoint_number,
+            direction_in,
+            transfer_type,
+            max_packet_size,
+            interval_ms,
+        }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] { &[] }
+    fn schema() -> &'static [(&'static str, abi::PropType)] {
+        &[]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,17 +333,42 @@ impl Thing for UsbTransferRequest {
 
         for prop in props.iter().flatten() {
             match prop.0 {
-                "endpoint_id" => if let PropValue::U64(v) = prop.1 { endpoint_id = ThingId(v); },
-                "kind" => if let PropValue::U64(v) = prop.1 { kind = UsbTransferKind::from(v); },
+                "endpoint_id" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        endpoint_id = ThingId(v);
+                    }
+                }
+                "kind" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        kind = UsbTransferKind::from(v);
+                    }
+                }
                 // "buffer" => if let PropValue::Blob(v) = &prop.1 { buffer = v.clone(); },
-                "expected_len" => if let PropValue::U64(v) = prop.1 { expected_len = v as u16; },
-                "timeout_ms" => if let PropValue::U64(v) = prop.1 { timeout_ms = v as u32; },
+                "expected_len" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        expected_len = v as u16;
+                    }
+                }
+                "timeout_ms" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        timeout_ms = v as u32;
+                    }
+                }
                 _ => {}
             }
         }
-        Self { id, endpoint_id, kind, buffer, expected_len, timeout_ms }
+        Self {
+            id,
+            endpoint_id,
+            kind,
+            buffer,
+            expected_len,
+            timeout_ms,
+        }
     }
-    fn schema() -> &'static [(&'static str, abi::PropType)] { &[] }
+    fn schema() -> &'static [(&'static str, abi::PropType)] {
+        &[]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -277,14 +415,29 @@ impl Thing for UsbTransferResult {
 
         for prop in props.iter().flatten() {
             match prop.0 {
-                "request_id" => if let PropValue::U64(v) = prop.1 { request_id = ThingId(v); },
-                "status" => if let PropValue::U64(v) = prop.1 { status = UsbTransferStatus::from(v); },
+                "request_id" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        request_id = ThingId(v);
+                    }
+                }
+                "status" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        status = UsbTransferStatus::from(v);
+                    }
+                }
                 // "data" => if let PropValue::Blob(v) = &prop.1 { data = v.clone(); },
                 _ => {}
             }
         }
-        Self { id, request_id, status, data }
+        Self {
+            id,
+            request_id,
+            status,
+            data,
+        }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] { &[] }
+    fn schema() -> &'static [(&'static str, abi::PropType)] {
+        &[]
+    }
 }

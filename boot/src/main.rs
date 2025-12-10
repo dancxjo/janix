@@ -148,8 +148,18 @@ fn init_machine() {
         unsafe { user::init_user_stack(offset) };
     }
 
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        // Map PCI ECAM (0x3f000000)
+        // QEMU virt ECAM is 0x3f000000, size 0x01000000 (16MB)
+        kernel_core::log("Mapping PCI ECAM...");
+        arch::aarch64::paging::map_device_region(0x3f000000, 0x01000000);
+        kernel_core::log("PCI ECAM mapped.");
+    }
+
     kernel_core::log("Initializing kernel core...");
     kernel_core::init();
+
 
     kernel_core::register_spawn_program_handler(crate::program::spawn_program);
     {

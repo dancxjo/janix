@@ -560,7 +560,7 @@ impl Thing for AlarmRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi::{graph_kinds, PropKey, PropValue};
+    use abi::{PropKey, PropValue, graph_kinds};
     use alloc::{string::String, vec::Vec};
 
     fn to_prop_slice(props: &[(PropKey, PropValue)]) -> Vec<Option<(PropKey, PropValue)>> {
@@ -615,7 +615,10 @@ mod tests {
         assert_eq!(
             props,
             [
-                (graph_kinds::PROP_IDENTIFIER, PropValue::Str(String::from("kernel"))),
+                (
+                    graph_kinds::PROP_IDENTIFIER,
+                    PropValue::Str(String::from("kernel"))
+                ),
                 (graph_kinds::PROP_MODULE_INDEX, PropValue::U64(3)),
                 (graph_kinds::PROP_BASE_PHYS, PropValue::U64(0x1000)),
                 (graph_kinds::PROP_SIZE, PropValue::U64(0x2000)),
@@ -645,10 +648,7 @@ mod tests {
 
         let mut props = Vec::new();
         request.to_props(&mut props);
-        assert!(props.contains(&(
-            graph_kinds::PROP_PRESENTED_AT_NS,
-            PropValue::U64(2_000)
-        )));
+        assert!(props.contains(&(graph_kinds::PROP_PRESENTED_AT_NS, PropValue::U64(2_000))));
 
         let roundtrip = DisplayPresentRequest::from_props(request.id, &to_prop_slice(&props));
         assert_eq!(roundtrip.framebuffer_id, request.framebuffer_id);

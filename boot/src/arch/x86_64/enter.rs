@@ -59,35 +59,39 @@ resume_user_mode_asm:
     push rax
     
     // GPRs
-    mov rax, [rdi + 112] // RAX
+    // GPRs
+    // Push in order: RAX...R15 (offsets 0...112)
+    // Stack grows down, so to pop R15...RAX later, we must push RAX first (deepest) and R15 last (top).
+    
+    mov rax, [rdi + 0]   // RAX
     push rax
-    mov rax, [rdi + 104] // RDI
+    mov rax, [rdi + 8]   // RDI
     push rax
-    mov rax, [rdi + 96]  // RSI
+    mov rax, [rdi + 16]  // RSI
     push rax
-    mov rax, [rdi + 88]  // RDX
+    mov rax, [rdi + 24]  // RDX
     push rax
-    mov rax, [rdi + 80]  // RCX
+    mov rax, [rdi + 32]  // RCX
     push rax
-    mov rax, [rdi + 72]  // R8
+    mov rax, [rdi + 40]  // R8
     push rax
-    mov rax, [rdi + 64]  // R9
+    mov rax, [rdi + 48]  // R9
     push rax
     mov rax, [rdi + 56]  // R10
     push rax
-    mov rax, [rdi + 48]  // R11
+    mov rax, [rdi + 64]  // R11
     push rax
-    mov rax, [rdi + 40]  // RBX
+    mov rax, [rdi + 72]  // RBX
     push rax
-    mov rax, [rdi + 32]  // RBP
+    mov rax, [rdi + 80]  // RBP
     push rax
-    mov rax, [rdi + 24]  // R12
+    mov rax, [rdi + 88]  // R12
     push rax
-    mov rax, [rdi + 16]  // R13
+    mov rax, [rdi + 96]  // R13
     push rax
-    mov rax, [rdi + 8]   // R14
+    mov rax, [rdi + 104] // R14
     push rax
-    mov rax, [rdi + 0]   // R15
+    mov rax, [rdi + 112] // R15
     push rax
     
     // Restore GPRs

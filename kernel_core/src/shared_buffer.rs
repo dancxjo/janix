@@ -59,18 +59,13 @@ impl SharedBufferManager {
 }
 
 static SHARED_BUFFERS: Mutex<SharedBufferManager> = Mutex::new(SharedBufferManager::new());
-static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 
 pub fn manager() -> &'static Mutex<SharedBufferManager> {
     &SHARED_BUFFERS
 }
 
-pub fn set_hhdm_offset(offset: u64) {
-    HHDM_OFFSET.store(offset, Ordering::SeqCst);
-}
-
 pub fn hhdm_offset() -> Option<u64> {
-    let val = HHDM_OFFSET.load(Ordering::SeqCst);
+    let val = crate::memory::get_hhdm_offset();
     (val != 0).then_some(val)
 }
 

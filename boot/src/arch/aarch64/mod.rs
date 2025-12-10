@@ -2,8 +2,10 @@ pub mod enter;
 pub mod rtc;
 pub mod time;
 pub mod trap;
+pub mod paging;
 
 use super::{Arch, UserEntryRegs};
+
 
 pub struct AArch64Arch;
 

@@ -38,10 +38,7 @@ impl Sys for UserlandSys {
     fn syscall(&self, request: KernelRequest) -> KernelResponse {
         if let KernelRequest::Log { .. } = &request {
         } else {
-             let msg = "UserlandSys: syscall";
-             let ptr = msg.as_ptr() as u64;
-             let len = msg.len() as u64;
-             unsafe { syscall_stub(SyscallNumber::Log, ptr, len, 0, 0, 0, 0) };
+             // Debug print removed
         }
         match request {
             KernelRequest::Log { message } => {

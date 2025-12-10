@@ -16,8 +16,8 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use thing_models::{
-    AlarmEvent, AlarmRequest, BootProfile, BootProgram, InterruptEvent, IoPortOp, IoPortRegion,
-    ProgramImage, TimeSource,
+    AlarmEvent, AlarmRequest, BootProfile, BootProgram, FontModule, InterruptEvent, IoPortOp,
+    IoPortRegion, ProgramImage, TimeSource,
 };
 
 #[derive(Clone, Copy)]
@@ -196,6 +196,11 @@ pub fn init_schemas() {
         ProgramImage::DESCRIPTION,
         ProgramImage::schema(),
     );
+    let _ = graph::register_schema(
+        graph_kinds::KIND_FONT_MODULE,
+        FontModule::DESCRIPTION,
+        FontModule::schema(),
+    );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_TIME_SOURCE,
@@ -263,6 +268,10 @@ pub fn init_schemas() {
         (graph_kinds::PROP_HEIGHT, PropType::U64),
         (graph_kinds::PROP_STRIDE, PropType::U64),
         (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
+        (graph_kinds::PROP_POWER_STATE, PropType::Str),
+        (graph_kinds::PROP_REFRESH_INTERVAL_NS, PropType::U64),
+        (graph_kinds::PROP_FRAMES_PRESENTED, PropType::U64),
+        (graph_kinds::PROP_LAST_PRESENT_NS, PropType::U64),
     ];
     let _ = graph::register_schema(
         graph_kinds::KIND_DISPLAY_FRAMEBUFFER,
@@ -281,6 +290,18 @@ pub fn init_schemas() {
         "A single frame produced by a compositor targeting a framebuffer",
         DISPLAY_FRAME_SCHEMA,
     );
+    static DISPLAY_PRESENT_REQUEST_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_FRAMEBUFFER_ID, PropType::U64),
+        (graph_kinds::PROP_FRAME_INDEX, PropType::U64),
+        (graph_kinds::PROP_REQUESTED_AT_NS, PropType::U64),
+        (graph_kinds::PROP_PRESENTED_AT_NS, PropType::U64),
+        (graph_kinds::PROP_COMPLETED, PropType::Bool),
+    ];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_DISPLAY_PRESENT_REQUEST,
+        "A compositor request asking a framebuffer driver to present a frame",
+        DISPLAY_PRESENT_REQUEST_SCHEMA,
+    );
 
     // Mode and windowing schemas
     static MODE_SCHEMA: &[(&str, PropType)] = &[
@@ -288,6 +309,7 @@ pub fn init_schemas() {
         (graph_kinds::PROP_NAME, PropType::Str),
         (graph_kinds::PROP_MODE_PLACE, PropType::U64),
         (graph_kinds::PROP_MODE_ACTIVE, PropType::Bool),
+        (graph_kinds::PROP_MODE_LAYOUT_POLICY, PropType::I64),
     ];
     let _ = graph::register_schema(
         graph_kinds::KIND_MODE,
@@ -305,7 +327,10 @@ pub fn init_schemas() {
         MODE_SWITCH_SCHEMA,
     );
 
-    static PLACE_SCHEMA: &[(&str, PropType)] = &[(graph_kinds::PROP_NAME, PropType::Str)];
+    static PLACE_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_NAME, PropType::Str),
+        (graph_kinds::PROP_LAYOUT_MODE, PropType::Str),
+    ];
     let _ = graph::register_schema(
         graph_kinds::KIND_PLACE,
         "Workspace root for windows",

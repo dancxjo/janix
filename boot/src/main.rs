@@ -126,7 +126,7 @@ fn init_machine() {
 
     unsafe {
         let start = core::ptr::addr_of_mut!(HEAP_MEMORY) as usize;
-        heap::KERNEL_ALLOCATOR.init(start, HEAP_SIZE);
+        heap::init_kernel_heap(start, HEAP_SIZE);
         let end = start + HEAP_SIZE;
         let msg = alloc::format!("Kernel heap initialized: [{:#x}, {:#x})", start, end);
         let leaked: &'static str = Box::leak(msg.into_boxed_str());
@@ -169,6 +169,7 @@ fn init_world_graph() {
     boot_model::seed_cpu_graph_from_limine();
     boot_model::seed_display_from_limine();
     boot_model::seed_boot_profile();
+    boot_model::seed_font_modules_from_limine();
     boot_model::seed_program_images_from_limine();
     boot_model::seed_boot_programs_from_limine();
     boot_model::seed_time_graph();
@@ -210,6 +211,9 @@ fn launch_init_process() {
 }
 
 fn init_console() -> bool {
+    if !console::FRAMEBUFFER_CONSOLE_ENABLED {
+        return false;
+    }
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             unsafe { console::init_global(&framebuffer) };

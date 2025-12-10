@@ -17,7 +17,7 @@ use abi::{
     SchedulerSummary, SharedBufferInfo, ThreadInfo,
 };
 // `graph_kinds` is re-exported below as `pub use abi::graph_kinds;`
-use userland_rt::Sys;
+use userland_rt::{Sys, UserlandSys};
 
 pub mod alarm;
 pub mod clock;
@@ -27,10 +27,27 @@ pub mod time;
 pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
 pub use thing_models::{
-    AlarmEvent, AlarmRequest, Mode, ModeSwitchEvent, Place, Surface, TimeSource, Window,
+    AlarmEvent, AlarmRequest, DisplayPresentRequest, MODE_INDEX_CONSOLE, Mode, ModeSwitchEvent,
+    Place, Surface, TimeSource, Window,
 };
 
-pub const MODE_INDEX_CONSOLE: u8 = 12;
+#[cfg(target_os = "none")]
+pub fn entry<F>(mut run: F) -> !
+where
+    F: FnOnce(&mut UserlandSys),
+{
+    let mut sys = UserlandSys::new();
+    run(&mut sys);
+    loop {}
+}
+
+#[cfg(not(target_os = "none"))]
+pub fn entry<F>(_run: F) -> !
+where
+    F: FnOnce(&mut UserlandSys),
+{
+    panic!("ThingOS userland apps only run on bare-metal targets");
+}
 
 /// Return the currently active Mode Thing, if one is marked active.
 pub fn active_mode<S: Sys>(sys: &mut S) -> Option<Mode> {

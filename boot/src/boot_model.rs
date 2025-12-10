@@ -8,7 +8,7 @@ use kernel_core::model;
 use kernel_core::{graph, graph_kinds, log, shared_buffer, time};
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
-use thing_models::{AlarmRequest, BootProgram, TimeSource};
+use thing_models::{AlarmRequest, BootProgram, FontModule, TimeSource};
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -59,9 +59,7 @@ pub fn seed_memory_graph_from_limine() {
                 let heap_start_phys = base;
                 let heap_start_virt = (heap_start_phys as u64 + hhdm_offset) as usize;
 
-                unsafe {
-                    crate::heap::KERNEL_ALLOCATOR.init(heap_start_virt, heap_size as usize);
-                }
+                unsafe { crate::heap::init_kernel_heap(heap_start_virt, heap_size as usize) };
 
                 let heap_mib = heap_size / (1024 * 1024);
                 let msg = alloc::format!("Initialized kernel heap ({} MiB)", heap_mib);
@@ -220,6 +218,49 @@ pub fn seed_program_images_from_limine() {
             log("Failed to create ProgramImage Thing");
         }
     }
+}
+
+pub fn seed_font_modules_from_limine() {
+    let Some(response) = MODULE_REQUEST.get_response() else {
+        log("No Limine modules found for FontModule seeding");
+        return;
+    };
+
+    let hhdm_offset = HHDM_REQUEST
+        .get_response()
+        .map(|resp| resp.offset())
+        .unwrap_or(0);
+
+    let mut created = 0_u64;
+
+    for (index, module) in response.modules().iter().enumerate() {
+        let Some(name) = parse_font_identifier((*module).string(), (*module).path()) else {
+            continue;
+        };
+
+        let virt_addr = (*module).addr() as u64;
+        let base_phys = virt_addr.saturating_sub(hhdm_offset);
+        let size = (*module).size() as u64;
+
+        let font = FontModule {
+            id: ThingId(0),
+            name,
+            module_index: index as u64,
+            base_phys,
+            size,
+        };
+        let mut props_vec = Vec::new();
+        font.to_props(&mut props_vec);
+        let props_slice = Box::leak(props_vec.into_boxed_slice());
+
+        if graph::create_thing(graph_kinds::KIND_FONT_MODULE, props_slice).is_some() {
+            created = created.saturating_add(1);
+        }
+    }
+
+    let msg = alloc::format!("Seeded {} FontModule Things from Limine modules", created);
+    let leaked: &'static str = Box::leak(msg.into_boxed_str());
+    log(leaked);
 }
 
 pub fn seed_boot_programs_from_limine() {
@@ -395,12 +436,49 @@ fn parse_identifier_from_path(path: &core::ffi::CStr) -> Option<String> {
 }
 
 fn parse_program_argument(line: &str) -> Option<String> {
+    parse_keyed_argument(line, "program=")
+}
+
+fn parse_font_argument(line: &str) -> Option<String> {
+    parse_keyed_argument(line, "font=")
+}
+
+fn parse_keyed_argument(line: &str, prefix: &str) -> Option<String> {
     line.split_whitespace()
-        .find(|arg| arg.starts_with("program="))
+        .find(|arg| arg.starts_with(prefix))
         .and_then(|arg| {
-            let ident = arg.trim_start_matches("program=");
+            let ident = arg.trim_start_matches(prefix);
             (!ident.is_empty()).then(|| String::from(ident))
         })
+}
+
+fn parse_font_identifier(cmdline: &core::ffi::CStr, path: &core::ffi::CStr) -> Option<String> {
+    let bytes = cmdline.to_bytes();
+    if !bytes.is_empty() {
+        if let Ok(line) = core::str::from_utf8(bytes) {
+            if let Some(name) = parse_font_argument(line) {
+                return Some(name);
+            }
+        } else {
+            let owned = String::from_utf8_lossy(bytes);
+            if let Some(name) = parse_font_argument(owned.as_ref()) {
+                return Some(name);
+            }
+        }
+    }
+
+    if let Some(path_ident) = parse_identifier_from_path(path) {
+        if let Some(stripped) = path_ident.strip_suffix(".ttf") {
+            if !stripped.is_empty() {
+                return Some(String::from(stripped));
+            }
+        }
+        if !path_ident.is_empty() {
+            return Some(path_ident);
+        }
+    }
+
+    None
 }
 
 fn boot_program_exists(binary: &str) -> bool {

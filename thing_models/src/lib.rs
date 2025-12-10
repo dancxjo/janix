@@ -2,13 +2,15 @@
 
 extern crate alloc;
 
+pub mod display;
 pub mod input;
 pub mod io;
 pub mod ui;
 
-use abi::{PropKey, PropType, PropValue, Thing, ThingId};
+use abi::{PropKey, PropType, PropValue, Thing, ThingId, graph_kinds};
 use alloc::string::String;
 use alloc::vec::Vec;
+pub use display::*;
 pub use input::*;
 pub use io::*;
 pub use ui::*;
@@ -223,10 +225,16 @@ impl Thing for ProgramImage {
         "An ELF program image discovered at boot and available for loading.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("identifier", PropValue::Str(self.identifier.clone())));
-        out.push(("module_index", PropValue::U64(self.module_index)));
-        out.push(("base_phys", PropValue::U64(self.base_phys)));
-        out.push(("size", PropValue::U64(self.size)));
+        out.push((
+            graph_kinds::PROP_IDENTIFIER,
+            PropValue::Str(self.identifier.clone()),
+        ));
+        out.push((
+            graph_kinds::PROP_MODULE_INDEX,
+            PropValue::U64(self.module_index),
+        ));
+        out.push((graph_kinds::PROP_BASE_PHYS, PropValue::U64(self.base_phys)));
+        out.push((graph_kinds::PROP_SIZE, PropValue::U64(self.size)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -236,22 +244,22 @@ impl Thing for ProgramImage {
         let mut size = 0;
         for prop in props.iter().flatten() {
             match prop.0 {
-                "identifier" => {
+                graph_kinds::PROP_IDENTIFIER => {
                     if let PropValue::Str(v) = &prop.1 {
                         identifier = v.clone();
                     }
                 }
-                "module_index" => {
+                graph_kinds::PROP_MODULE_INDEX => {
                     if let PropValue::U64(v) = prop.1 {
                         module_index = v;
                     }
                 }
-                "base_phys" => {
+                graph_kinds::PROP_BASE_PHYS => {
                     if let PropValue::U64(v) = prop.1 {
                         base_phys = v;
                     }
                 }
-                "size" => {
+                graph_kinds::PROP_SIZE => {
                     if let PropValue::U64(v) = prop.1 {
                         size = v;
                     }
@@ -270,10 +278,86 @@ impl Thing for ProgramImage {
 
     fn schema() -> &'static [(&'static str, PropType)] {
         &[
-            ("identifier", PropType::Str),
-            ("module_index", PropType::U64),
-            ("base_phys", PropType::U64),
-            ("size", PropType::U64),
+            (graph_kinds::PROP_IDENTIFIER, PropType::Str),
+            (graph_kinds::PROP_MODULE_INDEX, PropType::U64),
+            (graph_kinds::PROP_BASE_PHYS, PropType::U64),
+            (graph_kinds::PROP_SIZE, PropType::U64),
+        ]
+    }
+}
+
+pub struct FontModule {
+    pub id: ThingId,
+    pub name: String,
+    pub module_index: u64,
+    pub base_phys: u64,
+    pub size: u64,
+}
+
+impl Thing for FontModule {
+    const KIND: &'static str = graph_kinds::KIND_FONT_MODULE;
+    const DESCRIPTION: &'static str =
+        "A font payload supplied as a boot module available for UI rendering.";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push((
+            graph_kinds::PROP_FONT_NAME,
+            PropValue::Str(self.name.clone()),
+        ));
+        out.push((
+            graph_kinds::PROP_MODULE_INDEX,
+            PropValue::U64(self.module_index),
+        ));
+        out.push((graph_kinds::PROP_BASE_PHYS, PropValue::U64(self.base_phys)));
+        out.push((graph_kinds::PROP_SIZE, PropValue::U64(self.size)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut name = String::new();
+        let mut module_index = 0;
+        let mut base_phys = 0;
+        let mut size = 0;
+        for prop in props.iter().flatten() {
+            match prop.0 {
+                graph_kinds::PROP_FONT_NAME => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        name = v.clone();
+                    }
+                }
+                graph_kinds::PROP_MODULE_INDEX => {
+                    if let PropValue::U64(v) = prop.1 {
+                        module_index = v;
+                    }
+                }
+                graph_kinds::PROP_BASE_PHYS => {
+                    if let PropValue::U64(v) = prop.1 {
+                        base_phys = v;
+                    }
+                }
+                graph_kinds::PROP_SIZE => {
+                    if let PropValue::U64(v) = prop.1 {
+                        size = v;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        FontModule {
+            id,
+            name,
+            module_index,
+            base_phys,
+            size,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            (graph_kinds::PROP_FONT_NAME, PropType::Str),
+            (graph_kinds::PROP_MODULE_INDEX, PropType::U64),
+            (graph_kinds::PROP_BASE_PHYS, PropType::U64),
+            (graph_kinds::PROP_SIZE, PropType::U64),
         ]
     }
 }

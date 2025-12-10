@@ -20,9 +20,11 @@ pub use crate::ui::{
 };
 pub use userland_std::{
     CpuCoreThing,
+    MODE_INDEX_CONSOLE,
     ProcessThing,
     Thing,
     ThreadThing,
+    active_mode,
     alarm::{self, Alarm, sleep_until},
     alloc_frame,
     clock::SystemClock,
@@ -30,8 +32,10 @@ pub use userland_std::{
     // Add other common exports as needed
     create_thing,
     create_thread,
+    default_mode,
     free_frame,
     get_type_description,
+    is_console_mode_active,
     list_things_by_kind,
     load_thing,
     memory_summary,
@@ -40,10 +44,6 @@ pub use userland_std::{
     scheduler_summary,
     time,
     update_props,
-    active_mode,
-    default_mode,
-    is_console_mode_active,
-    MODE_INDEX_CONSOLE,
 };
 
 const LOG_BUFFER_LEN: usize = 256;

@@ -33,10 +33,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
                 let (fh, fm, fs) = seconds_to_hms(fired_secs);
                 log_dynamic(
                     sys,
-                    format_args!(
-                        "alarm_demo: alarm fired at {:02}:{:02}:{:02}",
-                        fh, fm, fs
-                    ),
+                    format_args!("alarm_demo: alarm fired at {:02}:{:02}:{:02}", fh, fm, fs),
                 );
                 break;
             } else if state == "Cancelled" {

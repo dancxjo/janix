@@ -8,13 +8,12 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 #[cfg(target_os = "none")]
-use userland_rt::UserlandSys;
+use userland_std::entry;
 
 #[cfg(target_os = "none")]
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    let mut sys = UserlandSys::new();
-    compositor::run(&mut sys)
+    entry(|sys| compositor::run(sys));
 }
 
 #[cfg(not(target_os = "none"))]

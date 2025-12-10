@@ -9,8 +9,8 @@ use alloc::vec::Vec;
 use thing_models::{BootProfile, BootProgram, Mode, Place, ProgramImage};
 use userland::prelude::*;
 use userland_std::{
-    ProcessThing, add_edge, edge_targets, find_thing, list_things_by_kind, load_thing,
-    spawn_program, MODE_INDEX_CONSOLE,
+    MODE_INDEX_CONSOLE, ProcessThing, add_edge, edge_targets, find_thing, list_things_by_kind,
+    load_thing, spawn_program,
 };
 
 const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
@@ -41,7 +41,10 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     collect_boot_programs(sys, &mut programs, launch_ids.as_slice());
 
     if programs.is_empty() {
-        println(sys, "init: no BootProgram edges; waiting briefly for rootfs");
+        println(
+            sys,
+            "init: no BootProgram edges; waiting briefly for rootfs",
+        );
         for _ in 0..8 {
             sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
             let refresh_ids = edge_targets(sys, boot_profile.id, graph_kinds::EDGE_LAUNCHES);
@@ -140,10 +143,12 @@ fn ensure_modes<S: Sys>(sys: &mut S) {
     let main_place = Place {
         id: ThingId(0),
         name: "place-main".to_string(),
+        layout_mode: None,
     };
     let console_place = Place {
         id: ThingId(0),
         name: "place-console".to_string(),
+        layout_mode: None,
     };
 
     let main_place_id = create_thing(sys, &main_place).unwrap_or(ThingId(0));
@@ -155,6 +160,7 @@ fn ensure_modes<S: Sys>(sys: &mut S) {
         name: "Desktop".to_string(),
         place_id: Some(main_place_id),
         active: true,
+        layout_policy: None,
     };
     if let Some(mode_id) = create_thing(sys, &main_mode) {
         let _ = add_edge(sys, mode_id, graph_kinds::EDGE_MODE_PLACE, main_place_id);
@@ -166,6 +172,7 @@ fn ensure_modes<S: Sys>(sys: &mut S) {
         name: "Console".to_string(),
         place_id: Some(console_place_id),
         active: false,
+        layout_policy: None,
     };
     if let Some(mode_id) = create_thing(sys, &console_mode) {
         let _ = add_edge(sys, mode_id, graph_kinds::EDGE_MODE_PLACE, console_place_id);

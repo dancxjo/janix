@@ -1,9 +1,15 @@
+use abi::PropValue;
 use kernel_core::console::{ConsoleSink, register_sink};
+use kernel_core::{graph, graph_kinds};
 use limine::framebuffer::Framebuffer;
 use spin::Mutex;
+use thing_models::MODE_INDEX_CONSOLE;
 
 // Will be provided by build.rs:
 include!(concat!(env!("OUT_DIR"), "/unifont.rs"));
+
+// Temporary kill-switch so logs only go out over serial until the FB console stabilizes.
+pub const FRAMEBUFFER_CONSOLE_ENABLED: bool = false;
 
 static CONSOLE: Mutex<Option<Console>> = Mutex::new(None);
 
@@ -13,6 +19,9 @@ unsafe impl Send for FramebufferSink {}
 
 impl ConsoleSink for FramebufferSink {
     fn write_str(&self, s: &str) {
+        if !console_mode_should_draw() {
+            return;
+        }
         if let Some(console) = CONSOLE.lock().as_mut() {
             console.write_str(s);
         }
@@ -194,5 +203,46 @@ where
         f(console)
     } else {
         panic!("Console not initialized");
+    }
+}
+
+fn console_mode_should_draw() -> bool {
+    let mut seen_mode = false;
+    let mut console_active = false;
+
+    graph::iter_things(|thing| {
+        if thing.kind == graph_kinds::KIND_MODE {
+            seen_mode = true;
+
+            let mut index: Option<u8> = None;
+            let mut active = false;
+
+            for (key, value) in thing.props.iter().flatten() {
+                if *key == graph_kinds::PROP_MODE_INDEX {
+                    if let PropValue::U64(v) = value {
+                        index = Some(*v as u8);
+                    }
+                } else if *key == graph_kinds::PROP_MODE_ACTIVE {
+                    if let PropValue::Bool(flag) = value {
+                        active = *flag;
+                    }
+                }
+            }
+
+            if active {
+                if let Some(idx) = index {
+                    if idx == MODE_INDEX_CONSOLE {
+                        console_active = true;
+                    }
+                }
+            }
+        }
+    });
+
+    if console_active {
+        true
+    } else {
+        // Before userland seeds Mode Things, allow the console to draw.
+        !seen_mode
     }
 }

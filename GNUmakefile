@@ -31,6 +31,7 @@ ifeq ($(ENABLE_ROOTFS),1)
 APPS := rootfs $(APPS)
 endif
 APPS_TARGET_DIR := target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)
+COMPOSITOR_FONT_DIR := target/compositor-fonts
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
 $(call USER_VARIABLE,QEMUFLAGS,-m 2G)
@@ -269,6 +270,10 @@ $(IMAGE_NAME).iso: limine/limine kernel apps
 	for app in $(APPS); do \
 		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/apps/$$app; \
 	done
+	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
+		mkdir -p iso_root/boot/fonts; \
+		cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
+	fi
 	mkdir -p iso_root/boot/limine
 	rm -f limine.conf.tmp
 	cp limine.conf limine.conf.tmp
@@ -276,6 +281,14 @@ ifeq ($(ENABLE_ROOTFS),1)
 	echo "    module_path: boot():/boot/apps/rootfs" >> limine.conf.tmp
 	echo "    module_cmdline: program=rootfs" >> limine.conf.tmp
 endif
+	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
+		for font in $(COMPOSITOR_FONT_DIR)/*.ttf; do \
+			name=$$(basename $$font); \
+			base=$${name%.ttf}; \
+			echo "    module_path: boot():/boot/fonts/$$name" >> limine.conf.tmp; \
+			echo "    module_cmdline: font=$$base" >> limine.conf.tmp; \
+		done; \
+	fi
 	cp -v limine.conf.tmp iso_root/boot/limine/limine.conf
 	mkdir -p iso_root/EFI/BOOT
 ifeq ($(KARCH),x86_64)
@@ -328,12 +341,25 @@ ifeq ($(ENABLE_ROOTFS),1)
 	echo "    module_path: boot():/boot/apps/rootfs" >> limine.conf.tmp
 	echo "    module_cmdline: program=rootfs" >> limine.conf.tmp
 endif
+	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
+		for font in $(COMPOSITOR_FONT_DIR)/*.ttf; do \
+			name=$$(basename $$font); \
+			base=$${name%.ttf}; \
+			echo "    module_path: boot():/boot/fonts/$$name" >> limine.conf.tmp; \
+			echo "    module_cmdline: font=$$base" >> limine.conf.tmp; \
+		done; \
+	fi
 	mformat -i $(IMAGE_NAME).hdd@@1M
-	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine ::/boot/apps
+	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine ::/boot/apps ::/boot/fonts
 	mcopy -i $(IMAGE_NAME).hdd@@1M boot/kernel ::/boot
 	for app in $(APPS); do \
 		mcopy -i $(IMAGE_NAME).hdd@@1M $(APPS_TARGET_DIR)/$$app ::/boot/apps; \
 	done
+	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
+		for font in $(COMPOSITOR_FONT_DIR)/*.ttf; do \
+			mcopy -i $(IMAGE_NAME).hdd@@1M $$font ::/boot/fonts/; \
+		done; \
+	fi
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf.tmp ::/boot/limine
 ifeq ($(KARCH),x86_64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/limine-bios.sys ::/boot/limine

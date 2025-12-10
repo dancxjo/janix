@@ -6,6 +6,8 @@ use abi::{PropKey, PropType, PropValue, Thing, ThingId, graph_kinds};
 use alloc::string::String;
 use alloc::vec::Vec;
 
+pub const MODE_INDEX_CONSOLE: u8 = 12;
+
 #[derive(Clone, Debug)]
 pub struct Mode {
     pub id: ThingId,
@@ -13,6 +15,7 @@ pub struct Mode {
     pub name: String,
     pub place_id: Option<ThingId>,
     pub active: bool,
+    pub layout_policy: Option<i64>,
 }
 
 impl Thing for Mode {
@@ -29,6 +32,9 @@ impl Thing for Mode {
             out.push((graph_kinds::PROP_MODE_PLACE, PropValue::U64(place.0)));
         }
         out.push((graph_kinds::PROP_MODE_ACTIVE, PropValue::Bool(self.active)));
+        if let Some(policy) = self.layout_policy {
+            out.push((graph_kinds::PROP_MODE_LAYOUT_POLICY, PropValue::I64(policy)));
+        }
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -36,6 +42,7 @@ impl Thing for Mode {
         let mut name = String::new();
         let mut place_id = None;
         let mut active = false;
+        let mut layout_policy = None;
 
         for prop in props.iter().flatten() {
             match prop.0 {
@@ -59,6 +66,11 @@ impl Thing for Mode {
                         active = v;
                     }
                 }
+                graph_kinds::PROP_MODE_LAYOUT_POLICY => {
+                    if let PropValue::I64(v) = prop.1 {
+                        layout_policy = Some(v);
+                    }
+                }
                 _ => {}
             }
         }
@@ -69,6 +81,7 @@ impl Thing for Mode {
             name,
             place_id,
             active,
+            layout_policy,
         }
     }
 
@@ -78,6 +91,7 @@ impl Thing for Mode {
             (graph_kinds::PROP_NAME, PropType::Str),
             (graph_kinds::PROP_MODE_PLACE, PropType::U64),
             (graph_kinds::PROP_MODE_ACTIVE, PropType::Bool),
+            (graph_kinds::PROP_MODE_LAYOUT_POLICY, PropType::I64),
         ]
     }
 }
@@ -86,6 +100,7 @@ impl Thing for Mode {
 pub struct Place {
     pub id: ThingId,
     pub name: String,
+    pub layout_mode: Option<String>,
 }
 
 impl Thing for Place {
@@ -94,22 +109,37 @@ impl Thing for Place {
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push((graph_kinds::PROP_NAME, PropValue::Str(self.name.clone())));
+        if let Some(mode) = &self.layout_mode {
+            out.push((graph_kinds::PROP_LAYOUT_MODE, PropValue::Str(mode.clone())));
+        }
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
         let mut name = String::new();
+        let mut layout_mode = None;
         for prop in props.iter().flatten() {
             if prop.0 == graph_kinds::PROP_NAME {
                 if let PropValue::Str(ref v) = prop.1 {
                     name = v.clone();
                 }
+            } else if prop.0 == graph_kinds::PROP_LAYOUT_MODE {
+                if let PropValue::Str(ref v) = prop.1 {
+                    layout_mode = Some(v.clone());
+                }
             }
         }
-        Place { id, name }
+        Place {
+            id,
+            name,
+            layout_mode,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
-        &[(graph_kinds::PROP_NAME, PropType::Str)]
+        &[
+            (graph_kinds::PROP_NAME, PropType::Str),
+            (graph_kinds::PROP_LAYOUT_MODE, PropType::Str),
+        ]
     }
 }
 

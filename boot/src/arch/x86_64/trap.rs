@@ -33,6 +33,9 @@ lazy_static! {
 pub fn init() {
     IDT.load();
     pic::init();
+    // Log syscall gate configuration to ensure user mode can invoke int 0x80.
+    let entry = &IDT[0x80];
+    kernel_core::println!("IDT[0x80]: {:?}", entry);
     unsafe {
         interrupts::enable();
     }

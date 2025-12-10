@@ -22,3 +22,11 @@ quiet: yes
     module_cmdline: program=compositor
     module_path: boot():/boot/apps/input_logger_demo
     module_cmdline: program=input_logger_demo
+    module_path: boot():/boot/fonts/HACK_REGULAR.ttf
+    module_cmdline: font=HACK_REGULAR
+    module_path: boot():/boot/fonts/NOTO_SANS_REGULAR.ttf
+    module_cmdline: font=NOTO_SANS_REGULAR
+    module_path: boot():/boot/fonts/NOTO_SANS_SYMBOLS.ttf
+    module_cmdline: font=NOTO_SANS_SYMBOLS
+    module_path: boot():/boot/fonts/NOTO_SANS_SYMBOLS2.ttf
+    module_cmdline: font=NOTO_SANS_SYMBOLS2

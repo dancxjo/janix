@@ -18,7 +18,7 @@ members = [
     "apps/window_demo",
     "apps/rootfs",
     "thing_macros",
-    "thing_models",
+    "thing_models", "smoke_tests",
 ]
 
 [workspace.package]

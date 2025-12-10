@@ -1,0 +1,6 @@
+[package]
+name = "smoke_tests"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

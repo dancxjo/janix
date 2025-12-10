@@ -1,13 +1,9 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 
-use abi::{
-    KernelRequest, KernelResponse, PropKey, PropType, PropValue, ThingId,
-};
+use abi::{KernelRequest, KernelResponse, PropKey, PropType, PropValue, ThingId};
 use userland_rt::Sys;
-use userland_std::{
-    create_transaction, find_thing, Thing,
-};
+use userland_std::{Thing, create_transaction, find_thing};
 
 #[derive(Default)]
 struct MockSys {
@@ -33,13 +29,21 @@ impl Sys for MockSys {
             .expect("mock response exhausted")
     }
 
-    fn time_now_ns(&mut self) -> u64 { 0 }
-    fn time_monotonic_ns(&mut self) -> u64 { 0 }
-    fn time_system_ns(&mut self) -> u64 { 0 }
+    fn time_now_ns(&mut self) -> u64 {
+        0
+    }
+    fn time_monotonic_ns(&mut self) -> u64 {
+        0
+    }
+    fn time_system_ns(&mut self) -> u64 {
+        0
+    }
     fn sleep_for_ns(&mut self, _delta_ns: u64) {}
     fn sleep_until_ns(&mut self, _deadline_ns: u64) {}
     fn yield_now(&mut self) {}
-    fn exit_thread(&mut self) -> ! { panic!("exit") }
+    fn exit_thread(&mut self) -> ! {
+        panic!("exit")
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -91,7 +95,7 @@ fn find_thing_returns_none_on_no_match() {
     // Actually, find_thing implementation in userland_std/src/lib.rs:
     // for i in 0..128 { load_thing... }
     // So we need 128 responses.
-    
+
     let mut responses = Vec::new();
     for i in 0..128 {
         responses.push(KernelResponse::ThingData {
@@ -100,9 +104,9 @@ fn find_thing_returns_none_on_no_match() {
             props: props_slice(vec![("flag", PropValue::Bool(false))]),
         });
     }
-    
+
     let sys = MockSys::with_responses(responses);
-    
+
     // Predicate looks for flag == true, but all are false
     let result = find_thing::<DummyThing>(&sys, |t| t.flag == true);
     assert!(result.is_none());
@@ -112,9 +116,11 @@ fn find_thing_returns_none_on_no_match() {
 fn create_transaction_aborted_does_not_persist() {
     // This test verifies that if we create a transaction but don't commit it,
     // we don't see a CommitTransaction syscall.
-    
+
     let sys = MockSys::with_responses(vec![
-        KernelResponse::TransactionCreated { tx_id: abi::TransactionId(1) },
+        KernelResponse::TransactionCreated {
+            tx_id: abi::TransactionId(1),
+        },
         // No commit response needed if we don't commit
     ]);
 
@@ -122,11 +128,11 @@ fn create_transaction_aborted_does_not_persist() {
     assert_eq!(tx_id, Some(abi::TransactionId(1)));
 
     // Simulate deciding to abort (just dropping the ID and not calling commit)
-    
+
     let requests = sys.requests.borrow();
     assert_eq!(requests.len(), 1);
     match &requests[0] {
-        KernelRequest::CreateTransaction => {},
+        KernelRequest::CreateTransaction => {}
         _ => panic!("Expected CreateTransaction"),
     }
     // Verify NO CommitTransaction
@@ -137,17 +143,19 @@ fn shared_buffer_and_display_open_sad_path() {
     // Test open_primary_display_buffer when the display thing is missing or malformed.
     // userland_std::open_primary_display_buffer calls find_thing internally to find the display.
     // If find_thing fails (returns None), open_primary_display_buffer should return Err.
-    
+
     // We'll simulate find_thing failing by providing responses that are NOT displays or don't match.
     // find_thing scans 128 IDs. We can just provide 128 "None" responses (e.g. Error or wrong kind).
-    
+
     let mut responses = Vec::new();
     for _ in 0..128 {
-        responses.push(KernelResponse::Error { message: "Not found" });
+        responses.push(KernelResponse::Error {
+            message: "Not found",
+        });
     }
-    
+
     let sys = MockSys::with_responses(responses);
-    
-    let result = userland_std::open_primary_display_buffer(&mut {sys});
+
+    let result = userland_std::open_primary_display_buffer(&mut { sys });
     assert!(result.is_err());
 }

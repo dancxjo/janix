@@ -63,6 +63,11 @@ run: run-$(KARCH)
 .PHONY: run-hdd
 run-hdd: run-hdd-$(KARCH)
 
+.PHONY: smoke
+smoke:
+	@echo "=== Running Smoke Tests (QEMU) ==="
+	THINGOS_QEMU_SMOKE=1 cargo test --package smoke_tests --test qemu_smoke -- --ignored --test-threads=1
+
 .PHONY: run-x86_64
 run-x86_64:
 	$(MAKE) KARCH=x86_64 launch-x86_64
@@ -331,7 +336,8 @@ endif
 
 $(IMAGE_NAME).hdd: limine/limine kernel apps
 	rm -f $(IMAGE_NAME).hdd
-	dd if=/dev/zero bs=1M count=0 seek=64 of=$(IMAGE_NAME).hdd
+	dd if=/dev/zero bs=1M count=0 seek=128 of=$@
+
 	sgdisk $(IMAGE_NAME).hdd -n 1:2048 -t 1:ef00
 ifeq ($(KARCH),x86_64)
 	./limine/limine bios-install $(IMAGE_NAME).hdd

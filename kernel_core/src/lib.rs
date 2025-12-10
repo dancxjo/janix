@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+pub mod boot_config;
 pub mod console;
 pub mod graph;
 pub mod graph_kinds;
@@ -15,10 +16,7 @@ pub mod sched_types;
 pub mod time;
 pub mod transaction;
 
-use crate::model::{
-    compute_memory_summary, compute_scheduler_summary, create_process_abi, create_thread_abi,
-    scheduler_tick,
-};
+use crate::model::{compute_memory_summary, compute_scheduler_summary, scheduler_tick};
 use crate::sched_types::ThreadState;
 use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, PropValue};
 use alloc::string::String;
@@ -96,6 +94,26 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 }
             }
         }
+        KernelRequest::AddEdge {
+            from,
+            edge_kind,
+            to,
+        } => {
+            if graph::add_edge(from, edge_kind, to) {
+                KernelResponse::Success { data: None }
+            } else {
+                KernelResponse::Error {
+                    message: "Failed to add edge",
+                }
+            }
+        }
+        KernelRequest::EdgeAt {
+            from,
+            edge_kind,
+            index,
+        } => KernelResponse::EdgeTarget {
+            target: graph::edge_target_at(from, edge_kind, index as usize),
+        },
         KernelRequest::SchemaRegister {
             kind,
             description,
@@ -136,21 +154,17 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             memory::free_frame(frame);
             KernelResponse::FrameFreed { frame_id }
         }
-        KernelRequest::CreateProcess { pid } => match create_process_abi(pid) {
-            Some(pid) => KernelResponse::ProcessCreated { pid },
-            None => KernelResponse::Error {
-                message: "Failed to create process",
-            },
+        KernelRequest::CreateProcess { name: _ } => KernelResponse::Error {
+            message: "CreateProcess not available via handle_request",
         },
-        KernelRequest::CreateThread { pid, tid, priority } => {
-            let _ = pid; // later we’ll link by edges
-            match create_thread_abi(pid, tid, priority) {
-                Some(tid) => KernelResponse::ThreadCreated { tid },
-                None => KernelResponse::Error {
-                    message: "Failed to create thread",
-                },
-            }
-        }
+        KernelRequest::CreateThread {
+            pid: _,
+            name: _,
+            app_id: _,
+            priority: _,
+        } => KernelResponse::Error {
+            message: "CreateThread not available via handle_request",
+        },
         KernelRequest::SchedulerTick => {
             let current = scheduler_tick();
             KernelResponse::SchedulerTicked { current }

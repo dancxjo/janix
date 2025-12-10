@@ -138,10 +138,10 @@ fn main() {
     sched.init_graph_mirror();
 
     let p1 = sched.add_process("user_app_hello");
-    let t1 = sched.add_thread(p1, "hello", dummy_entry, 1, 0);
+    let t1 = sched.add_thread(p1, "hello", dummy_entry, 1, 0, 0);
 
     let p2 = sched.add_process("user_app_heartbeat");
-    let t2 = sched.add_thread(p2, "heartbeat", dummy_entry, 2, 0);
+    let t2 = sched.add_thread(p2, "heartbeat", dummy_entry, 2, 0, 0);
 
     let mut threads = HashMap::new();
 

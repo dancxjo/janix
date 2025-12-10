@@ -6,9 +6,11 @@ extern crate alloc;
 #[cfg(target_os = "none")]
 use alloc::boxed::Box;
 #[cfg(target_os = "none")]
-use alloc::string::String;
+use alloc::string::{String, ToString};
 #[cfg(target_os = "none")]
 use alloc::vec::Vec;
+#[cfg(not(target_os = "none"))]
+use std::string::ToString;
 
 use abi::{
     FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary, NodeId, PropKey, PropType,
@@ -281,6 +283,43 @@ pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> O
     None
 }
 
+/// Return all neighbors reachable from `from` via `edge_kind` in insertion order.
+pub fn edge_targets<S: Sys>(
+    sys: &mut S,
+    from: ThingId,
+    edge_kind: &'static str,
+) -> Vec<ThingId> {
+    let mut results = Vec::new();
+    let mut index = 0;
+    loop {
+        match sys.syscall(KernelRequest::EdgeAt {
+            from,
+            edge_kind,
+            index,
+        }) {
+            KernelResponse::EdgeTarget { target: Some(id) } => {
+                results.push(id);
+                index += 1;
+            }
+            KernelResponse::EdgeTarget { target: None } => break,
+            _ => break,
+        }
+    }
+    results
+}
+
+/// Add an edge between Things via the kernel ABI.
+pub fn add_edge(sys: &impl Sys, from: ThingId, edge_kind: &'static str, to: ThingId) -> bool {
+    matches!(
+        sys.syscall(KernelRequest::AddEdge {
+            from,
+            edge_kind,
+            to
+        }),
+        KernelResponse::Success { .. }
+    )
+}
+
 /// List all Things of a given `T::KIND`
 ///
 /// This currently uses a brute-force scan of IDs 0..256.
@@ -342,18 +381,31 @@ pub fn free_frame(sys: &impl Sys, frame_id: FrameId) -> bool {
     )
 }
 
-pub fn create_process(sys: &impl Sys, pid: u64) -> bool {
-    matches!(
-        sys.syscall(KernelRequest::CreateProcess { pid }),
-        KernelResponse::ProcessCreated { .. }
-    )
+pub fn create_process(sys: &impl Sys, name: &str) -> Option<u64> {
+    let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+    match sys.syscall(KernelRequest::CreateProcess { name: leaked }) {
+        KernelResponse::ProcessCreated { pid } => Some(pid),
+        _ => None,
+    }
 }
 
-pub fn create_thread(sys: &impl Sys, pid: u64, tid: u64, priority: u64) -> bool {
-    matches!(
-        sys.syscall(KernelRequest::CreateThread { pid, tid, priority }),
-        KernelResponse::ThreadCreated { .. }
-    )
+pub fn create_thread(
+    sys: &impl Sys,
+    pid: u64,
+    name: &str,
+    app_id: u64,
+    priority: u64,
+) -> Option<u64> {
+    let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+    match sys.syscall(KernelRequest::CreateThread {
+        pid,
+        name: leaked,
+        app_id,
+        priority,
+    }) {
+        KernelResponse::ThreadCreated { tid } => Some(tid),
+        _ => None,
+    }
 }
 
 pub fn scheduler_tick(sys: &impl Sys) -> Option<ThreadInfo> {

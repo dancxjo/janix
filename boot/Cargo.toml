@@ -13,6 +13,7 @@ abi = { path = "../abi" }
 userland_rt = { path = "../userland_rt", features = ["kernel"] }
 user_app_hello = { path = "../user_app_hello" }
 user_app_heartbeat = { path = "../user_app_heartbeat" }
+user_app_init = { path = "../user_app_init" }
 user_app_thread_dashboard = { path = "../user_app_thread_dashboard" }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 spin = "0.10.0"

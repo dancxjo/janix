@@ -4,6 +4,8 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+pub mod graph_kinds;
+
 /// Process identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProcessId(pub u64);
@@ -138,13 +140,30 @@ pub enum KernelRequest {
     /// Free a frame
     FreeFrame { frame_id: FrameId },
     /// Create a process
-    CreateProcess { pid: u64 },
+    CreateProcess { name: &'static str },
     /// Create a thread
-    CreateThread { pid: u64, tid: u64, priority: u64 },
+    CreateThread {
+        pid: u64,
+        name: &'static str,
+        app_id: u64,
+        priority: u64,
+    },
     /// Advance scheduler tick
     SchedulerTick,
     /// Exit the current thread
     ExitThread,
+    /// Add an edge between Things
+    AddEdge {
+        from: ThingId,
+        edge_kind: &'static str,
+        to: ThingId,
+    },
+    /// Fetch the target of the edge at a specific index.
+    EdgeAt {
+        from: ThingId,
+        edge_kind: &'static str,
+        index: u64,
+    },
 }
 
 /// Kernel response to userland
@@ -190,6 +209,8 @@ pub enum KernelResponse {
         // snapshot of the thread that just ran (or None)
         current: Option<ThreadInfo>,
     },
+    /// Result of querying an edge target.
+    EdgeTarget { target: Option<ThingId> },
 }
 
 /// Syscall numbers for Ring 3 -> Ring 0 communication
@@ -215,6 +236,8 @@ pub enum SyscallNumber {
     TimeMonotonicNs = 20,
     TimeSystemNs = 21,
     SleepForNs = 22,
+    AddEdge = 23,
+    EdgeAt = 24,
     // Add others as needed
 }
 

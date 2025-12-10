@@ -9,10 +9,11 @@ extern crate alloc;
 use crate::sched_types::ThreadState;
 use crate::{graph, graph_kinds, sched_graph};
 use abi::{
-    FrameId, FrameInfo, MemorySummary, PropType, PropValue, SchedulerSummary, ThingId, ThreadId,
-    ThreadInfo,
+    FrameId, FrameInfo, MemorySummary, PropType, PropValue, SchedulerSummary, Thing, ThingId,
+    ThreadId, ThreadInfo,
 };
 use alloc::string::String;
+use thing_models::{BootProfile, BootProgram};
 
 #[derive(Clone, Copy)]
 pub struct Thread {
@@ -169,6 +170,18 @@ pub fn init_schemas() {
         graph_kinds::KIND_SLEEP_EVENT,
         "A scheduled wakeup for a sleeping thread",
         SLEEP_SCHEMA,
+    );
+
+    let _ = graph::register_schema(
+        graph_kinds::KIND_BOOT_PROFILE,
+        BootProfile::DESCRIPTION,
+        BootProfile::schema(),
+    );
+
+    let _ = graph::register_schema(
+        graph_kinds::KIND_BOOT_PROGRAM,
+        BootProgram::DESCRIPTION,
+        BootProgram::schema(),
     );
 }
 

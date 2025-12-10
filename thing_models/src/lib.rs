@@ -101,3 +101,103 @@ impl Thing for ThreadInfo {
         ]
     }
 }
+
+pub struct BootProfile {
+    pub id: ThingId,
+    pub version: u64,
+}
+
+impl Thing for BootProfile {
+    const KIND: &'static str = "BootProfile";
+    const DESCRIPTION: &'static str =
+        "The system-wide boot configuration used by init to launch all services and programs.";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("version", PropValue::U64(self.version)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut version = 0;
+        for prop in props.iter().flatten() {
+            if prop.0 == "version" {
+                if let PropValue::U64(v) = prop.1 {
+                    version = v;
+                }
+            }
+        }
+        BootProfile { id, version }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[("version", PropType::U64)]
+    }
+}
+
+pub struct BootProgram {
+    pub id: ThingId,
+    pub name: String,
+    pub binary: String,
+    pub app_id: u64,
+    pub priority: u64,
+}
+
+impl Thing for BootProgram {
+    const KIND: &'static str = "BootProgram";
+    const DESCRIPTION: &'static str =
+        "A program to be launched automatically by init during system boot.";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("name", PropValue::Str(self.name.clone())));
+        out.push(("binary", PropValue::Str(self.binary.clone())));
+        out.push(("app_id", PropValue::U64(self.app_id)));
+        out.push(("priority", PropValue::U64(self.priority)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut name = String::new();
+        let mut binary = String::new();
+        let mut app_id = 0;
+        let mut priority = 0;
+        for prop in props.iter().flatten() {
+            match prop.0 {
+                "name" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        name = v.clone();
+                    }
+                }
+                "binary" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        binary = v.clone();
+                    }
+                }
+                "app_id" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        app_id = v;
+                    }
+                }
+                "priority" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        priority = v;
+                    }
+                }
+                _ => {}
+            }
+        }
+        BootProgram {
+            id,
+            name,
+            binary,
+            app_id,
+            priority,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            ("name", PropType::Str),
+            ("binary", PropType::Str),
+            ("app_id", PropType::U64),
+            ("priority", PropType::U64),
+        ]
+    }
+}

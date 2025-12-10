@@ -791,3 +791,20 @@ pub fn neighbors(from: ThingId, edge_kind: &'static str, out: &mut [Option<Thing
         }
     }
 }
+
+/// Return the target ThingId for the edge at `index` with the provided `edge_kind`.
+pub fn edge_target_at(from: ThingId, edge_kind: &'static str, index: usize) -> Option<ThingId> {
+    unsafe {
+        let edges = &raw const EDGES;
+        let mut count = 0;
+        for edge in (*edges).iter().flatten() {
+            if edge.from == from && edge.edge_kind == edge_kind {
+                if count == index {
+                    return Some(edge.to);
+                }
+                count += 1;
+            }
+        }
+    }
+    None
+}

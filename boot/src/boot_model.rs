@@ -1,6 +1,13 @@
+extern crate alloc;
+
+use alloc::string::String;
+use kernel_core::boot_config::{BootProgramSpec, BOOT_PROFILE_VERSION, BOOT_PROGRAMS};
+use kernel_core::graph;
+use kernel_core::graph_kinds;
 use kernel_core::log;
 use kernel_core::memory::{BootFrameAllocator, init_frame_pool};
 use kernel_core::model;
+use abi::{PropValue, ThingId};
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, MemoryMapRequest, MpRequest};
 
@@ -81,5 +88,29 @@ pub fn seed_cpu_graph_from_limine() {
         // Fallback: single core
         let _ = model::create_cpu_core(0);
         log("No SMP info; created single CpuCore(0)");
+    }
+}
+
+pub fn seed_boot_profile() {
+    let props = &[("version", PropValue::U64(BOOT_PROFILE_VERSION))];
+    let Some(profile) = graph::create_thing(graph_kinds::KIND_BOOT_PROFILE, props) else {
+        log("Failed to create BootProfile");
+        return;
+    };
+
+    for program in BOOT_PROGRAMS {
+        create_program(profile, program);
+    }
+}
+
+fn create_program(profile: ThingId, spec: &BootProgramSpec) {
+    let props = &[
+        ("name", PropValue::Str(String::from(spec.name))),
+        ("binary", PropValue::Str(String::from(spec.binary))),
+        ("app_id", PropValue::U64(spec.app_id)),
+        ("priority", PropValue::U64(spec.priority)),
+    ];
+    if let Some(program) = graph::create_thing(graph_kinds::KIND_BOOT_PROGRAM, props) {
+        let _ = graph::add_edge(profile, graph_kinds::EDGE_LAUNCHES, program);
     }
 }

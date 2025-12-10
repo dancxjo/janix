@@ -63,6 +63,18 @@ pub struct Scheduler {
     fake_time_ns: u64,
 }
 
+fn thread_index(tid: ThreadId) -> usize {
+    tid.0
+        .checked_sub(1)
+        .expect("ThreadId 0 is invalid; IDs start at 1") as usize
+}
+
+fn process_index(pid: ProcessId) -> usize {
+    pid.0
+        .checked_sub(1)
+        .expect("ProcessId 0 is invalid; IDs start at 1") as usize
+}
+
 impl Scheduler {
     pub const fn new() -> Self {
         Self {
@@ -102,7 +114,7 @@ impl Scheduler {
             .current
             .expect("no current thread in sleep_current_thread");
 
-        let index = tid.0 as usize;
+        let index = thread_index(tid);
         if self.threads[index].is_none() {
             panic!("sleep_current_thread: missing thread");
         }
@@ -136,7 +148,7 @@ impl Scheduler {
             let entry = self.sleep_queue[i];
             if entry.wake_at_ns <= now_ns {
                 // Wake this thread.
-                let index = entry.thread_id.0 as usize;
+                let index = thread_index(entry.thread_id);
                 self.graph_clear_sleep_event(index);
                 if let Some(thr) = self.threads[index].as_mut() {
                     thr.state = ThreadState::Runnable;
@@ -160,7 +172,7 @@ impl Scheduler {
     pub fn add_process(&mut self, name: &'static str) -> ProcessId {
         for (i, slot) in self.processes.iter_mut().enumerate() {
             if slot.is_none() {
-                let pid = ProcessId(i as u64);
+                let pid = ProcessId(i as u64 + 1);
 
                 // Create Process Thing
                 let props = [("pid", PropValue::U64(pid.0))];
@@ -187,17 +199,18 @@ impl Scheduler {
         entry: extern "C" fn(u64) -> !,
         arg: u64,
         stack_top: u64,
+        priority: u64,
     ) -> ThreadId {
         for (i, slot) in self.threads.iter_mut().enumerate() {
             if slot.is_none() {
-                let tid = ThreadId(i as u64);
+                let tid = ThreadId(i as u64 + 1);
 
                 *slot = Some(Thread {
                     id: tid,
                     process_id,
                     state: ThreadState::New,
                     name,
-                    priority: 0,
+                    priority,
                     user_entry: Some(entry),
                     user_arg: arg,
                     user_stack_top: stack_top,
@@ -223,7 +236,7 @@ impl Scheduler {
     }
 
     pub fn mark_yield(&mut self, tid: ThreadId) {
-        let index = tid.0 as usize;
+        let index = thread_index(tid);
         let is_running = self
             .threads
             .get(index)
@@ -246,7 +259,7 @@ impl Scheduler {
     }
 
     pub fn mark_terminated(&mut self, tid: ThreadId) {
-        let index = tid.0 as usize;
+        let index = thread_index(tid);
         if self.threads.get(index).and_then(|t| t.as_ref()).is_some() {
             self.finish_running_thread(index);
             self.graph_clear_sleep_event(index);
@@ -290,7 +303,7 @@ impl Scheduler {
 
     pub fn set_current(&mut self, tid: ThreadId) {
         self.current = Some(tid);
-        let index = tid.0 as usize;
+        let index = thread_index(tid);
         if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
             thread.state = ThreadState::Running;
             thread.last_run_start_ns = self.fake_time_ns;
@@ -303,7 +316,7 @@ impl Scheduler {
     }
 
     pub fn thread_mut(&mut self, tid: ThreadId) -> Option<&mut Thread> {
-        self.threads[tid.0 as usize].as_mut()
+        self.threads[thread_index(tid)].as_mut()
     }
 
     pub fn thread_by_thing(&self, thing: ThingId) -> Option<&Thread> {
@@ -390,7 +403,7 @@ impl Scheduler {
         let Some(thread_thing) = thread.thing_id else {
             return;
         };
-        let proc_index = thread.process_id.0 as usize;
+        let proc_index = process_index(thread.process_id);
         if let Some(process) = self
             .processes
             .get(proc_index)

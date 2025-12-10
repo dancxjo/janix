@@ -76,26 +76,45 @@ impl Sys for UserlandSys {
                     }
                 }
             }
-            KernelRequest::CreateProcess { pid } => {
-                let ret = unsafe { syscall_stub(SyscallNumber::CreateProcess, pid, 0, 0, 0, 0, 0) };
+            KernelRequest::CreateProcess { name } => {
+                let ptr = name.as_ptr() as u64;
+                let len = name.len() as u64;
+                let ret = unsafe {
+                    syscall_stub(SyscallNumber::CreateProcess, ptr, len, 0, 0, 0, 0)
+                };
                 if ret == 0 {
-                    KernelResponse::ProcessCreated { pid }
-                } else {
                     KernelResponse::Error {
                         message: "CreateProcess failed",
                     }
+                } else {
+                    KernelResponse::ProcessCreated { pid: ret }
                 }
             }
-            KernelRequest::CreateThread { pid, tid, priority } => {
+            KernelRequest::CreateThread {
+                pid,
+                name,
+                app_id,
+                priority,
+            } => {
+                let ptr = name.as_ptr() as u64;
+                let len = name.len() as u64;
                 let ret = unsafe {
-                    syscall_stub(SyscallNumber::CreateThread, pid, tid, priority, 0, 0, 0)
+                    syscall_stub(
+                        SyscallNumber::CreateThread,
+                        pid,
+                        app_id,
+                        priority,
+                        ptr,
+                        len,
+                        0,
+                    )
                 };
                 if ret == 0 {
-                    KernelResponse::ThreadCreated { tid }
-                } else {
                     KernelResponse::Error {
                         message: "CreateThread failed",
                     }
+                } else {
+                    KernelResponse::ThreadCreated { tid: ret }
                 }
             }
             KernelRequest::ThingCreate { kind, props } => {
@@ -116,6 +135,58 @@ impl Sys for UserlandSys {
                 };
                 KernelResponse::ThingCreated {
                     id: abi::ThingId(ret),
+                }
+            }
+            KernelRequest::AddEdge {
+                from,
+                edge_kind,
+                to,
+            } => {
+                let kind_ptr = edge_kind.as_ptr() as u64;
+                let kind_len = edge_kind.len() as u64;
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::AddEdge,
+                        from.0,
+                        to.0,
+                        kind_ptr,
+                        kind_len,
+                        0,
+                        0,
+                    )
+                };
+                if ret == 0 {
+                    KernelResponse::Success { data: None }
+                } else {
+                    KernelResponse::Error {
+                        message: "AddEdge failed",
+                    }
+                }
+            }
+            KernelRequest::EdgeAt {
+                from,
+                edge_kind,
+                index,
+            } => {
+                let kind_ptr = edge_kind.as_ptr() as u64;
+                let kind_len = edge_kind.len() as u64;
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::EdgeAt,
+                        from.0,
+                        index,
+                        kind_ptr,
+                        kind_len,
+                        0,
+                        0,
+                    )
+                };
+                if ret == u64::MAX {
+                    KernelResponse::EdgeTarget { target: None }
+                } else {
+                    KernelResponse::EdgeTarget {
+                        target: Some(abi::ThingId(ret)),
+                    }
                 }
             }
             KernelRequest::SchemaRegister {

@@ -3,6 +3,11 @@
 #![feature(alloc_error_handler)]
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 
+extern crate user_app_heartbeat;
+extern crate user_app_hello;
+extern crate user_app_init;
+extern crate user_app_thread_dashboard;
+
 mod arch;
 mod boot_model;
 mod console;
@@ -16,9 +21,6 @@ mod serial;
 mod user;
 
 use crate::arch::{Arch, CurrentArch};
-use user_app_heartbeat;
-use user_app_hello;
-use user_app_thread_dashboard;
 
 use core::arch::asm;
 
@@ -137,32 +139,14 @@ fn init_world_graph() {
     kernel_core::create_builtin_things();
     boot_model::seed_memory_graph_from_limine();
     boot_model::seed_cpu_graph_from_limine();
-}
-
-fn spawn_demo_thread(process_name: &'static str, thread_name: &'static str, app_id: u64) {
-    let stack = user::alloc_user_stack();
-    let (process_id, thread_id) = {
-        let mut sched = kernel_core::sched::SCHEDULER.lock();
-        let pid = sched.add_process(process_name);
-        let tid = sched.add_thread(pid, thread_name, user::user_thread_main, app_id, stack);
-        (pid, tid)
-    };
-    kernel_core::println!("... created process {}", process_id.0);
-    kernel_core::println!("... created thread {}", thread_id.0);
+    boot_model::seed_boot_profile();
 }
 
 #[cfg(not(feature = "boot-dashboard-only"))]
 fn init_userland_and_enter_scheduler() -> ! {
-    kernel_core::log("Launching user_app_hello from kernel...");
-    spawn_demo_thread("user_app_hello", "hello", 1);
-
-    kernel_core::log("Launching user_app_heartbeat from kernel...");
-    spawn_demo_thread("user_app_heartbeat", "heartbeat", 2);
-
-    kernel_core::log("Launching user_app_thread_dashboard from kernel...");
-    spawn_demo_thread("user_app_thread_dashboard", "dashboard", 3);
-
-    kernel_core::log("Entering first user thread...");
+    kernel_core::log("Launching init (PID 1) ...");
+    launch_init_process();
+    kernel_core::log("Handing control to scheduler...");
     user::schedule_next();
 }
 
@@ -181,6 +165,13 @@ fn render_dashboard_and_halt() -> ! {
         kernel_core::log("No framebuffer available for dashboard");
     }
     hcf();
+}
+
+fn launch_init_process() {
+    let stack = user::alloc_user_stack();
+    let mut sched = kernel_core::sched::SCHEDULER.lock();
+    let pid = sched.add_process("init");
+    let _tid = sched.add_thread(pid, "init", user::user_thread_main, 0, stack, 1);
 }
 
 fn init_console() -> bool {

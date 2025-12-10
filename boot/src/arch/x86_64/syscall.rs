@@ -8,7 +8,7 @@
 //! helpers. The handler also saves/restores thread contexts and implements
 //! basic syscalls such as yield, sleep, logging, process/thread management,
 //! frame allocation, and time queries.
-use abi::{KernelRequest, KernelResponse, SyscallNumber};
+use abi::{KernelRequest, KernelResponse, ProcessId, SyscallNumber, ThingId};
 use core::arch::global_asm;
 extern crate alloc;
 use crate::user;
@@ -158,20 +158,63 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             _ => 1,
         }
     } else if num == SyscallNumber::CreateProcess as u64 {
-        let pid = arg1;
-        let req = KernelRequest::CreateProcess { pid };
+        let Some(name) = leak_user_str(arg1, arg2 as usize) else {
+            return 0;
+        };
+        let pid = {
+            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            let pid = sched.add_process(name);
+            pid.0
+        };
+        pid
+    } else if num == SyscallNumber::CreateThread as u64 {
+        let process_id = ProcessId(arg1);
+        let app_id = arg2;
+        let priority = arg3;
+        let Some(name) = leak_user_str(arg4, arg5 as usize) else {
+            return 0;
+        };
+        let stack = user::alloc_user_stack();
+        let tid = {
+            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            sched.add_thread(
+                process_id,
+                name,
+                user::user_thread_main,
+                app_id,
+                stack,
+                priority,
+            )
+        };
+        tid.0
+    } else if num == SyscallNumber::AddEdge as u64 {
+        let from = ThingId(arg1);
+        let to = ThingId(arg2);
+        let Some(edge_kind) = leak_user_str(arg3, arg4 as usize) else {
+            return 1;
+        };
+        let req = KernelRequest::AddEdge {
+            from,
+            edge_kind,
+            to,
+        };
         match kernel_core::handle_request(req) {
-            KernelResponse::ProcessCreated { .. } => 0,
+            KernelResponse::Success { .. } => 0,
             _ => 1,
         }
-    } else if num == SyscallNumber::CreateThread as u64 {
-        let pid = arg1;
-        let tid = arg2;
-        let priority = arg3;
-        let req = KernelRequest::CreateThread { pid, tid, priority };
-        match kernel_core::handle_request(req) {
-            KernelResponse::ThreadCreated { .. } => 0,
-            _ => 1,
+    } else if num == SyscallNumber::EdgeAt as u64 {
+        let from = ThingId(arg1);
+        let index = arg2;
+        let Some(edge_kind) = leak_user_str(arg3, arg4 as usize) else {
+            return u64::MAX;
+        };
+        match kernel_core::handle_request(KernelRequest::EdgeAt {
+            from,
+            edge_kind,
+            index,
+        }) {
+            KernelResponse::EdgeTarget { target } => target.map_or(u64::MAX, |id| id.0),
+            _ => u64::MAX,
         }
     } else if num == SyscallNumber::ThingCreate as u64 {
         let kind_ptr = arg1 as *const u8;
@@ -249,4 +292,14 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
 
 pub fn install_handler() {
     super::trap::init();
+}
+
+fn leak_user_str(ptr: u64, len: usize) -> Option<&'static str> {
+    if len == 0 {
+        return Some("");
+    }
+    let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len) };
+    core::str::from_utf8(bytes)
+        .ok()
+        .map(|s| Box::leak(s.to_string().into_boxed_str()))
 }

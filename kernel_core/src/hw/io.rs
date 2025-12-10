@@ -3,9 +3,7 @@ use abi::{PropValue, Thing, ThingId};
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
-use thing_models::{
-    InterruptEvent, IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth,
-};
+use thing_models::{InterruptEvent, IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth};
 
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::port::Port;
@@ -97,8 +95,7 @@ fn find_region_for_irq(irq_line: u8) -> Option<ThingId> {
 }
 
 fn load_region(id: ThingId) -> Option<IoPortRegion> {
-    graph::get_thing(id)
-        .map(|(_, props)| IoPortRegion::from_props(id, props))
+    graph::get_thing(id).map(|(_, props)| IoPortRegion::from_props(id, props))
 }
 
 fn execute_io_operation(op: &IoPortOp) -> Result<Option<u32>, IoError> {
@@ -126,12 +123,8 @@ fn execute_io_operation(op: &IoPortOp) -> Result<Option<u32>, IoError> {
                 Port::<u32>::new(addr).write(op.value);
                 Ok(None)
             }
-            (IoDirection::Read, IoWidth::U8) => {
-                Ok(Some(Port::<u8>::new(addr).read() as u32))
-            }
-            (IoDirection::Read, IoWidth::U16) => {
-                Ok(Some(Port::<u16>::new(addr).read() as u32))
-            }
+            (IoDirection::Read, IoWidth::U8) => Ok(Some(Port::<u8>::new(addr).read() as u32)),
+            (IoDirection::Read, IoWidth::U16) => Ok(Some(Port::<u16>::new(addr).read() as u32)),
             (IoDirection::Read, IoWidth::U32) => Ok(Some(Port::<u32>::new(addr).read())),
         }
     }

@@ -9,9 +9,10 @@ pub struct FramePool {
 
 impl FramePool {
     pub unsafe fn new(allocator: BootFrameAllocator) -> Self {
+        let total = allocator.total_frames();
         Self {
             allocator,
-            total: 0, // We could calculate this if we wanted
+            total,
             used: 0,
         }
     }
@@ -33,15 +34,8 @@ impl FramePool {
     }
 
     pub fn stats(&self) -> (u64, u64, u64) {
-        // Total is tricky if we don't know it upfront.
-        // For now, let's assume total is used + free (but we don't know free).
-        // Or we can just report used.
-        // The user instructions say: "total: u64 (optional, can be 0 for now)"
-        // But also "stats(&self) -> (u64, u64, u64) returning (total, used, free)"
-
-        // Let's just return (0, used, 0) if we don't track total.
-        // Or we can try to track total in BootFrameAllocator.
-        (self.total, self.used, 0)
+        let free = self.total.saturating_sub(self.used);
+        (self.total, self.used, free)
     }
 }
 

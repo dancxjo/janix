@@ -4,6 +4,8 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+pub const KERNEL_HEAP_SIZE_BYTES: usize = 8 * 1024 * 1024;
+
 pub trait AllocationObserver {
     fn on_alloc(&self, addr: usize, size: usize);
     fn on_dealloc(&self, addr: usize, size: usize);

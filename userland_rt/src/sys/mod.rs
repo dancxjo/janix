@@ -143,6 +143,28 @@ impl Sys for UserlandSys {
                     id: abi::ThingId(ret),
                 }
             }
+            KernelRequest::ThingUpdate { id, props } => {
+                let props_ptr = props.as_ptr() as u64;
+                let props_len = props.len() as u64;
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::ThingUpdate,
+                        id.0,
+                        props_ptr,
+                        props_len,
+                        0,
+                        0,
+                        0,
+                    )
+                };
+                if ret == 0 {
+                    KernelResponse::Success { data: None }
+                } else {
+                    KernelResponse::Error {
+                        message: "ThingUpdate failed",
+                    }
+                }
+            }
             KernelRequest::ThingGet { id } => {
                 let mut raw = ThingGetSyscallResult::default();
                 let ret = unsafe {

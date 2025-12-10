@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use crate::sched_types::ThreadState;
-use crate::{graph, graph_kinds, sched_graph};
+use crate::{graph, graph_kinds, memory, sched_graph};
 use abi::{
     FrameId, FrameInfo, MemorySummary, PropType, PropValue, SchedulerSummary, Thing, ThingId,
     ThreadId, ThreadInfo,
@@ -16,7 +16,7 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use thing_models::{
-    AlarmEvent, AlarmRequest, BootProfile, BootProgram, IoPortOp, IoPortRegion, InterruptEvent,
+    AlarmEvent, AlarmRequest, BootProfile, BootProgram, InterruptEvent, IoPortOp, IoPortRegion,
     ProgramImage, TimeSource,
 };
 
@@ -285,6 +285,15 @@ pub fn create_cpu_core(index: u64) -> Option<ThingId> {
 }
 
 pub fn compute_memory_summary() -> MemorySummary {
+    let (total_frames, used_frames, free_frames) = memory::frame_stats();
+    if total_frames > 0 {
+        return MemorySummary {
+            total_frames,
+            used_frames,
+            free_frames,
+        };
+    }
+
     let mut total_frames = 0_u64;
     let mut used_frames = 0_u64;
 

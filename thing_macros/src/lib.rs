@@ -73,25 +73,27 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
             let ty = &f.ty;
             let ty_str = normalize_type_name(ty);
 
-        let val_expr = match ty_str.as_str() {
-            "u64" => quote! { ::abi::PropValue::U64(self.#name as u64) },
-            "u32" => quote! { ::abi::PropValue::U64(self.#name as u64) },
-            "u16" => quote! { ::abi::PropValue::U64(self.#name as u64) },
-            "u8" => quote! { ::abi::PropValue::U64(self.#name as u64) },
+            let val_expr = match ty_str.as_str() {
+                "u64" => quote! { ::abi::PropValue::U64(self.#name as u64) },
+                "u32" => quote! { ::abi::PropValue::U64(self.#name as u64) },
+                "u16" => quote! { ::abi::PropValue::U64(self.#name as u64) },
+                "u8" => quote! { ::abi::PropValue::U64(self.#name as u64) },
                 "i64" => quote! { ::abi::PropValue::I64(self.#name as i64) },
                 "bool" => quote! { ::abi::PropValue::Bool(self.#name as bool) },
-            "alloc::string::String" | "String" => {
-                quote! { ::abi::PropValue::Str(self.#name.clone()) }
-            }
-            "&'staticstr" => {
-                quote! { ::abi::PropValue::Str(::alloc::string::String::from(self.#name)) }
-            }
-            "char" => quote! { ::abi::PropValue::Str(::alloc::string::String::from(self.#name)) },
-            "ThingId" | "abi::ThingId" => {
-                quote! { ::abi::PropValue::U64(self.#name.0) }
-            }
-            other => panic!("Unsupported type for Thing derive: {}", other),
-        };
+                "alloc::string::String" | "String" => {
+                    quote! { ::abi::PropValue::Str(self.#name.clone()) }
+                }
+                "&'staticstr" => {
+                    quote! { ::abi::PropValue::Str(::alloc::string::String::from(self.#name)) }
+                }
+                "char" => {
+                    quote! { ::abi::PropValue::Str(::alloc::string::String::from(self.#name)) }
+                }
+                "ThingId" | "abi::ThingId" => {
+                    quote! { ::abi::PropValue::U64(self.#name.0) }
+                }
+                other => panic!("Unsupported type for Thing derive: {}", other),
+            };
 
             Some(quote! {
                 out.push((stringify!(#name), #val_expr));
@@ -144,38 +146,38 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
-            "alloc::string::String" | "String" => quote! {
-                if let ::abi::PropValue::Str(ref val) = *v {
-                    val.clone()
-                } else {
-                    panic!("Type mismatch for {}", stringify!(#name))
-                }
-            },
-            "&'staticstr" => {
-                quote! {
+                "alloc::string::String" | "String" => quote! {
                     if let ::abi::PropValue::Str(ref val) = *v {
-                        ::alloc::string::String::from(val.as_str())
+                        val.clone()
                     } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
+                },
+                "&'staticstr" => {
+                    quote! {
+                        if let ::abi::PropValue::Str(ref val) = *v {
+                            ::alloc::string::String::from(val.as_str())
+                        } else {
+                            panic!("Type mismatch for {}", stringify!(#name))
+                        }
+                    }
                 }
-            }
-            "ThingId" | "abi::ThingId" => quote! {
+                "ThingId" | "abi::ThingId" => quote! {
                 if let ::abi::PropValue::U64(val) = *v {
                     ::abi::ThingId(val)
                     } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
-            "char" => quote! {
-                if let ::abi::PropValue::Str(ref val) = *v {
-                    val.chars().next().unwrap_or('\0')
-                } else {
-                    panic!("Type mismatch for {}", stringify!(#name))
-                }
-            },
-            other => panic!("Unsupported type for Thing derive: {}", other),
-        };
+                "char" => quote! {
+                    if let ::abi::PropValue::Str(ref val) = *v {
+                        val.chars().next().unwrap_or('\0')
+                    } else {
+                        panic!("Type mismatch for {}", stringify!(#name))
+                    }
+                },
+                other => panic!("Unsupported type for Thing derive: {}", other),
+            };
 
             quote! {
                 #name: {

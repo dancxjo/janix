@@ -56,7 +56,10 @@ impl InputCharEvent {
         [
             ("ch", PropValue::Str(String::from(ch))),
             ("source_controller", PropValue::U64(source_controller.0)),
-            ("source_port_index", PropValue::U64(source_port_index as u64)),
+            (
+                "source_port_index",
+                PropValue::U64(source_port_index as u64),
+            ),
             ("sequence_index", PropValue::U64(sequence_index)),
         ]
     }

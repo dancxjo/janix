@@ -33,7 +33,9 @@ lazy_static! {
 pub fn init() {
     IDT.load();
     pic::init();
-    unsafe { interrupts::enable(); }
+    unsafe {
+        interrupts::enable();
+    }
 }
 
 extern "x86-interrupt" fn double_fault_handler(

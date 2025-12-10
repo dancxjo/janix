@@ -2,14 +2,14 @@
 
 extern crate alloc;
 
-pub mod io;
 pub mod input;
+pub mod io;
 
 use abi::{PropKey, PropType, PropValue, Thing, ThingId};
 use alloc::string::String;
 use alloc::vec::Vec;
-pub use io::*;
 pub use input::*;
+pub use io::*;
 
 pub struct ThreadInfo {
     pub name: String,  // "hello", "heartbeat", "dashboard"

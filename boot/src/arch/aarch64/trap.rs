@@ -271,6 +271,24 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             KernelResponse::ThingCreated { id } => id.0,
             _ => 0,
         }
+    } else if num == SyscallNumber::ThingUpdate as u64 {
+        let id = ThingId(arg1);
+        let props_ptr = arg2 as *const (abi::PropKey, abi::PropValue);
+        let props_len = arg3 as usize;
+
+        let props = unsafe { core::slice::from_raw_parts(props_ptr, props_len) };
+        let props_vec: alloc::vec::Vec<(abi::PropKey, abi::PropValue)> = props.to_vec();
+        let props_static: &'static [(abi::PropKey, abi::PropValue)] =
+            Box::leak(props_vec.into_boxed_slice());
+
+        let req = KernelRequest::ThingUpdate {
+            id,
+            props: props_static,
+        };
+        match kernel_core::handle_request(req) {
+            KernelResponse::Success { .. } => 0,
+            _ => 1,
+        }
     } else if num == SyscallNumber::SchemaRegister as u64 {
         let kind_ptr = arg1 as *const u8;
         let kind_len = arg2 as usize;

@@ -39,6 +39,8 @@ pub fn seed_memory_graph_from_limine() {
 
     let mut heap_initialized = false;
     let mut boot_allocator = BootFrameAllocator::new();
+    let mut range_index = 0_usize;
+    const PAGE_SIZE: u64 = 4096;
 
     for entry in response.entries() {
         if entry.entry_type != EntryType::USABLE {
@@ -48,21 +50,41 @@ pub fn seed_memory_graph_from_limine() {
         let mut base = entry.base;
         let mut len = entry.length;
 
-        if !heap_initialized && len >= 2 * 1024 * 1024 {
-            let heap_size = 1024 * 1024; // 1 MiB
-            let heap_start_phys = base;
-            let heap_start_virt = (heap_start_phys as u64 + hhdm_offset) as usize;
+        if !heap_initialized {
+            let heap_size = crate::heap::KERNEL_HEAP_SIZE_BYTES as u64;
+            if len >= heap_size {
+                let heap_start_phys = base;
+                let heap_start_virt = (heap_start_phys as u64 + hhdm_offset) as usize;
 
-            unsafe {
-                crate::heap::KERNEL_ALLOCATOR.init(heap_start_virt, heap_size);
+                unsafe {
+                    crate::heap::KERNEL_ALLOCATOR.init(heap_start_virt, heap_size as usize);
+                }
+
+                let heap_mib = heap_size / (1024 * 1024);
+                let msg = alloc::format!("Initialized kernel heap ({} MiB)", heap_mib);
+                let leaked: &'static str = Box::leak(msg.into_boxed_str());
+                log(leaked);
+
+                base += heap_size as u64;
+                len -= heap_size as u64;
+                heap_initialized = true;
             }
-
-            log("Initialized kernel heap (1MiB)");
-
-            base += heap_size as u64;
-            len -= heap_size as u64;
-            heap_initialized = true;
         }
+
+        if len < PAGE_SIZE {
+            continue;
+        }
+
+        let region_end = base.saturating_add(len);
+        let msg = alloc::format!(
+            "[INFO] Range {}: 0x{:016x} - 0x{:016x}",
+            range_index,
+            base,
+            region_end
+        );
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        log(leaked);
+        range_index += 1;
 
         boot_allocator.add_region(base, len);
 
@@ -75,6 +97,15 @@ pub fn seed_memory_graph_from_limine() {
     }
 
     init_frame_pool(boot_allocator);
+
+    let (total_frames, _used_frames, free_frames) = kernel_core::memory::frame_stats();
+    let summary = alloc::format!(
+        "[INFO] BootFrameAllocator: total_frames={} free_frames={}",
+        total_frames,
+        free_frames
+    );
+    let leaked: &'static str = Box::leak(summary.into_boxed_str());
+    log(leaked);
 
     log("Seeded memory graph from Limine memory map");
 }

@@ -4,11 +4,7 @@ use crate::hw;
 
 pub fn init() {
     graph::subscribe_node_created(graph_kinds::KIND_IO_PORT_OP, on_op_created);
-    graph::subscribe_prop_changed(
-        graph_kinds::KIND_IO_PORT_OP,
-        "status",
-        on_status_changed,
-    );
+    graph::subscribe_prop_changed(graph_kinds::KIND_IO_PORT_OP, "status", on_status_changed);
 }
 
 fn on_op_created(event: &GraphEvent) {

@@ -49,10 +49,7 @@ impl IoPortRegion {
         props.push(("name", PropValue::Str(String::from(name))));
         props.push(("base_port", PropValue::U64(base_port as u64)));
         props.push(("port_count", PropValue::U64(port_count as u64)));
-        props.push((
-            "irq_lines",
-            PropValue::Str(serialize_irqs(irq_lines)),
-        ));
+        props.push(("irq_lines", PropValue::Str(serialize_irqs(irq_lines))));
         props
     }
 }
@@ -66,10 +63,7 @@ impl Thing for IoPortRegion {
         out.push(("name", PropValue::Str(self.name.clone())));
         out.push(("base_port", PropValue::U64(self.base_port as u64)));
         out.push(("port_count", PropValue::U64(self.port_count as u64)));
-        out.push((
-            "irq_lines",
-            PropValue::Str(serialize_irqs(&self.irq_lines)),
-        ));
+        out.push(("irq_lines", PropValue::Str(serialize_irqs(&self.irq_lines))));
         if let Some(owner) = self.claimed_by {
             out.push(("claimed_by", PropValue::U64(owner.0)));
         }
@@ -250,8 +244,7 @@ impl IoPortOp {
 
 impl Thing for IoPortOp {
     const KIND: &'static str = "IoPortOp";
-    const DESCRIPTION: &'static str =
-        "Request for a hardware I/O port read or write operation.";
+    const DESCRIPTION: &'static str = "Request for a hardware I/O port read or write operation.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("region_id", PropValue::U64(self.region_id.0)));

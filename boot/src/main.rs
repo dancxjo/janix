@@ -44,8 +44,8 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-// 1MB static heap
-const HEAP_SIZE: usize = 1024 * 1024;
+// Early boot heap before we reserve pages from the memory map.
+const HEAP_SIZE: usize = heap::KERNEL_HEAP_SIZE_BYTES;
 static mut HEAP_MEMORY: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 
 const STACK_SIZE: usize = 16 * 1024; // 16KB

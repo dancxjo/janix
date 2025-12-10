@@ -218,14 +218,8 @@ impl IoPortAccessor {
                 }
                 id
             } else {
-                let op = IoPortOp::new(
-                    region_id,
-                    offset,
-                    direction,
-                    IoWidth::U8,
-                    value,
-                    ThingId(0),
-                );
+                let op =
+                    IoPortOp::new(region_id, offset, direction, IoWidth::U8, value, ThingId(0));
                 let Some(new_id) = create_thing(sys, &op) else {
                     return None;
                 };
@@ -377,18 +371,90 @@ fn emit_char<S: Sys>(sys: &mut S, controller_id: ThingId, ch: char, sequence_ind
 
 fn decode_printable(scancode: u8, _extended: bool, shift: bool) -> Option<char> {
     let ch = match scancode {
-        0x02 => if shift { '!' } else { '1' },
-        0x03 => if shift { '@' } else { '2' },
-        0x04 => if shift { '#' } else { '3' },
-        0x05 => if shift { '$' } else { '4' },
-        0x06 => if shift { '%' } else { '5' },
-        0x07 => if shift { '^' } else { '6' },
-        0x08 => if shift { '&' } else { '7' },
-        0x09 => if shift { '*' } else { '8' },
-        0x0A => if shift { '(' } else { '9' },
-        0x0B => if shift { ')' } else { '0' },
-        0x0C => if shift { '_' } else { '-' },
-        0x0D => if shift { '+' } else { '=' },
+        0x02 => {
+            if shift {
+                '!'
+            } else {
+                '1'
+            }
+        }
+        0x03 => {
+            if shift {
+                '@'
+            } else {
+                '2'
+            }
+        }
+        0x04 => {
+            if shift {
+                '#'
+            } else {
+                '3'
+            }
+        }
+        0x05 => {
+            if shift {
+                '$'
+            } else {
+                '4'
+            }
+        }
+        0x06 => {
+            if shift {
+                '%'
+            } else {
+                '5'
+            }
+        }
+        0x07 => {
+            if shift {
+                '^'
+            } else {
+                '6'
+            }
+        }
+        0x08 => {
+            if shift {
+                '&'
+            } else {
+                '7'
+            }
+        }
+        0x09 => {
+            if shift {
+                '*'
+            } else {
+                '8'
+            }
+        }
+        0x0A => {
+            if shift {
+                '('
+            } else {
+                '9'
+            }
+        }
+        0x0B => {
+            if shift {
+                ')'
+            } else {
+                '0'
+            }
+        }
+        0x0C => {
+            if shift {
+                '_'
+            } else {
+                '-'
+            }
+        }
+        0x0D => {
+            if shift {
+                '+'
+            } else {
+                '='
+            }
+        }
         0x10 => letter('q', shift),
         0x11 => letter('w', shift),
         0x12 => letter('e', shift),
@@ -399,8 +465,20 @@ fn decode_printable(scancode: u8, _extended: bool, shift: bool) -> Option<char> 
         0x17 => letter('i', shift),
         0x18 => letter('o', shift),
         0x19 => letter('p', shift),
-        0x1A => if shift { '{' } else { '[' },
-        0x1B => if shift { '}' } else { ']' },
+        0x1A => {
+            if shift {
+                '{'
+            } else {
+                '['
+            }
+        }
+        0x1B => {
+            if shift {
+                '}'
+            } else {
+                ']'
+            }
+        }
         0x1C => '\n',
         0x1E => letter('a', shift),
         0x1F => letter('s', shift),
@@ -411,10 +489,34 @@ fn decode_printable(scancode: u8, _extended: bool, shift: bool) -> Option<char> 
         0x24 => letter('j', shift),
         0x25 => letter('k', shift),
         0x26 => letter('l', shift),
-        0x27 => if shift { ':' } else { ';' },
-        0x28 => if shift { '"' } else { '\'' },
-        0x29 => if shift { '~' } else { '`' },
-        0x2B => if shift { '|' } else { '\\' },
+        0x27 => {
+            if shift {
+                ':'
+            } else {
+                ';'
+            }
+        }
+        0x28 => {
+            if shift {
+                '"'
+            } else {
+                '\''
+            }
+        }
+        0x29 => {
+            if shift {
+                '~'
+            } else {
+                '`'
+            }
+        }
+        0x2B => {
+            if shift {
+                '|'
+            } else {
+                '\\'
+            }
+        }
         0x2C => letter('z', shift),
         0x2D => letter('x', shift),
         0x2E => letter('c', shift),
@@ -422,9 +524,27 @@ fn decode_printable(scancode: u8, _extended: bool, shift: bool) -> Option<char> 
         0x30 => letter('b', shift),
         0x31 => letter('n', shift),
         0x32 => letter('m', shift),
-        0x33 => if shift { '<' } else { ',' },
-        0x34 => if shift { '>' } else { '.' },
-        0x35 => if shift { '?' } else { '/' },
+        0x33 => {
+            if shift {
+                '<'
+            } else {
+                ','
+            }
+        }
+        0x34 => {
+            if shift {
+                '>'
+            } else {
+                '.'
+            }
+        }
+        0x35 => {
+            if shift {
+                '?'
+            } else {
+                '/'
+            }
+        }
         0x39 => ' ',
         0x0E => '\u{0008}',
         _ => return None,

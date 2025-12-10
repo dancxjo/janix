@@ -43,8 +43,7 @@ fn log_event<S: Sys>(sys: &mut S, event: &InputCharEvent) {
             sys,
             format!(
                 "input_logger_demo: InputCharEvent '{}' (seq={})",
-                label,
-                event.sequence_index
+                label, event.sequence_index
             ),
         );
         return;
@@ -54,8 +53,7 @@ fn log_event<S: Sys>(sys: &mut S, event: &InputCharEvent) {
         sys,
         format!(
             "input_logger_demo: InputCharEvent '{}' (seq={})",
-            event.ch,
-            event.sequence_index
+            event.ch, event.sequence_index
         ),
     );
 }

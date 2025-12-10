@@ -3,7 +3,6 @@
 extern crate alloc;
 
 use abi::{ThingId, graph_kinds};
-use alloc::format;
 #[cfg(feature = "rootfs")]
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -11,7 +10,7 @@ use thing_models::{BootProfile, BootProgram, Mode, Place, ProgramImage};
 use userland::prelude::*;
 use userland_std::{
     ProcessThing, add_edge, edge_targets, find_thing, list_things_by_kind, load_thing,
-    spawn_program,
+    spawn_program, MODE_INDEX_CONSOLE,
 };
 
 const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
@@ -22,7 +21,7 @@ const ROOTFS_IDENTIFIER: &str = "rootfs";
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "init: starting");
 
-    seed_modes(sys);
+    ensure_modes(sys);
 
     #[cfg(feature = "rootfs")]
     {
@@ -33,7 +32,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     let boot_profile = wait_for_boot_profile(sys);
     log_dynamic(
         sys,
-        format!("init: BootProfile version {}", boot_profile.version),
+        format_args!("init: BootProfile version {}", boot_profile.version),
     );
 
     let launch_ids = edge_targets(sys, boot_profile.id, graph_kinds::EDGE_LAUNCHES);
@@ -42,10 +41,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     collect_boot_programs(sys, &mut programs, launch_ids.as_slice());
 
     if programs.is_empty() {
-        log_dynamic(
-            sys,
-            "init: no BootProgram edges; waiting briefly for rootfs".into(),
-        );
+        println(sys, "init: no BootProgram edges; waiting briefly for rootfs");
         for _ in 0..8 {
             sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
             let refresh_ids = edge_targets(sys, boot_profile.id, graph_kinds::EDGE_LAUNCHES);
@@ -57,17 +53,17 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     }
 
     if programs.is_empty() {
-        log_dynamic(
+        println(
             sys,
-            "init: still no BootPrograms after waiting; scanning all BootProgram Things".into(),
+            "init: still no BootPrograms after waiting; scanning all BootProgram Things",
         );
         programs = list_things_by_kind(sys);
     }
 
     if programs.is_empty() {
-        log_dynamic(
+        println(
             sys,
-            "init: no BootPrograms found after full scan; system will idle".into(),
+            "init: no BootPrograms found after full scan; system will idle",
         );
     }
 
@@ -77,9 +73,9 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     let program_images: Vec<ProgramImage> = list_things_by_kind(sys);
 
     for _ in programs.iter().filter(|program| is_rootfs(program)) {
-        log_dynamic(
+        println(
             sys,
-            "init: skipping rootfs BootProgram entry (already handled)".into(),
+            "init: skipping rootfs BootProgram entry (already handled)",
         );
     }
 
@@ -88,10 +84,16 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         .filter(|program| !is_rootfs(program))
         .partition(|program| is_driver(program));
 
+    let (compositor_programs, other_app_programs): (Vec<&BootProgram>, Vec<&BootProgram>) =
+        app_programs
+            .iter()
+            .copied()
+            .partition(|program| is_compositor(program));
+
     if !driver_programs.is_empty() {
         log_dynamic(
             sys,
-            format!(
+            format_args!(
                 "init: launching {} driver BootProgram(s) before apps",
                 driver_programs.len()
             ),
@@ -102,17 +104,31 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         spawn_boot_program(sys, &init_process, &program_images, program);
     }
 
-    for program in app_programs.iter().copied() {
+    if !compositor_programs.is_empty() {
+        log_dynamic(
+            sys,
+            format_args!(
+                "init: launching compositor early before other apps ({} entry/entries)",
+                compositor_programs.len()
+            ),
+        );
+    }
+
+    for program in compositor_programs.iter().copied() {
         spawn_boot_program(sys, &init_process, &program_images, program);
     }
 
-    log_dynamic(sys, "init: entering supervision loop".into());
+    for program in other_app_programs.iter().copied() {
+        spawn_boot_program(sys, &init_process, &program_images, program);
+    }
+
+    println(sys, "init: entering supervision loop");
     loop {
         sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
     }
 }
 
-fn seed_modes<S: Sys>(sys: &mut S) {
+fn ensure_modes<S: Sys>(sys: &mut S) {
     let _ = register_schema_for::<Mode>(sys);
     let _ = register_schema_for::<Place>(sys);
 
@@ -121,29 +137,38 @@ fn seed_modes<S: Sys>(sys: &mut S) {
         return;
     }
 
-    for idx in 1..=12_u8 {
-        let name = match idx {
-            1 => "Desktop".to_string(),
-            12 => "Console".to_string(),
-            _ => format!("Mode {}", idx),
-        };
+    let main_place = Place {
+        id: ThingId(0),
+        name: "place-main".to_string(),
+    };
+    let console_place = Place {
+        id: ThingId(0),
+        name: "place-console".to_string(),
+    };
 
-        let place = Place {
-            id: ThingId(0),
-            name: format!("place-{}", idx),
-        };
-        let place_id = create_thing(sys, &place).unwrap_or(ThingId(0));
+    let main_place_id = create_thing(sys, &main_place).unwrap_or(ThingId(0));
+    let console_place_id = create_thing(sys, &console_place).unwrap_or(ThingId(0));
 
-        let mode = Mode {
-            id: ThingId(0),
-            index: idx,
-            name,
-            place_id: Some(place_id),
-            active: idx == 1,
-        };
-        if let Some(mode_id) = create_thing(sys, &mode) {
-            let _ = add_edge(sys, mode_id, graph_kinds::EDGE_MODE_PLACE, place_id);
-        }
+    let main_mode = Mode {
+        id: ThingId(0),
+        index: 1,
+        name: "Desktop".to_string(),
+        place_id: Some(main_place_id),
+        active: true,
+    };
+    if let Some(mode_id) = create_thing(sys, &main_mode) {
+        let _ = add_edge(sys, mode_id, graph_kinds::EDGE_MODE_PLACE, main_place_id);
+    }
+
+    let console_mode = Mode {
+        id: ThingId(0),
+        index: MODE_INDEX_CONSOLE,
+        name: "Console".to_string(),
+        place_id: Some(console_place_id),
+        active: false,
+    };
+    if let Some(mode_id) = create_thing(sys, &console_mode) {
+        let _ = add_edge(sys, mode_id, graph_kinds::EDGE_MODE_PLACE, console_place_id);
     }
 }
 
@@ -155,7 +180,7 @@ fn spawn_boot_program<S: Sys>(
 ) {
     log_dynamic(
         sys,
-        format!(
+        format_args!(
             "init: BootProgram name={} app_id={} priority={} binary={}",
             program.name, program.app_id, program.priority, program.binary
         ),
@@ -166,7 +191,7 @@ fn spawn_boot_program<S: Sys>(
     {
         log_dynamic(
             sys,
-            format!(
+            format_args!(
                 "init: BootProgram {} backed by ProgramImage id={} module_index={} base_phys={:#x} size={}",
                 program.name, image.identifier, image.module_index, image.base_phys, image.size
             ),
@@ -174,7 +199,7 @@ fn spawn_boot_program<S: Sys>(
     } else {
         log_dynamic(
             sys,
-            format!(
+            format_args!(
                 "init: WARNING: no ProgramImage found for BootProgram {} (binary={})",
                 program.name, program.binary
             ),
@@ -182,28 +207,29 @@ fn spawn_boot_program<S: Sys>(
     }
     log_dynamic(
         sys,
-        format!(
+        format_args!(
             "init: spawning BootProgram {} (app_id={}, binary={})",
             program.name, program.app_id, program.binary
         ),
     );
     if let Some((process_id, _thread_id)) = spawn_program(sys, program.id) {
         if !add_edge(sys, init_process.id, graph_kinds::EDGE_SPAWNED, process_id) {
-            log_dynamic(
-                sys,
-                "init: failed to add SPAWNED edge after spawn_program".into(),
-            );
+            println(sys, "init: failed to add SPAWNED edge after spawn_program");
         }
     } else {
         log_dynamic(
             sys,
-            format!("init: spawn_program failed for {}", program.name),
+            format_args!("init: spawn_program failed for {}", program.name),
         );
     }
 }
 
 fn is_driver(program: &BootProgram) -> bool {
     looks_like_driver_identifier(&program.name) || looks_like_driver_identifier(&program.binary)
+}
+
+fn is_compositor(program: &BootProgram) -> bool {
+    program.name == "compositor" || program.binary == "compositor"
 }
 
 fn looks_like_driver_identifier(identifier: &str) -> bool {
@@ -215,7 +241,7 @@ fn load_boot_profile<S: Sys>(sys: &mut S) -> Option<BootProfile> {
     let mut profiles: Vec<BootProfile> = list_things_by_kind(sys);
     log_dynamic(
         sys,
-        format!(
+        format_args!(
             "init: BootProfile query returned {} entries",
             profiles.len()
         ),
@@ -223,22 +249,22 @@ fn load_boot_profile<S: Sys>(sys: &mut S) -> Option<BootProfile> {
     if let Some(bp) = load_thing::<BootProfile>(sys, abi::ThingId(12)) {
         log_dynamic(
             sys,
-            format!(
+            format_args!(
                 "init: direct load of ThingId(12) succeeded with version {}",
                 bp.version
             ),
         );
     } else {
-        log_dynamic(sys, "init: direct load of ThingId(12) failed".into());
+        println(sys, "init: direct load of ThingId(12) failed");
     }
     match profiles.len() {
         1 => profiles.pop(),
         0 => {
-            log_dynamic(sys, "init: BootProfile not found".into());
+            println(sys, "init: BootProfile not found");
             None
         }
         _ => {
-            log_dynamic(sys, "init: multiple BootProfile nodes found".into());
+            println(sys, "init: multiple BootProfile nodes found");
             None
         }
     }
@@ -249,7 +275,7 @@ fn find_process_by_pid<S: Sys>(sys: &mut S, pid: u64) -> Option<ProcessThing> {
 }
 
 fn fatal<S: Sys>(sys: &mut S, msg: &str) -> ! {
-    log_dynamic(sys, format!("init fatal: {}", msg));
+    log_dynamic(sys, format_args!("init fatal: {}", msg));
     loop {
         sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
     }
@@ -262,7 +288,7 @@ fn collect_boot_programs<S: Sys>(sys: &mut S, programs: &mut Vec<BootProgram>, i
         } else {
             log_dynamic(
                 sys,
-                format!(
+                format_args!(
                     "init: ignoring missing BootProgram ThingId {}",
                     program_id.0
                 ),
@@ -286,7 +312,7 @@ fn start_rootfs<S: Sys>(sys: &mut S, images: &[ProgramImage]) {
     if let Some(existing) = find_thing::<BootProgram>(sys, |bp| bp.binary == ROOTFS_IDENTIFIER) {
         log_dynamic(
             sys,
-            format!(
+            format_args!(
                 "init: rootfs BootProgram already exists as ThingId {}",
                 existing.id.0
             ),
@@ -309,19 +335,19 @@ fn start_rootfs<S: Sys>(sys: &mut S, images: &[ProgramImage]) {
         if let Some(program_id) = create_thing(sys, &temp_program) {
             log_dynamic(
                 sys,
-                format!(
+                format_args!(
                     "init: created temporary rootfs BootProgram id={}",
                     program_id.0
                 ),
             );
             let _ = spawn_program(sys, program_id);
         } else {
-            log_dynamic(sys, "init: failed to create BootProgram for rootfs".into());
+            println(sys, "init: failed to create BootProgram for rootfs");
         }
     } else {
-        log_dynamic(
+        println(
             sys,
-            "init: rootfs ProgramImage missing; skipping rootfs launch".into(),
+            "init: rootfs ProgramImage missing; skipping rootfs launch",
         );
     }
 }

@@ -11,8 +11,6 @@ use std::thread;
 mod frame_pool;
 use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary, ThreadId};
 use frame_pool::{allocate_frame, frame_stats, free_frame, init_host_frame_pool};
-use heartbeat;
-use hello;
 use userland_rt::Sys;
 
 struct HostConsole;
@@ -139,31 +137,7 @@ fn main() {
     let mut sched = Scheduler::new();
     sched.init_graph_mirror();
 
-    let p1 = sched.add_process("hello");
-    let t1 = sched.add_thread(p1, "hello", dummy_entry, 1, 0, 0);
-
-    let p2 = sched.add_process("heartbeat");
-    let t2 = sched.add_thread(p2, "heartbeat", dummy_entry, 2, 0, 0);
-
-    let mut threads = HashMap::new();
-
-    // Spawn t1
-    let t1_handle = thread::spawn(move || {
-        CURRENT_THREAD_ID.with(|id: &RefCell<Option<ThreadId>>| *id.borrow_mut() = Some(t1));
-        thread::park(); // Wait for scheduler
-        let mut sys = HarnessSys;
-        hello::run(&mut sys);
-    });
-    threads.insert(t1, t1_handle.thread().clone());
-
-    // Spawn t2
-    let t2_handle = thread::spawn(move || {
-        CURRENT_THREAD_ID.with(|id: &RefCell<Option<ThreadId>>| *id.borrow_mut() = Some(t2));
-        thread::park(); // Wait for scheduler
-        let mut sys = HarnessSys;
-        heartbeat::run(&mut sys);
-    });
-    threads.insert(t2, t2_handle.thread().clone());
+    let mut threads: HashMap<ThreadId, std::thread::Thread> = HashMap::new();
 
     println!("Starting scheduler loop...");
     while !sched.all_done() {

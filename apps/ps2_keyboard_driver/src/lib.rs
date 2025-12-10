@@ -8,6 +8,7 @@ use thing_models::{
     KeyScanEvent, ModeSwitchEvent,
 };
 use userland::prelude::*;
+use userland_std::MODE_INDEX_CONSOLE;
 
 const POLL_INTERVAL_NS: u64 = 2_000_000;
 const STATUS_OFFSET: u16 = 4;
@@ -361,7 +362,7 @@ fn scancode_to_mode_index(byte: u8) -> Option<u8> {
         0x43 => Some(9),
         0x44 => Some(10),
         0x57 => Some(11),
-        0x58 => Some(12),
+        0x58 => Some(MODE_INDEX_CONSOLE),
         _ => None,
     }
 }

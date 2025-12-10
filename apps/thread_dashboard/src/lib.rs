@@ -14,7 +14,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
 
         log_dynamic(
             sys,
-            format!(
+            format_args!(
                 "=== Thread dashboard tick {} ({} ms since start) ===",
                 tick, elapsed_ms
             ),
@@ -23,12 +23,12 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         let threads: Vec<ThreadThing> = list_things_by_kind::<S, ThreadThing>(sys);
 
         if threads.is_empty() {
-            log_dynamic(sys, "  (no ThreadInfo Things found)".into());
+            println(sys, "  (no ThreadInfo Things found)");
         } else {
             for t in threads.iter() {
                 log_dynamic(
                     sys,
-                    format!(
+                    format_args!(
                         "  tid={:<4} state={:<10} priority={} runtime_ns={}",
                         t.tid, t.state, t.priority, t.runtime_ns,
                     ),

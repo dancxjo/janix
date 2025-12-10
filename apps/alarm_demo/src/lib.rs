@@ -20,7 +20,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     let (hour, minute, second) = seconds_to_hms(target_secs);
     log_dynamic(
         sys,
-        format!(
+        format_args!(
             "alarm_demo: waiting for alarm at {:02}:{:02}:{:02}",
             hour, minute, second
         ),
@@ -33,11 +33,14 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
                 let (fh, fm, fs) = seconds_to_hms(fired_secs);
                 log_dynamic(
                     sys,
-                    format!("alarm_demo: alarm fired at {:02}:{:02}:{:02}", fh, fm, fs),
+                    format_args!(
+                        "alarm_demo: alarm fired at {:02}:{:02}:{:02}",
+                        fh, fm, fs
+                    ),
                 );
                 break;
             } else if state == "Cancelled" {
-                log_dynamic(sys, "alarm_demo: alarm cancelled".into());
+                println(sys, "alarm_demo: alarm cancelled");
                 break;
             }
         }

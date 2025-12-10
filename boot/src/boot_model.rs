@@ -146,7 +146,11 @@ pub fn seed_display_from_limine() {
     let height = fb.height();
     let pitch = fb.pitch();
     let bpp = fb.bpp();
-    let fb_addr = fb.addr() as u64;
+    let hhdm_offset = HHDM_REQUEST
+        .get_response()
+        .map(|resp| resp.offset())
+        .unwrap_or(0);
+    let fb_addr = (fb.addr() as u64).saturating_sub(hhdm_offset);
     let size_bytes = pitch as u64 * height as u64;
 
     if bpp != 32 {

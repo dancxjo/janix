@@ -41,7 +41,7 @@ fn log_event<S: Sys>(sys: &mut S, event: &InputCharEvent) {
     if let Some(label) = special_display(event.ch) {
         log_dynamic(
             sys,
-            format!(
+            format_args!(
                 "input_logger_demo: InputCharEvent '{}' (seq={})",
                 label, event.sequence_index
             ),
@@ -51,7 +51,7 @@ fn log_event<S: Sys>(sys: &mut S, event: &InputCharEvent) {
 
     log_dynamic(
         sys,
-        format!(
+        format_args!(
             "input_logger_demo: InputCharEvent '{}' (seq={})",
             event.ch, event.sequence_index
         ),

@@ -7,8 +7,6 @@ members = [
     "userland_rt",
     "userland_std",
     "host_harness",
-    "apps/hello",
-    "apps/heartbeat",
     "apps/init",
     "apps/thread_dashboard",
     "apps/clock_demo",

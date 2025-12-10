@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use abi::{ThingId, graph_kinds};
-use alloc::{format, vec::Vec};
+use alloc::vec::Vec;
 use thing_models::{BootProfile, BootProgram, ProgramImage};
 use userland::prelude::*;
 use userland_std::add_edge;
@@ -61,7 +61,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
                 } else {
                     log_dynamic(
                         sys,
-                        format!(
+                        format_args!(
                             "rootfs: created BootProgram {} but failed to add edge",
                             image.identifier
                         ),
@@ -71,7 +71,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
             None => {
                 log_dynamic(
                     sys,
-                    format!(
+                    format_args!(
                         "rootfs: failed to create BootProgram for {}",
                         image.identifier
                     ),
@@ -80,7 +80,10 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         }
     }
 
-    log_dynamic(sys, format!("rootfs: seeded {} BootProgram entries", added));
+    log_dynamic(
+        sys,
+        format_args!("rootfs: seeded {} BootProgram entries", added),
+    );
     sys.exit_thread();
 }
 
@@ -90,7 +93,7 @@ fn ensure_boot_profile<S: Sys>(sys: &mut S) -> ThingId {
         [profile] => {
             log_dynamic(
                 sys,
-                format!("rootfs: using existing BootProfile id={}", profile.id.0),
+                format_args!("rootfs: using existing BootProfile id={}", profile.id.0),
             );
             profile.id
         }
@@ -101,7 +104,7 @@ fn ensure_boot_profile<S: Sys>(sys: &mut S) -> ThingId {
             };
             match create_thing(sys, &profile) {
                 Some(id) => {
-                    log_dynamic(sys, format!("rootfs: created BootProfile id={}", id.0));
+                    log_dynamic(sys, format_args!("rootfs: created BootProfile id={}", id.0));
                     id
                 }
                 None => fatal(sys, "rootfs: failed to create BootProfile"),
@@ -110,7 +113,7 @@ fn ensure_boot_profile<S: Sys>(sys: &mut S) -> ThingId {
         many => {
             log_dynamic(
                 sys,
-                format!(
+                format_args!(
                     "rootfs: multiple BootProfiles found ({}); picking first",
                     many.len()
                 ),
@@ -121,7 +124,7 @@ fn ensure_boot_profile<S: Sys>(sys: &mut S) -> ThingId {
 }
 
 fn fatal<S: Sys>(sys: &mut S, msg: &str) -> ! {
-    log_dynamic(sys, msg.into());
+    log_dynamic(sys, format_args!("{}", msg));
     loop {
         sys.sleep_for_ns(100_000_000);
     }

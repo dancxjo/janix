@@ -1,6 +1,7 @@
 extern crate alloc;
 
 use core::cmp::min;
+use core::fmt::{self, Write};
 use core::mem;
 use spin::Mutex;
 
@@ -39,17 +40,55 @@ pub use userland_std::{
     scheduler_summary,
     time,
     update_props,
+    active_mode,
+    default_mode,
+    is_console_mode_active,
+    MODE_INDEX_CONSOLE,
 };
 
 const LOG_BUFFER_LEN: usize = 256;
 static LOG_BUFFER: Mutex<[u8; LOG_BUFFER_LEN]> = Mutex::new([0; LOG_BUFFER_LEN]);
 
-/// Convenience logging helper for dynamic Strings
-pub fn log_dynamic(sys: &impl Sys, msg: String) {
-    let bytes = msg.as_bytes();
+struct LogBufferWriter<'a> {
+    buf: &'a mut [u8],
+    written: usize,
+}
+
+impl<'a> LogBufferWriter<'a> {
+    fn new(buf: &'a mut [u8]) -> Self {
+        Self { buf, written: 0 }
+    }
+
+    fn len(&self) -> usize {
+        self.written
+    }
+}
+
+impl<'a> Write for LogBufferWriter<'a> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        if self.written >= self.buf.len() {
+            return Ok(());
+        }
+        let remaining = self.buf.len().saturating_sub(self.written);
+        let bytes = s.as_bytes();
+        let to_copy = min(remaining, bytes.len());
+        if to_copy > 0 {
+            let start = self.written;
+            let end = start + to_copy;
+            self.buf[start..end].copy_from_slice(&bytes[..to_copy]);
+            self.written = end;
+        }
+        Ok(())
+    }
+}
+
+/// Convenience logging helper for dynamic strings without per-call heap allocation
+pub fn log_dynamic(sys: &impl Sys, args: fmt::Arguments<'_>) {
     let mut buffer = LOG_BUFFER.lock();
-    let len = min(bytes.len(), buffer.len().saturating_sub(1));
-    buffer[..len].copy_from_slice(&bytes[..len]);
+    let max_len = buffer.len().saturating_sub(1);
+    let mut writer = LogBufferWriter::new(&mut buffer[..max_len]);
+    let _ = writer.write_fmt(args);
+    let len = writer.len();
     buffer[len] = 0;
     let slice = &buffer[..len];
     let temp = unsafe { core::str::from_utf8_unchecked(slice) };

@@ -64,7 +64,7 @@ pub fn run<S: Sys>(sys: &mut S) {
 
         log_dynamic(
             sys,
-            format!(
+            format_args!(
                 "{{ crate_name }}: tick {} ({} ms since start)",
                 i,
                 elapsed_ms

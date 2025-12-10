@@ -6,19 +6,19 @@ quiet: yes
     kernel_path: boot():/boot/kernel
     module_path: boot():/boot/apps/init
     module_cmdline: program=init
-    module_path: boot():/boot/apps/hello
-    module_cmdline: program=hello
-    module_path: boot():/boot/apps/heartbeat
-    module_cmdline: program=heartbeat
     module_path: boot():/boot/apps/thread_dashboard
     module_cmdline: program=thread_dashboard
     module_path: boot():/boot/apps/clock_demo
     module_cmdline: program=clock_demo
     module_path: boot():/boot/apps/alarm_demo
     module_cmdline: program=alarm_demo
+    module_path: boot():/boot/apps/framebuffer_driver
+    module_cmdline: program=framebuffer_driver
     module_path: boot():/boot/apps/ps2_keyboard_driver
     module_cmdline: program=ps2_keyboard_driver
     module_path: boot():/boot/apps/ps2_mouse_driver
     module_cmdline: program=ps2_mouse_driver
+    module_path: boot():/boot/apps/compositor
+    module_cmdline: program=compositor
     module_path: boot():/boot/apps/input_logger_demo
     module_cmdline: program=input_logger_demo

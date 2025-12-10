@@ -72,11 +72,7 @@ impl Console {
         match ch {
             '\n' => {
                 self.cursor_x = 0;
-                self.cursor_y += 1;
-                if self.cursor_y >= self.rows {
-                    self.scroll();
-                    self.cursor_y = self.rows - 1;
-                }
+                self.advance_line();
             }
             _ => {
                 if let Some(bitmap) = lookup_glyph(ch) {
@@ -85,11 +81,7 @@ impl Console {
                 self.cursor_x += 1;
                 if self.cursor_x >= self.cols {
                     self.cursor_x = 0;
-                    self.cursor_y += 1;
-                    if self.cursor_y >= self.rows {
-                        self.scroll();
-                        self.cursor_y = self.rows - 1;
-                    }
+                    self.advance_line();
                 }
             }
         }
@@ -98,6 +90,14 @@ impl Console {
     pub fn write_str(&mut self, s: &str) {
         for ch in s.chars() {
             self.put_char(ch);
+        }
+    }
+
+    fn advance_line(&mut self) {
+        if self.cursor_y < self.rows.saturating_sub(1) {
+            self.cursor_y += 1;
+        } else {
+            self.scroll();
         }
     }
 
@@ -115,6 +115,7 @@ impl Console {
             // Clear the last row
             core::ptr::write_bytes(self.fb_ptr.add(copy_bytes), 0, row_bytes);
         }
+        self.cursor_y = self.rows.saturating_sub(1);
     }
 
     fn draw_glyph(&mut self, col: u32, row: u32, bitmap: &[u8; GLYPH_HEIGHT as usize]) {

@@ -357,6 +357,10 @@ impl Sys for UserlandSys {
 impl UserlandSys {
     /// Construct a portable syscall client suitable for user-mode code.
     pub fn new() -> Self {
+        #[cfg(all(target_os = "none", not(feature = "kernel")))]
+        {
+            crate::init_user_heap();
+        }
         UserlandSys
     }
 

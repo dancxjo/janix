@@ -13,4 +13,3 @@ userland = { path = "../../userland" }
 thing_models = { path = "../../thing_models" }
 userland_std = { path = "../../userland_std" }
 userland_rt = { path = "../../userland_rt" }
-userland_alloc = { path = "../../userland_alloc" }

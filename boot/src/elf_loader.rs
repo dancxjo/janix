@@ -13,6 +13,8 @@ pub struct LoadedElfProgram {
     pub entry_point: u64,
     pub user_stack_top: u64,
     pub address_space_token: u64,
+    pub heap_base: u64,
+    pub heap_limit: u64,
 }
 
 pub fn load_program(image: &ProgramImageData) -> Result<LoadedElfProgram, &'static str> {
@@ -33,6 +35,7 @@ mod x86_64 {
     use crate::boot_model::HHDM_REQUEST;
     use alloc::vec::Vec;
     use core::ptr;
+    use abi::{USER_HEAP_END, USER_HEAP_START};
     use kernel_core::memory;
     use kernel_core::log;
     use x86_64::registers::control::Cr3;
@@ -80,10 +83,13 @@ mod x86_64 {
             )?;
         }
         let stack_top = map_stack(&mut space, &mut frame_alloc, hhdm)?;
+        let (heap_base, heap_limit) = map_user_heap(&mut space, &mut frame_alloc, hhdm)?;
         Ok(LoadedElfProgram {
             entry_point: elf.entry_point,
             user_stack_top: stack_top,
             address_space_token: space.pml4_phys,
+            heap_base,
+            heap_limit,
         })
     }
 
@@ -301,6 +307,39 @@ mod x86_64 {
             addr += Size4KiB::SIZE as u64;
         }
         Ok(USER_STACK_TOP)
+    }
+
+    fn map_user_heap(
+        space: &mut AddressSpace,
+        frame_alloc: &mut KernelFrameAllocator,
+        hhdm_offset: u64,
+    ) -> Result<(u64, u64), &'static str> {
+        let heap_start = USER_HEAP_START as u64;
+        let heap_end = USER_HEAP_END as u64;
+        let mut mapper = mapper(space);
+        let mut addr = heap_start;
+        while addr < heap_end {
+            let page = Page::<Size4KiB>::containing_address(VirtAddr::new(addr));
+            let frame = frame_alloc
+                .allocate_frame()
+                .ok_or("Out of frames mapping heap")?;
+            unsafe {
+                mapper
+                    .map_to(
+                        page,
+                        frame,
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::USER_ACCESSIBLE,
+                        frame_alloc,
+                    )
+                    .map_err(map_err_to_str)?
+                    .flush();
+            }
+            zero_frame(frame.start_address().as_u64(), hhdm_offset);
+            addr += Size4KiB::SIZE as u64;
+        }
+        Ok((heap_start, heap_end))
     }
 
     fn align_down(addr: u64) -> u64 {

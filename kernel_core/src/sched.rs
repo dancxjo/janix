@@ -53,6 +53,8 @@ pub struct Process {
     pub name: &'static str,
     pub thing_id: Option<ThingId>,
     pub address_space_token: Option<u64>,
+    pub heap_base: usize,
+    pub heap_limit: usize,
 }
 
 pub struct Scheduler {
@@ -186,6 +188,8 @@ impl Scheduler {
                     name,
                     thing_id,
                     address_space_token: None,
+                    heap_base: 0,
+                    heap_limit: 0,
                 });
                 if self.graph_enabled {
                     self.ensure_process_thing(i);
@@ -200,6 +204,14 @@ impl Scheduler {
         let idx = process_index(pid);
         if let Some(proc_slot) = self.processes.get_mut(idx).and_then(|p| p.as_mut()) {
             proc_slot.address_space_token = Some(token);
+        }
+    }
+
+    pub fn set_process_heap(&mut self, pid: ProcessId, base: usize, limit: usize) {
+        let idx = process_index(pid);
+        if let Some(proc_slot) = self.processes.get_mut(idx).and_then(|p| p.as_mut()) {
+            proc_slot.heap_base = base;
+            proc_slot.heap_limit = limit;
         }
     }
 

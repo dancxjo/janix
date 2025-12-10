@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 abi = { path = "../abi" }
 kernel_core = { path = "../kernel_core" }
+spin = { version = "0.10", default-features = false }
 
 [features]
 host = []

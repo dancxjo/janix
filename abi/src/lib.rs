@@ -22,6 +22,10 @@ pub struct NodeId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ThingId(pub u64);
 
+pub const USER_HEAP_START: usize = 0x0000_0000_4000_0000;
+pub const USER_HEAP_SIZE: usize = 4 * 1024 * 1024;
+pub const USER_HEAP_END: usize = USER_HEAP_START + USER_HEAP_SIZE;
+
 /// Address Space identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AddressSpaceId(pub u64);

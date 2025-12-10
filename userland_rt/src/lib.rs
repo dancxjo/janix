@@ -1,6 +1,19 @@
 #![cfg_attr(target_os = "none", no_std)]
+#![cfg_attr(
+    all(target_os = "none", not(feature = "kernel")),
+    feature(alloc_error_handler)
+)]
 
 use abi::{KernelRequest, KernelResponse};
+
+#[cfg(all(target_os = "none", not(feature = "kernel")))]
+mod heap;
+
+#[cfg(all(target_os = "none", not(feature = "kernel")))]
+pub use heap::init_user_heap;
+
+#[cfg(not(all(target_os = "none", not(feature = "kernel"))))]
+pub fn init_user_heap() {}
 
 pub trait Sys {
     fn syscall(&self, request: KernelRequest) -> KernelResponse;

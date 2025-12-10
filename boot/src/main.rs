@@ -24,6 +24,7 @@ mod serial;
 mod user;
 
 use crate::arch::{Arch, CurrentArch};
+use alloc::boxed::Box;
 
 use core::arch::asm;
 
@@ -110,7 +111,16 @@ fn init_machine() {
     assert!(BASE_REVISION.is_supported());
 
     unsafe {
-        heap::KERNEL_ALLOCATOR.init(core::ptr::addr_of_mut!(HEAP_MEMORY) as usize, HEAP_SIZE);
+        let start = core::ptr::addr_of_mut!(HEAP_MEMORY) as usize;
+        heap::KERNEL_ALLOCATOR.init(start, HEAP_SIZE);
+        let end = start + HEAP_SIZE;
+        let msg = alloc::format!(
+            "Kernel heap initialized: [{:#x}, {:#x})",
+            start,
+            end
+        );
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        kernel_core::log(leaked);
     }
 
     kernel_core::log("Initializing kernel core...");

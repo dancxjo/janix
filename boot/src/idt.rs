@@ -1,27 +1,30 @@
 extern crate alloc;
 
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-use lazy_static::lazy_static;
 use crate::gdt;
 use crate::user;
-use core::arch::global_asm;
 use abi::SyscallNumber;
-use alloc::string::ToString;
 use alloc::boxed::Box;
+use alloc::string::ToString;
+use core::arch::global_asm;
+use lazy_static::lazy_static;
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
         unsafe {
             let handler_addr = x86_64::VirtAddr::new(syscall_handler_asm as u64);
-            idt[0x80].set_handler_addr(handler_addr)
+            idt[0x80]
+                .set_handler_addr(handler_addr)
                 .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
         }
         unsafe {
-            idt.double_fault.set_handler_fn(double_fault_handler)
+            idt.double_fault
+                .set_handler_fn(double_fault_handler)
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
         }
-        idt.general_protection_fault.set_handler_fn(gp_fault_handler);
+        idt.general_protection_fault
+            .set_handler_fn(gp_fault_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt
     };
@@ -32,47 +35,57 @@ pub fn init() {
 }
 
 extern "x86-interrupt" fn double_fault_handler(
-    stack_frame: InterruptStackFrame, _error_code: u64) -> !
-{
+    stack_frame: InterruptStackFrame,
+    _error_code: u64,
+) -> ! {
     kernel_core::log("DOUBLE FAULT");
     loop {}
 }
 
-extern "x86-interrupt" fn gp_fault_handler(
-    stack_frame: InterruptStackFrame, error_code: u64)
-{
+extern "x86-interrupt" fn gp_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     kernel_core::log("GENERAL PROTECTION FAULT");
     loop {}
 }
 
 extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode)
-{
-    use x86_64::registers::control::Cr2;
-    use x86_64::structures::paging::{PageTable, OffsetPageTable, Page, PageTableFlags, Size4KiB, Mapper};
+    stack_frame: InterruptStackFrame,
+    error_code: PageFaultErrorCode,
+) {
     use x86_64::VirtAddr;
+    use x86_64::registers::control::Cr2;
     use x86_64::structures::paging::mapper::MapperAllSizes;
+    use x86_64::structures::paging::{
+        Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB,
+    };
 
     let addr = Cr2::read();
-    
+
     // Lazy map as user accessible on protection violation
-    if error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION) && error_code.contains(PageFaultErrorCode::USER_MODE) {
+    if error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION)
+        && error_code.contains(PageFaultErrorCode::USER_MODE)
+    {
         if let Some(hhdm) = crate::boot_model::HHDM_REQUEST.get_response() {
-             let phys_mem_offset = hhdm.offset();
-             let level_4_table_ptr = x86_64::registers::control::Cr3::read().0.start_address().as_u64();
-             let level_4_table_ptr = VirtAddr::new(level_4_table_ptr + phys_mem_offset);
-             let level_4_table: &mut PageTable = unsafe { &mut *level_4_table_ptr.as_mut_ptr() };
-             let mut mapper = unsafe { OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset)) };
-             
-             let page = Page::<Size4KiB>::containing_address(addr);
-             let new_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-             
-             unsafe {
-                 if let Ok(flush) = mapper.update_flags(page, new_flags) {
-                     flush.flush();
-                     return;
-                 }
-             }
+            let phys_mem_offset = hhdm.offset();
+            let level_4_table_ptr = x86_64::registers::control::Cr3::read()
+                .0
+                .start_address()
+                .as_u64();
+            let level_4_table_ptr = VirtAddr::new(level_4_table_ptr + phys_mem_offset);
+            let level_4_table: &mut PageTable = unsafe { &mut *level_4_table_ptr.as_mut_ptr() };
+            let mut mapper =
+                unsafe { OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset)) };
+
+            let page = Page::<Size4KiB>::containing_address(addr);
+            let new_flags = PageTableFlags::PRESENT
+                | PageTableFlags::WRITABLE
+                | PageTableFlags::USER_ACCESSIBLE;
+
+            unsafe {
+                if let Ok(flush) = mapper.update_flags(page, new_flags) {
+                    flush.flush();
+                    return;
+                }
+            }
         }
     }
 
@@ -81,76 +94,3 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 
-#[repr(C)]
-pub struct SyscallRegs {
-    pub r11: u64,
-    pub r10: u64,
-    pub r9: u64,
-    pub r8: u64,
-    pub rcx: u64,
-    pub rdx: u64,
-    pub rsi: u64,
-    pub rdi: u64,
-    pub rax: u64,
-}
-
-global_asm!(
-    r#"
-.global syscall_handler_asm
-syscall_handler_asm:
-    push rax
-    push rdi
-    push rsi
-    push rdx
-    push rcx
-    push r8
-    push r9
-    push r10
-    push r11
-
-    mov rdi, rsp
-    call syscall_handler_rust
-    
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rcx
-    pop rdx
-    pop rsi
-    pop rdi
-    add rsp, 8 // pop rax
-    
-    iretq
-"#
-);
-
-unsafe extern "C" {
-    fn syscall_handler_asm();
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
-    let regs = unsafe { &mut *regs };
-    let num = regs.rax;
-    let arg1 = regs.rdi;
-    let arg2 = regs.rsi;
-    
-    if num == SyscallNumber::Yield as u64 {
-        0
-    } else if num == SyscallNumber::Log as u64 {
-        let ptr = arg1 as *const u8;
-        let len = arg2 as usize;
-        if let Ok(s) = unsafe { core::str::from_utf8(core::slice::from_raw_parts(ptr, len)) } {
-             let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
-             kernel_core::log(leaked);
-        }
-        0
-    } else if num == SyscallNumber::ExitThread as u64 {
-        kernel_core::log("Thread exited via syscall");
-        user::schedule_next();
-        0
-    } else {
-        0
-    }
-}

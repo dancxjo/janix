@@ -31,8 +31,131 @@ pub use thing_models::{
     Place, Surface, TimeSource, Window,
 };
 
+#[cfg(not(target_os = "none"))]
+pub mod doc_helpers {
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+
+    use abi::{KernelRequest, KernelResponse, PropKey, PropType, PropValue, Thing, ThingId};
+    use userland_rt::Sys;
+
+    /// Simple helper for doc tests that drives the syscall interface with canned responses.
+    pub struct DocSys {
+        pub requests: RefCell<Vec<KernelRequest>>,
+        responses: RefCell<VecDeque<KernelResponse>>,
+        pub time: RefCell<u64>,
+        pub slept_for: RefCell<Vec<u64>>,
+    }
+
+    impl DocSys {
+        pub fn with_responses(responses: Vec<KernelResponse>) -> Self {
+            Self {
+                requests: RefCell::new(Vec::new()),
+                responses: RefCell::new(responses.into()),
+                time: RefCell::new(0),
+                slept_for: RefCell::new(Vec::new()),
+            }
+        }
+
+        pub fn push_response(&self, response: KernelResponse) {
+            self.responses.borrow_mut().push_back(response);
+        }
+
+        pub fn props_slice(
+            props: Vec<(PropKey, PropValue)>,
+        ) -> &'static [Option<(PropKey, PropValue)>] {
+            Box::leak(
+                props
+                    .into_iter()
+                    .map(Some)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            )
+        }
+    }
+
+    impl Sys for DocSys {
+        fn syscall(&self, request: KernelRequest) -> KernelResponse {
+            self.requests.borrow_mut().push(request);
+            self.responses
+                .borrow_mut()
+                .pop_front()
+                .expect("doc helper responses exhausted")
+        }
+
+        fn time_now_ns(&mut self) -> u64 {
+            let mut t = self.time.borrow_mut();
+            *t += 1;
+            *t
+        }
+
+        fn time_monotonic_ns(&mut self) -> u64 {
+            self.time_now_ns()
+        }
+
+        fn time_system_ns(&mut self) -> u64 {
+            self.time_now_ns()
+        }
+
+        fn sleep_for_ns(&mut self, delta_ns: u64) {
+            self.slept_for.borrow_mut().push(delta_ns);
+        }
+
+        fn sleep_until_ns(&mut self, deadline_ns: u64) {
+            self.slept_for.borrow_mut().push(deadline_ns);
+        }
+
+        fn yield_now(&mut self) {}
+
+        fn exit_thread(&mut self) -> ! {
+            panic!("doc helper exit_thread invoked")
+        }
+    }
+
+    /// A lightweight Thing implementation for doc/test snippets.
+    #[derive(Clone, Debug)]
+    pub struct DummyThing {
+        pub id: ThingId,
+        pub flag: bool,
+    }
+
+    impl DummyThing {
+        pub fn new(flag: bool) -> Self {
+            DummyThing {
+                id: ThingId(0),
+                flag,
+            }
+        }
+    }
+
+    impl Thing for DummyThing {
+        const KIND: &'static str = "DocDummy";
+        const DESCRIPTION: &'static str = "Dummy Thing used in documentation snippets";
+
+        fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+            out.push(("flag", PropValue::Bool(self.flag)));
+        }
+
+        fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+            let mut flag = false;
+            for (k, v) in props.iter().flatten() {
+                if *k == "flag" {
+                    if let PropValue::Bool(b) = v {
+                        flag = *b;
+                    }
+                }
+            }
+            DummyThing { id, flag }
+        }
+
+        fn schema() -> &'static [(&'static str, PropType)] {
+            &[("flag", PropType::Bool)]
+        }
+    }
+}
+
 #[cfg(target_os = "none")]
-pub fn entry<F>(mut run: F) -> !
+pub fn entry<F>(run: F) -> !
 where
     F: FnOnce(&mut UserlandSys),
 {
@@ -49,7 +172,7 @@ where
     panic!("ThingOS userland apps only run on bare-metal targets");
 }
 
-/// Return the currently active Mode Thing, if one is marked active.
+/// Return the currently active `Mode` Thing, if one is marked active.
 pub fn active_mode<S: Sys>(sys: &mut S) -> Option<Mode> {
     list_things_by_kind::<S, Mode>(sys)
         .into_iter()
@@ -161,6 +284,7 @@ pub struct DisplayThing {
     pub height: u64,
     pub stride: u64,
     pub pixel_format: Option<String>,
+    pub active_buffer_index: i64,
 }
 
 impl abi::Thing for DisplayThing {
@@ -175,6 +299,10 @@ impl abi::Thing for DisplayThing {
         if let Some(fmt) = &self.pixel_format {
             out.push((graph_kinds::PROP_PIXEL_FORMAT, PropValue::Str(fmt.clone())));
         }
+        out.push((
+            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+            PropValue::I64(self.active_buffer_index),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -183,6 +311,7 @@ impl abi::Thing for DisplayThing {
         let mut height = 0;
         let mut stride = 0;
         let mut pixel_format = None;
+        let mut active_buffer_index = 0;
 
         for prop in props.iter().flatten() {
             match prop.0 {
@@ -211,6 +340,11 @@ impl abi::Thing for DisplayThing {
                         pixel_format = Some(v.clone());
                     }
                 }
+                graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX => {
+                    if let PropValue::I64(v) = prop.1 {
+                        active_buffer_index = v;
+                    }
+                }
                 _ => {}
             }
         }
@@ -222,6 +356,7 @@ impl abi::Thing for DisplayThing {
             height,
             stride,
             pixel_format,
+            active_buffer_index,
         }
     }
 
@@ -232,6 +367,7 @@ impl abi::Thing for DisplayThing {
             (graph_kinds::PROP_HEIGHT, PropType::U64),
             (graph_kinds::PROP_STRIDE, PropType::U64),
             (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
+            (graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX, PropType::I64),
         ]
     }
 }
@@ -381,13 +517,32 @@ impl abi::Thing for ThreadThing {
     }
 }
 
-/// Print a line to the kernel log
+/// Print a line to the kernel log.
+///
+/// This wraps the `Log` request, which is helpful for simple diagnostics when
+/// debugging a userland program.
 pub fn println(sys: &impl Sys, message: &'static str) {
     let request = KernelRequest::Log { message };
     sys.syscall(request);
 }
 
-/// Query a node in the graph
+/// Query a node in the kernel graph and return the associated value.
+///
+/// If the kernel returns anything other than `NodeData`, this helper returns
+/// `None`.
+///
+/// # Examples
+///
+/// ```
+/// use abi::{KernelResponse, NodeId};
+/// use userland_std::{doc_helpers::DocSys, graph_query};
+///
+/// let sys = DocSys::with_responses(vec![KernelResponse::NodeData {
+///     node_id: NodeId(3),
+///     value: 7,
+/// }]);
+/// assert_eq!(graph_query(&sys, NodeId(3)), Some(7));
+/// ```
 pub fn graph_query(sys: &impl Sys, node_id: NodeId) -> Option<u64> {
     let request = KernelRequest::GraphQuery { node_id };
     match sys.syscall(request) {
@@ -396,7 +551,22 @@ pub fn graph_query(sys: &impl Sys, node_id: NodeId) -> Option<u64> {
     }
 }
 
-/// Create a transaction
+/// Create a transaction and return its ID.
+///
+/// The returned transaction can be used with other helpers such as
+/// [`commit_transaction`].
+///
+/// # Examples
+///
+/// ```
+/// use abi::{KernelResponse, TransactionId};
+/// use userland_std::{create_transaction, doc_helpers::DocSys};
+///
+/// let sys = DocSys::with_responses(vec![KernelResponse::TransactionCreated {
+///     tx_id: TransactionId(42),
+/// }]);
+/// assert_eq!(create_transaction(&sys), Some(TransactionId(42)));
+/// ```
 pub fn create_transaction(sys: &impl Sys) -> Option<abi::TransactionId> {
     let request = KernelRequest::CreateTransaction;
     match sys.syscall(request) {
@@ -405,13 +575,13 @@ pub fn create_transaction(sys: &impl Sys) -> Option<abi::TransactionId> {
     }
 }
 
-/// Commit a transaction
+/// Commit an open transaction created via [`create_transaction`].
 pub fn commit_transaction(sys: &impl Sys, tx_id: abi::TransactionId) -> bool {
     let request = KernelRequest::CommitTransaction { tx_id };
     matches!(sys.syscall(request), KernelResponse::Success { .. })
 }
 
-/// Create a new Thing (user wrapper)
+/// Create a new Thing from a raw kind and property slice.
 pub fn user_create_thing(
     sys: &impl Sys,
     kind: &'static str,
@@ -425,7 +595,7 @@ pub fn user_create_thing(
     }
 }
 
-/// Update a Thing (user wrapper)
+/// Update properties of an existing Thing using a property slice.
 pub fn user_update_thing(
     sys: &impl Sys,
     id: ThingId,
@@ -445,6 +615,20 @@ pub use abi::{EdgePred, PropKey, PropType, PropValue, ThingId};
 // Re-export graph kinds module so consumers can access it as `userland_std::graph_kinds`
 pub use abi::graph_kinds;
 
+/// Create a `Thing` value and register it with the kernel.
+///
+/// # Examples
+///
+/// ```
+/// use abi::{KernelResponse, PropValue, ThingId};
+/// use userland_std::{create_thing, doc_helpers::{DocSys, DummyThing}, Thing};
+///
+/// let sys = DocSys::with_responses(vec![KernelResponse::ThingCreated {
+///     id: ThingId(1),
+/// }]);
+/// let dummy = DummyThing::new(true);
+/// assert_eq!(create_thing(&sys, &dummy), Some(ThingId(1)));
+/// ```
 pub fn create_thing<T: Thing>(sys: &impl Sys, thing: &T) -> Option<ThingId> {
     let mut props_vec = Vec::new();
     thing.to_props(&mut props_vec);
@@ -460,6 +644,23 @@ pub fn create_thing<T: Thing>(sys: &impl Sys, thing: &T) -> Option<ThingId> {
     }
 }
 
+/// Load a typed `Thing` from the kernel.
+///
+/// # Examples
+///
+/// ```
+/// use abi::{KernelResponse, PropValue, ThingId};
+/// use userland_std::{doc_helpers::{DocSys, DummyThing}, load_thing, Thing};
+///
+/// let props = DocSys::props_slice(vec![("flag", PropValue::Bool(true))]);
+/// let sys = DocSys::with_responses(vec![KernelResponse::ThingData {
+///     id: ThingId(1),
+///     kind: DummyThing::KIND,
+///     props,
+/// }]);
+/// let thing = load_thing::<DummyThing>(&sys, ThingId(1)).unwrap();
+/// assert!(thing.flag);
+/// ```
 pub fn load_thing<T: Thing>(sys: &impl Sys, id: ThingId) -> Option<T> {
     let request = KernelRequest::ThingGet { id };
     match sys.syscall(request) {
@@ -473,7 +674,10 @@ pub fn load_thing<T: Thing>(sys: &impl Sys, id: ThingId) -> Option<T> {
     }
 }
 
-/// Register a schema for a Thing type
+/// Request that the kernel register the schema for `T`.
+///
+/// This attaches the description and property metadata so that users can
+/// interpret Things using the schema registry.
 pub fn register_schema_for<T: Thing>(sys: &impl Sys) -> bool {
     let schema = T::schema();
     match sys.syscall(KernelRequest::SchemaRegister {
@@ -486,6 +690,9 @@ pub fn register_schema_for<T: Thing>(sys: &impl Sys) -> bool {
     }
 }
 
+/// Search for a `Thing` that satisfies `predicate`.
+///
+/// This helper performs a brute-force scan over the first 128 IDs.
 pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> Option<T> {
     // Simple scan of the first 128 IDs
     for i in 0..128 {
@@ -499,6 +706,8 @@ pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> O
 }
 
 /// Return all neighbors reachable from `from` via `pred` in insertion order.
+///
+/// The returned IDs are ordered by the kernel's insertion order.
 pub fn edge_targets<S: Sys>(sys: &mut S, from: ThingId, pred: EdgePred) -> Vec<ThingId> {
     let mut results = Vec::new();
     let mut index = 0;
@@ -523,7 +732,7 @@ pub fn add_edge(sys: &impl Sys, from: ThingId, pred: EdgePred, to: ThingId) -> b
     )
 }
 
-/// List all Things of a given `T::KIND`
+/// List all Things of a given `T::KIND`.
 ///
 /// This currently uses a brute-force scan of IDs 0..256.
 pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &mut S) -> Vec<T> {
@@ -548,12 +757,15 @@ pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &mut S) -> Vec<T> {
     results
 }
 
-/// Get the type-level description for a Thing type.
+/// Get the type-level description for a `Thing` type.
 /// This is a compile-time constant that describes what the type represents.
 pub fn get_type_description<T: Thing>() -> &'static str {
     T::DESCRIPTION
 }
 
+/// Update the properties for the Thing with `id`.
+///
+/// The passed slice is leaked to satisfy the ABI's `'static` requirement.
 pub fn update_props(sys: &impl Sys, id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
     // We must leak the props to satisfy the ABI's 'static requirement.
     let props_vec = props.to_vec();
@@ -566,6 +778,7 @@ pub fn update_props(sys: &impl Sys, id: ThingId, props: &[(PropKey, PropValue)])
     matches!(sys.syscall(request), KernelResponse::Success { .. })
 }
 
+/// Return a summary of the current physical memory state.
 pub fn memory_summary(sys: &impl Sys) -> Option<MemorySummary> {
     match sys.syscall(KernelRequest::GetMemorySummary) {
         KernelResponse::MemorySummary { summary } => Some(summary),
@@ -573,6 +786,7 @@ pub fn memory_summary(sys: &impl Sys) -> Option<MemorySummary> {
     }
 }
 
+/// Return a summary of the scheduler state exposed by the kernel.
 pub fn scheduler_summary(sys: &impl Sys) -> Option<SchedulerSummary> {
     match sys.syscall(KernelRequest::GetSchedulerSummary) {
         KernelResponse::SchedulerSummary { summary } => Some(summary),
@@ -580,6 +794,7 @@ pub fn scheduler_summary(sys: &impl Sys) -> Option<SchedulerSummary> {
     }
 }
 
+/// Allocate a zero-addressed frame from the first frame pool.
 pub fn alloc_frame(sys: &impl Sys) -> Option<FrameInfo> {
     match sys.syscall(KernelRequest::AllocFrame { pool_index: 0 }) {
         KernelResponse::FrameAllocated { frame } => Some(frame),
@@ -587,6 +802,7 @@ pub fn alloc_frame(sys: &impl Sys) -> Option<FrameInfo> {
     }
 }
 
+/// Return a previously-allocated frame to the kernel.
 pub fn free_frame(sys: &impl Sys, frame_id: FrameId) -> bool {
     matches!(
         sys.syscall(KernelRequest::FreeFrame { frame_id }),
@@ -594,6 +810,7 @@ pub fn free_frame(sys: &impl Sys, frame_id: FrameId) -> bool {
     )
 }
 
+/// Create a process with the provided display name.
 pub fn create_process(sys: &impl Sys, name: &str) -> Option<u64> {
     let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
     match sys.syscall(KernelRequest::CreateProcess { name: leaked }) {
@@ -602,6 +819,7 @@ pub fn create_process(sys: &impl Sys, name: &str) -> Option<u64> {
     }
 }
 
+/// Create a thread within a process.
 pub fn create_thread(
     sys: &impl Sys,
     pid: u64,
@@ -621,6 +839,7 @@ pub fn create_thread(
     }
 }
 
+/// Poll the scheduler for the currently running thread.
 pub fn scheduler_tick(sys: &impl Sys) -> Option<ThreadInfo> {
     match sys.syscall(KernelRequest::SchedulerTick) {
         KernelResponse::SchedulerTicked { current } => current,
@@ -628,6 +847,7 @@ pub fn scheduler_tick(sys: &impl Sys) -> Option<ThreadInfo> {
     }
 }
 
+/// Spawn a boot program and return its generated process/thread IDs.
 pub fn spawn_program(sys: &mut impl Sys, boot_program_id: ThingId) -> Option<(ThingId, ThingId)> {
     match sys.syscall(KernelRequest::SpawnProgram { boot_program_id }) {
         KernelResponse::ProgramSpawned {
@@ -642,6 +862,7 @@ pub fn spawn_program(sys: &mut impl Sys, boot_program_id: ThingId) -> Option<(Th
     }
 }
 
+/// Query metadata for a shared buffer Thing.
 pub fn shared_buffer_info(
     sys: &impl Sys,
     buffer_id: ThingId,
@@ -653,6 +874,7 @@ pub fn shared_buffer_info(
     }
 }
 
+/// Map a shared buffer into the calling address space.
 pub fn shared_buffer_map(
     sys: &impl Sys,
     buffer_id: ThingId,
@@ -665,15 +887,81 @@ pub fn shared_buffer_map(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct PrimaryDisplayBuffer {
-    pub display_id: ThingId,
-    pub buffer_id: ThingId,
+#[derive(Debug)]
+pub struct SharedBufferMapping {
+    pub id: ThingId,
     pub info: SharedBufferInfo,
     pub ptr: *mut u8,
     pub size: usize,
 }
 
+#[derive(Debug)]
+/// Represents a mapped primary display buffer that a userland process can draw into.
+pub struct PrimaryDisplayBuffer {
+    pub display_id: ThingId,
+    pub buffers: [SharedBufferMapping; 2],
+    pub active_buffer_index: i64,
+    pub info: SharedBufferInfo,
+    pub ptr: *mut u8,
+}
+
+impl PrimaryDisplayBuffer {
+    fn clamp_active_index(value: i64) -> i64 {
+        if value == 1 { 1 } else { 0 }
+    }
+
+    fn front_index(value: i64) -> usize {
+        match Self::clamp_active_index(value) {
+            1 => 1,
+            _ => 0,
+        }
+    }
+
+    fn back_index(value: i64) -> usize {
+        1 - Self::front_index(value)
+    }
+
+    fn sync_back_buffer(&mut self) {
+        let idx = Self::back_index(self.active_buffer_index);
+        let slot = &self.buffers[idx];
+        self.ptr = slot.ptr;
+        self.info = slot.info;
+    }
+
+    pub fn back_buffer(&self) -> &SharedBufferMapping {
+        &self.buffers[Self::back_index(self.active_buffer_index)]
+    }
+
+    pub fn front_buffer(&self) -> &SharedBufferMapping {
+        &self.buffers[Self::front_index(self.active_buffer_index)]
+    }
+
+    pub fn update_active_index(&mut self, index: i64) {
+        self.active_buffer_index = Self::clamp_active_index(index);
+        self.sync_back_buffer();
+    }
+}
+
+fn map_display_buffer<S: Sys>(
+    sys: &mut S,
+    buffer_id: ThingId,
+    flags: MapFlags,
+) -> Result<SharedBufferMapping, SysError> {
+    let info = shared_buffer_info(sys, buffer_id)?;
+    let (ptr, size) = shared_buffer_map(sys, buffer_id, flags)?;
+    Ok(SharedBufferMapping {
+        id: buffer_id,
+        info,
+        ptr,
+        size,
+    })
+}
+
+/// Locate and map the kernel's primary display buffer.
+///
+/// This helper finds `display0` (or falls back to the first display), follows
+/// the `scanout` edge to the shared buffer, and maps it with read/write/user
+/// permissions.
 pub fn open_primary_display_buffer<S: Sys>(sys: &mut S) -> Result<PrimaryDisplayBuffer, SysError> {
     let displays: Vec<DisplayThing> = list_things_by_kind(sys);
     let display = displays
@@ -683,18 +971,44 @@ pub fn open_primary_display_buffer<S: Sys>(sys: &mut S) -> Result<PrimaryDisplay
         .cloned()
         .ok_or(SysError::Unexpected)?;
 
-    let mut targets = edge_targets(sys, display.id, graph_kinds::EDGE_DISPLAY_SCANOUT);
-    let buffer_id = targets.pop().ok_or(SysError::Unexpected)?;
+    let mut front_targets =
+        edge_targets(sys, display.id, graph_kinds::EDGE_DISPLAY_HAS_FRONT_BUFFER);
+    let mut back_targets = edge_targets(sys, display.id, graph_kinds::EDGE_DISPLAY_HAS_BACK_BUFFER);
+    let front_id = front_targets.pop().ok_or(SysError::Unexpected)?;
+    let back_id = back_targets.pop().ok_or(SysError::Unexpected)?;
 
-    let info = shared_buffer_info(sys, buffer_id)?;
     let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER);
-    let (ptr, size) = shared_buffer_map(sys, buffer_id, flags)?;
+    let front_map = map_display_buffer(sys, front_id, flags)?;
+    let back_map = map_display_buffer(sys, back_id, flags)?;
 
-    Ok(PrimaryDisplayBuffer {
+    let mut primary = PrimaryDisplayBuffer {
         display_id: display.id,
-        buffer_id,
-        info,
-        ptr,
-        size,
-    })
+        buffers: [front_map, back_map],
+        active_buffer_index: PrimaryDisplayBuffer::clamp_active_index(display.active_buffer_index),
+        info: SharedBufferInfo {
+            width: 0,
+            height: 0,
+            stride: 0,
+            pixel_format: abi::PixelFormat::Rgba8888,
+        },
+        ptr: core::ptr::null_mut(),
+    };
+    primary.sync_back_buffer();
+    Ok(primary)
+}
+
+pub fn swap_display_buffers<S: Sys>(sys: &mut S, display_id: ThingId) -> Option<i64> {
+    let mut display = load_thing::<DisplayThing>(sys, display_id)?;
+    let current = PrimaryDisplayBuffer::clamp_active_index(display.active_buffer_index);
+    let next = 1 - current;
+    let updates = [(
+        graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+        PropValue::I64(next),
+    )];
+    if update_props(sys, display_id, &updates) {
+        display.active_buffer_index = next;
+        Some(next)
+    } else {
+        None
+    }
 }

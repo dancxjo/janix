@@ -222,7 +222,7 @@ pub fn map_frames_into_current_as(
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64_map {
-    use super::{hhdm_offset, PAGE_SIZE};
+    use super::{PAGE_SIZE, hhdm_offset};
     use crate::memory::{self, PhysFrame};
     use abi::MapFlags;
     use core::ptr;
@@ -311,11 +311,7 @@ mod aarch64_map {
         Ok(())
     }
 
-    fn ensure_table(
-        parent: &mut PageTable,
-        idx: usize,
-        hhdm: u64,
-    ) -> Result<u64, &'static str> {
+    fn ensure_table(parent: &mut PageTable, idx: usize, hhdm: u64) -> Result<u64, &'static str> {
         let entry = parent.entries[idx];
         if entry & DESC_VALID == 0 {
             let frame = memory::allocate_frame().ok_or("Out of frames for page table")?;

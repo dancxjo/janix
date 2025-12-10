@@ -128,7 +128,7 @@ mod tests {
     use super::*;
     use crate::config::TITLE_BAR_HEIGHT;
     use crate::layout::StackedWindow;
-    use crate::test_support::{list_responses, FramebufferFixture, MockSys, success};
+    use crate::test_support::{FramebufferFixture, MockSys, list_responses, success};
     use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
 
     fn packet(seq: u64, buttons: u8, dx: i16, dy: i16) -> MousePacketEvent {

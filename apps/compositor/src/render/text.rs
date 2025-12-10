@@ -126,18 +126,7 @@ mod tests {
     #[test]
     fn draw_text_no_space_is_noop() {
         let mut buf = vec![0u32; 16];
-        draw_text(
-            buf.as_mut_ptr(),
-            16,
-            4,
-            4,
-            0,
-            0,
-            0,
-            0,
-            "",
-            0xFF00FF00,
-        );
+        draw_text(buf.as_mut_ptr(), 16, 4, 4, 0, 0, 0, 0, "", 0xFF00FF00);
         assert!(buf.iter().all(|p| *p == 0));
     }
 

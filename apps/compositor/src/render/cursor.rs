@@ -40,14 +40,7 @@ mod tests {
         let width = 16;
         let height = 16;
         let mut buf = vec![0u32; (width * height) as usize];
-        draw_cursor(
-            buf.as_mut_ptr(),
-            width * 4,
-            width,
-            height,
-            5,
-            5,
-        );
+        draw_cursor(buf.as_mut_ptr(), width * 4, width, height, 5, 5);
 
         let stride = width as usize;
         let idx = 5 * stride + 5;

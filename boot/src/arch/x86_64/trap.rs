@@ -11,8 +11,8 @@ const KEYBOARD_IRQ: u8 = 1;
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
+        let handler_addr = x86_64::VirtAddr::new(syscall::syscall_handler_asm as *const () as u64);
         unsafe {
-            let handler_addr = x86_64::VirtAddr::new(syscall::syscall_handler_asm as u64);
             idt[0x80]
                 .set_handler_addr(handler_addr)
                 .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
@@ -106,7 +106,7 @@ extern "x86-interrupt" fn page_fault_handler(
         let mut mapper =
             unsafe { OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset)) };
 
-        let translation = mapper.translate_addr(addr);
+        let _translation = mapper.translate_addr(addr);
         // match translation {
         //     Some(pa) => {
         //         kernel_core::println!("Page fault translation: virt={:?} -> phys={:?}", addr, pa)

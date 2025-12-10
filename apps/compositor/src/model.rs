@@ -159,7 +159,7 @@ impl Compositor {
 mod tests {
     use super::*;
     use crate::layout::StackedWindow;
-    use crate::test_support::{list_responses, FramebufferFixture, MockSys, success};
+    use crate::test_support::{FramebufferFixture, MockSys, list_responses, success};
     use abi::{KernelRequest, KernelResponse, PropValue, ThingId, graph_kinds};
     use userland_std::thing_models::DisplayPresentRequest;
 
@@ -179,10 +179,7 @@ mod tests {
     fn sync_active_tracks_layout_state() {
         let fb = FramebufferFixture::new(40, 40);
         let mut comp = Compositor::new(fb.fb);
-        let stacked = vec![
-            stacked_window(1, 0, true),
-            stacked_window(2, 1, false),
-        ];
+        let stacked = vec![stacked_window(1, 0, true), stacked_window(2, 1, false)];
         comp.sync_active_from_layout(&stacked);
         assert_eq!(comp.active_window, Some(ThingId(1)));
 
@@ -196,10 +193,7 @@ mod tests {
         let fb = FramebufferFixture::new(60, 60);
         let mut comp = Compositor::new(fb.fb);
         comp.active_window = Some(ThingId(1));
-        let stacked = vec![
-            stacked_window(1, 1, true),
-            stacked_window(2, 3, false),
-        ];
+        let stacked = vec![stacked_window(1, 1, true), stacked_window(2, 3, false)];
         let mut sys = MockSys::with_responses(vec![success(), success()]);
 
         comp.ensure_window_active_from_layout(&mut sys, &stacked[1], &stacked);

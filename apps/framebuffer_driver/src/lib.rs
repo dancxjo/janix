@@ -2,11 +2,15 @@
 
 extern crate alloc;
 
-use abi::{PixelFormat, SharedBufferInfo, ThingId};
+use abi::{EdgePred, MapFlags, PixelFormat, SharedBufferInfo, ThingId};
 use alloc::string::String;
+use core::ptr;
 use userland::prelude::*;
 use userland_std::thing_models::DisplayPresentRequest;
-use userland_std::{SysError, add_edge, edge_targets};
+use userland_std::{
+    DisplayThing, SysError, add_edge, edge_targets, load_thing, shared_buffer_info,
+    shared_buffer_map,
+};
 
 const DEFAULT_REFRESH_INTERVAL_NS: u64 = 16_666_667;
 const MIN_SLEEP_NS: u64 = 1_000_000;
@@ -24,6 +28,10 @@ pub struct FramebufferDriver {
     frame_watch: Option<u64>,
     frames_presented: u64,
     last_present_ns: u64,
+    front_buffer: SharedBufferView,
+    back_buffer: SharedBufferView,
+    scanout_buffer: SharedBufferView,
+    active_buffer_index: i64,
 }
 
 impl FramebufferDriver {
@@ -36,6 +44,24 @@ impl FramebufferDriver {
         let height = descriptor.info.height;
         let stride = descriptor.info.stride;
         let pixel_format = descriptor.info.pixel_format;
+
+        let logical_map_flags = MapFlags::READ.union(MapFlags::USER);
+        let front_buffer_id = Self::display_buffer_target(
+            sys,
+            descriptor.display_id,
+            abi::graph_kinds::EDGE_DISPLAY_HAS_FRONT_BUFFER,
+        )?;
+        let back_buffer_id = Self::display_buffer_target(
+            sys,
+            descriptor.display_id,
+            abi::graph_kinds::EDGE_DISPLAY_HAS_BACK_BUFFER,
+        )?;
+        let front_buffer = Self::map_buffer_view(sys, front_buffer_id, logical_map_flags)?;
+        let back_buffer = Self::map_buffer_view(sys, back_buffer_id, logical_map_flags)?;
+        let scanout_map_flags = logical_map_flags.union(MapFlags::WRITE);
+        let scanout_buffer =
+            Self::map_buffer_view(sys, descriptor.scanout_buffer_id, scanout_map_flags)?;
+        let active_buffer_index = Self::load_active_buffer_index(sys, descriptor.display_id);
 
         println(sys, "framebuffer_driver: describing framebuffer Thing");
         let fb_thing = DisplayFramebufferThing {
@@ -83,6 +109,10 @@ impl FramebufferDriver {
             frame_watch: Some(request.frame_index),
             frames_presented: 0,
             last_present_ns: 0,
+            front_buffer,
+            back_buffer,
+            scanout_buffer,
+            active_buffer_index,
         })
     }
 
@@ -162,6 +192,8 @@ impl FramebufferDriver {
             return;
         }
 
+        self.blit_front_buffer(sys);
+
         self.frame_watch = Some(request.frame_index);
         self.frames_presented = self.frames_presented.saturating_add(1);
         self.last_present_ns = sys.time_monotonic_ns();
@@ -192,6 +224,60 @@ impl FramebufferDriver {
                 (abi::graph_kinds::PROP_COMPLETED, PropValue::Bool(true)),
             ],
         );
+    }
+
+    fn display_buffer_target<S: Sys>(
+        sys: &mut S,
+        display_id: ThingId,
+        pred: EdgePred,
+    ) -> Result<ThingId, SysError> {
+        let mut targets = edge_targets(sys, display_id, pred);
+        targets.pop().ok_or(SysError::Unexpected)
+    }
+
+    fn clamp_active_buffer_index(value: i64) -> i64 {
+        if value == 1 { 1 } else { 0 }
+    }
+
+    fn load_active_buffer_index<S: Sys>(sys: &mut S, display_id: ThingId) -> i64 {
+        let display = load_thing::<DisplayThing>(sys, display_id);
+        Self::clamp_active_buffer_index(display.map(|d| d.active_buffer_index).unwrap_or(0))
+    }
+
+    fn map_buffer_view<S: Sys>(
+        sys: &mut S,
+        buffer_id: ThingId,
+        flags: MapFlags,
+    ) -> Result<SharedBufferView, SysError> {
+        let info = shared_buffer_info(sys, buffer_id)?;
+        let (ptr, size) = shared_buffer_map(sys, buffer_id, flags)?;
+        Ok(SharedBufferView {
+            _id: buffer_id,
+            info,
+            ptr,
+            size,
+        })
+    }
+
+    fn blit_front_buffer<S: Sys>(&mut self, sys: &mut S) {
+        if let Some(display) = load_thing::<DisplayThing>(sys, self.display_id) {
+            let active_index = Self::clamp_active_buffer_index(display.active_buffer_index);
+            self.active_buffer_index = active_index;
+            let source = if active_index == 0 {
+                &self.front_buffer
+            } else {
+                &self.back_buffer
+            };
+            let bytes = (source.info.stride as usize).saturating_mul(source.info.height as usize);
+            let bytes =
+                core::cmp::min(bytes, core::cmp::min(source.size, self.scanout_buffer.size));
+            if bytes == 0 {
+                return;
+            }
+            unsafe {
+                ptr::copy_nonoverlapping(source.ptr, self.scanout_buffer.ptr, bytes);
+            }
+        }
     }
 }
 
@@ -227,7 +313,15 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
 
 struct DisplayDescriptor {
     display_id: ThingId,
+    scanout_buffer_id: ThingId,
     info: SharedBufferInfo,
+}
+
+struct SharedBufferView {
+    _id: ThingId,
+    info: SharedBufferInfo,
+    ptr: *mut u8,
+    size: usize,
 }
 
 fn primary_display_descriptor<S: Sys>(sys: &mut S) -> Result<DisplayDescriptor, SysError> {
@@ -242,11 +336,12 @@ fn primary_display_descriptor<S: Sys>(sys: &mut S) -> Result<DisplayDescriptor, 
         .ok_or(SysError::Unexpected)?;
 
     let mut targets = edge_targets(sys, display.id, abi::graph_kinds::EDGE_DISPLAY_SCANOUT);
-    let _buffer_id = targets.pop().ok_or(SysError::Unexpected)?;
-    let info = userland_std::shared_buffer_info(sys, _buffer_id)?;
+    let buffer_id = targets.pop().ok_or(SysError::Unexpected)?;
+    let info = userland_std::shared_buffer_info(sys, buffer_id)?;
 
     Ok(DisplayDescriptor {
         display_id: display.id,
+        scanout_buffer_id: buffer_id,
         info,
     })
 }

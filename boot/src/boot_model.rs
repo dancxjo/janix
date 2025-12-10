@@ -3,7 +3,7 @@ extern crate alloc;
 use crate::FRAMEBUFFER_REQUEST;
 use abi::{PixelFormat, PropValue, Thing, ThingId};
 use alloc::{boxed::Box, string::String, vec::Vec};
-use kernel_core::memory::{BootFrameAllocator, PhysFrame, init_frame_pool};
+use kernel_core::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_pool};
 use kernel_core::model;
 use kernel_core::{graph, graph_kinds, log, shared_buffer, time};
 use limine::memory_map::EntryType;
@@ -11,19 +11,19 @@ use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
 use thing_models::{AlarmRequest, BootProgram, FontModule, TimeSource};
 
 #[used]
-#[unsafe(link_section = ".requests")]
+#[link_section = ".requests"]
 static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 
 #[used]
-#[unsafe(link_section = ".requests")]
+#[link_section = ".requests"]
 static MP_REQUEST: MpRequest = MpRequest::new();
 
 #[used]
-#[unsafe(link_section = ".requests")]
+#[link_section = ".requests"]
 pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 #[used]
-#[unsafe(link_section = ".requests")]
+#[link_section = ".requests"]
 static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
 
 pub fn seed_memory_graph_from_limine() {
@@ -193,6 +193,37 @@ pub fn seed_display_from_limine() {
         pixel_format,
     };
 
+    fn allocate_logical_frames(
+        size: u64,
+    ) -> Option<heapless::Vec<PhysFrame, { shared_buffer::MAX_FRAMES_PER_BUFFER }>> {
+        let needed = shared_buffer::page_count_for_size(size);
+        let mut frames: heapless::Vec<PhysFrame, { shared_buffer::MAX_FRAMES_PER_BUFFER }> =
+            heapless::Vec::new();
+        let mut remaining = needed;
+        while remaining > 0 {
+            if let Some(frame) = allocate_frame() {
+                if frames.push(frame).is_err() {
+                    return None;
+                }
+                remaining -= 1;
+            } else {
+                return None;
+            }
+        }
+        Some(frames)
+    }
+
+    fn register_logical_buffer(
+        width: u32,
+        height: u32,
+        stride: u32,
+        pixel_format: PixelFormat,
+        size: u64,
+    ) -> Option<ThingId> {
+        let frames = allocate_logical_frames(size)?;
+        shared_buffer::register_shared_buffer(width, height, stride, pixel_format, frames).ok()
+    }
+
     match shared_buffer::register_shared_buffer(
         info.width,
         info.height,
@@ -201,7 +232,53 @@ pub fn seed_display_from_limine() {
         frames,
     ) {
         Ok(buffer_id) => {
-            let _ = shared_buffer::create_display_for_buffer(buffer_id, "display0", &info);
+            let Some(display_id) =
+                shared_buffer::create_display_for_buffer(buffer_id, "display0", &info)
+            else {
+                log("Failed to create Display Thing for framebuffer");
+                return;
+            };
+
+            let buffer_bytes = info.stride as u64 * info.height as u64;
+            let Some(front_buffer_id) = register_logical_buffer(
+                info.width,
+                info.height,
+                info.stride,
+                pixel_format,
+                buffer_bytes,
+            ) else {
+                log("Failed to allocate front display buffer for double buffering");
+                return;
+            };
+
+            let Some(back_buffer_id) = register_logical_buffer(
+                info.width,
+                info.height,
+                info.stride,
+                pixel_format,
+                buffer_bytes,
+            ) else {
+                log("Failed to allocate back display buffer for double buffering");
+                return;
+            };
+
+            let _ = graph::add_edge(
+                display_id,
+                graph_kinds::EDGE_DISPLAY_HAS_FRONT_BUFFER,
+                front_buffer_id,
+            );
+            let _ = graph::add_edge(
+                display_id,
+                graph_kinds::EDGE_DISPLAY_HAS_BACK_BUFFER,
+                back_buffer_id,
+            );
+            let _ = graph::update_thing(
+                display_id,
+                &[(
+                    graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+                    PropValue::I64(0),
+                )],
+            );
             log("Seeded display0 and SharedBuffer from Limine framebuffer");
         }
         Err(msg) => log(msg),

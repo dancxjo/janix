@@ -4,13 +4,17 @@ use userland::prelude::*;
 use userland_std::thing_models::MousePacketEvent;
 use userland_std::{
     Mode, ModeSwitchEvent, PrimaryDisplayBuffer, Surface, Window, active_mode, default_mode,
-    graph_kinds, is_console_mode_active,
+    graph_kinds, is_console_mode_active, swap_display_buffers as sys_swap_display_buffers,
 };
 
 use crate::layout::LayoutPolicy;
 
 pub fn active_framebuffer<S: Sys>(sys: &mut S) -> Option<PrimaryDisplayBuffer> {
     userland_std::open_primary_display_buffer(sys).ok()
+}
+
+pub fn swap_display_buffers<S: Sys>(sys: &mut S, display_id: ThingId) -> Option<i64> {
+    sys_swap_display_buffers(sys, display_id)
 }
 
 pub fn handle_mode_switches<S: Sys>(sys: &mut S) {
@@ -77,7 +81,7 @@ fn set_active_mode<S: Sys>(sys: &mut S, index: u8) {
 mod tests {
     use super::*;
     use crate::layout::LayoutPolicy;
-    use crate::test_support::{list_responses, MockSys, success};
+    use crate::test_support::{MockSys, list_responses, success};
     use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
     use userland_std::thing_models::ModeSwitchEvent;
 

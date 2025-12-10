@@ -8,7 +8,7 @@ use userland_rt::UserlandSys;
 // Re-export stack functions from current arch
 pub use crate::arch::current::{alloc_user_stack, init_user_stack};
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn user_thread_main(app_id: u64) -> ! {
     let mut sys = UserlandSys::new();
     kernel_core::log("user_thread_main reached without ELF ProgramImage; exiting");

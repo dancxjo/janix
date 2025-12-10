@@ -252,6 +252,7 @@ pub fn init_schemas() {
         (graph_kinds::PROP_NAME, PropType::Str),
         (graph_kinds::PROP_WIDTH, PropType::U64),
         (graph_kinds::PROP_HEIGHT, PropType::U64),
+        (graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX, PropType::I64),
     ];
     let _ = graph::register_schema(
         graph_kinds::KIND_DISPLAY,

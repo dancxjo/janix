@@ -9,9 +9,11 @@ pub const KERNEL_HEAP_SIZE_BYTES: usize = 32 * 1024 * 1024;
 static KERNEL_ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 pub unsafe fn init_kernel_heap(heap_start: usize, heap_size: usize) {
-    KERNEL_ALLOCATOR
-        .lock()
-        .init(heap_start as *mut u8, heap_size);
+    unsafe {
+        KERNEL_ALLOCATOR
+            .lock()
+            .init(heap_start as *mut u8, heap_size);
+    }
 }
 
 #[alloc_error_handler]

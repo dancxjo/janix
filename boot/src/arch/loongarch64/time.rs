@@ -18,7 +18,7 @@ impl HardwareTimer for LoongArchHardwareTimer {
             // Actually, let's just return 0 for now to avoid build errors if asm is wrong,
             // or try to use the correct one.
             // "rdcntvl.d $r4" -> $r4 = counter
-            asm!("rdcntvl.d {}", out(reg) cycles, options(nomem, nostack));
+            asm!("rdcntvl {}", out(reg) cycles, options(nomem, nostack));
         }
         // Assume 100MHz?
         cycles * 10

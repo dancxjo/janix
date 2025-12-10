@@ -118,6 +118,8 @@ You may boot these in QEMU, VirtualBox, or on real hardware with appropriate car
 
 Use `make run` (defaults to `KARCH=x86_64`) or `make run-<arch>` to launch the ISO with the QEMU watcher—it's the native kernel path now.
 
+For the RISC-V target you can run `make run-riscv64` or `make run-hdd-riscv64`; those targets use `qemu-system-riscv64 -cpu rv64` and rely on the `riscv64gc-unknown-none-elf` toolchain target that is now installed automatically (the RISC-V artifacts show up as `template-riscv64.iso` / `template-riscv64.hdd`).
+
 ---
 
 # 🧠 Architectural Overview

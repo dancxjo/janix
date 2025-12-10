@@ -7,10 +7,11 @@ use abi::{
 };
 use userland_rt::Sys;
 use userland_std::{
-    add_edge, alloc_frame, create_thing, create_thread, create_transaction, default_mode,
+    Alarm, AlarmRequest, Mode, Thing, add_edge, alloc_frame, create_thing, create_thread,
+    create_transaction, default_mode, demo_shared::DEMO_NAME_VAL, demo_shared::DemoState,
     edge_targets, find_thing, free_frame, is_console_mode_active, list_things_by_kind, load_thing,
     memory_summary, register_schema_for, scheduler_summary, scheduler_tick, spawn_program,
-    update_props, Mode, Thing,
+    update_props,
 };
 
 #[derive(Default)]
@@ -299,10 +300,19 @@ fn edge_helpers_and_updates() {
         KernelResponse::Success { data: None }, // update_props
     ]);
 
-    assert!(add_edge(&sys, ThingId(1), graph_kinds::EDGE_RUNS_ON, ThingId(2)));
+    assert!(add_edge(
+        &sys,
+        ThingId(1),
+        graph_kinds::EDGE_RUNS_ON,
+        ThingId(2)
+    ));
     let neighbors = edge_targets(&mut sys, ThingId(1), graph_kinds::EDGE_RUNS_ON);
     assert_eq!(neighbors, vec![ThingId(5)]);
-    assert!(update_props(&sys, ThingId(1), &[("flag", PropValue::Bool(true))]));
+    assert!(update_props(
+        &sys,
+        ThingId(1),
+        &[("flag", PropValue::Bool(true))]
+    ));
 }
 
 #[test]
@@ -372,6 +382,10 @@ fn shared_buffer_and_display_open() {
         (graph_kinds::PROP_WIDTH, PropValue::U64(640)),
         (graph_kinds::PROP_HEIGHT, PropValue::U64(480)),
         (graph_kinds::PROP_STRIDE, PropValue::U64(640 * 4)),
+        (
+            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+            PropValue::I64(0),
+        ),
     ]);
     let mut sys = MockSys::with_responses(vec![
         // ThingList/ThingGet for Display
@@ -384,12 +398,16 @@ fn shared_buffer_and_display_open() {
             props: display_props,
         },
         KernelResponse::ThingListEntry { id: None },
-        // Edge targets for display scanout
+        // Edge targets for display buffers
         KernelResponse::EdgeTarget {
             target: Some(ThingId(2)),
         },
         KernelResponse::EdgeTarget { target: None },
-        // Shared buffer info
+        KernelResponse::EdgeTarget {
+            target: Some(ThingId(3)),
+        },
+        KernelResponse::EdgeTarget { target: None },
+        // Shared buffer info/mapping for front
         KernelResponse::SharedBufferInfoResponse {
             info: abi::SharedBufferInfo {
                 width: 640,
@@ -398,16 +416,29 @@ fn shared_buffer_and_display_open() {
                 pixel_format: abi::PixelFormat::Bgra8888,
             },
         },
-        // Map buffer
         KernelResponse::SharedBufferMapped {
             vaddr: 0x1000,
+            size: 640 * 480 * 4,
+        },
+        // Shared buffer info/mapping for back
+        KernelResponse::SharedBufferInfoResponse {
+            info: abi::SharedBufferInfo {
+                width: 640,
+                height: 480,
+                stride: 640 * 4,
+                pixel_format: abi::PixelFormat::Bgra8888,
+            },
+        },
+        KernelResponse::SharedBufferMapped {
+            vaddr: 0x2000,
             size: 640 * 480 * 4,
         },
     ]);
 
     let buf = userland_std::open_primary_display_buffer(&mut sys).expect("open display");
-    assert_eq!(buf.buffer_id, ThingId(2));
-    assert_eq!(buf.info.width, 640);
+    assert_eq!(buf.front_buffer().id, ThingId(2));
+    assert_eq!(buf.back_buffer().id, ThingId(3));
+    assert_eq!(buf.front_buffer().info.width, 640);
 }
 
 #[test]
@@ -429,4 +460,61 @@ fn transaction_and_graph_queries() {
         abi::TransactionId(7)
     ));
     assert_eq!(userland_std::graph_query(&sys, abi::NodeId(1)).unwrap(), 55);
+}
+
+#[test]
+fn demo_state_updates_and_read() {
+    let props = props_slice(vec![
+        ("name", PropValue::U64(DEMO_NAME_VAL)),
+        ("hello_ticks", PropValue::U64(9)),
+        ("heartbeat_ticks", PropValue::U64(10)),
+    ]);
+    let sys = MockSys::with_responses(vec![
+        KernelResponse::Success { data: None },
+        KernelResponse::Success { data: None },
+        KernelResponse::ThingData {
+            id: ThingId(7),
+            kind: DemoState::KIND,
+            props,
+        },
+    ]);
+
+    let state = DemoState {
+        id: ThingId(7),
+        name: DEMO_NAME_VAL,
+        hello_ticks: 0,
+        heartbeat_ticks: 0,
+    };
+
+    assert!(state.update_hello_ticks(&sys, 9));
+    assert!(state.update_heartbeat_ticks(&sys, 10));
+    assert_eq!(state.read(&sys), Some((9, 10)));
+}
+
+#[test]
+fn alarm_request_and_state() {
+    let alarm_req = AlarmRequest {
+        id: ThingId(0),
+        target_unix_seconds: 0,
+        target_unix_nanos: 0,
+        owner_process: ThingId(0),
+        owner_thread: ThingId(0),
+        state: "Fired".to_string(),
+        target_ticks: None,
+    };
+    let mut props_vec = Vec::new();
+    alarm_req.to_props(&mut props_vec);
+    let props = props_slice(props_vec);
+    let mut sys = MockSys::with_responses(vec![
+        KernelResponse::ThingCreated { id: ThingId(5) },
+        KernelResponse::ThingData {
+            id: ThingId(5),
+            kind: AlarmRequest::KIND,
+            props,
+        },
+    ]);
+
+    let alarm = Alarm::request_at(&mut sys, 0, 0).expect("alarm");
+    assert_eq!(alarm.id, ThingId(5));
+    assert_eq!(alarm.state(&mut sys), Some("Fired".to_string()));
 }

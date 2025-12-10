@@ -127,8 +127,8 @@ pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
         rip: regs.entry_point,
         rsp: regs.user_stack,
         rflags: 0x202, // IF=1
-        user_cs: unsafe { selectors.ucode.0 as u64 | 3 },
-        user_ss: unsafe { selectors.udata.0 as u64 | 3 },
+        user_cs: selectors.ucode.0 as u64 | 3,
+        user_ss: selectors.udata.0 as u64 | 3,
         rdi: regs.arg0,
     };
 
@@ -153,7 +153,7 @@ pub unsafe fn init_user_stack(phys_mem_offset: u64) {
         .start_address()
         .as_u64();
     let level_4_table_ptr = VirtAddr::new(level_4_table_ptr + phys_mem_offset);
-    let level_4_table: &mut PageTable = &mut *level_4_table_ptr.as_mut_ptr();
+    let level_4_table: &mut PageTable = unsafe { &mut *level_4_table_ptr.as_mut_ptr() };
 
     let mut mapper = unsafe { OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset)) };
 
@@ -161,7 +161,7 @@ pub unsafe fn init_user_stack(phys_mem_offset: u64) {
     let code_page = Page::<Size4KiB>::containing_address(code_start);
     let code_flags = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
 
-    match mapper.update_flags(code_page, code_flags) {
+    match unsafe { mapper.update_flags(code_page, code_flags) } {
         Ok(flush) => flush.flush(),
         Err(_) => {
             kernel_core::log("Failed to update user code flags");

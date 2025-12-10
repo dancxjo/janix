@@ -12,7 +12,7 @@ use alloc::string::ToString;
 
 global_asm!(include_str!("trap.S"));
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     let esr: u64;
     unsafe { core::arch::asm!("mrs {}, esr_el1", out(reg) esr) };
@@ -371,7 +371,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) {
     let esr: u64;
     let far: u64;

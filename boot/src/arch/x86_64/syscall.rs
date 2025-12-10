@@ -67,6 +67,9 @@ syscall_handler_asm:
     mov rdi, rsp
     call syscall_handler_rust
     add rsp, 8       // drop the return address pushed by `call`
+    // Debug: snapshot the pending iret frame and saved regs.
+    mov rdi, rsp
+    call log_syscall_iret_frame
 
     pop rax
     pop rdi
@@ -92,7 +95,32 @@ unsafe extern "C" {
     pub fn syscall_handler_asm();
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
+extern "C" fn log_syscall_iret_frame(rsp: *const u64) {
+    // Read a few qwords from the stack to see what iret will consume.
+    let mut words = [0u64; 8];
+    for (i, slot) in words.iter_mut().enumerate() {
+        // SAFETY: best-effort diagnostic read; stack pointer is expected to be valid here.
+        unsafe {
+            *slot = core::ptr::read_volatile(rsp.add(i));
+        }
+    }
+    kernel_core::println!(
+        "syscall iret frame: rsp={:#x} top=[{:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}]",
+        rsp as u64,
+        words[0],
+        words[1],
+        words[2],
+        words[3],
+        words[4],
+        words[5],
+        words[6],
+        words[7],
+    );
+}
+
+#[allow(unreachable_code, unsafe_op_in_unsafe_fn)]
+#[no_mangle]
 pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     let regs = unsafe { &mut *regs };
     let num = regs.rax;
@@ -101,7 +129,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     let arg3 = regs.rdx;
     let arg4 = regs.rcx;
     let arg5 = regs.r8;
-    let arg6 = regs.r9;
+    let _arg6 = regs.r9;
 
     if num == SyscallNumber::Yield as u64 {
         {
@@ -472,6 +500,6 @@ unsafe fn user_slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
     if align > 1 && (ptr as usize) % align != 0 {
         &[]
     } else {
-        core::slice::from_raw_parts(ptr, len)
+        unsafe { core::slice::from_raw_parts(ptr, len) }
     }
 }

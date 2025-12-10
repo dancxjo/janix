@@ -246,13 +246,13 @@ fn draw_window_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::collections::BTreeMap;
     use crate::config::{
         CURSOR_COLOR, FRAME_BORDER, FRAME_THICKNESS, TITLE_COLOR_ACTIVE, TITLE_COLOR_INACTIVE,
     };
     use crate::layout::StackedWindow;
     use crate::test_support::FramebufferFixture;
     use abi::ThingId;
+    use alloc::collections::BTreeMap;
     use userland_std::{Surface, Window};
 
     fn stacked_window(id: u64, active: bool) -> StackedWindow {
@@ -300,10 +300,14 @@ mod tests {
 
         let ops = build_display_list(&comp, &stacked, &windows, &surfaces);
         assert!(matches!(ops.first(), Some(DrawOp::Clear { .. })));
-        assert!(ops.iter().any(|op| matches!(op, DrawOp::WindowFrame { id, .. } if *id == ThingId(1))));
-        assert!(ops
-            .iter()
-            .any(|op| matches!(op, DrawOp::WindowContentText { id, .. } if *id == ThingId(1))));
+        assert!(
+            ops.iter()
+                .any(|op| matches!(op, DrawOp::WindowFrame { id, .. } if *id == ThingId(1)))
+        );
+        assert!(
+            ops.iter()
+                .any(|op| matches!(op, DrawOp::WindowContentText { id, .. } if *id == ThingId(1)))
+        );
         assert!(matches!(
             ops.last(),
             Some(DrawOp::Cursor { x, y }) if *x == comp.cursor.x && *y == comp.cursor.y

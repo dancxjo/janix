@@ -71,17 +71,7 @@ mod tests {
     #[test]
     fn fill_rect_writes_only_inside_bounds() {
         let mut buf = vec![0u32; 25];
-        fill_rect(
-            buf.as_mut_ptr(),
-            20,
-            5,
-            5,
-            -1,
-            -1,
-            4,
-            4,
-            0xCC,
-        );
+        fill_rect(buf.as_mut_ptr(), 20, 5, 5, -1, -1, 4, 4, 0xCC);
         assert_eq!(buf[0], 0xCC, "clamps to framebuffer origin");
         assert_eq!(buf[1], 0xCC);
         assert_eq!(buf[6], 0xCC);

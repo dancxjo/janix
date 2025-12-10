@@ -220,8 +220,7 @@ mod tests {
         assert_eq!(stacked[1].y, 0);
         assert_eq!(stacked[1].width, 200, "clamped to fb width");
         assert_eq!(
-            stacked[1].height,
-            MIN_WINDOW_HEIGHT,
+            stacked[1].height, MIN_WINDOW_HEIGHT,
             "minimum height enforced via StackedWindow::from_window"
         );
     }

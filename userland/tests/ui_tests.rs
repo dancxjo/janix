@@ -2,7 +2,9 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use abi::{KernelRequest, KernelResponse, PropKey, PropValue, ThingId};
-use userland::ui::{append_window_text, create_window, ensure_ui_schemas, set_window_text, WindowHandle};
+use userland::ui::{
+    WindowHandle, append_window_text, create_window, ensure_ui_schemas, set_window_text,
+};
 use userland_rt::Sys;
 use userland_std::graph_kinds as gk;
 
@@ -74,9 +76,15 @@ fn surface_props(window: ThingId, text: &str) -> &'static [Option<(PropKey, Prop
 fn ensure_ui_schemas_registers_all() {
     let mut sys = MockSys::with_responses(vec![
         KernelResponse::SchemaRegistered { kind: "Place" },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_MODE },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_WINDOW },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_SURFACE },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_MODE,
+        },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_WINDOW,
+        },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_SURFACE,
+        },
     ]);
 
     ensure_ui_schemas(&mut sys);
@@ -88,9 +96,15 @@ fn create_window_links_surface_place() {
     let mut sys = MockSys::with_responses(vec![
         // Schema registration
         KernelResponse::SchemaRegistered { kind: "Place" },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_MODE },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_WINDOW },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_SURFACE },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_MODE,
+        },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_WINDOW,
+        },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_SURFACE,
+        },
         // list_things_by_kind for Mode
         KernelResponse::ThingListEntry {
             id: Some(ThingId(2)),
@@ -119,9 +133,15 @@ fn set_and_append_window_text_updates_existing_surface() {
     let mut sys = MockSys::with_responses(vec![
         // Schema registration for set_window_text
         KernelResponse::SchemaRegistered { kind: "Place" },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_MODE },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_WINDOW },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_SURFACE },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_MODE,
+        },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_WINDOW,
+        },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_SURFACE,
+        },
         // list surfaces (one)
         KernelResponse::ThingListEntry {
             id: Some(ThingId(5)),
@@ -136,9 +156,15 @@ fn set_and_append_window_text_updates_existing_surface() {
         KernelResponse::Success { data: None },
         // Schema registration for append_window_text
         KernelResponse::SchemaRegistered { kind: "Place" },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_MODE },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_WINDOW },
-        KernelResponse::SchemaRegistered { kind: gk::KIND_SURFACE },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_MODE,
+        },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_WINDOW,
+        },
+        KernelResponse::SchemaRegistered {
+            kind: gk::KIND_SURFACE,
+        },
         // list surfaces again
         KernelResponse::ThingListEntry {
             id: Some(ThingId(5)),

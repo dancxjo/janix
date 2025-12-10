@@ -2,6 +2,15 @@
 #![no_main]
 #![feature(alloc_error_handler)]
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
+#![allow(
+    unused_unsafe,
+    unsafe_op_in_unsafe_fn,
+    unreachable_code,
+    dead_code,
+    unused_variables,
+    function_casts_as_integer,
+    unused_mut
+)]
 
 extern crate alloc;
 
@@ -29,19 +38,19 @@ use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker
 
 /// Sets the base revision to the latest revision supported by the crate.
 #[used]
-#[unsafe(link_section = ".requests")]
+#[link_section = ".requests"]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
 
 #[used]
-#[unsafe(link_section = ".requests")]
+#[link_section = ".requests"]
 pub(crate) static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 /// Define the start and end markers for Limine requests.
 #[used]
-#[unsafe(link_section = ".requests_start_marker")]
+#[link_section = ".requests_start_marker"]
 static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[used]
-#[unsafe(link_section = ".requests_end_marker")]
+#[link_section = ".requests_end_marker"]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 // Early boot heap before we reserve pages from the memory map.
@@ -53,7 +62,7 @@ const STACK_SIZE: usize = 16 * 1024; // 16KB
 struct Stack([u8; STACK_SIZE]);
 static mut BOOT_STACK: Stack = Stack([0; STACK_SIZE]);
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 unsafe extern "C" fn kmain() -> ! {
     // Initialize serial console first (best effort)
     // We use 0 offset initially; Semihosting doesn't need offset.
@@ -112,7 +121,7 @@ unsafe extern "C" fn kmain() -> ! {
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 unsafe extern "C" fn kmain_inner() -> ! {
     kernel_core::log("Entered kmain_inner");
     init_machine();

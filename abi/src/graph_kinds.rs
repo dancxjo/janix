@@ -51,6 +51,8 @@ pub mod canon {
     pub const P_WIDGET_CHILD: EdgePred = EdgePred(0x0014);
     pub const P_ACTIVE_MODE: EdgePred = EdgePred(0x0015);
     pub const P_APP_OWNS_WINDOW: EdgePred = EdgePred(0x0016);
+    pub const P_DISPLAY_HAS_FRONT_BUFFER: EdgePred = EdgePred(0x0020);
+    pub const P_DISPLAY_HAS_BACK_BUFFER: EdgePred = EdgePred(0x0021);
 }
 
 pub const EDGE_OWNS_THREAD: EdgePred = canon::P_PROC_OWNS_THREAD;
@@ -61,6 +63,8 @@ pub const EDGE_SPAWNED: EdgePred = canon::P_INIT_SPAWNED;
 pub const EDGE_DISPLAY_SCANOUT: EdgePred = canon::P_DISPLAY_SCANOUT;
 pub const EDGE_DISPLAY_FRONT_BUFFER: EdgePred = canon::P_DISPLAY_FRONT_BUFFER;
 pub const EDGE_DISPLAY_BACK_BUFFER: EdgePred = canon::P_DISPLAY_BACK_BUFFER;
+pub const EDGE_DISPLAY_HAS_FRONT_BUFFER: EdgePred = canon::P_DISPLAY_HAS_FRONT_BUFFER;
+pub const EDGE_DISPLAY_HAS_BACK_BUFFER: EdgePred = canon::P_DISPLAY_HAS_BACK_BUFFER;
 pub const EDGE_MODE_PLACE: EdgePred = canon::P_MODE_PLACE;
 pub const EDGE_WINDOW_SURFACE: EdgePred = canon::P_WINDOW_SURFACE;
 pub const EDGE_PLACE_WINDOW: EdgePred = canon::P_PLACE_WINDOW;
@@ -100,6 +104,7 @@ pub const PROP_IDENTIFIER: &str = "identifier";
 pub const PROP_MODULE_INDEX: &str = "module_index";
 pub const PROP_BASE_PHYS: &str = "base_phys";
 pub const PROP_SIZE: &str = "size";
+pub const PROP_DISPLAY_ACTIVE_BUFFER_INDEX: &str = "active_buffer_index";
 pub const PROP_FONT_NAME: &str = "font_name";
 
 pub const PROP_EDGE_SRC: &str = "src";

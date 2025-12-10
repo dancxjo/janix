@@ -11,7 +11,7 @@ use abi::{
     KernelRequest, KernelResponse, PixelFormat, PropKey, PropValue, SharedBufferInfo, ThingId,
 };
 use userland_rt::Sys;
-use userland_std::{PrimaryDisplayBuffer, Thing};
+use userland_std::{PrimaryDisplayBuffer, SharedBufferMapping, Thing};
 
 #[derive(Default)]
 pub struct MockSys {
@@ -102,9 +102,7 @@ pub fn list_responses<T: Thing, F: Fn(&T) -> ThingId>(
     let mut responses = Vec::new();
     for thing in things {
         let id = id_fn(&thing);
-        responses.push(KernelResponse::ThingListEntry {
-            id: Some(id),
-        });
+        responses.push(KernelResponse::ThingListEntry { id: Some(id) });
         responses.push(thing_data_response(id, &thing));
     }
     responses.push(KernelResponse::ThingListEntry { id: None });
@@ -130,13 +128,27 @@ impl FramebufferFixture {
             pixel_format: PixelFormat::Rgba8888,
         };
 
-        let fb = PrimaryDisplayBuffer {
+        let mut fb = PrimaryDisplayBuffer {
             display_id: ThingId(1),
-            buffer_id: ThingId(2),
+            buffers: [
+                SharedBufferMapping {
+                    id: ThingId(2),
+                    info,
+                    ptr: buffer.as_mut_ptr() as *mut u8,
+                    size: buffer.len() * mem::size_of::<u32>(),
+                },
+                SharedBufferMapping {
+                    id: ThingId(3),
+                    info,
+                    ptr: buffer.as_mut_ptr() as *mut u8,
+                    size: buffer.len() * mem::size_of::<u32>(),
+                },
+            ],
+            active_buffer_index: 0,
             info,
             ptr: buffer.as_mut_ptr() as *mut u8,
-            size: buffer.len() * mem::size_of::<u32>(),
         };
+        fb.update_active_index(0);
 
         Self { fb, buffer }
     }

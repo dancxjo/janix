@@ -6,6 +6,7 @@ use crate::config::FRAME_INTERVAL_NS;
 use crate::graph::{
     active_framebuffer, collect_surfaces_for_windows, collect_windows_for_place,
     console_mode_active, current_mode, handle_mode_switches, layout_policy_for_mode,
+    swap_display_buffers,
 };
 use crate::layout::{self, StackedWindow};
 use crate::model::Compositor;
@@ -71,5 +72,8 @@ fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     compositor.process_mouse_packets(sys, &stacked);
     let ops = build_display_list(compositor, &stacked, &windows, &surface_map);
     render_display_list(compositor, &ops);
+    if let Some(active_index) = swap_display_buffers(sys, compositor.fb.display_id) {
+        compositor.fb.update_active_index(active_index);
+    }
     compositor.publish_present_request(sys);
 }

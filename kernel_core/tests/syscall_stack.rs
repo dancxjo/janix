@@ -37,7 +37,9 @@ fn syscall_pops(stack: &mut Vec<&'static str>) {
 fn cpu_iret_pops(stack: &mut Vec<&'static str>) {
     // iret pops RIP, CS, RFLAGS, RSP, SS in that order.
     for expected in ["rip", "cs", "rflags", "rsp", "ss"] {
-        let got = stack.pop().expect("stack underflow while popping iret frame");
+        let got = stack
+            .pop()
+            .expect("stack underflow while popping iret frame");
         assert_eq!(got, expected, "iret frame order mismatch");
     }
 }

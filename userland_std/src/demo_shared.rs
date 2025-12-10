@@ -1,5 +1,3 @@
-#![cfg_attr(target_os = "none", no_std)]
-
 use crate::{
     PropKey, PropType, PropValue, Sys, Thing, ThingId, create_thing, find_thing, load_thing,
     register_schema_for, update_props,
@@ -10,9 +8,11 @@ use alloc::vec::Vec;
 #[cfg(not(target_os = "none"))]
 use std::vec::Vec;
 
+/// The reserved name value used by demo helpers to identify their shared state.
 pub const DEMO_NAME_VAL: u64 = 0xCAFEBABE;
 
 #[derive(Debug, Clone)]
+/// Shared demonstration state that tracks hello/heartbeat ticks.
 pub struct DemoState {
     pub id: ThingId,
     pub name: u64,
@@ -75,6 +75,7 @@ impl Thing for DemoState {
 }
 
 impl DemoState {
+    /// Get the shared demo state, creating it if no existing Thing matches.
     pub fn get_or_create(sys: &impl Sys) -> Option<Self> {
         // Ensure schema is registered
         register_schema_for::<Self>(sys);
@@ -106,10 +107,39 @@ impl DemoState {
         update_props(sys, self.id, &[("hello_ticks", PropValue::U64(ticks))])
     }
 
+    /// Update the stored heartbeat tick count.
     pub fn update_heartbeat_ticks(&self, sys: &impl Sys, ticks: u64) -> bool {
         update_props(sys, self.id, &[("heartbeat_ticks", PropValue::U64(ticks))])
     }
 
+    /// Read the current hello/heartbeat tick counters from kernel state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use abi::{KernelResponse, PropValue, ThingId};
+    /// use userland_std::demo_shared::{DemoState, DEMO_NAME_VAL};
+    /// use userland_std::doc_helpers::DocSys;
+    /// use userland_std::Thing;
+    ///
+    /// let props = DocSys::props_slice(vec![
+    ///     ("name", PropValue::U64(DEMO_NAME_VAL)),
+    ///     ("hello_ticks", PropValue::U64(4)),
+    ///     ("heartbeat_ticks", PropValue::U64(5)),
+    /// ]);
+    /// let sys = DocSys::with_responses(vec![KernelResponse::ThingData {
+    ///     id: ThingId(1),
+    ///     kind: DemoState::KIND,
+    ///     props,
+    /// }]);
+    /// let demo = DemoState {
+    ///     id: ThingId(1),
+    ///     name: DEMO_NAME_VAL,
+    ///     hello_ticks: 0,
+    ///     heartbeat_ticks: 0,
+    /// };
+    /// assert_eq!(demo.read(&sys), Some((4, 5)));
+    /// ```
     pub fn read(&self, sys: &impl Sys) -> Option<(u64, u64)> {
         let current = load_thing::<Self>(sys, self.id)?;
         Some((current.hello_ticks, current.heartbeat_ticks))

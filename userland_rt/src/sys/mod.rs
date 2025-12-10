@@ -1,5 +1,12 @@
+extern crate alloc;
+
 use crate::Sys;
-use abi::{KernelRequest, KernelResponse, SyscallNumber};
+use abi::{
+    KernelRequest, KernelResponse, SyscallNumber, ThingGetSyscallResult, ThingPropScalarType,
+};
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
@@ -135,6 +142,71 @@ impl Sys for UserlandSys {
                 };
                 KernelResponse::ThingCreated {
                     id: abi::ThingId(ret),
+                }
+            }
+            KernelRequest::ThingGet { id } => {
+                let mut raw = ThingGetSyscallResult::default();
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::ThingGet,
+                        id.0,
+                        &mut raw as *mut _ as u64,
+                        0,
+                        0,
+                        0,
+                        0,
+                    )
+                };
+                if ret != 0 {
+                    KernelResponse::Error {
+                        message: "ThingGet failed",
+                    }
+                } else {
+                    let kind_bytes = &raw.kind[..raw.kind_len];
+                    let kind_str = core::str::from_utf8(kind_bytes).unwrap_or("");
+                    let kind_static: &'static str =
+                        Box::leak(kind_str.to_string().into_boxed_str());
+
+                    let mut copied: Vec<Option<(abi::PropKey, abi::PropValue)>> =
+                        Vec::with_capacity(raw.prop_count);
+                    for entry in raw.props.iter().take(raw.prop_count) {
+                        if entry.present == 0 {
+                            copied.push(None);
+                            continue;
+                        }
+
+                        let key_bytes = &entry.key[..entry.key_len];
+                        let key_str = core::str::from_utf8(key_bytes).unwrap_or("");
+                        let key_static: &'static str =
+                            Box::leak(key_str.to_string().into_boxed_str());
+
+                        let value = match entry.value_type {
+                            ThingPropScalarType::U64 => abi::PropValue::U64(entry.value_u64),
+                            ThingPropScalarType::I64 => abi::PropValue::I64(entry.value_i64),
+                            ThingPropScalarType::Bool => {
+                                abi::PropValue::Bool(entry.value_bool != 0)
+                            }
+                            ThingPropScalarType::Str => {
+                                let str_bytes = &entry.value_str[..entry.value_str_len];
+                                let string =
+                                    String::from_utf8(str_bytes.to_vec()).unwrap_or_else(|_| {
+                                        String::from(core::str::from_utf8(str_bytes).unwrap_or(""))
+                                    });
+                                abi::PropValue::Str(string)
+                            }
+                        };
+
+                        copied.push(Some((key_static, value)));
+                    }
+
+                    let props_static: &'static [Option<(abi::PropKey, abi::PropValue)>] =
+                        Box::leak(copied.into_boxed_slice());
+
+                    KernelResponse::ThingData {
+                        id,
+                        kind: kind_static,
+                        props: props_static,
+                    }
                 }
             }
             KernelRequest::AddEdge {

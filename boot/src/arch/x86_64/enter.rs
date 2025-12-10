@@ -1,13 +1,14 @@
 use super::super::UserEntryRegs;
 use crate::gdt;
 use core::arch::global_asm;
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
 use x86_64::structures::paging::{
     Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB,
 };
 use x86_64::{PhysAddr, VirtAddr};
 extern crate alloc;
-use alloc::boxed::Box;
+use alloc::alloc::{alloc_zeroed, Layout};
 use x86_64::structures::paging::mapper::MapperAllSizes;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::PhysFrame as X86PhysFrame;
@@ -169,10 +170,13 @@ pub unsafe fn init_user_stack(phys_mem_offset: u64) {
     }
 }
 
+const USER_STACK_SIZE: usize = 64 * 1024;
+
 pub fn alloc_user_stack() -> u64 {
-    let stack = Box::new([0u8; 4096]);
-    let stack_ptr = Box::leak(stack).as_mut_ptr();
-    let stack_addr = stack_ptr as u64;
+    let layout = Layout::from_size_align(USER_STACK_SIZE, 16).expect("invalid user stack layout");
+    let stack_ptr = unsafe { alloc_zeroed(layout) };
+    let stack_ptr = NonNull::new(stack_ptr).expect("alloc_user_stack: allocation failed");
+    let stack_addr = stack_ptr.as_ptr() as u64;
 
     unsafe {
         let phys_mem_offset = PHYS_MEM_OFFSET;
@@ -185,20 +189,30 @@ pub fn alloc_user_stack() -> u64 {
 
         let mut mapper = OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset));
 
-        let page = Page::<Size4KiB>::containing_address(VirtAddr::new(stack_addr));
+        let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(stack_addr));
+        let end_page = Page::<Size4KiB>::containing_address(VirtAddr::new(
+            stack_addr + USER_STACK_SIZE as u64 - 1,
+        ));
         let flags =
             PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
 
-        if let Ok(flush) = mapper.update_flags(page, flags) {
-            flush.flush();
-        } else {
-            kernel_core::log("Failed to update user stack flags");
+        for page in Page::range_inclusive(start_page, end_page) {
+            if let Ok(flush) = mapper.update_flags(page, flags) {
+                flush.flush();
+            } else {
+                kernel_core::log("Failed to update user stack flags");
+            }
         }
     }
 
-    stack_addr + 4096
+    let stack_top = stack_addr + USER_STACK_SIZE as u64;
+    kernel_core::println!(
+        "alloc_user_stack: bottom={:#x}, top={:#x}",
+        stack_addr,
+        stack_top
+    );
+    stack_top
 }
-
 static KERNEL_CR3: AtomicU64 = AtomicU64::new(0);
 
 fn ensure_kernel_cr3_recorded() -> u64 {

@@ -1,7 +1,9 @@
 use super::syscall;
 use crate::gdt;
 use lazy_static::lazy_static;
+use x86_64::instructions::hlt;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use x86_64::structures::paging::Translate;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -33,7 +35,10 @@ extern "x86-interrupt" fn double_fault_handler(
     _error_code: u64,
 ) -> ! {
     kernel_core::println!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
-    loop {}
+    kernel_core::log("Double fault occurred; halting CPU");
+    loop {
+        hlt();
+    }
 }
 
 extern "x86-interrupt" fn gp_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) {
@@ -58,21 +63,31 @@ extern "x86-interrupt" fn page_fault_handler(
 
     let addr = Cr2::read();
 
-    // Lazy map as user accessible on protection violation
-    if error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION)
-        && error_code.contains(PageFaultErrorCode::USER_MODE)
-    {
-        if let Some(hhdm) = crate::boot_model::HHDM_REQUEST.get_response() {
-            let phys_mem_offset = hhdm.offset();
-            let level_4_table_ptr = x86_64::registers::control::Cr3::read()
-                .0
-                .start_address()
-                .as_u64();
-            let level_4_table_ptr = VirtAddr::new(level_4_table_ptr + phys_mem_offset);
-            let level_4_table: &mut PageTable = unsafe { &mut *level_4_table_ptr.as_mut_ptr() };
-            let mut mapper =
-                unsafe { OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset)) };
+    if let Some(hhdm) = crate::boot_model::HHDM_REQUEST.get_response() {
+        let phys_mem_offset = hhdm.offset();
+        let level_4_table_ptr = x86_64::registers::control::Cr3::read()
+            .0
+            .start_address()
+            .as_u64();
+        let level_4_table_ptr = VirtAddr::new(level_4_table_ptr + phys_mem_offset);
+        let level_4_table: &mut PageTable = unsafe { &mut *level_4_table_ptr.as_mut_ptr() };
+        let mut mapper =
+            unsafe { OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset)) };
 
+        let translation = mapper.translate_addr(addr);
+        match translation {
+            Some(pa) => kernel_core::println!(
+                "Page fault translation: virt={:?} -> phys={:?}",
+                addr,
+                pa
+            ),
+            None => kernel_core::println!("Page fault translation: virt={:?} unmapped", addr),
+        }
+
+        // Lazy map as user accessible on protection violation
+        if error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION)
+            && error_code.contains(PageFaultErrorCode::USER_MODE)
+        {
             let page = Page::<Size4KiB>::containing_address(addr);
             let new_flags = PageTableFlags::PRESENT
                 | PageTableFlags::WRITABLE

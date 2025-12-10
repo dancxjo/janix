@@ -9,8 +9,11 @@
 //! basic syscalls such as yield, sleep, logging, process/thread management,
 //! frame allocation, and time queries.
 use abi::{
-    KernelRequest, KernelResponse, ProcessId, SpawnProgramResult, SyscallNumber, ThingId,
+    KernelRequest, KernelResponse, ProcessId, SyscallNumber, ThingGetSyscallResult,
+    ThingPropData, ThingPropScalarType, ThingId, THING_GET_MAX_KIND_LEN, THING_GET_MAX_PROPS,
+    THING_GET_MAX_STR_LEN,
 };
+use core::cmp;
 use core::arch::global_asm;
 extern crate alloc;
 use crate::user;
@@ -234,6 +237,76 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             }
             Err(msg) => {
                 kernel_core::log(msg);
+                1
+            }
+        }
+    } else if num == SyscallNumber::ThingGet as u64 {
+        let id = ThingId(arg1);
+        let result_ptr = arg2 as *mut ThingGetSyscallResult;
+        if result_ptr.is_null() {
+            return 1;
+        }
+        let req = KernelRequest::ThingGet { id };
+        match kernel_core::handle_request(req) {
+            KernelResponse::ThingData { kind, props, .. } => {
+                unsafe {
+                    let result = &mut *result_ptr;
+                    *result = ThingGetSyscallResult::default();
+                    let kind_bytes = kind.as_bytes();
+                    let kind_len = cmp::min(kind_bytes.len(), THING_GET_MAX_KIND_LEN);
+                    result.kind[..kind_len].copy_from_slice(&kind_bytes[..kind_len]);
+                    result.kind_len = kind_len;
+
+                    let mut count = 0;
+                    for entry in props.iter() {
+                        if count >= THING_GET_MAX_PROPS {
+                            break;
+                        }
+                        let slot: &mut ThingPropData = &mut result.props[count];
+                        if let Some((key, value)) = entry {
+                            slot.present = 1;
+                            let key_bytes = key.as_bytes();
+                            let key_len = cmp::min(key_bytes.len(), THING_GET_MAX_STR_LEN);
+                            slot.key[..key_len].copy_from_slice(&key_bytes[..key_len]);
+                            slot.key_len = key_len;
+                            match value {
+                                abi::PropValue::U64(v) => {
+                                    slot.value_type = ThingPropScalarType::U64;
+                                    slot.value_u64 = *v;
+                                }
+                                abi::PropValue::I64(v) => {
+                                    slot.value_type = ThingPropScalarType::I64;
+                                    slot.value_i64 = *v;
+                                }
+                                abi::PropValue::Bool(v) => {
+                                    slot.value_type = ThingPropScalarType::Bool;
+                                    slot.value_bool = if *v { 1 } else { 0 };
+                                }
+                                abi::PropValue::Str(s) => {
+                                    slot.value_type = ThingPropScalarType::Str;
+                                    let bytes = s.as_bytes();
+                                    let str_len = cmp::min(bytes.len(), THING_GET_MAX_STR_LEN);
+                                    slot.value_str[..str_len].copy_from_slice(&bytes[..str_len]);
+                                    slot.value_str_len = str_len;
+                                }
+                            }
+                            count += 1;
+                        } else {
+                            slot.present = 0;
+                        }
+                    }
+                    result.prop_count = count;
+                }
+                0
+            }
+            KernelResponse::Error { message } => {
+                kernel_core::log(message);
+                1
+            }
+            other => {
+                let msg = alloc::format!("ThingGet unexpected response {:?}", other);
+                let leaked: &'static str = Box::leak(msg.into_boxed_str());
+                kernel_core::log(leaked);
                 1
             }
         }

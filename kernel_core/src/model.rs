@@ -13,6 +13,8 @@ use abi::{
     ThreadId, ThreadInfo,
 };
 use alloc::string::String;
+use alloc::format;
+use alloc::boxed::Box;
 use thing_models::{BootProfile, BootProgram, ProgramImage};
 
 #[derive(Clone, Copy)]
@@ -512,6 +514,9 @@ pub fn init_boot_profile() {
         crate::log("Failed to create BootProfile Thing");
         return;
     };
+    let msg = format!("Created BootProfile Thing id={}", profile.0);
+    let leaked: &'static str = Box::leak(msg.into_boxed_str());
+    crate::log(leaked);
 
     for (name, app_id, priority, binary) in BOOT_PROGRAMS {
         let props = &[

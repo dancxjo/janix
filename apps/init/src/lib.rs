@@ -109,6 +109,18 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
 
 fn load_boot_profile<S: Sys>(sys: &mut S) -> Option<BootProfile> {
     let mut profiles: Vec<BootProfile> = list_things_by_kind(sys);
+    log_dynamic(
+        sys,
+        format!("init: BootProfile query returned {} entries", profiles.len()),
+    );
+    if let Some(bp) = load_thing::<BootProfile>(sys, abi::ThingId(12)) {
+        log_dynamic(
+            sys,
+            format!("init: direct load of ThingId(12) succeeded with version {}", bp.version),
+        );
+    } else {
+        log_dynamic(sys, "init: direct load of ThingId(12) failed".into());
+    }
     match profiles.len() {
         1 => profiles.pop(),
         0 => {

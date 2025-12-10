@@ -8,7 +8,8 @@ pub struct HeartbeatThing {
 
 impl Thing for HeartbeatThing {
     const KIND: &'static str = "Heartbeat";
-    const DESCRIPTION: &'static str = "A heartbeat counter that tracks periodic application activity";
+    const DESCRIPTION: &'static str =
+        "A heartbeat counter that tracks periodic application activity";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("counter", PropValue::U64(self.counter)));

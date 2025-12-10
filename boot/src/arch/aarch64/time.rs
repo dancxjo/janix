@@ -1,5 +1,5 @@
-use kernel_core::time::HardwareTimer;
 use core::arch::asm;
+use kernel_core::time::HardwareTimer;
 
 pub struct Arm64HardwareTimer {
     freq_hz: u64,
@@ -22,7 +22,9 @@ impl HardwareTimer for Arm64HardwareTimer {
             asm!("mrs {}, cntvct_el0", out(reg) cnt, options(nomem, nostack));
             asm!("mrs {}, cntfrq_el0", out(reg) freq, options(nomem, nostack));
         }
-        if freq == 0 { return 0; }
+        if freq == 0 {
+            return 0;
+        }
         // ns = cnt * 1_000_000_000 / freq
         // Use u128 to avoid overflow
         ((cnt as u128 * 1_000_000_000) / freq as u128) as u64

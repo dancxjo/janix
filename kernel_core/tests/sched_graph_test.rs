@@ -17,7 +17,9 @@ fn single_runnable_thread_is_marked_running() {
     assert_eq!(picked, thread);
 
     let state = graph::get_prop(thread, "state");
-    assert!(matches!(state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Running.as_str()));
+    assert!(
+        matches!(state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Running.as_str())
+    );
 
     let mut buf = [None; 4];
     graph::neighbors(thread, graph_kinds::EDGE_RUNS_ON, &mut buf);
@@ -42,17 +44,25 @@ fn timeslice_expiry_moves_thread_to_runnable() {
 
     let mut g = graph::Graph::new();
     let result = sched_graph::sched_tick(&mut g, 0, 6_000_000);
-    assert!(result.is_none(), "no thread should be selected after slice expiry without competitors");
+    assert!(
+        result.is_none(),
+        "no thread should be selected after slice expiry without competitors"
+    );
 
     let state = graph::get_prop(thread, "state");
-    assert!(matches!(state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Runnable.as_str()));
+    assert!(
+        matches!(state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Runnable.as_str())
+    );
 
     let runtime = graph::get_prop(thread, "runtime_ns");
     assert!(matches!(runtime, Some(PropValue::U64(v)) if v >= 6_000_000));
 
     let mut buf = [None; 2];
     graph::neighbors(thread, graph_kinds::EDGE_RUNS_ON, &mut buf);
-    assert!(buf.into_iter().flatten().next().is_none(), "preempted thread should not hold runs_on edge");
+    assert!(
+        buf.into_iter().flatten().next().is_none(),
+        "preempted thread should not hold runs_on edge"
+    );
 }
 
 #[test]
@@ -71,5 +81,7 @@ fn higher_priority_thread_wins() {
     assert!(buf.into_iter().flatten().any(|id| id == cpu));
 
     let low_state = graph::get_prop(low, "state");
-    assert!(matches!(low_state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Runnable.as_str()));
+    assert!(
+        matches!(low_state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Runnable.as_str())
+    );
 }

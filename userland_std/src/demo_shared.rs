@@ -22,7 +22,8 @@ pub struct DemoState {
 
 impl Thing for DemoState {
     const KIND: &'static str = "DemoState";
-    const DESCRIPTION: &'static str = "Shared state for demonstration applications tracking hello and heartbeat ticks";
+    const DESCRIPTION: &'static str =
+        "Shared state for demonstration applications tracking hello and heartbeat ticks";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("name", PropValue::U64(self.name)));

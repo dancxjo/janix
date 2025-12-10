@@ -5,7 +5,13 @@ global_asm!(include_str!("trap.S"));
 #[unsafe(no_mangle)]
 pub extern "C" fn trap_handler(tf: &TrapFrame, scause: u64, stval: u64, sepc: u64, sstatus: u64) {
     kernel_core::println!("EXCEPTION: RISC-V Trap");
-    kernel_core::println!("scause: {:#x}, stval: {:#x}, sepc: {:#x}, sstatus: {:#x}", scause, stval, sepc, sstatus);
+    kernel_core::println!(
+        "scause: {:#x}, stval: {:#x}, sepc: {:#x}, sstatus: {:#x}",
+        scause,
+        stval,
+        sepc,
+        sstatus
+    );
     kernel_core::println!("{:#?}", tf);
     loop {}
 }

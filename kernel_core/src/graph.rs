@@ -11,8 +11,14 @@ pub struct Graph;
 /// A change emitted by the graph when nodes, properties, or edges mutate.
 #[derive(Debug, Clone)]
 pub enum GraphEvent {
-    NodeCreated { id: ThingId, kind: &'static str },
-    NodeDeleted { id: ThingId, kind: &'static str },
+    NodeCreated {
+        id: ThingId,
+        kind: &'static str,
+    },
+    NodeDeleted {
+        id: ThingId,
+        kind: &'static str,
+    },
     PropChanged {
         id: ThingId,
         kind: &'static str,
@@ -20,8 +26,16 @@ pub enum GraphEvent {
         old: Option<PropValue>,
         new: PropValue,
     },
-    EdgeAdded { from: ThingId, edge_kind: &'static str, to: ThingId },
-    EdgeRemoved { from: ThingId, edge_kind: &'static str, to: ThingId },
+    EdgeAdded {
+        from: ThingId,
+        edge_kind: &'static str,
+        to: ThingId,
+    },
+    EdgeRemoved {
+        from: ThingId,
+        edge_kind: &'static str,
+        to: ThingId,
+    },
 }
 
 pub type GraphListener = fn(&GraphEvent);
@@ -183,7 +197,11 @@ impl Graph {
     }
 
     #[inline]
-    pub fn create_thing(&mut self, kind: &'static str, props: &[(PropKey, PropValue)]) -> Option<ThingId> {
+    pub fn create_thing(
+        &mut self,
+        kind: &'static str,
+        props: &[(PropKey, PropValue)],
+    ) -> Option<ThingId> {
         create_thing(kind, props)
     }
 
@@ -193,7 +211,10 @@ impl Graph {
     }
 
     #[inline]
-    pub fn get_thing(&self, id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey, PropValue)>])> {
+    pub fn get_thing(
+        &self,
+        id: ThingId,
+    ) -> Option<(&'static str, &'static [Option<(PropKey, PropValue)>])> {
         get_thing(id)
     }
 
@@ -342,7 +363,11 @@ pub fn subscribe_prop_changed(kind: &'static str, key: &'static str, listener: G
         let listeners = &raw mut PROP_CHANGED_LISTENERS;
         for slot in (*listeners).iter_mut() {
             if slot.is_none() {
-                *slot = Some(PropListener { kind, key, listener });
+                *slot = Some(PropListener {
+                    kind,
+                    key,
+                    listener,
+                });
                 return;
             }
         }
@@ -354,7 +379,10 @@ pub fn subscribe_edge_added(edge_kind: &'static str, listener: GraphListener) {
         let listeners = &raw mut EDGE_ADDED_LISTENERS;
         for slot in (*listeners).iter_mut() {
             if slot.is_none() {
-                *slot = Some(EdgeListener { edge_kind, listener });
+                *slot = Some(EdgeListener {
+                    edge_kind,
+                    listener,
+                });
                 return;
             }
         }
@@ -366,7 +394,10 @@ pub fn subscribe_edge_removed(edge_kind: &'static str, listener: GraphListener) 
         let listeners = &raw mut EDGE_REMOVED_LISTENERS;
         for slot in (*listeners).iter_mut() {
             if slot.is_none() {
-                *slot = Some(EdgeListener { edge_kind, listener });
+                *slot = Some(EdgeListener {
+                    edge_kind,
+                    listener,
+                });
                 return;
             }
         }

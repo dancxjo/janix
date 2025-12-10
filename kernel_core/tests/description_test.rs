@@ -1,28 +1,36 @@
 use kernel_core::graph;
+use std::sync::Mutex;
+
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_schema_description_storage() {
+    let _guard = TEST_LOCK.lock().unwrap();
     graph::init();
-    
+
     // Register a schema with a description
     let result = graph::register_schema(
         "TestThing",
         "A test thing for description validation",
         &[("prop1", abi::PropType::U64)],
     );
-    
+
     assert!(result.is_ok());
-    
+
     // Verify we can retrieve the description
     let description = graph::get_schema_description("TestThing");
     assert!(description.is_some());
-    assert_eq!(description.unwrap(), "A test thing for description validation");
+    assert_eq!(
+        description.unwrap(),
+        "A test thing for description validation"
+    );
 }
 
 #[test]
 fn test_schema_description_not_found() {
+    let _guard = TEST_LOCK.lock().unwrap();
     graph::init();
-    
+
     // Try to get description for non-existent schema
     let description = graph::get_schema_description("NonExistent");
     assert!(description.is_none());
@@ -30,8 +38,9 @@ fn test_schema_description_not_found() {
 
 #[test]
 fn test_multiple_schemas_with_descriptions() {
+    let _guard = TEST_LOCK.lock().unwrap();
     graph::init();
-    
+
     // Register multiple schemas
     let result1 = graph::register_schema(
         "Thing1",
@@ -39,14 +48,14 @@ fn test_multiple_schemas_with_descriptions() {
         &[("field1", abi::PropType::Bool)],
     );
     assert!(result1.is_ok(), "Failed to register Thing1: {:?}", result1);
-    
+
     let result2 = graph::register_schema(
         "Thing2",
         "Second test thing",
         &[("field2", abi::PropType::Str)],
     );
     assert!(result2.is_ok(), "Failed to register Thing2: {:?}", result2);
-    
+
     // Verify each has its own description
     assert_eq!(
         graph::get_schema_description("Thing1"),
@@ -60,9 +69,10 @@ fn test_multiple_schemas_with_descriptions() {
 
 #[test]
 fn test_model_schemas_have_descriptions() {
+    let _guard = TEST_LOCK.lock().unwrap();
     graph::init();
     kernel_core::model::init_schemas();
-    
+
     // Verify all model schemas have descriptions
     let schemas_to_check = [
         "PhysFrame",
@@ -73,7 +83,7 @@ fn test_model_schemas_have_descriptions() {
         "Thread",
         "CpuCore",
     ];
-    
+
     for schema_name in &schemas_to_check {
         let description = graph::get_schema_description(schema_name);
         assert!(
@@ -81,7 +91,7 @@ fn test_model_schemas_have_descriptions() {
             "Schema {} should have a description",
             schema_name
         );
-        
+
         let desc = description.unwrap();
         assert!(
             !desc.is_empty(),

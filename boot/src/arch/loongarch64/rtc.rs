@@ -1,5 +1,5 @@
-use kernel_core::time::RealTimeClock;
 use core::sync::atomic::{AtomicU64, Ordering};
+use kernel_core::time::RealTimeClock;
 
 pub struct LoongRtc {
     boot_offset_ns: AtomicU64,

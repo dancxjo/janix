@@ -125,10 +125,7 @@ fn update_runtime(graph: &mut Graph, thread: ThingId, now: TimeNs) -> TimeNs {
 }
 
 fn set_last_started(graph: &mut Graph, thread: ThingId, now: TimeNs) {
-    graph.update_thing(
-        thread,
-        &[("last_started_ns", PropValue::U64(now))],
-    );
+    graph.update_thing(thread, &[("last_started_ns", PropValue::U64(now))]);
 }
 
 fn make_runnable(graph: &mut Graph, thread: ThingId, now: TimeNs) {

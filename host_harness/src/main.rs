@@ -1,15 +1,15 @@
-use kernel_core::model::dashboard_snapshot;
 use kernel_core::console::{ConsoleSink, register_sink};
+use kernel_core::model::dashboard_snapshot;
 use kernel_core::sched::Scheduler;
 
-use std::thread;
-use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{channel, Sender};
-use std::collections::HashMap;
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::sync::mpsc::{Sender, channel};
+use std::thread;
 
 mod frame_pool;
-use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary, ThreadId, ProcessId};
+use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary, ThreadId};
 use frame_pool::{allocate_frame, frame_stats, free_frame, init_host_frame_pool};
 use userland_rt::Sys;
 
@@ -68,15 +68,16 @@ impl Sys for HarnessSys {
                 };
                 KernelResponse::MemorySummary { summary }
             }
-            _ => {
-                kernel_core::handle_request(request)
-            }
+            _ => kernel_core::handle_request(request),
         }
     }
 
     fn time_now_ns(&mut self) -> u64 {
         use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64
     }
 
     fn time_monotonic_ns(&mut self) -> u64 {
@@ -91,8 +92,7 @@ impl Sys for HarnessSys {
         std::thread::sleep(std::time::Duration::from_nanos(delta_ns));
     }
 
-    fn sleep_until_ns(&mut self, _deadline_ns: u64) {
-    }
+    fn sleep_until_ns(&mut self, _deadline_ns: u64) {}
 
     fn yield_now(&mut self) {
         let tid: Option<ThreadId> = CURRENT_THREAD_ID.with(|id| *id.borrow());
@@ -122,27 +122,29 @@ impl Sys for HarnessSys {
     }
 }
 
-extern "C" fn dummy_entry(_: u64) -> ! { loop {} }
+extern "C" fn dummy_entry(_: u64) -> ! {
+    loop {}
+}
 
 fn main() {
     register_sink(&HOST_CONSOLE);
     kernel_core::graph::init();
     init_host_frame_pool(128);
-    
+
     let (tx, rx) = channel();
     *SCHED_TX.lock().unwrap() = Some(tx);
-    
+
     let mut sched = Scheduler::new();
     sched.init_graph_mirror();
-    
+
     let p1 = sched.add_process("user_app_hello");
     let t1 = sched.add_thread(p1, "hello", dummy_entry, 1, 0);
-    
+
     let p2 = sched.add_process("user_app_heartbeat");
     let t2 = sched.add_thread(p2, "heartbeat", dummy_entry, 2, 0);
-    
+
     let mut threads = HashMap::new();
-    
+
     // Spawn t1
     let t1_handle = thread::spawn(move || {
         CURRENT_THREAD_ID.with(|id: &RefCell<Option<ThreadId>>| *id.borrow_mut() = Some(t1));
@@ -151,7 +153,7 @@ fn main() {
         user_app_hello::run(&mut sys);
     });
     threads.insert(t1, t1_handle.thread().clone());
-    
+
     // Spawn t2
     let t2_handle = thread::spawn(move || {
         CURRENT_THREAD_ID.with(|id: &RefCell<Option<ThreadId>>| *id.borrow_mut() = Some(t2));
@@ -160,16 +162,16 @@ fn main() {
         user_app_heartbeat::run(&mut sys);
     });
     threads.insert(t2, t2_handle.thread().clone());
-    
+
     println!("Starting scheduler loop...");
     while !sched.all_done() {
         if let Some(tid) = sched.next_runnable() {
             sched.set_current(tid);
-            
+
             if let Some(handle) = threads.get(&tid) {
                 handle.unpark();
             }
-            
+
             let event = rx.recv().unwrap();
             match event {
                 SchedEvent::Yield(t) => {
@@ -216,17 +218,32 @@ fn main() {
         if thing.kind == "Thread" {
             let mut name = "unknown";
             let mut state = "unknown";
-            let mut total_run_ns = 0;
-            
+            let mut runtime_ns = 0_u64;
+
             for prop in thing.props.iter().flatten() {
                 match prop.0 {
-                    "name" => if let abi::PropValue::Str(s) = &prop.1 { name = s },
-                    "state" => if let abi::PropValue::Str(s) = &prop.1 { state = s },
-                    "total_run_ns" => if let abi::PropValue::I64(v) = prop.1 { total_run_ns = v },
+                    "name" => {
+                        if let abi::PropValue::Str(s) = &prop.1 {
+                            name = s
+                        }
+                    }
+                    "state" => {
+                        if let abi::PropValue::Str(s) = &prop.1 {
+                            state = s
+                        }
+                    }
+                    "runtime_ns" => {
+                        if let abi::PropValue::U64(v) = prop.1 {
+                            runtime_ns = v
+                        }
+                    }
                     _ => {}
                 }
             }
-            println!("    - {} (id={}): state={} total_run_ns={}", name, thing.id.0, state, total_run_ns);
+            println!(
+                "    - {} (id={}): state={} runtime_ns={}",
+                name, thing.id.0, state, runtime_ns
+            );
         }
     });
 
@@ -235,21 +252,27 @@ fn main() {
     kernel_core::graph::iter_things(|thing| {
         if thing.kind == "SleepEvent" {
             found_sleep = true;
-            let mut wake_at = 0;
-            let mut label = "unknown";
+            let mut wake_at = 0_u64;
+            let mut created_at = 0_u64;
             for prop in thing.props.iter().flatten() {
                 match prop.0 {
-                    "wake_at_ns" => if let abi::PropValue::I64(v) = prop.1 { wake_at = v },
-                    "label" => if let abi::PropValue::Str(s) = &prop.1 { label = s },
+                    "wake_at_ns" => {
+                        if let abi::PropValue::U64(v) = prop.1 {
+                            wake_at = v
+                        }
+                    }
+                    "created_at_ns" => {
+                        if let abi::PropValue::U64(v) = prop.1 {
+                            created_at = v
+                        }
+                    }
                     _ => {}
                 }
             }
-            println!("    - wake_at={} label={}", wake_at, label);
+            println!("    - wake_at={} created_at={}", wake_at, created_at);
         }
     });
     if !found_sleep {
         println!("    (none)");
     }
 }
-
-

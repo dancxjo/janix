@@ -2,7 +2,6 @@ use abi::PropValue;
 use abi::ThingId;
 use kernel_core::graph::{self, GraphEvent};
 use kernel_core::graph_kinds;
-use kernel_core::log;
 
 const MAX_CPUS: usize = 4;
 static mut CURRENT_THREADS: [Option<ThingId>; MAX_CPUS] = [None; MAX_CPUS];
@@ -31,10 +30,13 @@ fn on_runs_on_edge(event: &GraphEvent) {
                     let previous = CURRENT_THREADS[cpu_index];
                     CURRENT_THREADS[cpu_index] = Some(*thread_id);
 
-                    if previous != Some(*thread_id) {
-                        // Placeholder hook for a real context switch once arch code is ready.
-                        log("Graph reifier observed sched.runs_on change; context switch pending.");
-                    }
+                    // Placeholder hook for a real context switch once arch code is ready.
+                    kernel_core::println!(
+                        "Would context switch CPU {} to Thread({}) now (prev={:?})",
+                        cpu_index,
+                        thread_id.0,
+                        previous.map(|id| id.0)
+                    );
                 }
             }
         }

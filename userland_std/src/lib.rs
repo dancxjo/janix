@@ -6,6 +6,8 @@ extern crate alloc;
 #[cfg(target_os = "none")]
 use alloc::boxed::Box;
 #[cfg(target_os = "none")]
+use alloc::string::String;
+#[cfg(target_os = "none")]
 use alloc::vec::Vec;
 
 use abi::{
@@ -20,6 +22,150 @@ pub mod time;
 pub extern crate thing_models;
 pub mod thread_info {
     pub use thing_models::ThreadInfo;
+}
+
+#[derive(Clone, Debug)]
+pub struct CpuCoreThing {
+    pub id: ThingId,
+    pub index: u64,
+}
+
+impl abi::Thing for CpuCoreThing {
+    const KIND: &'static str = "CpuCore";
+    const DESCRIPTION: &'static str = "A CPU core identified by its index in the system";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("index", PropValue::U64(self.index)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut index = 0;
+        for prop in props.iter().flatten() {
+            if prop.0 == "index" {
+                if let PropValue::U64(v) = prop.1 {
+                    index = v;
+                }
+            }
+        }
+        CpuCoreThing { id, index }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[("index", PropType::U64)]
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ProcessThing {
+    pub id: ThingId,
+    pub pid: u64,
+}
+
+impl abi::Thing for ProcessThing {
+    const KIND: &'static str = "Process";
+    const DESCRIPTION: &'static str = "A process with process identifier (PID) and execution state";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("pid", PropValue::U64(self.pid)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut pid = 0;
+        for prop in props.iter().flatten() {
+            if prop.0 == "pid" {
+                if let PropValue::U64(v) = prop.1 {
+                    pid = v;
+                }
+            }
+        }
+        ProcessThing { id, pid }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[("pid", PropType::U64)]
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ThreadThing {
+    pub id: ThingId,
+    pub tid: u64,
+    pub state: String,
+    pub priority: u64,
+    pub runtime_ns: u64,
+    pub last_started_ns: u64,
+}
+
+impl abi::Thing for ThreadThing {
+    const KIND: &'static str = "Thread";
+    const DESCRIPTION: &'static str =
+        "A thread of execution with thread identifier, state, priority, and runtime tracking";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("tid", PropValue::U64(self.tid)));
+        out.push(("state", PropValue::Str(self.state.clone())));
+        out.push(("priority", PropValue::U64(self.priority)));
+        out.push(("runtime_ns", PropValue::U64(self.runtime_ns)));
+        out.push(("last_started_ns", PropValue::U64(self.last_started_ns)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut tid = 0;
+        let mut state = String::new();
+        let mut priority = 0;
+        let mut runtime_ns = 0;
+        let mut last_started_ns = 0;
+
+        for prop in props.iter().flatten() {
+            match prop.0 {
+                "tid" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        tid = v;
+                    }
+                }
+                "state" => {
+                    if let PropValue::Str(ref v) = prop.1 {
+                        state = v.clone();
+                    }
+                }
+                "priority" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        priority = v;
+                    }
+                }
+                "runtime_ns" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        runtime_ns = v;
+                    }
+                }
+                "last_started_ns" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        last_started_ns = v;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        ThreadThing {
+            id,
+            tid,
+            state,
+            priority,
+            runtime_ns,
+            last_started_ns,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            ("tid", PropType::U64),
+            ("state", PropType::Str),
+            ("priority", PropType::U64),
+            ("runtime_ns", PropType::U64),
+            ("last_started_ns", PropType::U64),
+        ]
+    }
 }
 
 /// Print a line to the kernel log

@@ -1,11 +1,10 @@
-use kernel_core::time::HardwareTimer;
 use core::arch::asm;
+use kernel_core::time::HardwareTimer;
 
 pub struct LoongArchHardwareTimer;
 
 impl HardwareTimer for LoongArchHardwareTimer {
-    fn init(&self) {
-    }
+    fn init(&self) {}
 
     fn now_ns(&self) -> u64 {
         let cycles: u64;
@@ -16,7 +15,7 @@ impl HardwareTimer for LoongArchHardwareTimer {
             // Using a placeholder as I'm not 100% sure on the asm syntax for loongarch in Rust right now without checking docs.
             // But `rdcntvl.d` is correct instruction.
             // Let's assume a simple counter read.
-            // Actually, let's just return 0 for now to avoid build errors if asm is wrong, 
+            // Actually, let's just return 0 for now to avoid build errors if asm is wrong,
             // or try to use the correct one.
             // "rdcntvl.d $r4" -> $r4 = counter
             asm!("rdcntvl.d {}", out(reg) cycles, options(nomem, nostack));
@@ -25,8 +24,7 @@ impl HardwareTimer for LoongArchHardwareTimer {
         cycles * 10
     }
 
-    fn set_deadline_ns(&self, _deadline_ns: u64) {
-    }
+    fn set_deadline_ns(&self, _deadline_ns: u64) {}
 }
 
 pub fn init_arch_timer() {

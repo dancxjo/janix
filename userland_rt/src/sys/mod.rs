@@ -118,7 +118,11 @@ impl Sys for UserlandSys {
                     id: abi::ThingId(ret),
                 }
             }
-            KernelRequest::SchemaRegister { kind, description, props } => {
+            KernelRequest::SchemaRegister {
+                kind,
+                description,
+                props,
+            } => {
                 let kind_ptr = kind.as_ptr() as u64;
                 let kind_len = kind.len() as u64;
                 let desc_ptr = description.as_ptr() as u64;

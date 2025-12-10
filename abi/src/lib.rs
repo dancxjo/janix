@@ -221,13 +221,13 @@ pub enum SyscallNumber {
 pub trait Thing: Sized {
     const KIND: &'static str;
     const DESCRIPTION: &'static str;
-    
+
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self;
 
     /// Static schema for this Thing, used for registration.
     fn schema() -> &'static [(&'static str, PropType)];
-    
+
     /// Get the description for this Thing instance, falling back to the type description.
     /// This can be overridden to check for an instance-specific "description" property.
     fn get_description(&self) -> &'static str {

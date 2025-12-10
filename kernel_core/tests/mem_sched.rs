@@ -1,7 +1,11 @@
 use kernel_core::model;
+use std::sync::Mutex;
+
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_memory_allocator() {
+    let _guard = TEST_LOCK.lock().unwrap();
     kernel_core::init();
     kernel_core::create_builtin_things();
     kernel_core::init_boot_graph();
@@ -25,16 +29,17 @@ fn test_memory_allocator() {
 
 #[test]
 fn test_scheduler_basic() {
+    let _guard = TEST_LOCK.lock().unwrap();
     kernel_core::init();
     kernel_core::create_builtin_things();
-    kernel_core::init_boot_graph(); 
+    kernel_core::init_boot_graph();
     // init_boot_graph creates Process(1) and Thread(1) (Running and bound to CpuCore 0)
 
     // Create another process/thread
     // Note: create_process_abi returns Option<u64> (pid), not bool
     assert!(model::create_process_abi(2).is_some());
     // create_thread_abi returns Option<u64> (tid)
-    assert!(model::create_thread_abi(2, 2, 10).is_some()); 
+    assert!(model::create_thread_abi(2, 2, 10).is_some());
 
     // Tick 1 keeps the existing running thread on CPU 0.
     let t = model::scheduler_tick().expect("tick 1");

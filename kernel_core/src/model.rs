@@ -6,13 +6,13 @@
 
 extern crate alloc;
 
-use alloc::string::String;
-use crate::{graph, graph_kinds, sched_graph};
 use crate::sched_types::ThreadState;
+use crate::{graph, graph_kinds, sched_graph};
 use abi::{
     FrameId, FrameInfo, MemorySummary, PropType, PropValue, SchedulerSummary, ThingId, ThreadId,
     ThreadInfo,
 };
+use alloc::string::String;
 
 #[derive(Clone, Copy)]
 pub struct Thread {
@@ -94,7 +94,7 @@ pub fn init_schemas() {
     let _ = graph::register_schema(
         "PhysFrame",
         "A region of physical memory with base address, size, and allocation status",
-        PHYS_FRAME_SCHEMA
+        PHYS_FRAME_SCHEMA,
     );
 
     // FramePool: represents a pool of physical frames
@@ -106,7 +106,7 @@ pub fn init_schemas() {
     let _ = graph::register_schema(
         "FramePool",
         "A pool of physical memory frames with defined start, end, and frame size",
-        FRAME_POOL_SCHEMA
+        FRAME_POOL_SCHEMA,
     );
 
     // AddressSpace: represents a virtual address space
@@ -114,7 +114,7 @@ pub fn init_schemas() {
     let _ = graph::register_schema(
         "AddressSpace",
         "A virtual address space identified by its address space identifier (ASID)",
-        ADDRESS_SPACE_SCHEMA
+        ADDRESS_SPACE_SCHEMA,
     );
 
     // VirtRegion: represents a virtual memory region
@@ -126,20 +126,21 @@ pub fn init_schemas() {
     let _ = graph::register_schema(
         "VirtRegion",
         "A virtual memory region with base address, length, and access flags",
-        VIRT_REGION_SCHEMA
+        VIRT_REGION_SCHEMA,
     );
 
     // Process: represents a process
-    static PROCESS_SCHEMA: &[(&str, PropType)] = &[("pid", PropType::U64)];
+    static PROCESS_SCHEMA: &[(&str, PropType)] = &[("pid", PropType::U64), ("name", PropType::Str)];
     let _ = graph::register_schema(
         graph_kinds::KIND_PROCESS,
         "A process with process identifier (PID) and execution state",
-        PROCESS_SCHEMA
+        PROCESS_SCHEMA,
     );
 
     // Thread: represents a thread
     static THREAD_SCHEMA: &[(&str, PropType)] = &[
         ("tid", PropType::U64),
+        ("name", PropType::Str),
         ("state", PropType::Str),
         ("priority", PropType::U64),
         ("runtime_ns", PropType::U64),
@@ -148,7 +149,7 @@ pub fn init_schemas() {
     let _ = graph::register_schema(
         graph_kinds::KIND_THREAD,
         "A thread of execution with thread identifier, state, priority, runtime tracking, and last start time",
-        THREAD_SCHEMA
+        THREAD_SCHEMA,
     );
 
     // CpuCore: represents a CPU core
@@ -156,7 +157,7 @@ pub fn init_schemas() {
     let _ = graph::register_schema(
         graph_kinds::KIND_CPU_CORE,
         "A CPU core identified by its index in the system",
-        CPU_CORE_SCHEMA
+        CPU_CORE_SCHEMA,
     );
 
     // SleepEvent: represents a wakeup deadline for a thread
@@ -350,9 +351,7 @@ pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
         ("tid", PropValue::U64(tid)),
         (
             "state",
-            PropValue::Str(String::from(
-                ThreadState::Runnable.as_str(),
-            )),
+            PropValue::Str(String::from(ThreadState::Runnable.as_str())),
         ),
         ("priority", PropValue::U64(priority)),
         ("runtime_ns", PropValue::U64(0)),

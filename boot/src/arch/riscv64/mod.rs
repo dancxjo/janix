@@ -1,8 +1,8 @@
-pub mod time;
 pub mod rtc;
+pub mod time;
 pub mod trap;
 
-use super::{UserEntryRegs, Arch};
+use super::{Arch, UserEntryRegs};
 
 pub struct Riscv64Arch;
 
@@ -22,5 +22,7 @@ impl Arch for Riscv64Arch {
     }
 }
 
-pub fn alloc_user_stack() -> u64 { 0 }
+pub fn alloc_user_stack() -> u64 {
+    0
+}
 pub unsafe fn init_user_stack(_phys_mem_offset: u64) {}

@@ -1,8 +1,8 @@
-use kernel_core::model;
 use kernel_core::log;
 use kernel_core::memory::{BootFrameAllocator, init_frame_pool};
-use limine::request::{MemoryMapRequest, MpRequest, HhdmRequest};
+use kernel_core::model;
 use limine::memory_map::EntryType;
+use limine::request::{HhdmRequest, MemoryMapRequest, MpRequest};
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -37,22 +37,22 @@ pub fn seed_memory_graph_from_limine() {
         }
 
         let mut base = entry.base;
-        let mut len  = entry.length;
-        
+        let mut len = entry.length;
+
         if !heap_initialized && len >= 2 * 1024 * 1024 {
-             let heap_size = 1024 * 1024; // 1 MiB
-             let heap_start_phys = base;
-             let heap_start_virt = (heap_start_phys as u64 + hhdm_offset) as usize;
-             
-             unsafe {
-                 crate::heap::KERNEL_ALLOCATOR.init(heap_start_virt, heap_size);
-             }
-             
-             log("Initialized kernel heap (1MiB)");
-             
-             base += heap_size as u64;
-             len -= heap_size as u64;
-             heap_initialized = true;
+            let heap_size = 1024 * 1024; // 1 MiB
+            let heap_start_phys = base;
+            let heap_start_virt = (heap_start_phys as u64 + hhdm_offset) as usize;
+
+            unsafe {
+                crate::heap::KERNEL_ALLOCATOR.init(heap_start_virt, heap_size);
+            }
+
+            log("Initialized kernel heap (1MiB)");
+
+            base += heap_size as u64;
+            len -= heap_size as u64;
+            heap_initialized = true;
         }
 
         boot_allocator.add_region(base, len);

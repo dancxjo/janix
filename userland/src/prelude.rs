@@ -11,21 +11,25 @@ pub use abi::{PropKey, PropType, PropValue, ThingId};
 pub use userland_rt::Sys;
 
 pub use userland_std::{
+    CpuCoreThing,
+    ProcessThing,
     Thing,
-    println,
-    register_schema_for,
-    time,
+    ThreadThing,
+    alloc_frame,
+    create_process,
     // Add other common exports as needed
     create_thing,
-    load_thing,
-    list_things_by_kind,
-    create_process,
     create_thread,
-    alloc_frame,
     free_frame,
-    update_props,
+    get_type_description,
+    list_things_by_kind,
+    load_thing,
     memory_summary,
+    println,
+    register_schema_for,
     scheduler_summary,
+    time,
+    update_props,
 };
 
 /// Convenience logging helper for dynamic Strings

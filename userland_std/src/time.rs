@@ -7,12 +7,18 @@ pub struct Duration {
 
 impl Duration {
     pub fn from_secs(secs: u64) -> Self {
-        Duration { nanos: secs * 1_000_000_000 }
+        Duration {
+            nanos: secs * 1_000_000_000,
+        }
     }
     pub fn from_millis(ms: u64) -> Self {
-        Duration { nanos: ms * 1_000_000 }
+        Duration {
+            nanos: ms * 1_000_000,
+        }
     }
-    pub fn as_nanos(&self) -> u64 { self.nanos }
+    pub fn as_nanos(&self) -> u64 {
+        self.nanos
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -22,11 +28,15 @@ pub struct Instant {
 
 impl Instant {
     pub fn now<S: Sys>(sys: &mut S) -> Self {
-        Instant { t_ns: sys.time_now_ns() }
+        Instant {
+            t_ns: sys.time_now_ns(),
+        }
     }
 
     pub fn duration_since(&self, earlier: Instant) -> Duration {
-        Duration { nanos: self.t_ns - earlier.t_ns }
+        Duration {
+            nanos: self.t_ns - earlier.t_ns,
+        }
     }
 
     pub fn elapsed<S: Sys>(&self, sys: &mut S) -> Duration {
@@ -52,7 +62,9 @@ impl SystemTime {
     }
 
     pub fn duration_since(&self, earlier: SystemTime) -> Duration {
-        Duration { nanos: self.ns_since_epoch - earlier.ns_since_epoch }
+        Duration {
+            nanos: self.ns_since_epoch - earlier.ns_since_epoch,
+        }
     }
 }
 

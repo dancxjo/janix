@@ -1,10 +1,14 @@
-use kernel_core::graph;
-use kernel_core::graph::GraphEvent;
 use abi::PropValue;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use kernel_core::graph;
+use kernel_core::graph::GraphEvent;
+use std::sync::Mutex;
+
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn node_create_and_prop_change_emit_events() {
+    let _guard = TEST_LOCK.lock().unwrap();
     graph::init();
     static CREATED: AtomicUsize = AtomicUsize::new(0);
     static PROP: AtomicUsize = AtomicUsize::new(0);
@@ -30,6 +34,7 @@ fn node_create_and_prop_change_emit_events() {
 
 #[test]
 fn edge_add_and_remove_are_pushed() {
+    let _guard = TEST_LOCK.lock().unwrap();
     graph::init();
     static ADDED: AtomicUsize = AtomicUsize::new(0);
     static REMOVED: AtomicUsize = AtomicUsize::new(0);
@@ -52,6 +57,7 @@ fn edge_add_and_remove_are_pushed() {
 
 #[test]
 fn neighbors_collects_only_matching_edges() {
+    let _guard = TEST_LOCK.lock().unwrap();
     graph::init();
     let a = graph::create_thing("Thread", &[]).unwrap();
     let b = graph::create_thing("CpuCore", &[]).unwrap();

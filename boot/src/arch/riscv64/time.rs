@@ -1,11 +1,10 @@
-use kernel_core::time::HardwareTimer;
 use core::arch::asm;
+use kernel_core::time::HardwareTimer;
 
 pub struct RiscvHardwareTimer;
 
 impl HardwareTimer for RiscvHardwareTimer {
-    fn init(&self) {
-    }
+    fn init(&self) {}
 
     fn now_ns(&self) -> u64 {
         let cycles: u64;

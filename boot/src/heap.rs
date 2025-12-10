@@ -45,7 +45,7 @@ impl<O: AllocationObserver> BumpAllocator<O> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let align = layout.align();
         let size = layout.size();
-        
+
         let heap_start = self.heap_start.load(Ordering::SeqCst);
         let heap_size = self.heap_size.load(Ordering::SeqCst);
 

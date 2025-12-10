@@ -10,6 +10,7 @@ pub mod memory;
 pub mod model;
 pub mod sched;
 pub mod sched_graph;
+pub mod sched_tick;
 pub mod sched_types;
 pub mod time;
 pub mod transaction;
@@ -19,7 +20,7 @@ use crate::model::{
     scheduler_tick,
 };
 use crate::sched_types::ThreadState;
-use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse};
+use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, PropValue};
 use alloc::string::String;
 
 /// Initialize the kernel core subsystems
@@ -95,12 +96,14 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 }
             }
         }
-        KernelRequest::SchemaRegister { kind, description, props } => {
-            match graph::register_schema(kind, description, props) {
-                Ok(()) => KernelResponse::SchemaRegistered { kind },
-                Err(e) => KernelResponse::Error { message: e },
-            }
-        }
+        KernelRequest::SchemaRegister {
+            kind,
+            description,
+            props,
+        } => match graph::register_schema(kind, description, props) {
+            Ok(()) => KernelResponse::SchemaRegistered { kind },
+            Err(e) => KernelResponse::Error { message: e },
+        },
         KernelRequest::SchemaGet { kind } => match graph::get_schema_props(kind) {
             Some(props) => KernelResponse::SchemaData { kind, props },
             None => KernelResponse::Error {
@@ -172,7 +175,7 @@ pub fn create_builtin_things() {
     if let Err(e) = graph::register_schema(
         "KernelInfo",
         "Kernel version and boot status information",
-        KERNEL_INFO_SCHEMA
+        KERNEL_INFO_SCHEMA,
     ) {
         log("Failed to register KernelInfo schema");
         log(e);
@@ -187,7 +190,7 @@ pub fn create_builtin_things() {
     if let Err(e) = graph::register_schema(
         "BootStats",
         "Statistics about kernel boot process including boot time and initial things created",
-        BOOT_STATS_SCHEMA
+        BOOT_STATS_SCHEMA,
     ) {
         log("Failed to register BootStats schema");
         log(e);
@@ -323,4 +326,119 @@ pub fn init_boot_graph() {
     log("Created 3 VirtRegion nodes");
 
     log("Boot graph initialized: 1 process, 1 thread, 1 CPU");
+
+    if cfg!(target_os = "none") {
+        verify_boot_graph_invariants();
+    }
+}
+
+fn verify_boot_graph_invariants() {
+    use crate::graph_kinds::{EDGE_OWNS_THREAD, EDGE_RUNS_ON};
+
+    let mut cpu_count = 0_u64;
+    let mut process_count = 0_u64;
+    let mut thread_count = 0_u64;
+    let mut phys_frame_count = 0_u64;
+    let mut virt_region_count = 0_u64;
+    let mut addr_space_count = 0_u64;
+    let mut addr_space_node = None;
+
+    let mut cpu_node = None;
+    let mut process_node = None;
+    let mut running_thread = None;
+
+    graph::iter_things(|thing| match thing.kind {
+        "CpuCore" => {
+            cpu_count += 1;
+            cpu_node = Some(thing.id);
+        }
+        "Process" => {
+            process_count += 1;
+            process_node = Some(thing.id);
+        }
+        "Thread" => {
+            thread_count += 1;
+            if let Some(PropValue::Str(s)) = graph::get_prop(thing.id, "state") {
+                if s.as_str() == ThreadState::Running.as_str() {
+                    running_thread = Some(thing.id);
+                }
+            }
+        }
+        "PhysFrame" => phys_frame_count += 1,
+        "VirtRegion" => virt_region_count += 1,
+        "AddressSpace" => {
+            addr_space_count += 1;
+            addr_space_node = Some(thing.id);
+        }
+        _ => {}
+    });
+
+    println!(
+        "Boot graph counts: CpuCore={} Process={} Thread={} PhysFrame={} VirtRegion={} AddressSpace={}",
+        cpu_count,
+        process_count,
+        thread_count,
+        phys_frame_count,
+        virt_region_count,
+        addr_space_count
+    );
+
+    debug_assert_eq!(
+        cpu_count, 1_u64,
+        "boot graph should have exactly one CpuCore"
+    );
+    debug_assert_eq!(
+        process_count, 1_u64,
+        "boot graph should have exactly one Process"
+    );
+    debug_assert_eq!(
+        thread_count, 1_u64,
+        "boot graph should have exactly one Thread"
+    );
+    debug_assert_eq!(
+        phys_frame_count, 3_u64,
+        "boot graph should create three PhysFrame nodes"
+    );
+    debug_assert_eq!(
+        virt_region_count, 3_u64,
+        "boot graph should create three VirtRegion nodes"
+    );
+    debug_assert_eq!(
+        addr_space_count, 1_u64,
+        "boot graph should create one AddressSpace"
+    );
+
+    if let Some(thread) = running_thread {
+        let state = graph::get_prop(thread, "state");
+        debug_assert!(
+            matches!(state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Running.as_str()),
+            "boot thread should be Running"
+        );
+
+        if let Some(cpu) = cpu_node {
+            let mut buf = [None; 4];
+            graph::neighbors(thread, EDGE_RUNS_ON, &mut buf);
+            debug_assert!(
+                buf.into_iter().flatten().any(|id| id == cpu),
+                "boot thread should run on CpuCore(0)"
+            );
+        }
+    }
+
+    if let (Some(proc_id), Some(thread_id)) = (process_node, running_thread) {
+        let mut buf = [None; 4];
+        graph::neighbors(proc_id, EDGE_OWNS_THREAD, &mut buf);
+        debug_assert!(
+            buf.into_iter().flatten().any(|id| id == thread_id),
+            "boot Process(1) should own the boot thread"
+        );
+    }
+
+    if let Some(addr_space) = addr_space_node {
+        let asid = graph::get_prop(addr_space, "asid");
+        debug_assert!(
+            matches!(asid, Some(PropValue::U64(1))),
+            "AddressSpace should have ASID 1"
+        );
+    }
 }

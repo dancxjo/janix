@@ -18,7 +18,8 @@ members = [
     "apps/window_demo",
     "apps/rootfs",
     "thing_macros",
-    "thing_models", "smoke_tests",
+    "thing_models",
+    "smoke_tests",
 ]
 
 [workspace.package]
@@ -33,4 +34,3 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
-

@@ -28,19 +28,19 @@ pub fn schedule_next() -> ! {
         if let Some(thread) = next_thread {
             #[cfg(target_arch = "x86_64")]
             {
-                let rsp0 = crate::gdt::kernel_stack_top();
-                let ist1 = crate::gdt::kernel_stack_ist1_top();
-                let msg = alloc::format!(
-                    "schedule_next: tid={} started={} entry={:#x} usp={:#x} cr3_token={:?} rsp0={:#x} ist1={:#x}",
-                    thread.tid.0,
-                    thread.started,
-                    thread.entry_point,
-                    thread.user_stack_top,
-                    thread.address_space_token,
-                    rsp0,
-                    ist1
-                );
-                kernel_core::log(Box::leak(msg.into_boxed_str()));
+                // let rsp0 = crate::gdt::kernel_stack_top();
+                // let ist1 = crate::gdt::kernel_stack_ist1_top();
+                // let msg = alloc::format!(
+                //     "schedule_next: tid={} started={} entry={:#x} usp={:#x} cr3_token={:?} rsp0={:#x} ist1={:#x}",
+                //     thread.tid.0,
+                //     thread.started,
+                //     thread.entry_point,
+                //     thread.user_stack_top,
+                //     thread.address_space_token,
+                //     rsp0,
+                //     ist1
+                // );
+                // kernel_core::log(Box::leak(msg.into_boxed_str()));
             }
             #[cfg(not(target_arch = "x86_64"))]
             {

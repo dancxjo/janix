@@ -11,6 +11,69 @@ use crate::graph::{
 use crate::layout::{self, StackedWindow};
 use crate::model::Compositor;
 use crate::render::{build_display_list, render_display_list};
+use userland_std::{RawModule, shared_buffer_map};
+use crate::model::BackgroundImage;
+use abi::{MapFlags};
+use alloc::format;
+use alloc::boxed::Box;
+
+fn load_background_image<S: Sys>(sys: &mut S) -> Option<BackgroundImage> {
+    let modules = list_things_by_kind::<S, RawModule>(sys);
+    let clouds_module = modules.iter().find(|m| m.identifier == "clouds.bmp")?;
+    
+    if let Some(buffer_id) = clouds_module.framebuffer_id {
+         // Map the buffer
+         if let Some((vaddr, size)) = shared_buffer_map(sys, buffer_id, MapFlags::READ.union(MapFlags::USER)).ok() {
+             let ptr = vaddr as *const u8;
+             // Parse BMP header
+             // Signature "BM" at 0
+             unsafe {
+                 if *ptr != b'B' || *ptr.add(1) != b'M' {
+                     println(sys, "clouds.bmp: invalid signature");
+                     return None;
+                 }
+                 // Little endian parsing helper
+                 let read_u32 = |offset| {
+                     let p = ptr.add(offset);
+                     u32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)])
+                 };
+                 let read_i32 = |offset| {
+                     let p = ptr.add(offset);
+                     i32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)])
+                 };
+
+                 let read_u16 = |offset| {
+                     let p = ptr.add(offset);
+                     u16::from_le_bytes([*p, *p.add(1)])
+                 };
+
+                 let data_offset = read_u32(0x0A);
+                 let width = read_i32(0x12);
+                 let height = read_i32(0x16);
+                 let bpp = read_u16(0x1C);
+                 
+                 let msg = format!("clouds.bmp: mapped. {}x{} offset={} bpp={}", width, height, data_offset, bpp);
+                 let leaked = Box::leak(msg.into_boxed_str());
+                 println(sys, leaked);
+
+                 if bpp != 24 && bpp != 32 {
+                     println(sys, "clouds.bmp: unsupported bpp");
+                     return None;
+                 }
+
+                 return Some(BackgroundImage {
+                     ptr: ptr.add(data_offset as usize),
+                     size: size as usize,
+                     width,
+                     height,
+                     bpp,
+                 });
+             }
+         }
+    }
+    println(sys, "clouds.bmp: module found but no buffer_id or map failed");
+    None
+}
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "compositor: starting");
@@ -27,6 +90,10 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     };
 
     let mut compositor = Compositor::new(fb);
+    
+    if let Some(bg) = load_background_image(sys) {
+        compositor.background_image = Some(bg);
+    }
 
     loop {
         tick_once(sys, &mut compositor);

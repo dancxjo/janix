@@ -213,6 +213,107 @@ impl Thing for BootProgram {
     }
 }
 
+pub struct RawModule {
+    pub id: ThingId,
+    pub identifier: String,
+    pub raw_kind: String,
+    pub module_index: u64,
+    pub base_phys: u64,
+    pub size: u64,
+    pub framebuffer_id: Option<ThingId>,
+}
+
+impl Thing for RawModule {
+    const KIND: &'static str = graph_kinds::KIND_RAW_MODULE;
+    const DESCRIPTION: &'static str = "Raw data module loaded at boot";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push((
+            graph_kinds::PROP_IDENTIFIER,
+            PropValue::Str(self.identifier.clone()),
+        ));
+        out.push((
+            graph_kinds::PROP_RAW_KIND,
+            PropValue::Str(self.raw_kind.clone()),
+        ));
+        out.push((
+            graph_kinds::PROP_MODULE_INDEX,
+            PropValue::U64(self.module_index),
+        ));
+        out.push((graph_kinds::PROP_BASE_PHYS, PropValue::U64(self.base_phys)));
+        out.push((graph_kinds::PROP_SIZE, PropValue::U64(self.size)));
+        if let Some(fid) = self.framebuffer_id {
+            out.push((graph_kinds::PROP_FRAMEBUFFER_ID, PropValue::U64(fid.0)));
+        }
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut identifier = String::new();
+        let mut raw_kind = String::new();
+        let mut module_index = 0;
+        let mut base_phys = 0;
+        let mut size = 0;
+        let mut framebuffer_id = None;
+
+        for prop in props.iter().flatten() {
+            match prop.0 {
+                graph_kinds::PROP_IDENTIFIER => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        identifier = v.clone();
+                    }
+                }
+                graph_kinds::PROP_RAW_KIND => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        raw_kind = v.clone();
+                    }
+                }
+                graph_kinds::PROP_MODULE_INDEX => {
+                    if let PropValue::U64(v) = prop.1 {
+                        module_index = v;
+                    }
+                }
+                graph_kinds::PROP_BASE_PHYS => {
+                    if let PropValue::U64(v) = prop.1 {
+                        base_phys = v;
+                    }
+                }
+                graph_kinds::PROP_SIZE => {
+                    if let PropValue::U64(v) = prop.1 {
+                        size = v;
+                    }
+                }
+                graph_kinds::PROP_FRAMEBUFFER_ID => {
+                    if let PropValue::U64(v) = prop.1 {
+                        framebuffer_id = Some(ThingId(v));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        RawModule {
+            id,
+            identifier,
+            raw_kind,
+            module_index,
+            base_phys,
+            size,
+            framebuffer_id,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            (graph_kinds::PROP_IDENTIFIER, PropType::Str),
+            (graph_kinds::PROP_RAW_KIND, PropType::Str),
+            (graph_kinds::PROP_MODULE_INDEX, PropType::U64),
+            (graph_kinds::PROP_BASE_PHYS, PropType::U64),
+            (graph_kinds::PROP_SIZE, PropType::U64),
+            (graph_kinds::PROP_FRAMEBUFFER_ID, PropType::U64),
+        ]
+    }
+}
+
 pub struct ProgramImage {
     pub id: ThingId,
     pub identifier: String,

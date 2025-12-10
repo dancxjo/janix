@@ -50,6 +50,67 @@ pub fn fill_rect(
     }
 }
 
+pub fn draw_tiled_image(
+    buffer: *mut u32,
+    stride_bytes: u32,
+    fb_width: u32,
+    fb_height: u32,
+    img_ptr: *const u8,
+    img_w: i32,
+    img_h: i32,
+    bpp: u16,
+) {
+    if img_w <= 0 || img_h <= 0 {
+        return;
+    }
+
+    let stride_pixels = (stride_bytes / 4) as usize;
+
+    // BMP row stride is aligned to 4 bytes
+    let bytes_per_pixel = (bpp / 8) as usize;
+    let row_stride = ((img_w as usize * bpp as usize + 31) / 32) * 4;
+
+    for y in 0..fb_height {
+        let tex_y = (y as i32) % img_h;
+        // Standard BMP logic: positive height means bottom-up
+        let row = if img_h > 0 {
+            (img_h - 1 - tex_y) as usize
+        } else {
+            tex_y as usize
+        };
+
+        let row_start = unsafe { img_ptr.add(row * row_stride) };
+        let dest_row_start = (y as usize * stride_pixels);
+
+        for x in 0..fb_width {
+            let tex_x = (x as i32) % img_w;
+            let src_offset = tex_x as usize * bytes_per_pixel;
+            
+            unsafe {
+                let pixel_ptr = row_start.add(src_offset);
+                let color = if bpp == 24 {
+                    // BGR
+                    let b = *pixel_ptr as u32;
+                    let g = *pixel_ptr.add(1) as u32;
+                    let r = *pixel_ptr.add(2) as u32;
+                    0xFF000000 | (r << 16) | (g << 8) | b
+                } else if bpp == 32 {
+                    // BGRA
+                    let b = *pixel_ptr as u32;
+                    let g = *pixel_ptr.add(1) as u32;
+                    let r = *pixel_ptr.add(2) as u32;
+                    let a = *pixel_ptr.add(3) as u32;
+                    (a << 24) | (r << 16) | (g << 8) | b
+                } else {
+                    0 // Unsupported
+                };
+                
+                *buffer.add(dest_row_start + x as usize) = color;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

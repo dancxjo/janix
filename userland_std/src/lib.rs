@@ -28,7 +28,7 @@ pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
 pub use thing_models::{
     AlarmEvent, AlarmRequest, DisplayPresentRequest, MODE_INDEX_CONSOLE, Mode, ModeSwitchEvent,
-    Place, Surface, TimeSource, Window,
+    Place, RawModule, Surface, TimeSource, Window,
 };
 
 #[cfg(not(target_os = "none"))]
@@ -739,7 +739,7 @@ pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &mut S) -> Vec<T> {
     let mut results = Vec::new();
     let mut cursor = ThingId(u64::MAX);
     loop {
-        println(sys, "list_things_by_kind: calling ThingList syscall");
+        // println(sys, "list_things_by_kind: calling ThingList syscall");
         match sys.syscall(KernelRequest::ThingList {
             kind: T::KIND,
             start_after: cursor,

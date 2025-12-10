@@ -307,6 +307,7 @@ pub fn seed_program_images_from_limine() {
                 skipped_fonts = skipped_fonts.saturating_add(1);
                 continue;
             }
+            ModuleKind::Raw { .. } => continue,
         };
         let virt_addr = (*module).addr() as u64;
         let base_phys = virt_addr.saturating_sub(hhdm_offset);
@@ -346,6 +347,7 @@ pub fn seed_font_modules_from_limine() {
         let name = match classify_limine_module((*module).string(), (*module).path(), index) {
             ModuleKind::Font { name } => name,
             ModuleKind::Program { .. } => continue,
+            ModuleKind::Raw { .. } => continue,
         };
 
         let virt_addr = (*module).addr() as u64;
@@ -397,6 +399,7 @@ pub fn seed_boot_programs_from_limine() {
                 skipped_fonts = skipped_fonts.saturating_add(1);
                 continue;
             }
+            ModuleKind::Raw { .. } => continue,
         };
 
         if identifier == "init" {
@@ -441,6 +444,103 @@ pub fn seed_boot_programs_from_limine() {
     log(leaked);
 }
 
+pub fn seed_raw_modules_from_limine() {
+    let Some(response) = MODULE_REQUEST.get_response() else {
+        return;
+    };
+
+    let hhdm_offset = HHDM_REQUEST
+        .get_response()
+        .map(|resp| resp.offset())
+        .unwrap_or(0);
+
+    let mut created = 0_u64;
+
+    for (index, module) in response.modules().iter().enumerate() {
+        let (kind_str, identifier) =
+            match classify_limine_module((*module).string(), (*module).path(), index) {
+                ModuleKind::Raw { kind, identifier } => (kind, identifier),
+                _ => continue,
+            };
+
+        let virt_addr = (*module).addr() as u64;
+        let base_phys = virt_addr.saturating_sub(hhdm_offset);
+        let size = (*module).size() as u64;
+
+        // Try to create a SharedBuffer for this module
+        let buffer_id = if base_phys % 4096 == 0 {
+            let mut frames: heapless::Vec<PhysFrame, { shared_buffer::MAX_FRAMES_PER_BUFFER }> =
+                heapless::Vec::new();
+            
+            let start_addr = base_phys;
+            let end_addr = shared_buffer::align_up(base_phys + size, 4096);
+            let mut addr = start_addr;
+            let mut success = true;
+            
+            while addr < end_addr {
+                if frames.push(PhysFrame::from_start_address(addr, 4096)).is_err() {
+                    log("Module too large for SharedBuffer");
+                    success = false;
+                    break;
+                }
+                addr += 4096;
+            }
+
+            if success {
+                // Fake dimensions to satisfy SharedBuffer requirements.
+                // We use Rgba8888 (4 bytes/pixel), so width = size / 4.
+                // We round size up to multiple of 4.
+                let aligned_size = shared_buffer::align_up(size, 4);
+                let width = (aligned_size / 4) as u32;
+                let height = 1;
+                let stride = width * 4;
+                
+                match shared_buffer::register_shared_buffer(
+                    width, 
+                    height, 
+                    stride, 
+                    abi::PixelFormat::Rgba8888, 
+                    frames
+                ) {
+                    Ok(id) => Some(id),
+                    Err(e) => {
+                        log(e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            log("Module not page aligned, cannot create SharedBuffer");
+            None
+        };
+
+        let mut props_vec = alloc::vec::Vec::new();
+        props_vec.push((abi::graph_kinds::PROP_IDENTIFIER, abi::PropValue::Str(identifier)));
+        props_vec.push((abi::graph_kinds::PROP_RAW_KIND, abi::PropValue::Str(kind_str)));
+        props_vec.push((abi::graph_kinds::PROP_MODULE_INDEX, abi::PropValue::U64(index as u64)));
+        props_vec.push((abi::graph_kinds::PROP_BASE_PHYS, abi::PropValue::U64(base_phys)));
+        props_vec.push((abi::graph_kinds::PROP_SIZE, abi::PropValue::U64(size)));
+        
+        if let Some(bid) = buffer_id {
+            props_vec.push((abi::graph_kinds::PROP_FRAMEBUFFER_ID, abi::PropValue::U64(bid.0)));
+        }
+
+        let props_slice = Box::leak(props_vec.into_boxed_slice());
+
+        if graph::create_thing(graph_kinds::KIND_RAW_MODULE, props_slice).is_some() {
+            created = created.saturating_add(1);
+        }
+    }
+
+    if created > 0 {
+        let msg = alloc::format!("Seeded {} RawModule Things from Limine modules", created);
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        log(leaked);
+    }
+}
+
 pub fn seed_time_graph() {
     let tick_hz = time::tick_hz();
     let epoch_secs = time::rtc_epoch_seconds();
@@ -477,6 +577,7 @@ pub fn seed_time_graph() {
 enum ModuleKind {
     Program { identifier: String },
     Font { name: String },
+    Raw { kind: String, identifier: String },
 }
 
 fn classify_limine_module(
@@ -486,6 +587,8 @@ fn classify_limine_module(
 ) -> ModuleKind {
     if let Some(name) = parse_font_identifier(cmdline, path) {
         ModuleKind::Font { name }
+    } else if let Some((kind, identifier)) = parse_raw_identifier(cmdline, path) {
+        ModuleKind::Raw { kind, identifier }
     } else {
         ModuleKind::Program {
             identifier: derive_module_identifier(cmdline, path, index),
@@ -612,6 +715,29 @@ fn parse_font_identifier(cmdline: &core::ffi::CStr, path: &core::ffi::CStr) -> O
             if !stripped.is_empty() {
                 return Some(String::from(stripped));
             }
+        }
+    }
+
+    None
+}
+
+fn parse_raw_identifier(
+    cmdline: &core::ffi::CStr,
+    path: &core::ffi::CStr,
+) -> Option<(String, String)> {
+    // Check for "image=" or other raw types in cmdline
+    let bytes = cmdline.to_bytes();
+    if !bytes.is_empty() {
+        let line = String::from_utf8_lossy(bytes);
+        if let Some(val) = parse_keyed_argument(&line, "image=") {
+            return Some((String::from("image"), val));
+        }
+    }
+
+    // Check extension
+    if let Some(path_ident) = parse_identifier_from_path(path) {
+        if path_ident.ends_with(".bmp") {
+            return Some((String::from("image"), path_ident));
         }
     }
 

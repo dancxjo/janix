@@ -14,7 +14,17 @@ pub struct Compositor {
     pub drag: Option<DragState>,
     framebuffer_thing_id: Option<ThingId>,
     present_request_id: Option<ThingId>,
+    pub background_image: Option<BackgroundImage>,
     frame_counter: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BackgroundImage {
+    pub ptr: *const u8,
+    pub size: usize,
+    pub width: i32,
+    pub height: i32,
+    pub bpp: u16,
 }
 
 impl Compositor {
@@ -29,6 +39,7 @@ impl Compositor {
             drag: None,
             framebuffer_thing_id: None,
             present_request_id: None,
+            background_image: None,
             frame_counter: 0,
         }
     }

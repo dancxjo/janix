@@ -154,12 +154,17 @@ fn init_machine() {
         // QEMU virt ECAM is 0x3f000000, size 0x01000000 (16MB)
         kernel_core::log("Mapping PCI ECAM...");
         arch::aarch64::paging::map_device_region(0x3f000000, 0x01000000);
-        kernel_core::log("PCI ECAM mapped.");
+
+        // Map PCI MMIO (32-bit)
+        // QEMU virt PCI MMIO is 0x10000000, size 0x2effffff
+        kernel_core::log("Mapping PCI MMIO...");
+        arch::aarch64::paging::map_device_region(0x10000000, 0x2effffff);
+
+        kernel_core::log("PCI regions mapped.");
     }
 
     kernel_core::log("Initializing kernel core...");
     kernel_core::init();
-
 
     kernel_core::register_spawn_program_handler(crate::program::spawn_program);
     {
@@ -193,6 +198,7 @@ fn init_world_graph() {
     boot_model::seed_boot_profile();
     boot_model::seed_font_modules_from_limine();
     boot_model::seed_program_images_from_limine();
+    boot_model::seed_raw_modules_from_limine();
     boot_model::seed_boot_programs_from_limine();
     boot_model::seed_time_graph();
     kernel_core::hw::io::seed_io_regions();

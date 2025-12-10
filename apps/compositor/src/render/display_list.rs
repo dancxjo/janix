@@ -23,6 +23,12 @@ pub enum DrawOp {
     Clear {
         color: u32,
     },
+    TiledImage {
+        ptr: usize, // raw pointer cast directly to usize for transport
+        img_w: i32,
+        img_h: i32,
+        bpp: u16,
+    },
     Rect {
         x: i32,
         y: i32,
@@ -53,7 +59,7 @@ pub enum DrawOp {
     },
 }
 
-pub fn build_display_list(
+    pub fn build_display_list(
     comp: &Compositor,
     stacked: &[StackedWindow],
     windows: &[Window],
@@ -61,7 +67,16 @@ pub fn build_display_list(
 ) -> Vec<DrawOp> {
     let mut ops = Vec::new();
 
-    ops.push(DrawOp::Clear { color: CLEAR_COLOR });
+    if let Some(bg) = &comp.background_image {
+        ops.push(DrawOp::TiledImage {
+            ptr: bg.ptr as usize,
+            img_w: bg.width,
+            img_h: bg.height,
+            bpp: bg.bpp,
+        });
+    } else {
+        ops.push(DrawOp::Clear { color: CLEAR_COLOR });
+    }
 
     let mut window_map = BTreeMap::new();
     for window in windows {
@@ -139,6 +154,21 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp]) {
                 width as i32,
                 height as i32,
                 *color,
+            ),
+            DrawOp::TiledImage {
+                ptr,
+                img_w,
+                img_h,
+                bpp,
+            } => primitives::draw_tiled_image(
+                buffer,
+                stride,
+                width,
+                height,
+                *ptr as *const u8,
+                *img_w,
+                *img_h,
+                *bpp,
             ),
             DrawOp::Rect { x, y, w, h, color } => {
                 primitives::fill_rect(buffer, stride, width, height, *x, *y, *w, *h, *color)

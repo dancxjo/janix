@@ -10,6 +10,7 @@ pub const KIND_BOOT_PROFILE: &str = "BootProfile";
 pub const KIND_BOOT_PROGRAM: &str = "BootProgram";
 pub const KIND_PROGRAM_IMAGE: &str = "ProgramImage";
 pub const KIND_FONT_MODULE: &str = "FontModule";
+pub const KIND_RAW_MODULE: &str = "RawModule";
 pub const KIND_TIME_SOURCE: &str = "TimeSource";
 pub const KIND_ALARM_REQUEST: &str = "AlarmRequest";
 pub const KIND_ALARM_EVENT: &str = "AlarmEvent";
@@ -112,6 +113,7 @@ pub const PROP_BASE_PHYS: &str = "base_phys";
 pub const PROP_SIZE: &str = "size";
 pub const PROP_DISPLAY_ACTIVE_BUFFER_INDEX: &str = "active_buffer_index";
 pub const PROP_FONT_NAME: &str = "font_name";
+pub const PROP_RAW_KIND: &str = "raw_kind";
 
 pub const PROP_EDGE_SRC: &str = "src";
 pub const PROP_EDGE_DST: &str = "dst";

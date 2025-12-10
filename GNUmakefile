@@ -275,12 +275,15 @@ $(IMAGE_NAME).iso: limine/limine kernel apps
 		cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
 	fi
 	mkdir -p iso_root/boot/limine
+	cp -v clouds.bmp iso_root/boot/clouds.bmp
 	rm -f limine.conf.tmp
 	cp limine.conf limine.conf.tmp
 ifeq ($(ENABLE_ROOTFS),1)
 	echo "    module_path: boot():/boot/apps/rootfs" >> limine.conf.tmp
 	echo "    module_cmdline: program=rootfs" >> limine.conf.tmp
 endif
+	echo "    module_path: boot():/boot/clouds.bmp" >> limine.conf.tmp
+	echo "    module_cmdline: image=clouds.bmp" >> limine.conf.tmp
 	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
 		for font in $(COMPOSITOR_FONT_DIR)/*.ttf; do \
 			name=$$(basename $$font); \

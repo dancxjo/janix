@@ -170,7 +170,7 @@ fn assert_kernel_and_compositor_started(cfg: &QemuConfig<'_>) {
 fn qemu_smoke_x86_64() {
     assert_kernel_and_compositor_started(&QemuConfig {
         name: "x86_64",
-        make_target: "launch-hdd-x86_64",
+        make_target: "launch-x86_64",
     });
 }
 
@@ -179,7 +179,7 @@ fn qemu_smoke_x86_64() {
 fn qemu_smoke_aarch64() {
     assert_kernel_and_compositor_started(&QemuConfig {
         name: "aarch64",
-        make_target: "launch-hdd-aarch64",
+        make_target: "launch-aarch64",
     });
 }
 
@@ -188,7 +188,7 @@ fn qemu_smoke_aarch64() {
 fn qemu_smoke_riscv64() {
     assert_kernel_and_compositor_started(&QemuConfig {
         name: "riscv64",
-        make_target: "launch-hdd-riscv64",
+        make_target: "launch-riscv64",
     });
 }
 
@@ -197,6 +197,6 @@ fn qemu_smoke_riscv64() {
 fn qemu_smoke_loongarch64() {
     assert_kernel_and_compositor_started(&QemuConfig {
         name: "loongarch64",
-        make_target: "launch-hdd-loongarch64",
+        make_target: "launch-loongarch64",
     });
 }

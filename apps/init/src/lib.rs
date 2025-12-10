@@ -22,6 +22,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "init: starting");
 
     ensure_modes(sys);
+    println(sys, "init: ensure_modes done");
 
     #[cfg(feature = "rootfs")]
     {

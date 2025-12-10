@@ -314,6 +314,90 @@ fn wait_for_boot_profile<S: Sys>(sys: &mut S) -> BootProfile {
     fatal(sys, "BootProfile missing or duplicated after waiting");
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::{KernelRequest, KernelResponse, ThingId};
+    use std::vec::Vec;
+    use thing_models::{BootProgram, ProgramImage};
+    use userland_std::{ProcessThing, doc_helpers::DocSys, graph_kinds};
+
+    #[test]
+    fn ensure_modes_creates_places_and_modes() {
+        let mut responses = Vec::new();
+        responses.push(KernelResponse::SchemaRegistered { kind: Mode::KIND });
+        responses.push(KernelResponse::SchemaRegistered { kind: Place::KIND });
+        responses.push(KernelResponse::ThingListEntry { id: None });
+        responses.push(KernelResponse::ThingCreated { id: ThingId(10) });
+        responses.push(KernelResponse::ThingCreated { id: ThingId(11) });
+        responses.push(KernelResponse::ThingCreated { id: ThingId(20) });
+        responses.push(KernelResponse::Success { data: None });
+        responses.push(KernelResponse::ThingCreated { id: ThingId(21) });
+        responses.push(KernelResponse::Success { data: None });
+
+        let mut sys = DocSys::with_responses(responses);
+        ensure_modes(&mut sys);
+
+        let requests = sys.requests.borrow();
+        assert!(requests.iter().any(|req| match req {
+            KernelRequest::ThingCreate { kind, .. } => *kind == Place::KIND,
+            _ => false,
+        }));
+        assert!(requests.iter().any(|req| match req {
+            KernelRequest::ThingCreate { kind, .. } => *kind == Mode::KIND,
+            _ => false,
+        }));
+        assert!(requests.iter().any(|req| match req {
+            KernelRequest::AddEdge { pred, .. } => *pred == graph_kinds::EDGE_MODE_PLACE,
+            _ => false,
+        }));
+    }
+
+    #[test]
+    fn spawn_boot_program_links_process_and_logs() {
+        let mut sys = DocSys::with_responses(vec![
+            KernelResponse::ProgramSpawned {
+                process_id: ThingId(30),
+                thread_id: ThingId(31),
+            },
+            KernelResponse::Success { data: None },
+        ]);
+
+        let init_process = ProcessThing {
+            id: ThingId(5),
+            pid: 1,
+        };
+        let program = BootProgram {
+            id: ThingId(6),
+            name: "demo".to_string(),
+            app_id: 7,
+            priority: 0,
+            binary: "demo_bin".to_string(),
+        };
+        let images = vec![ProgramImage {
+            id: ThingId(7),
+            identifier: "demo_bin".to_string(),
+            module_index: 0,
+            base_phys: 0,
+            size: 0,
+        }];
+
+        spawn_boot_program(&mut sys, &init_process, &images, &program);
+
+        let requests = sys.requests.borrow();
+        assert!(requests.iter().any(|req| match req {
+            KernelRequest::SpawnProgram { boot_program_id } => *boot_program_id == program.id,
+            _ => false,
+        }));
+        assert!(requests.iter().any(|req| match req {
+            KernelRequest::AddEdge { from, pred, to } => {
+                *pred == graph_kinds::EDGE_SPAWNED && *from == init_process.id && *to == ThingId(30)
+            }
+            _ => false,
+        }));
+    }
+}
+
 #[cfg(feature = "rootfs")]
 fn start_rootfs<S: Sys>(sys: &mut S, images: &[ProgramImage]) {
     if let Some(existing) = find_thing::<BootProgram>(sys, |bp| bp.binary == ROOTFS_IDENTIFIER) {

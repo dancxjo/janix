@@ -23,3 +23,94 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         sys.sleep_for_ns(1_000_000_000);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::{KernelRequest, KernelResponse, PropKey, PropValue, ThingId};
+    use alloc::vec::Vec;
+    use userland::ui::{WindowHandle, create_window, set_window_text};
+    use userland_std::{Mode, Place, Surface, Thing, Window, doc_helpers::DocSys, graph_kinds};
+
+    fn thing_props<T: Thing>(thing: &T) -> &'static [Option<(PropKey, PropValue)>] {
+        let mut props = Vec::new();
+        thing.to_props(&mut props);
+        DocSys::props_slice(props)
+    }
+
+    #[test]
+    fn create_window_emits_schema_and_links() {
+        let mode = Mode {
+            id: ThingId(5),
+            index: 1,
+            name: "Desktop".to_string(),
+            place_id: Some(ThingId(13)),
+            active: true,
+            layout_policy: None,
+        };
+        let mut responses = Vec::new();
+        responses.push(KernelResponse::SchemaRegistered { kind: Place::KIND });
+        responses.push(KernelResponse::SchemaRegistered { kind: Mode::KIND });
+        responses.push(KernelResponse::SchemaRegistered { kind: Window::KIND });
+        responses.push(KernelResponse::SchemaRegistered {
+            kind: Surface::KIND,
+        });
+        responses.push(KernelResponse::ThingListEntry { id: Some(mode.id) });
+        responses.push(KernelResponse::ThingData {
+            id: mode.id,
+            kind: Mode::KIND,
+            props: thing_props(&mode),
+        });
+        responses.push(KernelResponse::ThingListEntry { id: None });
+        responses.push(KernelResponse::ThingCreated { id: ThingId(99) });
+        responses.push(KernelResponse::Success { data: None });
+
+        let mut sys = DocSys::with_responses(responses);
+        let handle = create_window(&mut sys, "Demo", mode.index).expect("window handle");
+        assert_eq!(handle.id, ThingId(99));
+
+        let requests = sys.requests.borrow();
+        assert!(requests.iter().any(|request| match request {
+            KernelRequest::AddEdge { from, pred, to } =>
+                *pred == graph_kinds::EDGE_PLACE_WINDOW
+                    && *from == mode.place_id.unwrap_or(ThingId(0))
+                    && *to == handle.id,
+            _ => false,
+        }));
+        assert!(requests.iter().any(|request| match request {
+            KernelRequest::ThingCreate { kind, .. } => *kind == Window::KIND,
+            _ => false,
+        }));
+    }
+
+    #[test]
+    fn set_window_text_creates_surface_when_missing() {
+        let mut responses = Vec::new();
+        responses.push(KernelResponse::SchemaRegistered { kind: Place::KIND });
+        responses.push(KernelResponse::SchemaRegistered { kind: Mode::KIND });
+        responses.push(KernelResponse::SchemaRegistered { kind: Window::KIND });
+        responses.push(KernelResponse::SchemaRegistered {
+            kind: Surface::KIND,
+        });
+        responses.push(KernelResponse::ThingListEntry { id: None });
+        responses.push(KernelResponse::ThingCreated { id: ThingId(42) });
+        responses.push(KernelResponse::Success { data: None });
+
+        let mut sys = DocSys::with_responses(responses);
+        let handle = WindowHandle { id: ThingId(99) };
+        set_window_text(&mut sys, handle, "hello");
+
+        let requests = sys.requests.borrow();
+        assert!(requests.iter().any(|request| match request {
+            KernelRequest::ThingCreate { kind, .. } => *kind == Surface::KIND,
+            _ => false,
+        }));
+        assert!(requests.iter().any(|request| match request {
+            KernelRequest::AddEdge { from, pred, to } =>
+                *pred == graph_kinds::EDGE_WINDOW_SURFACE
+                    && *from == handle.id
+                    && *to == ThingId(42),
+            _ => false,
+        }));
+    }
+}

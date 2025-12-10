@@ -15,3 +15,4 @@ thing_models = { path = "../../thing_models" }
 [dev-dependencies]
 kernel_core = { path = "../../kernel_core" }
 abi = { path = "../../abi" }
+userland_std = { path = "../../userland_std" }

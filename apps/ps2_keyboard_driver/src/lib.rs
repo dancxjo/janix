@@ -597,3 +597,73 @@ fn letter(base: char, shift: bool) -> char {
         base
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
+    use alloc::vec::Vec;
+    use thing_models::{InputCharEvent, KeyScanEvent};
+    use userland_std::doc_helpers::DocSys;
+
+    fn thing_sequence(props: &'static [(PropKey, PropValue)]) -> Option<u64> {
+        props.iter().find_map(|(key, value)| {
+            if *key == "sequence_index" {
+                if let PropValue::U64(v) = value {
+                    return Some(*v);
+                }
+            }
+            None
+        })
+    }
+
+    #[test]
+    fn scancode_to_mode_index_handles_function_keys() {
+        assert_eq!(scancode_to_mode_index(0x3B), Some(1));
+        assert_eq!(scancode_to_mode_index(0x58), Some(MODE_INDEX_CONSOLE));
+        assert_eq!(scancode_to_mode_index(0x01), None);
+    }
+
+    #[test]
+    fn decode_printable_respects_shift() {
+        assert_eq!(decode_printable(0x02, false, false), Some('1'));
+        assert_eq!(decode_printable(0x02, false, true), Some('!'));
+    }
+
+    #[test]
+    fn keyboard_decoder_emits_scan_and_char_events() {
+        let mut sys = DocSys::with_responses(vec![
+            KernelResponse::ThingCreated { id: ThingId(10) },
+            KernelResponse::ThingCreated { id: ThingId(11) },
+            KernelResponse::ThingCreated { id: ThingId(12) },
+            KernelResponse::ThingCreated { id: ThingId(13) },
+        ]);
+        let mut decoder = KeyboardDecoder::new(ThingId(3));
+
+        decoder.process_byte(&mut sys, 0x02);
+        decoder.process_byte(&mut sys, 0x02);
+
+        let requests = sys.requests.borrow();
+        let scan_sequences: Vec<_> = requests
+            .iter()
+            .filter_map(|request| match request {
+                KernelRequest::ThingCreate { kind, props } if *kind == KeyScanEvent::KIND => {
+                    thing_sequence(props)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(scan_sequences, vec![1, 2]);
+
+        let char_sequences: Vec<_> = requests
+            .iter()
+            .filter_map(|request| match request {
+                KernelRequest::ThingCreate { kind, props } if *kind == InputCharEvent::KIND => {
+                    thing_sequence(props)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(char_sequences, vec![1, 2]);
+    }
+}

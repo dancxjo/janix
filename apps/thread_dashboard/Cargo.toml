@@ -14,3 +14,4 @@ userland_rt = { path = "../../userland_rt" }
 
 [dev-dependencies]
 kernel_core = { path = "../../kernel_core" }
+abi = { path = "../../abi" }

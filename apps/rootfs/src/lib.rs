@@ -27,18 +27,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
 
     let mut added = 0;
     for image in images.iter() {
-        if image.identifier == "init" {
-            continue;
-        }
-
-        if image.identifier == ROOTFS_IDENTIFIER {
-            continue;
-        }
-
-        if existing_programs
-            .iter()
-            .any(|bp| bp.binary == image.identifier)
-        {
+        if !should_seed_image(&existing_programs, image) {
             continue;
         }
 
@@ -127,5 +116,109 @@ fn fatal<S: Sys>(sys: &mut S, msg: &str) -> ! {
     log_dynamic(sys, format_args!("{}", msg));
     loop {
         sys.sleep_for_ns(100_000_000);
+    }
+}
+
+fn should_seed_image(existing: &[BootProgram], image: &ProgramImage) -> bool {
+    if image.identifier == "init" {
+        return false;
+    }
+    if image.identifier == ROOTFS_IDENTIFIER {
+        return false;
+    }
+    !existing.iter().any(|bp| bp.binary == image.identifier)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
+    use alloc::vec::Vec;
+    use userland_std::doc_helpers::DocSys;
+
+    fn thing_props<T: Thing>(thing: &T) -> &'static [Option<(PropKey, PropValue)>] {
+        let mut props = Vec::new();
+        thing.to_props(&mut props);
+        DocSys::props_slice(props)
+    }
+
+    #[test]
+    fn ensure_boot_profile_creates_when_missing() {
+        let mut sys = DocSys::with_responses(vec![
+            KernelResponse::ThingListEntry { id: None },
+            KernelResponse::ThingCreated { id: ThingId(88) },
+        ]);
+        assert_eq!(ensure_boot_profile(&mut sys), ThingId(88));
+        let requests = sys.requests.borrow();
+        assert!(requests.iter().any(|request| matches!(
+            request,
+            KernelRequest::ThingCreate { kind, .. } if *kind == BootProfile::KIND
+        )));
+    }
+
+    #[test]
+    fn ensure_boot_profile_prefers_existing() {
+        let profile = BootProfile {
+            id: ThingId(5),
+            version: 2,
+        };
+        let mut responses = Vec::new();
+        responses.push(KernelResponse::ThingListEntry {
+            id: Some(profile.id),
+        });
+        responses.push(KernelResponse::ThingData {
+            id: profile.id,
+            kind: BootProfile::KIND,
+            props: thing_props(&profile),
+        });
+        responses.push(KernelResponse::ThingListEntry { id: None });
+        let mut sys = DocSys::with_responses(responses);
+        assert_eq!(ensure_boot_profile(&mut sys), profile.id);
+    }
+
+    #[test]
+    fn should_seed_image_filters_init_and_duplicates() {
+        let existing = vec![BootProgram {
+            id: ThingId(1),
+            name: "demo".to_string(),
+            app_id: 0,
+            priority: 0,
+            binary: "demo".to_string(),
+        }];
+        let image = ProgramImage {
+            id: ThingId(2),
+            identifier: "demo".to_string(),
+            module_index: 0,
+            base_phys: 0,
+            size: 0,
+        };
+        assert!(!should_seed_image(&existing, &image));
+
+        let init_image = ProgramImage {
+            id: ThingId(3),
+            identifier: "init".to_string(),
+            module_index: 1,
+            base_phys: 0,
+            size: 0,
+        };
+        assert!(!should_seed_image(&[], &init_image));
+
+        let rootfs_image = ProgramImage {
+            id: ThingId(4),
+            identifier: ROOTFS_IDENTIFIER.to_string(),
+            module_index: 2,
+            base_phys: 0,
+            size: 0,
+        };
+        assert!(!should_seed_image(&[], &rootfs_image));
+
+        let new_image = ProgramImage {
+            id: ThingId(5),
+            identifier: "new".to_string(),
+            module_index: 3,
+            base_phys: 0,
+            size: 0,
+        };
+        assert!(should_seed_image(&[], &new_image));
     }
 }

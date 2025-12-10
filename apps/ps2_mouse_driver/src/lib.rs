@@ -384,3 +384,52 @@ fn record_mouse_event<S: Sys>(
     };
     let _ = create_thing(sys, &event);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
+    use alloc::vec::Vec;
+    use thing_models::MousePacketEvent;
+    use userland_std::doc_helpers::DocSys;
+
+    fn find_prop(props: &'static [(PropKey, PropValue)], key: &str) -> Option<i64> {
+        props.iter().find_map(|(k, v)| {
+            if *k == key {
+                match v {
+                    PropValue::I64(v) => Some(*v),
+                    PropValue::U64(v) => Some(*v as i64),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
+    }
+
+    #[test]
+    fn mouse_decoder_emits_packet_event() {
+        let mut sys =
+            DocSys::with_responses(vec![KernelResponse::ThingCreated { id: ThingId(15) }]);
+        let mut decoder = MouseDecoder::new(ThingId(2));
+        decoder.process_byte(&mut sys, 0x08);
+        decoder.process_byte(&mut sys, 5);
+        decoder.process_byte(&mut sys, 0xFB);
+
+        let requests = sys.requests.borrow();
+        assert!(requests.iter().any(|request| match request {
+            KernelRequest::ThingCreate { kind, props } if kind == &MousePacketEvent::KIND => {
+                find_prop(props, "delta_x") == Some(5) && find_prop(props, "delta_y") == Some(-5)
+            }
+            _ => false,
+        }));
+    }
+
+    #[test]
+    fn mouse_decoder_ignores_packet_without_sync_bit() {
+        let mut sys = DocSys::with_responses(Vec::new());
+        let mut decoder = MouseDecoder::new(ThingId(2));
+        decoder.process_byte(&mut sys, 0x00);
+        assert!(sys.requests.borrow().is_empty());
+    }
+}

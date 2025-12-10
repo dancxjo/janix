@@ -281,6 +281,66 @@ impl FramebufferDriver {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
+    use alloc::vec::Vec;
+    use userland_std::{DisplayPresentRequest, doc_helpers::DocSys};
+
+    fn thing_props<T: Thing>(thing: &T) -> &'static [Option<(PropKey, PropValue)>] {
+        let mut props = Vec::new();
+        thing.to_props(&mut props);
+        DocSys::props_slice(props)
+    }
+
+    #[test]
+    fn find_present_request_returns_matching_buffer() {
+        let request = DisplayPresentRequest {
+            id: ThingId(3),
+            framebuffer_id: ThingId(5),
+            frame_index: 7,
+            requested_at_ns: 0,
+            presented_at_ns: Some(1),
+            completed: true,
+        };
+        let mut sys = DocSys::with_responses(vec![
+            KernelResponse::ThingListEntry {
+                id: Some(request.id),
+            },
+            KernelResponse::ThingData {
+                id: request.id,
+                kind: DisplayPresentRequest::KIND,
+                props: thing_props(&request),
+            },
+            KernelResponse::ThingListEntry { id: None },
+        ]);
+
+        let found = FramebufferDriver::find_present_request(&mut sys, request.framebuffer_id);
+        assert_eq!(found.map(|f| f.id), Some(request.id));
+    }
+
+    #[test]
+    fn ensure_present_request_creates_when_missing() {
+        let framebuffer = ThingId(11);
+        let mut sys = DocSys::with_responses(vec![
+            KernelResponse::ThingListEntry { id: None },
+            KernelResponse::ThingCreated { id: ThingId(22) },
+        ]);
+
+        let request = FramebufferDriver::ensure_present_request(&mut sys, framebuffer)
+            .expect("should create present request");
+        assert_eq!(request.framebuffer_id, framebuffer);
+        assert_eq!(request.id, ThingId(22));
+
+        let requests = sys.requests.borrow();
+        assert!(requests.iter().any(|request| matches!(
+            request,
+            KernelRequest::ThingCreate { kind, .. } if *kind == DisplayPresentRequest::KIND
+        )));
+    }
+}
+
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "framebuffer_driver: starting");
 

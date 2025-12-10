@@ -555,6 +555,111 @@ impl Thing for AlarmRequest {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::{graph_kinds, PropKey, PropValue};
+    use alloc::{string::String, vec::Vec};
+
+    fn to_prop_slice(props: &[(PropKey, PropValue)]) -> Vec<Option<(PropKey, PropValue)>> {
+        props.iter().map(|(k, v)| Some((*k, v.clone()))).collect()
+    }
+
+    #[test]
+    fn boot_program_roundtrip_props() {
+        let boot = BootProgram {
+            id: ThingId(0x00_1),
+            name: String::from("init"),
+            app_id: 0x42,
+            priority: 1,
+            binary: String::from("/bin/init"),
+        };
+
+        let mut props = Vec::new();
+        boot.to_props(&mut props);
+        assert_eq!(
+            props,
+            [
+                ("name", PropValue::Str(String::from("init"))),
+                ("app_id", PropValue::U64(0x42)),
+                ("priority", PropValue::U64(1)),
+                ("binary", PropValue::Str(String::from("/bin/init"))),
+            ]
+        );
+
+        let roundtrip = BootProgram::from_props(boot.id, &to_prop_slice(&props));
+        assert_eq!(roundtrip.id, boot.id);
+        assert_eq!(roundtrip.name, boot.name);
+        assert_eq!(roundtrip.app_id, boot.app_id);
+        assert_eq!(roundtrip.priority, boot.priority);
+        assert_eq!(roundtrip.binary, boot.binary);
+        let mut roundtrip_props = Vec::new();
+        roundtrip.to_props(&mut roundtrip_props);
+        assert_eq!(roundtrip_props, props);
+    }
+
+    #[test]
+    fn program_image_roundtrip_props() {
+        let image = ProgramImage {
+            id: ThingId(0xAA),
+            identifier: String::from("kernel"),
+            module_index: 3,
+            base_phys: 0x1000,
+            size: 0x2000,
+        };
+
+        let mut props = Vec::new();
+        image.to_props(&mut props);
+        assert_eq!(
+            props,
+            [
+                (graph_kinds::PROP_IDENTIFIER, PropValue::Str(String::from("kernel"))),
+                (graph_kinds::PROP_MODULE_INDEX, PropValue::U64(3)),
+                (graph_kinds::PROP_BASE_PHYS, PropValue::U64(0x1000)),
+                (graph_kinds::PROP_SIZE, PropValue::U64(0x2000)),
+            ]
+        );
+
+        let roundtrip = ProgramImage::from_props(image.id, &to_prop_slice(&props));
+        assert_eq!(roundtrip.identifier, image.identifier);
+        assert_eq!(roundtrip.module_index, image.module_index);
+        assert_eq!(roundtrip.base_phys, image.base_phys);
+        assert_eq!(roundtrip.size, image.size);
+        let mut roundtrip_props = Vec::new();
+        roundtrip.to_props(&mut roundtrip_props);
+        assert_eq!(roundtrip_props, props);
+    }
+
+    #[test]
+    fn display_present_request_roundtrip_props() {
+        let request = DisplayPresentRequest {
+            id: ThingId(0x1234),
+            framebuffer_id: ThingId(0x99),
+            frame_index: 5,
+            requested_at_ns: 1_000,
+            presented_at_ns: Some(2_000),
+            completed: true,
+        };
+
+        let mut props = Vec::new();
+        request.to_props(&mut props);
+        assert!(props.contains(&(
+            graph_kinds::PROP_PRESENTED_AT_NS,
+            PropValue::U64(2_000)
+        )));
+
+        let roundtrip = DisplayPresentRequest::from_props(request.id, &to_prop_slice(&props));
+        assert_eq!(roundtrip.framebuffer_id, request.framebuffer_id);
+        assert_eq!(roundtrip.frame_index, request.frame_index);
+        assert_eq!(roundtrip.requested_at_ns, request.requested_at_ns);
+        assert_eq!(roundtrip.presented_at_ns, request.presented_at_ns);
+        assert_eq!(roundtrip.completed, request.completed);
+        let mut roundtrip_props = Vec::new();
+        roundtrip.to_props(&mut roundtrip_props);
+        assert_eq!(roundtrip_props, props);
+    }
+}
+
 impl AlarmRequest {
     pub fn create_pending(
         target_unix_seconds: i64,

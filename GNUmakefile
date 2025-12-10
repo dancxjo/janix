@@ -310,6 +310,8 @@ ifeq ($(KARCH),aarch64)
 endif
 ifeq ($(KARCH),riscv64)
 	cp -v limine/limine-uefi-cd.bin iso_root/boot/limine/
+	cp -v limine.conf.tmp iso_root/EFI/BOOT/limine.conf
+	cp -v limine.conf.tmp iso_root/limine.conf
 	mcopy -i iso_root/boot/limine/limine-uefi-cd.bin templates/riscv-startup.nsh ::/startup.nsh
 	cp -v limine/BOOTRISCV64.EFI iso_root/EFI/BOOT/
 	xorriso -as mkisofs \
@@ -360,6 +362,9 @@ endif
 		done; \
 	fi
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf.tmp ::/boot/limine
+ifeq ($(KARCH),riscv64)
+	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf.tmp ::/EFI/BOOT/limine.conf
+endif
 ifeq ($(KARCH),riscv64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M templates/riscv-startup.nsh ::/
 endif

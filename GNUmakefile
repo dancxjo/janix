@@ -310,6 +310,7 @@ ifeq ($(KARCH),aarch64)
 endif
 ifeq ($(KARCH),riscv64)
 	cp -v limine/limine-uefi-cd.bin iso_root/boot/limine/
+	mcopy -i iso_root/boot/limine/limine-uefi-cd.bin templates/riscv-startup.nsh ::/startup.nsh
 	cp -v limine/BOOTRISCV64.EFI iso_root/EFI/BOOT/
 	xorriso -as mkisofs \
 		--efi-boot boot/limine/limine-uefi-cd.bin \

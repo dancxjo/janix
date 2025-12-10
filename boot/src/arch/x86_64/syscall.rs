@@ -66,6 +66,7 @@ syscall_handler_asm:
 
     mov rdi, rsp
     call syscall_handler_rust
+    // The return address is popped by `ret`, so don't mutate `rsp` here.
     // Debug: snapshot the pending iret frame and saved regs.
     mov rdi, rsp
     call log_syscall_iret_frame

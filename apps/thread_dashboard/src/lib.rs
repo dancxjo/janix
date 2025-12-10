@@ -52,8 +52,9 @@ fn log_thread_snapshot<S: Sys>(sys: &mut S, threads: &[ThreadThing]) {
 mod tests {
     use super::log_thread_snapshot;
     use abi::{KernelRequest, KernelResponse, ThingId};
-    use alloc::string::ToString;
-    use alloc::vec::Vec;
+    use alloc::{string::{String, ToString}, vec::Vec};
+    use core::cell::RefCell;
+    use userland_rt::Sys;
     use userland_std::{ThreadThing, doc_helpers::DocSys};
 
     fn thread(id: u64, tid: u64, state: &str) -> ThreadThing {
@@ -67,32 +68,79 @@ mod tests {
         }
     }
 
+    struct CaptureLogSys {
+        inner: DocSys,
+        logs: RefCell<Vec<String>>,
+    }
+
+    impl CaptureLogSys {
+        fn with_responses(responses: Vec<KernelResponse>) -> Self {
+            Self {
+                inner: DocSys::with_responses(responses),
+                logs: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn logs(&self) -> Vec<String> {
+            self.logs.borrow().clone()
+        }
+    }
+
+    impl Sys for CaptureLogSys {
+        fn syscall(&self, request: KernelRequest) -> KernelResponse {
+            if let KernelRequest::Log { message } = request {
+                self.logs.borrow_mut().push(message.to_string());
+            }
+            self.inner.syscall(request)
+        }
+
+        fn time_now_ns(&mut self) -> u64 {
+            self.inner.time_now_ns()
+        }
+
+        fn time_monotonic_ns(&mut self) -> u64 {
+            self.inner.time_monotonic_ns()
+        }
+
+        fn time_system_ns(&mut self) -> u64 {
+            self.inner.time_system_ns()
+        }
+
+        fn sleep_for_ns(&mut self, delta_ns: u64) {
+            self.inner.sleep_for_ns(delta_ns)
+        }
+
+        fn sleep_until_ns(&mut self, deadline_ns: u64) {
+            self.inner.sleep_until_ns(deadline_ns)
+        }
+
+        fn yield_now(&mut self) {
+            self.inner.yield_now()
+        }
+
+        fn exit_thread(&mut self) -> ! {
+            self.inner.exit_thread();
+        }
+    }
+
     #[test]
     fn logs_each_thread_line() {
         let mut responses = Vec::new();
         responses.push(KernelResponse::Success { data: None });
         responses.push(KernelResponse::Success { data: None });
-        let mut sys = DocSys::with_responses(responses);
+        let mut sys = CaptureLogSys::with_responses(responses);
         let mut threads = Vec::new();
         threads.push(thread(2, 10, "Running"));
         threads.push(thread(3, 20, "Sleeping"));
         log_thread_snapshot(&mut sys, &threads);
 
-        let requests = sys.requests.borrow();
-        for request in requests.iter() {
-            if let KernelRequest::Log { message } = request {
-                eprintln!("log message: {:?}", message);
-            }
-        }
-        assert!(requests.iter().any(|request| match request {
-            KernelRequest::Log { message } =>
-                message.contains("tid=10") && message.contains("Running"),
-            _ => false,
+        let log_messages = sys.logs();
+        assert_eq!(log_messages.len(), 2);
+        assert!(log_messages.iter().any(|message| {
+            message.contains("tid=10") && message.contains("Running")
         }));
-        assert!(requests.iter().any(|request| match request {
-            KernelRequest::Log { message } =>
-                message.contains("tid=20") && message.contains("Sleeping"),
-            _ => false,
+        assert!(log_messages.iter().any(|message| {
+            message.contains("tid=20") && message.contains("Sleeping")
         }));
     }
 

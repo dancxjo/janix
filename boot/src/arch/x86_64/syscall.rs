@@ -66,7 +66,6 @@ syscall_handler_asm:
 
     mov rdi, rsp
     call syscall_handler_rust
-    add rsp, 8       // drop the return address pushed by `call`
     // Debug: snapshot the pending iret frame and saved regs.
     mov rdi, rsp
     call log_syscall_iret_frame
@@ -130,13 +129,6 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     let arg4 = regs.rcx;
     let arg5 = regs.r8;
     let _arg6 = regs.r9;
-
-    kernel_core::println!(
-        "syscall entry regs: rip={:#x}, cs={:#x}, ss={:#x}",
-        regs.rip,
-        regs.cs,
-        regs.ss,
-    );
 
     if num == SyscallNumber::Yield as u64 {
         {

@@ -16,8 +16,10 @@ pub mod sched_tick;
 pub mod sched_types;
 pub mod time;
 pub mod transaction;
+pub mod shared_buffer;
 
 use crate::model::{compute_memory_summary, compute_scheduler_summary, scheduler_tick};
+use crate::shared_buffer::{self, MAX_FRAMES_PER_BUFFER};
 use crate::sched_types::ThreadState;
 use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, PropValue, ThingId};
 use alloc::string::String;
@@ -133,6 +135,100 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         } => KernelResponse::EdgeTarget {
             target: graph::edge_target_at(from, edge_kind, index as usize),
         },
+        KernelRequest::CreateSharedBuffer {
+            width,
+            height,
+            pixel_format,
+        } => {
+            let bytes_per_pixel = 4_u64;
+            let stride = width as u64 * bytes_per_pixel;
+            let size = stride * height as u64;
+
+            let mut frames = heapless::Vec::<memory::PhysFrame, { MAX_FRAMES_PER_BUFFER }>::new();
+            let needed = shared_buffer::page_count_for_size(size);
+            for _ in 0..needed {
+                let frame = match memory::allocate_frame() {
+                    Some(f) => f,
+                    None => {
+                        return KernelResponse::Error {
+                            message: "Out of frames for SharedBuffer",
+                        }
+                    }
+                };
+                if frames.push(frame).is_err() {
+                    return KernelResponse::Error {
+                        message: "SharedBuffer frame capacity exceeded",
+                    };
+                }
+            }
+
+            match shared_buffer::register_shared_buffer(
+                width,
+                height,
+                stride as u32,
+                pixel_format,
+                frames,
+            ) {
+                Ok(buffer_id) => KernelResponse::SharedBufferCreated { buffer_id },
+                Err(message) => KernelResponse::Error { message },
+            }
+        }
+        KernelRequest::MapSharedBuffer { buffer_id, flags } => {
+            let buffer = shared_buffer::manager().lock().get_cloned(&buffer_id);
+
+            let Some(buffer) = buffer else {
+                return KernelResponse::Error {
+                    message: "SharedBuffer not found",
+                };
+            };
+
+            let size = shared_buffer::align_up(buffer.size_bytes(), 4096);
+
+            let (vaddr, frames) = {
+                let mut sched = sched::SCHEDULER.lock();
+                let pid = match sched.current_process_id() {
+                    Some(id) => id,
+                    None => {
+                        return KernelResponse::Error {
+                            message: "No current process for mapping",
+                        }
+                    }
+                };
+
+                let vaddr = match sched.reserve_user_region(pid, size as usize, 4096) {
+                    Some(addr) => addr,
+                    None => {
+                        return KernelResponse::Error {
+                            message: "Failed to reserve virtual region",
+                        }
+                    }
+                };
+
+                (vaddr, buffer.frames)
+            };
+
+            if let Err(msg) = shared_buffer::map_frames_into_current_as(vaddr, &frames, flags) {
+                return KernelResponse::Error { message: msg };
+            }
+
+            KernelResponse::SharedBufferMapped {
+                vaddr,
+                size,
+            }
+        }
+        KernelRequest::GetSharedBufferInfo { buffer_id } => {
+            let info = shared_buffer::manager()
+                .lock()
+                .get(&buffer_id)
+                .map(|sb| sb.info());
+
+            match info {
+                Some(info) => KernelResponse::SharedBufferInfoResponse { info },
+                None => KernelResponse::Error {
+                    message: "SharedBuffer not found",
+                },
+            }
+        }
         KernelRequest::SpawnProgram { boot_program_id } => {
             let handler = SPAWN_PROGRAM_HANDLER.lock().clone();
             if let Some(spawn_fn) = handler {

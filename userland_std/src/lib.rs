@@ -13,9 +13,10 @@ use alloc::vec::Vec;
 use std::string::ToString;
 
 use abi::{
-    FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary, NodeId, PropKey, PropType,
-    PropValue, SchedulerSummary, ThingId, ThreadInfo,
+    FrameId, FrameInfo, KernelRequest, KernelResponse, MapFlags, MemorySummary, NodeId, PixelFormat,
+    PropKey, PropType, PropValue, SchedulerSummary, SharedBufferInfo, ThingId, ThreadInfo,
 };
+use abi::graph_kinds;
 use userland_rt::Sys;
 
 pub mod alarm;
@@ -30,6 +31,12 @@ pub use thing_models::{AlarmEvent, AlarmRequest, TimeSource};
 pub extern crate thing_models;
 pub mod thread_info {
     pub use thing_models::ThreadInfo;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SysError {
+    Kernel(&'static str),
+    Unexpected,
 }
 
 #[derive(Clone, Debug)]
@@ -102,6 +109,162 @@ pub struct ThreadThing {
     pub priority: u64,
     pub runtime_ns: u64,
     pub last_started_ns: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct DisplayThing {
+    pub id: ThingId,
+    pub name: String,
+    pub width: u64,
+    pub height: u64,
+    pub stride: u64,
+    pub pixel_format: Option<String>,
+}
+
+impl abi::Thing for DisplayThing {
+    const KIND: &'static str = graph_kinds::KIND_DISPLAY;
+    const DESCRIPTION: &'static str = "A display sink capable of scanning out a SharedBuffer";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push((graph_kinds::PROP_NAME, PropValue::Str(self.name.clone())));
+        out.push((graph_kinds::PROP_WIDTH, PropValue::U64(self.width)));
+        out.push((graph_kinds::PROP_HEIGHT, PropValue::U64(self.height)));
+        out.push((graph_kinds::PROP_STRIDE, PropValue::U64(self.stride)));
+        if let Some(fmt) = &self.pixel_format {
+            out.push((graph_kinds::PROP_PIXEL_FORMAT, PropValue::Str(fmt.clone())));
+        }
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut name = String::new();
+        let mut width = 0;
+        let mut height = 0;
+        let mut stride = 0;
+        let mut pixel_format = None;
+
+        for prop in props.iter().flatten() {
+            match prop.0 {
+                graph_kinds::PROP_NAME => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        name = v.clone();
+                    }
+                }
+                graph_kinds::PROP_WIDTH => {
+                    if let PropValue::U64(v) = prop.1 {
+                        width = v;
+                    }
+                }
+                graph_kinds::PROP_HEIGHT => {
+                    if let PropValue::U64(v) = prop.1 {
+                        height = v;
+                    }
+                }
+                graph_kinds::PROP_STRIDE => {
+                    if let PropValue::U64(v) = prop.1 {
+                        stride = v;
+                    }
+                }
+                graph_kinds::PROP_PIXEL_FORMAT => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        pixel_format = Some(v.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        DisplayThing {
+            id,
+            name,
+            width,
+            height,
+            stride,
+            pixel_format,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            (graph_kinds::PROP_NAME, PropType::Str),
+            (graph_kinds::PROP_WIDTH, PropType::U64),
+            (graph_kinds::PROP_HEIGHT, PropType::U64),
+            (graph_kinds::PROP_STRIDE, PropType::U64),
+            (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
+        ]
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SharedBufferThing {
+    pub id: ThingId,
+    pub width: u64,
+    pub height: u64,
+    pub stride: u64,
+    pub pixel_format: Option<String>,
+}
+
+impl abi::Thing for SharedBufferThing {
+    const KIND: &'static str = graph_kinds::KIND_SHARED_BUFFER;
+    const DESCRIPTION: &'static str = "Shared memory buffer exported by the kernel";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push((graph_kinds::PROP_WIDTH, PropValue::U64(self.width)));
+        out.push((graph_kinds::PROP_HEIGHT, PropValue::U64(self.height)));
+        out.push((graph_kinds::PROP_STRIDE, PropValue::U64(self.stride)));
+        if let Some(fmt) = &self.pixel_format {
+            out.push((graph_kinds::PROP_PIXEL_FORMAT, PropValue::Str(fmt.clone())));
+        }
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut width = 0;
+        let mut height = 0;
+        let mut stride = 0;
+        let mut pixel_format = None;
+
+        for prop in props.iter().flatten() {
+            match prop.0 {
+                graph_kinds::PROP_WIDTH => {
+                    if let PropValue::U64(v) = prop.1 {
+                        width = v;
+                    }
+                }
+                graph_kinds::PROP_HEIGHT => {
+                    if let PropValue::U64(v) = prop.1 {
+                        height = v;
+                    }
+                }
+                graph_kinds::PROP_STRIDE => {
+                    if let PropValue::U64(v) = prop.1 {
+                        stride = v;
+                    }
+                }
+                graph_kinds::PROP_PIXEL_FORMAT => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        pixel_format = Some(v.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        SharedBufferThing {
+            id,
+            width,
+            height,
+            stride,
+            pixel_format,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            (graph_kinds::PROP_WIDTH, PropType::U64),
+            (graph_kinds::PROP_HEIGHT, PropType::U64),
+            (graph_kinds::PROP_STRIDE, PropType::U64),
+            (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
+        ]
+    }
 }
 
 impl abi::Thing for ThreadThing {
@@ -439,4 +602,62 @@ pub fn spawn_program(sys: &mut impl Sys, boot_program_id: ThingId) -> Option<(Th
         }
         _ => None,
     }
+}
+
+pub fn shared_buffer_info(sys: &impl Sys, buffer_id: ThingId) -> Result<SharedBufferInfo, SysError> {
+    match sys.syscall(KernelRequest::GetSharedBufferInfo { buffer_id }) {
+        KernelResponse::SharedBufferInfoResponse { info } => Ok(info),
+        KernelResponse::Error { message } => Err(SysError::Kernel(message)),
+        _ => Err(SysError::Unexpected),
+    }
+}
+
+pub fn shared_buffer_map(
+    sys: &impl Sys,
+    buffer_id: ThingId,
+    flags: MapFlags,
+) -> Result<(*mut u8, usize), SysError> {
+    match sys.syscall(KernelRequest::MapSharedBuffer { buffer_id, flags }) {
+        KernelResponse::SharedBufferMapped { vaddr, size } => {
+            Ok((vaddr as *mut u8, size as usize))
+        }
+        KernelResponse::Error { message } => Err(SysError::Kernel(message)),
+        _ => Err(SysError::Unexpected),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PrimaryDisplayBuffer {
+    pub display_id: ThingId,
+    pub buffer_id: ThingId,
+    pub info: SharedBufferInfo,
+    pub ptr: *mut u8,
+    pub size: usize,
+}
+
+pub fn open_primary_display_buffer<S: Sys>(sys: &mut S) -> Result<PrimaryDisplayBuffer, SysError> {
+    let displays: Vec<DisplayThing> = list_things_by_kind(sys);
+    let display = displays
+        .iter()
+        .find(|d| d.name == "display0")
+        .or_else(|| displays.first())
+        .cloned()
+        .ok_or(SysError::Unexpected)?;
+
+    let mut targets = edge_targets(sys, display.id, graph_kinds::EDGE_DISPLAY_SCANOUT);
+    let buffer_id = targets
+        .pop()
+        .ok_or(SysError::Unexpected)?;
+
+    let info = shared_buffer_info(sys, buffer_id)?;
+    let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER);
+    let (ptr, size) = shared_buffer_map(sys, buffer_id, flags)?;
+
+    Ok(PrimaryDisplayBuffer {
+        display_id: display.id,
+        buffer_id,
+        info,
+        ptr,
+        size,
+    })
 }

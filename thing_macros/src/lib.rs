@@ -79,6 +79,9 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 "u16" => quote! { ::abi::PropValue::U64(self.#name as u64) },
                 "u8" => quote! { ::abi::PropValue::U64(self.#name as u64) },
                 "i64" => quote! { ::abi::PropValue::I64(self.#name as i64) },
+                "i32" => quote! { ::abi::PropValue::I64(self.#name as i64) },
+                "i16" => quote! { ::abi::PropValue::I64(self.#name as i64) },
+                "i8" => quote! { ::abi::PropValue::I64(self.#name as i64) },
                 "bool" => quote! { ::abi::PropValue::Bool(self.#name as bool) },
                 "alloc::string::String" | "String" => {
                     quote! { ::abi::PropValue::Str(self.#name.clone()) }
@@ -138,6 +141,21 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 },
                 "i64" => quote! {
                     if let ::abi::PropValue::I64(val) = *v { val } else {
+                        panic!("Type mismatch for {}", stringify!(#name))
+                    }
+                },
+                "i32" => quote! {
+                    if let ::abi::PropValue::I64(val) = *v { val as i32 } else {
+                        panic!("Type mismatch for {}", stringify!(#name))
+                    }
+                },
+                "i16" => quote! {
+                    if let ::abi::PropValue::I64(val) = *v { val as i16 } else {
+                        panic!("Type mismatch for {}", stringify!(#name))
+                    }
+                },
+                "i8" => quote! {
+                    if let ::abi::PropValue::I64(val) = *v { val as i8 } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
@@ -213,7 +231,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 "u64" | "u32" | "u16" | "u8" | "ThingId" | "abi::ThingId" => {
                     quote! { ::abi::PropType::U64 }
                 }
-                "i64" => quote! { ::abi::PropType::I64 },
+                "i64" | "i32" | "i16" | "i8" => quote! { ::abi::PropType::I64 },
                 "bool" => quote! { ::abi::PropType::Bool },
                 "alloc::string::String" | "String" => quote! { ::abi::PropType::Str },
                 "char" => quote! { ::abi::PropType::Str },

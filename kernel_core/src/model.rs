@@ -232,6 +232,55 @@ pub fn init_schemas() {
         AlarmEvent::DESCRIPTION,
         AlarmEvent::schema(),
     );
+
+    // Display pipeline schemas
+    static DISPLAY_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_NAME, PropType::Str),
+        (graph_kinds::PROP_WIDTH, PropType::U64),
+        (graph_kinds::PROP_HEIGHT, PropType::U64),
+    ];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_DISPLAY,
+        "A display sink capable of scanning out a SharedBuffer",
+        DISPLAY_SCHEMA,
+    );
+
+    static SHARED_BUFFER_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_WIDTH, PropType::U64),
+        (graph_kinds::PROP_HEIGHT, PropType::U64),
+        (graph_kinds::PROP_STRIDE, PropType::U64),
+        (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
+    ];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_SHARED_BUFFER,
+        "A kernel-owned shared memory buffer that can be mapped into userland",
+        SHARED_BUFFER_SCHEMA,
+    );
+
+    static DISPLAY_FRAMEBUFFER_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_NAME, PropType::Str),
+        (graph_kinds::PROP_WIDTH, PropType::U64),
+        (graph_kinds::PROP_HEIGHT, PropType::U64),
+        (graph_kinds::PROP_STRIDE, PropType::U64),
+        (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
+    ];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_DISPLAY_FRAMEBUFFER,
+        "A userland-published framebuffer description backed by a SharedBuffer",
+        DISPLAY_FRAMEBUFFER_SCHEMA,
+    );
+
+    static DISPLAY_FRAME_SCHEMA: &[(&str, PropType)] = &[
+        (graph_kinds::PROP_WIDTH, PropType::U64),
+        (graph_kinds::PROP_HEIGHT, PropType::U64),
+        (graph_kinds::PROP_STRIDE, PropType::U64),
+        (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
+    ];
+    let _ = graph::register_schema(
+        graph_kinds::KIND_DISPLAY_FRAME,
+        "A single frame produced by a compositor targeting a framebuffer",
+        DISPLAY_FRAME_SCHEMA,
+    );
 }
 
 /// Create a PhysFrame Thing

@@ -64,3 +64,45 @@ impl InputCharEvent {
         ]
     }
 }
+
+#[derive(thing_macros::Thing)]
+#[thing(description = "Raw PS/2 mouse packet decoded into deltas and buttons.")]
+pub struct MousePacketEvent {
+    pub id: ThingId,
+    pub controller_id: ThingId,
+    pub port_index: u8,
+    pub sequence_index: u64,
+    pub timestamp_ticks: u64,
+    pub buttons: u8,
+    pub delta_x: i16,
+    pub delta_y: i16,
+    pub overflow_x: bool,
+    pub overflow_y: bool,
+}
+
+impl MousePacketEvent {
+    #[allow(clippy::too_many_arguments)]
+    pub fn props_for(
+        controller_id: ThingId,
+        port_index: u8,
+        sequence_index: u64,
+        timestamp_ticks: u64,
+        buttons: u8,
+        delta_x: i16,
+        delta_y: i16,
+        overflow_x: bool,
+        overflow_y: bool,
+    ) -> [(PropKey, PropValue); 9] {
+        [
+            ("controller_id", PropValue::U64(controller_id.0)),
+            ("port_index", PropValue::U64(port_index as u64)),
+            ("sequence_index", PropValue::U64(sequence_index)),
+            ("timestamp_ticks", PropValue::U64(timestamp_ticks)),
+            ("buttons", PropValue::U64(buttons as u64)),
+            ("delta_x", PropValue::I64(delta_x as i64)),
+            ("delta_y", PropValue::I64(delta_y as i64)),
+            ("overflow_x", PropValue::Bool(overflow_x)),
+            ("overflow_y", PropValue::Bool(overflow_y)),
+        ]
+    }
+}

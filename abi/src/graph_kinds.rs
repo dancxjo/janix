@@ -15,9 +15,21 @@ pub const KIND_IO_PORT_OP: &str = "IoPortOp";
 pub const KIND_INTERRUPT_EVENT: &str = "InterruptEvent";
 pub const KIND_KEYSCAN_EVENT: &str = "KeyScanEvent";
 pub const KIND_INPUT_CHAR_EVENT: &str = "InputCharEvent";
+pub const KIND_MOUSE_PACKET_EVENT: &str = "MousePacketEvent";
+pub const KIND_DISPLAY: &str = "Display";
+pub const KIND_SHARED_BUFFER: &str = "SharedBuffer";
+pub const KIND_DISPLAY_FRAMEBUFFER: &str = "DisplayFramebuffer";
+pub const KIND_DISPLAY_FRAME: &str = "DisplayFrame";
 
 pub const EDGE_OWNS_THREAD: &str = "proc.owns_thread";
 pub const EDGE_RUNS_ON: &str = "sched.runs_on";
 pub const EDGE_SLEEPS_UNTIL: &str = "sched.sleeps_until";
 pub const EDGE_LAUNCHES: &str = "boot.launches";
 pub const EDGE_SPAWNED: &str = "init.spawned";
+pub const EDGE_DISPLAY_SCANOUT: &str = "display.scanout";
+
+pub const PROP_WIDTH: &str = "width";
+pub const PROP_HEIGHT: &str = "height";
+pub const PROP_STRIDE: &str = "stride";
+pub const PROP_PIXEL_FORMAT: &str = "pixel_format";
+pub const PROP_NAME: &str = "name";

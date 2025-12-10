@@ -2,7 +2,7 @@ extern crate alloc;
 
 pub use crate::sched_types::ThreadState;
 use crate::{graph, graph_kinds};
-use abi::{ProcessId, PropValue, ThingId, ThreadId};
+use abi::{ProcessId, PropValue, ThingId, ThreadId, USER_HEAP_END};
 use alloc::string::String;
 use heapless::Vec;
 use spin::Mutex;
@@ -55,6 +55,7 @@ pub struct Process {
     pub address_space_token: Option<u64>,
     pub heap_base: usize,
     pub heap_limit: usize,
+    pub next_map_base: u64,
 }
 
 pub struct Scheduler {
@@ -190,6 +191,7 @@ impl Scheduler {
                     address_space_token: None,
                     heap_base: 0,
                     heap_limit: 0,
+                    next_map_base: USER_HEAP_END as u64,
                 });
                 if self.graph_enabled {
                     self.ensure_process_thing(i);
@@ -213,6 +215,32 @@ impl Scheduler {
             proc_slot.heap_base = base;
             proc_slot.heap_limit = limit;
         }
+    }
+
+    pub fn current_process_id(&self) -> Option<ProcessId> {
+        let tid = self.current?;
+        let idx = thread_index(tid);
+        self.threads
+            .get(idx)
+            .and_then(|t| t.as_ref())
+            .map(|t| t.process_id)
+    }
+
+    pub fn reserve_user_region(&mut self, pid: ProcessId, size: usize, align: usize) -> Option<u64> {
+        let idx = process_index(pid);
+        let proc_slot = self.processes.get_mut(idx)?.as_mut()?;
+        let alignment = if align == 0 { 1 } else { align } as u64;
+        let start = proc_slot
+            .next_map_base
+            .max(USER_HEAP_END as u64);
+        let aligned = if start % alignment == 0 {
+            start
+        } else {
+            start + (alignment - (start % alignment))
+        };
+        let end = aligned.checked_add(size as u64)?;
+        proc_slot.next_map_base = end;
+        Some(aligned)
     }
 
     pub fn add_thread(

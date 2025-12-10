@@ -1,6 +1,6 @@
 use crate::user;
 use abi::{
-    KernelRequest, KernelResponse, ProcessId, SyscallNumber, THING_GET_MAX_KIND_LEN,
+    KernelRequest, KernelResponse, MapFlags, ProcessId, SyscallNumber, THING_GET_MAX_KIND_LEN,
     THING_GET_MAX_PROPS, THING_GET_MAX_STR_LEN, ThingGetSyscallResult, ThingId, ThingPropData,
     ThingPropScalarType,
 };
@@ -136,6 +136,53 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         }) {
             KernelResponse::EdgeTarget { target } => target.map_or(u64::MAX, |id| id.0),
             _ => u64::MAX,
+        }
+    } else if num == SyscallNumber::CreateSharedBuffer as u64 {
+        let width = arg1 as u32;
+        let height = arg2 as u32;
+        let pixel_format = match arg3 as u8 {
+            1 => abi::PixelFormat::Bgra8888,
+            _ => abi::PixelFormat::Rgba8888,
+        };
+        match kernel_core::handle_request(KernelRequest::CreateSharedBuffer {
+            width,
+            height,
+            pixel_format,
+        }) {
+            KernelResponse::SharedBufferCreated { buffer_id } => buffer_id.0,
+            _ => 0,
+        }
+    } else if num == SyscallNumber::MapSharedBuffer as u64 {
+        let buffer_id = ThingId(arg1);
+        let flags = MapFlags(arg2);
+        let vaddr_out = arg3 as *mut u64;
+        let size_out = arg4 as *mut u64;
+        match kernel_core::handle_request(KernelRequest::MapSharedBuffer {
+            buffer_id,
+            flags,
+        }) {
+            KernelResponse::SharedBufferMapped { vaddr, size } => {
+                if !vaddr_out.is_null() {
+                    unsafe { *vaddr_out = vaddr };
+                }
+                if !size_out.is_null() {
+                    unsafe { *size_out = size };
+                }
+                0
+            }
+            _ => 1,
+        }
+    } else if num == SyscallNumber::GetSharedBufferInfo as u64 {
+        let buffer_id = ThingId(arg1);
+        let info_out = arg2 as *mut abi::SharedBufferInfo;
+        match kernel_core::handle_request(KernelRequest::GetSharedBufferInfo { buffer_id }) {
+            KernelResponse::SharedBufferInfoResponse { info } => {
+                if !info_out.is_null() {
+                    unsafe { *info_out = info };
+                }
+                0
+            }
+            _ => 1,
         }
     } else if num == SyscallNumber::SpawnProgram as u64 {
         let boot_program_id = ThingId(arg1);

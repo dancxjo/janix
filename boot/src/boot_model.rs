@@ -1,10 +1,11 @@
 extern crate alloc;
 
-use abi::{PropValue, Thing, ThingId};
+use abi::{PixelFormat, PropValue, Thing, ThingId};
 use alloc::{boxed::Box, string::String, vec::Vec};
-use kernel_core::memory::{BootFrameAllocator, init_frame_pool};
+use kernel_core::memory::{BootFrameAllocator, PhysFrame, init_frame_pool};
 use kernel_core::model;
-use kernel_core::{graph, graph_kinds, log, time};
+use kernel_core::{graph, graph_kinds, log, shared_buffer, time};
+use crate::FRAMEBUFFER_REQUEST;
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
 use thing_models::{AlarmRequest, BootProgram, TimeSource};
@@ -32,7 +33,9 @@ pub fn seed_memory_graph_from_limine() {
     };
 
     let hhdm_offset = if let Some(hhdm) = HHDM_REQUEST.get_response() {
-        hhdm.offset()
+        let offset = hhdm.offset();
+        shared_buffer::set_hhdm_offset(offset);
+        offset
     } else {
         0
     };
@@ -126,6 +129,63 @@ pub fn seed_cpu_graph_from_limine() {
 
 pub fn seed_boot_profile() {
     model::init_boot_profile();
+}
+
+pub fn seed_display_from_limine() {
+    let Some(response) = FRAMEBUFFER_REQUEST.get_response() else {
+        log("No framebuffer provided by Limine; skipping display seeding");
+        return;
+    };
+
+    let Some(fb) = response.framebuffers().next() else {
+        log("Framebuffer request returned no framebuffers");
+        return;
+    };
+
+    let width = fb.width();
+    let height = fb.height();
+    let pitch = fb.pitch();
+    let bpp = fb.bpp();
+    let fb_addr = fb.addr();
+    let size_bytes = pitch as u64 * height as u64;
+
+    if bpp != 32 {
+        log("Unexpected framebuffer bpp; proceeding with assumption of 32bpp");
+    }
+
+    let start = fb_addr & !(4096 - 1);
+    let end = shared_buffer::align_up(fb_addr + size_bytes, 4096);
+
+    let mut frames: heapless::Vec<PhysFrame, { shared_buffer::MAX_FRAMES_PER_BUFFER }>
+        = heapless::Vec::new();
+
+    let mut addr = start;
+    while addr < end {
+        if frames
+            .push(PhysFrame::from_start_address(addr, 4096))
+            .is_err()
+        {
+            log("Framebuffer does not fit in SharedBuffer frame capacity");
+            return;
+        }
+        addr = addr.saturating_add(4096);
+    }
+
+    let pixel_format = PixelFormat::Bgra8888;
+    let info = abi::SharedBufferInfo {
+        width: width as u32,
+        height: height as u32,
+        stride: pitch as u32,
+        pixel_format,
+    };
+
+    match shared_buffer::register_shared_buffer(info.width, info.height, info.stride, pixel_format, frames) {
+        Ok(buffer_id) => {
+            let _ = shared_buffer::create_display_for_buffer(buffer_id, "display0", &info);
+            log("Seeded display0 and SharedBuffer from Limine framebuffer");
+        }
+        Err(msg) => log(msg),
+    }
 }
 
 pub fn seed_program_images_from_limine() {

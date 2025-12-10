@@ -78,9 +78,6 @@ fn init_controller<S: Sys>(sys: &mut S, accessor: &mut IoPortAccessor) -> bool {
     if !accessor.command(sys, 0xAD) {
         return false;
     }
-    if !accessor.command(sys, 0xA7) {
-        return false;
-    }
     accessor.flush_output(sys);
 
     if !accessor.command(sys, 0x20) {
@@ -112,6 +109,9 @@ fn drain_pending_bytes<S: Sys>(
     loop {
         match accessor.read_status(sys) {
             Some(status) if status & 0x01 != 0 => {
+                if status & 0x20 != 0 {
+                    break;
+                }
                 if let Some(byte) = accessor.read_data(sys) {
                     decoder.process_byte(sys, byte);
                 } else {

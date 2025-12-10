@@ -19,7 +19,7 @@ pub struct TransactionId(pub u64);
 pub struct NodeId(pub u64);
 
 /// Thing identifier
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ThingId(pub u64);
 
 pub const USER_HEAP_START: usize = 0x0000_0000_4000_0000;
@@ -92,6 +92,50 @@ pub struct FrameInfo {
     pub id: FrameId,
     pub base: u64,
     pub size: u64,
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum PixelFormat {
+    Rgba8888 = 0,
+    Bgra8888 = 1,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct MapFlags(pub u64);
+
+impl MapFlags {
+    pub const READ: MapFlags = MapFlags(1 << 0);
+    pub const WRITE: MapFlags = MapFlags(1 << 1);
+    pub const EXECUTE: MapFlags = MapFlags(1 << 2);
+    pub const USER: MapFlags = MapFlags(1 << 3);
+
+    pub const fn bits(self) -> u64 {
+        self.0
+    }
+
+    pub const fn contains(self, other: MapFlags) -> bool {
+        (self.0 & other.0) == other.0
+    }
+
+    pub const fn union(self, other: MapFlags) -> MapFlags {
+        MapFlags(self.0 | other.0)
+    }
+}
+
+impl From<u64> for MapFlags {
+    fn from(value: u64) -> Self {
+        MapFlags(value)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct SharedBufferInfo {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub pixel_format: PixelFormat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -175,6 +219,18 @@ pub enum KernelRequest {
         edge_kind: &'static str,
         index: u64,
     },
+    CreateSharedBuffer {
+        width: u32,
+        height: u32,
+        pixel_format: PixelFormat,
+    },
+    MapSharedBuffer {
+        buffer_id: ThingId,
+        flags: MapFlags,
+    },
+    GetSharedBufferInfo {
+        buffer_id: ThingId,
+    },
 }
 
 /// Kernel response to userland
@@ -229,6 +285,16 @@ pub enum KernelResponse {
     },
     /// Result of Thing enumeration
     ThingListEntry { id: Option<ThingId> },
+    SharedBufferCreated {
+        buffer_id: ThingId,
+    },
+    SharedBufferMapped {
+        vaddr: u64,
+        size: u64,
+    },
+    SharedBufferInfoResponse {
+        info: SharedBufferInfo,
+    },
 }
 
 pub const THING_GET_MAX_KIND_LEN: usize = 128;
@@ -330,6 +396,9 @@ pub enum SyscallNumber {
     GraphQuery = 20,
     CreateTransaction = 21,
     CommitTransaction = 22,
+    MapSharedBuffer = 23,
+    CreateSharedBuffer = 24,
+    GetSharedBufferInfo = 25,
     // Add others as needed
 }
 

@@ -1,0 +1,17 @@
+[package]
+name = "ps2_mouse_driver"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "ps2_mouse_driver"
+path = "src/lib.rs"
+
+[dependencies]
+userland = { path = "../../userland" }
+userland_rt = { path = "../../userland_rt" }
+thing_models = { path = "../../thing_models" }
+
+[dev-dependencies]
+kernel_core = { path = "../../kernel_core" }
+abi = { path = "../../abi" }

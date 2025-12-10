@@ -34,7 +34,7 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
-static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+pub(crate) static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 /// Define the start and end markers for Limine requests.
 #[used]
@@ -149,6 +149,7 @@ fn init_world_graph() {
     kernel_core::create_builtin_things();
     boot_model::seed_memory_graph_from_limine();
     boot_model::seed_cpu_graph_from_limine();
+    boot_model::seed_display_from_limine();
     boot_model::seed_boot_profile();
     boot_model::seed_program_images_from_limine();
     boot_model::seed_boot_programs_from_limine();

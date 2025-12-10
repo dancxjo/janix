@@ -2,7 +2,8 @@ extern crate alloc;
 
 use crate::Sys;
 use abi::{
-    KernelRequest, KernelResponse, SyscallNumber, ThingGetSyscallResult, ThingPropScalarType,
+    KernelRequest, KernelResponse, SharedBufferInfo, SyscallNumber, ThingGetSyscallResult,
+    ThingPropScalarType,
 };
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
@@ -358,6 +359,80 @@ impl Sys for UserlandSys {
                 } else {
                     KernelResponse::Error {
                         message: "SchemaRegister failed",
+                    }
+                }
+            }
+            KernelRequest::MapSharedBuffer { buffer_id, flags } => {
+                let mut vaddr = 0_u64;
+                let mut size = 0_u64;
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::MapSharedBuffer,
+                        buffer_id.0,
+                        flags.bits(),
+                        &mut vaddr as *mut _ as u64,
+                        &mut size as *mut _ as u64,
+                        0,
+                        0,
+                    )
+                };
+                if ret == 0 {
+                    KernelResponse::SharedBufferMapped { vaddr, size }
+                } else {
+                    KernelResponse::Error {
+                        message: "MapSharedBuffer failed",
+                    }
+                }
+            }
+            KernelRequest::CreateSharedBuffer {
+                width,
+                height,
+                pixel_format,
+            } => {
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::CreateSharedBuffer,
+                        width as u64,
+                        height as u64,
+                        pixel_format as u8 as u64,
+                        0,
+                        0,
+                        0,
+                    )
+                };
+                if ret != 0 {
+                    KernelResponse::SharedBufferCreated {
+                        buffer_id: abi::ThingId(ret),
+                    }
+                } else {
+                    KernelResponse::Error {
+                        message: "CreateSharedBuffer failed",
+                    }
+                }
+            }
+            KernelRequest::GetSharedBufferInfo { buffer_id } => {
+                let mut info = SharedBufferInfo {
+                    width: 0,
+                    height: 0,
+                    stride: 0,
+                    pixel_format: abi::PixelFormat::Rgba8888,
+                };
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::GetSharedBufferInfo,
+                        buffer_id.0,
+                        &mut info as *mut _ as u64,
+                        0,
+                        0,
+                        0,
+                        0,
+                    )
+                };
+                if ret == 0 {
+                    KernelResponse::SharedBufferInfoResponse { info }
+                } else {
+                    KernelResponse::Error {
+                        message: "GetSharedBufferInfo failed",
                     }
                 }
             }

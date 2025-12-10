@@ -1,0 +1,16 @@
+[package]
+name = "framebuffer_driver"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "framebuffer_driver"
+path = "src/lib.rs"
+
+[dependencies]
+userland = { path = "../../userland" }
+userland_rt = { path = "../../userland_rt" }
+abi = { path = "../../abi" }
+
+[dev-dependencies]
+kernel_core = { path = "../../kernel_core" }

@@ -79,6 +79,11 @@ mod tests {
         log_thread_snapshot(&mut sys, &threads);
 
         let requests = sys.requests.borrow();
+        for request in requests.iter() {
+            if let KernelRequest::Log { message } = request {
+                eprintln!("log message: {:?}", message);
+            }
+        }
         assert!(requests.iter().any(|request| match request {
             KernelRequest::Log { message } =>
                 message.contains("tid=10") && message.contains("Running"),

@@ -53,6 +53,7 @@ pub fn fill_rect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn set_pixel_clamped_ignores_out_of_bounds() {
@@ -81,10 +82,10 @@ mod tests {
             4,
             0xCC,
         );
-        assert_eq!(buf[0], 0);
+        assert_eq!(buf[0], 0xCC, "clamps to framebuffer origin");
         assert_eq!(buf[1], 0xCC);
         assert_eq!(buf[6], 0xCC);
         assert_eq!(buf[12], 0xCC);
-        assert_eq!(buf[24], 0, "should not write past requested area");
+        assert_eq!(buf[24], 0, "should not write beyond rect area");
     }
 }

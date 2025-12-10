@@ -118,6 +118,51 @@ pub fn draw_text(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+
+    #[test]
+    fn draw_text_no_space_is_noop() {
+        let mut buf = vec![0u32; 16];
+        draw_text(
+            buf.as_mut_ptr(),
+            16,
+            4,
+            4,
+            0,
+            0,
+            0,
+            0,
+            "",
+            0xFF00FF00,
+        );
+        assert!(buf.iter().all(|p| *p == 0));
+    }
+
+    #[test]
+    fn draw_text_renders_glyphs() {
+        let mut buf = vec![0u32; 64 * 64];
+        draw_text(
+            buf.as_mut_ptr(),
+            64 * 4,
+            64,
+            64,
+            2,
+            2,
+            40,
+            20,
+            "Hi",
+            0xFF00FF00,
+        );
+        assert!(
+            buf.iter().any(|p| *p == 0xFF00FF00),
+            "expected text rendering to modify buffer"
+        );
+    }
+}
+
 fn blit_glyph_bitmap(
     buffer: *mut u32,
     stride: u32,

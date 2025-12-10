@@ -57,11 +57,6 @@ test:
 	@echo "=== Running ThingOS test suite ==="
 	cargo test --workspace --exclude boot
 
-.PHONY: harness
-harness:
-	@echo "=== Running ThingOS Host Harness ==="
-	cargo run -p host_harness
-
 .PHONY: run
 run: run-$(KARCH)
 

@@ -43,8 +43,8 @@ pub fn init() {
 /// Register the function responsible for spawning programs described by BootProgram Things.
 ///
 /// This allows the kernel core to delegate spawning to the architecture-specific
-/// environment (e.g., the boot crate or the host harness). Calling this function
-/// replaces any previously registered handler.
+/// environment (e.g., the boot crate). Calling this function replaces any
+/// previously registered handler.
 pub fn register_spawn_program_handler(handler: SpawnProgramHandler) {
     *SPAWN_PROGRAM_HANDLER.lock() = Some(handler);
 }

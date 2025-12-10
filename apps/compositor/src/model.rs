@@ -160,7 +160,7 @@ mod tests {
     use super::*;
     use crate::layout::StackedWindow;
     use crate::test_support::{list_responses, FramebufferFixture, MockSys, success};
-    use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
+    use abi::{KernelRequest, KernelResponse, PropValue, ThingId, graph_kinds};
     use userland_std::thing_models::DisplayPresentRequest;
 
     fn stacked_window(id: u64, z_index: i64, active: bool) -> StackedWindow {
@@ -212,7 +212,7 @@ mod tests {
             let active = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_WINDOW_ACTIVE)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
             assert_eq!(active, Some(PropValue::Bool(false)));
         } else {
             panic!("expected ThingUpdate");
@@ -223,11 +223,11 @@ mod tests {
             let active = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_WINDOW_ACTIVE)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
             let z_index = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_Z_INDEX)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
             assert_eq!(active, Some(PropValue::Bool(true)));
             assert_eq!(z_index, Some(PropValue::I64(4)));
         } else {
@@ -255,7 +255,7 @@ mod tests {
             },
             KernelResponse::EdgeTarget { target: None },
         ];
-        responses.extend(list_responses(vec![present.clone()]));
+        responses.extend(list_responses(vec![present.clone()], |p| p.id));
         let mut sys = MockSys::with_responses(responses);
 
         comp.ensure_display_contracts(&mut sys);
@@ -300,15 +300,15 @@ mod tests {
             let frame_index = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_FRAME_INDEX)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
             let requested_at = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_REQUESTED_AT_NS)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
             let completed = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_COMPLETED)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
 
             assert_eq!(frame_index, Some(PropValue::U64(1)));
             assert_eq!(requested_at, Some(PropValue::U64(41)));

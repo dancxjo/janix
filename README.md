@@ -8,7 +8,7 @@ Everything meaningful in the system—processes, resources, windows, transaction
 
 ThingOS boots via the **Limine** bootloader and is structured as a modern Rust **Cargo workspace** with a strict separation between kernel logic, boot code, shared ABI, and userland libraries.
 
-This repository currently provides a minimal working skeleton of that system: a booting kernel, a small in-kernel graph stub, logging, transaction stubs, a userland runtime, and a simple “hello” application that runs in hosted mode.
+This repository currently provides a minimal working skeleton of that system: a booting kernel, a small in-kernel graph stub, logging, transaction stubs, a userland runtime, and a simple “hello” application that runs through the kernel and userland runtime stack.
 
 ---
 
@@ -31,8 +31,8 @@ This repository currently provides a minimal working skeleton of that system: a 
 * **Comfortable userland experience**
   User programs should feel “normallish”—like writing small Rust CLI apps—while still interacting with the kernel via the ABI.
 
-* **Host-testable kernel logic**
-  Kernel logic runs cleanly in a normal Rust environment (via `host_harness`) without requiring a VM. **Crucially, the host harness and kernel must maintain strict feature parity.**
+* **Native-first kernel logic**
+  Kernel logic is exercised on the real kernel builds (or QEMU) so the graph stays aligned with native behavior instead of a hosted shim.
 
 ---
 
@@ -57,13 +57,10 @@ thing-os/
 │   └── lib.rs          # KernelRequest, KernelResponse, NodeId, etc.
 │
 ├── userland_rt/        # no_std runtime / syscall interface
-│   └── lib.rs          # Sys trait + HostedSys stub
+│   └── lib.rs          # Sys trait + KernelSys implementation
 │
 ├── userland_std/       # std-like userland library (std)
 │   └── lib.rs          # println(), graph_query(), transaction helpers
-│
-├── host_harness/       # Runs kernel_core in a normal OS (std)
-│   └── main.rs
 │
 └── apps/               # User applications compiled to ELF modules
     ├── hello/
@@ -76,17 +73,15 @@ thing-os/
 
 # 🧵 Build and Run
 
-## Build the hosted components (recommended first)
+The hosted harness is retired; building and running now centers on the real kernel image instead of a shim.
+
+## Build the workspace (recommended first)
 
 ```bash
 cargo build --workspace --exclude boot
 ```
 
-### Run the kernel harness (simulated log output)
-
-```bash
-cargo run -p host_harness
-```
+This ensures the shared/runtime/userland crates are in a good state before producing boot artifacts.
 
 ## Build the bootable kernel image
 
@@ -119,6 +114,10 @@ thing-os.hdd
 
 You may boot these in QEMU, VirtualBox, or on real hardware with appropriate care.
 
+### Run the kernel image via QEMU
+
+Use `make run` (defaults to `KARCH=x86_64`) or `make run-<arch>` to launch the ISO with the QEMU watcher—it's the native kernel path now.
+
 ---
 
 # 🧠 Architectural Overview
@@ -150,10 +149,7 @@ This ABI will evolve into a richer transactional graph interface.
 
 ### Userland runtime
 
-`userland_rt` defines a `Sys` trait that abstracts the syscall interface:
-
-* Hosted mode: uses `HostedSys` (stub)
-* Kernel mode: future work—e.g. inline assembly or system call gates
+`userland_rt` defines a `Sys` trait that abstracts the syscall interface. On native kernels it exposes `KernelSys`, which forwards to `kernel_core`.
 
 `userland_std` provides friendly wrapper functions so programs can write:
 
@@ -168,7 +164,7 @@ let value = userland_std::graph_query(NodeId(3));
 
 ThingOS currently **boots successfully via Limine**, initializes a minimal kernel core, writes some pixels to the framebuffer, and logs messages into a kernel-side circular buffer.
 
-Userland applications run in hosted mode using the std-layer.
+Userland applications run through the kernel's syscall ABI with the `userland_std` helpers, matching the native execution path.
 
 Next steps include:
 

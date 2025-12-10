@@ -6,7 +6,6 @@ members = [
     "abi",
     "userland_rt",
     "userland_std",
-    "host_harness",
     "apps/init",
     "apps/thread_dashboard",
     "apps/clock_demo",

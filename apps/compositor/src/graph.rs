@@ -141,7 +141,7 @@ mod tests {
                 title: "b".into(),
             },
         ];
-        let responses = list_responses(windows);
+        let responses = list_responses(windows, |w| w.id);
         let mut sys = MockSys::with_responses(responses);
         let collected = collect_windows_for_place(&mut sys, ThingId(7));
         assert_eq!(collected.len(), 1);
@@ -175,7 +175,7 @@ mod tests {
                 text: "ignore".into(),
             },
         ];
-        let responses = list_responses(surfaces);
+        let responses = list_responses(surfaces, |s| s.id);
         let mut sys = MockSys::with_responses(responses);
         let map = collect_surfaces_for_windows(&mut sys, &windows);
         assert_eq!(map.len(), 1);
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn mouse_packets_sorted_by_sequence_index() {
         let events = vec![mouse_event(5), mouse_event(2)];
-        let responses = list_responses(events);
+        let responses = list_responses(events, |e| e.id);
         let mut sys = MockSys::with_responses(responses);
         let packets = mouse_packets(&mut sys);
         assert_eq!(packets.len(), 2);
@@ -196,8 +196,8 @@ mod tests {
     #[test]
     fn current_mode_falls_back_to_default() {
         let modes = vec![mode(1, 2, false), mode(2, 1, false)];
-        let mut responses = list_responses(modes.clone());
-        responses.extend(list_responses(modes));
+        let mut responses = list_responses(modes.clone(), |m| m.id);
+        responses.extend(list_responses(modes, |m| m.id));
         let mut sys = MockSys::with_responses(responses);
         let mode = current_mode(&mut sys).expect("expected mode");
         assert_eq!(mode.index, 1, "default should pick lowest index");
@@ -217,9 +217,9 @@ mod tests {
                 timestamp: 10,
             },
         ];
-        let mut responses = list_responses(events);
+        let mut responses = list_responses(events, |e| e.id);
         let modes = vec![mode(10, 1, false), mode(20, 2, false)];
-        responses.extend(list_responses(modes));
+        responses.extend(list_responses(modes, |m| m.id));
         responses.push(success());
         responses.push(success());
 
@@ -234,7 +234,7 @@ mod tests {
                     let active = props
                         .iter()
                         .find(|p| p.0 == graph_kinds::PROP_MODE_ACTIVE)
-                        .map(|p| p.1);
+                        .map(|p| p.1.clone());
                     Some((*id, active))
                 } else {
                     None

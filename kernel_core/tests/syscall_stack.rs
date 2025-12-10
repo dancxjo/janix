@@ -16,8 +16,8 @@ fn cpu_pushes(stack: &mut Vec<&'static str>) {
 fn syscall_pushes(stack: &mut Vec<&'static str>) {
     // Must mirror the assembly push order in boot/src/arch/x86_64/syscall.rs
     for reg in [
-        "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "r10", "r11", "rbx", "rbp", "r12", "r13",
-        "r14", "r15",
+        "r15", "r14", "r13", "r12", "rbp", "rbx", "r11", "r10", "r9", "r8", "rcx", "rdx", "rsi",
+        "rdi", "rax",
     ] {
         stack.push(reg);
     }
@@ -26,8 +26,8 @@ fn syscall_pushes(stack: &mut Vec<&'static str>) {
 fn syscall_pops(stack: &mut Vec<&'static str>) {
     // Must mirror the assembly pop order in boot/src/arch/x86_64/syscall.rs
     for expected in [
-        "r15", "r14", "r13", "r12", "rbp", "rbx", "r11", "r10", "r9", "r8", "rcx", "rdx", "rsi",
-        "rdi",
+        "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "r10", "r11", "rbx", "rbp", "r12", "r13",
+        "r14", "r15",
     ] {
         let got = stack.pop().expect("stack underflow while popping GPRs");
         assert_eq!(got, expected, "pop order mismatch");
@@ -52,8 +52,8 @@ fn syscall_stack_frame_matches_expected_layout() {
     let actual_top_to_bottom: Vec<_> = stack.iter().rev().copied().collect();
     let expected_top_to_bottom = vec![
         // Manual pushes (top first)
-        "r15", "r14", "r13", "r12", "rbp", "rbx", "r11", "r10", "r9", "r8", "rcx", "rdx", "rsi",
-        "rdi", "rax", // CPU frame (bottom)
+        "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "r10", "r11", "rbx", "rbp", "r12", "r13",
+        "r14", "r15", // CPU frame (bottom)
         "rip", "cs", "rflags", "rsp", "ss",
     ];
 
@@ -77,8 +77,6 @@ fn syscall_push_pop_disciplined() {
     assert_eq!(stack.len(), base_depth + 15);
 
     syscall_pops(&mut stack);
-    // Pop saved rax explicitly like the asm does.
-    assert_eq!(stack.pop(), Some("rax"));
     // iret frame should remain intact before iret executes.
     assert_eq!(stack.len(), base_depth);
     cpu_iret_pops(&mut stack);

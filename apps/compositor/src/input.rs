@@ -189,11 +189,11 @@ mod tests {
             let active = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_WINDOW_ACTIVE)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
             let z_index = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_Z_INDEX)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
             assert_eq!(active, Some(PropValue::Bool(true)));
             assert_eq!(z_index, Some(PropValue::I64(2)));
         } else {
@@ -223,11 +223,11 @@ mod tests {
             let x = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_WINDOW_X)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
             let y = props
                 .iter()
                 .find(|p| p.0 == graph_kinds::PROP_WINDOW_Y)
-                .map(|p| p.1);
+                .map(|p| p.1.clone());
             assert_eq!(x, Some(PropValue::I64(0)));
             assert_eq!(y, Some(PropValue::I64(0)));
         } else {
@@ -266,7 +266,7 @@ mod tests {
             },
         ];
 
-        let responses = list_responses(events);
+        let responses = list_responses(events, |e| e.id);
         let mut sys = MockSys::with_responses(responses);
         comp.process_mouse_packets(&mut sys, &[]);
         assert_eq!(comp.last_mouse_seq, 1);

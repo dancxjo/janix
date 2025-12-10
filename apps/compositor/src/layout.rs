@@ -297,11 +297,11 @@ mod tests {
                     let x = props
                         .iter()
                         .find(|p| p.0 == graph_kinds::PROP_WINDOW_X)
-                        .map(|(_, v)| *v);
+                        .map(|(_, v)| v.clone());
                     let y = props
                         .iter()
                         .find(|p| p.0 == graph_kinds::PROP_WINDOW_Y)
-                        .map(|(_, v)| *v);
+                        .map(|(_, v)| v.clone());
                     assert!(x.is_some() && y.is_some());
                     if id == ThingId(1) {
                         assert_eq!(x, Some(PropValue::I64(10)));

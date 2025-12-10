@@ -1,8 +1,11 @@
+extern crate alloc;
+
+use alloc::boxed::Box;
+use alloc::collections::VecDeque;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::cell::RefCell;
 use core::mem;
-use std::boxed::Box;
-use std::cell::RefCell;
-use std::collections::VecDeque;
-use std::vec::Vec;
 
 use abi::{
     KernelRequest, KernelResponse, PixelFormat, PropKey, PropValue, SharedBufferInfo, ThingId,
@@ -82,7 +85,7 @@ pub fn leaked_props(props: Vec<(PropKey, PropValue)>) -> &'static [Option<(PropK
     )
 }
 
-pub fn thing_data_response<T: Thing>(id: ThingId, thing: T) -> KernelResponse {
+pub fn thing_data_response<T: Thing>(id: ThingId, thing: &T) -> KernelResponse {
     let mut props = Vec::new();
     thing.to_props(&mut props);
     KernelResponse::ThingData {
@@ -92,13 +95,17 @@ pub fn thing_data_response<T: Thing>(id: ThingId, thing: T) -> KernelResponse {
     }
 }
 
-pub fn list_responses<T: Thing + Clone>(things: &[(ThingId, T)]) -> Vec<KernelResponse> {
+pub fn list_responses<T: Thing, F: Fn(&T) -> ThingId>(
+    things: Vec<T>,
+    id_fn: F,
+) -> Vec<KernelResponse> {
     let mut responses = Vec::new();
-    for (id, thing) in things {
+    for thing in things {
+        let id = id_fn(&thing);
         responses.push(KernelResponse::ThingListEntry {
-            id: Some(*id),
+            id: Some(id),
         });
-        responses.push(thing_data_response(*id, thing.clone()));
+        responses.push(thing_data_response(id, &thing));
     }
     responses.push(KernelResponse::ThingListEntry { id: None });
     responses

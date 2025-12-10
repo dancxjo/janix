@@ -242,3 +242,118 @@ fn draw_window_frame(
         TITLE_TEXT_COLOR,
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::collections::BTreeMap;
+    use crate::config::{
+        CURSOR_COLOR, FRAME_BORDER, FRAME_THICKNESS, TITLE_COLOR_ACTIVE, TITLE_COLOR_INACTIVE,
+    };
+    use crate::layout::StackedWindow;
+    use crate::test_support::FramebufferFixture;
+    use abi::ThingId;
+    use userland_std::{Surface, Window};
+
+    fn stacked_window(id: u64, active: bool) -> StackedWindow {
+        StackedWindow {
+            id: ThingId(id),
+            x: 5,
+            y: 5,
+            width: 120,
+            height: 80,
+            z_index: 1,
+            active,
+        }
+    }
+
+    fn window_meta(id: u64) -> Window {
+        Window {
+            id: ThingId(id),
+            place_id: ThingId(1),
+            x: 5,
+            y: 5,
+            width: 120,
+            height: 80,
+            z_index: 1,
+            active: true,
+            title: format!("window-{id}"),
+        }
+    }
+
+    #[test]
+    fn build_display_list_emits_frame_content_and_cursor() {
+        let fixture = FramebufferFixture::new(200, 150);
+        let comp = Compositor::new(fixture.fb);
+        let stacked = vec![stacked_window(1, true)];
+        let windows = vec![window_meta(1)];
+        let mut surfaces = BTreeMap::new();
+        surfaces.insert(
+            ThingId(1),
+            Surface {
+                id: ThingId(10),
+                window_id: ThingId(1),
+                kind: "text/plain".into(),
+                text: "hello".into(),
+            },
+        );
+
+        let ops = build_display_list(&comp, &stacked, &windows, &surfaces);
+        assert!(matches!(ops.first(), Some(DrawOp::Clear { .. })));
+        assert!(ops.iter().any(|op| matches!(op, DrawOp::WindowFrame { id, .. } if *id == ThingId(1))));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, DrawOp::WindowContentText { id, .. } if *id == ThingId(1))));
+        assert!(matches!(
+            ops.last(),
+            Some(DrawOp::Cursor { x, y }) if *x == comp.cursor.x && *y == comp.cursor.y
+        ));
+    }
+
+    #[test]
+    fn render_display_list_draws_expected_colors() {
+        let FramebufferFixture { fb, buffer } = FramebufferFixture::new(40, 40);
+        let comp = Compositor::new(fb);
+        let ops = vec![
+            DrawOp::Clear { color: 0x11111111 },
+            DrawOp::Rect {
+                x: 1,
+                y: 1,
+                w: 2,
+                h: 2,
+                color: 0x22222222,
+            },
+            DrawOp::WindowFrame {
+                id: ThingId(1),
+                x: 10,
+                y: 8,
+                w: 20,
+                h: 30,
+                active: true,
+                title: "demo".into(),
+            },
+            DrawOp::Cursor { x: 15, y: 5 },
+        ];
+
+        render_display_list(&comp, &ops);
+
+        let stride = comp.fb.info.width as usize;
+        assert_eq!(buffer[0], 0x11111111);
+        assert_eq!(buffer[1 + stride], 0x22222222);
+        let border_idx = 10 + 8 * stride;
+        assert_eq!(buffer[border_idx], FRAME_BORDER);
+        let title_idx = (10 + FRAME_THICKNESS) as usize + (12) * stride;
+        let title_color = if let Some(DrawOp::WindowFrame { active, .. }) = ops.get(2) {
+            if *active {
+                TITLE_COLOR_ACTIVE
+            } else {
+                TITLE_COLOR_INACTIVE
+            }
+        } else {
+            0
+        };
+        assert_eq!(buffer[title_idx], title_color);
+        let cursor_idx = 15 + 5 * stride;
+        assert_eq!(buffer[cursor_idx], CURSOR_COLOR);
+    }
+}

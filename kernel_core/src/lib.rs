@@ -2,7 +2,6 @@
 
 extern crate alloc;
 
-pub mod boot_config;
 pub mod console;
 pub mod graph;
 pub mod graph_kinds;

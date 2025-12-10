@@ -27,6 +27,10 @@ pub fn run<S: Sys>(sys: &mut S) {
         Some(profile) => profile,
         None => fatal(sys, "BootProfile missing or duplicated"),
     };
+    log_dynamic(
+        sys,
+        format!("init: BootProfile version {}", boot_profile.version),
+    );
 
     let launch_ids = edge_targets(sys, boot_profile.id, graph_kinds::EDGE_LAUNCHES);
     if launch_ids.is_empty() {
@@ -49,6 +53,13 @@ pub fn run<S: Sys>(sys: &mut S) {
         .unwrap_or_else(|| fatal(sys, "init Process Thing (pid=1) missing"));
 
     for program in programs.iter() {
+        log_dynamic(
+            sys,
+            format!(
+                "init: BootProgram name={} app_id={} priority={}",
+                program.name, program.app_id, program.priority
+            ),
+        );
         spawn_program(sys, &init_process, program);
     }
 
@@ -81,8 +92,8 @@ fn spawn_program<S: Sys>(sys: &mut S, init_process: &ProcessThing, program: &Boo
     log_dynamic(
         sys,
         format!(
-            "init: launching {} (binary={}, app_id={}, priority={})",
-            program.name, program.binary, program.app_id, program.priority
+            "init: launching {} (app_id={}, priority={})",
+            program.name, program.app_id, program.priority
         ),
     );
 
@@ -94,7 +105,7 @@ fn spawn_program<S: Sys>(sys: &mut S, init_process: &ProcessThing, program: &Boo
     let _tid = match create_thread(
         sys,
         pid,
-        program.binary.as_str(),
+        program.name.as_str(),
         program.app_id,
         program.priority,
     ) {

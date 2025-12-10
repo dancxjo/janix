@@ -136,7 +136,6 @@ impl Thing for BootProfile {
 pub struct BootProgram {
     pub id: ThingId,
     pub name: String,
-    pub binary: String,
     pub app_id: u64,
     pub priority: u64,
 }
@@ -148,14 +147,12 @@ impl Thing for BootProgram {
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("name", PropValue::Str(self.name.clone())));
-        out.push(("binary", PropValue::Str(self.binary.clone())));
         out.push(("app_id", PropValue::U64(self.app_id)));
         out.push(("priority", PropValue::U64(self.priority)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
         let mut name = String::new();
-        let mut binary = String::new();
         let mut app_id = 0;
         let mut priority = 0;
         for prop in props.iter().flatten() {
@@ -163,11 +160,6 @@ impl Thing for BootProgram {
                 "name" => {
                     if let PropValue::Str(v) = &prop.1 {
                         name = v.clone();
-                    }
-                }
-                "binary" => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        binary = v.clone();
                     }
                 }
                 "app_id" => {
@@ -186,7 +178,6 @@ impl Thing for BootProgram {
         BootProgram {
             id,
             name,
-            binary,
             app_id,
             priority,
         }
@@ -195,7 +186,6 @@ impl Thing for BootProgram {
     fn schema() -> &'static [(&'static str, PropType)] {
         &[
             ("name", PropType::Str),
-            ("binary", PropType::Str),
             ("app_id", PropType::U64),
             ("priority", PropType::U64),
         ]

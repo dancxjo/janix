@@ -492,6 +492,33 @@ pub fn scheduler_tick() -> Option<ThreadInfo> {
     }
 }
 
+static BOOT_PROGRAMS: &[(&str, u64, u64)] = &[
+    ("hello", 1, 0),
+    ("heartbeat", 2, 0),
+    ("thread_dashboard", 3, 0),
+];
+
+pub fn init_boot_profile() {
+    let profile_props = &[("version", PropValue::U64(1))];
+    let Some(profile) = graph::create_thing(graph_kinds::KIND_BOOT_PROFILE, profile_props) else {
+        crate::log("Failed to create BootProfile Thing");
+        return;
+    };
+
+    for (name, app_id, priority) in BOOT_PROGRAMS {
+        let props = &[
+            ("name", PropValue::Str(String::from(*name))),
+            ("app_id", PropValue::U64(*app_id)),
+            ("priority", PropValue::U64(*priority)),
+        ];
+        if let Some(program) = graph::create_thing(graph_kinds::KIND_BOOT_PROGRAM, props) {
+            let _ = graph::add_edge(profile, graph_kinds::EDGE_LAUNCHES, program);
+        } else {
+            crate::log("Failed to create BootProgram Thing");
+        }
+    }
+}
+
 fn encode_state(state: ThreadState) -> u64 {
     match state {
         ThreadState::Running => 1,

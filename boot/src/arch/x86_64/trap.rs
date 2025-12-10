@@ -53,9 +53,30 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 extern "x86-interrupt" fn gp_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) {
+    use core::ptr;
+    use x86_64::registers::control::Cr3;
+
+    let rsp = stack_frame.stack_pointer.as_u64();
+    let mut words = [0u64; 6];
+    // SAFETY: We only read a small number of words for debugging.
+    for (i, slot) in words.iter_mut().enumerate() {
+        let ptr = (rsp as *const u64).wrapping_add(i);
+        unsafe {
+            *slot = ptr::read_volatile(ptr);
+        }
+    }
+
     kernel_core::println!(
-        "EXCEPTION: GENERAL PROTECTION FAULT\nError Code: {:#x}\n{:#?}",
+        "EXCEPTION: GENERAL PROTECTION FAULT\nError Code: {:#x}\nCR3={:#x}\nRSP={:#x}\nStack top: [{:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}]\n{:#?}",
         error_code,
+        Cr3::read().0.start_address().as_u64(),
+        rsp,
+        words[0],
+        words[1],
+        words[2],
+        words[3],
+        words[4],
+        words[5],
         stack_frame
     );
     loop {}

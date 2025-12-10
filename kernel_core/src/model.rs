@@ -91,7 +91,16 @@ fn is_kind(id: ThingId, expected: &str) -> bool {
     }
 }
 
-/// Initialize all kernel model schemas
+/// Initialize all kernel model schemas.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// k::model::init_schemas();
+/// assert!(k::graph::get_schema_description(k::graph_kinds::KIND_THREAD).is_some());
+/// ```
 pub fn init_schemas() {
     // PhysFrame: represents a physical memory frame
     static PHYS_FRAME_SCHEMA: &[(&str, PropType)] = &[
@@ -373,6 +382,16 @@ pub fn init_schemas() {
 ///
 /// # Returns
 /// ThingId of the created PhysFrame, or None if creation failed
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let frame = k::model::create_phys_frame(0x1000, 4096).unwrap();
+/// assert!(matches!(k::graph::get_prop(frame, "base"), Some(abi::PropValue::U64(0x1000))));
+/// assert!(matches!(k::graph::get_prop(frame, "allocated"), Some(abi::PropValue::Bool(false))));
+/// ```
 pub fn create_phys_frame(base: u64, size: u64) -> Option<ThingId> {
     let props = &[
         ("base", PropValue::U64(base)),
@@ -392,6 +411,15 @@ pub fn create_phys_frame(base: u64, size: u64) -> Option<ThingId> {
 ///
 /// # Returns
 /// ThingId of the created FramePool, or None if creation failed
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let pool = k::model::create_frame_pool(0x1000, 0x2000, 4096).unwrap();
+/// assert!(matches!(k::graph::get_prop(pool, "frame_size"), Some(abi::PropValue::U64(4096))));
+/// ```
 pub fn create_frame_pool(start: u64, end: u64, frame_size: u64) -> Option<ThingId> {
     let props = &[
         ("start", PropValue::U64(start)),
@@ -409,12 +437,35 @@ pub fn create_frame_pool(start: u64, end: u64, frame_size: u64) -> Option<ThingI
 ///
 /// # Returns
 /// ThingId of the created CpuCore, or None if creation failed
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let cpu = k::model::create_cpu_core(0).unwrap();
+/// let idx = k::graph::get_prop(cpu, "index");
+/// assert!(matches!(idx, Some(abi::PropValue::U64(0))));
+/// ```
 pub fn create_cpu_core(index: u64) -> Option<ThingId> {
     let props = &[("index", PropValue::U64(index))];
 
     graph::create_thing(graph_kinds::KIND_CPU_CORE, props)
 }
 
+/// Compute memory statistics from graph state.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// k::model::create_phys_frame(0x1000, 4096);
+/// k::model::create_phys_frame(0x2000, 4096);
+/// let summary = k::model::compute_memory_summary();
+/// assert!(summary.total_frames >= 2);
+/// assert_eq!(summary.used_frames + summary.free_frames, summary.total_frames);
+/// ```
 pub fn compute_memory_summary() -> MemorySummary {
     let (total_frames, used_frames, free_frames) = memory::frame_stats();
     if total_frames > 0 {
@@ -453,6 +504,19 @@ pub fn compute_memory_summary() -> MemorySummary {
     }
 }
 
+/// Compute scheduler statistics from graph state.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// k::model::create_process(1);
+/// k::model::create_thread(1, 1);
+/// let summary = k::model::compute_scheduler_summary();
+/// assert!(summary.process_count >= 1);
+/// assert!(summary.thread_count >= 1);
+/// ```
 pub fn compute_scheduler_summary() -> SchedulerSummary {
     let mut process_count = 0_u64;
     let mut thread_count = 0_u64;
@@ -502,6 +566,15 @@ pub fn compute_scheduler_summary() -> SchedulerSummary {
 ///
 /// # Returns
 /// ThingId of the created AddressSpace, or None if creation failed
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let asid = k::model::create_address_space(7).unwrap();
+/// assert!(matches!(k::graph::get_prop(asid, "asid"), Some(abi::PropValue::U64(7))));
+/// ```
 pub fn create_address_space(asid: u64) -> Option<ThingId> {
     let props = &[("asid", PropValue::U64(asid))];
 
@@ -517,6 +590,15 @@ pub fn create_address_space(asid: u64) -> Option<ThingId> {
 ///
 /// # Returns
 /// ThingId of the created VirtRegion, or None if creation failed
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let vr = k::model::create_virt_region(0x4000, 0x1000, 0x7).unwrap();
+/// assert!(matches!(k::graph::get_prop(vr, "len"), Some(abi::PropValue::U64(0x1000))));
+/// ```
 pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
     let props = &[
         ("base", PropValue::U64(base)),
@@ -534,6 +616,16 @@ pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
 ///
 /// # Returns
 /// ThingId of the created Process, or None if creation failed
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let proc = k::model::create_process(1).unwrap();
+/// let pid = k::graph::get_prop(proc, "pid");
+/// assert!(matches!(pid, Some(abi::PropValue::U64(1))));
+/// ```
 pub fn create_process(pid: u64) -> Option<ThingId> {
     let props = &[("pid", PropValue::U64(pid))];
 
@@ -548,6 +640,16 @@ pub fn create_process(pid: u64) -> Option<ThingId> {
 ///
 /// # Returns
 /// ThingId of the created Thread, or None if creation failed
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let thread = k::model::create_thread(42, 10).unwrap();
+/// let state = k::graph::get_prop(thread, "state");
+/// assert!(matches!(state, Some(abi::PropValue::Str(s)) if s.as_str() == k::sched_types::ThreadState::Runnable.as_str()));
+/// ```
 pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
     let props = &[
         ("tid", PropValue::U64(tid)),
@@ -563,6 +665,18 @@ pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
     graph::create_thing(graph_kinds::KIND_THREAD, props)
 }
 
+/// Allocate the first free `PhysFrame` and mark it allocated.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let phys = k::model::create_phys_frame(0x2000, 4096).unwrap();
+/// let frame = k::model::alloc_frame().unwrap();
+/// assert_eq!(frame.id.0, phys.0);
+/// assert!(matches!(k::graph::get_prop(phys, "allocated"), Some(abi::PropValue::Bool(true))));
+/// ```
 pub fn alloc_frame() -> Option<FrameInfo> {
     // For now, scan all Things for the first PhysFrame with allocated == false
     for raw_id in 0..crate::graph::MAX_THINGS as u64 {
@@ -615,6 +729,19 @@ pub fn alloc_frame() -> Option<FrameInfo> {
     None
 }
 
+/// Mark a physical frame as free again.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let phys = k::model::create_phys_frame(0x1000, 4096).unwrap();
+/// let info = k::model::alloc_frame().unwrap();
+/// assert_eq!(info.id.0, phys.0);
+/// assert!(k::model::free_frame(info.id));
+/// assert!(matches!(k::graph::get_prop(phys, "allocated"), Some(abi::PropValue::Bool(false))));
+/// ```
 pub fn free_frame(frame_id: FrameId) -> bool {
     let tid = ThingId(frame_id.0);
     if !is_kind(tid, "PhysFrame") {
@@ -625,10 +752,34 @@ pub fn free_frame(frame_id: FrameId) -> bool {
     crate::graph::update_thing(tid, props)
 }
 
+/// ABI helper to create a process and return its raw ThingId.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let pid = k::model::create_process_abi(2).unwrap();
+/// let thing = abi::ThingId(pid);
+/// assert!(matches!(k::graph::get_prop(thing, "pid"), Some(abi::PropValue::U64(2))));
+/// ```
 pub fn create_process_abi(pid: u64) -> Option<u64> {
     create_process(pid).map(|id| id.0)
 }
 
+/// Create a thread from an ABI call, returning the ThingId raw value.
+///
+/// The first thread created becomes the current thread.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let tid = k::model::create_thread_abi(1, 10, 1).unwrap();
+/// let thing = abi::ThingId(tid);
+/// assert!(matches!(k::graph::get_prop(thing, "tid"), Some(abi::PropValue::U64(10))));
+/// ```
 pub fn create_thread_abi(_pid: u64, tid: u64, priority: u64) -> Option<u64> {
     // For now, we ignore pid in the graph; later we’ll add edges.
     create_thread(tid, priority).map(|id| {
@@ -643,6 +794,17 @@ pub fn create_thread_abi(_pid: u64, tid: u64, priority: u64) -> Option<u64> {
     })
 }
 
+/// Run a scheduler tick against the graph-backed model and return the selected thread info.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// k::init_boot_graph();
+/// let info = k::model::scheduler_tick().unwrap();
+/// assert!(info.tid > 0);
+/// ```
 pub fn scheduler_tick() -> Option<ThreadInfo> {
     static mut FAKE_TIME: u64 = 0;
 

@@ -4,6 +4,7 @@ use std::string::String;
 
 #[test]
 fn test_memory_summary() {
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
 
     // Create some PhysFrames
@@ -39,6 +40,7 @@ fn test_memory_summary() {
 
 #[test]
 fn test_scheduler_summary() {
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
 
     // Create a Process

@@ -1,12 +1,9 @@
 use abi::PropValue;
 use kernel_core::sched_types::ThreadState;
-use std::sync::Mutex;
-
-static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_boot_graph_initialization() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::init_boot_graph();
 
@@ -30,7 +27,7 @@ fn test_boot_graph_initialization() {
 
 #[test]
 fn test_boot_graph_has_process() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::init_boot_graph();
 
@@ -65,7 +62,7 @@ fn test_boot_graph_has_process() {
 
 #[test]
 fn test_boot_graph_has_thread() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::init_boot_graph();
 
@@ -127,7 +124,7 @@ fn test_boot_graph_has_thread() {
 
 #[test]
 fn test_boot_graph_has_cpu_core() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::init_boot_graph();
 
@@ -161,7 +158,7 @@ fn test_boot_graph_has_cpu_core() {
 
 #[test]
 fn test_boot_graph_has_address_space() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::init_boot_graph();
 
@@ -198,7 +195,7 @@ fn test_boot_graph_has_address_space() {
 
 #[test]
 fn test_boot_graph_has_frame_pool() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::init_boot_graph();
 
@@ -243,7 +240,7 @@ fn test_boot_graph_has_frame_pool() {
 
 #[test]
 fn test_boot_graph_has_phys_frames() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::init_boot_graph();
 
@@ -268,7 +265,7 @@ fn test_boot_graph_has_phys_frames() {
 
 #[test]
 fn test_boot_graph_has_virt_regions() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::init_boot_graph();
 
@@ -313,7 +310,7 @@ fn test_boot_graph_has_virt_regions() {
 
 #[test]
 fn test_model_create_functions() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
 
     // Test each create function directly

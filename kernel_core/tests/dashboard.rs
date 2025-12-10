@@ -1,5 +1,6 @@
 #[test]
 fn test_dashboard_snapshot_from_boot_graph() {
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::create_builtin_things();
 

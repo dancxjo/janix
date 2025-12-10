@@ -44,6 +44,7 @@ pub fn seed_memory_graph_from_limine() {
     let mut boot_allocator = BootFrameAllocator::new();
     let mut range_index = 0_usize;
     const PAGE_SIZE: u64 = 4096;
+    const MIN_PHYS_ALLOC: u64 = 0x10_0000; // avoid using very low memory for page tables/allocations
 
     for entry in response.entries() {
         if entry.entry_type != EntryType::USABLE {
@@ -52,6 +53,17 @@ pub fn seed_memory_graph_from_limine() {
 
         let mut base = entry.base;
         let mut len = entry.length;
+
+        // Skip anything entirely below the minimum and trim low memory that overlaps it.
+        let end = base.saturating_add(len);
+        if end <= MIN_PHYS_ALLOC {
+            continue;
+        }
+        if base < MIN_PHYS_ALLOC {
+            let delta = MIN_PHYS_ALLOC - base;
+            base = MIN_PHYS_ALLOC;
+            len = len.saturating_sub(delta);
+        }
 
         if !heap_initialized {
             let heap_size = crate::heap::KERNEL_HEAP_SIZE_BYTES as u64;
@@ -207,17 +219,36 @@ pub fn seed_program_images_from_limine() {
         .map(|resp| resp.offset())
         .unwrap_or(0);
 
+    let mut created = 0_u64;
+    let mut skipped_fonts = 0_u64;
+
     for (index, module) in response.modules().iter().enumerate() {
-        let identifier = derive_module_identifier((*module).string(), (*module).path(), index);
+        let identifier = match classify_limine_module((*module).string(), (*module).path(), index) {
+            ModuleKind::Program { identifier } => identifier,
+            ModuleKind::Font { .. } => {
+                skipped_fonts = skipped_fonts.saturating_add(1);
+                continue;
+            }
+        };
         let virt_addr = (*module).addr() as u64;
         let base_phys = virt_addr.saturating_sub(hhdm_offset);
         let size = (*module).size() as u64;
         if kernel_core::model::create_program_image(&identifier, index as u64, base_phys, size)
-            .is_none()
+            .is_some()
         {
+            created = created.saturating_add(1);
+        } else {
             log("Failed to create ProgramImage Thing");
         }
     }
+
+    let mut msg = alloc::format!("Seeded {} ProgramImage Things from Limine modules", created);
+    if skipped_fonts > 0 {
+        let suffix = alloc::format!(" (ignored {} font module(s))", skipped_fonts);
+        msg.push_str(&suffix);
+    }
+    let leaked: &'static str = Box::leak(msg.into_boxed_str());
+    log(leaked);
 }
 
 pub fn seed_font_modules_from_limine() {
@@ -234,8 +265,9 @@ pub fn seed_font_modules_from_limine() {
     let mut created = 0_u64;
 
     for (index, module) in response.modules().iter().enumerate() {
-        let Some(name) = parse_font_identifier((*module).string(), (*module).path()) else {
-            continue;
+        let name = match classify_limine_module((*module).string(), (*module).path(), index) {
+            ModuleKind::Font { name } => name,
+            ModuleKind::Program { .. } => continue,
         };
 
         let virt_addr = (*module).addr() as u64;
@@ -278,9 +310,16 @@ pub fn seed_boot_programs_from_limine() {
 
     let mut app_id = 1_u64;
     let mut created = 0_u64;
+    let mut skipped_fonts = 0_u64;
 
     for (index, module) in response.modules().iter().enumerate() {
-        let identifier = derive_module_identifier((*module).string(), (*module).path(), index);
+        let identifier = match classify_limine_module((*module).string(), (*module).path(), index) {
+            ModuleKind::Program { identifier } => identifier,
+            ModuleKind::Font { .. } => {
+                skipped_fonts = skipped_fonts.saturating_add(1);
+                continue;
+            }
+        };
 
         if identifier == "init" {
             continue;
@@ -315,7 +354,11 @@ pub fn seed_boot_programs_from_limine() {
         }
     }
 
-    let msg = alloc::format!("Seeded {} BootProgram Things from Limine modules", created);
+    let mut msg = alloc::format!("Seeded {} BootProgram Things from Limine modules", created);
+    if skipped_fonts > 0 {
+        let suffix = alloc::format!(" (ignored {} font module(s))", skipped_fonts);
+        msg.push_str(&suffix);
+    }
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
     log(leaked);
 }
@@ -350,6 +393,25 @@ pub fn seed_time_graph() {
         log(leaked);
     } else {
         log("Failed to create boot AlarmRequest Thing");
+    }
+}
+
+enum ModuleKind {
+    Program { identifier: String },
+    Font { name: String },
+}
+
+fn classify_limine_module(
+    cmdline: &core::ffi::CStr,
+    path: &core::ffi::CStr,
+    index: usize,
+) -> ModuleKind {
+    if let Some(name) = parse_font_identifier(cmdline, path) {
+        ModuleKind::Font { name }
+    } else {
+        ModuleKind::Program {
+            identifier: derive_module_identifier(cmdline, path, index),
+        }
     }
 }
 
@@ -472,9 +534,6 @@ fn parse_font_identifier(cmdline: &core::ffi::CStr, path: &core::ffi::CStr) -> O
             if !stripped.is_empty() {
                 return Some(String::from(stripped));
             }
-        }
-        if !path_ident.is_empty() {
-            return Some(path_ident);
         }
     }
 

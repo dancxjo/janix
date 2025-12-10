@@ -74,3 +74,11 @@ pub fn init() {
 pub fn get_selectors() -> &'static Selectors {
     &GDT.1
 }
+
+pub fn kernel_stack_top() -> u64 {
+    TSS.privilege_stack_table[0].as_u64()
+}
+
+pub fn kernel_stack_ist1_top() -> u64 {
+    TSS.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize].as_u64()
+}

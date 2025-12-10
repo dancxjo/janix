@@ -1,11 +1,8 @@
 use kernel_core::model;
-use std::sync::Mutex;
-
-static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_memory_allocator() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::create_builtin_things();
     kernel_core::init_boot_graph();
@@ -29,7 +26,7 @@ fn test_memory_allocator() {
 
 #[test]
 fn test_scheduler_basic() {
-    let _guard = TEST_LOCK.lock().unwrap();
+    let _guard = kernel_core::test_lock();
     kernel_core::init();
     kernel_core::create_builtin_things();
     kernel_core::init_boot_graph();

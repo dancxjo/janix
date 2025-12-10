@@ -1,9 +1,15 @@
 use abi::{KernelRequest, KernelResponse, PropType, PropValue};
 use kernel_core;
 
+fn init_locked() -> spin::MutexGuard<'static, ()> {
+    let guard = kernel_core::test_lock();
+    kernel_core::init();
+    guard
+}
+
 #[test]
 fn test_schema_registration() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     let schema = &[("count", PropType::U64), ("active", PropType::Bool)];
 
@@ -23,7 +29,7 @@ fn test_schema_registration() {
 
 #[test]
 fn test_duplicate_schema_registration() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     let schema = &[("field", PropType::U64)];
 
@@ -46,7 +52,7 @@ fn test_duplicate_schema_registration() {
 
 #[test]
 fn test_thing_creation_with_valid_schema() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     // Register schema
     let schema = &[("count", PropType::U64), ("active", PropType::Bool)];
@@ -72,7 +78,7 @@ fn test_thing_creation_with_valid_schema() {
 
 #[test]
 fn test_thing_creation_without_schema() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     // Try to create thing without registering schema
     let props = &[("count", PropValue::U64(42))];
@@ -93,7 +99,7 @@ fn test_thing_creation_without_schema() {
 
 #[test]
 fn test_thing_creation_with_type_mismatch() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     // Register schema expecting U64
     let schema = &[("value", PropType::U64)];
@@ -122,7 +128,7 @@ fn test_thing_creation_with_type_mismatch() {
 
 #[test]
 fn test_thing_creation_with_unknown_property() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     // Register schema with specific properties
     let schema = &[("count", PropType::U64)];
@@ -158,7 +164,7 @@ fn test_thing_creation_with_unknown_property() {
 
 #[test]
 fn test_thing_update_with_schema_validation() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     // Register schema
     let schema = &[("count", PropType::U64), ("active", PropType::Bool)];
@@ -195,7 +201,7 @@ fn test_thing_update_with_schema_validation() {
 
 #[test]
 fn test_thing_update_with_invalid_type() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     // Register schema
     let schema = &[("count", PropType::U64)];
@@ -235,7 +241,7 @@ fn test_thing_update_with_invalid_type() {
 
 #[test]
 fn test_schema_get() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     // Register a schema
     let schema = &[("field1", PropType::U64), ("field2", PropType::Bool)];
@@ -273,7 +279,7 @@ fn test_schema_get() {
 
 #[test]
 fn test_schema_get_not_found() {
-    kernel_core::init();
+    let _guard = init_locked();
 
     let response = kernel_core::handle_request(KernelRequest::SchemaGet {
         kind: "NonExistent",

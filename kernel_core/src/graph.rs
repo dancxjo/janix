@@ -307,8 +307,22 @@ fn edge_index_ref() -> &'static EdgeIndex {
     }
 }
 
-/// Initialize the graph subsystem
-/// This resets all global state for test isolation and kernel boot
+/// Initialize the graph subsystem.
+///
+/// This resets all global state for tests and boot. Call this before using the
+/// graph APIs to ensure schemas and storage are clean.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// let schema = &[("value", abi::PropType::U64)];
+/// k::graph::register_schema("Widget", "A widget", schema).unwrap();
+/// let id = k::graph::create_thing("Widget", &[("value", abi::PropValue::U64(1))]).unwrap();
+/// let (kind, _) = k::graph::get_thing(id).unwrap();
+/// assert_eq!(kind, "Widget");
+/// ```
 pub fn init() {
     unsafe {
         // Reset counters
@@ -664,7 +678,22 @@ pub fn subscribe_edge_removed(pred: EdgePred, listener: GraphListener) {
     }
 }
 
-/// Create a new Thing
+/// Create a new Thing.
+///
+/// Caller is responsible for ensuring the kind has an appropriate schema if
+/// validation is desired.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// k::graph::register_schema("Widget", "A test kind", &[("value", abi::PropType::U64)]).unwrap();
+/// let id = k::graph::create_thing("Widget", &[("value", abi::PropValue::U64(5))]).unwrap();
+/// let (kind, props) = k::graph::get_thing(id).unwrap();
+/// assert_eq!(kind, "Widget");
+/// assert!(props.iter().flatten().any(|(k, v)| *k == "value" && matches!(v, abi::PropValue::U64(5))));
+/// ```
 pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Option<ThingId> {
     unsafe {
         if NEXT_THING_ID >= MAX_THINGS as u64 {
@@ -701,7 +730,19 @@ pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Optio
     }
 }
 
-/// Get a Thing
+/// Get a Thing by id, returning its kind and properties.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// k::graph::register_schema("Widget", "A test kind", &[("flag", abi::PropType::Bool)]).unwrap();
+/// let id = k::graph::create_thing("Widget", &[("flag", abi::PropValue::Bool(true))]).unwrap();
+/// let (kind, props) = k::graph::get_thing(id).unwrap();
+/// assert_eq!(kind, "Widget");
+/// assert!(props.iter().flatten().any(|(k, v)| *k == "flag" && matches!(v, abi::PropValue::Bool(true))));
+/// ```
 pub fn get_thing(id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey, PropValue)>])> {
     unsafe {
         if id.0 >= MAX_THINGS as u64 {
@@ -713,7 +754,22 @@ pub fn get_thing(id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey
     }
 }
 
-/// Update a Thing
+/// Update an existing Thing's properties.
+///
+/// Keys present in `props` are replaced; absent keys are left unchanged.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// k::graph::register_schema("Widget", "A test kind", &[("value", abi::PropType::U64)]).unwrap();
+/// let id = k::graph::create_thing("Widget", &[("value", abi::PropValue::U64(1))]).unwrap();
+/// let ok = k::graph::update_thing(id, &[("value", abi::PropValue::U64(2))]);
+/// assert!(ok);
+/// let (_, props) = k::graph::get_thing(id).unwrap();
+/// assert!(props.iter().flatten().any(|(k, v)| *k == "value" && matches!(v, abi::PropValue::U64(2))));
+/// ```
 pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
     unsafe {
         if id.0 >= MAX_THINGS as u64 {
@@ -803,7 +859,19 @@ fn remove_incident_edges(id: ThingId) {
     }
 }
 
-/// Delete a Thing
+/// Delete a Thing.
+///
+/// If deleting an edge, associated indexes are cleaned up.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// let id = k::graph::create_thing("Widget", &[]).unwrap();
+/// assert!(k::graph::delete_thing(id));
+/// assert!(k::graph::get_thing(id).is_none());
+/// ```
 pub fn delete_thing(id: ThingId) -> bool {
     unsafe {
         if id.0 >= MAX_THINGS as u64 {
@@ -830,7 +898,20 @@ pub fn delete_thing(id: ThingId) -> bool {
     }
 }
 
-/// Register a schema
+/// Register a schema for a Thing kind.
+///
+/// Returns an error if the kind is already registered, too many props are
+/// provided, or storage is exhausted.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// k::graph::register_schema("Widget", "A test kind", &[("value", abi::PropType::U64)]).unwrap();
+/// // Registering again fails.
+/// assert!(k::graph::register_schema("Widget", "dup", &[]).is_err());
+/// ```
 pub fn register_schema(
     kind: &'static str,
     description: &'static str,
@@ -872,7 +953,7 @@ pub fn register_schema(
     }
 }
 
-/// Get a schema (returns static reference to props array)
+/// Get a schema (returns static reference to props array).
 pub fn get_schema_props(kind: &'static str) -> Option<&'static [Option<(&'static str, PropType)>]> {
     unsafe {
         let schemas = &raw const SCHEMAS;
@@ -887,7 +968,7 @@ pub fn get_schema_props(kind: &'static str) -> Option<&'static [Option<(&'static
     }
 }
 
-/// Get a schema description
+/// Get a schema description.
 pub fn get_schema_description(kind: &'static str) -> Option<&'static str> {
     unsafe {
         let schemas = &raw const SCHEMAS;
@@ -902,7 +983,21 @@ pub fn get_schema_description(kind: &'static str) -> Option<&'static str> {
     }
 }
 
-/// Validate properties against schema
+/// Validate properties against a schema.
+///
+/// Returns an error if the kind is unknown, a property is missing from the
+/// schema, or the type mismatches.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// let schema = &[("value", abi::PropType::U64)];
+/// k::graph::register_schema("Widget", "A test kind", schema).unwrap();
+/// assert!(k::graph::validate_props("Widget", &[("value", abi::PropValue::U64(3))]).is_ok());
+/// assert!(k::graph::validate_props("Widget", &[("value", abi::PropValue::Bool(false))]).is_err());
+/// ```
 pub fn validate_props(
     kind: &'static str,
     props: &[(PropKey, PropValue)],
@@ -1089,6 +1184,22 @@ pub fn cleanup_process_graph(_proc: ProcessId) {
 }
 
 /// Create an edge Thing and index it.
+///
+/// If the edge already exists between the endpoints for the predicate, the
+/// existing edge id is returned.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// let a = k::graph::create_thing("Thread", &[]).unwrap();
+/// let b = k::graph::create_thing("CpuCore", &[]).unwrap();
+/// let edge = k::graph::create_edge(a, k::graph_kinds::EDGE_RUNS_ON, b).unwrap();
+/// // Calling again returns the same edge id.
+/// let edge2 = k::graph::create_edge(a, k::graph_kinds::EDGE_RUNS_ON, b).unwrap();
+/// assert_eq!(edge, edge2);
+/// ```
 pub fn create_edge(src: ThingId, pred: EdgePred, dst: ThingId) -> Option<ThingId> {
     if let Some(existing) = edge_index_ref()
         .edges_from_pred(src, pred)
@@ -1111,11 +1222,35 @@ pub fn create_edge(src: ThingId, pred: EdgePred, dst: ThingId) -> Option<ThingId
 }
 
 /// Add an edge between two Things; convenience wrapper returning success.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// let a = k::graph::create_thing("Thread", &[]).unwrap();
+/// let b = k::graph::create_thing("CpuCore", &[]).unwrap();
+/// assert!(k::graph::add_edge(a, k::graph_kinds::EDGE_RUNS_ON, b));
+/// ```
 pub fn add_edge(from: ThingId, pred: EdgePred, to: ThingId) -> bool {
     create_edge(from, pred, to).is_some()
 }
 
 /// Delete an edge Thing by id.
+///
+/// Returns `false` if the id does not refer to an edge.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// let a = k::graph::create_thing("Thread", &[]).unwrap();
+/// let b = k::graph::create_thing("CpuCore", &[]).unwrap();
+/// let edge = k::graph::create_edge(a, k::graph_kinds::EDGE_RUNS_ON, b).unwrap();
+/// assert!(k::graph::delete_edge(edge));
+/// assert!(k::graph::get_thing(edge).is_none());
+/// ```
 pub fn delete_edge(id: ThingId) -> bool {
     unsafe {
         if id.0 >= MAX_THINGS as u64 {
@@ -1131,6 +1266,18 @@ pub fn delete_edge(id: ThingId) -> bool {
 }
 
 /// Remove an edge by endpoints/predicate; returns true if removed.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// let a = k::graph::create_thing("Thread", &[]).unwrap();
+/// let b = k::graph::create_thing("CpuCore", &[]).unwrap();
+/// k::graph::create_edge(a, k::graph_kinds::EDGE_RUNS_ON, b).unwrap();
+/// assert!(k::graph::remove_edge(a, k::graph_kinds::EDGE_RUNS_ON, b));
+/// assert!(k::graph::edge_target_at(a, k::graph_kinds::EDGE_RUNS_ON, 0).is_none());
+/// ```
 pub fn remove_edge(from: ThingId, pred: EdgePred, to: ThingId) -> bool {
     let candidate = edge_index_ref()
         .edges_from_pred(from, pred)
@@ -1148,6 +1295,21 @@ pub fn remove_edge(from: ThingId, pred: EdgePred, to: ThingId) -> bool {
 }
 
 /// Collect neighbors from outgoing edges of a given predicate.
+///
+/// The provided buffer is cleared then filled in order with matching dst ids.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// let a = k::graph::create_thing("Thread", &[]).unwrap();
+/// let b = k::graph::create_thing("CpuCore", &[]).unwrap();
+/// k::graph::add_edge(a, k::graph_kinds::EDGE_RUNS_ON, b);
+/// let mut out = [None; 2];
+/// k::graph::neighbors(a, k::graph_kinds::EDGE_RUNS_ON, &mut out);
+/// assert!(out.iter().flatten().any(|id| *id == b));
+/// ```
 pub fn neighbors(from: ThingId, pred: EdgePred, out: &mut [Option<ThingId>]) {
     for slot in out.iter_mut() {
         *slot = None;
@@ -1162,6 +1324,17 @@ pub fn neighbors(from: ThingId, pred: EdgePred, out: &mut [Option<ThingId>]) {
 }
 
 /// Return the target ThingId for the edge at `index` with the provided predicate.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::graph::init();
+/// let a = k::graph::create_thing("Thread", &[]).unwrap();
+/// let b = k::graph::create_thing("CpuCore", &[]).unwrap();
+/// k::graph::add_edge(a, k::graph_kinds::EDGE_RUNS_ON, b);
+/// assert_eq!(k::graph::edge_target_at(a, k::graph_kinds::EDGE_RUNS_ON, 0), Some(b));
+/// ```
 pub fn edge_target_at(from: ThingId, pred: EdgePred, index: usize) -> Option<ThingId> {
     edge_index_ref().neighbor_dsts(from, pred).nth(index)
 }

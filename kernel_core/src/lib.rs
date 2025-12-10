@@ -23,11 +23,13 @@ use crate::sched_types::ThreadState;
 use crate::shared_buffer::MAX_FRAMES_PER_BUFFER;
 use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, PropValue, ThingId};
 use alloc::string::String;
-use spin::Mutex;
+use spin::{Mutex, MutexGuard};
 
 type SpawnProgramHandler = fn(ThingId) -> Result<(ThingId, ThingId), &'static str>;
 
 static SPAWN_PROGRAM_HANDLER: Mutex<Option<SpawnProgramHandler>> = Mutex::new(None);
+
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 /// Initialize the kernel core subsystems
 pub fn init() {
@@ -50,6 +52,15 @@ pub fn register_spawn_program_handler(handler: SpawnProgramHandler) {
 /// Log a message to the kernel log
 pub fn log(message: &'static str) {
     log::log_message(message);
+}
+
+/// Serialize access to global kernel state for tests.
+///
+/// This is intended for integration and doc tests that share the global graph
+/// and schema storage. Hold the guard for the duration of a test to avoid
+/// cross-test interference.
+pub fn test_lock() -> MutexGuard<'static, ()> {
+    TEST_MUTEX.lock()
 }
 
 /// Get all log entries

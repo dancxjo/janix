@@ -41,6 +41,18 @@ fn spawn_loaded_program_named(
     priority: u64,
     loaded: LoadedElfProgram,
 ) -> Result<(ThingId, ThingId), &'static str> {
+    {
+        let msg = alloc::format!(
+            "spawn_loaded_program_named: name={} entry={:#x} stack_top={:#x} cr3={:#x} heap=[{:#x},{:#x})",
+            name,
+            loaded.entry_point,
+            loaded.user_stack_top,
+            loaded.address_space_token,
+            loaded.heap_base,
+            loaded.heap_limit
+        );
+        kernel_core::log(Box::leak(msg.into_boxed_str()));
+    }
     let leaked_name: &'static str = leak_name(name);
     let (process_thing, thread_thing) = {
         let mut sched = SCHEDULER.lock();

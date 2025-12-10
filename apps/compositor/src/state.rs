@@ -1,6 +1,6 @@
 use userland::prelude::*;
-use userland_std::thing_models::{DisplayPresentRequest, MousePacketEvent};
 use userland_std::MODE_INDEX_CONSOLE;
+use userland_std::thing_models::{DisplayPresentRequest, MousePacketEvent};
 
 use crate::config::FRAME_INTERVAL_NS;
 use crate::graph::{

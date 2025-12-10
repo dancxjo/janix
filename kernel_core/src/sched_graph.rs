@@ -8,8 +8,27 @@ const TIME_SLICE_NS: TimeNs = 5_000_000;
 const EDGE_BUF: usize = 4;
 
 /// Graph-driven scheduler tick.
+///
 /// Updates runtime accounting for the current thread on `cpu` and selects the
 /// next runnable thread based purely on graph state.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let cpu = k::model::create_cpu_core(0).unwrap();
+/// let thread = k::model::create_thread(1, 3).unwrap();
+/// let mut g = k::graph::Graph::new();
+///
+/// let picked = k::sched_graph::sched_tick(&mut g, 0, 10).unwrap();
+/// assert_eq!(picked, thread);
+///
+/// // The thread should now be marked running on the CPU.
+/// let mut buf = [None; 1];
+/// k::graph::neighbors(thread, k::graph_kinds::EDGE_RUNS_ON, &mut buf);
+/// assert!(buf.into_iter().flatten().any(|id| id == cpu));
+/// ```
 pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId> {
     let cpu_node = find_cpu_node(cpu)?;
     let current = find_current_thread(graph, cpu_node);
@@ -37,6 +56,22 @@ pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId>
 }
 
 /// Create a SleepEvent node and link it from the thread.
+///
+/// Returns the created event ThingId on success.
+///
+/// # Examples
+/// ```
+/// # use kernel_core as k;
+/// # let _guard = k::test_lock();
+/// k::init();
+/// let thread = k::model::create_thread(7, 1).unwrap();
+/// let mut g = k::graph::Graph::new();
+/// let sleep = k::sched_graph::create_sleep_event(&mut g, thread, 1_000_000, 5).unwrap();
+///
+/// let mut buf = [None; 1];
+/// k::graph::neighbors(thread, k::graph_kinds::EDGE_SLEEPS_UNTIL, &mut buf);
+/// assert!(buf.into_iter().flatten().any(|id| id == sleep));
+/// ```
 pub fn create_sleep_event(
     graph: &mut Graph,
     thread: ThingId,
@@ -53,6 +88,8 @@ pub fn create_sleep_event(
 }
 
 /// Remove the SleepEvent node for a thread, if present.
+///
+/// This clears the `EDGE_SLEEPS_UNTIL` edge and deletes the SleepEvent Thing.
 pub fn clear_sleep_event(graph: &mut Graph, thread: ThingId) {
     let mut buf = [None; EDGE_BUF];
     graph.neighbors(thread, graph_kinds::EDGE_SLEEPS_UNTIL, &mut buf);

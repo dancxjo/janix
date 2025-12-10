@@ -138,6 +138,7 @@ pub struct BootProgram {
     pub name: String,
     pub app_id: u64,
     pub priority: u64,
+    pub binary: String,
 }
 
 impl Thing for BootProgram {
@@ -149,12 +150,14 @@ impl Thing for BootProgram {
         out.push(("name", PropValue::Str(self.name.clone())));
         out.push(("app_id", PropValue::U64(self.app_id)));
         out.push(("priority", PropValue::U64(self.priority)));
+        out.push(("binary", PropValue::Str(self.binary.clone())));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
         let mut name = String::new();
         let mut app_id = 0;
         let mut priority = 0;
+        let mut binary = String::new();
         for prop in props.iter().flatten() {
             match prop.0 {
                 "name" => {
@@ -172,6 +175,11 @@ impl Thing for BootProgram {
                         priority = v;
                     }
                 }
+                "binary" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        binary = v.clone();
+                    }
+                }
                 _ => {}
             }
         }
@@ -180,6 +188,7 @@ impl Thing for BootProgram {
             name,
             app_id,
             priority,
+            binary,
         }
     }
 
@@ -188,6 +197,76 @@ impl Thing for BootProgram {
             ("name", PropType::Str),
             ("app_id", PropType::U64),
             ("priority", PropType::U64),
+            ("binary", PropType::Str),
+        ]
+    }
+}
+
+pub struct ProgramImage {
+    pub id: ThingId,
+    pub identifier: String,
+    pub module_index: u64,
+    pub base_phys: u64,
+    pub size: u64,
+}
+
+impl Thing for ProgramImage {
+    const KIND: &'static str = "ProgramImage";
+    const DESCRIPTION: &'static str =
+        "An ELF program image discovered at boot and available for loading.";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("identifier", PropValue::Str(self.identifier.clone())));
+        out.push(("module_index", PropValue::U64(self.module_index)));
+        out.push(("base_phys", PropValue::U64(self.base_phys)));
+        out.push(("size", PropValue::U64(self.size)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut identifier = String::new();
+        let mut module_index = 0;
+        let mut base_phys = 0;
+        let mut size = 0;
+        for prop in props.iter().flatten() {
+            match prop.0 {
+                "identifier" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        identifier = v.clone();
+                    }
+                }
+                "module_index" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        module_index = v;
+                    }
+                }
+                "base_phys" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        base_phys = v;
+                    }
+                }
+                "size" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        size = v;
+                    }
+                }
+                _ => {}
+            }
+        }
+        ProgramImage {
+            id,
+            identifier,
+            module_index,
+            base_phys,
+            size,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            ("identifier", PropType::Str),
+            ("module_index", PropType::U64),
+            ("base_phys", PropType::U64),
+            ("size", PropType::U64),
         ]
     }
 }

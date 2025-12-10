@@ -414,3 +414,17 @@ pub fn scheduler_tick(sys: &impl Sys) -> Option<ThreadInfo> {
         _ => None,
     }
 }
+
+pub fn spawn_program(sys: &mut impl Sys, boot_program_id: ThingId) -> Option<(ThingId, ThingId)> {
+    match sys.syscall(KernelRequest::SpawnProgram { boot_program_id }) {
+        KernelResponse::ProgramSpawned {
+            process_id,
+            thread_id,
+        } => Some((process_id, thread_id)),
+        KernelResponse::Error { message } => {
+            println(sys, message);
+            None
+        }
+        _ => None,
+    }
+}

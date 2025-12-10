@@ -113,6 +113,10 @@ pub enum KernelRequest {
         kind: &'static str,
         props: &'static [(PropKey, PropValue)],
     },
+    /// Spawn a program defined by a BootProgram Thing
+    SpawnProgram {
+        boot_program_id: ThingId,
+    },
     /// Get a Thing
     ThingGet { id: ThingId },
     /// Update a Thing
@@ -211,6 +215,11 @@ pub enum KernelResponse {
     },
     /// Result of querying an edge target.
     EdgeTarget { target: Option<ThingId> },
+    /// Program spawn result
+    ProgramSpawned {
+        process_id: ThingId,
+        thread_id: ThingId,
+    },
 }
 
 /// Syscall numbers for Ring 3 -> Ring 0 communication
@@ -238,7 +247,14 @@ pub enum SyscallNumber {
     SleepForNs = 22,
     AddEdge = 23,
     EdgeAt = 24,
+    SpawnProgram = 25,
     // Add others as needed
+}
+
+#[repr(C)]
+pub struct SpawnProgramResult {
+    pub process_id: ThingId,
+    pub thread_id: ThingId,
 }
 
 pub trait Thing: Sized {

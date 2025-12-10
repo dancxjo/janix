@@ -189,6 +189,33 @@ impl Sys for UserlandSys {
                     }
                 }
             }
+            KernelRequest::SpawnProgram { boot_program_id } => {
+                let mut result = abi::SpawnProgramResult {
+                    process_id: abi::ThingId(0),
+                    thread_id: abi::ThingId(0),
+                };
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::SpawnProgram,
+                        boot_program_id.0,
+                        &mut result as *mut _ as u64,
+                        0,
+                        0,
+                        0,
+                        0,
+                    )
+                };
+                if ret == 0 {
+                    KernelResponse::ProgramSpawned {
+                        process_id: result.process_id,
+                        thread_id: result.thread_id,
+                    }
+                } else {
+                    KernelResponse::Error {
+                        message: "SpawnProgram failed",
+                    }
+                }
+            }
             KernelRequest::SchemaRegister {
                 kind,
                 description,

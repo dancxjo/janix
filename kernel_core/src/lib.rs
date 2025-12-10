@@ -113,6 +113,9 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         } => KernelResponse::EdgeTarget {
             target: graph::edge_target_at(from, edge_kind, index as usize),
         },
+        KernelRequest::SpawnProgram { .. } => KernelResponse::Error {
+            message: "SpawnProgram unavailable via handle_request",
+        },
         KernelRequest::SchemaRegister {
             kind,
             description,

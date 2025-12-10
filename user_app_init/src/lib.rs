@@ -5,17 +5,10 @@ extern crate alloc;
 use alloc::format;
 use alloc::vec::Vec;
 use abi::graph_kinds;
-use thing_models::{BootProfile, BootProgram};
+use thing_models::{BootProfile, BootProgram, ProgramImage};
 use userland::prelude::*;
 use userland_std::{
-    add_edge,
-    create_process,
-    create_thread,
-    edge_targets,
-    find_thing,
-    list_things_by_kind,
-    load_thing,
-    ProcessThing,
+    add_edge, edge_targets, find_thing, list_things_by_kind, load_thing, spawn_program, ProcessThing,
 };
 
 const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
@@ -52,15 +45,60 @@ pub fn run<S: Sys>(sys: &mut S) {
     let init_process = find_process_by_pid(sys, 1)
         .unwrap_or_else(|| fatal(sys, "init Process Thing (pid=1) missing"));
 
+    let program_images: Vec<ProgramImage> = list_things_by_kind(sys);
+
     for program in programs.iter() {
         log_dynamic(
             sys,
             format!(
-                "init: BootProgram name={} app_id={} priority={}",
-                program.name, program.app_id, program.priority
+                "init: BootProgram name={} app_id={} priority={} binary={}",
+                program.name, program.app_id, program.priority, program.binary
             ),
         );
-        spawn_program(sys, &init_process, program);
+        if let Some(image) = program_images
+            .iter()
+            .find(|img| img.identifier == program.binary)
+        {
+            log_dynamic(
+                sys,
+                format!(
+                    "init: BootProgram {} backed by ProgramImage id={} module_index={} base_phys={:#x} size={}",
+                    program.name,
+                    image.identifier,
+                    image.module_index,
+                    image.base_phys,
+                    image.size
+                ),
+            );
+        } else {
+            log_dynamic(
+                sys,
+                format!(
+                    "init: WARNING: no ProgramImage found for BootProgram {} (binary={})",
+                    program.name, program.binary
+                ),
+            );
+        }
+        log_dynamic(
+            sys,
+            format!(
+                "init: spawning BootProgram {} (app_id={}, binary={})",
+                program.name, program.app_id, program.binary
+            ),
+        );
+        if let Some((process_id, _thread_id)) = spawn_program(sys, program.id) {
+            if !add_edge(sys, init_process.id, graph_kinds::EDGE_SPAWNED, process_id) {
+                log_dynamic(
+                    sys,
+                    "init: failed to add SPAWNED edge after spawn_program".into(),
+                );
+            }
+        } else {
+            log_dynamic(
+                sys,
+                format!("init: spawn_program failed for {}", program.name),
+            );
+        }
     }
 
     log_dynamic(sys, "init: entering supervision loop".into());
@@ -86,46 +124,6 @@ fn load_boot_profile<S: Sys>(sys: &mut S) -> Option<BootProfile> {
 
 fn find_process_by_pid<S: Sys>(sys: &mut S, pid: u64) -> Option<ProcessThing> {
     find_thing::<ProcessThing>(sys, |p| p.pid == pid)
-}
-
-fn spawn_program<S: Sys>(sys: &mut S, init_process: &ProcessThing, program: &BootProgram) {
-    log_dynamic(
-        sys,
-        format!(
-            "init: launching {} (app_id={}, priority={})",
-            program.name, program.app_id, program.priority
-        ),
-    );
-
-    let pid = match create_process(sys, program.name.as_str()) {
-        Some(pid) => pid,
-        None => fatal(sys, "failed to create process via syscall"),
-    };
-
-    let _tid = match create_thread(
-        sys,
-        pid,
-        program.name.as_str(),
-        program.app_id,
-        program.priority,
-    ) {
-        Some(tid) => tid,
-        None => fatal(sys, "failed to create thread via syscall"),
-    };
-
-    if let Some(proc_thing) = find_process_by_pid(sys, pid) {
-        if !add_edge(sys, init_process.id, graph_kinds::EDGE_SPAWNED, proc_thing.id) {
-            log_dynamic(
-                sys,
-                format!("init: failed to add SPAWNED edge to pid {}", pid),
-            );
-        }
-    } else {
-        log_dynamic(
-            sys,
-            format!("init: spawned process pid {} missing from graph", pid),
-        );
-    }
 }
 
 fn fatal<S: Sys>(sys: &mut S, msg: &str) -> ! {

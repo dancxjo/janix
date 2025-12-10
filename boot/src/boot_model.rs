@@ -1,8 +1,11 @@
+extern crate alloc;
+
+use alloc::string::String;
 use kernel_core::log;
 use kernel_core::memory::{BootFrameAllocator, init_frame_pool};
 use kernel_core::model;
 use limine::memory_map::EntryType;
-use limine::request::{HhdmRequest, MemoryMapRequest, MpRequest};
+use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -15,6 +18,10 @@ static MP_REQUEST: MpRequest = MpRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
 
 pub fn seed_memory_graph_from_limine() {
     let Some(response) = MEMORY_MAP_REQUEST.get_response() else {
@@ -86,4 +93,77 @@ pub fn seed_cpu_graph_from_limine() {
 
 pub fn seed_boot_profile() {
     model::init_boot_profile();
+}
+
+pub fn seed_program_images_from_limine() {
+    let Some(response) = MODULE_REQUEST.get_response() else {
+        log("No Limine modules found for ProgramImage seeding");
+        return;
+    };
+
+    for (index, module) in response.modules().iter().enumerate() {
+        let identifier = derive_module_identifier((*module).cmdline(), (*module).path(), index);
+        let base_phys = (*module).addr() as u64;
+        let size = (*module).size() as u64;
+        if kernel_core::model::create_program_image(&identifier, index as u64, base_phys, size)
+            .is_none()
+        {
+            log("Failed to create ProgramImage Thing");
+        }
+    }
+}
+
+fn derive_module_identifier(cmdline: &[u8], path: &core::ffi::CStr, index: usize) -> String {
+    if let Ok(line) = core::str::from_utf8(cmdline) {
+        if let Some(arg) = line
+            .split_whitespace()
+            .find(|arg| arg.starts_with("program="))
+        {
+            let ident = arg.trim_start_matches("program=");
+            if !ident.is_empty() {
+                return String::from(ident);
+            }
+        }
+        if !line.is_empty() {
+            return String::from(last_path_component(line));
+        }
+    }
+
+    if let Ok(pstr) = path.to_str() {
+        let component = last_path_component(pstr);
+        if !component.is_empty() {
+            return String::from(component);
+        }
+    } else if let Ok(s) = core::str::from_utf8(path.to_bytes()) {
+        let component = last_path_component(s);
+        if !component.is_empty() {
+            return String::from(component);
+        }
+    }
+
+    let mut s = String::new();
+    s.push_str("module_");
+    if index == 0 {
+        s.push('0');
+        return s;
+    }
+    let mut n = index;
+    let mut buf = [0u8; 20];
+    let mut i = 0usize;
+    while n > 0 {
+        buf[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+        i += 1;
+    }
+    for j in (0..i).rev() {
+        s.push(buf[j] as char);
+    }
+    s
+}
+
+fn last_path_component(input: &str) -> &str {
+    input
+        .rsplit_once('/')
+        .map(|(_, tail)| tail)
+        .unwrap_or(input)
 }

@@ -319,6 +319,22 @@ impl Scheduler {
         self.threads[thread_index(tid)].as_mut()
     }
 
+    pub fn process_thing_id(&self, pid: ProcessId) -> Option<ThingId> {
+        let index = process_index(pid);
+        self.processes
+            .get(index)
+            .and_then(|slot| slot.as_ref())
+            .and_then(|process| process.thing_id)
+    }
+
+    pub fn thread_thing_id(&self, tid: ThreadId) -> Option<ThingId> {
+        let index = thread_index(tid);
+        self.threads
+            .get(index)
+            .and_then(|slot| slot.as_ref())
+            .and_then(|thread| thread.thing_id)
+    }
+
     pub fn thread_by_thing(&self, thing: ThingId) -> Option<&Thread> {
         self.threads
             .iter()

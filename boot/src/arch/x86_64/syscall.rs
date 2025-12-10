@@ -8,7 +8,9 @@
 //! helpers. The handler also saves/restores thread contexts and implements
 //! basic syscalls such as yield, sleep, logging, process/thread management,
 //! frame allocation, and time queries.
-use abi::{KernelRequest, KernelResponse, ProcessId, SyscallNumber, ThingId};
+use abi::{
+    KernelRequest, KernelResponse, ProcessId, SpawnProgramResult, SyscallNumber, ThingId,
+};
 use core::arch::global_asm;
 extern crate alloc;
 use crate::user;
@@ -215,6 +217,25 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         }) {
             KernelResponse::EdgeTarget { target } => target.map_or(u64::MAX, |id| id.0),
             _ => u64::MAX,
+        }
+    } else if num == SyscallNumber::SpawnProgram as u64 {
+        let boot_program_id = abi::ThingId(arg1);
+        let result_ptr = arg2 as *mut abi::SpawnProgramResult;
+        if result_ptr.is_null() {
+            return 1;
+        }
+        match crate::program::spawn_program(boot_program_id) {
+            Ok((process_id, thread_id)) => {
+                unsafe {
+                    (*result_ptr).process_id = process_id;
+                    (*result_ptr).thread_id = thread_id;
+                }
+                0
+            }
+            Err(msg) => {
+                kernel_core::log(msg);
+                1
+            }
         }
     } else if num == SyscallNumber::ThingCreate as u64 {
         let kind_ptr = arg1 as *const u8;

@@ -13,7 +13,7 @@ use abi::{
     ThreadId, ThreadInfo,
 };
 use alloc::string::String;
-use thing_models::{BootProfile, BootProgram};
+use thing_models::{BootProfile, BootProgram, ProgramImage};
 
 #[derive(Clone, Copy)]
 pub struct Thread {
@@ -182,6 +182,12 @@ pub fn init_schemas() {
         graph_kinds::KIND_BOOT_PROGRAM,
         BootProgram::DESCRIPTION,
         BootProgram::schema(),
+    );
+
+    let _ = graph::register_schema(
+        graph_kinds::KIND_PROGRAM_IMAGE,
+        ProgramImage::DESCRIPTION,
+        ProgramImage::schema(),
     );
 }
 
@@ -492,10 +498,10 @@ pub fn scheduler_tick() -> Option<ThreadInfo> {
     }
 }
 
-static BOOT_PROGRAMS: &[(&str, u64, u64)] = &[
-    ("hello", 1, 0),
-    ("heartbeat", 2, 0),
-    ("thread_dashboard", 3, 0),
+static BOOT_PROGRAMS: &[(&str, u64, u64, &str)] = &[
+    ("hello", 1, 0, "hello"),
+    ("heartbeat", 2, 0, "heartbeat"),
+    ("thread_dashboard", 3, 0, "thread_dashboard"),
 ];
 
 pub fn init_boot_profile() {
@@ -505,11 +511,12 @@ pub fn init_boot_profile() {
         return;
     };
 
-    for (name, app_id, priority) in BOOT_PROGRAMS {
+    for (name, app_id, priority, binary) in BOOT_PROGRAMS {
         let props = &[
             ("name", PropValue::Str(String::from(*name))),
             ("app_id", PropValue::U64(*app_id)),
             ("priority", PropValue::U64(*priority)),
+            ("binary", PropValue::Str(String::from(*binary))),
         ];
         if let Some(program) = graph::create_thing(graph_kinds::KIND_BOOT_PROGRAM, props) {
             let _ = graph::add_edge(profile, graph_kinds::EDGE_LAUNCHES, program);
@@ -588,4 +595,18 @@ pub fn dashboard_snapshot() -> DashboardSnapshot {
         scheduler,
         counts,
     }
+}
+pub fn create_program_image(
+    identifier: &str,
+    module_index: u64,
+    base_phys: u64,
+    size: u64,
+) -> Option<ThingId> {
+    let props = &[
+        ("identifier", PropValue::Str(String::from(identifier))),
+        ("module_index", PropValue::U64(module_index)),
+        ("base_phys", PropValue::U64(base_phys)),
+        ("size", PropValue::U64(size)),
+    ];
+    graph::create_thing(graph_kinds::KIND_PROGRAM_IMAGE, props)
 }

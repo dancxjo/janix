@@ -13,6 +13,7 @@ mod boot_model;
 mod console;
 mod context_switch;
 mod dashboard;
+mod program;
 #[cfg(target_arch = "x86_64")]
 mod gdt;
 mod graph_reifier;
@@ -140,6 +141,7 @@ fn init_world_graph() {
     boot_model::seed_memory_graph_from_limine();
     boot_model::seed_cpu_graph_from_limine();
     boot_model::seed_boot_profile();
+    boot_model::seed_program_images_from_limine();
 }
 
 #[cfg(not(feature = "boot-dashboard-only"))]

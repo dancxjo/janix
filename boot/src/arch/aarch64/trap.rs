@@ -77,6 +77,9 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             KernelResponse::FrameFreed { .. } => 0,
             _ => 1,
         }
+    } else if num == SyscallNumber::SpawnProgram as u64 {
+        kernel_core::log("SpawnProgram syscall not implemented for aarch64");
+        1
     } else {
         kernel_core::log("Unknown syscall");
         1

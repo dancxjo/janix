@@ -105,6 +105,10 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     }
 
     for program in driver_programs.iter().copied() {
+        log_dynamic(sys, format_args!("init: checking program binary='{}'", program.binary));
+        if program.binary == "init" {
+            continue;
+        }
         spawn_boot_program(sys, &init_process, &program_images, program);
     }
 
@@ -123,6 +127,10 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     }
 
     for program in other_app_programs.iter().copied() {
+        log_dynamic(sys, format_args!("init: checking program binary='{}'", program.binary));
+        if program.binary == "init" {
+            continue;
+        }
         spawn_boot_program(sys, &init_process, &program_images, program);
     }
 

@@ -36,6 +36,13 @@ pub struct UserlandSys;
 
 impl Sys for UserlandSys {
     fn syscall(&self, request: KernelRequest) -> KernelResponse {
+        if let KernelRequest::Log { .. } = &request {
+        } else {
+             let msg = "UserlandSys: syscall";
+             let ptr = msg.as_ptr() as u64;
+             let len = msg.len() as u64;
+             unsafe { syscall_stub(SyscallNumber::Log, ptr, len, 0, 0, 0, 0) };
+        }
         match request {
             KernelRequest::Log { message } => {
                 let ptr = message.as_ptr() as u64;
@@ -43,6 +50,7 @@ impl Sys for UserlandSys {
                 unsafe { syscall_stub(SyscallNumber::Log, ptr, len, 0, 0, 0, 0) };
                 KernelResponse::Success { data: None }
             }
+
             KernelRequest::ExitThread => self.exit_thread(),
             KernelRequest::SchedulerTick => {
                 unsafe { syscall_stub(SyscallNumber::Yield, 0, 0, 0, 0, 0, 0) };

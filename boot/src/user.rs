@@ -44,15 +44,15 @@ pub fn schedule_next() -> ! {
             }
             #[cfg(not(target_arch = "x86_64"))]
             {
-                let msg = alloc::format!(
-                    "schedule_next: tid={} started={} entry={:#x} usp={:#x} cr3_token={:?}",
-                    thread.tid.0,
-                    thread.started,
-                    thread.entry_point,
-                    thread.user_stack_top,
-                    thread.address_space_token
-                );
-                kernel_core::log(Box::leak(msg.into_boxed_str()));
+                // let msg = alloc::format!(
+                //     "schedule_next: tid={} started={} entry={:#x} usp={:#x} cr3_token={:?}",
+                //     thread.tid.0,
+                //     thread.started,
+                //     thread.entry_point,
+                //     thread.user_stack_top,
+                //     thread.address_space_token
+                // );
+                // kernel_core::log(Box::leak(msg.into_boxed_str()));
             }
             CurrentArch::activate_user_address_space(thread.address_space_token);
             if thread.started {

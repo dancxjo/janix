@@ -38,7 +38,12 @@ pub fn init() {
     transaction::init();
     model::init_schemas();
     graph_watchers::init();
+    
+    // Initialize hardware
+    hw::usb::init();
 }
+
+
 
 /// Register the function responsible for spawning programs described by BootProgram Things.
 ///

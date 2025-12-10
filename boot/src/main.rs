@@ -142,8 +142,15 @@ fn init_machine() {
         kernel_core::log(leaked);
     }
 
+    if let Some(hhdm_response) = boot_model::HHDM_REQUEST.get_response() {
+        let offset = hhdm_response.offset();
+        kernel_core::memory::set_hhdm_offset(offset);
+        unsafe { user::init_user_stack(offset) };
+    }
+
     kernel_core::log("Initializing kernel core...");
     kernel_core::init();
+
     kernel_core::register_spawn_program_handler(crate::program::spawn_program);
     {
         let mut sched = kernel_core::sched::SCHEDULER.lock();
@@ -163,12 +170,8 @@ fn init_machine() {
     log_rtc_epoch(rtc_epoch);
     kernel_core::time::init_timekeeping(rtc_epoch);
 
-    if let Some(hhdm_response) = boot_model::HHDM_REQUEST.get_response() {
-        let offset = hhdm_response.offset();
-        unsafe { user::init_user_stack(offset) };
-    }
-
     init_console();
+
     kernel_core::log("ThingOS booting...");
 }
 

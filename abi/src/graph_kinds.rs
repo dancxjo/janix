@@ -31,6 +31,12 @@ pub const KIND_WINDOW: &str = "Window";
 pub const KIND_SURFACE: &str = "Surface";
 pub const KIND_EDGE: &str = "EDG";
 
+pub const KIND_USB_CONTROLLER: &str = "UsbController";
+pub const KIND_USB_DEVICE: &str = "UsbDevice";
+pub const KIND_USB_ENDPOINT: &str = "UsbEndpoint";
+pub const KIND_USB_TRANSFER_REQUEST: &str = "UsbTransferRequest";
+pub const KIND_USB_TRANSFER_RESULT: &str = "UsbTransferResult";
+
 pub mod canon {
     use crate::EdgePred;
 

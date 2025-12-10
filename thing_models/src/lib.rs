@@ -6,6 +6,7 @@ pub mod display;
 pub mod input;
 pub mod io;
 pub mod ui;
+pub mod usb;
 
 use abi::{PropKey, PropType, PropValue, Thing, ThingId, graph_kinds};
 use alloc::string::String;
@@ -14,6 +15,7 @@ pub use display::*;
 pub use input::*;
 pub use io::*;
 pub use ui::*;
+pub use usb::*;
 
 pub struct ThreadInfo {
     pub name: String,  // "hello", "heartbeat", "dashboard"

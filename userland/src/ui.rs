@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use userland_rt::Sys;
 use userland_std::{self, Mode, Place, Surface, Window};
 use userland_std::{PropValue, ThingId};
-use userland_std::{Thing, graph_kinds};
+use userland_std::graph_kinds;
 use userland_std::{create_thing, list_things_by_kind, register_schema_for, update_props};
 
 #[derive(Clone, Copy, Debug)]
@@ -48,7 +48,7 @@ pub fn create_window<S: Sys>(sys: &mut S, title: &str, mode_index: u8) -> Option
 
 pub fn set_window_text<S: Sys>(sys: &mut S, window: WindowHandle, text: &str) {
     ensure_ui_schemas(sys);
-    let mut surfaces: Vec<Surface> = list_things_by_kind(sys);
+    let surfaces: Vec<Surface> = list_things_by_kind(sys);
     if let Some(surface) = surfaces.iter().find(|s| s.window_id == window.id) {
         let _ = update_props(
             sys,

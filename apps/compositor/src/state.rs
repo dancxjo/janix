@@ -7,7 +7,7 @@ use crate::graph::{
     active_framebuffer, collect_surfaces_for_windows, collect_windows_for_place,
     console_mode_active, current_mode, handle_mode_switches, layout_policy_for_mode,
 };
-use crate::layout::{self, LayoutPolicy, StackedWindow};
+use crate::layout::{self, StackedWindow};
 use crate::model::Compositor;
 use crate::render::{build_display_list, render_display_list};
 

@@ -110,8 +110,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             }
         }
         kernel_core::sched::yield_current_thread();
-        user::schedule_next();
-        0
+        return user::schedule_next();
     } else if num == SyscallNumber::SleepForNs as u64 {
         {
             let mut sched = kernel_core::sched::SCHEDULER.lock();
@@ -124,8 +123,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                 }
             }
         }
-        user::sys_sleep_for_ns(arg1);
-        0
+        return user::sys_sleep_for_ns(arg1);
     } else if num == SyscallNumber::Log as u64 {
         let ptr = arg1 as *const u8;
         let len = arg2 as usize;
@@ -137,8 +135,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     } else if num == SyscallNumber::ExitThread as u64 {
         kernel_core::log("Thread exited via syscall");
         kernel_core::sched::exit_current_thread();
-        user::schedule_next();
-        0
+        return user::schedule_next();
     } else if num == SyscallNumber::AllocFrame as u64 {
         let pool_index = arg1;
         let frame_info_ptr = arg2 as *mut abi::FrameInfo;

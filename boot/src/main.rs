@@ -19,7 +19,6 @@ use crate::arch::{Arch, CurrentArch};
 use user_app_heartbeat;
 use user_app_hello;
 use user_app_thread_dashboard;
-use userland_rt::KernelSys;
 
 use core::arch::asm;
 
@@ -96,16 +95,20 @@ unsafe extern "C" fn kmain() -> ! {
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
     kernel_core::log("Entered kmain_inner");
+    init_machine();
+    init_world_graph();
+    init_userland_and_enter_scheduler();
+}
+
+fn init_machine() {
     // All limine requests must also be referenced in a called function
     assert!(BASE_REVISION.is_supported());
 
-    // Initialize heap
     unsafe {
         heap::KERNEL_ALLOCATOR.init(core::ptr::addr_of_mut!(HEAP_MEMORY) as usize, HEAP_SIZE);
     }
 
     kernel_core::log("Initializing kernel core...");
-    // Initialize kernel core
     kernel_core::init();
     {
         let mut sched = kernel_core::sched::SCHEDULER.lock();
@@ -114,114 +117,80 @@ unsafe extern "C" fn kmain_inner() -> ! {
     kernel_core::log("Kernel core initialized.");
     graph_reifier::init_graph_subscriptions();
 
-    // Initialize GDT
     #[cfg(target_arch = "x86_64")]
     {
         gdt::init();
     }
 
-    // Initialize syscall handler (and IDT/traps)
     CurrentArch::install_syscall_handler();
 
-    // Initialize user stack mapping
     if let Some(hhdm_response) = boot_model::HHDM_REQUEST.get_response() {
         let offset = hhdm_response.offset();
-        // serial::arch::init_serial(offset); // Already inited
         unsafe { user::init_user_stack(offset) };
     }
 
-    // Log startup message
+    init_console();
     kernel_core::log("ThingOS booting...");
+}
 
-    // Create builtin kernel Things
+fn init_world_graph() {
     kernel_core::create_builtin_things();
-
-    // Initialize boot graph with memory and scheduling Things
     boot_model::seed_memory_graph_from_limine();
     boot_model::seed_cpu_graph_from_limine();
+}
 
-    // Initialize console on the Limine framebuffer
+fn spawn_demo_thread(process_name: &'static str, thread_name: &'static str, app_id: u64) {
+    let stack = user::alloc_user_stack();
+    let (process_id, thread_id) = {
+        let mut sched = kernel_core::sched::SCHEDULER.lock();
+        let pid = sched.add_process(process_name);
+        let tid = sched.add_thread(pid, thread_name, user::user_thread_main, app_id, stack);
+        (pid, tid)
+    };
+    kernel_core::println!("... created process {}", process_id.0);
+    kernel_core::println!("... created thread {}", thread_id.0);
+}
+
+#[cfg(not(feature = "boot-dashboard-only"))]
+fn init_userland_and_enter_scheduler() -> ! {
+    kernel_core::log("Launching user_app_hello from kernel...");
+    spawn_demo_thread("user_app_hello", "hello", 1);
+
+    kernel_core::log("Launching user_app_heartbeat from kernel...");
+    spawn_demo_thread("user_app_heartbeat", "heartbeat", 2);
+
+    kernel_core::log("Launching user_app_thread_dashboard from kernel...");
+    spawn_demo_thread("user_app_thread_dashboard", "dashboard", 3);
+
+    kernel_core::log("Entering first user thread...");
+    user::schedule_next();
+}
+
+#[cfg(feature = "boot-dashboard-only")]
+fn init_userland_and_enter_scheduler() -> ! {
+    render_dashboard_and_halt();
+}
+
+#[cfg(feature = "boot-dashboard-only")]
+fn render_dashboard_and_halt() -> ! {
+    if init_console() {
+        console::with_console(|console| {
+            dashboard::render_dashboard(console);
+        });
+    } else {
+        kernel_core::log("No framebuffer available for dashboard");
+    }
+    hcf();
+}
+
+fn init_console() -> bool {
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             unsafe { console::init_global(&framebuffer) };
-
-            // Run the demo app through the same Sys trait as the host:
-            // let sys = KernelSys;
-            kernel_core::log("Launching user_app_hello from kernel...");
-            // user_app_hello::run(&sys);
-            let stack1 = user::alloc_user_stack();
-            // kernel_core::model::create_user_thread_for_app(100, 1, user::user_thread_main, stack1);
-            {
-                let mut sched = kernel_core::sched::SCHEDULER.lock();
-                let p1 = sched.add_process("user_app_hello");
-                sched.add_thread(p1, "hello", user::user_thread_main, 1, stack1);
-            }
-            kernel_core::log("... created process 100");
-            kernel_core::log("... created thread 101 in process 100");
-
-            kernel_core::log("Launching user_app_heartbeat from kernel...");
-            // user_app_heartbeat::run(&sys);
-            let stack2 = user::alloc_user_stack();
-            // kernel_core::model::create_user_thread_for_app(200, 2, user::user_thread_main, stack2);
-            {
-                let mut sched = kernel_core::sched::SCHEDULER.lock();
-                let p2 = sched.add_process("user_app_heartbeat");
-                sched.add_thread(p2, "heartbeat", user::user_thread_main, 2, stack2);
-            }
-            kernel_core::log("... created process 200");
-            kernel_core::log("... created thread 201 in process 200");
-
-            kernel_core::log("Launching user_app_thread_dashboard from kernel...");
-            let stack3 = user::alloc_user_stack();
-            {
-                let mut sched = kernel_core::sched::SCHEDULER.lock();
-                let p3 = sched.add_process("user_app_thread_dashboard");
-                // Launch with app_id = 3
-                sched.add_thread(p3, "dashboard", user::user_thread_main, 3, stack3);
-            }
-            kernel_core::log("... created process 300");
-            kernel_core::log("... created thread 301 in process 300");
-
-            // TEMPORARY: Test user mode entry
-            kernel_core::log("Entering first user thread...");
-            user::schedule_next();
-
-            /*
-            kernel_core::log("Starting scheduler loop...");
-            for _ in 0..100 {
-                if let Some(thread) = kernel_core::model::scheduler_tick() {
-                    match thread.tid {
-                        101 => user_app_hello::tick(&sys),
-                        201 => user_app_heartbeat::tick(&sys),
-                        _ => {}
-                    }
-                }
-            }
-            kernel_core::log("Scheduler loop finished.");
-            */
-
-            // Render dashboard instead of just raw log dump
-            console::with_console(|console| {
-                dashboard::render_dashboard(console);
-            });
-
-            // Optionally: halt, or spin
-            loop {
-                unsafe {
-                    #[cfg(target_arch = "x86_64")]
-                    asm!("hlt");
-                    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-                    asm!("wfi");
-                    #[cfg(target_arch = "loongarch64")]
-                    asm!("idle 0");
-                }
-            }
+            return true;
         }
     }
-
-    kernel_core::log("ThingOS started successfully");
-
-    hcf();
+    false
 }
 
 #[panic_handler]

@@ -3,6 +3,9 @@ name = "boot"
 version.workspace = true
 edition.workspace = true
 
+[features]
+boot-dashboard-only = []
+
 [dependencies]
 limine.workspace = true
 kernel_core = { path = "../kernel_core" }

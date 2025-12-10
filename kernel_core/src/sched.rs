@@ -35,6 +35,16 @@ pub struct Thread {
     pub total_run_ns: u64,
 }
 
+pub struct ScheduledThread {
+    pub tid: ThreadId,
+    pub name: &'static str,
+    pub started: bool,
+    pub entry_point: u64,
+    pub user_stack_top: u64,
+    pub user_arg: u64,
+    pub context: [u64; 34],
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Process {
     pub id: ProcessId,
@@ -253,6 +263,29 @@ impl Scheduler {
             return Some(self.run_queue.remove(0));
         }
         None
+    }
+
+    pub fn choose_next_thread(&mut self, now_ns: u64) -> Option<ScheduledThread> {
+        self.wake_sleepers(now_ns);
+        let tid = self.next_runnable()?;
+        self.set_current(tid);
+        let thread = self
+            .thread_mut(tid)
+            .expect("Scheduled thread missing backing state");
+        let entry_point = thread
+            .user_entry
+            .map(|entry| entry as u64)
+            .expect("Thread missing entry point");
+
+        Some(ScheduledThread {
+            tid,
+            name: thread.name,
+            started: thread.started,
+            entry_point,
+            user_stack_top: thread.user_stack_top,
+            user_arg: thread.user_arg,
+            context: thread.context,
+        })
     }
 
     pub fn set_current(&mut self, tid: ThreadId) {

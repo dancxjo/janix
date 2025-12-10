@@ -153,3 +153,43 @@ impl FramebufferFixture {
         Self { fb, buffer }
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct DummyThing {
+    pub id: ThingId,
+    pub flag: bool,
+}
+
+impl DummyThing {
+    pub fn new(flag: bool) -> Self {
+        DummyThing {
+            id: ThingId(0),
+            flag,
+        }
+    }
+}
+
+impl Thing for DummyThing {
+    const KIND: &'static str = "Dummy";
+    const DESCRIPTION: &'static str = "dummy";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("flag", PropValue::Bool(self.flag)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut flag = false;
+        for (k, v) in props.iter().flatten() {
+            if *k == "flag" {
+                if let PropValue::Bool(b) = v {
+                    flag = *b;
+                }
+            }
+        }
+        DummyThing { id, flag }
+    }
+
+    fn schema() -> &'static [(&'static str, abi::PropType)] {
+        &[("flag", abi::PropType::Bool)]
+    }
+}

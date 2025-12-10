@@ -15,5 +15,7 @@ mod state;
 
 #[cfg(test)]
 mod test_support;
+#[cfg(test)]
+mod mock_tests;
 
 pub use state::run;

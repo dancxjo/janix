@@ -2,9 +2,9 @@ use abi::PropValue;
 use abi::ThingId;
 use kernel_core::graph::{self, GraphEvent};
 use kernel_core::graph_kinds;
+use kernel_core::sched_types::CpuId;
 
-const MAX_CPUS: usize = 4;
-static mut CURRENT_THREADS: [Option<ThingId>; MAX_CPUS] = [None; MAX_CPUS];
+use crate::context_switch::{arch_current_thread, arch_switch_to_thread};
 
 fn cpu_index_from_node(node: ThingId) -> Option<usize> {
     match graph::get_prop(node, "index") {
@@ -25,19 +25,10 @@ fn on_runs_on_edge(event: &GraphEvent) {
         }
 
         if let Some(cpu_index) = cpu_index_from_node(*cpu_node) {
-            unsafe {
-                if cpu_index < MAX_CPUS {
-                    let previous = CURRENT_THREADS[cpu_index];
-                    CURRENT_THREADS[cpu_index] = Some(*thread_id);
-
-                    // Placeholder hook for a real context switch once arch code is ready.
-                    kernel_core::println!(
-                        "Would context switch CPU {} to Thread({}) now (prev={:?})",
-                        cpu_index,
-                        thread_id.0,
-                        previous.map(|id| id.0)
-                    );
-                }
+            let cpu = cpu_index as CpuId;
+            let current = arch_current_thread(cpu);
+            if current != Some(*thread_id) {
+                arch_switch_to_thread(cpu, *thread_id);
             }
         }
     }

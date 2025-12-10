@@ -274,6 +274,25 @@ impl Scheduler {
         self.threads[tid.0 as usize].as_mut()
     }
 
+    pub fn thread_by_thing(&self, thing: ThingId) -> Option<&Thread> {
+        self.threads
+            .iter()
+            .flatten()
+            .find(|thread| thread.thing_id == Some(thing))
+    }
+
+    #[allow(dead_code)]
+    pub fn thread_mut_by_thing(&mut self, thing: ThingId) -> Option<&mut Thread> {
+        self.threads
+            .iter_mut()
+            .flatten()
+            .find(|thread| thread.thing_id == Some(thing))
+    }
+
+    pub fn thread_id_for_thing(&self, thing: ThingId) -> Option<ThreadId> {
+        self.thread_by_thing(thing).map(|thread| thread.id)
+    }
+
     pub fn all_done(&self) -> bool {
         for thread in self.threads.iter().flatten() {
             if thread.state != ThreadState::Exited {

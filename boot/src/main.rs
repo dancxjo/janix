@@ -6,6 +6,7 @@
 mod arch;
 mod boot_model;
 mod console;
+mod context_switch;
 mod dashboard;
 #[cfg(target_arch = "x86_64")]
 mod gdt;

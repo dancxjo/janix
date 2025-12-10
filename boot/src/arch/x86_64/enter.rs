@@ -132,6 +132,12 @@ pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
         rdi: regs.arg0,
     };
 
+    kernel_core::println!(
+        "enter_user_mode selectors: cs={:#x}, ss={:#x}",
+        x86_regs.user_cs,
+        x86_regs.user_ss,
+    );
+
     unsafe { enter_user_mode_asm(&x86_regs as *const _) }
 }
 

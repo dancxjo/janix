@@ -131,6 +131,13 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     let arg5 = regs.r8;
     let _arg6 = regs.r9;
 
+    kernel_core::println!(
+        "syscall entry regs: rip={:#x}, cs={:#x}, ss={:#x}",
+        regs.rip,
+        regs.cs,
+        regs.ss,
+    );
+
     if num == SyscallNumber::Yield as u64 {
         {
             let mut sched = kernel_core::sched::SCHEDULER.lock();

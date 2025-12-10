@@ -72,6 +72,7 @@ fn special_display(ch: char) -> Option<&'static str> {
 mod tests {
     use super::*;
     use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
+    use alloc::vec;
     use alloc::vec::Vec;
     use thing_models::InputCharEvent;
     use userland_std::doc_helpers::DocSys;
@@ -143,7 +144,9 @@ mod tests {
                 sequence_index: 12,
             },
         ];
-        let mut sys = DocSys::with_responses(list_responses(&events));
+        let mut responses = list_responses(&events);
+        responses.push(KernelResponse::Success { data: None });
+        let mut sys = DocSys::with_responses(responses);
         let mut last_sequence = Some(6);
         log_new_events(&mut sys, &mut last_sequence);
         assert_eq!(last_sequence, Some(12));

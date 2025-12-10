@@ -318,7 +318,7 @@ fn wait_for_boot_profile<S: Sys>(sys: &mut S) -> BootProfile {
 mod tests {
     use super::*;
     use abi::{KernelRequest, KernelResponse, ThingId};
-    use std::vec::Vec;
+    use alloc::vec::Vec;
     use thing_models::{BootProgram, ProgramImage};
     use userland_std::{ProcessThing, doc_helpers::DocSys, graph_kinds};
 
@@ -356,6 +356,9 @@ mod tests {
     #[test]
     fn spawn_boot_program_links_process_and_logs() {
         let mut sys = DocSys::with_responses(vec![
+            KernelResponse::Success { data: None },
+            KernelResponse::Success { data: None },
+            KernelResponse::Success { data: None },
             KernelResponse::ProgramSpawned {
                 process_id: ThingId(30),
                 thread_id: ThingId(31),

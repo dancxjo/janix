@@ -144,10 +144,12 @@ mod tests {
 
     #[test]
     fn ensure_boot_profile_creates_when_missing() {
-        let mut sys = DocSys::with_responses(vec![
+        let mut responses = vec![
             KernelResponse::ThingListEntry { id: None },
             KernelResponse::ThingCreated { id: ThingId(88) },
-        ]);
+        ];
+        responses.push(KernelResponse::Success { data: None });
+        let mut sys = DocSys::with_responses(responses);
         assert_eq!(ensure_boot_profile(&mut sys), ThingId(88));
         let requests = sys.requests.borrow();
         assert!(requests.iter().any(|request| matches!(
@@ -172,6 +174,7 @@ mod tests {
             props: thing_props(&profile),
         });
         responses.push(KernelResponse::ThingListEntry { id: None });
+        responses.push(KernelResponse::Success { data: None });
         let mut sys = DocSys::with_responses(responses);
         assert_eq!(ensure_boot_profile(&mut sys), profile.id);
     }

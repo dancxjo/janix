@@ -285,6 +285,9 @@ endif
 		done; \
 	fi
 	cp -v limine.conf.tmp iso_root/boot/limine/limine.conf
+ifeq ($(KARCH),riscv64)
+	cp templates/riscv-startup.nsh iso_root/startup.nsh
+endif
 	mkdir -p iso_root/EFI/BOOT
 ifeq ($(KARCH),x86_64)
 	cp -v limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/boot/limine/
@@ -356,6 +359,9 @@ endif
 		done; \
 	fi
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf.tmp ::/boot/limine
+ifeq ($(KARCH),riscv64)
+	mcopy -i $(IMAGE_NAME).hdd@@1M templates/riscv-startup.nsh ::/
+endif
 ifeq ($(KARCH),x86_64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/limine-bios.sys ::/boot/limine
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTX64.EFI ::/EFI/BOOT

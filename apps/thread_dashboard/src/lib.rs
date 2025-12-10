@@ -1,5 +1,7 @@
 #![no_std]
 
+extern crate alloc;
+
 use userland::prelude::*;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
@@ -50,7 +52,8 @@ fn log_thread_snapshot<S: Sys>(sys: &mut S, threads: &[ThreadThing]) {
 mod tests {
     use super::log_thread_snapshot;
     use abi::{KernelRequest, ThingId};
-    use std::vec::Vec;
+    use alloc::string::ToString;
+    use alloc::vec::Vec;
     use userland_std::{ThreadThing, doc_helpers::DocSys};
 
     fn thread(id: u64, tid: u64, state: &str) -> ThreadThing {
@@ -67,7 +70,9 @@ mod tests {
     #[test]
     fn logs_each_thread_line() {
         let mut sys = DocSys::with_responses(Vec::new());
-        let threads = vec![thread(2, 10, "Running"), thread(3, 20, "Sleeping")];
+        let mut threads = Vec::new();
+        threads.push(thread(2, 10, "Running"));
+        threads.push(thread(3, 20, "Sleeping"));
         log_thread_snapshot(&mut sys, &threads);
 
         let requests = sys.requests.borrow();

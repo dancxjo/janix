@@ -96,48 +96,6 @@ unsafe extern "C" fn kmain() -> ! {
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
     kernel_core::log("Entered kmain_inner");
-    // Initialize heap allocator for kernel_core allocations
-    unsafe {
-        heap::KERNEL_ALLOCATOR.init(core::ptr::addr_of_mut!(HEAP_MEMORY) as usize, HEAP_SIZE);
-    }
-    kernel_core::init();
-    {
-        let mut sched = kernel_core::sched::SCHEDULER.lock();
-        sched.init_graph_mirror();
-    }
-    graph_reifier::init_graph_subscriptions();
-    kernel_core::create_builtin_things();
-    kernel_core::init_boot_graph();
-
-    let mut graph = kernel_core::graph::Graph::new();
-    let mut fake_now = 0_u64;
-
-    // Minimal kmain_inner loop while we wire up full arch reification.
-    loop {
-        fake_now = fake_now.saturating_add(1_000_000);
-        kernel_core::sched_tick::sched_tick(&mut graph, 0, fake_now);
-        unsafe {
-            #[cfg(target_arch = "x86_64")]
-            core::arch::asm!("hlt");
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-            core::arch::asm!("wfi");
-            #[cfg(target_arch = "loongarch64")]
-            core::arch::asm!("idle 0");
-        }
-    }
-}
-
-/*
-#[unsafe(no_mangle)]
-unsafe extern "C" fn kmain_inner() -> ! {
-    kernel_core::log("Entered kmain_inner");
-    // All limine requests must also be referenced in a called function
-    assert!(BASE_REVISION.is_supported());
-    // ... (rest of the function)
-*/
-#[allow(dead_code)]
-unsafe extern "C" fn kmain_inner_original() -> ! {
-    kernel_core::log("Entered kmain_inner");
     // All limine requests must also be referenced in a called function
     assert!(BASE_REVISION.is_supported());
 

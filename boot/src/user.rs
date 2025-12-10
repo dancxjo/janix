@@ -6,7 +6,7 @@ use crate::user_app_hello;
 use crate::user_app_init;
 use crate::user_app_thread_dashboard;
 use kernel_core::sched::SCHEDULER;
-use userland_rt::{Sys, UserlandSys};
+use userland_rt::UserlandSys;
 
 // Re-export stack functions from current arch
 pub use crate::arch::current::{alloc_user_stack, init_user_stack};

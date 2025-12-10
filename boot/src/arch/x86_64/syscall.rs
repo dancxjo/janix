@@ -299,7 +299,8 @@ fn leak_user_str(ptr: u64, len: usize) -> Option<&'static str> {
         return Some("");
     }
     let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len) };
-    core::str::from_utf8(bytes)
-        .ok()
-        .map(|s| Box::leak(s.to_string().into_boxed_str()))
+    core::str::from_utf8(bytes).ok().map(|s| {
+        let leaked: &'static mut str = Box::leak(s.to_string().into_boxed_str());
+        leaked as &'static str
+    })
 }

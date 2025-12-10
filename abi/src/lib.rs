@@ -121,6 +121,11 @@ pub enum KernelRequest {
     SpawnProgram {
         boot_program_id: ThingId,
     },
+    /// Enumerate Things of a given kind
+    ThingList {
+        kind: &'static str,
+        start_after: ThingId,
+    },
     /// Get a Thing
     ThingGet { id: ThingId },
     /// Update a Thing
@@ -224,6 +229,10 @@ pub enum KernelResponse {
         process_id: ThingId,
         thread_id: ThingId,
     },
+    /// Result of Thing enumeration
+    ThingListEntry {
+        id: Option<ThingId>,
+    },
 }
 
 pub const THING_GET_MAX_KIND_LEN: usize = 128;
@@ -315,6 +324,7 @@ pub enum SyscallNumber {
     AddEdge = 23,
     EdgeAt = 24,
     SpawnProgram = 25,
+    ThingList = 26,
     // Add others as needed
 }
 

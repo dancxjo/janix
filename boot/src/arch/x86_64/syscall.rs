@@ -81,8 +81,8 @@ syscall_handler_asm:
     pop rdx
     pop rsi
     pop rdi
-    pop rax
-    
+    add rsp, 8
+
     iretq
 "#
 );
@@ -308,6 +308,27 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                 let leaked: &'static str = Box::leak(msg.into_boxed_str());
                 kernel_core::log(leaked);
                 1
+            }
+        }
+    } else if num == SyscallNumber::ThingList as u64 {
+        let kind_ptr = arg1 as *const u8;
+        let kind_len = arg2 as usize;
+        let start_after = ThingId(arg3);
+        let kind = unsafe {
+            core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("")
+        };
+        let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
+        match kernel_core::handle_request(KernelRequest::ThingList {
+            kind: kind_static,
+            start_after,
+        }) {
+            KernelResponse::ThingListEntry { id } => id.map_or(u64::MAX, |tid| tid.0),
+            KernelResponse::Error { .. } => u64::MAX,
+            other => {
+                let msg = alloc::format!("ThingList unexpected response {:?}", other);
+                let leaked: &'static str = Box::leak(msg.into_boxed_str());
+                kernel_core::log(leaked);
+                u64::MAX
             }
         }
     } else if num == SyscallNumber::ThingCreate as u64 {

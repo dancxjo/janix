@@ -325,11 +325,21 @@ pub fn add_edge(sys: &impl Sys, from: ThingId, edge_kind: &'static str, to: Thin
 /// This currently uses a brute-force scan of IDs 0..256.
 pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &mut S) -> Vec<T> {
     let mut results = Vec::new();
-    // Scan a reasonable range of IDs. In a real system, we'd have a specific syscall.
-    for i in 0..256 {
-        if let Some(thing) = load_thing::<T>(sys, ThingId(i)) {
-            // load_thing already checks T::KIND
-            results.push(thing);
+    let mut cursor = ThingId(u64::MAX);
+    loop {
+        match sys.syscall(KernelRequest::ThingList {
+            kind: T::KIND,
+            start_after: cursor,
+        }) {
+            KernelResponse::ThingListEntry { id: Some(next_id) } => {
+                if let Some(thing) = load_thing::<T>(sys, next_id) {
+                    results.push(thing);
+                }
+                cursor = next_id;
+            }
+            KernelResponse::ThingListEntry { id: None } => break,
+            KernelResponse::Error { .. } => break,
+            _ => break,
         }
     }
     results

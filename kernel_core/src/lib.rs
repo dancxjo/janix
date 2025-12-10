@@ -92,6 +92,9 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 message: "Thing not found",
             },
         },
+        KernelRequest::ThingList { kind, start_after } => KernelResponse::ThingListEntry {
+            id: graph::next_thing_of_kind(kind, start_after),
+        },
         KernelRequest::ThingUpdate { id, props } => {
             // Get the kind first to validate
             if let Some((kind, _)) = graph::get_thing(id) {

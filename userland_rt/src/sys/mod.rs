@@ -209,6 +209,28 @@ impl Sys for UserlandSys {
                     }
                 }
             }
+            KernelRequest::ThingList { kind, start_after } => {
+                let kind_ptr = kind.as_ptr() as u64;
+                let kind_len = kind.len() as u64;
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::ThingList,
+                        kind_ptr,
+                        kind_len,
+                        start_after.0,
+                        0,
+                        0,
+                        0,
+                    )
+                };
+                if ret == u64::MAX {
+                    KernelResponse::ThingListEntry { id: None }
+                } else {
+                    KernelResponse::ThingListEntry {
+                        id: Some(abi::ThingId(ret)),
+                    }
+                }
+            }
             KernelRequest::AddEdge {
                 from,
                 edge_kind,

@@ -287,6 +287,26 @@ where
     }
 }
 
+/// Find the next Thing of the specified kind after a given ThingId.
+pub fn next_thing_of_kind(kind: &'static str, start_after: ThingId) -> Option<ThingId> {
+    unsafe {
+        let mut idx = if start_after.0 == u64::MAX {
+            0
+        } else {
+            start_after.0.saturating_add(1)
+        };
+        while idx < MAX_THINGS as u64 {
+            if let Some(node) = THINGS[idx as usize].as_ref() {
+                if node.kind == kind {
+                    return Some(node.id);
+                }
+            }
+            idx += 1;
+        }
+    }
+    None
+}
+
 fn dispatch_event(event: &GraphEvent) {
     unsafe {
         match event {

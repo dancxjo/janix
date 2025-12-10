@@ -46,3 +46,19 @@ fn seconds_to_hms(seconds: i64) -> (u32, u32, u32) {
     let second = (secs % 60) as u32;
     (hour, minute, second)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::seconds_to_hms;
+
+    #[test]
+    fn formats_small_time_values() {
+        assert_eq!(seconds_to_hms(7 * 3_600 + 5 * 60 + 9), (7, 5, 9));
+    }
+
+    #[test]
+    fn wraps_at_midnight() {
+        assert_eq!(seconds_to_hms(86_400), (0, 0, 0));
+        assert_eq!(seconds_to_hms(-1), (23, 59, 59));
+    }
+}

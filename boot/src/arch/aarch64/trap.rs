@@ -159,8 +159,8 @@ pub unsafe fn jump_to_el1_stack(stack_top: u64, entry: unsafe extern "C" fn() ->
     // kernel_core::println!("Switching to SP_EL1. Stack: {:#x}, Entry: {:#x}", stack_top, entry as usize);
     unsafe {
         core::arch::asm!(
-            "msr sp_el1, {stack}",
             "msr spsel, #1",
+            "mov sp, {stack}",
             "mov x29, xzr", // Clear FP
             "mov x30, xzr", // Clear LR
             "isb",

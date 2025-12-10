@@ -1,11 +1,13 @@
 extern crate alloc;
 
-use alloc::string::String;
-use kernel_core::log;
+use abi::{PropValue, Thing, ThingId};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use kernel_core::memory::{BootFrameAllocator, init_frame_pool};
 use kernel_core::model;
+use kernel_core::{graph, graph_kinds, log, time};
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
+use thing_models::{AlarmRequest, BootProgram, TimeSource};
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -119,7 +121,101 @@ pub fn seed_program_images_from_limine() {
     }
 }
 
-fn derive_module_identifier(cmdline: &core::ffi::CStr, path: &core::ffi::CStr, index: usize) -> String {
+pub fn seed_boot_programs_from_limine() {
+    let Some(profile_id) =
+        graph::next_thing_of_kind(graph_kinds::KIND_BOOT_PROFILE, ThingId(u64::MAX))
+    else {
+        log("No BootProfile found; skipping BootProgram seeding");
+        return;
+    };
+
+    let Some(response) = MODULE_REQUEST.get_response() else {
+        log("No Limine modules found for BootProgram seeding");
+        return;
+    };
+
+    let mut app_id = 1_u64;
+    let mut created = 0_u64;
+
+    for (index, module) in response.modules().iter().enumerate() {
+        let identifier = derive_module_identifier((*module).string(), (*module).path(), index);
+
+        if identifier == "init" {
+            continue;
+        }
+
+        if !cfg!(feature = "rootfs") && identifier == "rootfs" {
+            continue;
+        }
+
+        if boot_program_exists(&identifier) {
+            continue;
+        }
+
+        let boot_program = BootProgram {
+            id: ThingId(0),
+            name: identifier.clone(),
+            app_id,
+            priority: 0,
+            binary: identifier.clone(),
+        };
+
+        let mut props_vec = Vec::new();
+        boot_program.to_props(&mut props_vec);
+        let props_slice = Box::leak(props_vec.into_boxed_slice());
+
+        if let Some(program) = graph::create_thing(graph_kinds::KIND_BOOT_PROGRAM, props_slice) {
+            let _ = graph::add_edge(profile_id, graph_kinds::EDGE_LAUNCHES, program);
+            created = created.saturating_add(1);
+            app_id = app_id.saturating_add(1);
+        } else {
+            log("Failed to create BootProgram Thing");
+        }
+    }
+
+    let msg = alloc::format!("Seeded {} BootProgram Things from Limine modules", created);
+    let leaked: &'static str = Box::leak(msg.into_boxed_str());
+    log(leaked);
+}
+
+pub fn seed_time_graph() {
+    let tick_hz = time::tick_hz();
+    let epoch_secs = time::rtc_epoch_seconds();
+    let time_props = TimeSource::create(tick_hz, epoch_secs, 0);
+    if let Some(time_id) = graph::create_thing(graph_kinds::KIND_TIME_SOURCE, &time_props) {
+        time::bind_time_source(time_id);
+        let msg = alloc::format!(
+            "TimeSource created id={} tick_hz={} epoch_seconds={}",
+            time_id.0,
+            tick_hz,
+            epoch_secs
+        );
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        log(leaked);
+    } else {
+        log("Failed to create TimeSource Thing");
+    }
+
+    let boot_alarm_secs = epoch_secs.saturating_add(3);
+    let alarm_props = AlarmRequest::create_pending(boot_alarm_secs, 0, ThingId(0), ThingId(0));
+    if let Some(alarm_id) = graph::create_thing(graph_kinds::KIND_ALARM_REQUEST, &alarm_props) {
+        let msg = alloc::format!(
+            "Boot AlarmRequest id={} targeting {} seconds",
+            alarm_id.0,
+            boot_alarm_secs
+        );
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        log(leaked);
+    } else {
+        log("Failed to create boot AlarmRequest Thing");
+    }
+}
+
+fn derive_module_identifier(
+    cmdline: &core::ffi::CStr,
+    path: &core::ffi::CStr,
+    index: usize,
+) -> String {
     if let Some(cmd_ident) = parse_identifier_from_cmdline(cmdline) {
         return cmd_ident;
     }
@@ -204,4 +300,27 @@ fn parse_program_argument(line: &str) -> Option<String> {
             let ident = arg.trim_start_matches("program=");
             (!ident.is_empty()).then(|| String::from(ident))
         })
+}
+
+fn boot_program_exists(binary: &str) -> bool {
+    let mut cursor = ThingId(u64::MAX);
+    loop {
+        match graph::next_thing_of_kind(graph_kinds::KIND_BOOT_PROGRAM, cursor) {
+            Some(id) => {
+                if let Some((_kind, props)) = graph::get_thing(id) {
+                    for prop in props.iter().flatten() {
+                        if prop.0 == "binary" {
+                            if let PropValue::Str(ref s) = prop.1 {
+                                if s == binary {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                cursor = id;
+            }
+            None => return false,
+        }
+    }
 }

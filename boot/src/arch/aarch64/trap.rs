@@ -1,6 +1,11 @@
 use crate::user;
-use abi::{KernelRequest, KernelResponse, SyscallNumber};
+use abi::{
+    KernelRequest, KernelResponse, ProcessId, SyscallNumber, THING_GET_MAX_KIND_LEN,
+    THING_GET_MAX_PROPS, THING_GET_MAX_STR_LEN, ThingGetSyscallResult, ThingId, ThingPropData,
+    ThingPropScalarType,
+};
 use core::arch::global_asm;
+use core::cmp;
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::string::ToString;
@@ -14,8 +19,11 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     let ec = (esr >> 26) & 0x3F;
 
     if ec != 0x15 {
+        let far: u64;
+        unsafe { core::arch::asm!("mrs {}, far_el1", out(reg) far) };
         kernel_core::println!("EXCEPTION: AArch64 Trap (Not SVC)");
         kernel_core::println!("ESR: {:#x}", esr);
+        kernel_core::println!("FAR: {:#x}", far);
         kernel_core::println!("{:#?}", tf);
         loop {}
     }
@@ -28,21 +36,15 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     let arg5 = tf.x4;
     let arg6 = tf.x5;
 
+    static mut UNKNOWN_SYSCALLS_LOGGED: usize = 0;
+
     if num == SyscallNumber::Yield as u64 {
-        {
-            let mut sched = kernel_core::sched::SCHEDULER.lock();
-            if let Some(tid) = sched.current_id() {
-                if let Some(thread) = sched.thread_mut(tid) {
-                    let regs_ptr = tf as *const TrapFrame as *const u64;
-                    let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 34) };
-                    thread.context.copy_from_slice(regs_slice);
-                    thread.started = true;
-                }
-            }
-        }
+        save_current_thread_context(tf);
         kernel_core::sched::yield_current_thread();
-        user::schedule_next();
-        0
+        return user::schedule_next();
+    } else if num == SyscallNumber::SleepForNs as u64 {
+        save_current_thread_context(tf);
+        return user::sys_sleep_for_ns(arg1);
     } else if num == SyscallNumber::Log as u64 {
         let ptr = arg1 as *const u8;
         let len = arg2 as usize;
@@ -54,8 +56,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     } else if num == SyscallNumber::ExitThread as u64 {
         kernel_core::log("Thread exited via syscall");
         kernel_core::sched::exit_current_thread();
-        user::schedule_next();
-        0
+        return user::schedule_next();
     } else if num == SyscallNumber::AllocFrame as u64 {
         let pool_index = arg1;
         let frame_info_ptr = arg2 as *mut abi::FrameInfo;
@@ -77,11 +78,251 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             KernelResponse::FrameFreed { .. } => 0,
             _ => 1,
         }
+    } else if num == SyscallNumber::CreateProcess as u64 {
+        let Some(name) = leak_user_str(arg1, arg2 as usize) else {
+            return 0;
+        };
+        let pid = {
+            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            let pid = sched.add_process(name);
+            pid.0
+        };
+        pid
+    } else if num == SyscallNumber::CreateThread as u64 {
+        let process_id = ProcessId(arg1);
+        let app_id = arg2;
+        let priority = arg3;
+        let Some(name) = leak_user_str(arg4, arg5 as usize) else {
+            return 0;
+        };
+        let stack = user::alloc_user_stack();
+        let tid = {
+            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            sched.add_thread(
+                process_id,
+                name,
+                user::user_thread_main,
+                app_id,
+                stack,
+                priority,
+            )
+        };
+        tid.0
+    } else if num == SyscallNumber::AddEdge as u64 {
+        let from = ThingId(arg1);
+        let to = ThingId(arg2);
+        let Some(edge_kind) = leak_user_str(arg3, arg4 as usize) else {
+            return 1;
+        };
+        let req = KernelRequest::AddEdge {
+            from,
+            edge_kind,
+            to,
+        };
+        match kernel_core::handle_request(req) {
+            KernelResponse::Success { .. } => 0,
+            _ => 1,
+        }
+    } else if num == SyscallNumber::EdgeAt as u64 {
+        let from = ThingId(arg1);
+        let index = arg2;
+        let Some(edge_kind) = leak_user_str(arg3, arg4 as usize) else {
+            return u64::MAX;
+        };
+        match kernel_core::handle_request(KernelRequest::EdgeAt {
+            from,
+            edge_kind,
+            index,
+        }) {
+            KernelResponse::EdgeTarget { target } => target.map_or(u64::MAX, |id| id.0),
+            _ => u64::MAX,
+        }
     } else if num == SyscallNumber::SpawnProgram as u64 {
-        kernel_core::log("SpawnProgram syscall not implemented for aarch64");
-        1
+        let boot_program_id = ThingId(arg1);
+        let result_ptr = arg2 as *mut abi::SpawnProgramResult;
+        if result_ptr.is_null() {
+            return 1;
+        }
+        match crate::program::spawn_program(boot_program_id) {
+            Ok((process_id, thread_id)) => {
+                unsafe {
+                    (*result_ptr).process_id = process_id;
+                    (*result_ptr).thread_id = thread_id;
+                }
+                0
+            }
+            Err(msg) => {
+                kernel_core::log(msg);
+                1
+            }
+        }
+    } else if num == SyscallNumber::ThingGet as u64 {
+        let id = ThingId(arg1);
+        let result_ptr = arg2 as *mut ThingGetSyscallResult;
+        if result_ptr.is_null() {
+            return 1;
+        }
+        let req = KernelRequest::ThingGet { id };
+        match kernel_core::handle_request(req) {
+            KernelResponse::ThingData { kind, props, .. } => {
+                unsafe {
+                    let result = &mut *result_ptr;
+                    *result = ThingGetSyscallResult::default();
+                    let kind_bytes = kind.as_bytes();
+                    let kind_len = cmp::min(kind_bytes.len(), THING_GET_MAX_KIND_LEN);
+                    result.kind[..kind_len].copy_from_slice(&kind_bytes[..kind_len]);
+                    result.kind_len = kind_len;
+
+                    let mut count = 0;
+                    for entry in props.iter() {
+                        if count >= THING_GET_MAX_PROPS {
+                            break;
+                        }
+                        let slot: &mut ThingPropData = &mut result.props[count];
+                        if let Some((key, value)) = entry {
+                            slot.present = 1;
+                            let key_bytes = key.as_bytes();
+                            let key_len = cmp::min(key_bytes.len(), THING_GET_MAX_STR_LEN);
+                            slot.key[..key_len].copy_from_slice(&key_bytes[..key_len]);
+                            slot.key_len = key_len;
+                            match value {
+                                abi::PropValue::U64(v) => {
+                                    slot.value_type = ThingPropScalarType::U64;
+                                    slot.value_u64 = *v;
+                                }
+                                abi::PropValue::I64(v) => {
+                                    slot.value_type = ThingPropScalarType::I64;
+                                    slot.value_i64 = *v;
+                                }
+                                abi::PropValue::Bool(v) => {
+                                    slot.value_type = ThingPropScalarType::Bool;
+                                    slot.value_bool = if *v { 1 } else { 0 };
+                                }
+                                abi::PropValue::Str(s) => {
+                                    slot.value_type = ThingPropScalarType::Str;
+                                    let bytes = s.as_bytes();
+                                    let str_len = cmp::min(bytes.len(), THING_GET_MAX_STR_LEN);
+                                    slot.value_str[..str_len].copy_from_slice(&bytes[..str_len]);
+                                    slot.value_str_len = str_len;
+                                }
+                            }
+                            count += 1;
+                        } else {
+                            slot.present = 0;
+                        }
+                    }
+                    result.prop_count = count;
+                }
+                0
+            }
+            KernelResponse::Error { message } => {
+                kernel_core::log(message);
+                1
+            }
+            other => {
+                let msg = alloc::format!("ThingGet unexpected response {:?}", other);
+                let leaked: &'static str = Box::leak(msg.into_boxed_str());
+                kernel_core::log(leaked);
+                1
+            }
+        }
+    } else if num == SyscallNumber::ThingList as u64 {
+        let kind_ptr = arg1 as *const u8;
+        let kind_len = arg2 as usize;
+        let start_after = ThingId(arg3);
+        let kind = unsafe {
+            core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("")
+        };
+        let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
+        match kernel_core::handle_request(KernelRequest::ThingList {
+            kind: kind_static,
+            start_after,
+        }) {
+            KernelResponse::ThingListEntry { id } => id.map_or(u64::MAX, |tid| tid.0),
+            KernelResponse::Error { .. } => u64::MAX,
+            other => {
+                let msg = alloc::format!("ThingList unexpected response {:?}", other);
+                let leaked: &'static str = Box::leak(msg.into_boxed_str());
+                kernel_core::log(leaked);
+                u64::MAX
+            }
+        }
+    } else if num == SyscallNumber::ThingCreate as u64 {
+        let kind_ptr = arg1 as *const u8;
+        let kind_len = arg2 as usize;
+        let props_ptr = arg3 as *const (abi::PropKey, abi::PropValue);
+        let props_len = arg4 as usize;
+
+        let kind = unsafe {
+            core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("")
+        };
+        let props = unsafe { core::slice::from_raw_parts(props_ptr, props_len) };
+
+        let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
+        let props_vec: alloc::vec::Vec<(abi::PropKey, abi::PropValue)> = props.to_vec();
+        let props_static: &'static [(abi::PropKey, abi::PropValue)] =
+            Box::leak(props_vec.into_boxed_slice());
+
+        let req = KernelRequest::ThingCreate {
+            kind: kind_static,
+            props: props_static,
+        };
+        match kernel_core::handle_request(req) {
+            KernelResponse::ThingCreated { id } => id.0,
+            _ => 0,
+        }
+    } else if num == SyscallNumber::SchemaRegister as u64 {
+        let kind_ptr = arg1 as *const u8;
+        let kind_len = arg2 as usize;
+        let props_ptr = arg3 as *const (&'static str, abi::PropType);
+        let props_len = arg4 as usize;
+
+        let kind = unsafe {
+            core::str::from_utf8(core::slice::from_raw_parts(kind_ptr, kind_len)).unwrap_or("")
+        };
+        let props = unsafe { core::slice::from_raw_parts(props_ptr, props_len) };
+
+        let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
+        let props_vec = props.to_vec();
+        let props_static = Box::leak(props_vec.into_boxed_slice());
+
+        // Provide an empty description for schema registrations originating
+        // from userland syscalls (no description argument is passed over
+        // the syscall ABI). Leak to `'static` like `kind` and `props`.
+        let description_static: &'static str = Box::leak("".to_string().into_boxed_str());
+
+        let req = KernelRequest::SchemaRegister {
+            kind: kind_static,
+            description: description_static,
+            props: props_static,
+        };
+        match kernel_core::handle_request(req) {
+            KernelResponse::SchemaRegistered { .. } => 0,
+            _ => 1,
+        }
+    } else if num == SyscallNumber::TimeNow as u64 {
+        kernel_core::time::monotonic_now_ns()
+    } else if num == SyscallNumber::TimeMonotonicNs as u64 {
+        kernel_core::time::monotonic_now_ns()
+    } else if num == SyscallNumber::TimeSystemNs as u64 {
+        if let Some(ns) = kernel_core::time::system_time_ns() {
+            ns
+        } else {
+            0
+        }
+    } else if num == SyscallNumber::SleepUntil as u64 {
+        let deadline_ns = arg1;
+        while kernel_core::time::monotonic_now_ns() < deadline_ns {
+            user::schedule_next();
+        }
+        0
     } else {
-        kernel_core::log("Unknown syscall");
+        unsafe {
+            if UNKNOWN_SYSCALLS_LOGGED < 5 {
+                kernel_core::log("Unknown syscall");
+                UNKNOWN_SYSCALLS_LOGGED += 1;
+            }
+        }
         1
     }
 }
@@ -174,4 +415,27 @@ pub unsafe fn jump_to_el1_stack(stack_top: u64, entry: unsafe extern "C" fn() ->
             options(noreturn)
         );
     }
+}
+
+fn save_current_thread_context(tf: &TrapFrame) {
+    let mut sched = kernel_core::sched::SCHEDULER.lock();
+    if let Some(tid) = sched.current_id() {
+        if let Some(thread) = sched.thread_mut(tid) {
+            let regs_ptr = tf as *const TrapFrame as *const u64;
+            let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 34) };
+            thread.context.copy_from_slice(regs_slice);
+            thread.started = true;
+        }
+    }
+}
+
+fn leak_user_str(ptr: u64, len: usize) -> Option<&'static str> {
+    if len == 0 {
+        return Some("");
+    }
+    let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len) };
+    core::str::from_utf8(bytes).ok().map(|s| {
+        let leaked: &'static mut str = Box::leak(s.to_string().into_boxed_str());
+        leaked as &'static str
+    })
 }

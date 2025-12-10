@@ -25,7 +25,11 @@ ifeq ($(RUST_PROFILE),dev)
     override RUST_PROFILE_SUBDIR := debug
 endif
 
-APPS := hello heartbeat init thread_dashboard
+ENABLE_ROOTFS ?= 0
+APPS := init hello heartbeat thread_dashboard clock_demo alarm_demo
+ifeq ($(ENABLE_ROOTFS),1)
+APPS := rootfs $(APPS)
+endif
 APPS_TARGET_DIR := target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
@@ -36,6 +40,10 @@ $(call USER_VARIABLE,QEMUFLAGS,-m 2G)
 $(call USER_VARIABLE,QEMU_WATCHER,scripts/qemu-watcher.sh)
 
 override IMAGE_NAME := template-$(KARCH)
+FEATURES ?=
+ifneq ($(strip $(FEATURES)),)
+FEATURES_ARG := --features "$(strip $(FEATURES))"
+endif
 
 .PHONY: all
 all: $(IMAGE_NAME).iso
@@ -247,11 +255,11 @@ limine/limine:
 
 .PHONY: apps
 apps:
-	RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
+	RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) $(addprefix -p ,$(APPS))
 
 .PHONY: kernel
 kernel:
-	$(MAKE) -C boot
+	$(MAKE) -C boot FEATURES="$(FEATURES)"
 
 $(IMAGE_NAME).iso: limine/limine kernel apps
 	rm -rf iso_root
@@ -262,7 +270,13 @@ $(IMAGE_NAME).iso: limine/limine kernel apps
 		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/apps/$$app; \
 	done
 	mkdir -p iso_root/boot/limine
-	cp -v limine.conf iso_root/boot/limine/
+	rm -f limine.conf.tmp
+	cp limine.conf limine.conf.tmp
+ifeq ($(ENABLE_ROOTFS),1)
+	echo "    module_path: boot():/boot/apps/rootfs" >> limine.conf.tmp
+	echo "    module_cmdline: program=rootfs" >> limine.conf.tmp
+endif
+	cp -v limine.conf.tmp iso_root/boot/limine/limine.conf
 	mkdir -p iso_root/EFI/BOOT
 ifeq ($(KARCH),x86_64)
 	cp -v limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/boot/limine/
@@ -308,13 +322,19 @@ $(IMAGE_NAME).hdd: limine/limine kernel apps
 ifeq ($(KARCH),x86_64)
 	./limine/limine bios-install $(IMAGE_NAME).hdd
 endif
+	rm -f limine.conf.tmp
+	cp limine.conf limine.conf.tmp
+ifeq ($(ENABLE_ROOTFS),1)
+	echo "    module_path: boot():/boot/apps/rootfs" >> limine.conf.tmp
+	echo "    module_cmdline: program=rootfs" >> limine.conf.tmp
+endif
 	mformat -i $(IMAGE_NAME).hdd@@1M
 	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine ::/boot/apps
 	mcopy -i $(IMAGE_NAME).hdd@@1M boot/kernel ::/boot
 	for app in $(APPS); do \
 		mcopy -i $(IMAGE_NAME).hdd@@1M $(APPS_TARGET_DIR)/$$app ::/boot/apps; \
 	done
-	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf ::/boot/limine
+	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf.tmp ::/boot/limine
 ifeq ($(KARCH),x86_64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/limine-bios.sys ::/boot/limine
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTX64.EFI ::/EFI/BOOT
@@ -333,6 +353,7 @@ endif
 .PHONY: clean
 clean:
 	$(MAKE) -C boot clean
+	rm -f limine.conf.tmp
 	rm -rf iso_root $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
 
 .PHONY: distclean

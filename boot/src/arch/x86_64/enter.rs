@@ -8,8 +8,7 @@ use x86_64::structures::paging::{
 };
 use x86_64::{PhysAddr, VirtAddr};
 extern crate alloc;
-use alloc::alloc::{alloc_zeroed, Layout};
-use x86_64::structures::paging::mapper::MapperAllSizes;
+use alloc::alloc::{Layout, alloc_zeroed};
 use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::PhysFrame as X86PhysFrame;
 
@@ -232,8 +231,8 @@ pub fn activate_address_space(token: Option<u64>) {
     if current == target {
         return;
     }
-    let frame = X86PhysFrame::from_start_address(PhysAddr::new(target))
-        .expect("Invalid CR3 frame address");
+    let frame =
+        X86PhysFrame::from_start_address(PhysAddr::new(target)).expect("Invalid CR3 frame address");
     unsafe {
         Cr3::write(frame, Cr3Flags::empty());
     }

@@ -37,3 +37,7 @@ pub fn init_arch_rtc() {
     RTC.init();
     kernel_core::time::register_rtc(&RTC);
 }
+
+pub fn read_rtc_unix_epoch_seconds() -> i64 {
+    0
+}

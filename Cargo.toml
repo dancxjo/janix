@@ -11,6 +11,9 @@ members = [
     "apps/heartbeat",
     "apps/init",
     "apps/thread_dashboard",
+    "apps/clock_demo",
+    "apps/alarm_demo",
+    "apps/rootfs",
     "thing_macros",
     "thing_models",
 ]

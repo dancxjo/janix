@@ -2,44 +2,71 @@
 
 extern crate alloc;
 
+use abi::{ThingId, graph_kinds};
 use alloc::format;
+#[cfg(feature = "rootfs")]
+use alloc::string::String;
 use alloc::vec::Vec;
-use abi::graph_kinds;
 use thing_models::{BootProfile, BootProgram, ProgramImage};
 use userland::prelude::*;
 use userland_std::{
-    add_edge, edge_targets, find_thing, list_things_by_kind, load_thing, spawn_program, ProcessThing,
+    ProcessThing, add_edge, edge_targets, find_thing, list_things_by_kind, load_thing,
+    spawn_program,
 };
 
 const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
 
+#[cfg(feature = "rootfs")]
+const ROOTFS_IDENTIFIER: &str = "rootfs";
+
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "init: starting");
 
-    let boot_profile = match load_boot_profile(sys) {
-        Some(profile) => profile,
-        None => fatal(sys, "BootProfile missing or duplicated"),
-    };
+    #[cfg(feature = "rootfs")]
+    {
+        let program_images: Vec<ProgramImage> = list_things_by_kind(sys);
+        start_rootfs(sys, &program_images);
+    }
+
+    let boot_profile = wait_for_boot_profile(sys);
     log_dynamic(
         sys,
         format!("init: BootProfile version {}", boot_profile.version),
     );
 
     let launch_ids = edge_targets(sys, boot_profile.id, graph_kinds::EDGE_LAUNCHES);
-    if launch_ids.is_empty() {
-        log_dynamic(sys, "init: no BootProgram edges; system will idle".into());
-    }
 
     let mut programs = Vec::new();
-    for program_id in launch_ids.iter().copied() {
-        if let Some(program) = load_thing::<BootProgram>(sys, program_id) {
-            programs.push(program);
-        } else {
-            log_dynamic(
-                sys,
-                format!("init: ignoring missing BootProgram ThingId {}", program_id.0),
-            );
+    collect_boot_programs(sys, &mut programs, launch_ids.as_slice());
+
+    if programs.is_empty() {
+        log_dynamic(
+            sys,
+            "init: no BootProgram edges; waiting briefly for rootfs".into(),
+        );
+        for _ in 0..8 {
+            sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
+            let refresh_ids = edge_targets(sys, boot_profile.id, graph_kinds::EDGE_LAUNCHES);
+            collect_boot_programs(sys, &mut programs, refresh_ids.as_slice());
+            if !programs.is_empty() {
+                break;
+            }
         }
+    }
+
+    if programs.is_empty() {
+        log_dynamic(
+            sys,
+            "init: still no BootPrograms after waiting; scanning all BootProgram Things".into(),
+        );
+        programs = list_things_by_kind(sys);
+    }
+
+    if programs.is_empty() {
+        log_dynamic(
+            sys,
+            "init: no BootPrograms found after full scan; system will idle".into(),
+        );
     }
 
     let init_process = find_process_by_pid(sys, 1)
@@ -48,6 +75,13 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     let program_images: Vec<ProgramImage> = list_things_by_kind(sys);
 
     for program in programs.iter() {
+        if is_rootfs(program) {
+            log_dynamic(
+                sys,
+                "init: skipping rootfs BootProgram entry (already handled)".into(),
+            );
+            continue;
+        }
         log_dynamic(
             sys,
             format!(
@@ -63,11 +97,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
                 sys,
                 format!(
                     "init: BootProgram {} backed by ProgramImage id={} module_index={} base_phys={:#x} size={}",
-                    program.name,
-                    image.identifier,
-                    image.module_index,
-                    image.base_phys,
-                    image.size
+                    program.name, image.identifier, image.module_index, image.base_phys, image.size
                 ),
             );
         } else {
@@ -111,12 +141,18 @@ fn load_boot_profile<S: Sys>(sys: &mut S) -> Option<BootProfile> {
     let mut profiles: Vec<BootProfile> = list_things_by_kind(sys);
     log_dynamic(
         sys,
-        format!("init: BootProfile query returned {} entries", profiles.len()),
+        format!(
+            "init: BootProfile query returned {} entries",
+            profiles.len()
+        ),
     );
     if let Some(bp) = load_thing::<BootProfile>(sys, abi::ThingId(12)) {
         log_dynamic(
             sys,
-            format!("init: direct load of ThingId(12) succeeded with version {}", bp.version),
+            format!(
+                "init: direct load of ThingId(12) succeeded with version {}",
+                bp.version
+            ),
         );
     } else {
         log_dynamic(sys, "init: direct load of ThingId(12) failed".into());
@@ -143,4 +179,85 @@ fn fatal<S: Sys>(sys: &mut S, msg: &str) -> ! {
     loop {
         sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
     }
+}
+
+fn collect_boot_programs<S: Sys>(sys: &mut S, programs: &mut Vec<BootProgram>, ids: &[ThingId]) {
+    for program_id in ids.iter().copied() {
+        if let Some(program) = load_thing::<BootProgram>(sys, program_id) {
+            programs.push(program);
+        } else {
+            log_dynamic(
+                sys,
+                format!(
+                    "init: ignoring missing BootProgram ThingId {}",
+                    program_id.0
+                ),
+            );
+        }
+    }
+}
+
+fn wait_for_boot_profile<S: Sys>(sys: &mut S) -> BootProfile {
+    for _ in 0..32 {
+        if let Some(profile) = load_boot_profile(sys) {
+            return profile;
+        }
+        sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
+    }
+    fatal(sys, "BootProfile missing or duplicated after waiting");
+}
+
+#[cfg(feature = "rootfs")]
+fn start_rootfs<S: Sys>(sys: &mut S, images: &[ProgramImage]) {
+    if let Some(existing) = find_thing::<BootProgram>(sys, |bp| bp.binary == ROOTFS_IDENTIFIER) {
+        log_dynamic(
+            sys,
+            format!(
+                "init: rootfs BootProgram already exists as ThingId {}",
+                existing.id.0
+            ),
+        );
+        let _ = spawn_program(sys, existing.id);
+        return;
+    }
+
+    if let Some(image) = images
+        .iter()
+        .find(|img| img.identifier == ROOTFS_IDENTIFIER)
+    {
+        let temp_program = BootProgram {
+            id: ThingId(0),
+            name: String::from(ROOTFS_IDENTIFIER),
+            app_id: 0,
+            priority: 0,
+            binary: image.identifier.clone(),
+        };
+        if let Some(program_id) = create_thing(sys, &temp_program) {
+            log_dynamic(
+                sys,
+                format!(
+                    "init: created temporary rootfs BootProgram id={}",
+                    program_id.0
+                ),
+            );
+            let _ = spawn_program(sys, program_id);
+        } else {
+            log_dynamic(sys, "init: failed to create BootProgram for rootfs".into());
+        }
+    } else {
+        log_dynamic(
+            sys,
+            "init: rootfs ProgramImage missing; skipping rootfs launch".into(),
+        );
+    }
+}
+
+#[cfg(feature = "rootfs")]
+fn is_rootfs(program: &BootProgram) -> bool {
+    program.binary == ROOTFS_IDENTIFIER
+}
+
+#[cfg(not(feature = "rootfs"))]
+fn is_rootfs(_program: &BootProgram) -> bool {
+    false
 }

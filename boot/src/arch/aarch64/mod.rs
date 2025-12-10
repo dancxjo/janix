@@ -22,7 +22,9 @@ impl Arch for AArch64Arch {
         rtc::init_arch_rtc();
     }
 
-    fn activate_user_address_space(_token: Option<u64>) {}
+    fn activate_user_address_space(token: Option<u64>) {
+        enter::activate_address_space(token);
+    }
 }
 
 pub use enter::{alloc_user_stack, init_user_stack};

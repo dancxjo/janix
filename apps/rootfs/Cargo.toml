@@ -1,18 +1,15 @@
 [package]
-name = "init"
+name = "rootfs"
 version.workspace = true
 edition.workspace = true
 
 [lib]
-name = "init"
+name = "rootfs"
 path = "src/lib.rs"
 
 [dependencies]
 abi = { path = "../../abi" }
-userland = { path = "../../userland" }
 thing_models = { path = "../../thing_models" }
+userland = { path = "../../userland" }
 userland_std = { path = "../../userland_std" }
 userland_rt = { path = "../../userland_rt" }
-
-[features]
-rootfs = []

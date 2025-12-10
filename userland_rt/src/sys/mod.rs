@@ -86,9 +86,8 @@ impl Sys for UserlandSys {
             KernelRequest::CreateProcess { name } => {
                 let ptr = name.as_ptr() as u64;
                 let len = name.len() as u64;
-                let ret = unsafe {
-                    syscall_stub(SyscallNumber::CreateProcess, ptr, len, 0, 0, 0, 0)
-                };
+                let ret =
+                    unsafe { syscall_stub(SyscallNumber::CreateProcess, ptr, len, 0, 0, 0, 0) };
                 if ret == 0 {
                     KernelResponse::Error {
                         message: "CreateProcess failed",

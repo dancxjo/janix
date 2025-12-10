@@ -1,10 +1,6 @@
 extern crate alloc;
 
 use crate::arch::{Arch, CurrentArch, UserEntryRegs};
-use crate::heartbeat;
-use crate::hello;
-use crate::init_app;
-use crate::thread_dashboard;
 use kernel_core::sched::SCHEDULER;
 use userland_rt::UserlandSys;
 
@@ -14,18 +10,14 @@ pub use crate::arch::current::{alloc_user_stack, init_user_stack};
 #[unsafe(no_mangle)]
 pub extern "C" fn user_thread_main(app_id: u64) -> ! {
     let mut sys = UserlandSys::new();
-    match app_id {
-        0 => init_app::run(&mut sys),
-        1 => hello::run(&mut sys),
-        2 => heartbeat::run(&mut sys),
-        3 => thread_dashboard::run(&mut sys),
-        _ => {}
-    }
+    kernel_core::log("user_thread_main reached without ELF ProgramImage; exiting");
+    let _ = app_id;
     sys.exit_thread();
 }
 
 pub fn schedule_next() -> ! {
     loop {
+        kernel_core::time::poll_time();
         let next_thread = {
             let mut sched = SCHEDULER.lock();
             let now = kernel_core::time::monotonic_now_ns();
@@ -48,6 +40,7 @@ pub fn schedule_next() -> ! {
             }
         } else {
             kernel_core::log("No runnable threads");
+            kernel_core::time::poll_time();
             unsafe {
                 #[cfg(target_arch = "x86_64")]
                 core::arch::asm!("hlt");
@@ -61,6 +54,7 @@ pub fn schedule_next() -> ! {
 }
 
 pub fn sys_sleep_for_ns(delta_ns: u64) -> ! {
+    kernel_core::time::poll_time();
     let now = kernel_core::time::monotonic_now_ns();
     let wake_at = now.saturating_add(delta_ns);
 

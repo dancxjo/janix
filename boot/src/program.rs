@@ -1,33 +1,21 @@
 extern crate alloc;
 
-use alloc::{boxed::Box, string::String, string::ToString};
 use abi::{PropValue, ThingId};
+use alloc::{boxed::Box, string::String, string::ToString};
 use kernel_core::graph;
 use kernel_core::graph_kinds;
 use kernel_core::sched::SCHEDULER;
 
 use crate::elf_loader::{self, LoadedElfProgram, ProgramImageData};
-use crate::user;
 
 pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'static str> {
     let info = load_boot_program_info(boot_program_id)?;
 
-    if let Some(image) = find_program_image(&info.binary) {
-        match elf_loader::load_program(&image) {
-            Ok(loaded) => {
-                kernel_core::log("Loaded ELF ProgramImage, spawning process");
-                return spawn_loaded_program(&info, loaded);
-            }
-            Err(err) => {
-                kernel_core::log("ELF load failed; falling back to compat path");
-                kernel_core::log(err);
-            }
-        }
-    } else {
-        kernel_core::log("No ProgramImage found; falling back to compat path");
-    }
-
-    spawn_compat_program(&info)
+    let image =
+        find_program_image(&info.binary).ok_or("ProgramImage Thing not found for identifier")?;
+    let loaded = elf_loader::load_program(&image)?;
+    kernel_core::log("Loaded ELF ProgramImage, spawning process");
+    spawn_loaded_program(&info, loaded)
 }
 
 pub fn spawn_program_by_identifier(
@@ -58,11 +46,7 @@ fn spawn_loaded_program_named(
         let mut sched = SCHEDULER.lock();
         let pid = sched.add_process(leaked_name);
         sched.set_process_address_space(pid, loaded.address_space_token);
-        sched.set_process_heap(
-            pid,
-            loaded.heap_base as usize,
-            loaded.heap_limit as usize,
-        );
+        sched.set_process_heap(pid, loaded.heap_base as usize, loaded.heap_limit as usize);
         let tid = sched.add_thread_with_entry_point(
             pid,
             leaked_name,
@@ -70,31 +54,6 @@ fn spawn_loaded_program_named(
             0,
             loaded.user_stack_top,
             priority,
-        );
-        let process_thing = sched
-            .process_thing_id(pid)
-            .ok_or("Process Thing not recorded")?;
-        let thread_thing = sched
-            .thread_thing_id(tid)
-            .ok_or("Thread Thing not recorded")?;
-        (process_thing, thread_thing)
-    };
-    Ok((process_thing, thread_thing))
-}
-
-fn spawn_compat_program(info: &BootProgramInfo) -> Result<(ThingId, ThingId), &'static str> {
-    let leaked_name: &'static str = leak_name(&info.name);
-    let stack = user::alloc_user_stack();
-    let (process_thing, thread_thing) = {
-        let mut sched = SCHEDULER.lock();
-        let pid = sched.add_process(leaked_name);
-        let tid = sched.add_thread(
-            pid,
-            leaked_name,
-            user::user_thread_main,
-            info.app_id,
-            stack,
-            info.priority,
         );
         let process_thing = sched
             .process_thing_id(pid)

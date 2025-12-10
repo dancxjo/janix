@@ -7,3 +7,4 @@ edition = "2024"
 abi = { path = "../abi" }
 userland_rt = { path = "../userland_rt" }
 userland_std = { path = "../userland_std" }
+spin = "0.10"

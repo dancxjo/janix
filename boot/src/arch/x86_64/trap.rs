@@ -56,7 +56,7 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     use x86_64::VirtAddr;
     use x86_64::registers::control::Cr2;
-    use x86_64::structures::paging::mapper::{MapperAllSizes, MapperFlush};
+    use x86_64::structures::paging::mapper::MapperFlush;
     use x86_64::structures::paging::{
         Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB,
     };
@@ -75,12 +75,12 @@ extern "x86-interrupt" fn page_fault_handler(
             unsafe { OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset)) };
 
         let translation = mapper.translate_addr(addr);
-        match translation {
-            Some(pa) => {
-                kernel_core::println!("Page fault translation: virt={:?} -> phys={:?}", addr, pa)
-            }
-            None => kernel_core::println!("Page fault translation: virt={:?} unmapped", addr),
-        }
+        // match translation {
+        //     Some(pa) => {
+        //         kernel_core::println!("Page fault translation: virt={:?} -> phys={:?}", addr, pa)
+        //     }
+        //     None => kernel_core::println!("Page fault translation: virt={:?} unmapped", addr),
+        // }
 
         // Lazy map as user accessible on protection violation
         if error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION)

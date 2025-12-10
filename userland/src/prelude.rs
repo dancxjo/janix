@@ -1,5 +1,9 @@
 extern crate alloc;
 
+use core::cmp::min;
+use core::mem;
+use spin::Mutex;
+
 pub use alloc::boxed::Box;
 pub use alloc::format;
 pub use alloc::string::{String, ToString};
@@ -15,7 +19,9 @@ pub use userland_std::{
     ProcessThing,
     Thing,
     ThreadThing,
+    alarm::{self, Alarm, sleep_until},
     alloc_frame,
+    clock::SystemClock,
     create_process,
     // Add other common exports as needed
     create_thing,
@@ -32,9 +38,18 @@ pub use userland_std::{
     update_props,
 };
 
+const LOG_BUFFER_LEN: usize = 256;
+static LOG_BUFFER: Mutex<[u8; LOG_BUFFER_LEN]> = Mutex::new([0; LOG_BUFFER_LEN]);
+
 /// Convenience logging helper for dynamic Strings
 pub fn log_dynamic(sys: &impl Sys, msg: String) {
-    // LEAK: To satisfy the ABI's 'static requirements for now.
-    let leaked: &'static str = Box::leak(msg.into_boxed_str());
-    println(sys, leaked);
+    let bytes = msg.as_bytes();
+    let mut buffer = LOG_BUFFER.lock();
+    let len = min(bytes.len(), buffer.len().saturating_sub(1));
+    buffer[..len].copy_from_slice(&bytes[..len]);
+    buffer[len] = 0;
+    let slice = &buffer[..len];
+    let temp = unsafe { core::str::from_utf8_unchecked(slice) };
+    let static_str: &'static str = unsafe { mem::transmute::<&str, &'static str>(temp) };
+    println(sys, static_str);
 }

@@ -1,18 +1,16 @@
 [package]
-name = "init"
+name = "alarm_demo"
 version.workspace = true
 edition.workspace = true
 
 [lib]
-name = "init"
+name = "alarm_demo"
 path = "src/lib.rs"
 
 [dependencies]
-abi = { path = "../../abi" }
 userland = { path = "../../userland" }
-thing_models = { path = "../../thing_models" }
-userland_std = { path = "../../userland_std" }
 userland_rt = { path = "../../userland_rt" }
 
-[features]
-rootfs = []
+[dev-dependencies]
+kernel_core = { path = "../../kernel_core" }
+abi = { path = "../../abi" }

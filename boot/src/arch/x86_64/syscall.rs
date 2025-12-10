@@ -9,12 +9,12 @@
 //! basic syscalls such as yield, sleep, logging, process/thread management,
 //! frame allocation, and time queries.
 use abi::{
-    KernelRequest, KernelResponse, ProcessId, SyscallNumber, ThingGetSyscallResult,
-    ThingPropData, ThingPropScalarType, ThingId, THING_GET_MAX_KIND_LEN, THING_GET_MAX_PROPS,
-    THING_GET_MAX_STR_LEN,
+    KernelRequest, KernelResponse, ProcessId, SyscallNumber, THING_GET_MAX_KIND_LEN,
+    THING_GET_MAX_PROPS, THING_GET_MAX_STR_LEN, ThingGetSyscallResult, ThingId, ThingPropData,
+    ThingPropScalarType,
 };
-use core::cmp;
 use core::arch::global_asm;
+use core::cmp;
 extern crate alloc;
 use crate::user;
 use alloc::boxed::Box;

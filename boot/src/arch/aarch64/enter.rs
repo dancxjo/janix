@@ -95,3 +95,54 @@ pub fn alloc_user_stack() -> u64 {
 pub unsafe fn init_user_stack(_phys_mem_offset: u64) {
     // TODO: Map user code as accessible
 }
+
+use core::sync::atomic::{AtomicU64, Ordering};
+
+static KERNEL_TTBR0: AtomicU64 = AtomicU64::new(0);
+
+fn ensure_kernel_ttbr0_recorded() -> u64 {
+    let stored = KERNEL_TTBR0.load(Ordering::SeqCst);
+    if stored != 0 {
+        return stored;
+    }
+    let current: u64;
+    unsafe {
+        core::arch::asm!("mrs {reg}, ttbr0_el1", reg = out(reg) current);
+    }
+    KERNEL_TTBR0.store(current, Ordering::SeqCst);
+    current
+}
+
+pub fn activate_address_space(token: Option<u64>) {
+    let kernel_ttbr0 = ensure_kernel_ttbr0_recorded();
+    let target = token.unwrap_or(kernel_ttbr0);
+    let current: u64;
+    unsafe {
+        core::arch::asm!("mrs {reg}, ttbr0_el1", reg = out(reg) current);
+    }
+    if current == target {
+        return;
+    }
+    // Ensure TTBR0 translations are enabled (clear EPD0 if firmware left it set).
+    unsafe {
+        let mut tcr: u64;
+        core::arch::asm!("mrs {reg}, tcr_el1", reg = out(reg) tcr);
+        if tcr & (1 << 7) != 0 {
+            tcr &= !(1 << 7);
+            core::arch::asm!("msr tcr_el1, {val}", val = in(reg) tcr, options(nostack));
+            core::arch::asm!("isb");
+        }
+    }
+    unsafe {
+        core::arch::asm!(
+            "dsb ish",
+            "msr ttbr0_el1, {ttbr}",
+            "isb",
+            "tlbi vmalle1",
+            "dsb ish",
+            "isb",
+            ttbr = in(reg) target,
+            options(nostack)
+        );
+    }
+}

@@ -137,3 +137,9 @@ pub fn init_arch_rtc() {
     CMOS_RTC.init();
     kernel_core::time::register_rtc(&CMOS_RTC);
 }
+
+pub fn read_rtc_unix_epoch_seconds() -> i64 {
+    let rtc = CmosRtc::new();
+    let (secs, _) = rtc.to_unix_epoch(rtc.read_time_raw());
+    secs as i64
+}

@@ -11,8 +11,8 @@ use std::thread;
 mod frame_pool;
 use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, MemorySummary, ThreadId};
 use frame_pool::{allocate_frame, frame_stats, free_frame, init_host_frame_pool};
-use hello;
 use heartbeat;
+use hello;
 use userland_rt::Sys;
 
 struct HostConsole;

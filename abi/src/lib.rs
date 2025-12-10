@@ -118,9 +118,7 @@ pub enum KernelRequest {
         props: &'static [(PropKey, PropValue)],
     },
     /// Spawn a program defined by a BootProgram Thing
-    SpawnProgram {
-        boot_program_id: ThingId,
-    },
+    SpawnProgram { boot_program_id: ThingId },
     /// Enumerate Things of a given kind
     ThingList {
         kind: &'static str,
@@ -230,9 +228,7 @@ pub enum KernelResponse {
         thread_id: ThingId,
     },
     /// Result of Thing enumeration
-    ThingListEntry {
-        id: Option<ThingId>,
-    },
+    ThingListEntry { id: Option<ThingId> },
 }
 
 pub const THING_GET_MAX_KIND_LEN: usize = 128;
@@ -302,29 +298,38 @@ impl Default for ThingGetSyscallResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u64)]
 pub enum SyscallNumber {
-    Yield = 1,
-    Log = 2,
-    ExitThread = 3,
-    GraphQuery = 4,
-    CreateTransaction = 5,
-    CommitTransaction = 6,
-    ThingCreate = 7,
-    ThingGet = 8,
-    ThingUpdate = 9,
-    AllocFrame = 10,
-    FreeFrame = 11,
-    CreateProcess = 12,
-    CreateThread = 13,
-    SchemaRegister = 14,
-    TimeNow = 15,
-    SleepUntil = 16,
-    TimeMonotonicNs = 20,
-    TimeSystemNs = 21,
-    SleepForNs = 22,
-    AddEdge = 23,
-    EdgeAt = 24,
-    SpawnProgram = 25,
-    ThingList = 26,
+    // Scheduling and timekeeping
+    Yield = 0,
+    SleepForNs = 1,
+    SleepUntil = 2,
+    TimeMonotonicNs = 3,
+    TimeSystemNs = 4,
+    TimeNow = 5,
+
+    // Diagnostics / thread management
+    Log = 6,
+    ExitThread = 7,
+
+    // Memory and process management
+    AllocFrame = 8,
+    FreeFrame = 9,
+    CreateProcess = 10,
+    CreateThread = 11,
+    SpawnProgram = 12,
+
+    // Thing graph operations
+    ThingCreate = 13,
+    ThingGet = 14,
+    ThingUpdate = 15,
+    ThingList = 16,
+    AddEdge = 17,
+    EdgeAt = 18,
+    SchemaRegister = 19,
+
+    // Transactional / query interfaces
+    GraphQuery = 20,
+    CreateTransaction = 21,
+    CommitTransaction = 22,
     // Add others as needed
 }
 

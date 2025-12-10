@@ -18,8 +18,14 @@ use abi::{
 };
 use userland_rt::Sys;
 
+pub mod alarm;
+pub mod clock;
 pub mod demo_shared;
 pub mod time;
+
+pub use alarm::{Alarm, sleep_until};
+pub use clock::SystemClock;
+pub use thing_models::{AlarmEvent, AlarmRequest, TimeSource};
 
 pub extern crate thing_models;
 pub mod thread_info {
@@ -284,11 +290,7 @@ pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> O
 }
 
 /// Return all neighbors reachable from `from` via `edge_kind` in insertion order.
-pub fn edge_targets<S: Sys>(
-    sys: &mut S,
-    from: ThingId,
-    edge_kind: &'static str,
-) -> Vec<ThingId> {
+pub fn edge_targets<S: Sys>(sys: &mut S, from: ThingId, edge_kind: &'static str) -> Vec<ThingId> {
     let mut results = Vec::new();
     let mut index = 0;
     loop {

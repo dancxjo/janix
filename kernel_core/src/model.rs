@@ -12,10 +12,10 @@ use abi::{
     FrameId, FrameInfo, MemorySummary, PropType, PropValue, SchedulerSummary, Thing, ThingId,
     ThreadId, ThreadInfo,
 };
-use alloc::string::String;
-use alloc::format;
 use alloc::boxed::Box;
-use thing_models::{BootProfile, BootProgram, ProgramImage};
+use alloc::format;
+use alloc::string::String;
+use thing_models::{AlarmEvent, AlarmRequest, BootProfile, BootProgram, ProgramImage, TimeSource};
 
 #[derive(Clone, Copy)]
 pub struct Thread {
@@ -192,6 +192,24 @@ pub fn init_schemas() {
         graph_kinds::KIND_PROGRAM_IMAGE,
         ProgramImage::DESCRIPTION,
         ProgramImage::schema(),
+    );
+
+    let _ = graph::register_schema(
+        graph_kinds::KIND_TIME_SOURCE,
+        TimeSource::DESCRIPTION,
+        TimeSource::schema(),
+    );
+
+    let _ = graph::register_schema(
+        graph_kinds::KIND_ALARM_REQUEST,
+        AlarmRequest::DESCRIPTION,
+        AlarmRequest::schema(),
+    );
+
+    let _ = graph::register_schema(
+        graph_kinds::KIND_ALARM_EVENT,
+        AlarmEvent::DESCRIPTION,
+        AlarmEvent::schema(),
     );
 }
 
@@ -502,13 +520,17 @@ pub fn scheduler_tick() -> Option<ThreadInfo> {
     }
 }
 
-static BOOT_PROGRAMS: &[(&str, u64, u64, &str)] = &[
-    ("hello", 1, 0, "hello"),
-    ("heartbeat", 2, 0, "heartbeat"),
-    ("thread_dashboard", 3, 0, "thread_dashboard"),
-];
-
 pub fn init_boot_profile() {
+    // Avoid creating duplicate profiles if already seeded.
+    if let Some(existing) =
+        graph::next_thing_of_kind(graph_kinds::KIND_BOOT_PROFILE, ThingId(u64::MAX))
+    {
+        let msg = format!("Found existing BootProfile Thing id={}", existing.0);
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        crate::log(leaked);
+        return;
+    }
+
     let profile_props = &[("version", PropValue::U64(1))];
     let Some(profile) = graph::create_thing(graph_kinds::KIND_BOOT_PROFILE, profile_props) else {
         crate::log("Failed to create BootProfile Thing");
@@ -517,20 +539,6 @@ pub fn init_boot_profile() {
     let msg = format!("Created BootProfile Thing id={}", profile.0);
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
     crate::log(leaked);
-
-    for (name, app_id, priority, binary) in BOOT_PROGRAMS {
-        let props = &[
-            ("name", PropValue::Str(String::from(*name))),
-            ("app_id", PropValue::U64(*app_id)),
-            ("priority", PropValue::U64(*priority)),
-            ("binary", PropValue::Str(String::from(*binary))),
-        ];
-        if let Some(program) = graph::create_thing(graph_kinds::KIND_BOOT_PROGRAM, props) {
-            let _ = graph::add_edge(profile, graph_kinds::EDGE_LAUNCHES, program);
-        } else {
-            crate::log("Failed to create BootProgram Thing");
-        }
-    }
 }
 
 fn encode_state(state: ThreadState) -> u64 {

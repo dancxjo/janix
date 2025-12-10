@@ -225,14 +225,7 @@ impl Scheduler {
         priority: u64,
     ) -> ThreadId {
         let entry_point = entry as u64;
-        self.add_thread_with_entry_point(
-            process_id,
-            name,
-            entry_point,
-            arg,
-            stack_top,
-            priority,
-        )
+        self.add_thread_with_entry_point(process_id, name, entry_point, arg, stack_top, priority)
     }
 
     pub fn add_thread_with_entry_point(

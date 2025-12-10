@@ -87,8 +87,8 @@ pub struct ThingNode {
     pub owner_process: Option<ProcessId>,
 }
 
-const MAX_NODES: usize = 128;
-pub const MAX_THINGS: usize = 128;
+const MAX_NODES: usize = 256;
+pub const MAX_THINGS: usize = 512;
 
 // SAFETY: NODES and NEXT_ID are only accessed from single-threaded kernel context.
 // In a multi-threaded environment, this would need atomic operations or locks.

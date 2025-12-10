@@ -5,6 +5,8 @@ extern crate alloc;
 pub mod console;
 pub mod graph;
 pub mod graph_kinds;
+pub mod graph_watchers;
+pub mod hw;
 pub mod log;
 pub mod memory;
 pub mod model;
@@ -31,6 +33,7 @@ pub fn init() {
     graph::init();
     transaction::init();
     model::init_schemas();
+    graph_watchers::init();
 }
 
 /// Register the function responsible for spawning programs described by BootProgram Things.

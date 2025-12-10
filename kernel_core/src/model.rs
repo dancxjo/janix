@@ -15,7 +15,10 @@ use abi::{
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
-use thing_models::{AlarmEvent, AlarmRequest, BootProfile, BootProgram, ProgramImage, TimeSource};
+use thing_models::{
+    AlarmEvent, AlarmRequest, BootProfile, BootProgram, IoPortOp, IoPortRegion, InterruptEvent,
+    ProgramImage, TimeSource,
+};
 
 #[derive(Clone, Copy)]
 pub struct Thread {
@@ -198,6 +201,24 @@ pub fn init_schemas() {
         graph_kinds::KIND_TIME_SOURCE,
         TimeSource::DESCRIPTION,
         TimeSource::schema(),
+    );
+
+    let _ = graph::register_schema(
+        graph_kinds::KIND_IO_PORT_REGION,
+        IoPortRegion::DESCRIPTION,
+        IoPortRegion::schema(),
+    );
+
+    let _ = graph::register_schema(
+        graph_kinds::KIND_IO_PORT_OP,
+        IoPortOp::DESCRIPTION,
+        IoPortOp::schema(),
+    );
+
+    let _ = graph::register_schema(
+        graph_kinds::KIND_INTERRUPT_EVENT,
+        InterruptEvent::DESCRIPTION,
+        InterruptEvent::schema(),
     );
 
     let _ = graph::register_schema(

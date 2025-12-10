@@ -10,6 +10,11 @@ pub const KIND_PROGRAM_IMAGE: &str = "ProgramImage";
 pub const KIND_TIME_SOURCE: &str = "TimeSource";
 pub const KIND_ALARM_REQUEST: &str = "AlarmRequest";
 pub const KIND_ALARM_EVENT: &str = "AlarmEvent";
+pub const KIND_IO_PORT_REGION: &str = "IoPortRegion";
+pub const KIND_IO_PORT_OP: &str = "IoPortOp";
+pub const KIND_INTERRUPT_EVENT: &str = "InterruptEvent";
+pub const KIND_KEYSCAN_EVENT: &str = "KeyScanEvent";
+pub const KIND_INPUT_CHAR_EVENT: &str = "InputCharEvent";
 
 pub const EDGE_OWNS_THREAD: &str = "proc.owns_thread";
 pub const EDGE_RUNS_ON: &str = "sched.runs_on";

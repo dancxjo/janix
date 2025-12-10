@@ -13,6 +13,8 @@ members = [
     "apps/thread_dashboard",
     "apps/clock_demo",
     "apps/alarm_demo",
+    "apps/ps2_keyboard_driver",
+    "apps/input_logger_demo",
     "apps/rootfs",
     "thing_macros",
     "thing_models",

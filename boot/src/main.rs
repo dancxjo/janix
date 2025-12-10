@@ -153,6 +153,7 @@ fn init_world_graph() {
     boot_model::seed_program_images_from_limine();
     boot_model::seed_boot_programs_from_limine();
     boot_model::seed_time_graph();
+    kernel_core::hw::io::seed_io_regions();
 }
 
 #[cfg(not(feature = "boot-dashboard-only"))]
@@ -270,7 +271,6 @@ fn days_in_month(year: i32, month: i32) -> i32 {
 
 #[panic_handler]
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    kernel_core::log("PANIC!");
     kernel_core::println!("========== KERNEL PANIC ==========");
     let panic_message = info.message();
     kernel_core::println!("Message: {}", panic_message);
@@ -321,10 +321,10 @@ fn rust_panic(info: &core::panic::PanicInfo) -> ! {
         snapshot.counts.cpu_cores
     );
 
-    let current_thread = {
-        let sched = kernel_core::sched::SCHEDULER.lock();
-        sched.current_id()
-    };
+    let current_thread = kernel_core::sched::SCHEDULER
+        .try_lock()
+        .map(|sched| sched.current_id())
+        .flatten();
     match current_thread {
         Some(tid) => kernel_core::println!("Current thread: {}", tid.0),
         None => kernel_core::println!("Current thread: <none>"),
@@ -340,6 +340,7 @@ fn rust_panic(info: &core::panic::PanicInfo) -> ! {
         }
     }
 
+    kernel_core::log("PANIC!");
     hcf();
 }
 

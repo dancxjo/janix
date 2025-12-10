@@ -1,4 +1,5 @@
 pub mod enter;
+pub mod pic;
 pub mod rtc;
 pub mod syscall;
 pub mod time;

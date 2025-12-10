@@ -1,9 +1,12 @@
-use super::syscall;
+use super::{pic, syscall};
 use crate::gdt;
 use lazy_static::lazy_static;
-use x86_64::instructions::hlt;
+use x86_64::instructions::{hlt, interrupts};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use x86_64::structures::paging::Translate;
+
+const KEYBOARD_VECTOR: usize = (pic::PIC_1_OFFSET as usize) + 1;
+const KEYBOARD_IRQ: u8 = 1;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -22,12 +25,15 @@ lazy_static! {
         idt.general_protection_fault
             .set_handler_fn(gp_fault_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
+        idt[KEYBOARD_VECTOR].set_handler_fn(keyboard_interrupt_handler);
         idt
     };
 }
 
 pub fn init() {
     IDT.load();
+    pic::init();
+    unsafe { interrupts::enable(); }
 }
 
 extern "x86-interrupt" fn double_fault_handler(
@@ -106,4 +112,9 @@ extern "x86-interrupt" fn page_fault_handler(
     kernel_core::println!("Error Code: {:?}", error_code);
     kernel_core::println!("{:#?}", stack_frame);
     loop {}
+}
+
+extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    kernel_core::hw::io::handle_interrupt(KEYBOARD_IRQ);
+    pic::notify_end_of_interrupt(KEYBOARD_IRQ);
 }

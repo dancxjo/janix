@@ -5,3 +5,4 @@ edition.workspace = true
 
 [dependencies]
 abi = { path = "../abi" }
+thing_macros = { path = "../thing_macros" }

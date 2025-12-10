@@ -44,6 +44,31 @@ pub struct SyscallRegs {
     pub ss: u64,
 }
 
+const _: () = {
+    use core::mem::offset_of;
+    assert!(core::mem::size_of::<SyscallRegs>() == 160);
+    assert!(offset_of!(SyscallRegs, rax) == 0);
+    assert!(offset_of!(SyscallRegs, rdi) == 8);
+    assert!(offset_of!(SyscallRegs, rsi) == 16);
+    assert!(offset_of!(SyscallRegs, rdx) == 24);
+    assert!(offset_of!(SyscallRegs, rcx) == 32);
+    assert!(offset_of!(SyscallRegs, r8) == 40);
+    assert!(offset_of!(SyscallRegs, r9) == 48);
+    assert!(offset_of!(SyscallRegs, r10) == 56);
+    assert!(offset_of!(SyscallRegs, r11) == 64);
+    assert!(offset_of!(SyscallRegs, rbx) == 72);
+    assert!(offset_of!(SyscallRegs, rbp) == 80);
+    assert!(offset_of!(SyscallRegs, r12) == 88);
+    assert!(offset_of!(SyscallRegs, r13) == 96);
+    assert!(offset_of!(SyscallRegs, r14) == 104);
+    assert!(offset_of!(SyscallRegs, r15) == 112);
+    assert!(offset_of!(SyscallRegs, rip) == 120);
+    assert!(offset_of!(SyscallRegs, cs) == 128);
+    assert!(offset_of!(SyscallRegs, rflags) == 136);
+    assert!(offset_of!(SyscallRegs, rsp) == 144);
+    assert!(offset_of!(SyscallRegs, ss) == 152);
+};
+
 global_asm!(
     r#"
 .global syscall_handler_asm

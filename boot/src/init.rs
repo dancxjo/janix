@@ -34,7 +34,7 @@ pub fn init_machine() {
         sched.init_graph_mirror();
     }
     kernel::log("Kernel core initialized.");
-    
+
     // Seed memory graph early so frame allocator is available for arch init
     // (AArch64 needs this for paging::map_device_region during map_boot_device_regions)
     crate::boot_model::seed_memory_graph_from_limine();
@@ -42,6 +42,13 @@ pub fn init_machine() {
     if arch::platform::map_boot_device_regions() {
         kernel::log("PCI regions mapped.");
     }
+    // Now that boot-time device regions are mapped into the kernel page tables,
+    // initialize hardware drivers that access MMIO (e.g. PCI/XHCI). Previously
+    // this ran earlier during `kernel::init()` and could cause data-abort
+    // accesses when drivers tried to dereference `phys + HHDM_OFFSET` before
+    // the mappings existed.
+    kernel::log("Initializing hardware drivers (MMIO-dependent)");
+    kernel::hw::usb::init();
     crate::graph_reifier::init_graph_subscriptions();
 
     arch::platform::init_arch_tables();

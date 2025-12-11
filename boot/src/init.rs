@@ -25,10 +25,6 @@ pub fn init_machine() {
         unsafe { arch::user::init_user_stack(offset) };
     }
 
-    if arch::platform::map_boot_device_regions() {
-        kernel::log("PCI regions mapped.");
-    }
-
     kernel::log("Initializing kernel core...");
     kernel::init();
 
@@ -38,6 +34,14 @@ pub fn init_machine() {
         sched.init_graph_mirror();
     }
     kernel::log("Kernel core initialized.");
+    
+    // Seed memory graph early so frame allocator is available for arch init
+    // (AArch64 needs this for paging::map_device_region during map_boot_device_regions)
+    crate::boot_model::seed_memory_graph_from_limine();
+
+    if arch::platform::map_boot_device_regions() {
+        kernel::log("PCI regions mapped.");
+    }
     crate::graph_reifier::init_graph_subscriptions();
 
     arch::platform::init_arch_tables();
@@ -55,7 +59,7 @@ pub fn init_machine() {
 
 pub fn init_world_graph() {
     kernel::create_builtin_things();
-    crate::boot_model::seed_memory_graph_from_limine();
+    // seed_memory_graph_from_limine moved to init_machine
     crate::boot_model::seed_cpu_graph_from_limine();
     crate::boot_model::seed_display_from_limine();
     crate::boot_model::seed_boot_profile();

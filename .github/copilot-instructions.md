@@ -135,6 +135,16 @@ The host_harness crate provides a way to test kernel interactions in a hosted en
 
 ## Debugging
 
+### Automated Crash Analysis
+Use the `make debug-<arch>` command to automatically analyze crashes (Triple Faults, Panics). This tool runs QEMU with logging, captures the crash, and maps the instruction pointer to source code.
+
+```bash
+make debug-x86_64
+make debug-aarch64
+make debug-riscv64
+make debug-loongarch64
+```
+
 ### QEMU Options
 - Default memory: 2GB (override with `QEMUFLAGS="-m 4G"`)
 - Graphics: QEMU uses appropriate graphics for each architecture (ramfb for ARM/RISC-V)

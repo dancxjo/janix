@@ -235,6 +235,37 @@ run-hdd-bios: $(IMAGE_NAME).hdd
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
 
+.PHONY: debug
+debug: debug-$(KARCH)
+
+.PHONY: debug-x86_64
+debug-x86_64:
+	rm -f qemu.log
+	-$(MAKE) KARCH=x86_64 QEMUFLAGS="$(QEMUFLAGS) -d int,cpu_reset -D qemu.log" launch-x86_64
+	@echo "Analyzing crash..."
+	@python3 scripts/analyze_crash.py qemu.log target/x86_64-unknown-none/debug
+
+.PHONY: debug-aarch64
+debug-aarch64:
+	rm -f qemu.log
+	-$(MAKE) KARCH=aarch64 QEMUFLAGS="$(QEMUFLAGS) -d int,cpu_reset -D qemu.log" launch-aarch64
+	@echo "Analyzing crash..."
+	@python3 scripts/analyze_crash.py qemu.log target/aarch64-unknown-none/debug
+
+.PHONY: debug-riscv64
+debug-riscv64:
+	rm -f qemu.log
+	-$(MAKE) KARCH=riscv64 QEMUFLAGS="$(QEMUFLAGS) -d int,cpu_reset -D qemu.log" launch-riscv64
+	@echo "Analyzing crash..."
+	@python3 scripts/analyze_crash.py qemu.log target/riscv64gc-unknown-none-elf/debug
+
+.PHONY: debug-loongarch64
+debug-loongarch64:
+	rm -f qemu.log
+	-$(MAKE) KARCH=loongarch64 QEMUFLAGS="$(QEMUFLAGS) -d int,cpu_reset -D qemu.log" launch-loongarch64
+	@echo "Analyzing crash..."
+	@python3 scripts/analyze_crash.py qemu.log target/loongarch64-unknown-none/debug
+
 ovmf/edk2-ovmf.tar.gz:
 	mkdir -p ovmf
 	curl -Lo $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/edk2-ovmf.tar.gz

@@ -120,6 +120,23 @@ Use `make run` (defaults to `KARCH=x86_64`) or `make run-<arch>` to launch the I
 
 For the RISC-V target you can run `make run-riscv64` or `make run-hdd-riscv64`; those targets use `qemu-system-riscv64 -cpu rv64` and rely on the `riscv64gc-unknown-none-elf` toolchain target that is now installed automatically (the RISC-V artifacts show up as `template-riscv64.iso` / `template-riscv64.hdd`).
 
+### Debugging Crashes
+
+If the OS crashes (e.g., Triple Fault, Panic), you can use the automated debug tool to analyze the crash log and pinpoint the source code location:
+
+```bash
+make debug-x86_64
+# or
+make debug-aarch64
+make debug-riscv64
+make debug-loongarch64
+```
+
+This command will:
+1. Run the OS in QEMU with debug logging enabled.
+2. Wait for the crash.
+3. Automatically parse the log, find the crash address, and display the corresponding source code and disassembly.
+
 ---
 
 # 🧠 Architectural Overview

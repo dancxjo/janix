@@ -14,19 +14,19 @@ $(call USER_VARIABLE,KARCH,x86_64)
 
 # Determine Rust target/profile for artifacts.
 ifeq ($(RUST_TARGET),)
-    override RUST_TARGET := $(KARCH)-unknown-none
+	override RUST_TARGET := $(KARCH)-unknown-none
 	ifeq ($(KARCH),riscv64)
-    	override RUST_TARGET := riscv64gc-unknown-none-elf
+		override RUST_TARGET := riscv64gc-unknown-none-elf
 	endif
 endif
 
 ifeq ($(RUST_PROFILE),)
-    override RUST_PROFILE := dev
+	override RUST_PROFILE := dev
 endif
 
 override RUST_PROFILE_SUBDIR := $(RUST_PROFILE)
 ifeq ($(RUST_PROFILE),dev)
-    override RUST_PROFILE_SUBDIR := debug
+	override RUST_PROFILE_SUBDIR := debug
 endif
 
 ENABLE_ROOTFS ?= 0
@@ -39,6 +39,7 @@ COMPOSITOR_FONT_DIR := target/compositor-fonts
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
 $(call USER_VARIABLE,QEMUFLAGS,-m 2G)
+
 # Force QEMU to exit instead of rebooting when the guest halts/crashes.
 $(call USER_VARIABLE,QEMU_NO_REBOOT,-no-reboot)
 
@@ -47,10 +48,15 @@ $(call USER_VARIABLE,QEMU_NO_REBOOT,-no-reboot)
 $(call USER_VARIABLE,QEMU_WATCHER,scripts/qemu-watcher.sh)
 
 override IMAGE_NAME := template-$(KARCH)
+
 FEATURES ?=
 ifneq ($(strip $(FEATURES)),)
 FEATURES_ARG := --features "$(strip $(FEATURES))"
 endif
+
+# -----------------------------------------------------------------------------
+# Top-level targets
+# -----------------------------------------------------------------------------
 
 .PHONY: all
 all: $(IMAGE_NAME).iso
@@ -74,6 +80,10 @@ smoke:
 	@echo "=== Running Smoke Tests (QEMU) ==="
 	THINGOS_QEMU_SMOKE=1 cargo test --package smoke_tests --test qemu_smoke -- --ignored --test-threads=1
 
+# -----------------------------------------------------------------------------
+# Run targets per architecture (ISO)
+# -----------------------------------------------------------------------------
+
 .PHONY: run-x86_64
 run-x86_64:
 	$(MAKE) KARCH=x86_64 launch-x86_64
@@ -86,20 +96,6 @@ launch-x86_64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAM
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS)
-
-.PHONY: run-hdd-x86_64
-run-hdd-x86_64:
-	$(MAKE) KARCH=x86_64 launch-hdd-x86_64
-
-.PHONY: launch-hdd-x86_64
-launch-hdd-x86_64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
-		-M q35 \
-		-serial stdio \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd \
-		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
 
 .PHONY: run-aarch64
@@ -122,25 +118,6 @@ launch-aarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NA
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)
 
-.PHONY: run-hdd-aarch64
-run-hdd-aarch64:
-	$(MAKE) KARCH=aarch64 launch-hdd-aarch64
-
-.PHONY: launch-hdd-aarch64
-launch-hdd-aarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
-		-M virt \
-		-cpu cortex-a72 \
-		-serial stdio \
-		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd \
-		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS)
-
 .PHONY: run-riscv64
 run-riscv64:
 	$(MAKE) KARCH=riscv64 launch-riscv64
@@ -158,25 +135,6 @@ launch-riscv64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NA
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS)
-
-.PHONY: run-hdd-riscv64
-run-hdd-riscv64:
-	$(MAKE) KARCH=riscv64 launch-hdd-riscv64
-
-.PHONY: launch-hdd-riscv64
-launch-hdd-riscv64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
-		-M virt \
-		-cpu rv64 \
-		-serial stdio \
-		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd \
-		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
 
 .PHONY: run-loongarch64
@@ -198,6 +156,62 @@ launch-loongarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAG
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)
 
+# -----------------------------------------------------------------------------
+# Run targets per architecture (HDD)
+# -----------------------------------------------------------------------------
+
+.PHONY: run-hdd-x86_64
+run-hdd-x86_64:
+	$(MAKE) KARCH=x86_64 launch-hdd-x86_64
+
+.PHONY: launch-hdd-x86_64
+launch-hdd-x86_64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
+		-M q35 \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS)
+
+.PHONY: run-hdd-aarch64
+run-hdd-aarch64:
+	$(MAKE) KARCH=aarch64 launch-hdd-aarch64
+
+.PHONY: launch-hdd-aarch64
+launch-hdd-aarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
+		-M virt \
+		-cpu cortex-a72 \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS)
+
+.PHONY: run-hdd-riscv64
+run-hdd-riscv64:
+	$(MAKE) KARCH=riscv64 launch-hdd-riscv64
+
+.PHONY: launch-hdd-riscv64
+launch-hdd-riscv64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
+		-M virt \
+		-cpu rv64 \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-$(KARCH).fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS)
+
 .PHONY: run-hdd-loongarch64
 run-hdd-loongarch64:
 	$(MAKE) KARCH=loongarch64 launch-hdd-loongarch64
@@ -217,6 +231,9 @@ launch-hdd-loongarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
 
+# -----------------------------------------------------------------------------
+# BIOS-only run targets (no OVMF)
+# -----------------------------------------------------------------------------
 
 .PHONY: run-bios
 run-bios: $(IMAGE_NAME).iso
@@ -234,6 +251,10 @@ run-hdd-bios: $(IMAGE_NAME).hdd
 		-serial stdio \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
+
+# -----------------------------------------------------------------------------
+# OVMF helpers
+# -----------------------------------------------------------------------------
 
 .PHONY: reset-ovmf-vars
 reset-ovmf-vars:
@@ -253,6 +274,10 @@ run-ovmf-clean: $(IMAGE_NAME).iso ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KA
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)
 	-rm -f ovmf/ovmf-vars-run-$(KARCH).fd
+
+# -----------------------------------------------------------------------------
+# Debug helpers
+# -----------------------------------------------------------------------------
 
 .PHONY: debug
 debug: debug-$(KARCH)
@@ -294,25 +319,31 @@ debug-loongarch64:
 	@echo "Analyzing crash..."
 	@python3 scripts/analyze_crash.py qemu.log target/loongarch64-unknown-none/debug
 
-ovmf/edk2-ovmf.tar.gz:
+# -----------------------------------------------------------------------------
+# OVMF firmware (original style, per-arch files)
+# -----------------------------------------------------------------------------
+
+ovmf/ovmf-code-$(KARCH).fd:
 	mkdir -p ovmf
-	curl -Lo $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/edk2-ovmf.tar.gz
-
-ovmf/ovmf-code-$(KARCH).fd: ovmf/edk2-ovmf.tar.gz
-	tar -xzf $< -C ovmf --strip-components=1 edk2-ovmf/ovmf-code-$(KARCH).fd
+	curl -Lo $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/ovmf-code-$(KARCH).fd
 	case "$(KARCH)" in \
 		aarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=67108864 2>/dev/null;; \
 		loongarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=5242880 2>/dev/null;; \
 		riscv64) dd if=/dev/zero of=$@ bs=1 count=0 seek=33554432 2>/dev/null;; \
 	esac
 
-ovmf/ovmf-vars-$(KARCH).fd: ovmf/edk2-ovmf.tar.gz
-	tar -xzf $< -C ovmf --strip-components=1 edk2-ovmf/ovmf-vars-$(KARCH).fd
+ovmf/ovmf-vars-$(KARCH).fd:
+	mkdir -p ovmf
+	curl -Lo $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/ovmf-vars-$(KARCH).fd
 	case "$(KARCH)" in \
 		aarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=67108864 2>/dev/null;; \
 		loongarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=5242880 2>/dev/null;; \
 		riscv64) dd if=/dev/zero of=$@ bs=1 count=0 seek=33554432 2>/dev/null;; \
 	esac
+
+# -----------------------------------------------------------------------------
+# Limine & build steps
+# -----------------------------------------------------------------------------
 
 limine/limine:
 	rm -rf limine
@@ -326,6 +357,10 @@ apps:
 .PHONY: kernel
 kernel:
 	$(MAKE) -C boot FEATURES="$(FEATURES)"
+
+# -----------------------------------------------------------------------------
+# ISO image creation
+# -----------------------------------------------------------------------------
 
 $(IMAGE_NAME).iso: limine/limine kernel apps
 	rm -rf iso_root
@@ -400,6 +435,10 @@ ifeq ($(KARCH),loongarch64)
 endif
 	rm -rf iso_root
 
+# -----------------------------------------------------------------------------
+# HDD image creation
+# -----------------------------------------------------------------------------
+
 $(IMAGE_NAME).hdd: limine/limine kernel apps
 	rm -f $(IMAGE_NAME).hdd
 	dd if=/dev/zero bs=1M count=0 seek=128 of=$@
@@ -453,6 +492,10 @@ ifeq ($(KARCH),loongarch64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT
 endif
 
+# -----------------------------------------------------------------------------
+# Cleaning
+# -----------------------------------------------------------------------------
+
 .PHONY: clean
 clean:
 	$(MAKE) -C boot clean
@@ -462,7 +505,7 @@ clean:
 	# remove workspace build artifacts and generated files
 	@echo "Cleaning workspace cargo/target and generated files..."
 	-cargo clean --manifest-path Cargo.toml
-	rm -rf target $(COMPOSITOR_FONT_DIR) ovmf/edk2-ovmf.tar.gz ovmf/*.fd
+	rm -rf target $(COMPOSITOR_FONT_DIR) ovmf/*.fd
 
 .PHONY: distclean
 distclean: clean

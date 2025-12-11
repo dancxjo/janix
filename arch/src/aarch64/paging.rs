@@ -55,6 +55,17 @@ pub unsafe fn map_device_region(phys: u64, len: u64) {
     // Assuming 4KB granule (TG1 = 0 usually)
 
     let root_table = get_ttbr1();
+    // Diagnostic: print HHDM offset and root table so we can verify mapping
+    let hhdm_offset = kernel::memory::get_hhdm_offset();
+    kernel::println!(
+        "map_device_region: phys={:#x} len={:#x} root_table={:#x} hhdm_offset={:#x} t1sz={} va_bits={}",
+        phys,
+        len,
+        root_table,
+        hhdm_offset,
+        t1sz,
+        va_bits
+    );
     let hhdm_offset = kernel::memory::get_hhdm_offset();
 
     let start = phys;
@@ -63,6 +74,14 @@ pub unsafe fn map_device_region(phys: u64, len: u64) {
     let mut curr = start;
     while curr < end {
         let virt = curr + hhdm_offset;
+        // Print the first mapping for visibility
+        if curr == start {
+            kernel::println!(
+                "map_device_region: mapping first page phys={:#x} -> virt={:#x}",
+                curr,
+                virt
+            );
+        }
         map_page(root_table, virt, curr, va_bits);
         curr += 4096;
     }
@@ -71,6 +90,50 @@ pub unsafe fn map_device_region(phys: u64, len: u64) {
     asm!("tlbi vmalle1");
     asm!("dsb ish");
     asm!("isb");
+}
+
+/// Diagnostic helper: walk page tables for `virt` using current TTBR1 and
+/// print entries found at each level. Call from kernel context to verify
+/// whether a virtual address is actually mapped.
+pub unsafe fn dump_page_table_for(virt: u64) {
+    let root = get_ttbr1();
+    let l0_idx = (virt >> 39) & 0x1FF;
+    let l1_idx = (virt >> 30) & 0x1FF;
+    let l2_idx = (virt >> 21) & 0x1FF;
+    let l3_idx = (virt >> 12) & 0x1FF;
+
+    kernel::println!("dump_page_table_for: virt={:#x} root={:#x}", virt, root);
+    let mut table = root;
+    if (read_table(table, l0_idx as usize) & DESC_VALID) == 0 {
+        kernel::println!(
+            "L0 entry not present: idx={} val={:#x}",
+            l0_idx,
+            read_table(table, l0_idx as usize)
+        );
+        return;
+    }
+    let e0 = read_table(table, l0_idx as usize);
+    kernel::println!("L0[{}] = {:#x}", l0_idx, e0);
+    table = e0 & 0x0000_FFFF_FFFF_F000;
+
+    let e1 = read_table(table, l1_idx as usize);
+    if (e1 & DESC_VALID) == 0 {
+        kernel::println!("L1 entry not present: idx={} val={:#x}", l1_idx, e1);
+        return;
+    }
+    kernel::println!("L1[{}] = {:#x}", l1_idx, e1);
+    table = e1 & 0x0000_FFFF_FFFF_F000;
+
+    let e2 = read_table(table, l2_idx as usize);
+    if (e2 & DESC_VALID) == 0 {
+        kernel::println!("L2 entry not present: idx={} val={:#x}", l2_idx, e2);
+        return;
+    }
+    kernel::println!("L2[{}] = {:#x}", l2_idx, e2);
+    table = e2 & 0x0000_FFFF_FFFF_F000;
+
+    let e3 = read_table(table, l3_idx as usize);
+    kernel::println!("L3[{}] = {:#x}", l3_idx, e3);
 }
 
 unsafe fn map_page(root_phys: u64, virt: u64, phys: u64, va_bits: u64) {
@@ -101,6 +164,12 @@ unsafe fn map_page(root_phys: u64, virt: u64, phys: u64, va_bits: u64) {
     // Level 3 (Page)
     let entry = phys | DESC_VALID | DESC_PAGE | DESC_ACCESS_FLAG | DESC_SH_INNER | ATTR_DEVICE;
     // Note: We overwrite existing mapping if any.
+    kernel::println!(
+        "map_page: l3_idx={} table_phys={:#x} entry={:#x}",
+        l3_idx,
+        table_phys,
+        entry
+    );
     write_table(table_phys, l3_idx as usize, entry);
 }
 

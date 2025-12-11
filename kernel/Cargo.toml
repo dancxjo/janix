@@ -5,6 +5,10 @@ edition.workspace = true
 
 [lib]
 
+[features]
+arch_pci_in_kernel = []
+default = ["arch_pci_in_kernel"]
+
 [dependencies]
 abi = { path = "../abi" }
 thing_models = { path = "../thing_models" }

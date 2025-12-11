@@ -2,11 +2,9 @@ use crate::{graph, graph_kinds, time};
 use abi::{PropValue, Thing, ThingId};
 use alloc::string::String;
 use alloc::vec::Vec;
+use arch::io;
 use core::sync::atomic::{AtomicBool, Ordering};
-use thing_models::{InterruptEvent, IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth};
-
-#[cfg(target_arch = "x86_64")]
-use x86_64::instructions::port::Port;
+use thing_models::{InterruptEvent, IoPortOp, IoPortRegion, IoStatus};
 
 static IO_REGIONS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
@@ -107,31 +105,10 @@ fn execute_io_operation(op: &IoPortOp) -> Result<Option<u32>, IoError> {
     if port_addr > u16::MAX as u32 {
         return Err(IoError::OffsetOutOfRange);
     }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        let addr = port_addr as u16;
-        match (op.direction, op.width) {
-            (IoDirection::Write, IoWidth::U8) => {
-                Port::<u8>::new(addr).write(op.value as u8);
-                Ok(None)
-            }
-            (IoDirection::Write, IoWidth::U16) => {
-                Port::<u16>::new(addr).write(op.value as u16);
-                Ok(None)
-            }
-            (IoDirection::Write, IoWidth::U32) => {
-                Port::<u32>::new(addr).write(op.value);
-                Ok(None)
-            }
-            (IoDirection::Read, IoWidth::U8) => Ok(Some(Port::<u8>::new(addr).read() as u32)),
-            (IoDirection::Read, IoWidth::U16) => Ok(Some(Port::<u16>::new(addr).read() as u32)),
-            (IoDirection::Read, IoWidth::U32) => Ok(Some(Port::<u32>::new(addr).read())),
-        }
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        let _ = port_addr;
-        Err(IoError::Unsupported)
+    let addr = port_addr as u16;
+    match io::perform_io_operation(addr, op.direction, op.width, op.value) {
+        Ok(value) => Ok(value),
+        Err(io::IoAccessError::Unsupported) => Err(IoError::Unsupported),
     }
 }
 

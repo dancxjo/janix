@@ -45,6 +45,14 @@ impl FramebufferDriver {
         let stride = descriptor.info.stride;
         let pixel_format = descriptor.info.pixel_format;
 
+        log_dynamic(
+            sys,
+            format_args!(
+                "framebuffer_driver: display {} {}x{} stride={} fmt={:?}",
+                descriptor.display_id.0, width, height, stride, pixel_format,
+            ),
+        );
+
         let logical_map_flags = MapFlags::READ.union(MapFlags::USER);
         let front_buffer_id = Self::display_buffer_target(
             sys,

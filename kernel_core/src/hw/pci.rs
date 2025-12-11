@@ -1,13 +1,8 @@
-use crate::memory::phys_to_virt;
-use alloc::vec::Vec;
-
-// QEMU virt default for aarch64
 #[cfg(target_arch = "aarch64")]
-pub const PCI_ECAM_BASE: u64 = 0x3f000000;
-
-// For x86_64, we might use IO ports, but let's stick to aarch64 for now as requested.
-#[cfg(not(target_arch = "aarch64"))]
-pub const PCI_ECAM_BASE: u64 = 0; // Placeholder
+use crate::memory::get_hhdm_offset;
+use alloc::vec::Vec;
+#[cfg(target_arch = "aarch64")]
+use arch::pci;
 
 #[derive(Debug, Clone)]
 pub struct PciDevice {
@@ -22,58 +17,39 @@ pub struct PciDevice {
     pub header_type: u8,
 }
 
+#[cfg(target_arch = "aarch64")]
 fn read_config_u32(bus: u8, slot: u8, func: u8, offset: u16) -> u32 {
-    #[cfg(target_arch = "aarch64")]
-    {
-        let phys = PCI_ECAM_BASE
-            + ((bus as u64) << 20)
-            + ((slot as u64) << 15)
-            + ((func as u64) << 12)
-            + (offset as u64);
-        let virt = phys_to_virt(phys);
-        unsafe { (virt as *const u32).read_volatile() }
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        let _ = (bus, slot, func, offset);
-        0
-    }
+    let hhdm = get_hhdm_offset();
+    pci::read_config_u32(bus, slot, func, offset, hhdm).unwrap_or(0)
 }
 
+#[cfg(target_arch = "aarch64")]
 fn read_config_u16(bus: u8, slot: u8, func: u8, offset: u16) -> u16 {
-    #[cfg(target_arch = "aarch64")]
-    {
-        let phys = PCI_ECAM_BASE
-            + ((bus as u64) << 20)
-            + ((slot as u64) << 15)
-            + ((func as u64) << 12)
-            + (offset as u64);
-        let virt = phys_to_virt(phys);
-        unsafe { (virt as *const u16).read_volatile() }
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        let _ = (bus, slot, func, offset);
-        0
-    }
+    let hhdm = get_hhdm_offset();
+    pci::read_config_u16(bus, slot, func, offset, hhdm).unwrap_or(0)
 }
 
+#[cfg(target_arch = "aarch64")]
 fn read_config_u8(bus: u8, slot: u8, func: u8, offset: u16) -> u8 {
-    #[cfg(target_arch = "aarch64")]
-    {
-        let phys = PCI_ECAM_BASE
-            + ((bus as u64) << 20)
-            + ((slot as u64) << 15)
-            + ((func as u64) << 12)
-            + (offset as u64);
-        let virt = phys_to_virt(phys);
-        unsafe { (virt as *const u8).read_volatile() }
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        let _ = (bus, slot, func, offset);
-        0
-    }
+    let hhdm = get_hhdm_offset();
+    pci::read_config_u8(bus, slot, func, offset, hhdm).unwrap_or(0)
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn read_config_u32(_: u8, _: u8, _: u8, _: u16) -> u32 {
+    0
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+#[allow(dead_code)]
+fn read_config_u16(_: u8, _: u8, _: u8, _: u16) -> u16 {
+    0
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+#[allow(dead_code)]
+fn read_config_u8(_: u8, _: u8, _: u8, _: u16) -> u8 {
+    0
 }
 
 pub fn read_bar(bus: u8, slot: u8, func: u8, bar_index: u8) -> u32 {
@@ -81,6 +57,7 @@ pub fn read_bar(bus: u8, slot: u8, func: u8, bar_index: u8) -> u32 {
 }
 
 pub fn scan_pci() -> Vec<PciDevice> {
+    #[allow(unused_mut)]
     let mut devices = Vec::new();
 
     #[cfg(target_arch = "aarch64")]

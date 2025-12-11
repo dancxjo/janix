@@ -42,8 +42,21 @@ pub fn timer() -> &'static dyn HardwareTimer {
         match TIMER {
             Some(t) => t,
             None => {
-                crate::log("No hardware timer registered");
-                panic!("No hardware timer registered");
+                struct DummyTimer;
+                impl HardwareTimer for DummyTimer {
+                    fn init(&self) {}
+                    fn now_ns(&self) -> u64 {
+                        0
+                    }
+                    fn set_deadline_ns(&self, _deadline_ns: u64) {}
+                }
+                static DUMMY: DummyTimer = DummyTimer;
+                static WARNED: AtomicBool = AtomicBool::new(false);
+
+                if !WARNED.swap(true, Ordering::Relaxed) {
+                    crate::log("No hardware timer registered; using dummy timer.");
+                }
+                &DUMMY
             }
         }
     }

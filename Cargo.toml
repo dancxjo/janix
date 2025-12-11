@@ -20,6 +20,7 @@ members = [
     "thing_macros",
     "thing_models",
     "smoke_tests",
+    "arch",
 ]
 
 [workspace.package]

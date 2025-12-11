@@ -66,6 +66,7 @@ pub fn seed_memory_graph_from_limine() {
             len = len.saturating_sub(delta);
         }
 
+        /*
         if !heap_initialized {
             let heap_size = crate::heap::KERNEL_HEAP_SIZE_BYTES as u64;
             if len >= heap_size {
@@ -84,6 +85,7 @@ pub fn seed_memory_graph_from_limine() {
                 heap_initialized = true;
             }
         }
+        */
 
         if len < PAGE_SIZE {
             continue;

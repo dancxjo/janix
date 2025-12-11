@@ -38,7 +38,7 @@ impl Sys for UserlandSys {
     fn syscall(&self, request: KernelRequest) -> KernelResponse {
         if let KernelRequest::Log { .. } = &request {
         } else {
-             // Debug print removed
+            // Debug print removed
         }
         match request {
             KernelRequest::Log { message } => {

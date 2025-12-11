@@ -492,11 +492,11 @@ mod tests {
         // ThingId is a transparent wrapper around u64
         let id_zero = ThingId(0);
         let id_one = ThingId(1);
-        
+
         assert_eq!(id_zero.0, 0);
         assert_eq!(id_one.0, 1);
         assert!(id_zero < id_one);
-        
+
         // Verify it implements Copy/Clone/Debug/etc
         let copy_id = id_zero;
         assert_eq!(copy_id, id_zero);

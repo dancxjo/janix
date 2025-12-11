@@ -35,6 +35,8 @@ COMPOSITOR_FONT_DIR := target/compositor-fonts
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
 $(call USER_VARIABLE,QEMUFLAGS,-m 2G)
+# Force QEMU to exit instead of rebooting when the guest halts/crashes.
+$(call USER_VARIABLE,QEMU_NO_REBOOT,-no-reboot)
 
 # External watcher wrapper that runs QEMU and exits when a crash/halt pattern
 # is observed on QEMU's serial/stdout. Can be overridden by users.
@@ -74,7 +76,7 @@ run-x86_64:
 
 .PHONY: launch-x86_64
 launch-x86_64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M q35 \
 		-serial stdio \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
@@ -88,7 +90,7 @@ run-hdd-x86_64:
 
 .PHONY: launch-hdd-x86_64
 launch-hdd-x86_64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M q35 \
 		-serial stdio \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
@@ -102,7 +104,7 @@ run-aarch64:
 
 .PHONY: launch-aarch64
 launch-aarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M virt \
 		-cpu cortex-a72 \
 		-serial stdio \
@@ -122,7 +124,7 @@ run-hdd-aarch64:
 
 .PHONY: launch-hdd-aarch64
 launch-hdd-aarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M virt \
 		-cpu cortex-a72 \
 		-serial stdio \
@@ -141,7 +143,7 @@ run-riscv64:
 
 .PHONY: launch-riscv64
 launch-riscv64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M virt \
 		-cpu rv64 \
 		-serial stdio \
@@ -160,7 +162,7 @@ run-hdd-riscv64:
 
 .PHONY: launch-hdd-riscv64
 launch-hdd-riscv64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M virt \
 		-cpu rv64 \
 		-serial stdio \
@@ -179,7 +181,7 @@ run-loongarch64:
 
 .PHONY: launch-loongarch64
 launch-loongarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M virt \
 		-cpu la464 \
 		-serial stdio \
@@ -198,7 +200,7 @@ run-hdd-loongarch64:
 
 .PHONY: launch-hdd-loongarch64
 launch-hdd-loongarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M virt \
 		-cpu la464 \
 		-serial stdio \
@@ -214,7 +216,7 @@ launch-hdd-loongarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(
 
 .PHONY: run-bios
 run-bios: $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M q35 \
 		-serial stdio \
 		-cdrom $(IMAGE_NAME).iso \
@@ -223,7 +225,7 @@ run-bios: $(IMAGE_NAME).iso
 
 .PHONY: run-hdd-bios
 run-hdd-bios: $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!' -- qemu-system-$(KARCH) \
+	$(QEMU_WATCHER) --pattern 'PANIC!' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
 		-M q35 \
 		-serial stdio \
 		-hda $(IMAGE_NAME).hdd \

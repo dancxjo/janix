@@ -52,7 +52,10 @@ fn log_thread_snapshot<S: Sys>(sys: &mut S, threads: &[ThreadThing]) {
 mod tests {
     use super::log_thread_snapshot;
     use abi::{KernelRequest, KernelResponse, ThingId};
-    use alloc::{string::{String, ToString}, vec::Vec};
+    use alloc::{
+        string::{String, ToString},
+        vec::Vec,
+    };
     use core::cell::RefCell;
     use userland_rt::Sys;
     use userland_std::{ThreadThing, doc_helpers::DocSys};
@@ -136,12 +139,16 @@ mod tests {
 
         let log_messages = sys.logs();
         assert_eq!(log_messages.len(), 2);
-        assert!(log_messages.iter().any(|message| {
-            message.contains("tid=10") && message.contains("Running")
-        }));
-        assert!(log_messages.iter().any(|message| {
-            message.contains("tid=20") && message.contains("Sleeping")
-        }));
+        assert!(
+            log_messages
+                .iter()
+                .any(|message| { message.contains("tid=10") && message.contains("Running") })
+        );
+        assert!(
+            log_messages
+                .iter()
+                .any(|message| { message.contains("tid=20") && message.contains("Sleeping") })
+        );
     }
 
     #[test]

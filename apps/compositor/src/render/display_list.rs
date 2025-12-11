@@ -59,7 +59,7 @@ pub enum DrawOp {
     },
 }
 
-    pub fn build_display_list(
+pub fn build_display_list(
     comp: &Compositor,
     stacked: &[StackedWindow],
     windows: &[Window],

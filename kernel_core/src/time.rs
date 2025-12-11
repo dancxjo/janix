@@ -36,12 +36,15 @@ pub fn register_timer(timer: &'static dyn HardwareTimer) {
 }
 
 /// Get the global timer instance.
-/// Panics if no timer has been registered.
+/// Logs if no timer has been registered.
 pub fn timer() -> &'static dyn HardwareTimer {
     unsafe {
         match TIMER {
             Some(t) => t,
-            None => panic!("No hardware timer registered"),
+            None => {
+                crate::log("No hardware timer registered");
+                panic!("No hardware timer registered");
+            }
         }
     }
 }

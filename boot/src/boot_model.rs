@@ -471,14 +471,17 @@ pub fn seed_raw_modules_from_limine() {
         let buffer_id = if base_phys % 4096 == 0 {
             let mut frames: heapless::Vec<PhysFrame, { shared_buffer::MAX_FRAMES_PER_BUFFER }> =
                 heapless::Vec::new();
-            
+
             let start_addr = base_phys;
             let end_addr = shared_buffer::align_up(base_phys + size, 4096);
             let mut addr = start_addr;
             let mut success = true;
-            
+
             while addr < end_addr {
-                if frames.push(PhysFrame::from_start_address(addr, 4096)).is_err() {
+                if frames
+                    .push(PhysFrame::from_start_address(addr, 4096))
+                    .is_err()
+                {
                     log("Module too large for SharedBuffer");
                     success = false;
                     break;
@@ -494,13 +497,13 @@ pub fn seed_raw_modules_from_limine() {
                 let width = (aligned_size / 4) as u32;
                 let height = 1;
                 let stride = width * 4;
-                
+
                 match shared_buffer::register_shared_buffer(
-                    width, 
-                    height, 
-                    stride, 
-                    abi::PixelFormat::Rgba8888, 
-                    frames
+                    width,
+                    height,
+                    stride,
+                    abi::PixelFormat::Rgba8888,
+                    frames,
                 ) {
                     Ok(id) => Some(id),
                     Err(e) => {
@@ -517,14 +520,29 @@ pub fn seed_raw_modules_from_limine() {
         };
 
         let mut props_vec = alloc::vec::Vec::new();
-        props_vec.push((abi::graph_kinds::PROP_IDENTIFIER, abi::PropValue::Str(identifier)));
-        props_vec.push((abi::graph_kinds::PROP_RAW_KIND, abi::PropValue::Str(kind_str)));
-        props_vec.push((abi::graph_kinds::PROP_MODULE_INDEX, abi::PropValue::U64(index as u64)));
-        props_vec.push((abi::graph_kinds::PROP_BASE_PHYS, abi::PropValue::U64(base_phys)));
+        props_vec.push((
+            abi::graph_kinds::PROP_IDENTIFIER,
+            abi::PropValue::Str(identifier),
+        ));
+        props_vec.push((
+            abi::graph_kinds::PROP_RAW_KIND,
+            abi::PropValue::Str(kind_str),
+        ));
+        props_vec.push((
+            abi::graph_kinds::PROP_MODULE_INDEX,
+            abi::PropValue::U64(index as u64),
+        ));
+        props_vec.push((
+            abi::graph_kinds::PROP_BASE_PHYS,
+            abi::PropValue::U64(base_phys),
+        ));
         props_vec.push((abi::graph_kinds::PROP_SIZE, abi::PropValue::U64(size)));
-        
+
         if let Some(bid) = buffer_id {
-            props_vec.push((abi::graph_kinds::PROP_FRAMEBUFFER_ID, abi::PropValue::U64(bid.0)));
+            props_vec.push((
+                abi::graph_kinds::PROP_FRAMEBUFFER_ID,
+                abi::PropValue::U64(bid.0),
+            ));
         }
 
         let props_slice = Box::leak(props_vec.into_boxed_slice());

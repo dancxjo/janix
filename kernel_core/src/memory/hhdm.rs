@@ -11,5 +11,5 @@ pub fn get_hhdm_offset() -> u64 {
 }
 
 pub fn phys_to_virt(phys: u64) -> u64 {
-    phys + get_hhdm_offset()
+    phys.wrapping_add(get_hhdm_offset())
 }

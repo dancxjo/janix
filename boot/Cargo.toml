@@ -4,8 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [features]
+default = ["fill-framebuffer"]
 boot-dashboard-only = []
 rootfs = []
+fill-framebuffer = []
 
 [dependencies]
 limine.workspace = true

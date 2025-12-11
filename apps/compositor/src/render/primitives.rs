@@ -85,7 +85,7 @@ pub fn draw_tiled_image(
         for x in 0..fb_width {
             let tex_x = (x as i32) % img_w;
             let src_offset = tex_x as usize * bytes_per_pixel;
-            
+
             unsafe {
                 let pixel_ptr = row_start.add(src_offset);
                 let color = if bpp == 24 {
@@ -104,7 +104,7 @@ pub fn draw_tiled_image(
                 } else {
                     0 // Unsupported
                 };
-                
+
                 *buffer.add(dest_row_start + x as usize) = color;
             }
         }

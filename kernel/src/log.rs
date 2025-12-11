@@ -28,21 +28,30 @@ pub fn init() {
 /// Log a message
 pub fn log_message(message: &str) {
     unsafe {
-        if LOG_INDEX < MAX_LOG_ENTRIES {
-            let leaked = alloc::boxed::Box::leak(alloc::string::String::from(message).into_boxed_str());
-            LOG_BUFFER[LOG_INDEX] = Some(leaked);
-            LOG_INDEX += 1;
-        } else {
-             console::print("LOG BUFFER FULL\n");
+        if LOG_INDEX >= MAX_LOG_ENTRIES {
+            for i in 0..MAX_LOG_ENTRIES {
+                if let Some(s) = LOG_BUFFER[i] {
+                    // SAFETY: We know these strings were allocated with Box::leak
+                    let _ = alloc::boxed::Box::from_raw(s as *const str as *mut str);
+                    LOG_BUFFER[i] = None;
+                }
+            }
+            LOG_INDEX = 0;
+            console::print("LOG BUFFER FLUSHED\n");
         }
+
+        let leaked = alloc::boxed::Box::leak(alloc::string::String::from(message).into_boxed_str());
+        LOG_BUFFER[LOG_INDEX] = Some(leaked);
+        LOG_INDEX += 1;
+
         if LOG_INDEX == 1 {
-             console::print("LOG_BUFFER address: ");
-             let ptr = &raw const LOG_BUFFER;
-             // simple hex print
-             // We can't use println! easily here if it recurses?
-             // But console::print takes str.
-             // We can use format! but that allocates.
-             // Let's just print it in init()
+            console::print("LOG_BUFFER address: ");
+            let ptr = &raw const LOG_BUFFER;
+            // simple hex print
+            // We can't use println! easily here if it recurses?
+            // But console::print takes str.
+            // We can use format! but that allocates.
+            // Let's just print it in init()
         }
     }
     console::print(message);

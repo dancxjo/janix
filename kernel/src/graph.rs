@@ -314,7 +314,7 @@ fn edge_index_ref() -> &'static EdgeIndex {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// let schema = &[("value", abi::PropType::U64)];
@@ -685,7 +685,7 @@ pub fn subscribe_edge_removed(pred: EdgePred, listener: GraphListener) {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// k::graph::register_schema("Widget", "A test kind", &[("value", abi::PropType::U64)]).unwrap();
@@ -734,7 +734,7 @@ pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Optio
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// k::graph::register_schema("Widget", "A test kind", &[("flag", abi::PropType::Bool)]).unwrap();
@@ -760,7 +760,7 @@ pub fn get_thing(id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// k::graph::register_schema("Widget", "A test kind", &[("value", abi::PropType::U64)]).unwrap();
@@ -865,7 +865,7 @@ fn remove_incident_edges(id: ThingId) {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// let id = k::graph::create_thing("Widget", &[]).unwrap();
@@ -905,7 +905,7 @@ pub fn delete_thing(id: ThingId) -> bool {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// k::graph::register_schema("Widget", "A test kind", &[("value", abi::PropType::U64)]).unwrap();
@@ -991,7 +991,7 @@ pub fn get_schema_description(kind: &'static str) -> Option<&'static str> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// let schema = &[("value", abi::PropType::U64)];
@@ -1191,7 +1191,7 @@ pub fn cleanup_process_graph(_proc: ProcessId) {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// let a = k::graph::create_thing("Thread", &[]).unwrap();
@@ -1226,7 +1226,7 @@ pub fn create_edge(src: ThingId, pred: EdgePred, dst: ThingId) -> Option<ThingId
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// let a = k::graph::create_thing("Thread", &[]).unwrap();
@@ -1243,7 +1243,7 @@ pub fn add_edge(from: ThingId, pred: EdgePred, to: ThingId) -> bool {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// let a = k::graph::create_thing("Thread", &[]).unwrap();
@@ -1270,7 +1270,7 @@ pub fn delete_edge(id: ThingId) -> bool {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// let a = k::graph::create_thing("Thread", &[]).unwrap();
@@ -1301,7 +1301,7 @@ pub fn remove_edge(from: ThingId, pred: EdgePred, to: ThingId) -> bool {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// let a = k::graph::create_thing("Thread", &[]).unwrap();
@@ -1328,7 +1328,7 @@ pub fn neighbors(from: ThingId, pred: EdgePred, out: &mut [Option<ThingId>]) {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// let a = k::graph::create_thing("Thread", &[]).unwrap();

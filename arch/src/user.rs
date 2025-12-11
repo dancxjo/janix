@@ -2,7 +2,7 @@ extern crate alloc;
 
 use crate::{Arch, CurrentArch, UserEntryRegs};
 use crate::cpu;
-use kernel_core::sched::SCHEDULER;
+use kernel::sched::SCHEDULER;
 use userland_rt::UserlandSys;
 
 // Re-export stack functions from current arch
@@ -11,17 +11,17 @@ pub use crate::current::{alloc_user_stack, init_user_stack};
 #[unsafe(no_mangle)]
 pub extern "C" fn user_thread_main(app_id: u64) -> ! {
     let sys = UserlandSys::new();
-    kernel_core::log("user_thread_main reached without ELF ProgramImage; exiting");
+    kernel::log("user_thread_main reached without ELF ProgramImage; exiting");
     let _ = app_id;
     sys.exit_thread();
 }
 
 pub fn schedule_next() -> ! {
     loop {
-        kernel_core::time::poll_time();
+        kernel::time::poll_time();
         let next_thread = {
             let mut sched = SCHEDULER.lock();
-            let now = kernel_core::time::monotonic_now_ns();
+            let now = kernel::time::monotonic_now_ns();
             sched.choose_next_thread(now)
         };
 
@@ -40,7 +40,7 @@ pub fn schedule_next() -> ! {
                 //     rsp0,
                 //     ist1
                 // );
-                // kernel_core::log(Box::leak(msg.into_boxed_str()));
+                // kernel::log(Box::leak(msg.into_boxed_str()));
             }
             #[cfg(not(target_arch = "x86_64"))]
             {
@@ -52,14 +52,14 @@ pub fn schedule_next() -> ! {
                 //     thread.user_stack_top,
                 //     thread.address_space_token
                 // );
-                // kernel_core::log(Box::leak(msg.into_boxed_str()));
+                // kernel::log(Box::leak(msg.into_boxed_str()));
             }
             CurrentArch::activate_user_address_space(thread.address_space_token);
             if thread.started {
                 CurrentArch::resume_user_mode(&thread.context);
             } else {
-                kernel_core::log("Entering user thread...");
-                kernel_core::log(thread.name);
+                kernel::log("Entering user thread...");
+                kernel::log(thread.name);
                 let regs = UserEntryRegs {
                     entry_point: thread.entry_point,
                     user_stack: thread.user_stack_top,
@@ -68,16 +68,16 @@ pub fn schedule_next() -> ! {
                 CurrentArch::enter_user_mode(&regs);
             }
         } else {
-            kernel_core::log("No runnable threads");
-            kernel_core::time::poll_time();
+            kernel::log("No runnable threads");
+            kernel::time::poll_time();
             cpu::wait_for_interrupt();
         }
     }
 }
 
 pub fn sys_sleep_for_ns(delta_ns: u64) -> ! {
-    kernel_core::time::poll_time();
-    let now = kernel_core::time::monotonic_now_ns();
+    kernel::time::poll_time();
+    let now = kernel::time::monotonic_now_ns();
     let wake_at = now.saturating_add(delta_ns);
 
     {

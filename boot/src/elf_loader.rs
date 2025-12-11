@@ -40,8 +40,8 @@ mod x86_64 {
     use abi::{USER_HEAP_END, USER_HEAP_START};
     use alloc::vec::Vec;
     use core::ptr;
-    use kernel_core::log;
-    use kernel_core::memory;
+    use kernel::log;
+    use kernel::memory;
     use x86_64::registers::control::Cr3;
     use x86_64::structures::paging::mapper::MapToError;
     use x86_64::structures::paging::{
@@ -415,8 +415,8 @@ mod aarch64 {
     use abi::{USER_HEAP_END, USER_HEAP_START};
     use alloc::vec::Vec;
     use core::ptr;
-    use kernel_core::log;
-    use kernel_core::memory;
+    use kernel::log;
+    use kernel::memory;
 
     const PT_LOAD: u32 = 1;
     const PF_X: u32 = 1;

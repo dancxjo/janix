@@ -1,8 +1,8 @@
-use kernel_core::graph;
+use kernel::graph;
 
 #[test]
 fn test_schema_description_storage() {
-    let _guard = kernel_core::test_lock();
+    let _guard = kernel::test_lock();
     graph::init();
 
     // Register a schema with a description
@@ -25,7 +25,7 @@ fn test_schema_description_storage() {
 
 #[test]
 fn test_schema_description_not_found() {
-    let _guard = kernel_core::test_lock();
+    let _guard = kernel::test_lock();
     graph::init();
 
     // Try to get description for non-existent schema
@@ -35,7 +35,7 @@ fn test_schema_description_not_found() {
 
 #[test]
 fn test_multiple_schemas_with_descriptions() {
-    let _guard = kernel_core::test_lock();
+    let _guard = kernel::test_lock();
     graph::init();
 
     // Register multiple schemas
@@ -66,9 +66,9 @@ fn test_multiple_schemas_with_descriptions() {
 
 #[test]
 fn test_model_schemas_have_descriptions() {
-    let _guard = kernel_core::test_lock();
+    let _guard = kernel::test_lock();
     graph::init();
-    kernel_core::model::init_schemas();
+    kernel::model::init_schemas();
 
     // Verify all model schemas have descriptions
     let schemas_to_check = [

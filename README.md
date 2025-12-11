@@ -23,7 +23,7 @@ This repository currently provides a minimal working skeleton of that system: a 
 * **Separation of concerns**
 
   * `boot` handles hardware + Limine
-  * `kernel_core` holds pure no_std kernel logic
+  * `kernel` holds pure no_std kernel logic
   * `abi` defines shared types
   * `userland_rt` exposes a syscall-like trait
   * `userland_std` gives friendly, std-like APIs to userland programs
@@ -46,9 +46,9 @@ thing-os/
 ├── boot/               # Limine entrypoint + kernel binary (no_std)
 │   ├── build.rs        # Linker setup
 │   ├── linker-*.ld     # Linker scripts for supported arches
-│   └── src/main.rs     # kmain() → initializes kernel_core
+│   └── src/main.rs     # kmain() → initializes kernel
 │
-├── kernel_core/        # Pure kernel logic (no_std)
+├── kernel/        # Pure kernel logic (no_std)
 │   ├── graph.rs        # Minimal node storage + queries
 │   ├── transaction.rs  # Transaction ID + stub commit
 │   └── log.rs          # Fixed-size kernel log buffer
@@ -127,9 +127,9 @@ For the RISC-V target you can run `make run-riscv64` or `make run-hdd-riscv64`; 
 ### Kernel lifetime
 
 1. Limine loads `boot/kernel`
-2. `kmain()` asserts Limine revision → initializes `kernel_core`
-3. `kernel_core::init()` brings up logging, graph, transactions
-4. `kernel_core::boot_sequence()` creates initial kernel graph nodes
+2. `kmain()` asserts Limine revision → initializes `kernel`
+3. `kernel::init()` brings up logging, graph, transactions
+4. `kernel::boot_sequence()` creates initial kernel graph nodes
 5. Kernel halts in place (more work ahead!)
 
 ### ABI
@@ -151,7 +151,7 @@ This ABI will evolve into a richer transactional graph interface.
 
 ### Userland runtime
 
-`userland_rt` defines a `Sys` trait that abstracts the syscall interface. On native kernels it exposes `KernelSys`, which forwards to `kernel_core`.
+`userland_rt` defines a `Sys` trait that abstracts the syscall interface. On native kernels it exposes `KernelSys`, which forwards to `kernel`.
 
 `userland_std` provides friendly wrapper functions so programs can write:
 
@@ -185,8 +185,8 @@ We welcome improvements, experiments, and structural refinements.
 
 Principles for contributions:
 
-* Maintain clean separation between boot, kernel_core, ABI, and userland.
-* Keep kernel_core pure `no_std`.
+* Maintain clean separation between boot, kernel, ABI, and userland.
+* Keep kernel pure `no_std`.
 * Keep ABI small and stable.
 * Avoid over-engineering until necessary—grow organically.
 * Prefer small, composable changes over monolithic refactors.

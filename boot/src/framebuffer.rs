@@ -5,7 +5,7 @@ pub fn fill_framebuffer_with_color() {
     let response = match crate::FRAMEBUFFER_REQUEST.get_response() {
         Some(resp) => resp,
         None => {
-                    kernel_core::println!("Framebuffer fill skipped: no Limine framebuffer response");
+                    kernel::println!("Framebuffer fill skipped: no Limine framebuffer response");
             return;
         }
     };
@@ -13,7 +13,7 @@ pub fn fill_framebuffer_with_color() {
     let framebuffer = match response.framebuffers().next() {
         Some(fb) => fb,
         None => {
-            kernel_core::println!("Framebuffer fill skipped: response has no framebuffers");
+            kernel::println!("Framebuffer fill skipped: response has no framebuffers");
             return;
         }
     };
@@ -22,13 +22,13 @@ pub fn fill_framebuffer_with_color() {
     let height = framebuffer.height() as usize;
     let pitch = framebuffer.pitch() as usize;
     if width == 0 || height == 0 {
-        kernel_core::println!("Framebuffer fill skipped: zero dimensions");
+        kernel::println!("Framebuffer fill skipped: zero dimensions");
         return;
     }
 
     let stride = pitch / 4;
     if stride < width {
-        kernel_core::println!("Framebuffer fill skipped: pitch less than width");
+        kernel::println!("Framebuffer fill skipped: pitch less than width");
         return;
     }
 
@@ -40,12 +40,12 @@ pub fn fill_framebuffer_with_color() {
     let fb_virt = match virtual_framebuffer_address(fb_phys, hhdm_offset) {
         Some(addr) => addr,
         None => {
-            kernel_core::println!("Framebuffer fill skipped: could not determine virtual pointer");
+            kernel::println!("Framebuffer fill skipped: could not determine virtual pointer");
             return;
         }
     };
 
-    kernel_core::println!(
+    kernel::println!(
         "Framebuffer fill: phys={:#x} hhdm={:#x} virt={:#x} pitch={} width={} height={}",
         fb_phys,
         hhdm_offset,
@@ -65,7 +65,7 @@ pub fn fill_framebuffer_with_color() {
             }
         }
     }
-    kernel_core::println!("Framebuffer filled with solid green temporarily");
+    kernel::println!("Framebuffer filled with solid green temporarily");
 }
 
 pub fn virtual_framebuffer_address(guest_addr: u64, hhdm_offset: u64) -> Option<u64> {

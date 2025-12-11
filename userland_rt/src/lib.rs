@@ -40,41 +40,41 @@ pub struct KernelSys;
 #[cfg(any(target_os = "none", feature = "kernel"))]
 impl Sys for KernelSys {
     fn syscall(&self, request: KernelRequest) -> KernelResponse {
-        // In-kernel, we just call into kernel_core
-        kernel_core::handle_request(request)
+        // In-kernel, we just call into kernel
+        kernel::handle_request(request)
     }
 
     fn time_now_ns(&mut self) -> u64 {
-        kernel_core::time::monotonic_now_ns()
+        kernel::time::monotonic_now_ns()
     }
 
     fn time_monotonic_ns(&mut self) -> u64 {
-        kernel_core::time::monotonic_now_ns()
+        kernel::time::monotonic_now_ns()
     }
 
     fn time_system_ns(&mut self) -> u64 {
-        kernel_core::time::system_time_ns().unwrap_or(0)
+        kernel::time::system_time_ns().unwrap_or(0)
     }
 
     fn sleep_for_ns(&mut self, delta_ns: u64) {
-        let start = kernel_core::time::monotonic_now_ns();
-        while kernel_core::time::monotonic_now_ns() < start + delta_ns {
+        let start = kernel::time::monotonic_now_ns();
+        while kernel::time::monotonic_now_ns() < start + delta_ns {
             core::hint::spin_loop();
         }
     }
 
     fn sleep_until_ns(&mut self, deadline_ns: u64) {
-        while kernel_core::time::monotonic_now_ns() < deadline_ns {
+        while kernel::time::monotonic_now_ns() < deadline_ns {
             core::hint::spin_loop();
         }
     }
 
     fn yield_now(&mut self) {
-        kernel_core::sched::yield_current_thread();
+        kernel::sched::yield_current_thread();
     }
 
     fn exit_thread(&mut self) -> ! {
-        kernel_core::sched::exit_current_thread();
+        kernel::sched::exit_current_thread();
         loop {}
     }
 }

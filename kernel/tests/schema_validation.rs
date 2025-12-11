@@ -1,9 +1,9 @@
 use abi::{KernelRequest, KernelResponse, PropType, PropValue};
-use kernel_core;
+use kernel;
 
 fn init_locked() -> spin::MutexGuard<'static, ()> {
-    let guard = kernel_core::test_lock();
-    kernel_core::init();
+    let guard = kernel::test_lock();
+    kernel::init();
     guard
 }
 
@@ -13,7 +13,7 @@ fn test_schema_registration() {
 
     let schema = &[("count", PropType::U64), ("active", PropType::Bool)];
 
-    let response = kernel_core::handle_request(KernelRequest::SchemaRegister {
+    let response = kernel::handle_request(KernelRequest::SchemaRegister {
         kind: "TestThing",
         description: "A test thing for schema registration testing",
         props: schema,
@@ -34,7 +34,7 @@ fn test_duplicate_schema_registration() {
     let schema = &[("field", PropType::U64)];
 
     // Register first time - should succeed
-    let response1 = kernel_core::handle_request(KernelRequest::SchemaRegister {
+    let response1 = kernel::handle_request(KernelRequest::SchemaRegister {
         kind: "DupTest",
         description: "A duplicate test thing",
         props: schema,
@@ -42,7 +42,7 @@ fn test_duplicate_schema_registration() {
     assert!(matches!(response1, KernelResponse::SchemaRegistered { .. }));
 
     // Register second time - should fail
-    let response2 = kernel_core::handle_request(KernelRequest::SchemaRegister {
+    let response2 = kernel::handle_request(KernelRequest::SchemaRegister {
         kind: "DupTest",
         description: "A duplicate test thing",
         props: schema,
@@ -56,7 +56,7 @@ fn test_thing_creation_with_valid_schema() {
 
     // Register schema
     let schema = &[("count", PropType::U64), ("active", PropType::Bool)];
-    kernel_core::handle_request(KernelRequest::SchemaRegister {
+    kernel::handle_request(KernelRequest::SchemaRegister {
         kind: "ValidThing",
         description: "A valid test thing",
         props: schema,
@@ -68,7 +68,7 @@ fn test_thing_creation_with_valid_schema() {
         ("active", PropValue::Bool(true)),
     ];
 
-    let response = kernel_core::handle_request(KernelRequest::ThingCreate {
+    let response = kernel::handle_request(KernelRequest::ThingCreate {
         kind: "ValidThing",
         props,
     });
@@ -83,7 +83,7 @@ fn test_thing_creation_without_schema() {
     // Try to create thing without registering schema
     let props = &[("count", PropValue::U64(42))];
 
-    let response = kernel_core::handle_request(KernelRequest::ThingCreate {
+    let response = kernel::handle_request(KernelRequest::ThingCreate {
         kind: "UnregisteredThing",
         props,
     });
@@ -103,7 +103,7 @@ fn test_thing_creation_with_type_mismatch() {
 
     // Register schema expecting U64
     let schema = &[("value", PropType::U64)];
-    kernel_core::handle_request(KernelRequest::SchemaRegister {
+    kernel::handle_request(KernelRequest::SchemaRegister {
         kind: "TypeMismatchThing",
         description: "A thing for testing type mismatches",
         props: schema,
@@ -112,7 +112,7 @@ fn test_thing_creation_with_type_mismatch() {
     // Try to create with Bool instead
     let props = &[("value", PropValue::Bool(true))];
 
-    let response = kernel_core::handle_request(KernelRequest::ThingCreate {
+    let response = kernel::handle_request(KernelRequest::ThingCreate {
         kind: "TypeMismatchThing",
         props,
     });
@@ -132,7 +132,7 @@ fn test_thing_creation_with_unknown_property() {
 
     // Register schema with specific properties
     let schema = &[("count", PropType::U64)];
-    kernel_core::handle_request(KernelRequest::SchemaRegister {
+    kernel::handle_request(KernelRequest::SchemaRegister {
         kind: "StrictThing",
         description: "A thing with strict schema validation",
         props: schema,
@@ -144,7 +144,7 @@ fn test_thing_creation_with_unknown_property() {
         ("extra", PropValue::Bool(true)),
     ];
 
-    let response = kernel_core::handle_request(KernelRequest::ThingCreate {
+    let response = kernel::handle_request(KernelRequest::ThingCreate {
         kind: "StrictThing",
         props,
     });
@@ -168,7 +168,7 @@ fn test_thing_update_with_schema_validation() {
 
     // Register schema
     let schema = &[("count", PropType::U64), ("active", PropType::Bool)];
-    kernel_core::handle_request(KernelRequest::SchemaRegister {
+    kernel::handle_request(KernelRequest::SchemaRegister {
         kind: "UpdateTestThing",
         description: "A thing for testing updates",
         props: schema,
@@ -179,7 +179,7 @@ fn test_thing_update_with_schema_validation() {
         ("count", PropValue::U64(10)),
         ("active", PropValue::Bool(false)),
     ];
-    let create_response = kernel_core::handle_request(KernelRequest::ThingCreate {
+    let create_response = kernel::handle_request(KernelRequest::ThingCreate {
         kind: "UpdateTestThing",
         props: create_props,
     });
@@ -191,7 +191,7 @@ fn test_thing_update_with_schema_validation() {
 
     // Update with valid properties
     let update_props = &[("count", PropValue::U64(20))];
-    let update_response = kernel_core::handle_request(KernelRequest::ThingUpdate {
+    let update_response = kernel::handle_request(KernelRequest::ThingUpdate {
         id: thing_id,
         props: update_props,
     });
@@ -205,7 +205,7 @@ fn test_thing_update_with_invalid_type() {
 
     // Register schema
     let schema = &[("count", PropType::U64)];
-    kernel_core::handle_request(KernelRequest::SchemaRegister {
+    kernel::handle_request(KernelRequest::SchemaRegister {
         kind: "UpdateTypeThing",
         description: "A thing for testing update type validation",
         props: schema,
@@ -213,7 +213,7 @@ fn test_thing_update_with_invalid_type() {
 
     // Create thing
     let create_props = &[("count", PropValue::U64(10))];
-    let create_response = kernel_core::handle_request(KernelRequest::ThingCreate {
+    let create_response = kernel::handle_request(KernelRequest::ThingCreate {
         kind: "UpdateTypeThing",
         props: create_props,
     });
@@ -225,7 +225,7 @@ fn test_thing_update_with_invalid_type() {
 
     // Try to update with wrong type
     let update_props = &[("count", PropValue::Bool(true))];
-    let update_response = kernel_core::handle_request(KernelRequest::ThingUpdate {
+    let update_response = kernel::handle_request(KernelRequest::ThingUpdate {
         id: thing_id,
         props: update_props,
     });
@@ -245,14 +245,14 @@ fn test_schema_get() {
 
     // Register a schema
     let schema = &[("field1", PropType::U64), ("field2", PropType::Bool)];
-    kernel_core::handle_request(KernelRequest::SchemaRegister {
+    kernel::handle_request(KernelRequest::SchemaRegister {
         kind: "GetTestThing",
         description: "A thing for testing schema retrieval",
         props: schema,
     });
 
     // Get the schema back
-    let response = kernel_core::handle_request(KernelRequest::SchemaGet {
+    let response = kernel::handle_request(KernelRequest::SchemaGet {
         kind: "GetTestThing",
     });
 
@@ -281,7 +281,7 @@ fn test_schema_get() {
 fn test_schema_get_not_found() {
     let _guard = init_locked();
 
-    let response = kernel_core::handle_request(KernelRequest::SchemaGet {
+    let response = kernel::handle_request(KernelRequest::SchemaGet {
         kind: "NonExistent",
     });
 

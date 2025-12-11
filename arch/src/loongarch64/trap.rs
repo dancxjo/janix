@@ -4,9 +4,9 @@ global_asm!(include_str!("trap.S"));
 
 #[unsafe(no_mangle)]
 pub extern "C" fn trap_handler(tf: &TrapFrame, estat: u64, era: u64, badv: u64) {
-    kernel_core::println!("EXCEPTION: LoongArch64 Trap");
-    kernel_core::println!("estat: {:#x}, era: {:#x}, badv: {:#x}", estat, era, badv);
-    kernel_core::println!("{:#?}", tf);
+    kernel::println!("EXCEPTION: LoongArch64 Trap");
+    kernel::println!("estat: {:#x}, era: {:#x}, badv: {:#x}", estat, era, badv);
+    kernel::println!("{:#?}", tf);
     loop {}
 }
 

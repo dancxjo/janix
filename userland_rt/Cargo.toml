@@ -7,7 +7,7 @@ edition.workspace = true
 
 [dependencies]
 abi = { path = "../abi" }
-kernel_core = { path = "../kernel_core" }
+kernel = { path = "../kernel" }
 spin = { version = "0.10", default-features = false }
 linked_list_allocator = { version = "0.10", default-features = false, features = ["use_spin"] }
 

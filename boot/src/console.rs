@@ -1,6 +1,6 @@
 use abi::PropValue;
-use kernel_core::console::{ConsoleSink, register_sink};
-use kernel_core::{graph, graph_kinds};
+use kernel::console::{ConsoleSink, register_sink};
+use kernel::{graph, graph_kinds};
 use limine::framebuffer::Framebuffer;
 use spin::Mutex;
 use thing_models::MODE_INDEX_CONSOLE;
@@ -188,7 +188,7 @@ pub unsafe fn init_global(fb: &Framebuffer) {
 }
 
 pub fn print(s: &str) {
-    kernel_core::console::print(s);
+    kernel::console::print(s);
 }
 
 pub fn clear_screen() {

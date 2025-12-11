@@ -1,14 +1,14 @@
 #[test]
 fn test_dashboard_snapshot_from_boot_graph() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::create_builtin_things();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::create_builtin_things();
 
     // Seed some data
-    kernel_core::model::create_frame_pool(0x1000, 0x9000, 4096);
-    kernel_core::model::create_cpu_core(0);
+    kernel::model::create_frame_pool(0x1000, 0x9000, 4096);
+    kernel::model::create_cpu_core(0);
 
-    let snapshot = kernel_core::model::dashboard_snapshot();
+    let snapshot = kernel::model::dashboard_snapshot();
 
     // Verify counts
     assert!(snapshot.counts.total_things > 0);

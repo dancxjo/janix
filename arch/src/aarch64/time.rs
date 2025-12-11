@@ -1,5 +1,5 @@
 use core::arch::asm;
-use kernel_core::time::HardwareTimer;
+use kernel::time::HardwareTimer;
 
 pub struct Arm64HardwareTimer {
     freq_hz: u64,
@@ -37,5 +37,5 @@ impl HardwareTimer for Arm64HardwareTimer {
 
 pub fn init_arch_timer() {
     static TIMER: Arm64HardwareTimer = Arm64HardwareTimer { freq_hz: 0 };
-    kernel_core::time::register_timer(&TIMER);
+    kernel::time::register_timer(&TIMER);
 }

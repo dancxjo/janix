@@ -1,11 +1,11 @@
 use abi::PropValue;
-use kernel_core::sched_types::ThreadState;
+use kernel::sched_types::ThreadState;
 
 #[test]
 fn test_boot_graph_initialization() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::init_boot_graph();
 
     // The boot graph should have created various Things
     // We can't directly query by kind, but we can verify that Things were created
@@ -14,7 +14,7 @@ fn test_boot_graph_initialization() {
     // Try to get first several Things (CpuCore, Process, Thread, AddressSpace, etc.)
     for i in 0..10 {
         let thing_id = abi::ThingId(i);
-        if let Some((kind, props)) = kernel_core::graph::get_thing(thing_id) {
+        if let Some((kind, props)) = kernel::graph::get_thing(thing_id) {
             println!("Thing {}: kind = {}", i, kind);
             for prop in props.iter() {
                 if let Some((key, value)) = prop {
@@ -27,15 +27,15 @@ fn test_boot_graph_initialization() {
 
 #[test]
 fn test_boot_graph_has_process() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::init_boot_graph();
 
     // Look for Process Thing
     let mut found_process = false;
     for i in 0..20 {
         let thing_id = abi::ThingId(i);
-        if let Some((kind, props)) = kernel_core::graph::get_thing(thing_id) {
+        if let Some((kind, props)) = kernel::graph::get_thing(thing_id) {
             if kind == "Process" {
                 found_process = true;
                 // Check that it has a pid property
@@ -62,9 +62,9 @@ fn test_boot_graph_has_process() {
 
 #[test]
 fn test_boot_graph_has_thread() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::init_boot_graph();
 
     // Look for Thread Thing
     let mut found_thread = false;
@@ -72,7 +72,7 @@ fn test_boot_graph_has_thread() {
 
     for i in 0..20 {
         let thing_id = abi::ThingId(i);
-        if let Some((kind, props)) = kernel_core::graph::get_thing(thing_id) {
+        if let Some((kind, props)) = kernel::graph::get_thing(thing_id) {
             if kind == "Thread" {
                 found_thread = true;
 
@@ -124,16 +124,16 @@ fn test_boot_graph_has_thread() {
 
 #[test]
 fn test_boot_graph_has_cpu_core() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::init_boot_graph();
 
     // Look for CpuCore Thing
     let mut found_cpu = false;
 
     for i in 0..20 {
         let thing_id = abi::ThingId(i);
-        if let Some((kind, props)) = kernel_core::graph::get_thing(thing_id) {
+        if let Some((kind, props)) = kernel::graph::get_thing(thing_id) {
             if kind == "CpuCore" {
                 found_cpu = true;
 
@@ -158,16 +158,16 @@ fn test_boot_graph_has_cpu_core() {
 
 #[test]
 fn test_boot_graph_has_address_space() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::init_boot_graph();
 
     // Look for AddressSpace Thing
     let mut found_addr_space = false;
 
     for i in 0..20 {
         let thing_id = abi::ThingId(i);
-        if let Some((kind, props)) = kernel_core::graph::get_thing(thing_id) {
+        if let Some((kind, props)) = kernel::graph::get_thing(thing_id) {
             if kind == "AddressSpace" {
                 found_addr_space = true;
 
@@ -195,16 +195,16 @@ fn test_boot_graph_has_address_space() {
 
 #[test]
 fn test_boot_graph_has_frame_pool() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::init_boot_graph();
 
     // Look for FramePool Thing
     let mut found_pool = false;
 
     for i in 0..20 {
         let thing_id = abi::ThingId(i);
-        if let Some((kind, props)) = kernel_core::graph::get_thing(thing_id) {
+        if let Some((kind, props)) = kernel::graph::get_thing(thing_id) {
             if kind == "FramePool" {
                 found_pool = true;
 
@@ -240,16 +240,16 @@ fn test_boot_graph_has_frame_pool() {
 
 #[test]
 fn test_boot_graph_has_phys_frames() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::init_boot_graph();
 
     // Look for PhysFrame Things
     let mut frame_count = 0;
 
     for i in 0..20 {
         let thing_id = abi::ThingId(i);
-        if let Some((kind, _props)) = kernel_core::graph::get_thing(thing_id) {
+        if let Some((kind, _props)) = kernel::graph::get_thing(thing_id) {
             if kind == "PhysFrame" {
                 frame_count += 1;
             }
@@ -265,16 +265,16 @@ fn test_boot_graph_has_phys_frames() {
 
 #[test]
 fn test_boot_graph_has_virt_regions() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::init_boot_graph();
 
     // Look for VirtRegion Things
     let mut region_count = 0;
 
     for i in 0..20 {
         let thing_id = abi::ThingId(i);
-        if let Some((kind, props)) = kernel_core::graph::get_thing(thing_id) {
+        if let Some((kind, props)) = kernel::graph::get_thing(thing_id) {
             if kind == "VirtRegion" {
                 region_count += 1;
 
@@ -310,28 +310,28 @@ fn test_boot_graph_has_virt_regions() {
 
 #[test]
 fn test_model_create_functions() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
+    let _guard = kernel::test_lock();
+    kernel::init();
 
     // Test each create function directly
-    let cpu = kernel_core::model::create_cpu_core(0);
+    let cpu = kernel::model::create_cpu_core(0);
     assert!(cpu.is_some(), "Should create CpuCore");
 
-    let process = kernel_core::model::create_process(100);
+    let process = kernel::model::create_process(100);
     assert!(process.is_some(), "Should create Process");
 
-    let thread = kernel_core::model::create_thread(200, 50);
+    let thread = kernel::model::create_thread(200, 50);
     assert!(thread.is_some(), "Should create Thread");
 
-    let addr_space = kernel_core::model::create_address_space(10);
+    let addr_space = kernel::model::create_address_space(10);
     assert!(addr_space.is_some(), "Should create AddressSpace");
 
-    let frame_pool = kernel_core::model::create_frame_pool(0x1000, 0x2000, 4096);
+    let frame_pool = kernel::model::create_frame_pool(0x1000, 0x2000, 4096);
     assert!(frame_pool.is_some(), "Should create FramePool");
 
-    let phys_frame = kernel_core::model::create_phys_frame(0x1000, 4096);
+    let phys_frame = kernel::model::create_phys_frame(0x1000, 4096);
     assert!(phys_frame.is_some(), "Should create PhysFrame");
 
-    let virt_region = kernel_core::model::create_virt_region(0x400000, 0x1000, 0x7);
+    let virt_region = kernel::model::create_virt_region(0x400000, 0x1000, 0x7);
     assert!(virt_region.is_some(), "Should create VirtRegion");
 }

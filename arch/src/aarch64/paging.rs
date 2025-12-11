@@ -1,5 +1,5 @@
 use core::arch::asm;
-use kernel_core::memory::{PhysFrame, allocate_frame, phys_to_virt};
+use kernel::memory::{PhysFrame, allocate_frame, phys_to_virt};
 
 // AArch64 VMSA descriptors
 const DESC_VALID: u64 = 1 << 0;
@@ -55,7 +55,7 @@ pub unsafe fn map_device_region(phys: u64, len: u64) {
     // Assuming 4KB granule (TG1 = 0 usually)
 
     let root_table = get_ttbr1();
-    let hhdm_offset = kernel_core::memory::get_hhdm_offset();
+    let hhdm_offset = kernel::memory::get_hhdm_offset();
 
     let start = phys;
     let end = phys + len;

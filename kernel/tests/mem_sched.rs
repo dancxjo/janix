@@ -1,11 +1,11 @@
-use kernel_core::model;
+use kernel::model;
 
 #[test]
 fn test_memory_allocator() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::create_builtin_things();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::create_builtin_things();
+    kernel::init_boot_graph();
 
     // init_boot_graph creates 3 frames.
     // Let's try to allocate them.
@@ -26,10 +26,10 @@ fn test_memory_allocator() {
 
 #[test]
 fn test_scheduler_basic() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
-    kernel_core::create_builtin_things();
-    kernel_core::init_boot_graph();
+    let _guard = kernel::test_lock();
+    kernel::init();
+    kernel::create_builtin_things();
+    kernel::init_boot_graph();
     // init_boot_graph creates Process(1) and Thread(1) (Running and bound to CpuCore 0)
 
     // Create another process/thread

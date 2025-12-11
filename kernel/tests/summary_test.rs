@@ -1,11 +1,11 @@
 use abi::{KernelRequest, KernelResponse, PropValue};
-use kernel_core::model;
+use kernel::model;
 use std::string::String;
 
 #[test]
 fn test_memory_summary() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
+    let _guard = kernel::test_lock();
+    kernel::init();
 
     // Create some PhysFrames
     let _ = model::create_phys_frame(0x1000, 4096);
@@ -14,7 +14,7 @@ fn test_memory_summary() {
     // Create a FramePool
     let _ = model::create_frame_pool(0x1000, 0x3000, 4096);
 
-    let response = kernel_core::handle_request(KernelRequest::GetMemorySummary);
+    let response = kernel::handle_request(KernelRequest::GetMemorySummary);
 
     if let KernelResponse::MemorySummary { summary } = response {
         assert!(
@@ -40,12 +40,12 @@ fn test_memory_summary() {
 
 #[test]
 fn test_scheduler_summary() {
-    let _guard = kernel_core::test_lock();
-    kernel_core::init();
+    let _guard = kernel::test_lock();
+    kernel::init();
 
     // Create a Process
     let props = &[("pid", PropValue::U64(1))];
-    kernel_core::graph::create_thing("Process", props);
+    kernel::graph::create_thing("Process", props);
 
     // Create a Thread
     let props = &[
@@ -55,9 +55,9 @@ fn test_scheduler_summary() {
         ("runtime_ns", PropValue::U64(0)),
         ("last_started_ns", PropValue::U64(0)),
     ];
-    kernel_core::graph::create_thing("Thread", props);
+    kernel::graph::create_thing("Thread", props);
 
-    let response = kernel_core::handle_request(KernelRequest::GetSchedulerSummary);
+    let response = kernel::handle_request(KernelRequest::GetSchedulerSummary);
 
     if let KernelResponse::SchedulerSummary { summary } = response {
         assert!(

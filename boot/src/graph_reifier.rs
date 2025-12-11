@@ -1,8 +1,8 @@
 use abi::PropValue;
 use abi::ThingId;
-use kernel_core::graph::{self, GraphEvent};
-use kernel_core::graph_kinds;
-use kernel_core::sched_types::CpuId;
+use kernel::graph::{self, GraphEvent};
+use kernel::graph_kinds;
+use kernel::sched_types::CpuId;
 
 use crate::context_switch::{arch_current_thread, arch_switch_to_thread};
 

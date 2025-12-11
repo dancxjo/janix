@@ -1,6 +1,6 @@
 use super::{pic, syscall};
 use crate::gdt;
-use kernel_core::memory;
+use kernel::memory;
 use lazy_static::lazy_static;
 use x86_64::instructions::{hlt, interrupts};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
@@ -36,7 +36,7 @@ pub fn init() {
     pic::init();
     // Log syscall gate configuration to ensure user mode can invoke int 0x80.
     let entry = &IDT[0x80];
-    kernel_core::println!("IDT[0x80]: {:?}", entry);
+    kernel::println!("IDT[0x80]: {:?}", entry);
     interrupts::enable();
 }
 
@@ -44,8 +44,8 @@ extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) -> ! {
-    kernel_core::println!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
-    kernel_core::log("Double fault occurred; halting CPU");
+    kernel::println!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
+    kernel::log("Double fault occurred; halting CPU");
     loop {
         hlt();
     }
@@ -65,7 +65,7 @@ extern "x86-interrupt" fn gp_fault_handler(stack_frame: InterruptStackFrame, err
         }
     }
 
-    kernel_core::println!(
+    kernel::println!(
         "EXCEPTION: GENERAL PROTECTION FAULT\nError Code: {:#x}\nCR3={:#x}\nRSP={:#x}\nStack top: [{:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}]\n{:#?}",
         error_code,
         Cr3::read().0.start_address().as_u64(),
@@ -108,9 +108,9 @@ extern "x86-interrupt" fn page_fault_handler(
         let _translation = mapper.translate_addr(addr);
         // match translation {
         //     Some(pa) => {
-        //         kernel_core::println!("Page fault translation: virt={:?} -> phys={:?}", addr, pa)
+        //         kernel::println!("Page fault translation: virt={:?} -> phys={:?}", addr, pa)
         //     }
-        //     None => kernel_core::println!("Page fault translation: virt={:?} unmapped", addr),
+        //     None => kernel::println!("Page fault translation: virt={:?} unmapped", addr),
         // }
 
         // Lazy map as user accessible on protection violation
@@ -132,14 +132,14 @@ extern "x86-interrupt" fn page_fault_handler(
         }
     }
 
-    kernel_core::println!("EXCEPTION: PAGE FAULT");
-    kernel_core::println!("Accessed Address: {:?}", addr);
-    kernel_core::println!("Error Code: {:?}", error_code);
-    kernel_core::println!("{:#?}", stack_frame);
+    kernel::println!("EXCEPTION: PAGE FAULT");
+    kernel::println!("Accessed Address: {:?}", addr);
+    kernel::println!("Error Code: {:?}", error_code);
+    kernel::println!("{:#?}", stack_frame);
     loop {}
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    kernel_core::hw::io::handle_interrupt(KEYBOARD_IRQ);
+    kernel::hw::io::handle_interrupt(KEYBOARD_IRQ);
     pic::notify_end_of_interrupt(KEYBOARD_IRQ);
 }

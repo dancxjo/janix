@@ -68,12 +68,12 @@ pub fn get_heap_stats() -> (usize, usize) {
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
-    kernel_core::println!(
+    kernel::println!(
         "alloc_error_handler: KERNEL_ALLOCATOR address: {:p}",
         &KERNEL_ALLOCATOR
     );
     let (used, size) = get_heap_stats();
-    kernel_core::println!("Heap stats: used={} size={}", used, size);
+    kernel::println!("Heap stats: used={} size={}", used, size);
     panic!("allocation error: {:?}", layout);
 }
 
@@ -92,22 +92,22 @@ unsafe extern "C" fn kmain() -> ! {
     // We use 0 offset initially; Semihosting doesn't need offset.
     serial::arch::init_serial(0);
 
-    kernel_core::println!("Serial initialized. Preparing to switch stack...");
+    kernel::println!("Serial initialized. Preparing to switch stack...");
 
     unsafe {
         let heap_addr = core::ptr::addr_of_mut!(HEAP_MEMORY) as usize;
-        kernel_core::println!("HEAP_MEMORY address: {:#x}", heap_addr);
-        kernel_core::println!("Probing HEAP_MEMORY...");
+        kernel::println!("HEAP_MEMORY address: {:#x}", heap_addr);
+        kernel::println!("Probing HEAP_MEMORY...");
         // Volatile write to ensure it's not optimized out
         core::ptr::write_volatile(&mut HEAP_MEMORY[0], 0xAA);
         core::ptr::write_volatile(&mut HEAP_MEMORY[HEAP_SIZE - 1], 0xBB);
-        kernel_core::println!("HEAP_MEMORY probe successful.");
+        kernel::println!("HEAP_MEMORY probe successful.");
 
-        kernel_core::println!("KERNEL_ALLOCATOR address: {:p}", &KERNEL_ALLOCATOR);
+        kernel::println!("KERNEL_ALLOCATOR address: {:p}", &KERNEL_ALLOCATOR);
         KERNEL_ALLOCATOR
             .lock()
             .init(heap_addr as *mut u8, HEAP_SIZE);
-        kernel_core::println!(
+        kernel::println!(
             "Kernel heap initialized: [{:#x}, {:#x})",
             heap_addr,
             heap_addr + HEAP_SIZE
@@ -122,7 +122,7 @@ unsafe extern "C" fn kmain() -> ! {
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
-    kernel_core::println!("Entered kmain_inner");
+    kernel::println!("Entered kmain_inner");
     #[cfg(feature = "fill-framebuffer")]
     crate::framebuffer::fill_framebuffer_with_color();
 

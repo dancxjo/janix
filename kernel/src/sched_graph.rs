@@ -14,7 +14,7 @@ const EDGE_BUF: usize = 4;
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let cpu = k::model::create_cpu_core(0).unwrap();
@@ -61,7 +61,7 @@ pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId>
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let thread = k::model::create_thread(7, 1).unwrap();

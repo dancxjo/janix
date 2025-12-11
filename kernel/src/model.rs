@@ -95,7 +95,7 @@ fn is_kind(id: ThingId, expected: &str) -> bool {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::graph::init();
 /// k::model::init_schemas();
@@ -386,7 +386,7 @@ pub fn init_schemas() {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let frame = k::model::create_phys_frame(0x1000, 4096).unwrap();
@@ -415,7 +415,7 @@ pub fn create_phys_frame(base: u64, size: u64) -> Option<ThingId> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let pool = k::model::create_frame_pool(0x1000, 0x2000, 4096).unwrap();
@@ -441,7 +441,7 @@ pub fn create_frame_pool(start: u64, end: u64, frame_size: u64) -> Option<ThingI
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let cpu = k::model::create_cpu_core(0).unwrap();
@@ -458,7 +458,7 @@ pub fn create_cpu_core(index: u64) -> Option<ThingId> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// k::model::create_phys_frame(0x1000, 4096);
@@ -509,7 +509,7 @@ pub fn compute_memory_summary() -> MemorySummary {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// k::model::create_process(1);
@@ -570,7 +570,7 @@ pub fn compute_scheduler_summary() -> SchedulerSummary {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let asid = k::model::create_address_space(7).unwrap();
@@ -594,7 +594,7 @@ pub fn create_address_space(asid: u64) -> Option<ThingId> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let vr = k::model::create_virt_region(0x4000, 0x1000, 0x7).unwrap();
@@ -620,7 +620,7 @@ pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let proc = k::model::create_process(1).unwrap();
@@ -644,7 +644,7 @@ pub fn create_process(pid: u64) -> Option<ThingId> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let thread = k::model::create_thread(42, 10).unwrap();
@@ -670,7 +670,7 @@ pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let phys = k::model::create_phys_frame(0x2000, 4096).unwrap();
@@ -734,7 +734,7 @@ pub fn alloc_frame() -> Option<FrameInfo> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let phys = k::model::create_phys_frame(0x1000, 4096).unwrap();
@@ -757,7 +757,7 @@ pub fn free_frame(frame_id: FrameId) -> bool {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let pid = k::model::create_process_abi(2).unwrap();
@@ -774,7 +774,7 @@ pub fn create_process_abi(pid: u64) -> Option<u64> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let tid = k::model::create_thread_abi(1, 10, 1).unwrap();
@@ -799,7 +799,7 @@ pub fn create_thread_abi(_pid: u64, tid: u64, priority: u64) -> Option<u64> {
 ///
 /// # Examples
 /// ```
-/// # use kernel_core as k;
+/// # use kernel as k;
 /// # let _guard = k::test_lock();
 /// k::init();
 /// k::init_boot_graph();

@@ -11,7 +11,7 @@ fill-framebuffer = []
 
 [dependencies]
 limine.workspace = true
-kernel_core = { path = "../kernel_core" }
+kernel = { path = "../kernel" }
 abi = { path = "../abi" }
 userland_rt = { path = "../userland_rt", features = ["kernel"] }
 thing_models = { path = "../thing_models" }

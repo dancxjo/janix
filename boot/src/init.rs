@@ -16,28 +16,28 @@ pub fn init_machine() {
         // And we can log.
         let msg = alloc::format!("Kernel heap initialized: [{:#x}, {:#x})", start, end);
         let leaked: &'static str = Box::leak(msg.into_boxed_str());
-        kernel_core::log(leaked);
+        kernel::log(leaked);
     }
 
     if let Some(hhdm_response) = crate::boot_model::HHDM_REQUEST.get_response() {
         let offset = hhdm_response.offset();
-        kernel_core::memory::set_hhdm_offset(offset);
+        kernel::memory::set_hhdm_offset(offset);
         unsafe { arch::user::init_user_stack(offset) };
     }
 
     if arch::platform::map_boot_device_regions() {
-        kernel_core::log("PCI regions mapped.");
+        kernel::log("PCI regions mapped.");
     }
 
-    kernel_core::log("Initializing kernel core...");
-    kernel_core::init();
+    kernel::log("Initializing kernel core...");
+    kernel::init();
 
-    kernel_core::register_spawn_program_handler(crate::program::spawn_program);
+    kernel::register_spawn_program_handler(crate::program::spawn_program);
     {
-        let mut sched = kernel_core::sched::SCHEDULER.lock();
+        let mut sched = kernel::sched::SCHEDULER.lock();
         sched.init_graph_mirror();
     }
-    kernel_core::log("Kernel core initialized.");
+    kernel::log("Kernel core initialized.");
     crate::graph_reifier::init_graph_subscriptions();
 
     arch::platform::init_arch_tables();
@@ -46,15 +46,15 @@ pub fn init_machine() {
 
     let rtc_epoch = arch::read_boot_rtc_epoch_seconds();
     crate::time_utils::log_rtc_epoch(rtc_epoch);
-    kernel_core::time::init_timekeeping(rtc_epoch);
+    kernel::time::init_timekeeping(rtc_epoch);
 
     init_console();
 
-    kernel_core::log("ThingOS booting...");
+    kernel::log("ThingOS booting...");
 }
 
 pub fn init_world_graph() {
-    kernel_core::create_builtin_things();
+    kernel::create_builtin_things();
     crate::boot_model::seed_memory_graph_from_limine();
     crate::boot_model::seed_cpu_graph_from_limine();
     crate::boot_model::seed_display_from_limine();
@@ -64,14 +64,14 @@ pub fn init_world_graph() {
     crate::boot_model::seed_raw_modules_from_limine();
     crate::boot_model::seed_boot_programs_from_limine();
     crate::boot_model::seed_time_graph();
-    kernel_core::hw::io::seed_io_regions();
+    kernel::hw::io::seed_io_regions();
 }
 
 #[cfg(not(feature = "boot-dashboard-only"))]
 pub fn init_userland_and_enter_scheduler() -> ! {
-    kernel_core::log("Launching init (PID 1) ...");
+    kernel::log("Launching init (PID 1) ...");
     launch_init_process();
-    kernel_core::log("Handing control to scheduler...");
+    kernel::log("Handing control to scheduler...");
     arch::user::schedule_next();
 }
 
@@ -87,16 +87,16 @@ pub fn render_dashboard_and_halt() -> ! {
             crate::dashboard::render_dashboard(console);
         });
     } else {
-        kernel_core::log("No framebuffer available for dashboard");
+        kernel::log("No framebuffer available for dashboard");
     }
     crate::panic_handler::hcf();
 }
 
 pub fn launch_init_process() {
-    kernel_core::log("launch_init_process: spawning init via ProgramImage");
+    kernel::log("launch_init_process: spawning init via ProgramImage");
     if let Err(err) = crate::program::spawn_program_by_identifier("init", "init", 1) {
-        kernel_core::log("launch_init_process: failed to spawn init via ProgramImage");
-        kernel_core::log(err);
+        kernel::log("launch_init_process: failed to spawn init via ProgramImage");
+        kernel::log(err);
         crate::panic_handler::hcf();
     }
 }

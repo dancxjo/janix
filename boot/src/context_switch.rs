@@ -1,6 +1,6 @@
 use abi::ThingId;
-use kernel_core::sched::SCHEDULER;
-use kernel_core::sched_types::CpuId;
+use kernel::sched::SCHEDULER;
+use kernel::sched_types::CpuId;
 use spin::Mutex;
 
 const MAX_CPUS: usize = 4;
@@ -18,7 +18,7 @@ pub fn arch_current_thread(cpu: CpuId) -> Option<ThingId> {
 pub fn arch_switch_to_thread(cpu: CpuId, next: ThingId) {
     let idx = cpu as usize;
     if idx >= MAX_CPUS {
-        kernel_core::println!(
+        kernel::println!(
             "arch_switch_to_thread: ignoring assignment of Thread({}) to CpuCore({})",
             next.0,
             cpu
@@ -38,10 +38,10 @@ pub fn arch_switch_to_thread(cpu: CpuId, next: ThingId) {
 
     match previous {
         Some(prev) => {
-            kernel_core::println!("CPU {}: Thread({}) -> Thread({})", cpu, prev.0, next.0);
+            kernel::println!("CPU {}: Thread({}) -> Thread({})", cpu, prev.0, next.0);
         }
         None => {
-            kernel_core::println!("CPU {}: starting Thread({})", cpu, next.0);
+            kernel::println!("CPU {}: starting Thread({})", cpu, next.0);
         }
     }
 
@@ -49,9 +49,9 @@ pub fn arch_switch_to_thread(cpu: CpuId, next: ThingId) {
     let tid = sched.thread_id_for_thing(next).map(|id| id.0);
     if let Some(thread) = sched.thread_by_thing(next) {
         let tid_num = tid.unwrap_or(thread.id.0);
-        kernel_core::println!("CPU {} now running {} (tid {})", cpu, thread.name, tid_num);
+        kernel::println!("CPU {} now running {} (tid {})", cpu, thread.name, tid_num);
     } else {
-        kernel_core::println!(
+        kernel::println!(
             "CPU {}: Thread({}) not found in scheduler backing store",
             cpu,
             next.0

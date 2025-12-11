@@ -21,10 +21,10 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     if ec != 0x15 {
         let far: u64;
         unsafe { core::arch::asm!("mrs {}, far_el1", out(reg) far) };
-        kernel_core::println!("EXCEPTION: AArch64 Trap (Not SVC)");
-        kernel_core::println!("ESR: {:#x}", esr);
-        kernel_core::println!("FAR: {:#x}", far);
-        kernel_core::println!("{:#?}", tf);
+        kernel::println!("EXCEPTION: AArch64 Trap (Not SVC)");
+        kernel::println!("ESR: {:#x}", esr);
+        kernel::println!("FAR: {:#x}", far);
+        kernel::println!("{:#?}", tf);
         loop {}
     }
 
@@ -40,7 +40,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
 
     if num == SyscallNumber::Yield as u64 {
         save_current_thread_context(tf);
-        kernel_core::sched::yield_current_thread();
+        kernel::sched::yield_current_thread();
         return user::schedule_next();
     } else if num == SyscallNumber::SleepForNs as u64 {
         save_current_thread_context(tf);
@@ -49,12 +49,12 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let ptr = arg1 as *const u8;
         let len = arg2 as usize;
         if let Ok(s) = unsafe { core::str::from_utf8(user_slice(ptr, len)) } {
-            kernel_core::log(s);
+            kernel::log(s);
         }
         0
     } else if num == SyscallNumber::ExitThread as u64 {
-        kernel_core::log("Thread exited via syscall");
-        kernel_core::sched::exit_current_thread();
+        kernel::log("Thread exited via syscall");
+        kernel::sched::exit_current_thread();
         return user::schedule_next();
     } else if num == SyscallNumber::AllocFrame as u64 {
         let pool_index = arg1;
@@ -63,7 +63,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let req = KernelRequest::AllocFrame {
             pool_index: pool_index,
         };
-        match kernel_core::handle_request(req) {
+        match kernel::handle_request(req) {
             KernelResponse::FrameAllocated { frame } => {
                 unsafe { *frame_info_ptr = frame };
                 0
@@ -73,7 +73,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     } else if num == SyscallNumber::FreeFrame as u64 {
         let frame_id = abi::FrameId(arg1);
         let req = KernelRequest::FreeFrame { frame_id };
-        match kernel_core::handle_request(req) {
+        match kernel::handle_request(req) {
             KernelResponse::FrameFreed { .. } => 0,
             _ => 1,
         }
@@ -82,7 +82,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             return 0;
         };
         let pid = {
-            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            let mut sched = kernel::sched::SCHEDULER.lock();
             let pid = sched.add_process(name);
             pid.0
         };
@@ -96,7 +96,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         };
         let stack = user::alloc_user_stack();
         let tid = {
-            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            let mut sched = kernel::sched::SCHEDULER.lock();
             sched.add_thread(
                 process_id,
                 name,
@@ -112,7 +112,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let pred = abi::EdgePred(arg2);
         let to = ThingId(arg3);
         let req = KernelRequest::AddEdge { from, pred, to };
-        match kernel_core::handle_request(req) {
+        match kernel::handle_request(req) {
             KernelResponse::Success { .. } => 0,
             _ => 1,
         }
@@ -120,7 +120,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let from = ThingId(arg1);
         let index = arg2;
         let pred = abi::EdgePred(arg3);
-        match kernel_core::handle_request(KernelRequest::EdgeAt { from, pred, index }) {
+        match kernel::handle_request(KernelRequest::EdgeAt { from, pred, index }) {
             KernelResponse::EdgeTarget { target } => target.map_or(u64::MAX, |id| id.0),
             _ => u64::MAX,
         }
@@ -131,7 +131,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             1 => abi::PixelFormat::Bgra8888,
             _ => abi::PixelFormat::Rgba8888,
         };
-        match kernel_core::handle_request(KernelRequest::CreateSharedBuffer {
+        match kernel::handle_request(KernelRequest::CreateSharedBuffer {
             width,
             height,
             pixel_format,
@@ -144,7 +144,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let flags = MapFlags(arg2);
         let vaddr_out = arg3 as *mut u64;
         let size_out = arg4 as *mut u64;
-        match kernel_core::handle_request(KernelRequest::MapSharedBuffer { buffer_id, flags }) {
+        match kernel::handle_request(KernelRequest::MapSharedBuffer { buffer_id, flags }) {
             KernelResponse::SharedBufferMapped { vaddr, size } => {
                 if !vaddr_out.is_null() {
                     unsafe { *vaddr_out = vaddr };
@@ -159,7 +159,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
     } else if num == SyscallNumber::GetSharedBufferInfo as u64 {
         let buffer_id = ThingId(arg1);
         let info_out = arg2 as *mut abi::SharedBufferInfo;
-        match kernel_core::handle_request(KernelRequest::GetSharedBufferInfo { buffer_id }) {
+        match kernel::handle_request(KernelRequest::GetSharedBufferInfo { buffer_id }) {
             KernelResponse::SharedBufferInfoResponse { info } => {
                 if !info_out.is_null() {
                     unsafe { *info_out = info };
@@ -183,7 +183,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
                 0
             }
             Err(msg) => {
-                kernel_core::log(msg);
+                kernel::log(msg);
                 1
             }
         }
@@ -194,7 +194,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             return 1;
         }
         let req = KernelRequest::ThingGet { id };
-        match kernel_core::handle_request(req) {
+        match kernel::handle_request(req) {
             KernelResponse::ThingData { kind, props, .. } => {
                 unsafe {
                     let result = &mut *result_ptr;
@@ -247,13 +247,13 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
                 0
             }
             KernelResponse::Error { message } => {
-                kernel_core::log(message);
+                kernel::log(message);
                 1
             }
             other => {
                 let msg = alloc::format!("ThingGet unexpected response {:?}", other);
                 let leaked: &'static str = Box::leak(msg.into_boxed_str());
-                kernel_core::log(leaked);
+                kernel::log(leaked);
                 1
             }
         }
@@ -263,7 +263,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let start_after = ThingId(arg3);
         let kind = unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
-        match kernel_core::handle_request(KernelRequest::ThingList {
+        match kernel::handle_request(KernelRequest::ThingList {
             kind: kind_static,
             start_after,
         }) {
@@ -272,7 +272,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             other => {
                 let msg = alloc::format!("ThingList unexpected response {:?}", other);
                 let leaked: &'static str = Box::leak(msg.into_boxed_str());
-                kernel_core::log(leaked);
+                kernel::log(leaked);
                 u64::MAX
             }
         }
@@ -294,7 +294,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             kind: kind_static,
             props: props_static,
         };
-        match kernel_core::handle_request(req) {
+        match kernel::handle_request(req) {
             KernelResponse::ThingCreated { id } => id.0,
             _ => 0,
         }
@@ -312,7 +312,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             id,
             props: props_static,
         };
-        match kernel_core::handle_request(req) {
+        match kernel::handle_request(req) {
             KernelResponse::Success { .. } => 0,
             _ => 1,
         }
@@ -339,30 +339,30 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             description: description_static,
             props: props_static,
         };
-        match kernel_core::handle_request(req) {
+        match kernel::handle_request(req) {
             KernelResponse::SchemaRegistered { .. } => 0,
             _ => 1,
         }
     } else if num == SyscallNumber::TimeNow as u64 {
-        kernel_core::time::monotonic_now_ns()
+        kernel::time::monotonic_now_ns()
     } else if num == SyscallNumber::TimeMonotonicNs as u64 {
-        kernel_core::time::monotonic_now_ns()
+        kernel::time::monotonic_now_ns()
     } else if num == SyscallNumber::TimeSystemNs as u64 {
-        if let Some(ns) = kernel_core::time::system_time_ns() {
+        if let Some(ns) = kernel::time::system_time_ns() {
             ns
         } else {
             0
         }
     } else if num == SyscallNumber::SleepUntil as u64 {
         let deadline_ns = arg1;
-        while kernel_core::time::monotonic_now_ns() < deadline_ns {
+        while kernel::time::monotonic_now_ns() < deadline_ns {
             user::schedule_next();
         }
         0
     } else {
         unsafe {
             if UNKNOWN_SYSCALLS_LOGGED < 5 {
-                kernel_core::log("Unknown syscall");
+                kernel::log("Unknown syscall");
                 UNKNOWN_SYSCALLS_LOGGED += 1;
             }
         }
@@ -378,10 +378,10 @@ pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) 
         core::arch::asm!("mrs {}, esr_el1", out(reg) esr);
         core::arch::asm!("mrs {}, far_el1", out(reg) far);
     }
-    kernel_core::println!("EXCEPTION: AArch64 Trap");
-    kernel_core::println!("Kind: {}, Source: {}", kind, source);
-    kernel_core::println!("ESR: {:#x}, FAR: {:#x}", esr, far);
-    kernel_core::println!("{:#?}", tf);
+    kernel::println!("EXCEPTION: AArch64 Trap");
+    kernel::println!("Kind: {}, Source: {}", kind, source);
+    kernel::println!("ESR: {:#x}, FAR: {:#x}", esr, far);
+    kernel::println!("{:#?}", tf);
     loop {}
 }
 
@@ -443,7 +443,7 @@ pub unsafe fn jump_to_el1_stack(stack_top: u64, entry: unsafe extern "C" fn() ->
     // Ensure stack is 16-byte aligned
     let stack_top = stack_top & !0xf;
 
-    // kernel_core::println!("Switching to SP_EL1. Stack: {:#x}, Entry: {:#x}", stack_top, entry as usize);
+    // kernel::println!("Switching to SP_EL1. Stack: {:#x}, Entry: {:#x}", stack_top, entry as usize);
     unsafe {
         core::arch::asm!(
             "msr spsel, #1",
@@ -461,7 +461,7 @@ pub unsafe fn jump_to_el1_stack(stack_top: u64, entry: unsafe extern "C" fn() ->
 }
 
 fn save_current_thread_context(tf: &TrapFrame) {
-    let mut sched = kernel_core::sched::SCHEDULER.lock();
+    let mut sched = kernel::sched::SCHEDULER.lock();
     if let Some(tid) = sched.current_id() {
         if let Some(thread) = sched.thread_mut(tid) {
             let regs_ptr = tf as *const TrapFrame as *const u64;

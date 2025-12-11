@@ -1,5 +1,5 @@
 use core::arch::asm;
-use kernel_core::time::HardwareTimer;
+use kernel::time::HardwareTimer;
 
 pub struct RiscvHardwareTimer;
 
@@ -23,5 +23,5 @@ impl HardwareTimer for RiscvHardwareTimer {
 
 pub fn init_arch_timer() {
     static TIMER: RiscvHardwareTimer = RiscvHardwareTimer;
-    kernel_core::time::register_timer(&TIMER);
+    kernel::time::register_timer(&TIMER);
 }

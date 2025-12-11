@@ -136,7 +136,7 @@ pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
         rdi: regs.arg0,
     };
 
-    kernel_core::println!(
+    kernel::println!(
         "enter_user_mode selectors: cs={:#x}, ss={:#x}",
         x86_regs.user_cs,
         x86_regs.user_ss,
@@ -174,7 +174,7 @@ pub unsafe fn init_user_stack(phys_mem_offset: u64) {
     match unsafe { mapper.update_flags(code_page, code_flags) } {
         Ok(flush) => flush.flush(),
         Err(_) => {
-            kernel_core::log("Failed to update user code flags");
+            kernel::log("Failed to update user code flags");
         }
     }
 }
@@ -209,13 +209,13 @@ pub fn alloc_user_stack() -> u64 {
             if let Ok(flush) = mapper.update_flags(page, flags) {
                 flush.flush();
             } else {
-                kernel_core::log("Failed to update user stack flags");
+                kernel::log("Failed to update user stack flags");
             }
         }
     }
 
     let stack_top = stack_addr + USER_STACK_SIZE as u64;
-    kernel_core::println!(
+    kernel::println!(
         "alloc_user_stack: bottom={:#x}, top={:#x}",
         stack_addr,
         stack_top

@@ -1,5 +1,5 @@
 use core::arch::asm;
-use kernel_core::time::HardwareTimer;
+use kernel::time::HardwareTimer;
 
 pub struct LoongArchHardwareTimer;
 
@@ -29,5 +29,5 @@ impl HardwareTimer for LoongArchHardwareTimer {
 
 pub fn init_arch_timer() {
     static TIMER: LoongArchHardwareTimer = LoongArchHardwareTimer;
-    kernel_core::time::register_timer(&TIMER);
+    kernel::time::register_timer(&TIMER);
 }

@@ -1,5 +1,5 @@
 use core::sync::atomic::{AtomicU64, Ordering};
-use kernel_core::time::RealTimeClock;
+use kernel::time::RealTimeClock;
 
 pub struct RiscvRtc {
     boot_offset_ns: AtomicU64,
@@ -23,7 +23,7 @@ impl RealTimeClock for RiscvRtc {
     }
 
     fn now_utc(&self) -> (u64, u32) {
-        let now_ns = kernel_core::time::monotonic_now_ns();
+        let now_ns = kernel::time::monotonic_now_ns();
         let off = self.boot_offset_ns.load(Ordering::Relaxed);
         let total = now_ns.saturating_add(off);
         let secs = total / 1_000_000_000;
@@ -35,7 +35,7 @@ impl RealTimeClock for RiscvRtc {
 pub fn init_arch_rtc() {
     static RTC: RiscvRtc = RiscvRtc::new();
     RTC.init();
-    kernel_core::time::register_rtc(&RTC);
+    kernel::time::register_rtc(&RTC);
 }
 
 pub fn read_rtc_unix_epoch_seconds() -> i64 {

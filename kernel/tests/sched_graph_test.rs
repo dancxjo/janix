@@ -1,22 +1,22 @@
 extern crate alloc;
 
 use abi::PropValue;
-use kernel_core::graph;
-use kernel_core::graph_kinds;
-use kernel_core::sched_graph;
-use kernel_core::sched_types::ThreadState;
+use kernel::graph;
+use kernel::graph_kinds;
+use kernel::sched_graph;
+use kernel::sched_types::ThreadState;
 
 fn init_locked() -> spin::MutexGuard<'static, ()> {
-    let guard = kernel_core::test_lock();
-    kernel_core::init();
+    let guard = kernel::test_lock();
+    kernel::init();
     guard
 }
 
 #[test]
 fn single_runnable_thread_is_marked_running() {
     let _guard = init_locked();
-    let cpu = kernel_core::model::create_cpu_core(0).expect("cpu");
-    let thread = kernel_core::model::create_thread(1, 5).expect("thread");
+    let cpu = kernel::model::create_cpu_core(0).expect("cpu");
+    let thread = kernel::model::create_thread(1, 5).expect("thread");
 
     let mut g = graph::Graph::new();
     let picked = sched_graph::sched_tick(&mut g, 0, 100).expect("thread picked");
@@ -35,8 +35,8 @@ fn single_runnable_thread_is_marked_running() {
 #[test]
 fn timeslice_expiry_moves_thread_to_runnable() {
     let _guard = init_locked();
-    let cpu = kernel_core::model::create_cpu_core(0).expect("cpu");
-    let thread = kernel_core::model::create_thread(2, 1).expect("thread");
+    let cpu = kernel::model::create_cpu_core(0).expect("cpu");
+    let thread = kernel::model::create_thread(2, 1).expect("thread");
 
     let running_props = &[
         (
@@ -74,9 +74,9 @@ fn timeslice_expiry_moves_thread_to_runnable() {
 #[test]
 fn higher_priority_thread_wins() {
     let _guard = init_locked();
-    let cpu = kernel_core::model::create_cpu_core(0).expect("cpu");
-    let low = kernel_core::model::create_thread(10, 1).expect("low prio");
-    let high = kernel_core::model::create_thread(11, 10).expect("high prio");
+    let cpu = kernel::model::create_cpu_core(0).expect("cpu");
+    let low = kernel::model::create_thread(10, 1).expect("low prio");
+    let high = kernel::model::create_thread(11, 10).expect("high prio");
 
     let mut g = graph::Graph::new();
     let picked = sched_graph::sched_tick(&mut g, 0, 50).expect("picked thread");
@@ -95,8 +95,8 @@ fn higher_priority_thread_wins() {
 #[test]
 fn running_thread_keeps_cpu_when_slice_remaining() {
     let _guard = init_locked();
-    let cpu = kernel_core::model::create_cpu_core(0).expect("cpu");
-    let thread = kernel_core::model::create_thread(21, 3).expect("thread");
+    let cpu = kernel::model::create_cpu_core(0).expect("cpu");
+    let thread = kernel::model::create_thread(21, 3).expect("thread");
 
     graph::update_thing(
         thread,
@@ -134,9 +134,9 @@ fn running_thread_keeps_cpu_when_slice_remaining() {
 #[test]
 fn pick_prefers_lower_runtime_on_priority_tie() {
     let _guard = init_locked();
-    let cpu = kernel_core::model::create_cpu_core(0).expect("cpu");
-    let slow = kernel_core::model::create_thread(30, 7).expect("slow");
-    let fresh = kernel_core::model::create_thread(31, 7).expect("fresh");
+    let cpu = kernel::model::create_cpu_core(0).expect("cpu");
+    let slow = kernel::model::create_thread(30, 7).expect("slow");
+    let fresh = kernel::model::create_thread(31, 7).expect("fresh");
 
     graph::update_thing(slow, &[("runtime_ns", PropValue::U64(10_000))]);
     graph::update_thing(fresh, &[("runtime_ns", PropValue::U64(1_000))]);
@@ -158,9 +158,9 @@ fn pick_prefers_lower_runtime_on_priority_tie() {
 #[test]
 fn preempted_thread_is_skipped_for_selection() {
     let _guard = init_locked();
-    let cpu = kernel_core::model::create_cpu_core(0).expect("cpu");
-    let hog = kernel_core::model::create_thread(40, 9).expect("hog");
-    let backup = kernel_core::model::create_thread(41, 1).expect("backup");
+    let cpu = kernel::model::create_cpu_core(0).expect("cpu");
+    let hog = kernel::model::create_thread(40, 9).expect("hog");
+    let backup = kernel::model::create_thread(41, 1).expect("backup");
 
     graph::update_thing(
         hog,
@@ -195,7 +195,7 @@ fn preempted_thread_is_skipped_for_selection() {
 #[test]
 fn sleep_event_create_and_clear() {
     let _guard = init_locked();
-    let thread = kernel_core::model::create_thread(50, 1).expect("thread");
+    let thread = kernel::model::create_thread(50, 1).expect("thread");
     let mut g = graph::Graph::new();
 
     let sleep = sched_graph::create_sleep_event(&mut g, thread, 1_000_000, 5).expect("sleep");

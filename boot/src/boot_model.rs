@@ -3,9 +3,9 @@ extern crate alloc;
 use crate::FRAMEBUFFER_REQUEST;
 use abi::{PixelFormat, PropValue, Thing, ThingId};
 use alloc::{boxed::Box, string::String, vec::Vec};
-use kernel_core::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_pool};
-use kernel_core::model;
-use kernel_core::{graph, graph_kinds, log, shared_buffer, time};
+use kernel::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_pool};
+use kernel::model;
+use kernel::{graph, graph_kinds, log, shared_buffer, time};
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
 use thing_models::{AlarmRequest, BootProgram, FontModule, TimeSource};
@@ -34,8 +34,8 @@ pub fn seed_memory_graph_from_limine() {
 
     let hhdm_offset = if let Some(hhdm) = HHDM_REQUEST.get_response() {
         let offset = hhdm.offset();
-        // shared_buffer::set_hhdm_offset(offset); // Removed as shared_buffer now uses kernel_core::memory::hhdm
-        kernel_core::memory::set_hhdm_offset(offset);
+        // shared_buffer::set_hhdm_offset(offset); // Removed as shared_buffer now uses kernel::memory::hhdm
+        kernel::memory::set_hhdm_offset(offset);
         offset
     } else {
         0
@@ -163,7 +163,7 @@ pub fn seed_memory_graph_from_limine() {
 
     init_frame_pool(boot_allocator);
 
-    let (total_frames, _used_frames, free_frames) = kernel_core::memory::frame_stats();
+    let (total_frames, _used_frames, free_frames) = kernel::memory::frame_stats();
     let summary = alloc::format!(
         "[INFO] BootFrameAllocator: total_frames={} free_frames={}",
         total_frames,
@@ -363,7 +363,7 @@ pub fn seed_program_images_from_limine() {
         let virt_addr = (*module).addr() as u64;
         let base_phys = virt_addr.saturating_sub(hhdm_offset);
         let size = (*module).size() as u64;
-        if kernel_core::model::create_program_image(&identifier, index as u64, base_phys, size)
+        if kernel::model::create_program_image(&identifier, index as u64, base_phys, size)
             .is_some()
         {
             created = created.saturating_add(1);

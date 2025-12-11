@@ -38,12 +38,12 @@ extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) -> ! {
-    kernel_core::log("DOUBLE FAULT");
+    kernel::log("DOUBLE FAULT");
     loop {}
 }
 
 extern "x86-interrupt" fn gp_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) {
-    kernel_core::log("GENERAL PROTECTION FAULT");
+    kernel::log("GENERAL PROTECTION FAULT");
     loop {}
 }
 
@@ -80,8 +80,8 @@ extern "x86-interrupt" fn page_fault_handler(
             // Only allow lazy mapping for user addresses (lower half)
             // 0x0000_8000_0000_0000 is the start of the non-canonical hole / upper half
             if addr.as_u64() >= 0x0000_8000_0000_0000 {
-                 kernel_core::println!("PAGE FAULT: User tried to access kernel address {:?}", addr);
-                 kernel_core::log("PAGE FAULT (Kernel Access)");
+                 kernel::println!("PAGE FAULT: User tried to access kernel address {:?}", addr);
+                 kernel::log("PAGE FAULT (Kernel Access)");
                  loop {}
             }
 
@@ -98,6 +98,6 @@ extern "x86-interrupt" fn page_fault_handler(
         }
     }
 
-    kernel_core::log("PAGE FAULT");
+    kernel::log("PAGE FAULT");
     loop {}
 }

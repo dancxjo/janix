@@ -2,9 +2,9 @@ extern crate alloc;
 
 use abi::{PropValue, ThingId};
 use alloc::{boxed::Box, string::String, string::ToString};
-use kernel_core::graph;
-use kernel_core::graph_kinds;
-use kernel_core::sched::SCHEDULER;
+use kernel::graph;
+use kernel::graph_kinds;
+use kernel::sched::SCHEDULER;
 
 use crate::elf_loader::{self, LoadedElfProgram, ProgramImageData};
 
@@ -14,7 +14,7 @@ pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'s
     let image =
         find_program_image(&info.binary).ok_or("ProgramImage Thing not found for identifier")?;
     let loaded = elf_loader::load_program(&image)?;
-    kernel_core::log("Loaded ELF ProgramImage, spawning process");
+    kernel::log("Loaded ELF ProgramImage, spawning process");
     spawn_loaded_program(&info, loaded)
 }
 
@@ -51,7 +51,7 @@ fn spawn_loaded_program_named(
             loaded.heap_base,
             loaded.heap_limit
         );
-        kernel_core::log(Box::leak(msg.into_boxed_str()));
+        kernel::log(Box::leak(msg.into_boxed_str()));
     }
     let leaked_name: &'static str = leak_name(name);
     let (process_thing, thread_thing) = {
@@ -90,7 +90,7 @@ struct BootProgramInfo {
 }
 
 fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> {
-    let (kind, props) = kernel_core::graph::get_thing(id).ok_or("BootProgram Thing not found")?;
+    let (kind, props) = kernel::graph::get_thing(id).ok_or("BootProgram Thing not found")?;
     if kind != graph_kinds::KIND_BOOT_PROGRAM {
         return Err("SpawnProgram Thing was not BootProgram");
     }

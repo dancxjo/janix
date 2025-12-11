@@ -12,7 +12,7 @@ userland = { path = "../../userland" }
 userland_rt = { path = "../../userland_rt" }
 
 [dev-dependencies]
-kernel_core = { path = "../../kernel_core" }
+kernel = { path = "../../kernel" }
 abi = { path = "../../abi" }
 userland_std = { path = "../../userland_std" }
 thing_models = { path = "../../thing_models" }

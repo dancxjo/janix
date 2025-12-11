@@ -1,5 +1,5 @@
 use core::arch::asm;
-use kernel_core::time::HardwareTimer;
+use kernel::time::HardwareTimer;
 
 pub struct X86HardwareTimer;
 
@@ -31,5 +31,5 @@ impl HardwareTimer for X86HardwareTimer {
 
 pub fn init_arch_timer() {
     static TIMER: X86HardwareTimer = X86HardwareTimer;
-    kernel_core::time::register_timer(&TIMER);
+    kernel::time::register_timer(&TIMER);
 }

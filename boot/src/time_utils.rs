@@ -13,7 +13,7 @@ pub fn log_rtc_epoch(seconds: i64) {
         seconds
     );
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
-    kernel_core::log(leaked);
+    kernel::log(leaked);
 }
 
 pub fn unix_seconds_to_datetime(seconds: i64) -> (i32, u32, u32, u32, u32, u32) {

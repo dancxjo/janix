@@ -77,7 +77,7 @@ let description = counter.get_description();
 #### Get Schema Description from Kernel
 
 ```rust
-use kernel_core::graph;
+use kernel::graph;
 
 // After schema is registered
 let description = graph::get_schema_description("AutoCounter");
@@ -88,7 +88,7 @@ let description = graph::get_schema_description("AutoCounter");
 When registering schemas, descriptions must be provided:
 
 ```rust
-use kernel_core::graph;
+use kernel::graph;
 use abi::PropType;
 
 graph::register_schema(
@@ -123,12 +123,12 @@ User applications define their own Thing types with descriptions:
 
 Tests are provided to verify the description functionality:
 
-- `kernel_core/tests/description_test.rs` - Tests for schema descriptions
+- `kernel/tests/description_test.rs` - Tests for schema descriptions
 - `apps/hello/tests/description_test.rs` - Tests for Thing trait descriptions
 
 Run the tests with:
 
 ```bash
-cargo test --package kernel_core --test description_test
+cargo test --package kernel --test description_test
 cargo test --package hello --test description_test
 ```

@@ -16,4 +16,4 @@ fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] 
 spin = { version = "0.9", default-features = false, features = ["once"] }
 
 [dev-dependencies]
-kernel_core = { path = "../../kernel_core" }
+kernel = { path = "../../kernel" }

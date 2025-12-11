@@ -1,4 +1,4 @@
-use kernel_core::time::RealTimeClock;
+use kernel::time::RealTimeClock;
 use x86_64::instructions::port::Port;
 
 struct RawRtcTime {
@@ -135,7 +135,7 @@ impl RealTimeClock for CmosRtc {
 pub fn init_arch_rtc() {
     static CMOS_RTC: CmosRtc = CmosRtc::new();
     CMOS_RTC.init();
-    kernel_core::time::register_rtc(&CMOS_RTC);
+    kernel::time::register_rtc(&CMOS_RTC);
 }
 
 pub fn read_rtc_unix_epoch_seconds() -> i64 {

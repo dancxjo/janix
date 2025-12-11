@@ -1,7 +1,7 @@
 use crate::console::Console;
 use core::fmt::Write;
-use kernel_core::log;
-use kernel_core::model::{DashboardSnapshot, dashboard_snapshot};
+use kernel::log;
+use kernel::model::{DashboardSnapshot, dashboard_snapshot};
 
 pub fn render_dashboard(console: &mut Console) {
     let snapshot: DashboardSnapshot = dashboard_snapshot();
@@ -50,7 +50,7 @@ pub fn render_dashboard(console: &mut Console) {
 
     // Optional: tail of kernel logs
     let _ = writeln!(console, "Kernel log (tail):");
-    let logs = kernel_core::log::get_logs();
+    let logs = kernel::log::get_logs();
     let start = logs.len().saturating_sub(5);
     for entry in &logs[start..] {
         if let Some(msg) = entry {

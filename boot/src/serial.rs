@@ -1,4 +1,4 @@
-use kernel_core::console::{ConsoleSink, register_sink};
+use kernel::console::{ConsoleSink, register_sink};
 use spin::Mutex;
 
 #[cfg(target_arch = "x86_64")]

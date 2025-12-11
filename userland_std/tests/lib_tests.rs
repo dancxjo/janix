@@ -7,9 +7,9 @@ use abi::{
 };
 use userland_rt::Sys;
 use userland_std::{
-    Alarm, AlarmRequest, Mode, Thing, add_edge, alloc_frame, create_thing, create_thread,
+    Alarm, AlarmRequest, Mode, Thing, add_link, alloc_frame, create_thing, create_thread,
     create_transaction, default_mode, demo_shared::DEMO_NAME_VAL, demo_shared::DemoState,
-    edge_targets, find_thing, free_frame, is_console_mode_active, list_things_by_kind, load_thing,
+    link_targets, find_thing, free_frame, is_console_mode_active, list_things_by_kind, load_thing,
     memory_summary, register_schema_for, scheduler_summary, scheduler_tick, spawn_program,
     update_props,
 };
@@ -290,23 +290,23 @@ fn mode_selection_helpers() {
 }
 
 #[test]
-fn edge_helpers_and_updates() {
+fn link_helpers_and_updates() {
     let mut sys = MockSys::with_responses(vec![
-        KernelResponse::Success { data: None }, // add_edge
-        KernelResponse::EdgeTarget {
+        KernelResponse::Success { data: None }, // add_link
+        KernelResponse::LinkTarget {
             target: Some(ThingId(5)),
         },
-        KernelResponse::EdgeTarget { target: None },
+        KernelResponse::LinkTarget { target: None },
         KernelResponse::Success { data: None }, // update_props
     ]);
 
-    assert!(add_edge(
+    assert!(add_link(
         &sys,
         ThingId(1),
-        graph_kinds::EDGE_RUNS_ON,
+        graph_kinds::LINK_RUNS_ON,
         ThingId(2)
     ));
-    let neighbors = edge_targets(&mut sys, ThingId(1), graph_kinds::EDGE_RUNS_ON);
+    let neighbors = link_targets(&mut sys, ThingId(1), graph_kinds::LINK_RUNS_ON);
     assert_eq!(neighbors, vec![ThingId(5)]);
     assert!(update_props(
         &sys,
@@ -399,14 +399,14 @@ fn shared_buffer_and_display_open() {
         },
         KernelResponse::ThingListEntry { id: None },
         // Link targets for display buffers
-        KernelResponse::EdgeTarget {
+        KernelResponse::LinkTarget {
             target: Some(ThingId(2)),
         },
-        KernelResponse::EdgeTarget { target: None },
-        KernelResponse::EdgeTarget {
+        KernelResponse::LinkTarget { target: None },
+        KernelResponse::LinkTarget {
             target: Some(ThingId(3)),
         },
-        KernelResponse::EdgeTarget { target: None },
+        KernelResponse::LinkTarget { target: None },
         // Shared buffer info/mapping for front
         KernelResponse::SharedBufferInfoResponse {
             info: abi::SharedBufferInfo {

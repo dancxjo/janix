@@ -107,21 +107,21 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             )
         };
         tid.0
-    } else if num == SyscallNumber::AddEdge as u64 {
-        let from = ThingId(arg1);
-        let pred = abi::EdgePred(arg2);
-        let to = ThingId(arg3);
-        let req = KernelRequest::AddEdge { from, pred, to };
+    } else if num == SyscallNumber::AddLink as u64 {
+        let src = ThingId(arg1);
+        let pred = abi::Predicate(arg2);
+        let dst = ThingId(arg3);
+        let req = KernelRequest::AddLink { src, pred, dst };
         match kernel::handle_request(req) {
             KernelResponse::Success { .. } => 0,
             _ => 1,
         }
-    } else if num == SyscallNumber::EdgeAt as u64 {
-        let from = ThingId(arg1);
-        let index = arg2;
-        let pred = abi::EdgePred(arg3);
-        match kernel::handle_request(KernelRequest::EdgeAt { from, pred, index }) {
-            KernelResponse::EdgeTarget { target } => target.map_or(u64::MAX, |id| id.0),
+    } else if num == SyscallNumber::LinkAt as u64 {
+        let src = ThingId(arg1);
+        let idx = arg2 as usize;
+        let pred = abi::Predicate(arg3);
+        match kernel::handle_request(KernelRequest::LinkAt { src, pred, idx }) {
+            KernelResponse::LinkTarget { target } => target.map_or(u64::MAX, |id| id.0),
             _ => u64::MAX,
         }
     } else if num == SyscallNumber::CreateSharedBuffer as u64 {

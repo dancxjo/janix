@@ -3,7 +3,7 @@
 ThingOS now treats the kernel graph as the source of truth for scheduling. Threads, CPUs, and sleep events are modeled as Things with well-known properties and links, and mutations emit push-style events that hardware reifiers subscribe to.
 
 ## Schema
-- Nodes
+- Things
   - `Thread`: `tid`, `state` (`New`|`Runnable`|`Running`|`Sleeping`|`Blocked`|`Exited`), `priority`, `runtime_ns`, `last_started_ns`
   - `Process`: `pid`
   - `CpuCore`: `index`
@@ -22,7 +22,7 @@ ThingOS now treats the kernel graph as the source of truth for scheduling. Threa
   - Never calls arch/hardware APIs directly.
 
 ## Events and Reifiers
-- `GraphEvent` is emitted for node/prop/link changes via fixed listener tables.
+- `GraphEvent` is emitted for thing/prop/link changes via fixed listener tables.
 - Boot/arch registers listeners (e.g., for `sched.runs_on`) that:
   - Map `CpuCore.index` to a CPU slot.
   - Track the currently running thread per CPU.
@@ -39,7 +39,7 @@ ThingOS now treats the kernel graph as the source of truth for scheduling. Threa
 ```
 timer interrupt -> sched_tick(graph, cpu, now)
                 -> graph mutations (state/links)
-                -> GraphEvent::EdgeAdded("sched.runs_on")
+                -> GraphEvent::LinkAdded("sched.runs_on")
                 -> arch reifier compares desired vs current and switches contexts
 ```
 

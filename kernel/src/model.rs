@@ -112,6 +112,7 @@ pub fn init_schemas() {
         "PhysFrame",
         "A region of physical memory with base address, size, and allocation status",
         PHYS_FRAME_SCHEMA,
+        &[],
     );
 
     // FramePool: represents a pool of physical frames
@@ -124,6 +125,7 @@ pub fn init_schemas() {
         "FramePool",
         "A pool of physical memory frames with defined start, end, and frame size",
         FRAME_POOL_SCHEMA,
+        &[],
     );
 
     // AddressSpace: represents a virtual address space
@@ -132,6 +134,7 @@ pub fn init_schemas() {
         "AddressSpace",
         "A virtual address space identified by its address space identifier (ASID)",
         ADDRESS_SPACE_SCHEMA,
+        &[],
     );
 
     // VirtRegion: represents a virtual memory region
@@ -144,6 +147,7 @@ pub fn init_schemas() {
         "VirtRegion",
         "A virtual memory region with base address, length, and access flags",
         VIRT_REGION_SCHEMA,
+        &[],
     );
 
     // Process: represents a process
@@ -152,6 +156,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_PROCESS,
         "A process with process identifier (PID) and execution state",
         PROCESS_SCHEMA,
+        &[],
     );
 
     // Thread: represents a thread
@@ -167,6 +172,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_THREAD,
         "A thread of execution with thread identifier, state, priority, runtime tracking, and last start time",
         THREAD_SCHEMA,
+        &[],
     );
 
     // CpuCore: represents a CPU core
@@ -175,6 +181,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_CPU_CORE,
         "A CPU core identified by its index in the system",
         CPU_CORE_SCHEMA,
+        &[],
     );
 
     // SleepEvent: represents a wakeup deadline for a thread
@@ -186,65 +193,76 @@ pub fn init_schemas() {
         graph_kinds::KIND_SLEEP_EVENT,
         "A scheduled wakeup for a sleeping thread",
         SLEEP_SCHEMA,
+        &[],
     );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_BOOT_PROFILE,
         BootProfile::DESCRIPTION,
         BootProfile::schema(),
+        &[],
     );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_BOOT_PROGRAM,
         BootProgram::DESCRIPTION,
         BootProgram::schema(),
+        &[],
     );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_PROGRAM_IMAGE,
         ProgramImage::DESCRIPTION,
         ProgramImage::schema(),
+        &[],
     );
     let _ = graph::register_schema(
         graph_kinds::KIND_FONT_MODULE,
         FontModule::DESCRIPTION,
         FontModule::schema(),
+        &[],
     );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_TIME_SOURCE,
         TimeSource::DESCRIPTION,
         TimeSource::schema(),
+        &[],
     );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_IO_PORT_REGION,
         IoPortRegion::DESCRIPTION,
         IoPortRegion::schema(),
+        &[],
     );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_IO_PORT_OP,
         IoPortOp::DESCRIPTION,
         IoPortOp::schema(),
+        &[],
     );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_INTERRUPT_EVENT,
         InterruptEvent::DESCRIPTION,
         InterruptEvent::schema(),
+        &[],
     );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_ALARM_REQUEST,
         AlarmRequest::DESCRIPTION,
         AlarmRequest::schema(),
+        &[],
     );
 
     let _ = graph::register_schema(
         graph_kinds::KIND_ALARM_EVENT,
         AlarmEvent::DESCRIPTION,
         AlarmEvent::schema(),
+        &[],
     );
 
     // Display pipeline schemas
@@ -258,6 +276,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_DISPLAY,
         "A display sink capable of scanning out a SharedBuffer",
         DISPLAY_SCHEMA,
+        &[],
     );
 
     static SHARED_BUFFER_SCHEMA: &[(&str, PropType)] = &[
@@ -270,6 +289,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_SHARED_BUFFER,
         "A kernel-owned shared memory buffer that can be mapped into userland",
         SHARED_BUFFER_SCHEMA,
+        &[],
     );
 
     static DISPLAY_FRAMEBUFFER_SCHEMA: &[(&str, PropType)] = &[
@@ -287,6 +307,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_DISPLAY_FRAMEBUFFER,
         "A userland-published framebuffer description backed by a SharedBuffer",
         DISPLAY_FRAMEBUFFER_SCHEMA,
+        &[],
     );
 
     static DISPLAY_FRAME_SCHEMA: &[(&str, PropType)] = &[
@@ -299,6 +320,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_DISPLAY_FRAME,
         "A single frame produced by a compositor targeting a framebuffer",
         DISPLAY_FRAME_SCHEMA,
+        &[],
     );
     static DISPLAY_PRESENT_REQUEST_SCHEMA: &[(&str, PropType)] = &[
         (graph_kinds::PROP_FRAMEBUFFER_ID, PropType::U64),
@@ -311,6 +333,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_DISPLAY_PRESENT_REQUEST,
         "A compositor request asking a framebuffer driver to present a frame",
         DISPLAY_PRESENT_REQUEST_SCHEMA,
+        &[],
     );
 
     // Mode and windowing schemas
@@ -325,6 +348,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_MODE,
         "Logical system mode (F1-F12)",
         MODE_SCHEMA,
+        &[],
     );
 
     static MODE_SWITCH_SCHEMA: &[(&str, PropType)] = &[
@@ -335,6 +359,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_MODE_SWITCH_EVENT,
         "Input event requesting a mode change",
         MODE_SWITCH_SCHEMA,
+        &[],
     );
 
     static PLACE_SCHEMA: &[(&str, PropType)] = &[
@@ -345,6 +370,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_PLACE,
         "Workspace root for windows",
         PLACE_SCHEMA,
+        &[],
     );
 
     static WINDOW_SCHEMA: &[(&str, PropType)] = &[
@@ -361,6 +387,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_WINDOW,
         "Top-level window description",
         WINDOW_SCHEMA,
+        &[],
     );
 
     static SURFACE_SCHEMA: &[(&str, PropType)] = &[
@@ -372,6 +399,7 @@ pub fn init_schemas() {
         graph_kinds::KIND_SURFACE,
         "Renderable surface attached to a window",
         SURFACE_SCHEMA,
+        &[],
     );
 }
 
@@ -480,23 +508,20 @@ pub fn compute_memory_summary() -> MemorySummary {
     let mut total_frames = 0_u64;
     let mut used_frames = 0_u64;
 
-    for raw_id in 0..crate::graph::MAX_THINGS as u64 {
-        let id = ThingId(raw_id);
-        if let Some((kind, props)) = crate::graph::get_thing(id) {
-            if kind != "PhysFrame" {
-                continue;
-            }
-            total_frames += 1;
+    graph::iter_things(|thing| {
+        if thing.kind != "PhysFrame" {
+            return;
+        }
+        total_frames += 1;
 
-            for p in props.iter().flatten() {
-                if let (key, PropValue::Bool(allocated)) = p {
-                    if *key == "allocated" && *allocated {
-                        used_frames += 1;
-                    }
+        for p in thing.props.iter().flatten() {
+            if let (key, PropValue::Bool(allocated)) = p {
+                if *key == "allocated" && *allocated {
+                    used_frames += 1;
                 }
             }
         }
-    }
+    });
 
     MemorySummary {
         total_frames,
@@ -523,35 +548,32 @@ pub fn compute_scheduler_summary() -> SchedulerSummary {
     let mut thread_count = 0_u64;
     let mut runnable_threads = 0_u64;
 
-    for raw_id in 0..crate::graph::MAX_THINGS as u64 {
-        let id = ThingId(raw_id);
-        if let Some((kind, props)) = crate::graph::get_thing(id) {
-            match kind {
-                graph_kinds::KIND_PROCESS => {
-                    process_count += 1;
-                }
-                graph_kinds::KIND_THREAD => {
-                    thread_count += 1;
+    graph::iter_things(|thing| {
+        match thing.kind {
+            graph_kinds::KIND_PROCESS => {
+                process_count += 1;
+            }
+            graph_kinds::KIND_THREAD => {
+                thread_count += 1;
 
-                    // state == Running or Runnable counts as runnable
-                    let mut state = None;
-                    for p in props.iter().flatten() {
-                        let (key, value) = p;
-                        if *key == "state" {
-                            if let PropValue::Str(s) = value {
-                                state = ThreadState::from_str(s.as_str());
-                            }
+                // state == Running or Runnable counts as runnable
+                let mut state = None;
+                for p in thing.props.iter().flatten() {
+                    let (key, value) = p;
+                    if *key == "state" {
+                        if let PropValue::Str(s) = value {
+                            state = ThreadState::from_str(s.as_str());
                         }
                     }
-
-                    if matches!(state, Some(ThreadState::Running | ThreadState::Runnable)) {
-                        runnable_threads += 1;
-                    }
                 }
-                _ => {}
+
+                if matches!(state, Some(ThreadState::Running | ThreadState::Runnable)) {
+                    runnable_threads += 1;
+                }
             }
+            _ => {}
         }
-    }
+    });
 
     SchedulerSummary {
         process_count,
@@ -680,51 +702,58 @@ pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
 /// ```
 pub fn alloc_frame() -> Option<FrameInfo> {
     // For now, scan all Things for the first PhysFrame with allocated == false
-    for raw_id in 0..crate::graph::MAX_THINGS as u64 {
-        let tid = ThingId(raw_id);
-        if let Some((kind, props)) = crate::graph::get_thing(tid) {
-            if kind != "PhysFrame" {
-                continue;
-            }
+    let mut found_frame = None;
 
-            let mut base = 0_u64;
-            let mut size = 0_u64;
-            let mut allocated = false;
+    graph::iter_things(|thing| {
+        if found_frame.is_some() {
+            return;
+        }
 
-            for p in props.iter().flatten() {
-                let (key, value) = p;
-                match *key {
-                    "base" => {
-                        if let PropValue::U64(v) = value {
-                            base = *v;
-                        }
+        if thing.kind != "PhysFrame" {
+            return;
+        }
+
+        let mut base = 0_u64;
+        let mut size = 0_u64;
+        let mut allocated = false;
+
+        for p in thing.props.iter().flatten() {
+            let (key, value) = p;
+            match *key {
+                "base" => {
+                    if let PropValue::U64(v) = value {
+                        base = *v;
                     }
-                    "size" => {
-                        if let PropValue::U64(v) = value {
-                            size = *v;
-                        }
-                    }
-                    "allocated" => {
-                        if let PropValue::Bool(v) = value {
-                            allocated = *v;
-                        }
-                    }
-                    _ => {}
                 }
-            }
-
-            if !allocated {
-                // mark as allocated
-                let new_props = &[("allocated", PropValue::Bool(true))];
-                crate::graph::update_thing(tid, new_props);
-
-                return Some(FrameInfo {
-                    id: FrameId(raw_id),
-                    base,
-                    size,
-                });
+                "size" => {
+                    if let PropValue::U64(v) = value {
+                        size = *v;
+                    }
+                }
+                "allocated" => {
+                    if let PropValue::Bool(v) = value {
+                        allocated = *v;
+                    }
+                }
+                _ => {}
             }
         }
+
+        if !allocated {
+             found_frame = Some((thing.id, base, size));
+        }
+    });
+
+    if let Some((tid, base, size)) = found_frame {
+        // mark as allocated
+        let new_props = &[("allocated", PropValue::Bool(true))];
+        crate::graph::update_thing(tid, new_props);
+
+        return Some(FrameInfo {
+            id: FrameId(tid.0),
+            base,
+            size,
+        });
     }
 
     None
@@ -911,23 +940,20 @@ pub fn dashboard_snapshot() -> DashboardSnapshot {
     };
 
     // Walk all Things in the graph
-    for raw_id in 0..crate::graph::MAX_THINGS as u64 {
-        let id = ThingId(raw_id);
-        if let Some((kind, _props)) = crate::graph::get_thing(id) {
-            counts.total_things += 1;
+    graph::iter_things(|thing| {
+        counts.total_things += 1;
 
-            match kind {
-                "Process" => counts.processes += 1,
-                "Thread" => counts.threads += 1,
-                "PhysFrame" => counts.phys_frames += 1,
-                "VirtRegion" => counts.virt_regions += 1,
-                "FramePool" => counts.frame_pools += 1,
-                "AddressSpace" => counts.address_spaces += 1,
-                "CpuCore" => counts.cpu_cores += 1,
-                _ => {}
-            }
+        match thing.kind {
+            "Process" => counts.processes += 1,
+            "Thread" => counts.threads += 1,
+            "PhysFrame" => counts.phys_frames += 1,
+            "VirtRegion" => counts.virt_regions += 1,
+            "FramePool" => counts.frame_pools += 1,
+            "AddressSpace" => counts.address_spaces += 1,
+            "CpuCore" => counts.cpu_cores += 1,
+            _ => {}
         }
-    }
+    });
 
     DashboardSnapshot {
         memory,

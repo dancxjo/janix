@@ -145,7 +145,7 @@ pub fn create_display_for_buffer(
         ),
     ];
     let display_id = graph::create_thing(graph_kinds::KIND_DISPLAY, props)?;
-    let _ = graph::add_edge(display_id, graph_kinds::EDGE_DISPLAY_SCANOUT, buffer_id);
+    let _ = graph::add_link(display_id, graph_kinds::LINK_DISPLAY_SCANOUT, buffer_id);
     Some(display_id)
 }
 

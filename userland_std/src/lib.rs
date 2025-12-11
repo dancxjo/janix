@@ -20,6 +20,7 @@ use abi::{
 use userland_rt::{Sys, UserlandSys};
 
 pub mod alarm;
+pub mod batch;
 pub mod clock;
 pub mod demo_shared;
 pub mod time;
@@ -526,7 +527,7 @@ pub fn println(sys: &impl Sys, message: &'static str) {
     sys.syscall(request);
 }
 
-/// Query a node in the kernel graph and return the associated value.
+/// Query a thing in the kernel graph and return the associated value.
 ///
 /// If the kernel returns anything other than `NodeData`, this helper returns
 /// `None`.
@@ -611,7 +612,7 @@ pub fn user_update_thing(
 
 pub use abi::Thing;
 // Re-export commonly used ABI types for userland consumers
-pub use abi::{EdgePred, PropKey, PropType, PropValue, ThingId};
+pub use abi::{Predicate, PropKey, PropType, PropValue, ThingId};
 // Re-export graph kinds module so consumers can access it as `userland_std::graph_kinds`
 pub use abi::graph_kinds;
 
@@ -708,16 +709,16 @@ pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> O
 /// Return all neighbors reachable from `from` via `pred` in insertion order.
 ///
 /// The returned IDs are ordered by the kernel's insertion order.
-pub fn edge_targets<S: Sys>(sys: &mut S, from: ThingId, pred: EdgePred) -> Vec<ThingId> {
+pub fn link_targets<S: Sys>(sys: &mut S, src: ThingId, pred: Predicate) -> Vec<ThingId> {
     let mut results = Vec::new();
-    let mut index = 0;
+    let mut idx = 0;
     loop {
-        match sys.syscall(KernelRequest::EdgeAt { from, pred, index }) {
-            KernelResponse::EdgeTarget { target: Some(id) } => {
+        match sys.syscall(KernelRequest::LinkAt { src, pred, idx }) {
+            KernelResponse::LinkTarget { target: Some(id) } => {
                 results.push(id);
-                index += 1;
+                idx += 1;
             }
-            KernelResponse::EdgeTarget { target: None } => break,
+            KernelResponse::LinkTarget { target: None } => break,
             _ => break,
         }
     }
@@ -725,9 +726,9 @@ pub fn edge_targets<S: Sys>(sys: &mut S, from: ThingId, pred: EdgePred) -> Vec<T
 }
 
 /// Add a link between Things via the kernel ABI.
-pub fn add_edge(sys: &impl Sys, from: ThingId, pred: EdgePred, to: ThingId) -> bool {
+pub fn add_link(sys: &impl Sys, src: ThingId, pred: Predicate, dst: ThingId) -> bool {
     matches!(
-        sys.syscall(KernelRequest::AddEdge { from, pred, to }),
+        sys.syscall(KernelRequest::AddLink { src, pred, dst }),
         KernelResponse::Success { .. }
     )
 }
@@ -973,8 +974,8 @@ pub fn open_primary_display_buffer<S: Sys>(sys: &mut S) -> Result<PrimaryDisplay
         .ok_or(SysError::Unexpected)?;
 
     let mut front_targets =
-        edge_targets(sys, display.id, graph_kinds::EDGE_DISPLAY_HAS_FRONT_BUFFER);
-    let mut back_targets = edge_targets(sys, display.id, graph_kinds::EDGE_DISPLAY_HAS_BACK_BUFFER);
+        link_targets(sys, display.id, graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER);
+    let mut back_targets = link_targets(sys, display.id, graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER);
     let front_id = front_targets.pop().ok_or(SysError::Unexpected)?;
     let back_id = back_targets.pop().ok_or(SysError::Unexpected)?;
 

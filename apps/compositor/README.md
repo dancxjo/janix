@@ -1,6 +1,6 @@
 # Compositor Architecture Notes
 
-This is an internal design sketch for `apps/compositor`. It captures the high level graph of how data flows through modules (graph → layout → display list → framebuffer, plus input feedback). Nothing here is enforced yet by real Thing nodes; it is a guide for future instrumentation.
+This is an internal design sketch for `apps/compositor`. It captures the high level graph of how data flows through modules (graph → layout → display list → framebuffer, plus input feedback). Nothing here is enforced yet by real Things; it is a guide for future instrumentation.
 
 ## Core Modules & Types
 
@@ -43,7 +43,7 @@ Input (MousePacketEvent) → Layout hit-test → Graph prop updates
 
 ## Cypher Sketch
 
-Illustrative Cypher snippet (replace `DesignNode` with your actual schema when implementing real design graph nodes):
+Illustrative Cypher snippet (replace `DesignNode` with your actual schema when implementing real design graph things):
 
 ```cypher
 MERGE (comp:DesignNode {kind:"Module", name:"apps/compositor"});

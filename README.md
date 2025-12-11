@@ -2,9 +2,9 @@
 
 **ThingOS** is an experimental microkernel operating system written in Rust, built around one central idea:
 
-> **The kernel *is* a graph.**
+-> **The kernel *is* a graph.**
 
-Everything meaningful in the system—processes, resources, windows, transactions, modes—should eventually be represented as nodes and links in a single transactional graph that forms the heart of the OS.
+Everything meaningful in the system—processes, resources, windows, transactions, modes—should eventually be represented as things and links in a single transactional graph that forms the heart of the OS.
 
 ThingOS boots via the **Limine** bootloader and is structured as a modern Rust **Cargo workspace** with a strict separation between kernel logic, boot code, shared ABI, and userland libraries.
 
@@ -15,7 +15,7 @@ This repository currently provides a minimal working skeleton of that system: a 
 ## ✨ Project Goals
 
 * **Graph-centric kernel**
-  All kernel state is encoded as graph nodes/links. Kernel operations are graph transactions.
+  All kernel state is encoded as graph things/links. Kernel operations are graph transactions.
 
 * **Transactional updates**
   Mutations occur through an atomic transaction API exposed via a small ABI.
@@ -49,7 +49,7 @@ thing-os/
 │   └── src/main.rs     # kmain() → initializes kernel
 │
 ├── kernel/        # Pure kernel logic (no_std)
-│   ├── graph.rs        # Minimal node storage + queries
+│   ├── graph.rs        # Minimal thing storage + queries
 │   ├── transaction.rs  # Transaction ID + stub commit
 │   └── log.rs          # Fixed-size kernel log buffer
 │
@@ -146,7 +146,7 @@ This command will:
 1. Limine loads `boot/kernel`
 2. `kmain()` asserts Limine revision → initializes `kernel`
 3. `kernel::init()` brings up logging, graph, transactions
-4. `kernel::boot_sequence()` creates initial kernel graph nodes
+4. `kernel::boot_sequence()` creates initial kernel graph things
 5. Kernel halts in place (more work ahead!)
 
 ### ABI
@@ -190,7 +190,7 @@ Next steps include:
 * Real graph implementation (links, attributes, schemas)
 * Real transactions that mutate the graph
 * Process model & scheduler
-* Memory map represented as graph nodes
+* Memory map represented as graph things
 * Device drivers as graph-attached components
 * System call mechanism for actual in-kernel userland
 

@@ -5,7 +5,7 @@ use abi::{PropValue, ThingId};
 use alloc::string::String;
 
 const TIME_SLICE_NS: TimeNs = 5_000_000;
-const EDGE_BUF: usize = 4;
+const LINK_BUF: usize = 4;
 
 /// Graph-driven scheduler tick.
 ///
@@ -26,7 +26,7 @@ const EDGE_BUF: usize = 4;
 ///
 /// // The thread should now be marked running on the CPU.
 /// let mut buf = [None; 1];
-/// k::graph::neighbors(thread, k::graph_kinds::EDGE_RUNS_ON, &mut buf);
+/// k::graph::neighbors(thread, k::graph_kinds::LINK_RUNS_ON, &mut buf);
 /// assert!(buf.into_iter().flatten().any(|id| id == cpu));
 /// ```
 pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId> {
@@ -43,7 +43,7 @@ pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId>
         }
 
         make_runnable(graph, tid, now);
-        graph.remove_edge(tid, graph_kinds::EDGE_RUNS_ON, cpu_node);
+        graph.remove_link(tid, graph_kinds::LINK_RUNS_ON, cpu_node);
         preempted = Some(tid);
     }
 
@@ -55,7 +55,7 @@ pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId>
     Some(next)
 }
 
-/// Create a SleepEvent node and link it from the thread.
+/// Create a SleepEvent thing and link it from the thread.
 ///
 /// Returns the created event ThingId on success.
 ///
@@ -69,7 +69,7 @@ pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId>
 /// let sleep = k::sched_graph::create_sleep_event(&mut g, thread, 1_000_000, 5).unwrap();
 ///
 /// let mut buf = [None; 1];
-/// k::graph::neighbors(thread, k::graph_kinds::EDGE_SLEEPS_UNTIL, &mut buf);
+/// k::graph::neighbors(thread, k::graph_kinds::LINK_SLEEPS_UNTIL, &mut buf);
 /// assert!(buf.into_iter().flatten().any(|id| id == sleep));
 /// ```
 pub fn create_sleep_event(
@@ -83,18 +83,18 @@ pub fn create_sleep_event(
         ("created_at_ns", PropValue::U64(created_at_ns)),
     ];
     let sleep = graph.create_thing(graph_kinds::KIND_SLEEP_EVENT, props)?;
-    graph.add_edge(thread, graph_kinds::EDGE_SLEEPS_UNTIL, sleep);
+    graph.add_link(thread, graph_kinds::LINK_SLEEPS_UNTIL, sleep);
     Some(sleep)
 }
 
-/// Remove the SleepEvent node for a thread, if present.
+/// Remove the SleepEvent thing for a thread, if present.
 ///
-/// This clears the `EDGE_SLEEPS_UNTIL` link and deletes the SleepEvent Thing.
+/// This clears the `LINK_SLEEPS_UNTIL` link and deletes the SleepEvent Thing.
 pub fn clear_sleep_event(graph: &mut Graph, thread: ThingId) {
-    let mut buf = [None; EDGE_BUF];
-    graph.neighbors(thread, graph_kinds::EDGE_SLEEPS_UNTIL, &mut buf);
+    let mut buf = [None; LINK_BUF];
+    graph.neighbors(thread, graph_kinds::LINK_SLEEPS_UNTIL, &mut buf);
     for ev in buf.into_iter().flatten() {
-        graph.remove_edge(thread, graph_kinds::EDGE_SLEEPS_UNTIL, ev);
+        graph.remove_link(thread, graph_kinds::LINK_SLEEPS_UNTIL, ev);
         let _ = graph::delete_thing(ev);
     }
 }
@@ -123,8 +123,8 @@ fn find_current_thread(graph: &Graph, cpu_node: ThingId) -> Option<ThingId> {
         if current.is_some() || thing.kind != graph_kinds::KIND_THREAD {
             return;
         }
-        let mut out = [None; EDGE_BUF];
-        graph.neighbors(thing.id, graph_kinds::EDGE_RUNS_ON, &mut out);
+        let mut out = [None; LINK_BUF];
+        graph.neighbors(thing.id, graph_kinds::LINK_RUNS_ON, &mut out);
         if out.into_iter().flatten().any(|cpu| cpu == cpu_node) {
             current = Some(thing.id);
         }
@@ -190,7 +190,7 @@ fn start_running(graph: &mut Graph, thread: ThingId, cpu_node: ThingId, now: Tim
             ("last_started_ns", PropValue::U64(now)),
         ],
     );
-    graph.add_edge(thread, graph_kinds::EDGE_RUNS_ON, cpu_node);
+    graph.add_link(thread, graph_kinds::LINK_RUNS_ON, cpu_node);
 }
 
 fn clear_cpu_assignments(graph: &mut Graph, cpu_node: ThingId) {
@@ -198,11 +198,11 @@ fn clear_cpu_assignments(graph: &mut Graph, cpu_node: ThingId) {
         if thing.kind != graph_kinds::KIND_THREAD {
             return;
         }
-        let mut out = [None; EDGE_BUF];
-        graph.neighbors(thing.id, graph_kinds::EDGE_RUNS_ON, &mut out);
+        let mut out = [None; LINK_BUF];
+        graph.neighbors(thing.id, graph_kinds::LINK_RUNS_ON, &mut out);
         for cpu in out.into_iter().flatten() {
             if cpu == cpu_node {
-                graph.remove_edge(thing.id, graph_kinds::EDGE_RUNS_ON, cpu_node);
+                graph.remove_link(thing.id, graph_kinds::LINK_RUNS_ON, cpu_node);
             }
         }
     });

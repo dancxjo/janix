@@ -71,10 +71,10 @@ mod tests {
 
         let requests = sys.requests.borrow();
         assert!(requests.iter().any(|request| match request {
-            KernelRequest::AddEdge { from, pred, to } =>
-                *pred == graph_kinds::EDGE_PLACE_WINDOW
-                    && *from == mode.place_id.unwrap_or(ThingId(0))
-                    && *to == handle.id,
+            KernelRequest::AddLink { src, pred, dst } =>
+                *pred == graph_kinds::LINK_PLACE_WINDOW
+                    && *src == mode.place_id.unwrap_or(ThingId(0))
+                    && *dst == handle.id,
             _ => false,
         }));
         assert!(requests.iter().any(|request| match request {
@@ -106,10 +106,10 @@ mod tests {
             _ => false,
         }));
         assert!(requests.iter().any(|request| match request {
-            KernelRequest::AddEdge { from, pred, to } =>
-                *pred == graph_kinds::EDGE_WINDOW_SURFACE
-                    && *from == handle.id
-                    && *to == ThingId(42),
+            KernelRequest::AddLink { src, pred, dst } =>
+                *pred == graph_kinds::LINK_WINDOW_SURFACE
+                    && *src == handle.id
+                    && *dst == ThingId(42),
             _ => false,
         }));
     }

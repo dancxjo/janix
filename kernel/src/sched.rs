@@ -110,7 +110,7 @@ impl Scheduler {
             if self.threads[index].is_some() {
                 self.ensure_thread_thing(index);
                 self.graph_update_thread_state(index);
-                self.graph_restore_sleep_edge(index);
+                self.graph_restore_sleep_link(index);
             }
         }
     }
@@ -497,7 +497,7 @@ impl Scheduler {
             .and_then(|slot| slot.as_ref())
         {
             if let Some(process_thing) = process.thing_id {
-                let _ = graph::add_edge(process_thing, graph_kinds::EDGE_OWNS_THREAD, thread_thing);
+                let _ = graph::add_link(process_thing, graph_kinds::LINK_OWNS_THREAD, thread_thing);
             }
         }
     }
@@ -541,7 +541,7 @@ impl Scheduler {
             if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
                 thread.sleep_event_id = Some(event_id);
             }
-            let _ = graph::add_edge(thread_id, graph_kinds::EDGE_SLEEPS_UNTIL, event_id);
+            let _ = graph::add_link(thread_id, graph_kinds::LINK_SLEEPS_UNTIL, event_id);
         }
     }
 
@@ -551,7 +551,7 @@ impl Scheduler {
                 if self.graph_enabled {
                     if let Some(thread_thing) = thread.thing_id {
                         let _ =
-                            graph::remove_edge(thread_thing, graph_kinds::EDGE_SLEEPS_UNTIL, event);
+                            graph::remove_link(thread_thing, graph_kinds::LINK_SLEEPS_UNTIL, event);
                     }
                     let _ = graph::delete_thing(event);
                 }
@@ -559,13 +559,13 @@ impl Scheduler {
         }
     }
 
-    fn graph_restore_sleep_edge(&mut self, index: usize) {
+    fn graph_restore_sleep_link(&mut self, index: usize) {
         if !self.graph_enabled {
             return;
         }
         if let Some(thread) = self.threads.get(index).and_then(|t| t.as_ref()) {
             if let (Some(thread_thing), Some(event)) = (thread.thing_id, thread.sleep_event_id) {
-                let _ = graph::add_edge(thread_thing, graph_kinds::EDGE_SLEEPS_UNTIL, event);
+                let _ = graph::add_link(thread_thing, graph_kinds::LINK_SLEEPS_UNTIL, event);
             }
         }
     }

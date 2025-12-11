@@ -6,7 +6,7 @@ use crate::sched_types::{CpuId, ThreadState, TimeNs};
 use abi::{PropValue, ThingId};
 use alloc::string::String;
 
-const EDGE_BUF: usize = 4;
+const LINK_BUF: usize = 4;
 
 /// Minimal scheduler tick backed by graph state.
 /// For now, it keeps running the currently assigned thread (if any) or
@@ -49,8 +49,8 @@ fn find_thread_on_cpu(graph: &Graph, cpu_node: ThingId) -> Option<ThingId> {
             return;
         }
 
-        let mut buf = [None; EDGE_BUF];
-        graph.neighbors(thing.id, graph_kinds::EDGE_RUNS_ON, &mut buf);
+        let mut buf = [None; LINK_BUF];
+        graph.neighbors(thing.id, graph_kinds::LINK_RUNS_ON, &mut buf);
         if buf.into_iter().flatten().any(|cpu| cpu == cpu_node) {
             current = Some(thing.id);
         }
@@ -119,7 +119,7 @@ fn make_thread_current(graph: &mut Graph, thread: ThingId, cpu_node: ThingId, no
             ("last_started_ns", PropValue::U64(now)),
         ],
     );
-    ensure_runs_on_edge(graph, thread, cpu_node);
+    ensure_runs_on_link(graph, thread, cpu_node);
 }
 
 fn clear_cpu_assignments(graph: &mut Graph, cpu_node: ThingId, preserve: ThingId) {
@@ -127,21 +127,21 @@ fn clear_cpu_assignments(graph: &mut Graph, cpu_node: ThingId, preserve: ThingId
         if thing.kind != graph_kinds::KIND_THREAD || thing.id == preserve {
             return;
         }
-        let mut buf = [None; EDGE_BUF];
-        graph.neighbors(thing.id, graph_kinds::EDGE_RUNS_ON, &mut buf);
+        let mut buf = [None; LINK_BUF];
+        graph.neighbors(thing.id, graph_kinds::LINK_RUNS_ON, &mut buf);
         for cpu in buf.into_iter().flatten() {
             if cpu == cpu_node {
-                graph.remove_edge(thing.id, graph_kinds::EDGE_RUNS_ON, cpu_node);
+                graph.remove_link(thing.id, graph_kinds::LINK_RUNS_ON, cpu_node);
             }
         }
     });
 }
 
-fn ensure_runs_on_edge(graph: &mut Graph, thread: ThingId, cpu_node: ThingId) {
-    let mut buf = [None; EDGE_BUF];
-    graph.neighbors(thread, graph_kinds::EDGE_RUNS_ON, &mut buf);
+fn ensure_runs_on_link(graph: &mut Graph, thread: ThingId, cpu_node: ThingId) {
+    let mut buf = [None; LINK_BUF];
+    graph.neighbors(thread, graph_kinds::LINK_RUNS_ON, &mut buf);
     let already = buf.into_iter().flatten().any(|cpu| cpu == cpu_node);
     if !already {
-        graph.add_edge(thread, graph_kinds::EDGE_RUNS_ON, cpu_node);
+        graph.add_link(thread, graph_kinds::LINK_RUNS_ON, cpu_node);
     }
 }

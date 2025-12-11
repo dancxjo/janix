@@ -6,7 +6,7 @@ use abi::{ThingId, graph_kinds};
 use alloc::vec::Vec;
 use thing_models::{BootProfile, BootProgram, ProgramImage};
 use userland::prelude::*;
-use userland_std::add_edge;
+use userland_std::add_link;
 
 const ROOTFS_IDENTIFIER: &str = "rootfs";
 
@@ -41,7 +41,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
 
         match create_thing(sys, &program) {
             Some(program_id) => {
-                if add_edge(sys, profile_id, graph_kinds::EDGE_LAUNCHES, program_id) {
+                if add_link(sys, profile_id, graph_kinds::LINK_LAUNCHES, program_id) {
                     let mut recorded = program;
                     recorded.id = program_id;
                     existing_programs.push(recorded);

@@ -15,7 +15,7 @@ fn node_create_and_prop_change_emit_events() {
         CREATED.fetch_add(1, Ordering::SeqCst);
     });
     graph::subscribe_prop_changed("Widget", "name", |event| {
-        if let GraphEvent::PropChanged { old, new, .. } = event {
+        if let GraphEvent::PropUpdated { old, new, .. } = event {
             assert_eq!(old, &None);
             assert_eq!(new, &PropValue::Str("gizmo".into()));
             PROP.fetch_add(1, Ordering::SeqCst);
@@ -31,46 +31,46 @@ fn node_create_and_prop_change_emit_events() {
 }
 
 #[test]
-fn edge_add_and_remove_are_pushed() {
+fn link_add_and_remove_are_pushed() {
     let _guard = kernel::test_lock();
     graph::init();
     static ADDED: AtomicUsize = AtomicUsize::new(0);
     static REMOVED: AtomicUsize = AtomicUsize::new(0);
 
-    graph::subscribe_edge_added(graph_kinds::EDGE_RUNS_ON, |event| {
-        if let GraphEvent::EdgeAdded(edge) = event {
-            assert_eq!(edge.pred, graph_kinds::EDGE_RUNS_ON);
+    graph::subscribe_link_added(graph_kinds::LINK_RUNS_ON, |event| {
+        if let GraphEvent::LinkAdded(link) = event {
+            assert_eq!(link.pred, graph_kinds::LINK_RUNS_ON);
             ADDED.fetch_add(1, Ordering::SeqCst);
         }
     });
-    graph::subscribe_edge_removed(graph_kinds::EDGE_RUNS_ON, |event| {
-        if let GraphEvent::EdgeRemoved(edge) = event {
-            assert_eq!(edge.pred, graph_kinds::EDGE_RUNS_ON);
+    graph::subscribe_link_removed(graph_kinds::LINK_RUNS_ON, |event| {
+        if let GraphEvent::LinkRemoved(link) = event {
+            assert_eq!(link.pred, graph_kinds::LINK_RUNS_ON);
             REMOVED.fetch_add(1, Ordering::SeqCst);
         }
     });
 
     let a = graph::create_thing("Thread", &[]).expect("a");
     let b = graph::create_thing("CpuCore", &[]).expect("b");
-    assert!(graph::add_edge(a, graph_kinds::EDGE_RUNS_ON, b));
-    assert!(graph::remove_edge(a, graph_kinds::EDGE_RUNS_ON, b));
+    assert!(graph::add_link(a, graph_kinds::LINK_RUNS_ON, b));
+    assert!(graph::remove_link(a, graph_kinds::LINK_RUNS_ON, b));
 
     assert_eq!(ADDED.load(Ordering::SeqCst), 1);
     assert_eq!(REMOVED.load(Ordering::SeqCst), 1);
 }
 
 #[test]
-fn neighbors_collects_only_matching_edges() {
+fn neighbors_collects_only_matching_links() {
     let _guard = kernel::test_lock();
     graph::init();
     let a = graph::create_thing("Thread", &[]).unwrap();
     let b = graph::create_thing("CpuCore", &[]).unwrap();
     let c = graph::create_thing("CpuCore", &[]).unwrap();
-    assert!(graph::add_edge(a, graph_kinds::EDGE_RUNS_ON, b));
-    assert!(graph::add_edge(a, graph_kinds::EDGE_RUNS_ON, c));
+    assert!(graph::add_link(a, graph_kinds::LINK_RUNS_ON, b));
+    assert!(graph::add_link(a, graph_kinds::LINK_RUNS_ON, c));
 
     let mut out = [None; 4];
-    graph::neighbors(a, graph_kinds::EDGE_RUNS_ON, &mut out);
+    graph::neighbors(a, graph_kinds::LINK_RUNS_ON, &mut out);
     assert!(out.contains(&Some(b)));
     assert!(out.contains(&Some(c)));
 }

@@ -6,7 +6,7 @@ pub fn init() {
 }
 
 fn on_request_created(event: &GraphEvent) {
-    if let GraphEvent::NodeCreated { id, .. } = event {
+    if let GraphEvent::ThingCreated { id, .. } = event {
         crate::println!("New USB Transfer Request: {:?}", id);
         // TODO: Process request
     }

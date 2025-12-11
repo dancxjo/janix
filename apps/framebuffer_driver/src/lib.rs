@@ -2,13 +2,13 @@
 
 extern crate alloc;
 
-use abi::{EdgePred, MapFlags, PixelFormat, SharedBufferInfo, ThingId};
+use abi::{Predicate, MapFlags, PixelFormat, SharedBufferInfo, ThingId};
 use alloc::string::String;
 use core::ptr;
 use userland::prelude::*;
 use userland_std::thing_models::DisplayPresentRequest;
 use userland_std::{
-    DisplayThing, SysError, add_edge, edge_targets, load_thing, shared_buffer_info,
+    DisplayThing, SysError, add_link, link_targets, load_thing, shared_buffer_info,
     shared_buffer_map,
 };
 
@@ -57,12 +57,12 @@ impl FramebufferDriver {
         let front_buffer_id = Self::display_buffer_target(
             sys,
             descriptor.display_id,
-            abi::graph_kinds::EDGE_DISPLAY_HAS_FRONT_BUFFER,
+            abi::graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
         )?;
         let back_buffer_id = Self::display_buffer_target(
             sys,
             descriptor.display_id,
-            abi::graph_kinds::EDGE_DISPLAY_HAS_BACK_BUFFER,
+            abi::graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
         )?;
         let front_buffer = Self::map_buffer_view(sys, front_buffer_id, logical_map_flags)?;
         let back_buffer = Self::map_buffer_view(sys, back_buffer_id, logical_map_flags)?;
@@ -91,10 +91,10 @@ impl FramebufferDriver {
         let fb_id = create_thing(sys, &fb_thing).ok_or(SysError::Unexpected)?;
         println(sys, "framebuffer_driver: created framebuffer Thing");
 
-        let _ = add_edge(
+        let _ = add_link(
             sys,
             descriptor.display_id,
-            abi::graph_kinds::EDGE_DISPLAY_FRONT_BUFFER,
+            abi::graph_kinds::LINK_DISPLAY_FRONT_BUFFER,
             fb_id,
         );
         println(sys, "framebuffer_driver: linked framebuffer to display");
@@ -237,9 +237,9 @@ impl FramebufferDriver {
     fn display_buffer_target<S: Sys>(
         sys: &mut S,
         display_id: ThingId,
-        pred: EdgePred,
+        pred: Predicate,
     ) -> Result<ThingId, SysError> {
-        let mut targets = edge_targets(sys, display_id, pred);
+        let mut targets = link_targets(sys, display_id, pred);
         targets.pop().ok_or(SysError::Unexpected)
     }
 
@@ -403,7 +403,7 @@ fn primary_display_descriptor<S: Sys>(sys: &mut S) -> Result<DisplayDescriptor, 
         .cloned()
         .ok_or(SysError::Unexpected)?;
 
-    let mut targets = edge_targets(sys, display.id, abi::graph_kinds::EDGE_DISPLAY_SCANOUT);
+    let mut targets = link_targets(sys, display.id, abi::graph_kinds::LINK_DISPLAY_SCANOUT);
     let buffer_id = targets.pop().ok_or(SysError::Unexpected)?;
     let info = userland_std::shared_buffer_info(sys, buffer_id)?;
 

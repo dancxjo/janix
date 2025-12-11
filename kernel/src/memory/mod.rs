@@ -1,3 +1,4 @@
+pub mod arena;
 pub mod boot_frame_allocator;
 pub mod frame_pool;
 pub mod hhdm;

@@ -6,7 +6,9 @@ pub mod console;
 pub mod graph;
 pub mod graph_kinds;
 pub mod graph_watchers;
+pub mod handles;
 pub mod hw;
+pub mod journal;
 pub mod log;
 pub mod memory;
 pub mod model;
@@ -17,6 +19,7 @@ pub mod sched_types;
 pub mod shared_buffer;
 pub mod time;
 pub mod transaction;
+pub mod work_queue;
 
 use crate::model::{compute_memory_summary, compute_scheduler_summary, scheduler_tick};
 use crate::sched_types::ThreadState;
@@ -35,8 +38,10 @@ static TEST_MUTEX: Mutex<()> = Mutex::new(());
 pub fn init() {
     log::init();
     graph::init();
+    journal::init();
     transaction::init();
     model::init_schemas();
+    work_queue::init();
     graph_watchers::init();
 
     // Initialize hardware
@@ -74,10 +79,13 @@ pub fn get_logs() -> &'static [Option<&'static str>] {
 /// Handle a kernel request from userland
 pub fn handle_request(request: KernelRequest) -> KernelResponse {
     match request {
+        KernelRequest::LinkAt { src, pred, idx } => KernelResponse::LinkTarget {
+            target: graph::link_target_at(src, pred, idx as usize),
+        },
         KernelRequest::GraphQuery { node_id } => match graph::query_node(node_id) {
             Some(value) => KernelResponse::NodeData { node_id, value },
             None => KernelResponse::Error {
-                message: "Node not found",
+                message: "Thing not found",
             },
         },
         KernelRequest::CreateTransaction => {
@@ -129,8 +137,29 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 }
             }
         }
-        KernelRequest::AddEdge { from, pred, to } => {
-            if graph::add_edge(from, pred, to) {
+        KernelRequest::ThingBatchUpdate { updates } => {
+            for update in updates {
+                // Get kind to validate
+                if let Some((kind, _)) = graph::get_thing(update.id) {
+                    if let Err(e) = graph::validate_props(kind, update.props) {
+                        return KernelResponse::Error { message: e };
+                    }
+                } else {
+                    return KernelResponse::Error {
+                        message: "Thing not found in batch",
+                    };
+                }
+
+                if !graph::update_thing(update.id, update.props) {
+                    return KernelResponse::Error {
+                        message: "Failed to update thing in batch",
+                    };
+                }
+            }
+            KernelResponse::Success { data: None }
+        }
+        KernelRequest::AddLink { src, pred, dst } => {
+            if graph::add_link(src, pred, dst) {
                 KernelResponse::Success { data: None }
             } else {
                 KernelResponse::Error {
@@ -138,8 +167,8 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 }
             }
         }
-        KernelRequest::EdgeAt { from, pred, index } => KernelResponse::EdgeTarget {
-            target: graph::edge_target_at(from, pred, index as usize),
+        KernelRequest::LinkAt { src, pred, idx } => KernelResponse::LinkTarget {
+            target: graph::link_target_at(src, pred, idx as usize),
         },
         KernelRequest::CreateSharedBuffer {
             width,
@@ -252,7 +281,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             kind,
             description,
             props,
-        } => match graph::register_schema(kind, description, props) {
+        } => match graph::register_schema(kind, description, props, &[]) {
             Ok(()) => KernelResponse::SchemaRegistered { kind },
             Err(e) => KernelResponse::Error { message: e },
         },
@@ -324,6 +353,7 @@ pub fn create_builtin_things() {
         "KernelInfo",
         "Kernel version and boot status information",
         KERNEL_INFO_SCHEMA,
+        &[],
     ) {
         log("Failed to register KernelInfo schema");
         log(e);
@@ -339,6 +369,7 @@ pub fn create_builtin_things() {
         "BootStats",
         "Statistics about kernel boot process including boot time and initial things created",
         BOOT_STATS_SCHEMA,
+        &[],
     ) {
         log("Failed to register BootStats schema");
         log(e);
@@ -373,8 +404,8 @@ pub fn create_builtin_things() {
 /// - 1 CPU core
 /// - 1 Process with 1 Thread in Running state
 /// - 1 AddressSpace linked to the process
-/// - 1 FramePool with several PhysFrame nodes
-/// - Several VirtRegion nodes linked to AddressSpace and PhysFrames
+/// - 1 FramePool with several PhysFrame things
+/// - Several VirtRegion things linked to AddressSpace and PhysFrames
 ///
 /// This is a graph-only model - no actual paging or context switching.
 pub fn init_boot_graph() {
@@ -435,8 +466,8 @@ pub fn init_boot_graph() {
             ("last_started_ns", abi::PropValue::U64(0)),
         ];
         graph::update_thing(thread_id, &thread_running);
-        let _ = graph::add_edge(process, graph_kinds::EDGE_OWNS_THREAD, thread_id);
-        let _ = graph::add_edge(thread_id, graph_kinds::EDGE_RUNS_ON, cpu_core);
+        let _ = graph::add_link(process, graph_kinds::LINK_OWNS_THREAD, thread_id);
+        let _ = graph::add_link(thread_id, graph_kinds::LINK_RUNS_ON, cpu_core);
         log("Thread(1) set to Running state");
     } else {
         log("Failed to create Thread");
@@ -465,13 +496,13 @@ pub fn init_boot_graph() {
     let _frame1 = model::create_phys_frame(FRAME_POOL_START, FRAME_SIZE);
     let _frame2 = model::create_phys_frame(FRAME_POOL_START + FRAME_SIZE, FRAME_SIZE);
     let _frame3 = model::create_phys_frame(FRAME_POOL_START + 2 * FRAME_SIZE, FRAME_SIZE);
-    log("Created 3 PhysFrame nodes");
+    log("Created 3 PhysFrame things");
 
     // Create virtual regions (kernel space, user stack, user heap)
     let _virt1 = model::create_virt_region(KERNEL_VIRT_BASE, KERNEL_VIRT_SIZE, FLAG_RW);
     let _virt2 = model::create_virt_region(USER_STACK_BASE, USER_STACK_SIZE, FLAG_RWX);
     let _virt3 = model::create_virt_region(USER_HEAP_BASE, USER_HEAP_SIZE, FLAG_RX);
-    log("Created 3 VirtRegion nodes");
+    log("Created 3 VirtRegion things");
 
     log("Boot graph initialized: 1 process, 1 thread, 1 CPU");
 
@@ -481,7 +512,7 @@ pub fn init_boot_graph() {
 }
 
 fn verify_boot_graph_invariants() {
-    use crate::graph_kinds::{EDGE_OWNS_THREAD, EDGE_RUNS_ON};
+    use crate::graph_kinds::{LINK_OWNS_THREAD, LINK_RUNS_ON};
 
     let mut cpu_count = 0_u64;
     let mut process_count = 0_u64;
@@ -565,7 +596,7 @@ fn verify_boot_graph_invariants() {
 
         if let Some(cpu) = cpu_node {
             let mut buf = [None; 4];
-            graph::neighbors(thread, EDGE_RUNS_ON, &mut buf);
+            graph::neighbors(thread, LINK_RUNS_ON, &mut buf);
             debug_assert!(
                 buf.into_iter().flatten().any(|id| id == cpu),
                 "boot thread should run on CpuCore(0)"
@@ -575,7 +606,7 @@ fn verify_boot_graph_invariants() {
 
     if let (Some(proc_id), Some(thread_id)) = (process_node, running_thread) {
         let mut buf = [None; 4];
-        graph::neighbors(proc_id, EDGE_OWNS_THREAD, &mut buf);
+        graph::neighbors(proc_id, LINK_OWNS_THREAD, &mut buf);
         debug_assert!(
             buf.into_iter().flatten().any(|id| id == thread_id),
             "boot Process(1) should own the boot thread"

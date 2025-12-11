@@ -258,24 +258,25 @@ impl Sys for UserlandSys {
                     }
                 }
             }
-            KernelRequest::AddEdge { from, pred, to } => {
+            KernelRequest::AddLink { src, pred, dst } => {
                 let ret =
-                    unsafe { syscall_stub(SyscallNumber::AddEdge, from.0, pred.0, to.0, 0, 0, 0) };
+                    unsafe { syscall_stub(SyscallNumber::AddLink, src.0, pred.0, dst.0, 0, 0, 0) };
                 if ret == 0 {
                     KernelResponse::Success { data: None }
                 } else {
                     KernelResponse::Error {
-                        message: "AddEdge failed",
+                        message: "AddLink failed",
                     }
                 }
             }
-            KernelRequest::EdgeAt { from, pred, index } => {
-                let ret =
-                    unsafe { syscall_stub(SyscallNumber::EdgeAt, from.0, index, pred.0, 0, 0, 0) };
+            KernelRequest::LinkAt { src, pred, idx } => {
+                let ret = unsafe {
+                    syscall_stub(SyscallNumber::LinkAt, src.0, idx as u64, pred.0, 0, 0, 0)
+                };
                 if ret == u64::MAX {
-                    KernelResponse::EdgeTarget { target: None }
+                    KernelResponse::LinkTarget { target: None }
                 } else {
-                    KernelResponse::EdgeTarget {
+                    KernelResponse::LinkTarget {
                         target: Some(abi::ThingId(ret)),
                     }
                 }

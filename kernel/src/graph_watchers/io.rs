@@ -8,13 +8,13 @@ pub fn init() {
 }
 
 fn on_op_created(event: &GraphEvent) {
-    if let GraphEvent::NodeCreated { id, .. } = event {
+    if let GraphEvent::ThingCreated { id, .. } = event {
         hw::io::process_io_op(*id);
     }
 }
 
 fn on_status_changed(event: &GraphEvent) {
-    if let GraphEvent::PropChanged { id, key, .. } = event {
+    if let GraphEvent::PropUpdated { id, key, .. } = event {
         if *key == "status" {
             hw::io::process_io_op(*id);
         }

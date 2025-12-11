@@ -28,7 +28,7 @@ fn single_runnable_thread_is_marked_running() {
     );
 
     let mut buf = [None; 4];
-    graph::neighbors(thread, graph_kinds::EDGE_RUNS_ON, &mut buf);
+    graph::neighbors(thread, graph_kinds::LINK_RUNS_ON, &mut buf);
     assert!(buf.into_iter().flatten().any(|id| id == cpu));
 }
 
@@ -46,7 +46,7 @@ fn timeslice_expiry_moves_thread_to_runnable() {
         ("last_started_ns", PropValue::U64(0)),
     ];
     graph::update_thing(thread, running_props);
-    graph::add_edge(thread, graph_kinds::EDGE_RUNS_ON, cpu);
+    graph::add_link(thread, graph_kinds::LINK_RUNS_ON, cpu);
 
     let mut g = graph::Graph::new();
     let result = sched_graph::sched_tick(&mut g, 0, 6_000_000);
@@ -64,7 +64,7 @@ fn timeslice_expiry_moves_thread_to_runnable() {
     assert!(matches!(runtime, Some(PropValue::U64(v)) if v >= 6_000_000));
 
     let mut buf = [None; 2];
-    graph::neighbors(thread, graph_kinds::EDGE_RUNS_ON, &mut buf);
+    graph::neighbors(thread, graph_kinds::LINK_RUNS_ON, &mut buf);
     assert!(
         buf.into_iter().flatten().next().is_none(),
         "preempted thread should not hold runs_on link"
@@ -83,7 +83,7 @@ fn higher_priority_thread_wins() {
     assert_eq!(picked, high);
 
     let mut buf = [None; 2];
-    graph::neighbors(high, graph_kinds::EDGE_RUNS_ON, &mut buf);
+    graph::neighbors(high, graph_kinds::LINK_RUNS_ON, &mut buf);
     assert!(buf.into_iter().flatten().any(|id| id == cpu));
 
     let low_state = graph::get_prop(low, "state");
@@ -109,7 +109,7 @@ fn running_thread_keeps_cpu_when_slice_remaining() {
             ("runtime_ns", PropValue::U64(500)),
         ],
     );
-    graph::add_edge(thread, graph_kinds::EDGE_RUNS_ON, cpu);
+    graph::add_link(thread, graph_kinds::LINK_RUNS_ON, cpu);
 
     let mut g = graph::Graph::new();
     let picked = sched_graph::sched_tick(&mut g, 0, 3_000).expect("thread picked");
@@ -127,7 +127,7 @@ fn running_thread_keeps_cpu_when_slice_remaining() {
     assert!(matches!(last_started, Some(PropValue::U64(v)) if v == 3_000));
 
     let mut buf = [None; 1];
-    graph::neighbors(thread, graph_kinds::EDGE_RUNS_ON, &mut buf);
+    graph::neighbors(thread, graph_kinds::LINK_RUNS_ON, &mut buf);
     assert!(buf.into_iter().flatten().any(|id| id == cpu));
 }
 
@@ -146,7 +146,7 @@ fn pick_prefers_lower_runtime_on_priority_tie() {
     assert_eq!(picked, fresh);
 
     let mut buf = [None; 1];
-    graph::neighbors(fresh, graph_kinds::EDGE_RUNS_ON, &mut buf);
+    graph::neighbors(fresh, graph_kinds::LINK_RUNS_ON, &mut buf);
     assert!(buf.into_iter().flatten().any(|id| id == cpu));
 
     let slow_state = graph::get_prop(slow, "state");
@@ -169,7 +169,7 @@ fn preempted_thread_is_skipped_for_selection() {
             PropValue::Str(alloc::string::String::from(ThreadState::Running.as_str())),
         )],
     );
-    graph::add_edge(hog, graph_kinds::EDGE_RUNS_ON, cpu);
+    graph::add_link(hog, graph_kinds::LINK_RUNS_ON, cpu);
 
     let mut g = graph::Graph::new();
     let picked = sched_graph::sched_tick(&mut g, 0, 10_000_000).expect("picked thread");
@@ -183,13 +183,13 @@ fn preempted_thread_is_skipped_for_selection() {
     let hog_runtime = graph::get_prop(hog, "runtime_ns");
     assert!(matches!(hog_runtime, Some(PropValue::U64(v)) if v >= 10_000_000));
 
-    let mut hog_edges = [None; 1];
-    graph::neighbors(hog, graph_kinds::EDGE_RUNS_ON, &mut hog_edges);
-    assert!(hog_edges.into_iter().flatten().next().is_none());
+    let mut hog_links = [None; 1];
+    graph::neighbors(hog, graph_kinds::LINK_RUNS_ON, &mut hog_links);
+    assert!(hog_links.into_iter().flatten().next().is_none());
 
-    let mut backup_edges = [None; 1];
-    graph::neighbors(backup, graph_kinds::EDGE_RUNS_ON, &mut backup_edges);
-    assert!(backup_edges.into_iter().flatten().any(|id| id == cpu));
+    let mut backup_links = [None; 1];
+    graph::neighbors(backup, graph_kinds::LINK_RUNS_ON, &mut backup_links);
+    assert!(backup_links.into_iter().flatten().any(|id| id == cpu));
 }
 
 #[test]
@@ -215,13 +215,13 @@ fn sleep_event_create_and_clear() {
     );
 
     let mut buf = [None; 1];
-    graph::neighbors(thread, graph_kinds::EDGE_SLEEPS_UNTIL, &mut buf);
+    graph::neighbors(thread, graph_kinds::LINK_SLEEPS_UNTIL, &mut buf);
     assert!(buf.into_iter().flatten().any(|id| id == sleep));
 
     sched_graph::clear_sleep_event(&mut g, thread);
 
     let mut cleared = [None; 1];
-    graph::neighbors(thread, graph_kinds::EDGE_SLEEPS_UNTIL, &mut cleared);
+    graph::neighbors(thread, graph_kinds::LINK_SLEEPS_UNTIL, &mut cleared);
     assert!(cleared.into_iter().flatten().next().is_none());
     assert!(graph::get_thing(sleep).is_none());
 }

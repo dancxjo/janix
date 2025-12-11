@@ -258,7 +258,7 @@ fn test_boot_graph_has_phys_frames() {
 
     assert!(
         frame_count >= 3,
-        "Boot graph should contain at least 3 PhysFrame nodes, found {}",
+        "Boot graph should contain at least 3 PhysFrame things, found {}",
         frame_count
     );
 }
@@ -303,7 +303,7 @@ fn test_boot_graph_has_virt_regions() {
 
     assert!(
         region_count >= 3,
-        "Boot graph should contain at least 3 VirtRegion nodes, found {}",
+        "Boot graph should contain at least 3 VirtRegion things, found {}",
         region_count
     );
 }

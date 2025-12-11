@@ -22,17 +22,31 @@ pub struct NodeId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ThingId(pub u64);
 
+impl ThingId {
+    pub const fn new(index: u32, generation: u32) -> Self {
+        ThingId((generation as u64) << 32 | (index as u64))
+    }
+
+    pub const fn index(self) -> u32 {
+        self.0 as u32
+    }
+
+    pub const fn generation(self) -> u32 {
+        (self.0 >> 32) as u32
+    }
+}
+
 /// Predicate identifier for a link between Things.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct EdgePred(pub u64);
+pub struct Predicate(pub u64);
 
 /// Canonical link representation inside the graph.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Edge {
+pub struct Link {
     pub id: ThingId,
     pub src: ThingId,
     pub dst: ThingId,
-    pub pred: EdgePred,
+    pub pred: Predicate,
 }
 
 pub const USER_HEAP_START: usize = 0x0000_0000_4000_0000;
@@ -158,6 +172,12 @@ pub struct ThreadInfo {
     pub priority: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct BatchUpdateEntry {
+    pub id: ThingId,
+    pub props: &'static [(PropKey, PropValue)],
+}
+
 /// Kernel request from userland
 #[derive(Debug, Clone)]
 pub enum KernelRequest {
@@ -198,6 +218,10 @@ pub enum KernelRequest {
         id: ThingId,
         props: &'static [(PropKey, PropValue)],
     },
+    /// Batch update multiple Things
+    ThingBatchUpdate {
+        updates: &'static [BatchUpdateEntry],
+    },
     /// Register a schema
     SchemaRegister {
         kind: &'static str,
@@ -237,16 +261,16 @@ pub enum KernelRequest {
     /// Exit the current thread
     ExitThread,
     /// Add a link between Things
-    AddEdge {
-        from: ThingId,
-        pred: EdgePred,
-        to: ThingId,
+    AddLink {
+        src: ThingId,
+        pred: Predicate,
+        dst: ThingId,
     },
     /// Fetch the target of the link at a specific index.
-    EdgeAt {
-        from: ThingId,
-        pred: EdgePred,
-        index: u64,
+    LinkAt {
+        src: ThingId,
+        pred: Predicate,
+        idx: usize,
     },
     CreateSharedBuffer {
         width: u32,
@@ -331,7 +355,7 @@ pub enum KernelResponse {
         current: Option<ThreadInfo>,
     },
     /// Result of querying a link target.
-    EdgeTarget {
+    LinkTarget {
         target: Option<ThingId>,
     },
     /// Program spawn result
@@ -446,8 +470,8 @@ pub enum SyscallNumber {
     ThingGet = 14,
     ThingUpdate = 15,
     ThingList = 16,
-    AddEdge = 17,
-    EdgeAt = 18,
+    AddLink = 17,
+    LinkAt = 18,
     SchemaRegister = 19,
 
     // Transactional / query interfaces
@@ -488,6 +512,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_thing_id_packing() {
+        let id = ThingId::new(1, 2);
+        assert_eq!(id.index(), 1);
+        assert_eq!(id.generation(), 2);
+
+        let id_old = ThingId::new(1, 1);
+        let id_new = ThingId::new(1, 2);
+        assert!(id_new > id_old);
+
+        let id_idx = ThingId::new(2, 1);
+        assert!(id_idx > id_old);
+        assert!(id_new > id_idx); // Generation dominates
+    }
+
+    #[test]
     fn test_thing_id_invariants() {
         // ThingId is a transparent wrapper around u64
         let id_zero = ThingId(0);
@@ -522,8 +561,8 @@ mod tests {
         assert_eq!(SyscallNumber::ThingGet as u64, 14);
         assert_eq!(SyscallNumber::ThingUpdate as u64, 15);
         assert_eq!(SyscallNumber::ThingList as u64, 16);
-        assert_eq!(SyscallNumber::AddEdge as u64, 17);
-        assert_eq!(SyscallNumber::EdgeAt as u64, 18);
+        assert_eq!(SyscallNumber::AddLink as u64, 17);
+        assert_eq!(SyscallNumber::LinkAt as u64, 18);
         assert_eq!(SyscallNumber::SchemaRegister as u64, 19);
         assert_eq!(SyscallNumber::GraphQuery as u64, 20);
         assert_eq!(SyscallNumber::CreateTransaction as u64, 21);

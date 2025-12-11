@@ -1,5 +1,5 @@
 use userland::prelude::*;
-use userland_std::edge_targets;
+use userland_std::link_targets;
 use userland_std::thing_models::DisplayPresentRequest;
 use userland_std::{PrimaryDisplayBuffer, graph_kinds};
 
@@ -112,10 +112,10 @@ pub struct DragState {
 impl Compositor {
     pub fn ensure_display_contracts<S: Sys>(&mut self, sys: &mut S) {
         if self.framebuffer_thing_id.is_none() {
-            let mut targets = edge_targets(
+            let mut targets = link_targets(
                 sys,
                 self.fb.display_id,
-                graph_kinds::EDGE_DISPLAY_FRONT_BUFFER,
+                graph_kinds::LINK_DISPLAY_FRONT_BUFFER,
             );
             self.framebuffer_thing_id = targets.pop();
         }
@@ -255,10 +255,10 @@ mod tests {
         };
 
         let mut responses = vec![
-            KernelResponse::EdgeTarget {
+            KernelResponse::LinkTarget {
                 target: Some(fb_id),
             },
-            KernelResponse::EdgeTarget { target: None },
+            KernelResponse::LinkTarget { target: None },
         ];
         responses.extend(list_responses(vec![present.clone()], |p| p.id));
         let mut sys = MockSys::with_responses(responses);
@@ -275,10 +275,10 @@ mod tests {
         let fb_id = ThingId(5);
 
         let responses = vec![
-            KernelResponse::EdgeTarget {
+            KernelResponse::LinkTarget {
                 target: Some(fb_id),
             },
-            KernelResponse::EdgeTarget { target: None },
+            KernelResponse::LinkTarget { target: None },
             KernelResponse::ThingListEntry { id: None },
             KernelResponse::ThingCreated { id: ThingId(44) },
         ];

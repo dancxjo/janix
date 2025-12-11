@@ -1,6 +1,8 @@
 //! Shared graph kind and link identifiers used by both kernel and userland.
 
-use crate::EdgePred;
+pub const KIND_KIND: &str = "Kind";
+
+use crate::Predicate;
 
 pub const KIND_THREAD: &str = "Thread";
 pub const KIND_PROCESS: &str = "Process";
@@ -30,7 +32,7 @@ pub const KIND_MODE_SWITCH_EVENT: &str = "ModeSwitchEvent";
 pub const KIND_PLACE: &str = "Place";
 pub const KIND_WINDOW: &str = "Window";
 pub const KIND_SURFACE: &str = "Surface";
-pub const KIND_EDGE: &str = "EDG";
+pub const KIND_LINK: &str = "LNK";
 
 pub const KIND_USB_CONTROLLER: &str = "UsbController";
 pub const KIND_USB_DEVICE: &str = "UsbDevice";
@@ -39,42 +41,47 @@ pub const KIND_USB_TRANSFER_REQUEST: &str = "UsbTransferRequest";
 pub const KIND_USB_TRANSFER_RESULT: &str = "UsbTransferResult";
 
 pub mod canon {
-    use crate::EdgePred;
+    use crate::Predicate;
 
-    pub const P_PROC_OWNS_THREAD: EdgePred = EdgePred(0x0001);
-    pub const P_SCHED_RUNS_ON: EdgePred = EdgePred(0x0002);
-    pub const P_SCHED_SLEEPS_UNTIL: EdgePred = EdgePred(0x0003);
-    pub const P_BOOT_LAUNCHES: EdgePred = EdgePred(0x0004);
-    pub const P_INIT_SPAWNED: EdgePred = EdgePred(0x0005);
-    pub const P_DISPLAY_SCANOUT: EdgePred = EdgePred(0x0006);
-    pub const P_MODE_PLACE: EdgePred = EdgePred(0x0007);
-    pub const P_WINDOW_SURFACE: EdgePred = EdgePred(0x0008);
-    pub const P_PLACE_WINDOW: EdgePred = EdgePred(0x0009);
+    pub const P_PROC_OWNS_THREAD: Predicate = Predicate(0x0001);
+    pub const P_SCHED_RUNS_ON: Predicate = Predicate(0x0002);
+    pub const P_SCHED_SLEEPS_UNTIL: Predicate = Predicate(0x0003);
+    pub const P_BOOT_LAUNCHES: Predicate = Predicate(0x0004);
+    pub const P_INIT_SPAWNED: Predicate = Predicate(0x0005);
+    pub const P_DISPLAY_SCANOUT: Predicate = Predicate(0x0006);
+    pub const P_MODE_PLACE: Predicate = Predicate(0x0007);
+    pub const P_WINDOW_SURFACE: Predicate = Predicate(0x0008);
+    pub const P_PLACE_WINDOW: Predicate = Predicate(0x0009);
 
-    pub const P_MODE_HAS_WINDOW: EdgePred = EdgePred(0x0010);
-    pub const P_DISPLAY_FRONT_BUFFER: EdgePred = EdgePred(0x0011);
-    pub const P_DISPLAY_BACK_BUFFER: EdgePred = EdgePred(0x0012);
-    pub const P_WINDOW_HAS_SURFACE: EdgePred = EdgePred(0x0013);
-    pub const P_WIDGET_CHILD: EdgePred = EdgePred(0x0014);
-    pub const P_ACTIVE_MODE: EdgePred = EdgePred(0x0015);
-    pub const P_APP_OWNS_WINDOW: EdgePred = EdgePred(0x0016);
-    pub const P_DISPLAY_HAS_FRONT_BUFFER: EdgePred = EdgePred(0x0020);
-    pub const P_DISPLAY_HAS_BACK_BUFFER: EdgePred = EdgePred(0x0021);
+    pub const P_MODE_HAS_WINDOW: Predicate = Predicate(0x0010);
+    pub const P_DISPLAY_FRONT_BUFFER: Predicate = Predicate(0x0011);
+    pub const P_DISPLAY_BACK_BUFFER: Predicate = Predicate(0x0012);
+    pub const P_WINDOW_HAS_SURFACE: Predicate = Predicate(0x0013);
+    pub const P_WIDGET_CHILD: Predicate = Predicate(0x0014);
+    pub const P_ACTIVE_MODE: Predicate = Predicate(0x0015);
+    pub const P_APP_OWNS_WINDOW: Predicate = Predicate(0x0016);
+    pub const P_DISPLAY_HAS_FRONT_BUFFER: Predicate = Predicate(0x0020);
+    pub const P_DISPLAY_HAS_BACK_BUFFER: Predicate = Predicate(0x0021);
 }
 
-pub const EDGE_OWNS_THREAD: EdgePred = canon::P_PROC_OWNS_THREAD;
-pub const EDGE_RUNS_ON: EdgePred = canon::P_SCHED_RUNS_ON;
-pub const EDGE_SLEEPS_UNTIL: EdgePred = canon::P_SCHED_SLEEPS_UNTIL;
-pub const EDGE_LAUNCHES: EdgePred = canon::P_BOOT_LAUNCHES;
-pub const EDGE_SPAWNED: EdgePred = canon::P_INIT_SPAWNED;
-pub const EDGE_DISPLAY_SCANOUT: EdgePred = canon::P_DISPLAY_SCANOUT;
-pub const EDGE_DISPLAY_FRONT_BUFFER: EdgePred = canon::P_DISPLAY_FRONT_BUFFER;
-pub const EDGE_DISPLAY_BACK_BUFFER: EdgePred = canon::P_DISPLAY_BACK_BUFFER;
-pub const EDGE_DISPLAY_HAS_FRONT_BUFFER: EdgePred = canon::P_DISPLAY_HAS_FRONT_BUFFER;
-pub const EDGE_DISPLAY_HAS_BACK_BUFFER: EdgePred = canon::P_DISPLAY_HAS_BACK_BUFFER;
-pub const EDGE_MODE_PLACE: EdgePred = canon::P_MODE_PLACE;
-pub const EDGE_WINDOW_SURFACE: EdgePred = canon::P_WINDOW_SURFACE;
-pub const EDGE_PLACE_WINDOW: EdgePred = canon::P_PLACE_WINDOW;
+pub const LINK_OWNS_THREAD: Predicate = canon::P_PROC_OWNS_THREAD;
+pub const LINK_RUNS_ON: Predicate = canon::P_SCHED_RUNS_ON;
+pub const LINK_SLEEPS_UNTIL: Predicate = canon::P_SCHED_SLEEPS_UNTIL;
+pub const LINK_LAUNCHES: Predicate = canon::P_BOOT_LAUNCHES;
+pub const LINK_SPAWNED: Predicate = canon::P_INIT_SPAWNED;
+pub const LINK_DISPLAY_SCANOUT: Predicate = canon::P_DISPLAY_SCANOUT;
+pub const LINK_DISPLAY_FRONT_BUFFER: Predicate = canon::P_DISPLAY_FRONT_BUFFER;
+pub const LINK_DISPLAY_BACK_BUFFER: Predicate = canon::P_DISPLAY_BACK_BUFFER;
+pub const LINK_MODE_PLACE: Predicate = canon::P_MODE_PLACE;
+pub const LINK_MODE_HAS_WINDOW: Predicate = canon::P_MODE_HAS_WINDOW;
+pub const LINK_WINDOW_SURFACE: Predicate = canon::P_WINDOW_SURFACE;
+pub const LINK_WINDOW_HAS_SURFACE: Predicate = canon::P_WINDOW_HAS_SURFACE;
+pub const LINK_PLACE_WINDOW: Predicate = canon::P_PLACE_WINDOW;
+pub const LINK_WIDGET_CHILD: Predicate = canon::P_WIDGET_CHILD;
+pub const LINK_ACTIVE_MODE: Predicate = canon::P_ACTIVE_MODE;
+pub const LINK_APP_OWNS_WINDOW: Predicate = canon::P_APP_OWNS_WINDOW;
+pub const LINK_DISPLAY_HAS_FRONT_BUFFER: Predicate = canon::P_DISPLAY_HAS_FRONT_BUFFER;
+pub const LINK_DISPLAY_HAS_BACK_BUFFER: Predicate = canon::P_DISPLAY_HAS_BACK_BUFFER;
 
 pub const PROP_WIDTH: &str = "width";
 pub const PROP_HEIGHT: &str = "height";
@@ -115,6 +122,6 @@ pub const PROP_DISPLAY_ACTIVE_BUFFER_INDEX: &str = "active_buffer_index";
 pub const PROP_FONT_NAME: &str = "font_name";
 pub const PROP_RAW_KIND: &str = "raw_kind";
 
-pub const PROP_EDGE_SRC: &str = "src";
-pub const PROP_EDGE_DST: &str = "dst";
-pub const PROP_EDGE_PRED: &str = "pred";
+pub const PROP_LINK_SRC: &str = "link_src";
+pub const PROP_LINK_DST: &str = "link_dst";
+pub const PROP_LINK_PRED: &str = "link_pred";

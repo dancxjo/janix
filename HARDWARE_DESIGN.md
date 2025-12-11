@@ -122,7 +122,7 @@ Trigger speaker
 
 Transmit network frames
 
-Update the corresponding graph nodes with completion metadata.
+Update the corresponding graph things with completion metadata.
 
 This creates a stable and introspectable boundary:
 

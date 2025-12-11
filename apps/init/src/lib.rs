@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use thing_models::{BootProfile, BootProgram, Mode, Place, ProgramImage};
 use userland::prelude::*;
 use userland_std::{
-    MODE_INDEX_CONSOLE, ProcessThing, add_edge, edge_targets, find_thing, list_things_by_kind,
+    MODE_INDEX_CONSOLE, ProcessThing, add_link, find_thing, link_targets, list_things_by_kind,
     load_thing, spawn_program,
 };
 
@@ -36,7 +36,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         format_args!("init: BootProfile version {}", boot_profile.version),
     );
 
-    let launch_ids = edge_targets(sys, boot_profile.id, graph_kinds::EDGE_LAUNCHES);
+    let launch_ids = link_targets(sys, boot_profile.id, graph_kinds::LINK_LAUNCHES);
 
     let mut programs = Vec::new();
     collect_boot_programs(sys, &mut programs, launch_ids.as_slice());
@@ -48,7 +48,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         );
         for _ in 0..8 {
             sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
-            let refresh_ids = edge_targets(sys, boot_profile.id, graph_kinds::EDGE_LAUNCHES);
+            let refresh_ids = link_targets(sys, boot_profile.id, graph_kinds::LINK_LAUNCHES);
             collect_boot_programs(sys, &mut programs, refresh_ids.as_slice());
             if !programs.is_empty() {
                 break;
@@ -178,7 +178,7 @@ fn ensure_modes<S: Sys>(sys: &mut S) {
         layout_policy: None,
     };
     if let Some(mode_id) = create_thing(sys, &main_mode) {
-        let _ = add_edge(sys, mode_id, graph_kinds::EDGE_MODE_PLACE, main_place_id);
+        let _ = add_link(sys, mode_id, graph_kinds::LINK_MODE_PLACE, main_place_id);
     }
 
     let console_mode = Mode {
@@ -190,7 +190,7 @@ fn ensure_modes<S: Sys>(sys: &mut S) {
         layout_policy: None,
     };
     if let Some(mode_id) = create_thing(sys, &console_mode) {
-        let _ = add_edge(sys, mode_id, graph_kinds::EDGE_MODE_PLACE, console_place_id);
+        let _ = add_link(sys, mode_id, graph_kinds::LINK_MODE_PLACE, console_place_id);
     }
 }
 
@@ -235,7 +235,7 @@ fn spawn_boot_program<S: Sys>(
         ),
     );
     if let Some((process_id, _thread_id)) = spawn_program(sys, program.id) {
-        if !add_edge(sys, init_process.id, graph_kinds::EDGE_SPAWNED, process_id) {
+        if !add_link(sys, init_process.id, graph_kinds::LINK_SPAWNED, process_id) {
             println(sys, "init: failed to add SPAWNED link after spawn_program");
         }
     } else {
@@ -286,7 +286,7 @@ fn load_boot_profile<S: Sys>(sys: &mut S) -> Option<BootProfile> {
             None
         }
         _ => {
-            println(sys, "init: multiple BootProfile nodes found");
+            println(sys, "init: multiple BootProfile things found");
             None
         }
     }
@@ -363,7 +363,7 @@ mod tests {
             _ => false,
         }));
         assert!(requests.iter().any(|req| match req {
-            KernelRequest::AddEdge { pred, .. } => *pred == graph_kinds::EDGE_MODE_PLACE,
+            KernelRequest::AddLink { pred, .. } => *pred == graph_kinds::LINK_MODE_PLACE,
             _ => false,
         }));
     }
@@ -408,8 +408,8 @@ mod tests {
             _ => false,
         }));
         assert!(requests.iter().any(|req| match req {
-            KernelRequest::AddEdge { from, pred, to } => {
-                *pred == graph_kinds::EDGE_SPAWNED && *from == init_process.id && *to == ThingId(30)
+            KernelRequest::AddLink { src, pred, dst } => {
+                *pred == graph_kinds::LINK_SPAWNED && *src == init_process.id && *dst == ThingId(30)
             }
             _ => false,
         }));

@@ -13,22 +13,22 @@ fn cpu_index_from_node(node: ThingId) -> Option<usize> {
     }
 }
 
-fn on_runs_on_edge(event: &GraphEvent) {
-    if let GraphEvent::EdgeAdded(edge) = event {
-        if edge.pred != graph_kinds::EDGE_RUNS_ON {
+fn on_runs_on_link(event: &GraphEvent) {
+    if let GraphEvent::LinkAdded(link) = event {
+        if link.pred != graph_kinds::LINK_RUNS_ON {
             return;
         }
 
-        if let Some(cpu_index) = cpu_index_from_node(edge.dst) {
+        if let Some(cpu_index) = cpu_index_from_node(link.dst) {
             let cpu = cpu_index as CpuId;
             let current = arch_current_thread(cpu);
-            if current != Some(edge.src) {
-                arch_switch_to_thread(cpu, edge.src);
+            if current != Some(link.src) {
+                arch_switch_to_thread(cpu, link.src);
             }
         }
     }
 }
 
 pub fn init_graph_subscriptions() {
-    graph::subscribe_edge_added(graph_kinds::EDGE_RUNS_ON, on_runs_on_edge);
+    graph::subscribe_link_added(graph_kinds::LINK_RUNS_ON, on_runs_on_link);
 }

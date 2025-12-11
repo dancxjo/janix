@@ -42,7 +42,7 @@ pub fn create_window<S: Sys>(sys: &mut S, title: &str, mode_index: u8) -> Option
     };
 
     let id = create_thing(sys, &window)?;
-    let _ = userland_std::add_edge(sys, place_id, graph_kinds::EDGE_PLACE_WINDOW, id);
+    let _ = userland_std::add_link(sys, place_id, graph_kinds::LINK_PLACE_WINDOW, id);
     Some(WindowHandle { id })
 }
 
@@ -68,7 +68,7 @@ pub fn set_window_text<S: Sys>(sys: &mut S, window: WindowHandle, text: &str) {
         text: text.to_string(),
     };
     if let Some(id) = create_thing(sys, &surface) {
-        let _ = userland_std::add_edge(sys, window.id, graph_kinds::EDGE_WINDOW_SURFACE, id);
+        let _ = userland_std::add_link(sys, window.id, graph_kinds::LINK_WINDOW_SURFACE, id);
     }
 }
 

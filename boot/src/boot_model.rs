@@ -314,14 +314,14 @@ pub fn seed_display_from_limine() {
                 return;
             };
 
-            let _ = graph::add_edge(
+            let _ = graph::add_link(
                 display_id,
-                graph_kinds::EDGE_DISPLAY_HAS_FRONT_BUFFER,
+                graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
                 front_buffer_id,
             );
-            let _ = graph::add_edge(
+            let _ = graph::add_link(
                 display_id,
-                graph_kinds::EDGE_DISPLAY_HAS_BACK_BUFFER,
+                graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
                 back_buffer_id,
             );
             let _ = graph::update_thing(
@@ -478,7 +478,7 @@ pub fn seed_boot_programs_from_limine() {
         let props_slice = Box::leak(props_vec.into_boxed_slice());
 
         if let Some(program) = graph::create_thing(graph_kinds::KIND_BOOT_PROGRAM, props_slice) {
-            let _ = graph::add_edge(profile_id, graph_kinds::EDGE_LAUNCHES, program);
+            let _ = graph::add_link(profile_id, graph_kinds::LINK_LAUNCHES, program);
             created = created.saturating_add(1);
             app_id = app_id.saturating_add(1);
         } else {

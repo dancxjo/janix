@@ -11,3 +11,4 @@ Cargo.lock
 *.log
 EFI/BOOT/*.EFI
 thing_macros/tests/ui/unsupported_field.stderr
+*.tmp

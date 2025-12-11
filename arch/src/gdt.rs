@@ -20,9 +20,12 @@ lazy_static! {
         };
         // Set privilege stack for ring 0 (needed for ring 3 -> ring 0 transition)
         tss.privilege_stack_table[0] = {
-             const STACK_SIZE: usize = 4096 * 5;
+             const STACK_SIZE: usize = 4096 * 20; // 80KB
             static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
-
+            // Add a guard static to detect overflow?
+            // static mut GUARD: [u8; 4096] = [0; 4096];
+            // But we can't easily control order here.
+            
             let stack_start = VirtAddr::from_ptr(core::ptr::addr_of!(STACK));
             let stack_end = stack_start + STACK_SIZE;
             stack_end

@@ -5,6 +5,10 @@ MAKEFLAGS += -rR
 # Convenience macro to reliably declare user overridable variables.
 override USER_VARIABLE = $(if $(filter $(origin $(1)),default undefined),$(eval override $(1) := $(2)))
 
+# Default Rust warning policy: allow all warnings by default. Users may
+# override by setting `RUSTFLAGS` in their environment or on the make cmdline.
+$(call USER_VARIABLE,RUSTFLAGS,-Awarnings)
+
 # Target architecture to build for. Default to x86_64.
 $(call USER_VARIABLE,KARCH,x86_64)
 
@@ -258,7 +262,7 @@ limine/limine:
 
 .PHONY: apps
 apps:
-	RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) $(addprefix -p ,$(APPS))
+	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) $(addprefix -p ,$(APPS))
 
 .PHONY: kernel
 kernel:

@@ -1,16 +1,16 @@
 extern crate alloc;
 
-use crate::arch::{Arch, CurrentArch, UserEntryRegs};
-use alloc::boxed::Box;
+use crate::{Arch, CurrentArch, UserEntryRegs};
+use crate::cpu;
 use kernel_core::sched::SCHEDULER;
 use userland_rt::UserlandSys;
 
 // Re-export stack functions from current arch
-pub use crate::arch::current::{alloc_user_stack, init_user_stack};
+pub use crate::current::{alloc_user_stack, init_user_stack};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn user_thread_main(app_id: u64) -> ! {
-    let mut sys = UserlandSys::new();
+    let sys = UserlandSys::new();
     kernel_core::log("user_thread_main reached without ELF ProgramImage; exiting");
     let _ = app_id;
     sys.exit_thread();
@@ -70,14 +70,7 @@ pub fn schedule_next() -> ! {
         } else {
             kernel_core::log("No runnable threads");
             kernel_core::time::poll_time();
-            unsafe {
-                #[cfg(target_arch = "x86_64")]
-                core::arch::asm!("hlt");
-                #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-                core::arch::asm!("wfi");
-                #[cfg(target_arch = "loongarch64")]
-                core::arch::asm!("idle 0");
-            };
+            cpu::wait_for_interrupt();
         }
     }
 }

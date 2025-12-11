@@ -2,9 +2,12 @@ use crate::{graph, graph_kinds, time};
 use abi::{PropValue, Thing, ThingId};
 use alloc::string::String;
 use alloc::vec::Vec;
-use arch::io;
 use core::sync::atomic::{AtomicBool, Ordering};
 use thing_models::{InterruptEvent, IoPortOp, IoPortRegion, IoStatus};
+
+#[path = "../../../arch/src/io.rs"]
+mod arch_io;
+use arch_io as io;
 
 static IO_REGIONS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 

@@ -14,19 +14,15 @@
 
 extern crate alloc;
 
-mod arch;
 mod boot_model;
 mod console;
 mod context_switch;
 mod dashboard;
 mod elf_loader;
-#[cfg(target_arch = "x86_64")]
-mod gdt;
 mod graph_reifier;
 mod heap;
 mod program;
 mod serial;
-mod user;
 
 // Decomposed modules (moved out of this file to reduce size)
 mod framebuffer;
@@ -34,10 +30,8 @@ mod init;
 mod panic_handler;
 mod time_utils;
 
-use crate::arch::{Arch, CurrentArch};
-use alloc::boxed::Box;
-
-use core::arch::asm;
+use core::alloc::Layout;
+use linked_list_allocator::LockedHeap;
 
 use limine::BaseRevision;
 use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
@@ -51,6 +45,11 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[unsafe(link_section = ".requests")]
 pub(crate) static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
+#[used]
+#[unsafe(link_section = ".requests")]
+pub(crate) static KERNEL_ADDRESS_REQUEST: limine::request::KernelAddressRequest =
+    limine::request::KernelAddressRequest::new();
+
 /// Define the start and end markers for Limine requests.
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]
@@ -59,14 +58,33 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-// Early boot heap before we reserve pages from the memory map.
+#[global_allocator]
+static KERNEL_ALLOCATOR: LockedHeap = LockedHeap::empty();
+
+pub fn get_heap_stats() -> (usize, usize) {
+    let heap = KERNEL_ALLOCATOR.lock();
+    (heap.used(), heap.size())
+}
+
+#[alloc_error_handler]
+fn alloc_error_handler(layout: Layout) -> ! {
+    kernel_core::println!(
+        "alloc_error_handler: KERNEL_ALLOCATOR address: {:p}",
+        &KERNEL_ALLOCATOR
+    );
+    let (used, size) = get_heap_stats();
+    kernel_core::println!("Heap stats: used={} size={}", used, size);
+    panic!("allocation error: {:?}", layout);
+}
+
 const HEAP_SIZE: usize = heap::KERNEL_HEAP_SIZE_BYTES;
 static mut HEAP_MEMORY: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 
-const STACK_SIZE: usize = 16 * 1024; // 16KB
+const STACK_SIZE: usize = 128 * 1024; // 128KB
 #[repr(align(16))]
 struct Stack([u8; STACK_SIZE]);
 static mut BOOT_STACK: Stack = Stack([0; STACK_SIZE]);
+static mut STACK_GUARD: [u8; 4096] = [0; 4096];
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
@@ -74,7 +92,7 @@ unsafe extern "C" fn kmain() -> ! {
     // We use 0 offset initially; Semihosting doesn't need offset.
     serial::arch::init_serial(0);
 
-    kernel_core::log("Serial initialized. Preparing to switch stack...");
+    kernel_core::println!("Serial initialized. Preparing to switch stack...");
 
     unsafe {
         let heap_addr = core::ptr::addr_of_mut!(HEAP_MEMORY) as usize;
@@ -84,52 +102,27 @@ unsafe extern "C" fn kmain() -> ! {
         core::ptr::write_volatile(&mut HEAP_MEMORY[0], 0xAA);
         core::ptr::write_volatile(&mut HEAP_MEMORY[HEAP_SIZE - 1], 0xBB);
         kernel_core::println!("HEAP_MEMORY probe successful.");
+
+        kernel_core::println!("KERNEL_ALLOCATOR address: {:p}", &KERNEL_ALLOCATOR);
+        KERNEL_ALLOCATOR
+            .lock()
+            .init(heap_addr as *mut u8, HEAP_SIZE);
+        kernel_core::println!(
+            "Kernel heap initialized: [{:#x}, {:#x})",
+            heap_addr,
+            heap_addr + HEAP_SIZE
+        );
     }
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        // Initialize exception vector table early
-        arch::aarch64::trap::init();
-
-        let stack_top = core::ptr::addr_of!(BOOT_STACK) as u64 + STACK_SIZE as u64;
-
-        unsafe extern "C" {
-            fn kmain_inner_asm() -> !;
-        }
-
-        // Switch to SP_EL1 for kernel stack
-        unsafe {
-            arch::aarch64::trap::jump_to_el1_stack(stack_top, kmain_inner_asm);
-        }
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        // Switch away from the Limine-provided stack into a kernel-owned stack in .bss.
-        // On some machines the boot stack may live in a reserved/unmapped hole, which
-        // causes a page fault once we exhaust the initial stack space.
-        let stack_top = core::ptr::addr_of!(BOOT_STACK) as u64 + STACK_SIZE as u64;
-        unsafe {
-            asm!(
-                "mov rsp, {0}",
-                "xor rbp, rbp",
-                "call {1}",
-                in(reg) stack_top,
-                sym kmain_inner,
-                options(noreturn)
-            );
-        }
-    }
-
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-    {
-        kmain_inner();
+    let stack_base = core::ptr::addr_of!(BOOT_STACK) as u64;
+    unsafe {
+        arch::boot::enter_kernel_stack(stack_base, STACK_SIZE as u64);
     }
 }
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
-    kernel_core::log("Entered kmain_inner");
+    kernel_core::println!("Entered kmain_inner");
     #[cfg(feature = "fill-framebuffer")]
     crate::framebuffer::fill_framebuffer_with_color();
 

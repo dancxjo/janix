@@ -34,8 +34,9 @@ endif
 
 # Default target.
 .PHONY: all
+
 all:
-	cd .. && RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) -p boot
+	cd .. && RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) -p boot
 	cp ../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/boot kernel
 
 # Remove object files and the final executable.

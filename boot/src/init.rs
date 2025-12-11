@@ -1,15 +1,19 @@
 use alloc::boxed::Box;
 
-use crate::arch::{Arch, CurrentArch};
+use arch::{Arch, CurrentArch};
 
 pub fn init_machine() {
     // All limine requests must also be referenced in a called function
     assert!(crate::BASE_REVISION.is_supported());
 
     unsafe {
+        // Heap is initialized in kmain
         let start = core::ptr::addr_of_mut!(crate::HEAP_MEMORY) as usize;
-        crate::heap::init_kernel_heap(start, crate::HEAP_SIZE);
         let end = start + crate::HEAP_SIZE;
+        // We can't use alloc::format! here if heap is not initialized?
+        // But it IS initialized in kmain.
+        // However, we don't need to re-init.
+        // And we can log.
         let msg = alloc::format!("Kernel heap initialized: [{:#x}, {:#x})", start, end);
         let leaked: &'static str = Box::leak(msg.into_boxed_str());
         kernel_core::log(leaked);
@@ -18,18 +22,10 @@ pub fn init_machine() {
     if let Some(hhdm_response) = crate::boot_model::HHDM_REQUEST.get_response() {
         let offset = hhdm_response.offset();
         kernel_core::memory::set_hhdm_offset(offset);
-        unsafe { crate::user::init_user_stack(offset) };
+        unsafe { arch::user::init_user_stack(offset) };
     }
 
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        // Map PCI ECAM (0x3f000000)
-        kernel_core::log("Mapping PCI ECAM...");
-        crate::arch::aarch64::paging::map_device_region(0x3f000000, 0x01000000);
-
-        kernel_core::log("Mapping PCI MMIO...");
-        crate::arch::aarch64::paging::map_device_region(0x10000000, 0x2effffff);
-
+    if arch::platform::map_boot_device_regions() {
         kernel_core::log("PCI regions mapped.");
     }
 
@@ -44,14 +40,11 @@ pub fn init_machine() {
     kernel_core::log("Kernel core initialized.");
     crate::graph_reifier::init_graph_subscriptions();
 
-    #[cfg(target_arch = "x86_64")]
-    {
-        crate::gdt::init();
-    }
+    arch::platform::init_arch_tables();
 
     CurrentArch::install_syscall_handler();
 
-    let rtc_epoch = crate::arch::read_boot_rtc_epoch_seconds();
+    let rtc_epoch = arch::read_boot_rtc_epoch_seconds();
     crate::time_utils::log_rtc_epoch(rtc_epoch);
     kernel_core::time::init_timekeeping(rtc_epoch);
 
@@ -79,7 +72,7 @@ pub fn init_userland_and_enter_scheduler() -> ! {
     kernel_core::log("Launching init (PID 1) ...");
     launch_init_process();
     kernel_core::log("Handing control to scheduler...");
-    crate::user::schedule_next();
+    arch::user::schedule_next();
 }
 
 #[cfg(feature = "boot-dashboard-only")]

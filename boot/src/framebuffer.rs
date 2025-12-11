@@ -5,7 +5,7 @@ pub fn fill_framebuffer_with_color() {
     let response = match crate::FRAMEBUFFER_REQUEST.get_response() {
         Some(resp) => resp,
         None => {
-                    kernel_core::log("Framebuffer fill skipped: no Limine framebuffer response");
+                    kernel_core::println!("Framebuffer fill skipped: no Limine framebuffer response");
             return;
         }
     };
@@ -13,7 +13,7 @@ pub fn fill_framebuffer_with_color() {
     let framebuffer = match response.framebuffers().next() {
         Some(fb) => fb,
         None => {
-            kernel_core::log("Framebuffer fill skipped: response has no framebuffers");
+            kernel_core::println!("Framebuffer fill skipped: response has no framebuffers");
             return;
         }
     };
@@ -22,13 +22,13 @@ pub fn fill_framebuffer_with_color() {
     let height = framebuffer.height() as usize;
     let pitch = framebuffer.pitch() as usize;
     if width == 0 || height == 0 {
-        kernel_core::log("Framebuffer fill skipped: zero dimensions");
+        kernel_core::println!("Framebuffer fill skipped: zero dimensions");
         return;
     }
 
     let stride = pitch / 4;
     if stride < width {
-        kernel_core::log("Framebuffer fill skipped: pitch less than width");
+        kernel_core::println!("Framebuffer fill skipped: pitch less than width");
         return;
     }
 
@@ -40,7 +40,7 @@ pub fn fill_framebuffer_with_color() {
     let fb_virt = match virtual_framebuffer_address(fb_phys, hhdm_offset) {
         Some(addr) => addr,
         None => {
-            kernel_core::log("Framebuffer fill skipped: could not determine virtual pointer");
+            kernel_core::println!("Framebuffer fill skipped: could not determine virtual pointer");
             return;
         }
     };
@@ -65,7 +65,7 @@ pub fn fill_framebuffer_with_color() {
             }
         }
     }
-    kernel_core::log("Framebuffer filled with solid green temporarily");
+    kernel_core::println!("Framebuffer filled with solid green temporarily");
 }
 
 pub fn virtual_framebuffer_address(guest_addr: u64, hhdm_offset: u64) -> Option<u64> {

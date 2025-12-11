@@ -21,15 +21,28 @@ pub fn init() {
         for slot in (*buffer).iter_mut() {
             *slot = None;
         }
+        crate::println!("LOG_BUFFER address: {:p}", buffer);
     }
 }
 
 /// Log a message
-pub fn log_message(message: &'static str) {
+pub fn log_message(message: &str) {
     unsafe {
         if LOG_INDEX < MAX_LOG_ENTRIES {
-            LOG_BUFFER[LOG_INDEX] = Some(message);
+            let leaked = alloc::boxed::Box::leak(alloc::string::String::from(message).into_boxed_str());
+            LOG_BUFFER[LOG_INDEX] = Some(leaked);
             LOG_INDEX += 1;
+        } else {
+             console::print("LOG BUFFER FULL\n");
+        }
+        if LOG_INDEX == 1 {
+             console::print("LOG_BUFFER address: ");
+             let ptr = &raw const LOG_BUFFER;
+             // simple hex print
+             // We can't use println! easily here if it recurses?
+             // But console::print takes str.
+             // We can use format! but that allocates.
+             // Let's just print it in init()
         }
     }
     console::print(message);

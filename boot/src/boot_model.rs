@@ -47,6 +47,36 @@ pub fn seed_memory_graph_from_limine() {
     const PAGE_SIZE: u64 = 4096;
     const MIN_PHYS_ALLOC: u64 = 0x10_0000; // avoid using very low memory for page tables/allocations
 
+    // Calculate kernel physical range to exclude from allocator
+    let kernel_base_phys = crate::KERNEL_ADDRESS_REQUEST
+        .get_response()
+        .map(|r| r.physical_base())
+        .unwrap_or(0);
+    let kernel_base_virt = crate::KERNEL_ADDRESS_REQUEST
+        .get_response()
+        .map(|r| r.virtual_base())
+        .unwrap_or(0xffffffff80000000);
+
+    unsafe extern "C" {
+        static _end: u8;
+    }
+    let kernel_end_virt = unsafe { core::ptr::addr_of!(_end) as u64 };
+    let kernel_size = kernel_end_virt.saturating_sub(kernel_base_virt);
+    let kernel_end_phys = kernel_base_phys + kernel_size;
+    // Align end to page
+    let kernel_end_phys = (kernel_end_phys + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+
+    if kernel_size > 0 {
+        let msg = alloc::format!(
+            "Kernel phys: {:#x} - {:#x} (size {:#x})",
+            kernel_base_phys,
+            kernel_end_phys,
+            kernel_size
+        );
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        log(leaked);
+    }
+
     for entry in response.entries() {
         if entry.entry_type != EntryType::USABLE {
             continue;
@@ -102,12 +132,31 @@ pub fn seed_memory_graph_from_limine() {
         log(leaked);
         range_index += 1;
 
-        boot_allocator.add_region(base, len);
-
         let frame_size = 4096;
 
-        // For now: one pool per usable region.
-        let _pool = model::create_frame_pool(base, base + len, frame_size);
+        // Check overlap with kernel to avoid corrupting .bss heap
+        if base < kernel_end_phys && region_end > kernel_base_phys {
+            if base < kernel_base_phys {
+                let sub_len = kernel_base_phys - base;
+                if sub_len >= PAGE_SIZE {
+                    boot_allocator.add_region(base, sub_len);
+                    let _pool = model::create_frame_pool(base, base + sub_len, frame_size);
+                }
+            }
+
+            if region_end > kernel_end_phys {
+                let sub_start = kernel_end_phys;
+                let sub_len = region_end - sub_start;
+                if sub_len >= PAGE_SIZE {
+                    boot_allocator.add_region(sub_start, sub_len);
+                    let _pool =
+                        model::create_frame_pool(sub_start, sub_start + sub_len, frame_size);
+                }
+            }
+        } else {
+            boot_allocator.add_region(base, len);
+            let _pool = model::create_frame_pool(base, base + len, frame_size);
+        }
 
         // In future, you can optionally explode this into many PhysFrame Things.
     }

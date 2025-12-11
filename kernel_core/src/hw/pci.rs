@@ -1,8 +1,12 @@
 #[cfg(target_arch = "aarch64")]
 use crate::memory::get_hhdm_offset;
 use alloc::vec::Vec;
+
 #[cfg(target_arch = "aarch64")]
-use arch::pci;
+#[path = "../../../arch/src/pci.rs"]
+mod arch_pci;
+#[cfg(target_arch = "aarch64")]
+use arch_pci as pci;
 
 #[derive(Debug, Clone)]
 pub struct PciDevice {

@@ -1,4 +1,13 @@
-use crate::user;
+//! x86_64 syscall handling.
+//!
+//! This module provides the syscall entry point for x86_64. It defines
+//! `SyscallRegs` layout matching the stack-saved registers, an assembly
+//! wrapper `syscall_handler_asm` which saves registers and calls the Rust
+//! handler `syscall_handler_rust`, and the Rust-side dispatcher that decodes
+//! `SyscallNumber` values and forwards requests to `kernel_core` and `user`
+//! helpers. The handler also saves/restores thread contexts and implements
+//! basic syscalls such as yield, sleep, logging, process/thread management,
+//! frame allocation, and time queries.
 use abi::{
     KernelRequest, KernelResponse, MapFlags, ProcessId, SyscallNumber, THING_GET_MAX_KIND_LEN,
     THING_GET_MAX_PROPS, THING_GET_MAX_STR_LEN, ThingGetSyscallResult, ThingId, ThingPropData,
@@ -7,50 +16,181 @@ use abi::{
 use core::arch::global_asm;
 use core::cmp;
 extern crate alloc;
+use crate::user;
 use alloc::boxed::Box;
 use alloc::string::ToString;
 
-global_asm!(include_str!("trap.S"));
+#[repr(C)]
+pub struct SyscallRegs {
+    pub rax: u64,
+    pub rdi: u64,
+    pub rsi: u64,
+    pub rdx: u64,
+    pub rcx: u64,
+    pub r8: u64,
+    pub r9: u64,
+    pub r10: u64,
+    pub r11: u64,
+    pub rbx: u64,
+    pub rbp: u64,
+    pub r12: u64,
+    pub r13: u64,
+    pub r14: u64,
+    pub r15: u64,
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+}
+
+const _: () = {
+    use core::mem::offset_of;
+    assert!(core::mem::size_of::<SyscallRegs>() == 160);
+    assert!(offset_of!(SyscallRegs, rax) == 0);
+    assert!(offset_of!(SyscallRegs, rdi) == 8);
+    assert!(offset_of!(SyscallRegs, rsi) == 16);
+    assert!(offset_of!(SyscallRegs, rdx) == 24);
+    assert!(offset_of!(SyscallRegs, rcx) == 32);
+    assert!(offset_of!(SyscallRegs, r8) == 40);
+    assert!(offset_of!(SyscallRegs, r9) == 48);
+    assert!(offset_of!(SyscallRegs, r10) == 56);
+    assert!(offset_of!(SyscallRegs, r11) == 64);
+    assert!(offset_of!(SyscallRegs, rbx) == 72);
+    assert!(offset_of!(SyscallRegs, rbp) == 80);
+    assert!(offset_of!(SyscallRegs, r12) == 88);
+    assert!(offset_of!(SyscallRegs, r13) == 96);
+    assert!(offset_of!(SyscallRegs, r14) == 104);
+    assert!(offset_of!(SyscallRegs, r15) == 112);
+    assert!(offset_of!(SyscallRegs, rip) == 120);
+    assert!(offset_of!(SyscallRegs, cs) == 128);
+    assert!(offset_of!(SyscallRegs, rflags) == 136);
+    assert!(offset_of!(SyscallRegs, rsp) == 144);
+    assert!(offset_of!(SyscallRegs, ss) == 152);
+};
+
+global_asm!(
+    r#"
+.global syscall_handler_asm
+syscall_handler_asm:
+    push r15
+    push r14
+    push r13
+    push r12
+    push rbp
+    push rbx
+    push r11
+    push r10
+    push r9
+    push r8
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rax
+
+    mov rdi, rsp
+    call syscall_handler_rust
+    // The return address is popped by `ret`, so don't mutate `rsp` here.
+    // Overwrite the saved RAX (at [rsp]) with the return value from Rust.
+    mov [rsp], rax
+
+    // Debug: snapshot the pending iret frame and saved regs.
+    // mov rdi, rsp
+    // call log_syscall_iret_frame
+
+    pop rax
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop rbx
+    pop rbp
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+
+    iretq
+"#
+);
+
+unsafe extern "C" {
+    pub fn syscall_handler_asm();
+}
 
 #[unsafe(no_mangle)]
-pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
-    let esr: u64;
-    unsafe { core::arch::asm!("mrs {}, esr_el1", out(reg) esr) };
-    let ec = (esr >> 26) & 0x3F;
-
-    if ec != 0x15 {
-        let far: u64;
-        unsafe { core::arch::asm!("mrs {}, far_el1", out(reg) far) };
-        kernel_core::println!("EXCEPTION: AArch64 Trap (Not SVC)");
-        kernel_core::println!("ESR: {:#x}", esr);
-        kernel_core::println!("FAR: {:#x}", far);
-        kernel_core::println!("{:#?}", tf);
-        loop {}
+extern "C" fn log_syscall_iret_frame(rsp: *const u64) {
+    // Read a few qwords from the stack to see what iret will consume.
+    let mut words = [0u64; 8];
+    for (i, slot) in words.iter_mut().enumerate() {
+        // SAFETY: best-effort diagnostic read; stack pointer is expected to be valid here.
+        unsafe {
+            *slot = core::ptr::read_volatile(rsp.add(i));
+        }
     }
+    kernel_core::println!(
+        "syscall iret frame: rsp={:#x} top=[{:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}, {:#x}]",
+        rsp as u64,
+        words[0],
+        words[1],
+        words[2],
+        words[3],
+        words[4],
+        words[5],
+        words[6],
+        words[7],
+    );
+}
 
-    let num = tf.x8;
-    let arg1 = tf.x0;
-    let arg2 = tf.x1;
-    let arg3 = tf.x2;
-    let arg4 = tf.x3;
-    let arg5 = tf.x4;
-    let arg6 = tf.x5;
-
-    static mut UNKNOWN_SYSCALLS_LOGGED: usize = 0;
+#[allow(unreachable_code, unsafe_op_in_unsafe_fn)]
+#[unsafe(no_mangle)]
+pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
+    let regs = unsafe { &mut *regs };
+    let num = regs.rax;
+    let arg1 = regs.rdi;
+    let arg2 = regs.rsi;
+    let arg3 = regs.rdx;
+    let arg4 = regs.rcx;
+    let arg5 = regs.r8;
+    let _arg6 = regs.r9;
 
     if num == SyscallNumber::Yield as u64 {
-        save_current_thread_context(tf);
+        {
+            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            if let Some(tid) = sched.current_id() {
+                if let Some(thread) = sched.thread_mut(tid) {
+                    let regs_ptr = regs as *const SyscallRegs as *const u64;
+                    let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 20) };
+                    thread.context[..20].copy_from_slice(regs_slice);
+                    thread.started = true;
+                }
+            }
+        }
         kernel_core::sched::yield_current_thread();
         return user::schedule_next();
     } else if num == SyscallNumber::SleepForNs as u64 {
-        save_current_thread_context(tf);
+        {
+            let mut sched = kernel_core::sched::SCHEDULER.lock();
+            if let Some(tid) = sched.current_id() {
+                if let Some(thread) = sched.thread_mut(tid) {
+                    let regs_ptr = regs as *const SyscallRegs as *const u64;
+                    let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 20) };
+                    thread.context[..20].copy_from_slice(regs_slice);
+                    thread.started = true;
+                }
+            }
+        }
         return user::sys_sleep_for_ns(arg1);
     } else if num == SyscallNumber::Log as u64 {
         let ptr = arg1 as *const u8;
         let len = arg2 as usize;
         if let Ok(s) = unsafe { core::str::from_utf8(user_slice(ptr, len)) } {
-            let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
-            kernel_core::log(leaked);
+            kernel_core::log(s);
         }
         0
     } else if num == SyscallNumber::ExitThread as u64 {
@@ -170,23 +310,28 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
             _ => 1,
         }
     } else if num == SyscallNumber::SpawnProgram as u64 {
-        let boot_program_id = ThingId(arg1);
+        let boot_program_id = abi::ThingId(arg1);
         let result_ptr = arg2 as *mut abi::SpawnProgramResult;
         if result_ptr.is_null() {
             return 1;
         }
-        match crate::program::spawn_program(boot_program_id) {
-            Ok((process_id, thread_id)) => {
+        let req = KernelRequest::SpawnProgram { boot_program_id };
+        match kernel_core::handle_request(req) {
+            KernelResponse::ProgramSpawned {
+                process_id,
+                thread_id,
+            } => {
                 unsafe {
                     (*result_ptr).process_id = process_id;
                     (*result_ptr).thread_id = thread_id;
                 }
                 0
             }
-            Err(msg) => {
-                kernel_core::log(msg);
+            KernelResponse::Error { message } => {
+                kernel_core::log(message);
                 1
             }
+            _ => 1,
         }
     } else if num == SyscallNumber::ThingGet as u64 {
         let id = ThingId(arg1);
@@ -303,7 +448,6 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         let id = ThingId(arg1);
         let props_ptr = arg2 as *const (abi::PropKey, abi::PropValue);
         let props_len = arg3 as usize;
-
         let props = unsafe { user_slice(props_ptr, props_len) };
         let props_vec: alloc::vec::Vec<(abi::PropKey, abi::PropValue)> = props.to_vec();
         let props_static: &'static [(abi::PropKey, abi::PropValue)] =
@@ -361,116 +505,12 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         }
         0
     } else {
-        unsafe {
-            if UNKNOWN_SYSCALLS_LOGGED < 5 {
-                kernel_core::log("Unknown syscall");
-                UNKNOWN_SYSCALLS_LOGGED += 1;
-            }
-        }
-        1
+        1 // SYS_ENOSYS or error
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) {
-    let esr: u64;
-    let far: u64;
-    unsafe {
-        core::arch::asm!("mrs {}, esr_el1", out(reg) esr);
-        core::arch::asm!("mrs {}, far_el1", out(reg) far);
-    }
-    kernel_core::println!("EXCEPTION: AArch64 Trap");
-    kernel_core::println!("Kind: {}, Source: {}", kind, source);
-    kernel_core::println!("ESR: {:#x}, FAR: {:#x}", esr, far);
-    kernel_core::println!("{:#?}", tf);
-    loop {}
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct TrapFrame {
-    pub x0: u64,
-    pub x1: u64,
-    pub x2: u64,
-    pub x3: u64,
-    pub x4: u64,
-    pub x5: u64,
-    pub x6: u64,
-    pub x7: u64,
-    pub x8: u64,
-    pub x9: u64,
-    pub x10: u64,
-    pub x11: u64,
-    pub x12: u64,
-    pub x13: u64,
-    pub x14: u64,
-    pub x15: u64,
-    pub x16: u64,
-    pub x17: u64,
-    pub x18: u64,
-    pub x19: u64,
-    pub x20: u64,
-    pub x21: u64,
-    pub x22: u64,
-    pub x23: u64,
-    pub x24: u64,
-    pub x25: u64,
-    pub x26: u64,
-    pub x27: u64,
-    pub x28: u64,
-    pub x29: u64,
-    pub x30: u64,
-    pub sp_el0: u64,
-    pub elr: u64,
-    pub spsr: u64,
-}
-
-pub fn init() {
-    unsafe extern "C" {
-        static exception_vector_table: u8;
-    }
-    unsafe {
-        core::arch::asm!(
-            "msr vbar_el1, {}",
-            in(reg) &exception_vector_table,
-        );
-    }
-}
-
-/// Switches to a dedicated EL1 kernel stack and jumps to the given entry point.
-/// This is necessary because we cannot return to the caller after switching stacks
-/// (the return address would be on the old stack).
-pub unsafe fn jump_to_el1_stack(stack_top: u64, entry: unsafe extern "C" fn() -> !) -> ! {
-    // Ensure stack is 16-byte aligned
-    let stack_top = stack_top & !0xf;
-
-    // kernel_core::println!("Switching to SP_EL1. Stack: {:#x}, Entry: {:#x}", stack_top, entry as usize);
-    unsafe {
-        core::arch::asm!(
-            "msr spsel, #1",
-            "mov sp, {stack}",
-            "mov x29, xzr", // Clear FP
-            "mov x30, xzr", // Clear LR
-            "isb",
-            "br {entry}",
-            "b .",
-            stack = in(reg) stack_top,
-            entry = in(reg) entry,
-            options(noreturn)
-        );
-    }
-}
-
-fn save_current_thread_context(tf: &TrapFrame) {
-    let mut sched = kernel_core::sched::SCHEDULER.lock();
-    if let Some(tid) = sched.current_id() {
-        if let Some(thread) = sched.thread_mut(tid) {
-            let regs_ptr = tf as *const TrapFrame as *const u64;
-            let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 34) };
-            thread.context.copy_from_slice(regs_slice);
-            thread.started = true;
-        }
-    }
+pub fn install_handler() {
+    super::trap::init();
 }
 
 fn leak_user_str(ptr: u64, len: usize) -> Option<&'static str> {
@@ -492,6 +532,6 @@ unsafe fn user_slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
     if align > 1 && (ptr as usize) % align != 0 {
         &[]
     } else {
-        core::slice::from_raw_parts(ptr, len)
+        unsafe { core::slice::from_raw_parts(ptr, len) }
     }
 }

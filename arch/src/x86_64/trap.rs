@@ -1,5 +1,6 @@
 use super::{pic, syscall};
 use crate::gdt;
+use kernel_core::memory;
 use lazy_static::lazy_static;
 use x86_64::instructions::{hlt, interrupts};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
@@ -36,9 +37,7 @@ pub fn init() {
     // Log syscall gate configuration to ensure user mode can invoke int 0x80.
     let entry = &IDT[0x80];
     kernel_core::println!("IDT[0x80]: {:?}", entry);
-    unsafe {
-        interrupts::enable();
-    }
+    interrupts::enable();
 }
 
 extern "x86-interrupt" fn double_fault_handler(
@@ -95,8 +94,8 @@ extern "x86-interrupt" fn page_fault_handler(
 
     let addr = Cr2::read();
 
-    if let Some(hhdm) = crate::boot_model::HHDM_REQUEST.get_response() {
-        let phys_mem_offset = hhdm.offset();
+    let phys_mem_offset = memory::get_hhdm_offset();
+    if phys_mem_offset != 0 {
         let level_4_table_ptr = x86_64::registers::control::Cr3::read()
             .0
             .start_address()

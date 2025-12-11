@@ -3,9 +3,13 @@ use abi::{MapFlags, PixelFormat, PropValue, SharedBufferInfo, ThingId};
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec as AllocVec;
-use arch::shared_buffer::{self, FrameAllocator, FrameDescriptor};
 use heapless::Vec;
 use spin::Mutex;
+
+#[path = "../../arch/src/shared_buffer.rs"]
+mod arch_shared_buffer;
+use arch_shared_buffer as shared_buffer;
+pub use arch_shared_buffer::{FrameAllocator, FrameDescriptor, map_frames};
 
 pub const MAX_FRAMES_PER_BUFFER: usize = 4096;
 const PAGE_SIZE: u64 = 4096;

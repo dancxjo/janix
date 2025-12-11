@@ -1,7 +1,7 @@
 extern crate alloc;
 
-use crate::gdt;
-use crate::user;
+use arch::gdt;
+use arch::user;
 use abi::SyscallNumber;
 use alloc::boxed::Box;
 use alloc::string::ToString;
@@ -76,6 +76,15 @@ extern "x86-interrupt" fn page_fault_handler(
                 unsafe { OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset)) };
 
             let page = Page::<Size4KiB>::containing_address(addr);
+
+            // Only allow lazy mapping for user addresses (lower half)
+            // 0x0000_8000_0000_0000 is the start of the non-canonical hole / upper half
+            if addr.as_u64() >= 0x0000_8000_0000_0000 {
+                 kernel_core::println!("PAGE FAULT: User tried to access kernel address {:?}", addr);
+                 kernel_core::log("PAGE FAULT (Kernel Access)");
+                 loop {}
+            }
+
             let new_flags = PageTableFlags::PRESENT
                 | PageTableFlags::WRITABLE
                 | PageTableFlags::USER_ACCESSIBLE;

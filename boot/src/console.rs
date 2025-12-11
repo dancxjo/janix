@@ -19,6 +19,9 @@ unsafe impl Send for FramebufferSink {}
 
 impl ConsoleSink for FramebufferSink {
     fn write_str(&self, s: &str) {
+        if !FRAMEBUFFER_CONSOLE_ENABLED {
+            return;
+        }
         if !console_mode_should_draw() {
             return;
         }

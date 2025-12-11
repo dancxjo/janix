@@ -69,15 +69,59 @@ const _: () = {
     assert!(offset_of!(SyscallRegs, ss) == 152);
 };
 
-use x86_64::structures::idt::InterruptStackFrame;
+global_asm!(
+    r#"
+.global syscall_handler_asm
+syscall_handler_asm:
+    push r15
+    push r14
+    push r13
+    push r12
+    push rbp
+    push rbx
+    push r11
+    push r10
+    push r9
+    push r8
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rax
 
-#[unsafe(naked)]
-pub extern "x86-interrupt" fn syscall_handler_naked(_: InterruptStackFrame) {
-    unsafe {
-        core::arch::naked_asm!(
-            "iretq"
-        );
-    }
+    mov rdi, rsp
+    call syscall_handler_rust
+    // The return address is popped by `ret`, so don't mutate `rsp` here.
+    // Overwrite the saved RAX (at [rsp]) with the return value from Rust.
+    mov [rsp], rax
+
+    // Debug: snapshot the pending iret frame and saved regs.
+    // mov rdi, rsp
+    // call log_syscall_iret_frame
+
+    pop rax
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop rbx
+    pop rbp
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+
+    iretq
+"#
+);
+
+#[unsafe(no_mangle)]
+unsafe extern "C" {
+    pub fn syscall_handler_asm();
 }
 
 #[unsafe(no_mangle)]

@@ -235,6 +235,25 @@ run-hdd-bios: $(IMAGE_NAME).hdd
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
 
+.PHONY: reset-ovmf-vars
+reset-ovmf-vars:
+	@echo "Resetting OVMF vars for $(KARCH)..."
+	-rm -f ovmf/ovmf-vars-$(KARCH).fd
+	$(MAKE) ovmf/ovmf-vars-$(KARCH).fd
+
+.PHONY: run-ovmf-clean
+run-ovmf-clean: $(IMAGE_NAME).iso ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd
+	@echo "Running OVMF with a per-run copy of vars (avoids persistent BootOrder state)"
+	cp -f ovmf/ovmf-vars-$(KARCH).fd ovmf/ovmf-vars-run-$(KARCH).fd || true
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- qemu-system-$(KARCH) $(QEMU_NO_REBOOT) \
+		-M q35 \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(KARCH).fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-run-$(KARCH).fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS)
+	-rm -f ovmf/ovmf-vars-run-$(KARCH).fd
+
 .PHONY: debug
 debug: debug-$(KARCH)
 
@@ -244,6 +263,15 @@ debug-x86_64:
 	-$(MAKE) KARCH=x86_64 QEMUFLAGS="$(QEMUFLAGS) -d int,cpu_reset -D qemu.log" launch-x86_64
 	@echo "Analyzing crash..."
 	@python3 scripts/analyze_crash.py qemu.log target/x86_64-unknown-none/debug
+
+.PHONY: debug-silent
+debug-silent: debug-silent-$(KARCH)
+
+.PHONY: debug-silent-x86_64
+debug-silent-x86_64:
+	rm -f qemu.log
+	-$(MAKE) KARCH=x86_64 QEMUFLAGS="$(QEMUFLAGS) -d int,cpu_reset -D /dev/null" launch-x86_64
+	@echo "qemu log suppressed (sent to /dev/null); no analyzer run."
 
 .PHONY: debug-aarch64
 debug-aarch64:
@@ -301,9 +329,9 @@ kernel:
 
 $(IMAGE_NAME).iso: limine/limine kernel apps
 	rm -rf iso_root
-	mkdir -p iso_root/boot
+	# Prepare ISO root with both BIOS and UEFI directory trees upfront.
+	mkdir -p iso_root/boot iso_root/boot/apps iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
-	mkdir -p iso_root/boot/apps
 	for app in $(APPS); do \
 		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/apps/$$app; \
 	done
@@ -311,7 +339,6 @@ $(IMAGE_NAME).iso: limine/limine kernel apps
 		mkdir -p iso_root/boot/fonts; \
 		cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
 	fi
-	mkdir -p iso_root/boot/limine
 	cp -v clouds.bmp iso_root/boot/clouds.bmp
 	rm -f limine.conf.tmp
 	cp limine.conf limine.conf.tmp
@@ -333,7 +360,8 @@ endif
 ifeq ($(KARCH),riscv64)
 	cp templates/riscv-startup.nsh iso_root/startup.nsh
 endif
-	mkdir -p iso_root/EFI/BOOT
+	cp -v limine.conf.tmp iso_root/EFI/BOOT/limine.conf
+	cp -v limine.conf.tmp iso_root/limine.conf
 ifeq ($(KARCH),x86_64)
 	cp -v limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/boot/limine/
 	cp -v limine/BOOTX64.EFI iso_root/EFI/BOOT/
@@ -355,8 +383,6 @@ ifeq ($(KARCH),aarch64)
 endif
 ifeq ($(KARCH),riscv64)
 	cp -v limine/limine-uefi-cd.bin iso_root/boot/limine/
-	cp -v limine.conf.tmp iso_root/EFI/BOOT/limine.conf
-	cp -v limine.conf.tmp iso_root/limine.conf
 	mcopy -i iso_root/boot/limine/limine-uefi-cd.bin templates/riscv-startup.nsh ::/startup.nsh
 	cp -v limine/BOOTRISCV64.EFI iso_root/EFI/BOOT/
 	xorriso -as mkisofs \
@@ -408,9 +434,7 @@ endif
 		done; \
 	fi
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf.tmp ::/boot/limine
-ifeq ($(KARCH),riscv64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf.tmp ::/EFI/BOOT/limine.conf
-endif
 ifeq ($(KARCH),riscv64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M templates/riscv-startup.nsh ::/
 endif

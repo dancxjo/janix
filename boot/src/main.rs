@@ -123,11 +123,11 @@ unsafe extern "C" fn kmain() -> ! {
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
     kernel::println!("Entered kmain_inner");
-    crate::init::init_machine();
 
     #[cfg(feature = "fill-framebuffer")]
     crate::framebuffer::fill_framebuffer_with_color();
 
+    crate::init::init_machine();
     crate::init::init_world_graph();
     crate::init::init_userland_and_enter_scheduler();
 }

@@ -3,6 +3,7 @@ use crate::gdt;
 use kernel::memory;
 use lazy_static::lazy_static;
 use x86_64::instructions::{hlt, interrupts};
+use x86_64::VirtAddr;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use x86_64::structures::paging::Translate;
 
@@ -12,9 +13,10 @@ const KEYBOARD_IRQ: u8 = 1;
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
+        let handler_addr = VirtAddr::new(syscall::syscall_handler_asm as *const () as u64);
         unsafe {
             idt[0x80]
-                .set_handler_fn(syscall::syscall_handler_naked)
+                .set_handler_addr(handler_addr)
                 .set_privilege_level(x86_64::PrivilegeLevel::Ring3);
         }
         unsafe {

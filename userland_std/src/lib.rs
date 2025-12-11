@@ -724,7 +724,7 @@ pub fn edge_targets<S: Sys>(sys: &mut S, from: ThingId, pred: EdgePred) -> Vec<T
     results
 }
 
-/// Add an edge between Things via the kernel ABI.
+/// Add a link between Things via the kernel ABI.
 pub fn add_edge(sys: &impl Sys, from: ThingId, pred: EdgePred, to: ThingId) -> bool {
     matches!(
         sys.syscall(KernelRequest::AddEdge { from, pred, to }),
@@ -961,7 +961,7 @@ fn map_display_buffer<S: Sys>(
 /// Locate and map the kernel's primary display buffer.
 ///
 /// This helper finds `display0` (or falls back to the first display), follows
-/// the `scanout` edge to the shared buffer, and maps it with read/write/user
+/// the `scanout` link to the shared buffer, and maps it with read/write/user
 /// permissions.
 pub fn open_primary_display_buffer<S: Sys>(sys: &mut S) -> Result<PrimaryDisplayBuffer, SysError> {
     let displays: Vec<DisplayThing> = list_things_by_kind(sys);

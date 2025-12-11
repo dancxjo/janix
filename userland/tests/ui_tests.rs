@@ -117,7 +117,7 @@ fn create_window_links_surface_place() {
         KernelResponse::ThingListEntry { id: None },
         // create window
         KernelResponse::ThingCreated { id: ThingId(20) },
-        // add edge window to place
+        // add link window to place
         KernelResponse::Success { data: None },
     ]);
 

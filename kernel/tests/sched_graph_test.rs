@@ -67,7 +67,7 @@ fn timeslice_expiry_moves_thread_to_runnable() {
     graph::neighbors(thread, graph_kinds::EDGE_RUNS_ON, &mut buf);
     assert!(
         buf.into_iter().flatten().next().is_none(),
-        "preempted thread should not hold runs_on edge"
+        "preempted thread should not hold runs_on link"
     );
 }
 

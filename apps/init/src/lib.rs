@@ -44,7 +44,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     if programs.is_empty() {
         println(
             sys,
-            "init: no BootProgram edges; waiting briefly for rootfs",
+            "init: no BootProgram links; waiting briefly for rootfs",
         );
         for _ in 0..8 {
             sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
@@ -236,7 +236,7 @@ fn spawn_boot_program<S: Sys>(
     );
     if let Some((process_id, _thread_id)) = spawn_program(sys, program.id) {
         if !add_edge(sys, init_process.id, graph_kinds::EDGE_SPAWNED, process_id) {
-            println(sys, "init: failed to add SPAWNED edge after spawn_program");
+            println(sys, "init: failed to add SPAWNED link after spawn_program");
         }
     } else {
         log_dynamic(

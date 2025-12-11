@@ -89,7 +89,7 @@ pub fn create_sleep_event(
 
 /// Remove the SleepEvent node for a thread, if present.
 ///
-/// This clears the `EDGE_SLEEPS_UNTIL` edge and deletes the SleepEvent Thing.
+/// This clears the `EDGE_SLEEPS_UNTIL` link and deletes the SleepEvent Thing.
 pub fn clear_sleep_event(graph: &mut Graph, thread: ThingId) {
     let mut buf = [None; EDGE_BUF];
     graph.neighbors(thread, graph_kinds::EDGE_SLEEPS_UNTIL, &mut buf);

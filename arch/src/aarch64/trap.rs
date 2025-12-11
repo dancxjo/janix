@@ -174,18 +174,22 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         if result_ptr.is_null() {
             return 1;
         }
-        match crate::program::spawn_program(boot_program_id) {
-            Ok((process_id, thread_id)) => {
+        match kernel::handle_request(KernelRequest::SpawnProgram { boot_program_id }) {
+            KernelResponse::ProgramSpawned {
+                process_id,
+                thread_id,
+            } => {
                 unsafe {
                     (*result_ptr).process_id = process_id;
                     (*result_ptr).thread_id = thread_id;
                 }
                 0
             }
-            Err(msg) => {
-                kernel::log(msg);
+            KernelResponse::Error { message } => {
+                kernel::log(message);
                 1
             }
+            _ => 1,
         }
     } else if num == SyscallNumber::ThingGet as u64 {
         let id = ThingId(arg1);

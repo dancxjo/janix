@@ -4,7 +4,7 @@
 
 > **The kernel *is* a graph.**
 
-Everything meaningful in the system—processes, resources, windows, transactions, modes—should eventually be represented as nodes and edges in a single transactional graph that forms the heart of the OS.
+Everything meaningful in the system—processes, resources, windows, transactions, modes—should eventually be represented as nodes and links in a single transactional graph that forms the heart of the OS.
 
 ThingOS boots via the **Limine** bootloader and is structured as a modern Rust **Cargo workspace** with a strict separation between kernel logic, boot code, shared ABI, and userland libraries.
 
@@ -15,7 +15,7 @@ This repository currently provides a minimal working skeleton of that system: a 
 ## ✨ Project Goals
 
 * **Graph-centric kernel**
-  All kernel state is encoded as graph nodes/edges. Kernel operations are graph transactions.
+  All kernel state is encoded as graph nodes/links. Kernel operations are graph transactions.
 
 * **Transactional updates**
   Mutations occur through an atomic transaction API exposed via a small ABI.
@@ -187,7 +187,7 @@ Userland applications run through the kernel's syscall ABI with the `userland_st
 
 Next steps include:
 
-* Real graph implementation (edges, attributes, schemas)
+* Real graph implementation (links, attributes, schemas)
 * Real transactions that mutate the graph
 * Process model & scheduler
 * Memory map represented as graph nodes

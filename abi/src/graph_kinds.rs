@@ -1,4 +1,4 @@
-//! Shared graph kind and edge identifiers used by both kernel and userland.
+//! Shared graph kind and link identifiers used by both kernel and userland.
 
 use crate::EdgePred;
 

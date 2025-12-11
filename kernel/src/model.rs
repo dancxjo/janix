@@ -782,7 +782,7 @@ pub fn create_process_abi(pid: u64) -> Option<u64> {
 /// assert!(matches!(k::graph::get_prop(thing, "tid"), Some(abi::PropValue::U64(10))));
 /// ```
 pub fn create_thread_abi(_pid: u64, tid: u64, priority: u64) -> Option<u64> {
-    // For now, we ignore pid in the graph; later we’ll add edges.
+    // For now, we ignore pid in the graph; later we’ll add links.
     create_thread(tid, priority).map(|id| {
         // if there is no current thread yet, make this one current
         unsafe {

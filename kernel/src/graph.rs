@@ -27,7 +27,7 @@ pub trait EdgeStore {
     fn neighbor_dsts(&self, src: ThingId, pred: EdgePred) -> impl Iterator<Item = ThingId> + '_;
 }
 
-/// A change emitted by the graph when nodes, properties, or edges mutate.
+/// A change emitted by the graph when nodes, properties, or links mutate.
 #[derive(Debug, Clone)]
 pub enum GraphEvent {
     NodeCreated {
@@ -379,7 +379,7 @@ pub fn init() {
     ];
     let _ = register_schema(
         graph_kinds::KIND_EDGE,
-        "A graph edge connecting Things by predicate",
+        "A graph link connecting Things by predicate",
         EDGE_SCHEMA,
     );
 }
@@ -1184,10 +1184,10 @@ pub fn cleanup_process_graph(_proc: ProcessId) {
     // TODO: delete or mark Things owned by proc
 }
 
-/// Create an edge Thing and index it.
+/// Create a link Thing and index it.
 ///
-/// If the edge already exists between the endpoints for the predicate, the
-/// existing edge id is returned.
+/// If the link already exists between the endpoints for the predicate, the
+/// existing link id is returned.
 ///
 /// # Examples
 /// ```
@@ -1197,7 +1197,7 @@ pub fn cleanup_process_graph(_proc: ProcessId) {
 /// let a = k::graph::create_thing("Thread", &[]).unwrap();
 /// let b = k::graph::create_thing("CpuCore", &[]).unwrap();
 /// let edge = k::graph::create_edge(a, k::graph_kinds::EDGE_RUNS_ON, b).unwrap();
-/// // Calling again returns the same edge id.
+/// // Calling again returns the same link id.
 /// let edge2 = k::graph::create_edge(a, k::graph_kinds::EDGE_RUNS_ON, b).unwrap();
 /// assert_eq!(edge, edge2);
 /// ```
@@ -1222,7 +1222,7 @@ pub fn create_edge(src: ThingId, pred: EdgePred, dst: ThingId) -> Option<ThingId
     create_thing(graph_kinds::KIND_EDGE, props)
 }
 
-/// Add an edge between two Things; convenience wrapper returning success.
+/// Add a link between two Things; convenience wrapper returning success.
 ///
 /// # Examples
 /// ```
@@ -1237,7 +1237,7 @@ pub fn add_edge(from: ThingId, pred: EdgePred, to: ThingId) -> bool {
     create_edge(from, pred, to).is_some()
 }
 
-/// Delete an edge Thing by id.
+/// Delete a link Thing by id.
 ///
 /// Returns `false` if the id does not refer to an edge.
 ///
@@ -1266,7 +1266,7 @@ pub fn delete_edge(id: ThingId) -> bool {
     delete_thing(id)
 }
 
-/// Remove an edge by endpoints/predicate; returns true if removed.
+/// Remove a link by endpoints/predicate; returns true if removed.
 ///
 /// # Examples
 /// ```

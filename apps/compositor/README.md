@@ -27,7 +27,7 @@ Layout → DisplayList (Vec<DrawOp>) → Framebuffer (PrimaryDisplayBuffer)
 Input (MousePacketEvent) → Layout hit-test → Graph prop updates
 ```
 
-### Detailed edges
+### Detailed links
 
 - `Module_state` calls `Module_graph` (collect Things), `Module_layout` (build `Vec<StackedWindow>`), `Module_input` (cursor/drag with stacked windows), and `Module_render.display_list` (build/execute `DrawOp`s).
 - `Type_WindowThing -[:FLOW_INTO layout]-> Type_StackedWindow`

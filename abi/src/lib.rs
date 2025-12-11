@@ -22,11 +22,11 @@ pub struct NodeId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ThingId(pub u64);
 
-/// Predicate identifier for an edge between Things.
+/// Predicate identifier for a link between Things.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EdgePred(pub u64);
 
-/// Canonical edge representation inside the graph.
+/// Canonical link representation inside the graph.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Edge {
     pub id: ThingId,
@@ -236,13 +236,13 @@ pub enum KernelRequest {
     SchedulerTick,
     /// Exit the current thread
     ExitThread,
-    /// Add an edge between Things
+    /// Add a link between Things
     AddEdge {
         from: ThingId,
         pred: EdgePred,
         to: ThingId,
     },
-    /// Fetch the target of the edge at a specific index.
+    /// Fetch the target of the link at a specific index.
     EdgeAt {
         from: ThingId,
         pred: EdgePred,
@@ -330,7 +330,7 @@ pub enum KernelResponse {
         // snapshot of the thread that just ran (or None)
         current: Option<ThreadInfo>,
     },
-    /// Result of querying an edge target.
+    /// Result of querying a link target.
     EdgeTarget {
         target: Option<ThingId>,
     },

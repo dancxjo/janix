@@ -398,7 +398,7 @@ fn shared_buffer_and_display_open() {
             props: display_props,
         },
         KernelResponse::ThingListEntry { id: None },
-        // Edge targets for display buffers
+        // Link targets for display buffers
         KernelResponse::EdgeTarget {
             target: Some(ThingId(2)),
         },

@@ -134,7 +134,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 KernelResponse::Success { data: None }
             } else {
                 KernelResponse::Error {
-                    message: "Failed to add edge",
+                    message: "Failed to add link",
                 }
             }
         }

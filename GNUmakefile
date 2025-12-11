@@ -432,8 +432,13 @@ endif
 .PHONY: clean
 clean:
 	$(MAKE) -C boot clean
-	rm -f limine.conf.tmp
+	rm -f limine.conf.tmp qemu.log
+	# remove built images and temporary iso root
 	rm -rf iso_root $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
+	# remove workspace build artifacts and generated files
+	@echo "Cleaning workspace cargo/target and generated files..."
+	-cargo clean --manifest-path Cargo.toml
+	rm -rf target $(COMPOSITOR_FONT_DIR) ovmf/edk2-ovmf.tar.gz ovmf/*.fd
 
 .PHONY: distclean
 distclean: clean

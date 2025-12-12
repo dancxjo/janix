@@ -1,5 +1,6 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
+use abi::{KernelRequest, KernelResponse};
 use userland::prelude::*;
 use userland_std::thing_models::MousePacketEvent;
 use userland_std::{
@@ -64,8 +65,26 @@ pub fn collect_surfaces_for_windows<S: Sys>(
     map
 }
 
-pub fn mouse_packets<S: Sys>(sys: &mut S) -> Vec<MousePacketEvent> {
-    let mut events: Vec<MousePacketEvent> = list_things_by_kind(sys);
+pub fn mouse_packets_since<S: Sys>(sys: &mut S, last_id: Option<ThingId>) -> Vec<MousePacketEvent> {
+    let mut events = Vec::new();
+    let mut cursor = last_id.unwrap_or(ThingId(u64::MAX));
+
+    loop {
+        match sys.syscall(KernelRequest::ThingList {
+            kind: MousePacketEvent::KIND,
+            start_after: cursor,
+        }) {
+            KernelResponse::ThingListEntry { id: Some(next_id) } => {
+                if let Some(event) = load_thing::<MousePacketEvent>(sys, next_id) {
+                    events.push(event);
+                }
+                cursor = next_id;
+            }
+            _ => break,
+        }
+    }
+    
+    // Sort logic is good for determinism even if kernel returns in order
     events.sort_by_key(|e| e.sequence_index);
     events
 }

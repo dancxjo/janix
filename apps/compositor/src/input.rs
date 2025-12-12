@@ -26,12 +26,13 @@ impl CursorState {
 
 impl Compositor {
     pub fn process_mouse_packets<S: Sys>(&mut self, sys: &mut S, layout: &[StackedWindow]) {
-        let events = graph::mouse_packets(sys);
+        let events = graph::mouse_packets_since(sys, self.last_mouse_event_id);
         for event in events {
             if event.sequence_index <= self.last_mouse_seq {
                 continue;
             }
             self.last_mouse_seq = event.sequence_index;
+            self.last_mouse_event_id = Some(event.id);
             self.apply_mouse_event(sys, &event, layout);
         }
 

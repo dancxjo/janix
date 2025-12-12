@@ -12,3 +12,4 @@ Cargo.lock
 EFI/BOOT/*.EFI
 thing_macros/tests/ui/unsupported_field.stderr
 *.tmp
+stash_diff_stash0.patch

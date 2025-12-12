@@ -599,11 +599,19 @@ launch-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64
 
 ovmf/ovmf-code-x86_64.fd:
 	mkdir -p ovmf
-	curl -L -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEX64_OVMF_CODE.fd
+	if [ -f /usr/share/OVMF/OVMF_CODE.fd ]; then \
+		cp /usr/share/OVMF/OVMF_CODE.fd $@; \
+	else \
+		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEX64_OVMF_CODE.fd; \
+	fi
 
 ovmf/ovmf-vars-x86_64.fd:
 	mkdir -p ovmf
-	curl -L -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEX64_OVMF_VARS.fd
+	if [ -f /usr/share/OVMF/OVMF_VARS.fd ]; then \
+		cp /usr/share/OVMF/OVMF_VARS.fd $@; \
+	else \
+		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEX64_OVMF_VARS.fd; \
+	fi
 
 
 # ----------------------
@@ -612,11 +620,20 @@ ovmf/ovmf-vars-x86_64.fd:
 
 ovmf/ovmf-code-aarch64.fd:
 	mkdir -p ovmf
-	curl -L -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEAARCH64_QEMU_EFI.fd
+	if [ -f /usr/share/AAVMF/AAVMF_CODE.fd ]; then \
+		cp /usr/share/AAVMF/AAVMF_CODE.fd $@; \
+	else \
+		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEAARCH64_QEMU_EFI.fd; \
+	fi
 
 ovmf/ovmf-vars-aarch64.fd:
 	mkdir -p ovmf
-	curl -L -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEAARCH64_QEMU_VARS.fd
+	if [ -f /usr/share/AAVMF/AAVMF_VARS.fd ]; then \
+		cp /usr/share/AAVMF/AAVMF_VARS.fd $@; \
+	else \
+		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEAARCH64_QEMU_VARS.fd; \
+		truncate -s 64M $@; \
+	fi
 
 
 # ----------------------
@@ -625,10 +642,15 @@ ovmf/ovmf-vars-aarch64.fd:
 
 ovmf/ovmf-code-riscv64.fd:
 	mkdir -p ovmf
-	curl -L -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASERISCV64_VIRT.fd
+	if [ -f /usr/share/OVMF/OVMF_CODE.riscv64.fd ]; then \
+		cp /usr/share/OVMF/OVMF_CODE.riscv64.fd $@; \
+	else \
+		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASERISCV64_VIRT.fd; \
+	fi
 
 ovmf/ovmf-vars-riscv64.fd:
 	mkdir -p ovmf
+	# RISC-V vars file not typically available system-wide; create placeholder
 	truncate -s 32M $@
 
 
@@ -638,11 +660,19 @@ ovmf/ovmf-vars-riscv64.fd:
 
 ovmf/ovmf-code-loongarch64.fd:
 	mkdir -p ovmf
-	curl -L -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASELOONGARCH64_QEMU_EFI.fd
+	if [ -f /usr/share/OVMF/OVMF_CODE.loongarch64.fd ]; then \
+		cp /usr/share/OVMF/OVMF_CODE.loongarch64.fd $@; \
+	else \
+		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASELOONGARCH64_QEMU_EFI.fd; \
+	fi
 
 ovmf/ovmf-vars-loongarch64.fd:
 	mkdir -p ovmf
-	curl -L -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASELOONGARCH64_QEMU_VARS.fd
+	if [ -f /usr/share/OVMF/OVMF_VARS.loongarch64.fd ]; then \
+		cp /usr/share/OVMF/OVMF_VARS.loongarch64.fd $@; \
+	else \
+		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASELOONGARCH64_QEMU_VARS.fd; \
+	fi
 
 
 

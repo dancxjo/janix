@@ -19,3 +19,8 @@ mod mock_tests;
 mod test_support;
 
 pub use state::run;
+
+// Re-export the active_framebuffer selection seam so callers can obtain
+// the graph-driven primary display buffer without reaching into graph.rs
+// directly. This keeps the "which buffer?" decision isolated here.
+pub use crate::graph::active_framebuffer;

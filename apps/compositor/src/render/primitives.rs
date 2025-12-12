@@ -59,6 +59,8 @@ pub fn draw_tiled_image(
     img_w: i32,
     img_h: i32,
     bpp: u16,
+    offset_x: i32,
+    offset_y: i32,
 ) {
     if img_w <= 0 || img_h <= 0 {
         return;
@@ -71,7 +73,11 @@ pub fn draw_tiled_image(
     let row_stride = ((img_w as usize * bpp as usize + 31) / 32) * 4;
 
     for y in 0..fb_height {
-        let tex_y = (y as i32) % img_h;
+        // Calculate texture Y coordinate with offset and wrapping
+        // We want (y + offset) to map to texture space.
+        // Also handle negative results from % operator if offset is negative.
+        let tex_y = ((y as i32 + offset_y) % img_h + img_h) % img_h;
+
         // Standard BMP logic: positive height means bottom-up
         let row = if img_h > 0 {
             (img_h - 1 - tex_y) as usize
@@ -80,10 +86,10 @@ pub fn draw_tiled_image(
         };
 
         let row_start = unsafe { img_ptr.add(row * row_stride) };
-        let dest_row_start = (y as usize * stride_pixels);
+        let dest_row_start = y as usize * stride_pixels;
 
         for x in 0..fb_width {
-            let tex_x = (x as i32) % img_w;
+            let tex_x = ((x as i32 + offset_x) % img_w + img_w) % img_w;
             let src_offset = tex_x as usize * bytes_per_pixel;
 
             unsafe {

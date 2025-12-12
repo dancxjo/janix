@@ -3,8 +3,8 @@ use alloc::vec::Vec;
 use userland::prelude::*;
 use userland_std::thing_models::MousePacketEvent;
 use userland_std::{
-    Mode, ModeSwitchEvent, PrimaryDisplayBuffer, Surface, Window, active_mode, default_mode,
-    graph_kinds, is_console_mode_active, swap_display_buffers as sys_swap_display_buffers,
+    DisplayThing, Mode, ModeSwitchEvent, PrimaryDisplayBuffer, Surface, Window, active_mode,
+    default_mode, graph_kinds, is_console_mode_active, load_thing, update_props,
 };
 
 use crate::layout::LayoutPolicy;
@@ -14,7 +14,22 @@ pub fn active_framebuffer<S: Sys>(sys: &mut S) -> Option<PrimaryDisplayBuffer> {
 }
 
 pub fn swap_display_buffers<S: Sys>(sys: &mut S, display_id: ThingId) -> Option<i64> {
-    sys_swap_display_buffers(sys, display_id)
+    let display = load_thing::<DisplayThing>(sys, display_id)?;
+    let current_index = display.active_buffer_index;
+    let new_index = if current_index == 0 { 1 } else { 0 };
+
+    if !update_props(
+        sys,
+        display_id,
+        &[(
+            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+            PropValue::I64(new_index),
+        )],
+    ) {
+        return None;
+    }
+
+    Some(new_index)
 }
 
 pub fn handle_mode_switches<S: Sys>(sys: &mut S) {

@@ -604,6 +604,35 @@ pub fn create_address_space(asid: u64) -> Option<ThingId> {
     graph::create_thing("AddressSpace", props)
 }
 
+/// Create a Display Thing
+///
+/// # Arguments
+/// * `name` - Display name
+/// * `width` - Display width in pixels
+/// * `height` - Display height in pixels
+/// * `active_buffer_id` - ThingId of the currently active shared buffer
+///
+/// # Returns
+/// ThingId of the created Display, or None if creation failed
+pub fn create_display(
+    name: &str,
+    width: u64,
+    height: u64,
+    active_buffer_id: u64,
+) -> Option<ThingId> {
+    let props = &[
+        (graph_kinds::PROP_NAME, PropValue::Str(String::from(name))),
+        (graph_kinds::PROP_WIDTH, PropValue::U64(width)),
+        (graph_kinds::PROP_HEIGHT, PropValue::U64(height)),
+        (
+            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+            PropValue::I64(active_buffer_id as i64),
+        ),
+    ];
+
+    graph::create_thing(graph_kinds::KIND_DISPLAY, props)
+}
+
 /// Create a VirtRegion Thing
 ///
 /// # Arguments

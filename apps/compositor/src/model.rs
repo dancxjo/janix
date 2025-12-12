@@ -15,6 +15,7 @@ pub struct Compositor {
     framebuffer_thing_id: Option<ThingId>,
     present_request_id: Option<ThingId>,
     pub background_image: Option<BackgroundImage>,
+    pub background_offset: (i32, i32),
     frame_counter: u64,
 }
 
@@ -40,6 +41,7 @@ impl Compositor {
             framebuffer_thing_id: None,
             present_request_id: None,
             background_image: None,
+            background_offset: (0, 0),
             frame_counter: 0,
         }
     }

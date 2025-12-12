@@ -145,6 +145,11 @@ fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
 
     compositor.sync_active_from_layout(&stacked);
     compositor.process_mouse_packets(sys, &stacked);
+
+    // Animate background: scroll up and left (requires incrementing offset)
+    compositor.background_offset.0 = compositor.background_offset.0.wrapping_add(1);
+    compositor.background_offset.1 = compositor.background_offset.1.wrapping_add(1);
+
     let ops = build_display_list(compositor, &stacked, &windows, &surface_map);
     render_display_list(compositor, &ops);
     if let Some(active_index) = swap_display_buffers(sys, compositor.fb.display_id) {

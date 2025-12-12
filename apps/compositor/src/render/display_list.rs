@@ -28,6 +28,8 @@ pub enum DrawOp {
         img_w: i32,
         img_h: i32,
         bpp: u16,
+        offset_x: i32,
+        offset_y: i32,
     },
     Rect {
         x: i32,
@@ -73,6 +75,8 @@ pub fn build_display_list(
             img_w: bg.width,
             img_h: bg.height,
             bpp: bg.bpp,
+            offset_x: comp.background_offset.0,
+            offset_y: comp.background_offset.1,
         });
     } else {
         ops.push(DrawOp::Clear { color: CLEAR_COLOR });
@@ -160,6 +164,8 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp]) {
                 img_w,
                 img_h,
                 bpp,
+                offset_x,
+                offset_y,
             } => primitives::draw_tiled_image(
                 buffer,
                 stride,
@@ -169,6 +175,8 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp]) {
                 *img_w,
                 *img_h,
                 *bpp,
+                *offset_x,
+                *offset_y,
             ),
             DrawOp::Rect { x, y, w, h, color } => {
                 primitives::fill_rect(buffer, stride, width, height, *x, *y, *w, *h, *color)

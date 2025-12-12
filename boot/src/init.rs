@@ -80,8 +80,20 @@ pub fn init_world_graph() {
 
 #[cfg(not(feature = "boot-dashboard-only"))]
 pub fn init_userland_and_enter_scheduler() -> ! {
+    let (used, size) = crate::heap::get_heap_stats();
+    kernel::println!(
+        "Heap stats before launching init: used={} size={}",
+        used,
+        size
+    );
     kernel::log("Launching init (PID 1) ...");
     launch_init_process();
+    let (used, size) = crate::heap::get_heap_stats();
+    kernel::println!(
+        "Heap stats after spawning init: used={} size={}",
+        used,
+        size
+    );
     kernel::log("Handing control to scheduler...");
     arch::user::schedule_next();
 }

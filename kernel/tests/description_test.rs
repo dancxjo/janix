@@ -10,6 +10,7 @@ fn test_schema_description_storage() {
         "TestThing",
         "A test thing for description validation",
         &[("prop1", abi::PropType::U64)],
+        &[],
     );
 
     assert!(result.is_ok());
@@ -43,6 +44,7 @@ fn test_multiple_schemas_with_descriptions() {
         "Thing1",
         "First test thing",
         &[("field1", abi::PropType::Bool)],
+        &[],
     );
     assert!(result1.is_ok(), "Failed to register Thing1: {:?}", result1);
 
@@ -50,6 +52,7 @@ fn test_multiple_schemas_with_descriptions() {
         "Thing2",
         "Second test thing",
         &[("field2", abi::PropType::Str)],
+        &[],
     );
     assert!(result2.is_ok(), "Failed to register Thing2: {:?}", result2);
 

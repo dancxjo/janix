@@ -5,7 +5,6 @@ use linked_list_allocator::LockedHeap;
 
 pub const KERNEL_HEAP_SIZE_BYTES: usize = 64 * 1024 * 1024;
 
-/*
 static GUARD: [u8; 0x10000] = [0; 0x10000];
 
 #[global_allocator]
@@ -39,4 +38,4 @@ fn alloc_error_handler(layout: Layout) -> ! {
     kernel::println!("Heap stats: used={} size={}", used, size);
     panic!("allocation error: {:?}", layout);
 }
-*/
+

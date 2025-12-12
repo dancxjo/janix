@@ -30,8 +30,8 @@ mod init;
 mod panic_handler;
 mod time_utils;
 
-use core::alloc::Layout;
-use linked_list_allocator::LockedHeap;
+// use core::alloc::Layout; // Removed
+// use linked_list_allocator::LockedHeap; // Removed
 
 use limine::BaseRevision;
 use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
@@ -58,24 +58,8 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-#[global_allocator]
-static KERNEL_ALLOCATOR: LockedHeap = LockedHeap::empty();
+// Allocator is defined in heap.rs
 
-pub fn get_heap_stats() -> (usize, usize) {
-    let heap = KERNEL_ALLOCATOR.lock();
-    (heap.used(), heap.size())
-}
-
-#[alloc_error_handler]
-fn alloc_error_handler(layout: Layout) -> ! {
-    kernel::println!(
-        "alloc_error_handler: KERNEL_ALLOCATOR address: {:p}",
-        &KERNEL_ALLOCATOR
-    );
-    let (used, size) = get_heap_stats();
-    kernel::println!("Heap stats: used={} size={}", used, size);
-    panic!("allocation error: {:?}", layout);
-}
 
 const HEAP_SIZE: usize = heap::KERNEL_HEAP_SIZE_BYTES;
 static mut HEAP_MEMORY: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
@@ -103,15 +87,8 @@ unsafe extern "C" fn kmain() -> ! {
         core::ptr::write_volatile(&mut HEAP_MEMORY[HEAP_SIZE - 1], 0xBB);
         kernel::println!("HEAP_MEMORY probe successful.");
 
-        kernel::println!("KERNEL_ALLOCATOR address: {:p}", &KERNEL_ALLOCATOR);
-        KERNEL_ALLOCATOR
-            .lock()
-            .init(heap_addr as *mut u8, HEAP_SIZE);
-        kernel::println!(
-            "Kernel heap initialized: [{:#x}, {:#x})",
-            heap_addr,
-            heap_addr + HEAP_SIZE
-        );
+        // Initialize the shared kernel heap
+        heap::init_kernel_heap(heap_addr, HEAP_SIZE);
     }
 
     let stack_base = core::ptr::addr_of!(BOOT_STACK) as u64;
@@ -123,6 +100,8 @@ unsafe extern "C" fn kmain() -> ! {
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
     kernel::println!("Entered kmain_inner");
+    let (used, size) = heap::get_heap_stats();
+    kernel::println!("Heap stats after stack switch: used={} size={}", used, size);
 
     #[cfg(feature = "fill-framebuffer")]
     crate::framebuffer::fill_framebuffer_with_color();

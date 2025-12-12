@@ -13,7 +13,10 @@ pub unsafe fn enter_kernel_stack(stack_base: u64, stack_size: u64) -> ! {
 
     #[cfg(target_arch = "x86_64")]
     {
-        let adjusted_stack_top = stack_base + (stack_size / 2);
+        // Use the full stack buffer (grows downward) instead of starting halfway
+        // through it, which risked overrunning into the heap below when call
+        // depth temporarily spiked during boot.
+        let adjusted_stack_top = stack_base + stack_size;
         unsafe {
             asm!(
                 "mov rsp, {stack}",

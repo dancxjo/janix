@@ -72,6 +72,20 @@ run: run-$(KARCH)
 .PHONY: run-hdd
 run-hdd: run-hdd-$(KARCH)
 
+# Run-and-capture logs (non-paused) and analyze them
+.PHONY: run-log
+run-log: run-log-$(KARCH)
+
+.PHONY: run-log-hdd
+run-log-hdd: run-log-hdd-$(KARCH)
+
+# Debug run targets: start QEMU with GDB server (-s) and paused CPU (-S)
+.PHONY: run-debug
+run-debug: run-debug-$(KARCH)
+
+.PHONY: run-debug-hdd
+run-debug-hdd: run-debug-hdd-$(KARCH)
+
 .PHONY: smoke
 smoke:
 	@echo "=== Running Smoke Tests (QEMU) ==="
@@ -97,12 +111,51 @@ launch-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).i
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)
 
+.PHONY: run-log-x86_64
+run-log-x86_64:
+	$(MAKE) KARCH=x86_64 launch-log-x86_64
+
+.PHONY: launch-log-x86_64
+launch-log-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-x86_64 $(QEMU_NO_REBOOT) \
+		-M q35 \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
 
 # ---- AARCH64 ----
 
 .PHONY: run-aarch64
 run-aarch64:
 	$(MAKE) KARCH=aarch64 launch-aarch64
+
+.PHONY: run-log-aarch64
+run-log-aarch64:
+	$(MAKE) KARCH=aarch64 launch-log-aarch64
+
+.PHONY: launch-log-aarch64
+launch-log-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).iso
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-aarch64 $(QEMU_NO_REBOOT) \
+		-M virt \
+		-cpu cortex-a72 \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
 
 .PHONY: launch-aarch64
 launch-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).iso
@@ -127,6 +180,24 @@ launch-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME
 run-riscv64:
 	$(MAKE) KARCH=riscv64 launch-riscv64
 
+.PHONY: run-log-riscv64
+run-log-riscv64:
+	$(MAKE) KARCH=riscv64 launch-log-riscv64
+
+.PHONY: launch-log-riscv64
+launch-log-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).iso
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-riscv64 $(QEMU_NO_REBOOT) \
+		-M virt \
+		-serial stdio \
+		-device ramfb \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
 .PHONY: launch-riscv64
 launch-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).iso
 	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
@@ -146,6 +217,27 @@ launch-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME
 run-loongarch64:
 	$(MAKE) KARCH=loongarch64 launch-loongarch64
 
+.PHONY: run-log-loongarch64
+run-log-loongarch64:
+	$(MAKE) KARCH=loongarch64 launch-log-loongarch64
+
+.PHONY: launch-log-loongarch64
+launch-log-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).iso
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-loongarch64 $(QEMU_NO_REBOOT) \
+		-M virt \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
 .PHONY: launch-loongarch64
 launch-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).iso
 	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
@@ -163,15 +255,202 @@ launch-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd 
 
 
 ###############################################################################
+###############################################################################
+# DEBUG RUN TARGETS (ISO + HDD)
+# These launch targets start QEMU with a GDB server (-s) and keep the CPU
+# paused at startup (-S) so you can attach a debugger. Ports default to
+# QEMU's default (1234) when using `-s`.
+
+.PHONY: run-debug-x86_64
+run-debug-x86_64:
+	$(MAKE) KARCH=x86_64 launch-debug-x86_64
+
+.PHONY: launch-debug-x86_64
+launch-debug-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-x86_64 $(QEMU_NO_REBOOT) -s -S \
+		-M q35 \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
+# ---- AARCH64 ----
+
+.PHONY: run-debug-aarch64
+run-debug-aarch64:
+	$(MAKE) KARCH=aarch64 launch-debug-aarch64
+
+.PHONY: launch-debug-aarch64
+launch-debug-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).iso
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-aarch64 $(QEMU_NO_REBOOT) -s -S \
+		-M virt \
+		-cpu cortex-a72 \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
+# ---- RISCV64 ----
+
+.PHONY: run-debug-riscv64
+run-debug-riscv64:
+	$(MAKE) KARCH=riscv64 launch-debug-riscv64
+
+.PHONY: launch-debug-riscv64
+launch-debug-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).iso
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-riscv64 $(QEMU_NO_REBOOT) -s -S \
+		-M virt \
+		-serial stdio \
+		-device ramfb \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
+# ---- LOONGARCH64 ----
+
+.PHONY: run-debug-loongarch64
+run-debug-loongarch64:
+	$(MAKE) KARCH=loongarch64 launch-debug-loongarch64
+
+.PHONY: launch-debug-loongarch64
+launch-debug-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).iso
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-loongarch64 $(QEMU_NO_REBOOT) -s -S \
+		-M virt \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
+###############################################################################
 # RUN TARGETS (HDD VARIANTS)
 ###############################################################################
 
 # They follow same pattern.
 # Keeping your existing HDD rules unchanged.
 
+# Debug HDD targets: start QEMU with GDB server (-s) and paused CPU (-S)
+.PHONY: run-debug-hdd-x86_64
+run-debug-hdd-x86_64:
+	$(MAKE) KARCH=x86_64 launch-debug-hdd-x86_64
+
+.PHONY: launch-debug-hdd-x86_64
+launch-debug-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-x86_64 $(QEMU_NO_REBOOT) -s -S \
+		-M q35 \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
+.PHONY: run-debug-hdd-aarch64
+run-debug-hdd-aarch64:
+	$(MAKE) KARCH=aarch64 launch-debug-hdd-aarch64
+
+.PHONY: launch-debug-hdd-aarch64
+launch-debug-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-aarch64 $(QEMU_NO_REBOOT) -s -S \
+		-M virt \
+		-cpu cortex-a72 \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
+.PHONY: run-debug-hdd-riscv64
+run-debug-hdd-riscv64:
+	$(MAKE) KARCH=riscv64 launch-debug-hdd-riscv64
+
+.PHONY: launch-debug-hdd-riscv64
+launch-debug-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-riscv64 $(QEMU_NO_REBOOT) -s -S \
+		-M virt \
+		-serial stdio \
+		-device ramfb \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
+.PHONY: run-debug-hdd-loongarch64
+run-debug-hdd-loongarch64:
+	$(MAKE) KARCH=loongarch64 launch-debug-hdd-loongarch64
+
+.PHONY: launch-debug-hdd-loongarch64
+launch-debug-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-loongarch64 $(QEMU_NO_REBOOT) -s -S \
+		-M virt \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
 .PHONY: run-hdd-x86_64
 run-hdd-x86_64:
 	$(MAKE) KARCH=x86_64 launch-hdd-x86_64
+
+.PHONY: run-log-hdd-x86_64
+run-log-hdd-x86_64:
+	$(MAKE) KARCH=x86_64 launch-log-hdd-x86_64
+
+.PHONY: launch-log-hdd-x86_64
+launch-log-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-x86_64 $(QEMU_NO_REBOOT) \
+		-M q35 \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
 
 .PHONY: launch-hdd-x86_64
 launch-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd
@@ -190,6 +469,28 @@ launch-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAM
 .PHONY: run-hdd-aarch64
 run-hdd-aarch64:
 	$(MAKE) KARCH=aarch64 launch-hdd-aarch64
+
+.PHONY: run-log-hdd-aarch64
+run-log-hdd-aarch64:
+	$(MAKE) KARCH=aarch64 launch-log-hdd-aarch64
+
+.PHONY: launch-log-hdd-aarch64
+launch-log-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-aarch64 $(QEMU_NO_REBOOT) \
+		-M virt \
+		-cpu cortex-a72 \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
 
 .PHONY: launch-hdd-aarch64
 launch-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).hdd
@@ -214,6 +515,24 @@ launch-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_
 run-hdd-riscv64:
 	$(MAKE) KARCH=riscv64 launch-hdd-riscv64
 
+.PHONY: run-log-hdd-riscv64
+run-log-hdd-riscv64:
+	$(MAKE) KARCH=riscv64 launch-log-hdd-riscv64
+
+.PHONY: launch-log-hdd-riscv64
+launch-log-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-riscv64 $(QEMU_NO_REBOOT) \
+		-M virt \
+		-serial stdio \
+		-device ramfb \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
+
 .PHONY: launch-hdd-riscv64
 launch-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).hdd
 	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
@@ -232,6 +551,27 @@ launch-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_
 .PHONY: run-hdd-loongarch64
 run-hdd-loongarch64:
 	$(MAKE) KARCH=loongarch64 launch-hdd-loongarch64
+
+.PHONY: run-log-hdd-loongarch64
+run-log-hdd-loongarch64:
+	$(MAKE) KARCH=loongarch64 launch-log-hdd-loongarch64
+
+.PHONY: launch-log-hdd-loongarch64
+launch-log-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).hdd
+	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	qemu-system-loongarch64 $(QEMU_NO_REBOOT) \
+		-M virt \
+		-serial stdio \
+		-device ramfb \
+		-device qemu-xhci \
+		-device usb-kbd \
+		-device usb-mouse \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
+		-hda $(IMAGE_NAME).hdd \
+		$(QEMUFLAGS) | tee qemu.log ; \
+	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
+	python3 scripts/analyze_crash.py qemu.log boot || true
 
 .PHONY: launch-hdd-loongarch64
 launch-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).hdd

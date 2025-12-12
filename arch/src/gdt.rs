@@ -7,6 +7,9 @@ use x86_64::structures::tss::TaskStateSegment;
 // Use index 1 to reserve the first IST entry for double-fault handling.
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 1;
 
+const PRIVILEGE_STACK_GUARD_BYTES: usize = 16 * 1024;
+const PRIVILEGE_STACK_BYTES: usize = 256 * 1024;
+
 lazy_static! {
     static ref TSS: TaskStateSegment = {
         let mut tss = TaskStateSegment::new();
@@ -20,14 +23,15 @@ lazy_static! {
         };
         // Set privilege stack for ring 0 (needed for ring 3 -> ring 0 transition)
         tss.privilege_stack_table[0] = {
-             const STACK_SIZE: usize = 4096 * 20; // 80KB
-            static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
-            // Add a guard static to detect overflow?
-            // static mut GUARD: [u8; 4096] = [0; 4096];
-            // But we can't easily control order here.
-            
-            let stack_start = VirtAddr::from_ptr(core::ptr::addr_of!(STACK));
-            let stack_end = stack_start + STACK_SIZE;
+            static mut STACK: [u8; PRIVILEGE_STACK_GUARD_BYTES + PRIVILEGE_STACK_BYTES] =
+                [0; PRIVILEGE_STACK_GUARD_BYTES + PRIVILEGE_STACK_BYTES];
+
+            // Leave a guard region at the bottom so accidental underflow from the
+            // kernel privilege stack won't immediately trample adjacent globals
+            // (like the heap allocator) in .bss.
+            let stack_start = VirtAddr::from_ptr(core::ptr::addr_of!(STACK))
+                + PRIVILEGE_STACK_GUARD_BYTES;
+            let stack_end = stack_start + PRIVILEGE_STACK_BYTES;
             stack_end
         };
         tss

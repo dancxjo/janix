@@ -114,22 +114,17 @@ fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     handle_mode_switches(sys);
 
     if console_mode_active(sys) {
-        compositor.process_mouse_packets(sys, &[]);
-        compositor.drag = None;
         return;
     }
 
     let mode = match current_mode(sys) {
         Some(mode) => mode,
         None => {
-            compositor.process_mouse_packets(sys, &[]);
             return;
         }
     };
 
     if mode.index == MODE_INDEX_CONSOLE {
-        compositor.process_mouse_packets(sys, &[]);
-        compositor.drag = None;
         return;
     }
 

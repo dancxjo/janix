@@ -12,6 +12,7 @@ members = [
     "apps/alarm_demo",
     "apps/ps2_keyboard_driver",
     "apps/ps2_mouse_driver",
+    "apps/input_events",
     "apps/input_logger_demo",
     "apps/framebuffer_driver",
     "apps/compositor",

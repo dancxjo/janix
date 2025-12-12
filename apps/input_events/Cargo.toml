@@ -1,0 +1,9 @@
+[package]
+name = "input_events"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+userland = { path = "../../userland" }
+userland_rt = { path = "../../userland_rt" }
+thing_models = { path = "../../thing_models" }

@@ -47,6 +47,8 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
             }
             last_irq_id = event.id.0;
             handled = true;
+            handled = true;
+            println(sys, "ps2_mouse_driver: handling mouse IRQ");
             drain_mouse_bytes(sys, &mut accessor, &mut decoder);
         }
 
@@ -122,6 +124,7 @@ fn drain_mouse_bytes<S: Sys>(
                     break;
                 }
                 if let Some(byte) = accessor.read_data(sys) {
+                    println(sys, "ps2_mouse_driver: byte received");
                     decoder.process_byte(sys, byte);
                 } else {
                     break;

@@ -57,10 +57,9 @@ pub fn fill_framebuffer_with_color(color: u32) {
 
     unsafe {
         for y in 0..height {
-            for x in 0..width {
-                let pixel = ptr.add(y * stride + x);
-                core::ptr::write_volatile(pixel, color);
-            }
+            let row_start = ptr.add(y * stride);
+            let row_slice = core::slice::from_raw_parts_mut(row_start, width);
+            row_slice.fill(color);
         }
     }
     kernel::println!("Framebuffer filled with color {:#x}", color);

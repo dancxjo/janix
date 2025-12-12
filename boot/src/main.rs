@@ -102,17 +102,17 @@ unsafe extern "C" fn kmain_inner() -> ! {
     kernel::println!("Entered kmain_inner");
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color(0x00_00_FF_00); // Green
+    crate::framebuffer::fill_framebuffer_with_color(0x00_33_33_33); // Dark Gray
 
     crate::init::init_machine();
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color(0x00_00_00_FF); // Blue
+    crate::framebuffer::fill_framebuffer_with_color(0x00_80_80_80); // Gray
 
     crate::init::init_world_graph();
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color(0x00_FF_00_00); // Red
+    crate::framebuffer::fill_framebuffer_with_color(0x00_CC_CC_CC); // Light Gray
 
     crate::init::init_userland_and_enter_scheduler();
 }

@@ -109,7 +109,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     }
 }
 
-fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
+pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     compositor.ensure_display_contracts(sys);
     handle_mode_switches(sys);
 

@@ -225,7 +225,7 @@ mod tests {
         let events = vec![mouse_event(5), mouse_event(2)];
         let responses = list_responses(events, |e| e.id);
         let mut sys = MockSys::with_responses(responses);
-        let packets = mouse_packets(&mut sys);
+        let packets = mouse_packets_since(&mut sys, None);
         assert_eq!(packets.len(), 2);
         assert_eq!(packets[0].sequence_index, 2);
         assert_eq!(packets[1].sequence_index, 5);

@@ -16,7 +16,7 @@ use userland_std::{PrimaryDisplayBuffer, SharedBufferMapping, Thing};
 #[derive(Default)]
 pub struct MockSys {
     responses: RefCell<VecDeque<KernelResponse>>,
-    requests: RefCell<Vec<KernelRequest>>,
+    pub requests: RefCell<Vec<KernelRequest>>,
     time: RefCell<u64>,
 }
 

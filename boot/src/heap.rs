@@ -33,9 +33,11 @@ pub fn get_heap_stats() -> (usize, usize) {
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
-    kernel::println!("alloc_error_handler: KERNEL_ALLOCATOR address: {:p}", &KERNEL_ALLOCATOR);
+    kernel::println!(
+        "alloc_error_handler: KERNEL_ALLOCATOR address: {:p}",
+        &KERNEL_ALLOCATOR
+    );
     let (used, size) = get_heap_stats();
     kernel::println!("Heap stats: used={} size={}", used, size);
     panic!("allocation error: {:?}", layout);
 }
-

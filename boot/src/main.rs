@@ -100,14 +100,20 @@ unsafe extern "C" fn kmain() -> ! {
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
     kernel::println!("Entered kmain_inner");
-    let (used, size) = heap::get_heap_stats();
-    kernel::println!("Heap stats after stack switch: used={} size={}", used, size);
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color();
+    crate::framebuffer::fill_framebuffer_with_color(0x00_00_FF_00); // Green
 
     crate::init::init_machine();
+
+    #[cfg(feature = "fill-framebuffer")]
+    crate::framebuffer::fill_framebuffer_with_color(0x00_00_00_FF); // Blue
+
     crate::init::init_world_graph();
+
+    #[cfg(feature = "fill-framebuffer")]
+    crate::framebuffer::fill_framebuffer_with_color(0x00_FF_00_00); // Red
+
     crate::init::init_userland_and_enter_scheduler();
 }
 
@@ -143,8 +149,8 @@ fn init_console() -> bool {
 }
 
 #[cfg(feature = "fill-framebuffer")]
-fn fill_framebuffer_with_color() {
-    crate::framebuffer::fill_framebuffer_with_color()
+fn fill_framebuffer_with_color(color: u32) {
+    crate::framebuffer::fill_framebuffer_with_color(color)
 }
 
 #[cfg(feature = "fill-framebuffer")]

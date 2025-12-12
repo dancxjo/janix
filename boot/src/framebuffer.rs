@@ -1,11 +1,9 @@
 #[cfg(feature = "fill-framebuffer")]
-pub fn fill_framebuffer_with_color() {
-    const COLOR: u32 = 0x00_00_FF_00;
-
+pub fn fill_framebuffer_with_color(color: u32) {
     let response = match crate::FRAMEBUFFER_REQUEST.get_response() {
         Some(resp) => resp,
         None => {
-                    kernel::println!("Framebuffer fill skipped: no Limine framebuffer response");
+            kernel::println!("Framebuffer fill skipped: no Limine framebuffer response");
             return;
         }
     };
@@ -61,11 +59,11 @@ pub fn fill_framebuffer_with_color() {
         for y in 0..height {
             for x in 0..width {
                 let pixel = ptr.add(y * stride + x);
-                core::ptr::write_volatile(pixel, COLOR);
+                core::ptr::write_volatile(pixel, color);
             }
         }
     }
-    kernel::println!("Framebuffer filled with solid green temporarily");
+    kernel::println!("Framebuffer filled with color {:#x}", color);
 }
 
 pub fn virtual_framebuffer_address(guest_addr: u64, hhdm_offset: u64) -> Option<u64> {

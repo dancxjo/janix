@@ -277,16 +277,22 @@ fn run_alarm_actualizer(current_ticks: u64) {
             return;
         }
         let id = thing.id;
-        let mut state = None::<String>;
+        let mut armed = false;
+        let mut fired = false;
         let mut target_secs = None::<i64>;
         let mut target_nanos = None::<u32>;
         let mut target_ticks = None::<u64>;
 
         for prop in thing.props.iter().flatten() {
             match prop.0 {
-                "state" => {
-                    if let PropValue::Str(ref s) = prop.1 {
-                        state = Some(s.clone());
+                "armed" => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        armed = v;
+                    }
+                }
+                "fired" => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        fired = v;
                     }
                 }
                 "target_unix_seconds" => {
@@ -308,24 +314,22 @@ fn run_alarm_actualizer(current_ticks: u64) {
             }
         }
 
-        match state.as_deref() {
-            Some("Pending") => {
-                if let (Some(secs), Some(nanos)) = (target_secs, target_nanos) {
-                    let ticks = unix_to_ticks(secs, nanos);
-                    actions.push(AlarmAction::Arm {
-                        id,
-                        target_ticks: ticks,
-                    });
+        if !armed && !fired {
+            // Pending: try to arm it
+            if let (Some(secs), Some(nanos)) = (target_secs, target_nanos) {
+                let ticks = unix_to_ticks(secs, nanos);
+                actions.push(AlarmAction::Arm {
+                    id,
+                    target_ticks: ticks,
+                });
+            }
+        } else if armed {
+            // Armed: check if it should fire
+            if let Some(target) = target_ticks {
+                if current_ticks >= target {
+                    actions.push(AlarmAction::Fire { id });
                 }
             }
-            Some("Armed") => {
-                if let Some(target) = target_ticks {
-                    if current_ticks >= target {
-                        actions.push(AlarmAction::Fire { id });
-                    }
-                }
-            }
-            _ => {}
         }
     });
 

@@ -39,6 +39,10 @@ pub fn create_window<S: Sys>(sys: &mut S, title: &str, mode_index: u8) -> Option
         z_index: 0,
         active: false,
         title: title.to_string(),
+        draggable: true,
+        resizable: true,
+        closable: true,
+        minimizable: true,
     };
 
     let id = create_thing(sys, &window)?;
@@ -66,6 +70,15 @@ pub fn set_window_text<S: Sys>(sys: &mut S, window: WindowHandle, text: &str) {
         window_id: window.id,
         kind: "text".to_string(),
         text: text.to_string(),
+        width: 0,
+        height: 0,
+        stride: 0,
+        format: "Text".to_string(),
+        shared_buffer_id: None,
+        refresh_interval_ns: None,
+        frames_presented: None,
+        last_present_ns: None,
+        power_state: None,
     };
     if let Some(id) = create_thing(sys, &surface) {
         let _ = userland_std::add_link(sys, window.id, graph_kinds::LINK_WINDOW_SURFACE, id);

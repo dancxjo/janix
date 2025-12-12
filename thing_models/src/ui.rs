@@ -154,6 +154,10 @@ pub struct Window {
     pub z_index: i32,
     pub active: bool,
     pub title: String,
+    pub draggable: bool,
+    pub resizable: bool,
+    pub closable: bool,
+    pub minimizable: bool,
 }
 
 impl Thing for Window {
@@ -181,6 +185,10 @@ impl Thing for Window {
             PropValue::Bool(self.active),
         ));
         out.push((graph_kinds::PROP_TITLE, PropValue::Str(self.title.clone())));
+        out.push((graph_kinds::PROP_DRAGGABLE, PropValue::Bool(self.draggable)));
+        out.push((graph_kinds::PROP_RESIZABLE, PropValue::Bool(self.resizable)));
+        out.push((graph_kinds::PROP_CLOSABLE, PropValue::Bool(self.closable)));
+        out.push((graph_kinds::PROP_MINIMIZABLE, PropValue::Bool(self.minimizable)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -192,6 +200,10 @@ impl Thing for Window {
         let mut z_index = 0;
         let mut active = false;
         let mut title = String::new();
+        let mut draggable = true;
+        let mut resizable = true;
+        let mut closable = true;
+        let mut minimizable = true;
 
         for prop in props.iter().flatten() {
             match prop.0 {
@@ -235,6 +247,26 @@ impl Thing for Window {
                         title = v.clone();
                     }
                 }
+                graph_kinds::PROP_DRAGGABLE => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        draggable = v;
+                    }
+                }
+                graph_kinds::PROP_RESIZABLE => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        resizable = v;
+                    }
+                }
+                graph_kinds::PROP_CLOSABLE => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        closable = v;
+                    }
+                }
+                graph_kinds::PROP_MINIMIZABLE => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        minimizable = v;
+                    }
+                }
                 _ => {}
             }
         }
@@ -249,6 +281,10 @@ impl Thing for Window {
             z_index,
             active,
             title,
+            draggable,
+            resizable,
+            closable,
+            minimizable,
         }
     }
 
@@ -262,6 +298,10 @@ impl Thing for Window {
             (graph_kinds::PROP_Z_INDEX, PropType::I64),
             (graph_kinds::PROP_WINDOW_ACTIVE, PropType::Bool),
             (graph_kinds::PROP_TITLE, PropType::Str),
+            (graph_kinds::PROP_DRAGGABLE, PropType::Bool),
+            (graph_kinds::PROP_RESIZABLE, PropType::Bool),
+            (graph_kinds::PROP_CLOSABLE, PropType::Bool),
+            (graph_kinds::PROP_MINIMIZABLE, PropType::Bool),
         ]
     }
 }
@@ -272,6 +312,15 @@ pub struct Surface {
     pub window_id: ThingId,
     pub kind: String,
     pub text: String,
+    pub width: u64,
+    pub height: u64,
+    pub stride: u64,
+    pub format: String,
+    pub shared_buffer_id: Option<ThingId>,
+    pub refresh_interval_ns: Option<u64>,
+    pub frames_presented: Option<u64>,
+    pub last_present_ns: Option<u64>,
+    pub power_state: Option<String>,
 }
 
 impl Thing for Surface {
@@ -291,12 +340,40 @@ impl Thing for Surface {
             graph_kinds::PROP_SURFACE_TEXT,
             PropValue::Str(self.text.clone()),
         ));
+        out.push((graph_kinds::PROP_WIDTH, PropValue::U64(self.width)));
+        out.push((graph_kinds::PROP_HEIGHT, PropValue::U64(self.height)));
+        out.push((graph_kinds::PROP_STRIDE, PropValue::U64(self.stride)));
+        out.push((graph_kinds::PROP_PIXEL_FORMAT, PropValue::Str(self.format.clone())));
+        if let Some(sb) = self.shared_buffer_id {
+            out.push((graph_kinds::PROP_SHARED_BUFFER_ID, PropValue::U64(sb.0)));
+        }
+        if let Some(interval) = self.refresh_interval_ns {
+            out.push((graph_kinds::PROP_REFRESH_INTERVAL_NS, PropValue::U64(interval)));
+        }
+        if let Some(frames) = self.frames_presented {
+            out.push((graph_kinds::PROP_FRAMES_PRESENTED, PropValue::U64(frames)));
+        }
+        if let Some(last) = self.last_present_ns {
+            out.push((graph_kinds::PROP_LAST_PRESENT_NS, PropValue::U64(last)));
+        }
+        if let Some(power) = &self.power_state {
+            out.push((graph_kinds::PROP_POWER_STATE, PropValue::Str(power.clone())));
+        }
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
         let mut window_id = ThingId(0);
         let mut kind = String::from("text");
         let mut text = String::new();
+        let mut width = 0;
+        let mut height = 0;
+        let mut stride = 0;
+        let mut format = String::new();
+        let mut shared_buffer_id = None;
+        let mut refresh_interval_ns = None;
+        let mut frames_presented = None;
+        let mut last_present_ns = None;
+        let mut power_state = None;
 
         for prop in props.iter().flatten() {
             match prop.0 {
@@ -310,9 +387,56 @@ impl Thing for Surface {
                         kind = v.clone();
                     }
                 }
+
+
                 graph_kinds::PROP_SURFACE_TEXT => {
                     if let PropValue::Str(ref v) = prop.1 {
                         text = v.clone();
+                    }
+                }
+                graph_kinds::PROP_WIDTH => {
+                    if let PropValue::U64(v) = prop.1 {
+                        width = v;
+                    }
+                }
+                graph_kinds::PROP_HEIGHT => {
+                    if let PropValue::U64(v) = prop.1 {
+                        height = v;
+                    }
+                }
+                graph_kinds::PROP_STRIDE => {
+                    if let PropValue::U64(v) = prop.1 {
+                        stride = v;
+                    }
+                }
+                graph_kinds::PROP_PIXEL_FORMAT => {
+                    if let PropValue::Str(ref v) = prop.1 {
+                        format = v.clone();
+                    }
+                }
+                graph_kinds::PROP_SHARED_BUFFER_ID => {
+                    if let PropValue::U64(v) = prop.1 {
+                        shared_buffer_id = Some(ThingId(v));
+                    }
+                }
+                graph_kinds::PROP_REFRESH_INTERVAL_NS => {
+                    if let PropValue::U64(v) = prop.1 {
+                        refresh_interval_ns = Some(v);
+                    }
+                }
+                graph_kinds::PROP_FRAMES_PRESENTED => {
+                    if let PropValue::U64(v) = prop.1 {
+                        frames_presented = Some(v);
+                    }
+                }
+                graph_kinds::PROP_LAST_PRESENT_NS => {
+                    if let PropValue::U64(v) = prop.1 {
+                        last_present_ns = Some(v);
+                    }
+                }
+                graph_kinds::PROP_POWER_STATE => {
+                    if let PropValue::Str(ref v) = prop.1 {
+                        power_state = Some(v.clone());
                     }
                 }
                 _ => {}
@@ -324,6 +448,15 @@ impl Thing for Surface {
             window_id,
             kind,
             text,
+            width,
+            height,
+            stride,
+            format,
+            shared_buffer_id,
+            refresh_interval_ns,
+            frames_presented,
+            last_present_ns,
+            power_state,
         }
     }
 
@@ -332,6 +465,15 @@ impl Thing for Surface {
             (graph_kinds::PROP_WINDOW_ID, PropType::U64),
             (graph_kinds::PROP_SURFACE_KIND, PropType::Str),
             (graph_kinds::PROP_SURFACE_TEXT, PropType::Str),
+            (graph_kinds::PROP_WIDTH, PropType::U64),
+            (graph_kinds::PROP_HEIGHT, PropType::U64),
+            (graph_kinds::PROP_STRIDE, PropType::U64),
+            (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
+            (graph_kinds::PROP_SHARED_BUFFER_ID, PropType::U64),
+            (graph_kinds::PROP_REFRESH_INTERVAL_NS, PropType::U64),
+            (graph_kinds::PROP_FRAMES_PRESENTED, PropType::U64),
+            (graph_kinds::PROP_LAST_PRESENT_NS, PropType::U64),
+            (graph_kinds::PROP_POWER_STATE, PropType::Str),
         ]
     }
 }
@@ -384,6 +526,149 @@ impl Thing for ModeSwitchEvent {
         &[
             (graph_kinds::PROP_MODE_INDEX, PropType::U64),
             (graph_kinds::PROP_TIMESTAMP, PropType::U64),
+        ]
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct View {
+    pub id: ThingId,
+    pub parent_id: Option<ThingId>,
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
+    pub visible: bool,
+    pub text: Option<String>,
+    pub font: Option<String>,
+    pub font_size: u64,
+    pub fg_color: u32,
+    pub bg_color: u32,
+}
+
+impl Thing for View {
+    const KIND: &'static str = graph_kinds::KIND_VIEW;
+    const DESCRIPTION: &'static str = "A generic view component (text, shape, etc)";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        if let Some(pid) = self.parent_id {
+            out.push((graph_kinds::PROP_WINDOW_ID, PropValue::U64(pid.0)));
+        } 
+        out.push((graph_kinds::PROP_WINDOW_X, PropValue::I64(self.x))); 
+        out.push((graph_kinds::PROP_WINDOW_Y, PropValue::I64(self.y)));
+        out.push((graph_kinds::PROP_WIDTH, PropValue::U64(self.width as u64)));
+        out.push((graph_kinds::PROP_HEIGHT, PropValue::U64(self.height as u64)));
+        out.push((graph_kinds::PROP_VISIBLE, PropValue::Bool(self.visible)));
+        if let Some(text) = &self.text {
+            out.push((graph_kinds::PROP_TEXT, PropValue::Str(text.clone())));
+        }
+        if let Some(font) = &self.font {
+            out.push((graph_kinds::PROP_FONT_NAME, PropValue::Str(font.clone())));
+        }
+        out.push((graph_kinds::PROP_FONT_SIZE, PropValue::U64(self.font_size)));
+        out.push((graph_kinds::PROP_FG_COLOR, PropValue::U64(self.fg_color as u64)));
+        out.push((graph_kinds::PROP_BG_COLOR, PropValue::U64(self.bg_color as u64)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut parent_id = None;
+        let mut x = 0;
+        let mut y = 0;
+        let mut width = 0;
+        let mut height = 0;
+        let mut visible = true;
+        let mut text = None;
+        let mut font = None;
+        let mut font_size = 12;
+        let mut fg_color = 0xFFFFFFFF;
+        let mut bg_color = 0x00000000;
+
+        for prop in props.iter().flatten() {
+            match prop.0 {
+                graph_kinds::PROP_WINDOW_ID => if let PropValue::U64(v) = prop.1 { parent_id = Some(ThingId(v)); },
+                graph_kinds::PROP_WINDOW_X => if let PropValue::I64(v) = prop.1 { x = v; },
+                graph_kinds::PROP_WINDOW_Y => if let PropValue::I64(v) = prop.1 { y = v; },
+                graph_kinds::PROP_WIDTH => if let PropValue::U64(v) = prop.1 { width = v as i64; },
+                graph_kinds::PROP_HEIGHT => if let PropValue::U64(v) = prop.1 { height = v as i64; },
+                graph_kinds::PROP_VISIBLE => if let PropValue::Bool(v) = prop.1 { visible = v; },
+                graph_kinds::PROP_TEXT => if let PropValue::Str(v) = &prop.1 { text = Some(v.clone()); },
+                graph_kinds::PROP_FONT_NAME => if let PropValue::Str(v) = &prop.1 { font = Some(v.clone()); },
+                graph_kinds::PROP_FONT_SIZE => if let PropValue::U64(v) = prop.1 { font_size = v; },
+                graph_kinds::PROP_FG_COLOR => if let PropValue::U64(v) = prop.1 { fg_color = v as u32; },
+                graph_kinds::PROP_BG_COLOR => if let PropValue::U64(v) = prop.1 { bg_color = v as u32; },
+                _ => {}
+            }
+        }
+
+        View {
+            id, parent_id, x, y, width, height, visible, text, font, font_size, fg_color, bg_color,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            (graph_kinds::PROP_WINDOW_ID, PropType::U64),
+            (graph_kinds::PROP_WINDOW_X, PropType::I64),
+            (graph_kinds::PROP_WINDOW_Y, PropType::I64),
+            (graph_kinds::PROP_WIDTH, PropType::U64),
+            (graph_kinds::PROP_HEIGHT, PropType::U64),
+            (graph_kinds::PROP_VISIBLE, PropType::Bool),
+            (graph_kinds::PROP_TEXT, PropType::Str),
+            (graph_kinds::PROP_FONT_NAME, PropType::Str),
+            (graph_kinds::PROP_FONT_SIZE, PropType::U64),
+            (graph_kinds::PROP_FG_COLOR, PropType::U64),
+            (graph_kinds::PROP_BG_COLOR, PropType::U64),
+        ]
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Cursor {
+    pub id: ThingId,
+    pub x: i64,
+    pub y: i64,
+    pub shape: String,
+    pub visible: bool,
+}
+
+impl Thing for Cursor {
+    const KIND: &'static str = graph_kinds::KIND_CURSOR;
+    const DESCRIPTION: &'static str = "System pointer/cursor state";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push((graph_kinds::PROP_WINDOW_X, PropValue::I64(self.x)));
+        out.push((graph_kinds::PROP_WINDOW_Y, PropValue::I64(self.y)));
+        out.push((graph_kinds::PROP_CURSOR_SHAPE, PropValue::Str(self.shape.clone())));
+        out.push((graph_kinds::PROP_VISIBLE, PropValue::Bool(self.visible)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut x = 0;
+        let mut y = 0;
+        let mut shape = String::from("arrow");
+        let mut visible = true;
+
+        for prop in props.iter().flatten() {
+            match prop.0 {
+                graph_kinds::PROP_WINDOW_X => if let PropValue::I64(v) = prop.1 { x = v; },
+                graph_kinds::PROP_WINDOW_Y => if let PropValue::I64(v) = prop.1 { y = v; },
+                graph_kinds::PROP_CURSOR_SHAPE => if let PropValue::Str(v) = &prop.1 { shape = v.clone(); },
+                graph_kinds::PROP_VISIBLE => if let PropValue::Bool(v) = prop.1 { visible = v; },
+                _ => {}
+            }
+        }
+
+        Cursor {
+            id, x, y, shape, visible,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            (graph_kinds::PROP_WINDOW_X, PropType::I64),
+            (graph_kinds::PROP_WINDOW_Y, PropType::I64),
+            (graph_kinds::PROP_CURSOR_SHAPE, PropType::Str),
+            (graph_kinds::PROP_VISIBLE, PropType::Bool),
         ]
     }
 }

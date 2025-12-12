@@ -29,7 +29,7 @@ pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
 pub use thing_models::{
     AlarmEvent, AlarmRequest, DisplayPresentRequest, MODE_INDEX_CONSOLE, Mode, ModeSwitchEvent,
-    Place, RawModule, Surface, TimeSource, Window,
+    Place, RawModule, Surface, TimeSource, Window, View, Cursor,
 };
 
 #[cfg(not(target_os = "none"))]
@@ -1012,5 +1012,19 @@ pub fn swap_display_buffers<S: Sys>(sys: &mut S, display_id: ThingId) -> Option<
         Some(next)
     } else {
         None
+    }
+}
+
+pub fn get_thing<S: Sys>(sys: &mut S, id: ThingId) -> Option<(String, Vec<(String, PropValue)>)> {
+    match sys.syscall(KernelRequest::ThingGet { id }) {
+        KernelResponse::ThingData { kind, props, .. } => {
+            let props_vec = props
+                .iter()
+                .flatten()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect();
+            Some((kind.to_string(), props_vec))
+        }
+        _ => None,
     }
 }

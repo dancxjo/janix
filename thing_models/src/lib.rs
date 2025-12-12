@@ -561,12 +561,15 @@ impl TimeSource {
 
 pub struct AlarmRequest {
     pub id: ThingId,
+    pub time_source_id: Option<ThingId>,
     pub target_unix_seconds: i64,
     pub target_unix_nanos: u32,
+    pub target_ticks: Option<u64>,
+    pub period_ticks: Option<u64>,
     pub owner_process: ThingId,
     pub owner_thread: ThingId,
-    pub state: String,
-    pub target_ticks: Option<u64>,
+    pub armed: bool,
+    pub fired: bool,
 }
 
 impl Thing for AlarmRequest {
@@ -575,6 +578,9 @@ impl Thing for AlarmRequest {
         "User-requested alarm mapped to kernel tick space and lifecycle state.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        if let Some(ts_id) = self.time_source_id {
+            out.push(("time_source_id", PropValue::U64(ts_id.0)));
+        }
         out.push((
             "target_unix_seconds",
             PropValue::I64(self.target_unix_seconds),
@@ -583,24 +589,36 @@ impl Thing for AlarmRequest {
             "target_unix_nanos",
             PropValue::U64(self.target_unix_nanos as u64),
         ));
-        out.push(("owner_process", PropValue::U64(self.owner_process.0)));
-        out.push(("owner_thread", PropValue::U64(self.owner_thread.0)));
-        out.push(("state", PropValue::Str(self.state.clone())));
         if let Some(ticks) = self.target_ticks {
             out.push(("target_ticks", PropValue::U64(ticks)));
         }
+        if let Some(period) = self.period_ticks {
+            out.push(("period_ticks", PropValue::U64(period)));
+        }
+        out.push(("owner_process", PropValue::U64(self.owner_process.0)));
+        out.push(("owner_thread", PropValue::U64(self.owner_thread.0)));
+        out.push(("armed", PropValue::Bool(self.armed)));
+        out.push(("fired", PropValue::Bool(self.fired)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut time_source_id = None;
         let mut target_unix_seconds = 0_i64;
         let mut target_unix_nanos = 0_u32;
+        let mut target_ticks = None;
+        let mut period_ticks = None;
         let mut owner_process = ThingId(0);
         let mut owner_thread = ThingId(0);
-        let mut state = String::new();
-        let mut target_ticks = None;
+        let mut armed = false;
+        let mut fired = false;
 
         for prop in props.iter().flatten() {
             match prop.0 {
+                "time_source_id" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        time_source_id = Some(ThingId(v));
+                    }
+                }
                 "target_unix_seconds" => {
                     if let PropValue::I64(v) = prop.1 {
                         target_unix_seconds = v;
@@ -609,6 +627,16 @@ impl Thing for AlarmRequest {
                 "target_unix_nanos" => {
                     if let PropValue::U64(v) = prop.1 {
                         target_unix_nanos = v as u32;
+                    }
+                }
+                "target_ticks" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        target_ticks = Some(v);
+                    }
+                }
+                "period_ticks" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        period_ticks = Some(v);
                     }
                 }
                 "owner_process" => {
@@ -621,14 +649,14 @@ impl Thing for AlarmRequest {
                         owner_thread = ThingId(v);
                     }
                 }
-                "state" => {
-                    if let PropValue::Str(ref v) = prop.1 {
-                        state = v.clone();
+                "armed" => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        armed = v;
                     }
                 }
-                "target_ticks" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        target_ticks = Some(v);
+                "fired" => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        fired = v;
                     }
                 }
                 _ => {}
@@ -637,23 +665,29 @@ impl Thing for AlarmRequest {
 
         AlarmRequest {
             id,
+            time_source_id,
             target_unix_seconds,
             target_unix_nanos,
+            target_ticks,
+            period_ticks,
             owner_process,
             owner_thread,
-            state,
-            target_ticks,
+            armed,
+            fired,
         }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
         &[
+            ("time_source_id", PropType::U64),
             ("target_unix_seconds", PropType::I64),
             ("target_unix_nanos", PropType::U64),
+            ("target_ticks", PropType::U64),
+            ("period_ticks", PropType::U64),
             ("owner_process", PropType::U64),
             ("owner_thread", PropType::U64),
-            ("state", PropType::Str),
-            ("target_ticks", PropType::U64),
+            ("armed", PropType::Bool),
+            ("fired", PropType::Bool),
         ]
     }
 }
@@ -769,7 +803,7 @@ impl AlarmRequest {
         target_unix_nanos: u32,
         owner_process: ThingId,
         owner_thread: ThingId,
-    ) -> [(PropKey, PropValue); 5] {
+    ) -> [(PropKey, PropValue); 6] {
         [
             ("target_unix_seconds", PropValue::I64(target_unix_seconds)),
             (
@@ -778,23 +812,30 @@ impl AlarmRequest {
             ),
             ("owner_process", PropValue::U64(owner_process.0)),
             ("owner_thread", PropValue::U64(owner_thread.0)),
-            ("state", PropValue::Str(String::from("Pending"))),
+            ("armed", PropValue::Bool(false)),
+            ("fired", PropValue::Bool(false)),
         ]
     }
 
     pub fn arm_props(target_ticks: u64) -> [(PropKey, PropValue); 2] {
         [
-            ("state", PropValue::Str(String::from("Armed"))),
+            ("armed", PropValue::Bool(true)),
             ("target_ticks", PropValue::U64(target_ticks)),
         ]
     }
 
-    pub fn fired_props() -> [(PropKey, PropValue); 1] {
-        [("state", PropValue::Str(String::from("Fired")))]
+    pub fn fired_props() -> [(PropKey, PropValue); 2] {
+        [
+            ("armed", PropValue::Bool(false)),
+            ("fired", PropValue::Bool(true)),
+        ]
     }
 
-    pub fn cancel_props() -> [(PropKey, PropValue); 1] {
-        [("state", PropValue::Str(String::from("Cancelled")))]
+    pub fn cancel_props() -> [(PropKey, PropValue); 2] {
+        [
+            ("armed", PropValue::Bool(false)),
+            ("fired", PropValue::Bool(false)),
+        ]
     }
 }
 

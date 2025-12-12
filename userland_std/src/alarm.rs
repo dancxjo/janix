@@ -39,12 +39,15 @@ impl Alarm {
     ) -> Option<Self> {
         let pending = AlarmRequest {
             id: ThingId(0),
+            time_source_id: None,
             target_unix_seconds,
             target_unix_nanos,
+            target_ticks: None,
+            period_ticks: None,
             owner_process: ThingId(0),
             owner_thread: ThingId(0),
-            state: String::from("Pending"),
-            target_ticks: None,
+            armed: false,
+            fired: false,
         };
         let id = create_thing(sys, &pending)?;
         Some(Alarm { id })
@@ -59,7 +62,7 @@ impl Alarm {
     /// use thing_models::AlarmRequest;
     /// use userland_std::{alarm::Alarm, doc_helpers::DocSys, Thing};
     ///
-    /// let props = DocSys::props_slice(vec![("state", PropValue::Str("Fired".into()))]);
+    /// let props = DocSys::props_slice(vec![("fired", PropValue::Bool(true))]);
     /// let mut sys = DocSys::with_responses(vec![KernelResponse::ThingData {
     ///     id: ThingId(3),
     ///     kind: AlarmRequest::KIND,
@@ -69,7 +72,15 @@ impl Alarm {
     /// assert_eq!(alarm.state(&mut sys), Some("Fired".to_string()));
     /// ```
     pub fn state<S: Sys>(&self, sys: &mut S) -> Option<String> {
-        load_thing::<AlarmRequest>(sys, self.id).map(|req| req.state)
+        load_thing::<AlarmRequest>(sys, self.id).map(|req| {
+            if req.fired {
+                String::from("Fired")
+            } else if req.armed {
+                String::from("Armed")
+            } else {
+                String::from("Pending")
+            }
+        })
     }
 }
 

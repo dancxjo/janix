@@ -32,6 +32,8 @@ pub const KIND_MODE_SWITCH_EVENT: &str = "ModeSwitchEvent";
 pub const KIND_PLACE: &str = "Place";
 pub const KIND_WINDOW: &str = "Window";
 pub const KIND_SURFACE: &str = "Surface";
+pub const KIND_VIEW: &str = "View";
+pub const KIND_CURSOR: &str = "Cursor";
 pub const KIND_LINK: &str = "LNK";
 
 pub const KIND_USB_CONTROLLER: &str = "UsbController";
@@ -119,9 +121,21 @@ pub const PROP_MODULE_INDEX: &str = "module_index";
 pub const PROP_BASE_PHYS: &str = "base_phys";
 pub const PROP_SIZE: &str = "size";
 pub const PROP_DISPLAY_ACTIVE_BUFFER_INDEX: &str = "active_buffer_index";
+pub const PROP_DRAGGABLE: &str = "draggable";
+pub const PROP_RESIZABLE: &str = "resizable";
+pub const PROP_CLOSABLE: &str = "closable";
+pub const PROP_MINIMIZABLE: &str = "minimizable";
+pub const PROP_SHARED_BUFFER_ID: &str = "shared_buffer_id";
 pub const PROP_FONT_NAME: &str = "font_name";
 pub const PROP_RAW_KIND: &str = "raw_kind";
 
 pub const PROP_LINK_SRC: &str = "link_src";
 pub const PROP_LINK_DST: &str = "link_dst";
 pub const PROP_LINK_PRED: &str = "link_pred";
+
+pub const PROP_VISIBLE: &str = "visible";
+pub const PROP_TEXT: &str = "text";
+pub const PROP_FONT_SIZE: &str = "font_size";
+pub const PROP_FG_COLOR: &str = "fg_color";
+pub const PROP_BG_COLOR: &str = "bg_color";
+pub const PROP_CURSOR_SHAPE: &str = "cursor_shape";

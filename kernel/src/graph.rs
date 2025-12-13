@@ -174,10 +174,11 @@ type KindIndex = BTreeMap<ThingId, Vec<ThingId>>;
 static mut KIND_INDEX: Option<KindIndex> = None;
 
 // Hot Property Index
+// Use `'static str` for property *keys* to avoid heap-allocating keys repeatedly.
 struct PropertyIndex {
-    by_string: BTreeMap<String, BTreeMap<String, Vec<ThingId>>>, // Key -> Value -> Things
-    by_int: BTreeMap<String, BTreeMap<i64, Vec<ThingId>>>,       // Key -> Value -> Things
-    by_bool: BTreeMap<String, BTreeMap<bool, Vec<ThingId>>>,     // Key -> Value -> Things
+    by_string: BTreeMap<&'static str, BTreeMap<String, Vec<ThingId>>>, // Key -> Value -> Things
+    by_int: BTreeMap<&'static str, BTreeMap<i64, Vec<ThingId>>>,       // Key -> Value -> Things
+    by_bool: BTreeMap<&'static str, BTreeMap<bool, Vec<ThingId>>>,     // Key -> Value -> Things
 }
 
 impl PropertyIndex {
@@ -1493,7 +1494,7 @@ fn remove_from_kind_index(id: ThingId, kind_id: ThingId) {
     }
 }
 
-fn add_to_prop_index(id: ThingId, key: &str, value: &PropValue) {
+fn add_to_prop_index(id: ThingId, key: PropKey, value: &PropValue) {
     unsafe {
         let index_ptr = &raw mut PROPERTY_INDEX;
         let index = (*index_ptr).get_or_insert_with(PropertyIndex::new);
@@ -1502,7 +1503,7 @@ fn add_to_prop_index(id: ThingId, key: &str, value: &PropValue) {
             PropValue::Str(s) => {
                 index
                     .by_string
-                    .entry(String::from(key))
+                    .entry(key)
                     .or_default()
                     .entry(s.clone())
                     .or_default()
@@ -1511,7 +1512,7 @@ fn add_to_prop_index(id: ThingId, key: &str, value: &PropValue) {
             PropValue::I64(v) => {
                 index
                     .by_int
-                    .entry(String::from(key))
+                    .entry(key)
                     .or_default()
                     .entry(*v)
                     .or_default()
@@ -1520,7 +1521,7 @@ fn add_to_prop_index(id: ThingId, key: &str, value: &PropValue) {
             PropValue::Bool(v) => {
                 index
                     .by_bool
-                    .entry(String::from(key))
+                    .entry(key)
                     .or_default()
                     .entry(*v)
                     .or_default()
@@ -1531,7 +1532,7 @@ fn add_to_prop_index(id: ThingId, key: &str, value: &PropValue) {
     }
 }
 
-fn remove_from_prop_index(id: ThingId, key: &str, value: &PropValue) {
+fn remove_from_prop_index(id: ThingId, key: PropKey, value: &PropValue) {
     unsafe {
         let index_ptr = &raw mut PROPERTY_INDEX;
         if let Some(index) = (*index_ptr).as_mut() {

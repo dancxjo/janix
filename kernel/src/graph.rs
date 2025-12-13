@@ -684,6 +684,7 @@ pub fn next_thing_of_kind(kind: &'static str, start_after: ThingId) -> Option<Th
 }
 
 fn dispatch_event(event: &GraphEvent) {
+    #[cfg(feature = "journal")]
     journal::push(event.clone());
     unsafe {
         match event {

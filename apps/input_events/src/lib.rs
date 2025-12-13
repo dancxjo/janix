@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use thing_models::{InputCharEvent, KeyScanEvent, MousePacketEvent};
-use userland::prelude::*;
+use thing_os::prelude::*;
 
 const POLL_NS: u64 = 10_000_000; // 10ms
 

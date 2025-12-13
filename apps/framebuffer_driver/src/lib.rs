@@ -5,9 +5,9 @@ extern crate alloc;
 use abi::{Predicate, MapFlags, PixelFormat, SharedBufferInfo, ThingId};
 use alloc::string::String;
 use core::ptr;
-use userland::prelude::*;
-use userland_std::thing_models::DisplayPresentRequest;
-use userland_std::{
+use thing_os::prelude::*;
+use thing_os::thing_models::DisplayPresentRequest;
+use thing_os::{
     DisplayThing, SysError, add_link, link_targets, load_thing, shared_buffer_info,
     shared_buffer_map,
 };
@@ -296,7 +296,7 @@ mod tests {
     use super::*;
     use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
     use alloc::vec::Vec;
-    use userland_std::{DisplayPresentRequest, doc_helpers::DocSys};
+    use thing_os::{DisplayPresentRequest, doc_helpers::DocSys};
 
     fn thing_props<T: Thing>(thing: &T) -> &'static [Option<(PropKey, PropValue)>] {
         let mut props = Vec::new();
@@ -395,7 +395,7 @@ struct SharedBufferView {
 }
 
 fn primary_display_descriptor<S: Sys>(sys: &mut S) -> Result<DisplayDescriptor, SysError> {
-    use userland_std::DisplayThing;
+    use thing_os::DisplayThing;
 
     let displays: Vec<DisplayThing> = list_things_by_kind(sys);
     let display = displays
@@ -407,7 +407,7 @@ fn primary_display_descriptor<S: Sys>(sys: &mut S) -> Result<DisplayDescriptor, 
 
     let mut targets = link_targets(sys, display.id, abi::graph_kinds::LINK_DISPLAY_SCANOUT);
     let buffer_id = targets.pop().ok_or(SysError::Unexpected)?;
-    let info = userland_std::shared_buffer_info(sys, buffer_id)?;
+    let info = thing_os::shared_buffer_info(sys, buffer_id)?;
 
     Ok(DisplayDescriptor {
         display_id: display.id,

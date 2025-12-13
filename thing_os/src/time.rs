@@ -12,7 +12,7 @@ impl Duration {
     /// # Examples
     ///
     /// ```
-    /// use userland_std::time::Duration;
+    /// use thing_os::time::Duration;
     ///
     /// assert_eq!(Duration::from_secs(2).as_nanos(), 2_000_000_000);
     /// ```
@@ -49,7 +49,7 @@ impl Instant {
     /// use std::cell::RefCell;
     /// use abi::{KernelRequest, KernelResponse};
     /// use runtime::Sys;
-    /// use userland_std::time::{Duration, Instant};
+    /// use thing_os::time::{Duration, Instant};
     ///
     /// struct ClockSys(RefCell<u64>);
     ///
@@ -125,7 +125,7 @@ impl SystemTime {
     /// ```
     /// use abi::{KernelRequest, KernelResponse};
     /// use runtime::Sys;
-    /// use userland_std::time::SystemTime;
+    /// use thing_os::time::SystemTime;
     ///
     /// struct TimeSys(u64);
     ///
@@ -175,7 +175,7 @@ impl SystemTime {
 /// use std::cell::RefCell;
 /// use abi::{KernelRequest, KernelResponse};
 /// use runtime::Sys;
-/// use userland_std::time::{sleep, Duration};
+/// use thing_os::time::{sleep, Duration};
 ///
 /// struct SleepSys {
 ///     slept: RefCell<Vec<u64>>,

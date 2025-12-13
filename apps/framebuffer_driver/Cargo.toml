@@ -11,7 +11,7 @@ path = "src/lib.rs"
 userland = { path = "../../userland" }
 runtime = { path = "../../runtime" }
 abi = { path = "../../abi" }
-userland_std = { path = "../../userland_std" }
+thing_os = { path = "../../thing_os" }
 
 [dev-dependencies]
 kernel = { path = "../../kernel" }

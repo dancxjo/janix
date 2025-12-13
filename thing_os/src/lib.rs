@@ -24,6 +24,12 @@ pub mod batch;
 pub mod clock;
 pub mod demo_shared;
 pub mod time;
+pub mod userland;
+/// Convenience prelude: re-export the former `userland::prelude` at
+/// `thing_os::prelude` so callers can `use thing_os::prelude::*`.
+pub mod prelude {
+    pub use crate::userland::prelude::*;
+}
 
 pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
@@ -536,7 +542,7 @@ pub fn println(sys: &impl Sys, message: &'static str) {
 ///
 /// ```
 /// use abi::{KernelResponse, NodeId};
-/// use userland_std::{doc_helpers::DocSys, graph_query};
+/// use thing_os::{doc_helpers::DocSys, graph_query};
 ///
 /// let sys = DocSys::with_responses(vec![KernelResponse::NodeData {
 ///     node_id: NodeId(3),
@@ -561,7 +567,7 @@ pub fn graph_query(sys: &impl Sys, node_id: NodeId) -> Option<u64> {
 ///
 /// ```
 /// use abi::{KernelResponse, TransactionId};
-/// use userland_std::{create_transaction, doc_helpers::DocSys};
+/// use thing_os::{create_transaction, doc_helpers::DocSys};
 ///
 /// let sys = DocSys::with_responses(vec![KernelResponse::TransactionCreated {
 ///     tx_id: TransactionId(42),
@@ -613,7 +619,7 @@ pub fn user_update_thing(
 pub use abi::Thing;
 // Re-export commonly used ABI types for userland consumers
 pub use abi::{Predicate, PropKey, PropType, PropValue, ThingId};
-// Re-export graph kinds module so consumers can access it as `userland_std::graph_kinds`
+// Re-export graph kinds module so consumers can access it as `thing_os::graph_kinds`
 pub use abi::graph_kinds;
 
 /// Create a `Thing` value and register it with the kernel.
@@ -622,7 +628,7 @@ pub use abi::graph_kinds;
 ///
 /// ```
 /// use abi::{KernelResponse, PropValue, ThingId};
-/// use userland_std::{create_thing, doc_helpers::{DocSys, DummyThing}, Thing};
+/// use thing_os::{create_thing, doc_helpers::{DocSys, DummyThing}, Thing};
 ///
 /// let sys = DocSys::with_responses(vec![KernelResponse::ThingCreated {
 ///     id: ThingId(1),
@@ -651,7 +657,7 @@ pub fn create_thing<T: Thing>(sys: &impl Sys, thing: &T) -> Option<ThingId> {
 ///
 /// ```
 /// use abi::{KernelResponse, PropValue, ThingId};
-/// use userland_std::{doc_helpers::{DocSys, DummyThing}, load_thing, Thing};
+/// use thing_os::{doc_helpers::{DocSys, DummyThing}, load_thing, Thing};
 ///
 /// let props = DocSys::props_slice(vec![("flag", PropValue::Bool(true))]);
 /// let sys = DocSys::with_responses(vec![KernelResponse::ThingData {

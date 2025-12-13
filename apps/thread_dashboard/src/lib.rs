@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-use userland::prelude::*;
+use thing_os::prelude::*;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "thread_dashboard: run() reached");
@@ -58,7 +58,7 @@ mod tests {
     };
     use core::cell::RefCell;
     use runtime::Sys;
-    use userland_std::{ThreadThing, doc_helpers::DocSys};
+    use thing_os::{ThreadThing, doc_helpers::DocSys};
 
     fn thread(id: u64, tid: u64, state: &str) -> ThreadThing {
         ThreadThing {

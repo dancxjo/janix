@@ -26,7 +26,7 @@ This repository currently provides a minimal working skeleton of that system: a 
   * `kernel` holds pure no_std kernel logic
   * `abi` defines shared types
   * `runtime` exposes a syscall-like trait
-  * `userland_std` gives friendly, std-like APIs to userland programs
+  * `thing_os` gives friendly, std-like APIs to userland programs
 
 * **Comfortable userland experience**
   User programs should feel “normallish”—like writing small Rust CLI apps—while still interacting with the kernel via the ABI.
@@ -59,7 +59,7 @@ thing-os/
 ├── runtime/        # no_std runtime / syscall interface
 │   └── lib.rs          # Sys trait + KernelSys implementation
 │
-├── userland_std/       # std-like userland library (std)
+├── thing_os/       # std-like userland library (std)
 │   └── lib.rs          # println(), graph_query(), transaction helpers
 │
 └── apps/               # User applications compiled to ELF modules
@@ -170,11 +170,11 @@ This ABI will evolve into a richer transactional graph interface.
 
 `runtime` defines a `Sys` trait that abstracts the syscall interface. On native kernels it exposes `KernelSys`, which forwards to `kernel`.
 
-`userland_std` provides friendly wrapper functions so programs can write:
+`thing_os` provides friendly wrapper functions so programs can write:
 
 ```rust
-userland_std::println("Hello!");
-let value = userland_std::graph_query(NodeId(3));
+thing_os::println("Hello!");
+let value = thing_os::graph_query(NodeId(3));
 ```
 
 ---
@@ -183,7 +183,7 @@ let value = userland_std::graph_query(NodeId(3));
 
 ThingOS currently **boots successfully via Limine**, initializes a minimal kernel core, writes some pixels to the framebuffer, and logs messages into a kernel-side circular buffer.
 
-Userland applications run through the kernel's syscall ABI with the `userland_std` helpers, matching the native execution path.
+Userland applications run through the kernel's syscall ABI with the `thing_os` helpers, matching the native execution path.
 
 Next steps include:
 

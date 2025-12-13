@@ -2,11 +2,11 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use abi::{KernelRequest, KernelResponse, PropKey, PropValue, ThingId};
+use runtime::Sys;
+use thing_os::graph_kinds as gk;
 use userland::ui::{
     WindowHandle, append_window_text, create_window, ensure_ui_schemas, set_window_text,
 };
-use runtime::Sys;
-use userland_std::graph_kinds as gk;
 
 #[derive(Default)]
 struct MockSys {

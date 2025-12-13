@@ -1,6 +1,6 @@
-use userland::prelude::*;
-use userland_std::MODE_INDEX_CONSOLE;
-use userland_std::thing_models::{DisplayPresentRequest, MousePacketEvent};
+use thing_os::prelude::*;
+use thing_os::MODE_INDEX_CONSOLE;
+use thing_os::thing_models::{DisplayPresentRequest, MousePacketEvent};
 
 use crate::config::FRAME_INTERVAL_NS;
 use crate::graph::{
@@ -15,7 +15,7 @@ use crate::render::{build_display_list, render_display_list};
 use abi::MapFlags;
 use alloc::boxed::Box;
 use alloc::format;
-use userland_std::{RawModule, shared_buffer_map};
+use thing_os::{RawModule, shared_buffer_map};
 
 fn load_background_image<S: Sys>(sys: &mut S) -> Option<BackgroundImage> {
     let modules = list_things_by_kind::<S, RawModule>(sys);

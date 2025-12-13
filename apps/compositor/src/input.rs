@@ -1,5 +1,5 @@
-use userland::prelude::*;
-use userland_std::thing_models::MousePacketEvent;
+use thing_os::prelude::*;
+use thing_os::thing_models::MousePacketEvent;
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TITLE_BAR_HEIGHT};
 use crate::graph;
@@ -112,11 +112,11 @@ impl Compositor {
         drag.last_sent_y = clamped_y;
         let updates = [
             (
-                userland_std::graph_kinds::PROP_WINDOW_X,
+                thing_os::graph_kinds::PROP_WINDOW_X,
                 PropValue::I64(clamped_x as i64),
             ),
             (
-                userland_std::graph_kinds::PROP_WINDOW_Y,
+                thing_os::graph_kinds::PROP_WINDOW_Y,
                 PropValue::I64(clamped_y as i64),
             ),
         ];

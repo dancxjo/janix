@@ -6,8 +6,8 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use userland::prelude::*;
-use userland_std::{Surface, Window};
+use thing_os::prelude::*;
+use thing_os::{Surface, Window};
 
 use crate::config::{
     CLEAR_COLOR, CONTENT_BG, FRAME_THICKNESS, TEXT_COLOR, TITLE_BAR_HEIGHT, TITLE_COLOR_ACTIVE,
@@ -291,7 +291,7 @@ mod tests {
     use crate::test_support::FramebufferFixture;
     use abi::ThingId;
     use alloc::collections::BTreeMap;
-    use userland_std::{Surface, Window};
+    use thing_os::{Surface, Window};
 
     fn stacked_window(id: u64, active: bool) -> StackedWindow {
         StackedWindow {

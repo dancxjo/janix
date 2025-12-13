@@ -11,7 +11,7 @@ path = "src/lib.rs"
 userland = { path = "../../userland" }
 runtime = { path = "../../runtime" }
 abi = { path = "../../abi" }
-userland_std = { path = "../../userland_std" }
+thing_os = { path = "../../thing_os" }
 fontdue = { version = "0.9", default-features = false, features = [
     "hashbrown",
 ] }

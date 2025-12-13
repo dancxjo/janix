@@ -1,6 +1,6 @@
 use crate::test_support::MockSys;
 use abi::{KernelRequest, KernelResponse, ThingId};
-use userland_std::Thing;
+use thing_os::Thing;
 
 #[test]
 fn test_mock_sys_push_response() {
@@ -13,7 +13,7 @@ fn test_mock_sys_push_response() {
     sys.push_response(KernelResponse::ThingCreated { id: ThingId(123) });
 
     // Make the request
-    let result = userland_std::create_thing(&sys, &crate::test_support::DummyThing::new(true));
+    let result = thing_os::create_thing(&sys, &crate::test_support::DummyThing::new(true));
 
     assert_eq!(result, Some(ThingId(123)));
 
@@ -36,8 +36,8 @@ fn test_mock_sys_push_response_sequence() {
     sys.push_response(KernelResponse::ThingCreated { id: ThingId(1) });
     sys.push_response(KernelResponse::ThingCreated { id: ThingId(2) });
 
-    let res1 = userland_std::create_thing(&sys, &crate::test_support::DummyThing::new(true));
-    let res2 = userland_std::create_thing(&sys, &crate::test_support::DummyThing::new(false));
+    let res1 = thing_os::create_thing(&sys, &crate::test_support::DummyThing::new(true));
+    let res2 = thing_os::create_thing(&sys, &crate::test_support::DummyThing::new(false));
 
     assert_eq!(res1, Some(ThingId(1)));
     assert_eq!(res2, Some(ThingId(2)));
@@ -53,7 +53,7 @@ fn test_mock_sys_unexpected_response() {
         message: "Something went wrong",
     });
 
-    let result = userland_std::create_thing(&sys, &crate::test_support::DummyThing::new(true));
+    let result = thing_os::create_thing(&sys, &crate::test_support::DummyThing::new(true));
 
     // create_thing returns None on non-ThingCreated response
     assert_eq!(result, None);
@@ -67,7 +67,7 @@ mod tick_tests {
     use crate::model::Compositor;
     use crate::state::tick_once;
     use crate::test_support::{FramebufferFixture, list_responses};
-    use userland_std::{Mode, thing_models::{MousePacketEvent, Window, Surface, ModeSwitchEvent, DisplayPresentRequest}, MODE_INDEX_CONSOLE};
+    use thing_os::{Mode, thing_models::{MousePacketEvent, Window, Surface, ModeSwitchEvent, DisplayPresentRequest}, MODE_INDEX_CONSOLE};
     use abi::{PropValue, graph_kinds};
 
     fn mode_entry(id: u64, index: u8, active: bool) -> Mode {

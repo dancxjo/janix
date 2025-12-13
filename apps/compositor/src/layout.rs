@@ -3,8 +3,8 @@
 use alloc::vec::Vec;
 use core::cmp::max;
 
-use userland::prelude::*;
-use userland_std::{Window, graph_kinds};
+use thing_os::prelude::*;
+use thing_os::{Window, graph_kinds};
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
 

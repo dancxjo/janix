@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use thing_models::InputCharEvent;
-use userland::prelude::*;
+use thing_os::prelude::*;
 
 const POLL_NS: u64 = 5_000_000;
 
@@ -75,7 +75,7 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
     use thing_models::InputCharEvent;
-    use userland_std::doc_helpers::DocSys;
+    use thing_os::doc_helpers::DocSys;
 
     fn thing_props<T: Thing>(thing: &T) -> &'static [Option<(PropKey, PropValue)>] {
         let mut props = Vec::new();

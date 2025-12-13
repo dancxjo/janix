@@ -65,10 +65,10 @@ UNWIND [
   ["DragState","State","compositor.model"],
   ["StackedWindow","Layout","compositor.layout"],
   ["DrawOp","Render","compositor.render.display_list"],
-  ["Window","Thing","userland_std"],
-  ["Surface","Thing","userland_std"],
-  ["MousePacketEvent","Thing","userland_std"],
-  ["Mode","Thing","userland_std"]
+  ["Window","Thing","thing_os"],
+  ["Surface","Thing","thing_os"],
+  ["MousePacketEvent","Thing","thing_os"],
+  ["Mode","Thing","thing_os"]
 ] AS row
 MERGE (ty:DesignNode {kind:"Type", name:row[0]})
 SET ty.layer = row[1]

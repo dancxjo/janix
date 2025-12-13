@@ -118,9 +118,9 @@ impl DemoState {
     ///
     /// ```
     /// use abi::{KernelResponse, PropValue, ThingId};
-    /// use userland_std::demo_shared::{DemoState, DEMO_NAME_VAL};
-    /// use userland_std::doc_helpers::DocSys;
-    /// use userland_std::Thing;
+    /// use thing_os::demo_shared::{DemoState, DEMO_NAME_VAL};
+    /// use thing_os::doc_helpers::DocSys;
+    /// use thing_os::Thing;
     ///
     /// let props = DocSys::props_slice(vec![
     ///     ("name", PropValue::U64(DEMO_NAME_VAL)),

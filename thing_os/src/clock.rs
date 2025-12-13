@@ -25,7 +25,7 @@ impl SystemClock {
     /// ```
     /// use abi::{KernelResponse, PropValue, ThingId};
     /// use thing_models::TimeSource;
-    /// use userland_std::{clock::SystemClock, doc_helpers::DocSys, Thing};
+    /// use thing_os::{clock::SystemClock, doc_helpers::DocSys, Thing};
     ///
     /// let props = DocSys::props_slice(vec![
     ///     ("ticks_since_boot", PropValue::U64(100)),

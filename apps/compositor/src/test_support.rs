@@ -11,7 +11,7 @@ use abi::{
     KernelRequest, KernelResponse, PixelFormat, PropKey, PropValue, SharedBufferInfo, ThingId,
 };
 use runtime::Sys;
-use userland_std::{PrimaryDisplayBuffer, SharedBufferMapping, Thing};
+use thing_os::{PrimaryDisplayBuffer, SharedBufferMapping, Thing};
 
 #[derive(Default)]
 pub struct MockSys {

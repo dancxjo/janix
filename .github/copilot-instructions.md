@@ -15,9 +15,9 @@ This is a Cargo workspace with the following crates:
 - **runtime/** - Userland runtime with Sys trait for system calls and HostedSys stub implementation for testing
 
 ### Userland Components (std)
-- **userland_std/** - Userland standard library with `println()`, `graph_query()`, and transaction management functions
+- **thing_os/** - Userland standard library with `println()`, `graph_query()`, and transaction management functions
 - **host_harness/** - Host-side testing harness that displays simulated kernel logs
-- **user_app_hello/** - Example userland application demonstrating userland_std APIs
+- **user_app_hello/** - Example userland application demonstrating thing_os APIs
 
 ## Build System
 
@@ -76,7 +76,7 @@ Note: Additional architectures need to be enabled in boot/rust-toolchain.toml
 
 ### no_std vs std
 - **no_std crates**: boot, kernel, abi, runtime
-- **std crates**: userland_std, host_harness, user_app_hello
+- **std crates**: thing_os, host_harness, user_app_hello
 
 Always maintain the no_std compatibility for kernel and low-level crates.
 
@@ -88,7 +88,7 @@ Always maintain the no_std compatibility for kernel and low-level crates.
 ### Code Organization
 - Keep ABI definitions in the `abi` crate to be shared between kernel and userland
 - Separate kernel logic (kernel) from boot logic (boot)
-- Keep userland runtime (`runtime`) independent of the standard library (`userland_std`)
+- Keep userland runtime (`runtime`) independent of the standard library (`thing_os`)
 
 ### Host/Kernel Parity
 - **Sync Requirement**: The `host_harness` (via `HostedSys`) and the kernel (via `KernelSys`) must always stay in sync.
@@ -111,14 +111,14 @@ The host_harness crate provides a way to test kernel interactions in a hosted en
 ### Adding a New Userland Application
 1. Create a new crate in the workspace root
 2. Add it to `Cargo.toml` workspace members
-3. Depend on `userland_std` for standard APIs
+3. Depend on `thing_os` for standard APIs
 4. Follow the pattern in `user_app_hello`
 
 ### Modifying Kernel APIs
 1. Update types/enums in `abi` crate
 2. Implement changes in `kernel`
-3. Update `userland_std` to use new APIs
-4. Update documentation in userland_std
+3. Update `thing_os` to use new APIs
+4. Update documentation in thing_os
 
 ### Adding Architecture Support
 1. Add target to `rust-toolchain.toml`

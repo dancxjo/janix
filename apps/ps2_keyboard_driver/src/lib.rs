@@ -7,8 +7,8 @@ use thing_models::{
     InputCharEvent, InterruptEvent, InterruptRequest, IoDirection, IoPortOp, IoPortRegion,
     IoStatus, IoWidth, KeyScanEvent, ModeSwitchEvent,
 };
-use userland::prelude::*;
-use userland_std::MODE_INDEX_CONSOLE;
+use thing_os::prelude::*;
+use thing_os::MODE_INDEX_CONSOLE;
 
 const POLL_INTERVAL_NS: u64 = 2_000_000;
 const STATUS_OFFSET: u16 = 4;
@@ -631,7 +631,7 @@ mod tests {
     use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
     use alloc::vec::Vec;
     use thing_models::{InputCharEvent, KeyScanEvent};
-    use userland_std::doc_helpers::DocSys;
+    use thing_os::doc_helpers::DocSys;
 
     fn thing_sequence(props: &'static [(PropKey, PropValue)]) -> Option<u64> {
         props.iter().find_map(|(key, value)| {

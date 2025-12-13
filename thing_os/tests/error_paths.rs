@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 use abi::{KernelRequest, KernelResponse, PropKey, PropType, PropValue, ThingId};
 use runtime::Sys;
-use userland_std::{Thing, create_transaction, find_thing};
+use thing_os::{create_transaction, find_thing, Thing};
 
 #[derive(Default)]
 struct MockSys {
@@ -92,7 +92,7 @@ fn find_thing_returns_none_on_no_match() {
     // Simulate a scan where no Thing matches the predicate.
     // find_thing scans 128 IDs. We'll provide 128 responses of ThingData,
     // but none of them will match the predicate.
-    // Actually, find_thing implementation in userland_std/src/lib.rs:
+    // Actually, find_thing implementation in thing_os/src/lib.rs:
     // for i in 0..128 { load_thing... }
     // So we need 128 responses.
 
@@ -141,7 +141,7 @@ fn create_transaction_aborted_does_not_persist() {
 #[test]
 fn shared_buffer_and_display_open_sad_path() {
     // Test open_primary_display_buffer when the display thing is missing or malformed.
-    // userland_std::open_primary_display_buffer calls find_thing internally to find the display.
+    // thing_os::open_primary_display_buffer calls find_thing internally to find the display.
     // If find_thing fails (returns None), open_primary_display_buffer should return Err.
 
     // We'll simulate find_thing failing by providing responses that are NOT displays or don't match.
@@ -156,6 +156,6 @@ fn shared_buffer_and_display_open_sad_path() {
 
     let sys = MockSys::with_responses(responses);
 
-    let result = userland_std::open_primary_display_buffer(&mut { sys });
+    let result = thing_os::open_primary_display_buffer(&mut { sys });
     assert!(result.is_err());
 }

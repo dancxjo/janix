@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use alloc::format;
-use userland::prelude::*;
+use thing_os::prelude::*;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "window_demo: starting");
@@ -30,7 +30,7 @@ mod tests {
     use abi::{KernelRequest, KernelResponse, PropKey, PropValue, ThingId};
     use alloc::vec::Vec;
     use userland::ui::{WindowHandle, create_window, set_window_text};
-    use userland_std::{Mode, Place, Surface, Thing, Window, doc_helpers::DocSys, graph_kinds};
+    use thing_os::{Mode, Place, Surface, Thing, Window, doc_helpers::DocSys, graph_kinds};
 
     fn thing_props<T: Thing>(thing: &T) -> &'static [Option<(PropKey, PropValue)>] {
         let mut props = Vec::new();

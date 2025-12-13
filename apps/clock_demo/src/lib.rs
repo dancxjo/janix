@@ -1,6 +1,6 @@
 #![no_std]
 
-use userland::prelude::*;
+use thing_os::prelude::*;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "clock_demo: starting");

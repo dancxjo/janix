@@ -7,7 +7,7 @@ use thing_models::{
     InterruptEvent, InterruptRequest, IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth,
     MousePacketEvent,
 };
-use userland::prelude::*;
+use thing_os::prelude::*;
 
 const POLL_INTERVAL_NS: u64 = 2_000_000;
 const STATUS_OFFSET: u16 = 4;
@@ -406,7 +406,7 @@ mod tests {
     use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
     use alloc::vec::Vec;
     use thing_models::MousePacketEvent;
-    use userland_std::doc_helpers::DocSys;
+    use thing_os::doc_helpers::DocSys;
 
     fn find_prop(props: &'static [(PropKey, PropValue)], key: &str) -> Option<i64> {
         props.iter().find_map(|(k, v)| {

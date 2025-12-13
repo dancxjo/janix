@@ -1,7 +1,7 @@
-use userland::prelude::*;
-use userland_std::link_targets;
-use userland_std::thing_models::DisplayPresentRequest;
-use userland_std::{PrimaryDisplayBuffer, graph_kinds};
+use thing_os::prelude::*;
+use thing_os::link_targets;
+use thing_os::thing_models::DisplayPresentRequest;
+use thing_os::{PrimaryDisplayBuffer, graph_kinds};
 
 use crate::layout::StackedWindow;
 
@@ -176,7 +176,7 @@ mod tests {
     use crate::layout::StackedWindow;
     use crate::test_support::{FramebufferFixture, MockSys, list_responses, success};
     use abi::{KernelRequest, KernelResponse, PropValue, ThingId, graph_kinds};
-    use userland_std::thing_models::DisplayPresentRequest;
+    use thing_os::thing_models::DisplayPresentRequest;
 
     fn stacked_window(id: u64, z_index: i64, active: bool) -> StackedWindow {
         StackedWindow {

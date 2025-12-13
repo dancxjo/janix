@@ -5,7 +5,7 @@ members = [
     "kernel",
     "abi",
     "runtime",
-    "userland_std",
+    "thing_os",
     "apps/init",
     "apps/thread_dashboard",
     "apps/clock_demo",

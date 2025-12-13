@@ -7,3 +7,4 @@ edition = "2021"
 userland = { path = "../../userland" }
 runtime = { path = "../../runtime" }
 thing_models = { path = "../../thing_models" }
+thing_os = { path = "../../thing_os" }

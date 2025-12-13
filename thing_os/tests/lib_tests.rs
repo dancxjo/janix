@@ -2,16 +2,16 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use abi::{
-    KernelRequest, KernelResponse, MemorySummary, PropKey, PropType, PropValue, SchedulerSummary,
-    ThingId, graph_kinds,
+    graph_kinds, KernelRequest, KernelResponse, MemorySummary, PropKey, PropType, PropValue,
+    SchedulerSummary, ThingId,
 };
 use runtime::Sys;
-use userland_std::{
-    Alarm, AlarmRequest, Mode, Thing, add_link, alloc_frame, create_thing, create_thread,
-    create_transaction, default_mode, demo_shared::DEMO_NAME_VAL, demo_shared::DemoState,
-    link_targets, find_thing, free_frame, is_console_mode_active, list_things_by_kind, load_thing,
-    memory_summary, register_schema_for, scheduler_summary, scheduler_tick, spawn_program,
-    update_props,
+use thing_os::{
+    add_link, alloc_frame, create_thing, create_thread, create_transaction, default_mode,
+    demo_shared::DemoState, demo_shared::DEMO_NAME_VAL, find_thing, free_frame,
+    is_console_mode_active, link_targets, list_things_by_kind, load_thing, memory_summary,
+    register_schema_for, scheduler_summary, scheduler_tick, spawn_program, update_props, Alarm,
+    AlarmRequest, Mode, Thing,
 };
 
 #[derive(Default)]
@@ -282,7 +282,7 @@ fn mode_selection_helpers() {
         KernelResponse::ThingListEntry { id: None },
     ]);
 
-    let active = userland_std::active_mode(&mut sys).expect("active");
+    let active = thing_os::active_mode(&mut sys).expect("active");
     assert!(active.active);
     let default = default_mode(&mut sys).expect("default");
     assert_eq!(default.index, 2);
@@ -369,7 +369,7 @@ fn process_and_thread_ops() {
         },
     ]);
 
-    assert_eq!(userland_std::create_process(&sys, "p").unwrap(), 10);
+    assert_eq!(thing_os::create_process(&sys, "p").unwrap(), 10);
     assert_eq!(create_thread(&sys, 10, "t", 1, 5).unwrap(), 20);
     assert_eq!(scheduler_tick(&sys).unwrap().tid, 20);
     assert_eq!(spawn_program(&mut sys, ThingId(1)).unwrap().0, ThingId(3));
@@ -435,7 +435,7 @@ fn shared_buffer_and_display_open() {
         },
     ]);
 
-    let buf = userland_std::open_primary_display_buffer(&mut sys).expect("open display");
+    let buf = thing_os::open_primary_display_buffer(&mut sys).expect("open display");
     assert_eq!(buf.front_buffer().id, ThingId(2));
     assert_eq!(buf.back_buffer().id, ThingId(3));
     assert_eq!(buf.front_buffer().info.width, 640);
@@ -455,11 +455,8 @@ fn transaction_and_graph_queries() {
     ]);
 
     assert_eq!(create_transaction(&sys).unwrap(), abi::TransactionId(7));
-    assert!(userland_std::commit_transaction(
-        &sys,
-        abi::TransactionId(7)
-    ));
-    assert_eq!(userland_std::graph_query(&sys, abi::NodeId(1)).unwrap(), 55);
+    assert!(thing_os::commit_transaction(&sys, abi::TransactionId(7)));
+    assert_eq!(thing_os::graph_query(&sys, abi::NodeId(1)).unwrap(), 55);
 }
 
 #[test]

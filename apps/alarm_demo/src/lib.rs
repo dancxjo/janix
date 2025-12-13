@@ -1,6 +1,6 @@
 #![no_std]
 
-use userland::prelude::*;
+use thing_os::prelude::*;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "alarm_demo: starting");
@@ -64,8 +64,8 @@ fn seconds_to_hms(seconds: i64) -> (u32, u32, u32) {
 mod tests {
     use super::seconds_to_hms;
     use abi::{KernelRequest, KernelResponse, PropValue, ThingId};
-    use userland::prelude::*;
-    use userland_std::{AlarmRequest, alarm::Alarm, doc_helpers::DocSys};
+    use thing_os::prelude::*;
+    use thing_os::{AlarmRequest, alarm::Alarm, doc_helpers::DocSys};
 
     #[test]
     fn formats_alarm_target_times() {

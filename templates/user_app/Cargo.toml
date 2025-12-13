@@ -12,7 +12,8 @@ crate-type = ["rlib"]
 # ThingOS crates – adjust paths/names to match your workspace
 abi = { path = "../abi" }
 userland = { path = "../userland" }
+thing_os = { path = "../thing_os" }
 runtime = { path = "../runtime" }
-userland_std = { path = "../userland_std" }
+thing_os = { path = "../thing_os" }
 
 # no_std + alloc comes from the sysroot, no extra dep needed

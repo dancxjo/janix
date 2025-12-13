@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 use abi::{KernelRequest, KernelResponse, PropKey, PropType, PropValue, Thing, ThingId};
 use runtime::Sys;
-use userland_std::{create_thing, load_thing, user_update_thing};
+use thing_os::{create_thing, load_thing, user_update_thing};
 
 // MockSys implementation
 #[derive(Default)]

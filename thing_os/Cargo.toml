@@ -1,5 +1,5 @@
 [package]
-name = "userland_std"
+name = "thing_os"
 version.workspace = true
 edition.workspace = true
 
@@ -9,3 +9,4 @@ edition.workspace = true
 abi = { path = "../abi" }
 thing_models = { path = "../thing_models" }
 runtime = { path = "../runtime" }
+spin = "0.10"

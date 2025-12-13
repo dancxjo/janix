@@ -1,6 +1,6 @@
 #![no_std]
 
-use userland::prelude::*;
+use thing_os::prelude::*;
 
 /// Optional: an example Thing you can delete or repurpose.
 pub struct ExampleThing {
@@ -10,7 +10,8 @@ pub struct ExampleThing {
 
 impl Thing for ExampleThing {
     const KIND: &'static str = "ExampleThing";
-    const DESCRIPTION: &'static str = "An example Thing demonstrating counter and active state tracking";
+    const DESCRIPTION: &'static str =
+        "An example Thing demonstrating counter and active state tracking";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("counter", PropValue::U64(self.counter)));
@@ -43,10 +44,7 @@ impl Thing for ExampleThing {
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            ("counter", PropType::U64),
-            ("active", PropType::Bool),
-        ]
+        &[("counter", PropType::U64), ("active", PropType::Bool)]
     }
 }
 
@@ -66,8 +64,7 @@ pub fn run<S: Sys>(sys: &mut S) {
             sys,
             format_args!(
                 "{{ crate_name }}: tick {} ({} ms since start)",
-                i,
-                elapsed_ms
+                i, elapsed_ms
             ),
         );
 

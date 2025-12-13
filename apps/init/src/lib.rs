@@ -7,8 +7,8 @@ use abi::{ThingId, graph_kinds};
 use alloc::string::String;
 use alloc::vec::Vec;
 use thing_models::{BootProfile, BootProgram, Mode, Place, ProgramImage};
-use userland::prelude::*;
-use userland_std::{
+use thing_os::prelude::*;
+use thing_os::{
     MODE_INDEX_CONSOLE, ProcessThing, add_link, find_thing, link_targets, list_things_by_kind,
     load_thing, spawn_program,
 };
@@ -335,7 +335,7 @@ mod tests {
     use abi::{KernelRequest, KernelResponse, ThingId};
     use alloc::vec::Vec;
     use thing_models::{BootProgram, ProgramImage};
-    use userland_std::{ProcessThing, doc_helpers::DocSys, graph_kinds};
+    use thing_os::{ProcessThing, doc_helpers::DocSys, graph_kinds};
 
     #[test]
     fn ensure_modes_creates_places_and_modes() {

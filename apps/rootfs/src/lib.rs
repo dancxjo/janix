@@ -5,8 +5,8 @@ extern crate alloc;
 use abi::{ThingId, graph_kinds};
 use alloc::vec::Vec;
 use thing_models::{BootProfile, BootProgram, ProgramImage};
-use userland::prelude::*;
-use userland_std::add_link;
+use thing_os::add_link;
+use thing_os::prelude::*;
 
 const ROOTFS_IDENTIFIER: &str = "rootfs";
 
@@ -134,7 +134,7 @@ mod tests {
     use super::*;
     use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
     use alloc::vec::Vec;
-    use userland_std::doc_helpers::DocSys;
+    use thing_os::doc_helpers::DocSys;
 
     fn thing_props<T: Thing>(thing: &T) -> &'static [Option<(PropKey, PropValue)>] {
         let mut props = Vec::new();

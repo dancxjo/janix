@@ -1,9 +1,9 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use abi::{KernelRequest, KernelResponse};
-use userland::prelude::*;
-use userland_std::thing_models::MousePacketEvent;
-use userland_std::{
+use thing_os::prelude::*;
+use thing_os::thing_models::MousePacketEvent;
+use thing_os::{
     DisplayThing, Mode, ModeSwitchEvent, PrimaryDisplayBuffer, Surface, Window, active_mode,
     default_mode, graph_kinds, is_console_mode_active, load_thing, update_props,
 };
@@ -11,7 +11,7 @@ use userland_std::{
 use crate::layout::LayoutPolicy;
 
 pub fn active_framebuffer<S: Sys>(sys: &mut S) -> Option<PrimaryDisplayBuffer> {
-    userland_std::open_primary_display_buffer(sys).ok()
+    thing_os::open_primary_display_buffer(sys).ok()
 }
 
 pub fn swap_display_buffers<S: Sys>(sys: &mut S, display_id: ThingId) -> Option<i64> {
@@ -117,7 +117,7 @@ mod tests {
     use crate::layout::LayoutPolicy;
     use crate::test_support::{MockSys, list_responses, success};
     use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
-    use userland_std::thing_models::ModeSwitchEvent;
+    use thing_os::thing_models::ModeSwitchEvent;
 
     fn mode(id: u64, index: u8, active: bool) -> Mode {
         Mode {

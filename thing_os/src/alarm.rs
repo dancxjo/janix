@@ -24,7 +24,7 @@ impl Alarm {
     ///
     /// ```
     /// use abi::{KernelResponse, ThingId};
-    /// use userland_std::{alarm::Alarm, doc_helpers::DocSys};
+    /// use thing_os::{alarm::Alarm, doc_helpers::DocSys};
     ///
     /// let mut sys = DocSys::with_responses(vec![KernelResponse::ThingCreated {
     ///     id: ThingId(2),
@@ -60,7 +60,7 @@ impl Alarm {
     /// ```
     /// use abi::{KernelResponse, PropValue, ThingId};
     /// use thing_models::AlarmRequest;
-    /// use userland_std::{alarm::Alarm, doc_helpers::DocSys, Thing};
+    /// use thing_os::{alarm::Alarm, doc_helpers::DocSys, Thing};
     ///
     /// let props = DocSys::props_slice(vec![("fired", PropValue::Bool(true))]);
     /// let mut sys = DocSys::with_responses(vec![KernelResponse::ThingData {

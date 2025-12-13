@@ -11,5 +11,5 @@ path = "src/lib.rs"
 abi = { path = "../../abi" }
 thing_models = { path = "../../thing_models" }
 userland = { path = "../../userland" }
-userland_std = { path = "../../userland_std" }
+thing_os = { path = "../../thing_os" }
 runtime = { path = "../../runtime" }

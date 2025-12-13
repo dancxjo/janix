@@ -2,8 +2,8 @@ use super::{pic, syscall};
 use crate::gdt;
 use kernel::memory;
 use lazy_static::lazy_static;
-use x86_64::instructions::{hlt, interrupts};
 use x86_64::VirtAddr;
+use x86_64::instructions::{hlt, interrupts};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use x86_64::structures::paging::Translate;
 
@@ -36,8 +36,12 @@ pub fn init() {
     IDT.load();
     pic::init();
     // Log syscall gate configuration to ensure user mode can invoke int 0x80.
-    let entry = &IDT[0x80];
-    kernel::println!("IDT[0x80]: {:?}", entry);
+
+    #[cfg(feature = "trace_idt")]
+    {
+        let entry = &IDT[0x80];
+        kernel::println!("IDT[0x80]: {:?}", entry);
+    }
     interrupts::enable();
 }
 
@@ -86,60 +90,48 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    use x86_64::VirtAddr;
-    use x86_64::registers::control::Cr2;
-    use x86_64::structures::paging::mapper::MapperFlush;
-    use x86_64::structures::paging::{
-        Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB,
-    };
+    use x86_64::registers::control::{Cr2, Cr3};
+    use x86_64::structures::paging::Translate;
+    use x86_64::structures::paging::{OffsetPageTable, PageTable};
 
     let addr = Cr2::read();
 
+    kernel::println!("EXCEPTION: PAGE FAULT");
+    kernel::println!("  Accessed Address: {:?}", addr);
+    kernel::println!("  Error Code: {:?}", error_code);
+    kernel::println!(
+        "  RIP={:#x} RSP={:#x} CR3={:#x}",
+        stack_frame.instruction_pointer.as_u64(),
+        stack_frame.stack_pointer.as_u64(),
+        Cr3::read().0.start_address().as_u64(),
+    );
+
+    // Best-effort translation, read-only, no allocation
     let phys_mem_offset = memory::get_hhdm_offset();
     if phys_mem_offset != 0 {
-        let level_4_table_ptr = x86_64::registers::control::Cr3::read()
-            .0
-            .start_address()
-            .as_u64();
-        let level_4_table_ptr = VirtAddr::new(level_4_table_ptr + phys_mem_offset);
-        let level_4_table: &mut PageTable = unsafe { &mut *level_4_table_ptr.as_mut_ptr() };
-        let mut mapper =
-            unsafe { OffsetPageTable::new(level_4_table, VirtAddr::new(phys_mem_offset)) };
+        let l4_phys = Cr3::read().0.start_address().as_u64();
+        let l4_virt = VirtAddr::new(l4_phys + phys_mem_offset);
+        let l4: &mut PageTable = unsafe { &mut *l4_virt.as_mut_ptr() };
 
-        let _translation = mapper.translate_addr(addr);
-        // match translation {
-        //     Some(pa) => {
-        //         kernel::println!("Page fault translation: virt={:?} -> phys={:?}", addr, pa)
-        //     }
-        //     None => kernel::println!("Page fault translation: virt={:?} unmapped", addr),
-        // }
+        let mapper = unsafe { OffsetPageTable::new(l4, VirtAddr::new(phys_mem_offset)) };
 
-        // Lazy map as user accessible on protection violation
-        if error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION)
-            && error_code.contains(PageFaultErrorCode::USER_MODE)
-        {
-            let page = Page::<Size4KiB>::containing_address(addr);
-            let new_flags = PageTableFlags::PRESENT
-                | PageTableFlags::WRITABLE
-                | PageTableFlags::USER_ACCESSIBLE;
-
-            unsafe {
-                if let Ok(flush) = mapper.update_flags(page, new_flags) {
-                    let flush: MapperFlush<Size4KiB> = flush;
-                    flush.flush();
-                    return;
-                }
+        match mapper.translate_addr(addr) {
+            Some(pa) => {
+                kernel::println!("  Translation: virt={:?} -> phys={:#x}", addr, pa.as_u64());
+            }
+            None => {
+                kernel::println!("  Translation: virt={:?} unmapped", addr);
             }
         }
     }
 
-    kernel::println!("EXCEPTION: PAGE FAULT");
-    kernel::println!("Accessed Address: {:?}", addr);
-    kernel::println!("Error Code: {:?}", error_code);
     kernel::println!("{:#?}", stack_frame);
-    loop {}
-}
 
+    // Future: convert into a fault event or thread termination
+    loop {
+        hlt();
+    }
+}
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     kernel::hw::io::handle_interrupt(KEYBOARD_IRQ);
     pic::notify_end_of_interrupt(KEYBOARD_IRQ);

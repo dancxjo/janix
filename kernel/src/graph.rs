@@ -1196,6 +1196,7 @@ pub fn register_schema(
 ) -> Result<(), &'static str> {
     unsafe {
         let schemas = &raw mut SCHEMAS;
+        #[cfg(feature = "trace-schemas")]
         crate::println!("SCHEMAS address: {:p}", schemas);
 
         // Check if schema already exists

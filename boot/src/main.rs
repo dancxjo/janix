@@ -24,17 +24,16 @@ mod heap;
 mod program;
 mod serial;
 
-// Decomposed modules (moved out of this file to reduce size)
+// Decomposed modules
 mod framebuffer;
 mod init;
 mod panic_handler;
 mod time_utils;
 
-// use core::alloc::Layout; // Removed
-// use linked_list_allocator::LockedHeap; // Removed
-
 use limine::BaseRevision;
-use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
+use limine::request::{
+    FramebufferRequest, KernelAddressRequest, RequestsEndMarker, RequestsStartMarker,
+};
 
 /// Sets the base revision to the latest revision supported by the crate.
 #[used]
@@ -47,19 +46,16 @@ pub(crate) static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::
 
 #[used]
 #[unsafe(link_section = ".requests")]
-pub(crate) static KERNEL_ADDRESS_REQUEST: limine::request::KernelAddressRequest =
-    limine::request::KernelAddressRequest::new();
+pub(crate) static KERNEL_ADDRESS_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
 
-/// Define the start and end markers for Limine requests.
+/// Limine request markers
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]
 static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
+
 #[used]
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
-
-// Allocator is defined in heap.rs
-
 
 const HEAP_SIZE: usize = heap::KERNEL_HEAP_SIZE_BYTES;
 static mut HEAP_MEMORY: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
@@ -67,123 +63,55 @@ static mut HEAP_MEMORY: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 const STACK_SIZE: usize = 128 * 1024; // 128KB
 #[repr(align(16))]
 struct Stack([u8; STACK_SIZE]);
+
 static mut BOOT_STACK: Stack = Stack([0; STACK_SIZE]);
 static mut STACK_GUARD: [u8; 4096] = [0; 4096];
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
-    // Initialize serial console first (best effort)
-    // We use 0 offset initially; Semihosting doesn't need offset.
+    // Best-effort early serial
     serial::arch::init_serial(0);
+    kernel::println!("boot: serial ready");
 
-    kernel::println!("Serial initialized. Preparing to switch stack...");
-
+    // Initialize heap *before* anything allocation-hungry.
     unsafe {
         let heap_addr = core::ptr::addr_of_mut!(HEAP_MEMORY) as usize;
-        kernel::println!("HEAP_MEMORY address: {:#x}", heap_addr);
-        kernel::println!("Probing HEAP_MEMORY...");
-        // Volatile write to ensure it's not optimized out
+
+        // Tiny probe (kept, but not chatty)
         core::ptr::write_volatile(&mut HEAP_MEMORY[0], 0xAA);
         core::ptr::write_volatile(&mut HEAP_MEMORY[HEAP_SIZE - 1], 0xBB);
-        kernel::println!("HEAP_MEMORY probe successful.");
 
-        // Initialize the shared kernel heap
         heap::init_kernel_heap(heap_addr, HEAP_SIZE);
     }
 
+    kernel::println!("boot: heap ready; switching stack");
+
+    // Stack switch into kmain_inner
     let stack_base = core::ptr::addr_of!(BOOT_STACK) as u64;
-    unsafe {
-        arch::boot::enter_kernel_stack(stack_base, STACK_SIZE as u64);
-    }
+    arch::boot::enter_kernel_stack(stack_base, STACK_SIZE as u64);
 }
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
-    kernel::println!("Entered kmain_inner");
+    kernel::println!("boot: entered kmain_inner");
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color(0x00_33_33_33); // Dark Gray
+    crate::framebuffer::fill_framebuffer_with_color(0x00_33_33_33);
 
     crate::init::init_machine();
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color(0x00_80_80_80); // Gray
+    crate::framebuffer::fill_framebuffer_with_color(0x00_80_80_80);
 
     crate::init::init_world_graph();
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color(0x00_CC_CC_CC); // Light Gray
+    crate::framebuffer::fill_framebuffer_with_color(0x00_CC_CC_CC);
 
     crate::init::init_userland_and_enter_scheduler();
-}
-
-fn init_machine() {
-    crate::init::init_machine();
-}
-
-fn init_world_graph() {
-    crate::init::init_world_graph();
-}
-
-#[cfg(not(feature = "boot-dashboard-only"))]
-fn init_userland_and_enter_scheduler() -> ! {
-    crate::init::init_userland_and_enter_scheduler()
-}
-
-#[cfg(feature = "boot-dashboard-only")]
-fn init_userland_and_enter_scheduler() -> ! {
-    crate::init::init_userland_and_enter_scheduler()
-}
-
-#[cfg(feature = "boot-dashboard-only")]
-fn render_dashboard_and_halt() -> ! {
-    crate::init::render_dashboard_and_halt()
-}
-
-fn launch_init_process() {
-    crate::init::launch_init_process();
-}
-
-fn init_console() -> bool {
-    crate::init::init_console()
-}
-
-#[cfg(feature = "fill-framebuffer")]
-fn fill_framebuffer_with_color(color: u32) {
-    crate::framebuffer::fill_framebuffer_with_color(color)
-}
-
-#[cfg(feature = "fill-framebuffer")]
-fn virtual_framebuffer_address(guest_addr: u64, hhdm_offset: u64) -> Option<u64> {
-    crate::framebuffer::virtual_framebuffer_address(guest_addr, hhdm_offset)
-}
-
-#[cfg(feature = "fill-framebuffer")]
-fn is_canonical_address(addr: u64) -> bool {
-    crate::framebuffer::is_canonical_address(addr)
-}
-
-fn log_rtc_epoch(seconds: i64) {
-    crate::time_utils::log_rtc_epoch(seconds)
-}
-
-fn unix_seconds_to_datetime(seconds: i64) -> (i32, u32, u32, u32, u32, u32) {
-    crate::time_utils::unix_seconds_to_datetime(seconds)
-}
-
-fn days_in_year(year: i32) -> i32 {
-    crate::time_utils::days_in_year(year)
-}
-
-fn days_in_month(year: i32, month: i32) -> i32 {
-    crate::time_utils::days_in_month(year, month)
 }
 
 #[panic_handler]
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     crate::panic_handler::rust_panic(info)
-}
-
-fn hcf() -> ! {
-    crate::panic_handler::hcf()
 }

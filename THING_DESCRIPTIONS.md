@@ -124,7 +124,7 @@ User applications define their own Thing types with descriptions:
 Tests are provided to verify the description functionality:
 
 - `kernel/tests/description_test.rs` - Tests for schema descriptions
-- `apps/hello/tests/description_test.rs` - Tests for Thing trait descriptions
+- `user/hello/tests/description_test.rs` - Tests for Thing trait descriptions
 
 Run the tests with:
 

@@ -1,0 +1,18 @@
+[package]
+name = "alarm_demo"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "alarm_demo"
+path = "src/lib.rs"
+
+[dependencies]
+runtime = { path = "../../runtime" }
+thing_os = { path = "../../thing_os" }
+
+[dev-dependencies]
+kernel = { path = "../../kernel" }
+abi = { path = "../../abi" }
+thing_os = { path = "../../thing_os" }
+thing_models = { path = "../../thing_models" }

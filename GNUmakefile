@@ -662,8 +662,8 @@ limine/limine:
 	git clone https://github.com/limine-bootloader/limine.git --branch=v9.x-binary --depth=1
 	$(MAKE) -C limine
 
-.PHONY: apps
-apps:
+.PHONY: user
+user:
 	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) $(addprefix -p ,$(APPS))
 
 .PHONY: drivers
@@ -679,14 +679,14 @@ kernel:
 # ISO BUILD  (UNCHANGED FROM YOUR VERSION)
 ###############################################################################
 
-$(IMAGE_NAME).iso: limine/limine kernel apps drivers
+$(IMAGE_NAME).iso: limine/limine kernel user drivers
 	rm -rf iso_root
 	# Prepare ISO root with both BIOS and UEFI directory trees upfront.
-	mkdir -p iso_root/boot iso_root/boot/apps iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
+	mkdir -p iso_root/boot iso_root/boot/user iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
 	cp -v clouds.bmp iso_root/boot/
 	for app in $(APPS); do \
-		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/apps/$$app; \
+		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/user/$$app; \
 	done
 	for drv in $(DRIVERS); do \
 		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \
@@ -741,7 +741,7 @@ endif
 # HDD IMAGE BUILD
 ###############################################################################
 
-$(IMAGE_NAME).hdd: limine/limine kernel apps
+$(IMAGE_NAME).hdd: limine/limine kernel user
 	rm -f $(IMAGE_NAME).hdd
 	dd if=/dev/zero bs=1M count=0 seek=128 of=$@
 
@@ -752,7 +752,7 @@ endif
 	rm -f limine.conf.tmp
 	cp limine.conf limine.conf.tmp
 ifeq ($(ENABLE_ROOTFS),1)
-	echo "    module_path: boot():/boot/apps/rootfs" >> limine.conf.tmp
+	echo "    module_path: boot():/boot/user/rootfs" >> limine.conf.tmp
 	echo "    module_cmdline: program=rootfs" >> limine.conf.tmp
 endif
 	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
@@ -764,11 +764,11 @@ endif
 		done; \
 	fi
 	mformat -i $(IMAGE_NAME).hdd@@1M
-	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine ::/boot/apps ::/boot/fonts
+	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine ::/boot/user ::/boot/fonts
 	mcopy -i $(IMAGE_NAME).hdd@@1M boot/kernel ::/boot
 	mcopy -i $(IMAGE_NAME).hdd@@1M clouds.bmp ::/boot
 	for app in $(APPS); do \
-		mcopy -i $(IMAGE_NAME).hdd@@1M $(APPS_TARGET_DIR)/$$app ::/boot/apps; \
+		mcopy -i $(IMAGE_NAME).hdd@@1M $(APPS_TARGET_DIR)/$$app ::/boot/user; \
 	done
 	mmd -i $(IMAGE_NAME).hdd@@1M ::/boot/drivers
 	for drv in $(DRIVERS); do \

@@ -176,7 +176,7 @@ pub fn entry<F>(_run: F) -> !
 where
     F: FnOnce(&mut UserlandSys),
 {
-    panic!("ThingOS userland apps only run on bare-metal targets");
+    panic!("ThingOS userland user only run on bare-metal targets");
 }
 
 /// Return the currently active `Mode` Thing, if one is marked active.

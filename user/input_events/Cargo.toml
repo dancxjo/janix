@@ -1,0 +1,9 @@
+[package]
+name = "input_events"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+runtime = { path = "../../runtime" }
+thing_models = { path = "../../thing_models" }
+thing_os = { path = "../../thing_os" }

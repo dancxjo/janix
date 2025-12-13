@@ -29,7 +29,7 @@ This repository currently provides a minimal working skeleton of that system: a 
   * `thing_os` gives friendly, std-like APIs to userland programs
 
 * **Comfortable userland experience**
-  User programs should feel “normallish”—like writing small Rust CLI apps—while still interacting with the kernel via the ABI.
+  User programs should feel “normallish”—like writing small Rust CLI user—while still interacting with the kernel via the ABI.
 
 * **Native-first kernel logic**
   Kernel logic is exercised on the real kernel builds (or QEMU) so the graph stays aligned with native behavior instead of a hosted shim.
@@ -62,7 +62,7 @@ thing-os/
 ├── thing_os/       # std-like userland library (std)
 │   └── lib.rs          # println(), graph_query(), transaction helpers
 │
-└── apps/               # User applications compiled to ELF modules
+└── user/               # User applications compiled to ELF modules
     ├── hello/
     ├── heartbeat/
     ├── init/

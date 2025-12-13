@@ -1,0 +1,17 @@
+[package]
+name = "init"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "init"
+path = "src/lib.rs"
+
+[dependencies]
+abi = { path = "../../abi" }
+thing_models = { path = "../../thing_models" }
+thing_os = { path = "../../thing_os" }
+runtime = { path = "../../runtime" }
+
+[features]
+rootfs = []

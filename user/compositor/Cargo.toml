@@ -1,0 +1,20 @@
+[package]
+name = "compositor"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "compositor"
+path = "src/lib.rs"
+
+[dependencies]
+runtime = { path = "../../runtime" }
+abi = { path = "../../abi" }
+thing_os = { path = "../../thing_os" }
+fontdue = { version = "0.9", default-features = false, features = [
+    "hashbrown",
+] }
+spin = { version = "0.9", default-features = false, features = ["once"] }
+
+[dev-dependencies]
+kernel = { path = "../../kernel" }

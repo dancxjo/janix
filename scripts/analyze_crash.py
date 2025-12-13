@@ -146,7 +146,7 @@ def main():
         
     # Disassemble the first one (or all?)
     # Usually there should be only one unless multiple binaries map the same address (unlikely for static OS unless PIE/PIC at 0)
-    # But here user apps are at 0x200000 approx.
+    # But here user user are at 0x200000 approx.
     
     if candidates:
         binary = candidates[0][0]

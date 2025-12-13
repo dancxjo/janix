@@ -1,0 +1,17 @@
+[package]
+name = "thread_dashboard"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "thread_dashboard"
+path = "src/lib.rs"
+
+[dependencies]
+thing_os = { path = "../../thing_os" }
+runtime = { path = "../../runtime" }
+
+[dev-dependencies]
+kernel = { path = "../../kernel" }
+abi = { path = "../../abi" }
+thing_models = { path = "../../thing_models" }

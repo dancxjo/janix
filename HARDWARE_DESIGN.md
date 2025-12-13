@@ -234,7 +234,7 @@ Once this foundation stabilizes:
 
 Wits (Quick, Combobulator, Memory) can treat hardware I/O as ordinary graph state.
 
-Higher-level agents can reason about hardware the same way they reason about apps or windows.
+Higher-level agents can reason about hardware the same way they reason about user or windows.
 
 Summary
 

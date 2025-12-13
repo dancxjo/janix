@@ -29,7 +29,7 @@ mod loongarch64;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::syscall_stub;
 
-/// Sys implementation used by userland apps to invoke syscalls with an
+/// Sys implementation used by userland user to invoke syscalls with an
 /// architecture-specific trampoline. The struct itself stays portable;
 /// only the underlying trap mechanism changes per target.
 pub struct UserlandSys;

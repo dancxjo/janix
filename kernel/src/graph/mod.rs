@@ -101,4 +101,5 @@ pub fn init() {
         ],
     );
 }
+pub mod debug;
 pub mod sink;

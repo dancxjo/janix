@@ -38,6 +38,8 @@ static TEST_MUTEX: Mutex<()> = Mutex::new(());
 pub fn init() {
     log::init();
     graph::init();
+    // Dump the graph after initialization so builtin kinds and indexes are visible.
+    crate::graph::debug::dump_graph_table();
     journal::init();
     transaction::init();
     model::init_schemas();
@@ -398,6 +400,8 @@ pub fn create_builtin_things() {
     }
 
     log("Kernel Things created.");
+    // Dump the graph so callers can inspect the freshly-created builtin Things
+    crate::graph::debug::dump_graph_table();
 }
 
 /// Initialize the boot graph with memory and scheduling Things
@@ -508,6 +512,8 @@ pub fn init_boot_graph() {
 
     log("Boot graph initialized: 1 process, 1 thread, 1 CPU");
 
+    // Dump the graph after building the boot graph to aid debugging.
+    crate::graph::debug::dump_graph_table();
     if cfg!(target_os = "none") {
         verify_boot_graph_invariants();
     }

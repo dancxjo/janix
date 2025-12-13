@@ -176,3 +176,16 @@ pub(crate) fn link_index_ref() -> &'static LinkIndex {
     }
 }
 
+/// Iterate all live links and call `f` for each one.
+pub fn for_each_link<F>(mut f: F)
+where
+    F: FnMut(&Link),
+{
+    let idx = link_index_ref();
+    for slot in idx.links.values() {
+        if !slot.deleted {
+            f(&slot.link);
+        }
+    }
+}
+

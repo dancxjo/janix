@@ -14,12 +14,12 @@ use runtime::UserlandSys;
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     let mut sys = UserlandSys::new();
-    clock_demo::run(&mut sys)
+    debug_input_events::run(&mut sys)
 }
 
 #[cfg(not(target_os = "none"))]
 fn main() {
-    panic!("clock_demo app must run inside ThingOS");
+    panic!("debug_input_events must run inside ThingOS");
 }
 
 #[cfg(target_os = "none")]

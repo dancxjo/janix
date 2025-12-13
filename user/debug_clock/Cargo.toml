@@ -1,17 +1,16 @@
 [package]
-name = "thread_dashboard"
+name = "debug_clock"
 version.workspace = true
 edition.workspace = true
 
 [lib]
-name = "thread_dashboard"
+name = "debug_clock"
 path = "src/lib.rs"
 
 [dependencies]
-thing_os = { path = "../../thing_os" }
 runtime = { path = "../../runtime" }
+thing_os = { path = "../../thing_os" }
 
 [dev-dependencies]
 kernel = { path = "../../kernel" }
 abi = { path = "../../abi" }
-thing_models = { path = "../../thing_models" }

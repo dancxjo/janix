@@ -1,18 +1,18 @@
 [package]
-name = "alarm_demo"
+name = "debug_input_logger"
 version.workspace = true
 edition.workspace = true
 
 [lib]
-name = "alarm_demo"
+name = "debug_input_logger"
 path = "src/lib.rs"
 
 [dependencies]
 runtime = { path = "../../runtime" }
+thing_models = { path = "../../thing_models" }
 thing_os = { path = "../../thing_os" }
 
 [dev-dependencies]
 kernel = { path = "../../kernel" }
 abi = { path = "../../abi" }
 thing_os = { path = "../../thing_os" }
-thing_models = { path = "../../thing_models" }

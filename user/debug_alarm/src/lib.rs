@@ -3,25 +3,28 @@
 use thing_os::prelude::*;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "alarm_demo: starting");
+    println(sys, "debug_alarm: starting");
 
     let Some(clock) = SystemClock::discover(sys) else {
-        println(sys, "alarm_demo: TimeSource not found");
+        println(sys, "debug_alarm: TimeSource not found");
         sys.exit_thread();
     };
 
     let (now_secs, now_nanos) = clock.now(sys);
     let target_secs = now_secs.saturating_add(5);
-    let Some(alarm) = Alarm::request_at(sys, target_secs, now_nanos) else {
-        println(sys, "alarm_demo: failed to create AlarmRequest");
-        sys.exit_thread();
+    let mut alarm = match Alarm::request_at(sys, target_secs, now_nanos) {
+        Some(a) => a,
+        None => {
+            println(sys, "debug_alarm: failed to create AlarmRequest");
+            sys.exit_thread();
+        }
     };
 
     let (hour, minute, second) = seconds_to_hms(target_secs);
     log_dynamic(
         sys,
         format_args!(
-            "alarm_demo: waiting for alarm at {:02}:{:02}:{:02}",
+            "debug_alarm: waiting for alarm at {:02}:{:02}:{:02}",
             hour, minute, second
         ),
     );
@@ -29,22 +32,42 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     loop {
         if let Some(state) = alarm.state(sys) {
             if state == "Fired" {
-                let (fired_secs, _) = clock.now(sys);
+                let (fired_secs, fired_nanos) = clock.now(sys);
                 let (fh, fm, fs) = seconds_to_hms(fired_secs);
                 log_dynamic(
                     sys,
-                    format_args!("alarm_demo: alarm fired at {:02}:{:02}:{:02}", fh, fm, fs),
+                    format_args!("debug_alarm: alarm fired at {:02}:{:02}:{:02}", fh, fm, fs),
                 );
-                break;
+
+                // Re-arm the alarm for another 5 seconds in the future.
+                let next_target_secs = fired_secs.saturating_add(5);
+                let (_, now_nanos) = clock.now(sys);
+                match Alarm::request_at(sys, next_target_secs, now_nanos) {
+                    Some(new_alarm) => {
+                        alarm = new_alarm;
+                        let (nh, nm, ns) = seconds_to_hms(next_target_secs);
+                        log_dynamic(
+                            sys,
+                            format_args!(
+                                "debug_alarm: next alarm scheduled at {:02}:{:02}:{:02}",
+                                nh, nm, ns
+                            ),
+                        );
+                    }
+                    None => {
+                        println(sys, "debug_alarm: failed to create next AlarmRequest");
+                        sys.exit_thread();
+                    }
+                }
             } else if state == "Cancelled" {
-                println(sys, "alarm_demo: alarm cancelled");
-                break;
+                println(sys, "debug_alarm: alarm cancelled");
+                sys.exit_thread();
             }
         }
-        sys.yield_now();
-    }
 
-    sys.exit_thread();
+        // Small sleep to avoid busy-waiting
+        sys.sleep_for_ns(100_000);
+    }
 }
 
 fn seconds_to_hms(seconds: i64) -> (u32, u32, u32) {

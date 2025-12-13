@@ -15,8 +15,8 @@ kernel = { path = "../kernel" }
 abi = { path = "../abi" }
 runtime = { path = "../runtime", features = ["kernel"] }
 thing_models = { path = "../thing_models" }
-input_events = { path = "../user/input_events" }
-input_logger_demo = { path = "../user/input_logger_demo" }
+debug_input_events = { path = "../user/debug_input_events" }
+debug_input_logger = { path = "../user/debug_input_logger" }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 spin = "0.10.0"
 heapless = "0.9.2"

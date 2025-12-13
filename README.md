@@ -66,7 +66,7 @@ thing-os/
     ├── hello/
     ├── heartbeat/
     ├── init/
-    └── thread_dashboard/
+    └── debug_thread/
 ```
 
 ---

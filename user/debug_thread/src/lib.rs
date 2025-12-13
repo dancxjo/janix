@@ -5,12 +5,13 @@ extern crate alloc;
 use thing_os::prelude::*;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "thread_dashboard: run() reached");
+    println(sys, "debug_thread: run() reached");
 
     let start = sys.time_monotonic_ns();
 
-    // Show 10 snapshots, one per "tick".
-    for tick in 0..10 {
+    // Run continuously, showing a snapshot every second.
+    let mut tick: u64 = 0;
+    loop {
         let now = sys.time_monotonic_ns();
         let elapsed_ms = (now - start) / 1_000_000;
 
@@ -25,10 +26,9 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         let threads: Vec<ThreadThing> = list_things_by_kind::<S, ThreadThing>(sys);
         log_thread_snapshot(sys, &threads);
 
-        sys.yield_now();
+        tick = tick.saturating_add(1);
+        sys.sleep_for_ns(1_000_000_000);
     }
-
-    sys.exit_thread()
 }
 
 fn log_thread_snapshot<S: Sys>(sys: &mut S, threads: &[ThreadThing]) {

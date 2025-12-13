@@ -3,10 +3,10 @@
 use thing_os::prelude::*;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "clock_demo: starting");
+    println(sys, "debug_clock: starting");
 
     let Some(clock) = SystemClock::discover(sys) else {
-        println(sys, "clock_demo: TimeSource not found");
+        println(sys, "debug_clock: TimeSource not found");
         sys.exit_thread();
     };
 
@@ -24,7 +24,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
             log_dynamic(
                 sys,
                 format_args!(
-                    "clock_demo: {:02}:{:02}:{:02} UTC (ticks={} uptime_secs={})",
+                    "debug_clock: {:02}:{:02}:{:02} UTC (ticks={} uptime_secs={})",
                     hour, minute, second, ticks, elapsed_secs
                 ),
             );

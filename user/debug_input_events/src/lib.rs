@@ -8,8 +8,8 @@ use thing_os::prelude::*;
 const POLL_NS: u64 = 10_000_000; // 10ms
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "input_events: starting");
-    
+    println(sys, "debug_input_events: starting");
+
     // Register interest in schemas
     let _ = register_schema_for::<KeyScanEvent>(sys);
     let _ = register_schema_for::<InputCharEvent>(sys);
@@ -38,12 +38,13 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         // Log InputCharEvents
         let chars: Vec<InputCharEvent> = list_things_by_kind(sys);
         for event in chars {
-             if is_new(event.sequence_index, &last_char_seq) {
+            if is_new(event.sequence_index, &last_char_seq) {
                 log_dynamic(
                     sys,
                     format_args!(
                         "CHAR: '{}' (seq={})",
-                        escape_char(event.ch), event.sequence_index
+                        escape_char(event.ch),
+                        event.sequence_index
                     ),
                 );
                 update_seq(&mut last_char_seq, event.sequence_index);
@@ -53,7 +54,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         // Log MousePacketEvents
         let mice: Vec<MousePacketEvent> = list_things_by_kind(sys);
         for event in mice {
-             if is_new(event.sequence_index, &last_mouse_seq) {
+            if is_new(event.sequence_index, &last_mouse_seq) {
                 log_dynamic(
                     sys,
                     format_args!(
@@ -85,14 +86,14 @@ fn update_seq(last: &mut Option<u64>, current: u64) {
 
 // Helper trait to get sequence index generically would be nice, but explicit for now is fine.
 fn initial_sequence<S: Sys, T: Thing + HasSequence>(sys: &mut S) -> Option<u64> {
-     // This is a bit inefficient to list all just to find max, but acceptable for debug tool
-     // Actually, we can just rely on the helper function logic if we implemented a trait.
-     // But `Thing` doesn't enforce `sequence_index`.
-     // We'll just define the trait locally.
-     
-     // Correct implementation:
-     let items: Vec<T> = list_things_by_kind(sys);
-     items.into_iter().map(|i| i.sequence_index()).max()
+    // This is a bit inefficient to list all just to find max, but acceptable for debug tool
+    // Actually, we can just rely on the helper function logic if we implemented a trait.
+    // But `Thing` doesn't enforce `sequence_index`.
+    // We'll just define the trait locally.
+
+    // Correct implementation:
+    let items: Vec<T> = list_things_by_kind(sys);
+    items.into_iter().map(|i| i.sequence_index()).max()
 }
 
 trait HasSequence {
@@ -100,15 +101,21 @@ trait HasSequence {
 }
 
 impl HasSequence for KeyScanEvent {
-    fn sequence_index(&self) -> u64 { self.sequence_index }
+    fn sequence_index(&self) -> u64 {
+        self.sequence_index
+    }
 }
 
 impl HasSequence for InputCharEvent {
-    fn sequence_index(&self) -> u64 { self.sequence_index }
+    fn sequence_index(&self) -> u64 {
+        self.sequence_index
+    }
 }
 
 impl HasSequence for MousePacketEvent {
-    fn sequence_index(&self) -> u64 { self.sequence_index }
+    fn sequence_index(&self) -> u64 {
+        self.sequence_index
+    }
 }
 
 fn escape_char(c: char) -> alloc::string::String {

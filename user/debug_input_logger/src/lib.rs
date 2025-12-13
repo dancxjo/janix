@@ -8,7 +8,7 @@ use thing_os::prelude::*;
 const POLL_NS: u64 = 5_000_000;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "input_logger_demo: starting");
+    println(sys, "debug_input_logger: starting");
     let _ = register_schema_for::<InputCharEvent>(sys);
     let mut last_sequence = initial_sequence(sys);
     loop {
@@ -44,7 +44,7 @@ fn log_event<S: Sys>(sys: &mut S, event: &InputCharEvent) {
         log_dynamic(
             sys,
             format_args!(
-                "input_logger_demo: InputCharEvent '{}' (seq={})",
+                "debug_input_logger: InputCharEvent '{}' (seq={})",
                 label, event.sequence_index
             ),
         );
@@ -54,7 +54,7 @@ fn log_event<S: Sys>(sys: &mut S, event: &InputCharEvent) {
     log_dynamic(
         sys,
         format_args!(
-            "input_logger_demo: InputCharEvent '{}' (seq={})",
+            "debug_input_logger: InputCharEvent '{}' (seq={})",
             event.ch, event.sequence_index
         ),
     );

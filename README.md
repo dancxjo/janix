@@ -25,7 +25,7 @@ This repository currently provides a minimal working skeleton of that system: a 
   * `boot` handles hardware + Limine
   * `kernel` holds pure no_std kernel logic
   * `abi` defines shared types
-  * `userland_rt` exposes a syscall-like trait
+  * `runtime` exposes a syscall-like trait
   * `userland_std` gives friendly, std-like APIs to userland programs
 
 * **Comfortable userland experience**
@@ -56,7 +56,7 @@ thing-os/
 ├── abi/                # Shared ABI types (no_std)
 │   └── lib.rs          # KernelRequest, KernelResponse, NodeId, etc.
 │
-├── userland_rt/        # no_std runtime / syscall interface
+├── runtime/        # no_std runtime / syscall interface
 │   └── lib.rs          # Sys trait + KernelSys implementation
 │
 ├── userland_std/       # std-like userland library (std)
@@ -168,7 +168,7 @@ This ABI will evolve into a richer transactional graph interface.
 
 ### Userland runtime
 
-`userland_rt` defines a `Sys` trait that abstracts the syscall interface. On native kernels it exposes `KernelSys`, which forwards to `kernel`.
+`runtime` defines a `Sys` trait that abstracts the syscall interface. On native kernels it exposes `KernelSys`, which forwards to `kernel`.
 
 `userland_std` provides friendly wrapper functions so programs can write:
 

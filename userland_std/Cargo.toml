@@ -8,4 +8,4 @@ edition.workspace = true
 [dependencies]
 abi = { path = "../abi" }
 thing_models = { path = "../thing_models" }
-userland_rt = { path = "../userland_rt" }
+runtime = { path = "../runtime" }

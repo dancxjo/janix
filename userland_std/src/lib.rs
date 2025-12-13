@@ -17,7 +17,7 @@ use abi::{
     SchedulerSummary, SharedBufferInfo, ThreadInfo,
 };
 // `graph_kinds` is re-exported below as `pub use abi::graph_kinds;`
-use userland_rt::{Sys, UserlandSys};
+use runtime::{Sys, UserlandSys};
 
 pub mod alarm;
 pub mod batch;
@@ -28,8 +28,8 @@ pub mod time;
 pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
 pub use thing_models::{
-    AlarmEvent, AlarmRequest, DisplayPresentRequest, MODE_INDEX_CONSOLE, Mode, ModeSwitchEvent,
-    Place, RawModule, Surface, TimeSource, Window, View, Cursor,
+    AlarmEvent, AlarmRequest, Cursor, DisplayPresentRequest, MODE_INDEX_CONSOLE, Mode,
+    ModeSwitchEvent, Place, RawModule, Surface, TimeSource, View, Window,
 };
 
 #[cfg(not(target_os = "none"))]
@@ -38,7 +38,7 @@ pub mod doc_helpers {
     use std::collections::VecDeque;
 
     use abi::{KernelRequest, KernelResponse, PropKey, PropType, PropValue, Thing, ThingId};
-    use userland_rt::Sys;
+    use runtime::Sys;
 
     /// Simple helper for doc tests that drives the syscall interface with canned responses.
     pub struct DocSys {

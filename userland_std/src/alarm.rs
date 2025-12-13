@@ -7,8 +7,8 @@ use alloc::string::String;
 use std::string::String;
 
 use abi::ThingId;
+use runtime::Sys;
 use thing_models::AlarmRequest;
-use userland_rt::Sys;
 
 use crate::{create_thing, load_thing};
 

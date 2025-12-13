@@ -7,8 +7,8 @@ use alloc::vec::Vec;
 use std::vec::Vec;
 
 use abi::ThingId;
+use runtime::Sys;
 use thing_models::TimeSource;
-use userland_rt::Sys;
 
 use crate::{list_things_by_kind, load_thing};
 

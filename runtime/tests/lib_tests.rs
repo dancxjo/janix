@@ -1,4 +1,4 @@
-use userland_rt::init_user_heap;
+use runtime::init_user_heap;
 
 #[test]
 fn init_user_heap_is_noop_on_host() {

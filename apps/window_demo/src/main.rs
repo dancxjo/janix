@@ -8,7 +8,7 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 #[cfg(target_os = "none")]
-use userland_rt::UserlandSys;
+use runtime::UserlandSys;
 
 #[cfg(target_os = "none")]
 #[unsafe(no_mangle)]

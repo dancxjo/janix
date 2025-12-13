@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use abi::{KernelRequest, KernelResponse, PropKey, PropType, PropValue, ThingId};
-use userland_rt::Sys;
+use runtime::Sys;
 use userland_std::{Thing, create_transaction, find_thing};
 
 #[derive(Default)]

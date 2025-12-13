@@ -57,7 +57,7 @@ mod tests {
         vec::Vec,
     };
     use core::cell::RefCell;
-    use userland_rt::Sys;
+    use runtime::Sys;
     use userland_std::{ThreadThing, doc_helpers::DocSys};
 
     fn thread(id: u64, tid: u64, state: &str) -> ThreadThing {

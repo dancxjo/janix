@@ -12,7 +12,7 @@ This is a Cargo workspace with the following crates:
 - **boot/** - Limine bootloader entry point and kernel initialization
 - **kernel/** - Core kernel functionality including graph database subsystem, transaction management, and kernel logging
 - **abi/** - Shared ABI definitions with type definitions (ProcessId, TransactionId, NodeId) and KernelRequest/KernelResponse enums
-- **userland_rt/** - Userland runtime with Sys trait for system calls and HostedSys stub implementation for testing
+- **runtime/** - Userland runtime with Sys trait for system calls and HostedSys stub implementation for testing
 
 ### Userland Components (std)
 - **userland_std/** - Userland standard library with `println()`, `graph_query()`, and transaction management functions
@@ -75,7 +75,7 @@ Note: Additional architectures need to be enabled in boot/rust-toolchain.toml
 - Use nightly Rust features as needed for OS development
 
 ### no_std vs std
-- **no_std crates**: boot, kernel, abi, userland_rt
+- **no_std crates**: boot, kernel, abi, runtime
 - **std crates**: userland_std, host_harness, user_app_hello
 
 Always maintain the no_std compatibility for kernel and low-level crates.
@@ -88,7 +88,7 @@ Always maintain the no_std compatibility for kernel and low-level crates.
 ### Code Organization
 - Keep ABI definitions in the `abi` crate to be shared between kernel and userland
 - Separate kernel logic (kernel) from boot logic (boot)
-- Keep userland runtime (userland_rt) independent of the standard library (userland_std)
+- Keep userland runtime (`runtime`) independent of the standard library (`userland_std`)
 
 ### Host/Kernel Parity
 - **Sync Requirement**: The `host_harness` (via `HostedSys`) and the kernel (via `KernelSys`) must always stay in sync.

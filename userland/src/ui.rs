@@ -4,7 +4,7 @@ extern crate alloc;
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use userland_rt::Sys;
+use runtime::Sys;
 use userland_std::graph_kinds;
 use userland_std::{self, Mode, Place, Surface, Window};
 use userland_std::{PropValue, ThingId};

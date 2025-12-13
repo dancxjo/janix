@@ -5,7 +5,7 @@ use abi::{
     KernelRequest, KernelResponse, MemorySummary, PropKey, PropType, PropValue, SchedulerSummary,
     ThingId, graph_kinds,
 };
-use userland_rt::Sys;
+use runtime::Sys;
 use userland_std::{
     Alarm, AlarmRequest, Mode, Thing, add_link, alloc_frame, create_thing, create_thread,
     create_transaction, default_mode, demo_shared::DEMO_NAME_VAL, demo_shared::DemoState,

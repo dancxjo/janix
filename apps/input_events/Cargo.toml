@@ -5,5 +5,5 @@ edition = "2021"
 
 [dependencies]
 userland = { path = "../../userland" }
-userland_rt = { path = "../../userland_rt" }
+runtime = { path = "../../runtime" }
 thing_models = { path = "../../thing_models" }

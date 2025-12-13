@@ -12,7 +12,7 @@ abi = { path = "../../abi" }
 userland = { path = "../../userland" }
 thing_models = { path = "../../thing_models" }
 userland_std = { path = "../../userland_std" }
-userland_rt = { path = "../../userland_rt" }
+runtime = { path = "../../runtime" }
 
 [features]
 rootfs = []

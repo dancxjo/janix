@@ -10,7 +10,7 @@ use core::mem;
 use abi::{
     KernelRequest, KernelResponse, PixelFormat, PropKey, PropValue, SharedBufferInfo, ThingId,
 };
-use userland_rt::Sys;
+use runtime::Sys;
 use userland_std::{PrimaryDisplayBuffer, SharedBufferMapping, Thing};
 
 #[derive(Default)]

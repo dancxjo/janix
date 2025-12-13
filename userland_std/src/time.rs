@@ -1,4 +1,4 @@
-use userland_rt::Sys;
+use runtime::Sys;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 /// Simple duration type built on nanoseconds.
@@ -48,7 +48,7 @@ impl Instant {
     /// ```
     /// use std::cell::RefCell;
     /// use abi::{KernelRequest, KernelResponse};
-    /// use userland_rt::Sys;
+    /// use runtime::Sys;
     /// use userland_std::time::{Duration, Instant};
     ///
     /// struct ClockSys(RefCell<u64>);
@@ -124,7 +124,7 @@ impl SystemTime {
     ///
     /// ```
     /// use abi::{KernelRequest, KernelResponse};
-    /// use userland_rt::Sys;
+    /// use runtime::Sys;
     /// use userland_std::time::SystemTime;
     ///
     /// struct TimeSys(u64);
@@ -174,7 +174,7 @@ impl SystemTime {
 /// ```
 /// use std::cell::RefCell;
 /// use abi::{KernelRequest, KernelResponse};
-/// use userland_rt::Sys;
+/// use runtime::Sys;
 /// use userland_std::time::{sleep, Duration};
 ///
 /// struct SleepSys {

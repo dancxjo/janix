@@ -9,10 +9,12 @@ path = "src/lib.rs"
 
 [dependencies]
 userland = { path = "../../userland" }
-userland_rt = { path = "../../userland_rt" }
+runtime = { path = "../../runtime" }
 abi = { path = "../../abi" }
 userland_std = { path = "../../userland_std" }
-fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
+fontdue = { version = "0.9", default-features = false, features = [
+    "hashbrown",
+] }
 spin = { version = "0.9", default-features = false, features = ["once"] }
 
 [dev-dependencies]

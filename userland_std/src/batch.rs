@@ -13,8 +13,8 @@ use alloc::boxed::Box;
 #[cfg(not(target_os = "none"))]
 use std::boxed::Box;
 
-use abi::{ThingId, PropKey, PropValue, KernelRequest, KernelResponse, BatchUpdateEntry};
-use userland_rt::Sys;
+use abi::{BatchUpdateEntry, KernelRequest, KernelResponse, PropKey, PropValue, ThingId};
+use runtime::Sys;
 
 pub struct Batcher {
     updates: BTreeMap<ThingId, BTreeMap<PropKey, PropValue>>,
@@ -33,7 +33,6 @@ impl Batcher {
         props.insert(key, val);
     }
 
-
     /// Flush all queued updates as a single system call.
     pub fn flush(&mut self, sys: &impl Sys) -> bool {
         if self.updates.is_empty() {
@@ -48,7 +47,7 @@ impl Batcher {
                 props_vec.push((k.clone(), v.clone()));
             }
             let props_slice = Box::leak(props_vec.into_boxed_slice());
-            
+
             batch_entries.push(BatchUpdateEntry {
                 id: *id,
                 props: props_slice,
@@ -59,8 +58,10 @@ impl Batcher {
         self.updates.clear();
 
         let updates_slice = Box::leak(batch_entries.into_boxed_slice());
-        
-        match sys.syscall(KernelRequest::ThingBatchUpdate { updates: updates_slice }) {
+
+        match sys.syscall(KernelRequest::ThingBatchUpdate {
+            updates: updates_slice,
+        }) {
             KernelResponse::Success { .. } => true,
             _ => false,
         }

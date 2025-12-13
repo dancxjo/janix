@@ -3,7 +3,7 @@ extern crate alloc;
 use crate::{Arch, CurrentArch, UserEntryRegs};
 use crate::cpu;
 use kernel::sched::SCHEDULER;
-use userland_rt::UserlandSys;
+use runtime::UserlandSys;
 
 // Re-export stack functions from current arch
 pub use crate::current::{alloc_user_stack, init_user_stack};

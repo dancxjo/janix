@@ -12,4 +12,4 @@ abi = { path = "../../abi" }
 thing_models = { path = "../../thing_models" }
 userland = { path = "../../userland" }
 userland_std = { path = "../../userland_std" }
-userland_rt = { path = "../../userland_rt" }
+runtime = { path = "../../runtime" }

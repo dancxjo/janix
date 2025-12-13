@@ -5,7 +5,7 @@ use abi::{KernelRequest, KernelResponse, PropKey, PropValue, ThingId};
 use userland::ui::{
     WindowHandle, append_window_text, create_window, ensure_ui_schemas, set_window_text,
 };
-use userland_rt::Sys;
+use runtime::Sys;
 use userland_std::graph_kinds as gk;
 
 #[derive(Default)]

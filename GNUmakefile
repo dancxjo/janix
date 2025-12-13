@@ -749,20 +749,7 @@ $(IMAGE_NAME).hdd: limine/limine kernel user
 ifeq ($(KARCH),x86_64)
 	./limine/limine bios-install $(IMAGE_NAME).hdd
 endif
-	rm -f limine.conf.tmp
-	cp limine.conf limine.conf.tmp
-ifeq ($(ENABLE_ROOTFS),1)
-	echo "    module_path: boot():/boot/user/rootfs" >> limine.conf.tmp
-	echo "    module_cmdline: program=rootfs" >> limine.conf.tmp
-endif
-	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
-		for font in $(COMPOSITOR_FONT_DIR)/*.ttf; do \
-			name=$$(basename $$font); \
-			base=$${name%.ttf}; \
-			echo "    module_path: boot():/boot/fonts/$$name" >> limine.conf.tmp; \
-			echo "    module_cmdline: font=$$base" >> limine.conf.tmp; \
-		done; \
-	fi
+	# Use static limine.conf (do not alter dynamically)
 	mformat -i $(IMAGE_NAME).hdd@@1M
 	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine ::/boot/user ::/boot/fonts
 	mcopy -i $(IMAGE_NAME).hdd@@1M boot/kernel ::/boot
@@ -779,8 +766,8 @@ endif
 			mcopy -i $(IMAGE_NAME).hdd@@1M $$font ::/boot/fonts/; \
 		done; \
 	fi
-	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf.tmp ::/boot/limine
-	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf.tmp ::/EFI/BOOT/limine.conf
+	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf ::/boot/limine
+	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf ::/EFI/BOOT/limine.conf
 ifeq ($(KARCH),riscv64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M templates/riscv-startup.nsh ::/
 endif
@@ -807,7 +794,7 @@ endif
 .PHONY: clean
 clean:
 	$(MAKE) -C boot clean
-	rm -f limine.conf.tmp qemu.log
+	rm -f qemu.log
 	rm -rf iso_root $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
 	-cargo clean --manifest-path Cargo.toml
 	rm -rf target $(COMPOSITOR_FONT_DIR) ovmf/*.fd

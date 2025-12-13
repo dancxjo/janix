@@ -16,7 +16,7 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use thing_models::{
-    AlarmEvent, AlarmRequest, BootProfile, BootProgram, FontModule, InterruptEvent, IoPortOp,
+    AlarmEvent, AlarmRequest, BootProfile, BootProgram, FontModule, InterruptEvent, InterruptRequest, IoPortOp,
     IoPortRegion, ProgramImage, TimeSource,
 };
 
@@ -246,8 +246,14 @@ pub fn init_schemas() {
 
     let _ = graph::register_schema(
         graph_kinds::KIND_INTERRUPT_EVENT,
-        InterruptEvent::DESCRIPTION,
-        InterruptEvent::schema(),
+        thing_models::InterruptEvent::DESCRIPTION,
+        thing_models::InterruptEvent::schema(),
+        &[],
+    );
+    let _ = graph::register_schema(
+        abi::graph_kinds::KIND_INTERRUPT_REQUEST,
+        thing_models::InterruptRequest::DESCRIPTION,
+        thing_models::InterruptRequest::schema(),
         &[],
     );
 

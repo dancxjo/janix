@@ -25,6 +25,10 @@ pub fn init_machine() {
         unsafe { arch::user::init_user_stack(offset) };
     }
 
+    // Initialize architecture-specific tables (GDT, etc.)
+    // This MUST happen before we try to enter user mode or load segment selectors.
+    arch::platform::init_arch_tables();
+
     kernel::log("Initializing kernel core...");
     kernel::init();
 
@@ -51,7 +55,8 @@ pub fn init_machine() {
     kernel::hw::usb::init();
     crate::graph_reifier::init_graph_subscriptions();
 
-    arch::platform::init_arch_tables();
+    // Register IRQ controller callback to manage IRQ masking via graph requests
+    kernel::hw::io::register_irq_controller(arch::x86_64::pic::set_irq_mask);
 
     CurrentArch::install_syscall_handler();
 

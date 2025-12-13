@@ -1,9 +1,58 @@
 use crate::{graph, graph_kinds, time};
-use abi::{PropValue, Thing, ThingId};
+use abi::{PropKey, PropValue, ThingId};
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, Ordering};
+
+use core::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use spin::Mutex;
 use thing_models::{InterruptEvent, IoPortOp, IoPortRegion, IoStatus};
+
+static IRQ_CONTROLLER: Mutex<Option<fn(u8, bool)>> = Mutex::new(None);
+
+/// Register a handler that will be called for each IRQ line change.
+/// `handler(irq, masked)` where `masked` is true if the line should be masked.
+pub fn register_irq_controller(handler: fn(u8, bool)) {
+    let mut lock = IRQ_CONTROLLER.lock();
+    *lock = Some(handler);
+}
+
+/// Process an InterruptRequest Thing identified by `id`.
+/// Reads `irq_line` and `enabled` properties and invokes the registered handler.
+pub fn process_interrupt_request(id: ThingId) {
+    // Retrieve the thing
+    let Some((kind, props)) = graph::get_thing(id) else { return; };
+    if kind != abi::graph_kinds::KIND_INTERRUPT_REQUEST { return; }
+    let mut irq_line: u8 = 0;
+    let mut enabled: bool = false;
+    for (k, v) in props.iter().flatten() {
+        match *k {
+            abi::graph_kinds::PROP_IRQ_LINE => if let PropValue::U64(val) = v { irq_line = *val as u8; },
+            abi::graph_kinds::PROP_ENABLED => if let PropValue::Bool(b) = v { enabled = *b; },
+            _ => {}
+        }
+    }
+    let masked = !enabled;
+    if let Some(handler) = *IRQ_CONTROLLER.lock() {
+        handler(irq_line, masked);
+        let msg = format!(
+            "Processed InterruptRequest {}: line={}, enabled={}, masked={}",
+            id.0, irq_line, enabled, masked
+        );
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        crate::log(leaked);
+    } else {
+        let msg = format!(
+            "No IRQ controller registered when processing InterruptRequest {}",
+            id.0
+        );
+        let leaked: &'static str = Box::leak(msg.into_boxed_str());
+        crate::log(leaked);
+    }
+}
+
+use alloc::boxed::Box;
+use alloc::format;
+use abi::Thing;
 
 #[path = "../../../arch/src/io.rs"]
 mod arch_io;

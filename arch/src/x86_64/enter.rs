@@ -142,6 +142,38 @@ pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
         x86_regs.user_ss,
     );
 
+    // Diagnostic checks: ensure the selectors have RPL==3 and stack/rip look sane.
+    if (x86_regs.user_cs & 0x3) != 0x3 || (x86_regs.user_ss & 0x3) != 0x3 {
+        kernel::println!(
+            "Invalid selector RPLs: user_cs={:#x}, user_ss={:#x}",
+            x86_regs.user_cs,
+            x86_regs.user_ss,
+        );
+        // Dump the rcx struct contents to help debugging (rip, rsp, rflags, cs, ss, rdi)
+        unsafe {
+            let p = &x86_regs as *const X86UserEntryRegs as *const u64;
+            for i in 0..6 {
+                let v = core::ptr::read(p.add(i));
+                kernel::println!("rcx[{}] = {:#x}", i, v);
+            }
+        }
+        kernel::println!("Aborting user entry to avoid GP; spinning.");
+        loop {}
+    }
+
+    if x86_regs.rsp == 0 {
+        kernel::println!("Invalid user RSP == 0; aborting enter_user_mode");
+        unsafe {
+            let p = &x86_regs as *const X86UserEntryRegs as *const u64;
+            for i in 0..6 {
+                let v = core::ptr::read(p.add(i));
+                kernel::println!("rcx[{}] = {:#x}", i, v);
+            }
+        }
+        loop {}
+    }
+
+    // If diagnostics pass, go to assembly entry.
     unsafe { enter_user_mode_asm(&x86_regs as *const _) }
 }
 

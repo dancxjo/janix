@@ -52,11 +52,15 @@ mod x86_64 {
 
     struct TableFrameAllocator<'a, F> {
         allocator: &'a mut F,
+        hhdm_offset: u64,
     }
 
     unsafe impl<'a, F: FrameAllocator> X86FrameAllocator<Size4KiB> for TableFrameAllocator<'a, F> {
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
+        fn allocate_frame(&mut self) -> Option<PhysFrame> {
             let addr = self.allocator.allocate_frame()?;
+            unsafe {
+                core::ptr::write_bytes((addr + self.hhdm_offset) as *mut u8, 0, PAGE_SIZE as usize);
+            }
             let phys = PhysAddr::new(addr);
             PhysFrame::from_start_address(phys).ok()
         }
@@ -78,7 +82,10 @@ mod x86_64 {
         let l4_ptr = (l4_phys + hhdm_offset) as *mut PageTable;
         let l4_table = unsafe { &mut *l4_ptr };
         let mut mapper = unsafe { OffsetPageTable::new(l4_table, VirtAddr::new(hhdm_offset)) };
-        let mut table_alloc = TableFrameAllocator { allocator };
+        let mut table_alloc = TableFrameAllocator {
+            allocator,
+            hhdm_offset,
+        };
 
         let mut page_addr = vaddr;
         for frame in frames {

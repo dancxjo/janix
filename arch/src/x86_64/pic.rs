@@ -18,6 +18,26 @@ struct Pics;
 
 static PIC_LOCK: Mutex<()> = Mutex::new(());
 
+/// Set mask for a specific IRQ line. `masked = true` will mask (disable) the line.
+pub fn set_irq_mask(irq: u8, masked: bool) {
+    let _lock = PIC_LOCK.lock();
+    unsafe {
+        // Determine which PIC and data port to use
+        let (port_cmd, port_data) = if irq < 8 {
+            (PIC1_COMMAND, PIC1_DATA)
+        } else {
+            (PIC2_COMMAND, PIC2_DATA)
+        };
+        // Read current mask
+        let mut data_port = Port::<u8>::new(port_data);
+        let current_mask = data_port.read();
+        let mask_bit = 1u8 << (irq % 8);
+        let new_mask = if masked { current_mask | mask_bit } else { current_mask & !mask_bit };
+        // Write new mask
+        data_port.write(new_mask);
+    }
+}
+
 pub fn init() {
     let _lock = PIC_LOCK.lock();
     unsafe {
@@ -35,8 +55,8 @@ pub fn init() {
         pic1_data.write(ICW4_8086);
         pic2_data.write(ICW4_8086);
 
-        // Unmask only IRQ1 (keyboard) on master PIC; mask all on slave.
-        pic1_data.write(0b1111_1101);
+        // Mask all IRQ lines on both master and slave PICs
+        pic1_data.write(0xFF);
         pic2_data.write(0xFF);
     }
 }

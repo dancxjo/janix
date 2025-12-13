@@ -4,8 +4,8 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use thing_models::{
-    InputCharEvent, InterruptEvent, IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth,
-    KeyScanEvent, ModeSwitchEvent,
+    InputCharEvent, InterruptEvent, InterruptRequest, IoDirection, IoPortOp, IoPortRegion,
+    IoStatus, IoWidth, KeyScanEvent, ModeSwitchEvent,
 };
 use userland::prelude::*;
 use userland_std::MODE_INDEX_CONSOLE;
@@ -30,27 +30,54 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         println(sys, "ps2_keyboard_driver: controller init failed");
     } else {
         println(sys, "ps2_keyboard_driver: controller initialized");
+        // Create an InterruptRequest Thing so the kernel will unmask IRQ1 via PIC.
+        let _ = register_schema_for::<InterruptRequest>(sys);
+        let irq_req = InterruptRequest {
+            id: ThingId(0),
+            irq_line: 1,
+            enabled: true,
+            owner_process: None,
+        };
+        if let Some(_id) = create_thing(sys, &irq_req) {
+            println(sys, "ps2_keyboard_driver: created InterruptRequest");
+        } else {
+            println(
+                sys,
+                "ps2_keyboard_driver: failed to create InterruptRequest",
+            );
+        }
     }
 
     let mut decoder = KeyboardDecoder::new(region.id);
     let mut last_irq_id = initial_interrupt_cursor(sys);
 
     loop {
-        let mut events: Vec<InterruptEvent> = list_things_by_kind(sys);
-        events.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        println(sys, "ps2_keyboard_driver: listing InterruptEvent things");
+        let events: Vec<InterruptEvent> = list_things_by_kind(sys);
 
+        /*
+         * Temporarily avoid calling slice::sort (which uses unsafe helpers)
+         * while we gather diagnostics — perform a simple linear scan
+         * instead. This reduces exposure to potential UB in the standard
+         * library sort implementation and helps determine whether the
+         * crash is triggered by the sort.
+         */
         let mut handled = false;
-        for event in events {
+        let mut max_seen = last_irq_id;
+        for event in &events {
             if event.irq_line != 1 {
                 continue;
             }
             if event.id.0 <= last_irq_id {
                 continue;
             }
-            last_irq_id = event.id.0;
+            if event.id.0 > max_seen {
+                max_seen = event.id.0;
+            }
             handled = true;
             drain_pending_bytes(sys, &mut accessor, &mut decoder);
         }
+        last_irq_id = max_seen;
 
         if !handled {
             sys.sleep_for_ns(POLL_INTERVAL_NS);

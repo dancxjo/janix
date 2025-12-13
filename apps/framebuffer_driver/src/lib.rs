@@ -66,9 +66,11 @@ impl FramebufferDriver {
         )?;
         let front_buffer = Self::map_buffer_view(sys, front_buffer_id, logical_map_flags)?;
         let back_buffer = Self::map_buffer_view(sys, back_buffer_id, logical_map_flags)?;
+        
         let scanout_map_flags = logical_map_flags.union(MapFlags::WRITE);
         let scanout_buffer =
             Self::map_buffer_view(sys, descriptor.scanout_buffer_id, scanout_map_flags)?;
+        
         let active_buffer_index = Self::load_active_buffer_index(sys, descriptor.display_id);
 
         println(sys, "framebuffer_driver: describing framebuffer Thing");

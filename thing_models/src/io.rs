@@ -128,6 +128,50 @@ impl Thing for IoPortRegion {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct InterruptRequest {
+    pub id: ThingId,
+    pub irq_line: u8,
+    pub enabled: bool,
+    pub owner_process: Option<ThingId>,
+}
+
+impl Thing for InterruptRequest {
+    const KIND: &'static str = abi::graph_kinds::KIND_INTERRUPT_REQUEST;
+    const DESCRIPTION: &'static str = "Userland request to enable or disable an IRQ line.";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push((abi::graph_kinds::PROP_IRQ_LINE, PropValue::U64(self.irq_line as u64)));
+        out.push((abi::graph_kinds::PROP_ENABLED, PropValue::Bool(self.enabled)));
+        if let Some(owner) = self.owner_process {
+            out.push(("owner_process", PropValue::U64(owner.0)));
+        }
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut irq_line = 0u8;
+        let mut enabled = false;
+        let mut owner_process = None;
+        for (k, v) in props.iter().flatten() {
+            match *k {
+                abi::graph_kinds::PROP_IRQ_LINE => if let PropValue::U64(x) = v { irq_line = *x as u8; },
+                abi::graph_kinds::PROP_ENABLED => if let PropValue::Bool(b) = v { enabled = *b; },
+                "owner_process" => if let PropValue::U64(x) = v { owner_process = Some(ThingId(*x)); },
+                _ => {}
+            }
+        }
+        Self { id, irq_line, enabled, owner_process }
+    }
+
+    fn schema() -> &'static [(PropKey, PropType)] {
+        &[
+            (abi::graph_kinds::PROP_IRQ_LINE, PropType::U64),
+            (abi::graph_kinds::PROP_ENABLED, PropType::Bool),
+            ("owner_process", PropType::U64),
+        ]
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IoDirection {
     Read,

@@ -206,17 +206,24 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::MapSharedBuffer { buffer_id, flags } => {
-            let buffer = shared_buffer::manager().lock().get_cloned(&buffer_id);
-
-            let Some(buffer) = buffer else {
-                return KernelResponse::Error {
-                    message: "SharedBuffer not found",
-                };
+            // Retrieve buffer info and frames using a short-lived lock.
+            // We convert the frames to a heap-allocated Vec to avoid exploding the kernel stack,
+            // as SharedBuffer uses a large inline heapless::Vec (32KB+).
+            let (size_bytes, frames) = {
+                let manager = shared_buffer::manager().lock();
+                if let Some(buffer) = manager.get(&buffer_id) {
+                    let frames: alloc::vec::Vec<_> = buffer.frames.iter().cloned().collect();
+                    (buffer.size_bytes(), frames)
+                } else {
+                    return KernelResponse::Error {
+                        message: "SharedBuffer not found",
+                    };
+                }
             };
 
-            let size = shared_buffer::align_up(buffer.size_bytes(), 4096);
+            let size = shared_buffer::align_up(size_bytes, 4096);
 
-            let (vaddr, frames) = {
+            let vaddr = {
                 let mut sched = sched::SCHEDULER.lock();
                 let pid = match sched.current_process_id() {
                     Some(id) => id,
@@ -227,16 +234,14 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     }
                 };
 
-                let vaddr = match sched.reserve_user_region(pid, size as usize, 4096) {
+                match sched.reserve_user_region(pid, size as usize, 4096) {
                     Some(addr) => addr,
                     None => {
                         return KernelResponse::Error {
                             message: "Failed to reserve virtual region",
                         };
                     }
-                };
-
-                (vaddr, buffer.frames)
+                }
             };
 
             if let Err(msg) = shared_buffer::map_frames_into_current_as(vaddr, &frames, flags) {

@@ -232,77 +232,16 @@ struct LinkSlot {
     deleted: bool,
 }
 
-#[derive(Debug, Default, Clone)]
-struct CsrMatrix {
-    offsets: Vec<u32>,   // indexed by ThingId.index()
-    links: Vec<ThingId>, // The Link ThingIds
-}
-
-impl CsrMatrix {
-    fn ensure_capacity(&mut self, node_idx: usize) {
-        if node_idx + 2 > self.offsets.len() {
-            let old_len = self.offsets.len();
-            let new_len = node_idx + 2;
-            self.offsets.resize(new_len, 0);
-
-            // If resizing up, fill new slots with the last offset
-            if old_len > 0 {
-                let last_offset = self.offsets[old_len - 1];
-                for i in old_len..new_len {
-                    self.offsets[i] = last_offset;
-                }
-            }
-        }
-    }
-
-    fn add(&mut self, node_id: ThingId, link_id: ThingId) {
-        let idx = node_id.index() as usize;
-        self.ensure_capacity(idx);
-
-        let _start = self.offsets[idx] as usize;
-        let end = self.offsets[idx + 1] as usize;
-
-        // Insert and increment subsequent offsets
-        self.links.insert(end, link_id);
-
-        for offset in self.offsets.iter_mut().skip(idx + 1) {
-            *offset += 1;
-        }
-    }
-
-    fn remove(&mut self, node_id: ThingId, link_id: ThingId) {
-        let idx = node_id.index() as usize;
-        if idx + 1 >= self.offsets.len() {
-            return;
-        }
-
-        let start = self.offsets[idx] as usize;
-        let end = self.offsets[idx + 1] as usize;
-
-        if let Some(pos) = self.links[start..end].iter().position(|e| *e == link_id) {
-            self.links.remove(start + pos);
-            for offset in self.offsets.iter_mut().skip(idx + 1) {
-                *offset -= 1;
-            }
-        }
-    }
-
-    fn slice(&self, node_id: ThingId) -> &[ThingId] {
-        let idx = node_id.index() as usize;
-        if idx + 1 >= self.offsets.len() {
-            return &[];
-        }
-        let start = self.offsets[idx] as usize;
-        let end = self.offsets[idx + 1] as usize;
-        &self.links[start..end]
-    }
-}
+// Simpler, safer storage for early kernel: map predicate -> (node -> list of link ids).
+// This is easier to reason about and avoids brittle CSR offset maintenance.
 
 #[derive(Default, Debug)]
 pub struct LinkIndex {
     links: BTreeMap<ThingId, LinkSlot>,
-    by_pred_outgoing: BTreeMap<Predicate, CsrMatrix>,
-    by_pred_incoming: BTreeMap<Predicate, CsrMatrix>,
+    // Predicate -> (source node -> list of outgoing link ids)
+    by_pred_outgoing: BTreeMap<Predicate, BTreeMap<ThingId, Vec<ThingId>>>,
+    // Predicate -> (destination node -> list of incoming link ids)
+    by_pred_incoming: BTreeMap<Predicate, BTreeMap<ThingId, Vec<ThingId>>>,
 }
 
 static EMPTY_LINK_IDS: [ThingId; 0] = [];
@@ -375,14 +314,14 @@ impl LinkIndex {
     pub fn links_from_pred(&self, src: ThingId, pred: Predicate) -> &[ThingId] {
         self.by_pred_outgoing
             .get(&pred)
-            .map(|csr| csr.slice(src))
+            .and_then(|map| map.get(&src).map(|v| v.as_slice()))
             .unwrap_or(&EMPTY_LINK_IDS)
     }
 
     pub fn links_to_pred(&self, dst: ThingId, pred: Predicate) -> &[ThingId] {
         self.by_pred_incoming
             .get(&pred)
-            .map(|csr| csr.slice(dst))
+            .and_then(|map| map.get(&dst).map(|v| v.as_slice()))
             .unwrap_or(&EMPTY_LINK_IDS)
     }
 
@@ -398,13 +337,16 @@ impl LinkIndex {
     }
 
     pub fn collect_incident_links(&self, id: ThingId, out: &mut Vec<ThingId>) {
-        // CSR means we must iterate all predicates to find everything connected to `id`.
-        // This is slow (O(Predicates)), but deletion is rare compared to traversal.
-        for csr in self.by_pred_outgoing.values() {
-            out.extend_from_slice(csr.slice(id));
+        // Iterate all predicates to find everything connected to `id`.
+        for map in self.by_pred_outgoing.values() {
+            if let Some(v) = map.get(&id) {
+                out.extend_from_slice(v);
+            }
         }
-        for csr in self.by_pred_incoming.values() {
-            out.extend_from_slice(csr.slice(id));
+        for map in self.by_pred_incoming.values() {
+            if let Some(v) = map.get(&id) {
+                out.extend_from_slice(v);
+            }
         }
     }
 
@@ -412,20 +354,45 @@ impl LinkIndex {
         self.by_pred_outgoing
             .entry(link.pred)
             .or_default()
-            .add(link.src, id);
+            .entry(link.src)
+            .or_default()
+            .push(id);
 
         self.by_pred_incoming
             .entry(link.pred)
             .or_default()
-            .add(link.dst, id);
+            .entry(link.dst)
+            .or_default()
+            .push(id);
     }
 
     fn remove_from_indexes(&mut self, id: ThingId, link: &Link) {
-        if let Some(csr) = self.by_pred_outgoing.get_mut(&link.pred) {
-            csr.remove(link.src, id);
+        if let Some(map) = self.by_pred_outgoing.get_mut(&link.pred) {
+            if let Some(vec) = map.get_mut(&link.src) {
+                if let Some(pos) = vec.iter().position(|e| *e == id) {
+                    vec.remove(pos);
+                }
+                if vec.is_empty() {
+                    map.remove(&link.src);
+                }
+            }
+            if map.is_empty() {
+                self.by_pred_outgoing.remove(&link.pred);
+            }
         }
-        if let Some(csr) = self.by_pred_incoming.get_mut(&link.pred) {
-            csr.remove(link.dst, id);
+
+        if let Some(map) = self.by_pred_incoming.get_mut(&link.pred) {
+            if let Some(vec) = map.get_mut(&link.dst) {
+                if let Some(pos) = vec.iter().position(|e| *e == id) {
+                    vec.remove(pos);
+                }
+                if vec.is_empty() {
+                    map.remove(&link.dst);
+                }
+            }
+            if map.is_empty() {
+                self.by_pred_incoming.remove(&link.pred);
+            }
         }
     }
 }

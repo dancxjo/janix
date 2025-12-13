@@ -45,6 +45,22 @@ pub const KIND_USB_ENDPOINT: &str = "UsbEndpoint";
 pub const KIND_USB_TRANSFER_REQUEST: &str = "UsbTransferRequest";
 pub const KIND_USB_TRANSFER_RESULT: &str = "UsbTransferResult";
 
+pub const KIND_PCI_DEVICE: &str = "PciDevice";
+pub const PROP_BUS: &str = "bus";
+pub const PROP_SLOT: &str = "slot";
+pub const PROP_FUNC: &str = "func";
+pub const PROP_VENDOR_ID: &str = "vendor_id";
+pub const PROP_DEVICE_ID: &str = "device_id";
+pub const PROP_CLASS_ID: &str = "class_id";
+pub const PROP_SUBCLASS_ID: &str = "subclass_id";
+pub const PROP_PROG_IF: &str = "prog_if";
+pub const PROP_BAR0: &str = "bar0";
+pub const PROP_BAR1: &str = "bar1";
+pub const PROP_BAR2: &str = "bar2";
+pub const PROP_BAR3: &str = "bar3";
+pub const PROP_BAR4: &str = "bar4";
+pub const PROP_BAR5: &str = "bar5";
+
 pub mod canon {
     use crate::Predicate;
 

@@ -32,15 +32,9 @@ pub fn process_interrupt_request(id: ThingId) {
         }
     }
     let masked = !enabled;
+
     if let Some(handler) = *IRQ_CONTROLLER.lock() {
         handler(irq_line, masked);
-        let msg = format!(
-            "Processed InterruptRequest {}: line={}, enabled={}, masked={}",
-            id.0, irq_line, enabled, masked
-        );
-        let leaked: &'static str = Box::leak(msg.into_boxed_str());
-        crate::log(leaked);
-    } else {
         let msg = format!(
             "No IRQ controller registered when processing InterruptRequest {}",
             id.0

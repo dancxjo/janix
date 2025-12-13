@@ -4,7 +4,8 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use thing_models::{
-    InterruptEvent, IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth, MousePacketEvent,
+    InterruptEvent, InterruptRequest, IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth,
+    MousePacketEvent,
 };
 use userland::prelude::*;
 
@@ -28,6 +29,20 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         println(sys, "ps2_mouse_driver: mouse initialization failed");
     } else {
         println(sys, "ps2_mouse_driver: mouse initialization succeeded");
+
+        // Create an InterruptRequest Thing so the kernel will unmask IRQ12.
+        let _ = register_schema_for::<InterruptRequest>(sys);
+        let irq_req = InterruptRequest {
+            id: ThingId(0),
+            irq_line: MOUSE_IRQ_LINE,
+            enabled: true,
+            owner_process: None,
+        };
+        if let Some(_id) = create_thing(sys, &irq_req) {
+            println(sys, "ps2_mouse_driver: created InterruptRequest for IRQ12");
+        } else {
+            println(sys, "ps2_mouse_driver: failed to create InterruptRequest");
+        }
     }
 
     let mut decoder = MouseDecoder::new(region.id);
@@ -47,8 +62,6 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
             }
             last_irq_id = event.id.0;
             handled = true;
-            handled = true;
-            println(sys, "ps2_mouse_driver: handling mouse IRQ");
             drain_mouse_bytes(sys, &mut accessor, &mut decoder);
         }
 
@@ -124,7 +137,6 @@ fn drain_mouse_bytes<S: Sys>(
                     break;
                 }
                 if let Some(byte) = accessor.read_data(sys) {
-                    println(sys, "ps2_mouse_driver: byte received");
                     decoder.process_byte(sys, byte);
                 } else {
                     break;

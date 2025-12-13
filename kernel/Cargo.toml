@@ -11,6 +11,9 @@ default = ["arch_pci_in_kernel"]
 
 [dependencies]
 abi = { path = "../abi" }
+hal = { path = "../hal" }
+drivers_usb = { path = "../drivers_usb" }
+drivers_pci = { path = "../drivers_pci" }
 thing_models = { path = "../thing_models" }
 thing_macros = { path = "../thing_macros" }
 heapless = "0.9.2"

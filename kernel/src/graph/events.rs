@@ -1,30 +1,9 @@
 use abi::Link;
-
-#[derive(Debug, Clone)]
-pub enum GraphEvent {
-    ThingCreated {
-        id: abi::ThingId,
-        kind: &'static str,
-        kind_id: abi::ThingId,
-    },
-    ThingDeleted {
-        id: abi::ThingId,
-        kind: &'static str,
-        kind_id: abi::ThingId,
-    },
-    PropUpdated {
-        id: abi::ThingId,
-        kind: &'static str,
-        kind_id: abi::ThingId,
-        key: &'static str,
-        old: Option<abi::PropValue>,
-        new: abi::PropValue,
-    },
-    LinkAdded(Link),
-    LinkRemoved(Link),
-}
+pub use abi::graph_ops::GraphEvent;
 
 pub type GraphListener = fn(&GraphEvent);
+
+
 
 #[derive(Clone, Copy)]
 struct NodeListener {

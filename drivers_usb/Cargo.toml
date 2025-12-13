@@ -1,0 +1,11 @@
+[package]
+name = "drivers_usb"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hal = { path = "../hal" }
+abi = { path = "../abi" }
+spin = "0.9.8"
+
+log = "0.4" 

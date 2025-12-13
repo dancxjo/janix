@@ -67,7 +67,7 @@ pub fn collect_surfaces_for_windows<S: Sys>(
 
 pub fn mouse_packets_since<S: Sys>(sys: &mut S, last_id: Option<ThingId>) -> Vec<MousePacketEvent> {
     let mut events = Vec::new();
-    let mut cursor = last_id.unwrap_or(ThingId(u64::MAX));
+    let mut cursor = last_id.unwrap_or(ThingId(0));
 
     loop {
         match sys.syscall(KernelRequest::ThingList {

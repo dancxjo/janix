@@ -9,6 +9,8 @@ use x86_64::structures::paging::Translate;
 
 const KEYBOARD_VECTOR: usize = (pic::PIC_1_OFFSET as usize) + 1;
 const KEYBOARD_IRQ: u8 = 1;
+const MOUSE_VECTOR: usize = (pic::PIC_1_OFFSET as usize) + 12;
+const MOUSE_IRQ: u8 = 12;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -28,6 +30,7 @@ lazy_static! {
             .set_handler_fn(gp_fault_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt[KEYBOARD_VECTOR].set_handler_fn(keyboard_interrupt_handler);
+        idt[MOUSE_VECTOR].set_handler_fn(mouse_interrupt_handler);
         idt
     };
 }
@@ -135,4 +138,9 @@ extern "x86-interrupt" fn page_fault_handler(
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     kernel::hw::io::handle_interrupt(KEYBOARD_IRQ);
     pic::notify_end_of_interrupt(KEYBOARD_IRQ);
+}
+
+extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    kernel::hw::io::handle_interrupt(MOUSE_IRQ);
+    pic::notify_end_of_interrupt(MOUSE_IRQ);
 }

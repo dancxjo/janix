@@ -623,3 +623,5 @@ fn verify_boot_graph_invariants() {
         );
     }
 }
+pub mod hal_impl;
+pub mod driver_bringup;

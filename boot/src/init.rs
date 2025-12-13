@@ -52,7 +52,7 @@ pub fn init_machine() {
     // accesses when drivers tried to dereference `phys + HHDM_OFFSET` before
     // the mappings existed.
     kernel::log("Initializing hardware drivers (MMIO-dependent)");
-    kernel::hw::usb::init();
+    kernel::driver_bringup::init();
     crate::graph_reifier::init_graph_subscriptions();
 
     // Register IRQ controller callback to manage IRQ masking via graph requests

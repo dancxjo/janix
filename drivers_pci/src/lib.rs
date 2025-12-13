@@ -1,0 +1,118 @@
+#![no_std]
+#![feature(allocator_api)]
+
+extern crate alloc;
+
+use abi::{
+    graph_kinds::{self, KIND_PCI_DEVICE},
+    PropKey, PropValue,
+    graph_ops::{GraphOp, GraphSink},
+};
+use alloc::vec::Vec;
+use hal::{PciConfigAccess};
+
+pub struct PciDriver<'a> {
+    config: &'a dyn PciConfigAccess,
+}
+
+impl<'a> PciDriver<'a> {
+    pub fn new(config: &'a dyn PciConfigAccess) -> Self {
+        Self { config }
+    }
+
+    fn read_u32(&self, bus: u8, slot: u8, func: u8, offset: u16) -> u32 {
+        self.config.read_u32(bus, slot, func, offset)
+    }
+    fn read_u16(&self, bus: u8, slot: u8, func: u8, offset: u16) -> u16 {
+        self.config.read_u16(bus, slot, func, offset)
+    }
+    fn read_u8(&self, bus: u8, slot: u8, func: u8, offset: u16) -> u8 {
+        self.config.read_u8(bus, slot, func, offset)
+    }
+
+    fn read_bar(&self, bus: u8, slot: u8, func: u8, index: u8) -> u64 {
+        let raw = self.read_u32(bus, slot, func, 0x10 + (index as u16) * 4);
+
+        // Very basic BAR parsing
+        if raw & 1 == 1 {
+            // IO BAR - return as is for now, consumer needs to handle
+            (raw & !0x3) as u64
+        } else {
+            // Memory
+            let type_field = (raw >> 1) & 0x3;
+            match type_field {
+                0 => raw as u64, // 32-bit
+                2 => {
+                    // 64-bit, need to read next BAR
+                    let lower = raw & 0xFFFFFFF0;
+                    let upper = self.read_u32(bus, slot, func, 0x10 + ((index + 1) as u16) * 4);
+                    ((upper as u64) << 32) | (lower as u64)
+                }
+                _ => raw as u64, // fallback
+            }
+        }
+    }
+
+    pub fn init(&self) {
+    }
+    
+    pub fn scan_and_publish<S: GraphSink>(&self, sink: &mut S) {
+        // Register Schema -- for now skipped or we generic submit SchemaRegister if we had that Op.
+        // The Kernel Sink can handle SchemaRegister op, but it's not in GraphOp enum I checked in abi/graph_ops.rs (it only had CreateThing/UpdateProps).
+        // To fix this cleanly, we assume schema is loose or kernel allows it.
+        // We will just create things.
+
+        let bus = 0;
+        for slot in 0..32 {
+            let vendor_id = self.read_u16(bus, slot, 0, 0);
+            if vendor_id == 0xFFFF {
+                continue;
+            }
+
+            let header_type = self.read_u8(bus, slot, 0, 0x0E);
+            let func_count = if header_type & 0x80 != 0 { 8 } else { 1 };
+
+            for func in 0..func_count {
+                let vendor_id = self.read_u16(bus, slot, func, 0);
+                if vendor_id == 0xFFFF {
+                    continue;
+                }
+
+                let device_id = self.read_u16(bus, slot, func, 2);
+                let class_id = self.read_u8(bus, slot, func, 0x0B);
+                let subclass_id = self.read_u8(bus, slot, func, 0x0A);
+                let prog_if = self.read_u8(bus, slot, func, 0x09);
+
+                // Read BARs
+                let bar0 = self.read_bar(bus, slot, func, 0);
+                let bar1 = self.read_bar(bus, slot, func, 1);
+                let bar2 = self.read_bar(bus, slot, func, 2);
+                let bar3 = self.read_bar(bus, slot, func, 3);
+                let bar4 = self.read_bar(bus, slot, func, 4);
+                let bar5 = self.read_bar(bus, slot, func, 5);
+
+                let props: Vec<(PropKey, PropValue)> = alloc::vec![
+                    (graph_kinds::PROP_BUS, PropValue::U64(bus as u64)),
+                    (graph_kinds::PROP_SLOT, PropValue::U64(slot as u64)),
+                    (graph_kinds::PROP_FUNC, PropValue::U64(func as u64)),
+                    (graph_kinds::PROP_VENDOR_ID, PropValue::U64(vendor_id as u64)),
+                    (graph_kinds::PROP_DEVICE_ID, PropValue::U64(device_id as u64)),
+                    (graph_kinds::PROP_CLASS_ID, PropValue::U64(class_id as u64)),
+                    (graph_kinds::PROP_SUBCLASS_ID, PropValue::U64(subclass_id as u64)),
+                    (graph_kinds::PROP_PROG_IF, PropValue::U64(prog_if as u64)),
+                    (graph_kinds::PROP_BAR0, PropValue::U64(bar0)),
+                    (graph_kinds::PROP_BAR1, PropValue::U64(bar1)),
+                    (graph_kinds::PROP_BAR2, PropValue::U64(bar2)),
+                    (graph_kinds::PROP_BAR3, PropValue::U64(bar3)),
+                    (graph_kinds::PROP_BAR4, PropValue::U64(bar4)),
+                    (graph_kinds::PROP_BAR5, PropValue::U64(bar5)),
+                ];
+                
+                let _ = sink.submit(GraphOp::CreateThing {
+                    kind: KIND_PCI_DEVICE,
+                    props,
+                });
+            }
+        }
+    }
+}

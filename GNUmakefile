@@ -1,3 +1,4 @@
+
 # Nuke built-in rules and variables.
 MAKEFLAGS += -rR
 .SUFFIXES:
@@ -30,7 +31,8 @@ ifeq ($(RUST_PROFILE),dev)
 endif
 
 ENABLE_ROOTFS ?= 0
-APPS := init thread_dashboard clock_demo alarm_demo ps2_keyboard_driver ps2_mouse_driver input_logger_demo input_events framebuffer_driver compositor window_demo
+APPS := init thread_dashboard clock_demo alarm_demo input_logger_demo input_events window_demo compositor
+DRIVERS := framebuffer_driver ps2_keyboard_driver ps2_mouse_driver
 ifeq ($(ENABLE_ROOTFS),1)
 APPS := rootfs $(APPS)
 endif
@@ -57,6 +59,9 @@ endif
 
 .PHONY: all
 all: $(IMAGE_NAME).iso
+
+.PHONY: iso
+iso: $(IMAGE_NAME).iso
 
 .PHONY: all-hdd
 all-hdd: $(IMAGE_NAME).hdd
@@ -599,19 +604,11 @@ launch-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64
 
 ovmf/ovmf-code-x86_64.fd:
 	mkdir -p ovmf
-	if [ -f /usr/share/OVMF/OVMF_CODE.fd ]; then \
-		cp /usr/share/OVMF/OVMF_CODE.fd $@; \
-	else \
-		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEX64_OVMF_CODE.fd; \
-	fi
+	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-code-x86_64.fd
 
 ovmf/ovmf-vars-x86_64.fd:
 	mkdir -p ovmf
-	if [ -f /usr/share/OVMF/OVMF_VARS.fd ]; then \
-		cp /usr/share/OVMF/OVMF_VARS.fd $@; \
-	else \
-		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEX64_OVMF_VARS.fd; \
-	fi
+	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-vars-x86_64.fd
 
 
 # ----------------------
@@ -620,20 +617,13 @@ ovmf/ovmf-vars-x86_64.fd:
 
 ovmf/ovmf-code-aarch64.fd:
 	mkdir -p ovmf
-	if [ -f /usr/share/AAVMF/AAVMF_CODE.fd ]; then \
-		cp /usr/share/AAVMF/AAVMF_CODE.fd $@; \
-	else \
-		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEAARCH64_QEMU_EFI.fd; \
-	fi
+	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-code-aarch64.fd
+	truncate -s 64M $@
 
 ovmf/ovmf-vars-aarch64.fd:
 	mkdir -p ovmf
-	if [ -f /usr/share/AAVMF/AAVMF_VARS.fd ]; then \
-		cp /usr/share/AAVMF/AAVMF_VARS.fd $@; \
-	else \
-		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASEAARCH64_QEMU_VARS.fd; \
-		truncate -s 64M $@; \
-	fi
+	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-vars-aarch64.fd
+	truncate -s 64M $@
 
 
 # ----------------------
@@ -642,15 +632,10 @@ ovmf/ovmf-vars-aarch64.fd:
 
 ovmf/ovmf-code-riscv64.fd:
 	mkdir -p ovmf
-	if [ -f /usr/share/OVMF/OVMF_CODE.riscv64.fd ]; then \
-		cp /usr/share/OVMF/OVMF_CODE.riscv64.fd $@; \
-	else \
-		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASERISCV64_VIRT.fd; \
-	fi
+	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-code-riscv64.fd
 
 ovmf/ovmf-vars-riscv64.fd:
 	mkdir -p ovmf
-	# RISC-V vars file not typically available system-wide; create placeholder
 	truncate -s 32M $@
 
 
@@ -660,19 +645,11 @@ ovmf/ovmf-vars-riscv64.fd:
 
 ovmf/ovmf-code-loongarch64.fd:
 	mkdir -p ovmf
-	if [ -f /usr/share/OVMF/OVMF_CODE.loongarch64.fd ]; then \
-		cp /usr/share/OVMF/OVMF_CODE.loongarch64.fd $@; \
-	else \
-		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASELOONGARCH64_QEMU_EFI.fd; \
-	fi
+	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-code-loongarch64.fd
 
 ovmf/ovmf-vars-loongarch64.fd:
 	mkdir -p ovmf
-	if [ -f /usr/share/OVMF/OVMF_VARS.loongarch64.fd ]; then \
-		cp /usr/share/OVMF/OVMF_VARS.loongarch64.fd $@; \
-	else \
-		curl --fail --location --retry 5 --retry-delay 2 --connect-timeout 10 -o $@ https://retrage.github.io/edk2-nightly/bin/RELEASELOONGARCH64_QEMU_VARS.fd; \
-	fi
+	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-vars-loongarch64.fd
 
 
 
@@ -689,6 +666,10 @@ limine/limine:
 apps:
 	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) $(addprefix -p ,$(APPS))
 
+.PHONY: drivers
+drivers:
+	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) $(addprefix -p ,$(DRIVERS))
+
 .PHONY: kernel
 kernel:
 	$(MAKE) -C boot FEATURES="$(FEATURES)"
@@ -698,41 +679,25 @@ kernel:
 # ISO BUILD  (UNCHANGED FROM YOUR VERSION)
 ###############################################################################
 
-$(IMAGE_NAME).iso: limine/limine kernel apps
+$(IMAGE_NAME).iso: limine/limine kernel apps drivers
 	rm -rf iso_root
 	# Prepare ISO root with both BIOS and UEFI directory trees upfront.
-	mkdir -p iso_root/boot iso_root/boot/apps iso_root/boot/limine iso_root/EFI/BOOT
+	mkdir -p iso_root/boot iso_root/boot/apps iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
+	cp -v clouds.bmp iso_root/boot/
 	for app in $(APPS); do \
 		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/apps/$$app; \
+	done
+	for drv in $(DRIVERS); do \
+		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \
 	done
 	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
 		mkdir -p iso_root/boot/fonts; \
 		cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
 	fi
-	cp -v clouds.bmp iso_root/boot/clouds.bmp
-	rm -f limine.conf.tmp
-	cp limine.conf limine.conf.tmp
-ifeq ($(ENABLE_ROOTFS),1)
-	echo "    module_path: boot():/boot/apps/rootfs" >> limine.conf.tmp
-	echo "    module_cmdline: program=rootfs" >> limine.conf.tmp
-endif
-	echo "    module_path: boot():/boot/clouds.bmp" >> limine.conf.tmp
-	echo "    module_cmdline: image=clouds.bmp" >> limine.conf.tmp
-	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
-		for font in $(COMPOSITOR_FONT_DIR)/*.ttf; do \
-			name=$$(basename $$font); \
-			base=$${name%.ttf}; \
-			echo "    module_path: boot():/boot/fonts/$$name" >> limine.conf.tmp; \
-			echo "    module_cmdline: font=$$base" >> limine.conf.tmp; \
-		done; \
-	fi
-	cp -v limine.conf.tmp iso_root/boot/limine/limine.conf
-ifeq ($(KARCH),riscv64)
-	cp templates/riscv-startup.nsh iso_root/startup.nsh
-endif
-	cp -v limine.conf.tmp iso_root/EFI/BOOT/limine.conf
-	cp -v limine.conf.tmp iso_root/limine.conf
+	cp -v limine.conf iso_root/boot/limine/limine.conf
+	cp -v limine.conf iso_root/EFI/BOOT/limine.conf
+	cp -v limine.conf iso_root/limine.conf
 ifeq ($(KARCH),x86_64)
 	cp -v limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/boot/limine/
 	cp -v limine/BOOTX64.EFI iso_root/EFI/BOOT/
@@ -801,8 +766,13 @@ endif
 	mformat -i $(IMAGE_NAME).hdd@@1M
 	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine ::/boot/apps ::/boot/fonts
 	mcopy -i $(IMAGE_NAME).hdd@@1M boot/kernel ::/boot
+	mcopy -i $(IMAGE_NAME).hdd@@1M clouds.bmp ::/boot
 	for app in $(APPS); do \
 		mcopy -i $(IMAGE_NAME).hdd@@1M $(APPS_TARGET_DIR)/$$app ::/boot/apps; \
+	done
+	mmd -i $(IMAGE_NAME).hdd@@1M ::/boot/drivers
+	for drv in $(DRIVERS); do \
+		mcopy -i $(IMAGE_NAME).hdd@@1M $(APPS_TARGET_DIR)/$$drv ::/boot/drivers; \
 	done
 	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
 		for font in $(COMPOSITOR_FONT_DIR)/*.ttf; do \

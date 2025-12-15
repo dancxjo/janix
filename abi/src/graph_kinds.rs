@@ -61,6 +61,8 @@ pub const PROP_BAR3: &str = "bar3";
 pub const PROP_BAR4: &str = "bar4";
 pub const PROP_BAR5: &str = "bar5";
 
+pub const KIND_SYSTEM: &str = "System";
+
 pub mod canon {
     use crate::Predicate;
 
@@ -83,6 +85,7 @@ pub mod canon {
     pub const P_APP_OWNS_WINDOW: Predicate = Predicate(0x0016);
     pub const P_DISPLAY_HAS_FRONT_BUFFER: Predicate = Predicate(0x0020);
     pub const P_DISPLAY_HAS_BACK_BUFFER: Predicate = Predicate(0x0021);
+    pub const P_HAS_ACTIVE_MODE: Predicate = Predicate(0x0022);
 }
 
 pub const LINK_OWNS_THREAD: Predicate = canon::P_PROC_OWNS_THREAD;
@@ -103,6 +106,7 @@ pub const LINK_ACTIVE_MODE: Predicate = canon::P_ACTIVE_MODE;
 pub const LINK_APP_OWNS_WINDOW: Predicate = canon::P_APP_OWNS_WINDOW;
 pub const LINK_DISPLAY_HAS_FRONT_BUFFER: Predicate = canon::P_DISPLAY_HAS_FRONT_BUFFER;
 pub const LINK_DISPLAY_HAS_BACK_BUFFER: Predicate = canon::P_DISPLAY_HAS_BACK_BUFFER;
+pub const LINK_HAS_ACTIVE_MODE: Predicate = canon::P_HAS_ACTIVE_MODE;
 
 pub const PROP_WIDTH: &str = "width";
 pub const PROP_HEIGHT: &str = "height";

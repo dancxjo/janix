@@ -366,10 +366,6 @@ impl KeyboardDecoder {
         let timestamp = sys.time_monotonic_ns();
         record_scan_event(sys, self.controller_id, byte, seq, timestamp);
 
-        if let Some(mode_index) = scancode_to_mode_index(byte) {
-            emit_mode_switch(sys, mode_index, timestamp);
-        }
-
         if let Some(ch) = self.feed(byte) {
             emit_char(sys, self.controller_id, ch, seq);
         }
@@ -418,40 +414,9 @@ impl KeyboardDecoder {
     }
 }
 
-fn scancode_to_mode_index(byte: u8) -> Option<u8> {
-    let released = (byte & 0x80) != 0;
-    if released {
-        return None;
-    }
-    let scancode = byte & 0x7F;
-    match scancode {
-        0x3B => Some(1),
-        0x3C => Some(2),
-        0x3D => Some(3),
-        0x3E => Some(4),
-        0x3F => Some(5),
-        0x40 => Some(6),
-        0x41 => Some(7),
-        0x42 => Some(8),
-        0x43 => Some(9),
-        0x44 => Some(10),
-        0x57 => Some(11),
-        0x58 => Some(MODE_INDEX_CONSOLE),
-        _ => None,
-    }
-}
 
-fn emit_mode_switch<S: Sys>(sys: &mut S, mode_index: u8, timestamp: u64) {
-    let msg = alloc::format!("ps2_keyboard_driver: emitting ModeSwitchEvent index={}", mode_index);
-    let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
-    println(sys, leaked);
-    let event = ModeSwitchEvent {
-        id: ThingId(0),
-        mode_index,
-        timestamp,
-    };
-    let _ = create_thing(sys, &event);
-}
+
+
 
 fn record_scan_event<S: Sys>(
     sys: &mut S,

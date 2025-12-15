@@ -31,7 +31,11 @@ ifeq ($(RUST_PROFILE),dev)
 endif
 
 ENABLE_ROOTFS ?= 0
-APPS := init debug_thread debug_clock debug_alarm debug_input_logger debug_input_events window_demo compositor
+ENABLE_CARTOGRAPHER ?= 0
+APPS := init debug_thread debug_clock debug_alarm debug_input_logger debug_input_events window_demo compositor mode_manager
+ifeq ($(ENABLE_CARTOGRAPHER),1)
+APPS += cartographer
+endif
 DRIVERS := framebuffer_driver ps2_keyboard_driver ps2_mouse_driver
 ifeq ($(ENABLE_ROOTFS),1)
 APPS := rootfs $(APPS)
@@ -703,8 +707,12 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers
 		cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
 	fi
 	cp -v limine.conf iso_root/boot/limine/limine.conf
-	cp -v limine.conf iso_root/EFI/BOOT/limine.conf
-	cp -v limine.conf iso_root/limine.conf
+ifeq ($(ENABLE_CARTOGRAPHER),1)
+	echo '    module_path: boot():/boot/user/cartographer' >> iso_root/boot/limine/limine.conf
+	echo '    module_cmdline: program=cartographer' >> iso_root/boot/limine/limine.conf
+endif
+	cp -v iso_root/boot/limine/limine.conf iso_root/EFI/BOOT/limine.conf
+	cp -v iso_root/boot/limine/limine.conf iso_root/limine.conf
 ifeq ($(KARCH),x86_64)
 	cp -v limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/boot/limine/
 	cp -v limine/BOOTX64.EFI iso_root/EFI/BOOT/

@@ -35,15 +35,45 @@ pub fn swap_display_buffers<S: Sys>(sys: &mut S, display_id: ThingId) -> Option<
     Some(new_index)
 }
 
+#[derive(Debug, Clone)]
+struct SystemThing {
+    id: ThingId,
+}
+
+impl thing_os::Thing for SystemThing {
+    const KIND: &'static str = graph_kinds::KIND_SYSTEM;
+    const DESCRIPTION: &'static str = "System Root";
+    fn schema() -> &'static [(&'static str, abi::PropType)] { &[] }
+    fn from_props(id: ThingId, _props: &[Option<(abi::PropKey, PropValue)>]) -> Self {
+        SystemThing { id }
+    }
+    fn to_props(&self, _out: &mut Vec<(abi::PropKey, PropValue)>) {}
+}
+
 pub fn handle_mode_switches<S: Sys>(sys: &mut S) {
-    let events: Vec<ModeSwitchEvent> = list_things_by_kind(sys);
-    if let Some(latest) = events.into_iter().max_by_key(|e| e.timestamp) {
-        let current = current_mode(sys).map(|m| m.index);
-        if current != Some(latest.mode_index) {
-            let msg = format!("compositor: switching to mode index {}", latest.mode_index);
-            let leaked = Box::leak(msg.into_boxed_str());
-            println(sys, leaked);
-            set_active_mode(sys, latest.mode_index);
+    let systems: Vec<SystemThing> = list_things_by_kind(sys);
+    let system = match systems.first() {
+        Some(s) => s,
+        None => return,
+    };
+
+    let targets = thing_os::link_targets(sys, system.id, graph_kinds::LINK_HAS_ACTIVE_MODE);
+    if let Some(target_mode_id) = targets.first() {
+        let current = current_mode(sys);
+        if current.map(|m| m.id) != Some(*target_mode_id) {
+             let msg = format!("compositor: observed active mode edge pointing to {}", target_mode_id.0);
+             let leaked = Box::leak(msg.into_boxed_str());
+             println(sys, leaked);
+             
+             // Check index
+             if let Some(mode) = load_thing::<Mode>(sys, *target_mode_id) {
+                 println(sys, "compositor: switching internal mode state");
+                 set_active_mode(sys, mode.index);
+                 
+                 let msg = format!("MODE observed -> {}", mode.name);
+                 let leaked = Box::leak(msg.into_boxed_str());
+                 println(sys, leaked);
+             }
         }
     }
 }
@@ -85,6 +115,8 @@ pub fn mouse_packets_since<S: Sys>(sys: &mut S, last_id: Option<ThingId>) -> Vec
             KernelResponse::ThingListEntry { id: Some(next_id) } => {
                 if let Some(event) = load_thing::<MousePacketEvent>(sys, next_id) {
                     events.push(event);
+                } else {
+                    println(sys, "compositor: failed to load mouse event");
                 }
                 cursor = next_id;
             }
@@ -94,6 +126,13 @@ pub fn mouse_packets_since<S: Sys>(sys: &mut S, last_id: Option<ThingId>) -> Vec
     
     // Sort logic is good for determinism even if kernel returns in order
     events.sort_by_key(|e| e.sequence_index);
+    
+    if !events.is_empty() {
+        let msg = format!("compositor: found {} mouse packets via list_after({:?})", events.len(), last_id);
+        let leaked = Box::leak(msg.into_boxed_str());
+        println(sys, leaked);
+    }
+    
     events
 }
 

@@ -169,6 +169,13 @@ fn ensure_modes<S: Sys>(sys: &mut S) {
     let main_place_id = create_thing(sys, &main_place).unwrap_or(ThingId(0));
     let console_place_id = create_thing(sys, &console_place).unwrap_or(ThingId(0));
 
+    // Spawn mode_manager
+    println(sys, "init: spawning mode_manager");
+    let mode_manager_prog = find_thing::<BootProgram>(sys, |bp| bp.binary == "mode_manager")
+        .expect("mode_manager program not found");
+    let _ = spawn_program(sys, mode_manager_prog.id);
+
+    // Spawn geographer (desktop environment)
     let main_mode = Mode {
         id: ThingId(0),
         index: 1,

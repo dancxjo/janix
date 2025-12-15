@@ -1,7 +1,7 @@
 use abi::{PropKey, PropValue, ThingId};
 use alloc::string::String;
 
-#[derive(thing_macros::Thing)]
+#[derive(thing_macros::Thing, Clone, Copy, Debug)]
 #[thing(description = "Raw scan code byte emitted by an input controller interrupt.")]
 pub struct KeyScanEvent {
     pub id: ThingId,

@@ -30,11 +30,16 @@ impl Compositor {
         let events = graph::mouse_packets_since(sys, self.last_mouse_event_id);
         for event in events {
             if event.sequence_index <= self.last_mouse_seq {
+                let msg = format!("compositor: skipping stale mouse event {} <= {}", event.sequence_index, self.last_mouse_seq);
+                let leaked = Box::leak(msg.into_boxed_str());
+                println(sys, leaked);
                 continue;
             }
             self.last_mouse_seq = event.sequence_index;
             self.last_mouse_event_id = Some(event.id);
-            println(sys, "compositor: mouse event!");
+            let msg = format!("compositor: applying mouse event {}", event.sequence_index);
+            let leaked = Box::leak(msg.into_boxed_str());
+            println(sys, leaked);
             self.apply_mouse_event(sys, &event, layout);
         }
 

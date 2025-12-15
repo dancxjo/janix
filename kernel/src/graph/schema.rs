@@ -236,6 +236,26 @@ pub(crate) fn remove_from_kind_index(id: ThingId, kind_id: ThingId) {
     }
 }
 
+pub fn resolve_key(kind: &str, key: &str) -> Option<&'static str> {
+    unsafe {
+        let schemas = &raw const SCHEMAS;
+        for schema in (*schemas).iter() {
+            if let Some(s) = schema {
+                if s.kind == kind {
+                    for prop_def in s.props.iter() {
+                         if let Some((schema_key, _)) = prop_def {
+                             if *schema_key == key {
+                                 return Some(schema_key);
+                             }
+                         }
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
 pub fn init() {
     unsafe {
         let schemas = &raw mut SCHEMAS;

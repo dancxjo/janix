@@ -150,12 +150,33 @@ pub fn next_thing_of_kind(kind: &'static str, start_after: ThingId) -> Option<Th
         start_after.index() + 1
     };
 
-    for slot in slab.slots.iter().skip(start_idx as usize) {
+    if kind == "MousePacketEvent" {
+        let msg = alloc::format!("next_mouse: start_after={:?} start_idx={}", start_after, start_idx);
+        crate::log::log_message(&msg);
+    }
+
+    for (i, slot) in slab.slots.iter().enumerate().skip(start_idx as usize) {
         if let Some(node) = &slot.thing {
+            if kind == "MousePacketEvent" {
+                // Log first 3 candidates we inspect to see what they are
+                if i < (start_idx as usize + 3) {
+                     let msg = alloc::format!("next_mouse check [{}] -> kind='{}' vs target='{}'", i, node.kind, kind);
+                     crate::log::log_message(&msg);
+                }
+            }
+
             if node.kind == kind {
+                if kind == "MousePacketEvent" {
+                     let msg = alloc::format!("next_mouse found match at {}", i);
+                     crate::log::log_message(&msg);
+                }
                 return Some(node.id);
             }
         }
+    }
+    
+    if kind == "MousePacketEvent" {
+        crate::log::log_message("next_mouse: no match found");
     }
     None
 }
@@ -214,6 +235,12 @@ pub(crate) fn create_thing_internal(
 ) -> Option<ThingId> {
     let kind_id = explicit_kind_id.unwrap_or_else(|| super::schema::ensure_kind_exists(kind));
 
+    // Allow safely persisting user-provided strings by moving them to kernel heap
+    // checking if they are already kernel pointers would be an optimization,
+    // but for now we leak to be safe against user pointers.
+    // TODO: Use a proper interner
+    let safe_kind: &'static str = alloc::boxed::Box::leak(alloc::string::String::from(kind).into_boxed_str());
+
     unsafe {
         let slab = things_slab();
         let (idx, generation) = slab.alloc();
@@ -224,13 +251,14 @@ pub(crate) fn create_thing_internal(
             if i >= MAX_PROPS_PER_THING {
                 break;
             }
-            node_props[i] = Some((prop.0, prop.1.clone()));
+            let safe_key: &'static str = alloc::boxed::Box::leak(alloc::string::String::from(prop.0).into_boxed_str());
+            node_props[i] = Some((safe_key, prop.1.clone()));
         }
 
         let slot = &mut slab.slots[idx as usize];
         slot.thing = Some(ThingNode {
             id,
-            kind,
+            kind: safe_kind,
             kind_id,
             props: node_props,
             owner_process,

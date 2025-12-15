@@ -67,14 +67,50 @@ impl Compositor {
              }
              self.mouse_head = new_head;
              
-             for entry in events {
-                  self.apply_mouse_event(
-                       sys, 
-                       entry.dx as i64, 
-                       entry.dy as i64, 
-                       entry.buttons as u64, 
-                       layout
-                  );
+             if !events.is_empty() {
+                 let msg = alloc::format!("DEBUG: processing {} events", events.len());
+                 println(sys, alloc::boxed::Box::leak(msg.into_boxed_str()));
+                 
+                 use crate::config::{MOUSE_SCALE_NUM, MOUSE_SCALE_DEN};
+                 
+                 let mut pending_dx: i64 = 0;
+                 let mut pending_dy: i64 = 0;
+                 // Initialize with the first event's button state so we don't flash-trigger
+                 let mut pending_buttons = events[0].buttons;
+                 
+                 for entry in events {
+                     if entry.buttons != pending_buttons {
+                         // Flush collected motion for the *previous* button state
+                         let sdx = pending_dx * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
+                         let sdy = pending_dy * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
+                         self.apply_mouse_event(
+                            sys, 
+                            sdx, 
+                            sdy, 
+                            pending_buttons as u64, 
+                            layout
+                         );
+                         
+                         // Reset for new state
+                         pending_dx = 0;
+                         pending_dy = 0;
+                         pending_buttons = entry.buttons;
+                     }
+                     
+                     pending_dx += entry.dx as i64;
+                     pending_dy += entry.dy as i64;
+                 }
+                 
+                 // Flush final batch
+                 let sdx = pending_dx * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
+                 let sdy = pending_dy * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
+                 self.apply_mouse_event(
+                    sys,
+                    sdx,
+                    sdy,
+                    pending_buttons as u64,
+                    layout
+                 );
              }
         }
 
@@ -208,7 +244,7 @@ mod tests {
         let win = stacked_window(7);
         let mut sys = MockSys::with_responses(vec![success()]);
 
-        comp.apply_mouse_event(&mut sys, &packet(1, 1, 0, 0), &[win]);
+        comp.apply_mouse_event(&mut sys, 0, 0, 1, &[win]);
         assert_eq!(comp.active_window, Some(ThingId(7)));
         let drag = comp.drag.expect("dragging should start inside title bar");
         assert_eq!(drag.grab_offset_x, 20);
@@ -305,31 +341,47 @@ mod tests {
         }
         
         let responses = vec![
-             // response for find_thing (load_thing call 0)
+             // Step 1: ThingList -> Found ID 10
+             KernelResponse::ThingListEntry { id: Some(ThingId(10)) },
+             // Step 2: ThingGet -> Return Data
              KernelResponse::ThingData {
                  id: ThingId(10),
                  kind: MouseStreamThing::KIND,
                  props: &[],
              },
-             // response for map_resident
+             // Step 3: ThingList -> End of list
+             KernelResponse::ThingListEntry { id: None },
+             // Step 4: Map Resident
              KernelResponse::ResidentMapped {
                  resp: ResidentMapResp {
                       user_addr: ptr as u64,
                       byte_len: total_size as u32,
                       _pad: 0,
                  }
-             }
+             },
+             // Step 5: Log "mouse stream mapped"
+             success(),
+             // Step 6: Log "head advanced"
+             success(),
         ];
+        // Add padding for any extra logs
+        let mut responses = responses;
+        responses.extend(core::iter::repeat(success()).take(10));
         
         let mut sys = MockSys::with_responses(responses);
         comp.process_mouse_packets(&mut sys, &[]);
         
         // Cursor starts center (50, 50).
-        // Event 1: dx=10, dy=5 -> (60, 45) (y is subtracted)
-        // Event 2: dx=-5, dy=-2 -> (55, 47) (y subtracted: 45 - (-2) = 47)
+        // Event 1: dx=10, dy=5 
+        // Event 2: dx=-5, dy=-2
+        // Total Coalesced: dx=5, dy=3. 
+        // Scaled (3/1): dx=15, dy=9.
+        // New Pos: (50+15, 50-9) = (65, 41)
         
-        assert_eq!(comp.cursor.x, 55);
-        assert_eq!(comp.cursor.y, 47);
+        // Dump logs removed
+        
+        assert_eq!(comp.cursor.x, 65);
+        assert_eq!(comp.cursor.y, 41);
         assert_eq!(comp.mouse_head, 2);
     }
 }

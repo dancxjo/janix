@@ -20,3 +20,6 @@ pub const GLYPH_WIDTH: i32 = 4;
 pub const GLYPH_HEIGHT: i32 = 6;
 pub const CHAR_ADVANCE: i32 = 6;
 pub const FRAME_INTERVAL_NS: u64 = 16_000_000;
+
+pub const MOUSE_SCALE_NUM: i32 = 3;
+pub const MOUSE_SCALE_DEN: i32 = 1;

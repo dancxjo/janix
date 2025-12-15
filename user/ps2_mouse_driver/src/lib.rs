@@ -454,7 +454,13 @@ fn record_mouse_event<S: Sys>(
         overflow_x,
         overflow_y,
     };
-    let _ = create_thing(sys, &event);
+    if let Some(id) = create_thing(sys, &event) {
+        // let msg = alloc::format!("MsEvt: {}", sequence_index);
+        // let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
+        // println(sys, leaked);
+    } else {
+        println(sys, "MsEvt: failed to create Thing");
+    }
 }
 
 #[cfg(test)]

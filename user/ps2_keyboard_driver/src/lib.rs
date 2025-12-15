@@ -442,6 +442,9 @@ fn scancode_to_mode_index(byte: u8) -> Option<u8> {
 }
 
 fn emit_mode_switch<S: Sys>(sys: &mut S, mode_index: u8, timestamp: u64) {
+    let msg = alloc::format!("ps2_keyboard_driver: emitting ModeSwitchEvent index={}", mode_index);
+    let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
+    println(sys, leaked);
     let event = ModeSwitchEvent {
         id: ThingId(0),
         mode_index,

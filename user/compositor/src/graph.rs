@@ -1,5 +1,7 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
+use alloc::boxed::Box;
+use alloc::format;
 use abi::{KernelRequest, KernelResponse};
 use thing_os::prelude::*;
 use thing_os::thing_models::MousePacketEvent;
@@ -36,7 +38,13 @@ pub fn swap_display_buffers<S: Sys>(sys: &mut S, display_id: ThingId) -> Option<
 pub fn handle_mode_switches<S: Sys>(sys: &mut S) {
     let events: Vec<ModeSwitchEvent> = list_things_by_kind(sys);
     if let Some(latest) = events.into_iter().max_by_key(|e| e.timestamp) {
-        set_active_mode(sys, latest.mode_index);
+        let current = current_mode(sys).map(|m| m.index);
+        if current != Some(latest.mode_index) {
+            let msg = format!("compositor: switching to mode index {}", latest.mode_index);
+            let leaked = Box::leak(msg.into_boxed_str());
+            println(sys, leaked);
+            set_active_mode(sys, latest.mode_index);
+        }
     }
 }
 

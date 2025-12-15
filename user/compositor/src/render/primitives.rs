@@ -23,7 +23,7 @@ pub unsafe fn set_pixel_clamped(
 
 pub fn fill_rect(
     buffer: *mut u32,
-    stride_bytes: u32,
+    stride: u32,
     fb_width: u32,
     fb_height: u32,
     x: i32,
@@ -35,7 +35,7 @@ pub fn fill_rect(
     if w <= 0 || h <= 0 {
         return;
     }
-    let stride_pixels = (stride_bytes / 4) as usize;
+    let stride_pixels = stride as usize;
     let start_row = y.max(0) as usize;
     let end_row = max(min(y.saturating_add(h), fb_height as i32), 0) as usize;
     for row in start_row..end_row {
@@ -52,7 +52,7 @@ pub fn fill_rect(
 
 pub fn draw_tiled_image(
     buffer: *mut u32,
-    stride_bytes: u32,
+    stride: u32,
     fb_width: u32,
     fb_height: u32,
     img_ptr: *const u8,
@@ -66,7 +66,7 @@ pub fn draw_tiled_image(
         return;
     }
 
-    let stride_pixels = (stride_bytes / 4) as usize;
+    let stride_pixels = stride as usize;
 
     // BMP row stride is aligned to 4 bytes
     let bytes_per_pixel = (bpp / 8) as usize;
@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn fill_rect_writes_only_inside_bounds() {
         let mut buf = vec![0u32; 25];
-        fill_rect(buf.as_mut_ptr(), 20, 5, 5, -1, -1, 4, 4, 0xCC);
+        fill_rect(buf.as_mut_ptr(), 5, 5, 5, -1, -1, 4, 4, 0xCC);
         assert_eq!(buf[0], 0xCC, "clamps to framebuffer origin");
         assert_eq!(buf[1], 0xCC);
         assert_eq!(buf[6], 0xCC);

@@ -8,7 +8,8 @@ pub const TITLE_COLOR_INACTIVE: u32 = 0xFF2B2D34;
 pub const TITLE_TEXT_COLOR: u32 = 0xFFF0F0F0;
 pub const CONTENT_BG: u32 = 0xFF121214;
 pub const TEXT_COLOR: u32 = 0xFFE4E4E4;
-pub const CURSOR_COLOR: u32 = 0xFFFFCC00;
+pub const CURSOR_COLOR: u32 = 0xFFE6E6FA;
+pub const CURSOR_SHADOW: u32 = 0xFF000000;
 
 pub const TITLE_BAR_HEIGHT: i32 = 26;
 pub const FRAME_THICKNESS: i32 = 2;

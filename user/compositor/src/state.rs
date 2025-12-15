@@ -256,6 +256,12 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     compositor.sync_active_from_layout(&stacked);
     compositor.process_mouse_packets(sys, &stacked);
 
+    // DEBUG: Stub input for cursor movement (remove or comment out for production)
+    // let fb_w_i32 = compositor.fb.info.width as i32;
+    // let fb_h_i32 = compositor.fb.info.height as i32;
+    // compositor.cursor.x = (compositor.cursor.x + 2).rem_euclid(fb_w_i32);
+    // compositor.cursor.y = (compositor.cursor.y + 2).rem_euclid(fb_h_i32);
+
     // Animate background: scroll up and left (requires incrementing offset)
     compositor.background_offset.0 = compositor.background_offset.0.wrapping_add(1);
     compositor.background_offset.1 = compositor.background_offset.1.wrapping_add(1);

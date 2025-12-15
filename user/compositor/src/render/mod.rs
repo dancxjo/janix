@@ -1,3 +1,4 @@
+pub mod bitmap;
 pub mod cursor;
 pub mod display_list;
 pub mod primitives;

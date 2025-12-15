@@ -206,13 +206,17 @@ mod tests {
             Window {
                 id: ThingId(1),
                 place_id: ThingId(7),
-                x: 0,
-                y: 0,
-                width: 10,
-                height: 10,
+                x: 10,
+                y: 10,
+                width: 100,
+                height: 100,
                 z_index: 0,
                 active: false,
                 title: "a".into(),
+                draggable: true,
+                resizable: true,
+                closable: true,
+                minimizable: true,
             },
             Window {
                 id: ThingId(2),
@@ -224,13 +228,17 @@ mod tests {
                 z_index: 1,
                 active: false,
                 title: "b".into(),
+                draggable: true,
+                resizable: true,
+                closable: true,
+                minimizable: true,
             },
         ];
         let responses = list_responses(windows, |w| w.id);
         let mut sys = MockSys::with_responses(responses);
         let collected = collect_windows_for_place(&mut sys, ThingId(7));
         assert_eq!(collected.len(), 1);
-        assert_eq!(collected[0].id, ThingId(1));
+         assert_eq!(collected[0].id, ThingId(1));
     }
 
     #[test]
@@ -238,13 +246,17 @@ mod tests {
         let windows = vec![Window {
             id: ThingId(1),
             place_id: ThingId(1),
-            x: 0,
-            y: 0,
-            width: 10,
-            height: 10,
+            x: 10,
+            y: 10,
+            width: 100,
+            height: 100,
             z_index: 0,
             active: false,
             title: "a".into(),
+            draggable: true,
+            resizable: true,
+            closable: true,
+            minimizable: true,
         }];
         let surfaces = vec![
             Surface {
@@ -252,12 +264,30 @@ mod tests {
                 window_id: ThingId(1),
                 kind: "text/plain".into(),
                 text: "hello".into(),
+                width: 100,
+                height: 100,
+                stride: 100,
+                format: "Rgba8888".into(),
+                shared_buffer_id: None,
+                refresh_interval_ns: None,
+                frames_presented: None,
+                last_present_ns: None,
+                power_state: None,
             },
             Surface {
                 id: ThingId(11),
                 window_id: ThingId(2),
                 kind: "text/plain".into(),
                 text: "ignore".into(),
+                width: 100,
+                height: 100,
+                stride: 100,
+                format: "Rgba8888".into(),
+                shared_buffer_id: None,
+                refresh_interval_ns: None,
+                frames_presented: None,
+                last_present_ns: None,
+                power_state: None,
             },
         ];
         let responses = list_responses(surfaces, |s| s.id);

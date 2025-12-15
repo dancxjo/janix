@@ -189,14 +189,18 @@ mod tests {
     fn window(id: u64, z_index: i32) -> Window {
         Window {
             id: ThingId(id),
-            place_id: ThingId(9),
-            x: 0,
-            y: 0,
-            width: 50,
-            height: 50,
-            z_index,
+            place_id: ThingId(0),
+            x: 10,
+            y: 10,
+            width: 120,
+            height: 90,
+            z_index: z_index as i32,
             active: false,
-            title: format!("win-{id}"),
+            title: "".into(),
+            draggable: true,
+            resizable: true,
+            closable: true,
+            minimizable: true,
         }
     }
 

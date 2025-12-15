@@ -4,6 +4,7 @@ use thing_os::thing_models::DisplayPresentRequest;
 use thing_os::{PrimaryDisplayBuffer, graph_kinds};
 
 use crate::layout::StackedWindow;
+use crate::render::cursor::{self, CursorKind, CursorSprites};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConsoleBuffer {
@@ -19,6 +20,7 @@ pub struct ConsoleBuffer {
 pub struct Compositor {
     pub fb: PrimaryDisplayBuffer,
     pub cursor: CursorState,
+    pub cursor_sprites: CursorSprites,
     pub last_mouse_seq: u64,
     pub last_mouse_event_id: Option<ThingId>,
     pub active_window: Option<ThingId>,
@@ -47,6 +49,7 @@ impl Compositor {
         Self {
             fb,
             cursor: CursorState::new(cx, cy),
+            cursor_sprites: cursor::build_cursor_sprites(),
             last_mouse_seq: 0,
             last_mouse_event_id: None,
             active_window: None,
@@ -106,11 +109,19 @@ pub struct CursorState {
     pub x: i32,
     pub y: i32,
     pub buttons: u8,
+    pub visible: bool,
+    pub kind: CursorKind,
 }
 
 impl CursorState {
-    pub const fn new(x: i32, y: i32) -> Self {
-        Self { x, y, buttons: 0 }
+    pub fn new(x: i32, y: i32) -> Self {
+        Self {
+            x,
+            y,
+            buttons: 0,
+            visible: true,
+            kind: CursorKind::Arrow,
+        }
     }
 }
 

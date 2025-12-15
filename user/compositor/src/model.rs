@@ -5,6 +5,16 @@ use thing_os::{PrimaryDisplayBuffer, graph_kinds};
 
 use crate::layout::StackedWindow;
 
+#[derive(Debug, Clone, Copy)]
+pub struct ConsoleBuffer {
+    pub id: ThingId,
+    pub ptr: *const u8,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub pixel_format: abi::PixelFormat,
+}
+
 #[derive(Debug)]
 pub struct Compositor {
     pub fb: PrimaryDisplayBuffer,
@@ -17,6 +27,7 @@ pub struct Compositor {
     present_request_id: Option<ThingId>,
     pub background_image: Option<BackgroundImage>,
     pub background_offset: (i32, i32),
+    pub console_buffer: Option<ConsoleBuffer>,
     frame_counter: u64,
 }
 
@@ -44,6 +55,7 @@ impl Compositor {
             present_request_id: None,
             background_image: None,
             background_offset: (0, 0),
+            console_buffer: None,
             frame_counter: 0,
         }
     }

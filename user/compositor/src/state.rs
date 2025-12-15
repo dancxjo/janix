@@ -17,6 +17,119 @@ use alloc::boxed::Box;
 use alloc::format;
 use thing_os::{RawModule, shared_buffer_map};
 
+use crate::model::ConsoleBuffer;
+
+fn draw_console<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
+    if compositor.console_buffer.is_none() {
+        use abi::{KernelRequest, KernelResponse, PropValue, graph_kinds, ThingId};
+        
+        let mut found = None;
+        let mut cursor = ThingId(u64::MAX);
+
+        loop {
+            match sys.syscall(KernelRequest::ThingList {
+                kind: graph_kinds::KIND_SHARED_BUFFER,
+                start_after: cursor,
+            }) {
+                KernelResponse::ThingListEntry { id: Some(next_id) } => {
+                    // Check this thing
+                    match sys.syscall(KernelRequest::ThingGet { id: next_id }) {
+                        KernelResponse::ThingData { props, .. } => {
+                            let mut is_console = false;
+                            let mut width = 0;
+                            let mut height = 0;
+                            let mut stride = 0;
+
+                            for item in props.iter().flatten() {
+                                let (key, val) = item;
+                                if *key == graph_kinds::PROP_NAME {
+                                    if let PropValue::Str(s) = val {
+                                        if s == "console_backend" {
+                                            is_console = true;
+                                        }
+                                    }
+                                } else if *key == graph_kinds::PROP_WIDTH {
+                                     if let PropValue::U64(v) = val { width = *v as u32; }
+                                } else if *key == graph_kinds::PROP_HEIGHT {
+                                     if let PropValue::U64(v) = val { height = *v as u32; }
+                                } else if *key == graph_kinds::PROP_STRIDE {
+                                     if let PropValue::U64(v) = val { stride = *v as u32; }
+                                }
+                            }
+
+                            if is_console {
+                                found = Some((next_id, width, height, stride));
+                            }
+                        },
+                        _ => {}
+                    }
+                    if found.is_some() { break; }
+                    cursor = next_id;
+                }
+                _ => break,
+            }
+        }
+
+        if let Some((id, w, h, stride)) = found {
+             match shared_buffer_map(sys, id, MapFlags::READ.union(MapFlags::USER)) {
+                 Ok((vaddr, _size)) => {
+                     compositor.console_buffer = Some(ConsoleBuffer {
+                         id,
+                         ptr: vaddr as *const u8,
+                         width: w,
+                         height: h,
+                         stride,
+                         pixel_format: abi::PixelFormat::Bgra8888, 
+                     });
+                     println(sys, "compositor: mapped console buffer");
+                 },
+                 _ => {
+                     println(sys, "compositor: failed to map console buffer");
+                 }
+             }
+        }
+    }
+
+    if let Some(cb) = &compositor.console_buffer {
+        let ptr = cb.ptr;
+        let w = cb.width;
+        let h = cb.height;
+        let fb_w = compositor.fb.info.width;
+        let fb_h = compositor.fb.info.height;
+        
+        let dest_x = (fb_w as i32 - w as i32) / 2;
+        let dest_y = (fb_h as i32 - h as i32) / 2;
+        
+        let dest = compositor.fb.ptr as *mut u32;
+        let dest_stride_px = (compositor.fb.info.stride / 4) as i32;
+        let src_stride_px = (cb.stride / 4) as i32;
+        
+        // Simple blit
+        for y in 0..h {
+            let row_dest_y = dest_y + y as i32;
+            if row_dest_y < 0 || row_dest_y >= fb_h as i32 { continue; }
+
+            let row_src = unsafe { (ptr as *const u32).add((y as i32 * src_stride_px) as usize) };
+            let row_dest = unsafe { dest.add((row_dest_y * dest_stride_px) as usize) };
+            
+            unsafe {
+                // Bounds check horizontal
+                let start_x = 0.max(-dest_x);
+                let end_x = (w as i32).min(fb_w as i32 - dest_x);
+                
+                if end_x > start_x {
+                    let count = (end_x - start_x) as usize;
+                    core::ptr::copy_nonoverlapping(
+                        row_src.add(start_x as usize), 
+                        row_dest.add((dest_x + start_x) as usize), 
+                        count
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn load_background_image<S: Sys>(sys: &mut S) -> Option<BackgroundImage> {
     let modules = list_things_by_kind::<S, RawModule>(sys);
     let clouds_module = modules.iter().find(|m| m.identifier == "clouds.bmp")?;
@@ -125,6 +238,8 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     };
 
     if mode.index == MODE_INDEX_CONSOLE {
+        draw_console(sys, compositor);
+        compositor.publish_present_request(sys);
         return;
     }
 

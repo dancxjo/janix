@@ -86,16 +86,8 @@ pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
         "ps2_mouse_driver: found i8042 IO region; initializing mouse port",
     );
 
-    let mut accessor = IoPortAccessor::new(region.id);
-    if !init_mouse(sys, &mut accessor) {
-        println(sys, "ps2_mouse_driver: mouse initialization failed");
-    } else {
-        println(sys, "ps2_mouse_driver: mouse initialization succeeded");
-    }
-
-    let mut decoder = MouseDecoder::new(region.id);
-    
     // Open device 2 (Ps2Mouse)
+    let mut decoder = MouseDecoder::new(region.id);
     let handle = match unsafe { syscall_dev_open(2, 0) } {
         Ok(h) => h,
         Err(e) => {
@@ -106,6 +98,13 @@ pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
         }
     };
     println(sys, "ps2_mouse_driver: device opened");
+
+    let mut accessor = IoPortAccessor::new(region.id, Some(handle));
+    if !init_mouse(sys, &mut accessor) {
+        println(sys, "ps2_mouse_driver: mouse initialization failed");
+    } else {
+        println(sys, "ps2_mouse_driver: mouse initialization succeeded");
+    }
 
     let mut buffer = [0u8; 16];
 
@@ -155,23 +154,9 @@ fn init_mouse<S: Sys>(sys: &mut S, accessor: &mut IoPortAccessor) -> bool {
     }
     accessor.flush_output(sys);
 
-    if !accessor.command(sys, 0x20) {
-        return false;
-    }
-    let mut config = match accessor.read_data(sys) {
-        Some(byte) => byte,
-        None => return false,
-    };
-    config |= 0x02; // enable IRQ12
-    config &= !0x20; // ensure mouse clock enabled
-
-    if !accessor.command(sys, 0x60) {
-        return false;
-    }
-    if !accessor.write_data(sys, config) {
-        return false;
-    }
-    accessor.flush_output(sys);
+    // SKIP config byte setup (0x20 / 0x60) - assume keyboard driver did it.
+    // If we try to read 0x20 response here, we might miss it if it goes to keyboard buffer.
+    // And we blindly trust IRQ12 is enabled by keyboard driver.
 
     if !accessor.command(sys, 0xA8) {
         return false;
@@ -211,14 +196,16 @@ struct IoPortAccessor {
     region_id: ThingId,
     read_op: Option<ThingId>,
     write_op: Option<ThingId>,
+    device_handle: Option<DeviceHandle>,
 }
 
 impl IoPortAccessor {
-    fn new(region_id: ThingId) -> Self {
+    fn new(region_id: ThingId, device_handle: Option<DeviceHandle>) -> Self {
         Self {
             region_id,
             read_op: None,
             write_op: None,
+            device_handle,
         }
     }
 
@@ -259,27 +246,37 @@ impl IoPortAccessor {
     }
 
     fn read_aux_data<S: Sys>(&mut self, sys: &mut S) -> Option<u8> {
+        let handle = self.device_handle?;
+        let mut buffer = [0u8; 1];
         for _ in 0..200 {
-            let status = self.read_status(sys)?;
-            if status & 0x01 == 0 {
-                sys.sleep_for_ns(100_000);
-                continue;
+            // Try to read one byte from kernel buffer using dev_read
+            match unsafe { syscall_dev_read(handle, &mut buffer) } {
+                Ok(1) => return Some(buffer[0]),
+                Ok(_) => {
+                    // Buffer empty, wait
+                    sys.sleep_for_ns(100_000);
+                }
+                Err(_) => return None,
             }
-            if status & 0x20 == 0 {
-                sys.sleep_for_ns(100_000);
-                continue;
-            }
-            return self.read_data(sys);
         }
         None
     }
 
     fn flush_output<S: Sys>(&mut self, sys: &mut S) {
+        // flush hardware buffer if any (via IoPortOp, just in case)
         while let Some(status) = self.read_status(sys) {
-            if status & 0x01 == 0 {
-                break;
-            }
-            let _ = self.read_data(sys);
+             if status & 0x01 == 0 { break; }
+             let _ = self.read_data(sys);
+        }
+        // flush kernel buffer
+        if let Some(handle) = self.device_handle {
+             let mut buffer = [0u8; 16];
+             loop {
+                 match unsafe { syscall_dev_read(handle, &mut buffer) } {
+                     Ok(0) | Err(_) => break,
+                     Ok(_) => {}
+                 }
+             }
         }
     }
 

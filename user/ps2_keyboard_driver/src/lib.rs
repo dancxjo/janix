@@ -163,8 +163,8 @@ fn init_controller<S: Sys>(sys: &mut S, accessor: &mut IoPortAccessor) -> bool {
         Some(byte) => byte,
         None => return false,
     };
-    config |= 0x01;
-    config &= !0x10;
+    config |= 0x03; // Enable IRQ1 (Keyboard) and IRQ12 (Mouse)
+    config &= !0x30; // Clear Keyboard Disable (0x10) and Mouse Disable (0x20)
 
     if !accessor.command(sys, 0x60) {
         return false;

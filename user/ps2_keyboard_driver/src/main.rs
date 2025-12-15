@@ -35,14 +35,16 @@ unsafe fn syscall_dev_open(kind: u32, index: u32) -> Result<DeviceHandle, SysErr
     // Inline assembly for syscall
     // rax = num, rdi = arg1, rsi = arg2
     // We pass ptr to args in rdi, ptr to ret in rsi
-    core::arch::asm!(
-        "syscall",
-        in("rax") SYS_DEV_OPEN,
-        in("rdi") &args,
-        in("rsi") &ret,
-        lateout("rcx") _,
-        lateout("r11") _,
-    );
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            in("rax") SYS_DEV_OPEN,
+            in("rdi") &args,
+            in("rsi") &ret,
+            lateout("rcx") _,
+            lateout("r11") _,
+        );
+    }
 
     if ret.ok != 0 {
         Ok(ret.val.handle)
@@ -68,14 +70,16 @@ unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize
         err: SysError { code: 0, detail: 0 },
     };
 
-    core::arch::asm!(
-        "syscall",
-        in("rax") SYS_DEV_READ,
-        in("rdi") &args,
-        in("rsi") &ret,
-        lateout("rcx") _,
-        lateout("r11") _,
-    );
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            in("rax") SYS_DEV_READ,
+            in("rdi") &args,
+            in("rsi") &ret,
+            lateout("rcx") _,
+            lateout("r11") _,
+        );
+    }
 
     if ret.ok != 0 {
         Ok(ret.val.bytes_read as usize)

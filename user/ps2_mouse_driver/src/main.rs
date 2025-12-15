@@ -14,7 +14,7 @@ use runtime::UserlandSys;
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     let mut sys = UserlandSys::new();
-    ps2_mouse_driver::run(&mut sys)
+    ps2_mouse_driver::run_new_ABI(&mut sys)
 }
 
 #[cfg(not(target_os = "none"))]

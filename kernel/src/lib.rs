@@ -3,6 +3,8 @@
 extern crate alloc;
 
 pub mod console;
+pub mod console_backend;
+pub mod devices;
 pub mod graph;
 pub mod graph_kinds;
 pub mod graph_watchers;
@@ -37,12 +39,14 @@ static TEST_MUTEX: Mutex<()> = Mutex::new(());
 /// Initialize the kernel core subsystems
 pub fn init() {
     log::init();
+    devices::ps2_buffers::init();
     graph::init();
     // Dump the graph after initialization so builtin kinds and indexes are visible.
     crate::graph::debug::dump_graph_table();
     journal::init();
     transaction::init();
     model::init_schemas();
+    console_backend::init();
     work_queue::init();
     graph_watchers::init();
 }

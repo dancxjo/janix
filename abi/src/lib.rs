@@ -5,6 +5,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 pub mod graph_kinds;
+pub mod syscall_defs;
+pub mod syscall_numbers;
 
 /// Process identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

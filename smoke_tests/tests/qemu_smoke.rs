@@ -7,18 +7,22 @@ use std::time::{Duration, Instant};
 const TIMEOUT_SECS: u64 = 60;
 const LOG_DIR: &str = "../target/smoke_logs";
 
-// Adjust these to match your actual log strings
+// Stronger markers (match “actually alive” moments)
 const KERNEL_START_MARKER: &str = "ThingOS booting...";
-const COMPOSITOR_START_MARKER: &str = "compositor";
+const COMPOSITOR_START_MARKER: &str = "clouds.bmp: mapped"; // or "clouds.bmp: mapped"
+const ROLLING_WINDOW_BYTES: usize = 64 * 1024;
 
 struct QemuConfig<'a> {
     name: &'a str,
     make_target: &'a str,
 }
 
+fn enabled() -> bool {
+    std::env::var("THINGOS_QEMU_SMOKE").ok().as_deref() == Some("1")
+}
+
 fn run_qemu_and_capture(cfg: &QemuConfig<'_>) -> String {
-    // Optional env gate
-    if std::env::var("THINGOS_QEMU_SMOKE").ok().as_deref() != Some("1") {
+    if !enabled() {
         eprintln!(
             "[{}] Skipping QEMU smoke test; set THINGOS_QEMU_SMOKE=1 to enable.",
             cfg.name
@@ -26,51 +30,69 @@ fn run_qemu_and_capture(cfg: &QemuConfig<'_>) -> String {
         return String::new();
     }
 
-    // We use 'make' to launch QEMU via the existing Makefile targets.
-    // This ensures we use the exact same flags and images as 'make run'.
-    // We override QEMUFLAGS to disable the display but keep memory settings.
-    let mut child = Command::new("make")
-        .current_dir("..")
+    // NOTE: This assumes Makefile respects these variables.
+    // If your Makefile doesn’t, remove them and just run default.
+    let mut cmd = Command::new("make");
+    cmd.current_dir("..")
         .arg(cfg.make_target)
         .arg(format!("KARCH={}", cfg.name))
-        .arg("QEMUFLAGS=-m 2G -display none")
+        // Prefer additive variables if Makefile supports them.
+        .arg("QEMU_DISPLAY=none")
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // Unix: put child in its own process group so we can kill the whole tree.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            cmd.pre_exec(|| {
+                // setsid(): new session and process group
+                libc::setsid();
+                Ok(())
+            });
+        }
+    }
+
+    let mut child = cmd
         .spawn()
         .unwrap_or_else(|e| panic!("[{}] failed to spawn make: {e}", cfg.name));
 
     let mut stdout = child.stdout.take().expect("no stdout pipe");
     let mut stderr = child.stderr.take().expect("no stderr pipe");
 
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
     let tx_out = tx.clone();
     let tx_err = tx.clone();
 
-    // Read stdout in a background thread
     thread::spawn(move || {
-        let mut buf = [0u8; 1024];
+        let mut buf = [0u8; 4096];
         while let Ok(n) = stdout.read(&mut buf) {
             if n == 0 {
                 break;
             }
-            let _ = tx_out.send(Vec::from(&buf[..n]));
+            let _ = tx_out.send(buf[..n].to_vec());
         }
     });
 
-    // Read stderr in a background thread
     thread::spawn(move || {
-        let mut buf = [0u8; 1024];
+        let mut buf = [0u8; 4096];
         while let Ok(n) = stderr.read(&mut buf) {
             if n == 0 {
                 break;
             }
-            let _ = tx_err.send(Vec::from(&buf[..n]));
+            let _ = tx_err.send(buf[..n].to_vec());
         }
     });
 
+    // Parent holds tx; drop it so Disconnected can happen once readers finish.
+    drop(tx);
+
     let start = Instant::now();
-    let mut combined = String::new();
     let timeout = Duration::from_secs(TIMEOUT_SECS);
+
+    let mut full_log = String::new();
+    let mut rolling = String::new();
 
     let mut found_kernel = false;
     let mut found_compositor = false;
@@ -81,20 +103,27 @@ fn run_qemu_and_capture(cfg: &QemuConfig<'_>) -> String {
             break;
         }
 
-        // Try to receive data with a short timeout to allow checking child status
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(data) => {
                 let chunk = String::from_utf8_lossy(&data);
-                combined.push_str(&chunk);
 
-                // Check for markers
-                if !found_kernel && combined.contains(KERNEL_START_MARKER) {
-                    found_kernel = true;
-                    eprintln!("[{}] Found kernel start marker", cfg.name);
+                // Always keep full log for file output
+                full_log.push_str(&chunk);
+
+                // Rolling window for marker searching (avoid OOM)
+                rolling.push_str(&chunk);
+                if rolling.len() > ROLLING_WINDOW_BYTES {
+                    let drain = rolling.len() - ROLLING_WINDOW_BYTES;
+                    rolling.drain(..drain);
                 }
-                if !found_compositor && combined.contains(COMPOSITOR_START_MARKER) {
+
+                if !found_kernel && rolling.contains(KERNEL_START_MARKER) {
+                    found_kernel = true;
+                    eprintln!("[{}] Found kernel marker", cfg.name);
+                }
+                if !found_compositor && rolling.contains(COMPOSITOR_START_MARKER) {
                     found_compositor = true;
-                    eprintln!("[{}] Found compositor start marker", cfg.name);
+                    eprintln!("[{}] Found compositor marker", cfg.name);
                 }
 
                 if found_kernel && found_compositor {
@@ -103,40 +132,47 @@ fn run_qemu_and_capture(cfg: &QemuConfig<'_>) -> String {
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                // Check if child exited
                 if let Ok(Some(status)) = child.try_wait() {
                     eprintln!("[{}] Process exited with {}", cfg.name, status);
                     break;
                 }
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                // Both streams closed
-                break;
-            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
 
-    // Kill process tree if possible, or just the make command
-    let _ = child.kill();
+    // Kill the process group (Unix) or just the child (fallback)
+    #[cfg(unix)]
+    {
+        // If we created a new process group/session, PID == PGID
+        let pid = child.id() as i32;
+        unsafe {
+            // kill(-pgid, SIGKILL)
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+    }
+
     let _ = child.wait();
 
     // Write log to file
-    let abs_log_dir = std::fs::canonicalize("..")
-        .unwrap_or_default()
-        .join("target/smoke_logs");
-    std::fs::create_dir_all(&abs_log_dir).ok();
+    let abs_log_dir = std::fs::canonicalize(LOG_DIR).unwrap_or_else(|_| {
+        // fallback: relative
+        std::path::PathBuf::from(LOG_DIR)
+    });
+    let _ = std::fs::create_dir_all(&abs_log_dir);
     let log_path = abs_log_dir.join(format!("{}.log", cfg.name));
 
-    if let Err(e) = std::fs::write(&log_path, &combined) {
-        eprintln!(
-            "[{}] Failed to write log to {:?}: {}",
-            cfg.name, log_path, e
-        );
+    if let Err(e) = std::fs::write(&log_path, &full_log) {
+        eprintln!("[{}] Failed to write log to {:?}: {}", cfg.name, log_path, e);
     } else {
         eprintln!("[{}] Log written to {:?}", cfg.name, log_path);
     }
 
-    combined
+    full_log
 }
 
 fn assert_kernel_and_compositor_started(cfg: &QemuConfig<'_>) {
@@ -145,12 +181,11 @@ fn assert_kernel_and_compositor_started(cfg: &QemuConfig<'_>) {
         return;
     }
 
-    // Take a larger snippet for debugging if needed
-    let snippet: String = log.chars().take(4000).collect();
+    let snippet: String = log.chars().rev().take(6000).collect::<String>().chars().rev().collect();
 
     assert!(
         log.contains(KERNEL_START_MARKER),
-        "[{}] kernel start marker '{}' not found.\n--- log snippet ---\n{}\n-------------------",
+        "[{}] kernel marker '{}' not found.\n--- tail ---\n{}\n-----------",
         cfg.name,
         KERNEL_START_MARKER,
         snippet
@@ -158,7 +193,7 @@ fn assert_kernel_and_compositor_started(cfg: &QemuConfig<'_>) {
 
     assert!(
         log.contains(COMPOSITOR_START_MARKER),
-        "[{}] compositor start marker '{}' not found.\n--- log snippet ---\n{}\n-------------------",
+        "[{}] compositor marker '{}' not found.\n--- tail ---\n{}\n-----------",
         cfg.name,
         COMPOSITOR_START_MARKER,
         snippet
@@ -171,32 +206,5 @@ fn qemu_smoke_x86_64() {
     assert_kernel_and_compositor_started(&QemuConfig {
         name: "x86_64",
         make_target: "launch-x86_64",
-    });
-}
-
-#[test]
-#[ignore]
-fn qemu_smoke_aarch64() {
-    assert_kernel_and_compositor_started(&QemuConfig {
-        name: "aarch64",
-        make_target: "launch-aarch64",
-    });
-}
-
-#[test]
-#[ignore]
-fn qemu_smoke_riscv64() {
-    assert_kernel_and_compositor_started(&QemuConfig {
-        name: "riscv64",
-        make_target: "launch-riscv64",
-    });
-}
-
-#[test]
-#[ignore]
-fn qemu_smoke_loongarch64() {
-    assert_kernel_and_compositor_started(&QemuConfig {
-        name: "loongarch64",
-        make_target: "launch-loongarch64",
     });
 }

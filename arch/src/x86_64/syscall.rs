@@ -505,7 +505,54 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             user::schedule_next();
         }
         0
-    } else {
+    } else if num == abi::syscall_numbers::SYS_DEV_OPEN as u64 {
+        let args_ptr = arg1 as *const abi::syscall_defs::DevOpenArgs;
+        let ret_ptr = arg2 as *mut abi::syscall_defs::SysRet<abi::syscall_defs::DevOpenRet>;
+
+        if args_ptr.is_null() || ret_ptr.is_null() {
+            return 1;
+        }
+
+        // Safety: We blindly trust user pointers here for simplicity,
+        // matching existing syscall patterns in this file.
+        let args = unsafe { *args_ptr };
+        let res = kernel::devices::ps2_buffers::dev_open(args.kind, args.index);
+
+        let sys_ret = match res {
+            Ok(handle) => abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevOpenRet { handle }),
+            Err(e) => abi::syscall_defs::SysRet::err(e.code, e.detail),
+        };
+        unsafe { *ret_ptr = sys_ret };
+        0
+    } else if num == abi::syscall_numbers::SYS_DEV_READ as u64 {
+        let args_ptr = arg1 as *const abi::syscall_defs::DevReadArgs;
+        let ret_ptr = arg2 as *mut abi::syscall_defs::SysRet<abi::syscall_defs::DevReadRet>;
+
+        if args_ptr.is_null() || ret_ptr.is_null() {
+            return 1;
+        }
+
+        let args = unsafe { *args_ptr };
+        let buffer_ptr = args.out.ptr.addr as *mut u8;
+        let buffer_len = args.out.len as usize;
+
+        // Validation similar to user_slice but strictly mutable
+        if buffer_ptr.is_null() {
+             unsafe { *ret_ptr = abi::syscall_defs::SysRet::err(abi::syscall_defs::SysError::INVALID_ARG, 0) };
+             return 0;
+        }
+
+        let buffer = unsafe { core::slice::from_raw_parts_mut(buffer_ptr, buffer_len) };
+        let res = kernel::devices::ps2_buffers::dev_read(args.handle, buffer);
+
+        let sys_ret = match res {
+            Ok(bytes_read) => abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet {
+                bytes_read: bytes_read as u32,
+            }),
+            Err(e) => abi::syscall_defs::SysRet::err(e.code, e.detail),
+        };
+        unsafe { *ret_ptr = sys_ret };
+        0    } else {
         1 // SYS_ENOSYS or error
     }
 }

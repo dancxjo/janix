@@ -38,6 +38,10 @@ lazy_static! {
 pub fn init() {
     IDT.load();
     pic::init();
+    // Unmask PS/2 interrupts for device buffers (ISR now pushes to buffers)
+    pic::set_irq_mask(KEYBOARD_IRQ, false);
+    pic::set_irq_mask(MOUSE_IRQ, false);
+    
     // Log syscall gate configuration to ensure user mode can invoke int 0x80.
 
     #[cfg(feature = "trace_idt")]
@@ -136,11 +140,18 @@ extern "x86-interrupt" fn page_fault_handler(
     }
 }
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    kernel::hw::io::handle_interrupt(KEYBOARD_IRQ);
+    use x86_64::instructions::port::PortReadOnly;
+    // Read directly from port 0x60
+    let mut port = PortReadOnly::<u8>::new(0x60);
+    let scancode = unsafe { port.read() };
+    kernel::devices::ps2_buffers::push_keyboard_byte(scancode);
     pic::notify_end_of_interrupt(KEYBOARD_IRQ);
 }
 
 extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    kernel::hw::io::handle_interrupt(MOUSE_IRQ);
+    use x86_64::instructions::port::PortReadOnly;
+    let mut port = PortReadOnly::<u8>::new(0x60);
+    let byte = unsafe { port.read() };
+    kernel::devices::ps2_buffers::push_mouse_byte(byte);
     pic::notify_end_of_interrupt(MOUSE_IRQ);
 }

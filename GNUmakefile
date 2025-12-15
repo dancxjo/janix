@@ -45,6 +45,13 @@ $(call USER_VARIABLE,QEMUFLAGS,-m 2G)
 $(call USER_VARIABLE,QEMU_NO_REBOOT,-no-reboot)
 $(call USER_VARIABLE,QEMU_WATCHER,scripts/qemu-watcher.sh)
 
+QEMUFLAGS_EXTRA ?=
+QEMU_DISPLAY ?=
+
+ifeq ($(QEMU_DISPLAY),none)
+QEMUFLAGS_EXTRA += -display none
+endif
+
 override IMAGE_NAME := template-$(KARCH)
 
 FEATURES ?=
@@ -114,7 +121,7 @@ launch-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).i
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS)
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
 .PHONY: run-log-x86_64
 run-log-x86_64:
@@ -129,7 +136,7 @@ launch-log-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAM
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -158,7 +165,7 @@ launch-log-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -176,7 +183,7 @@ launch-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS)
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
 
 # ---- RISCV64 ----
@@ -199,7 +206,7 @@ launch-log-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -213,7 +220,7 @@ launch-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS)
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
 
 # ---- LOONGARCH64 ----
@@ -239,7 +246,7 @@ launch-log-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -256,7 +263,7 @@ launch-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd 
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS)
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
 
 ###############################################################################
@@ -279,7 +286,7 @@ launch-debug-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_N
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -303,7 +310,7 @@ launch-debug-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAG
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -323,7 +330,7 @@ launch-debug-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAG
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -346,7 +353,7 @@ launch-debug-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -371,7 +378,7 @@ launch-debug-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMA
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -393,7 +400,7 @@ launch-debug-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -411,7 +418,7 @@ launch-debug-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -432,7 +439,7 @@ launch-debug-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loong
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -453,7 +460,7 @@ launch-log-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -466,7 +473,7 @@ launch-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAM
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS)
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
 
 # AARCH64 HDD
@@ -493,7 +500,7 @@ launch-log-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IM
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -511,7 +518,7 @@ launch-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS)
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
 
 # RISCV64 HDD
@@ -534,7 +541,7 @@ launch-log-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IM
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -548,7 +555,7 @@ launch-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS)
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
 
 # LOONGARCH64 HDD
@@ -574,7 +581,7 @@ launch-log-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongar
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS) | tee qemu.log ; \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
@@ -591,7 +598,7 @@ launch-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
-		$(QEMUFLAGS)
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
 
 ###############################################################################

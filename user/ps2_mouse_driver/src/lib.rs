@@ -14,8 +14,70 @@ const STATUS_OFFSET: u16 = 4;
 const DATA_OFFSET: u16 = 0;
 const MOUSE_IRQ_LINE: u8 = 12;
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "ps2_mouse_driver: starting");
+use abi::syscall_defs::{
+    DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr, UserSlice,
+};
+use abi::syscall_numbers::{SYS_DEV_OPEN, SYS_DEV_READ};
+
+unsafe fn syscall_dev_open(kind: u32, index: u32) -> Result<DeviceHandle, SysError> {
+    let args = DevOpenArgs { kind, index };
+    let mut ret = SysRet::<DevOpenRet> {
+        ok: 0,
+        val: DevOpenRet::default(),
+        err: SysError { code: 0, detail: 0 },
+    };
+    
+    core::arch::asm!(
+        "int 0x80",
+        in("rax") SYS_DEV_OPEN,
+        in("rdi") &args,
+        in("rsi") &ret,
+        lateout("rcx") _,
+        lateout("r11") _,
+    );
+
+    if ret.ok != 0 {
+        Ok(ret.val.handle)
+    } else {
+        Err(ret.err)
+    }
+}
+
+unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize, SysError> {
+    let args = DevReadArgs {
+        handle,
+        out: UserSlice {
+            ptr: UserPtr {
+                addr: out.as_mut_ptr() as u64,
+                _phantom: core::marker::PhantomData,
+            },
+            len: out.len() as u64,
+        },
+    };
+    let mut ret = SysRet::<DevReadRet> {
+        ok: 0,
+        val: DevReadRet::default(),
+        err: SysError { code: 0, detail: 0 },
+    };
+
+    core::arch::asm!(
+        "int 0x80",
+        in("rax") SYS_DEV_READ,
+        in("rdi") &args,
+        in("rsi") &ret,
+        lateout("rcx") _,
+        lateout("r11") _,
+    );
+
+    if ret.ok != 0 {
+        Ok(ret.val.bytes_read as usize)
+    } else {
+        Err(ret.err)
+    }
+}
+
+pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
+    println(sys, "ps2_mouse_driver: starting (sys buffer)");
     let _ = register_schema_for::<MousePacketEvent>(sys);
 
     let region = wait_for_region(sys);
@@ -29,44 +91,42 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         println(sys, "ps2_mouse_driver: mouse initialization failed");
     } else {
         println(sys, "ps2_mouse_driver: mouse initialization succeeded");
-
-        // Create an InterruptRequest Thing so the kernel will unmask IRQ12.
-        let _ = register_schema_for::<InterruptRequest>(sys);
-        let irq_req = InterruptRequest {
-            id: ThingId(0),
-            irq_line: MOUSE_IRQ_LINE,
-            enabled: true,
-            owner_process: None,
-        };
-        if let Some(_id) = create_thing(sys, &irq_req) {
-            println(sys, "ps2_mouse_driver: created InterruptRequest for IRQ12");
-        } else {
-            println(sys, "ps2_mouse_driver: failed to create InterruptRequest");
-        }
     }
 
     let mut decoder = MouseDecoder::new(region.id);
-    let mut last_irq_id = initial_interrupt_cursor(sys);
+    
+    // Open device 2 (Ps2Mouse)
+    let handle = match unsafe { syscall_dev_open(2, 0) } {
+        Ok(h) => h,
+        Err(e) => {
+            let msg = alloc::format!("ps2_mouse_driver: failed to open device: code={}", e.code);
+            let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
+            println(sys, leaked);
+            loop { sys.sleep_for_ns(1_000_000_000); }
+        }
+    };
+    println(sys, "ps2_mouse_driver: device opened");
+
+    let mut buffer = [0u8; 16];
 
     loop {
-        let mut events: Vec<InterruptEvent> = list_things_by_kind(sys);
-        events.sort_by(|a, b| a.id.0.cmp(&b.id.0));
-
-        let mut handled = false;
-        for event in events {
-            if event.irq_line != MOUSE_IRQ_LINE {
-                continue;
-            }
-            if event.id.0 <= last_irq_id {
-                continue;
-            }
-            last_irq_id = event.id.0;
-            handled = true;
-            drain_mouse_bytes(sys, &mut accessor, &mut decoder);
-        }
-
-        if !handled {
-            sys.sleep_for_ns(POLL_INTERVAL_NS);
+        match unsafe { syscall_dev_read(handle, &mut buffer) } {
+             Ok(count) => {
+                if count > 0 {
+                    for i in 0..count {
+                         let byte = buffer[i];
+                         let msg = alloc::format!("Ms: {:02x}", byte);
+                         let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
+                         println(sys, leaked);
+                         decoder.process_byte(sys, byte);
+                    }
+                } else {
+                    sys.sleep_for_ns(POLL_INTERVAL_NS);
+                }
+             }
+             Err(_) => {
+                sys.sleep_for_ns(POLL_INTERVAL_NS);
+             }
         }
     }
 }

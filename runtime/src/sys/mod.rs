@@ -3,7 +3,7 @@ extern crate alloc;
 use crate::Sys;
 use abi::{
     KernelRequest, KernelResponse, SharedBufferInfo, SyscallNumber, ThingGetSyscallResult,
-    ThingPropScalarType,
+    ThingPropScalarType, resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
 };
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
@@ -416,6 +416,94 @@ impl Sys for UserlandSys {
                     KernelResponse::Error {
                         message: "GetSharedBufferInfo failed",
                     }
+                }
+            }
+            KernelRequest::ResidentAlloc { kind, byte_len, flags: _ } => {
+                let kind_ptr = kind.as_ptr() as u64;
+                let kind_len = kind.len() as u64;
+                let mut resp = ResidentAllocResp::default();
+                let mut err = ResidentError::default();
+                
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::ResidentAlloc,
+                        kind_ptr,
+                        kind_len,
+                        byte_len as u64,
+                        &mut resp as *mut _ as u64,
+                        &mut err as *mut _ as u64,
+                        0,
+                    )
+                };
+                
+                if ret == 0 {
+                    KernelResponse::ResidentAllocated { resp }
+                } else {
+                    KernelResponse::ResidentError(err)
+                }
+            }
+            KernelRequest::ResidentMap { id, perms } => {
+                let mut resp = ResidentMapResp::default();
+                let mut err = ResidentError::default();
+                
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::ResidentMap,
+                        id.0,
+                        perms.0 as u64,
+                        &mut resp as *mut _ as u64,
+                        &mut err as *mut _ as u64,
+                        0,
+                        0,
+                    )
+                };
+                
+                if ret == 0 {
+                    KernelResponse::ResidentMapped { resp }
+                } else {
+                    KernelResponse::ResidentError(err)
+                }
+            }
+            KernelRequest::ResidentUnmap { thing_id } => {
+                let mut err = ResidentError::default();
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::ResidentUnmap,
+                        thing_id.0,
+                        &mut err as *mut _ as u64,
+                        0,
+                        0,
+                        0,
+                        0,
+                    )
+                };
+                
+                if ret == 0 {
+                    KernelResponse::Success { data: None }
+                } else {
+                    KernelResponse::ResidentError(err)
+                }
+            }
+            KernelRequest::ThingRest { thing_id, policy } => {
+                let mut resp = RestResp::default();
+                let mut err = ResidentError::default();
+                
+                let ret = unsafe {
+                    syscall_stub(
+                        SyscallNumber::ThingRest,
+                        thing_id.0,
+                        policy as u64, // repr(u32)
+                        &mut resp as *mut _ as u64,
+                        &mut err as *mut _ as u64,
+                        0,
+                        0,
+                    )
+                };
+                
+                if ret == 0 {
+                    KernelResponse::ThingRested { resp }
+                } else {
+                    KernelResponse::ResidentError(err)
                 }
             }
             _ => KernelResponse::Error {

@@ -76,11 +76,48 @@ unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize
     }
 }
 
+
+use thing_os::resident::keyboard_stream::{KeyboardStreamMapped, KeyboardEntry, KeyboardStreamThing};
+use thing_os::resident::{alloc_resident, map_resident, ResidentMapPerms, Resident};
+
 pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "ps2_keyboard_driver: starting (sys buffer)");
-    let _ = register_schema_for::<KeyScanEvent>(sys);
-    let _ = register_schema_for::<InputCharEvent>(sys);
-    let _ = register_schema_for::<ModeSwitchEvent>(sys);
+    println(sys, "ps2_keyboard_driver: starting (resident stream)");
+
+    // Allocate Resident Keyboard Stream
+    // Capacity 64 entries * 8 bytes = 512 bytes + header (64) = 576 bytes
+    // Page size is usually 4096, so 4096 is fine.
+    let alloc_resp = match alloc_resident(sys, "KeyboardStream", 4096, 0) {
+        Ok(r) => r,
+        Err(e) => {
+             let msg = alloc::format!("ps2_keyboard_driver: alloc_resident failed {:?}", e);
+             let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
+             println(sys, leaked);
+             loop { sys.sleep_for_ns(1_000_000_000); }
+        }
+    };
+
+    // Create Thing to publish it
+    let stream_thing = KeyboardStreamThing { id: alloc_resp.id };
+    if create_thing(sys, &stream_thing).is_none() {
+         println(sys, "ps2_keyboard_driver: failed to create KeyboardStreamThing");
+    }
+
+    // Map it RW
+    let map_resp = match map_resident(sys, alloc_resp.id, ResidentMapPerms(ResidentMapPerms::READ.0 | ResidentMapPerms::WRITE.0)) {
+        Ok(r) => r,
+        Err(e) => {
+             let msg = alloc::format!("ps2_keyboard_driver: map_resident failed {:?}", e);
+             let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
+             println(sys, leaked);
+             loop { sys.sleep_for_ns(1_000_000_000); }
+        }
+    };
+    
+    let mut obj = unsafe { Resident::<()>::new(alloc_resp.id, map_resp.user_addr as *mut u8, map_resp.byte_len as usize) };
+    let mut stream = KeyboardStreamMapped::new(obj);
+    stream.init(256); // Capacity 256 entries
+
+    println(sys, "ps2_keyboard_driver: KeyboardStream initialized");
 
     let region = wait_for_region(sys);
     println(
@@ -116,10 +153,7 @@ pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
                 if count > 0 {
                     for i in 0..count {
                         let byte = buffer[i];
-                        let msg = alloc::format!("Kbd: {:02x}", byte);
-                        let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
-                        println(sys, leaked);
-                        decoder.process_byte(sys, byte);
+                        decoder.process_byte(sys, &mut stream, byte);
                     }
                 } else {
                      sys.sleep_for_ns(POLL_INTERVAL_NS);
@@ -177,27 +211,6 @@ fn init_controller<S: Sys>(sys: &mut S, accessor: &mut IoPortAccessor) -> bool {
     accessor.command(sys, 0xAE)
 }
 
-fn drain_pending_bytes<S: Sys>(
-    sys: &mut S,
-    accessor: &mut IoPortAccessor,
-    decoder: &mut KeyboardDecoder,
-) {
-    loop {
-        match accessor.read_status(sys) {
-            Some(status) if status & 0x01 != 0 => {
-                if status & 0x20 != 0 {
-                    break;
-                }
-                if let Some(byte) = accessor.read_data(sys) {
-                    decoder.process_byte(sys, byte);
-                } else {
-                    break;
-                }
-            }
-            _ => break,
-        }
-    }
-}
 
 struct IoPortAccessor {
     region_id: ThingId,
@@ -361,14 +374,57 @@ impl KeyboardDecoder {
         }
     }
 
-    fn process_byte<S: Sys>(&mut self, sys: &mut S, byte: u8) {
-        let seq = self.next_sequence();
-        let timestamp = sys.time_monotonic_ns();
-        record_scan_event(sys, self.controller_id, byte, seq, timestamp);
-
-        if let Some(ch) = self.feed(byte) {
-            emit_char(sys, self.controller_id, ch, seq);
+    fn process_byte<S: Sys>(&mut self, _sys: &mut S, stream: &mut KeyboardStreamMapped<()>, byte: u8) {
+        if byte == 0xE0 {
+            self.pending_e0 = true;
+            return;
         }
+        if byte == 0xE1 {
+            self.pending_e0 = false;
+            return;
+        }
+
+        let extended = self.pending_e0;
+        self.pending_e0 = false;
+        
+        // Update sequence index? 
+        // We're moving away from thing-based sequence index, 
+        // but KeyboardDecoder keeps it. We can ignore it or just increment it.
+        self.sequence_index = self.sequence_index.wrapping_add(1);
+
+        let released = (byte & 0x80) != 0;
+        let scancode = byte & 0x7F;
+
+        self.update_modifiers(scancode, released, extended);
+
+        let mut utf32 = 0;
+        let mut has_char = false;
+
+        if !released {
+            if let Some(ch) = decode_printable(scancode, extended, self.left_shift || self.right_shift) {
+                utf32 = ch as u32;
+                has_char = true;
+            }
+        }
+
+        let mut flags = 0;
+        if released {
+            flags |= KeyboardEntry::FLAG_RELEASED;
+        }
+        if extended {
+            flags |= KeyboardEntry::FLAG_EXTENDED;
+        }
+        if has_char {
+            flags |= KeyboardEntry::FLAG_HAS_CHAR;
+        }
+
+        let entry = KeyboardEntry {
+            scancode,
+            flags,
+            _pad: 0,
+            utf32,
+        };
+        stream.append(entry);
     }
 
     fn next_sequence(&mut self) -> u64 {
@@ -418,36 +474,6 @@ impl KeyboardDecoder {
 
 
 
-fn record_scan_event<S: Sys>(
-    sys: &mut S,
-    controller_id: ThingId,
-    scancode: u8,
-    sequence_index: u64,
-    timestamp_ns: u64,
-) {
-    let event = KeyScanEvent {
-        id: ThingId(0),
-        controller_id,
-        port_index: 0,
-        scancode,
-        extended: false,
-        released: (scancode & 0x80) != 0,
-        sequence_index,
-        timestamp_ticks: timestamp_ns,
-    };
-    let _ = create_thing(sys, &event);
-}
-
-fn emit_char<S: Sys>(sys: &mut S, controller_id: ThingId, ch: char, sequence_index: u64) {
-    let event = InputCharEvent {
-        id: ThingId(0),
-        ch,
-        source_controller: controller_id,
-        source_port_index: 0,
-        sequence_index,
-    };
-    let _ = create_thing(sys, &event);
-}
 
 fn decode_printable(scancode: u8, _extended: bool, shift: bool) -> Option<char> {
     let ch = match scancode {
@@ -682,8 +708,32 @@ mod tests {
         ]);
         let mut decoder = KeyboardDecoder::new(ThingId(3));
 
-        decoder.process_byte(&mut sys, 0x02);
-        decoder.process_byte(&mut sys, 0x02);
+        // Initialize a dummy stream for testing
+        // ... requires ResidentObject ... this is hard to mock without memory.
+        // For now, if we cannot mock stream easily, maybe we skip the test or mock ResidentObject with heap Vec.
+        // But ResidentObject takes raw pointer.
+        // We can allocate a Vec, leak it, and use that.
+        let mut data = alloc::vec![0u8; 4096];
+        let ptr = data.as_mut_ptr();
+        let mut obj = unsafe { thing_os::resident::ResidentObject::new(thing_os::ThingId(0), ptr, 4096) };
+        // Initialize header
+        obj.with_write(|header, _| {
+             header.magic = 0x525F4F53; // R_OS
+             header.version = 1;
+             header.total_len = 4096;
+             header.props_off = core::mem::size_of::<KeyboardStreamHeader>() as u32;
+             header.data_off = 4096; // Full? Or just after header.
+             // Actually KeyboardStreamHeader includes ResidentHeader.
+             // data_off should be size_of::<KeyboardStreamHeader>().
+             header.data_off = core::mem::size_of::<KeyboardStreamHeader>() as u32;
+             header.capacity = 0; // Will be set by init
+        });
+        
+        let mut stream = KeyboardStreamMapped::new(obj);
+        stream.init(100);
+
+        decoder.process_byte(&mut sys, &mut stream, 0x02);
+        decoder.process_byte(&mut sys, &mut stream, 0x02);
 
         let requests = sys.requests.borrow();
         let scan_sequences: Vec<_> = requests

@@ -600,6 +600,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         match kernel::handle_request(KernelRequest::ResidentAlloc {
             kind: kind_static,
             byte_len,
+            flags: 0,
         }) {
             KernelResponse::ResidentAllocated { resp } => {
                 if !resp_ptr.is_null() {
@@ -617,16 +618,12 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         }
     } else if num == SyscallNumber::ResidentMap as u64 {
         let id = ThingId(arg1);
-        let perms = match arg2 {
-            0 => abi::resident::ResidentMapPerms::ReadOnly,
-            1 => abi::resident::ResidentMapPerms::ReadWrite,
-            _ => return 1,
-        };
+        let perms = abi::resident::ResidentMapPerms(arg2 as u32);
         let resp_ptr = arg3 as *mut abi::resident::ResidentMapResp;
         let err_ptr = arg4 as *mut abi::resident::ResidentError;
 
         match kernel::handle_request(KernelRequest::ResidentMap {
-            thing_id: id,
+            id,
             perms,
         }) {
             KernelResponse::ResidentMapped { resp } => {

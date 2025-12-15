@@ -1,6 +1,6 @@
 use thing_os::prelude::*;
 use thing_os::MODE_INDEX_CONSOLE;
-use thing_os::thing_models::{DisplayPresentRequest, MousePacketEvent};
+use thing_os::thing_models::DisplayPresentRequest;
 
 use crate::config::FRAME_INTERVAL_NS;
 use crate::graph::{
@@ -199,7 +199,6 @@ fn load_background_image<S: Sys>(sys: &mut S) -> Option<BackgroundImage> {
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "compositor: starting");
     ensure_ui_schemas(sys);
-    let _ = register_schema_for::<MousePacketEvent>(sys);
     let _ = register_schema_for::<DisplayPresentRequest>(sys);
 
     let fb = loop {

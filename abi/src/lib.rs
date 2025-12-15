@@ -7,6 +7,8 @@ use alloc::vec::Vec;
 pub mod graph_kinds;
 pub mod resident;
 pub mod resident_layout;
+pub mod mouse_stream;
+pub mod keyboard_stream;
 pub mod syscall_defs;
 pub mod syscall_numbers;
 
@@ -23,7 +25,7 @@ pub struct TransactionId(pub u64);
 pub struct NodeId(pub u64);
 
 /// Thing identifier
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct ThingId(pub u64);
 
 impl ThingId {
@@ -298,9 +300,10 @@ pub enum KernelRequest {
     ResidentAlloc {
         kind: &'static str,
         byte_len: u32,
+        flags: u32, // keeping flags as I added it and it's useful
     },
     ResidentMap {
-        thing_id: ThingId,
+        id: ThingId,
         perms: crate::resident::ResidentMapPerms,
     },
     ResidentUnmap {

@@ -1,18 +1,16 @@
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct ResidentHeader {
-    pub magic: u32,      // 'RSID' = 0x44495352
-    pub version: u16,    // 1
-    pub flags: u16,      // reserved
-    pub kind_id: u32,    // schema kind id (or string-id)
-    pub prop_count: u16,
-    pub _pad0: u16,
-    pub props_off: u32,  // offset to PropEntry[prop_count]
-    pub data_off: u32,   // start of variable region
-    pub total_len: u32,  // bytes used
-    pub generation: u32,        // generation counter (handle invalidation)
-    pub seq: u32,        // seqlock-style: writer makes it odd while writing, even when stable
-    pub _pad1: u32,
+    pub magic: u32,        // 'RSID'
+    pub version: u16,      // 1
+    pub flags: u16,
+    pub total_len: u32,    // bytes
+    pub props_off: u32,    // offset to ResPropEntry table (0 if none)
+    pub prop_count: u32,
+    pub data_off: u32,     // offset to resident payload region
+    pub generation: u32,   // increment on rest/evict if desired
+    pub seq: u32,          // seqlock
+    pub _pad: u32,
 }
 
 impl ResidentHeader {
@@ -34,7 +32,7 @@ pub enum ResTag {
 #[derive(Clone, Copy, Debug)]
 pub struct ResPropEntry {
     pub key_id: u32,    // schema key id
-    pub tag: u8,
+    pub tag: ResTag,
     pub _pad: [u8; 3],
     pub a: u32,         // off for Str/Bytes
     pub b: u32,         // len for Str/Bytes

@@ -17,7 +17,7 @@ mod pci_impl {
             | ((func as u32) << 8)
             | (offset as u32 & 0xFC);
         let mut port = Port::<u32>::new(PCI_CONFIG_ADDRESS);
-        port.write(addr);
+        unsafe { port.write(addr); }
     }
 
     pub fn read_u8(bus: u8, slot: u8, func: u8, offset: u16) -> u8 {

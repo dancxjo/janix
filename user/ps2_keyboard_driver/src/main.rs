@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(target_os = "none", no_std)]
 #![cfg_attr(target_os = "none", no_main)]
 
 extern crate alloc;
@@ -95,6 +95,7 @@ pub extern "C" fn _start() -> ! {
     loop {}
 }
 
+#[cfg(target_os = "none")]
 fn main() {
     // We don't need UserlandSys for basic logging if we use a different way?
     // Wait, existing driver used `println(sys, ...)`

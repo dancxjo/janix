@@ -340,14 +340,24 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             let current = scheduler_tick();
             KernelResponse::SchedulerTicked { current }
         }
-        KernelRequest::ResidentAlloc { kind, byte_len } => {
-            match resident::manager::sys_resident_alloc(kind, byte_len) {
+        KernelRequest::ResidentAlloc { kind, byte_len, flags } => {
+            let kind_id = crate::graph::schema::ensure_kind_exists(kind);
+            let args = abi::resident::ResidentAllocArgs {
+                kind_id,
+                byte_len,
+                flags,
+            };
+            match resident::manager::sys_resident_alloc(args) {
                 Ok(resp) => KernelResponse::ResidentAllocated { resp },
                 Err(e) => KernelResponse::ResidentError(e),
             }
         }
-        KernelRequest::ResidentMap { thing_id, perms } => {
-             match resident::manager::sys_resident_map(thing_id, perms) {
+        KernelRequest::ResidentMap { id, perms } => {
+             let args = abi::resident::ResidentMapArgs {
+                 id,
+                 perms,
+             };
+             match resident::manager::sys_resident_map(args) {
                  Ok(resp) => KernelResponse::ResidentMapped { resp },
                  Err(e) => KernelResponse::ResidentError(e),
              }

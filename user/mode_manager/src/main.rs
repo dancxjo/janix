@@ -1,5 +1,5 @@
-#![no_std]
-#![no_main]
+#![cfg_attr(target_os = "none", no_std)]
+#![cfg_attr(target_os = "none", no_main)]
 
 extern crate alloc;
 
@@ -274,6 +274,10 @@ fn get_outgoing_links_by_pred<S: Sys>(sys: &mut S, source: ThingId, pred: abi::P
 }
 
 #[panic_handler]
+#[cfg(target_os = "none")]
 fn panic(_info: &PanicInfo) -> ! {
     loop {}
 }
+
+#[cfg(not(target_os = "none"))]
+fn main() {}

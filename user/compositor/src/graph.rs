@@ -4,7 +4,6 @@ use alloc::boxed::Box;
 use alloc::format;
 use abi::{KernelRequest, KernelResponse};
 use thing_os::prelude::*;
-use thing_os::thing_models::MousePacketEvent;
 use thing_os::{
     DisplayThing, Mode, ModeSwitchEvent, PrimaryDisplayBuffer, Surface, Window, active_mode,
     default_mode, graph_kinds, is_console_mode_active, load_thing, update_props,
@@ -146,20 +145,6 @@ mod tests {
         }
     }
 
-    fn mouse_event(seq: u64) -> MousePacketEvent {
-        MousePacketEvent {
-            id: ThingId(seq),
-            controller_id: ThingId(1),
-            port_index: 0,
-            sequence_index: seq,
-            timestamp_ticks: seq * 10,
-            buttons: 0,
-            delta_x: 0,
-            delta_y: 0,
-            overflow_x: false,
-            overflow_y: false,
-        }
-    }
 
     #[test]
     fn layout_policy_from_mode_defaults_to_free() {

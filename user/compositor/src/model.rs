@@ -5,7 +5,16 @@ use thing_os::{PrimaryDisplayBuffer, graph_kinds};
 
 use crate::layout::StackedWindow;
 use crate::render::cursor::{self, CursorKind, CursorSprites};
-use thing_os::resident::mouse::MouseStream;
+use thing_os::resident::mouse::MouseStreamMapped;
+
+#[derive(Debug, Clone, Copy)]
+pub struct BackgroundImage {
+    pub ptr: *const u8,
+    pub size: usize,
+    pub width: i32,
+    pub height: i32,
+    pub bpp: u16,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConsoleBuffer {
@@ -31,18 +40,9 @@ pub struct Compositor {
     pub background_image: Option<BackgroundImage>,
     pub background_offset: (i32, i32),
     pub console_buffer: Option<ConsoleBuffer>,
-    pub mouse_stream: Option<MouseStream<()>>,
+    pub mouse_stream: Option<MouseStreamMapped<()>>,
     pub mouse_head: u32,
     frame_counter: u64,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct BackgroundImage {
-    pub ptr: *const u8,
-    pub size: usize,
-    pub width: i32,
-    pub height: i32,
-    pub bpp: u16,
 }
 
 impl Compositor {

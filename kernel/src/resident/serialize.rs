@@ -1,13 +1,80 @@
-use crate::graph::store::{self, StorageState};
+use crate::graph::store::{self, StorageState, ArchiveRef};
 use crate::graph::schema;
 use abi::{ThingId, PropValue};
 use abi::resident::{RestPolicy, RestResp, ResidentError, ResidentErrorCode};
-use abi::resident_layout::{ResidentHeader, ResPropEntry};
+use abi::resident_layout::{ResidentHeader, ResPropEntry, ResTag};
 use crate::memory::hhdm;
 use alloc::vec::Vec;
 use alloc::string::String;
 
-pub fn snapshot_and_archive(thing_id: ThingId, _policy: RestPolicy) -> Result<RestResp, ResidentError> {
+enum PropValueView<'a> {
+    U64(u64),
+    I64(i64),
+    Bool(bool),
+    Str(&'a str),
+    Bytes(&'a [u8]),
+}
+
+impl<'a> PropValueView<'a> {
+    fn to_prop_value(&self) -> PropValue {
+        match self {
+            Self::U64(v) => PropValue::U64(*v),
+            Self::I64(v) => PropValue::I64(*v),
+            Self::Bool(v) => PropValue::Bool(*v),
+            Self::Str(s) => PropValue::Str(String::from(*s)),
+            Self::Bytes(_) => PropValue::Str(String::from("<bytes>")), // Placeholder for now
+        }
+    }
+}
+
+fn cbor_encode_header(val: u64, major: u8, out: &mut Vec<u8>) {
+    if val < 24 {
+        out.push((major << 5) | (val as u8));
+    } else if val <= 0xFF {
+        out.push((major << 5) | 24);
+        out.push(val as u8);
+    } else if val <= 0xFFFF {
+        out.push((major << 5) | 25);
+        out.extend_from_slice(&(val as u16).to_be_bytes());
+    } else if val <= 0xFFFF_FFFF {
+        out.push((major << 5) | 26);
+        out.extend_from_slice(&(val as u32).to_be_bytes());
+    } else {
+        out.push((major << 5) | 27);
+        out.extend_from_slice(&val.to_be_bytes());
+    }
+}
+
+fn cbor_encode_kv(out: &mut Vec<u8>, key: &str, val: &PropValueView) {
+    // Encode Key (Text String, Maj 3)
+    cbor_encode_header(key.len() as u64, 3, out);
+    out.extend_from_slice(key.as_bytes());
+
+    // Encode Value
+    match val {
+        PropValueView::U64(v) => cbor_encode_header(*v, 0, out),
+        PropValueView::I64(v) => {
+            if *v >= 0 {
+                cbor_encode_header(*v as u64, 0, out);
+            } else {
+                cbor_encode_header((-1 - *v) as u64, 1, out);
+            }
+        },
+        PropValueView::Bool(v) => {
+            out.push(if *v { 0xF5 } else { 0xF4 });
+        },
+        PropValueView::Str(s) => {
+            cbor_encode_header(s.len() as u64, 3, out);
+            out.extend_from_slice(s.as_bytes());
+        },
+        PropValueView::Bytes(b) => {
+            cbor_encode_header(b.len() as u64, 2, out); // Maj 2 = Byte String
+            out.extend_from_slice(b);
+        }
+    }
+}
+
+pub fn snapshot_and_archive(thing_id: ThingId, policy: RestPolicy) -> Result<RestResp, ResidentError> {
     unsafe {
         let slab = store::things_slab();
         let idx = thing_id.index() as usize;
@@ -31,8 +98,8 @@ pub fn snapshot_and_archive(thing_id: ThingId, _policy: RestPolicy) -> Result<Re
         let vaddr = hhdm::phys_to_virt(first_frame.start_address);
         let header_ptr = vaddr as *const ResidentHeader;
         
-        // Seqlock Retry Loop
-        let props_vec = loop {
+        // Seqlock Retry Loop + Encode
+        let cbor_blob = loop {
              let seq1 = (*header_ptr).seq;
              if seq1 % 2 != 0 {
                   core::hint::spin_loop();
@@ -50,40 +117,45 @@ pub fn snapshot_and_archive(thing_id: ThingId, _policy: RestPolicy) -> Result<Re
              
              let table_ptr = (header_ptr as *const u8).add(props_off as usize) as *const ResPropEntry;
              
-             let mut temp_props = Vec::with_capacity(count as usize);
+             let mut cbor_out = Vec::with_capacity(count as usize * 16); // heuristic
+             
+             // Begin Map (Maj 5)
+             cbor_encode_header(count as u64, 5, &mut cbor_out);
+
              let mut failed = false;
 
              for i in 0..count {
                   let entry = *table_ptr.add(i as usize);
                   
-                  let val = match entry.tag {
-                        1 => PropValue::U64(entry.v),
-                        2 => PropValue::I64(entry.v as i64),
-                        3 => PropValue::Bool(entry.v != 0),
-                        4 => { 
+                  let val_view = match entry.tag {
+                        ResTag::U64 => PropValueView::U64(entry.v), // U64
+                        ResTag::I64 => PropValueView::I64(entry.v as i64), // I64
+                        ResTag::Bool => PropValueView::Bool(entry.v != 0), // Bool
+                        ResTag::Str => { // Str
                             let off = entry.a;
                             let len = entry.b;
-                            if (off + len) as u32 > header.total_len {
-                                failed = true;
-                                break; 
-                            }
+                            if (off + len) as u32 > header.total_len { failed = true; break; }
                             let str_ptr = (header_ptr as *const u8).add(off as usize);
                             let slice = core::slice::from_raw_parts(str_ptr, len as usize);
                             if let Ok(s) = alloc::str::from_utf8(slice) {
-                                PropValue::Str(String::from(s))
+                                PropValueView::Str(s)
                             } else {
-                                PropValue::Str(String::from("<invalid utf8>")) 
+                                PropValueView::Str("<invalid utf8>")
                             }
                         },
-                        // Bytes not yet supported in PropValue fully? PropValue has Str.
-                        // We will skip bytes for now or map to Str special?
-                        // Plan said "minimal CBOR". But we are converting to internal Props first.
-                        // PropValue only has Str. We'll skip bytes.
-                        _ => PropValue::U64(0), 
+                        ResTag::Bytes => { // Bytes
+                            let off = entry.a;
+                            let len = entry.b;
+                            if (off + len) as u32 > header.total_len { failed = true; break; }
+                            let ptr = (header_ptr as *const u8).add(off as usize);
+                            let slice = core::slice::from_raw_parts(ptr, len as usize);
+                            PropValueView::Bytes(slice)
+                        },
+                        ResTag::ThingId => PropValueView::U64(entry.v), // ThingId -> U64 for cbor
                   };
                   
                   if let Some(k) = schema::get_key_from_id(thing.kind, entry.key_id) {
-                       temp_props.push((k, val));
+                       cbor_encode_kv(&mut cbor_out, k, &val_view);
                   }
              }
              
@@ -91,44 +163,39 @@ pub fn snapshot_and_archive(thing_id: ThingId, _policy: RestPolicy) -> Result<Re
              let seq2 = (*header_ptr).seq;
              
              if seq1 == seq2 && !failed {
-                  break temp_props;
-             }
+                   break cbor_out;
+              }
              if failed {
-                 // If we failed bounds check likely due to race, retry. 
-                 // If persistent, it will loop forever?
-                 // Add loop limit?
+                 // Bounds error, retry or fail
+                 // For now, if bounds fail, we assume race and retry.
+                 // Limit retries?
              }
         };
 
-        // Update Thing Props
-        for (key, val) in props_vec {
-             let mut found = false;
-             for slot in thing.props.iter_mut() {
-                  if let Some((k, _)) = slot {
-                       if *k == key {
-                            *slot = Some((key, val.clone()));
-                            found = true;
-                            // Update prop index? 
-                            // Direct update misses indexing.
-                            crate::graph::index_props::add_to_prop_index(thing.id, key, &val);
-                            break;
-                       }
-                  }
-             }
-             if !found {
-                  for slot in thing.props.iter_mut() {
-                       if matches!(slot, None) {
-                            *slot = Some((key, val.clone()));
-                            crate::graph::index_props::add_to_prop_index(thing.id, key, &val);
-                            break;
-                       }
-                  }
-             }
+        
+        // 2. Archive Blob
+        let archive_ref = store::archive_store().as_mut().unwrap().store(cbor_blob);
+        thing.archived_ref = Some(archive_ref);
+
+        // 3. Update State based on Policy
+        match policy {
+            RestPolicy::SnapshotKeepResident => {
+                thing.storage = StorageState::Both; 
+            },
+            RestPolicy::SnapshotEvictResident => {
+                thing.resident = None;
+                thing.storage = StorageState::Archived;
+            }
         }
         
-        thing.storage = StorageState::Both; // Keeping resident for now (Snapshot)
-        thing.archived = true;
-        
-        Ok(RestResp { thing_id })
+        let archived_ref = if let Some(r) = &thing.archived_ref {
+             abi::resident::ArchiveRef {
+                 id: r.0,
+             }
+        } else {
+             abi::resident::ArchiveRef::default()
+        };
+
+        Ok(RestResp { thing_id, archived_ref })
     }
 }

@@ -10,6 +10,7 @@ use super::index_props::{add_to_prop_index, remove_from_prop_index};
 use super::schema::{add_to_kind_index, is_prop_indexed, remove_from_kind_index};
 
 use alloc::string::String;
+use spin::{Mutex, MutexGuard};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Node {
@@ -19,12 +20,33 @@ pub struct Node {
 
 const MAX_PROPS_PER_THING: usize = 16;
 
-#[derive(Debug)]
-pub struct ResidentRef {
-    pub handle: abi::resident::ResidentHandle,
-    pub pages: Vec<crate::resident::mapping::ResidentPage>,
-    pub byte_len: usize,
-    pub rw_owner: Option<abi::ProcessId>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArchiveRef(pub u32);
+
+pub struct ArchiveStore {
+    blobs: Vec<Vec<u8>>,
+}
+
+static ARCHIVE_STORE: Mutex<Option<ArchiveStore>> = Mutex::new(None);
+
+pub fn archive_store() -> MutexGuard<'static, Option<ArchiveStore>> {
+    let mut guard = ARCHIVE_STORE.lock();
+    if guard.is_none() {
+        *guard = Some(ArchiveStore { blobs: Vec::new() });
+    }
+    guard
+}
+
+impl ArchiveStore {
+    pub fn store(&mut self, blob: Vec<u8>) -> ArchiveRef {
+        let idx = self.blobs.len() as u32;
+        self.blobs.push(blob);
+        ArchiveRef(idx)
+    }
+    
+    pub fn get(&self, r: ArchiveRef) -> Option<&[u8]> {
+        self.blobs.get(r.0 as usize).map(|v| v.as_slice())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,15 +57,57 @@ pub enum StorageState {
 }
 
 #[derive(Debug)]
+pub struct ResidentRef {
+    pub pages: Vec<crate::resident::mapping::ResidentPage>,
+    pub byte_len: usize,
+    pub rw_holder: Option<abi::ProcessId>, // Single writer holder
+}
+
+#[derive(Debug)]
 pub struct ThingNode {
     pub id: ThingId,
     pub kind: &'static str,
     pub kind_id: ThingId,
     pub props: [Option<(PropKey, PropValue)>; MAX_PROPS_PER_THING],
-    pub owner_process: Option<abi::ProcessId>,
+    pub owner_process: Option<abi::ProcessId>, // Creator/Owner
     pub storage: StorageState,
     pub resident: Option<ResidentRef>,
-    pub archived: bool, // Redundant if storage tracks it? Let's use StorageState.
+    pub archived_ref: Option<ArchiveRef>,
+}
+
+impl ThingNode {
+    pub fn new(id: ThingId, kind: &'static str, kind_id: ThingId, owner: abi::ProcessId) -> Self {
+        Self {
+            id,
+            kind,
+            kind_id,
+            props: [const { None }; MAX_PROPS_PER_THING],
+            owner_process: Some(owner),
+            storage: StorageState::Archived, // Default, changes if created as resident
+            resident: None,
+            archived_ref: None,
+        }
+    }
+
+    pub fn new_resident(
+        id: ThingId, 
+        kind: &'static str, 
+        kind_id: ThingId, 
+        resident: ResidentRef, 
+        owner: abi::ProcessId
+    ) -> Self {
+        Self {
+            id,
+            kind,
+            kind_id,
+            props: [const { None }; MAX_PROPS_PER_THING],
+            owner_process: Some(owner),
+            storage: StorageState::Resident,
+            resident: Some(resident),
+            archived_ref: None,
+        }
+    }
+    
 }
 
 const MAX_NODES: usize = 256;
@@ -93,7 +157,7 @@ impl Slab {
         }
     }
 }
-pub(crate) fn things_slab() -> &'static mut Slab {
+pub(crate) unsafe fn things_slab() -> &'static mut Slab {
     unsafe {
         let slab_ptr = &raw mut THINGS_SLAB;
         (*slab_ptr).get_or_insert_with(|| Slab {
@@ -104,8 +168,10 @@ pub(crate) fn things_slab() -> &'static mut Slab {
 }
 
 pub(crate) fn peek_next_slab_id() -> (u32, u32) {
-    let slab = things_slab();
-    slab.peek_next_id()
+    unsafe {
+        let slab = things_slab();
+        slab.peek_next_id()
+    }
 }
 pub fn add_node(value: u64) -> Option<NodeId> {
     unsafe {
@@ -152,16 +218,19 @@ pub fn iter_things<F>(mut f: F)
 where
     F: FnMut(&ThingNode),
 {
-    let slab = things_slab();
-    for slot in slab.slots.iter() {
-        if let Some(thing) = &slot.thing {
-            f(thing);
+    unsafe {
+        let slab = things_slab();
+        for slot in slab.slots.iter() {
+            if let Some(thing) = &slot.thing {
+                f(thing);
+            }
         }
     }
 }
 
 pub fn next_thing_of_kind(kind: &'static str, start_after: ThingId) -> Option<ThingId> {
-    let slab = things_slab();
+    unsafe {
+        let slab = things_slab();
     let start_idx = if start_after.0 == u64::MAX {
         0
     } else {
@@ -183,6 +252,7 @@ pub fn next_thing_of_kind(kind: &'static str, start_after: ThingId) -> Option<Th
     
 
     None
+    }
 }
 
 fn link_from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Option<Link> {
@@ -232,24 +302,6 @@ pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Optio
 }
 
 impl ThingNode {
-    pub fn new_resident(
-        id: ThingId,
-        kind: &'static str,
-        kind_id: ThingId,
-        resident_ref: ResidentRef,
-        owner: abi::ProcessId,
-    ) -> Self {
-         Self {
-            id,
-            kind,
-            kind_id,
-            props: [const { None }; MAX_PROPS_PER_THING],
-            owner_process: Some(owner),
-            storage: StorageState::Resident,
-            resident: Some(resident_ref),
-            archived: false,
-        }
-    }
 }
 
 pub(crate) fn create_thing_internal(
@@ -289,7 +341,7 @@ pub(crate) fn create_thing_internal(
             owner_process,
             storage: StorageState::Archived,
             resident: None,
-            archived: true,
+            archived_ref: None,
         });
 
         add_to_kind_index(id, kind_id);
@@ -322,7 +374,8 @@ pub(crate) fn create_thing_internal(
 }
 
 pub fn get_thing(id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey, PropValue)>])> {
-    let slab = things_slab();
+    unsafe {
+        let slab = things_slab();
     let idx = id.index() as usize;
     if idx >= slab.slots.len() {
         return None;
@@ -334,10 +387,12 @@ pub fn get_thing(id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey
     slot.thing
         .as_ref()
         .map(|n| (n.kind, &n.props as &[Option<(PropKey, PropValue)>]))
+    }
 }
 
 pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
-    let slab = things_slab();
+    unsafe {
+        let slab = things_slab();
     let idx = id.index() as usize;
     if idx >= slab.slots.len() {
         return false;
@@ -425,6 +480,7 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
     } else {
         false
     }
+    }
 }
 
 fn remove_incident_links(id: ThingId) {
@@ -439,7 +495,8 @@ fn remove_incident_links(id: ThingId) {
 }
 
 pub fn delete_thing(id: ThingId) -> bool {
-    let slab = things_slab();
+    unsafe {
+        let slab = things_slab();
     let idx = id.index() as usize;
     if idx >= slab.slots.len() {
         return false;
@@ -478,6 +535,7 @@ pub fn delete_thing(id: ThingId) -> bool {
         true
     } else {
         false
+    }
     }
 }
 

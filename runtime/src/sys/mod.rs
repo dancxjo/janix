@@ -145,8 +145,14 @@ impl Sys for UserlandSys {
                         0,
                     )
                 };
-                KernelResponse::ThingCreated {
-                    id: abi::ThingId(ret),
+                if ret == 0 {
+                    KernelResponse::Error {
+                        message: "ThingCreate failed",
+                    }
+                } else {
+                    KernelResponse::ThingCreated {
+                        id: abi::ThingId(ret),
+                    }
                 }
             }
             KernelRequest::ThingUpdate { id, props } => {

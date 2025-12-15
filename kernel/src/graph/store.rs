@@ -17,15 +17,33 @@ pub struct Node {
     pub value: u64,
 }
 
-const MAX_PROPS_PER_THING: usize = 8;
+const MAX_PROPS_PER_THING: usize = 16;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+pub struct ResidentRef {
+    pub handle: abi::resident::ResidentHandle,
+    pub pages: Vec<crate::resident::mapping::ResidentPage>,
+    pub byte_len: usize,
+    pub rw_owner: Option<abi::ProcessId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageState {
+    Archived,
+    Resident,
+    Both,
+}
+
+#[derive(Debug)]
 pub struct ThingNode {
     pub id: ThingId,
     pub kind: &'static str,
     pub kind_id: ThingId,
     pub props: [Option<(PropKey, PropValue)>; MAX_PROPS_PER_THING],
     pub owner_process: Option<abi::ProcessId>,
+    pub storage: StorageState,
+    pub resident: Option<ResidentRef>,
+    pub archived: bool, // Redundant if storage tracks it? Let's use StorageState.
 }
 
 const MAX_NODES: usize = 256;
@@ -34,21 +52,21 @@ const MAX_NODES: usize = 256;
 static mut NODES: [Option<Node>; MAX_NODES] = [None; MAX_NODES];
 static mut NEXT_ID: u64 = 0;
 
-#[derive(Debug, Clone)]
-struct ThingSlot {
-    generation: u32,
-    thing: Option<ThingNode>,
+#[derive(Debug)]
+pub(crate) struct ThingSlot {
+    pub(crate) generation: u32,
+    pub(crate) thing: Option<ThingNode>,
 }
 
-struct Slab {
-    slots: Vec<ThingSlot>,
-    free_indices: Vec<u32>,
+pub(crate) struct Slab {
+    pub(crate) slots: Vec<ThingSlot>,
+    pub(crate) free_indices: Vec<u32>,
 }
 
 static mut THINGS_SLAB: Option<Slab> = None;
 
 impl Slab {
-    fn alloc(&mut self) -> (u32, u32) {
+    pub(crate) fn alloc(&mut self) -> (u32, u32) {
         if let Some(idx) = self.free_indices.pop() {
             let slot = &mut self.slots[idx as usize];
             slot.generation = slot.generation.wrapping_add(1);
@@ -150,34 +168,20 @@ pub fn next_thing_of_kind(kind: &'static str, start_after: ThingId) -> Option<Th
         start_after.index() + 1
     };
 
-    if kind == "MousePacketEvent" {
-        let msg = alloc::format!("next_mouse: start_after={:?} start_idx={}", start_after, start_idx);
-        crate::log::log_message(&msg);
-    }
+
 
     for (i, slot) in slab.slots.iter().enumerate().skip(start_idx as usize) {
         if let Some(node) = &slot.thing {
-            if kind == "MousePacketEvent" {
-                // Log first 3 candidates we inspect to see what they are
-                if i < (start_idx as usize + 3) {
-                     let msg = alloc::format!("next_mouse check [{}] -> kind='{}' vs target='{}'", i, node.kind, kind);
-                     crate::log::log_message(&msg);
-                }
-            }
+
 
             if node.kind == kind {
-                if kind == "MousePacketEvent" {
-                     let msg = alloc::format!("next_mouse found match at {}", i);
-                     crate::log::log_message(&msg);
-                }
+
                 return Some(node.id);
             }
         }
     }
     
-    if kind == "MousePacketEvent" {
-        crate::log::log_message("next_mouse: no match found");
-    }
+
     None
 }
 
@@ -227,6 +231,27 @@ pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Optio
     create_thing_internal(kind, None, props, None)
 }
 
+impl ThingNode {
+    pub fn new_resident(
+        id: ThingId,
+        kind: &'static str,
+        kind_id: ThingId,
+        resident_ref: ResidentRef,
+        owner: abi::ProcessId,
+    ) -> Self {
+         Self {
+            id,
+            kind,
+            kind_id,
+            props: [const { None }; MAX_PROPS_PER_THING],
+            owner_process: Some(owner),
+            storage: StorageState::Resident,
+            resident: Some(resident_ref),
+            archived: false,
+        }
+    }
+}
+
 pub(crate) fn create_thing_internal(
     kind: &'static str,
     explicit_kind_id: Option<ThingId>,
@@ -262,6 +287,9 @@ pub(crate) fn create_thing_internal(
             kind_id,
             props: node_props,
             owner_process,
+            storage: StorageState::Archived,
+            resident: None,
+            archived: true,
         });
 
         add_to_kind_index(id, kind_id);
@@ -623,6 +651,6 @@ pub fn kernel_user_update_thing(
     }
 }
 
-pub fn cleanup_process_graph(_proc: abi::ProcessId) {
-    // TODO
+pub fn cleanup_process_graph(proc: abi::ProcessId) {
+    crate::resident::manager::process_exit_cleanup(proc);
 }

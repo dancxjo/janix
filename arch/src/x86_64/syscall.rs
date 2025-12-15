@@ -156,9 +156,9 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     let arg1 = regs.rdi;
     let arg2 = regs.rsi;
     let arg3 = regs.rdx;
-    let arg4 = regs.rcx;
+    let arg4 = regs.rcx; // Userland stub passes arg4 in RCX (int 0x80 convention)
     let arg5 = regs.r8;
-    let _arg6 = regs.r9;
+    let arg6 = regs.r9;
 
     if num == SyscallNumber::Yield as u64 {
         {
@@ -433,52 +433,86 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         let props = unsafe { user_slice(props_ptr, props_len) };
 
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
-        let props_vec: alloc::vec::Vec<(abi::PropKey, abi::PropValue)> = props.to_vec();
+        let mut deep_props = alloc::vec::Vec::with_capacity(props_len);
+        for (k, v) in props {
+            deep_props.push((k.clone(), v.clone()));
+        }
         let props_static: &'static [(abi::PropKey, abi::PropValue)] =
-            Box::leak(props_vec.into_boxed_slice());
+            Box::leak(deep_props.into_boxed_slice());
 
         let req = KernelRequest::ThingCreate {
             kind: kind_static,
             props: props_static,
         };
-        match kernel::handle_request(req) {
+        let ret = match kernel::handle_request(req) {
             KernelResponse::ThingCreated { id } => id.0,
             _ => 0,
+        };
+
+        // SAFETY: The request handling is done.
+        // We clean up props because they are copied into the ThingNode (which owns its props).
+        // WE DO NOT CLEAN UP kind_static, because ThingNode stores &'static str directly!
+        // This causes a memory leak (one kind string per thing), but preventing UAF is priority.
+        unsafe {
+            let _ = alloc::boxed::Box::from_raw(props_static as *const [(abi::PropKey, abi::PropValue)] as *mut [(abi::PropKey, abi::PropValue)]);
         }
+
+        ret
     } else if num == SyscallNumber::ThingUpdate as u64 {
         let id = ThingId(arg1);
         let props_ptr = arg2 as *const (abi::PropKey, abi::PropValue);
         let props_len = arg3 as usize;
         let props = unsafe { user_slice(props_ptr, props_len) };
-        let props_vec: alloc::vec::Vec<(abi::PropKey, abi::PropValue)> = props.to_vec();
+        let mut deep_props = alloc::vec::Vec::with_capacity(props_len);
+        for (k, v) in props {
+            deep_props.push((k.clone(), v.clone()));
+        }
         let props_static: &'static [(abi::PropKey, abi::PropValue)] =
-            Box::leak(props_vec.into_boxed_slice());
+            Box::leak(deep_props.into_boxed_slice());
 
         let req = KernelRequest::ThingUpdate {
             id,
             props: props_static,
         };
-        match kernel::handle_request(req) {
+        let ret = match kernel::handle_request(req) {
             KernelResponse::Success { .. } => 0,
             _ => 1,
+        };
+        
+        // SAFETY: Cleanup leaked props
+        unsafe {
+             let _ = alloc::boxed::Box::from_raw(props_static as *const [(abi::PropKey, abi::PropValue)] as *mut [(abi::PropKey, abi::PropValue)]);
         }
+        
+        ret
     } else if num == SyscallNumber::SchemaRegister as u64 {
         let kind_ptr = arg1 as *const u8;
         let kind_len = arg2 as usize;
-        let props_ptr = arg3 as *const (&'static str, abi::PropType);
-        let props_len = arg4 as usize;
+        let desc_ptr = arg3 as *const u8;
+        let desc_len = arg4 as usize;
+        let props_ptr = arg5 as *const (&'static str, abi::PropType);
+        let props_len = arg6 as usize;
+        
+        {
+            let msg = alloc::format!("SchemaReg: kind_len={} props_len={}", kind_len, props_len);
+            let leaked = Box::leak(msg.into_boxed_str());
+            kernel::log(leaked);
+        }
 
         let kind = unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
+        let description = unsafe { core::str::from_utf8(user_slice(desc_ptr, desc_len)).unwrap_or("") };
         let props = unsafe { user_slice(props_ptr, props_len) };
 
         let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
-        let props_vec = props.to_vec();
-        let props_static = Box::leak(props_vec.into_boxed_slice());
+        let description_static: &'static str = Box::leak(description.to_string().into_boxed_str());
 
-        // Provide an empty description for schema registrations originating
-        // from userland syscalls (no description argument is passed over
-        // the syscall ABI). Leak to `'static` like `kind` and `props`.
-        let description_static: &'static str = Box::leak("".to_string().into_boxed_str());
+        let mut deep_props = alloc::vec::Vec::with_capacity(props_len);
+        for (k, t) in props {
+             let k_static: &'static str = Box::leak(k.to_string().into_boxed_str());
+             deep_props.push((k_static, *t));
+        }
+        let props_static: &'static [(&'static str, abi::PropType)] =
+            Box::leak(deep_props.into_boxed_slice());
 
         let req = KernelRequest::SchemaRegister {
             kind: kind_static,
@@ -552,7 +586,105 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             Err(e) => abi::syscall_defs::SysRet::err(e.code, e.detail),
         };
         unsafe { *ret_ptr = sys_ret };
-        0    } else {
+        0
+    } else if num == SyscallNumber::ResidentAlloc as u64 {
+        let kind_ptr = arg1 as *const u8;
+        let kind_len = arg2 as usize;
+        let byte_len = arg3 as u32;
+        let resp_ptr = arg4 as *mut abi::resident::ResidentAllocResp;
+        let err_ptr = arg5 as *mut abi::resident::ResidentError;
+
+        let kind = unsafe { core::str::from_utf8(user_slice(kind_ptr, kind_len)).unwrap_or("") };
+        let kind_static: &'static str = Box::leak(kind.to_string().into_boxed_str());
+
+        match kernel::handle_request(KernelRequest::ResidentAlloc {
+            kind: kind_static,
+            byte_len,
+        }) {
+            KernelResponse::ResidentAllocated { resp } => {
+                if !resp_ptr.is_null() {
+                    unsafe { *resp_ptr = resp };
+                }
+                0
+            }
+            KernelResponse::ResidentError(e) => {
+                if !err_ptr.is_null() {
+                    unsafe { *err_ptr = e };
+                }
+                1
+            }
+            _ => 1,
+        }
+    } else if num == SyscallNumber::ResidentMap as u64 {
+        let id = ThingId(arg1);
+        let perms = match arg2 {
+            0 => abi::resident::ResidentMapPerms::ReadOnly,
+            1 => abi::resident::ResidentMapPerms::ReadWrite,
+            _ => return 1,
+        };
+        let resp_ptr = arg3 as *mut abi::resident::ResidentMapResp;
+        let err_ptr = arg4 as *mut abi::resident::ResidentError;
+
+        match kernel::handle_request(KernelRequest::ResidentMap {
+            thing_id: id,
+            perms,
+        }) {
+            KernelResponse::ResidentMapped { resp } => {
+                if !resp_ptr.is_null() {
+                    unsafe { *resp_ptr = resp };
+                }
+                0
+            }
+            KernelResponse::ResidentError(e) => {
+                if !err_ptr.is_null() {
+                    unsafe { *err_ptr = e };
+                }
+                1
+            }
+            _ => 1,
+        }
+    } else if num == SyscallNumber::ResidentUnmap as u64 {
+        let id = ThingId(arg1);
+        let err_ptr = arg2 as *mut abi::resident::ResidentError;
+        match kernel::handle_request(KernelRequest::ResidentUnmap { thing_id: id }) {
+            KernelResponse::Success { .. } => 0,
+            KernelResponse::ResidentError(e) => {
+                if !err_ptr.is_null() {
+                    unsafe { *err_ptr = e };
+                }
+                1
+            }
+            _ => 1,
+        }
+    } else if num == SyscallNumber::ThingRest as u64 {
+        let id = ThingId(arg1);
+        let policy = match arg2 {
+            0 => abi::resident::RestPolicy::SnapshotKeepResident,
+            1 => abi::resident::RestPolicy::SnapshotEvictResident,
+            _ => return 1,
+        };
+        let resp_ptr = arg3 as *mut abi::resident::RestResp;
+        let err_ptr = arg4 as *mut abi::resident::ResidentError;
+
+        match kernel::handle_request(KernelRequest::ThingRest {
+            thing_id: id,
+            policy,
+        }) {
+            KernelResponse::ThingRested { resp } => {
+                if !resp_ptr.is_null() {
+                    unsafe { *resp_ptr = resp };
+                }
+                0
+            }
+            KernelResponse::ResidentError(e) => {
+                if !err_ptr.is_null() {
+                    unsafe { *err_ptr = e };
+                }
+                1
+            }
+            _ => 1,
+        }
+    } else {
         1 // SYS_ENOSYS or error
     }
 }

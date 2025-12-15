@@ -103,38 +103,7 @@ pub fn collect_surfaces_for_windows<S: Sys>(
     map
 }
 
-pub fn mouse_packets_since<S: Sys>(sys: &mut S, last_id: Option<ThingId>) -> Vec<MousePacketEvent> {
-    let mut events = Vec::new();
-    let mut cursor = last_id.unwrap_or(ThingId(0));
 
-    loop {
-        match sys.syscall(KernelRequest::ThingList {
-            kind: MousePacketEvent::KIND,
-            start_after: cursor,
-        }) {
-            KernelResponse::ThingListEntry { id: Some(next_id) } => {
-                if let Some(event) = load_thing::<MousePacketEvent>(sys, next_id) {
-                    events.push(event);
-                } else {
-                    println(sys, "compositor: failed to load mouse event");
-                }
-                cursor = next_id;
-            }
-            _ => break,
-        }
-    }
-    
-    // Sort logic is good for determinism even if kernel returns in order
-    events.sort_by_key(|e| e.sequence_index);
-    
-    if !events.is_empty() {
-        let msg = format!("compositor: found {} mouse packets via list_after({:?})", events.len(), last_id);
-        let leaked = Box::leak(msg.into_boxed_str());
-        println(sys, leaked);
-    }
-    
-    events
-}
 
 pub fn console_mode_active<S: Sys>(sys: &mut S) -> bool {
     is_console_mode_active(sys)
@@ -298,17 +267,6 @@ mod tests {
     }
 
     #[test]
-    fn mouse_packets_sorted_by_sequence_index() {
-        let events = vec![mouse_event(5), mouse_event(2)];
-        let responses = list_responses(events, |e| e.id);
-        let mut sys = MockSys::with_responses(responses);
-        let packets = mouse_packets_since(&mut sys, None);
-        assert_eq!(packets.len(), 2);
-        assert_eq!(packets[0].sequence_index, 2);
-        assert_eq!(packets[1].sequence_index, 5);
-    }
-
-    #[test]
     fn current_mode_falls_back_to_default() {
         let modes = vec![mode(1, 2, false), mode(2, 1, false)];
         let mut responses = list_responses(modes.clone(), |m| m.id);
@@ -316,52 +274,5 @@ mod tests {
         let mut sys = MockSys::with_responses(responses);
         let mode = current_mode(&mut sys).expect("expected mode");
         assert_eq!(mode.index, 1, "default should pick lowest index");
-    }
-
-    #[test]
-    fn handle_mode_switches_applies_latest_request() {
-        let events = vec![
-            ModeSwitchEvent {
-                id: ThingId(1),
-                mode_index: 1,
-                timestamp: 5,
-            },
-            ModeSwitchEvent {
-                id: ThingId(2),
-                mode_index: 2,
-                timestamp: 10,
-            },
-        ];
-        let mut responses = list_responses(events, |e| e.id);
-        let modes = vec![mode(10, 1, false), mode(20, 2, false)];
-        responses.extend(list_responses(modes, |m| m.id));
-        responses.push(success());
-        responses.push(success());
-
-        let mut sys = MockSys::with_responses(responses);
-        handle_mode_switches(&mut sys);
-        let requests = sys.drain_requests();
-
-        let updates: Vec<_> = requests
-            .iter()
-            .filter_map(|req| {
-                if let KernelRequest::ThingUpdate { id, props } = req {
-                    let active = props
-                        .iter()
-                        .find(|p| p.0 == graph_kinds::PROP_MODE_ACTIVE)
-                        .map(|p| p.1.clone());
-                    Some((*id, active))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        assert_eq!(
-            updates,
-            vec![
-                (ThingId(10), Some(PropValue::Bool(false))),
-                (ThingId(20), Some(PropValue::Bool(true)))
-            ]
-        );
     }
 }

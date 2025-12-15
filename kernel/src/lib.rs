@@ -14,6 +14,7 @@ pub mod journal;
 pub mod log;
 pub mod memory;
 pub mod model;
+pub mod resident;
 pub mod sched;
 pub mod sched_graph;
 pub mod sched_tick;
@@ -107,6 +108,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         }
         KernelRequest::ThingCreate { kind, props } => {
             if let Err(e) = graph::validate_props(kind, props) {
+
                 return KernelResponse::Error { message: e };
             }
             match graph::create_thing(kind, props) {
@@ -170,9 +172,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 }
             }
         }
-        KernelRequest::LinkAt { src, pred, idx } => KernelResponse::LinkTarget {
-            target: graph::link_target_at(src, pred, idx as usize),
-        },
+
         KernelRequest::CreateSharedBuffer {
             width,
             height,
@@ -340,6 +340,31 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             let current = scheduler_tick();
             KernelResponse::SchedulerTicked { current }
         }
+        KernelRequest::ResidentAlloc { kind, byte_len } => {
+            match resident::manager::sys_resident_alloc(kind, byte_len) {
+                Ok(resp) => KernelResponse::ResidentAllocated { resp },
+                Err(e) => KernelResponse::ResidentError(e),
+            }
+        }
+        KernelRequest::ResidentMap { thing_id, perms } => {
+             match resident::manager::sys_resident_map(thing_id, perms) {
+                 Ok(resp) => KernelResponse::ResidentMapped { resp },
+                 Err(e) => KernelResponse::ResidentError(e),
+             }
+        }
+        KernelRequest::ResidentUnmap { thing_id } => {
+             match resident::manager::sys_resident_unmap(thing_id) {
+                 Ok(()) => KernelResponse::Success { data: None },
+                 Err(e) => KernelResponse::ResidentError(e),
+             }
+        }
+        KernelRequest::ThingRest { thing_id, policy } => {
+             match resident::manager::sys_thing_rest(thing_id, policy) {
+                 Ok(resp) => KernelResponse::ThingRested { resp },
+                 Err(e) => KernelResponse::ResidentError(e),
+             }
+        }
+        
         KernelRequest::ExitThread => KernelResponse::Success { data: None },
     }
 }

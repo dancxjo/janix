@@ -6,8 +6,12 @@ use crate::graph;
 use crate::layout::{StackedWindow, hit_test};
 use crate::model::{Compositor, CursorState, DragState};
 
+use thing_os::resident::{map_resident, ResidentObject, ResidentMapPerms};
+use thing_os::resident::mouse::{MouseStream, MouseStreamThing, MouseEntry};
+use thing_os::{find_thing};
+
 impl CursorState {
-    pub fn apply_packet(&mut self, packet: &MousePacketEvent, max_x: i32, max_y: i32) -> u8 {
+    pub fn apply_packet(&mut self, packet: &MousePacketEvent, max_x: i32, max_y: i32) -> u64 {
         let previous = self.buttons;
         self.x = (self.x + packet.delta_x as i32).clamp(0, max_x.saturating_sub(1));
         self.y = (self.y - packet.delta_y as i32).clamp(0, max_y.saturating_sub(1));
@@ -15,32 +19,50 @@ impl CursorState {
         previous
     }
 
-    pub fn left_pressed_changed(previous: u8, current: u8) -> bool {
+    pub fn left_pressed_changed(previous: u64, current: u64) -> bool {
         (previous & 1) != (current & 1)
     }
 
-    pub fn left_down(current: u8) -> bool {
+    pub fn left_down(current: u64) -> bool {
         current & 1 != 0
     }
 }
 
 impl Compositor {
     pub fn process_mouse_packets<S: Sys>(&mut self, sys: &mut S, layout: &[StackedWindow]) {
-        println(sys, "compositor: process_mouse_packets");
-        let events = graph::mouse_packets_since(sys, self.last_mouse_event_id);
-        for event in events {
-            if event.sequence_index <= self.last_mouse_seq {
-                let msg = format!("compositor: skipping stale mouse event {} <= {}", event.sequence_index, self.last_mouse_seq);
-                let leaked = Box::leak(msg.into_boxed_str());
-                println(sys, leaked);
-                continue;
-            }
-            self.last_mouse_seq = event.sequence_index;
-            self.last_mouse_event_id = Some(event.id);
-            let msg = format!("compositor: applying mouse event {}", event.sequence_index);
-            let leaked = Box::leak(msg.into_boxed_str());
-            println(sys, leaked);
-            self.apply_mouse_event(sys, &event, layout);
+        if self.mouse_stream.is_none() {
+             if let Some(thing) = find_thing::<MouseStreamThing>(sys, |_| true) {
+                 if let Ok(map_resp) = map_resident(sys, thing.id, ResidentMapPerms::ReadOnly) {
+                      unsafe {
+                          let obj = ResidentObject::<()>::new(thing.id, map_resp.user_addr as *mut u8, map_resp.byte_len as usize);
+                          self.mouse_stream = Some(MouseStream::new(obj));
+                      }
+                 }
+             }
+        }
+
+        if let Some(stream) = &self.mouse_stream {
+             let mut processed = 0;
+             
+             let (new_head, events) = stream.read_entries(self.mouse_head);
+             self.mouse_head = new_head;
+             
+             for entry in events {
+                  processed += 1;
+                  let event = MousePacketEvent {
+                       id: ThingId(0),
+                       controller_id: ThingId(0),
+                       port_index: 0,
+                       sequence_index: 0,
+                       timestamp_ticks: entry.timestamp,
+                       buttons: entry.buttons as u64,
+                       delta_x: entry.x as i64,
+                       delta_y: entry.y as i64,
+                       overflow_x: false, 
+                       overflow_y: false,
+                  };
+                  self.apply_mouse_event(sys, &event, layout);
+             }
         }
 
         if let Some(drag) = &self.drag {
@@ -137,7 +159,7 @@ mod tests {
     use crate::config::TITLE_BAR_HEIGHT;
     use crate::layout::StackedWindow;
     use crate::test_support::{FramebufferFixture, MockSys, list_responses, success};
-    use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
+    use abi::{KernelRequest, KernelResponse, PropValue, ThingId, graph_kinds};
 
     fn packet(seq: u64, buttons: u8, dx: i16, dy: i16) -> MousePacketEvent {
         MousePacketEvent {
@@ -146,9 +168,9 @@ mod tests {
             port_index: 0,
             sequence_index: seq,
             timestamp_ticks: seq * 10,
-            buttons,
-            delta_x: dx,
-            delta_y: dy,
+            buttons: buttons as u64,
+            delta_x: dx as i64,
+            delta_y: dy as i64,
             overflow_x: false,
             overflow_y: false,
         }
@@ -244,39 +266,65 @@ mod tests {
     }
 
     #[test]
-    fn process_mouse_packets_skips_stale_sequences() {
-        let fb = FramebufferFixture::new(80, 80);
-        let mut comp = Compositor::new(fb.fb);
-        let events = vec![
-            MousePacketEvent {
-                id: ThingId(1),
-                controller_id: ThingId(1),
-                port_index: 0,
-                sequence_index: 1,
-                timestamp_ticks: 0,
-                buttons: 0,
-                delta_x: 0,
-                delta_y: 0,
-                overflow_x: false,
-                overflow_y: false,
-            },
-            MousePacketEvent {
-                id: ThingId(2),
-                controller_id: ThingId(1),
-                port_index: 0,
-                sequence_index: 1,
-                timestamp_ticks: 1,
-                buttons: 0,
-                delta_x: 0,
-                delta_y: 0,
-                overflow_x: false,
-                overflow_y: false,
-            },
-        ];
+    fn test_process_mouse_stream() {
+        use abi::resident_layout::ResidentHeader;
+        use thing_os::resident::mouse::{MouseRingLayout, MouseEntry, MouseStream, MouseStreamThing};
+        use thing_os::resident::{ResidentMapResp, ResidentMapPerms, ResidentObject};
 
-        let responses = list_responses(events, |e| e.id);
+        let fb = FramebufferFixture::new(100, 100);
+        let mut comp = Compositor::new(fb.fb);
+        
+        // Create backing store
+        let capacity = 10;
+        let layout_size = core::mem::size_of::<MouseRingLayout>();
+        let entries_size = capacity as usize * core::mem::size_of::<MouseEntry>();
+        let header_size = core::mem::size_of::<ResidentHeader>();
+        let total_size = header_size + layout_size + entries_size;
+        let mut backing = vec![0u8; total_size];
+        let ptr = backing.as_mut_ptr();
+        
+        unsafe {
+             let header = ptr as *mut ResidentHeader;
+             (*header).magic = ResidentHeader::MAGIC;
+             (*header).version = 1;
+             (*header).props_off = header_size as u32;
+             (*header).total_len = total_size as u32; 
+             
+             let obj = ResidentObject::<()>::new(ThingId(99), ptr, total_size);
+             let mut stream = MouseStream::new(obj);
+             stream.init(capacity);
+             
+             // Append some events
+             stream.append(MouseEntry { buttons: 0, _pad0:0, x: 10, y: 5, z:0, timestamp: 100 });
+             stream.append(MouseEntry { buttons: 0, _pad0:0, x: -5, y: -2, z:0, timestamp: 101 });
+        }
+        
+        let responses = vec![
+             // response for find_thing (load_thing call 0)
+             KernelResponse::ThingData {
+                 id: ThingId(10),
+                 kind: MouseStreamThing::KIND,
+                 props: &[],
+             },
+             // response for map_resident
+             KernelResponse::ResidentMapped {
+                 resp: ResidentMapResp {
+                      user_addr: ptr as u64,
+                      byte_len: total_size as u32,
+                      _pad: 0,
+                 }
+             }
+        ];
+        
         let mut sys = MockSys::with_responses(responses);
         comp.process_mouse_packets(&mut sys, &[]);
-        assert_eq!(comp.last_mouse_seq, 1);
+        
+        // Cursor starts center (50, 50).
+        // Event 1: dx=10, dy=5 -> (60, 45) (y is subtracted)
+        // Event 2: dx=-5, dy=-2 -> (55, 47) (y subtracted: 45 - (-2) = 47)
+        
+        assert_eq!(comp.cursor.x, 55);
+        assert_eq!(comp.cursor.y, 47);
+        assert_eq!(comp.mouse_head, 2);
     }
 }

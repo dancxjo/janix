@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use abi::{PropKey, PropType, PropValue, ThingId};
 
-const MAX_SCHEMA_PROPS: usize = 16;
+const MAX_SCHEMA_PROPS: usize = 32;
 const MAX_SCHEMAS: usize = 64;
 
 #[derive(Debug, Clone, Copy)]
@@ -124,7 +124,7 @@ pub fn get_schema_description(kind: &'static str) -> Option<&'static str> {
     }
 }
 
-pub fn validate_props(kind: &'static str, props: &[(PropKey, PropValue)]) -> Result<(), &'static str> {
+    pub fn validate_props(kind: &'static str, props: &[(PropKey, PropValue)]) -> Result<(), &'static str> {
     unsafe {
         let schemas = &raw const SCHEMAS;
         let schema = (*schemas)
@@ -159,7 +159,11 @@ pub fn validate_props(kind: &'static str, props: &[(PropKey, PropValue)]) -> Res
             }
 
             if !found {
-                return Err(ERR_PROPERTY_NOT_IN_SCHEMA);
+                 let schema_keys: alloc::vec::Vec<alloc::string::String> = schema.props.iter().filter_map(|p| p.map(|(k, _)| alloc::format!("{}", k))).collect();
+                 let msg = alloc::format!("Validation failed: key '{}' not found in schema for kind '{}'. Schema keys: {:?}", key, kind, schema_keys);
+                 let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
+                 crate::log::log_message(leaked);
+                 return Err(ERR_PROPERTY_NOT_IN_SCHEMA);
             }
         }
 
@@ -250,6 +254,42 @@ pub fn resolve_key(kind: &str, key: &str) -> Option<&'static str> {
                          }
                     }
                 }
+            }
+        }
+        None
+    }
+}
+
+pub fn get_key_from_id(kind: &str, key_id: u32) -> Option<&'static str> {
+    unsafe {
+        let schemas = &raw const SCHEMAS;
+        for schema in (*schemas).iter() {
+            if let Some(s) = schema {
+                 if s.kind == kind {
+                     if (key_id as usize) < MAX_SCHEMA_PROPS {
+                         return s.props[key_id as usize].map(|(k, _)| k);
+                     }
+                 }
+            }
+        }
+        None
+    }
+}
+
+pub fn get_id_from_key(kind: &str, key: &str) -> Option<u32> {
+    unsafe {
+        let schemas = &raw const SCHEMAS;
+        for schema in (*schemas).iter() {
+            if let Some(s) = schema {
+                 if s.kind == kind {
+                     for (i, prop_def) in s.props.iter().enumerate() {
+                         if let Some((schema_key, _)) = prop_def {
+                             if *schema_key == key {
+                                 return Some(i as u32);
+                             }
+                         }
+                     }
+                 }
             }
         }
         None

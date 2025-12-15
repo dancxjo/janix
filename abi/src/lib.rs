@@ -5,6 +5,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 pub mod graph_kinds;
+pub mod resident;
+pub mod resident_layout;
 pub mod syscall_defs;
 pub mod syscall_numbers;
 
@@ -159,6 +161,13 @@ impl From<u64> for MapFlags {
     }
 }
 
+impl core::ops::BitOr for MapFlags {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        MapFlags(self.0 | rhs.0)
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct SharedBufferInfo {
     pub width: u32,
@@ -286,6 +295,21 @@ pub enum KernelRequest {
     GetSharedBufferInfo {
         buffer_id: ThingId,
     },
+    ResidentAlloc {
+        kind: &'static str,
+        byte_len: u32,
+    },
+    ResidentMap {
+        thing_id: ThingId,
+        perms: crate::resident::ResidentMapPerms,
+    },
+    ResidentUnmap {
+        thing_id: ThingId,
+    },
+    ThingRest {
+        thing_id: ThingId,
+        policy: crate::resident::RestPolicy,
+    },
 }
 
 /// Kernel response to userland
@@ -379,6 +403,16 @@ pub enum KernelResponse {
     SharedBufferInfoResponse {
         info: SharedBufferInfo,
     },
+    ResidentAllocated {
+        resp: crate::resident::ResidentAllocResp,
+    },
+    ResidentMapped {
+        resp: crate::resident::ResidentMapResp,
+    },
+    ThingRested {
+        resp: crate::resident::RestResp,
+    },
+    ResidentError(crate::resident::ResidentError),
 }
 
 pub const THING_GET_MAX_KIND_LEN: usize = 128;
@@ -483,6 +517,10 @@ pub enum SyscallNumber {
     MapSharedBuffer = 23,
     CreateSharedBuffer = 24,
     GetSharedBufferInfo = 25,
+    ResidentAlloc = 26,
+    ResidentMap = 27,
+    ResidentUnmap = 28,
+    ThingRest = 29,
     // Add others as needed
 }
 
@@ -572,6 +610,10 @@ mod tests {
         assert_eq!(SyscallNumber::MapSharedBuffer as u64, 23);
         assert_eq!(SyscallNumber::CreateSharedBuffer as u64, 24);
         assert_eq!(SyscallNumber::GetSharedBufferInfo as u64, 25);
+        assert_eq!(SyscallNumber::ResidentAlloc as u64, 26);
+        assert_eq!(SyscallNumber::ResidentMap as u64, 27);
+        assert_eq!(SyscallNumber::ResidentUnmap as u64, 28);
+        assert_eq!(SyscallNumber::ThingRest as u64, 29);
     }
 
     #[test]

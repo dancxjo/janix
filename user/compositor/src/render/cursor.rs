@@ -7,7 +7,7 @@ use crate::config::{CURSOR_COLOR as COLOR_CURSOR_PRIMARY, CURSOR_SHADOW as COLOR
 use crate::render::bitmap::Bitmap;
 use crate::render::primitives::fill_rect;
 
-pub const CURSOR_SIZE: usize = 98;
+pub const CURSOR_SIZE: usize = 128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CursorKind {
@@ -278,12 +278,12 @@ fn make_arrow_mask() -> (Mask, (i32, i32)) {
     // (16, 16) Wing
      let poly = [
         (0, 0),    // Tip
-        (0, 22),   // Left base
-        (5, 18),   // Notch start (inner)
-        (10, 30),  // Tail tip
-        (14, 28),  // Tail right
-        (9, 16),   // Notch end (outer)
-        (18, 16),  // Right base
+        (0, 32),   // Left base
+        (8, 26),   // Notch start (inner)
+        (14, 44),  // Tail tip
+        (20, 41),  // Tail right
+        (13, 23),  // Notch end (outer)
+        (26, 23),  // Right base
     ];
     
     // Fan triangulation from (0,0)

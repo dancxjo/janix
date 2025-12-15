@@ -13,11 +13,14 @@ const POLL_INTERVAL_NS: u64 = 2_000_000;
 const STATUS_OFFSET: u16 = 4;
 const DATA_OFFSET: u16 = 0;
 const MOUSE_IRQ_LINE: u8 = 12;
+const MOUSE_RING_CAPACITY: usize = 128;
 
 use abi::syscall_defs::{
     DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr, UserSlice,
 };
 use abi::syscall_numbers::{SYS_DEV_OPEN, SYS_DEV_READ};
+use thing_os::resident::{alloc_resident, ResidentObject};
+use thing_os::resident::mouse::{MouseEntry, MouseStream};
 
 unsafe fn syscall_dev_open(kind: u32, index: u32) -> Result<DeviceHandle, SysError> {
     let args = DevOpenArgs { kind, index };
@@ -77,17 +80,35 @@ unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize
 }
 
 pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "ps2_mouse_driver: starting (sys buffer)");
-    let _ = register_schema_for::<MousePacketEvent>(sys);
-
+    println(sys, "ps2_mouse_driver: starting (resident stream)");
+    
+    // 1. Allocate Resident Buffer
+    let alloc = match alloc_resident(sys, "MouseStream", 65536) {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = alloc::format!("ps2_mouse_driver: resident alloc failed code={:?}", e.code);
+            let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
+            println(sys, leaked);
+            loop { sys.sleep_for_ns(1_000_000_000); }
+        }
+    };
+    
+    let obj = unsafe { ResidentObject::<()>::new(alloc.thing_id, alloc.user_addr as *mut u8, alloc.byte_len as usize) };
+    let mut stream = MouseStream::new(obj);
+    stream.init(MOUSE_RING_CAPACITY as u32);
+    
+    // Advertise capabilities via props
+    // We update "head" to 0 initially.
+    let _ = update_props(sys, alloc.thing_id, &[
+        ("head", PropValue::U64(0)),
+        ("capacity", PropValue::U64(MOUSE_RING_CAPACITY as u64))
+    ]);
+    
     let region = wait_for_region(sys);
-    println(
-        sys,
-        "ps2_mouse_driver: found i8042 IO region; initializing mouse port",
-    );
+    println(sys, "ps2_mouse_driver: found i8042 IO region; initializing mouse port");
 
-    // Open device 2 (Ps2Mouse)
-    let mut decoder = MouseDecoder::new(region.id);
+    let mut decoder = MouseDecoder::new(region.id, stream);
+    
     let handle = match unsafe { syscall_dev_open(2, 0) } {
         Ok(h) => h,
         Err(e) => {
@@ -114,9 +135,6 @@ pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
                 if count > 0 {
                     for i in 0..count {
                          let byte = buffer[i];
-                         let msg = alloc::format!("Ms: {:02x}", byte);
-                         let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
-                         println(sys, leaked);
                          decoder.process_byte(sys, byte);
                     }
                 } else {
@@ -377,15 +395,17 @@ struct MouseDecoder {
     sequence_index: u64,
     packet: [u8; 3],
     index: usize,
+    stream: MouseStream<()>,
 }
 
 impl MouseDecoder {
-    fn new(controller_id: ThingId) -> Self {
+    fn new(controller_id: ThingId, stream: MouseStream<()>) -> Self {
         Self {
             controller_id,
             sequence_index: 0,
             packet: [0; 3],
             index: 0,
+            stream,
         }
     }
 
@@ -406,60 +426,42 @@ impl MouseDecoder {
         let dx = i16::from(self.packet[1] as i8);
         let dy = i16::from(self.packet[2] as i8);
         let buttons = status & 0x07;
-        let overflow_x = (status & 0x40) != 0;
-        let overflow_y = (status & 0x80) != 0;
-
-        let sequence_index = self.next_sequence();
+        
         let timestamp = sys.time_monotonic_ns();
-
-        record_mouse_event(
-            sys,
-            self.controller_id,
+        
+        // Append to ring
+        let entry = MouseEntry {
             buttons,
-            dx,
-            dy,
-            overflow_x,
-            overflow_y,
-            sequence_index,
+            _pad0: 0,
+            x: dx,
+            y: dy,
+            z: 0,
             timestamp,
-        );
+        };
+        self.stream.append(entry);
+        
+        // Signal update to wake compositor
+        // We update 'head' property. We need 'head' value from stream?
+        // stream.obj.header()...
+        // Getting current head requires reading resident data.
+        // But we just appended.
+        // Actually, we can just bump a "dirty" counter or monotonic "head" in props.
+        // Or just let update_props triggering the event be enough, value doesn't matter much if consumer checks ring.
+        // But let's be accurate.
+        // We know we incremented head. 
+        // We can keep a local shadow head?
+        
+        // Simpler: Just update "head" with 0 or monotonic counter purely for WAKEUP.
+        // The real head is in resident memory. The prop is just a signal.
+        // But if someone reads prop, they might get confused.
+        // Let's rely on the fact that Compositor looks at Resident memory.
+        
+        let _ = update_props(sys, self.stream.obj.id, &[("last_event_ns", PropValue::U64(timestamp))]);
     }
-
+    
     fn next_sequence(&mut self) -> u64 {
-        self.sequence_index = self.sequence_index.saturating_add(1);
+        self.sequence_index += 1;
         self.sequence_index
-    }
-}
-
-fn record_mouse_event<S: Sys>(
-    sys: &mut S,
-    controller_id: ThingId,
-    buttons: u8,
-    delta_x: i16,
-    delta_y: i16,
-    overflow_x: bool,
-    overflow_y: bool,
-    sequence_index: u64,
-    timestamp_ns: u64,
-) {
-    let event = MousePacketEvent {
-        id: ThingId(0),
-        controller_id,
-        port_index: 1,
-        sequence_index,
-        timestamp_ticks: timestamp_ns,
-        buttons,
-        delta_x,
-        delta_y,
-        overflow_x,
-        overflow_y,
-    };
-    if let Some(id) = create_thing(sys, &event) {
-        let msg = alloc::format!("MsEvt: {}", sequence_index);
-        let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
-        println(sys, leaked);
-    } else {
-        println(sys, "MsEvt: failed to create Thing");
     }
 }
 

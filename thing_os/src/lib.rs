@@ -1,6 +1,5 @@
 #![cfg_attr(target_os = "none", no_std)]
 
-#[cfg(target_os = "none")]
 extern crate alloc;
 
 #[cfg(target_os = "none")]
@@ -25,6 +24,7 @@ pub mod clock;
 pub mod demo_shared;
 pub mod time;
 pub mod userland;
+pub mod resident;
 /// Convenience prelude: re-export the former `userland::prelude` at
 /// `thing_os::prelude` so callers can `use thing_os::prelude::*`.
 pub mod prelude {

@@ -50,6 +50,7 @@ fn run<S: Sys>(sys: &mut S) -> ! {
 
     let _ = register_schema_for::<KeyScanEvent>(sys);
     let _ = register_schema_for::<Mode>(sys);
+    let _ = register_schema_for::<SystemThing>(sys);
     
     let (system_id, sky_id, console_id) = ensure_modes_exist(sys);
     

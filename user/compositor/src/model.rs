@@ -43,6 +43,7 @@ pub struct Compositor {
     pub mouse_stream: Option<MouseStreamMapped<()>>,
     pub mouse_head: u32,
     frame_counter: u64,
+    pub cached_layout: alloc::vec::Vec<StackedWindow>,
 }
 
 impl Compositor {
@@ -66,6 +67,7 @@ impl Compositor {
             mouse_stream: None,
             mouse_head: 0,
             frame_counter: 0,
+            cached_layout: alloc::vec::Vec::new(),
         }
     }
     pub fn sync_active_from_layout(&mut self, stacked: &[StackedWindow]) {

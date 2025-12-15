@@ -223,6 +223,11 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
 
 pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     compositor.ensure_display_contracts(sys);
+
+    // Process input EARLY using previous frame's layout (latency reduction)
+    let prev_layout = compositor.cached_layout.clone();
+    compositor.process_mouse_packets(sys, &prev_layout);
+
     handle_mode_switches(sys);
 
     if console_mode_active(sys) {
@@ -252,8 +257,10 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     let stacked: Vec<StackedWindow> = layout::apply_layout(policy, &windows, fb_w, fb_h);
     layout::persist_stack(sys, &stacked);
 
+    // Update cached layout for next frame's input processing
+    compositor.cached_layout = stacked.clone();
+
     compositor.sync_active_from_layout(&stacked);
-    compositor.process_mouse_packets(sys, &stacked);
 
     // DEBUG: Stub input for cursor movement (remove or comment out for production)
     // let fb_w_i32 = compositor.fb.info.width as i32;

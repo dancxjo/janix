@@ -97,10 +97,12 @@ pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
     };
 
     // Create Thing to publish it
-    let stream_thing = KeyboardStreamThing { id: alloc_resp.id };
-    if create_thing(sys, &stream_thing).is_none() {
-         println(sys, "ps2_keyboard_driver: failed to create KeyboardStreamThing");
-    }
+    // alloc_resident already created the Thing in the graph with kind "KeyboardStream".
+    // We do not need to call create_thing again.
+    // let stream_thing = KeyboardStreamThing { id: alloc_resp.id };
+    // if create_thing(sys, &stream_thing).is_none() {
+    //      println(sys, "ps2_keyboard_driver: failed to create KeyboardStreamThing");
+    // }
 
     // Map it RW
     let map_resp = match map_resident(sys, alloc_resp.id, ResidentMapPerms(ResidentMapPerms::READ.0 | ResidentMapPerms::WRITE.0)) {

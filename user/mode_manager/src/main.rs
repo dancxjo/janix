@@ -18,6 +18,8 @@ use thing_os::{
     entry, add_link, update_props, create_thing, list_things_by_kind,
     MODE_INDEX_CONSOLE,
 };
+use thing_os::resident::{map_resident, Resident};
+use thing_os::resident::keyboard_stream::{KeyboardStreamMapped, KeyboardStreamThing};
 
 #[derive(Debug, Clone)]
 struct SystemThing {
@@ -56,32 +58,69 @@ fn run<S: Sys>(sys: &mut S) -> ! {
     
     println(sys, "mode_manager: modes ensured. listening for F1/F12...");
 
-    let mut last_key_seq = initial_sequence::<S, KeyScanEvent>(sys);
+    // Find and map KeyboardStream
+    let mut keyboard_stream_obj: Option<KeyboardStreamMapped<()>> = None;
+    let mut head = 0;
+    
+    // Allocate buffer for events
+    let mut events = Vec::new();
 
     loop {
-        let events = new_things_since::<S, KeyScanEvent>(sys, &mut last_key_seq);
-        for event in events {
-            if event.released {
-                continue;
-            }
-            
-            // F1 = 0x3B (Sky)
-            // F12 = 0x58 (Console)
-            
-            let target_mode_id = match event.scancode {
-                0x3B => Some(sky_id),
-                0x58 => Some(console_id),
-                _ => None,
-            };
-
-            if let Some(target) = target_mode_id {
-                let name = if target == sky_id { "Sky" } else { "Console" };
-                let msg = format!("mode_manager: F-key detected. Switching to {}", name);
-                let leaked = Box::leak(msg.into_boxed_str());
-                println(sys, leaked);
-                
-                set_active_mode(sys, system_id, target, name);
-            }
+        // Try to map if not mapped
+        if keyboard_stream_obj.is_none() {
+             let streams = list_things_by_kind::<S, KeyboardStreamThing>(sys);
+             if streams.is_empty() {
+                  // println(sys, "mode_manager: no KeyboardStream found yet");
+             } else {
+                 if let Some(thing) = streams.first() {
+                     let msg = format!("mode_manager: found KeyboardStream id={:?}", thing.id);
+                     let leaked = Box::leak(msg.into_boxed_str());
+                     println(sys, leaked);
+                     
+                     match map_resident(sys, thing.id, thing_os::resident::ResidentMapPerms::READ) {
+                         Ok(map_resp) => {
+                              unsafe {
+                                  let obj = Resident::<()>::new(thing.id, map_resp.user_addr as *mut u8, map_resp.byte_len as usize);
+                                  keyboard_stream_obj = Some(KeyboardStreamMapped::new(obj));
+                                  println(sys, "mode_manager: keyboard stream mapped");
+                              }
+                         }
+                         Err(e) => {
+                              let msg = format!("mode_manager: failed to map keyboard stream: {:?}", e);
+                              let leaked = Box::leak(msg.into_boxed_str());
+                              println(sys, leaked);
+                         }
+                     }
+                 }
+             }
+        }
+        
+        if let Some(stream) = &keyboard_stream_obj {
+             events.clear();
+             let new_head = stream.read_entries_into(head, &mut events);
+             head = new_head;
+             
+             for event in events.iter() {
+                  let released = (event.flags & thing_os::resident::keyboard_stream::KeyboardEntry::FLAG_RELEASED) != 0;
+                  if released { continue; }
+                  
+                  // F1 = 0x3B (Sky)
+                  // F12 = 0x58 (Console)
+                  let target_mode_id = match event.scancode {
+                      0x3B => Some(sky_id),
+                      0x58 => Some(console_id),
+                      _ => None,
+                  };
+  
+                  if let Some(target) = target_mode_id {
+                      let name = if target == sky_id { "Sky" } else { "Console" };
+                      let msg = format!("mode_manager: F-key detected (new stream). Switching to {}", name);
+                      let leaked = Box::leak(msg.into_boxed_str());
+                      println(sys, leaked);
+                      
+                      set_active_mode(sys, system_id, target, name);
+                  }
+             }
         }
 
         sys.sleep_for_ns(50_000_000); // 50ms poll
@@ -157,7 +196,7 @@ fn ensure_modes_exist<S: Sys>(sys: &mut S) -> (ThingId, ThingId, ThingId) {
 fn set_active_mode<S: Sys>(sys: &mut S, system_id: ThingId, target_mode_id: ThingId, name: &str) {
     // Transaction:
     // 1. Find existing System -> HAS_ACTIVE_MODE links
-    // 2. If exists, update target. If not, create.
+    // 2. If existing, update target. If not, create.
     
     let existing = get_outgoing_links_by_pred(sys, system_id, LINK_HAS_ACTIVE_MODE);
     
@@ -177,58 +216,7 @@ fn set_active_mode<S: Sys>(sys: &mut S, system_id: ThingId, target_mode_id: Thin
     println(sys, leaked);
 }
 
-// Helpers
-
-// Initial sequence helper 
-fn initial_sequence<S: Sys, T: thing_os::Thing>(sys: &mut S) -> u64 {
-    // KeyScanEvent specific optimization: just assume 0 for now as we want all new events.
-    // Or scan max.
-    // Since T is generic, we can't access sequence_index unless we add a specific trait bound,
-    // or just return 0.
-    // For simplicity, returning 0 might replay old events if service restarts.
-    // But since `new_things_since` iterates ALL with sequence > last_seq, 
-    // we should try to find max seq.
-    // Without Generic trait bound, we can't.
-    // We specialized this before by listing KeyScanEvents directly in the caller if needed.
-    // But actually, KeyScanEvent struct has it.
-    // Let's implement it for KeyScanEvent only or T where T: KeyScanEvent? No.
-    // Just implement a specialized version for KeyScanEvent.
-    
-    // Wait, the original code had:
-    // `let mut last_key_seq = initial_sequence::<S, KeyScanEvent>(sys);`
-    // And `initial_sequence` took T: Thing.
-    // And inside it mapped `t -> 0`?
-    // That means it returned 0.
-    // So let's just use 0.
-    0
-}
-
-fn new_things_since<S: Sys, T: thing_os::Thing + Clone>(sys: &mut S, last_seq: &mut u64) -> Vec<KeyScanEvent> {
-    // This function is specialized for KeyScanEvent because we access `sequence_index`.
-    // We pretend access via T is not needed if we hardcode KeyScanEvent usage inside, 
-    // but the signature asks for T.
-    // Let's just remove T and use KeyScanEvent explicitly.
-    
-    let events: Vec<KeyScanEvent> = list_things_by_kind(sys);
-    let mut new_events = Vec::new();
-    let mut max_seq = *last_seq;
-    
-    for event in events {
-        if event.sequence_index > *last_seq {
-            new_events.push(event.clone());
-            if event.sequence_index > max_seq {
-                max_seq = event.sequence_index;
-            }
-        }
-    }
-    *last_seq = max_seq;
-    
-    // Sort by sequence
-    new_events.sort_by_key(|e| e.sequence_index);
-    new_events
-}
-
-// Link helpers
+// Struct for internal usage
 struct Link {
     id: ThingId,
     target: ThingId,

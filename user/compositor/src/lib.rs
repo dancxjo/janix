@@ -12,6 +12,9 @@ mod layout;
 mod model;
 mod render;
 mod state;
+pub mod flex;
+pub mod widget_layout;
+pub mod widgets;
 
 #[cfg(test)]
 mod mock_tests;

@@ -266,10 +266,77 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     compositor.background_offset.0 = compositor.background_offset.0.wrapping_add(1);
     compositor.background_offset.1 = compositor.background_offset.1.wrapping_add(1);
 
-    let ops = build_display_list(compositor, &stacked, &windows, &surface_map);
+    // Run widget layout pass
+    let widget_rects = run_widget_pass(sys, &stacked);
+
+    let ops = build_display_list(compositor, &stacked, &windows, &surface_map, &widget_rects);
     render_display_list(compositor, &ops);
     if let Some(active_index) = swap_display_buffers(sys, compositor.fb.display_id) {
         compositor.fb.update_active_index(active_index);
     }
     compositor.publish_present_request(sys);
+}
+
+fn run_widget_pass<S: Sys>(
+    sys: &mut S,
+    stacked: &[StackedWindow],
+) -> alloc::collections::BTreeMap<ThingId, alloc::vec::Vec<crate::widget_layout::Rect>> {
+    use crate::config::{FRAME_THICKNESS, TITLE_BAR_HEIGHT};
+    use crate::widget_layout::Rect;
+    use crate::widgets::{layout_children, widget_children, WidgetNode};
+    use alloc::collections::BTreeMap;
+    use alloc::vec::Vec;
+
+    // 1. Load all widgets
+    let all_widgets: Vec<WidgetNode> = list_things_by_kind(sys);
+    let mut widget_map = BTreeMap::new();
+    for w in all_widgets {
+        widget_map.insert(w.id, w);
+    }
+
+    let mut results = BTreeMap::new();
+
+    // 2. Iterate windows
+    for win in stacked {
+        let mut win_rects = Vec::new();
+
+        // Window Client Area
+        let client_x = win.x + FRAME_THICKNESS + 4;
+        let client_y = win.y + FRAME_THICKNESS + TITLE_BAR_HEIGHT + 4;
+        let client_w = (win.width - FRAME_THICKNESS * 2 - 8).max(0) as u32;
+        let client_h = (win.height - FRAME_THICKNESS * 2 - TITLE_BAR_HEIGHT - 8).max(0) as u32;
+
+        let container_rect = Rect::new(client_x, client_y, client_w, client_h);
+
+        // Recurse function
+        let mut queue = Vec::new(); // (id, rect)
+
+        let children = widget_children(sys, win.id);
+        let root_rects = layout_children(sys, &widget_map, win.id, container_rect, &children);
+
+        for (rid, rrect) in root_rects {
+            win_rects.push(rrect);
+            queue.push((rid, rrect));
+        }
+
+        // Process queue
+        let mut head = 0;
+        while head < queue.len() {
+            let (pid, prect) = queue[head];
+            head += 1;
+
+            let pchildren = widget_children(sys, pid);
+            if !pchildren.is_empty() {
+                let child_rects = layout_children(sys, &widget_map, pid, prect, &pchildren);
+                for (cid, crect) in child_rects {
+                    win_rects.push(crect);
+                    queue.push((cid, crect));
+                }
+            }
+        }
+
+        results.insert(win.id, win_rects);
+    }
+
+    results
 }

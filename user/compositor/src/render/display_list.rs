@@ -69,6 +69,7 @@ pub fn build_display_list(
     stacked: &[StackedWindow],
     windows: &[Window],
     surfaces: &BTreeMap<ThingId, Surface>,
+    widget_rects: &BTreeMap<ThingId, Vec<crate::widget_layout::Rect>>,
 ) -> Vec<DrawOp> {
     let mut ops = Vec::new();
 
@@ -130,6 +131,18 @@ pub fn build_display_list(
                     max_w: content_w - 8,
                     max_h: content_h - 8,
                     text: surface.text.clone(),
+                });
+            }
+        }
+
+        if let Some(rects) = widget_rects.get(&w.id) {
+            for r in rects {
+                ops.push(DrawOp::Rect {
+                    x: r.x,
+                    y: r.y,
+                    w: r.w as i32,
+                    h: r.h as i32,
+                    color: 0xFF550055, // Dark Magenta for debug
                 });
             }
         }
@@ -367,7 +380,8 @@ mod tests {
             },
         );
 
-        let ops = build_display_list(&comp, &stacked, &windows, &surfaces);
+        let widget_rects = BTreeMap::new();
+        let ops = build_display_list(&comp, &stacked, &windows, &surfaces, &widget_rects);
         assert!(matches!(ops.first(), Some(DrawOp::Clear { .. })));
         assert!(
             ops.iter()

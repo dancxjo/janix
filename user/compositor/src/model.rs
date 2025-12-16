@@ -5,6 +5,8 @@ use thing_os::{PrimaryDisplayBuffer, graph_kinds};
 
 use crate::layout::StackedWindow;
 use crate::render::cursor::{self, CursorKind, CursorSprites};
+use crate::widget_layout::Rect;
+use alloc::vec::Vec;
 use thing_os::resident::mouse::MouseStreamMapped;
 
 #[derive(Debug, Clone, Copy)]
@@ -40,6 +42,9 @@ pub struct Compositor {
     pub background_image: Option<BackgroundImage>,
     pub background_offset: (i32, i32),
     pub console_buffer: Option<ConsoleBuffer>,
+    // Dirty rectangle tracking
+    pub damage: Vec<Rect>,
+    pub previous_damage: Vec<Rect>,
     pub mouse_stream: Option<MouseStreamMapped<()>>,
     pub mouse_head: u32,
     frame_counter: u64,
@@ -64,6 +69,8 @@ impl Compositor {
             background_offset: (0, 0),
 
             console_buffer: None,
+            damage: Vec::new(),
+            previous_damage: Vec::new(),
             mouse_stream: None,
             mouse_head: 0,
             frame_counter: 0,
@@ -109,6 +116,20 @@ impl Compositor {
         ];
         let _ = update_props(sys, window.id, &updates);
         self.active_window = Some(window.id);
+    }
+
+    pub fn add_damage(&mut self, rect: Rect) {
+        self.damage.push(rect);
+    }
+
+    pub fn add_full_damage(&mut self) {
+        self.damage.clear();
+        self.damage.push(Rect::new(
+            0, 
+            0, 
+            self.fb.info.width, 
+            self.fb.info.height
+        ));
     }
 }
 

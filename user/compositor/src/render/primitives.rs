@@ -1,5 +1,26 @@
 use core::cmp::{max, min};
 
+// Helper to check intersection with clip rect
+#[inline(always)]
+fn clip_span(
+    start: i32, 
+    len: i32, 
+    clip_start: i32, 
+    clip_len: i32
+) -> Option<(i32, i32)> { // (new_start, new_len)
+    let end = start + len;
+    let clip_end = clip_start + clip_len;
+    
+    let new_start = max(start, clip_start);
+    let new_end = min(end, clip_end);
+    
+    if new_start >= new_end {
+        None
+    } else {
+        Some((new_start, new_end - new_start))
+    }
+}
+
 pub unsafe fn set_pixel_clamped(
     buffer: *mut u32,
     stride_pixels: i32,
@@ -8,9 +29,15 @@ pub unsafe fn set_pixel_clamped(
     x: i32,
     y: i32,
     color: u32,
+    clip: Option<(i32, i32, i32, i32)>,
 ) {
     if x < 0 || y < 0 || x >= fb_width || y >= fb_height {
         return;
+    }
+    if let Some((cx, cy, cw, ch)) = clip {
+        if x < cx || y < cy || x >= cx + cw as i32 || y >= cy + ch as i32 {
+            return;
+        }
     }
     let idx = y * stride_pixels + x;
     if idx < 0 {
@@ -31,16 +58,32 @@ pub fn fill_rect(
     w: i32,
     h: i32,
     color: u32,
+    clip: Option<(i32, i32, i32, i32)>,
 ) {
     if w <= 0 || h <= 0 {
         return;
     }
     let stride_pixels = stride as usize;
-    let start_row = y.max(0) as usize;
-    let end_row = max(min(y.saturating_add(h), fb_height as i32), 0) as usize;
+    
+    // Apply clipping if provided
+    let (cx, cy, cw, ch) = if let Some((cx, cy, cw, ch)) = clip {
+        // Intersect requested rect with clip
+        match (
+            clip_span(x, w, cx, cw),
+            clip_span(y, h, cy, ch)
+        ) {
+            (Some((nx, nw)), Some((ny, nh))) => (nx, ny, nw, nh),
+            _ => return, // No intersection
+        }
+    } else {
+        (x, y, w, h)
+    };
+
+    let start_row = cy.max(0) as usize;
+    let end_row = max(min(cy.saturating_add(ch), fb_height as i32), 0) as usize;
     for row in start_row..end_row {
-        let start_col = x.max(0) as usize;
-        let end_col = max(min(x.saturating_add(w), fb_width as i32), 0) as usize;
+        let start_col = cx.max(0) as usize;
+        let end_col = max(min(cx.saturating_add(cw), fb_width as i32), 0) as usize;
         for col in start_col..end_col {
             let idx = row * stride_pixels + col;
             unsafe {
@@ -61,6 +104,7 @@ pub fn draw_tiled_image(
     bpp: u16,
     offset_x: i32,
     offset_y: i32,
+    clip: Option<(i32, i32, i32, i32)>,
 ) {
     if img_w <= 0 || img_h <= 0 {
         return;
@@ -72,7 +116,27 @@ pub fn draw_tiled_image(
     let bytes_per_pixel = (bpp / 8) as usize;
     let row_stride = ((img_w as usize * bpp as usize + 31) / 32) * 4;
 
-    for y in 0..fb_height {
+    let bytes_per_pixel = (bpp / 8) as usize;
+    let row_stride = ((img_w as usize * bpp as usize + 31) / 32) * 4;
+
+    // Apply clipping (only affects the loops, does not affect the pattern offset logic)
+    let (cx, cy, cw, ch) = if let Some((cx, cy, cw, ch)) = clip {
+        let irect = (0, 0, fb_width as i32, fb_height as i32);
+        match (
+            clip_span(irect.0, irect.2, cx, cw),
+            clip_span(irect.1, irect.3, cy, ch)
+        ) {
+            (Some((nx, nw)), Some((ny, nh))) => (nx, ny, nw, nh),
+            _ => return,
+        }
+    } else {
+        (0, 0, fb_width as i32, fb_height as i32)
+    };
+
+    let start_y = cy.max(0);
+    let end_y = (cy + ch).min(fb_height as i32);
+
+    for y in start_y..end_y {
         // Calculate texture Y coordinate with offset and wrapping
         // We want (y + offset) to map to texture space.
         // Also handle negative results from % operator if offset is negative.
@@ -88,7 +152,13 @@ pub fn draw_tiled_image(
         let row_start = unsafe { img_ptr.add(row * row_stride) };
         let dest_row_start = y as usize * stride_pixels;
 
-        for x in 0..fb_width {
+        let row_start = unsafe { img_ptr.add(row * row_stride) };
+        let dest_row_start = y as usize * stride_pixels;
+        
+        let start_x = cx.max(0);
+        let end_x = (cx + cw).min(fb_width as i32);
+
+        for x in start_x..end_x {
             let tex_x = ((x as i32 + offset_x) % img_w + img_w) % img_w;
             let src_offset = tex_x as usize * bytes_per_pixel;
 
@@ -138,11 +208,33 @@ mod tests {
     #[test]
     fn fill_rect_writes_only_inside_bounds() {
         let mut buf = vec![0u32; 25];
-        fill_rect(buf.as_mut_ptr(), 5, 5, 5, -1, -1, 4, 4, 0xCC);
+        fill_rect(buf.as_mut_ptr(), 5, 5, 5, -1, -1, 4, 4, 0xCC, None);
         assert_eq!(buf[0], 0xCC, "clamps to framebuffer origin");
         assert_eq!(buf[1], 0xCC);
         assert_eq!(buf[6], 0xCC);
         assert_eq!(buf[12], 0xCC);
         assert_eq!(buf[24], 0, "should not write beyond rect area");
+    }
+
+    #[test]
+    fn fill_rect_respects_clip() {
+        let mut buf = vec![0u32; 25]; // 5x5
+        // Draw 3x3 at 1,1 -> indices 6,7,8, 11,12,13, 16,17,18
+        // Clip to 2x2 at 2,2 -> indices 12,13, 17,18
+        fill_rect(
+            buf.as_mut_ptr(), 
+            5, 
+            5, 
+            5, 
+            1, 1, 3, 3, 
+            0xFF, 
+            Some((2, 2, 2, 2))
+        );
+        
+        assert_eq!(buf[6], 0);
+        assert_eq!(buf[12], 0xFF);
+        assert_eq!(buf[13], 0xFF);
+        assert_eq!(buf[17], 0xFF);
+        assert_eq!(buf[18], 0xFF);
     }
 }

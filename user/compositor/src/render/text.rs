@@ -188,6 +188,7 @@ fn blit_glyph_bitmap(
                     px,
                     py,
                     color,
+                    None, // TODO: Pass clip through draw_text if needed
                 );
             }
         }

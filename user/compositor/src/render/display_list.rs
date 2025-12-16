@@ -7,6 +7,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use crate::widget_layout::Rect as LayoutRect;
 use crate::render::bitmap::Bitmap;
 use thing_os::prelude::*;
 use thing_os::{Surface, Window};
@@ -158,12 +159,14 @@ pub fn build_display_list(
     ops
 }
 
-pub fn render_display_list(comp: &Compositor, ops: &[DrawOp]) {
+pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<LayoutRect>) {
     let buffer = comp.fb.ptr as *mut u32;
     let width = comp.fb.info.width;
     let height = comp.fb.info.height;
     // Stride in Info is bytes, primitives expect u32 (pixel) stride.
     let stride = (comp.fb.info.stride / 4) as u32;
+
+    let clip_tuple = clip.map(|r| (r.x, r.y, r.w as i32, r.h as i32));
 
     for op in ops {
         match op {
@@ -177,6 +180,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp]) {
                 width as i32,
                 height as i32,
                 *color,
+                clip_tuple,
             ),
             DrawOp::TiledImage {
                 ptr,
@@ -196,9 +200,10 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp]) {
                 *bpp,
                 *offset_x,
                 *offset_y,
+                clip_tuple,
             ),
             DrawOp::Rect { x, y, w, h, color } => {
-                primitives::fill_rect(buffer, stride, width, height, *x, *y, *w, *h, *color)
+                primitives::fill_rect(buffer, stride, width, height, *x, *y, *w, *h, *color, clip_tuple)
             }
             DrawOp::WindowFrame {
                 x,
@@ -209,7 +214,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp]) {
                 title,
                 ..
             } => draw_window_frame(
-                buffer, stride, width, height, *x, *y, *w, *h, *active, title,
+                buffer, stride, width, height, *x, *y, *w, *h, *active, title, clip_tuple
             ),
             DrawOp::WindowContentText {
                 x,
@@ -249,6 +254,7 @@ fn draw_window_frame(
     h: i32,
     active: bool,
     title: &str,
+    clip: Option<(i32, i32, i32, i32)>,
 ) {
     use crate::config::{FRAME_BG, FRAME_BORDER};
 
@@ -266,6 +272,7 @@ fn draw_window_frame(
         w,
         h,
         FRAME_BORDER,
+        clip,
     );
 
     primitives::fill_rect(
@@ -278,6 +285,7 @@ fn draw_window_frame(
         w - FRAME_THICKNESS * 2,
         h - FRAME_THICKNESS * 2,
         FRAME_BG,
+        clip,
     );
 
     let title_color = if active {
@@ -296,6 +304,7 @@ fn draw_window_frame(
         w - FRAME_THICKNESS * 2,
         TITLE_BAR_HEIGHT,
         title_color,
+        clip,
     );
 
     text::draw_text(
@@ -427,7 +436,7 @@ mod tests {
             },
         ];
 
-        render_display_list(&comp, &ops);
+        render_display_list(&comp, &ops, None);
 
         let stride = comp.fb.info.width as usize;
         assert_eq!(buffer[0], 0x11111111);

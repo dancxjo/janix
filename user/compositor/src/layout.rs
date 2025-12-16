@@ -8,7 +8,7 @@ use thing_os::{Window, graph_kinds};
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StackedWindow {
     pub id: ThingId,
     pub x: i32,

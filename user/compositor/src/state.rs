@@ -215,6 +215,13 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         compositor.background_image = Some(bg);
     }
 
+    // Force initial full redraw to paint background/windows
+    // We must render TWICE to ensure both front and back buffers are initialized.
+    compositor.add_full_damage();
+    tick_once(sys, &mut compositor);
+    compositor.add_full_damage();
+    tick_once(sys, &mut compositor);
+
     let mut debug_frame_counter = 0;
     loop {
         if debug_frame_counter % 60 == 0 {
@@ -267,6 +274,13 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
 
     compositor.sync_active_from_layout(&stacked);
 
+    // Track layout changes for damage
+    // Naive: if layout changed at all, full redraw. 
+    // Ideally we diff 'prev_layout' vs 'stacked'.
+    if prev_layout != stacked {
+        compositor.add_full_damage();
+    }
+
     // DEBUG: Stub input for cursor movement (remove or comment out for production)
     // let fb_w_i32 = compositor.fb.info.width as i32;
     // let fb_h_i32 = compositor.fb.info.height as i32;
@@ -274,17 +288,75 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     // compositor.cursor.y = (compositor.cursor.y + 2).rem_euclid(fb_h_i32);
 
     // Animate background: scroll up and left (requires incrementing offset)
-    compositor.background_offset.0 = compositor.background_offset.0.wrapping_add(1);
-    compositor.background_offset.1 = compositor.background_offset.1.wrapping_add(1);
+    // Disabled to fix dirty rectangle glitches (we don't redraw background every frame)
+    // compositor.background_offset.0 = compositor.background_offset.0.wrapping_add(1);
+    // compositor.background_offset.1 = compositor.background_offset.1.wrapping_add(1);
 
     // Run widget layout pass
     let widget_rects = run_widget_pass(sys, &stacked);
 
-    let ops = build_display_list(compositor, &stacked, &windows, &surface_map, &widget_rects);
-    render_display_list(compositor, &ops);
-    if let Some(active_index) = swap_display_buffers(sys, compositor.fb.display_id) {
-        compositor.fb.update_active_index(active_index);
+    let widget_rects = run_widget_pass(sys, &stacked);
+
+    // Damage tracking: Union all damage rects into one bounding box
+    // This is the "easy" way (scissoring). 
+    // A harder way is to pass multiple clip rects (region) to the renderer.
+    
+    // We must consider BOTH current frame damage and previous frame damage
+    // because we are swapping buffers. The back buffer contains state from N-2.
+    // We need to clear artifacts from N-1 (previous_damage) and draw N (current damage).
+    let combined_damage_empty = compositor.damage.is_empty() && compositor.previous_damage.is_empty();
+
+    let clip: Option<crate::widget_layout::Rect> = if combined_damage_empty {
+        // No damage, do not render.
+        // But we still need to swap buffers if we rendered previously?
+        // Actually if nothing changed, we might not need to do anything.
+        // However, strictly speaking, double buffering means we might need to copy 
+        // front to back or re-render. 
+        // For simplicity: if no damage, skip render.
+        None
+    } else {
+        let mut min_x = i32::MAX;
+        let mut min_y = i32::MAX;
+        let mut max_x = i32::MIN;
+        let mut max_y = i32::MIN;
+
+        // Iterate over BOTH current and previous damage
+        for r in compositor.damage.iter().chain(compositor.previous_damage.iter()) {
+            min_x = min_x.min(r.x);
+            min_y = min_y.min(r.y);
+            max_x = max_x.max(r.x + r.w as i32);
+            max_y = max_y.max(r.y + r.h as i32);
+        }
+
+        // Clamp to screen
+        let fb_w = compositor.fb.info.width as i32;
+        let fb_h = compositor.fb.info.height as i32;
+
+        min_x = min_x.max(0);
+        min_y = min_y.max(0);
+        max_x = max_x.min(fb_w);
+        max_y = max_y.max(fb_h);
+
+        if max_x > min_x && max_y > min_y {
+            Some(crate::widget_layout::Rect::new(min_x, min_y, (max_x - min_x) as u32, (max_y - min_y) as u32))
+        } else {
+            None
+        }
+    };
+
+    if let Some(clip_rect) = clip {
+        let ops = build_display_list(compositor, &stacked, &windows, &surface_map, &widget_rects);
+        render_display_list(compositor, &ops, Some(clip_rect));
+        
+        if let Some(active_index) = swap_display_buffers(sys, compositor.fb.display_id) {
+            compositor.fb.update_active_index(active_index);
+        }
     }
+    
+    // Rotate damage history
+    compositor.previous_damage = compositor.damage.clone();
+    compositor.damage.clear();
+
     compositor.publish_present_request(sys);
 }
 

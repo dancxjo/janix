@@ -129,9 +129,41 @@ impl Compositor {
         buttons: u64,
         layout: &[StackedWindow],
     ) {
+        let old_x = self.cursor.x;
+        let old_y = self.cursor.y;
+
         let previous =
             self.cursor
                 .apply_packet(dx, dy, buttons, self.fb.info.width as i32, self.fb.info.height as i32);
+
+        if self.cursor.x != old_x || self.cursor.y != old_y {
+            // Add damage for old and new cursor positions
+            // Ideally we know the exact cursor size. 
+            // For now, assume ample size (e.g. 32x32) or look up from sprites.
+            // Let's use 32x32 as a safe default for standard cursors.
+            // Wait, we have self.cursor_sprites available!
+            // But determining *which* sprite needs checking cursor kind.
+            // Let's just use a safe bounding box 64x64 or 32x32.
+            let trash_size = 48; // safe upper bound
+            let sprite = self.cursor_sprites.for_kind(self.cursor.kind);
+            let w = sprite.bitmap.width as u32;
+            let h = sprite.bitmap.height as u32; // actually use real size
+            
+            // Old position damage
+            let hotspot = sprite.hotspot;
+            self.add_damage(crate::widget_layout::Rect::new(
+                old_x - hotspot.0, 
+                old_y - hotspot.1, 
+                w, h
+            ));
+            
+            // New position damage
+            self.add_damage(crate::widget_layout::Rect::new(
+                self.cursor.x - hotspot.0, 
+                self.cursor.y - hotspot.1, 
+                w, h
+            ));
+        }
 
         if CursorState::left_pressed_changed(previous, buttons) {
             if CursorState::left_down(buttons) {

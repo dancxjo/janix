@@ -33,7 +33,7 @@ pub struct UserEntryRegs {
 
 pub trait Arch {
     fn enter_user_mode(regs: &UserEntryRegs) -> !;
-    fn resume_user_mode(context: &[u64]) -> !;
+    fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext) -> !;
     fn install_syscall_handler();
     fn activate_user_address_space(token: Option<u64>);
 }

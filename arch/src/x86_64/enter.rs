@@ -122,8 +122,11 @@ unsafe extern "C" {
     fn resume_user_mode_asm(context: *const u64) -> !;
 }
 
-pub fn resume_user_mode(context: &[u64]) -> ! {
-    unsafe { resume_user_mode_asm(context.as_ptr()) }
+pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext) -> ! {
+    unsafe {
+        core::arch::x86_64::_fxrstor(fpu_context.data.as_ptr());
+        resume_user_mode_asm(context.as_ptr())
+    }
 }
 
 pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {

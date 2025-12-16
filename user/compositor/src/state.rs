@@ -215,7 +215,12 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         compositor.background_image = Some(bg);
     }
 
+    let mut debug_frame_counter = 0;
     loop {
+        if debug_frame_counter % 60 == 0 {
+            println(sys, "compositor: tick");
+        }
+        debug_frame_counter += 1;
         tick_once(sys, &mut compositor);
         sys.sleep_for_ns(FRAME_INTERVAL_NS);
     }

@@ -193,12 +193,15 @@ impl FramebufferDriver {
 
     fn try_present<S: Sys>(&mut self, sys: &mut S, request: &DisplayPresentRequest) {
         if request.framebuffer_id != self.fb_id {
+            // println(sys, "framebuffer_driver: request fb_id mismatch");
             return;
         }
         if request.completed {
+            // println(sys, "framebuffer_driver: request already completed");
             return;
         }
         if self.frame_watch == Some(request.frame_index) {
+            // println(sys, "framebuffer_driver: frame index not advanced");
             return;
         }
 

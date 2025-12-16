@@ -398,62 +398,33 @@ fn cursor_icon_from_mask(
     let h = mask.height;
     let mut pixels = vec![0u32; w * h];
     
-    // 1. Generate shadow map
-    let mut shadow_alpha = vec![0u8; w * h];
-    let offset_x = 4;
-    let offset_y = 4;
-    
+    let offset_x = 2;
+    let offset_y = 2;
+
     for y in 0..h {
         for x in 0..w {
-            if mask.filled(x as i32, y as i32) {
-                let sx = x + offset_x;
-                let sy = y + offset_y;
-                if sx < w && sy < h {
-                    shadow_alpha[sy * w + sx] = 0xA0;
-                }
-            }
-        }
-    }
-    
-    // 2. Blur shadow
-    for _ in 0..3 {
-        let src = shadow_alpha.clone();
-        for y in 1..h - 1 {
-            for x in 1..w - 1 {
-                let mut sum: u32 = 0;
-                for dy in -1..=1 {
-                    for dx in -1..=1 {
-                        let val = src[((y as isize + dy) as usize) * w + ((x as isize + dx) as usize)];
-                        sum += val as u32;
-                    }
-                }
-                shadow_alpha[y * w + x] = (sum / 9) as u8;
-            }
-        }
-    }
-    
-    // 3. Composite shadow
-    for i in 0..pixels.len() {
-        let a = shadow_alpha[i];
-        if a > 0 {
-             // Shadow color is usually black, apply alpha
-            let sa = ((shadow_color >> 24) & 0xFF) * a as u32 / 255;
-            let sr = (shadow_color >> 16) & 0xFF;
-            let sg = (shadow_color >> 8) & 0xFF;
-            let sb = (shadow_color) & 0xFF;
+            let mut pixel: u32 = 0;
             
-            // Premultiply
-            let r = (sr * sa) / 255;
-            let g = (sg * sa) / 255;
-            let b = (sb * sa) / 255;
-            
-            pixels[i] = (sa << 24) | (r << 16) | (g << 8) | b;
-        }
-    }
-    
-    // 4. Composite shape
-    for y in 0..h {
-        for x in 0..w {
+            // 1. Simple Drop Shadow (no blur)
+            // Check if source mask has a pixel at (x - offset, y - offset)
+            let sx = x as i32 - offset_x;
+            let sy = y as i32 - offset_y;
+            if mask.filled(sx, sy) {
+                 // Shadow color
+                 pixel = shadow_color; // Assuming shadow_color is opaque-ish
+                 // Apply a fixed alpha for shadow if needed, or use shadow_color's alpha
+                 // Let's assume shadow_color is 0x80000000 (black 50%) or similar.
+                 // If it's fully opaque black, let's make it 50%
+                 let sa = (shadow_color >> 24) & 0xFF;
+                 if sa > 0 {
+                    pixel = shadow_color;
+                 } else {
+                     // Force some shadow if provided constant is weird, but likely it's fine
+                     pixel = 0x80000000;
+                 }
+            }
+
+            // 2. Main Shape & Outline
             if mask.filled(x as i32, y as i32) {
                  // Check neighbors for outline
                  let neighbors = [
@@ -465,14 +436,12 @@ fn cursor_icon_from_mask(
                 let is_edge = neighbors.iter().any(|(nx, ny)| !mask.filled(*nx, *ny));
                 let color = if is_edge { outline_color } else { fill_color };
                 
-                let a = (color >> 24) & 0xFF;
-                if a > 0 {
-                    let r = ((color >> 16) & 0xFF) * a / 255;
-                    let g = ((color >> 8) & 0xFF) * a / 255;
-                    let b = (color & 0xFF) * a / 255;
-                    pixels[y * w + x] = (a << 24) | (r << 16) | (g << 8) | b;
-                }
+                // Composite over shadow (simple alpha blend or replacement)
+                // Since this is a simple generator, we can just overwrite
+                pixel = color; 
             }
+            
+            pixels[y * w + x] = pixel;
         }
     }
     

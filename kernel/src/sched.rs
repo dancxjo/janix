@@ -42,6 +42,25 @@ pub struct SleepEntry {
     pub wake_at_ns: u64,
 }
 
+#[repr(align(16))]
+#[derive(Copy, Clone, Debug)]
+pub struct FpuContext {
+    pub data: [u8; 512],
+}
+
+impl Default for FpuContext {
+    fn default() -> Self {
+        let mut data = [0u8; 512];
+        // FCW = 0x037F
+        data[0] = 0x7F;
+        data[1] = 0x03;
+        // MXCSR = 0x00001F80
+        data[24] = 0x80;
+        data[25] = 0x1F;
+        Self { data }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Thread {
     pub id: ThreadId,
@@ -53,6 +72,7 @@ pub struct Thread {
     pub user_arg: u64,
     pub user_stack_top: u64,
     pub context: [u64; 20],
+    pub fpu_context: FpuContext,
     pub started: bool,
     pub thing_id: Option<ThingId>,
     pub sleep_event_id: Option<ThingId>,
@@ -69,6 +89,7 @@ pub struct ScheduledThread {
     pub user_stack_top: u64,
     pub user_arg: u64,
     pub context: [u64; 20],
+    pub fpu_context: FpuContext,
     pub address_space_token: Option<u64>,
 }
 
@@ -312,6 +333,7 @@ impl Scheduler {
                     user_arg: arg,
                     user_stack_top: stack_top,
                     context: [0; 20],
+                    fpu_context: FpuContext::default(),
                     started: false,
                     thing_id: None,
                     sleep_event_id: None,
@@ -393,6 +415,7 @@ impl Scheduler {
             user_stack_top: thread.user_stack_top,
             user_arg: thread.user_arg,
             context: thread.context,
+            fpu_context: thread.fpu_context,
             address_space_token: thread.address_space_token,
         })
     }

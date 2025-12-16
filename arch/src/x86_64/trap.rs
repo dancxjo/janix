@@ -286,6 +286,9 @@ pub extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
              thread.context[17] = frame.rflags;
              thread.context[18] = frame.rsp;
              thread.context[19] = frame.ss;
+             unsafe {
+                 core::arch::x86_64::_fxsave(thread.fpu_context.data.as_mut_ptr());
+             }
              thread.started = true;
         }
 
@@ -303,7 +306,7 @@ pub extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
              super::enter::activate_address_space(next.address_space_token);
              
              // Resume
-             crate::current::resume_user_mode(&next.context);
+             crate::current::resume_user_mode(&next.context, &next.fpu_context);
         }
     }
 }

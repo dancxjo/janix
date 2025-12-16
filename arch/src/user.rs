@@ -57,7 +57,7 @@ pub fn schedule_next() -> ! {
             CurrentArch::activate_user_address_space(thread.address_space_token);
             
             if thread.started {
-                CurrentArch::resume_user_mode(&thread.context);
+                CurrentArch::resume_user_mode(&thread.context, &thread.fpu_context);
             } else {
                 kernel::log("Entering user thread...");
                 kernel::log(thread.name);

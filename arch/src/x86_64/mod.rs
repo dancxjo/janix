@@ -15,8 +15,8 @@ impl Arch for X86Arch {
         enter::enter_user_mode(regs)
     }
 
-    fn resume_user_mode(context: &[u64]) -> ! {
-        enter::resume_user_mode(context)
+    fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext) -> ! {
+        enter::resume_user_mode(context, fpu_context)
     }
 
     fn install_syscall_handler() {

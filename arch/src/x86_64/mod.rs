@@ -1,5 +1,6 @@
 pub mod enter;
 pub mod pic;
+pub mod pit;
 pub mod rtc;
 pub mod syscall;
 pub mod time;
@@ -29,4 +30,4 @@ impl Arch for X86Arch {
     }
 }
 
-pub use enter::{alloc_user_stack, init_user_stack};
+pub use enter::{alloc_user_stack, init_user_stack, resume_user_mode};

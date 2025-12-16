@@ -12,6 +12,82 @@ const KEYBOARD_IRQ: u8 = 1;
 const MOUSE_VECTOR: usize = (pic::PIC_1_OFFSET as usize) + 12;
 const MOUSE_IRQ: u8 = 12;
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct TrapFrame {
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub rbp: u64,
+    pub rbx: u64,
+    pub r11: u64,
+    pub r10: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub rax: u64,
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+}
+
+core::arch::global_asm!(
+    r#"
+.global timer_interrupt_handler_asm
+timer_interrupt_handler_asm:
+    push rax
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+    push r8
+    push r9
+    push r10
+    push r11
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+
+    // RDI = &TrapFrame (rsp matches struct layout now)
+    mov rdi, rsp
+    
+    // Call Rust handler
+    call timer_interrupt_handler
+    
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
+    
+    iretq
+"#
+);
+
+unsafe extern "C" {
+    fn timer_interrupt_handler_asm();
+}
+
+
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
@@ -30,7 +106,11 @@ lazy_static! {
             .set_handler_fn(gp_fault_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt[KEYBOARD_VECTOR].set_handler_fn(keyboard_interrupt_handler);
+
         idt[MOUSE_VECTOR].set_handler_fn(mouse_interrupt_handler);
+        unsafe {
+             idt[pic::PIC_1_OFFSET as usize].set_handler_addr(VirtAddr::new(timer_interrupt_handler_asm as u64));
+        }
         idt
     };
 }
@@ -38,6 +118,8 @@ lazy_static! {
 pub fn init() {
     IDT.load();
     pic::init();
+    // Initialize PIT to 1000Hz
+    super::pit::init();
     // Unmask PS/2 interrupts for device buffers (ISR now pushes to buffers)
     pic::set_irq_mask(KEYBOARD_IRQ, false);
     pic::set_irq_mask(MOUSE_IRQ, false);
@@ -154,4 +236,74 @@ extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: InterruptStackFr
     let byte = unsafe { port.read() };
     kernel::devices::ps2_buffers::push_mouse_byte(byte);
     pic::notify_end_of_interrupt(MOUSE_IRQ);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
+    use kernel::sched::{self, TICKS, PREEMPT_COUNT, NEED_RESCHED};
+    use core::sync::atomic::Ordering;
+
+    // 1. Ack PIC
+    pic::notify_end_of_interrupt(0);
+
+    // 2. Increment ticks
+    TICKS.fetch_add(1, Ordering::Relaxed);
+
+    // 3. Request reschedule
+    // For now, request every tick (or throttle if needed)
+    NEED_RESCHED.store(true, Ordering::Relaxed);
+
+    // 4. Check for preemption
+    // Only preempt if:
+    // - Preemption is allowed (count == 0)
+    // - We are returning to User Mode (CS & 3 == 3)
+    let is_user = (frame.cs & 3) == 3;
+    let preempt_allowed = PREEMPT_COUNT.load(Ordering::Relaxed) == 0;
+    
+    
+    if is_user && preempt_allowed {
+        // Safe to schedule
+        // Save context to current thread
+        let mut sched = sched::SCHEDULER.lock();
+        if let Some(mut thread) = sched.current_id().and_then(|tid| sched.thread_mut(tid)) {
+             thread.context[0] = frame.r15;
+             thread.context[1] = frame.r14;
+             thread.context[2] = frame.r13;
+             thread.context[3] = frame.r12;
+             thread.context[4] = frame.rbp;
+             thread.context[5] = frame.rbx;
+             thread.context[6] = frame.r11;
+             thread.context[7] = frame.r10;
+             thread.context[8] = frame.r9;
+             thread.context[9] = frame.r8;
+             thread.context[10] = frame.rcx;
+             thread.context[11] = frame.rdx;
+             thread.context[12] = frame.rsi;
+             thread.context[13] = frame.rdi;
+             thread.context[14] = frame.rax;
+             thread.context[15] = frame.rip;
+             thread.context[16] = frame.cs;
+             thread.context[17] = frame.rflags;
+             thread.context[18] = frame.rsp;
+             thread.context[19] = frame.ss;
+             thread.started = true;
+        }
+
+        // IMPORTANT: Requeue the current thread so it's not lost!
+        if let Some(tid) = sched.current_id() {
+             sched.mark_yield(tid);
+        }
+        
+        // Pick next thread
+        let now = kernel::time::monotonic_now_ns();
+        if let Some(next) = sched.choose_next_thread(now) {
+             drop(sched); // Unlock before switch
+             
+             // Activate address space
+             super::enter::activate_address_space(next.address_space_token);
+             
+             // Resume
+             crate::current::resume_user_mode(&next.context);
+        }
+    }
 }

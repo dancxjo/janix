@@ -55,8 +55,8 @@ pub fn init() {
         pic1_data.write(ICW4_8086);
         pic2_data.write(ICW4_8086);
 
-        // Mask all IRQ lines on both master and slave PICs, except Cascade (IRQ 2)
-        pic1_data.write(0xFF & !(1 << 2));
+        // Mask all IRQ lines on both master and slave PICs, except Cascade (IRQ 2) and Timer (IRQ 0)
+        pic1_data.write(0xFF & !((1 << 2) | (1 << 0)));
         pic2_data.write(0xFF);
     }
 }

@@ -22,98 +22,72 @@ use alloc::string::ToString;
 
 #[repr(C)]
 pub struct SyscallRegs {
-    pub rax: u64,
-    pub rdi: u64,
-    pub rsi: u64,
-    pub rdx: u64,
-    pub rcx: u64,
-    pub r8: u64,
-    pub r9: u64,
-    pub r10: u64,
-    pub r11: u64,
-    pub rbx: u64,
-    pub rbp: u64,
-    pub r12: u64,
-    pub r13: u64,
-    pub r14: u64,
     pub r15: u64,
-    pub rip: u64,
-    pub cs: u64,
-    pub rflags: u64,
-    pub rsp: u64,
-    pub ss: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub rbp: u64,
+    pub rbx: u64,
+    pub r11: u64,
+    pub r10: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub rax: u64,
 }
 
 const _: () = {
     use core::mem::offset_of;
-    assert!(core::mem::size_of::<SyscallRegs>() == 160);
-    assert!(offset_of!(SyscallRegs, rax) == 0);
-    assert!(offset_of!(SyscallRegs, rdi) == 8);
-    assert!(offset_of!(SyscallRegs, rsi) == 16);
-    assert!(offset_of!(SyscallRegs, rdx) == 24);
-    assert!(offset_of!(SyscallRegs, rcx) == 32);
-    assert!(offset_of!(SyscallRegs, r8) == 40);
-    assert!(offset_of!(SyscallRegs, r9) == 48);
-    assert!(offset_of!(SyscallRegs, r10) == 56);
-    assert!(offset_of!(SyscallRegs, r11) == 64);
-    assert!(offset_of!(SyscallRegs, rbx) == 72);
-    assert!(offset_of!(SyscallRegs, rbp) == 80);
-    assert!(offset_of!(SyscallRegs, r12) == 88);
-    assert!(offset_of!(SyscallRegs, r13) == 96);
-    assert!(offset_of!(SyscallRegs, r14) == 104);
-    assert!(offset_of!(SyscallRegs, r15) == 112);
-    assert!(offset_of!(SyscallRegs, rip) == 120);
-    assert!(offset_of!(SyscallRegs, cs) == 128);
-    assert!(offset_of!(SyscallRegs, rflags) == 136);
-    assert!(offset_of!(SyscallRegs, rsp) == 144);
-    assert!(offset_of!(SyscallRegs, ss) == 152);
+    assert!(core::mem::size_of::<SyscallRegs>() == 120);
+    assert!(offset_of!(SyscallRegs, r15) == 0);
+    assert!(offset_of!(SyscallRegs, rax) == 112);
 };
 
 global_asm!(
     r#"
 .global syscall_handler_asm
 syscall_handler_asm:
-    push r15
-    push r14
-    push r13
-    push r12
-    push rbp
-    push rbx
-    push r11
-    push r10
-    push r9
-    push r8
-    push rcx
-    push rdx
-    push rsi
-    push rdi
     push rax
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+    push r8
+    push r9
+    push r10
+    push r11
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
 
     mov rdi, rsp
     call syscall_handler_rust
     // The return address is popped by `ret`, so don't mutate `rsp` here.
-    // Overwrite the saved RAX (at [rsp]) with the return value from Rust.
-    mov [rsp], rax
+    // Overwrite the saved RAX (at [rsp + 14*8]) with the return value from Rust.
+    // Wait, [rsp] is R15 which is offset 0. R14 is offset 8. ... RAX is offset 112.
+    mov [rsp + 112], rax
 
-    // Debug: snapshot the pending iret frame and saved regs.
-    // mov rdi, rsp
-    // call log_syscall_iret_frame
-
-    pop rax
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop r8
-    pop r9
-    pop r10
-    pop r11
-    pop rbx
-    pop rbp
-    pop r12
-    pop r13
-    pop r14
     pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
 
     iretq
 "#
@@ -150,6 +124,8 @@ extern "C" fn log_syscall_iret_frame(rsp: *const u64) {
 
 #[allow(unreachable_code, unsafe_op_in_unsafe_fn)]
 #[unsafe(no_mangle)]
+#[allow(unreachable_code, unsafe_op_in_unsafe_fn)]
+#[unsafe(no_mangle)]
 pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     let regs = unsafe { &mut *regs };
     let num = regs.rax;
@@ -166,8 +142,26 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             if let Some(tid) = sched.current_id() {
                 if let Some(thread) = sched.thread_mut(tid) {
                     let regs_ptr = regs as *const SyscallRegs as *const u64;
-                    let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 20) };
-                    thread.context[..20].copy_from_slice(regs_slice);
+                    // Copy GPRs (15 u64s)
+                    let gprs = unsafe { core::slice::from_raw_parts(regs_ptr, 15) };
+                    thread.context[..15].copy_from_slice(gprs);
+                    
+                    // Manually read IRET frame from stack (offset 15)
+                    unsafe {
+                        let frame_ptr = regs_ptr.add(15);
+                        let rip = *frame_ptr.add(0);
+                        let cs = *frame_ptr.add(1);
+                        let rflags = *frame_ptr.add(2);
+                        let rsp = *frame_ptr.add(3);
+                        let ss = *frame_ptr.add(4);
+                        
+                        thread.context[15] = rip;
+                        thread.context[16] = cs;
+                        thread.context[17] = rflags;
+                        thread.context[18] = rsp;
+                        thread.context[19] = ss;
+                    }
+
                     thread.started = true;
                 }
             }
@@ -180,8 +174,25 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             if let Some(tid) = sched.current_id() {
                 if let Some(thread) = sched.thread_mut(tid) {
                     let regs_ptr = regs as *const SyscallRegs as *const u64;
-                    let regs_slice = unsafe { core::slice::from_raw_parts(regs_ptr, 20) };
-                    thread.context[..20].copy_from_slice(regs_slice);
+                    // Copy GPRs (15 u64s)
+                    let gprs = unsafe { core::slice::from_raw_parts(regs_ptr, 15) };
+                    thread.context[..15].copy_from_slice(gprs);
+                    
+                    // Manually read IRET frame from stack (offset 15)
+                    unsafe {
+                        let frame_ptr = regs_ptr.add(15);
+                        let rip = *frame_ptr.add(0);
+                        let cs = *frame_ptr.add(1);
+                        let rflags = *frame_ptr.add(2);
+                        let rsp = *frame_ptr.add(3);
+                        let ss = *frame_ptr.add(4);
+
+                        thread.context[15] = rip;
+                        thread.context[16] = cs;
+                        thread.context[17] = rflags;
+                        thread.context[18] = rsp;
+                        thread.context[19] = ss;
+                    }
                     thread.started = true;
                 }
             }

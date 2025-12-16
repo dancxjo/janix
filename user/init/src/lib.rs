@@ -46,8 +46,10 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
             sys,
             "init: no BootProgram links; waiting briefly for rootfs",
         );
-        for _ in 0..8 {
+        println(sys, "init: entering supervision loop");
+        loop {
             sys.sleep_for_ns(SUPERVISOR_IDLE_NS);
+            
             let refresh_ids = link_targets(sys, boot_profile.id, graph_kinds::LINK_LAUNCHES);
             collect_boot_programs(sys, &mut programs, refresh_ids.as_slice());
             if !programs.is_empty() {

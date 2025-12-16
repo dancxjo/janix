@@ -690,7 +690,17 @@ kernel:
 # ISO BUILD  (UNCHANGED FROM YOUR VERSION)
 ###############################################################################
 
-$(IMAGE_NAME).iso: limine/limine kernel user drivers
+ifeq ($(ENABLE_PLATARO_ICONS),1)
+.PHONY: icons
+icons:
+	tools/icons/build_plataro_icons.sh
+else
+.PHONY: icons
+icons:
+	@echo "Plataro icons disabled (ENABLE_PLATARO_ICONS!=1)"
+endif
+
+$(IMAGE_NAME).iso: limine/limine kernel user drivers icons
 	rm -rf iso_root
 	# Prepare ISO root with both BIOS and UEFI directory trees upfront.
 	mkdir -p iso_root/boot iso_root/boot/user iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
@@ -710,6 +720,10 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers
 ifeq ($(ENABLE_CARTOGRAPHER),1)
 	echo '    module_path: boot():/boot/user/cartographer' >> iso_root/boot/limine/limine.conf
 	echo '    module_cmdline: program=cartographer' >> iso_root/boot/limine/limine.conf
+endif
+ifeq ($(ENABLE_PLATARO_ICONS),1)
+	mkdir -p iso_root/share/icons/plataro64
+	cp -r rootfs/share/icons/plataro64/* iso_root/share/icons/plataro64/
 endif
 	cp -v iso_root/boot/limine/limine.conf iso_root/EFI/BOOT/limine.conf
 	cp -v iso_root/boot/limine/limine.conf iso_root/limine.conf

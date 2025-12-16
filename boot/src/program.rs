@@ -67,6 +67,33 @@ fn spawn_loaded_program_named(
             loaded.user_stack_top,
             priority,
         );
+
+        // Initialize architecture-specific context
+        if let Some(thread) = sched.thread_mut(tid) {
+            #[cfg(target_arch = "x86_64")]
+            {
+                use arch::gdt;
+                let selectors = gdt::get_selectors();
+                let cs = selectors.ucode.0 as u64 | 3;
+                let ss = selectors.udata.0 as u64 | 3;
+                
+                // TrapFrame layout indices (from arch/src/x86_64/trap.rs)
+                // 13: RDI (arg0)
+                // 15: RIP
+                // 16: CS
+                // 17: RFLAGS
+                // 18: RSP
+                // 19: SS
+                
+                thread.context[13] = 0; // arg0 (TODO: support args)
+                thread.context[15] = loaded.entry_point;
+                thread.context[16] = cs;
+                thread.context[17] = 0x202; // IF | Reserved
+                thread.context[18] = loaded.user_stack_top;
+                thread.context[19] = ss;
+            }
+        }
+
         let process_thing = sched
             .process_thing_id(pid)
             .ok_or("Process Thing not recorded")?;

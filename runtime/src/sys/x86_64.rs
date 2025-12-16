@@ -14,6 +14,10 @@ pub unsafe fn syscall_stub(
     unsafe {
         core::arch::asm!(
             "int 0x80",
+            "nop",
+            "nop",
+            "nop",
+            "nop",
             inlateout("rax") num as u64 => ret,
             in("rdi") arg0,
             in("rsi") arg1,

@@ -43,8 +43,8 @@ enter_user_mode_asm:
 
 .global resume_user_mode_asm
 resume_user_mode_asm:
-    // RDI points to context array (SyscallRegs layout)
-    // We need to push everything to stack to restore
+    // RDI points to context array (TrapFrame layout)
+    // We need to push everything to stack to restore (push order: SS .. RIP .. RAX .. R15)
     
     // Interrupt Frame
     mov rax, [rdi + 152] // SS
@@ -59,39 +59,41 @@ resume_user_mode_asm:
     push rax
     
     // GPRs
-    // GPRs
-    // Push in order: RAX...R15 (offsets 0...112)
-    // Stack grows down, so to pop R15...RAX later, we must push RAX first (deepest) and R15 last (top).
+    // Push in order: RAX...R15 (offsets 112...0)
     
-    mov rax, [rdi + 0]   // RAX
+    mov rax, [rdi + 112] // RAX
     push rax
-    mov rax, [rdi + 8]   // RDI
+    mov rax, [rdi + 104] // RDI (This is actually context[13]=RDI if using stack order, but TrapFrame fields define order)
+    // TrapFrame order: R15, R14, R13, R12, RBP, RBX, R11, R10, R9, R8, RCX, RDX, RSI, RDI, RAX
+    // So RAX is at offset 112. RDI is at offset 104.
+    
+    mov rax, [rdi + 104] // RDI
     push rax
-    mov rax, [rdi + 16]  // RSI
+    mov rax, [rdi + 96]  // RSI
     push rax
-    mov rax, [rdi + 24]  // RDX
+    mov rax, [rdi + 88]  // RDX
     push rax
-    mov rax, [rdi + 32]  // RCX
+    mov rax, [rdi + 80]  // RCX
     push rax
-    mov rax, [rdi + 40]  // R8
+    mov rax, [rdi + 72]  // R8
     push rax
-    mov rax, [rdi + 48]  // R9
+    mov rax, [rdi + 64]  // R9
     push rax
     mov rax, [rdi + 56]  // R10
     push rax
-    mov rax, [rdi + 64]  // R11
+    mov rax, [rdi + 48]  // R11
     push rax
-    mov rax, [rdi + 72]  // RBX
+    mov rax, [rdi + 40]  // RBX
     push rax
-    mov rax, [rdi + 80]  // RBP
+    mov rax, [rdi + 32]  // RBP
     push rax
-    mov rax, [rdi + 88]  // R12
+    mov rax, [rdi + 24]  // R12
     push rax
-    mov rax, [rdi + 96]  // R13
+    mov rax, [rdi + 16]  // R13
     push rax
-    mov rax, [rdi + 104] // R14
+    mov rax, [rdi + 8]   // R14
     push rax
-    mov rax, [rdi + 112] // R15
+    mov rax, [rdi + 0]   // R15
     push rax
     
     // Restore GPRs

@@ -6,6 +6,31 @@ use abi::{ProcessId, PropValue, ThingId, ThreadId, USER_HEAP_END};
 use alloc::string::String;
 use heapless::Vec;
 use spin::Mutex;
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
+
+pub static TICKS: AtomicU64 = AtomicU64::new(0);
+pub static PREEMPT_COUNT: AtomicU32 = AtomicU32::new(0);
+pub static NEED_RESCHED: AtomicBool = AtomicBool::new(false);
+
+pub fn preempt_disable() {
+    PREEMPT_COUNT.fetch_add(1, Ordering::Relaxed);
+    core::sync::atomic::compiler_fence(Ordering::SeqCst);
+}
+
+pub fn preempt_enable() {
+    core::sync::atomic::compiler_fence(Ordering::SeqCst);
+    PREEMPT_COUNT.fetch_sub(1, Ordering::Relaxed);
+}
+
+pub fn without_preemption<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    preempt_disable();
+    let res = f();
+    preempt_enable();
+    res
+}
 
 pub const MAX_THREADS: usize = 32;
 pub const MAX_PROCESSES: usize = 16;
@@ -27,7 +52,7 @@ pub struct Thread {
     pub entry_point: u64,
     pub user_arg: u64,
     pub user_stack_top: u64,
-    pub context: [u64; 34],
+    pub context: [u64; 20],
     pub started: bool,
     pub thing_id: Option<ThingId>,
     pub sleep_event_id: Option<ThingId>,
@@ -43,7 +68,7 @@ pub struct ScheduledThread {
     pub entry_point: u64,
     pub user_stack_top: u64,
     pub user_arg: u64,
-    pub context: [u64; 34],
+    pub context: [u64; 20],
     pub address_space_token: Option<u64>,
 }
 
@@ -286,7 +311,7 @@ impl Scheduler {
                     entry_point,
                     user_arg: arg,
                     user_stack_top: stack_top,
-                    context: [0; 34],
+                    context: [0; 20],
                     started: false,
                     thing_id: None,
                     sleep_event_id: None,
@@ -574,17 +599,21 @@ impl Scheduler {
 pub static SCHEDULER: Mutex<Scheduler> = Mutex::new(Scheduler::new());
 
 pub fn yield_current_thread() {
-    let mut sched = SCHEDULER.lock();
-    if let Some(tid) = sched.current {
-        sched.mark_yield(tid);
-        sched.current = None;
-    }
+    without_preemption(|| {
+        let mut sched = SCHEDULER.lock();
+        if let Some(tid) = sched.current {
+            sched.mark_yield(tid);
+            sched.current = None;
+        }
+    })
 }
 
 pub fn exit_current_thread() {
-    let mut sched = SCHEDULER.lock();
-    if let Some(tid) = sched.current {
-        sched.mark_terminated(tid);
-        sched.current = None;
-    }
+    without_preemption(|| {
+        let mut sched = SCHEDULER.lock();
+        if let Some(tid) = sched.current {
+            sched.mark_terminated(tid);
+            sched.current = None;
+        }
+    })
 }

@@ -68,12 +68,17 @@ pub struct Selectors {
 }
 
 pub fn init() {
-    use x86_64::instructions::segmentation::{CS, Segment};
+    use x86_64::instructions::segmentation::{CS, DS, ES, FS, GS, SS, Segment};
     use x86_64::instructions::tables::load_tss;
 
     GDT.0.load();
     unsafe {
         CS::set_reg(GDT.1.kcode);
+        DS::set_reg(GDT.1.kdata);
+        ES::set_reg(GDT.1.kdata);
+        SS::set_reg(GDT.1.kdata);
+        FS::set_reg(SegmentSelector(0));
+        GS::set_reg(SegmentSelector(0));
         load_tss(GDT.1.tss);
     }
 }

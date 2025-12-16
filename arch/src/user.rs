@@ -19,11 +19,11 @@ pub extern "C" fn user_thread_main(app_id: u64) -> ! {
 pub fn schedule_next() -> ! {
     loop {
         kernel::time::poll_time();
-        let next_thread = {
+        let next_thread = kernel::sched::without_preemption(|| {
             let mut sched = SCHEDULER.lock();
             let now = kernel::time::monotonic_now_ns();
             sched.choose_next_thread(now)
-        };
+        });
 
         if let Some(thread) = next_thread {
             #[cfg(target_arch = "x86_64")]
@@ -55,6 +55,7 @@ pub fn schedule_next() -> ! {
                 // kernel::log(Box::leak(msg.into_boxed_str()));
             }
             CurrentArch::activate_user_address_space(thread.address_space_token);
+            
             if thread.started {
                 CurrentArch::resume_user_mode(&thread.context);
             } else {
@@ -68,6 +69,7 @@ pub fn schedule_next() -> ! {
                 CurrentArch::enter_user_mode(&regs);
             }
         } else {
+            // Idle loop
             kernel::log("No runnable threads");
             kernel::time::poll_time();
             cpu::wait_for_interrupt();
@@ -80,10 +82,10 @@ pub fn sys_sleep_for_ns(delta_ns: u64) -> ! {
     let now = kernel::time::monotonic_now_ns();
     let wake_at = now.saturating_add(delta_ns);
 
-    {
+    kernel::sched::without_preemption(|| {
         let mut sched = SCHEDULER.lock();
         sched.sleep_current_thread(wake_at);
-    }
+    });
 
     schedule_next();
 }

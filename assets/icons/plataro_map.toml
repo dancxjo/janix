@@ -1,0 +1,25 @@
+[meta]
+size = 64
+output_dir = "rootfs/share/icons/plataro64"
+
+[kinds]
+# key is the Kind string as Geographer sees it
+Mode = { svg = "places/scalable/user-desktop.svg" }
+Window = { svg = "apps/scalable/preferences-system-windows.svg" }
+Process = { svg = "categories/scalable/applications-system.svg" }
+ProgramImage = { svg = "mimetypes/scalable/application-x-executable.svg" }
+Framebuffer = { svg = "devices/scalable/video-display.svg" }
+Ps2Keyboard = { svg = "devices/scalable/input-keyboard.svg" }
+Ps2Mouse = { svg = "devices/scalable/input-mouse.svg" }
+MouseStream = { svg = "devices/scalable/input-mouse.svg" }
+TimeSource = { svg = "apps/scalable/clock.svg" }
+AlarmRequest = { svg = "apps/scalable/alarm.svg" }
+AlarmEvent = { svg = "status/scalable/appointment-soon.svg" }
+InterruptEvent = { svg = "status/scalable/dialog-warning.svg" }
+InterruptRequest = { svg = "status/scalable/dialog-information.svg" }
+IoPortRegion = { svg = "devices/scalable/network-wired.svg" }
+IoPortOp = { svg = "categories/scalable/preferences-system.svg" }
+GraphRoot = { svg = "places/scalable/folder.svg" }
+Kind = { svg = "mimetypes/scalable/text-x-generic.svg" }
+Thing = { svg = "mimetypes/scalable/text-x-generic.svg" }
+Link = { svg = "actions/scalable/insert-link.svg" }

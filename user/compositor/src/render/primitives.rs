@@ -196,10 +196,10 @@ mod tests {
     fn set_pixel_clamped_ignores_out_of_bounds() {
         let mut buf = vec![0u32; 16];
         unsafe {
-            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, -1, 0, 0xAA);
-            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, 0, -1, 0xAA);
-            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, 10, 10, 0xAA);
-            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, 1, 1, 0xBB);
+            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, -1, 0, 0xAA, None);
+            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, 0, -1, 0xAA, None);
+            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, 10, 10, 0xAA, None);
+            set_pixel_clamped(buf.as_mut_ptr(), 4, 4, 4, 1, 1, 0xBB, None);
         }
         assert_eq!(buf[0], 0);
         assert_eq!(buf[5], 0xBB);

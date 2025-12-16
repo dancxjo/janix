@@ -199,6 +199,7 @@ pub fn raster_draw_cursor(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn raster_draw_cursor_blends_correctly() {

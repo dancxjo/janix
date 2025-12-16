@@ -502,7 +502,8 @@ mod tests {
         );
 
         let widget_rects = BTreeMap::new();
-        let ops = build_display_list(&comp, &stacked, &windows, &surfaces, &widget_rects);
+        let widget_map = BTreeMap::new();
+        let ops = build_display_list(&comp, &stacked, &windows, &surfaces, &widget_rects, &widget_map);
         assert!(matches!(ops.first(), Some(DrawOp::Clear { .. })));
         assert!(
             ops.iter()

@@ -1,0 +1,622 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/dancxjo/src/thing-os/boot/Cargo.toml
+workspace: /home/dancxjo/src/thing-os/Cargo.toml
+   Compiling stable_deref_trait v1.2.1
+   Compiling bitflags v2.10.0
+    Checking scopeguard v1.2.0
+    Checking abi v0.1.0 (/home/dancxjo/src/thing-os/abi)
+    Checking byteorder v1.5.0
+    Checking hal v0.1.0 (/home/dancxjo/src/thing-os/hal)
+    Checking log v0.4.29
+    Checking volatile v0.4.6
+    Checking bit_field v0.10.3
+   Compiling yoke v0.8.1
+    Checking foldhash v0.1.5
+    Checking lock_api v0.4.14
+    Checking equivalent v1.0.2
+    Checking allocator-api2 v0.2.21
+    Checking ttf-parser v0.21.1
+warning: the `#![no_std]` attribute can only be used at the crate root
+ --> abi/src/syscall_defs.rs:1:1
+  |
+1 | #![no_std]
+  | ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_attributes)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling tower-http v0.6.8
+warning: the `#![no_std]` attribute can only be used at the crate root
+ --> abi/src/syscall_numbers.rs:1:1
+  |
+1 | #![no_std]
+  | ^^^^^^^^^^
+
+   Compiling rustybuzz v0.18.0
+    Checking x86_64 v0.14.13
+    Checking hash32 v0.3.1
+   Compiling zerovec v0.11.5
+   Compiling zerotrie v0.2.3
+    Checking heapless v0.9.2
+    Checking spin v0.9.8
+    Checking spin v0.10.0
+    Checking spinning_top v0.2.5
+warning: `abi` (lib) generated 2 warnings
+    Checking thing_models v0.1.0 (/home/dancxjo/src/thing-os/thing_models)
+    Checking linked_list_allocator v0.10.5
+    Checking hashbrown v0.15.5
+    Checking drivers_usb v0.1.0 (/home/dancxjo/src/thing-os/drivers_usb)
+    Checking drivers_pci v0.1.0 (/home/dancxjo/src/thing-os/drivers_pci)
+warning: unused import: `alloc::vec::Vec`
+ --> drivers_usb/src/lib.rs:6:5
+  |
+6 | use alloc::vec::Vec;
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ToString`
+ --> drivers_usb/src/xhci.rs:3:29
+  |
+3 | use alloc::string::{String, ToString};
+  |                             ^^^^^^^^
+
+warning: unused import: `ThingProps`
+ --> drivers_usb/src/xhci.rs:4:67
+  |
+4 | use abi::graph_ops::{GraphOp, GraphSink, GraphDriver, GraphEvent, ThingProps};
+  |                                                                   ^^^^^^^^^^
+
+warning: unused imports: `PropType` and `ThingId`
+ --> drivers_usb/src/xhci.rs:7:31
+  |
+7 | use abi::{PropKey, PropValue, PropType, ThingId};
+  |                               ^^^^^^^^  ^^^^^^^
+
+warning: variable does not need to be mutable
+   --> thing_models/src/usb.rs:330:13
+    |
+330 |         let mut buffer = Vec::new();
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> thing_models/src/usb.rs:414:13
+    |
+414 |         let mut data = Vec::new();
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused import: `GraphSink`
+ --> drivers_usb/src/xhci.rs:4:31
+  |
+4 | use abi::graph_ops::{GraphOp, GraphSink, GraphDriver, GraphEvent, ThingProps};
+  |                               ^^^^^^^^^
+
+warning: `drivers_usb` (lib) generated 5 warnings (run `cargo fix --lib -p drivers_usb` to apply 4 suggestions)
+warning: `thing_models` (lib) generated 2 warnings (run `cargo fix --lib -p thing_models` to apply 2 suggestions)
+   Compiling tinystr v0.8.2
+   Compiling potential_utf v0.1.4
+   Compiling icu_collections v2.1.1
+   Compiling icu_locale_core v2.1.1
+    Checking fontdue v0.9.3
+   Compiling icu_provider v2.1.1
+   Compiling icu_normalizer v2.1.1
+   Compiling icu_properties v2.1.2
+   Compiling usvg v0.44.0
+   Compiling idna_adapter v1.2.1
+   Compiling idna v1.1.0
+   Compiling url v2.5.7
+   Compiling reqwest v0.12.25
+   Compiling resvg v0.44.0
+   Compiling compositor v0.1.0 (/home/dancxjo/src/thing-os/user/compositor)
+   Compiling kernel v0.1.0 (/home/dancxjo/src/thing-os/kernel)
+warning: unused import: `self`
+ --> kernel/src/console_backend.rs:2:20
+  |
+2 | use crate::graph::{self, update_thing};
+  |                    ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `self`
+ --> kernel/src/console_backend.rs:3:26
+  |
+3 | use crate::graph_kinds::{self, PROP_NAME};
+  |                          ^^^^
+
+warning: unused import: `self`
+ --> kernel/src/console_backend.rs:5:28
+  |
+5 | use crate::shared_buffer::{self, register_shared_buffer};
+  |                            ^^^^
+
+warning: unused import: `alloc::boxed::Box`
+ --> kernel/src/console_backend.rs:7:5
+  |
+7 | use alloc::boxed::Box;
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `core::fmt`
+ --> kernel/src/console_backend.rs:9:5
+  |
+9 | use core::fmt;
+  |     ^^^^^^^^^
+
+warning: unused imports: `DeviceKind` and `SysRet`
+ --> kernel/src/devices/ps2_buffers.rs:3:39
+  |
+3 | use abi::syscall_defs::{DeviceHandle, DeviceKind, SysError, SysRet};
+  |                                       ^^^^^^^^^^            ^^^^^^
+
+warning: unused import: `abi::Link`
+ --> kernel/src/graph/events.rs:1:5
+  |
+1 | use abi::Link;
+  |     ^^^^^^^^^
+
+warning: unexpected `cfg` condition value: `journal`
+  --> kernel/src/graph/events.rs:38:11
+   |
+38 |     #[cfg(feature = "journal")]
+   |           ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `arch_pci_in_kernel`, `debug_logging`, and `default`
+   = help: consider adding `journal` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unused imports: `add_to_prop_index` and `remove_from_prop_index`
+  --> kernel/src/graph/schema.rs:26:33
+   |
+26 | use crate::graph::index_props::{add_to_prop_index, remove_from_prop_index};
+   |                                 ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::string::String`
+  --> kernel/src/graph/store.rs:12:5
+   |
+12 | use alloc::string::String;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::vec::Vec`
+ --> kernel/src/graph_watchers/display.rs:8:5
+  |
+8 | use alloc::vec::Vec;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `PropKey`
+ --> kernel/src/hw/io.rs:2:11
+  |
+2 | use abi::{PropKey, PropValue, ThingId};
+  |           ^^^^^^^
+
+warning: unused import: `AtomicUsize`
+ --> kernel/src/hw/io.rs:6:26
+  |
+6 | use core::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+  |                          ^^^^^^^^^^^
+
+warning: unused import: `alloc::vec::Vec`
+ --> kernel/src/journal.rs:2:5
+  |
+2 | use alloc::vec::Vec;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `core::slice`
+ --> kernel/src/journal.rs:3:5
+  |
+3 | use core::slice;
+  |     ^^^^^^^^^^^
+
+warning: unused import: `crate::console`
+ --> kernel/src/log.rs:1:5
+  |
+1 | use crate::console;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `core::mem`
+ --> kernel/src/memory/arena.rs:1:5
+  |
+1 | use core::mem;
+  |     ^^^^^^^^^
+
+warning: unused imports: `InterruptEvent`, `InterruptRequest`, `Surface`, and `Window`
+  --> kernel/src/model.rs:19:69
+   |
+19 | ...uest, BootProfile, BootProgram, FontModule, InterruptEvent, InterruptRequest, IoPortOp,
+   |                                                ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+20 | ...mImage, Surface, TimeSource, Window,
+   |            ^^^^^^^              ^^^^^^
+
+warning: unused import: `ResidentId`
+ --> kernel/src/resident/manager.rs:4:131
+  |
+4 | ...esidentMapResp, RestPolicy, RestResp, ResidentId, ResidentAllocArgs};
+  |                                          ^^^^^^^^^^
+
+warning: unused import: `abi::resident::ResidentMapPerms`
+ --> kernel/src/resident/mapping.rs:1:5
+  |
+1 | use abi::resident::ResidentMapPerms;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `MapFlags` and `ProcessId`
+ --> kernel/src/resident/mapping.rs:2:11
+  |
+2 | use abi::{MapFlags, ProcessId};
+  |           ^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `ArchiveRef`
+ --> kernel/src/resident/serialize.rs:1:47
+  |
+1 | use crate::graph::store::{self, StorageState, ArchiveRef};
+  |                                               ^^^^^^^^^^
+
+warning: unused variable: `row_bytes`
+  --> kernel/src/console_backend.rs:85:13
+   |
+85 |         let row_bytes = self.stride * GLYPH_HEIGHT;
+   |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_row_bytes`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `i`
+   --> kernel/src/graph/store.rs:242:10
+    |
+242 |     for (i, slot) in slab.slots.iter().enumerate().skip(start_idx as usize) {
+    |          ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: value assigned to `found` is never read
+   --> kernel/src/graph/store.rs:437:25
+    |
+437 |                         found = true;
+    |                         ^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> kernel/src/graph_watchers/display.rs:100:9
+    |
+100 |     let mut remaining_bytes = height * src_stride; // Approximation if strides differ
+    |         ----^^^^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `remaining_bytes`
+   --> kernel/src/graph_watchers/display.rs:100:9
+    |
+100 |     let mut remaining_bytes = height * src_stride; // Approximation if strides differ
+    |         ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_remaining_bytes`
+
+warning: variant `Unsupported` is never constructed
+ --> kernel/src/hw/../../../arch/src/io.rs:5:5
+  |
+4 | pub enum IoAccessError {
+  |          ------------- variant in this enum
+5 |     Unsupported,
+  |     ^^^^^^^^^^^
+  |
+  = note: `IoAccessError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `head_at_start` is never read
+  --> kernel/src/journal.rs:59:5
+   |
+56 | pub struct JournalIterator {
+   |            --------------- field in this struct
+...
+59 |     head_at_start: usize,
+   |     ^^^^^^^^^^^^^
+
+warning: method `to_prop_value` is never used
+  --> kernel/src/resident/serialize.rs:19:8
+   |
+18 | impl<'a> PropValueView<'a> {
+   | -------------------------- method in this implementation
+19 |     fn to_prop_value(&self) -> PropValue {
+   |        ^^^^^^^^^^^^^
+
+warning: `kernel` (lib) generated 30 warnings (run `cargo fix --lib -p kernel` to apply 25 suggestions)
+    Checking runtime v0.1.0 (/home/dancxjo/src/thing-os/runtime)
+    Checking thing_os v0.1.0 (/home/dancxjo/src/thing-os/thing_os)
+warning: unused import: `crate::prelude::*`
+ --> thing_os/src/resident/keyboard_stream.rs:4:5
+  |
+4 | use crate::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&str` instead of cloning the inner type
+  --> thing_os/src/batch.rs:47:34
+   |
+47 |                 props_vec.push((k.clone(), v.clone()));
+   |                                  ^^^^^^^^
+   |
+   = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: `thing_os` (lib) generated 2 warnings (run `cargo fix --lib -p thing_os` to apply 1 suggestion)
+warning: unused imports: `KernelRequest` and `KernelResponse`
+ --> user/compositor/src/graph.rs:5:11
+  |
+5 | use abi::{KernelRequest, KernelResponse};
+  |           ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ModeSwitchEvent`
+ --> user/compositor/src/graph.rs:8:25
+  |
+8 |     DisplayThing, Mode, ModeSwitchEvent, PrimaryDisplayBuffer, Surface, Window, active_mode,
+  |                         ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::graph`
+ --> user/compositor/src/input.rs:4:5
+  |
+4 | use crate::graph;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `ResidentError`
+ --> user/compositor/src/input.rs:8:68
+  |
+8 | use thing_os::resident::{map_resident, Resident, ResidentMapPerms, ResidentError};
+  |                                                                    ^^^^^^^^^^^^^
+
+warning: unused imports: `MouseEntry` and `MouseStreamHeader`
+ --> user/compositor/src/input.rs:9:70
+  |
+9 | ...amMapped, MouseStreamThing, MouseEntry, MouseStreamHeader};
+  |                                ^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `String` and `ToString`
+ --> user/compositor/src/flex.rs:3:21
+  |
+3 | use alloc::string::{String, ToString};
+  |                     ^^^^^^  ^^^^^^^^
+
+warning: unused import: `BTreeSet`
+ --> user/compositor/src/widgets.rs:3:36
+  |
+3 | use alloc::collections::{BTreeMap, BTreeSet};
+  |                                    ^^^^^^^^
+
+error: cannot find macro `vec` in this scope
+   --> user/compositor/src/render/cursor.rs:216:27
+    |
+216 |         let sprite_data = vec![0x80800000];
+    |                           ^^^
+    |
+    = note: macro `crate::render::display_list::tests::vec` exists but is inaccessible
+help: consider importing one of these macros
+    |
+201 +     use std::vec;
+    |
+201 +     use alloc::vec;
+    |
+201 +     use thing_os::prelude::vec;
+    |
+
+error: cannot find macro `vec` in this scope
+   --> user/compositor/src/render/cursor.rs:206:26
+    |
+206 |         let mut buffer = vec![0xFFFFFFFF; 100]; 
+    |                          ^^^
+    |
+    = note: macro `crate::render::display_list::tests::vec` exists but is inaccessible
+help: consider importing one of these macros
+    |
+201 +     use std::vec;
+    |
+201 +     use alloc::vec;
+    |
+201 +     use thing_os::prelude::vec;
+    |
+
+warning: unused import: `success`
+   --> user/compositor/src/graph.rs:133:56
+    |
+133 |     use crate::test_support::{MockSys, list_responses, success};
+    |                                                        ^^^^^^^
+
+warning: unused imports: `KernelRequest`, `PropValue`, and `graph_kinds`
+   --> user/compositor/src/graph.rs:134:15
+    |
+134 |     use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
+    |               ^^^^^^^^^^^^^  ^^^^^^^^^           ^^^^^^^^^^^
+
+warning: unused import: `thing_os::thing_models::ModeSwitchEvent`
+   --> user/compositor/src/graph.rs:135:9
+    |
+135 |     use thing_os::thing_models::ModeSwitchEvent;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `list_responses`
+   --> user/compositor/src/input.rs:244:60
+    |
+244 |     use crate::test_support::{FramebufferFixture, MockSys, list_responses, success};
+    |                                                            ^^^^^^^^^^^^^^
+
+warning: unused import: `ResidentMapPerms`
+   --> user/compositor/src/input.rs:341:51
+    |
+341 |         use thing_os::resident::{ResidentMapResp, ResidentMapPerms, Resident};
+    |                                                   ^^^^^^^^^^^^^^^^
+
+warning: unused import: `CURSOR_COLOR`
+   --> user/compositor/src/render/display_list.rs:440:9
+    |
+440 | ...   CURSOR_COLOR, FRAME_BORDER, FRAME_THICKNESS, TITLE_COLOR_ACTIVE, TITLE_COLOR_INAC...
+    |       ^^^^^^^^^^^^
+
+warning: unused import: `thing_os::Thing`
+ --> user/compositor/src/mock_tests.rs:3:5
+  |
+3 | use thing_os::Thing;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused imports: `MousePacketEvent`, `Surface`, and `Window`
+  --> user/compositor/src/mock_tests.rs:70:41
+   |
+70 |     use thing_os::{Mode, thing_models::{MousePacketEvent, Window, Surface, ModeSwitchEve...
+   |                                         ^^^^^^^^^^^^^^^^  ^^^^^^  ^^^^^^^
+
+warning: unused imports: `PropValue` and `graph_kinds`
+  --> user/compositor/src/mock_tests.rs:71:15
+   |
+71 |     use abi::{PropValue, graph_kinds};
+   |               ^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused variable: `trash_size`
+   --> user/compositor/src/input.rs:147:17
+    |
+147 |             let trash_size = 48; // safe upper bound
+    |                 ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_trash_size`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `idx`
+   --> user/compositor/src/render/display_list.rs:210:18
+    |
+210 |             for (idx, r) in rects.iter().enumerate() { 
+    |                  ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+
+warning: unused variable: `r`
+   --> user/compositor/src/render/display_list.rs:210:23
+    |
+210 |             for (idx, r) in rects.iter().enumerate() { 
+    |                       ^ help: if this is intentional, prefix it with an underscore: `_r`
+
+warning: unused variable: `bytes_per_pixel`
+   --> user/compositor/src/render/primitives.rs:116:9
+    |
+116 |     let bytes_per_pixel = (bpp / 8) as usize;
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_bytes_per_pixel`
+
+warning: unused variable: `row_stride`
+   --> user/compositor/src/render/primitives.rs:117:9
+    |
+117 |     let row_stride = ((img_w as usize * bpp as usize + 31) / 32) * 4;
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_row_stride`
+
+warning: unused variable: `row_start`
+   --> user/compositor/src/render/primitives.rs:152:13
+    |
+152 |         let row_start = unsafe { img_ptr.add(row * row_stride) };
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_row_start`
+
+warning: unused variable: `dest_row_start`
+   --> user/compositor/src/render/primitives.rs:153:13
+    |
+153 |         let dest_row_start = y as usize * stride_pixels;
+    |             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dest_row_start`
+
+warning: field `size` is never read
+  --> user/compositor/src/model.rs:15:9
+   |
+13 | pub struct BackgroundImage {
+   |            --------------- field in this struct
+14 |     pub ptr: *const u8,
+15 |     pub size: usize,
+   |         ^^^^
+   |
+   = note: `BackgroundImage` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `id` and `pixel_format` are never read
+  --> user/compositor/src/model.rs:23:9
+   |
+22 | pub struct ConsoleBuffer {
+   |            ------------- fields in this struct
+23 |     pub id: ThingId,
+   |         ^^
+...
+28 |     pub pixel_format: abi::PixelFormat,
+   |         ^^^^^^^^^^^^
+   |
+   = note: `ConsoleBuffer` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `size` is never read
+  --> user/compositor/src/model.rs:39:9
+   |
+33 | pub struct MappedSurface {
+   |            ------------- field in this struct
+...
+39 |     pub size: usize,
+   |         ^^^^
+   |
+   = note: `MappedSurface` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `last_mouse_seq` and `last_mouse_event_id` are never read
+  --> user/compositor/src/model.rs:47:9
+   |
+43 | pub struct Compositor {
+   |            ---------- fields in this struct
+...
+47 |     pub last_mouse_seq: u64,
+   |         ^^^^^^^^^^^^^^
+48 |     pub last_mouse_event_id: Option<ThingId>,
+   |         ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `Compositor` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `visible` is never read
+   --> user/compositor/src/model.rs:154:9
+    |
+150 | pub struct CursorState {
+    |            ----------- field in this struct
+...
+154 |     pub visible: bool,
+    |         ^^^^^^^
+    |
+    = note: `CursorState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `new` is never used
+  --> user/compositor/src/render/bitmap.rs:11:12
+   |
+10 | impl Bitmap {
+   | ----------- associated function in this implementation
+11 |     pub fn new(width: usize, height: usize) -> Self {
+   |            ^^^
+
+warning: constant `CURSOR_SIZE` is never used
+ --> user/compositor/src/render/cursor.rs:7:11
+  |
+7 | pub const CURSOR_SIZE: usize = 32; // Most of these are 32x32 now
+  |           ^^^^^^^^^^^
+
+warning: multiple variants are never constructed
+  --> user/compositor/src/render/cursor.rs:17:5
+   |
+15 | pub enum CursorKind {
+   |          ---------- variants in this enum
+16 |     Arrow,
+17 |     Move,
+   |     ^^^^
+18 |     ResizeN,
+   |     ^^^^^^^
+19 |     ResizeS,
+   |     ^^^^^^^
+20 |     ResizeE,
+   |     ^^^^^^^
+21 |     ResizeW,
+   |     ^^^^^^^
+22 |     ResizeNE,
+   |     ^^^^^^^^
+23 |     ResizeNW,
+   |     ^^^^^^^^
+24 |     ResizeSE,
+   |     ^^^^^^^^
+25 |     ResizeSW,
+   |     ^^^^^^^^
+   |
+   = note: `CursorKind` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: `compositor` (lib) generated 22 warnings (run `cargo fix --lib -p compositor` to apply 14 suggestions)
+warning: `compositor` (lib test) generated 23 warnings (14 duplicates)
+error: could not compile `compositor` (lib test) due to 2 previous errors; 23 warnings emitted

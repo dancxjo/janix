@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::format;
 use thing_os::prelude::*;
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "window_demo: starting");
     let handle = match create_window(sys, "Demo") {
         Some(h) => h,

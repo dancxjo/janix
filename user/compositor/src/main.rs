@@ -8,12 +8,11 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 #[cfg(target_os = "none")]
-use thing_os::entry;
-
 #[cfg(target_os = "none")]
 #[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
-    entry(|sys| compositor::run(sys));
+fn main() {
+    let mut sys = runtime::UserlandSys::new();
+    compositor::main(&mut sys);
 }
 
 #[cfg(not(target_os = "none"))]

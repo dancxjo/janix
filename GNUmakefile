@@ -676,11 +676,11 @@ limine/limine:
 
 .PHONY: user
 user:
-	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
 
 .PHONY: drivers
 drivers:
-	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(DRIVERS))
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(DRIVERS))
 
 .PHONY: kernel
 kernel:
@@ -694,7 +694,8 @@ kernel:
 ifeq ($(ENABLE_PLATARO_ICONS),1)
 .PHONY: icons
 icons:
-	tools/icons/build_plataro_icons.sh
+	# tools/icons/build_plataro_icons.sh
+	echo "Plataro icons disabled (ENABLE_PLATARO_ICONS!=1)"
 else
 .PHONY: icons
 icons:

@@ -21,7 +21,7 @@ mod mock_tests;
 #[cfg(test)]
 mod test_support;
 
-pub use state::run;
+pub use state::main;
 
 // Re-export the active_framebuffer selection seam so callers can obtain
 // the graph-driven primary display buffer without reaching into graph.rs

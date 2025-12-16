@@ -7,7 +7,7 @@ use thing_os::prelude::*;
 
 const POLL_NS: u64 = 10_000_000; // 10ms
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "debug_input_events: starting");
 
     // Register interest in schemas

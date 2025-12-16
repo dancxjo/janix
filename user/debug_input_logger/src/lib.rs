@@ -7,7 +7,7 @@ use thing_os::prelude::*;
 
 const POLL_NS: u64 = 5_000_000;
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "debug_input_logger: starting");
     let _ = register_schema_for::<InputCharEvent>(sys);
     let mut last_sequence = initial_sequence(sys);

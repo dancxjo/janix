@@ -10,7 +10,7 @@ use thing_os::{user_create_thing, add_link};
 use thing_os::userland::ui;
 extern crate alloc;
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "debug_clock: starting...");
 
     let Some(clock) = SystemClock::discover(sys) else {

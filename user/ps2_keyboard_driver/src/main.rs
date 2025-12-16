@@ -90,42 +90,9 @@ unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize
 
 #[cfg(target_os = "none")]
 #[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
-    main();
-    loop {}
-}
-
-#[cfg(target_os = "none")]
 fn main() {
-    // We don't need UserlandSys for basic logging if we use a different way?
-    // Wait, existing driver used `println(sys, ...)`
-    // We can use `println!`? Does runtime support it?
-    // Let's assume we can use `runtime::println!` or similar if we import it?
-    // Or we create a dummy UserlandSys to access `println`.
-    
-    // Actually, ps2_keyboard_driver crate logic is in lib.rs?
-    // The previous main.rs called `ps2_keyboard_driver::run(&mut sys)`.
-    // I should rewrite `run` in `lib.rs`? Or just put everything in `main.rs` for simplicity as user requested "Loop: dev_read".
-    
-    // I'll rewrite `main.rs` to contain the logic directly.
-    
-    // We need logging. `thing_os::println`?
-    // Let's try to use `runtime` facilities if available.
-    
     let mut sys = UserlandSys::new();
-    
-    // Register schema for KeyScanEvent if we want to emit events?
-    // The user requirement says: "Emit higher-level events (graph Things, logs, etc.)"
-    // "Driver logs scancodes when keys are pressed"
-    // So distinct from just printing.
-    
-    // But Step 3 says: "Replace with dev_open... Loop: dev_read... Decode and act"
-    // "Acceptance: Driver logs scancodes"
-    
-    // I need `keyboard_decoder`. I can reuse the one in `lib.rs` if I modify `lib.rs`, or copy it.
-    // Modifying `lib.rs` is cleaner.
-    
-    ps2_keyboard_driver::run_new_ABI(&mut sys);
+    ps2_keyboard_driver::main(&mut sys);
 }
 
 #[cfg(not(target_os = "none"))]

@@ -2,7 +2,7 @@
 
 use thing_os::prelude::*;
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "debug_alarm: starting");
 
     let Some(clock) = SystemClock::discover(sys) else {

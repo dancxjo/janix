@@ -10,7 +10,7 @@ use thing_os::prelude::*;
 
 const ROOTFS_IDENTIFIER: &str = "rootfs";
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "rootfs: starting");
 
     let profile_id = ensure_boot_profile(sys);

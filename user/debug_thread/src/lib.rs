@@ -4,7 +4,7 @@ extern crate alloc;
 
 use thing_os::prelude::*;
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "debug_thread: run() reached");
 
     let start = sys.time_monotonic_ns();

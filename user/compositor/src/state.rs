@@ -196,7 +196,7 @@ fn load_background_image<S: Sys>(sys: &mut S) -> Option<BackgroundImage> {
     None
 }
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "compositor: starting");
     ensure_ui_schemas(sys);
     let _ = register_schema_for::<DisplayPresentRequest>(sys);

@@ -24,9 +24,9 @@ use icons::{Icon, IconAtlas};
 use sky::Sky;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+fn main() {
     let mut sys = UserlandSys::new();
-    geographer_main(&mut sys)
+    geographer_main(&mut sys);
 }
 
 fn geographer_main(sys: &mut UserlandSys) -> ! {

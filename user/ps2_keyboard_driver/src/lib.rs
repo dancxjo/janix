@@ -80,7 +80,7 @@ unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize
 use thing_os::resident::keyboard_stream::{KeyboardStreamMapped, KeyboardEntry, KeyboardStreamThing};
 use thing_os::resident::{alloc_resident, map_resident, ResidentMapPerms, Resident};
 
-pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "ps2_keyboard_driver: starting (resident stream)");
 
     // Allocate Resident Keyboard Stream

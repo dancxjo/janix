@@ -11,10 +11,11 @@ use core::panic::PanicInfo;
 use runtime::UserlandSys;
 
 #[cfg(target_os = "none")]
+#[cfg(target_os = "none")]
 #[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+fn main() {
     let mut sys = UserlandSys::new();
-    debug_thread::run(&mut sys)
+    debug_thread::main(&mut sys);
 }
 
 #[cfg(not(target_os = "none"))]

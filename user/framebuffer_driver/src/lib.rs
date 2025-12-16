@@ -354,7 +354,7 @@ mod tests {
     }
 }
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "framebuffer_driver: starting");
 
     let mut driver = loop {

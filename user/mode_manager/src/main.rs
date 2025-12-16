@@ -15,7 +15,7 @@ use abi::{
 use thing_models::{KeyScanEvent, Mode};
 use thing_os::prelude::*;
 use thing_os::{
-    entry, add_link, update_props, create_thing, list_things_by_kind,
+    add_link, update_props, create_thing, list_things_by_kind,
     MODE_INDEX_CONSOLE,
 };
 use thing_os::resident::{map_resident, Resident};
@@ -42,9 +42,11 @@ impl thing_os::Thing for SystemThing {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
-    entry(|sys| run(sys));
+#[cfg(target_os = "none")]
+#[unsafe(no_mangle)]
+fn main() {
+    let mut sys = runtime::UserlandSys::new();
+    run(&mut sys);
 }
 
 fn run<S: Sys>(sys: &mut S) -> ! {

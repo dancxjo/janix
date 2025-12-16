@@ -18,7 +18,7 @@ const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
 #[cfg(feature = "rootfs")]
 const ROOTFS_IDENTIFIER: &str = "rootfs";
 
-pub fn run<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "init: starting");
 
     ensure_modes(sys);

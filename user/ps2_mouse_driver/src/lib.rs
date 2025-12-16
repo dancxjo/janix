@@ -83,7 +83,7 @@ unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize
     }
 }
 
-pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
+pub fn main<S: Sys>(sys: &mut S) -> ! {
     println(sys, "ps2_mouse_driver: starting (resident stream)");
     
     // 1. Allocate & Map Resident Buffer

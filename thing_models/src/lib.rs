@@ -150,6 +150,7 @@ pub struct BootProgram {
     pub app_id: u64,
     pub priority: u64,
     pub binary: String,
+    pub respawn_policy: String,
 }
 
 impl Thing for BootProgram {
@@ -162,6 +163,10 @@ impl Thing for BootProgram {
         out.push(("app_id", PropValue::U64(self.app_id)));
         out.push(("priority", PropValue::U64(self.priority)));
         out.push(("binary", PropValue::Str(self.binary.clone())));
+        out.push((
+            graph_kinds::PROP_RESPAWN_POLICY,
+            PropValue::Str(self.respawn_policy.clone()),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -169,6 +174,8 @@ impl Thing for BootProgram {
         let mut app_id = 0;
         let mut priority = 0;
         let mut binary = String::new();
+        let mut respawn_policy = String::from(graph_kinds::RESPAWN_NEVER);
+
         for prop in props.iter().flatten() {
             match prop.0 {
                 "name" => {
@@ -191,6 +198,11 @@ impl Thing for BootProgram {
                         binary = v.clone();
                     }
                 }
+                graph_kinds::PROP_RESPAWN_POLICY => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        respawn_policy = v.clone();
+                    }
+                }
                 _ => {}
             }
         }
@@ -200,6 +212,7 @@ impl Thing for BootProgram {
             app_id,
             priority,
             binary,
+            respawn_policy,
         }
     }
 
@@ -209,6 +222,7 @@ impl Thing for BootProgram {
             ("app_id", PropType::U64),
             ("priority", PropType::U64),
             ("binary", PropType::Str),
+            (graph_kinds::PROP_RESPAWN_POLICY, PropType::Str),
         ]
     }
 }
@@ -710,6 +724,7 @@ mod tests {
             app_id: 0x42,
             priority: 1,
             binary: String::from("/bin/init"),
+            respawn_policy: String::from("Always"),
         };
 
         let mut props = Vec::new();
@@ -721,6 +736,7 @@ mod tests {
                 ("app_id", PropValue::U64(0x42)),
                 ("priority", PropValue::U64(1)),
                 ("binary", PropValue::Str(String::from("/bin/init"))),
+                (graph_kinds::PROP_RESPAWN_POLICY, PropValue::Str(String::from("Always"))),
             ]
         );
 
@@ -730,6 +746,7 @@ mod tests {
         assert_eq!(roundtrip.app_id, boot.app_id);
         assert_eq!(roundtrip.priority, boot.priority);
         assert_eq!(roundtrip.binary, boot.binary);
+        assert_eq!(roundtrip.respawn_policy, boot.respawn_policy);
         let mut roundtrip_props = Vec::new();
         roundtrip.to_props(&mut roundtrip_props);
         assert_eq!(roundtrip_props, props);

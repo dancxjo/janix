@@ -469,6 +469,16 @@ pub fn seed_boot_programs_from_limine() {
         }
 
         let priority = get_program_priority(&identifier);
+        
+        let mut respawn_policy = String::from(graph_kinds::RESPAWN_NEVER);
+        if identifier == "init" {
+             respawn_policy = String::from(graph_kinds::RESPAWN_ALWAYS);
+        }
+        
+        // Check for respawn override in cmdline
+        if let Some(policy) = parse_respawn_policy((*module).string()) {
+             respawn_policy = policy;
+        }
 
         let boot_program = BootProgram {
             id: ThingId(0),
@@ -476,6 +486,7 @@ pub fn seed_boot_programs_from_limine() {
             app_id,
             priority,
             binary: identifier.clone(),
+            respawn_policy,
         };
 
         let mut props_vec = Vec::new();
@@ -767,6 +778,21 @@ fn parse_keyed_argument(line: &str, prefix: &str) -> Option<String> {
             let ident = arg.trim_start_matches(prefix);
             (!ident.is_empty()).then(|| String::from(ident))
         })
+}
+
+fn parse_respawn_policy(cmdline: &core::ffi::CStr) -> Option<String> {
+    let bytes = cmdline.to_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+    
+    let line = if let Ok(s) = core::str::from_utf8(bytes) {
+         s 
+    } else {
+         return None; // simplify fallback for now
+    };
+    
+    parse_keyed_argument(line, "respawn=")
 }
 
 fn parse_font_identifier(cmdline: &core::ffi::CStr, path: &core::ffi::CStr) -> Option<String> {

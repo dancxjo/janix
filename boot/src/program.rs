@@ -15,7 +15,17 @@ pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'s
         find_program_image(&info.binary).ok_or("ProgramImage Thing not found for identifier")?;
     let loaded = elf_loader::load_program(&image)?;
     kernel::log("Loaded ELF ProgramImage, spawning process");
-    spawn_loaded_program(&info, loaded)
+    let (proc, thread) = spawn_loaded_program(&info, loaded)?;
+    
+    // Link the new process to the BootProgram as RUNNING
+    let _ = graph::add_link(boot_program_id, graph_kinds::LINK_RUNNING, proc);
+    
+    // Also copy the respawn policy to the Process Thing properties for easier lookup by kernel? 
+    // Or kernel can lookup LINK_RUNNING. The plan said "On ProcessExitEvent, the policy engine decides...". 
+    // And "lookup LINK_RUNNING to find the BootProgram".
+    // So just linking is enough.
+    
+    Ok((proc, thread))
 }
 
 pub fn spawn_program_by_identifier(
@@ -114,6 +124,7 @@ struct BootProgramInfo {
     app_id: u64,
     priority: u64,
     binary: String,
+    respawn_policy: String,
 }
 
 fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> {
@@ -126,6 +137,7 @@ fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> 
         let mut app_id: Option<u64> = None;
         let mut priority: u64 = 0;
         let mut binary: Option<String> = None;
+        let mut respawn_policy: Option<String> = None;
 
         for prop in thing.props.iter().flatten() {
             match prop.0 {
@@ -149,6 +161,11 @@ fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> 
                         binary = Some(s.clone());
                     }
                 }
+                graph_kinds::PROP_RESPAWN_POLICY => {
+                    if let PropValue::Str(s) = &prop.1 {
+                        respawn_policy = Some(s.clone());
+                    }
+                }
                 _ => {}
             }
         }
@@ -158,6 +175,7 @@ fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> 
             app_id: app_id.ok_or("BootProgram missing app_id")?,
             priority,
             binary: binary.unwrap_or_default(),
+            respawn_policy: respawn_policy.unwrap_or_else(|| String::from(graph_kinds::RESPAWN_NEVER)),
         })
     }).unwrap_or(Err("BootProgram Thing not found"))
 }

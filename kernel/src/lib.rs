@@ -62,6 +62,19 @@ pub fn register_spawn_program_handler(handler: SpawnProgramHandler) {
     *SPAWN_PROGRAM_HANDLER.lock() = Some(handler);
 }
 
+/// Spawn a program by its BootProgram Thing ID.
+///
+/// This invokes the registered handler (usually in the boot crate) to load and launch
+/// the program. Returns the new ProcessId and ThreadId as ThingIds on success.
+pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'static str> {
+    let handler = SPAWN_PROGRAM_HANDLER.lock().clone();
+    if let Some(spawn_fn) = handler {
+        spawn_fn(boot_program_id)
+    } else {
+        Err("SpawnProgram handler not registered")
+    }
+}
+
 /// Log a message to the kernel log
 pub fn log(message: &'static str) {
     log::log_message(message);

@@ -207,7 +207,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         0
     } else if num == SyscallNumber::ExitThread as u64 {
         kernel::log("Thread exited via syscall");
-        kernel::sched::exit_current_thread();
+        kernel::sched::exit_current_thread("returned", arg1);
         return user::schedule_next();
     } else if num == SyscallNumber::AllocFrame as u64 {
         let pool_index = arg1;

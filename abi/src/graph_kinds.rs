@@ -86,6 +86,9 @@ pub mod canon {
     pub const P_DISPLAY_HAS_FRONT_BUFFER: Predicate = Predicate(0x0020);
     pub const P_DISPLAY_HAS_BACK_BUFFER: Predicate = Predicate(0x0021);
     pub const P_HAS_ACTIVE_MODE: Predicate = Predicate(0x0022);
+    pub const P_ABOUT: Predicate = Predicate(0x0023);
+    pub const P_RUNNING: Predicate = Predicate(0x0024);
+    pub const P_RESPAWNED_FROM: Predicate = Predicate(0x0025);
 }
 
 pub const LINK_OWNS_THREAD: Predicate = canon::P_PROC_OWNS_THREAD;
@@ -107,6 +110,13 @@ pub const LINK_APP_OWNS_WINDOW: Predicate = canon::P_APP_OWNS_WINDOW;
 pub const LINK_DISPLAY_HAS_FRONT_BUFFER: Predicate = canon::P_DISPLAY_HAS_FRONT_BUFFER;
 pub const LINK_DISPLAY_HAS_BACK_BUFFER: Predicate = canon::P_DISPLAY_HAS_BACK_BUFFER;
 pub const LINK_HAS_ACTIVE_MODE: Predicate = canon::P_HAS_ACTIVE_MODE;
+pub const LINK_ABOUT: Predicate = canon::P_ABOUT;
+pub const LINK_RUNNING: Predicate = canon::P_RUNNING;
+pub const LINK_RESPAWNED_FROM: Predicate = canon::P_RESPAWNED_FROM;
+
+pub const KIND_PROCESS_EXIT_EVENT: &str = "ProcessExitEvent";
+pub const PROP_EXIT_REASON: &str = "exit_reason";
+pub const PROP_EXIT_CODE: &str = "exit_code";
 
 pub const PROP_WIDTH: &str = "width";
 pub const PROP_HEIGHT: &str = "height";
@@ -155,6 +165,11 @@ pub const PROP_RAW_KIND: &str = "raw_kind";
 pub const PROP_LINK_SRC: &str = "link_src";
 pub const PROP_LINK_DST: &str = "link_dst";
 pub const PROP_LINK_PRED: &str = "link_pred";
+
+pub const PROP_RESPAWN_POLICY: &str = "respawn_policy";
+pub const RESPAWN_NEVER: &str = "Never";
+pub const RESPAWN_ALWAYS: &str = "Always";
+pub const RESPAWN_ON_CRASH: &str = "OnCrash";
 
 pub const PROP_VISIBLE: &str = "visible";
 pub const PROP_TEXT: &str = "text";

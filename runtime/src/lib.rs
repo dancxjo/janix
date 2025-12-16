@@ -74,7 +74,7 @@ impl Sys for KernelSys {
     }
 
     fn exit_thread(&mut self) -> ! {
-        kernel::sched::exit_current_thread();
+        kernel::sched::exit_current_thread("runtime_exit", 0);
         loop {}
     }
 }

@@ -8,7 +8,7 @@ pub enum WorkItem {
     RebuildInputTree,
     SyncProcessState(ProcessRef),
     GraphCleanup,
-    // Future work types can be added here
+    SpawnProgram(ThingId, Option<ThingId>),
 }
 
 struct WorkQueue {

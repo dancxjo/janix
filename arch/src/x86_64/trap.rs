@@ -175,10 +175,18 @@ extern "x86-interrupt" fn gp_fault_handler(stack_frame: InterruptStackFrame, err
     loop {}
 }
 
+use crate::user;
+
 extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
+    if (stack_frame.code_segment & 3) == 3 {
+        kernel::println!("User Page Fault at {:#x}", stack_frame.instruction_pointer.as_u64());
+        kernel::sched::exit_current_thread("faulted", error_code.bits());
+        user::schedule_next();
+    }
+
     use x86_64::registers::control::{Cr2, Cr3};
     use x86_64::structures::paging::Translate;
     use x86_64::structures::paging::{OffsetPageTable, PageTable};

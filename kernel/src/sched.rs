@@ -380,15 +380,80 @@ impl Scheduler {
         }
     }
 
-    pub fn mark_terminated(&mut self, tid: ThreadId) {
+    pub fn mark_terminated(&mut self, tid: ThreadId, reason: &'static str, code: u64) {
         let index = thread_index(tid);
         if self.threads.get(index).and_then(|t| t.as_ref()).is_some() {
             self.finish_running_thread(index);
             self.graph_clear_sleep_event(index);
+            
+            let mut pid = ProcessId(0);
             if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
                 thread.state = ThreadState::Exited;
+                pid = thread.process_id;
             }
             self.graph_update_thread_state(index);
+
+            if self.is_process_dead(pid) {
+                self.emit_process_exit_event(pid, reason, code);
+            }
+        }
+    }
+
+    fn is_process_dead(&self, pid: ProcessId) -> bool {
+        for thread in self.threads.iter().flatten() {
+            if thread.process_id == pid && thread.state != ThreadState::Exited {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn emit_process_exit_event(&self, pid: ProcessId, reason: &'static str, code: u64) {
+        if !self.graph_enabled {
+            return;
+        }
+        let Some(proc_thing) = self.process_thing_id(pid) else {
+            return;
+        };
+
+        let props = [
+            (graph_kinds::PROP_EXIT_REASON, PropValue::Str(String::from(reason))),
+            (graph_kinds::PROP_EXIT_CODE, PropValue::U64(code)),
+            (graph_kinds::PROP_TIMESTAMP, PropValue::U64(self.fake_time_ns)),
+        ];
+
+        if let Some(event_id) = graph::create_thing(graph_kinds::KIND_PROCESS_EXIT_EVENT, &props) {
+            let _ = graph::add_link(event_id, graph_kinds::LINK_ABOUT, proc_thing);
+            
+            // Check for respawn policy
+            let mut boot_program_id = None;
+            let mut buf = [None; 1];
+            graph::neighbors(proc_thing, graph_kinds::LINK_RUNNING, &mut buf);
+            if let Some(id) = buf[0] {
+                 boot_program_id = Some(id);
+            }
+            
+            if let Some(bp_id) = boot_program_id {
+                 let mut policy = String::from(graph_kinds::RESPAWN_NEVER);
+                 if let Some(val) = graph::get_prop(bp_id, graph_kinds::PROP_RESPAWN_POLICY) {
+                      if let PropValue::Str(s) = val {
+                           policy = s.clone();
+                      }
+                 }
+                 
+                 let should_respawn = match policy.as_str() {
+                     graph_kinds::RESPAWN_ALWAYS => true,
+                     graph_kinds::RESPAWN_ON_CRASH => reason != "Exited", // Assuming "Exited" is normal exit? 
+                     _ => false,
+                 };
+                 
+                 if should_respawn {
+                     // Defer spawning to avoid deadlock with scheduler lock
+                     // Pass the old process thing ID to enable linking RESPAWNED_FROM
+                     crate::work_queue::push_normal(crate::work_queue::WorkItem::SpawnProgram(bp_id, Some(proc_thing)));
+                     crate::log("Respawn scheduled via WorkQueue");
+                 }
+            }
         }
     }
 
@@ -707,11 +772,11 @@ pub fn yield_current_thread() {
     })
 }
 
-pub fn exit_current_thread() {
+pub fn exit_current_thread(reason: &'static str, code: u64) {
     without_preemption(|| {
         let mut sched = SCHEDULER.lock();
         if let Some(tid) = sched.current {
-            sched.mark_terminated(tid);
+            sched.mark_terminated(tid, reason, code);
             sched.current = None;
         }
     })

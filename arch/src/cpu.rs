@@ -15,6 +15,23 @@ pub fn wait_for_interrupt() {
     }
 }
 
+/// Enable interrupts (STI / MSR write / etc).
+#[inline]
+pub fn enable_interrupts() {
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        core::arch::asm!("sti");
+        
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!("msr daifclr, #2"); // Enable IRQ
+
+        #[cfg(target_arch = "riscv64")]
+        core::arch::asm!("csrsi sstatus, 2"); // SIE bit
+
+        // loongarch64 todo
+    }
+}
+
 /// Halt forever by repeatedly issuing the target-specific idle instruction.
 #[inline]
 pub fn halt_loop() -> ! {

@@ -87,6 +87,8 @@ pub fn init_world_graph() {
 pub fn init_userland_and_enter_scheduler() -> ! {
     kernel::log("Launching init (PID 1) ...");
     launch_init_process();
+    kernel::log("Launching idle thread...");
+    launch_idle_thread();
     kernel::log("Handing control to scheduler...");
     arch::user::schedule_next();
 }
@@ -106,6 +108,13 @@ pub fn render_dashboard_and_halt() -> ! {
         kernel::log("No framebuffer available for dashboard");
     }
     crate::panic_handler::hcf();
+}
+
+fn launch_idle_thread() {
+   // Attach to PID 1 (init)
+   let pid = abi::ProcessId(1);
+   let mut sched = kernel::sched::SCHEDULER.lock();
+   sched.add_idle_thread(pid);
 }
 
 pub fn launch_init_process() {

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "user/examples_support",
     "boot",
     "kernel",
     "abi",

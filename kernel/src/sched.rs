@@ -80,6 +80,7 @@ pub struct Thread {
     pub total_run_ns: u64,
     pub address_space_token: Option<u64>,
     pub pending_wake: bool,
+    pub is_idle: bool,
 }
 
 pub struct ScheduledThread {
@@ -92,6 +93,7 @@ pub struct ScheduledThread {
     pub context: [u64; 20],
     pub fpu_context: FpuContext,
     pub address_space_token: Option<u64>,
+    pub is_idle: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -342,6 +344,7 @@ impl Scheduler {
                     total_run_ns: 0,
                     address_space_token,
                     pending_wake: false,
+                    is_idle: false,
                 });
                 if self.graph_enabled {
                     self.ensure_thread_thing(i);
@@ -355,6 +358,50 @@ impl Scheduler {
             }
         }
         panic!("Max threads reached");
+    }
+
+    pub fn add_idle_thread(&mut self, process_id: ProcessId) -> ThreadId {
+        for (i, slot) in self.threads.iter_mut().enumerate() {
+            if slot.is_none() {
+                let tid = ThreadId(i as u64 + 1);
+                // Idle thread shares address space of the process (likely kernel/init)
+                let address_space_token = self.processes
+                    .get(process_index(process_id))
+                    .and_then(|p| p.as_ref())
+                    .and_then(|p| p.address_space_token);
+
+                *slot = Some(Thread {
+                    id: tid,
+                    process_id,
+                    state: ThreadState::Runnable, // Always runnable
+                    name: "idle",
+                    priority: 0, // Lowest priority
+                    entry_point: 0,
+                    user_arg: 0,
+                    user_stack_top: 0,
+                    context: [0; 20],
+                    fpu_context: FpuContext::default(),
+                    started: false,
+                    thing_id: None,
+                    sleep_event_id: None,
+                    last_run_start_ns: 0,
+                    total_run_ns: 0,
+                    address_space_token,
+                    pending_wake: false,
+                    is_idle: true,
+                });
+                if self.graph_enabled {
+                    self.ensure_thread_thing(i);
+                    self.graph_update_thread_state(i);
+                }
+                // Add to run queue
+                if self.run_queue.push(tid).is_err() {
+                    panic!("Run queue full creating idle thread");
+                }
+                return tid;
+            }
+        }
+        panic!("Max threads reached creating idle thread");
     }
 
     pub fn mark_yield(&mut self, tid: ThreadId) {
@@ -501,6 +548,7 @@ impl Scheduler {
             context: thread.context,
             fpu_context: thread.fpu_context,
             address_space_token: thread.address_space_token,
+            is_idle: thread.is_idle,
         })
     }
 

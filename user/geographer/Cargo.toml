@@ -1,17 +1,10 @@
 [package]
 name = "geographer"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 thing_os = { path = "../../thing_os" }
+examples_support = { path = "../examples_support" }
 abi = { path = "../../abi" }
-runtime = { path = "../../runtime" }
-
-[build-dependencies]
-flate2 = "1.0"
-reqwest = { version = "0.11", features = ["blocking"] }
-
-[dependencies.libm]
-version = "0.2"
-default-features = false
+log = "0.4"

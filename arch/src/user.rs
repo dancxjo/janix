@@ -54,25 +54,31 @@ pub fn schedule_next() -> ! {
                 // );
                 // kernel::log(Box::leak(msg.into_boxed_str()));
             }
-            CurrentArch::activate_user_address_space(thread.address_space_token);
             
-            if thread.started {
-                CurrentArch::resume_user_mode(&thread.context, &thread.fpu_context);
+            if thread.is_idle {
+                // Idle thread "running" means waiting for interrupt
+                crate::cpu::enable_interrupts();
+                crate::cpu::wait_for_interrupt();
             } else {
-                kernel::log("Entering user thread...");
-                kernel::log(thread.name);
-                let regs = UserEntryRegs {
-                    entry_point: thread.entry_point,
-                    user_stack: thread.user_stack_top,
-                    arg0: thread.user_arg,
-                };
-                CurrentArch::enter_user_mode(&regs);
+                CurrentArch::activate_user_address_space(thread.address_space_token);
+                
+                if thread.started {
+                    CurrentArch::resume_user_mode(&thread.context, &thread.fpu_context);
+                } else {
+                    kernel::log("Entering user thread...");
+                    kernel::log(thread.name);
+                    let regs = UserEntryRegs {
+                        entry_point: thread.entry_point,
+                        user_stack: thread.user_stack_top,
+                        arg0: thread.user_arg,
+                    };
+                    CurrentArch::enter_user_mode(&regs);
+                }
             }
         } else {
-            // Idle loop
-            kernel::log("No runnable threads");
-            kernel::time::poll_time();
-            cpu::wait_for_interrupt();
+            // Should not happen if idle thread exists, but safe fallback
+             crate::cpu::enable_interrupts();
+             crate::cpu::wait_for_interrupt();
         }
     }
 }

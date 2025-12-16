@@ -5,7 +5,7 @@ use std::path::Path;
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    // Path to things-os/fonts relative to user/geographer
+    // Path to things-os/fonts relative to user/examples_support
     let fonts_dir = Path::new(&manifest_dir).join("../../fonts");
     let unifont_hex = fonts_dir.join("unifont.hex");
 
@@ -13,19 +13,42 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     if !unifont_hex.exists() {
-        // If the font doesn't exist, we can't generate it. 
-        // We assume the kernel build has already downloaded it or will download it.
-        // However, since we are in userland, we might build independently.
-        // For now, we will just panic with a helpful message if it's missing, 
-        // relying on the top-level build to handle dependencies or the user to run kernel build first.
-        println!("cargo:warning=Unifont not found at {:?}. Please run kernel build first to download it.", unifont_hex);
+        println!("cargo:warning=Unifont not found at {:?}. Font rendering will not work.", unifont_hex);
+        // We could generate a dummy font here to avoid compile failure, but for now let's hope it exists.
+        generate_dummy_font();
     } else {
         generate_font_source(&unifont_hex);
     }
 }
 
+fn generate_dummy_font() {
+     let out_dir = env::var("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("unifont.rs");
+    let mut out_file = fs::File::create(&dest_path).expect("Failed to create unifont.rs");
+    
+    writeln!(out_file, "pub const GLYPH_WIDTH: u32 = 8;").unwrap();
+    writeln!(out_file, "pub const GLYPH_HEIGHT: u32 = 16;").unwrap();
+    writeln!(out_file, "pub static GLYPHS: [[u8; 16]; 0] = [];").unwrap();
+    writeln!(
+        out_file,
+        r#"
+#[inline]
+pub fn lookup_glyph(_ch: char) -> Option<&'static [u8; GLYPH_HEIGHT as usize]> {{
+    None
+}}
+"#
+    ).unwrap();
+}
+
 fn generate_font_source(unifont_path: &Path) {
-    let content = fs::read_to_string(unifont_path).expect("Failed to read unifont.hex");
+    let content = match fs::read_to_string(unifont_path) {
+        Ok(c) => c,
+        Err(_) => {
+            generate_dummy_font();
+            return;
+        }
+    };
+    
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("unifont.rs");
     let mut out_file = fs::File::create(&dest_path).expect("Failed to create unifont.rs");

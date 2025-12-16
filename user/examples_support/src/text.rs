@@ -1,9 +1,7 @@
 include!(concat!(env!("OUT_DIR"), "/unifont.rs"));
 
 /// Draw a string of text to the buffer.
-/// Color is expected to be 0xAABBGGRR (little endian u32) = R, G, B, A in byte order.
-/// e.g. 0xFF00FF00 -> R=00, G=FF, B=00, A=FF (Green)
-/// e.g. 0xFFFFFFFF -> R=FF, G=FF, B=FF, A=FF (White)
+/// Color is 0xAABBGGRR.
 pub fn draw_text_simple(
     buffer: &mut [u8],
     stride: u32,
@@ -37,7 +35,6 @@ pub fn draw_text_simple(
             );
             curr_x += GLYPH_WIDTH as i32;
         } else {
-            // Draw box or space for missing glyph?
             curr_x += GLYPH_WIDTH as i32;
         }
     }
@@ -54,13 +51,9 @@ fn draw_glyph(
     color: u32,
 ) {
     if x < 0 || x >= surface_width as i32 || y < 0 || y >= surface_height as i32 {
-        return; // Clipping simplistic
+        return; 
     }
 
-    // Decompose color for alpha blending if we wanted (but here simple overwrite)
-    // Actually, let's treat 0 as transparent in the font
-    
-    // Convert u32 color to bytes
     let b_r = (color & 0xFF) as u8;
     let b_g = ((color >> 8) & 0xFF) as u8;
     let b_b = ((color >> 16) & 0xFF) as u8;

@@ -37,6 +37,7 @@ pub fn main<S: Sys>(sys: &mut S) -> ! {
             app_id: next_app_id,
             priority: 0,
             binary: image.identifier.clone(),
+            respawn_policy: graph_kinds::RESPAWN_NEVER.into(),
         };
 
         match create_thing(sys, &program) {
@@ -187,6 +188,7 @@ mod tests {
             app_id: 0,
             priority: 0,
             binary: "demo".to_string(),
+            respawn_policy: "Never".to_string(),
         }];
         let image = ProgramImage {
             id: ThingId(2),

@@ -1,17 +1,10 @@
 [package]
 name = "debug_thread"
-version.workspace = true
-edition.workspace = true
-
-[lib]
-name = "debug_thread"
-path = "src/lib.rs"
+version = "0.1.0"
+edition = "2021"
 
 [dependencies]
 thing_os = { path = "../../thing_os" }
-runtime = { path = "../../runtime" }
-
-[dev-dependencies]
-kernel = { path = "../../kernel" }
+examples_support = { path = "../examples_support" }
 abi = { path = "../../abi" }
-thing_models = { path = "../../thing_models" }
+log = "0.4"

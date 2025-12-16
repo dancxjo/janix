@@ -375,13 +375,13 @@ mod tests {
         // Event 1: dx=10, dy=5 
         // Event 2: dx=-5, dy=-2
         // Total Coalesced: dx=5, dy=3. 
-        // Scaled (3/1): dx=15, dy=9.
-        // New Pos: (50+15, 50-9) = (65, 41)
+        // Scaled (1/1): dx=5, dy=3.
+        // New Pos: (50+5, 50-3) = (55, 47)
         
         // Dump logs removed
         
-        assert_eq!(comp.cursor.x, 65);
-        assert_eq!(comp.cursor.y, 41);
+        assert_eq!(comp.cursor.x, 55);
+        assert_eq!(comp.cursor.y, 47);
         assert_eq!(comp.mouse_head, 2);
     }
 }

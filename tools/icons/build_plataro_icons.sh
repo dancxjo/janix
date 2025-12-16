@@ -10,8 +10,16 @@ FETCH_SCRIPT="$ROOT/tools/icons/fetch_plataro.sh"
 
 # Ensure tools
 if ! command -v rsvg-convert &> /dev/null; then
-    echo "Error: rsvg-convert not found. Please install librsvg2-bin."
-    exit 1
+    echo "rsvg-convert not found. Checking for Python PIL..."
+    if python3 -c "import PIL" 2>/dev/null; then
+        echo "Falling back to Python/PIL generation."
+        python3 tools/icons/gen_dummy_icons.py "$MAP" "$OUT_DIR"
+        exit $?
+    else
+        echo "Error: rsvg-convert not found and Python PIL not available."
+        echo "Please install librsvg2-bin or python3-pil."
+        exit 1
+    fi
 fi
 if ! command -v magick &> /dev/null; then
     echo "Error: magick (ImageMagick) not found. Please install imagemagick."

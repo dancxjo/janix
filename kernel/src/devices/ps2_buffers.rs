@@ -7,34 +7,46 @@ pub const KEYBOARD_BUFFER_SIZE: usize = 256;
 pub const MOUSE_BUFFER_SIZE: usize = 256;
 
 // Use Mutex<VecDeque> for simplicity and safety via without_interrupts
-pub static PS2_KEYBOARD_BUFFER: Mutex<Option<VecDeque<u8>>> = Mutex::new(None);
-pub static PS2_MOUSE_BUFFER: Mutex<Option<VecDeque<u8>>> = Mutex::new(None);
+use abi::ThreadId;
+
+pub static PS2_KEYBOARD_BUFFER: Mutex<Option<(VecDeque<u8>, Option<ThreadId>)>> = Mutex::new(None);
+pub static PS2_MOUSE_BUFFER: Mutex<Option<(VecDeque<u8>, Option<ThreadId>)>> = Mutex::new(None);
 
 pub fn init() {
     // Initialize buffers
     interrupts::without_interrupts(|| {
-        *PS2_KEYBOARD_BUFFER.lock() = Some(VecDeque::with_capacity(KEYBOARD_BUFFER_SIZE));
-        *PS2_MOUSE_BUFFER.lock() = Some(VecDeque::with_capacity(MOUSE_BUFFER_SIZE));
+        *PS2_KEYBOARD_BUFFER.lock() = Some((VecDeque::with_capacity(KEYBOARD_BUFFER_SIZE), None));
+        *PS2_MOUSE_BUFFER.lock() = Some((VecDeque::with_capacity(MOUSE_BUFFER_SIZE), None));
     });
 }
 
 pub fn push_keyboard_byte(byte: u8) {
     // ISR runs with interrupts disabled, so safe to lock directly IF thread also disables interrupts
     // We assume thread uses without_interrupts when locking.
-    if let Some(queue) = &mut *PS2_KEYBOARD_BUFFER.lock() {
+    if let Some((queue, waiter)) = &mut *PS2_KEYBOARD_BUFFER.lock() {
         if queue.len() >= KEYBOARD_BUFFER_SIZE {
             queue.pop_front(); // Drop oldest
         }
         queue.push_back(byte);
+        if let Some(tid) = waiter.take() {
+            // Wake the waiting thread
+            use crate::sched;
+            sched::SCHEDULER.lock().wake_thread(tid);
+        }
     }
 }
 
 pub fn push_mouse_byte(byte: u8) {
-    if let Some(queue) = &mut *PS2_MOUSE_BUFFER.lock() {
+    if let Some((queue, waiter)) = &mut *PS2_MOUSE_BUFFER.lock() {
         if queue.len() >= MOUSE_BUFFER_SIZE {
             queue.pop_front();
         }
         queue.push_back(byte);
+        if let Some(tid) = waiter.take() {
+            // Wake the waiting thread
+            use crate::sched;
+            sched::SCHEDULER.lock().wake_thread(tid);
+        }
     }
 }
 
@@ -58,7 +70,19 @@ pub fn dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize, SysError>
              _ => return Err(SysError { code: SysError::BAD_HANDLE, detail: 0 }),
         };
 
-        if let Some(queue) = &mut *guard {
+        if let Some((queue, waiter)) = &mut *guard {
+            if queue.is_empty() {
+                // Register waiter
+                use crate::sched;
+                if let Some(tid) = sched::SCHEDULER.lock().current_id() {
+                    *waiter = Some(tid);
+                    return Err(SysError { code: SysError::WOULD_BLOCK, detail: 0 });
+                } else {
+                    // Should be impossible if called from syscall context
+                    return Err(SysError { code: SysError::INTERNAL, detail: 0 });
+                }
+            }
+
             let mut count = 0;
             for slot in out.iter_mut() {
                 if let Some(byte) = queue.pop_front() {

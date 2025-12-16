@@ -8,7 +8,8 @@ use thing_models::{
 };
 use thing_os::prelude::*;
 
-const POLL_INTERVAL_NS: u64 = 2_000_000;
+use thing_os::prelude::*;
+
 const STATUS_OFFSET: u16 = 4;
 const DATA_OFFSET: u16 = 0;
 // const MOUSE_IRQ_LINE: u8 = 12; // Unused
@@ -143,11 +144,12 @@ pub fn run_new_ABI<S: Sys>(sys: &mut S) -> ! {
                          decoder.process_byte(sys, byte);
                     }
                 } else {
-                    sys.sleep_for_ns(POLL_INTERVAL_NS);
+                    // Blocking read returned 0? Should imply wakeup.
+                    // Just retry immediately.
                 }
              }
              Err(_) => {
-                sys.sleep_for_ns(POLL_INTERVAL_NS);
+                // Similarly, retry on error.
              }
         }
     }
@@ -243,13 +245,18 @@ impl IoPortAccessor {
         let mut buffer = [0u8; 1];
         for _ in 0..200 {
             // Try to read one byte from kernel buffer using dev_read
+            // Try to read one byte from kernel buffer using dev_read
             match unsafe { syscall_dev_read(handle, &mut buffer) } {
                 Ok(1) => return Some(buffer[0]),
                 Ok(_) => {
-                    // Buffer empty, wait
-                    sys.sleep_for_ns(100_000);
+                    // Buffer empty, wait (should have blocked, but if returned 0, just retry)
+                    // sys.sleep_for_ns(100_000); // No sleep needed if we trust blocking
                 }
-                Err(_) => return None,
+                Err(_) => {
+                    // Start retry.
+                    // If blocking is enabled, Err might mean we blocked and woke up.
+                    // Just retry.
+                }
             }
         }
         None
@@ -262,6 +269,11 @@ impl IoPortAccessor {
              let _ = self.read_data(sys);
         }
         // flush kernel buffer
+        // WARNING: We cannot flush kernel buffer with blocking I/O enabled,
+        // as reading an empty buffer will block the thread indefinitely!
+        // Since we just initialized the buffer in kernel on startup, it should be empty
+        // or contain only relevant response bytes.
+        /*
         if let Some(handle) = self.device_handle {
              let mut buffer = [0u8; 16];
              loop {
@@ -271,6 +283,7 @@ impl IoPortAccessor {
                  }
              }
         }
+        */
     }
 
     fn wait_input_clear<S: Sys>(&mut self, sys: &mut S) -> bool {

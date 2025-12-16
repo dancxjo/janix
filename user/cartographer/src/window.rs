@@ -13,38 +13,50 @@ pub struct WindowContext {
     pub stride: u32,
 }
 
+use thing_os::DisplayThing;
+
 pub fn create_cartographer_window<S: Sys>(sys: &mut S) -> Option<WindowContext> {
     // 1. Ensure schemas
     let _ = register_schema_for::<Window>(sys);
     let _ = register_schema_for::<Surface>(sys);
 
-    // 2. Create Window
-    // We want it fairly large or fullscreen. For now hardcode 800x600 or check mode.
-    // The snippet mentioned "fullscreen surface (over the clouds)".
-    // Let's assume 1024x768 for now or try to match display mode if we can query it.
-    let width_i32 = 1024;
-    let height_i32 = 768;
-    let width_u32 = 1024;
-    let height_u32 = 768;
+    // 2. Detect Resolution
+    let displays: alloc::vec::Vec<DisplayThing> = list_things_by_kind(sys);
+    if displays.is_empty() {
+        return None;
+    }
+    let display = &displays[0];
+    let width_u32 = display.width as u32;
+    let height_u32 = display.height as u32;
+    let width_i32 = width_u32 as i32;
+    let height_i32 = height_u32 as i32;
 
-    let modes: alloc::vec::Vec<thing_os::Mode> = list_things_by_kind(sys);
-    // Just pick the first active one or default
-    let place_id = modes.first().and_then(|m| m.place_id).unwrap_or(ThingId(0));
+    // 3. Find Place
+    let place_id = thing_os::active_mode(sys)
+        .or_else(|| thing_os::default_mode(sys))
+        .and_then(|m| m.place_id);
+    
+    let place_id = match place_id {
+        Some(pid) if pid.0 != 0 => pid,
+        _ => return None,
+    };
 
+    // 4. Create Window
     let window = Window {
         id: ThingId(0),
         place_id,
-        x: 50,
-        y: 50,
+        x: 0,
+        y: 0,
         width: width_i32,
         height: height_i32,
-        z_index: 10, // slightly above background
+        z_index: 100, // Ensure visibility on top of background
+
         active: true,
         title: "Cartographer".to_string(),
-        draggable: true,
-        resizable: false, // simpler for raw buffer
-        closable: true,
-        minimizable: true,
+        draggable: false,
+        resizable: false,
+        closable: false,
+        minimizable: false,
     };
 
     let window_id = create_thing(sys, &window)?;

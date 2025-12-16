@@ -108,8 +108,11 @@ pub fn log_message(message: &str) {
         LOG_INDEX = (LOG_INDEX + 1) % MAX_LOG_ENTRIES;
         LOG_TOTAL_WRITES += 1;
     }
-    console::print(message);
-    console::print("\n");
+    #[cfg(feature = "debug_logging")]
+    {
+        console::print(message);
+        console::print("\n");
+    }
 }
 
 /// Get all log entries

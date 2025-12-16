@@ -79,6 +79,7 @@ pub struct Thread {
     pub last_run_start_ns: u64,
     pub total_run_ns: u64,
     pub address_space_token: Option<u64>,
+    pub pending_wake: bool,
 }
 
 pub struct ScheduledThread {
@@ -340,6 +341,7 @@ impl Scheduler {
                     last_run_start_ns: 0,
                     total_run_ns: 0,
                     address_space_token,
+                    pending_wake: false,
                 });
                 if self.graph_enabled {
                     self.ensure_thread_thing(i);
@@ -391,11 +393,28 @@ impl Scheduler {
     }
 
     pub fn next_runnable(&mut self) -> Option<ThreadId> {
-        // round-robin: pop front
-        if !self.run_queue.is_empty() {
-            return Some(self.run_queue.remove(0));
+        if self.run_queue.is_empty() {
+            return None;
         }
-        None
+
+        // Find the index of the thread with the highest priority.
+        // We use strict priority: always pick the highest available priority.
+        // If there are ties, pick the one that appears earliest in the queue (FIFO for same priority).
+        let mut best_index = 0;
+        let mut best_prio = 0;
+
+        for (i, &tid) in self.run_queue.iter().enumerate() {
+            let index = thread_index(tid);
+            if let Some(thr) = self.threads[index].as_ref() {
+                if thr.priority > best_prio {
+                    best_prio = thr.priority;
+                    best_index = i;
+                }
+            }
+        }
+
+        // Remove and return the best candidate
+        Some(self.run_queue.remove(best_index))
     }
 
     pub fn choose_next_thread(&mut self, now_ns: u64) -> Option<ScheduledThread> {
@@ -614,6 +633,63 @@ impl Scheduler {
         if let Some(thread) = self.threads.get(index).and_then(|t| t.as_ref()) {
             if let (Some(thread_thing), Some(event)) = (thread.thing_id, thread.sleep_event_id) {
                 let _ = graph::add_link(thread_thing, graph_kinds::LINK_SLEEPS_UNTIL, event);
+            }
+        }
+    }
+
+    pub fn mark_blocked(&mut self, tid: ThreadId) -> bool {
+        let index = thread_index(tid);
+        // Check conditions first
+        let should_block = if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
+            if thread.pending_wake {
+                // Was woken while running, so don't block
+                thread.pending_wake = false;
+                return false;
+            }
+            thread.state == ThreadState::Running
+        } else {
+            false
+        };
+
+        if should_block {
+            self.finish_running_thread(index);
+            if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
+                thread.state = ThreadState::Blocked;
+            }
+            self.graph_update_thread_state(index);
+            return true;
+        }
+        false
+    }
+
+    pub fn wake_thread(&mut self, tid: ThreadId) {
+        let index = thread_index(tid);
+        let state = self.threads.get(index).and_then(|t| t.as_ref()).map(|t| t.state);
+
+        if let Some(state) = state {
+            if state == ThreadState::Blocked || state == ThreadState::Sleeping {
+                if state == ThreadState::Sleeping {
+                    self.graph_clear_sleep_event(index);
+                    // Remove from sleep queue if present
+                    if let Some(pos) = self.sleep_queue.iter().position(|&e| e.thread_id == tid) {
+                        self.sleep_queue.swap_remove(pos);
+                    }
+                }
+                
+                if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
+                    thread.state = ThreadState::Runnable;
+                    thread.pending_wake = false;
+                }
+                self.graph_update_thread_state(index);
+                if self.run_queue.push(tid).is_err() {
+                    // Queue full, but we must run eventualy. Panic for now.
+                    panic!("Run queue full in wake_thread");
+                }
+            } else {
+                // Already Running or Runnable, just mark pending
+                if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
+                    thread.pending_wake = true;
+                }
             }
         }
     }

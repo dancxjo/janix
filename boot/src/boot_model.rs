@@ -468,11 +468,13 @@ pub fn seed_boot_programs_from_limine() {
             continue;
         }
 
+        let priority = get_program_priority(&identifier);
+
         let boot_program = BootProgram {
             id: ThingId(0),
             name: identifier.clone(),
             app_id,
-            priority: 0,
+            priority,
             binary: identifier.clone(),
         };
 
@@ -835,6 +837,25 @@ fn boot_program_exists(binary: &str) -> bool {
                 cursor = id;
             }
             None => return false,
+        }
+    }
+}
+
+fn get_program_priority(name: &str) -> u64 {
+    match name {
+        // Input drivers need highest priority for responsiveness
+        "ps2_mouse_driver" | "ps2_keyboard_driver" => 200,
+        // High priority for UI responsiveness
+        "compositor" => 100,
+        // Low priority for debug tools to avoid interference
+        "debug_thread" => 1,
+        // Default priority for everything else
+        _ => {
+            if name.starts_with("debug_") {
+                1
+            } else {
+                10
+            }
         }
     }
 }

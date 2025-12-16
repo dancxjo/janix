@@ -8,6 +8,7 @@ default = ["fill-framebuffer"]
 boot-dashboard-only = []
 rootfs = []
 fill-framebuffer = []
+debug_logging = ["kernel/debug_logging"]
 
 [dependencies]
 limine.workspace = true

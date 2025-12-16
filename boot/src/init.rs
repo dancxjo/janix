@@ -110,7 +110,7 @@ pub fn render_dashboard_and_halt() -> ! {
 
 pub fn launch_init_process() {
     kernel::log("launch_init_process: spawning init via ProgramImage");
-    if let Err(err) = crate::program::spawn_program_by_identifier("init", "init", 1) {
+    if let Err(err) = crate::program::spawn_program_by_identifier("init", "init", 10) {
         kernel::log("launch_init_process: failed to spawn init via ProgramImage");
         kernel::log(err);
         crate::panic_handler::hcf();

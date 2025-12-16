@@ -31,7 +31,7 @@ ifeq ($(RUST_PROFILE),dev)
 endif
 
 ENABLE_ROOTFS ?= 0
-ENABLE_CARTOGRAPHER ?= 0
+ENABLE_CARTOGRAPHER ?= 1
 APPS := init debug_thread debug_clock debug_alarm debug_input_logger debug_input_events window_demo compositor mode_manager
 ifeq ($(ENABLE_CARTOGRAPHER),1)
 APPS += cartographer
@@ -675,11 +675,11 @@ limine/limine:
 
 .PHONY: user
 user:
-	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) $(addprefix -p ,$(APPS))
+	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
 
 .PHONY: drivers
 drivers:
-	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(FEATURES_ARG) $(addprefix -p ,$(DRIVERS))
+	RUSTFLAGS="-C relocation-model=static -Awarnings" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(DRIVERS))
 
 .PHONY: kernel
 kernel:
@@ -724,6 +724,12 @@ endif
 ifeq ($(ENABLE_PLATARO_ICONS),1)
 	mkdir -p iso_root/share/icons/plataro64
 	cp -r rootfs/share/icons/plataro64/* iso_root/share/icons/plataro64/
+	# Append icons to limine.conf as modules
+	for icon in iso_root/share/icons/plataro64/*.bmp; do \
+		NAME=$$(basename $$icon); \
+		echo "    module_path: boot():/share/icons/plataro64/$$NAME" >> iso_root/boot/limine/limine.conf; \
+		echo "    module_cmdline: image=$$NAME" >> iso_root/boot/limine/limine.conf; \
+	done
 endif
 	cp -v iso_root/boot/limine/limine.conf iso_root/EFI/BOOT/limine.conf
 	cp -v iso_root/boot/limine/limine.conf iso_root/limine.conf

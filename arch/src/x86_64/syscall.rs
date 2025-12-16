@@ -588,16 +588,82 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         }
 
         let buffer = unsafe { core::slice::from_raw_parts_mut(buffer_ptr, buffer_len) };
+        let buffer = unsafe { core::slice::from_raw_parts_mut(buffer_ptr, buffer_len) };
         let res = kernel::devices::ps2_buffers::dev_read(args.handle, buffer);
 
-        let sys_ret = match res {
-            Ok(bytes_read) => abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet {
-                bytes_read: bytes_read as u32,
-            }),
-            Err(e) => abi::syscall_defs::SysRet::err(e.code, e.detail),
-        };
-        unsafe { *ret_ptr = sys_ret };
-        0
+        match res {
+            Ok(bytes_read) => {
+                let sys_ret = abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet {
+                    bytes_read: bytes_read as u32,
+                });
+                unsafe { *ret_ptr = sys_ret };
+                0
+            }
+            Err(e) if e.code == abi::syscall_defs::SysError::WOULD_BLOCK => {
+                // Thread needs to block.
+                // 1. Save context similar to Yield/Sleep
+                {
+                    let mut sched = kernel::sched::SCHEDULER.lock();
+                    if let Some(tid) = sched.current_id() {
+                        if let Some(thread) = sched.thread_mut(tid) {
+                            let regs_ptr = regs as *const SyscallRegs as *const u64;
+                            // Copy GPRs (15 u64s)
+                            let gprs = unsafe { core::slice::from_raw_parts(regs_ptr, 15) };
+                            thread.context[..15].copy_from_slice(gprs);
+                            
+                            // Manually read IRET frame from stack (offset 15)
+                            unsafe {
+                                let frame_ptr = regs_ptr.add(15);
+                                let rip = *frame_ptr.add(0);
+                                let cs = *frame_ptr.add(1);
+                                let rflags = *frame_ptr.add(2);
+                                let rsp = *frame_ptr.add(3);
+                                let ss = *frame_ptr.add(4);
+
+                                thread.context[15] = rip;
+                                thread.context[16] = cs;
+                                thread.context[17] = rflags;
+                                thread.context[18] = rsp;
+                                thread.context[19] = ss;
+                            }
+                            thread.started = true;
+                            
+                            // 2. Mark blocked
+                            if sched.mark_blocked(tid) {
+                                // Blocked successfully
+                            } else {
+                                // Was woken already (pending_wake was true)
+                                // We should probably loop and try read again, OR return 0 to user (poll behavior)
+                                // Returning 0 bytes read is safer for now, user will retry.
+                                // Actually, if we return 0 bytes ok, user thinks EOF?
+                                // Better to return -EAGAIN or just retry here?
+                                // If we assume user loop, just return EAGAIN.
+                                // But simple user driver might burn CPU.
+                                // Let's try to return EAGAIN/WOULD_BLOCK to user if we can't block?
+                                // Or better: if mark_blocked returns false, it means we have data?
+                                // ps2_buffers check was under its own lock.
+                                // If pending_wake is true, it means an interrupt happened.
+                                // So we should just return to user with 0 bytes (wait, invalid)
+                                // or return to user so they call read again.
+                                // Let's return Ok(0) for now, driver loops.
+                                let sys_ret = abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet {
+                                    bytes_read: 0,
+                                });
+                                unsafe { *ret_ptr = sys_ret };
+                                return 0;
+                            }
+                        }
+                    }
+                }
+                // 3. Switch task
+                user::schedule_next();
+            }
+            Err(e) => {
+                let sys_ret = abi::syscall_defs::SysRet::err(e.code, e.detail);
+                unsafe { *ret_ptr = sys_ret };
+                0
+            }
+        }
     } else if num == SyscallNumber::ResidentAlloc as u64 {
         let kind_ptr = arg1 as *const u8;
         let kind_len = arg2 as usize;

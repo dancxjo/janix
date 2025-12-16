@@ -10,6 +10,12 @@ pub struct GeoNode {
     pub kind: String,
     // We optionally keep props if we want to show them later
     pub props: Vec<(String, PropValue)>,
+    
+    // Layout
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
 }
 
 #[derive(Debug, Clone)]

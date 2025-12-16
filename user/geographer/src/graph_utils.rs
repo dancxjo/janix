@@ -1,7 +1,6 @@
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
-use thing_os::prelude::*;
 use abi::{PropKey, PropValue, PropType, ThingId, Predicate, graph_kinds};
 
 #[derive(Debug, Clone)]
@@ -14,8 +13,6 @@ pub struct GeoNode {
     // Layout
     pub x: f32,
     pub y: f32,
-    pub vx: f32,
-    pub vy: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -73,22 +70,5 @@ impl thing_os::Thing for LinkThing {
             }
         }
         LinkThing { id, src, dst, pred }
-    }
-}
-
-pub fn pred_to_string(p: Predicate) -> &'static str {
-    match p {
-        graph_kinds::LINK_OWNS_THREAD => "OWNS_THREAD",
-        graph_kinds::LINK_RUNS_ON => "RUNS_ON",
-        graph_kinds::LINK_SLEEPS_UNTIL => "SLEEPS_UNTIL",
-        graph_kinds::LINK_LAUNCHES => "LAUNCHES",
-        graph_kinds::LINK_SPAWNED => "SPAWNED",
-        graph_kinds::LINK_DISPLAY_SCANOUT => "DISPLAY_SCANOUT",
-        graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER => "HAS_FRONT",
-        graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER => "HAS_BACK",
-        graph_kinds::LINK_PLACE_WINDOW => "PLACE_WINDOW",
-        graph_kinds::LINK_WINDOW_SURFACE => "WINDOW_SURFACE",
-        graph_kinds::LINK_HAS_ACTIVE_MODE => "HAS_ACTIVE_MODE",
-        _ => "UNKNOWN",
     }
 }

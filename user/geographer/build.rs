@@ -5,7 +5,7 @@ use std::path::Path;
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    // Path to things-os/fonts relative to user/cartographer
+    // Path to things-os/fonts relative to user/geographer
     let fonts_dir = Path::new(&manifest_dir).join("../../fonts");
     let unifont_hex = fonts_dir.join("unifont.hex");
 

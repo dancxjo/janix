@@ -261,7 +261,13 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
 
     let place_id = mode.place_id.unwrap_or(ThingId(0));
     let windows = collect_windows_for_place(sys, place_id);
+    if compositor.frame_counter % 60 == 0 {
+         // let msg = format!("compositor: found {} windows for place {}", windows.len(), place_id.0);
+         // let leaked = Box::leak(msg.into_boxed_str());
+         // println(sys, leaked);
+    }
     let surface_map = collect_surfaces_for_windows(sys, &windows);
+    update_mapped_surfaces(sys, compositor, &surface_map);
 
     let fb_w = compositor.fb.info.width as i32;
     let fb_h = compositor.fb.info.height as i32;
@@ -293,9 +299,7 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     // compositor.background_offset.1 = compositor.background_offset.1.wrapping_add(1);
 
     // Run widget layout pass
-    let widget_rects = run_widget_pass(sys, &stacked);
-
-    let widget_rects = run_widget_pass(sys, &stacked);
+    let (widget_rects, widget_map) = run_widget_pass(sys, &stacked);
 
     // Damage tracking: Union all damage rects into one bounding box
     // This is the "easy" way (scissoring). 
@@ -345,7 +349,7 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     };
 
     if let Some(clip_rect) = clip {
-        let ops = build_display_list(compositor, &stacked, &windows, &surface_map, &widget_rects);
+        let ops = build_display_list(compositor, &stacked, &windows, &surface_map, &widget_rects, &widget_map);
         render_display_list(compositor, &ops, Some(clip_rect));
         
         if let Some(active_index) = swap_display_buffers(sys, compositor.fb.display_id) {
@@ -363,7 +367,10 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
 fn run_widget_pass<S: Sys>(
     sys: &mut S,
     stacked: &[StackedWindow],
-) -> alloc::collections::BTreeMap<ThingId, alloc::vec::Vec<crate::widget_layout::Rect>> {
+) -> (
+    alloc::collections::BTreeMap<ThingId, alloc::vec::Vec<(ThingId, crate::widget_layout::Rect)>>,
+    alloc::collections::BTreeMap<ThingId, crate::widgets::WidgetNode>
+) {
     use crate::config::{FRAME_THICKNESS, TITLE_BAR_HEIGHT};
     use crate::widget_layout::Rect;
     use crate::widgets::{layout_children, widget_children, WidgetNode};
@@ -395,10 +402,15 @@ fn run_widget_pass<S: Sys>(
         let mut queue = Vec::new(); // (id, rect)
 
         let children = widget_children(sys, win.id);
+        
+        let msg = format!("compositor: layout window {} children={}", win.id.0, children.len());
+        let leaked = Box::leak(msg.into_boxed_str());
+        println(sys, leaked);
+
         let root_rects = layout_children(sys, &widget_map, win.id, container_rect, &children);
 
         for (rid, rrect) in root_rects {
-            win_rects.push(rrect);
+            win_rects.push((rid, rrect));
             queue.push((rid, rrect));
         }
 
@@ -412,14 +424,76 @@ fn run_widget_pass<S: Sys>(
             if !pchildren.is_empty() {
                 let child_rects = layout_children(sys, &widget_map, pid, prect, &pchildren);
                 for (cid, crect) in child_rects {
-                    win_rects.push(crect);
+                    win_rects.push((cid, crect));
                     queue.push((cid, crect));
                 }
             }
         }
 
+
+
         results.insert(win.id, win_rects);
     }
 
-    results
+    (results, widget_map)
+}
+
+fn update_mapped_surfaces<S: Sys>(
+    sys: &mut S,
+    compositor: &mut Compositor,
+    current_surfaces: &alloc::collections::BTreeMap<ThingId, thing_os::Surface>,
+) {
+    use crate::model::MappedSurface;
+    use abi::{KernelRequest, KernelResponse, PixelFormat};
+
+    // 1. Remove stale mappings
+    let mut to_remove = alloc::vec::Vec::new();
+    for id in compositor.mapped_surfaces.keys() {
+        if !current_surfaces.contains_key(id) {
+            to_remove.push(*id);
+        }
+    }
+    for id in to_remove {
+        // Unmap not supported yet, just drop
+        compositor.mapped_surfaces.remove(&id);
+    }
+
+    // 2. Add new mappings
+    for (id, surface) in current_surfaces {
+        if compositor.mapped_surfaces.contains_key(id) {
+            continue;
+        }
+
+        if let Some(buf_id) = surface.shared_buffer_id {
+            // Map it
+            match sys.syscall(KernelRequest::MapSharedBuffer {
+                buffer_id: buf_id,
+                flags: MapFlags::READ.union(MapFlags::USER),
+            }) {
+                KernelResponse::SharedBufferMapped { vaddr, size } => {
+                    let format = match surface.format.as_str() {
+                        "Rgba8888" => PixelFormat::Rgba8888,
+                        "Bgra8888" => PixelFormat::Bgra8888,
+                        _ => PixelFormat::Rgba8888,
+                    };
+
+                    compositor.mapped_surfaces.insert(
+                        *id,
+                        MappedSurface {
+                            ptr: vaddr as *const u8,
+                            width: surface.width as u32,
+                            height: surface.height as u32,
+                            stride: surface.stride as u32,
+                            size: size as usize,
+                            pixel_format: format,
+                        },
+                    );
+                    thing_os::println(sys, "compositor: mapped surface");
+                }
+                _ => {
+                    thing_os::println(sys, "compositor: failed to map surface");
+                }
+            }
+        }
+    }
 }

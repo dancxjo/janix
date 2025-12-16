@@ -15,7 +15,7 @@ pub struct WindowHandle {
     pub id: ThingId,
 }
 
-pub fn ensure_ui_schemas<S: Sys>(sys: &mut S) {
+pub fn ensure_ui_schemas(sys: &impl Sys) {
     let _ = register_schema_for::<Place>(sys);
     let _ = register_schema_for::<Mode>(sys);
     let _ = register_schema_for::<Window>(sys);
@@ -36,7 +36,7 @@ pub fn create_window<S: Sys>(sys: &mut S, title: &str, mode_index: u8) -> Option
         y: 40,
         width: 480,
         height: 320,
-        z_index: 0,
+        z_index: 10,
         active: false,
         title: title.to_string(),
         draggable: true,

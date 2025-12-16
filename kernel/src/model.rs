@@ -17,7 +17,7 @@ use alloc::format;
 use alloc::string::String;
 use thing_models::{
     AlarmEvent, AlarmRequest, BootProfile, BootProgram, FontModule, InterruptEvent, InterruptRequest, IoPortOp,
-    IoPortRegion, ProgramImage, TimeSource,
+    IoPortRegion, ProgramImage, Surface, TimeSource, Window,
 };
 
 #[derive(Clone, Copy)]
@@ -379,32 +379,17 @@ pub fn init_schemas() {
         &[],
     );
 
-    static WINDOW_SCHEMA: &[(&str, PropType)] = &[
-        (graph_kinds::PROP_PLACE_ID, PropType::U64),
-        (graph_kinds::PROP_WINDOW_X, PropType::I64),
-        (graph_kinds::PROP_WINDOW_Y, PropType::I64),
-        (graph_kinds::PROP_WINDOW_WIDTH, PropType::I64),
-        (graph_kinds::PROP_WINDOW_HEIGHT, PropType::I64),
-        (graph_kinds::PROP_Z_INDEX, PropType::I64),
-        (graph_kinds::PROP_WINDOW_ACTIVE, PropType::Bool),
-        (graph_kinds::PROP_TITLE, PropType::Str),
-    ];
     let _ = graph::register_schema(
         graph_kinds::KIND_WINDOW,
-        "Top-level window description",
-        WINDOW_SCHEMA,
+        thing_models::Window::DESCRIPTION,
+        thing_models::Window::schema(),
         &[],
     );
 
-    static SURFACE_SCHEMA: &[(&str, PropType)] = &[
-        (graph_kinds::PROP_WINDOW_ID, PropType::U64),
-        (graph_kinds::PROP_SURFACE_KIND, PropType::Str),
-        (graph_kinds::PROP_SURFACE_TEXT, PropType::Str),
-    ];
     let _ = graph::register_schema(
         graph_kinds::KIND_SURFACE,
-        "Renderable surface attached to a window",
-        SURFACE_SCHEMA,
+        thing_models::Surface::DESCRIPTION,
+        thing_models::Surface::schema(),
         &[],
     );
 }

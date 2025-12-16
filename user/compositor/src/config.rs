@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
 pub const CLEAR_COLOR: u32 = 0xFF101014;
-pub const FRAME_BG: u32 = 0xFF1D1E22;
+pub const FRAME_BG: u32 = 0xFF1D1E22; // Dark Glass
 pub const FRAME_BORDER: u32 = 0xFF3A3C45;
-pub const TITLE_COLOR_ACTIVE: u32 = 0xFF4C8BF5;
+pub const TITLE_COLOR_ACTIVE: u32 = 0xFF4C8BF5; // Sky Blue
 pub const TITLE_COLOR_INACTIVE: u32 = 0xFF2B2D34;
-pub const TITLE_TEXT_COLOR: u32 = 0xFFF0F0F0;
-pub const CONTENT_BG: u32 = 0xFF121214;
-pub const TEXT_COLOR: u32 = 0xFFE4E4E4;
+pub const TITLE_TEXT_COLOR: u32 = 0xFFFFFFFF; // High contrast white
+pub const CONTENT_BG: u32 = 0xFF121218; // Deep Blue/Black
+pub const TEXT_COLOR: u32 = 0xFFFFFFFF; // High contrast white
 pub const CURSOR_COLOR: u32 = 0xFFE6E6FA;
 pub const CURSOR_SHADOW: u32 = 0xFF000000;
 

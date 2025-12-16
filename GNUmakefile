@@ -31,10 +31,11 @@ ifeq ($(RUST_PROFILE),dev)
 endif
 
 ENABLE_ROOTFS ?= 0
-ENABLE_CARTOGRAPHER ?= 1
+ENABLE_geographer ?= 1
+ENABLE_PLATARO_ICONS ?= 1
 APPS := init debug_thread debug_clock debug_alarm debug_input_logger debug_input_events window_demo compositor mode_manager
-ifeq ($(ENABLE_CARTOGRAPHER),1)
-APPS += cartographer
+ifeq ($(ENABLE_geographer),1)
+APPS += geographer
 endif
 DRIVERS := framebuffer_driver ps2_keyboard_driver ps2_mouse_driver
 ifeq ($(ENABLE_ROOTFS),1)
@@ -58,7 +59,7 @@ endif
 
 override IMAGE_NAME := template-$(KARCH)
 
-FEATURES ?=
+FEATURES ?= debug_logging
 ifneq ($(strip $(FEATURES)),)
 FEATURES_ARG := --features "$(strip $(FEATURES))"
 endif
@@ -717,9 +718,9 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons
 		cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
 	fi
 	cp -v limine.conf iso_root/boot/limine/limine.conf
-ifeq ($(ENABLE_CARTOGRAPHER),1)
-	echo '    module_path: boot():/boot/user/cartographer' >> iso_root/boot/limine/limine.conf
-	echo '    module_cmdline: program=cartographer' >> iso_root/boot/limine/limine.conf
+ifeq ($(ENABLE_geographer),1)
+	echo '    module_path: boot():/boot/user/geographer' >> iso_root/boot/limine/limine.conf
+	echo '    module_cmdline: program=geographer' >> iso_root/boot/limine/limine.conf
 endif
 ifeq ($(ENABLE_PLATARO_ICONS),1)
 	mkdir -p iso_root/share/icons/plataro64

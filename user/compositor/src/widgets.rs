@@ -2,6 +2,7 @@ extern crate alloc;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
+use alloc::string::String;
 
 use abi::graph_kinds;
 use thing_os::prelude::*;
@@ -35,6 +36,12 @@ pub struct WidgetNode {
     // flex behavior when this widget is a child
     pub flex_grow: Option<f32>,
     pub flex_shrink: Option<f32>,
+
+    // visual properties
+    pub text: Option<String>,
+    pub font_size: Option<u32>,
+    pub fg_color: Option<u32>,
+    pub bg_color: Option<u32>,
 }
 
 impl WidgetNode {
@@ -60,6 +67,24 @@ impl thing_os::Thing for WidgetNode {
         let get_prop = |k: &str| -> Option<&PropValue> {
              props.iter().flatten().find(|(key, _)| *key == k).map(|(_, v)| v)
         };
+
+        let text = get_prop(graph_kinds::PROP_TEXT).and_then(|v| match v {
+            PropValue::Str(s) => Some(s.clone()),
+            _ => None,
+        });
+        
+        // Helper for color/size which are I64 or U64 depending on encoding, usually I64 in properties
+        let get_u32 = |k: &str| -> Option<u32> {
+             match get_prop(k) {
+                 Some(PropValue::I64(v)) => Some(*v as u32),
+                 Some(PropValue::U64(v)) => Some(*v as u32),
+                 _ => None,
+             }
+        };
+
+        let font_size = get_u32(graph_kinds::PROP_FONT_SIZE);
+        let fg_color = get_u32(graph_kinds::PROP_FG_COLOR);
+        let bg_color = get_u32(graph_kinds::PROP_BG_COLOR);
 
         let flex_direction = get_prop(graph_kinds::PROP_FLEX_DIRECTION)
             .and_then(FlexDirection::from_prop);
@@ -99,6 +124,11 @@ impl thing_os::Thing for WidgetNode {
 
             flex_grow,
             flex_shrink,
+
+            text,
+            font_size,
+            fg_color,
+            bg_color,
         }
     }
 

@@ -28,6 +28,17 @@ pub struct ConsoleBuffer {
     pub pixel_format: abi::PixelFormat,
 }
 
+
+#[derive(Debug, Clone, Copy)]
+pub struct MappedSurface {
+    pub ptr: *const u8,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub pixel_format: abi::PixelFormat,
+    pub size: usize,
+}
+
 #[derive(Debug)]
 pub struct Compositor {
     pub fb: PrimaryDisplayBuffer,
@@ -42,12 +53,13 @@ pub struct Compositor {
     pub background_image: Option<BackgroundImage>,
     pub background_offset: (i32, i32),
     pub console_buffer: Option<ConsoleBuffer>,
+    pub mapped_surfaces: alloc::collections::BTreeMap<ThingId, MappedSurface>,
     // Dirty rectangle tracking
     pub damage: Vec<Rect>,
     pub previous_damage: Vec<Rect>,
     pub mouse_stream: Option<MouseStreamMapped<()>>,
     pub mouse_head: u32,
-    frame_counter: u64,
+    pub frame_counter: u64,
     pub cached_layout: alloc::vec::Vec<StackedWindow>,
 }
 
@@ -69,6 +81,7 @@ impl Compositor {
             background_offset: (0, 0),
 
             console_buffer: None,
+            mapped_surfaces: alloc::collections::BTreeMap::new(),
             damage: Vec::new(),
             previous_damage: Vec::new(),
             mouse_stream: None,

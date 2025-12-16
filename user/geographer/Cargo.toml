@@ -1,5 +1,5 @@
 [package]
-name = "cartographer"
+name = "geographer"
 version = "0.1.0"
 edition = "2024"
 
@@ -11,3 +11,7 @@ runtime = { path = "../../runtime" }
 [build-dependencies]
 flate2 = "1.0"
 reqwest = { version = "0.11", features = ["blocking"] }
+
+[dependencies.libm]
+version = "0.2"
+default-features = false

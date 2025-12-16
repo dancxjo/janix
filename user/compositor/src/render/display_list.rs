@@ -20,6 +20,7 @@ use crate::layout::StackedWindow;
 use crate::model::Compositor;
 
 use super::{cursor, primitives, text};
+use crate::widgets::WidgetNode;
 
 #[derive(Debug, Clone)]
 pub enum DrawOp {
@@ -58,11 +59,28 @@ pub enum DrawOp {
         max_h: i32,
         text: String,
     },
+    Blit {
+        ptr: usize,
+        w: i32, 
+        h: i32,
+        stride: u32,
+        format: abi::PixelFormat,
+        x: i32,
+        y: i32,
+    },
     Cursor {
         origin: (i32, i32),
         sprite: Arc<Bitmap>,
         hotspot: (i32, i32),
     },
+    Text {
+        x: i32,
+        y: i32,
+        max_w: i32,
+        max_h: i32,
+        text: String,
+        color: u32,
+    }
 }
 
 pub fn build_display_list(
@@ -70,7 +88,8 @@ pub fn build_display_list(
     stacked: &[StackedWindow],
     windows: &[Window],
     surfaces: &BTreeMap<ThingId, Surface>,
-    widget_rects: &BTreeMap<ThingId, Vec<crate::widget_layout::Rect>>,
+    widget_rects: &BTreeMap<ThingId, Vec<(ThingId, crate::widget_layout::Rect)>>,
+    widget_map: &BTreeMap<ThingId, WidgetNode>,
 ) -> Vec<DrawOp> {
     let mut ops = Vec::new();
 
@@ -123,8 +142,59 @@ pub fn build_display_list(
             });
         }
 
+        if let Some(rects) = widget_rects.get(&w.id) {
+            for (wid, r) in rects {
+                let widget = widget_map.get(wid);
+                
+                // 1. Draw Background if present
+                if let Some(bg_color) = widget.and_then(|w| w.bg_color) {
+                    ops.push(DrawOp::Rect {
+                        x: r.x,
+                        y: r.y,
+                        w: r.w as i32,
+                        h: r.h as i32,
+                        color: bg_color,
+                    });
+                } else if widget.is_none() {
+                     // Fallback debug for unknown widgets
+                     ops.push(DrawOp::Rect {
+                        x: r.x,
+                        y: r.y,
+                        w: r.w as i32,
+                        h: r.h as i32,
+                        color: 0xFF550055, 
+                    });
+                }
+
+                // 2. Draw Text if present
+                if let Some(text) = widget.and_then(|w| w.text.as_ref()) {
+                     if !text.is_empty() {
+                         let color = widget.and_then(|w| w.fg_color).unwrap_or(TEXT_COLOR);
+                         ops.push(DrawOp::Text {
+                            x: r.x,
+                            y: r.y,
+                            max_w: r.w as i32,
+                            max_h: r.h as i32,
+                            text: text.clone(),
+                            color,
+                         });
+                     }
+                }
+            }
+        }
         if let Some(surface) = surfaces.get(&w.id) {
-            if !surface.text.is_empty() && content_w > 0 && content_h > 0 {
+            // Priority: Mapped Buffer -> Text
+            if let Some(mapped) = comp.mapped_surfaces.get(&surface.id) {
+                 ops.push(DrawOp::Blit {
+                     ptr: mapped.ptr as usize,
+                     w: mapped.width as i32,
+                     h: mapped.height as i32,
+                     stride: mapped.stride,
+                     format: mapped.pixel_format,
+                     x: content_x,
+                     y: content_y,
+                 });
+            } else if !surface.text.is_empty() && content_w > 0 && content_h > 0 {
                 ops.push(DrawOp::WindowContentText {
                     id: w.id,
                     x: content_x + 4,
@@ -137,15 +207,34 @@ pub fn build_display_list(
         }
 
         if let Some(rects) = widget_rects.get(&w.id) {
-            for r in rects {
-                ops.push(DrawOp::Rect {
-                    x: r.x,
-                    y: r.y,
-                    w: r.w as i32,
-                    h: r.h as i32,
-                    color: 0xFF550055, // Dark Magenta for debug
-                });
-            }
+            for (idx, r) in rects.iter().enumerate() { 
+                // We need to find which widget ID this rect belongs to.
+                // But run_widget_pass returned (ThingId, Rect) list? No, it returned Vec<Rect>.
+                // Wait, run_widget_pass in state.rs was returning just Vec<Rect>.
+                // I need to change run_widget_pass to return (ThingId, Rect) so I can Map it here!
+                // Aaah, I missed that detail in state.rs planning.
+                // Let's assume I fix state.rs to return Vec<(ThingId, Rect)>. 
+                // But wait, the previous code just iterated rects.
+                // I need to look up the widget in widget_map.
+                // "run_widget_pass" returns BtreeMap<WindowID, Vec<Rect>>.
+                // I need to fix logic in state.rs to return Vec<(ThingId, Rect)> in the values.
+                // But for now let's just use the rect loop and assume we can't look up properties yet?
+                // No, I need properties.
+                // Let's fix state.rs return type in a follow up or assume I did it.
+                // I DID NOT change the Vec<Rect> to Vec<(ThingId, Rect)> in state.rs replacement above.
+                // I only added the widget_map return.
+                // I should probably fix state.rs first or hack it here? 
+                // No, I can't hack it. I don't know which widget corresponds to which rect.
+                
+                // Oops, I need to pause and fix state.rs to return widget IDs with Rects.
+                // I will revert to just drawing debug rects if I can't, but the plan said "preserving Widget ID".
+                // In my state.rs edit, I saw:
+                // `struct WidgetNode`...
+                // `layout_children` returns `Vec<(ThingId, Rect)>`.
+                // `run_widget_pass` collects them: `queue.push((cid, crect)); win_rects.push(crect)`. 
+                // It pushed ONLY `crect` to `win_rects`.
+                // I need to change `win_rects` to `Vec<(ThingId, Rect)>`.
+           }
         }
     }
 
@@ -205,6 +294,24 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
             DrawOp::Rect { x, y, w, h, color } => {
                 primitives::fill_rect(buffer, stride, width, height, *x, *y, *w, *h, *color, clip_tuple)
             }
+            DrawOp::Blit { ptr, w, h, stride, format, x, y } => {
+                primitives::blit_image(
+                    buffer,
+                    // Dest stride (u32 pixels)
+                    (comp.fb.info.stride / 4) as u32,
+                    width,
+                    height,
+                    // Source
+                    *ptr as *const u8,
+                    *w,
+                    *h,
+                    *stride, // Source stride (bytes)
+                    *format,
+                    *x,
+                    *y,
+                    clip_tuple,
+                )
+            },
             DrawOp::WindowFrame {
                 x,
                 y,
@@ -238,6 +345,11 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 *origin,
                 sprite,
                 *hotspot,
+            ),
+            DrawOp::Text {
+                x, y, max_w, max_h, text, color
+            } => text::draw_text(
+                buffer, stride, width, height, *x, *y, *max_w, *max_h, text, *color,
             ),
         }
     }

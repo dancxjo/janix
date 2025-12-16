@@ -698,18 +698,8 @@ pub fn register_schema_for<T: Thing>(sys: &impl Sys) -> bool {
 }
 
 /// Search for a `Thing` that satisfies `predicate`.
-///
-/// This helper performs a brute-force scan over the first 128 IDs.
 pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> Option<T> {
-    // Simple scan of the first 128 IDs
-    for i in 0..128 {
-        if let Some(thing) = load_thing::<T>(sys, ThingId(i)) {
-            if predicate(&thing) {
-                return Some(thing);
-            }
-        }
-    }
-    None
+    list_things_by_kind(sys).into_iter().find(predicate)
 }
 
 /// Return all neighbors reachable from `from` via `pred` in insertion order.
@@ -740,9 +730,7 @@ pub fn add_link(sys: &impl Sys, src: ThingId, pred: Predicate, dst: ThingId) -> 
 }
 
 /// List all Things of a given `T::KIND`.
-///
-/// This currently uses a brute-force scan of IDs 0..256.
-pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &mut S) -> Vec<T> {
+pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &S) -> Vec<T> {
     let mut results = Vec::new();
     let mut cursor = ThingId(u64::MAX);
     loop {

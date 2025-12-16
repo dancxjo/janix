@@ -1,12 +1,10 @@
 use alloc::string::ToString;
 use core::slice;
 use thing_os::prelude::*;
-use abi::{SharedBufferInfo, PixelFormat, MapFlags, KernelRequest, KernelResponse, graph_kinds};
+use abi::{PixelFormat, MapFlags, KernelRequest, KernelResponse, graph_kinds};
 use thing_os::{Window, Surface, create_thing, list_things_by_kind, register_schema_for};
 
 pub struct WindowContext {
-    pub window_handle: ThingId,
-    pub surface_id: ThingId,
     pub buffer_ptr: *mut u8,
     pub width: u32,
     pub height: u32,
@@ -15,7 +13,7 @@ pub struct WindowContext {
 
 use thing_os::DisplayThing;
 
-pub fn create_cartographer_window<S: Sys>(sys: &mut S) -> Option<WindowContext> {
+pub fn create_geographer_window<S: Sys>(sys: &mut S) -> Option<WindowContext> {
     // 1. Ensure schemas
     let _ = register_schema_for::<Window>(sys);
     let _ = register_schema_for::<Surface>(sys);
@@ -49,10 +47,10 @@ pub fn create_cartographer_window<S: Sys>(sys: &mut S) -> Option<WindowContext> 
         y: 0,
         width: width_i32,
         height: height_i32,
-        z_index: 100, // Ensure visibility on top of background
+        z_index: -1, // Keep behind application windows
 
         active: true,
-        title: "Cartographer".to_string(),
+        title: "geographer".to_string(),
         draggable: false,
         resizable: false,
         closable: false,
@@ -73,7 +71,7 @@ pub fn create_cartographer_window<S: Sys>(sys: &mut S) -> Option<WindowContext> 
     };
 
     // 4. Map SharedBuffer
-    let (buffer_ptr, buffer_size) = match sys.syscall(KernelRequest::MapSharedBuffer {
+    let (buffer_ptr, _buffer_size) = match sys.syscall(KernelRequest::MapSharedBuffer {
         buffer_id,
         flags: MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER),
     }) {
@@ -103,13 +101,11 @@ pub fn create_cartographer_window<S: Sys>(sys: &mut S) -> Option<WindowContext> 
 
     // Initial clear
     unsafe {
-        let slice = slice::from_raw_parts_mut(buffer_ptr, buffer_size);
+        let slice = slice::from_raw_parts_mut(buffer_ptr, _buffer_size);
         slice.fill(0);
     }
 
     Some(WindowContext {
-        window_handle: window_id,
-        surface_id,
         buffer_ptr,
         width: width_u32,
         height: height_u32,

@@ -139,6 +139,16 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
         if program.binary == "init" {
             continue;
         }
+        // DEBUG: Force disable Geographer for white screen debugging
+        if program.binary == "geographer" {
+            println(sys, "init: SKIPPING geographer (debug disable)");
+            continue;
+        }
+        // DEBUG: Force disable window_demo for freeze debugging
+        if program.binary == "window_demo" {
+             println(sys, "init: SKIPPING window_demo (debug disable)");
+             continue;
+        }
         spawn_boot_program(sys, &init_process, &program_images, program);
     }
 
@@ -173,11 +183,26 @@ fn ensure_modes<S: Sys>(sys: &mut S) {
 
     // Spawn mode_manager
     println(sys, "init: spawning mode_manager");
-    let mode_manager_prog = find_thing::<BootProgram>(sys, |bp| bp.binary == "mode_manager")
-        .expect("mode_manager program not found");
-    let _ = spawn_program(sys, mode_manager_prog.id);
+    if let Some(mode_manager_prog) = find_thing::<BootProgram>(sys, |bp| bp.binary == "mode_manager") {
+         if let Some(_) = spawn_program(sys, mode_manager_prog.id) {
+             println(sys, "init: mode_manager spawned");
+         } else {
+             println(sys, "init: ERROR spawn_program failed for mode_manager");
+         }
+    } else {
+        println(sys, "init: ERROR mode_manager program not found!");
+    }
 
-    // Spawn geographer (desktop environment)
+    // Spawn geographer
+    /*
+    println(sys, "init: spawning geographer");
+    if let Some(geo_prog) = find_thing::<BootProgram>(sys, |bp| bp.binary == "geographer") {
+        let _ = spawn_program(sys, geo_prog.id);
+    } else {
+        println(sys, "init: geographer program not found");
+    }
+    */
+
     let main_mode = Mode {
         id: ThingId(0),
         index: 1,

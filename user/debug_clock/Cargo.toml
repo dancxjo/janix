@@ -10,6 +10,7 @@ path = "src/lib.rs"
 [dependencies]
 runtime = { path = "../../runtime" }
 thing_os = { path = "../../thing_os" }
+abi = { path = "../../abi" }
 
 [dev-dependencies]
 kernel = { path = "../../kernel" }

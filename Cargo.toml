@@ -22,7 +22,7 @@ members = [
     "drivers_usb",
     "drivers_pci",
     "user/rootfs",
-    "user/cartographer",
+    "user/geographer",
     "thing_macros",
     "thing_models",
     "smoke_tests",

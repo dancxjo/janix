@@ -238,3 +238,86 @@ mod tests {
         assert_eq!(buf[18], 0xFF);
     }
 }
+pub fn blit_image(
+    buffer: *mut u32,
+    stride: u32,
+    fb_width: u32,
+    fb_height: u32,
+    img_ptr: *const u8,
+    img_w: i32,
+    img_h: i32,
+    img_stride_bytes: u32,
+    pixel_format: abi::PixelFormat, // Currently assume Rgba8888 or Bgra8888
+    x: i32,
+    y: i32,
+    clip: Option<(i32, i32, i32, i32)>,
+) {
+    if img_w <= 0 || img_h <= 0 {
+        return;
+    }
+
+    let stride_pixels = stride as usize;
+    let (cx, cy, cw, ch) = if let Some((cx, cy, cw, ch)) = clip {
+        // Intersect requested rect with clip
+        // We are drawing at (x, y) with size (img_w, img_h)
+        match (
+             clip_span(x, img_w, cx, cw),
+             clip_span(y, img_h, cy, ch)
+        ) {
+             (Some((nx, nw)), Some((ny, nh))) => (nx, ny, nw, nh),
+             _ => return, 
+        }
+    } else {
+        (x, y, img_w, img_h)
+    };
+
+    let start_y = cy.max(0);
+    let end_y = (cy + ch).min(fb_height as i32);
+    let start_x = cx.max(0);
+    let end_x = (cx + cw).min(fb_width as i32);
+
+    for dest_y in start_y..end_y {
+        let src_y = dest_y - y;
+        if src_y < 0 || src_y >= img_h { continue; } // Should be covered by clip logic but safety first
+
+        let src_row_start = unsafe { img_ptr.add(src_y as usize * img_stride_bytes as usize) };
+        let dest_row_idx = dest_y as usize * stride_pixels;
+        
+        // This inner loop could be optimized with copy_nonoverlapping if formats match and no alpha blending
+        // For now, per-pixel copy to handle formats.
+        // Assuming Rgba8888 source for raw buffers usually?
+        
+        for dest_x in start_x..end_x {
+            let src_x = dest_x - x;
+            if src_x < 0 || src_x >= img_w { continue; }
+
+            let src_offset = src_x as usize * 4; // Assume 32bpp
+            unsafe {
+                let pixel_ptr = src_row_start.add(src_offset);
+                let src_val = *(pixel_ptr as *const u32);
+                
+                // If format matches, direct copy
+                // For simplified implementation, direct copy for now.
+                // TODO: Alpha blending if needed.
+                let val = if matches!(pixel_format, abi::PixelFormat::Rgba8888) {
+                     // Source is RGBA. Destination is usually BGRA (UEFI).
+                     // Need swap R/B?
+                     // Check common behavior. Usually UEFI is BGRA.
+                     // Software buffers (Geographer) are RGBA8888.
+                     // u32 is LE.
+                     // RGBA in memory: R G B A. u32 = 0xAABBGGRR.
+                     // BGRA in memory: B G R A. u32 = 0xAARRGGBB.
+                     // Swap calculation:
+                     // (src_val & 0xFF00FF00) | ((src_val & 0xFF) << 16) | ((src_val >> 16) & 0xFF)
+                     (src_val & 0xFF00FF00) | ((src_val & 0xFF) << 16) | ((src_val >> 16) & 0xFF)
+                } else if matches!(pixel_format, abi::PixelFormat::Bgra8888) {
+                     src_val
+                } else {
+                     src_val // Hope for best?
+                };
+                
+                *buffer.add(dest_row_idx + dest_x as usize) = val;
+            }
+        }
+    }
+}

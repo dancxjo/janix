@@ -19,6 +19,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     };
 
     // Create UI window
+    /*
     let title = "ThingOS Clock"; // Define 'title' for the format! macro
     let title_buf = format!("debug_clock: {}", title);
     let window = match ui::create_window(sys, &title_buf) {
@@ -51,7 +52,7 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
 
     // Link Root -> Text
     add_link(sys, root_id, graph_kinds::LINK_WIDGET_CHILD, text_id);
-
+    */
 
     let tick_hz = clock.tick_hz(sys).max(1);
     let start_ticks = clock.uptime_ticks(sys);
@@ -67,10 +68,12 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
             let (hour, minute, second) = seconds_to_hms(base_seconds + elapsed_secs as i64);
             
             let time_str = format!("{:02}:{:02}:{:02}", hour, minute, second);
+            /*
             let _ = update_props(sys, text_id, &[
                 (graph_kinds::PROP_TEXT, PropValue::Str(time_str)),
                 (graph_kinds::PROP_FONT_SIZE, PropValue::I64(24)),
             ]);
+            */
 
             last_logged = Some(elapsed_secs);
         }

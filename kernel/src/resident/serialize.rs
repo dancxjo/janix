@@ -76,7 +76,8 @@ fn cbor_encode_kv(out: &mut Vec<u8>, key: &str, val: &PropValueView) {
 
 pub fn snapshot_and_archive(thing_id: ThingId, policy: RestPolicy) -> Result<RestResp, ResidentError> {
     unsafe {
-        let slab = store::things_slab();
+        let mut guard = store::things_slab();
+        let slab = guard.as_mut().unwrap();
         let idx = thing_id.index() as usize;
 
         if idx >= slab.slots.len() { 

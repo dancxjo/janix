@@ -351,69 +351,63 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         if result_ptr.is_null() {
             return 1;
         }
-        let req = KernelRequest::ThingGet { id };
-        match kernel::handle_request(req) {
-            KernelResponse::ThingData { kind, props, .. } => {
-                unsafe {
-                    let result = &mut *result_ptr;
-                    *result = ThingGetSyscallResult::default();
-                    let kind_bytes = kind.as_bytes();
-                    let kind_len = cmp::min(kind_bytes.len(), THING_GET_MAX_KIND_LEN);
-                    result.kind[..kind_len].copy_from_slice(&kind_bytes[..kind_len]);
-                    result.kind_len = kind_len;
 
-                    let mut count = 0;
-                    for entry in props.iter() {
-                        if count >= THING_GET_MAX_PROPS {
-                            break;
-                        }
-                        let slot: &mut ThingPropData = &mut result.props[count];
-                        if let Some((key, value)) = entry {
-                            slot.present = 1;
-                            let key_bytes = key.as_bytes();
-                            let key_len = cmp::min(key_bytes.len(), THING_GET_MAX_STR_LEN);
-                            slot.key[..key_len].copy_from_slice(&key_bytes[..key_len]);
-                            slot.key_len = key_len;
-                            match value {
-                                abi::PropValue::U64(v) => {
-                                    slot.value_type = ThingPropScalarType::U64;
-                                    slot.value_u64 = *v;
-                                }
-                                abi::PropValue::I64(v) => {
-                                    slot.value_type = ThingPropScalarType::I64;
-                                    slot.value_i64 = *v;
-                                }
-                                abi::PropValue::Bool(v) => {
-                                    slot.value_type = ThingPropScalarType::Bool;
-                                    slot.value_bool = if *v { 1 } else { 0 };
-                                }
-                                abi::PropValue::Str(s) => {
-                                    slot.value_type = ThingPropScalarType::Str;
-                                    let bytes = s.as_bytes();
-                                    let str_len = cmp::min(bytes.len(), THING_GET_MAX_STR_LEN);
-                                    slot.value_str[..str_len].copy_from_slice(&bytes[..str_len]);
-                                    slot.value_str_len = str_len;
-                                }
-                            }
-                            count += 1;
-                        } else {
-                            slot.present = 0;
-                        }
+        let found = kernel::graph::with_thing(id, |node| {
+            unsafe {
+                let result = &mut *result_ptr;
+                *result = ThingGetSyscallResult::default();
+                let kind_bytes = node.kind.as_bytes();
+                let kind_len = cmp::min(kind_bytes.len(), THING_GET_MAX_KIND_LEN);
+                result.kind[..kind_len].copy_from_slice(&kind_bytes[..kind_len]);
+                result.kind_len = kind_len;
+
+                let mut count = 0;
+                for entry in node.props.iter() {
+                    if count >= THING_GET_MAX_PROPS {
+                        break;
                     }
-                    result.prop_count = count;
+                    let slot: &mut ThingPropData = &mut result.props[count];
+                    if let Some((key, value)) = entry {
+                        slot.present = 1;
+                        let key_bytes = key.as_bytes();
+                        let key_len = cmp::min(key_bytes.len(), THING_GET_MAX_STR_LEN);
+                        slot.key[..key_len].copy_from_slice(&key_bytes[..key_len]);
+                        slot.key_len = key_len;
+                        match value {
+                            abi::PropValue::U64(v) => {
+                                slot.value_type = ThingPropScalarType::U64;
+                                slot.value_u64 = *v;
+                            }
+                            abi::PropValue::I64(v) => {
+                                slot.value_type = ThingPropScalarType::I64;
+                                slot.value_i64 = *v;
+                            }
+                            abi::PropValue::Bool(v) => {
+                                slot.value_type = ThingPropScalarType::Bool;
+                                slot.value_bool = if *v { 1 } else { 0 };
+                            }
+                            abi::PropValue::Str(s) => {
+                                slot.value_type = ThingPropScalarType::Str;
+                                let bytes = s.as_bytes();
+                                let str_len = cmp::min(bytes.len(), THING_GET_MAX_STR_LEN);
+                                slot.value_str[..str_len].copy_from_slice(&bytes[..str_len]);
+                                slot.value_str_len = str_len;
+                            }
+                        }
+                        count += 1;
+                    } else {
+                        slot.present = 0;
+                    }
                 }
-                0
+                result.prop_count = count;
             }
-            KernelResponse::Error { message } => {
-                kernel::log(message);
-                1
-            }
-            other => {
-                let msg = alloc::format!("ThingGet unexpected response {:?}", other);
-                let leaked: &'static str = Box::leak(msg.into_boxed_str());
-                kernel::log(leaked);
-                1
-            }
+        }).is_some();
+
+        if found {
+             0
+        } else {
+             kernel::log("ThingGet: Thing not found");
+             1
         }
     } else if num == SyscallNumber::ThingList as u64 {
         let kind_ptr = arg1 as *const u8;
@@ -546,10 +540,40 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         }
     } else if num == SyscallNumber::SleepUntil as u64 {
         let deadline_ns = arg1;
-        while kernel::time::monotonic_now_ns() < deadline_ns {
-            user::schedule_next();
+        {
+            let mut sched = kernel::sched::SCHEDULER.lock();
+            if let Some(tid) = sched.current_id() {
+                if let Some(thread) = sched.thread_mut(tid) {
+                    let regs_ptr = regs as *const SyscallRegs as *const u64;
+                    // Copy GPRs (15 u64s)
+                    let gprs = unsafe { core::slice::from_raw_parts(regs_ptr, 15) };
+                    thread.context[..15].copy_from_slice(gprs);
+                    
+                    // Manually read IRET frame from stack (offset 15)
+                    unsafe {
+                        let frame_ptr = regs_ptr.add(15);
+                        let rip = *frame_ptr.add(0);
+                        let cs = *frame_ptr.add(1);
+                        let rflags = *frame_ptr.add(2);
+                        let rsp = *frame_ptr.add(3);
+                        let ss = *frame_ptr.add(4);
+
+                        thread.context[15] = rip;
+                        thread.context[16] = cs;
+                        thread.context[17] = rflags;
+                        thread.context[18] = rsp;
+                        thread.context[19] = ss;
+                    }
+                    thread.started = true;
+                }
+            }
         }
-        0
+        
+        kernel::sched::without_preemption(|| {
+            let mut sched = kernel::sched::SCHEDULER.lock();
+            sched.sleep_current_thread(deadline_ns);
+        });
+        return user::schedule_next();
     } else if num == abi::syscall_numbers::SYS_DEV_OPEN as u64 {
         let args_ptr = arg1 as *const abi::syscall_defs::DevOpenArgs;
         let ret_ptr = arg2 as *mut abi::syscall_defs::SysRet<abi::syscall_defs::DevOpenRet>;

@@ -119,7 +119,7 @@ run-x86_64:
 
 .PHONY: launch-x86_64
 launch-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-x86_64 $(QEMU_NO_REBOOT) \
 		-M q35 \
 		-serial stdio \
@@ -134,7 +134,7 @@ run-log-x86_64:
 
 .PHONY: launch-log-x86_64
 launch-log-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-x86_64 $(QEMU_NO_REBOOT) \
 		-M q35 \
 		-serial stdio \
@@ -158,7 +158,7 @@ run-log-aarch64:
 
 .PHONY: launch-log-aarch64
 launch-log-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-aarch64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-cpu cortex-a72 \
@@ -176,7 +176,7 @@ launch-log-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_
 
 .PHONY: launch-aarch64
 launch-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-aarch64 $(QEMU_NO_REBOOT) \
 		-M virt \
         -cpu cortex-a72 \
@@ -203,7 +203,7 @@ run-log-riscv64:
 
 .PHONY: launch-log-riscv64
 launch-log-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-riscv64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-serial stdio \
@@ -217,7 +217,7 @@ launch-log-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_
 
 .PHONY: launch-riscv64
 launch-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-riscv64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-serial stdio \
@@ -240,7 +240,7 @@ run-log-loongarch64:
 
 .PHONY: launch-log-loongarch64
 launch-log-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-loongarch64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-serial stdio \
@@ -257,7 +257,7 @@ launch-log-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64
 
 .PHONY: launch-loongarch64
 launch-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-loongarch64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-serial stdio \
@@ -284,7 +284,7 @@ run-debug-x86_64:
 
 .PHONY: launch-debug-x86_64
 launch-debug-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-x86_64 $(QEMU_NO_REBOOT) -s -S \
 		-M q35 \
 		-serial stdio \
@@ -303,7 +303,7 @@ run-debug-aarch64:
 
 .PHONY: launch-debug-aarch64
 launch-debug-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-aarch64 $(QEMU_NO_REBOOT) -s -S \
 		-M virt \
 		-cpu cortex-a72 \
@@ -327,7 +327,7 @@ run-debug-riscv64:
 
 .PHONY: launch-debug-riscv64
 launch-debug-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-riscv64 $(QEMU_NO_REBOOT) -s -S \
 		-M virt \
 		-serial stdio \
@@ -347,7 +347,7 @@ run-debug-loongarch64:
 
 .PHONY: launch-debug-loongarch64
 launch-debug-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).iso
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-loongarch64 $(QEMU_NO_REBOOT) -s -S \
 		-M virt \
 		-serial stdio \
@@ -376,7 +376,7 @@ run-debug-hdd-x86_64:
 
 .PHONY: launch-debug-hdd-x86_64
 launch-debug-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-x86_64 $(QEMU_NO_REBOOT) -s -S \
 		-M q35 \
 		-serial stdio \
@@ -393,7 +393,7 @@ run-debug-hdd-aarch64:
 
 .PHONY: launch-debug-hdd-aarch64
 launch-debug-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-aarch64 $(QEMU_NO_REBOOT) -s -S \
 		-M virt \
 		-cpu cortex-a72 \
@@ -415,7 +415,7 @@ run-debug-hdd-riscv64:
 
 .PHONY: launch-debug-hdd-riscv64
 launch-debug-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-riscv64 $(QEMU_NO_REBOOT) -s -S \
 		-M virt \
 		-serial stdio \
@@ -433,7 +433,7 @@ run-debug-hdd-loongarch64:
 
 .PHONY: launch-debug-hdd-loongarch64
 launch-debug-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-loongarch64 $(QEMU_NO_REBOOT) -s -S \
 		-M virt \
 		-serial stdio \
@@ -458,7 +458,7 @@ run-log-hdd-x86_64:
 
 .PHONY: launch-log-hdd-x86_64
 launch-log-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-x86_64 $(QEMU_NO_REBOOT) \
 		-M q35 \
 		-serial stdio \
@@ -471,7 +471,7 @@ launch-log-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE
 
 .PHONY: launch-hdd-x86_64
 launch-hdd-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-x86_64 $(QEMU_NO_REBOOT) \
 		-M q35 \
 		-serial stdio \
@@ -493,7 +493,7 @@ run-log-hdd-aarch64:
 
 .PHONY: launch-log-hdd-aarch64
 launch-log-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-aarch64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-cpu cortex-a72 \
@@ -511,7 +511,7 @@ launch-log-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IM
 
 .PHONY: launch-hdd-aarch64
 launch-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-aarch64 $(QEMU_NO_REBOOT) \
 		-M virt \
         -cpu cortex-a72 \
@@ -538,7 +538,7 @@ run-log-hdd-riscv64:
 
 .PHONY: launch-log-hdd-riscv64
 launch-log-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-riscv64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-serial stdio \
@@ -552,7 +552,7 @@ launch-log-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IM
 
 .PHONY: launch-hdd-riscv64
 launch-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-riscv64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-serial stdio \
@@ -575,7 +575,7 @@ run-log-hdd-loongarch64:
 
 .PHONY: launch-log-hdd-loongarch64
 launch-log-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-loongarch64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-serial stdio \
@@ -592,7 +592,7 @@ launch-log-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongar
 
 .PHONY: launch-hdd-loongarch64
 launch-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd $(IMAGE_NAME).hdd
-	$(QEMU_WATCHER) --pattern 'PANIC!|No runnable threads' -- \
+	$(QEMU_WATCHER) --pattern 'PANIC!|DOUBLE FAULT' -- \
 	qemu-system-loongarch64 $(QEMU_NO_REBOOT) \
 		-M virt \
 		-serial stdio \

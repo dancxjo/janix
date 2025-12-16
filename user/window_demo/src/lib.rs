@@ -7,7 +7,7 @@ use thing_os::prelude::*;
 
 pub fn run<S: Sys>(sys: &mut S) -> ! {
     println(sys, "window_demo: starting");
-    let handle = match create_window(sys, "Demo", 1) {
+    let handle = match create_window(sys, "Demo") {
         Some(h) => h,
         None => {
             println(sys, "window_demo: failed to create window");
@@ -66,7 +66,7 @@ mod tests {
         responses.push(KernelResponse::Success { data: None });
 
         let mut sys = DocSys::with_responses(responses);
-        let handle = create_window(&mut sys, "Demo", mode.index).expect("window handle");
+        let handle = create_window(&mut sys, "Demo").expect("window handle");
         assert_eq!(handle.id, ThingId(99));
 
         let requests = sys.requests.borrow();

@@ -41,14 +41,11 @@ impl Graph {
     }
 
     #[inline]
-    pub fn get_thing(
-        &self,
-        id: abi::ThingId,
-    ) -> Option<(
-        &'static str,
-        &'static [Option<(abi::PropKey, abi::PropValue)>],
-    )> {
-        get_thing(id)
+    pub fn with_thing<F, R>(&self, id: abi::ThingId, f: F) -> Option<R>
+    where
+        F: FnOnce(&store::ThingNode) -> R,
+    {
+        with_thing(id, f)
     }
 
     #[inline]

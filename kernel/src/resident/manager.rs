@@ -93,7 +93,8 @@ pub fn sys_resident_alloc(args: ResidentAllocArgs) -> Result<ResidentAllocResp, 
     let safe_kind = alloc::boxed::Box::leak(kind_str.into_boxed_str());
 
     unsafe {
-        let slab = store::things_slab();
+        let mut guard = store::things_slab();
+        let slab = guard.as_mut().unwrap();
         let (idx, generation) = slab.alloc();
         let id = ThingId::new(idx, generation);
 
@@ -129,7 +130,8 @@ pub fn sys_resident_map(args: abi::resident::ResidentMapArgs) -> Result<Resident
     })?;
 
     unsafe {
-        let slab = store::things_slab();
+        let mut guard = store::things_slab();
+        let slab = guard.as_mut().unwrap();
         let idx = thing_id.index() as usize;
         if idx >= slab.slots.len() {
              return Err(ResidentError { code: ResidentErrorCode::BadThing, aux0: 0, aux1: 0 });
@@ -185,7 +187,8 @@ pub fn sys_resident_unmap(thing_id: ThingId) -> Result<(), ResidentError> {
     })?;
 
     unsafe {
-        let slab = store::things_slab();
+        let mut guard = store::things_slab();
+        let slab = guard.as_mut().unwrap();
         let idx = thing_id.index() as usize;
         if idx >= slab.slots.len() {
              return Err(ResidentError { code: ResidentErrorCode::BadThing, aux0: 0, aux1: 0 });
@@ -227,7 +230,8 @@ pub fn process_exit_cleanup(pid: ProcessId) {
     });
 
     unsafe {
-        let slab = store::things_slab();
+        let mut guard = store::things_slab();
+        let slab = guard.as_mut().unwrap();
         
         for id in modified_ids {
              if let Some(slot) = slab.slots.get_mut(id.index() as usize) {

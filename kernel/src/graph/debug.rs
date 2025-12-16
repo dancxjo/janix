@@ -27,9 +27,10 @@ pub fn dump_graph_table() {
     crate::graph::index_links::for_each_link(|link| {
         // Try to fetch any extra props stored on the link Thing
         let mut extra = String::new();
-        if let Some((_, props)) = crate::graph::get_thing(link.id) {
+        // Try to fetch any extra props stored on the link Thing
+        crate::graph::with_thing(link.id, |thing| {
             let mut first = true;
-            for prop in props.iter().flatten() {
+            for prop in thing.props.iter().flatten() {
                 let (k, v) = prop;
                 // skip canonical link props
                 if *k == graph_kinds::PROP_LINK_SRC
@@ -49,7 +50,7 @@ pub fn dump_graph_table() {
                     PropValue::Str(s) => extra.push_str(&alloc::format!("{}: '{}'", k, s)),
                 }
             }
-        }
+        });
 
         // Print link in canonical form: (src)-[:PRED {props}]->(dst)
         let pred_sym = match link.pred.0 {

@@ -32,14 +32,20 @@ impl GraphDriver for KernelGraphSink {
     }
 
     fn get_thing(&self, id: ThingId) -> Option<ThingProps> {
-        if let Some((_kind, props)) = graph::get_thing(id) {
+        let result = graph::with_thing(id, |thing| {
+            // The original get_thing didn't filter by kind, so we'll remove this specific check
+            // if thing.kind != "GraphSink" {
+            //     return Err("Not a GraphSink");
+            // }
             let mut vec = Vec::new();
-            for entry in props.iter() {
-                if let Some((k, v)) = entry {
-                     vec.push((*k, v.clone()));
-                }
+            for (k, v) in thing.props.iter().flatten() {
+                 vec.push((*k, v.clone()));
             }
-            Some(ThingProps { props: vec })
+            Ok::<Vec<(&str, abi::PropValue)>, &str>(vec)
+        });
+
+        if let Some(Ok(props_vec)) = result {
+            Some(ThingProps { props: props_vec })
         } else {
             None
         }

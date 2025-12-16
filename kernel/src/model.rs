@@ -84,11 +84,7 @@ pub fn pick_next_thread() -> Option<&'static mut Thread> {
 static mut CURRENT_THREAD: Option<ThingId> = None;
 
 fn is_kind(id: ThingId, expected: &str) -> bool {
-    if let Some((kind, _)) = crate::graph::get_thing(id) {
-        kind == expected
-    } else {
-        false
-    }
+    crate::graph::with_thing(id, |node| node.kind == expected).unwrap_or(false)
 }
 
 /// Initialize all kernel model schemas.

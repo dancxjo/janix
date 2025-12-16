@@ -127,7 +127,7 @@ pub(crate) struct Slab {
     pub(crate) free_indices: Vec<u32>,
 }
 
-static mut THINGS_SLAB: Option<Slab> = None;
+static THINGS_SLAB: Mutex<Option<Slab>> = Mutex::new(None);
 
 impl Slab {
     pub(crate) fn alloc(&mut self) -> (u32, u32) {
@@ -157,21 +157,21 @@ impl Slab {
         }
     }
 }
-pub(crate) unsafe fn things_slab() -> &'static mut Slab {
-    unsafe {
-        let slab_ptr = &raw mut THINGS_SLAB;
-        (*slab_ptr).get_or_insert_with(|| Slab {
+
+pub(crate) fn things_slab<'a>() -> MutexGuard<'a, Option<Slab>> {
+    let mut guard = THINGS_SLAB.lock();
+    if guard.is_none() {
+        *guard = Some(Slab {
             slots: Vec::new(),
             free_indices: Vec::new(),
-        })
+        });
     }
+    guard
 }
 
 pub(crate) fn peek_next_slab_id() -> (u32, u32) {
-    unsafe {
-        let slab = things_slab();
-        slab.peek_next_id()
-    }
+    let mut slab = things_slab();
+    slab.as_mut().unwrap().peek_next_id()
 }
 pub fn add_node(value: u64) -> Option<NodeId> {
     unsafe {
@@ -197,7 +197,7 @@ pub fn init() {
         }
 
         // Reset slab
-        THINGS_SLAB = Some(Slab {
+        *THINGS_SLAB.lock() = Some(Slab {
             slots: Vec::new(),
             free_indices: Vec::new(),
         });
@@ -218,41 +218,32 @@ pub fn iter_things<F>(mut f: F)
 where
     F: FnMut(&ThingNode),
 {
-    unsafe {
-        let slab = things_slab();
-        for slot in slab.slots.iter() {
-            if let Some(thing) = &slot.thing {
-                f(thing);
-            }
+    let slab_guard = things_slab();
+    let slab = slab_guard.as_ref().unwrap();
+    for slot in slab.slots.iter() {
+        if let Some(thing) = &slot.thing {
+            f(thing);
         }
     }
 }
 
 pub fn next_thing_of_kind(kind: &'static str, start_after: ThingId) -> Option<ThingId> {
-    unsafe {
-        let slab = things_slab();
+    let slab_guard = things_slab();
+    let slab = slab_guard.as_ref().unwrap();
     let start_idx = if start_after.0 == u64::MAX {
         0
     } else {
         start_after.index() + 1
     };
 
-
-
-    for (i, slot) in slab.slots.iter().enumerate().skip(start_idx as usize) {
+    for slot in slab.slots.iter().skip(start_idx as usize) {
         if let Some(node) = &slot.thing {
-
-
             if node.kind == kind {
-
                 return Some(node.id);
             }
         }
     }
-    
-
     None
-    }
 }
 
 fn link_from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Option<Link> {
@@ -288,13 +279,14 @@ fn link_from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Optio
 }
 
 pub fn get_prop(id: ThingId, key: PropKey) -> Option<PropValue> {
-    get_thing(id).and_then(|(_, props)| {
-        props
+    with_thing(id, |node| {
+        node.props
             .iter()
             .flatten()
             .find(|(k, _)| *k == key)
             .map(|(_, v)| v.clone())
     })
+    .flatten()
 }
 
 pub fn create_thing(kind: &'static str, props: &[(PropKey, PropValue)]) -> Option<ThingId> {
@@ -318,64 +310,73 @@ pub(crate) fn create_thing_internal(
     // TODO: Use a proper interner
     let safe_kind: &'static str = alloc::boxed::Box::leak(alloc::string::String::from(kind).into_boxed_str());
 
-    unsafe {
-        let slab = things_slab();
-        let (idx, generation) = slab.alloc();
-        let id = ThingId::new(idx, generation);
-
-        let mut node_props = [const { None }; MAX_PROPS_PER_THING];
-        for (i, prop) in props.iter().enumerate() {
-            if i >= MAX_PROPS_PER_THING {
-                break;
-            }
-            let safe_key: &'static str = alloc::boxed::Box::leak(alloc::string::String::from(prop.0).into_boxed_str());
-            node_props[i] = Some((safe_key, prop.1.clone()));
-        }
-
-        let slot = &mut slab.slots[idx as usize];
-        slot.thing = Some(ThingNode {
-            id,
-            kind: safe_kind,
-            kind_id,
-            props: node_props,
-            owner_process,
-            storage: StorageState::Archived,
-            resident: None,
-            archived_ref: None,
-        });
-
-        add_to_kind_index(id, kind_id);
-
-        for (key, value) in props {
-            if is_prop_indexed(kind, key) {
-                add_to_prop_index(id, key, value);
-            }
-        }
-
-        dispatch_event(&GraphEvent::ThingCreated { id, kind, kind_id });
-
-        if kind == graph_kinds::KIND_LINK {
-            let slab = things_slab();
-            let link = link_from_props(
-                id,
-                &slab.slots[id.index() as usize]
-                    .thing
-                    .as_ref()
-                    .unwrap()
-                    .props,
-            )
-            .expect("Created link but failed to parse props");
-            index_links::link_index_mut().insert(link);
-            dispatch_event(&GraphEvent::LinkAdded(link));
-        }
-
-        Some(id)
+    let mut guard = things_slab();
+    let slab = guard.as_mut().unwrap();
+    let (idx, generation) = slab.alloc();
+    if idx % 1000 == 0 {
+         crate::console::print(&alloc::format!("Total Things: {}\n", idx));
+         if idx > 10000 {
+             crate::graph::debug::dump_graph_table();
+             loop {}
+         }
     }
+    let id = ThingId::new(idx, generation);
+
+    let mut node_props = [const { None }; MAX_PROPS_PER_THING];
+    for (i, prop) in props.iter().enumerate() {
+        if i >= MAX_PROPS_PER_THING {
+            break;
+        }
+        let safe_key: &'static str = alloc::boxed::Box::leak(alloc::string::String::from(prop.0).into_boxed_str());
+        node_props[i] = Some((safe_key, prop.1.clone()));
+    }
+
+    let slot = &mut slab.slots[idx as usize];
+    slot.thing = Some(ThingNode {
+        id,
+        kind: safe_kind,
+        kind_id,
+        props: node_props,
+        owner_process,
+        storage: StorageState::Archived,
+        resident: None,
+        archived_ref: None,
+    });
+    
+    // Explicitly drop lock before dispatching events
+    drop(guard);
+
+    add_to_kind_index(id, kind_id);
+
+    for (key, value) in props {
+        if is_prop_indexed(kind, key) {
+            add_to_prop_index(id, key, value);
+        }
+    }
+
+    dispatch_event(&GraphEvent::ThingCreated { id, kind, kind_id });
+
+    if kind == graph_kinds::KIND_LINK {
+        // Re-acquire access safely via with_thing to read props for link creation
+        let link_opt = with_thing(id, |thing| {
+            link_from_props(id, &thing.props)
+        }).flatten();
+        
+        if let Some(link) = link_opt {
+             super::index_links::link_index_mut().insert(link);
+             dispatch_event(&GraphEvent::LinkAdded(link));
+        }
+    }
+
+    Some(id)
 }
 
-pub fn get_thing(id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey, PropValue)>])> {
-    unsafe {
-        let slab = things_slab();
+pub fn with_thing<F, R>(id: ThingId, f: F) -> Option<R>
+where
+    F: FnOnce(&ThingNode) -> R,
+{
+    let guard = things_slab();
+    let slab = guard.as_ref().unwrap();
     let idx = id.index() as usize;
     if idx >= slab.slots.len() {
         return None;
@@ -384,102 +385,124 @@ pub fn get_thing(id: ThingId) -> Option<(&'static str, &'static [Option<(PropKey
     if slot.generation != id.generation() {
         return None;
     }
-    slot.thing
-        .as_ref()
-        .map(|n| (n.kind, &n.props as &[Option<(PropKey, PropValue)>]))
-    }
+    slot.thing.as_ref().map(|n| f(n))
 }
 
 pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
-    unsafe {
-        let slab = things_slab();
-    let idx = id.index() as usize;
-    if idx >= slab.slots.len() {
-        return false;
-    }
-    let slot = &mut slab.slots[idx];
-    if slot.generation != id.generation() {
-        return false;
-    }
+    let mut events = alloc::vec::Vec::new();
+    let mut link_updates = None;
 
-    if let Some(node) = slot.thing.as_mut() {
-        let is_link = node.kind == graph_kinds::KIND_LINK;
-        let previous_link = if is_link {
-            index_links::link_index_ref().link(id).copied()
-        } else {
-            None
-        };
+    let success = {
+        let mut guard = things_slab();
+        let slab = guard.as_mut().unwrap();
+        let idx = id.index() as usize;
+        if idx >= slab.slots.len() {
+            return false;
+        }
+        let slot = &mut slab.slots[idx];
+        if slot.generation != id.generation() {
+            return false;
+        }
 
-        for (key, value) in props {
-            let mut previous: Option<PropValue> = None;
-            let mut found = false;
-            for slot in node.props.iter_mut() {
-                if let Some((k, old_val)) = slot {
-                    if *k == *key {
-                        let old_val_clone = old_val.clone();
-                        previous = Some(old_val_clone.clone());
-
-                        *slot = Some((*key, value.clone()));
-                        found = true;
-
-                        if is_prop_indexed(node.kind, key) {
-                            remove_from_prop_index(id, key, &old_val_clone);
-                            add_to_prop_index(id, key, value);
-                        }
-                        break;
-                    }
-                }
-            }
-            if !found {
+        if let Some(node) = slot.thing.as_mut() {
+            let is_link = node.kind == graph_kinds::KIND_LINK;
+             let previous_link = if is_link {
+                index_links::link_index_ref().link(id).copied()
+            } else {
+                None
+            };
+            
+            for (key, value) in props {
+                let mut found = false;
                 for slot in node.props.iter_mut() {
-                    if slot.is_none() {
-                        *slot = Some((*key, value.clone()));
-                        found = true;
-                        if is_prop_indexed(node.kind, key) {
-                            add_to_prop_index(id, key, value);
-                        }
-                        break;
+                    if let Some((k, old_val)) = slot {
+                         if *k == *key {
+                            let old_val_clone = old_val.clone();
+                            if is_prop_indexed(node.kind, key) {
+                                // Defer index update to outside lock
+                            }
+                            *slot = Some((*key, value.clone()));
+                             events.push(GraphEvent::PropUpdated {
+                                id,
+                                kind: node.kind,
+                                kind_id: node.kind_id,
+                                key: *key,
+                                old: Some(old_val_clone),
+                                new: value.clone(),
+                            });
+                            found = true;
+                            break;
+                         }
+                    }
+                }
+                 if !found {
+                    for slot in node.props.iter_mut() {
+                        if slot.is_none() {
+                            *slot = Some((*key, value.clone()));
+                             events.push(GraphEvent::PropUpdated {
+                                id,
+                                kind: node.kind,
+                                kind_id: node.kind_id,
+                                key: *key,
+                                old: None,
+                                new: value.clone(),
+                            });
+                            found = true;
+                            break;
+                         }
                     }
                 }
             }
 
-            dispatch_event(&GraphEvent::PropUpdated {
-                id,
-                kind: node.kind,
-                kind_id: node.kind_id,
-                key: *key,
-                old: previous,
-                new: value.clone(),
-            });
-        }
-        if is_link {
-            let new_link = link_from_props(id, &node.props);
-            match (previous_link, new_link) {
-                (Some(prev), Some(next)) => {
-                    if prev != next {
-                        if index_links::link_index_mut().remove(id) {
-                            dispatch_event(&GraphEvent::LinkRemoved(prev));
-                        }
-                        index_links::link_index_mut().insert(next);
-                        dispatch_event(&GraphEvent::LinkAdded(next));
-                    }
-                }
-                (Some(prev), None) => {
-                    if index_links::link_index_mut().remove(id) {
-                        dispatch_event(&GraphEvent::LinkRemoved(prev));
-                    }
-                }
-                (None, Some(next)) => {
-                    index_links::link_index_mut().insert(next);
-                    dispatch_event(&GraphEvent::LinkAdded(next));
-                }
-                (None, None) => {}
+            if is_link {
+                 let new_link = link_from_props(id, &node.props);
+                 link_updates = Some((previous_link, new_link));
             }
-        }
-        true
+            true
+         } else {
+            false
+         }
+    }; // Drop lock
+
+    if success {
+         for event in events {
+             if let GraphEvent::PropUpdated { kind, key, old, new, .. } = &event {
+                 if is_prop_indexed(kind, key) {
+                     if let Some(old_val) = old {
+                         remove_from_prop_index(id, key, old_val);
+                     }
+                      add_to_prop_index(id, key, new);
+                 }
+             }
+             dispatch_event(&event);
+         }
+         
+         if let Some((previous_link, new_link)) = link_updates {
+             match (previous_link, new_link) {
+                 (Some(prev), Some(next)) => {
+                     if prev != next {
+                         if index_links::link_index_mut().remove(id) {
+                             dispatch_event(&GraphEvent::LinkRemoved(prev));
+                         }
+                         index_links::link_index_mut().insert(next);
+                         dispatch_event(&GraphEvent::LinkAdded(next));
+                     }
+                 }
+                 (Some(prev), None) => {
+                     if index_links::link_index_mut().remove(id) {
+                         dispatch_event(&GraphEvent::LinkRemoved(prev));
+                     }
+                 }
+                 (None, Some(next)) => {
+                     index_links::link_index_mut().insert(next);
+                     dispatch_event(&GraphEvent::LinkAdded(next));
+                 }
+                 (None, None) => {}
+             }
+         }
+         true
     } else {
-        false
-    }
+         false
     }
 }
 
@@ -495,18 +518,29 @@ fn remove_incident_links(id: ThingId) {
 }
 
 pub fn delete_thing(id: ThingId) -> bool {
-    unsafe {
-        let slab = things_slab();
-    let idx = id.index() as usize;
-    if idx >= slab.slots.len() {
-        return false;
-    }
-    let slot = &mut slab.slots[idx];
-    if slot.generation != id.generation() {
-        return false;
-    }
+    // 1. Lock and remove from slab
+    let thing_opt = {
+        let mut guard = things_slab();
+        let slab = guard.as_mut().unwrap();
+        let idx = id.index() as usize;
+        if idx >= slab.slots.len() {
+            None
+        } else {
+            let slot = &mut slab.slots[idx];
+            if slot.generation != id.generation() {
+                None
+            } else {
+                let t = slot.thing.take();
+                if t.is_some() {
+                    slab.free_indices.push(idx as u32);
+                }
+                t
+            }
+        }
+    };
 
-    if let Some(thing) = slot.thing.take() {
+    // 2. Process removal outside lock
+    if let Some(thing) = thing_opt {
         if thing.kind == graph_kinds::KIND_LINK {
             if let Some(link) = index_links::link_index_ref().link(id).copied() {
                 if index_links::link_index_mut().remove(id) {
@@ -530,12 +564,9 @@ pub fn delete_thing(id: ThingId) -> bool {
             kind_id: thing.kind_id,
         });
 
-        slab.free_indices.push(idx as u32);
-
         true
     } else {
         false
-    }
     }
 }
 
@@ -618,8 +649,12 @@ pub fn kernel_user_update_thing(
     id: ThingId,
     props: &[(PropKey, PropValue)],
 ) -> bool {
-    unsafe {
-        let slab = things_slab();
+    let mut events = alloc::vec::Vec::new();
+    let mut link_updates = None;
+
+    let success = unsafe {
+        let mut guard = things_slab();
+        let slab = guard.as_mut().unwrap();
         let idx = id.index() as usize;
         if idx >= slab.slots.len() {
             return false;
@@ -635,21 +670,20 @@ pub fn kernel_user_update_thing(
             }
 
             let is_link = thing.kind == graph_kinds::KIND_LINK;
-            let previous_link = if is_link {
+             let previous_link = if is_link {
                 index_links::link_index_ref().link(id).copied()
             } else {
                 None
             };
-
+            
             for (key, value) in props {
                 let mut found = false;
                 for i in 0..MAX_PROPS_PER_THING {
                     if let Some((k, _)) = thing.props[i] {
-                        if k == *key {
-                            let old = thing.props[i].as_ref().map(|(_, v)| v.clone());
+                         if k == *key {
+                            let old: Option<PropValue> = thing.props[i].as_ref().map(|(_, v)| v.clone());
                             thing.props[i] = Some((*key, value.clone()));
-                            found = true;
-                            dispatch_event(&GraphEvent::PropUpdated {
+                             events.push(GraphEvent::PropUpdated {
                                 id,
                                 kind: thing.kind,
                                 kind_id: thing.kind_id,
@@ -657,15 +691,16 @@ pub fn kernel_user_update_thing(
                                 old,
                                 new: value.clone(),
                             });
+                            found = true;
                             break;
-                        }
+                         }
                     }
                 }
-                if !found {
+                 if !found {
                     for i in 0..MAX_PROPS_PER_THING {
                         if thing.props[i].is_none() {
                             thing.props[i] = Some((*key, value.clone()));
-                            dispatch_event(&GraphEvent::PropUpdated {
+                             events.push(GraphEvent::PropUpdated {
                                 id,
                                 kind: thing.kind,
                                 kind_id: thing.kind_id,
@@ -673,39 +708,62 @@ pub fn kernel_user_update_thing(
                                 old: None,
                                 new: value.clone(),
                             });
+                            found = true;
                             break;
-                        }
+                         }
                     }
                 }
             }
 
             if is_link {
-                let new_link = link_from_props(id, &thing.props);
-                match (previous_link, new_link) {
-                    (Some(prev), Some(next)) => {
-                        if prev != next {
-                            if index_links::link_index_mut().remove(id) {
-                                dispatch_event(&GraphEvent::LinkRemoved(prev));
-                            }
-                            index_links::link_index_mut().insert(next);
-                            dispatch_event(&GraphEvent::LinkAdded(next));
-                        }
-                    }
-                    (Some(prev), None) => {
-                        if index_links::link_index_mut().remove(id) {
-                            dispatch_event(&GraphEvent::LinkRemoved(prev));
-                        }
-                    }
-                    (None, Some(next)) => {
-                        index_links::link_index_mut().insert(next);
-                        dispatch_event(&GraphEvent::LinkAdded(next));
-                    }
-                    (None, None) => {}
-                }
+                 let new_link = link_from_props(id, &thing.props);
+                 link_updates = Some((previous_link, new_link));
             }
-            return true;
-        }
-        false
+            true
+         } else {
+            false
+         }
+    }; // Drop lock
+
+    if success {
+         for event in events {
+             if let GraphEvent::PropUpdated { kind, key, old, new, .. } = &event {
+                 if is_prop_indexed(kind, key) {
+                     if let Some(old_val) = old {
+                         remove_from_prop_index(id, key, old_val);
+                     }
+                      add_to_prop_index(id, key, new);
+                 }
+             }
+             dispatch_event(&event);
+         }
+         
+         if let Some((previous_link, new_link)) = link_updates {
+             match (previous_link, new_link) {
+                 (Some(prev), Some(next)) => {
+                     if prev != next {
+                         if index_links::link_index_mut().remove(id) {
+                             dispatch_event(&GraphEvent::LinkRemoved(prev));
+                         }
+                         index_links::link_index_mut().insert(next);
+                         dispatch_event(&GraphEvent::LinkAdded(next));
+                     }
+                 }
+                 (Some(prev), None) => {
+                     if index_links::link_index_mut().remove(id) {
+                         dispatch_event(&GraphEvent::LinkRemoved(prev));
+                     }
+                 }
+                 (None, Some(next)) => {
+                     index_links::link_index_mut().insert(next);
+                     dispatch_event(&GraphEvent::LinkAdded(next));
+                 }
+                 (None, None) => {}
+             }
+         }
+         true
+    } else {
+         false
     }
 }
 

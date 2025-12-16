@@ -823,8 +823,8 @@ fn boot_program_exists(binary: &str) -> bool {
     loop {
         match graph::next_thing_of_kind(graph_kinds::KIND_BOOT_PROGRAM, cursor) {
             Some(id) => {
-                if let Some((_kind, props)) = graph::get_thing(id) {
-                    for prop in props.iter().flatten() {
+                if let Some(found) = graph::with_thing(id, |thing| {
+                    for prop in thing.props.iter().flatten() {
                         if prop.0 == "binary" {
                             if let PropValue::Str(ref s) = prop.1 {
                                 if s == binary {
@@ -833,6 +833,9 @@ fn boot_program_exists(binary: &str) -> bool {
                             }
                         }
                     }
+                    false
+                }) {
+                     if found { return true; }
                 }
                 cursor = id;
             }

@@ -20,17 +20,20 @@ pub fn register_irq_controller(handler: fn(u8, bool)) {
 /// Reads `irq_line` and `enabled` properties and invokes the registered handler.
 pub fn process_interrupt_request(id: ThingId) {
     // Retrieve the thing
-    let Some((kind, props)) = graph::get_thing(id) else { return; };
-    if kind != abi::graph_kinds::KIND_INTERRUPT_REQUEST { return; }
     let mut irq_line: u8 = 0;
     let mut enabled: bool = false;
-    for (k, v) in props.iter().flatten() {
-        match *k {
-            abi::graph_kinds::PROP_IRQ_LINE => if let PropValue::U64(val) = v { irq_line = *val as u8; },
-            abi::graph_kinds::PROP_ENABLED => if let PropValue::Bool(b) = v { enabled = *b; },
-            _ => {}
-        }
-    }
+    graph::with_thing(id, |thing| {
+        if thing.kind != abi::graph_kinds::KIND_INTERRUPT_REQUEST { return; }
+        irq_line = thing.props.iter().flatten()
+            .find(|(k, _)| *k == abi::graph_kinds::PROP_IRQ_LINE)
+            .and_then(|(_, v)| if let PropValue::U64(val) = v { Some(*val as u8) } else { None })
+            .unwrap_or(0); // Default to 0 if not found or wrong type
+
+        enabled = thing.props.iter().flatten()
+            .find(|(k, _)| *k == abi::graph_kinds::PROP_ENABLED)
+            .and_then(|(_, v)| if let PropValue::Bool(b) = v { Some(*b) } else { None })
+            .unwrap_or(false); // Default to false if not found or wrong type
+    });
     let masked = !enabled;
 
     if let Some(handler) = *IRQ_CONTROLLER.lock() {
@@ -73,13 +76,11 @@ pub fn seed_io_regions() {
 }
 
 pub fn process_io_op(op_id: ThingId) {
-    let Some((kind, props)) = graph::get_thing(op_id) else {
-        return;
-    };
-    if kind != graph_kinds::KIND_IO_PORT_OP {
-        return;
-    }
-    let op = IoPortOp::from_props(op_id, props);
+    let op = if let Some(op) = graph::with_thing(op_id, |thing| {
+        if thing.kind != graph_kinds::KIND_IO_PORT_OP { return None; }
+        Some(IoPortOp::from_props(op_id, thing.props.as_slice()))
+    }).flatten() { op } else { return; };
+
     if op.status != IoStatus::Pending {
         return;
     }
@@ -139,7 +140,7 @@ fn find_region_for_irq(irq_line: u8) -> Option<ThingId> {
 }
 
 fn load_region(id: ThingId) -> Option<IoPortRegion> {
-    graph::get_thing(id).map(|(_, props)| IoPortRegion::from_props(id, props))
+    graph::with_thing(id, |thing| IoPortRegion::from_props(id, thing.props.as_slice()))
 }
 
 fn execute_io_operation(op: &IoPortOp) -> Result<Option<u32>, IoError> {

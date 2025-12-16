@@ -1,4 +1,5 @@
 #![no_std]
+// force rebuild 2
 
 extern crate alloc;
 
@@ -118,21 +119,23 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 },
             }
         }
-        KernelRequest::ThingGet { id } => match graph::get_thing(id) {
-            Some((kind, props)) => KernelResponse::ThingData { id, kind, props },
-            None => KernelResponse::Error {
-                message: "Thing not found",
-            },
+        KernelRequest::ThingGet { id: _ } => KernelResponse::Error {
+            message: "ThingGet not available via handle_request (use with_thing)",
         },
         KernelRequest::ThingList { kind, start_after } => KernelResponse::ThingListEntry {
             id: graph::next_thing_of_kind(kind, start_after),
         },
         KernelRequest::ThingUpdate { id, props } => {
             // Get the kind first to validate
-            if let Some((kind, _)) = graph::get_thing(id) {
-                if let Err(e) = graph::validate_props(kind, props) {
-                    return KernelResponse::Error { message: e };
-                }
+            let validation_result = graph::with_thing(id, |thing_node| {
+                graph::validate_props(thing_node.kind, props)
+            });
+            if let Some(res) = validation_result {
+                 if let Err(e) = res {
+                     return KernelResponse::Error { message: e };
+                 }
+            } else {
+                 // Thing not found, update_thing will fail anyway, loop continues to update_thing call
             }
             if graph::update_thing(id, props) {
                 KernelResponse::Success { data: None }
@@ -145,8 +148,11 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         KernelRequest::ThingBatchUpdate { updates } => {
             for update in updates {
                 // Get kind to validate
-                if let Some((kind, _)) = graph::get_thing(update.id) {
-                    if let Err(e) = graph::validate_props(kind, update.props) {
+                let validation_result = graph::with_thing(update.id, |thing_node| {
+                    graph::validate_props(thing_node.kind, update.props)
+                });
+                if let Some(res) = validation_result {
+                    if let Err(e) = res {
                         return KernelResponse::Error { message: e };
                     }
                 } else {

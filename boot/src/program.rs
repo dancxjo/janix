@@ -117,48 +117,49 @@ struct BootProgramInfo {
 }
 
 fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> {
-    let (kind, props) = kernel::graph::get_thing(id).ok_or("BootProgram Thing not found")?;
-    if kind != graph_kinds::KIND_BOOT_PROGRAM {
-        return Err("SpawnProgram Thing was not BootProgram");
-    }
-
-    let mut name: Option<String> = None;
-    let mut app_id: Option<u64> = None;
-    let mut priority: u64 = 0;
-    let mut binary: Option<String> = None;
-
-    for prop in props.iter().flatten() {
-        match prop.0 {
-            "name" => {
-                if let PropValue::Str(s) = &prop.1 {
-                    name = Some(s.clone());
-                }
-            }
-            "app_id" => {
-                if let PropValue::U64(v) = prop.1 {
-                    app_id = Some(v);
-                }
-            }
-            "priority" => {
-                if let PropValue::U64(v) = prop.1 {
-                    priority = v;
-                }
-            }
-            "binary" => {
-                if let PropValue::Str(s) = &prop.1 {
-                    binary = Some(s.clone());
-                }
-            }
-            _ => {}
+    graph::with_thing(id, |thing| {
+        if thing.kind != graph_kinds::KIND_BOOT_PROGRAM {
+            return Err("SpawnProgram Thing was not BootProgram");
         }
-    }
 
-    Ok(BootProgramInfo {
-        name: name.ok_or("BootProgram missing name")?,
-        app_id: app_id.ok_or("BootProgram missing app_id")?,
-        priority,
-        binary: binary.unwrap_or_default(),
-    })
+        let mut name: Option<String> = None;
+        let mut app_id: Option<u64> = None;
+        let mut priority: u64 = 0;
+        let mut binary: Option<String> = None;
+
+        for prop in thing.props.iter().flatten() {
+            match prop.0 {
+                "name" => {
+                    if let PropValue::Str(s) = &prop.1 {
+                        name = Some(s.clone());
+                    }
+                }
+                "app_id" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        app_id = Some(v);
+                    }
+                }
+                "priority" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        priority = v;
+                    }
+                }
+                "binary" => {
+                    if let PropValue::Str(s) = &prop.1 {
+                        binary = Some(s.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(BootProgramInfo {
+            name: name.ok_or("BootProgram missing name")?,
+            app_id: app_id.ok_or("BootProgram missing app_id")?,
+            priority,
+            binary: binary.unwrap_or_default(),
+        })
+    }).unwrap_or(Err("BootProgram Thing not found"))
 }
 
 fn find_program_image(identifier: &str) -> Option<ProgramImageData> {

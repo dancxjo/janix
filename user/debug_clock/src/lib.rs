@@ -19,17 +19,10 @@ pub fn run<S: Sys>(sys: &mut S) -> ! {
     };
 
     // Create UI window
-    let mut title_buf = String::new();
-    title_buf.push_str("ThingOS Clock");
-    
-    println(sys, "debug_clock: creating window...");
-    let window = match ui::create_window(sys, &title_buf, 0) { // 0 = Default/Sky mode
-        Some(w) => {
-            let msg = format!("debug_clock: window created id={:?}", w.id);
-            let leaked = Box::leak(msg.into_boxed_str());
-            println(sys, leaked);
-            w
-        },
+    let title = "ThingOS Clock"; // Define 'title' for the format! macro
+    let title_buf = format!("debug_clock: {}", title);
+    let window = match ui::create_window(sys, &title_buf) {
+        Some(w) => w,
         None => {
             println(sys, "debug_clock: failed to create window!");
             loop { sys.syscall(abi::KernelRequest::ExitThread); }

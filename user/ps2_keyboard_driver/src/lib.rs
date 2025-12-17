@@ -245,11 +245,15 @@ impl IoPortAccessor {
     }
 
     fn flush_output(&mut self) {
-        while let Some(status) = self.read_status() {
-            if status & 0x01 == 0 {
+        for _ in 0..1000 {
+            if let Some(status) = self.read_status() {
+                if status & 0x01 == 0 {
+                    break;
+                }
+                let _ = self.read_data();
+            } else {
                 break;
             }
-            let _ = self.read_data();
         }
     }
 

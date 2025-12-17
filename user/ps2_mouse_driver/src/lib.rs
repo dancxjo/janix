@@ -120,6 +120,9 @@ pub fn driver_main() -> ! {
     };
     println!("ps2_mouse_driver: device opened");
 
+    // Wait for keyboard driver to finish its controller init
+    sleep(Duration::from_millis(500));
+
     let mut accessor = IoPortAccessor::new(region.id, Some(handle));
     if !init_mouse(&mut accessor) {
         println!("ps2_mouse_driver: mouse initialization failed");
@@ -246,9 +249,13 @@ impl IoPortAccessor {
     }
 
     fn flush_output(&mut self) {
-        while let Some(status) = self.read_status() {
-             if status & 0x01 == 0 { break; }
-             let _ = self.read_data();
+        for _ in 0..1000 {
+            if let Some(status) = self.read_status() {
+                 if status & 0x01 == 0 { break; }
+                 let _ = self.read_data();
+            } else {
+                break;
+            }
         }
     }
 

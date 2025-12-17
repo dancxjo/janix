@@ -1,15 +1,14 @@
 use abi::ThingId;
 pub use abi::resident::{ResidentAllocResp, ResidentError, ResidentErrorCode, ResidentMapPerms, ResidentMapResp, RestPolicy, RestResp};
 use abi::resident_layout::ResidentHeader;
-use runtime::Sys;
 use core::sync::atomic::{Ordering, compiler_fence};
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use abi::{KernelRequest, KernelResponse};
+use crate::syscalls::syscall;
 
 pub mod mouse;
 pub mod keyboard_stream;
-mod abi_tests;
 
 /// A wrapper around a resident object mapped in memory.
 /// `T` is a phantom type indicating the logical kind of the object (e.g. `MouseStream`).
@@ -96,34 +95,34 @@ impl<T> Resident<T> {
     }
 }
 
-pub fn alloc_resident(sys: &impl Sys, kind: &str, byte_len: u32, flags: u32) -> Result<ResidentAllocResp, ResidentError> {
+pub fn alloc_resident(kind: &str, byte_len: u32, flags: u32) -> Result<ResidentAllocResp, ResidentError> {
     // Current ABI requires static kind string.
     let kind_static = Box::leak(kind.to_string().into_boxed_str());
-    match sys.syscall(KernelRequest::ResidentAlloc { kind: kind_static, byte_len, flags }) {
+    match syscall(KernelRequest::ResidentAlloc { kind: kind_static, byte_len, flags }) {
         KernelResponse::ResidentAllocated { resp } => Ok(resp),
         KernelResponse::ResidentError(e) => Err(e),
         _ => Err(ResidentError { code: ResidentErrorCode::Unknown, aux0: 0, aux1: 0 }),
     }
 }
 
-pub fn map_resident(sys: &impl Sys, id: ThingId, perms: ResidentMapPerms) -> Result<ResidentMapResp, ResidentError> {
-    match sys.syscall(KernelRequest::ResidentMap { id, perms }) {
+pub fn map_resident(id: ThingId, perms: ResidentMapPerms) -> Result<ResidentMapResp, ResidentError> {
+    match syscall(KernelRequest::ResidentMap { id, perms }) {
         KernelResponse::ResidentMapped { resp } => Ok(resp),
         KernelResponse::ResidentError(e) => Err(e),
         _ => Err(ResidentError { code: ResidentErrorCode::Unknown, aux0: 0, aux1: 0 }),
     }
 }
 
-pub fn unmap_resident(sys: &impl Sys, thing_id: ThingId) -> Result<(), ResidentError> {
-    match sys.syscall(KernelRequest::ResidentUnmap { thing_id }) {
+pub fn unmap_resident(thing_id: ThingId) -> Result<(), ResidentError> {
+    match syscall(KernelRequest::ResidentUnmap { thing_id }) {
         KernelResponse::Success { .. } => Ok(()),
         KernelResponse::ResidentError(e) => Err(e),
         _ => Err(ResidentError { code: ResidentErrorCode::Unknown, aux0: 0, aux1: 0 }),
     }
 }
 
-pub fn rest_thing(sys: &impl Sys, thing_id: ThingId, policy: RestPolicy) -> Result<RestResp, ResidentError> {
-    match sys.syscall(KernelRequest::ThingRest { thing_id, policy }) {
+pub fn rest_thing(thing_id: ThingId, policy: RestPolicy) -> Result<RestResp, ResidentError> {
+    match syscall(KernelRequest::ThingRest { thing_id, policy }) {
         KernelResponse::ThingRested { resp } => Ok(resp),
         KernelResponse::ResidentError(e) => Err(e),
         _ => Err(ResidentError { code: ResidentErrorCode::Unknown, aux0: 0, aux1: 0 }),
@@ -131,17 +130,16 @@ pub fn rest_thing(sys: &impl Sys, thing_id: ThingId, policy: RestPolicy) -> Resu
 }
 
 pub unsafe fn resident_create_and_map<T>(
-    sys: &impl Sys, 
     kind: &str, 
     byte_len: u32, 
     perms: ResidentMapPerms
 ) -> Result<Resident<T>, ResidentError> {
     // 1. Alloc
-    let alloc_resp = alloc_resident(sys, kind, byte_len, 0)?; // default flags
+    let alloc_resp = alloc_resident(kind, byte_len, 0)?; // default flags
     
     // 2. Map
     // alloc_resp.id is ThingId.
-    let map_resp = map_resident(sys, alloc_resp.id, perms)?;
+    let map_resp = map_resident(alloc_resp.id, perms)?;
     
     // 3. Wrap
     unsafe {

@@ -14,7 +14,7 @@ use alloc::boxed::Box;
 use std::boxed::Box;
 
 use abi::{BatchUpdateEntry, KernelRequest, KernelResponse, PropKey, PropValue, ThingId};
-use runtime::Sys;
+use crate::syscalls::syscall;
 
 pub struct Batcher {
     updates: BTreeMap<ThingId, BTreeMap<PropKey, PropValue>>,
@@ -34,7 +34,7 @@ impl Batcher {
     }
 
     /// Flush all queued updates as a single system call.
-    pub fn flush(&mut self, sys: &impl Sys) -> bool {
+    pub fn flush(&mut self) -> bool {
         if self.updates.is_empty() {
             return true;
         }
@@ -59,7 +59,7 @@ impl Batcher {
 
         let updates_slice = Box::leak(batch_entries.into_boxed_slice());
 
-        match sys.syscall(KernelRequest::ThingBatchUpdate {
+        match syscall(KernelRequest::ThingBatchUpdate {
             updates: updates_slice,
         }) {
             KernelResponse::Success { .. } => true,

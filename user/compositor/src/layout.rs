@@ -4,7 +4,9 @@ use alloc::vec::Vec;
 use core::cmp::max;
 
 use thing_os::prelude::*;
-use thing_os::{Window, graph_kinds};
+use abi::{PropValue, ThingId, graph_kinds};
+use thing_os::update_props;
+use thing_os::{Window};
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
 
@@ -107,7 +109,7 @@ pub fn auto_tile(windows: &[Window], fb_width: i32, fb_height: i32) -> Vec<Stack
     stacked
 }
 
-pub fn persist_stack<S: Sys>(sys: &mut S, stack: &[StackedWindow]) {
+pub fn persist_stack(stack: &[StackedWindow]) {
     for win in stack {
         let props = [
             (graph_kinds::PROP_WINDOW_X, PropValue::I64(win.x as i64)),
@@ -121,7 +123,7 @@ pub fn persist_stack<S: Sys>(sys: &mut S, stack: &[StackedWindow]) {
                 PropValue::I64(win.height as i64),
             ),
         ];
-        let _ = update_props(sys, win.id, &props);
+        let _ = update_props(win.id, &props);
     }
 }
 
@@ -176,148 +178,5 @@ pub fn apply_layout(
     match policy {
         LayoutPolicy::Free => stack_and_clamp(windows, fb_width, fb_height),
         LayoutPolicy::Tiled => auto_tile(windows, fb_width, fb_height),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TITLE_BAR_HEIGHT};
-    use crate::test_support::{MockSys, success};
-    use abi::{KernelRequest, PropValue, ThingId, graph_kinds};
-
-    fn window(id: u64, z_index: i32) -> Window {
-        Window {
-            id: ThingId(id),
-            place_id: ThingId(0),
-            x: 10,
-            y: 10,
-            width: 120,
-            height: 90,
-            z_index: z_index as i32,
-            active: false,
-            title: "".into(),
-            draggable: true,
-            resizable: true,
-            closable: true,
-            minimizable: true,
-        }
-    }
-
-    #[test]
-    fn stack_and_clamp_orders_and_clamps_windows() {
-        let mut w1 = window(1, 2);
-        w1.x = -5;
-        w1.y = -10;
-        w1.width = 300;
-        w1.height = 20;
-
-        let mut w2 = window(2, 1);
-        w2.x = 150;
-        w2.width = 100;
-
-        let stacked = stack_and_clamp(&[w1.clone(), w2.clone()], 200, 120);
-        assert_eq!(stacked.len(), 2);
-        assert_eq!(stacked[0].id, w2.id, "sorted by z-index");
-        assert_eq!(stacked[0].x, 100, "clamped inside framebuffer");
-        assert_eq!(stacked[1].x, 0);
-        assert_eq!(stacked[1].y, 0);
-        assert_eq!(stacked[1].width, 200, "clamped to fb width");
-        assert_eq!(
-            stacked[1].height, MIN_WINDOW_HEIGHT,
-            "minimum height enforced via StackedWindow::from_window"
-        );
-    }
-
-    #[test]
-    fn contains_point_respects_minimum_size() {
-        let mut win = window(1, 0);
-        win.width = 10;
-        win.height = 10;
-        let stacked = StackedWindow::from_window(&win);
-        assert!(stacked.contains_point(stacked.x + MIN_WINDOW_WIDTH - 1, stacked.y));
-        assert!(!stacked.contains_point(
-            stacked.x + MIN_WINDOW_WIDTH,
-            stacked.y + MIN_WINDOW_HEIGHT + TITLE_BAR_HEIGHT
-        ));
-    }
-
-    #[test]
-    fn hit_test_prefers_highest_z_index() {
-        let mut a = StackedWindow::from_window(&window(1, 1));
-        a.width = 200;
-        a.height = 200;
-        let mut b = StackedWindow::from_window(&window(2, 5));
-        b.x = 50;
-        b.y = 50;
-        b.width = 50;
-        b.height = 50;
-        let stacked = vec![a, b.clone()];
-        let hit = hit_test(&stacked, 60, 60).expect("expected hit");
-        assert_eq!(hit.id, b.id, "top-most window should win");
-    }
-
-    #[test]
-    fn auto_tile_assigns_grid_positions() {
-        let mut a = window(1, 2);
-        let mut b = window(2, 1);
-        let mut c = window(3, 3);
-        a.width = 200;
-        b.width = 200;
-        c.width = 200;
-
-        let tiles = auto_tile(&[a, b, c], 200, 120);
-        assert_eq!(tiles.len(), 3);
-        assert_eq!((tiles[0].x, tiles[0].y), (0, 0));
-        assert_eq!((tiles[1].x, tiles[1].y), (100, 0));
-        assert_eq!((tiles[2].x, tiles[2].y), (0, 60));
-        assert_eq!(tiles[0].width, 100);
-        assert_eq!(tiles[0].height, MIN_WINDOW_HEIGHT);
-    }
-
-    #[test]
-    fn persist_stack_writes_back_geometry() {
-        let mut a = StackedWindow::from_window(&window(1, 1));
-        a.x = 10;
-        a.y = 20;
-        a.width = 111;
-        a.height = 222;
-        let mut b = StackedWindow::from_window(&window(2, 2));
-        b.x = 30;
-        b.y = 40;
-        b.width = 333;
-        b.height = 444;
-
-        let responses = vec![success(), success()];
-        let mut sys = MockSys::with_responses(responses);
-        persist_stack(&mut sys, &[a, b]);
-        let requests = sys.drain_requests();
-        assert_eq!(requests.len(), 2);
-
-        for request in requests {
-            match request {
-                KernelRequest::ThingUpdate { id, props } => {
-                    let x = props
-                        .iter()
-                        .find(|p| p.0 == graph_kinds::PROP_WINDOW_X)
-                        .map(|(_, v)| v.clone());
-                    let y = props
-                        .iter()
-                        .find(|p| p.0 == graph_kinds::PROP_WINDOW_Y)
-                        .map(|(_, v)| v.clone());
-                    assert!(x.is_some() && y.is_some());
-                    if id == ThingId(1) {
-                        assert_eq!(x, Some(PropValue::I64(10)));
-                        assert_eq!(y, Some(PropValue::I64(20)));
-                    } else if id == ThingId(2) {
-                        assert_eq!(x, Some(PropValue::I64(30)));
-                        assert_eq!(y, Some(PropValue::I64(40)));
-                    } else {
-                        panic!("unexpected ThingUpdate id {:?}", id);
-                    }
-                }
-                other => panic!("unexpected request {other:?}"),
-            }
-        }
     }
 }

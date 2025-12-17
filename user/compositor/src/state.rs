@@ -18,8 +18,10 @@ use alloc::format;
 use thing_os::{RawModule, shared_buffer_map};
 
 use crate::model::ConsoleBuffer;
+use thing_os::syscalls::syscall;
+use thing_os::println;
 
-fn draw_console<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
+fn draw_console(compositor: &mut Compositor) {
     if compositor.console_buffer.is_none() {
         use abi::{KernelRequest, KernelResponse, PropValue, graph_kinds, ThingId};
         
@@ -27,13 +29,13 @@ fn draw_console<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
         let mut cursor = ThingId(u64::MAX);
 
         loop {
-            match sys.syscall(KernelRequest::ThingList {
+            match syscall(KernelRequest::ThingList {
                 kind: graph_kinds::KIND_SHARED_BUFFER,
                 start_after: cursor,
             }) {
                 KernelResponse::ThingListEntry { id: Some(next_id) } => {
                     // Check this thing
-                    match sys.syscall(KernelRequest::ThingGet { id: next_id }) {
+                    match syscall(KernelRequest::ThingGet { id: next_id }) {
                         KernelResponse::ThingData { props, .. } => {
                             let mut is_console = false;
                             let mut width = 0;
@@ -71,7 +73,7 @@ fn draw_console<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
         }
 
         if let Some((id, w, h, stride)) = found {
-             match shared_buffer_map(sys, id, MapFlags::READ.union(MapFlags::USER)) {
+             match shared_buffer_map(id, MapFlags::READ.union(MapFlags::USER)) {
                  Ok((vaddr, _size)) => {
                      compositor.console_buffer = Some(ConsoleBuffer {
                          id,
@@ -81,10 +83,10 @@ fn draw_console<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
                          stride,
                          pixel_format: abi::PixelFormat::Bgra8888, 
                      });
-                     println(sys, "compositor: mapped console buffer");
+                     println!("compositor: mapped console buffer");
                  },
                  _ => {
-                     println(sys, "compositor: failed to map console buffer");
+                     println!("compositor: failed to map console buffer");
                  }
              }
         }
@@ -130,21 +132,21 @@ fn draw_console<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     }
 }
 
-fn load_background_image<S: Sys>(sys: &mut S) -> Option<BackgroundImage> {
-    let modules = list_things_by_kind::<S, RawModule>(sys);
+fn load_background_image() -> Option<BackgroundImage> {
+    let modules = list_things_by_kind::<RawModule>();
     let clouds_module = modules.iter().find(|m| m.identifier == "clouds.bmp")?;
 
     if let Some(buffer_id) = clouds_module.framebuffer_id {
         // Map the buffer
         if let Some((vaddr, size)) =
-            shared_buffer_map(sys, buffer_id, MapFlags::READ.union(MapFlags::USER)).ok()
+            shared_buffer_map(buffer_id, MapFlags::READ.union(MapFlags::USER)).ok()
         {
             let ptr = vaddr as *const u8;
             // Parse BMP header
             // Signature "BM" at 0
             unsafe {
                 if *ptr != b'B' || *ptr.add(1) != b'M' {
-                    println(sys, "clouds.bmp: invalid signature");
+                    println!("clouds.bmp: invalid signature");
                     return None;
                 }
                 // Little endian parsing helper
@@ -172,10 +174,10 @@ fn load_background_image<S: Sys>(sys: &mut S) -> Option<BackgroundImage> {
                     width, height, data_offset, bpp
                 );
                 let leaked = Box::leak(msg.into_boxed_str());
-                println(sys, leaked);
+                println!("{}", leaked);
 
                 if bpp != 24 && bpp != 32 {
-                    println(sys, "clouds.bmp: unsupported bpp");
+                    println!("clouds.bmp: unsupported bpp");
                     return None;
                 }
 
@@ -189,64 +191,63 @@ fn load_background_image<S: Sys>(sys: &mut S) -> Option<BackgroundImage> {
             }
         }
     }
-    println(
-        sys,
+    println!(
         "clouds.bmp: module found but no buffer_id or map failed",
     );
     None
 }
 
-pub fn main<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "compositor: starting");
-    ensure_ui_schemas(sys);
-    let _ = register_schema_for::<DisplayPresentRequest>(sys);
+pub fn main() -> ! {
+    println!("compositor: starting");
+    ensure_ui_schemas();
+    let _ = register_schema_for::<DisplayPresentRequest>();
 
     let fb = loop {
-        if let Some(fb) = active_framebuffer(sys) {
+        if let Some(fb) = active_framebuffer() {
             break fb;
         }
-        println(sys, "compositor: waiting for primary display");
-        sys.sleep_for_ns(50_000_000);
+        println!("compositor: waiting for primary display");
+        sleep_ms(50); // 50ms = 50,000,000 ns
     };
 
     let mut compositor = Compositor::new(fb);
 
-    if let Some(bg) = load_background_image(sys) {
+    if let Some(bg) = load_background_image() {
         compositor.background_image = Some(bg);
     }
 
     // Force initial full redraw to paint background/windows
     // We must render TWICE to ensure both front and back buffers are initialized.
     compositor.add_full_damage();
-    tick_once(sys, &mut compositor);
+    tick_once(&mut compositor);
     compositor.add_full_damage();
-    tick_once(sys, &mut compositor);
+    tick_once(&mut compositor);
 
     let mut debug_frame_counter = 0;
     loop {
         if debug_frame_counter % 60 == 0 {
-            println(sys, "compositor: tick");
+            println!("compositor: tick");
         }
         debug_frame_counter += 1;
-        tick_once(sys, &mut compositor);
-        sys.sleep_for_ns(FRAME_INTERVAL_NS);
+        tick_once(&mut compositor);
+        thing_os::time::sleep(Duration::from_nanos(FRAME_INTERVAL_NS));
     }
 }
 
-pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
-    compositor.ensure_display_contracts(sys);
+pub fn tick_once(compositor: &mut Compositor) {
+    compositor.ensure_display_contracts();
 
     // Process input EARLY using previous frame's layout (latency reduction)
     let prev_layout = compositor.cached_layout.clone();
-    compositor.process_mouse_packets(sys, &prev_layout);
+    compositor.process_mouse_packets(&prev_layout);
 
-    handle_mode_switches(sys);
+    handle_mode_switches();
 
-    if console_mode_active(sys) {
+    if console_mode_active() {
         return;
     }
 
-    let mode = match current_mode(sys) {
+    let mode = match current_mode() {
         Some(mode) => mode,
         None => {
             return;
@@ -254,26 +255,26 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     };
 
     if mode.index == MODE_INDEX_CONSOLE {
-        draw_console(sys, compositor);
-        compositor.publish_present_request(sys);
+        draw_console(compositor);
+        compositor.publish_present_request();
         return;
     }
 
     let place_id = mode.place_id.unwrap_or(ThingId(0));
-    let windows = collect_windows_for_place(sys, place_id);
+    let windows = collect_windows_for_place(place_id);
     if compositor.frame_counter % 60 == 0 {
          // let msg = format!("compositor: found {} windows for place {}", windows.len(), place_id.0);
          // let leaked = Box::leak(msg.into_boxed_str());
          // println(sys, leaked);
     }
-    let surface_map = collect_surfaces_for_windows(sys, &windows);
-    update_mapped_surfaces(sys, compositor, &surface_map);
+    let surface_map = collect_surfaces_for_windows(&windows);
+    update_mapped_surfaces(compositor, &surface_map);
 
     let fb_w = compositor.fb.info.width as i32;
     let fb_h = compositor.fb.info.height as i32;
     let policy = layout_policy_for_mode(&mode);
     let stacked: Vec<StackedWindow> = layout::apply_layout(policy, &windows, fb_w, fb_h);
-    layout::persist_stack(sys, &stacked);
+    layout::persist_stack(&stacked);
 
     // Update cached layout for next frame's input processing
     compositor.cached_layout = stacked.clone();
@@ -299,7 +300,7 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     // compositor.background_offset.1 = compositor.background_offset.1.wrapping_add(1);
 
     // Run widget layout pass
-    let (widget_rects, widget_map) = run_widget_pass(sys, &stacked);
+    let (widget_rects, widget_map) = run_widget_pass(&stacked);
 
     // Damage tracking: Union all damage rects into one bounding box
     // This is the "easy" way (scissoring). 
@@ -352,7 +353,7 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
         let ops = build_display_list(compositor, &stacked, &windows, &surface_map, &widget_rects, &widget_map);
         render_display_list(compositor, &ops, Some(clip_rect));
         
-        if let Some(active_index) = swap_display_buffers(sys, compositor.fb.display_id) {
+        if let Some(active_index) = swap_display_buffers(compositor.fb.display_id) {
             compositor.fb.update_active_index(active_index);
         }
     }
@@ -361,11 +362,10 @@ pub fn tick_once<S: Sys>(sys: &mut S, compositor: &mut Compositor) {
     compositor.previous_damage = compositor.damage.clone();
     compositor.damage.clear();
 
-    compositor.publish_present_request(sys);
+    compositor.publish_present_request();
 }
 
-fn run_widget_pass<S: Sys>(
-    sys: &mut S,
+fn run_widget_pass(
     stacked: &[StackedWindow],
 ) -> (
     alloc::collections::BTreeMap<ThingId, alloc::vec::Vec<(ThingId, crate::widget_layout::Rect)>>,
@@ -378,7 +378,7 @@ fn run_widget_pass<S: Sys>(
     use alloc::vec::Vec;
 
     // 1. Load all widgets
-    let all_widgets: Vec<WidgetNode> = list_things_by_kind(sys);
+    let all_widgets: Vec<WidgetNode> = list_things_by_kind();
     let mut widget_map = BTreeMap::new();
     for w in all_widgets {
         widget_map.insert(w.id, w);
@@ -401,13 +401,12 @@ fn run_widget_pass<S: Sys>(
         // Recurse function
         let mut queue = Vec::new(); // (id, rect)
 
-        let children = widget_children(sys, win.id);
+        let children = widget_children(win.id);
         
-        let msg = format!("compositor: layout window {} children={}", win.id.0, children.len());
-        let leaked = Box::leak(msg.into_boxed_str());
-        println(sys, leaked);
+        // let msg = format!("compositor: layout window {} children={}", win.id.0, children.len());
+        // println!("{}", msg);
 
-        let root_rects = layout_children(sys, &widget_map, win.id, container_rect, &children);
+        let root_rects = layout_children(&widget_map, win.id, container_rect, &children);
 
         for (rid, rrect) in root_rects {
             win_rects.push((rid, rrect));
@@ -420,9 +419,9 @@ fn run_widget_pass<S: Sys>(
             let (pid, prect) = queue[head];
             head += 1;
 
-            let pchildren = widget_children(sys, pid);
+            let pchildren = widget_children(pid);
             if !pchildren.is_empty() {
-                let child_rects = layout_children(sys, &widget_map, pid, prect, &pchildren);
+                let child_rects = layout_children(&widget_map, pid, prect, &pchildren);
                 for (cid, crect) in child_rects {
                     win_rects.push((cid, crect));
                     queue.push((cid, crect));
@@ -438,8 +437,7 @@ fn run_widget_pass<S: Sys>(
     (results, widget_map)
 }
 
-fn update_mapped_surfaces<S: Sys>(
-    sys: &mut S,
+fn update_mapped_surfaces(
     compositor: &mut Compositor,
     current_surfaces: &alloc::collections::BTreeMap<ThingId, thing_os::Surface>,
 ) {
@@ -466,7 +464,7 @@ fn update_mapped_surfaces<S: Sys>(
 
         if let Some(buf_id) = surface.shared_buffer_id {
             // Map it
-            match sys.syscall(KernelRequest::MapSharedBuffer {
+            match syscall(KernelRequest::MapSharedBuffer {
                 buffer_id: buf_id,
                 flags: MapFlags::READ.union(MapFlags::USER),
             }) {
@@ -488,10 +486,10 @@ fn update_mapped_surfaces<S: Sys>(
                             pixel_format: format,
                         },
                     );
-                    thing_os::println(sys, "compositor: mapped surface");
+                    println!("compositor: mapped surface");
                 }
                 _ => {
-                    thing_os::println(sys, "compositor: failed to map surface");
+                    println!("compositor: failed to map surface");
                 }
             }
         }

@@ -17,11 +17,11 @@ fn main() {
 
     // Font handling
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let fonts_dir = Path::new(&manifest_dir).join("..").join("fonts");
+    let fonts_dir = Path::new(&manifest_dir).join("..").join("assets").join("fonts");
     let unifont_hex = fonts_dir.join("unifont.hex");
 
     if !fonts_dir.exists() {
-        fs::create_dir(&fonts_dir).unwrap();
+        fs::create_dir_all(&fonts_dir).unwrap();
     }
 
     if !unifont_hex.exists() {

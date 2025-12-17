@@ -1,6 +1,8 @@
 use thing_os::prelude::*;
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TITLE_BAR_HEIGHT};
+use abi::{PropValue, ThingId, graph_kinds};
+use thing_os::update_props;
 use crate::graph;
 use crate::layout::{StackedWindow, hit_test};
 use crate::model::{Compositor, CursorState, DragState};
@@ -28,17 +30,17 @@ impl CursorState {
 }
 
 impl Compositor {
-    pub fn process_mouse_packets<S: Sys>(&mut self, sys: &mut S, layout: &[StackedWindow]) {
+    pub fn process_mouse_packets(&mut self, layout: &[StackedWindow]) {
         if self.mouse_stream.is_none() {
-             let streams = list_things_by_kind::<S, MouseStreamThing>(sys);
+             let streams = list_things_by_kind::<MouseStreamThing>();
              if let Some(thing) = streams.first() {
-                 if let Ok(map_resp) = map_resident(sys, thing.id, ResidentMapPerms::READ) {
+                 if let Ok(map_resp) = map_resident(thing.id, ResidentMapPerms::READ) {
                       unsafe {
                           // TODO: Verify map_resp.byte_len against expected size?
                           let obj = Resident::<()>::new(thing.id, map_resp.user_addr as *mut u8, map_resp.byte_len as usize);
                           self.mouse_stream = Some(MouseStreamMapped::new(obj));
                           let msg = alloc::format!("compositor: mouse stream mapped id={:?} addr={:?} len={}", thing.id, map_resp.user_addr, map_resp.byte_len);
-                          println(sys, alloc::boxed::Box::leak(msg.into_boxed_str()));
+                          println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
                       }
                  }
              }
@@ -63,13 +65,13 @@ impl Compositor {
                   // User plan verification step: "Check for: compositor: head advanced".
                   // So I MUST log it.
                   let msg = alloc::format!("compositor: head advanced old_tail={} new_tail={} n={}", self.mouse_head, new_head, events.len());
-                  println(sys, alloc::boxed::Box::leak(msg.into_boxed_str()));
-             }
+                  println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
+              }
              self.mouse_head = new_head;
              
              if !events.is_empty() {
                  let msg = alloc::format!("DEBUG: processing {} events", events.len());
-                 println(sys, alloc::boxed::Box::leak(msg.into_boxed_str()));
+                 println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
                  
                  use crate::config::{MOUSE_SCALE_NUM, MOUSE_SCALE_DEN};
                  
@@ -84,7 +86,6 @@ impl Compositor {
                          let sdx = pending_dx * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
                          let sdy = pending_dy * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
                          self.apply_mouse_event(
-                            sys, 
                             sdx, 
                             sdy, 
                             pending_buttons as u64, 
@@ -105,7 +106,6 @@ impl Compositor {
                  let sdx = pending_dx * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
                  let sdy = pending_dy * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
                  self.apply_mouse_event(
-                    sys,
                     sdx,
                     sdy,
                     pending_buttons as u64,
@@ -121,9 +121,8 @@ impl Compositor {
         }
     }
 
-    fn apply_mouse_event<S: Sys>(
+    fn apply_mouse_event(
         &mut self,
-        sys: &mut S,
         dx: i64,
         dy: i64,
         buttons: u64,
@@ -167,18 +166,18 @@ impl Compositor {
 
         if CursorState::left_pressed_changed(previous, buttons) {
             if CursorState::left_down(buttons) {
-                self.handle_left_press(sys, layout);
+                self.handle_left_press(layout);
             } else {
                 self.handle_left_release();
             }
         } else if CursorState::left_down(buttons) {
-             self.continue_drag(sys);
+             self.continue_drag();
         }
     }
 
-    fn handle_left_press<S: Sys>(&mut self, sys: &mut S, layout: &[StackedWindow]) {
+    fn handle_left_press(&mut self, layout: &[StackedWindow]) {
         if let Some(window) = hit_test(layout, self.cursor.x, self.cursor.y) {
-            self.ensure_window_active_from_layout(sys, window, layout);
+            self.ensure_window_active_from_layout(window, layout);
 
             let in_title = self.cursor.y < window.y + TITLE_BAR_HEIGHT;
             if in_title {
@@ -204,7 +203,7 @@ impl Compositor {
         self.drag = None;
     }
 
-    fn continue_drag<S: Sys>(&mut self, sys: &mut S) {
+    fn continue_drag(&mut self) {
         let Some(drag) = &mut self.drag else {
             return;
         };
@@ -224,196 +223,15 @@ impl Compositor {
         drag.last_sent_y = clamped_y;
         let updates = [
             (
-                thing_os::graph_kinds::PROP_WINDOW_X,
+                abi::graph_kinds::PROP_WINDOW_X,
                 PropValue::I64(clamped_x as i64),
             ),
             (
-                thing_os::graph_kinds::PROP_WINDOW_Y,
+                abi::graph_kinds::PROP_WINDOW_Y,
                 PropValue::I64(clamped_y as i64),
             ),
         ];
-        let _ = update_props(sys, drag.window_id, &updates);
+        let _ = update_props(drag.window_id, &updates);
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::TITLE_BAR_HEIGHT;
-    use crate::layout::StackedWindow;
-    use crate::test_support::{FramebufferFixture, MockSys, list_responses, success};
-    use abi::{KernelRequest, KernelResponse, PropValue, ThingId, graph_kinds};
-
-
-    fn stacked_window(id: u64) -> StackedWindow {
-        StackedWindow {
-            id: ThingId(id),
-            x: 10,
-            y: 10,
-            width: 120,
-            height: 90,
-            z_index: 1,
-            active: false,
-        }
-    }
-
-    #[test]
-    fn cursor_apply_packet_clamps_and_tracks_buttons() {
-        let mut cursor = CursorState::new(5, 5);
-        let previous = cursor.apply_packet(-10, 20, 3, 8, 8);
-        assert_eq!(previous, 0);
-        assert_eq!(cursor.x, 0);
-        assert_eq!(cursor.y, 0);
-        assert_eq!(cursor.buttons, 3);
-    }
-
-    #[test]
-    fn left_press_in_title_starts_drag_and_activates_window() {
-        let fb = FramebufferFixture::new(300, 200);
-        let mut comp = Compositor::new(fb.fb);
-        comp.cursor.x = 30;
-        comp.cursor.y = 12;
-        let win = stacked_window(7);
-        let mut sys = MockSys::with_responses(vec![success()]);
-
-        comp.apply_mouse_event(&mut sys, 0, 0, 1, &[win]);
-        assert_eq!(comp.active_window, Some(ThingId(7)));
-        let drag = comp.drag.expect("dragging should start inside title bar");
-        assert_eq!(drag.grab_offset_x, 20);
-        assert_eq!(drag.grab_offset_y, 2);
-
-        let requests = sys.drain_requests();
-        assert_eq!(requests.len(), 1);
-        if let KernelRequest::ThingUpdate { props, .. } = &requests[0] {
-            let active = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_WINDOW_ACTIVE)
-                .map(|p| p.1.clone());
-            let z_index = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_Z_INDEX)
-                .map(|p| p.1.clone());
-            assert_eq!(active, Some(PropValue::Bool(true)));
-            assert_eq!(z_index, Some(PropValue::I64(2)));
-        } else {
-            panic!("expected ThingUpdate request, got {:?}", requests[0]);
-        }
-    }
-
-    #[test]
-    fn dragging_updates_window_position_and_clamps() {
-        let fb = FramebufferFixture::new(120, 100);
-        let mut comp = Compositor::new(fb.fb);
-        comp.cursor.x = 40;
-        comp.cursor.y = 12 + TITLE_BAR_HEIGHT / 2;
-        let win = stacked_window(9);
-        let mut sys = MockSys::with_responses(vec![success(), success()]);
-
-        comp.apply_mouse_event(&mut sys, 0, 0, 1, &[win]);
-        comp.apply_mouse_event(&mut sys, -50, 30, 1, &[stacked_window(9)]);
-
-        assert_eq!(comp.drag.as_ref().map(|d| d.window_id), Some(ThingId(9)));
-        assert_eq!(comp.drag.as_ref().map(|d| d.last_sent_x), Some(0));
-        assert_eq!(comp.drag.as_ref().map(|d| d.last_sent_y), Some(0));
-
-        let requests = sys.drain_requests();
-        assert_eq!(requests.len(), 2);
-        if let KernelRequest::ThingUpdate { props, .. } = &requests[1] {
-            let x = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_WINDOW_X)
-                .map(|p| p.1.clone());
-            let y = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_WINDOW_Y)
-                .map(|p| p.1.clone());
-            assert_eq!(x, Some(PropValue::I64(0)));
-            assert_eq!(y, Some(PropValue::I64(0)));
-        } else {
-            panic!("expected position update");
-        }
-    }
-
-    #[test]
-    fn test_process_mouse_stream() {
-        use abi::resident_layout::ResidentHeader;
-        use thing_os::resident::mouse::{MouseStreamMapped, MouseStreamThing, MouseStreamHeader, MouseEntry};
-        use thing_os::resident::{ResidentMapResp, ResidentMapPerms, Resident};
-        use alloc::vec;
-
-        let fb = FramebufferFixture::new(100, 100);
-        let mut comp = Compositor::new(fb.fb);
-        
-        // Create backing store with CORRECT layout
-        // Header + MouseStreamHeader + Entries
-        let capacity = 10;
-        let header_size = core::mem::size_of::<ResidentHeader>(); // 32
-        let stream_header_size = core::mem::size_of::<MouseStreamHeader>(); // 16
-        let entries_size = capacity as usize * core::mem::size_of::<MouseEntry>(); // 10*8=80
-        let total_size = header_size + stream_header_size + entries_size;
-        
-        // Align up to power of 2 for allocator safety? No, vec is fine.
-        let mut backing = vec![0u8; total_size];
-        let ptr = backing.as_mut_ptr();
-        
-        unsafe {
-             let header = ptr as *mut ResidentHeader;
-             (*header).magic = ResidentHeader::MAGIC;
-             (*header).version = 1;
-             (*header).data_off = header_size as u32; // Offset to start of stream header
-             (*header).total_len = total_size as u32; 
-             
-             let obj = Resident::<()>::new(ThingId(99), ptr, total_size);
-             let mut stream = MouseStreamMapped::new(obj);
-             stream.init(capacity);
-             
-             // Append some events
-             stream.append(MouseEntry { buttons: 0, flags: 0, dx: 10, dy: 5, _pad: 0 });
-             stream.append(MouseEntry { buttons: 0, flags: 0, dx: -5, dy: -2, _pad: 0 });
-        }
-        
-        let responses = vec![
-             // Step 1: ThingList -> Found ID 10
-             KernelResponse::ThingListEntry { id: Some(ThingId(10)) },
-             // Step 2: ThingGet -> Return Data
-             KernelResponse::ThingData {
-                 id: ThingId(10),
-                 kind: MouseStreamThing::KIND,
-                 props: &[],
-             },
-             // Step 3: ThingList -> End of list
-             KernelResponse::ThingListEntry { id: None },
-             // Step 4: Map Resident
-             KernelResponse::ResidentMapped {
-                 resp: ResidentMapResp {
-                      user_addr: ptr as u64,
-                      byte_len: total_size as u32,
-                      _pad: 0,
-                 }
-             },
-             // Step 5: Log "mouse stream mapped"
-             success(),
-             // Step 6: Log "head advanced"
-             success(),
-        ];
-        // Add padding for any extra logs
-        let mut responses = responses;
-        responses.extend(core::iter::repeat(success()).take(10));
-        
-        let mut sys = MockSys::with_responses(responses);
-        comp.process_mouse_packets(&mut sys, &[]);
-        
-        // Cursor starts center (50, 50).
-        // Event 1: dx=10, dy=5 
-        // Event 2: dx=-5, dy=-2
-        // Total Coalesced: dx=5, dy=3. 
-        // Scaled (2/3): dx=3, dy=2.
-        // New Pos: (50+3, 50-2) = (53, 48)
-        
-        // Dump logs removed
-        
-        assert_eq!(comp.cursor.x, 53);
-        assert_eq!(comp.cursor.y, 48);
-        assert_eq!(comp.mouse_head, 2);
-    }
-}

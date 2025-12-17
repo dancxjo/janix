@@ -2,9 +2,10 @@
 name = "geographer"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 thing_os = { path = "../../thing_os" }
-examples_support = { path = "../examples_support" }
 abi = { path = "../../abi" }
-log = "0.4"
+
+[build-dependencies]

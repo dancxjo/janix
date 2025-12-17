@@ -2,10 +2,10 @@ extern crate alloc;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
-use alloc::string::String;
-
-use abi::graph_kinds;
+use alloc::string::String; // This line was implicitly removed by the instruction's provided block, but it's needed for `String` type. Re-adding it.
 use thing_os::prelude::*;
+use abi::{PropValue, ThingId, graph_kinds};
+use thing_os::{update_props, list_things_by_kind, load_thing};
 
 use crate::flex::{AlignItems, FlexDirection, FlexWrap, JustifyContent, prop_as_f32};
 use crate::widget_layout::{self, LayoutItem, LayoutSpec, Rect};
@@ -136,14 +136,13 @@ impl thing_os::Thing for WidgetNode {
 }
 
 /// Collect widget ids that are direct children of `parent` via LINK_WIDGET_CHILD.
-pub fn widget_children<S: Sys>(sys: &mut S, parent: ThingId) -> Vec<ThingId> {
-    thing_os::link_targets(sys, parent, graph_kinds::LINK_WIDGET_CHILD)
+pub fn widget_children(parent: ThingId) -> Vec<ThingId> {
+    thing_os::link_targets(parent, graph_kinds::LINK_WIDGET_CHILD)
 }
 
 /// Lay out and return computed rects for children inside `container`.
 /// Also writes computed width/height back to each child if changed.
-pub fn layout_children<S: Sys>(
-    sys: &mut S,
+pub fn layout_children(
     widgets: &BTreeMap<ThingId, WidgetNode>,
     container_id: ThingId,
     container_rect: Rect,
@@ -221,7 +220,7 @@ pub fn layout_children<S: Sys>(
                 if height_changed {
                     props.push((graph_kinds::PROP_HEIGHT, PropValue::I64(r.h as i64)));
                 }
-                let _ = update_props(sys, *id, &props);
+                let _ = update_props(*id, &props);
             }
         }
     }

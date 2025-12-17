@@ -1,30 +1,12 @@
-#![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(target_os = "none", no_main)]
+#![no_std]
+#![no_main]
 
 #[cfg(target_os = "none")]
 extern crate alloc;
 
-#[cfg(target_os = "none")]
-use core::panic::PanicInfo;
+// Panic handler is provided by thing_os::panic
 
-#[cfg(target_os = "none")]
-use runtime::UserlandSys;
-
-#[cfg(target_os = "none")]
-#[cfg(target_os = "none")]
-#[unsafe(no_mangle)]
+#[thing_os::main]
 fn main() {
-    let mut sys = UserlandSys::new();
-    ps2_mouse_driver::main(&mut sys);
-}
-
-#[cfg(not(target_os = "none"))]
-fn main() {
-    panic!("ps2_mouse_driver must run inside ThingOS");
-}
-
-#[cfg(target_os = "none")]
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+    ps2_mouse_driver::driver_main();
 }

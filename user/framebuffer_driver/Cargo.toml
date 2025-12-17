@@ -8,7 +8,7 @@ name = "framebuffer_driver"
 path = "src/lib.rs"
 
 [dependencies]
-runtime = { path = "../../runtime" }
+
 thing_os = { path = "../../thing_os" }
 abi = { path = "../../abi" }
 thing_models = { path = "../../thing_models" }

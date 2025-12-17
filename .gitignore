@@ -13,3 +13,8 @@ EFI/BOOT/*.EFI
 thing_macros/tests/ui/unsupported_field.stderr
 *.tmp
 stash_diff_stash0.patch
+assets/icons/
+assets/tango.tar.gz
+assets/tango-raw/
+assets/fonts/*.ttf
+assets/fonts/unifont.hex

@@ -5,6 +5,4 @@ edition = "2021"
 
 [dependencies]
 thing_os = { path = "../../thing_os" }
-examples_support = { path = "../examples_support" }
-abi = { path = "../../abi" }
 log = "0.4"

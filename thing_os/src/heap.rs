@@ -1,4 +1,4 @@
-#![cfg(all(target_os = "none", not(feature = "kernel")))]
+#![cfg(target_os = "none")]
 
 use abi::{USER_HEAP_END, USER_HEAP_START};
 use core::alloc::Layout;
@@ -23,5 +23,5 @@ pub fn init_user_heap() {
 
 #[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
-    loop {}
+    panic!("Allocation failed");
 }

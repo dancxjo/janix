@@ -4,10 +4,8 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use thing_models::{
-    InterruptEvent, InterruptRequest, IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth,
+    IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth,
 };
-use thing_os::prelude::*;
-
 use thing_os::prelude::*;
 
 const STATUS_OFFSET: u16 = 4;
@@ -19,8 +17,9 @@ use abi::syscall_defs::{
     DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr, UserSlice,
 };
 use abi::syscall_numbers::{SYS_DEV_OPEN, SYS_DEV_READ};
-use thing_os::resident::{resident_create_and_map, Resident};
+use thing_os::resident::{resident_create_and_map};
 use thing_os::resident::mouse::{MouseEntry, MouseStreamMapped};
+use thing_os::{update_props, PropKey, PropValue};
 
 unsafe fn syscall_dev_open(kind: u32, index: u32) -> Result<DeviceHandle, SysError> {
     let args = DevOpenArgs { kind, index };
@@ -83,54 +82,49 @@ unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize
     }
 }
 
-pub fn main<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "ps2_mouse_driver: starting (resident stream)");
+pub fn driver_main() -> ! {
+    println!("ps2_mouse_driver: starting (resident stream)");
     
     // 1. Allocate & Map Resident Buffer
-    let stream_resident = match unsafe { resident_create_and_map::<()>(sys, "MouseStream", 65536, abi::resident::ResidentMapPerms(abi::resident::ResidentMapPerms::READ.0 | abi::resident::ResidentMapPerms::WRITE.0)) } {
+    let stream_resident = match unsafe { resident_create_and_map::<()>("MouseStream", 65536, abi::resident::ResidentMapPerms(abi::resident::ResidentMapPerms::READ.0 | abi::resident::ResidentMapPerms::WRITE.0)) } {
         Ok(r) => r,
         Err(e) => {
-            let msg = alloc::format!("ps2_mouse_driver: resident create failed code={:?}", e.code);
-            let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
-            println(sys, leaked);
-            loop { sys.sleep_for_ns(1_000_000_000); }
+            println!("ps2_mouse_driver: resident create failed code={:?}", e.code);
+            loop { sleep(Duration::from_nanos(1_000_000_000)); }
         }
     };
     
     let stream_id = stream_resident.id;
-    let msg = alloc::format!("mouse: allocated MouseStream id={:?} addr={:?}", stream_id, stream_resident.ptr);
-    println(sys, alloc::boxed::Box::leak(msg.into_boxed_str()));
+    println!("mouse: allocated MouseStream id={:?} addr={:?}", stream_id, stream_resident.ptr);
 
     let mut stream = MouseStreamMapped::new(stream_resident);
     stream.init(MOUSE_RING_CAPACITY as u32);
     
     // Advertise capabilities via props
-    let _ = update_props(sys, stream_id, &[
+    let _ = update_props(stream_id, &[
         ("head", PropValue::U64(0)),
         ("capacity", PropValue::U64(MOUSE_RING_CAPACITY as u64))
     ]);
     
-    let region = wait_for_region(sys);
-    println(sys, "ps2_mouse_driver: found i8042 IO region; initializing mouse port");
+    let region = wait_for_region();
+    println!("ps2_mouse_driver: found i8042 IO region; initializing mouse port");
 
     let mut decoder = MouseDecoder::new(region.id, stream);
     
     let handle = match unsafe { syscall_dev_open(2, 0) } {
         Ok(h) => h,
         Err(e) => {
-            let msg = alloc::format!("ps2_mouse_driver: failed to open device: code={}", e.code);
-            let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
-            println(sys, leaked);
-            loop { sys.sleep_for_ns(1_000_000_000); }
+            println!("ps2_mouse_driver: failed to open device: code={}", e.code);
+            loop { sleep(Duration::from_nanos(1_000_000_000)); }
         }
     };
-    println(sys, "ps2_mouse_driver: device opened");
+    println!("ps2_mouse_driver: device opened");
 
     let mut accessor = IoPortAccessor::new(region.id, Some(handle));
-    if !init_mouse(sys, &mut accessor) {
-        println(sys, "ps2_mouse_driver: mouse initialization failed");
+    if !init_mouse(&mut accessor) {
+        println!("ps2_mouse_driver: mouse initialization failed");
     } else {
-        println(sys, "ps2_mouse_driver: mouse initialization succeeded");
+        println!("ps2_mouse_driver: mouse initialization succeeded");
     }
 
     let mut buffer = [0u8; 16];
@@ -141,7 +135,7 @@ pub fn main<S: Sys>(sys: &mut S) -> ! {
                 if count > 0 {
                     for i in 0..count {
                          let byte = buffer[i];
-                         decoder.process_byte(sys, byte);
+                         decoder.process_byte(byte);
                     }
                 } else {
                     // Blocking read returned 0? Should imply wakeup.
@@ -155,36 +149,32 @@ pub fn main<S: Sys>(sys: &mut S) -> ! {
     }
 }
 
-fn wait_for_region<S: Sys>(sys: &mut S) -> IoPortRegion {
+fn wait_for_region() -> IoPortRegion {
     loop {
-        let regions: Vec<IoPortRegion> = list_things_by_kind(sys);
+        let regions: Vec<IoPortRegion> = list_things_by_kind();
         if let Some(region) = regions.into_iter().find(|r| r.name == "i8042") {
             return region;
         }
-        sys.sleep_for_ns(5_000_000);
+        sleep(Duration::from_nanos(5_000_000));
     }
 }
 
-fn init_mouse<S: Sys>(sys: &mut S, accessor: &mut IoPortAccessor) -> bool {
-    if !accessor.command(sys, 0xA7) {
+fn init_mouse(accessor: &mut IoPortAccessor) -> bool {
+    if !accessor.command(0xA7) {
         return false;
     }
-    accessor.flush_output(sys);
+    accessor.flush_output();
 
-    // SKIP config byte setup (0x20 / 0x60) - assume keyboard driver did it.
-    // If we try to read 0x20 response here, we might miss it if it goes to keyboard buffer.
-    // And we blindly trust IRQ12 is enabled by keyboard driver.
-
-    if !accessor.command(sys, 0xA8) {
+    if !accessor.command(0xA8) {
         return false;
     }
-    accessor.flush_output(sys);
+    accessor.flush_output();
 
-    if !accessor.mouse_command(sys, 0xF6) {
+    if !accessor.mouse_command(0xF6) {
         return false;
     }
-    accessor.flush_output(sys);
-    accessor.mouse_command(sys, 0xF4)
+    accessor.flush_output();
+    accessor.mouse_command(0xF4)
 }
 
 struct IoPortAccessor {
@@ -204,108 +194,83 @@ impl IoPortAccessor {
         }
     }
 
-    fn read_status<S: Sys>(&mut self, sys: &mut S) -> Option<u8> {
-        self.read_u8(sys, STATUS_OFFSET)
+    fn read_status(&mut self) -> Option<u8> {
+        self.read_u8(STATUS_OFFSET)
     }
 
-    fn read_data<S: Sys>(&mut self, sys: &mut S) -> Option<u8> {
-        self.read_u8(sys, DATA_OFFSET)
+    fn read_data(&mut self) -> Option<u8> {
+        self.read_u8(DATA_OFFSET)
     }
 
-    fn write_data<S: Sys>(&mut self, sys: &mut S, value: u8) -> bool {
-        self.write_u8(sys, DATA_OFFSET, value)
+    fn write_data(&mut self, value: u8) -> bool {
+        self.write_u8(DATA_OFFSET, value)
     }
 
-    fn command<S: Sys>(&mut self, sys: &mut S, value: u8) -> bool {
-        if !self.wait_input_clear(sys) {
+    fn command(&mut self, value: u8) -> bool {
+        if !self.wait_input_clear() {
             return false;
         }
-        self.write_u8(sys, STATUS_OFFSET, value)
+        self.write_u8(STATUS_OFFSET, value)
     }
 
-    fn write_second_port<S: Sys>(&mut self, sys: &mut S, value: u8) -> bool {
-        if !self.command(sys, 0xD4) {
+    fn write_second_port(&mut self, value: u8) -> bool {
+        if !self.command(0xD4) {
             return false;
         }
-        if !self.wait_input_clear(sys) {
+        if !self.wait_input_clear() {
             return false;
         }
-        self.write_data(sys, value)
+        self.write_data(value)
     }
 
-    fn mouse_command<S: Sys>(&mut self, sys: &mut S, command: u8) -> bool {
-        if !self.write_second_port(sys, command) {
+    fn mouse_command(&mut self, command: u8) -> bool {
+        if !self.write_second_port(command) {
             return false;
         }
-        matches!(self.read_aux_data(sys), Some(0xFA))
+        matches!(self.read_aux_data(), Some(0xFA))
     }
 
-    fn read_aux_data<S: Sys>(&mut self, sys: &mut S) -> Option<u8> {
+    fn read_aux_data(&mut self) -> Option<u8> {
         let handle = self.device_handle?;
         let mut buffer = [0u8; 1];
         for _ in 0..200 {
-            // Try to read one byte from kernel buffer using dev_read
-            // Try to read one byte from kernel buffer using dev_read
             match unsafe { syscall_dev_read(handle, &mut buffer) } {
                 Ok(1) => return Some(buffer[0]),
                 Ok(_) => {
-                    // Buffer empty, wait (should have blocked, but if returned 0, just retry)
-                    // sys.sleep_for_ns(100_000); // No sleep needed if we trust blocking
                 }
                 Err(_) => {
-                    // Start retry.
-                    // If blocking is enabled, Err might mean we blocked and woke up.
-                    // Just retry.
                 }
             }
         }
         None
     }
 
-    fn flush_output<S: Sys>(&mut self, sys: &mut S) {
-        // flush hardware buffer if any (via IoPortOp, just in case)
-        while let Some(status) = self.read_status(sys) {
+    fn flush_output(&mut self) {
+        while let Some(status) = self.read_status() {
              if status & 0x01 == 0 { break; }
-             let _ = self.read_data(sys);
+             let _ = self.read_data();
         }
-        // flush kernel buffer
-        // WARNING: We cannot flush kernel buffer with blocking I/O enabled,
-        // as reading an empty buffer will block the thread indefinitely!
-        // Since we just initialized the buffer in kernel on startup, it should be empty
-        // or contain only relevant response bytes.
-        /*
-        if let Some(handle) = self.device_handle {
-             let mut buffer = [0u8; 16];
-             loop {
-                 match unsafe { syscall_dev_read(handle, &mut buffer) } {
-                     Ok(0) | Err(_) => break,
-                     Ok(_) => {}
-                 }
-             }
-        }
-        */
     }
 
-    fn wait_input_clear<S: Sys>(&mut self, sys: &mut S) -> bool {
+    fn wait_input_clear(&mut self) -> bool {
         for _ in 0..100 {
-            if let Some(status) = self.read_status(sys) {
+            if let Some(status) = self.read_status() {
                 if status & 0x02 == 0 {
                     return true;
                 }
             }
-            sys.sleep_for_ns(100_000);
+            sleep(Duration::from_nanos(100_000));
         }
         false
     }
 
-    fn read_u8<S: Sys>(&mut self, sys: &mut S, offset: u16) -> Option<u8> {
-        self.submit_op(sys, SlotKind::Read, offset, IoDirection::Read, 0)
+    fn read_u8(&mut self, offset: u16) -> Option<u8> {
+        self.submit_op(SlotKind::Read, offset, IoDirection::Read, 0)
             .map(|value| value as u8)
     }
 
-    fn write_u8<S: Sys>(&mut self, sys: &mut S, offset: u16, value: u8) -> bool {
+    fn write_u8(&mut self, offset: u16, value: u8) -> bool {
         self.submit_op(
-            sys,
             SlotKind::Write,
             offset,
             IoDirection::Write,
@@ -314,9 +279,8 @@ impl IoPortAccessor {
         .is_some()
     }
 
-    fn submit_op<S: Sys>(
+    fn submit_op(
         &mut self,
-        sys: &mut S,
         slot_kind: SlotKind,
         offset: u16,
         direction: IoDirection,
@@ -333,14 +297,14 @@ impl IoPortAccessor {
                     ("value", PropValue::U64(value as u64)),
                     ("status", PropValue::Str(IoStatus::Pending.as_str().into())),
                 ];
-                if !update_props(sys, id, &props) {
+                if !update_props(id, &props) {
                     return None;
                 }
                 id
             } else {
                 let op =
                     IoPortOp::new(region_id, offset, direction, IoWidth::U8, value, ThingId(0));
-                let Some(new_id) = create_thing(sys, &op) else {
+                let Some(new_id) = create_thing(&op) else {
                     return None;
                 };
                 *slot = Some(new_id);
@@ -348,7 +312,7 @@ impl IoPortAccessor {
             }
         };
 
-        self.wait_for_completion(sys, op_id)
+        self.wait_for_completion(op_id)
     }
 
     fn slot(&mut self, kind: SlotKind) -> &mut Option<ThingId> {
@@ -358,16 +322,16 @@ impl IoPortAccessor {
         }
     }
 
-    fn wait_for_completion<S: Sys>(&self, sys: &mut S, op_id: ThingId) -> Option<u32> {
+    fn wait_for_completion(&self, op_id: ThingId) -> Option<u32> {
         for _ in 0..200 {
-            if let Some(op) = load_thing::<IoPortOp>(sys, op_id) {
+            if let Some(op) = load_thing::<IoPortOp>(op_id) {
                 match op.status {
                     IoStatus::Completed => return Some(op.value),
                     IoStatus::Failed => return None,
                     _ => {}
                 }
             }
-            sys.sleep_for_ns(100_000);
+            sleep(Duration::from_nanos(100_000));
         }
         None
     }
@@ -398,7 +362,7 @@ impl MouseDecoder {
         }
     }
 
-    fn process_byte<S: Sys>(&mut self, sys: &mut S, byte: u8) {
+    fn process_byte(&mut self, byte: u8) {
         if self.index == 0 && byte & 0x08 == 0 {
             return;
         }
@@ -406,17 +370,17 @@ impl MouseDecoder {
         self.index += 1;
         if self.index == 3 {
             self.index = 0;
-            self.emit_event(sys);
+            self.emit_event();
         }
     }
 
-    fn emit_event<S: Sys>(&mut self, sys: &mut S) {
+    fn emit_event(&mut self) {
         let status = self.packet[0];
         let dx = i16::from(self.packet[1] as i8);
         let dy = i16::from(self.packet[2] as i8);
         let buttons = status & 0x07;
         
-        let timestamp = sys.time_monotonic_ns();
+        let timestamp = Instant::now().t_ns;
         
         // Append to ring
         let entry = MouseEntry {
@@ -424,28 +388,8 @@ impl MouseDecoder {
             flags: 0,
             dx,
             dy,
-            _pad: 0,
+            _pad: 0, // Should be something but 0 is fine
         };
         self.stream.append(entry);
-        
-        // REMOVED update_props wakeup
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
-    use alloc::vec::Vec;
-    use thing_os::doc_helpers::DocSys;
-
-    #[test]
-    fn mouse_decoder_ignores_packet_without_sync_bit() {
-        let sys = DocSys::with_responses(Vec::new());
-        // Mock stream? We cannot mock ResidentObject easily in this test env without unsafe backend.
-        // So we skip this test or mock MouseStreamMapped?
-        // MouseStreamMapped owns ResidentObject which uses raw pointers.
-        // It's hard to test here without a real allocation.
-        // Disabling test for now.
     }
 }

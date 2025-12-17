@@ -4,10 +4,13 @@ use alloc::string::String;
 use std::string::String;
 
 use abi::{MapFlags, PropValue, SharedBufferInfo, ThingId};
-use runtime::Sys;
+use crate::graph_kinds;
+use crate::sys::raw_syscall;
+use alloc::vec::Vec;
 
-use crate::syscalls::{link_targets, list_things_by_kind, update_props};
-use crate::things::DisplayThing;
+use crate::syscalls::syscall;
+use crate::{link_targets, list_things_by_kind, update_props};
+use crate::DisplayThing;
 
 #[derive(Debug)]
 pub struct SharedBufferMapping {
@@ -64,13 +67,12 @@ impl PrimaryDisplayBuffer {
     }
 }
 
-fn map_display_buffer<S: Sys>(
-    sys: &mut S,
+fn map_display_buffer(
     buffer_id: ThingId,
     flags: MapFlags,
-) -> Result<SharedBufferMapping, crate::things::SysError> {
-    let info = shared_buffer_info(sys, buffer_id)?;
-    let (ptr, size) = shared_buffer_map(sys, buffer_id, flags)?;
+) -> Result<SharedBufferMapping, crate::SysError> {
+    let info = shared_buffer_info(buffer_id)?;
+    let (ptr, size) = shared_buffer_map(buffer_id, flags)?;
     Ok(SharedBufferMapping {
         id: buffer_id,
         info,
@@ -81,47 +83,45 @@ fn map_display_buffer<S: Sys>(
 
 /// Query metadata for a shared buffer Thing.
 pub fn shared_buffer_info(
-    sys: &impl Sys,
     buffer_id: ThingId,
-) -> Result<SharedBufferInfo, crate::things::SysError> {
-    match sys.syscall(abi::KernelRequest::GetSharedBufferInfo { buffer_id }) {
+) -> Result<SharedBufferInfo, crate::SysError> {
+    match syscall(abi::KernelRequest::GetSharedBufferInfo { buffer_id }) {
         abi::KernelResponse::SharedBufferInfoResponse { info } => Ok(info),
-        abi::KernelResponse::Error { message } => Err(crate::things::SysError::Kernel(message)),
-        _ => Err(crate::things::SysError::Unexpected),
+        abi::KernelResponse::Error { message } => Err(crate::SysError::Kernel(message)),
+        _ => Err(crate::SysError::Unexpected),
     }
 }
 
 /// Map a shared buffer into the calling address space.
 pub fn shared_buffer_map(
-    sys: &impl Sys,
     buffer_id: ThingId,
     flags: MapFlags,
-) -> Result<(*mut u8, usize), crate::things::SysError> {
-    match sys.syscall(abi::KernelRequest::MapSharedBuffer { buffer_id, flags }) {
+) -> Result<(*mut u8, usize), crate::SysError> {
+    match syscall(abi::KernelRequest::MapSharedBuffer { buffer_id, flags }) {
         abi::KernelResponse::SharedBufferMapped { vaddr, size } => Ok((vaddr as *mut u8, size as usize)),
-        abi::KernelResponse::Error { message } => Err(crate::things::SysError::Kernel(message)),
-        _ => Err(crate::things::SysError::Unexpected),
+        abi::KernelResponse::Error { message } => Err(crate::SysError::Kernel(message)),
+        _ => Err(crate::SysError::Unexpected),
     }
 }
 
 /// Locate and map the kernel's primary display buffer.
-pub fn open_primary_display_buffer<S: Sys>(sys: &mut S) -> Result<PrimaryDisplayBuffer, crate::things::SysError> {
-    let displays: Vec<DisplayThing> = list_things_by_kind(sys);
+pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysError> {
+    let displays: Vec<crate::DisplayThing> = list_things_by_kind();
     let display = displays
         .iter()
         .find(|d| d.name == "display0")
         .or_else(|| displays.first())
         .cloned()
-        .ok_or(crate::things::SysError::Unexpected)?;
+        .ok_or(crate::SysError::Unexpected)?;
 
-    let mut front_targets = link_targets(sys, display.id, abi::graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER);
-    let mut back_targets = link_targets(sys, display.id, abi::graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER);
-    let front_id = front_targets.pop().ok_or(crate::things::SysError::Unexpected)?;
-    let back_id = back_targets.pop().ok_or(crate::things::SysError::Unexpected)?;
+    let mut front_targets = link_targets(display.id, abi::graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER);
+    let mut back_targets = link_targets(display.id, abi::graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER);
+    let front_id = front_targets.pop().ok_or(crate::SysError::Unexpected)?;
+    let back_id = back_targets.pop().ok_or(crate::SysError::Unexpected)?;
 
     let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER);
-    let front_map = map_display_buffer(sys, front_id, flags)?;
-    let back_map = map_display_buffer(sys, back_id, flags)?;
+    let front_map = map_display_buffer(front_id, flags)?;
+    let back_map = map_display_buffer(back_id, flags)?;
 
     let mut primary = PrimaryDisplayBuffer {
         display_id: display.id,
@@ -139,15 +139,15 @@ pub fn open_primary_display_buffer<S: Sys>(sys: &mut S) -> Result<PrimaryDisplay
     Ok(primary)
 }
 
-pub fn swap_display_buffers<S: Sys>(sys: &mut S, display_id: ThingId) -> Option<i64> {
-    let mut display = crate::syscalls::load_thing::<DisplayThing>(sys, display_id)?;
+pub fn swap_display_buffers(display_id: ThingId) -> Option<i64> {
+    let mut display = crate::load_thing::<crate::DisplayThing>(display_id)?;
     let current = PrimaryDisplayBuffer::clamp_active_index(display.active_buffer_index);
     let next = 1 - current;
     let updates = [(
         abi::graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
         PropValue::I64(next),
     )];
-    if update_props(sys, display_id, &updates) {
+    if update_props(display_id, &updates) {
         display.active_buffer_index = next;
         Some(next)
     } else {

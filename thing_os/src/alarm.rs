@@ -7,7 +7,6 @@ use alloc::string::String;
 use std::string::String;
 
 use abi::ThingId;
-use runtime::Sys;
 use thing_models::AlarmRequest;
 
 use crate::{create_thing, load_thing};
@@ -19,21 +18,7 @@ pub struct Alarm {
 
 impl Alarm {
     /// Request an alarm triggering at the supplied Unix timestamp.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use abi::{KernelResponse, ThingId};
-    /// use thing_os::{alarm::Alarm, doc_helpers::DocSys};
-    ///
-    /// let mut sys = DocSys::with_responses(vec![KernelResponse::ThingCreated {
-    ///     id: ThingId(2),
-    /// }]);
-    /// let alarm = Alarm::request_at(&mut sys, 0, 0);
-    /// assert_eq!(alarm.unwrap().id, ThingId(2));
-    /// ```
-    pub fn request_at<S: Sys>(
-        sys: &mut S,
+    pub fn request_at(
         target_unix_seconds: i64,
         target_unix_nanos: u32,
     ) -> Option<Self> {
@@ -49,30 +34,13 @@ impl Alarm {
             armed: false,
             fired: false,
         };
-        let id = create_thing(sys, &pending)?;
+        let id = create_thing(&pending)?;
         Some(Alarm { id })
     }
 
     /// Query the kernel for the current alarm state string.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use abi::{KernelResponse, PropValue, ThingId};
-    /// use thing_models::AlarmRequest;
-    /// use thing_os::{alarm::Alarm, doc_helpers::DocSys, Thing};
-    ///
-    /// let props = DocSys::props_slice(vec![("fired", PropValue::Bool(true))]);
-    /// let mut sys = DocSys::with_responses(vec![KernelResponse::ThingData {
-    ///     id: ThingId(3),
-    ///     kind: AlarmRequest::KIND,
-    ///     props,
-    /// }]);
-    /// let alarm = Alarm { id: ThingId(3) };
-    /// assert_eq!(alarm.state(&mut sys), Some("Fired".to_string()));
-    /// ```
-    pub fn state<S: Sys>(&self, sys: &mut S) -> Option<String> {
-        load_thing::<AlarmRequest>(sys, self.id).map(|req| {
+    pub fn state(&self) -> Option<String> {
+        load_thing::<AlarmRequest>(self.id).map(|req| {
             if req.fired {
                 String::from("Fired")
             } else if req.armed {
@@ -85,15 +53,15 @@ impl Alarm {
 }
 
 /// Poll an alarm until it fires or is cancelled, sleeping the current thread.
-pub fn sleep_until<S: Sys>(sys: &mut S, target_unix_seconds: i64, target_unix_nanos: u32) {
-    if let Some(alarm) = Alarm::request_at(sys, target_unix_seconds, target_unix_nanos) {
+pub fn sleep_until(target_unix_seconds: i64, target_unix_nanos: u32) {
+    if let Some(alarm) = Alarm::request_at(target_unix_seconds, target_unix_nanos) {
         loop {
-            if let Some(state) = alarm.state(sys) {
+            if let Some(state) = alarm.state() {
                 if state == "Fired" || state == "Cancelled" {
                     break;
                 }
             }
-            sys.yield_now();
+            crate::time::yield_now();
         }
     }
 }

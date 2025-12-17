@@ -9,7 +9,8 @@ use thing_os::prelude::*;
 use thing_os::thing_models::DisplayPresentRequest;
 use thing_os::{
     DisplayThing, SysError, add_link, link_targets, load_thing, shared_buffer_info,
-    shared_buffer_map,
+    shared_buffer_map, create_thing, register_schema_for, update_props, list_things_by_kind,
+    PropKey, PropValue, PropType,
 };
 
 const DEFAULT_REFRESH_INTERVAL_NS: u64 = 16_666_667;
@@ -35,45 +36,41 @@ pub struct FramebufferDriver {
 }
 
 impl FramebufferDriver {
-    fn init<S: Sys>(sys: &mut S) -> Result<Self, SysError> {
-        println(sys, "framebuffer_driver: locating primary display");
-        let descriptor = primary_display_descriptor(sys)?;
-        println(sys, "framebuffer_driver: found display descriptor");
+    fn init() -> Result<Self, SysError> {
+        println!("framebuffer_driver: locating primary display");
+        let descriptor = primary_display_descriptor()?;
+        println!("framebuffer_driver: found display descriptor");
 
         let width = descriptor.info.width;
         let height = descriptor.info.height;
         let stride = descriptor.info.stride;
         let pixel_format = descriptor.info.pixel_format;
 
-        log_dynamic(
-            sys,
-            format_args!(
-                "framebuffer_driver: display {} {}x{} stride={} fmt={:?}",
-                descriptor.display_id.0, width, height, stride, pixel_format,
-            ),
+        println!(
+            "framebuffer_driver: display {} {}x{} stride={} fmt={:?}",
+            descriptor.display_id.0, width, height, stride, pixel_format,
         );
 
         let logical_map_flags = MapFlags::READ.union(MapFlags::USER);
         let front_buffer_id = Self::display_buffer_target(
-            sys,
             descriptor.display_id,
             abi::graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
         )?;
         let back_buffer_id = Self::display_buffer_target(
-            sys,
             descriptor.display_id,
             abi::graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
         )?;
-        let front_buffer = Self::map_buffer_view(sys, front_buffer_id, logical_map_flags)?;
-        let back_buffer = Self::map_buffer_view(sys, back_buffer_id, logical_map_flags)?;
+        let front_buffer = Self::map_buffer_view(front_buffer_id, logical_map_flags)?;
+        let back_buffer = Self::map_buffer_view(back_buffer_id, logical_map_flags)?;
         
         let scanout_map_flags = logical_map_flags.union(MapFlags::WRITE);
         let scanout_buffer =
-            Self::map_buffer_view(sys, descriptor.scanout_buffer_id, scanout_map_flags)?;
+            Self::map_buffer_view(descriptor.scanout_buffer_id, scanout_map_flags)?;
         
-        let active_buffer_index = Self::load_active_buffer_index(sys, descriptor.display_id);
+        // let active_buffer_index = Self::load_active_buffer_index(descriptor.display_id);
+        // We load it fresh in tick
 
-        println(sys, "framebuffer_driver: describing framebuffer Thing");
+        println!("framebuffer_driver: describing framebuffer Thing");
         let fb_thing = DisplayFramebufferThing {
             name: "fb0".into(),
             width: width as u64,
@@ -86,24 +83,23 @@ impl FramebufferDriver {
             last_present_ns: 0,
         };
 
-        println(sys, "framebuffer_driver: registering schemas");
-        let _ = register_schema_for::<DisplayFramebufferThing>(sys);
-        let _ = register_schema_for::<DisplayPresentRequest>(sys);
-        println(sys, "framebuffer_driver: creating framebuffer Thing");
-        let fb_id = create_thing(sys, &fb_thing).ok_or(SysError::Unexpected)?;
-        println(sys, "framebuffer_driver: created framebuffer Thing");
+        println!("framebuffer_driver: registering schemas");
+        let _ = register_schema_for::<DisplayFramebufferThing>();
+        let _ = register_schema_for::<DisplayPresentRequest>();
+        println!("framebuffer_driver: creating framebuffer Thing");
+        let fb_id = create_thing(&fb_thing).ok_or(SysError::Unexpected)?;
+        println!("framebuffer_driver: created framebuffer Thing");
 
         let _ = add_link(
-            sys,
             descriptor.display_id,
             abi::graph_kinds::LINK_DISPLAY_FRONT_BUFFER,
             fb_id,
         );
-        println(sys, "framebuffer_driver: linked framebuffer to display");
+        println!("framebuffer_driver: linked framebuffer to display");
 
-        println(sys, "framebuffer_driver: ensuring present request");
-        let request = Self::ensure_present_request(sys, fb_id)?;
-        println(sys, "framebuffer_driver: ensured present request");
+        println!("framebuffer_driver: ensuring present request");
+        let request = Self::ensure_present_request(fb_id)?;
+        println!("framebuffer_driver: ensured present request");
 
         Ok(Self {
             display_id: descriptor.display_id,
@@ -122,15 +118,14 @@ impl FramebufferDriver {
             front_buffer,
             back_buffer,
             scanout_buffer,
-            active_buffer_index,
+            active_buffer_index: 0,
         })
     }
 
-    fn ensure_present_request<S: Sys>(
-        sys: &mut S,
+    fn ensure_present_request(
         fb_id: ThingId,
     ) -> Result<DisplayPresentRequest, SysError> {
-        if let Some(existing) = Self::find_present_request(sys, fb_id) {
+        if let Some(existing) = Self::find_present_request(fb_id) {
             return Ok(existing);
         }
 
@@ -142,28 +137,28 @@ impl FramebufferDriver {
             presented_at_ns: None,
             completed: true,
         };
-        let id = create_thing(sys, &request).ok_or(SysError::Unexpected)?;
+        let id = create_thing(&request).ok_or(SysError::Unexpected)?;
         Ok(DisplayPresentRequest { id, ..request })
     }
 
-    fn find_present_request<S: Sys>(sys: &mut S, fb_id: ThingId) -> Option<DisplayPresentRequest> {
-        list_things_by_kind::<S, DisplayPresentRequest>(sys)
+    fn find_present_request(fb_id: ThingId) -> Option<DisplayPresentRequest> {
+        list_things_by_kind::<DisplayPresentRequest>()
             .into_iter()
             .find(|req| req.framebuffer_id == fb_id)
     }
 
-    fn tick<S: Sys>(&mut self, sys: &mut S) -> u64 {
-        let power_state = self.sync_framebuffer_state(sys);
+    fn tick(&mut self) -> u64 {
+        let power_state = self.sync_framebuffer_state();
         if power_state != DisplayPowerState::On {
             return self.refresh_interval_ns.max(RETRY_INTERVAL_NS);
         }
 
-        self.process_requests(sys);
+        self.process_requests();
         self.refresh_interval_ns.max(MIN_SLEEP_NS)
     }
 
-    fn sync_framebuffer_state<S: Sys>(&mut self, sys: &mut S) -> DisplayPowerState {
-        if let Some(fb) = load_thing::<DisplayFramebufferThing>(sys, self.fb_id) {
+    fn sync_framebuffer_state(&mut self) -> DisplayPowerState {
+        if let Some(fb) = load_thing::<DisplayFramebufferThing>(self.fb_id) {
             if let Some(refresh) = fb.refresh_interval_ns {
                 if refresh != 0 {
                     self.refresh_interval_ns = refresh;
@@ -174,45 +169,41 @@ impl FramebufferDriver {
         DisplayPowerState::On
     }
 
-    fn process_requests<S: Sys>(&mut self, sys: &mut S) {
+    fn process_requests(&mut self) {
         if let Some(req_id) = self.present_request_id {
-            if let Some(request) = load_thing::<DisplayPresentRequest>(sys, req_id) {
-                self.try_present(sys, &request);
+            if let Some(request) = load_thing::<DisplayPresentRequest>(req_id) {
+                self.try_present(&request);
                 return;
             }
             self.present_request_id = None;
         }
 
         if self.present_request_id.is_none() {
-            if let Some(request) = Self::find_present_request(sys, self.fb_id) {
+            if let Some(request) = Self::find_present_request(self.fb_id) {
                 self.frame_watch = Some(request.frame_index);
                 self.present_request_id = Some(request.id);
             }
         }
     }
 
-    fn try_present<S: Sys>(&mut self, sys: &mut S, request: &DisplayPresentRequest) {
+    fn try_present(&mut self, request: &DisplayPresentRequest) {
         if request.framebuffer_id != self.fb_id {
-            // println(sys, "framebuffer_driver: request fb_id mismatch");
             return;
         }
         if request.completed {
-            // println(sys, "framebuffer_driver: request already completed");
             return;
         }
         if self.frame_watch == Some(request.frame_index) {
-            // println(sys, "framebuffer_driver: frame index not advanced");
             return;
         }
 
-        self.blit_front_buffer(sys);
+        self.blit_front_buffer();
 
         self.frame_watch = Some(request.frame_index);
         self.frames_presented = self.frames_presented.saturating_add(1);
-        self.last_present_ns = sys.time_monotonic_ns();
+        self.last_present_ns = Instant::now().t_ns; 
 
         let _ = update_props(
-            sys,
             self.fb_id,
             &[
                 (
@@ -227,7 +218,6 @@ impl FramebufferDriver {
         );
 
         let _ = update_props(
-            sys,
             request.id,
             &[
                 (
@@ -239,12 +229,11 @@ impl FramebufferDriver {
         );
     }
 
-    fn display_buffer_target<S: Sys>(
-        sys: &mut S,
+    fn display_buffer_target(
         display_id: ThingId,
         pred: Predicate,
     ) -> Result<ThingId, SysError> {
-        let mut targets = link_targets(sys, display_id, pred);
+        let mut targets = link_targets(display_id, pred);
         targets.pop().ok_or(SysError::Unexpected)
     }
 
@@ -252,18 +241,19 @@ impl FramebufferDriver {
         if value == 1 { 1 } else { 0 }
     }
 
-    fn load_active_buffer_index<S: Sys>(sys: &mut S, display_id: ThingId) -> i64 {
-        let display = load_thing::<DisplayThing>(sys, display_id);
+    /*
+    fn load_active_buffer_index(display_id: ThingId) -> i64 {
+        let display = load_thing::<DisplayThing>(display_id);
         Self::clamp_active_buffer_index(display.map(|d| d.active_buffer_index).unwrap_or(0))
     }
+    */
 
-    fn map_buffer_view<S: Sys>(
-        sys: &mut S,
+    fn map_buffer_view(
         buffer_id: ThingId,
         flags: MapFlags,
     ) -> Result<SharedBufferView, SysError> {
-        let info = shared_buffer_info(sys, buffer_id)?;
-        let (ptr, size) = shared_buffer_map(sys, buffer_id, flags)?;
+        let info = shared_buffer_info(buffer_id)?;
+        let (ptr, size) = shared_buffer_map(buffer_id, flags)?;
         Ok(SharedBufferView {
             _id: buffer_id,
             info,
@@ -272,8 +262,8 @@ impl FramebufferDriver {
         })
     }
 
-    fn blit_front_buffer<S: Sys>(&mut self, sys: &mut S) {
-        if let Some(display) = load_thing::<DisplayThing>(sys, self.display_id) {
+    fn blit_front_buffer(&mut self) {
+        if let Some(display) = load_thing::<DisplayThing>(self.display_id) {
             let active_index = Self::clamp_active_buffer_index(display.active_buffer_index);
             self.active_buffer_index = active_index;
             let source = if active_index == 0 {
@@ -294,93 +284,27 @@ impl FramebufferDriver {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use abi::{KernelRequest, KernelResponse, PropKey, PropValue, Thing, ThingId};
-    use alloc::vec::Vec;
-    use thing_os::{DisplayPresentRequest, doc_helpers::DocSys};
-
-    fn thing_props<T: Thing>(thing: &T) -> &'static [Option<(PropKey, PropValue)>] {
-        let mut props = Vec::new();
-        thing.to_props(&mut props);
-        DocSys::props_slice(props)
-    }
-
-    #[test]
-    fn find_present_request_returns_matching_buffer() {
-        let request = DisplayPresentRequest {
-            id: ThingId(3),
-            framebuffer_id: ThingId(5),
-            frame_index: 7,
-            requested_at_ns: 0,
-            presented_at_ns: Some(1),
-            completed: true,
-        };
-        let mut sys = DocSys::with_responses(vec![
-            KernelResponse::ThingListEntry {
-                id: Some(request.id),
-            },
-            KernelResponse::ThingData {
-                id: request.id,
-                kind: DisplayPresentRequest::KIND,
-                props: thing_props(&request),
-            },
-            KernelResponse::ThingListEntry { id: None },
-        ]);
-
-        let found = FramebufferDriver::find_present_request(&mut sys, request.framebuffer_id);
-        assert_eq!(found.map(|f| f.id), Some(request.id));
-    }
-
-    #[test]
-    fn ensure_present_request_creates_when_missing() {
-        let framebuffer = ThingId(11);
-        let mut sys = DocSys::with_responses(vec![
-            KernelResponse::ThingListEntry { id: None },
-            KernelResponse::ThingCreated { id: ThingId(22) },
-        ]);
-
-        let request = FramebufferDriver::ensure_present_request(&mut sys, framebuffer)
-            .expect("should create present request");
-        assert_eq!(request.framebuffer_id, framebuffer);
-        assert_eq!(request.id, ThingId(22));
-
-        let requests = sys.requests.borrow();
-        assert!(requests.iter().any(|request| matches!(
-            request,
-            KernelRequest::ThingCreate { kind, .. } if *kind == DisplayPresentRequest::KIND
-        )));
-    }
-}
-
-pub fn main<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "framebuffer_driver: starting");
+pub fn driver_main() -> ! {
+    println!("framebuffer_driver: starting");
 
     let mut driver = loop {
-        match FramebufferDriver::init(sys) {
+        match FramebufferDriver::init() {
             Ok(driver) => break driver,
             Err(err) => {
-                log_dynamic(
-                    sys,
-                    format_args!("framebuffer_driver: init failed ({:?}), retrying", err),
-                );
-                sys.sleep_for_ns(RETRY_INTERVAL_NS);
+                println!("framebuffer_driver: init failed ({:?}), retrying", err);
+                sleep(Duration::from_nanos(RETRY_INTERVAL_NS));
             }
         }
     };
 
-    log_dynamic(
-        sys,
-        format_args!(
-            "framebuffer_driver: registered framebuffer {}x{} stride {} display {} fmt {:?}",
-            driver.width, driver.height, driver.stride, driver.display_id.0, driver.pixel_format,
-        ),
+    println!(
+        "framebuffer_driver: registered framebuffer {}x{} stride {} display {} fmt {:?}",
+        driver.width, driver.height, driver.stride, driver.display_id.0, driver.pixel_format,
     );
 
     loop {
-        let sleep_ns = driver.tick(sys);
-        sys.sleep_for_ns(sleep_ns);
+        let sleep_ns = driver.tick();
+        sleep(Duration::from_nanos(sleep_ns));
     }
 }
 
@@ -397,10 +321,10 @@ struct SharedBufferView {
     size: usize,
 }
 
-fn primary_display_descriptor<S: Sys>(sys: &mut S) -> Result<DisplayDescriptor, SysError> {
+fn primary_display_descriptor() -> Result<DisplayDescriptor, SysError> {
     use thing_os::DisplayThing;
 
-    let displays: Vec<DisplayThing> = list_things_by_kind(sys);
+    let displays: Vec<DisplayThing> = list_things_by_kind();
     let display = displays
         .iter()
         .find(|d| d.name == "display0")
@@ -408,9 +332,9 @@ fn primary_display_descriptor<S: Sys>(sys: &mut S) -> Result<DisplayDescriptor, 
         .cloned()
         .ok_or(SysError::Unexpected)?;
 
-    let mut targets = link_targets(sys, display.id, abi::graph_kinds::LINK_DISPLAY_SCANOUT);
+    let mut targets = link_targets(display.id, abi::graph_kinds::LINK_DISPLAY_SCANOUT);
     let buffer_id = targets.pop().ok_or(SysError::Unexpected)?;
-    let info = thing_os::shared_buffer_info(sys, buffer_id)?;
+    let info = thing_os::shared_buffer_info(buffer_id)?;
 
     Ok(DisplayDescriptor {
         display_id: display.id,

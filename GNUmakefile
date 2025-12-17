@@ -33,9 +33,9 @@ endif
 ENABLE_ROOTFS ?= 0
 ENABLE_geographer ?= 1
 ENABLE_PLATARO_ICONS ?= 1
-APPS := init debug_thread debug_clock debug_alarm debug_input_logger debug_input_events window_demo compositor mode_manager
-ifeq ($(ENABLE_geographer),1)
-APPS += geographer
+APPS := init debug_clock window_demo compositor hello_world geographer
+ifneq ($(ENABLE_geographer),1)
+# APPS += geographer
 endif
 DRIVERS := framebuffer_driver ps2_keyboard_driver ps2_mouse_driver
 ifeq ($(ENABLE_ROOTFS),1)
@@ -680,7 +680,9 @@ user:
 
 .PHONY: drivers
 drivers:
+ifneq ($(strip $(DRIVERS)),)
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(DRIVERS))
+endif
 
 .PHONY: kernel
 kernel:
@@ -702,12 +704,25 @@ icons:
 	@echo "Plataro icons disabled (ENABLE_PLATARO_ICONS!=1)"
 endif
 
-$(IMAGE_NAME).iso: limine/limine kernel user drivers icons
+.PHONY: assets
+assets:
+	mkdir -p assets/tango-raw
+	# Download Tango icon theme
+	curl -L -o assets/tango.tar.gz http://tango.freedesktop.org/releases/tango-icon-theme-0.8.90.tar.gz
+	tar -xzf assets/tango.tar.gz -C assets/tango-raw --strip-components=1
+	mkdir -p assets/icons
+	# Build icon-gen tool
+	cargo build --manifest-path tools/icon-gen/Cargo.toml --release
+	# Run icon-gen
+	./target/release/icon-gen --input assets/tango-raw/scalable --output assets/icons
+
+
+$(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	rm -rf iso_root
 	# Prepare ISO root with both BIOS and UEFI directory trees upfront.
 	mkdir -p iso_root/boot iso_root/boot/user iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
-	cp -v clouds.bmp iso_root/boot/
+	cp -v assets/wallpapers/clouds.bmp iso_root/boot/clouds.bmp
 	for app in $(APPS); do \
 		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/user/$$app; \
 	done
@@ -718,18 +733,21 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons
 		mkdir -p iso_root/boot/fonts; \
 		cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
 	fi
+	# Copy unified fonts
+	mkdir -p iso_root/boot/fonts
+	cp -v assets/fonts/* iso_root/boot/fonts/
 	cp -v limine.conf iso_root/boot/limine/limine.conf
 ifeq ($(ENABLE_geographer),1)
 	echo '    module_path: boot():/boot/user/geographer' >> iso_root/boot/limine/limine.conf
 	echo '    module_cmdline: program=geographer' >> iso_root/boot/limine/limine.conf
 endif
 ifeq ($(ENABLE_PLATARO_ICONS),1)
-	mkdir -p iso_root/share/icons/plataro64
-	cp -r rootfs/share/icons/plataro64/* iso_root/share/icons/plataro64/
+	mkdir -p iso_root/share/icons/tango
+	cp -r assets/icons/* iso_root/share/icons/tango/
 	# Append icons to limine.conf as modules
-	for icon in iso_root/share/icons/plataro64/*.bmp; do \
+	for icon in iso_root/share/icons/tango/*.bmp; do \
 		NAME=$$(basename $$icon); \
-		echo "    module_path: boot():/share/icons/plataro64/$$NAME" >> iso_root/boot/limine/limine.conf; \
+		echo "    module_path: boot():/share/icons/tango/$$NAME" >> iso_root/boot/limine/limine.conf; \
 		echo "    module_cmdline: image=$$NAME" >> iso_root/boot/limine/limine.conf; \
 	done
 endif

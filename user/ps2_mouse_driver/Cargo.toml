@@ -8,7 +8,7 @@ name = "ps2_mouse_driver"
 path = "src/lib.rs"
 
 [dependencies]
-runtime = { path = "../../runtime" }
+
 thing_models = { path = "../../thing_models" }
 abi = { path = "../../abi" }
 thing_os = { path = "../../thing_os" }

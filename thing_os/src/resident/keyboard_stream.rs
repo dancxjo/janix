@@ -24,8 +24,8 @@ impl<T> KeyboardStreamMapped<T> {
                  }
 
                  let stream_header_ptr = data.as_ptr().add(data_off) as *const KeyboardStreamHeader;
-                 let head = (*stream_header_ptr).head;
-                 let capacity = (*stream_header_ptr).capacity;
+                 let head = stream_header_ptr.read_unaligned().head;
+                 let capacity = stream_header_ptr.read_unaligned().capacity;
                  
                  if capacity == 0 {
                      return start_tail;
@@ -49,7 +49,7 @@ impl<T> KeyboardStreamMapped<T> {
                            break; 
                       }
 
-                      let entry = *entries_ptr.add(idx);
+                      let entry = entries_ptr.add(idx).read_unaligned();
                       out.push(entry);
                       current = current.wrapping_add(1);
                  }
@@ -67,8 +67,8 @@ impl<T> KeyboardStreamMapped<T> {
                 if data_off >= data.len() { return; }
 
                 let stream_header_ptr = data.as_mut_ptr().add(data_off) as *mut KeyboardStreamHeader;
-                let head = (*stream_header_ptr).head;
-                let capacity = (*stream_header_ptr).capacity;
+                let head = stream_header_ptr.read_unaligned().head;
+                let capacity = stream_header_ptr.read_unaligned().capacity;
                  
                 if capacity == 0 { return; } 
                  
@@ -79,8 +79,10 @@ impl<T> KeyboardStreamMapped<T> {
                 let entry_offset = entries_start + idx * core::mem::size_of::<KeyboardEntry>();
                 
                 if entry_offset + core::mem::size_of::<KeyboardEntry>() <= data.len() {
-                    *entries_ptr.add(idx) = entry;
-                    (*stream_header_ptr).head = head.wrapping_add(1);
+                    entries_ptr.add(idx).write_unaligned(entry);
+                    let mut header_val = stream_header_ptr.read_unaligned();
+                    header_val.head = head.wrapping_add(1);
+                    stream_header_ptr.write_unaligned(header_val);
                 }
              }
         })
@@ -95,14 +97,19 @@ impl<T> KeyboardStreamMapped<T> {
                   let needed = data_off + core::mem::size_of::<KeyboardStreamHeader>() + (capacity as usize * core::mem::size_of::<KeyboardEntry>());
                   if needed > data.len() {
                       let stream_header_ptr = data.as_mut_ptr().add(data_off) as *mut KeyboardStreamHeader;
-                      (*stream_header_ptr).capacity = 0;
+                      let mut header_val = stream_header_ptr.read_unaligned();
+                      header_val.capacity = 0;
+                      stream_header_ptr.write_unaligned(header_val);
                       return;
                   }
 
                   let stream_header_ptr = data.as_mut_ptr().add(data_off) as *mut KeyboardStreamHeader;
-                  (*stream_header_ptr).head = 0;
-                  (*stream_header_ptr).capacity = capacity;
-                  (*stream_header_ptr)._pad = [0u8; 8];
+                  // Read the full header (including ResidentHeader)
+                  let mut header_val: KeyboardStreamHeader = stream_header_ptr.read_unaligned();
+                  header_val.head = 0;
+                  header_val.capacity = capacity;
+                  header_val._pad = [0u8; 8];
+                  stream_header_ptr.write_unaligned(header_val);
               }
         })
     }

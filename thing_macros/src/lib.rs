@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Attribute, Data, DeriveInput, Expr, Fields, Lit, Meta, MetaNameValue, Type, parse_macro_input,
+    Attribute, Data, DeriveInput, Expr, Fields, ItemFn, Lit, Meta, MetaNameValue, Type, parse_macro_input,
 };
 
 fn extract_description(attrs: &[Attribute]) -> Option<String> {
@@ -276,5 +276,31 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
         }
     };
 
+    TokenStream::from(expanded)
+}
+
+#[proc_macro_attribute]
+pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as syn::ItemFn);
+    let original_main = input.block;
+    let original_sig = input.sig;
+    
+    // Rename user's main to avoid conflict
+    let mut modified_sig = original_sig.clone();
+    modified_sig.ident = syn::Ident::new("thing_os_app_main", modified_sig.ident.span());
+
+    let expanded = quote! {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn main() -> ! {
+            ::thing_os::heap::init_user_heap();
+            thing_os_app_main();
+            unsafe {
+                 ::thing_os::syscalls::syscall(::thing_os::abi::KernelRequest::ExitThread);
+            }
+            loop {}
+        }
+        
+        #modified_sig #original_main
+    };
     TokenStream::from(expanded)
 }

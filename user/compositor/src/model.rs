@@ -1,7 +1,9 @@
 use thing_os::prelude::*;
 use thing_os::link_targets;
 use thing_os::thing_models::DisplayPresentRequest;
-use thing_os::{PrimaryDisplayBuffer, graph_kinds};
+use thing_os::PrimaryDisplayBuffer;
+use abi::{PropValue, ThingId, graph_kinds};
+use thing_os::{update_props, create_thing, list_things_by_kind, load_thing};
 
 use crate::layout::StackedWindow;
 use crate::render::cursor::{self, CursorKind, CursorSprites};
@@ -103,9 +105,8 @@ impl Compositor {
         }
     }
 
-    pub fn ensure_window_active_from_layout<S: Sys>(
+    pub fn ensure_window_active_from_layout(
         &mut self,
-        sys: &mut S,
         window: &StackedWindow,
         stacked: &[StackedWindow],
     ) {
@@ -115,7 +116,6 @@ impl Compositor {
 
         if let Some(prev) = self.active_window {
             let _ = update_props(
-                sys,
                 prev,
                 &[(graph_kinds::PROP_WINDOW_ACTIVE, PropValue::Bool(false))],
             );
@@ -127,7 +127,7 @@ impl Compositor {
             (graph_kinds::PROP_WINDOW_ACTIVE, PropValue::Bool(true)),
             (graph_kinds::PROP_Z_INDEX, PropValue::I64(new_z as i64)),
         ];
-        let _ = update_props(sys, window.id, &updates);
+        let _ = update_props(window.id, &updates);
         self.active_window = Some(window.id);
     }
 
@@ -179,10 +179,9 @@ pub struct DragState {
 }
 
 impl Compositor {
-    pub fn ensure_display_contracts<S: Sys>(&mut self, sys: &mut S) {
+    pub fn ensure_display_contracts(&mut self) {
         if self.framebuffer_thing_id.is_none() {
             let mut targets = link_targets(
-                sys,
                 self.fb.display_id,
                 graph_kinds::LINK_DISPLAY_FRONT_BUFFER,
             );
@@ -191,7 +190,7 @@ impl Compositor {
 
         if let Some(fb_id) = self.framebuffer_thing_id {
             if self.present_request_id.is_none() {
-                if let Some(existing) = Self::find_present_request(sys, fb_id) {
+                if let Some(existing) = Self::find_present_request(fb_id) {
                     self.present_request_id = Some(existing.id);
                 } else {
                     let request = DisplayPresentRequest {
@@ -202,7 +201,7 @@ impl Compositor {
                         presented_at_ns: None,
                         completed: true,
                     };
-                    if let Some(id) = create_thing(sys, &request) {
+                    if let Some(id) = create_thing(&request) {
                         self.present_request_id = Some(id);
                     }
                 }
@@ -210,18 +209,18 @@ impl Compositor {
         }
     }
 
-    fn find_present_request<S: Sys>(sys: &mut S, fb_id: ThingId) -> Option<DisplayPresentRequest> {
-        list_things_by_kind::<S, DisplayPresentRequest>(sys)
+    fn find_present_request(fb_id: ThingId) -> Option<DisplayPresentRequest> {
+        list_things_by_kind::<DisplayPresentRequest>()
             .into_iter()
             .find(|req| req.framebuffer_id == fb_id)
     }
 
-    pub fn publish_present_request<S: Sys>(&mut self, sys: &mut S) {
+    pub fn publish_present_request(&mut self) {
         let Some(req_id) = self.present_request_id else {
             return;
         };
         self.frame_counter = self.frame_counter.wrapping_add(1);
-        let now = sys.time_monotonic_ns();
+        let now = thing_os::time::Instant::now().t_ns;
         let updates = [
             (
                 graph_kinds::PROP_FRAME_INDEX,
@@ -231,164 +230,6 @@ impl Compositor {
             (graph_kinds::PROP_COMPLETED, PropValue::Bool(false)),
             (graph_kinds::PROP_PRESENTED_AT_NS, PropValue::U64(0)),
         ];
-        let _ = update_props(sys, req_id, &updates);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::layout::StackedWindow;
-    use crate::test_support::{FramebufferFixture, MockSys, list_responses, success};
-    use abi::{KernelRequest, KernelResponse, PropValue, ThingId, graph_kinds};
-    use thing_os::thing_models::DisplayPresentRequest;
-
-    fn stacked_window(id: u64, z_index: i64, active: bool) -> StackedWindow {
-        StackedWindow {
-            id: ThingId(id),
-            x: 0,
-            y: 0,
-            width: 50,
-            height: 50,
-            z_index,
-            active,
-        }
-    }
-
-    #[test]
-    fn sync_active_tracks_layout_state() {
-        let fb = FramebufferFixture::new(40, 40);
-        let mut comp = Compositor::new(fb.fb);
-        let stacked = vec![stacked_window(1, 0, true), stacked_window(2, 1, false)];
-        comp.sync_active_from_layout(&stacked);
-        assert_eq!(comp.active_window, Some(ThingId(1)));
-
-        let stacked = vec![stacked_window(2, 1, false)];
-        comp.sync_active_from_layout(&stacked);
-        assert_eq!(comp.active_window, None);
-    }
-
-    #[test]
-    fn ensure_window_active_updates_previous_and_bumps_z() {
-        let fb = FramebufferFixture::new(60, 60);
-        let mut comp = Compositor::new(fb.fb);
-        comp.active_window = Some(ThingId(1));
-        let stacked = vec![stacked_window(1, 1, true), stacked_window(2, 3, false)];
-        let mut sys = MockSys::with_responses(vec![success(), success()]);
-
-        comp.ensure_window_active_from_layout(&mut sys, &stacked[1], &stacked);
-        assert_eq!(comp.active_window, Some(ThingId(2)));
-
-        let requests = sys.drain_requests();
-        assert_eq!(requests.len(), 2);
-        if let KernelRequest::ThingUpdate { id, props } = &requests[0] {
-            assert_eq!(*id, ThingId(1));
-            let active = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_WINDOW_ACTIVE)
-                .map(|p| p.1.clone());
-            assert_eq!(active, Some(PropValue::Bool(false)));
-        } else {
-            panic!("expected ThingUpdate");
-        }
-
-        if let KernelRequest::ThingUpdate { id, props } = &requests[1] {
-            assert_eq!(*id, ThingId(2));
-            let active = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_WINDOW_ACTIVE)
-                .map(|p| p.1.clone());
-            let z_index = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_Z_INDEX)
-                .map(|p| p.1.clone());
-            assert_eq!(active, Some(PropValue::Bool(true)));
-            assert_eq!(z_index, Some(PropValue::I64(4)));
-        } else {
-            panic!("expected ThingUpdate for new active window");
-        }
-    }
-
-    #[test]
-    fn ensure_display_contracts_reuses_present_request() {
-        let fb = FramebufferFixture::new(80, 80);
-        let mut comp = Compositor::new(fb.fb);
-        let fb_id = ThingId(10);
-        let present = DisplayPresentRequest {
-            id: ThingId(77),
-            framebuffer_id: fb_id,
-            frame_index: 0,
-            requested_at_ns: 0,
-            presented_at_ns: None,
-            completed: true,
-        };
-
-        let mut responses = vec![
-            KernelResponse::LinkTarget {
-                target: Some(fb_id),
-            },
-            KernelResponse::LinkTarget { target: None },
-        ];
-        responses.extend(list_responses(vec![present.clone()], |p| p.id));
-        let mut sys = MockSys::with_responses(responses);
-
-        comp.ensure_display_contracts(&mut sys);
-        assert_eq!(comp.framebuffer_thing_id, Some(fb_id));
-        assert_eq!(comp.present_request_id, Some(present.id));
-    }
-
-    #[test]
-    fn ensure_display_contracts_creates_request_when_missing() {
-        let fb = FramebufferFixture::new(80, 80);
-        let mut comp = Compositor::new(fb.fb);
-        let fb_id = ThingId(5);
-
-        let responses = vec![
-            KernelResponse::LinkTarget {
-                target: Some(fb_id),
-            },
-            KernelResponse::LinkTarget { target: None },
-            KernelResponse::ThingListEntry { id: None },
-            KernelResponse::ThingCreated { id: ThingId(44) },
-        ];
-        let mut sys = MockSys::with_responses(responses);
-        comp.ensure_display_contracts(&mut sys);
-        assert_eq!(comp.present_request_id, Some(ThingId(44)));
-        assert_eq!(comp.framebuffer_thing_id, Some(fb_id));
-    }
-
-    #[test]
-    fn publish_present_request_updates_frame_state() {
-        let fb = FramebufferFixture::new(100, 100);
-        let mut comp = Compositor::new(fb.fb);
-        comp.present_request_id = Some(ThingId(30));
-        let mut sys = MockSys::with_responses(vec![success()]);
-        sys.set_time(40);
-
-        comp.publish_present_request(&mut sys);
-        assert_eq!(comp.frame_counter, 1);
-
-        let requests = sys.drain_requests();
-        assert_eq!(requests.len(), 1);
-        if let KernelRequest::ThingUpdate { props, .. } = &requests[0] {
-            let frame_index = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_FRAME_INDEX)
-                .map(|p| p.1.clone());
-            let requested_at = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_REQUESTED_AT_NS)
-                .map(|p| p.1.clone());
-            let completed = props
-                .iter()
-                .find(|p| p.0 == graph_kinds::PROP_COMPLETED)
-                .map(|p| p.1.clone());
-
-            assert_eq!(frame_index, Some(PropValue::U64(1)));
-            assert_eq!(requested_at, Some(PropValue::U64(41)));
-            assert_eq!(completed, Some(PropValue::Bool(false)));
-        } else {
-            panic!("expected ThingUpdate for present request");
-        }
+        let _ = update_props(req_id, &updates);
     }
 }

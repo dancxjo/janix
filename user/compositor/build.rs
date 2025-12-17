@@ -63,25 +63,23 @@ fn main() {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
     std::fs::create_dir_all(&out_dir).expect("failed to create OUT_DIR");
-    let shared_fonts_dir = workspace_root().join("target").join("compositor-fonts");
+    let shared_fonts_dir = workspace_root().join("assets").join("fonts");
     fs::create_dir_all(&shared_fonts_dir).expect("failed to create shared fonts dir");
 
     // --- Fonts ---
     for (name, url) in FONT_SOURCES {
         let filename = format!("{name}.ttf");
-        let dest = out_dir.join(&filename);
+        let dest = shared_fonts_dir.join(&filename);
         if !dest.exists() {
             fetch_url(url, &dest)
                 .unwrap_or_else(|e| panic!("failed to download {name} from {url}: {e}"));
         }
-        let shared_dest = shared_fonts_dir.join(&filename);
-        copy_font_to_shared_dir(&dest, &shared_dest);
     }
 
     let fonts_rs = out_dir.join("fonts_includes.rs");
     let mut file = File::create(&fonts_rs).expect("failed to create fonts_includes.rs");
     for (name, _) in FONT_SOURCES {
-        let path = out_dir.join(format!("{name}.ttf"));
+        let path = shared_fonts_dir.join(format!("{name}.ttf"));
         writeln!(
             file,
             "pub static {}: &[u8] = include_bytes!({:?});",
@@ -163,12 +161,7 @@ fn workspace_root() -> PathBuf {
         .expect("failed to derive workspace root from manifest dir")
 }
 
-fn copy_font_to_shared_dir(src: &Path, dest: &Path) {
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent).expect("failed to create shared font parent dir");
-    }
-    fs::copy(src, dest).expect("failed to copy font into shared directory");
-}
+
 
 fn render_svg(path: &Path) -> io::Result<(u32, u32, Vec<u32>)> {
     let mut svg_data = fs::read_to_string(path)?;

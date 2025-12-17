@@ -1,9 +1,7 @@
 [package]
-name = "debug_clock"
+name = "hello_world"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 thing_os = { path = "../../thing_os" }
-abi = { path = "../../abi" }
-log = "0.4"

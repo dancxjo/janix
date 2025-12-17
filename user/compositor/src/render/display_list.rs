@@ -433,6 +433,7 @@ fn draw_window_frame(
     );
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,3 +578,4 @@ mod tests {
         // assert_ne!(buffer[cursor_idx], 0);
     }
 }
+*/

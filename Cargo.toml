@@ -1,33 +1,26 @@
 [workspace]
 resolver = "2"
 members = [
-    "user/examples_support",
     "boot",
     "kernel",
     "abi",
-    "runtime",
     "thing_os",
-    "user/init",
-    "user/debug_thread",
     "user/debug_clock",
-    "user/debug_alarm",
-    "user/mode_manager",
-    "user/ps2_keyboard_driver",
-    "user/ps2_mouse_driver",
-    "user/debug_input_events",
-    "user/debug_input_logger",
-    "user/framebuffer_driver",
     "user/compositor",
     "user/window_demo",
     "hal",
     "drivers_usb",
     "drivers_pci",
-    "user/rootfs",
-    "user/geographer",
     "thing_macros",
     "thing_models",
-    "smoke_tests",
     "arch",
+    "user/init",
+    "user/framebuffer_driver",
+    "user/ps2_keyboard_driver",
+    "user/ps2_mouse_driver",
+    "user/geographer",
+
+    "user/hello_world", "tools/icon-gen",
 ]
 
 [workspace.package]

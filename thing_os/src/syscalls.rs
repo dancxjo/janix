@@ -1,243 +1,484 @@
-#[cfg(target_os = "none")]
-use alloc::boxed::Box;
-#[cfg(target_os = "none")]
-use alloc::string::ToString;
-#[cfg(target_os = "none")]
-use alloc::vec::Vec;
-#[cfg(not(target_os = "none"))]
-use std::string::ToString;
-
 use abi::{
-    FrameId, FrameInfo, KernelRequest, KernelResponse, MapFlags, MemorySummary, NodeId,
-    SchedulerSummary, SharedBufferInfo, ThreadInfo,
+    KernelRequest, KernelResponse, SharedBufferInfo, SyscallNumber, ThingGetSyscallResult,
+    ThingPropScalarType, resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
 };
-use runtime::Sys;
+use crate::sys::raw_syscall;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
-/// Print a line to the kernel log.
-pub fn println(sys: &impl Sys, message: &'static str) {
-    let request = KernelRequest::Log { message };
-    sys.syscall(request);
-}
-
-/// Query a node in the kernel graph and return the associated value.
-pub fn graph_query(sys: &impl Sys, node_id: NodeId) -> Option<u64> {
-    let request = KernelRequest::GraphQuery { node_id };
-    match sys.syscall(request) {
-        KernelResponse::NodeData { node_id: _, value } => Some(value),
-        _ => None,
-    }
-}
-
-/// Create a transaction and return its ID.
-pub fn create_transaction(sys: &impl Sys) -> Option<abi::TransactionId> {
-    let request = KernelRequest::CreateTransaction;
-    match sys.syscall(request) {
-        KernelResponse::TransactionCreated { tx_id } => Some(tx_id),
-        _ => None,
-    }
-}
-
-/// Commit an open transaction created via [`create_transaction`].
-pub fn commit_transaction(sys: &impl Sys, tx_id: abi::TransactionId) -> bool {
-    let request = KernelRequest::CommitTransaction { tx_id };
-    matches!(sys.syscall(request), KernelResponse::Success { .. })
-}
-
-/// Create a new Thing from a raw kind and property slice.
-pub fn user_create_thing(
-    sys: &impl Sys,
-    kind: &'static str,
-    props: &'static [(abi::PropKey, abi::PropValue)],
-) -> Result<abi::ThingId, &'static str> {
-    let request = KernelRequest::ThingCreate { kind, props };
-    match sys.syscall(request) {
-        KernelResponse::ThingCreated { id } => Ok(id),
-        KernelResponse::Error { message } => Err(message),
-        _ => Err("Unexpected response"),
-    }
-}
-
-/// Update properties of an existing Thing using a property slice.
-pub fn user_update_thing(
-    sys: &impl Sys,
-    id: abi::ThingId,
-    props: &'static [(abi::PropKey, abi::PropValue)],
-) -> Result<(), &'static str> {
-    let request = KernelRequest::ThingUpdate { id, props };
-    match sys.syscall(request) {
-        KernelResponse::Success { .. } => Ok(()),
-        KernelResponse::Error { message } => Err(message),
-        _ => Err("Unexpected response"),
-    }
-}
-
-pub use abi::Thing;
-pub use abi::graph_kinds;
-pub use abi::{Predicate, PropKey, PropType, PropValue, ThingId};
-
-/// Create a `Thing` value and register it with the kernel.
-pub fn create_thing<T: Thing>(sys: &impl Sys, thing: &T) -> Option<ThingId> {
-    let mut props_vec = Vec::new();
-    thing.to_props(&mut props_vec);
-    let props_slice = Box::leak(props_vec.into_boxed_slice());
-
-    let request = KernelRequest::ThingCreate {
-        kind: T::KIND,
-        props: props_slice,
-    };
-    match sys.syscall(request) {
-        KernelResponse::ThingCreated { id } => Some(id),
-        _ => None,
-    }
-}
-
-/// Load a typed `Thing` from the kernel.
-pub fn load_thing<T: Thing>(sys: &impl Sys, id: ThingId) -> Option<T> {
-    let request = KernelRequest::ThingGet { id };
-    match sys.syscall(request) {
-        KernelResponse::ThingData { id, kind, props } => {
-            if kind != T::KIND {
-                return None;
-            }
-            Some(T::from_props(id, props))
+pub fn syscall(request: KernelRequest) -> KernelResponse {
+    match request {
+        KernelRequest::Log { message } => {
+            let ptr = message.as_ptr() as u64;
+            let len = message.len() as u64;
+            unsafe { raw_syscall(SyscallNumber::Log, ptr, len, 0, 0, 0, 0) };
+            KernelResponse::Success { data: None }
         }
-        _ => None,
-    }
-}
 
-/// Request that the kernel register the schema for `T`.
-pub fn register_schema_for<T: Thing>(sys: &impl Sys) -> bool {
-    let schema = T::schema();
-    match sys.syscall(KernelRequest::SchemaRegister {
-        kind: T::KIND,
-        description: T::DESCRIPTION,
-        props: schema,
-    }) {
-        KernelResponse::SchemaRegistered { .. } => true,
-        _ => false,
-    }
-}
-
-/// Search for a `Thing` that satisfies `predicate`.
-pub fn find_thing<T: Thing>(sys: &impl Sys, predicate: impl Fn(&T) -> bool) -> Option<T> {
-    for i in 0..128 {
-        if let Some(thing) = load_thing::<T>(sys, ThingId(i)) {
-            if predicate(&thing) {
-                return Some(thing);
-            }
+        KernelRequest::ExitThread => {
+             unsafe { raw_syscall(SyscallNumber::ExitThread, 0, 0, 0, 0, 0, 0) };
+             loop {}
+        },
+        KernelRequest::SchedulerTick => {
+            unsafe { raw_syscall(SyscallNumber::Yield, 0, 0, 0, 0, 0, 0) };
+            KernelResponse::Success { data: None }
         }
-    }
-    None
-}
-
-/// Return all neighbors reachable from `from` via `pred` in insertion order.
-pub fn link_targets<S: Sys>(sys: &mut S, src: ThingId, pred: Predicate) -> Vec<ThingId> {
-    let mut results = Vec::new();
-    let mut idx = 0;
-    loop {
-        match sys.syscall(KernelRequest::LinkAt { src, pred, idx }) {
-            KernelResponse::LinkTarget { target: Some(id) } => {
-                results.push(id);
-                idx += 1;
-            }
-            KernelResponse::LinkTarget { target: None } => break,
-            _ => break,
-        }
-    }
-    results
-}
-
-/// Add a link between Things via the kernel ABI.
-pub fn add_link(sys: &impl Sys, src: ThingId, pred: Predicate, dst: ThingId) -> bool {
-    matches!(
-        sys.syscall(KernelRequest::AddLink { src, pred, dst }),
-        KernelResponse::Success { .. }
-    )
-}
-
-/// List all Things of a given `T::KIND`.
-pub fn list_things_by_kind<S: Sys, T: Thing>(sys: &mut S) -> Vec<T> {
-    let mut results = Vec::new();
-    let mut cursor = ThingId(u64::MAX);
-    loop {
-        match sys.syscall(KernelRequest::ThingList {
-            kind: T::KIND,
-            start_after: cursor,
-        }) {
-            KernelResponse::ThingListEntry { id: Some(next_id) } => {
-                if let Some(thing) = load_thing::<T>(sys, next_id) {
-                    results.push(thing);
+        KernelRequest::AllocFrame { pool_index } => {
+            let mut frame = abi::FrameInfo {
+                id: abi::FrameId(0),
+                base: 0,
+                size: 0,
+            };
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::AllocFrame,
+                    pool_index as u64,
+                    &mut frame as *mut _ as u64,
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::FrameAllocated { frame }
+            } else {
+                KernelResponse::Error {
+                    message: "AllocFrame failed",
                 }
-                cursor = next_id;
             }
-            KernelResponse::ThingListEntry { id: None } => break,
-            KernelResponse::Error { .. } => break,
-            _ => break,
         }
-    }
-    results
-}
-
-/// Get the type-level description for a `Thing` type.
-pub fn get_type_description<T: Thing>() -> &'static str {
-    T::DESCRIPTION
-}
-
-/// Update the properties for the Thing with `id`.
-pub fn update_props(sys: &impl Sys, id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
-    let props_vec = props.to_vec();
-    let props_slice = Box::leak(props_vec.into_boxed_slice());
-
-    let request = KernelRequest::ThingUpdate {
-        id,
-        props: props_slice,
-    };
-    matches!(sys.syscall(request), KernelResponse::Success { .. })
-}
-
-/// Return a summary of the current physical memory state.
-pub fn memory_summary(sys: &impl Sys) -> Option<MemorySummary> {
-    match sys.syscall(KernelRequest::GetMemorySummary) {
-        KernelResponse::MemorySummary { summary } => Some(summary),
-        _ => None,
-    }
-}
-
-/// Return a summary of the scheduler state exposed by the kernel.
-pub fn scheduler_summary(sys: &impl Sys) -> Option<SchedulerSummary> {
-    match sys.syscall(KernelRequest::GetSchedulerSummary) {
-        KernelResponse::SchedulerSummary { summary } => Some(summary),
-        _ => None,
-    }
-}
-
-/// Allocate a zero-addressed frame from the first frame pool.
-pub fn alloc_frame(sys: &impl Sys) -> Option<FrameInfo> {
-    match sys.syscall(KernelRequest::AllocFrame { pool_index: 0 }) {
-        KernelResponse::FrameAllocated { frame } => Some(frame),
-        _ => None,
-    }
-}
-
-/// Return a previously-allocated frame to the kernel.
-pub fn free_frame(sys: &impl Sys, frame_id: FrameId) -> bool {
-    matches!(
-        sys.syscall(KernelRequest::FreeFrame { frame_id }),
-        KernelResponse::FrameFreed { .. }
-    )
-}
-
-/// Query a thing and return name+props (utility for debugging).
-pub fn get_thing<S: Sys>(sys: &mut S, id: ThingId) -> Option<(String, Vec<(String, PropValue)>)> {
-    match sys.syscall(KernelRequest::ThingGet { id }) {
-        KernelResponse::ThingData { kind, props, .. } => {
-            let props_vec = props
-                .iter()
-                .flatten()
-                .map(|(k, v)| (k.to_string(), v.clone()))
-                .collect();
-            Some((kind.to_string(), props_vec))
+        KernelRequest::FreeFrame { frame_id } => {
+            let ret =
+                unsafe { raw_syscall(SyscallNumber::FreeFrame, frame_id.0, 0, 0, 0, 0, 0) };
+            if ret == 0 {
+                KernelResponse::FrameFreed { frame_id }
+            } else {
+                KernelResponse::Error {
+                    message: "FreeFrame failed",
+                }
+            }
         }
-        _ => None,
+        KernelRequest::CreateProcess { name } => {
+            let ptr = name.as_ptr() as u64;
+            let len = name.len() as u64;
+            let ret =
+                unsafe { raw_syscall(SyscallNumber::CreateProcess, ptr, len, 0, 0, 0, 0) };
+            if ret == 0 {
+                KernelResponse::Error {
+                    message: "CreateProcess failed",
+                }
+            } else {
+                KernelResponse::ProcessCreated { pid: ret }
+            }
+        }
+        KernelRequest::CreateThread {
+            pid,
+            name,
+            app_id,
+            priority,
+        } => {
+            let ptr = name.as_ptr() as u64;
+            let len = name.len() as u64;
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::CreateThread,
+                    pid,
+                    app_id,
+                    priority,
+                    ptr,
+                    len,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::Error {
+                    message: "CreateThread failed",
+                }
+            } else {
+                KernelResponse::ThreadCreated { tid: ret }
+            }
+        }
+        KernelRequest::ThingCreate { kind, props } => {
+            let kind_ptr = kind.as_ptr() as u64;
+            let kind_len = kind.len() as u64;
+            let props_ptr = props.as_ptr() as u64;
+            let props_len = props.len() as u64;
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::ThingCreate,
+                    kind_ptr,
+                    kind_len,
+                    props_ptr,
+                    props_len,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::Error {
+                    message: "ThingCreate failed",
+                }
+            } else {
+                KernelResponse::ThingCreated {
+                    id: abi::ThingId(ret),
+                }
+            }
+        }
+        KernelRequest::ThingUpdate { id, props } => {
+            let props_ptr = props.as_ptr() as u64;
+            let props_len = props.len() as u64;
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::ThingUpdate,
+                    id.0,
+                    props_ptr,
+                    props_len,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::Success { data: None }
+            } else {
+                KernelResponse::Error {
+                    message: "ThingUpdate failed",
+                }
+            }
+        }
+        KernelRequest::ThingGet { id } => {
+            let mut raw = ThingGetSyscallResult::default();
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::ThingGet,
+                    id.0,
+                    &mut raw as *mut _ as u64,
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret != 0 {
+                KernelResponse::Error {
+                    message: "ThingGet failed",
+                }
+            } else {
+                let kind_bytes = &raw.kind[..raw.kind_len];
+                let kind_str = core::str::from_utf8(kind_bytes).unwrap_or("");
+                let kind_static: &'static str =
+                    Box::leak(kind_str.to_string().into_boxed_str());
+
+                let mut copied: Vec<Option<(abi::PropKey, abi::PropValue)>> =
+                    Vec::with_capacity(raw.prop_count);
+                for entry in raw.props.iter().take(raw.prop_count) {
+                    if entry.present == 0 {
+                        copied.push(None);
+                        continue;
+                    }
+
+                    let key_bytes = &entry.key[..entry.key_len];
+                    let key_str = core::str::from_utf8(key_bytes).unwrap_or("");
+                    let key_static: &'static str =
+                        Box::leak(key_str.to_string().into_boxed_str());
+
+                    let value = match entry.value_type {
+                        ThingPropScalarType::U64 => abi::PropValue::U64(entry.value_u64),
+                        ThingPropScalarType::I64 => abi::PropValue::I64(entry.value_i64),
+                        ThingPropScalarType::Bool => {
+                            abi::PropValue::Bool(entry.value_bool != 0)
+                        }
+                        ThingPropScalarType::Str => {
+                            let str_bytes = &entry.value_str[..entry.value_str_len];
+                            let string =
+                                String::from_utf8(str_bytes.to_vec()).unwrap_or_else(|_| {
+                                    String::from(core::str::from_utf8(str_bytes).unwrap_or(""))
+                                });
+                            abi::PropValue::Str(string)
+                        }
+                    };
+
+                    copied.push(Some((key_static, value)));
+                }
+
+                let props_static: &'static [Option<(abi::PropKey, abi::PropValue)>] =
+                    Box::leak(copied.into_boxed_slice());
+
+                KernelResponse::ThingData {
+                    id,
+                    kind: kind_static,
+                    props: props_static,
+                }
+            }
+        }
+        KernelRequest::ThingList { kind, start_after } => {
+            let kind_ptr = kind.as_ptr() as u64;
+            let kind_len = kind.len() as u64;
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::ThingList,
+                    kind_ptr,
+                    kind_len,
+                    start_after.0,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret == u64::MAX {
+                KernelResponse::ThingListEntry { id: None }
+            } else {
+                KernelResponse::ThingListEntry {
+                    id: Some(abi::ThingId(ret)),
+                }
+            }
+        }
+        KernelRequest::AddLink { src, pred, dst } => {
+            let ret =
+                unsafe { raw_syscall(SyscallNumber::AddLink, src.0, pred.0, dst.0, 0, 0, 0) };
+            if ret == 0 {
+                KernelResponse::Success { data: None }
+            } else {
+                KernelResponse::Error {
+                    message: "AddLink failed",
+                }
+            }
+        }
+        KernelRequest::LinkAt { src, pred, idx } => {
+            let ret = unsafe {
+                raw_syscall(SyscallNumber::LinkAt, src.0, idx as u64, pred.0, 0, 0, 0)
+            };
+            if ret == u64::MAX {
+                KernelResponse::LinkTarget { target: None }
+            } else {
+                KernelResponse::LinkTarget {
+                    target: Some(abi::ThingId(ret)),
+                }
+            }
+        }
+        KernelRequest::SpawnProgram { boot_program_id } => {
+            let mut result = abi::SpawnProgramResult {
+                process_id: abi::ThingId(0),
+                thread_id: abi::ThingId(0),
+            };
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::SpawnProgram,
+                    boot_program_id.0,
+                    &mut result as *mut _ as u64,
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::ProgramSpawned {
+                    process_id: result.process_id,
+                    thread_id: result.thread_id,
+                }
+            } else {
+                KernelResponse::Error {
+                    message: "SpawnProgram failed",
+                }
+            }
+        }
+        KernelRequest::SchemaRegister {
+            kind,
+            description,
+            props,
+        } => {
+            let kind_ptr = kind.as_ptr() as u64;
+            let kind_len = kind.len() as u64;
+            let desc_ptr = description.as_ptr() as u64;
+            let desc_len = description.len() as u64;
+            let props_ptr = props.as_ptr() as u64;
+            let props_len = props.len() as u64;
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::SchemaRegister,
+                    kind_ptr,
+                    kind_len,
+                    desc_ptr,
+                    desc_len,
+                    props_ptr,
+                    props_len,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::SchemaRegistered { kind }
+            } else {
+                KernelResponse::Error {
+                    message: "SchemaRegister failed",
+                }
+            }
+        }
+        KernelRequest::MapSharedBuffer { buffer_id, flags } => {
+            let mut vaddr = 0_u64;
+            let mut size = 0_u64;
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::MapSharedBuffer,
+                    buffer_id.0,
+                    flags.bits(),
+                    &mut vaddr as *mut _ as u64,
+                    &mut size as *mut _ as u64,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::SharedBufferMapped { vaddr, size }
+            } else {
+                KernelResponse::Error {
+                    message: "MapSharedBuffer failed",
+                }
+            }
+        }
+        KernelRequest::CreateSharedBuffer {
+            width,
+            height,
+            pixel_format,
+        } => {
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::CreateSharedBuffer,
+                    width as u64,
+                    height as u64,
+                    pixel_format as u8 as u64,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret != 0 {
+                KernelResponse::SharedBufferCreated {
+                    buffer_id: abi::ThingId(ret),
+                }
+            } else {
+                KernelResponse::Error {
+                    message: "CreateSharedBuffer failed",
+                }
+            }
+        }
+        KernelRequest::GetSharedBufferInfo { buffer_id } => {
+            let mut info = SharedBufferInfo {
+                width: 0,
+                height: 0,
+                stride: 0,
+                pixel_format: abi::PixelFormat::Rgba8888,
+            };
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::GetSharedBufferInfo,
+                    buffer_id.0,
+                    &mut info as *mut _ as u64,
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::SharedBufferInfoResponse { info }
+            } else {
+                KernelResponse::Error {
+                    message: "GetSharedBufferInfo failed",
+                }
+            }
+        }
+        KernelRequest::ResidentAlloc { kind, byte_len, flags: _ } => {
+            let kind_ptr = kind.as_ptr() as u64;
+            let kind_len = kind.len() as u64;
+            let mut resp = ResidentAllocResp::default();
+            let mut err = ResidentError::default();
+            
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::ResidentAlloc,
+                    kind_ptr,
+                    kind_len,
+                    byte_len as u64,
+                    &mut resp as *mut _ as u64,
+                    &mut err as *mut _ as u64,
+                    0,
+                )
+            };
+            
+            if ret == 0 {
+                KernelResponse::ResidentAllocated { resp }
+            } else {
+                KernelResponse::ResidentError(err)
+            }
+        }
+        KernelRequest::ResidentMap { id, perms } => {
+            let mut resp = ResidentMapResp::default();
+            let mut err = ResidentError::default();
+            
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::ResidentMap,
+                    id.0,
+                    perms.0 as u64,
+                    &mut resp as *mut _ as u64,
+                    &mut err as *mut _ as u64,
+                    0,
+                    0,
+                )
+            };
+            
+            if ret == 0 {
+                KernelResponse::ResidentMapped { resp }
+            } else {
+                KernelResponse::ResidentError(err)
+            }
+        }
+        KernelRequest::ResidentUnmap { thing_id } => {
+            let mut err = ResidentError::default();
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::ResidentUnmap,
+                    thing_id.0,
+                    &mut err as *mut _ as u64,
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            
+            if ret == 0 {
+                KernelResponse::Success { data: None }
+            } else {
+                KernelResponse::ResidentError(err)
+            }
+        }
+        KernelRequest::ThingRest { thing_id, policy } => {
+            let mut resp = RestResp::default();
+            let mut err = ResidentError::default();
+            
+            let ret = unsafe {
+                raw_syscall(
+                    SyscallNumber::ThingRest,
+                    thing_id.0,
+                    policy as u64,
+                    &mut resp as *mut _ as u64,
+                    &mut err as *mut _ as u64,
+                    0,
+                    0,
+                )
+            };
+            
+            if ret == 0 {
+                KernelResponse::ThingRested { resp }
+            } else {
+                KernelResponse::ResidentError(err)
+            }
+        }
+        _ => KernelResponse::Error {
+            message: "Syscall not implemented yet",
+        },
     }
 }

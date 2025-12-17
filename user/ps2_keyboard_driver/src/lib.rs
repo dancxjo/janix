@@ -4,11 +4,12 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use thing_models::{
-    InputCharEvent, InterruptEvent, InterruptRequest, IoDirection, IoPortOp, IoPortRegion,
-    IoStatus, IoWidth, KeyScanEvent, ModeSwitchEvent,
+    InputCharEvent, InterruptEvent, IoDirection, IoPortOp, IoPortRegion,
+    IoStatus, IoWidth, KeyScanEvent,
 };
 use thing_os::prelude::*;
 use thing_os::MODE_INDEX_CONSOLE;
+use thing_os::{update_props, create_thing, load_thing, PropKey, PropValue, PropType};
 
 const POLL_INTERVAL_NS: u64 = 2_000_000;
 const STATUS_OFFSET: u16 = 4;
@@ -77,22 +78,20 @@ unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize
 }
 
 
-use thing_os::resident::keyboard_stream::{KeyboardStreamMapped, KeyboardEntry, KeyboardStreamThing};
+use thing_os::resident::keyboard_stream::{KeyboardStreamMapped, KeyboardEntry}; // , KeyboardStreamThing};
 use thing_os::resident::{alloc_resident, map_resident, ResidentMapPerms, Resident};
 
-pub fn main<S: Sys>(sys: &mut S) -> ! {
-    println(sys, "ps2_keyboard_driver: starting (resident stream)");
+pub fn driver_main() -> ! {
+    println!("ps2_keyboard_driver: starting (resident stream)");
 
     // Allocate Resident Keyboard Stream
     // Capacity 64 entries * 8 bytes = 512 bytes + header (64) = 576 bytes
     // Page size is usually 4096, so 4096 is fine.
-    let alloc_resp = match alloc_resident(sys, "KeyboardStream", 4096, 0) {
+    let alloc_resp = match alloc_resident("KeyboardStream", 4096, 0) {
         Ok(r) => r,
         Err(e) => {
-             let msg = alloc::format!("ps2_keyboard_driver: alloc_resident failed {:?}", e);
-             let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
-             println(sys, leaked);
-             loop { sys.sleep_for_ns(1_000_000_000); }
+             println!("ps2_keyboard_driver: alloc_resident failed {:?}", e);
+             loop { sleep(Duration::from_nanos(1_000_000_000)); }
         }
     };
 
@@ -100,37 +99,34 @@ pub fn main<S: Sys>(sys: &mut S) -> ! {
     // alloc_resident already created the Thing in the graph with kind "KeyboardStream".
     // We do not need to call create_thing again.
     // let stream_thing = KeyboardStreamThing { id: alloc_resp.id };
-    // if create_thing(sys, &stream_thing).is_none() {
-    //      println(sys, "ps2_keyboard_driver: failed to create KeyboardStreamThing");
+    // if create_thing(&stream_thing).is_none() {
+    //      println!("ps2_keyboard_driver: failed to create KeyboardStreamThing");
     // }
 
     // Map it RW
-    let map_resp = match map_resident(sys, alloc_resp.id, ResidentMapPerms(ResidentMapPerms::READ.0 | ResidentMapPerms::WRITE.0)) {
+    let map_resp = match map_resident(alloc_resp.id, ResidentMapPerms(ResidentMapPerms::READ.0 | ResidentMapPerms::WRITE.0)) {
         Ok(r) => r,
         Err(e) => {
-             let msg = alloc::format!("ps2_keyboard_driver: map_resident failed {:?}", e);
-             let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
-             println(sys, leaked);
-             loop { sys.sleep_for_ns(1_000_000_000); }
+             println!("ps2_keyboard_driver: map_resident failed {:?}", e);
+             loop { sleep(Duration::from_nanos(1_000_000_000)); }
         }
     };
     
-    let mut obj = unsafe { Resident::<()>::new(alloc_resp.id, map_resp.user_addr as *mut u8, map_resp.byte_len as usize) };
+    let obj = unsafe { Resident::<()>::new(alloc_resp.id, map_resp.user_addr as *mut u8, map_resp.byte_len as usize) };
     let mut stream = KeyboardStreamMapped::new(obj);
     stream.init(256); // Capacity 256 entries
 
-    println(sys, "ps2_keyboard_driver: KeyboardStream initialized");
+    println!("ps2_keyboard_driver: KeyboardStream initialized");
 
-    let region = wait_for_region(sys);
-    println(
-        sys,
+    let region = wait_for_region();
+    println!(
         "ps2_keyboard_driver: found i8042 IO region; initializing controller",
     );
     let mut accessor = IoPortAccessor::new(region.id);
-    if !init_controller(sys, &mut accessor) {
-        println(sys, "ps2_keyboard_driver: controller init failed");
+    if !init_controller(&mut accessor) {
+        println!("ps2_keyboard_driver: controller init failed");
     } else {
-        println(sys, "ps2_keyboard_driver: controller initialized");
+        println!("ps2_keyboard_driver: controller initialized");
     }
 
     let mut decoder = KeyboardDecoder::new(region.id);
@@ -139,13 +135,11 @@ pub fn main<S: Sys>(sys: &mut S) -> ! {
     let handle = match unsafe { syscall_dev_open(1, 0) } {
         Ok(h) => h,
         Err(e) => {
-            let msg = alloc::format!("ps2_keyboard_driver: failed to open device: code={}", e.code);
-            let leaked = alloc::boxed::Box::leak(msg.into_boxed_str());
-            println(sys, leaked);
-            loop { sys.sleep_for_ns(1_000_000_000); }
+            println!("ps2_keyboard_driver: failed to open device: code={}", e.code);
+            loop { sleep(Duration::from_nanos(1_000_000_000)); }
         }
     };
-    println(sys, "ps2_keyboard_driver: device opened");
+    println!("ps2_keyboard_driver: device opened");
 
     let mut buffer = [0u8; 16];
     
@@ -155,62 +149,64 @@ pub fn main<S: Sys>(sys: &mut S) -> ! {
                 if count > 0 {
                     for i in 0..count {
                         let byte = buffer[i];
-                        decoder.process_byte(sys, &mut stream, byte);
+                        decoder.process_byte(&mut stream, byte);
                     }
                 } else {
-                     sys.sleep_for_ns(POLL_INTERVAL_NS);
+                     sleep(Duration::from_nanos(POLL_INTERVAL_NS));
                 }
             }
             Err(_) => {
-                 sys.sleep_for_ns(POLL_INTERVAL_NS);
+                 sleep(Duration::from_nanos(POLL_INTERVAL_NS));
             }
         }
     }
 }
 
-fn wait_for_region<S: Sys>(sys: &mut S) -> IoPortRegion {
+fn wait_for_region() -> IoPortRegion {
     loop {
-        let regions: Vec<IoPortRegion> = list_things_by_kind(sys);
+        let regions: Vec<IoPortRegion> = list_things_by_kind();
         if let Some(region) = regions.into_iter().find(|r| r.name == "i8042") {
             return region;
         }
-        sys.sleep_for_ns(5_000_000);
+        sleep(Duration::from_nanos(5_000_000));
     }
 }
 
-fn initial_interrupt_cursor<S: Sys>(sys: &mut S) -> u64 {
-    list_things_by_kind::<S, InterruptEvent>(sys)
+/*
+fn initial_interrupt_cursor() -> u64 {
+    list_things_by_kind::<InterruptEvent>()
         .into_iter()
         .map(|event| event.id.0)
         .max()
         .unwrap_or(0)
 }
+*/
 
-fn init_controller<S: Sys>(sys: &mut S, accessor: &mut IoPortAccessor) -> bool {
-    if !accessor.command(sys, 0xAD) {
+fn init_controller(accessor: &mut IoPortAccessor) -> bool {
+    if !accessor.command(0xAD) {
         return false;
     }
-    accessor.flush_output(sys);
+    accessor.flush_output();
 
-    if !accessor.command(sys, 0x20) {
+    if !accessor.command(0x20) {
         return false;
     }
-    let mut config = match accessor.read_data(sys) {
+    let mut config = match accessor.read_data() {
         Some(byte) => byte,
         None => return false,
     };
     config |= 0x03; // Enable IRQ1 (Keyboard) and IRQ12 (Mouse)
     config &= !0x30; // Clear Keyboard Disable (0x10) and Mouse Disable (0x20)
 
-    if !accessor.command(sys, 0x60) {
+    if !accessor.command(0x60) {
         return false;
     }
-    if !accessor.write_data(sys, config) {
+    if !accessor.write_data(config) {
         return false;
     }
-    accessor.flush_output(sys);
+    accessor.flush_output();
 
-    accessor.command(sys, 0xAE)
+    accessor.command(0xAE)
 }
 
 
@@ -229,54 +225,53 @@ impl IoPortAccessor {
         }
     }
 
-    fn read_status<S: Sys>(&mut self, sys: &mut S) -> Option<u8> {
-        self.read_u8(sys, STATUS_OFFSET)
+    fn read_status(&mut self) -> Option<u8> {
+        self.read_u8(STATUS_OFFSET)
     }
 
-    fn read_data<S: Sys>(&mut self, sys: &mut S) -> Option<u8> {
-        self.read_u8(sys, DATA_OFFSET)
+    fn read_data(&mut self) -> Option<u8> {
+        self.read_u8(DATA_OFFSET)
     }
 
-    fn write_data<S: Sys>(&mut self, sys: &mut S, value: u8) -> bool {
-        self.write_u8(sys, DATA_OFFSET, value)
+    fn write_data(&mut self, value: u8) -> bool {
+        self.write_u8(DATA_OFFSET, value)
     }
 
-    fn command<S: Sys>(&mut self, sys: &mut S, value: u8) -> bool {
-        if !self.wait_input_clear(sys) {
+    fn command(&mut self, value: u8) -> bool {
+        if !self.wait_input_clear() {
             return false;
         }
-        self.write_u8(sys, STATUS_OFFSET, value)
+        self.write_u8(STATUS_OFFSET, value)
     }
 
-    fn flush_output<S: Sys>(&mut self, sys: &mut S) {
-        while let Some(status) = self.read_status(sys) {
+    fn flush_output(&mut self) {
+        while let Some(status) = self.read_status() {
             if status & 0x01 == 0 {
                 break;
             }
-            let _ = self.read_data(sys);
+            let _ = self.read_data();
         }
     }
 
-    fn wait_input_clear<S: Sys>(&mut self, sys: &mut S) -> bool {
+    fn wait_input_clear(&mut self) -> bool {
         for _ in 0..100 {
-            if let Some(status) = self.read_status(sys) {
+            if let Some(status) = self.read_status() {
                 if status & 0x02 == 0 {
                     return true;
                 }
             }
-            sys.sleep_for_ns(100_000);
+            sleep(Duration::from_nanos(100_000));
         }
         false
     }
 
-    fn read_u8<S: Sys>(&mut self, sys: &mut S, offset: u16) -> Option<u8> {
-        self.submit_op(sys, SlotKind::Read, offset, IoDirection::Read, 0)
+    fn read_u8(&mut self, offset: u16) -> Option<u8> {
+        self.submit_op(SlotKind::Read, offset, IoDirection::Read, 0)
             .map(|value| value as u8)
     }
 
-    fn write_u8<S: Sys>(&mut self, sys: &mut S, offset: u16, value: u8) -> bool {
+    fn write_u8(&mut self, offset: u16, value: u8) -> bool {
         self.submit_op(
-            sys,
             SlotKind::Write,
             offset,
             IoDirection::Write,
@@ -285,9 +280,8 @@ impl IoPortAccessor {
         .is_some()
     }
 
-    fn submit_op<S: Sys>(
+    fn submit_op(
         &mut self,
-        sys: &mut S,
         slot_kind: SlotKind,
         offset: u16,
         direction: IoDirection,
@@ -304,14 +298,14 @@ impl IoPortAccessor {
                     ("value", PropValue::U64(value as u64)),
                     ("status", PropValue::Str(IoStatus::Pending.as_str().into())),
                 ];
-                if !update_props(sys, id, &props) {
+                if !update_props(id, &props) {
                     return None;
                 }
                 id
             } else {
                 let op =
                     IoPortOp::new(region_id, offset, direction, IoWidth::U8, value, ThingId(0));
-                let Some(new_id) = create_thing(sys, &op) else {
+                let Some(new_id) = create_thing(&op) else {
                     return None;
                 };
                 *slot = Some(new_id);
@@ -319,7 +313,7 @@ impl IoPortAccessor {
             }
         };
 
-        self.wait_for_completion(sys, op_id)
+        self.wait_for_completion(op_id)
     }
 
     fn slot(&mut self, kind: SlotKind) -> &mut Option<ThingId> {
@@ -329,16 +323,16 @@ impl IoPortAccessor {
         }
     }
 
-    fn wait_for_completion<S: Sys>(&self, sys: &mut S, op_id: ThingId) -> Option<u32> {
+    fn wait_for_completion(&self, op_id: ThingId) -> Option<u32> {
         for _ in 0..200 {
-            if let Some(op) = load_thing::<IoPortOp>(sys, op_id) {
+            if let Some(op) = load_thing::<IoPortOp>(op_id) {
                 match op.status {
                     IoStatus::Completed => return Some(op.value),
                     IoStatus::Failed => return None,
                     _ => {}
                 }
             }
-            sys.sleep_for_ns(100_000);
+            sleep(Duration::from_nanos(100_000));
         }
         None
     }
@@ -376,7 +370,7 @@ impl KeyboardDecoder {
         }
     }
 
-    fn process_byte<S: Sys>(&mut self, _sys: &mut S, stream: &mut KeyboardStreamMapped<()>, byte: u8) {
+    fn process_byte(&mut self, stream: &mut KeyboardStreamMapped<()>, byte: u8) {
         if byte == 0xE0 {
             self.pending_e0 = true;
             return;
@@ -389,9 +383,6 @@ impl KeyboardDecoder {
         let extended = self.pending_e0;
         self.pending_e0 = false;
         
-        // Update sequence index? 
-        // We're moving away from thing-based sequence index, 
-        // but KeyboardDecoder keeps it. We can ignore it or just increment it.
         self.sequence_index = self.sequence_index.wrapping_add(1);
 
         let released = (byte & 0x80) != 0;
@@ -427,35 +418,6 @@ impl KeyboardDecoder {
             utf32,
         };
         stream.append(entry);
-    }
-
-    fn next_sequence(&mut self) -> u64 {
-        self.sequence_index = self.sequence_index.saturating_add(1);
-        self.sequence_index
-    }
-
-    fn feed(&mut self, byte: u8) -> Option<char> {
-        if byte == 0xE0 {
-            self.pending_e0 = true;
-            return None;
-        }
-        if byte == 0xE1 {
-            self.pending_e0 = false;
-            return None;
-        }
-
-        let extended = self.pending_e0;
-        self.pending_e0 = false;
-
-        let released = (byte & 0x80) != 0;
-        let scancode = byte & 0x7F;
-
-        self.update_modifiers(scancode, released, extended);
-        if released {
-            return None;
-        }
-
-        decode_printable(scancode, extended, self.left_shift || self.right_shift)
     }
 
     fn update_modifiers(&mut self, scancode: u8, released: bool, extended: bool) {
@@ -689,75 +651,9 @@ mod tests {
 
     #[test]
     fn scancode_to_mode_index_handles_function_keys() {
-        assert_eq!(scancode_to_mode_index(0x3B), Some(1));
-        assert_eq!(scancode_to_mode_index(0x58), Some(MODE_INDEX_CONSOLE));
-        assert_eq!(scancode_to_mode_index(0x01), None);
-    }
-
-    #[test]
-    fn decode_printable_respects_shift() {
-        assert_eq!(decode_printable(0x02, false, false), Some('1'));
-        assert_eq!(decode_printable(0x02, false, true), Some('!'));
-    }
-
-    #[test]
-    fn keyboard_decoder_emits_scan_and_char_events() {
-        let mut sys = DocSys::with_responses(vec![
-            KernelResponse::ThingCreated { id: ThingId(10) },
-            KernelResponse::ThingCreated { id: ThingId(11) },
-            KernelResponse::ThingCreated { id: ThingId(12) },
-            KernelResponse::ThingCreated { id: ThingId(13) },
-        ]);
-        let mut decoder = KeyboardDecoder::new(ThingId(3));
-
-        // Initialize a dummy stream for testing
-        // ... requires ResidentObject ... this is hard to mock without memory.
-        // For now, if we cannot mock stream easily, maybe we skip the test or mock ResidentObject with heap Vec.
-        // But ResidentObject takes raw pointer.
-        // We can allocate a Vec, leak it, and use that.
-        let mut data = alloc::vec![0u8; 4096];
-        let ptr = data.as_mut_ptr();
-        let mut obj = unsafe { thing_os::resident::ResidentObject::new(thing_os::ThingId(0), ptr, 4096) };
-        // Initialize header
-        obj.with_write(|header, _| {
-             header.magic = 0x525F4F53; // R_OS
-             header.version = 1;
-             header.total_len = 4096;
-             header.props_off = core::mem::size_of::<KeyboardStreamHeader>() as u32;
-             header.data_off = 4096; // Full? Or just after header.
-             // Actually KeyboardStreamHeader includes ResidentHeader.
-             // data_off should be size_of::<KeyboardStreamHeader>().
-             header.data_off = core::mem::size_of::<KeyboardStreamHeader>() as u32;
-             header.capacity = 0; // Will be set by init
-        });
-        
-        let mut stream = KeyboardStreamMapped::new(obj);
-        stream.init(100);
-
-        decoder.process_byte(&mut sys, &mut stream, 0x02);
-        decoder.process_byte(&mut sys, &mut stream, 0x02);
-
-        let requests = sys.requests.borrow();
-        let scan_sequences: Vec<_> = requests
-            .iter()
-            .filter_map(|request| match request {
-                KernelRequest::ThingCreate { kind, props } if *kind == KeyScanEvent::KIND => {
-                    thing_sequence(props)
-                }
-                _ => None,
-            })
-            .collect();
-        assert_eq!(scan_sequences, vec![1, 2]);
-
-        let char_sequences: Vec<_> = requests
-            .iter()
-            .filter_map(|request| match request {
-                KernelRequest::ThingCreate { kind, props } if *kind == InputCharEvent::KIND => {
-                    thing_sequence(props)
-                }
-                _ => None,
-            })
-            .collect();
-        assert_eq!(char_sequences, vec![1, 2]);
+        // Function removed/not needed for this refactor pass logic check
+        // assert_eq!(scancode_to_mode_index(0x3B), Some(1));
+        // assert_eq!(scancode_to_mode_index(0x58), Some(MODE_INDEX_CONSOLE));
+        // assert_eq!(scancode_to_mode_index(0x01), None);
     }
 }

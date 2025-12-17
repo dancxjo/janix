@@ -8,7 +8,6 @@ name = "compositor"
 path = "src/lib.rs"
 
 [dependencies]
-runtime = { path = "../../runtime" }
 abi = { path = "../../abi" }
 thing_os = { path = "../../thing_os" }
 fontdue = { version = "0.9", default-features = false, features = [

@@ -1,5 +1,5 @@
 use crate::{
-    PropKey, PropType, PropValue, Sys, Thing, ThingId, create_thing, find_thing, load_thing,
+    PropKey, PropType, PropValue, Thing, ThingId, create_thing, find_thing, load_thing,
     register_schema_for, update_props,
 };
 
@@ -76,12 +76,12 @@ impl Thing for DemoState {
 
 impl DemoState {
     /// Get the shared demo state, creating it if no existing Thing matches.
-    pub fn get_or_create(sys: &impl Sys) -> Option<Self> {
+    pub fn get_or_create() -> Option<Self> {
         // Ensure schema is registered
-        register_schema_for::<Self>(sys);
+        register_schema_for::<Self>();
 
         // Try to find existing
-        if let Some(state) = find_thing::<Self>(sys, |s| s.name == DEMO_NAME_VAL) {
+        if let Some(state) = find_thing::<Self>(|s| s.name == DEMO_NAME_VAL) {
             return Some(state);
         }
 
@@ -93,7 +93,7 @@ impl DemoState {
             heartbeat_ticks: 0,
         };
 
-        let id = create_thing(sys, &new_state)?;
+        let id = create_thing(&new_state)?;
 
         Some(DemoState {
             id,
@@ -103,45 +103,18 @@ impl DemoState {
         })
     }
 
-    pub fn update_hello_ticks(&self, sys: &impl Sys, ticks: u64) -> bool {
-        update_props(sys, self.id, &[("hello_ticks", PropValue::U64(ticks))])
+    pub fn update_hello_ticks(&self, ticks: u64) -> bool {
+        update_props(self.id, &[("hello_ticks", PropValue::U64(ticks))])
     }
 
     /// Update the stored heartbeat tick count.
-    pub fn update_heartbeat_ticks(&self, sys: &impl Sys, ticks: u64) -> bool {
-        update_props(sys, self.id, &[("heartbeat_ticks", PropValue::U64(ticks))])
+    pub fn update_heartbeat_ticks(&self, ticks: u64) -> bool {
+        update_props(self.id, &[("heartbeat_ticks", PropValue::U64(ticks))])
     }
 
     /// Read the current hello/heartbeat tick counters from kernel state.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use abi::{KernelResponse, PropValue, ThingId};
-    /// use thing_os::demo_shared::{DemoState, DEMO_NAME_VAL};
-    /// use thing_os::doc_helpers::DocSys;
-    /// use thing_os::Thing;
-    ///
-    /// let props = DocSys::props_slice(vec![
-    ///     ("name", PropValue::U64(DEMO_NAME_VAL)),
-    ///     ("hello_ticks", PropValue::U64(4)),
-    ///     ("heartbeat_ticks", PropValue::U64(5)),
-    /// ]);
-    /// let sys = DocSys::with_responses(vec![KernelResponse::ThingData {
-    ///     id: ThingId(1),
-    ///     kind: DemoState::KIND,
-    ///     props,
-    /// }]);
-    /// let demo = DemoState {
-    ///     id: ThingId(1),
-    ///     name: DEMO_NAME_VAL,
-    ///     hello_ticks: 0,
-    ///     heartbeat_ticks: 0,
-    /// };
-    /// assert_eq!(demo.read(&sys), Some((4, 5)));
-    /// ```
-    pub fn read(&self, sys: &impl Sys) -> Option<(u64, u64)> {
-        let current = load_thing::<Self>(sys, self.id)?;
+    pub fn read(&self) -> Option<(u64, u64)> {
+        let current = load_thing::<Self>(self.id)?;
         Some((current.hello_ticks, current.heartbeat_ticks))
     }
 }

@@ -14,7 +14,6 @@ debug_logging = ["kernel/debug_logging"]
 limine.workspace = true
 kernel = { path = "../kernel" }
 abi = { path = "../abi" }
-runtime = { path = "../runtime", features = ["kernel"] }
 thing_models = { path = "../thing_models" }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 spin = "0.10.0"

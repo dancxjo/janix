@@ -729,13 +729,16 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	for drv in $(DRIVERS); do \
 		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \
 	done
-	if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
-		mkdir -p iso_root/boot/fonts; \
-		cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
-	fi
+	# Fonts: Only include unifont.hex and HACK_REGULAR.ttf
+	# if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
+	# 	mkdir -p iso_root/boot/fonts; \
+	# 	cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
+	# fi
 	# Copy unified fonts
 	mkdir -p iso_root/boot/fonts
-	cp -v assets/fonts/* iso_root/boot/fonts/
+	# cp -v assets/fonts/* iso_root/boot/fonts/
+	cp -v assets/fonts/unifont.hex iso_root/boot/fonts/
+	cp -v assets/fonts/HACK_REGULAR.ttf iso_root/boot/fonts/
 	cp -v limine.conf iso_root/boot/limine/limine.conf
 ifeq ($(ENABLE_geographer),1)
 	echo '    module_path: boot():/boot/user/geographer' >> iso_root/boot/limine/limine.conf
@@ -745,11 +748,12 @@ ifeq ($(ENABLE_PLATARO_ICONS),1)
 	mkdir -p iso_root/share/icons/tango
 	cp -r assets/icons/* iso_root/share/icons/tango/
 	# Append icons to limine.conf as modules
-	for icon in iso_root/share/icons/tango/*.bmp; do \
-		NAME=$$(basename $$icon); \
-		echo "    module_path: boot():/share/icons/tango/$$NAME" >> iso_root/boot/limine/limine.conf; \
-		echo "    module_cmdline: image=$$NAME" >> iso_root/boot/limine/limine.conf; \
-	done
+	# Icons are no longer added to limine.conf as modules
+	# for icon in iso_root/share/icons/tango/*.bmp; do \
+	# 	NAME=$$(basename $$icon); \
+	# 	echo "    module_path: boot():/share/icons/tango/$$NAME" >> iso_root/boot/limine/limine.conf; \
+	# 	echo "    module_cmdline: image=$$NAME" >> iso_root/boot/limine/limine.conf; \
+	# done
 endif
 	cp -v iso_root/boot/limine/limine.conf iso_root/EFI/BOOT/limine.conf
 	cp -v iso_root/boot/limine/limine.conf iso_root/limine.conf

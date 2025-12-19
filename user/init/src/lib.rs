@@ -190,11 +190,17 @@ fn validate_boot_manifest(programs: &[BootProgram], images: &[ProgramImage]) {
     println!("init: {:<20} | {:<20} | {:<10} | {:<8}", "BootProgram", "Binary", "Status", "Size");
     println!("init: {:-<20}-+-{:-<20}-+-{:-<10}-+-{:-<8}", "", "", "", "");
 
+    let mut missing = 0_u32;
+
     for prog in programs {
         let image = images.iter().find(|img| img.identifier == prog.binary);
         let status = if image.is_some() { "OK" } else { "MISSING" };
         let size = image.map(|i| i.size).unwrap_or(0);
         let size_str = if size > 0 { format!("{}b", size) } else { "-".to_string() };
+
+        if image.is_none() {
+            missing += 1;
+        }
         
         println!(
             "init: {:<20} | {:<20} | {:<10} | {:<8}",
@@ -202,6 +208,9 @@ fn validate_boot_manifest(programs: &[BootProgram], images: &[ProgramImage]) {
         );
     }
     println!("init: ===========================");
+    if missing > 0 {
+        println!("init: WARNING - {} BootProgram(s) missing ProgramImage(s)", missing);
+    }
 }
 
 fn spawn_boot_program(

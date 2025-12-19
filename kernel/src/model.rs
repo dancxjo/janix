@@ -1015,3 +1015,36 @@ pub fn create_program_image(
     ];
     Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_PROGRAM_IMAGE), props))
 }
+/// Check if a ProgramImage with the given identifier exists.
+/// 
+/// # Arguments
+/// * `identifier` - The program identifier to check for.
+/// 
+/// # Returns
+/// `true` if a ProgramImage with the matching identifier exists, `false` otherwise.
+pub fn program_image_exists(identifier: &str) -> bool {
+    let kind = crate::symbols::intern(graph_kinds::KIND_PROGRAM_IMAGE);
+    let key_identifier = crate::symbols::intern("identifier");
+
+    let slab_guard = crate::graph::store::things_slab().lock();
+    let slab = match slab_guard.as_ref() {
+        Some(s) => s,
+        None => return false,
+    };
+
+    for (_id_val, node) in slab.things.iter() {
+        if node.kind != kind {
+            continue;
+        }
+        for (k, v) in node.props.iter() {
+            if *k == key_identifier {
+                if let abi::PropValue::Str(s) = v {
+                    if s == identifier {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}

@@ -126,12 +126,14 @@ pub fn launch_init_process() {
         crate::panic_handler::hcf();
     }
 
-    kernel::log("launch_init_process: spawning debug_input_events debug app");
-    if let Err(err) =
-        crate::program::spawn_program_by_identifier("debug_input_events", "debug_input_events", 1)
-    {
-        kernel::log("launch_init_process: failed to spawn debug_input_events");
-        kernel::log(err);
+    if kernel::model::program_image_exists("debug_input_events") {
+        kernel::log("launch_init_process: spawning debug_input_events debug app");
+        if let Err(err) =
+            crate::program::spawn_program_by_identifier("debug_input_events", "debug_input_events", 1)
+        {
+            kernel::log("launch_init_process: failed to spawn debug_input_events");
+            kernel::log(err);
+        }
     }
 }
 

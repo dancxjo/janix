@@ -336,6 +336,8 @@ pub fn seed_program_images_from_limine() {
     let mut created = 0_u64;
     let mut skipped_fonts = 0_u64;
 
+    let mut seen = alloc::collections::BTreeSet::new();
+
     for (index, module) in response.modules().iter().enumerate() {
         let identifier = match classify_limine_module((*module).string(), (*module).path(), index) {
             ModuleKind::Program { identifier } => identifier,
@@ -345,6 +347,12 @@ pub fn seed_program_images_from_limine() {
             }
             ModuleKind::Raw { .. } => continue,
         };
+
+        if !seen.insert(identifier.clone()) {
+            log("Duplicate ProgramImage identifier from Limine module; skipping");
+            continue;
+        }
+
         let virt_addr = (*module).addr() as u64;
         let base_phys = virt_addr.saturating_sub(hhdm_offset);
         let size = (*module).size() as u64;

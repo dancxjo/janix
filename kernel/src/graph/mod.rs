@@ -68,27 +68,9 @@ pub fn create_thing(kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingI
 }
 
 pub fn update_thing(id: ThingId, props: Vec<(SymbolId, PropValue)>) -> bool {
-    // We want to log the property updates.
-    // Re-use print_thing_created format for updates? 
-    // The requirement says "On creation of a thing...". It doesn't explicitly mention updates.
-    // However, the prompt says "print all graph modifications".
-    // "On creation of a thing... (t1234:Thorton { kay: 'vel', boo: 123 })"
-    // For updates, the same format makes sense if we consider the props being applied.
-    
-    // We need 'kind' to print fully formatted 't1234:Kind'.
-    // We can get it from store or just print what we have.
-    // Getting kind requires store access.
     let slab_guard = store::things_slab();
     let mut store = slab_guard.lock();
-    let success = store.as_mut().unwrap().update_thing(id, props.clone());
-    
-    // If successful, log it.
-    if success {
-         let kind = store.as_ref().unwrap().get_thing_kind(id).unwrap_or(SymbolId(0)); // 0 is hopefully safe fallback or check store
-         drop(store);
-         debug::print_thing_created(id, kind, &props);
-    }
-    success
+    store.as_mut().unwrap().update_thing(id, props)
 }
 
 pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {

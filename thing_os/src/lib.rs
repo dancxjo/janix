@@ -525,18 +525,15 @@ pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
     let request = KernelRequest::ThingGet { id };
     match syscall(request) {
         KernelResponse::ThingData { id, kind, props } => {
+            // Kind is string returned from syscall (syscall impl copies it)
+            // Kind is SymbolId returned from syscall
             let expected = sys_symbol_intern(T::KIND);
             if kind != expected {
-                let msg = format!("load_thing mismatch: id={} kind={} expected={}\n", id.0, kind.0, expected.0);
-                crate::console::print(&msg);
                 return None;
             }
             Some(T::from_props(id, props))
         }
-        _ => {
-            crate::console::print("load_thing failed: syscall returned unexpected response\n");
-            None
-        },
+        _ => None,
     }
 }
 

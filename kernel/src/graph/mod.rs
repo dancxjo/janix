@@ -98,9 +98,6 @@ pub fn next_thing_of_kind_sym(kind: SymbolId, start_after: ThingId) -> Option<Th
     let slab_guard = store::things_slab().lock();
     let slab = slab_guard.as_ref().unwrap();
     
-    // DEBUG LOG
-    crate::log(alloc::boxed::Box::leak(format!("next_thing input: kind={} start={}", kind.0, start_after.0).into_boxed_str()));
-
     let mut best: Option<ThingId> = None;
     
     for (_id_val, node) in slab.things.iter() {
@@ -113,12 +110,6 @@ pub fn next_thing_of_kind_sym(kind: SymbolId, start_after: ThingId) -> Option<Th
                  best = Some(node.id);
             }
         }
-    }
-
-    if let Some(b) = best {
-        crate::log(alloc::boxed::Box::leak(format!("next_thing found: {}", b.0).into_boxed_str()));
-    } else {
-        crate::log("next_thing found nothing");
     }
 
     best

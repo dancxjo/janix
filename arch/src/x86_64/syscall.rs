@@ -321,6 +321,68 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
              }
              u64::MAX
         }
+        SYSCALL_THING_GET => {
+             let id = ThingId(arg1);
+             // arg2 is pointer to ThingGetSyscallResult
+             if let Some(out) = unsafe { user_ptr_mut::<abi::ThingGetSyscallResult>(arg2) } {
+                 let found = kernel::graph::with_thing(id, |node| {
+                     // 1. Fill kind
+                     if let Some(k) = kernel::symbols::resolve(node.kind) {
+                         let bytes = k.as_bytes();
+                         let len = core::cmp::min(bytes.len(), abi::THING_GET_MAX_KIND_LEN);
+                         out.kind[..len].copy_from_slice(&bytes[..len]);
+                         out.kind_len = len;
+                     }
+
+                     // 2. Fill props (limit to MAX_PROPS)
+                     let mut count = 0;
+                     for (key_sym, val) in &node.props {
+                         if count >= abi::THING_GET_MAX_PROPS { break; }
+                         if let Some(key_str) = kernel::symbols::resolve(*key_sym) {
+                             let mut ent = abi::ThingPropData::default();
+                             
+                             // Key
+                             let kbytes = key_str.as_bytes();
+                             let klen = core::cmp::min(kbytes.len(), abi::THING_GET_MAX_STR_LEN);
+                             ent.key[..klen].copy_from_slice(&kbytes[..klen]);
+                             ent.key_len = klen;
+                             ent.present = 1;
+
+                             // Value
+                             match val {
+                                 PropValue::U64(v) => {
+                                     ent.value_type = abi::ThingPropScalarType::U64;
+                                     ent.value_u64 = *v;
+                                 },
+                                 PropValue::I64(v) => {
+                                     ent.value_type = abi::ThingPropScalarType::I64;
+                                     ent.value_i64 = *v;
+                                 },
+                                 PropValue::Bool(v) => {
+                                     ent.value_type = abi::ThingPropScalarType::Bool;
+                                     ent.value_bool = if *v { 1 } else { 0 };
+                                 },
+                                 PropValue::Str(s) => {
+                                     ent.value_type = abi::ThingPropScalarType::Str;
+                                     let sbytes = s.as_bytes();
+                                     let slen = core::cmp::min(sbytes.len(), abi::THING_GET_MAX_STR_LEN);
+                                     ent.value_str[..slen].copy_from_slice(&sbytes[..slen]);
+                                     ent.value_str_len = slen;
+                                 },
+                                 _ => continue, // Skip unsupported types for now
+                             }
+                             out.props[count] = ent;
+                             count += 1;
+                         }
+                     }
+                     out.prop_count = count;
+                     0 // Success
+                 });
+                 found.unwrap_or(1) // 1 if thing not found
+             } else {
+                 1 // Invalid pointer
+             }
+        }
         SYSCALL_DEV_OPEN => {
              if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::DevOpenArgs>(arg1) } {
                  let res = kernel::bridge::ps2::dev_open(unsafe { core::mem::transmute(args.kind) }, args.index);

@@ -383,6 +383,27 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                  1 // Invalid pointer
              }
         }
+        SYSCALL_SCHEMA_REGISTER => {
+            let kind = SymbolId(arg1 as u32);
+            let desc = SymbolId(arg2 as u32);
+            let props_ptr = arg3;
+            let props_len = arg4;
+
+            let req = abi::KernelRequest::SchemaRegister {
+                kind,
+                description: desc,
+                props: UserSlice { 
+                    ptr: props_ptr, 
+                    len: props_len,
+                    _phantom: core::marker::PhantomData
+                },
+            };
+
+            match kernel::handle_request(req) {
+                abi::KernelResponse::SchemaRegistered { .. } => 0,
+                _ => 1,
+            }
+        }
         SYSCALL_ADD_LINK => {
              let src = ThingId(arg1);
              let pred = abi::Predicate(arg2);

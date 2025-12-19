@@ -364,39 +364,24 @@ pub fn init_schemas() {
     );
 
     // Mode and windowing schemas
-    static MODE_SCHEMA: &[(&str, PropType)] = &[
-        (graph_kinds::PROP_MODE_INDEX, PropType::U64),
-        (graph_kinds::PROP_NAME, PropType::Str),
-        (graph_kinds::PROP_MODE_PLACE, PropType::U64),
-        (graph_kinds::PROP_MODE_ACTIVE, PropType::Bool),
-        (graph_kinds::PROP_MODE_LAYOUT_POLICY, PropType::I64),
-    ];
     register_static_schema(
         graph_kinds::KIND_MODE,
-        "Logical system mode (F1-F12)",
-        MODE_SCHEMA,
+        thing_models::Mode::DESCRIPTION,
+        thing_models::Mode::schema(),
         &[],
     );
 
-    static MODE_SWITCH_SCHEMA: &[(&str, PropType)] = &[
-        (graph_kinds::PROP_MODE_INDEX, PropType::U64),
-        (graph_kinds::PROP_TIMESTAMP, PropType::U64),
-    ];
     register_static_schema(
         graph_kinds::KIND_MODE_SWITCH_EVENT,
-        "Input event requesting a mode change",
-        MODE_SWITCH_SCHEMA,
+        thing_models::ModeSwitchEvent::DESCRIPTION,
+        thing_models::ModeSwitchEvent::schema(),
         &[],
     );
 
-    static PLACE_SCHEMA: &[(&str, PropType)] = &[
-        (graph_kinds::PROP_NAME, PropType::Str),
-        (graph_kinds::PROP_LAYOUT_MODE, PropType::Str),
-    ];
     register_static_schema(
         graph_kinds::KIND_PLACE,
-        "Workspace root for windows",
-        PLACE_SCHEMA,
+        thing_models::Place::DESCRIPTION,
+        thing_models::Place::schema(),
         &[],
     );
 

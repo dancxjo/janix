@@ -25,8 +25,29 @@ pub fn register_schema(
 ) -> Result<(), &'static str> {
     let mut guard = SCHEMAS.lock();
     let schemas = guard.as_mut().expect("Schemas not initialized");
-    if schemas.contains_key(&kind) {
-        return Err("Schema already registered");
+    
+    if let Some(existing) = schemas.get(&kind) {
+        if existing.description == description {
+            // Check props equality (ignoring order for robustness, but strict for now)
+            if existing.props.len() == props.len() && existing.indexed_props == indexed_props {
+                let all_props_match = props.iter().all(|(k, t)| {
+                    existing.props.get(k).map(|et| et == t).unwrap_or(false)
+                });
+                
+                if all_props_match {
+                    return Ok(());
+                } else {
+                     crate::log::log_message(&alloc::format!("Schema mismatch: props content. Existing: {:?} New: {:?}", existing.props, props));
+                }
+            } else {
+                 crate::log::log_message(&alloc::format!("Schema mismatch: props len/index. Existing len: {} New len: {}. Indexed: {:?} vs {:?}", existing.props.len(), props.len(), existing.indexed_props, indexed_props));
+            }
+        } else {
+             let d1 = crate::symbols::resolve(existing.description).unwrap_or(alloc::string::String::from("?"));
+             let d2 = crate::symbols::resolve(description).unwrap_or(alloc::string::String::from("?"));
+             crate::log::log_message(&alloc::format!("Schema mismatch: description. Existing: {:?} \"{}\" New: {:?} \"{}\"", existing.description, d1, description, d2));
+        }
+        return Err("Schema already registered with different definition");
     }
 
     let mut prop_map = HashMap::new();

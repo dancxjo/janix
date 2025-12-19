@@ -475,7 +475,14 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             }
             match register_schema(kind, description, props_vec, alloc::vec![]) {
                 Ok(()) => KernelResponse::SchemaRegistered { kind },
-                Err(e) => KernelResponse::Error { message: e },
+                Err(e) => {
+                    let msg = alloc::format!(
+                        "SchemaRegister failed: kind={:?} desc={:?} err={}",
+                        kind, description, e
+                    );
+                    crate::log::log_message(&msg);
+                    KernelResponse::Error { message: e }
+                }
             }
         },
         KernelRequest::SchemaGet { kind } => match get_schema_props(kind) {

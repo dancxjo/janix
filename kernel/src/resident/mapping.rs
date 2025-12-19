@@ -4,7 +4,7 @@ use crate::memory::PhysFrame;
 use alloc::vec::Vec;
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ResidentPage {
     pub frame: PhysFrame,
 }

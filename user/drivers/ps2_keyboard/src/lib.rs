@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use thing_models::{
     InputCharEvent, InterruptEvent, IoDirection, IoPortOp, IoPortRegion,
@@ -296,11 +297,11 @@ impl IoPortAccessor {
             let slot = self.slot(slot_kind);
             if let Some(id) = *slot {
                 let props = [
-                    ("offset", PropValue::U64(offset as u64)),
-                    ("direction", PropValue::Str(direction.as_str().into())),
-                    ("width", PropValue::Str(IoWidth::U8.as_str().into())),
-                    ("value", PropValue::U64(value as u64)),
-                    ("status", PropValue::Str(IoStatus::Pending.as_str().into())),
+                    ("offset".to_string(), PropValue::U64(offset as u64)),
+                    ("direction".to_string(), PropValue::Str(direction.as_str().into())),
+                    ("width".to_string(), PropValue::Str(IoWidth::U8.as_str().into())),
+                    ("value".to_string(), PropValue::U64(value as u64)),
+                    ("status".to_string(), PropValue::Str(IoStatus::Pending.as_str().into())),
                 ];
                 if !update_props(id, &props) {
                     return None;

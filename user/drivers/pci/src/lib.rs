@@ -5,11 +5,17 @@ extern crate alloc;
 
 use abi::{
     graph_kinds::{self, KIND_PCI_DEVICE},
-    PropKey, PropValue,
-    graph_ops::{GraphOp, GraphSink},
+    PropKey, PropValue, syscall_defs::SymbolId,
+    graph_ops::{GraphOp},
+    wire::graph::{WirePropValue},
 };
 use alloc::vec::Vec;
 use hal::{PciConfigAccess};
+use thing_os::intern;
+
+pub trait GraphSink {
+    fn submit(&mut self, op: GraphOp) -> Result<(), &'static str>;
+}
 
 pub struct PciDriver<'a> {
     config: &'a dyn PciConfigAccess,
@@ -57,11 +63,6 @@ impl<'a> PciDriver<'a> {
     }
     
     pub fn scan_and_publish<S: GraphSink>(&self, sink: &mut S) {
-        // Register Schema -- for now skipped or we generic submit SchemaRegister if we had that Op.
-        // The Kernel Sink can handle SchemaRegister op, but it's not in GraphOp enum I checked in abi/graph_ops.rs (it only had CreateThing/UpdateProps).
-        // To fix this cleanly, we assume schema is loose or kernel allows it.
-        // We will just create things.
-
         let bus = 0;
         for slot in 0..32 {
             let vendor_id = self.read_u16(bus, slot, 0, 0);
@@ -91,25 +92,25 @@ impl<'a> PciDriver<'a> {
                 let bar4 = self.read_bar(bus, slot, func, 4);
                 let bar5 = self.read_bar(bus, slot, func, 5);
 
-                let props: Vec<(PropKey, PropValue)> = alloc::vec![
-                    (graph_kinds::PROP_BUS, PropValue::U64(bus as u64)),
-                    (graph_kinds::PROP_SLOT, PropValue::U64(slot as u64)),
-                    (graph_kinds::PROP_FUNC, PropValue::U64(func as u64)),
-                    (graph_kinds::PROP_VENDOR_ID, PropValue::U64(vendor_id as u64)),
-                    (graph_kinds::PROP_DEVICE_ID, PropValue::U64(device_id as u64)),
-                    (graph_kinds::PROP_CLASS_ID, PropValue::U64(class_id as u64)),
-                    (graph_kinds::PROP_SUBCLASS_ID, PropValue::U64(subclass_id as u64)),
-                    (graph_kinds::PROP_PROG_IF, PropValue::U64(prog_if as u64)),
-                    (graph_kinds::PROP_BAR0, PropValue::U64(bar0)),
-                    (graph_kinds::PROP_BAR1, PropValue::U64(bar1)),
-                    (graph_kinds::PROP_BAR2, PropValue::U64(bar2)),
-                    (graph_kinds::PROP_BAR3, PropValue::U64(bar3)),
-                    (graph_kinds::PROP_BAR4, PropValue::U64(bar4)),
-                    (graph_kinds::PROP_BAR5, PropValue::U64(bar5)),
+                let props: Vec<(SymbolId, WirePropValue)> = alloc::vec![
+                    (intern(graph_kinds::PROP_BUS), WirePropValue::u64(bus as u64)),
+                    (intern(graph_kinds::PROP_SLOT), WirePropValue::u64(slot as u64)),
+                    (intern(graph_kinds::PROP_FUNC), WirePropValue::u64(func as u64)),
+                    (intern(graph_kinds::PROP_VENDOR_ID), WirePropValue::u64(vendor_id as u64)),
+                    (intern(graph_kinds::PROP_DEVICE_ID), WirePropValue::u64(device_id as u64)),
+                    (intern(graph_kinds::PROP_CLASS_ID), WirePropValue::u64(class_id as u64)),
+                    (intern(graph_kinds::PROP_SUBCLASS_ID), WirePropValue::u64(subclass_id as u64)),
+                    (intern(graph_kinds::PROP_PROG_IF), WirePropValue::u64(prog_if as u64)),
+                    (intern(graph_kinds::PROP_BAR0), WirePropValue::u64(bar0)),
+                    (intern(graph_kinds::PROP_BAR1), WirePropValue::u64(bar1)),
+                    (intern(graph_kinds::PROP_BAR2), WirePropValue::u64(bar2)),
+                    (intern(graph_kinds::PROP_BAR3), WirePropValue::u64(bar3)),
+                    (intern(graph_kinds::PROP_BAR4), WirePropValue::u64(bar4)),
+                    (intern(graph_kinds::PROP_BAR5), WirePropValue::u64(bar5)),
                 ];
                 
                 let _ = sink.submit(GraphOp::CreateThing {
-                    kind: KIND_PCI_DEVICE,
+                    kind: intern(KIND_PCI_DEVICE),
                     props,
                 });
             }
@@ -133,15 +134,12 @@ impl PciConfigAccess for UserPciConfig {
     }
 }
 
-
-
-
 struct UserGraphSink;
 impl GraphSink for UserGraphSink {
     fn submit(&mut self, op: GraphOp) -> Result<(), &'static str> {
         match op {
-            GraphOp::CreateThing { kind, props: _ } => {
-                println!("PCI: Creating thing kind={}", kind);
+            GraphOp::CreateThing { kind, props } => {
+                println!("PCI: Creating thing kind={:?} (sym)", kind);
                 // In real impl, convert props to slices and call Syscall
                 // For now, stub.
                 Ok(())

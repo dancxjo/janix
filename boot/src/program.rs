@@ -1,10 +1,11 @@
 extern crate alloc;
 
-use abi::{PropValue, ThingId};
+use abi::{PropValue, ThingId, Predicate};
 use alloc::{boxed::Box, string::String, string::ToString};
 use kernel::graph;
 use kernel::graph_kinds;
 use kernel::sched::SCHEDULER;
+use kernel::symbols;
 
 use crate::elf_loader::{self, LoadedElfProgram, ProgramImageData};
 
@@ -18,12 +19,8 @@ pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'s
     let (proc, thread) = spawn_loaded_program(&info, loaded)?;
     
     // Link the new process to the BootProgram as RUNNING
-    let _ = graph::add_link(boot_program_id, graph_kinds::LINK_RUNNING, proc);
-    
-    // Also copy the respawn policy to the Process Thing properties for easier lookup by kernel? 
-    // Or kernel can lookup LINK_RUNNING. The plan said "On ProcessExitEvent, the policy engine decides...". 
-    // And "lookup LINK_RUNNING to find the BootProgram".
-    // So just linking is enough.
+    let pred_running = graph_kinds::LINK_RUNNING;
+    let _ = graph::add_link(boot_program_id, pred_running, proc);
     
     Ok((proc, thread))
 }
@@ -78,27 +75,19 @@ fn spawn_loaded_program_named(
             priority,
         );
 
-        // Initialize architecture-specific context
         if let Some(thread) = sched.thread_mut(tid) {
             #[cfg(target_arch = "x86_64")]
             {
                 use arch::gdt;
+                // ... (Context initialization same as before)
                 let selectors = gdt::get_selectors();
                 let cs = selectors.ucode.0 as u64 | 3;
                 let ss = selectors.udata.0 as u64 | 3;
                 
-                // TrapFrame layout indices (from arch/src/x86_64/trap.rs)
-                // 13: RDI (arg0)
-                // 15: RIP
-                // 16: CS
-                // 17: RFLAGS
-                // 18: RSP
-                // 19: SS
-                
-                thread.context[13] = 0; // arg0 (TODO: support args)
+                thread.context[13] = 0; 
                 thread.context[15] = loaded.entry_point;
                 thread.context[16] = cs;
-                thread.context[17] = 0x202; // IF | Reserved
+                thread.context[17] = 0x202; 
                 thread.context[18] = loaded.user_stack_top;
                 thread.context[19] = ss;
             }
@@ -129,7 +118,8 @@ struct BootProgramInfo {
 
 fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> {
     graph::with_thing(id, |thing| {
-        if thing.kind != graph_kinds::KIND_BOOT_PROGRAM {
+        let kind_boot_prog = symbols::intern(graph_kinds::KIND_BOOT_PROGRAM);
+        if thing.kind != kind_boot_prog {
             return Err("SpawnProgram Thing was not BootProgram");
         }
 
@@ -139,34 +129,23 @@ fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> 
         let mut binary: Option<String> = None;
         let mut respawn_policy: Option<String> = None;
 
-        for prop in thing.props.iter().flatten() {
-            match prop.0 {
-                "name" => {
-                    if let PropValue::Str(s) = &prop.1 {
-                        name = Some(s.clone());
-                    }
-                }
-                "app_id" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        app_id = Some(v);
-                    }
-                }
-                "priority" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        priority = v;
-                    }
-                }
-                "binary" => {
-                    if let PropValue::Str(s) = &prop.1 {
-                        binary = Some(s.clone());
-                    }
-                }
-                graph_kinds::PROP_RESPAWN_POLICY => {
-                    if let PropValue::Str(s) = &prop.1 {
-                        respawn_policy = Some(s.clone());
-                    }
-                }
-                _ => {}
+        let prop_name = symbols::intern("name");
+        let prop_app_id = symbols::intern("app_id");
+        let prop_priority = symbols::intern("priority");
+        let prop_binary = symbols::intern("binary");
+        let prop_respawn = symbols::intern(graph_kinds::PROP_RESPAWN_POLICY);
+
+        for prop in thing.props.iter() {
+            if prop.0 == prop_name {
+                if let PropValue::Str(s) = &prop.1 { name = Some(s.clone()); }
+            } else if prop.0 == prop_app_id {
+                if let PropValue::U64(v) = prop.1 { app_id = Some(v); }
+            } else if prop.0 == prop_priority {
+                if let PropValue::U64(v) = prop.1 { priority = v; }
+            } else if prop.0 == prop_binary {
+                if let PropValue::Str(s) = &prop.1 { binary = Some(s.clone()); }
+            } else if prop.0 == prop_respawn {
+                if let PropValue::Str(s) = &prop.1 { respawn_policy = Some(s.clone()); }
             }
         }
 
@@ -181,50 +160,58 @@ fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> 
 }
 
 fn find_program_image(identifier: &str) -> Option<ProgramImageData> {
-    let mut found = None;
-    graph::iter_things(|thing| {
-        if found.is_some() || thing.kind != graph_kinds::KIND_PROGRAM_IMAGE {
-            return;
-        }
-        let mut id_value: Option<String> = None;
-        let mut module_index = 0;
-        let mut base_phys = 0;
-        let mut size = 0;
-        for prop in thing.props.iter().flatten() {
-            match prop.0 {
-                "identifier" => {
-                    if let PropValue::Str(s) = &prop.1 {
-                        id_value = Some(s.clone());
-                    }
-                }
-                "module_index" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        module_index = v;
-                    }
-                }
-                "base_phys" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        base_phys = v;
-                    }
-                }
-                "size" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        size = v;
-                    }
-                }
-                _ => {}
-            }
-        }
-        if let Some(id) = id_value {
-            if id == identifier {
-                found = Some(ProgramImageData {
-                    identifier: id,
-                    module_index,
-                    base_phys,
-                    size,
-                });
-            }
-        }
-    });
-    found
+    // Iterate things logic
+    // We can't use graph::iter_things easily if it iterates internal store (which is locked).
+    // graph::iter_things was a helper?
+    // Let's assume store supports iterating.
+    // OR we use next_thing_of_kind loop again.
+    
+    let kind_prog_img = symbols::intern(graph_kinds::KIND_PROGRAM_IMAGE);
+    let mut current = ThingId(0);
+    
+    // Pre-intern keys
+    let prop_ident = symbols::intern(graph_kinds::PROP_IDENTIFIER);
+    let prop_idx = symbols::intern(graph_kinds::PROP_MODULE_INDEX);
+    let prop_base = symbols::intern(graph_kinds::PROP_BASE_PHYS);
+    let prop_size = symbols::intern(graph_kinds::PROP_SIZE);
+
+    while let Some(next) = graph::next_thing_of_kind_sym(kind_prog_img, current) {
+         let mut found_ident: Option<String> = None;
+         let mut module_index = 0;
+         let mut base_phys = 0;
+         let mut size = 0;
+         
+         // Access properties via get_prop or with_thing
+         let match_found = graph::with_thing(next, |thing| {
+             for prop in thing.props.iter() {
+                 if prop.0 == prop_ident {
+                      if let PropValue::Str(s) = &prop.1 { found_ident = Some(s.clone()); }
+                 } else if prop.0 == prop_idx {
+                      if let PropValue::U64(v) = prop.1 { module_index = v; }
+                 } else if prop.0 == prop_base {
+                      if let PropValue::U64(v) = prop.1 { base_phys = v; }
+                 } else if prop.0 == prop_size {
+                      if let PropValue::U64(v) = prop.1 { size = v; }
+                 }
+             }
+             if let Some(id) = &found_ident {
+                 if id == identifier {
+                     return Some(ProgramImageData {
+                         identifier: id.clone(),
+                         module_index,
+                         base_phys,
+                         size,
+                     });
+                 }
+             }
+             None
+         }).flatten();
+         
+         if let Some(data) = match_found {
+             return Some(data);
+         }
+         
+         current = next;
+    }
+    None
 }

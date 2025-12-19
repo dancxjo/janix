@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use thing_os::prelude::*;
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TITLE_BAR_HEIGHT};
@@ -223,11 +224,11 @@ impl Compositor {
         drag.last_sent_y = clamped_y;
         let updates = [
             (
-                abi::graph_kinds::PROP_WINDOW_X,
+                abi::graph_kinds::PROP_WINDOW_X.to_string(),
                 PropValue::I64(clamped_x as i64),
             ),
             (
-                abi::graph_kinds::PROP_WINDOW_Y,
+                abi::graph_kinds::PROP_WINDOW_Y.to_string(),
                 PropValue::I64(clamped_y as i64),
             ),
         ];

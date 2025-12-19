@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use thing_models::{
     IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth,
@@ -103,8 +104,8 @@ pub fn driver_main() -> ! {
     
     // Advertise capabilities via props
     let _ = update_props(stream_id, &[
-        ("head", PropValue::U64(0)),
-        ("capacity", PropValue::U64(MOUSE_RING_CAPACITY as u64))
+        ("head".to_string(), PropValue::U64(0)),
+        ("capacity".to_string(), PropValue::U64(MOUSE_RING_CAPACITY as u64))
     ]);
     
     let region = wait_for_region();
@@ -316,11 +317,11 @@ impl IoPortAccessor {
             let slot = self.slot(slot_kind);
             if let Some(id) = *slot {
                 let props = [
-                    ("offset", PropValue::U64(offset as u64)),
-                    ("direction", PropValue::Str(direction.as_str().into())),
-                    ("width", PropValue::Str(IoWidth::U8.as_str().into())),
-                    ("value", PropValue::U64(value as u64)),
-                    ("status", PropValue::Str(IoStatus::Pending.as_str().into())),
+                    ("offset".to_string(), PropValue::U64(offset as u64)),
+                    ("direction".to_string(), PropValue::Str(direction.as_str().into())),
+                    ("width".to_string(), PropValue::Str(IoWidth::U8.as_str().into())),
+                    ("value".to_string(), PropValue::U64(value as u64)),
+                    ("status".to_string(), PropValue::Str(IoStatus::Pending.as_str().into())),
                 ];
                 if !update_props(id, &props) {
                     return None;

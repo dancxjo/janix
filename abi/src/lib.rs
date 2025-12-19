@@ -1,7 +1,7 @@
 #![no_std]
 
 extern crate alloc;
-use alloc::string::String;
+
 use alloc::vec::Vec;
 
 pub mod graph_kinds;
@@ -11,6 +11,14 @@ pub mod mouse_stream;
 pub mod keyboard_stream;
 pub mod syscall_defs;
 pub mod syscall_numbers;
+pub mod syscalls;
+pub mod wire;
+
+pub use crate::wire::memory::{MemorySummary, SchedulerSummary, FrameInfo, MapFlags};
+pub use crate::wire::buffers::{PixelFormat, SharedBufferInfo};
+
+use crate::wire::common::UserSlice;
+use crate::wire::graph::{WireProp, WireSchemaProp, BatchUpdateEntry as WireBatchEntry};
 
 /// Process identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -82,8 +90,10 @@ pub struct FrameId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FramePoolId(pub u64);
 
+use crate::syscall_defs::SymbolId;
+
 /// Simple property key
-pub type PropKey = &'static str;
+pub type PropKey = alloc::string::String;
 
 /// Simple property value
 #[derive(Debug, Clone, PartialEq)]
@@ -91,7 +101,9 @@ pub enum PropValue {
     U64(u64),
     I64(i64),
     Bool(bool),
-    Str(String),
+    Str(alloc::string::String),
+    Blob(alloc::vec::Vec<u8>),
+    Symbol(crate::syscall_defs::SymbolId),
 }
 
 /// Property type for schema validation
@@ -100,98 +112,20 @@ pub enum PropType {
     U64,
     I64,
     Bool,
+    Symbol,
     Str,
+    Blob,
 }
 
 /// Schema identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SchemaId(pub u64);
 
-/// Memory summary statistics
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MemorySummary {
-    pub total_frames: u64,
-    pub used_frames: u64,
-    pub free_frames: u64,
-}
-
-/// Scheduler summary statistics
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SchedulerSummary {
-    pub process_count: u64,
-    pub thread_count: u64,
-    pub runnable_threads: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FrameInfo {
-    pub id: FrameId,
-    pub base: u64,
-    pub size: u64,
-}
-
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum PixelFormat {
-    Rgba8888 = 0,
-    Bgra8888 = 1,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(transparent)]
-pub struct MapFlags(pub u64);
-
-impl MapFlags {
-    pub const READ: MapFlags = MapFlags(1 << 0);
-    pub const WRITE: MapFlags = MapFlags(1 << 1);
-    pub const EXECUTE: MapFlags = MapFlags(1 << 2);
-    pub const USER: MapFlags = MapFlags(1 << 3);
-
-    pub const fn bits(self) -> u64 {
-        self.0
-    }
-
-    pub const fn contains(self, other: MapFlags) -> bool {
-        (self.0 & other.0) == other.0
-    }
-
-    pub const fn union(self, other: MapFlags) -> MapFlags {
-        MapFlags(self.0 | other.0)
-    }
-}
-
-impl From<u64> for MapFlags {
-    fn from(value: u64) -> Self {
-        MapFlags(value)
-    }
-}
-
-impl core::ops::BitOr for MapFlags {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        MapFlags(self.0 | rhs.0)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct SharedBufferInfo {
-    pub width: u32,
-    pub height: u32,
-    pub stride: u32,
-    pub pixel_format: PixelFormat,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ThreadInfo {
     pub tid: u64,
     pub state: u64,
     pub priority: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct BatchUpdateEntry {
-    pub id: ThingId,
-    pub props: &'static [(PropKey, PropValue)],
 }
 
 /// Kernel request from userland
@@ -213,8 +147,8 @@ pub enum KernelRequest {
     },
     /// Create a new Thing
     ThingCreate {
-        kind: &'static str,
-        props: &'static [(PropKey, PropValue)],
+        kind: SymbolId,
+        props: UserSlice<WireProp>,
     },
     /// Spawn a program defined by a BootProgram Thing
     SpawnProgram {
@@ -222,7 +156,7 @@ pub enum KernelRequest {
     },
     /// Enumerate Things of a given kind
     ThingList {
-        kind: &'static str,
+        kind: SymbolId,
         start_after: ThingId,
     },
     /// Get a Thing
@@ -232,21 +166,21 @@ pub enum KernelRequest {
     /// Update a Thing
     ThingUpdate {
         id: ThingId,
-        props: &'static [(PropKey, PropValue)],
+        props: UserSlice<WireProp>,
     },
     /// Batch update multiple Things
     ThingBatchUpdate {
-        updates: &'static [BatchUpdateEntry],
+        updates: UserSlice<WireBatchEntry>,
     },
     /// Register a schema
     SchemaRegister {
-        kind: &'static str,
-        description: &'static str,
-        props: &'static [(&'static str, PropType)],
+        kind: SymbolId,
+        description: SymbolId,
+        props: UserSlice<WireSchemaProp>,
     },
     /// Get a schema
     SchemaGet {
-        kind: &'static str,
+        kind: SymbolId,
     },
     /// Get memory summary
     GetMemorySummary,
@@ -301,20 +235,20 @@ pub enum KernelRequest {
         buffer_id: ThingId,
     },
     ResidentAlloc {
-        kind: &'static str,
+        kind: SymbolId,
         byte_len: u32,
-        flags: u32, // keeping flags as I added it and it's useful
+        flags: u32,
     },
     ResidentMap {
         id: ThingId,
-        perms: crate::resident::ResidentMapPerms,
+        perms: crate::wire::resident::ResidentMapPerms,
     },
     ResidentUnmap {
         thing_id: ThingId,
     },
     ThingRest {
         thing_id: ThingId,
-        policy: crate::resident::RestPolicy,
+        policy: crate::wire::resident::RestPolicy,
     },
 }
 
@@ -336,7 +270,7 @@ pub enum KernelResponse {
     /// Node data
     NodeData {
         node_id: NodeId,
-        value: u64,
+        value: Vec<u8>,
     },
     /// Thing created
     ThingCreated {
@@ -345,17 +279,17 @@ pub enum KernelResponse {
     /// Thing data
     ThingData {
         id: ThingId,
-        kind: &'static str,
+        kind: SymbolId,
         props: &'static [Option<(PropKey, PropValue)>],
     },
     /// Schema registered
     SchemaRegistered {
-        kind: &'static str,
+        kind: SymbolId,
     },
     /// Schema data
     SchemaData {
-        kind: &'static str,
-        props: &'static [Option<(&'static str, PropType)>],
+        kind: SymbolId,
+        props: &'static [Option<(SymbolId, PropType)>],
     },
     /// Memory summary data
     MemorySummary {
@@ -410,15 +344,15 @@ pub enum KernelResponse {
         info: SharedBufferInfo,
     },
     ResidentAllocated {
-        resp: crate::resident::ResidentAllocResp,
+        resp: crate::wire::resident::ResidentAllocResp,
     },
     ResidentMapped {
-        resp: crate::resident::ResidentMapResp,
+        resp: crate::wire::resident::ResidentMapResp,
     },
     ThingRested {
-        resp: crate::resident::RestResp,
+        resp: crate::wire::resident::RestResp,
     },
-    ResidentError(crate::resident::ResidentError),
+    ResidentError(crate::wire::resident::ResidentError),
 }
 
 pub const THING_GET_MAX_KIND_LEN: usize = 128;
@@ -484,60 +418,8 @@ impl Default for ThingGetSyscallResult {
     }
 }
 
-/// Syscall numbers for Ring 3 -> Ring 0 communication
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u64)]
-pub enum SyscallNumber {
-    // Scheduling and timekeeping
-    Yield = 0,
-    SleepForNs = 1,
-    SleepUntil = 2,
-    TimeMonotonicNs = 3,
-    TimeSystemNs = 4,
-    TimeNow = 5,
-
-    // Diagnostics / thread management
-    Log = 6,
-    ExitThread = 7,
-
-    // Memory and process management
-    AllocFrame = 8,
-    FreeFrame = 9,
-    CreateProcess = 10,
-    CreateThread = 11,
-    SpawnProgram = 12,
-
-    // Thing graph operations
-    ThingCreate = 13,
-    ThingGet = 14,
-    ThingUpdate = 15,
-    ThingList = 16,
-    AddLink = 17,
-    LinkAt = 18,
-    SchemaRegister = 19,
-
-    // Transactional / query interfaces
-    GraphQuery = 20,
-    CreateTransaction = 21,
-    CommitTransaction = 22,
-    MapSharedBuffer = 23,
-    CreateSharedBuffer = 24,
-    GetSharedBufferInfo = 25,
-    ResidentAlloc = 26,
-    ResidentMap = 27,
-    ResidentUnmap = 28,
-    ThingRest = 29,
-    // Add others as needed
-}
-
-#[repr(C)]
-pub struct SpawnProgramResult {
-    pub process_id: ThingId,
-    pub thread_id: ThingId,
-}
-
 pub trait Thing: Sized {
-    const KIND: &'static str;
+    const KIND: &'static str; // High level string, wrapper must intern
     const DESCRIPTION: &'static str;
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);
@@ -585,69 +467,6 @@ mod tests {
         // Verify it implements Copy/Clone/Debug/etc
         let copy_id = id_zero;
         assert_eq!(copy_id, id_zero);
-    }
-
-    #[test]
-    fn test_syscall_number_encoding() {
-        // Lock in specific syscall numbers to ensure ABI stability
-        assert_eq!(SyscallNumber::Yield as u64, 0);
-        assert_eq!(SyscallNumber::SleepForNs as u64, 1);
-        assert_eq!(SyscallNumber::SleepUntil as u64, 2);
-        assert_eq!(SyscallNumber::TimeMonotonicNs as u64, 3);
-        assert_eq!(SyscallNumber::TimeSystemNs as u64, 4);
-        assert_eq!(SyscallNumber::TimeNow as u64, 5);
-        assert_eq!(SyscallNumber::Log as u64, 6);
-        assert_eq!(SyscallNumber::ExitThread as u64, 7);
-        assert_eq!(SyscallNumber::AllocFrame as u64, 8);
-        assert_eq!(SyscallNumber::FreeFrame as u64, 9);
-        assert_eq!(SyscallNumber::CreateProcess as u64, 10);
-        assert_eq!(SyscallNumber::CreateThread as u64, 11);
-        assert_eq!(SyscallNumber::SpawnProgram as u64, 12);
-        assert_eq!(SyscallNumber::ThingCreate as u64, 13);
-        assert_eq!(SyscallNumber::ThingGet as u64, 14);
-        assert_eq!(SyscallNumber::ThingUpdate as u64, 15);
-        assert_eq!(SyscallNumber::ThingList as u64, 16);
-        assert_eq!(SyscallNumber::AddLink as u64, 17);
-        assert_eq!(SyscallNumber::LinkAt as u64, 18);
-        assert_eq!(SyscallNumber::SchemaRegister as u64, 19);
-        assert_eq!(SyscallNumber::GraphQuery as u64, 20);
-        assert_eq!(SyscallNumber::CreateTransaction as u64, 21);
-        assert_eq!(SyscallNumber::CommitTransaction as u64, 22);
-        assert_eq!(SyscallNumber::MapSharedBuffer as u64, 23);
-        assert_eq!(SyscallNumber::CreateSharedBuffer as u64, 24);
-        assert_eq!(SyscallNumber::GetSharedBufferInfo as u64, 25);
-        assert_eq!(SyscallNumber::ResidentAlloc as u64, 26);
-        assert_eq!(SyscallNumber::ResidentMap as u64, 27);
-        assert_eq!(SyscallNumber::ResidentUnmap as u64, 28);
-        assert_eq!(SyscallNumber::ThingRest as u64, 29);
-    }
-
-    #[test]
-    fn test_pixel_format_encoding() {
-        assert_eq!(PixelFormat::Rgba8888 as u8, 0);
-        assert_eq!(PixelFormat::Bgra8888 as u8, 1);
-    }
-
-    #[test]
-    fn test_thing_prop_scalar_type_encoding() {
-        assert_eq!(ThingPropScalarType::U64 as u8, 0);
-        assert_eq!(ThingPropScalarType::I64 as u8, 1);
-        assert_eq!(ThingPropScalarType::Bool as u8, 2);
-        assert_eq!(ThingPropScalarType::Str as u8, 3);
-    }
-
-    #[test]
-    fn test_map_flags_invariants() {
-        let read = MapFlags::READ;
-        let write = MapFlags::WRITE;
-        let rw = read.union(write);
-
-        assert_eq!(read.bits(), 1);
-        assert_eq!(write.bits(), 2);
-        assert_eq!(rw.bits(), 3);
-        assert!(rw.contains(read));
-        assert!(rw.contains(write));
-        assert!(!read.contains(write));
     }
 }
 pub mod graph_ops;

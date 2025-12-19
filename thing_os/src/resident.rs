@@ -5,7 +5,7 @@ use core::sync::atomic::{Ordering, compiler_fence};
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use abi::{KernelRequest, KernelResponse};
-use crate::syscalls::syscall;
+use crate::syscalls::{syscall, sys_symbol_intern};
 
 pub mod mouse;
 pub mod keyboard_stream;
@@ -98,7 +98,7 @@ impl<T> Resident<T> {
 pub fn alloc_resident(kind: &str, byte_len: u32, flags: u32) -> Result<ResidentAllocResp, ResidentError> {
     // Current ABI requires static kind string.
     let kind_static = Box::leak(kind.to_string().into_boxed_str());
-    match syscall(KernelRequest::ResidentAlloc { kind: kind_static, byte_len, flags }) {
+    match syscall(KernelRequest::ResidentAlloc { kind: sys_symbol_intern(kind_static), byte_len, flags }) {
         KernelResponse::ResidentAllocated { resp } => Ok(resp),
         KernelResponse::ResidentError(e) => Err(e),
         _ => Err(ResidentError { code: ResidentErrorCode::Unknown, aux0: 0, aux1: 0 }),

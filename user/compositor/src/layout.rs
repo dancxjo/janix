@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::cmp::max;
 
@@ -112,14 +113,14 @@ pub fn auto_tile(windows: &[Window], fb_width: i32, fb_height: i32) -> Vec<Stack
 pub fn persist_stack(stack: &[StackedWindow]) {
     for win in stack {
         let props = [
-            (graph_kinds::PROP_WINDOW_X, PropValue::I64(win.x as i64)),
-            (graph_kinds::PROP_WINDOW_Y, PropValue::I64(win.y as i64)),
+            (graph_kinds::PROP_WINDOW_X.to_string(), PropValue::I64(win.x as i64)),
+            (graph_kinds::PROP_WINDOW_Y.to_string(), PropValue::I64(win.y as i64)),
             (
-                graph_kinds::PROP_WINDOW_WIDTH,
+                graph_kinds::PROP_WINDOW_WIDTH.to_string(),
                 PropValue::I64(win.width as i64),
             ),
             (
-                graph_kinds::PROP_WINDOW_HEIGHT,
+                graph_kinds::PROP_WINDOW_HEIGHT.to_string(),
                 PropValue::I64(win.height as i64),
             ),
         ];

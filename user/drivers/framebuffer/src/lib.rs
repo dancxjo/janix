@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use abi::{Predicate, MapFlags, PixelFormat, SharedBufferInfo, ThingId};
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use core::ptr;
 use thing_os::prelude::*;
 use thing_os::thing_models::DisplayPresentRequest;
@@ -207,11 +207,11 @@ impl FramebufferDriver {
             self.fb_id,
             &[
                 (
-                    abi::graph_kinds::PROP_LAST_PRESENT_NS,
+                    abi::graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
                     PropValue::U64(self.last_present_ns),
                 ),
                 (
-                    abi::graph_kinds::PROP_FRAMES_PRESENTED,
+                    abi::graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
                     PropValue::U64(self.frames_presented),
                 ),
             ],
@@ -221,10 +221,10 @@ impl FramebufferDriver {
             request.id,
             &[
                 (
-                    abi::graph_kinds::PROP_PRESENTED_AT_NS,
+                    abi::graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
                     PropValue::U64(self.last_present_ns),
                 ),
-                (abi::graph_kinds::PROP_COMPLETED, PropValue::Bool(true)),
+                (abi::graph_kinds::PROP_COMPLETED.to_string(), PropValue::Bool(true)),
             ],
         );
     }
@@ -362,36 +362,36 @@ impl Thing for DisplayFramebufferThing {
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push((
-            abi::graph_kinds::PROP_NAME,
+            abi::graph_kinds::PROP_NAME.to_string(),
             PropValue::Str(self.name.clone()),
         ));
-        out.push((abi::graph_kinds::PROP_WIDTH, PropValue::U64(self.width)));
-        out.push((abi::graph_kinds::PROP_HEIGHT, PropValue::U64(self.height)));
-        out.push((abi::graph_kinds::PROP_STRIDE, PropValue::U64(self.stride)));
+        out.push((abi::graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
+        out.push((abi::graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
+        out.push((abi::graph_kinds::PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
         let fmt = match self.pixel_format {
             PixelFormat::Rgba8888 => "Rgba8888",
             PixelFormat::Bgra8888 => "Bgra8888",
         };
         out.push((
-            abi::graph_kinds::PROP_PIXEL_FORMAT,
+            abi::graph_kinds::PROP_PIXEL_FORMAT.to_string(),
             PropValue::Str(fmt.into()),
         ));
         out.push((
-            abi::graph_kinds::PROP_POWER_STATE,
+            abi::graph_kinds::PROP_POWER_STATE.to_string(),
             PropValue::Str(self.power_state.as_str().into()),
         ));
         if let Some(refresh) = self.refresh_interval_ns {
             out.push((
-                abi::graph_kinds::PROP_REFRESH_INTERVAL_NS,
+                abi::graph_kinds::PROP_REFRESH_INTERVAL_NS.to_string(),
                 PropValue::U64(refresh),
             ));
         }
         out.push((
-            abi::graph_kinds::PROP_FRAMES_PRESENTED,
+            abi::graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
             PropValue::U64(self.frames_presented),
         ));
         out.push((
-            abi::graph_kinds::PROP_LAST_PRESENT_NS,
+            abi::graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
             PropValue::U64(self.last_present_ns),
         ));
     }
@@ -408,7 +408,7 @@ impl Thing for DisplayFramebufferThing {
         let mut last_present_ns = 0;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 abi::graph_kinds::PROP_NAME => {
                     if let PropValue::Str(v) = &prop.1 {
                         name = v.clone();

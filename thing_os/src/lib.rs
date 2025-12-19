@@ -14,16 +14,17 @@ pub mod batch;
 pub mod clock;
 pub mod demo_shared;
 pub mod time;
-// pub mod userland; // Removed
 pub mod resident;
 pub mod prelude;
-pub mod ui; // Moved from userland/ui.rs
+pub mod ui;
 pub mod display;
 pub use display::*;
 
 use abi::{
     FrameInfo, KernelRequest, KernelResponse, MemorySummary, NodeId,
-    SchedulerSummary, ThreadInfo, FrameId,
+    SchedulerSummary, ThreadInfo, FrameId, 
+    wire::{graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag}, common::UserSlice},
+    syscall_defs::SymbolId,
 };
 pub use abi::graph_kinds;
 pub use alloc::boxed::Box;
@@ -33,7 +34,7 @@ pub use alloc::rc::Rc;
 pub use alloc::sync::Arc;
 pub use alloc::format;
 pub use alloc::vec;
-use syscalls::syscall;
+use syscalls::{syscall, sys_symbol_intern};
 
 pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
@@ -89,7 +90,7 @@ impl abi::Thing for CpuCoreThing {
     const DESCRIPTION: &'static str = "A CPU core identified by its index in the system";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("index", PropValue::U64(self.index)));
+        out.push(("index".to_string(), PropValue::U64(self.index)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -120,7 +121,7 @@ impl abi::Thing for ProcessThing {
     const DESCRIPTION: &'static str = "A process with process identifier (PID) and execution state";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("pid", PropValue::U64(self.pid)));
+        out.push(("pid".to_string(), PropValue::U64(self.pid)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -167,15 +168,15 @@ impl abi::Thing for DisplayThing {
     const DESCRIPTION: &'static str = "A display sink capable of scanning out a SharedBuffer";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_NAME, PropValue::Str(self.name.clone())));
-        out.push((graph_kinds::PROP_WIDTH, PropValue::U64(self.width)));
-        out.push((graph_kinds::PROP_HEIGHT, PropValue::U64(self.height)));
-        out.push((graph_kinds::PROP_STRIDE, PropValue::U64(self.stride)));
+        out.push((graph_kinds::PROP_NAME.to_string(), PropValue::Str(self.name.clone())));
+        out.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
+        out.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
+        out.push((graph_kinds::PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
         if let Some(fmt) = &self.pixel_format {
-            out.push((graph_kinds::PROP_PIXEL_FORMAT, PropValue::Str(fmt.clone())));
+            out.push((graph_kinds::PROP_PIXEL_FORMAT.to_string(), PropValue::Str(fmt.clone())));
         }
         out.push((
-            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(),
             PropValue::I64(self.active_buffer_index),
         ));
     }
@@ -189,7 +190,7 @@ impl abi::Thing for DisplayThing {
         let mut active_buffer_index = 0;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 graph_kinds::PROP_NAME => {
                     if let PropValue::Str(v) = &prop.1 {
                         name = v.clone();
@@ -261,11 +262,11 @@ impl abi::Thing for SharedBufferThing {
     const DESCRIPTION: &'static str = "Shared memory buffer exported by the kernel";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_WIDTH, PropValue::U64(self.width)));
-        out.push((graph_kinds::PROP_HEIGHT, PropValue::U64(self.height)));
-        out.push((graph_kinds::PROP_STRIDE, PropValue::U64(self.stride)));
+        out.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
+        out.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
+        out.push((graph_kinds::PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
         if let Some(fmt) = &self.pixel_format {
-            out.push((graph_kinds::PROP_PIXEL_FORMAT, PropValue::Str(fmt.clone())));
+            out.push((graph_kinds::PROP_PIXEL_FORMAT.to_string(), PropValue::Str(fmt.clone())));
         }
     }
 
@@ -276,7 +277,7 @@ impl abi::Thing for SharedBufferThing {
         let mut pixel_format = None;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 graph_kinds::PROP_WIDTH => {
                     if let PropValue::U64(v) = prop.1 {
                         width = v;
@@ -326,11 +327,11 @@ impl abi::Thing for ThreadThing {
         "A thread of execution with thread identifier, state, priority, and runtime tracking";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("tid", PropValue::U64(self.tid)));
-        out.push(("state", PropValue::Str(self.state.clone())));
-        out.push(("priority", PropValue::U64(self.priority)));
-        out.push(("runtime_ns", PropValue::U64(self.runtime_ns)));
-        out.push(("last_started_ns", PropValue::U64(self.last_started_ns)));
+        out.push(("tid".to_string(), PropValue::U64(self.tid)));
+        out.push(("state".to_string(), PropValue::Str(self.state.clone())));
+        out.push(("priority".to_string(), PropValue::U64(self.priority)));
+        out.push(("runtime_ns".to_string(), PropValue::U64(self.runtime_ns)));
+        out.push(("last_started_ns".to_string(), PropValue::U64(self.last_started_ns)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -341,7 +342,7 @@ impl abi::Thing for ThreadThing {
         let mut last_started_ns = 0;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "tid" => {
                     if let PropValue::U64(v) = prop.1 {
                         tid = v;
@@ -396,7 +397,16 @@ impl abi::Thing for ThreadThing {
 pub fn graph_query(node_id: NodeId) -> Option<u64> {
     let request = KernelRequest::GraphQuery { node_id };
     match syscall(request) {
-        KernelResponse::NodeData { node_id: _, value } => Some(value),
+        KernelResponse::NodeData { node_id: _, value } => {
+            // Try to interpret bytes as u64
+            if value.len() >= 8 {
+                 let mut buf = [0u8; 8];
+                 buf.copy_from_slice(&value[0..8]);
+                 Some(u64::from_le_bytes(buf))
+            } else {
+                 None
+            }
+        }
         _ => None,
     }
 }
@@ -421,7 +431,26 @@ pub fn user_create_thing(
     kind: &'static str,
     props: &'static [(PropKey, PropValue)],
 ) -> Result<ThingId, &'static str> {
-    let request = KernelRequest::ThingCreate { kind, props };
+    let kind_sym = sys_symbol_intern(kind);
+    let mut wire_props = Vec::with_capacity(props.len());
+    
+    for (key, val) in props {
+        let key_sym = sys_symbol_intern(&key);
+        let wire_val = match val {
+            PropValue::U64(v) => WirePropValue::u64(*v),
+            PropValue::I64(v) => WirePropValue::i64(*v),
+            PropValue::Bool(v) => WirePropValue::bool(*v),
+            PropValue::Str(s) => WirePropValue::sym(sys_symbol_intern(s)),
+            PropValue::Symbol(id) => WirePropValue::sym(*id),
+            PropValue::Blob(_) => return Err("Blob unsupported in wire conversion yet"),
+        };
+        wire_props.push(WireProp { key: key_sym, value: wire_val, _pad: 0 });
+    }
+
+    let request = KernelRequest::ThingCreate {
+        kind: kind_sym,
+        props: UserSlice::from_slice(&wire_props),
+    };
     match syscall(request) {
         KernelResponse::ThingCreated { id } => Ok(id),
         KernelResponse::Error { message } => Err(message),
@@ -434,7 +463,25 @@ pub fn user_update_thing(
     id: ThingId,
     props: &'static [(PropKey, PropValue)],
 ) -> Result<(), &'static str> {
-    let request = KernelRequest::ThingUpdate { id, props };
+    let mut wire_props = Vec::with_capacity(props.len());
+    
+    for (key, val) in props {
+        let key_sym = sys_symbol_intern(&key);
+        let wire_val = match val {
+            PropValue::U64(v) => WirePropValue::u64(*v),
+            PropValue::I64(v) => WirePropValue::i64(*v),
+            PropValue::Bool(v) => WirePropValue::bool(*v),
+            PropValue::Str(s) => WirePropValue::sym(sys_symbol_intern(s)),
+            PropValue::Symbol(id) => WirePropValue::sym(*id),
+            PropValue::Blob(_) => return Err("Blob unsupported in wire conversion yet"),
+        };
+        wire_props.push(WireProp { key: key_sym, value: wire_val, _pad: 0 });
+    }
+
+    let request = KernelRequest::ThingUpdate {
+        id,
+        props: UserSlice::from_slice(&wire_props)
+    };
     match syscall(request) {
         KernelResponse::Success { .. } => Ok(()),
         KernelResponse::Error { message } => Err(message),
@@ -447,26 +494,25 @@ pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {
     let mut props_vec = Vec::new();
     thing.to_props(&mut props_vec);
 
-    // Sanitize keys: Copy static strings to heap
-    let mut _key_holders = Vec::new();
-    let mut safe_props_vec = Vec::new();
+    let kind_sym = sys_symbol_intern(T::KIND);
+    let mut wire_props = Vec::with_capacity(props_vec.len());
+    
     for (key, val) in props_vec {
-        let key_str = String::from(key);
-        let key_static: &'static str = unsafe { core::mem::transmute(key_str.as_str()) };
-        _key_holders.push(key_str);
-        safe_props_vec.push((key_static, val));
+        let key_sym = sys_symbol_intern(&key);
+        let wire_val = match val {
+            PropValue::U64(v) => WirePropValue::u64(v),
+            PropValue::I64(v) => WirePropValue::i64(v),
+            PropValue::Bool(v) => WirePropValue::bool(v),
+            PropValue::Str(s) => WirePropValue::sym(sys_symbol_intern(&s)),
+            PropValue::Symbol(id) => WirePropValue::sym(id),
+            PropValue::Blob(_) => continue, // TODO: support blobs via interning? Only symbols for now.
+        };
+        wire_props.push(WireProp { key: key_sym, value: wire_val, _pad: 0 });
     }
 
-    let kind_str = String::from(T::KIND);
-    let kind_static: &'static str = unsafe { core::mem::transmute(kind_str.as_str()) };
-
-    // Pass slice reference transmuted to static lifetime (safe because syscall blocks)
-    let props_slice = safe_props_vec.as_slice();
-    let props_static: &'static [(PropKey, PropValue)] = unsafe { core::mem::transmute(props_slice) };
-
     let request = KernelRequest::ThingCreate {
-        kind: kind_static,
-        props: props_static,
+        kind: kind_sym,
+        props: UserSlice::from_slice(&wire_props),
     };
     match syscall(request) {
         KernelResponse::ThingCreated { id } => Some(id),
@@ -479,9 +525,10 @@ pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
     let request = KernelRequest::ThingGet { id };
     match syscall(request) {
         KernelResponse::ThingData { id, kind, props } => {
-            // Workaround: Copy T::KIND to heap for safe comparison if needed
-            let kind_str = String::from(T::KIND);
-            if kind != kind_str.as_str() {
+            // Kind is string returned from syscall (syscall impl copies it)
+            // Kind is SymbolId returned from syscall
+            let expected = sys_symbol_intern(T::KIND);
+            if kind != expected {
                 return None;
             }
             Some(T::from_props(id, props))
@@ -494,31 +541,30 @@ pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
 pub fn register_schema_for<T: Thing>() -> bool {
     let schema = T::schema();
     
-    // Sanitize schema: Copy strings to heap
-    let mut _str_holders = Vec::new();
-    let mut safe_schema_vec = Vec::new();
+    let kind_sym = sys_symbol_intern(T::KIND);
+    let desc_sym = sys_symbol_intern(T::DESCRIPTION);
+    
+    let mut wire_schema = Vec::with_capacity(schema.len());
     for (key, prop_type) in schema {
-        let key_str = String::from(*key);
-        let key_static: &'static str = unsafe { core::mem::transmute(key_str.as_str()) };
-        _str_holders.push(key_str);
-        safe_schema_vec.push((key_static, *prop_type));
+        let key_sym = sys_symbol_intern(*key);
+        let tag = match prop_type {
+            PropType::U64 => WireValueTag::U64,
+            PropType::I64 => WireValueTag::I64,
+            PropType::Bool => WireValueTag::Bool,
+            PropType::Str => WireValueTag::Str, // String type
+            PropType::Symbol => WireValueTag::Str, // Treated same for now?
+            PropType::Blob => WireValueTag::Blob,
+        };
+        wire_schema.push(WireSchemaProp { name: key_sym, prop_type: tag as u32 });
     }
     
-    let schema_slice = safe_schema_vec.as_slice();
-    let schema_static: &'static [(&'static str, PropType)] = unsafe { core::mem::transmute(schema_slice) };
+    let request = KernelRequest::SchemaRegister {
+        kind: kind_sym,
+        description: desc_sym,
+        props: UserSlice::from_slice(&wire_schema),
+    };
 
-    // Workaround: Copy strings to heap to avoid potential .rodata mapping issues
-    let kind_str = String::from(T::KIND);
-    let desc_str = String::from(T::DESCRIPTION);
-    // SAFETY: Transmute to static lifetime for syscall duration
-    let kind_static: &'static str = unsafe { core::mem::transmute(kind_str.as_str()) };
-    let desc_static: &'static str = unsafe { core::mem::transmute(desc_str.as_str()) };
-
-    match syscall(KernelRequest::SchemaRegister {
-        kind: kind_static,
-        description: desc_static,
-        props: schema_static,
-    }) {
+    match syscall(request) {
         KernelResponse::SchemaRegistered { .. } => true,
         _ => false,
     }
@@ -526,7 +572,7 @@ pub fn register_schema_for<T: Thing>() -> bool {
 
 /// Search for a `Thing` that satisfies `predicate`.
 pub fn find_thing<T: Thing>(predicate: impl Fn(&T) -> bool) -> Option<T> {
-    list_things_by_kind().into_iter().find(predicate)
+    list_things_by_kind::<T>().into_iter().find(predicate)
 }
 
 /// Return all neighbors reachable from `from` via `pred` in insertion order.
@@ -558,14 +604,11 @@ pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
 pub fn list_things_by_kind<T: Thing>() -> Vec<T> {
     let mut results = Vec::new();
     let mut cursor = ThingId(u64::MAX);
-    // Workaround: Copy kind to heap to avoid potential .rodata mapping issues
-    let kind_str = String::from(T::KIND);
-    // SAFETY: The string slice is only registered for the duration of the syscall,
-    // which does not retain the pointer.
-    let kind_static: &'static str = unsafe { core::mem::transmute(kind_str.as_str()) };
+    let kind_sym = sys_symbol_intern(T::KIND);
+    
     loop {
         match syscall(KernelRequest::ThingList {
-            kind: kind_static,
+            kind: kind_sym,
             start_after: cursor,
         }) {
             KernelResponse::ThingListEntry { id: Some(next_id) } => {
@@ -589,22 +632,25 @@ pub fn get_type_description<T: Thing>() -> &'static str {
 
 /// Update the properties for the Thing with `id`.
 pub fn update_props(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
-    // Sanitize keys: Copy static strings to heap
-    let mut _key_holders = Vec::new();
-    let mut safe_props_vec = Vec::new();
-    for (key, val) in props {
-        let key_str = String::from(*key);
-        let key_static: &'static str = unsafe { core::mem::transmute(key_str.as_str()) };
-        _key_holders.push(key_str);
-        safe_props_vec.push((key_static, val.clone()));
-    }
+    // This helper likely redundant with user_update_thing, but kept for consistency
+    let mut wire_props = Vec::with_capacity(props.len());
     
-    let props_slice = safe_props_vec.as_slice();
-    let props_static: &'static [(PropKey, PropValue)] = unsafe { core::mem::transmute(props_slice) };
+    for (key, val) in props {
+        let key_sym = sys_symbol_intern(&key);
+        let wire_val = match val {
+            PropValue::U64(v) => WirePropValue::u64(*v),
+            PropValue::I64(v) => WirePropValue::i64(*v),
+            PropValue::Bool(v) => WirePropValue::bool(*v),
+            PropValue::Str(s) => WirePropValue::sym(sys_symbol_intern(s)),
+            PropValue::Symbol(id) => WirePropValue::sym(*id),
+            PropValue::Blob(_) => continue,
+        };
+        wire_props.push(WireProp { key: key_sym, value: wire_val, _pad: 0 });
+    }
 
     let request = KernelRequest::ThingUpdate {
         id,
-        props: props_static,
+        props: UserSlice::from_slice(&wire_props),
     };
     matches!(syscall(request), KernelResponse::Success { .. })
 }
@@ -671,4 +717,9 @@ pub fn free_frame(frame_id: FrameId) -> bool {
         KernelResponse::FrameFreed { .. } => true,
         _ => false,
     }
+}
+
+/// Intern a string to get its SymbolId.
+pub fn intern(s: &str) -> SymbolId {
+    sys_symbol_intern(s)
 }

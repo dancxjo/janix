@@ -72,7 +72,7 @@ pub fn set_window_text(window: WindowHandle, text: &str) {
         let _ = update_props(
             surface.id,
             &[(
-                graph_kinds::PROP_SURFACE_TEXT,
+                graph_kinds::PROP_SURFACE_TEXT.to_string(),
                 PropValue::Str(text.to_string()),
             )],
         );
@@ -107,7 +107,7 @@ pub fn append_window_text(window: WindowHandle, text: &str) {
         let _ = update_props(
             surface.id,
             &[(
-                graph_kinds::PROP_SURFACE_TEXT,
+                graph_kinds::PROP_SURFACE_TEXT.to_string(),
                 PropValue::Str(surface.text.clone()),
             )],
         );

@@ -1,4 +1,4 @@
-#![no_std]
+
 
 use core::marker::PhantomData;
 
@@ -119,4 +119,41 @@ impl Default for DevReadRet {
     fn default() -> Self {
         Self { bytes_read: 0 }
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SymbolId(pub u32);
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct WireStr {
+    pub ptr: u64,
+    pub len: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SymbolInternReq {
+    pub s: WireStr,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SymbolInternResp {
+    pub id: SymbolId,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SymbolResolveReq {
+    pub id: SymbolId,
+    pub out_ptr: u64,
+    pub out_cap: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SymbolResolveResp {
+    pub written: u64, // bytes written
 }

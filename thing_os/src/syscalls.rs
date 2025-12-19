@@ -1,27 +1,49 @@
 use abi::{
-    KernelRequest, KernelResponse, SharedBufferInfo, SyscallNumber, ThingGetSyscallResult,
+    KernelRequest, KernelResponse, SharedBufferInfo, ThingGetSyscallResult,
     ThingPropScalarType, resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
+    syscalls::*, syscall_defs::{SymbolId, SymbolInternReq, WireStr}
 };
 use crate::sys::raw_syscall;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+pub fn sys_symbol_intern(s: &str) -> SymbolId {
+    let req = SymbolInternReq {
+        s: WireStr {
+            ptr: s.as_ptr() as u64,
+            len: s.len() as u64,
+        },
+    };
+    let ret = unsafe {
+        raw_syscall(
+            SYSCALL_SYMBOL_INTERN,
+            &req as *const _ as u64,
+            0,
+            0,
+            0,
+            0,
+            0
+        )
+    };
+    SymbolId(ret as u32)
+}
+
 pub fn syscall(request: KernelRequest) -> KernelResponse {
     match request {
         KernelRequest::Log { message } => {
             let ptr = message.as_ptr() as u64;
             let len = message.len() as u64;
-            unsafe { raw_syscall(SyscallNumber::Log, ptr, len, 0, 0, 0, 0) };
+            unsafe { raw_syscall(SYSCALL_LOG, ptr, len, 0, 0, 0, 0) };
             KernelResponse::Success { data: None }
         }
 
         KernelRequest::ExitThread => {
-             unsafe { raw_syscall(SyscallNumber::ExitThread, 0, 0, 0, 0, 0, 0) };
+             unsafe { raw_syscall(SYSCALL_EXIT_THREAD, 0, 0, 0, 0, 0, 0) };
              loop {}
         },
         KernelRequest::SchedulerTick => {
-            unsafe { raw_syscall(SyscallNumber::Yield, 0, 0, 0, 0, 0, 0) };
+            unsafe { raw_syscall(SYSCALL_YIELD, 0, 0, 0, 0, 0, 0) };
             KernelResponse::Success { data: None }
         }
         KernelRequest::AllocFrame { pool_index } => {
@@ -32,7 +54,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             };
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::AllocFrame,
+                    SYSCALL_ALLOC_FRAME,
                     pool_index as u64,
                     &mut frame as *mut _ as u64,
                     0,
@@ -51,7 +73,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
         }
         KernelRequest::FreeFrame { frame_id } => {
             let ret =
-                unsafe { raw_syscall(SyscallNumber::FreeFrame, frame_id.0, 0, 0, 0, 0, 0) };
+                unsafe { raw_syscall(SYSCALL_FREE_FRAME, frame_id.0, 0, 0, 0, 0, 0) };
             if ret == 0 {
                 KernelResponse::FrameFreed { frame_id }
             } else {
@@ -64,7 +86,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             let ptr = name.as_ptr() as u64;
             let len = name.len() as u64;
             let ret =
-                unsafe { raw_syscall(SyscallNumber::CreateProcess, ptr, len, 0, 0, 0, 0) };
+                unsafe { raw_syscall(SYSCALL_CREATE_PROCESS, ptr, len, 0, 0, 0, 0) };
             if ret == 0 {
                 KernelResponse::Error {
                     message: "CreateProcess failed",
@@ -83,7 +105,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             let len = name.len() as u64;
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::CreateThread,
+                    SYSCALL_CREATE_THREAD,
                     pid,
                     app_id,
                     priority,
@@ -101,17 +123,26 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::ThingCreate { kind, props } => {
-            let kind_ptr = kind.as_ptr() as u64;
-            let kind_len = kind.len() as u64;
-            let props_ptr = props.as_ptr() as u64;
-            let props_len = props.len() as u64;
+            // Updated to new ABI: passes request struct by pointer?
+            // No, ABI plan said ThingCreate arguments: rdi=kind(u32), rsi=props_ptr, rdx=props_len
+            // Wait, kind is SymbolId (u32 wrapped). 
+            // Register passing: kind.0 as u64
+            // props is UserSlice<WireProp>. We pass ptr/len of the slice directly?
+            // UserSlice is just POD (ptr, len).
+            // Usually we pass ptr/len as registers if possible, OR pointer to UserSlice struct.
+            // arch/src/x86_64/syscall.rs: 
+            // let kind = SymbolId(arg1 as u32);
+            // let props_ptr = UserPtr::new(arg2);
+            // let props_len = arg3;
+            // So we pass kind in arg1, props ptr in arg2, props len in arg3.
+            
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::ThingCreate,
-                    kind_ptr,
-                    kind_len,
-                    props_ptr,
-                    props_len,
+                    SYSCALL_THING_CREATE,
+                    kind.0 as u64,
+                    props.ptr,
+                    props.len,
+                    0,
                     0,
                     0,
                 )
@@ -127,14 +158,13 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::ThingUpdate { id, props } => {
-            let props_ptr = props.as_ptr() as u64;
-            let props_len = props.len() as u64;
+            // arg1=id, arg2=props_ptr, arg3=props_len
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::ThingUpdate,
+                    SYSCALL_THING_UPDATE,
                     id.0,
-                    props_ptr,
-                    props_len,
+                    props.ptr,
+                    props.len,
                     0,
                     0,
                     0,
@@ -152,7 +182,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             let mut raw = ThingGetSyscallResult::default();
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::ThingGet,
+                    SYSCALL_THING_GET,
                     id.0,
                     &mut raw as *mut _ as u64,
                     0,
@@ -200,7 +230,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
                         }
                     };
 
-                    copied.push(Some((key_static, value)));
+                    copied.push(Some((key_static.to_string(), value)));
                 }
 
                 let props_static: &'static [Option<(abi::PropKey, abi::PropValue)>] =
@@ -208,20 +238,19 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
 
                 KernelResponse::ThingData {
                     id,
-                    kind: kind_static,
+                    kind: sys_symbol_intern(kind_static),
                     props: props_static,
                 }
             }
         }
         KernelRequest::ThingList { kind, start_after } => {
-            let kind_ptr = kind.as_ptr() as u64;
-            let kind_len = kind.len() as u64;
+            // arg1=kind(SymbolId), arg2=start_after
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::ThingList,
-                    kind_ptr,
-                    kind_len,
+                    SYSCALL_THING_LIST,
+                    kind.0 as u64,
                     start_after.0,
+                    0,
                     0,
                     0,
                     0,
@@ -237,7 +266,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
         }
         KernelRequest::AddLink { src, pred, dst } => {
             let ret =
-                unsafe { raw_syscall(SyscallNumber::AddLink, src.0, pred.0, dst.0, 0, 0, 0) };
+                unsafe { raw_syscall(SYSCALL_ADD_LINK, src.0, pred.0, dst.0, 0, 0, 0) };
             if ret == 0 {
                 KernelResponse::Success { data: None }
             } else {
@@ -248,7 +277,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
         }
         KernelRequest::LinkAt { src, pred, idx } => {
             let ret = unsafe {
-                raw_syscall(SyscallNumber::LinkAt, src.0, idx as u64, pred.0, 0, 0, 0)
+                raw_syscall(SYSCALL_LINK_AT, src.0, idx as u64, pred.0, 0, 0, 0)
             };
             if ret == u64::MAX {
                 KernelResponse::LinkTarget { target: None }
@@ -259,13 +288,14 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::SpawnProgram { boot_program_id } => {
-            let mut result = abi::SpawnProgramResult {
+use abi::wire::process::SpawnProgramResult;
+            let mut result = SpawnProgramResult {
                 process_id: abi::ThingId(0),
                 thread_id: abi::ThingId(0),
             };
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::SpawnProgram,
+                    SYSCALL_SPAWN_PROGRAM,
                     boot_program_id.0,
                     &mut result as *mut _ as u64,
                     0,
@@ -290,21 +320,17 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             description,
             props,
         } => {
-            let kind_ptr = kind.as_ptr() as u64;
-            let kind_len = kind.len() as u64;
-            let desc_ptr = description.as_ptr() as u64;
-            let desc_len = description.len() as u64;
-            let props_ptr = props.as_ptr() as u64;
-            let props_len = props.len() as u64;
+            // arg1=kind(Sym), arg2=desc(Sym), arg3=props_ptr, arg4=props_len
+            
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::SchemaRegister,
-                    kind_ptr,
-                    kind_len,
-                    desc_ptr,
-                    desc_len,
-                    props_ptr,
-                    props_len,
+                    SYSCALL_SCHEMA_REGISTER,
+                    kind.0 as u64,
+                    description.0 as u64,
+                    props.ptr,
+                    props.len,
+                    0,
+                    0,
                 )
             };
             if ret == 0 {
@@ -320,7 +346,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             let mut size = 0_u64;
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::MapSharedBuffer,
+                    SYSCALL_MAP_SHARED_BUFFER,
                     buffer_id.0,
                     flags.bits(),
                     &mut vaddr as *mut _ as u64,
@@ -344,7 +370,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
         } => {
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::CreateSharedBuffer,
+                    SYSCALL_CREATE_SHARED_BUFFER,
                     width as u64,
                     height as u64,
                     pixel_format as u8 as u64,
@@ -372,7 +398,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             };
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::GetSharedBufferInfo,
+                    SYSCALL_GET_SHARED_BUFFER_INFO,
                     buffer_id.0,
                     &mut info as *mut _ as u64,
                     0,
@@ -390,19 +416,18 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::ResidentAlloc { kind, byte_len, flags: _ } => {
-            let kind_ptr = kind.as_ptr() as u64;
-            let kind_len = kind.len() as u64;
+            // kind is SymbolId now
             let mut resp = ResidentAllocResp::default();
             let mut err = ResidentError::default();
             
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::ResidentAlloc,
-                    kind_ptr,
-                    kind_len,
+                    SYSCALL_RESIDENT_ALLOC,
+                    kind.0 as u64,
                     byte_len as u64,
                     &mut resp as *mut _ as u64,
                     &mut err as *mut _ as u64,
+                    0,
                     0,
                 )
             };
@@ -419,7 +444,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::ResidentMap,
+                    SYSCALL_RESIDENT_MAP,
                     id.0,
                     perms.0 as u64,
                     &mut resp as *mut _ as u64,
@@ -439,7 +464,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             let mut err = ResidentError::default();
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::ResidentUnmap,
+                    SYSCALL_RESIDENT_UNMAP,
                     thing_id.0,
                     &mut err as *mut _ as u64,
                     0,
@@ -461,7 +486,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             
             let ret = unsafe {
                 raw_syscall(
-                    SyscallNumber::ThingRest,
+                    SYSCALL_THING_REST,
                     thing_id.0,
                     policy as u64,
                     &mut resp as *mut _ as u64,

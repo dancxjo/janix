@@ -1,5 +1,5 @@
 use core::fmt;
-use abi::SyscallNumber;
+
 use crate::sys::raw_syscall;
 
 pub struct Console;
@@ -9,7 +9,7 @@ impl fmt::Write for Console {
         let ptr = s.as_ptr() as u64;
         let len = s.len() as u64;
         unsafe {
-            raw_syscall(SyscallNumber::Log, ptr, len, 0, 0, 0, 0);
+            raw_syscall(abi::syscalls::SYSCALL_LOG, ptr, len, 0, 0, 0, 0);
         }
         Ok(())
     }

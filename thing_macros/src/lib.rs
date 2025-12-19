@@ -99,7 +99,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
             };
 
             Some(quote! {
-                out.push((stringify!(#name), #val_expr));
+                out.push((::alloc::string::String::from(stringify!(#name)), #val_expr));
             })
         })
         .collect();

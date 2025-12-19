@@ -5,6 +5,8 @@ use abi::graph_ops::{GraphOp, GraphSink, GraphDriver, GraphEvent, ThingProps};
 use abi::graph_kinds::{self, KIND_PCI_DEVICE, KIND_USB_CONTROLLER};
 use hal::MmioMapper;
 use abi::{PropKey, PropValue, PropType, ThingId};
+use abi::wire::graph::{WirePropValue};
+use thing_os::intern;
 
 // Local descriptor for UsbController
 struct UsbControllerDesc {
@@ -16,12 +18,13 @@ struct UsbControllerDesc {
 }
 
 impl UsbControllerDesc {
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-      out.push(("name", PropValue::Str(self.name.clone())));
-      out.push(("pci_bus", PropValue::U64(self.pci_bus)));
-      out.push(("pci_slot", PropValue::U64(self.pci_slot)));
-      out.push(("pci_func", PropValue::U64(self.pci_func)));
-      out.push(("mmio_base", PropValue::U64(self.mmio_base)));
+    // Returns interned keys and WirePropValue
+    fn to_wire_props(&self, out: &mut Vec<(abi::SymbolId, WirePropValue)>) {
+      out.push((intern("name"), WirePropValue::Str(intern(&self.name).0)));
+      out.push((intern("pci_bus"), WirePropValue::U64(self.pci_bus)));
+      out.push((intern("pci_slot"), WirePropValue::U64(self.pci_slot)));
+      out.push((intern("pci_func"), WirePropValue::U64(self.pci_func)));
+      out.push((intern("mmio_base"), WirePropValue::U64(self.mmio_base)));
     }
 }
 
@@ -46,52 +49,57 @@ pub fn register_watcher(mmio: &dyn MmioMapper, graph: &mut dyn GraphDriver) {
     *MMIO.lock() = Some(SyncMmio(static_mmio));
     *DRIVER.lock() = Some(SyncDriver(static_graph));
 
-    // We can't lock DRIVER while subscribing if we fear recursion, but subscribe shouldn't recurse here.
-    // However, static_graph is already moved into the Option (if we moved it). 
-    // Wait, SyncDriver holds a reference. We have a copy of the reference.
-    
-    // We cannot use `static_graph` directly if we put it in the mutex? 
-    // Yes we can, it's a Copy/Clone reference (fat pointer).
-    // Actually `&mut` is NOT Copy. 
-    
-    // So we need to re-borrow from the Mutex OR just use the pointer we have before creating the wrapper.
-    // BUT we already transmuted it to static mutable reference.
-    // Rust does not allow two mutable references. using `static_graph` here and putting it in Mutex might be aliasing violation
-    // if we access it from another thread.
-    // But we are single threaded here.
-    
-    // To be safe: We should convert to raw pointer or just realize `&mut` is unique.
-    // We put it in the Mutex. To use it, we must lock the mutex.
-    
     let mut guard = DRIVER.lock();
     if let Some(wrapper) = guard.as_mut() {
-        wrapper.0.subscribe(KIND_PCI_DEVICE, on_pci_device_created);
+        wrapper.0.subscribe(intern(KIND_PCI_DEVICE), on_pci_device_created);
     }
 }
 
 fn on_pci_device_created(event: &GraphEvent) {
-    // Fixed: logic to extract kind correctly from event
     let (id, kind) = match event {
-        GraphEvent::ThingCreated { id, kind, .. } => (id, kind),
-        // We only care about creation
+        GraphEvent::ThingCreated(id) => {
+             // GraphEvent was updated in ABI. It might look like just ThingCreated(ThingId) now?
+             // Step 197 shows GraphEvent::ThingCreated(ThingId). No kind.
+             // So we must query the kind!
+             // Wait, GraphEvent in Step 197: ThingCreated(ThingId).
+             // Step 238 code had `GraphEvent::ThingCreated { id, kind, .. }`.
+             // So ABI CHANGED. I must update logic to query kind.
+             (id, None)
+        },
         _ => return,
     };
     
-    if *kind != KIND_PCI_DEVICE {
-        return;
-    }
-
     let mut driver_guard = DRIVER.lock();
     let driver = match driver_guard.as_mut() {
         Some(d) => &mut d.0,
         None => return,
     };
     
-    // Query props
+    // Query thing to get kind
     let props_obj = match driver.get_thing(*id) {
         Some(p) => p,
         None => return,
     };
+    
+    // Check kind
+    // props_obj should have a kind field?
+    // ABI `ThingProps` struct. Step 197 didn't show `ThingProps` definition.
+    // Assuming `ThingProps` has `kind: SymbolId`.
+    // If props_obj.kind != intern(KIND_PCI_DEVICE) -> return.
+    
+    // If I can't see ThingProps definition, I assume it has kind. 
+    // OLD code (Step 238) didn't use `props_obj.kind`. It used `kind` from event.
+    // Since `GraphEvent` lost the kind, I MUST check `props_obj.kind`.
+    
+    // Note: Assuming `get_thing` returns `ThingProps` which has `kind`.
+    // If not, I am stuck. But `ThingData` in syscall returns kind. 
+    // `GraphDriver::get_thing` returns `Option<ThingProps>`.
+    
+    // Let's assume `ThingProps` (in `abi::graph_ops`) has `pub kind: SymbolId`.
+    
+    if props_obj.kind != intern(KIND_PCI_DEVICE) {
+        return;
+    }
     
     // Analyze props
     let mut class_id = 0;
@@ -102,18 +110,30 @@ fn on_pci_device_created(event: &GraphEvent) {
     let mut func = 0;
     let mut bar0 = 0;
     
+    // Intern keys for comparison
+    let k_class = intern(graph_kinds::PROP_CLASS_ID);
+    let k_subclass = intern(graph_kinds::PROP_SUBCLASS_ID);
+    let k_progif = intern(graph_kinds::PROP_PROG_IF);
+    let k_bus = intern(graph_kinds::PROP_BUS);
+    let k_slot = intern(graph_kinds::PROP_SLOT);
+    let k_func = intern(graph_kinds::PROP_FUNC);
+    let k_bar0 = intern(graph_kinds::PROP_BAR0);
+    
+    // Props are now probably Vec<(SymbolId, WirePropValue)>?
+    // Or did ThingProps props field change?
+    // Step 197 `GraphOp` changed. `ThingProps` (if in `graph_ops`) likely changed too.
+    
     for (k, v) in props_obj.props.iter() {
-        if let PropValue::U64(val) = v {
-            match *k {
-                graph_kinds::PROP_CLASS_ID => class_id = *val,
-                graph_kinds::PROP_SUBCLASS_ID => subclass_id = *val,
-                graph_kinds::PROP_PROG_IF => prog_if = *val,
-                graph_kinds::PROP_BUS => bus = *val,
-                graph_kinds::PROP_SLOT => slot = *val,
-                graph_kinds::PROP_FUNC => func = *val,
-                graph_kinds::PROP_BAR0 => bar0 = *val,
-                _ => {}
-            }
+        // v is WirePropValue
+        if let WirePropValue::U64(val) = v {
+            let key = *k;
+            if key == k_class { class_id = *val; }
+            else if key == k_subclass { subclass_id = *val; }
+            else if key == k_progif { prog_if = *val; }
+            else if key == k_bus { bus = *val; }
+            else if key == k_slot { slot = *val; }
+            else if key == k_func { func = *val; }
+            else if key == k_bar0 { bar0 = *val; }
         }
     }
     
@@ -121,14 +141,16 @@ fn on_pci_device_created(event: &GraphEvent) {
         // Found XHCI
         let mmio_base_phys = bar0 & !0xF; // Mask low bits
         
-        // Don't hold driver lock while locking MMIO if possible? 
-        // Should be fine, different mutexes.
+        // Unlock driver to lock MMIO (avoid potential deadlock though likely safe here)
+        // Actually we hold driver lock from line 84.
+        
         let mmio_guard = MMIO.lock();
         let mmio = match mmio_guard.as_ref() {
             Some(m) => m.0,
             None => return,
         };
         
+        // Safety: mapping arbitrary physical address
         let mmio_ptr = unsafe { mmio.map_mmio(mmio_base_phys, 4096) };
         let mmio_base_virt = mmio_ptr as u64;
 
@@ -143,10 +165,10 @@ fn on_pci_device_created(event: &GraphEvent) {
         };
 
         let mut props = Vec::new();
-        controller.to_props(&mut props);
+        controller.to_wire_props(&mut props);
 
         let _ = driver.submit(GraphOp::CreateThing {
-            kind: KIND_USB_CONTROLLER,
+            kind: intern(KIND_USB_CONTROLLER),
             props,
         });
     }

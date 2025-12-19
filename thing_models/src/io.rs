@@ -1,6 +1,6 @@
 use abi::{PropKey, PropType, PropValue, Thing, ThingId};
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 fn serialize_irqs(irq_lines: &[u8]) -> String {
@@ -46,10 +46,10 @@ impl IoPortRegion {
         irq_lines: &[u8],
     ) -> Vec<(PropKey, PropValue)> {
         let mut props = Vec::new();
-        props.push(("name", PropValue::Str(String::from(name))));
-        props.push(("base_port", PropValue::U64(base_port as u64)));
-        props.push(("port_count", PropValue::U64(port_count as u64)));
-        props.push(("irq_lines", PropValue::Str(serialize_irqs(irq_lines))));
+        props.push(("name".to_string(), PropValue::Str(String::from(name))));
+        props.push(("base_port".to_string(), PropValue::U64(base_port as u64)));
+        props.push(("port_count".to_string(), PropValue::U64(port_count as u64)));
+        props.push(("irq_lines".to_string(), PropValue::Str(serialize_irqs(irq_lines))));
         props
     }
 }
@@ -60,12 +60,12 @@ impl Thing for IoPortRegion {
         "Hardware I/O port range that can be managed by userland drivers.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("name", PropValue::Str(self.name.clone())));
-        out.push(("base_port", PropValue::U64(self.base_port as u64)));
-        out.push(("port_count", PropValue::U64(self.port_count as u64)));
-        out.push(("irq_lines", PropValue::Str(serialize_irqs(&self.irq_lines))));
+        out.push(("name".to_string(), PropValue::Str(self.name.clone())));
+        out.push(("base_port".to_string(), PropValue::U64(self.base_port as u64)));
+        out.push(("port_count".to_string(), PropValue::U64(self.port_count as u64)));
+        out.push(("irq_lines".to_string(), PropValue::Str(serialize_irqs(&self.irq_lines))));
         if let Some(owner) = self.claimed_by {
-            out.push(("claimed_by", PropValue::U64(owner.0)));
+            out.push(("claimed_by".to_string(), PropValue::U64(owner.0)));
         }
     }
 
@@ -77,7 +77,7 @@ impl Thing for IoPortRegion {
         let mut claimed_by = None;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "name" => {
                     if let PropValue::Str(ref v) = prop.1 {
                         name = v.clone();
@@ -141,10 +141,10 @@ impl Thing for InterruptRequest {
     const DESCRIPTION: &'static str = "Userland request to enable or disable an IRQ line.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((abi::graph_kinds::PROP_IRQ_LINE, PropValue::U64(self.irq_line as u64)));
-        out.push((abi::graph_kinds::PROP_ENABLED, PropValue::Bool(self.enabled)));
+        out.push(((abi::graph_kinds::PROP_IRQ_LINE).to_string(), PropValue::U64(self.irq_line as u64)));
+        out.push(((abi::graph_kinds::PROP_ENABLED).to_string(), PropValue::Bool(self.enabled)));
         if let Some(owner) = self.owner_process {
-            out.push(("owner_process", PropValue::U64(owner.0)));
+            out.push(("owner_process".to_string(), PropValue::U64(owner.0)));
         }
     }
 
@@ -153,7 +153,7 @@ impl Thing for InterruptRequest {
         let mut enabled = false;
         let mut owner_process = None;
         for (k, v) in props.iter().flatten() {
-            match *k {
+            match k.as_str() {
                 abi::graph_kinds::PROP_IRQ_LINE => if let PropValue::U64(x) = v { irq_line = *x as u8; },
                 abi::graph_kinds::PROP_ENABLED => if let PropValue::Bool(b) = v { enabled = *b; },
                 "owner_process" => if let PropValue::U64(x) = v { owner_process = Some(ThingId(*x)); },
@@ -163,7 +163,7 @@ impl Thing for InterruptRequest {
         Self { id, irq_line, enabled, owner_process }
     }
 
-    fn schema() -> &'static [(PropKey, PropType)] {
+    fn schema() -> &'static [(&'static str, PropType)] {
         &[
             (abi::graph_kinds::PROP_IRQ_LINE, PropType::U64),
             (abi::graph_kinds::PROP_ENABLED, PropType::Bool),
@@ -291,14 +291,14 @@ impl Thing for IoPortOp {
     const DESCRIPTION: &'static str = "Request for a hardware I/O port read or write operation.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("region_id", PropValue::U64(self.region_id.0)));
-        out.push(("offset", PropValue::U64(self.offset as u64)));
-        out.push(("direction", PropValue::Str(self.direction.as_str().into())));
-        out.push(("width", PropValue::Str(self.width.as_str().into())));
-        out.push(("value", PropValue::U64(self.value as u64)));
-        out.push(("status", PropValue::Str(self.status.as_str().into())));
-        out.push(("error_code", PropValue::U64(self.error_code as u64)));
-        out.push(("issued_by", PropValue::U64(self.issued_by.0)));
+        out.push(("region_id".to_string(), PropValue::U64(self.region_id.0)));
+        out.push(("offset".to_string(), PropValue::U64(self.offset as u64)));
+        out.push(("direction".to_string(), PropValue::Str(self.direction.as_str().into())));
+        out.push(("width".to_string(), PropValue::Str(self.width.as_str().into())));
+        out.push(("value".to_string(), PropValue::U64(self.value as u64)));
+        out.push(("status".to_string(), PropValue::Str(self.status.as_str().into())));
+        out.push(("error_code".to_string(), PropValue::U64(self.error_code as u64)));
+        out.push(("issued_by".to_string(), PropValue::U64(self.issued_by.0)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -312,7 +312,7 @@ impl Thing for IoPortOp {
         let mut issued_by = ThingId(0);
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "region_id" => {
                     if let PropValue::U64(v) = prop.1 {
                         region_id = ThingId(v);
@@ -405,11 +405,11 @@ impl InterruptEvent {
         timestamp_ticks: u64,
     ) -> Vec<(PropKey, PropValue)> {
         let mut props = Vec::new();
-        props.push(("irq_line", PropValue::U64(irq_line as u64)));
+        props.push(("irq_line".to_string(), PropValue::U64(irq_line as u64)));
         if let Some(region) = region_id {
-            props.push(("region_id", PropValue::U64(region.0)));
+            props.push(("region_id".to_string(), PropValue::U64(region.0)));
         }
-        props.push(("timestamp_ticks", PropValue::U64(timestamp_ticks)));
+        props.push(("timestamp_ticks".to_string(), PropValue::U64(timestamp_ticks)));
         props
     }
 }
@@ -419,11 +419,11 @@ impl Thing for InterruptEvent {
     const DESCRIPTION: &'static str = "Kernel notification that an IRQ line fired.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("irq_line", PropValue::U64(self.irq_line as u64)));
+        out.push(("irq_line".to_string(), PropValue::U64(self.irq_line as u64)));
         if let Some(region) = self.region_id {
-            out.push(("region_id", PropValue::U64(region.0)));
+            out.push(("region_id".to_string(), PropValue::U64(region.0)));
         }
-        out.push(("timestamp_ticks", PropValue::U64(self.timestamp_ticks)));
+        out.push(("timestamp_ticks".to_string(), PropValue::U64(self.timestamp_ticks)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -432,7 +432,7 @@ impl Thing for InterruptEvent {
         let mut timestamp_ticks = 0;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "irq_line" => {
                     if let PropValue::U64(v) = prop.1 {
                         irq_line = v as u8;

@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use alloc::boxed::Box;
@@ -24,7 +25,7 @@ pub fn swap_display_buffers(display_id: ThingId) -> Option<i64> {
     if !update_props(
         display_id,
         &[(
-            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(),
             PropValue::I64(new_index),
         )],
     ) {

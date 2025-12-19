@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use thing_os::prelude::*;
 use thing_os::link_targets;
 use thing_os::thing_models::DisplayPresentRequest;
@@ -117,15 +118,15 @@ impl Compositor {
         if let Some(prev) = self.active_window {
             let _ = update_props(
                 prev,
-                &[(graph_kinds::PROP_WINDOW_ACTIVE, PropValue::Bool(false))],
+                &[(graph_kinds::PROP_WINDOW_ACTIVE.to_string(), PropValue::Bool(false))],
             );
         }
 
         let max_z = stacked.iter().map(|w| w.z_index).max().unwrap_or(0);
         let new_z = max_z.saturating_add(1);
         let updates = [
-            (graph_kinds::PROP_WINDOW_ACTIVE, PropValue::Bool(true)),
-            (graph_kinds::PROP_Z_INDEX, PropValue::I64(new_z as i64)),
+            (graph_kinds::PROP_WINDOW_ACTIVE.to_string(), PropValue::Bool(true)),
+            (graph_kinds::PROP_Z_INDEX.to_string(), PropValue::I64(new_z as i64)),
         ];
         let _ = update_props(window.id, &updates);
         self.active_window = Some(window.id);
@@ -223,12 +224,12 @@ impl Compositor {
         let now = thing_os::time::Instant::now().t_ns;
         let updates = [
             (
-                graph_kinds::PROP_FRAME_INDEX,
+                graph_kinds::PROP_FRAME_INDEX.to_string(),
                 PropValue::U64(self.frame_counter),
             ),
-            (graph_kinds::PROP_REQUESTED_AT_NS, PropValue::U64(now)),
-            (graph_kinds::PROP_COMPLETED, PropValue::Bool(false)),
-            (graph_kinds::PROP_PRESENTED_AT_NS, PropValue::U64(0)),
+            (graph_kinds::PROP_REQUESTED_AT_NS.to_string(), PropValue::U64(now)),
+            (graph_kinds::PROP_COMPLETED.to_string(), PropValue::Bool(false)),
+            (graph_kinds::PROP_PRESENTED_AT_NS.to_string(), PropValue::U64(0)),
         ];
         let _ = update_props(req_id, &updates);
     }

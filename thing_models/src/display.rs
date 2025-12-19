@@ -4,6 +4,7 @@ extern crate alloc;
 
 use abi::{PropKey, PropType, PropValue, Thing, ThingId, graph_kinds};
 use alloc::vec::Vec;
+use alloc::string::ToString;
 
 #[derive(Clone, Debug)]
 pub struct DisplayPresentRequest {
@@ -21,22 +22,19 @@ impl Thing for DisplayPresentRequest {
         "A compositor request for a framebuffer driver to present a frame";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((
-            graph_kinds::PROP_FRAMEBUFFER_ID,
+        out.push((graph_kinds::PROP_FRAMEBUFFER_ID.to_string(),
             PropValue::U64(self.framebuffer_id.0),
         ));
-        out.push((
-            graph_kinds::PROP_FRAME_INDEX,
+        out.push((graph_kinds::PROP_FRAME_INDEX.to_string(),
             PropValue::U64(self.frame_index),
         ));
-        out.push((
-            graph_kinds::PROP_REQUESTED_AT_NS,
+        out.push((graph_kinds::PROP_REQUESTED_AT_NS.to_string(),
             PropValue::U64(self.requested_at_ns),
         ));
         if let Some(presented) = self.presented_at_ns {
-            out.push((graph_kinds::PROP_PRESENTED_AT_NS, PropValue::U64(presented)));
+            out.push((graph_kinds::PROP_PRESENTED_AT_NS.to_string(), PropValue::U64(presented)));
         }
-        out.push((graph_kinds::PROP_COMPLETED, PropValue::Bool(self.completed)));
+        out.push((graph_kinds::PROP_COMPLETED.to_string(), PropValue::Bool(self.completed)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -47,7 +45,7 @@ impl Thing for DisplayPresentRequest {
         let mut completed = false;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 graph_kinds::PROP_FRAMEBUFFER_ID => {
                     if let PropValue::U64(v) = prop.1 {
                         framebuffer_id = ThingId(v);

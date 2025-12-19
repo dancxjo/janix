@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use crate::{
     PropKey, PropType, PropValue, Thing, ThingId, create_thing, find_thing, load_thing,
     register_schema_for, update_props,
@@ -26,9 +27,9 @@ impl Thing for DemoState {
         "Shared state for demonstration applications tracking hello and heartbeat ticks";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("name", PropValue::U64(self.name)));
-        out.push(("hello_ticks", PropValue::U64(self.hello_ticks)));
-        out.push(("heartbeat_ticks", PropValue::U64(self.heartbeat_ticks)));
+        out.push(("name".to_string(), PropValue::U64(self.name)));
+        out.push(("hello_ticks".to_string(), PropValue::U64(self.hello_ticks)));
+        out.push(("heartbeat_ticks".to_string(), PropValue::U64(self.heartbeat_ticks)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -37,7 +38,7 @@ impl Thing for DemoState {
         let mut heartbeat_ticks = 0;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "name" => {
                     if let PropValue::U64(v) = prop.1 {
                         name = v;
@@ -104,12 +105,12 @@ impl DemoState {
     }
 
     pub fn update_hello_ticks(&self, ticks: u64) -> bool {
-        update_props(self.id, &[("hello_ticks", PropValue::U64(ticks))])
+        update_props(self.id, &[("hello_ticks".to_string(), PropValue::U64(ticks))])
     }
 
     /// Update the stored heartbeat tick count.
     pub fn update_heartbeat_ticks(&self, ticks: u64) -> bool {
-        update_props(self.id, &[("heartbeat_ticks", PropValue::U64(ticks))])
+        update_props(self.id, &[("heartbeat_ticks".to_string(), PropValue::U64(ticks))])
     }
 
     /// Read the current hello/heartbeat tick counters from kernel state.

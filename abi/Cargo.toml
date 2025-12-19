@@ -6,3 +6,6 @@ edition.workspace = true
 [lib]
 
 [dependencies]
+
+[dev-dependencies]
+static_assertions = "1.1.0"

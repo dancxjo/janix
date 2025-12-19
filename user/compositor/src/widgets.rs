@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::string::ToString;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use alloc::string::String; // This line was implicitly removed by the instruction's provided block, but it's needed for `String` type. Re-adding it.
@@ -215,10 +216,10 @@ pub fn layout_children(
             if width_changed || height_changed {
                 let mut props = Vec::new();
                 if width_changed {
-                    props.push((graph_kinds::PROP_WIDTH, PropValue::I64(r.w as i64)));
+                    props.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::I64(r.w as i64)));
                 }
                 if height_changed {
-                    props.push((graph_kinds::PROP_HEIGHT, PropValue::I64(r.h as i64)));
+                    props.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::I64(r.h as i64)));
                 }
                 let _ = update_props(*id, &props);
             }

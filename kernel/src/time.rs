@@ -163,8 +163,9 @@ pub fn refresh_time_source() {
 
 fn refresh_time_source_with(raw_id: u64, ticks: u64) {
     let (unix_seconds, unix_nanos) = now_unix_from_rtc_ticks(ticks);
-    let props = TimeSource::update_from_kernel(ticks, unix_seconds, unix_nanos);
-    let _ = graph::update_thing(ThingId(raw_id), &props);
+    let props_str = TimeSource::update_from_kernel(ticks, unix_seconds, unix_nanos);
+    let props = props_str.into_iter().map(|(k, v)| (crate::symbols::intern(&k), v)).collect();
+    let _ = graph::update_thing(ThingId(raw_id), props);
 }
 
 pub fn now_unix_from_rtc() -> (i64, u32) {
@@ -273,7 +274,7 @@ fn run_alarm_actualizer(current_ticks: u64) {
     let mut actions: Vec<AlarmAction> = Vec::new();
 
     graph::iter_things(|thing| {
-        if thing.kind != graph_kinds::KIND_ALARM_REQUEST {
+        if thing.kind != crate::symbols::intern(graph_kinds::KIND_ALARM_REQUEST) {
             return;
         }
         let id = thing.id;
@@ -283,34 +284,27 @@ fn run_alarm_actualizer(current_ticks: u64) {
         let mut target_nanos = None::<u32>;
         let mut target_ticks = None::<u64>;
 
-        for prop in thing.props.iter().flatten() {
-            match prop.0 {
-                "armed" => {
-                    if let PropValue::Bool(v) = prop.1 {
-                        armed = v;
-                    }
+        for (key, val) in thing.props.iter() {
+            if *key == crate::symbols::intern("armed") {
+                if let PropValue::Bool(v) = val {
+                    armed = *v;
                 }
-                "fired" => {
-                    if let PropValue::Bool(v) = prop.1 {
-                        fired = v;
-                    }
+            } else if *key == crate::symbols::intern("fired") {
+                if let PropValue::Bool(v) = val {
+                    fired = *v;
                 }
-                "target_unix_seconds" => {
-                    if let PropValue::I64(v) = prop.1 {
-                        target_secs = Some(v);
-                    }
+            } else if *key == crate::symbols::intern("target_unix_seconds") {
+                if let PropValue::I64(v) = val {
+                    target_secs = Some(*v);
                 }
-                "target_unix_nanos" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        target_nanos = Some(v as u32);
-                    }
+            } else if *key == crate::symbols::intern("target_unix_nanos") {
+                if let PropValue::U64(v) = val {
+                    target_nanos = Some(*v as u32);
                 }
-                "target_ticks" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        target_ticks = Some(v);
-                    }
+            } else if *key == crate::symbols::intern("target_ticks") {
+                if let PropValue::U64(v) = val {
+                    target_ticks = Some(*v);
                 }
-                _ => {}
             }
         }
 
@@ -336,19 +330,22 @@ fn run_alarm_actualizer(current_ticks: u64) {
     for action in actions {
         match action {
             AlarmAction::Arm { id, target_ticks } => {
-                let props = AlarmRequest::arm_props(target_ticks);
-                let _ = graph::update_thing(id, &props);
+                let props_str = AlarmRequest::arm_props(target_ticks);
+                let props = props_str.into_iter().map(|(k, v)| (crate::symbols::intern(&k), v)).collect();
+                let _ = graph::update_thing(id, props);
                 log_message(format!(
                     "AlarmRequest id={} armed target_ticks={}",
                     id.0, target_ticks
                 ));
             }
             AlarmAction::Fire { id } => {
-                let props = AlarmRequest::fired_props();
-                let _ = graph::update_thing(id, &props);
+                let props_str = AlarmRequest::fired_props();
+                let props = props_str.into_iter().map(|(k, v)| (crate::symbols::intern(&k), v)).collect();
+                let _ = graph::update_thing(id, props);
                 let (secs, nanos) = now_unix_from_rtc();
-                let event_props = AlarmEvent::from_fire(id, secs, nanos);
-                let _ = graph::create_thing(graph_kinds::KIND_ALARM_EVENT, &event_props);
+                let event_props_str = AlarmEvent::from_fire(id, secs, nanos);
+                let event_props = event_props_str.into_iter().map(|(k, v)| (crate::symbols::intern(&k), v)).collect();
+                let _ = graph::create_thing(crate::symbols::intern(graph_kinds::KIND_ALARM_EVENT), event_props);
                 log_message(format!(
                     "AlarmRequest id={} fired at {}.{}",
                     id.0, secs, nanos

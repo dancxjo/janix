@@ -1,7 +1,7 @@
 #[cfg(target_os = "none")]
-use alloc::string::String;
+use alloc::string::{String, ToString};
 #[cfg(not(target_os = "none"))]
-use std::string::String;
+use std::string::{String, ToString};
 
 use abi::{MapFlags, PropValue, SharedBufferInfo, ThingId};
 use crate::graph_kinds;
@@ -147,7 +147,7 @@ pub fn swap_display_buffers(display_id: ThingId) -> Option<i64> {
     let current = PrimaryDisplayBuffer::clamp_active_index(display.active_buffer_index);
     let next = 1 - current;
     let updates = [(
-        abi::graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+        abi::graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(),
         PropValue::I64(next),
     )];
     if update_props(display_id, &updates) {

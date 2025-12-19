@@ -1,6 +1,6 @@
 use abi::PropValue;
 use kernel::console::{ConsoleSink, register_sink};
-use kernel::{graph, graph_kinds};
+use kernel::{graph, graph_kinds, symbols};
 use limine::framebuffer::Framebuffer;
 use spin::Mutex;
 use thing_models::MODE_INDEX_CONSOLE;
@@ -212,20 +212,25 @@ where
 fn console_mode_should_draw() -> bool {
     let mut seen_mode = false;
     let mut console_active = false;
+    
+    // Intern symbols for lookup
+    let kind_mode = symbols::intern(graph_kinds::KIND_MODE);
+    let prop_mode_idx = symbols::intern(graph_kinds::PROP_MODE_INDEX);
+    let prop_mode_active = symbols::intern(graph_kinds::PROP_MODE_ACTIVE);
 
     graph::iter_things(|thing| {
-        if thing.kind == graph_kinds::KIND_MODE {
+        if thing.kind == kind_mode {
             seen_mode = true;
 
             let mut index: Option<u8> = None;
             let mut active = false;
 
-            for (key, value) in thing.props.iter().flatten() {
-                if *key == graph_kinds::PROP_MODE_INDEX {
+            for (key, value) in thing.props.iter() {
+                if *key == prop_mode_idx {
                     if let PropValue::U64(v) = value {
                         index = Some(*v as u8);
                     }
-                } else if *key == graph_kinds::PROP_MODE_ACTIVE {
+                } else if *key == prop_mode_active {
                     if let PropValue::Bool(flag) = value {
                         active = *flag;
                     }

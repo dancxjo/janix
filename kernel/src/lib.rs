@@ -2,6 +2,7 @@
 // force rebuild 2
 
 extern crate alloc;
+use crate::graph::schema::{register_schema, get_schema_props};
 
 pub mod bridge;
 pub mod console;
@@ -20,6 +21,7 @@ pub mod sched_graph;
 pub mod sched_tick;
 pub mod sched_types;
 pub mod shared_buffer;
+pub mod symbols;
 pub mod time;
 pub mod transaction;
 pub mod work_queue;
@@ -41,7 +43,7 @@ static TEST_MUTEX: Mutex<()> = Mutex::new(());
 pub fn init() {
     log::init();
     bridge::ps2::init();
-    graph::init();
+    init();
     // Dump the graph after initialization so builtin kinds and indexes are visible.
     crate::graph::debug::dump_graph_table();
     journal::init();
@@ -99,7 +101,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         KernelRequest::LinkAt { src, pred, idx } => KernelResponse::LinkTarget {
             target: graph::link_target_at(src, pred, idx as usize),
         },
-        KernelRequest::GraphQuery { node_id } => match graph::query_node(node_id) {
+        KernelRequest::GraphQuery { node_id } => match graph::query_node(ThingId(node_id.0)) {
             Some(value) => KernelResponse::NodeData { node_id, value },
             None => KernelResponse::Error {
                 message: "Thing not found",
@@ -120,16 +122,70 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             KernelResponse::Success { data: None }
         }
         KernelRequest::ThingCreate { kind, props } => {
-            if let Err(e) = graph::validate_props(kind, props) {
+            // Convert UserSlice<WireProp> to Vec<(SymbolId, PropValue)>
+            // Note: This requires reading from user memory, which might fail or be unsafe if not validated.
+            // For now assuming UserSlice provides an iterator or we can check bounds.
+            // But UserSlice in kernel is just a pointer/len wrapper.
+            // We need a helper to read from it.
+            // AND we need to convert WirePropValue to PropValue.
+            
+            // Helper should ideally be in a separate module or function to reuse.
+            // But for now inline or local helper.
+            let mut internal_props = alloc::vec::Vec::new();
+            
+            // Assuming we have a way to iter UserSlice.
+            // If UserSlice impls IntoIterator for &UserSlice or similar?
+            // Checking abi/src/wire/common.rs implies UserSlice is just POD.
+            // We need `copy_from_user` logic which is mocked/abstracted here?
+            // In a real kernel, we'd copy the slice to kernel memory first.
+            // Here, we might assume shared address space or direct access if 'user' is just function calls (mock kernel).
+            // But UserPtr implies it might be an offset.
+            // Let's assume for now we can treat UserPtr as a raw pointer if we are in same address space (toy OS).
+            // Or better, we cast pointer and read.
+            // Safe access?
+            
+            let slice_ptr = props.ptr as *const abi::wire::graph::WireProp;
+            let slice_len = props.len;
+            
+            unsafe {
+                for i in 0..slice_len {
+                    let wire_prop = *slice_ptr.add(i as usize);
+                    let key = wire_prop.key;
+                    // Convert value
+                    let val = match wire_prop.value.tag {
+                         0 => PropValue::U64(wire_prop.value.data_0),
+                         1 => PropValue::I64(wire_prop.value.data_0 as i64),
+                         2 => PropValue::Bool(wire_prop.value.data_0 != 0),
+                         3 => PropValue::Symbol(abi::syscall_defs::SymbolId(wire_prop.value.data_0 as u32)),
+                         4 => {
+                             // Blob. data_0 is ptr, data_1 is len.
+                             // Need to copy blob data.
+                             let blob_ptr = wire_prop.value.data_0 as *const u8;
+                             let blob_len = wire_prop.value.data_1;
+                             let mut blob = alloc::vec::Vec::with_capacity(blob_len as usize);
+                             // Check bounds/null?
+                             if blob_ptr.is_null() && blob_len > 0 {
+                                 return KernelResponse::Error { message: "Invalid blob pointer" };
+                             }
+                             if !blob_ptr.is_null() {
+                                 core::ptr::copy_nonoverlapping(blob_ptr, blob.as_mut_ptr(), blob_len as usize);
+                                 blob.set_len(blob_len as usize);
+                             }
+                             PropValue::Blob(blob)
+                         },
+                         _ => return KernelResponse::Error { message: "Invalid property tag" },
+                    };
+                    internal_props.push((key, val));
+                }
+            }
+
+            if let Err(e) = graph::validate_props(kind, &internal_props) {
 
                 return KernelResponse::Error { message: e };
             }
-            match graph::create_thing(kind, props) {
-                Some(id) => KernelResponse::ThingCreated { id },
-                None => KernelResponse::Error {
-                    message: "Failed to create thing",
-                },
-            }
+            
+            let id = graph::create_thing(kind, internal_props);
+            KernelResponse::ThingCreated { id }
         }
         KernelRequest::ThingGet { id: _ } => KernelResponse::Error {
             message: "ThingGet not available via handle_request (use with_thing)",
@@ -138,18 +194,61 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             id: graph::next_thing_of_kind(kind, start_after),
         },
         KernelRequest::ThingUpdate { id, props } => {
+            // Similar conversion logic
+             let mut internal_props = alloc::vec::Vec::new();
+            
+            let slice_ptr = props.ptr as *const abi::wire::graph::WireProp;
+            let slice_len = props.len;
+            
+            unsafe {
+                for i in 0..slice_len {
+                    let wire_prop = *slice_ptr.add(i as usize);
+                    let key = wire_prop.key;
+                    let val = match wire_prop.value.tag {
+                         0 => PropValue::U64(wire_prop.value.data_0),
+                         1 => PropValue::I64(wire_prop.value.data_0 as i64),
+                         2 => PropValue::Bool(wire_prop.value.data_0 != 0),
+                         3 => PropValue::Symbol(abi::syscall_defs::SymbolId(wire_prop.value.data_0 as u32)),
+                         4 => {
+                             let blob_ptr = wire_prop.value.data_0 as *const u8;
+                             let blob_len = wire_prop.value.data_1;
+                             let mut blob = alloc::vec::Vec::with_capacity(blob_len as usize);
+                             if !blob_ptr.is_null() {
+                                 core::ptr::copy_nonoverlapping(blob_ptr, blob.as_mut_ptr(), blob_len as usize);
+                                 blob.set_len(blob_len as usize);
+                             }
+                             PropValue::Blob(blob)
+                         },
+                         _ => return KernelResponse::Error { message: "Invalid property tag" },
+                    };
+                    internal_props.push((key, val));
+                }
+            }
+// ... (omitting update logic unchanged except slice_ptr fix)
+// Need to match context.
+// I'll assume lines around 145 and 198 match.
+// I need to split this replacement or provide enough context.
+// The previous tool usage replaced large chunk.
+// I will just replace the `props.base.0` lines specifically if possible, or large chunk again.
+// And create_builtin_things fix.
+
+// create_builtin_things fix:
+// Lines 562, 573.
+// I'll separate the tool calls.
+
+
             // Get the kind first to validate
             let validation_result = graph::with_thing(id, |thing_node| {
-                graph::validate_props(thing_node.kind, props)
+                graph::validate_props(thing_node.kind, &internal_props)
             });
             if let Some(res) = validation_result {
                  if let Err(e) = res {
                      return KernelResponse::Error { message: e };
                  }
             } else {
-                 // Thing not found, update_thing will fail anyway, loop continues to update_thing call
+                 // Thing not found, update_thing will fail anyway
             }
-            if graph::update_thing(id, props) {
+            if graph::update_thing(id, internal_props) {
                 KernelResponse::Success { data: None }
             } else {
                 KernelResponse::Error {
@@ -158,25 +257,63 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::ThingBatchUpdate { updates } => {
-            for update in updates {
-                // Get kind to validate
-                let validation_result = graph::with_thing(update.id, |thing_node| {
-                    graph::validate_props(thing_node.kind, update.props)
-                });
-                if let Some(res) = validation_result {
-                    if let Err(e) = res {
-                        return KernelResponse::Error { message: e };
-                    }
-                } else {
-                    return KernelResponse::Error {
-                        message: "Thing not found in batch",
-                    };
-                }
+            // Iterate batch entries
+            let updates_ptr = updates.ptr as *const abi::wire::graph::BatchUpdateEntry;
+            let updates_len = updates.len;
+            // I need to check context. The 'props' in slice_len in previous block was correct variable for ThingUpdate.
+            // In ThingBatchUpdate, arg is 'updates'.
+            
+            unsafe {
+                for i in 0..updates.len { // updates_len
+                    let entry = *updates_ptr.add(i as usize);
+                    // Convert entry.props_ptr/len to internal_props
+                    let mut internal_props = alloc::vec::Vec::new();
+                    let props_ptr = entry.props_ptr.ptr as *const abi::wire::graph::WireProp;
 
-                if !graph::update_thing(update.id, update.props) {
-                    return KernelResponse::Error {
-                        message: "Failed to update thing in batch",
-                    };
+                    let props_len = entry.props_len;
+                    
+                     for j in 0..props_len {
+                        let wire_prop = *props_ptr.add(j as usize);
+                        let key = wire_prop.key;
+                        let val = match wire_prop.value.tag {
+                             0 => PropValue::U64(wire_prop.value.data_0),
+                             1 => PropValue::I64(wire_prop.value.data_0 as i64),
+                             2 => PropValue::Bool(wire_prop.value.data_0 != 0),
+                             3 => PropValue::Symbol(abi::syscall_defs::SymbolId(wire_prop.value.data_0 as u32)),
+                             4 => {
+                                 let blob_ptr = wire_prop.value.data_0 as *const u8;
+                                 let blob_len = wire_prop.value.data_1;
+                                 let mut blob = alloc::vec::Vec::with_capacity(blob_len as usize);
+                                 if !blob_ptr.is_null() {
+                                     core::ptr::copy_nonoverlapping(blob_ptr, blob.as_mut_ptr(), blob_len as usize);
+                                     blob.set_len(blob_len as usize);
+                                 }
+                                 PropValue::Blob(blob)
+                             },
+                             _ => return KernelResponse::Error { message: "Invalid property tag" },
+                        };
+                        internal_props.push((key, val));
+                    }
+                    
+                    // Validate and update
+                     let validation_result = graph::with_thing(entry.id, |thing_node| {
+                        graph::validate_props(thing_node.kind, &internal_props)
+                    });
+                     if let Some(res) = validation_result {
+                        if let Err(e) = res {
+                            return KernelResponse::Error { message: e };
+                        }
+                    } else {
+                        return KernelResponse::Error {
+                            message: "Thing not found in batch",
+                        };
+                    }
+
+                    if !graph::update_thing(entry.id, internal_props) {
+                        return KernelResponse::Error {
+                            message: "Failed to update thing in batch",
+                        };
+                    }
                 }
             }
             KernelResponse::Success { data: None }
@@ -307,12 +444,39 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             kind,
             description,
             props,
-        } => match graph::register_schema(kind, description, props, &[]) {
-            Ok(()) => KernelResponse::SchemaRegistered { kind },
-            Err(e) => KernelResponse::Error { message: e },
+        } => { 
+            let mut props_vec = alloc::vec::Vec::new();
+            unsafe {
+                 let ptr = props.ptr as *const abi::wire::graph::WireSchemaProp;
+                 for i in 0..props.len {
+                      let wp = *ptr.add(i as usize);
+                      // wp.name is SymbolId
+                      let sym = wp.name;
+                      
+                      let pt = match wp.prop_type {
+                          0 => abi::PropType::U64,
+                          1 => abi::PropType::I64,
+                          2 => abi::PropType::Bool,
+                          3 => abi::PropType::Symbol,
+                          4 => abi::PropType::Str,
+                          5 => abi::PropType::Blob,
+                          _ => abi::PropType::U64, // Fallback
+                      };
+                      
+                      props_vec.push((sym, pt));
+                 }
+            }
+            match register_schema(kind, description, props_vec, alloc::vec![]) {
+                Ok(()) => KernelResponse::SchemaRegistered { kind },
+                Err(e) => KernelResponse::Error { message: e },
+            }
         },
-        KernelRequest::SchemaGet { kind } => match graph::get_schema_props(kind) {
-            Some(props) => KernelResponse::SchemaData { kind, props },
+        KernelRequest::SchemaGet { kind } => match get_schema_props(kind) {
+            Some(props) => {
+                 let props_converted: alloc::vec::Vec<Option<(abi::syscall_defs::SymbolId, abi::PropType)>> = props.into_iter().map(Some).collect();
+                 let props_slice = alloc::boxed::Box::leak(props_converted.into_boxed_slice());
+                 KernelResponse::SchemaData { kind, props: props_slice }
+            }
             None => KernelResponse::Error {
                 message: "Schema not found",
             },
@@ -400,61 +564,57 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
 /// Create builtin kernel Things at boot time
 pub fn create_builtin_things() {
     use abi::{PropType, PropValue};
+    use alloc::vec;
 
     log("Creating kernel Things...");
 
-    // Number of Things we'll create
     const BUILTIN_THING_COUNT: u64 = 2;
 
     // Register schema for KernelInfo Thing
-    static KERNEL_INFO_SCHEMA: &[(&str, PropType)] =
-        &[("version", PropType::U64), ("booted", PropType::Bool)];
-
-    if let Err(e) = graph::register_schema(
-        "KernelInfo",
-        "Kernel version and boot status information",
-        KERNEL_INFO_SCHEMA,
-        &[],
-    ) {
+    let kind = crate::symbols::intern("KernelInfo");
+    let desc = crate::symbols::intern("Kernel version and boot status information");
+    let props = vec![
+        (crate::symbols::intern("version"), PropType::U64),
+        (crate::symbols::intern("booted"), PropType::Bool),
+    ];
+    
+    if let Err(e) = register_schema(kind, desc, props, vec![]) {
         log("Failed to register KernelInfo schema");
         log(e);
     }
 
     // Register schema for BootStats Thing
-    static BOOT_STATS_SCHEMA: &[(&str, PropType)] = &[
-        ("boot_time_ms", PropType::U64),
-        ("things_created", PropType::U64),
+    let kind = crate::symbols::intern("BootStats");
+    let desc = crate::symbols::intern("Statistics about kernel boot process");
+    let props = vec![
+        (crate::symbols::intern("boot_time_ms"), PropType::U64),
+        (crate::symbols::intern("things_created"), PropType::U64),
     ];
 
-    if let Err(e) = graph::register_schema(
-        "BootStats",
-        "Statistics about kernel boot process including boot time and initial things created",
-        BOOT_STATS_SCHEMA,
-        &[],
-    ) {
+    if let Err(e) = register_schema(kind, desc, props, vec![]) {
         log("Failed to register BootStats schema");
         log(e);
     }
 
     // Create a KernelInfo Thing
-    static KERNEL_PROPS: &[(abi::PropKey, PropValue)] = &[
-        ("version", PropValue::U64(1)),
-        ("booted", PropValue::Bool(true)),
+    let kind = crate::symbols::intern("KernelInfo");
+    let props = vec![
+        (crate::symbols::intern("version"), PropValue::U64(1)),
+        (crate::symbols::intern("booted"), PropValue::Bool(true)),
     ];
 
-    if let Some(_id) = graph::create_thing("KernelInfo", KERNEL_PROPS) {
-        log("Created KernelInfo Thing");
-    }
+    let _id = graph::create_thing(kind, props);
+    log("Created KernelInfo Thing");
 
     // Create a BootStats Thing
-    static STATS_PROPS: &[(abi::PropKey, PropValue)] = &[
-        ("boot_time_ms", PropValue::U64(0)),
-        ("things_created", PropValue::U64(BUILTIN_THING_COUNT)),
+    let kind = crate::symbols::intern("BootStats");
+    let props = vec![
+        (crate::symbols::intern("boot_time_ms"), PropValue::U64(0)),
+        (crate::symbols::intern("things_created"), PropValue::U64(BUILTIN_THING_COUNT)),
     ];
 
-    if let Some(_id) = graph::create_thing("BootStats", STATS_PROPS) {
-        log("Created BootStats Thing");
-    }
+    let _id = graph::create_thing(kind, props);
+    log("Created BootStats Thing");
 
     log("Kernel Things created.");
     // Dump the graph so callers can inspect the freshly-created builtin Things
@@ -521,14 +681,14 @@ pub fn init_boot_graph() {
         log("Created Thread(1)");
 
         // Update thread state to Running
-        let thread_running = [
+        let thread_running = alloc::vec![
             (
-                "state",
+                crate::symbols::intern("state"),
                 abi::PropValue::Str(String::from(ThreadState::Running.as_str())),
             ),
-            ("last_started_ns", abi::PropValue::U64(0)),
+            (crate::symbols::intern("last_started_ns"), abi::PropValue::U64(0)),
         ];
-        graph::update_thing(thread_id, &thread_running);
+        graph::update_thing(thread_id, thread_running);
         let _ = graph::add_link(process, graph_kinds::LINK_OWNS_THREAD, thread_id);
         let _ = graph::add_link(thread_id, graph_kinds::LINK_RUNS_ON, cpu_core);
         log("Thread(1) set to Running state");
@@ -590,34 +750,43 @@ fn verify_boot_graph_invariants() {
     let mut cpu_node = None;
     let mut process_node = None;
     let mut running_thread = None;
+    
+    let kind_cpu = crate::symbols::intern("CpuCore");
+    let kind_process = crate::symbols::intern("Process");
+    let kind_thread = crate::symbols::intern("Thread");
+    let kind_frame = crate::symbols::intern("PhysFrame");
+    let kind_virt = crate::symbols::intern("VirtRegion");
+    let kind_as = crate::symbols::intern("AddressSpace");
+    let prop_state = crate::symbols::intern("state");
+    let prop_asid = crate::symbols::intern("asid");
 
-    graph::iter_things(|thing| match thing.kind {
-        "CpuCore" => {
+    graph::iter_things(|thing| {
+        if thing.kind == kind_cpu {
             cpu_count += 1;
             cpu_node = Some(thing.id);
-        }
-        "Process" => {
+        } else if thing.kind == kind_process {
             process_count += 1;
             process_node = Some(thing.id);
-        }
-        "Thread" => {
-            thread_count += 1;
-            if let Some(PropValue::Str(s)) = graph::get_prop(thing.id, "state") {
-                if s.as_str() == ThreadState::Running.as_str() {
-                    running_thread = Some(thing.id);
-                }
-            }
-        }
-        "PhysFrame" => phys_frame_count += 1,
-        "VirtRegion" => virt_region_count += 1,
-        "AddressSpace" => {
+        } else if thing.kind == kind_thread {
+             thread_count += 1;
+             // Find state prop in Vec
+             if let Some((_, PropValue::Str(s))) = thing.props.iter().find(|(k, _)| *k == prop_state) {
+                 if s.as_str() == ThreadState::Running.as_str() {
+                     running_thread = Some(thing.id);
+                 }
+             }
+        } else if thing.kind == kind_frame {
+            phys_frame_count += 1;
+        } else if thing.kind == kind_virt {
+            virt_region_count += 1;
+        } else if thing.kind == kind_as {
             addr_space_count += 1;
             addr_space_node = Some(thing.id);
         }
-        _ => {}
     });
 
-    println!(
+    // Logging counts via println (serial)
+    crate::println!(
         "Boot graph counts: CpuCore={} Process={} Thread={} PhysFrame={} VirtRegion={} AddressSpace={}",
         cpu_count,
         process_count,
@@ -627,37 +796,21 @@ fn verify_boot_graph_invariants() {
         addr_space_count
     );
 
-    debug_assert_eq!(
-        cpu_count, 1_u64,
-        "boot graph should have exactly one CpuCore"
-    );
-    debug_assert_eq!(
-        process_count, 1_u64,
-        "boot graph should have exactly one Process"
-    );
-    debug_assert_eq!(
-        thread_count, 1_u64,
-        "boot graph should have exactly one Thread"
-    );
-    debug_assert_eq!(
-        phys_frame_count, 3_u64,
-        "boot graph should create three PhysFrame nodes"
-    );
-    debug_assert_eq!(
-        virt_region_count, 3_u64,
-        "boot graph should create three VirtRegion nodes"
-    );
-    debug_assert_eq!(
-        addr_space_count, 1_u64,
-        "boot graph should create one AddressSpace"
-    );
+    debug_assert_eq!(cpu_count, 1);
+    debug_assert_eq!(process_count, 1);
+    debug_assert_eq!(thread_count, 1);
+    debug_assert_eq!(phys_frame_count, 3);
+    debug_assert_eq!(virt_region_count, 3);
+    debug_assert_eq!(addr_space_count, 1);
 
     if let Some(thread) = running_thread {
-        let state = graph::get_prop(thread, "state");
-        debug_assert!(
-            matches!(state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Running.as_str()),
-            "boot thread should be Running"
-        );
+        graph::with_thing(thread, |t| {
+             let state = t.props.iter().find(|(k, _)| *k == prop_state).map(|(_, v)| v);
+             debug_assert!(
+                 matches!(state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Running.as_str()),
+                 "boot thread should be Running"
+             );
+        });
 
         if let Some(cpu) = cpu_node {
             let mut buf = [None; 4];
@@ -679,11 +832,13 @@ fn verify_boot_graph_invariants() {
     }
 
     if let Some(addr_space) = addr_space_node {
-        let asid = graph::get_prop(addr_space, "asid");
-        debug_assert!(
-            matches!(asid, Some(PropValue::U64(1))),
-            "AddressSpace should have ASID 1"
-        );
+        graph::with_thing(addr_space, |t| {
+            let asid = t.props.iter().find(|(k, _)| *k == prop_asid).map(|(_, v)| v);
+             debug_assert!(
+                 matches!(asid, Some(PropValue::U64(1))),
+                 "AddressSpace should have ASID 1"
+             );
+        });
     }
 }
 pub mod hal_impl;

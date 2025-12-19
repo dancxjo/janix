@@ -76,18 +76,18 @@ fn cbor_encode_kv(out: &mut Vec<u8>, key: &str, val: &PropValueView) {
 
 pub fn snapshot_and_archive(thing_id: ThingId, policy: RestPolicy) -> Result<RestResp, ResidentError> {
     unsafe {
-        let mut guard = store::things_slab();
-        let slab = guard.as_mut().unwrap();
-        let idx = thing_id.index() as usize;
+        let mut guard = store::things_slab().lock();
+        let store = guard.as_mut().unwrap();
+        
+        let node = store.get_node_mut(thing_id).ok_or(ResidentError{code: ResidentErrorCode::BadThing, aux0:0,aux1:0})?;
+        
+        // Check generation implicitly handled by get_node_mut logic (GraphStore uses HashMap key lookup so ID match ensures correctness mostly, unless recycled ID not handled well. But ABI refactored GraphStore uses unique IDs mostly? Or HashMap handles it.)
+        // Actually GraphStore uses ThingId as key. ThingId includes generation.
+        // HashMap lookup by ThingId checks generation if ThingId::eq checks it.
+        // ThingId derives PartialEq, so it checks both index and generation.
+        // So HashMap lookup IS SAFE.
 
-        if idx >= slab.slots.len() { 
-            return Err(ResidentError{code: ResidentErrorCode::BadThing, aux0:0,aux1:0}); 
-        }
-        let slot = &mut slab.slots[idx];
-        if slot.generation != thing_id.generation() { 
-            return Err(ResidentError{code: ResidentErrorCode::BadThing, aux0:0,aux1:0}); 
-        }
-        let thing = slot.thing.as_mut().ok_or(ResidentError{code: ResidentErrorCode::BadThing, aux0:0,aux1:0})?;
+        let thing = node;
 
         let resident = thing.resident.as_ref().ok_or(ResidentError{code: ResidentErrorCode::NotResident, aux0:0,aux1:0})?;
         
@@ -156,7 +156,7 @@ pub fn snapshot_and_archive(thing_id: ThingId, policy: RestPolicy) -> Result<Res
                   };
                   
                   if let Some(k) = schema::get_key_from_id(thing.kind, entry.key_id) {
-                       cbor_encode_kv(&mut cbor_out, k, &val_view);
+                       cbor_encode_kv(&mut cbor_out, &k, &val_view);
                   }
              }
              
@@ -175,7 +175,7 @@ pub fn snapshot_and_archive(thing_id: ThingId, policy: RestPolicy) -> Result<Res
 
         
         // 2. Archive Blob
-        let archive_ref = store::archive_store().as_mut().unwrap().store(cbor_blob);
+        let archive_ref = store::archive_store().lock().as_mut().unwrap().store(cbor_blob);
         thing.archived_ref = Some(archive_ref);
 
         // 3. Update State based on Policy
@@ -191,7 +191,7 @@ pub fn snapshot_and_archive(thing_id: ThingId, policy: RestPolicy) -> Result<Res
         
         let archived_ref = if let Some(r) = &thing.archived_ref {
              abi::resident::ArchiveRef {
-                 id: r.0,
+                 id: r.0 as u32,
              }
         } else {
              abi::resident::ArchiveRef::default()

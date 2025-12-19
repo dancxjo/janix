@@ -8,46 +8,49 @@ use abi::PropValue;
 use alloc::vec::Vec;
 
 pub fn init() {
-    graph::subscribe_prop_changed(
-        graph_kinds::KIND_DISPLAY,
-        PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
-        on_active_buffer_changed,
-    );
+    crate::graph::events::subscribe(on_event);
 }
 
-fn on_active_buffer_changed(event: &GraphEvent) {
-    if let GraphEvent::PropUpdated {
-        id, new: PropValue::I64(index), ..
-    } = event
-    {
-        let display_id = *id;
-        let active_index = *index;
-
-        // 1. Identify source buffer
-        let src_pred = if active_index == 1 {
-            LINK_DISPLAY_HAS_BACK_BUFFER
-        } else {
-            LINK_DISPLAY_HAS_FRONT_BUFFER
-        };
-
-        let mut out = [None; 1];
-        graph::neighbors(display_id, src_pred, &mut out);
-        let src_buffer_id = match out[0] {
-            Some(id) => id,
-            None => return,
-        };
-
-        // 2. Identify destination buffer (the scanout VRAM wrapper)
-        let mut out = [None; 1];
-        graph::neighbors(display_id, LINK_DISPLAY_SCANOUT, &mut out);
-        let dst_buffer_id = match out[0] {
-            Some(id) => id,
-            None => return,
-        };
-
-        // 3. Perform blit
-        blit_buffers(src_buffer_id, dst_buffer_id);
+fn on_event(event: &GraphEvent) {
+    if let GraphEvent::ThingUpdated(id) = event {
+        // Check if it's a display
+        if let Some(kind) = crate::graph::get_thing_kind(*id) {
+            if kind == crate::symbols::intern(graph_kinds::KIND_DISPLAY) {
+                // Potential update to active buffer index.
+                // We should check the property.
+                if let Some(PropValue::I64(idx)) = crate::graph::get_prop(*id, PROP_DISPLAY_ACTIVE_BUFFER_INDEX) {
+                    process_display_update(*id, idx);
+                }
+            }
+        }
     }
+}
+
+fn process_display_update(display_id: abi::ThingId, active_index: i64) {
+    // 1. Identify source buffer
+    let src_pred = if active_index == 1 {
+        LINK_DISPLAY_HAS_BACK_BUFFER
+    } else {
+        LINK_DISPLAY_HAS_FRONT_BUFFER
+    };
+
+    let mut out = [None; 1];
+    graph::neighbors(display_id, src_pred, &mut out);
+    let src_buffer_id = match out[0] {
+        Some(id) => id,
+        None => return,
+    };
+
+    // 2. Identify destination buffer (the scanout VRAM wrapper)
+    let mut out = [None; 1];
+    graph::neighbors(display_id, LINK_DISPLAY_SCANOUT, &mut out);
+    let dst_buffer_id = match out[0] {
+        Some(id) => id,
+        None => return,
+    };
+
+    // 3. Perform blit
+    blit_buffers(src_buffer_id, dst_buffer_id);
 }
 
 fn blit_buffers(src_id: abi::ThingId, dst_id: abi::ThingId) {

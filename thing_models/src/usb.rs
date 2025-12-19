@@ -1,5 +1,5 @@
 use abi::{PropKey, PropValue, Thing, ThingId, graph_kinds};
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 #[derive(Debug, Clone)]
@@ -17,11 +17,11 @@ impl Thing for UsbController {
     const DESCRIPTION: &'static str = "A USB Host Controller (e.g. XHCI)";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("name", PropValue::Str(self.name.clone())));
-        out.push(("pci_bus", PropValue::U64(self.pci_bus as u64)));
-        out.push(("pci_slot", PropValue::U64(self.pci_slot as u64)));
-        out.push(("pci_func", PropValue::U64(self.pci_func as u64)));
-        out.push(("mmio_base", PropValue::U64(self.mmio_base)));
+        out.push(("name".to_string(), PropValue::Str(self.name.clone())));
+        out.push(("pci_bus".to_string(), PropValue::U64(self.pci_bus as u64)));
+        out.push(("pci_slot".to_string(), PropValue::U64(self.pci_slot as u64)));
+        out.push(("pci_func".to_string(), PropValue::U64(self.pci_func as u64)));
+        out.push(("mmio_base".to_string(), PropValue::U64(self.mmio_base)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -32,7 +32,7 @@ impl Thing for UsbController {
         let mut mmio_base = 0;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "name" => {
                     if let PropValue::Str(v) = &prop.1 {
                         name = v.clone();
@@ -94,14 +94,14 @@ impl Thing for UsbDevice {
     const DESCRIPTION: &'static str = "A USB Device";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("controller_id", PropValue::U64(self.controller_id.0)));
-        out.push(("slot", PropValue::U64(self.slot as u64)));
-        out.push(("address", PropValue::U64(self.address as u64)));
-        out.push(("vid", PropValue::U64(self.vid as u64)));
-        out.push(("pid", PropValue::U64(self.pid as u64)));
-        out.push(("class", PropValue::U64(self.class as u64)));
-        out.push(("subclass", PropValue::U64(self.subclass as u64)));
-        out.push(("protocol", PropValue::U64(self.protocol as u64)));
+        out.push(("controller_id".to_string(), PropValue::U64(self.controller_id.0)));
+        out.push(("slot".to_string(), PropValue::U64(self.slot as u64)));
+        out.push(("address".to_string(), PropValue::U64(self.address as u64)));
+        out.push(("vid".to_string(), PropValue::U64(self.vid as u64)));
+        out.push(("pid".to_string(), PropValue::U64(self.pid as u64)));
+        out.push(("class".to_string(), PropValue::U64(self.class as u64)));
+        out.push(("subclass".to_string(), PropValue::U64(self.subclass as u64)));
+        out.push(("protocol".to_string(), PropValue::U64(self.protocol as u64)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -115,7 +115,7 @@ impl Thing for UsbDevice {
         let mut protocol = 0;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "controller_id" => {
                     if let PropValue::U64(v) = prop.1 {
                         controller_id = ThingId(v);
@@ -211,18 +211,16 @@ impl Thing for UsbEndpoint {
     const DESCRIPTION: &'static str = "A USB Endpoint";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("device_id", PropValue::U64(self.device_id.0)));
-        out.push((
-            "endpoint_number",
+        out.push(("device_id".to_string(), PropValue::U64(self.device_id.0)));
+        out.push(("endpoint_number".to_string(),
             PropValue::U64(self.endpoint_number as u64),
         ));
-        out.push(("direction_in", PropValue::Bool(self.direction_in)));
-        out.push(("transfer_type", PropValue::U64(self.transfer_type as u64)));
-        out.push((
-            "max_packet_size",
+        out.push(("direction_in".to_string(), PropValue::Bool(self.direction_in)));
+        out.push(("transfer_type".to_string(), PropValue::U64(self.transfer_type as u64)));
+        out.push(("max_packet_size".to_string(),
             PropValue::U64(self.max_packet_size as u64),
         ));
-        out.push(("interval_ms", PropValue::U64(self.interval_ms as u64)));
+        out.push(("interval_ms".to_string(), PropValue::U64(self.interval_ms as u64)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -234,7 +232,7 @@ impl Thing for UsbEndpoint {
         let mut interval_ms = 0;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "device_id" => {
                     if let PropValue::U64(v) = prop.1 {
                         device_id = ThingId(v);
@@ -317,11 +315,11 @@ impl Thing for UsbTransferRequest {
     const DESCRIPTION: &'static str = "A request to perform a USB transfer";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("endpoint_id", PropValue::U64(self.endpoint_id.0)));
-        out.push(("kind", PropValue::U64(self.kind as u64)));
-        // out.push(("buffer", PropValue::Blob(self.buffer.clone())));
-        out.push(("expected_len", PropValue::U64(self.expected_len as u64)));
-        out.push(("timeout_ms", PropValue::U64(self.timeout_ms as u64)));
+        out.push(("endpoint_id".to_string(), PropValue::U64(self.endpoint_id.0)));
+        out.push(("kind".to_string(), PropValue::U64(self.kind as u64)));
+        // out.push(("buffer".to_string(), PropValue::Blob(self.buffer.clone())));
+        out.push(("expected_len".to_string(), PropValue::U64(self.expected_len as u64)));
+        out.push(("timeout_ms".to_string(), PropValue::U64(self.timeout_ms as u64)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -332,7 +330,7 @@ impl Thing for UsbTransferRequest {
         let mut timeout_ms = 0;
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "endpoint_id" => {
                     if let PropValue::U64(v) = prop.1 {
                         endpoint_id = ThingId(v);
@@ -403,9 +401,9 @@ impl Thing for UsbTransferResult {
     const DESCRIPTION: &'static str = "The result of a USB transfer";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("request_id", PropValue::U64(self.request_id.0)));
-        out.push(("status", PropValue::U64(self.status as u64)));
-        // out.push(("data", PropValue::Blob(self.data.clone())));
+        out.push(("request_id".to_string(), PropValue::U64(self.request_id.0)));
+        out.push(("status".to_string(), PropValue::U64(self.status as u64)));
+        // out.push(("data".to_string(), PropValue::Blob(self.data.clone())));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -414,7 +412,7 @@ impl Thing for UsbTransferResult {
         let mut data = Vec::new();
 
         for prop in props.iter().flatten() {
-            match prop.0 {
+            match prop.0.as_str() {
                 "request_id" => {
                     if let PropValue::U64(v) = prop.1 {
                         request_id = ThingId(v);

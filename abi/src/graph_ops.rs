@@ -1,56 +1,31 @@
 use alloc::vec::Vec;
-use crate::{PropKey, PropValue, ThingId, Link};
+use crate::{ThingId, wire::graph::WirePropValue, syscall_defs::SymbolId};
 
-pub type Prop = (PropKey, PropValue);
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GraphOp {
     CreateThing {
-        kind: &'static str,
-        props: Vec<Prop>,
+        kind: SymbolId,
+        props: Vec<(SymbolId, WirePropValue)>,
     },
-    UpdateProps {
+    UpdateThing {
         id: ThingId,
-        props: Vec<Prop>,
+        props: Vec<(SymbolId, WirePropValue)>,
+    },
+    AddLink {
+        src: ThingId,
+        dst: ThingId,
+        pred: crate::Predicate,
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum GraphEvent {
-    ThingCreated {
-        id: ThingId,
-        kind: &'static str,
-        kind_id: ThingId,
+    ThingCreated(ThingId),
+    ThingUpdated(ThingId),
+    LinkAdded {
+        src: ThingId,
+        dst: ThingId,
+        pred: crate::Predicate,
     },
-    ThingDeleted {
-        id: ThingId,
-        kind: &'static str,
-        kind_id: ThingId,
-    },
-    PropUpdated {
-        id: ThingId,
-        kind: &'static str,
-        kind_id: ThingId,
-        key: &'static str,
-        old: Option<PropValue>,
-        new: PropValue,
-    },
-    LinkAdded(Link),
-    LinkRemoved(Link),
-}
-
-pub trait GraphSink {
-    fn submit(&mut self, op: GraphOp) -> Result<(), &'static str>;
-}
-
-// Helper struct for query results (simplified version of ThingGetSyscallResult logic)
-#[derive(Debug, Clone)]
-pub struct ThingProps {
-    // We can use a callback or return a simple vector for kernel-internal use
-    pub props: Vec<(PropKey, PropValue)>,
-}
-
-pub trait GraphDriver: GraphSink {
-    fn subscribe(&mut self, kind: &'static str, handler: fn(&GraphEvent));
-    fn get_thing(&self, id: ThingId) -> Option<ThingProps>;
+    BatchUpdateComplete,
 }

@@ -1,5 +1,5 @@
 use core::panic::PanicInfo;
-use abi::SyscallNumber;
+
 use crate::sys::raw_syscall;
 
 #[cfg(target_os = "none")]
@@ -9,7 +9,7 @@ fn panic(info: &PanicInfo) -> ! {
     
     // Exit thread
     unsafe {
-        raw_syscall(SyscallNumber::ExitThread, 0, 0, 0, 0, 0, 0);
+        raw_syscall(abi::syscalls::SYSCALL_EXIT_THREAD, 0, 0, 0, 0, 0, 0);
     }
     loop {}
 }

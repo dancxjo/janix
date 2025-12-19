@@ -17,7 +17,7 @@ use alloc::format;
 use thing_os::{RawModule, shared_buffer_map};
 
 use crate::model::ConsoleBuffer;
-use thing_os::syscalls::syscall;
+use thing_os::syscalls::{syscall, sys_symbol_intern};
 use thing_os::println;
 
 fn draw_console(compositor: &mut Compositor) {
@@ -29,7 +29,7 @@ fn draw_console(compositor: &mut Compositor) {
 
         loop {
             match syscall(KernelRequest::ThingList {
-                kind: graph_kinds::KIND_SHARED_BUFFER,
+                kind: sys_symbol_intern(graph_kinds::KIND_SHARED_BUFFER),
                 start_after: cursor,
             }) {
                 KernelResponse::ThingListEntry { id: Some(next_id) } => {

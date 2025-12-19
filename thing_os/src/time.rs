@@ -1,4 +1,4 @@
-use abi::SyscallNumber;
+
 use crate::sys::raw_syscall;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -41,7 +41,7 @@ pub struct Instant {
 impl Instant {
     /// Capture the current monotonic counter.
     pub fn now() -> Self {
-        let ret = unsafe { match raw_syscall(SyscallNumber::TimeMonotonicNs, 0, 0, 0, 0, 0, 0) {
+        let ret = unsafe { match raw_syscall(abi::syscalls::SYSCALL_TIME_MONOTONIC_NS, 0, 0, 0, 0, 0, 0) {
              t => t
         }};
         Instant { t_ns: ret }
@@ -76,7 +76,7 @@ pub struct SystemTime {
 impl SystemTime {
     /// Capture the system time.
     pub fn now() -> Self {
-        let ret = unsafe { raw_syscall(SyscallNumber::TimeSystemNs, 0, 0, 0, 0, 0, 0) };
+        let ret = unsafe { raw_syscall(abi::syscalls::SYSCALL_TIME_SYSTEM_NS, 0, 0, 0, 0, 0, 0) };
         SystemTime { ns_since_epoch: ret }
     }
 
@@ -91,14 +91,14 @@ impl SystemTime {
 /// Sleep for at least `dur`.
 pub fn sleep(dur: Duration) {
     unsafe {
-        raw_syscall(SyscallNumber::SleepForNs, dur.as_nanos(), 0, 0, 0, 0, 0);
+        raw_syscall(abi::syscalls::SYSCALL_SLEEP_FOR_NS, dur.as_nanos(), 0, 0, 0, 0, 0);
     }
 }
 
 /// Yield the current thread's timeslice.
 pub fn yield_now() {
     unsafe {
-        raw_syscall(SyscallNumber::Yield, 0, 0, 0, 0, 0, 0);
+        raw_syscall(abi::syscalls::SYSCALL_YIELD, 0, 0, 0, 0, 0, 0);
     }
 }
 
@@ -106,4 +106,3 @@ pub fn yield_now() {
 pub fn sleep_ms(ms: u64) {
     sleep(Duration::from_millis(ms));
 }
-

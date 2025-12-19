@@ -30,7 +30,7 @@ pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) {
 fn find_cpu(cpu_index: CpuId) -> Option<ThingId> {
     let mut found = None;
     graph::iter_things(|thing| {
-        if found.is_some() || thing.kind != graph_kinds::KIND_CPU_CORE {
+        if found.is_some() || thing.kind != crate::symbols::intern(graph_kinds::KIND_CPU_CORE) {
             return;
         }
         if let Some(PropValue::U64(idx)) = graph::get_prop(thing.id, "index") {
@@ -45,7 +45,7 @@ fn find_cpu(cpu_index: CpuId) -> Option<ThingId> {
 fn find_thread_on_cpu(graph: &Graph, cpu_node: ThingId) -> Option<ThingId> {
     let mut current = None;
     graph::iter_things(|thing| {
-        if current.is_some() || thing.kind != graph_kinds::KIND_THREAD {
+        if current.is_some() || thing.kind != crate::symbols::intern(graph_kinds::KIND_THREAD) {
             return;
         }
 
@@ -61,7 +61,7 @@ fn find_thread_on_cpu(graph: &Graph, cpu_node: ThingId) -> Option<ThingId> {
 fn pick_first_runnable(_graph: &Graph) -> Option<ThingId> {
     let mut next = None;
     graph::iter_things(|thing| {
-        if next.is_some() || thing.kind != graph_kinds::KIND_THREAD {
+        if next.is_some() || thing.kind != crate::symbols::intern(graph_kinds::KIND_THREAD) {
             return;
         }
 
@@ -98,33 +98,29 @@ fn update_runtime(graph: &mut Graph, thread: ThingId, now: TimeNs) {
         return;
     }
     let new_runtime = runtime.saturating_add(delta);
-    graph.update_thing(
-        thread,
-        &[
-            ("runtime_ns", PropValue::U64(new_runtime)),
-            ("last_started_ns", PropValue::U64(now)),
-        ],
-    );
+    let props = alloc::vec![
+        (crate::symbols::intern("runtime_ns"), PropValue::U64(new_runtime)),
+        (crate::symbols::intern("last_started_ns"), PropValue::U64(now)),
+    ];
+    graph.update_thing(thread, props.as_slice());
 }
 
 fn make_thread_current(graph: &mut Graph, thread: ThingId, cpu_node: ThingId, now: TimeNs) {
     clear_cpu_assignments(graph, cpu_node, thread);
-    graph.update_thing(
-        thread,
-        &[
-            (
-                "state",
-                PropValue::Str(String::from(ThreadState::Running.as_str())),
-            ),
-            ("last_started_ns", PropValue::U64(now)),
-        ],
-    );
+    let props = alloc::vec![
+        (
+            crate::symbols::intern("state"),
+            PropValue::Str(String::from(ThreadState::Running.as_str())),
+        ),
+        (crate::symbols::intern("last_started_ns"), PropValue::U64(now)),
+    ];
+    graph.update_thing(thread, props.as_slice());
     ensure_runs_on_link(graph, thread, cpu_node);
 }
 
 fn clear_cpu_assignments(graph: &mut Graph, cpu_node: ThingId, preserve: ThingId) {
     graph::iter_things(|thing| {
-        if thing.kind != graph_kinds::KIND_THREAD || thing.id == preserve {
+        if thing.kind != crate::symbols::intern(graph_kinds::KIND_THREAD) || thing.id == preserve {
             return;
         }
         let mut buf = [None; LINK_BUF];

@@ -47,8 +47,8 @@ lazy_static! {
         let kcode = gdt.add_entry(Descriptor::kernel_code_segment());
         let kdata = gdt.add_entry(Descriptor::kernel_data_segment());
         let tss = gdt.add_entry(Descriptor::tss_segment(&TSS));
-        let ucode = gdt.add_entry(Descriptor::user_code_segment());
         let udata = gdt.add_entry(Descriptor::user_data_segment());
+        let ucode = gdt.add_entry(Descriptor::user_code_segment());
         (
             gdt,
             Selectors {

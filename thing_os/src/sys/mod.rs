@@ -1,4 +1,4 @@
-use abi::SyscallNumber;
+
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
@@ -21,7 +21,7 @@ mod loongarch64;
 use loongarch64::syscall_stub;
 
 pub(crate) unsafe fn raw_syscall(
-    num: SyscallNumber,
+    num: u64,
     arg0: u64,
     arg1: u64,
     arg2: u64,

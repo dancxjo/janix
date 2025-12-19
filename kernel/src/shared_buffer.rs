@@ -91,15 +91,15 @@ pub fn create_shared_buffer_thing(
     };
 
     let mut props = AllocVec::new();
-    props.push((graph_kinds::PROP_WIDTH, PropValue::U64(width as u64)));
-    props.push((graph_kinds::PROP_HEIGHT, PropValue::U64(height as u64)));
-    props.push((graph_kinds::PROP_STRIDE, PropValue::U64(stride as u64)));
+    props.push((crate::symbols::intern(graph_kinds::PROP_WIDTH), PropValue::U64(width as u64)));
+    props.push((crate::symbols::intern(graph_kinds::PROP_HEIGHT), PropValue::U64(height as u64)));
+    props.push((crate::symbols::intern(graph_kinds::PROP_STRIDE), PropValue::U64(stride as u64)));
     props.push((
-        graph_kinds::PROP_PIXEL_FORMAT,
+        crate::symbols::intern(graph_kinds::PROP_PIXEL_FORMAT),
         PropValue::Str(pf_str.into()),
     ));
-    let boxed = Box::leak(props.into_boxed_slice());
-    graph::create_thing(graph_kinds::KIND_SHARED_BUFFER, boxed)
+    // create_thing takes props by value (Vec)
+    Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_SHARED_BUFFER), props))
 }
 
 pub fn register_shared_buffer(
@@ -134,17 +134,17 @@ pub fn create_display_for_buffer(
         PixelFormat::Bgra8888 => "Bgra8888",
     };
 
-    let props = &[
-        (graph_kinds::PROP_NAME, PropValue::Str(name.into())),
-        (graph_kinds::PROP_WIDTH, PropValue::U64(info.width as u64)),
-        (graph_kinds::PROP_HEIGHT, PropValue::U64(info.height as u64)),
-        (graph_kinds::PROP_STRIDE, PropValue::U64(info.stride as u64)),
+    let props = alloc::vec![
+        (crate::symbols::intern(graph_kinds::PROP_NAME), PropValue::Str(name.into())),
+        (crate::symbols::intern(graph_kinds::PROP_WIDTH), PropValue::U64(info.width as u64)),
+        (crate::symbols::intern(graph_kinds::PROP_HEIGHT), PropValue::U64(info.height as u64)),
+        (crate::symbols::intern(graph_kinds::PROP_STRIDE), PropValue::U64(info.stride as u64)),
         (
-            graph_kinds::PROP_PIXEL_FORMAT,
+            crate::symbols::intern(graph_kinds::PROP_PIXEL_FORMAT),
             PropValue::Str(pf_str.into()),
         ),
     ];
-    let display_id = graph::create_thing(graph_kinds::KIND_DISPLAY, props)?;
+    let display_id = graph::create_thing(crate::symbols::intern(graph_kinds::KIND_DISPLAY), props);
     let _ = graph::add_link(display_id, graph_kinds::LINK_DISPLAY_SCANOUT, buffer_id);
     Some(display_id)
 }

@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use spin::Mutex;
-use lazy_static::lazy_static;
+
 use abi::{ThingId, PropType, syscall_defs::SymbolId};
 
 pub struct Schema {
@@ -11,12 +11,10 @@ pub struct Schema {
     pub indexed_props: Vec<SymbolId>,
 }
 
-lazy_static! {
-    static ref SCHEMAS: Mutex<HashMap<SymbolId, Schema>> = Mutex::new(HashMap::new());
-}
+static SCHEMAS: Mutex<Option<HashMap<SymbolId, Schema>>> = Mutex::new(None);
 
 pub fn init() {
-    (*SCHEMAS).lock().clear();
+    *SCHEMAS.lock() = Some(HashMap::new());
 }
 
 pub fn register_schema(
@@ -25,7 +23,8 @@ pub fn register_schema(
     props: Vec<(SymbolId, PropType)>,
     indexed_props: Vec<SymbolId>
 ) -> Result<(), &'static str> {
-    let mut schemas = (*SCHEMAS).lock();
+    let mut guard = SCHEMAS.lock();
+    let schemas = guard.as_mut().expect("Schemas not initialized");
     if schemas.contains_key(&kind) {
         return Err("Schema already registered");
     }
@@ -45,7 +44,7 @@ pub fn register_schema(
 }
 
 pub fn get_schema_props(kind: SymbolId) -> Option<Vec<(SymbolId, PropType)>> {
-    (*SCHEMAS).lock().get(&kind).map(|s| {
+    SCHEMAS.lock().as_ref().expect("Schemas not initialized").get(&kind).map(|s| {
         s.props.iter().map(|(k, v)| (*k, *v)).collect()
     })
 }
@@ -59,7 +58,7 @@ pub fn ensure_kind_exists(kind: SymbolId) -> ThingId {
 }
 
 pub fn is_prop_indexed(kind: SymbolId, key: SymbolId) -> bool {
-    (*SCHEMAS).lock().get(&kind)
+    SCHEMAS.lock().as_ref().expect("Schemas not initialized").get(&kind)
         .map(|s| s.indexed_props.contains(&key))
         .unwrap_or(false)
 }

@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use hashbrown::HashMap;
 use spin::Mutex;
 pub use abi::syscall_defs::SymbolId;
-use lazy_static::lazy_static;
+
 
 pub struct SymbolTable {
     unintern: Vec<String>,
@@ -35,16 +35,18 @@ impl SymbolTable {
     }
 }
 
-lazy_static! {
-    static ref SYMBOLS: Mutex<SymbolTable> = Mutex::new(SymbolTable::new());
+static SYMBOLS: Mutex<Option<SymbolTable>> = Mutex::new(None);
+
+pub fn init() {
+    *SYMBOLS.lock() = Some(SymbolTable::new());
 }
 
 pub fn intern(s: &str) -> SymbolId {
-    (*SYMBOLS).lock().intern(s)
+    SYMBOLS.lock().as_mut().expect("Symbols not initialized").intern(s)
 }
 
 pub fn resolve(id: SymbolId) -> Option<String> {
-    (*SYMBOLS).lock().resolve(id).map(String::from)
+    SYMBOLS.lock().as_ref().expect("Symbols not initialized").resolve(id).map(String::from)
 }
 
 /// Direct access to map, carefully.
@@ -52,6 +54,7 @@ pub fn with_symbol_table<F, R>(f: F) -> R
 where
     F: FnOnce(&mut SymbolTable) -> R,
 {
-    let mut table = (*SYMBOLS).lock();
-    f(&mut table)
+    let mut guard = SYMBOLS.lock();
+    let table = guard.as_mut().expect("Symbols not initialized");
+    f(table)
 }

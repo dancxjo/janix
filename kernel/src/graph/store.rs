@@ -3,7 +3,7 @@ use hashbrown::HashMap;
 use abi::{ThingId, PropValue, Predicate, Link, syscall_defs::SymbolId};
 use spin::Mutex;
 use alloc::sync::Arc;
-use lazy_static::lazy_static;
+
 
 // Moved definition to replacement block above
 
@@ -214,5 +214,5 @@ impl GraphStore {
 }
 
 pub fn init() {
-    // Placeholder
+    *THINGS_SLAB.lock() = Some(GraphStore::new());
 }

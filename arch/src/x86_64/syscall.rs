@@ -373,17 +373,13 @@ pub fn install_handler() {
     let selectors = gdt::get_selectors();
     let kernel_code_sel = selectors.kcode;
     let kernel_data_sel = selectors.kdata;
-    // SYSRET: CS = base+16 (UserCode), SS = base+8 (UserData).
-    // GDT Order: ..., UData, UCode.
-    // So base = UData - 8.
-    // UData selector (u16).
-    let udata_val = selectors.udata.0;
-    let user_base_sel = SegmentSelector(udata_val - 8);
+    let user_code_sel = selectors.ucode;
+    let user_data_sel = selectors.udata;
 
     unsafe {
         Star::write(
-            user_base_sel,
-            user_base_sel,
+            user_code_sel,
+            user_data_sel,
             kernel_code_sel,
             kernel_data_sel
         ).unwrap();

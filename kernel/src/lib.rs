@@ -44,6 +44,14 @@ pub fn init() {
     log::init();
     bridge::ps2::init();
 
+    // Initialize graph store first
+    crate::graph::store::init();
+    // Initialize symbols and other graph components
+    crate::symbols::init();
+    crate::graph::schema::init();
+    crate::graph::events::init();
+    crate::graph::index_props::init();
+
     // Dump the graph after initialization so builtin kinds and indexes are visible.
     crate::graph::debug::dump_graph_table();
     journal::init();

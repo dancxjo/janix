@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use hashbrown::HashMap;
 use abi::{ThingId, PropValue, syscall_defs::SymbolId};
 use spin::Mutex;
-use lazy_static::lazy_static;
+
 
 // Map: PropName -> (PropValue -> Vec<ThingId>)
 // Since PropValue isn't Hash or Ord by default easily (contains String), 
@@ -20,12 +20,16 @@ use lazy_static::lazy_static;
 type ValueIndex = HashMap<PropValue, Vec<ThingId>>;
 type PropIndex = HashMap<SymbolId, ValueIndex>;
 
-lazy_static! {
-    static ref PROP_INDEX: Mutex<PropIndex> = Mutex::new(HashMap::new());
+static PROP_INDEX: Mutex<Option<PropIndex>> = Mutex::new(None);
+
+pub fn init() {
+    *PROP_INDEX.lock() = Some(HashMap::new());
 }
 
 pub fn clear() {
-    (*PROP_INDEX).lock().clear();
+    if let Some(idx) = PROP_INDEX.lock().as_mut() {
+        idx.clear();
+    }
 }
 
 pub fn add_to_prop_index(_id: ThingId, _key: SymbolId, _val: &PropValue) {

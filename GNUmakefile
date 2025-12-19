@@ -706,15 +706,24 @@ endif
 
 .PHONY: assets
 assets:
+ifeq ($(ENABLE_PLATARO_ICONS),1)
 	mkdir -p assets/tango-raw
-	# Download Tango icon theme
-	curl -L -o assets/tango.tar.gz http://tango.freedesktop.org/releases/tango-icon-theme-0.8.90.tar.gz
+	# Download Tango icon theme if not already cached
+	if [ ! -f assets/tango.tar.gz ]; then \
+		echo "Downloading Tango icons..."; \
+		curl -L -o assets/tango.tar.gz http://tango.freedesktop.org/releases/tango-icon-theme-0.8.90.tar.gz; \
+	else \
+		echo "Using cached Tango icons from assets/tango.tar.gz"; \
+	fi
 	tar -xzf assets/tango.tar.gz -C assets/tango-raw --strip-components=1
 	mkdir -p assets/icons
 	# Build icon-gen tool
 	cargo build --manifest-path tools/icon-gen/Cargo.toml --release
 	# Run icon-gen
 	./target/release/icon-gen --input assets/tango-raw/scalable --output assets/icons
+else
+	@echo "Skipping asset generation (ENABLE_PLATARO_ICONS!=1)"
+endif
 
 
 $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets

@@ -43,7 +43,7 @@ static TEST_MUTEX: Mutex<()> = Mutex::new(());
 pub fn init() {
     log::init();
     bridge::ps2::init();
-    init();
+
     // Dump the graph after initialization so builtin kinds and indexes are visible.
     crate::graph::debug::dump_graph_table();
     journal::init();

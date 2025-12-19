@@ -466,7 +466,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                           1 => abi::PropType::I64,
                           2 => abi::PropType::Bool,
                           3 => abi::PropType::Str,
-                          4 => abi::PropType::Blob, // Corrected from Str=4, Blob=5
+                          4 => abi::PropType::Blob,
                           _ => return KernelResponse::Error { message: "Invalid schema prop_type tag" },
                       };
                       

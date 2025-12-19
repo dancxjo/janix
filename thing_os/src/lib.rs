@@ -589,19 +589,24 @@ pub fn register_schema_for<T: Thing>() -> bool {
 
     match syscall(request) {
         KernelResponse::SchemaRegistered { .. } => true,
-        KernelResponse::Error { message } if message == "Schema already registered" => {
+        KernelResponse::Error { message } => {
+            println!("schema register failed for kind {}: {}", T::KIND, message);
             // Check if existing schema matches what we expect
-            match syscall(KernelRequest::SchemaGet { kind: kind_sym }) {
-                KernelResponse::SchemaData { props, .. } => {
-                     // We cast the pointer/len in `props` which is a slice of options.
-                     // The KernelResponse definition for SchemaData must ensure this matches the kernel's return.
-                     // Assuming props is `&[Option<(SymbolId, PropType)>]` as seen in kernel.
-                     schema_matches::<T>(props)
+            if message == "Schema already registered" {
+                 match syscall(KernelRequest::SchemaGet { kind: kind_sym }) {
+                    KernelResponse::SchemaData { props, .. } => {
+                         schema_matches::<T>(props)
+                    }
+                    _ => false,
                 }
-                _ => false,
+            } else {
+                false
             }
         }
-        _ => false,
+        other => {
+            println!("schema register unexpected response for kind {}: {:?}", T::KIND, other);
+            false
+        }
     }
 }
 

@@ -200,9 +200,13 @@ pub fn main() -> ! {
     println!("compositor: starting");
     
     // 1. Critical Base Infrastructure Checks
+    // 1. Critical Base Infrastructure Checks
     if !ensure_ui_schemas() {
-        println!("compositor: FATAL - ensure_ui_schemas() failed (see prior ui:: log for which schema)");
-        loop { thing_os::time::sleep(Duration::from_secs(1)); }
+        println!("compositor: schemas unavailable; sleeping and retrying");
+        loop {
+            thing_os::time::sleep(Duration::from_millis(250));
+            if ensure_ui_schemas() { break; }
+        }
     }
     
     if !register_schema_for::<DisplayPresentRequest>() {

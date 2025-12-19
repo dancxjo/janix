@@ -33,7 +33,7 @@ endif
 ENABLE_ROOTFS ?= 0
 ENABLE_geographer ?= 1
 ENABLE_PLATARO_ICONS ?= 1
-APPS := init debug_clock window_demo compositor hello_world geographer
+APPS := init debug_clock window_demo compositor hello_world geographer debug_alloc
 ifneq ($(ENABLE_geographer),1)
 # APPS += geographer
 endif

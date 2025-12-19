@@ -1,0 +1,8 @@
+[package]
+name = "debug_alloc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thing_os = { path = "../../thing_os" }
+

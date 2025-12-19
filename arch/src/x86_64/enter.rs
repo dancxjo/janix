@@ -159,9 +159,35 @@ pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext
 pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
     let selectors = gdt::get_selectors();
 
+    let raw_top = regs.user_stack;
+    
+    // Align down to 16
+    let mut rsp = raw_top & !0xFu64;
+
+    // Simulate a return address slot like a real `call` would push.
+    // This makes many compilers/higher-level assumptions happier.
+    rsp -= 8;
+
+    // Optionally write a 0 "return address" (not required, but nice for debuggability)
+    // NOTE: This assumes we are entering the address space where `rsp` is valid!
+    // Since we are about to iretq to it, we better be in the right Cr3.
+    // However, we are in kernel mode here. If SMAP/SMEP is on, this might fault if not handled.
+    // Given the user instructions explicitly included it, we will include it but wrapped in unsafe.
+    // If it causes faults (e.g. page not mapped in kernel, or S-bit protection), we might need to remove it.
+    // But for "user entry", the stack page should be user-accessible. Kernel accessing user page usually requires stac/clac on x86 if SMAP is on.
+    // To be safe against SMAP, we should probably SKIP the write unless we know SMAP is off or we use user_access primitives.
+    // The user's snippet didn't show stac/clac. 
+    // I will Include it as requested but with a comment.
+    // Actually, if I look at `copy_segment_bytes` in elf_loader, it writes to user memory using direct pointer (with HHDM?). 
+    // Ah, `copy_segment_bytes` uses `frame_phys + hhdm`. That is a kernel mapping (direct map).
+    // `rsp` here is a USER virtual address. safely writing to it requires mapping lookup or `stac`.
+    // I'll skip the write to be safe to avoid unneeded faults, satisfying "Optionally".
+    // Wait, the user said "If your entry stack alignment is wrong... nonsense". 
+    // The write is just for debuggability. The adjustment `rsp -= 8` is the fix.
+    
     let x86_regs = X86UserEntryRegs {
         rip: regs.entry_point,
-        rsp: regs.user_stack,
+        rsp, // Use adjusted RSP
         rflags: 0x202, // IF=1
         user_cs: selectors.ucode.0 as u64 | 3,
         user_ss: selectors.udata.0 as u64 | 3,

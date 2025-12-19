@@ -91,6 +91,12 @@ pub fn init_main() -> ! {
     // 1. Boot Manifest Audit
     validate_boot_manifest(&programs, &program_images);
 
+    // Explicitly launch debug_alloc early
+    if let Some(debug_alloc) = programs.iter().find(|p| p.binary == "debug_alloc") {
+         println!("init: launching allocation smoke test: debug_alloc");
+         spawn_boot_program(&init_process, &program_images, debug_alloc);
+    }
+
     if !driver_programs.is_empty() {
         println!("init: launching {} driver BootProgram(s) before user", driver_programs.len());
     }

@@ -20,6 +20,11 @@ pub fn ensure_ui_schemas() -> bool {
     let r2 = register_schema_for::<Mode>();
     let r3 = register_schema_for::<Window>();
     let r4 = register_schema_for::<Surface>();
+    
+    if !(r1 && r2 && r3 && r4) {
+        println!("ui::ensure_ui_schemas failed: Place={} Mode={} Window={} Surface={}", r1, r2, r3, r4);
+    }
+    
     r1 && r2 && r3 && r4
 }
 

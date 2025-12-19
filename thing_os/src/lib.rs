@@ -537,6 +537,29 @@ pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
     }
 }
 
+/// Check if an existing schema matches the expected schema for T.
+fn schema_matches<T: Thing>(existing: &[Option<(SymbolId, PropType)>]) -> bool {
+    let expected = T::schema();
+
+    // Count actual entries in existing
+    let existing_count = existing.iter().flatten().count();
+
+    if existing_count != expected.len() { 
+        return false; 
+    }
+
+    // Convert existing slice to a map-like search or just simple linear scan since schemas are small.
+    // Also need interned keys for comparison.
+    for (key_str, exp_pt) in expected {
+        let key_sym = sys_symbol_intern(*key_str);
+        // Find by symbol
+        let found = existing.iter().flatten().find(|(k, _)| *k == key_sym);
+        let Some((_, got_pt)) = found else { return false; };
+        if got_pt != exp_pt { return false; }
+    }
+    true
+}
+
 /// Request that the kernel register the schema for `T`.
 pub fn register_schema_for<T: Thing>() -> bool {
     let schema = T::schema();
@@ -566,6 +589,18 @@ pub fn register_schema_for<T: Thing>() -> bool {
 
     match syscall(request) {
         KernelResponse::SchemaRegistered { .. } => true,
+        KernelResponse::Error { message } if message == "Schema already registered" => {
+            // Check if existing schema matches what we expect
+            match syscall(KernelRequest::SchemaGet { kind: kind_sym }) {
+                KernelResponse::SchemaData { props, .. } => {
+                     // We cast the pointer/len in `props` which is a slice of options.
+                     // The KernelResponse definition for SchemaData must ensure this matches the kernel's return.
+                     // Assuming props is `&[Option<(SymbolId, PropType)>]` as seen in kernel.
+                     schema_matches::<T>(props)
+                }
+                _ => false,
+            }
+        }
         _ => false,
     }
 }

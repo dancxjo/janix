@@ -201,7 +201,7 @@ pub fn main() -> ! {
     
     // 1. Critical Base Infrastructure Checks
     if !ensure_ui_schemas() {
-        println!("compositor: FATAL - Failed to register UI schemas");
+        println!("compositor: FATAL - ensure_ui_schemas() failed (see prior ui:: log for which schema)");
         loop { thing_os::time::sleep(Duration::from_secs(1)); }
     }
     

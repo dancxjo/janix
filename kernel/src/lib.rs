@@ -465,10 +465,9 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                           0 => abi::PropType::U64,
                           1 => abi::PropType::I64,
                           2 => abi::PropType::Bool,
-                          3 => abi::PropType::Symbol,
-                          4 => abi::PropType::Str,
-                          5 => abi::PropType::Blob,
-                          _ => abi::PropType::U64, // Fallback
+                          3 => abi::PropType::Str,
+                          4 => abi::PropType::Blob, // Corrected from Str=4, Blob=5
+                          _ => return KernelResponse::Error { message: "Invalid schema prop_type tag" },
                       };
                       
                       props_vec.push((sym, pt));

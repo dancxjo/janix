@@ -383,6 +383,198 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                  1 // Invalid pointer
              }
         }
+        SYSCALL_ADD_LINK => {
+             let src = ThingId(arg1);
+             let pred = abi::Predicate(arg2);
+             let dst = ThingId(arg3);
+             
+             if kernel::graph::add_link(src, pred, dst) {
+                 0
+             } else {
+                 1
+             }
+        }
+        SYSCALL_LINK_AT => {
+             let src = ThingId(arg1);
+             let idx = arg2 as usize;
+             let pred = abi::Predicate(arg3);
+             
+             if let Some(target) = kernel::graph::link_target_at(src, pred, idx) {
+                 target.0
+             } else {
+                 u64::MAX
+             }
+        }
+        SYSCALL_MAP_SHARED_BUFFER => {
+             let id = ThingId(arg1);
+             let flags = MapFlags(arg2); // MapFlags(pub u64)
+             // arg3: output vaddr ptr
+             // arg4: output size ptr
+             
+             let pid = match kernel::sched::SCHEDULER.lock().current_process_id() {
+                 Some(p) => p,
+                 None => return 1,
+             };
+
+             // Get frames and size from SharedBufferManager
+             // We scope the lock to avoid holding it during map operations if possible,
+             // though shared_buffer::get returns reference.
+             // We need to copy the frames to a local Vec to release lock, 
+             // or hold lock. map_frames_into_current_as takes slice.
+             
+             // Simplest is to hold lock. It's global mutex.
+             // But map_frames allocates frames (locks allocator).
+             // Should be safe.
+             
+             let manager = kernel::shared_buffer::manager().lock();
+             if let Some(sb) = manager.get(&id) {
+                 let size_bytes = sb.size_bytes();
+                 let size_aligned = kernel::shared_buffer::align_up(size_bytes, 4096);
+                 
+                 // Reserve VMA in Process
+                 // We must drop shared buffer lock before locking scheduler? 
+                 // Scheduler lock is usually high order.
+                 // let's clone frames.
+                 let frames = sb.frames.clone();
+                 drop(manager);
+
+                 if let Some(vaddr) = kernel::sched::SCHEDULER.lock().reserve_resident_region(pid, size_aligned as usize, 4096) {
+                      if let Ok(_) = kernel::shared_buffer::map_frames_into_current_as(vaddr as u64, &frames, flags) {
+                           if let Some(v_out) = unsafe { user_ptr_mut::<u64>(arg3) } { *v_out = vaddr as u64; }
+                           if let Some(s_out) = unsafe { user_ptr_mut::<u64>(arg4) } { *s_out = size_bytes; }
+                           0
+                      } else { 1 }
+                 } else { 1 }
+             } else { 1 }
+        }
+        SYSCALL_CREATE_SHARED_BUFFER => {
+             let width = arg1 as u32;
+             let height = arg2 as u32;
+             let format = unsafe { core::mem::transmute(arg3 as u8) }; // unsafe cast to PixelFormat enum
+             
+             // We need to allocate frames. 
+             // Logic similar to register_shared_buffer but we need to allocate fresh frames.
+             // shared_buffer.rs doesn't seem to have "create and allocate".
+             // It has `register_shared_buffer` taking frames.
+             // We can allocate frames here.
+             
+             // Calculate size
+             // Format depth?
+             // Assuming 32bpp for now as per PixelFormat 
+             let stride = width * 4;
+             let size = (stride * height) as u64;
+             let pages = kernel::shared_buffer::page_count_for_size(size);
+             
+             let mut frames = heapless::Vec::new();
+             for _ in 0..pages {
+                 if let Some(f) = kernel::memory::allocate_frame() {
+                     if frames.push(f).is_err() {
+                         // Free all and fail
+                         // TODO: Cleanup
+                         return u64::MAX;
+                     }
+                 } else {
+                     return u64::MAX;
+                 }
+             }
+             
+             match kernel::shared_buffer::register_shared_buffer(width, height, stride, format, frames) {
+                 Ok(id) => id.0,
+                 Err(_) => u64::MAX,
+             }
+        }
+        SYSCALL_GET_SHARED_BUFFER_INFO => {
+              let id = ThingId(arg1);
+              let manager = kernel::shared_buffer::manager().lock();
+              if let Some(sb) = manager.get(&id) {
+                  let info = sb.info();
+                  drop(manager);
+                  
+                  if let Some(out) = unsafe { user_ptr_mut::<abi::SharedBufferInfo>(arg2) } {
+                      *out = info;
+                      0
+                  } else { 1 }
+              } else { 1 }
+        }
+        SYSCALL_RESIDENT_ALLOC => {
+             let kind = SymbolId(arg1 as u32);
+             let byte_len = arg2;
+             
+             let args = abi::resident::ResidentAllocArgs {
+                 kind_id: ThingId(kind.0 as u64),
+                 byte_len: byte_len as u32,
+                 flags: 0,
+             };
+             
+             match kernel::resident::manager::sys_resident_alloc(args) {
+                 Ok(resp) => {
+                      if let Some(out) = unsafe { user_ptr_mut(arg3) } {
+                          *out = resp;
+                          0
+                      } else { 1 }
+                 },
+                 Err(e) => {
+                      if let Some(out) = unsafe { user_ptr_mut(arg4) } {
+                          *out = e;
+                      }
+                      1
+                 }
+             }
+        }
+        SYSCALL_RESIDENT_MAP => {
+             let id = ThingId(arg1);
+             let perms = abi::resident::ResidentMapPerms(arg2 as u32);
+             
+             let args = abi::resident::ResidentMapArgs {
+                 id,
+                 perms,
+             };
+             
+             match kernel::resident::manager::sys_resident_map(args) {
+                 Ok(resp) => {
+                      if let Some(out) = unsafe { user_ptr_mut(arg3) } {
+                          *out = resp;
+                          0
+                      } else { 1 }
+                 },
+                 Err(e) => {
+                      if let Some(out) = unsafe { user_ptr_mut(arg4) } {
+                          *out = e;
+                      }
+                      1
+                 }
+             }
+        }
+        SYSCALL_RESIDENT_UNMAP => {
+             let id = ThingId(arg1);
+             match kernel::resident::manager::sys_resident_unmap(id) {
+                 Ok(_) => 0,
+                 Err(e) => {
+                      if let Some(out) = unsafe { user_ptr_mut(arg2) } {
+                          *out = e;
+                      }
+                      1
+                 }
+             }
+        }
+        SYSCALL_THING_REST => {
+             let id = ThingId(arg1);
+             let policy = unsafe { core::mem::transmute(arg2 as u32) }; 
+             match kernel::resident::manager::sys_thing_rest(id, policy) {
+                 Ok(resp) => {
+                      if let Some(out) = unsafe { user_ptr_mut(arg3) } {
+                          *out = resp;
+                          0
+                      } else { 1 }
+                 },
+                 Err(e) => {
+                      if let Some(out) = unsafe { user_ptr_mut(arg4) } {
+                          *out = e;
+                      }
+                      1
+                 }
+             }
+        }
         SYSCALL_DEV_OPEN => {
              if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::DevOpenArgs>(arg1) } {
                  let res = kernel::bridge::ps2::dev_open(unsafe { core::mem::transmute(args.kind) }, args.index);

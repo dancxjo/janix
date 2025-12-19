@@ -8,6 +8,7 @@ abi = { path = "../abi" }
 kernel = { path = "../kernel" }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 spin = "0.10.0"
+heapless = "0.9.2"
 thing_models = { path = "../thing_models" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]

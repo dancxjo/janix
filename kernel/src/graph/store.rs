@@ -39,6 +39,7 @@ pub struct ThingNode {
     pub owner_process: Option<ProcessId>,
     pub storage: StorageState,
     pub archived_ref: Option<ArchiveRef>,
+    pub links: Vec<(Predicate, ThingId)>,
 }
 
 impl ThingNode {
@@ -58,6 +59,7 @@ impl ThingNode {
             owner_process: Some(pid),
             storage: StorageState::Resident,
             archived_ref: None,
+            links: Vec::new(),
         }
     }
 }
@@ -142,6 +144,7 @@ impl GraphStore {
             owner_process: None,
             storage: StorageState::Resident, // Default
             archived_ref: None,
+            links: Vec::new(),
         };
         
         self.things.insert(id, node);
@@ -160,6 +163,7 @@ impl GraphStore {
             owner_process: Some(pid),
             storage: StorageState::Resident,
             archived_ref: None,
+            links: Vec::new(),
         };
         self.things.insert(id, node);
         id
@@ -203,13 +207,23 @@ impl GraphStore {
     
     // Placeholder links implementation until we fully port links
     pub fn add_link(&mut self, src: ThingId, dst: ThingId, pred: Predicate) -> bool {
-        // TODO: Implement actual link storage
-        true
+        if let Some(node) = self.things.get_mut(&src) {
+            node.links.push((pred, dst));
+            true
+        } else {
+            false
+        }
     }
     
     pub fn get_link(&self, src: ThingId, pred: Predicate, idx: usize) -> Option<ThingId> {
-         // TODO: Implement actual link storage
-        None
+         if let Some(node) = self.things.get(&src) {
+             node.links.iter()
+                 .filter(|(p, _)| *p == pred)
+                 .nth(idx)
+                 .map(|(_, dst)| *dst)
+         } else {
+             None
+         }
     }
 }
 

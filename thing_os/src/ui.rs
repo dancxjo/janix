@@ -15,11 +15,12 @@ pub struct WindowHandle {
     pub id: ThingId,
 }
 
-pub fn ensure_ui_schemas() {
-    let _ = register_schema_for::<Place>();
-    let _ = register_schema_for::<Mode>();
-    let _ = register_schema_for::<Window>();
-    let _ = register_schema_for::<Surface>();
+pub fn ensure_ui_schemas() -> bool {
+    let r1 = register_schema_for::<Place>();
+    let r2 = register_schema_for::<Mode>();
+    let r3 = register_schema_for::<Window>();
+    let r4 = register_schema_for::<Surface>();
+    r1 && r2 && r3 && r4
 }
 
 pub fn create_window(title: &str) -> Option<WindowHandle> {

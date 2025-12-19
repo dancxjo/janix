@@ -88,21 +88,16 @@ pub fn init_main() -> ! {
             .copied()
             .partition(|program| is_compositor(program));
 
+    // 1. Boot Manifest Audit
+    validate_boot_manifest(&programs, &program_images);
+
     if !driver_programs.is_empty() {
         println!("init: launching {} driver BootProgram(s) before user", driver_programs.len());
     }
 
+    // 2. Launch Drivers
     for program in driver_programs.iter().copied() {
-        println!("init: checking program binary='{}'", program.binary);
         if program.binary == "init" {
-            continue;
-        }
-        if program.binary == "ps2_keyboard_driver" {
-            println!("init: temporarily skipping ps2_keyboard_driver for conflict test");
-            continue;
-        }
-        if program.binary == "ps2_keyboard_driver" {
-            println!("init: temporarily skipping ps2_keyboard_driver for conflict test");
             continue;
         }
         spawn_boot_program(&init_process, &program_images, program);
@@ -112,6 +107,7 @@ pub fn init_main() -> ! {
         println!("init: launching compositor early before other user ({} entry/entries)", compositor_programs.len());
     }
 
+    // 3. Launch Compositor
     for program in compositor_programs.iter().copied() {
         spawn_boot_program(&init_process, &program_images, program);
     }
@@ -188,36 +184,53 @@ fn ensure_modes() {
     }
 }
 
+fn validate_boot_manifest(programs: &[BootProgram], images: &[ProgramImage]) {
+    use alloc::format;
+    println!("init: === Boot Manifest Audit ===");
+    println!("init: {:<20} | {:<20} | {:<10} | {:<8}", "BootProgram", "Binary", "Status", "Size");
+    println!("init: {:-<20}-+-{:-<20}-+-{:-<10}-+-{:-<8}", "", "", "", "");
+
+    for prog in programs {
+        let image = images.iter().find(|img| img.identifier == prog.binary);
+        let status = if image.is_some() { "OK" } else { "MISSING" };
+        let size = image.map(|i| i.size).unwrap_or(0);
+        let size_str = if size > 0 { format!("{}b", size) } else { "-".to_string() };
+        
+        println!(
+            "init: {:<20} | {:<20} | {:<10} | {:<8}",
+            prog.name, prog.binary, status, size_str
+        );
+    }
+    println!("init: ===========================");
+}
+
 fn spawn_boot_program(
     init_process: &ProcessThing,
     program_images: &[ProgramImage],
     program: &BootProgram,
 ) {
-    println!(
-        "init: BootProgram name={} app_id={} priority={} binary={}",
-        program.name, program.app_id, program.priority, program.binary
-    );
-    if let Some(image) = program_images
+    // Audit already checked existence, but we check again to find the image for spawning
+    if let Some(_image) = program_images
         .iter()
         .find(|img| img.identifier == program.binary)
     {
-        println!(
-            "init: BootProgram {} backed by ProgramImage id={} module_index={} base_phys={:#x} size={}",
-            program.name, image.identifier, image.module_index, image.base_phys, image.size
-        );
+         // Found
     } else {
         println!(
-            "init: WARNING: no ProgramImage found for BootProgram {} (binary={})",
+            "init: ERROR: Skipping spawn for '{}' - binary '{}' missing from images",
             program.name, program.binary
         );
+        return;
     }
+
     println!(
-        "init: spawning BootProgram {} (app_id={}, binary={})",
-        program.name, program.app_id, program.binary
+        "init: spawning {} (id={})",
+        program.name, program.app_id
     );
+
     if let Some((process_id, _thread_id)) = create_process(program.id).ok() {
         if !add_link(init_process.id, graph_kinds::LINK_SPAWNED, process_id) {
-            println!("init: failed to add SPAWNED link after create_process");
+            println!("init: failed to add SPAWNED link");
         }
     } else {
         println!("init: create_process failed for {}", program.name);

@@ -98,7 +98,12 @@ pub fn shared_buffer_map(
     flags: MapFlags,
 ) -> Result<(*mut u8, usize), crate::SysError> {
     match syscall(abi::KernelRequest::MapSharedBuffer { buffer_id, flags }) {
-        abi::KernelResponse::SharedBufferMapped { vaddr, size } => Ok((vaddr as *mut u8, size as usize)),
+        abi::KernelResponse::SharedBufferMapped { vaddr, size } => {
+            if vaddr == 0 {
+                return Err(crate::SysError::Kernel("Kernel returned NULL for shared buffer mapping"));
+            }
+            Ok((vaddr as *mut u8, size as usize))
+        },
         abi::KernelResponse::Error { message } => Err(crate::SysError::Kernel(message)),
         _ => Err(crate::SysError::Unexpected),
     }
@@ -120,8 +125,20 @@ pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysE
     let back_id = back_targets.pop().ok_or(crate::SysError::Unexpected)?;
 
     let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER);
-    let front_map = map_display_buffer(front_id, flags)?;
-    let back_map = map_display_buffer(back_id, flags)?;
+    let front_map = map_display_buffer(front_id, flags).map_err(|e| {
+        use crate::println;
+        println!("open_primary_display: failed to map front buffer {:?}: {:?}", front_id, e);
+        e
+    })?;
+    let back_map = map_display_buffer(back_id, flags).map_err(|e| {
+        use crate::println;
+        println!("open_primary_display: failed to map back buffer {:?}: {:?}", back_id, e);
+        e
+    })?;
+
+    if front_map.ptr.is_null() || back_map.ptr.is_null() {
+         return Err(crate::SysError::Kernel("Primary display buffer mapped to NULL"));
+    }
 
     let mut primary = PrimaryDisplayBuffer {
         display_id: display.id,

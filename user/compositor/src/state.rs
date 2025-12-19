@@ -198,15 +198,38 @@ fn load_background_image() -> Option<BackgroundImage> {
 
 pub fn main() -> ! {
     println!("compositor: starting");
-    ensure_ui_schemas();
-    let _ = register_schema_for::<DisplayPresentRequest>();
+    
+    // 1. Critical Base Infrastructure Checks
+    if !ensure_ui_schemas() {
+        println!("compositor: FATAL - Failed to register UI schemas");
+        loop { thing_os::time::sleep(Duration::from_secs(1)); }
+    }
+    
+    if !register_schema_for::<DisplayPresentRequest>() {
+        println!("compositor: FATAL - Failed to register DisplayPresentRequest schema");
+        loop { thing_os::time::sleep(Duration::from_secs(1)); }
+    }
 
     let fb = loop {
-        if let Some(fb) = active_framebuffer() {
-            break fb;
+        match active_framebuffer() {
+            Some(fb) => {
+                // 2. Framebuffer Integrity Checks
+                if fb.ptr.is_null() {
+                     println!("compositor: FATAL - Active framebuffer pointer is NULL");
+                     loop { thing_os::time::sleep(Duration::from_secs(1)); }
+                }
+                if fb.info.width == 0 || fb.info.height == 0 {
+                     println!("compositor: FATAL - Active framebuffer has invalid dimensions ({}x{})", 
+                        fb.info.width, fb.info.height);
+                     loop { thing_os::time::sleep(Duration::from_secs(1)); }
+                }
+                break fb;
+            }
+            None => {
+                println!("compositor: waiting for primary display");
+                sleep_ms(50); 
+            }
         }
-        println!("compositor: waiting for primary display");
-        sleep_ms(50); // 50ms = 50,000,000 ns
     };
 
     let mut compositor = Compositor::new(fb);

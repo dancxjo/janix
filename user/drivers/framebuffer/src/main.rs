@@ -8,5 +8,5 @@ extern crate alloc;
 
 #[thing_os::main]
 fn main() {
-    framebuffer_driver::driver_main();
+    framebuffer::driver_main();
 }

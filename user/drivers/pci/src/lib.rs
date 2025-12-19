@@ -116,3 +116,49 @@ impl<'a> PciDriver<'a> {
         }
     }
 }
+
+use thing_os::println;
+
+struct UserPciConfig;
+impl PciConfigAccess for UserPciConfig {
+    fn read_u32(&self, bus: u8, slot: u8, func: u8, offset: u16) -> u32 {
+        println!("PCI READ STUB: b={} s={} f={} o={}", bus, slot, func, offset);
+        0xFFFFFFFF
+    }
+    fn read_u16(&self, bus: u8, slot: u8, func: u8, offset: u16) -> u16 {
+        0xFFFF
+    }
+    fn read_u8(&self, bus: u8, slot: u8, func: u8, offset: u16) -> u8 {
+        0xFF
+    }
+}
+
+
+
+
+struct UserGraphSink;
+impl GraphSink for UserGraphSink {
+    fn submit(&mut self, op: GraphOp) -> Result<(), &'static str> {
+        match op {
+            GraphOp::CreateThing { kind, props: _ } => {
+                println!("PCI: Creating thing kind={}", kind);
+                // In real impl, convert props to slices and call Syscall
+                // For now, stub.
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+pub fn driver_main() {
+    println!("PCI Driver Starting...");
+    let config = UserPciConfig;
+    let driver = PciDriver::new(&config);
+    let mut sink = UserGraphSink;
+    driver.scan_and_publish(&mut sink);
+    println!("PCI Driver Finished Scan. Parking.");
+    loop {
+        // yield
+    }
+}

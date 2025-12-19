@@ -8,13 +8,15 @@ pub fn init() {
 
     // 1. Initialize USB driver (Watch PciDevice)
     // We must do this BEFORE scanning PCI so that the watcher catches the creation events.
-    let mmio = KernelMmio;
-    drivers_usb::init(&mmio, &mut graph_sink);
+    // let mmio = KernelMmio;
+    // drivers_usb::init(&mmio, &mut graph_sink);
+    // TODO: Spawn userland USB driver
 
     // 2. Initialize and run PCI driver (Publish PciDevice)
-    let pci_config = KernelPciConfigAccess;
-    let pci_driver = drivers_pci::PciDriver::new(&pci_config);
-    pci_driver.scan_and_publish(&mut graph_sink);
+    // let pci_config = KernelPciConfigAccess;
+    // let pci_driver = drivers_pci::PciDriver::new(&pci_config);
+    // pci_driver.scan_and_publish(&mut graph_sink);
+    // TODO: Spawn userland PCI driver
 
-    crate::log("Drivers initialized.");
+    crate::log("Drivers initialized (Userland transition).");
 }

@@ -585,7 +585,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         // Safety: We blindly trust user pointers here for simplicity,
         // matching existing syscall patterns in this file.
         let args = unsafe { *args_ptr };
-        let res = kernel::devices::ps2_buffers::dev_open(args.kind, args.index);
+        let res = kernel::bridge::ps2::dev_open(args.kind, args.index);
 
         let sys_ret = match res {
             Ok(handle) => abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevOpenRet { handle }),
@@ -613,7 +613,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
 
         let buffer = unsafe { core::slice::from_raw_parts_mut(buffer_ptr, buffer_len) };
         let buffer = unsafe { core::slice::from_raw_parts_mut(buffer_ptr, buffer_len) };
-        let res = kernel::devices::ps2_buffers::dev_read(args.handle, buffer);
+        let res = kernel::bridge::ps2::dev_read(args.handle, buffer);
 
         match res {
             Ok(bytes_read) => {

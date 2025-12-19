@@ -37,7 +37,7 @@ APPS := init debug_clock window_demo compositor hello_world geographer
 ifneq ($(ENABLE_geographer),1)
 # APPS += geographer
 endif
-DRIVERS := framebuffer_driver ps2_keyboard_driver ps2_mouse_driver
+DRIVERS := framebuffer ps2_keyboard_driver ps2_mouse_driver pci usb
 ifeq ($(ENABLE_ROOTFS),1)
 APPS := rootfs $(APPS)
 endif
@@ -725,9 +725,11 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	cp -v assets/wallpapers/clouds.bmp iso_root/boot/clouds.bmp
 	for app in $(APPS); do \
 		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/user/$$app; \
+		strip --strip-debug iso_root/boot/user/$$app; \
 	done
 	for drv in $(DRIVERS); do \
 		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \
+		strip --strip-debug iso_root/boot/drivers/$$drv; \
 	done
 	# Fonts: Only include unifont.hex and HACK_REGULAR.ttf
 	# if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \

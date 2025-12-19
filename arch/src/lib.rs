@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(naked_functions)]
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 
 pub mod boot;

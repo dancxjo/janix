@@ -144,17 +144,7 @@ fn ensure_modes() {
     let main_place_id = create_thing(&main_place).unwrap_or(ThingId(0));
     let console_place_id = create_thing(&console_place).unwrap_or(ThingId(0));
 
-    // Spawn mode_manager
-    println!("init: spawning mode_manager");
-    if let Some(mode_manager_prog) = find_thing::<BootProgram>(|bp| bp.binary == "mode_manager") {
-         if let Some(_) = create_process(mode_manager_prog.id).ok() {
-             println!("init: mode_manager spawned");
-         } else {
-             println!("init: ERROR create_process failed for mode_manager");
-         }
-    } else {
-        println!("init: ERROR mode_manager program not found!");
-    }
+
 
     let main_mode = Mode {
         id: ThingId(0),

@@ -1,0 +1,18 @@
+[package]
+name = "ps2_keyboard_driver"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "ps2_keyboard_driver"
+path = "src/lib.rs"
+
+[dependencies]
+
+thing_os = { path = "../../../thing_os" }
+thing_models = { path = "../../../thing_models" }
+abi = { path = "../../../abi" }
+
+[dev-dependencies]
+kernel = { path = "../../../kernel" }
+abi = { path = "../../../abi" }

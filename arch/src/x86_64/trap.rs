@@ -234,7 +234,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     // Read directly from port 0x60
     let mut port = PortReadOnly::<u8>::new(0x60);
     let scancode = unsafe { port.read() };
-    kernel::devices::ps2_buffers::push_keyboard_byte(scancode);
+    kernel::bridge::ps2::push_keyboard_byte(scancode);
     pic::notify_end_of_interrupt(KEYBOARD_IRQ);
 }
 
@@ -242,7 +242,7 @@ extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: InterruptStackFr
     use x86_64::instructions::port::PortReadOnly;
     let mut port = PortReadOnly::<u8>::new(0x60);
     let byte = unsafe { port.read() };
-    kernel::devices::ps2_buffers::push_mouse_byte(byte);
+    kernel::bridge::ps2::push_mouse_byte(byte);
     pic::notify_end_of_interrupt(MOUSE_IRQ);
 }
 

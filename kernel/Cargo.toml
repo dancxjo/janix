@@ -12,9 +12,9 @@ default = ["arch_pci_in_kernel"]
 
 [dependencies]
 abi = { path = "../abi" }
-hal = { path = "../hal" }
-drivers_usb = { path = "../drivers_usb" }
-drivers_pci = { path = "../drivers_pci" }
+hal = { path = "../libs/hal" }
+# drivers_usb = { path = "../drivers_usb" } # Moved to user/drivers
+# drivers_pci = { path = "../drivers_pci" } # Moved to user/drivers
 thing_models = { path = "../thing_models" }
 thing_macros = { path = "../thing_macros" }
 heapless = "0.9.2"

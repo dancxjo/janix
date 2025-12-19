@@ -56,7 +56,7 @@ pub fn init_machine() {
     crate::graph_reifier::init_graph_subscriptions();
 
     // Register IRQ controller callback to manage IRQ masking via graph requests
-    kernel::hw::io::register_irq_controller(arch::x86_64::pic::set_irq_mask);
+    kernel::bridge::io::register_irq_controller(arch::x86_64::pic::set_irq_mask);
 
     CurrentArch::install_syscall_handler();
 
@@ -80,7 +80,7 @@ pub fn init_world_graph() {
     crate::boot_model::seed_raw_modules_from_limine();
     crate::boot_model::seed_boot_programs_from_limine();
     crate::boot_model::seed_time_graph();
-    kernel::hw::io::seed_io_regions();
+    kernel::bridge::io::seed_io_regions();
 }
 
 #[cfg(not(feature = "boot-dashboard-only"))]

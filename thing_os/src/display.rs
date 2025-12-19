@@ -135,7 +135,10 @@ pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysE
         },
         ptr: core::ptr::null_mut(),
     };
+    use crate::println;
+    println!("DEBUG: open_primary_display: front_ptr={:p} back_ptr={:p}", primary.buffers[0].ptr, primary.buffers[1].ptr);
     primary.sync_back_buffer();
+    println!("DEBUG: open_primary_display: synced ptr={:p} idx={}", primary.ptr, primary.active_buffer_index);
     Ok(primary)
 }
 

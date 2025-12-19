@@ -19,6 +19,7 @@ pub fn init_arch_tables() -> bool {
     #[cfg(target_arch = "x86_64")]
     {
         super::gdt::init();
+        super::current::fpu::init();
         return true;
     }
 

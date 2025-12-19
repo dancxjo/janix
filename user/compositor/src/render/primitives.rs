@@ -1,4 +1,5 @@
 use core::cmp::{max, min};
+use thing_os::println;
 
 // Helper to check intersection with clip rect
 #[inline(always)]
@@ -106,6 +107,7 @@ pub fn draw_tiled_image(
     offset_y: i32,
     clip: Option<(i32, i32, i32, i32)>,
 ) {
+    println!("DEBUG: draw_tiled_image: buffer={:p}", buffer);
     if img_w <= 0 || img_h <= 0 {
         return;
     }

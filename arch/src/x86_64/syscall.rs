@@ -138,7 +138,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
 
     if num == SyscallNumber::Yield as u64 {
         {
-            let mut sched = kernel::sched::SCHEDULER.lock();
+        kernel::sched::with_scheduler(|sched| {
             if let Some(tid) = sched.current_id() {
                 if let Some(thread) = sched.thread_mut(tid) {
                     let regs_ptr = regs as *const SyscallRegs as *const u64;
@@ -165,12 +165,13 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                     thread.started = true;
                 }
             }
+        });
         }
         kernel::sched::yield_current_thread();
         return user::schedule_next();
     } else if num == SyscallNumber::SleepForNs as u64 {
         {
-            let mut sched = kernel::sched::SCHEDULER.lock();
+        kernel::sched::with_scheduler(|sched| {
             if let Some(tid) = sched.current_id() {
                 if let Some(thread) = sched.thread_mut(tid) {
                     let regs_ptr = regs as *const SyscallRegs as *const u64;
@@ -196,6 +197,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                     thread.started = true;
                 }
             }
+        });
         }
         return user::sys_sleep_for_ns(arg1);
     } else if num == SyscallNumber::Log as u64 {
@@ -234,11 +236,9 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
         let Some(name) = leak_user_str(arg1, arg2 as usize) else {
             return 0;
         };
-        let pid = {
-            let mut sched = kernel::sched::SCHEDULER.lock();
-            let pid = sched.add_process(name);
-            pid.0
-        };
+        let pid = kernel::sched::with_scheduler(|sched| {
+            sched.add_process(name).0
+        });
         pid
     } else if num == SyscallNumber::CreateThread as u64 {
         let process_id = ProcessId(arg1);
@@ -248,8 +248,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             return 0;
         };
         let stack = user::alloc_user_stack();
-        let tid = {
-            let mut sched = kernel::sched::SCHEDULER.lock();
+        let tid = kernel::sched::with_scheduler(|sched| {
             sched.add_thread(
                 process_id,
                 name,
@@ -257,9 +256,9 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                 app_id,
                 stack,
                 priority,
-            )
-        };
-        tid.0
+            ).0
+        });
+        tid
     } else if num == SyscallNumber::AddLink as u64 {
         let src = ThingId(arg1);
         let pred = abi::Predicate(arg2);
@@ -569,8 +568,7 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             }
         }
         
-        kernel::sched::without_preemption(|| {
-            let mut sched = kernel::sched::SCHEDULER.lock();
+        kernel::sched::with_scheduler(|sched| {
             sched.sleep_current_thread(deadline_ns);
         });
         return user::schedule_next();
@@ -656,20 +654,8 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                             if sched.mark_blocked(tid) {
                                 // Blocked successfully
                             } else {
-                                // Was woken already (pending_wake was true)
-                                // We should probably loop and try read again, OR return 0 to user (poll behavior)
-                                // Returning 0 bytes read is safer for now, user will retry.
-                                // Actually, if we return 0 bytes ok, user thinks EOF?
-                                // Better to return -EAGAIN or just retry here?
-                                // If we assume user loop, just return EAGAIN.
-                                // But simple user driver might burn CPU.
-                                // Let's try to return EAGAIN/WOULD_BLOCK to user if we can't block?
-                                // Or better: if mark_blocked returns false, it means we have data?
-                                // ps2_buffers check was under its own lock.
-                                // If pending_wake is true, it means an interrupt happened.
-                                // So we should just return to user with 0 bytes (wait, invalid)
-                                // or return to user so they call read again.
-                                // Let's return Ok(0) for now, driver loops.
+                                // Pending wake (race condition resolved)
+                                // We return Ok(0) so the userland driver loops and calls read again immediately.
                                 let sys_ret = abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet {
                                     bytes_read: 0,
                                 });

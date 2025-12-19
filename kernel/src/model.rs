@@ -163,6 +163,7 @@ pub fn init_schemas() {
         ("priority", PropType::U64),
         ("runtime_ns", PropType::U64),
         ("last_started_ns", PropType::U64),
+        ("sleep_until_ns", PropType::U64),
     ];
     let _ = graph::register_schema(
         graph_kinds::KIND_THREAD,

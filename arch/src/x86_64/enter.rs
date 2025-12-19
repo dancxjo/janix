@@ -123,8 +123,31 @@ unsafe extern "C" {
 }
 
 pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext) -> ! {
+    // Manually align a stack buffer to 16 bytes.
+    // We allocate 512 + 16 bytes to ensure we can find a 16-byte aligned offset.
+    let mut raw_buffer = [0u8; 512 + 16];
+    let start_addr = raw_buffer.as_ptr() as usize;
+    let align_offset = if start_addr % 16 == 0 {
+        0
+    } else {
+        16 - (start_addr % 16)
+    };
+    
+    // Create a mutable slice starting at the aligned offset
+    let aligned_slice = &mut raw_buffer[align_offset..align_offset + 512];
+    
+    // Copy data
+    aligned_slice.copy_from_slice(&fpu_context.data);
+
+    // Sanitize MXCSR (offset 24)
+    let mxcsr_offset = 24;
+    let default_mxcsr: u32 = 0x1F80;
+    aligned_slice[mxcsr_offset..mxcsr_offset + 4].copy_from_slice(&default_mxcsr.to_le_bytes());
+
+    let aligned_ptr = aligned_slice.as_ptr();
+
     unsafe {
-        core::arch::x86_64::_fxrstor(fpu_context.data.as_ptr());
+        core::arch::x86_64::_fxrstor(aligned_ptr);
         resume_user_mode_asm(context.as_ptr())
     }
 }

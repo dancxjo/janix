@@ -53,7 +53,7 @@ mod x86_64 {
     const PT_LOAD: u32 = 1;
     const PF_X: u32 = 1;
     const PF_W: u32 = 2;
-    const STACK_SIZE: u64 = 64 * 1024;
+    const STACK_SIZE: u64 = 32 * 1024 * 1024;
     const USER_STACK_TOP: u64 = 0x0000_7fff_ffff_f000;
 
     pub fn load_program(image: &ProgramImageData) -> Result<LoadedElfProgram, &'static str> {
@@ -422,7 +422,7 @@ mod aarch64 {
     const PF_X: u32 = 1;
     const PF_W: u32 = 2;
     const PAGE_SIZE: u64 = 4096;
-    const STACK_SIZE: u64 = 64 * 1024;
+    const STACK_SIZE: u64 = 32 * 1024 * 1024;
     const USER_STACK_TOP: u64 = 0x0000_0000_3fff_f000;
 
     const DESC_VALID: u64 = 1 << 0;

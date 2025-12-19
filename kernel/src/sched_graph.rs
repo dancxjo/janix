@@ -55,9 +55,9 @@ pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId>
     Some(next)
 }
 
-/// Create a SleepEvent thing and link it from the thread.
+/// Update the thread's sleep_until_ns property.
 ///
-/// Returns the created event ThingId on success.
+/// Returns the thread ThingId on success.
 ///
 /// # Examples
 /// ```
@@ -66,37 +66,28 @@ pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId>
 /// k::init();
 /// let thread = k::model::create_thread(7, 1).unwrap();
 /// let mut g = k::graph::Graph::new();
-/// let sleep = k::sched_graph::create_sleep_event(&mut g, thread, 1_000_000, 5).unwrap();
+/// k::sched_graph::create_sleep_event(&mut g, thread, 1_000_000, 5).unwrap();
 ///
-/// let mut buf = [None; 1];
-/// k::graph::neighbors(thread, k::graph_kinds::LINK_SLEEPS_UNTIL, &mut buf);
-/// assert!(buf.into_iter().flatten().any(|id| id == sleep));
+/// let sleep_until = k::graph::get_prop(thread, "sleep_until_ns");
+/// assert!(matches!(sleep_until, Some(abi::PropValue::U64(1_000_000))));
 /// ```
 pub fn create_sleep_event(
     graph: &mut Graph,
     thread: ThingId,
     wake_at_ns: TimeNs,
-    created_at_ns: TimeNs,
+    _created_at_ns: TimeNs,
 ) -> Option<ThingId> {
     let props = &[
-        ("wake_at_ns", PropValue::U64(wake_at_ns)),
-        ("created_at_ns", PropValue::U64(created_at_ns)),
+        ("sleep_until_ns", PropValue::U64(wake_at_ns)),
     ];
-    let sleep = graph.create_thing(graph_kinds::KIND_SLEEP_EVENT, props)?;
-    graph.add_link(thread, graph_kinds::LINK_SLEEPS_UNTIL, sleep);
-    Some(sleep)
+    graph.update_thing(thread, props);
+    Some(thread)
 }
 
-/// Remove the SleepEvent thing for a thread, if present.
-///
-/// This clears the `LINK_SLEEPS_UNTIL` link and deletes the SleepEvent Thing.
+/// Clear the thread's sleep_until_ns property.
 pub fn clear_sleep_event(graph: &mut Graph, thread: ThingId) {
-    let mut buf = [None; LINK_BUF];
-    graph.neighbors(thread, graph_kinds::LINK_SLEEPS_UNTIL, &mut buf);
-    for ev in buf.into_iter().flatten() {
-        graph.remove_link(thread, graph_kinds::LINK_SLEEPS_UNTIL, ev);
-        let _ = graph::delete_thing(ev);
-    }
+    let props = &[("sleep_until_ns", PropValue::U64(0))];
+    let _ = graph.update_thing(thread, props);
 }
 
 fn find_cpu_node(cpu_index: CpuId) -> Option<ThingId> {

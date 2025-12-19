@@ -32,6 +32,16 @@ where
     res
 }
 
+pub fn with_scheduler<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Scheduler) -> R,
+{
+    without_preemption(|| {
+        let mut sched = SCHEDULER.lock();
+        f(&mut *sched)
+    })
+}
+
 pub const MAX_THREADS: usize = 32;
 pub const MAX_PROCESSES: usize = 16;
 const FAKE_SLICE_NS: u64 = 5_000_000;
@@ -105,6 +115,7 @@ pub struct Process {
     pub heap_base: usize,
     pub heap_limit: usize,
     pub next_map_base: u64,
+    pub next_resident_map_base: u64,
 }
 
 pub struct Scheduler {
@@ -159,7 +170,7 @@ impl Scheduler {
             if self.threads[index].is_some() {
                 self.ensure_thread_thing(index);
                 self.graph_update_thread_state(index);
-                self.graph_restore_sleep_link(index);
+                // self.graph_restore_sleep_link(index);
             }
         }
     }
@@ -241,6 +252,7 @@ impl Scheduler {
                     heap_base: 0,
                     heap_limit: 0,
                     next_map_base: USER_HEAP_END as u64,
+                    next_resident_map_base: abi::USER_RESIDENT_BASE as u64,
                 });
                 if self.graph_enabled {
                     self.ensure_process_thing(i);
@@ -284,7 +296,7 @@ impl Scheduler {
         let idx = process_index(pid);
         let proc_slot = self.processes.get_mut(idx)?.as_mut()?;
         let alignment = if align == 0 { 1 } else { align } as u64;
-        let start = proc_slot.next_map_base.max(USER_HEAP_END as u64);
+        let start = proc_slot.next_map_base.max(0x5000_0000 as u64);
         let aligned = if start % alignment == 0 {
             start
         } else {
@@ -292,6 +304,32 @@ impl Scheduler {
         };
         let end = aligned.checked_add(size as u64)?;
         proc_slot.next_map_base = end;
+        Some(aligned)
+    }
+
+    pub fn reserve_resident_region(
+        &mut self,
+        pid: ProcessId,
+        size: usize,
+        align: usize,
+    ) -> Option<u64> {
+        let idx = process_index(pid);
+        let proc_slot = self.processes.get_mut(idx)?.as_mut()?;
+        let alignment = if align == 0 { 1 } else { align } as u64;
+        
+        let start = proc_slot.next_resident_map_base;
+        let aligned = if start % alignment == 0 {
+            start
+        } else {
+            start + (alignment - (start % alignment))
+        };
+        
+        let end = aligned.checked_add(size as u64)?;
+        if end > abi::USER_RESIDENT_LIMIT as u64 {
+            return None;
+        }
+        
+        proc_slot.next_resident_map_base = end;
         Some(aligned)
     }
 
@@ -654,6 +692,7 @@ impl Scheduler {
                 ("priority", PropValue::U64(thread.priority)),
                 ("runtime_ns", PropValue::U64(thread.total_run_ns)),
                 ("last_started_ns", PropValue::U64(thread.last_run_start_ns)),
+                ("sleep_until_ns", PropValue::U64(0)),
             ];
             thread.thing_id = graph::create_thing(graph_kinds::KIND_THREAD, &props);
             self.graph_link_process_thread(index);
@@ -711,43 +750,28 @@ impl Scheduler {
             return;
         };
 
-        self.graph_clear_sleep_event(index);
-
+        // Update the thread with the sleep deadline
         let props = [
-            ("wake_at_ns", PropValue::U64(wake_at_ns)),
-            ("created_at_ns", PropValue::U64(self.fake_time_ns)),
+            ("sleep_until_ns", PropValue::U64(wake_at_ns)),
         ];
-        if let Some(event_id) = graph::create_thing(graph_kinds::KIND_SLEEP_EVENT, &props) {
-            if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
-                thread.sleep_event_id = Some(event_id);
-            }
-            let _ = graph::add_link(thread_id, graph_kinds::LINK_SLEEPS_UNTIL, event_id);
-        }
+        let _ = graph::update_thing(thread_id, &props);
     }
 
     fn graph_clear_sleep_event(&mut self, index: usize) {
-        if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
-            if let Some(event) = thread.sleep_event_id.take() {
-                if self.graph_enabled {
-                    if let Some(thread_thing) = thread.thing_id {
-                        let _ =
-                            graph::remove_link(thread_thing, graph_kinds::LINK_SLEEPS_UNTIL, event);
-                    }
-                    let _ = graph::delete_thing(event);
-                }
-            }
-        }
-    }
-
-    fn graph_restore_sleep_link(&mut self, index: usize) {
         if !self.graph_enabled {
             return;
         }
         if let Some(thread) = self.threads.get(index).and_then(|t| t.as_ref()) {
-            if let (Some(thread_thing), Some(event)) = (thread.thing_id, thread.sleep_event_id) {
-                let _ = graph::add_link(thread_thing, graph_kinds::LINK_SLEEPS_UNTIL, event);
+            if let Some(thread_thing) = thread.thing_id {
+                let props = [("sleep_until_ns", PropValue::U64(0))];
+                let _ = graph::update_thing(thread_thing, &props);
             }
         }
+    }
+
+    fn graph_restore_sleep_link(&mut self, _index: usize) {
+        // No-op: sleep state is now on the thread itself, and we don't persist
+        // sleep events across graph re-initialization in this simplified model.
     }
 
     pub fn mark_blocked(&mut self, tid: ThreadId) -> bool {

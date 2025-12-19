@@ -12,6 +12,7 @@ const STATUS_OFFSET: u16 = 4;
 const DATA_OFFSET: u16 = 0;
 // const MOUSE_IRQ_LINE: u8 = 12; // Unused
 const MOUSE_RING_CAPACITY: usize = 128;
+const ENABLE_POLLING_MODE: bool = true;
 
 use abi::syscall_defs::{
     DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr, UserSlice,
@@ -137,24 +138,32 @@ pub fn driver_main() -> ! {
 
 
     loop {
-        // FAKE EVENT INJECTION (Disabled loop injection to prioritize single event test logic)
-        // last_fake += 1;
-        match unsafe { syscall_dev_read(handle, &mut buffer) } {
-             Ok(count) => {
-                if count > 0 {
-                    for i in 0..count {
-                         let byte = buffer[i];
-                         println!("ps2_mouse: byte {:02x}", byte);
-                         decoder.process_byte(byte);
+        if ENABLE_POLLING_MODE {
+            // Polling Mode for Diagnostics
+            if let Some(status) = accessor.read_status() {
+                // Check Output Buffer Full (OBF) bit 0 AND Mouse Data (AUX) bit 5
+                if (status & 0x01 != 0) && (status & 0x20 != 0) {
+                    if let Some(byte) = accessor.read_data() {
+                        // In polling mode, we are competing with IRQ handler if it were active.
+                        // But since IRQ seems broken, we are the only reader.
+                        // println!("ps2_mouse: POLLING read byte {:02x} status={:02x}", byte, status);
+                        decoder.process_byte(byte);
                     }
-                } else {
-                    // Blocking read returned 0? Should imply wakeup.
-                    // Just retry immediately.
                 }
-             }
-             Err(_) => {
-                // Similarly, retry on error.
-             }
+            }
+            sleep(Duration::from_millis(10));
+        } else {
+            // IRQ / Blocking Mode
+            match unsafe { syscall_dev_read(handle, &mut buffer) } {
+                 Ok(count) => {
+                    if count > 0 {
+                        for i in 0..count {
+                             decoder.process_byte(buffer[i]);
+                        }
+                    }
+                 }
+                 Err(_) => {}
+            }
         }
     }
 }

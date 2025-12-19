@@ -165,7 +165,7 @@ pub fn sys_resident_map(args: abi::resident::ResidentMapArgs) -> Result<Resident
         let frames: Vec<_> = resident.pages.iter().map(|p| p.frame).collect();
         let size_aligned = shared_buffer::align_up(resident.byte_len as u64, 4096);
         
-        let user_vaddr = sched::SCHEDULER.lock().reserve_user_region(pid, size_aligned as usize, 4096).ok_or(ResidentError {
+        let user_vaddr = sched::SCHEDULER.lock().reserve_resident_region(pid, size_aligned as usize, 4096).ok_or(ResidentError {
              code: ResidentErrorCode::OutOfMemory, aux0: 0, aux1: 0
         })?;
         

@@ -90,6 +90,14 @@ pub fn init_main() -> ! {
         if program.binary == "init" {
             continue;
         }
+        if program.binary == "ps2_keyboard_driver" {
+            println!("init: temporarily skipping ps2_keyboard_driver for conflict test");
+            continue;
+        }
+        if program.binary == "ps2_keyboard_driver" {
+            println!("init: temporarily skipping ps2_keyboard_driver for conflict test");
+            continue;
+        }
         spawn_boot_program(&init_process, &program_images, program);
     }
 
@@ -101,6 +109,7 @@ pub fn init_main() -> ! {
         spawn_boot_program(&init_process, &program_images, program);
     }
 
+    /*
     for program in other_app_programs.iter().copied() {
         println!("init: checking program binary='{}'", program.binary);
         if program.binary == "init" {
@@ -114,6 +123,7 @@ pub fn init_main() -> ! {
         }
         spawn_boot_program(&init_process, &program_images, program);
     }
+    */
 
     println!("init: entering supervision loop");
     loop {
@@ -217,7 +227,7 @@ fn is_compositor(program: &BootProgram) -> bool {
 
 fn looks_like_driver_identifier(identifier: &str) -> bool {
     // Drivers currently follow a naming convention like "ps2_keyboard_driver".
-    identifier.contains("_driver") || identifier.contains("-driver")
+    identifier.contains("_driver") || identifier.contains("-driver") || identifier == "pci" || identifier == "usb" || identifier == "framebuffer"
 }
 
 fn load_boot_profile() -> Option<BootProfile> {

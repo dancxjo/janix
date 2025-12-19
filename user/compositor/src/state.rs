@@ -1,11 +1,10 @@
 use thing_os::prelude::*;
-use thing_os::MODE_INDEX_CONSOLE;
+
 use thing_os::thing_models::DisplayPresentRequest;
 
 use crate::config::FRAME_INTERVAL_NS;
 use crate::graph::{
-    active_framebuffer, collect_surfaces_for_windows, collect_windows_for_place,
-    console_mode_active, current_mode, handle_mode_switches, layout_policy_for_mode,
+    active_framebuffer, collect_surfaces_for_windows, collect_all_windows,
     swap_display_buffers,
 };
 use crate::layout::{self, StackedWindow};
@@ -241,12 +240,10 @@ pub fn tick_once(compositor: &mut Compositor) {
     let prev_layout = compositor.cached_layout.clone();
     compositor.process_mouse_packets(&prev_layout);
 
-    handle_mode_switches();
+    // handle_mode_switches();
+    // if console_mode_active() { return; }
 
-    if console_mode_active() {
-        return;
-    }
-
+    /*
     let mode = match current_mode() {
         Some(mode) => mode,
         None => {
@@ -259,11 +256,13 @@ pub fn tick_once(compositor: &mut Compositor) {
         compositor.publish_present_request();
         return;
     }
-
+    
     let place_id = mode.place_id.unwrap_or(ThingId(0));
-    let windows = collect_windows_for_place(place_id);
+    */
+    
+    let windows = collect_all_windows();
     if compositor.frame_counter % 60 == 0 {
-         // let msg = format!("compositor: found {} windows for place {}", windows.len(), place_id.0);
+         // let msg = format!("compositor: found {} windows", windows.len());
          // let leaked = Box::leak(msg.into_boxed_str());
          // println(sys, leaked);
     }
@@ -272,7 +271,7 @@ pub fn tick_once(compositor: &mut Compositor) {
 
     let fb_w = compositor.fb.info.width as i32;
     let fb_h = compositor.fb.info.height as i32;
-    let policy = layout_policy_for_mode(&mode);
+    let policy = layout::LayoutPolicy::default();
     let stacked: Vec<StackedWindow> = layout::apply_layout(policy, &windows, fb_w, fb_h);
     layout::persist_stack(&stacked);
 

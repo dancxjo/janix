@@ -314,7 +314,7 @@ pub(crate) fn create_thing_internal(
     let slab = guard.as_mut().unwrap();
     let (idx, generation) = slab.alloc();
     if idx % 1000 == 0 {
-         crate::console::print(&alloc::format!("Total Things: {}\n", idx));
+         // crate::console::print(&alloc::format!("Total Things: {}\n", idx));
          if idx > 10000 {
              crate::graph::debug::dump_graph_table();
              loop {}
@@ -364,7 +364,30 @@ pub(crate) fn create_thing_internal(
         
         if let Some(link) = link_opt {
              super::index_links::link_index_mut().insert(link);
+             super::index_links::link_index_mut().insert(link);
              dispatch_event(&GraphEvent::LinkAdded(link));
+        }
+    }
+
+    // Log the creation
+    if kind != graph_kinds::KIND_LINK {
+        crate::graph::debug::print_thing_created(id, kind, props);
+    }
+
+    if kind == graph_kinds::KIND_LINK {
+        // Re-acquire access safely via with_thing to read props for link creation
+        // Note: we can't use with_thing inside the print function if we were holding the lock,
+        // but here we are not holding the lock. 
+        // However, instead of re-parsing props, we can just use the link we created above?
+        // Actually, the link creation logic above (lines 359-369) already inserted it into index.
+        // But we didn't capture the `Link` struct.
+        // Let's just resolve it again or construct it if we want to log it as a Link.
+        
+        // Simpler: recalculate link from props (we have them in args!) to print it
+        // Or access the index?
+        // Creating a temporary link struct from props is cheap.
+        if let Some(link) = link_from_props(id, &alloc::vec::Vec::from(props).into_iter().map(|(k,v)| Some((k,v))).collect::<Vec<_>>()) {
+             crate::graph::debug::print_link_created(&link);
         }
     }
 
@@ -486,6 +509,9 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
                          }
                          index_links::link_index_mut().insert(next);
                          dispatch_event(&GraphEvent::LinkAdded(next));
+
+                         // Log Link Update
+                         crate::graph::debug::print_link_created(&next);
                      }
                  }
                  (Some(prev), None) => {
@@ -496,6 +522,9 @@ pub fn update_thing(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
                  (None, Some(next)) => {
                      index_links::link_index_mut().insert(next);
                      dispatch_event(&GraphEvent::LinkAdded(next));
+
+                     // Log Link Creation (via update)
+                     crate::graph::debug::print_link_created(&next);
                  }
                  (None, None) => {}
              }

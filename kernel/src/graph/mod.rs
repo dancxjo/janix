@@ -98,11 +98,9 @@ pub fn next_thing_of_kind_sym(kind: SymbolId, start_after: ThingId) -> Option<Th
     let slab_guard = store::things_slab().lock();
     let slab = slab_guard.as_ref().unwrap();
     
-    // Naive linear scan for now. Indexing would be better.
-    // If we have KIND_INDEX restored, use it.
-    // Assuming linear scan as store.rs implementation was simple.
-    // TODO: Optimize
-    
+    // DEBUG LOG
+    crate::log(alloc::boxed::Box::leak(format!("next_thing input: kind={} start={}", kind.0, start_after.0).into_boxed_str()));
+
     let mut best: Option<ThingId> = None;
     
     for (_id_val, node) in slab.things.iter() {
@@ -116,6 +114,13 @@ pub fn next_thing_of_kind_sym(kind: SymbolId, start_after: ThingId) -> Option<Th
             }
         }
     }
+
+    if let Some(b) = best {
+        crate::log(alloc::boxed::Box::leak(format!("next_thing found: {}", b.0).into_boxed_str()));
+    } else {
+        crate::log("next_thing found nothing");
+    }
+
     best
 }
 

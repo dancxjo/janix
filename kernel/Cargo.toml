@@ -8,7 +8,7 @@ edition.workspace = true
 [features]
 arch_pci_in_kernel = []
 debug_logging = []
-default = ["arch_pci_in_kernel"]
+default = ["arch_pci_in_kernel", "debug_logging"]
 
 [dependencies]
 abi = { path = "../abi" }

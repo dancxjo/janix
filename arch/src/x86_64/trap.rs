@@ -195,7 +195,14 @@ extern "x86-interrupt" fn page_fault_handler(
 
     kernel::println!("EXCEPTION: PAGE FAULT");
     kernel::println!("  Accessed Address: {:?}", addr);
-    kernel::println!("  Error Code: {:?}", error_code);
+    kernel::println!("  Error Code: {:?} (bits={:#x})", error_code, error_code.bits());
+    kernel::println!("  P:{} W:{} U:{} R:{} I:{}",
+        (error_code.bits() & 1) != 0, // Present
+        (error_code.bits() & 2) != 0, // Write
+        (error_code.bits() & 4) != 0, // User
+        (error_code.bits() & 8) != 0, // Reserved write
+        (error_code.bits() & 16) != 0 // Instruction fetch
+    );
     kernel::println!(
         "  RIP={:#x} RSP={:#x} CR3={:#x}",
         stack_frame.instruction_pointer.as_u64(),

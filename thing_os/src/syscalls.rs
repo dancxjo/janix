@@ -15,18 +15,23 @@ pub fn sys_symbol_intern(s: &str) -> SymbolId {
             len: s.len() as u64,
         },
     };
+    let mut resp = abi::syscall_defs::SymbolInternResp { id: SymbolId(0) };
     let ret = unsafe {
         raw_syscall(
             SYSCALL_SYMBOL_INTERN,
             &req as *const _ as u64,
-            0,
+            &mut resp as *mut _ as u64,
             0,
             0,
             0,
             0
         )
     };
-    SymbolId(ret as u32)
+    if ret == 0 {
+        resp.id
+    } else {
+        SymbolId(0) // Error fallback
+    }
 }
 
 pub fn syscall(request: KernelRequest) -> KernelResponse {

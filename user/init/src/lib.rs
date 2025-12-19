@@ -20,6 +20,13 @@ const ROOTFS_IDENTIFIER: &str = "rootfs";
 
 pub fn init_main() -> ! {
     println!("init: starting");
+    
+    // Direct syscall test
+    // let msg = "Hello from direct syscall\n";
+    // unsafe {
+    //    thing_os::syscalls::syscall(abi::KernelRequest::Log { message: msg });
+    // }
+    // loop {}
 
     ensure_modes();
     println!("init: ensure_modes done");
@@ -233,11 +240,7 @@ fn looks_like_driver_identifier(identifier: &str) -> bool {
 fn load_boot_profile() -> Option<BootProfile> {
     let mut profiles: Vec<BootProfile> = list_things_by_kind();
     println!("init: BootProfile query returned {} entries", profiles.len());
-    if let Some(bp) = load_thing::<BootProfile>(abi::ThingId(12)) {
-        println!("init: direct load of ThingId(12) succeeded with version {}", bp.version);
-    } else {
-        println!("init: direct load of ThingId(12) failed");
-    }
+
     match profiles.len() {
         1 => profiles.pop(),
         0 => {

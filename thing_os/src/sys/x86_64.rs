@@ -13,8 +13,8 @@ pub unsafe fn syscall_stub(
     let mut ret: u64;
     unsafe {
         core::arch::asm!(
-            "int 0x80",
-            "nop",
+            "syscall",
+            "nop", // No-ops kept for padding/alignment if needed, though likely unnecessary
             "nop",
             "nop",
             "nop",
@@ -22,9 +22,11 @@ pub unsafe fn syscall_stub(
             in("rdi") arg0,
             in("rsi") arg1,
             in("rdx") arg2,
-            in("rcx") arg3,
+            in("r10") arg3,
             in("r8") arg4,
             in("r9") arg5,
+            lateout("rcx") _, // rcx is clobbered by syscall
+            lateout("r11") _, // r11 is clobbered by syscall
             options(nostack, preserves_flags),
         );
     }

@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 abi = { path = "../abi" }
 kernel = { path = "../kernel" }
-lazy_static = "1.4"
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
 spin = "0.10.0"
 thing_models = { path = "../thing_models" }
 

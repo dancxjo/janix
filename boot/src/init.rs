@@ -26,6 +26,7 @@ pub fn init_machine() {
     }
 
     // Initialize architecture-specific tables (GDT, etc.)
+    // Initialize architecture-specific tables (GDT, etc.)
     // This MUST happen before we try to enter user mode or load segment selectors.
     arch::platform::init_arch_tables();
 

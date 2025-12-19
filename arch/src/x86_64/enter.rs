@@ -145,7 +145,11 @@ pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext
     aligned_slice[mxcsr_offset..mxcsr_offset + 4].copy_from_slice(&default_mxcsr.to_le_bytes());
 
     let aligned_ptr = aligned_slice.as_ptr();
-
+    
+    // Debug logging to verify context
+    let rip = context[15];
+    let rsp = context[18];
+    
     unsafe {
         core::arch::x86_64::_fxrstor(aligned_ptr);
         resume_user_mode_asm(context.as_ptr())

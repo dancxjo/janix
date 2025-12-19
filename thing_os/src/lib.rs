@@ -525,15 +525,18 @@ pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
     let request = KernelRequest::ThingGet { id };
     match syscall(request) {
         KernelResponse::ThingData { id, kind, props } => {
-            // Kind is string returned from syscall (syscall impl copies it)
-            // Kind is SymbolId returned from syscall
             let expected = sys_symbol_intern(T::KIND);
             if kind != expected {
+                let msg = format!("load_thing mismatch: id={} kind={} expected={}\n", id.0, kind.0, expected.0);
+                crate::console::print(&msg);
                 return None;
             }
             Some(T::from_props(id, props))
         }
-        _ => None,
+        _ => {
+            crate::console::print("load_thing failed: syscall returned unexpected response\n");
+            None
+        },
     }
 }
 
@@ -603,7 +606,7 @@ pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
 /// List all Things of a given `T::KIND`.
 pub fn list_things_by_kind<T: Thing>() -> Vec<T> {
     let mut results = Vec::new();
-    let mut cursor = ThingId(u64::MAX);
+    let mut cursor = ThingId(0);
     let kind_sym = sys_symbol_intern(T::KIND);
     
     loop {

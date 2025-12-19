@@ -50,7 +50,7 @@ $(call USER_VARIABLE,QEMUFLAGS,-m 2G)
 $(call USER_VARIABLE,QEMU_NO_REBOOT,-no-reboot)
 $(call USER_VARIABLE,QEMU_WATCHER,scripts/qemu-watcher.sh)
 
-QEMUFLAGS_EXTRA ?=
+QEMUFLAGS_EXTRA ?= -d int,cpu_reset -D qemu_debug.log
 QEMU_DISPLAY ?=
 
 ifeq ($(QEMU_DISPLAY),none)
@@ -746,8 +746,8 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	# 	cp -v $(COMPOSITOR_FONT_DIR)/*.ttf iso_root/boot/fonts/; \
 	# fi
 	# Copy unified fonts
+	# Copy unified fonts
 	mkdir -p iso_root/boot/fonts
-	# cp -v assets/fonts/* iso_root/boot/fonts/
 	cp -v assets/fonts/unifont.hex iso_root/boot/fonts/
 	cp -v assets/fonts/HACK_REGULAR.ttf iso_root/boot/fonts/
 	cp -v limine.conf iso_root/boot/limine/limine.conf

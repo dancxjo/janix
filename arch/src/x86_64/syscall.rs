@@ -13,24 +13,60 @@ use core::slice;
 
 use core::arch::global_asm;
 
+// Global variables for syscall stack switching (used by ASM)
+#[unsafe(no_mangle)]
+static mut SYSCALL_KERNEL_RSP: u64 = 0;
+#[unsafe(no_mangle)]
+static mut SYSCALL_USER_RSP_SCRATCH: u64 = 0;
+#[unsafe(no_mangle)]
+static mut SYSCALL_USER_CS: u64 = 0;
+#[unsafe(no_mangle)]
+static mut SYSCALL_USER_SS: u64 = 0;
+
 global_asm!(r#"
 .global syscall_handler_asm
 syscall_handler_asm:
-    // We are on Kernel Stack (via TSS/IDT).
-    // Push order matching SyscallRegs (reversed)
+    // Interrupts are disabled (SFMASK).
+    // User Stack is currently active.
     
-    // 1. Saved regs (Deepest)
+    // 1. Save User RSP to scratch
+    mov [rip + SYSCALL_USER_RSP_SCRATCH], rsp
+    
+    // 2. Load Kernel RSP
+    mov rsp, [rip + SYSCALL_KERNEL_RSP]
+    
+    // 3. Construct IRETQ frame on Kernel Stack
+    // Frame: SS, RSP, RFLAGS, CS, RIP
+    
+    // Push SS (User Data)
+    push qword ptr [rip + SYSCALL_USER_SS]
+    
+    // Push RSP (User RSP)
+    push qword ptr [rip + SYSCALL_USER_RSP_SCRATCH]
+    
+    // Push RFLAGS (r11 saved by syscall)
+    push r11
+    
+    // Push CS (User Code)
+    push qword ptr [rip + SYSCALL_USER_CS]
+    
+    // Push RIP (rcx saved by syscall)
+    push rcx
+    
+    // 4. Push SyscallRegs (reversed order)
+    
+    // Saved Regs
     push rax // rax_saved
     push rdi // rdi_saved
-    push rsi // rsi_saved
-    push rdx // rdx_saved
-    push rcx // rcx_saved
-    push r8  // r8_saved
-    push r9  // r9_saved
-    push r10 // r10_saved
-    push r11 // r11_saved
+    push rsi
+    push rdx
+    push rcx // rcx_saved (RIP, but also general arg)
+    push r8
+    push r9
+    push r10
+    push r11 // r11_saved (RFlAGS, but also general arg)
     
-    // 2. Callee-saved
+    // Callee-saved
     push rbx
     push rbp
     push r12
@@ -38,7 +74,11 @@ syscall_handler_asm:
     push r14
     push r15
     
-    // 3. Scratch/Dup regs (Shallowest)
+    // Scratch (Syscall Arguments passed in registers)
+    // Syscall ABI: RDI, RSI, RDX, R10, R8, R9.
+    // SyscallRegs Layout (top down):
+    // r11, r10, r9, r8, rcx, rdx, rsi, rdi, rax
+    
     push r11
     push r10
     push r9
@@ -49,7 +89,7 @@ syscall_handler_asm:
     push rdi
     push rax
     
-    // rsp points to SyscallRegs.rax
+    // rsp points to SyscallRegs.
     mov rdi, rsp
     
     call syscall_handler_rust
@@ -76,9 +116,10 @@ syscall_handler_asm:
     pop rbp
     pop rbx
     
-    // Cleanup saved args (9 regs * 8 bytes = 72)
+    // Cleanup saved args (9 regs * 8 = 72 bytes)
     add rsp, 72
     
+    // Now stack points to IRETQ frame compatible with user mode return
     iretq
 "#);
 
@@ -328,18 +369,6 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                                    });
                                }
                                crate::user::schedule_next();
-                               // After resume, we still need to return something? 
-                               // Or does schedule_next not return until we are woken?
-                               // If we were woken, it means data is available or signal.
-                               // We should probably just return WOULD_BLOCK again or 0 if we assume read retry.
-                               // Returning 0 for bytes_read works if logic handles it.
-                               // But typically we should just restart the syscall or return success.
-                               // For simplicity, we return "Ok(0 bytes)" to indicate wake-up-and-retry.
-                               // Actually, let's just return WOULD_BLOCK if we failed to block?
-                               // If mark_blocked returns false, it means we consumed a wake event.
-                               // So we should retry immediately.
-                               // But we can't retry kernel call from here easily.
-                               // Return 0 bytes read.
                                unsafe { *ret_ref = abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet { bytes_read: 0 }); }
                                0
                           },
@@ -377,11 +406,31 @@ pub fn install_handler() {
     let user_data_sel = selectors.udata;
 
     unsafe {
+        // Init global statics
+        SYSCALL_KERNEL_RSP = gdt::kernel_stack_top();
+        SYSCALL_USER_CS = user_code_sel.0 as u64 | 3;
+        SYSCALL_USER_SS = user_data_sel.0 as u64 | 3;
+        
+        let krsp = SYSCALL_KERNEL_RSP;
+        let ucs = SYSCALL_USER_CS;
+        let uss = SYSCALL_USER_SS;
+        
+        kernel::println!(
+            "Syscall setup: KRSP={:#x} CS={:#x} SS={:#x}",
+            krsp,
+            ucs,
+            uss
+        );
+
         Star::write(
             user_code_sel,
             user_data_sel,
             kernel_code_sel,
             kernel_data_sel
         ).unwrap();
+
+        // Enable Syscall Extensions (EFER.SCE)
+        use x86_64::registers::model_specific::{Efer, EferFlags};
+        Efer::update(|f| f.insert(EferFlags::SYSTEM_CALL_EXTENSIONS));
     }
 }

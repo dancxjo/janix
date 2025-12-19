@@ -84,6 +84,7 @@ pub fn init() {
         GS::set_reg(SegmentSelector(0));
         load_tss(GDT.1.tss);
     }
+    kernel::println!("GDT initialized. TSS RSP0: {:#x}", TSS.privilege_stack_table[0].as_u64());
 }
 
 pub fn get_selectors() -> &'static Selectors {

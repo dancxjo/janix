@@ -71,8 +71,16 @@ mod x86_64 {
         log("ELF loader: parsed header");
         let mut space = AddressSpace::new(hhdm)?;
         let mut frame_alloc = KernelFrameAllocator;
-        for segment in elf.program_headers.iter() {
+        for (i, segment) in elf.program_headers.iter().enumerate() {
+            {
+                use alloc::format;
+                let msg = format!("ELF Seg {}: type={:#x} flags={:#x} offset={:#x} vaddr={:#x} memsz={:#x}", 
+                    i, segment.p_type, segment.p_flags, segment.p_offset, segment.p_vaddr, segment.p_memsz);
+                kernel::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
+            }
+
             if segment.p_type != PT_LOAD || segment.p_memsz == 0 {
+                kernel::log("  Skipping segment (not PT_LOAD or empty)");
                 continue;
             }
             map_segment(&mut space, segment, module_slice, &mut frame_alloc, hhdm)?;
@@ -244,6 +252,13 @@ mod x86_64 {
     ) -> Result<(), &'static str> {
         let start = align_down(segment.p_vaddr);
         let end = align_up(segment.p_vaddr + segment.p_memsz);
+        
+        {
+            use alloc::format;
+            let msg = format!("ELF map_segment: vaddr={:#x}-{:#x} flags={:#x}", start, end, segment.p_flags);
+            kernel::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
+        }
+
         if end <= start {
             return Err("Invalid segment size");
         }

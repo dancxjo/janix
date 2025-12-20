@@ -861,9 +861,26 @@ fn parse_font_identifier(cmdline: &core::ffi::CStr, path: &core::ffi::CStr) -> O
     None
 }
 
-fn parse_raw_identifier(cmdline: &core::ffi::CStr, path: &core::ffi::CStr) -> Option<(String, String)> {
-    // Check for "raw=kind:ident"
-    // TODO: implement
+fn parse_raw_identifier(cmdline: &core::ffi::CStr, _path: &core::ffi::CStr) -> Option<(String, String)> {
+    let bytes = cmdline.to_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let line = if let Ok(s) = core::str::from_utf8(bytes) {
+        s
+    } else {
+        return None;
+    };
+
+    if let Some(val) = parse_keyed_argument(line, "raw=") {
+        if let Some((kind, ident)) = val.split_once(':') {
+            if !kind.is_empty() && !ident.is_empty() {
+                return Some((String::from(kind), String::from(ident)));
+            }
+        }
+    }
+
     None
 }
 

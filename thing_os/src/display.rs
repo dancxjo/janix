@@ -5,6 +5,9 @@ use alloc::string::{String, ToString};
 
 use abi::{MapFlags, PropValue, SharedBufferInfo, ThingId};
 use crate::graph_kinds;
+use thing_models::graph_kinds::{
+    LINK_DISPLAY_HAS_FRONT_BUFFER, LINK_DISPLAY_HAS_BACK_BUFFER, PROP_DISPLAY_ACTIVE_BUFFER_INDEX
+};
 use crate::sys::raw_syscall;
 use alloc::vec::Vec;
 
@@ -87,7 +90,7 @@ pub fn shared_buffer_info(
 ) -> Result<SharedBufferInfo, crate::SysError> {
     match syscall(abi::KernelRequest::GetSharedBufferInfo { buffer_id }) {
         abi::KernelResponse::SharedBufferInfoResponse { info } => Ok(info),
-        abi::KernelResponse::Error { message } => Err(crate::SysError::Kernel(message)),
+        abi::KernelResponse::Error { err: _ } => Err(crate::SysError::Kernel("shared_buffer_info failed")),
         _ => Err(crate::SysError::Unexpected),
     }
 }
@@ -104,7 +107,7 @@ pub fn shared_buffer_map(
             }
             Ok((vaddr as *mut u8, size as usize))
         },
-        abi::KernelResponse::Error { message } => Err(crate::SysError::Kernel(message)),
+        abi::KernelResponse::Error { err: _ } => Err(crate::SysError::Kernel("shared_buffer_map failed")),
         _ => Err(crate::SysError::Unexpected),
     }
 }
@@ -119,8 +122,8 @@ pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysE
         .cloned()
         .ok_or(crate::SysError::Unexpected)?;
 
-    let mut front_targets = link_targets(display.id, abi::graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER);
-    let mut back_targets = link_targets(display.id, abi::graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER);
+    let mut front_targets = link_targets(display.id, LINK_DISPLAY_HAS_FRONT_BUFFER);
+    let mut back_targets = link_targets(display.id, LINK_DISPLAY_HAS_BACK_BUFFER);
     let front_id = front_targets.pop().ok_or(crate::SysError::Unexpected)?;
     let back_id = back_targets.pop().ok_or(crate::SysError::Unexpected)?;
 
@@ -164,7 +167,7 @@ pub fn swap_display_buffers(display_id: ThingId) -> Option<i64> {
     let current = PrimaryDisplayBuffer::clamp_active_index(display.active_buffer_index);
     let next = 1 - current;
     let updates = [(
-        abi::graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(),
+        PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(),
         PropValue::I64(next),
     )];
     if update_props(display_id, &updates) {

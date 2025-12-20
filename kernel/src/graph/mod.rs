@@ -145,9 +145,8 @@ pub fn link_target_at(src: ThingId, pred: Predicate, idx: usize) -> Option<Thing
 }
 
 // Validation helper used by lib.rs
-pub fn validate_props(_kind: SymbolId, _props: &[(SymbolId, PropValue)]) -> Result<(), &'static str> {
-    // TODO: Implement schema validation against prop types
-    Ok(())
+pub fn validate_props(kind: SymbolId, props: &[(SymbolId, PropValue)]) -> Result<(), &'static str> {
+    schema::validate_props(kind, props)
 }
 
 // Helper for iteration

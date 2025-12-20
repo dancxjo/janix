@@ -195,57 +195,52 @@ fn convert_prop(wire: &WireProp) -> (SymbolId, PropValue) {
     (key, val)
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
-    let regs = unsafe { &mut *regs };
-    let num = regs.rax_saved;
-
-    let arg1 = regs.rdi_saved;
-    let arg2 = regs.rsi_saved;
-    let arg3 = regs.rdx_saved;
-    let arg4 = regs.r10_saved; 
-    let arg5 = regs.r8_saved;
-    let arg6 = regs.r9_saved;
-
-    match num {
-        SYSCALL_LOG => {
-            let ptr = arg1;
-            let len = arg2;
+macro_rules! dispatch_syscall {
+    (SYSCALL_LOG, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+            let ptr = $a1;
+            let len = $a2;
             let slice = unsafe { user_slice::<u8>(ptr, len) };
             if let Ok(s) = core::str::from_utf8(slice) {
                 kernel::log(s);
             }
             0
         }
-        SYSCALL_YIELD => {
-            {
-               kernel::sched::with_scheduler(|sched| {
-                    if let Some(tid) = sched.current_id() {
-                        if let Some(thread) = sched.thread_mut(tid) {
-                             thread.started = true;
-                        }
+    };
+    (SYSCALL_YIELD, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+           kernel::sched::with_scheduler(|sched| {
+                if let Some(tid) = sched.current_id() {
+                    if let Some(thread) = sched.thread_mut(tid) {
+                         thread.started = true;
                     }
-               });
-            }
-            kernel::sched::yield_current_thread();
-            crate::user::schedule_next();
-            0 
+                }
+           });
+           kernel::sched::yield_current_thread();
+           crate::user::schedule_next();
+           0
         }
-        SYSCALL_EXIT_THREAD => {
-            kernel::sched::exit_current_thread("syscall", arg1);
+    };
+    (SYSCALL_EXIT_THREAD, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+            kernel::sched::exit_current_thread("syscall", $a1);
             crate::user::schedule_next();
             0
         }
-        SYSCALL_SLEEP_FOR_NS => { 
-             crate::user::sys_sleep_for_ns(arg1);
+    };
+    (SYSCALL_SLEEP_FOR_NS, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             crate::user::sys_sleep_for_ns($a1);
              0 
         }
-        SYSCALL_SPAWN_PROGRAM => {
-             let boot_program_id = ThingId(arg1);
+    };
+    (SYSCALL_SPAWN_PROGRAM, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let boot_program_id = ThingId($a1);
              let req = abi::KernelRequest::SpawnProgram { boot_program_id };
              match kernel::handle_request(req) {
                  abi::KernelResponse::ProgramSpawned { process_id, thread_id } => {
-                     if let Some(res) = unsafe { user_ptr_mut::<abi::wire::process::SpawnProgramResult>(arg2) } {
+                     if let Some(res) = unsafe { user_ptr_mut::<abi::wire::process::SpawnProgramResult>($a2) } {
                          res.process_id = process_id;
                          res.thread_id = thread_id;
                      }
@@ -254,41 +249,49 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                  _ => 1
              }
         }
-        SYSCALL_SYMBOL_INTERN => {
+    };
+    (SYSCALL_SYMBOL_INTERN, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let mut ret = 1;
              unsafe {
-                 if let Some(req) = user_ptr_val::<SymbolInternReq>(arg1) {
+                 if let Some(req) = user_ptr_val::<SymbolInternReq>($a1) {
                      let slice = user_slice::<u8>(req.s.ptr, req.s.len);
                      if let Ok(s) = core::str::from_utf8(slice) {
                          let id = symbols::intern(s);
-                         if let Some(resp) = user_ptr_mut::<SymbolInternResp>(arg2) {
+                         if let Some(resp) = user_ptr_mut::<SymbolInternResp>($a2) {
                              resp.id = id;
-                             return 0;
+                             ret = 0;
                          }
                      }
                  }
              }
-             1 
+             ret
         }
-        SYSCALL_SYMBOL_RESOLVE => {
+    };
+    (SYSCALL_SYMBOL_RESOLVE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let mut ret: u64 = 1;
              unsafe {
-                 if let Some(req) = user_ptr_val::<SymbolResolveReq>(arg1) {
-                     if let Some(resp) = user_ptr_mut::<SymbolResolveResp>(arg2) {
+                 if let Some(req) = user_ptr_val::<SymbolResolveReq>($a1) {
+                     if let Some(resp) = user_ptr_mut::<SymbolResolveResp>($a2) {
                          if let Some(s) = symbols::resolve(req.id) {
                               let out_slice = slice::from_raw_parts_mut(req.out_ptr as *mut u8, req.out_cap as usize);
                               let len = core::cmp::min(s.len(), out_slice.len());
                               out_slice[..len].copy_from_slice(&s.as_bytes()[..len]);
                               resp.written = len as u64;
-                              return 0;
+                              ret = 0;
                          }
                      }
                  }
              }
-             1
+             ret
         }
-        SYSCALL_THING_CREATE => {
-             let kind = SymbolId(arg1 as u32);
-             let props_ptr = arg2;
-             let props_len = arg3;
+    };
+    (SYSCALL_THING_CREATE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let kind = SymbolId($a1 as u32);
+             let props_ptr = $a2;
+             let props_len = $a3;
              
              let wire_props = unsafe { user_slice::<WireProp>(props_ptr, props_len) };
              let mut kernel_props = Vec::with_capacity(wire_props.len());
@@ -299,10 +302,12 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
              let id = graph::create_thing(kind, kernel_props);
              id.0
         }
-        SYSCALL_THING_UPDATE => {
-            let id = ThingId(arg1);
-            let props_ptr = arg2;
-            let props_len = arg3;
+    };
+    (SYSCALL_THING_UPDATE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+            let id = ThingId($a1);
+            let props_ptr = $a2;
+            let props_len = $a3;
              
              let wire_props = unsafe { user_slice::<WireProp>(props_ptr, props_len) };
              let mut kernel_props = Vec::with_capacity(wire_props.len());
@@ -313,20 +318,23 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
              graph::update_thing(id, kernel_props);
              0
         }
-        SYSCALL_THING_LIST => {
-             let kind = SymbolId(arg1 as u32);
-             let start_after = ThingId(arg2);
+    };
+    (SYSCALL_THING_LIST, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let kind = SymbolId($a1 as u32);
+             let start_after = ThingId($a2);
              if let Some(id) = graph::next_thing_of_kind_sym(kind, start_after) {
-                  return id.0;
+                  id.0
+             } else {
+                  u64::MAX
              }
-             u64::MAX
         }
-        SYSCALL_THING_GET => {
-             let id = ThingId(arg1);
-             // arg2 is pointer to ThingGetSyscallResult
-             if let Some(out) = unsafe { user_ptr_mut::<abi::ThingGetSyscallResult>(arg2) } {
+    };
+    (SYSCALL_THING_GET, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let id = ThingId($a1);
+             if let Some(out) = unsafe { user_ptr_mut::<abi::ThingGetSyscallResult>($a2) } {
                  let found = kernel::graph::with_thing(id, |node| {
-                     // 1. Fill kind
                      if let Some(k) = kernel::symbols::resolve(node.kind) {
                          let bytes = k.as_bytes();
                          let len = core::cmp::min(bytes.len(), abi::THING_GET_MAX_KIND_LEN);
@@ -334,21 +342,18 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                          out.kind_len = len;
                      }
 
-                     // 2. Fill props (limit to MAX_PROPS)
                      let mut count = 0;
                      for (key_sym, val) in &node.props {
                          if count >= abi::THING_GET_MAX_PROPS { break; }
                          if let Some(key_str) = kernel::symbols::resolve(*key_sym) {
                              let mut ent = abi::ThingPropData::default();
                              
-                             // Key
                              let kbytes = key_str.as_bytes();
                              let klen = core::cmp::min(kbytes.len(), abi::THING_GET_MAX_STR_LEN);
                              ent.key[..klen].copy_from_slice(&kbytes[..klen]);
                              ent.key_len = klen;
                              ent.present = 1;
 
-                             // Value
                              match val {
                                  PropValue::U64(v) => {
                                      ent.value_type = abi::ThingPropScalarType::U64;
@@ -369,25 +374,27 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                                      ent.value_str[..slen].copy_from_slice(&sbytes[..slen]);
                                      ent.value_str_len = slen;
                                  },
-                                 _ => continue, // Skip unsupported types for now
+                                 _ => continue,
                              }
                              out.props[count] = ent;
                              count += 1;
                          }
                      }
                      out.prop_count = count;
-                     0 // Success
+                     0
                  });
-                 found.unwrap_or(1) // 1 if thing not found
+                 found.unwrap_or(1)
              } else {
-                 1 // Invalid pointer
+                 1
              }
         }
-        SYSCALL_SCHEMA_REGISTER => {
-            let kind = SymbolId(arg1 as u32);
-            let desc = SymbolId(arg2 as u32);
-            let props_ptr = arg3;
-            let props_len = arg4;
+    };
+    (SYSCALL_SCHEMA_REGISTER_PACKAGE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+            let kind = SymbolId($a1 as u32);
+            let desc = SymbolId($a2 as u32);
+            let props_ptr = $a3;
+            let props_len = $a4;
 
             let req = abi::KernelRequest::SchemaRegister {
                 kind,
@@ -401,13 +408,15 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
 
             match kernel::handle_request(req) {
                 abi::KernelResponse::SchemaRegistered { outcome, .. } => outcome as u64,
-                _ => 3, // 3 = generic error? or just u64::MAX? Original was 1. 1 is now taken.
+                _ => 3,
             }
         }
-        SYSCALL_ADD_LINK => {
-             let src = ThingId(arg1);
-             let pred = abi::Predicate(arg2);
-             let dst = ThingId(arg3);
+    };
+    (SYSCALL_ADD_LINK, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let src = ThingId($a1);
+             let pred = abi::Predicate($a2);
+             let dst = ThingId($a3);
              
              if kernel::graph::add_link(src, pred, dst) {
                  0
@@ -415,10 +424,12 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                  1
              }
         }
-        SYSCALL_LINK_AT => {
-             let src = ThingId(arg1);
-             let idx = arg2 as usize;
-             let pred = abi::Predicate(arg3);
+    };
+    (SYSCALL_LINK_AT, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let src = ThingId($a1);
+             let idx = $a2 as usize;
+             let pred = abi::Predicate($a3);
              
              if let Some(target) = kernel::graph::link_target_at(src, pred, idx) {
                  target.0
@@ -426,62 +437,39 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                  u64::MAX
              }
         }
-        SYSCALL_MAP_SHARED_BUFFER => {
-             let id = ThingId(arg1);
-             let flags = MapFlags(arg2); // MapFlags(pub u64)
-             // arg3: output vaddr ptr
-             // arg4: output size ptr
+    };
+    (SYSCALL_MAP_SHARED_BUFFER, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let id = ThingId($a1);
+             let flags = MapFlags($a2);
              
              let pid = match kernel::sched::SCHEDULER.lock().current_process_id() {
                  Some(p) => p,
                  None => return 1,
              };
 
-             // Get frames and size from SharedBufferManager
-             // We scope the lock to avoid holding it during map operations if possible,
-             // though shared_buffer::get returns reference.
-             // We need to copy the frames to a local Vec to release lock, 
-             // or hold lock. map_frames_into_current_as takes slice.
-             
-             // Simplest is to hold lock. It's global mutex.
-             // But map_frames allocates frames (locks allocator).
-             // Should be safe.
-             
              let manager = kernel::shared_buffer::manager().lock();
              if let Some(sb) = manager.get(&id) {
                  let size_bytes = sb.size_bytes();
                  let size_aligned = kernel::shared_buffer::align_up(size_bytes, 4096);
-                 
-                 // Reserve VMA in Process
-                 // We must drop shared buffer lock before locking scheduler? 
-                 // Scheduler lock is usually high order.
-                 // let's clone frames.
                  let frames = sb.frames.clone();
                  drop(manager);
 
                  if let Some(vaddr) = kernel::sched::SCHEDULER.lock().reserve_resident_region(pid, size_aligned as usize, 4096) {
                       if let Ok(_) = kernel::shared_buffer::map_frames_into_current_as(vaddr as u64, &frames, flags) {
-                           if let Some(v_out) = unsafe { user_ptr_mut::<u64>(arg3) } { *v_out = vaddr as u64; }
-                           if let Some(s_out) = unsafe { user_ptr_mut::<u64>(arg4) } { *s_out = size_bytes; }
+                           if let Some(v_out) = unsafe { user_ptr_mut::<u64>($a3) } { *v_out = vaddr as u64; }
+                           if let Some(s_out) = unsafe { user_ptr_mut::<u64>($a4) } { *s_out = size_bytes; }
                            0
                       } else { 1 }
                  } else { 1 }
              } else { 1 }
         }
-        SYSCALL_CREATE_SHARED_BUFFER => {
-             let width = arg1 as u32;
-             let height = arg2 as u32;
-             let format = unsafe { core::mem::transmute(arg3 as u8) }; // unsafe cast to PixelFormat enum
-             
-             // We need to allocate frames. 
-             // Logic similar to register_shared_buffer but we need to allocate fresh frames.
-             // shared_buffer.rs doesn't seem to have "create and allocate".
-             // It has `register_shared_buffer` taking frames.
-             // We can allocate frames here.
-             
-             // Calculate size
-             // Format depth?
-             // Assuming 32bpp for now as per PixelFormat 
+    };
+    (SYSCALL_CREATE_SHARED_BUFFER, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let width = $a1 as u32;
+             let height = $a2 as u32;
+             let format = unsafe { core::mem::transmute($a3 as u8) };
              let stride = width * 4;
              let size = (stride * height) as u64;
              let pages = kernel::shared_buffer::page_count_for_size(size);
@@ -490,8 +478,6 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
              for _ in 0..pages {
                  if let Some(f) = kernel::memory::allocate_frame() {
                      if frames.push(f).is_err() {
-                         // Free all and fail
-                         // TODO: Cleanup
                          return u64::MAX;
                      }
                  } else {
@@ -504,22 +490,26 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
                  Err(_) => u64::MAX,
              }
         }
-        SYSCALL_GET_SHARED_BUFFER_INFO => {
-              let id = ThingId(arg1);
+    };
+    (SYSCALL_GET_SHARED_BUFFER_INFO, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+              let id = ThingId($a1);
               let manager = kernel::shared_buffer::manager().lock();
               if let Some(sb) = manager.get(&id) {
                   let info = sb.info();
                   drop(manager);
                   
-                  if let Some(out) = unsafe { user_ptr_mut::<abi::SharedBufferInfo>(arg2) } {
+                  if let Some(out) = unsafe { user_ptr_mut::<abi::SharedBufferInfo>($a2) } {
                       *out = info;
                       0
                   } else { 1 }
               } else { 1 }
         }
-        SYSCALL_RESIDENT_ALLOC => {
-             let kind = SymbolId(arg1 as u32);
-             let byte_len = arg2;
+    };
+    (SYSCALL_RESIDENT_ALLOC, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let kind = SymbolId($a1 as u32);
+             let byte_len = $a2;
              
              let args = abi::resident::ResidentAllocArgs {
                  kind_id: ThingId(kind.0 as u64),
@@ -529,22 +519,24 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
              
              match kernel::resident::manager::sys_resident_alloc(args) {
                  Ok(resp) => {
-                      if let Some(out) = unsafe { user_ptr_mut(arg3) } {
+                      if let Some(out) = unsafe { user_ptr_mut($a3) } {
                           *out = resp;
                           0
                       } else { 1 }
                  },
                  Err(e) => {
-                      if let Some(out) = unsafe { user_ptr_mut(arg4) } {
+                      if let Some(out) = unsafe { user_ptr_mut($a4) } {
                           *out = e;
                       }
                       1
                  }
              }
         }
-        SYSCALL_RESIDENT_MAP => {
-             let id = ThingId(arg1);
-             let perms = abi::resident::ResidentMapPerms(arg2 as u32);
+    };
+    (SYSCALL_RESIDENT_MAP, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let id = ThingId($a1);
+             let perms = abi::resident::ResidentMapPerms($a2 as u32);
              
              let args = abi::resident::ResidentMapArgs {
                  id,
@@ -553,111 +545,153 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
              
              match kernel::resident::manager::sys_resident_map(args) {
                  Ok(resp) => {
-                      if let Some(out) = unsafe { user_ptr_mut(arg3) } {
+                      if let Some(out) = unsafe { user_ptr_mut($a3) } {
                           *out = resp;
                           0
                       } else { 1 }
                  },
                  Err(e) => {
-                      if let Some(out) = unsafe { user_ptr_mut(arg4) } {
+                      if let Some(out) = unsafe { user_ptr_mut($a4) } {
                           *out = e;
                       }
                       1
                  }
              }
         }
-        SYSCALL_RESIDENT_UNMAP => {
-             let id = ThingId(arg1);
+    };
+    (SYSCALL_RESIDENT_UNMAP, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let id = ThingId($a1);
              match kernel::resident::manager::sys_resident_unmap(id) {
                  Ok(_) => 0,
                  Err(e) => {
-                      if let Some(out) = unsafe { user_ptr_mut(arg2) } {
+                      if let Some(out) = unsafe { user_ptr_mut($a2) } {
                           *out = e;
                       }
                       1
                  }
              }
         }
-        SYSCALL_THING_REST => {
-             let id = ThingId(arg1);
-             let policy = unsafe { core::mem::transmute(arg2 as u32) }; 
+    };
+    (SYSCALL_THING_REST, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             let id = ThingId($a1);
+             let policy = unsafe { core::mem::transmute($a2 as u32) };
              match kernel::resident::manager::sys_thing_rest(id, policy) {
                  Ok(resp) => {
-                      if let Some(out) = unsafe { user_ptr_mut(arg3) } {
+                      if let Some(out) = unsafe { user_ptr_mut($a3) } {
                           *out = resp;
                           0
                       } else { 1 }
                  },
                  Err(e) => {
-                      if let Some(out) = unsafe { user_ptr_mut(arg4) } {
+                      if let Some(out) = unsafe { user_ptr_mut($a4) } {
                           *out = e;
                       }
                       1
                  }
              }
         }
-        SYSCALL_DEV_OPEN => {
-             if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::DevOpenArgs>(arg1) } {
+    };
+    (SYSCALL_DEV_OPEN, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+             if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::DevOpenArgs>($a1) } {
                  let res = kernel::bridge::ps2::dev_open(unsafe { core::mem::transmute(args.kind) }, args.index);
-                  if let Some(ret_ref) = unsafe { user_ptr_mut(arg2) } {
+                  if let Some(ret_ref) = unsafe { user_ptr_mut($a2) } {
                       *ret_ref = match res {
                           Ok(handle) => abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevOpenRet { handle }),
                           Err(e) => abi::syscall_defs::SysRet::err(e.code, e.detail),
                       };
-                      return 0;
-                  }
+                      0
+                  } else { 1 }
+             } else {
+                 1
              }
-             1
         }
-        SYSCALL_DEV_READ => {
-            if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::DevReadArgs>(arg1) } {
-                if let Some(ret_ref) = unsafe { user_ptr_mut::<abi::syscall_defs::SysRet<abi::syscall_defs::DevReadRet>>(arg2) } {
-                     // Get buffer
+    };
+    (SYSCALL_DEV_READ, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+            if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::DevReadArgs>($a1) } {
+                if let Some(ret_ref) = unsafe { user_ptr_mut::<abi::syscall_defs::SysRet<abi::syscall_defs::DevReadRet>>($a2) } {
                      let buffer_ptr = args.out.ptr.addr as *mut u8;
                      let buffer_len = args.out.len as usize;
                      if buffer_ptr.is_null() {
                           unsafe { *ret_ref = abi::syscall_defs::SysRet::err(abi::syscall_defs::SysError::INVALID_ARG, 0); }
-                          return 0;
-                     }
-                     let buffer = unsafe { core::slice::from_raw_parts_mut(buffer_ptr, buffer_len) };
-                     let res = kernel::bridge::ps2::dev_read(args.handle, buffer);
-                     
-                     match res {
-                          Ok(bytes_read) => {
-                               unsafe { *ret_ref = abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet { bytes_read: bytes_read as u32 }); }
-                               0
-                          },
-                          Err(e) if e.code == abi::syscall_defs::SysError::WOULD_BLOCK => {
-                               // Block logic:
-                               {
-                                   kernel::sched::with_scheduler(|sched| {
-                                        if let Some(tid) = sched.current_id() {
-                                             if let Some(thread) = sched.thread_mut(tid) {
-                                                  thread.started = true;
-                                                  if sched.mark_blocked(tid) {
-                                                      // Blocked
-                                                  } else {
-                                                      // Race condition won, return 0 bytes read for now (loop in userland)
-                                                  }
-                                             }
-                                        }
-                                   });
-                               }
-                               crate::user::schedule_next();
-                               unsafe { *ret_ref = abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet { bytes_read: 0 }); }
-                               0
-                          },
-                          Err(e) => {
-                               unsafe { *ret_ref = abi::syscall_defs::SysRet::err(e.code, e.detail); }
-                               0
-                          }
+                          0
+                     } else {
+                         let buffer = unsafe { core::slice::from_raw_parts_mut(buffer_ptr, buffer_len) };
+                         let res = kernel::bridge::ps2::dev_read(args.handle, buffer);
+
+                         match res {
+                              Ok(bytes_read) => {
+                                   unsafe { *ret_ref = abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet { bytes_read: bytes_read as u32 }); }
+                                   0
+                              },
+                              Err(e) if e.code == abi::syscall_defs::SysError::WOULD_BLOCK => {
+                                   {
+                                       kernel::sched::with_scheduler(|sched| {
+                                            if let Some(tid) = sched.current_id() {
+                                                 if let Some(thread) = sched.thread_mut(tid) {
+                                                      thread.started = true;
+                                                      if sched.mark_blocked(tid) {
+                                                      } else {
+                                                      }
+                                                 }
+                                            }
+                                       });
+                                   }
+                                   crate::user::schedule_next();
+                                   unsafe { *ret_ref = abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet { bytes_read: 0 }); }
+                                   0
+                              },
+                              Err(e) => {
+                                   unsafe { *ret_ref = abi::syscall_defs::SysRet::err(e.code, e.detail); }
+                                   0
+                              }
+                         }
                      }
                 } else { 1 }
             } else { 1 }
         }
-        _ => {
-            u64::MAX 
-        }
+    };
+
+    // Fallback for missing syscalls (Stubs)
+    ($name:ident, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        u64::MAX
+    }
+}
+
+macro_rules! dispatch_helper {
+    ($($name:ident => $num:expr),* $(,)?) => {
+         $(
+             $name => dispatch_syscall!($name, regs, arg1, arg2, arg3, arg4, arg5, arg6),
+         )*
+    };
+}
+
+macro_rules! collect_dispatched_numbers {
+    ($($name:ident => $num:expr),* $(,)?) => {
+        pub const DISPATCHED_SYSCALL_NUMBERS: &[u64] = &[ $($num),* ];
+    };
+}
+
+abi::syscalls::for_each_syscall!(collect_dispatched_numbers);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
+    let regs = unsafe { &mut *regs };
+    let num = regs.rax_saved;
+
+    let arg1 = regs.rdi_saved;
+    let arg2 = regs.rsi_saved;
+    let arg3 = regs.rdx_saved;
+    let arg4 = regs.r10_saved;
+    let arg5 = regs.r8_saved;
+    let arg6 = regs.r9_saved;
+
+    match num {
+        abi::syscalls::for_each_syscall!(dispatch_helper);
+        _ => u64::MAX
     }
 }
 
@@ -707,5 +741,22 @@ pub fn install_handler() {
         // Enable Syscall Extensions (EFER.SCE)
         use x86_64::registers::model_specific::{Efer, EferFlags};
         Efer::update(|f| f.insert(EferFlags::SYSTEM_CALL_EXTENSIONS));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_syscall_dispatch_coverage() {
+        let abi_nums = abi::syscalls::ABI_SYSCALL_NUMBERS;
+        let dispatched_nums = DISPATCHED_SYSCALL_NUMBERS;
+
+        assert_eq!(abi_nums.len(), dispatched_nums.len(), "Mismatch in syscall count between ABI and Dispatch");
+
+        for (i, &num) in abi_nums.iter().enumerate() {
+            assert_eq!(num, dispatched_nums[i], "Mismatch at index {}", i);
+        }
     }
 }

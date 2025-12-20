@@ -1,57 +1,75 @@
+#![allow(unused_macros)]
 
+#[macro_export]
+macro_rules! for_each_syscall {
+    ($mac:ident) => {
+        $mac! {
+            // Time & Scheduling
+            SYSCALL_YIELD => 0,
+            SYSCALL_SLEEP_FOR_NS => 1,
+            SYSCALL_SLEEP_UNTIL => 2,
+            SYSCALL_TIME_MONOTONIC_NS => 3,
+            SYSCALL_TIME_SYSTEM_NS => 4,
+            SYSCALL_TIME_NOW => 5,
 
-// Time & Scheduling
-pub const SYSCALL_YIELD: u64 = 0;
-pub const SYSCALL_SLEEP_FOR_NS: u64 = 1;
-pub const SYSCALL_SLEEP_UNTIL: u64 = 2;
-pub const SYSCALL_TIME_MONOTONIC_NS: u64 = 3;
-pub const SYSCALL_TIME_SYSTEM_NS: u64 = 4;
-pub const SYSCALL_TIME_NOW: u64 = 5;
+            // Diagnostics
+            SYSCALL_LOG => 6,
 
-// Diagnostics
-pub const SYSCALL_LOG: u64 = 6;
+            // Thread & Process
+            SYSCALL_EXIT_THREAD => 7,
+            SYSCALL_ALLOC_FRAME => 8,
+            SYSCALL_FREE_FRAME => 9,
+            SYSCALL_CREATE_PROCESS => 10,
+            SYSCALL_CREATE_THREAD => 11,
+            SYSCALL_SPAWN_PROGRAM => 12,
 
-// Thread & Process
-pub const SYSCALL_EXIT_THREAD: u64 = 7;
-pub const SYSCALL_CREATE_PROCESS: u64 = 10;
-pub const SYSCALL_CREATE_THREAD: u64 = 11;
-pub const SYSCALL_SPAWN_PROGRAM: u64 = 12;
+            // Graph Operations
+            SYSCALL_THING_CREATE => 13,
+            SYSCALL_THING_GET => 14,
+            SYSCALL_THING_UPDATE => 15,
+            SYSCALL_THING_LIST => 16,
+            SYSCALL_ADD_LINK => 17,
+            SYSCALL_LINK_AT => 18,
+            SYSCALL_SCHEMA_REGISTER_PACKAGE => 19,
+            SYSCALL_GRAPH_QUERY => 20,
+            SYSCALL_CREATE_TRANSACTION => 21,
+            SYSCALL_COMMIT_TRANSACTION => 22,
 
-// Memory
-pub const SYSCALL_ALLOC_FRAME: u64 = 8;
-pub const SYSCALL_FREE_FRAME: u64 = 9;
+            // Shared Buffer
+            SYSCALL_MAP_SHARED_BUFFER => 23,
+            SYSCALL_CREATE_SHARED_BUFFER => 24,
+            SYSCALL_GET_SHARED_BUFFER_INFO => 25,
 
-// Graph Operations
-pub const SYSCALL_THING_CREATE: u64 = 13;
-pub const SYSCALL_THING_GET: u64 = 14;
-pub const SYSCALL_THING_UPDATE: u64 = 15;
-pub const SYSCALL_THING_LIST: u64 = 16;
-pub const SYSCALL_ADD_LINK: u64 = 17;
-pub const SYSCALL_LINK_AT: u64 = 18;
-pub const SYSCALL_GRAPH_QUERY: u64 = 20;
-pub const SYSCALL_CREATE_TRANSACTION: u64 = 21;
-pub const SYSCALL_COMMIT_TRANSACTION: u64 = 22;
+            // Resident Memory
+            SYSCALL_RESIDENT_ALLOC => 26,
+            SYSCALL_RESIDENT_MAP => 27,
+            SYSCALL_RESIDENT_UNMAP => 28,
+            SYSCALL_THING_REST => 29,
 
-// Schema
-pub const SYSCALL_SCHEMA_REGISTER_PACKAGE: u64 = 19;
-pub const SYSCALL_SCHEMA_GET: u64 = 33;
+            // Symbols
+            SYSCALL_SYMBOL_INTERN => 30,
+            SYSCALL_SYMBOL_RESOLVE => 31,
+            SYSCALL_THING_BATCH_UPDATE => 32,
+            SYSCALL_SCHEMA_GET => 33,
 
-// Shared Buffer
-pub const SYSCALL_MAP_SHARED_BUFFER: u64 = 23;
-pub const SYSCALL_CREATE_SHARED_BUFFER: u64 = 24;
-pub const SYSCALL_GET_SHARED_BUFFER_INFO: u64 = 25;
+            // Devices
+            SYSCALL_DEV_OPEN => 64,
+            SYSCALL_DEV_READ => 65,
+        }
+    };
+}
 
-// Resident Memory
-pub const SYSCALL_RESIDENT_ALLOC: u64 = 26;
-pub const SYSCALL_RESIDENT_MAP: u64 = 27;
-pub const SYSCALL_RESIDENT_UNMAP: u64 = 28;
-pub const SYSCALL_THING_REST: u64 = 29;
+macro_rules! define_syscall_const {
+    ($($name:ident => $num:expr),* $(,)?) => {
+        $( pub const $name: u64 = $num; )*
+    };
+}
 
-// Symbols (New)
-pub const SYSCALL_SYMBOL_INTERN: u64 = 30;
-pub const SYSCALL_SYMBOL_RESOLVE: u64 = 31;
-pub const SYSCALL_THING_BATCH_UPDATE: u64 = 32;
+macro_rules! define_syscall_list {
+    ($($name:ident => $num:expr),* $(,)?) => {
+        pub const ABI_SYSCALL_NUMBERS: &[u64] = &[ $($num),* ];
+    };
+}
 
-// Devices
-pub const SYSCALL_DEV_OPEN: u64 = 64; // 0x40
-pub const SYSCALL_DEV_READ: u64 = 65; // 0x41
+for_each_syscall!(define_syscall_const);
+for_each_syscall!(define_syscall_list);

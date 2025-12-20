@@ -18,6 +18,9 @@ const DESC_ATTR_DEV_NGNRNE: u64 = 0 << 2; // MAIR index 0 (Device-nGnRnE) usuall
 
 // We'll assume MAIR index 0 is Device.
 const ATTR_DEVICE: u64 = 0;
+pub const ATTR_NORMAL: u64 = 1 << 2; // MAIR index 1 (Normal Write-Back)
+
+pub const DESC_AP_EL0: u64 = 1 << 6; // AP[1]=1, AP[2]=0 => RW at EL0
 
 // TTBR1_EL1 points to L0 table (for 48-bit VA) or L1 (for 39-bit VA).
 // Limine usually uses 4-level (48-bit) or 3-level?
@@ -90,6 +93,47 @@ pub unsafe fn map_device_region(phys: u64, len: u64) {
     asm!("tlbi vmalle1");
     asm!("dsb ish");
     asm!("isb");
+}
+
+pub unsafe fn update_page_flags(virt: u64, flags_to_set: u64) {
+    let tcr = get_tcr();
+    let t1sz = (tcr >> 16) & 0x3F;
+    let va_bits = 64 - t1sz;
+
+    let root = get_ttbr1();
+
+    let l0_idx = (virt >> 39) & 0x1FF;
+    let l1_idx = (virt >> 30) & 0x1FF;
+    let l2_idx = (virt >> 21) & 0x1FF;
+    let l3_idx = (virt >> 12) & 0x1FF;
+
+    let mut table = root;
+
+    if va_bits > 39 {
+        let entry = read_table(table, l0_idx as usize);
+        if entry & DESC_VALID == 0 { return; }
+        table = entry & 0x0000_FFFF_FFFF_F000;
+    }
+
+    let entry = read_table(table, l1_idx as usize);
+    if entry & DESC_VALID == 0 { return; }
+    table = entry & 0x0000_FFFF_FFFF_F000;
+
+    let entry = read_table(table, l2_idx as usize);
+    if entry & DESC_VALID == 0 { return; }
+    table = entry & 0x0000_FFFF_FFFF_F000;
+
+    // L3
+    let entry = read_table(table, l3_idx as usize);
+    if entry & DESC_VALID != 0 {
+        let new_entry = entry | flags_to_set;
+        write_table(table, l3_idx as usize, new_entry);
+
+        // TLB flush
+        asm!("tlbi vmalle1");
+        asm!("dsb ish");
+        asm!("isb");
+    }
 }
 
 /// Diagnostic helper: walk page tables for `virt` using current TTBR1 and

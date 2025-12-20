@@ -1,8 +1,10 @@
+
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use spin::Mutex;
+use alloc::format;
 
-use abi::{ThingId, PropType, syscall_defs::SymbolId};
+use abi::{ThingId, PropType, PropValue, syscall_defs::SymbolId};
 
 pub struct Schema {
     pub kind: SymbolId,
@@ -67,7 +69,7 @@ pub fn register_schema(
         // Let's log details
         let d1 = crate::symbols::resolve(existing.description).unwrap_or(alloc::string::String::from("?"));
         let d2 = crate::symbols::resolve(description).unwrap_or(alloc::string::String::from("?"));
-        crate::log::log_message(&alloc::format!(
+        crate::log::log_message(&format!(
             "Schema Conflict for kind {:?}. Existing fp={:x}, New fp={:x}. Desc '{:?}' vs '{:?}'", 
             kind, existing.fingerprint, fingerprint, d1, d2
         ));
@@ -111,8 +113,37 @@ pub fn is_prop_indexed(kind: SymbolId, key: SymbolId) -> bool {
 }
 
 // Helper to validate props against schema
-pub fn validate_props(_kind: SymbolId, _props: &[(SymbolId, abi::PropValue)]) -> Result<(), &'static str> {
-    // TODO: Implement validation
+pub fn validate_props(kind: SymbolId, props: &[(SymbolId, abi::PropValue)]) -> Result<(), &'static str> {
+    let guard = SCHEMAS.lock();
+    let schemas = guard.as_ref().expect("Schemas not initialized");
+
+    // If no schema exists for the kind, we default to allowing (schemaless).
+    let schema = match schemas.get(&kind) {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+
+    for (key, value) in props {
+        if let Some(expected_type) = schema.props.get(key) {
+            let valid = match (expected_type, value) {
+                (PropType::U64, PropValue::U64(_)) => true,
+                (PropType::I64, PropValue::I64(_)) => true,
+                (PropType::Bool, PropValue::Bool(_)) => true,
+                (PropType::Str, PropValue::Str(_)) => true,
+                (PropType::Blob, PropValue::Blob(_)) => true,
+                (PropType::Symbol, PropValue::Symbol(_)) => true,
+                _ => false,
+            };
+
+            if !valid {
+                 return Err("Schema validation failed: property type mismatch");
+            }
+        } else {
+             // Strict schema: Unknown property is an error.
+             return Err("Schema validation failed: unknown property");
+        }
+    }
+
     Ok(())
 }
 

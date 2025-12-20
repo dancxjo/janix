@@ -5,6 +5,7 @@ extern crate alloc;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use crate::graph_kinds;
+use thing_models::graph_kinds::{PROP_SURFACE_TEXT, LINK_PLACE_WINDOW, LINK_WINDOW_SURFACE};
 use crate::{Mode, Place, Surface, Window};
 use crate::{PropValue, ThingId};
 use crate::{create_thing, list_things_by_kind, ensure_schema_exists_for, update_props};
@@ -65,7 +66,7 @@ pub fn create_window(title: &str) -> Option<WindowHandle> {
     let id = create_thing(&window)?;
     println!("ui::create_window: create_thing returned");
     
-    let _ = crate::add_link(place_id, graph_kinds::LINK_PLACE_WINDOW, id);
+    let _ = crate::add_link(place_id, LINK_PLACE_WINDOW, id);
     println!("ui::create_window: link added");
     
     Some(WindowHandle { id })
@@ -78,7 +79,7 @@ pub fn set_window_text(window: WindowHandle, text: &str) {
         let _ = update_props(
             surface.id,
             &[(
-                graph_kinds::PROP_SURFACE_TEXT.to_string(),
+                PROP_SURFACE_TEXT.to_string(),
                 PropValue::Str(text.to_string()),
             )],
         );
@@ -101,7 +102,7 @@ pub fn set_window_text(window: WindowHandle, text: &str) {
         power_state: None,
     };
     if let Some(id) = create_thing(&surface) {
-        let _ = crate::add_link(window.id, graph_kinds::LINK_WINDOW_SURFACE, id);
+        let _ = crate::add_link(window.id, LINK_WINDOW_SURFACE, id);
     }
 }
 
@@ -113,7 +114,7 @@ pub fn append_window_text(window: WindowHandle, text: &str) {
         let _ = update_props(
             surface.id,
             &[(
-                graph_kinds::PROP_SURFACE_TEXT.to_string(),
+                PROP_SURFACE_TEXT.to_string(),
                 PropValue::Str(surface.text.clone()),
             )],
         );

@@ -396,7 +396,7 @@ macro_rules! dispatch_syscall {
             let props_ptr = $a3;
             let props_len = $a4;
 
-            let req = abi::KernelRequest::SchemaRegister {
+            let req = abi::KernelRequest::SchemaRegisterPackage {
                 kind,
                 description: desc,
                 props: UserSlice { 
@@ -624,7 +624,7 @@ macro_rules! dispatch_syscall {
         {
             if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::DevReadArgs>($a1) } {
                 if let Some(ret_ref) = unsafe { user_ptr_mut::<abi::syscall_defs::SysRet<abi::syscall_defs::DevReadRet>>($a2) } {
-                     let buffer_ptr = args.out.ptr.addr as *mut u8;
+                     let buffer_ptr = args.out.ptr as *mut u8;
                      let buffer_len = args.out.len as usize;
                      if buffer_ptr.is_null() {
                           unsafe { *ret_ref = abi::syscall_defs::SysRet::err(abi::syscall_defs::SysError::INVALID_ARG, 0); }
@@ -672,13 +672,6 @@ macro_rules! dispatch_syscall {
     }
 }
 
-macro_rules! dispatch_helper {
-    ($($name:ident => $num:expr),* $(,)?) => {
-         $(
-             $name => dispatch_syscall!($name, regs, arg1, arg2, arg3, arg4, arg5, arg6),
-         )*
-    };
-}
 
 macro_rules! collect_dispatched_numbers {
     ($($name:ident => $num:expr),* $(,)?) => {
@@ -686,7 +679,7 @@ macro_rules! collect_dispatched_numbers {
     };
 }
 
-abi::syscalls::for_each_syscall!(collect_dispatched_numbers);
+abi::for_each_syscall!(collect_dispatched_numbers);
 
 #[unsafe(no_mangle)]
 pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
@@ -700,10 +693,16 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
     let arg5 = regs.r8_saved;
     let arg6 = regs.r9_saved;
 
-    match num {
-        abi::syscalls::for_each_syscall!(dispatch_helper);
-        _ => u64::MAX
+    macro_rules! dispatch_helper {
+        ($($name:ident => $num:expr),* $(,)?) => {
+            match num {
+                $($name => dispatch_syscall!($name, regs, arg1, arg2, arg3, arg4, arg5, arg6),)*
+                _ => u64::MAX
+            }
+        };
     }
+
+    abi::for_each_syscall!(dispatch_helper)
 }
 
 pub fn install_handler() {

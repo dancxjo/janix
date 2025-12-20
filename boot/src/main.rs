@@ -111,6 +111,7 @@ unsafe extern "C" fn kmain_inner() -> ! {
     crate::init::init_userland_and_enter_scheduler();
 }
 
+#[cfg(target_os = "none")]
 #[panic_handler]
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     crate::panic_handler::rust_panic(info)

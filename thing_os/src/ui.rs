@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use crate::graph_kinds;
 use crate::{Mode, Place, Surface, Window};
 use crate::{PropValue, ThingId};
-use crate::{create_thing, list_things_by_kind, register_schema_for, update_props};
+use crate::{create_thing, list_things_by_kind, ensure_schema_exists_for, update_props};
 use crate::println;
 
 #[derive(Clone, Copy, Debug)]
@@ -16,10 +16,10 @@ pub struct WindowHandle {
 }
 
 pub fn ensure_ui_schemas() -> bool {
-    let r1 = register_schema_for::<Place>();
-    let r2 = register_schema_for::<Mode>();
-    let r3 = register_schema_for::<Window>();
-    let r4 = register_schema_for::<Surface>();
+    let r1 = ensure_schema_exists_for::<Place>();
+    let r2 = ensure_schema_exists_for::<Mode>();
+    let r3 = ensure_schema_exists_for::<Window>();
+    let r4 = ensure_schema_exists_for::<Surface>();
     
     if !(r1 && r2 && r3 && r4) {
         println!("ui::ensure_ui_schemas failed: Place={} Mode={} Window={} Surface={}", r1, r2, r3, r4);

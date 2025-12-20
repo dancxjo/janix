@@ -208,65 +208,42 @@ pub fn main() -> ! {
             if ensure_ui_schemas() { break; }
         }
     }
-    println!("compositor: ui schemas ensured");
     
-    if !register_schema_for::<DisplayPresentRequest>() {
-        println!("compositor: FATAL - Failed to register DisplayPresentRequest schema");
+    if !ensure_schema_exists_for::<DisplayPresentRequest>() {
+        println!("compositor: FATAL - DisplayPresentRequest schema missing in kernel");
         loop { thing_os::time::sleep(Duration::from_secs(1)); }
     }
-    println!("compositor: DisplayPresentRequest schema ensured");
 
     let fb = loop {
         match active_framebuffer() {
-            Some(fb) => {
-                // 2. Framebuffer Integrity Checks
-                if fb.ptr.is_null() {
-                     println!("compositor: FATAL - Active framebuffer pointer is NULL");
-                     loop { thing_os::time::sleep(Duration::from_secs(1)); }
-                }
-                if fb.info.width == 0 || fb.info.height == 0 {
-                     println!("compositor: FATAL - Active framebuffer has invalid dimensions ({}x{})", 
-                        fb.info.width, fb.info.height);
-                     loop { thing_os::time::sleep(Duration::from_secs(1)); }
-                }
-                break fb;
-            }
+            Some(fb) => break fb,
             None => {
-                println!("compositor: waiting for primary display");
                 thing_os::time::sleep(Duration::from_millis(50)); 
             }
         }
     };
-    println!("compositor: got active framebuffer");
 
     let mut compositor = Compositor::new(fb);
-    println!("compositor: initialized struct");
 
     if let Some(bg) = load_background_image() {
         compositor.background_image = Some(bg);
-        println!("compositor: loaded background");
-    } else {
-        println!("compositor: background failed or not found");
     }
 
     // Force initial full redraw to paint background/windows
     // We must render TWICE to ensure both front and back buffers are initialized.
     compositor.add_full_damage();
-    println!("compositor: pre-tick 1");
     tick_once(&mut compositor);
-    println!("compositor: post-tick 1");
     compositor.add_full_damage();
-    println!("compositor: pre-tick 2");
     tick_once(&mut compositor);
-    println!("compositor: post-tick 2");
 
     let mut debug_frame_counter = 0;
-    println!("compositor: entering loop");
     loop {
+        /*
         if debug_frame_counter % 60 == 0 {
             println!("compositor: tick");
         }
         debug_frame_counter += 1;
+        */
         tick_once(&mut compositor);
         thing_os::time::sleep(Duration::from_nanos(FRAME_INTERVAL_NS));
     }

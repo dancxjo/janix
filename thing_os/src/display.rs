@@ -1,7 +1,7 @@
 #[cfg(target_os = "none")]
 use alloc::string::{String, ToString};
 #[cfg(not(target_os = "none"))]
-use std::string::{String, ToString};
+use alloc::string::{String, ToString};
 
 use abi::{MapFlags, PropValue, SharedBufferInfo, ThingId};
 use crate::graph_kinds;

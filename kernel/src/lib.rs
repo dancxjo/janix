@@ -474,7 +474,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                  }
             }
             match register_schema(kind, description, props_vec, alloc::vec![]) {
-                Ok(()) => KernelResponse::SchemaRegistered { kind },
+                Ok(outcome) => KernelResponse::SchemaRegistered { kind, outcome },
                 Err(e) => {
                     let msg = alloc::format!(
                         "SchemaRegister failed: kind={:?} desc={:?} err={}",

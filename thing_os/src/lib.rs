@@ -22,7 +22,7 @@ pub use display::*;
 
 use abi::{
     FrameInfo, KernelRequest, KernelResponse, MemorySummary, NodeId,
-    SchedulerSummary, ThreadInfo, FrameId, 
+    SchedulerSummary, FrameId, 
     wire::{graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag}, common::UserSlice},
     syscall_defs::SymbolId,
 };
@@ -588,7 +588,16 @@ pub fn register_schema_for<T: Thing>() -> bool {
     };
 
     match syscall(request) {
-        KernelResponse::SchemaRegistered { .. } => true,
+        KernelResponse::SchemaRegistered { outcome, .. } => {
+            match outcome {
+                abi::SchemaRegistryOutcome::Created => true,
+                abi::SchemaRegistryOutcome::AlreadyRegisteredSame => true,
+                abi::SchemaRegistryOutcome::Conflict => {
+                    println!("schema register conflict for kind {}", T::KIND);
+                    false
+                }
+            }
+        },
         KernelResponse::Error { message } => {
             println!("schema register failed for kind {}: {}", T::KIND, message);
             // Check if existing schema matches what we expect
@@ -607,6 +616,16 @@ pub fn register_schema_for<T: Thing>() -> bool {
             println!("schema register unexpected response for kind {}: {:?}", T::KIND, other);
             false
         }
+    }
+}
+
+/// Ensure that the schema for `T` exists in the kernel.
+/// Returns true if it exists.
+pub fn ensure_schema_exists_for<T: Thing>() -> bool {
+    let kind_sym = sys_symbol_intern(T::KIND);
+    match syscall(KernelRequest::SchemaGet { kind: kind_sym }) {
+        KernelResponse::SchemaData { .. } => true,
+        _ => false,
     }
 }
 

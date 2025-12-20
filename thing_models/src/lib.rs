@@ -7,6 +7,7 @@ pub mod input;
 pub mod io;
 pub mod ui;
 pub mod usb;
+pub mod kernel;
 
 use abi::{PropKey, PropType, PropValue, Thing, ThingId, graph_kinds};
 use alloc::string::{String, ToString};
@@ -16,100 +17,54 @@ pub use input::*;
 pub use io::*;
 pub use ui::*;
 pub use usb::*;
+pub use kernel::*;
 
-pub struct ThreadInfo {
-    pub name: String,  // "hello", "heartbeat", "dashboard"
-    pub state: String, // "NEW", "RUNNABLE", "RUNNING", "SLEEPING", "TERMINATED"
-    pub last_run_ns: i64,
-    pub total_run_ns: i64,
-    pub process_thing_id: u64,
-    pub scheduler_thing_id: u64,
-}
+/// Returns the complete list of core schemas that the kernel MUST register at boot.
+/// 
+/// This list is the "Single Source of Truth" for system core types.
+/// The kernel should iterate this list and register each schema.
+pub fn kernel_core_schemas() -> Vec<(&'static str, &'static str, &'static [(&'static str, PropType)])> {
+    let mut schemas = Vec::new();
 
-impl Thing for ThreadInfo {
-    const KIND: &'static str = "ThreadInfo";
-    const DESCRIPTION: &'static str =
-        "Runtime information about a thread including state, execution time, and owning process";
+    // 1. Kernel Internals
+    schemas.push((PhysFrame::KIND, PhysFrame::DESCRIPTION, PhysFrame::schema()));
+    schemas.push((FramePool::KIND, FramePool::DESCRIPTION, FramePool::schema()));
+    schemas.push((AddressSpace::KIND, AddressSpace::DESCRIPTION, AddressSpace::schema()));
+    schemas.push((VirtRegion::KIND, VirtRegion::DESCRIPTION, VirtRegion::schema()));
+    schemas.push((Process::KIND, Process::DESCRIPTION, Process::schema()));
+    schemas.push((Thread::KIND, Thread::DESCRIPTION, Thread::schema()));
+    schemas.push((ThreadInfo::KIND, ThreadInfo::DESCRIPTION, ThreadInfo::schema()));
+    schemas.push((CpuCore::KIND, CpuCore::DESCRIPTION, CpuCore::schema()));
+    schemas.push((SleepEvent::KIND, SleepEvent::DESCRIPTION, SleepEvent::schema()));
 
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("name".to_string(), PropValue::Str(self.name.clone())));
-        out.push(("state".to_string(), PropValue::Str(self.state.clone())));
-        out.push(("last_run_ns".to_string(), PropValue::I64(self.last_run_ns)));
-        out.push(("total_run_ns".to_string(), PropValue::I64(self.total_run_ns)));
-        out.push(("process_thing_id".to_string(), PropValue::U64(self.process_thing_id)));
-        out.push(("scheduler_thing_id".to_string(),
-            PropValue::U64(self.scheduler_thing_id),
-        ));
-    }
+    // 2. Boot & System
+    schemas.push((BootProfile::KIND, BootProfile::DESCRIPTION, BootProfile::schema()));
+    schemas.push((BootProgram::KIND, BootProgram::DESCRIPTION, BootProgram::schema()));
+    schemas.push((ProgramImage::KIND, ProgramImage::DESCRIPTION, ProgramImage::schema()));
+    schemas.push((FontModule::KIND, FontModule::DESCRIPTION, FontModule::schema()));
+    schemas.push((TimeSource::KIND, TimeSource::DESCRIPTION, TimeSource::schema()));
+    schemas.push((graph_kinds::KIND_IO_PORT_REGION, IoPortRegion::DESCRIPTION, IoPortRegion::schema()));
+    schemas.push((graph_kinds::KIND_IO_PORT_OP, IoPortOp::DESCRIPTION, IoPortOp::schema()));
+    schemas.push((graph_kinds::KIND_INTERRUPT_EVENT, InterruptEvent::DESCRIPTION, InterruptEvent::schema()));
+    schemas.push((abi::graph_kinds::KIND_INTERRUPT_REQUEST, InterruptRequest::DESCRIPTION, InterruptRequest::schema()));
+    schemas.push((graph_kinds::KIND_ALARM_REQUEST, AlarmRequest::DESCRIPTION, AlarmRequest::schema()));
+    schemas.push((graph_kinds::KIND_ALARM_EVENT, AlarmEvent::DESCRIPTION, AlarmEvent::schema()));
 
-    fn from_props(_id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        use alloc::string::{String, ToString};
+    // 3. Display Subsystem
+    schemas.push((Display::KIND, Display::DESCRIPTION, Display::schema()));
+    schemas.push((SharedBuffer::KIND, SharedBuffer::DESCRIPTION, SharedBuffer::schema()));
+    schemas.push((DisplayFramebuffer::KIND, DisplayFramebuffer::DESCRIPTION, DisplayFramebuffer::schema()));
+    schemas.push((DisplayFrame::KIND, DisplayFrame::DESCRIPTION, DisplayFrame::schema()));
+    schemas.push((DisplayPresentRequest::KIND, DisplayPresentRequest::DESCRIPTION, DisplayPresentRequest::schema()));
 
-        let mut name = String::new();
-        let mut state = String::new();
-        let mut last_run_ns = 0_i64;
-        let mut total_run_ns = 0_i64;
-        let mut process_thing_id = 0_u64;
-        let mut scheduler_thing_id = 0_u64;
+    // 4. Shared UI Contract (Windowing)
+    schemas.push((Mode::KIND, Mode::DESCRIPTION, Mode::schema()));
+    schemas.push((ModeSwitchEvent::KIND, ModeSwitchEvent::DESCRIPTION, ModeSwitchEvent::schema()));
+    schemas.push((Place::KIND, Place::DESCRIPTION, Place::schema()));
+    schemas.push((Window::KIND, Window::DESCRIPTION, Window::schema()));
+    schemas.push((Surface::KIND, Surface::DESCRIPTION, Surface::schema()));
 
-        for prop in props {
-            if let Some((k, v)) = prop {
-                match k.as_str() {
-                    "name" => {
-                        if let PropValue::Str(s) = v {
-                            name = s.clone();
-                        }
-                    }
-                    "state" => {
-                        if let PropValue::Str(s) = v {
-                            state = s.clone();
-                        }
-                    }
-                    "last_run_ns" => {
-                        if let PropValue::I64(val) = v {
-                            last_run_ns = *val;
-                        }
-                    }
-                    "total_run_ns" => {
-                        if let PropValue::I64(val) = v {
-                            total_run_ns = *val;
-                        }
-                    }
-                    "process_thing_id" => {
-                        if let PropValue::U64(val) = v {
-                            process_thing_id = *val;
-                        }
-                    }
-                    "scheduler_thing_id" => {
-                        if let PropValue::U64(val) = v {
-                            scheduler_thing_id = *val;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        ThreadInfo {
-            name,
-            state,
-            last_run_ns,
-            total_run_ns,
-            process_thing_id,
-            scheduler_thing_id,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            ("name", PropType::Str),
-            ("state", PropType::Str),
-            ("last_run_ns", PropType::I64),
-            ("total_run_ns", PropType::I64),
-            ("process_thing_id", PropType::U64),
-            ("scheduler_thing_id", PropType::U64),
-        ]
-    }
+    schemas
 }
 
 pub struct BootProfile {

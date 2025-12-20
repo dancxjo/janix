@@ -11,7 +11,7 @@ pub use crate::ThingId;
 pub use crate::Thing;
 pub use crate::{
     active_mode, create_thing, default_mode, find_thing, is_console_mode_active,
-    list_things_by_kind, load_thing, register_schema_for, update_props, user_create_thing,
+    list_things_by_kind, load_thing, ensure_schema_exists_for, update_props, user_create_thing,
     user_update_thing,
 };
 pub use crate::ui::ensure_ui_schemas;

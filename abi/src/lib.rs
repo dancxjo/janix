@@ -252,6 +252,14 @@ pub enum KernelRequest {
     },
 }
 
+/// Schema register outcome
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchemaRegistryOutcome {
+    Created,
+    AlreadyRegisteredSame,
+    Conflict,
+}
+
 /// Kernel response to userland
 #[derive(Debug, Clone)]
 pub enum KernelResponse {
@@ -282,9 +290,12 @@ pub enum KernelResponse {
         kind: SymbolId,
         props: &'static [Option<(PropKey, PropValue)>],
     },
-    /// Schema registered
+
+
+    /// Schema registered result
     SchemaRegistered {
         kind: SymbolId,
+        outcome: SchemaRegistryOutcome,
     },
     /// Schema data
     SchemaData {

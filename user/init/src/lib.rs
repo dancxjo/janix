@@ -141,8 +141,12 @@ pub fn init_main() -> ! {
 }
 
 fn ensure_modes() {
-    let _ = register_schema_for::<Mode>();
-    let _ = register_schema_for::<Place>();
+    if !ensure_schema_exists_for::<Mode>() {
+        fatal("Mode schema missing");
+    }
+    if !ensure_schema_exists_for::<Place>() {
+        fatal("Place schema missing");
+    }
 
     let existing: Vec<Mode> = list_things_by_kind();
     if !existing.is_empty() {

@@ -400,8 +400,8 @@ pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
             };
 
             match kernel::handle_request(req) {
-                abi::KernelResponse::SchemaRegistered { .. } => 0,
-                _ => 1,
+                abi::KernelResponse::SchemaRegistered { outcome, .. } => outcome as u64,
+                _ => 3, // 3 = generic error? or just u64::MAX? Original was 1. 1 is now taken.
             }
         }
         SYSCALL_ADD_LINK => {

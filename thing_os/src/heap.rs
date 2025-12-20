@@ -55,25 +55,10 @@ pub fn init_user_heap() {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
         
-        // Check heap start
-        if (heap_start as u64) == 0x40000000 {
-            let req = abi::KernelRequest::Log { message: "init_user_heap: Heap Addr 0x40000000 OK" };
-            crate::syscalls::syscall(req);
-        } else {
-             let req = abi::KernelRequest::Log { message: "init_user_heap: Heap Addr MISMATCH" };
-             crate::syscalls::syscall(req);
-        }
-
         let req = abi::KernelRequest::Log { message: "init_user_heap: locking global allocator" };
         crate::syscalls::syscall(req);
 
-        {
-            let mut guard = GLOBAL_ALLOCATOR.0.lock();
-            let req = abi::KernelRequest::Log { message: "init_user_heap: locked successfully" };
-            crate::syscalls::syscall(req);
-            
-            guard.init(heap_start, heap_size);
-        }
+        GLOBAL_ALLOCATOR.0.lock().init(heap_start, heap_size);
         
         let req = abi::KernelRequest::Log { message: "init_user_heap: allocator initialized" };
         crate::syscalls::syscall(req);
@@ -87,6 +72,7 @@ pub fn init_user_heap() {
     }
 }
 
+#[cfg(target_os = "none")]
 #[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
     panic!("Allocation failed");

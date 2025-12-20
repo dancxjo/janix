@@ -9,6 +9,7 @@ pub struct Schema {
     pub description: SymbolId,
     pub props: HashMap<SymbolId, PropType>,
     pub indexed_props: Vec<SymbolId>,
+    pub fingerprint: u64,
 }
 
 static SCHEMAS: Mutex<Option<HashMap<SymbolId, Schema>>> = Mutex::new(None);
@@ -22,32 +23,56 @@ pub fn register_schema(
     description: SymbolId, 
     props: Vec<(SymbolId, PropType)>,
     indexed_props: Vec<SymbolId>
-) -> Result<(), &'static str> {
+) -> Result<abi::SchemaRegistryOutcome, &'static str> {
     let mut guard = SCHEMAS.lock();
     let schemas = guard.as_mut().expect("Schemas not initialized");
     
+    // Calculate fingerprint
+    // For stability, we must sort the props by key before hashing, or use an order-independent hash.
+    // Since we receive a Vec, let's sort a view of it.
+    let mut sorted_props = props.clone();
+    sorted_props.sort_by(|a, b| a.0.0.cmp(&b.0.0));
+    
+    let mut hasher = hashbrown::hash_map::DefaultHashBuilder::default().build_hasher();
+    use core::hash::{Hash, Hasher, BuildHasher};
+    
+    // Hash relevant parts
+    kind.hash(&mut hasher);
+    // Description is technically part of the schema definition, but if we want to be permissive about desc changes
+    // we might exclude it from the "strict" fingerprint, or track it separately?
+    // User request says: "AlreadyRegisteredSame: success (no-op) if the existing schema is byte-for-byte identical."
+    // This implies description too.
+    description.hash(&mut hasher); 
+    
+    for (k, t) in &sorted_props {
+        k.hash(&mut hasher);
+        t.hash(&mut hasher);
+    }
+    for k in &indexed_props {
+        k.hash(&mut hasher);
+    }
+    
+    let fingerprint = hasher.finish();
+
     if let Some(existing) = schemas.get(&kind) {
-        if existing.description == description {
-            // Check props equality (ignoring order for robustness, but strict for now)
-            if existing.props.len() == props.len() && existing.indexed_props == indexed_props {
-                let all_props_match = props.iter().all(|(k, t)| {
-                    existing.props.get(k).map(|et| et == t).unwrap_or(false)
-                });
-                
-                if all_props_match {
-                    return Ok(());
-                } else {
-                     crate::log::log_message(&alloc::format!("Schema mismatch: props content. Existing: {:?} New: {:?}", existing.props, props));
-                }
-            } else {
-                 crate::log::log_message(&alloc::format!("Schema mismatch: props len/index. Existing len: {} New len: {}. Indexed: {:?} vs {:?}", existing.props.len(), props.len(), existing.indexed_props, indexed_props));
-            }
-        } else {
-             let d1 = crate::symbols::resolve(existing.description).unwrap_or(alloc::string::String::from("?"));
-             let d2 = crate::symbols::resolve(description).unwrap_or(alloc::string::String::from("?"));
-             crate::log::log_message(&alloc::format!("Schema mismatch: description. Existing: {:?} \"{}\" New: {:?} \"{}\"", existing.description, d1, description, d2));
+        if existing.fingerprint == fingerprint {
+            return Ok(abi::SchemaRegistryOutcome::AlreadyRegisteredSame);
         }
-        return Err("Schema already registered with different definition");
+        
+        // Fingerprint mismatch. Could be desc change or props change.
+        // If it's just description, maybe we can be permissive? 
+        // "ConflictDifferent: a deterministic error if the kind exists but the schema differs."
+        // Strict interpretation: ANY difference is a conflict.
+        
+        // Let's log details
+        let d1 = crate::symbols::resolve(existing.description).unwrap_or(alloc::string::String::from("?"));
+        let d2 = crate::symbols::resolve(description).unwrap_or(alloc::string::String::from("?"));
+        crate::log::log_message(&alloc::format!(
+            "Schema Conflict for kind {:?}. Existing fp={:x}, New fp={:x}. Desc '{:?}' vs '{:?}'", 
+            kind, existing.fingerprint, fingerprint, d1, d2
+        ));
+        
+        return Ok(abi::SchemaRegistryOutcome::Conflict);
     }
 
     let mut prop_map = HashMap::new();
@@ -60,8 +85,9 @@ pub fn register_schema(
         description,
         props: prop_map,
         indexed_props,
+        fingerprint,
     });
-    Ok(())
+    Ok(abi::SchemaRegistryOutcome::Created)
 }
 
 pub fn get_schema_props(kind: SymbolId) -> Option<Vec<(SymbolId, PropType)>> {

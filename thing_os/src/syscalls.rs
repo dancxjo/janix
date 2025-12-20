@@ -1,7 +1,8 @@
 use abi::{
     KernelRequest, KernelResponse, SharedBufferInfo, ThingGetSyscallResult,
     ThingPropScalarType, resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
-    syscalls::*, syscall_defs::{SymbolId, SymbolInternReq, WireStr}
+    syscalls::*, syscall_defs::{SymbolId, SymbolInternReq, WireStr},
+    SchemaRegistryOutcome
 };
 use crate::sys::raw_syscall;
 use alloc::boxed::Box;
@@ -338,8 +339,9 @@ use abi::wire::process::SpawnProgramResult;
                     0,
                 )
             };
-            if ret == 0 {
-                KernelResponse::SchemaRegistered { kind }
+            if ret <= 2 {
+                let outcome = unsafe { core::mem::transmute(ret as u8) };
+                KernelResponse::SchemaRegistered { kind, outcome }
             } else {
                 KernelResponse::Error {
                     message: "SchemaRegister failed",

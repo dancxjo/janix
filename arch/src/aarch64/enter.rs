@@ -79,7 +79,7 @@ pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
     unsafe { enter_user_mode_asm(regs) }
 }
 
-pub fn resume_user_mode(context: &[u64]) -> ! {
+pub fn resume_user_mode(context: &[u64], _fpu_context: &kernel::sched::FpuContext) -> ! {
     unsafe { resume_user_mode_asm(context.as_ptr()) }
 }
 

@@ -11,7 +11,7 @@ impl Arch for Riscv64Arch {
         loop {}
     }
 
-    fn resume_user_mode(_context: &[u64]) -> ! {
+    fn resume_user_mode(_context: &[u64], _fpu_context: &kernel::sched::FpuContext) -> ! {
         loop {}
     }
 

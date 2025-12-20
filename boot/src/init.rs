@@ -57,6 +57,7 @@ pub fn init_machine() {
     crate::graph_reifier::init_graph_subscriptions();
 
     // Register IRQ controller callback to manage IRQ masking via graph requests
+    #[cfg(target_arch = "x86_64")]
     kernel::bridge::io::register_irq_controller(arch::x86_64::pic::set_irq_mask);
 
     CurrentArch::install_syscall_handler();

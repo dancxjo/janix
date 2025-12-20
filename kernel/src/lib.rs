@@ -45,7 +45,7 @@ static TEST_MUTEX: Mutex<()> = Mutex::new(());
 /// Initialize the kernel core subsystems
 pub fn init() {
     log::init();
-    #[cfg(not(test))]
+    #[cfg(all(not(test), target_arch = "x86_64"))]
     bridge::ps2::init();
 
     // Initialize graph store first

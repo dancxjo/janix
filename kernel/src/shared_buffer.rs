@@ -1,5 +1,6 @@
 use crate::{graph, graph_kinds, memory::{self, PhysFrame}};
-use abi::{MapFlags, PixelFormat, PropValue, SharedBufferInfo, ThingId};
+use abi::{MapFlags, PixelFormat, SharedBufferInfo, ThingId};
+use thing_models::PropValue;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec as AllocVec;

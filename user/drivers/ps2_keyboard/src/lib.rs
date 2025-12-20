@@ -48,13 +48,7 @@ unsafe fn syscall_dev_open(kind: u32, index: u32) -> Result<DeviceHandle, SysErr
 unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize, SysError> {
     let args = DevReadArgs {
         handle,
-        out: UserSlice {
-            ptr: UserPtr {
-                addr: out.as_mut_ptr() as u64,
-                _phantom: core::marker::PhantomData,
-            },
-            len: out.len() as u64,
-        },
+        out: UserSlice::from_slice(out),
     };
     let mut ret = SysRet::<DevReadRet> {
         ok: 0,

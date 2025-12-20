@@ -1,7 +1,8 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
-use abi::{ThingId, PropValue, syscall_defs::SymbolId};
+use abi::{ThingId, syscall_defs::SymbolId};
+use thing_models::PropValue;
 use spin::Mutex;
 
 

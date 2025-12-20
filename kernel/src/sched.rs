@@ -2,7 +2,8 @@ extern crate alloc;
 
 pub use crate::sched_types::ThreadState;
 use crate::{graph, graph_kinds};
-use abi::{ProcessId, PropValue, ThingId, ThreadId, USER_HEAP_END};
+use abi::{ProcessId, ThingId, ThreadId, USER_HEAP_END};
+use thing_models::PropValue;
 use alloc::string::String;
 use heapless::Vec;
 use spin::Mutex;

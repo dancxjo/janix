@@ -4,7 +4,8 @@ use hashbrown::HashMap;
 use spin::Mutex;
 use alloc::format;
 
-use abi::{ThingId, PropType, PropValue, syscall_defs::SymbolId};
+use abi::{ThingId, syscall_defs::SymbolId};
+use thing_models::{PropType, PropValue};
 
 pub struct Schema {
     pub kind: SymbolId,
@@ -113,7 +114,7 @@ pub fn is_prop_indexed(kind: SymbolId, key: SymbolId) -> bool {
 }
 
 // Helper to validate props against schema
-pub fn validate_props(kind: SymbolId, props: &[(SymbolId, abi::PropValue)]) -> Result<(), &'static str> {
+pub fn validate_props(kind: SymbolId, props: &[(SymbolId, PropValue)]) -> Result<(), &'static str> {
     let guard = SCHEMAS.lock();
     let schemas = guard.as_ref().expect("Schemas not initialized");
 

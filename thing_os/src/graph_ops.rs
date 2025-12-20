@@ -5,6 +5,7 @@
 
 use alloc::vec::Vec;
 use abi::{ThingId, syscall_defs::SymbolId, wire::graph::WirePropValue, Predicate};
+pub use abi::GraphEvent;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GraphOp {
@@ -21,18 +22,6 @@ pub enum GraphOp {
         dst: ThingId,
         pred: Predicate,
     },
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum GraphEvent {
-    ThingCreated(ThingId),
-    ThingUpdated(ThingId),
-    LinkAdded {
-        src: ThingId,
-        dst: ThingId,
-        pred: Predicate,
-    },
-    BatchUpdateComplete,
 }
 
 #[derive(Debug, Clone)]

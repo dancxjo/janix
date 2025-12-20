@@ -1,4 +1,4 @@
-use abi::graph_ops::GraphEvent;
+use abi::GraphEvent;
 use alloc::vec::Vec;
 use spin::Mutex;
 

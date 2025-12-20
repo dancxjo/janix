@@ -28,7 +28,11 @@ pub fn enable_interrupts() {
         #[cfg(target_arch = "riscv64")]
         core::arch::asm!("csrsi sstatus, 2"); // SIE bit
 
-        // loongarch64 todo
+        #[cfg(target_arch = "loongarch64")]
+        {
+            let mut mask: u32 = 0x4; // IE bit
+            core::arch::asm!("csrxchg {0}, {0}, 0x0", inout(reg) mask);
+        }
     }
 }
 

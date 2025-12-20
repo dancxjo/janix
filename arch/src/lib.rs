@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 
 pub mod boot;

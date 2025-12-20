@@ -31,10 +31,26 @@ def generate_syscalls():
 
     syscalls_map = {}
     with open('abi/src/syscalls.rs', 'r') as f:
-        for line in f:
-            m = re.search(r'pub const (SYSCALL_\w+): u64 = (\d+);', line)
-            if m:
-                syscalls_map[m.group(1)] = int(m.group(2))
+        content = f.read()
+
+    macro_start = content.find('$mac! {')
+    if macro_start != -1:
+        block_start = content.find('{', macro_start)
+        if block_start != -1:
+            block = parse_brace_block(content, block_start)
+            for line in block.split('\n'):
+                line = line.strip()
+                if not line or line.startswith('//'): continue
+                m = re.search(r'(SYSCALL_\w+)\s*=>\s*(\d+)', line)
+                if m:
+                    syscalls_map[m.group(1)] = int(m.group(2))
+
+    if not syscalls_map:
+        with open('abi/src/syscalls.rs', 'r') as f:
+            for line in f:
+                m = re.search(r'pub const (SYSCALL_\w+): u64 = (\d+);', line)
+                if m:
+                    syscalls_map[m.group(1)] = int(m.group(2))
 
     arch_path = 'arch/src/x86_64/syscall.rs'
     if not os.path.exists(arch_path):
@@ -43,8 +59,13 @@ def generate_syscalls():
         with open(arch_path, 'r') as f:
             arch_content = f.read()
 
+        dispatch_macro_start = arch_content.find('macro_rules! dispatch_syscall {')
         match_start = arch_content.find('match num {')
-        if match_start != -1:
+
+        if dispatch_macro_start != -1:
+             brace_start = arch_content.find('{', dispatch_macro_start)
+             match_block = parse_brace_block(arch_content, brace_start) if brace_start != -1 else ""
+        elif match_start != -1:
             match_block = parse_brace_block(arch_content, match_start)
         else:
             match_block = ""
@@ -52,7 +73,7 @@ def generate_syscalls():
     handlers = {}
 
     for name in syscalls_map.keys():
-        arm_regex = re.compile(rf'\b{name}\s*=>')
+        arm_regex = re.compile(rf'(\(|^|\s){name}.*=>')
         m = arm_regex.search(match_block)
 
         if not m:

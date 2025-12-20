@@ -2,8 +2,8 @@ use alloc::string::ToString;
 use thing_os::prelude::*;
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TITLE_BAR_HEIGHT};
-use abi::{ThingId};
-use thing_models::{PropValue, graph_kinds};
+use abi::{ThingId, PropValue};
+use thing_models::graph_kinds;
 use thing_os::update_props;
 use crate::graph;
 use crate::layout::{StackedWindow, hit_test};

@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::string::{String, ToString};
 use core::str::FromStr;
 
-use thing_models::PropValue;
+use abi::PropValue;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FlexDirection {

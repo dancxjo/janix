@@ -14,7 +14,8 @@ use alloc::boxed::Box;
 use std::boxed::Box;
 use alloc::string::ToString;
 
-use abi::{KernelRequest, KernelResponse, PropKey, PropValue, ThingId};
+use abi::ThingId;
+use crate::{KernelRequest, KernelResponse, PropKey, PropValue};
 use abi::wire::common::{UserSlice, UserPtr};
 use abi::wire::graph::{BatchUpdateEntry, WireProp, WirePropValue};
 use crate::syscalls::{syscall, sys_symbol_intern};

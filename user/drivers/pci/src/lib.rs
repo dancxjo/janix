@@ -4,11 +4,12 @@
 extern crate alloc;
 
 use abi::{
-    graph_kinds::{self, KIND_PCI_DEVICE},
-    PropKey, PropValue, syscall_defs::SymbolId,
-    graph_ops::{GraphOp},
+    syscall_defs::SymbolId,
     wire::graph::{WirePropValue},
 };
+use thing_os::{PropKey, PropValue};
+use thing_os::thing_models::graph_kinds::{self, KIND_PCI_DEVICE};
+use thing_os::graph_ops::GraphOp;
 use alloc::vec::Vec;
 use hal::{PciConfigAccess};
 use thing_os::intern;

@@ -1,5 +1,6 @@
-use abi::{ThingId, PropKey, PropValue, Predicate, Link, syscall_defs::SymbolId};
-pub use abi::graph_ops::GraphEvent;
+use abi::{ThingId, Predicate, Link, syscall_defs::SymbolId};
+use thing_models::{PropKey, PropValue};
+pub use self::ops::GraphEvent;
 use alloc::vec::Vec;
 use alloc::format;
 use crate::symbols;
@@ -17,6 +18,7 @@ pub mod debug;
 pub mod index_props;
 pub mod index_links;
 pub mod sink;
+pub mod ops;
 
 // Keep module-level constructor convenience
 #[derive(Clone, Copy, Default, Debug)]

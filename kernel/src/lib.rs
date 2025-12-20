@@ -32,7 +32,8 @@ mod syscalls_test;
 use crate::model::{compute_memory_summary, compute_scheduler_summary, scheduler_tick};
 use crate::sched_types::ThreadState;
 use crate::shared_buffer::MAX_FRAMES_PER_BUFFER;
-use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, PropValue, ThingId, ThreadInfo};
+use abi::{FrameId, FrameInfo, ThingId, KernelRequest, KernelResponse};
+use thing_models::{PropType, PropValue, SchedThreadInfo};
 use alloc::string::String;
 use spin::{Mutex, MutexGuard};
 
@@ -477,11 +478,11 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                       let sym = wp.name;
                       
                       let pt = match wp.prop_type {
-                          0 => abi::PropType::U64,
-                          1 => abi::PropType::I64,
-                          2 => abi::PropType::Bool,
-                          3 => abi::PropType::Str,
-                          4 => abi::PropType::Blob,
+                          0 => PropType::U64,
+                          1 => PropType::I64,
+                          2 => PropType::Bool,
+                          3 => PropType::Str,
+                          4 => PropType::Blob,
                           _ => return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 8 } },
                       };
                       
@@ -511,12 +512,12 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                      for i in 0..count {
                          let (sym, pt) = props[i];
                          let pt_raw = match pt {
-                             abi::PropType::U64 => 0,
-                             abi::PropType::I64 => 1,
-                             abi::PropType::Bool => 2,
-                             abi::PropType::Str => 3,
-                             abi::PropType::Blob => 4,
-                             abi::PropType::Symbol => 5,
+                             PropType::U64 => 0,
+                             PropType::I64 => 1,
+                             PropType::Bool => 2,
+                             PropType::Str => 3,
+                             PropType::Blob => 4,
+                             PropType::Symbol => 5,
                              _ => 0,
                          };
                          let wsp = abi::wire::graph::WireSchemaProp {
@@ -573,7 +574,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             let current = scheduler_tick();
             match current {
                 Some(c) => KernelResponse::SchedulerTicked { has_current: 1, current: c },
-                None => KernelResponse::SchedulerTicked { has_current: 0, current: ThreadInfo { tid: 0, state: 0, priority: 0 } },
+                None => KernelResponse::SchedulerTicked { has_current: 0, current: SchedThreadInfo { tid: 0, state: 0, priority: 0 } },
             }
         }
         KernelRequest::ResidentAlloc { kind, byte_len, flags } => {
@@ -617,7 +618,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
 
 /// Create builtin kernel Things at boot time
 pub fn create_builtin_things() {
-    use abi::{PropType, PropValue};
+    use thing_models::{PropType, PropValue};
     use alloc::vec;
 
     log("Creating kernel Things...");
@@ -738,9 +739,9 @@ pub fn init_boot_graph() {
         let thread_running = alloc::vec![
             (
                 crate::symbols::intern("state"),
-                abi::PropValue::Str(String::from(ThreadState::Running.as_str())),
+                PropValue::Str(String::from(ThreadState::Running.as_str())),
             ),
-            (crate::symbols::intern("last_started_ns"), abi::PropValue::U64(0)),
+            (crate::symbols::intern("last_started_ns"), PropValue::U64(0)),
         ];
         graph::update_thing(thread_id, thread_running);
         let _ = graph::add_link(process, graph_kinds::LINK_OWNS_THREAD, thread_id);

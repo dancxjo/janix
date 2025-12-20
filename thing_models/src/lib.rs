@@ -1,6 +1,7 @@
 #![no_std]
 
 extern crate alloc;
+extern crate self as thing_models;
 
 pub mod display;
 pub mod input;
@@ -10,9 +11,65 @@ pub mod usb;
 pub mod kernel;
 pub mod graph_kinds;
 
-use abi::{PropKey, PropType, PropValue, Thing, ThingId};
+use abi::{ThingId, syscall_defs::SymbolId};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+
+pub type PropKey = String;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PropValue {
+    U64(u64),
+    I64(i64),
+    Bool(bool),
+    Str(String),
+    Blob(Vec<u8>),
+    Symbol(SymbolId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PropType {
+    U64,
+    I64,
+    Bool,
+    Symbol,
+    Str,
+    Blob,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SchemaId(pub u64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SchedThreadInfo {
+    pub tid: u64,
+    pub state: u64,
+    pub priority: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchemaRegistryOutcome {
+    Created,
+    AlreadyRegisteredSame,
+    Conflict,
+}
+
+pub trait Thing: Sized {
+    const KIND: &'static str; // High level string, wrapper must intern
+    const DESCRIPTION: &'static str;
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self;
+
+    /// Static schema for this Thing, used for registration.
+    fn schema() -> &'static [(&'static str, PropType)];
+
+    /// Get the description for this Thing instance, falling back to the type description.
+    /// This can be overridden to check for an instance-specific "description" property.
+    fn get_description(&self) -> &'static str {
+        Self::DESCRIPTION
+    }
+}
 pub use display::*;
 pub use input::*;
 pub use io::*;

@@ -80,7 +80,6 @@ pub mod canon {
     pub const P_DISPLAY_FRONT_BUFFER: Predicate = Predicate(0x0011);
     pub const P_DISPLAY_BACK_BUFFER: Predicate = Predicate(0x0012);
     pub const P_WINDOW_HAS_SURFACE: Predicate = Predicate(0x0013);
-    pub const P_WIDGET_CHILD: Predicate = Predicate(0x0014);
     pub const P_ACTIVE_MODE: Predicate = Predicate(0x0015);
     pub const P_APP_OWNS_WINDOW: Predicate = Predicate(0x0016);
     pub const P_DISPLAY_HAS_FRONT_BUFFER: Predicate = Predicate(0x0020);
@@ -104,7 +103,6 @@ pub const LINK_MODE_HAS_WINDOW: Predicate = canon::P_MODE_HAS_WINDOW;
 pub const LINK_WINDOW_SURFACE: Predicate = canon::P_WINDOW_SURFACE;
 pub const LINK_WINDOW_HAS_SURFACE: Predicate = canon::P_WINDOW_HAS_SURFACE;
 pub const LINK_PLACE_WINDOW: Predicate = canon::P_PLACE_WINDOW;
-pub const LINK_WIDGET_CHILD: Predicate = canon::P_WIDGET_CHILD;
 pub const LINK_ACTIVE_MODE: Predicate = canon::P_ACTIVE_MODE;
 pub const LINK_APP_OWNS_WINDOW: Predicate = canon::P_APP_OWNS_WINDOW;
 pub const LINK_DISPLAY_HAS_FRONT_BUFFER: Predicate = canon::P_DISPLAY_HAS_FRONT_BUFFER;
@@ -177,23 +175,3 @@ pub const PROP_FONT_SIZE: &str = "font_size";
 pub const PROP_FG_COLOR: &str = "fg_color";
 pub const PROP_BG_COLOR: &str = "bg_color";
 pub const PROP_CURSOR_SHAPE: &str = "cursor_shape";
-
-pub const KIND_WIDGET: &str = "Widget";
-
-// Widget layout props (generic, not window-specific)
-pub const PROP_X: &str = "x"; // absolute overlay x
-pub const PROP_Y: &str = "y"; // absolute overlay y
-
-pub const PROP_MIN_WIDTH: &str = "min_width";
-pub const PROP_MIN_HEIGHT: &str = "min_height";
-pub const PROP_MAX_WIDTH: &str = "max_width";
-pub const PROP_MAX_HEIGHT: &str = "max_height";
-
-pub const PROP_FLEX_DIRECTION: &str = "flex_direction"; // "row" | "column"
-pub const PROP_FLEX_WRAP: &str = "flex_wrap"; // "nowrap" | "wrap"
-pub const PROP_JUSTIFY_CONTENT: &str = "justify_content"; // "start" | "center" | "end" | "space-between" | "space-around"
-pub const PROP_ALIGN_ITEMS: &str = "align_items"; // "start" | "center" | "end" | "stretch"
-
-pub const PROP_FLEX_GROW: &str = "flex_grow"; // f32 encoded as I64 scaled? (see below) OR Text.
-pub const PROP_FLEX_SHRINK: &str = "flex_shrink";
-pub const PROP_GAP: &str = "gap";

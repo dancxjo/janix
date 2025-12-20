@@ -21,12 +21,14 @@ pub mod display;
 pub use display::*;
 
 use abi::{
-    FrameInfo, KernelRequest, KernelResponse, MemorySummary, NodeId,
+    FrameInfo, MemorySummary, NodeId,
     SchedulerSummary, FrameId, 
     wire::{graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag}, common::UserSlice},
     syscall_defs::SymbolId,
 };
 pub use abi::graph_kinds;
+pub mod graph_ops;
+pub use abi::{KernelRequest, KernelResponse};
 use thing_models::graph_kinds::{
     PROP_NAME, PROP_WIDTH, PROP_HEIGHT, PROP_STRIDE, PROP_PIXEL_FORMAT, PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
     KIND_SHARED_BUFFER
@@ -47,9 +49,9 @@ pub use thing_models::{
     ModeSwitchEvent, Place, RawModule, Surface, TimeSource, View, Window,
 };
 pub use thing_macros::main;
-pub use abi::Thing;
 pub use abi; // Export abi crate
-pub use abi::{Predicate, PropKey, PropType, PropValue, ThingId};
+pub use abi::{Predicate, ThingId};
+pub use thing_models::{PropKey, PropType, PropValue, Thing};
 
 /// Return the currently active `Mode` Thing, if one is marked active.
 pub fn active_mode() -> Option<Mode> {
@@ -89,7 +91,7 @@ pub struct CpuCoreThing {
     pub index: u64,
 }
 
-impl abi::Thing for CpuCoreThing {
+impl Thing for CpuCoreThing {
     const KIND: &'static str = "CpuCore";
     const DESCRIPTION: &'static str = "A CPU core identified by its index in the system";
 
@@ -120,7 +122,7 @@ pub struct ProcessThing {
     pub pid: u64,
 }
 
-impl abi::Thing for ProcessThing {
+impl Thing for ProcessThing {
     const KIND: &'static str = "Process";
     const DESCRIPTION: &'static str = "A process with process identifier (PID) and execution state";
 
@@ -166,7 +168,7 @@ pub struct DisplayThing {
     pub active_buffer_index: i64,
 }
 
-impl abi::Thing for DisplayThing {
+impl Thing for DisplayThing {
     // const KIND: &'static str = graph_kinds::KIND_DISPLAY;
     const KIND: &'static str = "Display";
     const DESCRIPTION: &'static str = "A display sink capable of scanning out a SharedBuffer";
@@ -261,7 +263,7 @@ pub struct SharedBufferThing {
     pub pixel_format: Option<String>,
 }
 
-impl abi::Thing for SharedBufferThing {
+impl Thing for SharedBufferThing {
     const KIND: &'static str = KIND_SHARED_BUFFER;
     const DESCRIPTION: &'static str = "Shared memory buffer exported by the kernel";
 
@@ -325,7 +327,7 @@ impl abi::Thing for SharedBufferThing {
     }
 }
 
-impl abi::Thing for ThreadThing {
+impl Thing for ThreadThing {
     const KIND: &'static str = "Thread";
     const DESCRIPTION: &'static str =
         "A thread of execution with thread identifier, state, priority, and runtime tracking";

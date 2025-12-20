@@ -92,170 +92,13 @@ pub struct FramePoolId(pub u64);
 
 use crate::syscall_defs::SymbolId;
 
-/// Simple property key
-pub type PropKey = alloc::string::String;
-
-/// Simple property value
-#[derive(Debug, Clone, PartialEq)]
-pub enum PropValue {
-    U64(u64),
-    I64(i64),
-    Bool(bool),
-    Str(alloc::string::String),
-    Blob(alloc::vec::Vec<u8>),
-    Symbol(crate::syscall_defs::SymbolId),
-}
-
-/// Property type for schema validation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PropType {
-    U64,
-    I64,
-    Bool,
-    Symbol,
-    Str,
-    Blob,
-}
-
-/// Schema identifier
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SchemaId(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ThreadInfo {
+pub struct SchedThreadInfo {
     pub tid: u64,
     pub state: u64,
     pub priority: u64,
 }
 
-/// Kernel request from userland
-#[derive(Debug, Clone)]
-pub enum KernelRequest {
-    /// Query the graph
-    GraphQuery {
-        node_id: NodeId,
-        out: UserSlice<u8>,
-    },
-    /// Create a transaction
-    CreateTransaction,
-    /// Commit a transaction
-    CommitTransaction {
-        tx_id: TransactionId,
-    },
-    /// Log a message
-    Log {
-        message: UserSlice<u8>,
-    },
-    /// Create a new Thing
-    ThingCreate {
-        kind: SymbolId,
-        props: UserSlice<WireProp>,
-    },
-    /// Spawn a program defined by a BootProgram Thing
-    SpawnProgram {
-        boot_program_id: ThingId,
-    },
-    /// Enumerate Things of a given kind
-    ThingList {
-        kind: SymbolId,
-        start_after: ThingId,
-    },
-    /// Get a Thing
-    ThingGet {
-        id: ThingId,
-        out: UserSlice<u8>,
-    },
-    /// Update a Thing
-    ThingUpdate {
-        id: ThingId,
-        props: UserSlice<WireProp>,
-    },
-    /// Batch update multiple Things
-    ThingBatchUpdate {
-        updates: UserSlice<WireBatchEntry>,
-    },
-    /// Register a package schema (scoped to the calling process).
-    SchemaRegisterPackage {
-        kind: SymbolId,
-        description: SymbolId,
-        props: UserSlice<WireSchemaProp>,
-    },
-    /// Get a schema
-    SchemaGet {
-        kind: SymbolId,
-        out: UserSlice<WireSchemaProp>,
-    },
-    /// Get memory summary
-    GetMemorySummary,
-    /// Get scheduler summary
-    GetSchedulerSummary,
-    /// Allocate a frame
-    AllocFrame {
-        // optional: later we can support multiple pools; for now, use 0
-        pool_index: u64,
-    },
-    /// Free a frame
-    FreeFrame {
-        frame_id: FrameId,
-    },
-    /// Create a process
-    CreateProcess {
-        name: UserSlice<u8>,
-    },
-    /// Create a thread
-    CreateThread {
-        pid: u64,
-        name: UserSlice<u8>,
-        app_id: u64,
-        priority: u64,
-    },
-    /// Advance scheduler tick
-    SchedulerTick,
-    /// Exit the current thread
-    ExitThread,
-    /// Add a link between Things
-    AddLink {
-        src: ThingId,
-        pred: Predicate,
-        dst: ThingId,
-    },
-    /// Fetch the target of the link at a specific index.
-    LinkAt {
-        src: ThingId,
-        pred: Predicate,
-        idx: usize,
-    },
-    CreateSharedBuffer {
-        width: u32,
-        height: u32,
-        pixel_format: PixelFormat,
-    },
-    MapSharedBuffer {
-        buffer_id: ThingId,
-        flags: MapFlags,
-    },
-    GetSharedBufferInfo {
-        buffer_id: ThingId,
-    },
-    ResidentAlloc {
-        kind: SymbolId,
-        byte_len: u32,
-        flags: u32,
-    },
-    ResidentMap {
-        id: ThingId,
-        perms: crate::wire::resident::ResidentMapPerms,
-    },
-    ResidentUnmap {
-        thing_id: ThingId,
-    },
-    ThingRest {
-        thing_id: ThingId,
-        policy: crate::wire::resident::RestPolicy,
-    },
-}
-
-/// Schema register outcome
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchemaRegistryOutcome {
     Created,
@@ -263,104 +106,8 @@ pub enum SchemaRegistryOutcome {
     Conflict,
 }
 
-/// Kernel response to userland
-#[derive(Debug, Clone)]
-pub enum KernelResponse {
-    /// Success with optional data
-    Success {
-        data: Option<u64>,
-    },
-    /// Error with message
-    Error {
-        err: crate::syscall_defs::SysError,
-    },
-    /// Transaction created
-    TransactionCreated {
-        tx_id: TransactionId,
-    },
-    /// Node data
-    NodeData {
-        written: u64,
-    },
-    /// Thing created
-    ThingCreated {
-        id: ThingId,
-    },
-    /// Schema registered result
-    SchemaRegistered {
-        kind: SymbolId,
-        outcome: SchemaRegistryOutcome,
-    },
-    /// Schema data
-    SchemaData {
-        written: u64,
-        fingerprint: u64,
-    },
-    /// Memory summary data
-    MemorySummary {
-        summary: MemorySummary,
-    },
-    /// Scheduler summary data
-    SchedulerSummary {
-        summary: SchedulerSummary,
-    },
-    /// Frame allocated
-    FrameAllocated {
-        frame: FrameInfo,
-    },
-    /// Frame freed
-    FrameFreed {
-        frame_id: FrameId,
-    },
-    /// Process created
-    ProcessCreated {
-        pid: u64,
-    },
-    /// Thread created
-    ThreadCreated {
-        tid: u64,
-    },
-    /// Scheduler ticked
-    SchedulerTicked {
-        has_current: u32,
-        current: ThreadInfo,
-    },
-    /// Result of querying a link target.
-    LinkTarget {
-        found: u32,
-        target: ThingId,
-    },
-    /// Program spawn result
-    ProgramSpawned {
-        process_id: ThingId,
-        thread_id: ThingId,
-    },
-    /// Result of Thing enumeration
-    ThingListEntry {
-        valid: u32,
-        id: ThingId,
-    },
-    SharedBufferCreated {
-        buffer_id: ThingId,
-    },
-    SharedBufferMapped {
-        vaddr: u64,
-        size: u64,
-    },
-    SharedBufferInfoResponse {
-        info: SharedBufferInfo,
-    },
-    ResidentAllocated {
-        resp: crate::wire::resident::ResidentAllocResp,
-    },
-    ResidentMapped {
-        resp: crate::wire::resident::ResidentMapResp,
-    },
-    ThingRested {
-        resp: crate::wire::resident::RestResp,
-    },
-    ResidentError(crate::wire::resident::ResidentError),
-}
+pub mod requests;
+pub use requests::{KernelRequest, KernelResponse};
 
 pub const THING_GET_MAX_KIND_LEN: usize = 128;
 pub const THING_GET_MAX_STR_LEN: usize = 128;
@@ -425,22 +172,6 @@ impl Default for ThingGetSyscallResult {
     }
 }
 
-pub trait Thing: Sized {
-    const KIND: &'static str; // High level string, wrapper must intern
-    const DESCRIPTION: &'static str;
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>);
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self;
-
-    /// Static schema for this Thing, used for registration.
-    fn schema() -> &'static [(&'static str, PropType)];
-
-    /// Get the description for this Thing instance, falling back to the type description.
-    /// This can be overridden to check for an instance-specific "description" property.
-    fn get_description(&self) -> &'static str {
-        Self::DESCRIPTION
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -476,4 +207,3 @@ mod tests {
         assert_eq!(copy_id, id_zero);
     }
 }
-pub mod graph_ops;

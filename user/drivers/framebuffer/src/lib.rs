@@ -3,6 +3,7 @@
 extern crate alloc;
 
 use abi::{Predicate, MapFlags, PixelFormat, SharedBufferInfo, ThingId};
+use thing_models::graph_kinds;
 use alloc::string::{String, ToString};
 use core::ptr;
 use thing_os::prelude::*;
@@ -54,11 +55,11 @@ impl FramebufferDriver {
         let logical_map_flags = MapFlags::READ.union(MapFlags::USER);
         let front_buffer_id = Self::display_buffer_target(
             descriptor.display_id,
-            abi::graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
+            graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
         )?;
         let back_buffer_id = Self::display_buffer_target(
             descriptor.display_id,
-            abi::graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
+            graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
         )?;
         let front_buffer = Self::map_buffer_view(front_buffer_id, logical_map_flags)?;
         let back_buffer = Self::map_buffer_view(back_buffer_id, logical_map_flags)?;
@@ -92,7 +93,7 @@ impl FramebufferDriver {
 
         let _ = add_link(
             descriptor.display_id,
-            abi::graph_kinds::LINK_DISPLAY_FRONT_BUFFER,
+            graph_kinds::LINK_DISPLAY_FRONT_BUFFER,
             fb_id,
         );
         println!("framebuffer_driver: linked framebuffer to display");
@@ -207,11 +208,11 @@ impl FramebufferDriver {
             self.fb_id,
             &[
                 (
-                    abi::graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
+                    graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
                     PropValue::U64(self.last_present_ns),
                 ),
                 (
-                    abi::graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
+                    graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
                     PropValue::U64(self.frames_presented),
                 ),
             ],
@@ -221,10 +222,10 @@ impl FramebufferDriver {
             request.id,
             &[
                 (
-                    abi::graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
+                    graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
                     PropValue::U64(self.last_present_ns),
                 ),
-                (abi::graph_kinds::PROP_COMPLETED.to_string(), PropValue::Bool(true)),
+                (graph_kinds::PROP_COMPLETED.to_string(), PropValue::Bool(true)),
             ],
         );
     }
@@ -332,7 +333,7 @@ fn primary_display_descriptor() -> Result<DisplayDescriptor, SysError> {
         .cloned()
         .ok_or(SysError::Unexpected)?;
 
-    let mut targets = link_targets(display.id, abi::graph_kinds::LINK_DISPLAY_SCANOUT);
+    let mut targets = link_targets(display.id, graph_kinds::LINK_DISPLAY_SCANOUT);
     let buffer_id = targets.pop().ok_or(SysError::Unexpected)?;
     let info = thing_os::shared_buffer_info(buffer_id)?;
 
@@ -357,41 +358,41 @@ struct DisplayFramebufferThing {
 }
 
 impl Thing for DisplayFramebufferThing {
-    const KIND: &'static str = abi::graph_kinds::KIND_DISPLAY_FRAMEBUFFER;
+    const KIND: &'static str = graph_kinds::KIND_DISPLAY_FRAMEBUFFER;
     const DESCRIPTION: &'static str = "Userland-published framebuffer";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push((
-            abi::graph_kinds::PROP_NAME.to_string(),
+            graph_kinds::PROP_NAME.to_string(),
             PropValue::Str(self.name.clone()),
         ));
-        out.push((abi::graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
-        out.push((abi::graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
-        out.push((abi::graph_kinds::PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
+        out.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
+        out.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
+        out.push((graph_kinds::PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
         let fmt = match self.pixel_format {
             PixelFormat::Rgba8888 => "Rgba8888",
             PixelFormat::Bgra8888 => "Bgra8888",
         };
         out.push((
-            abi::graph_kinds::PROP_PIXEL_FORMAT.to_string(),
+            graph_kinds::PROP_PIXEL_FORMAT.to_string(),
             PropValue::Str(fmt.into()),
         ));
         out.push((
-            abi::graph_kinds::PROP_POWER_STATE.to_string(),
+            graph_kinds::PROP_POWER_STATE.to_string(),
             PropValue::Str(self.power_state.as_str().into()),
         ));
         if let Some(refresh) = self.refresh_interval_ns {
             out.push((
-                abi::graph_kinds::PROP_REFRESH_INTERVAL_NS.to_string(),
+                graph_kinds::PROP_REFRESH_INTERVAL_NS.to_string(),
                 PropValue::U64(refresh),
             ));
         }
         out.push((
-            abi::graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
+            graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
             PropValue::U64(self.frames_presented),
         ));
         out.push((
-            abi::graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
+            graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
             PropValue::U64(self.last_present_ns),
         ));
     }
@@ -409,27 +410,27 @@ impl Thing for DisplayFramebufferThing {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                abi::graph_kinds::PROP_NAME => {
+                graph_kinds::PROP_NAME => {
                     if let PropValue::Str(v) = &prop.1 {
                         name = v.clone();
                     }
                 }
-                abi::graph_kinds::PROP_WIDTH => {
+                graph_kinds::PROP_WIDTH => {
                     if let PropValue::U64(v) = prop.1 {
                         width = v;
                     }
                 }
-                abi::graph_kinds::PROP_HEIGHT => {
+                graph_kinds::PROP_HEIGHT => {
                     if let PropValue::U64(v) = prop.1 {
                         height = v;
                     }
                 }
-                abi::graph_kinds::PROP_STRIDE => {
+                graph_kinds::PROP_STRIDE => {
                     if let PropValue::U64(v) = prop.1 {
                         stride = v;
                     }
                 }
-                abi::graph_kinds::PROP_PIXEL_FORMAT => {
+                graph_kinds::PROP_PIXEL_FORMAT => {
                     if let PropValue::Str(v) = &prop.1 {
                         pixel_format = if v == "Bgra8888" {
                             PixelFormat::Bgra8888
@@ -438,22 +439,22 @@ impl Thing for DisplayFramebufferThing {
                         };
                     }
                 }
-                abi::graph_kinds::PROP_POWER_STATE => {
+                graph_kinds::PROP_POWER_STATE => {
                     if let PropValue::Str(v) = &prop.1 {
                         power_state = DisplayPowerState::from_str(v);
                     }
                 }
-                abi::graph_kinds::PROP_REFRESH_INTERVAL_NS => {
+                graph_kinds::PROP_REFRESH_INTERVAL_NS => {
                     if let PropValue::U64(v) = prop.1 {
                         refresh_interval_ns = Some(v);
                     }
                 }
-                abi::graph_kinds::PROP_FRAMES_PRESENTED => {
+                graph_kinds::PROP_FRAMES_PRESENTED => {
                     if let PropValue::U64(v) = prop.1 {
                         frames_presented = v;
                     }
                 }
-                abi::graph_kinds::PROP_LAST_PRESENT_NS => {
+                graph_kinds::PROP_LAST_PRESENT_NS => {
                     if let PropValue::U64(v) = prop.1 {
                         last_present_ns = v;
                     }
@@ -477,15 +478,15 @@ impl Thing for DisplayFramebufferThing {
 
     fn schema() -> &'static [(&'static str, PropType)] {
         &[
-            (abi::graph_kinds::PROP_NAME, PropType::Str),
-            (abi::graph_kinds::PROP_WIDTH, PropType::U64),
-            (abi::graph_kinds::PROP_HEIGHT, PropType::U64),
-            (abi::graph_kinds::PROP_STRIDE, PropType::U64),
-            (abi::graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
-            (abi::graph_kinds::PROP_POWER_STATE, PropType::Str),
-            (abi::graph_kinds::PROP_REFRESH_INTERVAL_NS, PropType::U64),
-            (abi::graph_kinds::PROP_FRAMES_PRESENTED, PropType::U64),
-            (abi::graph_kinds::PROP_LAST_PRESENT_NS, PropType::U64),
+            (graph_kinds::PROP_NAME, PropType::Str),
+            (graph_kinds::PROP_WIDTH, PropType::U64),
+            (graph_kinds::PROP_HEIGHT, PropType::U64),
+            (graph_kinds::PROP_STRIDE, PropType::U64),
+            (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
+            (graph_kinds::PROP_POWER_STATE, PropType::Str),
+            (graph_kinds::PROP_REFRESH_INTERVAL_NS, PropType::U64),
+            (graph_kinds::PROP_FRAMES_PRESENTED, PropType::U64),
+            (graph_kinds::PROP_LAST_PRESENT_NS, PropType::U64),
         ]
     }
 }

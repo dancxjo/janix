@@ -3,7 +3,8 @@ use alloc::string::{String, ToString};
 #[cfg(not(target_os = "none"))]
 use alloc::string::{String, ToString};
 
-use abi::{MapFlags, PropValue, SharedBufferInfo, ThingId};
+use abi::{MapFlags, SharedBufferInfo, ThingId};
+use crate::PropValue;
 use crate::graph_kinds;
 use thing_models::graph_kinds::{
     LINK_DISPLAY_HAS_FRONT_BUFFER, LINK_DISPLAY_HAS_BACK_BUFFER, PROP_DISPLAY_ACTIVE_BUFFER_INDEX

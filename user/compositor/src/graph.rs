@@ -3,12 +3,12 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use alloc::boxed::Box;
 use alloc::format;
-use abi::{KernelRequest, KernelResponse, PropKey, PropValue, ThingId};
-use core::option::Option;
+use abi::{KernelRequest, KernelResponse, ThingId};
+use thing_models::{PropKey, PropValue, graph_kinds};
 use thing_os::prelude::*;
 use thing_os::{
     DisplayThing, PrimaryDisplayBuffer, Surface, Window,
-    graph_kinds, load_thing, update_props, list_things_by_kind,
+    load_thing, update_props, list_things_by_kind,
 };
 
 

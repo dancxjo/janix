@@ -239,6 +239,39 @@ mod tests {
         assert_eq!(buf[17], 0xFF);
         assert_eq!(buf[18], 0xFF);
     }
+
+    #[test]
+    fn blit_image_alpha_blending() {
+        // Test basic alpha blending
+        // Src: Red 50% (0x80FF0000 in BGRA)
+        // Dst: White (0xFFFFFFFF in BGRA)
+        // Expected: 0xFFFF7F7F (A R G B)
+
+        // Setup: 1x1 buffer
+        let mut dest_buf = vec![0xFFFFFFFFu32; 1];
+
+        // Src: Rgba8888
+        // Red in Rgba8888 is 0xFF, 0x00, 0x00, 0x80 (R G B A)
+        // In u32 LE: 0x800000FF
+        let src_pixel: u32 = 0x800000FF;
+        let src_buf = vec![src_pixel; 1];
+
+        blit_image(
+            dest_buf.as_mut_ptr(),
+            1, // stride
+            1, // width
+            1, // height
+            src_buf.as_ptr() as *const u8,
+            1, // img_w
+            1, // img_h
+            4, // img_stride_bytes
+            abi::PixelFormat::Rgba8888,
+            0, 0, // x, y
+            None
+        );
+
+        assert_eq!(dest_buf[0], 0xFFFF7F7F);
+    }
 }
 pub fn blit_image(
     buffer: *mut u32,
@@ -298,27 +331,47 @@ pub fn blit_image(
                 let pixel_ptr = src_row_start.add(src_offset);
                 let src_val = *(pixel_ptr as *const u32);
                 
-                // If format matches, direct copy
-                // For simplified implementation, direct copy for now.
-                // TODO: Alpha blending if needed.
-                let val = if matches!(pixel_format, abi::PixelFormat::Rgba8888) {
-                     // Source is RGBA. Destination is usually BGRA (UEFI).
-                     // Need swap R/B?
-                     // Check common behavior. Usually UEFI is BGRA.
-                     // Software buffers (Geographer) are RGBA8888.
-                     // u32 is LE.
+                let dest_ptr = buffer.add(dest_row_idx + dest_x as usize);
+
+                let src_bgra_opt = if matches!(pixel_format, abi::PixelFormat::Rgba8888) {
+                     // Source is RGBA. Swap R/B to get BGRA.
                      // RGBA in memory: R G B A. u32 = 0xAABBGGRR.
                      // BGRA in memory: B G R A. u32 = 0xAARRGGBB.
-                     // Swap calculation:
-                     // (src_val & 0xFF00FF00) | ((src_val & 0xFF) << 16) | ((src_val >> 16) & 0xFF)
-                     (src_val & 0xFF00FF00) | ((src_val & 0xFF) << 16) | ((src_val >> 16) & 0xFF)
+                     Some((src_val & 0xFF00FF00) | ((src_val & 0xFF) << 16) | ((src_val >> 16) & 0xFF))
                 } else if matches!(pixel_format, abi::PixelFormat::Bgra8888) {
-                     src_val
+                     Some(src_val)
                 } else {
-                     src_val // Hope for best?
+                     None // Unknown format, treated as opaque copy
                 };
-                
-                *buffer.add(dest_row_idx + dest_x as usize) = val;
+
+                if let Some(src_bgra) = src_bgra_opt {
+                    let sa = (src_bgra >> 24) & 0xFF;
+                    if sa == 255 {
+                        *dest_ptr = src_bgra;
+                    } else if sa != 0 {
+                        let dest_bgra = *dest_ptr;
+                        let sr = (src_bgra >> 16) & 0xFF;
+                        let sg = (src_bgra >> 8) & 0xFF;
+                        let sb = src_bgra & 0xFF;
+
+                        let da = (dest_bgra >> 24) & 0xFF;
+                        let dr = (dest_bgra >> 16) & 0xFF;
+                        let dg = (dest_bgra >> 8) & 0xFF;
+                        let db = dest_bgra & 0xFF;
+
+                        let inv_sa = 255 - sa;
+
+                        let out_r = (sr * sa + dr * inv_sa) / 255;
+                        let out_g = (sg * sa + dg * inv_sa) / 255;
+                        let out_b = (sb * sa + db * inv_sa) / 255;
+                        let out_a = sa + (da * inv_sa) / 255;
+
+                        *dest_ptr = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
+                    }
+                } else {
+                     // Fallback for unknown formats: just overwrite
+                     *dest_ptr = src_val;
+                }
             }
         }
     }

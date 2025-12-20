@@ -46,6 +46,11 @@ pub fn init_machine() {
 
     if arch::platform::map_boot_device_regions() {
         kernel::log("PCI regions mapped.");
+        #[cfg(target_arch = "aarch64")]
+        {
+            crate::serial::arch::init_pl011(kernel::memory::get_hhdm_offset());
+            kernel::log("PL011 initialized.");
+        }
     }
     // Now that boot-time device regions are mapped into the kernel page tables,
     // initialize hardware drivers that access MMIO (e.g. PCI/XHCI). Previously

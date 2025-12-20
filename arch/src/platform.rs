@@ -6,6 +6,8 @@ pub fn map_boot_device_regions() -> bool {
         unsafe {
             super::aarch64::paging::map_device_region(0x3f000000, 0x01000000);
             super::aarch64::paging::map_device_region(0x10000000, 0x2effffff);
+            // PL011 UART
+            super::aarch64::paging::map_device_region(0x09000000, 0x1000);
         }
         return true;
     }

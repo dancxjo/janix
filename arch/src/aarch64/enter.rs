@@ -2,6 +2,9 @@ use super::super::UserEntryRegs;
 use core::arch::global_asm;
 extern crate alloc;
 use alloc::boxed::Box;
+use alloc::alloc::{Layout, alloc_zeroed};
+use core::ptr::NonNull;
+use super::paging;
 
 global_asm!(
     r#"
@@ -83,17 +86,36 @@ pub fn resume_user_mode(context: &[u64], _fpu_context: &kernel::sched::FpuContex
     unsafe { resume_user_mode_asm(context.as_ptr()) }
 }
 
+const USER_STACK_SIZE: usize = 64 * 1024;
+
 pub fn alloc_user_stack() -> u64 {
-    let stack = Box::new([0u8; 4096]);
-    let stack_ptr = Box::leak(stack).as_mut_ptr();
+    let layout = Layout::from_size_align(USER_STACK_SIZE, 16).expect("invalid user stack layout");
+    let stack_ptr = unsafe { alloc_zeroed(layout) };
+    let stack_ptr = NonNull::new(stack_ptr).expect("alloc_user_stack: allocation failed");
+    let stack_addr = stack_ptr.as_ptr() as u64;
+
+    unsafe {
+        // Map as user accessible + Normal memory
+        let start = stack_addr;
+        let end = stack_addr + USER_STACK_SIZE as u64;
+        let mut curr = start;
+        while curr < end {
+             // We want AP[1]=1 (EL0 access) and Normal memory type
+             paging::update_page_flags(curr, paging::DESC_AP_EL0 | paging::ATTR_NORMAL);
+             curr += 4096;
+        }
+    }
+
     // Stack grows down, so return end
-    let stack_addr = stack_ptr as u64 + 4096;
-    // Align to 16 bytes
-    stack_addr & !0xf
+    let stack_top = stack_addr + USER_STACK_SIZE as u64;
+    // Align to 16 bytes (layout guarantees it, but just in case logic changes)
+    stack_top & !0xf
 }
 
 pub unsafe fn init_user_stack(_phys_mem_offset: u64) {
-    // TODO: Map user code as accessible
+    // Map user_thread_main as user accessible
+    let code_addr = crate::user::user_thread_main as *const () as u64;
+    paging::update_page_flags(code_addr, paging::DESC_AP_EL0);
 }
 
 use core::sync::atomic::{AtomicU64, Ordering};

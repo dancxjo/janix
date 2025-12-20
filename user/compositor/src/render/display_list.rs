@@ -206,36 +206,6 @@ pub fn build_display_list(
             }
         }
 
-        if let Some(rects) = widget_rects.get(&w.id) {
-            for (idx, r) in rects.iter().enumerate() { 
-                // We need to find which widget ID this rect belongs to.
-                // But run_widget_pass returned (ThingId, Rect) list? No, it returned Vec<Rect>.
-                // Wait, run_widget_pass in state.rs was returning just Vec<Rect>.
-                // I need to change run_widget_pass to return (ThingId, Rect) so I can Map it here!
-                // Aaah, I missed that detail in state.rs planning.
-                // Let's assume I fix state.rs to return Vec<(ThingId, Rect)>. 
-                // But wait, the previous code just iterated rects.
-                // I need to look up the widget in widget_map.
-                // "run_widget_pass" returns BtreeMap<WindowID, Vec<Rect>>.
-                // I need to fix logic in state.rs to return Vec<(ThingId, Rect)> in the values.
-                // But for now let's just use the rect loop and assume we can't look up properties yet?
-                // No, I need properties.
-                // Let's fix state.rs return type in a follow up or assume I did it.
-                // I DID NOT change the Vec<Rect> to Vec<(ThingId, Rect)> in state.rs replacement above.
-                // I only added the widget_map return.
-                // I should probably fix state.rs first or hack it here? 
-                // No, I can't hack it. I don't know which widget corresponds to which rect.
-                
-                // Oops, I need to pause and fix state.rs to return widget IDs with Rects.
-                // I will revert to just drawing debug rects if I can't, but the plan said "preserving Widget ID".
-                // In my state.rs edit, I saw:
-                // `struct WidgetNode`...
-                // `layout_children` returns `Vec<(ThingId, Rect)>`.
-                // `run_widget_pass` collects them: `queue.push((cid, crect)); win_rects.push(crect)`. 
-                // It pushed ONLY `crect` to `win_rects`.
-                // I need to change `win_rects` to `Vec<(ThingId, Rect)>`.
-           }
-        }
     }
 
     let icon = comp.cursor_sprites.for_kind(comp.cursor.kind);

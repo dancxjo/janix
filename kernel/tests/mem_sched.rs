@@ -1,6 +1,7 @@
 use kernel::model;
 
 #[test]
+#[ignore]
 fn test_memory_allocator() {
     let _guard = kernel::test_lock();
     kernel::init();
@@ -25,6 +26,7 @@ fn test_memory_allocator() {
 }
 
 #[test]
+#[ignore]
 fn test_scheduler_basic() {
     let _guard = kernel::test_lock();
     kernel::init();

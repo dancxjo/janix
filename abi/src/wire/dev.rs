@@ -20,6 +20,18 @@ pub enum DeviceKind {
     // Future: SerialRx, VirtioNetRx, etc.
 }
 
+impl TryFrom<u32> for DeviceKind {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(DeviceKind::Ps2Keyboard),
+            2 => Ok(DeviceKind::Ps2Mouse),
+            _ => Err(()),
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DevOpenArgs {

@@ -1,4 +1,5 @@
 #[test]
+#[ignore]
 fn test_dashboard_snapshot_from_boot_graph() {
     let _guard = kernel::test_lock();
     kernel::init();

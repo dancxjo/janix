@@ -130,6 +130,7 @@ The host_harness crate provides a way to test kernel interactions in a hosted en
 - The kernel uses the Limine bootloader protocol (v9.x-binary branch)
 - Graph database is a core feature - consider it when making kernel changes
 - Transaction management is integral to the kernel design
+- Reminder: keep ABI types data-only (avoid Rust trait APIs or `&'static str` fields in request/response structs).
 - Always test changes with both cargo commands (for userland) and make commands (for kernel)
 - QEMU targets support both UEFI and BIOS boot modes
 

@@ -44,6 +44,8 @@ fn fmt_prop_value(val: &PropValue) -> alloc::string::String {
 }
 
 pub fn dump_graph_table() {
+    #[cfg(not(test))]
+    {
     crate::log("Graph Dump:");
     crate::graph::iter_things(|node| {
         let kind_str = symbols::resolve(node.kind).unwrap_or_else(|| "???".into());
@@ -62,9 +64,12 @@ pub fn dump_graph_table() {
         let msg = format!("(t{}:{} {{ {} }})", node.id.0, kind_str, props_str);
         crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
     });
+    }
 }
 
 pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, PropValue)]) {
+    #[cfg(test)]
+    return;
     let kind_str = symbols::resolve(kind).unwrap_or_else(|| "???".into());
     let mut props_str = alloc::string::String::new();
     let mut first = true;
@@ -83,6 +88,8 @@ pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, Prop
 }
 
 pub fn print_link_created(src: ThingId, pred: Predicate, dst: ThingId) {
+     #[cfg(test)]
+     return;
      // format: (t1234)-[:RESOLVED_NAME]->(x8549)
      let pred_str = resolve_predicate(pred);
      let msg = format!("(t{})-[:{}]->(t{})", src.0, pred_str, dst.0);

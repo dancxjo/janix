@@ -108,7 +108,7 @@ pub fn log_message(message: &str) {
         LOG_INDEX = (LOG_INDEX + 1) % MAX_LOG_ENTRIES;
         LOG_TOTAL_WRITES += 1;
     }
-    #[cfg(feature = "debug_logging")]
+    #[cfg(all(feature = "debug_logging", not(test)))]
     {
         console::print(message);
         console::print("\n");

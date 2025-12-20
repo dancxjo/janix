@@ -8,8 +8,9 @@ pub mod io;
 pub mod ui;
 pub mod usb;
 pub mod kernel;
+pub mod graph_kinds;
 
-use abi::{PropKey, PropType, PropValue, Thing, ThingId, graph_kinds};
+use abi::{PropKey, PropType, PropValue, Thing, ThingId};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 pub use display::*;
@@ -46,7 +47,7 @@ pub fn kernel_core_schemas() -> Vec<(&'static str, &'static str, &'static [(&'st
     schemas.push((graph_kinds::KIND_IO_PORT_REGION, IoPortRegion::DESCRIPTION, IoPortRegion::schema()));
     schemas.push((graph_kinds::KIND_IO_PORT_OP, IoPortOp::DESCRIPTION, IoPortOp::schema()));
     schemas.push((graph_kinds::KIND_INTERRUPT_EVENT, InterruptEvent::DESCRIPTION, InterruptEvent::schema()));
-    schemas.push((abi::graph_kinds::KIND_INTERRUPT_REQUEST, InterruptRequest::DESCRIPTION, InterruptRequest::schema()));
+    schemas.push((graph_kinds::KIND_INTERRUPT_REQUEST, InterruptRequest::DESCRIPTION, InterruptRequest::schema()));
     schemas.push((graph_kinds::KIND_ALARM_REQUEST, AlarmRequest::DESCRIPTION, AlarmRequest::schema()));
     schemas.push((graph_kinds::KIND_ALARM_EVENT, AlarmEvent::DESCRIPTION, AlarmEvent::schema()));
 

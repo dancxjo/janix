@@ -134,6 +134,7 @@ pub enum KernelRequest {
     /// Query the graph
     GraphQuery {
         node_id: NodeId,
+        out: UserSlice<u8>,
     },
     /// Create a transaction
     CreateTransaction,
@@ -143,7 +144,7 @@ pub enum KernelRequest {
     },
     /// Log a message
     Log {
-        message: &'static str,
+        message: UserSlice<u8>,
     },
     /// Create a new Thing
     ThingCreate {
@@ -162,6 +163,7 @@ pub enum KernelRequest {
     /// Get a Thing
     ThingGet {
         id: ThingId,
+        out: UserSlice<u8>,
     },
     /// Update a Thing
     ThingUpdate {
@@ -172,8 +174,8 @@ pub enum KernelRequest {
     ThingBatchUpdate {
         updates: UserSlice<WireBatchEntry>,
     },
-    /// Register a schema
-    SchemaRegister {
+    /// Register a package schema (scoped to the calling process).
+    SchemaRegisterPackage {
         kind: SymbolId,
         description: SymbolId,
         props: UserSlice<WireSchemaProp>,
@@ -181,6 +183,7 @@ pub enum KernelRequest {
     /// Get a schema
     SchemaGet {
         kind: SymbolId,
+        out: UserSlice<WireSchemaProp>,
     },
     /// Get memory summary
     GetMemorySummary,
@@ -197,12 +200,12 @@ pub enum KernelRequest {
     },
     /// Create a process
     CreateProcess {
-        name: &'static str,
+        name: UserSlice<u8>,
     },
     /// Create a thread
     CreateThread {
         pid: u64,
-        name: &'static str,
+        name: UserSlice<u8>,
         app_id: u64,
         priority: u64,
     },
@@ -269,7 +272,7 @@ pub enum KernelResponse {
     },
     /// Error with message
     Error {
-        message: &'static str,
+        err: crate::syscall_defs::SysError,
     },
     /// Transaction created
     TransactionCreated {
@@ -277,21 +280,12 @@ pub enum KernelResponse {
     },
     /// Node data
     NodeData {
-        node_id: NodeId,
-        value: Vec<u8>,
+        written: u64,
     },
     /// Thing created
     ThingCreated {
         id: ThingId,
     },
-    /// Thing data
-    ThingData {
-        id: ThingId,
-        kind: SymbolId,
-        props: &'static [Option<(PropKey, PropValue)>],
-    },
-
-
     /// Schema registered result
     SchemaRegistered {
         kind: SymbolId,
@@ -299,8 +293,8 @@ pub enum KernelResponse {
     },
     /// Schema data
     SchemaData {
-        kind: SymbolId,
-        props: &'static [Option<(SymbolId, PropType)>],
+        written: u64,
+        fingerprint: u64,
     },
     /// Memory summary data
     MemorySummary {
@@ -328,12 +322,13 @@ pub enum KernelResponse {
     },
     /// Scheduler ticked
     SchedulerTicked {
-        // snapshot of the thread that just ran (or None)
-        current: Option<ThreadInfo>,
+        has_current: u32,
+        current: ThreadInfo,
     },
     /// Result of querying a link target.
     LinkTarget {
-        target: Option<ThingId>,
+        found: u32,
+        target: ThingId,
     },
     /// Program spawn result
     ProgramSpawned {
@@ -342,7 +337,8 @@ pub enum KernelResponse {
     },
     /// Result of Thing enumeration
     ThingListEntry {
-        id: Option<ThingId>,
+        valid: u32,
+        id: ThingId,
     },
     SharedBufferCreated {
         buffer_id: ThingId,

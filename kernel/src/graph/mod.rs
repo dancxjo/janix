@@ -84,9 +84,10 @@ pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
     success
 }
 
-pub fn remove_link(_src: ThingId, _pred: Predicate, _dst: ThingId) -> bool {
-    // TODO: Implement remove_link in store
-    true
+pub fn remove_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
+    let slab_guard = store::things_slab();
+    let mut store = slab_guard.lock();
+    store.as_mut().unwrap().remove_link(src, dst, pred)
 }
 
 pub fn neighbors(src: ThingId, pred: Predicate, out: &mut [Option<ThingId>]) {

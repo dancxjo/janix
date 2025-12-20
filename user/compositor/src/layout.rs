@@ -5,7 +5,8 @@ use alloc::vec::Vec;
 use core::cmp::max;
 
 use thing_os::prelude::*;
-use abi::{PropValue, ThingId, graph_kinds};
+use abi::ThingId;
+use thing_models::{PropValue, graph_kinds};
 use thing_os::update_props;
 use thing_os::{Window};
 

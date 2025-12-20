@@ -10,6 +10,8 @@ path = "src/lib.rs"
 [dependencies]
 abi = { path = "../../abi" }
 thing_os = { path = "../../thing_os" }
+compositor_api = { path = "../compositor_api" }
+thing_models = { path = "../../thing_models" }
 fontdue = { version = "0.9", default-features = false, features = [
     "hashbrown",
 ] }

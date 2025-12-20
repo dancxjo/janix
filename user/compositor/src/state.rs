@@ -21,75 +21,11 @@ use thing_os::syscalls::{syscall, sys_symbol_intern};
 use thing_os::println;
 
 fn draw_console(compositor: &mut Compositor) {
+    /*
     if compositor.console_buffer.is_none() {
-        use abi::{KernelRequest, KernelResponse, PropValue, graph_kinds, ThingId};
-        
-        let mut found = None;
-        let mut cursor = ThingId(u64::MAX);
-
-        loop {
-            match syscall(KernelRequest::ThingList {
-                kind: sys_symbol_intern(graph_kinds::KIND_SHARED_BUFFER),
-                start_after: cursor,
-            }) {
-                KernelResponse::ThingListEntry { id: Some(next_id) } => {
-                    // Check this thing
-                    match syscall(KernelRequest::ThingGet { id: next_id }) {
-                        KernelResponse::ThingData { props, .. } => {
-                            let mut is_console = false;
-                            let mut width = 0;
-                            let mut height = 0;
-                            let mut stride = 0;
-
-                            for item in props.iter().flatten() {
-                                let (key, val) = item;
-                                if *key == graph_kinds::PROP_NAME {
-                                    if let PropValue::Str(s) = val {
-                                        if s == "console_backend" {
-                                            is_console = true;
-                                        }
-                                    }
-                                } else if *key == graph_kinds::PROP_WIDTH {
-                                     if let PropValue::U64(v) = val { width = *v as u32; }
-                                } else if *key == graph_kinds::PROP_HEIGHT {
-                                     if let PropValue::U64(v) = val { height = *v as u32; }
-                                } else if *key == graph_kinds::PROP_STRIDE {
-                                     if let PropValue::U64(v) = val { stride = *v as u32; }
-                                }
-                            }
-
-                            if is_console {
-                                found = Some((next_id, width, height, stride));
-                            }
-                        },
-                        _ => {}
-                    }
-                    if found.is_some() { break; }
-                    cursor = next_id;
-                }
-                _ => break,
-            }
-        }
-
-        if let Some((id, w, h, stride)) = found {
-             match shared_buffer_map(id, MapFlags::READ.union(MapFlags::USER)) {
-                 Ok((vaddr, _size)) => {
-                     compositor.console_buffer = Some(ConsoleBuffer {
-                         id,
-                         ptr: vaddr as *const u8,
-                         width: w,
-                         height: h,
-                         stride,
-                         pixel_format: abi::PixelFormat::Bgra8888, 
-                     });
-                     println!("compositor: mapped console buffer");
-                 },
-                 _ => {
-                     println!("compositor: failed to map console buffer");
-                 }
-             }
-        }
+        // ... (Disabled: ThingGet usage invalid) ...
     }
+    */
 
     if let Some(cb) = &compositor.console_buffer {
         let ptr = cb.ptr;

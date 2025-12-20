@@ -115,7 +115,8 @@ impl<T> KeyboardStreamMapped<T> {
     }
 }
 
-use abi::{Thing, ThingId, PropKey, PropValue, PropType};
+use abi::ThingId;
+use crate::{Thing, PropKey, PropValue, PropType};
 
 #[derive(Clone, Debug)]
 pub struct KeyboardStreamThing {

@@ -74,26 +74,26 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
             let ty_str = normalize_type_name(ty);
 
             let val_expr = match ty_str.as_str() {
-                "u64" => quote! { ::abi::PropValue::U64(self.#name as u64) },
-                "u32" => quote! { ::abi::PropValue::U64(self.#name as u64) },
-                "u16" => quote! { ::abi::PropValue::U64(self.#name as u64) },
-                "u8" => quote! { ::abi::PropValue::U64(self.#name as u64) },
-                "i64" => quote! { ::abi::PropValue::I64(self.#name as i64) },
-                "i32" => quote! { ::abi::PropValue::I64(self.#name as i64) },
-                "i16" => quote! { ::abi::PropValue::I64(self.#name as i64) },
-                "i8" => quote! { ::abi::PropValue::I64(self.#name as i64) },
-                "bool" => quote! { ::abi::PropValue::Bool(self.#name as bool) },
+                "u64" => quote! { ::thing_models::PropValue::U64(self.#name as u64) },
+                "u32" => quote! { ::thing_models::PropValue::U64(self.#name as u64) },
+                "u16" => quote! { ::thing_models::PropValue::U64(self.#name as u64) },
+                "u8" => quote! { ::thing_models::PropValue::U64(self.#name as u64) },
+                "i64" => quote! { ::thing_models::PropValue::I64(self.#name as i64) },
+                "i32" => quote! { ::thing_models::PropValue::I64(self.#name as i64) },
+                "i16" => quote! { ::thing_models::PropValue::I64(self.#name as i64) },
+                "i8" => quote! { ::thing_models::PropValue::I64(self.#name as i64) },
+                "bool" => quote! { ::thing_models::PropValue::Bool(self.#name as bool) },
                 "alloc::string::String" | "String" => {
-                    quote! { ::abi::PropValue::Str(self.#name.clone()) }
+                    quote! { ::thing_models::PropValue::Str(self.#name.clone()) }
                 }
                 "&'staticstr" => {
-                    quote! { ::abi::PropValue::Str(::alloc::string::String::from(self.#name)) }
+                    quote! { ::thing_models::PropValue::Str(::alloc::string::String::from(self.#name)) }
                 }
                 "char" => {
-                    quote! { ::abi::PropValue::Str(::alloc::string::String::from(self.#name)) }
+                    quote! { ::thing_models::PropValue::Str(::alloc::string::String::from(self.#name)) }
                 }
                 "ThingId" | "abi::ThingId" => {
-                    quote! { ::abi::PropValue::U64(self.#name.0) }
+                    quote! { ::thing_models::PropValue::U64(self.#name.0) }
                 }
                 other => panic!("Unsupported type for Thing derive: {}", other),
             };
@@ -120,52 +120,52 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
 
             let match_arm = match ty_str.as_str() {
                 "u64" => quote! {
-                    if let ::abi::PropValue::U64(val) = *v { val } else {
+                    if let ::thing_models::PropValue::U64(val) = *v { val } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "u32" => quote! {
-                    if let ::abi::PropValue::U64(val) = *v { val as u32 } else {
+                    if let ::thing_models::PropValue::U64(val) = *v { val as u32 } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "u16" => quote! {
-                    if let ::abi::PropValue::U64(val) = *v { val as u16 } else {
+                    if let ::thing_models::PropValue::U64(val) = *v { val as u16 } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "u8" => quote! {
-                    if let ::abi::PropValue::U64(val) = *v { val as u8 } else {
+                    if let ::thing_models::PropValue::U64(val) = *v { val as u8 } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "i64" => quote! {
-                    if let ::abi::PropValue::I64(val) = *v { val } else {
+                    if let ::thing_models::PropValue::I64(val) = *v { val } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "i32" => quote! {
-                    if let ::abi::PropValue::I64(val) = *v { val as i32 } else {
+                    if let ::thing_models::PropValue::I64(val) = *v { val as i32 } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "i16" => quote! {
-                    if let ::abi::PropValue::I64(val) = *v { val as i16 } else {
+                    if let ::thing_models::PropValue::I64(val) = *v { val as i16 } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "i8" => quote! {
-                    if let ::abi::PropValue::I64(val) = *v { val as i8 } else {
+                    if let ::thing_models::PropValue::I64(val) = *v { val as i8 } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "bool" => quote! {
-                    if let ::abi::PropValue::Bool(val) = *v { val } else {
+                    if let ::thing_models::PropValue::Bool(val) = *v { val } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "alloc::string::String" | "String" => quote! {
-                    if let ::abi::PropValue::Str(ref val) = *v {
+                    if let ::thing_models::PropValue::Str(ref val) = *v {
                         val.clone()
                     } else {
                         panic!("Type mismatch for {}", stringify!(#name))
@@ -173,7 +173,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 },
                 "&'staticstr" => {
                     quote! {
-                        if let ::abi::PropValue::Str(ref val) = *v {
+                        if let ::thing_models::PropValue::Str(ref val) = *v {
                             ::alloc::string::String::from(val.as_str())
                         } else {
                             panic!("Type mismatch for {}", stringify!(#name))
@@ -181,14 +181,14 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                     }
                 }
                 "ThingId" | "abi::ThingId" => quote! {
-                if let ::abi::PropValue::U64(val) = *v {
+                if let ::thing_models::PropValue::U64(val) = *v {
                     ::abi::ThingId(val)
                     } else {
                         panic!("Type mismatch for {}", stringify!(#name))
                     }
                 },
                 "char" => quote! {
-                    if let ::abi::PropValue::Str(ref val) = *v {
+                    if let ::thing_models::PropValue::Str(ref val) = *v {
                         val.chars().next().unwrap_or('\0')
                     } else {
                         panic!("Type mismatch for {}", stringify!(#name))
@@ -229,13 +229,13 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
 
             let prop_ty_expr = match ty_str.as_str() {
                 "u64" | "u32" | "u16" | "u8" | "ThingId" | "abi::ThingId" => {
-                    quote! { ::abi::PropType::U64 }
+                    quote! { ::thing_models::PropType::U64 }
                 }
-                "i64" | "i32" | "i16" | "i8" => quote! { ::abi::PropType::I64 },
-                "bool" => quote! { ::abi::PropType::Bool },
-                "alloc::string::String" | "String" => quote! { ::abi::PropType::Str },
-                "char" => quote! { ::abi::PropType::Str },
-                "&'staticstr" => quote! { ::abi::PropType::Str },
+                "i64" | "i32" | "i16" | "i8" => quote! { ::thing_models::PropType::I64 },
+                "bool" => quote! { ::thing_models::PropType::Bool },
+                "alloc::string::String" | "String" => quote! { ::thing_models::PropType::Str },
+                "char" => quote! { ::thing_models::PropType::Str },
+                "&'staticstr" => quote! { ::thing_models::PropType::Str },
                 other => {
                     let error_msg = format!(
                         "Unsupported type '{}' for Thing derive schema. Only numeric primitives, bool, and String-based fields are supported.",
@@ -252,23 +252,23 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
         .collect();
 
     let expanded = quote! {
-        impl ::abi::Thing for #name {
+        impl ::thing_models::Thing for #name {
             const KIND: &'static str = #kind_str;
             const DESCRIPTION: &'static str = #description;
 
-            fn to_props(&self, out: &mut ::alloc::vec::Vec<(::abi::PropKey, ::abi::PropValue)>) {
+            fn to_props(&self, out: &mut ::alloc::vec::Vec<(::thing_models::PropKey, ::thing_models::PropValue)>) {
                 #(#to_props_arms)*
             }
 
-            fn from_props(id: ::abi::ThingId, props: &[Option<(::abi::PropKey, ::abi::PropValue)>]) -> Self {
+            fn from_props(id: ::abi::ThingId, props: &[Option<(::thing_models::PropKey, ::thing_models::PropValue)>]) -> Self {
                 let _ = id;
                 Self {
                     #(#from_props_arms),*
                 }
             }
 
-            fn schema() -> &'static [(&'static str, ::abi::PropType)] {
-                static SCHEMA: &[(&'static str, ::abi::PropType)] = &[
+            fn schema() -> &'static [(&'static str, ::thing_models::PropType)] {
+                static SCHEMA: &[(&'static str, ::thing_models::PropType)] = &[
                     #(#schema_entries),*
                 ];
                 SCHEMA

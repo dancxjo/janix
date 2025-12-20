@@ -1,4 +1,5 @@
-use abi::{PropKey, PropValue, Thing, ThingId};
+use abi::ThingId;
+use crate::{PropKey, PropType, PropValue, Thing};
 use crate::graph_kinds;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -72,7 +73,7 @@ impl Thing for UsbController {
         }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] {
+    fn schema() -> &'static [(&'static str, PropType)] {
         &[]
     }
 }
@@ -173,7 +174,7 @@ impl Thing for UsbDevice {
         }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] {
+    fn schema() -> &'static [(&'static str, PropType)] {
         &[]
     }
 }
@@ -278,7 +279,7 @@ impl Thing for UsbEndpoint {
         }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] {
+    fn schema() -> &'static [(&'static str, PropType)] {
         &[]
     }
 }
@@ -365,7 +366,7 @@ impl Thing for UsbTransferRequest {
             timeout_ms,
         }
     }
-    fn schema() -> &'static [(&'static str, abi::PropType)] {
+    fn schema() -> &'static [(&'static str, PropType)] {
         &[]
     }
 }
@@ -436,7 +437,7 @@ impl Thing for UsbTransferResult {
         }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] {
+    fn schema() -> &'static [(&'static str, PropType)] {
         &[]
     }
 }

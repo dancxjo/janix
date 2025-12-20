@@ -2,7 +2,8 @@ use alloc::string::ToString;
 use thing_os::prelude::*;
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TITLE_BAR_HEIGHT};
-use abi::{PropValue, ThingId, graph_kinds};
+use abi::{ThingId};
+use thing_models::{PropValue, graph_kinds};
 use thing_os::update_props;
 use crate::graph;
 use crate::layout::{StackedWindow, hit_test};
@@ -224,11 +225,11 @@ impl Compositor {
         drag.last_sent_y = clamped_y;
         let updates = [
             (
-                abi::graph_kinds::PROP_WINDOW_X.to_string(),
+                graph_kinds::PROP_WINDOW_X.to_string(),
                 PropValue::I64(clamped_x as i64),
             ),
             (
-                abi::graph_kinds::PROP_WINDOW_Y.to_string(),
+                graph_kinds::PROP_WINDOW_Y.to_string(),
                 PropValue::I64(clamped_y as i64),
             ),
         ];

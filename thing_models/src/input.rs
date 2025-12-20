@@ -1,4 +1,5 @@
-use abi::{PropKey, PropValue, ThingId};
+use abi::ThingId;
+use crate::{PropKey, PropValue};
 use alloc::string::{String, ToString};
 
 #[derive(thing_macros::Thing, Clone, Copy, Debug)]

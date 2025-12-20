@@ -9,10 +9,8 @@ use crate::graph::schema::register_schema;
 
 use crate::sched_types::ThreadState;
 use crate::{graph, graph_kinds, memory, sched_graph};
-use abi::{
-    FrameId, FrameInfo, MemorySummary, PropType, PropValue, SchedulerSummary, Thing, ThingId,
-    ThreadId, ThreadInfo,
-};
+use abi::{FrameId, FrameInfo, MemorySummary, SchedulerSummary, ThingId, ThreadId};
+use thing_models::{PropType, PropValue, Thing, ThreadInfo, SchedThreadInfo};
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
@@ -106,7 +104,7 @@ fn is_kind(id: ThingId, expected: &str) -> bool {
 fn register_static_schema(
     kind_str: &str, 
     desc: &str, 
-    props: &[(&str, abi::PropType)], 
+    props: &[(&str, PropType)],
     indexed: &[abi::syscall_defs::SymbolId]
 ) {
     let kind = crate::symbols::intern(kind_str);
@@ -588,7 +586,7 @@ pub fn create_thread_abi(_pid: u64, tid: u64, priority: u64) -> Option<u64> {
 /// let info = k::model::scheduler_tick().unwrap();
 /// assert!(info.tid > 0);
 /// ```
-pub fn scheduler_tick() -> Option<ThreadInfo> {
+pub fn scheduler_tick() -> Option<SchedThreadInfo> {
     static mut FAKE_TIME: u64 = 0;
 
     unsafe {
@@ -618,7 +616,7 @@ pub fn scheduler_tick() -> Option<ThreadInfo> {
 
         CURRENT_THREAD = Some(next);
 
-        Some(ThreadInfo {
+        Some(SchedThreadInfo {
             tid,
             state: encode_state(state),
             priority,
@@ -756,7 +754,7 @@ pub fn program_image_exists(identifier: &str) -> bool {
         }
         for (k, v) in node.props.iter() {
             if *k == key_identifier {
-                if let abi::PropValue::Str(s) = v {
+                if let PropValue::Str(s) = v {
                     if s == identifier {
                         return true;
                     }

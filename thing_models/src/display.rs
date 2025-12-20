@@ -2,7 +2,8 @@
 
 extern crate alloc;
 
-use abi::{PropKey, PropType, PropValue, Thing, ThingId};
+use abi::ThingId;
+use crate::{PropKey, PropType, PropValue, Thing};
 use crate::graph_kinds;
 use alloc::vec::Vec;
 use alloc::string::ToString;

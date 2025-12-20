@@ -1,9 +1,10 @@
 use abi::{
-    KernelRequest, KernelResponse, SharedBufferInfo, ThingGetSyscallResult,
+    SharedBufferInfo, ThingGetSyscallResult,
     ThingPropScalarType, resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
     syscalls::*, syscall_defs::{SymbolId, SymbolInternReq, WireStr},
-    SchemaRegistryOutcome
 };
+use abi::{KernelRequest, KernelResponse};
+use thing_models::{PropType, SchemaRegistryOutcome};
 use crate::sys::raw_syscall;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};

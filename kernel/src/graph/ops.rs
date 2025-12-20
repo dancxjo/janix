@@ -1,10 +1,10 @@
-//! Helper types for graph operations. Not syscall-visible.
+//! Helper types for graph operations.
 //!
-//! These types use `Vec` and are intended for internal kernel use or higher-level abstractions,
+//! These types use `Vec` and are intended for internal use or higher-level abstractions,
 //! not for the raw syscall boundary.
 
 use alloc::vec::Vec;
-use crate::{ThingId, syscall_defs::SymbolId, wire::graph::WirePropValue};
+use abi::{ThingId, syscall_defs::SymbolId, wire::graph::WirePropValue, Predicate};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GraphOp {
@@ -19,7 +19,7 @@ pub enum GraphOp {
     AddLink {
         src: ThingId,
         dst: ThingId,
-        pred: crate::Predicate,
+        pred: Predicate,
     },
 }
 
@@ -30,7 +30,7 @@ pub enum GraphEvent {
     LinkAdded {
         src: ThingId,
         dst: ThingId,
-        pred: crate::Predicate,
+        pred: Predicate,
     },
     BatchUpdateComplete,
 }

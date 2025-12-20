@@ -1,11 +1,12 @@
 use alloc::format;
 use alloc::vec::Vec;
 use alloc::string::{String, ToString};
-use abi::graph_ops::{GraphOp, GraphSink, GraphDriver, GraphEvent, ThingProps};
-use abi::graph_kinds::{self, KIND_PCI_DEVICE, KIND_USB_CONTROLLER};
+use thing_os::graph_ops::{GraphOp, GraphSink, GraphDriver, GraphEvent, ThingProps};
+use thing_os::thing_models::graph_kinds::{self, KIND_PCI_DEVICE, KIND_USB_CONTROLLER};
 use hal::MmioMapper;
-use abi::{PropKey, PropValue, PropType, ThingId};
-use abi::wire::graph::{WirePropValue};
+use abi::{ThingId, syscall_defs::SymbolId};
+use thing_os::{PropKey, PropValue, PropType};
+use abi::wire::graph::{WirePropValue, WireValueTag};
 use thing_os::intern;
 
 // Local descriptor for UsbController
@@ -19,12 +20,12 @@ struct UsbControllerDesc {
 
 impl UsbControllerDesc {
     // Returns interned keys and WirePropValue
-    fn to_wire_props(&self, out: &mut Vec<(abi::SymbolId, WirePropValue)>) {
-      out.push((intern("name"), WirePropValue::Str(intern(&self.name).0)));
-      out.push((intern("pci_bus"), WirePropValue::U64(self.pci_bus)));
-      out.push((intern("pci_slot"), WirePropValue::U64(self.pci_slot)));
-      out.push((intern("pci_func"), WirePropValue::U64(self.pci_func)));
-      out.push((intern("mmio_base"), WirePropValue::U64(self.mmio_base)));
+    fn to_wire_props(&self, out: &mut Vec<(SymbolId, WirePropValue)>) {
+      out.push((intern("name"), WirePropValue::sym(intern(&self.name))));
+      out.push((intern("pci_bus"), WirePropValue::u64(self.pci_bus)));
+      out.push((intern("pci_slot"), WirePropValue::u64(self.pci_slot)));
+      out.push((intern("pci_func"), WirePropValue::u64(self.pci_func)));
+      out.push((intern("mmio_base"), WirePropValue::u64(self.mmio_base)));
     }
 }
 
@@ -56,15 +57,9 @@ pub fn register_watcher(mmio: &dyn MmioMapper, graph: &mut dyn GraphDriver) {
 }
 
 fn on_pci_device_created(event: &GraphEvent) {
-    let (id, kind) = match event {
+    let (id, _kind) = match event {
         GraphEvent::ThingCreated(id) => {
-             // GraphEvent was updated in ABI. It might look like just ThingCreated(ThingId) now?
-             // Step 197 shows GraphEvent::ThingCreated(ThingId). No kind.
-             // So we must query the kind!
-             // Wait, GraphEvent in Step 197: ThingCreated(ThingId).
-             // Step 238 code had `GraphEvent::ThingCreated { id, kind, .. }`.
-             // So ABI CHANGED. I must update logic to query kind.
-             (id, None)
+             (id, Option::<SymbolId>::None)
         },
         _ => return,
     };
@@ -125,15 +120,16 @@ fn on_pci_device_created(event: &GraphEvent) {
     
     for (k, v) in props_obj.props.iter() {
         // v is WirePropValue
-        if let WirePropValue::U64(val) = v {
+        if v.tag == WireValueTag::U64 as u8 {
+            let val = v.data_0;
             let key = *k;
-            if key == k_class { class_id = *val; }
-            else if key == k_subclass { subclass_id = *val; }
-            else if key == k_progif { prog_if = *val; }
-            else if key == k_bus { bus = *val; }
-            else if key == k_slot { slot = *val; }
-            else if key == k_func { func = *val; }
-            else if key == k_bar0 { bar0 = *val; }
+            if key == k_class { class_id = val; }
+            else if key == k_subclass { subclass_id = val; }
+            else if key == k_progif { prog_if = val; }
+            else if key == k_bus { bus = val; }
+            else if key == k_slot { slot = val; }
+            else if key == k_func { func = val; }
+            else if key == k_bar0 { bar0 = val; }
         }
     }
     

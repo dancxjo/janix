@@ -5,7 +5,9 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use alloc::string::String; // This line was implicitly removed by the instruction's provided block, but it's needed for `String` type. Re-adding it.
 use thing_os::prelude::*;
-use abi::{PropValue, ThingId, graph_kinds};
+use abi::{ThingId};
+use thing_models::{PropValue, PropKey, PropType, graph_kinds};
+use compositor_api;
 use thing_os::{update_props, list_things_by_kind, load_thing};
 
 use crate::flex::{AlignItems, FlexDirection, FlexWrap, JustifyContent, prop_as_f32};
@@ -53,11 +55,11 @@ impl WidgetNode {
 }
 
 impl thing_os::Thing for WidgetNode {
-    const KIND: &'static str = graph_kinds::KIND_WIDGET;
+    const KIND: &'static str = compositor_api::KIND_WIDGET;
     const DESCRIPTION: &'static str = "UI Widget";
-    fn schema() -> &'static [(&'static str, abi::PropType)] { &[] }
+    fn schema() -> &'static [(&'static str, PropType)] { &[] }
 
-    fn from_props(id: ThingId, props: &[Option<(abi::PropKey, PropValue)>]) -> Self {
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
         let get_i32 = |k: &str| -> Option<i32> {
             props.iter().flatten().find(|(key, _)| *key == k).and_then(|(_, v)| match v {
                 PropValue::I64(n) => Some(*n as i32),
@@ -87,41 +89,41 @@ impl thing_os::Thing for WidgetNode {
         let fg_color = get_u32(graph_kinds::PROP_FG_COLOR);
         let bg_color = get_u32(graph_kinds::PROP_BG_COLOR);
 
-        let flex_direction = get_prop(graph_kinds::PROP_FLEX_DIRECTION)
+        let flex_direction = get_prop(compositor_api::PROP_FLEX_DIRECTION)
             .and_then(FlexDirection::from_prop);
 
-        let flex_wrap = get_prop(graph_kinds::PROP_FLEX_WRAP)
+        let flex_wrap = get_prop(compositor_api::PROP_FLEX_WRAP)
             .and_then(FlexWrap::from_prop);
 
-        let justify = get_prop(graph_kinds::PROP_JUSTIFY_CONTENT)
+        let justify = get_prop(compositor_api::PROP_JUSTIFY_CONTENT)
             .and_then(JustifyContent::from_prop);
 
-        let align = get_prop(graph_kinds::PROP_ALIGN_ITEMS)
+        let align = get_prop(compositor_api::PROP_ALIGN_ITEMS)
             .and_then(AlignItems::from_prop);
 
-        let flex_grow = get_prop(graph_kinds::PROP_FLEX_GROW)
+        let flex_grow = get_prop(compositor_api::PROP_FLEX_GROW)
             .and_then(prop_as_f32);
         
-        let flex_shrink = get_prop(graph_kinds::PROP_FLEX_SHRINK)
+        let flex_shrink = get_prop(compositor_api::PROP_FLEX_SHRINK)
             .and_then(prop_as_f32);
 
         Self {
             id,
-            x: get_i32(graph_kinds::PROP_X),
-            y: get_i32(graph_kinds::PROP_Y),
+            x: get_i32(compositor_api::PROP_X),
+            y: get_i32(compositor_api::PROP_Y),
 
             width: get_i32(graph_kinds::PROP_WIDTH),
             height: get_i32(graph_kinds::PROP_HEIGHT),
-            min_width: get_i32(graph_kinds::PROP_MIN_WIDTH),
-            min_height: get_i32(graph_kinds::PROP_MIN_HEIGHT),
-            max_width: get_i32(graph_kinds::PROP_MAX_WIDTH),
-            max_height: get_i32(graph_kinds::PROP_MAX_HEIGHT),
+            min_width: get_i32(compositor_api::PROP_MIN_WIDTH),
+            min_height: get_i32(compositor_api::PROP_MIN_HEIGHT),
+            max_width: get_i32(compositor_api::PROP_MAX_WIDTH),
+            max_height: get_i32(compositor_api::PROP_MAX_HEIGHT),
 
             flex_direction,
             flex_wrap,
             justify,
             align,
-            gap: get_i32(graph_kinds::PROP_GAP),
+            gap: get_i32(compositor_api::PROP_GAP),
 
             flex_grow,
             flex_shrink,
@@ -133,12 +135,12 @@ impl thing_os::Thing for WidgetNode {
         }
     }
 
-    fn to_props(&self, _out: &mut Vec<(abi::PropKey, PropValue)>) {}
+    fn to_props(&self, _out: &mut Vec<(PropKey, PropValue)>) {}
 }
 
 /// Collect widget ids that are direct children of `parent` via LINK_WIDGET_CHILD.
 pub fn widget_children(parent: ThingId) -> Vec<ThingId> {
-    thing_os::link_targets(parent, graph_kinds::LINK_WIDGET_CHILD)
+    thing_os::link_targets(parent, compositor_api::LINK_WIDGET_CHILD)
 }
 
 /// Lay out and return computed rects for children inside `container`.

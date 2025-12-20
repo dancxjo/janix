@@ -873,3 +873,8 @@ clean:
 distclean: clean
 	$(MAKE) -C boot distclean
 	rm -rf limine ovmf
+
+.PHONY: contracts
+contracts:
+	@mkdir -p docs/contracts
+	python3 tools/generate_contracts.py

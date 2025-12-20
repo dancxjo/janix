@@ -3,10 +3,10 @@ extern crate alloc;
 use alloc::string::ToString;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
-use alloc::string::String; // This line was implicitly removed by the instruction's provided block, but it's needed for `String` type. Re-adding it.
+use alloc::string::String;
 use thing_os::prelude::*;
-use abi::{ThingId};
-use thing_models::{PropValue, PropKey, PropType, graph_kinds};
+use abi::{ThingId, PropValue, PropKey, PropType};
+use thing_models::graph_kinds;
 use compositor_api;
 use thing_os::{update_props, list_things_by_kind, load_thing};
 

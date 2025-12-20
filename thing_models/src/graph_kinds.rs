@@ -4,6 +4,7 @@
 
 use abi::Predicate;
 
+pub const KIND_KIND: &str = "Kind";
 pub const KIND_THREAD: &str = "Thread";
 pub const KIND_PROCESS: &str = "Process";
 pub const KIND_CPU_CORE: &str = "CpuCore";

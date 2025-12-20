@@ -11,31 +11,9 @@ pub mod usb;
 pub mod kernel;
 pub mod graph_kinds;
 
-use abi::{ThingId, syscall_defs::SymbolId};
+use abi::{ThingId, syscall_defs::SymbolId, PropKey, PropValue, PropType};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-
-pub type PropKey = String;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PropValue {
-    U64(u64),
-    I64(i64),
-    Bool(bool),
-    Str(String),
-    Blob(Vec<u8>),
-    Symbol(SymbolId),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PropType {
-    U64,
-    I64,
-    Bool,
-    Symbol,
-    Str,
-    Blob,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SchemaId(pub u64);
@@ -711,11 +689,11 @@ impl Thing for AlarmRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi::{PropKey, PropValue, graph_kinds};
+    use crate::graph_kinds;
     use alloc::{string::String, vec::Vec};
 
     fn to_prop_slice(props: &[(PropKey, PropValue)]) -> Vec<Option<(PropKey, PropValue)>> {
-        props.iter().map(|(k, v)| Some((*k, v.clone()))).collect()
+        props.iter().map(|(k, v)| Some((k.clone(), v.clone()))).collect()
     }
 
     #[test]
@@ -770,7 +748,7 @@ mod tests {
             props,
             [
                 (
-                    graph_kinds::PROP_IDENTIFIER,
+                    graph_kinds::PROP_IDENTIFIER.to_string(),
                     PropValue::Str(String::from("kernel"))
                 ),
                 (graph_kinds::PROP_MODULE_INDEX.to_string(), PropValue::U64(3)),

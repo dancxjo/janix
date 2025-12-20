@@ -3,8 +3,8 @@ use thing_os::prelude::*;
 use thing_os::link_targets;
 use thing_os::thing_models::DisplayPresentRequest;
 use thing_os::PrimaryDisplayBuffer;
-use abi::ThingId;
-use thing_models::{PropValue, graph_kinds};
+use abi::{ThingId, PropValue};
+use thing_models::graph_kinds;
 use thing_os::{update_props, create_thing, list_things_by_kind, load_thing};
 
 use crate::layout::StackedWindow;

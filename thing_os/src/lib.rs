@@ -26,7 +26,7 @@ use abi::{
     wire::{graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag}, common::UserSlice},
     syscall_defs::SymbolId,
 };
-pub use abi::graph_kinds;
+pub use thing_models::graph_kinds;
 pub mod graph_ops;
 pub use abi::{KernelRequest, KernelResponse};
 use thing_models::graph_kinds::{
@@ -51,7 +51,8 @@ pub use thing_models::{
 pub use thing_macros::main;
 pub use abi; // Export abi crate
 pub use abi::{Predicate, ThingId};
-pub use thing_models::{PropKey, PropType, PropValue, Thing};
+pub use abi::{PropKey, PropType, PropValue};
+pub use thing_models::Thing;
 
 /// Return the currently active `Mode` Thing, if one is marked active.
 pub fn active_mode() -> Option<Mode> {

@@ -1,4 +1,5 @@
-use abi::{PropKey, PropValue, Thing, ThingId, graph_kinds};
+use abi::{PropKey, PropValue, Thing, ThingId};
+use crate::graph_kinds;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 

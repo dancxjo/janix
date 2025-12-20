@@ -23,14 +23,14 @@ pub fn process_interrupt_request(id: ThingId) {
     let mut irq_line: u8 = 0;
     let mut enabled: bool = false;
     graph::with_thing(id, |thing| {
-        if thing.kind != crate::symbols::intern(abi::graph_kinds::KIND_INTERRUPT_REQUEST) { return; }
+        if thing.kind != crate::symbols::intern(graph_kinds::KIND_INTERRUPT_REQUEST) { return; }
         irq_line = thing.props.iter()
-            .find(|(k, _)| *k == crate::symbols::intern(abi::graph_kinds::PROP_IRQ_LINE))
+            .find(|(k, _)| *k == crate::symbols::intern(graph_kinds::PROP_IRQ_LINE))
             .and_then(|(_, v)| if let PropValue::U64(val) = v { Some(*val as u8) } else { None })
             .unwrap_or(0); // Default to 0 if not found or wrong type
 
         enabled = thing.props.iter()
-            .find(|(k, _)| *k == crate::symbols::intern(abi::graph_kinds::PROP_ENABLED))
+            .find(|(k, _)| *k == crate::symbols::intern(graph_kinds::PROP_ENABLED))
             .and_then(|(_, v)| if let PropValue::Bool(b) = v { Some(*b) } else { None })
             .unwrap_or(false); // Default to false if not found or wrong type
     });

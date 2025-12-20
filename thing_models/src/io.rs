@@ -1,4 +1,5 @@
 use abi::{PropKey, PropType, PropValue, Thing, ThingId};
+use crate::graph_kinds;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -137,12 +138,12 @@ pub struct InterruptRequest {
 }
 
 impl Thing for InterruptRequest {
-    const KIND: &'static str = abi::graph_kinds::KIND_INTERRUPT_REQUEST;
+    const KIND: &'static str = graph_kinds::KIND_INTERRUPT_REQUEST;
     const DESCRIPTION: &'static str = "Userland request to enable or disable an IRQ line.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(((abi::graph_kinds::PROP_IRQ_LINE).to_string(), PropValue::U64(self.irq_line as u64)));
-        out.push(((abi::graph_kinds::PROP_ENABLED).to_string(), PropValue::Bool(self.enabled)));
+        out.push(((graph_kinds::PROP_IRQ_LINE).to_string(), PropValue::U64(self.irq_line as u64)));
+        out.push(((graph_kinds::PROP_ENABLED).to_string(), PropValue::Bool(self.enabled)));
         if let Some(owner) = self.owner_process {
             out.push(("owner_process".to_string(), PropValue::U64(owner.0)));
         }
@@ -154,8 +155,8 @@ impl Thing for InterruptRequest {
         let mut owner_process = None;
         for (k, v) in props.iter().flatten() {
             match k.as_str() {
-                abi::graph_kinds::PROP_IRQ_LINE => if let PropValue::U64(x) = v { irq_line = *x as u8; },
-                abi::graph_kinds::PROP_ENABLED => if let PropValue::Bool(b) = v { enabled = *b; },
+                graph_kinds::PROP_IRQ_LINE => if let PropValue::U64(x) = v { irq_line = *x as u8; },
+                graph_kinds::PROP_ENABLED => if let PropValue::Bool(b) = v { enabled = *b; },
                 "owner_process" => if let PropValue::U64(x) = v { owner_process = Some(ThingId(*x)); },
                 _ => {}
             }
@@ -165,8 +166,8 @@ impl Thing for InterruptRequest {
 
     fn schema() -> &'static [(&'static str, PropType)] {
         &[
-            (abi::graph_kinds::PROP_IRQ_LINE, PropType::U64),
-            (abi::graph_kinds::PROP_ENABLED, PropType::Bool),
+            (graph_kinds::PROP_IRQ_LINE, PropType::U64),
+            (graph_kinds::PROP_ENABLED, PropType::Bool),
             ("owner_process", PropType::U64),
         ]
     }

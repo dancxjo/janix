@@ -33,7 +33,8 @@ pub const SYSCALL_CREATE_TRANSACTION: u64 = 21;
 pub const SYSCALL_COMMIT_TRANSACTION: u64 = 22;
 
 // Schema
-pub const SYSCALL_SCHEMA_REGISTER: u64 = 19;
+pub const SYSCALL_SCHEMA_REGISTER_PACKAGE: u64 = 19;
+pub const SYSCALL_SCHEMA_GET: u64 = 33;
 
 // Shared Buffer
 pub const SYSCALL_MAP_SHARED_BUFFER: u64 = 23;

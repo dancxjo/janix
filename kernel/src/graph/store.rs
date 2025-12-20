@@ -214,6 +214,16 @@ impl GraphStore {
             false
         }
     }
+
+    pub fn remove_link(&mut self, src: ThingId, dst: ThingId, pred: Predicate) -> bool {
+        if let Some(node) = self.things.get_mut(&src) {
+            if let Some(pos) = node.links.iter().position(|(p, d)| *p == pred && *d == dst) {
+                node.links.remove(pos);
+                return true;
+            }
+        }
+        false
+    }
     
     pub fn get_link(&self, src: ThingId, pred: Predicate, idx: usize) -> Option<ThingId> {
          if let Some(node) = self.things.get(&src) {
@@ -229,4 +239,32 @@ impl GraphStore {
 
 pub fn init() {
     *THINGS_SLAB.lock() = Some(GraphStore::new());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::{ThingId, Predicate, syscall_defs::SymbolId};
+
+    #[test]
+    fn test_add_remove_link() {
+        let mut store = GraphStore::new();
+        let src = store.create_thing(SymbolId(1), Vec::new());
+        let dst = store.create_thing(SymbolId(2), Vec::new());
+        let pred = Predicate(100);
+
+        assert!(store.add_link(src, dst, pred));
+
+        let link = store.get_link(src, pred, 0);
+        assert_eq!(link, Some(dst));
+
+        let removed = store.remove_link(src, dst, pred);
+        assert!(removed);
+
+        let link_after = store.get_link(src, pred, 0);
+        assert_eq!(link_after, None);
+
+        let removed_again = store.remove_link(src, dst, pred);
+        assert!(!removed_again);
+    }
 }

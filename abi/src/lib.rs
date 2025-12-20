@@ -207,3 +207,15 @@ mod tests {
         assert_eq!(copy_id, id_zero);
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphEvent {
+    ThingCreated(ThingId),
+    ThingUpdated(ThingId),
+    LinkAdded {
+        src: ThingId,
+        dst: ThingId,
+        pred: Predicate,
+    },
+    BatchUpdateComplete,
+}

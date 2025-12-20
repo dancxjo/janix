@@ -1,6 +1,7 @@
 use crate::graph::store;
 use crate::symbols;
-use abi::{ThingId, PropValue, Predicate, syscall_defs::SymbolId};
+use abi::{ThingId, Predicate, syscall_defs::SymbolId};
+use thing_models::PropValue;
 use alloc::format;
 use crate::graph_kinds;
 
@@ -19,7 +20,6 @@ fn resolve_predicate(pred: Predicate) -> alloc::string::String {
         graph_kinds::LINK_WINDOW_SURFACE => "WINDOW_SURFACE".into(),
         graph_kinds::LINK_WINDOW_HAS_SURFACE => "WINDOW_HAS_SURFACE".into(),
         graph_kinds::LINK_PLACE_WINDOW => "PLACE_WINDOW".into(),
-        graph_kinds::LINK_WIDGET_CHILD => "WIDGET_CHILD".into(),
         graph_kinds::LINK_ACTIVE_MODE => "ACTIVE_MODE".into(),
         graph_kinds::LINK_APP_OWNS_WINDOW => "APP_OWNS_WINDOW".into(),
         graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER => "DISPLAY_HAS_FRONT_BUFFER".into(),

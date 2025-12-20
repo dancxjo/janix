@@ -573,8 +573,14 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         KernelRequest::SchedulerTick => {
             let current = scheduler_tick();
             match current {
-                Some(c) => KernelResponse::SchedulerTicked { has_current: 1, current: c },
-                None => KernelResponse::SchedulerTicked { has_current: 0, current: SchedThreadInfo { tid: 0, state: 0, priority: 0 } },
+                Some(c) => KernelResponse::SchedulerTicked {
+                    has_current: 1,
+                    current: abi::SchedThreadInfo { tid: c.tid, state: c.state, priority: c.priority }
+                },
+                None => KernelResponse::SchedulerTicked {
+                    has_current: 0,
+                    current: abi::SchedThreadInfo { tid: 0, state: 0, priority: 0 }
+                },
             }
         }
         KernelRequest::ResidentAlloc { kind, byte_len, flags } => {

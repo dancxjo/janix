@@ -1,5 +1,6 @@
 use crate::{graph, graph_kinds, time};
-use abi::{PropKey, PropValue, ThingId};
+use abi::ThingId;
+use thing_models::{PropKey, PropValue};
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -49,7 +50,6 @@ pub fn process_interrupt_request(id: ThingId) {
 
 use alloc::boxed::Box;
 use alloc::format;
-use abi::Thing;
 
 #[path = "../../../arch/src/io.rs"]
 mod arch_io;

@@ -4,7 +4,7 @@ use crate::graph_kinds::{
     PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
 };
 use crate::shared_buffer;
-use abi::PropValue;
+use thing_models::PropValue;
 use alloc::vec::Vec;
 
 pub fn init() {

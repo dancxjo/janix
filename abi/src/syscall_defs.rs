@@ -46,19 +46,7 @@ impl<T: Default> SysRet<T> {
     }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct UserPtr<T> {
-    pub addr: u64, // user virtual address
-    pub _phantom: PhantomData<T>,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct UserSlice<T> {
-    pub ptr: UserPtr<T>,
-    pub len: u64, // number of T elements
-}
+pub use crate::wire::common::{UserPtr, UserSlice};
 
 pub use crate::wire::dev::{
     DeviceHandle, DeviceKind, DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet,

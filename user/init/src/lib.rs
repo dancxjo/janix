@@ -2,7 +2,8 @@
 
 extern crate alloc;
 
-use abi::{ThingId, graph_kinds};
+use abi::ThingId;
+use thing_models::graph_kinds;
 #[cfg(feature = "rootfs")]
 use alloc::string::String;
 use alloc::vec::Vec;

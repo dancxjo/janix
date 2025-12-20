@@ -475,14 +475,25 @@ macro_rules! dispatch_syscall {
              let pages = kernel::shared_buffer::page_count_for_size(size);
              
              let mut frames = heapless::Vec::new();
+             let mut success = true;
              for _ in 0..pages {
                  if let Some(f) = kernel::memory::allocate_frame() {
                      if frames.push(f).is_err() {
-                         return u64::MAX;
+                         kernel::memory::free_frame(f);
+                         success = false;
+                         break;
                      }
                  } else {
-                     return u64::MAX;
+                     success = false;
+                     break;
                  }
+             }
+
+             if !success {
+                 for frame in frames {
+                     kernel::memory::free_frame(frame);
+                 }
+                 return u64::MAX;
              }
              
              match kernel::shared_buffer::register_shared_buffer(width, height, stride, format, frames) {

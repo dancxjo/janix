@@ -1,4 +1,5 @@
 pub mod rtc;
+pub mod sbi;
 pub mod time;
 pub mod trap;
 

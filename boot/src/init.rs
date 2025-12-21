@@ -48,7 +48,7 @@ pub fn init_machine() {
         kernel::log("PCI regions mapped.");
         #[cfg(target_arch = "aarch64")]
         {
-            crate::serial::arch::init_pl011(kernel::memory::get_hhdm_offset());
+            crate::serial::arch::init_serial(kernel::memory::get_hhdm_offset());
             kernel::log("PL011 initialized.");
         }
     }

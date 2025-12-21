@@ -101,7 +101,7 @@ pub fn alloc_user_stack() -> u64 {
         let mut curr = start;
         while curr < end {
              // We want AP[1]=1 (EL0 access) and Normal memory type
-             paging::update_page_flags(curr, paging::DESC_AP_EL0 | paging::ATTR_NORMAL);
+             paging::update_page_flags(curr, paging::DESC_AP_EL0 | paging::ATTR_NORMAL, 0);
              curr += 4096;
         }
     }
@@ -115,7 +115,8 @@ pub fn alloc_user_stack() -> u64 {
 pub unsafe fn init_user_stack(_phys_mem_offset: u64) {
     // Map user_thread_main as user accessible
     let code_addr = crate::user::user_thread_main as *const () as u64;
-    paging::update_page_flags(code_addr, paging::DESC_AP_EL0);
+    // We need to set AP bits for EL0 access AND clear UXN to allow execution
+    paging::update_page_flags(code_addr, paging::DESC_AP_EL0, paging::DESC_UXN);
 }
 
 use core::sync::atomic::{AtomicU64, Ordering};

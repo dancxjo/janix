@@ -21,6 +21,7 @@ const ATTR_DEVICE: u64 = 0;
 pub const ATTR_NORMAL: u64 = 1 << 2; // MAIR index 1 (Normal Write-Back)
 
 pub const DESC_AP_EL0: u64 = 1 << 6; // AP[1]=1, AP[2]=0 => RW at EL0
+pub const DESC_UXN: u64 = 1 << 54; // Unprivileged Execute Never
 
 // TTBR1_EL1 points to L0 table (for 48-bit VA) or L1 (for 39-bit VA).
 // Limine usually uses 4-level (48-bit) or 3-level?
@@ -95,7 +96,7 @@ pub unsafe fn map_device_region(phys: u64, len: u64) {
     asm!("isb");
 }
 
-pub unsafe fn update_page_flags(virt: u64, flags_to_set: u64) {
+pub unsafe fn update_page_flags(virt: u64, flags_to_set: u64, flags_to_clear: u64) {
     let tcr = get_tcr();
     let t1sz = (tcr >> 16) & 0x3F;
     let va_bits = 64 - t1sz;
@@ -126,7 +127,7 @@ pub unsafe fn update_page_flags(virt: u64, flags_to_set: u64) {
     // L3
     let entry = read_table(table, l3_idx as usize);
     if entry & DESC_VALID != 0 {
-        let new_entry = entry | flags_to_set;
+        let new_entry = (entry & !flags_to_clear) | flags_to_set;
         write_table(table, l3_idx as usize, new_entry);
 
         // TLB flush

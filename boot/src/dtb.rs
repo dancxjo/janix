@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
 use alloc::format;
-use core::sync::atomic::Ordering;
 use limine::request::DeviceTreeBlobRequest;
 
 #[used]
@@ -20,49 +19,14 @@ pub fn seed_dtb_frequency() {
         return;
     }
 
-    // Safety: Limine guarantees dtb_ptr is valid if provided.
-    // We trust the bootloader.
-    let fdt = match unsafe { fdt::Fdt::from_ptr(dtb_ptr as *const u8) } {
-        Ok(f) => f,
-        Err(e) => {
-             kernel::log("Failed to parse DTB");
-             return;
-        }
-    };
-
-    let mut found = false;
-    for cpu in fdt.cpus() {
-        let freq = cpu.timebase_frequency();
-        if freq > 0 {
-            let freq = freq as u64;
-            kernel::log(Box::leak(format!("DTB: Found timebase-frequency: {}", freq).into_boxed_str()));
-
-            // Set the frequency in arch::riscv64::time::FREQUENCY
-            arch::riscv64::time::FREQUENCY.store(freq, Ordering::Relaxed);
-            found = true;
-            break; // Assuming all CPUs have same timebase
-        }
+    // Pass to arch
+    unsafe {
+        arch::riscv64::time::init_frequency_from_dtb(dtb_ptr as *const u8);
     }
 
-    if !found {
-        // Fallback to checking /cpus node directly if iterator misses it or if it is property of /cpus
-        // fdt crate's cpus() iterates over /cpus/cpu@* nodes.
-        // Sometimes timebase-frequency is in /cpus node itself.
-        if let Some(cpus_node) = fdt.find_node("/cpus") {
-             if let Some(prop) = cpus_node.property("timebase-frequency") {
-                 let freq = prop.as_usize().unwrap_or(0) as u64;
-                 if freq > 0 {
-                     kernel::log(Box::leak(format!("DTB: Found /cpus/timebase-frequency: {}", freq).into_boxed_str()));
-                     arch::riscv64::time::FREQUENCY.store(freq, Ordering::Relaxed);
-                     found = true;
-                 }
-             }
-        }
-    }
-
-    if !found {
-        kernel::log("DTB: timebase-frequency not found, using default");
-    }
+    // Log the frequency
+    let freq = arch::riscv64::time::FREQUENCY.load(core::sync::atomic::Ordering::Relaxed);
+    kernel::log(Box::leak(format!("RISC-V Timer Frequency: {} Hz", freq).into_boxed_str()));
 }
 
 #[cfg(not(target_arch = "riscv64"))]

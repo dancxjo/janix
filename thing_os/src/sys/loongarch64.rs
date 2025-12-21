@@ -1,8 +1,6 @@
-use abi::SyscallNumber;
-
 #[inline(always)]
 pub unsafe fn syscall_stub(
-    num: SyscallNumber,
+    num: u64,
     arg0: u64,
     arg1: u64,
     arg2: u64,
@@ -14,7 +12,7 @@ pub unsafe fn syscall_stub(
     unsafe {
         core::arch::asm!(
             "syscall 0",
-            inlateout("$a7") num as u64 => ret,
+            inlateout("$a7") num => ret,
             inlateout("$a0") arg0 => ret,
             in("$a1") arg1,
             in("$a2") arg2,

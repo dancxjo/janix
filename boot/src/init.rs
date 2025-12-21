@@ -64,6 +64,11 @@ pub fn init_machine() {
             crate::serial::arch::init_serial(kernel::memory::get_hhdm_offset());
             kernel::log("PL011 initialized.");
         }
+        #[cfg(target_arch = "riscv64")]
+        {
+            crate::serial::arch::init_serial(kernel::memory::get_hhdm_offset());
+            kernel::log("NS16550 initialized.");
+        }
     }
 
     crate::boot_screen::step("Initializing graph subscriptions...");

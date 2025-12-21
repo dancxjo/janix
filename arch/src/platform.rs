@@ -1,13 +1,14 @@
 /// Map platform-specific MMIO or PCI regions needed during boot.
 /// Returns `true` when any mappings were emitted.
 pub fn map_boot_device_regions() -> bool {
+    let hhdm = kernel::memory::get_hhdm_offset();
     #[cfg(target_arch = "aarch64")]
     {
         unsafe {
-            super::aarch64::paging::map_device_region(0x3f000000, 0x01000000);
-            super::aarch64::paging::map_device_region(0x10000000, 0x2effffff);
+            super::aarch64::paging::map_device_region(0x3f000000, 0x01000000, hhdm);
+            super::aarch64::paging::map_device_region(0x10000000, 0x2effffff, hhdm);
             // PL011 UART
-            super::aarch64::paging::map_device_region(0x09000000, 0x1000);
+            super::aarch64::paging::map_device_region(0x09000000, 0x1000, hhdm);
         }
         return true;
     }

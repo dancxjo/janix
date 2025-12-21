@@ -5,7 +5,7 @@ use std::path::Path;
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let fonts_dir = Path::new(&manifest_dir).join("..").join("fonts");
+    let fonts_dir = Path::new(&manifest_dir).join("..").join("assets").join("fonts");
     let unifont_hex = fonts_dir.join("unifont.hex");
 
     if !fonts_dir.exists() {

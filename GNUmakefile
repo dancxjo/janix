@@ -37,7 +37,7 @@ APPS := init debug_clock window_demo compositor hello_world geographer debug_all
 ifneq ($(ENABLE_geographer),1)
 # APPS += geographer
 endif
-DRIVERS := framebuffer ps2_keyboard_driver ps2_mouse_driver pci
+DRIVERS := framebuffer ps2_keyboard_driver ps2_mouse_driver pci usb
 ifeq ($(ENABLE_ROOTFS),1)
 APPS := rootfs $(APPS)
 endif

@@ -96,7 +96,7 @@ pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'s
 }
 
 /// Log a message to the kernel log
-pub fn log(message: &'static str) {
+pub fn log(message: &str) {
     log::log_message(message);
 }
 

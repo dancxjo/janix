@@ -101,7 +101,11 @@ pub fn create_thing(kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingI
 }
 
 pub fn update_thing(id: ThingId, props: Vec<(SymbolId, PropValue)>) -> bool {
-    with_store_mut(|store| store.update_thing(id, props))
+    let success = with_store_mut(|store| store.update_thing(id, props.clone()));
+    if success {
+        debug::print_thing_updated(id, &props);
+    }
+    success
 }
 
 pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
@@ -113,7 +117,11 @@ pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
 }
 
 pub fn remove_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
-    with_store_mut(|store| store.remove_link(src, dst, pred))
+    let success = with_store_mut(|store| store.remove_link(src, dst, pred));
+    if success {
+        debug::print_link_removed(src, pred, dst);
+    }
+    success
 }
 
 pub fn neighbors(src: ThingId, pred: Predicate, out: &mut [Option<ThingId>]) {

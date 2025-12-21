@@ -16,6 +16,7 @@ pub use crate::props::{PropKey, PropType, PropValue};
 use abi::{ThingId, syscall_defs::SymbolId};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use thing_macros::Thing;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SchemaId(pub u64);
@@ -106,35 +107,11 @@ pub fn kernel_core_schemas() -> Vec<(&'static str, &'static str, &'static [(&'st
     schemas
 }
 
+#[derive(Thing)]
+#[thing(description = "The system-wide boot configuration used by init to launch all services and programs.")]
 pub struct BootProfile {
     pub id: ThingId,
     pub version: u64,
-}
-
-impl Thing for BootProfile {
-    const KIND: &'static str = "BootProfile";
-    const DESCRIPTION: &'static str =
-        "The system-wide boot configuration used by init to launch all services and programs.";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("version".to_string(), PropValue::U64(self.version)));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut version = 0;
-        for prop in props.iter().flatten() {
-            if prop.0 == "version" {
-                if let PropValue::U64(v) = prop.1 {
-                    version = v;
-                }
-            }
-        }
-        BootProfile { id, version }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[("version", PropType::U64)]
-    }
 }
 
 pub struct BootProgram {
@@ -317,77 +294,14 @@ impl Thing for RawModule {
     }
 }
 
+#[derive(Thing)]
+#[thing(description = "An ELF program image discovered at boot and available for loading.")]
 pub struct ProgramImage {
     pub id: ThingId,
     pub identifier: String,
     pub module_index: u64,
     pub base_phys: u64,
     pub size: u64,
-}
-
-impl Thing for ProgramImage {
-    const KIND: &'static str = "ProgramImage";
-    const DESCRIPTION: &'static str =
-        "An ELF program image discovered at boot and available for loading.";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_IDENTIFIER.to_string(),
-            PropValue::Str(self.identifier.clone()),
-        ));
-        out.push((graph_kinds::PROP_MODULE_INDEX.to_string(),
-            PropValue::U64(self.module_index),
-        ));
-        out.push((graph_kinds::PROP_BASE_PHYS.to_string(), PropValue::U64(self.base_phys)));
-        out.push((graph_kinds::PROP_SIZE.to_string(), PropValue::U64(self.size)));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut identifier = String::new();
-        let mut module_index = 0;
-        let mut base_phys = 0;
-        let mut size = 0;
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                graph_kinds::PROP_IDENTIFIER => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        identifier = v.clone();
-                    }
-                }
-                graph_kinds::PROP_MODULE_INDEX => {
-                    if let PropValue::U64(v) = prop.1 {
-                        module_index = v;
-                    }
-                }
-                graph_kinds::PROP_BASE_PHYS => {
-                    if let PropValue::U64(v) = prop.1 {
-                        base_phys = v;
-                    }
-                }
-                graph_kinds::PROP_SIZE => {
-                    if let PropValue::U64(v) = prop.1 {
-                        size = v;
-                    }
-                }
-                _ => {}
-            }
-        }
-        ProgramImage {
-            id,
-            identifier,
-            module_index,
-            base_phys,
-            size,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            (graph_kinds::PROP_IDENTIFIER, PropType::Str),
-            (graph_kinds::PROP_MODULE_INDEX, PropType::U64),
-            (graph_kinds::PROP_BASE_PHYS, PropType::U64),
-            (graph_kinds::PROP_SIZE, PropType::U64),
-        ]
-    }
 }
 
 pub struct FontModule {
@@ -464,75 +378,14 @@ impl Thing for FontModule {
     }
 }
 
+#[derive(Thing)]
+#[thing(description = "Kernel-published system clock including monotonic tick counter and Unix wall time.")]
 pub struct TimeSource {
     pub id: ThingId,
     pub ticks_since_boot: u64,
     pub tick_hz: u32,
     pub unix_seconds: i64,
     pub unix_nanos: u32,
-}
-
-impl Thing for TimeSource {
-    const KIND: &'static str = "TimeSource";
-    const DESCRIPTION: &'static str =
-        "Kernel-published system clock including monotonic tick counter and Unix wall time.";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("ticks_since_boot".to_string(), PropValue::U64(self.ticks_since_boot)));
-        out.push(("tick_hz".to_string(), PropValue::U64(self.tick_hz as u64)));
-        out.push(("unix_seconds".to_string(), PropValue::I64(self.unix_seconds)));
-        out.push(("unix_nanos".to_string(), PropValue::U64(self.unix_nanos as u64)));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut ticks_since_boot = 0_u64;
-        let mut tick_hz = 0_u32;
-        let mut unix_seconds = 0_i64;
-        let mut unix_nanos = 0_u32;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                "ticks_since_boot" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        ticks_since_boot = v;
-                    }
-                }
-                "tick_hz" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        tick_hz = v as u32;
-                    }
-                }
-                "unix_seconds" => {
-                    if let PropValue::I64(v) = prop.1 {
-                        unix_seconds = v;
-                    }
-                }
-                "unix_nanos" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        unix_nanos = v as u32;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        TimeSource {
-            id,
-            ticks_since_boot,
-            tick_hz,
-            unix_seconds,
-            unix_nanos,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            ("ticks_since_boot", PropType::U64),
-            ("tick_hz", PropType::U64),
-            ("unix_seconds", PropType::I64),
-            ("unix_nanos", PropType::U64),
-        ]
-    }
 }
 
 impl TimeSource {
@@ -839,70 +692,13 @@ impl AlarmRequest {
     }
 }
 
+#[derive(Thing)]
+#[thing(description = "Recorded firing of a kernel-backed alarm.")]
 pub struct AlarmEvent {
     pub id: ThingId,
     pub alarm_id: ThingId,
     pub fired_unix_seconds: i64,
     pub fired_unix_nanos: u32,
-}
-
-impl Thing for AlarmEvent {
-    const KIND: &'static str = "AlarmEvent";
-    const DESCRIPTION: &'static str = "Recorded firing of a kernel-backed alarm.";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("alarm_id".to_string(), PropValue::U64(self.alarm_id.0)));
-        out.push((
-            "fired_unix_seconds".to_string(),
-            PropValue::I64(self.fired_unix_seconds),
-        ));
-        out.push((
-            "fired_unix_nanos".to_string(),
-            PropValue::U64(self.fired_unix_nanos as u64),
-        ));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut alarm_id = ThingId(0);
-        let mut fired_unix_seconds = 0_i64;
-        let mut fired_unix_nanos = 0_u32;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                "alarm_id" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        alarm_id = ThingId(v);
-                    }
-                }
-                "fired_unix_seconds" => {
-                    if let PropValue::I64(v) = prop.1 {
-                        fired_unix_seconds = v;
-                    }
-                }
-                "fired_unix_nanos" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        fired_unix_nanos = v as u32;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        AlarmEvent {
-            id,
-            alarm_id,
-            fired_unix_seconds,
-            fired_unix_nanos,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            ("alarm_id", PropType::U64),
-            ("fired_unix_seconds", PropType::I64),
-            ("fired_unix_nanos", PropType::U64),
-        ]
-    }
 }
 
 impl AlarmEvent {

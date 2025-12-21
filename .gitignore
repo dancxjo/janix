@@ -7,7 +7,6 @@ Cargo.lock
 /iso_root
 /boot/kernel
 /kernel/kernel
-/fonts/
 *.log
 EFI/BOOT/*.EFI
 thing_macros/tests/ui/unsupported_field.stderr

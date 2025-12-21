@@ -474,3 +474,60 @@ pub fn sys_pci_read_config(bus: u8, slot: u8, func: u8, offset: u16, width: u8) 
         None
     }
 }
+
+pub fn sys_dev_open(kind: u32, index: u32) -> Result<abi::syscall_defs::DeviceHandle, abi::syscall_defs::SysError> {
+    use abi::syscall_defs::{DevOpenArgs, DevOpenRet, SysError, SysRet};
+    use abi::syscalls::SYSCALL_DEV_OPEN;
+
+    let args = DevOpenArgs { kind, index };
+    let mut ret = SysRet::<DevOpenRet> {
+        ok: 0,
+        val: DevOpenRet::default(),
+        err: SysError { code: 0, detail: 0 },
+    };
+
+    unsafe {
+        raw_syscall(
+            SYSCALL_DEV_OPEN,
+            &args as *const _ as u64,
+            &mut ret as *mut _ as u64,
+            0, 0, 0, 0
+        )
+    };
+
+    if ret.ok != 0 {
+        Ok(ret.val.handle)
+    } else {
+        Err(ret.err)
+    }
+}
+
+pub fn sys_dev_read(handle: abi::syscall_defs::DeviceHandle, out: &mut [u8]) -> Result<usize, abi::syscall_defs::SysError> {
+    use abi::syscall_defs::{DevReadArgs, DevReadRet, SysError, SysRet};
+    use abi::syscalls::SYSCALL_DEV_READ;
+
+    let args = DevReadArgs {
+        handle,
+        out: UserSlice::from_slice(out),
+    };
+    let mut ret = SysRet::<DevReadRet> {
+        ok: 0,
+        val: DevReadRet::default(),
+        err: SysError { code: 0, detail: 0 },
+    };
+
+    unsafe {
+        raw_syscall(
+            SYSCALL_DEV_READ,
+            &args as *const _ as u64,
+            &mut ret as *mut _ as u64,
+            0, 0, 0, 0
+        )
+    };
+
+    if ret.ok != 0 {
+        Ok(ret.val.bytes_read as usize)
+    } else {
+        Err(ret.err)
+    }
+}

@@ -18,65 +18,18 @@ const ENABLE_POLLING_MODE: bool = true;
 use abi::syscall_defs::{
     DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr, UserSlice,
 };
-use abi::syscalls::{SYSCALL_DEV_OPEN, SYSCALL_DEV_READ};
+
+// use abi::syscalls::{SYSCALL_DEV_OPEN, SYSCALL_DEV_READ}; // Removed
+
 use thing_os::resident::{resident_create_and_map};
 use thing_os::resident::mouse::{MouseEntry, MouseStreamMapped};
 use thing_os::{update_props, PropKey, PropValue};
 
-unsafe fn syscall_dev_open(kind: u32, index: u32) -> Result<DeviceHandle, SysError> {
-    let args = DevOpenArgs { kind, index };
-    let mut ret = SysRet::<DevOpenRet> {
-        ok: 0,
-        val: DevOpenRet::default(),
-        err: SysError { code: 0, detail: 0 },
-    };
-    
-    unsafe {
-        core::arch::asm!(
-            "int 0x80",
-            in("rax") SYSCALL_DEV_OPEN,
-            in("rdi") &args,
-            in("rsi") &ret,
-            lateout("rcx") _,
-            lateout("r11") _,
-        );
-    }
 
-    if ret.ok != 0 {
-        Ok(ret.val.handle)
-    } else {
-        Err(ret.err)
-    }
-}
+use thing_os::syscalls::{sys_dev_open as syscall_dev_open, sys_dev_read as syscall_dev_read};
 
-unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize, SysError> {
-    let args = DevReadArgs {
-        handle,
-        out: UserSlice::from_slice(out),
-    };
-    let mut ret = SysRet::<DevReadRet> {
-        ok: 0,
-        val: DevReadRet::default(),
-        err: SysError { code: 0, detail: 0 },
-    };
+// Locals removed.
 
-    unsafe {
-        core::arch::asm!(
-            "int 0x80",
-            in("rax") SYSCALL_DEV_READ,
-            in("rdi") &args,
-            in("rsi") &ret,
-            lateout("rcx") _,
-            lateout("r11") _,
-        );
-    }
-
-    if ret.ok != 0 {
-        Ok(ret.val.bytes_read as usize)
-    } else {
-        Err(ret.err)
-    }
-}
 
 pub fn driver_main() -> ! {
     println!("ps2_mouse_driver: starting (resident stream)");

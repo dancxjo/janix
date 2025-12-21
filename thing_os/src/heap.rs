@@ -5,15 +5,64 @@ use abi::{USER_HEAP_END, USER_HEAP_START};
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use core::cell::UnsafeCell;
-use linked_list_allocator::Heap;
+// use linked_list_allocator::Heap;
 
 // First bad allocation recorded as (align << 32) | (size_low32)
 static FIRST_BAD_LAYOUT: AtomicU64 = AtomicU64::new(0);
 
+// Bump allocator for debug stability
+pub struct BumpAllocator {
+    start: usize,
+    end: usize,
+    next: usize,
+    allocations: usize,
+}
+
+impl BumpAllocator {
+    const fn empty() -> Self {
+        BumpAllocator {
+            start: 0,
+            end: 0,
+            next: 0,
+            allocations: 0,
+        }
+    }
+
+    fn init(&mut self, start: usize, size: usize) {
+        self.start = start;
+        self.end = start + size;
+        self.next = start;
+    }
+
+    fn alloc(&mut self, layout: Layout) -> *mut u8 {
+        let alloc_start = align_up(self.next, layout.align());
+        let alloc_end = match alloc_start.checked_add(layout.size()) {
+            Some(end) => end,
+            None => return core::ptr::null_mut(),
+        };
+
+        if alloc_end > self.end {
+            return core::ptr::null_mut();
+        }
+
+        self.next = alloc_end;
+        self.allocations += 1;
+        alloc_start as *mut u8
+    }
+
+    fn dealloc(&mut self, _ptr: *mut u8, _layout: Layout) {
+        self.allocations = self.allocations.saturating_sub(1);
+    }
+}
+
+fn align_up(addr: usize, align: usize) -> usize {
+    (addr + align - 1) & !(align - 1)
+}
+
 #[repr(C)]
 struct SimpleLockedHeap {
     lock: AtomicBool,
-    inner: UnsafeCell<Heap>,
+    inner: UnsafeCell<BumpAllocator>,
 }
 
 unsafe impl Sync for SimpleLockedHeap {}
@@ -22,7 +71,7 @@ impl SimpleLockedHeap {
     pub const fn new() -> Self {
         Self {
             lock: AtomicBool::new(false),
-            inner: UnsafeCell::new(Heap::empty()),
+            inner: UnsafeCell::new(BumpAllocator::empty()),
         }
     }
 
@@ -32,20 +81,29 @@ impl SimpleLockedHeap {
         }
         HeapGuard { lock: &self.lock, inner: unsafe { &mut *self.inner.get() } }
     }
+
+    pub unsafe fn init(&self, start: *mut u8, size: usize) {
+        while self.lock.swap(true, Ordering::Acquire) {
+            core::hint::spin_loop();
+        }
+        let heap = &mut *self.inner.get();
+        heap.init(start as usize, size);
+        self.lock.store(false, Ordering::Release);
+    }
 }
 
 pub struct HeapGuard<'a> {
     lock: &'a AtomicBool,
-    inner: &'a mut Heap,
+    inner: &'a mut BumpAllocator,
 }
 
-impl core::ops::Deref for HeapGuard<'_> {
-    type Target = Heap;
-    fn deref(&self) -> &Heap { self.inner }
+impl<'a> core::ops::Deref for HeapGuard<'a> {
+    type Target = BumpAllocator;
+    fn deref(&self) -> &BumpAllocator { self.inner }
 }
 
 impl core::ops::DerefMut for HeapGuard<'_> {
-    fn deref_mut(&mut self) -> &mut Heap { self.inner }
+    fn deref_mut(&mut self) -> &mut BumpAllocator { self.inner }
 }
 
 impl Drop for HeapGuard<'_> {
@@ -57,17 +115,12 @@ impl Drop for HeapGuard<'_> {
 unsafe impl GlobalAlloc for SimpleLockedHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let mut heap = self.lock();
-        heap.allocate_first_fit(layout)
-            .ok()
-            .map(|ptr| ptr.as_ptr())
-            .unwrap_or(core::ptr::null_mut())
+        heap.alloc(layout)
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let mut heap = self.lock();
-        if let Some(p) = core::ptr::NonNull::new(ptr) {
-            heap.deallocate(p, layout);
-        }
+        heap.dealloc(ptr, layout)
     }
 }
 
@@ -76,20 +129,12 @@ struct CheckedHeap(SimpleLockedHeap);
 unsafe impl GlobalAlloc for CheckedHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let a = layout.align();
-        let s = layout.size();
-
-        // If alignment is ever not a power-of-two, that is a *hard invariant break*.
+        // Check power-of-two alignment
         if a == 0 || (a & (a - 1)) != 0 {
-            let packed = ((a as u64) << 32) | ((s as u64) & 0xFFFF_FFFF);
-            FIRST_BAD_LAYOUT.compare_exchange(0, packed, Ordering::AcqRel, Ordering::Relaxed).ok();
-
-            // Log without allocating
-            log_raw("ALLOC ERROR: layout.align is not power-of-two (halting)");
-
-            // Halt: we want the earliest failure point, not cascading corruption.
-            loop {}
+             // ... error handling ...
+             log_raw("ALLOC ERROR: layout.align is not power-of-two (halting)");
+             loop {}
         }
-
         self.0.alloc(layout)
     }
 
@@ -122,7 +167,7 @@ pub fn init_user_heap() {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
 
-        GLOBAL_ALLOCATOR.0.lock().init(heap_start, heap_size);
+        GLOBAL_ALLOCATOR.0.init(heap_start, heap_size);
     }
 }
 

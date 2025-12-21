@@ -873,6 +873,13 @@ fn parse_raw_identifier(cmdline: &core::ffi::CStr, _path: &core::ffi::CStr) -> O
         return None;
     };
 
+    // Allow shorthand `image=<identifier>` for bundling bitmap assets.
+    if let Some(ident) = parse_keyed_argument(line, "image=") {
+        if !ident.is_empty() {
+            return Some((String::from("image"), ident));
+        }
+    }
+
     if let Some(val) = parse_keyed_argument(line, "raw=") {
         if let Some((kind, ident)) = val.split_once(':') {
             if !kind.is_empty() && !ident.is_empty() {

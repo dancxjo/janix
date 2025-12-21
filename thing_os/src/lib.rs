@@ -418,7 +418,6 @@ pub fn graph_query(node_id: NodeId) -> Option<u64> {
             // }
         // }
         _ => None,
-        _ => None,
     }
 }
 

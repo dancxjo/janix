@@ -1,5 +1,10 @@
 use core::arch::asm;
+use core::sync::atomic::{AtomicU64, Ordering};
 use kernel::time::HardwareTimer;
+
+// Default to 10MHz (QEMU virt)
+// This can be updated by boot code if FDT is parsed.
+pub static FREQUENCY: AtomicU64 = AtomicU64::new(10_000_000);
 
 pub struct RiscvHardwareTimer;
 
@@ -21,15 +26,16 @@ impl HardwareTimer for RiscvHardwareTimer {
         unsafe {
             asm!("rdtime {}", out(reg) cycles, options(nomem, nostack));
         }
-        // Assume 10MHz for QEMU virt (100 ns per cycle)
-        // TODO: Get actual frequency from device tree or config
-        cycles * 100
+
+        let freq = FREQUENCY.load(Ordering::Relaxed);
+        // cycles * 1e9 / freq
+        ((cycles as u128 * 1_000_000_000) / freq as u128) as u64
     }
 
     fn set_deadline_ns(&self, deadline_ns: u64) {
-        // Convert deadline_ns to cycles.
-        // Since now_ns = cycles * 100, then cycles = deadline_ns / 100.
-        let cycles = deadline_ns / 100;
+        let freq = FREQUENCY.load(Ordering::Relaxed);
+        // deadline_ns * freq / 1e9
+        let cycles = ((deadline_ns as u128 * freq as u128) / 1_000_000_000) as u64;
 
         // Program the timer using SBI.
         super::sbi::set_timer(cycles);

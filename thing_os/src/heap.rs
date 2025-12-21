@@ -56,5 +56,14 @@ pub fn init_user_heap() {
 #[cfg(target_os = "none")]
 #[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
-    panic!("Allocation failed");
+    // Log without allocating to avoid recursive panic
+    let msg = "ALLOCATION FAILED\n";
+    let req = abi::KernelRequest::Log { message: UserSlice::from_slice(msg.as_bytes()) };
+    crate::syscalls::syscall(req);
+
+    // Exit thread gracefully (code 1 for error)
+    unsafe {
+        crate::sys::raw_syscall(abi::syscalls::SYSCALL_EXIT_THREAD, 1, 0, 0, 0, 0, 0);
+    }
+    loop {}
 }

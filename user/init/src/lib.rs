@@ -30,7 +30,7 @@ pub fn init_main() -> ! {
     // loop {}
 
     ensure_modes();
-    println!("init: ensure_modes done");
+    // println!("init: ensure_modes done");
 
     #[cfg(feature = "rootfs")]
     {

@@ -62,15 +62,12 @@ pub fn dump_graph_table() {
                 first = false;
             }
             let msg = format!("(t{}:{} {{ {} }})", node.id.0, kind_str, props_str);
-            // crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
+            crate::log(&msg);
         });
     }
 }
 
 pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, PropValue)]) {
-    #[cfg(test)]
-    return;
-
     let kind_str = symbols::resolve(kind).unwrap_or_else(|| "???".into());
     let mut props_str = alloc::string::String::new();
     let mut first = true;
@@ -85,15 +82,34 @@ pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, Prop
     }
     // format: (t1234:Thorton { kay: 'vel', boo: 123 })
     let msg = format!("(t{}:{} {{ {} }})", id.0, kind_str, props_str);
-    // crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
+    crate::log(&msg);
+}
+
+pub fn print_thing_updated(id: ThingId, props: &[(SymbolId, PropValue)]) {
+    let mut props_str = alloc::string::String::new();
+    let mut first = true;
+    for (key_id, val) in props {
+        if !first {
+            props_str.push_str(", ");
+        }
+        let key_str = symbols::resolve(*key_id).unwrap_or_else(|| "???".into());
+        let val_str = fmt_prop_value(val);
+        props_str.push_str(&format!("{}: {}", key_str, val_str));
+        first = false;
+    }
+    let msg = format!("(t{}) updated {{ {} }}", id.0, props_str);
+    crate::log(&msg);
 }
 
 pub fn print_link_created(src: ThingId, pred: Predicate, dst: ThingId) {
-    #[cfg(test)]
-    return;
-
     // format: (t1234)-[:RESOLVED_NAME]->(x8549)
     let pred_str = resolve_predicate(pred);
     let msg = format!("(t{})-[:{}]->(t{})", src.0, pred_str, dst.0);
-    // crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
+    crate::log(&msg);
+}
+
+pub fn print_link_removed(src: ThingId, pred: Predicate, dst: ThingId) {
+    let pred_str = resolve_predicate(pred);
+    let msg = format!("(t{})-[:{}]-/->(t{})", src.0, pred_str, dst.0);
+    crate::log(&msg);
 }

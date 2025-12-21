@@ -17,7 +17,7 @@ impl fmt::Write for Console {
 
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    let _ = Console.write_str(args);
+    let _ = Console.write_fmt(args);
 }
 
 #[macro_export]

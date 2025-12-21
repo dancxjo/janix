@@ -23,16 +23,22 @@ pub fn init_machine() {
         crate::boot_screen::step(leaked);
     }
 
+    kernel::log("Checking HHDM response...");
     if let Some(hhdm_response) = crate::boot_model::HHDM_REQUEST.get_response() {
         let offset = hhdm_response.offset();
         kernel::memory::set_hhdm_offset(offset);
         unsafe { arch::user::init_user_stack(offset) };
+        kernel::log("User stack initialized");
+    } else {
+        kernel::log("No HHDM response!");
     }
 
     // Initialize architecture-specific tables (GDT, etc.)
     // This MUST happen before we try to enter user mode or load segment selectors.
     crate::boot_screen::step("Initializing architecture tables...");
+    kernel::log("Calling init_arch_tables...");
     arch::platform::init_arch_tables();
+    kernel::log("init_arch_tables returned");
 
     crate::boot_screen::step("Initializing kernel core...");
     kernel::init();

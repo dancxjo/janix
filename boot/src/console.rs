@@ -308,6 +308,11 @@ fn console_mode_should_draw() -> bool {
     let prop_mode_idx = symbols::intern(graph_kinds::PROP_MODE_INDEX);
     let prop_mode_active = symbols::intern(graph_kinds::PROP_MODE_ACTIVE);
 
+    // Check if graph is initialized before iterating
+    if kernel::graph::store::things_slab().lock().is_none() {
+        return true;
+    }
+
     graph::iter_things(|thing| {
         if thing.kind == kind_mode {
             seen_mode = true;

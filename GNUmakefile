@@ -160,6 +160,21 @@ launch-log-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAM
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
 
+.PHONY: run-debug-hang-x86_64
+run-debug-hang-x86_64:
+	$(MAKE) KARCH=x86_64 launch-debug-hang-x86_64
+
+.PHONY: launch-debug-hang-x86_64
+launch-debug-hang-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
+	scripts/debug_hang.sh $(APPS_TARGET_DIR) -- \
+	qemu-system-x86_64 $(QEMU_NO_REBOOT) \
+		-M q35 \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
+
 
 # ---- AARCH64 ----
 

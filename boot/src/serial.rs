@@ -53,10 +53,12 @@ pub mod arch {
 
     impl ConsoleSink for SerialSink {
         fn write_str(&self, s: &str) {
-            let mut port = self.0.lock();
-            for byte in s.bytes() {
-                port.send(byte);
-            }
+            x86_64::instructions::interrupts::without_interrupts(|| {
+                let mut port = self.0.lock();
+                for byte in s.bytes() {
+                    port.send(byte);
+                }
+            });
         }
     }
 

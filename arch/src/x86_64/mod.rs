@@ -7,6 +7,7 @@ pub mod syscall;
 pub mod time;
 pub mod trap;
 pub mod apic;
+pub mod paging;
 
 use super::{Arch, UserEntryRegs};
 

@@ -21,7 +21,7 @@
 | 16 | `SYSCALL_THING_LIST` | `N/A` | `Inline/Unknown` |  |
 | 17 | `SYSCALL_ADD_LINK` | `N/A` | `kernel::graph::add_link` |  |
 | 18 | `SYSCALL_LINK_AT` | `N/A` | `kernel::graph::link_target_at` |  |
-| 19 | `SYSCALL_SCHEMA_REGISTER_PACKAGE` | `N/A` | `Not found in x86_64/syscall.rs` | Missing handler |
+| 19 | `SYSCALL_SCHEMA_REGISTER_PACKAGE` | `SchemaRegisterPackage` | `kernel::handle_request (SchemaRegisterPackage)` |  |
 | 20 | `SYSCALL_GRAPH_QUERY` | `N/A` | `Not found in x86_64/syscall.rs` | Missing handler |
 | 21 | `SYSCALL_CREATE_TRANSACTION` | `N/A` | `Not found in x86_64/syscall.rs` | Missing handler |
 | 22 | `SYSCALL_COMMIT_TRANSACTION` | `N/A` | `Not found in x86_64/syscall.rs` | Missing handler |

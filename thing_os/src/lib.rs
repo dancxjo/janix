@@ -33,6 +33,7 @@ use thing_models::graph_kinds::{
     PROP_NAME, PROP_WIDTH, PROP_HEIGHT, PROP_STRIDE, PROP_PIXEL_FORMAT, PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
     KIND_SHARED_BUFFER
 };
+use thing_macros::Thing;
 pub use alloc::boxed::Box;
 pub use alloc::vec::Vec;
 pub use alloc::string::{String, ToString};
@@ -88,69 +89,22 @@ pub enum SysError {
     Unexpected,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Thing)]
+#[thing(description = "A CPU core identified by its index in the system")]
 pub struct CpuCoreThing {
     pub id: ThingId,
     pub index: u64,
 }
 
-impl Thing for CpuCoreThing {
-    const KIND: &'static str = "CpuCore";
-    const DESCRIPTION: &'static str = "A CPU core identified by its index in the system";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("index".to_string(), PropValue::U64(self.index)));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut index = 0;
-        for prop in props.iter().flatten() {
-            if prop.0 == "index" {
-                if let PropValue::U64(v) = prop.1 {
-                    index = v;
-                }
-            }
-        }
-        CpuCoreThing { id, index }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[("index", PropType::U64)]
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Thing)]
+#[thing(description = "A process with process identifier (PID) and execution state")]
 pub struct ProcessThing {
     pub id: ThingId,
     pub pid: u64,
 }
 
-impl Thing for ProcessThing {
-    const KIND: &'static str = "Process";
-    const DESCRIPTION: &'static str = "A process with process identifier (PID) and execution state";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("pid".to_string(), PropValue::U64(self.pid)));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut pid = 0;
-        for prop in props.iter().flatten() {
-            if prop.0 == "pid" {
-                if let PropValue::U64(v) = prop.1 {
-                    pid = v;
-                }
-            }
-        }
-        ProcessThing { id, pid }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[("pid", PropType::U64)]
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Thing)]
+#[thing(description = "A thread of execution with thread identifier, state, priority, and runtime tracking")]
 pub struct ThreadThing {
     pub id: ThingId,
     pub tid: u64,
@@ -330,77 +284,6 @@ impl Thing for SharedBufferThing {
     }
 }
 
-impl Thing for ThreadThing {
-    const KIND: &'static str = "Thread";
-    const DESCRIPTION: &'static str =
-        "A thread of execution with thread identifier, state, priority, and runtime tracking";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("tid".to_string(), PropValue::U64(self.tid)));
-        out.push(("state".to_string(), PropValue::Str(self.state.clone())));
-        out.push(("priority".to_string(), PropValue::U64(self.priority)));
-        out.push(("runtime_ns".to_string(), PropValue::U64(self.runtime_ns)));
-        out.push(("last_started_ns".to_string(), PropValue::U64(self.last_started_ns)));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut tid = 0;
-        let mut state = String::new();
-        let mut priority = 0;
-        let mut runtime_ns = 0;
-        let mut last_started_ns = 0;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                "tid" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        tid = v;
-                    }
-                }
-                "state" => {
-                    if let PropValue::Str(ref v) = prop.1 {
-                        state = v.clone();
-                    }
-                }
-                "priority" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        priority = v;
-                    }
-                }
-                "runtime_ns" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        runtime_ns = v;
-                    }
-                }
-                "last_started_ns" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        last_started_ns = v;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        ThreadThing {
-            id,
-            tid,
-            state,
-            priority,
-            runtime_ns,
-            last_started_ns,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            ("tid", PropType::U64),
-            ("state", PropType::Str),
-            ("priority", PropType::U64),
-            ("runtime_ns", PropType::U64),
-            ("last_started_ns", PropType::U64),
-        ]
-    }
-}
 
 /// Query a thing in the kernel graph and return the associated value.
 pub fn graph_query(node_id: NodeId) -> Option<u64> {

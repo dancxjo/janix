@@ -1,4 +1,4 @@
-use hal::{PciConfigAccess, MmioMapper};
+use hw::{PciConfigAccess, MmioMapper};
 use crate::memory::phys_to_virt;
 
 pub struct KernelPciConfigAccess;

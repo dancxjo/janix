@@ -9,7 +9,7 @@ members = [
     "user/compositor",
     "user/compositor_api",
     "user/window_demo",
-    "libs/hal",
+    "user/drivers/hw",
     "user/drivers/usb",
     "user/drivers/pci",
     "thing_macros",

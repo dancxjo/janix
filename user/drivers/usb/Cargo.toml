@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hal = { path = "../../../libs/hal" }
+hw = { path = "../hw" }
 abi = { path = "../../../abi" }
 thing_os = { path = "../../../thing_os" }
 spin = "0.9.8"

@@ -10,7 +10,7 @@ use abi::{
 use thing_os::thing_models::graph_kinds::{self, KIND_PCI_DEVICE};
 use thing_os::graph_ops::GraphOp;
 use alloc::vec::Vec;
-use hal::{PciConfigAccess};
+use hw::{PciConfigAccess};
 use thing_os::intern;
 
 pub trait GraphSink {

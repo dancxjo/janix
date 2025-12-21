@@ -12,7 +12,7 @@ default = ["arch_pci_in_kernel", "debug_logging"]
 
 [dependencies]
 abi = { path = "../abi" }
-hal = { path = "../libs/hal" }
+hw = { path = "../user/drivers/hw" }
 # drivers_usb = { path = "../drivers_usb" } # Moved to user/drivers
 # drivers_pci = { path = "../drivers_pci" } # Moved to user/drivers
 thing_models = { path = "../thing_models" }

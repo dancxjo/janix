@@ -3,10 +3,8 @@
 use abi::wire::common::UserSlice;
 use abi::{USER_HEAP_END, USER_HEAP_START};
 use core::alloc::{GlobalAlloc, Layout};
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 use linked_list_allocator::LockedHeap;
-
-static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 // First bad allocation recorded as (align << 32) | (size_low32)
 static FIRST_BAD_LAYOUT: AtomicU64 = AtomicU64::new(0);
@@ -44,10 +42,6 @@ static GLOBAL_ALLOCATOR: CheckedHeap = CheckedHeap(LockedHeap::empty());
 
 pub fn init_user_heap() {
     crate::println!("heap::init_heap: start={:#x}", USER_HEAP_START);
-
-    if INITIALIZED.swap(true, Ordering::AcqRel) {
-        return;
-    }
 
     // Print address of GLOBAL_ALLOCATOR to verify it's not NULL
     let alloc_addr = &GLOBAL_ALLOCATOR as *const _ as usize;

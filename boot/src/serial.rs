@@ -160,9 +160,15 @@ pub mod arch {
         SerialSink(Mutex::new(unsafe { Pl011::new(0x09000000 as *mut u8) }));
     static SEMIHOSTING: SemihostingSink = SemihostingSink;
 
-    pub fn init_serial(_offset: u64) {
+    pub fn init_serial(offset: u64) {
         // Register Semihosting first so we get output even if PL011 fails
         register_sink(&SEMIHOSTING);
+
+        // FIXME: PL011 might not be mapped in HHDM. Accessing it might crash.
+        // For now, let's try to init it, but if it crashes, we hope Semihosting worked.
+        if offset != 0 {
+            init_pl011(offset);
+        }
     }
 
     pub fn init_pl011(offset: u64) {

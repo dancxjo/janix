@@ -44,6 +44,10 @@ pub fn init_machine() {
     // (AArch64 needs this for paging::map_device_region during map_boot_device_regions)
     crate::boot_model::seed_memory_graph_from_limine();
 
+    // Seed DTB frequency (RISC-V)
+    #[cfg(target_arch = "riscv64")]
+    arch::riscv64::dtb::init();
+
     if arch::platform::map_boot_device_regions() {
         kernel::log("PCI regions mapped.");
         #[cfg(target_arch = "aarch64")]

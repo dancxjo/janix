@@ -6,6 +6,38 @@ use kernel::time::HardwareTimer;
 // This can be updated by boot code if FDT is parsed.
 pub static FREQUENCY: AtomicU64 = AtomicU64::new(10_000_000);
 
+pub unsafe fn init_frequency_from_dtb(dtb_ptr: *const u8) {
+    let fdt = match unsafe { fdt::Fdt::from_ptr(dtb_ptr) } {
+        Ok(f) => f,
+        Err(_e) => {
+             return;
+        }
+    };
+
+    let mut found = false;
+    for cpu in fdt.cpus() {
+        let freq = cpu.timebase_frequency();
+        if freq > 0 {
+            let freq = freq as u64;
+            // Set the frequency
+            FREQUENCY.store(freq, Ordering::Relaxed);
+            found = true;
+            break; // Assuming all CPUs have same timebase
+        }
+    }
+
+    if !found {
+        if let Some(cpus_node) = fdt.find_node("/cpus") {
+             if let Some(prop) = cpus_node.property("timebase-frequency") {
+                 let freq = prop.as_usize().unwrap_or(0) as u64;
+                 if freq > 0 {
+                     FREQUENCY.store(freq, Ordering::Relaxed);
+                 }
+             }
+        }
+    }
+}
+
 pub struct RiscvHardwareTimer;
 
 impl HardwareTimer for RiscvHardwareTimer {
@@ -28,6 +60,9 @@ impl HardwareTimer for RiscvHardwareTimer {
         }
 
         let freq = FREQUENCY.load(Ordering::Relaxed);
+        if freq == 0 {
+             return 0;
+        }
         // cycles * 1e9 / freq
         ((cycles as u128 * 1_000_000_000) / freq as u128) as u64
     }

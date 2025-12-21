@@ -7,7 +7,6 @@ use abi::{
     syscall_defs::SymbolId,
     wire::graph::{WirePropValue},
 };
-use thing_os::{PropKey, PropValue};
 use thing_os::thing_models::graph_kinds::{self, KIND_PCI_DEVICE};
 use thing_os::graph_ops::GraphOp;
 use alloc::vec::Vec;
@@ -124,16 +123,18 @@ use thing_os::println;
 struct UserPciConfig;
 impl PciConfigAccess for UserPciConfig {
     fn read_u32(&self, bus: u8, slot: u8, func: u8, offset: u16) -> u32 {
-        println!("PCI READ STUB: b={} s={} f={} o={}", bus, slot, func, offset);
-        0xFFFFFFFF
+        thing_os::syscalls::sys_pci_read_config(bus, slot, func, offset, 4).unwrap_or(0xFFFFFFFF)
     }
     fn read_u16(&self, bus: u8, slot: u8, func: u8, offset: u16) -> u16 {
-        0xFFFF
+        thing_os::syscalls::sys_pci_read_config(bus, slot, func, offset, 2).unwrap_or(0xFFFF) as u16
     }
     fn read_u8(&self, bus: u8, slot: u8, func: u8, offset: u16) -> u8 {
-        0xFF
+        thing_os::syscalls::sys_pci_read_config(bus, slot, func, offset, 1).unwrap_or(0xFF) as u8
     }
 }
+
+use abi::wire::graph::WireProp;
+use abi::wire::common::UserSlice;
 
 struct UserGraphSink;
 impl GraphSink for UserGraphSink {
@@ -141,9 +142,24 @@ impl GraphSink for UserGraphSink {
         match op {
             GraphOp::CreateThing { kind, props } => {
                 println!("PCI: Creating thing kind={:?} (sym)", kind);
-                // In real impl, convert props to slices and call Syscall
-                // For now, stub.
-                Ok(())
+                
+                let mut wire_props = Vec::with_capacity(props.len());
+                for (key, value) in props {
+                    wire_props.push(WireProp { key, value, _pad: 0 });
+                }
+                
+                let req = thing_os::KernelRequest::ThingCreate {
+                    kind,
+                    props: UserSlice::from_slice(&wire_props),
+                };
+                
+                match thing_os::syscalls::syscall(req) {
+                    thing_os::KernelResponse::ThingCreated { .. } => Ok(()),
+                    _ => {
+                        println!("PCI: Failed to create thing");
+                        Err("Failed to create thing")
+                    }
+                }
             }
             _ => Ok(()),
         }

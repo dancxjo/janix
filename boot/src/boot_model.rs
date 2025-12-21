@@ -1,15 +1,19 @@
 extern crate alloc;
 
 use crate::FRAMEBUFFER_REQUEST;
-use abi::{PixelFormat, PropValue, ThingId, syscall_defs::SymbolId};
-use thing_models::Thing;
+use abi::{PixelFormat, ThingId, syscall_defs::SymbolId};
+use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource, PropValue};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use kernel::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_pool};
 use kernel::model;
 use kernel::{graph, graph_kinds, log, shared_buffer, time, symbols};
 use limine::memory_map::EntryType;
-use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
-use thing_models::{AlarmRequest, BootProgram, FontModule, TimeSource};
+use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest, KernelFileRequest};
+// use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource}; // Merged into line 4
+
+#[used]
+#[unsafe(link_section = ".requests")]
+static KERNEL_FILE_REQUEST: KernelFileRequest = KernelFileRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -267,31 +271,6 @@ pub fn seed_display_from_limine() {
         frames,
     ) {
         Ok(buffer_id) => {
-            let buffer_bytes = info.stride as u64 * info.height as u64;
-
-            let Some(front_buffer_id) = register_logical_buffer(
-                info.width,
-                info.height,
-                info.stride,
-                pixel_format,
-                buffer_bytes,
-            ) else {
-                log("Failed to allocate front display buffer for double buffering");
-                return;
-            };
-
-            let Some(back_buffer_id) = register_logical_buffer(
-                info.width,
-                info.height,
-                info.stride,
-                pixel_format,
-                buffer_bytes,
-            ) else {
-                log("Failed to allocate back display buffer for double buffering");
-                return;
-            };
-
-            // create_display call also needs checking in kernel::model
             let Some(display_id) = kernel::model::create_display(
                 "display0",
                 info.width as u64,
@@ -306,16 +285,6 @@ pub fn seed_display_from_limine() {
                 display_id,
                 graph_kinds::LINK_DISPLAY_SCANOUT,
                 buffer_id,
-            );
-            let _ = graph::add_link(
-                display_id,
-                graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
-                front_buffer_id,
-            );
-            let _ = graph::add_link(
-                display_id,
-                graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
-                back_buffer_id,
             );
             log("Seeded display0 and SharedBuffer from Limine framebuffer");
         }
@@ -374,6 +343,7 @@ pub fn seed_program_images_from_limine() {
     }
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
     log(leaked);
+
 }
 
 pub fn seed_font_modules_from_limine() {
@@ -417,9 +387,6 @@ pub fn seed_font_modules_from_limine() {
         created = created.saturating_add(1);
     }
 
-    let msg = alloc::format!("Seeded {} FontModule Things from Limine modules", created);
-    let leaked: &'static str = Box::leak(msg.into_boxed_str());
-    log(leaked);
 }
 
 pub fn seed_boot_programs_from_limine() {
@@ -427,7 +394,6 @@ pub fn seed_boot_programs_from_limine() {
     let Some(profile_id) =
         graph::next_thing_of_kind_sym(kind_boot_profile, ThingId(0))
     else {
-        log("No BootProfile found; skipping BootProgram seeding");
         return;
     };
 
@@ -439,6 +405,16 @@ pub fn seed_boot_programs_from_limine() {
     let mut app_id = 1_u64;
     let mut created = 0_u64;
     let mut skipped_fonts = 0_u64;
+    let mut seen = alloc::collections::BTreeSet::new();
+
+
+    let is_debug_profile = get_kernel_arg("profile=")
+        .map(|s| s == "debug")
+        .unwrap_or(false);
+
+    if is_debug_profile {
+        log("DEBUG PROFILE ACTIVE: Only spawning init and debug_clock");
+    }
 
     for (index, module) in response.modules().iter().enumerate() {
         let identifier = match classify_limine_module((*module).string(), (*module).path(), index) {
@@ -451,6 +427,8 @@ pub fn seed_boot_programs_from_limine() {
         };
 
         if identifier == "init" {
+            // Always spawn init
+        } else if is_debug_profile && identifier != "debug_clock" {
             continue;
         }
 
@@ -458,10 +436,12 @@ pub fn seed_boot_programs_from_limine() {
             continue;
         }
 
-        if boot_program_exists(&identifier) {
-            continue;
+        if !seen.insert(identifier.clone()) {
+             continue;
         }
 
+        // Removed boot_program_exists check which caused hang
+        
         let priority = get_program_priority(&identifier);
         
         let mut respawn_policy = String::from(graph_kinds::RESPAWN_NEVER);
@@ -580,26 +560,26 @@ pub fn seed_raw_modules_from_limine() {
         let mut props_vec = alloc::vec::Vec::new();
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_IDENTIFIER),
-            abi::PropValue::Str(identifier),
+            PropValue::Str(identifier),
         ));
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_RAW_KIND),
-            abi::PropValue::Str(kind_str),
+            PropValue::Str(kind_str),
         ));
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_MODULE_INDEX),
-            abi::PropValue::U64(index as u64),
+            PropValue::U64(index as u64),
         ));
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_BASE_PHYS),
-            abi::PropValue::U64(base_phys),
+            PropValue::U64(base_phys),
         ));
-        props_vec.push((symbols::intern(thing_models::graph_kinds::PROP_SIZE), abi::PropValue::U64(size)));
+        props_vec.push((symbols::intern(thing_models::graph_kinds::PROP_SIZE), PropValue::U64(size)));
 
         if let Some(bid) = buffer_id {
             props_vec.push((
                 symbols::intern(thing_models::graph_kinds::PROP_FRAMEBUFFER_ID),
-                abi::PropValue::U64(bid.0),
+                PropValue::U64(bid.0),
             ));
         }
 
@@ -825,6 +805,21 @@ fn parse_keyed_argument(line: &str, prefix: &str) -> Option<String> {
         })
 }
 
+pub fn get_kernel_arg(prefix: &str) -> Option<String> {
+    let response = KERNEL_FILE_REQUEST.get_response()?;
+    let file = response.file();
+    let cmdline = file.cmdline();
+    // cmdline() is deprecated but returns the byte slice directly or via Deref?
+    // Using it as is for now since string() might return &CStr which needs to_bytes().
+    // The previous error was that `&[u8]` doesn't have `to_bytes()`.
+    let bytes = cmdline;
+    if bytes.is_empty() {
+        return None;
+    }
+    let cow = String::from_utf8_lossy(bytes);
+    parse_keyed_argument(&cow, prefix)
+}
+
 fn parse_respawn_policy(cmdline: &core::ffi::CStr) -> Option<String> {
     let bytes = cmdline.to_bytes();
     if bytes.is_empty() {
@@ -868,11 +863,15 @@ fn parse_raw_identifier(cmdline: &core::ffi::CStr, _path: &core::ffi::CStr) -> O
         return None;
     }
 
-    let line = if let Ok(s) = core::str::from_utf8(bytes) {
-        s
-    } else {
-        return None;
-    };
+    let cow = String::from_utf8_lossy(bytes);
+    let line = cow.as_ref();
+
+    // Allow shorthand `image=<identifier>` for bundling bitmap assets.
+    if let Some(ident) = parse_keyed_argument(line, "image=") {
+        if !ident.is_empty() {
+            return Some((String::from("image"), ident));
+        }
+    }
 
     if let Some(val) = parse_keyed_argument(line, "raw=") {
         if let Some((kind, ident)) = val.split_once(':') {

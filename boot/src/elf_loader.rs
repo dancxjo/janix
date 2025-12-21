@@ -17,6 +17,10 @@ pub struct LoadedElfProgram {
     pub heap_limit: u64,
 }
 
+fn log_milestone(message: &str) {
+    kernel::log::log_message(message);
+}
+
 pub fn load_program(image: &ProgramImageData) -> Result<LoadedElfProgram, &'static str> {
     #[cfg(target_arch = "x86_64")]
     {
@@ -35,12 +39,12 @@ pub fn load_program(image: &ProgramImageData) -> Result<LoadedElfProgram, &'stat
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64 {
-    use super::{LoadedElfProgram, ProgramImageData};
+    use super::{log_milestone, LoadedElfProgram, ProgramImageData};
     use crate::boot_model::HHDM_REQUEST;
     use abi::{USER_HEAP_END, USER_HEAP_START};
+    use alloc::format;
     use alloc::vec::Vec;
     use core::ptr;
-    use kernel::log;
     use kernel::memory;
     use x86_64::registers::control::Cr3;
     use x86_64::structures::paging::mapper::MapToError;
@@ -68,25 +72,38 @@ mod x86_64 {
             core::slice::from_raw_parts((image.base_phys + hhdm) as *const u8, image.size as usize)
         };
         let elf = ElfFile::parse(module_slice)?;
-        log("ELF loader: parsed header");
+        let total_segments = elf.program_headers.len();
+        let loadable_segments = elf
+            .program_headers
+            .iter()
+            .filter(|seg| seg.p_type == PT_LOAD && seg.p_memsz != 0)
+            .count();
+        log_milestone(&format!(
+            "elf: parsed '{}' entry={:#x} segments={}/{}",
+            image.identifier, elf.entry_point, loadable_segments, total_segments
+        ));
         let mut space = AddressSpace::new(hhdm)?;
         let mut frame_alloc = KernelFrameAllocator;
-        for (i, segment) in elf.program_headers.iter().enumerate() {
-            {
-                use alloc::format;
-                let msg = format!("ELF Seg {}: type={:#x} flags={:#x} offset={:#x} vaddr={:#x} memsz={:#x}", 
-                    i, segment.p_type, segment.p_flags, segment.p_offset, segment.p_vaddr, segment.p_memsz);
-                kernel::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
-            }
-
+        let mut mapped_segments = 0usize;
+        let mut skipped_segments = 0usize;
+        for segment in elf.program_headers.iter() {
             if segment.p_type != PT_LOAD || segment.p_memsz == 0 {
-                kernel::log("  Skipping segment (not PT_LOAD or empty)");
+                skipped_segments += 1;
                 continue;
             }
             map_segment(&mut space, segment, module_slice, &mut frame_alloc, hhdm)?;
+            mapped_segments += 1;
         }
+        log_milestone(&format!(
+            "elf: mapped segments loadable={} skipped={}",
+            mapped_segments, skipped_segments
+        ));
         let stack_top = map_stack(&mut space, &mut frame_alloc, hhdm)?;
         let (heap_base, heap_limit) = map_user_heap(&mut space, &mut frame_alloc, hhdm)?;
+        log_milestone(&format!(
+            "elf: stack+heap ready stack_top={:#x} heap={:#x}-{:#x}",
+            stack_top, heap_base, heap_limit
+        ));
         Ok(LoadedElfProgram {
             entry_point: elf.entry_point,
             user_stack_top: stack_top,
@@ -253,12 +270,6 @@ mod x86_64 {
         let start = align_down(segment.p_vaddr);
         let end = align_up(segment.p_vaddr + segment.p_memsz);
         
-        {
-            use alloc::format;
-            let msg = format!("ELF map_segment: vaddr={:#x}-{:#x} flags={:#x}", start, end, segment.p_flags);
-            kernel::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
-        }
-
         if end <= start {
             return Err("Invalid segment size");
         }
@@ -328,9 +339,11 @@ mod x86_64 {
     ) -> Result<(u64, u64), &'static str> {
         let heap_start = USER_HEAP_START as u64;
         let heap_end = USER_HEAP_END as u64;
+        let map_end = heap_start + (16 * Size4KiB::SIZE as u64);
+
         let mut mapper = mapper(space);
         let mut addr = heap_start;
-        while addr < heap_end {
+        while addr < map_end {
             let page = Page::<Size4KiB>::containing_address(VirtAddr::new(addr));
             let frame = frame_alloc
                 .allocate_frame()
@@ -425,12 +438,12 @@ mod x86_64 {
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64 {
-    use super::{LoadedElfProgram, ProgramImageData};
+    use super::{log_milestone, LoadedElfProgram, ProgramImageData};
     use crate::boot_model::HHDM_REQUEST;
     use abi::{USER_HEAP_END, USER_HEAP_START};
+    use alloc::format;
     use alloc::vec::Vec;
     use core::ptr;
-    use kernel::log;
     use kernel::memory;
 
     const PT_LOAD: u32 = 1;
@@ -463,19 +476,40 @@ mod aarch64 {
             core::slice::from_raw_parts((image.base_phys + hhdm) as *const u8, image.size as usize)
         };
         let elf = ElfFile::parse(module_slice)?;
-        log("ELF loader: parsed header");
+        let total_segments = elf.program_headers.len();
+        let loadable_segments = elf
+            .program_headers
+            .iter()
+            .filter(|seg| seg.p_type == PT_LOAD && seg.p_memsz != 0)
+            .count();
+        log_milestone(&format!(
+            "elf: parsed '{}' entry={:#x} segments={}/{}",
+            image.identifier, elf.entry_point, loadable_segments, total_segments
+        ));
         let mut space = AddressSpace::new(hhdm)?;
         let mut frame_alloc = FrameAlloc;
 
+        let mut mapped_segments = 0usize;
+        let mut skipped_segments = 0usize;
         for segment in elf.program_headers.iter() {
             if segment.p_type != PT_LOAD || segment.p_memsz == 0 {
+                skipped_segments += 1;
                 continue;
             }
             map_segment(&mut space, segment, module_slice, &mut frame_alloc, hhdm)?;
+            mapped_segments += 1;
         }
+        log_milestone(&format!(
+            "elf: mapped segments loadable={} skipped={}",
+            mapped_segments, skipped_segments
+        ));
 
         let stack_top = map_stack(&mut space, &mut frame_alloc, hhdm)?;
         let (heap_base, heap_limit) = map_user_heap(&mut space, &mut frame_alloc, hhdm)?;
+        log_milestone(&format!(
+            "elf: stack+heap ready stack_top={:#x} heap={:#x}-{:#x}",
+            stack_top, heap_base, heap_limit
+        ));
 
         Ok(LoadedElfProgram {
             entry_point: elf.entry_point,
@@ -739,8 +773,10 @@ mod aarch64 {
     ) -> Result<(u64, u64), &'static str> {
         let heap_start = USER_HEAP_START as u64;
         let heap_end = USER_HEAP_END as u64;
+        let map_end = heap_start + (16 * PAGE_SIZE);
+
         let mut addr = heap_start;
-        while addr < heap_end {
+        while addr < map_end {
             let frame = frame_alloc.allocate().ok_or("Out of frames mapping heap")?;
             space.map_page(addr, frame, true, false)?;
             zero_frame(frame, hhdm);

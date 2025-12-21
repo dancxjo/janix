@@ -1,3 +1,4 @@
+pub mod dtb;
 pub mod rtc;
 pub mod sbi;
 pub mod time;

@@ -160,6 +160,10 @@ fn on_pci_device_created(event: &GraphEvent) {
             mmio_base: mmio_base_virt,
         };
 
+        unsafe {
+            init_controller(mmio_base_virt);
+        }
+
         let mut props = Vec::new();
         controller.to_wire_props(&mut props);
 
@@ -168,4 +172,52 @@ fn on_pci_device_created(event: &GraphEvent) {
             props,
         });
     }
+}
+
+use core::ptr;
+use thing_os::println;
+
+unsafe fn init_controller(base: u64) {
+    println!("XHCI: Initializing controller at {:#x}", base);
+    let cap_reg = base as *mut u32;
+    // CAPLENGTH is byte 0
+    let caplength = ((*cap_reg) & 0xFF) as u64;
+    println!("XHCI: CAPLENGTH={}", caplength);
+    
+    let op_base = base + caplength;
+    let op_regs = op_base as *mut u32;
+    
+    let usbcmd_ptr = op_regs.add(0); // Offset 0
+    let usbsts_ptr = op_regs.add(1); // Offset 4 (u32 index 1)
+    
+    // 1. Stop Controller (Clear Run/Stop bit 0)
+    let mut cmd = ptr::read_volatile(usbcmd_ptr);
+    if (cmd & 1) != 0 {
+        println!("XHCI: Stopping controller...");
+        cmd &= !1;
+        ptr::write_volatile(usbcmd_ptr, cmd);
+    }
+    
+    // 2. Wait for HCHalted (Status bit 0 == 1)
+    println!("XHCI: Waiting for HCHalted...");
+    loop {
+        let sts = ptr::read_volatile(usbsts_ptr);
+        if (sts & 1) != 0 { break; }
+        core::hint::spin_loop();
+    }
+    
+    // 3. Reset Controller (Set HCRST bit 1)
+    println!("XHCI: Resetting controller...");
+    cmd = ptr::read_volatile(usbcmd_ptr);
+    cmd |= 2;
+    ptr::write_volatile(usbcmd_ptr, cmd);
+    
+    // 4. Wait for Reset to complete (HCRST bit 1 becomes 0)
+    println!("XHCI: Waiting for Reset completion...");
+    loop {
+        let cmd = ptr::read_volatile(usbcmd_ptr);
+        if (cmd & 2) == 0 { break; }
+        core::hint::spin_loop();
+    }
+    println!("XHCI: Reset complete.");
 }

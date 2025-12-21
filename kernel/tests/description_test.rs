@@ -1,6 +1,8 @@
 extern crate alloc;
 use kernel::graph;
 
+use thing_models::PropType;
+
 #[test]
 #[ignore]
 fn test_schema_description_storage() {
@@ -13,7 +15,7 @@ fn test_schema_description_storage() {
     let result = kernel::graph::schema::register_schema(
         kernel::symbols::intern("TestThing"),
         kernel::symbols::intern("A test thing for description validation"),
-        alloc::vec::Vec::from([(sym_prop1, abi::PropType::U64)]),
+        alloc::vec::Vec::from([(sym_prop1, PropType::U64)]),
         alloc::vec::Vec::new(),
     );
 

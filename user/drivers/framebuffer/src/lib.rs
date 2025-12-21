@@ -53,14 +53,34 @@ impl FramebufferDriver {
         );
 
         let logical_map_flags = MapFlags::READ.union(MapFlags::USER);
-        let front_buffer_id = Self::display_buffer_target(
+        let logical_map_flags = MapFlags::READ.union(MapFlags::USER);
+        
+        let front_buffer_id = match Self::display_buffer_target(
             descriptor.display_id,
             graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
-        )?;
-        let back_buffer_id = Self::display_buffer_target(
+        ) {
+             Ok(id) => id,
+             Err(_) => {
+                println!("framebuffer_driver: creating front buffer");
+                 let id = thing_os::create_shared_buffer(width, height, pixel_format)?;
+                 let _ = add_link(descriptor.display_id, graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER, id);
+                 id
+             }
+        };
+
+        let back_buffer_id = match Self::display_buffer_target(
             descriptor.display_id,
             graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
-        )?;
+        ) {
+             Ok(id) => id,
+             Err(_) => {
+                 println!("framebuffer_driver: creating back buffer");
+                 let id = thing_os::create_shared_buffer(width, height, pixel_format)?;
+                 let _ = add_link(descriptor.display_id, graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER, id);
+                 id
+             }
+        };
+
         let front_buffer = Self::map_buffer_view(front_buffer_id, logical_map_flags)?;
         let back_buffer = Self::map_buffer_view(back_buffer_id, logical_map_flags)?;
         

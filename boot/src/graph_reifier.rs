@@ -1,4 +1,4 @@
-use abi::PropValue;
+use thing_models::PropValue;
 use abi::ThingId;
 use kernel::graph::{self, GraphEvent};
 use kernel::symbols;

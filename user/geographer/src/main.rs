@@ -12,13 +12,14 @@ use alloc::vec::Vec;
 use core::slice;
 
 use abi::{
-    KernelRequest, KernelResponse, MapFlags, PixelFormat, PropKey, PropType, PropValue, SharedBufferInfo,
-    Thing, ThingId, graph_kinds,
+    KernelRequest, KernelResponse, MapFlags, PixelFormat,
+    SharedBufferInfo, ThingId,
 };
+use thing_os::{PropKey, PropType, PropValue};
 use thing_os::prelude::*;
 use thing_os::{
-    DisplayThing, Window, Surface, ProcessThing, create_thing, list_things_by_kind,
-    register_schema_for, update_props, add_link,
+    add_link, create_thing, graph_kinds, list_things_by_kind, register_schema_for, update_props,
+    DisplayThing, ProcessThing, Surface, Thing, Window,
 };
 
 mod text;
@@ -45,7 +46,7 @@ fn main() {
         for p in processes {
             nodes.push(p.id);
         }
-        
+
         // Just counting links for now
         let all_links: Vec<LinkThing> = list_things_by_kind();
         for l in all_links {
@@ -54,24 +55,44 @@ fn main() {
 
         // --- 3. Render ---
         // Clear background
-        fill_rect(win.buffer, win.stride, win.width, win.height, 0, 0, win.width as i32, win.height as i32, 0xFF202020);
+        fill_rect(
+            win.buffer,
+            win.stride,
+            win.width,
+            win.height,
+            0,
+            0,
+            win.width as i32,
+            win.height as i32,
+            0xFF202020,
+        );
 
         // Header
-        let stats = format!("System Graph | Nodes: {}  Links: {}", nodes.len(), links.len());
-        draw_text_simple(win.buffer, win.stride, win.width, win.height, 10, 10, &stats, 0xFFFFFFFF);
+        let stats = format!(
+            "System Graph | Nodes: {}  Links: {}",
+            nodes.len(),
+            links.len()
+        );
+        draw_text_simple(
+            win.buffer, win.stride, win.width, win.height, 10, 10, &stats, 0xFFFFFFFF,
+        );
 
         // List Nodes
         let mut y = 40;
         for (i, node) in nodes.iter().enumerate() {
-            if y > win.height as i32 - 20 { break; }
+            if y > win.height as i32 - 20 {
+                break;
+            }
             let s = format!("Process Node #{}: ID({})", i, node.0);
-            draw_text_simple(win.buffer, win.stride, win.width, win.height, 20, y, &s, 0xFF00FF00);
+            draw_text_simple(
+                win.buffer, win.stride, win.width, win.height, 20, y, &s, 0xFF00FF00,
+            );
             y += 20;
         }
-        
+
         // Present/Flush?
         // SimpleWindow logic maps buffer to surface. Surface updates might need a "present" prop or just modifying buffer is enough if kernel scans out.
-        // But for composited windows, we usually need to signal update? 
+        // But for composited windows, we usually need to signal update?
         // Or if it's shared buffer, compositor reads it. Compositor usually redraws on vsync.
         // We might want to sleep.
 
@@ -87,13 +108,15 @@ pub struct LinkThing {
 
 impl Thing for LinkThing {
     const KIND: &'static str = "Link"; // Only if Link things exist in graph?
-    // Actually Link is usually an edge, not a Thing. 
-    // Wait, original code had: impl Thing for LinkThing { const KIND: &'static str = "Link"; ... }
-    // If "Link" things exist, fine. If they are edges, list_things_by_kind won't find them unless they are reified as Things.
-    // Abi defines `KernelRequest::AddLink`. The link itself might not be a Thing unless explicitly created as one.
-    // But original code assumed it. I'll keep it.
+                                       // Actually Link is usually an edge, not a Thing.
+                                       // Wait, original code had: impl Thing for LinkThing { const KIND: &'static str = "Link"; ... }
+                                       // If "Link" things exist, fine. If they are edges, list_things_by_kind won't find them unless they are reified as Things.
+                                       // Abi defines `KernelRequest::AddLink`. The link itself might not be a Thing unless explicitly created as one.
+                                       // But original code assumed it. I'll keep it.
     const DESCRIPTION: &'static str = "";
-    fn schema() -> &'static [(&'static str, PropType)] { &[] }
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[]
+    }
     fn to_props(&self, _: &mut Vec<(PropKey, PropValue)>) {}
     fn from_props(id: ThingId, _: &[Option<(PropKey, PropValue)>]) -> Self {
         LinkThing { id }
@@ -105,7 +128,17 @@ impl Thing for LinkThing {
 
 // --- Drawing Helper ---
 
-fn fill_rect(buffer: &mut [u8], stride: u32, _width: u32, height: u32, x: i32, y: i32, w: i32, h: i32, color: u32) {
+fn fill_rect(
+    buffer: &mut [u8],
+    stride: u32,
+    _width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    color: u32,
+) {
     let b_r = (color & 0xFF) as u8;
     let b_g = ((color >> 8) & 0xFF) as u8;
     let b_b = ((color >> 16) & 0xFF) as u8;
@@ -113,10 +146,14 @@ fn fill_rect(buffer: &mut [u8], stride: u32, _width: u32, height: u32, x: i32, y
 
     for row in 0..h {
         let py = y + row;
-        if py < 0 || py as u32 >= height { continue; }
+        if py < 0 || py as u32 >= height {
+            continue;
+        }
         for col in 0..w {
             let px = x + col;
-            if px < 0 { continue; }
+            if px < 0 {
+                continue;
+            }
             let offset = (py as u32 * stride + px as u32 * 4) as usize;
             if offset + 4 <= buffer.len() {
                 buffer[offset] = b_r;
@@ -153,7 +190,10 @@ impl SimpleWindow {
         let display = &displays[0];
         let width_u32 = display.width as u32;
         let height_u32 = display.height as u32;
-        println!("SimpleWindow: display selected {}x{}", width_u32, height_u32);
+        println!(
+            "SimpleWindow: display selected {}x{}",
+            width_u32, height_u32
+        );
 
         // 3. Find Place
         println!("SimpleWindow: finding place...");
@@ -183,10 +223,10 @@ impl SimpleWindow {
         let _ = add_link(place_id, graph_kinds::LINK_PLACE_WINDOW, window_id);
 
         // 5. Create SharedBuffer
-        // Need raw syscall or thing_os wrapper. 
+        // Need raw syscall or thing_os wrapper.
         // thing_os doesn't seem to expose arbitrary syscall wrapper easily but it has `sys` module?
         // Or I can use `thing_os::syscalls::syscall`.
-        
+
         let buffer_id = match thing_os::syscalls::syscall(KernelRequest::CreateSharedBuffer {
             width: width_u32,
             height: height_u32,
@@ -197,13 +237,16 @@ impl SimpleWindow {
         };
 
         // 6. Map SharedBuffer
-        let (buffer_ptr, buffer_size) = match thing_os::syscalls::syscall(KernelRequest::MapSharedBuffer {
-            buffer_id,
-            flags: MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER),
-        }) {
-            KernelResponse::SharedBufferMapped { vaddr, size } => (vaddr as *mut u8, size as usize),
-            _ => return None,
-        };
+        let (buffer_ptr, buffer_size) =
+            match thing_os::syscalls::syscall(KernelRequest::MapSharedBuffer {
+                buffer_id,
+                flags: MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER),
+            }) {
+                KernelResponse::SharedBufferMapped { vaddr, size } => {
+                    (vaddr as *mut u8, size as usize)
+                }
+                _ => return None,
+            };
 
         // 7. Create Surface wrapping this buffer
         let surface = Surface {

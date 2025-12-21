@@ -4,8 +4,7 @@ use core::alloc::Layout;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use linked_list_allocator::LockedHeap;
 
-pub const KERNEL_HEAP_SIZE_BYTES: usize = 64 * 1024 * 1024;
-
+pub const KERNEL_HEAP_SIZE_BYTES: usize = 256 * 1024 * 1024; // 256 MiB
 // A little "tripwire" in .bss so we can see when nearby memory gets stomped.
 static GUARD: [u8; 0x10000] = [0; 0x10000];
 

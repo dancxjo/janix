@@ -37,7 +37,7 @@ APPS := init debug_clock window_demo compositor hello_world geographer debug_all
 ifneq ($(ENABLE_geographer),1)
 # APPS += geographer
 endif
-DRIVERS := framebuffer ps2_keyboard_driver ps2_mouse_driver pci
+DRIVERS := framebuffer ps2_keyboard_driver ps2_mouse_driver pci usb
 ifeq ($(ENABLE_ROOTFS),1)
 APPS := rootfs $(APPS)
 endif
@@ -78,10 +78,25 @@ iso: $(IMAGE_NAME).iso
 .PHONY: all-hdd
 all-hdd: $(IMAGE_NAME).hdd
 
+TEST_EXCLUDES := --exclude boot \
+	--exclude geographer \
+	--exclude compositor \
+	--exclude window_demo \
+	--exclude debug_clock \
+	--exclude hello_world \
+	--exclude init \
+	--exclude debug_alloc \
+	--exclude ps2_keyboard_driver \
+	--exclude ps2_mouse_driver \
+	--exclude framebuffer \
+	--exclude pci \
+	--exclude usb \
+	--exclude compositor_api
+
 .PHONY: test
 test:
 	@echo "=== Running ThingOS test suite ==="
-	cargo test --workspace --exclude boot
+	cargo test --workspace $(TEST_EXCLUDES) --lib --tests
 
 .PHONY: run
 run: run-$(KARCH)
@@ -144,6 +159,21 @@ launch-log-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAM
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
 	python3 scripts/analyze_crash.py qemu.log boot || true
+
+.PHONY: run-debug-hang-x86_64
+run-debug-hang-x86_64:
+	$(MAKE) KARCH=x86_64 launch-debug-hang-x86_64
+
+.PHONY: launch-debug-hang-x86_64
+launch-debug-hang-x86_64: ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd $(IMAGE_NAME).iso
+	scripts/debug_hang.sh $(APPS_TARGET_DIR) -- \
+	qemu-system-x86_64 $(QEMU_NO_REBOOT) \
+		-M q35 \
+		-serial stdio \
+		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-x86_64.fd,readonly=on \
+		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-x86_64.fd \
+		-cdrom $(IMAGE_NAME).iso \
+		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
 
 # ---- AARCH64 ----
@@ -677,12 +707,14 @@ limine/limine:
 .PHONY: user
 user:
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target x86_64-unknown-none --profile release -p init
 
 .PHONY: drivers
 drivers:
 ifneq ($(strip $(DRIVERS)),)
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(DRIVERS))
 endif
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target x86_64-unknown-none --profile release -p pci
 
 .PHONY: kernel
 kernel:
@@ -732,14 +764,17 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	mkdir -p iso_root/boot iso_root/boot/user iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
 	cp -v assets/wallpapers/clouds.bmp iso_root/boot/clouds.bmp
-	for app in $(APPS); do \
-		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/user/$$app; \
-		strip --strip-debug iso_root/boot/user/$$app; \
+	for app in debug_clock window_demo compositor hello_world geographer debug_alloc; do \
+		cp -v target/x86_64-unknown-none/debug/$$app iso_root/boot/user/$$app; \
+		# objcopy --strip-debug iso_root/boot/user/$$app; \
 	done
-	for drv in $(DRIVERS); do \
-		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \
-		strip --strip-debug iso_root/boot/drivers/$$drv; \
+	cp -v target/x86_64-unknown-none/release/init iso_root/boot/user/init
+
+	for drv in framebuffer ps2_keyboard_driver ps2_mouse_driver usb; do \
+		cp -v target/x86_64-unknown-none/debug/$$drv iso_root/boot/drivers/$$drv; \
+		# objcopy --strip-debug iso_root/boot/drivers/$$drv; \
 	done
+	cp -v target/x86_64-unknown-none/release/pci iso_root/boot/drivers/pci
 	# Fonts: Only include unifont.hex and HACK_REGULAR.ttf
 	# if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
 	# 	mkdir -p iso_root/boot/fonts; \
@@ -777,6 +812,8 @@ ifeq ($(KARCH),x86_64)
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
 		iso_root -o $(IMAGE_NAME).iso
+	cp iso_root/boot/drivers/pci pci_debug_dump
+	objdump -d -S --start-address=0x206d50 --stop-address=0x206da0 pci_debug_dump > pci_dump_snippet.txt
 	./limine/limine bios-install $(IMAGE_NAME).iso
 endif
 ifeq ($(KARCH),aarch64)

@@ -55,6 +55,7 @@ macro_rules! for_each_syscall {
             // Devices
             SYSCALL_DEV_OPEN => 64,
             SYSCALL_DEV_READ => 65,
+            SYSCALL_PCI_READ_CONFIG => 66,
         }
     };
 }

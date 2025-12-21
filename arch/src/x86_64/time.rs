@@ -30,30 +30,33 @@ impl HardwareTimer for X86HardwareTimer {
 
         if !tick_started {
              kernel::println!("TSC Calibration failed: TICKS not incrementing. Using default 2GHz.");
-             return;
+        } else {
+            let tsc_start = rdtsc();
+            let start_tick_aligned = TICKS.load(Ordering::Relaxed);
+
+            // Wait for 50 ticks (50ms)
+            let calibration_ticks = 50;
+            let target_tick = start_tick_aligned + calibration_ticks;
+
+            // No strict loop limit here as 50ms takes time.
+            // We rely on interrupts working (verified by first loop).
+            while TICKS.load(Ordering::Relaxed) < target_tick {
+                 core::hint::spin_loop();
+            }
+
+            let tsc_end = rdtsc();
+
+            let delta_tsc = tsc_end - tsc_start;
+            // Frequency = (delta_tsc * 1000) / calibration_ticks
+            let frequency = (delta_tsc * 1000) / calibration_ticks;
+
+            TSC_FREQUENCY.store(frequency, Ordering::Relaxed);
+            kernel::println!("TSC Calibrated: {} Hz", frequency);
         }
 
-        let tsc_start = rdtsc();
-        let start_tick_aligned = TICKS.load(Ordering::Relaxed);
-
-        // Wait for 50 ticks (50ms)
-        let calibration_ticks = 50;
-        let target_tick = start_tick_aligned + calibration_ticks;
-
-        // No strict loop limit here as 50ms takes time.
-        // We rely on interrupts working (verified by first loop).
-        while TICKS.load(Ordering::Relaxed) < target_tick {
-             core::hint::spin_loop();
-        }
-
-        let tsc_end = rdtsc();
-
-        let delta_tsc = tsc_end - tsc_start;
-        // Frequency = (delta_tsc * 1000) / calibration_ticks
-        let frequency = (delta_tsc * 1000) / calibration_ticks;
-
-        TSC_FREQUENCY.store(frequency, Ordering::Relaxed);
-        kernel::println!("TSC Calibrated: {} Hz", frequency);
+        // Initialize LAPIC Timer
+        super::apic::init();
+        super::apic::set_timer_vector(super::trap::LAPIC_TIMER_VECTOR as u8);
     }
 
     fn now_ns(&self) -> u64 {
@@ -66,8 +69,13 @@ impl HardwareTimer for X86HardwareTimer {
         ((tsc as u128 * 1_000_000_000) / freq as u128) as u64
     }
 
-    fn set_deadline_ns(&self, _deadline_ns: u64) {
-        // TODO: Program LAPIC timer
+    fn set_deadline_ns(&self, deadline_ns: u64) {
+        let freq = TSC_FREQUENCY.load(Ordering::Relaxed);
+        if freq == 0 { return; }
+
+        // deadline_tsc = deadline_ns * freq / 1_000_000_000
+        let deadline_tsc = (deadline_ns as u128 * freq as u128) / 1_000_000_000;
+        super::apic::set_deadline_tsc(deadline_tsc as u64);
     }
 }
 

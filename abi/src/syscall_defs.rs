@@ -1,5 +1,3 @@
-
-
 use core::marker::PhantomData;
 
 #[repr(C)]
@@ -49,7 +47,7 @@ impl<T: Default> SysRet<T> {
 pub use crate::wire::common::{UserPtr, UserSlice};
 
 pub use crate::wire::dev::{
-    DeviceHandle, DeviceKind, DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet,
+    DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, DeviceKind,
 };
 
 #[repr(C)]
@@ -87,4 +85,20 @@ pub struct SymbolResolveReq {
 #[derive(Clone, Copy, Debug)]
 pub struct SymbolResolveResp {
     pub written: u64, // bytes written
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PciReadConfigArgs {
+    pub bus: u8,
+    pub slot: u8,
+    pub func: u8,
+    pub offset: u16,
+    pub width: u8, // 1, 2, or 4
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PciReadConfigRet {
+    pub value: u32,
 }

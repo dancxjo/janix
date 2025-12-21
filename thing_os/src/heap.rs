@@ -43,38 +43,27 @@ unsafe impl GlobalAlloc for CheckedHeap {
 static GLOBAL_ALLOCATOR: CheckedHeap = CheckedHeap(LockedHeap::empty());
 
 pub fn init_user_heap() {
-    // Manually log to avoid allocation/formatting issues during heap init
-    let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: entered".as_bytes()) };
-    unsafe { crate::syscalls::syscall(req); }
-
     if INITIALIZED.swap(true, Ordering::AcqRel) {
-        let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: already initialized".as_bytes()) };
-        unsafe { crate::syscalls::syscall(req); }
         return;
     }
     unsafe {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
-        
-        let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: locking global allocator".as_bytes()) };
-        crate::syscalls::syscall(req);
-
         GLOBAL_ALLOCATOR.0.lock().init(heap_start, heap_size);
-        
-        let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: allocator initialized".as_bytes()) };
-        crate::syscalls::syscall(req);
-
-        let packed = FIRST_BAD_LAYOUT.load(Ordering::Acquire);
-        if packed != 0 {
-            // Don’t format! Just log a fixed string.
-            let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: WARNING: FIRST_BAD_LAYOUT was set".as_bytes()) };
-            crate::syscalls::syscall(req);
-        }
     }
 }
 
 #[cfg(target_os = "none")]
 #[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
-    panic!("Allocation failed");
+    // Log without allocating to avoid recursive panic
+    let msg = "ALLOCATION FAILED\n";
+    let req = abi::KernelRequest::Log { message: UserSlice::from_slice(msg.as_bytes()) };
+    crate::syscalls::syscall(req);
+
+    // Exit thread gracefully (code 1 for error)
+    unsafe {
+        crate::sys::raw_syscall(abi::syscalls::SYSCALL_EXIT_THREAD, 1, 0, 0, 0, 0, 0);
+    }
+    loop {}
 }

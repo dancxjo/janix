@@ -47,6 +47,8 @@ pub fn init() {
     log::init();
     #[cfg(all(not(test), target_arch = "x86_64"))]
     bridge::ps2::init();
+    #[cfg(all(not(test), target_arch = "x86_64"))]
+    bridge::ata::init();
 
     // Initialize graph store first
     crate::graph::store::init();
@@ -95,7 +97,7 @@ pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'s
 }
 
 /// Log a message to the kernel log
-pub fn log(message: &'static str) {
+pub fn log(message: &str) {
     log::log_message(message);
 }
 
@@ -678,7 +680,8 @@ pub fn create_builtin_things() {
 
     log("Kernel Things created.");
     // Dump the graph so callers can inspect the freshly-created builtin Things
-    crate::graph::debug::dump_graph_table();
+
+
 }
 
 /// Initialize the boot graph with memory and scheduling Things

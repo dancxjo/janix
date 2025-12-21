@@ -11,6 +11,7 @@ const KEYBOARD_VECTOR: usize = (pic::PIC_1_OFFSET as usize) + 1;
 const KEYBOARD_IRQ: u8 = 1;
 const MOUSE_VECTOR: usize = (pic::PIC_1_OFFSET as usize) + 12;
 const MOUSE_IRQ: u8 = 12;
+pub const LAPIC_TIMER_VECTOR: usize = 0xF0;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -58,10 +59,16 @@ timer_interrupt_handler_asm:
     push r15
 
     // RDI = &TrapFrame (rsp matches struct layout now)
+    // RDI = &TrapFrame (rsp matches struct layout now)
     mov rdi, rsp
+    
+    // ABI: Align stack to 16 bytes before call
+    sub rsp, 8
     
     // Call Rust handler
     call timer_interrupt_handler
+    
+    add rsp, 8
     
     pop r15
     pop r14
@@ -80,11 +87,60 @@ timer_interrupt_handler_asm:
     pop rax
     
     iretq
+
+.global lapic_timer_handler_asm
+lapic_timer_handler_asm:
+    push rax
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+    push r8
+    push r9
+    push r10
+    push r11
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+
+    // RDI = &TrapFrame
+    // RDI = &TrapFrame
+    mov rdi, rsp
+
+    // ABI: Align stack
+    sub rsp, 8
+
+    // Call Rust handler
+    call lapic_timer_handler
+
+    add rsp, 8
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
+
+    iretq
 "#
 );
 
 unsafe extern "C" {
     fn timer_interrupt_handler_asm();
+    fn lapic_timer_handler_asm();
 }
 
 
@@ -104,12 +160,14 @@ lazy_static! {
         }
         idt.general_protection_fault
             .set_handler_fn(gp_fault_handler);
-        idt.page_fault.set_handler_fn(page_fault_handler);
+        unsafe {
+            idt.page_fault.set_handler_addr(VirtAddr::new(page_fault_handler_asm as u64));
+        }
         idt[KEYBOARD_VECTOR].set_handler_fn(keyboard_interrupt_handler);
-
         idt[MOUSE_VECTOR].set_handler_fn(mouse_interrupt_handler);
         unsafe {
              idt[pic::PIC_1_OFFSET as usize].set_handler_addr(VirtAddr::new(timer_interrupt_handler_asm as u64));
+             idt[LAPIC_TIMER_VECTOR].set_handler_addr(VirtAddr::new(lapic_timer_handler_asm as u64));
         }
         idt
     };
@@ -177,12 +235,78 @@ extern "x86-interrupt" fn gp_fault_handler(stack_frame: InterruptStackFrame, err
 
 use crate::user;
 
-extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: InterruptStackFrame,
-    error_code: PageFaultErrorCode,
-) {
-    if (stack_frame.code_segment & 3) == 3 {
-        kernel::println!("User Page Fault at {:#x}", stack_frame.instruction_pointer.as_u64());
+core::arch::global_asm!(
+    r#"
+.global page_fault_handler_asm
+page_fault_handler_asm:
+    // Error code is at [rsp]. Pop it into RSI (2nd arg).
+    pop rsi
+
+    push rax
+    push rdi
+    push rsi // Pushes the Error Code (which is in RSI) into struct location for RSI
+    push rdx
+    push rcx
+    push r8
+    push r9
+    push r10
+    push r11
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov rdi, rsp
+    sub rsp, 8
+    call page_fault_handler
+    add rsp, 8
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
+    
+    iretq
+"#
+);
+
+unsafe extern "C" {
+    fn page_fault_handler_asm();
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn page_fault_handler(frame: &mut TrapFrame) {
+    // RSI field in frame holds the Error Code (because of asm glue)
+    let error_code_val = frame.rsi;
+    let error_code = PageFaultErrorCode::from_bits_truncate(error_code_val);
+
+    if (frame.cs & 3) == 3 {
+        use x86_64::registers::control::Cr2;
+        let addr = Cr2::read();
+        kernel::println!("User Page Fault at RIP={:#x} CR2={:?} Error={:?}", 
+            frame.rip,
+            addr,
+            error_code
+        );
+        kernel::println!("Regs: RAX={:#x} RBX={:#x} RCX={:#x} RDX={:#x} RDI={:#x} RSI(clobbered/err)={:#x}",
+            frame.rax, frame.rbx, frame.rcx, frame.rdx, frame.rdi, frame.rsi);
+        kernel::println!("      R8={:#x} R9={:#x} R10={:#x} R11={:#x} R12={:#x} R13={:#x} R14={:#x} R15={:#x}",
+            frame.r8, frame.r9, frame.r10, frame.r11, frame.r12, frame.r13, frame.r14, frame.r15);
+        kernel::println!("      RBP={:#x} RSP={:#x}", frame.rbp, frame.rsp);
+
         kernel::sched::exit_current_thread("faulted", error_code.bits());
         user::schedule_next();
     }
@@ -205,8 +329,8 @@ extern "x86-interrupt" fn page_fault_handler(
     );
     kernel::println!(
         "  RIP={:#x} RSP={:#x} CR3={:#x}",
-        stack_frame.instruction_pointer.as_u64(),
-        stack_frame.stack_pointer.as_u64(),
+        frame.rip,
+        frame.rsp,
         Cr3::read().0.start_address().as_u64(),
     );
 
@@ -229,9 +353,8 @@ extern "x86-interrupt" fn page_fault_handler(
         }
     }
 
-    kernel::println!("{:#?}", stack_frame);
+    kernel::println!("{:#?}", frame);
 
-    // Future: convert into a fault event or thread termination
     loop {
         hlt();
     }
@@ -255,20 +378,30 @@ extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: InterruptStackFr
 
 #[unsafe(no_mangle)]
 pub extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
+    pic::notify_end_of_interrupt(0);
+    timer_tick(frame);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn lapic_timer_handler(frame: &mut TrapFrame) {
+    super::apic::eoi();
+    timer_tick(frame);
+}
+
+fn timer_tick(frame: &mut TrapFrame) {
     use kernel::sched::{self, TICKS, PREEMPT_COUNT, NEED_RESCHED};
     use core::sync::atomic::Ordering;
 
-    // 1. Ack PIC
-    pic::notify_end_of_interrupt(0);
-
-    // 2. Increment ticks
+    // Increment ticks
     TICKS.fetch_add(1, Ordering::Relaxed);
 
-    // 3. Request reschedule
-    // For now, request every tick (or throttle if needed)
+    // Poll kernel timer subsystem (updates time, checks alarms)
+    kernel::time::poll_time();
+
+    // Request reschedule
     NEED_RESCHED.store(true, Ordering::Relaxed);
 
-    // 4. Check for preemption
+    // Check for preemption
     // Only preempt if:
     // - Preemption is allowed (count == 0)
     // - We are returning to User Mode (CS & 3 == 3)
@@ -277,51 +410,55 @@ pub extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
     
     
     if is_user && preempt_allowed {
-        // Safe to schedule
-        // Save context to current thread
-        let mut sched = sched::SCHEDULER.lock();
-        if let Some(mut thread) = sched.current_id().and_then(|tid| sched.thread_mut(tid)) {
-             thread.context[0] = frame.r15;
-             thread.context[1] = frame.r14;
-             thread.context[2] = frame.r13;
-             thread.context[3] = frame.r12;
-             thread.context[4] = frame.rbp;
-             thread.context[5] = frame.rbx;
-             thread.context[6] = frame.r11;
-             thread.context[7] = frame.r10;
-             thread.context[8] = frame.r9;
-             thread.context[9] = frame.r8;
-             thread.context[10] = frame.rcx;
-             thread.context[11] = frame.rdx;
-             thread.context[12] = frame.rsi;
-             thread.context[13] = frame.rdi;
-             thread.context[14] = frame.rax;
-             thread.context[15] = frame.rip;
-             thread.context[16] = frame.cs;
-             thread.context[17] = frame.rflags;
-             thread.context[18] = frame.rsp;
-             thread.context[19] = frame.ss;
-             unsafe {
-                 core::arch::x86_64::_fxsave(thread.fpu_context.data.as_mut_ptr());
-             }
-             thread.started = true;
-        }
+        if let Some(mut sched) = sched::SCHEDULER.try_lock() {
+            if let Some(mut thread) = sched.current_id().and_then(|tid| sched.thread_mut(tid)) {
+                thread.user_stack_top = frame.rsp;
+                thread.entry_point = frame.rip;
+                thread.context[15] = frame.rip;
+                thread.context[16] = frame.cs as u64;
+                thread.context[17] = frame.rflags;
+                thread.context[18] = frame.rsp;
+                thread.context[19] = frame.ss as u64;
+                
+                // Save FPU
+                if thread.id.0 > 1 {
+                    unsafe {
+                         core::arch::x86_64::_fxsave(thread.fpu_context.data.as_mut_ptr());
+                    }
+                }
+                thread.started = true;
+            } else {
+                 if let Some(tid) = sched.current_id() {
+                      // Diagnostic: This path means we failed to save context for the current thread!
+                 }
+            }
 
-        // IMPORTANT: Requeue the current thread so it's not lost!
-        if let Some(tid) = sched.current_id() {
-             sched.mark_yield(tid);
-        }
+            // IMPORTANT: Requeue the current thread so it's not lost!
+            if let Some(tid) = sched.current_id() {
+                 sched.mark_yield(tid);
+            }
         
-        // Pick next thread
-        let now = kernel::time::monotonic_now_ns();
-        if let Some(next) = sched.choose_next_thread(now) {
-             drop(sched); // Unlock before switch
+            // Pick next thread
+            let now = kernel::time::monotonic_now_ns();
+            if let Some(next) = sched.choose_next_thread(now) {
+                 drop(sched); // Unlock before switch
              
-             // Activate address space
-             super::enter::activate_address_space(next.address_space_token);
+                 // Activate address space
+                 super::enter::activate_address_space(next.address_space_token);
              
-             // Resume
-             crate::current::resume_user_mode(&next.context, &next.fpu_context);
+                 // Resume or Start
+                 if next.started {
+                     crate::current::resume_user_mode(&next.context, &next.fpu_context);
+                 } else {
+                     let stack = if next.user_stack_top == 0 { 0x1000 } else { next.user_stack_top };
+                     let regs = crate::UserEntryRegs {
+                         entry_point: next.entry_point,
+                         user_stack: stack,
+                         arg0: next.user_arg,
+                     };
+                     super::enter::enter_user_mode(&regs);
+                 }
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-use abi::PropValue;
+use thing_models::PropValue;
 use kernel::console::{ConsoleSink, register_sink};
 use kernel::{graph, graph_kinds, symbols};
 use limine::framebuffer::Framebuffer;
@@ -43,6 +43,8 @@ pub struct Console {
     cursor_y: u32,
     cols: u32,
     rows: u32,
+    bg_color: u32,
+    fg_color: u32,
 }
 
 unsafe impl Send for Console {}
@@ -69,14 +71,81 @@ impl Console {
             cursor_y: 0,
             cols,
             rows,
+            bg_color: 0x00000000,
+            fg_color: 0xFFFFFFFF,
+        }
+    }
+
+    pub fn set_colors(&mut self, bg: u32, fg: u32) {
+        self.bg_color = bg;
+        self.fg_color = fg;
+    }
+
+    pub fn repaint(&mut self) {
+        self.clear();
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+
+        let logs = kernel::log::get_logs();
+        // Only print the last N logs that fit on the screen to avoid instant scrolling
+        // Leave some space for the progress bar at the bottom
+        let max_lines = self.rows.saturating_sub(4) as usize;
+        let start = logs.len().saturating_sub(max_lines);
+
+        for entry in &logs[start..] {
+            if let Some(msg) = entry {
+                self.write_str(msg);
+                self.put_char('\n');
+            }
+        }
+    }
+
+    pub fn draw_progress(&mut self, percent: f32) {
+        if self.bpp != 32 { return; }
+
+        let bar_height = 8;
+        let padding_bottom = 10;
+        let padding_side = 50;
+
+        if self.height < (bar_height + padding_bottom) as u64 {
+            return;
+        }
+
+        let y_start = self.height as u32 - bar_height - padding_bottom;
+        let total_width = (self.width as u32).saturating_sub(padding_side * 2);
+        let x_start = padding_side;
+
+        let percent = percent.max(0.0).min(1.0);
+        let filled_width = (total_width as f32 * percent) as u32;
+
+        // Draw background of bar (slightly lighter than bg or fixed dark grey)
+        let bar_bg = 0xFF444444;
+        self.fill_rect(x_start, y_start, total_width, bar_height, bar_bg);
+
+        // Draw filled part
+        let bar_fg = 0xFFFFFFFF; // White
+        self.fill_rect(x_start, y_start, filled_width, bar_height, bar_fg);
+    }
+
+    fn fill_rect(&mut self, x: u32, y: u32, w: u32, h: u32, color: u32) {
+        for dy in 0..h {
+            for dx in 0..w {
+                self.set_pixel(x + dx, y + dy, color);
+            }
         }
     }
 
     pub fn clear(&mut self) {
-        // Zero the framebuffer; assume 32 bpp.
-        let bytes = (self.pitch * self.height) as usize;
-        unsafe {
-            core::ptr::write_bytes(self.fb_ptr, 0, bytes);
+        // Fill the framebuffer with bg_color; assume 32 bpp.
+        // If bg_color is 0, we can use write_bytes which is faster (memset)
+        // Otherwise, we must loop.
+        if self.bg_color == 0 {
+            let bytes = (self.pitch * self.height) as usize;
+            unsafe {
+                core::ptr::write_bytes(self.fb_ptr, 0, bytes);
+            }
+        } else {
+            self.fill_rect(0, 0, self.width as u32, self.height as u32, self.bg_color);
         }
     }
 
@@ -124,9 +193,18 @@ impl Console {
             // Move everything up by one row height
             core::ptr::copy(self.fb_ptr.add(row_bytes), self.fb_ptr, copy_bytes);
 
-            // Clear the last row
-            core::ptr::write_bytes(self.fb_ptr.add(copy_bytes), 0, row_bytes);
+            // Clear the last row if background is black (fast path)
+            if self.bg_color == 0 {
+                core::ptr::write_bytes(self.fb_ptr.add(copy_bytes), 0, row_bytes);
+            }
         }
+
+        // Fill the bottom cleared area with bg_color (if not black)
+        if self.bg_color != 0 {
+             let start_y = (self.height as u32).saturating_sub(GLYPH_HEIGHT as u32);
+             self.fill_rect(0, start_y, self.width as u32, GLYPH_HEIGHT as u32, self.bg_color);
+        }
+
         self.cursor_y = self.rows.saturating_sub(1);
     }
 
@@ -149,10 +227,9 @@ impl Console {
                 }
                 let on = (byte >> (7 - bit)) & 1 != 0;
                 if on {
-                    self.set_pixel(x, y, 0xFFFFFFFF);
+                    self.set_pixel(x, y, self.fg_color);
                 } else {
-                    // Optional: draw background color (black)
-                    self.set_pixel(x, y, 0x00000000);
+                    self.set_pixel(x, y, self.bg_color);
                 }
             }
         }
@@ -194,6 +271,19 @@ pub fn print(s: &str) {
 pub fn clear_screen() {
     if let Some(console) = CONSOLE.lock().as_mut() {
         console.clear();
+    }
+}
+
+pub fn update_theme(bg: u32, fg: u32) {
+    if let Some(console) = CONSOLE.lock().as_mut() {
+        console.set_colors(bg, fg);
+        console.repaint();
+    }
+}
+
+pub fn draw_progress(percent: f32) {
+    if let Some(console) = CONSOLE.lock().as_mut() {
+        console.draw_progress(percent);
     }
 }
 

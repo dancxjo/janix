@@ -3,7 +3,9 @@ use abi::{
     ThingPropScalarType, resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
     syscalls::*, syscall_defs::{SymbolId, SymbolInternReq, WireStr},
 };
-use abi::{KernelRequest, KernelResponse, PropType};
+use abi::wire::common::UserSlice;
+use abi::{KernelRequest, KernelResponse};
+use thing_models::PropType;
 use thing_models::SchemaRegistryOutcome;
 use crate::sys::raw_syscall;
 use alloc::boxed::Box;
@@ -11,6 +13,14 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 pub fn sys_symbol_intern(s: &str) -> SymbolId {
+    #[cfg(test)]
+    return SymbolId(0);
+
+    // Safety check: null pointer slice is UB but if it happens, avoid syscall.
+    if s.as_ptr().is_null() {
+        return SymbolId(0);
+    }
+
     let req = SymbolInternReq {
         s: WireStr {
             ptr: s.as_ptr() as u64,
@@ -37,6 +47,10 @@ pub fn sys_symbol_intern(s: &str) -> SymbolId {
 }
 
 pub fn syscall(request: KernelRequest) -> KernelResponse {
+    #[cfg(test)]
+    {
+        return crate::mock::handle_syscall(request);
+    }
     match request {
         KernelRequest::Log { message } => {
             let ptr = message.ptr;
@@ -441,5 +455,28 @@ use abi::wire::process::SpawnProgramResult;
         _ => KernelResponse::Error {
             err: abi::syscall_defs::SysError { code: 1, detail: 0 },
         },
+    }
+}
+
+pub fn sys_pci_read_config(bus: u8, slot: u8, func: u8, offset: u16, width: u8) -> Option<u32> {
+    use abi::syscall_defs::{PciReadConfigArgs, PciReadConfigRet};
+    use abi::syscalls::SYSCALL_PCI_READ_CONFIG;
+    
+    let args = PciReadConfigArgs { bus, slot, func, offset, width };
+    let mut ret = PciReadConfigRet { value: 0 };
+    
+    let res = unsafe {
+        raw_syscall(
+            SYSCALL_PCI_READ_CONFIG as u64,
+            &args as *const _ as u64,
+            &mut ret as *mut _ as u64,
+            0, 0, 0, 0
+        )
+    };
+    
+    if res == 0 {
+        Some(ret.value)
+    } else {
+        None
     }
 }

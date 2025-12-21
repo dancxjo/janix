@@ -1,5 +1,6 @@
 extern crate alloc;
-use abi::{KernelRequest, KernelResponse, PropValue};
+use abi::{KernelRequest, KernelResponse};
+use thing_models::PropValue;
 use kernel::model;
 use alloc::string::String;
 use alloc::vec::Vec;

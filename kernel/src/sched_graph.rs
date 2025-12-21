@@ -70,7 +70,7 @@ pub fn sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs) -> Option<ThingId>
 /// k::sched_graph::create_sleep_event(&mut g, thread, 1_000_000, 5).unwrap();
 ///
 /// let sleep_until = k::graph::get_prop(thread, "sleep_until_ns");
-/// assert!(matches!(sleep_until, Some(abi::PropValue::U64(1_000_000))));
+/// assert!(matches!(sleep_until, Some(thing_models::PropValue::U64(1_000_000))));
 /// ```
 pub fn create_sleep_event(
     graph: &mut Graph,

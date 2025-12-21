@@ -12,6 +12,15 @@ pub fn map_boot_device_regions() -> bool {
         return true;
     }
 
+    #[cfg(target_arch = "x86_64")]
+    {
+        unsafe {
+            // Map Local APIC (default base 0xFEE00000)
+            super::x86_64::paging::map_device_region(0xfee00000, 0x1000);
+        }
+        return true;
+    }
+
     #[allow(unreachable_code)]
     false
 }

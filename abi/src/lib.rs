@@ -9,12 +9,12 @@ pub mod resident_layout;
 pub mod mouse_stream;
 pub mod keyboard_stream;
 pub mod syscall_defs;
-pub mod syscall_numbers;
+
 pub mod syscalls;
 pub mod wire;
-pub mod prop_value;
 
-pub use prop_value::{PropKey, PropValue, PropType};
+
+
 pub use crate::wire::memory::{MemorySummary, SchedulerSummary, FrameInfo, MapFlags};
 pub use crate::wire::buffers::{PixelFormat, SharedBufferInfo};
 

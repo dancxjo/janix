@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Attribute, Data, DeriveInput, Expr, Fields, ItemFn, Lit, Meta, MetaNameValue, Type, parse_macro_input,
+    Attribute, Data, DeriveInput, Expr, Fields, Lit, Meta, MetaNameValue, Type, parse_macro_input,
 };
 
 fn extract_description(attrs: &[Attribute]) -> Option<String> {

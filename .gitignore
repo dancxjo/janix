@@ -22,3 +22,11 @@ pci_debug_dump
 pci_dump*.txt
 run_output*.txt
 boot_log*.txt
+debug*.txt
+debug_clock_crash_v4.txt
+debug_clock_init_v3.txt
+debug_clock_init_v4.txt
+debug_clock_log_hex.txt
+debug_clock_my_lock.txt
+debug_clock_rev_back.txt
+debug_clock_rev_next.txt

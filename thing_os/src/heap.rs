@@ -3,13 +3,78 @@
 use abi::wire::common::UserSlice;
 use abi::{USER_HEAP_END, USER_HEAP_START};
 use core::alloc::{GlobalAlloc, Layout};
-use core::sync::atomic::{AtomicU64, Ordering};
-use linked_list_allocator::LockedHeap;
+use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use core::cell::UnsafeCell;
+use linked_list_allocator::Heap;
 
 // First bad allocation recorded as (align << 32) | (size_low32)
 static FIRST_BAD_LAYOUT: AtomicU64 = AtomicU64::new(0);
 
-struct CheckedHeap(LockedHeap);
+#[repr(C)]
+struct SimpleLockedHeap {
+    lock: AtomicBool,
+    inner: UnsafeCell<Heap>,
+}
+
+unsafe impl Sync for SimpleLockedHeap {}
+
+impl SimpleLockedHeap {
+    pub const fn new() -> Self {
+        Self {
+            lock: AtomicBool::new(false),
+            inner: UnsafeCell::new(Heap::empty()),
+        }
+    }
+
+    pub fn lock(&self) -> HeapGuard {
+        loop {
+            if self.lock.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_ok() {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+        HeapGuard { lock: &self.lock, inner: unsafe { &mut *self.inner.get() } }
+    }
+}
+
+pub struct HeapGuard<'a> {
+    lock: &'a AtomicBool,
+    inner: &'a mut Heap,
+}
+
+impl core::ops::Deref for HeapGuard<'_> {
+    type Target = Heap;
+    fn deref(&self) -> &Heap { self.inner }
+}
+
+impl core::ops::DerefMut for HeapGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Heap { self.inner }
+}
+
+impl Drop for HeapGuard<'_> {
+    fn drop(&mut self) {
+        self.lock.store(false, Ordering::Release);
+    }
+}
+
+unsafe impl GlobalAlloc for SimpleLockedHeap {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let mut heap = self.lock();
+        heap.allocate_first_fit(layout)
+            .ok()
+            .map(|ptr| ptr.as_ptr())
+            .unwrap_or(core::ptr::null_mut())
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let mut heap = self.lock();
+        if let Some(p) = core::ptr::NonNull::new(ptr) {
+            heap.deallocate(p, layout);
+        }
+    }
+}
+
+struct CheckedHeap(SimpleLockedHeap);
 
 unsafe impl GlobalAlloc for CheckedHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
@@ -37,7 +102,7 @@ unsafe impl GlobalAlloc for CheckedHeap {
 }
 
 #[global_allocator]
-static GLOBAL_ALLOCATOR: CheckedHeap = CheckedHeap(LockedHeap::empty());
+static GLOBAL_ALLOCATOR: CheckedHeap = CheckedHeap(SimpleLockedHeap::new());
 
 fn log_raw(s: &str) {
     let ptr = s.as_ptr() as u64;
@@ -92,8 +157,6 @@ pub fn init_user_heap() {
     unsafe {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
-
-        log_hex("heap::init_heap: size=", heap_size);
 
         GLOBAL_ALLOCATOR.0.lock().init(heap_start, heap_size);
 

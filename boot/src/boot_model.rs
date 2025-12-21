@@ -271,31 +271,6 @@ pub fn seed_display_from_limine() {
         frames,
     ) {
         Ok(buffer_id) => {
-            let buffer_bytes = info.stride as u64 * info.height as u64;
-
-            let Some(front_buffer_id) = register_logical_buffer(
-                info.width,
-                info.height,
-                info.stride,
-                pixel_format,
-                buffer_bytes,
-            ) else {
-                log("Failed to allocate front display buffer for double buffering");
-                return;
-            };
-
-            let Some(back_buffer_id) = register_logical_buffer(
-                info.width,
-                info.height,
-                info.stride,
-                pixel_format,
-                buffer_bytes,
-            ) else {
-                log("Failed to allocate back display buffer for double buffering");
-                return;
-            };
-
-            // create_display call also needs checking in kernel::model
             let Some(display_id) = kernel::model::create_display(
                 "display0",
                 info.width as u64,
@@ -310,16 +285,6 @@ pub fn seed_display_from_limine() {
                 display_id,
                 graph_kinds::LINK_DISPLAY_SCANOUT,
                 buffer_id,
-            );
-            let _ = graph::add_link(
-                display_id,
-                graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
-                front_buffer_id,
-            );
-            let _ = graph::add_link(
-                display_id,
-                graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
-                back_buffer_id,
             );
             log("Seeded display0 and SharedBuffer from Limine framebuffer");
         }

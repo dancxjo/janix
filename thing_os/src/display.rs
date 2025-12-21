@@ -113,6 +113,23 @@ pub fn shared_buffer_map(
     }
 }
 
+/// Create a new shared buffer compatible with display scanout.
+pub fn create_shared_buffer(
+    width: u32,
+    height: u32,
+    pixel_format: abi::PixelFormat,
+) -> Result<ThingId, crate::SysError> {
+    match syscall(abi::KernelRequest::CreateSharedBuffer {
+        width,
+        height,
+        pixel_format,
+    }) {
+        abi::KernelResponse::SharedBufferCreated { buffer_id } => Ok(buffer_id),
+        abi::KernelResponse::Error { err: _ } => Err(crate::SysError::Kernel("create_shared_buffer failed")),
+        _ => Err(crate::SysError::Unexpected),
+    }
+}
+
 /// Locate and map the kernel's primary display buffer.
 pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysError> {
     let displays: Vec<crate::DisplayThing> = list_things_by_kind();

@@ -867,11 +867,8 @@ fn parse_raw_identifier(cmdline: &core::ffi::CStr, _path: &core::ffi::CStr) -> O
         return None;
     }
 
-    let line = if let Ok(s) = core::str::from_utf8(bytes) {
-        s
-    } else {
-        return None;
-    };
+    let cow = String::from_utf8_lossy(bytes);
+    let line = cow.as_ref();
 
     if let Some(val) = parse_keyed_argument(line, "raw=") {
         if let Some((kind, ident)) = val.split_once(':') {

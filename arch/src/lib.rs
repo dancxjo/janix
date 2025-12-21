@@ -67,7 +67,7 @@ pub fn read_boot_rtc_epoch_seconds() -> i64 {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        return aarch64::rtc::read_rtc_unix_epoch_seconds();
+        return aarch64::rtc::read_boot_rtc_epoch_seconds();
     }
     #[cfg(target_arch = "riscv64")]
     {

@@ -1,3 +1,4 @@
+pub mod dtb;
 pub mod enter;
 pub mod paging;
 pub mod rtc;

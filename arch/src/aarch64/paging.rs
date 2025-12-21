@@ -1,5 +1,5 @@
 use core::arch::asm;
-use kernel::memory::{PhysFrame, allocate_frame, phys_to_virt};
+use kernel::memory::{allocate_frame, phys_to_virt};
 
 // AArch64 VMSA descriptors
 const DESC_VALID: u64 = 1 << 0;
@@ -9,7 +9,6 @@ const DESC_PAGE: u64 = 1 << 1; // For L3
 
 const DESC_ACCESS_FLAG: u64 = 1 << 10;
 const DESC_SH_INNER: u64 = 3 << 8;
-const DESC_ATTR_DEV_NGNRNE: u64 = 0 << 2; // MAIR index 0 (Device-nGnRnE) usually?
 // We need to check MAIR setup by Limine.
 // Limine usually sets:
 // 0: Device-nGnRnE

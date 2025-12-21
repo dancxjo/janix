@@ -1,7 +1,6 @@
 use super::super::UserEntryRegs;
 use core::arch::global_asm;
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::alloc::{Layout, alloc_zeroed};
 use core::ptr::NonNull;
 use super::paging;

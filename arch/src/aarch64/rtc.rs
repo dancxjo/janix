@@ -19,7 +19,31 @@ impl Arm64Rtc {
 
 impl RealTimeClock for Arm64Rtc {
     fn init(&self) {
-        // TODO: Read RTC from firmware/bootloader if available.
+        if let Some(addr) = super::dtb::get_pl031_address() {
+            unsafe {
+                // Map the PL031 device region (4KB is sufficient)
+                super::paging::map_device_region(addr, 4096);
+
+                let virt = kernel::memory::phys_to_virt(addr);
+                let ptr = virt as *const u32;
+                // RTCDR (Data Register) is at offset 0x000
+                let seconds = ptr.read_volatile();
+
+                let now_ns = kernel::time::monotonic_now_ns();
+                let rtc_ns = (seconds as u64) * 1_000_000_000;
+
+                // Calculate offset: offset = rtc_ns - monotonic_now_ns
+                // Since monotonic starts at 0, this effectively sets the base time.
+                // We use saturating_sub just in case, though monotonic should be small.
+                let offset = rtc_ns.saturating_sub(now_ns);
+
+                self.boot_offset_ns.store(offset, Ordering::Relaxed);
+
+                kernel::log("Initialized RTC from PL031");
+            }
+        } else {
+            kernel::log("PL031 RTC not found in DTB");
+        }
     }
 
     fn now_utc(&self) -> (u64, u32) {
@@ -32,12 +56,13 @@ impl RealTimeClock for Arm64Rtc {
     }
 }
 
+static RTC: Arm64Rtc = Arm64Rtc::new();
+
 pub fn init_arch_rtc() {
-    static RTC: Arm64Rtc = Arm64Rtc::new();
     RTC.init();
     kernel::time::register_rtc(&RTC);
 }
 
-pub fn read_rtc_unix_epoch_seconds() -> i64 {
-    0
+pub fn read_boot_rtc_epoch_seconds() -> i64 {
+    RTC.now_utc().0 as i64
 }

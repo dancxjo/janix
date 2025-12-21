@@ -11,6 +11,7 @@ spin = "0.10.0"
 heapless = "0.9.2"
 thing_models = { path = "../thing_models" }
 fdt = "0.1.5"
+limine.workspace = true
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.14"

@@ -45,7 +45,8 @@ pub fn init_machine() {
     crate::boot_model::seed_memory_graph_from_limine();
 
     // Seed DTB frequency (RISC-V)
-    crate::dtb::seed_dtb_frequency();
+    #[cfg(target_arch = "riscv64")]
+    arch::riscv64::dtb::init();
 
     if arch::platform::map_boot_device_regions() {
         kernel::log("PCI regions mapped.");

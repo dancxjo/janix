@@ -2,6 +2,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 
+extern crate alloc;
+
 pub mod boot;
 pub mod cpu;
 pub mod io;

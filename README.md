@@ -71,6 +71,29 @@ thing-os/
 
 ---
 
+# 📚 Documentation
+
+The detailed documentation is located in the `docs/` directory:
+
+* **Architecture & Design**
+  * [Hardware Design (Graph Actualization)](docs/hardware_design.md) - How the kernel delegates hardware control to the graph.
+  * [Graph Scheduling](docs/graph_scheduling.md) - How the scheduler uses the graph as the source of truth.
+  * [Input Pipeline](docs/input_pipeline.md) - Flow of input events from hardware to userland.
+
+* **Contracts & Interfaces**
+  * [Userland Process Contract](docs/userland_process_contract.md) - Lifecycle and environment of user processes.
+  * [Thing Descriptions](docs/thing_descriptions.md) - How to use and query Thing descriptions.
+  * [ABI Surface](docs/contracts/abi_surface.md)
+  * [Syscalls](docs/contracts/syscalls.md)
+  * [Schema Authority](docs/contracts/schema_authority.md)
+  * [Invariants](docs/contracts/invariant.md)
+
+* **Reports**
+  * [Architecture Alignment (Oct 2024)](docs/reports/architecture_alignment_2024_10_18.md)
+  * [Non-OS Compliance Report](docs/contracts/nonos_report.txt)
+
+---
+
 # 🧵 Build and Run
 
 The hosted harness is retired; building and running now centers on the real kernel image instead of a shim.

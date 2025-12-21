@@ -11,6 +11,7 @@ const KEYBOARD_VECTOR: usize = (pic::PIC_1_OFFSET as usize) + 1;
 const KEYBOARD_IRQ: u8 = 1;
 const MOUSE_VECTOR: usize = (pic::PIC_1_OFFSET as usize) + 12;
 const MOUSE_IRQ: u8 = 12;
+pub const LAPIC_TIMER_VECTOR: usize = 0xF0;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -80,11 +81,54 @@ timer_interrupt_handler_asm:
     pop rax
     
     iretq
+
+.global lapic_timer_handler_asm
+lapic_timer_handler_asm:
+    push rax
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+    push r8
+    push r9
+    push r10
+    push r11
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+
+    // RDI = &TrapFrame
+    mov rdi, rsp
+
+    // Call Rust handler
+    call lapic_timer_handler
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
+
+    iretq
 "#
 );
 
 unsafe extern "C" {
     fn timer_interrupt_handler_asm();
+    fn lapic_timer_handler_asm();
 }
 
 
@@ -110,6 +154,7 @@ lazy_static! {
         idt[MOUSE_VECTOR].set_handler_fn(mouse_interrupt_handler);
         unsafe {
              idt[pic::PIC_1_OFFSET as usize].set_handler_addr(VirtAddr::new(timer_interrupt_handler_asm as u64));
+             idt[LAPIC_TIMER_VECTOR].set_handler_addr(VirtAddr::new(lapic_timer_handler_asm as u64));
         }
         idt
     };
@@ -255,20 +300,30 @@ extern "x86-interrupt" fn mouse_interrupt_handler(_stack_frame: InterruptStackFr
 
 #[unsafe(no_mangle)]
 pub extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
+    pic::notify_end_of_interrupt(0);
+    timer_tick(frame);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn lapic_timer_handler(frame: &mut TrapFrame) {
+    super::apic::eoi();
+    timer_tick(frame);
+}
+
+fn timer_tick(frame: &mut TrapFrame) {
     use kernel::sched::{self, TICKS, PREEMPT_COUNT, NEED_RESCHED};
     use core::sync::atomic::Ordering;
 
-    // 1. Ack PIC
-    pic::notify_end_of_interrupt(0);
-
-    // 2. Increment ticks
+    // Increment ticks
     TICKS.fetch_add(1, Ordering::Relaxed);
 
-    // 3. Request reschedule
-    // For now, request every tick (or throttle if needed)
+    // Poll kernel timer subsystem (updates time, checks alarms)
+    kernel::time::poll_time();
+
+    // Request reschedule
     NEED_RESCHED.store(true, Ordering::Relaxed);
 
-    // 4. Check for preemption
+    // Check for preemption
     // Only preempt if:
     // - Preemption is allowed (count == 0)
     // - We are returning to User Mode (CS & 3 == 3)

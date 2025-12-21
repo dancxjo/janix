@@ -87,7 +87,7 @@ unsafe impl GlobalAlloc for CheckedHeap {
             FIRST_BAD_LAYOUT.compare_exchange(0, packed, Ordering::AcqRel, Ordering::Relaxed).ok();
 
             // Log without allocating
-            log_raw("ALLOC ERROR: layout.align is not power-of-two (halting)\n");
+            log_raw("ALLOC ERROR: layout.align is not power-of-two (halting)");
 
             // Halt: we want the earliest failure point, not cascading corruption.
             loop {}
@@ -113,13 +113,25 @@ fn log_raw(s: &str) {
 }
 
 fn log_hex(label: &str, val: usize) {
-    log_raw(label);
-    log_raw("0x");
-
-    let mut buf = [0u8; 18]; // 16 digits + newline + null
+    let mut buf = [0u8; 128];
     let mut idx = 0;
 
-    // Convert to hex
+    // Append label
+    for &b in label.as_bytes() {
+        if idx < buf.len() {
+            buf[idx] = b;
+            idx += 1;
+        }
+    }
+
+    // Append "0x"
+    if idx + 2 <= buf.len() {
+        buf[idx] = b'0';
+        buf[idx + 1] = b'x';
+        idx += 2;
+    }
+
+    // Convert to hex (16 hex digits for 64-bit usize)
     for i in (0..16).rev() {
         let digit = (val >> (i * 4)) & 0xF;
         let c = if digit < 10 {
@@ -127,29 +139,35 @@ fn log_hex(label: &str, val: usize) {
         } else {
             b'a' + (digit - 10) as u8
         };
-        // Skip leading zeros? No, print full 64-bit for clarity
-        buf[idx] = c;
-        idx += 1;
+        if idx < buf.len() {
+            buf[idx] = c;
+            idx += 1;
+        }
     }
-    buf[idx] = b'\n';
 
-    let s = unsafe { core::str::from_utf8_unchecked(&buf[..idx+1]) };
+    // No newline appended here because kernel::log adds one
+    let s = unsafe { core::str::from_utf8_unchecked(&buf[..idx]) };
     log_raw(s);
 }
 
 pub fn init_user_heap() {
+    log_raw("heap::init_heap: starting");
+    log_hex("heap::init_heap: start=", USER_HEAP_START);
+
     unsafe {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
 
         GLOBAL_ALLOCATOR.0.lock().init(heap_start, heap_size);
+
+        log_raw("heap::init_heap: initialized");
     }
 }
 
 #[cfg(target_os = "none")]
 #[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
-    log_raw("ALLOCATION FAILED\n");
+    log_raw("ALLOCATION FAILED");
 
     // Exit thread gracefully (code 1 for error)
     unsafe {

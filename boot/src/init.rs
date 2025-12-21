@@ -143,17 +143,25 @@ pub fn launch_init_process() {
         .map(|s| s == "debug")
         .unwrap_or(false);
 
-    kernel::log("launch_init_process: spawning init via ProgramImage");
-    if let Err(err) = crate::program::spawn_program_by_identifier("init", "init", 10) {
-        kernel::log("launch_init_process: failed to spawn init via ProgramImage");
-        kernel::log(err);
-        crate::panic_handler::hcf();
+    let (binary, app_id) = if is_debug_profile {
+        ("debug_clock", 2) // app_id 2 for consistency with seeding order if needed, or just arbitrary
+    } else {
+        ("init", 1)
+    };
+
+    kernel::log("launch_init_process: spawning PID 1");
+    // Ensure debug_clock is seeded if we use it. The prior boot_model logic ensures it.
+    
+    if let Err(err) = crate::program::spawn_program_by_identifier(binary, binary, app_id) {
+         kernel::log("launch_init_process: failed to spawn PID 1");
+         kernel::log(err);
+         crate::panic_handler::hcf();
     }
 
     if !is_debug_profile && kernel::model::program_image_exists("debug_input_events") {
         kernel::log("launch_init_process: spawning debug_input_events debug app");
         if let Err(err) =
-            crate::program::spawn_program_by_identifier("debug_input_events", "debug_input_events", 1)
+            crate::program::spawn_program_by_identifier("debug_input_events", "debug_input_events", 100)
         {
             kernel::log("launch_init_process: failed to spawn debug_input_events");
             kernel::log(err);

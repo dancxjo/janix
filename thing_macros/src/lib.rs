@@ -22,8 +22,26 @@ fn extract_description(attrs: &[Attribute]) -> Option<String> {
             }
         }
     }
+    None
+}
 
-    // No description found
+fn extract_kind(attrs: &[Attribute]) -> Option<String> {
+    for attr in attrs {
+        if attr.path().is_ident("thing") {
+            if let Meta::List(meta_list) = &attr.meta {
+                if let Ok(meta_name_value) = syn::parse2::<MetaNameValue>(meta_list.tokens.clone())
+                {
+                    if meta_name_value.path.is_ident("kind") {
+                        if let Expr::Lit(expr_lit) = &meta_name_value.value {
+                            if let Lit::Str(lit_str) = &expr_lit.lit {
+                                return Some(lit_str.value());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     None
 }
 
@@ -36,13 +54,24 @@ fn normalize_type_name(ty: &Type) -> String {
     ty_str
 }
 
+fn extract_inner_type(ty_str: &str) -> Option<String> {
+    if ty_str.starts_with("Option<") && ty_str.ends_with(">") {
+        Some(ty_str[7..ty_str.len() - 1].to_string())
+    } else {
+        None
+    }
+}
+
 #[proc_macro_derive(Thing, attributes(thing))]
 pub fn derive_thing(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
-    let kind_str = name.to_string();
 
-    // Extract description and generate compile error if missing
+    let mut kind_str = name.to_string();
+    if let Some(k) = extract_kind(&input.attrs) {
+        kind_str = k;
+    }
+
     let description = match extract_description(&input.attrs) {
         Some(desc) => desc,
         None => {
@@ -71,36 +100,49 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 return None;
             }
             let ty = &f.ty;
-            let ty_str = normalize_type_name(ty);
+            let full_ty_str = normalize_type_name(ty);
+            let (ty_str, is_option) = match extract_inner_type(&full_ty_str) {
+                Some(inner) => (inner, true),
+                None => (full_ty_str, false),
+            };
 
-            let val_expr = match ty_str.as_str() {
-                "u64" => quote! { ::thing_models::PropValue::U64(self.#name as u64) },
-                "u32" => quote! { ::thing_models::PropValue::U64(self.#name as u64) },
-                "u16" => quote! { ::thing_models::PropValue::U64(self.#name as u64) },
-                "u8" => quote! { ::thing_models::PropValue::U64(self.#name as u64) },
-                "i64" => quote! { ::thing_models::PropValue::I64(self.#name as i64) },
-                "i32" => quote! { ::thing_models::PropValue::I64(self.#name as i64) },
-                "i16" => quote! { ::thing_models::PropValue::I64(self.#name as i64) },
-                "i8" => quote! { ::thing_models::PropValue::I64(self.#name as i64) },
-                "bool" => quote! { ::thing_models::PropValue::Bool(self.#name as bool) },
+            let val_conversion = match ty_str.as_str() {
+                "u64" => quote! { ::thing_models::PropValue::U64(*val as u64) },
+                "u32" => quote! { ::thing_models::PropValue::U64(*val as u64) },
+                "u16" => quote! { ::thing_models::PropValue::U64(*val as u64) },
+                "u8" => quote! { ::thing_models::PropValue::U64(*val as u64) },
+                "i64" => quote! { ::thing_models::PropValue::I64(*val as i64) },
+                "i32" => quote! { ::thing_models::PropValue::I64(*val as i64) },
+                "i16" => quote! { ::thing_models::PropValue::I64(*val as i64) },
+                "i8" => quote! { ::thing_models::PropValue::I64(*val as i64) },
+                "bool" => quote! { ::thing_models::PropValue::Bool(*val as bool) },
                 "alloc::string::String" | "String" => {
-                    quote! { ::thing_models::PropValue::Str(self.#name.clone()) }
+                    quote! { ::thing_models::PropValue::Str(val.clone()) }
                 }
                 "&'staticstr" => {
-                    quote! { ::thing_models::PropValue::Str(::alloc::string::String::from(self.#name)) }
+                    quote! { ::thing_models::PropValue::Str(::alloc::string::String::from(*val)) }
                 }
                 "char" => {
-                    quote! { ::thing_models::PropValue::Str(::alloc::string::String::from(self.#name)) }
+                    quote! { ::thing_models::PropValue::Str(::alloc::string::String::from(*val)) }
                 }
                 "ThingId" | "abi::ThingId" => {
-                    quote! { ::thing_models::PropValue::U64(self.#name.0) }
+                    quote! { ::thing_models::PropValue::U64(val.0) }
                 }
                 other => panic!("Unsupported type for Thing derive: {}", other),
             };
 
-            Some(quote! {
-                out.push((::alloc::string::String::from(stringify!(#name)), #val_expr));
-            })
+            if is_option {
+                Some(quote! {
+                    if let Some(ref val) = self.#name {
+                        out.push((::alloc::string::String::from(stringify!(#name)), #val_conversion));
+                    }
+                })
+            } else {
+                Some(quote! {
+                    let val = &self.#name;
+                    out.push((::alloc::string::String::from(stringify!(#name)), #val_conversion));
+                })
+            }
         })
         .collect();
 
@@ -112,7 +154,11 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 .as_ref()
                 .expect("Thing derive only supports named fields");
             let ty = &f.ty;
-            let ty_str = normalize_type_name(ty);
+            let full_ty_str = normalize_type_name(ty);
+            let (ty_str, is_option) = match extract_inner_type(&full_ty_str) {
+                Some(inner) => (inner, true),
+                None => (full_ty_str, false),
+            };
 
             if name == "id" {
                 return quote! { #name: id };
@@ -197,18 +243,35 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 other => panic!("Unsupported type for Thing derive: {}", other),
             };
 
-            quote! {
-                #name: {
-                    let mut found = None;
-                    for prop in props {
-                        if let Some((k, v)) = prop {
-                            if *k == stringify!(#name) {
-                                found = Some(#match_arm);
-                                break;
+            if is_option {
+                quote! {
+                    #name: {
+                        let mut found = None;
+                        for prop in props {
+                            if let Some((k, v)) = prop {
+                                if *k == stringify!(#name) {
+                                    found = Some(Some(#match_arm));
+                                    break;
+                                }
                             }
                         }
+                        found.unwrap_or(None)
                     }
-                    found.expect(concat!("Missing property: ", stringify!(#name)))
+                }
+            } else {
+                quote! {
+                    #name: {
+                        let mut found = None;
+                        for prop in props {
+                            if let Some((k, v)) = prop {
+                                if *k == stringify!(#name) {
+                                    found = Some(#match_arm);
+                                    break;
+                                }
+                            }
+                        }
+                        found.expect(concat!("Missing property: ", stringify!(#name)))
+                    }
                 }
             }
         })
@@ -225,7 +288,11 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 return None;
             }
             let ty = &f.ty;
-            let ty_str = normalize_type_name(ty);
+            let full_ty_str = normalize_type_name(ty);
+            let (ty_str, _is_option) = match extract_inner_type(&full_ty_str) {
+                Some(inner) => (inner, true),
+                None => (full_ty_str, false),
+            };
 
             let prop_ty_expr = match ty_str.as_str() {
                 "u64" | "u32" | "u16" | "u8" | "ThingId" | "abi::ThingId" => {

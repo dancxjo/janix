@@ -125,6 +125,8 @@ pub struct BootProgram {
     pub respawn_policy: String,
 }
 
+#[derive(Thing)]
+#[thing(description = "Raw data module loaded at boot")]
 pub struct RawModule {
     pub id: ThingId,
     pub identifier: String,
@@ -133,94 +135,6 @@ pub struct RawModule {
     pub base_phys: u64,
     pub size: u64,
     pub framebuffer_id: Option<ThingId>,
-}
-
-impl Thing for RawModule {
-    const KIND: &'static str = graph_kinds::KIND_RAW_MODULE;
-    const DESCRIPTION: &'static str = "Raw data module loaded at boot";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_IDENTIFIER.to_string(),
-            PropValue::Str(self.identifier.clone()),
-        ));
-        out.push((graph_kinds::PROP_RAW_KIND.to_string(),
-            PropValue::Str(self.raw_kind.clone()),
-        ));
-        out.push((graph_kinds::PROP_MODULE_INDEX.to_string(),
-            PropValue::U64(self.module_index),
-        ));
-        out.push((graph_kinds::PROP_BASE_PHYS.to_string(), PropValue::U64(self.base_phys)));
-        out.push((graph_kinds::PROP_SIZE.to_string(), PropValue::U64(self.size)));
-        if let Some(fid) = self.framebuffer_id {
-            out.push((graph_kinds::PROP_FRAMEBUFFER_ID.to_string(), PropValue::U64(fid.0)));
-        }
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut identifier = String::new();
-        let mut raw_kind = String::new();
-        let mut module_index = 0;
-        let mut base_phys = 0;
-        let mut size = 0;
-        let mut framebuffer_id = None;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                graph_kinds::PROP_IDENTIFIER => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        identifier = v.clone();
-                    }
-                }
-                graph_kinds::PROP_RAW_KIND => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        raw_kind = v.clone();
-                    }
-                }
-                graph_kinds::PROP_MODULE_INDEX => {
-                    if let PropValue::U64(v) = prop.1 {
-                        module_index = v;
-                    }
-                }
-                graph_kinds::PROP_BASE_PHYS => {
-                    if let PropValue::U64(v) = prop.1 {
-                        base_phys = v;
-                    }
-                }
-                graph_kinds::PROP_SIZE => {
-                    if let PropValue::U64(v) = prop.1 {
-                        size = v;
-                    }
-                }
-                graph_kinds::PROP_FRAMEBUFFER_ID => {
-                    if let PropValue::U64(v) = prop.1 {
-                        framebuffer_id = Some(ThingId(v));
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        RawModule {
-            id,
-            identifier,
-            raw_kind,
-            module_index,
-            base_phys,
-            size,
-            framebuffer_id,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            (graph_kinds::PROP_IDENTIFIER, PropType::Str),
-            (graph_kinds::PROP_RAW_KIND, PropType::Str),
-            (graph_kinds::PROP_MODULE_INDEX, PropType::U64),
-            (graph_kinds::PROP_BASE_PHYS, PropType::U64),
-            (graph_kinds::PROP_SIZE, PropType::U64),
-            (graph_kinds::PROP_FRAMEBUFFER_ID, PropType::U64),
-        ]
-    }
 }
 
 #[derive(Thing)]
@@ -340,6 +254,8 @@ impl TimeSource {
     }
 }
 
+#[derive(Thing)]
+#[thing(description = "User-requested alarm mapped to kernel tick space and lifecycle state.")]
 pub struct AlarmRequest {
     pub id: ThingId,
     pub time_source_id: Option<ThingId>,
@@ -351,124 +267,6 @@ pub struct AlarmRequest {
     pub owner_thread: ThingId,
     pub armed: bool,
     pub fired: bool,
-}
-
-impl Thing for AlarmRequest {
-    const KIND: &'static str = "AlarmRequest";
-    const DESCRIPTION: &'static str =
-        "User-requested alarm mapped to kernel tick space and lifecycle state.";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        if let Some(ts_id) = self.time_source_id {
-            out.push(("time_source_id".to_string(), PropValue::U64(ts_id.0)));
-        }
-        out.push(("target_unix_seconds".to_string(),
-            PropValue::I64(self.target_unix_seconds),
-        ));
-        out.push(("target_unix_nanos".to_string(),
-            PropValue::U64(self.target_unix_nanos as u64),
-        ));
-        if let Some(ticks) = self.target_ticks {
-            out.push(("target_ticks".to_string(), PropValue::U64(ticks)));
-        }
-        if let Some(period) = self.period_ticks {
-            out.push(("period_ticks".to_string(), PropValue::U64(period)));
-        }
-        out.push(("owner_process".to_string(), PropValue::U64(self.owner_process.0)));
-        out.push(("owner_thread".to_string(), PropValue::U64(self.owner_thread.0)));
-        out.push(("armed".to_string(), PropValue::Bool(self.armed)));
-        out.push(("fired".to_string(), PropValue::Bool(self.fired)));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut time_source_id = None;
-        let mut target_unix_seconds = 0_i64;
-        let mut target_unix_nanos = 0_u32;
-        let mut target_ticks = None;
-        let mut period_ticks = None;
-        let mut owner_process = ThingId(0);
-        let mut owner_thread = ThingId(0);
-        let mut armed = false;
-        let mut fired = false;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                "time_source_id" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        time_source_id = Some(ThingId(v));
-                    }
-                }
-                "target_unix_seconds" => {
-                    if let PropValue::I64(v) = prop.1 {
-                        target_unix_seconds = v;
-                    }
-                }
-                "target_unix_nanos" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        target_unix_nanos = v as u32;
-                    }
-                }
-                "target_ticks" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        target_ticks = Some(v);
-                    }
-                }
-                "period_ticks" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        period_ticks = Some(v);
-                    }
-                }
-                "owner_process" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        owner_process = ThingId(v);
-                    }
-                }
-                "owner_thread" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        owner_thread = ThingId(v);
-                    }
-                }
-                "armed" => {
-                    if let PropValue::Bool(v) = prop.1 {
-                        armed = v;
-                    }
-                }
-                "fired" => {
-                    if let PropValue::Bool(v) = prop.1 {
-                        fired = v;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        AlarmRequest {
-            id,
-            time_source_id,
-            target_unix_seconds,
-            target_unix_nanos,
-            target_ticks,
-            period_ticks,
-            owner_process,
-            owner_thread,
-            armed,
-            fired,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            ("time_source_id", PropType::U64),
-            ("target_unix_seconds", PropType::I64),
-            ("target_unix_nanos", PropType::U64),
-            ("target_ticks", PropType::U64),
-            ("period_ticks", PropType::U64),
-            ("owner_process", PropType::U64),
-            ("owner_thread", PropType::U64),
-            ("armed", PropType::Bool),
-            ("fired", PropType::Bool),
-        ]
-    }
 }
 
 #[cfg(test)]

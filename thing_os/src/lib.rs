@@ -91,6 +91,7 @@ pub enum SysError {
 
 #[derive(Clone, Debug, Thing)]
 #[thing(description = "A CPU core identified by its index in the system")]
+#[thing(kind = "CpuCore")]
 pub struct CpuCoreThing {
     pub id: ThingId,
     pub index: u64,
@@ -98,6 +99,7 @@ pub struct CpuCoreThing {
 
 #[derive(Clone, Debug, Thing)]
 #[thing(description = "A process with process identifier (PID) and execution state")]
+#[thing(kind = "Process")]
 pub struct ProcessThing {
     pub id: ThingId,
     pub pid: u64,
@@ -105,6 +107,7 @@ pub struct ProcessThing {
 
 #[derive(Clone, Debug, Thing)]
 #[thing(description = "A thread of execution with thread identifier, state, priority, and runtime tracking")]
+#[thing(kind = "Thread")]
 pub struct ThreadThing {
     pub id: ThingId,
     pub tid: u64,

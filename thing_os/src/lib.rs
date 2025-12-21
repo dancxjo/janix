@@ -26,6 +26,7 @@ use abi::{
     wire::{graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag}, common::{UserPtr, UserSlice}},
     syscall_defs::SymbolId,
 };
+use abi::{ThingGetSyscallResult, ThingPropScalarType};
 pub use thing_models::graph_kinds;
 pub mod graph_ops;
 pub use abi::{KernelRequest, KernelResponse};
@@ -53,6 +54,8 @@ pub use abi; // Export abi crate
 pub use abi::{Predicate, ThingId};
 pub use abi::{PropKey, PropType, PropValue};
 pub use thing_models::Thing;
+use crate::sys::raw_syscall;
+use abi::syscalls::SYSCALL_THING_GET;
 
 /// Return the currently active `Mode` Thing, if one is marked active.
 pub fn active_mode() -> Option<Mode> {
@@ -530,20 +533,37 @@ pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {
 
 /// Load a typed `Thing` from the kernel.
 pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
-    // let request = KernelRequest::ThingGet { id, out: UserSlice::default() };
-    // match syscall(request) {
-    //     KernelResponse::ThingData { id, kind, props } => {
-    //         // Kind is string returned from syscall (syscall impl copies it)
-    //         // Kind is SymbolId returned from syscall
-    //         let expected = sys_symbol_intern(T::KIND);
-    //         if kind != expected {
-    //             return None;
-    //         }
-    //         Some(T::from_props(id, props))
-    //     }
-    //     _ => None,
-    // }
-    None
+    let mut out = ThingGetSyscallResult::default();
+    let ret = unsafe { raw_syscall(SYSCALL_THING_GET, id.0, &mut out as *mut _ as u64, 0, 0, 0, 0) };
+    if ret != 0 {
+        return None;
+    }
+
+    let kind_str = core::str::from_utf8(&out.kind[..out.kind_len]).ok()?;
+    if kind_str != T::KIND {
+        return None;
+    }
+
+    let mut props: Vec<Option<(PropKey, PropValue)>> = Vec::with_capacity(out.prop_count);
+    for prop in out.props.iter().take(out.prop_count) {
+        if prop.present == 0 {
+            continue;
+        }
+        let key = core::str::from_utf8(&prop.key[..prop.key_len]).ok()?.to_string();
+        let value = match prop.value_type {
+            ThingPropScalarType::U64 => PropValue::U64(prop.value_u64),
+            ThingPropScalarType::I64 => PropValue::I64(prop.value_i64),
+            ThingPropScalarType::Bool => PropValue::Bool(prop.value_bool != 0),
+            ThingPropScalarType::Str => {
+                let len = core::cmp::min(prop.value_str_len, prop.value_str.len());
+                let s = core::str::from_utf8(&prop.value_str[..len]).ok()?.to_string();
+                PropValue::Str(s)
+            }
+        };
+        props.push(Some((key, value)));
+    }
+
+    Some(T::from_props(id, &props))
 }
 
 /// Check if an existing schema matches the expected schema for T.

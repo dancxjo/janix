@@ -13,12 +13,12 @@ use core::slice;
 
 use abi::{
     KernelRequest, KernelResponse, MapFlags, PixelFormat, PropKey, PropType, PropValue, SharedBufferInfo,
-    Thing, ThingId, graph_kinds,
+    ThingId,
 };
 use thing_os::prelude::*;
 use thing_os::{
     DisplayThing, Window, Surface, ProcessThing, create_thing, list_things_by_kind,
-    register_schema_for, update_props, add_link,
+    register_schema_for, update_props, add_link, Thing, graph_kinds,
 };
 
 mod text;

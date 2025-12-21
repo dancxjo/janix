@@ -1,14 +1,14 @@
 extern crate alloc;
 
 use crate::FRAMEBUFFER_REQUEST;
-use abi::{PixelFormat, PropValue, Thing, ThingId, syscall_defs::SymbolId};
+use abi::{PixelFormat, PropValue, ThingId, syscall_defs::SymbolId};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use kernel::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_pool};
 use kernel::model;
 use kernel::{graph, graph_kinds, log, shared_buffer, time, symbols};
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
-use thing_models::{AlarmRequest, BootProgram, FontModule, TimeSource};
+use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource};
 
 #[used]
 #[unsafe(link_section = ".requests")]

@@ -23,7 +23,7 @@ pub use display::*;
 use abi::{
     FrameInfo, MemorySummary, NodeId,
     SchedulerSummary, FrameId, 
-    wire::{graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag}, common::UserSlice},
+    wire::{graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag}, common::{UserPtr, UserSlice}},
     syscall_defs::SymbolId,
 };
 pub use thing_models::graph_kinds;
@@ -632,11 +632,36 @@ pub fn register_schema_for<T: Thing>() -> bool {
 /// Returns true if it exists.
 pub fn ensure_schema_exists_for<T: Thing>() -> bool {
     let kind_sym = sys_symbol_intern(T::KIND);
-    // match syscall(KernelRequest::SchemaGet { kind: kind_sym, out: UserSlice::default() }) {
-    //     KernelResponse::SchemaData { .. } => true,
-    //     _ => false,
-    // }
-    false
+    // Ask the kernel for the schema so we can verify shape.
+    const MAX_SCHEMA_PROPS: usize = 16;
+    let mut buf = [WireSchemaProp { name: SymbolId(0), prop_type: 0 }; MAX_SCHEMA_PROPS];
+    let out = UserSlice::new(UserPtr::new(buf.as_mut_ptr() as u64), buf.len() as u64);
+
+    match syscall(KernelRequest::SchemaGet { kind: kind_sym, out }) {
+        KernelResponse::SchemaData { written, .. } => {
+            let count = core::cmp::min(written as usize, buf.len());
+            let mut props = Vec::with_capacity(count);
+            for wsp in &buf[..count] {
+                let pt = match wsp.prop_type {
+                    0 => Some(PropType::U64),
+                    1 => Some(PropType::I64),
+                    2 => Some(PropType::Bool),
+                    3 => Some(PropType::Str),
+                    4 => Some(PropType::Blob),
+                    5 => Some(PropType::Symbol),
+                    _ => None,
+                };
+                props.push(pt.map(|p| (wsp.name, p)));
+            }
+            if schema_matches::<T>(&props) {
+                return true;
+            }
+            // If the schema shape differs, try to (re)register the canonical one.
+            register_schema_for::<T>()
+        }
+        KernelResponse::Error { .. } => register_schema_for::<T>(),
+        _ => register_schema_for::<T>(),
+    }
 }
 
 /// Search for a `Thing` that satisfies `predicate`.

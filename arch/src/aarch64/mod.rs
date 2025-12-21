@@ -30,3 +30,15 @@ impl Arch for AArch64Arch {
 }
 
 pub use enter::{alloc_user_stack, init_user_stack};
+
+pub fn map_boot_device_regions() -> bool {
+    let hhdm = kernel::memory::get_hhdm_offset();
+    unsafe {
+        // Generic PCI/MMIO? Copied from legacy platform.rs
+        paging::map_device_region(0x3f000000, 0x01000000, hhdm);
+        paging::map_device_region(0x10000000, 0x2effffff, hhdm);
+        // PL011 UART
+        paging::map_device_region(0x09000000, 0x1000, hhdm);
+    }
+    true
+}

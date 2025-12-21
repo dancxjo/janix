@@ -37,6 +37,10 @@ pub fn sys_symbol_intern(s: &str) -> SymbolId {
 }
 
 pub fn syscall(request: KernelRequest) -> KernelResponse {
+    #[cfg(test)]
+    {
+        return crate::mock::handle_syscall(request);
+    }
     match request {
         KernelRequest::Log { message } => {
             let ptr = message.ptr;

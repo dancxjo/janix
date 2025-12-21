@@ -13,4 +13,5 @@ proc-macro2 = "1.0"
 
 [dev-dependencies]
 abi = { path = "../abi" }
+thing_models = { path = "../thing_models" }
 trybuild = "1.0"

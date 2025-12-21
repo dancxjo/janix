@@ -836,3 +836,9 @@ pub fn free_frame(frame_id: FrameId) -> bool {
 pub fn intern(s: &str) -> SymbolId {
     sys_symbol_intern(s)
 }
+
+#[cfg(test)]
+pub mod mock;
+
+#[cfg(test)]
+mod lib_tests;

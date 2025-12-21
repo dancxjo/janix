@@ -339,9 +339,11 @@ mod x86_64 {
     ) -> Result<(u64, u64), &'static str> {
         let heap_start = USER_HEAP_START as u64;
         let heap_end = USER_HEAP_END as u64;
+        let map_end = heap_start + (16 * Size4KiB::SIZE as u64);
+
         let mut mapper = mapper(space);
         let mut addr = heap_start;
-        while addr < heap_end {
+        while addr < map_end {
             let page = Page::<Size4KiB>::containing_address(VirtAddr::new(addr));
             let frame = frame_alloc
                 .allocate_frame()
@@ -771,8 +773,10 @@ mod aarch64 {
     ) -> Result<(u64, u64), &'static str> {
         let heap_start = USER_HEAP_START as u64;
         let heap_end = USER_HEAP_END as u64;
+        let map_end = heap_start + (16 * PAGE_SIZE);
+
         let mut addr = heap_start;
-        while addr < heap_end {
+        while addr < map_end {
             let frame = frame_alloc.allocate().ok_or("Out of frames mapping heap")?;
             space.map_page(addr, frame, true, false)?;
             zero_frame(frame, hhdm);

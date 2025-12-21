@@ -679,7 +679,8 @@ pub fn create_builtin_things() {
 
     log("Kernel Things created.");
     // Dump the graph so callers can inspect the freshly-created builtin Things
-    crate::graph::debug::dump_graph_table();
+
+
 }
 
 /// Initialize the boot graph with memory and scheduling Things

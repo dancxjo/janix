@@ -373,6 +373,7 @@ pub fn seed_program_images_from_limine() {
     }
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
     log(leaked);
+
 }
 
 pub fn seed_font_modules_from_limine() {

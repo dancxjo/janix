@@ -6,6 +6,7 @@ pub mod rtc;
 pub mod syscall;
 pub mod time;
 pub mod trap;
+pub mod apic;
 
 use super::{Arch, UserEntryRegs};
 

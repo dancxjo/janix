@@ -675,6 +675,7 @@ ovmf/ovmf-vars-aarch64.fd:
 ovmf/ovmf-code-riscv64.fd:
 	mkdir -p ovmf
 	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-code-riscv64.fd
+	truncate -s 32M $@
 
 ovmf/ovmf-vars-riscv64.fd:
 	mkdir -p ovmf

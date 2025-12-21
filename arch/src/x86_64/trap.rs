@@ -418,6 +418,8 @@ fn timer_tick(frame: &mut TrapFrame) {
                  super::enter::enter_user_mode(&regs);
              }
         }
+        } else {
+             // kernel::println!("timer_tick: scheduler locked, skipping dispatch");
         }
     }
 }

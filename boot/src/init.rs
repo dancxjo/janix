@@ -139,6 +139,10 @@ fn launch_idle_thread() {
 }
 
 pub fn launch_init_process() {
+    let is_debug_profile = crate::boot_model::get_kernel_arg("profile=")
+        .map(|s| s == "debug")
+        .unwrap_or(false);
+
     kernel::log("launch_init_process: spawning init via ProgramImage");
     if let Err(err) = crate::program::spawn_program_by_identifier("init", "init", 10) {
         kernel::log("launch_init_process: failed to spawn init via ProgramImage");
@@ -146,7 +150,7 @@ pub fn launch_init_process() {
         crate::panic_handler::hcf();
     }
 
-    if kernel::model::program_image_exists("debug_input_events") {
+    if !is_debug_profile && kernel::model::program_image_exists("debug_input_events") {
         kernel::log("launch_init_process: spawning debug_input_events debug app");
         if let Err(err) =
             crate::program::spawn_program_by_identifier("debug_input_events", "debug_input_events", 1)

@@ -443,6 +443,14 @@ pub fn seed_boot_programs_from_limine() {
     let mut seen = alloc::collections::BTreeSet::new();
 
 
+    let is_debug_profile = get_kernel_arg("profile=")
+        .map(|s| s == "debug")
+        .unwrap_or(false);
+
+    if is_debug_profile {
+        log("DEBUG PROFILE ACTIVE: Only spawning init and debug_clock");
+    }
+
     for (index, module) in response.modules().iter().enumerate() {
         let identifier = match classify_limine_module((*module).string(), (*module).path(), index) {
             ModuleKind::Program { identifier } => identifier,
@@ -454,6 +462,8 @@ pub fn seed_boot_programs_from_limine() {
         };
 
         if identifier == "init" {
+            // Always spawn init
+        } else if is_debug_profile && identifier != "debug_clock" {
             continue;
         }
 

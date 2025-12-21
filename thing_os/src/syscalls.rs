@@ -1,6 +1,6 @@
 use abi::{
-    SharedBufferInfo, ThingGetSyscallResult,
-    ThingPropScalarType, resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
+    SharedBufferInfo,
+    resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
     syscalls::*, syscall_defs::{SymbolId, SymbolInternReq, WireStr},
 };
 use abi::wire::common::UserSlice;
@@ -184,12 +184,6 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
                 KernelResponse::Error {
                     err: abi::syscall_defs::SysError { code: 1, detail: 0 },
                 }
-            }
-        }
-        KernelRequest::ThingGet { id, out: _ } => {
-            // Disabled ThingGet shim
-            KernelResponse::Error {
-                 err: abi::syscall_defs::SysError { code: 1, detail: 0 },
             }
         }
         KernelRequest::ThingList { kind, start_after } => {

@@ -334,60 +334,35 @@ macro_rules! dispatch_syscall {
     (SYSCALL_THING_GET, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
         {
              let id = ThingId($a1);
-             if let Some(out) = unsafe { user_ptr_mut::<abi::ThingGetSyscallResult>($a2) } {
-                 let found = kernel::graph::with_thing(id, |node| {
-                     if let Some(k) = kernel::symbols::resolve(node.kind) {
-                         let bytes = k.as_bytes();
-                         let len = core::cmp::min(bytes.len(), abi::THING_GET_MAX_KIND_LEN);
-                         out.kind[..len].copy_from_slice(&bytes[..len]);
-                         out.kind_len = len;
-                     }
+             let out_ptr = $a2;
+             let out_len = $a3;
 
-                     let mut count = 0;
+             let found = kernel::graph::with_thing(id, |node| {
+                 let mut count = 0;
+                 if let Some(out_slice) = unsafe { user_ptr_mut::<WireProp>(out_ptr) }.map(|p| unsafe { slice::from_raw_parts_mut(p, out_len as usize) }) {
                      for (key_sym, val) in &node.props {
-                         if count >= abi::THING_GET_MAX_PROPS { break; }
-                         if let Some(key_str) = kernel::symbols::resolve(*key_sym) {
-                             let mut ent = abi::ThingPropData::default();
-                             
-                             let kbytes = key_str.as_bytes();
-                             let klen = core::cmp::min(kbytes.len(), abi::THING_GET_MAX_STR_LEN);
-                             ent.key[..klen].copy_from_slice(&kbytes[..klen]);
-                             ent.key_len = klen;
-                             ent.present = 1;
+                         if count >= out_slice.len() { break; }
 
-                             match val {
-                                 PropValue::U64(v) => {
-                                     ent.value_type = abi::ThingPropScalarType::U64;
-                                     ent.value_u64 = *v;
-                                 },
-                                 PropValue::I64(v) => {
-                                     ent.value_type = abi::ThingPropScalarType::I64;
-                                     ent.value_i64 = *v;
-                                 },
-                                 PropValue::Bool(v) => {
-                                     ent.value_type = abi::ThingPropScalarType::Bool;
-                                     ent.value_bool = if *v { 1 } else { 0 };
-                                 },
-                                 PropValue::Str(s) => {
-                                     ent.value_type = abi::ThingPropScalarType::Str;
-                                     let sbytes = s.as_bytes();
-                                     let slen = core::cmp::min(sbytes.len(), abi::THING_GET_MAX_STR_LEN);
-                                     ent.value_str[..slen].copy_from_slice(&sbytes[..slen]);
-                                     ent.value_str_len = slen;
-                                 },
-                                 _ => continue,
-                             }
-                             out.props[count] = ent;
-                             count += 1;
-                         }
+                         let wire_val = match val {
+                            PropValue::U64(v) => WirePropValue::u64(*v),
+                            PropValue::I64(v) => WirePropValue::i64(*v),
+                            PropValue::Bool(v) => WirePropValue::bool(*v),
+                            PropValue::Str(s) => WirePropValue::sym(kernel::symbols::intern(s)),
+                            PropValue::Symbol(id) => WirePropValue::sym(*id),
+                            PropValue::Blob(b) => WirePropValue::blob(b.as_ptr() as u64, b.len() as u64),
+                         };
+
+                         out_slice[count] = WireProp {
+                             key: *key_sym,
+                             value: wire_val,
+                             _pad: 0,
+                         };
+                         count += 1;
                      }
-                     out.prop_count = count;
-                     0
-                 });
-                 found.unwrap_or(1)
-             } else {
-                 1
-             }
+                 }
+                 count as u64
+             });
+             found.unwrap_or(u64::MAX)
         }
     };
     (SYSCALL_SCHEMA_REGISTER_PACKAGE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {

@@ -29,14 +29,31 @@ mod inner {
         }
     }
 
-    unsafe fn wait_busy() {
+
+    unsafe fn wait_busy() -> Result<(), ()> {
         let mut port = PortReadOnly::<u8>::new(ATA_PRIMARY_STATUS);
-        while port.read() & STATUS_BSY != 0 {}
+        // Timeout: roughly 100ms equivalent loop count
+        // 100_000 iterations * (io_port_read + check) should be plenty.
+        for _ in 0..100_000 {
+            if port.read() & STATUS_BSY == 0 {
+                return Ok(());
+            }
+            // Simple cpu relaxation
+            core::hint::spin_loop();
+        }
+        Err(())
     }
 
-    unsafe fn wait_drq() {
+    unsafe fn wait_drq() -> Result<(), ()> {
         let mut port = PortReadOnly::<u8>::new(ATA_PRIMARY_STATUS);
-        while port.read() & STATUS_DRQ == 0 {}
+        // Timeout
+        for _ in 0..100_000 {
+            if port.read() & STATUS_DRQ != 0 {
+                return Ok(());
+            }
+            core::hint::spin_loop();
+        }
+        Err(())
     }
 
     unsafe fn identify() {
@@ -67,7 +84,10 @@ mod inner {
             return;
         }
 
-        wait_busy();
+        if wait_busy().is_err() {
+            crate::log("ATA: Timeout waiting for BUSY clear during identify");
+            return;
+        }
 
         // Check for non-ATA devices (e.g. ATAPI)
         // Actually 0x1F4/1F5 are RW. We need ReadOnly wrappers to read.
@@ -80,13 +100,19 @@ mod inner {
              return;
         }
 
+        // Wait for ERR clear (should be clear if success)
+        // But traditional check is: while status & BSY != 0... done above.
+        // Check ERR bit.
         let status = status_port.read();
-        while status & STATUS_ERR != 0 {
+        if status & STATUS_ERR != 0 {
              crate::log("ATA: Error during IDENTIFY");
              return;
         }
 
-        while status_port.read() & STATUS_DRQ == 0 {}
+        if wait_drq().is_err() {
+            crate::log("ATA: Timeout waiting for DRQ during identify");
+            return;
+        }
 
         // Read 256 words (512 bytes)
         let mut data_port = Port::<u16>::new(ATA_PRIMARY_DATA);
@@ -156,8 +182,14 @@ mod inner {
         let mut cmd_port = PortWriteOnly::<u8>::new(ATA_PRIMARY_COMMAND);
         cmd_port.write(0x20); // READ SECTORS (with retry)
 
-        wait_busy();
-        wait_drq();
+        if wait_busy().is_err() {
+            crate::log("ATA: Timeout waiting for BUSY clear during read");
+            return;
+        }
+        if wait_drq().is_err() {
+             crate::log("ATA: Timeout waiting for DRQ during read");
+             return;
+        }
 
         let mut data_port = Port::<u16>::new(ATA_PRIMARY_DATA);
         let mut sector_data = [0u8; 512];

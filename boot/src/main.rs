@@ -15,6 +15,7 @@
 extern crate alloc;
 
 mod boot_model;
+mod boot_screen;
 mod console;
 mod context_switch;
 mod dashboard;

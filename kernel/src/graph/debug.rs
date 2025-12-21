@@ -98,7 +98,7 @@ pub fn print_thing_updated(id: ThingId, props: &[(SymbolId, PropValue)]) {
         first = false;
     }
     let msg = format!("(t{}) updated {{ {} }}", id.0, props_str);
-    crate::log(&msg);
+    // crate::log(&msg);
 }
 
 pub fn print_link_created(src: ThingId, pred: Predicate, dst: ThingId) {

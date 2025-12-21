@@ -90,24 +90,41 @@ pub fn init() {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
+use x86_64::instructions::interrupts;
+
+#[cfg(not(target_arch = "x86_64"))]
+mod interrupts {
+    #[inline]
+    pub fn without_interrupts<F, R>(f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        f()
+    }
+}
+
 /// Log a message
 pub fn log_message(message: &str) {
-    unsafe {
-        let truncated = message.as_bytes().len() > MAX_LOG_LEN;
-        if truncated {
-            LOG_TRUNCATED += 1;
-        }
+    interrupts::without_interrupts(|| {
+        unsafe {
+            let truncated = message.as_bytes().len() > MAX_LOG_LEN;
+            if truncated {
+                LOG_TRUNCATED += 1;
+            }
 
-        if LOG_COUNT == MAX_LOG_ENTRIES {
-            LOG_OVERWRITES += 1;
-        } else {
-            LOG_COUNT += 1;
-        }
+            if LOG_COUNT == MAX_LOG_ENTRIES {
+                LOG_OVERWRITES += 1;
+            } else {
+                LOG_COUNT += 1;
+            }
 
-        LOG_BUFFER[LOG_INDEX].write_from(message);
-        LOG_INDEX = (LOG_INDEX + 1) % MAX_LOG_ENTRIES;
-        LOG_TOTAL_WRITES += 1;
-    }
+            LOG_BUFFER[LOG_INDEX].write_from(message);
+            LOG_INDEX = (LOG_INDEX + 1) % MAX_LOG_ENTRIES;
+            LOG_TOTAL_WRITES += 1;
+        }
+    });
+
     #[cfg(all(feature = "debug_logging", not(test)))]
     {
         console::print(message);
@@ -117,7 +134,7 @@ pub fn log_message(message: &str) {
 
 /// Get all log entries
 pub fn get_logs() -> &'static [Option<&'static str>] {
-    unsafe {
+    interrupts::without_interrupts(|| unsafe {
         // Render a chronological view into LOG_VIEW to preserve the existing return
         // type without introducing heap allocations.
         let available = LOG_COUNT;
@@ -133,7 +150,7 @@ pub fn get_logs() -> &'static [Option<&'static str>] {
         }
 
         &LOG_VIEW[..available]
-    }
+    })
 }
 
 /// Get the number of log entries

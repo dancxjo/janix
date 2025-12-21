@@ -747,13 +747,13 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	mkdir -p iso_root/boot iso_root/boot/user iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
 	cp -v assets/wallpapers/clouds.bmp iso_root/boot/clouds.bmp
-	for app in $(APPS); do \
-		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/user/$$app; \
-		strip --strip-debug iso_root/boot/user/$$app; \
+	for app in debug_clock window_demo compositor hello_world geographer debug_alloc init; do \
+		cp -v target/x86_64-unknown-none/debug/$$app iso_root/boot/user/$$app; \
+		objcopy --strip-debug iso_root/boot/user/$$app; \
 	done
-	for drv in $(DRIVERS); do \
-		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \
-		strip --strip-debug iso_root/boot/drivers/$$drv; \
+	for drv in framebuffer ps2_keyboard_driver ps2_mouse_driver pci usb; do \
+		cp -v target/x86_64-unknown-none/debug/$$drv iso_root/boot/drivers/$$drv; \
+		objcopy --strip-debug iso_root/boot/drivers/$$drv; \
 	done
 	# Fonts: Only include unifont.hex and HACK_REGULAR.ttf
 	# if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \

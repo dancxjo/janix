@@ -56,22 +56,67 @@ pub fn init_user_heap() {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
         
-        // Debug address
+        // Check and log address
         let ga_addr = &GLOBAL_ALLOCATOR as *const _ as usize;
-        if ga_addr == 0 {
-             let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: GLOBAL_ALLOCATOR is NULL".as_bytes()) };
-             crate::syscalls::syscall(req);
-             loop {}
-        } else {
-             // We can't easily format, but we can check if it matches expectation or just log "Not NULL"
-             let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: GLOBAL_ALLOCATOR is NOT NULL".as_bytes()) };
-             crate::syscalls::syscall(req);
+        
+        fn log_addr(label: &str, val: usize) {
+            // Minimal hex buffer
+            let mut buf = [0u8; 64];
+            let mut i = 0;
+            for &b in label.as_bytes() {
+                if i < buf.len() { buf[i] = b; i += 1; }
+            }
+            if i < buf.len() { buf[i] = b'='; i += 1; }
+            if val == 0 {
+                if i < buf.len() { buf[i] = b'0'; i += 1; }
+            } else {
+                // write hex (reverse)
+                let mut v = val;
+                let start = i;
+                while v > 0 && i < buf.len() {
+                    let d = v % 16;
+                    buf[i] = if d < 10 { b'0' + d as u8 } else { b'a' + (d - 10) as u8 };
+                    v /= 16;
+                    i += 1;
+                }
+                // reverse
+                let end = i;
+                let len = end - start;
+                for j in 0..len/2 {
+                    let tmp = buf[start+j];
+                    buf[start+j] = buf[end-1-j];
+                    buf[end-1-j] = tmp;
+                }
+            }
+            let req = abi::KernelRequest::Log { message: UserSlice::from_slice(&buf[..i]) };
+            unsafe { crate::syscalls::syscall(req); }
         }
 
-        let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: locking global allocator".as_bytes()) };
+        log_addr("GLOBAL_ALLOCATOR", ga_addr);
+
+        if ga_addr == 0 { loop {} }
+
+        let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: locking...".as_bytes()) };
         crate::syscalls::syscall(req);
 
-        GLOBAL_ALLOCATOR.0.lock().init(heap_start, heap_size);
+        let lock_ref = &GLOBAL_ALLOCATOR.0;
+        log_addr("LockRef", lock_ref as *const _ as usize);
+
+        let mut guard = lock_ref.lock();
+        log_addr("GuardAcquired", 1); // just a marker
+
+        let heap_ref = &mut *guard;
+        log_addr("HeapRef", heap_ref as *const _ as usize);
+
+        if (heap_ref as *const _ as usize) == 0 {
+             log_addr("HeapRefIsNull", 0);
+             loop {}
+        }
+
+        heap_ref.init(heap_start, heap_size);
+        
+        let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: initialized".as_bytes()) };
+        crate::syscalls::syscall(req);
         
         let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: allocator initialized".as_bytes()) };
         crate::syscalls::syscall(req);

@@ -27,7 +27,7 @@ pub unsafe fn syscall_stub(
             in("r9") arg5,
             lateout("rcx") _, // rcx is clobbered by syscall
             lateout("r11") _, // r11 is clobbered by syscall
-            options(nostack, preserves_flags),
+            options(nostack),
         );
     }
     ret

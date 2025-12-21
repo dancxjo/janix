@@ -3,6 +3,7 @@ use abi::{
     ThingPropScalarType, resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
     syscalls::*, syscall_defs::{SymbolId, SymbolInternReq, WireStr},
 };
+use abi::wire::common::UserSlice;
 use abi::{KernelRequest, KernelResponse};
 use thing_models::PropType;
 use thing_models::SchemaRegistryOutcome;
@@ -12,6 +13,14 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 pub fn sys_symbol_intern(s: &str) -> SymbolId {
+    #[cfg(test)]
+    return SymbolId(0);
+
+    // Safety check: null pointer slice is UB but if it happens, avoid syscall.
+    if s.as_ptr().is_null() {
+        return SymbolId(0);
+    }
+
     let req = SymbolInternReq {
         s: WireStr {
             ptr: s.as_ptr() as u64,
@@ -471,4 +480,3 @@ pub fn sys_pci_read_config(bus: u8, slot: u8, func: u8, offset: u16, width: u8) 
         None
     }
 }
-

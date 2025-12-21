@@ -1,6 +1,6 @@
 use crate::{graph, graph_kinds, time};
 use abi::ThingId;
-use thing_models::{PropKey, PropValue};
+use abi::{PropKey, PropValue};
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -99,7 +99,7 @@ pub fn process_io_op(op_id: ThingId) {
         let mut offset = None;
         let mut width = None;
         let mut value = None;
-        let mut status = None;
+        let mut status: Option<IoStatus> = None;
         
         for (k, v) in &thing.props {
              if *k == crate::symbols::intern("direction") {
@@ -113,7 +113,7 @@ pub fn process_io_op(op_id: ThingId) {
              } else if *k == crate::symbols::intern("value") {
                  if let PropValue::U64(val) = v { value = Some(*val as u32); }
              } else if *k == crate::symbols::intern("status") {
-                 if let PropValue::Str(s) = v { status = Some(IoStatus::from_str(s)); }
+                 if let PropValue::Str(s) = v { status = IoStatus::from_str(s); }
              }
         }
         
@@ -124,7 +124,7 @@ pub fn process_io_op(op_id: ThingId) {
              _ => None
         };
 
-        if let (Some(d), Some(r), Some(o), Some(w_enum), Some(s_opt)) = (direction, region_id, offset, width_enum, status) {
+        if let (Some(d), Some(r), Some(o), Some(w_enum)) = (direction, region_id, offset, width_enum) {
              Some(IoPortOp {
                  id: op_id,
                  direction: if d == 0 { thing_models::IoDirection::Read } else { thing_models::IoDirection::Write },
@@ -132,7 +132,7 @@ pub fn process_io_op(op_id: ThingId) {
                  offset: o,
                  width: w_enum,
                  value: value.unwrap_or(0),
-                 status: s_opt.unwrap_or(IoStatus::Pending),
+                 status: status.unwrap_or(IoStatus::Pending),
                  error_code: 0,
                  issued_by: ThingId(0) // stub
              })

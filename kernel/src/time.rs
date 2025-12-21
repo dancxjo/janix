@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 
 use crate::{graph, graph_kinds};
 use abi::ThingId;
-use thing_models::PropValue;
+use abi::PropValue;
 use thing_models::{AlarmEvent, AlarmRequest, TimeSource};
 
 /// Trait for hardware timer abstraction

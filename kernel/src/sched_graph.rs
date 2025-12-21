@@ -2,7 +2,7 @@ use crate::graph::{self, Graph};
 use crate::graph_kinds;
 use crate::sched_types::{CpuId, ThreadState, TimeNs};
 use abi::ThingId;
-use thing_models::PropValue;
+use abi::PropValue;
 use alloc::string::String;
 
 const TIME_SLICE_NS: TimeNs = 5_000_000;

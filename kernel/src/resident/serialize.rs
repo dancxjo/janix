@@ -1,7 +1,7 @@
 use crate::graph::store::{self, StorageState, ArchiveRef};
 use crate::graph::schema;
 use abi::ThingId;
-use thing_models::PropValue;
+use abi::PropValue;
 use abi::resident::{RestPolicy, RestResp, ResidentError, ResidentErrorCode};
 use abi::resident_layout::{ResidentHeader, ResPropEntry, ResTag};
 use crate::memory::hhdm;

@@ -1,7 +1,8 @@
 use crate::graph::store;
 use crate::graph_kinds;
 use crate::symbols;
-use abi::{Predicate, ThingId, syscall_defs::SymbolId};
+use abi::{ThingId, Predicate, syscall_defs::SymbolId};
+use abi::PropValue;
 use alloc::format;
 use thing_models::PropValue;
 

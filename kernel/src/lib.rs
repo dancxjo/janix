@@ -32,8 +32,7 @@ mod syscalls_test;
 use crate::model::{compute_memory_summary, compute_scheduler_summary, scheduler_tick};
 use crate::sched_types::ThreadState;
 use crate::shared_buffer::MAX_FRAMES_PER_BUFFER;
-use abi::{FrameId, FrameInfo, ThingId, KernelRequest, KernelResponse};
-use thing_models::{PropType, PropValue, SchedThreadInfo};
+use abi::{FrameId, FrameInfo, ThingId, KernelRequest, KernelResponse, PropType, PropValue, SchedThreadInfo};
 use alloc::string::String;
 use spin::{Mutex, MutexGuard};
 
@@ -626,7 +625,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
 
 /// Create builtin kernel Things at boot time
 pub fn create_builtin_things() {
-    use thing_models::{PropType, PropValue};
+    use abi::{PropType, PropValue};
     use alloc::vec;
 
     log("Creating kernel Things...");

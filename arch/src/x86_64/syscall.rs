@@ -480,6 +480,8 @@ macro_rules! dispatch_syscall {
              for _ in 0..pages {
                  if let Some(f) = kernel::memory::allocate_frame() {
                      if frames.push(f).is_err() {
+                         // Frame allocation succeeded but list is full.
+                         // Free the current frame and abort to cleanup existing frames.
                          kernel::memory::free_frame(f);
                          success = false;
                          break;

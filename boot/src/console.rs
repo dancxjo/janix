@@ -9,7 +9,7 @@ use thing_models::MODE_INDEX_CONSOLE;
 include!(concat!(env!("OUT_DIR"), "/unifont.rs"));
 
 // Temporary kill-switch so logs only go out over serial until the FB console stabilizes.
-pub const FRAMEBUFFER_CONSOLE_ENABLED: bool = false;
+pub const FRAMEBUFFER_CONSOLE_ENABLED: bool = true;
 
 static CONSOLE: Mutex<Option<Console>> = Mutex::new(None);
 
@@ -300,6 +300,10 @@ where
 }
 
 fn console_mode_should_draw() -> bool {
+    if !symbols::is_initialized() || kernel::graph::store::things_slab().lock().is_none() {
+        return true;
+    }
+
     let mut seen_mode = false;
     let mut console_active = false;
     

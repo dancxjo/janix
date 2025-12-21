@@ -55,6 +55,10 @@ pub fn init() {
     *SYMBOLS.lock() = Some(SymbolTable::new());
 }
 
+pub fn is_initialized() -> bool {
+    interrupts::without_interrupts(|| SYMBOLS.lock().is_some())
+}
+
 pub fn intern(s: &str) -> SymbolId {
     interrupts::without_interrupts(|| {
         SYMBOLS

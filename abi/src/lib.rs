@@ -110,68 +110,6 @@ pub enum SchemaRegistryOutcome {
 pub mod requests;
 pub use requests::{KernelRequest, KernelResponse};
 
-pub const THING_GET_MAX_KIND_LEN: usize = 128;
-pub const THING_GET_MAX_STR_LEN: usize = 128;
-pub const THING_GET_MAX_PROPS: usize = 8;
-
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ThingPropScalarType {
-    U64 = 0,
-    I64 = 1,
-    Bool = 2,
-    Str = 3,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct ThingPropData {
-    pub present: u8,
-    pub key_len: usize,
-    pub key: [u8; THING_GET_MAX_STR_LEN],
-    pub value_type: ThingPropScalarType,
-    pub value_u64: u64,
-    pub value_i64: i64,
-    pub value_bool: u8,
-    pub value_str_len: usize,
-    pub value_str: [u8; THING_GET_MAX_STR_LEN],
-}
-
-impl Default for ThingPropData {
-    fn default() -> Self {
-        Self {
-            present: 0,
-            key_len: 0,
-            key: [0; THING_GET_MAX_STR_LEN],
-            value_type: ThingPropScalarType::U64,
-            value_u64: 0,
-            value_i64: 0,
-            value_bool: 0,
-            value_str_len: 0,
-            value_str: [0; THING_GET_MAX_STR_LEN],
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct ThingGetSyscallResult {
-    pub kind_len: usize,
-    pub kind: [u8; THING_GET_MAX_KIND_LEN],
-    pub prop_count: usize,
-    pub props: [ThingPropData; THING_GET_MAX_PROPS],
-}
-
-impl Default for ThingGetSyscallResult {
-    fn default() -> Self {
-        Self {
-            kind_len: 0,
-            kind: [0; THING_GET_MAX_KIND_LEN],
-            prop_count: 0,
-            props: [ThingPropData::default(); THING_GET_MAX_PROPS],
-        }
-    }
-}
 
 
 #[cfg(test)]

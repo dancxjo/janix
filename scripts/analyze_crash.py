@@ -20,13 +20,13 @@ def find_crash_rip(log_path):
     crash_idx = -1
     # Scan for known crash patterns
     for i, line in enumerate(lines):
-        if "Triple fault" in line or "PANIC" in line or "DOUBLE FAULT" in line:
+        if "Triple fault" in line or "PANIC" in line or "DOUBLE FAULT" in line or "--- DEBUG SNAPSHOT ---" in line:
             crash_idx = i
             # Keep searching for the *last* crash if multiple (though usually QEMU exits)
             # But usually the last one is the one that killed it.
     
     if crash_idx == -1:
-        print("No crash detected in log (searched for 'Triple fault', 'PANIC', 'DOUBLE FAULT').")
+        print("No crash/snapshot detected in log (searched for 'Triple fault', 'PANIC', 'DOUBLE FAULT', '--- DEBUG SNAPSHOT ---').")
         return None
 
     print(f"Crash detected at line {crash_idx + 1}: {lines[crash_idx].strip()}")

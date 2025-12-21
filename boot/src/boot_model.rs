@@ -454,7 +454,13 @@ pub fn seed_boot_programs_from_limine() {
             continue;
         }
 
+        // Temporary debug: skip pci and usb to see if they cause the hang
+        if identifier == "pci" || identifier == "usb" {
+             continue;
+        }
+
         if !cfg!(feature = "rootfs") && identifier == "rootfs" {
+
             continue;
         }
 

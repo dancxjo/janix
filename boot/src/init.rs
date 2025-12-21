@@ -61,9 +61,9 @@ pub fn init_machine() {
     // this ran earlier during `kernel::init()` and could cause data-abort
     // accesses when drivers tried to dereference `phys + HHDM_OFFSET` before
     // the mappings existed.
-    kernel::log("Initializing hardware drivers (MMIO-dependent)");
-    kernel::driver_bringup::init();
+    // kernel::driver_bringup::init() moved to init_world_graph
     crate::graph_reifier::init_graph_subscriptions();
+
 
     // Register IRQ controller callback to manage IRQ masking via graph requests
     #[cfg(target_arch = "x86_64")]
@@ -90,8 +90,14 @@ pub fn init_world_graph() {
     crate::boot_model::seed_program_images_from_limine();
     crate::boot_model::seed_raw_modules_from_limine();
     crate::boot_model::seed_boot_programs_from_limine();
+    
+    // Now that boot programs are seeded, we can initialize userland drivers
+    kernel::log("Initializing hardware drivers (MMIO-dependent)");
+    kernel::driver_bringup::init();
+
     crate::boot_model::seed_time_graph();
     kernel::bridge::io::seed_io_regions();
+
 }
 
 #[cfg(not(feature = "boot-dashboard-only"))]

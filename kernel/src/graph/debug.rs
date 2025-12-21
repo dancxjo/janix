@@ -70,6 +70,9 @@ pub fn dump_graph_table() {
 pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, PropValue)]) {
     #[cfg(test)]
     return;
+    // Disable verbose graph logging to prevent serial port deadlocks/hangs
+    return;
+
     let kind_str = symbols::resolve(kind).unwrap_or_else(|| "???".into());
     let mut props_str = alloc::string::String::new();
     let mut first = true;
@@ -90,6 +93,9 @@ pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, Prop
 pub fn print_link_created(src: ThingId, pred: Predicate, dst: ThingId) {
      #[cfg(test)]
      return;
+     // Disable verbose graph logging to prevent serial port deadlocks/hangs
+     return;
+
      // format: (t1234)-[:RESOLVED_NAME]->(x8549)
      let pred_str = resolve_predicate(pred);
      let msg = format!("(t{})-[:{}]->(t{})", src.0, pred_str, dst.0);

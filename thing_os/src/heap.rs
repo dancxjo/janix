@@ -43,13 +43,24 @@ unsafe impl GlobalAlloc for CheckedHeap {
 static GLOBAL_ALLOCATOR: CheckedHeap = CheckedHeap(LockedHeap::empty());
 
 pub fn init_user_heap() {
+    crate::println!("heap::init_heap: start={:#x}", USER_HEAP_START);
+
     if INITIALIZED.swap(true, Ordering::AcqRel) {
         return;
     }
+
+    // Print address of GLOBAL_ALLOCATOR to verify it's not NULL
+    let alloc_addr = &GLOBAL_ALLOCATOR as *const _ as usize;
+    crate::println!("KERNEL_ALLOCATOR address: {:#x}", alloc_addr);
+
     unsafe {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
+        crate::println!("heap::init_heap: initializing size={}", heap_size);
+
         GLOBAL_ALLOCATOR.0.lock().init(heap_start, heap_size);
+        crate::println!("heap::init_heap: initialized");
+
     }
 }
 

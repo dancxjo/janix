@@ -17,10 +17,7 @@ impl fmt::Write for Console {
 
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    use alloc::string::String;
-    let mut buf = String::new();
-    let _ = buf.write_fmt(args);
-    let _ = Console.write_str(&buf);
+    let _ = Console.write_str(args);
 }
 
 #[macro_export]

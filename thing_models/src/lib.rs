@@ -87,6 +87,7 @@ pub fn kernel_core_schemas() -> Vec<(&'static str, &'static str, &'static [(&'st
     schemas.push((graph_kinds::KIND_INTERRUPT_REQUEST, InterruptRequest::DESCRIPTION, InterruptRequest::schema()));
     schemas.push((graph_kinds::KIND_ALARM_REQUEST, AlarmRequest::DESCRIPTION, AlarmRequest::schema()));
     schemas.push((graph_kinds::KIND_ALARM_EVENT, AlarmEvent::DESCRIPTION, AlarmEvent::schema()));
+    schemas.push((BlockDevice::KIND, BlockDevice::DESCRIPTION, BlockDevice::schema()));
 
     // 3. Display Subsystem
     schemas.push((Display::KIND, Display::DESCRIPTION, Display::schema()));

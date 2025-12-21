@@ -131,6 +131,54 @@ impl Thing for IoPortRegion {
 }
 
 #[derive(Clone, Debug)]
+pub struct BlockDevice {
+    pub id: ThingId,
+    pub sector_size: u64,
+    pub sector_count: u64,
+    pub transport: String,
+    pub model: String,
+}
+
+impl Thing for BlockDevice {
+    const KIND: &'static str = "BlockDevice";
+    const DESCRIPTION: &'static str = "A block storage device.";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("sector_size".to_string(), PropValue::U64(self.sector_size)));
+        out.push(("sector_count".to_string(), PropValue::U64(self.sector_count)));
+        out.push(("transport".to_string(), PropValue::Str(self.transport.clone())));
+        out.push(("model".to_string(), PropValue::Str(self.model.clone())));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        let mut sector_size = 512;
+        let mut sector_count = 0;
+        let mut transport = String::new();
+        let mut model = String::new();
+
+        for prop in props.iter().flatten() {
+            match prop.0.as_str() {
+                "sector_size" => if let PropValue::U64(v) = prop.1 { sector_size = v; },
+                "sector_count" => if let PropValue::U64(v) = prop.1 { sector_count = v; },
+                "transport" => if let PropValue::Str(v) = &prop.1 { transport = v.clone(); },
+                "model" => if let PropValue::Str(v) = &prop.1 { model = v.clone(); },
+                _ => {}
+            }
+        }
+        BlockDevice { id, sector_size, sector_count, transport, model }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            ("sector_size", PropType::U64),
+            ("sector_count", PropType::U64),
+            ("transport", PropType::Str),
+            ("model", PropType::Str),
+        ]
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct InterruptRequest {
     pub id: ThingId,
     pub irq_line: u8,

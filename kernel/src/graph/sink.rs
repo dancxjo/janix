@@ -1,6 +1,6 @@
 use crate::graph::ops::{GraphOp, GraphEvent};
 use abi::{ThingId, syscall_defs::SymbolId};
-use abi::{PropKey, PropValue};
+use thing_models::{PropKey, PropValue};
 
 pub struct KernelGraphSink;
 

@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use hashbrown::HashMap;
-use abi::{ThingId, Predicate, Link, syscall_defs::SymbolId, PropValue};
+use abi::{ThingId, Predicate, Link, syscall_defs::SymbolId};
+use thing_models::PropValue;
 use spin::Mutex;
 use alloc::sync::Arc;
 

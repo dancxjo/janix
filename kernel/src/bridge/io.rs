@@ -1,6 +1,6 @@
 use crate::{graph, graph_kinds, time};
 use abi::ThingId;
-use abi::{PropKey, PropValue};
+use thing_models::{PropKey, PropValue};
 use alloc::string::String;
 use alloc::vec::Vec;
 

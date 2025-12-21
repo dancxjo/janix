@@ -4,7 +4,8 @@ use hashbrown::HashMap;
 use spin::Mutex;
 use alloc::format;
 
-use abi::{ThingId, syscall_defs::SymbolId, PropType, PropValue};
+use abi::{ThingId, syscall_defs::SymbolId};
+use thing_models::{PropType, PropValue};
 
 pub struct Schema {
     pub kind: SymbolId,

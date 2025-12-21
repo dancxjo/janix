@@ -4,7 +4,7 @@ use crate::graph::{self, Graph};
 use crate::graph_kinds;
 use crate::sched_types::{CpuId, ThreadState, TimeNs};
 use abi::ThingId;
-use abi::PropValue;
+use thing_models::PropValue;
 use alloc::string::String;
 
 const LINK_BUF: usize = 4;

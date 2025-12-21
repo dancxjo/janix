@@ -339,7 +339,8 @@ fn run_widget_pass(
 
     // 2. Iterate windows
     for win in stacked {
-        let mut win_rects = Vec::new();
+        // Explicit type annotation to ensure we are collecting (ThingId, Rect) tuples as required
+        let mut win_rects: Vec<(ThingId, Rect)> = Vec::new();
 
         // Window Client Area
         let client_x = win.x + FRAME_THICKNESS + 4;
@@ -350,7 +351,7 @@ fn run_widget_pass(
         let container_rect = Rect::new(client_x, client_y, client_w, client_h);
 
         // Recurse function
-        let mut queue = Vec::new(); // (id, rect)
+        let mut queue: Vec<(ThingId, Rect)> = Vec::new();
 
         let children = widget_children(win.id);
         

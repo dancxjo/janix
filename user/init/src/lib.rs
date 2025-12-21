@@ -20,13 +20,6 @@ const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
 const ROOTFS_IDENTIFIER: &str = "rootfs";
 
 pub fn init_main() -> ! {
-    let msg = "INIT: init_main entered\n";
-    unsafe {
-        let req = thing_os::KernelRequest::Log { 
-            message: abi::wire::common::UserSlice::from_slice(msg.as_bytes()) 
-        };
-        thing_os::syscalls::syscall(req);
-    }
     println!("init: starting");
     
     // Direct syscall test

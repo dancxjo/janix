@@ -167,13 +167,6 @@ impl GraphSink for UserGraphSink {
 }
 
 pub fn driver_main() {
-    let msg = "PCI: driver_main entered\n";
-    unsafe {
-        let req = thing_os::KernelRequest::Log { 
-            message: abi::wire::common::UserSlice::from_slice(msg.as_bytes()) 
-        };
-        thing_os::syscalls::syscall(req);
-    }
     println!("PCI Driver Starting...");
     let config = UserPciConfig;
     let driver = PciDriver::new(&config);

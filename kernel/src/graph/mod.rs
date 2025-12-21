@@ -8,7 +8,39 @@ use crate::symbols;
 // ...
 
 pub fn get_thing_kind(id: ThingId) -> Option<SymbolId> {
-    store::things_slab().lock().as_ref().unwrap().get_thing_kind(id)
+    with_store(|store| store.get_thing_kind(id))
+}
+
+#[cfg(target_arch = "x86_64")]
+use x86_64::instructions::interrupts;
+
+#[cfg(not(target_arch = "x86_64"))]
+mod interrupts {
+    #[inline]
+    pub fn without_interrupts<F, R>(f: F) -> R
+    where F: FnOnce() -> R {
+        f()
+    }
+}
+
+fn with_store_mut<F, R>(f: F) -> R
+where F: FnOnce(&mut store::GraphStore) -> R
+{
+    interrupts::without_interrupts(|| {
+        let mut guard = store::things_slab().lock();
+        let store = guard.as_mut().expect("GraphStore not initialized");
+        f(store)
+    })
+}
+
+fn with_store<F, R>(f: F) -> R
+where F: FnOnce(&store::GraphStore) -> R
+{
+    interrupts::without_interrupts(|| {
+        let guard = store::things_slab().lock();
+        let store = guard.as_ref().expect("GraphStore not initialized");
+        f(store)
+    })
 }
 
 pub mod store;
@@ -61,25 +93,19 @@ impl Graph {
 }
 
 pub fn create_thing(kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingId {
-    let slab_guard = store::things_slab();
-    let mut store = slab_guard.lock();
-    let id = store.as_mut().unwrap().create_thing(kind, props.clone());
-    drop(store);
+    let id = with_store_mut(|store| {
+        store.create_thing(kind, props.clone())
+    });
     debug::print_thing_created(id, kind, &props);
     id
 }
 
 pub fn update_thing(id: ThingId, props: Vec<(SymbolId, PropValue)>) -> bool {
-    let slab_guard = store::things_slab();
-    let mut store = slab_guard.lock();
-    store.as_mut().unwrap().update_thing(id, props)
+    with_store_mut(|store| store.update_thing(id, props))
 }
 
 pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
-    let slab_guard = store::things_slab();
-    let mut store = slab_guard.lock();
-    let success = store.as_mut().unwrap().add_link(src, dst, pred);
-    drop(store);
+    let success = with_store_mut(|store| store.add_link(src, dst, pred));
     if success {
         debug::print_link_created(src, pred, dst);
     }
@@ -87,43 +113,34 @@ pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
 }
 
 pub fn remove_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
-    let slab_guard = store::things_slab();
-    let mut store = slab_guard.lock();
-    store.as_mut().unwrap().remove_link(src, dst, pred)
+    with_store_mut(|store| store.remove_link(src, dst, pred))
 }
 
 pub fn neighbors(src: ThingId, pred: Predicate, out: &mut [Option<ThingId>]) {
-    let store_guard = store::things_slab().lock();
-    let store_ref = store_guard.as_ref().unwrap();
-    // Proxy to store implementation
-    // store.get_link(src, pred, idx)
-    // Naively fill buffer
-    for i in 0..out.len() {
-        out[i] = store_ref.get_link(src, pred, i);
-    }
+    with_store(|store| {
+        for i in 0..out.len() {
+            out[i] = store.get_link(src, pred, i);
+        }
+    })
 }
 
 // Helper for syscall
 pub fn next_thing_of_kind_sym(kind: SymbolId, start_after: ThingId) -> Option<ThingId> {
-    // iterate store
-    let slab_guard = store::things_slab().lock();
-    let slab = slab_guard.as_ref().unwrap();
-    
-    let mut best: Option<ThingId> = None;
-    
-    for (_id_val, node) in slab.things.iter() {
-        if node.id.0 > start_after.0 && node.kind == kind {
-            if let Some(current_best) = best {
-                if node.id.0 < current_best.0 {
-                    best = Some(node.id);
+    with_store(|slab| {
+        let mut best: Option<ThingId> = None;
+        for (_id_val, node) in slab.things.iter() {
+            if node.id.0 > start_after.0 && node.kind == kind {
+                if let Some(current_best) = best {
+                    if node.id.0 < current_best.0 {
+                        best = Some(node.id);
+                    }
+                } else {
+                     best = Some(node.id);
                 }
-            } else {
-                 best = Some(node.id);
             }
         }
-    }
-
-    best
+        best
+    })
 }
 
 pub fn next_thing_of_kind(kind: SymbolId, start_after: ThingId) -> Option<ThingId> {
@@ -142,9 +159,7 @@ pub fn query_node(id: ThingId) -> Option<alloc::vec::Vec<u8>> {
 
 // Helper for link target at index
 pub fn link_target_at(src: ThingId, pred: Predicate, idx: usize) -> Option<ThingId> {
-    let store_guard = store::things_slab().lock();
-    let store = store_guard.as_ref().unwrap();
-    store.get_link(src, pred, idx)
+    with_store(|store| store.get_link(src, pred, idx))
 }
 
 // Validation helper used by lib.rs
@@ -153,38 +168,28 @@ pub fn validate_props(kind: SymbolId, props: &[(SymbolId, PropValue)]) -> Result
 }
 
 // Helper for iteration
-pub fn iter_things<F>(f: F)
+pub fn iter_things<F>(mut f: F)
 where
     F: FnMut(&store::ThingNode),
 {
-    let guard = store::things_slab().lock();
-    let store = guard.as_ref().unwrap();
-    // store.things.values().for_each(f); 
-    // values() returns iterator.
-    // Mutable closure? values() gives &ThingNode. 
-    // F is FnMut.
-    // for_each consumes iterator.
-    store.things.values().for_each(f);
+    // FnMut requires exclusive access to F if we call it multiple times.
+    // without_interrupts handles closure.
+    with_store(|store| {
+        store.things.values().for_each(|n| f(n));
+    });
 }
 
 pub fn get_prop(id: ThingId, key_str: &str) -> Option<PropValue> {
     // This is slow: interns string to look up.
-    // But `sched_graph.rs` uses it with string literal keys.
-    // Ideally we intern ONCE.
-    // But here we must intern to match.
-    // Wait, symbols::intern returns SymbolId (u32, copy).
-    // So distinct calls are fine but mutex overhead.
     let key = symbols::intern(key_str);
-    let guard = store::things_slab().lock();
-    let store = guard.as_ref().unwrap();
-    store.get_prop(id, key)
+    with_store(|store| store.get_prop(id, key))
 }
 
 pub fn with_thing<F, R>(id: ThingId, f: F) -> Option<R>
 where
     F: FnOnce(&store::ThingNode) -> R,
 {
-    let guard = store::things_slab().lock();
-    let store = guard.as_ref().unwrap();
-    store.things.get(&id).map(|n| f(n))
+    with_store(|store| {
+        store.things.get(&id).map(|n| f(n))
+    })
 }

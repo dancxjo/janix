@@ -59,10 +59,16 @@ timer_interrupt_handler_asm:
     push r15
 
     // RDI = &TrapFrame (rsp matches struct layout now)
+    // RDI = &TrapFrame (rsp matches struct layout now)
     mov rdi, rsp
+    
+    // ABI: Align stack to 16 bytes before call
+    sub rsp, 8
     
     // Call Rust handler
     call timer_interrupt_handler
+    
+    add rsp, 8
     
     pop r15
     pop r14
@@ -101,10 +107,16 @@ lapic_timer_handler_asm:
     push r15
 
     // RDI = &TrapFrame
+    // RDI = &TrapFrame
     mov rdi, rsp
+
+    // ABI: Align stack
+    sub rsp, 8
 
     // Call Rust handler
     call lapic_timer_handler
+
+    add rsp, 8
 
     pop r15
     pop r14
@@ -334,8 +346,12 @@ fn timer_tick(frame: &mut TrapFrame) {
     if is_user && preempt_allowed {
         // Safe to schedule
         // Save context to current thread
-        let mut sched = sched::SCHEDULER.lock();
-        if let Some(mut thread) = sched.current_id().and_then(|tid| sched.thread_mut(tid)) {
+        // Use try_lock to avoid deadlock if current thread holds the lock (e.g. kmain)
+        if let Some(mut sched) = sched::SCHEDULER.try_lock() {
+            if let Some(mut thread) = sched.current_id().and_then(|tid| sched.thread_mut(tid)) {
+             if thread.id.0 > 1 {
+                 kernel::println!("timer_tick: saving tid={} frame RIP={:#x} CS={:#x} RSP={:#x}", thread.id.0, frame.rip, frame.cs, frame.rsp);
+             }
              thread.context[0] = frame.r15;
              thread.context[1] = frame.r14;
              thread.context[2] = frame.r13;
@@ -377,13 +393,31 @@ fn timer_tick(frame: &mut TrapFrame) {
         // Pick next thread
         let now = kernel::time::monotonic_now_ns();
         if let Some(next) = sched.choose_next_thread(now) {
+
              drop(sched); // Unlock before switch
              
              // Activate address space
              super::enter::activate_address_space(next.address_space_token);
              
-             // Resume
-             crate::current::resume_user_mode(&next.context, &next.fpu_context);
+             // Resume or Start
+             if next.started {
+                 if next.tid.0 > 1 {
+                     kernel::println!("timer_tick: resuming tid={} RIP={:#x} CS={:#x} RSP={:#x}", next.tid.0, next.context[15], next.context[16], next.context[18]);
+                 }
+                 crate::current::resume_user_mode(&next.context, &next.fpu_context);
+             } else {
+                 if next.tid.0 > 1 {
+                     kernel::println!("timer_tick: starting tid={} entry={:#x} stack={:#x}", next.tid.0, next.entry_point, next.user_stack_top);
+                 }
+                 let stack = if next.user_stack_top == 0 { 0x1000 } else { next.user_stack_top };
+                 let regs = crate::UserEntryRegs {
+                     entry_point: next.entry_point,
+                     user_stack: stack,
+                     arg0: next.user_arg,
+                 };
+                 super::enter::enter_user_mode(&regs);
+             }
+        }
         }
     }
 }

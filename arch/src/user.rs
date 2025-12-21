@@ -80,6 +80,9 @@ pub fn schedule_next() -> ! {
                 CurrentArch::activate_user_address_space(thread.address_space_token);
                 
                 if thread.started {
+                    if thread.tid.0 > 3 {
+                        kernel::println!("schedule_next: resuming tid={} RIP={:#x} CS={:#x} RSP={:#x}", thread.tid.0, thread.context[15], thread.context[16], thread.context[18]);
+                    }
                     CurrentArch::resume_user_mode(&thread.context, &thread.fpu_context);
                 } else {
                     kernel::log("Entering user thread...");

@@ -149,6 +149,7 @@ pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext
     // Debug logging to verify context
     let rip = context[15];
     let rsp = context[18];
+    // Removed: logging moved to user.rs/schedule_next
     
     unsafe {
         core::arch::x86_64::_fxrstor(aligned_ptr);

@@ -62,7 +62,7 @@ pub fn dump_graph_table() {
                 first = false;
             }
             let msg = format!("(t{}:{} {{ {} }})", node.id.0, kind_str, props_str);
-            crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
+            // crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
         });
     }
 }
@@ -85,7 +85,7 @@ pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, Prop
     }
     // format: (t1234:Thorton { kay: 'vel', boo: 123 })
     let msg = format!("(t{}:{} {{ {} }})", id.0, kind_str, props_str);
-    crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
+    // crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
 }
 
 pub fn print_link_created(src: ThingId, pred: Predicate, dst: ThingId) {
@@ -95,5 +95,5 @@ pub fn print_link_created(src: ThingId, pred: Predicate, dst: ThingId) {
     // format: (t1234)-[:RESOLVED_NAME]->(x8549)
     let pred_str = resolve_predicate(pred);
     let msg = format!("(t{})-[:{}]->(t{})", src.0, pred_str, dst.0);
-    crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
+    // crate::log(alloc::boxed::Box::leak(msg.into_boxed_str()));
 }

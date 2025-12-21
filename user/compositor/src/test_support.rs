@@ -8,8 +8,9 @@ use core::cell::RefCell;
 use core::mem;
 
 use abi::{
-    KernelRequest, KernelResponse, PixelFormat, PropKey, PropValue, SharedBufferInfo, ThingId,
+    KernelRequest, KernelResponse, PixelFormat, SharedBufferInfo, ThingId,
 };
+use thing_models::{PropKey, PropValue, PropType};
 use runtime::Sys;
 use thing_os::{PrimaryDisplayBuffer, SharedBufferMapping, Thing};
 
@@ -189,7 +190,7 @@ impl Thing for DummyThing {
         DummyThing { id, flag }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] {
-        &[("flag", abi::PropType::Bool)]
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[("flag", PropType::Bool)]
     }
 }

@@ -1,4 +1,4 @@
-use abi::PropValue;
+use thing_models::PropValue;
 use kernel::sched_types::ThreadState;
 
 #[test]

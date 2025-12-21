@@ -146,8 +146,8 @@ pub fn init_schemas() {
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let frame = k::model::create_phys_frame(0x1000, 4096).unwrap();
-/// assert!(matches!(k::graph::get_prop(frame, "base"), Some(abi::PropValue::U64(0x1000))));
-/// assert!(matches!(k::graph::get_prop(frame, "allocated"), Some(abi::PropValue::Bool(false))));
+/// assert!(matches!(k::graph::get_prop(frame, "base"), Some(thing_models::PropValue::U64(0x1000))));
+/// assert!(matches!(k::graph::get_prop(frame, "allocated"), Some(thing_models::PropValue::Bool(false))));
 /// ```
 pub fn create_phys_frame(base: u64, size: u64) -> Option<ThingId> {
     let props = alloc::vec![
@@ -175,7 +175,7 @@ pub fn create_phys_frame(base: u64, size: u64) -> Option<ThingId> {
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let pool = k::model::create_frame_pool(0x1000, 0x2000, 4096).unwrap();
-/// assert!(matches!(k::graph::get_prop(pool, "frame_size"), Some(abi::PropValue::U64(4096))));
+/// assert!(matches!(k::graph::get_prop(pool, "frame_size"), Some(thing_models::PropValue::U64(4096))));
 /// ```
 pub fn create_frame_pool(start: u64, end: u64, frame_size: u64) -> Option<ThingId> {
     let props = alloc::vec![
@@ -202,7 +202,7 @@ pub fn create_frame_pool(start: u64, end: u64, frame_size: u64) -> Option<ThingI
 /// k::init();
 /// let cpu = k::model::create_cpu_core(0).unwrap();
 /// let idx = k::graph::get_prop(cpu, "index");
-/// assert!(matches!(idx, Some(abi::PropValue::U64(0))));
+/// assert!(matches!(idx, Some(thing_models::PropValue::U64(0))));
 /// ```
 pub fn create_cpu_core(index: u64) -> Option<ThingId> {
     let props = alloc::vec![(crate::symbols::intern("index"), PropValue::U64(index))];
@@ -323,7 +323,7 @@ pub fn compute_scheduler_summary() -> SchedulerSummary {
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let asid = k::model::create_address_space(7).unwrap();
-/// assert!(matches!(k::graph::get_prop(asid, "asid"), Some(abi::PropValue::U64(7))));
+/// assert!(matches!(k::graph::get_prop(asid, "asid"), Some(thing_models::PropValue::U64(7))));
 /// ```
 pub fn create_address_space(asid: u64) -> Option<ThingId> {
     let props = alloc::vec![(crate::symbols::intern("asid"), PropValue::U64(asid))];
@@ -376,7 +376,7 @@ pub fn create_display(
 /// # let _guard = k::test_lock();
 /// k::init();
 /// let vr = k::model::create_virt_region(0x4000, 0x1000, 0x7).unwrap();
-/// assert!(matches!(k::graph::get_prop(vr, "len"), Some(abi::PropValue::U64(0x1000))));
+/// assert!(matches!(k::graph::get_prop(vr, "len"), Some(thing_models::PropValue::U64(0x1000))));
 /// ```
 pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
     let props = alloc::vec![
@@ -403,7 +403,7 @@ pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
 /// k::init();
 /// let proc = k::model::create_process(1).unwrap();
 /// let pid = k::graph::get_prop(proc, "pid");
-/// assert!(matches!(pid, Some(abi::PropValue::U64(1))));
+/// assert!(matches!(pid, Some(thing_models::PropValue::U64(1))));
 /// ```
 pub fn create_process(pid: u64) -> Option<ThingId> {
     let props = alloc::vec![(crate::symbols::intern("pid"), PropValue::U64(pid))];
@@ -427,7 +427,7 @@ pub fn create_process(pid: u64) -> Option<ThingId> {
 /// k::init();
 /// let thread = k::model::create_thread(42, 10).unwrap();
 /// let state = k::graph::get_prop(thread, "state");
-/// assert!(matches!(state, Some(abi::PropValue::Str(s)) if s.as_str() == k::sched_types::ThreadState::Runnable.as_str()));
+/// assert!(matches!(state, Some(thing_models::PropValue::Str(s)) if s.as_str() == k::sched_types::ThreadState::Runnable.as_str()));
 /// ```
 pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
     let props = alloc::vec![
@@ -454,7 +454,7 @@ pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
 /// let phys = k::model::create_phys_frame(0x2000, 4096).unwrap();
 /// let frame = k::model::alloc_frame().unwrap();
 /// assert_eq!(frame.id.0, phys.0);
-/// assert!(matches!(k::graph::get_prop(phys, "allocated"), Some(abi::PropValue::Bool(true))));
+/// assert!(matches!(k::graph::get_prop(phys, "allocated"), Some(thing_models::PropValue::Bool(true))));
 /// ```
 pub fn alloc_frame() -> Option<FrameInfo> {
     // For now, scan all Things for the first PhysFrame with allocated == false
@@ -521,7 +521,7 @@ pub fn alloc_frame() -> Option<FrameInfo> {
 /// let info = k::model::alloc_frame().unwrap();
 /// assert_eq!(info.id.0, phys.0);
 /// assert!(k::model::free_frame(info.id));
-/// assert!(matches!(k::graph::get_prop(phys, "allocated"), Some(abi::PropValue::Bool(false))));
+/// assert!(matches!(k::graph::get_prop(phys, "allocated"), Some(thing_models::PropValue::Bool(false))));
 /// ```
 pub fn free_frame(frame_id: FrameId) -> bool {
     let tid = ThingId(frame_id.0);
@@ -542,7 +542,7 @@ pub fn free_frame(frame_id: FrameId) -> bool {
 /// k::init();
 /// let pid = k::model::create_process_abi(2).unwrap();
 /// let thing = abi::ThingId(pid);
-/// assert!(matches!(k::graph::get_prop(thing, "pid"), Some(abi::PropValue::U64(2))));
+/// assert!(matches!(k::graph::get_prop(thing, "pid"), Some(thing_models::PropValue::U64(2))));
 /// ```
 pub fn create_process_abi(pid: u64) -> Option<u64> {
     create_process(pid).map(|id| id.0)
@@ -559,7 +559,7 @@ pub fn create_process_abi(pid: u64) -> Option<u64> {
 /// k::init();
 /// let tid = k::model::create_thread_abi(1, 10, 1).unwrap();
 /// let thing = abi::ThingId(tid);
-/// assert!(matches!(k::graph::get_prop(thing, "tid"), Some(abi::PropValue::U64(10))));
+/// assert!(matches!(k::graph::get_prop(thing, "tid"), Some(thing_models::PropValue::U64(10))));
 /// ```
 pub fn create_thread_abi(_pid: u64, tid: u64, priority: u64) -> Option<u64> {
     // For now, we ignore pid in the graph; later we’ll add links.

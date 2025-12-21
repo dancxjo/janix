@@ -1,6 +1,7 @@
 extern crate alloc;
 
-use abi::{PropValue, ThingId, Predicate};
+use abi::{ThingId, Predicate};
+use thing_models::PropValue;
 use alloc::{boxed::Box, string::String, string::ToString};
 use kernel::graph;
 use kernel::graph_kinds;

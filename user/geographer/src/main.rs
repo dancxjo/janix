@@ -12,9 +12,10 @@ use alloc::vec::Vec;
 use core::slice;
 
 use abi::{
-    KernelRequest, KernelResponse, MapFlags, PixelFormat, PropKey, PropType, PropValue,
+    KernelRequest, KernelResponse, MapFlags, PixelFormat,
     SharedBufferInfo, ThingId,
 };
+use thing_os::{PropKey, PropType, PropValue};
 use thing_os::prelude::*;
 use thing_os::{
     add_link, create_thing, graph_kinds, list_things_by_kind, register_schema_for, update_props,

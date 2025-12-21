@@ -1,14 +1,15 @@
 extern crate alloc;
 
 use crate::FRAMEBUFFER_REQUEST;
-use abi::{PixelFormat, PropValue, ThingId, syscall_defs::SymbolId};
+use abi::{PixelFormat, ThingId, syscall_defs::SymbolId};
+use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource, PropValue};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use kernel::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_pool};
 use kernel::model;
 use kernel::{graph, graph_kinds, log, shared_buffer, time, symbols};
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
-use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource};
+// use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource}; // Merged into line 4
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -580,26 +581,26 @@ pub fn seed_raw_modules_from_limine() {
         let mut props_vec = alloc::vec::Vec::new();
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_IDENTIFIER),
-            abi::PropValue::Str(identifier),
+            PropValue::Str(identifier),
         ));
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_RAW_KIND),
-            abi::PropValue::Str(kind_str),
+            PropValue::Str(kind_str),
         ));
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_MODULE_INDEX),
-            abi::PropValue::U64(index as u64),
+            PropValue::U64(index as u64),
         ));
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_BASE_PHYS),
-            abi::PropValue::U64(base_phys),
+            PropValue::U64(base_phys),
         ));
-        props_vec.push((symbols::intern(thing_models::graph_kinds::PROP_SIZE), abi::PropValue::U64(size)));
+        props_vec.push((symbols::intern(thing_models::graph_kinds::PROP_SIZE), PropValue::U64(size)));
 
         if let Some(bid) = buffer_id {
             props_vec.push((
                 symbols::intern(thing_models::graph_kinds::PROP_FRAMEBUFFER_ID),
-                abi::PropValue::U64(bid.0),
+                PropValue::U64(bid.0),
             ));
         }
 

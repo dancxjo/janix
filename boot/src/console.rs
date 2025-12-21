@@ -1,4 +1,4 @@
-use abi::PropValue;
+use thing_models::PropValue;
 use kernel::console::{ConsoleSink, register_sink};
 use kernel::{graph, graph_kinds, symbols};
 use limine::framebuffer::Framebuffer;

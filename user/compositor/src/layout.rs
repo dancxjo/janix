@@ -6,7 +6,7 @@ use core::cmp::max;
 
 use thing_os::prelude::*;
 use abi::ThingId;
-use abi::PropValue;
+use thing_models::PropValue;
 use thing_models::graph_kinds;
 use thing_os::update_props;
 use thing_os::{Window};

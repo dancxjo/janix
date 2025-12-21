@@ -19,7 +19,7 @@ const DATA_OFFSET: u16 = 0;
 use abi::syscall_defs::{
     DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr, UserSlice,
 };
-use abi::syscall_numbers::{SYS_DEV_OPEN, SYS_DEV_READ};
+use abi::syscalls::{SYSCALL_DEV_OPEN, SYSCALL_DEV_READ};
 
 unsafe fn syscall_dev_open(kind: u32, index: u32) -> Result<DeviceHandle, SysError> {
     let args = DevOpenArgs { kind, index };
@@ -31,7 +31,7 @@ unsafe fn syscall_dev_open(kind: u32, index: u32) -> Result<DeviceHandle, SysErr
     
     core::arch::asm!(
         "int 0x80",
-        in("rax") SYS_DEV_OPEN,
+        in("rax") SYSCALL_DEV_OPEN,
         in("rdi") &args,
         in("rsi") &ret,
         lateout("rcx") _,
@@ -58,7 +58,7 @@ unsafe fn syscall_dev_read(handle: DeviceHandle, out: &mut [u8]) -> Result<usize
 
     core::arch::asm!(
         "int 0x80",
-        in("rax") SYS_DEV_READ,
+        in("rax") SYSCALL_DEV_READ,
         in("rdi") &args,
         in("rsi") &ret,
         lateout("rcx") _,

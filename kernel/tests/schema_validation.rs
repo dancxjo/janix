@@ -1,5 +1,6 @@
 extern crate alloc;
-use abi::{KernelRequest, KernelResponse, PropType, PropValue};
+use abi::{KernelRequest, KernelResponse};
+use thing_models::{PropType, PropValue};
 use abi::wire::common::{UserSlice, UserPtr};
 use abi::wire::graph::{WireProp, WireSchemaProp, WirePropValue, WireValueTag};
 use abi::syscall_defs::SymbolId;

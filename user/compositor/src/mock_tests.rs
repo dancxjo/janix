@@ -68,7 +68,7 @@ mod tick_tests {
     use crate::state::tick_once;
     use crate::test_support::{FramebufferFixture, list_responses};
     use thing_os::{Mode, thing_models::{MousePacketEvent, Window, Surface, ModeSwitchEvent, DisplayPresentRequest}, MODE_INDEX_CONSOLE};
-    use abi::PropValue;
+    use thing_models::PropValue;
     use thing_models::graph_kinds;
 
     fn mode_entry(id: u64, index: u8, active: bool) -> Mode {

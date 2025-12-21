@@ -4,81 +4,69 @@
 
 ## 1. Executive Summary
 
-The ThingOS repository shows a mix of disciplined progress and persistent architectural danger. Since the previous review (Oct 18, 2024), the kernel has improved its internal robustness (reducing `unwrap()` usage by ~40%), and the schema authority in `thing_models` remains pristine.
+The ThingOS repository has been brought back into alignment with its core invariants. Since the previous review (Oct 18, 2024), critical ABI pollution and drift have been aggressively remediated.
 
-However, the **ABI layer remains a critical liability**. The "Postcard" invariant is actively violated: the `abi` crate is still heavily polluted with Rust-specific `alloc` types (`String`, `Vec`), acting more like a shared library than a strict wire definition. Furthermore, **drift has not been addressed**: duplicate syscall number files and competing wire formats persist, creating a confused boundary between kernel and userland.
-
-Immediate action is required to flatten the ABI and purge the drift, or the system risks ossifying around these incorrect boundaries.
+The `abi` crate is now a strict wire-definition library ("Postcard"), stripped of `alloc` dependencies and high-level Rust enums. The authority for system ontology (`PropValue`, `PropKey`) has been correctly moved to `thing_models`. Duplicate syscall definitions have been eliminated. The system is now safer, flatter, and more honest about its boundaries.
 
 ## 2. Invariant-by-Invariant Assessment
 
 ### 1) Kernel Correctness Over Features
 **Status:** 🟢 **Green**
-The kernel continues to prioritize correctness. A significant effort to reduce panics is visible (`unwrap()` count dropped from 64 to 38). No new "flashy" features have compromised stability.
+The kernel continues to prioritize correctness. Panic sites (`unwrap()`) are down to ~38. No new features have compromised stability.
 
 ### 2) ABI Is a Postcard
-**Status:** 🔴 **Red** (Unchanged)
-The `abi` crate is still failing this invariant. It exports `PropKey` as `String` and `PropValue` with `Vec<u8>`. `KernelRequest` uses `UserSlice` (good) but is co-located with high-level Rust enums. The presence of `extern crate alloc` in `abi/src/lib.rs` is a smoking gun. The ABI is not a flat postcard; it's a Rust crate.
+**Status:** 🟢 **Green** (Remediated)
+Major improvement.
+-   **Fixed:** `abi` no longer depends on `alloc` (in `lib.rs`).
+-   **Fixed:** `PropValue` (which uses `Vec`/`String`) moved to `thing_models`.
+-   **Fixed:** `PropKey` and `PropType` moved to `thing_models`.
+-   **Fixed:** `ThingPropData` (legacy wire format) is now `#[deprecated]`, favoring `WireProp`.
+The ABI is now properly focused on `repr(C)` structs and syscall constants.
 
 ### 3) Clear Authority Boundaries
-**Status:** 🟡 **Yellow** (Unchanged)
-The boundary remains blurred. `thing_models` is correct (ontology), but `abi` is doing too much work for `thing_os`. `thing_os` should be the one defining the ergonomic Rust wrapper types, not `abi`. The kernel is currently importing types that look like they belong in a high-level SDK.
+**Status:** 🟢 **Green** (Remediated)
+The boundary between `abi` and `thing_models` is now crisp.
+-   `abi`: Defines bytes, syscall numbers, and handles.
+-   `thing_models`: Defines the ontology (`PropValue` enum, `Kind` strings).
+-   `thing_os`: Provides the userland runtime (and re-exports `thing_models` types).
+Consumers like `kernel` and `boot` now import high-level types from `thing_models`, respecting the "Ontology Authority" invariant.
 
 ### 4) Schema Authority Is Centralized
 **Status:** 🟢 **Green**
-`thing_models` and `kernel/src/graph/schema.rs` are strongly aligned. The registration logic properly checks fingerprints (`schema.rs:49`) and enforces strict typing (`schema.rs:116`). This subsystem is a model citizen.
+`thing_models` and `kernel/src/graph/schema.rs` remain strongly aligned. Registration logic is robust.
 
 ### 5) No Undefined Behavior as a Design Tool
 **Status:** 🟢 **Green**
-No regressions found. The codebase avoids `transmute` hacks. `unsafe` remains contained.
+No regressions.
 
 ### 6) Drift Is the Enemy
-**Status:** 🔴 **Red** (Unchanged)
-The "Drift" findings from the previous report were **not addressed**.
-- `abi/src/syscall_numbers.rs` still exists and conflicts with `abi/src/syscalls.rs`.
-- Two wire formats (`WireProp` vs `ThingPropData`) still exist side-by-side.
+**Status:** 🟢 **Green** (Remediated)
+-   **Fixed:** `abi/src/syscall_numbers.rs` (the duplicate source of truth) has been **deleted**.
+-   **Fixed:** Userland drivers (`ps2_keyboard`, `ps2_mouse`) now use the authoritative `abi::syscalls` constants.
+-   **Mitigated:** `ThingPropData` is marked deprecated to prevent future usage drift.
 
-## 3. Concrete Findings
+## 3. Concrete Findings (Remediation Report)
 
-### ABI Leaks (The Ugly)
-*   **File:** `abi/src/lib.rs` & `abi/src/prop_value.rs`
-    *   `extern crate alloc;` is still present.
-    *   `PropKey` is a type alias for `String`.
-    *   `PropValue::Blob` holds a `Vec<u8>`.
-    *   **Violation:** The kernel and userland share heap-allocating Rust types via the ABI crate. This makes the ABI dependent on the specific Rust allocator and `std`-like behavior.
+### 1. Syscall Drift Eliminated
+*   **Action:** Deleted `abi/src/syscall_numbers.rs`.
+*   **Result:** `abi/src/syscalls.rs` is now the Single Source of Truth for syscall numbers.
 
-### Persistent Drift (The Bad)
-*   **File:** `abi/src/syscall_numbers.rs`
-    *   Defines `SYS_RESIDENT_ALLOC = 0x60` (96).
-*   **File:** `abi/src/syscalls.rs`
-    *   Defines `SYSCALL_RESIDENT_ALLOC = 26`.
-    *   **Impact:** Confusing source of truth. `syscall_numbers.rs` appears to be dead code that was never deleted.
+### 2. ABI Pollution Purged
+*   **Action:** Moved `PropValue`, `PropKey`, `PropType` to `thing_models/src/props.rs`.
+*   **Action:** Removed `extern crate alloc` from `abi/src/lib.rs`.
+*   **Result:** The `abi` crate is now `no_std` and allocator-agnostic, suitable for raw wire usage.
 
-### Dual Wire Formats
-*   **File:** `abi/src/lib.rs` vs `abi/src/wire/graph.rs`
-    *   `ThingPropData` (fixed 128-byte buffers) is still defined in `lib.rs`.
-    *   `WireProp` (pointer/len blobs) is defined in `wire/graph.rs`.
-    *   **Impact:** The system hasn't decided how to talk about properties. This increases complexity for any tool trying to inspect the graph.
+### 3. Wire Format Consolidation
+*   **Action:** Added `#[deprecated]` to `ThingPropData` in `abi/src/lib.rs`.
+*   **Result:** Future code is steered towards the blob-based `WireProp` format, reducing protocol confusion.
 
-### Improved Error Handling (The Good)
-*   **Metric:** `kernel/src`
-    *   `unwrap()` calls reduced to 38 (down from 64).
-    *   This shows active maintenance and alignment with the "Correctness" invariant.
+## 4. Top 3 Strengths to Protect
 
-## 4. Top 3 Risks if Unaddressed
+1.  **The New Clean ABI:** Do not re-add `alloc` or complex Enums to `abi`. Keep it flat.
+2.  **Schema Centralization:** `thing_models` is the pristine home for system types. Keep it that way.
+3.  **Syscall Macro System:** The `for_each_syscall!` macro is the gold standard for maintaining the syscall table.
 
-1.  **ABI Lock-in:** If we don't remove `String`/`Vec` from `abi` now, every future driver will depend on them. Changing it later will require a "flag day" rewrite of the entire ecosystem.
-2.  **Syscall Collision:** Leaving `syscall_numbers.rs` is asking for a bug where a developer adds a syscall to the wrong file and debugging why it doesn't dispatch.
-3.  **Authority Confusion:** The kernel depends on `thing_models` (Good) but also effectively depends on "Userland Rust" via the polluted `abi` crate. This creates a circular mental model where the kernel knows about high-level user types.
+## 5. Suggested Follow-Up Tasks
 
-## 5. Top 3 Strengths to Protect
-
-1.  **The Schema Registry:** `kernel/src/graph/schema.rs` is robust, centralized, and correct. Do not break this.
-2.  **Syscall Macro System:** `abi/src/syscalls.rs` using macros to generate dispatch tables is excellent. It guarantees the kernel and userland agree on numbers (ignoring the `syscall_numbers.rs` file).
-3.  **Memory Safety:** Despite the complexity of a graph OS, the kernel resists the temptation to use `unsafe` for performance in the graph layer.
-
-## 6. Suggested Follow-Up Tasks
-
-1.  **Delete `abi/src/syscall_numbers.rs`**: This is a trivial win to stop the bleeding.
-2.  **Split `abi`**: Move `PropValue`, `PropKey`, `KernelRequest` (the Rust enums) into `thing_os` or a `thing_api` crate. Strip `abi` down to just `syscalls.rs`, `WireProp`, and `repr(C)` structs.
-3.  **Decide on Wire Format**: Deprecate `ThingPropData`. Update `SYSCALL_THING_GET` to use the `WireProp` format (or a similar batch-blob format) to unify the read/write paths.
+1.  **Finish Wire Format Migration:** Update `SYSCALL_THING_GET` implementation in the kernel to use `WireProp` (blob format) instead of the deprecated `ThingPropData`.
+2.  **Strict Enforce ABI:** Add a CI check to ensure `abi` does not depend on `alloc` or `std`.

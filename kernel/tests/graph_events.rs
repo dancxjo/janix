@@ -1,5 +1,5 @@
 extern crate alloc;
-use abi::PropValue;
+use thing_models::PropValue;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use kernel::graph;
 use kernel::graph::GraphEvent;

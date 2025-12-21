@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use abi::PropValue;
+use thing_models::PropValue;
 use kernel::graph;
 use kernel::graph_kinds;
 use kernel::sched_graph;

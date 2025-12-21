@@ -3,7 +3,8 @@ use abi::{
     ThingPropScalarType, resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
     syscalls::*, syscall_defs::{SymbolId, SymbolInternReq, WireStr},
 };
-use abi::{KernelRequest, KernelResponse, PropType};
+use abi::{KernelRequest, KernelResponse};
+use thing_models::PropType;
 use thing_models::SchemaRegistryOutcome;
 use crate::sys::raw_syscall;
 use alloc::boxed::Box;

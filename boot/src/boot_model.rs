@@ -579,26 +579,26 @@ pub fn seed_raw_modules_from_limine() {
         let mut props_vec = alloc::vec::Vec::new();
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_IDENTIFIER),
-            abi::PropValue::Str(identifier),
+            thing_models::PropValue::Str(identifier),
         ));
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_RAW_KIND),
-            abi::PropValue::Str(kind_str),
+            thing_models::PropValue::Str(kind_str),
         ));
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_MODULE_INDEX),
-            abi::PropValue::U64(index as u64),
+            thing_models::PropValue::U64(index as u64),
         ));
         props_vec.push((
             symbols::intern(thing_models::graph_kinds::PROP_BASE_PHYS),
-            abi::PropValue::U64(base_phys),
+            thing_models::PropValue::U64(base_phys),
         ));
-        props_vec.push((symbols::intern(thing_models::graph_kinds::PROP_SIZE), abi::PropValue::U64(size)));
+        props_vec.push((symbols::intern(thing_models::graph_kinds::PROP_SIZE), thing_models::PropValue::U64(size)));
 
         if let Some(bid) = buffer_id {
             props_vec.push((
                 symbols::intern(thing_models::graph_kinds::PROP_FRAMEBUFFER_ID),
-                abi::PropValue::U64(bid.0),
+                thing_models::PropValue::U64(bid.0),
             ));
         }
 

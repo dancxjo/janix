@@ -52,7 +52,7 @@ pub use thing_models::{
 pub use thing_macros::main;
 pub use abi; // Export abi crate
 pub use abi::{Predicate, ThingId};
-pub use abi::{PropKey, PropType, PropValue};
+pub use thing_models::{PropKey, PropType, PropValue};
 pub use thing_models::Thing;
 use crate::sys::raw_syscall;
 use abi::syscalls::SYSCALL_THING_GET;

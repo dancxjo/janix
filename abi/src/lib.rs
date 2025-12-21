@@ -1,20 +1,13 @@
 #![no_std]
 
-extern crate alloc;
-
-use alloc::vec::Vec;
-
 pub mod resident;
 pub mod resident_layout;
 pub mod mouse_stream;
 pub mod keyboard_stream;
 pub mod syscall_defs;
-pub mod syscall_numbers;
 pub mod syscalls;
 pub mod wire;
-pub mod prop_value;
 
-pub use prop_value::{PropKey, PropValue, PropType};
 pub use crate::wire::memory::{MemorySummary, SchedulerSummary, FrameInfo, MapFlags};
 pub use crate::wire::buffers::{PixelFormat, SharedBufferInfo};
 
@@ -154,6 +147,7 @@ impl Default for ThingPropData {
 }
 
 #[repr(C)]
+#[deprecated(note = "Use WireProp instead")]
 #[derive(Clone, Copy)]
 pub struct ThingGetSyscallResult {
     pub kind_len: usize,

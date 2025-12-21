@@ -189,7 +189,7 @@ impl Thing for DummyThing {
         DummyThing { id, flag }
     }
 
-    fn schema() -> &'static [(&'static str, abi::PropType)] {
-        &[("flag", abi::PropType::Bool)]
+    fn schema() -> &'static [(&'static str, thing_models::PropType)] {
+        &[("flag", thing_models::PropType::Bool)]
     }
 }

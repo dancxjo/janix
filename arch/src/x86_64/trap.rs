@@ -360,6 +360,13 @@ fn timer_tick(frame: &mut TrapFrame) {
                  core::arch::x86_64::_fxsave(thread.fpu_context.data.as_mut_ptr());
              }
              thread.started = true;
+        } else {
+             // Diagnostic: This path means we failed to save context for the current thread!
+             if let Some(tid) = sched.current_id() {
+                  kernel::println!("FATAL: timer_tick failed to find thread_mut for current tid={:?}", tid);
+             } else {
+                  kernel::println!("FATAL: timer_tick found no current thread ID!");
+             }
         }
 
         // IMPORTANT: Requeue the current thread so it's not lost!

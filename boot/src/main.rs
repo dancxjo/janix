@@ -71,6 +71,8 @@ static mut STACK_GUARD: [u8; 4096] = [0; 4096];
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
     // Best-effort early serial
+    // On RISC-V, this accesses unmapped MMIO and crashes. Skip it.
+    #[cfg(not(target_arch = "riscv64"))]
     serial::arch::init_serial(0);
     kernel::println!("boot: serial ready");
 

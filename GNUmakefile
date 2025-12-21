@@ -692,12 +692,14 @@ limine/limine:
 .PHONY: user
 user:
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target x86_64-unknown-none --profile release -p init
 
 .PHONY: drivers
 drivers:
 ifneq ($(strip $(DRIVERS)),)
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(DRIVERS))
 endif
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target x86_64-unknown-none --profile release -p pci
 
 .PHONY: kernel
 kernel:
@@ -747,14 +749,17 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	mkdir -p iso_root/boot iso_root/boot/user iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
 	cp -v assets/wallpapers/clouds.bmp iso_root/boot/clouds.bmp
-	for app in debug_clock window_demo compositor hello_world geographer debug_alloc init; do \
+	for app in debug_clock window_demo compositor hello_world geographer debug_alloc; do \
 		cp -v target/x86_64-unknown-none/debug/$$app iso_root/boot/user/$$app; \
-		objcopy --strip-debug iso_root/boot/user/$$app; \
+		# objcopy --strip-debug iso_root/boot/user/$$app; \
 	done
-	for drv in framebuffer ps2_keyboard_driver ps2_mouse_driver pci usb; do \
+	cp -v target/x86_64-unknown-none/release/init iso_root/boot/user/init
+
+	for drv in framebuffer ps2_keyboard_driver ps2_mouse_driver usb; do \
 		cp -v target/x86_64-unknown-none/debug/$$drv iso_root/boot/drivers/$$drv; \
-		objcopy --strip-debug iso_root/boot/drivers/$$drv; \
+		# objcopy --strip-debug iso_root/boot/drivers/$$drv; \
 	done
+	cp -v target/x86_64-unknown-none/release/pci iso_root/boot/drivers/pci
 	# Fonts: Only include unifont.hex and HACK_REGULAR.ttf
 	# if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
 	# 	mkdir -p iso_root/boot/fonts; \

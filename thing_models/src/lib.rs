@@ -11,7 +11,8 @@ pub mod usb;
 pub mod kernel;
 pub mod graph_kinds;
 
-use abi::{ThingId, syscall_defs::SymbolId, PropKey, PropValue, PropType};
+pub use abi::{PropKey, PropType, PropValue};
+use abi::{ThingId, syscall_defs::SymbolId};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 

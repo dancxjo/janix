@@ -197,8 +197,7 @@ launch-log-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_
 		-device qemu-xhci \
 		-device usb-kbd \
 		-device usb-mouse \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-bios ovmf/ovmf-code-aarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
@@ -215,8 +214,7 @@ launch-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME
 		-device qemu-xhci \
 		-device usb-kbd \
 		-device usb-mouse \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-bios ovmf/ovmf-code-aarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
@@ -238,8 +236,7 @@ launch-log-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-bios ovmf/ovmf-code-riscv64.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
@@ -252,8 +249,7 @@ launch-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_NAME
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-bios ovmf/ovmf-code-riscv64.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
@@ -342,8 +338,7 @@ launch-debug-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAG
 		-device qemu-xhci \
 		-device usb-kbd \
 		-device usb-mouse \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-bios ovmf/ovmf-code-aarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
@@ -362,8 +357,7 @@ launch-debug-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAG
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-bios ovmf/ovmf-code-riscv64.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
@@ -432,8 +426,7 @@ launch-debug-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(
 		-device qemu-xhci \
 		-device usb-kbd \
 		-device usb-mouse \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-bios ovmf/ovmf-code-aarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
@@ -450,8 +443,7 @@ launch-debug-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-bios ovmf/ovmf-code-riscv64.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
@@ -532,8 +524,7 @@ launch-log-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IM
 		-device qemu-xhci \
 		-device usb-kbd \
 		-device usb-mouse \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-bios ovmf/ovmf-code-aarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
@@ -550,8 +541,7 @@ launch-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_
 		-device qemu-xhci \
 		-device usb-kbd \
 		-device usb-mouse \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-aarch64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-aarch64.fd \
+		-bios ovmf/ovmf-code-aarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
@@ -573,8 +563,7 @@ launch-log-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IM
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-bios ovmf/ovmf-code-riscv64.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
 	python3 scripts/analyze_crash.py qemu.log $(APPS_TARGET_DIR) || true ; \
@@ -587,8 +576,7 @@ launch-hdd-riscv64: ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd $(IMAGE_
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-riscv64.fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-riscv64.fd \
+		-bios ovmf/ovmf-code-riscv64.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
 
@@ -660,12 +648,10 @@ ovmf/ovmf-vars-x86_64.fd:
 ovmf/ovmf-code-aarch64.fd:
 	mkdir -p ovmf
 	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-code-aarch64.fd
-	truncate -s 64M $@
 
 ovmf/ovmf-vars-aarch64.fd:
 	mkdir -p ovmf
 	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-vars-aarch64.fd
-	truncate -s 64M $@
 
 
 # ----------------------
@@ -675,7 +661,6 @@ ovmf/ovmf-vars-aarch64.fd:
 ovmf/ovmf-code-riscv64.fd:
 	mkdir -p ovmf
 	curl -L -o $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-10-09/ovmf-code-riscv64.fd
-	truncate -s 32M $@
 
 ovmf/ovmf-vars-riscv64.fd:
 	mkdir -p ovmf
@@ -708,14 +693,14 @@ limine/limine:
 .PHONY: user
 user:
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
-	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target x86_64-unknown-none --profile release -p init
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile release -p init
 
 .PHONY: drivers
 drivers:
 ifneq ($(strip $(DRIVERS)),)
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(DRIVERS))
 endif
-	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target x86_64-unknown-none --profile release -p pci
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile release -p pci
 
 .PHONY: kernel
 kernel:
@@ -766,16 +751,16 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	cp -v boot/kernel iso_root/boot/
 	cp -v assets/wallpapers/clouds.bmp iso_root/boot/clouds.bmp
 	for app in debug_clock window_demo compositor hello_world geographer debug_alloc; do \
-		cp -v target/x86_64-unknown-none/debug/$$app iso_root/boot/user/$$app; \
+		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/user/$$app; \
 		# objcopy --strip-debug iso_root/boot/user/$$app; \
 	done
-	cp -v target/x86_64-unknown-none/release/init iso_root/boot/user/init
+	cp -v target/$(RUST_TARGET)/release/init iso_root/boot/user/init
 
 	for drv in framebuffer ps2_keyboard_driver ps2_mouse_driver usb; do \
-		cp -v target/x86_64-unknown-none/debug/$$drv iso_root/boot/drivers/$$drv; \
+		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \
 		# objcopy --strip-debug iso_root/boot/drivers/$$drv; \
 	done
-	cp -v target/x86_64-unknown-none/release/pci iso_root/boot/drivers/pci
+	cp -v target/$(RUST_TARGET)/release/pci iso_root/boot/drivers/pci
 	# Fonts: Only include unifont.hex and HACK_REGULAR.ttf
 	# if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
 	# 	mkdir -p iso_root/boot/fonts; \

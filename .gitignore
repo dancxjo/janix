@@ -19,3 +19,5 @@ assets/tango-raw/
 assets/fonts/*.ttf
 assets/fonts/unifont.hex
 my_log.txt
+pci_debug_dump
+pci_dump_snippet.txt

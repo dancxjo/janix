@@ -56,6 +56,18 @@ pub fn init_user_heap() {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
         
+        // Debug address
+        let ga_addr = &GLOBAL_ALLOCATOR as *const _ as usize;
+        if ga_addr == 0 {
+             let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: GLOBAL_ALLOCATOR is NULL".as_bytes()) };
+             crate::syscalls::syscall(req);
+             loop {}
+        } else {
+             // We can't easily format, but we can check if it matches expectation or just log "Not NULL"
+             let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: GLOBAL_ALLOCATOR is NOT NULL".as_bytes()) };
+             crate::syscalls::syscall(req);
+        }
+
         let req = abi::KernelRequest::Log { message: UserSlice::from_slice("init_user_heap: locking global allocator".as_bytes()) };
         crate::syscalls::syscall(req);
 

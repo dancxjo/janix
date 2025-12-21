@@ -792,6 +792,8 @@ ifeq ($(KARCH),x86_64)
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
 		iso_root -o $(IMAGE_NAME).iso
+	cp iso_root/boot/drivers/pci pci_debug_dump
+	objdump -d -S --start-address=0x206d50 --stop-address=0x206da0 pci_debug_dump > pci_dump_snippet.txt
 	./limine/limine bios-install $(IMAGE_NAME).iso
 endif
 ifeq ($(KARCH),aarch64)

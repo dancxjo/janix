@@ -160,9 +160,10 @@ lazy_static! {
         }
         idt.general_protection_fault
             .set_handler_fn(gp_fault_handler);
-        idt.page_fault.set_handler_fn(page_fault_handler);
+        unsafe {
+            idt.page_fault.set_handler_addr(VirtAddr::new(page_fault_handler_asm as u64));
+        }
         idt[KEYBOARD_VECTOR].set_handler_fn(keyboard_interrupt_handler);
-
         idt[MOUSE_VECTOR].set_handler_fn(mouse_interrupt_handler);
         unsafe {
              idt[pic::PIC_1_OFFSET as usize].set_handler_addr(VirtAddr::new(timer_interrupt_handler_asm as u64));
@@ -234,12 +235,78 @@ extern "x86-interrupt" fn gp_fault_handler(stack_frame: InterruptStackFrame, err
 
 use crate::user;
 
-extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: InterruptStackFrame,
-    error_code: PageFaultErrorCode,
-) {
-    if (stack_frame.code_segment & 3) == 3 {
-        kernel::println!("User Page Fault at {:#x}", stack_frame.instruction_pointer.as_u64());
+core::arch::global_asm!(
+    r#"
+.global page_fault_handler_asm
+page_fault_handler_asm:
+    // Error code is at [rsp]. Pop it into RSI (2nd arg).
+    pop rsi
+
+    push rax
+    push rdi
+    push rsi // Pushes the Error Code (which is in RSI) into struct location for RSI
+    push rdx
+    push rcx
+    push r8
+    push r9
+    push r10
+    push r11
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov rdi, rsp
+    sub rsp, 8
+    call page_fault_handler
+    add rsp, 8
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
+    
+    iretq
+"#
+);
+
+unsafe extern "C" {
+    fn page_fault_handler_asm();
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn page_fault_handler(frame: &mut TrapFrame) {
+    // RSI field in frame holds the Error Code (because of asm glue)
+    let error_code_val = frame.rsi;
+    let error_code = PageFaultErrorCode::from_bits_truncate(error_code_val);
+
+    if (frame.cs & 3) == 3 {
+        use x86_64::registers::control::Cr2;
+        let addr = Cr2::read();
+        kernel::println!("User Page Fault at RIP={:#x} CR2={:?} Error={:?}", 
+            frame.rip,
+            addr,
+            error_code
+        );
+        kernel::println!("Regs: RAX={:#x} RBX={:#x} RCX={:#x} RDX={:#x} RDI={:#x} RSI(clobbered/err)={:#x}",
+            frame.rax, frame.rbx, frame.rcx, frame.rdx, frame.rdi, frame.rsi);
+        kernel::println!("      R8={:#x} R9={:#x} R10={:#x} R11={:#x} R12={:#x} R13={:#x} R14={:#x} R15={:#x}",
+            frame.r8, frame.r9, frame.r10, frame.r11, frame.r12, frame.r13, frame.r14, frame.r15);
+        kernel::println!("      RBP={:#x} RSP={:#x}", frame.rbp, frame.rsp);
+
         kernel::sched::exit_current_thread("faulted", error_code.bits());
         user::schedule_next();
     }
@@ -262,8 +329,8 @@ extern "x86-interrupt" fn page_fault_handler(
     );
     kernel::println!(
         "  RIP={:#x} RSP={:#x} CR3={:#x}",
-        stack_frame.instruction_pointer.as_u64(),
-        stack_frame.stack_pointer.as_u64(),
+        frame.rip,
+        frame.rsp,
         Cr3::read().0.start_address().as_u64(),
     );
 
@@ -286,9 +353,8 @@ extern "x86-interrupt" fn page_fault_handler(
         }
     }
 
-    kernel::println!("{:#?}", stack_frame);
+    kernel::println!("{:#?}", frame);
 
-    // Future: convert into a fault event or thread termination
     loop {
         hlt();
     }

@@ -118,8 +118,15 @@ pub fn register_shared_buffer(
         frames,
     };
 
-    let buffer_id = create_shared_buffer_thing(width, height, stride, pixel_format)
-        .ok_or("Failed to create SharedBuffer Thing")?;
+    let buffer_id = match create_shared_buffer_thing(width, height, stride, pixel_format) {
+        Some(id) => id,
+        None => {
+            for frame in buffer.frames {
+                memory::free_frame(frame);
+            }
+            return Err("Failed to create SharedBuffer Thing");
+        }
+    };
 
     SHARED_BUFFERS.lock().insert(buffer_id, buffer);
     Ok(buffer_id)

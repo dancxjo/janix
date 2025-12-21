@@ -60,12 +60,10 @@ static IO_REGIONS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 pub fn seed_io_regions() {
     #[cfg(target_arch = "x86_64")]
     {
-        crate::log("seed_io_regions: entered");
         if IO_REGIONS_INITIALIZED
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
-            crate::log("seed_io_regions: skipped (already initialized)");
             return;
         }
         let props = IoPortRegion::seed_props("i8042", 0x60, 5, &[1, 12]);
@@ -77,7 +75,6 @@ pub fn seed_io_regions() {
             final_props.push((crate::symbols::intern(&k_str), v));
         }
         let _ = graph::create_thing(crate::symbols::intern(graph_kinds::KIND_IO_PORT_REGION), final_props);
-        crate::log("seed_io_regions: finished");
     }
     #[cfg(not(target_arch = "x86_64"))]
     {

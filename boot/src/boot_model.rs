@@ -417,9 +417,6 @@ pub fn seed_font_modules_from_limine() {
         created = created.saturating_add(1);
     }
 
-    let msg = alloc::format!("Seeded {} FontModule Things from Limine modules", created);
-    let leaked: &'static str = Box::leak(msg.into_boxed_str());
-    log(leaked);
 }
 
 pub fn seed_boot_programs_from_limine() {
@@ -427,7 +424,6 @@ pub fn seed_boot_programs_from_limine() {
     let Some(profile_id) =
         graph::next_thing_of_kind_sym(kind_boot_profile, ThingId(0))
     else {
-        log("No BootProfile found; skipping BootProgram seeding");
         return;
     };
 

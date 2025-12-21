@@ -269,7 +269,7 @@ mod x86_64 {
     ) -> Result<(), &'static str> {
         let start = align_down(segment.p_vaddr);
         let end = align_up(segment.p_vaddr + segment.p_memsz);
-
+        
         if end <= start {
             return Err("Invalid segment size");
         }

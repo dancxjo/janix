@@ -344,82 +344,55 @@ fn timer_tick(frame: &mut TrapFrame) {
     
     
     if is_user && preempt_allowed {
-        // Safe to schedule
-        // Save context to current thread
-        // Use try_lock to avoid deadlock if current thread holds the lock (e.g. kmain)
         if let Some(mut sched) = sched::SCHEDULER.try_lock() {
             if let Some(mut thread) = sched.current_id().and_then(|tid| sched.thread_mut(tid)) {
-             if thread.id.0 > 1 {
-                 kernel::println!("timer_tick: saving tid={} frame RIP={:#x} CS={:#x} RSP={:#x}", thread.id.0, frame.rip, frame.cs, frame.rsp);
-             }
-             thread.context[0] = frame.r15;
-             thread.context[1] = frame.r14;
-             thread.context[2] = frame.r13;
-             thread.context[3] = frame.r12;
-             thread.context[4] = frame.rbp;
-             thread.context[5] = frame.rbx;
-             thread.context[6] = frame.r11;
-             thread.context[7] = frame.r10;
-             thread.context[8] = frame.r9;
-             thread.context[9] = frame.r8;
-             thread.context[10] = frame.rcx;
-             thread.context[11] = frame.rdx;
-             thread.context[12] = frame.rsi;
-             thread.context[13] = frame.rdi;
-             thread.context[14] = frame.rax;
-             thread.context[15] = frame.rip;
-             thread.context[16] = frame.cs;
-             thread.context[17] = frame.rflags;
-             thread.context[18] = frame.rsp;
-             thread.context[19] = frame.ss;
-             unsafe {
-                 core::arch::x86_64::_fxsave(thread.fpu_context.data.as_mut_ptr());
-             }
-             thread.started = true;
-        } else {
-             // Diagnostic: This path means we failed to save context for the current thread!
-             if let Some(tid) = sched.current_id() {
-                  kernel::println!("FATAL: timer_tick failed to find thread_mut for current tid={:?}", tid);
-             } else {
-                  kernel::println!("FATAL: timer_tick found no current thread ID!");
-             }
-        }
+                thread.user_stack_top = frame.rsp;
+                thread.entry_point = frame.rip;
+                thread.context[15] = frame.rip;
+                thread.context[16] = frame.cs as u64;
+                thread.context[17] = frame.rflags;
+                thread.context[18] = frame.rsp;
+                thread.context[19] = frame.ss as u64;
+                
+                // Save FPU
+                if thread.id.0 > 1 {
+                    unsafe {
+                         core::arch::x86_64::_fxsave(thread.fpu_context.data.as_mut_ptr());
+                    }
+                }
+                thread.started = true;
+            } else {
+                 if let Some(tid) = sched.current_id() {
+                      // Diagnostic: This path means we failed to save context for the current thread!
+                 }
+            }
 
-        // IMPORTANT: Requeue the current thread so it's not lost!
-        if let Some(tid) = sched.current_id() {
-             sched.mark_yield(tid);
-        }
+            // IMPORTANT: Requeue the current thread so it's not lost!
+            if let Some(tid) = sched.current_id() {
+                 sched.mark_yield(tid);
+            }
         
-        // Pick next thread
-        let now = kernel::time::monotonic_now_ns();
-        if let Some(next) = sched.choose_next_thread(now) {
-
-             drop(sched); // Unlock before switch
+            // Pick next thread
+            let now = kernel::time::monotonic_now_ns();
+            if let Some(next) = sched.choose_next_thread(now) {
+                 drop(sched); // Unlock before switch
              
-             // Activate address space
-             super::enter::activate_address_space(next.address_space_token);
+                 // Activate address space
+                 super::enter::activate_address_space(next.address_space_token);
              
-             // Resume or Start
-             if next.started {
-                 if next.tid.0 > 1 {
-                     kernel::println!("timer_tick: resuming tid={} RIP={:#x} CS={:#x} RSP={:#x}", next.tid.0, next.context[15], next.context[16], next.context[18]);
+                 // Resume or Start
+                 if next.started {
+                     crate::current::resume_user_mode(&next.context, &next.fpu_context);
+                 } else {
+                     let stack = if next.user_stack_top == 0 { 0x1000 } else { next.user_stack_top };
+                     let regs = crate::UserEntryRegs {
+                         entry_point: next.entry_point,
+                         user_stack: stack,
+                         arg0: next.user_arg,
+                     };
+                     super::enter::enter_user_mode(&regs);
                  }
-                 crate::current::resume_user_mode(&next.context, &next.fpu_context);
-             } else {
-                 if next.tid.0 > 1 {
-                     kernel::println!("timer_tick: starting tid={} entry={:#x} stack={:#x}", next.tid.0, next.entry_point, next.user_stack_top);
-                 }
-                 let stack = if next.user_stack_top == 0 { 0x1000 } else { next.user_stack_top };
-                 let regs = crate::UserEntryRegs {
-                     entry_point: next.entry_point,
-                     user_stack: stack,
-                     arg0: next.user_arg,
-                 };
-                 super::enter::enter_user_mode(&regs);
-             }
-        }
-        } else {
-             // kernel::println!("timer_tick: scheduler locked, skipping dispatch");
+            }
         }
     }
 }

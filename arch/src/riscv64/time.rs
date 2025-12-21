@@ -6,6 +6,10 @@ use kernel::time::HardwareTimer;
 // This can be updated by boot code if FDT is parsed.
 pub static FREQUENCY: AtomicU64 = AtomicU64::new(10_000_000);
 
+pub fn set_frequency(freq: u64) {
+    FREQUENCY.store(freq, Ordering::Relaxed);
+}
+
 pub unsafe fn init_frequency_from_dtb(dtb_ptr: *const u8) {
     let fdt = match unsafe { fdt::Fdt::from_ptr(dtb_ptr) } {
         Ok(f) => f,

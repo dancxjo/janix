@@ -46,7 +46,11 @@ pub fn init_machine() {
 
     // Seed DTB frequency (RISC-V)
     #[cfg(target_arch = "riscv64")]
-    arch::riscv64::dtb::init();
+    {
+        let freq_override = crate::boot_model::get_kernel_arg("timer_freq=")
+            .and_then(|s| s.parse::<u64>().ok());
+        arch::riscv64::dtb::init(freq_override);
+    }
 
     if arch::platform::map_boot_device_regions() {
         kernel::log("PCI regions mapped.");

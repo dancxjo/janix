@@ -8,8 +8,12 @@ use kernel::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_p
 use kernel::model;
 use kernel::{graph, graph_kinds, log, shared_buffer, time, symbols};
 use limine::memory_map::EntryType;
-use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest};
+use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest, KernelFileRequest};
 // use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource}; // Merged into line 4
+
+#[used]
+#[unsafe(link_section = ".requests")]
+static KERNEL_FILE_REQUEST: KernelFileRequest = KernelFileRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -824,6 +828,21 @@ fn parse_keyed_argument(line: &str, prefix: &str) -> Option<String> {
             let ident = arg.trim_start_matches(prefix);
             (!ident.is_empty()).then(|| String::from(ident))
         })
+}
+
+pub fn get_kernel_arg(prefix: &str) -> Option<String> {
+    let response = KERNEL_FILE_REQUEST.get_response()?;
+    let file = response.file();
+    let cmdline = file.cmdline();
+    // cmdline() is deprecated but returns the byte slice directly or via Deref?
+    // Using it as is for now since string() might return &CStr which needs to_bytes().
+    // The previous error was that `&[u8]` doesn't have `to_bytes()`.
+    let bytes = cmdline;
+    if bytes.is_empty() {
+        return None;
+    }
+    let cow = String::from_utf8_lossy(bytes);
+    parse_keyed_argument(&cow, prefix)
 }
 
 fn parse_respawn_policy(cmdline: &core::ffi::CStr) -> Option<String> {

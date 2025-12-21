@@ -22,3 +22,4 @@ my_log.txt
 pci_debug_dump
 pci_dump*.txt
 run_output*.txt
+boot_log*.txt

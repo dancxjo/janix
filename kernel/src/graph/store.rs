@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 use hashbrown::HashMap;
-use abi::{ThingId, Predicate, Link, syscall_defs::SymbolId};
-use thing_models::PropValue;
+use abi::{ThingId, Predicate, Link, syscall_defs::SymbolId, PropValue};
 use spin::Mutex;
 use alloc::sync::Arc;
 
@@ -202,7 +201,7 @@ impl GraphStore {
         self.things.get(&id).and_then(|node| {
             node.props.iter()
                 .find(|(k, _)| *k == key)
-                .map(|(_, v)| v.clone())
+                .map(|(_, v): &(_, _)| v.clone())
         })
     }
     

@@ -1,8 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
-use abi::{ThingId, syscall_defs::SymbolId};
-use thing_models::PropValue;
+use abi::{ThingId, syscall_defs::SymbolId, PropValue};
 use spin::Mutex;
 
 
@@ -18,8 +17,8 @@ use spin::Mutex;
 
 // For this specific implementation step, I'll rely on a simplified index that only supports exact match on simple types.
 
-type ValueIndex = HashMap<PropValue, Vec<ThingId>>;
-type PropIndex = HashMap<SymbolId, ValueIndex>;
+// type ValueIndex = HashMap<PropValue, Vec<ThingId>>; // PropValue not Hash
+type PropIndex = HashMap<SymbolId, ()>; // Stubbed out
 
 static PROP_INDEX: Mutex<Option<PropIndex>> = Mutex::new(None);
 

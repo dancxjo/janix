@@ -1,6 +1,6 @@
 use crate::graph;
 use crate::symbols;
-use thing_models::{PropValue, PropType};
+use abi::{PropValue, PropType};
 use alloc::vec::Vec;
 use alloc::string::String;
 

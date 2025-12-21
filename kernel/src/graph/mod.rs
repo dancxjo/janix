@@ -1,5 +1,4 @@
-use abi::{ThingId, Predicate, Link, syscall_defs::SymbolId};
-use thing_models::{PropKey, PropValue};
+use abi::{ThingId, Predicate, Link, syscall_defs::SymbolId, PropKey, PropValue};
 pub use self::ops::GraphEvent;
 use alloc::vec::Vec;
 use alloc::format;

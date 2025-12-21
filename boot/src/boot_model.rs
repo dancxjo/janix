@@ -1,7 +1,8 @@
 extern crate alloc;
 
 use crate::FRAMEBUFFER_REQUEST;
-use abi::{PixelFormat, PropValue, Thing, ThingId, syscall_defs::SymbolId};
+use abi::{PixelFormat, PropValue, ThingId, syscall_defs::SymbolId};
+use thing_models::Thing;
 use alloc::{boxed::Box, string::String, vec::Vec};
 use kernel::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_pool};
 use kernel::model;

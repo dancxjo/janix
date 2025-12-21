@@ -223,6 +223,8 @@ unsafe fn ensure_next_level(table_phys: u64, index: usize, level: u8) -> u64 {
     if entry & DESC_VALID != 0 {
         // Check if it's a block mapping (Bit 1 is 0)
         // DESC_TABLE = 1<<1 = 2. DESC_BLOCK = 0<<1 = 0.
+        // If it is a block, we must split it into a new table to allow more granular mapping
+        // while preserving existing attributes.
         if (entry & 2) == 0 {
             // Found a block mapping. We must split it into a new table.
             if level == 0 {

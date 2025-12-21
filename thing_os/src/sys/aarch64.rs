@@ -12,7 +12,7 @@ pub unsafe fn syscall_stub(
     unsafe {
         core::arch::asm!(
             "svc #0",
-            inlateout("x8") num as u64 => ret,
+            inlateout("x8") num => ret,
             inlateout("x0") arg0 => ret,
             in("x1") arg1,
             in("x2") arg2,

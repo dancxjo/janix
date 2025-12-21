@@ -2,7 +2,6 @@ extern crate alloc;
 
 use arch::gdt;
 use arch::user;
-use abi::SyscallNumber;
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::arch::global_asm;

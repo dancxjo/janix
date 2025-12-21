@@ -42,8 +42,9 @@ impl HardwareTimer for Arm64HardwareTimer {
     fn set_deadline_ns(&self, deadline_ns: u64) {
         let now = self.now_ns();
 
-        // Calculate ticks to wait
-        // If deadline is in the past, fire immediately (write 0 to TVAL)
+        // Calculate ticks to wait.
+        // If deadline is in the past, we want to fire immediately.
+        // Writing 0 to TVAL triggers the interrupt immediately because the condition is (TVAL <= 0).
         let ticks: u64 = if deadline_ns <= now {
              0
         } else {
@@ -64,9 +65,11 @@ impl HardwareTimer for Arm64HardwareTimer {
         };
 
         // CNTV_TVAL_EL0 is a 32-bit signed down counter.
-        // Max value is i32::MAX.
-        // If ticks > i32::MAX, we cap it. The interrupt will fire early,
-        // and the kernel will re-evaluate and sleep again.
+        // Max positive value is i32::MAX.
+        // If ticks > i32::MAX, we cap it at i32::MAX.
+        // This effectively sleeps for the maximum possible duration supported by the 32-bit counter.
+        // The interrupt will fire "early" relative to the true deadline,
+        // and the kernel's timer loop will re-evaluate and sleep again.
         let tval = if ticks > i32::MAX as u64 {
             i32::MAX as u64
         } else {
@@ -75,7 +78,9 @@ impl HardwareTimer for Arm64HardwareTimer {
 
         unsafe {
             asm!("msr cntv_tval_el0, {}", in(reg) tval, options(nomem, nostack));
-            // Enable timer and unmask interrupt (ENABLE=1, IMASK=0)
+            // Enable timer and unmask interrupt (ENABLE=1, IMASK=0, ISTATUS is read-only)
+            // bit 0: ENABLE
+            // bit 1: IMASK (1 = masked, 0 = unmasked)
             asm!("msr cntv_ctl_el0, {}", in(reg) 1u64, options(nomem, nostack));
         }
     }

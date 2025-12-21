@@ -443,3 +443,27 @@ use abi::wire::process::SpawnProgramResult;
         },
     }
 }
+
+pub fn sys_pci_read_config(bus: u8, slot: u8, func: u8, offset: u16, width: u8) -> Option<u32> {
+    use abi::syscall_defs::{PciReadConfigArgs, PciReadConfigRet};
+    use abi::syscall_numbers::SYS_PCI_READ_CONFIG;
+    
+    let args = PciReadConfigArgs { bus, slot, func, offset, width };
+    let mut ret = PciReadConfigRet { value: 0 };
+    
+    let res = unsafe {
+        raw_syscall(
+            SYS_PCI_READ_CONFIG as u64,
+            &args as *const _ as u64,
+            &mut ret as *mut _ as u64,
+            0, 0, 0, 0
+        )
+    };
+    
+    if res == 0 {
+        Some(ret.value)
+    } else {
+        None
+    }
+}
+

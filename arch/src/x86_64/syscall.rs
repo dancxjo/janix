@@ -668,6 +668,27 @@ macro_rules! dispatch_syscall {
             } else { 1 }
         }
     };
+    (SYSCALL_PCI_READ_CONFIG, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+        {
+            if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::PciReadConfigArgs>($a1) } {
+                if let Some(ret_ref) = unsafe { user_ptr_mut::<abi::syscall_defs::PciReadConfigRet>($a2) } {
+                    let val = match args.width {
+                        1 => crate::pci::read_config_u8(args.bus, args.slot, args.func, args.offset, 0).map(|v| v as u32),
+                        2 => crate::pci::read_config_u16(args.bus, args.slot, args.func, args.offset, 0).map(|v| v as u32),
+                        4 => crate::pci::read_config_u32(args.bus, args.slot, args.func, args.offset, 0),
+                        _ => None,
+                    };
+                    
+                    if let Some(v) = val {
+                        unsafe { *ret_ref = abi::syscall_defs::PciReadConfigRet { value: v }; }
+                        0
+                    } else {
+                        1 // Error
+                    }
+                } else { 1 }
+            } else { 1 }
+        }
+    };
 
     // Fallback for missing syscalls (Stubs)
     ($name:ident, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {

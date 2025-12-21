@@ -439,6 +439,8 @@ pub fn seed_boot_programs_from_limine() {
     let mut app_id = 1_u64;
     let mut created = 0_u64;
     let mut skipped_fonts = 0_u64;
+    let mut seen = alloc::collections::BTreeSet::new();
+
 
     for (index, module) in response.modules().iter().enumerate() {
         let identifier = match classify_limine_module((*module).string(), (*module).path(), index) {
@@ -454,20 +456,16 @@ pub fn seed_boot_programs_from_limine() {
             continue;
         }
 
-        // Temporary debug: skip pci and usb to see if they cause the hang
-        if identifier == "pci" || identifier == "usb" {
+        if !cfg!(feature = "rootfs") && identifier == "rootfs" {
+            continue;
+        }
+
+        if !seen.insert(identifier.clone()) {
              continue;
         }
 
-        if !cfg!(feature = "rootfs") && identifier == "rootfs" {
-
-            continue;
-        }
-
-        if boot_program_exists(&identifier) {
-            continue;
-        }
-
+        // Removed boot_program_exists check which caused hang
+        
         let priority = get_program_priority(&identifier);
         
         let mut respawn_policy = String::from(graph_kinds::RESPAWN_NEVER);

@@ -39,7 +39,20 @@ pub fn read_config_u32(bus: u8, slot: u8, func: u8, offset: u16, hhdm_offset: u6
         Some(unsafe { (virt as *const u32).read_volatile() })
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        let _ = hhdm_offset;
+        use x86_64::instructions::port::Port;
+        let address = 0x80000000 | ((bus as u32) << 16) | ((slot as u32) << 11) | ((func as u32) << 8) | ((offset as u32) & 0xFC);
+        unsafe {
+            let mut config_address_port = Port::<u32>::new(0xCF8);
+            let mut config_data_port = Port::<u32>::new(0xCFC);
+            config_address_port.write(address);
+            Some(config_data_port.read())
+        }
+    }
+
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         let _ = (bus, slot, func, offset, hhdm_offset);
         None
@@ -69,7 +82,14 @@ pub fn read_config_u16(bus: u8, slot: u8, func: u8, offset: u16, hhdm_offset: u6
         Some(unsafe { (virt as *const u16).read_volatile() })
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        let val = read_config_u32(bus, slot, func, offset & !3, hhdm_offset)?;
+        let shift = (offset & 3) * 8;
+        Some((val >> shift) as u16)
+    }
+
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         let _ = (bus, slot, func, offset, hhdm_offset);
         None
@@ -99,7 +119,14 @@ pub fn read_config_u8(bus: u8, slot: u8, func: u8, offset: u16, hhdm_offset: u64
         Some(unsafe { (virt as *const u8).read_volatile() })
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        let val = read_config_u32(bus, slot, func, offset & !3, hhdm_offset)?;
+        let shift = (offset & 3) * 8;
+        Some((val >> shift) as u8)
+    }
+
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         let _ = (bus, slot, func, offset, hhdm_offset);
         None

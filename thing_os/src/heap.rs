@@ -22,8 +22,7 @@ unsafe impl GlobalAlloc for CheckedHeap {
             FIRST_BAD_LAYOUT.compare_exchange(0, packed, Ordering::AcqRel, Ordering::Relaxed).ok();
 
             // Log without allocating
-            let req = abi::KernelRequest::Log { message: UserSlice::from_slice("ALLOC ERROR: layout.align is not power-of-two (halting)".as_bytes()) };
-            crate::syscalls::syscall(req);
+            log_raw("ALLOC ERROR: layout.align is not power-of-two (halting)\n");
 
             // Halt: we want the earliest failure point, not cascading corruption.
             loop {}
@@ -40,31 +39,59 @@ unsafe impl GlobalAlloc for CheckedHeap {
 #[global_allocator]
 static GLOBAL_ALLOCATOR: CheckedHeap = CheckedHeap(LockedHeap::empty());
 
-pub fn init_user_heap() {
-    crate::println!("heap::init_heap: start={:#x}", USER_HEAP_START);
+fn log_raw(s: &str) {
+    let ptr = s.as_ptr() as u64;
+    let len = s.len() as u64;
+    unsafe {
+        crate::sys::raw_syscall(abi::syscalls::SYSCALL_LOG, ptr, len, 0, 0, 0, 0);
+    }
+}
 
-    // Print address of GLOBAL_ALLOCATOR to verify it's not NULL
-    let alloc_addr = &GLOBAL_ALLOCATOR as *const _ as usize;
-    crate::println!("KERNEL_ALLOCATOR address: {:#x}", alloc_addr);
+fn log_hex(label: &str, val: usize) {
+    log_raw(label);
+    log_raw("0x");
+
+    let mut buf = [0u8; 18]; // 16 digits + newline + null
+    let mut idx = 0;
+
+    // Convert to hex
+    for i in (0..16).rev() {
+        let digit = (val >> (i * 4)) & 0xF;
+        let c = if digit < 10 {
+            b'0' + digit as u8
+        } else {
+            b'a' + (digit - 10) as u8
+        };
+        // Skip leading zeros? No, print full 64-bit for clarity
+        buf[idx] = c;
+        idx += 1;
+    }
+    buf[idx] = b'\n';
+
+    let s = unsafe { core::str::from_utf8_unchecked(&buf[..idx+1]) };
+    log_raw(s);
+}
+
+pub fn init_user_heap() {
+    log_raw("heap::init_heap: starting\n");
+    log_hex("heap::init_heap: start=", USER_HEAP_START);
 
     unsafe {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
-        crate::println!("heap::init_heap: initializing size={}", heap_size);
+
+        log_hex("heap::init_heap: size=", heap_size);
 
         GLOBAL_ALLOCATOR.0.lock().init(heap_start, heap_size);
-        crate::println!("heap::init_heap: initialized");
 
+        log_raw("heap::init_heap: initialized\n");
     }
 }
 
 #[cfg(target_os = "none")]
 #[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
-    // Log without allocating to avoid recursive panic
-    let msg = "ALLOCATION FAILED\n";
-    let req = abi::KernelRequest::Log { message: UserSlice::from_slice(msg.as_bytes()) };
-    crate::syscalls::syscall(req);
+    log_raw("ALLOCATION FAILED\n");
 
     // Exit thread gracefully (code 1 for error)
     unsafe {

@@ -1,5 +1,6 @@
 extern crate alloc;
-use abi::{PropValue, Thing, ThingId};
+use abi::ThingId;
+use thing_models::{PropValue, Thing};
 use thing_macros::Thing;
 
 #[derive(Clone, Debug, PartialEq, Eq, Thing)]
@@ -32,12 +33,12 @@ fn derived_thing_roundtrips_via_props() {
     assert_eq!(
         props,
         [
-            ("counter", PropValue::U64(42)),
-            ("variant", PropValue::U64(7)),
-            ("signed", PropValue::I64(-3)),
-            ("label", PropValue::Str(String::from("roundtrip"))),
-            ("ready", PropValue::Bool(true)),
-            ("letter", PropValue::Str(String::from("A"))),
+            ("counter".to_string(), PropValue::U64(42)),
+            ("variant".to_string(), PropValue::U64(7)),
+            ("signed".to_string(), PropValue::I64(-3)),
+            ("label".to_string(), PropValue::Str(String::from("roundtrip"))),
+            ("ready".to_string(), PropValue::Bool(true)),
+            ("letter".to_string(), PropValue::Str(String::from("A"))),
         ]
     );
 
@@ -45,7 +46,7 @@ fn derived_thing_roundtrips_via_props() {
         thing.id,
         &props
             .iter()
-            .map(|(k, v)| Some((*k, v.clone())))
+            .map(|(k, v)| Some((k.clone(), v.clone())))
             .collect::<Vec<_>>(),
     );
 

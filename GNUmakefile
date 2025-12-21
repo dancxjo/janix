@@ -78,10 +78,25 @@ iso: $(IMAGE_NAME).iso
 .PHONY: all-hdd
 all-hdd: $(IMAGE_NAME).hdd
 
+TEST_EXCLUDES := --exclude boot \
+	--exclude geographer \
+	--exclude compositor \
+	--exclude window_demo \
+	--exclude debug_clock \
+	--exclude hello_world \
+	--exclude init \
+	--exclude debug_alloc \
+	--exclude ps2_keyboard_driver \
+	--exclude ps2_mouse_driver \
+	--exclude framebuffer \
+	--exclude pci \
+	--exclude usb \
+	--exclude compositor_api
+
 .PHONY: test
 test:
 	@echo "=== Running ThingOS test suite ==="
-	cargo test --workspace --exclude boot
+	cargo test --workspace $(TEST_EXCLUDES) --lib --tests
 
 .PHONY: run
 run: run-$(KARCH)

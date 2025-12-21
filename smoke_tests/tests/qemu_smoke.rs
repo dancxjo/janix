@@ -7,9 +7,29 @@ use std::time::{Duration, Instant};
 const TIMEOUT_SECS: u64 = 60;
 const LOG_DIR: &str = "../target/smoke_logs";
 
-// Stronger markers (match “actually alive” moments)
-const KERNEL_START_MARKER: &str = "ThingOS booting...";
-const COMPOSITOR_START_MARKER: &str = "clouds.bmp: mapped"; // or "clouds.bmp: mapped"
+// Milestones
+const KERNEL_HEAP_MARKER: &str = "Kernel heap initialized";
+const GRAPH_SEEDED_MARKER: &str = "Memory graph seeded.";
+const SYSCALL_HANDLER_MARKER: &str = "Installing syscall handler...";
+const TIMEKEEPING_MARKER: &str = "Initializing timekeeping...";
+const DRIVERS_INIT_MARKER: &str = "Initializing hardware drivers...";
+const INIT_LAUNCH_MARKER: &str = "Launching init (PID 1) ...";
+const SCHEDULER_MARKER: &str = "Handing control to scheduler...";
+const COMPOSITOR_START_MARKER: &str = "compositor: starting";
+const CLOUDS_MAPPED_MARKER: &str = "clouds.bmp: mapped";
+
+const ALL_MARKERS: &[&str] = &[
+    KERNEL_HEAP_MARKER,
+    GRAPH_SEEDED_MARKER,
+    SYSCALL_HANDLER_MARKER,
+    TIMEKEEPING_MARKER,
+    DRIVERS_INIT_MARKER,
+    INIT_LAUNCH_MARKER,
+    SCHEDULER_MARKER,
+    COMPOSITOR_START_MARKER,
+    CLOUDS_MAPPED_MARKER,
+];
+
 const ROLLING_WINDOW_BYTES: usize = 64 * 1024;
 
 struct QemuConfig<'a> {
@@ -94,8 +114,8 @@ fn run_qemu_and_capture(cfg: &QemuConfig<'_>) -> String {
     let mut full_log = String::new();
     let mut rolling = String::new();
 
-    let mut found_kernel = false;
-    let mut found_compositor = false;
+    // Track which markers we have found
+    let mut found_markers = vec![false; ALL_MARKERS.len()];
 
     loop {
         if start.elapsed() > timeout {
@@ -117,16 +137,25 @@ fn run_qemu_and_capture(cfg: &QemuConfig<'_>) -> String {
                     rolling.drain(..drain);
                 }
 
-                if !found_kernel && rolling.contains(KERNEL_START_MARKER) {
-                    found_kernel = true;
-                    eprintln!("[{}] Found kernel marker", cfg.name);
+                // Check for failure patterns
+                if rolling.contains("panicked at") {
+                    eprintln!("[{}] CRITICAL FAILURE: Panic detected!", cfg.name);
+                    break; // Exit loop to fail assertion
                 }
-                if !found_compositor && rolling.contains(COMPOSITOR_START_MARKER) {
-                    found_compositor = true;
-                    eprintln!("[{}] Found compositor marker", cfg.name);
+                if rolling.contains("Out of memory") {
+                    eprintln!("[{}] CRITICAL FAILURE: OOM detected!", cfg.name);
+                    break;
                 }
 
-                if found_kernel && found_compositor {
+                // Check for markers
+                for (i, marker) in ALL_MARKERS.iter().enumerate() {
+                    if !found_markers[i] && rolling.contains(marker) {
+                        found_markers[i] = true;
+                        eprintln!("[{}] Found marker: '{}'", cfg.name, marker);
+                    }
+                }
+
+                if found_markers.iter().all(|&f| f) {
                     eprintln!("[{}] All markers found, exiting early.", cfg.name);
                     break;
                 }
@@ -183,21 +212,30 @@ fn assert_kernel_and_compositor_started(cfg: &QemuConfig<'_>) {
 
     let snippet: String = log.chars().rev().take(6000).collect::<String>().chars().rev().collect();
 
+    // 1. Check for panics
     assert!(
-        log.contains(KERNEL_START_MARKER),
-        "[{}] kernel marker '{}' not found.\n--- tail ---\n{}\n-----------",
+        !log.contains("panicked at"),
+        "[{}] Kernel panic detected!\n--- tail ---\n{}\n-----------",
         cfg.name,
-        KERNEL_START_MARKER,
+        snippet
+    );
+    assert!(
+        !log.contains("Out of memory"),
+        "[{}] Out of memory detected!\n--- tail ---\n{}\n-----------",
+        cfg.name,
         snippet
     );
 
-    assert!(
-        log.contains(COMPOSITOR_START_MARKER),
-        "[{}] compositor marker '{}' not found.\n--- tail ---\n{}\n-----------",
-        cfg.name,
-        COMPOSITOR_START_MARKER,
-        snippet
-    );
+    // 2. Check for all milestones
+    for marker in ALL_MARKERS {
+        assert!(
+            log.contains(marker),
+            "[{}] Milestone '{}' not found.\n--- tail ---\n{}\n-----------",
+            cfg.name,
+            marker,
+            snippet
+        );
+    }
 }
 
 #[test]

@@ -268,6 +268,37 @@ macro_rules! dispatch_syscall {
             u64::MAX
         }
     }};
+    (SYSCALL_SCHEMA_GET, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        let kind = SymbolId($a1 as u32);
+        let out_ptr = $a2;
+        let out_len = $a3;
+
+        let req = abi::KernelRequest::SchemaGet {
+            kind,
+            out: UserSlice {
+                ptr: out_ptr,
+                len: out_len,
+                _phantom: core::marker::PhantomData,
+            },
+        };
+
+        match kernel::handle_request(req) {
+            abi::KernelResponse::SchemaData {
+                written,
+                fingerprint,
+            } => {
+                // Write back outputs
+                if let Some(w_ptr) = unsafe { user_ptr_mut::<u64>($a4) } {
+                    *w_ptr = written;
+                }
+                if let Some(f_ptr) = unsafe { user_ptr_mut::<u64>($a5) } {
+                    *f_ptr = fingerprint;
+                }
+                0
+            }
+            _ => 1,
+        }
+    }};
     (SYSCALL_THING_GET, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let id = ThingId($a1);
         let out_ptr = $a2;

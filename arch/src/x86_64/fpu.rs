@@ -1,4 +1,5 @@
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
+use kernel::sched::FpuContext;
 
 pub fn init() {
     unsafe {
@@ -10,5 +11,13 @@ pub fn init() {
         let mut cr4 = Cr4::read();
         cr4.insert(Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE);
         Cr4::write(cr4);
+    }
+}
+
+pub fn save_fpu(ctx: &mut FpuContext) {
+    // FpuContext is aligned to 16 bytes, so data array should be aligned.
+    let ptr = ctx.data.as_mut_ptr();
+    unsafe {
+        core::arch::x86_64::_fxsave(ptr);
     }
 }

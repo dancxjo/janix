@@ -50,6 +50,7 @@ fn spawn_loaded_program_named(
     loaded: LoadedElfProgram,
 ) -> Result<(ThingId, ThingId), &'static str> {
     {
+        let t = kernel::time::boot_span_start("spawn_log_format");
         let msg = alloc::format!(
             "spawn_loaded_program_named: name={} entry={:#x} stack_top={:#x} cr3={:#x} heap=[{:#x},{:#x})",
             name,
@@ -60,7 +61,9 @@ fn spawn_loaded_program_named(
             loaded.heap_limit
         );
         kernel::log(Box::leak(msg.into_boxed_str()));
+        kernel::time::boot_span_end("spawn_log_format", t);
     }
+    let t_spawn = kernel::time::boot_span_start("spawn_process_setup");
     let leaked_name: &'static str = leak_name(name);
     let (process_thing, thread_thing) = {
         let mut sched = SCHEDULER.lock();
@@ -102,6 +105,7 @@ fn spawn_loaded_program_named(
             .ok_or("Thread Thing not recorded")?;
         (process_thing, thread_thing)
     };
+    kernel::time::boot_span_end("spawn_process_setup", t_spawn);
     Ok((process_thing, thread_thing))
 }
 

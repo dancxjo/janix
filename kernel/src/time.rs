@@ -360,3 +360,20 @@ fn log_message(msg: String) {
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
     crate::log(leaked);
 }
+
+/// Start a named span for boot instrumentation.
+/// Returns the start time in nanoseconds.
+pub fn boot_span_start(name: &str) -> u64 {
+    let now = monotonic_now_ns();
+    crate::log(alloc::format!("[SPAN] start {}", name).as_str());
+    now
+}
+
+/// End a named span for boot instrumentation.
+/// Logs the duration in microseconds.
+pub fn boot_span_end(name: &str, start_ns: u64) {
+    let now = monotonic_now_ns();
+    let dt_ns = now.saturating_sub(start_ns);
+    let dt_us = dt_ns / 1_000;
+    crate::log(alloc::format!("[SPAN] end {} taken={}us", name, dt_us).as_str());
+}

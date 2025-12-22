@@ -274,11 +274,13 @@ mod x86_64 {
             return Err("Invalid segment size");
         }
 
-        // USER REQUESTED LOGGING
+        // USER REQUESTED LOGGING - DISABLED FOR SPEED
+        /*
         log_milestone(&format!(
             "PT_LOAD vaddr={:#x} off={:#x} filesz={:#x} memsz={:#x}",
             segment.p_vaddr, segment.p_offset, segment.p_filesz, segment.p_memsz
         ));
+        */
 
         let flags = segment_flags(segment.p_flags);
         let mut mapper = mapper(space);
@@ -337,10 +339,12 @@ mod x86_64 {
             }
         }
         
+        /*
         log_milestone(&format!(
             "copied={:#x} zeroed_range_touched={:#x}",
             total_copied, total_zeroed
         ));
+        */
         
         Ok(())
     }

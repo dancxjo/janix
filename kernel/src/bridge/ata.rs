@@ -32,28 +32,53 @@ mod inner {
 
     unsafe fn wait_busy() -> Result<(), ()> {
         let mut port = PortReadOnly::<u8>::new(ATA_PRIMARY_STATUS);
-        // Timeout: roughly 100ms equivalent loop count
-        // 100_000 iterations * (io_port_read + check) should be plenty.
-        for _ in 0..100_000 {
+        
+        let start = crate::time::monotonic_now_ns();
+        let timeout_ns = 100_000_000; // 100ms
+        
+        loop {
             if port.read() & STATUS_BSY == 0 {
                 return Ok(());
             }
-            // Simple cpu relaxation
+            if start > 0 {
+                if crate::time::monotonic_now_ns().saturating_sub(start) > timeout_ns {
+                    return Err(());
+                }
+            } else {
+                 // Fallback if timer is 0 (early boot?)
+                 for _ in 0..10_000 {
+                     if port.read() & STATUS_BSY == 0 { return Ok(()); }
+                     core::hint::spin_loop();
+                 }
+                 return Err(());
+            }
             core::hint::spin_loop();
         }
-        Err(())
     }
 
     unsafe fn wait_drq() -> Result<(), ()> {
         let mut port = PortReadOnly::<u8>::new(ATA_PRIMARY_STATUS);
-        // Timeout
-        for _ in 0..100_000 {
+        
+        let start = crate::time::monotonic_now_ns();
+        let timeout_ns = 100_000_000; // 100ms
+
+        loop {
             if port.read() & STATUS_DRQ != 0 {
                 return Ok(());
             }
+            if start > 0 {
+                 if crate::time::monotonic_now_ns().saturating_sub(start) > timeout_ns {
+                    return Err(());
+                }
+            } else {
+                 for _ in 0..10_000 {
+                     if port.read() & STATUS_DRQ != 0 { return Ok(()); }
+                     core::hint::spin_loop();
+                 }
+                 return Err(());
+            }
             core::hint::spin_loop();
         }
-        Err(())
     }
 
     unsafe fn identify() {

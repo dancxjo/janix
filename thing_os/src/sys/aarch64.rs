@@ -19,7 +19,8 @@ pub unsafe fn syscall_stub(
             in("x3") arg3,
             in("x4") arg4,
             in("x5") arg5,
-            options(nostack, preserves_flags),
+            clobber_abi("C"),
+            options(nostack),
         );
     }
     ret

@@ -1,5 +1,4 @@
 
-
 #[inline(always)]
 pub unsafe fn syscall_stub(
     num: u64,
@@ -18,15 +17,14 @@ pub unsafe fn syscall_stub(
             "nop",
             "nop",
             "nop",
-            inlateout("rax") num as u64 => ret,
+            inlateout("rax") num => ret,
             in("rdi") arg0,
             in("rsi") arg1,
             in("rdx") arg2,
             in("r10") arg3,
             in("r8") arg4,
             in("r9") arg5,
-            lateout("rcx") _, // rcx is clobbered by syscall
-            lateout("r11") _, // r11 is clobbered by syscall
+            clobber_abi("C"),
             options(nostack),
         );
     }

@@ -122,5 +122,14 @@ pub unsafe fn init_per_cpu() {
     let rsp_val = core::ptr::addr_of!(PER_CPU.kernel_rsp).read();
     kernel::println!("PerCpu init: addr={:?} kernel_rsp={:#x}", addr, rsp_val);
     KernelGsBase::write(addr);
-    kernel::println!("PerCpu init: written to MSR 0xC0000102");
+    let check = KernelGsBase::read();
+    if check.as_u64() != addr.as_u64() {
+        kernel::println!("FATAL: KernelGsBase write failed! read={:?} expected={:?}", check, addr);
+        loop {}
+    }
+    kernel::println!("PerCpu init: written to MSR 0xC0000102. Verified: {:?}", check);
+    
+    // Switch to Kernel GS immediately so we run with correct context.
+    // This ensures enter_user_mode (which does swapgs) sees Kernel GS as active.
+    x86_64::instructions::segmentation::swap_gs();
 }

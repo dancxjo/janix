@@ -39,6 +39,7 @@ enter_user_mode_asm:
     push rdx     // rflags
     push r8      // cs
     push r10     // rip
+    swapgs
     iretq
 
 .global resume_user_mode_asm
@@ -113,6 +114,7 @@ resume_user_mode_asm:
     pop rdi
     pop rax
     
+    swapgs
     iretq
 "#
 );

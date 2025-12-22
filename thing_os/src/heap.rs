@@ -83,17 +83,6 @@ impl SimpleLockedHeap {
     }
 
     pub unsafe fn init(&self, start: *mut u8, size: usize) {
-        // DEBUG: Log self pointer early and bail if somehow null.
-        log_raw("SimpleLockedHeap::init self=0x");
-        let self_addr = self as *const _ as u64;
-        log_hex_val(self_addr);
-        log_raw("\n");
-        if self_addr == 0 {
-            log_raw("SimpleLockedHeap::init self was NULL; skipping init\n");
-            return;
-        }
-
-        // Reset lock to false (unlocked), using Relaxed ordering as we are single-threaded init.
         self.lock.store(false, Ordering::Relaxed);
         let heap = &mut *self.inner.get();
         heap.init(start as usize, size);
@@ -168,7 +157,6 @@ fn log_hex(label: &str, val: usize) {
 }
 
 fn log_hex_val(val: u64) {
-    // Manual hex print without fmt.
     let mut buf = [0u8; 16];
     for i in 0..16 {
         let shift = (15 - i) * 4;

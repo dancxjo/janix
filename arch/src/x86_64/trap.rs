@@ -42,6 +42,12 @@ core::arch::global_asm!(
     r#"
 .global timer_interrupt_handler_asm
 timer_interrupt_handler_asm:
+    // Check if coming from user mode (CS & 3 == 3)
+    // CS is at [rsp + 8] (because RIP is at rsp+0)
+    test byte ptr [rsp + 8], 3
+    jz 1f
+    swapgs
+1:
     push rax
     push rdi
     push rsi
@@ -86,10 +92,18 @@ timer_interrupt_handler_asm:
     pop rdi
     pop rax
     
+    test byte ptr [rsp + 8], 3
+    jz 2f
+    swapgs
+2:
     iretq
 
 .global lapic_timer_handler_asm
 lapic_timer_handler_asm:
+    test byte ptr [rsp + 8], 3
+    jz 1f
+    swapgs
+1:
     push rax
     push rdi
     push rsi
@@ -134,6 +148,10 @@ lapic_timer_handler_asm:
     pop rdi
     pop rax
 
+    test byte ptr [rsp + 8], 3
+    jz 2f
+    swapgs
+2:
     iretq
 "#
 );
@@ -239,7 +257,16 @@ core::arch::global_asm!(
     r#"
 .global page_fault_handler_asm
 page_fault_handler_asm:
-    // Error code is at [rsp]. Pop it into RSI (2nd arg).
+    // Error code is at [rsp].
+    // Stack: ErrorCode, RIP, CS, RFLAGS, RSP, SS
+    
+    // Check if coming from user mode (CS & 3 == 3)
+    // CS is at [rsp + 16] (because ErrorCode is at rsp+0, RIP at rsp+8)
+    test byte ptr [rsp + 16], 3
+    jz 1f
+    swapgs
+1:
+    // Pop error code into RSI (2nd arg)
     pop rsi
 
     push rax
@@ -279,6 +306,10 @@ page_fault_handler_asm:
     pop rdi
     pop rax
     
+    test byte ptr [rsp + 8], 3
+    jz 2f
+    swapgs
+2:
     iretq
 "#
 );
@@ -412,8 +443,26 @@ fn timer_tick(frame: &mut TrapFrame) {
     if is_user && preempt_allowed {
         if let Some(mut sched) = sched::SCHEDULER.try_lock() {
             if let Some(mut thread) = sched.current_id().and_then(|tid| sched.thread_mut(tid)) {
-                thread.user_stack_top = frame.rsp;
+                // Save General Purpose Registers
+                thread.context[0] = frame.r15;
+                thread.context[1] = frame.r14;
+                thread.context[2] = frame.r13;
+                thread.context[3] = frame.r12;
+                thread.context[4] = frame.rbp;
+                thread.context[5] = frame.rbx;
+                thread.context[6] = frame.r11;
+                thread.context[7] = frame.r10;
+                thread.context[8] = frame.r9;
+                thread.context[9] = frame.r8;
+                thread.context[10] = frame.rcx;
+                thread.context[11] = frame.rdx;
+                thread.context[12] = frame.rsi;
+                thread.context[13] = frame.rdi;
+                thread.context[14] = frame.rax;
+
+                // Save Hardware Frame
                 thread.entry_point = frame.rip;
+                thread.user_stack_top = frame.rsp;
                 thread.context[15] = frame.rip;
                 thread.context[16] = frame.cs as u64;
                 thread.context[17] = frame.rflags;

@@ -25,12 +25,15 @@ syscall_handler_asm:
     
     // 3. Load Kernel RSP from PerCpu.kernel_rsp (offset 0)
     mov rsp, gs:[0]
+
+    // 4. Push User RSP onto Kernel Stack immediately (Preserve against preemption)
+    push qword ptr gs:[8]
     
-    // 4. Save User context (RIP, RFLAGS are in RCX, R11)
+    // 5. Save User context (RIP, RFLAGS are in RCX, R11)
     push rcx // User RIP
     push r11 // User RFLAGS
     
-    // 5. Save Callee-Saved Registers (RbP, RBX, R12-R15)
+    // 6. Save Callee-Saved Registers (RbP, RBX, R12-R15)
     push rbp
     push rbx
     push r12
@@ -38,55 +41,55 @@ syscall_handler_asm:
     push r14
     push r15
     
-    // 6. Shuffle arguments for Rust ABI (System V AMD64)
+    // 7. Shuffle arguments for Rust ABI (System V AMD64)
     // Syscall ABI: RAX(num), RDI(a1), RSI(a2), RDX(a3), R10(a4), R8(a5), R9(a6)
     // Rust Call:   RDI(num), RSI(a1), RDX(a2), RCX(a3), R8 (a4), R9(a5), Stack(a6)
     
-    // Prepare Stack Argument (a6)
+    // Argument 6 (R9) -> Stack
     push r9
     
     // Shuffle Registers
-    mov r9, r8   // a5
-    mov r8, r10  // a4
-    mov rcx, rdx // a3
-    mov rdx, rsi // a2
-    mov rsi, rdi // a1
-    mov rdi, rax // num
+    mov r9, r8   // a5 -> r9
+    mov r8, r10  // a4 -> r8
+    mov rcx, rdx // a3 -> rcx
+    mov rdx, rsi // a2 -> rdx
+    mov rsi, rdi // a1 -> rsi
+    mov rdi, rax // num -> rdi
     
-    // Stack alignment (switched from user stack, current RSP is aligned?)
-    // Pushed 8 regs (64 bytes) + 1 arg (8 bytes) = 72 bytes.
-    // Need 16-byte alignment before call.
-    // 72 is not stable.
-    // Wait, RSP was kernel_stack_top (aligned 16?).
-    // Pushed 8 regs (64 bytes, 8*8). RSP aligned.
-    // Pushed R9 (8 bytes). RSP ends in 8.
-    // Need sub rsp, 8 for alignment.
-    sub rsp, 8
+    // Alignment (Total pushes: 1(RSP)+2(RIP/FL)+6(Callee)+1(Arg6) = 10 qwords.
+    // RSP aligned (16-byte) at start? 
+    // Wait. PerCpu.kernel_rsp is top of stack. Aligned 16.
+    // 10 pushes = 80 bytes. Aligned 16.
+    // So NO sub needed?
+    // Let's verify. 80 is divisible by 16.
+    // So RSP is aligned.
     
     call syscall_handler_rust
     
-    // Cleanup stack
-    add rsp, 16 // 8 (align) + 8 (arg7)
+    // Cleanup Stack Arg (Arg6)
+    add rsp, 8 
     
     // Result in RAX.
     
-    // 7. Restore Callee-Saved
+    // 8. Restore Callee-Saved
     pop r15
     pop r14
     pop r13
     pop r12
     pop rbx
     pop rbp
+    
+    // 9. Restore User RFLAGS, RIP
     pop r11 // User RFLAGS
     pop rcx // User RIP
     
-    // 8. Restore User RSP
-    mov rsp, gs:[8]
+    // 10. Restore User RSP from Stack
+    pop rsp
     
-    // 9. Swap GS back to User
+    // 11. Swap GS back to User
     swapgs
     
-    // 10. Return
+    // 12. Return
     sysretq
 "#);
 

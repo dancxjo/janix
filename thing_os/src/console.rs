@@ -16,8 +16,10 @@ impl fmt::Write for Console {
 }
 
 pub fn _print(args: fmt::Arguments) {
+    use alloc::format;
     use core::fmt::Write;
-    let _ = Console.write_fmt(args);
+    let s = format!("{}", args);
+    let _ = Console.write_str(&s);
 }
 
 #[macro_export]

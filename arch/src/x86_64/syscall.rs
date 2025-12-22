@@ -1,104 +1,129 @@
 extern crate alloc;
 use abi::syscall_defs::{
-    SymbolId, SymbolInternReq, SymbolInternResp, SymbolResolveReq, SymbolResolveResp, SysRet,
+    SymbolId, SymbolInternReq, SymbolInternResp, SymbolResolveReq, SymbolResolveResp,
 };
 use abi::syscalls::*;
-use abi::wire::common::{UserPtr, UserSlice};
+use abi::wire::common::{UserSlice};
 use abi::wire::graph::{
-    BatchUpdateEntry, BatchUpdateReq, WireProp, WirePropValue, WireSchemaProp, WireValueTag,
+    BatchUpdateEntry, WireProp, WirePropValue, WireValueTag,
 };
-use abi::{MapFlags, ProcessId, ThingId, TransactionId};
+use abi::{MapFlags, ThingId};
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::slice;
 use kernel::graph;
-use kernel::memory;
-use kernel::shared_buffer;
 use kernel::symbols;
-use kernel::transaction;
-use thing_models::{PropType, PropValue};
+use thing_models::PropValue;
 
 use core::arch::global_asm;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct TrapFrame {
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub rbp: u64,
+    pub rbx: u64,
+    pub r11: u64,
+    pub r10: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub rax: u64,
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+}
 
 global_asm!(
     r#"
 .global syscall_handler_asm
 syscall_handler_asm:
-    // 1. Swap to Kernel GS to access PerCpu
     swapgs
-    
-    // 2. Save User RSP to PerCpu.user_rsp (offset 8)
     mov gs:[8], rsp
-    
-    // 3. Load Kernel RSP from PerCpu.kernel_rsp (offset 0)
     mov rsp, gs:[0]
 
-    // 4. Push User RSP onto Kernel Stack immediately (Preserve against preemption)
+    // Construct TrapFrame matching struct layout (reverse order of fields)
+    // 19: SS (0x2b)
+    push 0x2b
+    // 18: RSP
     push qword ptr gs:[8]
-    
-    // 5. Save User context (RIP, RFLAGS are in RCX, R11)
-    push rcx // User RIP
-    push r11 // User RFLAGS
-    
-    // 6. Save Callee-Saved Registers (RbP, RBX, R12-R15)
-    push rbp
+    // 17: RFLAGS (from R11)
+    push r11
+    // 16: CS (0x33)
+    push 0x33
+    // 15: RIP (from RCX)
+    push rcx
+    // 14: RAX
+    push rax
+    // 13: RDI
+    push rdi
+    // 12: RSI
+    push rsi
+    // 11: RDX
+    push rdx
+    // 10: RCX (Caller-saved, destroyed by syscall, pushing 0)
+    push 0
+    // 9: R8
+    push r8
+    // 8: R9
+    push r9
+    // 7: R10 (Arg4)
+    push r10
+    // 6: R11 (Caller-saved, destroyed by syscall, pushing 0)
+    push 0
+    // 5: RBX
     push rbx
+    // 4: RBP
+    push rbp
+    // 3: R12
     push r12
+    // 2: R13
     push r13
+    // 1: R14
     push r14
+    // 0: R15
     push r15
     
-    // 7. Shuffle arguments for Rust ABI (System V AMD64)
-    // Syscall ABI: RAX(num), RDI(a1), RSI(a2), RDX(a3), R10(a4), R8(a5), R9(a6)
-    // Rust Call:   RDI(num), RSI(a1), RDX(a2), RCX(a3), R8 (a4), R9(a5), Stack(a6)
-    
-    // Argument 6 (R9) -> Stack
-    push r9
-    
-    // Shuffle Registers
-    mov r9, r8   // a5 -> r9
-    mov r8, r10  // a4 -> r8
-    mov rcx, rdx // a3 -> rcx
-    mov rdx, rsi // a2 -> rdx
-    mov rsi, rdi // a1 -> rsi
-    mov rdi, rax // num -> rdi
-    
-    // Alignment (Total pushes: 1(RSP)+2(RIP/FL)+6(Callee)+1(Arg6) = 10 qwords.
-    // RSP aligned (16-byte) at start? 
-    // Wait. PerCpu.kernel_rsp is top of stack. Aligned 16.
-    // 10 pushes = 80 bytes. Aligned 16.
-    // So NO sub needed?
-    // Let's verify. 80 is divisible by 16.
-    // So RSP is aligned.
+    // Pass pointer to TrapFrame as 1st argument (RDI)
+    mov rdi, rsp
     
     call syscall_handler_rust
     
-    // Cleanup Stack Arg (Arg6)
-    add rsp, 8 
+    // Result in RAX. Update TrapFrame.rax (offset 112 = 14 * 8)
+    mov [rsp + 112], rax
     
-    // Result in RAX.
-    
-    // 8. Restore Callee-Saved
+    // Restore registers
     pop r15
     pop r14
     pop r13
     pop r12
     pop rbx
     pop rbp
+    add rsp, 8 // skip R11
+    pop r10
+    pop r9
+    pop r8
+    add rsp, 8 // skip RCX
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
     
-    // 9. Restore User RFLAGS, RIP
-    pop r11 // User RFLAGS
-    pop rcx // User RIP
+    // Skip RIP, CS, RFLAGS, RSP, SS (handled by iretq)
+    // But wait, iretq pops them! So we keep them on stack.
+    // The current RSP points to RIP.
     
-    // 10. Restore User RSP from Stack
-    pop rsp
-    
-    // 11. Swap GS back to User
     swapgs
-    
-    // 12. Return
-    sysretq
+    iretq
 "#
 );
 
@@ -152,8 +177,22 @@ fn convert_prop(wire: &WireProp) -> (SymbolId, PropValue) {
     (key, val)
 }
 
+fn save_current_thread_context(ctx: &TrapFrame) {
+    kernel::sched::with_scheduler(|sched| {
+        if let Some(tid) = sched.current_id() {
+             if let Some(thread) = sched.thread_mut(tid) {
+                 unsafe {
+                     let ptr = thread.context.as_mut_ptr() as *mut TrapFrame;
+                     *ptr = *ctx;
+                 }
+                 super::fpu::save_fpu(&mut thread.fpu_context);
+             }
+        }
+    });
+}
+
 macro_rules! dispatch_syscall {
-    (SYSCALL_LOG, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_LOG, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let ptr = $a1;
         let len = $a2;
         let slice = unsafe { user_slice::<u8>(ptr, len) };
@@ -162,7 +201,9 @@ macro_rules! dispatch_syscall {
         }
         0
     }};
-    (SYSCALL_YIELD, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_YIELD, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        $ctx.rax = 0;
+        save_current_thread_context($ctx);
         kernel::sched::with_scheduler(|sched| {
             if let Some(tid) = sched.current_id() {
                 if let Some(thread) = sched.thread_mut(tid) {
@@ -174,16 +215,19 @@ macro_rules! dispatch_syscall {
         crate::user::schedule_next();
         0
     }};
-    (SYSCALL_EXIT_THREAD, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_EXIT_THREAD, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        // No need to save context on exit
         kernel::sched::exit_current_thread("syscall", $a1);
         crate::user::schedule_next();
         0
     }};
-    (SYSCALL_SLEEP_FOR_NS, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_SLEEP_FOR_NS, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        $ctx.rax = 0;
+        save_current_thread_context($ctx);
         crate::user::sys_sleep_for_ns($a1);
         0
     }};
-    (SYSCALL_SPAWN_PROGRAM, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_SPAWN_PROGRAM, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let boot_program_id = ThingId($a1);
         let req = abi::KernelRequest::SpawnProgram { boot_program_id };
         match kernel::handle_request(req) {
@@ -202,7 +246,7 @@ macro_rules! dispatch_syscall {
             _ => 1,
         }
     }};
-    (SYSCALL_SYMBOL_INTERN, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_SYMBOL_INTERN, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let mut ret = 1;
         unsafe {
             if let Some(req) = user_ptr_val::<SymbolInternReq>($a1) {
@@ -218,7 +262,7 @@ macro_rules! dispatch_syscall {
         }
         ret
     }};
-    (SYSCALL_SYMBOL_RESOLVE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_SYMBOL_RESOLVE, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let mut ret: u64 = 1;
         unsafe {
             if let Some(req) = user_ptr_val::<SymbolResolveReq>($a1) {
@@ -236,7 +280,7 @@ macro_rules! dispatch_syscall {
         }
         ret
     }};
-    (SYSCALL_THING_CREATE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_THING_CREATE, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let kind = SymbolId($a1 as u32);
         let props_ptr = $a2;
         let props_len = $a3;
@@ -250,7 +294,7 @@ macro_rules! dispatch_syscall {
         let id = graph::create_thing(kind, kernel_props);
         id.0
     }};
-    (SYSCALL_THING_UPDATE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_THING_UPDATE, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let id = ThingId($a1);
         let props_ptr = $a2;
         let props_len = $a3;
@@ -264,7 +308,7 @@ macro_rules! dispatch_syscall {
         graph::update_thing(id, kernel_props);
         0
     }};
-    (SYSCALL_THING_LIST, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_THING_LIST, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let kind = SymbolId($a1 as u32);
         let start_after = ThingId($a2);
         if let Some(id) = graph::next_thing_of_kind_sym(kind, start_after) {
@@ -273,7 +317,7 @@ macro_rules! dispatch_syscall {
             u64::MAX
         }
     }};
-    (SYSCALL_SCHEMA_GET, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_SCHEMA_GET, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let kind = SymbolId($a1 as u32);
         let out_ptr = $a2;
         let out_len = $a3;
@@ -304,7 +348,7 @@ macro_rules! dispatch_syscall {
             _ => 1,
         }
     }};
-    (SYSCALL_THING_GET, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_THING_GET, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let id = ThingId($a1);
         let out_ptr = $a2;
         let out_len = $a3;
@@ -342,7 +386,7 @@ macro_rules! dispatch_syscall {
         });
         found.unwrap_or(u64::MAX)
     }};
-    (SYSCALL_SCHEMA_REGISTER_PACKAGE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_SCHEMA_REGISTER_PACKAGE, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let kind = SymbolId($a1 as u32);
         let desc = SymbolId($a2 as u32);
         let props_ptr = $a3;
@@ -363,7 +407,7 @@ macro_rules! dispatch_syscall {
             _ => 3,
         }
     }};
-    (SYSCALL_ADD_LINK, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_ADD_LINK, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let src = ThingId($a1);
         let pred = abi::Predicate($a2);
         let dst = ThingId($a3);
@@ -374,7 +418,7 @@ macro_rules! dispatch_syscall {
             1
         }
     }};
-    (SYSCALL_LINK_AT, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_LINK_AT, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let src = ThingId($a1);
         let idx = $a2 as usize;
         let pred = abi::Predicate($a3);
@@ -385,7 +429,7 @@ macro_rules! dispatch_syscall {
             u64::MAX
         }
     }};
-    (SYSCALL_MAP_SHARED_BUFFER, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_MAP_SHARED_BUFFER, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let id = ThingId($a1);
         let flags = MapFlags($a2);
 
@@ -426,7 +470,7 @@ macro_rules! dispatch_syscall {
             1
         }
     }};
-    (SYSCALL_CREATE_SHARED_BUFFER, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_CREATE_SHARED_BUFFER, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let width = $a1 as u32;
         let height = $a2 as u32;
         let format = unsafe { core::mem::transmute($a3 as u8) };
@@ -463,7 +507,7 @@ macro_rules! dispatch_syscall {
             Err(_) => u64::MAX,
         }
     }};
-    (SYSCALL_GET_SHARED_BUFFER_INFO, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_GET_SHARED_BUFFER_INFO, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let id = ThingId($a1);
         let manager = kernel::shared_buffer::manager().lock();
         if let Some(sb) = manager.get(&id) {
@@ -480,7 +524,7 @@ macro_rules! dispatch_syscall {
             1
         }
     }};
-    (SYSCALL_RESIDENT_ALLOC, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_RESIDENT_ALLOC, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let kind = SymbolId($a1 as u32);
         let byte_len = $a2;
 
@@ -507,7 +551,7 @@ macro_rules! dispatch_syscall {
             }
         }
     }};
-    (SYSCALL_RESIDENT_MAP, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_RESIDENT_MAP, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let id = ThingId($a1);
         let perms = abi::resident::ResidentMapPerms($a2 as u32);
 
@@ -530,7 +574,7 @@ macro_rules! dispatch_syscall {
             }
         }
     }};
-    (SYSCALL_RESIDENT_UNMAP, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_RESIDENT_UNMAP, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let id = ThingId($a1);
         match kernel::resident::manager::sys_resident_unmap(id) {
             Ok(_) => 0,
@@ -542,7 +586,7 @@ macro_rules! dispatch_syscall {
             }
         }
     }};
-    (SYSCALL_THING_REST, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_THING_REST, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let id = ThingId($a1);
         let policy = unsafe { core::mem::transmute($a2 as u32) };
         match kernel::resident::manager::sys_thing_rest(id, policy) {
@@ -562,7 +606,7 @@ macro_rules! dispatch_syscall {
             }
         }
     }};
-    (SYSCALL_DEV_OPEN, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_DEV_OPEN, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::DevOpenArgs>($a1) } {
             let res = kernel::bridge::ps2::dev_open(
                 unsafe { core::mem::transmute(args.kind) },
@@ -583,7 +627,7 @@ macro_rules! dispatch_syscall {
             1
         }
     }};
-    (SYSCALL_DEV_READ, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_DEV_READ, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::DevReadArgs>($a1) } {
             if let Some(ret_ref) = unsafe {
                 user_ptr_mut::<abi::syscall_defs::SysRet<abi::syscall_defs::DevReadRet>>($a2)
@@ -613,6 +657,8 @@ macro_rules! dispatch_syscall {
                             0
                         }
                         Err(e) if e.code == abi::syscall_defs::SysError::WOULD_BLOCK => {
+                            $ctx.rax = 0;
+                            save_current_thread_context($ctx);
                             {
                                 kernel::sched::with_scheduler(|sched| {
                                     if let Some(tid) = sched.current_id() {
@@ -649,7 +695,7 @@ macro_rules! dispatch_syscall {
             1
         }
     }};
-    (SYSCALL_PCI_READ_CONFIG, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_PCI_READ_CONFIG, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::PciReadConfigArgs>($a1) } {
             if let Some(ret_ref) =
                 unsafe { user_ptr_mut::<abi::syscall_defs::PciReadConfigRet>($a2) }
@@ -682,20 +728,22 @@ macro_rules! dispatch_syscall {
             1
         }
     }};
-    (SYSCALL_SLEEP_UNTIL, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_SLEEP_UNTIL, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        $ctx.rax = 0;
+        save_current_thread_context($ctx);
         kernel::sched::with_scheduler(|sched| {
             sched.sleep_current_thread($a1);
         });
         crate::user::schedule_next();
         0
     }};
-    (SYSCALL_TIME_MONOTONIC_NS, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_TIME_MONOTONIC_NS, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         kernel::time::monotonic_now_ns()
     }};
-    (SYSCALL_TIME_SYSTEM_NS, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_TIME_SYSTEM_NS, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         kernel::time::system_time_ns().unwrap_or(0)
     }};
-    (SYSCALL_TIME_NOW, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_TIME_NOW, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let (sec, nanos) = kernel::time::now_unix_from_rtc();
         if let Some(sec_ptr) = unsafe { user_ptr_mut::<i64>($a1) } {
             *sec_ptr = sec;
@@ -705,7 +753,7 @@ macro_rules! dispatch_syscall {
         }
         0
     }};
-    (SYSCALL_ALLOC_FRAME, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_ALLOC_FRAME, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         if let Some(frame) = kernel::memory::allocate_frame() {
             if let Some(out) = unsafe { user_ptr_mut::<abi::wire::memory::FrameInfo>($a2) } {
                 out.id = abi::FrameId(frame.start_address >> 12);
@@ -719,7 +767,7 @@ macro_rules! dispatch_syscall {
             1
         }
     }};
-    (SYSCALL_FREE_FRAME, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_FREE_FRAME, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let addr = $a1 << 12;
         let frame = unsafe {
              kernel::memory::PhysFrame { start_address: addr, size: 4096 }
@@ -727,7 +775,7 @@ macro_rules! dispatch_syscall {
         kernel::memory::free_frame(frame);
         0
     }};
-    (SYSCALL_CREATE_PROCESS, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_CREATE_PROCESS, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let ptr = $a1;
         let len = $a2;
         let slice = unsafe { user_slice::<u8>(ptr, len) };
@@ -739,7 +787,7 @@ macro_rules! dispatch_syscall {
              u64::MAX
         }
     }};
-    (SYSCALL_CREATE_THREAD, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_CREATE_THREAD, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let pid = abi::ProcessId($a1);
         let entry = $a2;
         let prio = $a3;
@@ -786,16 +834,16 @@ macro_rules! dispatch_syscall {
              }
         }
     }};
-    (SYSCALL_CREATE_TRANSACTION, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_CREATE_TRANSACTION, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         kernel::transaction::create_transaction().0
     }};
-    (SYSCALL_COMMIT_TRANSACTION, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_COMMIT_TRANSACTION, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         match kernel::transaction::commit_transaction(abi::TransactionId($a1)) {
             Ok(_) => 0,
             Err(_) => 1,
         }
     }};
-    (SYSCALL_GRAPH_QUERY, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_GRAPH_QUERY, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let id = abi::ThingId($a1);
         let out_ptr = $a2;
         let out_len = $a3;
@@ -808,7 +856,7 @@ macro_rules! dispatch_syscall {
             1
         }
     }};
-    (SYSCALL_THING_BATCH_UPDATE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+    (SYSCALL_THING_BATCH_UPDATE, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let ptr = $a1;
         let len = $a2;
         let slice = unsafe { user_slice::<BatchUpdateEntry>(ptr, len) };
@@ -826,7 +874,7 @@ macro_rules! dispatch_syscall {
     }};
 
     // Fallback for missing syscalls (Stubs)
-    ($name:ident, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
+    ($name:ident, $ctx:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {
         u64::MAX
     };
 }
@@ -840,19 +888,19 @@ macro_rules! collect_dispatched_numbers {
 abi::for_each_syscall!(collect_dispatched_numbers);
 
 #[unsafe(no_mangle)]
-pub extern "C" fn syscall_handler_rust(
-    num: u64,
-    arg1: u64,
-    arg2: u64,
-    arg3: u64,
-    arg4: u64,
-    arg5: u64,
-    arg6: u64,
-) -> u64 {
+pub extern "C" fn syscall_handler_rust(context: &mut TrapFrame) -> u64 {
+    let num = context.rax;
+    let arg1 = context.rdi;
+    let arg2 = context.rsi;
+    let arg3 = context.rdx;
+    let arg4 = context.r10; // R10 holds Arg4 in syscall ABI
+    let arg5 = context.r8;
+    let arg6 = context.r9;
+
     macro_rules! dispatch_helper {
         ($($name:ident => $num:expr),* $(,)?) => {
             match num {
-                $($name => dispatch_syscall!($name, 0, arg1, arg2, arg3, arg4, arg5, arg6),)*
+                $($name => dispatch_syscall!($name, context, arg1, arg2, arg3, arg4, arg5, arg6),)*
                 _ => u64::MAX
             }
         };

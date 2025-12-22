@@ -403,7 +403,7 @@ pub fn seed_boot_programs_from_limine() {
         .unwrap_or(false);
 
     if is_debug_profile {
-        log("DEBUG PROFILE ACTIVE: Only spawning init and debug_clock");
+        log("DEBUG PROFILE ACTIVE: Only spawning init and clock");
     }
 
     for (index, module) in response.modules().iter().enumerate() {
@@ -418,7 +418,7 @@ pub fn seed_boot_programs_from_limine() {
 
         if identifier == "init" {
             // Always spawn init
-        } else if is_debug_profile && identifier != "debug_clock" {
+        } else if is_debug_profile && identifier != "clock" {
             continue;
         }
 

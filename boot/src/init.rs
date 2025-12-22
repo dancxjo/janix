@@ -168,14 +168,10 @@ pub fn launch_init_process() {
         .map(|s| s == "debug")
         .unwrap_or(false);
 
-    let (binary, app_id) = if is_debug_profile {
-        ("debug_clock", 2) // app_id 2 for consistency with seeding order if needed, or just arbitrary
-    } else {
-        ("init", 1)
-    };
+    let (binary, app_id) = if is_debug_profile { ("clock", 2) } else { ("init", 1) };
 
     kernel::log("launch_init_process: spawning PID 1");
-    // Ensure debug_clock is seeded if we use it. The prior boot_model logic ensures it.
+    // Ensure clock is seeded if we use it. The prior boot_model logic ensures it.
 
     if let Err(err) = crate::program::spawn_program_by_identifier(binary, binary, app_id) {
         kernel::log("launch_init_process: failed to spawn PID 1");

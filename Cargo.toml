@@ -5,7 +5,7 @@ members = [
     "kernel",
     "abi",
     "thing_os",
-    "user/debug_clock",
+    "user/clock",
     "user/compositor",
     "user/compositor_api",
     "user/window_demo",

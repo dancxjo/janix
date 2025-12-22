@@ -33,7 +33,7 @@ endif
 ENABLE_ROOTFS ?= 0
 ENABLE_geographer ?= 1
 ENABLE_PLATARO_ICONS ?= 1
-APPS := init debug_clock window_demo compositor hello_world geographer debug_alloc
+APPS := init clock window_demo compositor hello_world geographer debug_alloc
 ifneq ($(ENABLE_geographer),1)
 # APPS += geographer
 endif
@@ -82,7 +82,7 @@ TEST_EXCLUDES := --exclude boot \
 	--exclude geographer \
 	--exclude compositor \
 	--exclude window_demo \
-	--exclude debug_clock \
+	--exclude clock \
 	--exclude hello_world \
 	--exclude init \
 	--exclude debug_alloc \
@@ -750,7 +750,7 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	mkdir -p iso_root/boot iso_root/boot/user iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
 	cp -v assets/wallpapers/clouds.bmp iso_root/boot/clouds.bmp
-	for app in debug_clock window_demo compositor hello_world geographer debug_alloc; do \
+	for app in clock window_demo compositor hello_world geographer debug_alloc; do \
 		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/user/$$app; \
 		# objcopy --strip-debug iso_root/boot/user/$$app; \
 	done

@@ -8,6 +8,7 @@ pub mod heap;
 pub mod console;
 pub mod panic;
 pub mod syscalls;
+pub mod mem;
 
 pub mod alarm;
 pub mod batch;
@@ -419,7 +420,9 @@ pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {
 pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
     const MAX_PROPS: usize = 32;
     // Use zeroed initialization to avoid WirePropValue call (and potential crash)
-    let mut buf: [WireProp; MAX_PROPS] = unsafe { core::mem::zeroed() };
+    // Manually initializing instead of core::mem::zeroed() to verify if it was the culprit
+    // (though we added memset now, manual is safer for debugging)
+    let mut buf: [WireProp; MAX_PROPS] = [WireProp { key: SymbolId(0), value: WirePropValue::u64(0), _pad: 0 }; MAX_PROPS];
 
     // Call syscall with ptr and len
     let ptr = buf.as_mut_ptr() as u64;

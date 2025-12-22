@@ -21,7 +21,7 @@ pub fn enable_interrupts() {
     unsafe {
         #[cfg(target_arch = "x86_64")]
         core::arch::asm!("sti");
-        
+
         #[cfg(target_arch = "aarch64")]
         core::arch::asm!("msr daifclr, #2"); // Enable IRQ
 

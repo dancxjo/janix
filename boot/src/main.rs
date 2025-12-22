@@ -99,17 +99,29 @@ unsafe extern "C" fn kmain_inner() -> ! {
     kernel::println!("boot: entered kmain_inner");
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color(0x00_33_33_33);
+    crate::framebuffer::fill_framebuffer_progress(
+        crate::framebuffer::BOOT_DOMINANT_COLOR,
+        0.25,
+        Some("ThingOS: booting kernel"),
+    );
 
     crate::init::init_machine();
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color(0x00_80_80_80);
+    crate::framebuffer::fill_framebuffer_progress(
+        crate::framebuffer::BOOT_DOMINANT_COLOR,
+        0.55,
+        Some("Kernel core online"),
+    );
 
     crate::init::init_world_graph();
 
     #[cfg(feature = "fill-framebuffer")]
-    crate::framebuffer::fill_framebuffer_with_color(0x00_CC_CC_CC);
+    crate::framebuffer::fill_framebuffer_progress(
+        crate::framebuffer::BOOT_DOMINANT_COLOR,
+        1.0,
+        Some("Starting compositor"),
+    );
 
     crate::init::init_userland_and_enter_scheduler();
 }

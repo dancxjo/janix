@@ -58,8 +58,8 @@ pub fn init_machine() {
     // Seed DTB frequency (RISC-V)
     #[cfg(target_arch = "riscv64")]
     {
-        let freq_override = crate::boot_model::get_kernel_arg("timer_freq=")
-            .and_then(|s| s.parse::<u64>().ok());
+        let freq_override =
+            crate::boot_model::get_kernel_arg("timer_freq=").and_then(|s| s.parse::<u64>().ok());
         arch::riscv64::dtb::init(freq_override);
     }
 
@@ -82,7 +82,6 @@ pub fn init_machine() {
     crate::boot_screen::step("Initializing graph subscriptions...");
     crate::graph_reifier::init_graph_subscriptions();
 
-
     // Register IRQ controller callback to manage IRQ masking via graph requests
     #[cfg(target_arch = "x86_64")]
     kernel::bridge::io::register_irq_controller(arch::x86_64::pic::set_irq_mask);
@@ -102,7 +101,7 @@ pub fn init_machine() {
 
 pub fn init_world_graph() {
     let t_all = kernel::time::boot_span_start("init_world_graph");
-    
+
     crate::boot_screen::step("Creating builtin things...");
     kernel::create_builtin_things();
 
@@ -111,14 +110,14 @@ pub fn init_world_graph() {
     crate::boot_model::seed_display_from_limine();
     crate::boot_model::seed_boot_profile();
     crate::boot_model::seed_font_modules_from_limine();
-    
+
     let t = kernel::time::boot_span_start("seed_images");
     crate::boot_model::seed_program_images_from_limine();
     kernel::time::boot_span_end("seed_images", t);
 
     crate::boot_model::seed_raw_modules_from_limine();
     crate::boot_model::seed_boot_programs_from_limine();
-    
+
     crate::boot_screen::step("Initializing hardware drivers...");
     let t = kernel::time::boot_span_start("driver_bringup");
     kernel::driver_bringup::init();
@@ -126,7 +125,7 @@ pub fn init_world_graph() {
 
     crate::boot_model::seed_time_graph();
     kernel::bridge::io::seed_io_regions();
-    
+
     kernel::time::boot_span_end("init_world_graph", t_all);
 }
 
@@ -158,10 +157,10 @@ pub fn render_dashboard_and_halt() -> ! {
 }
 
 fn launch_idle_thread() {
-   // Attach to PID 1 (init)
-   let pid = abi::ProcessId(1);
-   let mut sched = kernel::sched::SCHEDULER.lock();
-   sched.add_idle_thread(pid);
+    // Attach to PID 1 (init)
+    let pid = abi::ProcessId(1);
+    let mut sched = kernel::sched::SCHEDULER.lock();
+    sched.add_idle_thread(pid);
 }
 
 pub fn launch_init_process() {
@@ -177,18 +176,20 @@ pub fn launch_init_process() {
 
     kernel::log("launch_init_process: spawning PID 1");
     // Ensure debug_clock is seeded if we use it. The prior boot_model logic ensures it.
-    
+
     if let Err(err) = crate::program::spawn_program_by_identifier(binary, binary, app_id) {
-         kernel::log("launch_init_process: failed to spawn PID 1");
-         kernel::log(err);
-         crate::panic_handler::hcf();
+        kernel::log("launch_init_process: failed to spawn PID 1");
+        kernel::log(err);
+        crate::panic_handler::hcf();
     }
 
     if !is_debug_profile && kernel::model::program_image_exists("debug_input_events") {
         kernel::log("launch_init_process: spawning debug_input_events debug app");
-        if let Err(err) =
-            crate::program::spawn_program_by_identifier("debug_input_events", "debug_input_events", 100)
-        {
+        if let Err(err) = crate::program::spawn_program_by_identifier(
+            "debug_input_events",
+            "debug_input_events",
+            100,
+        ) {
             kernel::log("launch_init_process: failed to spawn debug_input_events");
             kernel::log(err);
         }

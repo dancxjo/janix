@@ -2,12 +2,12 @@
 
 extern crate alloc;
 
-use abi::ThingId;
-use crate::{PropKey, PropType, PropValue, Thing};
 use crate::graph_kinds;
-use alloc::vec::Vec;
-use alloc::string::ToString;
+use crate::{PropKey, PropType, PropValue, Thing};
+use abi::ThingId;
 use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 #[derive(Clone, Debug)]
 pub struct Display {
@@ -23,10 +23,22 @@ impl Thing for Display {
     const DESCRIPTION: &'static str = "A display sink capable of scanning out a SharedBuffer";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_NAME.to_string(), PropValue::Str(self.name.clone())));
-        out.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
-        out.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
-        out.push((graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(), PropValue::I64(self.active_buffer_index)));
+        out.push((
+            graph_kinds::PROP_NAME.to_string(),
+            PropValue::Str(self.name.clone()),
+        ));
+        out.push((
+            graph_kinds::PROP_WIDTH.to_string(),
+            PropValue::U64(self.width),
+        ));
+        out.push((
+            graph_kinds::PROP_HEIGHT.to_string(),
+            PropValue::U64(self.height),
+        ));
+        out.push((
+            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(),
+            PropValue::I64(self.active_buffer_index),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -37,14 +49,36 @@ impl Thing for Display {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                graph_kinds::PROP_NAME => if let PropValue::Str(v) = &prop.1 { name = v.clone(); },
-                graph_kinds::PROP_WIDTH => if let PropValue::U64(v) = prop.1 { width = v; },
-                graph_kinds::PROP_HEIGHT => if let PropValue::U64(v) = prop.1 { height = v; },
-                graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX => if let PropValue::I64(v) = prop.1 { active_buffer_index = v; },
+                graph_kinds::PROP_NAME => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        name = v.clone();
+                    }
+                }
+                graph_kinds::PROP_WIDTH => {
+                    if let PropValue::U64(v) = prop.1 {
+                        width = v;
+                    }
+                }
+                graph_kinds::PROP_HEIGHT => {
+                    if let PropValue::U64(v) = prop.1 {
+                        height = v;
+                    }
+                }
+                graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX => {
+                    if let PropValue::I64(v) = prop.1 {
+                        active_buffer_index = v;
+                    }
+                }
                 _ => {}
             }
         }
-        Display { id, name, width, height, active_buffer_index }
+        Display {
+            id,
+            name,
+            width,
+            height,
+            active_buffer_index,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
@@ -68,13 +102,26 @@ pub struct SharedBuffer {
 
 impl Thing for SharedBuffer {
     const KIND: &'static str = graph_kinds::KIND_SHARED_BUFFER;
-    const DESCRIPTION: &'static str = "A kernel-owned shared memory buffer that can be mapped into userland";
+    const DESCRIPTION: &'static str =
+        "A kernel-owned shared memory buffer that can be mapped into userland";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
-        out.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
-        out.push((graph_kinds::PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
-        out.push((graph_kinds::PROP_PIXEL_FORMAT.to_string(), PropValue::Str(self.pixel_format.clone())));
+        out.push((
+            graph_kinds::PROP_WIDTH.to_string(),
+            PropValue::U64(self.width),
+        ));
+        out.push((
+            graph_kinds::PROP_HEIGHT.to_string(),
+            PropValue::U64(self.height),
+        ));
+        out.push((
+            graph_kinds::PROP_STRIDE.to_string(),
+            PropValue::U64(self.stride),
+        ));
+        out.push((
+            graph_kinds::PROP_PIXEL_FORMAT.to_string(),
+            PropValue::Str(self.pixel_format.clone()),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -85,14 +132,36 @@ impl Thing for SharedBuffer {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                graph_kinds::PROP_WIDTH => if let PropValue::U64(v) = prop.1 { width = v; },
-                graph_kinds::PROP_HEIGHT => if let PropValue::U64(v) = prop.1 { height = v; },
-                graph_kinds::PROP_STRIDE => if let PropValue::U64(v) = prop.1 { stride = v; },
-                graph_kinds::PROP_PIXEL_FORMAT => if let PropValue::Str(v) = &prop.1 { pixel_format = v.clone(); },
+                graph_kinds::PROP_WIDTH => {
+                    if let PropValue::U64(v) = prop.1 {
+                        width = v;
+                    }
+                }
+                graph_kinds::PROP_HEIGHT => {
+                    if let PropValue::U64(v) = prop.1 {
+                        height = v;
+                    }
+                }
+                graph_kinds::PROP_STRIDE => {
+                    if let PropValue::U64(v) = prop.1 {
+                        stride = v;
+                    }
+                }
+                graph_kinds::PROP_PIXEL_FORMAT => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        pixel_format = v.clone();
+                    }
+                }
                 _ => {}
             }
         }
-        SharedBuffer { id, width, height, stride, pixel_format }
+        SharedBuffer {
+            id,
+            width,
+            height,
+            stride,
+            pixel_format,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
@@ -121,18 +190,46 @@ pub struct DisplayFramebuffer {
 
 impl Thing for DisplayFramebuffer {
     const KIND: &'static str = graph_kinds::KIND_DISPLAY_FRAMEBUFFER;
-    const DESCRIPTION: &'static str = "A userland-published framebuffer description backed by a SharedBuffer";
+    const DESCRIPTION: &'static str =
+        "A userland-published framebuffer description backed by a SharedBuffer";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_NAME.to_string(), PropValue::Str(self.name.clone())));
-        out.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
-        out.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
-        out.push((graph_kinds::PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
-        out.push((graph_kinds::PROP_PIXEL_FORMAT.to_string(), PropValue::Str(self.pixel_format.clone())));
-        out.push((graph_kinds::PROP_POWER_STATE.to_string(), PropValue::Str(self.power_state.clone())));
-        out.push((graph_kinds::PROP_REFRESH_INTERVAL_NS.to_string(), PropValue::U64(self.refresh_interval_ns)));
-        out.push((graph_kinds::PROP_FRAMES_PRESENTED.to_string(), PropValue::U64(self.frames_presented)));
-        out.push((graph_kinds::PROP_LAST_PRESENT_NS.to_string(), PropValue::U64(self.last_present_ns)));
+        out.push((
+            graph_kinds::PROP_NAME.to_string(),
+            PropValue::Str(self.name.clone()),
+        ));
+        out.push((
+            graph_kinds::PROP_WIDTH.to_string(),
+            PropValue::U64(self.width),
+        ));
+        out.push((
+            graph_kinds::PROP_HEIGHT.to_string(),
+            PropValue::U64(self.height),
+        ));
+        out.push((
+            graph_kinds::PROP_STRIDE.to_string(),
+            PropValue::U64(self.stride),
+        ));
+        out.push((
+            graph_kinds::PROP_PIXEL_FORMAT.to_string(),
+            PropValue::Str(self.pixel_format.clone()),
+        ));
+        out.push((
+            graph_kinds::PROP_POWER_STATE.to_string(),
+            PropValue::Str(self.power_state.clone()),
+        ));
+        out.push((
+            graph_kinds::PROP_REFRESH_INTERVAL_NS.to_string(),
+            PropValue::U64(self.refresh_interval_ns),
+        ));
+        out.push((
+            graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
+            PropValue::U64(self.frames_presented),
+        ));
+        out.push((
+            graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
+            PropValue::U64(self.last_present_ns),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -148,19 +245,66 @@ impl Thing for DisplayFramebuffer {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                graph_kinds::PROP_NAME => if let PropValue::Str(v) = &prop.1 { name = v.clone(); },
-                graph_kinds::PROP_WIDTH => if let PropValue::U64(v) = prop.1 { width = v; },
-                graph_kinds::PROP_HEIGHT => if let PropValue::U64(v) = prop.1 { height = v; },
-                graph_kinds::PROP_STRIDE => if let PropValue::U64(v) = prop.1 { stride = v; },
-                graph_kinds::PROP_PIXEL_FORMAT => if let PropValue::Str(v) = &prop.1 { pixel_format = v.clone(); },
-                graph_kinds::PROP_POWER_STATE => if let PropValue::Str(v) = &prop.1 { power_state = v.clone(); },
-                graph_kinds::PROP_REFRESH_INTERVAL_NS => if let PropValue::U64(v) = prop.1 { refresh_interval_ns = v; },
-                graph_kinds::PROP_FRAMES_PRESENTED => if let PropValue::U64(v) = prop.1 { frames_presented = v; },
-                graph_kinds::PROP_LAST_PRESENT_NS => if let PropValue::U64(v) = prop.1 { last_present_ns = v; },
+                graph_kinds::PROP_NAME => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        name = v.clone();
+                    }
+                }
+                graph_kinds::PROP_WIDTH => {
+                    if let PropValue::U64(v) = prop.1 {
+                        width = v;
+                    }
+                }
+                graph_kinds::PROP_HEIGHT => {
+                    if let PropValue::U64(v) = prop.1 {
+                        height = v;
+                    }
+                }
+                graph_kinds::PROP_STRIDE => {
+                    if let PropValue::U64(v) = prop.1 {
+                        stride = v;
+                    }
+                }
+                graph_kinds::PROP_PIXEL_FORMAT => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        pixel_format = v.clone();
+                    }
+                }
+                graph_kinds::PROP_POWER_STATE => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        power_state = v.clone();
+                    }
+                }
+                graph_kinds::PROP_REFRESH_INTERVAL_NS => {
+                    if let PropValue::U64(v) = prop.1 {
+                        refresh_interval_ns = v;
+                    }
+                }
+                graph_kinds::PROP_FRAMES_PRESENTED => {
+                    if let PropValue::U64(v) = prop.1 {
+                        frames_presented = v;
+                    }
+                }
+                graph_kinds::PROP_LAST_PRESENT_NS => {
+                    if let PropValue::U64(v) = prop.1 {
+                        last_present_ns = v;
+                    }
+                }
                 _ => {}
             }
         }
-        DisplayFramebuffer { id, name, width, height, stride, pixel_format, power_state, refresh_interval_ns, frames_presented, last_present_ns }
+        DisplayFramebuffer {
+            id,
+            name,
+            width,
+            height,
+            stride,
+            pixel_format,
+            power_state,
+            refresh_interval_ns,
+            frames_presented,
+            last_present_ns,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
@@ -189,13 +333,26 @@ pub struct DisplayFrame {
 
 impl Thing for DisplayFrame {
     const KIND: &'static str = graph_kinds::KIND_DISPLAY_FRAME;
-    const DESCRIPTION: &'static str = "A single frame produced by a compositor targeting a framebuffer";
+    const DESCRIPTION: &'static str =
+        "A single frame produced by a compositor targeting a framebuffer";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
-        out.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
-        out.push((graph_kinds::PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
-        out.push((graph_kinds::PROP_PIXEL_FORMAT.to_string(), PropValue::Str(self.pixel_format.clone())));
+        out.push((
+            graph_kinds::PROP_WIDTH.to_string(),
+            PropValue::U64(self.width),
+        ));
+        out.push((
+            graph_kinds::PROP_HEIGHT.to_string(),
+            PropValue::U64(self.height),
+        ));
+        out.push((
+            graph_kinds::PROP_STRIDE.to_string(),
+            PropValue::U64(self.stride),
+        ));
+        out.push((
+            graph_kinds::PROP_PIXEL_FORMAT.to_string(),
+            PropValue::Str(self.pixel_format.clone()),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -206,14 +363,36 @@ impl Thing for DisplayFrame {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                graph_kinds::PROP_WIDTH => if let PropValue::U64(v) = prop.1 { width = v; },
-                graph_kinds::PROP_HEIGHT => if let PropValue::U64(v) = prop.1 { height = v; },
-                graph_kinds::PROP_STRIDE => if let PropValue::U64(v) = prop.1 { stride = v; },
-                graph_kinds::PROP_PIXEL_FORMAT => if let PropValue::Str(v) = &prop.1 { pixel_format = v.clone(); },
+                graph_kinds::PROP_WIDTH => {
+                    if let PropValue::U64(v) = prop.1 {
+                        width = v;
+                    }
+                }
+                graph_kinds::PROP_HEIGHT => {
+                    if let PropValue::U64(v) = prop.1 {
+                        height = v;
+                    }
+                }
+                graph_kinds::PROP_STRIDE => {
+                    if let PropValue::U64(v) = prop.1 {
+                        stride = v;
+                    }
+                }
+                graph_kinds::PROP_PIXEL_FORMAT => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        pixel_format = v.clone();
+                    }
+                }
                 _ => {}
             }
         }
-        DisplayFrame { id, width, height, stride, pixel_format }
+        DisplayFrame {
+            id,
+            width,
+            height,
+            stride,
+            pixel_format,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
@@ -242,19 +421,28 @@ impl Thing for DisplayPresentRequest {
         "A compositor request for a framebuffer driver to present a frame";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_FRAMEBUFFER_ID.to_string(),
+        out.push((
+            graph_kinds::PROP_FRAMEBUFFER_ID.to_string(),
             PropValue::U64(self.framebuffer_id.0),
         ));
-        out.push((graph_kinds::PROP_FRAME_INDEX.to_string(),
+        out.push((
+            graph_kinds::PROP_FRAME_INDEX.to_string(),
             PropValue::U64(self.frame_index),
         ));
-        out.push((graph_kinds::PROP_REQUESTED_AT_NS.to_string(),
+        out.push((
+            graph_kinds::PROP_REQUESTED_AT_NS.to_string(),
             PropValue::U64(self.requested_at_ns),
         ));
         if let Some(presented) = self.presented_at_ns {
-            out.push((graph_kinds::PROP_PRESENTED_AT_NS.to_string(), PropValue::U64(presented)));
+            out.push((
+                graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
+                PropValue::U64(presented),
+            ));
         }
-        out.push((graph_kinds::PROP_COMPLETED.to_string(), PropValue::Bool(self.completed)));
+        out.push((
+            graph_kinds::PROP_COMPLETED.to_string(),
+            PropValue::Bool(self.completed),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {

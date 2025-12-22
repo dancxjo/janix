@@ -2,8 +2,8 @@
 #![no_main]
 
 use thing_os::prelude::*;
-use thing_os::SystemClock;
 use thing_os::sys::raw_syscall;
+use thing_os::SystemClock;
 
 #[thing_os::main]
 fn main() {
@@ -19,14 +19,14 @@ fn main() {
         // But for now just sleep loop to prove we persist
         // We can't easily construct SystemClock from TimeSource without private fields or helpers
         // So just loop printing raw ticks
-        
+
         loop {
-             if let Some(ts_loop) = thing_os::load_thing::<thing_os::TimeSource>(id) {
-                 print_str("Ticks: ");
-                 print_num(ts_loop.ticks_since_boot);
-                 print_str("\n");
-             }
-             sleep_ms(1000);
+            if let Some(ts_loop) = thing_os::load_thing::<thing_os::TimeSource>(id) {
+                print_str("Ticks: ");
+                print_num(ts_loop.ticks_since_boot);
+                print_str("\n");
+            }
+            sleep_ms(1000);
         }
     } else {
         print_str("Failed to load TimeSource 16\n");
@@ -43,10 +43,10 @@ fn main() {
     loop {
         let ticks = clock.uptime_ticks();
         let elapsed_secs = ticks.saturating_sub(start_ticks) / tick_hz as u64;
-        
+
         if last_logged.map(|prev| prev != elapsed_secs).unwrap_or(true) {
             let (hour, minute, second) = seconds_to_hms(base_seconds + elapsed_secs as i64);
-            
+
             print_str("debug_clock: Time: ");
             print_num(hour as u64);
             print_str(":");
@@ -84,16 +84,16 @@ fn print_num(mut n: u64) {
         print_str("00");
         return;
     }
-    
-    // Buffer for u64 (max 20 digits). 
+
+    // Buffer for u64 (max 20 digits).
     // We want aligned output for time (00-59), so let's handle padding manually for now or just print raw.
-    
+
     let mut buffer = [0u8; 20];
     let mut i = 20;
-    
+
     // If n < 10, pad with 0
     if n < 10 {
-       print_str("0");
+        print_str("0");
     }
 
     while n > 0 {
@@ -101,8 +101,7 @@ fn print_num(mut n: u64) {
         buffer[i] = (n % 10) as u8 + b'0';
         n /= 10;
     }
-    
+
     let s = unsafe { core::str::from_utf8_unchecked(&buffer[i..]) };
     print_str(s);
 }
-

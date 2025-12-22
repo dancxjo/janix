@@ -1,11 +1,11 @@
 extern crate alloc;
 
-use thing_models::PropValue;
+use alloc::vec::Vec;
 use kernel::graph;
 use kernel::graph_kinds;
 use kernel::sched_graph;
 use kernel::sched_types::ThreadState;
-use alloc::vec::Vec;
+use thing_models::PropValue;
 
 fn init_locked() -> spin::MutexGuard<'static, ()> {
     let guard = kernel::test_lock();
@@ -46,7 +46,10 @@ fn timeslice_expiry_moves_thread_to_runnable() {
             kernel::symbols::intern("state"),
             PropValue::Str(alloc::string::String::from(ThreadState::Running.as_str())),
         ),
-        (kernel::symbols::intern("last_started_ns"), PropValue::U64(0)),
+        (
+            kernel::symbols::intern("last_started_ns"),
+            PropValue::U64(0),
+        ),
     ];
     graph::update_thing(thread, running_props.to_vec());
     graph::add_link(thread, graph_kinds::LINK_RUNS_ON, cpu);
@@ -108,7 +111,10 @@ fn running_thread_keeps_cpu_when_slice_remaining() {
             kernel::symbols::intern("state"),
             PropValue::Str(alloc::string::String::from(ThreadState::Running.as_str())),
         ),
-        (kernel::symbols::intern("last_started_ns"), PropValue::U64(1_000)),
+        (
+            kernel::symbols::intern("last_started_ns"),
+            PropValue::U64(1_000),
+        ),
         (kernel::symbols::intern("runtime_ns"), PropValue::U64(500)),
     ];
     graph::update_thing(thread, props.to_vec());
@@ -142,7 +148,10 @@ fn pick_prefers_lower_runtime_on_priority_tie() {
     let slow = kernel::model::create_thread(30, 7).expect("slow");
     let fresh = kernel::model::create_thread(31, 7).expect("fresh");
 
-    let slow_props = [(kernel::symbols::intern("runtime_ns"), PropValue::U64(10_000))];
+    let slow_props = [(
+        kernel::symbols::intern("runtime_ns"),
+        PropValue::U64(10_000),
+    )];
     graph::update_thing(slow, slow_props.to_vec());
 
     let fresh_props = [(kernel::symbols::intern("runtime_ns"), PropValue::U64(1_000))];
@@ -213,12 +222,19 @@ fn sleep_event_create_and_clear() {
     kernel::graph::with_thing(sleep, |thing| {
         assert_eq!(thing.kind, kind_sleep);
         assert!(
-            thing.props.iter().any(|(k, v)| *k == sym_wake && matches!(v, PropValue::U64(1_000_000)))
+            thing
+                .props
+                .iter()
+                .any(|(k, v)| *k == sym_wake && matches!(v, PropValue::U64(1_000_000)))
         );
         assert!(
-            thing.props.iter().any(|(k, v)| *k == sym_created && matches!(v, PropValue::U64(5)))
+            thing
+                .props
+                .iter()
+                .any(|(k, v)| *k == sym_created && matches!(v, PropValue::U64(5)))
         );
-    }).expect("sleep thing");
+    })
+    .expect("sleep thing");
 
     let mut buf = [None; 1];
     graph::neighbors(thread, graph_kinds::LINK_SLEEPS_UNTIL, &mut buf);

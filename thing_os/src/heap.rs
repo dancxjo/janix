@@ -3,8 +3,8 @@
 use abi::wire::common::UserSlice;
 use abi::{USER_HEAP_END, USER_HEAP_START};
 use core::alloc::{GlobalAlloc, Layout};
-use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 // use linked_list_allocator::Heap;
 
 // First bad allocation recorded as (align << 32) | (size_low32)
@@ -79,7 +79,10 @@ impl SimpleLockedHeap {
         while self.lock.swap(true, Ordering::Acquire) {
             core::hint::spin_loop();
         }
-        HeapGuard { lock: &self.lock, inner: unsafe { &mut *self.inner.get() } }
+        HeapGuard {
+            lock: &self.lock,
+            inner: unsafe { &mut *self.inner.get() },
+        }
     }
 
     pub unsafe fn init(&self, start: *mut u8, size: usize) {
@@ -96,11 +99,15 @@ pub struct HeapGuard<'a> {
 
 impl<'a> core::ops::Deref for HeapGuard<'a> {
     type Target = BumpAllocator;
-    fn deref(&self) -> &BumpAllocator { self.inner }
+    fn deref(&self) -> &BumpAllocator {
+        self.inner
+    }
 }
 
 impl core::ops::DerefMut for HeapGuard<'_> {
-    fn deref_mut(&mut self) -> &mut BumpAllocator { self.inner }
+    fn deref_mut(&mut self) -> &mut BumpAllocator {
+        self.inner
+    }
 }
 
 impl Drop for HeapGuard<'_> {
@@ -128,9 +135,9 @@ unsafe impl GlobalAlloc for CheckedHeap {
         let a = layout.align();
         // Check power-of-two alignment
         if a == 0 || (a & (a - 1)) != 0 {
-             // ... error handling ...
-             log_raw("ALLOC ERROR: layout.align is not power-of-two (halting)");
-             loop {}
+            // ... error handling ...
+            log_raw("ALLOC ERROR: layout.align is not power-of-two (halting)");
+            loop {}
         }
         self.0.alloc(layout)
     }
@@ -161,14 +168,18 @@ fn log_hex_val(val: u64) {
     for i in 0..16 {
         let shift = (15 - i) * 4;
         let nibble = ((val >> shift) & 0xF) as u8;
-        buf[i] = if nibble < 10 { b'0' + nibble } else { b'A' + (nibble - 10) };
+        buf[i] = if nibble < 10 {
+            b'0' + nibble
+        } else {
+            b'A' + (nibble - 10)
+        };
     }
     let s = unsafe { core::str::from_utf8_unchecked(&buf) };
     log_raw(s);
 }
 
 pub fn init_user_heap() {
-     unsafe {
+    unsafe {
         let heap_start = USER_HEAP_START as *mut u8;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
 

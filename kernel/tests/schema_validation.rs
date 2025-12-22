@@ -1,11 +1,11 @@
 extern crate alloc;
-use abi::{KernelRequest, KernelResponse};
-use thing_models::{PropType, PropValue};
-use abi::wire::common::{UserSlice, UserPtr};
-use abi::wire::graph::{WireProp, WireSchemaProp, WirePropValue, WireValueTag};
 use abi::syscall_defs::SymbolId;
+use abi::wire::common::{UserPtr, UserSlice};
+use abi::wire::graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag};
+use abi::{KernelRequest, KernelResponse};
 use alloc::vec::Vec;
 use kernel;
+use thing_models::{PropType, PropValue};
 
 fn init_locked() -> spin::MutexGuard<'static, ()> {
     let guard = kernel::test_lock();
@@ -52,7 +52,9 @@ fn to_wire_props(props: &[(SymbolId, PropValue)]) -> (Vec<WireProp>, UserSlice<W
     (vec, slice)
 }
 
-fn to_wire_schema(props: &[(SymbolId, PropType)]) -> (Vec<WireSchemaProp>, UserSlice<WireSchemaProp>) {
+fn to_wire_schema(
+    props: &[(SymbolId, PropType)],
+) -> (Vec<WireSchemaProp>, UserSlice<WireSchemaProp>) {
     let mut vec = Vec::new();
     for (k, t) in props {
         let pt = match t {
@@ -150,11 +152,11 @@ fn test_duplicate_schema_registration() {
     // Let's assume it errors for now.
 
     if let KernelResponse::SchemaRegistered { outcome, .. } = response2 {
-         assert_eq!(outcome, abi::SchemaRegistryOutcome::AlreadyRegisteredSame);
+        assert_eq!(outcome, abi::SchemaRegistryOutcome::AlreadyRegisteredSame);
     } else {
-         // If it errors, that's also "duplicate".
-         // assert!(matches!(response2, KernelResponse::Error { .. }));
-         // But SchemaRegistered has outcome field now.
+        // If it errors, that's also "duplicate".
+        // assert!(matches!(response2, KernelResponse::Error { .. }));
+        // But SchemaRegistered has outcome field now.
     }
 }
 
@@ -245,7 +247,7 @@ fn test_thing_creation_with_type_mismatch() {
 
     match response {
         KernelResponse::Error { err } => {
-             // Expect error
+            // Expect error
         }
         _ => panic!("Expected error for type mismatch"),
     }
@@ -283,7 +285,7 @@ fn test_thing_creation_with_unknown_property() {
 
     match response {
         KernelResponse::Error { err } => {
-             // Expect error
+            // Expect error
         }
         _ => panic!("Expected error for unknown property"),
     }
@@ -376,7 +378,7 @@ fn test_thing_update_with_invalid_type() {
 
     match update_response {
         KernelResponse::Error { err } => {
-             // Expect error
+            // Expect error
         }
         _ => panic!("Expected error for type mismatch on update"),
     }
@@ -403,7 +405,13 @@ fn test_schema_get() {
 
     // Prepare output buffer
     let mut out_vec = Vec::with_capacity(10);
-    out_vec.resize(10, WireSchemaProp { name: SymbolId(0), prop_type: 0 });
+    out_vec.resize(
+        10,
+        WireSchemaProp {
+            name: SymbolId(0),
+            prop_type: 0,
+        },
+    );
     let out_slice = UserSlice {
         ptr: out_vec.as_ptr() as u64,
         len: out_vec.len() as u64,
@@ -416,7 +424,10 @@ fn test_schema_get() {
     });
 
     match response {
-        KernelResponse::SchemaData { written, fingerprint } => {
+        KernelResponse::SchemaData {
+            written,
+            fingerprint,
+        } => {
             assert_eq!(written, 2);
             // Verify content
             let p1 = out_vec[0];
@@ -438,7 +449,13 @@ fn test_schema_get_not_found() {
     let kind_sym = kernel::symbols::intern("NonExistent");
 
     let mut out_vec = Vec::with_capacity(10);
-    out_vec.resize(10, WireSchemaProp { name: SymbolId(0), prop_type: 0 });
+    out_vec.resize(
+        10,
+        WireSchemaProp {
+            name: SymbolId(0),
+            prop_type: 0,
+        },
+    );
     let out_slice = UserSlice {
         ptr: out_vec.as_ptr() as u64,
         len: out_vec.len() as u64,

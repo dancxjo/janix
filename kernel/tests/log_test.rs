@@ -27,8 +27,17 @@ fn log_stats_track_truncation_and_overwrite() {
     }
 
     let stats = log::log_stats();
-    assert_eq!(stats.stored_entries, 100, "ring buffer should retain its max size");
+    assert_eq!(
+        stats.stored_entries, 100,
+        "ring buffer should retain its max size"
+    );
     assert_eq!(stats.total_written, 151); // 1 long + 150 short
-    assert_eq!(stats.overwritten, 51, "entries beyond capacity should be counted as overwrites");
-    assert_eq!(stats.truncated, 1, "only the first long message should be truncated");
+    assert_eq!(
+        stats.overwritten, 51,
+        "entries beyond capacity should be counted as overwrites"
+    );
+    assert_eq!(
+        stats.truncated, 1,
+        "only the first long message should be truncated"
+    );
 }

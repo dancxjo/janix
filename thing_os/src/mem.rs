@@ -1,11 +1,12 @@
-
 use core::ffi::c_void;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void {
     let s = s as *mut u8;
     for i in 0..n {
-        unsafe { *s.add(i) = c as u8; }
+        unsafe {
+            *s.add(i) = c as u8;
+        }
     }
     s as *mut c_void
 }
@@ -15,7 +16,9 @@ pub unsafe extern "C" fn memcpy(dest: *mut c_void, src: *const c_void, n: usize)
     let dest = dest as *mut u8;
     let src = src as *const u8;
     for i in 0..n {
-        unsafe { *dest.add(i) = *src.add(i); }
+        unsafe {
+            *dest.add(i) = *src.add(i);
+        }
     }
     dest as *mut c_void
 }
@@ -27,12 +30,16 @@ pub unsafe extern "C" fn memmove(dest: *mut c_void, src: *const c_void, n: usize
     if src < dest as *const u8 {
         // Backward copy
         for i in (0..n).rev() {
-            unsafe { *dest.add(i) = *src.add(i); }
+            unsafe {
+                *dest.add(i) = *src.add(i);
+            }
         }
     } else {
         // Forward copy
         for i in 0..n {
-            unsafe { *dest.add(i) = *src.add(i); }
+            unsafe {
+                *dest.add(i) = *src.add(i);
+            }
         }
     }
     dest as *mut c_void

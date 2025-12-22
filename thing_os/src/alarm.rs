@@ -18,10 +18,7 @@ pub struct Alarm {
 
 impl Alarm {
     /// Request an alarm triggering at the supplied Unix timestamp.
-    pub fn request_at(
-        target_unix_seconds: i64,
-        target_unix_nanos: u32,
-    ) -> Option<Self> {
+    pub fn request_at(target_unix_seconds: i64, target_unix_nanos: u32) -> Option<Self> {
         let pending = AlarmRequest {
             id: ThingId(0),
             time_source_id: None,

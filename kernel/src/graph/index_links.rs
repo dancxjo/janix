@@ -1,6 +1,6 @@
+use abi::{Link, Predicate, ThingId};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
-use abi::{Link, ThingId, Predicate};
 
 #[derive(Debug, Clone)]
 struct LinkSlot {
@@ -37,7 +37,10 @@ impl LinkIndex {
             self.remove_from_indexes(link.id, &existing_link);
         }
 
-        let slot = LinkSlot { link, deleted: false };
+        let slot = LinkSlot {
+            link,
+            deleted: false,
+        };
         self.add_to_indexes(slot.link.id, &slot.link);
         self.links.insert(slot.link.id, slot);
     }
@@ -87,7 +90,11 @@ impl LinkIndex {
             .unwrap_or(&[])
     }
 
-    pub fn neighbor_dsts(&self, src: ThingId, pred: Predicate) -> impl Iterator<Item = ThingId> + '_ {
+    pub fn neighbor_dsts(
+        &self,
+        src: ThingId,
+        pred: Predicate,
+    ) -> impl Iterator<Item = ThingId> + '_ {
         self.links_from_pred(src, pred)
             .iter()
             .filter_map(|id| self.link(*id))
@@ -188,4 +195,3 @@ where
         }
     }
 }
-

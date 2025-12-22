@@ -3,66 +3,66 @@
 
 extern crate alloc;
 
-pub mod sys;
-pub mod heap;
 pub mod console;
-pub mod panic;
-pub mod syscalls;
+pub mod heap;
 pub mod mem;
+pub mod panic;
+pub mod sys;
+pub mod syscalls;
 
 pub mod alarm;
 pub mod batch;
 pub mod clock;
 pub mod demo_shared;
-pub mod time;
-pub mod resident;
-pub mod prelude;
-pub mod ui;
 pub mod display;
+pub mod prelude;
+pub mod resident;
+pub mod time;
+pub mod ui;
 pub use display::*;
 
 use abi::{
-    FrameInfo, MemorySummary, NodeId,
-    SchedulerSummary, FrameId, 
-    wire::{graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag}, common::{UserPtr, UserSlice}},
+    FrameId, FrameInfo, MemorySummary, NodeId, SchedulerSummary,
     syscall_defs::SymbolId,
+    wire::{
+        common::{UserPtr, UserSlice},
+        graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag},
+    },
 };
 pub use thing_models::graph_kinds;
 pub mod graph_ops;
 pub use abi::{KernelRequest, KernelResponse};
-use thing_models::graph_kinds::{
-    PROP_NAME, PROP_WIDTH, PROP_HEIGHT, PROP_STRIDE, PROP_PIXEL_FORMAT, PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
-    KIND_SHARED_BUFFER
-};
-use thing_macros::Thing;
 pub use alloc::boxed::Box;
-pub use alloc::vec::Vec;
-pub use alloc::string::{String, ToString};
-pub use alloc::rc::Rc;
-pub use alloc::sync::Arc;
 pub use alloc::format;
+pub use alloc::rc::Rc;
+pub use alloc::string::{String, ToString};
+pub use alloc::sync::Arc;
 pub use alloc::vec;
-use syscalls::{syscall, sys_symbol_intern};
+pub use alloc::vec::Vec;
+use syscalls::{sys_symbol_intern, syscall};
+use thing_macros::Thing;
+use thing_models::graph_kinds::{
+    KIND_SHARED_BUFFER, PROP_DISPLAY_ACTIVE_BUFFER_INDEX, PROP_HEIGHT, PROP_NAME,
+    PROP_PIXEL_FORMAT, PROP_STRIDE, PROP_WIDTH,
+};
 
+use crate::sys::raw_syscall;
+pub use abi; // Export abi crate
+use abi::syscalls::SYSCALL_THING_GET;
+pub use abi::{Predicate, ThingId};
 pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
+pub use thing_macros::main;
+pub use thing_models::Thing;
 pub use thing_models::{
     AlarmEvent, AlarmRequest, Cursor, DisplayPresentRequest, MODE_INDEX_CONSOLE, Mode,
     ModeSwitchEvent, Place, RawModule, Surface, TimeSource, View, Window,
 };
-pub use thing_macros::main;
-pub use abi; // Export abi crate
-pub use abi::{Predicate, ThingId};
 pub use thing_models::{PropKey, PropType, PropValue};
-pub use thing_models::Thing;
-use crate::sys::raw_syscall;
-use abi::syscalls::SYSCALL_THING_GET;
 
 /// Return the currently active `Mode` Thing, if one is marked active.
 pub fn active_mode() -> Option<Mode> {
-    list_things_by_kind::<Mode>()
-        .into_iter()
-        .find(|m| m.active)
+    list_things_by_kind::<Mode>().into_iter().find(|m| m.active)
 }
 
 /// Fallback when no mode is active yet: choose the lowest index mode.
@@ -107,7 +107,9 @@ pub struct ProcessThing {
 }
 
 #[derive(Clone, Debug, Thing)]
-#[thing(description = "A thread of execution with thread identifier, state, priority, and runtime tracking")]
+#[thing(
+    description = "A thread of execution with thread identifier, state, priority, and runtime tracking"
+)]
 #[thing(kind = "Thread")]
 pub struct ThreadThing {
     pub id: ThingId,
@@ -288,20 +290,22 @@ impl Thing for SharedBufferThing {
     }
 }
 
-
 /// Query a thing in the kernel graph and return the associated value.
 pub fn graph_query(node_id: NodeId) -> Option<u64> {
-    let request = KernelRequest::GraphQuery { node_id, out: UserSlice::default() };
+    let request = KernelRequest::GraphQuery {
+        node_id,
+        out: UserSlice::default(),
+    };
     match syscall(request) {
         // KernelResponse::NodeData { node_id: _, value } => {
-            // // Try to interpret bytes as u64
-            // if value.len() >= 8 {
-            //      let mut buf = [0u8; 8];
-            //      buf.copy_from_slice(&value[0..8]);
-            //      Some(u64::from_le_bytes(buf))
-            // } else {
-            //      None
-            // }
+        // // Try to interpret bytes as u64
+        // if value.len() >= 8 {
+        //      let mut buf = [0u8; 8];
+        //      buf.copy_from_slice(&value[0..8]);
+        //      Some(u64::from_le_bytes(buf))
+        // } else {
+        //      None
+        // }
         // }
         _ => None,
     }
@@ -329,7 +333,7 @@ pub fn user_create_thing(
 ) -> Result<ThingId, &'static str> {
     let kind_sym = sys_symbol_intern(kind);
     let mut wire_props = Vec::with_capacity(props.len());
-    
+
     for (key, val) in props {
         let key_sym = sys_symbol_intern(&key);
         let wire_val = match val {
@@ -340,7 +344,11 @@ pub fn user_create_thing(
             PropValue::Symbol(id) => WirePropValue::sym(*id),
             PropValue::Blob(b) => WirePropValue::blob(b.as_ptr() as u64, b.len() as u64),
         };
-        wire_props.push(WireProp { key: key_sym, value: wire_val, _pad: 0 });
+        wire_props.push(WireProp {
+            key: key_sym,
+            value: wire_val,
+            _pad: 0,
+        });
     }
 
     let request = KernelRequest::ThingCreate {
@@ -360,7 +368,7 @@ pub fn user_update_thing(
     props: &'static [(PropKey, PropValue)],
 ) -> Result<(), &'static str> {
     let mut wire_props = Vec::with_capacity(props.len());
-    
+
     for (key, val) in props {
         let key_sym = sys_symbol_intern(&key);
         let wire_val = match val {
@@ -371,12 +379,16 @@ pub fn user_update_thing(
             PropValue::Symbol(id) => WirePropValue::sym(*id),
             PropValue::Blob(b) => WirePropValue::blob(b.as_ptr() as u64, b.len() as u64),
         };
-        wire_props.push(WireProp { key: key_sym, value: wire_val, _pad: 0 });
+        wire_props.push(WireProp {
+            key: key_sym,
+            value: wire_val,
+            _pad: 0,
+        });
     }
 
     let request = KernelRequest::ThingUpdate {
         id,
-        props: UserSlice::from_slice(&wire_props)
+        props: UserSlice::from_slice(&wire_props),
     };
     match syscall(request) {
         KernelResponse::Success { .. } => Ok(()),
@@ -392,7 +404,7 @@ pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {
 
     let kind_sym = sys_symbol_intern(T::KIND);
     let mut wire_props = Vec::with_capacity(props_vec.len());
-    
+
     for (key, val) in &props_vec {
         let key_sym = sys_symbol_intern(key);
         let wire_val = match val {
@@ -403,7 +415,11 @@ pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {
             PropValue::Symbol(id) => WirePropValue::sym(*id),
             PropValue::Blob(b) => WirePropValue::blob(b.as_ptr() as u64, b.len() as u64),
         };
-        wire_props.push(WireProp { key: key_sym, value: wire_val, _pad: 0 });
+        wire_props.push(WireProp {
+            key: key_sym,
+            value: wire_val,
+            _pad: 0,
+        });
     }
 
     let request = KernelRequest::ThingCreate {
@@ -422,7 +438,11 @@ pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
     // Use zeroed initialization to avoid WirePropValue call (and potential crash)
     // Manually initializing instead of core::mem::zeroed() to verify if it was the culprit
     // (though we added memset now, manual is safer for debugging)
-    let mut buf: [WireProp; MAX_PROPS] = [WireProp { key: SymbolId(0), value: WirePropValue::u64(0), _pad: 0 }; MAX_PROPS];
+    let mut buf: [WireProp; MAX_PROPS] = [WireProp {
+        key: SymbolId(0),
+        value: WirePropValue::u64(0),
+        _pad: 0,
+    }; MAX_PROPS];
 
     // Call syscall with ptr and len
     let ptr = buf.as_mut_ptr() as u64;
@@ -454,11 +474,16 @@ pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
                 abi::syscalls::SYSCALL_SYMBOL_RESOLVE,
                 &key_req as *const _ as u64,
                 &mut resp as *mut _ as u64,
-                0, 0, 0, 0
+                0,
+                0,
+                0,
+                0,
             )
         };
 
-        if resolve_ret != 0 { continue; }
+        if resolve_ret != 0 {
+            continue;
+        }
 
         let key_len = core::cmp::min(resp.written as usize, key_buf.len());
         let key_str = core::str::from_utf8(&key_buf[..key_len]).ok()?.to_string();
@@ -469,31 +494,34 @@ pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
             t if t == WireValueTag::I64 as u8 => PropValue::I64(wp.value.data_0 as i64),
             t if t == WireValueTag::Bool as u8 => PropValue::Bool(wp.value.data_0 != 0),
             t if t == WireValueTag::Str as u8 => {
-                 let sym_id = SymbolId(wp.value.data_0 as u32);
-                 // Resolve string value
-                 let mut str_buf = [0u8; 128];
-                 let str_req = abi::syscall_defs::SymbolResolveReq {
-                     id: sym_id,
-                     out_ptr: str_buf.as_mut_ptr() as u64,
-                     out_cap: str_buf.len() as u64,
-                 };
-                 let mut str_resp = abi::syscall_defs::SymbolResolveResp { written: 0 };
-                 let str_ret = unsafe {
-                     raw_syscall(
-                         abi::syscalls::SYSCALL_SYMBOL_RESOLVE,
-                         &str_req as *const _ as u64,
-                         &mut str_resp as *mut _ as u64,
-                         0, 0, 0, 0
-                     )
-                 };
-                 if str_ret == 0 {
-                     let slen = core::cmp::min(str_resp.written as usize, str_buf.len());
-                     let s = core::str::from_utf8(&str_buf[..slen]).ok()?.to_string();
-                     PropValue::Str(s)
-                 } else {
-                     PropValue::Str(String::new())
-                 }
-            },
+                let sym_id = SymbolId(wp.value.data_0 as u32);
+                // Resolve string value
+                let mut str_buf = [0u8; 128];
+                let str_req = abi::syscall_defs::SymbolResolveReq {
+                    id: sym_id,
+                    out_ptr: str_buf.as_mut_ptr() as u64,
+                    out_cap: str_buf.len() as u64,
+                };
+                let mut str_resp = abi::syscall_defs::SymbolResolveResp { written: 0 };
+                let str_ret = unsafe {
+                    raw_syscall(
+                        abi::syscalls::SYSCALL_SYMBOL_RESOLVE,
+                        &str_req as *const _ as u64,
+                        &mut str_resp as *mut _ as u64,
+                        0,
+                        0,
+                        0,
+                        0,
+                    )
+                };
+                if str_ret == 0 {
+                    let slen = core::cmp::min(str_resp.written as usize, str_buf.len());
+                    let s = core::str::from_utf8(&str_buf[..slen]).ok()?.to_string();
+                    PropValue::Str(s)
+                } else {
+                    PropValue::Str(String::new())
+                }
+            }
             // Blob support omitted for brevity/safety in this context
             _ => continue,
         };
@@ -515,8 +543,8 @@ fn schema_matches<T: Thing>(existing: &[Option<(SymbolId, PropType)>]) -> bool {
     // Count actual entries in existing
     let existing_count = existing.iter().flatten().count();
 
-    if existing_count != expected.len() { 
-        return false; 
+    if existing_count != expected.len() {
+        return false;
     }
 
     // Convert existing slice to a map-like search or just simple linear scan since schemas are small.
@@ -525,8 +553,12 @@ fn schema_matches<T: Thing>(existing: &[Option<(SymbolId, PropType)>]) -> bool {
         let key_sym = sys_symbol_intern(*key_str);
         // Find by symbol
         let found = existing.iter().flatten().find(|(k, _)| *k == key_sym);
-        let Some((_, got_pt)) = found else { return false; };
-        if got_pt != exp_pt { return false; }
+        let Some((_, got_pt)) = found else {
+            return false;
+        };
+        if got_pt != exp_pt {
+            return false;
+        }
     }
     true
 }
@@ -534,10 +566,10 @@ fn schema_matches<T: Thing>(existing: &[Option<(SymbolId, PropType)>]) -> bool {
 /// Request that the kernel register the schema for `T`.
 pub fn register_schema_for<T: Thing>() -> bool {
     let schema = T::schema();
-    
+
     let kind_sym = sys_symbol_intern(T::KIND);
     let desc_sym = sys_symbol_intern(T::DESCRIPTION);
-    
+
     let mut wire_schema = Vec::with_capacity(schema.len());
     for (key, prop_type) in schema {
         let key_sym = sys_symbol_intern(*key);
@@ -545,13 +577,16 @@ pub fn register_schema_for<T: Thing>() -> bool {
             PropType::U64 => WireValueTag::U64,
             PropType::I64 => WireValueTag::I64,
             PropType::Bool => WireValueTag::Bool,
-            PropType::Str => WireValueTag::Str, // String type
+            PropType::Str => WireValueTag::Str,    // String type
             PropType::Symbol => WireValueTag::Str, // Treated same for now?
             PropType::Blob => WireValueTag::Blob,
         };
-        wire_schema.push(WireSchemaProp { name: key_sym, prop_type: tag as u32 });
+        wire_schema.push(WireSchemaProp {
+            name: key_sym,
+            prop_type: tag as u32,
+        });
     }
-    
+
     let request = KernelRequest::SchemaRegisterPackage {
         kind: kind_sym,
         description: desc_sym,
@@ -559,14 +594,12 @@ pub fn register_schema_for<T: Thing>() -> bool {
     };
 
     match syscall(request) {
-        KernelResponse::SchemaRegistered { outcome, .. } => {
-            match outcome {
-                abi::SchemaRegistryOutcome::Created => true,
-                abi::SchemaRegistryOutcome::AlreadyRegisteredSame => true,
-                abi::SchemaRegistryOutcome::Conflict => {
-                    println!("schema register conflict for kind {}", T::KIND);
-                    false
-                }
+        KernelResponse::SchemaRegistered { outcome, .. } => match outcome {
+            abi::SchemaRegistryOutcome::Created => true,
+            abi::SchemaRegistryOutcome::AlreadyRegisteredSame => true,
+            abi::SchemaRegistryOutcome::Conflict => {
+                println!("schema register conflict for kind {}", T::KIND);
+                false
             }
         },
         KernelResponse::Error { err } => {
@@ -584,7 +617,11 @@ pub fn register_schema_for<T: Thing>() -> bool {
             false
         }
         other => {
-            println!("schema register unexpected response for kind {}: {:?}", T::KIND, other);
+            println!(
+                "schema register unexpected response for kind {}: {:?}",
+                T::KIND,
+                other
+            );
             false
         }
     }
@@ -596,10 +633,16 @@ pub fn ensure_schema_exists_for<T: Thing>() -> bool {
     let kind_sym = sys_symbol_intern(T::KIND);
     // Ask the kernel for the schema so we can verify shape.
     const MAX_SCHEMA_PROPS: usize = 16;
-    let mut buf = [WireSchemaProp { name: SymbolId(0), prop_type: 0 }; MAX_SCHEMA_PROPS];
+    let mut buf = [WireSchemaProp {
+        name: SymbolId(0),
+        prop_type: 0,
+    }; MAX_SCHEMA_PROPS];
     let out = UserSlice::new(UserPtr::new(buf.as_mut_ptr() as u64), buf.len() as u64);
 
-    match syscall(KernelRequest::SchemaGet { kind: kind_sym, out }) {
+    match syscall(KernelRequest::SchemaGet {
+        kind: kind_sym,
+        out,
+    }) {
         KernelResponse::SchemaData { written, .. } => {
             let count = core::cmp::min(written as usize, buf.len());
             let mut props = Vec::with_capacity(count);
@@ -661,13 +704,16 @@ pub fn list_things_by_kind<T: Thing>() -> Vec<T> {
     let mut results = Vec::new();
     let mut cursor = ThingId(0);
     let kind_sym = sys_symbol_intern(T::KIND);
-    
+
     loop {
         match syscall(KernelRequest::ThingList {
             kind: kind_sym,
             start_after: cursor,
         }) {
-            KernelResponse::ThingListEntry { id: next_id, valid: 1 } => {
+            KernelResponse::ThingListEntry {
+                id: next_id,
+                valid: 1,
+            } => {
                 if let Some(thing) = load_thing::<T>(next_id) {
                     results.push(thing);
                 }
@@ -690,7 +736,7 @@ pub fn get_type_description<T: Thing>() -> &'static str {
 pub fn update_props(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
     // This helper likely redundant with user_update_thing, but kept for consistency
     let mut wire_props = Vec::with_capacity(props.len());
-    
+
     for (key, val) in props {
         let key_sym = sys_symbol_intern(key);
         let wire_val = match val {
@@ -701,7 +747,11 @@ pub fn update_props(id: ThingId, props: &[(PropKey, PropValue)]) -> bool {
             PropValue::Symbol(id) => WirePropValue::sym(*id),
             PropValue::Blob(b) => WirePropValue::blob(b.as_ptr() as u64, b.len() as u64),
         };
-        wire_props.push(WireProp { key: key_sym, value: wire_val, _pad: 0 });
+        wire_props.push(WireProp {
+            key: key_sym,
+            value: wire_val,
+            _pad: 0,
+        });
     }
 
     let request = KernelRequest::ThingUpdate {

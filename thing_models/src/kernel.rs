@@ -1,8 +1,8 @@
-use abi::ThingId;
-use crate::{PropKey, PropType, PropValue, Thing};
 use crate::graph_kinds;
-use alloc::vec::Vec;
+use crate::{PropKey, PropType, PropValue, Thing};
+use abi::ThingId;
 use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 #[derive(Clone, Debug)]
 pub struct PhysFrame {
@@ -14,7 +14,8 @@ pub struct PhysFrame {
 
 impl Thing for PhysFrame {
     const KIND: &'static str = "PhysFrame";
-    const DESCRIPTION: &'static str = "A region of physical memory with base address, size, and allocation status";
+    const DESCRIPTION: &'static str =
+        "A region of physical memory with base address, size, and allocation status";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("base".to_string(), PropValue::U64(self.base)));
@@ -29,13 +30,30 @@ impl Thing for PhysFrame {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                "base" => if let PropValue::U64(v) = prop.1 { base = v; },
-                "size" => if let PropValue::U64(v) = prop.1 { size = v; },
-                "allocated" => if let PropValue::Bool(v) = prop.1 { allocated = v; },
+                "base" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        base = v;
+                    }
+                }
+                "size" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        size = v;
+                    }
+                }
+                "allocated" => {
+                    if let PropValue::Bool(v) = prop.1 {
+                        allocated = v;
+                    }
+                }
                 _ => {}
             }
         }
-        PhysFrame { id, base, size, allocated }
+        PhysFrame {
+            id,
+            base,
+            size,
+            allocated,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
@@ -57,7 +75,8 @@ pub struct FramePool {
 
 impl Thing for FramePool {
     const KIND: &'static str = "FramePool";
-    const DESCRIPTION: &'static str = "A pool of physical memory frames with defined start, end, and frame size";
+    const DESCRIPTION: &'static str =
+        "A pool of physical memory frames with defined start, end, and frame size";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("start".to_string(), PropValue::U64(self.start)));
@@ -72,13 +91,30 @@ impl Thing for FramePool {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                "start" => if let PropValue::U64(v) = prop.1 { start = v; },
-                "end" => if let PropValue::U64(v) = prop.1 { end = v; },
-                "frame_size" => if let PropValue::U64(v) = prop.1 { frame_size = v; },
+                "start" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        start = v;
+                    }
+                }
+                "end" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        end = v;
+                    }
+                }
+                "frame_size" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        frame_size = v;
+                    }
+                }
                 _ => {}
             }
         }
-        FramePool { id, start, end, frame_size }
+        FramePool {
+            id,
+            start,
+            end,
+            frame_size,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
@@ -98,7 +134,8 @@ pub struct AddressSpace {
 
 impl Thing for AddressSpace {
     const KIND: &'static str = "AddressSpace";
-    const DESCRIPTION: &'static str = "A virtual address space identified by its address space identifier (ASID)";
+    const DESCRIPTION: &'static str =
+        "A virtual address space identified by its address space identifier (ASID)";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("asid".to_string(), PropValue::U64(self.asid)));
@@ -108,7 +145,9 @@ impl Thing for AddressSpace {
         let mut asid = 0;
         for prop in props.iter().flatten() {
             if prop.0 == "asid" {
-                if let PropValue::U64(v) = prop.1 { asid = v; }
+                if let PropValue::U64(v) = prop.1 {
+                    asid = v;
+                }
             }
         }
         AddressSpace { id, asid }
@@ -129,7 +168,8 @@ pub struct VirtRegion {
 
 impl Thing for VirtRegion {
     const KIND: &'static str = "VirtRegion";
-    const DESCRIPTION: &'static str = "A virtual memory region with base address, length, and access flags";
+    const DESCRIPTION: &'static str =
+        "A virtual memory region with base address, length, and access flags";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("base".to_string(), PropValue::U64(self.base)));
@@ -144,13 +184,30 @@ impl Thing for VirtRegion {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                "base" => if let PropValue::U64(v) = prop.1 { base = v; },
-                "len" => if let PropValue::U64(v) = prop.1 { len = v; },
-                "flags" => if let PropValue::U64(v) = prop.1 { flags = v; },
+                "base" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        base = v;
+                    }
+                }
+                "len" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        len = v;
+                    }
+                }
+                "flags" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        flags = v;
+                    }
+                }
                 _ => {}
             }
         }
-        VirtRegion { id, base, len, flags }
+        VirtRegion {
+            id,
+            base,
+            len,
+            flags,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
@@ -184,8 +241,16 @@ impl Thing for Process {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                "pid" => if let PropValue::U64(v) = prop.1 { pid = v; },
-                "name" => if let PropValue::Str(v) = &prop.1 { name = v.clone(); },
+                "pid" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        pid = v;
+                    }
+                }
+                "name" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        name = v.clone();
+                    }
+                }
                 _ => {}
             }
         }
@@ -219,8 +284,14 @@ impl Thing for Thread {
         out.push(("state".to_string(), PropValue::Str(self.state.clone())));
         out.push(("priority".to_string(), PropValue::U64(self.priority)));
         out.push(("runtime_ns".to_string(), PropValue::U64(self.runtime_ns)));
-        out.push(("last_started_ns".to_string(), PropValue::U64(self.last_started_ns)));
-        out.push(("sleep_until_ns".to_string(), PropValue::U64(self.sleep_until_ns)));
+        out.push((
+            "last_started_ns".to_string(),
+            PropValue::U64(self.last_started_ns),
+        ));
+        out.push((
+            "sleep_until_ns".to_string(),
+            PropValue::U64(self.sleep_until_ns),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -234,17 +305,54 @@ impl Thing for Thread {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                "tid" => if let PropValue::U64(v) = prop.1 { tid = v; },
-                "name" => if let PropValue::Str(v) = &prop.1 { name = v.clone(); },
-                "state" => if let PropValue::Str(v) = &prop.1 { state = v.clone(); },
-                "priority" => if let PropValue::U64(v) = prop.1 { priority = v; },
-                "runtime_ns" => if let PropValue::U64(v) = prop.1 { runtime_ns = v; },
-                "last_started_ns" => if let PropValue::U64(v) = prop.1 { last_started_ns = v; },
-                "sleep_until_ns" => if let PropValue::U64(v) = prop.1 { sleep_until_ns = v; },
+                "tid" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        tid = v;
+                    }
+                }
+                "name" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        name = v.clone();
+                    }
+                }
+                "state" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        state = v.clone();
+                    }
+                }
+                "priority" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        priority = v;
+                    }
+                }
+                "runtime_ns" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        runtime_ns = v;
+                    }
+                }
+                "last_started_ns" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        last_started_ns = v;
+                    }
+                }
+                "sleep_until_ns" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        sleep_until_ns = v;
+                    }
+                }
                 _ => {}
             }
         }
-        Thread { id, tid, name, state, priority, runtime_ns, last_started_ns, sleep_until_ns }
+        Thread {
+            id,
+            tid,
+            name,
+            state,
+            priority,
+            runtime_ns,
+            last_started_ns,
+            sleep_until_ns,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
@@ -278,7 +386,9 @@ impl Thing for CpuCore {
         let mut index = 0;
         for prop in props.iter().flatten() {
             if prop.0 == "index" {
-                if let PropValue::U64(v) = prop.1 { index = v; }
+                if let PropValue::U64(v) = prop.1 {
+                    index = v;
+                }
             }
         }
         CpuCore { id, index }
@@ -302,7 +412,10 @@ impl Thing for SleepEvent {
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("wake_at_ns".to_string(), PropValue::U64(self.wake_at_ns)));
-        out.push(("created_at_ns".to_string(), PropValue::U64(self.created_at_ns)));
+        out.push((
+            "created_at_ns".to_string(),
+            PropValue::U64(self.created_at_ns),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -311,12 +424,24 @@ impl Thing for SleepEvent {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                "wake_at_ns" => if let PropValue::U64(v) = prop.1 { wake_at_ns = v; },
-                "created_at_ns" => if let PropValue::U64(v) = prop.1 { created_at_ns = v; },
+                "wake_at_ns" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        wake_at_ns = v;
+                    }
+                }
+                "created_at_ns" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        created_at_ns = v;
+                    }
+                }
                 _ => {}
             }
         }
-        SleepEvent { id, wake_at_ns, created_at_ns }
+        SleepEvent {
+            id,
+            wake_at_ns,
+            created_at_ns,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
@@ -340,15 +465,25 @@ pub struct ThreadInfo {
 
 impl Thing for ThreadInfo {
     const KIND: &'static str = "ThreadInfo";
-    const DESCRIPTION: &'static str = "Runtime information about a thread including state, execution time, and owning process";
+    const DESCRIPTION: &'static str =
+        "Runtime information about a thread including state, execution time, and owning process";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("name".to_string(), PropValue::Str(self.name.clone())));
         out.push(("state".to_string(), PropValue::Str(self.state.clone())));
         out.push(("last_run_ns".to_string(), PropValue::I64(self.last_run_ns)));
-        out.push(("total_run_ns".to_string(), PropValue::I64(self.total_run_ns)));
-        out.push(("process_thing_id".to_string(), PropValue::U64(self.process_thing_id)));
-        out.push(("scheduler_thing_id".to_string(), PropValue::U64(self.scheduler_thing_id)));
+        out.push((
+            "total_run_ns".to_string(),
+            PropValue::I64(self.total_run_ns),
+        ));
+        out.push((
+            "process_thing_id".to_string(),
+            PropValue::U64(self.process_thing_id),
+        ));
+        out.push((
+            "scheduler_thing_id".to_string(),
+            PropValue::U64(self.scheduler_thing_id),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -361,16 +496,48 @@ impl Thing for ThreadInfo {
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
-                "name" => if let PropValue::Str(v) = &prop.1 { name = v.clone(); },
-                "state" => if let PropValue::Str(v) = &prop.1 { state = v.clone(); },
-                "last_run_ns" => if let PropValue::I64(v) = prop.1 { last_run_ns = v; },
-                "total_run_ns" => if let PropValue::I64(v) = prop.1 { total_run_ns = v; },
-                "process_thing_id" => if let PropValue::U64(v) = prop.1 { process_thing_id = v; },
-                "scheduler_thing_id" => if let PropValue::U64(v) = prop.1 { scheduler_thing_id = v; },
+                "name" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        name = v.clone();
+                    }
+                }
+                "state" => {
+                    if let PropValue::Str(v) = &prop.1 {
+                        state = v.clone();
+                    }
+                }
+                "last_run_ns" => {
+                    if let PropValue::I64(v) = prop.1 {
+                        last_run_ns = v;
+                    }
+                }
+                "total_run_ns" => {
+                    if let PropValue::I64(v) = prop.1 {
+                        total_run_ns = v;
+                    }
+                }
+                "process_thing_id" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        process_thing_id = v;
+                    }
+                }
+                "scheduler_thing_id" => {
+                    if let PropValue::U64(v) = prop.1 {
+                        scheduler_thing_id = v;
+                    }
+                }
                 _ => {}
             }
         }
-        ThreadInfo { id, name, state, last_run_ns, total_run_ns, process_thing_id, scheduler_thing_id }
+        ThreadInfo {
+            id,
+            name,
+            state,
+            last_run_ns,
+            total_run_ns,
+            process_thing_id,
+            scheduler_thing_id,
+        }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {

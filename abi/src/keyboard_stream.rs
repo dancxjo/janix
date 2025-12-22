@@ -5,7 +5,7 @@ use crate::resident_layout::ResidentHeader;
 pub struct KeyboardStreamHeader {
     // Standard ResidentHeader (40 bytes)
     pub header: ResidentHeader,
-    
+
     // Ring buffer state
     pub head: u64,
     pub capacity: u64,
@@ -16,9 +16,9 @@ pub struct KeyboardStreamHeader {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KeyboardEntry {
     pub scancode: u8,
-    pub flags: u8,      // Bit 0: Released, Bit 1: Extended, Bit 2: HasChar
+    pub flags: u8, // Bit 0: Released, Bit 1: Extended, Bit 2: HasChar
     pub _pad: u16,
-    pub utf32: u32,     // Character codepoint if HasChar is set
+    pub utf32: u32, // Character codepoint if HasChar is set
 }
 
 impl KeyboardEntry {

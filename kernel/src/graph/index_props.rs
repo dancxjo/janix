@@ -1,14 +1,13 @@
+use abi::{ThingId, syscall_defs::SymbolId};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
-use abi::{ThingId, syscall_defs::SymbolId};
-use thing_models::PropValue;
 use spin::Mutex;
-
+use thing_models::PropValue;
 
 // Map: PropName -> (PropValue -> Vec<ThingId>)
-// Since PropValue isn't Hash or Ord by default easily (contains String), 
-// we might iterate or need to ensure PropValue is Key-able. 
+// Since PropValue isn't Hash or Ord by default easily (contains String),
+// we might iterate or need to ensure PropValue is Key-able.
 // For now, let's just use linear scan for values or exact match if PropValue supports PartialEq.
 // Wait, PropValue has a Blob which is Vec<u8> and String.
 // BTreeMap<PropValue, Vec<ThingId>> requires Ord.

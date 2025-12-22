@@ -1,13 +1,11 @@
+use abi::{Link, Predicate, ThingId, syscall_defs::SymbolId};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
-use abi::{ThingId, Predicate, Link, syscall_defs::SymbolId};
-use thing_models::PropValue;
 use spin::Mutex;
-use alloc::sync::Arc;
-
+use thing_models::PropValue;
 
 // Moved definition to replacement block above
-
 
 // Imports for ResidentRef
 use crate::resident::mapping::ResidentPage;
@@ -22,9 +20,9 @@ pub struct ResidentRef {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageState {
-   Resident,
-   Archived,
-   Both
+    Resident,
+    Archived,
+    Both,
 }
 
 #[derive(Debug, Clone)]
@@ -112,19 +110,19 @@ impl GraphStore {
     // `slab.alloc()` -> `(idx, gen)`
     // `slab.slots[idx]` access.
     // This expects `Slab<ThingNode>`.
-    
+
     // I SHOULD probably revert GraphStore to use Slab if I want minimal changes to resident manager.
     // But HashMap is cleaner for `ThingId`.
     // Let's modify resident manager to use `create_thing` API?
     // resident_alloc uses `ThingNode::new_resident`.
     // I should add `create_resident_thing` to `GraphStore`.
-    
+
     // BUT resident manager accesses `slab.slots` directly.
     // I will rewrite resident/manager.rs to use `GraphStore` API.
     // This means `sys_resident_alloc` calls `store.create_resident(...)`.
-    
+
     // First, let's fix ThingNode definition.
-    
+
     pub fn new() -> Self {
         Self {
             things: HashMap::new(),
@@ -135,7 +133,7 @@ impl GraphStore {
     pub fn create_thing(&mut self, kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingId {
         let id = ThingId(self.next_id);
         self.next_id += 1;
-        
+
         let node = ThingNode {
             id,
             kind,
@@ -147,15 +145,20 @@ impl GraphStore {
             archived_ref: None,
             links: Vec::new(),
         };
-        
+
         self.things.insert(id, node);
         id
     }
-    
-    pub fn create_resident(&mut self, kind: SymbolId, resident: ResidentRef, pid: ProcessId) -> ThingId {
+
+    pub fn create_resident(
+        &mut self,
+        kind: SymbolId,
+        resident: ResidentRef,
+        pid: ProcessId,
+    ) -> ThingId {
         let id = ThingId(self.next_id);
         self.next_id += 1;
-         let node = ThingNode {
+        let node = ThingNode {
             id,
             kind,
             kind_id: kind,
@@ -185,7 +188,7 @@ impl GraphStore {
             false
         }
     }
-    
+
     pub fn get_node_mut(&mut self, id: ThingId) -> Option<&mut ThingNode> {
         self.things.get_mut(&id)
     }
@@ -200,12 +203,13 @@ impl GraphStore {
 
     pub fn get_prop(&self, id: ThingId, key: SymbolId) -> Option<PropValue> {
         self.things.get(&id).and_then(|node| {
-            node.props.iter()
+            node.props
+                .iter()
                 .find(|(k, _)| *k == key)
                 .map(|(_, v): &(_, _)| v.clone())
         })
     }
-    
+
     // Placeholder links implementation until we fully port links
     pub fn add_link(&mut self, src: ThingId, dst: ThingId, pred: Predicate) -> bool {
         if let Some(node) = self.things.get_mut(&src) {
@@ -225,16 +229,17 @@ impl GraphStore {
         }
         false
     }
-    
+
     pub fn get_link(&self, src: ThingId, pred: Predicate, idx: usize) -> Option<ThingId> {
-         if let Some(node) = self.things.get(&src) {
-             node.links.iter()
-                 .filter(|(p, _)| *p == pred)
-                 .nth(idx)
-                 .map(|(_, dst)| *dst)
-         } else {
-             None
-         }
+        if let Some(node) = self.things.get(&src) {
+            node.links
+                .iter()
+                .filter(|(p, _)| *p == pred)
+                .nth(idx)
+                .map(|(_, dst)| *dst)
+        } else {
+            None
+        }
     }
 }
 
@@ -245,7 +250,7 @@ pub fn init() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi::{ThingId, Predicate, syscall_defs::SymbolId};
+    use abi::{Predicate, ThingId, syscall_defs::SymbolId};
 
     #[test]
     fn test_add_remove_link() {

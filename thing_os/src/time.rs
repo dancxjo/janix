@@ -1,4 +1,3 @@
-
 use crate::sys::raw_syscall;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -41,9 +40,11 @@ pub struct Instant {
 impl Instant {
     /// Capture the current monotonic counter.
     pub fn now() -> Self {
-        let ret = unsafe { match raw_syscall(abi::syscalls::SYSCALL_TIME_MONOTONIC_NS, 0, 0, 0, 0, 0, 0) {
-             t => t
-        }};
+        let ret = unsafe {
+            match raw_syscall(abi::syscalls::SYSCALL_TIME_MONOTONIC_NS, 0, 0, 0, 0, 0, 0) {
+                t => t,
+            }
+        };
         Instant { t_ns: ret }
     }
 
@@ -77,7 +78,9 @@ impl SystemTime {
     /// Capture the system time.
     pub fn now() -> Self {
         let ret = unsafe { raw_syscall(abi::syscalls::SYSCALL_TIME_SYSTEM_NS, 0, 0, 0, 0, 0, 0) };
-        SystemTime { ns_since_epoch: ret }
+        SystemTime {
+            ns_since_epoch: ret,
+        }
     }
 
     /// Compute the difference between two system times.
@@ -91,7 +94,15 @@ impl SystemTime {
 /// Sleep for at least `dur`.
 pub fn sleep(dur: Duration) {
     unsafe {
-        raw_syscall(abi::syscalls::SYSCALL_SLEEP_FOR_NS, dur.as_nanos(), 0, 0, 0, 0, 0);
+        raw_syscall(
+            abi::syscalls::SYSCALL_SLEEP_FOR_NS,
+            dur.as_nanos(),
+            0,
+            0,
+            0,
+            0,
+            0,
+        );
     }
 }
 

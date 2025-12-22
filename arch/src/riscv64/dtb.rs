@@ -9,7 +9,9 @@ static DTB_REQUEST: DeviceTreeBlobRequest = DeviceTreeBlobRequest::new();
 pub fn init(override_freq: Option<u64>) {
     if let Some(freq) = override_freq {
         super::time::set_frequency(freq);
-        kernel::log(Box::leak(format!("RISC-V Timer Frequency: {} Hz (forced)", freq).into_boxed_str()));
+        kernel::log(Box::leak(
+            format!("RISC-V Timer Frequency: {} Hz (forced)", freq).into_boxed_str(),
+        ));
         // Do not return early, as DTB might contain other info.
         // However, we should ensure we don't overwrite the forced frequency.
     }
@@ -35,5 +37,7 @@ pub fn init(override_freq: Option<u64>) {
 
     // Log the frequency
     let freq = super::time::FREQUENCY.load(core::sync::atomic::Ordering::Relaxed);
-    kernel::log(Box::leak(format!("RISC-V Timer Frequency: {} Hz", freq).into_boxed_str()));
+    kernel::log(Box::leak(
+        format!("RISC-V Timer Frequency: {} Hz", freq).into_boxed_str(),
+    ));
 }

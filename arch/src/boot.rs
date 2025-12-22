@@ -2,7 +2,6 @@ use core::arch::asm;
 
 /// Switch from the temporary boot stack to a kernel-owned stack and invoke the main entry point.
 pub unsafe fn enter_kernel_stack(stack_base: u64, stack_size: u64) -> ! {
-
     #[cfg(target_arch = "aarch64")]
     {
         let stack_top = stack_base + stack_size;

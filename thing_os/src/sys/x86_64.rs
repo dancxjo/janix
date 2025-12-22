@@ -1,4 +1,3 @@
-
 #[inline(always)]
 pub unsafe fn syscall_stub(
     num: u64,

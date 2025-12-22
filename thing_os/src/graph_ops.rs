@@ -3,9 +3,9 @@
 //! These types use `Vec` and are intended for internal use or higher-level abstractions,
 //! not for the raw syscall boundary.
 
-use alloc::vec::Vec;
-use abi::{ThingId, syscall_defs::SymbolId, wire::graph::WirePropValue, Predicate};
 pub use abi::GraphEvent;
+use abi::{Predicate, ThingId, syscall_defs::SymbolId, wire::graph::WirePropValue};
+use alloc::vec::Vec;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GraphOp {

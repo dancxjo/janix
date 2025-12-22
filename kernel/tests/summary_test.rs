@@ -1,9 +1,9 @@
 extern crate alloc;
 use abi::{KernelRequest, KernelResponse};
-use thing_models::PropValue;
-use kernel::model;
 use alloc::string::String;
 use alloc::vec::Vec;
+use kernel::model;
+use thing_models::PropValue;
 
 #[test]
 #[ignore]
@@ -57,10 +57,16 @@ fn test_scheduler_summary() {
     let kind_thread = kernel::symbols::intern("Thread");
     let props = [
         (kernel::symbols::intern("tid"), PropValue::U64(1)),
-        (kernel::symbols::intern("state"), PropValue::Str(String::from("Running"))),
+        (
+            kernel::symbols::intern("state"),
+            PropValue::Str(String::from("Running")),
+        ),
         (kernel::symbols::intern("priority"), PropValue::U64(1)),
         (kernel::symbols::intern("runtime_ns"), PropValue::U64(0)),
-        (kernel::symbols::intern("last_started_ns"), PropValue::U64(0)),
+        (
+            kernel::symbols::intern("last_started_ns"),
+            PropValue::U64(0),
+        ),
     ];
     kernel::graph::create_thing(kind_thread, props.to_vec());
 

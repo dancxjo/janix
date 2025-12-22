@@ -2,7 +2,6 @@ use abi::GraphEvent;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-
 type EventHandler = fn(&GraphEvent);
 
 static LISTENERS: Mutex<Option<Vec<EventHandler>>> = Mutex::new(None);
@@ -12,7 +11,11 @@ pub fn init() {
 }
 
 pub fn subscribe(handler: EventHandler) {
-    LISTENERS.lock().as_mut().expect("Events not initialized").push(handler);
+    LISTENERS
+        .lock()
+        .as_mut()
+        .expect("Events not initialized")
+        .push(handler);
 }
 
 pub fn dispatch_event(event: &GraphEvent) {

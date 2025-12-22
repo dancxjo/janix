@@ -1,6 +1,6 @@
+use crate::bridge;
 use crate::graph::{self, GraphEvent};
 use crate::graph_kinds;
-use crate::bridge;
 
 pub fn init() {
     crate::graph::events::subscribe(on_event);

@@ -51,7 +51,7 @@ fn draw_glyph(
     color: u32,
 ) {
     if x < 0 || x >= surface_width as i32 || y < 0 || y >= surface_height as i32 {
-        return; 
+        return;
     }
 
     let b_r = (color & 0xFF) as u8;

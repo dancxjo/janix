@@ -5,6 +5,7 @@ extern crate alloc;
 extern crate std;
 
 mod config;
+pub mod flex;
 mod fonts;
 mod graph;
 mod input;
@@ -12,7 +13,6 @@ mod layout;
 mod model;
 mod render;
 mod state;
-pub mod flex;
 pub mod widget_layout;
 pub mod widgets;
 

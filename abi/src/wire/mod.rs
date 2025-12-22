@@ -3,10 +3,10 @@
 //! This module defines the raw wire-compatible types used for syscalls.
 //! These types must be stable, layout-compatible with C, and use single-source-of-truth definitions.
 
-pub mod common;
-pub mod graph;
-pub mod process;
-pub mod memory;
 pub mod buffers;
+pub mod common;
 pub mod dev;
+pub mod graph;
+pub mod memory;
+pub mod process;
 pub mod resident;

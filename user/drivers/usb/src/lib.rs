@@ -3,10 +3,10 @@
 
 extern crate alloc;
 
+use abi::{syscall_defs::SymbolId, ThingId};
 use alloc::vec::Vec;
-use thing_os::graph_ops::{GraphDriver, GraphSink, GraphOp, GraphEvent, ThingProps};
-use abi::{ThingId, syscall_defs::SymbolId};
 use hal::MmioMapper;
+use thing_os::graph_ops::{GraphDriver, GraphEvent, GraphOp, GraphSink, ThingProps};
 
 pub mod xhci;
 
@@ -20,7 +20,7 @@ struct UserMmioMapper;
 impl MmioMapper for UserMmioMapper {
     unsafe fn map_mmio(&self, phys: u64, size: u64) -> *mut u8 {
         println!("USB: Requesting MMIO map {:#x} size {}", phys, size);
-        core::ptr::null_mut() 
+        core::ptr::null_mut()
     }
 }
 

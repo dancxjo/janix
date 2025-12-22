@@ -4,19 +4,19 @@ extern crate alloc;
 extern crate self as thing_models;
 
 pub mod display;
+pub mod graph_kinds;
 pub mod input;
 pub mod io;
+pub mod kernel;
+pub mod props;
 pub mod ui;
 pub mod usb;
-pub mod kernel;
-pub mod graph_kinds;
-pub mod props;
 
 pub use crate::props::{PropKey, PropType, PropValue};
-use thing_macros::Thing;
 use abi::{ThingId, syscall_defs::SymbolId};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use thing_macros::Thing;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SchemaId(pub u64);
@@ -54,52 +54,140 @@ pub trait Thing: Sized {
 pub use display::*;
 pub use input::*;
 pub use io::*;
+pub use kernel::*;
 pub use ui::*;
 pub use usb::*;
-pub use kernel::*;
 
 /// Returns the complete list of core schemas that the kernel MUST register at boot.
-/// 
+///
 /// This list is the "Single Source of Truth" for system core types.
 /// The kernel should iterate this list and register each schema.
-pub fn kernel_core_schemas() -> Vec<(&'static str, &'static str, &'static [(&'static str, PropType)])> {
+pub fn kernel_core_schemas() -> Vec<(
+    &'static str,
+    &'static str,
+    &'static [(&'static str, PropType)],
+)> {
     let mut schemas = Vec::new();
 
     // 1. Kernel Internals
     schemas.push((PhysFrame::KIND, PhysFrame::DESCRIPTION, PhysFrame::schema()));
     schemas.push((FramePool::KIND, FramePool::DESCRIPTION, FramePool::schema()));
-    schemas.push((AddressSpace::KIND, AddressSpace::DESCRIPTION, AddressSpace::schema()));
-    schemas.push((VirtRegion::KIND, VirtRegion::DESCRIPTION, VirtRegion::schema()));
+    schemas.push((
+        AddressSpace::KIND,
+        AddressSpace::DESCRIPTION,
+        AddressSpace::schema(),
+    ));
+    schemas.push((
+        VirtRegion::KIND,
+        VirtRegion::DESCRIPTION,
+        VirtRegion::schema(),
+    ));
     schemas.push((Process::KIND, Process::DESCRIPTION, Process::schema()));
     schemas.push((Thread::KIND, Thread::DESCRIPTION, Thread::schema()));
-    schemas.push((ThreadInfo::KIND, ThreadInfo::DESCRIPTION, ThreadInfo::schema()));
+    schemas.push((
+        ThreadInfo::KIND,
+        ThreadInfo::DESCRIPTION,
+        ThreadInfo::schema(),
+    ));
     schemas.push((CpuCore::KIND, CpuCore::DESCRIPTION, CpuCore::schema()));
-    schemas.push((SleepEvent::KIND, SleepEvent::DESCRIPTION, SleepEvent::schema()));
+    schemas.push((
+        SleepEvent::KIND,
+        SleepEvent::DESCRIPTION,
+        SleepEvent::schema(),
+    ));
 
     // 2. Boot & System
-    schemas.push((BootProfile::KIND, BootProfile::DESCRIPTION, BootProfile::schema()));
-    schemas.push((BootProgram::KIND, BootProgram::DESCRIPTION, BootProgram::schema()));
-    schemas.push((ProgramImage::KIND, ProgramImage::DESCRIPTION, ProgramImage::schema()));
-    schemas.push((FontModule::KIND, FontModule::DESCRIPTION, FontModule::schema()));
-    schemas.push((TimeSource::KIND, TimeSource::DESCRIPTION, TimeSource::schema()));
-    schemas.push((graph_kinds::KIND_IO_PORT_REGION, IoPortRegion::DESCRIPTION, IoPortRegion::schema()));
-    schemas.push((graph_kinds::KIND_IO_PORT_OP, IoPortOp::DESCRIPTION, IoPortOp::schema()));
-    schemas.push((graph_kinds::KIND_INTERRUPT_EVENT, InterruptEvent::DESCRIPTION, InterruptEvent::schema()));
-    schemas.push((graph_kinds::KIND_INTERRUPT_REQUEST, InterruptRequest::DESCRIPTION, InterruptRequest::schema()));
-    schemas.push((graph_kinds::KIND_ALARM_REQUEST, AlarmRequest::DESCRIPTION, AlarmRequest::schema()));
-    schemas.push((graph_kinds::KIND_ALARM_EVENT, AlarmEvent::DESCRIPTION, AlarmEvent::schema()));
-    schemas.push((BlockDevice::KIND, BlockDevice::DESCRIPTION, BlockDevice::schema()));
+    schemas.push((
+        BootProfile::KIND,
+        BootProfile::DESCRIPTION,
+        BootProfile::schema(),
+    ));
+    schemas.push((
+        BootProgram::KIND,
+        BootProgram::DESCRIPTION,
+        BootProgram::schema(),
+    ));
+    schemas.push((
+        ProgramImage::KIND,
+        ProgramImage::DESCRIPTION,
+        ProgramImage::schema(),
+    ));
+    schemas.push((
+        FontModule::KIND,
+        FontModule::DESCRIPTION,
+        FontModule::schema(),
+    ));
+    schemas.push((
+        TimeSource::KIND,
+        TimeSource::DESCRIPTION,
+        TimeSource::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_IO_PORT_REGION,
+        IoPortRegion::DESCRIPTION,
+        IoPortRegion::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_IO_PORT_OP,
+        IoPortOp::DESCRIPTION,
+        IoPortOp::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_INTERRUPT_EVENT,
+        InterruptEvent::DESCRIPTION,
+        InterruptEvent::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_INTERRUPT_REQUEST,
+        InterruptRequest::DESCRIPTION,
+        InterruptRequest::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_ALARM_REQUEST,
+        AlarmRequest::DESCRIPTION,
+        AlarmRequest::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_ALARM_EVENT,
+        AlarmEvent::DESCRIPTION,
+        AlarmEvent::schema(),
+    ));
+    schemas.push((
+        BlockDevice::KIND,
+        BlockDevice::DESCRIPTION,
+        BlockDevice::schema(),
+    ));
 
     // 3. Display Subsystem
     schemas.push((Display::KIND, Display::DESCRIPTION, Display::schema()));
-    schemas.push((SharedBuffer::KIND, SharedBuffer::DESCRIPTION, SharedBuffer::schema()));
-    schemas.push((DisplayFramebuffer::KIND, DisplayFramebuffer::DESCRIPTION, DisplayFramebuffer::schema()));
-    schemas.push((DisplayFrame::KIND, DisplayFrame::DESCRIPTION, DisplayFrame::schema()));
-    schemas.push((DisplayPresentRequest::KIND, DisplayPresentRequest::DESCRIPTION, DisplayPresentRequest::schema()));
+    schemas.push((
+        SharedBuffer::KIND,
+        SharedBuffer::DESCRIPTION,
+        SharedBuffer::schema(),
+    ));
+    schemas.push((
+        DisplayFramebuffer::KIND,
+        DisplayFramebuffer::DESCRIPTION,
+        DisplayFramebuffer::schema(),
+    ));
+    schemas.push((
+        DisplayFrame::KIND,
+        DisplayFrame::DESCRIPTION,
+        DisplayFrame::schema(),
+    ));
+    schemas.push((
+        DisplayPresentRequest::KIND,
+        DisplayPresentRequest::DESCRIPTION,
+        DisplayPresentRequest::schema(),
+    ));
 
     // 4. Shared UI Contract (Windowing)
     schemas.push((Mode::KIND, Mode::DESCRIPTION, Mode::schema()));
-    schemas.push((ModeSwitchEvent::KIND, ModeSwitchEvent::DESCRIPTION, ModeSwitchEvent::schema()));
+    schemas.push((
+        ModeSwitchEvent::KIND,
+        ModeSwitchEvent::DESCRIPTION,
+        ModeSwitchEvent::schema(),
+    ));
     schemas.push((Place::KIND, Place::DESCRIPTION, Place::schema()));
     schemas.push((Window::KIND, Window::DESCRIPTION, Window::schema()));
     schemas.push((Surface::KIND, Surface::DESCRIPTION, Surface::schema()));
@@ -108,7 +196,9 @@ pub fn kernel_core_schemas() -> Vec<(&'static str, &'static str, &'static [(&'st
 }
 
 #[derive(Thing)]
-#[thing(description = "The system-wide boot configuration used by init to launch all services and programs.")]
+#[thing(
+    description = "The system-wide boot configuration used by init to launch all services and programs."
+)]
 pub struct BootProfile {
     pub id: ThingId,
     pub version: u64,
@@ -161,14 +251,22 @@ impl Thing for FontModule {
         "A font payload supplied as a boot module available for UI rendering.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_FONT_NAME.to_string(),
+        out.push((
+            graph_kinds::PROP_FONT_NAME.to_string(),
             PropValue::Str(self.name.clone()),
         ));
-        out.push((graph_kinds::PROP_MODULE_INDEX.to_string(),
+        out.push((
+            graph_kinds::PROP_MODULE_INDEX.to_string(),
             PropValue::U64(self.module_index),
         ));
-        out.push((graph_kinds::PROP_BASE_PHYS.to_string(), PropValue::U64(self.base_phys)));
-        out.push((graph_kinds::PROP_SIZE.to_string(), PropValue::U64(self.size)));
+        out.push((
+            graph_kinds::PROP_BASE_PHYS.to_string(),
+            PropValue::U64(self.base_phys),
+        ));
+        out.push((
+            graph_kinds::PROP_SIZE.to_string(),
+            PropValue::U64(self.size),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -231,13 +329,23 @@ pub struct TimeSource {
 
 impl Thing for TimeSource {
     const KIND: &'static str = graph_kinds::KIND_TIME_SOURCE;
-    const DESCRIPTION: &'static str = "Kernel-published system clock including monotonic tick counter and Unix wall time.";
+    const DESCRIPTION: &'static str =
+        "Kernel-published system clock including monotonic tick counter and Unix wall time.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("ticks_since_boot".to_string(), PropValue::U64(self.ticks_since_boot)));
+        out.push((
+            "ticks_since_boot".to_string(),
+            PropValue::U64(self.ticks_since_boot),
+        ));
         out.push(("tick_hz".to_string(), PropValue::U64(self.tick_hz as u64)));
-        out.push(("unix_seconds".to_string(), PropValue::I64(self.unix_seconds)));
-        out.push(("unix_nanos".to_string(), PropValue::U64(self.unix_nanos as u64)));
+        out.push((
+            "unix_seconds".to_string(),
+            PropValue::I64(self.unix_seconds),
+        ));
+        out.push((
+            "unix_nanos".to_string(),
+            PropValue::U64(self.unix_nanos as u64),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -303,7 +411,10 @@ impl TimeSource {
         unix_nanos: u32,
     ) -> [(PropKey, PropValue); 3] {
         [
-            ("ticks_since_boot".to_string(), PropValue::U64(ticks_since_boot)),
+            (
+                "ticks_since_boot".to_string(),
+                PropValue::U64(ticks_since_boot),
+            ),
             ("unix_seconds".to_string(), PropValue::I64(unix_seconds)),
             ("unix_nanos".to_string(), PropValue::U64(unix_nanos as u64)),
         ]
@@ -332,7 +443,10 @@ mod tests {
     use alloc::{string::String, vec::Vec};
 
     fn to_prop_slice(props: &[(PropKey, PropValue)]) -> Vec<Option<(PropKey, PropValue)>> {
-        props.iter().map(|(k, v)| Some((k.clone(), v.clone()))).collect()
+        props
+            .iter()
+            .map(|(k, v)| Some((k.clone(), v.clone())))
+            .collect()
     }
 
     #[test]
@@ -354,8 +468,14 @@ mod tests {
                 ("name".to_string(), PropValue::Str(String::from("init"))),
                 ("app_id".to_string(), PropValue::U64(0x42)),
                 ("priority".to_string(), PropValue::U64(1)),
-                ("binary".to_string(), PropValue::Str(String::from("/bin/init"))),
-                (graph_kinds::PROP_RESPAWN_POLICY.to_string(), PropValue::Str(String::from("Always"))),
+                (
+                    "binary".to_string(),
+                    PropValue::Str(String::from("/bin/init"))
+                ),
+                (
+                    graph_kinds::PROP_RESPAWN_POLICY.to_string(),
+                    PropValue::Str(String::from("Always"))
+                ),
             ]
         );
 
@@ -390,8 +510,14 @@ mod tests {
                     graph_kinds::PROP_IDENTIFIER.to_string(),
                     PropValue::Str(String::from("kernel"))
                 ),
-                (graph_kinds::PROP_MODULE_INDEX.to_string(), PropValue::U64(3)),
-                (graph_kinds::PROP_BASE_PHYS.to_string(), PropValue::U64(0x1000)),
+                (
+                    graph_kinds::PROP_MODULE_INDEX.to_string(),
+                    PropValue::U64(3)
+                ),
+                (
+                    graph_kinds::PROP_BASE_PHYS.to_string(),
+                    PropValue::U64(0x1000)
+                ),
                 (graph_kinds::PROP_SIZE.to_string(), PropValue::U64(0x2000)),
             ]
         );
@@ -419,7 +545,10 @@ mod tests {
 
         let mut props = Vec::new();
         request.to_props(&mut props);
-        assert!(props.contains(&(graph_kinds::PROP_PRESENTED_AT_NS.to_string(), PropValue::U64(2_000))));
+        assert!(props.contains(&(
+            graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
+            PropValue::U64(2_000)
+        )));
 
         let roundtrip = DisplayPresentRequest::from_props(request.id, &to_prop_slice(&props));
         assert_eq!(roundtrip.framebuffer_id, request.framebuffer_id);
@@ -441,7 +570,10 @@ impl AlarmRequest {
         owner_thread: ThingId,
     ) -> [(PropKey, PropValue); 6] {
         [
-            ("target_unix_seconds".to_string(), PropValue::I64(target_unix_seconds)),
+            (
+                "target_unix_seconds".to_string(),
+                PropValue::I64(target_unix_seconds),
+            ),
             (
                 "target_unix_nanos".to_string(),
                 PropValue::U64(target_unix_nanos as u64),
@@ -492,8 +624,14 @@ impl AlarmEvent {
     ) -> [(PropKey, PropValue); 3] {
         [
             ("alarm_id".to_string(), PropValue::U64(alarm_id.0)),
-            ("fired_unix_seconds".to_string(), PropValue::I64(fired_unix_seconds)),
-            ("fired_unix_nanos".to_string(), PropValue::U64(fired_unix_nanos as u64)),
+            (
+                "fired_unix_seconds".to_string(),
+                PropValue::I64(fired_unix_seconds),
+            ),
+            (
+                "fired_unix_nanos".to_string(),
+                PropValue::U64(fired_unix_nanos as u64),
+            ),
         ]
     }
 }

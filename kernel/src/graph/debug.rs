@@ -1,9 +1,9 @@
 use crate::graph::store;
 use crate::graph_kinds;
 use crate::symbols;
-use abi::{ThingId, Predicate, syscall_defs::SymbolId};
-use thing_models::PropValue;
+use abi::{Predicate, ThingId, syscall_defs::SymbolId};
 use alloc::format;
+use thing_models::PropValue;
 
 fn resolve_predicate(pred: Predicate) -> alloc::string::String {
     match pred {

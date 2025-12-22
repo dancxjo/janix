@@ -7,8 +7,8 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use crate::widget_layout::Rect as LayoutRect;
 use crate::render::bitmap::Bitmap;
+use crate::widget_layout::Rect as LayoutRect;
 use thing_os::prelude::*;
 use thing_os::{Surface, Window};
 
@@ -61,7 +61,7 @@ pub enum DrawOp {
     },
     Blit {
         ptr: usize,
-        w: i32, 
+        w: i32,
         h: i32,
         stride: u32,
         format: abi::PixelFormat,
@@ -80,7 +80,7 @@ pub enum DrawOp {
         max_h: i32,
         text: String,
         color: u32,
-    }
+    },
 }
 
 pub fn build_display_list(
@@ -145,7 +145,7 @@ pub fn build_display_list(
         if let Some(rects) = widget_rects.get(&w.id) {
             for (wid, r) in rects {
                 let widget = widget_map.get(wid);
-                
+
                 // 1. Draw Background if present
                 if let Some(bg_color) = widget.and_then(|w| w.bg_color) {
                     ops.push(DrawOp::Rect {
@@ -156,44 +156,44 @@ pub fn build_display_list(
                         color: bg_color,
                     });
                 } else if widget.is_none() {
-                     // Fallback debug for unknown widgets
-                     ops.push(DrawOp::Rect {
+                    // Fallback debug for unknown widgets
+                    ops.push(DrawOp::Rect {
                         x: r.x,
                         y: r.y,
                         w: r.w as i32,
                         h: r.h as i32,
-                        color: 0xFF550055, 
+                        color: 0xFF550055,
                     });
                 }
 
                 // 2. Draw Text if present
                 if let Some(text) = widget.and_then(|w| w.text.as_ref()) {
-                     if !text.is_empty() {
-                         let color = widget.and_then(|w| w.fg_color).unwrap_or(TEXT_COLOR);
-                         ops.push(DrawOp::Text {
+                    if !text.is_empty() {
+                        let color = widget.and_then(|w| w.fg_color).unwrap_or(TEXT_COLOR);
+                        ops.push(DrawOp::Text {
                             x: r.x,
                             y: r.y,
                             max_w: r.w as i32,
                             max_h: r.h as i32,
                             text: text.clone(),
                             color,
-                         });
-                     }
+                        });
+                    }
                 }
             }
         }
         if let Some(surface) = surfaces.get(&w.id) {
             // Priority: Mapped Buffer -> Text
             if let Some(mapped) = comp.mapped_surfaces.get(&surface.id) {
-                 ops.push(DrawOp::Blit {
-                     ptr: mapped.ptr as usize,
-                     w: mapped.width as i32,
-                     h: mapped.height as i32,
-                     stride: mapped.stride,
-                     format: mapped.pixel_format,
-                     x: content_x,
-                     y: content_y,
-                 });
+                ops.push(DrawOp::Blit {
+                    ptr: mapped.ptr as usize,
+                    w: mapped.width as i32,
+                    h: mapped.height as i32,
+                    stride: mapped.stride,
+                    format: mapped.pixel_format,
+                    x: content_x,
+                    y: content_y,
+                });
             } else if !surface.text.is_empty() && content_w > 0 && content_h > 0 {
                 ops.push(DrawOp::WindowContentText {
                     id: w.id,
@@ -205,7 +205,6 @@ pub fn build_display_list(
                 });
             }
         }
-
     }
 
     let icon = comp.cursor_sprites.for_kind(comp.cursor.kind);
@@ -261,10 +260,18 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 *offset_y,
                 clip_tuple,
             ),
-            DrawOp::Rect { x, y, w, h, color } => {
-                primitives::fill_rect(buffer, stride, width, height, *x, *y, *w, *h, *color, clip_tuple)
-            }
-            DrawOp::Blit { ptr, w, h, stride, format, x, y } => {
+            DrawOp::Rect { x, y, w, h, color } => primitives::fill_rect(
+                buffer, stride, width, height, *x, *y, *w, *h, *color, clip_tuple,
+            ),
+            DrawOp::Blit {
+                ptr,
+                w,
+                h,
+                stride,
+                format,
+                x,
+                y,
+            } => {
                 primitives::blit_image(
                     buffer,
                     // Dest stride (u32 pixels)
@@ -281,7 +288,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                     *y,
                     clip_tuple,
                 )
-            },
+            }
             DrawOp::WindowFrame {
                 x,
                 y,
@@ -291,7 +298,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 title,
                 ..
             } => draw_window_frame(
-                buffer, stride, width, height, *x, *y, *w, *h, *active, title, clip_tuple
+                buffer, stride, width, height, *x, *y, *w, *h, *active, title, clip_tuple,
             ),
             DrawOp::WindowContentText {
                 x,
@@ -307,17 +314,16 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 origin,
                 sprite,
                 hotspot,
-            } => cursor::raster_draw_cursor(
-                buffer,
-                stride,
-                width,
-                height,
-                *origin,
-                sprite,
-                *hotspot,
-            ),
+            } => {
+                cursor::raster_draw_cursor(buffer, stride, width, height, *origin, sprite, *hotspot)
+            }
             DrawOp::Text {
-                x, y, max_w, max_h, text, color
+                x,
+                y,
+                max_w,
+                max_h,
+                text,
+                color,
             } => text::draw_text(
                 buffer, stride, width, height, *x, *y, *max_w, *max_h, text, *color,
             ),

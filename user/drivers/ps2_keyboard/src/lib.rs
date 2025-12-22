@@ -5,24 +5,25 @@ extern crate alloc;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use thing_models::{
-    InputCharEvent, InterruptEvent, IoDirection, IoPortOp, IoPortRegion,
-    IoStatus, IoWidth, KeyScanEvent,
+    InputCharEvent, InterruptEvent, IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth,
+    KeyScanEvent,
 };
-use thing_os::prelude::*;
 use thing_os::MODE_INDEX_CONSOLE;
-use thing_os::{update_props, create_thing, load_thing, PropKey, PropValue, PropType};
+use thing_os::prelude::*;
+use thing_os::{PropKey, PropType, PropValue, create_thing, load_thing, update_props};
 
 const POLL_INTERVAL_NS: u64 = 2_000_000;
 const STATUS_OFFSET: u16 = 4;
 const DATA_OFFSET: u16 = 0;
 
 use abi::syscall_defs::{
-    DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr, UserSlice,
+    DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr,
+    UserSlice,
 };
 use abi::syscalls::{SYSCALL_DEV_OPEN, SYSCALL_DEV_READ};
+use thing_os::resident::keyboard_stream::{KeyboardEntry, KeyboardStreamMapped};
+use thing_os::resident::{Resident, ResidentMapPerms, alloc_resident, map_resident};
 use thing_os::syscalls::{sys_dev_open as syscall_dev_open, sys_dev_read as syscall_dev_read};
-use thing_os::resident::keyboard_stream::{KeyboardStreamMapped, KeyboardEntry};
-use thing_os::resident::{alloc_resident, map_resident, ResidentMapPerms, Resident};
 
 pub fn driver_main() -> ! {
     println!("ps2_keyboard_driver: starting (resident stream)");
@@ -33,8 +34,10 @@ pub fn driver_main() -> ! {
     let alloc_resp = match alloc_resident("KeyboardStream", 4096, 0) {
         Ok(r) => r,
         Err(e) => {
-             println!("ps2_keyboard_driver: alloc_resident failed {:?}", e);
-             loop { sleep(Duration::from_nanos(1_000_000_000)); }
+            println!("ps2_keyboard_driver: alloc_resident failed {:?}", e);
+            loop {
+                sleep(Duration::from_nanos(1_000_000_000));
+            }
         }
     };
 
@@ -47,24 +50,33 @@ pub fn driver_main() -> ! {
     // }
 
     // Map it RW
-    let map_resp = match map_resident(alloc_resp.id, ResidentMapPerms(ResidentMapPerms::READ.0 | ResidentMapPerms::WRITE.0)) {
+    let map_resp = match map_resident(
+        alloc_resp.id,
+        ResidentMapPerms(ResidentMapPerms::READ.0 | ResidentMapPerms::WRITE.0),
+    ) {
         Ok(r) => r,
         Err(e) => {
-             println!("ps2_keyboard_driver: map_resident failed {:?}", e);
-             loop { sleep(Duration::from_nanos(1_000_000_000)); }
+            println!("ps2_keyboard_driver: map_resident failed {:?}", e);
+            loop {
+                sleep(Duration::from_nanos(1_000_000_000));
+            }
         }
     };
-    
-    let obj = unsafe { Resident::<()>::new(alloc_resp.id, map_resp.user_addr as *mut u8, map_resp.byte_len as usize) };
+
+    let obj = unsafe {
+        Resident::<()>::new(
+            alloc_resp.id,
+            map_resp.user_addr as *mut u8,
+            map_resp.byte_len as usize,
+        )
+    };
     let mut stream = KeyboardStreamMapped::new(obj);
     stream.init(256); // Capacity 256 entries
 
     println!("ps2_keyboard_driver: KeyboardStream initialized");
 
     let region = wait_for_region();
-    println!(
-        "ps2_keyboard_driver: found i8042 IO region; initializing controller",
-    );
+    println!("ps2_keyboard_driver: found i8042 IO region; initializing controller",);
     let mut accessor = IoPortAccessor::new(region.id);
     if !init_controller(&mut accessor) {
         println!("ps2_keyboard_driver: controller init failed");
@@ -73,19 +85,24 @@ pub fn driver_main() -> ! {
     }
 
     let mut decoder = KeyboardDecoder::new(region.id);
-    
+
     // Open device 1 (Ps2Keyboard)
     let handle = match unsafe { syscall_dev_open(1, 0) } {
         Ok(h) => h,
         Err(e) => {
-            println!("ps2_keyboard_driver: failed to open device: code={}", e.code);
-            loop { sleep(Duration::from_nanos(1_000_000_000)); }
+            println!(
+                "ps2_keyboard_driver: failed to open device: code={}",
+                e.code
+            );
+            loop {
+                sleep(Duration::from_nanos(1_000_000_000));
+            }
         }
     };
     println!("ps2_keyboard_driver: device opened");
 
     let mut buffer = [0u8; 16];
-    
+
     loop {
         match unsafe { syscall_dev_read(handle, &mut buffer) } {
             Ok(count) => {
@@ -95,11 +112,11 @@ pub fn driver_main() -> ! {
                         decoder.process_byte(&mut stream, byte);
                     }
                 } else {
-                     sleep(Duration::from_nanos(POLL_INTERVAL_NS));
+                    sleep(Duration::from_nanos(POLL_INTERVAL_NS));
                 }
             }
             Err(_) => {
-                 sleep(Duration::from_nanos(POLL_INTERVAL_NS));
+                sleep(Duration::from_nanos(POLL_INTERVAL_NS));
             }
         }
     }
@@ -151,7 +168,6 @@ fn init_controller(accessor: &mut IoPortAccessor) -> bool {
 
     accessor.command(0xAE)
 }
-
 
 struct IoPortAccessor {
     region_id: ThingId,
@@ -218,13 +234,8 @@ impl IoPortAccessor {
     }
 
     fn write_u8(&mut self, offset: u16, value: u8) -> bool {
-        self.submit_op(
-            SlotKind::Write,
-            offset,
-            IoDirection::Write,
-            value as u32,
-        )
-        .is_some()
+        self.submit_op(SlotKind::Write, offset, IoDirection::Write, value as u32)
+            .is_some()
     }
 
     fn submit_op(
@@ -240,10 +251,19 @@ impl IoPortAccessor {
             if let Some(id) = *slot {
                 let props = [
                     ("offset".to_string(), PropValue::U64(offset as u64)),
-                    ("direction".to_string(), PropValue::Str(direction.as_str().into())),
-                    ("width".to_string(), PropValue::Str(IoWidth::U8.as_str().into())),
+                    (
+                        "direction".to_string(),
+                        PropValue::Str(direction.as_str().into()),
+                    ),
+                    (
+                        "width".to_string(),
+                        PropValue::Str(IoWidth::U8.as_str().into()),
+                    ),
                     ("value".to_string(), PropValue::U64(value as u64)),
-                    ("status".to_string(), PropValue::Str(IoStatus::Pending.as_str().into())),
+                    (
+                        "status".to_string(),
+                        PropValue::Str(IoStatus::Pending.as_str().into()),
+                    ),
                 ];
                 if !update_props(id, &props) {
                     return None;
@@ -329,7 +349,7 @@ impl KeyboardDecoder {
 
         let extended = self.pending_e0;
         self.pending_e0 = false;
-        
+
         self.sequence_index = self.sequence_index.wrapping_add(1);
 
         let released = (byte & 0x80) != 0;
@@ -341,7 +361,9 @@ impl KeyboardDecoder {
         let mut has_char = false;
 
         if !released {
-            if let Some(ch) = decode_printable(scancode, extended, self.left_shift || self.right_shift) {
+            if let Some(ch) =
+                decode_printable(scancode, extended, self.left_shift || self.right_shift)
+            {
                 utf32 = ch as u32;
                 has_char = true;
             }
@@ -380,11 +402,6 @@ impl KeyboardDecoder {
         }
     }
 }
-
-
-
-
-
 
 fn decode_printable(scancode: u8, _extended: bool, shift: bool) -> Option<char> {
     let ch = match scancode {

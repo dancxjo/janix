@@ -106,23 +106,21 @@ mod interrupts {
 
 /// Log a message
 pub fn log_message(message: &str) {
-    interrupts::without_interrupts(|| {
-        unsafe {
-            let truncated = message.as_bytes().len() > MAX_LOG_LEN;
-            if truncated {
-                LOG_TRUNCATED += 1;
-            }
-
-            if LOG_COUNT == MAX_LOG_ENTRIES {
-                LOG_OVERWRITES += 1;
-            } else {
-                LOG_COUNT += 1;
-            }
-
-            LOG_BUFFER[LOG_INDEX].write_from(message);
-            LOG_INDEX = (LOG_INDEX + 1) % MAX_LOG_ENTRIES;
-            LOG_TOTAL_WRITES += 1;
+    interrupts::without_interrupts(|| unsafe {
+        let truncated = message.as_bytes().len() > MAX_LOG_LEN;
+        if truncated {
+            LOG_TRUNCATED += 1;
         }
+
+        if LOG_COUNT == MAX_LOG_ENTRIES {
+            LOG_OVERWRITES += 1;
+        } else {
+            LOG_COUNT += 1;
+        }
+
+        LOG_BUFFER[LOG_INDEX].write_from(message);
+        LOG_INDEX = (LOG_INDEX + 1) % MAX_LOG_ENTRIES;
+        LOG_TOTAL_WRITES += 1;
     });
 
     #[cfg(all(feature = "debug_logging", not(test)))]

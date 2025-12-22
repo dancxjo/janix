@@ -31,7 +31,7 @@ pub fn init() {
 
         // Enable APIC if disabled (bit 11 of IA32_APIC_BASE)
         if base & (1 << 11) == 0 {
-             msr.write(base | (1 << 11));
+            msr.write(base | (1 << 11));
         }
 
         // Mask out flags to get physical address (bits 12-35 usually, but we mask lower 12)
@@ -49,31 +49,37 @@ pub fn init() {
         // Copy statics to local to avoid "shared reference to mutable static" error in println
         let base = APIC_BASE;
         let has_tsc = HAS_TSC_DEADLINE;
-        kernel::println!("LAPIC initialized. Base={:#x}, TSC-Deadline={}", base, has_tsc);
+        kernel::println!(
+            "LAPIC initialized. Base={:#x}, TSC-Deadline={}",
+            base,
+            has_tsc
+        );
     }
 }
 
 pub fn eoi() {
-    unsafe { write_reg(APIC_EOI, 0); }
+    unsafe {
+        write_reg(APIC_EOI, 0);
+    }
 }
 
 pub fn set_timer_vector(vector: u8) {
     unsafe {
-         if HAS_TSC_DEADLINE {
-             // TSC-Deadline mode: Bit 18 set, Bit 17 clear.
-             // Vector in bits 0-7.
-             let value = (2 << 17) | (vector as u32);
-             write_reg(APIC_LVT_TIMER, value);
-         } else {
-             // Fallback: One-Shot mode (Bits 17, 18 clear).
-             // We'll use this if we implement fallback logic.
-             let value = vector as u32;
-             write_reg(APIC_LVT_TIMER, value);
+        if HAS_TSC_DEADLINE {
+            // TSC-Deadline mode: Bit 18 set, Bit 17 clear.
+            // Vector in bits 0-7.
+            let value = (2 << 17) | (vector as u32);
+            write_reg(APIC_LVT_TIMER, value);
+        } else {
+            // Fallback: One-Shot mode (Bits 17, 18 clear).
+            // We'll use this if we implement fallback logic.
+            let value = vector as u32;
+            write_reg(APIC_LVT_TIMER, value);
 
-             // Set Divider to 16 (bits 3:0 of 0x3E0 -> 0x3)
-             // 0000: /2, 0001: /4, 0010: /8, 0011: /16
-             write_reg(APIC_DIV_CONFIG, 0x3);
-         }
+            // Set Divider to 16 (bits 3:0 of 0x3E0 -> 0x3)
+            // 0000: /2, 0001: /4, 0010: /8, 0011: /16
+            write_reg(APIC_DIV_CONFIG, 0x3);
+        }
     }
 }
 
@@ -95,14 +101,18 @@ pub fn set_deadline_tsc(tsc: u64) {
 }
 
 unsafe fn write_reg(offset: usize, value: u32) {
-    if APIC_BASE == 0 { return; }
+    if APIC_BASE == 0 {
+        return;
+    }
     let addr = (APIC_BASE as usize + offset) as *mut u32;
     write_volatile(addr, value);
 }
 
 #[allow(dead_code)]
 unsafe fn read_reg(offset: usize) -> u32 {
-    if APIC_BASE == 0 { return 0; }
+    if APIC_BASE == 0 {
+        return 0;
+    }
     let addr = (APIC_BASE as usize + offset) as *const u32;
     read_volatile(addr)
 }

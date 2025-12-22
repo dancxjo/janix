@@ -1,10 +1,10 @@
 use crate::{graph, graph_kinds, time};
 use abi::ThingId;
-use thing_models::{PropKey, PropValue};
 use alloc::string::String;
 use alloc::vec::Vec;
+use thing_models::{PropKey, PropValue};
 
-use core::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use spin::Mutex;
 use thing_models::{InterruptEvent, IoPortOp, IoPortRegion, IoStatus};
 
@@ -24,15 +24,33 @@ pub fn process_interrupt_request(id: ThingId) {
     let mut irq_line: u8 = 0;
     let mut enabled: bool = false;
     graph::with_thing(id, |thing| {
-        if thing.kind != crate::symbols::intern(graph_kinds::KIND_INTERRUPT_REQUEST) { return; }
-        irq_line = thing.props.iter()
+        if thing.kind != crate::symbols::intern(graph_kinds::KIND_INTERRUPT_REQUEST) {
+            return;
+        }
+        irq_line = thing
+            .props
+            .iter()
             .find(|(k, _)| *k == crate::symbols::intern(graph_kinds::PROP_IRQ_LINE))
-            .and_then(|(_, v)| if let PropValue::U64(val) = v { Some(*val as u8) } else { None })
+            .and_then(|(_, v)| {
+                if let PropValue::U64(val) = v {
+                    Some(*val as u8)
+                } else {
+                    None
+                }
+            })
             .unwrap_or(0); // Default to 0 if not found or wrong type
 
-        enabled = thing.props.iter()
+        enabled = thing
+            .props
+            .iter()
             .find(|(k, _)| *k == crate::symbols::intern(graph_kinds::PROP_ENABLED))
-            .and_then(|(_, v)| if let PropValue::Bool(b) = v { Some(*b) } else { None })
+            .and_then(|(_, v)| {
+                if let PropValue::Bool(b) = v {
+                    Some(*b)
+                } else {
+                    None
+                }
+            })
             .unwrap_or(false); // Default to false if not found or wrong type
     });
     let masked = !enabled;
@@ -74,7 +92,10 @@ pub fn seed_io_regions() {
         for (k_str, v) in props {
             final_props.push((crate::symbols::intern(&k_str), v));
         }
-        let _ = graph::create_thing(crate::symbols::intern(graph_kinds::KIND_IO_PORT_REGION), final_props);
+        let _ = graph::create_thing(
+            crate::symbols::intern(graph_kinds::KIND_IO_PORT_REGION),
+            final_props,
+        );
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
@@ -84,7 +105,9 @@ pub fn seed_io_regions() {
 
 pub fn process_io_op(op_id: ThingId) {
     let op = if let Some(op) = graph::with_thing(op_id, |thing| {
-        if thing.kind != crate::symbols::intern(graph_kinds::KIND_IO_PORT_OP) { return None; }
+        if thing.kind != crate::symbols::intern(graph_kinds::KIND_IO_PORT_OP) {
+            return None;
+        }
         // Convert thing.props (Vec<(SymbolId, PropValue)>) to expected format for from_props
         // thing_models::IoPortOp::from_props expects &[Option<(String, PropValue)>] ??
         // Actually from_props signature in abi/src/lib.rs:
@@ -100,46 +123,70 @@ pub fn process_io_op(op_id: ThingId) {
         let mut width = None;
         let mut value = None;
         let mut status: Option<IoStatus> = None;
-        
+
         for (k, v) in &thing.props {
-             if *k == crate::symbols::intern("direction") {
-                 if let PropValue::U64(val) = v { direction = Some(*val as u8); } // enum?
-             } else if *k == crate::symbols::intern("region") {
-                 if let PropValue::U64(id_val) = v { region_id = Some(ThingId(*id_val)); }
-             } else if *k == crate::symbols::intern("offset") {
-                 if let PropValue::U64(val) = v { offset = Some(*val as u16); }
-             } else if *k == crate::symbols::intern("width") {
-                 if let PropValue::U64(val) = v { width = Some(*val as u8); }
-             } else if *k == crate::symbols::intern("value") {
-                 if let PropValue::U64(val) = v { value = Some(*val as u32); }
-             } else if *k == crate::symbols::intern("status") {
-                 if let PropValue::Str(s) = v { status = IoStatus::from_str(s); }
-             }
+            if *k == crate::symbols::intern("direction") {
+                if let PropValue::U64(val) = v {
+                    direction = Some(*val as u8);
+                } // enum?
+            } else if *k == crate::symbols::intern("region") {
+                if let PropValue::U64(id_val) = v {
+                    region_id = Some(ThingId(*id_val));
+                }
+            } else if *k == crate::symbols::intern("offset") {
+                if let PropValue::U64(val) = v {
+                    offset = Some(*val as u16);
+                }
+            } else if *k == crate::symbols::intern("width") {
+                if let PropValue::U64(val) = v {
+                    width = Some(*val as u8);
+                }
+            } else if *k == crate::symbols::intern("value") {
+                if let PropValue::U64(val) = v {
+                    value = Some(*val as u32);
+                }
+            } else if *k == crate::symbols::intern("status") {
+                if let PropValue::Str(s) = v {
+                    status = IoStatus::from_str(s);
+                }
+            }
         }
-        
+
         let width_enum = match width.unwrap_or(0) {
-             1 => Some(thing_models::IoWidth::U8),
-             2 => Some(thing_models::IoWidth::U16),
-             4 => Some(thing_models::IoWidth::U32),
-             _ => None
+            1 => Some(thing_models::IoWidth::U8),
+            2 => Some(thing_models::IoWidth::U16),
+            4 => Some(thing_models::IoWidth::U32),
+            _ => None,
         };
 
-        if let (Some(d), Some(r), Some(o), Some(w_enum)) = (direction, region_id, offset, width_enum) {
-             Some(IoPortOp {
-                 id: op_id,
-                 direction: if d == 0 { thing_models::IoDirection::Read } else { thing_models::IoDirection::Write },
-                 region_id: r,
-                 offset: o,
-                 width: w_enum,
-                 value: value.unwrap_or(0),
-                 status: status.unwrap_or(IoStatus::Pending),
-                 error_code: 0,
-                 issued_by: ThingId(0) // stub
-             })
+        if let (Some(d), Some(r), Some(o), Some(w_enum)) =
+            (direction, region_id, offset, width_enum)
+        {
+            Some(IoPortOp {
+                id: op_id,
+                direction: if d == 0 {
+                    thing_models::IoDirection::Read
+                } else {
+                    thing_models::IoDirection::Write
+                },
+                region_id: r,
+                offset: o,
+                width: w_enum,
+                value: value.unwrap_or(0),
+                status: status.unwrap_or(IoStatus::Pending),
+                error_code: 0,
+                issued_by: ThingId(0), // stub
+            })
         } else {
-             None
+            None
         }
-    }).flatten() { op } else { return; };
+    })
+    .flatten()
+    {
+        op
+    } else {
+        return;
+    };
 
     if op.status != IoStatus::Pending {
         return;
@@ -172,7 +219,10 @@ pub fn process_io_op(op_id: ThingId) {
                     crate::symbols::intern("status"),
                     PropValue::Str(String::from(IoStatus::Failed.as_str())),
                 ),
-                (crate::symbols::intern("error_code"), PropValue::U64(err.code() as u64)),
+                (
+                    crate::symbols::intern("error_code"),
+                    PropValue::U64(err.code() as u64)
+                ),
             ];
             let _ = graph::update_thing(op_id, updates);
         }
@@ -187,12 +237,18 @@ pub fn handle_interrupt(irq_line: u8) {
     for (k, v) in props_orig {
         props.push((crate::symbols::intern(&k), v));
     }
-    let _ = graph::create_thing(crate::symbols::intern(graph_kinds::KIND_INTERRUPT_EVENT), props);
+    let _ = graph::create_thing(
+        crate::symbols::intern(graph_kinds::KIND_INTERRUPT_EVENT),
+        props,
+    );
 }
 
 fn find_region_for_irq(irq_line: u8) -> Option<ThingId> {
     let mut cursor = ThingId(u64::MAX);
-    while let Some(id) = graph::next_thing_of_kind(crate::symbols::intern(graph_kinds::KIND_IO_PORT_REGION), cursor) {
+    while let Some(id) = graph::next_thing_of_kind(
+        crate::symbols::intern(graph_kinds::KIND_IO_PORT_REGION),
+        cursor,
+    ) {
         cursor = id;
         if let Some(region) = load_region(id) {
             if region.irq_lines.iter().any(|&irq| irq == irq_line) {
@@ -204,37 +260,45 @@ fn find_region_for_irq(irq_line: u8) -> Option<ThingId> {
 }
 
 fn load_region(id: ThingId) -> Option<IoPortRegion> {
-    graph::with_thing(id, |thing| { // Manual extraction again
+    graph::with_thing(id, |thing| {
+        // Manual extraction again
         let mut base = None;
         let mut count = None;
         let mut irqs = Vec::new();
-        
+
         for (k, v) in &thing.props {
-             if *k == crate::symbols::intern("base_port") {
-                 if let PropValue::U64(val) = v { base = Some(*val as u16); }
-             } else if *k == crate::symbols::intern("port_count") {
-                 if let PropValue::U64(val) = v { count = Some(*val as u16); }
-             } else if *k == crate::symbols::intern("irq_lines") {
-                 if let PropValue::U64(val) = v { irqs.push(*val as u8); } // assume scalar or we check how seed_props creates it
-             }
+            if *k == crate::symbols::intern("base_port") {
+                if let PropValue::U64(val) = v {
+                    base = Some(*val as u16);
+                }
+            } else if *k == crate::symbols::intern("port_count") {
+                if let PropValue::U64(val) = v {
+                    count = Some(*val as u16);
+                }
+            } else if *k == crate::symbols::intern("irq_lines") {
+                if let PropValue::U64(val) = v {
+                    irqs.push(*val as u8);
+                } // assume scalar or we check how seed_props creates it
+            }
         }
-        
-        // Handling irq_lines from props might need improved layout support (List). 
+
+        // Handling irq_lines from props might need improved layout support (List).
         // For now assume logic.
-        
+
         if let (Some(b), Some(c)) = (base, count) {
             Some(IoPortRegion {
                 id,
                 base_port: b,
                 port_count: c,
                 irq_lines: irqs,
-                name: String::from("i8042"), // stub
-                claimed_by: Some(ThingId(0)) // stub
+                name: String::from("i8042"),  // stub
+                claimed_by: Some(ThingId(0)), // stub
             })
         } else {
             None
         }
-    }).flatten()
+    })
+    .flatten()
 }
 
 fn execute_io_operation(op: &IoPortOp) -> Result<Option<u32>, IoError> {

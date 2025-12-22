@@ -9,21 +9,20 @@ use crate::graph::schema::register_schema;
 
 use crate::sched_types::ThreadState;
 use crate::{graph, graph_kinds, memory, sched_graph};
-use abi::{FrameId, FrameInfo, MemorySummary, SchedulerSummary, ThingId, ThreadId};
-use thing_models::{Thing, ThreadInfo};
 use abi::SchedThreadInfo;
-use thing_models::{PropType, PropValue};
+use abi::{FrameId, FrameInfo, MemorySummary, SchedulerSummary, ThingId, ThreadId};
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use thing_models::{
-    AlarmEvent, AlarmRequest, BootProfile, BootProgram, FontModule, InterruptEvent, InterruptRequest, IoPortOp,
-    IoPortRegion, ProgramImage, Surface, TimeSource, Window,
-    Display, SharedBuffer, DisplayFramebuffer, DisplayFrame, DisplayPresentRequest,
-    Mode, ModeSwitchEvent, Place,
-    PhysFrame, FramePool, AddressSpace, VirtRegion, Process, CpuCore, SleepEvent,
+    AddressSpace, AlarmEvent, AlarmRequest, BootProfile, BootProgram, CpuCore, Display,
+    DisplayFrame, DisplayFramebuffer, DisplayPresentRequest, FontModule, FramePool, InterruptEvent,
+    InterruptRequest, IoPortOp, IoPortRegion, Mode, ModeSwitchEvent, PhysFrame, Place, Process,
+    ProgramImage, SharedBuffer, SleepEvent, Surface, TimeSource, VirtRegion, Window,
     kernel_core_schemas,
 };
+use thing_models::{PropType, PropValue};
+use thing_models::{Thing, ThreadInfo};
 
 #[derive(Clone, Copy)]
 pub struct Thread {
@@ -89,7 +88,8 @@ pub fn pick_next_thread() -> Option<&'static mut Thread> {
 static mut CURRENT_THREAD: Option<ThingId> = None;
 
 fn is_kind(id: ThingId, expected: &str) -> bool {
-    crate::graph::with_thing(id, |node| node.kind == crate::symbols::intern(expected)).unwrap_or(false)
+    crate::graph::with_thing(id, |node| node.kind == crate::symbols::intern(expected))
+        .unwrap_or(false)
 }
 
 /// Initialize all kernel model schemas.
@@ -104,10 +104,10 @@ fn is_kind(id: ThingId, expected: &str) -> bool {
 /// ```
 // Helper to register static schemas
 fn register_static_schema(
-    kind_str: &str, 
-    desc: &str, 
+    kind_str: &str,
+    desc: &str,
     props: &[(&str, PropType)],
-    indexed: &[abi::syscall_defs::SymbolId]
+    indexed: &[abi::syscall_defs::SymbolId],
 ) {
     let kind = crate::symbols::intern(kind_str);
     let desc_sym = crate::symbols::intern(desc);
@@ -116,7 +116,7 @@ fn register_static_schema(
         props_vec.push((crate::symbols::intern(k), *t));
     }
     let indexed_vec = indexed.to_vec();
-    
+
     // We expect register_schema to be imported
     if let Err(e) = crate::graph::schema::register_schema(kind, desc_sym, props_vec, indexed_vec) {
         crate::console::print("Failed to register schema\n");
@@ -158,7 +158,10 @@ pub fn create_phys_frame(base: u64, size: u64) -> Option<ThingId> {
         (crate::symbols::intern("allocated"), PropValue::Bool(false)),
     ];
 
-    Some(graph::create_thing(crate::symbols::intern("PhysFrame"), props))
+    Some(graph::create_thing(
+        crate::symbols::intern("PhysFrame"),
+        props,
+    ))
 }
 
 /// Create a FramePool Thing
@@ -183,10 +186,16 @@ pub fn create_frame_pool(start: u64, end: u64, frame_size: u64) -> Option<ThingI
     let props = alloc::vec![
         (crate::symbols::intern("start"), PropValue::U64(start)),
         (crate::symbols::intern("end"), PropValue::U64(end)),
-        (crate::symbols::intern("frame_size"), PropValue::U64(frame_size)),
+        (
+            crate::symbols::intern("frame_size"),
+            PropValue::U64(frame_size)
+        ),
     ];
 
-    Some(graph::create_thing(crate::symbols::intern("FramePool"), props))
+    Some(graph::create_thing(
+        crate::symbols::intern("FramePool"),
+        props,
+    ))
 }
 
 /// Create a CpuCore Thing
@@ -209,7 +218,10 @@ pub fn create_frame_pool(start: u64, end: u64, frame_size: u64) -> Option<ThingI
 pub fn create_cpu_core(index: u64) -> Option<ThingId> {
     let props = alloc::vec![(crate::symbols::intern("index"), PropValue::U64(index))];
 
-    Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_CPU_CORE), props))
+    Some(graph::create_thing(
+        crate::symbols::intern(graph_kinds::KIND_CPU_CORE),
+        props,
+    ))
 }
 
 /// Compute memory statistics from graph state.
@@ -330,7 +342,10 @@ pub fn compute_scheduler_summary() -> SchedulerSummary {
 pub fn create_address_space(asid: u64) -> Option<ThingId> {
     let props = alloc::vec![(crate::symbols::intern("asid"), PropValue::U64(asid))];
 
-    Some(graph::create_thing(crate::symbols::intern("AddressSpace"), props))
+    Some(graph::create_thing(
+        crate::symbols::intern("AddressSpace"),
+        props,
+    ))
 }
 
 /// Create a Display Thing
@@ -350,16 +365,28 @@ pub fn create_display(
     active_buffer_id: u64,
 ) -> Option<ThingId> {
     let props = alloc::vec![
-        (crate::symbols::intern(graph_kinds::PROP_NAME), PropValue::Str(String::from(name))),
-        (crate::symbols::intern(graph_kinds::PROP_WIDTH), PropValue::U64(width)),
-        (crate::symbols::intern(graph_kinds::PROP_HEIGHT), PropValue::U64(height)),
+        (
+            crate::symbols::intern(graph_kinds::PROP_NAME),
+            PropValue::Str(String::from(name))
+        ),
+        (
+            crate::symbols::intern(graph_kinds::PROP_WIDTH),
+            PropValue::U64(width)
+        ),
+        (
+            crate::symbols::intern(graph_kinds::PROP_HEIGHT),
+            PropValue::U64(height)
+        ),
         (
             crate::symbols::intern(graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX),
             PropValue::I64(active_buffer_id as i64),
         ),
     ];
 
-    Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_DISPLAY), props))
+    Some(graph::create_thing(
+        crate::symbols::intern(graph_kinds::KIND_DISPLAY),
+        props,
+    ))
 }
 
 /// Create a VirtRegion Thing
@@ -387,7 +414,10 @@ pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
         (crate::symbols::intern("flags"), PropValue::U64(flags)),
     ];
 
-    Some(graph::create_thing(crate::symbols::intern("VirtRegion"), props))
+    Some(graph::create_thing(
+        crate::symbols::intern("VirtRegion"),
+        props,
+    ))
 }
 
 /// Create a Process Thing
@@ -410,7 +440,10 @@ pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
 pub fn create_process(pid: u64) -> Option<ThingId> {
     let props = alloc::vec![(crate::symbols::intern("pid"), PropValue::U64(pid))];
 
-    Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_PROCESS), props))
+    Some(graph::create_thing(
+        crate::symbols::intern(graph_kinds::KIND_PROCESS),
+        props,
+    ))
 }
 
 /// Create a Thread Thing
@@ -443,7 +476,10 @@ pub fn create_thread(tid: u64, priority: u64) -> Option<ThingId> {
         (crate::symbols::intern("last_started_ns"), PropValue::U64(0)),
     ];
 
-    Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_THREAD), props))
+    Some(graph::create_thing(
+        crate::symbols::intern(graph_kinds::KIND_THREAD),
+        props,
+    ))
 }
 
 /// Allocate the first free `PhysFrame` and mark it allocated.
@@ -493,7 +529,7 @@ pub fn alloc_frame() -> Option<FrameInfo> {
         }
 
         if !allocated {
-             found_frame = Some((thing.id, base, size));
+            found_frame = Some((thing.id, base, size));
         }
     });
 
@@ -628,9 +664,10 @@ pub fn scheduler_tick() -> Option<SchedThreadInfo> {
 
 pub fn init_boot_profile() {
     // Avoid creating duplicate profiles if already seeded.
-    if let Some(existing) =
-        graph::next_thing_of_kind(crate::symbols::intern(graph_kinds::KIND_BOOT_PROFILE), ThingId(u64::MAX))
-    {
+    if let Some(existing) = graph::next_thing_of_kind(
+        crate::symbols::intern(graph_kinds::KIND_BOOT_PROFILE),
+        ThingId(u64::MAX),
+    ) {
         let msg = format!("Found existing BootProfile Thing id={}", existing.0);
         let leaked: &'static str = Box::leak(msg.into_boxed_str());
         crate::log(leaked);
@@ -638,7 +675,10 @@ pub fn init_boot_profile() {
     }
 
     let profile_props = alloc::vec![(crate::symbols::intern("version"), PropValue::U64(1))];
-    let Some(profile) = Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_BOOT_PROFILE), profile_props)) else {
+    let Some(profile) = Some(graph::create_thing(
+        crate::symbols::intern(graph_kinds::KIND_BOOT_PROFILE),
+        profile_props,
+    )) else {
         crate::log("Failed to create BootProfile Thing");
         return;
     };
@@ -726,18 +766,30 @@ pub fn create_program_image(
     size: u64,
 ) -> Option<ThingId> {
     let props = alloc::vec![
-        (crate::symbols::intern("identifier"), PropValue::Str(String::from(identifier))),
-        (crate::symbols::intern("module_index"), PropValue::U64(module_index)),
-        (crate::symbols::intern("base_phys"), PropValue::U64(base_phys)),
+        (
+            crate::symbols::intern("identifier"),
+            PropValue::Str(String::from(identifier))
+        ),
+        (
+            crate::symbols::intern("module_index"),
+            PropValue::U64(module_index)
+        ),
+        (
+            crate::symbols::intern("base_phys"),
+            PropValue::U64(base_phys)
+        ),
         (crate::symbols::intern("size"), PropValue::U64(size)),
     ];
-    Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_PROGRAM_IMAGE), props))
+    Some(graph::create_thing(
+        crate::symbols::intern(graph_kinds::KIND_PROGRAM_IMAGE),
+        props,
+    ))
 }
 /// Check if a ProgramImage with the given identifier exists.
-/// 
+///
 /// # Arguments
 /// * `identifier` - The program identifier to check for.
-/// 
+///
 /// # Returns
 /// `true` if a ProgramImage with the matching identifier exists, `false` otherwise.
 pub fn program_image_exists(identifier: &str) -> bool {

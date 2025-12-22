@@ -4,8 +4,8 @@ use crate::graph_kinds::{
     PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
 };
 use crate::shared_buffer;
-use thing_models::PropValue;
 use alloc::vec::Vec;
+use thing_models::PropValue;
 
 pub fn init() {
     crate::graph::events::subscribe(on_event);
@@ -18,7 +18,9 @@ fn on_event(event: &GraphEvent) {
             if kind == crate::symbols::intern(graph_kinds::KIND_DISPLAY) {
                 // Potential update to active buffer index.
                 // We should check the property.
-                if let Some(PropValue::I64(idx)) = crate::graph::get_prop(*id, PROP_DISPLAY_ACTIVE_BUFFER_INDEX) {
+                if let Some(PropValue::I64(idx)) =
+                    crate::graph::get_prop(*id, PROP_DISPLAY_ACTIVE_BUFFER_INDEX)
+                {
                     process_display_update(*id, idx);
                 }
             }
@@ -128,10 +130,9 @@ fn blit_buffers(src_id: abi::ThingId, dst_id: abi::ThingId) {
             let dst_rem = 4096 - dst_frame_off;
             let copy_size = chunk_size.min(src_rem).min(dst_rem);
 
-            if let (Some(src_frame), Some(dst_frame)) = (
-                src_frames.get(src_frame_idx),
-                dst_frames.get(dst_frame_idx),
-            ) {
+            if let (Some(src_frame), Some(dst_frame)) =
+                (src_frames.get(src_frame_idx), dst_frames.get(dst_frame_idx))
+            {
                 let src_phys = src_frame.start_address + src_frame_off as u64;
                 let dst_phys = dst_frame.start_address + dst_frame_off as u64;
 

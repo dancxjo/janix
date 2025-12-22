@@ -2,7 +2,7 @@
 // force rebuild 3
 
 extern crate alloc;
-use crate::graph::schema::{register_schema, get_schema_props};
+use crate::graph::schema::{get_schema_props, register_schema};
 
 pub mod bridge;
 pub mod console;
@@ -32,15 +32,15 @@ mod syscalls_test;
 use crate::model::{compute_memory_summary, compute_scheduler_summary, scheduler_tick};
 use crate::sched_types::ThreadState;
 use crate::shared_buffer::MAX_FRAMES_PER_BUFFER;
-use abi::{FrameId, FrameInfo, ThingId, KernelRequest, KernelResponse, SchedThreadInfo};
+use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, SchedThreadInfo, ThingId};
 use thing_models::{PropType, PropValue};
 
 pub use self::model::Thread;
-pub use thing_models::{Process, CpuCore, SleepEvent, Thing, FramePool, AlarmRequest, AlarmEvent};
-pub use thing_models::io::{IoPortRegion, IoPortOp, InterruptEvent, InterruptRequest};
-pub use thing_models::display::{Display, DisplayFramebuffer, DisplayFrame, DisplayPresentRequest};
 use alloc::string::String;
 use spin::{Mutex, MutexGuard};
+pub use thing_models::display::{Display, DisplayFrame, DisplayFramebuffer, DisplayPresentRequest};
+pub use thing_models::io::{InterruptEvent, InterruptRequest, IoPortOp, IoPortRegion};
+pub use thing_models::{AlarmEvent, AlarmRequest, CpuCore, FramePool, Process, SleepEvent, Thing};
 
 type SpawnProgramHandler = fn(ThingId) -> Result<(ThingId, ThingId), &'static str>;
 
@@ -146,17 +146,26 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         KernelRequest::LinkAt { src, pred, idx } => {
             let target = graph::link_target_at(src, pred, idx as usize);
             match target {
-                Some(id) => KernelResponse::LinkTarget { found: 1, target: id },
-                None => KernelResponse::LinkTarget { found: 0, target: ThingId(0) },
+                Some(id) => KernelResponse::LinkTarget {
+                    found: 1,
+                    target: id,
+                },
+                None => KernelResponse::LinkTarget {
+                    found: 0,
+                    target: ThingId(0),
+                },
             }
-        },
+        }
         KernelRequest::GraphQuery { node_id, out } => match graph::query_node(ThingId(node_id.0)) {
             Some(value) => {
                 let written = unsafe { write_user_bytes(out, &value) };
                 KernelResponse::NodeData { written }
-            },
+            }
             None => KernelResponse::Error {
-                err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::NOT_FOUND, detail: 0 },
+                err: abi::syscall_defs::SysError {
+                    code: abi::syscall_defs::SysError::NOT_FOUND,
+                    detail: 0,
+                },
             },
         },
         KernelRequest::CreateTransaction => {
@@ -168,8 +177,13 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 Ok(()) => KernelResponse::Success { data: None },
                 Err(e) => {
                     log::log_message(e); // log internal error message
-                    KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 0 } }
-                },
+                    KernelResponse::Error {
+                        err: abi::syscall_defs::SysError {
+                            code: abi::syscall_defs::SysError::INTERNAL,
+                            detail: 0,
+                        },
+                    }
+                }
             }
         }
         KernelRequest::Log { message } => {
@@ -187,33 +201,51 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
         }
         KernelRequest::ThingCreate { kind, props } => {
             let mut internal_props = alloc::vec::Vec::new();
-            
+
             let slice_ptr = props.ptr as *const abi::wire::graph::WireProp;
             let slice_len = props.len;
-            
+
             unsafe {
                 for i in 0..slice_len {
                     let wire_prop = *slice_ptr.add(i as usize);
                     let key = wire_prop.key;
                     let val = match wire_prop.value.tag {
-                         0 => PropValue::U64(wire_prop.value.data_0),
-                         1 => PropValue::I64(wire_prop.value.data_0 as i64),
-                         2 => PropValue::Bool(wire_prop.value.data_0 != 0),
-                         3 => PropValue::Symbol(abi::syscall_defs::SymbolId(wire_prop.value.data_0 as u32)),
-                         4 => {
-                             let blob_ptr = wire_prop.value.data_0 as *const u8;
-                             let blob_len = wire_prop.value.data_1;
-                             let mut blob = alloc::vec::Vec::with_capacity(blob_len as usize);
-                             if blob_ptr.is_null() && blob_len > 0 {
-                                 return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 1 } };
-                             }
-                             if !blob_ptr.is_null() {
-                                 core::ptr::copy_nonoverlapping(blob_ptr, blob.as_mut_ptr(), blob_len as usize);
-                                 blob.set_len(blob_len as usize);
-                             }
-                             PropValue::Blob(blob)
-                         },
-                         _ => return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 2 } },
+                        0 => PropValue::U64(wire_prop.value.data_0),
+                        1 => PropValue::I64(wire_prop.value.data_0 as i64),
+                        2 => PropValue::Bool(wire_prop.value.data_0 != 0),
+                        3 => PropValue::Symbol(abi::syscall_defs::SymbolId(
+                            wire_prop.value.data_0 as u32,
+                        )),
+                        4 => {
+                            let blob_ptr = wire_prop.value.data_0 as *const u8;
+                            let blob_len = wire_prop.value.data_1;
+                            let mut blob = alloc::vec::Vec::with_capacity(blob_len as usize);
+                            if blob_ptr.is_null() && blob_len > 0 {
+                                return KernelResponse::Error {
+                                    err: abi::syscall_defs::SysError {
+                                        code: abi::syscall_defs::SysError::INVALID_ARG,
+                                        detail: 1,
+                                    },
+                                };
+                            }
+                            if !blob_ptr.is_null() {
+                                core::ptr::copy_nonoverlapping(
+                                    blob_ptr,
+                                    blob.as_mut_ptr(),
+                                    blob_len as usize,
+                                );
+                                blob.set_len(blob_len as usize);
+                            }
+                            PropValue::Blob(blob)
+                        }
+                        _ => {
+                            return KernelResponse::Error {
+                                err: abi::syscall_defs::SysError {
+                                    code: abi::syscall_defs::SysError::INVALID_ARG,
+                                    detail: 2,
+                                },
+                            };
+                        }
                     };
                     internal_props.push((key, val));
                 }
@@ -221,9 +253,14 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
 
             if let Err(e) = graph::validate_props(kind, &internal_props) {
                 log::log_message(e);
-                return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 3 } };
+                return KernelResponse::Error {
+                    err: abi::syscall_defs::SysError {
+                        code: abi::syscall_defs::SysError::INVALID_ARG,
+                        detail: 3,
+                    },
+                };
             }
-            
+
             let id = graph::create_thing(kind, internal_props);
             KernelResponse::ThingCreated { id }
         }
@@ -246,9 +283,14 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                             PropValue::U64(v) => abi::wire::graph::WirePropValue::u64(*v),
                             PropValue::I64(v) => abi::wire::graph::WirePropValue::i64(*v),
                             PropValue::Bool(v) => abi::wire::graph::WirePropValue::bool(*v),
-                            PropValue::Str(s) => abi::wire::graph::WirePropValue::sym(crate::symbols::intern(s)),
+                            PropValue::Str(s) => {
+                                abi::wire::graph::WirePropValue::sym(crate::symbols::intern(s))
+                            }
                             PropValue::Symbol(id) => abi::wire::graph::WirePropValue::sym(*id),
-                            PropValue::Blob(b) => abi::wire::graph::WirePropValue::blob(b.as_ptr() as u64, b.len() as u64),
+                            PropValue::Blob(b) => abi::wire::graph::WirePropValue::blob(
+                                b.as_ptr() as u64,
+                                b.len() as u64,
+                            ),
                         };
 
                         out_slice[count] = abi::wire::graph::WireProp {
@@ -261,9 +303,14 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 }
                 count
             }) {
-                Some(written) => KernelResponse::NodeData { written: written as u64 },
+                Some(written) => KernelResponse::NodeData {
+                    written: written as u64,
+                },
                 None => KernelResponse::Error {
-                    err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::NOT_FOUND, detail: 0 },
+                    err: abi::syscall_defs::SysError {
+                        code: abi::syscall_defs::SysError::NOT_FOUND,
+                        detail: 0,
+                    },
                 },
             }
         }
@@ -271,35 +318,51 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             let next = graph::next_thing_of_kind(kind, start_after);
             match next {
                 Some(id) => KernelResponse::ThingListEntry { valid: 1, id },
-                None => KernelResponse::ThingListEntry { valid: 0, id: ThingId(0) },
+                None => KernelResponse::ThingListEntry {
+                    valid: 0,
+                    id: ThingId(0),
+                },
             }
-        },
+        }
         KernelRequest::ThingUpdate { id, props } => {
-             let mut internal_props = alloc::vec::Vec::new();
-            
+            let mut internal_props = alloc::vec::Vec::new();
+
             let slice_ptr = props.ptr as *const abi::wire::graph::WireProp;
             let slice_len = props.len;
-            
+
             unsafe {
                 for i in 0..slice_len {
                     let wire_prop = *slice_ptr.add(i as usize);
                     let key = wire_prop.key;
                     let val = match wire_prop.value.tag {
-                         0 => PropValue::U64(wire_prop.value.data_0),
-                         1 => PropValue::I64(wire_prop.value.data_0 as i64),
-                         2 => PropValue::Bool(wire_prop.value.data_0 != 0),
-                         3 => PropValue::Symbol(abi::syscall_defs::SymbolId(wire_prop.value.data_0 as u32)),
-                         4 => {
-                             let blob_ptr = wire_prop.value.data_0 as *const u8;
-                             let blob_len = wire_prop.value.data_1;
-                             let mut blob = alloc::vec::Vec::with_capacity(blob_len as usize);
-                             if !blob_ptr.is_null() {
-                                 core::ptr::copy_nonoverlapping(blob_ptr, blob.as_mut_ptr(), blob_len as usize);
-                                 blob.set_len(blob_len as usize);
-                             }
-                             PropValue::Blob(blob)
-                         },
-                         _ => return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 2 } },
+                        0 => PropValue::U64(wire_prop.value.data_0),
+                        1 => PropValue::I64(wire_prop.value.data_0 as i64),
+                        2 => PropValue::Bool(wire_prop.value.data_0 != 0),
+                        3 => PropValue::Symbol(abi::syscall_defs::SymbolId(
+                            wire_prop.value.data_0 as u32,
+                        )),
+                        4 => {
+                            let blob_ptr = wire_prop.value.data_0 as *const u8;
+                            let blob_len = wire_prop.value.data_1;
+                            let mut blob = alloc::vec::Vec::with_capacity(blob_len as usize);
+                            if !blob_ptr.is_null() {
+                                core::ptr::copy_nonoverlapping(
+                                    blob_ptr,
+                                    blob.as_mut_ptr(),
+                                    blob_len as usize,
+                                );
+                                blob.set_len(blob_len as usize);
+                            }
+                            PropValue::Blob(blob)
+                        }
+                        _ => {
+                            return KernelResponse::Error {
+                                err: abi::syscall_defs::SysError {
+                                    code: abi::syscall_defs::SysError::INVALID_ARG,
+                                    detail: 2,
+                                },
+                            };
+                        }
                     };
                     internal_props.push((key, val));
                 }
@@ -309,24 +372,32 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 graph::validate_props(thing_node.kind, &internal_props)
             });
             if let Some(res) = validation_result {
-                 if let Err(e) = res {
-                     log::log_message(e);
-                     return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 3 } };
-                 }
+                if let Err(e) = res {
+                    log::log_message(e);
+                    return KernelResponse::Error {
+                        err: abi::syscall_defs::SysError {
+                            code: abi::syscall_defs::SysError::INVALID_ARG,
+                            detail: 3,
+                        },
+                    };
+                }
             } else {
-                 // Thing not found, update_thing will fail anyway, but safer to error here
+                // Thing not found, update_thing will fail anyway, but safer to error here
             }
             if graph::update_thing(id, internal_props) {
                 KernelResponse::Success { data: None }
             } else {
                 KernelResponse::Error {
-                    err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::NOT_FOUND, detail: 0 },
+                    err: abi::syscall_defs::SysError {
+                        code: abi::syscall_defs::SysError::NOT_FOUND,
+                        detail: 0,
+                    },
                 }
             }
         }
         KernelRequest::ThingBatchUpdate { updates } => {
             let updates_ptr = updates.ptr as *const abi::wire::graph::BatchUpdateEntry;
-            
+
             unsafe {
                 for i in 0..updates.len {
                     let entry = *updates_ptr.add(i as usize);
@@ -335,47 +406,71 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     let props_ptr = entry.props_ptr.ptr as *const abi::wire::graph::WireProp;
 
                     let props_len = entry.props_len;
-                    
-                     for j in 0..props_len {
+
+                    for j in 0..props_len {
                         let wire_prop = *props_ptr.add(j as usize);
                         let key = wire_prop.key;
                         let val = match wire_prop.value.tag {
-                             0 => PropValue::U64(wire_prop.value.data_0),
-                             1 => PropValue::I64(wire_prop.value.data_0 as i64),
-                             2 => PropValue::Bool(wire_prop.value.data_0 != 0),
-                             3 => PropValue::Symbol(abi::syscall_defs::SymbolId(wire_prop.value.data_0 as u32)),
-                             4 => {
-                                 let blob_ptr = wire_prop.value.data_0 as *const u8;
-                                 let blob_len = wire_prop.value.data_1;
-                                 let mut blob = alloc::vec::Vec::with_capacity(blob_len as usize);
-                                 if !blob_ptr.is_null() {
-                                     core::ptr::copy_nonoverlapping(blob_ptr, blob.as_mut_ptr(), blob_len as usize);
-                                     blob.set_len(blob_len as usize);
-                                 }
-                                 PropValue::Blob(blob)
-                             },
-                             _ => return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 2 } },
+                            0 => PropValue::U64(wire_prop.value.data_0),
+                            1 => PropValue::I64(wire_prop.value.data_0 as i64),
+                            2 => PropValue::Bool(wire_prop.value.data_0 != 0),
+                            3 => PropValue::Symbol(abi::syscall_defs::SymbolId(
+                                wire_prop.value.data_0 as u32,
+                            )),
+                            4 => {
+                                let blob_ptr = wire_prop.value.data_0 as *const u8;
+                                let blob_len = wire_prop.value.data_1;
+                                let mut blob = alloc::vec::Vec::with_capacity(blob_len as usize);
+                                if !blob_ptr.is_null() {
+                                    core::ptr::copy_nonoverlapping(
+                                        blob_ptr,
+                                        blob.as_mut_ptr(),
+                                        blob_len as usize,
+                                    );
+                                    blob.set_len(blob_len as usize);
+                                }
+                                PropValue::Blob(blob)
+                            }
+                            _ => {
+                                return KernelResponse::Error {
+                                    err: abi::syscall_defs::SysError {
+                                        code: abi::syscall_defs::SysError::INVALID_ARG,
+                                        detail: 2,
+                                    },
+                                };
+                            }
                         };
                         internal_props.push((key, val));
                     }
-                    
+
                     let validation_result = graph::with_thing(entry.id, |thing_node| {
                         graph::validate_props(thing_node.kind, &internal_props)
                     });
-                     if let Some(res) = validation_result {
+                    if let Some(res) = validation_result {
                         if let Err(e) = res {
                             log::log_message(e);
-                            return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 3 } };
+                            return KernelResponse::Error {
+                                err: abi::syscall_defs::SysError {
+                                    code: abi::syscall_defs::SysError::INVALID_ARG,
+                                    detail: 3,
+                                },
+                            };
                         }
                     } else {
                         return KernelResponse::Error {
-                            err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::NOT_FOUND, detail: 0 },
+                            err: abi::syscall_defs::SysError {
+                                code: abi::syscall_defs::SysError::NOT_FOUND,
+                                detail: 0,
+                            },
                         };
                     }
 
                     if !graph::update_thing(entry.id, internal_props) {
                         return KernelResponse::Error {
-                            err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 0 },
+                            err: abi::syscall_defs::SysError {
+                                code: abi::syscall_defs::SysError::INTERNAL,
+                                detail: 0,
+                            },
                         };
                     }
                 }
@@ -387,7 +482,10 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 KernelResponse::Success { data: None }
             } else {
                 KernelResponse::Error {
-                    err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 0 },
+                    err: abi::syscall_defs::SysError {
+                        code: abi::syscall_defs::SysError::INTERNAL,
+                        detail: 0,
+                    },
                 }
             }
         }
@@ -408,13 +506,19 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     Some(f) => f,
                     None => {
                         return KernelResponse::Error {
-                            err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 1 },
+                            err: abi::syscall_defs::SysError {
+                                code: abi::syscall_defs::SysError::INTERNAL,
+                                detail: 1,
+                            },
                         };
                     }
                 };
                 if frames.push(frame).is_err() {
                     return KernelResponse::Error {
-                        err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 2 },
+                        err: abi::syscall_defs::SysError {
+                            code: abi::syscall_defs::SysError::INTERNAL,
+                            detail: 2,
+                        },
                     };
                 }
             }
@@ -429,8 +533,13 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 Ok(buffer_id) => KernelResponse::SharedBufferCreated { buffer_id },
                 Err(message) => {
                     log::log_message(message);
-                    KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 3 } }
-                },
+                    KernelResponse::Error {
+                        err: abi::syscall_defs::SysError {
+                            code: abi::syscall_defs::SysError::INTERNAL,
+                            detail: 3,
+                        },
+                    }
+                }
             }
         }
         KernelRequest::MapSharedBuffer { buffer_id, flags } => {
@@ -441,7 +550,10 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     (buffer.size_bytes(), frames)
                 } else {
                     return KernelResponse::Error {
-                        err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::NOT_FOUND, detail: 0 },
+                        err: abi::syscall_defs::SysError {
+                            code: abi::syscall_defs::SysError::NOT_FOUND,
+                            detail: 0,
+                        },
                     };
                 }
             };
@@ -454,7 +566,10 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     Some(id) => id,
                     None => {
                         return KernelResponse::Error {
-                             err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::PERMISSION, detail: 0 },
+                            err: abi::syscall_defs::SysError {
+                                code: abi::syscall_defs::SysError::PERMISSION,
+                                detail: 0,
+                            },
                         };
                     }
                 };
@@ -463,7 +578,10 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     Some(addr) => addr,
                     None => {
                         return KernelResponse::Error {
-                            err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 4 },
+                            err: abi::syscall_defs::SysError {
+                                code: abi::syscall_defs::SysError::INTERNAL,
+                                detail: 4,
+                            },
                         };
                     }
                 }
@@ -471,7 +589,12 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
 
             if let Err(msg) = shared_buffer::map_frames_into_current_as(vaddr, &frames, flags) {
                 log::log_message(msg);
-                return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 5 } };
+                return KernelResponse::Error {
+                    err: abi::syscall_defs::SysError {
+                        code: abi::syscall_defs::SysError::INTERNAL,
+                        detail: 5,
+                    },
+                };
             }
 
             KernelResponse::SharedBufferMapped { vaddr, size }
@@ -485,7 +608,10 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             match info {
                 Some(info) => KernelResponse::SharedBufferInfoResponse { info },
                 None => KernelResponse::Error {
-                    err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::NOT_FOUND, detail: 0 },
+                    err: abi::syscall_defs::SysError {
+                        code: abi::syscall_defs::SysError::NOT_FOUND,
+                        detail: 0,
+                    },
                 },
             }
         }
@@ -499,12 +625,20 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     },
                     Err(msg) => {
                         log::log_message(msg);
-                        KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 6 } }
-                    },
+                        KernelResponse::Error {
+                            err: abi::syscall_defs::SysError {
+                                code: abi::syscall_defs::SysError::INTERNAL,
+                                detail: 6,
+                            },
+                        }
+                    }
                 }
             } else {
                 KernelResponse::Error {
-                    err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 7 },
+                    err: abi::syscall_defs::SysError {
+                        code: abi::syscall_defs::SysError::INTERNAL,
+                        detail: 7,
+                    },
                 }
             }
         }
@@ -512,69 +646,89 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             kind,
             description,
             props,
-        } => { 
+        } => {
             let mut props_vec = alloc::vec::Vec::new();
             unsafe {
-                 let ptr = props.ptr as *const abi::wire::graph::WireSchemaProp;
-                 for i in 0..props.len {
-                      let wp = *ptr.add(i as usize);
-                      // wp.name is SymbolId
-                      let sym = wp.name;
-                      
-                      let pt = match wp.prop_type {
-                          0 => PropType::U64,
-                          1 => PropType::I64,
-                          2 => PropType::Bool,
-                          3 => PropType::Str,
-                          4 => PropType::Blob,
-                          _ => return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 8 } },
-                      };
-                      
-                      props_vec.push((sym, pt));
-                 }
+                let ptr = props.ptr as *const abi::wire::graph::WireSchemaProp;
+                for i in 0..props.len {
+                    let wp = *ptr.add(i as usize);
+                    // wp.name is SymbolId
+                    let sym = wp.name;
+
+                    let pt = match wp.prop_type {
+                        0 => PropType::U64,
+                        1 => PropType::I64,
+                        2 => PropType::Bool,
+                        3 => PropType::Str,
+                        4 => PropType::Blob,
+                        _ => {
+                            return KernelResponse::Error {
+                                err: abi::syscall_defs::SysError {
+                                    code: abi::syscall_defs::SysError::INVALID_ARG,
+                                    detail: 8,
+                                },
+                            };
+                        }
+                    };
+
+                    props_vec.push((sym, pt));
+                }
             }
             match register_schema(kind, description, props_vec, alloc::vec![]) {
                 Ok(outcome) => KernelResponse::SchemaRegistered { kind, outcome },
                 Err(e) => {
                     let msg = alloc::format!(
                         "SchemaRegister failed: kind={:?} desc={:?} err={}",
-                        kind, description, e
+                        kind,
+                        description,
+                        e
                     );
                     crate::log::log_message(&msg);
-                    KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 9 } }
+                    KernelResponse::Error {
+                        err: abi::syscall_defs::SysError {
+                            code: abi::syscall_defs::SysError::INTERNAL,
+                            detail: 9,
+                        },
+                    }
                 }
             }
-        },
+        }
         KernelRequest::SchemaGet { kind, out } => match get_schema_props(kind) {
             Some(props) => {
-                 // Convert Internal PropType to WireSchemaProp
-                 // We need to write to `out`.
-                 // Max items = out.len
-                 let count = core::cmp::min(props.len(), out.len as usize);
-                 let ptr = out.ptr as *mut abi::wire::graph::WireSchemaProp;
-                 unsafe {
-                     for i in 0..count {
-                         let (sym, pt) = props[i];
-                         let pt_raw = match pt {
-                             PropType::U64 => 0,
-                             PropType::I64 => 1,
-                             PropType::Bool => 2,
-                             PropType::Str => 3,
-                             PropType::Blob => 4,
-                             PropType::Symbol => 5,
-                             _ => 0,
-                         };
-                         let wsp = abi::wire::graph::WireSchemaProp {
-                             name: sym,
-                             prop_type: pt_raw,
-                         };
-                         *ptr.add(i) = wsp;
-                     }
-                 }
-                 KernelResponse::SchemaData { written: count as u64, fingerprint: 0 }
+                // Convert Internal PropType to WireSchemaProp
+                // We need to write to `out`.
+                // Max items = out.len
+                let count = core::cmp::min(props.len(), out.len as usize);
+                let ptr = out.ptr as *mut abi::wire::graph::WireSchemaProp;
+                unsafe {
+                    for i in 0..count {
+                        let (sym, pt) = props[i];
+                        let pt_raw = match pt {
+                            PropType::U64 => 0,
+                            PropType::I64 => 1,
+                            PropType::Bool => 2,
+                            PropType::Str => 3,
+                            PropType::Blob => 4,
+                            PropType::Symbol => 5,
+                            _ => 0,
+                        };
+                        let wsp = abi::wire::graph::WireSchemaProp {
+                            name: sym,
+                            prop_type: pt_raw,
+                        };
+                        *ptr.add(i) = wsp;
+                    }
+                }
+                KernelResponse::SchemaData {
+                    written: count as u64,
+                    fingerprint: 0,
+                }
             }
             None => KernelResponse::Error {
-                err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::NOT_FOUND, detail: 0 },
+                err: abi::syscall_defs::SysError {
+                    code: abi::syscall_defs::SysError::NOT_FOUND,
+                    detail: 0,
+                },
             },
         },
         KernelRequest::GetMemorySummary => {
@@ -595,7 +749,10 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 KernelResponse::FrameAllocated { frame: frame_info }
             }
             None => KernelResponse::Error {
-                err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 10 },
+                err: abi::syscall_defs::SysError {
+                    code: abi::syscall_defs::SysError::INTERNAL,
+                    detail: 10,
+                },
             },
         },
         KernelRequest::FreeFrame { frame_id } => {
@@ -604,7 +761,10 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             KernelResponse::FrameFreed { frame_id }
         }
         KernelRequest::CreateProcess { name: _ } => KernelResponse::Error {
-            err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 99 },
+            err: abi::syscall_defs::SysError {
+                code: abi::syscall_defs::SysError::INTERNAL,
+                detail: 99,
+            },
         },
         KernelRequest::CreateThread {
             pid: _,
@@ -612,22 +772,37 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             app_id: _,
             priority: _,
         } => KernelResponse::Error {
-            err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 99 },
+            err: abi::syscall_defs::SysError {
+                code: abi::syscall_defs::SysError::INTERNAL,
+                detail: 99,
+            },
         },
         KernelRequest::SchedulerTick => {
             let current = scheduler_tick();
             match current {
                 Some(c) => KernelResponse::SchedulerTicked {
                     has_current: 1,
-                    current: abi::SchedThreadInfo { tid: c.tid, state: c.state, priority: c.priority }
+                    current: abi::SchedThreadInfo {
+                        tid: c.tid,
+                        state: c.state,
+                        priority: c.priority,
+                    },
                 },
                 None => KernelResponse::SchedulerTicked {
                     has_current: 0,
-                    current: abi::SchedThreadInfo { tid: 0, state: 0, priority: 0 }
+                    current: abi::SchedThreadInfo {
+                        tid: 0,
+                        state: 0,
+                        priority: 0,
+                    },
                 },
             }
         }
-        KernelRequest::ResidentAlloc { kind, byte_len, flags } => {
+        KernelRequest::ResidentAlloc {
+            kind,
+            byte_len,
+            flags,
+        } => {
             let kind_id = crate::graph::schema::ensure_kind_exists(kind);
             let args = abi::resident::ResidentAllocArgs {
                 kind_id,
@@ -640,36 +815,33 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::ResidentMap { id, perms } => {
-             let args = abi::resident::ResidentMapArgs {
-                 id,
-                 perms,
-             };
-             match resident::manager::sys_resident_map(args) {
-                 Ok(resp) => KernelResponse::ResidentMapped { resp },
-                 Err(e) => KernelResponse::ResidentError(e),
-             }
+            let args = abi::resident::ResidentMapArgs { id, perms };
+            match resident::manager::sys_resident_map(args) {
+                Ok(resp) => KernelResponse::ResidentMapped { resp },
+                Err(e) => KernelResponse::ResidentError(e),
+            }
         }
         KernelRequest::ResidentUnmap { thing_id } => {
-             match resident::manager::sys_resident_unmap(thing_id) {
-                 Ok(()) => KernelResponse::Success { data: None },
-                 Err(e) => KernelResponse::ResidentError(e),
-             }
+            match resident::manager::sys_resident_unmap(thing_id) {
+                Ok(()) => KernelResponse::Success { data: None },
+                Err(e) => KernelResponse::ResidentError(e),
+            }
         }
         KernelRequest::ThingRest { thing_id, policy } => {
-             match resident::manager::sys_thing_rest(thing_id, policy) {
-                 Ok(resp) => KernelResponse::ThingRested { resp },
-                 Err(e) => KernelResponse::ResidentError(e),
-             }
+            match resident::manager::sys_thing_rest(thing_id, policy) {
+                Ok(resp) => KernelResponse::ThingRested { resp },
+                Err(e) => KernelResponse::ResidentError(e),
+            }
         }
-        
+
         KernelRequest::ExitThread => KernelResponse::Success { data: None },
     }
 }
 
 /// Create builtin kernel Things at boot time
 pub fn create_builtin_things() {
-    use thing_models::{PropType, PropValue};
     use alloc::vec;
+    use thing_models::{PropType, PropValue};
 
     log("Creating kernel Things...");
 
@@ -682,7 +854,7 @@ pub fn create_builtin_things() {
         (crate::symbols::intern("version"), PropType::U64),
         (crate::symbols::intern("booted"), PropType::Bool),
     ];
-    
+
     if let Err(e) = register_schema(kind, desc, props, vec![]) {
         log("Failed to register KernelInfo schema");
         log(e);
@@ -715,7 +887,10 @@ pub fn create_builtin_things() {
     let kind = crate::symbols::intern("BootStats");
     let props = vec![
         (crate::symbols::intern("boot_time_ms"), PropValue::U64(0)),
-        (crate::symbols::intern("things_created"), PropValue::U64(BUILTIN_THING_COUNT)),
+        (
+            crate::symbols::intern("things_created"),
+            PropValue::U64(BUILTIN_THING_COUNT),
+        ),
     ];
 
     let _id = graph::create_thing(kind, props);
@@ -723,8 +898,6 @@ pub fn create_builtin_things() {
 
     log("Kernel Things created.");
     // Dump the graph so callers can inspect the freshly-created builtin Things
-
-
 }
 
 /// Initialize the boot graph with memory and scheduling Things
@@ -856,7 +1029,7 @@ fn verify_boot_graph_invariants() {
     let mut cpu_node = None;
     let mut process_node = None;
     let mut running_thread = None;
-    
+
     let kind_cpu = crate::symbols::intern("CpuCore");
     let kind_process = crate::symbols::intern("Process");
     let kind_thread = crate::symbols::intern("Thread");
@@ -874,13 +1047,14 @@ fn verify_boot_graph_invariants() {
             process_count += 1;
             process_node = Some(thing.id);
         } else if thing.kind == kind_thread {
-             thread_count += 1;
-             // Find state prop in Vec
-             if let Some((_, PropValue::Str(s))) = thing.props.iter().find(|(k, _)| *k == prop_state) {
-                 if s.as_str() == ThreadState::Running.as_str() {
-                     running_thread = Some(thing.id);
-                 }
-             }
+            thread_count += 1;
+            // Find state prop in Vec
+            if let Some((_, PropValue::Str(s))) = thing.props.iter().find(|(k, _)| *k == prop_state)
+            {
+                if s.as_str() == ThreadState::Running.as_str() {
+                    running_thread = Some(thing.id);
+                }
+            }
         } else if thing.kind == kind_frame {
             phys_frame_count += 1;
         } else if thing.kind == kind_virt {
@@ -911,11 +1085,15 @@ fn verify_boot_graph_invariants() {
 
     if let Some(thread) = running_thread {
         graph::with_thing(thread, |t| {
-             let state = t.props.iter().find(|(k, _)| *k == prop_state).map(|(_, v)| v);
-             debug_assert!(
-                 matches!(state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Running.as_str()),
-                 "boot thread should be Running"
-             );
+            let state = t
+                .props
+                .iter()
+                .find(|(k, _)| *k == prop_state)
+                .map(|(_, v)| v);
+            debug_assert!(
+                matches!(state, Some(PropValue::Str(s)) if s.as_str() == ThreadState::Running.as_str()),
+                "boot thread should be Running"
+            );
         });
 
         if let Some(cpu) = cpu_node {
@@ -939,13 +1117,17 @@ fn verify_boot_graph_invariants() {
 
     if let Some(addr_space) = addr_space_node {
         graph::with_thing(addr_space, |t| {
-            let asid = t.props.iter().find(|(k, _)| *k == prop_asid).map(|(_, v)| v);
-             debug_assert!(
-                 matches!(asid, Some(PropValue::U64(1))),
-                 "AddressSpace should have ASID 1"
-             );
+            let asid = t
+                .props
+                .iter()
+                .find(|(k, _)| *k == prop_asid)
+                .map(|(_, v)| v);
+            debug_assert!(
+                matches!(asid, Some(PropValue::U64(1))),
+                "AddressSpace should have ASID 1"
+            );
         });
     }
 }
-pub mod hal_impl;
 pub mod driver_bringup;
+pub mod hal_impl;

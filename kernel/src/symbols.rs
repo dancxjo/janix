@@ -1,9 +1,8 @@
+pub use abi::syscall_defs::SymbolId;
 use alloc::string::String;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use spin::Mutex;
-pub use abi::syscall_defs::SymbolId;
-
 
 pub struct SymbolTable {
     unintern: Vec<String>,

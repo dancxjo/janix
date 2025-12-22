@@ -1,7 +1,7 @@
+use abi::syscall_defs::SymbolId;
 use abi::wire::common::*;
 use abi::wire::graph::*;
 use abi::wire::memory::*;
-use abi::syscall_defs::SymbolId;
 use static_assertions::assert_eq_size;
 
 #[test]
@@ -21,7 +21,7 @@ fn test_wire_layout() {
 
     // FrameInfo: id(8) + base(8) + size(8) = 24 bytes
     assert_eq_size!(FrameInfo, [u8; 24]);
-    
+
     // BatchUpdateEntry has id: ThingId(u64), props_ptr: UserPtr (u64), props_len: u64
     assert_eq_size!(abi::wire::graph::BatchUpdateEntry, [u8; 24]);
 }

@@ -1,14 +1,14 @@
 #![allow(dead_code)]
 
-pub const CLEAR_COLOR: u32 = 0xFF100814; // Deepest purple
-pub const FRAME_BG: u32 = 0xFF1C1224; // Dark Purple
-pub const FRAME_BORDER: u32 = 0xFF483A59; // Muted Purple
-pub const TITLE_COLOR_ACTIVE: u32 = 0xFF9370DB; // Medium Purple/Lavender-ish
-pub const TITLE_COLOR_INACTIVE: u32 = 0xFF2E2436; // Dark Muted Purple
+pub const CLEAR_COLOR: u32 = 0xFF4C89AA; // Dominant sky blue from clouds.bmp
+pub const FRAME_BG: u32 = 0xFF15364A; // Deep navy interior
+pub const FRAME_BORDER: u32 = 0xFF0E2433; // Dark outline for contrast
+pub const TITLE_COLOR_ACTIVE: u32 = 0xFF76B4D1; // Light sky tint
+pub const TITLE_COLOR_INACTIVE: u32 = 0xFF2F5E78; // Muted blue
 pub const TITLE_TEXT_COLOR: u32 = 0xFFFFFFFF; // High contrast white
-pub const CONTENT_BG: u32 = 0xFF0E0612; // Almost black purple
+pub const CONTENT_BG: u32 = 0xFF0B1D27; // Shadowed panel interior
 pub const TEXT_COLOR: u32 = 0xFFFFFFFF; // High contrast white
-pub const CURSOR_COLOR: u32 = 0xFFE6E6FA; // Lavender
+pub const CURSOR_COLOR: u32 = 0xFFF4FAFF; // Soft white highlight
 pub const CURSOR_SHADOW: u32 = 0xFF000000;
 
 pub const TITLE_BAR_HEIGHT: i32 = 26;

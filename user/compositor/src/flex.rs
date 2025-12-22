@@ -22,7 +22,9 @@ impl FlexDirection {
     }
 }
 impl Default for FlexDirection {
-    fn default() -> Self { Self::Column }
+    fn default() -> Self {
+        Self::Column
+    }
 }
 impl FromStr for FlexDirection {
     type Err = ();
@@ -52,7 +54,9 @@ impl FlexWrap {
     }
 }
 impl Default for FlexWrap {
-    fn default() -> Self { Self::NoWrap }
+    fn default() -> Self {
+        Self::NoWrap
+    }
 }
 impl FromStr for FlexWrap {
     type Err = ();
@@ -88,7 +92,9 @@ impl JustifyContent {
     }
 }
 impl Default for JustifyContent {
-    fn default() -> Self { Self::Start }
+    fn default() -> Self {
+        Self::Start
+    }
 }
 impl FromStr for JustifyContent {
     type Err = ();
@@ -125,7 +131,9 @@ impl AlignItems {
     }
 }
 impl Default for AlignItems {
-    fn default() -> Self { Self::Stretch }
+    fn default() -> Self {
+        Self::Stretch
+    }
 }
 impl FromStr for AlignItems {
     type Err = ();

@@ -1,8 +1,8 @@
 use core::arch::asm;
 use kernel::memory::{PhysFrame, allocate_frame, phys_to_virt};
 use x86_64::structures::paging::{
-    Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame as X86PhysFrame, Size4KiB,
-    FrameAllocator,
+    FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags,
+    PhysFrame as X86PhysFrame, Size4KiB,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -38,29 +38,38 @@ pub unsafe fn map_device_region(phys: u64, len: u64) {
     let end_frame = X86PhysFrame::<Size4KiB>::containing_address(end);
 
     let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE;
-        // Note: x86_64 crate doesn't have a direct "DEVICE" flag, usually we want NO_CACHE (PCD) or WRITE_THROUGH (PWT).
-        // For MMIO, NO_CACHE is generally safer.
+    // Note: x86_64 crate doesn't have a direct "DEVICE" flag, usually we want NO_CACHE (PCD) or WRITE_THROUGH (PWT).
+    // For MMIO, NO_CACHE is generally safer.
 
     for frame in X86PhysFrame::range_inclusive(start_frame, end_frame) {
-        let page = Page::containing_address(VirtAddr::new(frame.start_address().as_u64() + hhdm_offset));
-        
+        let page =
+            Page::containing_address(VirtAddr::new(frame.start_address().as_u64() + hhdm_offset));
+
         // Check if already mapped
         if mapper.translate_page(page).is_ok() {
-             kernel::println!("map_device_region: page {:?} already mapped, skipping/updating flags", page);
-             // Verify/Update flags? For now just log.
-             continue;
+            kernel::println!(
+                "map_device_region: page {:?} already mapped, skipping/updating flags",
+                page
+            );
+            // Verify/Update flags? For now just log.
+            continue;
         }
 
         unsafe {
             match mapper.map_to(page, frame, flags, &mut allocator) {
                 Ok(flush) => flush.flush(),
                 Err(e) => {
-                     kernel::println!("map_device_region: failed to map {:?} to {:?}: {:?}", page, frame, e);
-                     panic!("Failed to map device region");
+                    kernel::println!(
+                        "map_device_region: failed to map {:?} to {:?}: {:?}",
+                        page,
+                        frame,
+                        e
+                    );
+                    panic!("Failed to map device region");
                 }
             }
         }
     }
-    
+
     kernel::println!("Mapped device region {:#x} len {:#x}", phys, len);
 }

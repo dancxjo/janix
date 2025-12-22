@@ -1,12 +1,12 @@
-use crate::graph::store::{self, StorageState, ArchiveRef};
 use crate::graph::schema;
-use abi::ThingId;
-use thing_models::PropValue;
-use abi::resident::{RestPolicy, RestResp, ResidentError, ResidentErrorCode};
-use abi::resident_layout::{ResidentHeader, ResPropEntry, ResTag};
+use crate::graph::store::{self, ArchiveRef, StorageState};
 use crate::memory::hhdm;
-use alloc::vec::Vec;
+use abi::ThingId;
+use abi::resident::{ResidentError, ResidentErrorCode, RestPolicy, RestResp};
+use abi::resident_layout::{ResPropEntry, ResTag, ResidentHeader};
 use alloc::string::String;
+use alloc::vec::Vec;
+use thing_models::PropValue;
 
 enum PropValueView<'a> {
     U64(u64),
@@ -60,14 +60,14 @@ fn cbor_encode_kv(out: &mut Vec<u8>, key: &str, val: &PropValueView) {
             } else {
                 cbor_encode_header((-1 - *v) as u64, 1, out);
             }
-        },
+        }
         PropValueView::Bool(v) => {
             out.push(if *v { 0xF5 } else { 0xF4 });
-        },
+        }
         PropValueView::Str(s) => {
             cbor_encode_header(s.len() as u64, 3, out);
             out.extend_from_slice(s.as_bytes());
-        },
+        }
         PropValueView::Bytes(b) => {
             cbor_encode_header(b.len() as u64, 2, out); // Maj 2 = Byte String
             out.extend_from_slice(b);
@@ -75,13 +75,20 @@ fn cbor_encode_kv(out: &mut Vec<u8>, key: &str, val: &PropValueView) {
     }
 }
 
-pub fn snapshot_and_archive(thing_id: ThingId, policy: RestPolicy) -> Result<RestResp, ResidentError> {
+pub fn snapshot_and_archive(
+    thing_id: ThingId,
+    policy: RestPolicy,
+) -> Result<RestResp, ResidentError> {
     unsafe {
         let mut guard = store::things_slab().lock();
         let store = guard.as_mut().unwrap();
-        
-        let node = store.get_node_mut(thing_id).ok_or(ResidentError{code: ResidentErrorCode::BadThing, aux0:0,aux1:0})?;
-        
+
+        let node = store.get_node_mut(thing_id).ok_or(ResidentError {
+            code: ResidentErrorCode::BadThing,
+            aux0: 0,
+            aux1: 0,
+        })?;
+
         // Check generation implicitly handled by get_node_mut logic (GraphStore uses HashMap key lookup so ID match ensures correctness mostly, unless recycled ID not handled well. But ABI refactored GraphStore uses unique IDs mostly? Or HashMap handles it.)
         // Actually GraphStore uses ThingId as key. ThingId includes generation.
         // HashMap lookup by ThingId checks generation if ThingId::eq checks it.
@@ -90,114 +97,139 @@ pub fn snapshot_and_archive(thing_id: ThingId, policy: RestPolicy) -> Result<Res
 
         let thing = node;
 
-        let resident = thing.resident.as_ref().ok_or(ResidentError{code: ResidentErrorCode::NotResident, aux0:0,aux1:0})?;
-        
+        let resident = thing.resident.as_ref().ok_or(ResidentError {
+            code: ResidentErrorCode::NotResident,
+            aux0: 0,
+            aux1: 0,
+        })?;
+
         if resident.pages.is_empty() {
-             return Err(ResidentError{code: ResidentErrorCode::NotResident, aux0:0,aux1:0});
+            return Err(ResidentError {
+                code: ResidentErrorCode::NotResident,
+                aux0: 0,
+                aux1: 0,
+            });
         }
 
         let first_frame = resident.pages[0].frame;
         let vaddr = hhdm::phys_to_virt(first_frame.start_address);
         let header_ptr = vaddr as *const ResidentHeader;
-        
+
         // Seqlock Retry Loop + Encode
         let cbor_blob = loop {
-             let seq1 = (*header_ptr).seq;
-             if seq1 % 2 != 0 {
-                  core::hint::spin_loop();
-                  continue;
-             }
-             core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Acquire);
-             
-             let header = *header_ptr;
-             if header.magic != ResidentHeader::MAGIC {
-                  return Err(ResidentError{code: ResidentErrorCode::BadHeader, aux0:0,aux1:0});
-             }
-             
-             let props_off = header.props_off;
-             let count = header.prop_count;
-             
-             let table_ptr = (header_ptr as *const u8).add(props_off as usize) as *const ResPropEntry;
-             
-             let mut cbor_out = Vec::with_capacity(count as usize * 16); // heuristic
-             
-             // Begin Map (Maj 5)
-             cbor_encode_header(count as u64, 5, &mut cbor_out);
+            let seq1 = (*header_ptr).seq;
+            if seq1 % 2 != 0 {
+                core::hint::spin_loop();
+                continue;
+            }
+            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Acquire);
 
-             let mut failed = false;
+            let header = *header_ptr;
+            if header.magic != ResidentHeader::MAGIC {
+                return Err(ResidentError {
+                    code: ResidentErrorCode::BadHeader,
+                    aux0: 0,
+                    aux1: 0,
+                });
+            }
 
-             for i in 0..count {
-                  let entry = *table_ptr.add(i as usize);
-                  
-                  let val_view = match entry.tag {
-                        ResTag::U64 => PropValueView::U64(entry.v), // U64
-                        ResTag::I64 => PropValueView::I64(entry.v as i64), // I64
-                        ResTag::Bool => PropValueView::Bool(entry.v != 0), // Bool
-                        ResTag::Str => { // Str
-                            let off = entry.a;
-                            let len = entry.b;
-                            if (off + len) as u32 > header.total_len { failed = true; break; }
-                            let str_ptr = (header_ptr as *const u8).add(off as usize);
-                            let slice = core::slice::from_raw_parts(str_ptr, len as usize);
-                            if let Ok(s) = alloc::str::from_utf8(slice) {
-                                PropValueView::Str(s)
-                            } else {
-                                PropValueView::Str("<invalid utf8>")
-                            }
-                        },
-                        ResTag::Bytes => { // Bytes
-                            let off = entry.a;
-                            let len = entry.b;
-                            if (off + len) as u32 > header.total_len { failed = true; break; }
-                            let ptr = (header_ptr as *const u8).add(off as usize);
-                            let slice = core::slice::from_raw_parts(ptr, len as usize);
-                            PropValueView::Bytes(slice)
-                        },
-                        ResTag::ThingId => PropValueView::U64(entry.v), // ThingId -> U64 for cbor
-                  };
-                  
-                  if let Some(k) = schema::get_key_from_id(thing.kind, entry.key_id) {
-                       cbor_encode_kv(&mut cbor_out, &k, &val_view);
-                  }
-             }
-             
-             core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
-             let seq2 = (*header_ptr).seq;
-             
-             if seq1 == seq2 && !failed {
-                   break cbor_out;
-              }
-             if failed {
-                 // Bounds error, retry or fail
-                 // For now, if bounds fail, we assume race and retry.
-                 // Limit retries?
-             }
+            let props_off = header.props_off;
+            let count = header.prop_count;
+
+            let table_ptr =
+                (header_ptr as *const u8).add(props_off as usize) as *const ResPropEntry;
+
+            let mut cbor_out = Vec::with_capacity(count as usize * 16); // heuristic
+
+            // Begin Map (Maj 5)
+            cbor_encode_header(count as u64, 5, &mut cbor_out);
+
+            let mut failed = false;
+
+            for i in 0..count {
+                let entry = *table_ptr.add(i as usize);
+
+                let val_view = match entry.tag {
+                    ResTag::U64 => PropValueView::U64(entry.v),        // U64
+                    ResTag::I64 => PropValueView::I64(entry.v as i64), // I64
+                    ResTag::Bool => PropValueView::Bool(entry.v != 0), // Bool
+                    ResTag::Str => {
+                        // Str
+                        let off = entry.a;
+                        let len = entry.b;
+                        if (off + len) as u32 > header.total_len {
+                            failed = true;
+                            break;
+                        }
+                        let str_ptr = (header_ptr as *const u8).add(off as usize);
+                        let slice = core::slice::from_raw_parts(str_ptr, len as usize);
+                        if let Ok(s) = alloc::str::from_utf8(slice) {
+                            PropValueView::Str(s)
+                        } else {
+                            PropValueView::Str("<invalid utf8>")
+                        }
+                    }
+                    ResTag::Bytes => {
+                        // Bytes
+                        let off = entry.a;
+                        let len = entry.b;
+                        if (off + len) as u32 > header.total_len {
+                            failed = true;
+                            break;
+                        }
+                        let ptr = (header_ptr as *const u8).add(off as usize);
+                        let slice = core::slice::from_raw_parts(ptr, len as usize);
+                        PropValueView::Bytes(slice)
+                    }
+                    ResTag::ThingId => PropValueView::U64(entry.v), // ThingId -> U64 for cbor
+                };
+
+                if let Some(k) = schema::get_key_from_id(thing.kind, entry.key_id) {
+                    cbor_encode_kv(&mut cbor_out, &k, &val_view);
+                }
+            }
+
+            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+            let seq2 = (*header_ptr).seq;
+
+            if seq1 == seq2 && !failed {
+                break cbor_out;
+            }
+            if failed {
+                // Bounds error, retry or fail
+                // For now, if bounds fail, we assume race and retry.
+                // Limit retries?
+            }
         };
 
-        
         // 2. Archive Blob
-        let archive_ref = store::archive_store().lock().as_mut().unwrap().store(cbor_blob);
+        let archive_ref = store::archive_store()
+            .lock()
+            .as_mut()
+            .unwrap()
+            .store(cbor_blob);
         thing.archived_ref = Some(archive_ref);
 
         // 3. Update State based on Policy
         match policy {
             RestPolicy::SnapshotKeepResident => {
-                thing.storage = StorageState::Both; 
-            },
+                thing.storage = StorageState::Both;
+            }
             RestPolicy::SnapshotEvictResident => {
                 thing.resident = None;
                 thing.storage = StorageState::Archived;
             }
         }
-        
+
         let archived_ref = if let Some(r) = &thing.archived_ref {
-             abi::resident::ArchiveRef {
-                 id: r.0 as u32,
-             }
+            abi::resident::ArchiveRef { id: r.0 as u32 }
         } else {
-             abi::resident::ArchiveRef::default()
+            abi::resident::ArchiveRef::default()
         };
 
-        Ok(RestResp { thing_id, archived_ref })
+        Ok(RestResp {
+            thing_id,
+            archived_ref,
+        })
     }
 }

@@ -351,7 +351,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as syn::ItemFn);
     let original_main = input.block;
     let original_sig = input.sig;
-    
+
     // Rename user's main to avoid conflict
     let mut modified_sig = original_sig.clone();
     modified_sig.ident = syn::Ident::new("thing_os_app_main", modified_sig.ident.span());
@@ -366,7 +366,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             loop {}
         }
-        
+
         #modified_sig #original_main
     };
     TokenStream::from(expanded)

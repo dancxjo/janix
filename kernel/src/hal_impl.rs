@@ -1,5 +1,5 @@
-use hal::{PciConfigAccess, MmioMapper};
 use crate::memory::phys_to_virt;
+use hal::{MmioMapper, PciConfigAccess};
 
 pub struct KernelPciConfigAccess;
 
@@ -17,7 +17,9 @@ mod pci_impl {
             | ((func as u32) << 8)
             | (offset as u32 & 0xFC);
         let mut port = Port::<u32>::new(PCI_CONFIG_ADDRESS);
-        unsafe { port.write(addr); }
+        unsafe {
+            port.write(addr);
+        }
     }
 
     pub fn read_u8(bus: u8, slot: u8, func: u8, offset: u16) -> u8 {
@@ -47,9 +49,15 @@ mod pci_impl {
 
 #[cfg(not(target_arch = "x86_64"))]
 mod pci_impl {
-    pub fn read_u8(_bus: u8, _slot: u8, _func: u8, _offset: u16) -> u8 { 0xFF }
-    pub fn read_u16(_bus: u8, _slot: u8, _func: u8, _offset: u16) -> u16 { 0xFFFF }
-    pub fn read_u32(_bus: u8, _slot: u8, _func: u8, _offset: u16) -> u32 { 0xFFFFFFFF }
+    pub fn read_u8(_bus: u8, _slot: u8, _func: u8, _offset: u16) -> u8 {
+        0xFF
+    }
+    pub fn read_u16(_bus: u8, _slot: u8, _func: u8, _offset: u16) -> u16 {
+        0xFFFF
+    }
+    pub fn read_u32(_bus: u8, _slot: u8, _func: u8, _offset: u16) -> u32 {
+        0xFFFFFFFF
+    }
 }
 
 impl PciConfigAccess for KernelPciConfigAccess {

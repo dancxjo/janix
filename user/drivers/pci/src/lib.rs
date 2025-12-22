@@ -3,15 +3,12 @@
 
 extern crate alloc;
 
-use abi::{
-    syscall_defs::SymbolId,
-    wire::graph::{WirePropValue},
-};
-use thing_os::thing_models::graph_kinds::{self, KIND_PCI_DEVICE};
-use thing_os::graph_ops::GraphOp;
+use abi::{syscall_defs::SymbolId, wire::graph::WirePropValue};
 use alloc::vec::Vec;
-use hal::{PciConfigAccess};
+use hal::PciConfigAccess;
+use thing_os::graph_ops::GraphOp;
 use thing_os::intern;
+use thing_os::thing_models::graph_kinds::{self, KIND_PCI_DEVICE};
 
 pub trait GraphSink {
     fn submit(&mut self, op: GraphOp) -> Result<(), &'static str>;
@@ -59,9 +56,8 @@ impl<'a> PciDriver<'a> {
         }
     }
 
-    pub fn init(&self) {
-    }
-    
+    pub fn init(&self) {}
+
     pub fn scan_and_publish<S: GraphSink>(&self, sink: &mut S) {
         let bus = 0;
         for slot in 0..32 {
@@ -93,14 +89,38 @@ impl<'a> PciDriver<'a> {
                 let bar5 = self.read_bar(bus, slot, func, 5);
 
                 let props: Vec<(SymbolId, WirePropValue)> = alloc::vec![
-                    (intern(graph_kinds::PROP_BUS), WirePropValue::u64(bus as u64)),
-                    (intern(graph_kinds::PROP_SLOT), WirePropValue::u64(slot as u64)),
-                    (intern(graph_kinds::PROP_FUNC), WirePropValue::u64(func as u64)),
-                    (intern(graph_kinds::PROP_VENDOR_ID), WirePropValue::u64(vendor_id as u64)),
-                    (intern(graph_kinds::PROP_DEVICE_ID), WirePropValue::u64(device_id as u64)),
-                    (intern(graph_kinds::PROP_CLASS_ID), WirePropValue::u64(class_id as u64)),
-                    (intern(graph_kinds::PROP_SUBCLASS_ID), WirePropValue::u64(subclass_id as u64)),
-                    (intern(graph_kinds::PROP_PROG_IF), WirePropValue::u64(prog_if as u64)),
+                    (
+                        intern(graph_kinds::PROP_BUS),
+                        WirePropValue::u64(bus as u64)
+                    ),
+                    (
+                        intern(graph_kinds::PROP_SLOT),
+                        WirePropValue::u64(slot as u64)
+                    ),
+                    (
+                        intern(graph_kinds::PROP_FUNC),
+                        WirePropValue::u64(func as u64)
+                    ),
+                    (
+                        intern(graph_kinds::PROP_VENDOR_ID),
+                        WirePropValue::u64(vendor_id as u64)
+                    ),
+                    (
+                        intern(graph_kinds::PROP_DEVICE_ID),
+                        WirePropValue::u64(device_id as u64)
+                    ),
+                    (
+                        intern(graph_kinds::PROP_CLASS_ID),
+                        WirePropValue::u64(class_id as u64)
+                    ),
+                    (
+                        intern(graph_kinds::PROP_SUBCLASS_ID),
+                        WirePropValue::u64(subclass_id as u64)
+                    ),
+                    (
+                        intern(graph_kinds::PROP_PROG_IF),
+                        WirePropValue::u64(prog_if as u64)
+                    ),
                     (intern(graph_kinds::PROP_BAR0), WirePropValue::u64(bar0)),
                     (intern(graph_kinds::PROP_BAR1), WirePropValue::u64(bar1)),
                     (intern(graph_kinds::PROP_BAR2), WirePropValue::u64(bar2)),
@@ -108,7 +128,7 @@ impl<'a> PciDriver<'a> {
                     (intern(graph_kinds::PROP_BAR4), WirePropValue::u64(bar4)),
                     (intern(graph_kinds::PROP_BAR5), WirePropValue::u64(bar5)),
                 ];
-                
+
                 let _ = sink.submit(GraphOp::CreateThing {
                     kind: intern(KIND_PCI_DEVICE),
                     props,
@@ -133,8 +153,8 @@ impl PciConfigAccess for UserPciConfig {
     }
 }
 
-use abi::wire::graph::WireProp;
 use abi::wire::common::UserSlice;
+use abi::wire::graph::WireProp;
 
 struct UserGraphSink;
 impl GraphSink for UserGraphSink {
@@ -142,17 +162,21 @@ impl GraphSink for UserGraphSink {
         match op {
             GraphOp::CreateThing { kind, props } => {
                 println!("PCI: Creating thing kind={:?} (sym)", kind);
-                
+
                 let mut wire_props = Vec::with_capacity(props.len());
                 for (key, value) in props {
-                    wire_props.push(WireProp { key, value, _pad: 0 });
+                    wire_props.push(WireProp {
+                        key,
+                        value,
+                        _pad: 0,
+                    });
                 }
-                
+
                 let req = thing_os::KernelRequest::ThingCreate {
                     kind,
                     props: UserSlice::from_slice(&wire_props),
                 };
-                
+
                 match thing_os::syscalls::syscall(req) {
                     thing_os::KernelResponse::ThingCreated { .. } => Ok(()),
                     _ => {

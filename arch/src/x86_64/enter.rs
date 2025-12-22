@@ -134,10 +134,10 @@ pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext
     } else {
         16 - (start_addr % 16)
     };
-    
+
     // Create a mutable slice starting at the aligned offset
     let aligned_slice = &mut raw_buffer[align_offset..align_offset + 512];
-    
+
     // Copy data
     aligned_slice.copy_from_slice(&fpu_context.data);
 
@@ -147,12 +147,12 @@ pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext
     aligned_slice[mxcsr_offset..mxcsr_offset + 4].copy_from_slice(&default_mxcsr.to_le_bytes());
 
     let aligned_ptr = aligned_slice.as_ptr();
-    
+
     // Debug logging to verify context
     let rip = context[15];
     let rsp = context[18];
     // Removed: logging moved to user.rs/schedule_next
-    
+
     unsafe {
         core::arch::x86_64::_fxrstor(aligned_ptr);
         resume_user_mode_asm(context.as_ptr())
@@ -163,7 +163,7 @@ pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
     let selectors = gdt::get_selectors();
 
     let raw_top = regs.user_stack;
-    
+
     // Align down to 16
     let mut rsp = raw_top & !0xFu64;
 
@@ -179,18 +179,18 @@ pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
     // If it causes faults (e.g. page not mapped in kernel, or S-bit protection), we might need to remove it.
     // But for "user entry", the stack page should be user-accessible. Kernel accessing user page usually requires stac/clac on x86 if SMAP is on.
     // To be safe against SMAP, we should probably SKIP the write unless we know SMAP is off or we use user_access primitives.
-    // The user's snippet didn't show stac/clac. 
+    // The user's snippet didn't show stac/clac.
     // I will Include it as requested but with a comment.
-    // Actually, if I look at `copy_segment_bytes` in elf_loader, it writes to user memory using direct pointer (with HHDM?). 
+    // Actually, if I look at `copy_segment_bytes` in elf_loader, it writes to user memory using direct pointer (with HHDM?).
     // Ah, `copy_segment_bytes` uses `frame_phys + hhdm`. That is a kernel mapping (direct map).
     // `rsp` here is a USER virtual address. safely writing to it requires mapping lookup or `stac`.
     // I'll skip the write to be safe to avoid unneeded faults, satisfying "Optionally".
-    // Wait, the user said "If your entry stack alignment is wrong... nonsense". 
+    // Wait, the user said "If your entry stack alignment is wrong... nonsense".
     // The write is just for debuggability. The adjustment `rsp -= 8` is the fix.
-    
+
     let x86_regs = X86UserEntryRegs {
         rip: regs.entry_point,
-        rsp, // Use adjusted RSP
+        rsp,           // Use adjusted RSP
         rflags: 0x202, // IF=1
         user_cs: selectors.ucode.0 as u64 | 3,
         user_ss: selectors.udata.0 as u64 | 3,

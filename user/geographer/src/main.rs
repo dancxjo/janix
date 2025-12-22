@@ -11,16 +11,13 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::slice;
 
-use abi::{
-    KernelRequest, KernelResponse, MapFlags, PixelFormat,
-    SharedBufferInfo, ThingId,
-};
-use thing_os::{PropKey, PropType, PropValue};
+use abi::{KernelRequest, KernelResponse, MapFlags, PixelFormat, SharedBufferInfo, ThingId};
 use thing_os::prelude::*;
 use thing_os::{
     add_link, create_thing, graph_kinds, list_things_by_kind, register_schema_for, update_props,
     DisplayThing, ProcessThing, Surface, Thing, Window,
 };
+use thing_os::{PropKey, PropType, PropValue};
 
 mod text;
 use text::draw_text_simple;

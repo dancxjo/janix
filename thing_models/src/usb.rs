@@ -1,6 +1,6 @@
-use abi::ThingId;
-use crate::{PropKey, PropType, PropValue, Thing};
 use crate::graph_kinds;
+use crate::{PropKey, PropType, PropValue, Thing};
+use abi::ThingId;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -96,7 +96,10 @@ impl Thing for UsbDevice {
     const DESCRIPTION: &'static str = "A USB Device";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("controller_id".to_string(), PropValue::U64(self.controller_id.0)));
+        out.push((
+            "controller_id".to_string(),
+            PropValue::U64(self.controller_id.0),
+        ));
         out.push(("slot".to_string(), PropValue::U64(self.slot as u64)));
         out.push(("address".to_string(), PropValue::U64(self.address as u64)));
         out.push(("vid".to_string(), PropValue::U64(self.vid as u64)));
@@ -214,15 +217,26 @@ impl Thing for UsbEndpoint {
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("device_id".to_string(), PropValue::U64(self.device_id.0)));
-        out.push(("endpoint_number".to_string(),
+        out.push((
+            "endpoint_number".to_string(),
             PropValue::U64(self.endpoint_number as u64),
         ));
-        out.push(("direction_in".to_string(), PropValue::Bool(self.direction_in)));
-        out.push(("transfer_type".to_string(), PropValue::U64(self.transfer_type as u64)));
-        out.push(("max_packet_size".to_string(),
+        out.push((
+            "direction_in".to_string(),
+            PropValue::Bool(self.direction_in),
+        ));
+        out.push((
+            "transfer_type".to_string(),
+            PropValue::U64(self.transfer_type as u64),
+        ));
+        out.push((
+            "max_packet_size".to_string(),
             PropValue::U64(self.max_packet_size as u64),
         ));
-        out.push(("interval_ms".to_string(), PropValue::U64(self.interval_ms as u64)));
+        out.push((
+            "interval_ms".to_string(),
+            PropValue::U64(self.interval_ms as u64),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -317,11 +331,20 @@ impl Thing for UsbTransferRequest {
     const DESCRIPTION: &'static str = "A request to perform a USB transfer";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("endpoint_id".to_string(), PropValue::U64(self.endpoint_id.0)));
+        out.push((
+            "endpoint_id".to_string(),
+            PropValue::U64(self.endpoint_id.0),
+        ));
         out.push(("kind".to_string(), PropValue::U64(self.kind as u64)));
         // out.push(("buffer".to_string(), PropValue::Blob(self.buffer.clone())));
-        out.push(("expected_len".to_string(), PropValue::U64(self.expected_len as u64)));
-        out.push(("timeout_ms".to_string(), PropValue::U64(self.timeout_ms as u64)));
+        out.push((
+            "expected_len".to_string(),
+            PropValue::U64(self.expected_len as u64),
+        ));
+        out.push((
+            "timeout_ms".to_string(),
+            PropValue::U64(self.timeout_ms as u64),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {

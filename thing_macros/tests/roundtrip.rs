@@ -1,7 +1,7 @@
 extern crate alloc;
 use abi::ThingId;
-use thing_models::{PropValue, Thing};
 use thing_macros::Thing;
+use thing_models::{PropValue, Thing};
 
 #[derive(Clone, Debug, PartialEq, Eq, Thing)]
 #[thing(description = "Helper struct for verifying Thing derive conversions")]
@@ -36,7 +36,10 @@ fn derived_thing_roundtrips_via_props() {
             ("counter".to_string(), PropValue::U64(42)),
             ("variant".to_string(), PropValue::U64(7)),
             ("signed".to_string(), PropValue::I64(-3)),
-            ("label".to_string(), PropValue::Str(String::from("roundtrip"))),
+            (
+                "label".to_string(),
+                PropValue::Str(String::from("roundtrip"))
+            ),
             ("ready".to_string(), PropValue::Bool(true)),
             ("letter".to_string(), PropValue::Str(String::from("A"))),
         ]

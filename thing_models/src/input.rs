@@ -1,5 +1,5 @@
-use abi::ThingId;
 use crate::{PropKey, PropValue};
+use abi::ThingId;
 use alloc::string::{String, ToString};
 
 #[derive(thing_macros::Thing, Clone, Copy, Debug)]
@@ -32,7 +32,10 @@ impl KeyScanEvent {
             ("extended".to_string(), PropValue::Bool(extended)),
             ("released".to_string(), PropValue::Bool(released)),
             ("sequence_index".to_string(), PropValue::U64(sequence_index)),
-            ("timestamp_ticks".to_string(), PropValue::U64(timestamp_ticks)),
+            (
+                "timestamp_ticks".to_string(),
+                PropValue::U64(timestamp_ticks),
+            ),
         ]
     }
 }
@@ -56,7 +59,10 @@ impl InputCharEvent {
     ) -> [(PropKey, PropValue); 4] {
         [
             ("ch".to_string(), PropValue::Str(String::from(ch))),
-            ("source_controller".to_string(), PropValue::U64(source_controller.0)),
+            (
+                "source_controller".to_string(),
+                PropValue::U64(source_controller.0),
+            ),
             (
                 "source_port_index".to_string(),
                 PropValue::U64(source_port_index as u64),
@@ -98,7 +104,10 @@ impl MousePacketEvent {
             ("controller_id".to_string(), PropValue::U64(controller_id.0)),
             ("port_index".to_string(), PropValue::U64(port_index)),
             ("sequence_index".to_string(), PropValue::U64(sequence_index)),
-            ("timestamp_ticks".to_string(), PropValue::U64(timestamp_ticks)),
+            (
+                "timestamp_ticks".to_string(),
+                PropValue::U64(timestamp_ticks),
+            ),
             ("buttons".to_string(), PropValue::U64(buttons)),
             ("delta_x".to_string(), PropValue::I64(delta_x)),
             ("delta_y".to_string(), PropValue::I64(delta_y)),

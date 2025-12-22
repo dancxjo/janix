@@ -1,15 +1,15 @@
 extern crate alloc;
 
-use alloc::string::ToString;
-use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::vec::Vec;
-use alloc::string::String;
-use thing_os::prelude::*;
 use abi::ThingId;
-use thing_models::{PropValue, PropKey, PropType};
-use thing_models::graph_kinds;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use compositor_api;
-use thing_os::{update_props, list_things_by_kind, load_thing};
+use thing_models::graph_kinds;
+use thing_models::{PropKey, PropType, PropValue};
+use thing_os::prelude::*;
+use thing_os::{list_things_by_kind, load_thing, update_props};
 
 use crate::flex::{AlignItems, FlexDirection, FlexWrap, JustifyContent, prop_as_f32};
 use crate::widget_layout::{self, LayoutItem, LayoutSpec, Rect};
@@ -49,7 +49,6 @@ pub struct WidgetNode {
 }
 
 impl WidgetNode {
-
     pub fn is_overlay(&self) -> bool {
         self.x.is_some() && self.y.is_some()
     }
@@ -58,55 +57,61 @@ impl WidgetNode {
 impl thing_os::Thing for WidgetNode {
     const KIND: &'static str = compositor_api::KIND_WIDGET;
     const DESCRIPTION: &'static str = "UI Widget";
-    fn schema() -> &'static [(&'static str, PropType)] { &[] }
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[]
+    }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
         let get_i32 = |k: &str| -> Option<i32> {
-            props.iter().flatten().find(|(key, _)| *key == k).and_then(|(_, v)| match v {
-                PropValue::I64(n) => Some(*n as i32),
-                _ => None,
-            })
+            props
+                .iter()
+                .flatten()
+                .find(|(key, _)| *key == k)
+                .and_then(|(_, v)| match v {
+                    PropValue::I64(n) => Some(*n as i32),
+                    _ => None,
+                })
         };
 
         let get_prop = |k: &str| -> Option<&PropValue> {
-             props.iter().flatten().find(|(key, _)| *key == k).map(|(_, v)| v)
+            props
+                .iter()
+                .flatten()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| v)
         };
 
         let text = get_prop(graph_kinds::PROP_TEXT).and_then(|v| match v {
             PropValue::Str(s) => Some(s.clone()),
             _ => None,
         });
-        
+
         // Helper for color/size which are I64 or U64 depending on encoding, usually I64 in properties
         let get_u32 = |k: &str| -> Option<u32> {
-             match get_prop(k) {
-                 Some(PropValue::I64(v)) => Some(*v as u32),
-                 Some(PropValue::U64(v)) => Some(*v as u32),
-                 _ => None,
-             }
+            match get_prop(k) {
+                Some(PropValue::I64(v)) => Some(*v as u32),
+                Some(PropValue::U64(v)) => Some(*v as u32),
+                _ => None,
+            }
         };
 
         let font_size = get_u32(graph_kinds::PROP_FONT_SIZE);
         let fg_color = get_u32(graph_kinds::PROP_FG_COLOR);
         let bg_color = get_u32(graph_kinds::PROP_BG_COLOR);
 
-        let flex_direction = get_prop(compositor_api::PROP_FLEX_DIRECTION)
-            .and_then(FlexDirection::from_prop);
+        let flex_direction =
+            get_prop(compositor_api::PROP_FLEX_DIRECTION).and_then(FlexDirection::from_prop);
 
-        let flex_wrap = get_prop(compositor_api::PROP_FLEX_WRAP)
-            .and_then(FlexWrap::from_prop);
+        let flex_wrap = get_prop(compositor_api::PROP_FLEX_WRAP).and_then(FlexWrap::from_prop);
 
-        let justify = get_prop(compositor_api::PROP_JUSTIFY_CONTENT)
-            .and_then(JustifyContent::from_prop);
+        let justify =
+            get_prop(compositor_api::PROP_JUSTIFY_CONTENT).and_then(JustifyContent::from_prop);
 
-        let align = get_prop(compositor_api::PROP_ALIGN_ITEMS)
-            .and_then(AlignItems::from_prop);
+        let align = get_prop(compositor_api::PROP_ALIGN_ITEMS).and_then(AlignItems::from_prop);
 
-        let flex_grow = get_prop(compositor_api::PROP_FLEX_GROW)
-            .and_then(prop_as_f32);
-        
-        let flex_shrink = get_prop(compositor_api::PROP_FLEX_SHRINK)
-            .and_then(prop_as_f32);
+        let flex_grow = get_prop(compositor_api::PROP_FLEX_GROW).and_then(prop_as_f32);
+
+        let flex_shrink = get_prop(compositor_api::PROP_FLEX_SHRINK).and_then(prop_as_f32);
 
         Self {
             id,
@@ -159,14 +164,25 @@ pub fn layout_children(
         let wrap = container.flex_wrap.unwrap_or(FlexWrap::NoWrap);
         let justify = container.justify.unwrap_or_default();
         let align = container.align.unwrap_or(AlignItems::Stretch);
-        (gap, LayoutSpec::Flex { direction: dir, wrap, justify, align })
+        (
+            gap,
+            LayoutSpec::Flex {
+                direction: dir,
+                wrap,
+                justify,
+                align,
+            },
+        )
     } else {
-        (0, LayoutSpec::Flex {
-            direction: FlexDirection::Column,
-            wrap: FlexWrap::NoWrap,
-            justify: JustifyContent::Start,
-            align: AlignItems::Stretch,
-        })
+        (
+            0,
+            LayoutSpec::Flex {
+                direction: FlexDirection::Column,
+                wrap: FlexWrap::NoWrap,
+                justify: JustifyContent::Start,
+                align: AlignItems::Stretch,
+            },
+        )
     };
 
     let mut relative = Vec::new();
@@ -174,28 +190,35 @@ pub fn layout_children(
 
     for id in children {
         if let Some(w) = widgets.get(id) {
-            if w.is_overlay() { overlay.push(*id); } else { relative.push(*id); }
+            if w.is_overlay() {
+                overlay.push(*id);
+            } else {
+                relative.push(*id);
+            }
         }
     }
 
     // --- relative children (flex flow) ---
-    let items: Vec<LayoutItem> = relative.iter().filter_map(|id| {
-        widgets.get(id).map(|w| {
-            // This is the “30px fallback height” trick from Basic-OS
-            let min_w = w.min_width.or(w.width).unwrap_or(0).max(0) as u32;
-            let min_h = w.min_height.or(w.height).unwrap_or(30).max(0) as u32;
+    let items: Vec<LayoutItem> = relative
+        .iter()
+        .filter_map(|id| {
+            widgets.get(id).map(|w| {
+                // This is the “30px fallback height” trick from Basic-OS
+                let min_w = w.min_width.or(w.width).unwrap_or(0).max(0) as u32;
+                let min_h = w.min_height.or(w.height).unwrap_or(30).max(0) as u32;
 
-            LayoutItem {
-                id: *id,
-                min_width: min_w,
-                min_height: min_h,
-                max_width: w.max_width.map(|v| v.max(0) as u32),
-                max_height: w.max_height.map(|v| v.max(0) as u32),
-                flex_grow: w.flex_grow.unwrap_or(0.0),
-                flex_shrink: w.flex_shrink.unwrap_or(1.0),
-            }
+                LayoutItem {
+                    id: *id,
+                    min_width: min_w,
+                    min_height: min_h,
+                    max_width: w.max_width.map(|v| v.max(0) as u32),
+                    max_height: w.max_height.map(|v| v.max(0) as u32),
+                    flex_grow: w.flex_grow.unwrap_or(0.0),
+                    flex_shrink: w.flex_shrink.unwrap_or(1.0),
+                }
+            })
         })
-    }).collect();
+        .collect();
 
     let mut rects = widget_layout::layout(container_rect, spec, &items, gap);
 
@@ -219,10 +242,16 @@ pub fn layout_children(
             if width_changed || height_changed {
                 let mut props = Vec::new();
                 if width_changed {
-                    props.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::I64(r.w as i64)));
+                    props.push((
+                        graph_kinds::PROP_WIDTH.to_string(),
+                        PropValue::I64(r.w as i64),
+                    ));
                 }
                 if height_changed {
-                    props.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::I64(r.h as i64)));
+                    props.push((
+                        graph_kinds::PROP_HEIGHT.to_string(),
+                        PropValue::I64(r.h as i64),
+                    ));
                 }
                 let _ = update_props(*id, &props);
             }

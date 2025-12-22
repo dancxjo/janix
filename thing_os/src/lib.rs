@@ -418,7 +418,8 @@ pub fn create_thing<T: Thing>(thing: &T) -> Option<ThingId> {
 /// Load a typed `Thing` from the kernel.
 pub fn load_thing<T: Thing>(id: ThingId) -> Option<T> {
     const MAX_PROPS: usize = 32;
-    let mut buf = [WireProp { key: SymbolId(0), value: WirePropValue::u64(0), _pad: 0 }; MAX_PROPS];
+    // Use zeroed initialization to avoid WirePropValue call (and potential crash)
+    let mut buf: [WireProp; MAX_PROPS] = unsafe { core::mem::zeroed() };
 
     // Call syscall with ptr and len
     let ptr = buf.as_mut_ptr() as u64;

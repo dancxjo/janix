@@ -83,12 +83,10 @@ impl SimpleLockedHeap {
     }
 
     pub unsafe fn init(&self, start: *mut u8, size: usize) {
-        while self.lock.swap(true, Ordering::Acquire) {
-            core::hint::spin_loop();
-        }
+        // Reset lock to false (unlocked), using Relaxed ordering as we are single-threaded init
+        self.lock.store(false, Ordering::Relaxed);
         let heap = &mut *self.inner.get();
         heap.init(start as usize, size);
-        self.lock.store(false, Ordering::Release);
     }
 }
 

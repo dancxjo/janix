@@ -4,14 +4,19 @@ use abi::syscall_defs::{
 };
 use abi::syscalls::*;
 use abi::wire::common::{UserPtr, UserSlice};
-use abi::wire::graph::{BatchUpdateReq, WireProp, WirePropValue, WireSchemaProp, WireValueTag};
-use abi::{MapFlags, ProcessId, ThingId};
+use abi::wire::graph::{
+    BatchUpdateEntry, BatchUpdateReq, WireProp, WirePropValue, WireSchemaProp, WireValueTag,
+};
+use abi::{MapFlags, ProcessId, ThingId, TransactionId};
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::slice;
 use kernel::graph;
+use kernel::memory;
+use kernel::shared_buffer;
 use kernel::symbols;
+use kernel::transaction;
 use thing_models::{PropType, PropValue};
 
 use core::arch::global_asm;
@@ -676,6 +681,148 @@ macro_rules! dispatch_syscall {
         } else {
             1
         }
+    }};
+    (SYSCALL_SLEEP_UNTIL, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        kernel::sched::with_scheduler(|sched| {
+            sched.sleep_current_thread($a1);
+        });
+        crate::user::schedule_next();
+        0
+    }};
+    (SYSCALL_TIME_MONOTONIC_NS, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        kernel::time::monotonic_now_ns()
+    }};
+    (SYSCALL_TIME_SYSTEM_NS, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        kernel::time::system_time_ns().unwrap_or(0)
+    }};
+    (SYSCALL_TIME_NOW, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        let (sec, nanos) = kernel::time::now_unix_from_rtc();
+        if let Some(sec_ptr) = unsafe { user_ptr_mut::<i64>($a1) } {
+            *sec_ptr = sec;
+        }
+        if let Some(nanos_ptr) = unsafe { user_ptr_mut::<u32>($a2) } {
+            *nanos_ptr = nanos;
+        }
+        0
+    }};
+    (SYSCALL_ALLOC_FRAME, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        if let Some(frame) = kernel::memory::allocate_frame() {
+            if let Some(out) = unsafe { user_ptr_mut::<abi::wire::memory::FrameInfo>($a2) } {
+                out.id = abi::FrameId(frame.start_address >> 12);
+                out.base = frame.start_address;
+                out.size = frame.size;
+                0
+            } else {
+                1
+            }
+        } else {
+            1
+        }
+    }};
+    (SYSCALL_FREE_FRAME, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        let addr = $a1 << 12;
+        let frame = unsafe {
+             kernel::memory::PhysFrame { start_address: addr, size: 4096 }
+        };
+        kernel::memory::free_frame(frame);
+        0
+    }};
+    (SYSCALL_CREATE_PROCESS, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        let ptr = $a1;
+        let len = $a2;
+        let slice = unsafe { user_slice::<u8>(ptr, len) };
+        if let Ok(s) = core::str::from_utf8(slice) {
+             let name = alloc::string::String::from(s);
+             let leaked: &'static str = Box::leak(name.into_boxed_str());
+             kernel::sched::SCHEDULER.lock().add_process(leaked).0
+        } else {
+             u64::MAX
+        }
+    }};
+    (SYSCALL_CREATE_THREAD, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        let pid = abi::ProcessId($a1);
+        let entry = $a2;
+        let prio = $a3;
+        let name_ptr = $a4;
+        let name_len = $a5;
+
+        let slice = unsafe { user_slice::<u8>(name_ptr, name_len) };
+        let name_str = core::str::from_utf8(slice).unwrap_or("unknown");
+        let name = alloc::string::String::from(name_str);
+        let leaked_name: &'static str = Box::leak(name.into_boxed_str());
+
+        let stack_size = 64 * 1024; // 64KB
+        let pid_check = kernel::sched::SCHEDULER.lock().current_process_id();
+        if pid_check != Some(pid) {
+             u64::MAX
+        } else {
+             if let Some(stack_base) = kernel::sched::SCHEDULER.lock().reserve_user_region(pid, stack_size, 4096) {
+                 let page_count = stack_size / 4096;
+                 let mut frames = alloc::vec::Vec::new();
+                 let mut success = true;
+                 for _ in 0..page_count {
+                     if let Some(f) = kernel::memory::allocate_frame() {
+                         frames.push(f);
+                     } else {
+                         success = false;
+                         break;
+                     }
+                 }
+
+                 if success {
+                     if kernel::shared_buffer::map_frames_into_current_as(stack_base, &frames, abi::MapFlags::READ | abi::MapFlags::WRITE).is_ok() {
+                         let stack_top = stack_base + stack_size as u64;
+                         kernel::sched::SCHEDULER.lock().add_thread(pid, leaked_name, unsafe { core::mem::transmute(entry) }, 0, stack_top, prio).0
+                     } else {
+                         for f in frames { kernel::memory::free_frame(f); }
+                         u64::MAX
+                     }
+                 } else {
+                     for f in frames { kernel::memory::free_frame(f); }
+                     u64::MAX
+                 }
+             } else {
+                 u64::MAX
+             }
+        }
+    }};
+    (SYSCALL_CREATE_TRANSACTION, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        kernel::transaction::create_transaction().0
+    }};
+    (SYSCALL_COMMIT_TRANSACTION, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        match kernel::transaction::commit_transaction(abi::TransactionId($a1)) {
+            Ok(_) => 0,
+            Err(_) => 1,
+        }
+    }};
+    (SYSCALL_GRAPH_QUERY, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        let id = abi::ThingId($a1);
+        let out_ptr = $a2;
+        let out_len = $a3;
+        if let Some(data) = graph::query_node(id) {
+            let slice = unsafe { slice::from_raw_parts_mut(out_ptr as *mut u8, out_len as usize) };
+            let len = core::cmp::min(data.len(), slice.len());
+            slice[..len].copy_from_slice(&data[..len]);
+            0
+        } else {
+            1
+        }
+    }};
+    (SYSCALL_THING_BATCH_UPDATE, $regs:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        let ptr = $a1;
+        let len = $a2;
+        let slice = unsafe { user_slice::<BatchUpdateEntry>(ptr, len) };
+        for entry in slice {
+            let props_ptr = entry.props_ptr.ptr;
+            let props_len = entry.props_len;
+            let wire_props = unsafe { user_slice::<WireProp>(props_ptr, props_len) };
+            let mut kernel_props = Vec::with_capacity(wire_props.len());
+            for wp in wire_props {
+                kernel_props.push(convert_prop(wp));
+            }
+            graph::update_thing(entry.id, kernel_props);
+        }
+        0
     }};
 
     // Fallback for missing syscalls (Stubs)

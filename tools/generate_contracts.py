@@ -197,7 +197,7 @@ def generate_abi_surface():
     with open('docs/contracts/abi_surface.md', 'w') as f:
         f.write("# ABI Surface Inventory\n\n")
 
-        with open('abi/src/lib.rs', 'r') as fr:
+        with open('abi/src/requests.rs', 'r') as fr:
             content = fr.read()
 
         req_start = content.find('pub enum KernelRequest')
@@ -232,9 +232,9 @@ def generate_abi_surface():
                      ftype = parts[1].strip().rstrip(',')
                      forbidden = check_forbidden(ftype)
                      warn = " **FORBIDDEN: " + ", ".join(forbidden) + "**" if forbidden else ""
-                     f.write(f"| `{current_variant}` | `{fname}: {ftype}`{warn} | `abi/src/lib.rs` |\n")
+                     f.write(f"| `{current_variant}` | `{fname}: {ftype}`{warn} | `abi/src/requests.rs` |\n")
                 elif line.endswith(',') and '{' not in line and '(' not in line:
-                     f.write(f"| `{line.rstrip(',')}` | Unit | `abi/src/lib.rs` |\n")
+                     f.write(f"| `{line.rstrip(',')}` | Unit | `abi/src/requests.rs` |\n")
 
         f.write("\n## KernelResponse Variants\n\n")
         f.write("| Variant | Field Types | Source |\n")
@@ -257,9 +257,9 @@ def generate_abi_surface():
                  ftype = parts[1].strip().rstrip(',')
                  forbidden = check_forbidden(ftype)
                  warn = " **FORBIDDEN: " + ", ".join(forbidden) + "**" if forbidden else ""
-                 f.write(f"| `{current_variant}` | `{fname}: {ftype}`{warn} | `abi/src/lib.rs` |\n")
+                 f.write(f"| `{current_variant}` | `{fname}: {ftype}`{warn} | `abi/src/requests.rs` |\n")
             elif line.endswith(',') and '{' not in line and '(' not in line:
-                 f.write(f"| `{line.rstrip(',')}` | Unit | `abi/src/lib.rs` |\n")
+                 f.write(f"| `{line.rstrip(',')}` | Unit | `abi/src/requests.rs` |\n")
 
         f.write("\n## Wire Types (abi/src/wire/**)\n\n")
         f.write("| Type Name | Kind | Fields/Types | Source | Compliance |\n")
@@ -323,8 +323,8 @@ def generate_nonos():
     # (pattern, description, scope_path)
     queries = [
         ("mem::transmute", "mem::transmute calls", "."),
-        ("&'static str", "&'static str in ABI request/response", "abi/src/lib.rs"),
-        ("&'static [", "&'static slices in ABI response", "abi/src/lib.rs"),
+        ("&'static str", "&'static str in ABI request/response", "abi/src"),
+        ("&'static [", "&'static slices in ABI response", "abi/src"),
         ("static mut", "static mut in user drivers", "user/drivers"),
         ("unsafe impl Send", "unsafe Send in user drivers", "user/drivers"),
         ("unsafe impl Sync", "unsafe Sync in user drivers", "user/drivers"),

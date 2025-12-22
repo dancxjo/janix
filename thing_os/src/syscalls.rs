@@ -387,6 +387,68 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
                 KernelResponse::ResidentError(err)
             }
         }
+        KernelRequest::CreateTransaction => {
+            let ret = unsafe { raw_syscall(SYSCALL_CREATE_TRANSACTION, 0, 0, 0, 0, 0, 0) };
+            if ret > 0 {
+                KernelResponse::TransactionCreated {
+                    tx_id: abi::TransactionId(ret),
+                }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
+        KernelRequest::CommitTransaction { tx_id } => {
+            let ret = unsafe { raw_syscall(SYSCALL_COMMIT_TRANSACTION, tx_id.0, 0, 0, 0, 0, 0) };
+            if ret == 0 {
+                KernelResponse::Success { data: None }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
+        KernelRequest::ThingBatchUpdate { updates } => {
+            let ret = unsafe {
+                raw_syscall(
+                    SYSCALL_THING_BATCH_UPDATE,
+                    updates.ptr,
+                    updates.len,
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::Success { data: None }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
+        KernelRequest::GraphQuery { node_id, out } => {
+            let ret = unsafe {
+                raw_syscall(
+                    SYSCALL_GRAPH_QUERY,
+                    node_id.0,
+                    out.ptr,
+                    out.len,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::NodeData { written: 0 }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
         KernelRequest::ResidentMap { id, perms } => {
             let mut resp = ResidentMapResp::default();
             let mut err = ResidentError::default();
@@ -425,28 +487,6 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
 
             if ret == 0 {
                 KernelResponse::Success { data: None }
-            } else {
-                KernelResponse::ResidentError(err)
-            }
-        }
-        KernelRequest::ThingRest { thing_id, policy } => {
-            let mut resp = RestResp::default();
-            let mut err = ResidentError::default();
-
-            let ret = unsafe {
-                raw_syscall(
-                    SYSCALL_THING_REST,
-                    thing_id.0,
-                    policy as u64,
-                    &mut resp as *mut _ as u64,
-                    &mut err as *mut _ as u64,
-                    0,
-                    0,
-                )
-            };
-
-            if ret == 0 {
-                KernelResponse::ThingRested { resp }
             } else {
                 KernelResponse::ResidentError(err)
             }

@@ -2,44 +2,43 @@ No-Nos Grep Report
 ==================
 
 --- mem::transmute calls ---
-Count: 8
-./arch/src/x86_64/syscall.rs:474:             let format = unsafe { core::mem::transmute(arg3 as u8) }; // unsafe cast to PixelFormat enum
-./arch/src/x86_64/syscall.rs:583:             let policy = unsafe { core::mem::transmute(arg2 as u32) };
-./arch/src/x86_64/syscall.rs:601:                 let res = kernel::bridge::ps2::dev_open(unsafe { core::mem::transmute(args.kind) }, args.index);
-./tools/generate_contracts.py:304:        ("mem::transmute", "mem::transmute calls", "."),
+Count: 11
+./arch/src/x86_64/syscall.rs:432:        let format = unsafe { core::mem::transmute($a3 as u8) };
+./arch/src/x86_64/syscall.rs:547:        let policy = unsafe { core::mem::transmute($a2 as u32) };
+./arch/src/x86_64/syscall.rs:568:                unsafe { core::mem::transmute(args.kind) },
+./arch/src/x86_64/syscall.rs:775:                         kernel::sched::SCHEDULER.lock().add_thread(pid, leaked_name, unsafe { core::mem::transmute(entry) }, 0, stack_top, prio).0
+./tools/generate_contracts.py:325:        ("mem::transmute", "mem::transmute calls", "."),
+./thing_os/src/syscalls.rs:256:                let outcome = unsafe { core::mem::transmute(ret as u8) };
+./docs/reports/architecture_alignment_2025_12_22.md:25:    *   Code uses `unsafe { core::mem::transmute(mmio) }` to cast a local reference to `&'static`. This is text-book Undefined Behavior and a ticking time bomb.
 ./docs/reports/architecture_alignment_2024_10_18.md:31:Zero instances of `mem::transmute` found in `kernel/src`. `unsafe` is used appropriately in `arch` and FFI boundaries. The kernel avoids UB shortcuts.
-./thing_os/src/syscalls.rs:343:                let outcome = unsafe { core::mem::transmute(ret as u8) };
-./user/drivers/usb/src/xhci.rs:46:    let static_mmio: &'static dyn MmioMapper = unsafe { core::mem::transmute(mmio) };
-./user/drivers/usb/src/xhci.rs:47:    let static_graph: &'static mut dyn GraphDriver = unsafe { core::mem::transmute(graph) };
+./docs/reports/architecture_alignment_2024_10_23.md:43:    let format = unsafe { core::mem::transmute($a3 as u8) };
+./docs/reports/architecture_alignment_2024_10_23.md:48:    let policy = unsafe { core::mem::transmute($a2 as u32) };
+./docs/reports/architecture_alignment_2024_10_23.md:61:    let static_mmio: &'static dyn MmioMapper = unsafe { core::mem::transmute(mmio) };
 
 --- &'static str in ABI request/response ---
-Count: 4
-429:    const KIND: &'static str; // High level string, wrapper must intern
-430:    const DESCRIPTION: &'static str;
-436:    fn schema() -> &'static [(&'static str, PropType)];
-440:    fn get_description(&self) -> &'static str {
+Count: 0
 
 --- &'static slices in ABI response ---
 Count: 0
 
 --- static mut in user drivers ---
-Count: 2
-user/drivers/usb/src/xhci.rs:36:struct SyncDriver(pub &'static mut dyn GraphDriver);
-user/drivers/usb/src/xhci.rs:47:    let static_graph: &'static mut dyn GraphDriver = unsafe { core::mem::transmute(graph) };
+Count: 3
+user/drivers/usb/src/lib.rs:14:pub fn init(mmio: &'static dyn MmioMapper, graph: &'static mut dyn GraphDriver) {
+user/drivers/usb/src/xhci.rs:37:struct SyncDriver(pub &'static mut dyn GraphDriver);
+user/drivers/usb/src/xhci.rs:45:pub fn register_watcher(mmio: &'static dyn MmioMapper, graph: &'static mut dyn GraphDriver) {
 
 --- unsafe Send in user drivers ---
 Count: 2
-user/drivers/usb/src/xhci.rs:34:unsafe impl Send for SyncMmio {}
-user/drivers/usb/src/xhci.rs:38:unsafe impl Send for SyncDriver {}
+user/drivers/usb/src/xhci.rs:35:unsafe impl Send for SyncMmio {}
+user/drivers/usb/src/xhci.rs:39:unsafe impl Send for SyncDriver {}
 
 --- unsafe Sync in user drivers ---
 Count: 2
-user/drivers/usb/src/xhci.rs:33:unsafe impl Sync for SyncMmio {}
-user/drivers/usb/src/xhci.rs:37:unsafe impl Sync for SyncDriver {}
+user/drivers/usb/src/xhci.rs:34:unsafe impl Sync for SyncMmio {}
+user/drivers/usb/src/xhci.rs:38:unsafe impl Sync for SyncDriver {}
 
 --- Vec usage in wire types ---
 Count: 0
 
 --- Traits in ABI ---
-Count: 1
-abi/src/lib.rs:428:pub trait Thing: Sized {
+Count: 0

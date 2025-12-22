@@ -67,7 +67,8 @@ pub fn dump_graph_table() {
     }
 }
 
-pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, PropValue)]) {
+pub fn print_thing_created(id: ThingId, _kind: SymbolId, _props: &[(SymbolId, PropValue)]) {
+    /*
     let kind_str = symbols::resolve(kind).unwrap_or_else(|| "???".into());
     let mut props_str = alloc::string::String::new();
     let mut first = true;
@@ -83,6 +84,9 @@ pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, Prop
     // format: (t1234:Thorton { kay: 'vel', boo: 123 })
     let msg = format!("(t{}:{} {{ {} }})", id.0, kind_str, props_str);
     crate::log(&msg);
+    */
+    // Minimal log or disabled for performance
+    // crate::log(&format!("(t{}) created", id.0));
 }
 
 pub fn print_thing_updated(id: ThingId, props: &[(SymbolId, PropValue)]) {
@@ -101,15 +105,19 @@ pub fn print_thing_updated(id: ThingId, props: &[(SymbolId, PropValue)]) {
     // crate::log(&msg);
 }
 
-pub fn print_link_created(src: ThingId, pred: Predicate, dst: ThingId) {
+pub fn print_link_created(src: ThingId, _pred: Predicate, dst: ThingId) {
+    /*
     // format: (t1234)-[:RESOLVED_NAME]->(x8549)
     let pred_str = resolve_predicate(pred);
     let msg = format!("(t{})-[:{}]->(t{})", src.0, pred_str, dst.0);
     crate::log(&msg);
+    */
 }
 
-pub fn print_link_removed(src: ThingId, pred: Predicate, dst: ThingId) {
+pub fn print_link_removed(src: ThingId, _pred: Predicate, dst: ThingId) {
+    /*
     let pred_str = resolve_predicate(pred);
     let msg = format!("(t{})-[:{}]-/->(t{})", src.0, pred_str, dst.0);
     crate::log(&msg);
+    */
 }

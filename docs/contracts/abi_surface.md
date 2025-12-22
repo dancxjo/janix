@@ -4,92 +4,92 @@
 
 | Variant | Field Types | Source |
 |---|---|---|
-| `GraphQuery` | `node_id: NodeId` | `abi/src/lib.rs` |
-| `GraphQuery` | `out: UserSlice<u8>` | `abi/src/lib.rs` |
-| `CreateTransaction` | Unit | `abi/src/lib.rs` |
-| `CommitTransaction` | `tx_id: TransactionId` | `abi/src/lib.rs` |
-| `Log` | `message: UserSlice<u8>` | `abi/src/lib.rs` |
-| `ThingCreate` | `kind: SymbolId` | `abi/src/lib.rs` |
-| `ThingCreate` | `props: UserSlice<WireProp>` | `abi/src/lib.rs` |
-| `SpawnProgram` | `boot_program_id: ThingId` | `abi/src/lib.rs` |
-| `ThingList` | `kind: SymbolId` | `abi/src/lib.rs` |
-| `ThingList` | `start_after: ThingId` | `abi/src/lib.rs` |
-| `ThingGet` | `id: ThingId` | `abi/src/lib.rs` |
-| `ThingGet` | `out: UserSlice<u8>` | `abi/src/lib.rs` |
-| `ThingUpdate` | `id: ThingId` | `abi/src/lib.rs` |
-| `ThingUpdate` | `props: UserSlice<WireProp>` | `abi/src/lib.rs` |
-| `ThingBatchUpdate` | `updates: UserSlice<WireBatchEntry>` | `abi/src/lib.rs` |
-| `SchemaRegisterPackage` | `kind: SymbolId` | `abi/src/lib.rs` |
-| `SchemaRegisterPackage` | `description: SymbolId` | `abi/src/lib.rs` |
-| `SchemaRegisterPackage` | `props: UserSlice<WireSchemaProp>` | `abi/src/lib.rs` |
-| `SchemaGet` | `kind: SymbolId` | `abi/src/lib.rs` |
-| `SchemaGet` | `out: UserSlice<WireSchemaProp>` | `abi/src/lib.rs` |
-| `GetMemorySummary` | Unit | `abi/src/lib.rs` |
-| `GetSchedulerSummary` | Unit | `abi/src/lib.rs` |
-| `AllocFrame` | `pool_index: u64` | `abi/src/lib.rs` |
-| `FreeFrame` | `frame_id: FrameId` | `abi/src/lib.rs` |
-| `CreateProcess` | `name: UserSlice<u8>` | `abi/src/lib.rs` |
-| `CreateThread` | `pid: u64` | `abi/src/lib.rs` |
-| `CreateThread` | `name: UserSlice<u8>` | `abi/src/lib.rs` |
-| `CreateThread` | `app_id: u64` | `abi/src/lib.rs` |
-| `CreateThread` | `priority: u64` | `abi/src/lib.rs` |
-| `SchedulerTick` | Unit | `abi/src/lib.rs` |
-| `ExitThread` | Unit | `abi/src/lib.rs` |
-| `AddLink` | `src: ThingId` | `abi/src/lib.rs` |
-| `AddLink` | `pred: Predicate` | `abi/src/lib.rs` |
-| `AddLink` | `dst: ThingId` | `abi/src/lib.rs` |
-| `LinkAt` | `src: ThingId` | `abi/src/lib.rs` |
-| `LinkAt` | `pred: Predicate` | `abi/src/lib.rs` |
-| `LinkAt` | `idx: usize` | `abi/src/lib.rs` |
-| `CreateSharedBuffer` | `width: u32` | `abi/src/lib.rs` |
-| `CreateSharedBuffer` | `height: u32` | `abi/src/lib.rs` |
-| `CreateSharedBuffer` | `pixel_format: PixelFormat` | `abi/src/lib.rs` |
-| `MapSharedBuffer` | `buffer_id: ThingId` | `abi/src/lib.rs` |
-| `MapSharedBuffer` | `flags: MapFlags` | `abi/src/lib.rs` |
-| `GetSharedBufferInfo` | `buffer_id: ThingId` | `abi/src/lib.rs` |
-| `ResidentAlloc` | `kind: SymbolId` | `abi/src/lib.rs` |
-| `ResidentAlloc` | `byte_len: u32` | `abi/src/lib.rs` |
-| `ResidentAlloc` | `flags: u32` | `abi/src/lib.rs` |
-| `ResidentMap` | `id: ThingId` | `abi/src/lib.rs` |
-| `ResidentMap` | `perms: crate` | `abi/src/lib.rs` |
-| `ResidentUnmap` | `thing_id: ThingId` | `abi/src/lib.rs` |
-| `ThingRest` | `thing_id: ThingId` | `abi/src/lib.rs` |
-| `ThingRest` | `policy: crate` | `abi/src/lib.rs` |
+| `GraphQuery` | `node_id: NodeId` | `abi/src/requests.rs` |
+| `GraphQuery` | `out: UserSlice<u8>` | `abi/src/requests.rs` |
+| `CreateTransaction` | Unit | `abi/src/requests.rs` |
+| `CommitTransaction` | `tx_id: TransactionId` | `abi/src/requests.rs` |
+| `Log` | `message: UserSlice<u8>` | `abi/src/requests.rs` |
+| `ThingCreate` | `kind: SymbolId` | `abi/src/requests.rs` |
+| `ThingCreate` | `props: UserSlice<WireProp>` | `abi/src/requests.rs` |
+| `SpawnProgram` | `boot_program_id: ThingId` | `abi/src/requests.rs` |
+| `ThingList` | `kind: SymbolId` | `abi/src/requests.rs` |
+| `ThingList` | `start_after: ThingId` | `abi/src/requests.rs` |
+| `ThingGet` | `id: ThingId` | `abi/src/requests.rs` |
+| `ThingGet` | `out: UserSlice<u8>` | `abi/src/requests.rs` |
+| `ThingUpdate` | `id: ThingId` | `abi/src/requests.rs` |
+| `ThingUpdate` | `props: UserSlice<WireProp>` | `abi/src/requests.rs` |
+| `ThingBatchUpdate` | `updates: UserSlice<WireBatchEntry>` | `abi/src/requests.rs` |
+| `SchemaRegisterPackage` | `kind: SymbolId` | `abi/src/requests.rs` |
+| `SchemaRegisterPackage` | `description: SymbolId` | `abi/src/requests.rs` |
+| `SchemaRegisterPackage` | `props: UserSlice<WireSchemaProp>` | `abi/src/requests.rs` |
+| `SchemaGet` | `kind: SymbolId` | `abi/src/requests.rs` |
+| `SchemaGet` | `out: UserSlice<WireSchemaProp>` | `abi/src/requests.rs` |
+| `GetMemorySummary` | Unit | `abi/src/requests.rs` |
+| `GetSchedulerSummary` | Unit | `abi/src/requests.rs` |
+| `AllocFrame` | `pool_index: u64` | `abi/src/requests.rs` |
+| `FreeFrame` | `frame_id: FrameId` | `abi/src/requests.rs` |
+| `CreateProcess` | `name: UserSlice<u8>` | `abi/src/requests.rs` |
+| `CreateThread` | `pid: u64` | `abi/src/requests.rs` |
+| `CreateThread` | `name: UserSlice<u8>` | `abi/src/requests.rs` |
+| `CreateThread` | `app_id: u64` | `abi/src/requests.rs` |
+| `CreateThread` | `priority: u64` | `abi/src/requests.rs` |
+| `SchedulerTick` | Unit | `abi/src/requests.rs` |
+| `ExitThread` | Unit | `abi/src/requests.rs` |
+| `AddLink` | `src: ThingId` | `abi/src/requests.rs` |
+| `AddLink` | `pred: Predicate` | `abi/src/requests.rs` |
+| `AddLink` | `dst: ThingId` | `abi/src/requests.rs` |
+| `LinkAt` | `src: ThingId` | `abi/src/requests.rs` |
+| `LinkAt` | `pred: Predicate` | `abi/src/requests.rs` |
+| `LinkAt` | `idx: usize` | `abi/src/requests.rs` |
+| `CreateSharedBuffer` | `width: u32` | `abi/src/requests.rs` |
+| `CreateSharedBuffer` | `height: u32` | `abi/src/requests.rs` |
+| `CreateSharedBuffer` | `pixel_format: PixelFormat` | `abi/src/requests.rs` |
+| `MapSharedBuffer` | `buffer_id: ThingId` | `abi/src/requests.rs` |
+| `MapSharedBuffer` | `flags: MapFlags` | `abi/src/requests.rs` |
+| `GetSharedBufferInfo` | `buffer_id: ThingId` | `abi/src/requests.rs` |
+| `ResidentAlloc` | `kind: SymbolId` | `abi/src/requests.rs` |
+| `ResidentAlloc` | `byte_len: u32` | `abi/src/requests.rs` |
+| `ResidentAlloc` | `flags: u32` | `abi/src/requests.rs` |
+| `ResidentMap` | `id: ThingId` | `abi/src/requests.rs` |
+| `ResidentMap` | `perms: ResidentMapPerms` | `abi/src/requests.rs` |
+| `ResidentUnmap` | `thing_id: ThingId` | `abi/src/requests.rs` |
+| `ThingRest` | `thing_id: ThingId` | `abi/src/requests.rs` |
+| `ThingRest` | `policy: RestPolicy` | `abi/src/requests.rs` |
 
 ## KernelResponse Variants
 
 | Variant | Field Types | Source |
 |---|---|---|
-| `Success` | `data: Option<u64>` | `abi/src/lib.rs` |
-| `Error` | `err: crate` | `abi/src/lib.rs` |
-| `TransactionCreated` | `tx_id: TransactionId` | `abi/src/lib.rs` |
-| `NodeData` | `written: u64` | `abi/src/lib.rs` |
-| `ThingCreated` | `id: ThingId` | `abi/src/lib.rs` |
-| `SchemaRegistered` | `kind: SymbolId` | `abi/src/lib.rs` |
-| `SchemaRegistered` | `outcome: SchemaRegistryOutcome` | `abi/src/lib.rs` |
-| `SchemaData` | `written: u64` | `abi/src/lib.rs` |
-| `SchemaData` | `fingerprint: u64` | `abi/src/lib.rs` |
-| `MemorySummary` | `summary: MemorySummary` | `abi/src/lib.rs` |
-| `SchedulerSummary` | `summary: SchedulerSummary` | `abi/src/lib.rs` |
-| `FrameAllocated` | `frame: FrameInfo` | `abi/src/lib.rs` |
-| `FrameFreed` | `frame_id: FrameId` | `abi/src/lib.rs` |
-| `ProcessCreated` | `pid: u64` | `abi/src/lib.rs` |
-| `ThreadCreated` | `tid: u64` | `abi/src/lib.rs` |
-| `SchedulerTicked` | `has_current: u32` | `abi/src/lib.rs` |
-| `SchedulerTicked` | `current: ThreadInfo` | `abi/src/lib.rs` |
-| `LinkTarget` | `found: u32` | `abi/src/lib.rs` |
-| `LinkTarget` | `target: ThingId` | `abi/src/lib.rs` |
-| `ProgramSpawned` | `process_id: ThingId` | `abi/src/lib.rs` |
-| `ProgramSpawned` | `thread_id: ThingId` | `abi/src/lib.rs` |
-| `ThingListEntry` | `valid: u32` | `abi/src/lib.rs` |
-| `ThingListEntry` | `id: ThingId` | `abi/src/lib.rs` |
-| `SharedBufferCreated` | `buffer_id: ThingId` | `abi/src/lib.rs` |
-| `SharedBufferMapped` | `vaddr: u64` | `abi/src/lib.rs` |
-| `SharedBufferMapped` | `size: u64` | `abi/src/lib.rs` |
-| `SharedBufferInfoResponse` | `info: SharedBufferInfo` | `abi/src/lib.rs` |
-| `ResidentAllocated` | `resp: crate` | `abi/src/lib.rs` |
-| `ResidentMapped` | `resp: crate` | `abi/src/lib.rs` |
-| `ThingRested` | `resp: crate` | `abi/src/lib.rs` |
+| `Success` | `data: Option<u64>` | `abi/src/requests.rs` |
+| `Error` | `err: SysError` | `abi/src/requests.rs` |
+| `TransactionCreated` | `tx_id: TransactionId` | `abi/src/requests.rs` |
+| `NodeData` | `written: u64` | `abi/src/requests.rs` |
+| `ThingCreated` | `id: ThingId` | `abi/src/requests.rs` |
+| `SchemaRegistered` | `kind: SymbolId` | `abi/src/requests.rs` |
+| `SchemaRegistered` | `outcome: SchemaRegistryOutcome` | `abi/src/requests.rs` |
+| `SchemaData` | `written: u64` | `abi/src/requests.rs` |
+| `SchemaData` | `fingerprint: u64` | `abi/src/requests.rs` |
+| `MemorySummary` | `summary: MemorySummary` | `abi/src/requests.rs` |
+| `SchedulerSummary` | `summary: SchedulerSummary` | `abi/src/requests.rs` |
+| `FrameAllocated` | `frame: FrameInfo` | `abi/src/requests.rs` |
+| `FrameFreed` | `frame_id: FrameId` | `abi/src/requests.rs` |
+| `ProcessCreated` | `pid: u64` | `abi/src/requests.rs` |
+| `ThreadCreated` | `tid: u64` | `abi/src/requests.rs` |
+| `SchedulerTicked` | `has_current: u32` | `abi/src/requests.rs` |
+| `SchedulerTicked` | `current: SchedThreadInfo` | `abi/src/requests.rs` |
+| `LinkTarget` | `found: u32` | `abi/src/requests.rs` |
+| `LinkTarget` | `target: ThingId` | `abi/src/requests.rs` |
+| `ProgramSpawned` | `process_id: ThingId` | `abi/src/requests.rs` |
+| `ProgramSpawned` | `thread_id: ThingId` | `abi/src/requests.rs` |
+| `ThingListEntry` | `valid: u32` | `abi/src/requests.rs` |
+| `ThingListEntry` | `id: ThingId` | `abi/src/requests.rs` |
+| `SharedBufferCreated` | `buffer_id: ThingId` | `abi/src/requests.rs` |
+| `SharedBufferMapped` | `vaddr: u64` | `abi/src/requests.rs` |
+| `SharedBufferMapped` | `size: u64` | `abi/src/requests.rs` |
+| `SharedBufferInfoResponse` | `info: SharedBufferInfo` | `abi/src/requests.rs` |
+| `ResidentAllocated` | `resp: ResidentAllocResp` | `abi/src/requests.rs` |
+| `ResidentMapped` | `resp: ResidentMapResp` | `abi/src/requests.rs` |
+| `ThingRested` | `resp: RestResp` | `abi/src/requests.rs` |
 
 ## Wire Types (abi/src/wire/**)
 

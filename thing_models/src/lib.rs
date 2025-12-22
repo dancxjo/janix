@@ -248,9 +248,12 @@ pub struct TimeSource {
     pub unix_nanos: u32,
 }
 
-
 impl TimeSource {
-    pub fn create(tick_hz: u32, unix_seconds: i64, unix_nanos: u32) -> [(PropKey, PropValue); 4] {
+    pub fn create(
+        tick_hz: u32,
+        unix_seconds: i64,
+        unix_nanos: u32,
+    ) -> [(PropKey, PropValue); 4] {
         [
             ("tick_hz".to_string(), PropValue::U64(tick_hz as u64)),
             ("ticks_since_boot".to_string(), PropValue::U64(0)),

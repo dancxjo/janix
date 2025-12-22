@@ -89,15 +89,18 @@ impl Graph {
 }
 
 pub fn create_thing(kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingId {
-    let id = with_store_mut(|store| store.create_thing(kind, props.clone()));
-    debug::print_thing_created(id, kind, &props);
+    // Optimization: props are moved into store to avoid clone.
+    // Debug print receives empty slice as it's disabled/minimal now.
+    let id = with_store_mut(|store| store.create_thing(kind, props));
+    debug::print_thing_created(id, kind, &[]);
     id
 }
 
 pub fn update_thing(id: ThingId, props: Vec<(SymbolId, PropValue)>) -> bool {
-    let success = with_store_mut(|store| store.update_thing(id, props.clone()));
+    // Optimization: props are moved into store to avoid clone.
+    let success = with_store_mut(|store| store.update_thing(id, props));
     if success {
-        debug::print_thing_updated(id, &props);
+        debug::print_thing_updated(id, &[]);
     }
     success
 }
@@ -128,21 +131,7 @@ pub fn neighbors(src: ThingId, pred: Predicate, out: &mut [Option<ThingId>]) {
 
 // Helper for syscall
 pub fn next_thing_of_kind_sym(kind: SymbolId, start_after: ThingId) -> Option<ThingId> {
-    with_store(|slab| {
-        let mut best: Option<ThingId> = None;
-        for (_id_val, node) in slab.things.iter() {
-            if node.id.0 > start_after.0 && node.kind == kind {
-                if let Some(current_best) = best {
-                    if node.id.0 < current_best.0 {
-                        best = Some(node.id);
-                    }
-                } else {
-                    best = Some(node.id);
-                }
-            }
-        }
-        best
-    })
+    with_store(|store| store.next_thing_of_kind(kind, start_after))
 }
 
 pub fn next_thing_of_kind(kind: SymbolId, start_after: ThingId) -> Option<ThingId> {

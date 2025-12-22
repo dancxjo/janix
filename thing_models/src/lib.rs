@@ -17,23 +17,11 @@ use abi::{ThingId, syscall_defs::SymbolId};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use thing_macros::Thing;
+// Re-export ABI types to avoid duplication
+pub use abi::{SchedThreadInfo, SchemaRegistryOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SchemaId(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SchedThreadInfo {
-    pub tid: u64,
-    pub state: u64,
-    pub priority: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SchemaRegistryOutcome {
-    Created,
-    AlreadyRegisteredSame,
-    Conflict,
-}
 
 pub trait Thing: Sized {
     const KIND: &'static str; // High level string, wrapper must intern

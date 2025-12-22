@@ -90,205 +90,12 @@ pub enum SysError {
     Unexpected,
 }
 
-#[derive(Clone, Debug, Thing)]
-#[thing(description = "A CPU core identified by its index in the system")]
-#[thing(kind = "CpuCore")]
-pub struct CpuCoreThing {
-    pub id: ThingId,
-    pub index: u64,
-}
-
-#[derive(Clone, Debug, Thing)]
-#[thing(description = "A process with process identifier (PID) and execution state")]
-#[thing(kind = "Process")]
-pub struct ProcessThing {
-    pub id: ThingId,
-    pub pid: u64,
-}
-
-#[derive(Clone, Debug, Thing)]
-#[thing(
-    description = "A thread of execution with thread identifier, state, priority, and runtime tracking"
-)]
-#[thing(kind = "Thread")]
-pub struct ThreadThing {
-    pub id: ThingId,
-    pub tid: u64,
-    pub state: String,
-    pub priority: u64,
-    pub runtime_ns: u64,
-    pub last_started_ns: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct DisplayThing {
-    pub id: ThingId,
-    pub name: String,
-    pub width: u64,
-    pub height: u64,
-    pub stride: u64,
-    pub pixel_format: Option<String>,
-    pub active_buffer_index: i64,
-}
-
-impl Thing for DisplayThing {
-    // const KIND: &'static str = graph_kinds::KIND_DISPLAY;
-    const KIND: &'static str = "Display";
-    const DESCRIPTION: &'static str = "A display sink capable of scanning out a SharedBuffer";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((PROP_NAME.to_string(), PropValue::Str(self.name.clone())));
-        out.push((PROP_WIDTH.to_string(), PropValue::U64(self.width)));
-        out.push((PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
-        out.push((PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
-        if let Some(fmt) = &self.pixel_format {
-            out.push((PROP_PIXEL_FORMAT.to_string(), PropValue::Str(fmt.clone())));
-        }
-        out.push((
-            PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(),
-            PropValue::I64(self.active_buffer_index),
-        ));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut name = String::new();
-        let mut width = 0;
-        let mut height = 0;
-        let mut stride = 0;
-        let mut pixel_format = None;
-        let mut active_buffer_index = 0;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                PROP_NAME => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        name = v.clone();
-                    }
-                }
-                PROP_WIDTH => {
-                    if let PropValue::U64(v) = prop.1 {
-                        width = v;
-                    }
-                }
-                PROP_HEIGHT => {
-                    if let PropValue::U64(v) = prop.1 {
-                        height = v;
-                    }
-                }
-                PROP_STRIDE => {
-                    if let PropValue::U64(v) = prop.1 {
-                        stride = v;
-                    }
-                }
-                PROP_PIXEL_FORMAT => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        pixel_format = Some(v.clone());
-                    }
-                }
-                PROP_DISPLAY_ACTIVE_BUFFER_INDEX => {
-                    if let PropValue::I64(v) = prop.1 {
-                        active_buffer_index = v;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        DisplayThing {
-            id,
-            name,
-            width,
-            height,
-            stride,
-            pixel_format,
-            active_buffer_index,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            (PROP_NAME, PropType::Str),
-            (PROP_WIDTH, PropType::U64),
-            (PROP_HEIGHT, PropType::U64),
-            (PROP_STRIDE, PropType::U64),
-            (PROP_PIXEL_FORMAT, PropType::Str),
-            (PROP_DISPLAY_ACTIVE_BUFFER_INDEX, PropType::I64),
-        ]
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct SharedBufferThing {
-    pub id: ThingId,
-    pub width: u64,
-    pub height: u64,
-    pub stride: u64,
-    pub pixel_format: Option<String>,
-}
-
-impl Thing for SharedBufferThing {
-    const KIND: &'static str = KIND_SHARED_BUFFER;
-    const DESCRIPTION: &'static str = "Shared memory buffer exported by the kernel";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((PROP_WIDTH.to_string(), PropValue::U64(self.width)));
-        out.push((PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
-        out.push((PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
-        if let Some(fmt) = &self.pixel_format {
-            out.push((PROP_PIXEL_FORMAT.to_string(), PropValue::Str(fmt.clone())));
-        }
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut width = 0;
-        let mut height = 0;
-        let mut stride = 0;
-        let mut pixel_format = None;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                PROP_WIDTH => {
-                    if let PropValue::U64(v) = prop.1 {
-                        width = v;
-                    }
-                }
-                PROP_HEIGHT => {
-                    if let PropValue::U64(v) = prop.1 {
-                        height = v;
-                    }
-                }
-                PROP_STRIDE => {
-                    if let PropValue::U64(v) = prop.1 {
-                        stride = v;
-                    }
-                }
-                PROP_PIXEL_FORMAT => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        pixel_format = Some(v.clone());
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        SharedBufferThing {
-            id,
-            width,
-            height,
-            stride,
-            pixel_format,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            (PROP_WIDTH, PropType::U64),
-            (PROP_HEIGHT, PropType::U64),
-            (PROP_STRIDE, PropType::U64),
-            (PROP_PIXEL_FORMAT, PropType::Str),
-        ]
-    }
-}
+// Re-export core models to replace shadow structs
+pub use thing_models::CpuCore as CpuCoreThing;
+pub use thing_models::Process as ProcessThing;
+pub use thing_models::Thread as ThreadThing;
+pub use thing_models::Display as DisplayThing;
+pub use thing_models::SharedBuffer as SharedBufferThing;
 
 /// Query a thing in the kernel graph and return the associated value.
 pub fn graph_query(node_id: NodeId) -> Option<u64> {
@@ -804,10 +611,9 @@ pub fn create_thread(
     app_id: u64,
     priority: u64,
 ) -> Result<ThingId, &'static str> {
-    let name_static = Box::leak(name.to_string().into_boxed_str());
     match syscall(KernelRequest::CreateThread {
         pid: pid.0,
-        name: UserSlice::from_slice(name_static.as_bytes()),
+        name: UserSlice::from_slice(name.as_bytes()),
         app_id,
         priority,
     }) {

@@ -42,13 +42,9 @@ use spin::Mutex;
 static MMIO: Mutex<Option<SyncMmio>> = Mutex::new(None);
 static DRIVER: Mutex<Option<SyncDriver>> = Mutex::new(None);
 
-pub fn register_watcher(mmio: &dyn MmioMapper, graph: &mut dyn GraphDriver) {
-    // SAFETY: We assume mmio and graph live for the entire kernel lifetime.
-    let static_mmio: &'static dyn MmioMapper = unsafe { core::mem::transmute(mmio) };
-    let static_graph: &'static mut dyn GraphDriver = unsafe { core::mem::transmute(graph) };
-
-    *MMIO.lock() = Some(SyncMmio(static_mmio));
-    *DRIVER.lock() = Some(SyncDriver(static_graph));
+pub fn register_watcher(mmio: &'static dyn MmioMapper, graph: &'static mut dyn GraphDriver) {
+    *MMIO.lock() = Some(SyncMmio(mmio));
+    *DRIVER.lock() = Some(SyncDriver(graph));
 
     let mut guard = DRIVER.lock();
     if let Some(wrapper) = guard.as_mut() {

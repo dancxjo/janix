@@ -7,5 +7,7 @@ build = "build.rs"
 [dependencies]
 thing_os = { path = "../../thing_os" }
 abi = { path = "../../abi" }
+thing_macros = { path = "../../thing_macros" }
+thing_models = { path = "../../thing_models" }
 
 [build-dependencies]

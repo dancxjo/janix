@@ -12,6 +12,7 @@ path = "src/lib.rs"
 thing_os = { path = "../../../thing_os" }
 abi = { path = "../../../abi" }
 thing_models = { path = "../../../thing_models" }
+thing_macros = { path = "../../../thing_macros" }
 
 [dev-dependencies]
 kernel = { path = "../../../kernel" }

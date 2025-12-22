@@ -227,86 +227,15 @@ pub struct ProgramImage {
     pub size: u64,
 }
 
+#[derive(Thing)]
+#[thing(description = "A font payload supplied as a boot module available for UI rendering.")]
 pub struct FontModule {
     pub id: ThingId,
+    #[thing(rename = "font_name")]
     pub name: String,
     pub module_index: u64,
     pub base_phys: u64,
     pub size: u64,
-}
-
-impl Thing for FontModule {
-    const KIND: &'static str = graph_kinds::KIND_FONT_MODULE;
-    const DESCRIPTION: &'static str =
-        "A font payload supplied as a boot module available for UI rendering.";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((
-            graph_kinds::PROP_FONT_NAME.to_string(),
-            PropValue::Str(self.name.clone()),
-        ));
-        out.push((
-            graph_kinds::PROP_MODULE_INDEX.to_string(),
-            PropValue::U64(self.module_index),
-        ));
-        out.push((
-            graph_kinds::PROP_BASE_PHYS.to_string(),
-            PropValue::U64(self.base_phys),
-        ));
-        out.push((
-            graph_kinds::PROP_SIZE.to_string(),
-            PropValue::U64(self.size),
-        ));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut name = String::new();
-        let mut module_index = 0;
-        let mut base_phys = 0;
-        let mut size = 0;
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                graph_kinds::PROP_FONT_NAME => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        name = v.clone();
-                    }
-                }
-                graph_kinds::PROP_MODULE_INDEX => {
-                    if let PropValue::U64(v) = prop.1 {
-                        module_index = v;
-                    }
-                }
-                graph_kinds::PROP_BASE_PHYS => {
-                    if let PropValue::U64(v) = prop.1 {
-                        base_phys = v;
-                    }
-                }
-                graph_kinds::PROP_SIZE => {
-                    if let PropValue::U64(v) = prop.1 {
-                        size = v;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        FontModule {
-            id,
-            name,
-            module_index,
-            base_phys,
-            size,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            (graph_kinds::PROP_FONT_NAME, PropType::Str),
-            (graph_kinds::PROP_MODULE_INDEX, PropType::U64),
-            (graph_kinds::PROP_BASE_PHYS, PropType::U64),
-            (graph_kinds::PROP_SIZE, PropType::U64),
-        ]
-    }
 }
 
 #[derive(Thing)]
@@ -319,73 +248,6 @@ pub struct TimeSource {
     pub unix_nanos: u32,
 }
 
-impl Thing for TimeSource {
-    const KIND: &'static str = graph_kinds::KIND_TIME_SOURCE;
-    const DESCRIPTION: &'static str =
-        "Kernel-published system clock including monotonic tick counter and Unix wall time.";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((
-            "ticks_since_boot".to_string(),
-            PropValue::U64(self.ticks_since_boot),
-        ));
-        out.push(("tick_hz".to_string(), PropValue::U64(self.tick_hz as u64)));
-        out.push((
-            "unix_seconds".to_string(),
-            PropValue::I64(self.unix_seconds),
-        ));
-        out.push((
-            "unix_nanos".to_string(),
-            PropValue::U64(self.unix_nanos as u64),
-        ));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        fn find(props: &[Option<(PropKey, PropValue)>], key: &str) -> Option<PropValue> {
-            props
-                .iter()
-                .flatten()
-                .find(|(k, _)| k == key)
-                .map(|(_, v)| v.clone())
-        }
-
-        let ticks_since_boot = match find(props, "ticks_since_boot") {
-            Some(PropValue::U64(v)) => v,
-            _ => 0,
-        };
-        let tick_hz = match find(props, "tick_hz") {
-            Some(PropValue::U64(v)) => v as u32,
-            _ => 0,
-        };
-        let unix_seconds = match find(props, "unix_seconds") {
-            Some(PropValue::I64(v)) => v,
-            Some(PropValue::U64(v)) => v as i64,
-            _ => 0,
-        };
-        let unix_nanos = match find(props, "unix_nanos") {
-            Some(PropValue::U64(v)) => v as u32,
-            Some(PropValue::I64(v)) => v as u32,
-            _ => 0,
-        };
-
-        TimeSource {
-            id,
-            ticks_since_boot,
-            tick_hz,
-            unix_seconds,
-            unix_nanos,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            ("ticks_since_boot", PropType::U64),
-            ("tick_hz", PropType::U64),
-            ("unix_seconds", PropType::I64),
-            ("unix_nanos", PropType::U64),
-        ]
-    }
-}
 
 impl TimeSource {
     pub fn create(tick_hz: u32, unix_seconds: i64, unix_nanos: u32) -> [(PropKey, PropValue); 4] {

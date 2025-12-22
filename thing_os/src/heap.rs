@@ -83,7 +83,17 @@ impl SimpleLockedHeap {
     }
 
     pub unsafe fn init(&self, start: *mut u8, size: usize) {
-        // Reset lock to false (unlocked), using Relaxed ordering as we are single-threaded init
+        // DEBUG: Log self pointer early and bail if somehow null.
+        log_raw("SimpleLockedHeap::init self=0x");
+        let self_addr = self as *const _ as u64;
+        log_hex_val(self_addr);
+        log_raw("\n");
+        if self_addr == 0 {
+            log_raw("SimpleLockedHeap::init self was NULL; skipping init\n");
+            return;
+        }
+
+        // Reset lock to false (unlocked), using Relaxed ordering as we are single-threaded init.
         self.lock.store(false, Ordering::Relaxed);
         let heap = &mut *self.inner.get();
         heap.init(start as usize, size);
@@ -154,10 +164,19 @@ fn log_raw(s: &str) {
 
 fn log_hex(label: &str, val: usize) {
     log_raw(label);
-    log_raw("0x");
-    // Simple hex print logic if needed, or just rely on the fact that we fixed the lock
-    // For now, let's keep it simple or remove it if not critical.
-    // Actually, let's just use log_raw("...") for simplicity to verify the fix works first.
+    log_hex_val(val as u64);
+}
+
+fn log_hex_val(val: u64) {
+    // Manual hex print without fmt.
+    let mut buf = [0u8; 16];
+    for i in 0..16 {
+        let shift = (15 - i) * 4;
+        let nibble = ((val >> shift) & 0xF) as u8;
+        buf[i] = if nibble < 10 { b'0' + nibble } else { b'A' + (nibble - 10) };
+    }
+    let s = unsafe { core::str::from_utf8_unchecked(&buf) };
+    log_raw(s);
 }
 
 pub fn init_user_heap() {

@@ -221,14 +221,70 @@ impl Thing for FontModule {
     }
 }
 
-#[derive(Thing)]
-#[thing(description = "Kernel-published system clock including monotonic tick counter and Unix wall time.")]
 pub struct TimeSource {
     pub id: ThingId,
     pub ticks_since_boot: u64,
     pub tick_hz: u32,
     pub unix_seconds: i64,
     pub unix_nanos: u32,
+}
+
+impl Thing for TimeSource {
+    const KIND: &'static str = graph_kinds::KIND_TIME_SOURCE;
+    const DESCRIPTION: &'static str = "Kernel-published system clock including monotonic tick counter and Unix wall time.";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push(("ticks_since_boot".to_string(), PropValue::U64(self.ticks_since_boot)));
+        out.push(("tick_hz".to_string(), PropValue::U64(self.tick_hz as u64)));
+        out.push(("unix_seconds".to_string(), PropValue::I64(self.unix_seconds)));
+        out.push(("unix_nanos".to_string(), PropValue::U64(self.unix_nanos as u64)));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        fn find(props: &[Option<(PropKey, PropValue)>], key: &str) -> Option<PropValue> {
+            props
+                .iter()
+                .flatten()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+        }
+
+        let ticks_since_boot = match find(props, "ticks_since_boot") {
+            Some(PropValue::U64(v)) => v,
+            _ => 0,
+        };
+        let tick_hz = match find(props, "tick_hz") {
+            Some(PropValue::U64(v)) => v as u32,
+            _ => 0,
+        };
+        let unix_seconds = match find(props, "unix_seconds") {
+            Some(PropValue::I64(v)) => v,
+            Some(PropValue::U64(v)) => v as i64,
+            _ => 0,
+        };
+        let unix_nanos = match find(props, "unix_nanos") {
+            Some(PropValue::U64(v)) => v as u32,
+            Some(PropValue::I64(v)) => v as u32,
+            _ => 0,
+        };
+
+        TimeSource {
+            id,
+            ticks_since_boot,
+            tick_hz,
+            unix_seconds,
+            unix_nanos,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            ("ticks_since_boot", PropType::U64),
+            ("tick_hz", PropType::U64),
+            ("unix_seconds", PropType::I64),
+            ("unix_nanos", PropType::U64),
+        ]
+    }
 }
 
 impl TimeSource {

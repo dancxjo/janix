@@ -227,9 +227,46 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             let id = graph::create_thing(kind, internal_props);
             KernelResponse::ThingCreated { id }
         }
-        KernelRequest::ThingGet { id: _, out: _ } => KernelResponse::Error {
-            err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 99 }, // Not implemented
-        },
+        KernelRequest::ThingGet { id, out } => {
+            let slice_ptr = out.ptr as *mut abi::wire::graph::WireProp;
+            let slice_len = out.len as usize;
+
+            match graph::with_thing(id, |node| {
+                let mut count = 0usize;
+                if slice_ptr.is_null() || slice_len == 0 {
+                    return 0;
+                }
+                unsafe {
+                    let out_slice = core::slice::from_raw_parts_mut(slice_ptr, slice_len);
+                    for (key_sym, val) in &node.props {
+                        if count >= out_slice.len() {
+                            break;
+                        }
+                        let wire_val = match val {
+                            PropValue::U64(v) => abi::wire::graph::WirePropValue::u64(*v),
+                            PropValue::I64(v) => abi::wire::graph::WirePropValue::i64(*v),
+                            PropValue::Bool(v) => abi::wire::graph::WirePropValue::bool(*v),
+                            PropValue::Str(s) => abi::wire::graph::WirePropValue::sym(crate::symbols::intern(s)),
+                            PropValue::Symbol(id) => abi::wire::graph::WirePropValue::sym(*id),
+                            PropValue::Blob(b) => abi::wire::graph::WirePropValue::blob(b.as_ptr() as u64, b.len() as u64),
+                        };
+
+                        out_slice[count] = abi::wire::graph::WireProp {
+                            key: *key_sym,
+                            value: wire_val,
+                            _pad: 0,
+                        };
+                        count += 1;
+                    }
+                }
+                count
+            }) {
+                Some(written) => KernelResponse::NodeData { written: written as u64 },
+                None => KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::NOT_FOUND, detail: 0 },
+                },
+            }
+        }
         KernelRequest::ThingList { kind, start_after } => {
             let next = graph::next_thing_of_kind(kind, start_after);
             match next {

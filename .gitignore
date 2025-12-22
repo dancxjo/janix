@@ -30,3 +30,4 @@ debug_clock_log_hex.txt
 debug_clock_my_lock.txt
 debug_clock_rev_back.txt
 debug_clock_rev_next.txt
+full_disasm.txt

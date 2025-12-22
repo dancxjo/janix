@@ -14,151 +14,86 @@ use core::slice;
 
 use core::arch::global_asm;
 
-// Global variables for syscall stack switching (used by ASM)
-#[unsafe(no_mangle)]
-static mut SYSCALL_KERNEL_RSP: u64 = 0;
-#[unsafe(no_mangle)]
-static mut SYSCALL_USER_RSP_SCRATCH: u64 = 0;
-#[unsafe(no_mangle)]
-static mut SYSCALL_USER_CS: u64 = 0;
-#[unsafe(no_mangle)]
-static mut SYSCALL_USER_SS: u64 = 0;
-
 global_asm!(r#"
 .global syscall_handler_asm
 syscall_handler_asm:
-    // Interrupts are disabled (SFMASK).
-    // User Stack is currently active.
+    // 1. Swap to Kernel GS to access PerCpu
+    swapgs
     
-    // 1. Save User RSP to scratch
-    mov [rip + SYSCALL_USER_RSP_SCRATCH], rsp
+    // 2. Save User RSP to PerCpu.user_rsp (offset 8)
+    mov gs:[8], rsp
     
-    // 2. Load Kernel RSP
-    mov rsp, [rip + SYSCALL_KERNEL_RSP]
+    // 3. Load Kernel RSP from PerCpu.kernel_rsp (offset 0)
+    mov rsp, gs:[0]
     
-    // 3. Construct IRETQ frame on Kernel Stack
-    // Frame: SS, RSP, RFLAGS, CS, RIP
+    // 4. Save User context (RIP, RFLAGS are in RCX, R11)
+    push rcx // User RIP
+    push r11 // User RFLAGS
     
-    // Push SS (User Data)
-    push qword ptr [rip + SYSCALL_USER_SS]
-    
-    // Push RSP (User RSP)
-    push qword ptr [rip + SYSCALL_USER_RSP_SCRATCH]
-    
-    // Push RFLAGS (r11 saved by syscall)
-    push r11
-    
-    // Push CS (User Code)
-    push qword ptr [rip + SYSCALL_USER_CS]
-    
-    // Push RIP (rcx saved by syscall)
-    push rcx
-    
-    // 4. Push SyscallRegs (reversed order)
-    
-    // Saved Regs
-    push rax // rax_saved
-    push rdi // rdi_saved
-    push rsi
-    push rdx
-    push rcx // rcx_saved (RIP, but also general arg)
-    push r8
-    push r9
-    push r10
-    push r11 // r11_saved (RFlAGS, but also general arg)
-    
-    // Callee-saved
-    push rbx
+    // 5. Save Callee-Saved Registers (RbP, RBX, R12-R15)
     push rbp
+    push rbx
     push r12
     push r13
     push r14
     push r15
     
-    // Scratch (Syscall Arguments passed in registers)
-    // Syscall ABI: RDI, RSI, RDX, R10, R8, R9.
-    // SyscallRegs Layout (top down):
-    // r11, r10, r9, r8, rcx, rdx, rsi, rdi, rax
+    // 6. Shuffle arguments for Rust ABI (System V AMD64)
+    // Syscall ABI: RAX(num), RDI(a1), RSI(a2), RDX(a3), R10(a4), R8(a5), R9(a6)
+    // Rust Call:   RDI(num), RSI(a1), RDX(a2), RCX(a3), R8 (a4), R9(a5), Stack(a6)
     
-    push r11
-    push r10
+    // Prepare Stack Argument (a6)
     push r9
-    push r8
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push rax
     
-    // rsp points to SyscallRegs.
-    mov rdi, rsp
+    // Shuffle Registers
+    mov r9, r8   // a5
+    mov r8, r10  // a4
+    mov rcx, rdx // a3
+    mov rdx, rsi // a2
+    mov rsi, rdi // a1
+    mov rdi, rax // num
+    
+    // Stack alignment (switched from user stack, current RSP is aligned?)
+    // Pushed 8 regs (64 bytes) + 1 arg (8 bytes) = 72 bytes.
+    // Need 16-byte alignment before call.
+    // 72 is not stable.
+    // Wait, RSP was kernel_stack_top (aligned 16?).
+    // Pushed 8 regs (64 bytes, 8*8). RSP aligned.
+    // Pushed R9 (8 bytes). RSP ends in 8.
+    // Need sub rsp, 8 for alignment.
+    sub rsp, 8
     
     call syscall_handler_rust
     
-    // Return value is in rax. Write it to stack slot for pop rax.
-    mov [rsp], rax
+    // Cleanup stack
+    add rsp, 16 // 8 (align) + 8 (arg7)
     
-    // Restore scratch
-    pop rax
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop r8
-    pop r9
-    pop r10
-    pop r11
+    // Result in RAX.
     
-    // Restore callee-saved
+    // 7. Restore Callee-Saved
     pop r15
     pop r14
     pop r13
     pop r12
-    pop rbp
     pop rbx
+    pop rbp
+    pop r11 // User RFLAGS
+    pop rcx // User RIP
     
-    // Cleanup saved args (9 regs * 8 = 72 bytes)
-    add rsp, 72
+    // 8. Restore User RSP
+    mov rsp, gs:[8]
     
-    // Now stack points to IRETQ frame compatible with user mode return
-    iretq
+    // 9. Swap GS back to User
+    swapgs
+    
+    // 10. Return
+    sysretq
 "#);
 
 unsafe extern "C" {
     pub fn syscall_handler_asm();
 }
 
-
-// ... (SyscallRegs struct and helpers as defined before) ...
-#[repr(C)]
-#[derive(Debug)]
-pub struct SyscallRegs {
-    pub rax: u64,
-    pub rdi: u64, // Arg 1
-    pub rsi: u64, // Arg 2
-    pub rdx: u64, // Arg 3
-    pub rcx: u64, // Arg 4
-    pub r8: u64,  // Arg 5
-    pub r9: u64,  // Arg 6
-    pub r10: u64, // Used by linux syscalls as 4th arg
-    pub r11: u64, // RFLAGS
-    // ... saved regs ...
-    pub r15: u64,
-    pub r14: u64,
-    pub r13: u64,
-    pub r12: u64,
-    pub rbp: u64,
-    pub rbx: u64,
-    pub r11_saved: u64,
-    pub r10_saved: u64,
-    pub r9_saved: u64,
-    pub r8_saved: u64,
-    pub rcx_saved: u64,
-    pub rdx_saved: u64,
-    pub rsi_saved: u64,
-    pub rdi_saved: u64,
-    pub rax_saved: u64,
-}
 
 unsafe fn user_slice<'a, T>(ptr: u64, len: u64) -> &'a [T] {
     if ptr == 0 || len == 0 { return &[]; }
@@ -681,21 +616,19 @@ macro_rules! collect_dispatched_numbers {
 abi::for_each_syscall!(collect_dispatched_numbers);
 
 #[unsafe(no_mangle)]
-pub extern "C" fn syscall_handler_rust(regs: *mut SyscallRegs) -> u64 {
-    let regs = unsafe { &mut *regs };
-    let num = regs.rax_saved;
-
-    let arg1 = regs.rdi_saved;
-    let arg2 = regs.rsi_saved;
-    let arg3 = regs.rdx_saved;
-    let arg4 = regs.r10_saved;
-    let arg5 = regs.r8_saved;
-    let arg6 = regs.r9_saved;
-
+pub extern "C" fn syscall_handler_rust(
+    num: u64,
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+    arg6: u64,
+) -> u64 {
     macro_rules! dispatch_helper {
         ($($name:ident => $num:expr),* $(,)?) => {
             match num {
-                $($name => dispatch_syscall!($name, regs, arg1, arg2, arg3, arg4, arg5, arg6),)*
+                $($name => dispatch_syscall!($name, 0, arg1, arg2, arg3, arg4, arg5, arg6),)*
                 _ => u64::MAX
             }
         };
@@ -710,12 +643,16 @@ pub fn install_handler() {
     use x86_64::VirtAddr;
     use crate::gdt;
 
+    // Init per-cpu GS first
+    unsafe { gdt::init_per_cpu(); }
+
     // Set LStar to handler
     let handler_addr = VirtAddr::new(syscall_handler_asm as *const () as u64);
     unsafe { LStar::write(handler_addr); }
 
     use x86_64::registers::rflags::RFlags;
-    unsafe { SFMask::write(RFlags::INTERRUPT_FLAG | RFlags::TRAP_FLAG); }
+    // Mask interrupts (and Direction/Trap) when entering syscall
+    unsafe { SFMask::write(RFlags::INTERRUPT_FLAG | RFlags::TRAP_FLAG | RFlags::DIRECTION_FLAG); }
 
     let selectors = gdt::get_selectors();
     let kernel_code_sel = selectors.kcode;
@@ -724,22 +661,13 @@ pub fn install_handler() {
     let user_data_sel = selectors.udata;
 
     unsafe {
-        // Init global statics
-        SYSCALL_KERNEL_RSP = gdt::kernel_stack_top();
-        SYSCALL_USER_CS = user_code_sel.0 as u64 | 3;
-        SYSCALL_USER_SS = user_data_sel.0 as u64 | 3;
+        // STAR MSR expects:
+        // Bits 63:48 - Sysret CS (User Code) + 16 (User Data)
+        // Bits 47:32 - Syscall CS (Kernel Code) + 0 (Kernel Data)
+        // Note: Sysret loads CS with selector+16, SS with selector+8. 
+        // We pass user_code_sel_base in bits 63:48. 
+        // Need to ensure selectors are ordered: User 32=Code, 40=Data.
         
-        let krsp = SYSCALL_KERNEL_RSP;
-        let ucs = SYSCALL_USER_CS;
-        let uss = SYSCALL_USER_SS;
-        
-        kernel::println!(
-            "Syscall setup: KRSP={:#x} CS={:#x} SS={:#x}",
-            krsp,
-            ucs,
-            uss
-        );
-
         Star::write(
             user_code_sel,
             user_data_sel,

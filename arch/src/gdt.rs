@@ -98,3 +98,29 @@ pub fn kernel_stack_top() -> u64 {
 pub fn kernel_stack_ist1_top() -> u64 {
     TSS.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize].as_u64()
 }
+
+#[repr(C)]
+pub struct PerCpu {
+    pub kernel_rsp: u64,
+    pub user_rsp: u64,
+    pub scratch: u64,
+}
+
+pub static mut PER_CPU: PerCpu = PerCpu {
+    kernel_rsp: 0,
+    user_rsp: 0,
+    scratch: 0,
+};
+
+pub unsafe fn init_per_cpu() {
+    use x86_64::registers::model_specific::KernelGsBase;
+    
+    // Set up the PerCpu structure
+    PER_CPU.kernel_rsp = kernel_stack_top();
+    
+    let addr = x86_64::VirtAddr::from_ptr(core::ptr::addr_of!(PER_CPU));
+    let rsp_val = core::ptr::addr_of!(PER_CPU.kernel_rsp).read();
+    kernel::println!("PerCpu init: addr={:?} kernel_rsp={:#x}", addr, rsp_val);
+    KernelGsBase::write(addr);
+    kernel::println!("PerCpu init: written to MSR 0xC0000102");
+}

@@ -17,6 +17,7 @@ fn main() {
     };
 
     loop {
+        println!("clock: loop start");
         let (unix_seconds, _) = clock.now();
         let (year, month, day, hour, minute, second) = unix_seconds_to_datetime(unix_seconds);
 
@@ -30,7 +31,9 @@ fn main() {
             second
         );
 
+        println!("clock: sleeping");
         sleep_ms(1000);
+        println!("clock: woke up");
     }
 }
 

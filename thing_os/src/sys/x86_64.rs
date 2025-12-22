@@ -13,10 +13,6 @@ pub unsafe fn syscall_stub(
     unsafe {
         core::arch::asm!(
             "syscall",
-            "nop", // No-ops kept for padding/alignment if needed, though likely unnecessary
-            "nop",
-            "nop",
-            "nop",
             inlateout("rax") num => ret,
             in("rdi") arg0,
             in("rsi") arg1,

@@ -20,7 +20,7 @@ mod loongarch64;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::syscall_stub;
 
-pub(crate) unsafe fn raw_syscall(
+pub unsafe fn raw_syscall(
     num: u64,
     arg0: u64,
     arg1: u64,

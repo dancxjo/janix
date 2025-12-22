@@ -9,7 +9,7 @@ static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 pub fn init_user_heap() {
     unsafe {
-        let heap_start = USER_HEAP_START as *mut u8;
+        let heap_start = USER_HEAP_START as usize;
         let heap_size = USER_HEAP_END.saturating_sub(USER_HEAP_START);
 
         ALLOCATOR.lock().init(heap_start, heap_size);

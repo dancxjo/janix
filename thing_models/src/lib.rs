@@ -13,10 +13,11 @@ pub mod ui;
 pub mod usb;
 
 pub use crate::props::{PropKey, PropType, PropValue};
-use abi::{ThingId, syscall_defs::SymbolId};
+use abi::{syscall_defs::SymbolId, ThingId};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use thing_macros::Thing;
+
 // Re-export ABI types to avoid duplication
 pub use abi::{SchedThreadInfo, SchemaRegistryOutcome};
 
@@ -39,6 +40,7 @@ pub trait Thing: Sized {
         Self::DESCRIPTION
     }
 }
+
 pub use display::*;
 pub use input::*;
 pub use io::*;
@@ -307,6 +309,8 @@ impl Thing for FontModule {
     }
 }
 
+#[derive(Thing)]
+#[thing(description = "Kernel-published system clock including monotonic tick counter and Unix wall time.")]
 pub struct TimeSource {
     pub id: ThingId,
     pub ticks_since_boot: u64,

@@ -395,7 +395,7 @@ mod x86_64 {
     ) -> Result<(u64, u64), &'static str> {
         let heap_start = USER_HEAP_START as u64;
         let heap_end = USER_HEAP_END as u64;
-        let map_end = heap_start + (16 * Size4KiB::SIZE as u64);
+        let map_end = heap_start + (512 * Size4KiB::SIZE as u64);
 
         let mut mapper = mapper(space);
         let mut addr = heap_start;

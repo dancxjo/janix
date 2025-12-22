@@ -140,25 +140,14 @@ impl<T> MouseStreamMapped<T> {
 
 use crate::{PropKey, PropType, PropValue, Thing};
 use abi::ThingId;
+use thing_macros::Thing;
 
-#[derive(Clone, Debug)]
-pub struct MouseStreamThing {
+#[derive(Thing, Clone, Debug)]
+#[thing(description = "Resident ring buffer for mouse input")]
+pub struct MouseStream {
     pub id: ThingId,
-}
-
-impl Thing for MouseStreamThing {
-    const KIND: &'static str = "MouseStream";
-    const DESCRIPTION: &'static str = "Resident ring buffer for mouse input";
-
-    fn to_props(&self, _out: &mut Vec<(PropKey, PropValue)>) {}
-
-    fn from_props(id: ThingId, _props: &[Option<(PropKey, PropValue)>]) -> Self {
-        Self { id }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[("head", PropType::U64), ("capacity", PropType::U64)]
-    }
+    pub head: Option<u64>,
+    pub capacity: Option<u64>,
 }
 
 #[cfg(test)]

@@ -123,23 +123,12 @@ impl<T> KeyboardStreamMapped<T> {
 
 use crate::{PropKey, PropType, PropValue, Thing};
 use abi::ThingId;
+use thing_macros::Thing;
 
-#[derive(Clone, Debug)]
-pub struct KeyboardStreamThing {
+#[derive(Thing, Clone, Debug)]
+#[thing(description = "Resident ring buffer for keyboard input")]
+pub struct KeyboardStream {
     pub id: ThingId,
-}
-
-impl Thing for KeyboardStreamThing {
-    const KIND: &'static str = "KeyboardStream";
-    const DESCRIPTION: &'static str = "Resident ring buffer for keyboard input";
-
-    fn to_props(&self, _out: &mut Vec<(PropKey, PropValue)>) {}
-
-    fn from_props(id: ThingId, _props: &[Option<(PropKey, PropValue)>]) -> Self {
-        Self { id }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[("head", PropType::U64), ("capacity", PropType::U64)]
-    }
+    pub head: Option<u64>,
+    pub capacity: Option<u64>,
 }

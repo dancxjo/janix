@@ -12,7 +12,7 @@ use thing_os::update_props;
 
 use thing_os::list_things_by_kind;
 use thing_os::resident::mouse::{
-    MouseEntry, MouseStreamHeader, MouseStreamMapped, MouseStreamThing,
+    MouseEntry, MouseStreamHeader, MouseStreamMapped, MouseStream,
 };
 use thing_os::resident::{Resident, ResidentError, ResidentMapPerms, map_resident};
 
@@ -37,7 +37,7 @@ impl CursorState {
 impl Compositor {
     pub fn process_mouse_packets(&mut self, layout: &[StackedWindow]) {
         if self.mouse_stream.is_none() {
-            let streams = list_things_by_kind::<MouseStreamThing>();
+            let streams = list_things_by_kind::<MouseStream>();
             if let Some(thing) = streams.first() {
                 if let Ok(map_resp) = map_resident(thing.id, ResidentMapPerms::READ) {
                     unsafe {

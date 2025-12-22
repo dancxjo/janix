@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 use core::slice;
 
 use abi::{KernelRequest, KernelResponse, MapFlags, PixelFormat, SharedBufferInfo, ThingId};
+use thing_macros::Thing;
 use thing_os::prelude::*;
 use thing_os::{
     add_link, create_thing, graph_kinds, list_things_by_kind, register_schema_for, update_props,
@@ -31,7 +32,7 @@ fn main() {
     println!("geographer: window created");
 
     let mut nodes: Vec<ThingId> = Vec::new();
-    let mut links: Vec<LinkThing> = Vec::new();
+    let mut links: Vec<Link> = Vec::new();
 
     loop {
         // --- 2. Update Graph State ---
@@ -45,7 +46,7 @@ fn main() {
         }
 
         // Just counting links for now
-        let all_links: Vec<LinkThing> = list_things_by_kind();
+        let all_links: Vec<Link> = list_things_by_kind();
         for l in all_links {
             links.push(l);
         }
@@ -99,25 +100,10 @@ fn main() {
 
 // --- Minimal Graph Queries ---
 
-pub struct LinkThing {
+#[derive(Thing, Clone, Debug)]
+#[thing(description = "Link node")]
+pub struct Link {
     pub id: ThingId,
-}
-
-impl Thing for LinkThing {
-    const KIND: &'static str = "Link"; // Only if Link things exist in graph?
-                                       // Actually Link is usually an edge, not a Thing.
-                                       // Wait, original code had: impl Thing for LinkThing { const KIND: &'static str = "Link"; ... }
-                                       // If "Link" things exist, fine. If they are edges, list_things_by_kind won't find them unless they are reified as Things.
-                                       // Abi defines `KernelRequest::AddLink`. The link itself might not be a Thing unless explicitly created as one.
-                                       // But original code assumed it. I'll keep it.
-    const DESCRIPTION: &'static str = "";
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[]
-    }
-    fn to_props(&self, _: &mut Vec<(PropKey, PropValue)>) {}
-    fn from_props(id: ThingId, _: &[Option<(PropKey, PropValue)>]) -> Self {
-        LinkThing { id }
-    }
 }
 
 // Reuse ProcessThing from thing_os::ProcessThing if available, or define local wrapper

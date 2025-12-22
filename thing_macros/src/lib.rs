@@ -45,6 +45,46 @@ fn extract_kind(attrs: &[Attribute]) -> Option<String> {
     None
 }
 
+fn extract_field_rename(attrs: &[Attribute]) -> Option<String> {
+    for attr in attrs {
+        if attr.path().is_ident("thing") {
+            if let Meta::List(meta_list) = &attr.meta {
+                if let Ok(meta_name_value) = syn::parse2::<MetaNameValue>(meta_list.tokens.clone())
+                {
+                    if meta_name_value.path.is_ident("rename") {
+                        if let Expr::Lit(expr_lit) = &meta_name_value.value {
+                            if let Lit::Str(lit_str) = &expr_lit.lit {
+                                return Some(lit_str.value());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_field_via(attrs: &[Attribute]) -> Option<String> {
+    for attr in attrs {
+        if attr.path().is_ident("thing") {
+            if let Meta::List(meta_list) = &attr.meta {
+                if let Ok(meta_name_value) = syn::parse2::<MetaNameValue>(meta_list.tokens.clone())
+                {
+                    if meta_name_value.path.is_ident("via") {
+                        if let Expr::Lit(expr_lit) = &meta_name_value.value {
+                            if let Lit::Str(lit_str) = &expr_lit.lit {
+                                return Some(lit_str.value());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn normalize_type_name(ty: &Type) -> String {
     let mut ty_str = quote!(#ty).to_string();
     ty_str.retain(|c| !c.is_whitespace());
@@ -92,13 +132,17 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
     let to_props_arms: Vec<_> = fields
         .iter()
         .filter_map(|f| {
-            let name = f
+            let ident = f
                 .ident
                 .as_ref()
                 .expect("Thing derive only supports named fields");
-            if name == "id" {
+            if ident == "id" {
                 return None;
             }
+
+            let prop_name = extract_field_rename(&f.attrs).unwrap_or(ident.to_string());
+            let via_type = extract_field_via(&f.attrs);
+
             let ty = &f.ty;
             let full_ty_str = normalize_type_name(ty);
             let (ty_str, is_option) = match extract_inner_type(&full_ty_str) {
@@ -106,7 +150,13 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 None => (full_ty_str, false),
             };
 
-            let val_conversion = match ty_str.as_str() {
+            let effective_type = if let Some(via) = &via_type {
+                via.clone()
+            } else {
+                ty_str.clone()
+            };
+
+            let val_conversion = match effective_type.as_str() {
                 "u64" => quote! { ::thing_models::PropValue::U64(*val as u64) },
                 "u32" => quote! { ::thing_models::PropValue::U64(*val as u64) },
                 "u16" => quote! { ::thing_models::PropValue::U64(*val as u64) },
@@ -117,7 +167,11 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 "i8" => quote! { ::thing_models::PropValue::I64(*val as i64) },
                 "bool" => quote! { ::thing_models::PropValue::Bool(*val as bool) },
                 "alloc::string::String" | "String" => {
-                    quote! { ::thing_models::PropValue::Str(val.clone()) }
+                    if via_type.is_some() {
+                         quote! { ::thing_models::PropValue::Str(val.to_string()) }
+                    } else {
+                         quote! { ::thing_models::PropValue::Str(val.clone()) }
+                    }
                 }
                 "&'staticstr" => {
                     quote! { ::thing_models::PropValue::Str(::alloc::string::String::from(*val)) }
@@ -133,14 +187,14 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
 
             if is_option {
                 Some(quote! {
-                    if let Some(ref val) = self.#name {
-                        out.push((::alloc::string::String::from(stringify!(#name)), #val_conversion));
+                    if let Some(ref val) = self.#ident {
+                        out.push((::alloc::string::String::from(#prop_name), #val_conversion));
                     }
                 })
             } else {
                 Some(quote! {
-                    let val = &self.#name;
-                    out.push((::alloc::string::String::from(stringify!(#name)), #val_conversion));
+                    let val = &self.#ident;
+                    out.push((::alloc::string::String::from(#prop_name), #val_conversion));
                 })
             }
         })
@@ -149,7 +203,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
     let from_props_arms: Vec<_> = fields
         .iter()
         .map(|f| {
-            let name = f
+            let ident = f
                 .ident
                 .as_ref()
                 .expect("Thing derive only supports named fields");
@@ -160,61 +214,69 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 None => (full_ty_str, false),
             };
 
-            if name == "id" {
-                return quote! { #name: id };
+            if ident == "id" {
+                return quote! { #ident: id };
             }
 
-            let match_arm = match ty_str.as_str() {
+            let prop_name = extract_field_rename(&f.attrs).unwrap_or(ident.to_string());
+            let via_type = extract_field_via(&f.attrs);
+             let effective_type = if let Some(via) = &via_type {
+                via.clone()
+            } else {
+                ty_str.clone()
+            };
+
+            let mut match_arm = match effective_type.as_str() {
                 "u64" => quote! {
                     if let ::thing_models::PropValue::U64(val) = *v { val } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "u32" => quote! {
                     if let ::thing_models::PropValue::U64(val) = *v { val as u32 } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "u16" => quote! {
                     if let ::thing_models::PropValue::U64(val) = *v { val as u16 } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "u8" => quote! {
                     if let ::thing_models::PropValue::U64(val) = *v { val as u8 } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "i64" => quote! {
                     if let ::thing_models::PropValue::I64(val) = *v { val } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "i32" => quote! {
                     if let ::thing_models::PropValue::I64(val) = *v { val as i32 } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "i16" => quote! {
                     if let ::thing_models::PropValue::I64(val) = *v { val as i16 } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "i8" => quote! {
                     if let ::thing_models::PropValue::I64(val) = *v { val as i8 } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "bool" => quote! {
                     if let ::thing_models::PropValue::Bool(val) = *v { val } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "alloc::string::String" | "String" => quote! {
                     if let ::thing_models::PropValue::Str(ref val) = *v {
                         val.clone()
                     } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "&'staticstr" => {
@@ -222,7 +284,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                         if let ::thing_models::PropValue::Str(ref val) = *v {
                             ::alloc::string::String::from(val.as_str())
                         } else {
-                            panic!("Type mismatch for {}", stringify!(#name))
+                            panic!("Type mismatch for {}", #prop_name)
                         }
                     }
                 }
@@ -230,26 +292,35 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 if let ::thing_models::PropValue::U64(val) = *v {
                     ::abi::ThingId(val)
                     } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 "char" => quote! {
                     if let ::thing_models::PropValue::Str(ref val) = *v {
                         val.chars().next().unwrap_or('\0')
                     } else {
-                        panic!("Type mismatch for {}", stringify!(#name))
+                        panic!("Type mismatch for {}", #prop_name)
                     }
                 },
                 other => panic!("Unsupported type for Thing derive: {}", other),
             };
 
+            if via_type.is_some() {
+                 match_arm = quote! {
+                     {
+                         let s: ::alloc::string::String = #match_arm;
+                         s.parse().expect("Failed to parse via type")
+                     }
+                 }
+            }
+
             if is_option {
                 quote! {
-                    #name: {
+                    #ident: {
                         let mut found = None;
                         for prop in props {
                             if let Some((k, v)) = prop {
-                                if *k == stringify!(#name) {
+                                if *k == #prop_name {
                                     found = Some(Some(#match_arm));
                                     break;
                                 }
@@ -260,17 +331,17 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 }
             } else {
                 quote! {
-                    #name: {
+                    #ident: {
                         let mut found = None;
                         for prop in props {
                             if let Some((k, v)) = prop {
-                                if *k == stringify!(#name) {
+                                if *k == #prop_name {
                                     found = Some(#match_arm);
                                     break;
                                 }
                             }
                         }
-                        found.expect(concat!("Missing property: ", stringify!(#name)))
+                        found.expect(concat!("Missing property: ", #prop_name))
                     }
                 }
             }
@@ -280,13 +351,17 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
     let schema_entries: Vec<_> = fields
         .iter()
         .filter_map(|f| {
-            let name = f
+            let ident = f
                 .ident
                 .as_ref()
                 .expect("Thing derive only supports named fields");
-            if name == "id" {
+            if ident == "id" {
                 return None;
             }
+
+            let prop_name = extract_field_rename(&f.attrs).unwrap_or(ident.to_string());
+             let via_type = extract_field_via(&f.attrs);
+
             let ty = &f.ty;
             let full_ty_str = normalize_type_name(ty);
             let (ty_str, _is_option) = match extract_inner_type(&full_ty_str) {
@@ -294,7 +369,13 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 None => (full_ty_str, false),
             };
 
-            let prop_ty_expr = match ty_str.as_str() {
+             let effective_type = if let Some(via) = &via_type {
+                via.clone()
+            } else {
+                ty_str.clone()
+            };
+
+            let prop_ty_expr = match effective_type.as_str() {
                 "u64" | "u32" | "u16" | "u8" | "ThingId" | "abi::ThingId" => {
                     quote! { ::thing_models::PropType::U64 }
                 }
@@ -313,7 +394,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
             };
 
             Some(quote! {
-                ( stringify!(#name), #prop_ty_expr )
+                ( #prop_name, #prop_ty_expr )
             })
         })
         .collect();

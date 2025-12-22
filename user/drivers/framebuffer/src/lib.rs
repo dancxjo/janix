@@ -5,6 +5,7 @@ extern crate alloc;
 use abi::{MapFlags, PixelFormat, Predicate, SharedBufferInfo, ThingId};
 use alloc::string::{String, ToString};
 use core::ptr;
+use thing_macros::Thing;
 use thing_models::graph_kinds;
 use thing_os::prelude::*;
 use thing_os::thing_models::DisplayPresentRequest;
@@ -100,7 +101,8 @@ impl FramebufferDriver {
         // We load it fresh in tick
 
         println!("framebuffer_driver: describing framebuffer Thing");
-        let fb_thing = DisplayFramebufferThing {
+        let fb_thing = DisplayFramebuffer {
+            id: ThingId(0),
             name: "fb0".into(),
             width: width as u64,
             height: height as u64,
@@ -113,7 +115,7 @@ impl FramebufferDriver {
         };
 
         println!("framebuffer_driver: registering schemas");
-        let _ = register_schema_for::<DisplayFramebufferThing>();
+        let _ = register_schema_for::<DisplayFramebuffer>();
         let _ = register_schema_for::<DisplayPresentRequest>();
         println!("framebuffer_driver: creating framebuffer Thing");
         let fb_id = create_thing(&fb_thing).ok_or(SysError::Unexpected)?;
@@ -185,7 +187,7 @@ impl FramebufferDriver {
     }
 
     fn sync_framebuffer_state(&mut self) -> DisplayPowerState {
-        if let Some(fb) = load_thing::<DisplayFramebufferThing>(self.fb_id) {
+        if let Some(fb) = load_thing::<DisplayFramebuffer>(self.fb_id) {
             if let Some(refresh) = fb.refresh_interval_ns {
                 if refresh != 0 {
                     self.refresh_interval_ns = refresh;
@@ -371,160 +373,21 @@ fn primary_display_descriptor() -> Result<DisplayDescriptor, SysError> {
     })
 }
 
-#[derive(Clone, Debug)]
-struct DisplayFramebufferThing {
+#[derive(Thing, Clone, Debug)]
+#[thing(description = "Userland-published framebuffer")]
+struct DisplayFramebuffer {
+    pub id: ThingId,
     pub name: String,
     pub width: u64,
     pub height: u64,
     pub stride: u64,
+    #[thing(via = "String")]
     pub pixel_format: PixelFormat,
+    #[thing(via = "String")]
     pub power_state: DisplayPowerState,
     pub refresh_interval_ns: Option<u64>,
     pub frames_presented: u64,
     pub last_present_ns: u64,
-}
-
-impl Thing for DisplayFramebufferThing {
-    const KIND: &'static str = graph_kinds::KIND_DISPLAY_FRAMEBUFFER;
-    const DESCRIPTION: &'static str = "Userland-published framebuffer";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((
-            graph_kinds::PROP_NAME.to_string(),
-            PropValue::Str(self.name.clone()),
-        ));
-        out.push((
-            graph_kinds::PROP_WIDTH.to_string(),
-            PropValue::U64(self.width),
-        ));
-        out.push((
-            graph_kinds::PROP_HEIGHT.to_string(),
-            PropValue::U64(self.height),
-        ));
-        out.push((
-            graph_kinds::PROP_STRIDE.to_string(),
-            PropValue::U64(self.stride),
-        ));
-        let fmt = match self.pixel_format {
-            PixelFormat::Rgba8888 => "Rgba8888",
-            PixelFormat::Bgra8888 => "Bgra8888",
-        };
-        out.push((
-            graph_kinds::PROP_PIXEL_FORMAT.to_string(),
-            PropValue::Str(fmt.into()),
-        ));
-        out.push((
-            graph_kinds::PROP_POWER_STATE.to_string(),
-            PropValue::Str(self.power_state.as_str().into()),
-        ));
-        if let Some(refresh) = self.refresh_interval_ns {
-            out.push((
-                graph_kinds::PROP_REFRESH_INTERVAL_NS.to_string(),
-                PropValue::U64(refresh),
-            ));
-        }
-        out.push((
-            graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
-            PropValue::U64(self.frames_presented),
-        ));
-        out.push((
-            graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
-            PropValue::U64(self.last_present_ns),
-        ));
-    }
-
-    fn from_props(_id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut name = String::new();
-        let mut width = 0;
-        let mut height = 0;
-        let mut stride = 0;
-        let mut pixel_format = PixelFormat::Rgba8888;
-        let mut power_state = DisplayPowerState::On;
-        let mut refresh_interval_ns = None;
-        let mut frames_presented = 0;
-        let mut last_present_ns = 0;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                graph_kinds::PROP_NAME => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        name = v.clone();
-                    }
-                }
-                graph_kinds::PROP_WIDTH => {
-                    if let PropValue::U64(v) = prop.1 {
-                        width = v;
-                    }
-                }
-                graph_kinds::PROP_HEIGHT => {
-                    if let PropValue::U64(v) = prop.1 {
-                        height = v;
-                    }
-                }
-                graph_kinds::PROP_STRIDE => {
-                    if let PropValue::U64(v) = prop.1 {
-                        stride = v;
-                    }
-                }
-                graph_kinds::PROP_PIXEL_FORMAT => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        pixel_format = if v == "Bgra8888" {
-                            PixelFormat::Bgra8888
-                        } else {
-                            PixelFormat::Rgba8888
-                        };
-                    }
-                }
-                graph_kinds::PROP_POWER_STATE => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        power_state = DisplayPowerState::from_str(v);
-                    }
-                }
-                graph_kinds::PROP_REFRESH_INTERVAL_NS => {
-                    if let PropValue::U64(v) = prop.1 {
-                        refresh_interval_ns = Some(v);
-                    }
-                }
-                graph_kinds::PROP_FRAMES_PRESENTED => {
-                    if let PropValue::U64(v) = prop.1 {
-                        frames_presented = v;
-                    }
-                }
-                graph_kinds::PROP_LAST_PRESENT_NS => {
-                    if let PropValue::U64(v) = prop.1 {
-                        last_present_ns = v;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        DisplayFramebufferThing {
-            name,
-            width,
-            height,
-            stride,
-            pixel_format,
-            power_state,
-            refresh_interval_ns,
-            frames_presented,
-            last_present_ns,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            (graph_kinds::PROP_NAME, PropType::Str),
-            (graph_kinds::PROP_WIDTH, PropType::U64),
-            (graph_kinds::PROP_HEIGHT, PropType::U64),
-            (graph_kinds::PROP_STRIDE, PropType::U64),
-            (graph_kinds::PROP_PIXEL_FORMAT, PropType::Str),
-            (graph_kinds::PROP_POWER_STATE, PropType::Str),
-            (graph_kinds::PROP_REFRESH_INTERVAL_NS, PropType::U64),
-            (graph_kinds::PROP_FRAMES_PRESENTED, PropType::U64),
-            (graph_kinds::PROP_LAST_PRESENT_NS, PropType::U64),
-        ]
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -534,20 +397,30 @@ enum DisplayPowerState {
     Off,
 }
 
+impl core::fmt::Display for DisplayPowerState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl core::str::FromStr for DisplayPowerState {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Off" => Ok(DisplayPowerState::Off),
+            "Sleep" => Ok(DisplayPowerState::Sleep),
+            _ => Ok(DisplayPowerState::On),
+        }
+    }
+}
+
 impl DisplayPowerState {
     const fn as_str(self) -> &'static str {
         match self {
             DisplayPowerState::On => "On",
             DisplayPowerState::Sleep => "Sleep",
             DisplayPowerState::Off => "Off",
-        }
-    }
-
-    fn from_str(value: &str) -> Self {
-        match value {
-            "Off" => DisplayPowerState::Off,
-            "Sleep" => DisplayPowerState::Sleep,
-            _ => DisplayPowerState::On,
         }
     }
 }

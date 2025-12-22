@@ -3,17 +3,17 @@ No-Nos Grep Report
 
 --- mem::transmute calls ---
 Count: 11
+./tools/generate_contracts.py:325:        ("mem::transmute", "mem::transmute calls", "."),
 ./arch/src/x86_64/syscall.rs:432:        let format = unsafe { core::mem::transmute($a3 as u8) };
 ./arch/src/x86_64/syscall.rs:547:        let policy = unsafe { core::mem::transmute($a2 as u32) };
 ./arch/src/x86_64/syscall.rs:568:                unsafe { core::mem::transmute(args.kind) },
 ./arch/src/x86_64/syscall.rs:775:                         kernel::sched::SCHEDULER.lock().add_thread(pid, leaked_name, unsafe { core::mem::transmute(entry) }, 0, stack_top, prio).0
-./tools/generate_contracts.py:325:        ("mem::transmute", "mem::transmute calls", "."),
-./thing_os/src/syscalls.rs:256:                let outcome = unsafe { core::mem::transmute(ret as u8) };
 ./docs/reports/architecture_alignment_2025_12_22.md:25:    *   Code uses `unsafe { core::mem::transmute(mmio) }` to cast a local reference to `&'static`. This is text-book Undefined Behavior and a ticking time bomb.
 ./docs/reports/architecture_alignment_2024_10_18.md:31:Zero instances of `mem::transmute` found in `kernel/src`. `unsafe` is used appropriately in `arch` and FFI boundaries. The kernel avoids UB shortcuts.
 ./docs/reports/architecture_alignment_2024_10_23.md:43:    let format = unsafe { core::mem::transmute($a3 as u8) };
 ./docs/reports/architecture_alignment_2024_10_23.md:48:    let policy = unsafe { core::mem::transmute($a2 as u32) };
 ./docs/reports/architecture_alignment_2024_10_23.md:61:    let static_mmio: &'static dyn MmioMapper = unsafe { core::mem::transmute(mmio) };
+./thing_os/src/syscalls.rs:256:                let outcome = unsafe { core::mem::transmute(ret as u8) };
 
 --- &'static str in ABI request/response ---
 Count: 0

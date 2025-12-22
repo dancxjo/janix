@@ -65,6 +65,7 @@ impl ThingNode {
 
 pub struct GraphStore {
     pub things: HashMap<ThingId, ThingNode>,
+    pub kind_index: HashMap<SymbolId, Vec<ThingId>>,
     pub next_id: u64,
     // Add free_indices to support resident manager slot reuse logic (stub)
     // Actually resident manager uses slab.slots directly.
@@ -126,6 +127,7 @@ impl GraphStore {
     pub fn new() -> Self {
         Self {
             things: HashMap::new(),
+            kind_index: HashMap::new(),
             next_id: 1,
         }
     }
@@ -147,6 +149,7 @@ impl GraphStore {
         };
 
         self.things.insert(id, node);
+        self.kind_index.entry(kind).or_default().push(id);
         id
     }
 
@@ -170,6 +173,7 @@ impl GraphStore {
             links: Vec::new(),
         };
         self.things.insert(id, node);
+        self.kind_index.entry(kind).or_default().push(id);
         id
     }
 
@@ -194,7 +198,15 @@ impl GraphStore {
     }
 
     pub fn delete_thing(&mut self, id: ThingId) -> Option<ThingNode> {
-        self.things.remove(&id)
+        let node = self.things.remove(&id);
+        if let Some(ref n) = node {
+            if let Some(list) = self.kind_index.get_mut(&n.kind) {
+                if let Ok(idx) = list.binary_search(&id) {
+                    list.remove(idx);
+                }
+            }
+        }
+        node
     }
 
     pub fn get_thing_kind(&self, id: ThingId) -> Option<SymbolId> {
@@ -241,6 +253,27 @@ impl GraphStore {
             None
         }
     }
+
+    pub fn next_thing_of_kind(&self, kind: SymbolId, start_after: ThingId) -> Option<ThingId> {
+        if let Some(list) = self.kind_index.get(&kind) {
+            // list is sorted by ThingId (monotonic creation)
+            // find first element > start_after
+            // binary_search returns Err(idx) where it could be inserted to maintain order.
+            // This is exactly the index of the first element greater than start_after (if not present).
+            // If present, it returns Ok(idx), so we want idx+1.
+            let idx = match list.binary_search(&start_after) {
+                Ok(i) => i + 1,
+                Err(i) => i,
+            };
+            if idx < list.len() {
+                Some(list[idx])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
 }
 
 pub fn init() {
@@ -272,5 +305,37 @@ mod tests {
 
         let removed_again = store.remove_link(src, dst, pred);
         assert!(!removed_again);
+    }
+
+    #[test]
+    fn test_kind_index() {
+        let mut store = GraphStore::new();
+        let kind_a = SymbolId(1);
+        let kind_b = SymbolId(2);
+
+        let id1 = store.create_thing(kind_a, Vec::new()); // t1
+        let id2 = store.create_thing(kind_b, Vec::new()); // t2
+        let id3 = store.create_thing(kind_a, Vec::new()); // t3
+
+        // Index check
+        assert_eq!(store.kind_index.get(&kind_a).unwrap().len(), 2);
+        assert_eq!(store.kind_index.get(&kind_b).unwrap().len(), 1);
+
+        // next_thing_of_kind
+        let next = store.next_thing_of_kind(kind_a, ThingId(0));
+        assert_eq!(next, Some(id1));
+
+        let next = store.next_thing_of_kind(kind_a, id1);
+        assert_eq!(next, Some(id3));
+
+        let next = store.next_thing_of_kind(kind_a, id3);
+        assert_eq!(next, None);
+
+        // Delete t1
+        store.delete_thing(id1);
+        assert_eq!(store.kind_index.get(&kind_a).unwrap().len(), 1);
+
+        let next = store.next_thing_of_kind(kind_a, ThingId(0));
+        assert_eq!(next, Some(id3)); // Skipped t1
     }
 }

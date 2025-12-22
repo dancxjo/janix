@@ -309,8 +309,9 @@ impl Thing for FontModule {
     }
 }
 
-#[derive(Thing)]
-#[thing(description = "Kernel-published system clock including monotonic tick counter and Unix wall time.")]
+// #[derive(Thing)] - Manual implementation provided below
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+// Note: Description handled in manual impl
 pub struct TimeSource {
     pub id: ThingId,
     pub ticks_since_boot: u64,

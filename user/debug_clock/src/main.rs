@@ -125,6 +125,8 @@ unsafe fn raw_syscall(
         in("r10") arg3,
         in("r8") arg4,
         in("r9") arg5,
+        lateout("rcx") _,
+        lateout("r11") _,
         clobber_abi("C"),
         options(nostack)
     );

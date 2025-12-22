@@ -8,12 +8,12 @@ pub unsafe fn syscall_stub(
     arg4: u64,
     arg5: u64,
 ) -> u64 {
-    let mut ret: u64;
+    let mut a0 = arg0;
     unsafe {
         core::arch::asm!(
             "syscall 0",
-            inlateout("$a7") num => ret,
-            inlateout("$a0") arg0 => ret,
+            in("$a7") num,
+            inlateout("$a0") a0,
             in("$a1") arg1,
             in("$a2") arg2,
             in("$a3") arg3,
@@ -23,5 +23,5 @@ pub unsafe fn syscall_stub(
             options(nostack),
         );
     }
-    ret
+    a0
 }

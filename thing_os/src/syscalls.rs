@@ -261,6 +261,31 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
                 }
             }
         }
+        KernelRequest::SchemaGet { kind, out } => {
+            let mut written = 0;
+            let mut fingerprint = 0;
+            let ret = unsafe {
+                raw_syscall(
+                    SYSCALL_SCHEMA_GET,
+                    kind.0 as u64,
+                    out.ptr,
+                    out.len,
+                    &mut written as *mut _ as u64,
+                    &mut fingerprint as *mut _ as u64,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::SchemaData {
+                    written,
+                    fingerprint,
+                }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
         KernelRequest::MapSharedBuffer { buffer_id, flags } => {
             let mut vaddr = 0_u64;
             let mut size = 0_u64;

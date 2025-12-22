@@ -2,15 +2,16 @@
 #![feature(allocator_api)]
 
 extern crate alloc;
+use alloc::boxed::Box;
 
+use abi::{syscall_defs::SymbolId, ThingId};
 use alloc::vec::Vec;
-use thing_os::graph_ops::{GraphDriver, GraphSink, GraphOp, GraphEvent, ThingProps};
-use abi::{ThingId, syscall_defs::SymbolId};
 use hal::MmioMapper;
+use thing_os::graph_ops::{GraphDriver, GraphEvent, GraphOp, GraphSink, ThingProps};
 
 pub mod xhci;
 
-pub fn init(mmio: &dyn MmioMapper, graph: &mut dyn GraphDriver) {
+pub fn init(mmio: &'static dyn MmioMapper, graph: &'static mut dyn GraphDriver) {
     xhci::register_watcher(mmio, graph);
 }
 
@@ -20,7 +21,7 @@ struct UserMmioMapper;
 impl MmioMapper for UserMmioMapper {
     unsafe fn map_mmio(&self, phys: u64, size: u64) -> *mut u8 {
         println!("USB: Requesting MMIO map {:#x} size {}", phys, size);
-        core::ptr::null_mut() 
+        core::ptr::null_mut()
     }
 }
 
@@ -41,9 +42,10 @@ impl GraphDriver for UserGraphDriver {
 
 pub fn driver_main() {
     println!("USB Driver Starting...");
-    let mmio = UserMmioMapper;
-    let mut graph = UserGraphDriver;
-    init(&mmio, &mut graph);
+    // Leak the drivers to get 'static references for the global watcher
+    let mmio = Box::leak(Box::new(UserMmioMapper));
+    let graph = Box::leak(Box::new(UserGraphDriver));
+    init(mmio, graph);
     loop {
         // yield
     }

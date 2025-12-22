@@ -39,7 +39,7 @@ pub fn load_program(image: &ProgramImageData) -> Result<LoadedElfProgram, &'stat
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64 {
-    use super::{log_milestone, LoadedElfProgram, ProgramImageData};
+    use super::{LoadedElfProgram, ProgramImageData, log_milestone};
     use crate::boot_model::HHDM_REQUEST;
     use abi::{USER_HEAP_END, USER_HEAP_START};
     use alloc::format;
@@ -269,32 +269,88 @@ mod x86_64 {
     ) -> Result<(), &'static str> {
         let start = align_down(segment.p_vaddr);
         let end = align_up(segment.p_vaddr + segment.p_memsz);
-        
+
         if end <= start {
             return Err("Invalid segment size");
         }
+
+        // USER REQUESTED LOGGING - DISABLED FOR SPEED
+        /*
+        log_milestone(&format!(
+            "PT_LOAD vaddr={:#x} off={:#x} filesz={:#x} memsz={:#x}",
+            segment.p_vaddr, segment.p_offset, segment.p_filesz, segment.p_memsz
+        ));
+        */
+
         let flags = segment_flags(segment.p_flags);
         let mut mapper = mapper(space);
+        let mut total_copied = 0u64;
+        let mut total_zeroed = 0u64;
+
         for page_addr in (start..end).step_by(Size4KiB::SIZE as usize) {
             let page = Page::<Size4KiB>::containing_address(VirtAddr::new(page_addr));
             let frame = frame_alloc
                 .allocate_frame()
                 .ok_or("Out of frames mapping segment")?;
             unsafe {
-                mapper
-                    .map_to(page, frame, flags, frame_alloc)
-                    .map_err(map_err_to_str)?
-                    .flush();
+                match mapper.map_to(page, frame, flags, frame_alloc) {
+                    Ok(tlb) => tlb.flush(),
+                    Err(e) => return Err(map_err_to_str(e)),
+                }
             }
-            zero_frame(frame.start_address().as_u64(), hhdm_offset);
-            copy_segment_bytes(
-                frame.start_address().as_u64(),
-                page_addr,
-                segment,
-                image,
-                hhdm_offset,
-            );
+
+            let page_start = page_addr;
+            let page_end = page_start + Size4KiB::SIZE as u64;
+
+            // 1. Zero valid memory range (safe default)
+            let mem_valid_start = page_start.max(segment.p_vaddr);
+            let mem_valid_end = page_end.min(segment.p_vaddr + segment.p_memsz);
+
+            if mem_valid_end > mem_valid_start {
+                let offset = mem_valid_start - page_start;
+                let len = mem_valid_end - mem_valid_start;
+                let phys_ptr = (frame.start_address().as_u64() + hhdm_offset + offset) as *mut u8;
+                unsafe {
+                    ptr::write_bytes(phys_ptr, 0, len as usize);
+                }
+                total_zeroed += len;
+            }
+
+            // 2. Copy file data (overwrites zeros)
+            let file_limit = segment.p_vaddr + segment.p_filesz;
+            let copy_start = page_start.max(segment.p_vaddr);
+            let copy_end = page_end.min(file_limit);
+
+            let copy_len = if copy_end > copy_start {
+                copy_end - copy_start
+            } else {
+                0
+            };
+
+            if copy_len > 0 {
+                let dest_offset = copy_start - page_start;
+                let offset_in_segment = copy_start - segment.p_vaddr;
+                let src_offset = segment.p_offset + offset_in_segment;
+
+                if (src_offset as usize + copy_len as usize) <= image.len() {
+                    let dest_ptr =
+                        (frame.start_address().as_u64() + hhdm_offset + dest_offset) as *mut u8;
+                    let src_ptr = unsafe { image.as_ptr().add(src_offset as usize) };
+                    unsafe {
+                        ptr::copy_nonoverlapping(src_ptr, dest_ptr, copy_len as usize);
+                    }
+                    total_copied += copy_len;
+                }
+            }
         }
+
+        /*
+        log_milestone(&format!(
+            "copied={:#x} zeroed_range_touched={:#x}",
+            total_copied, total_zeroed
+        ));
+        */
+
         Ok(())
     }
 
@@ -438,7 +494,7 @@ mod x86_64 {
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64 {
-    use super::{log_milestone, LoadedElfProgram, ProgramImageData};
+    use super::{LoadedElfProgram, ProgramImageData, log_milestone};
     use crate::boot_model::HHDM_REQUEST;
     use abi::{USER_HEAP_END, USER_HEAP_START};
     use alloc::format;

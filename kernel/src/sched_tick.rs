@@ -4,8 +4,8 @@ use crate::graph::{self, Graph};
 use crate::graph_kinds;
 use crate::sched_types::{CpuId, ThreadState, TimeNs};
 use abi::ThingId;
-use thing_models::PropValue;
 use alloc::string::String;
+use thing_models::PropValue;
 
 const LINK_BUF: usize = 4;
 
@@ -100,8 +100,14 @@ fn update_runtime(graph: &mut Graph, thread: ThingId, now: TimeNs) {
     }
     let new_runtime = runtime.saturating_add(delta);
     let props = alloc::vec![
-        (crate::symbols::intern("runtime_ns"), PropValue::U64(new_runtime)),
-        (crate::symbols::intern("last_started_ns"), PropValue::U64(now)),
+        (
+            crate::symbols::intern("runtime_ns"),
+            PropValue::U64(new_runtime)
+        ),
+        (
+            crate::symbols::intern("last_started_ns"),
+            PropValue::U64(now)
+        ),
     ];
     graph.update_thing(thread, props.as_slice());
 }
@@ -113,7 +119,10 @@ fn make_thread_current(graph: &mut Graph, thread: ThingId, cpu_node: ThingId, no
             crate::symbols::intern("state"),
             PropValue::Str(String::from(ThreadState::Running.as_str())),
         ),
-        (crate::symbols::intern("last_started_ns"), PropValue::U64(now)),
+        (
+            crate::symbols::intern("last_started_ns"),
+            PropValue::U64(now)
+        ),
     ];
     graph.update_thing(thread, props.as_slice());
     ensure_runs_on_link(graph, thread, cpu_node);

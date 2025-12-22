@@ -1,9 +1,9 @@
 use super::super::UserEntryRegs;
 use core::arch::global_asm;
 extern crate alloc;
+use super::paging;
 use alloc::alloc::{Layout, alloc_zeroed};
 use core::ptr::NonNull;
-use super::paging;
 
 global_asm!(
     r#"
@@ -99,9 +99,9 @@ pub fn alloc_user_stack() -> u64 {
         let end = stack_addr + USER_STACK_SIZE as u64;
         let mut curr = start;
         while curr < end {
-             // We want AP[1]=1 (EL0 access) and Normal memory type
-             paging::update_page_flags(curr, paging::DESC_AP_EL0 | paging::ATTR_NORMAL, 0);
-             curr += 4096;
+            // We want AP[1]=1 (EL0 access) and Normal memory type
+            paging::update_page_flags(curr, paging::DESC_AP_EL0 | paging::ATTR_NORMAL, 0);
+            curr += 4096;
         }
     }
 

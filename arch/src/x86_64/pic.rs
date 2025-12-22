@@ -32,7 +32,11 @@ pub fn set_irq_mask(irq: u8, masked: bool) {
         let mut data_port = Port::<u8>::new(port_data);
         let current_mask = data_port.read();
         let mask_bit = 1u8 << (irq % 8);
-        let new_mask = if masked { current_mask | mask_bit } else { current_mask & !mask_bit };
+        let new_mask = if masked {
+            current_mask | mask_bit
+        } else {
+            current_mask & !mask_bit
+        };
         // Write new mask
         data_port.write(new_mask);
     }

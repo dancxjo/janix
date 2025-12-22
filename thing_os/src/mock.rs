@@ -1,7 +1,7 @@
-use alloc::vec::Vec;
-use alloc::collections::VecDeque;
-use core::cell::RefCell;
 use abi::{KernelRequest, KernelResponse};
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
+use core::cell::RefCell;
 
 thread_local! {
     static RESPONSES: RefCell<VecDeque<KernelResponse>> = RefCell::new(VecDeque::new());
@@ -19,9 +19,5 @@ pub fn get_requests() -> Vec<KernelRequest> {
 
 pub fn handle_syscall(request: KernelRequest) -> KernelResponse {
     REQUESTS.with(|r| r.borrow_mut().push(request));
-    RESPONSES.with(|r| {
-        r.borrow_mut()
-            .pop_front()
-            .expect("mock response exhausted")
-    })
+    RESPONSES.with(|r| r.borrow_mut().pop_front().expect("mock response exhausted"))
 }

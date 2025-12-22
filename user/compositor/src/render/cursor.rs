@@ -107,7 +107,7 @@ pub fn build_cursor_sprites() -> CursorSprites {
         assets::resize_nwse::HOTSPOT_X,
         assets::resize_nwse::HOTSPOT_Y,
     );
-     let resize_ne_sw = load_asset(
+    let resize_ne_sw = load_asset(
         assets::resize_nesw::DATA,
         assets::resize_nesw::WIDTH,
         assets::resize_nesw::HEIGHT,
@@ -136,16 +136,16 @@ pub fn raster_draw_cursor(
 ) {
     let top_left_x = origin.0 - hotspot.0;
     let top_left_y = origin.1 - hotspot.1;
-    
+
     let start_x = max(0, top_left_x);
     let start_y = max(0, top_left_y);
     let end_x = min(fb_width as i32, top_left_x + sprite.width as i32);
     let end_y = min(fb_height as i32, top_left_y + sprite.height as i32);
-    
+
     if start_x >= end_x || start_y >= end_y {
         return;
     }
-    
+
     let sprite_width = sprite.width;
     let sprite_data = &sprite.data;
 
@@ -157,19 +157,21 @@ pub fn raster_draw_cursor(
     for (row_idx, y) in (start_y..end_y).enumerate() {
         let sy = start_sy + row_idx;
         let sprite_offset = sy * sprite_width + start_sx;
-        
+
         let sprite_row = &sprite_data[sprite_offset..sprite_offset + width_to_draw];
         let dst_row_start = (y as usize) * (stride as usize) + (start_x as usize);
-        
+
         unsafe {
             let dst_ptr = buffer.add(dst_row_start);
-            
+
             for (i, &px) in sprite_row.iter().enumerate() {
                 let alpha = (px >> 24) & 0xFF;
-                if alpha == 0 { continue; }
+                if alpha == 0 {
+                    continue;
+                }
 
                 let dst = dst_ptr.add(i);
-                
+
                 if alpha == 0xFF {
                     *dst = px;
                 } else {
@@ -204,29 +206,33 @@ mod tests {
     #[test]
     fn raster_draw_cursor_blends_correctly() {
         // White background
-        let mut buffer = vec![0xFFFFFFFF; 100]; 
+        let mut buffer = vec![0xFFFFFFFF; 100];
         let stride = 10;
         let w = 10;
         let h = 10;
-        
+
         // Simple 1x1 red sprite with 50% alpha
         // Alpha = 0x80 (128)
         // Color = Red (0xFF0000)
         // Premultiplied: R=128, G=0, B=0
         // Pixel = 0x80800000
         let sprite_data = vec![0x80800000];
-        let sprite = Bitmap { width: 1, height: 1, data: sprite_data };
-        
+        let sprite = Bitmap {
+            width: 1,
+            height: 1,
+            data: sprite_data,
+        };
+
         raster_draw_cursor(buffer.as_mut_ptr(), stride, w, h, (5, 5), &sprite, (0, 0));
-        
+
         let idx = 5 * stride + 5;
         let px = buffer[idx as usize];
         let r = (px >> 16) & 0xFF;
         let g = (px >> 8) & 0xFF;
         let b = px & 0xFF;
-        
+
         assert_eq!(r, 255);
-        assert!(g >= 126 && g <= 128);  
+        assert!(g >= 126 && g <= 128);
         assert!(b >= 126 && b <= 128);
     }
 }

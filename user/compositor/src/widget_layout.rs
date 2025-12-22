@@ -13,13 +13,18 @@ pub struct Rect {
     pub h: u32,
 }
 impl Rect {
-    pub const fn new(x: i32, y: i32, w: u32, h: u32) -> Self { Self { x, y, w, h } }
+    pub const fn new(x: i32, y: i32, w: u32, h: u32) -> Self {
+        Self { x, y, w, h }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LayoutSpec {
     Stack,
-    Grid { rows: usize, cols: usize },
+    Grid {
+        rows: usize,
+        cols: usize,
+    },
     Flex {
         direction: FlexDirection,
         wrap: FlexWrap,
@@ -53,9 +58,16 @@ impl Default for LayoutItem {
     }
 }
 
-pub fn layout(container: Rect, spec: LayoutSpec, children: &[LayoutItem], gap: i32) -> Vec<(ThingId, Rect)> {
+pub fn layout(
+    container: Rect,
+    spec: LayoutSpec,
+    children: &[LayoutItem],
+    gap: i32,
+) -> Vec<(ThingId, Rect)> {
     let mut result = Vec::new();
-    if children.is_empty() { return result; }
+    if children.is_empty() {
+        return result;
+    }
 
     match spec {
         LayoutSpec::Stack => {
@@ -80,27 +92,42 @@ pub fn layout(container: Rect, spec: LayoutSpec, children: &[LayoutItem], gap: i
             for (i, child) in children.iter().enumerate() {
                 let row = (i as u32) / cols;
                 let col = (i as u32) % cols;
-                if row >= rows { break; }
+                if row >= rows {
+                    break;
+                }
 
                 let x = container.x + (col as i32 * (cell_w as i32 + gap));
                 let y = container.y + (row as i32 * (cell_h as i32 + gap));
 
                 let mut w = if col == cols - 1 {
                     container.w - (cell_w * (cols - 1)) - (total_gap_x as u32)
-                } else { cell_w };
+                } else {
+                    cell_w
+                };
 
                 let mut h = if row == rows - 1 {
                     container.h - (cell_h * (rows - 1)) - (total_gap_y as u32)
-                } else { cell_h };
+                } else {
+                    cell_h
+                };
 
-                if let Some(max_w) = child.max_width { w = w.min(max_w); }
-                if let Some(max_h) = child.max_height { h = h.min(max_h); }
+                if let Some(max_w) = child.max_width {
+                    w = w.min(max_w);
+                }
+                if let Some(max_h) = child.max_height {
+                    h = h.min(max_h);
+                }
 
                 result.push((child.id, Rect::new(x, y, w, h)));
             }
         }
 
-        LayoutSpec::Flex { direction, wrap, justify, align } => {
+        LayoutSpec::Flex {
+            direction,
+            wrap,
+            justify,
+            align,
+        } => {
             let is_row = direction == FlexDirection::Row;
             let main_size = if is_row { container.w } else { container.h };
 
@@ -113,7 +140,11 @@ pub fn layout(container: Rect, spec: LayoutSpec, children: &[LayoutItem], gap: i
                 let mut used: u32 = 0;
 
                 for child in children {
-                    let basis = if is_row { child.min_width } else { child.min_height };
+                    let basis = if is_row {
+                        child.min_width
+                    } else {
+                        child.min_height
+                    };
                     let gap_needed = if current.is_empty() { 0 } else { gap as u32 };
 
                     if !current.is_empty() && used + gap_needed + basis > main_size {
@@ -121,11 +152,15 @@ pub fn layout(container: Rect, spec: LayoutSpec, children: &[LayoutItem], gap: i
                         current = Vec::new();
                         used = 0;
                     }
-                    if !current.is_empty() { used += gap as u32; }
+                    if !current.is_empty() {
+                        used += gap as u32;
+                    }
                     used += basis;
                     current.push(child);
                 }
-                if !current.is_empty() { lines.push(current); }
+                if !current.is_empty() {
+                    lines.push(current);
+                }
             }
 
             // 2) layout each line
@@ -139,8 +174,16 @@ pub fn layout(container: Rect, spec: LayoutSpec, children: &[LayoutItem], gap: i
                 let mut line_cross: u32 = 0;
 
                 for child in &line {
-                    let basis = if is_row { child.min_width } else { child.min_height };
-                    let cross = if is_row { child.min_height } else { child.min_width };
+                    let basis = if is_row {
+                        child.min_width
+                    } else {
+                        child.min_height
+                    };
+                    let cross = if is_row {
+                        child.min_height
+                    } else {
+                        child.min_width
+                    };
                     total_basis += basis;
                     total_grow += child.flex_grow;
                     line_cross = line_cross.max(cross);
@@ -165,33 +208,60 @@ pub fn layout(container: Rect, spec: LayoutSpec, children: &[LayoutItem], gap: i
                     }
                 }
 
-                let extra_gap = if total_grow == 0.0 && available > 0 && justify == JustifyContent::SpaceBetween && count > 1 {
+                let extra_gap = if total_grow == 0.0
+                    && available > 0
+                    && justify == JustifyContent::SpaceBetween
+                    && count > 1
+                {
                     available / (count - 1) as u32
-                } else if total_grow == 0.0 && available > 0 && justify == JustifyContent::SpaceAround {
+                } else if total_grow == 0.0
+                    && available > 0
+                    && justify == JustifyContent::SpaceAround
+                {
                     available / count as u32
-                } else { 0 };
+                } else {
+                    0
+                };
 
                 let effective_gap: u32 = (gap.max(0) as u32) + extra_gap;
 
                 for child in line {
-                    let basis = if is_row { child.min_width } else { child.min_height };
+                    let basis = if is_row {
+                        child.min_width
+                    } else {
+                        child.min_height
+                    };
                     let grow_share = if total_grow > 0.0 {
                         (available as f32 * (child.flex_grow / total_grow)) as u32
-                    } else { 0 };
+                    } else {
+                        0
+                    };
 
                     let mut item_main = basis + grow_share;
 
                     let mut item_cross = if align == AlignItems::Stretch {
                         line_cross
-                    } else if is_row { child.min_height } else { child.min_width };
+                    } else if is_row {
+                        child.min_height
+                    } else {
+                        child.min_width
+                    };
 
                     // max constraints
                     if is_row {
-                        if let Some(max_w) = child.max_width { item_main = item_main.min(max_w); }
-                        if let Some(max_h) = child.max_height { item_cross = item_cross.min(max_h); }
+                        if let Some(max_w) = child.max_width {
+                            item_main = item_main.min(max_w);
+                        }
+                        if let Some(max_h) = child.max_height {
+                            item_cross = item_cross.min(max_h);
+                        }
                     } else {
-                        if let Some(max_h) = child.max_height { item_main = item_main.min(max_h); }
-                        if let Some(max_w) = child.max_width { item_cross = item_cross.min(max_w); }
+                        if let Some(max_h) = child.max_height {
+                            item_main = item_main.min(max_h);
+                        }
+                        if let Some(max_w) = child.max_width {
+                            item_cross = item_cross.min(max_w);
+                        }
                     }
 
                     let cross_offset = match align {
@@ -201,13 +271,19 @@ pub fn layout(container: Rect, spec: LayoutSpec, children: &[LayoutItem], gap: i
                     };
 
                     let (x, y, w, h) = if is_row {
-                        (container.x + main_pos as i32,
-                         container.y + cross_pos as i32 + cross_offset as i32,
-                         item_main, item_cross)
+                        (
+                            container.x + main_pos as i32,
+                            container.y + cross_pos as i32 + cross_offset as i32,
+                            item_main,
+                            item_cross,
+                        )
                     } else {
-                        (container.x + cross_pos as i32 + cross_offset as i32,
-                         container.y + main_pos as i32,
-                         item_cross, item_main)
+                        (
+                            container.x + cross_pos as i32 + cross_offset as i32,
+                            container.y + main_pos as i32,
+                            item_cross,
+                            item_main,
+                        )
                     };
 
                     result.push((child.id, Rect::new(x, y, w, h)));
@@ -236,16 +312,31 @@ mod tests {
 
         let container = Rect::new(0, 0, 100, 20);
         let items = [
-            LayoutItem { id: ThingId(1), min_width: 10, min_height: 5, ..Default::default() },
-            LayoutItem { id: ThingId(2), min_width: 20, min_height: 5, ..Default::default() },
+            LayoutItem {
+                id: ThingId(1),
+                min_width: 10,
+                min_height: 5,
+                ..Default::default()
+            },
+            LayoutItem {
+                id: ThingId(2),
+                min_width: 20,
+                min_height: 5,
+                ..Default::default()
+            },
         ];
 
-        let rects = layout(container, LayoutSpec::Flex {
-            direction: FlexDirection::Row,
-            wrap: FlexWrap::NoWrap,
-            justify: JustifyContent::Start,
-            align: AlignItems::Start,
-        }, &items, 5);
+        let rects = layout(
+            container,
+            LayoutSpec::Flex {
+                direction: FlexDirection::Row,
+                wrap: FlexWrap::NoWrap,
+                justify: JustifyContent::Start,
+                align: AlignItems::Start,
+            },
+            &items,
+            5,
+        );
 
         assert_eq!(rects.len(), 2);
         assert_eq!(rects[0].1.x, 0);
@@ -257,14 +348,24 @@ mod tests {
         use crate::flex::*;
 
         let container = Rect::new(0, 0, 100, 20);
-        let items = [LayoutItem { id: ThingId(1), min_width: 20, min_height: 5, ..Default::default() }];
+        let items = [LayoutItem {
+            id: ThingId(1),
+            min_width: 20,
+            min_height: 5,
+            ..Default::default()
+        }];
 
-        let rects = layout(container, LayoutSpec::Flex {
-            direction: FlexDirection::Row,
-            wrap: FlexWrap::NoWrap,
-            justify: JustifyContent::Center,
-            align: AlignItems::Start,
-        }, &items, 0);
+        let rects = layout(
+            container,
+            LayoutSpec::Flex {
+                direction: FlexDirection::Row,
+                wrap: FlexWrap::NoWrap,
+                justify: JustifyContent::Center,
+                align: AlignItems::Start,
+            },
+            &items,
+            0,
+        );
 
         assert_eq!(rects[0].1.x, 40); // (100 - 20)/2
     }

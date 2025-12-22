@@ -4,12 +4,12 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::cmp::max;
 
-use thing_os::prelude::*;
 use abi::ThingId;
 use thing_models::PropValue;
 use thing_models::graph_kinds;
+use thing_os::Window;
+use thing_os::prelude::*;
 use thing_os::update_props;
-use thing_os::{Window};
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH};
 
@@ -115,8 +115,14 @@ pub fn auto_tile(windows: &[Window], fb_width: i32, fb_height: i32) -> Vec<Stack
 pub fn persist_stack(stack: &[StackedWindow]) {
     for win in stack {
         let props = [
-            (graph_kinds::PROP_WINDOW_X.to_string(), PropValue::I64(win.x as i64)),
-            (graph_kinds::PROP_WINDOW_Y.to_string(), PropValue::I64(win.y as i64)),
+            (
+                graph_kinds::PROP_WINDOW_X.to_string(),
+                PropValue::I64(win.x as i64),
+            ),
+            (
+                graph_kinds::PROP_WINDOW_Y.to_string(),
+                PropValue::I64(win.y as i64),
+            ),
             (
                 graph_kinds::PROP_WINDOW_WIDTH.to_string(),
                 PropValue::I64(win.width as i64),

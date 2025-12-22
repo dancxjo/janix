@@ -2,16 +2,16 @@
 
 extern crate alloc;
 
-use abi::{Predicate, MapFlags, PixelFormat, SharedBufferInfo, ThingId};
-use thing_models::graph_kinds;
+use abi::{MapFlags, PixelFormat, Predicate, SharedBufferInfo, ThingId};
 use alloc::string::{String, ToString};
 use core::ptr;
+use thing_models::graph_kinds;
 use thing_os::prelude::*;
 use thing_os::thing_models::DisplayPresentRequest;
 use thing_os::{
-    DisplayThing, SysError, add_link, link_targets, load_thing, shared_buffer_info,
-    shared_buffer_map, create_thing, register_schema_for, update_props, list_things_by_kind,
-    PropKey, PropValue, PropType,
+    add_link, create_thing, link_targets, list_things_by_kind, load_thing, register_schema_for,
+    shared_buffer_info, shared_buffer_map, update_props, DisplayThing, PropKey, PropType,
+    PropValue, SysError,
 };
 
 const DEFAULT_REFRESH_INTERVAL_NS: u64 = 16_666_667;
@@ -54,40 +54,48 @@ impl FramebufferDriver {
 
         let logical_map_flags = MapFlags::READ.union(MapFlags::USER);
         let logical_map_flags = MapFlags::READ.union(MapFlags::USER);
-        
+
         let front_buffer_id = match Self::display_buffer_target(
             descriptor.display_id,
             graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
         ) {
-             Ok(id) => id,
-             Err(_) => {
+            Ok(id) => id,
+            Err(_) => {
                 println!("framebuffer_driver: creating front buffer");
-                 let id = thing_os::create_shared_buffer(width, height, pixel_format)?;
-                 let _ = add_link(descriptor.display_id, graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER, id);
-                 id
-             }
+                let id = thing_os::create_shared_buffer(width, height, pixel_format)?;
+                let _ = add_link(
+                    descriptor.display_id,
+                    graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
+                    id,
+                );
+                id
+            }
         };
 
         let back_buffer_id = match Self::display_buffer_target(
             descriptor.display_id,
             graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
         ) {
-             Ok(id) => id,
-             Err(_) => {
-                 println!("framebuffer_driver: creating back buffer");
-                 let id = thing_os::create_shared_buffer(width, height, pixel_format)?;
-                 let _ = add_link(descriptor.display_id, graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER, id);
-                 id
-             }
+            Ok(id) => id,
+            Err(_) => {
+                println!("framebuffer_driver: creating back buffer");
+                let id = thing_os::create_shared_buffer(width, height, pixel_format)?;
+                let _ = add_link(
+                    descriptor.display_id,
+                    graph_kinds::LINK_DISPLAY_HAS_BACK_BUFFER,
+                    id,
+                );
+                id
+            }
         };
 
         let front_buffer = Self::map_buffer_view(front_buffer_id, logical_map_flags)?;
         let back_buffer = Self::map_buffer_view(back_buffer_id, logical_map_flags)?;
-        
+
         let scanout_map_flags = logical_map_flags.union(MapFlags::WRITE);
         let scanout_buffer =
             Self::map_buffer_view(descriptor.scanout_buffer_id, scanout_map_flags)?;
-        
+
         // let active_buffer_index = Self::load_active_buffer_index(descriptor.display_id);
         // We load it fresh in tick
 
@@ -143,9 +151,7 @@ impl FramebufferDriver {
         })
     }
 
-    fn ensure_present_request(
-        fb_id: ThingId,
-    ) -> Result<DisplayPresentRequest, SysError> {
+    fn ensure_present_request(fb_id: ThingId) -> Result<DisplayPresentRequest, SysError> {
         if let Some(existing) = Self::find_present_request(fb_id) {
             return Ok(existing);
         }
@@ -222,7 +228,7 @@ impl FramebufferDriver {
 
         self.frame_watch = Some(request.frame_index);
         self.frames_presented = self.frames_presented.saturating_add(1);
-        self.last_present_ns = Instant::now().t_ns; 
+        self.last_present_ns = Instant::now().t_ns;
 
         let _ = update_props(
             self.fb_id,
@@ -245,21 +251,25 @@ impl FramebufferDriver {
                     graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
                     PropValue::U64(self.last_present_ns),
                 ),
-                (graph_kinds::PROP_COMPLETED.to_string(), PropValue::Bool(true)),
+                (
+                    graph_kinds::PROP_COMPLETED.to_string(),
+                    PropValue::Bool(true),
+                ),
             ],
         );
     }
 
-    fn display_buffer_target(
-        display_id: ThingId,
-        pred: Predicate,
-    ) -> Result<ThingId, SysError> {
+    fn display_buffer_target(display_id: ThingId, pred: Predicate) -> Result<ThingId, SysError> {
         let mut targets = link_targets(display_id, pred);
         targets.pop().ok_or(SysError::Unexpected)
     }
 
     fn clamp_active_buffer_index(value: i64) -> i64 {
-        if value == 1 { 1 } else { 0 }
+        if value == 1 {
+            1
+        } else {
+            0
+        }
     }
 
     /*
@@ -269,10 +279,7 @@ impl FramebufferDriver {
     }
     */
 
-    fn map_buffer_view(
-        buffer_id: ThingId,
-        flags: MapFlags,
-    ) -> Result<SharedBufferView, SysError> {
+    fn map_buffer_view(buffer_id: ThingId, flags: MapFlags) -> Result<SharedBufferView, SysError> {
         let info = shared_buffer_info(buffer_id)?;
         let (ptr, size) = shared_buffer_map(buffer_id, flags)?;
         Ok(SharedBufferView {
@@ -386,9 +393,18 @@ impl Thing for DisplayFramebufferThing {
             graph_kinds::PROP_NAME.to_string(),
             PropValue::Str(self.name.clone()),
         ));
-        out.push((graph_kinds::PROP_WIDTH.to_string(), PropValue::U64(self.width)));
-        out.push((graph_kinds::PROP_HEIGHT.to_string(), PropValue::U64(self.height)));
-        out.push((graph_kinds::PROP_STRIDE.to_string(), PropValue::U64(self.stride)));
+        out.push((
+            graph_kinds::PROP_WIDTH.to_string(),
+            PropValue::U64(self.width),
+        ));
+        out.push((
+            graph_kinds::PROP_HEIGHT.to_string(),
+            PropValue::U64(self.height),
+        ));
+        out.push((
+            graph_kinds::PROP_STRIDE.to_string(),
+            PropValue::U64(self.stride),
+        ));
         let fmt = match self.pixel_format {
             PixelFormat::Rgba8888 => "Rgba8888",
             PixelFormat::Bgra8888 => "Bgra8888",

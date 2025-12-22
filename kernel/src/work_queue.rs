@@ -1,6 +1,6 @@
-use alloc::vec::Vec;
 use crate::handles::ProcessRef;
 use abi::ThingId;
+use alloc::vec::Vec;
 
 #[derive(Debug, Clone)]
 pub enum WorkItem {

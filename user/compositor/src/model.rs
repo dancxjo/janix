@@ -1,12 +1,12 @@
-use alloc::string::ToString;
-use thing_os::prelude::*;
-use thing_os::link_targets;
-use thing_os::thing_models::DisplayPresentRequest;
-use thing_os::PrimaryDisplayBuffer;
 use abi::ThingId;
+use alloc::string::ToString;
 use thing_models::PropValue;
 use thing_models::graph_kinds;
-use thing_os::{update_props, create_thing, list_things_by_kind, load_thing};
+use thing_os::PrimaryDisplayBuffer;
+use thing_os::link_targets;
+use thing_os::prelude::*;
+use thing_os::thing_models::DisplayPresentRequest;
+use thing_os::{create_thing, list_things_by_kind, load_thing, update_props};
 
 use crate::layout::StackedWindow;
 use crate::render::cursor::{self, CursorKind, CursorSprites};
@@ -32,7 +32,6 @@ pub struct ConsoleBuffer {
     pub stride: u32,
     pub pixel_format: abi::PixelFormat,
 }
-
 
 #[derive(Debug, Clone, Copy)]
 pub struct MappedSurface {
@@ -120,15 +119,24 @@ impl Compositor {
         if let Some(prev) = self.active_window {
             let _ = update_props(
                 prev,
-                &[(graph_kinds::PROP_WINDOW_ACTIVE.to_string(), PropValue::Bool(false))],
+                &[(
+                    graph_kinds::PROP_WINDOW_ACTIVE.to_string(),
+                    PropValue::Bool(false),
+                )],
             );
         }
 
         let max_z = stacked.iter().map(|w| w.z_index).max().unwrap_or(0);
         let new_z = max_z.saturating_add(1);
         let updates = [
-            (graph_kinds::PROP_WINDOW_ACTIVE.to_string(), PropValue::Bool(true)),
-            (graph_kinds::PROP_Z_INDEX.to_string(), PropValue::I64(new_z as i64)),
+            (
+                graph_kinds::PROP_WINDOW_ACTIVE.to_string(),
+                PropValue::Bool(true),
+            ),
+            (
+                graph_kinds::PROP_Z_INDEX.to_string(),
+                PropValue::I64(new_z as i64),
+            ),
         ];
         let _ = update_props(window.id, &updates);
         self.active_window = Some(window.id);
@@ -140,12 +148,8 @@ impl Compositor {
 
     pub fn add_full_damage(&mut self) {
         self.damage.clear();
-        self.damage.push(Rect::new(
-            0, 
-            0, 
-            self.fb.info.width, 
-            self.fb.info.height
-        ));
+        self.damage
+            .push(Rect::new(0, 0, self.fb.info.width, self.fb.info.height));
     }
 }
 
@@ -184,10 +188,8 @@ pub struct DragState {
 impl Compositor {
     pub fn ensure_display_contracts(&mut self) {
         if self.framebuffer_thing_id.is_none() {
-            let mut targets = link_targets(
-                self.fb.display_id,
-                graph_kinds::LINK_DISPLAY_FRONT_BUFFER,
-            );
+            let mut targets =
+                link_targets(self.fb.display_id, graph_kinds::LINK_DISPLAY_FRONT_BUFFER);
             self.framebuffer_thing_id = targets.pop();
         }
 
@@ -229,9 +231,18 @@ impl Compositor {
                 graph_kinds::PROP_FRAME_INDEX.to_string(),
                 PropValue::U64(self.frame_counter),
             ),
-            (graph_kinds::PROP_REQUESTED_AT_NS.to_string(), PropValue::U64(now)),
-            (graph_kinds::PROP_COMPLETED.to_string(), PropValue::Bool(false)),
-            (graph_kinds::PROP_PRESENTED_AT_NS.to_string(), PropValue::U64(0)),
+            (
+                graph_kinds::PROP_REQUESTED_AT_NS.to_string(),
+                PropValue::U64(now),
+            ),
+            (
+                graph_kinds::PROP_COMPLETED.to_string(),
+                PropValue::Bool(false),
+            ),
+            (
+                graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
+                PropValue::U64(0),
+            ),
         ];
         let _ = update_props(req_id, &updates);
     }

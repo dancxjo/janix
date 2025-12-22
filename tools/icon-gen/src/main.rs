@@ -1,9 +1,9 @@
 use clap::Parser;
+use resvg::usvg::{Options, Tree};
 use std::fs;
 use std::path::PathBuf;
-use walkdir::WalkDir;
 use tiny_skia::{Pixmap, Transform};
-use resvg::usvg::{Options, Tree};
+use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let height = 32;
 
             let mut pixmap = Pixmap::new(width, height).unwrap();
-            
+
             let size = tree.size().to_int_size();
             let sx = width as f32 / size.width() as f32;
             let sy = height as f32 / size.height() as f32;
@@ -53,9 +53,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             resvg::render(&tree, transform, &mut pixmap.as_mut());
 
             // Convert to DynamicImage to save as BMP
-            let img = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(width, height, pixmap.data().to_vec()).unwrap();
+            let img = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+                width,
+                height,
+                pixmap.data().to_vec(),
+            )
+            .unwrap();
             let dynamic_image = image::DynamicImage::ImageRgba8(img);
-            
+
             let output_path = args.output.join(format!("{}.bmp", file_name));
             dynamic_image.save_with_format(output_path, image::ImageFormat::Bmp)?;
         }

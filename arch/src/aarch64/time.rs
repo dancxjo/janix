@@ -24,7 +24,7 @@ impl HardwareTimer for Arm64HardwareTimer {
         let freq = self.freq_hz.load(Ordering::Relaxed);
         let freq = if freq == 0 {
             let freq_reg: u64;
-             unsafe {
+            unsafe {
                 asm!("mrs {}, cntfrq_el0", out(reg) freq_reg, options(nomem, nostack));
             }
             freq_reg
@@ -46,22 +46,26 @@ impl HardwareTimer for Arm64HardwareTimer {
         // If deadline is in the past, we want to fire immediately.
         // Writing 0 to TVAL triggers the interrupt immediately because the condition is (TVAL <= 0).
         let ticks: u64 = if deadline_ns <= now {
-             0
+            0
         } else {
-             let freq = self.freq_hz.load(Ordering::Relaxed);
-             // If freq is 0 (should not happen if init called), try read again
-             let freq = if freq == 0 {
-                 let freq_reg: u64;
-                 unsafe { asm!("mrs {}, cntfrq_el0", out(reg) freq_reg, options(nomem, nostack)); }
-                 freq_reg
-             } else {
-                 freq
-             };
+            let freq = self.freq_hz.load(Ordering::Relaxed);
+            // If freq is 0 (should not happen if init called), try read again
+            let freq = if freq == 0 {
+                let freq_reg: u64;
+                unsafe {
+                    asm!("mrs {}, cntfrq_el0", out(reg) freq_reg, options(nomem, nostack));
+                }
+                freq_reg
+            } else {
+                freq
+            };
 
-             if freq == 0 { return; } // Can't do anything without frequency
+            if freq == 0 {
+                return;
+            } // Can't do anything without frequency
 
-             let delta_ns = deadline_ns - now;
-             ((delta_ns as u128 * freq as u128) / 1_000_000_000) as u64
+            let delta_ns = deadline_ns - now;
+            ((delta_ns as u128 * freq as u128) / 1_000_000_000) as u64
         };
 
         // CNTV_TVAL_EL0 is a 32-bit signed down counter.
@@ -87,7 +91,9 @@ impl HardwareTimer for Arm64HardwareTimer {
 }
 
 pub fn init_arch_timer() {
-    static TIMER: Arm64HardwareTimer = Arm64HardwareTimer { freq_hz: AtomicU64::new(0) };
+    static TIMER: Arm64HardwareTimer = Arm64HardwareTimer {
+        freq_hz: AtomicU64::new(0),
+    };
     kernel::time::register_timer(&TIMER);
     TIMER.init();
 }

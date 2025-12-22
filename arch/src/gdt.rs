@@ -84,7 +84,10 @@ pub fn init() {
         GS::set_reg(SegmentSelector(0));
         load_tss(GDT.1.tss);
     }
-    kernel::println!("GDT initialized. TSS RSP0: {:#x}", TSS.privilege_stack_table[0].as_u64());
+    kernel::println!(
+        "GDT initialized. TSS RSP0: {:#x}",
+        TSS.privilege_stack_table[0].as_u64()
+    );
 }
 
 pub fn get_selectors() -> &'static Selectors {
@@ -97,4 +100,46 @@ pub fn kernel_stack_top() -> u64 {
 
 pub fn kernel_stack_ist1_top() -> u64 {
     TSS.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize].as_u64()
+}
+
+#[repr(C)]
+pub struct PerCpu {
+    pub kernel_rsp: u64,
+    pub user_rsp: u64,
+    pub scratch: u64,
+}
+
+pub static mut PER_CPU: PerCpu = PerCpu {
+    kernel_rsp: 0,
+    user_rsp: 0,
+    scratch: 0,
+};
+
+pub unsafe fn init_per_cpu() {
+    use x86_64::registers::model_specific::KernelGsBase;
+
+    // Set up the PerCpu structure
+    PER_CPU.kernel_rsp = kernel_stack_top();
+
+    let addr = x86_64::VirtAddr::from_ptr(core::ptr::addr_of!(PER_CPU));
+    let rsp_val = core::ptr::addr_of!(PER_CPU.kernel_rsp).read();
+    kernel::println!("PerCpu init: addr={:?} kernel_rsp={:#x}", addr, rsp_val);
+    KernelGsBase::write(addr);
+    let check = KernelGsBase::read();
+    if check.as_u64() != addr.as_u64() {
+        kernel::println!(
+            "FATAL: KernelGsBase write failed! read={:?} expected={:?}",
+            check,
+            addr
+        );
+        loop {}
+    }
+    kernel::println!(
+        "PerCpu init: written to MSR 0xC0000102. Verified: {:?}",
+        check
+    );
+
+    // Switch to Kernel GS immediately so we run with correct context.
+    // This ensures enter_user_mode (which does swapgs) sees Kernel GS as active.
+    x86_64::instructions::segmentation::swap_gs();
 }

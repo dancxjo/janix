@@ -1,11 +1,11 @@
 #[cfg(target_arch = "x86_64")]
 mod inner {
-    use x86_64::instructions::port::{Port, PortReadOnly, PortWriteOnly};
-    use thing_models::io::BlockDevice;
-    use thing_models::{PropValue, Thing};
     use crate::graph;
     use alloc::string::{String, ToString};
     use alloc::vec;
+    use thing_models::io::BlockDevice;
+    use thing_models::{PropValue, Thing};
+    use x86_64::instructions::port::{Port, PortReadOnly, PortWriteOnly};
 
     const ATA_PRIMARY_DATA: u16 = 0x1F0;
     const ATA_PRIMARY_ERR: u16 = 0x1F1;
@@ -29,31 +29,59 @@ mod inner {
         }
     }
 
-
     unsafe fn wait_busy() -> Result<(), ()> {
         let mut port = PortReadOnly::<u8>::new(ATA_PRIMARY_STATUS);
-        // Timeout: roughly 100ms equivalent loop count
-        // 100_000 iterations * (io_port_read + check) should be plenty.
-        for _ in 0..100_000 {
+
+        let start = crate::time::monotonic_now_ns();
+        let timeout_ns = 100_000_000; // 100ms
+
+        loop {
             if port.read() & STATUS_BSY == 0 {
                 return Ok(());
             }
-            // Simple cpu relaxation
+            if start > 0 {
+                if crate::time::monotonic_now_ns().saturating_sub(start) > timeout_ns {
+                    return Err(());
+                }
+            } else {
+                // Fallback if timer is 0 (early boot?)
+                for _ in 0..10_000 {
+                    if port.read() & STATUS_BSY == 0 {
+                        return Ok(());
+                    }
+                    core::hint::spin_loop();
+                }
+                return Err(());
+            }
             core::hint::spin_loop();
         }
-        Err(())
     }
 
     unsafe fn wait_drq() -> Result<(), ()> {
         let mut port = PortReadOnly::<u8>::new(ATA_PRIMARY_STATUS);
-        // Timeout
-        for _ in 0..100_000 {
+
+        let start = crate::time::monotonic_now_ns();
+        let timeout_ns = 100_000_000; // 100ms
+
+        loop {
             if port.read() & STATUS_DRQ != 0 {
                 return Ok(());
             }
+            if start > 0 {
+                if crate::time::monotonic_now_ns().saturating_sub(start) > timeout_ns {
+                    return Err(());
+                }
+            } else {
+                for _ in 0..10_000 {
+                    if port.read() & STATUS_DRQ != 0 {
+                        return Ok(());
+                    }
+                    core::hint::spin_loop();
+                }
+                return Err(());
+            }
             core::hint::spin_loop();
         }
-        Err(())
     }
 
     unsafe fn identify() {
@@ -96,8 +124,8 @@ mod inner {
         let lba_hi_read = PortReadOnly::<u8>::new(ATA_PRIMARY_LBA_HI).read();
 
         if lba_mid_read != 0 || lba_hi_read != 0 {
-             crate::log("ATA: Device is not ATA (possibly ATAPI)");
-             return;
+            crate::log("ATA: Device is not ATA (possibly ATAPI)");
+            return;
         }
 
         // Wait for ERR clear (should be clear if success)
@@ -105,8 +133,8 @@ mod inner {
         // Check ERR bit.
         let status = status_port.read();
         if status & STATUS_ERR != 0 {
-             crate::log("ATA: Error during IDENTIFY");
-             return;
+            crate::log("ATA: Error during IDENTIFY");
+            return;
         }
 
         if wait_drq().is_err() {
@@ -123,9 +151,16 @@ mod inner {
 
         // Extract sector count (words 60-61 for LBA28, 100-103 for LBA48)
         let sectors_28 = (buffer[60] as u32) | ((buffer[61] as u32) << 16);
-        let sectors_48 = (buffer[100] as u64) | ((buffer[101] as u64) << 16) | ((buffer[102] as u64) << 32) | ((buffer[103] as u64) << 48);
+        let sectors_48 = (buffer[100] as u64)
+            | ((buffer[101] as u64) << 16)
+            | ((buffer[102] as u64) << 32)
+            | ((buffer[103] as u64) << 48);
 
-        let sector_count = if sectors_48 > 0 { sectors_48 } else { sectors_28 as u64 };
+        let sector_count = if sectors_48 > 0 {
+            sectors_48
+        } else {
+            sectors_28 as u64
+        };
 
         // Extract model string (words 27-46)
         let mut model = String::new();
@@ -134,8 +169,12 @@ mod inner {
             // ATA strings are big-endian pairs
             let b1 = (word >> 8) as u8;
             let b2 = (word & 0xFF) as u8;
-            if b1 != 0 { model.push(b1 as char); }
-            if b2 != 0 { model.push(b2 as char); }
+            if b1 != 0 {
+                model.push(b1 as char);
+            }
+            if b2 != 0 {
+                model.push(b2 as char);
+            }
         }
         let model = model.trim().to_string();
 
@@ -146,8 +185,14 @@ mod inner {
         let bd_kind = crate::symbols::intern(BlockDevice::KIND);
         let props = vec![
             (crate::symbols::intern("sector_size"), PropValue::U64(512)),
-            (crate::symbols::intern("sector_count"), PropValue::U64(sector_count)),
-            (crate::symbols::intern("transport"), PropValue::Str("ata_pio".to_string())),
+            (
+                crate::symbols::intern("sector_count"),
+                PropValue::U64(sector_count),
+            ),
+            (
+                crate::symbols::intern("transport"),
+                PropValue::Str("ata_pio".to_string()),
+            ),
             (crate::symbols::intern("model"), PropValue::Str(model)),
         ];
 
@@ -187,8 +232,8 @@ mod inner {
             return;
         }
         if wait_drq().is_err() {
-             crate::log("ATA: Timeout waiting for DRQ during read");
-             return;
+            crate::log("ATA: Timeout waiting for DRQ during read");
+            return;
         }
 
         let mut data_port = Port::<u16>::new(ATA_PRIMARY_DATA);
@@ -196,8 +241,8 @@ mod inner {
 
         for i in 0..256 {
             let word = data_port.read();
-            sector_data[i*2] = (word & 0xFF) as u8;
-            sector_data[i*2+1] = (word >> 8) as u8;
+            sector_data[i * 2] = (word & 0xFF) as u8;
+            sector_data[i * 2 + 1] = (word >> 8) as u8;
         }
 
         // Hex dump first 32 bytes

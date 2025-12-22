@@ -35,47 +35,47 @@ pub fn alloc<T>(value: T) -> Option<&'static mut T> {
     unsafe {
         let ptr = &raw mut GLOBAL_ARENA;
         let arena = &mut *ptr;
-        
+
         let layout = core::alloc::Layout::new::<T>();
         let current_ptr = arena.buffer.as_ptr().add(arena.offset) as usize;
-        
+
         // Align up
         let align_offset = (layout.align() - (current_ptr % layout.align())) % layout.align();
         let new_offset = arena.offset + align_offset;
-        
+
         if new_offset + layout.size() > ARENA_SIZE {
             return None;
         }
-        
+
         // Write value
         let dest_ptr = arena.buffer.as_mut_ptr().add(new_offset) as *mut T;
         ptr::write(dest_ptr, value);
-        
+
         arena.offset = new_offset + layout.size();
-        
+
         Some(&mut *dest_ptr)
     }
 }
 
 /// Get a slice of raw bytes from the arena.
 pub fn alloc_bytes(size: usize, align: usize) -> Option<&'static mut [u8]> {
-     unsafe {
+    unsafe {
         let ptr = &raw mut GLOBAL_ARENA;
         let arena = &mut *ptr;
-        
+
         let current_ptr = arena.buffer.as_ptr().add(arena.offset) as usize;
         let align_offset = (align - (current_ptr % align)) % align;
         let new_offset = arena.offset + align_offset;
-        
+
         if new_offset + size > ARENA_SIZE {
             return None;
         }
-        
+
         let slice_ptr = arena.buffer.as_mut_ptr().add(new_offset);
         let slice = core::slice::from_raw_parts_mut(slice_ptr, size);
-        
+
         arena.offset = new_offset + size;
-        
+
         Some(slice)
     }
 }

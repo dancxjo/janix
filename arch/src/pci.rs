@@ -43,7 +43,11 @@ pub fn read_config_u32(bus: u8, slot: u8, func: u8, offset: u16, hhdm_offset: u6
     {
         let _ = hhdm_offset;
         use x86_64::instructions::port::Port;
-        let address = 0x80000000 | ((bus as u32) << 16) | ((slot as u32) << 11) | ((func as u32) << 8) | ((offset as u32) & 0xFC);
+        let address = 0x80000000
+            | ((bus as u32) << 16)
+            | ((slot as u32) << 11)
+            | ((func as u32) << 8)
+            | ((offset as u32) & 0xFC);
         unsafe {
             let mut config_address_port = Port::<u32>::new(0xCF8);
             let mut config_data_port = Port::<u32>::new(0xCFC);

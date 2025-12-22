@@ -2,14 +2,14 @@
 
 extern crate alloc;
 
-use alloc::string::ToString;
-use alloc::vec::Vec;
 use crate::graph_kinds;
-use thing_models::graph_kinds::{PROP_SURFACE_TEXT, LINK_PLACE_WINDOW, LINK_WINDOW_SURFACE};
+use crate::println;
 use crate::{Mode, Place, Surface, Window};
 use crate::{PropValue, ThingId};
-use crate::{create_thing, list_things_by_kind, ensure_schema_exists_for, update_props};
-use crate::println;
+use crate::{create_thing, ensure_schema_exists_for, list_things_by_kind, update_props};
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use thing_models::graph_kinds::{LINK_PLACE_WINDOW, LINK_WINDOW_SURFACE, PROP_SURFACE_TEXT};
 
 #[derive(Clone, Copy, Debug)]
 pub struct WindowHandle {
@@ -21,11 +21,14 @@ pub fn ensure_ui_schemas() -> bool {
     let r2 = ensure_schema_exists_for::<Mode>();
     let r3 = ensure_schema_exists_for::<Window>();
     let r4 = ensure_schema_exists_for::<Surface>();
-    
+
     if !(r1 && r2 && r3 && r4) {
-        println!("ui::ensure_ui_schemas failed: Place={} Mode={} Window={} Surface={}", r1, r2, r3, r4);
+        println!(
+            "ui::ensure_ui_schemas failed: Place={} Mode={} Window={} Surface={}",
+            r1, r2, r3, r4
+        );
     }
-    
+
     r1 && r2 && r3 && r4
 }
 
@@ -36,12 +39,12 @@ pub fn create_window(title: &str) -> Option<WindowHandle> {
     let place_id = if let Some(mode) = crate::active_mode() {
         mode.place_id.unwrap_or(ThingId(0))
     } else {
-         // Fallback: try to find *any* mode or default place
+        // Fallback: try to find *any* mode or default place
         let modes: Vec<Mode> = list_things_by_kind();
         if let Some(mode) = modes.into_iter().find(|m| m.index == 1) {
-             mode.place_id.unwrap_or(ThingId(0))
+            mode.place_id.unwrap_or(ThingId(0))
         } else {
-             ThingId(0)
+            ThingId(0)
         }
     };
     println!("ui::create_window: resolved place_id");
@@ -65,10 +68,10 @@ pub fn create_window(title: &str) -> Option<WindowHandle> {
     println!("ui::create_window: calling create_thing");
     let id = create_thing(&window)?;
     println!("ui::create_window: create_thing returned");
-    
+
     let _ = crate::add_link(place_id, LINK_PLACE_WINDOW, id);
     println!("ui::create_window: link added");
-    
+
     Some(WindowHandle { id })
 }
 

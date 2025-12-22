@@ -1,13 +1,15 @@
 use crate::{
-    ThingId, FrameId, TransactionId, NodeId, Predicate,
-    SchedThreadInfo, SchemaRegistryOutcome,
+    FrameId, NodeId, Predicate, SchedThreadInfo, SchemaRegistryOutcome, ThingId, TransactionId,
     syscall_defs::{SymbolId, SysError},
     wire::{
-        common::UserSlice,
-        graph::{WireProp, BatchUpdateEntry as WireBatchEntry, WireSchemaProp},
-        memory::{MemorySummary, SchedulerSummary, FrameInfo, MapFlags},
-        resident::{ResidentAllocResp, ResidentMapResp, RestResp, ResidentError, ResidentMapPerms, RestPolicy},
         buffers::{PixelFormat, SharedBufferInfo},
+        common::UserSlice,
+        graph::{BatchUpdateEntry as WireBatchEntry, WireProp, WireSchemaProp},
+        memory::{FrameInfo, MapFlags, MemorySummary, SchedulerSummary},
+        resident::{
+            ResidentAllocResp, ResidentError, ResidentMapPerms, ResidentMapResp, RestPolicy,
+            RestResp,
+        },
     },
 };
 

@@ -165,7 +165,10 @@ pub fn refresh_time_source() {
 fn refresh_time_source_with(raw_id: u64, ticks: u64) {
     let (unix_seconds, unix_nanos) = now_unix_from_rtc_ticks(ticks);
     let props_str = TimeSource::update_from_kernel(ticks, unix_seconds, unix_nanos);
-    let props = props_str.into_iter().map(|(k, v)| (crate::symbols::intern(&k), v)).collect();
+    let props = props_str
+        .into_iter()
+        .map(|(k, v)| (crate::symbols::intern(&k), v))
+        .collect();
     let _ = graph::update_thing(ThingId(raw_id), props);
 }
 
@@ -332,7 +335,10 @@ fn run_alarm_actualizer(current_ticks: u64) {
         match action {
             AlarmAction::Arm { id, target_ticks } => {
                 let props_str = AlarmRequest::arm_props(target_ticks);
-                let props = props_str.into_iter().map(|(k, v)| (crate::symbols::intern(&k), v)).collect();
+                let props = props_str
+                    .into_iter()
+                    .map(|(k, v)| (crate::symbols::intern(&k), v))
+                    .collect();
                 let _ = graph::update_thing(id, props);
                 log_message(format!(
                     "AlarmRequest id={} armed target_ticks={}",
@@ -341,12 +347,21 @@ fn run_alarm_actualizer(current_ticks: u64) {
             }
             AlarmAction::Fire { id } => {
                 let props_str = AlarmRequest::fired_props();
-                let props = props_str.into_iter().map(|(k, v)| (crate::symbols::intern(&k), v)).collect();
+                let props = props_str
+                    .into_iter()
+                    .map(|(k, v)| (crate::symbols::intern(&k), v))
+                    .collect();
                 let _ = graph::update_thing(id, props);
                 let (secs, nanos) = now_unix_from_rtc();
                 let event_props_str = AlarmEvent::from_fire(id, secs, nanos);
-                let event_props = event_props_str.into_iter().map(|(k, v)| (crate::symbols::intern(&k), v)).collect();
-                let _ = graph::create_thing(crate::symbols::intern(graph_kinds::KIND_ALARM_EVENT), event_props);
+                let event_props = event_props_str
+                    .into_iter()
+                    .map(|(k, v)| (crate::symbols::intern(&k), v))
+                    .collect();
+                let _ = graph::create_thing(
+                    crate::symbols::intern(graph_kinds::KIND_ALARM_EVENT),
+                    event_props,
+                );
                 log_message(format!(
                     "AlarmRequest id={} fired at {}.{}",
                     id.0, secs, nanos
@@ -359,4 +374,21 @@ fn run_alarm_actualizer(current_ticks: u64) {
 fn log_message(msg: String) {
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
     crate::log(leaked);
+}
+
+/// Start a named span for boot instrumentation.
+/// Returns the start time in nanoseconds.
+pub fn boot_span_start(name: &str) -> u64 {
+    let now = monotonic_now_ns();
+    crate::log(alloc::format!("[SPAN] start {}", name).as_str());
+    now
+}
+
+/// End a named span for boot instrumentation.
+/// Logs the duration in microseconds.
+pub fn boot_span_end(name: &str, start_ns: u64) {
+    let now = monotonic_now_ns();
+    let dt_ns = now.saturating_sub(start_ns);
+    let dt_us = dt_ns / 1_000;
+    crate::log(alloc::format!("[SPAN] end {} taken={}us", name, dt_us).as_str());
 }

@@ -1,13 +1,13 @@
+pub mod apic;
 pub mod enter;
 pub mod fpu;
+pub mod paging;
 pub mod pic;
 pub mod pit;
 pub mod rtc;
 pub mod syscall;
 pub mod time;
 pub mod trap;
-pub mod apic;
-pub mod paging;
 
 use super::{Arch, UserEntryRegs};
 

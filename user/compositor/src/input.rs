@@ -2,17 +2,19 @@ use alloc::string::ToString;
 use thing_os::prelude::*;
 
 use crate::config::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TITLE_BAR_HEIGHT};
+use crate::graph;
+use crate::layout::{StackedWindow, hit_test};
+use crate::model::{Compositor, CursorState, DragState};
 use abi::ThingId;
 use thing_models::PropValue;
 use thing_models::graph_kinds;
 use thing_os::update_props;
-use crate::graph;
-use crate::layout::{StackedWindow, hit_test};
-use crate::model::{Compositor, CursorState, DragState};
 
-use thing_os::resident::{map_resident, Resident, ResidentMapPerms, ResidentError};
-use thing_os::resident::mouse::{MouseStreamMapped, MouseStreamThing, MouseEntry, MouseStreamHeader};
-use thing_os::{list_things_by_kind};
+use thing_os::list_things_by_kind;
+use thing_os::resident::mouse::{
+    MouseEntry, MouseStreamHeader, MouseStreamMapped, MouseStreamThing,
+};
+use thing_os::resident::{Resident, ResidentError, ResidentMapPerms, map_resident};
 
 impl CursorState {
     pub fn apply_packet(&mut self, dx: i64, dy: i64, buttons: u64, max_x: i32, max_y: i32) -> u64 {
@@ -35,86 +37,90 @@ impl CursorState {
 impl Compositor {
     pub fn process_mouse_packets(&mut self, layout: &[StackedWindow]) {
         if self.mouse_stream.is_none() {
-             let streams = list_things_by_kind::<MouseStreamThing>();
-             if let Some(thing) = streams.first() {
-                 if let Ok(map_resp) = map_resident(thing.id, ResidentMapPerms::READ) {
-                      unsafe {
-                          // TODO: Verify map_resp.byte_len against expected size?
-                          let obj = Resident::<()>::new(thing.id, map_resp.user_addr as *mut u8, map_resp.byte_len as usize);
-                          self.mouse_stream = Some(MouseStreamMapped::new(obj));
-                          let msg = alloc::format!("compositor: mouse stream mapped id={:?} addr={:?} len={}", thing.id, map_resp.user_addr, map_resp.byte_len);
-                          println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
-                      }
-                 }
-             }
+            let streams = list_things_by_kind::<MouseStreamThing>();
+            if let Some(thing) = streams.first() {
+                if let Ok(map_resp) = map_resident(thing.id, ResidentMapPerms::READ) {
+                    unsafe {
+                        // TODO: Verify map_resp.byte_len against expected size?
+                        let obj = Resident::<()>::new(
+                            thing.id,
+                            map_resp.user_addr as *mut u8,
+                            map_resp.byte_len as usize,
+                        );
+                        self.mouse_stream = Some(MouseStreamMapped::new(obj));
+                        let msg = alloc::format!(
+                            "compositor: mouse stream mapped id={:?} addr={:?} len={}",
+                            thing.id,
+                            map_resp.user_addr,
+                            map_resp.byte_len
+                        );
+                        println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
+                    }
+                }
+            }
         }
 
         if let Some(stream) = &self.mouse_stream {
-             // Use a stack-local buffer or a persistent buffer in Compositor to avoid alloc?
-             // For now, persistent buffer on stack is fine if small, or just Vec inside Compositor struct.
-             // But implementing changes here: local Vec.
-             let mut events = Vec::new(); 
-             // Note: in a real loop we'd reuse this Vec across frames.
-             
-             let new_head = stream.read_entries_into(self.mouse_head, &mut events);
-             if new_head != self.mouse_head {
-                  // Log advancement occasionally or on change? Too verbose if constant.
-                  // Plan says "Log mapping and head advancement".
-                  // Let's log if it jumps significantly or just debug.
-                  // "compositor: head advanced old_tail=... new_tail=... n=..."
-                  // let msg = alloc::format!("compositor: head advanced old={:?} new={:?} n={}", self.mouse_head, new_head, events.len());
-                  // println(sys, alloc::boxed::Box::leak(msg.into_boxed_str()));
-                  // Actually, commenting this out for noise unless I want strict verification.
-                  // User plan verification step: "Check for: compositor: head advanced".
-                  // So I MUST log it.
-                  let msg = alloc::format!("compositor: head advanced old_tail={} new_tail={} n={}", self.mouse_head, new_head, events.len());
-                  println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
-              }
-             self.mouse_head = new_head;
-             
-             if !events.is_empty() {
-                 let msg = alloc::format!("DEBUG: processing {} events", events.len());
-                 println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
-                 
-                 use crate::config::{MOUSE_SCALE_NUM, MOUSE_SCALE_DEN};
-                 
-                 let mut pending_dx: i64 = 0;
-                 let mut pending_dy: i64 = 0;
-                 // Initialize with the first event's button state so we don't flash-trigger
-                 let mut pending_buttons = events[0].buttons;
-                 
-                 for entry in events {
-                     if entry.buttons != pending_buttons {
-                         // Flush collected motion for the *previous* button state
-                         let sdx = pending_dx * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
-                         let sdy = pending_dy * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
-                         self.apply_mouse_event(
-                            sdx, 
-                            sdy, 
-                            pending_buttons as u64, 
-                            layout
-                         );
-                         
-                         // Reset for new state
-                         pending_dx = 0;
-                         pending_dy = 0;
-                         pending_buttons = entry.buttons;
-                     }
-                     
-                     pending_dx += entry.dx as i64;
-                     pending_dy += entry.dy as i64;
-                 }
-                 
-                 // Flush final batch
-                 let sdx = pending_dx * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
-                 let sdy = pending_dy * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
-                 self.apply_mouse_event(
-                    sdx,
-                    sdy,
-                    pending_buttons as u64,
-                    layout
-                 );
-             }
+            // Use a stack-local buffer or a persistent buffer in Compositor to avoid alloc?
+            // For now, persistent buffer on stack is fine if small, or just Vec inside Compositor struct.
+            // But implementing changes here: local Vec.
+            let mut events = Vec::new();
+            // Note: in a real loop we'd reuse this Vec across frames.
+
+            let new_head = stream.read_entries_into(self.mouse_head, &mut events);
+            if new_head != self.mouse_head {
+                // Log advancement occasionally or on change? Too verbose if constant.
+                // Plan says "Log mapping and head advancement".
+                // Let's log if it jumps significantly or just debug.
+                // "compositor: head advanced old_tail=... new_tail=... n=..."
+                // let msg = alloc::format!("compositor: head advanced old={:?} new={:?} n={}", self.mouse_head, new_head, events.len());
+                // println(sys, alloc::boxed::Box::leak(msg.into_boxed_str()));
+                // Actually, commenting this out for noise unless I want strict verification.
+                // User plan verification step: "Check for: compositor: head advanced".
+                // So I MUST log it.
+                let msg = alloc::format!(
+                    "compositor: head advanced old_tail={} new_tail={} n={}",
+                    self.mouse_head,
+                    new_head,
+                    events.len()
+                );
+                println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
+            }
+            self.mouse_head = new_head;
+
+            if !events.is_empty() {
+                let msg = alloc::format!("DEBUG: processing {} events", events.len());
+                println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
+
+                use crate::config::{MOUSE_SCALE_DEN, MOUSE_SCALE_NUM};
+
+                let mut pending_dx: i64 = 0;
+                let mut pending_dy: i64 = 0;
+                // Initialize with the first event's button state so we don't flash-trigger
+                let mut pending_buttons = events[0].buttons;
+
+                for entry in events {
+                    if entry.buttons != pending_buttons {
+                        // Flush collected motion for the *previous* button state
+                        let sdx = pending_dx * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
+                        let sdy = pending_dy * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
+                        self.apply_mouse_event(sdx, sdy, pending_buttons as u64, layout);
+
+                        // Reset for new state
+                        pending_dx = 0;
+                        pending_dy = 0;
+                        pending_buttons = entry.buttons;
+                    }
+
+                    pending_dx += entry.dx as i64;
+                    pending_dy += entry.dy as i64;
+                }
+
+                // Flush final batch
+                let sdx = pending_dx * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
+                let sdy = pending_dy * MOUSE_SCALE_NUM as i64 / MOUSE_SCALE_DEN as i64;
+                self.apply_mouse_event(sdx, sdy, pending_buttons as u64, layout);
+            }
         }
 
         if let Some(drag) = &self.drag {
@@ -124,23 +130,21 @@ impl Compositor {
         }
     }
 
-    fn apply_mouse_event(
-        &mut self,
-        dx: i64,
-        dy: i64,
-        buttons: u64,
-        layout: &[StackedWindow],
-    ) {
+    fn apply_mouse_event(&mut self, dx: i64, dy: i64, buttons: u64, layout: &[StackedWindow]) {
         let old_x = self.cursor.x;
         let old_y = self.cursor.y;
 
-        let previous =
-            self.cursor
-                .apply_packet(dx, dy, buttons, self.fb.info.width as i32, self.fb.info.height as i32);
+        let previous = self.cursor.apply_packet(
+            dx,
+            dy,
+            buttons,
+            self.fb.info.width as i32,
+            self.fb.info.height as i32,
+        );
 
         if self.cursor.x != old_x || self.cursor.y != old_y {
             // Add damage for old and new cursor positions
-            // Ideally we know the exact cursor size. 
+            // Ideally we know the exact cursor size.
             // For now, assume ample size (e.g. 32x32) or look up from sprites.
             // Let's use 32x32 as a safe default for standard cursors.
             // Wait, we have self.cursor_sprites available!
@@ -150,20 +154,22 @@ impl Compositor {
             let sprite = self.cursor_sprites.for_kind(self.cursor.kind);
             let w = sprite.bitmap.width as u32;
             let h = sprite.bitmap.height as u32; // actually use real size
-            
+
             // Old position damage
             let hotspot = sprite.hotspot;
             self.add_damage(crate::widget_layout::Rect::new(
-                old_x - hotspot.0, 
-                old_y - hotspot.1, 
-                w, h
+                old_x - hotspot.0,
+                old_y - hotspot.1,
+                w,
+                h,
             ));
-            
+
             // New position damage
             self.add_damage(crate::widget_layout::Rect::new(
-                self.cursor.x - hotspot.0, 
-                self.cursor.y - hotspot.1, 
-                w, h
+                self.cursor.x - hotspot.0,
+                self.cursor.y - hotspot.1,
+                w,
+                h,
             ));
         }
 
@@ -174,7 +180,7 @@ impl Compositor {
                 self.handle_left_release();
             }
         } else if CursorState::left_down(buttons) {
-             self.continue_drag();
+            self.continue_drag();
         }
     }
 
@@ -237,4 +243,3 @@ impl Compositor {
         let _ = update_props(drag.window_id, &updates);
     }
 }
-

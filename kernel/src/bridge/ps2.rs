@@ -1,21 +1,23 @@
 #[cfg(target_arch = "x86_64")]
 mod inner {
-    use spin::Mutex;
-    use alloc::collections::VecDeque;
-    use abi::syscall_defs::{DeviceHandle, DeviceKind, SysError, SysRet};
-    use x86_64::instructions::interrupts;
     use abi::ThreadId;
+    use abi::syscall_defs::{DeviceHandle, DeviceKind, SysError, SysRet};
+    use alloc::collections::VecDeque;
+    use spin::Mutex;
+    use x86_64::instructions::interrupts;
 
     pub const KEYBOARD_BUFFER_SIZE: usize = 256;
     pub const MOUSE_BUFFER_SIZE: usize = 256;
 
-    pub static PS2_KEYBOARD_BUFFER: Mutex<Option<(VecDeque<u8>, Option<ThreadId>)>> = Mutex::new(None);
+    pub static PS2_KEYBOARD_BUFFER: Mutex<Option<(VecDeque<u8>, Option<ThreadId>)>> =
+        Mutex::new(None);
     pub static PS2_MOUSE_BUFFER: Mutex<Option<(VecDeque<u8>, Option<ThreadId>)>> = Mutex::new(None);
 
     pub fn init() {
         // Initialize buffers
         interrupts::without_interrupts(|| {
-            *PS2_KEYBOARD_BUFFER.lock() = Some((VecDeque::with_capacity(KEYBOARD_BUFFER_SIZE), None));
+            *PS2_KEYBOARD_BUFFER.lock() =
+                Some((VecDeque::with_capacity(KEYBOARD_BUFFER_SIZE), None));
             *PS2_MOUSE_BUFFER.lock() = Some((VecDeque::with_capacity(MOUSE_BUFFER_SIZE), None));
         });
     }
@@ -52,12 +54,18 @@ mod inner {
 
     pub fn dev_open(kind: u32, index: u32) -> Result<DeviceHandle, SysError> {
         if index != 0 {
-            return Err(SysError { code: SysError::NOT_FOUND, detail: 0 });
+            return Err(SysError {
+                code: SysError::NOT_FOUND,
+                detail: 0,
+            });
         }
         match kind {
             1 => Ok(DeviceHandle { raw: 1 }), // Keyboard
             2 => Ok(DeviceHandle { raw: 2 }), // Mouse
-            _ => Err(SysError { code: SysError::NOT_FOUND, detail: 0 }),
+            _ => Err(SysError {
+                code: SysError::NOT_FOUND,
+                detail: 0,
+            }),
         }
     }
 
@@ -67,7 +75,12 @@ mod inner {
             let mut guard = match handle.raw {
                 1 => PS2_KEYBOARD_BUFFER.lock(),
                 2 => PS2_MOUSE_BUFFER.lock(),
-                 _ => return Err(SysError { code: SysError::BAD_HANDLE, detail: 0 }),
+                _ => {
+                    return Err(SysError {
+                        code: SysError::BAD_HANDLE,
+                        detail: 0,
+                    });
+                }
             };
 
             if let Some((queue, waiter)) = &mut *guard {
@@ -76,10 +89,16 @@ mod inner {
                     use crate::sched;
                     if let Some(tid) = sched::SCHEDULER.lock().current_id() {
                         *waiter = Some(tid);
-                        return Err(SysError { code: SysError::WOULD_BLOCK, detail: 0 });
+                        return Err(SysError {
+                            code: SysError::WOULD_BLOCK,
+                            detail: 0,
+                        });
                     } else {
                         // Should be impossible if called from syscall context
-                        return Err(SysError { code: SysError::INTERNAL, detail: 0 });
+                        return Err(SysError {
+                            code: SysError::INTERNAL,
+                            detail: 0,
+                        });
                     }
                 }
 
@@ -94,7 +113,10 @@ mod inner {
                 }
                 Ok(count)
             } else {
-                 Err(SysError { code: SysError::INTERNAL, detail: 0 })
+                Err(SysError {
+                    code: SysError::INTERNAL,
+                    detail: 0,
+                })
             }
         })
     }
@@ -117,10 +139,16 @@ use abi::syscall_defs::{DeviceHandle, SysError};
 
 #[cfg(not(target_arch = "x86_64"))]
 pub fn dev_open(_kind: u32, _index: u32) -> Result<DeviceHandle, SysError> {
-    Err(SysError { code: SysError::NOT_FOUND, detail: 0 })
+    Err(SysError {
+        code: SysError::NOT_FOUND,
+        detail: 0,
+    })
 }
 
 #[cfg(not(target_arch = "x86_64"))]
 pub fn dev_read(_handle: DeviceHandle, _out: &mut [u8]) -> Result<usize, SysError> {
-     Err(SysError { code: SysError::NOT_FOUND, detail: 0 })
+    Err(SysError {
+        code: SysError::NOT_FOUND,
+        detail: 0,
+    })
 }

@@ -1,10 +1,10 @@
 extern crate alloc;
-use thing_models::PropValue;
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use kernel::graph;
 use kernel::graph::GraphEvent;
 use kernel::graph_kinds;
-use alloc::vec::Vec;
+use thing_models::PropValue;
 
 #[test]
 #[ignore]
@@ -48,7 +48,12 @@ fn link_add_and_remove_are_pushed() {
     static ADDED: AtomicUsize = AtomicUsize::new(0);
 
     kernel::graph::events::subscribe(|event| {
-        if let GraphEvent::LinkAdded { src: _, dst: _, pred } = event {
+        if let GraphEvent::LinkAdded {
+            src: _,
+            dst: _,
+            pred,
+        } = event
+        {
             if *pred == graph_kinds::LINK_RUNS_ON {
                 ADDED.fetch_add(1, Ordering::SeqCst);
             }

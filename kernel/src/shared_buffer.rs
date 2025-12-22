@@ -1,11 +1,14 @@
-use crate::{graph, graph_kinds, memory::{self, PhysFrame}};
+use crate::{
+    graph, graph_kinds,
+    memory::{self, PhysFrame},
+};
 use abi::{MapFlags, PixelFormat, SharedBufferInfo, ThingId};
-use thing_models::PropValue;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec as AllocVec;
 use heapless::Vec;
 use spin::Mutex;
+use thing_models::PropValue;
 
 #[path = "../../arch/src/shared_buffer.rs"]
 mod arch_shared_buffer;
@@ -92,15 +95,27 @@ pub fn create_shared_buffer_thing(
     };
 
     let mut props = AllocVec::new();
-    props.push((crate::symbols::intern(graph_kinds::PROP_WIDTH), PropValue::U64(width as u64)));
-    props.push((crate::symbols::intern(graph_kinds::PROP_HEIGHT), PropValue::U64(height as u64)));
-    props.push((crate::symbols::intern(graph_kinds::PROP_STRIDE), PropValue::U64(stride as u64)));
+    props.push((
+        crate::symbols::intern(graph_kinds::PROP_WIDTH),
+        PropValue::U64(width as u64),
+    ));
+    props.push((
+        crate::symbols::intern(graph_kinds::PROP_HEIGHT),
+        PropValue::U64(height as u64),
+    ));
+    props.push((
+        crate::symbols::intern(graph_kinds::PROP_STRIDE),
+        PropValue::U64(stride as u64),
+    ));
     props.push((
         crate::symbols::intern(graph_kinds::PROP_PIXEL_FORMAT),
         PropValue::Str(pf_str.into()),
     ));
     // create_thing takes props by value (Vec)
-    Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_SHARED_BUFFER), props))
+    Some(graph::create_thing(
+        crate::symbols::intern(graph_kinds::KIND_SHARED_BUFFER),
+        props,
+    ))
 }
 
 pub fn register_shared_buffer(
@@ -143,10 +158,22 @@ pub fn create_display_for_buffer(
     };
 
     let props = alloc::vec![
-        (crate::symbols::intern(graph_kinds::PROP_NAME), PropValue::Str(name.into())),
-        (crate::symbols::intern(graph_kinds::PROP_WIDTH), PropValue::U64(info.width as u64)),
-        (crate::symbols::intern(graph_kinds::PROP_HEIGHT), PropValue::U64(info.height as u64)),
-        (crate::symbols::intern(graph_kinds::PROP_STRIDE), PropValue::U64(info.stride as u64)),
+        (
+            crate::symbols::intern(graph_kinds::PROP_NAME),
+            PropValue::Str(name.into())
+        ),
+        (
+            crate::symbols::intern(graph_kinds::PROP_WIDTH),
+            PropValue::U64(info.width as u64)
+        ),
+        (
+            crate::symbols::intern(graph_kinds::PROP_HEIGHT),
+            PropValue::U64(info.height as u64)
+        ),
+        (
+            crate::symbols::intern(graph_kinds::PROP_STRIDE),
+            PropValue::U64(info.stride as u64)
+        ),
         (
             crate::symbols::intern(graph_kinds::PROP_PIXEL_FORMAT),
             PropValue::Str(pf_str.into()),

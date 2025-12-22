@@ -3,11 +3,11 @@ extern crate alloc;
 pub use crate::sched_types::ThreadState;
 use crate::{graph, graph_kinds};
 use abi::{ProcessId, ThingId, ThreadId, USER_HEAP_END};
-use thing_models::PropValue;
 use alloc::string::String;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use heapless::Vec;
 use spin::Mutex;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
+use thing_models::PropValue;
 
 pub static TICKS: AtomicU64 = AtomicU64::new(0);
 pub static PREEMPT_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -242,10 +242,11 @@ impl Scheduler {
                 let pid = ProcessId(i as u64 + 1);
 
                 // Create Process Thing
-                let props = alloc::vec![
-                    (crate::symbols::intern("pid"), PropValue::U64(pid.0))
-                ];
-                let thing_id = Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_PROCESS), props));
+                let props = alloc::vec![(crate::symbols::intern("pid"), PropValue::U64(pid.0))];
+                let thing_id = Some(graph::create_thing(
+                    crate::symbols::intern(graph_kinds::KIND_PROCESS),
+                    props,
+                ));
 
                 *slot = Some(Process {
                     id: pid,
@@ -319,19 +320,19 @@ impl Scheduler {
         let idx = process_index(pid);
         let proc_slot = self.processes.get_mut(idx)?.as_mut()?;
         let alignment = if align == 0 { 1 } else { align } as u64;
-        
+
         let start = proc_slot.next_resident_map_base;
         let aligned = if start % alignment == 0 {
             start
         } else {
             start + (alignment - (start % alignment))
         };
-        
+
         let end = aligned.checked_add(size as u64)?;
         if end > abi::USER_RESIDENT_LIMIT as u64 {
             return None;
         }
-        
+
         proc_slot.next_resident_map_base = end;
         Some(aligned)
     }
@@ -406,7 +407,8 @@ impl Scheduler {
             if slot.is_none() {
                 let tid = ThreadId(i as u64 + 1);
                 // Idle thread shares address space of the process (likely kernel/init)
-                let address_space_token = self.processes
+                let address_space_token = self
+                    .processes
                     .get(process_index(process_id))
                     .and_then(|p| p.as_ref())
                     .and_then(|p| p.address_space_token);
@@ -473,7 +475,7 @@ impl Scheduler {
         if self.threads.get(index).and_then(|t| t.as_ref()).is_some() {
             self.finish_running_thread(index);
             self.graph_clear_sleep_event(index);
-            
+
             let mut pid = ProcessId(0);
             if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
                 thread.state = ThreadState::Exited;
@@ -505,43 +507,58 @@ impl Scheduler {
         };
 
         let props = alloc::vec![
-            (crate::symbols::intern(graph_kinds::PROP_EXIT_REASON), PropValue::Str(String::from(reason))),
-            (crate::symbols::intern(graph_kinds::PROP_EXIT_CODE), PropValue::U64(code)),
-            (crate::symbols::intern(graph_kinds::PROP_TIMESTAMP), PropValue::U64(self.fake_time_ns)),
+            (
+                crate::symbols::intern(graph_kinds::PROP_EXIT_REASON),
+                PropValue::Str(String::from(reason))
+            ),
+            (
+                crate::symbols::intern(graph_kinds::PROP_EXIT_CODE),
+                PropValue::U64(code)
+            ),
+            (
+                crate::symbols::intern(graph_kinds::PROP_TIMESTAMP),
+                PropValue::U64(self.fake_time_ns)
+            ),
         ];
 
-        let event_id = graph::create_thing(crate::symbols::intern(graph_kinds::KIND_PROCESS_EXIT_EVENT), props);
+        let event_id = graph::create_thing(
+            crate::symbols::intern(graph_kinds::KIND_PROCESS_EXIT_EVENT),
+            props,
+        );
         if event_id.0 != 0 {
             let _ = graph::add_link(event_id, graph_kinds::LINK_ABOUT, proc_thing);
-            
+
             // Check for respawn policy
             let mut boot_program_id = None;
             let mut buf = [None; 1];
             graph::neighbors(proc_thing, graph_kinds::LINK_RUNNING, &mut buf);
             if let Some(id) = buf[0] {
-                 boot_program_id = Some(id);
+                boot_program_id = Some(id);
             }
-            
+
             if let Some(bp_id) = boot_program_id {
-                 let mut policy = String::from(graph_kinds::RESPAWN_NEVER);
-                 if let Some(val) = graph::get_prop(bp_id, graph_kinds::PROP_RESPAWN_POLICY) {
-                      if let PropValue::Str(s) = val {
-                           policy = s.clone();
-                      }
-                 }
-                 
-                 let should_respawn = match policy.as_str() {
-                     graph_kinds::RESPAWN_ALWAYS => true,
-                     graph_kinds::RESPAWN_ON_CRASH => reason != "Exited", // Assuming "Exited" is normal exit? 
-                     _ => false,
-                 };
-                 
-                 if should_respawn {
-                     // Defer spawning to avoid deadlock with scheduler lock
-                     // Pass the old process thing ID to enable linking RESPAWNED_FROM
-                     crate::work_queue::push_normal(crate::work_queue::WorkItem::SpawnProgram(bp_id, Some(proc_thing)));
-                     crate::log("Respawn scheduled via WorkQueue");
-                 }
+                let mut policy = String::from(graph_kinds::RESPAWN_NEVER);
+                if let Some(val) = graph::get_prop(bp_id, graph_kinds::PROP_RESPAWN_POLICY) {
+                    if let PropValue::Str(s) = val {
+                        policy = s.clone();
+                    }
+                }
+
+                let should_respawn = match policy.as_str() {
+                    graph_kinds::RESPAWN_ALWAYS => true,
+                    graph_kinds::RESPAWN_ON_CRASH => reason != "Exited", // Assuming "Exited" is normal exit?
+                    _ => false,
+                };
+
+                if should_respawn {
+                    // Defer spawning to avoid deadlock with scheduler lock
+                    // Pass the old process thing ID to enable linking RESPAWNED_FROM
+                    crate::work_queue::push_normal(crate::work_queue::WorkItem::SpawnProgram(
+                        bp_id,
+                        Some(proc_thing),
+                    ));
+                    crate::log("Respawn scheduled via WorkQueue");
+                }
             }
         }
     }
@@ -675,9 +692,15 @@ impl Scheduler {
             }
             let props = alloc::vec![
                 (crate::symbols::intern("pid"), PropValue::U64(process.id.0)),
-                (crate::symbols::intern("name"), PropValue::Str(String::from(process.name))),
+                (
+                    crate::symbols::intern("name"),
+                    PropValue::Str(String::from(process.name))
+                ),
             ];
-            process.thing_id = Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_PROCESS), props));
+            process.thing_id = Some(graph::create_thing(
+                crate::symbols::intern(graph_kinds::KIND_PROCESS),
+                props,
+            ));
         }
     }
 
@@ -691,14 +714,32 @@ impl Scheduler {
             }
             let props = alloc::vec![
                 (crate::symbols::intern("tid"), PropValue::U64(thread.id.0)),
-                (crate::symbols::intern("name"), PropValue::Str(String::from(thread.name))),
-                (crate::symbols::intern("state"), PropValue::Str(String::from(thread.state.as_str()))),
-                (crate::symbols::intern("priority"), PropValue::U64(thread.priority)),
-                (crate::symbols::intern("runtime_ns"), PropValue::U64(thread.total_run_ns)),
-                (crate::symbols::intern("last_started_ns"), PropValue::U64(thread.last_run_start_ns)),
+                (
+                    crate::symbols::intern("name"),
+                    PropValue::Str(String::from(thread.name))
+                ),
+                (
+                    crate::symbols::intern("state"),
+                    PropValue::Str(String::from(thread.state.as_str()))
+                ),
+                (
+                    crate::symbols::intern("priority"),
+                    PropValue::U64(thread.priority)
+                ),
+                (
+                    crate::symbols::intern("runtime_ns"),
+                    PropValue::U64(thread.total_run_ns)
+                ),
+                (
+                    crate::symbols::intern("last_started_ns"),
+                    PropValue::U64(thread.last_run_start_ns)
+                ),
                 (crate::symbols::intern("sleep_until_ns"), PropValue::U64(0)),
             ];
-            thread.thing_id = Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_THREAD), props));
+            thread.thing_id = Some(graph::create_thing(
+                crate::symbols::intern(graph_kinds::KIND_THREAD),
+                props,
+            ));
             self.graph_link_process_thread(index);
         }
     }
@@ -732,9 +773,18 @@ impl Scheduler {
         if let Some(thread) = self.threads.get(index).and_then(|t| t.as_ref()) {
             if let Some(thread_thing) = thread.thing_id {
                 let props = alloc::vec![
-                    (crate::symbols::intern("state"), PropValue::Str(String::from(thread.state.as_str()))),
-                    (crate::symbols::intern("runtime_ns"), PropValue::U64(thread.total_run_ns)),
-                    (crate::symbols::intern("last_started_ns"), PropValue::U64(thread.last_run_start_ns)),
+                    (
+                        crate::symbols::intern("state"),
+                        PropValue::Str(String::from(thread.state.as_str()))
+                    ),
+                    (
+                        crate::symbols::intern("runtime_ns"),
+                        PropValue::U64(thread.total_run_ns)
+                    ),
+                    (
+                        crate::symbols::intern("last_started_ns"),
+                        PropValue::U64(thread.last_run_start_ns)
+                    ),
                 ];
                 let _ = graph::update_thing(thread_thing, props);
             }
@@ -755,9 +805,10 @@ impl Scheduler {
         };
 
         // Update the thread with the sleep deadline
-        let props = alloc::vec![
-            (crate::symbols::intern("sleep_until_ns"), PropValue::U64(wake_at_ns)),
-        ];
+        let props = alloc::vec![(
+            crate::symbols::intern("sleep_until_ns"),
+            PropValue::U64(wake_at_ns)
+        ),];
         let _ = graph::update_thing(thread_id, props);
     }
 
@@ -767,7 +818,8 @@ impl Scheduler {
         }
         if let Some(thread) = self.threads.get(index).and_then(|t| t.as_ref()) {
             if let Some(thread_thing) = thread.thing_id {
-                let props = alloc::vec![(crate::symbols::intern("sleep_until_ns"), PropValue::U64(0))];
+                let props =
+                    alloc::vec![(crate::symbols::intern("sleep_until_ns"), PropValue::U64(0))];
                 let _ = graph::update_thing(thread_thing, props);
             }
         }
@@ -781,16 +833,17 @@ impl Scheduler {
     pub fn mark_blocked(&mut self, tid: ThreadId) -> bool {
         let index = thread_index(tid);
         // Check conditions first
-        let should_block = if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
-            if thread.pending_wake {
-                // Was woken while running, so don't block
-                thread.pending_wake = false;
-                return false;
-            }
-            thread.state == ThreadState::Running
-        } else {
-            false
-        };
+        let should_block =
+            if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
+                if thread.pending_wake {
+                    // Was woken while running, so don't block
+                    thread.pending_wake = false;
+                    return false;
+                }
+                thread.state == ThreadState::Running
+            } else {
+                false
+            };
 
         if should_block {
             self.finish_running_thread(index);
@@ -805,7 +858,11 @@ impl Scheduler {
 
     pub fn wake_thread(&mut self, tid: ThreadId) {
         let index = thread_index(tid);
-        let state = self.threads.get(index).and_then(|t| t.as_ref()).map(|t| t.state);
+        let state = self
+            .threads
+            .get(index)
+            .and_then(|t| t.as_ref())
+            .map(|t| t.state);
 
         if let Some(state) = state {
             if state == ThreadState::Blocked || state == ThreadState::Sleeping {
@@ -816,7 +873,7 @@ impl Scheduler {
                         self.sleep_queue.swap_remove(pos);
                     }
                 }
-                
+
                 if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
                     thread.state = ThreadState::Runnable;
                     thread.pending_wake = false;

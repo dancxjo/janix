@@ -1,8 +1,7 @@
+use crate::memory::PhysFrame;
 use abi::resident::ResidentMapPerms;
 use abi::{MapFlags, ProcessId};
-use crate::memory::PhysFrame;
 use alloc::vec::Vec;
-
 
 #[derive(Debug, Clone)]
 pub struct ResidentPage {

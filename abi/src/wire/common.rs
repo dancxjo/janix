@@ -1,5 +1,3 @@
-
-
 use core::marker::PhantomData;
 
 /// A pointer to a T in user memory.
@@ -18,7 +16,7 @@ impl<T> UserPtr<T> {
             _phantom: PhantomData,
         }
     }
-    
+
     pub fn is_null(&self) -> bool {
         self.ptr == 0
     }
@@ -60,7 +58,11 @@ impl<T> UserSlice<T> {
 
 impl<T> Default for UserSlice<T> {
     fn default() -> Self {
-        Self { ptr: 0, len: 0, _phantom: PhantomData }
+        Self {
+            ptr: 0,
+            len: 0,
+            _phantom: PhantomData,
+        }
     }
 }
 

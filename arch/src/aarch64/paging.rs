@@ -4,7 +4,7 @@ use kernel::memory::allocate_frame;
 // Page Table Entry Flags (AArch64 VMSA)
 pub const PTE_VALID: u64 = 1 << 0;
 pub const PTE_TABLE: u64 = 1 << 1; // L0-L2 points to next-level table
-pub const PTE_PAGE: u64 = 1 << 1;  // L3 page descriptor (same bit pattern as TABLE at L3)
+pub const PTE_PAGE: u64 = 1 << 1; // L3 page descriptor (same bit pattern as TABLE at L3)
 
 // AttrIndx[2:0] lives at [4:2] in the descriptor.
 // This code assumes MAIR is set up such that these indices mean:
@@ -14,13 +14,13 @@ pub const PTE_PAGE: u64 = 1 << 1;  // L3 page descriptor (same bit pattern as TA
 pub const PTE_ATTR_NORMAL: u64 = 0 << 2; // AttrIndx = 0
 pub const PTE_ATTR_DEVICE: u64 = 1 << 2; // AttrIndx = 1
 
-pub const PTE_NS: u64 = 1 << 5;          // Non-secure
-pub const PTE_AP_RW_EL1: u64 = 0 << 6;   // RW at EL1 only
-pub const PTE_AP_RW_EL0: u64 = 1 << 6;   // RW at EL1/EL0
-pub const PTE_SH_INNER: u64 = 3 << 8;    // Inner shareable
-pub const PTE_AF: u64 = 1 << 10;         // Access Flag
-pub const PTE_PXN: u64 = 1 << 53;        // Privileged Execute Never
-pub const PTE_UXN: u64 = 1 << 54;        // Unprivileged Execute Never
+pub const PTE_NS: u64 = 1 << 5; // Non-secure
+pub const PTE_AP_RW_EL1: u64 = 0 << 6; // RW at EL1 only
+pub const PTE_AP_RW_EL0: u64 = 1 << 6; // RW at EL1/EL0
+pub const PTE_SH_INNER: u64 = 3 << 8; // Inner shareable
+pub const PTE_AF: u64 = 1 << 10; // Access Flag
+pub const PTE_PXN: u64 = 1 << 53; // Privileged Execute Never
+pub const PTE_UXN: u64 = 1 << 54; // Unprivileged Execute Never
 
 // Aliases for compatibility with older naming used elsewhere.
 pub const DESC_AP_EL0: u64 = PTE_AP_RW_EL0;

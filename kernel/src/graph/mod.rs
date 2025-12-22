@@ -1,9 +1,9 @@
-use abi::{ThingId, Predicate, Link, syscall_defs::SymbolId};
-use thing_models::{PropKey, PropValue};
 pub use self::ops::GraphEvent;
-use alloc::vec::Vec;
-use alloc::format;
 use crate::symbols;
+use abi::{Link, Predicate, ThingId, syscall_defs::SymbolId};
+use alloc::format;
+use alloc::vec::Vec;
+use thing_models::{PropKey, PropValue};
 
 // ...
 
@@ -18,13 +18,16 @@ use x86_64::instructions::interrupts;
 mod interrupts {
     #[inline]
     pub fn without_interrupts<F, R>(f: F) -> R
-    where F: FnOnce() -> R {
+    where
+        F: FnOnce() -> R,
+    {
         f()
     }
 }
 
 fn with_store_mut<F, R>(f: F) -> R
-where F: FnOnce(&mut store::GraphStore) -> R
+where
+    F: FnOnce(&mut store::GraphStore) -> R,
 {
     interrupts::without_interrupts(|| {
         let mut guard = store::things_slab().lock();
@@ -34,7 +37,8 @@ where F: FnOnce(&mut store::GraphStore) -> R
 }
 
 fn with_store<F, R>(f: F) -> R
-where F: FnOnce(&store::GraphStore) -> R
+where
+    F: FnOnce(&store::GraphStore) -> R,
 {
     interrupts::without_interrupts(|| {
         let guard = store::things_slab().lock();
@@ -43,14 +47,14 @@ where F: FnOnce(&store::GraphStore) -> R
     })
 }
 
-pub mod store;
-pub mod schema;
-pub mod events;
 pub mod debug;
-pub mod index_props;
+pub mod events;
 pub mod index_links;
-pub mod sink;
+pub mod index_props;
 pub mod ops;
+pub mod schema;
+pub mod sink;
+pub mod store;
 
 // Keep module-level constructor convenience
 #[derive(Clone, Copy, Default, Debug)]
@@ -63,20 +67,12 @@ impl Graph {
     }
 
     #[inline]
-    pub fn create_thing(
-        &mut self,
-        kind: SymbolId,
-        props: &[(SymbolId, PropValue)],
-    ) -> ThingId {
+    pub fn create_thing(&mut self, kind: SymbolId, props: &[(SymbolId, PropValue)]) -> ThingId {
         create_thing(kind, Vec::from(props))
     }
 
     #[inline]
-    pub fn update_thing(
-        &mut self,
-        id: ThingId,
-        props: &[(SymbolId, PropValue)],
-    ) -> bool {
+    pub fn update_thing(&mut self, id: ThingId, props: &[(SymbolId, PropValue)]) -> bool {
         update_thing(id, Vec::from(props))
     }
     pub fn add_link(&mut self, src: ThingId, pred: Predicate, dst: ThingId) -> bool {
@@ -93,9 +89,7 @@ impl Graph {
 }
 
 pub fn create_thing(kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingId {
-    let id = with_store_mut(|store| {
-        store.create_thing(kind, props.clone())
-    });
+    let id = with_store_mut(|store| store.create_thing(kind, props.clone()));
     debug::print_thing_created(id, kind, &props);
     id
 }
@@ -143,7 +137,7 @@ pub fn next_thing_of_kind_sym(kind: SymbolId, start_after: ThingId) -> Option<Th
                         best = Some(node.id);
                     }
                 } else {
-                     best = Some(node.id);
+                    best = Some(node.id);
                 }
             }
         }
@@ -160,9 +154,7 @@ pub fn query_node(id: ThingId) -> Option<alloc::vec::Vec<u8>> {
     // Used by Debug console or queries.
     // This used to return byte dump.
     // We can return debug string for now.
-    with_thing(id, |t| {
-        format!("{:?}", t).into_bytes()
-    })
+    with_thing(id, |t| format!("{:?}", t).into_bytes())
 }
 
 // Helper for link target at index
@@ -197,7 +189,5 @@ pub fn with_thing<F, R>(id: ThingId, f: F) -> Option<R>
 where
     F: FnOnce(&store::ThingNode) -> R,
 {
-    with_store(|store| {
-        store.things.get(&id).map(|n| f(n))
-    })
+    with_store(|store| store.things.get(&id).map(|n| f(n)))
 }

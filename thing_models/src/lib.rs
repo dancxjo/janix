@@ -4,36 +4,25 @@ extern crate alloc;
 extern crate self as thing_models;
 
 pub mod display;
+pub mod graph_kinds;
 pub mod input;
 pub mod io;
+pub mod kernel;
+pub mod props;
 pub mod ui;
 pub mod usb;
-pub mod kernel;
-pub mod graph_kinds;
-pub mod props;
 
 pub use crate::props::{PropKey, PropType, PropValue};
-use abi::{ThingId, syscall_defs::SymbolId};
+use abi::{syscall_defs::SymbolId, ThingId};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use thing_macros::Thing;
 
+// Re-export ABI types to avoid duplication
+pub use abi::{SchedThreadInfo, SchemaRegistryOutcome};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SchemaId(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SchedThreadInfo {
-    pub tid: u64,
-    pub state: u64,
-    pub priority: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SchemaRegistryOutcome {
-    Created,
-    AlreadyRegisteredSame,
-    Conflict,
-}
 
 pub trait Thing: Sized {
     const KIND: &'static str; // High level string, wrapper must intern
@@ -51,55 +40,144 @@ pub trait Thing: Sized {
         Self::DESCRIPTION
     }
 }
+
 pub use display::*;
 pub use input::*;
 pub use io::*;
+pub use kernel::*;
 pub use ui::*;
 pub use usb::*;
-pub use kernel::*;
 
 /// Returns the complete list of core schemas that the kernel MUST register at boot.
-/// 
+///
 /// This list is the "Single Source of Truth" for system core types.
 /// The kernel should iterate this list and register each schema.
-pub fn kernel_core_schemas() -> Vec<(&'static str, &'static str, &'static [(&'static str, PropType)])> {
+pub fn kernel_core_schemas() -> Vec<(
+    &'static str,
+    &'static str,
+    &'static [(&'static str, PropType)],
+)> {
     let mut schemas = Vec::new();
 
     // 1. Kernel Internals
     schemas.push((PhysFrame::KIND, PhysFrame::DESCRIPTION, PhysFrame::schema()));
     schemas.push((FramePool::KIND, FramePool::DESCRIPTION, FramePool::schema()));
-    schemas.push((AddressSpace::KIND, AddressSpace::DESCRIPTION, AddressSpace::schema()));
-    schemas.push((VirtRegion::KIND, VirtRegion::DESCRIPTION, VirtRegion::schema()));
+    schemas.push((
+        AddressSpace::KIND,
+        AddressSpace::DESCRIPTION,
+        AddressSpace::schema(),
+    ));
+    schemas.push((
+        VirtRegion::KIND,
+        VirtRegion::DESCRIPTION,
+        VirtRegion::schema(),
+    ));
     schemas.push((Process::KIND, Process::DESCRIPTION, Process::schema()));
     schemas.push((Thread::KIND, Thread::DESCRIPTION, Thread::schema()));
-    schemas.push((ThreadInfo::KIND, ThreadInfo::DESCRIPTION, ThreadInfo::schema()));
+    schemas.push((
+        ThreadInfo::KIND,
+        ThreadInfo::DESCRIPTION,
+        ThreadInfo::schema(),
+    ));
     schemas.push((CpuCore::KIND, CpuCore::DESCRIPTION, CpuCore::schema()));
-    schemas.push((SleepEvent::KIND, SleepEvent::DESCRIPTION, SleepEvent::schema()));
+    schemas.push((
+        SleepEvent::KIND,
+        SleepEvent::DESCRIPTION,
+        SleepEvent::schema(),
+    ));
 
     // 2. Boot & System
-    schemas.push((BootProfile::KIND, BootProfile::DESCRIPTION, BootProfile::schema()));
-    schemas.push((BootProgram::KIND, BootProgram::DESCRIPTION, BootProgram::schema()));
-    schemas.push((ProgramImage::KIND, ProgramImage::DESCRIPTION, ProgramImage::schema()));
-    schemas.push((FontModule::KIND, FontModule::DESCRIPTION, FontModule::schema()));
-    schemas.push((TimeSource::KIND, TimeSource::DESCRIPTION, TimeSource::schema()));
-    schemas.push((graph_kinds::KIND_IO_PORT_REGION, IoPortRegion::DESCRIPTION, IoPortRegion::schema()));
-    schemas.push((graph_kinds::KIND_IO_PORT_OP, IoPortOp::DESCRIPTION, IoPortOp::schema()));
-    schemas.push((graph_kinds::KIND_INTERRUPT_EVENT, InterruptEvent::DESCRIPTION, InterruptEvent::schema()));
-    schemas.push((graph_kinds::KIND_INTERRUPT_REQUEST, InterruptRequest::DESCRIPTION, InterruptRequest::schema()));
-    schemas.push((graph_kinds::KIND_ALARM_REQUEST, AlarmRequest::DESCRIPTION, AlarmRequest::schema()));
-    schemas.push((graph_kinds::KIND_ALARM_EVENT, AlarmEvent::DESCRIPTION, AlarmEvent::schema()));
-    schemas.push((BlockDevice::KIND, BlockDevice::DESCRIPTION, BlockDevice::schema()));
+    schemas.push((
+        BootProfile::KIND,
+        BootProfile::DESCRIPTION,
+        BootProfile::schema(),
+    ));
+    schemas.push((
+        BootProgram::KIND,
+        BootProgram::DESCRIPTION,
+        BootProgram::schema(),
+    ));
+    schemas.push((
+        ProgramImage::KIND,
+        ProgramImage::DESCRIPTION,
+        ProgramImage::schema(),
+    ));
+    schemas.push((
+        FontModule::KIND,
+        FontModule::DESCRIPTION,
+        FontModule::schema(),
+    ));
+    schemas.push((
+        TimeSource::KIND,
+        TimeSource::DESCRIPTION,
+        TimeSource::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_IO_PORT_REGION,
+        IoPortRegion::DESCRIPTION,
+        IoPortRegion::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_IO_PORT_OP,
+        IoPortOp::DESCRIPTION,
+        IoPortOp::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_INTERRUPT_EVENT,
+        InterruptEvent::DESCRIPTION,
+        InterruptEvent::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_INTERRUPT_REQUEST,
+        InterruptRequest::DESCRIPTION,
+        InterruptRequest::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_ALARM_REQUEST,
+        AlarmRequest::DESCRIPTION,
+        AlarmRequest::schema(),
+    ));
+    schemas.push((
+        graph_kinds::KIND_ALARM_EVENT,
+        AlarmEvent::DESCRIPTION,
+        AlarmEvent::schema(),
+    ));
+    schemas.push((
+        BlockDevice::KIND,
+        BlockDevice::DESCRIPTION,
+        BlockDevice::schema(),
+    ));
 
     // 3. Display Subsystem
     schemas.push((Display::KIND, Display::DESCRIPTION, Display::schema()));
-    schemas.push((SharedBuffer::KIND, SharedBuffer::DESCRIPTION, SharedBuffer::schema()));
-    schemas.push((DisplayFramebuffer::KIND, DisplayFramebuffer::DESCRIPTION, DisplayFramebuffer::schema()));
-    schemas.push((DisplayFrame::KIND, DisplayFrame::DESCRIPTION, DisplayFrame::schema()));
-    schemas.push((DisplayPresentRequest::KIND, DisplayPresentRequest::DESCRIPTION, DisplayPresentRequest::schema()));
+    schemas.push((
+        SharedBuffer::KIND,
+        SharedBuffer::DESCRIPTION,
+        SharedBuffer::schema(),
+    ));
+    schemas.push((
+        DisplayFramebuffer::KIND,
+        DisplayFramebuffer::DESCRIPTION,
+        DisplayFramebuffer::schema(),
+    ));
+    schemas.push((
+        DisplayFrame::KIND,
+        DisplayFrame::DESCRIPTION,
+        DisplayFrame::schema(),
+    ));
+    schemas.push((
+        DisplayPresentRequest::KIND,
+        DisplayPresentRequest::DESCRIPTION,
+        DisplayPresentRequest::schema(),
+    ));
 
     // 4. Shared UI Contract (Windowing)
     schemas.push((Mode::KIND, Mode::DESCRIPTION, Mode::schema()));
-    schemas.push((ModeSwitchEvent::KIND, ModeSwitchEvent::DESCRIPTION, ModeSwitchEvent::schema()));
+    schemas.push((
+        ModeSwitchEvent::KIND,
+        ModeSwitchEvent::DESCRIPTION,
+        ModeSwitchEvent::schema(),
+    ));
     schemas.push((Place::KIND, Place::DESCRIPTION, Place::schema()));
     schemas.push((Window::KIND, Window::DESCRIPTION, Window::schema()));
     schemas.push((Surface::KIND, Surface::DESCRIPTION, Surface::schema()));
@@ -108,12 +186,16 @@ pub fn kernel_core_schemas() -> Vec<(&'static str, &'static str, &'static [(&'st
 }
 
 #[derive(Thing)]
-#[thing(description = "The system-wide boot configuration used by init to launch all services and programs.")]
+#[thing(
+    description = "The system-wide boot configuration used by init to launch all services and programs."
+)]
 pub struct BootProfile {
     pub id: ThingId,
     pub version: u64,
 }
 
+#[derive(Thing)]
+#[thing(description = "A program to be launched automatically by init during system boot.")]
 pub struct BootProgram {
     pub id: ThingId,
     pub name: String,
@@ -123,79 +205,8 @@ pub struct BootProgram {
     pub respawn_policy: String,
 }
 
-impl Thing for BootProgram {
-    const KIND: &'static str = "BootProgram";
-    const DESCRIPTION: &'static str =
-        "A program to be launched automatically by init during system boot.";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push(("name".to_string(), PropValue::Str(self.name.clone())));
-        out.push(("app_id".to_string(), PropValue::U64(self.app_id)));
-        out.push(("priority".to_string(), PropValue::U64(self.priority)));
-        out.push(("binary".to_string(), PropValue::Str(self.binary.clone())));
-        out.push((graph_kinds::PROP_RESPAWN_POLICY.to_string(),
-            PropValue::Str(self.respawn_policy.clone()),
-        ));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut name = String::new();
-        let mut app_id = 0;
-        let mut priority = 0;
-        let mut binary = String::new();
-        let mut respawn_policy = String::from(graph_kinds::RESPAWN_NEVER);
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                "name" => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        name = v.clone();
-                    }
-                }
-                "app_id" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        app_id = v;
-                    }
-                }
-                "priority" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        priority = v;
-                    }
-                }
-                "binary" => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        binary = v.clone();
-                    }
-                }
-                graph_kinds::PROP_RESPAWN_POLICY => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        respawn_policy = v.clone();
-                    }
-                }
-                _ => {}
-            }
-        }
-        BootProgram {
-            id,
-            name,
-            app_id,
-            priority,
-            binary,
-            respawn_policy,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            ("name", PropType::Str),
-            ("app_id", PropType::U64),
-            ("priority", PropType::U64),
-            ("binary", PropType::Str),
-            (graph_kinds::PROP_RESPAWN_POLICY, PropType::Str),
-        ]
-    }
-}
-
+#[derive(Thing)]
+#[thing(description = "Raw data module loaded at boot")]
 pub struct RawModule {
     pub id: ThingId,
     pub identifier: String,
@@ -204,94 +215,6 @@ pub struct RawModule {
     pub base_phys: u64,
     pub size: u64,
     pub framebuffer_id: Option<ThingId>,
-}
-
-impl Thing for RawModule {
-    const KIND: &'static str = graph_kinds::KIND_RAW_MODULE;
-    const DESCRIPTION: &'static str = "Raw data module loaded at boot";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_IDENTIFIER.to_string(),
-            PropValue::Str(self.identifier.clone()),
-        ));
-        out.push((graph_kinds::PROP_RAW_KIND.to_string(),
-            PropValue::Str(self.raw_kind.clone()),
-        ));
-        out.push((graph_kinds::PROP_MODULE_INDEX.to_string(),
-            PropValue::U64(self.module_index),
-        ));
-        out.push((graph_kinds::PROP_BASE_PHYS.to_string(), PropValue::U64(self.base_phys)));
-        out.push((graph_kinds::PROP_SIZE.to_string(), PropValue::U64(self.size)));
-        if let Some(fid) = self.framebuffer_id {
-            out.push((graph_kinds::PROP_FRAMEBUFFER_ID.to_string(), PropValue::U64(fid.0)));
-        }
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut identifier = String::new();
-        let mut raw_kind = String::new();
-        let mut module_index = 0;
-        let mut base_phys = 0;
-        let mut size = 0;
-        let mut framebuffer_id = None;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                graph_kinds::PROP_IDENTIFIER => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        identifier = v.clone();
-                    }
-                }
-                graph_kinds::PROP_RAW_KIND => {
-                    if let PropValue::Str(v) = &prop.1 {
-                        raw_kind = v.clone();
-                    }
-                }
-                graph_kinds::PROP_MODULE_INDEX => {
-                    if let PropValue::U64(v) = prop.1 {
-                        module_index = v;
-                    }
-                }
-                graph_kinds::PROP_BASE_PHYS => {
-                    if let PropValue::U64(v) = prop.1 {
-                        base_phys = v;
-                    }
-                }
-                graph_kinds::PROP_SIZE => {
-                    if let PropValue::U64(v) = prop.1 {
-                        size = v;
-                    }
-                }
-                graph_kinds::PROP_FRAMEBUFFER_ID => {
-                    if let PropValue::U64(v) = prop.1 {
-                        framebuffer_id = Some(ThingId(v));
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        RawModule {
-            id,
-            identifier,
-            raw_kind,
-            module_index,
-            base_phys,
-            size,
-            framebuffer_id,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            (graph_kinds::PROP_IDENTIFIER, PropType::Str),
-            (graph_kinds::PROP_RAW_KIND, PropType::Str),
-            (graph_kinds::PROP_MODULE_INDEX, PropType::U64),
-            (graph_kinds::PROP_BASE_PHYS, PropType::U64),
-            (graph_kinds::PROP_SIZE, PropType::U64),
-            (graph_kinds::PROP_FRAMEBUFFER_ID, PropType::U64),
-        ]
-    }
 }
 
 #[derive(Thing)]
@@ -318,14 +241,22 @@ impl Thing for FontModule {
         "A font payload supplied as a boot module available for UI rendering.";
 
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        out.push((graph_kinds::PROP_FONT_NAME.to_string(),
+        out.push((
+            graph_kinds::PROP_FONT_NAME.to_string(),
             PropValue::Str(self.name.clone()),
         ));
-        out.push((graph_kinds::PROP_MODULE_INDEX.to_string(),
+        out.push((
+            graph_kinds::PROP_MODULE_INDEX.to_string(),
             PropValue::U64(self.module_index),
         ));
-        out.push((graph_kinds::PROP_BASE_PHYS.to_string(), PropValue::U64(self.base_phys)));
-        out.push((graph_kinds::PROP_SIZE.to_string(), PropValue::U64(self.size)));
+        out.push((
+            graph_kinds::PROP_BASE_PHYS.to_string(),
+            PropValue::U64(self.base_phys),
+        ));
+        out.push((
+            graph_kinds::PROP_SIZE.to_string(),
+            PropValue::U64(self.size),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -388,6 +319,74 @@ pub struct TimeSource {
     pub unix_nanos: u32,
 }
 
+impl Thing for TimeSource {
+    const KIND: &'static str = graph_kinds::KIND_TIME_SOURCE;
+    const DESCRIPTION: &'static str =
+        "Kernel-published system clock including monotonic tick counter and Unix wall time.";
+
+    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
+        out.push((
+            "ticks_since_boot".to_string(),
+            PropValue::U64(self.ticks_since_boot),
+        ));
+        out.push(("tick_hz".to_string(), PropValue::U64(self.tick_hz as u64)));
+        out.push((
+            "unix_seconds".to_string(),
+            PropValue::I64(self.unix_seconds),
+        ));
+        out.push((
+            "unix_nanos".to_string(),
+            PropValue::U64(self.unix_nanos as u64),
+        ));
+    }
+
+    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
+        fn find(props: &[Option<(PropKey, PropValue)>], key: &str) -> Option<PropValue> {
+            props
+                .iter()
+                .flatten()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+        }
+
+        let ticks_since_boot = match find(props, "ticks_since_boot") {
+            Some(PropValue::U64(v)) => v,
+            _ => 0,
+        };
+        let tick_hz = match find(props, "tick_hz") {
+            Some(PropValue::U64(v)) => v as u32,
+            _ => 0,
+        };
+        let unix_seconds = match find(props, "unix_seconds") {
+            Some(PropValue::I64(v)) => v,
+            Some(PropValue::U64(v)) => v as i64,
+            _ => 0,
+        };
+        let unix_nanos = match find(props, "unix_nanos") {
+            Some(PropValue::U64(v)) => v as u32,
+            Some(PropValue::I64(v)) => v as u32,
+            _ => 0,
+        };
+
+        TimeSource {
+            id,
+            ticks_since_boot,
+            tick_hz,
+            unix_seconds,
+            unix_nanos,
+        }
+    }
+
+    fn schema() -> &'static [(&'static str, PropType)] {
+        &[
+            ("ticks_since_boot", PropType::U64),
+            ("tick_hz", PropType::U64),
+            ("unix_seconds", PropType::I64),
+            ("unix_nanos", PropType::U64),
+        ]
+    }
+}
+
 impl TimeSource {
     pub fn create(tick_hz: u32, unix_seconds: i64, unix_nanos: u32) -> [(PropKey, PropValue); 4] {
         [
@@ -404,13 +403,18 @@ impl TimeSource {
         unix_nanos: u32,
     ) -> [(PropKey, PropValue); 3] {
         [
-            ("ticks_since_boot".to_string(), PropValue::U64(ticks_since_boot)),
+            (
+                "ticks_since_boot".to_string(),
+                PropValue::U64(ticks_since_boot),
+            ),
             ("unix_seconds".to_string(), PropValue::I64(unix_seconds)),
             ("unix_nanos".to_string(), PropValue::U64(unix_nanos as u64)),
         ]
     }
 }
 
+#[derive(Thing)]
+#[thing(description = "User-requested alarm mapped to kernel tick space and lifecycle state.")]
 pub struct AlarmRequest {
     pub id: ThingId,
     pub time_source_id: Option<ThingId>,
@@ -424,124 +428,6 @@ pub struct AlarmRequest {
     pub fired: bool,
 }
 
-impl Thing for AlarmRequest {
-    const KIND: &'static str = "AlarmRequest";
-    const DESCRIPTION: &'static str =
-        "User-requested alarm mapped to kernel tick space and lifecycle state.";
-
-    fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
-        if let Some(ts_id) = self.time_source_id {
-            out.push(("time_source_id".to_string(), PropValue::U64(ts_id.0)));
-        }
-        out.push(("target_unix_seconds".to_string(),
-            PropValue::I64(self.target_unix_seconds),
-        ));
-        out.push(("target_unix_nanos".to_string(),
-            PropValue::U64(self.target_unix_nanos as u64),
-        ));
-        if let Some(ticks) = self.target_ticks {
-            out.push(("target_ticks".to_string(), PropValue::U64(ticks)));
-        }
-        if let Some(period) = self.period_ticks {
-            out.push(("period_ticks".to_string(), PropValue::U64(period)));
-        }
-        out.push(("owner_process".to_string(), PropValue::U64(self.owner_process.0)));
-        out.push(("owner_thread".to_string(), PropValue::U64(self.owner_thread.0)));
-        out.push(("armed".to_string(), PropValue::Bool(self.armed)));
-        out.push(("fired".to_string(), PropValue::Bool(self.fired)));
-    }
-
-    fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
-        let mut time_source_id = None;
-        let mut target_unix_seconds = 0_i64;
-        let mut target_unix_nanos = 0_u32;
-        let mut target_ticks = None;
-        let mut period_ticks = None;
-        let mut owner_process = ThingId(0);
-        let mut owner_thread = ThingId(0);
-        let mut armed = false;
-        let mut fired = false;
-
-        for prop in props.iter().flatten() {
-            match prop.0.as_str() {
-                "time_source_id" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        time_source_id = Some(ThingId(v));
-                    }
-                }
-                "target_unix_seconds" => {
-                    if let PropValue::I64(v) = prop.1 {
-                        target_unix_seconds = v;
-                    }
-                }
-                "target_unix_nanos" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        target_unix_nanos = v as u32;
-                    }
-                }
-                "target_ticks" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        target_ticks = Some(v);
-                    }
-                }
-                "period_ticks" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        period_ticks = Some(v);
-                    }
-                }
-                "owner_process" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        owner_process = ThingId(v);
-                    }
-                }
-                "owner_thread" => {
-                    if let PropValue::U64(v) = prop.1 {
-                        owner_thread = ThingId(v);
-                    }
-                }
-                "armed" => {
-                    if let PropValue::Bool(v) = prop.1 {
-                        armed = v;
-                    }
-                }
-                "fired" => {
-                    if let PropValue::Bool(v) = prop.1 {
-                        fired = v;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        AlarmRequest {
-            id,
-            time_source_id,
-            target_unix_seconds,
-            target_unix_nanos,
-            target_ticks,
-            period_ticks,
-            owner_process,
-            owner_thread,
-            armed,
-            fired,
-        }
-    }
-
-    fn schema() -> &'static [(&'static str, PropType)] {
-        &[
-            ("time_source_id", PropType::U64),
-            ("target_unix_seconds", PropType::I64),
-            ("target_unix_nanos", PropType::U64),
-            ("target_ticks", PropType::U64),
-            ("period_ticks", PropType::U64),
-            ("owner_process", PropType::U64),
-            ("owner_thread", PropType::U64),
-            ("armed", PropType::Bool),
-            ("fired", PropType::Bool),
-        ]
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -549,7 +435,10 @@ mod tests {
     use alloc::{string::String, vec::Vec};
 
     fn to_prop_slice(props: &[(PropKey, PropValue)]) -> Vec<Option<(PropKey, PropValue)>> {
-        props.iter().map(|(k, v)| Some((k.clone(), v.clone()))).collect()
+        props
+            .iter()
+            .map(|(k, v)| Some((k.clone(), v.clone())))
+            .collect()
     }
 
     #[test]
@@ -571,8 +460,14 @@ mod tests {
                 ("name".to_string(), PropValue::Str(String::from("init"))),
                 ("app_id".to_string(), PropValue::U64(0x42)),
                 ("priority".to_string(), PropValue::U64(1)),
-                ("binary".to_string(), PropValue::Str(String::from("/bin/init"))),
-                (graph_kinds::PROP_RESPAWN_POLICY.to_string(), PropValue::Str(String::from("Always"))),
+                (
+                    "binary".to_string(),
+                    PropValue::Str(String::from("/bin/init"))
+                ),
+                (
+                    graph_kinds::PROP_RESPAWN_POLICY.to_string(),
+                    PropValue::Str(String::from("Always"))
+                ),
             ]
         );
 
@@ -607,8 +502,14 @@ mod tests {
                     graph_kinds::PROP_IDENTIFIER.to_string(),
                     PropValue::Str(String::from("kernel"))
                 ),
-                (graph_kinds::PROP_MODULE_INDEX.to_string(), PropValue::U64(3)),
-                (graph_kinds::PROP_BASE_PHYS.to_string(), PropValue::U64(0x1000)),
+                (
+                    graph_kinds::PROP_MODULE_INDEX.to_string(),
+                    PropValue::U64(3)
+                ),
+                (
+                    graph_kinds::PROP_BASE_PHYS.to_string(),
+                    PropValue::U64(0x1000)
+                ),
                 (graph_kinds::PROP_SIZE.to_string(), PropValue::U64(0x2000)),
             ]
         );
@@ -636,7 +537,10 @@ mod tests {
 
         let mut props = Vec::new();
         request.to_props(&mut props);
-        assert!(props.contains(&(graph_kinds::PROP_PRESENTED_AT_NS.to_string(), PropValue::U64(2_000))));
+        assert!(props.contains(&(
+            graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
+            PropValue::U64(2_000)
+        )));
 
         let roundtrip = DisplayPresentRequest::from_props(request.id, &to_prop_slice(&props));
         assert_eq!(roundtrip.framebuffer_id, request.framebuffer_id);
@@ -658,7 +562,10 @@ impl AlarmRequest {
         owner_thread: ThingId,
     ) -> [(PropKey, PropValue); 6] {
         [
-            ("target_unix_seconds".to_string(), PropValue::I64(target_unix_seconds)),
+            (
+                "target_unix_seconds".to_string(),
+                PropValue::I64(target_unix_seconds),
+            ),
             (
                 "target_unix_nanos".to_string(),
                 PropValue::U64(target_unix_nanos as u64),
@@ -709,8 +616,14 @@ impl AlarmEvent {
     ) -> [(PropKey, PropValue); 3] {
         [
             ("alarm_id".to_string(), PropValue::U64(alarm_id.0)),
-            ("fired_unix_seconds".to_string(), PropValue::I64(fired_unix_seconds)),
-            ("fired_unix_nanos".to_string(), PropValue::U64(fired_unix_nanos as u64)),
+            (
+                "fired_unix_seconds".to_string(),
+                PropValue::I64(fired_unix_seconds),
+            ),
+            (
+                "fired_unix_nanos".to_string(),
+                PropValue::U64(fired_unix_nanos as u64),
+            ),
         ]
     }
 }

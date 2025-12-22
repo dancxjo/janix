@@ -1,6 +1,6 @@
+use abi::syscall_defs::SymbolId;
 use alloc::string::String;
 use alloc::vec::Vec;
-use abi::syscall_defs::SymbolId;
 
 pub type PropKey = String;
 

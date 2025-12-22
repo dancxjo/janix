@@ -2,8 +2,8 @@ use crate::graph::{self, Graph};
 use crate::graph_kinds;
 use crate::sched_types::{CpuId, ThreadState, TimeNs};
 use abi::ThingId;
-use thing_models::PropValue;
 use alloc::string::String;
+use thing_models::PropValue;
 
 const TIME_SLICE_NS: TimeNs = 5_000_000;
 const LINK_BUF: usize = 4;
@@ -78,9 +78,10 @@ pub fn create_sleep_event(
     wake_at_ns: TimeNs,
     _created_at_ns: TimeNs,
 ) -> Option<ThingId> {
-    let props = alloc::vec![
-        (crate::symbols::intern("sleep_until_ns"), PropValue::U64(wake_at_ns)),
-    ];
+    let props = alloc::vec![(
+        crate::symbols::intern("sleep_until_ns"),
+        PropValue::U64(wake_at_ns)
+    ),];
     graph.update_thing(thread, props.as_slice());
     Some(thread)
 }
@@ -144,15 +145,24 @@ fn update_runtime(graph: &mut Graph, thread: ThingId, now: TimeNs) -> TimeNs {
     let delta = now.saturating_sub(last_started);
     let new_runtime = runtime.saturating_add(delta);
     let props = alloc::vec![
-        (crate::symbols::intern("runtime_ns"), PropValue::U64(new_runtime)),
-        (crate::symbols::intern("last_started_ns"), PropValue::U64(now)),
+        (
+            crate::symbols::intern("runtime_ns"),
+            PropValue::U64(new_runtime)
+        ),
+        (
+            crate::symbols::intern("last_started_ns"),
+            PropValue::U64(now)
+        ),
     ];
     graph.update_thing(thread, props.as_slice());
     delta
 }
 
 fn set_last_started(graph: &mut Graph, thread: ThingId, now: TimeNs) {
-    let props = alloc::vec![(crate::symbols::intern("last_started_ns"), PropValue::U64(now))];
+    let props = alloc::vec![(
+        crate::symbols::intern("last_started_ns"),
+        PropValue::U64(now)
+    )];
     graph.update_thing(thread, props.as_slice());
 }
 
@@ -162,7 +172,10 @@ fn make_runnable(graph: &mut Graph, thread: ThingId, now: TimeNs) {
             crate::symbols::intern("state"),
             PropValue::Str(String::from(ThreadState::Runnable.as_str())),
         ),
-        (crate::symbols::intern("last_started_ns"), PropValue::U64(now)),
+        (
+            crate::symbols::intern("last_started_ns"),
+            PropValue::U64(now)
+        ),
     ];
     graph.update_thing(thread, props.as_slice());
 }
@@ -174,7 +187,10 @@ fn start_running(graph: &mut Graph, thread: ThingId, cpu_node: ThingId, now: Tim
             crate::symbols::intern("state"),
             PropValue::Str(String::from(ThreadState::Running.as_str())),
         ),
-        (crate::symbols::intern("last_started_ns"), PropValue::U64(now)),
+        (
+            crate::symbols::intern("last_started_ns"),
+            PropValue::U64(now)
+        ),
     ];
     graph.update_thing(thread, props.as_slice());
     graph.add_link(thread, graph_kinds::LINK_RUNS_ON, cpu_node);

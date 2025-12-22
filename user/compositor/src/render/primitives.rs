@@ -3,18 +3,14 @@ use thing_os::println;
 
 // Helper to check intersection with clip rect
 #[inline(always)]
-fn clip_span(
-    start: i32, 
-    len: i32, 
-    clip_start: i32, 
-    clip_len: i32
-) -> Option<(i32, i32)> { // (new_start, new_len)
+fn clip_span(start: i32, len: i32, clip_start: i32, clip_len: i32) -> Option<(i32, i32)> {
+    // (new_start, new_len)
     let end = start + len;
     let clip_end = clip_start + clip_len;
-    
+
     let new_start = max(start, clip_start);
     let new_end = min(end, clip_end);
-    
+
     if new_start >= new_end {
         None
     } else {
@@ -65,14 +61,11 @@ pub fn fill_rect(
         return;
     }
     let stride_pixels = stride as usize;
-    
+
     // Apply clipping if provided
     let (cx, cy, cw, ch) = if let Some((cx, cy, cw, ch)) = clip {
         // Intersect requested rect with clip
-        match (
-            clip_span(x, w, cx, cw),
-            clip_span(y, h, cy, ch)
-        ) {
+        match (clip_span(x, w, cx, cw), clip_span(y, h, cy, ch)) {
             (Some((nx, nw)), Some((ny, nh))) => (nx, ny, nw, nh),
             _ => return, // No intersection
         }
@@ -126,7 +119,7 @@ pub fn draw_tiled_image(
         let irect = (0, 0, fb_width as i32, fb_height as i32);
         match (
             clip_span(irect.0, irect.2, cx, cw),
-            clip_span(irect.1, irect.3, cy, ch)
+            clip_span(irect.1, irect.3, cy, ch),
         ) {
             (Some((nx, nw)), Some((ny, nh))) => (nx, ny, nw, nh),
             _ => return,
@@ -156,7 +149,7 @@ pub fn draw_tiled_image(
 
         let row_start = unsafe { img_ptr.add(row * row_stride) };
         let dest_row_start = y as usize * stride_pixels;
-        
+
         let start_x = cx.max(0);
         let end_x = (cx + cw).min(fb_width as i32);
 
@@ -224,15 +217,18 @@ mod tests {
         // Draw 3x3 at 1,1 -> indices 6,7,8, 11,12,13, 16,17,18
         // Clip to 2x2 at 2,2 -> indices 12,13, 17,18
         fill_rect(
-            buf.as_mut_ptr(), 
-            5, 
-            5, 
-            5, 
-            1, 1, 3, 3, 
-            0xFF, 
-            Some((2, 2, 2, 2))
+            buf.as_mut_ptr(),
+            5,
+            5,
+            5,
+            1,
+            1,
+            3,
+            3,
+            0xFF,
+            Some((2, 2, 2, 2)),
         );
-        
+
         assert_eq!(buf[6], 0);
         assert_eq!(buf[12], 0xFF);
         assert_eq!(buf[13], 0xFF);
@@ -266,8 +262,9 @@ mod tests {
             1, // img_h
             4, // img_stride_bytes
             abi::PixelFormat::Rgba8888,
-            0, 0, // x, y
-            None
+            0,
+            0, // x, y
+            None,
         );
 
         assert_eq!(dest_buf[0], 0xFFFF7F7F);
@@ -295,12 +292,9 @@ pub fn blit_image(
     let (cx, cy, cw, ch) = if let Some((cx, cy, cw, ch)) = clip {
         // Intersect requested rect with clip
         // We are drawing at (x, y) with size (img_w, img_h)
-        match (
-             clip_span(x, img_w, cx, cw),
-             clip_span(y, img_h, cy, ch)
-        ) {
-             (Some((nx, nw)), Some((ny, nh))) => (nx, ny, nw, nh),
-             _ => return, 
+        match (clip_span(x, img_w, cx, cw), clip_span(y, img_h, cy, ch)) {
+            (Some((nx, nw)), Some((ny, nh))) => (nx, ny, nw, nh),
+            _ => return,
         }
     } else {
         (x, y, img_w, img_h)
@@ -313,35 +307,43 @@ pub fn blit_image(
 
     for dest_y in start_y..end_y {
         let src_y = dest_y - y;
-        if src_y < 0 || src_y >= img_h { continue; } // Should be covered by clip logic but safety first
+        if src_y < 0 || src_y >= img_h {
+            continue;
+        } // Should be covered by clip logic but safety first
 
         let src_row_start = unsafe { img_ptr.add(src_y as usize * img_stride_bytes as usize) };
         let dest_row_idx = dest_y as usize * stride_pixels;
-        
+
         // This inner loop could be optimized with copy_nonoverlapping if formats match and no alpha blending
         // For now, per-pixel copy to handle formats.
         // Assuming Rgba8888 source for raw buffers usually?
-        
+
         for dest_x in start_x..end_x {
             let src_x = dest_x - x;
-            if src_x < 0 || src_x >= img_w { continue; }
+            if src_x < 0 || src_x >= img_w {
+                continue;
+            }
 
             let src_offset = src_x as usize * 4; // Assume 32bpp
             unsafe {
                 let pixel_ptr = src_row_start.add(src_offset);
                 let src_val = *(pixel_ptr as *const u32);
-                
+
                 let dest_ptr = buffer.add(dest_row_idx + dest_x as usize);
 
                 let src_bgra_opt = if matches!(pixel_format, abi::PixelFormat::Rgba8888) {
-                     // Source is RGBA. Swap R/B to get BGRA.
-                     // RGBA in memory: R G B A. u32 = 0xAABBGGRR.
-                     // BGRA in memory: B G R A. u32 = 0xAARRGGBB.
-                     Some((src_val & 0xFF00FF00) | ((src_val & 0xFF) << 16) | ((src_val >> 16) & 0xFF))
+                    // Source is RGBA. Swap R/B to get BGRA.
+                    // RGBA in memory: R G B A. u32 = 0xAABBGGRR.
+                    // BGRA in memory: B G R A. u32 = 0xAARRGGBB.
+                    Some(
+                        (src_val & 0xFF00FF00)
+                            | ((src_val & 0xFF) << 16)
+                            | ((src_val >> 16) & 0xFF),
+                    )
                 } else if matches!(pixel_format, abi::PixelFormat::Bgra8888) {
-                     Some(src_val)
+                    Some(src_val)
                 } else {
-                     None // Unknown format, treated as opaque copy
+                    None // Unknown format, treated as opaque copy
                 };
 
                 if let Some(src_bgra) = src_bgra_opt {
@@ -369,8 +371,8 @@ pub fn blit_image(
                         *dest_ptr = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
                     }
                 } else {
-                     // Fallback for unknown formats: just overwrite
-                     *dest_ptr = src_val;
+                    // Fallback for unknown formats: just overwrite
+                    *dest_ptr = src_val;
                 }
             }
         }

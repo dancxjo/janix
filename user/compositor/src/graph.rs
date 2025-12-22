@@ -1,18 +1,16 @@
-use alloc::string::ToString;
-use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::vec::Vec;
-use alloc::boxed::Box;
-use alloc::format;
 use abi::{KernelRequest, KernelResponse, ThingId};
-use thing_models::{PropKey, PropValue};
+use alloc::boxed::Box;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use thing_models::graph_kinds;
+use thing_models::{PropKey, PropValue};
 use thing_os::prelude::*;
 use thing_os::{
-    DisplayThing, PrimaryDisplayBuffer, Surface, Window,
-    load_thing, update_props, list_things_by_kind,
+    DisplayThing, PrimaryDisplayBuffer, Surface, Window, list_things_by_kind, load_thing,
+    update_props,
 };
-
-
 
 pub fn active_framebuffer() -> Option<PrimaryDisplayBuffer> {
     thing_os::open_primary_display_buffer().ok()
@@ -36,15 +34,11 @@ pub fn swap_display_buffers(display_id: ThingId) -> Option<i64> {
     Some(new_index)
 }
 
-
-
 pub fn collect_all_windows() -> Vec<Window> {
     list_things_by_kind()
 }
 
-pub fn collect_surfaces_for_windows(
-    windows: &[Window],
-) -> BTreeMap<ThingId, Surface> {
+pub fn collect_surfaces_for_windows(windows: &[Window]) -> BTreeMap<ThingId, Surface> {
     let wanted: BTreeSet<ThingId> = windows.iter().map(|w| w.id).collect();
     let mut map = BTreeMap::new();
     for surface in list_things_by_kind::<Surface>() {
@@ -54,5 +48,3 @@ pub fn collect_surfaces_for_windows(
     }
     map
 }
-
-

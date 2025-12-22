@@ -1,16 +1,17 @@
+use crate::sys::raw_syscall;
+use abi::wire::common::UserSlice;
+use abi::{KernelRequest, KernelResponse};
 use abi::{
     SharedBufferInfo,
     resident::{ResidentAllocResp, ResidentError, ResidentMapResp, RestResp},
-    syscalls::*, syscall_defs::{SymbolId, SymbolInternReq, WireStr},
+    syscall_defs::{SymbolId, SymbolInternReq, WireStr},
+    syscalls::*,
 };
-use abi::wire::common::UserSlice;
-use abi::{KernelRequest, KernelResponse};
-use thing_models::PropType;
-use thing_models::SchemaRegistryOutcome;
-use crate::sys::raw_syscall;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use thing_models::PropType;
+use thing_models::SchemaRegistryOutcome;
 
 pub fn sys_symbol_intern(s: &str) -> SymbolId {
     #[cfg(test)]
@@ -36,7 +37,7 @@ pub fn sys_symbol_intern(s: &str) -> SymbolId {
             0,
             0,
             0,
-            0
+            0,
         )
     };
     if ret == 0 {
@@ -60,9 +61,9 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
         }
 
         KernelRequest::ExitThread => {
-             unsafe { raw_syscall(SYSCALL_EXIT_THREAD, 0, 0, 0, 0, 0, 0) };
-             loop {}
-        },
+            unsafe { raw_syscall(SYSCALL_EXIT_THREAD, 0, 0, 0, 0, 0, 0) };
+            loop {}
+        }
         KernelRequest::SchedulerTick => {
             unsafe { raw_syscall(SYSCALL_YIELD, 0, 0, 0, 0, 0, 0) };
             KernelResponse::Success { data: None }
@@ -93,8 +94,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::FreeFrame { frame_id } => {
-            let ret =
-                unsafe { raw_syscall(SYSCALL_FREE_FRAME, frame_id.0, 0, 0, 0, 0, 0) };
+            let ret = unsafe { raw_syscall(SYSCALL_FREE_FRAME, frame_id.0, 0, 0, 0, 0, 0) };
             if ret == 0 {
                 KernelResponse::FrameFreed { frame_id }
             } else {
@@ -106,8 +106,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
         KernelRequest::CreateProcess { name } => {
             let ptr = name.ptr;
             let len = name.len;
-            let ret =
-                unsafe { raw_syscall(SYSCALL_CREATE_PROCESS, ptr, len, 0, 0, 0, 0) };
+            let ret = unsafe { raw_syscall(SYSCALL_CREATE_PROCESS, ptr, len, 0, 0, 0, 0) };
             if ret == 0 {
                 KernelResponse::Error {
                     err: abi::syscall_defs::SysError { code: 1, detail: 0 },
@@ -124,17 +123,8 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
         } => {
             let ptr = name.ptr;
             let len = name.len;
-            let ret = unsafe {
-                raw_syscall(
-                    SYSCALL_CREATE_THREAD,
-                    pid,
-                    app_id,
-                    priority,
-                    ptr,
-                    len,
-                    0,
-                )
-            };
+            let ret =
+                unsafe { raw_syscall(SYSCALL_CREATE_THREAD, pid, app_id, priority, ptr, len, 0) };
             if ret == 0 {
                 KernelResponse::Error {
                     err: abi::syscall_defs::SysError { code: 1, detail: 0 },
@@ -167,17 +157,8 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
         }
         KernelRequest::ThingUpdate { id, props } => {
             // arg1=id, arg2=props_ptr, arg3=props_len
-            let ret = unsafe {
-                raw_syscall(
-                    SYSCALL_THING_UPDATE,
-                    id.0,
-                    props.ptr,
-                    props.len,
-                    0,
-                    0,
-                    0,
-                )
-            };
+            let ret =
+                unsafe { raw_syscall(SYSCALL_THING_UPDATE, id.0, props.ptr, props.len, 0, 0, 0) };
             if ret == 0 {
                 KernelResponse::Success { data: None }
             } else {
@@ -189,18 +170,13 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
         KernelRequest::ThingList { kind, start_after } => {
             // arg1=kind(SymbolId), arg2=start_after
             let ret = unsafe {
-                raw_syscall(
-                    SYSCALL_THING_LIST,
-                    kind.0 as u64,
-                    start_after.0,
-                    0,
-                    0,
-                    0,
-                    0,
-                )
+                raw_syscall(SYSCALL_THING_LIST, kind.0 as u64, start_after.0, 0, 0, 0, 0)
             };
             if ret == u64::MAX {
-                KernelResponse::ThingListEntry { id: abi::ThingId(0), valid: 0 }
+                KernelResponse::ThingListEntry {
+                    id: abi::ThingId(0),
+                    valid: 0,
+                }
             } else {
                 KernelResponse::ThingListEntry {
                     id: abi::ThingId(ret),
@@ -209,8 +185,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::AddLink { src, pred, dst } => {
-            let ret =
-                unsafe { raw_syscall(SYSCALL_ADD_LINK, src.0, pred.0, dst.0, 0, 0, 0) };
+            let ret = unsafe { raw_syscall(SYSCALL_ADD_LINK, src.0, pred.0, dst.0, 0, 0, 0) };
             if ret == 0 {
                 KernelResponse::Success { data: None }
             } else {
@@ -220,11 +195,12 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::LinkAt { src, pred, idx } => {
-            let ret = unsafe {
-                raw_syscall(SYSCALL_LINK_AT, src.0, idx as u64, pred.0, 0, 0, 0)
-            };
+            let ret = unsafe { raw_syscall(SYSCALL_LINK_AT, src.0, idx as u64, pred.0, 0, 0, 0) };
             if ret == u64::MAX {
-                KernelResponse::LinkTarget { target: abi::ThingId(0), found: 0 }
+                KernelResponse::LinkTarget {
+                    target: abi::ThingId(0),
+                    found: 0,
+                }
             } else {
                 KernelResponse::LinkTarget {
                     target: abi::ThingId(ret),
@@ -233,7 +209,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::SpawnProgram { boot_program_id } => {
-use abi::wire::process::SpawnProgramResult;
+            use abi::wire::process::SpawnProgramResult;
             let mut result = SpawnProgramResult {
                 process_id: abi::ThingId(0),
                 thread_id: abi::ThingId(0),
@@ -279,6 +255,31 @@ use abi::wire::process::SpawnProgramResult;
             if ret <= 2 {
                 let outcome = unsafe { core::mem::transmute(ret as u8) };
                 KernelResponse::SchemaRegistered { kind, outcome }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
+        KernelRequest::SchemaGet { kind, out } => {
+            let mut written = 0;
+            let mut fingerprint = 0;
+            let ret = unsafe {
+                raw_syscall(
+                    SYSCALL_SCHEMA_GET,
+                    kind.0 as u64,
+                    out.ptr,
+                    out.len,
+                    &mut written as *mut _ as u64,
+                    &mut fingerprint as *mut _ as u64,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::SchemaData {
+                    written,
+                    fingerprint,
+                }
             } else {
                 KernelResponse::Error {
                     err: abi::syscall_defs::SysError { code: 1, detail: 0 },
@@ -359,11 +360,15 @@ use abi::wire::process::SpawnProgramResult;
                 }
             }
         }
-        KernelRequest::ResidentAlloc { kind, byte_len, flags: _ } => {
+        KernelRequest::ResidentAlloc {
+            kind,
+            byte_len,
+            flags: _,
+        } => {
             // kind is SymbolId now
             let mut resp = ResidentAllocResp::default();
             let mut err = ResidentError::default();
-            
+
             let ret = unsafe {
                 raw_syscall(
                     SYSCALL_RESIDENT_ALLOC,
@@ -375,17 +380,79 @@ use abi::wire::process::SpawnProgramResult;
                     0,
                 )
             };
-            
+
             if ret == 0 {
                 KernelResponse::ResidentAllocated { resp }
             } else {
                 KernelResponse::ResidentError(err)
             }
         }
+        KernelRequest::CreateTransaction => {
+            let ret = unsafe { raw_syscall(SYSCALL_CREATE_TRANSACTION, 0, 0, 0, 0, 0, 0) };
+            if ret > 0 {
+                KernelResponse::TransactionCreated {
+                    tx_id: abi::TransactionId(ret),
+                }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
+        KernelRequest::CommitTransaction { tx_id } => {
+            let ret = unsafe { raw_syscall(SYSCALL_COMMIT_TRANSACTION, tx_id.0, 0, 0, 0, 0, 0) };
+            if ret == 0 {
+                KernelResponse::Success { data: None }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
+        KernelRequest::ThingBatchUpdate { updates } => {
+            let ret = unsafe {
+                raw_syscall(
+                    SYSCALL_THING_BATCH_UPDATE,
+                    updates.ptr,
+                    updates.len,
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::Success { data: None }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
+        KernelRequest::GraphQuery { node_id, out } => {
+            let ret = unsafe {
+                raw_syscall(
+                    SYSCALL_GRAPH_QUERY,
+                    node_id.0,
+                    out.ptr,
+                    out.len,
+                    0,
+                    0,
+                    0,
+                )
+            };
+            if ret == 0 {
+                KernelResponse::NodeData { written: 0 }
+            } else {
+                KernelResponse::Error {
+                    err: abi::syscall_defs::SysError { code: 1, detail: 0 },
+                }
+            }
+        }
         KernelRequest::ResidentMap { id, perms } => {
             let mut resp = ResidentMapResp::default();
             let mut err = ResidentError::default();
-            
+
             let ret = unsafe {
                 raw_syscall(
                     SYSCALL_RESIDENT_MAP,
@@ -397,7 +464,7 @@ use abi::wire::process::SpawnProgramResult;
                     0,
                 )
             };
-            
+
             if ret == 0 {
                 KernelResponse::ResidentMapped { resp }
             } else {
@@ -417,31 +484,9 @@ use abi::wire::process::SpawnProgramResult;
                     0,
                 )
             };
-            
+
             if ret == 0 {
                 KernelResponse::Success { data: None }
-            } else {
-                KernelResponse::ResidentError(err)
-            }
-        }
-        KernelRequest::ThingRest { thing_id, policy } => {
-            let mut resp = RestResp::default();
-            let mut err = ResidentError::default();
-            
-            let ret = unsafe {
-                raw_syscall(
-                    SYSCALL_THING_REST,
-                    thing_id.0,
-                    policy as u64,
-                    &mut resp as *mut _ as u64,
-                    &mut err as *mut _ as u64,
-                    0,
-                    0,
-                )
-            };
-            
-            if ret == 0 {
-                KernelResponse::ThingRested { resp }
             } else {
                 KernelResponse::ResidentError(err)
             }
@@ -455,27 +500,35 @@ use abi::wire::process::SpawnProgramResult;
 pub fn sys_pci_read_config(bus: u8, slot: u8, func: u8, offset: u16, width: u8) -> Option<u32> {
     use abi::syscall_defs::{PciReadConfigArgs, PciReadConfigRet};
     use abi::syscalls::SYSCALL_PCI_READ_CONFIG;
-    
-    let args = PciReadConfigArgs { bus, slot, func, offset, width };
+
+    let args = PciReadConfigArgs {
+        bus,
+        slot,
+        func,
+        offset,
+        width,
+    };
     let mut ret = PciReadConfigRet { value: 0 };
-    
+
     let res = unsafe {
         raw_syscall(
             SYSCALL_PCI_READ_CONFIG as u64,
             &args as *const _ as u64,
             &mut ret as *mut _ as u64,
-            0, 0, 0, 0
+            0,
+            0,
+            0,
+            0,
         )
     };
-    
-    if res == 0 {
-        Some(ret.value)
-    } else {
-        None
-    }
+
+    if res == 0 { Some(ret.value) } else { None }
 }
 
-pub fn sys_dev_open(kind: u32, index: u32) -> Result<abi::syscall_defs::DeviceHandle, abi::syscall_defs::SysError> {
+pub fn sys_dev_open(
+    kind: u32,
+    index: u32,
+) -> Result<abi::syscall_defs::DeviceHandle, abi::syscall_defs::SysError> {
     use abi::syscall_defs::{DevOpenArgs, DevOpenRet, SysError, SysRet};
     use abi::syscalls::SYSCALL_DEV_OPEN;
 
@@ -491,7 +544,10 @@ pub fn sys_dev_open(kind: u32, index: u32) -> Result<abi::syscall_defs::DeviceHa
             SYSCALL_DEV_OPEN,
             &args as *const _ as u64,
             &mut ret as *mut _ as u64,
-            0, 0, 0, 0
+            0,
+            0,
+            0,
+            0,
         )
     };
 
@@ -502,7 +558,10 @@ pub fn sys_dev_open(kind: u32, index: u32) -> Result<abi::syscall_defs::DeviceHa
     }
 }
 
-pub fn sys_dev_read(handle: abi::syscall_defs::DeviceHandle, out: &mut [u8]) -> Result<usize, abi::syscall_defs::SysError> {
+pub fn sys_dev_read(
+    handle: abi::syscall_defs::DeviceHandle,
+    out: &mut [u8],
+) -> Result<usize, abi::syscall_defs::SysError> {
     use abi::syscall_defs::{DevReadArgs, DevReadRet, SysError, SysRet};
     use abi::syscalls::SYSCALL_DEV_READ;
 
@@ -521,7 +580,10 @@ pub fn sys_dev_read(handle: abi::syscall_defs::DeviceHandle, out: &mut [u8]) -> 
             SYSCALL_DEV_READ,
             &args as *const _ as u64,
             &mut ret as *mut _ as u64,
-            0, 0, 0, 0
+            0,
+            0,
+            0,
+            0,
         )
     };
 

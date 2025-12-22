@@ -1,9 +1,9 @@
-use thing_models::PropValue;
 use kernel::console::{ConsoleSink, register_sink};
 use kernel::{graph, graph_kinds, symbols};
 use limine::framebuffer::Framebuffer;
 use spin::Mutex;
 use thing_models::MODE_INDEX_CONSOLE;
+use thing_models::PropValue;
 
 // Will be provided by build.rs:
 include!(concat!(env!("OUT_DIR"), "/unifont.rs"));
@@ -101,7 +101,9 @@ impl Console {
     }
 
     pub fn draw_progress(&mut self, percent: f32) {
-        if self.bpp != 32 { return; }
+        if self.bpp != 32 {
+            return;
+        }
 
         let bar_height = 8;
         let padding_bottom = 10;
@@ -201,8 +203,14 @@ impl Console {
 
         // Fill the bottom cleared area with bg_color (if not black)
         if self.bg_color != 0 {
-             let start_y = (self.height as u32).saturating_sub(GLYPH_HEIGHT as u32);
-             self.fill_rect(0, start_y, self.width as u32, GLYPH_HEIGHT as u32, self.bg_color);
+            let start_y = (self.height as u32).saturating_sub(GLYPH_HEIGHT as u32);
+            self.fill_rect(
+                0,
+                start_y,
+                self.width as u32,
+                GLYPH_HEIGHT as u32,
+                self.bg_color,
+            );
         }
 
         self.cursor_y = self.rows.saturating_sub(1);
@@ -306,7 +314,7 @@ fn console_mode_should_draw() -> bool {
 
     let mut seen_mode = false;
     let mut console_active = false;
-    
+
     // Intern symbols for lookup
     let kind_mode = symbols::intern(graph_kinds::KIND_MODE);
     let prop_mode_idx = symbols::intern(graph_kinds::PROP_MODE_INDEX);

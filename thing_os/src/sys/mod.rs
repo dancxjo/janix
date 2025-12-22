@@ -1,5 +1,3 @@
-
-
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
 #[cfg(target_arch = "x86_64")]
@@ -20,7 +18,7 @@ mod loongarch64;
 #[cfg(target_arch = "loongarch64")]
 use loongarch64::syscall_stub;
 
-pub(crate) unsafe fn raw_syscall(
+pub unsafe fn raw_syscall(
     num: u64,
     arg0: u64,
     arg1: u64,
@@ -29,5 +27,5 @@ pub(crate) unsafe fn raw_syscall(
     arg4: u64,
     arg5: u64,
 ) -> u64 {
-    syscall_stub(num, arg0, arg1, arg2, arg3, arg4, arg5)
+    unsafe { syscall_stub(num, arg0, arg1, arg2, arg3, arg4, arg5) }
 }

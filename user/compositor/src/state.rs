@@ -4,8 +4,7 @@ use thing_os::thing_models::DisplayPresentRequest;
 
 use crate::config::FRAME_INTERVAL_NS;
 use crate::graph::{
-    active_framebuffer, collect_surfaces_for_windows, collect_all_windows,
-    swap_display_buffers,
+    active_framebuffer, collect_all_windows, collect_surfaces_for_windows, swap_display_buffers,
 };
 use crate::layout::{self, StackedWindow};
 use crate::model::BackgroundImage;
@@ -17,8 +16,8 @@ use alloc::format;
 use thing_os::{RawModule, shared_buffer_map};
 
 use crate::model::ConsoleBuffer;
-use thing_os::syscalls::{syscall, sys_symbol_intern};
 use thing_os::println;
+use thing_os::syscalls::{sys_symbol_intern, syscall};
 
 fn draw_console(compositor: &mut Compositor) {
     /*
@@ -33,33 +32,35 @@ fn draw_console(compositor: &mut Compositor) {
         let h = cb.height;
         let fb_w = compositor.fb.info.width;
         let fb_h = compositor.fb.info.height;
-        
+
         let dest_x = (fb_w as i32 - w as i32) / 2;
         let dest_y = (fb_h as i32 - h as i32) / 2;
-        
+
         let dest = compositor.fb.ptr as *mut u32;
         let dest_stride_px = (compositor.fb.info.stride / 4) as i32;
         let src_stride_px = (cb.stride / 4) as i32;
-        
+
         // Simple blit
         for y in 0..h {
             let row_dest_y = dest_y + y as i32;
-            if row_dest_y < 0 || row_dest_y >= fb_h as i32 { continue; }
+            if row_dest_y < 0 || row_dest_y >= fb_h as i32 {
+                continue;
+            }
 
             let row_src = unsafe { (ptr as *const u32).add((y as i32 * src_stride_px) as usize) };
             let row_dest = unsafe { dest.add((row_dest_y * dest_stride_px) as usize) };
-            
+
             unsafe {
                 // Bounds check horizontal
                 let start_x = 0.max(-dest_x);
                 let end_x = (w as i32).min(fb_w as i32 - dest_x);
-                
+
                 if end_x > start_x {
                     let count = (end_x - start_x) as usize;
                     core::ptr::copy_nonoverlapping(
-                        row_src.add(start_x as usize), 
-                        row_dest.add((dest_x + start_x) as usize), 
-                        count
+                        row_src.add(start_x as usize),
+                        row_dest.add((dest_x + start_x) as usize),
+                        count,
                     );
                 }
             }
@@ -126,35 +127,37 @@ fn load_background_image() -> Option<BackgroundImage> {
             }
         }
     }
-    println!(
-        "clouds.bmp: module found but no buffer_id or map failed",
-    );
+    println!("clouds.bmp: module found but no buffer_id or map failed",);
     None
 }
 
 pub fn main() -> ! {
     println!("compositor: starting");
-    
+
     // 1. Critical Base Infrastructure Checks
     // 1. Critical Base Infrastructure Checks
     if !ensure_ui_schemas() {
         println!("compositor: schemas unavailable; sleeping and retrying");
         loop {
             thing_os::time::sleep(Duration::from_millis(250));
-            if ensure_ui_schemas() { break; }
+            if ensure_ui_schemas() {
+                break;
+            }
         }
     }
-    
+
     if !ensure_schema_exists_for::<DisplayPresentRequest>() {
         println!("compositor: FATAL - DisplayPresentRequest schema missing in kernel");
-        loop { thing_os::time::sleep(Duration::from_secs(1)); }
+        loop {
+            thing_os::time::sleep(Duration::from_secs(1));
+        }
     }
 
     let fb = loop {
         match active_framebuffer() {
             Some(fb) => break fb,
             None => {
-                thing_os::time::sleep(Duration::from_millis(50)); 
+                thing_os::time::sleep(Duration::from_millis(50));
             }
         }
     };
@@ -208,15 +211,15 @@ pub fn tick_once(compositor: &mut Compositor) {
         compositor.publish_present_request();
         return;
     }
-    
+
     let place_id = mode.place_id.unwrap_or(ThingId(0));
     */
-    
+
     let windows = collect_all_windows();
     if compositor.frame_counter % 60 == 0 {
-         // let msg = format!("compositor: found {} windows", windows.len());
-         // let leaked = Box::leak(msg.into_boxed_str());
-         // println(sys, leaked);
+        // let msg = format!("compositor: found {} windows", windows.len());
+        // let leaked = Box::leak(msg.into_boxed_str());
+        // println(sys, leaked);
     }
     let surface_map = collect_surfaces_for_windows(&windows);
     update_mapped_surfaces(compositor, &surface_map);
@@ -233,7 +236,7 @@ pub fn tick_once(compositor: &mut Compositor) {
     compositor.sync_active_from_layout(&stacked);
 
     // Track layout changes for damage
-    // Naive: if layout changed at all, full redraw. 
+    // Naive: if layout changed at all, full redraw.
     // Ideally we diff 'prev_layout' vs 'stacked'.
     if prev_layout != stacked {
         compositor.add_full_damage();
@@ -254,20 +257,21 @@ pub fn tick_once(compositor: &mut Compositor) {
     let (widget_rects, widget_map) = run_widget_pass(&stacked);
 
     // Damage tracking: Union all damage rects into one bounding box
-    // This is the "easy" way (scissoring). 
+    // This is the "easy" way (scissoring).
     // A harder way is to pass multiple clip rects (region) to the renderer.
-    
+
     // We must consider BOTH current frame damage and previous frame damage
     // because we are swapping buffers. The back buffer contains state from N-2.
     // We need to clear artifacts from N-1 (previous_damage) and draw N (current damage).
-    let combined_damage_empty = compositor.damage.is_empty() && compositor.previous_damage.is_empty();
+    let combined_damage_empty =
+        compositor.damage.is_empty() && compositor.previous_damage.is_empty();
 
     let clip: Option<crate::widget_layout::Rect> = if combined_damage_empty {
         // No damage, do not render.
         // But we still need to swap buffers if we rendered previously?
         // Actually if nothing changed, we might not need to do anything.
-        // However, strictly speaking, double buffering means we might need to copy 
-        // front to back or re-render. 
+        // However, strictly speaking, double buffering means we might need to copy
+        // front to back or re-render.
         // For simplicity: if no damage, skip render.
         None
     } else {
@@ -277,7 +281,11 @@ pub fn tick_once(compositor: &mut Compositor) {
         let mut max_y = i32::MIN;
 
         // Iterate over BOTH current and previous damage
-        for r in compositor.damage.iter().chain(compositor.previous_damage.iter()) {
+        for r in compositor
+            .damage
+            .iter()
+            .chain(compositor.previous_damage.iter())
+        {
             min_x = min_x.min(r.x);
             min_y = min_y.min(r.y);
             max_x = max_x.max(r.x + r.w as i32);
@@ -294,21 +302,33 @@ pub fn tick_once(compositor: &mut Compositor) {
         max_y = max_y.max(fb_h);
 
         if max_x > min_x && max_y > min_y {
-            Some(crate::widget_layout::Rect::new(min_x, min_y, (max_x - min_x) as u32, (max_y - min_y) as u32))
+            Some(crate::widget_layout::Rect::new(
+                min_x,
+                min_y,
+                (max_x - min_x) as u32,
+                (max_y - min_y) as u32,
+            ))
         } else {
             None
         }
     };
 
     if let Some(clip_rect) = clip {
-        let ops = build_display_list(compositor, &stacked, &windows, &surface_map, &widget_rects, &widget_map);
+        let ops = build_display_list(
+            compositor,
+            &stacked,
+            &windows,
+            &surface_map,
+            &widget_rects,
+            &widget_map,
+        );
         render_display_list(compositor, &ops, Some(clip_rect));
-        
+
         if let Some(active_index) = swap_display_buffers(compositor.fb.display_id) {
             compositor.fb.update_active_index(active_index);
         }
     }
-    
+
     // Rotate damage history
     compositor.previous_damage = compositor.damage.clone();
     compositor.damage.clear();
@@ -320,11 +340,11 @@ fn run_widget_pass(
     stacked: &[StackedWindow],
 ) -> (
     alloc::collections::BTreeMap<ThingId, alloc::vec::Vec<(ThingId, crate::widget_layout::Rect)>>,
-    alloc::collections::BTreeMap<ThingId, crate::widgets::WidgetNode>
+    alloc::collections::BTreeMap<ThingId, crate::widgets::WidgetNode>,
 ) {
     use crate::config::{FRAME_THICKNESS, TITLE_BAR_HEIGHT};
     use crate::widget_layout::Rect;
-    use crate::widgets::{layout_children, widget_children, WidgetNode};
+    use crate::widgets::{WidgetNode, layout_children, widget_children};
     use alloc::collections::BTreeMap;
     use alloc::vec::Vec;
 
@@ -354,7 +374,7 @@ fn run_widget_pass(
         let mut queue: Vec<(ThingId, Rect)> = Vec::new();
 
         let children = widget_children(win.id);
-        
+
         // let msg = format!("compositor: layout window {} children={}", win.id.0, children.len());
         // println!("{}", msg);
 
@@ -380,8 +400,6 @@ fn run_widget_pass(
                 }
             }
         }
-
-
 
         results.insert(win.id, win_rects);
     }

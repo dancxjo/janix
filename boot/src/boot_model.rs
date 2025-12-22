@@ -2,13 +2,13 @@ extern crate alloc;
 
 use crate::FRAMEBUFFER_REQUEST;
 use abi::{PixelFormat, ThingId, syscall_defs::SymbolId};
-use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource, PropValue};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use kernel::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_pool};
 use kernel::model;
-use kernel::{graph, graph_kinds, log, shared_buffer, time, symbols};
+use kernel::{graph, graph_kinds, log, shared_buffer, symbols, time};
 use limine::memory_map::EntryType;
-use limine::request::{HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest, KernelFileRequest};
+use limine::request::{HhdmRequest, KernelFileRequest, MemoryMapRequest, ModuleRequest, MpRequest};
+use thing_models::{AlarmRequest, BootProgram, FontModule, PropValue, Thing, TimeSource};
 // use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource}; // Merged into line 4
 
 #[used]
@@ -33,7 +33,10 @@ static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
 
 // Helper to convert thing_models props (String keys) to Kernel props (SymbolId keys)
 fn intern_props(props: Vec<(String, PropValue)>) -> Vec<(SymbolId, PropValue)> {
-    props.into_iter().map(|(k, v)| (symbols::intern(&k), v)).collect()
+    props
+        .into_iter()
+        .map(|(k, v)| (symbols::intern(&k), v))
+        .collect()
 }
 
 pub fn seed_memory_graph_from_limine() {
@@ -160,13 +163,13 @@ pub fn seed_cpu_graph_from_limine() {
     if let Some(resp) = MP_REQUEST.get_response() {
         let cores = resp.cpus().len() as u64;
         for idx in 0..cores {
-             // model::create_cpu_core likely needs update to intern kind? 
-             // Assuming kernel::model::create_cpu_core handles it internally or we update it.
-             // Checking imports: kernel::model.
-             // kernel/src/model.rs probably needs update too! I missed it in task list.
-             // I'll assume for now I need to fix kernel::model calls if they fail.
-             // But create_cpu_core probably calls create_thing.
-             let _ = model::create_cpu_core(idx);
+            // model::create_cpu_core likely needs update to intern kind?
+            // Assuming kernel::model::create_cpu_core handles it internally or we update it.
+            // Checking imports: kernel::model.
+            // kernel/src/model.rs probably needs update too! I missed it in task list.
+            // I'll assume for now I need to fix kernel::model calls if they fail.
+            // But create_cpu_core probably calls create_thing.
+            let _ = model::create_cpu_core(idx);
         }
         log("Seeded CpuCore Things from Limine SMP");
     } else {
@@ -271,21 +274,14 @@ pub fn seed_display_from_limine() {
         frames,
     ) {
         Ok(buffer_id) => {
-            let Some(display_id) = kernel::model::create_display(
-                "display0",
-                info.width as u64,
-                info.height as u64,
-                0,
-            ) else {
+            let Some(display_id) =
+                kernel::model::create_display("display0", info.width as u64, info.height as u64, 0)
+            else {
                 log("Failed to create Display Thing");
                 return;
             };
 
-            let _ = graph::add_link(
-                display_id,
-                graph_kinds::LINK_DISPLAY_SCANOUT,
-                buffer_id,
-            );
+            let _ = graph::add_link(display_id, graph_kinds::LINK_DISPLAY_SCANOUT, buffer_id);
             log("Seeded display0 and SharedBuffer from Limine framebuffer");
         }
         Err(msg) => log(msg),
@@ -327,8 +323,7 @@ pub fn seed_program_images_from_limine() {
         let base_phys = virt_addr.saturating_sub(hhdm_offset);
         let size = (*module).size() as u64;
         // kernel::model::create_program_image needs update?
-        if kernel::model::create_program_image(&identifier, index as u64, base_phys, size)
-            .is_some()
+        if kernel::model::create_program_image(&identifier, index as u64, base_phys, size).is_some()
         {
             created = created.saturating_add(1);
         } else {
@@ -343,7 +338,6 @@ pub fn seed_program_images_from_limine() {
     }
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
     log(leaked);
-
 }
 
 pub fn seed_font_modules_from_limine() {
@@ -386,14 +380,11 @@ pub fn seed_font_modules_from_limine() {
         let _ = graph::create_thing(kind, kernel_props);
         created = created.saturating_add(1);
     }
-
 }
 
 pub fn seed_boot_programs_from_limine() {
     let kind_boot_profile = symbols::intern(graph_kinds::KIND_BOOT_PROFILE);
-    let Some(profile_id) =
-        graph::next_thing_of_kind_sym(kind_boot_profile, ThingId(0))
-    else {
+    let Some(profile_id) = graph::next_thing_of_kind_sym(kind_boot_profile, ThingId(0)) else {
         return;
     };
 
@@ -406,7 +397,6 @@ pub fn seed_boot_programs_from_limine() {
     let mut created = 0_u64;
     let mut skipped_fonts = 0_u64;
     let mut seen = alloc::collections::BTreeSet::new();
-
 
     let is_debug_profile = get_kernel_arg("profile=")
         .map(|s| s == "debug")
@@ -437,20 +427,20 @@ pub fn seed_boot_programs_from_limine() {
         }
 
         if !seen.insert(identifier.clone()) {
-             continue;
+            continue;
         }
 
         // Removed boot_program_exists check which caused hang
-        
+
         let priority = get_program_priority(&identifier);
-        
+
         let mut respawn_policy = String::from(graph_kinds::RESPAWN_NEVER);
         if identifier == "init" {
-             respawn_policy = String::from(graph_kinds::RESPAWN_ALWAYS);
+            respawn_policy = String::from(graph_kinds::RESPAWN_ALWAYS);
         }
-        
+
         if let Some(policy) = parse_respawn_policy((*module).string()) {
-             respawn_policy = policy;
+            respawn_policy = policy;
         }
 
         let boot_program = BootProgram {
@@ -468,11 +458,7 @@ pub fn seed_boot_programs_from_limine() {
         let kind = symbols::intern(graph_kinds::KIND_BOOT_PROGRAM);
 
         let program = graph::create_thing(kind, kernel_props);
-        let _ = graph::add_link(
-            profile_id, 
-            graph_kinds::LINK_LAUNCHES,
-            program
-        );
+        let _ = graph::add_link(profile_id, graph_kinds::LINK_LAUNCHES, program);
         created = created.saturating_add(1);
         app_id = app_id.saturating_add(1);
     }
@@ -574,7 +560,10 @@ pub fn seed_raw_modules_from_limine() {
             symbols::intern(thing_models::graph_kinds::PROP_BASE_PHYS),
             PropValue::U64(base_phys),
         ));
-        props_vec.push((symbols::intern(thing_models::graph_kinds::PROP_SIZE), PropValue::U64(size)));
+        props_vec.push((
+            symbols::intern(thing_models::graph_kinds::PROP_SIZE),
+            PropValue::U64(size),
+        ));
 
         if let Some(bid) = buffer_id {
             props_vec.push((
@@ -600,15 +589,17 @@ pub fn seed_time_graph() {
     let epoch_secs = time::rtc_epoch_seconds();
     let time_props_arr = TimeSource::create(tick_hz, epoch_secs, 0);
     // Convert array to Vec<(SymbolId, PropValue)>
-    let props: Vec<(SymbolId, PropValue)> = time_props_arr.iter()
+    let props: Vec<(SymbolId, PropValue)> = time_props_arr
+        .iter()
         .map(|(k, v)| (symbols::intern(k), v.clone())) // clone value as we are interning key
         .collect();
-        
+
     let kind = symbols::intern(graph_kinds::KIND_TIME_SOURCE);
     let time_id = graph::create_thing(kind, props);
-    { // Block for time_id usage
+    {
+        // Block for time_id usage
         time::bind_time_source(time_id);
-    // ... scope continues
+        // ... scope continues
         let msg = alloc::format!(
             "TimeSource created id={} tick_hz={} epoch_seconds={}",
             time_id.0,
@@ -620,8 +611,9 @@ pub fn seed_time_graph() {
     }
 
     let boot_alarm_secs = epoch_secs.saturating_add(3);
-    let alarm_props_model = AlarmRequest::create_pending(boot_alarm_secs, 0, ThingId(0), ThingId(0));
-    
+    let alarm_props_model =
+        AlarmRequest::create_pending(boot_alarm_secs, 0, ThingId(0), ThingId(0));
+
     // AlarmRequest::create_pending returns AlarmRequest struct or props?
     // Check thing_models... create_pending is likely a constructor returning AlarmRequest.
     // Wait, TimeSource::create returned array.
@@ -635,7 +627,7 @@ pub fn seed_time_graph() {
     // Let's assume it returns `AlarmRequest` struct.
     // Then I call `to_props`.
     // If it returns props array, I map it.
-    
+
     // Previous code: `let alarm_props = AlarmRequest::create_pending(...)`. `graph::create_thing(..., &alarm_props)`.
     // This implies it returned props array/slice.
     // But `TimeSource::create` return type was explicit in previous file content (Step 147 line 554): `[(PropKey, PropValue); 4]`.
@@ -652,7 +644,7 @@ pub fn seed_time_graph() {
     // `AlarmRequest` (lines 576-708) did NOT show `impl AlarmRequest`. It only showed `struct` and `impl Thing`.
     // So `create_pending` might be missing or in another block I missed?
     // Or I construct `AlarmRequest` struct manually.
-    
+
     let alarm_req = AlarmRequest {
         id: ThingId(0),
         time_source_id: None,
@@ -665,12 +657,12 @@ pub fn seed_time_graph() {
         armed: true,
         fired: false,
     };
-    
+
     let mut props_vec = Vec::new();
     alarm_req.to_props(&mut props_vec);
     let kernel_props = intern_props(props_vec);
     let kind_alarm = symbols::intern(graph_kinds::KIND_ALARM_REQUEST);
-    
+
     let alarm_id = graph::create_thing(kind_alarm, kernel_props);
     {
         let msg = alloc::format!(
@@ -744,7 +736,7 @@ fn last_path_component(input: &str) -> &str {
         .rsplit_once('/')
         .map(|(_, tail)| tail)
         .unwrap_or(input)
-    }
+}
 
 fn parse_identifier_from_cmdline(cmdline: &core::ffi::CStr) -> Option<String> {
     let bytes = cmdline.to_bytes();
@@ -825,13 +817,13 @@ fn parse_respawn_policy(cmdline: &core::ffi::CStr) -> Option<String> {
     if bytes.is_empty() {
         return None;
     }
-    
+
     let line = if let Ok(s) = core::str::from_utf8(bytes) {
-         s 
+        s
     } else {
-         return None;
+        return None;
     };
-    
+
     parse_keyed_argument(line, "respawn=")
 }
 
@@ -839,25 +831,28 @@ fn parse_font_identifier(cmdline: &core::ffi::CStr, path: &core::ffi::CStr) -> O
     let bytes = cmdline.to_bytes();
     if !bytes.is_empty() {
         if let Ok(line) = core::str::from_utf8(bytes) {
-             if let Some(font) = parse_font_argument(line) {
-                 return Some(font);
-             }
+            if let Some(font) = parse_font_argument(line) {
+                return Some(font);
+            }
         }
     }
-    
+
     // Check extension .psf, .font?
     // Simplified: check if path ends with .psf
     // Using simple extension check for now
     if let Ok(p) = path.to_str() {
         if p.ends_with(".psf") || p.ends_with(".PSF") {
-             // derive name?
-             return Some(String::from(last_path_component(p)));
+            // derive name?
+            return Some(String::from(last_path_component(p)));
         }
     }
     None
 }
 
-fn parse_raw_identifier(cmdline: &core::ffi::CStr, _path: &core::ffi::CStr) -> Option<(String, String)> {
+fn parse_raw_identifier(
+    cmdline: &core::ffi::CStr,
+    _path: &core::ffi::CStr,
+) -> Option<(String, String)> {
     let bytes = cmdline.to_bytes();
     if bytes.is_empty() {
         return None;
@@ -890,24 +885,28 @@ fn boot_program_exists(name: &str) -> bool {
     // But graph::next_thing_of_kind now takes SymbolId (kernel/src/graph/mod.rs logic)
     // kernel/src/graph/store.rs has iteration.
     // We can't easily query by NAME prop without iterating.
-    
+
     let kind = symbols::intern(graph_kinds::KIND_BOOT_PROGRAM);
     let mut current = ThingId(0);
     // Loop through all BootPrograms
     while let Some(next) = graph::next_thing_of_kind_sym(kind, current) {
-         // Check name property
-         if let Some(PropValue::Str(s)) = graph::get_prop(next, "name") {
-             if s == name {
-                 return true;
-             }
-         }
-         current = next;
+        // Check name property
+        if let Some(PropValue::Str(s)) = graph::get_prop(next, "name") {
+            if s == name {
+                return true;
+            }
+        }
+        current = next;
     }
     false
 }
 
 fn get_program_priority(name: &str) -> u64 {
-    if name == "compositor" { 10 }
-    else if name == "init" { 100 }
-    else { 0 }
+    if name == "compositor" {
+        10
+    } else if name == "init" {
+        100
+    } else {
+        0
+    }
 }

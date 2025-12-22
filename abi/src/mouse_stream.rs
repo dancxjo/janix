@@ -18,7 +18,7 @@ pub struct MouseEntry {
     pub dy: i16,
     pub buttons: u8,
     pub flags: u8,
-    pub _pad: u16, 
+    pub _pad: u16,
 }
 
 // Static assertion for size (will fail compile if not 8)

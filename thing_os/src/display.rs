@@ -3,18 +3,18 @@ use alloc::string::{String, ToString};
 #[cfg(not(target_os = "none"))]
 use alloc::string::{String, ToString};
 
-use abi::{MapFlags, SharedBufferInfo, ThingId};
 use crate::PropValue;
 use crate::graph_kinds;
-use thing_models::graph_kinds::{
-    LINK_DISPLAY_HAS_FRONT_BUFFER, LINK_DISPLAY_HAS_BACK_BUFFER, PROP_DISPLAY_ACTIVE_BUFFER_INDEX
-};
 use crate::sys::raw_syscall;
+use abi::{MapFlags, SharedBufferInfo, ThingId};
 use alloc::vec::Vec;
+use thing_models::graph_kinds::{
+    LINK_DISPLAY_HAS_BACK_BUFFER, LINK_DISPLAY_HAS_FRONT_BUFFER, PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
+};
 
+use crate::DisplayThing;
 use crate::syscalls::syscall;
 use crate::{link_targets, list_things_by_kind, update_props};
-use crate::DisplayThing;
 
 #[derive(Debug)]
 pub struct SharedBufferMapping {
@@ -86,12 +86,12 @@ fn map_display_buffer(
 }
 
 /// Query metadata for a shared buffer Thing.
-pub fn shared_buffer_info(
-    buffer_id: ThingId,
-) -> Result<SharedBufferInfo, crate::SysError> {
+pub fn shared_buffer_info(buffer_id: ThingId) -> Result<SharedBufferInfo, crate::SysError> {
     match syscall(abi::KernelRequest::GetSharedBufferInfo { buffer_id }) {
         abi::KernelResponse::SharedBufferInfoResponse { info } => Ok(info),
-        abi::KernelResponse::Error { err: _ } => Err(crate::SysError::Kernel("shared_buffer_info failed")),
+        abi::KernelResponse::Error { err: _ } => {
+            Err(crate::SysError::Kernel("shared_buffer_info failed"))
+        }
         _ => Err(crate::SysError::Unexpected),
     }
 }
@@ -104,11 +104,15 @@ pub fn shared_buffer_map(
     match syscall(abi::KernelRequest::MapSharedBuffer { buffer_id, flags }) {
         abi::KernelResponse::SharedBufferMapped { vaddr, size } => {
             if vaddr == 0 {
-                return Err(crate::SysError::Kernel("Kernel returned NULL for shared buffer mapping"));
+                return Err(crate::SysError::Kernel(
+                    "Kernel returned NULL for shared buffer mapping",
+                ));
             }
             Ok((vaddr as *mut u8, size as usize))
-        },
-        abi::KernelResponse::Error { err: _ } => Err(crate::SysError::Kernel("shared_buffer_map failed")),
+        }
+        abi::KernelResponse::Error { err: _ } => {
+            Err(crate::SysError::Kernel("shared_buffer_map failed"))
+        }
         _ => Err(crate::SysError::Unexpected),
     }
 }
@@ -125,7 +129,9 @@ pub fn create_shared_buffer(
         pixel_format,
     }) {
         abi::KernelResponse::SharedBufferCreated { buffer_id } => Ok(buffer_id),
-        abi::KernelResponse::Error { err: _ } => Err(crate::SysError::Kernel("create_shared_buffer failed")),
+        abi::KernelResponse::Error { err: _ } => {
+            Err(crate::SysError::Kernel("create_shared_buffer failed"))
+        }
         _ => Err(crate::SysError::Unexpected),
     }
 }
@@ -148,17 +154,25 @@ pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysE
     let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER);
     let front_map = map_display_buffer(front_id, flags).map_err(|e| {
         use crate::println;
-        println!("open_primary_display: failed to map front buffer {:?}: {:?}", front_id, e);
+        println!(
+            "open_primary_display: failed to map front buffer {:?}: {:?}",
+            front_id, e
+        );
         e
     })?;
     let back_map = map_display_buffer(back_id, flags).map_err(|e| {
         use crate::println;
-        println!("open_primary_display: failed to map back buffer {:?}: {:?}", back_id, e);
+        println!(
+            "open_primary_display: failed to map back buffer {:?}: {:?}",
+            back_id, e
+        );
         e
     })?;
 
     if front_map.ptr.is_null() || back_map.ptr.is_null() {
-         return Err(crate::SysError::Kernel("Primary display buffer mapped to NULL"));
+        return Err(crate::SysError::Kernel(
+            "Primary display buffer mapped to NULL",
+        ));
     }
 
     let mut primary = PrimaryDisplayBuffer {
@@ -174,9 +188,15 @@ pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysE
         ptr: core::ptr::null_mut(),
     };
     use crate::println;
-    println!("DEBUG: open_primary_display: front_ptr={:p} back_ptr={:p}", primary.buffers[0].ptr, primary.buffers[1].ptr);
+    println!(
+        "DEBUG: open_primary_display: front_ptr={:p} back_ptr={:p}",
+        primary.buffers[0].ptr, primary.buffers[1].ptr
+    );
     primary.sync_back_buffer();
-    println!("DEBUG: open_primary_display: synced ptr={:p} idx={}", primary.ptr, primary.active_buffer_index);
+    println!(
+        "DEBUG: open_primary_display: synced ptr={:p} idx={}",
+        primary.ptr, primary.active_buffer_index
+    );
     Ok(primary)
 }
 

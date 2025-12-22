@@ -1,12 +1,18 @@
 use core::arch::global_asm;
-use kernel::time;
-use kernel::sched;
 use core::sync::atomic::Ordering;
+use kernel::sched;
+use kernel::time;
 
 global_asm!(include_str!("trap.S"));
 
 #[unsafe(no_mangle)]
-pub extern "C" fn trap_handler(tf: &mut TrapFrame, scause: u64, stval: u64, sepc: u64, sstatus: u64) {
+pub extern "C" fn trap_handler(
+    tf: &mut TrapFrame,
+    scause: u64,
+    stval: u64,
+    sepc: u64,
+    sstatus: u64,
+) {
     let is_interrupt = (scause & (1 << 63)) != 0;
     let code = scause & !(1 << 63);
 

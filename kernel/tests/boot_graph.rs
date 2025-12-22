@@ -1,5 +1,5 @@
-use thing_models::PropValue;
 use kernel::sched_types::ThreadState;
+use thing_models::PropValue;
 
 #[test]
 #[ignore]
@@ -92,18 +92,28 @@ fn test_boot_graph_has_thread() {
                 let mut has_last_started = false;
 
                 for (key, value) in &thing.props {
-                    if *key == sym_tid { has_tid = true; }
-                    else if *key == sym_state {
+                    if *key == sym_tid {
+                        has_tid = true;
+                    } else if *key == sym_state {
                         if let PropValue::Str(state) = value {
                             state_val = Some(state.clone());
                         }
+                    } else if *key == sym_priority {
+                        has_priority = true;
+                    } else if *key == sym_runtime_ns {
+                        has_runtime = true;
+                    } else if *key == sym_last_started_ns {
+                        has_last_started = true;
                     }
-                    else if *key == sym_priority { has_priority = true; }
-                    else if *key == sym_runtime_ns { has_runtime = true; }
-                    else if *key == sym_last_started_ns { has_last_started = true; }
                 }
 
-                return Some((has_tid, state_val, has_priority, has_runtime, has_last_started));
+                return Some((
+                    has_tid,
+                    state_val,
+                    has_priority,
+                    has_runtime,
+                    has_last_started,
+                ));
             }
             None
         });
@@ -222,9 +232,13 @@ fn test_boot_graph_has_frame_pool() {
                 let mut has_frame_size = false;
 
                 for (key, _value) in &thing.props {
-                    if *key == sym_start { has_start = true; }
-                    else if *key == sym_end { has_end = true; }
-                    else if *key == sym_frame_size { has_frame_size = true; }
+                    if *key == sym_start {
+                        has_start = true;
+                    } else if *key == sym_end {
+                        has_end = true;
+                    } else if *key == sym_frame_size {
+                        has_frame_size = true;
+                    }
                 }
                 return Some((has_start, has_end, has_frame_size));
             }
@@ -259,9 +273,9 @@ fn test_boot_graph_has_phys_frames() {
 
     for i in 0..20 {
         let thing_id = abi::ThingId(i);
-        if let Some(is_frame) = kernel::graph::with_thing(thing_id, |thing| {
-            thing.kind == kind_phys_frame
-        }) {
+        if let Some(is_frame) =
+            kernel::graph::with_thing(thing_id, |thing| thing.kind == kind_phys_frame)
+        {
             if is_frame {
                 frame_count += 1;
             }
@@ -298,9 +312,13 @@ fn test_boot_graph_has_virt_regions() {
                 let mut has_flags = false;
 
                 for (key, _value) in &thing.props {
-                    if *key == sym_base { has_base = true; }
-                    else if *key == sym_len { has_len = true; }
-                    else if *key == sym_flags { has_flags = true; }
+                    if *key == sym_base {
+                        has_base = true;
+                    } else if *key == sym_len {
+                        has_len = true;
+                    } else if *key == sym_flags {
+                        has_flags = true;
+                    }
                 }
                 return Some((has_base, has_len, has_flags));
             }

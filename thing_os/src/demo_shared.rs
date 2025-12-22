@@ -1,8 +1,8 @@
-use alloc::string::ToString;
 use crate::{
     PropKey, PropType, PropValue, Thing, ThingId, create_thing, find_thing, load_thing,
     register_schema_for, update_props,
 };
+use alloc::string::ToString;
 
 #[cfg(target_os = "none")]
 use alloc::vec::Vec;
@@ -29,7 +29,10 @@ impl Thing for DemoState {
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("name".to_string(), PropValue::U64(self.name)));
         out.push(("hello_ticks".to_string(), PropValue::U64(self.hello_ticks)));
-        out.push(("heartbeat_ticks".to_string(), PropValue::U64(self.heartbeat_ticks)));
+        out.push((
+            "heartbeat_ticks".to_string(),
+            PropValue::U64(self.heartbeat_ticks),
+        ));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
@@ -105,12 +108,18 @@ impl DemoState {
     }
 
     pub fn update_hello_ticks(&self, ticks: u64) -> bool {
-        update_props(self.id, &[("hello_ticks".to_string(), PropValue::U64(ticks))])
+        update_props(
+            self.id,
+            &[("hello_ticks".to_string(), PropValue::U64(ticks))],
+        )
     }
 
     /// Update the stored heartbeat tick count.
     pub fn update_heartbeat_ticks(&self, ticks: u64) -> bool {
-        update_props(self.id, &[("heartbeat_ticks".to_string(), PropValue::U64(ticks))])
+        update_props(
+            self.id,
+            &[("heartbeat_ticks".to_string(), PropValue::U64(ticks))],
+        )
     }
 
     /// Read the current hello/heartbeat tick counters from kernel state.

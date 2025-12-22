@@ -1,7 +1,7 @@
 extern crate alloc;
 
-use crate::{Arch, CurrentArch, UserEntryRegs};
 use crate::cpu;
+use crate::{Arch, CurrentArch, UserEntryRegs};
 use kernel::sched::SCHEDULER;
 
 // Re-export stack functions from current arch
@@ -15,7 +15,7 @@ pub extern "C" fn user_thread_main(app_id: u64) -> ! {
     unsafe {
         // We use the syscall instruction directly or via an ABI helper if available in arch?
         // But arch IS where the syscall instruction wrapper usually lives.
-        // Wait, arch::user::user_thread_main runs in user mode. 
+        // Wait, arch::user::user_thread_main runs in user mode.
         // It needs to trap to kernel.
         // The previous code used UserlandSys::new().exit_thread().
         // UserlandSys called runtime::sys::syscall.
@@ -71,17 +71,23 @@ pub fn schedule_next() -> ! {
                 // );
                 // kernel::log(Box::leak(msg.into_boxed_str()));
             }
-            
+
             if thread.is_idle {
                 // Idle thread "running" means waiting for interrupt
                 crate::cpu::enable_interrupts();
                 crate::cpu::wait_for_interrupt();
             } else {
                 CurrentArch::activate_user_address_space(thread.address_space_token);
-                
+
                 if thread.started {
                     if thread.tid.0 > 3 {
-                        kernel::println!("schedule_next: resuming tid={} RIP={:#x} CS={:#x} RSP={:#x}", thread.tid.0, thread.context[15], thread.context[16], thread.context[18]);
+                        kernel::println!(
+                            "schedule_next: resuming tid={} RIP={:#x} CS={:#x} RSP={:#x}",
+                            thread.tid.0,
+                            thread.context[15],
+                            thread.context[16],
+                            thread.context[18]
+                        );
                     }
                     CurrentArch::resume_user_mode(&thread.context, &thread.fpu_context);
                 } else {
@@ -97,8 +103,8 @@ pub fn schedule_next() -> ! {
             }
         } else {
             // Should not happen if idle thread exists, but safe fallback
-             crate::cpu::enable_interrupts();
-             crate::cpu::wait_for_interrupt();
+            crate::cpu::enable_interrupts();
+            crate::cpu::wait_for_interrupt();
         }
     }
 }

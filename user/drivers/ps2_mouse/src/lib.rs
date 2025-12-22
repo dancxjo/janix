@@ -4,9 +4,7 @@ extern crate alloc;
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use thing_models::{
-    IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth,
-};
+use thing_models::{IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth};
 use thing_os::prelude::*;
 
 const STATUS_OFFSET: u16 = 4;
@@ -16,55 +14,75 @@ const MOUSE_RING_CAPACITY: usize = 128;
 const ENABLE_POLLING_MODE: bool = true;
 
 use abi::syscall_defs::{
-    DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr, UserSlice,
+    DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr,
+    UserSlice,
 };
 
 // use abi::syscalls::{SYSCALL_DEV_OPEN, SYSCALL_DEV_READ}; // Removed
 
-use thing_os::resident::{resident_create_and_map};
 use thing_os::resident::mouse::{MouseEntry, MouseStreamMapped};
-use thing_os::{update_props, PropKey, PropValue};
-
+use thing_os::resident::resident_create_and_map;
+use thing_os::{PropKey, PropValue, update_props};
 
 use thing_os::syscalls::{sys_dev_open as syscall_dev_open, sys_dev_read as syscall_dev_read};
 
 // Locals removed.
 
-
 pub fn driver_main() -> ! {
     println!("ps2_mouse_driver: starting (resident stream)");
-    
+
     // 1. Allocate & Map Resident Buffer
-    let stream_resident = match unsafe { resident_create_and_map::<()>("MouseStream", 65536, abi::resident::ResidentMapPerms(abi::resident::ResidentMapPerms::READ.0 | abi::resident::ResidentMapPerms::WRITE.0)) } {
+    let stream_resident = match unsafe {
+        resident_create_and_map::<()>(
+            "MouseStream",
+            65536,
+            abi::resident::ResidentMapPerms(
+                abi::resident::ResidentMapPerms::READ.0 | abi::resident::ResidentMapPerms::WRITE.0,
+            ),
+        )
+    } {
         Ok(r) => r,
         Err(e) => {
             println!("ps2_mouse_driver: resident create failed code={:?}", e.code);
-            loop { sleep(Duration::from_nanos(1_000_000_000)); }
+            loop {
+                sleep(Duration::from_nanos(1_000_000_000));
+            }
         }
     };
-    
+
     let stream_id = stream_resident.id;
-    println!("mouse: allocated MouseStream id={:?} addr={:?}", stream_id, stream_resident.ptr);
+    println!(
+        "mouse: allocated MouseStream id={:?} addr={:?}",
+        stream_id, stream_resident.ptr
+    );
 
     let mut stream = MouseStreamMapped::new(stream_resident);
     stream.init(MOUSE_RING_CAPACITY as u32);
-    
+
     // Advertise capabilities via props
-    let _ = update_props(stream_id, &[
-        ("head".to_string(), PropValue::U64(0)),
-        ("capacity".to_string(), PropValue::U64(MOUSE_RING_CAPACITY as u64))
-    ]);
-    
+    let _ = update_props(
+        stream_id,
+        &[
+            ("head".to_string(), PropValue::U64(0)),
+            (
+                "capacity".to_string(),
+                PropValue::U64(MOUSE_RING_CAPACITY as u64),
+            ),
+        ],
+    );
+
     let region = wait_for_region();
     println!("ps2_mouse_driver: found i8042 IO region; initializing mouse port");
 
     let mut decoder = MouseDecoder::new(region.id, stream);
-    
+
     let handle = match unsafe { syscall_dev_open(2, 0) } {
         Ok(h) => h,
         Err(e) => {
             println!("ps2_mouse_driver: failed to open device: code={}", e.code);
-            loop { sleep(Duration::from_nanos(1_000_000_000)); }
+            loop {
+                sleep(Duration::from_nanos(1_000_000_000));
+            }
         }
     };
     println!("ps2_mouse_driver: device opened");
@@ -82,8 +100,7 @@ pub fn driver_main() -> ! {
     }
 
     let mut buffer = [0u8; 16];
-    let mut last_fake = 0;  // Should ideally remove unused var, but minimizing diffs is safer
-
+    let mut last_fake = 0; // Should ideally remove unused var, but minimizing diffs is safer
 
     loop {
         if ENABLE_POLLING_MODE {
@@ -103,14 +120,14 @@ pub fn driver_main() -> ! {
         } else {
             // IRQ / Blocking Mode
             match unsafe { syscall_dev_read(handle, &mut buffer) } {
-                 Ok(count) => {
+                Ok(count) => {
                     if count > 0 {
                         for i in 0..count {
-                             decoder.process_byte(buffer[i]);
+                            decoder.process_byte(buffer[i]);
                         }
                     }
-                 }
-                 Err(_) => {}
+                }
+                Err(_) => {}
             }
         }
     }
@@ -131,7 +148,7 @@ fn init_mouse(accessor: &mut IoPortAccessor) -> bool {
     // This is because the PS/2 Keyboard Driver might be racing to read from the same IO port (0x60),
     // stealing the ACK byte. Since we cannot easily coordinate with the keyboard driver from here,
     // we assume the command succeeds and proceed. This allows the mouse to work even if ACKs are lost.
-    
+
     let _ = accessor.command(0xA7);
     accessor.flush_output();
 
@@ -140,7 +157,7 @@ fn init_mouse(accessor: &mut IoPortAccessor) -> bool {
 
     let _ = accessor.mouse_command(0xF6);
     accessor.flush_output();
-    
+
     // Final enable
     let _ = accessor.mouse_command(0xF4);
     true
@@ -205,10 +222,8 @@ impl IoPortAccessor {
         for _ in 0..200 {
             match unsafe { syscall_dev_read(handle, &mut buffer) } {
                 Ok(1) => return Some(buffer[0]),
-                Ok(_) => {
-                }
-                Err(_) => {
-                }
+                Ok(_) => {}
+                Err(_) => {}
             }
         }
         None
@@ -217,8 +232,10 @@ impl IoPortAccessor {
     fn flush_output(&mut self) {
         for _ in 0..1000 {
             if let Some(status) = self.read_status() {
-                 if status & 0x01 == 0 { break; }
-                 let _ = self.read_data();
+                if status & 0x01 == 0 {
+                    break;
+                }
+                let _ = self.read_data();
             } else {
                 break;
             }
@@ -243,13 +260,8 @@ impl IoPortAccessor {
     }
 
     fn write_u8(&mut self, offset: u16, value: u8) -> bool {
-        self.submit_op(
-            SlotKind::Write,
-            offset,
-            IoDirection::Write,
-            value as u32,
-        )
-        .is_some()
+        self.submit_op(SlotKind::Write, offset, IoDirection::Write, value as u32)
+            .is_some()
     }
 
     fn submit_op(
@@ -265,10 +277,19 @@ impl IoPortAccessor {
             if let Some(id) = *slot {
                 let props = [
                     ("offset".to_string(), PropValue::U64(offset as u64)),
-                    ("direction".to_string(), PropValue::Str(direction.as_str().into())),
-                    ("width".to_string(), PropValue::Str(IoWidth::U8.as_str().into())),
+                    (
+                        "direction".to_string(),
+                        PropValue::Str(direction.as_str().into()),
+                    ),
+                    (
+                        "width".to_string(),
+                        PropValue::Str(IoWidth::U8.as_str().into()),
+                    ),
                     ("value".to_string(), PropValue::U64(value as u64)),
-                    ("status".to_string(), PropValue::Str(IoStatus::Pending.as_str().into())),
+                    (
+                        "status".to_string(),
+                        PropValue::Str(IoStatus::Pending.as_str().into()),
+                    ),
                 ];
                 if !update_props(id, &props) {
                     return None;
@@ -354,9 +375,9 @@ impl MouseDecoder {
         let dx = i16::from(self.packet[1] as i8);
         let dy = i16::from(self.packet[2] as i8);
         let buttons = status & 0x07;
-        
+
         let timestamp = Instant::now().t_ns;
-        
+
         // Append to ring
         let entry = MouseEntry {
             buttons,
@@ -366,6 +387,9 @@ impl MouseDecoder {
             _pad: 0, // Should be something but 0 is fine
         };
         self.stream.append(entry);
-        println!("ps2_mouse: appended event dx={} dy={} btn={}", dx, dy, buttons);
+        println!(
+            "ps2_mouse: appended event dx={} dy={} btn={}",
+            dx, dy, buttons
+        );
     }
 }

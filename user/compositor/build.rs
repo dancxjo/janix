@@ -9,32 +9,38 @@ const CURSOR_SOURCES: &[(&str, &str, i32, i32)] = &[
     (
         "ARROW",
         "https://raw.githubusercontent.com/catppuccin/cursors/main/src/svgs/default.svg",
-        0, 0
+        0,
+        0,
     ),
     (
         "MOVE",
         "https://raw.githubusercontent.com/catppuccin/cursors/main/src/svgs/all-scroll.svg",
-        64, 64
+        64,
+        64,
     ),
     (
         "RESIZE_NS",
         "https://raw.githubusercontent.com/catppuccin/cursors/main/src/svgs/size_ver.svg",
-        64, 64
+        64,
+        64,
     ),
     (
         "RESIZE_EW",
         "https://raw.githubusercontent.com/catppuccin/cursors/main/src/svgs/size_hor.svg",
-        64, 64
+        64,
+        64,
     ),
     (
         "RESIZE_NWSE",
         "https://raw.githubusercontent.com/catppuccin/cursors/main/src/svgs/size_bdiag.svg",
-        64, 64
+        64,
+        64,
     ),
     (
         "RESIZE_NESW",
         "https://raw.githubusercontent.com/catppuccin/cursors/main/src/svgs/size_fdiag.svg",
-        64, 64
+        64,
+        64,
     ),
 ];
 
@@ -100,32 +106,39 @@ fn main() {
                 .unwrap_or_else(|e| panic!("failed to download {name} from {url}: {e}"));
         }
 
-        let (width, height, rgba_data) = render_svg(&dest)
-             .unwrap_or_else(|e| panic!("failed to render cursor {name}: {e}"));
+        let (width, height, rgba_data) =
+            render_svg(&dest).unwrap_or_else(|e| panic!("failed to render cursor {name}: {e}"));
 
         // Write the data to a binary file to include it cleanly
         let bin_filename = format!("{}_data.bin", name.to_lowercase());
         let bin_path = out_dir.join(&bin_filename);
         let mut bin_file = File::create(&bin_path).expect("failed to create cursor bin file");
-        
+
         // Write raw u32s (LE)
         for pixel in rgba_data {
-            bin_file.write_all(&pixel.to_le_bytes()).expect("failed to write pixel");
+            bin_file
+                .write_all(&pixel.to_le_bytes())
+                .expect("failed to write pixel");
         }
 
         let mod_name = name.to_lowercase();
-        let mod_name = if mod_name == "move" { "r#move".to_string() } else { mod_name };
-
-        writeln!(
-            cursor_file,
-            "pub mod {} {{",
+        let mod_name = if mod_name == "move" {
+            "r#move".to_string()
+        } else {
             mod_name
-        ).unwrap();
+        };
+
+        writeln!(cursor_file, "pub mod {} {{", mod_name).unwrap();
         writeln!(cursor_file, "    pub const WIDTH: u32 = {};", width).unwrap();
         writeln!(cursor_file, "    pub const HEIGHT: u32 = {};", height).unwrap();
         writeln!(cursor_file, "    pub const HOTSPOT_X: i32 = {};", hot_x).unwrap();
         writeln!(cursor_file, "    pub const HOTSPOT_Y: i32 = {};", hot_y).unwrap();
-        writeln!(cursor_file, "    pub static DATA: &[u8] = include_bytes!({:?});", bin_path).unwrap();
+        writeln!(
+            cursor_file,
+            "    pub static DATA: &[u8] = include_bytes!({:?});",
+            bin_path
+        )
+        .unwrap();
         writeln!(cursor_file, "}}").unwrap();
     }
 }
@@ -161,25 +174,27 @@ fn workspace_root() -> PathBuf {
         .expect("failed to derive workspace root from manifest dir")
 }
 
-
-
 fn render_svg(path: &Path) -> io::Result<(u32, u32, Vec<u32>)> {
     let mut svg_data = fs::read_to_string(path)?;
-    
+
     // Replace placeholder colors with "Cloud" theme
-    // #00FF00 -> Border (Dark Charocal/Black)
-    // #FF0000 -> Fill (Cloud Color from clouds.bmp: #D2DCE0)
-    svg_data = svg_data.replace("#00FF00", "#1e1e2e"); // Catppuccin Base
-    svg_data = svg_data.replace("#FF0000", "#D2DCE0"); // Cloud color
-    
+    // #00FF00 -> Border (Dark Charcoal/Black)
+    // #FF0000 -> Fill (Cloud Color from clouds.bmp: #4C89AA)
+    svg_data = svg_data.replace("#00FF00", "#0f1c25"); // Deep navy outline to match sky theme
+    svg_data = svg_data.replace("#FF0000", "#4C89AA"); // Dominant sky blue
+
     // Also handle shorthand if present (though checking default.svg showed full hex)
     // Just in case:
-    svg_data = svg_data.replace("fill:#0f0", "fill:#1e1e2e");
-    svg_data = svg_data.replace("fill:#f00", "fill:#D2DCE0");
+    svg_data = svg_data.replace("fill:#0f0", "fill:#0f1c25");
+    svg_data = svg_data.replace("fill:#f00", "fill:#4C89AA");
 
     let opt = resvg::usvg::Options::default();
-    let rtree = resvg::usvg::Tree::from_str(&svg_data, &opt)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("usvg parse error: {}", e)))?;
+    let rtree = resvg::usvg::Tree::from_str(&svg_data, &opt).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("usvg parse error: {}", e),
+        )
+    })?;
 
     let width = 128; // Target width
     let height = 128; // Target height
@@ -191,9 +206,9 @@ fn render_svg(path: &Path) -> io::Result<(u32, u32, Vec<u32>)> {
     let sx = width as f32 / size.width() as f32;
     let sy = height as f32 / size.height() as f32;
     let scale = sx.min(sy); // Keep aspect ratio
-    
+
     let fit_transform = tiny_skia::Transform::from_scale(scale, scale);
-    
+
     resvg::render(&rtree, fit_transform, &mut pixmap.as_mut());
 
     // Convert to ARGB u32 for compositor
@@ -201,11 +216,11 @@ fn render_svg(path: &Path) -> io::Result<(u32, u32, Vec<u32>)> {
         .pixels()
         .iter()
         .map(|p| {
-             let (r, g, b, a) = (p.red(), p.green(), p.blue(), p.alpha());
-             // tiny-skia uses premultiplied alpha already
-             // We need to pack as 0xAARRGGBB
-             
-             ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+            let (r, g, b, a) = (p.red(), p.green(), p.blue(), p.alpha());
+            // tiny-skia uses premultiplied alpha already
+            // We need to pack as 0xAARRGGBB
+
+            ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
         })
         .collect();
 

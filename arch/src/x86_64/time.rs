@@ -1,7 +1,7 @@
 use core::arch::asm;
-use kernel::time::HardwareTimer;
-use kernel::sched::TICKS;
 use core::sync::atomic::{AtomicU64, Ordering};
+use kernel::sched::TICKS;
+use kernel::time::HardwareTimer;
 
 // Default to 2GHz if calibration fails or before calibration
 static TSC_FREQUENCY: AtomicU64 = AtomicU64::new(2_000_000_000);
@@ -20,16 +20,16 @@ impl HardwareTimer for X86HardwareTimer {
         let mut loop_limit = 10_000_000;
         let mut tick_started = false;
         while loop_limit > 0 {
-             if TICKS.load(Ordering::Relaxed) != start_tick {
-                 tick_started = true;
-                 break;
-             }
-             core::hint::spin_loop();
-             loop_limit -= 1;
+            if TICKS.load(Ordering::Relaxed) != start_tick {
+                tick_started = true;
+                break;
+            }
+            core::hint::spin_loop();
+            loop_limit -= 1;
         }
 
         if !tick_started {
-             kernel::println!("TSC Calibration failed: TICKS not incrementing. Using default 2GHz.");
+            kernel::println!("TSC Calibration failed: TICKS not incrementing. Using default 2GHz.");
         } else {
             let tsc_start = rdtsc();
             let start_tick_aligned = TICKS.load(Ordering::Relaxed);
@@ -41,7 +41,7 @@ impl HardwareTimer for X86HardwareTimer {
             // No strict loop limit here as 50ms takes time.
             // We rely on interrupts working (verified by first loop).
             while TICKS.load(Ordering::Relaxed) < target_tick {
-                 core::hint::spin_loop();
+                core::hint::spin_loop();
             }
 
             let tsc_end = rdtsc();
@@ -71,7 +71,9 @@ impl HardwareTimer for X86HardwareTimer {
 
     fn set_deadline_ns(&self, deadline_ns: u64) {
         let freq = TSC_FREQUENCY.load(Ordering::Relaxed);
-        if freq == 0 { return; }
+        if freq == 0 {
+            return;
+        }
 
         // deadline_tsc = deadline_ns * freq / 1_000_000_000
         let deadline_tsc = (deadline_ns as u128 * freq as u128) / 1_000_000_000;

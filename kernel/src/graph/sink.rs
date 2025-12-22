@@ -1,4 +1,4 @@
-use crate::graph::ops::{GraphOp, GraphEvent};
+use crate::graph::ops::{GraphEvent, GraphOp};
 use abi::{ThingId, syscall_defs::SymbolId};
 use thing_models::{PropKey, PropValue};
 

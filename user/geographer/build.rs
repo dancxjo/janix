@@ -6,7 +6,7 @@ use std::path::Path;
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     // Path to things-os/fonts relative to user/geographer
-    let fonts_dir = Path::new(&manifest_dir).join("../../assets/fonts"); 
+    let fonts_dir = Path::new(&manifest_dir).join("../../assets/fonts");
     // Wait, previous build.rs used ../../fonts. Walkthrough said fonts moved to assets/fonts.
     // Let's verify path.
     let unifont_hex = fonts_dir.join("unifont.hex");
@@ -15,7 +15,10 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     if !unifont_hex.exists() {
-        println!("cargo:warning=Unifont not found at {:?}. Font rendering will not work.", unifont_hex);
+        println!(
+            "cargo:warning=Unifont not found at {:?}. Font rendering will not work.",
+            unifont_hex
+        );
         generate_dummy_font();
     } else {
         generate_font_source(&unifont_hex);
@@ -23,10 +26,10 @@ fn main() {
 }
 
 fn generate_dummy_font() {
-     let out_dir = env::var("OUT_DIR").unwrap();
+    let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("unifont.rs");
     let mut out_file = fs::File::create(&dest_path).expect("Failed to create unifont.rs");
-    
+
     writeln!(out_file, "pub const GLYPH_WIDTH: u32 = 8;").unwrap();
     writeln!(out_file, "pub const GLYPH_HEIGHT: u32 = 16;").unwrap();
     writeln!(out_file, "pub static GLYPHS: [[u8; 16]; 0] = [];").unwrap();
@@ -38,7 +41,8 @@ pub fn lookup_glyph(_ch: char) -> Option<&'static [u8; GLYPH_HEIGHT as usize]> {
     None
 }}
 "#
-    ).unwrap();
+    )
+    .unwrap();
 }
 
 fn generate_font_source(unifont_path: &Path) {
@@ -49,7 +53,7 @@ fn generate_font_source(unifont_path: &Path) {
             return;
         }
     };
-    
+
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("unifont.rs");
     let mut out_file = fs::File::create(&dest_path).expect("Failed to create unifont.rs");

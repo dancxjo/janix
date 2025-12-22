@@ -4,22 +4,20 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+pub mod keyboard_stream;
+pub mod mouse_stream;
 pub mod resident;
 pub mod resident_layout;
-pub mod mouse_stream;
-pub mod keyboard_stream;
 pub mod syscall_defs;
 
 pub mod syscalls;
 pub mod wire;
 
-
-
-pub use crate::wire::memory::{MemorySummary, SchedulerSummary, FrameInfo, MapFlags};
 pub use crate::wire::buffers::{PixelFormat, SharedBufferInfo};
+pub use crate::wire::memory::{FrameInfo, MapFlags, MemorySummary, SchedulerSummary};
 
 use crate::wire::common::UserSlice;
-use crate::wire::graph::{WireProp, WireSchemaProp, BatchUpdateEntry as WireBatchEntry};
+use crate::wire::graph::{BatchUpdateEntry as WireBatchEntry, WireProp, WireSchemaProp};
 
 /// Process identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -109,8 +107,6 @@ pub enum SchemaRegistryOutcome {
 
 pub mod requests;
 pub use requests::{KernelRequest, KernelResponse};
-
-
 
 #[cfg(test)]
 mod tests {

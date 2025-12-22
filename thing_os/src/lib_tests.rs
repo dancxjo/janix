@@ -3,7 +3,10 @@ use alloc::vec::Vec;
 
 #[test]
 fn cpu_core_thing_props() {
-    let cpu = CpuCoreThing { id: ThingId(1), index: 0 };
+    let cpu = CpuCoreThing {
+        id: ThingId(1),
+        index: 0,
+    };
     let mut props = Vec::new();
     cpu.to_props(&mut props);
 
@@ -11,7 +14,10 @@ fn cpu_core_thing_props() {
     assert_eq!(props[0].0, "index");
     assert_eq!(props[0].1, PropValue::U64(0));
 
-    let cpu2 = CpuCoreThing::from_props(ThingId(2), &[Some(("index".to_string(), PropValue::U64(5)))]);
+    let cpu2 = CpuCoreThing::from_props(
+        ThingId(2),
+        &[Some(("index".to_string(), PropValue::U64(5)))],
+    );
     assert_eq!(cpu2.id, ThingId(2));
     assert_eq!(cpu2.index, 5);
 }
@@ -23,7 +29,7 @@ fn display_thing_props() {
         name: "Screen".to_string(),
         width: 1920,
         height: 1080,
-        stride: 1920*4,
+        stride: 1920 * 4,
         pixel_format: Some("Bgra8888".to_string()),
         active_buffer_index: 1,
     };
@@ -48,12 +54,10 @@ fn test_create_process() {
     let expected_pid = ThingId(123);
     let expected_tid = ThingId(456);
 
-    mock::set_responses(vec![
-        KernelResponse::ProgramSpawned {
-            process_id: expected_pid,
-            thread_id: expected_tid,
-        }
-    ]);
+    mock::set_responses(vec![KernelResponse::ProgramSpawned {
+        process_id: expected_pid,
+        thread_id: expected_tid,
+    }]);
 
     // Call function
     let boot_prog = ThingId(1);

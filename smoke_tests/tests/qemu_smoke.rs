@@ -196,7 +196,10 @@ fn run_qemu_and_capture(cfg: &QemuConfig<'_>) -> String {
     let log_path = abs_log_dir.join(format!("{}.log", cfg.name));
 
     if let Err(e) = std::fs::write(&log_path, &full_log) {
-        eprintln!("[{}] Failed to write log to {:?}: {}", cfg.name, log_path, e);
+        eprintln!(
+            "[{}] Failed to write log to {:?}: {}",
+            cfg.name, log_path, e
+        );
     } else {
         eprintln!("[{}] Log written to {:?}", cfg.name, log_path);
     }
@@ -210,7 +213,14 @@ fn assert_kernel_and_compositor_started(cfg: &QemuConfig<'_>) {
         return;
     }
 
-    let snippet: String = log.chars().rev().take(6000).collect::<String>().chars().rev().collect();
+    let snippet: String = log
+        .chars()
+        .rev()
+        .take(6000)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
 
     // 1. Check for panics
     assert!(

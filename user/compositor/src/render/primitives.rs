@@ -99,6 +99,7 @@ pub fn draw_tiled_image(
     offset_x: i32,
     offset_y: i32,
     clip: Option<(i32, i32, i32, i32)>,
+    force_opaque: bool,
 ) {
     if img_w <= 0 || img_h <= 0 {
         return;
@@ -165,9 +166,12 @@ pub fn draw_tiled_image(
                     let b = *pixel_ptr as u32;
                     let g = *pixel_ptr.add(1) as u32;
                     let r = *pixel_ptr.add(2) as u32;
-                    // Force opaque alpha for 32bpp images because many BMPs have 0 in the alpha byte
-                    // but are intended to be opaque. If we respect alpha=0, we get transparency (black).
-                    0xFF000000 | (r << 16) | (g << 8) | b
+                    let a = if force_opaque {
+                        0xFF
+                    } else {
+                        *pixel_ptr.add(3) as u32
+                    };
+                    (a << 24) | (r << 16) | (g << 8) | b
                 } else {
                     0 // Unsupported
                 };
@@ -284,6 +288,7 @@ mod tests {
             0,
             0,
             None,
+            true, // force_opaque
         );
 
         // Expect Alpha to be forced to 0xFF.

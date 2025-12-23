@@ -157,6 +157,7 @@ fn prepare_background_canvas(compositor: &mut Compositor) {
         compositor.background_offset.0,
         compositor.background_offset.1,
         None,
+        true, // force_opaque
     );
 
     compositor.background_canvas = Some(BackgroundCanvas {

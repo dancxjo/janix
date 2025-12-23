@@ -34,6 +34,7 @@ pub enum DrawOp {
         bpp: u16,
         offset_x: i32,
         offset_y: i32,
+        force_opaque: bool,
     },
     Rect {
         x: i32,
@@ -111,6 +112,7 @@ pub fn build_display_list(
             bpp: bg.bpp,
             offset_x: comp.background_offset.0,
             offset_y: comp.background_offset.1,
+            force_opaque: true,
         });
     } else {
         ops.push(DrawOp::Clear { color: CLEAR_COLOR });
@@ -257,6 +259,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 bpp,
                 offset_x,
                 offset_y,
+                force_opaque,
             } => primitives::draw_tiled_image(
                 buffer,
                 stride,
@@ -269,6 +272,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 *offset_x,
                 *offset_y,
                 clip_tuple,
+                *force_opaque,
             ),
             DrawOp::Rect { x, y, w, h, color } => primitives::fill_rect(
                 buffer, stride, width, height, *x, *y, *w, *h, *color, clip_tuple,

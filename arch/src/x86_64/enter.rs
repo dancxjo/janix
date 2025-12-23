@@ -123,7 +123,6 @@ resume_kernel_mode_asm:
     // Load RSP first!
     mov rsp, [rdi + 144]
 
-    // Push RFLAGS, CS, RIP
     mov rax, [rdi + 136] // RFLAGS
     push rax
     mov rax, [rdi + 128] // CS
@@ -233,6 +232,21 @@ pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext
 pub fn resume_kernel_mode(context: &[u64]) -> ! {
     unsafe {
         resume_kernel_mode_asm(context.as_ptr())
+    }
+}
+
+pub fn start_kernel_thread(entry: u64, stack_top: u64, arg: u64) -> ! {
+    // Set stack, pass arg in RDI, and jump to entry. No iret frame needed for ring0->ring0 start.
+    unsafe {
+        core::arch::asm!(
+            "mov rsp, {stack}",
+            "mov rdi, {arg}",
+            "jmp {entry}",
+            stack = in(reg) stack_top,
+            arg = in(reg) arg,
+            entry = in(reg) entry,
+            options(noreturn)
+        );
     }
 }
 

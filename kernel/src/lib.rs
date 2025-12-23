@@ -100,7 +100,7 @@ pub fn init() {
             actualizer_entry,
             0,
             stack_top,
-            10, // Priority
+            5, // Priority (slightly above default user tasks)
         );
         log("Spawned Actualizer thread");
     }

@@ -65,6 +65,7 @@ pub fn main() -> ! {
         
         println!("compositor: mittens consilium praesentandi");
         if let Some(intent_id) = create_thing(&intent) {
+            println!("compositor: consilium creatum id={}, exspectans 'Done'", intent_id.0);
             // Wait for it to be Done
             // In a real loop we wouldn't block, but for "First Light" logical verification:
             let mut retries = 0;
@@ -76,13 +77,15 @@ pub fn main() -> ! {
                     } else if updated.state == IntentState::Error {
                        println!("compositor: error in consilio");
                        break;
+                    } else if retries % 250 == 0 {
+                        println!("compositor: adhuc exspectans consilium id={} status={:?}", intent_id.0, updated.state);
                     }
                 }
                 thing_os::time::sleep(Duration::from_millis(1));
                 retries += 1;
                 if retries > 1000 {
                      // Timeout
-                     println!("compositor: mora consilii");
+                     println!("compositor: mora consilii id={}", intent_id.0);
                      break;
                 }
             }

@@ -614,12 +614,15 @@ fn timer_tick(frame: &mut TrapFrame) {
                             selectors.kcode.0
                         );
 
+                        // Build minimal context frame and enter via iretq helper.
                         let mut ctx = next.context;
+                        ctx[13] = next.user_arg; // RDI
                         ctx[15] = next.entry_point; // RIP
                         ctx[16] = selectors.kcode.0 as u64; // CS
                         ctx[17] = 0x202; // RFLAGS IF=1
                         ctx[18] = rsp; // RSP
-                        
+                        ctx[19] = selectors.kdata.0 as u64; // SS (not consumed in CPL0 iretq, but keep consistent)
+
                         super::enter::resume_kernel_mode(&ctx);
                     } else {
                         // User Thread Start

@@ -31,7 +31,7 @@ ifeq ($(RUST_PROFILE),dev)
 endif
 
 ENABLE_PLATARO_ICONS ?= 1
-APPS := init clock compositor debug_input_logger debug_input_events
+APPS := init clock compositor debug_input_logger debug_input_events time_test
 DRIVERS := framebuffer ps2_keyboard_driver ps2_mouse_driver
 
 APPS_TARGET_DIR := target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)
@@ -701,7 +701,7 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	mkdir -p iso_root/boot iso_root/boot/user iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
 	cp -v assets/wallpapers/clouds.bmp iso_root/boot/clouds.bmp
-	for app in clock compositor debug_input_logger debug_input_events; do \
+	for app in clock compositor debug_input_logger debug_input_events time_test; do \
 		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/user/$$app; \
 		# objcopy --strip-debug iso_root/boot/user/$$app; \
 	done

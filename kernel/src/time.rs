@@ -126,9 +126,14 @@ static TICKS_SINCE_BOOT: AtomicU64 = AtomicU64::new(0);
 static RTC_EPOCH_SECONDS: AtomicI64 = AtomicI64::new(0);
 static LAST_MONOTONIC_NS: AtomicU64 = AtomicU64::new(0);
 static TIME_SOURCE_ID: AtomicU64 = AtomicU64::new(u64::MAX);
+static WITNESS_UNIX_TIME_ID: AtomicU64 = AtomicU64::new(u64::MAX);
+static WITNESS_CLOCK_TIME_ID: AtomicU64 = AtomicU64::new(u64::MAX);
 static LAST_TIME_SOURCE_UPDATE: AtomicU64 = AtomicU64::new(0);
+static LAST_WITNESS_UPDATE: AtomicU64 = AtomicU64::new(0);
 static LAST_ALARM_POLL_TICKS: AtomicU64 = AtomicU64::new(0);
 static SANITY_LOGGED: AtomicBool = AtomicBool::new(false);
+
+const WITNESS_UPDATE_INTERVAL_TICKS: u64 = 1000; // 1 second at 1000Hz
 
 pub fn init_timekeeping(rtc_epoch_seconds: i64) {
     RTC_EPOCH_SECONDS.store(rtc_epoch_seconds, Ordering::Relaxed);
@@ -151,6 +156,14 @@ pub fn ticks_since_boot() -> u64 {
 pub fn bind_time_source(id: ThingId) {
     TIME_SOURCE_ID.store(id.0, Ordering::Relaxed);
     refresh_time_source();
+}
+
+pub fn bind_witness_unix_time(id: ThingId) {
+    WITNESS_UNIX_TIME_ID.store(id.0, Ordering::Relaxed);
+}
+
+pub fn bind_witness_clock_time(id: ThingId) {
+    WITNESS_CLOCK_TIME_ID.store(id.0, Ordering::Relaxed);
 }
 
 pub fn refresh_time_source() {
@@ -224,8 +237,57 @@ fn advance_ticks(delta: u64) {
     }
     let current = TICKS_SINCE_BOOT.fetch_add(delta, Ordering::Relaxed) + delta;
     maybe_refresh_time_source(current);
+    maybe_update_witnesses(current);
     maybe_run_alarm_actualizer(current);
     maybe_log_time_sanity(current);
+}
+
+fn maybe_update_witnesses(current_ticks: u64) {
+    let last = LAST_WITNESS_UPDATE.load(Ordering::Relaxed);
+    if current_ticks.saturating_sub(last) < WITNESS_UPDATE_INTERVAL_TICKS {
+        return;
+    }
+    LAST_WITNESS_UPDATE.store(current_ticks, Ordering::Relaxed);
+    update_witnesses(current_ticks);
+}
+
+fn update_witnesses(current_ticks: u64) {
+    let unix_id_raw = WITNESS_UNIX_TIME_ID.load(Ordering::Relaxed);
+    let clock_id_raw = WITNESS_CLOCK_TIME_ID.load(Ordering::Relaxed);
+
+    if unix_id_raw == u64::MAX && clock_id_raw == u64::MAX {
+        return;
+    }
+
+    let (unix_seconds, unix_nanos) = now_unix_from_rtc_ticks(current_ticks);
+
+    if unix_id_raw != u64::MAX {
+        let props = alloc::vec![
+            (crate::symbols::intern(graph_kinds::PROP_UNIX_SECONDS), PropValue::I64(unix_seconds)),
+            (crate::symbols::intern(graph_kinds::PROP_UNIX_NANOS), PropValue::U64(unix_nanos as u64)),
+            (crate::symbols::intern(graph_kinds::PROP_TICKS_SINCE_BOOT), PropValue::U64(current_ticks)),
+        ];
+        let _ = graph::update_thing(ThingId(unix_id_raw), props);
+    }
+
+    if clock_id_raw != u64::MAX {
+        // Calculate HH:MM:SS from unix_seconds
+        // Simple approximation logic, eventually we might want full timezone support in userland?
+        // But the requirement is "ClockTime { hours, minutes, seconds }"
+        // Assuming UTC for now.
+        let seconds_of_day = unix_seconds % 86400;
+        let hours = seconds_of_day / 3600;
+        let rem_seconds = seconds_of_day % 3600;
+        let minutes = rem_seconds / 60;
+        let seconds = rem_seconds % 60;
+
+        let props = alloc::vec![
+            (crate::symbols::intern(graph_kinds::PROP_HOURS), PropValue::U64(hours as u64)),
+            (crate::symbols::intern(graph_kinds::PROP_MINUTES), PropValue::U64(minutes as u64)),
+            (crate::symbols::intern(graph_kinds::PROP_SECONDS), PropValue::U64(seconds as u64)),
+        ];
+         let _ = graph::update_thing(ThingId(clock_id_raw), props);
+    }
 }
 
 fn maybe_refresh_time_source(current_ticks: u64) {

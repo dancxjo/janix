@@ -286,10 +286,8 @@ impl TimeSource {
 }
 
 #[derive(Thing)]
-#[thing(
-    kind = "Witness.UnixTime",
-    description = "Kernel-authored Unix wall clock correlated to kernel tick space."
-)]
+#[thing(kind = "Witness.UnixTime")]
+#[thing(description = "Kernel-authored Unix wall clock correlated to kernel tick space.")]
 pub struct UnixTime {
     pub id: ThingId,
     #[thing(rename = graph_kinds::PROP_TICKS_SINCE_BOOT)]
@@ -332,10 +330,8 @@ impl UnixTime {
 }
 
 #[derive(Thing)]
-#[thing(
-    kind = "Witness.ClockTime",
-    description = "Kernel-authored UTC clock wall time for UI consumption."
-)]
+#[thing(kind = "Witness.ClockTime")]
+#[thing(description = "Kernel-authored UTC clock wall time for UI consumption.")]
 pub struct ClockTime {
     pub id: ThingId,
     #[thing(rename = graph_kinds::PROP_TICKS_SINCE_BOOT)]

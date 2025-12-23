@@ -578,6 +578,35 @@ pub fn seed_time_graph() {
         log(leaked);
     }
 
+    // Witness.UnixTime
+    let witness_unix_props = alloc::vec![
+        (symbols::intern(graph_kinds::PROP_UNIX_SECONDS), PropValue::I64(epoch_secs)),
+        (symbols::intern(graph_kinds::PROP_UNIX_NANOS), PropValue::U64(0)),
+        (symbols::intern(graph_kinds::PROP_TICKS_SINCE_BOOT), PropValue::U64(0)),
+    ];
+    let witness_unix_id = graph::create_thing(symbols::intern(graph_kinds::KIND_WITNESS_UNIX_TIME), witness_unix_props);
+    time::bind_witness_unix_time(witness_unix_id);
+    
+    // Witness.ClockTime
+    let seconds_of_day = epoch_secs % 86400;
+    let hours = seconds_of_day / 3600;
+    let rem_seconds = seconds_of_day % 3600;
+    let minutes = rem_seconds / 60;
+    let seconds = rem_seconds % 60;
+    
+    let witness_clock_props = alloc::vec![
+        (symbols::intern(graph_kinds::PROP_HOURS), PropValue::U64(hours as u64)),
+        (symbols::intern(graph_kinds::PROP_MINUTES), PropValue::U64(minutes as u64)),
+        (symbols::intern(graph_kinds::PROP_SECONDS), PropValue::U64(seconds as u64)),
+    ];
+    let witness_clock_id = graph::create_thing(symbols::intern(graph_kinds::KIND_WITNESS_CLOCK_TIME), witness_clock_props);
+    time::bind_witness_clock_time(witness_clock_id);
+
+    let msg = alloc::format!("Testes Temporis creati: Unix={}, Clock={}", witness_unix_id.0, witness_clock_id.0);
+    let leaked: &'static str = Box::leak(msg.into_boxed_str());
+    log(leaked);
+
+
     let boot_alarm_secs = epoch_secs.saturating_add(3);
     let alarm_props_model =
         AlarmRequest::create_pending(boot_alarm_secs, 0, ThingId(0), ThingId(0));
@@ -874,6 +903,8 @@ fn get_program_priority(name: &str) -> u64 {
         10
     } else if name == "init" {
         100
+    } else if name == "time_test" {
+        5
     } else {
         0
     }

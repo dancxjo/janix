@@ -17,6 +17,7 @@ members = [
     "tools/icon-gen",
     "user/debug_input_logger",
     "user/debug_input_events",
+    "user/time_test",
     "smoke_tests",
 ]
 

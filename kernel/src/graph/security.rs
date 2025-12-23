@@ -83,7 +83,7 @@ fn check_user_policy(_user: &UserActor, mutation: &Mutation) -> Result<(), &'sta
             }
         },
         Mutation::UpdateThing { props, .. } => {
-            let kind = graph::get_thing_kind(*props.get(0).map(|_| ThingId(0)).unwrap_or(&ThingId(0))).unwrap_or(SymbolId(0));
+            let kind = graph::get_thing_kind(props.get(0).map(|_| ThingId(0)).unwrap_or(ThingId(0))).unwrap_or(SymbolId(0));
             if let Some(kind) = graph::get_thing_kind(match mutation {
                 Mutation::UpdateThing { id, .. } => *id,
                 _ => ThingId(0),

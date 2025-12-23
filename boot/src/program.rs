@@ -13,8 +13,8 @@ use crate::elf_loader::{self, LoadedElfProgram, ProgramImageData};
 pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'static str> {
     let info = load_boot_program_info(boot_program_id)?;
 
-    let image =
-        find_program_image(&info.binary).ok_or("Res ProgramImage pro identificatore non inventa")?;
+    let image = find_program_image(&info.binary)
+        .ok_or("Res ProgramImage pro identificatore non inventa")?;
     let loaded = elf_loader::load_program(&image)?;
     kernel::log("ProgramImage ELF onustus, processum progenerans");
     let (proc, thread) = spawn_loaded_program(&info, loaded)?;
@@ -100,9 +100,7 @@ fn spawn_loaded_program_named(
         let process_thing = sched
             .process_thing_id(pid)
             .ok_or("Res Process non relata")?;
-        let thread_thing = sched
-            .thread_thing_id(tid)
-            .ok_or("Res Thread non relata")?;
+        let thread_thing = sched.thread_thing_id(tid).ok_or("Res Thread non relata")?;
         (process_thing, thread_thing)
     };
     kernel::time::boot_span_end("spawn_process_setup", t_spawn);

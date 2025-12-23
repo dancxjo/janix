@@ -22,12 +22,12 @@ pub mod ui;
 pub use display::*;
 
 use abi::{
+    FrameId, FrameInfo, MemorySummary, NodeId, SchedulerSummary,
     syscall_defs::SymbolId,
     wire::{
         common::{UserPtr, UserSlice},
         graph::{WireProp, WirePropValue, WireSchemaProp, WireValueTag},
     },
-    FrameId, FrameInfo, MemorySummary, NodeId, SchedulerSummary,
 };
 pub use abi::{KernelRequest, KernelResponse};
 pub use alloc::boxed::Box;
@@ -43,21 +43,22 @@ pub mod graph_ops;
 
 use syscalls::sys_symbol_intern;
 use thing_models::graph_kinds::{
-    KIND_SHARED_BUFFER, PROP_DISPLAY_ACTIVE_BUFFER_INDEX, PROP_HEIGHT, PROP_NAME, PROP_PIXEL_FORMAT,
-    PROP_STRIDE, PROP_WIDTH,
+    KIND_SHARED_BUFFER, PROP_DISPLAY_ACTIVE_BUFFER_INDEX, PROP_HEIGHT, PROP_NAME,
+    PROP_PIXEL_FORMAT, PROP_STRIDE, PROP_WIDTH,
 };
 
 use crate::sys::raw_syscall;
 pub use abi; // Export abi crate
 use abi::syscalls::SYSCALL_THING_GET;
 pub use abi::{Predicate, ThingId};
-pub use alarm::{sleep_until, Alarm};
+pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
+pub use framebuffer_api::{DisplayFramebuffer, DisplayPowerState, DisplayPresentRequest};
 pub use thing_macros::main;
 pub use thing_models::Thing;
 pub use thing_models::{
-    AlarmEvent, AlarmRequest, Cursor, DisplayPresentRequest, MODE_INDEX_CONSOLE, Mode, ModeSwitchEvent,
-    Place, RawModule, Surface, TimeSource, View, Window,
+    AlarmEvent, AlarmRequest, Cursor, MODE_INDEX_CONSOLE, Mode, ModeSwitchEvent, Place, RawModule,
+    Surface, TimeSource, View, Window,
 };
 pub use thing_models::{PropKey, PropType, PropValue};
 
@@ -94,10 +95,10 @@ pub enum SysError {
 
 // Re-export core models to replace shadow structs
 pub use thing_models::CpuCore as CpuCoreThing;
-pub use thing_models::Process as ProcessThing;
-pub use thing_models::Thread as ThreadThing;
 pub use thing_models::Display as DisplayThing;
+pub use thing_models::Process as ProcessThing;
 pub use thing_models::SharedBuffer as SharedBufferThing;
+pub use thing_models::Thread as ThreadThing;
 
 /// Query a thing in the kernel graph and return the associated value.
 pub fn graph_query(node_id: NodeId) -> Option<u64> {
@@ -162,7 +163,10 @@ pub fn user_create_thing(
 }
 
 /// Update properties of an existing Thing using a property slice.
-pub fn user_update_thing(id: ThingId, props: &'static [(PropKey, PropValue)]) -> Result<(), &'static str> {
+pub fn user_update_thing(
+    id: ThingId,
+    props: &'static [(PropKey, PropValue)],
+) -> Result<(), &'static str> {
     let mut wire_props = Vec::with_capacity(props.len());
 
     for (key, val) in props {
@@ -408,7 +412,10 @@ pub fn ensure_schema_exists_for<T: Thing>() -> bool {
     }; MAX_SCHEMA_PROPS];
     let out = UserSlice::new(UserPtr::new(buf.as_mut_ptr() as u64), buf.len() as u64);
 
-    match syscalls::syscall(KernelRequest::SchemaGet { kind: kind_sym, out }) {
+    match syscalls::syscall(KernelRequest::SchemaGet {
+        kind: kind_sym,
+        out,
+    }) {
         KernelResponse::SchemaData { written, .. } => {
             let count = core::cmp::min(written as usize, buf.len());
             let mut props = Vec::with_capacity(count);
@@ -471,8 +478,14 @@ pub fn list_things_by_kind<T: Thing>() -> Vec<T> {
     let kind_sym = sys_symbol_intern(T::KIND);
 
     loop {
-        match syscalls::syscall(KernelRequest::ThingList { kind: kind_sym, start_after: cursor }) {
-            KernelResponse::ThingListEntry { id: next_id, valid: 1 } => {
+        match syscalls::syscall(KernelRequest::ThingList {
+            kind: kind_sym,
+            start_after: cursor,
+        }) {
+            KernelResponse::ThingListEntry {
+                id: next_id,
+                valid: 1,
+            } => {
                 if let Some(thing) = load_thing::<T>(next_id) {
                     results.push(thing);
                 }

@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 
-use thing_os::prelude::*;
 use thing_os::SystemClock;
+use thing_os::prelude::*;
 
 #[thing_os::main]
 fn main() {
@@ -18,7 +18,10 @@ fn main() {
         let (unix_seconds, _) = clock.now();
         let (year, month, day, hour, minute, second) = unix_seconds_to_datetime(unix_seconds);
 
-        println!("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", year, month, day, hour, minute, second);
+        println!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+            year, month, day, hour, minute, second
+        );
         sleep_ms(1000);
     }
 }

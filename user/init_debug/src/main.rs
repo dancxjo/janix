@@ -17,7 +17,6 @@ fn main() {
         idle();
     }
 
-    launch_program("debug_alloc");
     launch_program("ps2_keyboard_driver");
     launch_program("debug_input_logger");
     launch_program("debug_input_events");

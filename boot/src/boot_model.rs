@@ -331,7 +331,10 @@ pub fn seed_program_images_from_limine() {
         }
     }
 
-    let mut msg = alloc::format!("Seminatae sunt {} Res ProgramImage ex modulis Limine", created);
+    let mut msg = alloc::format!(
+        "Seminatae sunt {} Res ProgramImage ex modulis Limine",
+        created
+    );
     if skipped_fonts > 0 {
         let suffix = alloc::format!(" (neglecta(e) {} modula(e) typographicae)", skipped_fonts);
         msg.push_str(&suffix);
@@ -403,7 +406,9 @@ pub fn seed_boot_programs_from_limine() {
         .unwrap_or(false);
 
     if is_debug_profile {
-        log("PROFILUM DEBUG ACTIVUM: Tantum progeneramus init_debug, debug_alloc, debug_input_logger, debug_input_events, framebuffer, compositor, ps2_keyboard_driver, ps2_mouse_driver");
+        log(
+            "PROFILUM DEBUG ACTIVUM: Tantum progeneramus init_debug, debug_input_logger, debug_input_events, framebuffer, compositor, ps2_keyboard_driver, ps2_mouse_driver",
+        );
     }
 
     for (index, module) in response.modules().iter().enumerate() {
@@ -418,7 +423,6 @@ pub fn seed_boot_programs_from_limine() {
 
         if is_debug_profile
             && identifier != "init_debug"
-            && identifier != "debug_alloc"
             && identifier != "debug_input_logger"
             && identifier != "ps2_keyboard_driver"
             && identifier != "debug_input_events"
@@ -470,7 +474,10 @@ pub fn seed_boot_programs_from_limine() {
         app_id = app_id.saturating_add(1);
     }
 
-    let mut msg = alloc::format!("Seminatae sunt {} Res BootProgram ex modulis Limine", created);
+    let mut msg = alloc::format!(
+        "Seminatae sunt {} Res BootProgram ex modulis Limine",
+        created
+    );
     if skipped_fonts > 0 {
         let suffix = alloc::format!(" (neglecta(e) {} modula(e) typographicae)", skipped_fonts);
         msg.push_str(&suffix);

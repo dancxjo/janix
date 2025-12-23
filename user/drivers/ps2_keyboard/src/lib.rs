@@ -138,7 +138,10 @@ fn wait_for_region() -> IoPortRegion {
             return region.clone();
         }
         if counter % 200 == 0 {
-            println!("ps2_keyboard_driver: waiting for i8042 region (found {} regions)", regions.len());
+            println!(
+                "ps2_keyboard_driver: waiting for i8042 region (found {} regions)",
+                regions.len()
+            );
         }
         counter += 1;
         sleep(Duration::from_nanos(5_000_000));

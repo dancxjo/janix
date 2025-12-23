@@ -16,10 +16,9 @@ use alloc::format;
 use alloc::string::String;
 use thing_models::{
     AddressSpace, AlarmEvent, AlarmRequest, BootProfile, BootProgram, CpuCore, Display,
-    DisplayFrame, DisplayFramebuffer, DisplayPresentRequest, FontModule, FramePool, InterruptEvent,
-    InterruptRequest, IoPortOp, IoPortRegion, Mode, ModeSwitchEvent, PhysFrame, Place, Process,
-    ProgramImage, SharedBuffer, SleepEvent, Surface, TimeSource, VirtRegion, Window,
-    kernel_core_schemas,
+    DisplayFrame, FontModule, FramePool, InterruptEvent, InterruptRequest, IoPortOp, IoPortRegion,
+    Mode, ModeSwitchEvent, PhysFrame, Place, Process, ProgramImage, SharedBuffer, SleepEvent,
+    Surface, TimeSource, VirtRegion, Window, kernel_core_schemas,
 };
 use thing_models::{PropType, PropValue};
 use thing_models::{Thing, ThreadInfo};

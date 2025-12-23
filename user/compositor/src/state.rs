@@ -1,6 +1,6 @@
 use thing_os::prelude::*;
 
-use thing_os::thing_models::DisplayPresentRequest;
+use framebuffer_api::DisplayPresentRequest;
 
 use crate::config::FRAME_INTERVAL_NS;
 use crate::graph::{
@@ -336,7 +336,10 @@ pub fn tick_once(compositor: &mut Compositor) {
     compositor.damage.clear();
 
     if compositor.frame_counter % 60 == 0 {
-        println!("compositor: requesting present for frame {}", compositor.frame_counter + 1);
+        println!(
+            "compositor: requesting present for frame {}",
+            compositor.frame_counter + 1
+        );
     }
     compositor.publish_present_request();
 }

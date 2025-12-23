@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 
-use thing_os::prelude::*;
 use thing_os::ThreadThing;
+use thing_os::prelude::*;
 
 const DASHBOARD_INTERVAL_MS: u64 = 5_000;
 

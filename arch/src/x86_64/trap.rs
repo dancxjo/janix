@@ -327,60 +327,73 @@ extern "C" fn page_fault_handler(frame: &mut TrapFrame) {
 
     if (frame.cs & 3) == 3 {
         use x86_64::registers::control::{Cr2, Cr3};
-        use x86_64::structures::paging::{PageTable, OffsetPageTable, Page, PhysFrame, Size4KiB, PageTableFlags};
+        use x86_64::structures::paging::{
+            OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
+        };
         use x86_64::{PhysAddr, VirtAddr};
 
         let addr_val = Cr2::read().as_u64();
-        
+
         // Demand Paging for User Heap
         if addr_val >= abi::USER_HEAP_START as u64 && addr_val < abi::USER_HEAP_END as u64 {
-             let phys_mem_offset = memory::get_hhdm_offset();
-             if phys_mem_offset != 0 {
+            let phys_mem_offset = memory::get_hhdm_offset();
+            if phys_mem_offset != 0 {
                 let l4_phys = Cr3::read().0.start_address().as_u64();
                 let l4_virt = VirtAddr::new(l4_phys + phys_mem_offset);
                 let l4: &mut PageTable = unsafe { &mut *l4_virt.as_mut_ptr() };
-                let mut mapper = unsafe { OffsetPageTable::new(l4, VirtAddr::new(phys_mem_offset)) };
+                let mut mapper =
+                    unsafe { OffsetPageTable::new(l4, VirtAddr::new(phys_mem_offset)) };
 
                 let page = Page::<Size4KiB>::containing_address(VirtAddr::new(addr_val));
-                
+
                 // Check if already mapped (spurious fault or permissions issue)
                 if mapper.translate_addr(VirtAddr::new(addr_val)).is_none() {
                     if let Some(frame_info) = memory::allocate_frame() {
-                         let frame = PhysFrame::from_start_address(PhysAddr::new(frame_info.start_address)).unwrap();
-                         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-                         
-                         unsafe {
-                             use x86_64::structures::paging::Mapper; // Import Mapper trait
-                             // We need a frame allocator for the mapper to create page tables if needed
-                             // We can reuse our global allocator wrapper or a dummy if we assume tables exist?
-                             // Tables might NOT exist for sparse heap. We need an allocator.
-                             // Implementing a quick local struct implementing FrameAllocator
-                             
-                             struct LocalFrameAllocator;
-                             unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for LocalFrameAllocator {
-                                 fn allocate_frame(&mut self) -> Option<PhysFrame> {
-                                     memory::allocate_frame().map(|f| PhysFrame::from_start_address(PhysAddr::new(f.start_address)).unwrap())
-                                 }
-                             }
-                             
-                             match mapper.map_to(page, frame, flags, &mut LocalFrameAllocator) {
-                                 Ok(tlb) => {
-                                     tlb.flush();
-                                     // Zero the page
-                                     let page_ptr = (frame_info.start_address + phys_mem_offset) as *mut u8;
-                                     core::ptr::write_bytes(page_ptr, 0, 4096);
-                                     return; // Retry instruction
-                                 },
-                                 Err(e) => {
-                                     kernel::println!("Demand paging failed to map: {:?}", e);
-                                 }
-                             }
-                         }
+                        let frame =
+                            PhysFrame::from_start_address(PhysAddr::new(frame_info.start_address))
+                                .unwrap();
+                        let flags = PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::USER_ACCESSIBLE;
+
+                        unsafe {
+                            use x86_64::structures::paging::Mapper; // Import Mapper trait
+                            // We need a frame allocator for the mapper to create page tables if needed
+                            // We can reuse our global allocator wrapper or a dummy if we assume tables exist?
+                            // Tables might NOT exist for sparse heap. We need an allocator.
+                            // Implementing a quick local struct implementing FrameAllocator
+
+                            struct LocalFrameAllocator;
+                            unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for LocalFrameAllocator {
+                                fn allocate_frame(&mut self) -> Option<PhysFrame> {
+                                    memory::allocate_frame().map(|f| {
+                                        PhysFrame::from_start_address(PhysAddr::new(
+                                            f.start_address,
+                                        ))
+                                        .unwrap()
+                                    })
+                                }
+                            }
+
+                            match mapper.map_to(page, frame, flags, &mut LocalFrameAllocator) {
+                                Ok(tlb) => {
+                                    tlb.flush();
+                                    // Zero the page
+                                    let page_ptr =
+                                        (frame_info.start_address + phys_mem_offset) as *mut u8;
+                                    core::ptr::write_bytes(page_ptr, 0, 4096);
+                                    return; // Retry instruction
+                                }
+                                Err(e) => {
+                                    kernel::println!("Demand paging failed to map: {:?}", e);
+                                }
+                            }
+                        }
                     } else {
                         kernel::println!("Demand paging OOM");
                     }
                 }
-             }
+            }
         }
 
         let addr = Cr2::read();

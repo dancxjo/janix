@@ -1,11 +1,11 @@
 use abi::ThingId;
 use alloc::string::ToString;
+use framebuffer_api::DisplayPresentRequest;
 use thing_models::PropValue;
 use thing_models::graph_kinds;
 use thing_os::PrimaryDisplayBuffer;
 use thing_os::link_targets;
 use thing_os::prelude::*;
-use thing_os::thing_models::DisplayPresentRequest;
 use thing_os::{create_thing, list_things_by_kind, load_thing, update_props};
 
 use crate::layout::StackedWindow;

@@ -1,4 +1,5 @@
 use crate::console;
+use spin::Mutex;
 
 /// Maximum number of log entries kept in memory. Older entries are
 /// overwritten in a ring-buffer fashion.
@@ -45,17 +46,37 @@ impl LogEntry {
     }
 }
 
-/// Log entry storage
-// SAFETY: LOG_BUFFER and associated indices are only accessed from single-threaded
-// kernel context. In a multi-threaded environment, this would need atomic operations
-// or locks.
-static mut LOG_BUFFER: [LogEntry; MAX_LOG_ENTRIES] = [LogEntry::new(); MAX_LOG_ENTRIES];
-static mut LOG_INDEX: usize = 0;
-static mut LOG_COUNT: usize = 0;
-static mut LOG_TOTAL_WRITES: usize = 0;
-static mut LOG_OVERWRITES: usize = 0;
-static mut LOG_TRUNCATED: usize = 0;
 static mut LOG_VIEW: [Option<&'static str>; MAX_LOG_ENTRIES] = [None; MAX_LOG_ENTRIES];
+
+/// Aggregated log state guarded by a spinlock so writers on different CPUs
+/// cannot stomp on each other's indices.
+struct LogState {
+    buffer: [LogEntry; MAX_LOG_ENTRIES],
+    index: usize,
+    count: usize,
+    total_writes: usize,
+    overwrites: usize,
+    truncated: usize,
+}
+
+impl LogState {
+    const fn new() -> Self {
+        Self {
+            buffer: [LogEntry::new(); MAX_LOG_ENTRIES],
+            index: 0,
+            count: 0,
+            total_writes: 0,
+            overwrites: 0,
+            truncated: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+}
+
+static LOG_STATE: Mutex<LogState> = Mutex::new(LogState::new());
 
 /// Summary of the in-kernel log buffer useful for dashboards and crash dumps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,21 +94,13 @@ pub struct LogStats {
 /// Initialize the log subsystem
 /// This resets all log state for test isolation and kernel boot
 pub fn init() {
-    unsafe {
-        // Reset counter
-        LOG_INDEX = 0;
-        LOG_COUNT = 0;
-        LOG_TOTAL_WRITES = 0;
-        LOG_OVERWRITES = 0;
-        LOG_TRUNCATED = 0;
+    let buffer_ptr = interrupts::without_interrupts(|| {
+        let mut state = LOG_STATE.lock();
+        state.reset();
+        state.buffer.as_ptr()
+    });
 
-        // Clear all log entries
-        let buffer = &raw mut LOG_BUFFER;
-        for slot in (*buffer).iter_mut() {
-            *slot = LogEntry::new();
-        }
-        crate::println!("LOG_BUFFER address: {:p}", buffer);
-    }
+    crate::println!("LOG_BUFFER address: {:p}", buffer_ptr);
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -106,21 +119,24 @@ mod interrupts {
 
 /// Log a message
 pub fn log_message(message: &str) {
-    interrupts::without_interrupts(|| unsafe {
+    interrupts::without_interrupts(|| {
+        let mut state = LOG_STATE.lock();
+
         let truncated = message.as_bytes().len() > MAX_LOG_LEN;
         if truncated {
-            LOG_TRUNCATED += 1;
+            state.truncated += 1;
         }
 
-        if LOG_COUNT == MAX_LOG_ENTRIES {
-            LOG_OVERWRITES += 1;
+        if state.count == MAX_LOG_ENTRIES {
+            state.overwrites += 1;
         } else {
-            LOG_COUNT += 1;
+            state.count += 1;
         }
 
-        LOG_BUFFER[LOG_INDEX].write_from(message);
-        LOG_INDEX = (LOG_INDEX + 1) % MAX_LOG_ENTRIES;
-        LOG_TOTAL_WRITES += 1;
+        let idx = state.index;
+        state.buffer[idx].write_from(message);
+        state.index = (idx + 1) % MAX_LOG_ENTRIES;
+        state.total_writes += 1;
     });
 
     #[cfg(all(feature = "debug_logging", not(test)))]
@@ -135,16 +151,19 @@ pub fn get_logs() -> &'static [Option<&'static str>] {
     interrupts::without_interrupts(|| unsafe {
         // Render a chronological view into LOG_VIEW to preserve the existing return
         // type without introducing heap allocations.
-        let available = LOG_COUNT;
+        let state = LOG_STATE.lock();
+        let available = state.count;
         let start = if available < MAX_LOG_ENTRIES {
-            LOG_INDEX + MAX_LOG_ENTRIES - available
+            state.index + MAX_LOG_ENTRIES - available
         } else {
-            LOG_INDEX
+            state.index
         } % MAX_LOG_ENTRIES;
 
         for i in 0..available {
             let idx = (start + i) % MAX_LOG_ENTRIES;
-            LOG_VIEW[i] = LOG_BUFFER[idx].as_str();
+            // SAFETY: buffer entries live for 'static because LOG_STATE is static.
+            let entry: &'static LogEntry = &*(&state.buffer[idx] as *const LogEntry);
+            LOG_VIEW[i] = entry.as_str();
         }
 
         &LOG_VIEW[..available]
@@ -153,17 +172,18 @@ pub fn get_logs() -> &'static [Option<&'static str>] {
 
 /// Get the number of log entries
 pub fn log_count() -> usize {
-    unsafe { LOG_COUNT }
+    interrupts::without_interrupts(|| LOG_STATE.lock().count)
 }
 
 /// Return high-level statistics about the log buffer.
 pub fn log_stats() -> LogStats {
-    unsafe {
+    interrupts::without_interrupts(|| {
+        let state = LOG_STATE.lock();
         LogStats {
-            stored_entries: LOG_COUNT,
-            total_written: LOG_TOTAL_WRITES,
-            overwritten: LOG_OVERWRITES,
-            truncated: LOG_TRUNCATED,
+            stored_entries: state.count,
+            total_written: state.total_writes,
+            overwritten: state.overwrites,
+            truncated: state.truncated,
         }
-    }
+    })
 }

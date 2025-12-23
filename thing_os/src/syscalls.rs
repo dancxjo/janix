@@ -430,17 +430,8 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             }
         }
         KernelRequest::GraphQuery { node_id, out } => {
-            let ret = unsafe {
-                raw_syscall(
-                    SYSCALL_GRAPH_QUERY,
-                    node_id.0,
-                    out.ptr,
-                    out.len,
-                    0,
-                    0,
-                    0,
-                )
-            };
+            let ret =
+                unsafe { raw_syscall(SYSCALL_GRAPH_QUERY, node_id.0, out.ptr, out.len, 0, 0, 0) };
             if ret == 0 {
                 KernelResponse::NodeData { written: 0 }
             } else {

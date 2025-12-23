@@ -131,11 +131,19 @@ unsafe fn user_slice<'a, T>(ptr: u64, len: u64) -> &'a [T] {
 }
 
 unsafe fn user_ptr_val<'a, T>(ptr: u64) -> Option<&'a T> {
-    if ptr == 0 { None } else { Some(&*(ptr as *const T)) }
+    if ptr == 0 {
+        None
+    } else {
+        Some(&*(ptr as *const T))
+    }
 }
 
 unsafe fn user_ptr_mut<'a, T>(ptr: u64) -> Option<&'a mut T> {
-    if ptr == 0 { None } else { Some(&mut *(ptr as *mut T)) }
+    if ptr == 0 {
+        None
+    } else {
+        Some(&mut *(ptr as *mut T))
+    }
 }
 
 fn convert_prop(wire: &WireProp) -> (SymbolId, PropValue) {
@@ -237,7 +245,10 @@ macro_rules! dispatch_syscall {
         let boot_program_id = ThingId($a1);
         let req = abi::KernelRequest::SpawnProgram { boot_program_id };
         match kernel::handle_request(req) {
-            abi::KernelResponse::ProgramSpawned { process_id, thread_id } => {
+            abi::KernelResponse::ProgramSpawned {
+                process_id,
+                thread_id,
+            } => {
                 if let Some(res) =
                     unsafe { user_ptr_mut::<abi::wire::process::SpawnProgramResult>($a2) }
                 {
@@ -341,7 +352,10 @@ macro_rules! dispatch_syscall {
         };
 
         match kernel::handle_request(req) {
-            abi::KernelResponse::SchemaData { written, fingerprint } => {
+            abi::KernelResponse::SchemaData {
+                written,
+                fingerprint,
+            } => {
                 if let Some(w_ptr) = unsafe { user_ptr_mut::<u64>($a4) } {
                     *w_ptr = written;
                 }
@@ -375,7 +389,9 @@ macro_rules! dispatch_syscall {
                         PropValue::Bool(v) => WirePropValue::bool(*v),
                         PropValue::Str(s) => WirePropValue::sym(kernel::symbols::intern(s)),
                         PropValue::Symbol(id) => WirePropValue::sym(*id),
-                        PropValue::Blob(b) => WirePropValue::blob(b.as_ptr() as u64, b.len() as u64),
+                        PropValue::Blob(b) => {
+                            WirePropValue::blob(b.as_ptr() as u64, b.len() as u64)
+                        }
                     };
 
                     out_slice[count] = WireProp {
@@ -418,7 +434,11 @@ macro_rules! dispatch_syscall {
         let pred = abi::Predicate($a2);
         let dst = ThingId($a3);
 
-        if kernel::graph::add_link(src, pred, dst) { 0 } else { 1 }
+        if kernel::graph::add_link(src, pred, dst) {
+            0
+        } else {
+            1
+        }
     }};
 
     (SYSCALL_LINK_AT, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
@@ -449,10 +469,14 @@ macro_rules! dispatch_syscall {
             let frames = sb.frames.clone();
             drop(manager);
 
-            if let Some(vaddr) =
-                kernel::sched::SCHEDULER.lock().reserve_resident_region(pid, size_aligned as usize, 4096)
-            {
-                if kernel::shared_buffer::map_frames_into_current_as(vaddr as u64, &frames, flags).is_ok() {
+            if let Some(vaddr) = kernel::sched::SCHEDULER.lock().reserve_resident_region(
+                pid,
+                size_aligned as usize,
+                4096,
+            ) {
+                if kernel::shared_buffer::map_frames_into_current_as(vaddr as u64, &frames, flags)
+                    .is_ok()
+                {
                     if let Some(v_out) = unsafe { user_ptr_mut::<u64>($a3) } {
                         *v_out = vaddr as u64;
                     }
@@ -619,7 +643,9 @@ macro_rules! dispatch_syscall {
             );
             if let Some(ret_ref) = unsafe { user_ptr_mut($a2) } {
                 *ret_ref = match res {
-                    Ok(handle) => abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevOpenRet { handle }),
+                    Ok(handle) => {
+                        abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevOpenRet { handle })
+                    }
                     Err(e) => abi::syscall_defs::SysRet::err(e.code, e.detail),
                 };
                 0
@@ -654,9 +680,10 @@ macro_rules! dispatch_syscall {
                     match res {
                         Ok(bytes_read) => {
                             unsafe {
-                                *ret_ref = abi::syscall_defs::SysRet::ok(
-                                    abi::syscall_defs::DevReadRet { bytes_read: bytes_read as u32 }
-                                );
+                                *ret_ref =
+                                    abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet {
+                                        bytes_read: bytes_read as u32,
+                                    });
                             }
                             0
                         }
@@ -672,9 +699,10 @@ macro_rules! dispatch_syscall {
                             });
                             crate::user::schedule_next();
                             unsafe {
-                                *ret_ref = abi::syscall_defs::SysRet::ok(
-                                    abi::syscall_defs::DevReadRet { bytes_read: 0 }
-                                );
+                                *ret_ref =
+                                    abi::syscall_defs::SysRet::ok(abi::syscall_defs::DevReadRet {
+                                        bytes_read: 0,
+                                    });
                             }
                             0
                         }
@@ -696,16 +724,26 @@ macro_rules! dispatch_syscall {
 
     (SYSCALL_PCI_READ_CONFIG, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         if let Some(args) = unsafe { user_ptr_val::<abi::syscall_defs::PciReadConfigArgs>($a1) } {
-            if let Some(ret_ref) = unsafe { user_ptr_mut::<abi::syscall_defs::PciReadConfigRet>($a2) } {
+            if let Some(ret_ref) =
+                unsafe { user_ptr_mut::<abi::syscall_defs::PciReadConfigRet>($a2) }
+            {
                 let val = match args.width {
-                    1 => crate::pci::read_config_u8(args.bus, args.slot, args.func, args.offset, 0).map(|v| v as u32),
-                    2 => crate::pci::read_config_u16(args.bus, args.slot, args.func, args.offset, 0).map(|v| v as u32),
-                    4 => crate::pci::read_config_u32(args.bus, args.slot, args.func, args.offset, 0),
+                    1 => crate::pci::read_config_u8(args.bus, args.slot, args.func, args.offset, 0)
+                        .map(|v| v as u32),
+                    2 => {
+                        crate::pci::read_config_u16(args.bus, args.slot, args.func, args.offset, 0)
+                            .map(|v| v as u32)
+                    }
+                    4 => {
+                        crate::pci::read_config_u32(args.bus, args.slot, args.func, args.offset, 0)
+                    }
                     _ => None,
                 };
 
                 if let Some(v) = val {
-                    unsafe { *ret_ref = abi::syscall_defs::PciReadConfigRet { value: v }; }
+                    unsafe {
+                        *ret_ref = abi::syscall_defs::PciReadConfigRet { value: v };
+                    }
                     0
                 } else {
                     1
@@ -727,13 +765,9 @@ macro_rules! dispatch_syscall {
         0
     }};
 
-    (SYSCALL_TIME_MONOTONIC_NS, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
-        kernel::time::monotonic_now_ns()
-    }};
+    (SYSCALL_TIME_MONOTONIC_NS, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{ kernel::time::monotonic_now_ns() }};
 
-    (SYSCALL_TIME_SYSTEM_NS, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
-        kernel::time::system_time_ns().unwrap_or(0)
-    }};
+    (SYSCALL_TIME_SYSTEM_NS, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{ kernel::time::system_time_ns().unwrap_or(0) }};
 
     (SYSCALL_TIME_NOW, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let (sec, nanos) = kernel::time::now_unix_from_rtc();
@@ -763,7 +797,12 @@ macro_rules! dispatch_syscall {
 
     (SYSCALL_FREE_FRAME, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let addr = $a1 << 12;
-        let frame = unsafe { kernel::memory::PhysFrame { start_address: addr, size: 4096 } };
+        let frame = unsafe {
+            kernel::memory::PhysFrame {
+                start_address: addr,
+                size: 4096,
+            }
+        };
         kernel::memory::free_frame(frame);
         0
     }};
@@ -798,8 +837,9 @@ macro_rules! dispatch_syscall {
         if pid_check != Some(pid) {
             u64::MAX
         } else {
-            if let Some(stack_base) =
-                kernel::sched::SCHEDULER.lock().reserve_user_region(pid, stack_size, 4096)
+            if let Some(stack_base) = kernel::sched::SCHEDULER
+                .lock()
+                .reserve_user_region(pid, stack_size, 4096)
             {
                 let page_count = stack_size / 4096;
                 let mut frames = alloc::vec::Vec::new();
@@ -851,9 +891,7 @@ macro_rules! dispatch_syscall {
         }
     }};
 
-    (SYSCALL_CREATE_TRANSACTION, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
-        kernel::transaction::create_transaction().0
-    }};
+    (SYSCALL_CREATE_TRANSACTION, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{ kernel::transaction::create_transaction().0 }};
 
     (SYSCALL_COMMIT_TRANSACTION, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         match kernel::transaction::commit_transaction(abi::TransactionId($a1)) {
@@ -934,10 +972,10 @@ pub extern "C" fn syscall_handler_rust(frame: &mut TrapFrame) -> u64 {
 
 pub fn install_handler() {
     use crate::gdt;
+    use x86_64::VirtAddr;
     use x86_64::registers::model_specific::{LStar, SFMask, Star};
     use x86_64::registers::rflags::RFlags;
     use x86_64::structures::gdt::SegmentSelector;
-    use x86_64::VirtAddr;
 
     // Init per-cpu GS first
     unsafe {
@@ -962,7 +1000,13 @@ pub fn install_handler() {
     let user_data_sel: SegmentSelector = selectors.udata;
 
     unsafe {
-        Star::write(user_code_sel, user_data_sel, kernel_code_sel, kernel_data_sel).unwrap();
+        Star::write(
+            user_code_sel,
+            user_data_sel,
+            kernel_code_sel,
+            kernel_data_sel,
+        )
+        .unwrap();
 
         // Enable Syscall Extensions (EFER.SCE)
         use x86_64::registers::model_specific::{Efer, EferFlags};

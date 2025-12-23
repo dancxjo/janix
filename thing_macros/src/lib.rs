@@ -168,9 +168,9 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
                 "bool" => quote! { ::thing_models::PropValue::Bool(*val as bool) },
                 "alloc::string::String" | "String" => {
                     if via_type.is_some() {
-                         quote! { ::thing_models::PropValue::Str(val.to_string()) }
+                        quote! { ::thing_models::PropValue::Str(val.to_string()) }
                     } else {
-                         quote! { ::thing_models::PropValue::Str(val.clone()) }
+                        quote! { ::thing_models::PropValue::Str(val.clone()) }
                     }
                 }
                 "&'staticstr" => {
@@ -220,7 +220,7 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
 
             let prop_name = extract_field_rename(&f.attrs).unwrap_or(ident.to_string());
             let via_type = extract_field_via(&f.attrs);
-             let effective_type = if let Some(via) = &via_type {
+            let effective_type = if let Some(via) = &via_type {
                 via.clone()
             } else {
                 ty_str.clone()
@@ -306,12 +306,12 @@ pub fn derive_thing(input: TokenStream) -> TokenStream {
             };
 
             if via_type.is_some() {
-                 match_arm = quote! {
-                     {
-                         let s: ::alloc::string::String = #match_arm;
-                         s.parse().expect("Failed to parse via type")
-                     }
-                 }
+                match_arm = quote! {
+                    {
+                        let s: ::alloc::string::String = #match_arm;
+                        s.parse().expect("Failed to parse via type")
+                    }
+                }
             }
 
             if is_option {

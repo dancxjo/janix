@@ -13,7 +13,7 @@ pub mod ui;
 pub mod usb;
 
 pub use crate::props::{PropKey, PropType, PropValue};
-use abi::{syscall_defs::SymbolId, ThingId};
+use abi::{ThingId, syscall_defs::SymbolId};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use thing_macros::Thing;
@@ -156,19 +156,9 @@ pub fn kernel_core_schemas() -> Vec<(
         SharedBuffer::schema(),
     ));
     schemas.push((
-        DisplayFramebuffer::KIND,
-        DisplayFramebuffer::DESCRIPTION,
-        DisplayFramebuffer::schema(),
-    ));
-    schemas.push((
         DisplayFrame::KIND,
         DisplayFrame::DESCRIPTION,
         DisplayFrame::schema(),
-    ));
-    schemas.push((
-        DisplayPresentRequest::KIND,
-        DisplayPresentRequest::DESCRIPTION,
-        DisplayPresentRequest::schema(),
     ));
 
     // 4. Shared UI Contract (Windowing)
@@ -239,7 +229,9 @@ pub struct FontModule {
 }
 
 #[derive(Thing)]
-#[thing(description = "Kernel-published system clock including monotonic tick counter and Unix wall time.")]
+#[thing(
+    description = "Kernel-published system clock including monotonic tick counter and Unix wall time."
+)]
 pub struct TimeSource {
     pub id: ThingId,
     pub ticks_since_boot: u64,
@@ -249,11 +241,7 @@ pub struct TimeSource {
 }
 
 impl TimeSource {
-    pub fn create(
-        tick_hz: u32,
-        unix_seconds: i64,
-        unix_nanos: u32,
-    ) -> [(PropKey, PropValue); 4] {
+    pub fn create(tick_hz: u32, unix_seconds: i64, unix_nanos: u32) -> [(PropKey, PropValue); 4] {
         [
             ("tick_hz".to_string(), PropValue::U64(tick_hz as u64)),
             ("ticks_since_boot".to_string(), PropValue::U64(0)),
@@ -384,35 +372,6 @@ mod tests {
         assert_eq!(roundtrip.module_index, image.module_index);
         assert_eq!(roundtrip.base_phys, image.base_phys);
         assert_eq!(roundtrip.size, image.size);
-        let mut roundtrip_props = Vec::new();
-        roundtrip.to_props(&mut roundtrip_props);
-        assert_eq!(roundtrip_props, props);
-    }
-
-    #[test]
-    fn display_present_request_roundtrip_props() {
-        let request = DisplayPresentRequest {
-            id: ThingId(0x1234),
-            framebuffer_id: ThingId(0x99),
-            frame_index: 5,
-            requested_at_ns: 1_000,
-            presented_at_ns: Some(2_000),
-            completed: true,
-        };
-
-        let mut props = Vec::new();
-        request.to_props(&mut props);
-        assert!(props.contains(&(
-            graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
-            PropValue::U64(2_000)
-        )));
-
-        let roundtrip = DisplayPresentRequest::from_props(request.id, &to_prop_slice(&props));
-        assert_eq!(roundtrip.framebuffer_id, request.framebuffer_id);
-        assert_eq!(roundtrip.frame_index, request.frame_index);
-        assert_eq!(roundtrip.requested_at_ns, request.requested_at_ns);
-        assert_eq!(roundtrip.presented_at_ns, request.presented_at_ns);
-        assert_eq!(roundtrip.completed, request.completed);
         let mut roundtrip_props = Vec::new();
         roundtrip.to_props(&mut roundtrip_props);
         assert_eq!(roundtrip_props, props);

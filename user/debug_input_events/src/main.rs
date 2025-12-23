@@ -26,20 +26,30 @@ fn main() {
     let mut last_mouse = max_seq::<MousePacketEvent>();
 
     loop {
-        process_events("KEY", &mut last_key, list_things_by_kind::<KeyScanEvent>(), |e| {
-            println!(
-                "debug_input_events: KEY scancode={:#x} released={} extended={} seq={}",
-                e.scancode, e.released, e.extended, e.sequence_index
-            );
-        });
+        process_events(
+            "KEY",
+            &mut last_key,
+            list_things_by_kind::<KeyScanEvent>(),
+            |e| {
+                println!(
+                    "debug_input_events: KEY scancode={:#x} released={} extended={} seq={}",
+                    e.scancode, e.released, e.extended, e.sequence_index
+                );
+            },
+        );
 
-        process_events("CHAR", &mut last_char, list_things_by_kind::<InputCharEvent>(), |e| {
-            println!(
-                "debug_input_events: CHAR '{}' seq={}",
-                escape_char(e.ch),
-                e.sequence_index
-            );
-        });
+        process_events(
+            "CHAR",
+            &mut last_char,
+            list_things_by_kind::<InputCharEvent>(),
+            |e| {
+                println!(
+                    "debug_input_events: CHAR '{}' seq={}",
+                    escape_char(e.ch),
+                    e.sequence_index
+                );
+            },
+        );
 
         process_events(
             "MOUSE",
@@ -58,7 +68,10 @@ fn main() {
 }
 
 fn max_seq<T: Thing + Sequenced>() -> Option<u64> {
-    list_things_by_kind::<T>().iter().map(|e| e.sequence()).max()
+    list_things_by_kind::<T>()
+        .iter()
+        .map(|e| e.sequence())
+        .max()
 }
 
 fn process_events<T, F>(tag: &str, last_seq: &mut Option<u64>, mut events: Vec<T>, f: F)

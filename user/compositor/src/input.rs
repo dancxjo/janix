@@ -11,9 +11,7 @@ use thing_models::graph_kinds;
 use thing_os::update_props;
 
 use thing_os::list_things_by_kind;
-use thing_os::resident::mouse::{
-    MouseEntry, MouseStreamHeader, MouseStreamMapped, MouseStream,
-};
+use thing_os::resident::mouse::{MouseEntry, MouseStream, MouseStreamHeader, MouseStreamMapped};
 use thing_os::resident::{Resident, ResidentError, ResidentMapPerms, map_resident};
 
 impl CursorState {

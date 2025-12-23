@@ -3,16 +3,14 @@
 extern crate alloc;
 
 use abi::{MapFlags, PixelFormat, Predicate, SharedBufferInfo, ThingId};
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use core::ptr;
-use thing_macros::Thing;
-use thing_models::graph_kinds;
+use framebuffer_api::{DisplayFramebuffer, DisplayPowerState, DisplayPresentRequest};
+use thing_os::graph_kinds;
 use thing_os::prelude::*;
-use thing_os::thing_models::DisplayPresentRequest;
 use thing_os::{
     add_link, create_thing, link_targets, list_things_by_kind, load_thing, register_schema_for,
-    shared_buffer_info, shared_buffer_map, update_props, DisplayThing, PropKey, PropType,
-    PropValue, SysError,
+    shared_buffer_info, shared_buffer_map, update_props, DisplayThing, PropValue, SysError,
 };
 
 const DEFAULT_REFRESH_INTERVAL_NS: u64 = 16_666_667;
@@ -205,13 +203,19 @@ impl FramebufferDriver {
                 return;
             }
             // If request is gone, drop the ID
-            println!("framebuffer_driver: DisplayPresentRequest {} gone", req_id.0);
+            println!(
+                "framebuffer_driver: DisplayPresentRequest {} gone",
+                req_id.0
+            );
             self.present_request_id = None;
         }
 
         if self.present_request_id.is_none() {
             if let Some(request) = Self::find_present_request(self.fb_id) {
-                println!("framebuffer_driver: found DisplayPresentRequest {}", request.id.0);
+                println!(
+                    "framebuffer_driver: found DisplayPresentRequest {}",
+                    request.id.0
+                );
                 self.frame_watch = Some(request.frame_index);
                 self.present_request_id = Some(request.id);
             }
@@ -229,7 +233,10 @@ impl FramebufferDriver {
             return;
         }
 
-        println!("framebuffer_driver: presenting frame {}", request.frame_index);
+        println!(
+            "framebuffer_driver: presenting frame {}",
+            request.frame_index
+        );
         self.blit_front_buffer();
 
         self.frame_watch = Some(request.frame_index);
@@ -375,56 +382,4 @@ fn primary_display_descriptor() -> Result<DisplayDescriptor, SysError> {
         scanout_buffer_id: buffer_id,
         info,
     })
-}
-
-#[derive(Thing, Clone, Debug)]
-#[thing(description = "Userland-published framebuffer")]
-struct DisplayFramebuffer {
-    pub id: ThingId,
-    pub name: String,
-    pub width: u64,
-    pub height: u64,
-    pub stride: u64,
-    #[thing(via = "String")]
-    pub pixel_format: PixelFormat,
-    #[thing(via = "String")]
-    pub power_state: DisplayPowerState,
-    pub refresh_interval_ns: Option<u64>,
-    pub frames_presented: u64,
-    pub last_present_ns: u64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DisplayPowerState {
-    On,
-    Sleep,
-    Off,
-}
-
-impl core::fmt::Display for DisplayPowerState {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl core::str::FromStr for DisplayPowerState {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Off" => Ok(DisplayPowerState::Off),
-            "Sleep" => Ok(DisplayPowerState::Sleep),
-            _ => Ok(DisplayPowerState::On),
-        }
-    }
-}
-
-impl DisplayPowerState {
-    const fn as_str(self) -> &'static str {
-        match self {
-            DisplayPowerState::On => "On",
-            DisplayPowerState::Sleep => "Sleep",
-            DisplayPowerState::Off => "Off",
-        }
-    }
 }

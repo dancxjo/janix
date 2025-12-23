@@ -1,5 +1,5 @@
-use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 use kernel::sched::FpuContext;
+use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 pub fn init() {
     unsafe {

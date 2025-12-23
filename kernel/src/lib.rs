@@ -38,7 +38,7 @@ use thing_models::{PropType, PropValue};
 pub use self::model::Thread;
 use alloc::string::String;
 use spin::{Mutex, MutexGuard};
-pub use thing_models::display::{Display, DisplayFrame, DisplayFramebuffer, DisplayPresentRequest};
+pub use thing_models::display::{Display, DisplayFrame};
 pub use thing_models::io::{InterruptEvent, InterruptRequest, IoPortOp, IoPortRegion};
 pub use thing_models::{AlarmEvent, AlarmRequest, CpuCore, FramePool, Process, SleepEvent, Thing};
 

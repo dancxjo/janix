@@ -33,7 +33,7 @@ endif
 ENABLE_ROOTFS ?= 0
 ENABLE_geographer ?= 1
 ENABLE_PLATARO_ICONS ?= 1
-APPS := init clock window_demo compositor hello_world geographer debug_alloc
+APPS := init init_debug clock window_demo compositor hello_world geographer debug_alloc
 ifneq ($(ENABLE_geographer),1)
 # APPS += geographer
 endif
@@ -693,7 +693,7 @@ limine/limine:
 .PHONY: user
 user:
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
-	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile release -p init
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile release -p init -p init_debug
 
 .PHONY: drivers
 drivers:
@@ -755,6 +755,7 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 		# objcopy --strip-debug iso_root/boot/user/$$app; \
 	done
 	cp -v target/$(RUST_TARGET)/release/init iso_root/boot/user/init
+	cp -v target/$(RUST_TARGET)/release/init_debug iso_root/boot/user/init_debug
 
 	for drv in framebuffer ps2_keyboard_driver ps2_mouse_driver usb; do \
 		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \

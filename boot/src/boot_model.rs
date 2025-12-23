@@ -403,7 +403,7 @@ pub fn seed_boot_programs_from_limine() {
         .unwrap_or(false);
 
     if is_debug_profile {
-        log("DEBUG PROFILE ACTIVE: Only spawning init and clock");
+        log("DEBUG PROFILE ACTIVE: Only spawning init_debug and clock");
     }
 
     for (index, module) in response.modules().iter().enumerate() {
@@ -416,9 +416,7 @@ pub fn seed_boot_programs_from_limine() {
             ModuleKind::Raw { .. } => continue,
         };
 
-        if identifier == "init" {
-            // Always spawn init
-        } else if is_debug_profile && identifier != "clock" {
+        if is_debug_profile && identifier != "clock" && identifier != "init_debug" {
             continue;
         }
 
@@ -435,7 +433,7 @@ pub fn seed_boot_programs_from_limine() {
         let priority = get_program_priority(&identifier);
 
         let mut respawn_policy = String::from(graph_kinds::RESPAWN_NEVER);
-        if identifier == "init" {
+        if identifier == "init" || identifier == "init_debug" {
             respawn_policy = String::from(graph_kinds::RESPAWN_ALWAYS);
         }
 

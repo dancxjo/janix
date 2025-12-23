@@ -6,8 +6,6 @@ use thing_os::SystemClock;
 
 #[thing_os::main]
 fn main() {
-    println!("clock: starting...");
-
     let clock = match SystemClock::discover() {
         Some(clock) => clock,
         None => {
@@ -17,23 +15,11 @@ fn main() {
     };
 
     loop {
-        println!("clock: loop start");
         let (unix_seconds, _) = clock.now();
         let (year, month, day, hour, minute, second) = unix_seconds_to_datetime(unix_seconds);
 
-        println!(
-            "clock: {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
-            year,
-            month,
-            day,
-            hour,
-            minute,
-            second
-        );
-
-        println!("clock: sleeping");
+        println!("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", year, month, day, hour, minute, second);
         sleep_ms(1000);
-        println!("clock: woke up");
     }
 }
 

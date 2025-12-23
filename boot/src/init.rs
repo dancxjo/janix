@@ -168,7 +168,11 @@ pub fn launch_init_process() {
         .map(|s| s == "debug")
         .unwrap_or(false);
 
-    let (binary, app_id) = if is_debug_profile { ("clock", 2) } else { ("init", 1) };
+    let (binary, app_id) = if is_debug_profile {
+        ("init_debug", 1)
+    } else {
+        ("init", 1)
+    };
 
     kernel::log("launch_init_process: spawning PID 1");
     // Ensure clock is seeded if we use it. The prior boot_model logic ensures it.

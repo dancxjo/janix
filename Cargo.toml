@@ -23,6 +23,7 @@ members = [
 
     "user/hello_world", "tools/icon-gen",
     "user/debug_alloc",
+    "user/init_debug",
     "smoke_tests",
 ]
 

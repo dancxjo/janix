@@ -141,8 +141,42 @@ pub fn log_message(message: &str) {
 
     #[cfg(all(feature = "debug_logging", not(test)))]
     {
-        console::print(message);
-        console::print("\r");
+        // Copy message to stack buffer to append \r and print atomically.
+        // MAX_LOG_LEN is 256, so +2 fits easily on stack (total 258 bytes).
+        let mut buf = [0u8; MAX_LOG_LEN + 2];
+        let bytes = message.as_bytes();
+        let len = bytes.len().min(MAX_LOG_LEN);
+
+        // Copy the truncated message bytes
+        buf[..len].copy_from_slice(&bytes[..len]);
+
+        // Append \r to match original behavior (replaces separated calls).
+        let mut total_len = len;
+        buf[total_len] = b'\r';
+        total_len += 1;
+
+        // Ensure valid UTF-8. Truncation might split a multi-byte char at the end.
+        match core::str::from_utf8(&buf[..total_len]) {
+            Ok(s) => console::print(s),
+            Err(e) => {
+                // If invalid UTF-8 (due to truncation), print up to the valid part.
+                let valid_len = e.valid_up_to();
+
+                // We still want the \r. If the valid part is shorter than len,
+                // we should check if \r was the problem? No, \r is ASCII.
+                // The problem is likely at `len` index (truncation point).
+                // So print valid prefix + \r.
+
+                // Move \r to after the valid prefix
+                buf[valid_len] = b'\r';
+                let print_len = valid_len + 1;
+
+                // SAFETY: valid_up_to guarantees valid UTF-8, and we appended ASCII \r.
+                if let Ok(s) = core::str::from_utf8(&buf[..print_len]) {
+                    console::print(s);
+                }
+            }
+        }
     }
 }
 

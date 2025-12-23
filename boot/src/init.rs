@@ -115,8 +115,15 @@ pub fn init_world_graph() {
     crate::boot_model::seed_program_images_from_limine();
     kernel::time::boot_span_end("seed_images", t);
 
+    crate::boot_screen::step("Seminatio modulorum rudium...");
+    let t = kernel::time::boot_span_start("seed_raw_modules");
     crate::boot_model::seed_raw_modules_from_limine();
+    kernel::time::boot_span_end("seed_raw_modules", t);
+
+    crate::boot_screen::step("Seminatio programmatum initialium...");
+    let t = kernel::time::boot_span_start("seed_boot_programs");
     crate::boot_model::seed_boot_programs_from_limine();
+    kernel::time::boot_span_end("seed_boot_programs", t);
 
     crate::boot_screen::step("Moderatores instrumentorum instruuntur...");
     let t = kernel::time::boot_span_start("driver_bringup");

@@ -148,9 +148,6 @@ fn wait_for_region() -> IoPortRegion {
 }
 
 fn init_mouse(accessor: &mut IoPortAccessor) -> bool {
-    println!("ps2_mouse_driver: skipping hardware init (debug bypass)");
-    return true;
-
     // We send enable commands but deliberately ignore failures (ACKs).
     // This is because the PS/2 Keyboard Driver might be racing to read from the same IO port (0x60),
     // stealing the ACK byte. Since we cannot easily coordinate with the keyboard driver from here,
@@ -324,7 +321,7 @@ impl IoPortAccessor {
     }
 
     fn wait_for_completion(&self, op_id: ThingId) -> Option<u32> {
-        for _ in 0..200 {
+        for _ in 0..1000 {
             if let Some(op) = load_thing::<IoPortOp>(op_id) {
                 match op.status {
                     IoStatus::Completed => return Some(op.value),

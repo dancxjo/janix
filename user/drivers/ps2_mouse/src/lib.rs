@@ -11,7 +11,7 @@ const STATUS_OFFSET: u16 = 4;
 const DATA_OFFSET: u16 = 0;
 // const MOUSE_IRQ_LINE: u8 = 12; // Unused
 const MOUSE_RING_CAPACITY: usize = 128;
-const ENABLE_POLLING_MODE: bool = true;
+const ENABLE_POLLING_MODE: bool = false;
 
 use abi::syscall_defs::{
     DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr,

@@ -165,8 +165,9 @@ pub fn draw_tiled_image(
                     let b = *pixel_ptr as u32;
                     let g = *pixel_ptr.add(1) as u32;
                     let r = *pixel_ptr.add(2) as u32;
-                    let a = *pixel_ptr.add(3) as u32;
-                    (a << 24) | (r << 16) | (g << 8) | b
+                    // Force opaque alpha for 32bpp images because many BMPs have 0 in the alpha byte
+                    // but are intended to be opaque. If we respect alpha=0, we get transparency (black).
+                    0xFF000000 | (r << 16) | (g << 8) | b
                 } else {
                     0 // Unsupported
                 };
@@ -263,6 +264,31 @@ mod tests {
         );
 
         assert_eq!(dest_buf[0], 0xFFFF7F7F);
+    }
+
+    #[test]
+    fn draw_tiled_image_32bpp_forces_alpha() {
+        let mut buf = vec![0u32; 1];
+        // Source: Blue=0x11, Green=0x22, Red=0x33, Alpha=0x00 (stored as B G R A)
+        let src_bytes: [u8; 4] = [0x11, 0x22, 0x33, 0x00];
+
+        draw_tiled_image(
+            buf.as_mut_ptr(),
+            4, // stride (1 pixel)
+            1,
+            1,
+            src_bytes.as_ptr(),
+            1,
+            1,
+            32, // bpp
+            0,
+            0,
+            None,
+        );
+
+        // Expect Alpha to be forced to 0xFF.
+        // 0xFF000000 | (0x33 << 16) | (0x22 << 8) | 0x11
+        assert_eq!(buf[0], 0xFF332211, "Alpha should be forced to 0xFF for 32bpp images");
     }
 }
 pub fn blit_image(

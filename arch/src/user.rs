@@ -79,26 +79,36 @@ pub fn schedule_next() -> ! {
             } else {
                 CurrentArch::activate_user_address_space(thread.address_space_token);
 
+                let is_kernel_thread = thread.process_id.0 == 1;
+
                 if thread.started {
-                    if thread.tid.0 > 3 {
-                        //                         kernel::println!(
-                        //                             "schedule_next: resuming tid={} RIP={:#x} CS={:#x} RSP={:#x}",
-                        //                             thread.tid.0,
-                        //                             thread.context[15],
-                        //                             thread.context[16],
-                        //                             thread.context[18]
-                        //                         );
+                    if is_kernel_thread {
+                        // Resume kernel thread (Ring 0 -> Ring 0)
+                        crate::current::resume_kernel_mode(&thread.context);
+                    } else {
+                        // Resume user thread (Ring 0 -> Ring 3)
+                        CurrentArch::resume_user_mode(&thread.context, &thread.fpu_context);
                     }
-                    CurrentArch::resume_user_mode(&thread.context, &thread.fpu_context);
                 } else {
-                    kernel::log("Entering user thread...");
-                    kernel::log(thread.name);
-                    let regs = UserEntryRegs {
-                        entry_point: thread.entry_point,
-                        user_stack: thread.user_stack_top,
-                        arg0: thread.user_arg,
-                    };
-                    CurrentArch::enter_user_mode(&regs);
+                    if is_kernel_thread {
+                        kernel::log("Entering kernel thread...");
+                        kernel::log(thread.name);
+                        // Jump to kernel entry point
+                        let entry = thread.entry_point;
+                        let stack = thread.user_stack_top;
+                        unsafe {
+                            enter_kernel_thread(entry, stack);
+                        }
+                    } else {
+                        kernel::log("Entering user thread...");
+                        kernel::log(thread.name);
+                        let regs = UserEntryRegs {
+                            entry_point: thread.entry_point,
+                            user_stack: thread.user_stack_top,
+                            arg0: thread.user_arg,
+                        };
+                        CurrentArch::enter_user_mode(&regs);
+                    }
                 }
             }
         } else {
@@ -107,6 +117,17 @@ pub fn schedule_next() -> ! {
             crate::cpu::wait_for_interrupt();
         }
     }
+}
+
+unsafe fn enter_kernel_thread(entry: u64, stack: u64) -> ! {
+    core::arch::asm!(
+        "mov rsp, {stack}", // Switch stack
+        "push 0",           // Dummy return address for alignment/ABI
+        "jmp {entry}",      // Jump to entry
+        stack = in(reg) stack,
+        entry = in(reg) entry,
+        options(noreturn)
+    );
 }
 
 pub fn sys_sleep_for_ns(delta_ns: u64) -> ! {

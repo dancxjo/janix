@@ -45,4 +45,4 @@ impl Arch for X86Arch {
     }
 }
 
-pub use enter::{alloc_user_stack, init_user_stack, resume_user_mode};
+pub use enter::{alloc_user_stack, init_user_stack, resume_user_mode, resume_kernel_mode};

@@ -77,6 +77,30 @@ pub fn init() {
     work_queue::init();
     #[cfg(not(test))]
     graph_watchers::init();
+
+    // Spawn Actualizer Thread
+    {
+        extern "C" fn actualizer_entry(_arg: u64) -> ! {
+            crate::graph::actualizer::run()
+        }
+
+        // Allocate stack (16KB)
+        let stack_size = 16 * 1024;
+        let stack = alloc::vec![0u8; stack_size];
+        let stack_leak = alloc::boxed::Box::leak(stack.into_boxed_slice());
+        let stack_top = stack_leak.as_ptr() as u64 + stack_size as u64;
+
+        // Add thread to kernel process (PID 1)
+        crate::sched::SCHEDULER.lock().add_thread(
+            abi::ProcessId(1),
+            "actualizer",
+            actualizer_entry,
+            0,
+            stack_top,
+            100, // Priority
+        );
+        log("Spawned Actualizer thread");
+    }
 }
 
 /// Register the function responsible for spawning programs described by BootProgram Things.
@@ -942,7 +966,8 @@ pub fn init_boot_graph() {
     };
 
     // Create process
-    let process = match model::create_process(1) {
+    let package_id = crate::symbols::intern("kernel");
+    let process = match model::create_process(1, package_id) {
         Some(id) => {
             log("Created Process(1)");
             id

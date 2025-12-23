@@ -67,7 +67,7 @@ fn spawn_loaded_program_named(
     let leaked_name: &'static str = leak_name(name);
     let (process_thing, thread_thing) = {
         let mut sched = SCHEDULER.lock();
-        let pid = sched.add_process(leaked_name);
+        let pid = sched.add_process(leaked_name, leaked_name);
         sched.set_process_address_space(pid, loaded.address_space_token);
         sched.set_process_heap(pid, loaded.heap_base as usize, loaded.heap_limit as usize);
         let tid = sched.add_thread_with_entry_point(

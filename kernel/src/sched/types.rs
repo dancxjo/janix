@@ -89,6 +89,7 @@ pub struct Thread {
 
 pub struct ScheduledThread {
     pub tid: ThreadId,
+    pub process_id: ProcessId,
     pub name: &'static str,
     pub started: bool,
     pub entry_point: u64,
@@ -104,6 +105,7 @@ pub struct ScheduledThread {
 pub struct Process {
     pub id: ProcessId,
     pub name: &'static str,
+    pub package_id: abi::syscall_defs::SymbolId,
     pub thing_id: Option<ThingId>,
     pub address_space_token: Option<u64>,
     pub heap_base: usize,

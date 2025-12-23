@@ -120,7 +120,43 @@ mod inner {
             }
         })
     }
-}
+
+    // Actualizer helpers
+    pub fn pop_keyboard_byte() -> Option<u8> {
+        interrupts::without_interrupts(|| {
+            if let Some((queue, _)) = &mut *PS2_KEYBOARD_BUFFER.lock() {
+                queue.pop_front()
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn set_keyboard_waiter(tid: ThreadId) {
+        interrupts::without_interrupts(|| {
+             if let Some((_, waiter)) = &mut *PS2_KEYBOARD_BUFFER.lock() {
+                 *waiter = Some(tid);
+             }
+        })
+    }
+
+    pub fn pop_mouse_byte() -> Option<u8> {
+        interrupts::without_interrupts(|| {
+            if let Some((queue, _)) = &mut *PS2_MOUSE_BUFFER.lock() {
+                queue.pop_front()
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn set_mouse_waiter(tid: ThreadId) {
+        interrupts::without_interrupts(|| {
+             if let Some((_, waiter)) = &mut *PS2_MOUSE_BUFFER.lock() {
+                 *waiter = Some(tid);
+             }
+        })
+    }}
 
 #[cfg(target_arch = "x86_64")]
 pub use inner::*;

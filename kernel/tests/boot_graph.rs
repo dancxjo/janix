@@ -350,7 +350,7 @@ fn test_model_create_functions() {
     let cpu = kernel::model::create_cpu_core(0);
     assert!(cpu.is_some(), "Should create CpuCore");
 
-    let process = kernel::model::create_process(100);
+    let process = kernel::model::create_process(100, kernel::symbols::intern("test"));
     assert!(process.is_some(), "Should create Process");
 
     let thread = kernel::model::create_thread(200, 50);

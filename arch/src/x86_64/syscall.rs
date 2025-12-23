@@ -814,7 +814,7 @@ macro_rules! dispatch_syscall {
         if let Ok(s) = core::str::from_utf8(slice) {
             let name = alloc::string::String::from(s);
             let leaked: &'static str = Box::leak(name.into_boxed_str());
-            kernel::sched::SCHEDULER.lock().add_process(leaked).0
+            kernel::sched::SCHEDULER.lock().add_process(leaked, leaked).0
         } else {
             u64::MAX
         }

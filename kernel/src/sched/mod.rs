@@ -216,13 +216,17 @@ impl Scheduler {
         }
     }
 
-    pub fn add_process(&mut self, name: &'static str) -> ProcessId {
+    pub fn add_process(&mut self, name: &'static str, package_name: &str) -> ProcessId {
         for (i, slot) in self.processes.iter_mut().enumerate() {
             if slot.is_none() {
                 let pid = ProcessId(i as u64 + 1);
 
                 // Create Process Thing
-                let props = alloc::vec![(crate::symbols::intern("pid"), PropValue::U64(pid.0))];
+                let package_id = crate::symbols::intern(package_name);
+                let props = alloc::vec![
+                    (crate::symbols::intern("pid"), PropValue::U64(pid.0)),
+                    (crate::symbols::intern("package_id"), PropValue::Symbol(package_id)),
+                ];
                 let thing_id = Some(graph::create_thing(
                     crate::symbols::intern(graph_kinds::KIND_PROCESS),
                     props,
@@ -231,6 +235,7 @@ impl Scheduler {
                 *slot = Some(Process {
                     id: pid,
                     name,
+                    package_id,
                     thing_id,
                     address_space_token: None,
                     heap_base: 0,
@@ -607,6 +612,7 @@ impl Scheduler {
 
         Some(ScheduledThread {
             tid,
+            process_id: thread.process_id,
             name: thread.name,
             started: thread.started,
             entry_point: thread.entry_point,
@@ -817,4 +823,16 @@ pub fn exit_current_thread(reason: &'static str, code: u64) {
             sched.current = None;
         }
     })
+}
+pub fn block_current_thread() {
+    without_preemption(|| {
+        let mut sched = SCHEDULER.lock();
+        if let Some(tid) = sched.current {
+            sched.mark_blocked(tid);
+            sched.current = None;
+        }
+    });
+    // Yield CPU
+    #[cfg(target_arch = "x86_64")]
+    x86_64::instructions::hlt();
 }

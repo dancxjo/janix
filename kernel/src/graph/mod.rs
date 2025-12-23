@@ -57,6 +57,8 @@ pub mod index_links;
 pub mod index_props;
 pub mod ops;
 pub mod schema;
+pub mod security;
+pub mod actualizer;
 pub mod sink;
 pub mod store;
 
@@ -92,36 +94,110 @@ impl Graph {
     }
 }
 
+
+pub fn apply_mutation(actor: security::Actor, mutation: security::Mutation) -> Result<security::MutationResult, &'static str> {
+    security::check_policy(&actor, &mutation)?;
+    match mutation {
+        security::Mutation::CreateThing { kind, props } => {
+             // Validate props against schema before creating
+            if let Err(e) = validate_props(kind, props) {
+                return Err(e);
+            }
+            let props_vec = Vec::from(props);
+            let id = with_store_mut(|store| store.create_thing(kind, props_vec));
+            debug::print_thing_created(id, kind, props);
+            events::dispatch_event(&GraphEvent::ThingCreated(id));
+            Ok(security::MutationResult::Created(id))
+        }
+        security::Mutation::UpdateThing { id, props } => {
+            let props_vec = Vec::from(props);
+            let updated = with_store_mut(|store| store.update_thing(id, props_vec));
+            if updated {
+                events::dispatch_event(&GraphEvent::ThingUpdated(id));
+            }
+            Ok(security::MutationResult::Updated(updated))
+        }
+        security::Mutation::AddLink { src, pred, dst } => {
+            let success = with_store_mut(|store| store.add_link(src, dst, pred));
+            if success {
+                debug::print_link_created(src, pred, dst);
+            }
+            Ok(security::MutationResult::Linked(success))
+        }
+        security::Mutation::RemoveLink { src, pred, dst } => {
+             let success = with_store_mut(|store| store.remove_link(src, dst, pred));
+            if success {
+                debug::print_link_removed(src, pred, dst);
+            }
+            Ok(security::MutationResult::Unlinked(success))
+        }
+        security::Mutation::DeclareSchema { kind, fingerprint: _, definition } => {
+             let (desc, props, indexed) = schema::decode_schema(definition)?;
+             let result = schema::register_schema(kind, desc, props, indexed);
+             match result {
+                 Ok(abi::SchemaRegistryOutcome::Created) | Ok(abi::SchemaRegistryOutcome::AlreadyRegisteredSame) => {
+                     Ok(security::MutationResult::Declared)
+                 }
+                 Ok(abi::SchemaRegistryOutcome::Conflict) => {
+                     Err("Schema declaration conflict")
+                 }
+                 Err(e) => Err(e),
+             }
+        }
+    }
+}
+
 pub fn create_thing(kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingId {
-    let props_for_log = props.clone();
-    let id = with_store_mut(|store| store.create_thing(kind, props));
-    debug::print_thing_created(id, kind, props_for_log.as_slice());
-    events::dispatch_event(&GraphEvent::ThingCreated(id));
-    id
+    let mutation = security::Mutation::CreateThing {
+        kind,
+        props: &props,
+    };
+    match apply_mutation(security::Actor::Kernel, mutation) {
+        Ok(security::MutationResult::Created(id)) => id,
+        Ok(_) => panic!("create_thing: wrong result type"),
+        Err(e) => panic!("create_thing failed: {}", e),
+    }
 }
 
 pub fn update_thing(id: ThingId, props: Vec<(SymbolId, PropValue)>) -> bool {
-    let updated = with_store_mut(|store| store.update_thing(id, props));
-    if updated {
-        events::dispatch_event(&GraphEvent::ThingUpdated(id));
+    let mutation = security::Mutation::UpdateThing {
+        id,
+        props: &props,
+    };
+    match apply_mutation(security::Actor::Kernel, mutation) {
+        Ok(security::MutationResult::Updated(b)) => b,
+        Ok(_) => panic!("update_thing: wrong result type"),
+        Err(e) => {
+            // update_thing wrapper used to return bool, so if it fails policy/validation we return false?
+            // But Kernel shouldn't fail policy.
+            crate::log(&format!("update_thing failed: {}", e));
+            false
+        }
     }
-    updated
 }
 
 pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
-    let success = with_store_mut(|store| store.add_link(src, dst, pred));
-    if success {
-        debug::print_link_created(src, pred, dst);
+    let mutation = security::Mutation::AddLink { src, pred, dst };
+    match apply_mutation(security::Actor::Kernel, mutation) {
+        Ok(security::MutationResult::Linked(b)) => b,
+        Ok(_) => panic!("add_link: wrong result type"),
+        Err(e) => { 
+             crate::log(&format!("add_link failed: {}", e));
+             false
+        }
     }
-    success
 }
 
 pub fn remove_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
-    let success = with_store_mut(|store| store.remove_link(src, dst, pred));
-    if success {
-        debug::print_link_removed(src, pred, dst);
+    let mutation = security::Mutation::RemoveLink { src, pred, dst };
+    match apply_mutation(security::Actor::Kernel, mutation) {
+        Ok(security::MutationResult::Unlinked(b)) => b,
+        Ok(_) => panic!("remove_link: wrong result type"),
+        Err(e) => {
+              crate::log(&format!("remove_link failed: {}", e));
+              false
+        }
     }
-    success
 }
 
 pub fn neighbors(src: ThingId, pred: Predicate, out: &mut [Option<ThingId>]) {

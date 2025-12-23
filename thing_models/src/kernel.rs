@@ -224,6 +224,7 @@ pub struct Process {
     pub id: ThingId,
     pub pid: u64,
     pub name: String,
+    pub package_id: abi::syscall_defs::SymbolId,
 }
 
 impl Thing for Process {
@@ -233,11 +234,13 @@ impl Thing for Process {
     fn to_props(&self, out: &mut Vec<(PropKey, PropValue)>) {
         out.push(("pid".to_string(), PropValue::U64(self.pid)));
         out.push(("name".to_string(), PropValue::Str(self.name.clone())));
+        out.push(("package_id".to_string(), PropValue::Symbol(self.package_id)));
     }
 
     fn from_props(id: ThingId, props: &[Option<(PropKey, PropValue)>]) -> Self {
         let mut pid = 0;
         let mut name = String::new();
+        let mut package_id = abi::syscall_defs::SymbolId(0);
 
         for prop in props.iter().flatten() {
             match prop.0.as_str() {
@@ -251,14 +254,19 @@ impl Thing for Process {
                         name = v.clone();
                     }
                 }
+                "package_id" => {
+                    if let PropValue::Symbol(v) = prop.1 {
+                        package_id = v;
+                    }
+                }
                 _ => {}
             }
         }
-        Process { id, pid, name }
+        Process { id, pid, name, package_id }
     }
 
     fn schema() -> &'static [(&'static str, PropType)] {
-        &[("pid", PropType::U64), ("name", PropType::Str)]
+        &[("pid", PropType::U64), ("name", PropType::Str), ("package_id", PropType::Symbol)]
     }
 }
 

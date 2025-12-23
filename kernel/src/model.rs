@@ -436,8 +436,11 @@ pub fn create_virt_region(base: u64, len: u64, flags: u64) -> Option<ThingId> {
 /// let pid = k::graph::get_prop(proc, "pid");
 /// assert!(matches!(pid, Some(thing_models::PropValue::U64(1))));
 /// ```
-pub fn create_process(pid: u64) -> Option<ThingId> {
-    let props = alloc::vec![(crate::symbols::intern("pid"), PropValue::U64(pid))];
+pub fn create_process(pid: u64, package_id: abi::syscall_defs::SymbolId) -> Option<ThingId> {
+    let props = alloc::vec![
+        (crate::symbols::intern("pid"), PropValue::U64(pid)),
+        (crate::symbols::intern("package_id"), PropValue::Symbol(package_id)),
+    ];
 
     Some(graph::create_thing(
         crate::symbols::intern(graph_kinds::KIND_PROCESS),
@@ -582,7 +585,7 @@ pub fn free_frame(frame_id: FrameId) -> bool {
 /// assert!(matches!(k::graph::get_prop(thing, "pid"), Some(thing_models::PropValue::U64(2))));
 /// ```
 pub fn create_process_abi(pid: u64) -> Option<u64> {
-    create_process(pid).map(|id| id.0)
+    create_process(pid, abi::syscall_defs::SymbolId(0)).map(|id| id.0)
 }
 
 /// Create a thread from an ABI call, returning the ThingId raw value.

@@ -176,3 +176,77 @@ pub fn get_key_from_id(_kind: SymbolId, key_id: u32) -> Option<alloc::string::St
     // It returns String!
     crate::symbols::resolve(SymbolId(key_id))
 }
+
+pub fn decode_schema(definition: &[u8]) -> Result<(SymbolId, Vec<(SymbolId, PropType)>, Vec<SymbolId>), &'static str> {
+    // Simple binary format:
+    // [Desc: 8 bytes]
+    // [NumProps: 4 bytes]
+    // [PropKey: 8 bytes, PropType: 1 byte] * NumProps
+    // [NumIndexed: 4 bytes]
+    // [IndexedKey: 8 bytes] * NumIndexed
+
+    use core::convert::TryInto;
+
+    let mut cursor = 0;
+    if definition.len() < 8 + 4 {
+        return Err("Schema definition too short");
+    }
+
+    // Desc
+    let desc_bytes = definition[cursor..cursor+8].try_into().map_err(|_| "Invalid desc")?;
+    let desc_val = u64::from_le_bytes(desc_bytes);
+    let description = SymbolId(desc_val.try_into().map_err(|_| "SymbolId overflow")?);
+    cursor += 8;
+
+    // NumProps
+    let np_bytes = definition[cursor..cursor+4].try_into().map_err(|_| "Invalid num props")?;
+    let num_props = u32::from_le_bytes(np_bytes) as usize;
+    cursor += 4;
+
+    let mut props = Vec::with_capacity(num_props);
+    for _ in 0..num_props {
+        if cursor + 9 > definition.len() {
+             return Err("Schema definition too short for props");
+        }
+        let key_bytes = definition[cursor..cursor+8].try_into().unwrap();
+        let key_val = u64::from_le_bytes(key_bytes);
+        let key = SymbolId(key_val.try_into().map_err(|_| "SymbolId overflow")?);
+        cursor += 8;
+
+        let type_byte = definition[cursor];
+        cursor += 1;
+
+        let pt = match type_byte {
+            0 => PropType::U64,
+            1 => PropType::I64,
+            2 => PropType::Bool,
+            3 => PropType::Str,
+            4 => PropType::Blob,
+            5 => PropType::Symbol,
+            _ => return Err("Invalid PropType"),
+        };
+        props.push((key, pt));
+    }
+
+    // NumIndexed
+    if cursor + 4 > definition.len() {
+        return Err("Schema definition too short for indexed count");
+    }
+    let ni_bytes = definition[cursor..cursor+4].try_into().map_err(|_| "Invalid num indexed")?;
+    let num_indexed = u32::from_le_bytes(ni_bytes) as usize;
+    cursor += 4;
+
+    let mut indexed = Vec::with_capacity(num_indexed);
+    for _ in 0..num_indexed {
+        if cursor + 8 > definition.len() {
+             return Err("Schema definition too short for indexed");
+        }
+        let key_bytes = definition[cursor..cursor+8].try_into().unwrap();
+        let key_val = u64::from_le_bytes(key_bytes);
+        let key = SymbolId(key_val.try_into().map_err(|_| "SymbolId overflow")?);
+        cursor += 8;
+        indexed.push(key);
+    }
+
+    Ok((description, props, indexed))
+}

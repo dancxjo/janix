@@ -36,7 +36,12 @@ impl Compositor {
     pub fn process_mouse_packets(&mut self, layout: &[StackedWindow]) {
         if self.mouse_stream.is_none() {
             let streams = list_things_by_kind::<MouseStream>();
-            println!("compositor: list_things_by_kind found {} items", streams.len());
+            println!("compositor: list_things_by_kind found {} items. Kind='{}'", streams.len(), MouseStream::KIND);
+            if let Some(t) = thing_os::load_thing::<MouseStream>(thing_os::ThingId(51)) {
+                 println!("compositor: ThingId(51) found? YES");
+            } else {
+                 println!("compositor: ThingId(51) found? NO");
+            }
             if let Some(thing) = streams.first() {
                 if let Ok(map_resp) = map_resident(thing.id, ResidentMapPerms::READ) {
                     unsafe {

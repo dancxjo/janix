@@ -20,7 +20,7 @@ use abi::syscall_defs::{
 
 // use abi::syscalls::{SYSCALL_DEV_OPEN, SYSCALL_DEV_READ}; // Removed
 
-use thing_os::resident::mouse::{MouseEntry, MouseStreamMapped};
+use thing_os::resident::mouse::{MouseEntry, MouseStream, MouseStreamMapped};
 use thing_os::resident::resident_create_and_map;
 use thing_os::{PropKey, PropValue, update_props};
 
@@ -38,7 +38,7 @@ pub fn driver_main() -> ! {
     // 1. Allocate & Map Resident Buffer
     let stream_resident = match unsafe {
         resident_create_and_map::<()>(
-            "MouseStream",
+            MouseStream::KIND,
             65536,
             abi::resident::ResidentMapPerms(
                 abi::resident::ResidentMapPerms::READ.0 | abi::resident::ResidentMapPerms::WRITE.0,

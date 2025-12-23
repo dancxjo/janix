@@ -1,13 +1,11 @@
 use abi::ThingId;
 use alloc::string::ToString;
-use framebuffer_api::DisplayPresentRequest;
 use thing_models::PropValue;
 use thing_models::graph_kinds;
 use thing_os::PrimaryDisplayBuffer;
 use thing_os::link_targets;
 use thing_os::prelude::*;
 use thing_os::{create_thing, list_things_by_kind, load_thing, update_props};
-use crate::graph::swap_display_buffers;
 
 use crate::layout::StackedWindow;
 use crate::render::cursor::{self, CursorKind, CursorSprites};
@@ -71,20 +69,24 @@ pub struct Compositor {
     pub last_mouse_event_id: Option<ThingId>,
     pub active_window: Option<ThingId>,
     pub drag: Option<DragState>,
+
+    // Legacy / Setup fields
     framebuffer_thing_id: Option<ThingId>,
-    present_request_id: Option<ThingId>,
+
     pub background_image: Option<BackgroundImage>,
     pub background_offset: (i32, i32),
     pub background_canvas: Option<BackgroundCanvas>,
     pub console_buffer: Option<ConsoleBuffer>,
     pub mapped_surfaces: alloc::collections::BTreeMap<ThingId, MappedSurface>,
+
     // Dirty rectangle tracking
     pub damage: Vec<Rect>,
-    pub previous_damage: Vec<Rect>,
+    pub previous_damage: Vec<Rect>, // Kept for cursor trail cleaning, if needed
+
     pub mouse_stream: Option<MouseStreamMapped<()>>,
     pub mouse_head: u32,
     pub mouse_received: bool,
-    pub present_request_missing_logged: bool,
+
     pub frame_counter: u64,
     pub cached_layout: alloc::vec::Vec<StackedWindow>,
 }
@@ -102,7 +104,6 @@ impl Compositor {
             active_window: None,
             drag: None,
             framebuffer_thing_id: None,
-            present_request_id: None,
             background_image: None,
             background_offset: (0, 0),
             background_canvas: None,
@@ -114,7 +115,6 @@ impl Compositor {
             mouse_stream: None,
             mouse_head: 0,
             mouse_received: false,
-            present_request_missing_logged: false,
             frame_counter: 0,
             cached_layout: alloc::vec::Vec::new(),
         }
@@ -176,6 +176,40 @@ impl Compositor {
         self.damage
             .push(Rect::new(0, 0, self.fb.info.width, self.fb.info.height));
     }
+
+    pub fn ensure_display_contracts(&mut self) {
+        // Just locate the framebuffer thing for metadata/properties if needed.
+        if self.framebuffer_thing_id.is_none() {
+            let mut targets =
+                link_targets(self.fb.display_id, graph_kinds::LINK_DISPLAY_FRONT_BUFFER);
+            self.framebuffer_thing_id = targets.pop();
+        }
+    }
+
+    // No-op for direct rendering
+    pub fn present_frame(&mut self) {
+        self.frame_counter = self.frame_counter.wrapping_add(1);
+
+        // Optionally update metadata on the framebuffer thing
+        if self.frame_counter % 60 == 0 {
+             if let Some(fb_id) = self.framebuffer_thing_id {
+                 let now = thing_os::time::Instant::now().t_ns;
+                 let _ = update_props(
+                    fb_id,
+                    &[
+                        (
+                            graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
+                            PropValue::U64(now),
+                        ),
+                        (
+                            graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
+                            PropValue::U64(self.frame_counter),
+                        ),
+                    ],
+                );
+             }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -208,119 +242,4 @@ pub struct DragState {
     pub height: i32,
     pub last_sent_x: i32,
     pub last_sent_y: i32,
-}
-
-impl Compositor {
-    pub fn ensure_display_contracts(&mut self) {
-        if self.framebuffer_thing_id.is_none() {
-            let mut targets =
-                link_targets(self.fb.display_id, graph_kinds::LINK_DISPLAY_FRONT_BUFFER);
-            self.framebuffer_thing_id = targets.pop();
-        }
-
-        if let Some(fb_id) = self.framebuffer_thing_id {
-            if self.present_request_id.is_none() {
-                if let Some(existing) = Self::find_present_request(fb_id) {
-                    self.present_request_id = Some(existing.id);
-                } else {
-                    let request = DisplayPresentRequest {
-                        id: ThingId(0),
-                        framebuffer_id: fb_id,
-                        frame_index: 0,
-                        requested_at_ns: 0,
-                        presented_at_ns: None,
-                        completed: true,
-                        damage_count: 0,
-                        damage_rects: alloc::vec::Vec::new(),
-                    };
-                    if let Some(id) = create_thing(&request) {
-                        self.present_request_id = Some(id);
-                    }
-                }
-            }
-        }
-    }
-
-    fn find_present_request(fb_id: ThingId) -> Option<DisplayPresentRequest> {
-        list_things_by_kind::<DisplayPresentRequest>()
-            .into_iter()
-            .find(|req| req.framebuffer_id == fb_id)
-    }
-
-    fn ensure_present_request(&mut self) -> Option<ThingId> {
-        self.ensure_display_contracts();
-        if self.present_request_id.is_none() {
-            if !self.present_request_missing_logged {
-                println!("compositor: missing DisplayPresentRequest; retrying creation");
-                self.present_request_missing_logged = true;
-            }
-            return None;
-        }
-        self.present_request_missing_logged = false;
-        self.present_request_id
-    }
-
-    pub fn present_frame(&mut self) {
-        let Some(req_id) = self.ensure_present_request() else {
-            return;
-        };
-
-        if let Some(active_index) = crate::graph::swap_display_buffers(self.fb.display_id) {
-            self.fb.update_active_index(active_index);
-        } else if !self.present_request_missing_logged {
-            println!("compositor: swap_display_buffers failed");
-            self.present_request_missing_logged = true;
-        }
-
-        self.frame_counter = self.frame_counter.wrapping_add(1);
-        let now = thing_os::time::Instant::now().t_ns;
-
-        // Pack damage rects from previous_damage (which is the current frame's damage after rotation)
-        let mut packed_rects = alloc::vec::Vec::new();
-        let mut count = 0;
-        let limit = self.previous_damage.len().min(64);
-        
-        for rect in self.previous_damage.iter().take(limit) {
-             let x = (rect.x as u16).to_le_bytes();
-             let y = (rect.y as u16).to_le_bytes();
-             let w = (rect.w as u16).to_le_bytes();
-             let h = (rect.h as u16).to_le_bytes();
-             packed_rects.extend_from_slice(&x);
-             packed_rects.extend_from_slice(&y);
-             packed_rects.extend_from_slice(&w);
-             packed_rects.extend_from_slice(&h);
-             count += 1;
-        }
-        
-        // If damage exceeds 64, fall back to full redraw (count=0) or we could just clip.
-        // Let's cap at 64 for now.
-        if self.previous_damage.len() > 64 {
-             count = 0;
-             packed_rects.clear();
-        }
-
-        let updates = [
-            (
-                graph_kinds::PROP_FRAME_INDEX.to_string(),
-                PropValue::U64(self.frame_counter),
-            ),
-            (
-                graph_kinds::PROP_REQUESTED_AT_NS.to_string(),
-                PropValue::U64(now),
-            ),
-            (
-                graph_kinds::PROP_COMPLETED.to_string(),
-                PropValue::Bool(false),
-            ),
-            (
-                "damage_count".to_string(),
-                PropValue::U64(count as u64),
-            ),
-            (
-                "damage_rects".to_string(),
-                PropValue::Blob(packed_rects),
-            ),
-        ];
-        let _ = update_props(req_id, &updates);
-    }
 }

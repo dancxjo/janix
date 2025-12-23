@@ -3,18 +3,12 @@ use alloc::string::{String, ToString};
 #[cfg(not(target_os = "none"))]
 use alloc::string::{String, ToString};
 
-use crate::PropValue;
-use crate::graph_kinds;
-use crate::sys::raw_syscall;
 use abi::{MapFlags, SharedBufferInfo, ThingId};
 use alloc::vec::Vec;
-use thing_models::graph_kinds::{
-    LINK_DISPLAY_HAS_BACK_BUFFER, LINK_DISPLAY_HAS_FRONT_BUFFER, PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
-};
+use thing_models::graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER;
 
-use crate::DisplayThing;
 use crate::syscalls::syscall;
-use crate::{link_targets, list_things_by_kind, update_props};
+use crate::{link_targets, list_things_by_kind};
 
 #[derive(Debug)]
 pub struct SharedBufferMapping {
@@ -25,49 +19,28 @@ pub struct SharedBufferMapping {
 }
 
 #[derive(Debug)]
-/// Represents a mapped primary display buffer that a userland process can draw into.
+/// Represents a mapped primary display buffer (scanout) that a userland process can draw into.
+/// Single-buffered configuration.
 pub struct PrimaryDisplayBuffer {
     pub display_id: ThingId,
-    pub buffers: [SharedBufferMapping; 2],
-    pub active_buffer_index: i64,
+    pub buffer: SharedBufferMapping,
     pub info: SharedBufferInfo,
     pub ptr: *mut u8,
 }
 
 impl PrimaryDisplayBuffer {
-    fn clamp_active_index(value: i64) -> i64 {
-        if value == 1 { 1 } else { 0 }
-    }
-
-    fn front_index(value: i64) -> usize {
-        match Self::clamp_active_index(value) {
-            1 => 1,
-            _ => 0,
-        }
-    }
-
-    fn back_index(value: i64) -> usize {
-        1 - Self::front_index(value)
-    }
-
-    fn sync_back_buffer(&mut self) {
-        let idx = Self::back_index(self.active_buffer_index);
-        let slot = &self.buffers[idx];
-        self.ptr = slot.ptr;
-        self.info = slot.info;
-    }
-
-    pub fn back_buffer(&self) -> &SharedBufferMapping {
-        &self.buffers[Self::back_index(self.active_buffer_index)]
+    // Legacy helper: update_active_index is now a no-op since there's only one buffer
+    pub fn update_active_index(&mut self, _index: i64) {
+        // No-op
     }
 
     pub fn front_buffer(&self) -> &SharedBufferMapping {
-        &self.buffers[Self::front_index(self.active_buffer_index)]
+        &self.buffer
     }
 
-    pub fn update_active_index(&mut self, index: i64) {
-        self.active_buffer_index = Self::clamp_active_index(index);
-        self.sync_back_buffer();
+    // Legacy support: back_buffer returns the same buffer
+    pub fn back_buffer(&self) -> &SharedBufferMapping {
+        &self.buffer
     }
 }
 
@@ -146,72 +119,47 @@ pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysE
         .cloned()
         .ok_or(crate::SysError::Unexpected)?;
 
-    let mut front_targets = link_targets(display.id, LINK_DISPLAY_HAS_FRONT_BUFFER);
-    let mut back_targets = link_targets(display.id, LINK_DISPLAY_HAS_BACK_BUFFER);
-    let front_id = front_targets.pop().ok_or(crate::SysError::Unexpected)?;
-    let back_id = back_targets.pop().ok_or(crate::SysError::Unexpected)?;
+    // In single-buffered mode, we look for the "Front Buffer" which links to the scanout.
+    let mut targets = link_targets(display.id, LINK_DISPLAY_HAS_FRONT_BUFFER);
+    let buffer_id = targets.pop().ok_or(crate::SysError::Unexpected)?;
+
+    // If there were a back buffer, we ignore it.
 
     let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER);
-    let front_map = map_display_buffer(front_id, flags).map_err(|e| {
+    let mapping = map_display_buffer(buffer_id, flags).map_err(|e| {
         use crate::println;
         println!(
-            "open_primary_display: failed to map front buffer {:?}: {:?}",
-            front_id, e
-        );
-        e
-    })?;
-    let back_map = map_display_buffer(back_id, flags).map_err(|e| {
-        use crate::println;
-        println!(
-            "open_primary_display: failed to map back buffer {:?}: {:?}",
-            back_id, e
+            "open_primary_display: failed to map buffer {:?}: {:?}",
+            buffer_id, e
         );
         e
     })?;
 
-    if front_map.ptr.is_null() || back_map.ptr.is_null() {
+    if mapping.ptr.is_null() {
         return Err(crate::SysError::Kernel(
             "Primary display buffer mapped to NULL",
         ));
     }
 
-    let mut primary = PrimaryDisplayBuffer {
-        display_id: display.id,
-        buffers: [front_map, back_map],
-        active_buffer_index: PrimaryDisplayBuffer::clamp_active_index(display.active_buffer_index),
-        info: SharedBufferInfo {
-            width: 0,
-            height: 0,
-            stride: 0,
-            pixel_format: abi::PixelFormat::Rgba8888,
-        },
-        ptr: core::ptr::null_mut(),
-    };
+    let ptr = mapping.ptr;
+    let info = mapping.info;
+
     use crate::println;
     println!(
-        "DEBUG: open_primary_display: front_ptr={:p} back_ptr={:p}",
-        primary.buffers[0].ptr, primary.buffers[1].ptr
+        "DEBUG: open_primary_display: ptr={:p} w={} h={}",
+        ptr, info.width, info.height
     );
-    primary.sync_back_buffer();
-    println!(
-        "DEBUG: open_primary_display: synced ptr={:p} idx={}",
-        primary.ptr, primary.active_buffer_index
-    );
-    Ok(primary)
+
+    Ok(PrimaryDisplayBuffer {
+        display_id: display.id,
+        buffer: mapping,
+        info,
+        ptr,
+    })
 }
 
-pub fn swap_display_buffers(display_id: ThingId) -> Option<i64> {
-    let mut display = crate::load_thing::<crate::DisplayThing>(display_id)?;
-    let current = PrimaryDisplayBuffer::clamp_active_index(display.active_buffer_index);
-    let next = 1 - current;
-    let updates = [(
-        PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(),
-        PropValue::I64(next),
-    )];
-    if update_props(display_id, &updates) {
-        display.active_buffer_index = next;
-        Some(next)
-    } else {
-        None
-    }
+// Deprecated/No-op
+pub fn swap_display_buffers(_display_id: ThingId) -> Option<i64> {
+    // Always index 0
+    Some(0)
 }

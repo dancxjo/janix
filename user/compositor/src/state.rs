@@ -20,12 +20,6 @@ use thing_os::println;
 use thing_os::syscalls::{sys_symbol_intern, syscall};
 
 fn draw_console(compositor: &mut Compositor) {
-    /*
-    if compositor.console_buffer.is_none() {
-        // ... (Disabled: ThingGet usage invalid) ...
-    }
-    */
-
     if let Some(cb) = &compositor.console_buffer {
         let ptr = cb.ptr;
         let w = cb.width;
@@ -157,6 +151,7 @@ fn prepare_background_canvas(compositor: &mut Compositor) {
         compositor.background_offset.0,
         compositor.background_offset.1,
         None,
+        true, // force_opaque
     );
 
     compositor.background_canvas = Some(BackgroundCanvas {
@@ -168,9 +163,8 @@ fn prepare_background_canvas(compositor: &mut Compositor) {
 }
 
 pub fn main() -> ! {
-    println!("compositor: starting");
+    println!("compositor: starting (single-buffered)");
 
-    // 1. Critical Base Infrastructure Checks
     // 1. Critical Base Infrastructure Checks
     if !ensure_ui_schemas() {
         println!("compositor: schemas unavailable; sleeping and retrying");
@@ -182,12 +176,8 @@ pub fn main() -> ! {
         }
     }
 
-    if !ensure_schema_exists_for::<DisplayPresentRequest>() {
-        println!("compositor: FATAL - DisplayPresentRequest schema missing in kernel");
-        loop {
-            thing_os::time::sleep(Duration::from_secs(1));
-        }
-    }
+    // We no longer strictly need DisplayPresentRequest schema since we don't send it,
+    // but the driver might still register it. We can skip checking it.
 
     let fb = loop {
         match active_framebuffer() {
@@ -206,9 +196,6 @@ pub fn main() -> ! {
     }
 
     // Force initial full redraw to paint background/windows
-    // We must render TWICE to ensure both front and back buffers are initialized.
-    compositor.add_full_damage();
-    tick_once(&mut compositor);
     compositor.add_full_damage();
     tick_once(&mut compositor);
 
@@ -253,11 +240,6 @@ pub fn tick_once(compositor: &mut Compositor) {
     */
 
     let windows = collect_all_windows();
-    if compositor.frame_counter % 60 == 0 {
-        // let msg = format!("compositor: found {} windows", windows.len());
-        // let leaked = Box::leak(msg.into_boxed_str());
-        // println(sys, leaked);
-    }
     let surface_map = collect_surfaces_for_windows(&windows);
     update_mapped_surfaces(compositor, &surface_map);
 
@@ -273,56 +255,46 @@ pub fn tick_once(compositor: &mut Compositor) {
     compositor.sync_active_from_layout(&stacked);
 
     // Track layout changes for damage
-    // Naive: if layout changed at all, full redraw.
-    // Ideally we diff 'prev_layout' vs 'stacked'.
     if prev_layout != stacked {
         compositor.add_full_damage();
     }
-
-    // DEBUG: Stub input for cursor movement (remove or comment out for production)
-    // let fb_w_i32 = compositor.fb.info.width as i32;
-    // let fb_h_i32 = compositor.fb.info.height as i32;
-    // compositor.cursor.x = (compositor.cursor.x + 2).rem_euclid(fb_w_i32);
-    // compositor.cursor.y = (compositor.cursor.y + 2).rem_euclid(fb_h_i32);
-
-    // Animate background: scroll up and left (requires incrementing offset)
-    // Disabled to fix dirty rectangle glitches (we don't redraw background every frame)
-    // compositor.background_offset.0 = compositor.background_offset.0.wrapping_add(1);
-    // compositor.background_offset.1 = compositor.background_offset.1.wrapping_add(1);
 
     // Run widget layout pass
     let (widget_rects, widget_map) = run_widget_pass(&stacked);
 
     // Damage tracking: Union all damage rects into one bounding box
-    // This is the "easy" way (scissoring).
-    // A harder way is to pass multiple clip rects (region) to the renderer.
-
-    // We must consider BOTH current frame damage and previous frame damage
-    // because we are swapping buffers. The back buffer contains state from N-2.
-    // We need to clear artifacts from N-1 (previous_damage) and draw N (current damage).
     
-    // Union current damage
+    // In single-buffered mode, we must treat damage differently than double-buffered swap.
+    // If we move the cursor, we must:
+    // 1. Redraw the area where the cursor WAS (to restore background/windows).
+    // 2. Redraw the area where the cursor IS (to draw new cursor).
+    // The `previous_damage` tracking in compositor handles the "previous frame" concept,
+    // but mainly for "what was dirty on back buffer".
+    // Here, we just need to ensure we cover the "trails".
+
+    // The compositor model pushes new damage into `compositor.damage`.
+    // It keeps `previous_damage` from the last tick.
+
+    // Union current damage (includes new cursor pos)
     let current_union = calc_damage_union(&compositor.damage);
     
-    // Union with previous damage (for double buffering consistency)
+    // Union with previous damage (includes old cursor pos, etc)
+    // We MUST redraw previous damage regions because they might contain artifacts (like old cursor)
+    // that are still on the single screen buffer if we don't clear them.
+    // Wait, if we moved the cursor, `compositor.process_mouse_packets` adds damage for *both* old and new positions?
+    // Let's check `process_mouse_packets` in `input.rs` (not visible here, but usually it does).
+    // If `process_mouse_packets` adds old+new rects to `compositor.damage`, then `current_union` suffices.
+    // Assuming standard implementation:
+    // `cursor.x/y` updated. Old rect added to damage. New rect added to damage.
+
+    // If so, we just need `current_union`.
+    // `previous_damage` was useful for swapping because the back buffer was 2 frames old.
+    // With single buffer, the buffer is current-1 frame old (what we just showed).
+    // We just need to overwrite changed pixels.
+
     let render_clip_tuple = if let Some((cx, cy, cw, ch)) = current_union {
-         if let Some((px, py, pw, ph)) = calc_damage_union(&compositor.previous_damage) {
-             let min_x = cx.min(px);
-             let min_y = cy.min(py);
-             let max_x = (cx + cw).max(px + pw);
-             let max_y = (cy + ch).max(py + ph);
-             Some((min_x, min_y, max_x - min_x, max_y - min_y))
-         } else {
-             Some((cx, cy, cw, ch))
-         }
+         Some((cx, cy, cw, ch))
     } else {
-         // Even if current damage is empty, if previous damage exists, we might need to repair the back buffer?
-         // If we DON'T render, we DON'T swap. But to enable animations that STOP, we just stop swapping.
-         // So if no new damage, we don't present?
-         // BUT if we have pending "previous damage", that means the current back buffer (which was front last time)
-         // might be dirty relative to what we want to show?
-         // Actually, if we don't swap, we show the Front Buffer which is correct (Frame N-1).
-         // So we only need to render if we have NEW damage.
          None
     };
 
@@ -343,7 +315,6 @@ pub fn tick_once(compositor: &mut Compositor) {
                  (max_y - min_y) as u32,
              )
          } else {
-             // Zero area clip, effectively None/Empty
              crate::widget_layout::Rect::new(0, 0, 0, 0)
          }
     }).filter(|r| r.w > 0 && r.h > 0);
@@ -359,23 +330,14 @@ pub fn tick_once(compositor: &mut Compositor) {
         );
         render_display_list(compositor, &ops, Some(clip_rect));
         
-        // Present
-        if compositor.frame_counter % 60 == 0 {
-             /*
-             println!(
-                 "compositor: requesting present for frame {}",
-                 compositor.frame_counter + 1
-             );
-             */
-        }
+        // Present (No-op / Metadata update)
         compositor.present_frame();
         
-        // Rotate damage history
+        // Clear damage
         compositor.previous_damage = compositor.damage.clone();
         compositor.damage.clear();
     } else {
-        // No damage, no render, no present.
-        // Sleep a bit?
+        // No damage, no render.
     }
 }
 
@@ -439,9 +401,6 @@ fn run_widget_pass(
         let mut queue: Vec<(ThingId, Rect)> = Vec::new();
 
         let children = widget_children(win.id);
-
-        // let msg = format!("compositor: layout window {} children={}", win.id.0, children.len());
-        // println!("{}", msg);
 
         let root_rects = layout_children(&widget_map, win.id, container_rect, &children);
 

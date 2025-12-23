@@ -7,8 +7,8 @@
 extern crate alloc;
 use crate::graph::schema::register_schema;
 
-use crate::sched_types::ThreadState;
-use crate::{graph, graph_kinds, memory, sched_graph};
+use crate::sched::ThreadState;
+use crate::{graph, graph_kinds, memory, sched::legacy_graph};
 use abi::SchedThreadInfo;
 use abi::{FrameId, FrameInfo, MemorySummary, SchedulerSummary, ThingId, ThreadId};
 use alloc::boxed::Box;
@@ -630,7 +630,7 @@ pub fn scheduler_tick() -> Option<SchedThreadInfo> {
         FAKE_TIME = FAKE_TIME.saturating_add(1_000_000);
         let now = FAKE_TIME;
         let mut g = graph::Graph::new();
-        let next = sched_graph::sched_tick(&mut g, 0, now)?;
+        let next = legacy_graph::sched_tick(&mut g, 0, now)?;
 
         let state = crate::graph::get_prop(next, "state")
             .and_then(|v| match v {

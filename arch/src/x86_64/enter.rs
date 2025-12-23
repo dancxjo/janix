@@ -123,6 +123,7 @@ resume_kernel_mode_asm:
     // Load RSP first!
     mov rsp, [rdi + 144]
 
+    // Interrupt frame (RIP, CS, RFLAGS). For CPL0 returns, iretq pops only these.
     mov rax, [rdi + 136] // RFLAGS
     push rax
     mov rax, [rdi + 128] // CS
@@ -130,21 +131,7 @@ resume_kernel_mode_asm:
     mov rax, [rdi + 120] // RIP
     push rax
 
-    // Restore GPRs (copy-paste from resume_user_mode_asm but without initial stack preamble)
-    mov rax, [rdi + 112] // RAX
-    push rax
-    mov rax, [rdi + 104] // RDI temp stash on stack?
-    // Wait, if we push RAX, we clobber it on pop?
-    // No, standard pop order implies we push in reverse order of pops.
-    
-    // The previous code:
-    // mov rax, [rdi + 112] // RAX
-    // push rax
-    // ...
-    // pop rax
-    
-    // So we just need to replicate the GPR restore sequence:
-    
+    // GPRs (RAX .. R15)
     mov rax, [rdi + 112] // RAX
     push rax
     mov rax, [rdi + 104] // RDI
@@ -240,11 +227,12 @@ pub fn start_kernel_thread(entry: u64, stack_top: u64, arg: u64) -> ! {
     unsafe {
         core::arch::asm!(
             "mov rsp, {stack}",
+            "mov rax, {entry}",
             "mov rdi, {arg}",
-            "jmp {entry}",
+            "jmp rax",
             stack = in(reg) stack_top,
-            arg = in(reg) arg,
             entry = in(reg) entry,
+            arg = in(reg) arg,
             options(noreturn)
         );
     }

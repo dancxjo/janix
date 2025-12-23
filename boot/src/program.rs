@@ -14,9 +14,9 @@ pub fn spawn_program(boot_program_id: ThingId) -> Result<(ThingId, ThingId), &'s
     let info = load_boot_program_info(boot_program_id)?;
 
     let image =
-        find_program_image(&info.binary).ok_or("ProgramImage Thing not found for identifier")?;
+        find_program_image(&info.binary).ok_or("Res ProgramImage pro identificatore non inventa")?;
     let loaded = elf_loader::load_program(&image)?;
-    kernel::log("Loaded ELF ProgramImage, spawning process");
+    kernel::log("ProgramImage ELF onustus, processum progenerans");
     let (proc, thread) = spawn_loaded_program(&info, loaded)?;
 
     // Link the new process to the BootProgram as RUNNING
@@ -32,7 +32,7 @@ pub fn spawn_program_by_identifier(
     priority: u64,
 ) -> Result<(ThingId, ThingId), &'static str> {
     let image =
-        find_program_image(identifier).ok_or("ProgramImage Thing not found for identifier")?;
+        find_program_image(identifier).ok_or("Res ProgramImage pro identificatore non inventa")?;
     let loaded = elf_loader::load_program(&image)?;
     spawn_loaded_program_named(name, priority, loaded)
 }
@@ -99,10 +99,10 @@ fn spawn_loaded_program_named(
 
         let process_thing = sched
             .process_thing_id(pid)
-            .ok_or("Process Thing not recorded")?;
+            .ok_or("Res Process non relata")?;
         let thread_thing = sched
             .thread_thing_id(tid)
-            .ok_or("Thread Thing not recorded")?;
+            .ok_or("Res Thread non relata")?;
         (process_thing, thread_thing)
     };
     kernel::time::boot_span_end("spawn_process_setup", t_spawn);
@@ -125,7 +125,7 @@ fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> 
     graph::with_thing(id, |thing| {
         let kind_boot_prog = symbols::intern(graph_kinds::KIND_BOOT_PROGRAM);
         if thing.kind != kind_boot_prog {
-            return Err("SpawnProgram Thing was not BootProgram");
+            return Err("Res SpawnProgram BootProgram non fuit");
         }
 
         let mut name: Option<String> = None;
@@ -165,15 +165,15 @@ fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> 
         }
 
         Ok(BootProgramInfo {
-            name: name.ok_or("BootProgram missing name")?,
-            app_id: app_id.ok_or("BootProgram missing app_id")?,
+            name: name.ok_or("BootProgram caret nomine")?,
+            app_id: app_id.ok_or("BootProgram caret app_id")?,
             priority,
             binary: binary.unwrap_or_default(),
             respawn_policy: respawn_policy
                 .unwrap_or_else(|| String::from(graph_kinds::RESPAWN_NEVER)),
         })
     })
-    .unwrap_or(Err("BootProgram Thing not found"))
+    .unwrap_or(Err("Res BootProgram non inventa"))
 }
 
 fn find_program_image(identifier: &str) -> Option<ProgramImageData> {

@@ -1,23 +1,23 @@
 pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    kernel::println!("========== KERNEL PANIC ==========");
+    kernel::println!("========== PAVOR NUCLEI ==========");
     let panic_message = info.message();
-    kernel::println!("Message: {}", panic_message);
+    kernel::println!("Nuntius: {}", panic_message);
     if let Some(location) = info.location() {
         kernel::println!(
-            "Location: {}:{}:{}",
+            "Locus: {}:{}:{}",
             location.file(),
             location.line(),
             location.column()
         );
     } else {
-        kernel::println!("Location: <unknown>");
+        kernel::println!("Locus: <incertus>");
     }
 
     let ticks = kernel::time::ticks_since_boot();
     let monotonic_ns = kernel::time::monotonic_now_ns();
     let (unix_seconds, unix_nanos) = kernel::time::now_unix_from_rtc();
     kernel::println!(
-        "Time: ticks={} monotonic_ns={} unix_seconds={} unix_nanos={}",
+        "Tempus: tictus={} monotonic_ns={} unix_secundae={} unix_nani={}",
         ticks,
         monotonic_ns,
         unix_seconds,
@@ -26,19 +26,19 @@ pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
 
     let snapshot = kernel::model::dashboard_snapshot();
     kernel::println!(
-        "Memory: total_frames={} used_frames={} free_frames={}",
+        "Memoria: tabulae_totales={} tabulae_usitatae={} tabulae_liberae={}",
         snapshot.memory.total_frames,
         snapshot.memory.used_frames,
         snapshot.memory.free_frames
     );
     kernel::println!(
-        "Scheduler: processes={} threads={} runnable={}",
+        "Ordonnator: processus={} fila={} curribilia={}",
         snapshot.scheduler.process_count,
         snapshot.scheduler.thread_count,
         snapshot.scheduler.runnable_threads
     );
     kernel::println!(
-        "ThingCounts: total={} processes={} threads={} phys_frames={} virt_regions={} frame_pools={} address_spaces={} cpu_cores={}",
+        "Numeri Rerum: summa={} processus={} fila={} tabulae_physicae={} regiones_virtuosae={} piscinae_tabularum={} spatia_adressuum={} nuclei_cpu={}",
         snapshot.counts.total_things,
         snapshot.counts.processes,
         snapshot.counts.threads,
@@ -54,13 +54,13 @@ pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
         .map(|sched| sched.current_id())
         .flatten();
     match current_thread {
-        Some(tid) => kernel::println!("Current thread: {}", tid.0),
-        None => kernel::println!("Current thread: <none>"),
+        Some(tid) => kernel::println!("Fila praesens: {}", tid.0),
+        None => kernel::println!("Fila praesens: <nulla>"),
     }
 
     const LOG_TAIL: usize = 10;
     let logs = kernel::get_logs();
-    kernel::println!("Recent kernel log entries (last {}):", LOG_TAIL);
+    kernel::println!("Commentarii nuclei recentes (postrema {}):", LOG_TAIL);
     let start = logs.len().saturating_sub(LOG_TAIL);
     for entry in &logs[start..] {
         if let Some(msg) = entry {
@@ -68,16 +68,16 @@ pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
         }
     }
 
-    kernel::log("PANIC! Panic in the streets of Birmingham!");
+    kernel::log("PAVOR! Pavor per vias Birminghamienses!");
     if let Some(location) = info.location() {
         kernel::println!(
-            "Panic location: {}:{}:{}",
+            "Locus pavoris: {}:{}:{}",
             location.file(),
             location.line(),
             location.column()
         );
     } else {
-        kernel::println!("Panic location: <unknown>");
+        kernel::println!("Locus pavoris: <incertus>");
     }
     hcf();
 }

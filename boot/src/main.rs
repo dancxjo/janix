@@ -74,7 +74,7 @@ unsafe extern "C" fn kmain() -> ! {
     // On RISC-V, this accesses unmapped MMIO and crashes. Skip it.
     #[cfg(not(target_arch = "riscv64"))]
     serial::arch::init_serial(0);
-    kernel::println!("boot: serial ready");
+    kernel::println!("boot: linea serialis parata");
 
     // Initialize heap *before* anything allocation-hungry.
     unsafe {
@@ -87,7 +87,7 @@ unsafe extern "C" fn kmain() -> ! {
         heap::init_kernel_heap(heap_addr, HEAP_SIZE);
     }
 
-    kernel::println!("boot: heap ready; switching stack");
+    kernel::println!("boot: acervus paratus; acervum mutamus");
 
     // Stack switch into kmain_inner
     let stack_base = core::ptr::addr_of!(BOOT_STACK) as u64;
@@ -96,13 +96,13 @@ unsafe extern "C" fn kmain() -> ! {
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain_inner() -> ! {
-    kernel::println!("boot: entered kmain_inner");
+    kernel::println!("boot: in kmain_inner ingressi");
 
     #[cfg(feature = "fill-framebuffer")]
     crate::framebuffer::fill_framebuffer_progress(
         crate::framebuffer::BOOT_DOMINANT_COLOR,
         0.25,
-        Some("ThingOS: booting kernel"),
+        Some("ThingOS: nucleum iniciens"),
     );
 
     crate::init::init_machine();
@@ -111,7 +111,7 @@ unsafe extern "C" fn kmain_inner() -> ! {
     crate::framebuffer::fill_framebuffer_progress(
         crate::framebuffer::BOOT_DOMINANT_COLOR,
         0.55,
-        Some("Kernel core online"),
+        Some("Cor nuclei in linea"),
     );
 
     crate::init::init_world_graph();
@@ -120,7 +120,7 @@ unsafe extern "C" fn kmain_inner() -> ! {
     crate::framebuffer::fill_framebuffer_progress(
         crate::framebuffer::BOOT_DOMINANT_COLOR,
         1.0,
-        Some("Starting compositor"),
+        Some("Initium perfectum"),
     );
 
     crate::init::init_userland_and_enter_scheduler();

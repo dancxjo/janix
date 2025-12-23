@@ -23,13 +23,13 @@ pub unsafe fn init_kernel_heap(heap_start: usize, heap_size: usize) {
     HEAP_SIZE.store(heap_size, Ordering::Release);
 
     kernel::println!(
-        "heap::init_heap: start=0x{:x}, size=0x{:x} ({} bytes)",
+        "heap::init_heap: initium=0x{:x}, magnitudo=0x{:x} ({} octeti)",
         heap_start,
         heap_size,
         heap_size
     );
-    kernel::println!("GUARD address: {:p}", &GUARD);
-    kernel::println!("KERNEL_ALLOCATOR address: {:p}", &KERNEL_ALLOCATOR);
+    kernel::println!("Inscriptio GUARD: {:p}", &GUARD);
+    kernel::println!("Inscriptio KERNEL_ALLOCATOR: {:p}", &KERNEL_ALLOCATOR);
 
     KERNEL_ALLOCATOR
         .lock()
@@ -39,7 +39,7 @@ pub unsafe fn init_kernel_heap(heap_start: usize, heap_size: usize) {
     // Confirm initialization immediately.
     let (used, size) = get_heap_stats();
     kernel::println!(
-        "heap::init_heap: confirmed heap size={} used={}",
+        "heap::init_heap: magnitudo acervi confirmata={} usus={}",
         size,
         used
     );
@@ -52,12 +52,12 @@ pub fn get_heap_stats() -> (usize, usize) {
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
-    kernel::println!("alloc_error_handler: layout={:?}", layout);
+    kernel::println!("alloc_error_handler: dispositio={:?}", layout);
     kernel::println!(
-        "alloc_error_handler: KERNEL_ALLOCATOR address: {:p}",
+        "alloc_error_handler: inscriptio KERNEL_ALLOCATOR: {:p}",
         &KERNEL_ALLOCATOR
     );
-    kernel::println!("alloc_error_handler: GUARD address: {:p}", &GUARD);
+    kernel::println!("alloc_error_handler: inscriptio GUARD: {:p}", &GUARD);
 
     let init = HEAP_INITIALIZED.load(Ordering::Acquire);
     let start = HEAP_START.load(Ordering::Acquire);
@@ -73,16 +73,16 @@ fn alloc_error_handler(layout: Layout) -> ! {
     // If the allocator was stomped back to "empty", heap.size() will be 0.
     let (used, size_actual) = get_heap_stats();
     kernel::println!(
-        "alloc_error_handler: heap stats used={} size={}",
+        "alloc_error_handler: statistica acervi usus={} magnitudo={}",
         used,
         size_actual
     );
 
     if init && size_expected != 0 && size_actual == 0 {
         kernel::println!(
-            "alloc_error_handler: HEAP LOOKS CLOBBERED (likely stack overflow / static overwrite)"
+            "alloc_error_handler: ACERVUS VIDETUR DELETUS (fortasse superfluxus stivae / rescriptio statica)"
         );
     }
 
-    panic!("allocation error: {:?}", layout);
+    panic!("error partitionis: {:?}", layout);
 }

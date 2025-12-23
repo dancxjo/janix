@@ -41,7 +41,7 @@ fn intern_props(props: Vec<(String, PropValue)>) -> Vec<(SymbolId, PropValue)> {
 
 pub fn seed_memory_graph_from_limine() {
     let Some(response) = MEMORY_MAP_REQUEST.get_response() else {
-        log("No Limine memory map; skipping memory graph seeding");
+        log("Nulla mappa memoriae Limine; seminatio graphidis memoriae praetermissa");
         return;
     };
 
@@ -77,7 +77,7 @@ pub fn seed_memory_graph_from_limine() {
 
     if kernel_size > 0 {
         let msg = alloc::format!(
-            "Kernel phys: {:#x} - {:#x} (size {:#x})",
+            "Phys nucleus: {:#x} - {:#x} (magnitudo {:#x})",
             kernel_base_phys,
             kernel_end_phys,
             kernel_size
@@ -110,7 +110,7 @@ pub fn seed_memory_graph_from_limine() {
 
         let region_end = base.saturating_add(len);
         let msg = alloc::format!(
-            "[INFO] Range {}: 0x{:016x} - 0x{:016x}",
+            "[NOTITIA] Ager {}: 0x{:016x} - 0x{:016x}",
             range_index,
             base,
             region_end
@@ -149,14 +149,14 @@ pub fn seed_memory_graph_from_limine() {
 
     let (total_frames, _used_frames, free_frames) = kernel::memory::frame_stats();
     let summary = alloc::format!(
-        "[INFO] BootFrameAllocator: total_frames={} free_frames={}",
+        "[NOTITIA] BootFrameAllocator: tabulae_totales={} tabulae_liberae={}",
         total_frames,
         free_frames
     );
     let leaked: &'static str = Box::leak(summary.into_boxed_str());
     log(leaked);
 
-    log("Seeded memory graph from Limine memory map");
+    log("Graphis memoriae ex mappa Limine seminatus");
 }
 
 pub fn seed_cpu_graph_from_limine() {
@@ -171,10 +171,10 @@ pub fn seed_cpu_graph_from_limine() {
             // But create_cpu_core probably calls create_thing.
             let _ = model::create_cpu_core(idx);
         }
-        log("Seeded CpuCore Things from Limine SMP");
+        log("Res CpuCore ex Limine SMP seminatae");
     } else {
         let _ = model::create_cpu_core(0);
-        log("No SMP info; created single CpuCore(0)");
+        log("Nulla notitia SMP; unus CpuCore(0) creatus");
     }
 }
 
@@ -185,12 +185,12 @@ pub fn seed_boot_profile() {
 
 pub fn seed_display_from_limine() {
     let Some(response) = FRAMEBUFFER_REQUEST.get_response() else {
-        log("No framebuffer provided by Limine; skipping display seeding");
+        log("Nulla tabula imaginis a Limine data; seminatio ostensionis praetermissa");
         return;
     };
 
     let Some(fb) = response.framebuffers().next() else {
-        log("Framebuffer request returned no framebuffers");
+        log("Petitio framebuffer nullam tabulam reddidit");
         return;
     };
 
@@ -206,7 +206,7 @@ pub fn seed_display_from_limine() {
     let size_bytes = pitch as u64 * height as u64;
 
     if bpp != 32 {
-        log("Unexpected framebuffer bpp; proceeding with assumption of 32bpp");
+        log("Bpp graphidis inopinata; pergimus cum opinione 32bpp");
     }
 
     let start = fb_addr & !(4096 - 1);
@@ -221,7 +221,7 @@ pub fn seed_display_from_limine() {
             .push(PhysFrame::from_start_address(addr, 4096))
             .is_err()
         {
-            log("Framebuffer does not fit in SharedBuffer frame capacity");
+            log("Tabula imaginis non capit in capacitatem tabularum CommunisBuffer");
             return;
         }
         addr = addr.saturating_add(4096);
@@ -277,12 +277,12 @@ pub fn seed_display_from_limine() {
             let Some(display_id) =
                 kernel::model::create_display("display0", info.width as u64, info.height as u64, 0)
             else {
-                log("Failed to create Display Thing");
+                log("Creatio Rei Display defecit");
                 return;
             };
 
             let _ = graph::add_link(display_id, graph_kinds::LINK_DISPLAY_SCANOUT, buffer_id);
-            log("Seeded display0 and SharedBuffer from Limine framebuffer");
+            log("display0 et CommunisBuffer ex tabula imaginis Limine seminata sunt");
         }
         Err(msg) => log(msg),
     }
@@ -290,7 +290,7 @@ pub fn seed_display_from_limine() {
 
 pub fn seed_program_images_from_limine() {
     let Some(response) = MODULE_REQUEST.get_response() else {
-        log("No Limine modules found for ProgramImage seeding");
+        log("Nulla modula Limine inventa ad seminanda ProgramImage");
         return;
     };
 
@@ -315,7 +315,7 @@ pub fn seed_program_images_from_limine() {
         };
 
         if !seen.insert(identifier.clone()) {
-            log("Duplicate ProgramImage identifier from Limine module; skipping");
+            log("Identificator ProgramImage duplicatus e modulo Limine; praetermittitur");
             continue;
         }
 
@@ -327,13 +327,13 @@ pub fn seed_program_images_from_limine() {
         {
             created = created.saturating_add(1);
         } else {
-            log("Failed to create ProgramImage Thing");
+            log("Creatio Rei ProgramImage defecit");
         }
     }
 
-    let mut msg = alloc::format!("Seeded {} ProgramImage Things from Limine modules", created);
+    let mut msg = alloc::format!("Seminatae sunt {} Res ProgramImage ex modulis Limine", created);
     if skipped_fonts > 0 {
-        let suffix = alloc::format!(" (ignored {} font module(s))", skipped_fonts);
+        let suffix = alloc::format!(" (neglecta(e) {} modula(e) typographicae)", skipped_fonts);
         msg.push_str(&suffix);
     }
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
@@ -342,7 +342,7 @@ pub fn seed_program_images_from_limine() {
 
 pub fn seed_font_modules_from_limine() {
     let Some(response) = MODULE_REQUEST.get_response() else {
-        log("No Limine modules found for FontModule seeding");
+        log("Nulla modula Limine inventa ad seminanda FontModule");
         return;
     };
 
@@ -389,7 +389,7 @@ pub fn seed_boot_programs_from_limine() {
     };
 
     let Some(response) = MODULE_REQUEST.get_response() else {
-        log("No Limine modules found for BootProgram seeding");
+        log("Nulla modula Limine inventa ad seminanda BootProgram");
         return;
     };
 
@@ -403,7 +403,7 @@ pub fn seed_boot_programs_from_limine() {
         .unwrap_or(false);
 
     if is_debug_profile {
-        log("DEBUG PROFILE ACTIVE: Only spawning init_debug, clock, debug_alloc, taskman, debug_input_logger, debug_input_events, framebuffer, compositor, ps2_keyboard_driver, ps2_mouse_driver");
+        log("PROFILUM DEBUG ACTIVUM: Tantum progeneramus init_debug, clock, debug_alloc, taskman, debug_input_logger, debug_input_events, framebuffer, compositor, ps2_keyboard_driver, ps2_mouse_driver");
     }
 
     for (index, module) in response.modules().iter().enumerate() {
@@ -472,9 +472,9 @@ pub fn seed_boot_programs_from_limine() {
         app_id = app_id.saturating_add(1);
     }
 
-    let mut msg = alloc::format!("Seeded {} BootProgram Things from Limine modules", created);
+    let mut msg = alloc::format!("Seminatae sunt {} Res BootProgram ex modulis Limine", created);
     if skipped_fonts > 0 {
-        let suffix = alloc::format!(" (ignored {} font module(s))", skipped_fonts);
+        let suffix = alloc::format!(" (neglecta(e) {} modula(e) typographicae)", skipped_fonts);
         msg.push_str(&suffix);
     }
     let leaked: &'static str = Box::leak(msg.into_boxed_str());
@@ -518,7 +518,7 @@ pub fn seed_raw_modules_from_limine() {
                     .push(PhysFrame::from_start_address(addr, 4096))
                     .is_err()
                 {
-                    log("Module too large for SharedBuffer");
+                    log("Modulus nimis magnus pro CommuniBuffer");
                     success = false;
                     break;
                 }
@@ -548,7 +548,7 @@ pub fn seed_raw_modules_from_limine() {
                 None
             }
         } else {
-            log("Module not page aligned, cannot create SharedBuffer");
+            log("Modulus paginis non adaequatus, CommunisBuffer creari non potest");
             None
         };
 
@@ -587,7 +587,7 @@ pub fn seed_raw_modules_from_limine() {
     }
 
     if created > 0 {
-        let msg = alloc::format!("Seeded {} RawModule Things from Limine modules", created);
+        let msg = alloc::format!("Seminatae sunt {} Res RawModule ex modulis Limine", created);
         let leaked: &'static str = Box::leak(msg.into_boxed_str());
         log(leaked);
     }
@@ -610,7 +610,7 @@ pub fn seed_time_graph() {
         time::bind_time_source(time_id);
         // ... scope continues
         let msg = alloc::format!(
-            "TimeSource created id={} tick_hz={} epoch_seconds={}",
+            "Fons Temporis creatus id={} tictus_hz={} epoch_secundae={}",
             time_id.0,
             tick_hz,
             epoch_secs
@@ -675,7 +675,7 @@ pub fn seed_time_graph() {
     let alarm_id = graph::create_thing(kind_alarm, kernel_props);
     {
         let msg = alloc::format!(
-            "Boot AlarmRequest id={} targeting {} seconds",
+            "Petitio Alarmae Boot id={} petens {} secundas",
             alarm_id.0,
             boot_alarm_secs
         );

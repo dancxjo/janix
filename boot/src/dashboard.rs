@@ -8,21 +8,21 @@ pub fn render_dashboard(console: &mut Console) {
 
     console.clear();
 
-    let _ = writeln!(console, "ThingOS Boot Dashboard");
+    let _ = writeln!(console, "Tabula Initii ThingOS");
     let _ = writeln!(console, "======================");
     let _ = writeln!(console, "");
 
     // Memory
-    let _ = writeln!(console, "Memory:");
+    let _ = writeln!(console, "Memoria:");
     let _ = writeln!(
         console,
-        "  frames: total={} used={} free={}",
+        "  tabulae: totales={} usitatae={} liberae={}",
         snapshot.memory.total_frames, snapshot.memory.used_frames, snapshot.memory.free_frames,
     );
     let _ = writeln!(console, "");
 
     // Scheduler
-    let _ = writeln!(console, "Scheduler:");
+    let _ = writeln!(console, "Ordonnator:");
     let _ = writeln!(
         console,
         "  processes={} threads={} runnable={}",
@@ -33,7 +33,7 @@ pub fn render_dashboard(console: &mut Console) {
     let _ = writeln!(console, "");
 
     // Thing counts
-    let _ = writeln!(console, "Thing counts:");
+    let _ = writeln!(console, "Numeri Rerum:");
     let _ = writeln!(console, "  total       = {}", snapshot.counts.total_things);
     let _ = writeln!(console, "  processes   = {}", snapshot.counts.processes);
     let _ = writeln!(console, "  threads     = {}", snapshot.counts.threads);
@@ -49,7 +49,7 @@ pub fn render_dashboard(console: &mut Console) {
     let _ = writeln!(console, "");
 
     // Optional: tail of kernel logs
-    let _ = writeln!(console, "Kernel log (tail):");
+    let _ = writeln!(console, "Commentarium nuclei (cauda):");
     let logs = kernel::log::get_logs();
     let start = logs.len().saturating_sub(5);
     for entry in &logs[start..] {
@@ -58,5 +58,5 @@ pub fn render_dashboard(console: &mut Console) {
         }
     }
 
-    log::log_message("Rendered boot dashboard");
+    log::log_message("Tabula initii expressa");
 }

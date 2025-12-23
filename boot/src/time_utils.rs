@@ -3,7 +3,7 @@ use alloc::boxed::Box;
 pub fn log_rtc_epoch(seconds: i64) {
     let (year, month, day, hour, minute, second) = unix_seconds_to_datetime(seconds);
     let msg = alloc::format!(
-        "RTC epoch (raw): {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC ({}s)",
+        "Epoch RTC (rudis): {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC ({}s)",
         year,
         month,
         day,

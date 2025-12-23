@@ -23,7 +23,7 @@ struct FramebufferView {
 impl FramebufferView {
     fn fill_solid(&self, color: u32) {
         if self.bpp != 32 {
-            kernel::println!("Framebuffer fill skipped: unsupported bpp {}", self.bpp);
+            kernel::println!("Implentio graphidis omissa: bpp non suffulta {}", self.bpp);
             return;
         }
 
@@ -115,7 +115,7 @@ impl FramebufferView {
 #[cfg(feature = "fill-framebuffer")]
 pub fn fill_framebuffer_progress(target_color: u32, progress: f32, label: Option<&str>) {
     let Some(view) = map_framebuffer() else {
-        kernel::println!("Framebuffer fill skipped: no accessible framebuffer");
+        kernel::println!("Implentio graphidis omissa: nulla tabula imaginis adhibenda");
         return;
     };
 
@@ -132,7 +132,7 @@ pub fn fill_framebuffer_progress(target_color: u32, progress: f32, label: Option
         LAST_FILL_COLOR = target_scaled;
     }
     kernel::println!(
-        "Framebuffer filled to {:.0}% toward target color {:#010x}",
+        "Tabula imaginis impleta ad {:.0}% versus colorem propositum {:#010x}",
         clamped * 100.0,
         target_color
     );
@@ -153,20 +153,20 @@ fn map_framebuffer() -> Option<FramebufferView> {
     let pitch = framebuffer.pitch() as usize;
     let bpp = framebuffer.bpp();
     if width == 0 || height == 0 || pitch == 0 {
-        kernel::println!("Framebuffer fill skipped: invalid dimensions");
+        kernel::println!("Implentio graphidis omissa: mensurae invalidae");
         return None;
     }
 
     let stride = match bpp {
         32 => pitch / 4,
         _ => {
-            kernel::println!("Framebuffer fill skipped: unsupported bpp {}", bpp);
+            kernel::println!("Implentio graphidis omissa: bpp non suffulta {}", bpp);
             return None;
         }
     };
 
     if stride < width {
-        kernel::println!("Framebuffer fill skipped: pitch less than width");
+        kernel::println!("Implentio graphidis omissa: passus minor quam latitudo");
         return None;
     }
 
@@ -178,13 +178,13 @@ fn map_framebuffer() -> Option<FramebufferView> {
     let fb_virt = match virtual_framebuffer_address(fb_phys, hhdm_offset) {
         Some(addr) => addr,
         None => {
-            kernel::println!("Framebuffer fill skipped: could not determine virtual pointer");
+            kernel::println!("Implentio graphidis omissa: indicem virtualem definire non potui");
             return None;
         }
     };
 
     kernel::println!(
-        "Framebuffer fill: phys={:#x} hhdm={:#x} virt={:#x} pitch={} width={} height={}",
+        "Implentio graphidis: phys={:#x} hhdm={:#x} virt={:#x} passus={} latitudo={} altitudo={}",
         fb_phys,
         hhdm_offset,
         fb_virt,

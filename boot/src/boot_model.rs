@@ -490,10 +490,8 @@ pub fn seed_boot_programs_from_limine() {
 
 pub fn seed_raw_modules_from_limine() {
     let Some(response) = MODULE_REQUEST.get_response() else {
-        log("seed_raw_modules: No response");
         return;
     };
-    log("seed_raw_modules: Got response, iterating modules");
 
     let hhdm_offset = HHDM_REQUEST
         .get_response()
@@ -503,18 +501,11 @@ pub fn seed_raw_modules_from_limine() {
     let mut created = 0_u64;
 
     for (index, module) in response.modules().iter().enumerate() {
-        // We log every 10 or so? Or all? There are only ~15 modules. Log all.
-        let msg = alloc::format!("seed_raw_modules: Checking module {}", index);
-        let leaked: &'static str = Box::leak(msg.into_boxed_str());
-        log(leaked);
-
         let (kind_str, identifier) =
             match classify_limine_module((*module).string(), (*module).path(), index) {
                 ModuleKind::Raw { kind, identifier } => (kind, identifier),
                 _ => continue,
             };
-        
-        log("seed_raw_modules: Found Raw module!");
 
         let virt_addr = (*module).addr() as u64;
         let base_phys = virt_addr.saturating_sub(hhdm_offset);

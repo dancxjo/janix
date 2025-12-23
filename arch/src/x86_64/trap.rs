@@ -589,9 +589,8 @@ fn timer_tick(frame: &mut TrapFrame) {
 
                 // Resume or Start
                 if next.started {
-                    // Check CS to distinguish Kernel vs User resume
-                    let cs = next.context[16];
-                    if (cs & 3) == 0 {
+                    // Force kernel mode depending on ThreadKind, NOT solely on CS
+                    if let kernel::sched::types::ThreadKind::Kernel = next.kind {
                          // Kernel thread (Ring 0)
                          super::enter::resume_kernel_mode(&next.context);
                     } else {
@@ -599,7 +598,7 @@ fn timer_tick(frame: &mut TrapFrame) {
                          crate::current::resume_user_mode(&next.context, &next.fpu_context);
                     }
                 } else {
-                    if next.address_space_token.is_none() {
+                    if let kernel::sched::types::ThreadKind::Kernel = next.kind {
                         // Kernel Thread Start
                         let selectors = crate::gdt::get_selectors();
                         let mut rsp = next.user_stack_top;

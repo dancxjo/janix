@@ -46,6 +46,12 @@ fn spawn_driver_by_name(name: &str) {
 pub fn init() {
     crate::log("Initializing drivers...");
 
+    #[cfg(all(not(test), target_arch = "x86_64"))]
+    crate::bridge::ps2::init();
+
+    #[cfg(all(not(test), target_arch = "x86_64"))]
+    crate::bridge::ata::init();
+
     // 1. Initialize USB driver (Userland)
     if let Some(usb_program) = find_boot_program("usb") {
         match crate::spawn_program(usb_program) {

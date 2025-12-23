@@ -871,6 +871,7 @@ macro_rules! dispatch_syscall {
                                 0,
                                 stack_top,
                                 prio,
+                                kernel::sched::types::ThreadKind::User,
                             )
                             .0
                     } else {

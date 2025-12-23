@@ -64,12 +64,19 @@ impl Default for FpuContext {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThreadKind {
+    Kernel,
+    User,
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Thread {
     pub id: ThreadId,
     pub process_id: ProcessId,
     pub state: ThreadState,
     pub name: &'static str,
+    pub kind: ThreadKind,
     pub priority: u64,
     pub entry_point: u64,
     pub user_arg: u64,
@@ -91,6 +98,7 @@ pub struct ScheduledThread {
     pub tid: ThreadId,
     pub process_id: ProcessId,
     pub name: &'static str,
+    pub kind: ThreadKind,
     pub started: bool,
     pub entry_point: u64,
     pub user_stack_top: u64,

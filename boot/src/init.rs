@@ -9,6 +9,10 @@ pub fn init_machine() {
     // Initialize console early to show boot progress
     init_console();
 
+    // Disable preemption to prevent scheduler from hijacking the boot process
+    // once interrupts are enabled.
+    kernel::sched::preempt_disable();
+
     unsafe {
         // Heap is initialized in kmain
         let start = core::ptr::addr_of_mut!(crate::HEAP_MEMORY) as usize;
@@ -49,19 +53,10 @@ pub fn init_machine() {
     crate::boot_screen::step("Cor nuclei initum est.");
 
     // Seed memory graph early so frame allocator is available for arch init
-    // (AArch64 needs this for paging::map_device_region during map_boot_device_regions)
     let t = kernel::time::boot_span_start("seed_memory_graph");
     crate::boot_model::seed_memory_graph_from_limine();
     kernel::time::boot_span_end("seed_memory_graph", t);
     crate::boot_screen::step("Graphis memoriae seminatus est.");
-
-    // Seed DTB frequency (RISC-V)
-    #[cfg(target_arch = "riscv64")]
-    {
-        let freq_override =
-            crate::boot_model::get_kernel_arg("timer_freq=").and_then(|s| s.parse::<u64>().ok());
-        arch::riscv64::dtb::init(freq_override);
-    }
 
     let t = kernel::time::boot_span_start("map_boot_device_regions");
     if arch::platform::map_boot_device_regions() {
@@ -79,15 +74,32 @@ pub fn init_machine() {
     }
     kernel::time::boot_span_end("map_boot_device_regions", t);
 
+    crate::boot_screen::step("Curator vocationis systematis inseritur...");
+    let t = kernel::time::boot_span_start("install_syscall_handler");
+    CurrentArch::install_syscall_handler();
+    kernel::time::boot_span_end("install_syscall_handler", t);
+
+    // Seed memory graph early so frame allocator is available for arch init
+    // (AArch64 needs this for paging::map_device_region during map_boot_device_regions)
+    let t = kernel::time::boot_span_start("seed_memory_graph");
+    crate::boot_model::seed_memory_graph_from_limine();
+    kernel::time::boot_span_end("seed_memory_graph", t);
+    crate::boot_screen::step("Graphis memoriae seminatus est.");
+
+    // Seed DTB frequency (RISC-V)
+    #[cfg(target_arch = "riscv64")]
+    {
+        let freq_override =
+            crate::boot_model::get_kernel_arg("timer_freq=").and_then(|s| s.parse::<u64>().ok());
+        arch::riscv64::dtb::init(freq_override);
+    }
+
     crate::boot_screen::step("Subnotationes graphidis instruuntur...");
     crate::graph_reifier::init_graph_subscriptions();
 
     // Register IRQ controller callback to manage IRQ masking via graph requests
     #[cfg(target_arch = "x86_64")]
     kernel::bridge::io::register_irq_controller(arch::x86_64::pic::set_irq_mask);
-
-    crate::boot_screen::step("Curator vocationis systematis inseritur...");
-    CurrentArch::install_syscall_handler();
 
     let rtc_epoch = arch::read_boot_rtc_epoch_seconds();
     crate::time_utils::log_rtc_epoch(rtc_epoch);
@@ -136,6 +148,10 @@ pub fn init_userland_and_enter_scheduler() -> ! {
     crate::boot_screen::step("Fila otiosa mittitur...");
     launch_idle_thread();
     crate::boot_screen::step("Imperium schedulatori traditur...");
+    
+    // Re-enable preemption so the scheduler can work
+    kernel::sched::preempt_enable();
+    
     arch::user::schedule_next();
 }
 

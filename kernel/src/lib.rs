@@ -50,11 +50,6 @@ static TEST_MUTEX: Mutex<()> = Mutex::new(());
 /// Initialize the kernel core subsystems
 pub fn init() {
     log::init();
-    #[cfg(all(not(test), target_arch = "x86_64"))]
-    bridge::ps2::init();
-    #[cfg(all(not(test), target_arch = "x86_64"))]
-    bridge::ata::init();
-
     // Initialize graph store first
     crate::graph::store::init();
     // Initialize symbols and other graph components
@@ -100,7 +95,8 @@ pub fn init() {
             actualizer_entry,
             0,
             stack_top,
-            5, // Priority (slightly above default user tasks)
+            1, // Priority (normal user priority)
+            crate::sched::types::ThreadKind::Kernel,
         );
         log("Spawned Actualizer thread");
     }

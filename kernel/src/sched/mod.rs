@@ -346,9 +346,10 @@ impl Scheduler {
         arg: u64,
         stack_top: u64,
         priority: u64,
+        kind: types::ThreadKind,
     ) -> ThreadId {
         let entry_point = entry as u64;
-        self.add_thread_with_entry_point(process_id, name, entry_point, arg, stack_top, priority)
+        self.add_thread_with_entry_point(process_id, name, entry_point, arg, stack_top, priority, kind)
     }
 
     pub fn add_thread_with_entry_point(
@@ -359,6 +360,7 @@ impl Scheduler {
         arg: u64,
         stack_top: u64,
         priority: u64,
+        kind: types::ThreadKind,
     ) -> ThreadId {
         for (i, slot) in self.threads.iter_mut().enumerate() {
             if slot.is_none() {
@@ -374,6 +376,7 @@ impl Scheduler {
                     process_id,
                     state: ThreadState::New,
                     name,
+                    kind,
                     priority,
                     entry_point,
                     user_arg: arg,
@@ -426,6 +429,7 @@ impl Scheduler {
                     process_id,
                     state: ThreadState::Runnable,
                     name: "idle",
+                    kind: types::ThreadKind::Kernel,
                     priority: 0,
                     entry_point: 0,
                     user_arg: 0,
@@ -631,7 +635,8 @@ impl Scheduler {
                  }
              }
              crate::log(&alloc::format!(
-                 "Sched Heartbeat: run_q={} act_state={} act_prio={} max={}ns avg={}ns",
+                 "Sched Heartbeat: current={} run_q={} act_state={} act_prio={} max={}ns avg={}ns",
+                 if let Some(c) = self.current { c.0 } else { 0 },
                  run_queue_len, actualizer_state, actualizer_prio,
                  self.max_tick_time_ns, self.avg_tick_time_ns
              ));
@@ -643,6 +648,7 @@ impl Scheduler {
             tid,
             process_id: thread.process_id,
             name: thread.name,
+            kind: thread.kind,
             started: thread.started,
             entry_point: thread.entry_point,
             user_stack_top: thread.user_stack_top,

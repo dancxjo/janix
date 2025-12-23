@@ -77,6 +77,7 @@ fn spawn_loaded_program_named(
             0,
             loaded.user_stack_top,
             priority,
+            kernel::sched::types::ThreadKind::User,
         );
 
         if let Some(thread) = sched.thread_mut(tid) {

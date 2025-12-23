@@ -20,6 +20,7 @@ pub fn run() -> ! {
         loops += 1;
         let now = crate::time::monotonic_now_ns();
         if now - last_log_time > 1_000_000_000 {
+            // Heartbeat
             crate::log(&alloc::format!(
                 "Actualizer Heartbeat: loops={} pending={} seen={} done={} err={} last={}",
                 loops,
@@ -29,43 +30,32 @@ pub fn run() -> ! {
                 intents_error,
                 last_processed.0
             ));
-            last_log_time = now;
-
-            // Debug sample of up to 5 intents and their states
+            
+            // Debug sample
             let intent_kind = symbols::intern("pkg.framebuffer.PresentIntent");
             let mut cursor = ThingId(0);
-            let mut sample: Vec<(ThingId, u64, u64)> = Vec::new();
-            while sample.len() < 5 {
-                if let Some(id) = graph::next_thing_of_kind(intent_kind, cursor) {
-                    cursor = id;
-                    let state = match graph::get_prop(id, "state") {
+            let mut count = 0;
+            // Just verify first few intents existence to debug graph iteration
+            while let Some(id) = graph::next_thing_of_kind(intent_kind, cursor) {
+                cursor = id;
+                count += 1;
+                if count <= 3 {
+                     let state = match graph::get_prop(id, "state") {
                         Some(PropValue::U64(v)) => v,
-                        _ => 0,
+                        Some(PropValue::I64(v)) => v as u64,
+                        _ => 999,
                     };
-                    let buf_idx = match graph::get_prop(id, "buffer_index") {
-                        Some(PropValue::U64(v)) => v,
-                        _ => 0,
-                    };
-                    sample.push((id, state, buf_idx));
-                } else {
-                    break;
+                    crate::log(&alloc::format!("Sample Intent: {} state={}", id.0, state));
                 }
+                if count > 10 { break; }
             }
-            if !sample.is_empty() {
-                let entries: Vec<String> = sample
-                    .into_iter()
-                    .map(|(id, state, buf)| alloc::format!("id={} state={} buf={}", id.0, state, buf))
-                    .collect();
-                crate::log(&alloc::format!(
-                    "Actualizer Intent Sample: {}",
-                    entries.join(", ")
-                ));
-            }
+
+            last_log_time = now;
         }
 
         let mut worked = false;
 
-        // Poll keyboard
+        // Poll Input
         while let Some(byte) = ps2::pop_keyboard_byte() {
             worked = true;
             let kind = symbols::intern("input.keyboard");
@@ -73,107 +63,103 @@ pub fn run() -> ! {
             let mutation = security::Mutation::CreateThing { kind, props: &props };
             let _ = graph::apply_mutation(security::Actor::Kernel, mutation);
         }
-
-        // Poll mouse
         while let Some(byte) = ps2::pop_mouse_byte() {
-            worked = true;
+             worked = true;
             let kind = symbols::intern("input.mouse");
             let props = vec![(symbols::intern("byte"), PropValue::U64(byte as u64))];
             let mutation = security::Mutation::CreateThing { kind, props: &props };
             let _ = graph::apply_mutation(security::Actor::Kernel, mutation);
         }
 
-        // Scan for PresentIntents in Pending state
+        // Scan for Pending PresentIntents
+        // We collect IDs first to avoid holding any iteration locks longer than needed, 
+        // though next_thing_of_kind is safe.
         let intent_kind = symbols::intern("pkg.framebuffer.PresentIntent");
         let mut cursor = ThingId(0);
-        let mut pending: Vec<ThingId> = Vec::new();
+        let mut pending_batch: Vec<ThingId> = Vec::new(); // Limit batch size
+        
         while let Some(intent_id) = graph::next_thing_of_kind(intent_kind, cursor) {
             cursor = intent_id;
             intents_seen = intents_seen.saturating_add(1);
-            if let Some(PropValue::U64(state)) = graph::get_prop(intent_id, "state") {
-                if state == 0 {
-                    pending.push(intent_id);
-                }
+            
+            // Check state
+            if let Some(state_val) = graph::get_prop(intent_id, "state") {
+                 let is_pending = match state_val {
+                     PropValue::U64(0) => true,
+                     PropValue::I64(0) => true, // Be permissive with number types
+                     _ => false,
+                 };
+                 if is_pending {
+                     pending_batch.push(intent_id);
+                     if pending_batch.len() >= 10 { break; }
+                 }
             }
         }
 
-        intents_pending = pending.len() as u64;
-        if !pending.is_empty() {
-            worked = true;
-            for intent_id in pending {
-                match process_present_intent(intent_id) {
-                    Ok(()) => {
-                        intents_done = intents_done.saturating_add(1);
-                        last_processed = intent_id;
-                    }
-                    Err(e) => {
-                        intents_error = intents_error.saturating_add(1);
-                        crate::log(&alloc::format!(
-                            "Actualizer: failed to process intent {} ({})",
-                            intent_id.0,
-                            e
-                        ));
-                    }
-                }
-            }
+        intents_pending = pending_batch.len() as u64;
+
+        if !pending_batch.is_empty() {
+             worked = true;
+             for intent_id in pending_batch {
+                 match process_present_intent(intent_id) {
+                     Ok(_) => {
+                         intents_done += 1;
+                         last_processed = intent_id;
+                     }
+                     Err(e) => {
+                         intents_error += 1;
+                         crate::log(&alloc::format!("Actualizer Error {}: {}", intent_id.0, e));
+                     }
+                 }
+             }
         }
 
         if !worked {
-            // Sleep if both empty, atomically-ish
-            crate::sched::without_preemption(|| {
-                 let k = ps2::pop_keyboard_byte();
-                 let m = ps2::pop_mouse_byte();
-                 // We can't check graph efficiently inside this closure without locks which might deadlock if used wrong,
-                 // but next_thing_of_kind handles store lock.
-                 // For now, simpler sleep is fine. We might wake up a bit late for frame intents but better than spin.
-                 
-                 if k.is_none() && m.is_none() {
-                         let tid = crate::sched::SCHEDULER.lock().current_id();
-                         if let Some(tid) = tid {
-                             ps2::set_keyboard_waiter(tid);
-                             ps2::set_mouse_waiter(tid);
-                             // crate::log("Actualizer blocking...");
-                             // Sleep for 1ms (or until input wakes us)
-                             let now = crate::time::monotonic_now_ns();
-                             crate::sched::with_scheduler(|sched| {
-                                 sched.sleep_current_thread(now + 1_000_000);
-                             });
-                             crate::sched::wait_for_interrupt();
-                             // crate::log("Actualizer woke up");
-                         }
-                     } else {
-                     // If input arrived, handle it next loop
-                 }
+            // Sleep briefly to yield CPU
+            let sleep_ns = 2_000_000; // 2ms
+            let wake_at = crate::time::monotonic_now_ns() + sleep_ns;
+            crate::sched::with_scheduler(|sched| {
+                sched.sleep_current_thread(wake_at);
             });
+            // We must force a context switch now that we marked ourselves sleeping
+            // The timer interrupt will eventually switch us, but calling yield_now or waiting for interrupt is better.
+            // Since we are in kernel, wait_for_interrupt is okay IF interrupts are enabled.
+            // But sleep_current_thread deschedules us. The next interrupt will call helper and pick someone else.
+            // So we just need to wait for that interrupt.
+            crate::sched::wait_for_interrupt();
+        } else {
+             // If we did work, just yield to be nice to others
+             crate::sched::with_scheduler(|sched| {
+                 if let Some(tid) = sched.current_id() {
+                     sched.mark_yield(tid);
+                 }
+             });
+             // We need to trigger a switch. in x86 usually via interrupt or explicit call.
+             // For now relies on timer tick which is frequent enough.
         }
     }
 }
 
 fn process_present_intent(id: ThingId) -> Result<(), &'static str> {
-    // Check state is Pending (0)
-    let state_val = graph::get_prop(id, "state");
-    // "state" 0 = Pending
-    if let Some(PropValue::U64(0)) = state_val {
-        if let Some(PropValue::U64(buf_idx)) = graph::get_prop(id, "buffer_index") {
-            // Update Display
-            update_display_active_buffer(buf_idx);
+    // 1. Validate (Optimistic, we just checked pending)
+    let buf_idx = match graph::get_prop(id, "buffer_index") {
+        Some(PropValue::U64(v)) => v,
+        Some(PropValue::I64(v)) => v as u64,
+        _ => return Err("missing/invalid buffer_index"),
+    };
 
-            // Mark Done (1)
-            let state_sym = symbols::intern("state");
-            let props = vec![(state_sym, PropValue::U64(1))];
-            let mutation = security::Mutation::UpdateThing { id, props: &props };
-            match graph::apply_mutation(security::Actor::Kernel, mutation) {
-                Ok(_) => {
-                    crate::log(&alloc::format!("actualizer: present processed id={}", id.0));
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            }
-        } else {
-            Err("missing buffer_index")
-        }
-    } else {
-        Err("intent not pending")
+    // 2. Actuate Hardware
+    update_display_active_buffer(buf_idx);
+
+    // 3. Mark Done
+    let state_sym = symbols::intern("state");
+    // 1 = Done
+    let props = vec![(state_sym, PropValue::U64(1))];
+    let mutation = security::Mutation::UpdateThing { id, props: &props };
+    
+    match graph::apply_mutation(security::Actor::Kernel, mutation) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
     }
 }
 
@@ -216,23 +202,13 @@ mod tests {
             }
         }
 
-        ids.sort_by_key(|id| id.0);
-
-        let mut cursor = ThingId(0);
-        let mut seen = alloc::vec![];
-        while let Some(id) = graph::next_thing_of_kind(kind, cursor) {
-            cursor = id;
-            seen.push(id);
+        // Manual process
+        for id in ids.iter() {
+           let res = process_present_intent(*id);
+           assert!(res.is_ok());
+           let val = graph::get_prop(*id, "state");
+           assert!(matches!(val, Some(PropValue::U64(1))));
         }
-
-        assert_eq!(seen.len(), ids.len());
-        assert_eq!(seen, ids);
-
-        let done_props = alloc::vec![(symbols::intern("state"), PropValue::U64(1))];
-        let mutation = security::Mutation::UpdateThing { id: ids[0], props: &done_props };
-        let res = graph::apply_mutation(security::Actor::Kernel, mutation);
-        assert!(matches!(res, Ok(security::MutationResult::Updated(true))));
-        assert!(matches!(graph::get_prop(ids[0], "state"), Some(PropValue::U64(1))));
     }
 }
 

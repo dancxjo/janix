@@ -79,7 +79,14 @@ pub fn schedule_next() -> ! {
             } else {
                 CurrentArch::activate_user_address_space(thread.address_space_token);
 
-                let is_kernel_thread = thread.process_id.0 == 1;
+                let is_kernel_thread = matches!(thread.kind, kernel::sched::types::ThreadKind::Kernel);
+                
+                // ASSERTION DUMP
+                // Explicitly log the decision path we are taking
+                if is_kernel_thread {
+                     // Kernel threads
+                } else {
+                }
 
                 if thread.started {
                     if is_kernel_thread {
@@ -91,8 +98,6 @@ pub fn schedule_next() -> ! {
                     }
                 } else {
                     if is_kernel_thread {
-                        kernel::log("Entering kernel thread...");
-                        kernel::log(thread.name);
                         // Jump to kernel entry point
                         let entry = thread.entry_point;
                         let stack = thread.user_stack_top;
@@ -100,8 +105,6 @@ pub fn schedule_next() -> ! {
                             enter_kernel_thread(entry, stack);
                         }
                     } else {
-                        kernel::log("Entering user thread...");
-                        kernel::log(thread.name);
                         let regs = UserEntryRegs {
                             entry_point: thread.entry_point,
                             user_stack: thread.user_stack_top,

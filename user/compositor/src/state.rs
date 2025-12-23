@@ -72,14 +72,19 @@ pub fn main() -> ! {
             loop {
                 if let Some(updated) = load_thing::<PresentIntent>(intent_id) {
                     if updated.state == IntentState::Done {
-                       println!("compositor: consilium perfectum");
+                       println!("compositor: consilium perfectum (Done)");
                        break;
                     } else if updated.state == IntentState::Error {
-                       println!("compositor: error in consilio");
+                       println!("compositor: error in consilio (Msg: {:?})", updated.error_message);
                        break;
-                    } else if retries % 250 == 0 {
-                        println!("compositor: adhuc exspectans consilium id={} status={:?}", intent_id.0, updated.state);
+                    } else if retries % 100 == 0 {
+                        println!("compositor: adhuc exspectans consilium id={} status={:?} buf_idx={}", 
+                            intent_id.0, updated.state, updated.buffer_index);
                     }
+                } else {
+                     if retries % 100 == 0 {
+                        println!("compositor: intent id={} disapparuit from graph?", intent_id.0);
+                     }
                 }
                 thing_os::time::sleep(Duration::from_millis(1));
                 retries += 1;

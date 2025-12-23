@@ -57,9 +57,6 @@ ifeq ($(QEMU_DISPLAY),none)
 QEMUFLAGS_EXTRA += -display none
 endif
 
-ifeq ($(KARCH),x86_64)
-    QEMUFLAGS_EXTRA += -vga std -global VGA.vgamem_mb=64
-endif
 
 override IMAGE_NAME := template-$(KARCH)
 

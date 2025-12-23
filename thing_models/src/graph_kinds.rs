@@ -38,6 +38,7 @@ pub const KIND_MODE_SWITCH_EVENT: &str = "ModeSwitchEvent";
 pub const KIND_PLACE: &str = "Place";
 pub const KIND_WINDOW: &str = "Window";
 pub const KIND_SURFACE: &str = "Surface";
+pub const KIND_FRAME_RENDER_INTENT: &str = "FrameRenderIntent";
 pub const KIND_VIEW: &str = "View";
 pub const KIND_CURSOR: &str = "Cursor";
 pub const KIND_LINK: &str = "LNK";

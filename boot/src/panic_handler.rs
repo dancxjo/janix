@@ -1,16 +1,14 @@
 pub fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    kernel::println!("========== PAVOR NUCLEI ==========");
+    kernel::console::print("\n========== PAVOR NUCLEI ==========\n");
     let panic_message = info.message();
-    kernel::println!("Nuntius: {}", panic_message);
+    kernel::console::print("Nuntius: ");
+    kernel::println!("{}", panic_message);
+    
     if let Some(location) = info.location() {
-        kernel::println!(
-            "Locus: {}:{}:{}",
-            location.file(),
-            location.line(),
-            location.column()
-        );
+         kernel::console::print("Locus: ");
+         kernel::println!("{}:{}:{}", location.file(), location.line(), location.column());
     } else {
-        kernel::println!("Locus: <incertus>");
+         kernel::console::print("Locus: <incertus>\n");
     }
 
     let ticks = kernel::time::ticks_since_boot();

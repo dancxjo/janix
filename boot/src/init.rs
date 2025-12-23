@@ -147,6 +147,10 @@ pub fn init_userland_and_enter_scheduler() -> ! {
     launch_init_process();
     crate::boot_screen::step("Fila otiosa mittitur...");
     launch_idle_thread();
+    
+    // Launch TimeKeeper
+    launch_timekeeper_thread();
+
     crate::boot_screen::step("Imperium schedulatori traditur...");
     
     // Re-enable preemption so the scheduler can work
@@ -193,11 +197,31 @@ fn launch_idle_thread() {
     sched.add_idle_thread(pid, idle_entry, stack_top);
 }
 
+fn launch_timekeeper_thread() {
+    // Allocate stack for timekeeper thread (4KB)
+    let stack_size = 4096;
+    let stack = alloc::vec![0u8; stack_size];
+    let stack_leak = alloc::boxed::Box::leak(stack.into_boxed_slice());
+    let stack_top = stack_leak.as_ptr() as u64 + stack_size as u64;
+
+    let pid = abi::ProcessId(1);
+    let mut sched = kernel::sched::SCHEDULER.lock();
+    sched.add_thread(
+        pid,
+        "timekeeper",
+        kernel::time::timekeeper_loop,
+        0,
+        stack_top,
+        50,
+        kernel::sched::types::ThreadKind::Kernel
+    );
+}
+
 pub fn launch_init_process() {
     kernel::log("launch_init_process: PID 1 progeneratur");
     // Ensure clock is seeded if we use it. The prior boot_model logic ensures it.
 
-    if let Err(err) = crate::program::spawn_program_by_identifier("init", "init", 1) {
+    if let Err(err) = crate::program::spawn_program_by_identifier("init", "init", 100) {
         kernel::log("launch_init_process: defecit in generando PID 1");
         kernel::log(err);
         crate::panic_handler::hcf();

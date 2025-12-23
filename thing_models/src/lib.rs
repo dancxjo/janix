@@ -3,6 +3,7 @@
 extern crate alloc;
 extern crate self as thing_models;
 
+pub mod compositor;
 pub mod display;
 pub mod graph_kinds;
 pub mod input;
@@ -41,6 +42,7 @@ pub trait Thing: Sized {
     }
 }
 
+pub use compositor::*;
 pub use display::*;
 pub use input::*;
 pub use io::*;
@@ -97,6 +99,14 @@ pub fn kernel_core_schemas() -> Vec<(
         BootProgram::DESCRIPTION,
         BootProgram::schema(),
     ));
+
+    // 3. System Graphics
+    schemas.push((
+        FrameRenderIntent::KIND,
+        FrameRenderIntent::DESCRIPTION,
+        FrameRenderIntent::schema(),
+    ));
+
     schemas.push((
         ProgramImage::KIND,
         ProgramImage::DESCRIPTION,

@@ -12,20 +12,18 @@ use thing_os::{
     list_things_by_kind, load_thing,
 };
 
+
+
+
+
+
+
 const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
 
 pub fn init_main() -> ! {
-    println!("init: starting");
-
-    // Direct syscall test
-    // let msg = "Hello from direct syscall\n";
-    // unsafe {
-    //    thing_os::syscalls::syscall(abi::KernelRequest::Log { message: msg });
-    // }
-    // loop {}
-
+    println!("init: starting v2");
     ensure_modes();
-    // println!("init: ensure_modes done");
+    println!("init: ensure_modes done");
 
     let boot_profile = wait_for_boot_profile();
     println!("init: BootProfile version {}", boot_profile.version);

@@ -242,13 +242,31 @@ fn advance_ticks(delta: u64) {
     maybe_log_time_sanity(current);
 }
 
-fn maybe_update_witnesses(current_ticks: u64) {
-    let last = LAST_WITNESS_UPDATE.load(Ordering::Relaxed);
-    if current_ticks.saturating_sub(last) < WITNESS_UPDATE_INTERVAL_TICKS {
-        return;
+fn maybe_update_witnesses(_current_ticks: u64) {
+    // Removed to avoid ISR deadlock. Now handled by timekeeper thread.
+}
+
+pub extern "C" fn timekeeper_loop(_arg: u64) -> ! {
+    loop {
+        // Update every second (approx)
+        let now = monotonic_now_ns();
+        let current_ticks = ticks_since_boot(); // Safe read
+        
+        let last = LAST_WITNESS_UPDATE.load(Ordering::Relaxed);
+        if current_ticks.saturating_sub(last) >= WITNESS_UPDATE_INTERVAL_TICKS {
+             LAST_WITNESS_UPDATE.store(current_ticks, Ordering::Relaxed);
+             update_witnesses(current_ticks);
+        }
+
+        // Sleep for 100ms to verify granularity or 1s?
+        // WITNESS_UPDATE_INTERVAL_TICKS is usually 1000 (1s).
+        // Sleep 100ms.
+        crate::sched::SCHEDULER.lock().sleep_current_thread(now + 100_000_000);
+        #[cfg(target_arch = "x86_64")]
+        x86_64::instructions::hlt();
+        #[cfg(not(target_arch = "x86_64"))]
+        core::hint::spin_loop();
     }
-    LAST_WITNESS_UPDATE.store(current_ticks, Ordering::Relaxed);
-    update_witnesses(current_ticks);
 }
 
 fn update_witnesses(current_ticks: u64) {

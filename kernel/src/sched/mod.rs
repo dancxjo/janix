@@ -200,6 +200,10 @@ impl Scheduler {
             thread_id: tid,
             wake_at_ns,
         });
+
+        // Debug logging
+        let now = crate::time::monotonic_now_ns();
+        crate::log(&alloc::format!("Thread {} sleeping until {} (now: {})", tid.0, wake_at_ns, now));
     }
 
     pub fn wake_sleepers(&mut self, now_ns: u64) {
@@ -857,6 +861,7 @@ impl Scheduler {
     }
 
     pub fn mark_blocked(&mut self, tid: ThreadId) -> bool {
+        crate::log(&alloc::format!("mark_blocked: tid={}", tid.0));
         let index = thread_index(tid);
         // Check conditions first
         let should_block =
@@ -935,6 +940,7 @@ pub fn yield_current_thread() {
 }
 
 pub fn exit_current_thread(reason: &'static str, code: u64) {
+    crate::log(&alloc::format!("exit_current_thread: reason='{}' code={}", reason, code));
     without_preemption(|| {
         let mut sched = SCHEDULER.lock();
         if let Some(tid) = sched.current {

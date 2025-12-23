@@ -200,8 +200,6 @@ impl Scheduler {
             thread_id: tid,
             wake_at_ns,
         });
-
-        self.current = None;
     }
 
     pub fn wake_sleepers(&mut self, now_ns: u64) {

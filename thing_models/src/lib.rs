@@ -113,6 +113,16 @@ pub fn kernel_core_schemas() -> Vec<(
         TimeSource::schema(),
     ));
     schemas.push((
+        UnixTime::KIND,
+        UnixTime::DESCRIPTION,
+        UnixTime::schema(),
+    ));
+    schemas.push((
+        ClockTime::KIND,
+        ClockTime::DESCRIPTION,
+        ClockTime::schema(),
+    ));
+    schemas.push((
         graph_kinds::KIND_IO_PORT_REGION,
         IoPortRegion::DESCRIPTION,
         IoPortRegion::schema(),
@@ -272,6 +282,106 @@ impl TimeSource {
             ("unix_seconds".to_string(), PropValue::I64(unix_seconds)),
             ("unix_nanos".to_string(), PropValue::U64(unix_nanos as u64)),
         ]
+    }
+}
+
+#[derive(Thing)]
+#[thing(
+    kind = "Witness.UnixTime",
+    description = "Kernel-authored Unix wall clock correlated to kernel tick space."
+)]
+pub struct UnixTime {
+    pub id: ThingId,
+    #[thing(rename = graph_kinds::PROP_TICKS_SINCE_BOOT)]
+    pub ticks_since_boot: u64,
+    #[thing(rename = graph_kinds::PROP_UNIX_SECONDS)]
+    pub unix_seconds: i64,
+    #[thing(rename = graph_kinds::PROP_UNIX_NANOS)]
+    pub unix_nanos: u32,
+}
+
+impl UnixTime {
+    pub fn create(
+        ticks_since_boot: u64,
+        unix_seconds: i64,
+        unix_nanos: u32,
+    ) -> [(PropKey, PropValue); 3] {
+        [
+            (
+                graph_kinds::PROP_TICKS_SINCE_BOOT.to_string(),
+                PropValue::U64(ticks_since_boot),
+            ),
+            (
+                graph_kinds::PROP_UNIX_SECONDS.to_string(),
+                PropValue::I64(unix_seconds),
+            ),
+            (
+                graph_kinds::PROP_UNIX_NANOS.to_string(),
+                PropValue::U64(unix_nanos as u64),
+            ),
+        ]
+    }
+
+    pub fn update_from_kernel(
+        ticks_since_boot: u64,
+        unix_seconds: i64,
+        unix_nanos: u32,
+    ) -> [(PropKey, PropValue); 3] {
+        Self::create(ticks_since_boot, unix_seconds, unix_nanos)
+    }
+}
+
+#[derive(Thing)]
+#[thing(
+    kind = "Witness.ClockTime",
+    description = "Kernel-authored UTC clock wall time for UI consumption."
+)]
+pub struct ClockTime {
+    pub id: ThingId,
+    #[thing(rename = graph_kinds::PROP_TICKS_SINCE_BOOT)]
+    pub ticks_since_boot: u64,
+    #[thing(rename = graph_kinds::PROP_HOURS)]
+    pub hours: u8,
+    #[thing(rename = graph_kinds::PROP_MINUTES)]
+    pub minutes: u8,
+    #[thing(rename = graph_kinds::PROP_SECONDS)]
+    pub seconds: u8,
+}
+
+impl ClockTime {
+    pub fn create(
+        ticks_since_boot: u64,
+        hours: u8,
+        minutes: u8,
+        seconds: u8,
+    ) -> [(PropKey, PropValue); 4] {
+        [
+            (
+                graph_kinds::PROP_TICKS_SINCE_BOOT.to_string(),
+                PropValue::U64(ticks_since_boot),
+            ),
+            (
+                graph_kinds::PROP_HOURS.to_string(),
+                PropValue::U64(hours as u64),
+            ),
+            (
+                graph_kinds::PROP_MINUTES.to_string(),
+                PropValue::U64(minutes as u64),
+            ),
+            (
+                graph_kinds::PROP_SECONDS.to_string(),
+                PropValue::U64(seconds as u64),
+            ),
+        ]
+    }
+
+    pub fn update_from_kernel(
+        ticks_since_boot: u64,
+        hours: u8,
+        minutes: u8,
+        seconds: u8,
+    ) -> [(PropKey, PropValue); 4] {
+        Self::create(ticks_since_boot, hours, minutes, seconds)
     }
 }
 

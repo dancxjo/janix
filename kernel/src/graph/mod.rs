@@ -110,6 +110,12 @@ pub fn apply_mutation(actor: security::Actor, mutation: security::Mutation) -> R
             Ok(security::MutationResult::Created(id))
         }
         security::Mutation::UpdateThing { id, props } => {
+            // Validate against schema when possible
+            if let Some(kind) = with_store(|store| store.get_thing_kind(id)) {
+                if let Err(e) = validate_props(kind, props) {
+                    return Err(e);
+                }
+            }
             let props_vec = Vec::from(props);
             let updated = with_store_mut(|store| store.update_thing(id, props_vec));
             if updated {

@@ -49,24 +49,25 @@ thing-os/
 │   └── src/main.rs     # kmain() → initializes kernel
 │
 ├── kernel/        # Pure kernel logic (no_std)
-│   ├── graph.rs        # Minimal thing storage + queries
-│   ├── transaction.rs  # Transaction ID + stub commit
-│   └── log.rs          # Fixed-size kernel log buffer
+│   ├── src/graph/      # Graph database implementation
+│   ├── src/sched.rs    # Scheduler
+│   └── src/log.rs      # Kernel log buffer
 │
 ├── abi/                # Shared ABI types (no_std)
-│   └── lib.rs          # KernelRequest, KernelResponse, NodeId, etc.
+│   ├── src/lib.rs      # Shared types (ThingId, etc.)
+│   └── src/requests.rs # KernelRequest, KernelResponse definitions
 │
-├── runtime/        # no_std runtime / syscall interface
-│   └── lib.rs          # Sys trait + KernelSys implementation
+├── thing_models/   # System Ontology & Schemas
+│   └── src/lib.rs      # Core Thing definitions and schemas
 │
-├── thing_os/       # std-like userland library (std)
-│   └── lib.rs          # println(), graph_query(), transaction helpers
+├── thing_os/       # Userland standard library (std-like)
+│   └── src/lib.rs      # println(), create_thing(), helpers
 │
-└── user/               # User applications compiled to ELF modules
-    ├── hello/
-    ├── heartbeat/
+└── user/               # User applications and drivers
+    ├── hello_world/
     ├── init/
-    └── taskman/
+    ├── taskman/
+    └── drivers/        # Userland drivers (ps2, framebuffer, etc.)
 ```
 
 ---
@@ -170,7 +171,7 @@ This command will:
 2. `kmain()` asserts Limine revision → initializes `kernel`
 3. `kernel::init()` brings up logging, graph, transactions
 4. `kernel::boot_sequence()` creates initial kernel graph things
-5. Kernel halts in place (more work ahead!)
+5. `kernel::sched::start()` hands control to the scheduler and spawns the `init` process
 
 ### ABI
 
@@ -180,42 +181,39 @@ Userland communicates with the kernel via:
 KernelRequest → KernelResponse
 ```
 
-Simple requests currently include:
+Common requests include:
 
-* `GraphQuery { node_id }`
-* `CreateTransaction`
-* `CommitTransaction`
+* `ThingGet { id }`
+* `ThingCreate { kind, props }`
 * `Log { message }`
+* `SpawnProgram { boot_program_id }`
 
-This ABI will evolve into a richer transactional graph interface.
-
-### Userland runtime
-
-`runtime` defines a `Sys` trait that abstracts the syscall interface. On native kernels it exposes `KernelSys`, which forwards to `kernel`.
+### Userland Runtime
 
 `thing_os` provides friendly wrapper functions so programs can write:
 
 ```rust
-thing_os::println("Hello!");
-let value = thing_os::graph_query(NodeId(3));
+thing_os::println!("Hello!");
+let thing = thing_os::load_thing::<MyThing>(thing_id);
 ```
 
 ---
 
 # 🚧 Current Status
 
-ThingOS currently **boots successfully via Limine**, initializes a minimal kernel core, writes some pixels to the framebuffer, and logs messages into a kernel-side circular buffer.
+ThingOS currently **boots successfully via Limine**, initializes the kernel graph, starts the scheduler, and runs userland processes (init, drivers, compositors).
 
-Userland applications run through the kernel's syscall ABI with the `thing_os` helpers, matching the native execution path.
+* **Graph**: Core graph database is functional (Things, Links, Properties, Schemas).
+* **Scheduling**: Round-robin scheduler with priority and graph mirroring.
+* **Drivers**: Userland drivers (PS/2, Framebuffer) interact with hardware via graph resources (IO Ports, Memory Maps).
+* **UI**: A compositing window manager runs in userland.
 
 Next steps include:
 
-* Real graph implementation (links, attributes, schemas)
-* Real transactions that mutate the graph
-* Process model & scheduler
-* Memory map represented as graph things
-* Device drivers as graph-attached components
-* System call mechanism for actual in-kernel userland
+* Richer transaction semantics
+* Advanced IPC patterns
+* Network stack
+* Persistent storage integration
 
 ---
 

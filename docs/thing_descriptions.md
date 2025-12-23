@@ -76,28 +76,37 @@ let description = counter.get_description();
 
 #### Get Schema Description from Kernel
 
-```rust
-use kernel::graph;
-
-// After schema is registered
-let description = graph::get_schema_description("AutoCounter");
-```
+Retrieving the description string from the kernel is done via `SYSCALL_SCHEMA_GET`. The `thing_os` library handles this internally when verifying schemas.
 
 ## Schema Registration
 
-When registering schemas, descriptions must be provided:
+### Userland (Recommended)
+
+When using `thing_os`, the `derive(Thing)` macro generates the schema definition. You simply call:
+
+```rust
+use thing_os::ensure_schema_exists_for;
+
+// Registers the schema if it doesn't exist, using the description from the macro.
+ensure_schema_exists_for::<MyThing>();
+```
+
+### Kernel Internal
+
+When registering schemas inside the kernel, you must use `SymbolId`s:
 
 ```rust
 use kernel::graph;
-use abi::PropType;
+use kernel::symbols::intern;
 
 graph::register_schema(
-    "MyThing",
-    "A custom thing that represents some state",
-    &[
-        ("field1", PropType::U64),
-        ("field2", PropType::Bool),
+    intern("MyThing"),
+    intern("A custom thing that represents some state"),
+    vec![
+        (intern("field1"), PropType::U64),
+        (intern("field2"), PropType::Bool),
     ],
+    vec![] // Indexed properties
 )?;
 ```
 

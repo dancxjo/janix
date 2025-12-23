@@ -1,6 +1,6 @@
-# Graph-Driven Scheduling
+# Graph-Mirrored Scheduling
 
-ThingOS now treats the kernel graph as the source of truth for scheduling. Threads, CPUs, and sleep events are modeled as Things with well-known properties and links, and mutations emit push-style events that hardware reifiers subscribe to.
+ThingOS uses the kernel graph to mirror its internal scheduling state. While the low-level scheduler uses efficient internal structures (run queues, priority vectors) for dispatching, it publishes all state changes to the graph. This allows userland and debug tools to inspect the scheduler state using standard graph queries.
 
 ## Schema
 - Things
@@ -14,20 +14,18 @@ ThingOS now treats the kernel graph as the source of truth for scheduling. Threa
   - `sched.sleeps_until`: `Thread -> SleepEvent`
 
 ## Scheduler
-- Entry point: `sched_graph::sched_tick(graph: &mut Graph, cpu: CpuId, now: TimeNs)`
+- Entry point: `sched::schedule_next()`
 - Behavior:
-  - Finds the current thread via `sched.runs_on` links, accounts runtime, and preempts when the slice expires.
-  - Picks the next runnable thread (by priority, then lowest runtime) from the graph.
-  - Writes decisions back into the graph (`state`, `last_started_ns`, `sched.runs_on`).
-  - Never calls arch/hardware APIs directly.
+  - Maintains an internal `run_queue` (priority-based round-robin).
+  - Handles timer interrupts and context switching imperatively.
+  - **Mirrors** state changes to the graph when `graph_enabled` is true:
+    - Updates `Thread.state` (Running, Runnable, Sleeping).
+    - Updates `sched.runs_on` links.
+    - Updates `runtime_ns` stats.
 
-## Events and Reifiers
-- `GraphEvent` is emitted for thing/prop/link changes via fixed listener tables.
-- Boot/arch registers listeners (e.g., for `sched.runs_on`) that:
-  - Map `CpuCore.index` to a CPU slot.
-  - Track the currently running thread per CPU.
-  - Invoke platform context-switch hooks when the desired thread changes (placeholder logging today).
-- Sleep events use `sched.sleeps_until` links; helpers are provided to create/clear `SleepEvent` Things.
+## Observation
+- The graph serves as a read-only view of the scheduler for the rest of the system.
+- Debug tools can watch for `GraphEvent`s to visualize thread switching.
 
 ## Invariants
 - A running thread should have exactly one outgoing `sched.runs_on` link.
@@ -37,10 +35,10 @@ ThingOS now treats the kernel graph as the source of truth for scheduling. Threa
 
 ## Lifecycle
 ```
-timer interrupt -> sched_tick(graph, cpu, now)
-                -> graph mutations (state/links)
-                -> GraphEvent::LinkAdded("sched.runs_on")
-                -> arch reifier compares desired vs current and switches contexts
+timer interrupt -> sched::scheduler_tick()
+                -> internal run_queue update
+                -> context switch (arch-specific)
+                -> graph update (mirroring state to Things)
 ```
 
-The entire scheduling path is observable by inspecting the graph, and mutations are pushed to interested subsystems immediately.***
+The scheduling path is observable by inspecting the graph, which reflects the decisions made by the kernel scheduler.

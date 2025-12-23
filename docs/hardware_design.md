@@ -9,8 +9,8 @@ Instead, all hardware interaction is delegated through the system graph.
 
 There are two flows:
 
-Input Direction (Hardware → Kernel → Graph)
-The kernel captures hardware events (via IRQs, controllers, timers) and records them into the graph as structured Things.
+Input Direction (Hardware → Graph)
+Hardware events are captured by drivers (either in-kernel or userland) and recorded into the graph as structured Things.
 
 Output Direction (Userland → Graph → Kernel → Hardware)
 Userland describes its intended hardware state by mutating Things in the graph, and the kernel actualizes those changes into real hardware effects.
@@ -34,36 +34,25 @@ Drives toward a declarative, introspectable, testable OS.
 
 Input Pipeline
 
-(Hardware → Kernel → Graph)
+(Hardware → Graph)
 
-Hardware events are captured by kernel drivers:
+Hardware events are captured by drivers (often running in userland via kernel-exposed primitives like IO Ports):
 
-Keyboard IRQs
+*   Keyboard IRQs
+*   Mouse motion + button packets
+*   Serial input
+*   Network frames
+*   Timers
+*   Sensors
 
-Mouse motion + button packets
+The driver interprets the hardware signals (e.g., PS/2 scancodes) and records them as high-level graph updates:
 
-Serial input
-
-Network frames
-
-Timers
-
-Sensors
-
-The kernel does not interpret them further than necessary.
-It simply records them as graph updates:
-
-KeyEvent
-
-MouseDelta or PointerEvent
-
-SerialReceived
-
-NetworkFrameReceived
-
-TickEvent
-
-SensorReading
+*   `KeyScanEvent` / `InputCharEvent`
+*   `MouseDelta` or `PointerEvent`
+*   `SerialReceived`
+*   `NetworkFrameReceived`
+*   `TickEvent`
+*   `SensorReading`
 
 Each is a Thing with appropriate fields (timestamp, device, data).
 
@@ -87,20 +76,17 @@ Setting SpeakerCommand { tone, duration }
 
 Posting NetworkSendFrame { interface, bytes, state: Pending }
 
-The kernel’s Actualizer Module scans the graph for these command or state Things:
+The Actualizer (which may be the kernel or a userland driver) scans the graph for these command or state Things:
 
-Detects new or changed entries.
+1.  Detects new or changed entries.
+2.  Performs the corresponding hardware action.
+3.  Updates result fields (state = Done, Error, or updated version).
 
-Performs the corresponding hardware action.
+The system does not decide what the user wants the hardware to do—it merely actualizes the intent encoded in the graph.
 
-Updates result fields (state = Done, Error, or updated version).
+Actualizer Role
 
-The kernel does not decide what the user wants the hardware to do—
-it merely actualizes the intent encoded in the graph.
-
-Kernel Actualizer Module
-
-A kernel subsystem (actualizer, graph_io, or similar) is responsible for observing the graph and applying userland intentions to hardware.
+An actualizer (e.g., a kernel subsystem or a userland process like `ps2_keyboard_driver`) is responsible for observing the graph and applying userland intentions to hardware.
 
 Responsibilities:
 

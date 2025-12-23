@@ -40,7 +40,7 @@ Currently, programs do not receive dynamic arguments at startup. Configuration s
 
 Communication with the kernel happens primarily through:
 1.  **System Calls**: Invoked via the `syscall` instruction (x86_64). The ABI is defined in `abi/src/syscalls.rs`.
-2.  **Kernel Requests**: Higher-level operations (like graph queries) are sent via messaging or specific system call structures defined in `abi/src/lib.rs`.
+2.  **Kernel Requests**: Higher-level operations (like graph queries) are sent via messaging or specific system call structures defined in `abi/src/requests.rs`.
 
 ## 5. Scheduling Expectations
 

@@ -92,11 +92,16 @@ pub fn create_thing(kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingI
     let props_for_log = props.clone();
     let id = with_store_mut(|store| store.create_thing(kind, props));
     debug::print_thing_created(id, kind, props_for_log.as_slice());
+    events::dispatch_event(&GraphEvent::ThingCreated(id));
     id
 }
 
 pub fn update_thing(id: ThingId, props: Vec<(SymbolId, PropValue)>) -> bool {
-    with_store_mut(|store| store.update_thing(id, props))
+    let updated = with_store_mut(|store| store.update_thing(id, props));
+    if updated {
+        events::dispatch_event(&GraphEvent::ThingUpdated(id));
+    }
+    updated
 }
 
 pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {

@@ -602,12 +602,23 @@ fn timer_tick(frame: &mut TrapFrame) {
                     if next.address_space_token.is_none() {
                         // Kernel Thread Start
                         let selectors = crate::gdt::get_selectors();
-                        kernel::println!("Starting Kernel Thread '{}' entry={:#x} stack={:#x} cs={:#x}", next.name, next.entry_point, next.user_stack_top, selectors.kcode.0);
+                        let mut rsp = next.user_stack_top;
+                        // Align stack to 16 bytes to satisfy ABI expectations before pushes.
+                        rsp &= !0xFu64;
+
+                        kernel::println!(
+                            "Starting Kernel Thread '{}' entry={:#x} stack={:#x} cs={:#x}",
+                            next.name,
+                            next.entry_point,
+                            rsp,
+                            selectors.kcode.0
+                        );
+
                         let mut ctx = next.context;
-                        ctx[16] = selectors.kcode.0 as u64;
+                        ctx[15] = next.entry_point; // RIP
+                        ctx[16] = selectors.kcode.0 as u64; // CS
                         ctx[17] = 0x202; // RFLAGS IF=1
-                        ctx[15] = 0xDEADBEEF; // Debug hack
-                        ctx[18] = next.user_stack_top; // Reverted +8
+                        ctx[18] = rsp; // RSP
                         
                         super::enter::resume_kernel_mode(&ctx);
                     } else {

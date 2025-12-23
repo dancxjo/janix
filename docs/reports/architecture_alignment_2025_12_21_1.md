@@ -1,4 +1,4 @@
-# Architecture Alignment 2024-10-24
+# Architecture Alignment 2025-12-21
 
 ## Summary
 The `abi` and `thing_models` crates have been refactored to align with architectural invariants.

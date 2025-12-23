@@ -88,8 +88,8 @@ The detailed documentation is located in the `docs/` directory:
   * [Invariants](docs/contracts/invariant.md)
 
 * **Reports**
-  * [Architecture Alignment (Oct 2024)](docs/reports/architecture_alignment_2024_10_18.md)
-  * [Non-OS Compliance Report](docs/contracts/nonos_report.txt)
+  * [Architecture Alignment (Dec 2025)](docs/reports/architecture_alignment_2025_12_20.md)
+  * [No-nos Compliance Report](docs/contracts/nonos_report.txt)
 
 ---
 

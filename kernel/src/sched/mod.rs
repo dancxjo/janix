@@ -76,6 +76,12 @@ pub struct Scheduler {
     pub avg_tick_time_ns: u64,
     pub total_ticks: u64,
     pub rebuild_count: u64,
+    pub total_switches: u64,
+    pub last_switch_ns: u64,
+    pub last_heartbeat_ns: u64,
+    pub last_runtime_total: u64,
+    pub last_runtime_idle: u64,
+    pub last_runtime_actualizer: u64,
 }
 
 fn thread_index(tid: ThreadId) -> usize {
@@ -108,6 +114,12 @@ impl Scheduler {
             avg_tick_time_ns: 0,
             total_ticks: 0,
             rebuild_count: 0,
+            total_switches: 0,
+            last_switch_ns: 0,
+            last_heartbeat_ns: 0,
+            last_runtime_total: 0,
+            last_runtime_idle: 0,
+            last_runtime_actualizer: 0,
         }
     }
 
@@ -701,6 +713,87 @@ impl Scheduler {
         }
     }
 
+    fn runtime_snapshot(&self) -> (u64, u64, u64) {
+        let mut total: u64 = 0;
+        let mut idle: u64 = 0;
+        let mut actualizer: u64 = 0;
+        for thread in self.threads.iter().flatten() {
+            total = total.saturating_add(thread.total_run_ns);
+            if thread.is_idle {
+                idle = idle.saturating_add(thread.total_run_ns);
+            }
+            if thread.name == "actualizer" {
+                actualizer = thread.total_run_ns;
+            }
+        }
+        (total, idle, actualizer)
+    }
+
+    fn maybe_log_heartbeat(&mut self, now_ns: u64) {
+        if self.last_switch_ns == 0 {
+            self.last_switch_ns = now_ns;
+        }
+
+        if self.last_heartbeat_ns == 0 {
+            let (total, idle, actualizer) = self.runtime_snapshot();
+            self.last_runtime_total = total;
+            self.last_runtime_idle = idle;
+            self.last_runtime_actualizer = actualizer;
+            self.last_heartbeat_ns = now_ns;
+            return;
+        }
+
+        let elapsed = now_ns.saturating_sub(self.last_heartbeat_ns);
+        if elapsed < 1_000_000_000 {
+            return;
+        }
+
+        let (total, idle, actualizer) = self.runtime_snapshot();
+        let delta_total = total.saturating_sub(self.last_runtime_total);
+        let delta_idle = idle.saturating_sub(self.last_runtime_idle);
+        let delta_actualizer = actualizer.saturating_sub(self.last_runtime_actualizer);
+
+        let idle_share = percent(delta_idle, delta_total);
+        let actualizer_share = percent(delta_actualizer, delta_total);
+        let run_q = self.cache.run_queue.len();
+        let since_switch_ms = now_ns.saturating_sub(self.last_switch_ns) / 1_000_000;
+
+        let current_str = if let Some(tid) = self.current {
+            if let Some(thread) = self.threads[thread_index(tid)].as_ref() {
+                alloc::format!("{}:{}", tid.0, thread.name)
+            } else {
+                String::from("unknown")
+            }
+        } else {
+            String::from("none")
+        };
+
+        crate::log(&alloc::format!(
+            "Sched Heartbeat: current={} run_q={} idle_share={} act_share={} switches={} max_tick={}ns avg_tick={}ns",
+            current_str,
+            run_q,
+            idle_share,
+            actualizer_share,
+            self.total_switches,
+            self.max_tick_time_ns,
+            self.avg_tick_time_ns
+        ));
+
+        if since_switch_ms > 50 {
+            crate::log(&alloc::format!(
+                "Sched Watchdog: no context switch for {}ms (current={} run_q={})",
+                since_switch_ms,
+                current_str,
+                run_q
+            ));
+        }
+
+        self.last_runtime_total = total;
+        self.last_runtime_idle = idle;
+        self.last_runtime_actualizer = actualizer;
+        self.last_heartbeat_ns = now_ns;
+    }
+
     fn ensure_process_thing(&mut self, index: usize) {
         if !self.graph_enabled { return; }
         if let Some(process) = self.processes.get_mut(index).and_then(|p| p.as_mut()) {
@@ -820,6 +913,12 @@ impl Scheduler {
     }
 }
 
+fn percent(part: u64, total: u64) -> u64 {
+    if total == 0 {
+        return 0;
+    }
+    part.saturating_mul(100) / total
+}
 pub static SCHEDULER: Mutex<Scheduler> = Mutex::new(Scheduler::new());
 
 pub fn yield_current_thread() {

@@ -6,3 +6,5 @@ edition.workspace = true
 [dependencies]
 abi = { path = "../abi" }
 thing_macros = { path = "../thing_macros" }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+postcard = { version = "1.0", default-features = false, features = ["alloc"] }

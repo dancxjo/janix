@@ -308,12 +308,10 @@ pub fn main() -> ! {
 
     let mut debug_frame_counter = 0;
     loop {
-        /*
         if debug_frame_counter % 60 == 0 {
             println!("compositor: tick");
         }
         debug_frame_counter += 1;
-        */
         tick_once(&mut compositor);
         thing_os::time::sleep(Duration::from_nanos(FRAME_INTERVAL_NS));
     }

@@ -37,7 +37,7 @@ impl Compositor {
         if self.mouse_stream.is_none() {
             let streams = list_things_by_kind::<MouseStream>();
             if !streams.is_empty() {
-                println!(crate::l10n!("compositor: inventa {} cursus muris"), streams.len());
+                println!("compositor: inventa {} cursus muris", streams.len());
             }
 
             if let Some(thing) = streams.first() {
@@ -59,7 +59,7 @@ impl Compositor {
                         );
                         self.mouse_stream = Some(MouseStreamMapped::new(obj));
                         let msg = alloc::format!(
-                            crate::l10n!("compositor: rivus muris descriptus id={:?} locus={:?} longitudo={}"),
+                            "compositor: rivus muris descriptus id={:?} locus={:?} longitudo={}",
                             real_id,
                             map_resp.user_addr,
                             map_resp.byte_len
@@ -67,7 +67,7 @@ impl Compositor {
                         println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
                     }
                 } else {
-                    println!(crate::l10n!("compositor: non potui describere rivum muris id={:?}"), real_id);
+                    println!("compositor: non potui describere rivum muris id={:?}", real_id);
                 }
             }
         }
@@ -91,7 +91,7 @@ impl Compositor {
                 // User plan verification step: "Check for: compositor: head advanced".
                 // So I MUST log it.
                 let msg = alloc::format!(
-                    crate::l10n!("compositor: caput processum profectum vetus_cauda={} nova_cauda={} n={}"),
+                    "compositor: caput processum profectum vetus_cauda={} nova_cauda={} n={}",
                     self.mouse_head,
                     new_head,
                     events.len()
@@ -101,12 +101,12 @@ impl Compositor {
             self.mouse_head = new_head;
 
             if !events.is_empty() {
-                let msg = alloc::format!(crate::l10n!("DEBUG: tractans {} eventus"), events.len());
+                let msg = alloc::format!("DEBUG: tractans {} eventus", events.len());
                 println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
 
                 if !self.mouse_received {
                     let first_msg = alloc::format!(
-                        crate::l10n!("compositor: rivus muris acceptus ({} eventus conditus)"),
+                        "compositor: rivus muris acceptus ({} eventus conditus)",
                         events.len()
                     );
                     println!("{}", alloc::boxed::Box::leak(first_msg.into_boxed_str()));

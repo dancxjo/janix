@@ -21,7 +21,7 @@ fn map_buffer(buffer_id: ThingId) -> Option<(*mut u8, usize)> {
 }
 
 pub fn main() -> ! {
-    println!(crate::l10n!("compositor: initium (modus securitatis graphidis)"));
+    println!("compositor: initium (modus securitatis graphidis)");
 
     // Register schemas
     let _ = register_schema_for::<Surface>();
@@ -40,10 +40,14 @@ pub fn main() -> ! {
         }
     };
 
-    println!(crate::l10n!("compositor: inventa indicia tabulae imaginum {}x{}"), fb_info.width, fb_info.height);
+    println!(
+        "compositor: inventa indicia tabulae imaginum {}x{}",
+        fb_info.width,
+        fb_info.height
+    );
 
-    let (ptr, _size) = map_buffer(buffer.shared_buffer_id).expect(crate::l10n!("Non potui tabulam imaginum describere"));
-    println!(crate::l10n!("compositor: tabula imaginum depicta"));
+    let (ptr, _size) = map_buffer(buffer.shared_buffer_id).expect("Non potui tabulam imaginum describere");
+    println!("compositor: tabula imaginum depicta");
 
     let mut compositor = Compositor::new(fb_info, ptr, buffer.index, display.id);
 
@@ -59,7 +63,7 @@ pub fn main() -> ! {
             error_message: None,
         };
         
-        println!(crate::l10n!("compositor: mittens consilium praesentandi"));
+        println!("compositor: mittens consilium praesentandi");
         if let Some(intent_id) = create_thing(&intent) {
             // Wait for it to be Done
             // In a real loop we wouldn't block, but for "First Light" logical verification:
@@ -67,10 +71,10 @@ pub fn main() -> ! {
             loop {
                 if let Some(updated) = load_thing::<PresentIntent>(intent_id) {
                     if updated.state == IntentState::Done {
-                       println!(crate::l10n!("compositor: consilium perfectum"));
+                       println!("compositor: consilium perfectum");
                        break;
                     } else if updated.state == IntentState::Error {
-                       println!(crate::l10n!("compositor: error in consilio"));
+                       println!("compositor: error in consilio");
                        break;
                     }
                 }
@@ -78,12 +82,12 @@ pub fn main() -> ! {
                 retries += 1;
                 if retries > 1000 {
                      // Timeout
-                     println!(crate::l10n!("compositor: mora consilii"));
+                     println!("compositor: mora consilii");
                      break;
                 }
             }
         } else {
-            println!(crate::l10n!("compositor: non potui consilium creare"));
+            println!("compositor: non potui consilium creare");
         }
 
         thing_os::time::sleep(Duration::from_nanos(FRAME_INTERVAL_NS));

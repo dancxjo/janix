@@ -16,7 +16,7 @@ pub struct FontEngine {
 impl FontEngine {
     fn new() -> Self {
         let font = Font::from_bytes(NOTO_SANS_REGULAR, FontSettings::default())
-            .expect(crate::l10n!("fontdue Font exstruere non potui"));
+            .expect("fontdue Font exstruere non potui");
         Self { font }
     }
 

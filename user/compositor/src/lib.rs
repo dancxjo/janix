@@ -4,15 +4,6 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
-mod i18n;
-
-#[macro_export]
-macro_rules! l10n {
-    ($text:literal) => {
-        $crate::i18n::mark($text)
-    };
-}
-
 mod config;
 pub mod flex;
 mod fonts;

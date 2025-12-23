@@ -1,4 +1,3 @@
-use crate::graph::store;
 use crate::graph_kinds;
 use crate::symbols;
 use abi::{Predicate, ThingId, syscall_defs::SymbolId};
@@ -67,8 +66,7 @@ pub fn dump_graph_table() {
     }
 }
 
-pub fn print_thing_created(id: ThingId, _kind: SymbolId, _props: &[(SymbolId, PropValue)]) {
-    /*
+pub fn print_thing_created(id: ThingId, kind: SymbolId, props: &[(SymbolId, PropValue)]) {
     let kind_str = symbols::resolve(kind).unwrap_or_else(|| "???".into());
     let mut props_str = alloc::string::String::new();
     let mut first = true;
@@ -82,11 +80,7 @@ pub fn print_thing_created(id: ThingId, _kind: SymbolId, _props: &[(SymbolId, Pr
         first = false;
     }
     // format: (t1234:Thorton { kay: 'vel', boo: 123 })
-    let msg = format!("(t{}:{} {{ {} }})", id.0, kind_str, props_str);
-    crate::log(&msg);
-    */
-    // Minimal log or disabled for performance
-    // crate::log(&format!("(t{}) created", id.0));
+    crate::log(&format!("(t{}:{} {{ {} }})", id.0, kind_str, props_str));
 }
 
 pub fn print_thing_updated(id: ThingId, props: &[(SymbolId, PropValue)]) {
@@ -102,22 +96,18 @@ pub fn print_thing_updated(id: ThingId, props: &[(SymbolId, PropValue)]) {
         first = false;
     }
     let msg = format!("(t{}) updated {{ {} }}", id.0, props_str);
-    // crate::log(&msg);
+    crate::log(&msg);
 }
 
-pub fn print_link_created(src: ThingId, _pred: Predicate, dst: ThingId) {
-    /*
-    // format: (t1234)-[:RESOLVED_NAME]->(x8549)
+pub fn print_link_created(src: ThingId, pred: Predicate, dst: ThingId) {
     let pred_str = resolve_predicate(pred);
+    // format: (t1234)-[:RESOLVED_NAME]->(x8549)
     let msg = format!("(t{})-[:{}]->(t{})", src.0, pred_str, dst.0);
     crate::log(&msg);
-    */
 }
 
-pub fn print_link_removed(src: ThingId, _pred: Predicate, dst: ThingId) {
-    /*
+pub fn print_link_removed(src: ThingId, pred: Predicate, dst: ThingId) {
     let pred_str = resolve_predicate(pred);
     let msg = format!("(t{})-[:{}]-/->(t{})", src.0, pred_str, dst.0);
     crate::log(&msg);
-    */
 }

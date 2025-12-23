@@ -125,8 +125,8 @@ pub fn log_message(message: &str) {
 
     #[cfg(all(feature = "debug_logging", not(test)))]
     {
-        // console::print(message);
-        // console::print("\n");
+        console::print(message);
+        console::print("\r");
     }
 }
 

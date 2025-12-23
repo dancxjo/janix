@@ -89,18 +89,17 @@ impl Graph {
 }
 
 pub fn create_thing(kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingId {
-    // Optimization: props are moved into store to avoid clone.
-    // Debug print receives empty slice as it's disabled/minimal now.
+    let props_for_log = props.clone();
     let id = with_store_mut(|store| store.create_thing(kind, props));
-    debug::print_thing_created(id, kind, &[]);
+    debug::print_thing_created(id, kind, props_for_log.as_slice());
     id
 }
 
 pub fn update_thing(id: ThingId, props: Vec<(SymbolId, PropValue)>) -> bool {
-    // Optimization: props are moved into store to avoid clone.
+    let props_for_log = props.clone();
     let success = with_store_mut(|store| store.update_thing(id, props));
     if success {
-        debug::print_thing_updated(id, &[]);
+        debug::print_thing_updated(id, props_for_log.as_slice());
     }
     success
 }

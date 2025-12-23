@@ -10,16 +10,14 @@ const IDLE_SLEEP_MS: u64 = 1_000;
 
 #[thing_os::main]
 fn main() {
-    println!("init_debug: starting clock+debug_alloc init");
+    println!("init_debug: starting debug init (clock/taskman disabled)");
 
     if !ensure_schema_exists_for::<BootProgram>() {
         println!("init_debug: BootProgram schema missing");
         idle();
     }
 
-    launch_program("clock");
     launch_program("debug_alloc");
-    launch_program("taskman");
     launch_program("ps2_keyboard_driver");
     launch_program("debug_input_logger");
     launch_program("debug_input_events");

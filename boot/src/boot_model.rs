@@ -403,7 +403,7 @@ pub fn seed_boot_programs_from_limine() {
         .unwrap_or(false);
 
     if is_debug_profile {
-        log("PROFILUM DEBUG ACTIVUM: Tantum progeneramus init_debug, clock, debug_alloc, taskman, debug_input_logger, debug_input_events, framebuffer, compositor, ps2_keyboard_driver, ps2_mouse_driver");
+        log("PROFILUM DEBUG ACTIVUM: Tantum progeneramus init_debug, debug_alloc, debug_input_logger, debug_input_events, framebuffer, compositor, ps2_keyboard_driver, ps2_mouse_driver");
     }
 
     for (index, module) in response.modules().iter().enumerate() {
@@ -417,10 +417,8 @@ pub fn seed_boot_programs_from_limine() {
         };
 
         if is_debug_profile
-            && identifier != "clock"
             && identifier != "init_debug"
             && identifier != "debug_alloc"
-            && identifier != "taskman"
             && identifier != "debug_input_logger"
             && identifier != "ps2_keyboard_driver"
             && identifier != "debug_input_events"

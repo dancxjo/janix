@@ -160,6 +160,16 @@ pub fn kernel_core_schemas() -> Vec<(
         DisplayFrame::DESCRIPTION,
         DisplayFrame::schema(),
     ));
+    schemas.push((
+        DisplayFramebuffer::KIND,
+        DisplayFramebuffer::DESCRIPTION,
+        DisplayFramebuffer::schema(),
+    ));
+    schemas.push((
+        DisplayPresentRequest::KIND,
+        DisplayPresentRequest::DESCRIPTION,
+        DisplayPresentRequest::schema(),
+    ));
 
     // 4. Shared UI Contract (Windowing)
     schemas.push((Mode::KIND, Mode::DESCRIPTION, Mode::schema()));

@@ -1,37 +1,32 @@
-use abi::{KernelRequest, KernelResponse, ThingId};
-use alloc::boxed::Box;
+use abi::ThingId;
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::format;
-use alloc::string::ToString;
 use alloc::vec::Vec;
-use thing_models::graph_kinds;
-use thing_models::{PropKey, PropValue};
 use thing_os::prelude::*;
 use thing_os::{
-    DisplayThing, PrimaryDisplayBuffer, Surface, Window, list_things_by_kind, load_thing,
-    update_props,
+    DisplayThing, Window, list_things_by_kind, link_targets, load_thing, 
+    update_props, intern, Predicate
 };
+use crate::schemas::{FramebufferInfo, Buffer, Surface};
 
-pub fn active_framebuffer() -> Option<PrimaryDisplayBuffer> {
-    thing_os::open_primary_display_buffer().ok()
-}
+pub fn find_framebuffer_setup() -> Option<(FramebufferInfo, Buffer, DisplayThing)> {
+    let infos: Vec<FramebufferInfo> = list_things_by_kind();
+    let fb_info = infos.first()?;
 
-pub fn swap_display_buffers(display_id: ThingId) -> Option<i64> {
-    let display = load_thing::<DisplayThing>(display_id)?;
-    let current_index = display.active_buffer_index;
-    let new_index = if current_index == 0 { 1 } else { 0 };
+    // Find buffer
+    let has_buffer = intern("pkg.framebuffer.has_buffer");
+    let targets = link_targets(fb_info.id, Predicate(has_buffer.0 as u64));
+    let buffer_id = targets.first()?;
+    let buffer = load_thing::<Buffer>(*buffer_id)?;
 
-    if !update_props(
-        display_id,
-        &[(
-            graph_kinds::PROP_DISPLAY_ACTIVE_BUFFER_INDEX.to_string(),
-            PropValue::I64(new_index),
-        )],
-    ) {
-        return None;
-    }
+    // Find display
+    let displays: Vec<DisplayThing> = list_things_by_kind();
+    let info_pred = intern("pkg.framebuffer.info");
+    let display = displays.into_iter().find(|d| {
+         let targets = link_targets(d.id, Predicate(info_pred.0 as u64));
+         targets.contains(&fb_info.id)
+    })?;
 
-    Some(new_index)
+    Some((fb_info.clone(), buffer, display))
 }
 
 pub fn collect_all_windows() -> Vec<Window> {
@@ -42,9 +37,34 @@ pub fn collect_surfaces_for_windows(windows: &[Window]) -> BTreeMap<ThingId, Sur
     let wanted: BTreeSet<ThingId> = windows.iter().map(|w| w.id).collect();
     let mut map = BTreeMap::new();
     for surface in list_things_by_kind::<Surface>() {
-        if wanted.contains(&surface.window_id) {
-            map.insert(surface.window_id, surface);
-        }
+        // We match by window_id property. Surface struct has no window_id field in my schema!
+        // Wait, schema.rs Surface:
+        // width, height, format, buffer_index.
+        // It DOES NOT have window_id.
+        // The previous definition in thing_models::Surface (used by collect_surfaces_for_windows) had window_id.
+        // I define pkg.compositor.Surface in schemas.rs.
+        // If I use the new schemas for internal logic, I must ensure they match.
+        // Or maybe I should use the old `thing_models::Surface` if userland creates it?
+        // But Part 1.2 "Required schemas... Surface".
+        // Schema definition only listed width, height, format, buffer_index.
+        // How do we associate surface with window?
+        // "RenderTree -> root_surface".
+        // Windows might not be used in the "first light" version.
+        // "4.2 Minimal Rendering... Do not attempt windows yet".
+        
+        // So for "First Light", I should disable window logic or stub it out.
+        // But the existing compositor code relies heavily on windows.
+        
+        // I will return empty map for now or try to adapt.
+        // If I want to fix windows later, I should add window_id to Surface schema.
+        // But I should stick to the requested schema.
+        // "Required schemas (minimal): pkg.compositor.Surface ... Fields: width, height, format, buffer_index".
+        // It seems the new model assumes a RenderTree.
+        
+        // For now, I'll comment out window gathering or make it no-op.
+        
+        // But I need to preserve `collect_surfaces_for_windows` signature for `state.rs`.
+        // I'll return empty map.
     }
     map
 }

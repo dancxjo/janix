@@ -12,7 +12,6 @@ allocator-api2 = { version = "0.2.21", default-features = false, features = ["al
 spin = "0.9.8"
 thing_models = { path = "../thing_models" }
 thing_macros = { path = "../thing_macros" }
-framebuffer_api = { path = "../user/drivers/framebuffer_api" }
 linked_list_allocator = "0.9"
 
 # No runtime dependency anymore

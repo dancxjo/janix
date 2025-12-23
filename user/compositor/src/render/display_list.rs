@@ -230,11 +230,11 @@ pub fn build_display_list(
 }
 
 pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<LayoutRect>) {
-    let buffer = comp.fb.ptr as *mut u32;
-    let width = comp.fb.info.width;
-    let height = comp.fb.info.height;
+    let buffer = comp.fb_ptr as *mut u32;
+    let width = comp.fb_info.width;
+    let height = comp.fb_info.height;
     // Primitives expect stride in BYTES.
-    let stride_bytes = comp.fb.info.stride as u32;
+    let stride_bytes = comp.fb_info.stride as u32;
 
     let clip_tuple = clip.map(|r| (r.x, r.y, r.w as i32, r.h as i32));
 

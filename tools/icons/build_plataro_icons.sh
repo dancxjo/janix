@@ -3,7 +3,7 @@ set -e
 
 # Setup paths
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-OUT_DIR="$ROOT/rootfs/share/icons/plataro64"
+OUT_DIR="$ROOT/assets/icons/plataro64"
 IMG0="/home/dancxjo/.gemini/antigravity/brain/3bc233c3-0068-4964-aa62-a56936846098/uploaded_image_0_1765867872395.png"
 IMG1="/home/dancxjo/.gemini/antigravity/brain/3bc233c3-0068-4964-aa62-a56936846098/uploaded_image_1_1765867872395.png"
 IMG2="/home/dancxjo/.gemini/antigravity/brain/3bc233c3-0068-4964-aa62-a56936846098/uploaded_image_0_1765868759845.png"

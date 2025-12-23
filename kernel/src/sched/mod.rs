@@ -149,6 +149,9 @@ impl Scheduler {
     }
 
     fn ensure_cache_valid(&mut self) {
+        if !self.graph_enabled {
+            return;
+        }
         let rev = graph::get_revision();
         if rev != self.cache.last_graph_revision {
             let rebuilt = graph_sync::rebuild_cache_from_graph(&mut self.threads);
@@ -604,8 +607,22 @@ impl Scheduler {
         self.total_ticks += 1;
         self.avg_tick_time_ns = (self.avg_tick_time_ns * (self.total_ticks - 1) + dur) / self.total_ticks;
 
-        if self.total_ticks % 1000 == 0 {
-             crate::log(&alloc::format!("Sched stats: max={}ns avg={}ns rebuilds={}", self.max_tick_time_ns, self.avg_tick_time_ns, self.rebuild_count));
+        if self.total_ticks % 10 == 0 {
+             let run_queue_len = self.cache.run_queue.len();
+             let mut actualizer_state = "Not Found";
+             let mut actualizer_prio = 0;
+             for t in self.threads.iter().flatten() {
+                 if t.name == "actualizer" {
+                     actualizer_state = t.state.as_str();
+                     actualizer_prio = t.priority;
+                     break;
+                 }
+             }
+             crate::log(&alloc::format!(
+                 "Sched Heartbeat: run_q={} act_state={} act_prio={} max={}ns avg={}ns",
+                 run_queue_len, actualizer_state, actualizer_prio,
+                 self.max_tick_time_ns, self.avg_tick_time_ns
+             ));
         }
 
         let thread = self.thread_mut(tid).expect("Scheduled thread missing backing state");
@@ -833,6 +850,11 @@ pub fn block_current_thread() {
         }
     });
     // Yield CPU
+    #[cfg(target_arch = "x86_64")]
+    x86_64::instructions::hlt();
+}
+
+pub fn wait_for_interrupt() {
     #[cfg(target_arch = "x86_64")]
     x86_64::instructions::hlt();
 }

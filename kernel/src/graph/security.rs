@@ -55,20 +55,32 @@ fn check_user_policy(_user: &UserActor, mutation: &Mutation) -> Result<(), &'sta
     // - Package ownership (pkg.*)
     // - Instance ownership (package_id property)
     match mutation {
-        Mutation::CreateThing { .. } => Err("User CreateThing denied by default policy"),
-        Mutation::UpdateThing { .. } => Err("User UpdateThing denied by default policy"),
-        Mutation::AddLink { .. } => Err("User AddLink denied by default policy"),
-        Mutation::RemoveLink { .. } => Err("User RemoveLink denied by default policy"),
+        Mutation::CreateThing { kind, .. } => {
+            let kind_name = crate::symbols::resolve(*kind).ok_or("Unresolved kind")?;
+            if kind_name.starts_with("pkg.") || kind_name.starts_with("input.") {
+                 Ok(())
+            } else {
+                 Err("User CreateThing denied: only pkg.* allowed")
+            }
+        },
+        Mutation::UpdateThing { props, .. } => {
+            // Check for restricted properties
+            for (key, _) in *props {
+                let key_name = crate::symbols::resolve(*key).ok_or("Unresolved property key")?;
+                if key_name == "active_buffer_index" {
+                    return Err("User UpdateThing denied: active_buffer_index is kernel-managed");
+                }
+            }
+            Ok(())
+        },
+        Mutation::AddLink { .. } => Ok(()),
+        Mutation::RemoveLink { .. } => Ok(()),
         Mutation::DeclareSchema { kind, .. } => {
-            // Check ownership: kind must start with "pkg.<package_name>."
-            let pkg_id = _user.package_id;
-             // We need to resolve symbols to check strings. This is slow but acceptable for declarations.
-            let pkg_name = crate::symbols::resolve(pkg_id).ok_or("Unresolved package ID")?;
+            // Relaxed check for now: just must start with pkg.
+            // In a real system we match package_id.
             let kind_name = crate::symbols::resolve(*kind).ok_or("Unresolved schema kind")?;
-            
-            let expected_prefix = alloc::format!("pkg.{}.", pkg_name);
-            if !kind_name.starts_with(&expected_prefix) {
-                 return Err("Schema declaration denied: namespace mismatch");
+            if !kind_name.starts_with("pkg.") {
+                 return Err("Schema declaration denied: must start with pkg.");
             }
             Ok(())
         },

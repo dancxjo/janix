@@ -90,14 +90,17 @@ pub fn init() {
         let stack_leak = alloc::boxed::Box::leak(stack.into_boxed_slice());
         let stack_top = stack_leak.as_ptr() as u64 + stack_size as u64;
 
-        // Add thread to kernel process (PID 1)
+        // Create kernel process (PID 1)
+        let pid = crate::sched::SCHEDULER.lock().add_process("kernel", "pkg.kernel");
+
+        // Add thread to kernel process
         crate::sched::SCHEDULER.lock().add_thread(
-            abi::ProcessId(1),
+            pid,
             "actualizer",
             actualizer_entry,
             0,
             stack_top,
-            100, // Priority
+            10, // Priority
         );
         log("Spawned Actualizer thread");
     }

@@ -12,6 +12,3 @@ abi = { path = "../../abi" }
 thing_models = { path = "../../thing_models" }
 thing_os = { path = "../../thing_os" }
 
-
-[features]
-rootfs = []

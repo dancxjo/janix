@@ -4,12 +4,24 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+mod i18n;
+
+#[macro_export]
+macro_rules! l10n {
+    ($text:literal) => {
+        $crate::i18n::mark($text)
+    };
+}
+
 mod config;
 pub mod flex;
 mod fonts;
 mod graph;
 mod input;
 mod layout;
+pub mod api;
+pub mod schemas;
+pub use schemas::*;
 mod model;
 mod render;
 mod state;
@@ -26,4 +38,3 @@ pub use state::main;
 // Re-export the active_framebuffer selection seam so callers can obtain
 // the graph-driven primary display buffer without reaching into graph.rs
 // directly. This keeps the "which buffer?" decision isolated here.
-pub use crate::graph::active_framebuffer;

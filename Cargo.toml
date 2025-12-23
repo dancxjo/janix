@@ -7,10 +7,7 @@ members = [
     "thing_os",
     "user/clock",
     "user/compositor",
-    "user/compositor_api",
-    "user/window_demo",
     "libs/hal",
-    "user/drivers/framebuffer_api",
     "user/drivers/usb",
     "user/drivers/pci",
     "thing_macros",
@@ -20,14 +17,9 @@ members = [
     "user/drivers/framebuffer",
     "user/drivers/ps2_keyboard",
     "user/drivers/ps2_mouse",
-    "user/geographer",
-
-    "user/hello_world", "tools/icon-gen",
-    "user/debug_alloc",
-    "user/taskman",
+    "tools/icon-gen",
     "user/debug_input_logger",
     "user/debug_input_events",
-    "user/init_debug",
     "smoke_tests",
 ]
 

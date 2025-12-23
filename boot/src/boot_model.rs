@@ -403,16 +403,6 @@ pub fn seed_boot_programs_from_limine() {
     let mut skipped_fonts = 0_u64;
     let mut seen = alloc::collections::BTreeSet::new();
 
-    let is_debug_profile = get_kernel_arg("profile=")
-        .map(|s| s == "debug")
-        .unwrap_or(false);
-
-    if is_debug_profile {
-        log(
-            "PROFILUM DEBUG ACTIVUM: Tantum progeneramus init_debug, debug_input_logger, debug_input_events, framebuffer, compositor, ps2_keyboard_driver, ps2_mouse_driver",
-        );
-    }
-
     for (index, module) in response.modules().iter().enumerate() {
         let identifier = match classify_limine_module((*module).string(), (*module).path(), index) {
             ModuleKind::Program { identifier } => identifier,
@@ -423,22 +413,6 @@ pub fn seed_boot_programs_from_limine() {
             ModuleKind::Raw { .. } => continue,
         };
 
-        if is_debug_profile
-            && identifier != "init_debug"
-            && identifier != "debug_input_logger"
-            && identifier != "ps2_keyboard_driver"
-            && identifier != "debug_input_events"
-            && identifier != "ps2_mouse_driver"
-            && identifier != "framebuffer"
-            && identifier != "compositor"
-        {
-            continue;
-        }
-
-        if !cfg!(feature = "rootfs") && identifier == "rootfs" {
-            continue;
-        }
-
         if !seen.insert(identifier.clone()) {
             continue;
         }
@@ -448,7 +422,7 @@ pub fn seed_boot_programs_from_limine() {
         let priority = get_program_priority(&identifier);
 
         let mut respawn_policy = String::from(graph_kinds::RESPAWN_NEVER);
-        if identifier == "init" || identifier == "init_debug" {
+        if identifier == "init" {
             respawn_policy = String::from(graph_kinds::RESPAWN_ALWAYS);
         }
 

@@ -8,11 +8,10 @@ name = "compositor"
 path = "src/lib.rs"
 
 [dependencies]
+thing_models = { path = "../../thing_models" }
+thing_macros = { path = "../../thing_macros" }
 abi = { path = "../../abi" }
 thing_os = { path = "../../thing_os" }
-compositor_api = { path = "../compositor_api" }
-thing_models = { path = "../../thing_models" }
-framebuffer_api = { path = "../drivers/framebuffer_api" }
 fontdue = { version = "0.9", default-features = false, features = [
     "hashbrown",
 ] }

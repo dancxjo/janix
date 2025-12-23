@@ -30,17 +30,9 @@ ifeq ($(RUST_PROFILE),dev)
     override RUST_PROFILE_SUBDIR := debug
 endif
 
-ENABLE_ROOTFS ?= 0
-ENABLE_geographer ?= 1
 ENABLE_PLATARO_ICONS ?= 1
-APPS := init init_debug clock window_demo compositor hello_world geographer debug_alloc taskman debug_input_logger debug_input_events
-ifneq ($(ENABLE_geographer),1)
-# APPS += geographer
-endif
+APPS := init clock compositor debug_input_logger debug_input_events
 DRIVERS := framebuffer ps2_keyboard_driver ps2_mouse_driver pci usb
-ifeq ($(ENABLE_ROOTFS),1)
-APPS := rootfs $(APPS)
-endif
 
 APPS_TARGET_DIR := target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)
 COMPOSITOR_FONT_DIR := target/compositor-fonts
@@ -80,19 +72,16 @@ iso: $(IMAGE_NAME).iso
 all-hdd: $(IMAGE_NAME).hdd
 
 TEST_EXCLUDES := --exclude boot \
-	--exclude geographer \
 	--exclude compositor \
-	--exclude window_demo \
 	--exclude clock \
-	--exclude hello_world \
 	--exclude init \
-	--exclude debug_alloc \
+	--exclude debug_input_logger \
+	--exclude debug_input_events \
 	--exclude ps2_keyboard_driver \
 	--exclude ps2_mouse_driver \
 	--exclude framebuffer \
 	--exclude pci \
-	--exclude usb \
-	--exclude compositor_api
+	--exclude usb
 
 .PHONY: test
 test:
@@ -694,7 +683,7 @@ limine/limine:
 .PHONY: user
 user:
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(APPS))
-	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile release -p init -p init_debug
+	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile release -p init
 
 .PHONY: drivers
 drivers:
@@ -751,12 +740,11 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	mkdir -p iso_root/boot iso_root/boot/user iso_root/boot/drivers iso_root/boot/limine iso_root/EFI/BOOT
 	cp -v boot/kernel iso_root/boot/
 	cp -v assets/wallpapers/clouds.bmp iso_root/boot/clouds.bmp
-	for app in clock window_demo compositor hello_world geographer debug_alloc taskman debug_input_logger debug_input_events; do \
+	for app in clock compositor debug_input_logger debug_input_events; do \
 		cp -v $(APPS_TARGET_DIR)/$$app iso_root/boot/user/$$app; \
 		# objcopy --strip-debug iso_root/boot/user/$$app; \
 	done
 	cp -v target/$(RUST_TARGET)/release/init iso_root/boot/user/init
-	cp -v target/$(RUST_TARGET)/release/init_debug iso_root/boot/user/init_debug
 
 	for drv in framebuffer ps2_keyboard_driver ps2_mouse_driver usb; do \
 		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \
@@ -774,10 +762,6 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	cp -v assets/fonts/unifont.hex iso_root/boot/fonts/
 	cp -v assets/fonts/HACK_REGULAR.ttf iso_root/boot/fonts/
 	cp -v limine.conf iso_root/boot/limine/limine.conf
-ifeq ($(ENABLE_geographer),1)
-	echo '    module_path: boot():/boot/user/geographer' >> iso_root/boot/limine/limine.conf
-	echo '    module_cmdline: program=geographer' >> iso_root/boot/limine/limine.conf
-endif
 ifeq ($(ENABLE_PLATARO_ICONS),1)
 	mkdir -p iso_root/share/icons/tango
 	cp -r assets/icons/* iso_root/share/icons/tango/

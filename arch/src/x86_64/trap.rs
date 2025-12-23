@@ -528,10 +528,9 @@ fn timer_tick(frame: &mut TrapFrame) {
     // Only preempt if:
     // - Preemption is allowed (count == 0)
     // - We are returning to User Mode (CS & 3 == 3)
-    let is_user = (frame.cs & 3) == 3;
     let preempt_allowed = PREEMPT_COUNT.load(Ordering::Relaxed) == 0;
 
-    if is_user && preempt_allowed {
+    if preempt_allowed {
         if let Some(mut sched) = sched::SCHEDULER.try_lock() {
             if let Some(mut thread) = sched.current_id().and_then(|tid| sched.thread_mut(tid)) {
                 // Save General Purpose Registers
@@ -590,19 +589,41 @@ fn timer_tick(frame: &mut TrapFrame) {
 
                 // Resume or Start
                 if next.started {
-                    crate::current::resume_user_mode(&next.context, &next.fpu_context);
-                } else {
-                    let stack = if next.user_stack_top == 0 {
-                        0x1000
+                    // Check CS to distinguish Kernel vs User resume
+                    let cs = next.context[16];
+                    if (cs & 3) == 0 {
+                         // Kernel thread (Ring 0)
+                         super::enter::resume_kernel_mode(&next.context);
                     } else {
-                        next.user_stack_top
-                    };
-                    let regs = crate::UserEntryRegs {
-                        entry_point: next.entry_point,
-                        user_stack: stack,
-                        arg0: next.user_arg,
-                    };
-                    super::enter::enter_user_mode(&regs);
+                         // User thread (Ring 3)
+                         crate::current::resume_user_mode(&next.context, &next.fpu_context);
+                    }
+                } else {
+                    if next.address_space_token.is_none() {
+                        // Kernel Thread Start
+                        let selectors = crate::gdt::get_selectors();
+                        kernel::println!("Starting Kernel Thread '{}' entry={:#x} stack={:#x} cs={:#x}", next.name, next.entry_point, next.user_stack_top, selectors.kcode.0);
+                        let mut ctx = next.context;
+                        ctx[16] = selectors.kcode.0 as u64;
+                        ctx[17] = 0x202; // RFLAGS IF=1
+                        ctx[15] = 0xDEADBEEF; // Debug hack
+                        ctx[18] = next.user_stack_top; // Reverted +8
+                        
+                        super::enter::resume_kernel_mode(&ctx);
+                    } else {
+                        // User Thread Start
+                        let stack = if next.user_stack_top == 0 {
+                            0x1000
+                        } else {
+                            next.user_stack_top
+                        };
+                        let regs = crate::UserEntryRegs {
+                            entry_point: next.entry_point,
+                            user_stack: stack,
+                            arg0: next.user_arg,
+                        };
+                        super::enter::enter_user_mode(&regs);
+                    }
                 }
             }
         }

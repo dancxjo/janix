@@ -3,8 +3,6 @@
 extern crate alloc;
 
 use abi::ThingId;
-#[cfg(feature = "rootfs")]
-use alloc::string::String;
 use alloc::vec::Vec;
 use thing_models::graph_kinds;
 use thing_models::{BootProfile, BootProgram, Mode, Place, ProgramImage};
@@ -15,9 +13,6 @@ use thing_os::{
 };
 
 const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
-
-#[cfg(feature = "rootfs")]
-const ROOTFS_IDENTIFIER: &str = "rootfs";
 
 pub fn init_main() -> ! {
     println!("init: starting");
@@ -32,12 +27,6 @@ pub fn init_main() -> ! {
     ensure_modes();
     // println!("init: ensure_modes done");
 
-    #[cfg(feature = "rootfs")]
-    {
-        let program_images: Vec<ProgramImage> = list_things_by_kind();
-        start_rootfs(&program_images);
-    }
-
     let boot_profile = wait_for_boot_profile();
     println!("init: BootProfile version {}", boot_profile.version);
 
@@ -47,7 +36,7 @@ pub fn init_main() -> ! {
     collect_boot_programs(&mut programs, launch_ids.as_slice());
 
     if programs.is_empty() {
-        println!("init: no BootProgram links; waiting briefly for rootfs");
+        println!("init: no BootProgram links; waiting for boot graph to populate");
         println!("init: entering supervision loop");
         loop {
             sleep(Duration::from_nanos(SUPERVISOR_IDLE_NS));
@@ -74,13 +63,8 @@ pub fn init_main() -> ! {
 
     let program_images: Vec<ProgramImage> = list_things_by_kind();
 
-    for _ in programs.iter().filter(|program| is_rootfs(program)) {
-        println!("init: skipping rootfs BootProgram entry (already handled)");
-    }
-
     let (driver_programs, app_programs): (Vec<&BootProgram>, Vec<&BootProgram>) = programs
         .iter()
-        .filter(|program| !is_rootfs(program))
         .partition(|program| is_driver(program));
 
     let (compositor_programs, other_app_programs): (Vec<&BootProgram>, Vec<&BootProgram>) =
@@ -91,12 +75,6 @@ pub fn init_main() -> ! {
 
     // 1. Boot Manifest Audit
     validate_boot_manifest(&programs, &program_images);
-
-    // Explicitly launch debug_alloc early
-    if let Some(debug_alloc) = programs.iter().find(|p| p.binary == "debug_alloc") {
-        println!("init: launching allocation smoke test: debug_alloc");
-        spawn_boot_program(&init_process, &program_images, debug_alloc);
-    }
 
     if !driver_programs.is_empty() {
         println!(
@@ -125,21 +103,12 @@ pub fn init_main() -> ! {
         spawn_boot_program(&init_process, &program_images, program);
     }
 
-    /*
     for program in other_app_programs.iter().copied() {
-        println!("init: checking program binary='{}'", program.binary);
         if program.binary == "init" {
             continue;
         }
-
-        // DEBUG: Force disable window_demo for freeze debugging
-        if program.binary == "window_demo" {
-             println!("init: SKIPPING window_demo (debug disable)");
-             continue;
-        }
         spawn_boot_program(&init_process, &program_images, program);
     }
-    */
 
     println!("init: entering supervision loop");
     loop {
@@ -337,50 +306,4 @@ fn wait_for_boot_profile() -> BootProfile {
         sleep(Duration::from_nanos(SUPERVISOR_IDLE_NS));
     }
     fatal("BootProfile missing or duplicated after waiting");
-}
-
-#[cfg(feature = "rootfs")]
-fn start_rootfs(images: &[ProgramImage]) {
-    if let Some(existing) = find_thing::<BootProgram>(|bp| bp.binary == ROOTFS_IDENTIFIER) {
-        println!(
-            "init: rootfs BootProgram already exists as ThingId {}",
-            existing.id.0
-        );
-        let _ = create_process(existing.id);
-        return;
-    }
-
-    if let Some(image) = images
-        .iter()
-        .find(|img| img.identifier == ROOTFS_IDENTIFIER)
-    {
-        let temp_program = BootProgram {
-            id: ThingId(0),
-            name: String::from(ROOTFS_IDENTIFIER),
-            app_id: 0,
-            priority: 0,
-            binary: image.identifier.clone(),
-        };
-        if let Some(program_id) = create_thing(&temp_program) {
-            println!(
-                "init: created temporary rootfs BootProgram id={}",
-                program_id.0
-            );
-            let _ = create_process(program_id);
-        } else {
-            println!("init: failed to create BootProgram for rootfs");
-        }
-    } else {
-        println!("init: rootfs ProgramImage missing; skipping rootfs launch");
-    }
-}
-
-#[cfg(feature = "rootfs")]
-fn is_rootfs(program: &BootProgram) -> bool {
-    program.binary == ROOTFS_IDENTIFIER
-}
-
-#[cfg(not(feature = "rootfs"))]
-fn is_rootfs(_program: &BootProgram) -> bool {
-    false
 }

@@ -164,35 +164,13 @@ fn launch_idle_thread() {
 }
 
 pub fn launch_init_process() {
-    let is_debug_profile = crate::boot_model::get_kernel_arg("profile=")
-        .map(|s| s == "debug")
-        .unwrap_or(false);
-
-    let (binary, app_id) = if is_debug_profile {
-        ("init_debug", 1)
-    } else {
-        ("init", 1)
-    };
-
     kernel::log("launch_init_process: PID 1 progeneratur");
     // Ensure clock is seeded if we use it. The prior boot_model logic ensures it.
 
-    if let Err(err) = crate::program::spawn_program_by_identifier(binary, binary, app_id) {
+    if let Err(err) = crate::program::spawn_program_by_identifier("init", "init", 1) {
         kernel::log("launch_init_process: defecit in generando PID 1");
         kernel::log(err);
         crate::panic_handler::hcf();
-    }
-
-    if !is_debug_profile && kernel::model::program_image_exists("debug_input_events") {
-        kernel::log("launch_init_process: generans applicationem diagnosticam debug_input_events");
-        if let Err(err) = crate::program::spawn_program_by_identifier(
-            "debug_input_events",
-            "debug_input_events",
-            100,
-        ) {
-            kernel::log("launch_init_process: defecit in generando debug_input_events");
-            kernel::log(err);
-        }
     }
 }
 

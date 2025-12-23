@@ -5,7 +5,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use compositor_api;
+use crate::api;
 use thing_models::graph_kinds;
 use thing_models::{PropKey, PropType, PropValue};
 use thing_os::prelude::*;
@@ -55,7 +55,7 @@ impl WidgetNode {
 }
 
 impl thing_os::Thing for WidgetNode {
-    const KIND: &'static str = compositor_api::KIND_WIDGET;
+    const KIND: &'static str = api::KIND_WIDGET;
     const DESCRIPTION: &'static str = "UI Widget";
     fn schema() -> &'static [(&'static str, PropType)] {
         &[]
@@ -100,36 +100,36 @@ impl thing_os::Thing for WidgetNode {
         let bg_color = get_u32(graph_kinds::PROP_BG_COLOR);
 
         let flex_direction =
-            get_prop(compositor_api::PROP_FLEX_DIRECTION).and_then(FlexDirection::from_prop);
+            get_prop(api::PROP_FLEX_DIRECTION).and_then(FlexDirection::from_prop);
 
-        let flex_wrap = get_prop(compositor_api::PROP_FLEX_WRAP).and_then(FlexWrap::from_prop);
+        let flex_wrap = get_prop(api::PROP_FLEX_WRAP).and_then(FlexWrap::from_prop);
 
         let justify =
-            get_prop(compositor_api::PROP_JUSTIFY_CONTENT).and_then(JustifyContent::from_prop);
+            get_prop(api::PROP_JUSTIFY_CONTENT).and_then(JustifyContent::from_prop);
 
-        let align = get_prop(compositor_api::PROP_ALIGN_ITEMS).and_then(AlignItems::from_prop);
+        let align = get_prop(api::PROP_ALIGN_ITEMS).and_then(AlignItems::from_prop);
 
-        let flex_grow = get_prop(compositor_api::PROP_FLEX_GROW).and_then(prop_as_f32);
+        let flex_grow = get_prop(api::PROP_FLEX_GROW).and_then(prop_as_f32);
 
-        let flex_shrink = get_prop(compositor_api::PROP_FLEX_SHRINK).and_then(prop_as_f32);
+        let flex_shrink = get_prop(api::PROP_FLEX_SHRINK).and_then(prop_as_f32);
 
         Self {
             id,
-            x: get_i32(compositor_api::PROP_X),
-            y: get_i32(compositor_api::PROP_Y),
+            x: get_i32(api::PROP_X),
+            y: get_i32(api::PROP_Y),
 
             width: get_i32(graph_kinds::PROP_WIDTH),
             height: get_i32(graph_kinds::PROP_HEIGHT),
-            min_width: get_i32(compositor_api::PROP_MIN_WIDTH),
-            min_height: get_i32(compositor_api::PROP_MIN_HEIGHT),
-            max_width: get_i32(compositor_api::PROP_MAX_WIDTH),
-            max_height: get_i32(compositor_api::PROP_MAX_HEIGHT),
+            min_width: get_i32(api::PROP_MIN_WIDTH),
+            min_height: get_i32(api::PROP_MIN_HEIGHT),
+            max_width: get_i32(api::PROP_MAX_WIDTH),
+            max_height: get_i32(api::PROP_MAX_HEIGHT),
 
             flex_direction,
             flex_wrap,
             justify,
             align,
-            gap: get_i32(compositor_api::PROP_GAP),
+            gap: get_i32(api::PROP_GAP),
 
             flex_grow,
             flex_shrink,
@@ -146,7 +146,7 @@ impl thing_os::Thing for WidgetNode {
 
 /// Collect widget ids that are direct children of `parent` via LINK_WIDGET_CHILD.
 pub fn widget_children(parent: ThingId) -> Vec<ThingId> {
-    thing_os::link_targets(parent, compositor_api::LINK_WIDGET_CHILD)
+    thing_os::link_targets(parent, api::LINK_WIDGET_CHILD)
 }
 
 /// Lay out and return computed rects for children inside `container`.

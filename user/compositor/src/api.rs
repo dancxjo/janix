@@ -1,5 +1,3 @@
-#![no_std]
-
 use abi::Predicate;
 
 pub const KIND_WIDGET: &str = "Widget";
@@ -18,7 +16,7 @@ pub const PROP_FLEX_WRAP: &str = "flex_wrap"; // "nowrap" | "wrap"
 pub const PROP_JUSTIFY_CONTENT: &str = "justify_content"; // "start" | "center" | "end" | "space-between" | "space-around"
 pub const PROP_ALIGN_ITEMS: &str = "align_items"; // "start" | "center" | "end" | "stretch"
 
-pub const PROP_FLEX_GROW: &str = "flex_grow"; // f32 encoded as I64 scaled? (see below) OR Text.
+pub const PROP_FLEX_GROW: &str = "flex_grow"; // f32 encoded as I64 scaled
 pub const PROP_FLEX_SHRINK: &str = "flex_shrink";
 pub const PROP_GAP: &str = "gap";
 

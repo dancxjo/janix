@@ -62,13 +62,12 @@ fn test_mock_sys_unexpected_response() {
 #[cfg(test)]
 mod tick_tests {
     use super::*;
-    use std::vec;
-    use std::vec::Vec;
-    use crate::model::Compositor;
-    use crate::state::tick_once;
-    use crate::test_support::{FramebufferFixture, list_responses};
-use thing_os::{Mode, thing_models::{MousePacketEvent, Window, Surface, ModeSwitchEvent}, MODE_INDEX_CONSOLE};
-use framebuffer_api::DisplayPresentRequest;
+use std::vec;
+use std::vec::Vec;
+use crate::model::Compositor;
+use crate::state::tick_once;
+use crate::test_support::{FramebufferFixture, list_responses};
+use thing_os::{Mode, thing_models::{MousePacketEvent, Window, Surface, ModeSwitchEvent, DisplayPresentRequest}, MODE_INDEX_CONSOLE};
     use thing_models::PropValue;
     use thing_models::graph_kinds;
 

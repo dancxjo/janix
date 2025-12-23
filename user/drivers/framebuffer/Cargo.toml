@@ -8,10 +8,11 @@ name = "framebuffer"
 path = "src/lib.rs"
 
 [dependencies]
+thing_models = { path = "../../../thing_models" }
+thing_macros = { path = "../../../thing_macros" }
 
 thing_os = { path = "../../../thing_os" }
 abi = { path = "../../../abi" }
-framebuffer_api = { path = "../framebuffer_api" }
 
 [dev-dependencies]
 kernel = { path = "../../../kernel" }

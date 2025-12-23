@@ -2,7 +2,6 @@ use abi::ThingId;
 use alloc::string::ToString;
 use thing_models::PropValue;
 use thing_models::graph_kinds;
-use thing_os::PrimaryDisplayBuffer;
 use thing_os::link_targets;
 use thing_os::prelude::*;
 use thing_os::{create_thing, list_things_by_kind, load_thing, update_props};
@@ -12,6 +11,7 @@ use crate::render::cursor::{self, CursorKind, CursorSprites};
 use crate::widget_layout::Rect;
 use alloc::vec::Vec;
 use thing_os::resident::mouse::MouseStreamMapped;
+use crate::schemas::FramebufferInfo;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BackgroundImage {
@@ -62,16 +62,17 @@ pub struct MappedSurface {
 
 #[derive(Debug)]
 pub struct Compositor {
-    pub fb: PrimaryDisplayBuffer,
+    pub fb_info: FramebufferInfo,
+    pub fb_ptr: *mut u8,
+    pub display_id: ThingId, // We need to know which display we are on
+    pub buffer_index: u32,
+    
     pub cursor: CursorState,
     pub cursor_sprites: CursorSprites,
     pub last_mouse_seq: u64,
     pub last_mouse_event_id: Option<ThingId>,
     pub active_window: Option<ThingId>,
     pub drag: Option<DragState>,
-
-    // Legacy / Setup fields
-    framebuffer_thing_id: Option<ThingId>,
 
     pub background_image: Option<BackgroundImage>,
     pub background_offset: (i32, i32),
@@ -92,18 +93,20 @@ pub struct Compositor {
 }
 
 impl Compositor {
-    pub fn new(fb: PrimaryDisplayBuffer) -> Self {
-        let cx = fb.info.width as i32 / 2;
-        let cy = fb.info.height as i32 / 2;
+    pub fn new(fb_info: FramebufferInfo, fb_ptr: *mut u8, buffer_index: u32, display_id: ThingId) -> Self {
+        let cx = fb_info.width as i32 / 2;
+        let cy = fb_info.height as i32 / 2;
         Self {
-            fb,
+            fb_info,
+            fb_ptr,
+            buffer_index,
+            display_id,
             cursor: CursorState::new(cx, cy),
             cursor_sprites: cursor::build_cursor_sprites(),
             last_mouse_seq: 0,
             last_mouse_event_id: None,
             active_window: None,
             drag: None,
-            framebuffer_thing_id: None,
             background_image: None,
             background_offset: (0, 0),
             background_canvas: None,
@@ -174,41 +177,14 @@ impl Compositor {
     pub fn add_full_damage(&mut self) {
         self.damage.clear();
         self.damage
-            .push(Rect::new(0, 0, self.fb.info.width, self.fb.info.height));
+            .push(Rect::new(0, 0, self.fb_info.width as u32, self.fb_info.height as u32));
     }
 
-    pub fn ensure_display_contracts(&mut self) {
-        // Just locate the framebuffer thing for metadata/properties if needed.
-        if self.framebuffer_thing_id.is_none() {
-            let mut targets =
-                link_targets(self.fb.display_id, graph_kinds::LINK_DISPLAY_FRONT_BUFFER);
-            self.framebuffer_thing_id = targets.pop();
-        }
-    }
-
-    // No-op for direct rendering
+    // No-op via this method, logic handled in state.rs via Intent
     pub fn present_frame(&mut self) {
         self.frame_counter = self.frame_counter.wrapping_add(1);
-
-        // Optionally update metadata on the framebuffer thing
-        if self.frame_counter % 60 == 0 {
-             if let Some(fb_id) = self.framebuffer_thing_id {
-                 let now = thing_os::time::Instant::now().t_ns;
-                 let _ = update_props(
-                    fb_id,
-                    &[
-                        (
-                            graph_kinds::PROP_LAST_PRESENT_NS.to_string(),
-                            PropValue::U64(now),
-                        ),
-                        (
-                            graph_kinds::PROP_FRAMES_PRESENTED.to_string(),
-                            PropValue::U64(self.frame_counter),
-                        ),
-                    ],
-                );
-             }
-        }
+        // We don't update metadata on FramebufferInfo here because it's package-owned by driver.
+        // We will issue PresentIntent in state.rs main loop.
     }
 }
 

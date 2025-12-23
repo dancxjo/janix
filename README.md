@@ -63,10 +63,9 @@ thing-os/
 │   └── lib.rs          # println(), graph_query(), transaction helpers
 │
 └── user/               # User applications compiled to ELF modules
-    ├── hello/
-    ├── heartbeat/
     ├── init/
-    └── taskman/
+    ├── clock/
+    └── compositor/
 ```
 
 ---

@@ -1,63 +1,55 @@
-#![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(target_os = "none", no_main)]
+#![no_std]
+#![no_main]
 
-#[cfg(target_os = "none")]
-mod app {
-    extern crate alloc;
-    use thing_os::prelude::*;
-    use thing_models::InputCharEvent;
-    use examples_support::{log, sleep_ms, UserlandSys};
-    use alloc::format;
-    use alloc::vec::Vec;
+extern crate alloc;
 
-    #[unsafe(no_mangle)]
-    pub fn main() {
-        let mut sys = examples_support::init();
-        if let Err(_) = run(&mut sys) {
-            log(&mut sys, "debug_input_logger", "Error running app");
-        }
+use alloc::vec::Vec;
+use thing_models::InputCharEvent;
+use thing_os::prelude::*;
+
+#[thing_os::main]
+fn main() {
+    println!("debug_input_logger: starting");
+
+    if !ensure_schema_exists_for::<InputCharEvent>() {
+        println!("debug_input_logger: InputCharEvent schema missing");
+        return;
     }
 
-    fn run(sys: &mut UserlandSys) -> Result<(), ()> {
-        log(sys, "debug_input_logger", "starting");
+    let mut last_seq = list_things_by_kind::<InputCharEvent>()
+        .iter()
+        .map(|e| e.sequence_index)
+        .max();
 
-        let _ = register_schema_for::<InputCharEvent>(sys);
+    loop {
+        let mut events: Vec<InputCharEvent> = list_things_by_kind();
+        events.sort_by_key(|e| e.sequence_index);
 
-        let mut last_seq = list_things_by_kind::<UserlandSys, InputCharEvent>(sys)
-            .iter()
-            .map(|e| e.sequence_index)
-            .max();
-
-        loop {
-            let mut events: Vec<InputCharEvent> = list_things_by_kind::<UserlandSys, InputCharEvent>(sys);
-            events.sort_by_key(|e| e.sequence_index);
-
-            for event in events {
-                if last_seq.map_or(true, |last| event.sequence_index > last) {
-                    log_event(sys, &event);
-                    last_seq = Some(event.sequence_index);
-                }
+        for event in events {
+            if last_seq.map_or(true, |last| event.sequence_index > last) {
+                log_event(&event);
+                last_seq = Some(event.sequence_index);
             }
-
-            sleep_ms(sys, 5);
         }
-    }
 
-    fn log_event(sys: &mut UserlandSys, event: &InputCharEvent) {
-        let display_str = match event.ch {
-            '\n' => "\\n",
-            '\u{0008}' => "\\b",
-            _ => return log(sys, "debug_input_logger", &format!("InputCharEvent '{}' (seq={})", event.ch, event.sequence_index)),
-        };
-        log(sys, "debug_input_logger", &format!("InputCharEvent '{}' (seq={})", display_str, event.sequence_index));
+        sleep_ms(5);
     }
 }
 
-#[cfg(not(target_os = "none"))]
-fn main() {}
-
-#[cfg(target_os = "none")]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn log_event(event: &InputCharEvent) {
+    let display = match event.ch {
+        '\n' => "\\n",
+        '\u{0008}' => "\\b",
+        _ => {
+            println!(
+                "debug_input_logger: InputCharEvent '{}' (seq={})",
+                event.ch, event.sequence_index
+            );
+            return;
+        }
+    };
+    println!(
+        "debug_input_logger: InputCharEvent '{}' (seq={})",
+        display, event.sequence_index
+    );
 }

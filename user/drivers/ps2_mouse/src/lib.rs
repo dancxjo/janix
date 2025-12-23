@@ -4,7 +4,7 @@ extern crate alloc;
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use thing_models::{IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth};
+use thing_models::{IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth, MousePacketEvent};
 use thing_os::prelude::*;
 
 const STATUS_OFFSET: u16 = 4;
@@ -30,6 +30,10 @@ use thing_os::syscalls::{sys_dev_open as syscall_dev_open, sys_dev_read as sysca
 
 pub fn driver_main() -> ! {
     println!("ps2_mouse_driver: starting (resident stream)");
+
+    if !ensure_schema_exists_for::<MousePacketEvent>() {
+        println!("ps2_mouse_driver: MousePacketEvent schema missing");
+    }
 
     // 1. Allocate & Map Resident Buffer
     let stream_resident = match unsafe {
@@ -375,8 +379,11 @@ impl MouseDecoder {
         let dx = i16::from(self.packet[1] as i8);
         let dy = i16::from(self.packet[2] as i8);
         let buttons = status & 0x07;
+        let overflow_x = status & 0x40 != 0;
+        let overflow_y = status & 0x80 != 0;
 
         let timestamp = Instant::now().t_ns;
+        self.sequence_index = self.sequence_index.wrapping_add(1);
 
         // Append to ring
         let entry = MouseEntry {
@@ -391,5 +398,21 @@ impl MouseDecoder {
             "ps2_mouse: appended event dx={} dy={} btn={}",
             dx, dy, buttons
         );
+
+        let packet = MousePacketEvent {
+            id: ThingId(0),
+            controller_id: self.controller_id,
+            port_index: 0,
+            sequence_index: self.sequence_index,
+            timestamp_ticks: timestamp,
+            buttons: buttons as u64,
+            delta_x: dx as i64,
+            delta_y: dy as i64,
+            overflow_x,
+            overflow_y,
+        };
+        if create_thing(&packet).is_none() {
+            println!("ps2_mouse_driver: failed to create MousePacketEvent");
+        }
     }
 }

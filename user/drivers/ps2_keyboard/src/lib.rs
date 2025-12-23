@@ -28,6 +28,13 @@ use thing_os::syscalls::{sys_dev_open as syscall_dev_open, sys_dev_read as sysca
 pub fn driver_main() -> ! {
     println!("ps2_keyboard_driver: starting (resident stream)");
 
+    if !ensure_schema_exists_for::<KeyScanEvent>() {
+        println!("ps2_keyboard_driver: KeyScanEvent schema missing");
+    }
+    if !ensure_schema_exists_for::<InputCharEvent>() {
+        println!("ps2_keyboard_driver: InputCharEvent schema missing");
+    }
+
     // Allocate Resident Keyboard Stream
     // Capacity 64 entries * 8 bytes = 512 bytes + header (64) = 576 bytes
     // Page size is usually 4096, so 4096 is fine.
@@ -380,6 +387,8 @@ impl KeyboardDecoder {
             flags |= KeyboardEntry::FLAG_HAS_CHAR;
         }
 
+        let timestamp_ticks = Instant::now().t_ns;
+
         let entry = KeyboardEntry {
             scancode,
             flags,
@@ -387,6 +396,33 @@ impl KeyboardDecoder {
             utf32,
         };
         stream.append(entry);
+
+        let scan_event = KeyScanEvent {
+            id: ThingId(0),
+            controller_id: self.controller_id,
+            port_index: 0,
+            scancode,
+            extended,
+            released,
+            sequence_index: self.sequence_index,
+            timestamp_ticks,
+        };
+        if create_thing(&scan_event).is_none() {
+            println!("ps2_keyboard_driver: failed to create KeyScanEvent");
+        }
+
+        if has_char {
+            let char_event = InputCharEvent {
+                id: ThingId(0),
+                ch: char::from_u32(utf32).unwrap_or_default(),
+                source_controller: self.controller_id,
+                source_port_index: 0,
+                sequence_index: self.sequence_index,
+            };
+            if create_thing(&char_event).is_none() {
+                println!("ps2_keyboard_driver: failed to create InputCharEvent");
+            }
+        }
     }
 
     fn update_modifiers(&mut self, scancode: u8, released: bool, extended: bool) {

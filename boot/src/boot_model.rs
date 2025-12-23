@@ -1,10 +1,12 @@
 extern crate alloc;
 
 use crate::FRAMEBUFFER_REQUEST;
-use abi::{PixelFormat, ThingId, syscall_defs::SymbolId};
+use abi::{PixelFormat, ProcessId, ThingId, syscall_defs::SymbolId};
 use alloc::{boxed::Box, string::String, vec::Vec};
+use kernel::graph::store::ResidentRef;
 use kernel::memory::{BootFrameAllocator, PhysFrame, allocate_frame, init_frame_pool};
 use kernel::model;
+use kernel::resident::mapping::ResidentPage;
 use kernel::{graph, graph_kinds, log, shared_buffer, symbols, time};
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, KernelFileRequest, MemoryMapRequest, ModuleRequest, MpRequest};
@@ -509,52 +511,26 @@ pub fn seed_raw_modules_from_limine() {
         let base_phys = virt_addr.saturating_sub(hhdm_offset);
         let size = (*module).size() as u64;
 
-        let buffer_id = if base_phys % 4096 == 0 {
-            let mut frames: heapless::Vec<PhysFrame, { shared_buffer::MAX_FRAMES_PER_BUFFER }> =
-                heapless::Vec::new();
-
+        // Build resident pages for RawModule
+        let mut resident_pages = Vec::new();
+        if base_phys % 4096 == 0 {
             let start_addr = base_phys;
             let end_addr = shared_buffer::align_up(base_phys + size, 4096);
             let mut addr = start_addr;
-            let mut success = true;
-
             while addr < end_addr {
-                if frames
-                    .push(PhysFrame::from_start_address(addr, 4096))
-                    .is_err()
-                {
-                    log("Modulus nimis magnus pro CommuniBuffer");
-                    success = false;
-                    break;
-                }
+                let frame = PhysFrame::from_start_address(addr, 4096);
+                resident_pages.push(ResidentPage { frame });
                 addr += 4096;
             }
-
-            if success {
-                let aligned_size = shared_buffer::align_up(size, 4);
-                let width = (aligned_size / 4) as u32;
-                let height = 1;
-                let stride = width * 4;
-
-                match shared_buffer::register_shared_buffer(
-                    width,
-                    height,
-                    stride,
-                    abi::PixelFormat::Rgba8888,
-                    frames,
-                ) {
-                    Ok(id) => Some(id),
-                    Err(e) => {
-                        log(e);
-                        None
-                    }
-                }
-            } else {
-                None
-            }
         } else {
-            log("Modulus paginis non adaequatus, CommunisBuffer creari non potest");
-            None
+            log("Modulus paginis non adaequatus, Residens creari non potest");
+            continue;
+        }
+
+        let resident_ref = ResidentRef {
+            pages: resident_pages,
+            byte_len: size as usize,
+            rw_holder: None,
         };
 
         let mut props_vec = alloc::vec::Vec::new();
@@ -579,15 +555,19 @@ pub fn seed_raw_modules_from_limine() {
             PropValue::U64(size),
         ));
 
-        if let Some(bid) = buffer_id {
-            props_vec.push((
-                symbols::intern(thing_models::graph_kinds::PROP_FRAMEBUFFER_ID),
-                PropValue::U64(bid.0),
-            ));
+        let kind = symbols::intern(graph_kinds::KIND_RAW_MODULE);
+
+        // Create Resident Thing via store directly
+        {
+            let slab = kernel::graph::store::things_slab();
+            let mut guard = slab.lock();
+            let store = guard.as_mut().expect("GraphStore init");
+            // Owner is None (kernel/system) - using ProcessId(0) to represent kernel/root
+            let _id = store.create_resident(kind, resident_ref, ProcessId(0));
+            // Update props
+            store.update_thing(_id, props_vec);
         }
 
-        let kind = symbols::intern(graph_kinds::KIND_RAW_MODULE);
-        let _ = graph::create_thing(kind, props_vec);
         created = created.saturating_add(1);
     }
 

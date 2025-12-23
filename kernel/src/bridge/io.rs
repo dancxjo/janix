@@ -104,6 +104,10 @@ pub fn seed_io_regions() {
 }
 
 pub fn process_io_op(op_id: ThingId) {
+    // crate::log(&alloc::format!("DEBUG: process_io_op id={:?}", op_id)); // Uncomment for noise
+    let msg = alloc::format!("DEBUG: process_io_op id={:?}", op_id);
+    let leaked: &'static str = Box::leak(msg.into_boxed_str());
+    crate::log(leaked);
     let op = if let Some(op) = graph::with_thing(op_id, |thing| {
         if thing.kind != crate::symbols::intern(graph_kinds::KIND_IO_PORT_OP) {
             return None;

@@ -10,10 +10,10 @@ pub fn step(message: &str) {
     let step = CURRENT_STEP.fetch_add(1, Ordering::SeqCst) + 1;
     let progress = (step as f32 / TOTAL_STEPS as f32).min(1.0);
 
-    // Calculate background color (Black -> Dominant wallpaper blue #3A87B9)
-    let target_r: u32 = 0x3A;
-    let target_g: u32 = 0x87;
-    let target_b: u32 = 0xB9;
+    // Calculate background color (Black -> Target boot blue #2E80D1)
+    let target_r: u32 = 0x2E;
+    let target_g: u32 = 0x80;
+    let target_b: u32 = 0xD1;
 
     let r = (target_r as f32 * progress) as u32;
     let g = (target_g as f32 * progress) as u32;

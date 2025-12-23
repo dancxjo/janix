@@ -137,17 +137,10 @@ pub fn draw_tiled_image(
     let end_y = (cy + ch).min(fb_height as i32);
 
     for y in start_y..end_y {
-        // Calculate texture Y coordinate with offset and wrapping
+        // Calculate texture Y coordinate with offset and wrapping.
+        // All compositor images are stored top-down (row 0 = top), so we read directly.
         let tex_y = ((y as i32 + offset_y) % img_h + img_h) % img_h;
-
-        // Standard BMP logic: positive height means bottom-up
-        let row = if img_h > 0 {
-            (img_h - 1 - tex_y) as usize
-        } else {
-            tex_y as usize
-        };
-
-        let row_start = unsafe { img_ptr.add(row * row_stride) };
+        let row_start = unsafe { img_ptr.add(tex_y as usize * row_stride) };
         // Use byte-based stride for destination
         let dest_row_ptr = unsafe { (buffer as *mut u8).add(y as usize * stride_bytes as usize) as *mut u32 };
 

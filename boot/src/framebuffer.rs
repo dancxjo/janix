@@ -5,7 +5,7 @@ use core::hint::spin_loop;
 use crate::console::{GLYPH_HEIGHT, GLYPH_WIDTH, lookup_glyph};
 
 #[cfg(feature = "fill-framebuffer")]
-pub const BOOT_DOMINANT_COLOR: u32 = 0xFF4C89AA; // Dominant sky blue from clouds.bmp
+pub const BOOT_DOMINANT_COLOR: u32 = 0xFF2E80D1; // Target boot blue #2E80D1
 
 #[cfg(feature = "fill-framebuffer")]
 static mut LAST_FILL_COLOR: u32 = 0;

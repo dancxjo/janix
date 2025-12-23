@@ -28,6 +28,6 @@ pub fn step(message: &str) {
     kernel::log(message);
 
     // Update visual
-    console::update_theme(bg_color, fg_color);
-    console::draw_progress(progress);
+    // console::update_theme(bg_color, fg_color);
+    // console::draw_progress(progress);
 }

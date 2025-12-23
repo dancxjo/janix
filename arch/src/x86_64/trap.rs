@@ -606,11 +606,23 @@ fn timer_tick(frame: &mut TrapFrame) {
                 // Resume or Start
                 if next.started {
                     // Force kernel mode depending on ThreadKind, NOT solely on CS
-                    if let kernel::sched::types::ThreadKind::Kernel = next.kind {
-                         // Kernel thread (Ring 0)
+                    // Determine if we are resuming to Kernel Mode or User Mode
+                    // based on the saved CS selector.
+                    let saved_cs = next.context[16];
+                    let is_kernel_frame = (saved_cs & 3) == 0;
+
+                    if is_kernel_frame {
+                         // Resuming to Kernel Mode (Ring 0)
+                         // Even if it's a User Thread, if it was preempted in Kernel Mode,
+                         // we must reuse the Kernel Mode resumption path (no swapgs).
+                         
+                         // We should restore FPU state if this thread owns FPU state.
+                         if next.tid.0 > 1 {
+                             super::enter::restore_fpu(&next.fpu_context);
+                         }
                          super::enter::resume_kernel_mode(&next.context);
                     } else {
-                         // User thread (Ring 3)
+                         // Resuming to User Mode (Ring 3)
                          crate::current::resume_user_mode(&next.context, &next.fpu_context);
                     }
                 } else {

@@ -191,9 +191,8 @@ unsafe extern "C" {
     fn resume_kernel_mode_asm(context: *const u64) -> !;
 }
 
-pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext) -> ! {
+pub fn restore_fpu(fpu_context: &kernel::sched::FpuContext) {
     // Manually align a stack buffer to 16 bytes.
-    // ... (omitted similar logic)
     // We allocate 512 + 16 bytes to ensure we can find a 16-byte aligned offset.
     let mut raw_buffer = [0u8; 512 + 16];
     let start_addr = raw_buffer.as_ptr() as usize;
@@ -212,6 +211,12 @@ pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext
 
     unsafe {
         core::arch::x86_64::_fxrstor(aligned_ptr);
+    }
+}
+
+pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext) -> ! {
+    restore_fpu(fpu_context);
+    unsafe {
         resume_user_mode_asm(context.as_ptr())
     }
 }

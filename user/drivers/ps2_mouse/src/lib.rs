@@ -6,6 +6,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use thing_models::{IoDirection, IoPortOp, IoPortRegion, IoStatus, IoWidth, MousePacketEvent};
 use thing_os::prelude::*;
+use thing_os::{add_link, create_thing, intern, Predicate};
 
 const STATUS_OFFSET: u16 = 4;
 const DATA_OFFSET: u16 = 0;
@@ -59,23 +60,24 @@ pub fn driver_main() -> ! {
         "mouse: allocated MouseStream id={:?} addr={:?}",
         stream_id, stream_resident.ptr
     );
-
-    // DEBUG: Explicitly create a graph thing to verify scan
-    let dummy = MouseStream {
+    // Advertise capabilities via props using a Proxy Thing
+    // because alloc_resident Things are not indexed by Kind.
+    let proxy = MouseStream {
          id: ThingId(0),
          head: Some(0),
-         capacity: Some(128),
+         capacity: Some(MOUSE_RING_CAPACITY as u64),
     };
-    if let Some(dummy_id) = thing_os::create_thing(&dummy) {
-         println!("ps2_mouse_driver: created dummy MouseStream id={:?}", dummy_id);
+    if let Some(proxy_id) = create_thing(&proxy) {
+         println!("ps2_mouse_driver: created proxy MouseStream id={:?}", proxy_id);
+         let _ = add_link(proxy_id, Predicate(intern("has_buffer").0 as u64), stream_id);
     } else {
-         println!("ps2_mouse_driver: failed to create dummy MouseStream");
+         println!("ps2_mouse_driver: failed to create proxy MouseStream");
     }
 
     let mut stream = MouseStreamMapped::new(stream_resident);
     stream.init(MOUSE_RING_CAPACITY as u32);
 
-    // Advertise capabilities via props
+    // Also update resident props just in case
     let _ = update_props(
         stream_id,
         &[

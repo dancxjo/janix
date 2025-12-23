@@ -36,30 +36,38 @@ impl Compositor {
     pub fn process_mouse_packets(&mut self, layout: &[StackedWindow]) {
         if self.mouse_stream.is_none() {
             let streams = list_things_by_kind::<MouseStream>();
-            println!("compositor: list_things_by_kind found {} items. Kind='{}'", streams.len(), MouseStream::KIND);
-            if let Some(t) = thing_os::load_thing::<MouseStream>(thing_os::ThingId(51)) {
-                 println!("compositor: ThingId(51) found? YES");
-            } else {
-                 println!("compositor: ThingId(51) found? NO");
+            if !streams.is_empty() {
+                println!("compositor: found {} MouseStream(s)", streams.len());
             }
+
             if let Some(thing) = streams.first() {
-                if let Ok(map_resp) = map_resident(thing.id, ResidentMapPerms::READ) {
+                // If the thing is a proxy, it might point to the real resident object via a link.
+                // This handles the case where alloc_resident doesn't register the proper Kind,
+                // so we use a created proxy Thing to advertise it.
+                let real_id = {
+                    let targets = thing_os::link_targets(thing.id, thing_os::Predicate(thing_os::intern("has_buffer").0 as u64));
+                    targets.first().copied().unwrap_or(thing.id)
+                };
+
+                if let Ok(map_resp) = map_resident(real_id, ResidentMapPerms::READ) {
                     unsafe {
                         // TODO: Verify map_resp.byte_len against expected size?
                         let obj = Resident::<()>::new(
-                            thing.id,
+                            real_id,
                             map_resp.user_addr as *mut u8,
                             map_resp.byte_len as usize,
                         );
                         self.mouse_stream = Some(MouseStreamMapped::new(obj));
                         let msg = alloc::format!(
                             "compositor: mouse stream mapped id={:?} addr={:?} len={}",
-                            thing.id,
+                            real_id,
                             map_resp.user_addr,
                             map_resp.byte_len
                         );
                         println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
                     }
+                } else {
+                    println!("compositor: failed to map mouse stream id={:?}", real_id);
                 }
             }
         }

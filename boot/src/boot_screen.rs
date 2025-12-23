@@ -12,13 +12,13 @@ pub fn step(message: &str) {
 
     // Calculate background color (Black -> Light Gray)
     // We go from 0x00 to 0xAA.
-    let max_brightness = 0xAA;
+    let max_brightness: u32 = 0xAA;
     let brightness = (max_brightness as f32 * progress) as u32;
     // ARGB
-    let bg_color = 0xFF000000 | (brightness << 16) | (brightness << 8) | brightness;
+    let bg_color: u32 = 0xFF000000 | (brightness << 16) | (brightness << 8) | brightness;
 
     // Switch text to black if background is too bright
-    let fg_color = if brightness > 0x80 {
+    let fg_color: u32 = if brightness > 0x80 {
         0xFF000000
     } else {
         0xFFFFFFFF

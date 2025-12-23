@@ -403,7 +403,7 @@ pub fn seed_boot_programs_from_limine() {
         .unwrap_or(false);
 
     if is_debug_profile {
-        log("DEBUG PROFILE ACTIVE: Only spawning init_debug, clock, debug_alloc, debug_thread, debug_input_logger, debug_input_events, ps2_keyboard_driver, ps2_mouse_driver");
+        log("DEBUG PROFILE ACTIVE: Only spawning init_debug, clock, debug_alloc, debug_thread, debug_input_logger, debug_input_events, framebuffer, compositor, ps2_keyboard_driver, ps2_mouse_driver");
     }
 
     for (index, module) in response.modules().iter().enumerate() {
@@ -425,6 +425,8 @@ pub fn seed_boot_programs_from_limine() {
             && identifier != "ps2_keyboard_driver"
             && identifier != "debug_input_events"
             && identifier != "ps2_mouse_driver"
+            && identifier != "framebuffer"
+            && identifier != "compositor"
         {
             continue;
         }

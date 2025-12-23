@@ -24,6 +24,8 @@ fn main() {
     launch_program("debug_input_logger");
     launch_program("debug_input_events");
     launch_program("ps2_mouse_driver");
+    launch_program("framebuffer");
+    launch_program("compositor");
 
     idle();
 }

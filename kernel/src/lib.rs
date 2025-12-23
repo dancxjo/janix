@@ -79,11 +79,10 @@ pub fn init() {
             crate::graph::actualizer::run()
         }
 
-        // Allocate stack (16KB)
-        let stack_size = 16 * 1024;
-        let stack = alloc::vec![0u8; stack_size];
-        let stack_leak = alloc::boxed::Box::leak(stack.into_boxed_slice());
-        let stack_top = stack_leak.as_ptr() as u64 + stack_size as u64;
+        // Allocate aligned stack (16KB, 16-byte align)
+        let stack_layout = alloc::alloc::Layout::from_size_align(16 * 1024, 16).unwrap();
+        let stack_ptr = unsafe { alloc::alloc::alloc(stack_layout) };
+        let stack_top = stack_ptr as u64 + stack_layout.size() as u64;
 
         // Create kernel process (PID 1)
         let pid = crate::sched::SCHEDULER.lock().add_process("kernel", "pkg.kernel");

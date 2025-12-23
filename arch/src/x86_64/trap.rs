@@ -554,10 +554,24 @@ fn timer_tick(frame: &mut TrapFrame) {
                 thread.entry_point = frame.rip;
                 thread.user_stack_top = frame.rsp;
                 thread.context[15] = frame.rip;
-                thread.context[16] = frame.cs as u64;
+                thread.context[16] = frame.cs;
                 thread.context[17] = frame.rflags;
-                thread.context[18] = frame.rsp;
-                thread.context[19] = frame.ss as u64;
+
+                // Handle Kernel vs User Interrupt Frame
+                if (frame.cs & 3) == 0 {
+                   // Kernel Interrupt: RSP/SS not pushed.
+                   // RSP (before interrupt) = Address(RIP on stack) + 24 bytes (RIP+CS+RFLAGS)
+                   let rip_addr = core::ptr::addr_of!(frame.rip) as u64;
+                   let calculated_rsp = rip_addr + 24;
+                   
+                   thread.user_stack_top = calculated_rsp;
+                   thread.context[18] = calculated_rsp;
+                   thread.context[19] = 0; // SS ignored
+                } else {
+                   thread.user_stack_top = frame.rsp;
+                   thread.context[18] = frame.rsp;
+                   thread.context[19] = frame.ss;
+                }
 
                 // Save FPU
                 if thread.id.0 > 1 {
@@ -582,6 +596,8 @@ fn timer_tick(frame: &mut TrapFrame) {
             let old_tid = sched.current_id();
 
             if let Some(next) = sched.choose_next_thread(now) {
+                let kind_char = if matches!(next.kind, kernel::sched::types::ThreadKind::Kernel) { 'K' } else { 'U' };
+                kernel::println!("TRAP_SWITCH: tid={} kind={} token={:?}", next.tid.0, kind_char, next.address_space_token);
                 sched.commit_switch(old_tid, Some(next.tid), now);
                 drop(sched); // Unlock before switch
 

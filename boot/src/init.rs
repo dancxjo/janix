@@ -173,10 +173,24 @@ pub fn render_dashboard_and_halt() -> ! {
 }
 
 fn launch_idle_thread() {
+    extern "C" fn idle_entry(_arg: u64) -> ! {
+        loop {
+            // Safe because we are in kernel mode (idle thread)
+            arch::cpu::enable_interrupts();
+            arch::cpu::wait_for_interrupt();
+        }
+    }
+
+    // Allocate stack for idle thread (4KB)
+    let stack_size = 4096;
+    let stack = alloc::vec![0u8; stack_size];
+    let stack_leak = alloc::boxed::Box::leak(stack.into_boxed_slice());
+    let stack_top = stack_leak.as_ptr() as u64 + stack_size as u64;
+
     // Attach to PID 1 (init)
     let pid = abi::ProcessId(1);
     let mut sched = kernel::sched::SCHEDULER.lock();
-    sched.add_idle_thread(pid);
+    sched.add_idle_thread(pid, idle_entry, stack_top);
 }
 
 pub fn launch_init_process() {

@@ -413,8 +413,7 @@ impl Scheduler {
         panic!("Max threads reached");
     }
 
-    pub fn add_idle_thread(&mut self, process_id: ProcessId) -> ThreadId {
-         // Same logic as add_thread but state=Runnable, priority=0
+    pub fn add_idle_thread(&mut self, process_id: ProcessId, entry: extern "C" fn(u64) -> !, stack_top: u64) -> ThreadId {
         for (i, slot) in self.threads.iter_mut().enumerate() {
             if slot.is_none() {
                 let tid = ThreadId(i as u64 + 1);
@@ -431,9 +430,9 @@ impl Scheduler {
                     name: "idle",
                     kind: types::ThreadKind::Kernel,
                     priority: 0,
-                    entry_point: 0,
+                    entry_point: entry as u64,
                     user_arg: 0,
-                    user_stack_top: 0,
+                    user_stack_top: stack_top,
                     context: [0; 20],
                     fpu_context: FpuContext::default(),
                     started: false,

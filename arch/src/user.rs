@@ -77,16 +77,14 @@ pub fn schedule_next() -> ! {
                 crate::cpu::enable_interrupts();
                 crate::cpu::wait_for_interrupt();
             } else {
-                CurrentArch::activate_user_address_space(thread.address_space_token);
-
                 let is_kernel_thread = matches!(thread.kind, kernel::sched::types::ThreadKind::Kernel);
                 
-                // ASSERTION DUMP
-                // Explicitly log the decision path we are taking
                 if is_kernel_thread {
-                     // Kernel threads
+                    // Kernel threads continue in current address space
                 } else {
+                    CurrentArch::activate_user_address_space(thread.address_space_token);
                 }
+
 
                 if thread.started {
                     if is_kernel_thread {

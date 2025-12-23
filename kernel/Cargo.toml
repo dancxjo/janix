@@ -8,6 +8,7 @@ edition.workspace = true
 [features]
 arch_pci_in_kernel = []
 debug_logging = []
+log_skip_lock = []
 default = ["arch_pci_in_kernel", "debug_logging"]
 
 [dependencies]

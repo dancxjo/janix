@@ -47,6 +47,8 @@ impl LogEntry {
 }
 
 static mut LOG_VIEW: [Option<&'static str>; MAX_LOG_ENTRIES] = [None; MAX_LOG_ENTRIES];
+#[cfg(feature = "log_skip_lock")]
+static EMPTY_LOGS: [Option<&'static str>; 0] = [];
 
 /// Aggregated log state guarded by a spinlock so writers on different CPUs
 /// cannot stomp on each other's indices.
@@ -119,6 +121,19 @@ mod interrupts {
 
 /// Log a message
 pub fn log_message(message: &str) {
+    // Optional fast-path: skip ring buffer and spinlock entirely.
+    // Useful in tight loops where logging is diagnostic-only.
+    #[cfg(feature = "log_skip_lock")]
+    {
+        #[cfg(all(feature = "debug_logging", not(test)))]
+        {
+            // Keep console output behavior if enabled.
+            console::print(message);
+            console::print("\n");
+        }
+        return;
+    }
+
     interrupts::without_interrupts(|| {
         let mut state = LOG_STATE.lock();
 
@@ -141,7 +156,7 @@ pub fn log_message(message: &str) {
 
     #[cfg(all(feature = "debug_logging", not(test)))]
     {
-        // Copy message to stack buffer to append \r and print atomically.
+        // Copy message to stack buffer to append \n and print atomically.
         // MAX_LOG_LEN is 256, so +2 fits easily on stack (total 258 bytes).
         let mut buf = [0u8; MAX_LOG_LEN + 2];
         let bytes = message.as_bytes();
@@ -150,9 +165,9 @@ pub fn log_message(message: &str) {
         // Copy the truncated message bytes
         buf[..len].copy_from_slice(&bytes[..len]);
 
-        // Append \r to match original behavior (replaces separated calls).
+        // Append \n to match original behavior (replaces separated calls).
         let mut total_len = len;
-        buf[total_len] = b'\r';
+        buf[total_len] = b'\n';
         total_len += 1;
 
         // Ensure valid UTF-8. Truncation might split a multi-byte char at the end.
@@ -162,16 +177,16 @@ pub fn log_message(message: &str) {
                 // If invalid UTF-8 (due to truncation), print up to the valid part.
                 let valid_len = e.valid_up_to();
 
-                // We still want the \r. If the valid part is shorter than len,
-                // we should check if \r was the problem? No, \r is ASCII.
+                // We still want the \n. If the valid part is shorter than len,
+                // we should check if \n was the problem? No, \n is ASCII.
                 // The problem is likely at `len` index (truncation point).
-                // So print valid prefix + \r.
+                // So print valid prefix + \n.
 
-                // Move \r to after the valid prefix
-                buf[valid_len] = b'\r';
+                // Move \n to after the valid prefix
+                buf[valid_len] = b'\n';
                 let print_len = valid_len + 1;
 
-                // SAFETY: valid_up_to guarantees valid UTF-8, and we appended ASCII \r.
+                // SAFETY: valid_up_to guarantees valid UTF-8, and we appended ASCII \n.
                 if let Ok(s) = core::str::from_utf8(&buf[..print_len]) {
                     console::print(s);
                 }
@@ -182,6 +197,11 @@ pub fn log_message(message: &str) {
 
 /// Get all log entries
 pub fn get_logs() -> &'static [Option<&'static str>] {
+    #[cfg(feature = "log_skip_lock")]
+    {
+        return &EMPTY_LOGS;
+    }
+
     interrupts::without_interrupts(|| unsafe {
         // Render a chronological view into LOG_VIEW to preserve the existing return
         // type without introducing heap allocations.
@@ -206,11 +226,26 @@ pub fn get_logs() -> &'static [Option<&'static str>] {
 
 /// Get the number of log entries
 pub fn log_count() -> usize {
+    #[cfg(feature = "log_skip_lock")]
+    {
+        return 0;
+    }
+
     interrupts::without_interrupts(|| LOG_STATE.lock().count)
 }
 
 /// Return high-level statistics about the log buffer.
 pub fn log_stats() -> LogStats {
+    #[cfg(feature = "log_skip_lock")]
+    {
+        return LogStats {
+            stored_entries: 0,
+            total_written: 0,
+            overwritten: 0,
+            truncated: 0,
+        };
+    }
+
     interrupts::without_interrupts(|| {
         let state = LOG_STATE.lock();
         LogStats {

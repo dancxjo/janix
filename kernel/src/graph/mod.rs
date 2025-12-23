@@ -96,12 +96,7 @@ pub fn create_thing(kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingI
 }
 
 pub fn update_thing(id: ThingId, props: Vec<(SymbolId, PropValue)>) -> bool {
-    let props_for_log = props.clone();
-    let success = with_store_mut(|store| store.update_thing(id, props));
-    if success {
-        debug::print_thing_updated(id, props_for_log.as_slice());
-    }
-    success
+    with_store_mut(|store| store.update_thing(id, props))
 }
 
 pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {

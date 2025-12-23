@@ -91,7 +91,7 @@ where
 fn escape_char(ch: char) -> &'static str {
     match ch {
         '\n' => "\\n",
-        '\r' => "\\r",
+        '\n' => "\\n",
         '\t' => "\\t",
         _ => {
             // We return static str; fallback to "." for non-printable

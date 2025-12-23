@@ -18,6 +18,8 @@ use thing_os::{RawModule, shared_buffer_map};
 use crate::model::ConsoleBuffer;
 use thing_os::println;
 use thing_os::syscalls::{sys_symbol_intern, syscall};
+use abi::{KernelRequest, KernelResponse, PixelFormat};
+use abi::resident::ResidentMapPerms;
 
 fn draw_console(compositor: &mut Compositor) {
     if let Some(cb) = &compositor.console_buffer {
@@ -66,66 +68,165 @@ fn load_background_image() -> Option<BackgroundImage> {
     let modules = list_things_by_kind::<RawModule>();
     let clouds_module = modules.iter().find(|m| m.identifier == "clouds.bmp")?;
 
-    if let Some(buffer_id) = clouds_module.framebuffer_id {
-        // Map the buffer
-        if let Some((vaddr, size)) =
-            shared_buffer_map(buffer_id, MapFlags::READ.union(MapFlags::USER)).ok()
-        {
-            let ptr = vaddr as *const u8;
-            // Parse BMP header
-            // Signature "BM" at 0
-            unsafe {
-                if *ptr != b'B' || *ptr.add(1) != b'M' {
-                    println!("clouds.bmp: invalid signature");
-                    return None;
-                }
-                // Little endian parsing helper
-                let read_u32 = |offset| {
-                    let p = ptr.add(offset);
-                    u32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)])
-                };
-                let read_i32 = |offset| {
-                    let p = ptr.add(offset);
-                    i32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)])
-                };
+    println!("compositor: mapping clouds.bmp via ResidentMap");
 
-                let read_u16 = |offset| {
-                    let p = ptr.add(offset);
-                    u16::from_le_bytes([*p, *p.add(1)])
-                };
+    // Map the RawModule via ResidentMap
+    let (src_ptr, src_len) = match syscall(KernelRequest::ResidentMap {
+        id: clouds_module.id,
+        perms: ResidentMapPerms::READ,
+    }) {
+        KernelResponse::ResidentMapped { resp } => (resp.user_addr as *const u8, resp.byte_len as usize),
+        _ => {
+            println!("clouds.bmp: failed to map resident module");
+            return None;
+        }
+    };
 
-                let data_offset = read_u32(0x0A);
-                let width = read_i32(0x12);
-                let height = read_i32(0x16);
-                let bpp = read_u16(0x1C);
+    unsafe {
+        if *src_ptr != b'B' || *src_ptr.add(1) != b'M' {
+            println!("clouds.bmp: invalid signature");
+            return None;
+        }
+        // Little endian parsing helper
+        let read_u32 = |offset| {
+            let p = src_ptr.add(offset);
+            u32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)])
+        };
+        let read_i32 = |offset| {
+            let p = src_ptr.add(offset);
+            i32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)])
+        };
+        let read_u16 = |offset| {
+            let p = src_ptr.add(offset);
+            u16::from_le_bytes([*p, *p.add(1)])
+        };
 
-                let msg = format!(
-                    "clouds.bmp: mapped. {}x{} offset={} bpp={}",
-                    width, height, data_offset, bpp
-                );
-                let leaked = Box::leak(msg.into_boxed_str());
-                println!("{}", leaked);
+        let data_offset = read_u32(0x0A);
+        let width = read_i32(0x12);
+        let height = read_i32(0x16);
+        let bpp = read_u16(0x1C);
 
-                if bpp != 24 && bpp != 32 {
-                    println!("clouds.bmp: unsupported bpp");
-                    return None;
-                }
+        if width <= 0 || height <= 0 {
+            println!("clouds.bmp: invalid dimensions");
+            return None;
+        }
 
-                return Some(BackgroundImage {
-                    ptr: ptr.add(data_offset as usize),
-                    size: size as usize,
-                    width,
-                    height,
-                    bpp,
-                });
+        let width = width as u32;
+        let height = height as u32;
+
+        let msg = format!(
+            "clouds.bmp: decoded header. {}x{} offset={} bpp={}",
+            width, height, data_offset, bpp
+        );
+        let leaked = Box::leak(msg.into_boxed_str());
+        println!("{}", leaked);
+
+        if bpp != 24 {
+             let msg = format!("clouds.bmp: unsupported bpp {} (only 24 supported for now)", bpp);
+             println!("{}", Box::leak(msg.into_boxed_str()));
+             return None;
+        }
+
+        // Allocate SharedBuffer for decoded image
+        let pixel_format = PixelFormat::Bgra8888;
+        let buffer_id = match syscall(KernelRequest::CreateSharedBuffer {
+            width,
+            height,
+            pixel_format,
+        }) {
+            KernelResponse::SharedBufferCreated { buffer_id } => buffer_id,
+            _ => {
+                println!("clouds.bmp: failed to create shared buffer");
+                return None;
+            }
+        };
+
+        // Map the new buffer
+        let (dest_ptr, dest_size) = match syscall(KernelRequest::MapSharedBuffer {
+            buffer_id,
+            flags: MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER),
+        }) {
+            KernelResponse::SharedBufferMapped { vaddr, size } => (vaddr as *mut u8, size),
+            _ => {
+                println!("clouds.bmp: failed to map new shared buffer");
+                return None;
+            }
+        };
+
+        // Decode: Convert BGR (24bpp) to BGRA (32bpp)
+        // BMP lines are padded to 4-byte boundary
+        let src_stride = ((width * 24 + 31) / 32) * 4;
+        let dest_stride = width * 4;
+        let src_data = src_ptr.add(data_offset as usize);
+
+        // BMP is usually stored bottom-up, but if height is positive it's bottom-up.
+        // If height is negative, top-down. We read abs(height) already?
+        // Wait, read_i32 returns signed. If positive, it's bottom-up.
+        // We should check sign of height.
+        let height_i32 = read_i32(0x16);
+        let is_top_down = height_i32 < 0;
+
+        for y in 0..height {
+            let src_row_idx = if is_top_down {
+                y
+            } else {
+                height - 1 - y
+            };
+
+            let row_src = src_data.add((src_row_idx * src_stride) as usize);
+            let row_dest = dest_ptr.add((y * dest_stride) as usize);
+
+            for x in 0..width {
+                let p_src = row_src.add((x * 3) as usize);
+                let p_dest = row_dest.add((x * 4) as usize);
+
+                // BGR -> BGRA
+                *p_dest = *p_src;       // B
+                *p_dest.add(1) = *p_src.add(1); // G
+                *p_dest.add(2) = *p_src.add(2); // R
+                *p_dest.add(3) = 0xFF;  // A
             }
         }
+
+        println!("clouds.bmp: decoded successfully");
+
+        return Some(BackgroundImage {
+            ptr: dest_ptr,
+            size: dest_size as usize,
+            width: width as i32,
+            height: height as i32,
+            bpp: 32, // Converted to 32
+        });
     }
-    println!("clouds.bmp: module found but no buffer_id or map failed",);
-    None
 }
 
 fn prepare_background_canvas(compositor: &mut Compositor) {
+    compositor.background_canvas = None;
+
+    let Some(bg) = &compositor.background_image else {
+        return;
+    };
+
+    if bg.width <= 0 || bg.height <= 0 {
+        println!("compositor: background image has invalid dimensions, skipping");
+        return;
+    }
+
+    // Safety guard for stride/size if needed (though we just created it)
+    if bg.bpp != 32 {
+         println!("compositor: expected 32bpp background");
+         return;
+    }
+
+    let width = compositor.fb.info.width;
+    let height = compositor.fb.info.height;
+    let stride_pixels = (compositor.fb.info.stride / 4) as u32;
+
+    // Blitter safety
+    if stride_pixels < width {
+         println!("compositor: framebuffer stride < width!");
+         return;
+    }
     compositor.background_canvas = None;
 
     let Some(bg) = &compositor.background_image else {

@@ -204,7 +204,6 @@ pub struct RawModule {
     pub module_index: u64,
     pub base_phys: u64,
     pub size: u64,
-    pub framebuffer_id: Option<ThingId>,
 }
 
 #[derive(Thing)]

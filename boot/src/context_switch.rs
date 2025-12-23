@@ -1,6 +1,6 @@
 use abi::ThingId;
 use kernel::sched::SCHEDULER;
-use kernel::sched_types::CpuId;
+use kernel::sched::types::CpuId;
 use spin::Mutex;
 
 const MAX_CPUS: usize = 4;

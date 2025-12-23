@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use heapless::Vec;
 use spin::Mutex;
 use thing_models::PropValue;
-use crate::sched::types::{Thread, SleepEntry, Process, FpuContext, ScheduledThread};
+pub use crate::sched::types::{Thread, SleepEntry, Process, FpuContext, ScheduledThread};
 
 pub mod types;
 pub mod tick;

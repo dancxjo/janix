@@ -2,7 +2,7 @@ use abi::ThingId;
 use alloc::boxed::Box;
 use kernel::graph::{self, GraphEvent};
 use kernel::graph_kinds;
-use kernel::sched_types::CpuId;
+use kernel::sched::types::CpuId;
 use kernel::symbols;
 use thing_models::PropValue;
 

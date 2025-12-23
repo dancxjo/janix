@@ -29,7 +29,7 @@ fn on_graph_event(event: &GraphEvent) {
                 }
             }
         }
-    } else if let GraphEvent::ThingCreated(id) = event {
+    } else if let GraphEvent::ThingCreated(id) | GraphEvent::ThingUpdated(id) = event {
         let kind_io_op = symbols::intern(graph_kinds::KIND_IO_PORT_OP);
         let is_io_op = graph::with_thing(*id, |thing| thing.kind == kind_io_op).unwrap_or(false);
         if is_io_op {

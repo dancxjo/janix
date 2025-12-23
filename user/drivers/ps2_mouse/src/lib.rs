@@ -347,6 +347,7 @@ struct MouseDecoder {
     packet: [u8; 3],
     index: usize,
     stream: MouseStreamMapped<()>,
+    logged_first_event: bool,
 }
 
 impl MouseDecoder {
@@ -357,6 +358,7 @@ impl MouseDecoder {
             packet: [0; 3],
             index: 0,
             stream,
+            logged_first_event: false,
         }
     }
 
@@ -368,8 +370,6 @@ impl MouseDecoder {
         self.index += 1;
         if self.index == 3 {
             self.index = 0;
-            self.index = 0;
-            println!("ps2_mouse: packet complete {:02x?}", self.packet);
             self.emit_event();
         }
     }
@@ -394,10 +394,13 @@ impl MouseDecoder {
             _pad: 0, // Should be something but 0 is fine
         };
         self.stream.append(entry);
-        println!(
-            "ps2_mouse: appended event dx={} dy={} btn={}",
-            dx, dy, buttons
-        );
+        if !self.logged_first_event {
+            println!(
+                "ps2_mouse: publishing mouse events (seq={})",
+                self.sequence_index
+            );
+            self.logged_first_event = true;
+        }
 
         let packet = MousePacketEvent {
             id: ThingId(0),

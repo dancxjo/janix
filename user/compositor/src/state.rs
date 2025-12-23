@@ -4,15 +4,15 @@ use framebuffer_api::DisplayPresentRequest;
 
 use crate::config::FRAME_INTERVAL_NS;
 use crate::graph::{
-    active_framebuffer, collect_all_windows, collect_surfaces_for_windows, swap_display_buffers,
+    active_framebuffer, collect_all_windows, collect_surfaces_for_windows,
 };
 use crate::layout::{self, StackedWindow};
-use crate::model::BackgroundImage;
-use crate::model::Compositor;
-use crate::render::{build_display_list, render_display_list};
+use crate::model::{BackgroundCanvas, BackgroundImage, Compositor};
+use crate::render::{build_display_list, primitives, render_display_list};
 use abi::MapFlags;
 use alloc::boxed::Box;
 use alloc::format;
+use alloc::vec::Vec;
 use thing_os::{RawModule, shared_buffer_map};
 
 use crate::model::ConsoleBuffer;
@@ -131,6 +131,42 @@ fn load_background_image() -> Option<BackgroundImage> {
     None
 }
 
+fn prepare_background_canvas(compositor: &mut Compositor) {
+    compositor.background_canvas = None;
+
+    let Some(bg) = &compositor.background_image else {
+        return;
+    };
+
+    let width = compositor.fb.info.width;
+    let height = compositor.fb.info.height;
+    let stride_pixels = (compositor.fb.info.stride / 4) as u32;
+    let total_pixels = stride_pixels.saturating_mul(height);
+    let mut pixels = Vec::with_capacity(total_pixels as usize);
+    pixels.resize(total_pixels as usize, 0);
+
+    primitives::draw_tiled_image(
+        pixels.as_mut_ptr(),
+        stride_pixels,
+        width,
+        height,
+        bg.ptr,
+        bg.width,
+        bg.height,
+        bg.bpp,
+        compositor.background_offset.0,
+        compositor.background_offset.1,
+        None,
+    );
+
+    compositor.background_canvas = Some(BackgroundCanvas {
+        pixels,
+        width,
+        height,
+        stride_pixels,
+    });
+}
+
 pub fn main() -> ! {
     println!("compositor: starting");
 
@@ -166,6 +202,7 @@ pub fn main() -> ! {
 
     if let Some(bg) = load_background_image() {
         compositor.background_image = Some(bg);
+        prepare_background_canvas(&mut compositor);
     }
 
     // Force initial full redraw to paint background/windows
@@ -323,12 +360,6 @@ pub fn tick_once(compositor: &mut Compositor) {
             &widget_map,
         );
         render_display_list(compositor, &ops, Some(clip_rect));
-
-        if let Some(active_index) = swap_display_buffers(compositor.fb.display_id) {
-            compositor.fb.update_active_index(active_index);
-        } else {
-            println!("compositor: swap_display_buffers failed");
-        }
     }
 
     // Rotate damage history
@@ -341,7 +372,7 @@ pub fn tick_once(compositor: &mut Compositor) {
             compositor.frame_counter + 1
         );
     }
-    compositor.publish_present_request();
+    compositor.present_frame();
 }
 
 fn run_widget_pass(

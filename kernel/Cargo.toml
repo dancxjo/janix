@@ -9,7 +9,7 @@ edition.workspace = true
 arch_pci_in_kernel = []
 debug_logging = []
 log_skip_lock = []
-default = ["arch_pci_in_kernel", "debug_logging"]
+default = ["arch_pci_in_kernel", "debug_logging", "log_skip_lock"]
 
 [dependencies]
 abi = { path = "../abi" }

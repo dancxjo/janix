@@ -100,16 +100,11 @@ pub fn draw_tiled_image(
     offset_y: i32,
     clip: Option<(i32, i32, i32, i32)>,
 ) {
-    println!("DEBUG: draw_tiled_image: buffer={:p}", buffer);
     if img_w <= 0 || img_h <= 0 {
         return;
     }
 
     let stride_pixels = stride as usize;
-
-    // BMP row stride is aligned to 4 bytes
-    let bytes_per_pixel = (bpp / 8) as usize;
-    let row_stride = ((img_w as usize * bpp as usize + 31) / 32) * 4;
 
     let bytes_per_pixel = (bpp / 8) as usize;
     let row_stride = ((img_w as usize * bpp as usize + 31) / 32) * 4;

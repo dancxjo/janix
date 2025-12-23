@@ -160,9 +160,9 @@ impl FramebufferDriver {
             id: ThingId(0),
             framebuffer_id: fb_id,
             frame_index: 0,
-            requested_at_ns: 0,
+            requested_at_ns: Instant::now().t_ns,
             presented_at_ns: None,
-            completed: true,
+            completed: false,
         };
         let id = create_thing(&request).ok_or(SysError::Unexpected)?;
         Ok(DisplayPresentRequest { id, ..request })
@@ -226,10 +226,7 @@ impl FramebufferDriver {
         if request.framebuffer_id != self.fb_id {
             return;
         }
-        if request.completed {
-            return;
-        }
-        if self.frame_watch == Some(request.frame_index) {
+        if self.frame_watch == Some(request.frame_index) && request.completed {
             return;
         }
 

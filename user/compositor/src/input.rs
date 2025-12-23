@@ -90,6 +90,15 @@ impl Compositor {
                 let msg = alloc::format!("DEBUG: processing {} events", events.len());
                 println!("{}", alloc::boxed::Box::leak(msg.into_boxed_str()));
 
+                if !self.mouse_received {
+                    let first_msg = alloc::format!(
+                        "compositor: received mouse stream ({} event(s) buffered)",
+                        events.len()
+                    );
+                    println!("{}", alloc::boxed::Box::leak(first_msg.into_boxed_str()));
+                    self.mouse_received = true;
+                }
+
                 use crate::config::{MOUSE_SCALE_DEN, MOUSE_SCALE_NUM};
 
                 let mut pending_dx: i64 = 0;

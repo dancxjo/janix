@@ -7,6 +7,7 @@ use thing_os::PrimaryDisplayBuffer;
 use thing_os::link_targets;
 use thing_os::prelude::*;
 use thing_os::{create_thing, list_things_by_kind, load_thing, update_props};
+use crate::graph::swap_display_buffers;
 
 use crate::layout::StackedWindow;
 use crate::render::cursor::{self, CursorKind, CursorSprites};
@@ -21,6 +22,24 @@ pub struct BackgroundImage {
     pub width: i32,
     pub height: i32,
     pub bpp: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct BackgroundCanvas {
+    pub pixels: Vec<u32>,
+    pub width: u32,
+    pub height: u32,
+    pub stride_pixels: u32,
+}
+
+impl BackgroundCanvas {
+    pub fn as_ptr(&self) -> *const u8 {
+        self.pixels.as_ptr() as *const u8
+    }
+
+    pub fn stride_bytes(&self) -> u32 {
+        self.stride_pixels * 4
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -56,6 +75,7 @@ pub struct Compositor {
     present_request_id: Option<ThingId>,
     pub background_image: Option<BackgroundImage>,
     pub background_offset: (i32, i32),
+    pub background_canvas: Option<BackgroundCanvas>,
     pub console_buffer: Option<ConsoleBuffer>,
     pub mapped_surfaces: alloc::collections::BTreeMap<ThingId, MappedSurface>,
     // Dirty rectangle tracking
@@ -63,6 +83,8 @@ pub struct Compositor {
     pub previous_damage: Vec<Rect>,
     pub mouse_stream: Option<MouseStreamMapped<()>>,
     pub mouse_head: u32,
+    pub mouse_received: bool,
+    pub present_request_missing_logged: bool,
     pub frame_counter: u64,
     pub cached_layout: alloc::vec::Vec<StackedWindow>,
 }
@@ -83,6 +105,7 @@ impl Compositor {
             present_request_id: None,
             background_image: None,
             background_offset: (0, 0),
+            background_canvas: None,
 
             console_buffer: None,
             mapped_surfaces: alloc::collections::BTreeMap::new(),
@@ -90,6 +113,8 @@ impl Compositor {
             previous_damage: Vec::new(),
             mouse_stream: None,
             mouse_head: 0,
+            mouse_received: false,
+            present_request_missing_logged: false,
             frame_counter: 0,
             cached_layout: alloc::vec::Vec::new(),
         }
@@ -220,10 +245,31 @@ impl Compositor {
             .find(|req| req.framebuffer_id == fb_id)
     }
 
-    pub fn publish_present_request(&mut self) {
-        let Some(req_id) = self.present_request_id else {
+    fn ensure_present_request(&mut self) -> Option<ThingId> {
+        self.ensure_display_contracts();
+        if self.present_request_id.is_none() {
+            if !self.present_request_missing_logged {
+                println!("compositor: missing DisplayPresentRequest; retrying creation");
+                self.present_request_missing_logged = true;
+            }
+            return None;
+        }
+        self.present_request_missing_logged = false;
+        self.present_request_id
+    }
+
+    pub fn present_frame(&mut self) {
+        let Some(req_id) = self.ensure_present_request() else {
             return;
         };
+
+        if let Some(active_index) = crate::graph::swap_display_buffers(self.fb.display_id) {
+            self.fb.update_active_index(active_index);
+        } else if !self.present_request_missing_logged {
+            println!("compositor: swap_display_buffers failed");
+            self.present_request_missing_logged = true;
+        }
+
         self.frame_counter = self.frame_counter.wrapping_add(1);
         let now = thing_os::time::Instant::now().t_ns;
         let updates = [

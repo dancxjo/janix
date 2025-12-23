@@ -93,7 +93,17 @@ pub fn build_display_list(
 ) -> Vec<DrawOp> {
     let mut ops = Vec::new();
 
-    if let Some(bg) = &comp.background_image {
+    if let Some(canvas) = &comp.background_canvas {
+        ops.push(DrawOp::Blit {
+            ptr: canvas.as_ptr() as usize,
+            w: canvas.width as i32,
+            h: canvas.height as i32,
+            stride: canvas.stride_bytes(),
+            format: abi::PixelFormat::Bgra8888,
+            x: 0,
+            y: 0,
+        });
+    } else if let Some(bg) = &comp.background_image {
         ops.push(DrawOp::TiledImage {
             ptr: bg.ptr as usize,
             img_w: bg.width,

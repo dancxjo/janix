@@ -179,14 +179,14 @@ fn render_svg(path: &Path) -> io::Result<(u32, u32, Vec<u32>)> {
 
     // Replace placeholder colors with "Cloud" theme
     // #00FF00 -> Border (Dark Charcoal/Black)
-    // #FF0000 -> Fill (Cloud Color from clouds.bmp: #4C89AA)
+    // #FF0000 -> Fill (Cloud Color from clouds.bmp: #3A87B9)
     svg_data = svg_data.replace("#00FF00", "#0f1c25"); // Deep navy outline to match sky theme
-    svg_data = svg_data.replace("#FF0000", "#4C89AA"); // Dominant sky blue
+    svg_data = svg_data.replace("#FF0000", "#3A87B9"); // Dominant sky blue sampled from wallpaper
 
     // Also handle shorthand if present (though checking default.svg showed full hex)
     // Just in case:
     svg_data = svg_data.replace("fill:#0f0", "fill:#0f1c25");
-    svg_data = svg_data.replace("fill:#f00", "fill:#4C89AA");
+    svg_data = svg_data.replace("fill:#f00", "fill:#3A87B9");
 
     let opt = resvg::usvg::Options::default();
     let rtree = resvg::usvg::Tree::from_str(&svg_data, &opt).map_err(|e| {

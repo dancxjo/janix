@@ -32,7 +32,7 @@ endif
 
 ENABLE_PLATARO_ICONS ?= 1
 APPS := init clock compositor debug_input_logger debug_input_events
-DRIVERS := framebuffer ps2_keyboard_driver ps2_mouse_driver pci usb
+DRIVERS := framebuffer ps2_keyboard_driver ps2_mouse_driver
 
 APPS_TARGET_DIR := target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)
 COMPOSITOR_FONT_DIR := target/compositor-fonts
@@ -79,9 +79,7 @@ TEST_EXCLUDES := --exclude boot \
 	--exclude debug_input_events \
 	--exclude ps2_keyboard_driver \
 	--exclude ps2_mouse_driver \
-	--exclude framebuffer \
-	--exclude pci \
-	--exclude usb
+	--exclude framebuffer
 
 .PHONY: test
 test:
@@ -184,9 +182,6 @@ launch-log-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_
 		-cpu cortex-a72 \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-bios ovmf/ovmf-code-aarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
@@ -201,9 +196,6 @@ launch-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_NAME
         -cpu cortex-a72 \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-bios ovmf/ovmf-code-aarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
@@ -261,9 +253,6 @@ launch-log-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
@@ -278,9 +267,6 @@ launch-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd 
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
@@ -325,9 +311,6 @@ launch-debug-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAG
 		-cpu cortex-a72 \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-bios ovmf/ovmf-code-aarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
@@ -366,9 +349,6 @@ launch-debug-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-cdrom $(IMAGE_NAME).iso \
@@ -413,9 +393,6 @@ launch-debug-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(
 		-cpu cortex-a72 \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-bios ovmf/ovmf-code-aarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
@@ -450,9 +427,6 @@ launch-debug-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loong
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
@@ -511,9 +485,6 @@ launch-log-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IM
 		-cpu cortex-a72 \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-bios ovmf/ovmf-code-aarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA) | tee qemu.log ; \
@@ -528,9 +499,6 @@ launch-hdd-aarch64: ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd $(IMAGE_
         -cpu cortex-a72 \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-bios ovmf/ovmf-code-aarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS) $(QEMUFLAGS_EXTRA)
@@ -588,9 +556,6 @@ launch-log-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongar
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
@@ -605,9 +570,6 @@ launch-hdd-loongarch64: ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64
 		-M virt \
 		-serial stdio \
 		-device ramfb \
-		-device qemu-xhci \
-		-device usb-kbd \
-		-device usb-mouse \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-loongarch64.fd,readonly=on \
 		-drive if=pflash,unit=1,format=raw,file=ovmf/ovmf-vars-loongarch64.fd \
 		-hda $(IMAGE_NAME).hdd \
@@ -690,7 +652,6 @@ drivers:
 ifneq ($(strip $(DRIVERS)),)
 	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE) $(addprefix -p ,$(DRIVERS))
 endif
-	RUSTFLAGS="-C relocation-model=static -Awarnings -C link-arg=-e -C link-arg=main" cargo build --target $(RUST_TARGET) --profile release -p pci
 
 .PHONY: kernel
 kernel:
@@ -746,11 +707,10 @@ $(IMAGE_NAME).iso: limine/limine kernel user drivers icons assets
 	done
 	cp -v target/$(RUST_TARGET)/release/init iso_root/boot/user/init
 
-	for drv in framebuffer ps2_keyboard_driver ps2_mouse_driver usb; do \
+	for drv in framebuffer ps2_keyboard_driver ps2_mouse_driver; do \
 		cp -v $(APPS_TARGET_DIR)/$$drv iso_root/boot/drivers/$$drv; \
 		# objcopy --strip-debug iso_root/boot/drivers/$$drv; \
 	done
-	cp -v target/$(RUST_TARGET)/release/pci iso_root/boot/drivers/pci
 	# Fonts: Only include unifont.hex and HACK_REGULAR.ttf
 	# if [ -d $(COMPOSITOR_FONT_DIR) ] && ls $(COMPOSITOR_FONT_DIR)/*.ttf >/dev/null 2>&1; then \
 	# 	mkdir -p iso_root/boot/fonts; \
@@ -784,8 +744,6 @@ ifeq ($(KARCH),x86_64)
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
 		iso_root -o $(IMAGE_NAME).iso
-	cp iso_root/boot/drivers/pci pci_debug_dump
-	objdump -d -S --start-address=0x206d50 --stop-address=0x206da0 pci_debug_dump > pci_dump_snippet.txt
 	./limine/limine bios-install $(IMAGE_NAME).iso
 endif
 ifeq ($(KARCH),aarch64)

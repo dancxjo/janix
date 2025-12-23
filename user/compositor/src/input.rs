@@ -38,8 +38,6 @@ impl Compositor {
             let streams = list_things_by_kind::<MouseStream>();
             if !streams.is_empty() {
                 println!("compositor: found {} MouseStream(s)", streams.len());
-            } else {
-                // println!("compositor: no MouseStream found"); // excessive noise?
             }
 
             if let Some(thing) = streams.first() {

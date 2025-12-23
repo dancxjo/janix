@@ -129,7 +129,7 @@ pub fn driver_main() -> ! {
                     if let Some(byte) = accessor.read_data() {
                         // In polling mode, we are competing with IRQ handler if it were active.
                         // But since IRQ seems broken, we are the only reader.
-                        println!("ps2_mouse: POLLING read byte {:02x} status={:02x}", byte, status);
+                        // println!("ps2_mouse: POLLING read byte {:02x} status={:02x}", byte, status);
                         decoder.process_byte(byte);
                     }
                 }

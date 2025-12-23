@@ -19,6 +19,7 @@ fn main() {
 
     launch_program("clock");
     launch_program("debug_alloc");
+    launch_program("debug_thread");
 
     idle();
 }

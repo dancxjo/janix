@@ -10,24 +10,29 @@ const IDLE_SLEEP_MS: u64 = 1_000;
 
 #[thing_os::main]
 fn main() {
-    println!("init_debug: starting clock-only init");
+    println!("init_debug: starting clock+debug_alloc init");
 
     if !ensure_schema_exists_for::<BootProgram>() {
         println!("init_debug: BootProgram schema missing");
         idle();
     }
 
-    let Some(clock_program) = find_thing::<BootProgram>(|program| program.binary == "clock") else {
-        println!("init_debug: clock BootProgram missing");
-        idle();
-    };
-
-    println!("init_debug: launching clock");
-    if create_process(clock_program.id).is_err() {
-        println!("init_debug: failed to spawn clock");
-    }
+    launch_program("clock");
+    launch_program("debug_alloc");
 
     idle();
+}
+
+fn launch_program(binary: &str) {
+    let Some(program) = find_thing::<BootProgram>(|program| program.binary == binary) else {
+        println!("init_debug: {} BootProgram missing", binary);
+        return;
+    };
+
+    println!("init_debug: launching {}", binary);
+    if create_process(program.id).is_err() {
+        println!("init_debug: failed to spawn {}", binary);
+    }
 }
 
 fn idle() -> ! {

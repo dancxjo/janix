@@ -60,6 +60,18 @@ pub fn driver_main() -> ! {
         stream_id, stream_resident.ptr
     );
 
+    // DEBUG: Explicitly create a graph thing to verify scan
+    let dummy = MouseStream {
+         id: ThingId(0),
+         head: Some(0),
+         capacity: Some(128),
+    };
+    if let Some(dummy_id) = thing_os::create_thing(&dummy) {
+         println!("ps2_mouse_driver: created dummy MouseStream id={:?}", dummy_id);
+    } else {
+         println!("ps2_mouse_driver: failed to create dummy MouseStream");
+    }
+
     let mut stream = MouseStreamMapped::new(stream_resident);
     stream.init(MOUSE_RING_CAPACITY as u32);
 

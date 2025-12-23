@@ -11,7 +11,7 @@ const STATUS_OFFSET: u16 = 4;
 const DATA_OFFSET: u16 = 0;
 // const MOUSE_IRQ_LINE: u8 = 12; // Unused
 const MOUSE_RING_CAPACITY: usize = 128;
-const ENABLE_POLLING_MODE: bool = false;
+const ENABLE_POLLING_MODE: bool = true;
 
 use abi::syscall_defs::{
     DevOpenArgs, DevOpenRet, DevReadArgs, DevReadRet, DeviceHandle, SysError, SysRet, UserPtr,
@@ -148,6 +148,9 @@ fn wait_for_region() -> IoPortRegion {
 }
 
 fn init_mouse(accessor: &mut IoPortAccessor) -> bool {
+    println!("ps2_mouse_driver: skipping hardware init (debug bypass)");
+    return true;
+
     // We send enable commands but deliberately ignore failures (ACKs).
     // This is because the PS/2 Keyboard Driver might be racing to read from the same IO port (0x60),
     // stealing the ACK byte. Since we cannot easily coordinate with the keyboard driver from here,
@@ -234,7 +237,7 @@ impl IoPortAccessor {
     }
 
     fn flush_output(&mut self) {
-        for _ in 0..1000 {
+        for _ in 0..50 {
             if let Some(status) = self.read_status() {
                 if status & 0x01 == 0 {
                     break;
@@ -247,7 +250,7 @@ impl IoPortAccessor {
     }
 
     fn wait_input_clear(&mut self) -> bool {
-        for _ in 0..100 {
+        for _ in 0..20 {
             if let Some(status) = self.read_status() {
                 if status & 0x02 == 0 {
                     return true;

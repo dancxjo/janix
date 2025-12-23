@@ -130,11 +130,17 @@ pub fn driver_main() -> ! {
 }
 
 fn wait_for_region() -> IoPortRegion {
+    let mut counter = 0;
     loop {
         let regions: Vec<IoPortRegion> = list_things_by_kind();
-        if let Some(region) = regions.into_iter().find(|r| r.name == "i8042") {
-            return region;
+        if let Some(region) = regions.iter().find(|r| r.name == "i8042") {
+            println!("ps2_keyboard_driver: found i8042 region");
+            return region.clone();
         }
+        if counter % 200 == 0 {
+            println!("ps2_keyboard_driver: waiting for i8042 region (found {} regions)", regions.len());
+        }
+        counter += 1;
         sleep(Duration::from_nanos(5_000_000));
     }
 }

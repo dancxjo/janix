@@ -326,6 +326,8 @@ pub fn tick_once(compositor: &mut Compositor) {
 
         if let Some(active_index) = swap_display_buffers(compositor.fb.display_id) {
             compositor.fb.update_active_index(active_index);
+        } else {
+            println!("compositor: swap_display_buffers failed");
         }
     }
 
@@ -333,6 +335,9 @@ pub fn tick_once(compositor: &mut Compositor) {
     compositor.previous_damage = compositor.damage.clone();
     compositor.damage.clear();
 
+    if compositor.frame_counter % 60 == 0 {
+        println!("compositor: requesting present for frame {}", compositor.frame_counter + 1);
+    }
     compositor.publish_present_request();
 }
 

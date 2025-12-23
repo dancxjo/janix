@@ -204,11 +204,14 @@ impl FramebufferDriver {
                 self.try_present(&request);
                 return;
             }
+            // If request is gone, drop the ID
+            println!("framebuffer_driver: DisplayPresentRequest {} gone", req_id.0);
             self.present_request_id = None;
         }
 
         if self.present_request_id.is_none() {
             if let Some(request) = Self::find_present_request(self.fb_id) {
+                println!("framebuffer_driver: found DisplayPresentRequest {}", request.id.0);
                 self.frame_watch = Some(request.frame_index);
                 self.present_request_id = Some(request.id);
             }
@@ -226,6 +229,7 @@ impl FramebufferDriver {
             return;
         }
 
+        println!("framebuffer_driver: presenting frame {}", request.frame_index);
         self.blit_front_buffer();
 
         self.frame_watch = Some(request.frame_index);

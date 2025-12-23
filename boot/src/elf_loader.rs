@@ -57,7 +57,7 @@ mod x86_64 {
     const PT_LOAD: u32 = 1;
     const PF_X: u32 = 1;
     const PF_W: u32 = 2;
-    const STACK_SIZE: u64 = 32 * 1024 * 1024;
+    const STACK_SIZE: u64 = 2 * 1024 * 1024;
     const USER_STACK_TOP: u64 = 0x0000_7fff_ffff_f000;
 
     pub fn load_program(image: &ProgramImageData) -> Result<LoadedElfProgram, &'static str> {
@@ -395,7 +395,8 @@ mod x86_64 {
     ) -> Result<(u64, u64), &'static str> {
         let heap_start = USER_HEAP_START as u64;
         let heap_end = USER_HEAP_END as u64;
-        let map_end = heap_start + (512 * Size4KiB::SIZE as u64);
+        // Map 64KiB eagerly, rely on demand paging for the rest
+        let map_end = heap_start + (16 * Size4KiB::SIZE as u64);
 
         let mut mapper = mapper(space);
         let mut addr = heap_start;
@@ -506,7 +507,7 @@ mod aarch64 {
     const PF_X: u32 = 1;
     const PF_W: u32 = 2;
     const PAGE_SIZE: u64 = 4096;
-    const STACK_SIZE: u64 = 32 * 1024 * 1024;
+    const STACK_SIZE: u64 = 2 * 1024 * 1024;
     const USER_STACK_TOP: u64 = 0x0000_0000_3fff_f000;
 
     const DESC_VALID: u64 = 1 << 0;

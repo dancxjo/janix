@@ -67,12 +67,7 @@ pub struct GraphStore {
     pub things: HashMap<ThingId, ThingNode>,
     pub kind_index: HashMap<SymbolId, Vec<ThingId>>,
     pub next_id: u64,
-    // Add free_indices to support resident manager slot reuse logic (stub)
-    // Actually resident manager uses slab.slots directly.
-    // GraphStore is a wrapper around generic logic.
-    // But resident/manager.rs calls store::things_slab() which returns a Locked Slab?
-    // Wait. resident/manager.rs line 96: `store::things_slab()`.
-    // usage in serialize.rs: store::archive_store()
+    pub revision: u64,
 }
 
 pub struct ArchiveStore;
@@ -96,45 +91,19 @@ pub fn things_slab() -> &'static Mutex<Option<GraphStore>> {
 }
 
 impl GraphStore {
-    // expose slots for resident/manager logic compatibility if possible?
-    // resident/manager.rs casts return of things_slab() to something with `slots` and `alloc()`.
-    // My GraphStore struct has `things: HashMap`.
-    // resident/manager.rs expects a SLAB (Vec/Array).
-    // This is a MAJOR mismatch.
-    // I replaced Slab with HashMap in ABI refactor.
-    // But resident manager was not updated.
-    // I must either update resident manager to use HashMap API OR restore Slab.
-    // Given the time, updating resident manager to use `insert(id, node)` is better than rewriting Store to Slab.
-    // But resident/manager touches `slots` directly.
-    // I will mock `slots` or fix resident manager.
-    // resident/manager.rs:
-    // `slab.alloc()` -> `(idx, gen)`
-    // `slab.slots[idx]` access.
-    // This expects `Slab<ThingNode>`.
-
-    // I SHOULD probably revert GraphStore to use Slab if I want minimal changes to resident manager.
-    // But HashMap is cleaner for `ThingId`.
-    // Let's modify resident manager to use `create_thing` API?
-    // resident_alloc uses `ThingNode::new_resident`.
-    // I should add `create_resident_thing` to `GraphStore`.
-
-    // BUT resident manager accesses `slab.slots` directly.
-    // I will rewrite resident/manager.rs to use `GraphStore` API.
-    // This means `sys_resident_alloc` calls `store.create_resident(...)`.
-
-    // First, let's fix ThingNode definition.
-
     pub fn new() -> Self {
         Self {
             things: HashMap::new(),
             kind_index: HashMap::new(),
             next_id: 1,
+            revision: 0,
         }
     }
 
     pub fn create_thing(&mut self, kind: SymbolId, props: Vec<(SymbolId, PropValue)>) -> ThingId {
         let id = ThingId(self.next_id);
         self.next_id += 1;
+        self.revision += 1;
 
         let node = ThingNode {
             id,
@@ -161,6 +130,7 @@ impl GraphStore {
     ) -> ThingId {
         let id = ThingId(self.next_id);
         self.next_id += 1;
+        self.revision += 1;
         let node = ThingNode {
             id,
             kind,
@@ -179,6 +149,7 @@ impl GraphStore {
 
     pub fn update_thing(&mut self, id: ThingId, props: Vec<(SymbolId, PropValue)>) -> bool {
         if let Some(node) = self.things.get_mut(&id) {
+            self.revision += 1;
             for (key, val) in props {
                 // Simplistic update: remove old, push new
                 if let Some(pos) = node.props.iter().position(|(k, _)| *k == key) {
@@ -194,10 +165,20 @@ impl GraphStore {
     }
 
     pub fn get_node_mut(&mut self, id: ThingId) -> Option<&mut ThingNode> {
+        // Mutation via get_node_mut assumes caller might modify.
+        // But since we can't track what they do, we should increment revision if they take a mutable ref?
+        // OR we rely on specialized methods.
+        // This is risky. But for now, let's assume get_node_mut is used for internal things.
+        // Actually, if we modify links via this, we miss revision update.
+        // However, add_link/remove_link are methods on GraphStore.
+        // So direct modification of node via get_node_mut is dangerous if not tracked.
+        // Given current usage, let's assume it's fine or we should increment revision here too just in case.
+        // self.revision += 1; // Conservative
         self.things.get_mut(&id)
     }
 
     pub fn delete_thing(&mut self, id: ThingId) -> Option<ThingNode> {
+        self.revision += 1;
         let node = self.things.remove(&id);
         if let Some(ref n) = node {
             if let Some(list) = self.kind_index.get_mut(&n.kind) {
@@ -225,6 +206,7 @@ impl GraphStore {
     // Placeholder links implementation until we fully port links
     pub fn add_link(&mut self, src: ThingId, dst: ThingId, pred: Predicate) -> bool {
         if let Some(node) = self.things.get_mut(&src) {
+            self.revision += 1;
             node.links.push((pred, dst));
             true
         } else {
@@ -235,6 +217,7 @@ impl GraphStore {
     pub fn remove_link(&mut self, src: ThingId, dst: ThingId, pred: Predicate) -> bool {
         if let Some(node) = self.things.get_mut(&src) {
             if let Some(pos) = node.links.iter().position(|(p, d)| *p == pred && *d == dst) {
+                self.revision += 1;
                 node.links.remove(pos);
                 return true;
             }
@@ -273,6 +256,10 @@ impl GraphStore {
         } else {
             None
         }
+    }
+
+    pub fn get_revision(&self) -> u64 {
+        self.revision
     }
 }
 

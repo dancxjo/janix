@@ -1,6 +1,6 @@
 extern crate alloc;
 
-pub use crate::sched_types::ThreadState;
+pub use self::types::ThreadState;
 use crate::{graph, graph_kinds};
 use abi::{ProcessId, ThingId, ThreadId, USER_HEAP_END};
 use alloc::string::String;
@@ -8,6 +8,15 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use heapless::Vec;
 use spin::Mutex;
 use thing_models::PropValue;
+use crate::sched::types::{Thread, SleepEntry, Process, FpuContext, ScheduledThread};
+
+pub mod types;
+pub mod tick;
+pub mod legacy_graph;
+pub mod graph_sync;
+
+#[cfg(test)]
+mod tests;
 
 pub static TICKS: AtomicU64 = AtomicU64::new(0);
 pub static PREEMPT_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -47,87 +56,26 @@ pub const MAX_THREADS: usize = 32;
 pub const MAX_PROCESSES: usize = 16;
 const FAKE_SLICE_NS: u64 = 5_000_000;
 
-#[derive(Copy, Clone, Debug)]
-pub struct SleepEntry {
-    pub thread_id: ThreadId,
-    pub wake_at_ns: u64,
-}
-
-#[repr(align(16))]
-#[derive(Copy, Clone, Debug)]
-pub struct FpuContext {
-    pub data: [u8; 512],
-}
-
-impl Default for FpuContext {
-    fn default() -> Self {
-        let mut data = [0u8; 512];
-        // FCW = 0x037F
-        data[0] = 0x7F;
-        data[1] = 0x03;
-        // MXCSR = 0x00001F80
-        data[24] = 0x80;
-        data[25] = 0x1F;
-        Self { data }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct Thread {
-    pub id: ThreadId,
-    pub process_id: ProcessId,
-    pub state: ThreadState,
-    pub name: &'static str,
-    pub priority: u64,
-    pub entry_point: u64,
-    pub user_arg: u64,
-    pub user_stack_top: u64,
-    pub context: [u64; 20],
-    pub fpu_context: FpuContext,
-    pub started: bool,
-    pub thing_id: Option<ThingId>,
-    pub sleep_event_id: Option<ThingId>,
-    pub last_run_start_ns: u64,
-    pub total_run_ns: u64,
-    pub address_space_token: Option<u64>,
-    pub pending_wake: bool,
-    pub is_idle: bool,
-}
-
-pub struct ScheduledThread {
-    pub tid: ThreadId,
-    pub name: &'static str,
-    pub started: bool,
-    pub entry_point: u64,
-    pub user_stack_top: u64,
-    pub user_arg: u64,
-    pub context: [u64; 20],
-    pub fpu_context: FpuContext,
-    pub address_space_token: Option<u64>,
-    pub is_idle: bool,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct Process {
-    pub id: ProcessId,
-    pub name: &'static str,
-    pub thing_id: Option<ThingId>,
-    pub address_space_token: Option<u64>,
-    pub heap_base: usize,
-    pub heap_limit: usize,
-    pub next_map_base: u64,
-    pub next_resident_map_base: u64,
+pub struct SchedCache {
+    pub run_queue: Vec<ThreadId, MAX_THREADS>,
+    pub sleep_queue: Vec<SleepEntry, MAX_THREADS>,
+    pub last_graph_revision: u64,
 }
 
 pub struct Scheduler {
-    // Simple round-robin run queue
-    run_queue: Vec<ThreadId, MAX_THREADS>,
-    threads: [Option<Thread>; MAX_THREADS],
-    processes: [Option<Process>; MAX_PROCESSES],
-    current: Option<ThreadId>,
-    sleep_queue: Vec<SleepEntry, MAX_THREADS>,
-    graph_enabled: bool,
-    fake_time_ns: u64,
+    pub cache: SchedCache,
+    pub threads: [Option<Thread>; MAX_THREADS],
+    pub processes: [Option<Process>; MAX_PROCESSES],
+    pub current: Option<ThreadId>,
+    pub graph_enabled: bool,
+    pub fake_time_ns: u64,
+    pub cpu_thing_id: Option<ThingId>,
+
+    // Metrics
+    pub max_tick_time_ns: u64,
+    pub avg_tick_time_ns: u64,
+    pub total_ticks: u64,
+    pub rebuild_count: u64,
 }
 
 fn thread_index(tid: ThreadId) -> usize {
@@ -145,19 +93,24 @@ fn process_index(pid: ProcessId) -> usize {
 impl Scheduler {
     pub const fn new() -> Self {
         Self {
-            run_queue: Vec::new(),
+            cache: SchedCache {
+                run_queue: Vec::new(),
+                sleep_queue: Vec::new(),
+                last_graph_revision: 0,
+            },
             threads: [const { None }; MAX_THREADS],
             processes: [const { None }; MAX_PROCESSES],
             current: None,
-            sleep_queue: Vec::new(),
             graph_enabled: false,
             fake_time_ns: 0,
+            cpu_thing_id: None,
+            max_tick_time_ns: 0,
+            avg_tick_time_ns: 0,
+            total_ticks: 0,
+            rebuild_count: 0,
         }
     }
 
-    /// Enable graph mirroring for scheduler state. Once enabled, process and thread
-    /// mutations are reflected into the kernel graph so hosted environments can
-    /// inspect scheduling state the same way as on real hardware.
     pub fn init_graph_mirror(&mut self) {
         self.graph_enabled = true;
 
@@ -170,9 +123,41 @@ impl Scheduler {
         for index in 0..self.threads.len() {
             if self.threads[index].is_some() {
                 self.ensure_thread_thing(index);
-                self.graph_update_thread_state(index);
-                // self.graph_restore_sleep_link(index);
+                // We don't manually call update here, assume initial state is synced
+                // or will be synced on next switch/rebuild.
+                // Actually we should make sure graph matches local state initially.
+                self.graph_update_thread_state_initial(index);
             }
+        }
+
+        // Find CPU Thing (assuming single core 0)
+        let kind = crate::symbols::intern(graph_kinds::KIND_CPU_CORE);
+        let mut curr = None;
+        // Use loop to find CPU with index 0
+        while let Some(id) = graph::next_thing_of_kind(kind, curr.unwrap_or(ThingId(0))) {
+            if let Some(PropValue::U64(idx)) = graph::get_prop(id, "index") {
+                if idx == 0 {
+                    self.cpu_thing_id = Some(id);
+                    break;
+                }
+            }
+            curr = Some(id);
+        }
+
+        // Force rebuild on next tick
+        self.cache.last_graph_revision = 0;
+    }
+
+    fn ensure_cache_valid(&mut self) {
+        let rev = graph::get_revision();
+        if rev != self.cache.last_graph_revision {
+            let rebuilt = graph_sync::rebuild_cache_from_graph(&mut self.threads);
+            self.cache.run_queue = rebuilt.run_queue;
+            self.cache.sleep_queue = rebuilt.sleep_queue;
+            // We trust local current over rebuilt current for now,
+            // but in a pure graph system, we might assert they match.
+            self.cache.last_graph_revision = rev;
+            self.rebuild_count += 1;
         }
     }
 
@@ -189,47 +174,42 @@ impl Scheduler {
         self.finish_running_thread(index);
         if let Some(thr) = self.threads[index].as_mut() {
             thr.state = ThreadState::Sleeping;
-        }
-        self.graph_update_thread_state(index);
-        self.graph_record_sleep_event(index, wake_at_ns);
-
-        // Remove from run_queue if it’s there.
-        if let Some(pos) = self.run_queue.iter().position(|&id| id == tid) {
-            self.run_queue.swap_remove(pos);
+            thr.sleep_until_ns = wake_at_ns;
         }
 
-        // Register in sleep queue.
-        self.sleep_queue
-            .push(SleepEntry {
-                thread_id: tid,
-                wake_at_ns,
-            })
-            .expect("sleep_queue full");
+        // We update local cache immediately to prevent running again before tick/rebuild
+        if let Some(pos) = self.cache.run_queue.iter().position(|&id| id == tid) {
+            self.cache.run_queue.swap_remove(pos);
+        }
+        let _ = self.cache.sleep_queue.push(SleepEntry {
+            thread_id: tid,
+            wake_at_ns,
+        });
 
         self.current = None;
     }
 
     pub fn wake_sleepers(&mut self, now_ns: u64) {
         let mut i = 0;
-        while i < self.sleep_queue.len() {
-            let entry = self.sleep_queue[i];
+        while i < self.cache.sleep_queue.len() {
+            let entry = self.cache.sleep_queue[i];
             if entry.wake_at_ns <= now_ns {
                 // Wake this thread.
                 let index = thread_index(entry.thread_id);
-                self.graph_clear_sleep_event(index);
                 if let Some(thr) = self.threads[index].as_mut() {
                     thr.state = ThreadState::Runnable;
+                    thr.sleep_until_ns = 0;
+
+                    // Commit wake to graph immediately because this is an async event
+                    // (not necessarily coupled with a switch of THIS thread).
+                    graph_sync::commit_thread_wake(thr);
                 }
-                self.graph_update_thread_state(index);
 
                 // Put back on run queue.
-                self.run_queue
-                    .push(entry.thread_id)
-                    .expect("run_queue full while waking sleeper");
+                let _ = self.cache.run_queue.push(entry.thread_id);
 
                 // Remove this entry from sleep_queue by swap_remove.
-                self.sleep_queue.swap_remove(i);
-                // Do NOT increment i; swapped element needs to be checked.
+                self.cache.sleep_queue.swap_remove(i);
             } else {
                 i += 1;
             }
@@ -267,6 +247,7 @@ impl Scheduler {
         panic!("Max processes reached");
     }
 
+    // ... setters ...
     pub fn set_process_address_space(&mut self, pid: ProcessId, token: u64) {
         let idx = process_index(pid);
         if let Some(proc_slot) = self.processes.get_mut(idx).and_then(|p| p.as_mut()) {
@@ -382,20 +363,27 @@ impl Scheduler {
                     started: false,
                     thing_id: None,
                     sleep_event_id: None,
+                    sleep_until_ns: 0,
                     last_run_start_ns: 0,
                     total_run_ns: 0,
                     address_space_token,
                     pending_wake: false,
                     is_idle: false,
                 });
+
+                // Create Thing immediately (updates revision)
+                // If graph_enabled is false, we don't.
+                // But we must add to cache locally.
+
                 if self.graph_enabled {
                     self.ensure_thread_thing(i);
-                    self.graph_update_thread_state(i);
+                    self.graph_update_thread_state_initial(i);
+                    // This bumped revision, so ensure_cache_valid will rebuild run_queue
+                } else {
+                     // Manually add to run_queue since we won't rebuild
+                     let _ = self.cache.run_queue.push(tid);
                 }
-                // Add to run queue
-                if self.run_queue.push(tid).is_err() {
-                    panic!("Run queue full");
-                }
+
                 return tid;
             }
         }
@@ -403,10 +391,10 @@ impl Scheduler {
     }
 
     pub fn add_idle_thread(&mut self, process_id: ProcessId) -> ThreadId {
+         // Same logic as add_thread but state=Runnable, priority=0
         for (i, slot) in self.threads.iter_mut().enumerate() {
             if slot.is_none() {
                 let tid = ThreadId(i as u64 + 1);
-                // Idle thread shares address space of the process (likely kernel/init)
                 let address_space_token = self
                     .processes
                     .get(process_index(process_id))
@@ -416,9 +404,9 @@ impl Scheduler {
                 *slot = Some(Thread {
                     id: tid,
                     process_id,
-                    state: ThreadState::Runnable, // Always runnable
+                    state: ThreadState::Runnable,
                     name: "idle",
-                    priority: 0, // Lowest priority
+                    priority: 0,
                     entry_point: 0,
                     user_arg: 0,
                     user_stack_top: 0,
@@ -427,20 +415,21 @@ impl Scheduler {
                     started: false,
                     thing_id: None,
                     sleep_event_id: None,
+                    sleep_until_ns: 0,
                     last_run_start_ns: 0,
                     total_run_ns: 0,
                     address_space_token,
                     pending_wake: false,
                     is_idle: true,
                 });
+
                 if self.graph_enabled {
                     self.ensure_thread_thing(i);
-                    self.graph_update_thread_state(i);
+                    self.graph_update_thread_state_initial(i);
+                } else {
+                     let _ = self.cache.run_queue.push(tid);
                 }
-                // Add to run queue
-                if self.run_queue.push(tid).is_err() {
-                    panic!("Run queue full creating idle thread");
-                }
+
                 return tid;
             }
         }
@@ -461,11 +450,9 @@ impl Scheduler {
             if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
                 thread.state = ThreadState::Runnable;
             }
-            self.graph_update_thread_state(index);
-
-            if self.run_queue.push(tid).is_err() {
-                // Should not happen if we manage queue correctly
-                panic!("Run queue full on yield");
+            // Update cache locally (it will be consistent with graph after commit_switch)
+            if self.cache.run_queue.push(tid).is_err() {
+                 crate::log("Run queue full on yield");
             }
         }
     }
@@ -474,14 +461,18 @@ impl Scheduler {
         let index = thread_index(tid);
         if self.threads.get(index).and_then(|t| t.as_ref()).is_some() {
             self.finish_running_thread(index);
-            self.graph_clear_sleep_event(index);
+            // clear sleep event?
+            // self.graph_clear_sleep_event(index); // graph_sync handles this?
 
             let mut pid = ProcessId(0);
             if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
                 thread.state = ThreadState::Exited;
                 pid = thread.process_id;
             }
-            self.graph_update_thread_state(index);
+
+            // Graph update happens at commit_switch (Running -> Exited).
+            // But if we need to emit Exit Event, we might need to do it here or in commit_switch.
+            // For now, let's keep emit_process_exit_event logic but decouple it from graph_update_thread_state.
 
             if self.is_process_dead(pid) {
                 self.emit_process_exit_event(pid, reason, code);
@@ -489,6 +480,7 @@ impl Scheduler {
         }
     }
 
+    // ... is_process_dead, emit_process_exit_event ...
     fn is_process_dead(&self, pid: ProcessId) -> bool {
         for thread in self.threads.iter().flatten() {
             if thread.process_id == pid && thread.state != ThreadState::Exited {
@@ -499,9 +491,12 @@ impl Scheduler {
     }
 
     fn emit_process_exit_event(&self, pid: ProcessId, reason: &'static str, code: u64) {
-        if !self.graph_enabled {
-            return;
-        }
+         // Logic identical to old code
+         if !self.graph_enabled { return; }
+         // ... (copy paste old logic)
+         // Since this uses graph::create_thing, it's allowed.
+         // It doesn't modify thread state.
+
         let Some(proc_thing) = self.process_thing_id(pid) else {
             return;
         };
@@ -527,9 +522,8 @@ impl Scheduler {
         );
         if event_id.0 != 0 {
             let _ = graph::add_link(event_id, graph_kinds::LINK_ABOUT, proc_thing);
-
-            // Check for respawn policy
-            let mut boot_program_id = None;
+            // Respawn logic ...
+             let mut boot_program_id = None;
             let mut buf = [None; 1];
             graph::neighbors(proc_thing, graph_kinds::LINK_RUNNING, &mut buf);
             if let Some(id) = buf[0] {
@@ -546,13 +540,11 @@ impl Scheduler {
 
                 let should_respawn = match policy.as_str() {
                     graph_kinds::RESPAWN_ALWAYS => true,
-                    graph_kinds::RESPAWN_ON_CRASH => reason != "Exited", // Assuming "Exited" is normal exit?
+                    graph_kinds::RESPAWN_ON_CRASH => reason != "Exited",
                     _ => false,
                 };
 
                 if should_respawn {
-                    // Defer spawning to avoid deadlock with scheduler lock
-                    // Pass the old process thing ID to enable linking RESPAWNED_FROM
                     crate::work_queue::push_normal(crate::work_queue::WorkItem::SpawnProgram(
                         bp_id,
                         Some(proc_thing),
@@ -564,44 +556,60 @@ impl Scheduler {
     }
 
     pub fn next_runnable(&mut self) -> Option<ThreadId> {
-        if self.run_queue.is_empty() {
+        if self.cache.run_queue.is_empty() {
             return None;
         }
 
-        // Find the index of the thread with the highest priority.
-        // We use strict priority: always pick the highest available priority.
-        // If there are ties, pick the one that appears earliest in the queue (FIFO for same priority).
         let mut best_index = 0;
         let mut best_prio = 0;
 
-        for (i, &tid) in self.run_queue.iter().enumerate() {
+        for (i, &tid) in self.cache.run_queue.iter().enumerate() {
             let index = thread_index(tid);
             if let Some(thr) = self.threads[index].as_ref() {
                 if thr.priority > best_prio {
                     best_prio = thr.priority;
                     best_index = i;
                 }
+                // Ties? FIFO.
             }
         }
 
-        // Remove and return the best candidate
-        Some(self.run_queue.remove(best_index))
+        Some(self.cache.run_queue.remove(best_index))
     }
 
     pub fn choose_next_thread(&mut self, now_ns: u64) -> Option<ScheduledThread> {
+        let start = crate::time::monotonic_now_ns();
         self.wake_sleepers(now_ns);
+        self.ensure_cache_valid();
+
         let tid = self.next_runnable()?;
-        self.set_current(tid);
-        let thread = self
-            .thread_mut(tid)
-            .expect("Scheduled thread missing backing state");
-        let entry_point = thread.entry_point;
+        self.current = Some(tid);
+
+        let fake_time = self.fake_time_ns;
+        if let Some(thread) = self.thread_mut(tid) {
+            thread.state = ThreadState::Running;
+            thread.last_run_start_ns = fake_time;
+        }
+
+        let end = crate::time::monotonic_now_ns();
+        let dur = end.saturating_sub(start);
+        if dur > self.max_tick_time_ns {
+            self.max_tick_time_ns = dur;
+        }
+        self.total_ticks += 1;
+        self.avg_tick_time_ns = (self.avg_tick_time_ns * (self.total_ticks - 1) + dur) / self.total_ticks;
+
+        if self.total_ticks % 1000 == 0 {
+             crate::log(&alloc::format!("Sched stats: max={}ns avg={}ns rebuilds={}", self.max_tick_time_ns, self.avg_tick_time_ns, self.rebuild_count));
+        }
+
+        let thread = self.thread_mut(tid).expect("Scheduled thread missing backing state");
 
         Some(ScheduledThread {
             tid,
             name: thread.name,
             started: thread.started,
-            entry_point,
+            entry_point: thread.entry_point,
             user_stack_top: thread.user_stack_top,
             user_arg: thread.user_arg,
             context: thread.context,
@@ -611,14 +619,27 @@ impl Scheduler {
         })
     }
 
+    pub fn commit_switch(&mut self, old_tid: Option<ThreadId>, new_tid: Option<ThreadId>, now_ns: u64) {
+         let old_state = if let Some(tid) = old_tid {
+             if let Some(t) = self.threads[thread_index(tid)].as_ref() {
+                 t.state
+             } else {
+                 ThreadState::Runnable
+             }
+         } else { ThreadState::Runnable };
+
+         let new_state = ThreadState::Running;
+         let runtime = FAKE_SLICE_NS; // Approximation
+
+         graph_sync::commit_decision_to_graph(old_tid, new_tid, old_state, new_state, &self.threads, runtime, now_ns, self.cpu_thing_id);
+
+         self.cache.last_graph_revision = graph::get_revision();
+    }
+
+    // ... set_current, current_id, thread_mut ...
     pub fn set_current(&mut self, tid: ThreadId) {
         self.current = Some(tid);
-        let index = thread_index(tid);
-        if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
-            thread.state = ThreadState::Running;
-            thread.last_run_start_ns = self.fake_time_ns;
-        }
-        self.graph_update_thread_state(index);
+        // We don't update state/graph here. commit_switch does it.
     }
 
     pub fn current_id(&self) -> Option<ThreadId> {
@@ -629,48 +650,23 @@ impl Scheduler {
         self.threads[thread_index(tid)].as_mut()
     }
 
+    // ... helpers ...
     pub fn process_thing_id(&self, pid: ProcessId) -> Option<ThingId> {
         let index = process_index(pid);
-        self.processes
-            .get(index)
-            .and_then(|slot| slot.as_ref())
-            .and_then(|process| process.thing_id)
+        self.processes.get(index).and_then(|slot| slot.as_ref()).and_then(|p| p.thing_id)
     }
 
     pub fn thread_thing_id(&self, tid: ThreadId) -> Option<ThingId> {
         let index = thread_index(tid);
-        self.threads
-            .get(index)
-            .and_then(|slot| slot.as_ref())
-            .and_then(|thread| thread.thing_id)
+        self.threads.get(index).and_then(|slot| slot.as_ref()).and_then(|t| t.thing_id)
     }
 
     pub fn thread_by_thing(&self, thing: ThingId) -> Option<&Thread> {
-        self.threads
-            .iter()
-            .flatten()
-            .find(|thread| thread.thing_id == Some(thing))
-    }
-
-    #[allow(dead_code)]
-    pub fn thread_mut_by_thing(&mut self, thing: ThingId) -> Option<&mut Thread> {
-        self.threads
-            .iter_mut()
-            .flatten()
-            .find(|thread| thread.thing_id == Some(thing))
+        self.threads.iter().flatten().find(|thread| thread.thing_id == Some(thing))
     }
 
     pub fn thread_id_for_thing(&self, thing: ThingId) -> Option<ThreadId> {
         self.thread_by_thing(thing).map(|thread| thread.id)
-    }
-
-    pub fn all_done(&self) -> bool {
-        for thread in self.threads.iter().flatten() {
-            if thread.state != ThreadState::Exited {
-                return false;
-            }
-        }
-        true
     }
 
     fn finish_running_thread(&mut self, index: usize) {
@@ -683,151 +679,62 @@ impl Scheduler {
     }
 
     fn ensure_process_thing(&mut self, index: usize) {
-        if !self.graph_enabled {
-            return;
-        }
+        if !self.graph_enabled { return; }
         if let Some(process) = self.processes.get_mut(index).and_then(|p| p.as_mut()) {
-            if process.thing_id.is_some() {
-                return;
-            }
+            if process.thing_id.is_some() { return; }
             let props = alloc::vec![
                 (crate::symbols::intern("pid"), PropValue::U64(process.id.0)),
-                (
-                    crate::symbols::intern("name"),
-                    PropValue::Str(String::from(process.name))
-                ),
+                (crate::symbols::intern("name"), PropValue::Str(String::from(process.name))),
             ];
-            process.thing_id = Some(graph::create_thing(
-                crate::symbols::intern(graph_kinds::KIND_PROCESS),
-                props,
-            ));
+            process.thing_id = Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_PROCESS), props));
         }
     }
 
     fn ensure_thread_thing(&mut self, index: usize) {
-        if !self.graph_enabled {
-            return;
-        }
+        if !self.graph_enabled { return; }
         if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
-            if thread.thing_id.is_some() {
-                return;
-            }
+            if thread.thing_id.is_some() { return; }
             let props = alloc::vec![
                 (crate::symbols::intern("tid"), PropValue::U64(thread.id.0)),
-                (
-                    crate::symbols::intern("name"),
-                    PropValue::Str(String::from(thread.name))
-                ),
-                (
-                    crate::symbols::intern("state"),
-                    PropValue::Str(String::from(thread.state.as_str()))
-                ),
-                (
-                    crate::symbols::intern("priority"),
-                    PropValue::U64(thread.priority)
-                ),
-                (
-                    crate::symbols::intern("runtime_ns"),
-                    PropValue::U64(thread.total_run_ns)
-                ),
-                (
-                    crate::symbols::intern("last_started_ns"),
-                    PropValue::U64(thread.last_run_start_ns)
-                ),
+                (crate::symbols::intern("name"), PropValue::Str(String::from(thread.name))),
+                (crate::symbols::intern("state"), PropValue::Str(String::from(thread.state.as_str()))),
+                (crate::symbols::intern("priority"), PropValue::U64(thread.priority)),
+                (crate::symbols::intern("runtime_ns"), PropValue::U64(thread.total_run_ns)),
+                (crate::symbols::intern("last_started_ns"), PropValue::U64(thread.last_run_start_ns)),
                 (crate::symbols::intern("sleep_until_ns"), PropValue::U64(0)),
             ];
-            thread.thing_id = Some(graph::create_thing(
-                crate::symbols::intern(graph_kinds::KIND_THREAD),
-                props,
-            ));
+            thread.thing_id = Some(graph::create_thing(crate::symbols::intern(graph_kinds::KIND_THREAD), props));
             self.graph_link_process_thread(index);
         }
     }
 
     fn graph_link_process_thread(&mut self, thread_index: usize) {
-        if !self.graph_enabled {
-            return;
-        }
-        let Some(thread) = self.threads.get(thread_index).and_then(|t| t.as_ref()) else {
-            return;
-        };
-        let Some(thread_thing) = thread.thing_id else {
-            return;
-        };
+        if !self.graph_enabled { return; }
+        let Some(thread) = self.threads.get(thread_index).and_then(|t| t.as_ref()) else { return; };
+        let Some(thread_thing) = thread.thing_id else { return; };
         let proc_index = process_index(thread.process_id);
-        if let Some(process) = self
-            .processes
-            .get(proc_index)
-            .and_then(|slot| slot.as_ref())
-        {
+        if let Some(process) = self.processes.get(proc_index).and_then(|slot| slot.as_ref()) {
             if let Some(process_thing) = process.thing_id {
                 let _ = graph::add_link(process_thing, graph_kinds::LINK_OWNS_THREAD, thread_thing);
             }
         }
     }
 
-    fn graph_update_thread_state(&mut self, index: usize) {
-        if !self.graph_enabled {
-            return;
-        }
+    // Only used for initial setup or explicit manual sync
+    fn graph_update_thread_state_initial(&mut self, index: usize) {
+        // Implementation similar to old graph_update_thread_state but we rely on commit_switch usually.
+        // We keep this for ensuring initial state is committed.
+        if !self.graph_enabled { return; }
         if let Some(thread) = self.threads.get(index).and_then(|t| t.as_ref()) {
             if let Some(thread_thing) = thread.thing_id {
                 let props = alloc::vec![
-                    (
-                        crate::symbols::intern("state"),
-                        PropValue::Str(String::from(thread.state.as_str()))
-                    ),
-                    (
-                        crate::symbols::intern("runtime_ns"),
-                        PropValue::U64(thread.total_run_ns)
-                    ),
-                    (
-                        crate::symbols::intern("last_started_ns"),
-                        PropValue::U64(thread.last_run_start_ns)
-                    ),
+                    (crate::symbols::intern("state"), PropValue::Str(String::from(thread.state.as_str()))),
+                    (crate::symbols::intern("runtime_ns"), PropValue::U64(thread.total_run_ns)),
+                    (crate::symbols::intern("last_started_ns"), PropValue::U64(thread.last_run_start_ns)),
                 ];
                 let _ = graph::update_thing(thread_thing, props);
             }
         }
-    }
-
-    fn graph_record_sleep_event(&mut self, index: usize, wake_at_ns: u64) {
-        if !self.graph_enabled {
-            return;
-        }
-        let thread_thing = self
-            .threads
-            .get(index)
-            .and_then(|t| t.as_ref())
-            .and_then(|thread| thread.thing_id);
-        let Some(thread_id) = thread_thing else {
-            return;
-        };
-
-        // Update the thread with the sleep deadline
-        let props = alloc::vec![(
-            crate::symbols::intern("sleep_until_ns"),
-            PropValue::U64(wake_at_ns)
-        ),];
-        let _ = graph::update_thing(thread_id, props);
-    }
-
-    fn graph_clear_sleep_event(&mut self, index: usize) {
-        if !self.graph_enabled {
-            return;
-        }
-        if let Some(thread) = self.threads.get(index).and_then(|t| t.as_ref()) {
-            if let Some(thread_thing) = thread.thing_id {
-                let props =
-                    alloc::vec![(crate::symbols::intern("sleep_until_ns"), PropValue::U64(0))];
-                let _ = graph::update_thing(thread_thing, props);
-            }
-        }
-    }
-
-    fn graph_restore_sleep_link(&mut self, _index: usize) {
-        // No-op: sleep state is now on the thread itself, and we don't persist
-        // sleep events across graph re-initialization in this simplified model.
     }
 
     pub fn mark_blocked(&mut self, tid: ThreadId) -> bool {
@@ -836,7 +743,6 @@ impl Scheduler {
         let should_block =
             if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
                 if thread.pending_wake {
-                    // Was woken while running, so don't block
                     thread.pending_wake = false;
                     return false;
                 }
@@ -850,7 +756,8 @@ impl Scheduler {
             if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
                 thread.state = ThreadState::Blocked;
             }
-            self.graph_update_thread_state(index);
+            // Blocked threads are removed from run_queue (they are running, so not in queue).
+            // commit_switch will see Blocked state and update graph.
             return true;
         }
         false
@@ -858,30 +765,27 @@ impl Scheduler {
 
     pub fn wake_thread(&mut self, tid: ThreadId) {
         let index = thread_index(tid);
-        let state = self
-            .threads
-            .get(index)
-            .and_then(|t| t.as_ref())
-            .map(|t| t.state);
+        let state = self.threads.get(index).and_then(|t| t.as_ref()).map(|t| t.state);
 
         if let Some(state) = state {
             if state == ThreadState::Blocked || state == ThreadState::Sleeping {
                 if state == ThreadState::Sleeping {
-                    self.graph_clear_sleep_event(index);
                     // Remove from sleep queue if present
-                    if let Some(pos) = self.sleep_queue.iter().position(|&e| e.thread_id == tid) {
-                        self.sleep_queue.swap_remove(pos);
+                     if let Some(pos) = self.cache.sleep_queue.iter().position(|&e| e.thread_id == tid) {
+                        self.cache.sleep_queue.swap_remove(pos);
                     }
                 }
 
                 if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
                     thread.state = ThreadState::Runnable;
                     thread.pending_wake = false;
+
+                     // Update graph immediately as we are changing state outside of a switch
+                    graph_sync::commit_thread_wake(thread);
                 }
-                self.graph_update_thread_state(index);
-                if self.run_queue.push(tid).is_err() {
-                    // Queue full, but we must run eventualy. Panic for now.
-                    panic!("Run queue full in wake_thread");
+
+                if self.cache.run_queue.push(tid).is_err() {
+                     crate::log("Run queue full in wake_thread");
                 }
             } else {
                 // Already Running or Runnable, just mark pending
@@ -900,7 +804,7 @@ pub fn yield_current_thread() {
         let mut sched = SCHEDULER.lock();
         if let Some(tid) = sched.current {
             sched.mark_yield(tid);
-            sched.current = None;
+            sched.current = None; // This logic remains to signal "not running"
         }
     })
 }

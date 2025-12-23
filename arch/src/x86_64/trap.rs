@@ -580,10 +580,12 @@ fn timer_tick(frame: &mut TrapFrame) {
 
             // Pick next thread
             let now = kernel::time::monotonic_now_ns();
+            let old_tid = sched.current_id();
+
             if let Some(next) = sched.choose_next_thread(now) {
+                sched.commit_switch(old_tid, Some(next.tid), now);
                 drop(sched); // Unlock before switch
 
-                // Activate address space
                 super::enter::activate_address_space(next.address_space_token);
 
                 // Resume or Start

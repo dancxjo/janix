@@ -11,6 +11,10 @@ pub fn get_thing_kind(id: ThingId) -> Option<SymbolId> {
     with_store(|store| store.get_thing_kind(id))
 }
 
+pub fn get_revision() -> u64 {
+    with_store(|store| store.get_revision())
+}
+
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::interrupts;
 

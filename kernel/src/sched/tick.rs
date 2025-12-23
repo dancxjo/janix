@@ -2,7 +2,7 @@ extern crate alloc;
 
 use crate::graph::{self, Graph};
 use crate::graph_kinds;
-use crate::sched_types::{CpuId, ThreadState, TimeNs};
+use crate::sched::types::{CpuId, ThreadState, TimeNs};
 use abi::ThingId;
 use alloc::string::String;
 use thing_models::PropValue;

@@ -4,8 +4,10 @@
 extern crate alloc;
 use crate::graph::schema::{get_schema_props, register_schema};
 
+#[cfg(not(test))]
 pub mod bridge;
 pub mod console;
+#[cfg(not(test))]
 pub mod console_backend;
 pub mod graph;
 pub mod graph_kinds;
@@ -17,9 +19,6 @@ pub mod memory;
 pub mod model;
 pub mod resident;
 pub mod sched;
-pub mod sched_graph;
-pub mod sched_tick;
-pub mod sched_types;
 pub mod shared_buffer;
 pub mod symbols;
 pub mod time;
@@ -30,7 +29,7 @@ pub mod work_queue;
 mod syscalls_test;
 
 use crate::model::{compute_memory_summary, compute_scheduler_summary, scheduler_tick};
-use crate::sched_types::ThreadState;
+use crate::sched::ThreadState;
 use crate::shared_buffer::MAX_FRAMES_PER_BUFFER;
 use abi::{FrameId, FrameInfo, KernelRequest, KernelResponse, SchedThreadInfo, ThingId};
 use thing_models::{PropType, PropValue};

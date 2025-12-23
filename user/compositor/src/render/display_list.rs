@@ -231,8 +231,8 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
     let buffer = comp.fb.ptr as *mut u32;
     let width = comp.fb.info.width;
     let height = comp.fb.info.height;
-    // Stride in Info is bytes, primitives expect u32 (pixel) stride.
-    let stride = (comp.fb.info.stride / 4) as u32;
+    // Primitives expect stride in BYTES.
+    let stride = comp.fb.info.stride as u32;
 
     let clip_tuple = clip.map(|r| (r.x, r.y, r.w as i32, r.h as i32));
 

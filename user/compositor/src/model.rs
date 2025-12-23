@@ -230,6 +230,8 @@ impl Compositor {
                         requested_at_ns: 0,
                         presented_at_ns: None,
                         completed: true,
+                        damage_count: 0,
+                        damage_rects: alloc::vec::Vec::new(),
                     };
                     if let Some(id) = create_thing(&request) {
                         self.present_request_id = Some(id);
@@ -272,6 +274,31 @@ impl Compositor {
 
         self.frame_counter = self.frame_counter.wrapping_add(1);
         let now = thing_os::time::Instant::now().t_ns;
+
+        // Pack damage rects from previous_damage (which is the current frame's damage after rotation)
+        let mut packed_rects = alloc::vec::Vec::new();
+        let mut count = 0;
+        let limit = self.previous_damage.len().min(64);
+        
+        for rect in self.previous_damage.iter().take(limit) {
+             let x = (rect.x as u16).to_le_bytes();
+             let y = (rect.y as u16).to_le_bytes();
+             let w = (rect.w as u16).to_le_bytes();
+             let h = (rect.h as u16).to_le_bytes();
+             packed_rects.extend_from_slice(&x);
+             packed_rects.extend_from_slice(&y);
+             packed_rects.extend_from_slice(&w);
+             packed_rects.extend_from_slice(&h);
+             count += 1;
+        }
+        
+        // If damage exceeds 64, fall back to full redraw (count=0) or we could just clip.
+        // Let's cap at 64 for now.
+        if self.previous_damage.len() > 64 {
+             count = 0;
+             packed_rects.clear();
+        }
+
         let updates = [
             (
                 graph_kinds::PROP_FRAME_INDEX.to_string(),
@@ -286,8 +313,12 @@ impl Compositor {
                 PropValue::Bool(false),
             ),
             (
-                graph_kinds::PROP_PRESENTED_AT_NS.to_string(),
-                PropValue::U64(0),
+                "damage_count".to_string(),
+                PropValue::U64(count as u64),
+            ),
+            (
+                "damage_rects".to_string(),
+                PropValue::Blob(packed_rects),
             ),
         ];
         let _ = update_props(req_id, &updates);

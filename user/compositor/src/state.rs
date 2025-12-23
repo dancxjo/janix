@@ -147,7 +147,7 @@ fn prepare_background_canvas(compositor: &mut Compositor) {
 
     primitives::draw_tiled_image(
         pixels.as_mut_ptr(),
-        stride_pixels,
+        stride_pixels * 4, // Pass bytes, as draw_tiled_image expects bytes and divides by 4
         width,
         height,
         bg.ptr,
@@ -300,55 +300,53 @@ pub fn tick_once(compositor: &mut Compositor) {
     // We must consider BOTH current frame damage and previous frame damage
     // because we are swapping buffers. The back buffer contains state from N-2.
     // We need to clear artifacts from N-1 (previous_damage) and draw N (current damage).
-    let combined_damage_empty =
-        compositor.damage.is_empty() && compositor.previous_damage.is_empty();
-
-    let clip: Option<crate::widget_layout::Rect> = if combined_damage_empty {
-        // No damage, do not render.
-        // But we still need to swap buffers if we rendered previously?
-        // Actually if nothing changed, we might not need to do anything.
-        // However, strictly speaking, double buffering means we might need to copy
-        // front to back or re-render.
-        // For simplicity: if no damage, skip render.
-        None
+    
+    // Union current damage
+    let current_union = calc_damage_union(&compositor.damage);
+    
+    // Union with previous damage (for double buffering consistency)
+    let render_clip_tuple = if let Some((cx, cy, cw, ch)) = current_union {
+         if let Some((px, py, pw, ph)) = calc_damage_union(&compositor.previous_damage) {
+             let min_x = cx.min(px);
+             let min_y = cy.min(py);
+             let max_x = (cx + cw).max(px + pw);
+             let max_y = (cy + ch).max(py + ph);
+             Some((min_x, min_y, max_x - min_x, max_y - min_y))
+         } else {
+             Some((cx, cy, cw, ch))
+         }
     } else {
-        let mut min_x = i32::MAX;
-        let mut min_y = i32::MAX;
-        let mut max_x = i32::MIN;
-        let mut max_y = i32::MIN;
-
-        // Iterate over BOTH current and previous damage
-        for r in compositor
-            .damage
-            .iter()
-            .chain(compositor.previous_damage.iter())
-        {
-            min_x = min_x.min(r.x);
-            min_y = min_y.min(r.y);
-            max_x = max_x.max(r.x + r.w as i32);
-            max_y = max_y.max(r.y + r.h as i32);
-        }
-
-        // Clamp to screen
-        let fb_w = compositor.fb.info.width as i32;
-        let fb_h = compositor.fb.info.height as i32;
-
-        min_x = min_x.max(0);
-        min_y = min_y.max(0);
-        max_x = max_x.min(fb_w);
-        max_y = max_y.max(fb_h);
-
-        if max_x > min_x && max_y > min_y {
-            Some(crate::widget_layout::Rect::new(
-                min_x,
-                min_y,
-                (max_x - min_x) as u32,
-                (max_y - min_y) as u32,
-            ))
-        } else {
-            None
-        }
+         // Even if current damage is empty, if previous damage exists, we might need to repair the back buffer?
+         // If we DON'T render, we DON'T swap. But to enable animations that STOP, we just stop swapping.
+         // So if no new damage, we don't present?
+         // BUT if we have pending "previous damage", that means the current back buffer (which was front last time)
+         // might be dirty relative to what we want to show?
+         // Actually, if we don't swap, we show the Front Buffer which is correct (Frame N-1).
+         // So we only need to render if we have NEW damage.
+         None
     };
+
+    let clip: Option<crate::widget_layout::Rect> = render_clip_tuple.map(|(x, y, w, h)| {
+         let fb_w = compositor.fb.info.width as i32;
+         let fb_h = compositor.fb.info.height as i32;
+
+         let min_x = x.max(0);
+         let min_y = y.max(0);
+         let max_x = (x + w).min(fb_w);
+         let max_y = (y + h).min(fb_h);
+
+         if max_x > min_x && max_y > min_y {
+             crate::widget_layout::Rect::new(
+                 min_x,
+                 min_y,
+                 (max_x - min_x) as u32,
+                 (max_y - min_y) as u32,
+             )
+         } else {
+             // Zero area clip, effectively None/Empty
+             crate::widget_layout::Rect::new(0, 0, 0, 0)
+         }
+    }).filter(|r| r.w > 0 && r.h > 0);
 
     if let Some(clip_rect) = clip {
         let ops = build_display_list(
@@ -360,19 +358,47 @@ pub fn tick_once(compositor: &mut Compositor) {
             &widget_map,
         );
         render_display_list(compositor, &ops, Some(clip_rect));
+        
+        // Present
+        if compositor.frame_counter % 60 == 0 {
+             /*
+             println!(
+                 "compositor: requesting present for frame {}",
+                 compositor.frame_counter + 1
+             );
+             */
+        }
+        compositor.present_frame();
+        
+        // Rotate damage history
+        compositor.previous_damage = compositor.damage.clone();
+        compositor.damage.clear();
+    } else {
+        // No damage, no render, no present.
+        // Sleep a bit?
     }
+}
 
-    // Rotate damage history
-    compositor.previous_damage = compositor.damage.clone();
-    compositor.damage.clear();
-
-    if compositor.frame_counter % 60 == 0 {
-        println!(
-            "compositor: requesting present for frame {}",
-            compositor.frame_counter + 1
-        );
+fn calc_damage_union(damage: &[crate::widget_layout::Rect]) -> Option<(i32, i32, i32, i32)> {
+    if damage.is_empty() { return None; }
+    let mut u_x = 0;
+    let mut u_y = 0;
+    let mut u_w = 0;
+    let mut u_h = 0;
+    let mut first = true;
+    for rect in damage {
+        if first {
+            u_x = rect.x; u_y = rect.y; u_w = rect.w as i32; u_h = rect.h as i32;
+            first = false;
+        } else {
+            let min_x = u_x.min(rect.x);
+            let min_y = u_y.min(rect.y);
+            let max_x = (u_x + u_w).max(rect.x + rect.w as i32);
+            let max_y = (u_y + u_h).max(rect.y + rect.h as i32);
+            u_x = min_x; u_y = min_y; u_w = max_x - min_x; u_h = max_y - min_y;
+        }
     }
-    compositor.present_frame();
+    Some((u_x, u_y, u_w, u_h))
 }
 
 fn run_widget_pass(

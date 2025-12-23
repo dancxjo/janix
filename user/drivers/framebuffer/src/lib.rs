@@ -33,6 +33,12 @@ pub struct FramebufferDriver {
     back_buffer: SharedBufferView,
     scanout_buffer: SharedBufferView,
     active_buffer_index: i64,
+    // Instrumentation
+    stat_frames: u64,
+    stat_damage_rects: u64,
+    stat_damage_pixels: u64,
+    stat_bytes_copied: u64,
+    last_stat_report_ns: u64,
 }
 
 impl FramebufferDriver {
@@ -148,6 +154,11 @@ impl FramebufferDriver {
             back_buffer,
             scanout_buffer,
             active_buffer_index: 0,
+            stat_frames: 0,
+            stat_damage_rects: 0,
+            stat_damage_pixels: 0,
+            stat_bytes_copied: 0,
+            last_stat_report_ns: Instant::now().t_ns,
         })
     }
 
@@ -163,6 +174,8 @@ impl FramebufferDriver {
             requested_at_ns: Instant::now().t_ns,
             presented_at_ns: None,
             completed: false,
+            damage_count: 0,
+            damage_rects: alloc::vec::Vec::new(),
         };
         let id = create_thing(&request).ok_or(SysError::Unexpected)?;
         Ok(DisplayPresentRequest { id, ..request })
@@ -175,6 +188,24 @@ impl FramebufferDriver {
     }
 
     fn tick(&mut self) -> u64 {
+        let now_ns = Instant::now().t_ns;
+        if now_ns.saturating_sub(self.last_stat_report_ns) >= 1_000_000_000 {
+            if self.stat_frames > 0 {
+                println!(
+                    "framebuffer_driver: {} fps, {} rects/frame, {} px/frame, {} MB/s",
+                    self.stat_frames,
+                    self.stat_damage_rects / self.stat_frames,
+                    self.stat_damage_pixels / self.stat_frames,
+                    (self.stat_bytes_copied / 1024 / 1024) * (1_000_000_000 / now_ns.saturating_sub(self.last_stat_report_ns))
+                );
+            }
+            self.stat_frames = 0;
+            self.stat_damage_rects = 0;
+            self.stat_damage_pixels = 0;
+            self.stat_bytes_copied = 0;
+            self.last_stat_report_ns = now_ns;
+        }
+
         let power_state = self.sync_framebuffer_state();
         if power_state != DisplayPowerState::On {
             return self.refresh_interval_ns.max(RETRY_INTERVAL_NS);
@@ -230,11 +261,37 @@ impl FramebufferDriver {
             return;
         }
 
+        /*
         println!(
             "framebuffer_driver: presenting frame {}",
             request.frame_index
         );
-        self.blit_front_buffer();
+        */
+
+        let mut rects = alloc::vec::Vec::new();
+        if request.damage_count > 0 && !request.damage_rects.is_empty() {
+             let bytes = &request.damage_rects;
+             // Each rect is 8 bytes: x(u16), y(u16), w(u16), h(u16)
+             let count = bytes.len() / 8;
+             let limit = count.min(64).min(request.damage_count as usize);
+
+             for i in 0..limit {
+                 let offset = i * 8;
+                 let x = u16::from_le_bytes([bytes[offset], bytes[offset+1]]);
+                 let y = u16::from_le_bytes([bytes[offset+2], bytes[offset+3]]);
+                 let w = u16::from_le_bytes([bytes[offset+4], bytes[offset+5]]);
+                 let h = u16::from_le_bytes([bytes[offset+6], bytes[offset+7]]);
+                 rects.push(Rect { x: x as u32, y: y as u32, w: w as u32, h: h as u32 });
+             }
+             self.stat_damage_rects += limit as u64;
+        } else {
+             // 0 or invalid means full redraw
+             rects.push(Rect { x: 0, y: 0, w: self.width, h: self.height });
+             self.stat_damage_rects += 1;
+        }
+
+        self.blit_front_buffer(&rects);
+        self.stat_frames += 1;
 
         self.frame_watch = Some(request.frame_index);
         self.frames_presented = self.frames_presented.saturating_add(1);
@@ -300,7 +357,7 @@ impl FramebufferDriver {
         })
     }
 
-    fn blit_front_buffer(&mut self) {
+    fn blit_front_buffer(&mut self, damage: &[Rect]) {
         if let Some(display) = load_thing::<DisplayThing>(self.display_id) {
             let active_index = Self::clamp_active_buffer_index(display.active_buffer_index);
             self.active_buffer_index = active_index;
@@ -309,14 +366,34 @@ impl FramebufferDriver {
             } else {
                 &self.back_buffer
             };
-            let bytes = (source.info.stride as usize).saturating_mul(source.info.height as usize);
-            let bytes =
-                core::cmp::min(bytes, core::cmp::min(source.size, self.scanout_buffer.size));
-            if bytes == 0 {
-                return;
-            }
-            unsafe {
-                ptr::copy_nonoverlapping(source.ptr, self.scanout_buffer.ptr, bytes);
+
+            let src_ptr = source.ptr;
+            let dst_ptr = self.scanout_buffer.ptr;
+            let stride = source.info.stride as usize;
+            let bytes_per_pixel = 4usize; // Assume 32bpp for copy
+
+            for rect in damage {
+                let x = rect.x.min(self.width) as usize;
+                let y = rect.y.min(self.height) as usize;
+                let w = rect.w.min(self.width - x as u32) as usize;
+                let h = rect.h.min(self.height - y as u32) as usize;
+
+                if w == 0 || h == 0 { continue; }
+
+                let row_bytes = w * bytes_per_pixel;
+                self.stat_damage_pixels += (w * h) as u64;
+                self.stat_bytes_copied += (row_bytes * h) as u64;
+
+                for row in 0..h {
+                    let offset = (y + row) * stride + (x * bytes_per_pixel);
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            src_ptr.add(offset),
+                            dst_ptr.add(offset),
+                            row_bytes
+                        );
+                    }
+                }
             }
         }
     }
@@ -357,6 +434,13 @@ struct SharedBufferView {
     info: SharedBufferInfo,
     ptr: *mut u8,
     size: usize,
+}
+
+struct Rect {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
 }
 
 fn primary_display_descriptor() -> Result<DisplayDescriptor, SysError> {

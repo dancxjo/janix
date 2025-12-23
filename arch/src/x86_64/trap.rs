@@ -597,7 +597,7 @@ fn timer_tick(frame: &mut TrapFrame) {
 
             if let Some(next) = sched.choose_next_thread(now) {
                 let kind_char = if matches!(next.kind, kernel::sched::types::ThreadKind::Kernel) { 'K' } else { 'U' };
-                kernel::println!("TRAP_SWITCH: tid={} kind={} token={:?}", next.tid.0, kind_char, next.address_space_token);
+                // kernel::println!("TRAP_SWITCH: tid={} kind={} token={:?}", next.tid.0, kind_char, next.address_space_token);
                 sched.commit_switch(old_tid, Some(next.tid), now);
                 drop(sched); // Unlock before switch
 

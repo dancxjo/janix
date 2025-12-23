@@ -631,12 +631,12 @@ impl Scheduler {
                      break;
                  }
              }
-             crate::log(&alloc::format!(
-                 "Sched Heartbeat: current={} run_q={} act_state={} act_prio={} max={}ns avg={}ns",
-                 if let Some(c) = self.current { c.0 } else { 0 },
-                 run_queue_len, actualizer_state, actualizer_prio,
-                 self.max_tick_time_ns, self.avg_tick_time_ns
-             ));
+            //  crate::log(&alloc::format!(
+                //  "Sched Heartbeat: current={} run_q={} act_state={} act_prio={} max={}ns avg={}ns",
+                //  if let Some(c) = self.current { c.0 } else { 0 },
+                //  run_queue_len, actualizer_state, actualizer_prio,
+                //  self.max_tick_time_ns, self.avg_tick_time_ns
+            //  ));
         }
 
         let thread = self.thread_mut(tid).expect("Scheduled thread missing backing state");
@@ -771,16 +771,16 @@ impl Scheduler {
             String::from("none")
         };
 
-        crate::log(&alloc::format!(
-            "Sched Heartbeat: current={} run_q={} idle_share={} act_share={} switches={} max_tick={}ns avg_tick={}ns",
-            current_str,
-            run_q,
-            idle_share,
-            actualizer_share,
-            self.total_switches,
-            self.max_tick_time_ns,
-            self.avg_tick_time_ns
-        ));
+        // crate::log(&alloc::format!(
+        //     "Sched Heartbeat: current={} run_q={} idle_share={} act_share={} switches={} max_tick={}ns avg_tick={}ns",
+        //     current_str,
+        //     run_q,
+        //     idle_share,
+        //     actualizer_share,
+        //     self.total_switches,
+        //     self.max_tick_time_ns,
+        //     self.avg_tick_time_ns
+        // ));
 
         if since_switch_ms > 50 {
             crate::log(&alloc::format!(

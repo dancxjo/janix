@@ -25,16 +25,18 @@ This document traces the path of a keypress from hardware interrupt to userland 
 *   **Implementation**: The driver implements a `KeyboardDecoder`.
 *   **Action**:
     *   **Phase 4.1 (Physical)**: Decodes Set 2 scancodes, handling E0 prefixes and break codes.
-    *   **Phase 4.2 (Events)**: Creates `KeyScanEvent` and `InputCharEvent` Things in the graph using `create_thing`.
-*   **Output**: Graph nodes representing input events (`KeyScanEvent`, `InputCharEvent`).
+    *   **Phase 4.2 (Stream)**: Writes decoded `KeyboardEntry` (scancode + utf32 + flags) to a Resident Memory Stream ("KeyboardStream") mapped by the compositor.
+    *   **Phase 4.3 (Events)**: Creates `KeyScanEvent` and `InputCharEvent` Things in the graph using `create_thing`.
+*   **Output**:
+    *   Resident Memory: Stream of `KeyboardEntry` structures.
+    *   Graph: Nodes representing input events (`KeyScanEvent`, `InputCharEvent`).
 
-## 5. Global Hotkey Intercept
-*   **Module**: `user/ps2_keyboard_driver` and `user/compositor`.
+## 5. Input Consumption
+*   **Module**: `user/compositor`.
 *   **Implementation**:
-    *   **Detection**: `ps2_keyboard_driver` detects function keys (F1-F12) during decoding.
-    *   **Emission**: It creates a `ModeSwitchEvent` Thing with the requested mode index.
-    *   **Handling**: `user/compositor/src/graph.rs` (`handle_mode_switches`) queries for `ModeSwitchEvent` nodes.
-*   **Action**: The compositor reads the latest `ModeSwitchEvent` and updates the system's `active_mode`. This happens *globaly* before individual window event dispatch.
+    *   **Events**: The compositor queries the graph for `KeyScanEvent` and `InputCharEvent` things.
+    *   **Stream**: The compositor maps the "KeyboardStream" resident memory to read high-throughput events efficiently.
+*   **Action**: The compositor dispatches these events to the active window or handles global shortcuts (like Mode Switching).
 
 ## 6. Focus & Routing
 *   **Module**: `user/compositor/src/input.rs` and `user/compositor/src/model.rs`.
@@ -42,5 +44,5 @@ This document traces the path of a keypress from hardware interrupt to userland 
 *   **Action**: The compositor determines the active window based on layout and mouse interaction. It updates `Window` properties (`active`, `z_index`) to reflect focus. Application input routing is currently implicit via the `Window` property state, or apps subscribe to input events directly (NOTE: This potentially broadcasts all key events to all listeners, relying on "Focus" property for filtering).
 
 ## Known Gaps / Issues
-1.  **Mode Index Corruption**: Debugging reveals `ModeSwitchEvent` created with index 12 (Console) is read by the compositor as index 0. This suggests a property serialization/deserialization mismatch in `ModeSwitchEvent::to_props` / `from_props`.
-2.  **Broadcast vs Targeted**: Input events are currently broadcast to the graph. Secure input routing will eventually require targeted piping to the focused window's queue rather than global graph visibility.
+1.  **Broadcast vs Targeted**: Input events are currently broadcast to the graph or available in a global stream. Secure input routing will eventually require targeted piping to the focused window's queue rather than global graph visibility.
+2.  **Latency**: Polling `syscall_dev_read` introduces latency compared to interrupt-driven userspace notifications (planned).

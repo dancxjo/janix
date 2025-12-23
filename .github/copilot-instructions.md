@@ -12,12 +12,11 @@ This is a Cargo workspace with the following crates:
 - **boot/** - Limine bootloader entry point and kernel initialization
 - **kernel/** - Core kernel functionality including graph database subsystem, transaction management, and kernel logging
 - **abi/** - Shared ABI definitions with type definitions (ProcessId, TransactionId, NodeId) and KernelRequest/KernelResponse enums
-- **runtime/** - Userland runtime with Sys trait for system calls and HostedSys stub implementation for testing
+- **thing_models/** - Shared system ontology (Kinds, Properties, Predicates) used by both kernel and userland.
 
 ### Userland Components (std)
 - **thing_os/** - Userland standard library with `println()`, `graph_query()`, and transaction management functions
-- **host_harness/** - Host-side testing harness that displays simulated kernel logs
-- **user_app_hello/** - Example userland application demonstrating thing_os APIs
+- **user/** - Userland applications and drivers (compositor, drivers, init, etc.)
 
 ## Build System
 
@@ -32,13 +31,7 @@ This is a Cargo workspace with the following crates:
 
 #### Workspace Components (non-kernel)
 ```bash
-# Build and run host harness
-cargo run -p host_harness
-
-# Build and run example userland application
-cargo run -p user_app_hello
-
-# Build all workspace members except boot
+# Build all workspace members except boot (which is no_std kernel)
 cargo build --workspace --exclude boot
 ```
 
@@ -56,7 +49,6 @@ make all-hdd
 # Build and run in QEMU
 make run        # ISO with UEFI
 make run-hdd    # HDD with UEFI
-make run-bios   # ISO with BIOS
 ```
 
 ### Architecture Support
@@ -75,8 +67,8 @@ Note: Additional architectures need to be enabled in boot/rust-toolchain.toml
 - Use nightly Rust features as needed for OS development
 
 ### no_std vs std
-- **no_std crates**: boot, kernel, abi, runtime
-- **std crates**: thing_os, host_harness, user_app_hello
+- **no_std crates**: boot, kernel, abi, thing_models
+- **std crates**: thing_os, user/*
 
 Always maintain the no_std compatibility for kernel and low-level crates.
 
@@ -88,37 +80,39 @@ Always maintain the no_std compatibility for kernel and low-level crates.
 ### Code Organization
 - Keep ABI definitions in the `abi` crate to be shared between kernel and userland
 - Separate kernel logic (kernel) from boot logic (boot)
-- Keep userland runtime (`runtime`) independent of the standard library (`thing_os`)
+- Keep userland runtime (`thing_os`) independent of the kernel implementation details.
 
 ### Host/Kernel Parity
-- **Sync Requirement**: The `host_harness` (via `HostedSys`) and the kernel (via `KernelSys`) must always stay in sync.
-- **Capability Parity**: Anything the kernel can do, the host harness must be able to do, and vice versa.
-- **Verification**: When adding a new syscall or kernel feature, ensure it is implemented and tested in both environments.
+- **Sync Requirement**: Tests should run on both host (unit tests) and target (smoke tests) where possible.
+- **Verification**: When adding a new syscall or kernel feature, ensure it is implemented and tested in both environments if possible (using mocks in `thing_os` for host tests).
 
 ## Testing Strategy
 
 ### Workspace Testing
 ```bash
-# Test all workspace members (excluding boot which is no_std kernel code)
-cargo test --workspace --exclude boot
+# Test all workspace members (excluding boot which is no_std kernel code and user apps which are target-specific)
+make test
 ```
 
-### Host Harness Testing
-The host_harness crate provides a way to test kernel interactions in a hosted environment without needing to build and run the full kernel.
+### Smoke Tests
+Smoke tests run the full OS in QEMU and verify boot milestones.
+```bash
+make smoke
+```
 
 ## Common Tasks
 
 ### Adding a New Userland Application
-1. Create a new crate in the workspace root
+1. Create a new crate in the `user/` directory
 2. Add it to `Cargo.toml` workspace members
 3. Depend on `thing_os` for standard APIs
-4. Follow the pattern in `user_app_hello`
+4. Follow the pattern in `user/init` or `user/clock`
 
 ### Modifying Kernel APIs
 1. Update types/enums in `abi` crate
 2. Implement changes in `kernel`
 3. Update `thing_os` to use new APIs
-4. Update documentation in thing_os
+4. Update documentation in `docs/` and `thing_os`
 
 ### Adding Architecture Support
 1. Add target to `rust-toolchain.toml`
@@ -131,7 +125,7 @@ The host_harness crate provides a way to test kernel interactions in a hosted en
 - Graph database is a core feature - consider it when making kernel changes
 - Transaction management is integral to the kernel design
 - Reminder: keep ABI types data-only (avoid Rust trait APIs or `&'static str` fields in request/response structs).
-- Always test changes with both cargo commands (for userland) and make commands (for kernel)
+- Always test changes with both cargo commands (for userland/unit tests) and make commands (for kernel/smoke tests)
 - QEMU targets support both UEFI and BIOS boot modes
 
 ## Debugging

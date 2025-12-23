@@ -117,18 +117,9 @@ User applications define their own Thing types with descriptions:
 
 - **AutoCounter**: "An automatically incrementing counter with active/inactive state"
 - **HeartbeatThing**: "A heartbeat counter that tracks periodic application activity"
-- **DemoState**: "Shared state for demonstration applications tracking hello and heartbeat ticks"
 
 ## Testing
 
 Tests are provided to verify the description functionality:
 
 - `kernel/tests/description_test.rs` - Tests for schema descriptions
-- `user/hello/tests/description_test.rs` - Tests for Thing trait descriptions
-
-Run the tests with:
-
-```bash
-cargo test --package kernel --test description_test
-cargo test --package hello --test description_test
-```

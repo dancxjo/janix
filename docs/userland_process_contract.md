@@ -17,10 +17,10 @@ graph LR
 
 ## 2. Entry Point
 
-ThingOS user programs are typically ELF 64-bit binaries (x86_64). The kernel loads the ELF and jumps to the entry point defined in the ELF header.
+ThingOS user programs are typically ELF 64-bit binaries. The kernel loads the ELF and jumps to the entry point defined in the ELF header.
 
 ### Rust Runtime Environment
-For Rust programs using `thing_os_lib` (the standard library shim), the entry point is `_start`, which initializes the runtime (allocator, logging) and then calls `main()`.
+For Rust programs using `thing_os` (the standard library shim), the entry point is `_start`, which initializes the runtime (allocator, logging, TLS) and then calls `main()`.
 
 ```rust
 #[no_mangle]
@@ -39,15 +39,15 @@ Currently, programs do not receive dynamic arguments at startup. Configuration s
 ## 4. System Calls & ABI
 
 Communication with the kernel happens primarily through:
-1.  **System Calls**: Invoked via the `syscall` instruction (x86_64). The ABI is defined in `abi/src/syscalls.rs`.
+1.  **System Calls**: Invoked via the `syscall` instruction (x86_64) or `svc` (AArch64). The ABI is defined in `abi/src/syscalls.rs`.
 2.  **Kernel Requests**: Higher-level operations (like graph queries) are sent via messaging or specific system call structures defined in `abi/src/lib.rs`.
 
 ## 5. Scheduling Expectations
 
-ThingOS uses a priority-based round-robin scheduler.
+ThingOS uses a priority-based scheduler driven by the system graph.
 - **Preemption**: Threads can be preempted.
-- **Yielding**: Cooperative yielding is encouraged for polling loops.
-- **Blocking**: Threads should block on events (message reception, timeouts) rather than spinning, to save CPU.
+- **Yielding**: Cooperative yielding (`SYSCALL_YIELD`) is encouraged for polling loops.
+- **Blocking**: Threads should block on events or sleep (`SYSCALL_SLEEP_FOR_NS`) rather than spinning.
 
 ## 6. Exit Semantics
 
@@ -58,7 +58,7 @@ A process can terminate in three ways:
 
 Upon termination:
 - All threads are stopped.
-- Memory and resources are reclaimed (eventually).
+- Memory and resources are reclaimed.
 - A `ProcessExitEvent` Thing is created in the graph to record the event.
 
 ```mermaid
@@ -82,7 +82,9 @@ To manage service availability, ThingOS implements a **Respawn Policy** attached
 - **`OnCrash`**: The program is restarted *only* if it exits abnormally (Fault or Killed). Normal exit is treated as a clean shutdown.
 
 ### Mechanism
-When a process exits, the kernel checks the linked `BootProgram`'s `respawn_policy`. If the condition is met, a new process is spawned. The new process will be linked to the old one via `LINK_RESPAWNED_FROM` (Feature Planned).
+When a process exits (`emit_process_exit_event` in `kernel/src/sched/mod.rs`), the kernel checks the linked `BootProgram`'s `respawn_policy`. If the condition is met, a request is pushed to the `WorkQueue` to spawn a new process.
+
+The new process will be linked to the old one via `LINK_RESPAWNED_FROM` (Feature Planned).
 
 > [!IMPORTANT]
-> The kernel attempts to prevent tight restart loops using a backoff timer (Implementation Pending).
+> The kernel attempts to prevent tight restart loops but a full backoff implementation is pending.

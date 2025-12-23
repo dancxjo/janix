@@ -1,5 +1,5 @@
 [package]
-name = "debug_thread"
+name = "taskman"
 version = "0.1.0"
 edition = "2024"
 

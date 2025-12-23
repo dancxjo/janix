@@ -19,7 +19,7 @@ fn main() {
 
     launch_program("clock");
     launch_program("debug_alloc");
-    launch_program("debug_thread");
+    launch_program("taskman");
     launch_program("ps2_keyboard_driver");
     launch_program("debug_input_logger");
     launch_program("debug_input_events");

@@ -127,7 +127,7 @@ pub fn build_cursor_sprites() -> CursorSprites {
 
 pub fn raster_draw_cursor(
     buffer: *mut u32,
-    stride: u32,
+    stride_bytes: u32,
     fb_width: u32,
     fb_height: u32,
     origin: (i32, i32),
@@ -159,10 +159,11 @@ pub fn raster_draw_cursor(
         let sprite_offset = sy * sprite_width + start_sx;
 
         let sprite_row = &sprite_data[sprite_offset..sprite_offset + width_to_draw];
-        let dst_row_start = (y as usize) * (stride as usize) + (start_x as usize);
 
         unsafe {
-            let dst_ptr = buffer.add(dst_row_start);
+            // Use byte-based stride arithmetic
+            let dst_row_ptr = (buffer as *mut u8).add((y as usize) * (stride_bytes as usize)) as *mut u32;
+            let dst_ptr = dst_row_ptr.add(start_x as usize);
 
             for (i, &px) in sprite_row.iter().enumerate() {
                 let alpha = (px >> 24) & 0xFF;
@@ -207,7 +208,7 @@ mod tests {
     fn raster_draw_cursor_blends_correctly() {
         // White background
         let mut buffer = vec![0xFFFFFFFF; 100];
-        let stride = 10;
+        let stride_bytes = 10 * 4; // 10 pixels stride
         let w = 10;
         let h = 10;
 
@@ -223,9 +224,9 @@ mod tests {
             data: sprite_data,
         };
 
-        raster_draw_cursor(buffer.as_mut_ptr(), stride, w, h, (5, 5), &sprite, (0, 0));
+        raster_draw_cursor(buffer.as_mut_ptr(), stride_bytes, w, h, (5, 5), &sprite, (0, 0));
 
-        let idx = 5 * stride + 5;
+        let idx = 5 * 10 + 5; // Stride is 10 pixels (40 bytes)
         let px = buffer[idx as usize];
         let r = (px >> 16) & 0xFF;
         let g = (px >> 8) & 0xFF;

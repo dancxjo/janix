@@ -29,7 +29,7 @@ impl FontEngine {
 /// Draw UTF-8 text using fontdue with simple wrapping and newline handling.
 pub fn draw_text(
     buffer: *mut u32,
-    stride: u32,
+    stride_bytes: u32,
     fb_width: u32,
     fb_height: u32,
     x: i32,
@@ -96,7 +96,7 @@ pub fn draw_text(
 
         blit_glyph_bitmap(
             buffer,
-            stride,
+            stride_bytes,
             fb_width,
             fb_height,
             glyph_x,
@@ -154,7 +154,7 @@ mod tests {
 
 fn blit_glyph_bitmap(
     buffer: *mut u32,
-    stride: u32,
+    stride_bytes: u32,
     fb_width: u32,
     fb_height: u32,
     x: i32,
@@ -168,7 +168,6 @@ fn blit_glyph_bitmap(
         return;
     }
 
-    let stride_pixels = (stride / 4) as i32;
     for row in 0..glyph_height {
         for col in 0..glyph_width {
             let idx = (row * glyph_width + col) as usize;
@@ -182,7 +181,7 @@ fn blit_glyph_bitmap(
             unsafe {
                 set_pixel_clamped(
                     buffer,
-                    stride_pixels,
+                    stride_bytes,
                     fb_width as i32,
                     fb_height as i32,
                     px,

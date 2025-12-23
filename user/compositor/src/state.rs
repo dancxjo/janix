@@ -33,7 +33,8 @@ fn draw_console(compositor: &mut Compositor) {
         let dest_y = (fb_h as i32 - h as i32) / 2;
 
         let dest = compositor.fb.ptr as *mut u32;
-        let dest_stride_px = (compositor.fb.info.stride / 4) as i32;
+        // Use byte stride arithmetic
+        let dest_stride_bytes = compositor.fb.info.stride as usize;
         let src_stride_px = (cb.stride / 4) as i32;
 
         // Simple blit
@@ -44,9 +45,10 @@ fn draw_console(compositor: &mut Compositor) {
             }
 
             let row_src = unsafe { (ptr as *const u32).add((y as i32 * src_stride_px) as usize) };
-            let row_dest = unsafe { dest.add((row_dest_y * dest_stride_px) as usize) };
 
             unsafe {
+                let row_dest = (dest as *mut u8).add(row_dest_y as usize * dest_stride_bytes) as *mut u32;
+
                 // Bounds check horizontal
                 let start_x = 0.max(-dest_x);
                 let end_x = (w as i32).min(fb_w as i32 - dest_x);
@@ -235,14 +237,18 @@ fn prepare_background_canvas(compositor: &mut Compositor) {
 
     let width = compositor.fb.info.width;
     let height = compositor.fb.info.height;
-    let stride_pixels = (compositor.fb.info.stride / 4) as u32;
+
+    // Use tight packing for offscreen canvas
+    let stride_pixels = width;
+    let stride_bytes = stride_pixels * 4;
+
     let total_pixels = stride_pixels.saturating_mul(height);
     let mut pixels = Vec::with_capacity(total_pixels as usize);
     pixels.resize(total_pixels as usize, 0);
 
     primitives::draw_tiled_image(
         pixels.as_mut_ptr(),
-        stride_pixels * 4, // Pass bytes, as draw_tiled_image expects bytes and divides by 4
+        stride_bytes,
         width,
         height,
         bg.ptr,
@@ -259,7 +265,7 @@ fn prepare_background_canvas(compositor: &mut Compositor) {
         pixels,
         width,
         height,
-        stride_pixels,
+        stride_pixels, // This is now tightly packed width
     });
 }
 

@@ -64,7 +64,7 @@ pub enum DrawOp {
         ptr: usize,
         w: i32,
         h: i32,
-        stride: u32,
+        stride_bytes: u32, // Changed from stride to stride_bytes
         format: abi::PixelFormat,
         x: i32,
         y: i32,
@@ -99,7 +99,7 @@ pub fn build_display_list(
             ptr: canvas.as_ptr() as usize,
             w: canvas.width as i32,
             h: canvas.height as i32,
-            stride: canvas.stride_bytes(),
+            stride_bytes: canvas.stride_bytes(),
             format: abi::PixelFormat::Bgra8888,
             x: 0,
             y: 0,
@@ -201,7 +201,7 @@ pub fn build_display_list(
                     ptr: mapped.ptr as usize,
                     w: mapped.width as i32,
                     h: mapped.height as i32,
-                    stride: mapped.stride,
+                    stride_bytes: mapped.stride,
                     format: mapped.pixel_format,
                     x: content_x,
                     y: content_y,
@@ -234,7 +234,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
     let width = comp.fb.info.width;
     let height = comp.fb.info.height;
     // Primitives expect stride in BYTES.
-    let stride = comp.fb.info.stride as u32;
+    let stride_bytes = comp.fb.info.stride as u32;
 
     let clip_tuple = clip.map(|r| (r.x, r.y, r.w as i32, r.h as i32));
 
@@ -242,7 +242,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
         match op {
             DrawOp::Clear { color } => primitives::fill_rect(
                 buffer,
-                stride,
+                stride_bytes,
                 width,
                 height,
                 0,
@@ -262,7 +262,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 force_opaque,
             } => primitives::draw_tiled_image(
                 buffer,
-                stride,
+                stride_bytes,
                 width,
                 height,
                 *ptr as *const u8,
@@ -275,28 +275,27 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 *force_opaque,
             ),
             DrawOp::Rect { x, y, w, h, color } => primitives::fill_rect(
-                buffer, stride, width, height, *x, *y, *w, *h, *color, clip_tuple,
+                buffer, stride_bytes, width, height, *x, *y, *w, *h, *color, clip_tuple,
             ),
             DrawOp::Blit {
                 ptr,
                 w,
                 h,
-                stride,
+                stride_bytes: src_stride,
                 format,
                 x,
                 y,
             } => {
                 primitives::blit_image(
                     buffer,
-                    // Dest stride (u32 pixels)
-                    (comp.fb.info.stride / 4) as u32,
+                    stride_bytes, // Dest stride (bytes)
                     width,
                     height,
                     // Source
                     *ptr as *const u8,
                     *w,
                     *h,
-                    *stride, // Source stride (bytes)
+                    *src_stride, // Source stride (bytes)
                     *format,
                     *x,
                     *y,
@@ -312,7 +311,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 title,
                 ..
             } => draw_window_frame(
-                buffer, stride, width, height, *x, *y, *w, *h, *active, title, clip_tuple,
+                buffer, stride_bytes, width, height, *x, *y, *w, *h, *active, title, clip_tuple,
             ),
             DrawOp::WindowContentText {
                 x,
@@ -322,14 +321,14 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 text,
                 ..
             } => text::draw_text(
-                buffer, stride, width, height, *x, *y, *max_w, *max_h, text, TEXT_COLOR,
+                buffer, stride_bytes, width, height, *x, *y, *max_w, *max_h, text, TEXT_COLOR,
             ),
             DrawOp::Cursor {
                 origin,
                 sprite,
                 hotspot,
             } => {
-                cursor::raster_draw_cursor(buffer, stride, width, height, *origin, sprite, *hotspot)
+                cursor::raster_draw_cursor(buffer, stride_bytes, width, height, *origin, sprite, *hotspot)
             }
             DrawOp::Text {
                 x,
@@ -339,7 +338,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
                 text,
                 color,
             } => text::draw_text(
-                buffer, stride, width, height, *x, *y, *max_w, *max_h, text, *color,
+                buffer, stride_bytes, width, height, *x, *y, *max_w, *max_h, text, *color,
             ),
         }
     }
@@ -347,7 +346,7 @@ pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<Layou
 
 fn draw_window_frame(
     buffer: *mut u32,
-    stride: u32,
+    stride_bytes: u32,
     fb_width: u32,
     fb_height: u32,
     x: i32,
@@ -366,7 +365,7 @@ fn draw_window_frame(
 
     primitives::fill_rect(
         buffer,
-        stride,
+        stride_bytes,
         fb_width,
         fb_height,
         x,
@@ -379,7 +378,7 @@ fn draw_window_frame(
 
     primitives::fill_rect(
         buffer,
-        stride,
+        stride_bytes,
         fb_width,
         fb_height,
         x + FRAME_THICKNESS,
@@ -398,7 +397,7 @@ fn draw_window_frame(
 
     primitives::fill_rect(
         buffer,
-        stride,
+        stride_bytes,
         fb_width,
         fb_height,
         x + FRAME_THICKNESS,
@@ -411,7 +410,7 @@ fn draw_window_frame(
 
     text::draw_text(
         buffer,
-        stride,
+        stride_bytes,
         fb_width,
         fb_height,
         x + FRAME_THICKNESS + 6,

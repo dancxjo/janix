@@ -186,6 +186,8 @@ impl GraphStore {
                 } else {
                     node.props.push((key, val));
                 }
+                // Emit event
+                super::watch::emit_prop_set(id, key);
             }
             true
         } else {
@@ -226,6 +228,8 @@ impl GraphStore {
     pub fn add_link(&mut self, src: ThingId, dst: ThingId, pred: Predicate) -> bool {
         if let Some(node) = self.things.get_mut(&src) {
             node.links.push((pred, dst));
+            // Emit event
+            super::watch::emit_link_added(src, SymbolId(pred.0 as u32), dst);
             true
         } else {
             false
@@ -236,6 +240,8 @@ impl GraphStore {
         if let Some(node) = self.things.get_mut(&src) {
             if let Some(pos) = node.links.iter().position(|(p, d)| *p == pred && *d == dst) {
                 node.links.remove(pos);
+                // Emit event
+                super::watch::emit_link_removed(src, SymbolId(pred.0 as u32), dst);
                 return true;
             }
         }

@@ -55,6 +55,7 @@ pub mod ops;
 pub mod schema;
 pub mod sink;
 pub mod store;
+pub mod watch; // New module
 
 // Keep module-level constructor convenience
 #[derive(Clone, Copy, Default, Debug)]

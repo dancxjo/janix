@@ -128,8 +128,8 @@ pub fn commit_transaction(tx_id: abi::TransactionId) -> bool {
 
 /// Create a new Thing from a raw kind and property slice.
 pub fn user_create_thing(
-    kind: &'static str,
-    props: &'static [(PropKey, PropValue)],
+    kind: &str,
+    props: &[(PropKey, PropValue)],
 ) -> Result<ThingId, &'static str> {
     let kind_sym = sys_symbol_intern(kind);
     let mut wire_props = Vec::with_capacity(props.len());
@@ -165,7 +165,7 @@ pub fn user_create_thing(
 /// Update properties of an existing Thing using a property slice.
 pub fn user_update_thing(
     id: ThingId,
-    props: &'static [(PropKey, PropValue)],
+    props: &[(PropKey, PropValue)],
 ) -> Result<(), &'static str> {
     let mut wire_props = Vec::with_capacity(props.len());
 
@@ -605,3 +605,35 @@ pub mod mock;
 
 #[cfg(test)]
 mod lib_tests;
+
+// Watch Wrappers
+use abi::wire::graph::{WatchEvent, WatchSpec, WatchId};
+use abi::syscall_defs::{SYSCALL_WATCH_OPEN, SYSCALL_WATCH_NEXT, SYSCALL_WATCH_CLOSE};
+
+pub fn watch_open(spec: &WatchSpec) -> Option<WatchId> {
+    let ret = unsafe { match sys::raw_syscall(SYSCALL_WATCH_OPEN, spec as *const _ as u64, 0, 0, 0, 0, 0) {
+        u64::MAX => None,
+        val => Some(WatchId(val)),
+    }};
+    ret
+}
+
+pub fn watch_next(id: WatchId, out: &mut [WatchEvent]) -> Option<usize> {
+    let ret = unsafe { sys::raw_syscall(
+        SYSCALL_WATCH_NEXT, 
+        id.0, 
+        out.as_mut_ptr() as u64, 
+        (out.len() * core::mem::size_of::<WatchEvent>()) as u64, 
+        0, 0, 0
+    )};
+    if ret == u64::MAX {
+        None
+    } else {
+        Some(ret as usize)
+    }
+}
+
+pub fn watch_close(id: WatchId) -> bool {
+    let ret = unsafe { sys::raw_syscall(SYSCALL_WATCH_CLOSE, id.0, 0, 0, 0, 0, 0) };
+    ret == 0
+}

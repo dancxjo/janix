@@ -102,3 +102,7 @@ pub struct PciReadConfigArgs {
 pub struct PciReadConfigRet {
     pub value: u32,
 }
+
+pub const SYSCALL_WATCH_OPEN: u64 = 600;
+pub const SYSCALL_WATCH_NEXT: u64 = 601;
+pub const SYSCALL_WATCH_CLOSE: u64 = 602;

@@ -116,3 +116,61 @@ pub struct BatchUpdateReq {
     pub updates_ptr: UserPtr<BatchUpdateEntry>,
     pub updates_len: u64,
 }
+
+// Watch ABI
+
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct WatchId(pub u64);
+
+#[repr(u32)] // u32 for wire stability
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEventKind {
+    LinkAdded = 1,
+    LinkRemoved = 2,
+    PropSet = 3,
+    PropDel = 4,
+    Overflow = 5,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WatchEvent {
+    pub kind: WatchEventKind,
+    pub src_or_thing: crate::ThingId, // src for links, thing for props
+    pub pred_or_key: SymbolId,        // pred for links, key for props
+    pub dst_or_aux: u64,              // dst for links, 0 for props
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WatchFlags {
+    pub bits: u32,
+}
+
+impl WatchFlags {
+    pub const LINK_ADDED: u32 = 1 << 0;
+    pub const LINK_REMOVED: u32 = 1 << 1;
+    pub const PROP_SET: u32 = 1 << 2;
+    pub const PROP_DEL: u32 = 1 << 3;
+
+    pub fn contains(&self, other: u32) -> bool {
+        (self.bits & other) != 0
+    }
+}
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchSpecTag {
+    Link = 1,
+    Prop = 2,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WatchSpec {
+    pub tag: WatchSpecTag,
+    pub thing: crate::ThingId, // src for Link, thing for Prop
+    pub key: SymbolId,         // pred for Link, key for Prop
+    pub flags: WatchFlags,
+}

@@ -28,6 +28,7 @@ members = [
     "user/debug_input_logger",
     "user/debug_input_events",
     "user/init_debug",
+    "user/watch_test",
     "smoke_tests",
 ]
 

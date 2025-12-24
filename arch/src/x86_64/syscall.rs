@@ -2,10 +2,13 @@ extern crate alloc;
 
 use abi::syscall_defs::{
     SymbolId, SymbolInternReq, SymbolInternResp, SymbolResolveReq, SymbolResolveResp,
+    SYSCALL_WATCH_OPEN, SYSCALL_WATCH_NEXT, SYSCALL_WATCH_CLOSE,
 };
 use abi::syscalls::*;
 use abi::wire::common::UserSlice;
-use abi::wire::graph::{BatchUpdateEntry, WireProp, WirePropValue, WireValueTag};
+use abi::wire::graph::{
+    BatchUpdateEntry, WireProp, WirePropValue, WireValueTag, WatchSpec, WatchEvent, WatchId,
+};
 use abi::{MapFlags, ThingId};
 
 use alloc::boxed::Box;
@@ -778,6 +781,86 @@ macro_rules! dispatch_syscall {
             *nanos_ptr = nanos;
         }
         0
+    }};
+
+    (SYSCALL_WATCH_OPEN, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        if let Some(spec) = unsafe { user_ptr_val::<WatchSpec>($a1) } {
+            if let Some(pid) = kernel::sched::SCHEDULER.lock().current_process_id() {
+                let id = kernel::graph::watch::lock_registry().as_mut().unwrap().create_watch(pid, *spec);
+                id.0
+            } else {
+                u64::MAX
+            }
+        } else {
+            u64::MAX
+        }
+    }};
+
+    (SYSCALL_WATCH_NEXT, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        let watch_id = WatchId($a1);
+        let out_ptr = $a2;
+        let out_len_bytes = $a3;
+        let event_size = core::mem::size_of::<WatchEvent>() as u64;
+        let max_events = out_len_bytes / event_size;
+        
+        if max_events == 0 {
+             u64::MAX // Buffer too small
+        } else {
+            let mut guard = kernel::graph::watch::lock_registry();
+            let reg = guard.as_mut().unwrap();
+            if let Some(watch) = reg.watches.get_mut(&watch_id) {
+                if watch.queue.is_empty() {
+                    // Blocking logic
+                    if let Some(tid) = kernel::sched::SCHEDULER.lock().current_id() {
+                        watch.waiting_thread = Some(tid);
+                        drop(guard); // Unlock before switch
+                        
+                        let frame = $frame;
+                        frame.rip -= 2; // Rewind
+                        save_current_thread_context($frame, 0);
+                        kernel::sched::with_scheduler(|sched| {
+                            let _ = sched.mark_blocked(tid);
+                        });
+                        crate::user::schedule_next();
+                        0 
+                    } else {
+                         u64::MAX // Scheduler error
+                    }
+                } else {
+                    // Have events
+                    if let Some(out_slice) = unsafe { 
+                        let ptr = out_ptr as *mut WatchEvent;
+                        slice::from_raw_parts_mut(ptr, max_events as usize) 
+                    } {
+                        let mut count = 0;
+                        while count < max_events && !watch.queue.is_empty() {
+                             if let Some(ev) = watch.queue.pop_front() {
+                                 out_slice[count as usize] = ev;
+                                 count += 1;
+                             }
+                        }
+                        count // Return number of events
+                    } else {
+                        u64::MAX // Bad pointer
+                    }
+                }
+            } else {
+                 u64::MAX // Bad handle
+            }
+        }
+    }};
+
+    (SYSCALL_WATCH_CLOSE, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
+        let watch_id = WatchId($a1);
+        if let Some(pid) = kernel::sched::SCHEDULER.lock().current_process_id() {
+            if kernel::graph::watch::lock_registry().as_mut().unwrap().close_watch(watch_id, pid) {
+                0
+            } else {
+                u64::MAX
+            }
+        } else {
+            u64::MAX
+        }
     }};
 
     (SYSCALL_ALLOC_FRAME, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{

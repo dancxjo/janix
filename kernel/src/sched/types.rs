@@ -1,5 +1,8 @@
 //! Shared scheduling-related types and helpers used across kernel modules.
 use abi::{ProcessId, ThingId, ThreadId};
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
+use abi::wire::events::WireWatchSpec;
 
 pub type CpuId = u64;
 pub type TimeNs = u64;
@@ -109,7 +112,15 @@ pub struct ScheduledThread {
     pub is_idle: bool,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
+pub struct Event {
+    pub src: ThingId,
+    pub pred: abi::Predicate,
+    pub on: abi::syscall_defs::SymbolId,
+    pub payload: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
 pub struct Process {
     pub id: ProcessId,
     pub name: &'static str,
@@ -120,4 +131,6 @@ pub struct Process {
     pub heap_limit: usize,
     pub next_map_base: u64,
     pub next_resident_map_base: u64,
+    pub watches: Vec<WireWatchSpec>,
+    pub events: VecDeque<Event>,
 }

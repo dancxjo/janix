@@ -3,6 +3,7 @@ extern crate alloc;
 pub use self::types::ThreadState;
 use crate::{graph, graph_kinds};
 use abi::{ProcessId, ThingId, ThreadId, USER_HEAP_END};
+use alloc::collections::VecDeque;
 use alloc::string::String;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use heapless::Vec;
@@ -259,6 +260,8 @@ impl Scheduler {
                     heap_limit: 0,
                     next_map_base: USER_HEAP_END as u64,
                     next_resident_map_base: abi::USER_RESIDENT_BASE as u64,
+                    watches: alloc::vec::Vec::new(),
+                    events: VecDeque::new(),
                 });
                 if self.graph_enabled {
                     self.ensure_process_thing(i);

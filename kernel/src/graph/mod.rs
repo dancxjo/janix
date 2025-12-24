@@ -124,11 +124,25 @@ pub fn apply_mutation(actor: security::Actor, mutation: security::Mutation) -> R
             Ok(security::MutationResult::Updated(updated))
         }
         security::Mutation::AddLink { src, pred, dst } => {
-            let success = with_store_mut(|store| store.add_link(src, dst, pred));
-            if success {
-                debug::print_link_created(src, pred, dst);
+            let result = with_store_mut(|store| {
+                if let Some(kind) = store.get_thing_kind(src) {
+                    let count = store.get_link_count(src, pred);
+                    if let Err(e) = schema::validate_link_cardinality(kind, pred, count) {
+                        return Err(e);
+                    }
+                }
+                Ok(store.add_link(src, dst, pred))
+            });
+
+            match result {
+                Ok(success) => {
+                    if success {
+                        debug::print_link_created(src, pred, dst);
+                    }
+                    Ok(security::MutationResult::Linked(success))
+                }
+                Err(e) => Err(e),
             }
-            Ok(security::MutationResult::Linked(success))
         }
         security::Mutation::RemoveLink { src, pred, dst } => {
              let success = with_store_mut(|store| store.remove_link(src, dst, pred));
@@ -138,8 +152,8 @@ pub fn apply_mutation(actor: security::Actor, mutation: security::Mutation) -> R
             Ok(security::MutationResult::Unlinked(success))
         }
         security::Mutation::DeclareSchema { kind, fingerprint: _, definition } => {
-             let (desc, props, indexed) = schema::decode_schema(definition)?;
-             let result = schema::register_schema(kind, desc, props, indexed);
+             let (desc, props, indexed, links) = schema::decode_schema(definition)?;
+             let result = schema::register_schema(kind, desc, props, indexed, links);
              match result {
                  Ok(abi::SchemaRegistryOutcome::Created) | Ok(abi::SchemaRegistryOutcome::AlreadyRegisteredSame) => {
                      Ok(security::MutationResult::Declared)

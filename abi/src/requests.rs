@@ -4,7 +4,8 @@ use crate::{
     wire::{
         buffers::{PixelFormat, SharedBufferInfo},
         common::UserSlice,
-        graph::{BatchUpdateEntry as WireBatchEntry, WireProp, WireSchemaProp},
+        events::WireWatchSpec,
+        graph::{BatchUpdateEntry as WireBatchEntry, WireProp, WireSchemaLink, WireSchemaProp},
         memory::{FrameInfo, MapFlags, MemorySummary, SchedulerSummary},
         resident::{
             ResidentAllocResp, ResidentError, ResidentMapPerms, ResidentMapResp, RestPolicy,
@@ -48,10 +49,23 @@ pub enum KernelRequest {
     ThingBatchUpdate {
         updates: UserSlice<WireBatchEntry>,
     },
+    WatchRegister {
+        spec: WireWatchSpec,
+    },
+    EventNext {
+        out: UserSlice<u8>,
+    },
+    EventEmit {
+        src: ThingId,
+        pred: Predicate,
+        on: SymbolId,
+        payload: UserSlice<u8>,
+    },
     SchemaRegisterPackage {
         kind: SymbolId,
         description: SymbolId,
         props: UserSlice<WireSchemaProp>,
+        links: UserSlice<WireSchemaLink>,
     },
     SchemaGet {
         kind: SymbolId,
@@ -132,6 +146,9 @@ pub enum KernelResponse {
     },
     ThingCreated {
         id: ThingId,
+    },
+    EventData {
+        written: u64,
     },
     SchemaRegistered {
         kind: SymbolId,

@@ -117,7 +117,7 @@ fn register_static_schema(
     let indexed_vec = indexed.to_vec();
 
     // We expect register_schema to be imported
-    if let Err(e) = crate::graph::schema::register_schema(kind, desc_sym, props_vec, indexed_vec) {
+    if let Err(e) = crate::graph::schema::register_schema(kind, desc_sym, props_vec, indexed_vec, alloc::vec![]) {
         crate::console::print("Failed to register schema\n");
         crate::console::print(e);
         crate::console::print("\n");

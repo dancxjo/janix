@@ -161,9 +161,94 @@ unsafe fn write_user_bytes(slice: abi::wire::common::UserSlice<u8>, data: &[u8])
     len as u64
 }
 
+unsafe fn read_user_bytes(slice: abi::wire::common::UserSlice<u8>) -> alloc::vec::Vec<u8> {
+    let mut vec = alloc::vec::Vec::with_capacity(slice.len as usize);
+    if slice.len > 0 {
+        let ptr = slice.ptr as *const u8;
+        unsafe {
+            core::ptr::copy_nonoverlapping(ptr, vec.as_mut_ptr(), slice.len as usize);
+            vec.set_len(slice.len as usize);
+        }
+    }
+    vec
+}
+
 /// Handle a kernel request from userland
 pub fn handle_request(request: KernelRequest) -> KernelResponse {
     match request {
+        KernelRequest::WatchRegister { spec } => {
+             let pid = sched::SCHEDULER.lock().current_process_id();
+             if let Some(pid) = pid {
+                 if let Err(e) = graph::events::register_watch(pid, spec) {
+                     log(e);
+                     KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INTERNAL, detail: 0 } }
+                 } else {
+                     KernelResponse::Success { data: None }
+                 }
+             } else {
+                 KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::PERMISSION, detail: 0 } }
+             }
+        }
+        KernelRequest::EventNext { out } => {
+             let pid = sched::SCHEDULER.lock().current_process_id();
+             let Some(pid) = pid else {
+                 return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::PERMISSION, detail: 0 } };
+             };
+
+             loop {
+                 let event_opt = sched::with_scheduler(|sched| {
+                     // Find process
+                     for slot in sched.processes.iter_mut() {
+                         if let Some(p) = slot {
+                             if p.id == pid {
+                                 return p.events.pop_front();
+                             }
+                         }
+                     }
+                     None
+                 });
+
+                 if let Some(event) = event_opt {
+                     // Write to out
+                     // Header + Payload
+                     let header_size = core::mem::size_of::<abi::wire::events::WireEventHeader>();
+                     if (out.len as usize) < header_size {
+                         return KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::INVALID_ARG, detail: 1 } };
+                     }
+
+                     let header = abi::wire::events::WireEventHeader {
+                         src: event.src,
+                         pred: event.pred,
+                         on: event.on,
+                         payload_len: event.payload.len() as u32,
+                     };
+
+                     unsafe {
+                         let ptr = out.ptr as *mut u8;
+                         core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, ptr, header_size);
+
+                         let payload_space = out.len as usize - header_size;
+                         let copy_len = core::cmp::min(payload_space, event.payload.len());
+                         if copy_len > 0 {
+                            core::ptr::copy_nonoverlapping(event.payload.as_ptr(), ptr.add(header_size), copy_len);
+                         }
+                         return KernelResponse::EventData { written: (header_size + copy_len) as u64 };
+                     }
+                 }
+
+                 // Block
+                 sched::block_current_thread();
+             }
+        }
+        KernelRequest::EventEmit { src, pred, on, payload } => {
+             if let Some(kind) = graph::get_thing_kind(src) {
+                 let data = unsafe { read_user_bytes(payload) };
+                 graph::events::dispatch_custom_event(src, kind, pred, on, &data);
+                 KernelResponse::Success { data: None }
+             } else {
+                 KernelResponse::Error { err: abi::syscall_defs::SysError { code: abi::syscall_defs::SysError::NOT_FOUND, detail: 0 } }
+             }
+        }
         KernelRequest::LinkAt { src, pred, idx } => {
             let target = graph::link_target_at(src, pred, idx as usize);
             match target {
@@ -667,6 +752,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             kind,
             description,
             props,
+            links,
         } => {
             let mut props_vec = alloc::vec::Vec::new();
             unsafe {
@@ -682,6 +768,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                         2 => PropType::Bool,
                         3 => PropType::Str,
                         4 => PropType::Blob,
+                        5 => PropType::Symbol,
                         _ => {
                             return KernelResponse::Error {
                                 err: abi::syscall_defs::SysError {
@@ -695,7 +782,23 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     props_vec.push((sym, pt));
                 }
             }
-            match register_schema(kind, description, props_vec, alloc::vec![]) {
+
+            let mut links_vec = alloc::vec::Vec::new();
+            unsafe {
+                let ptr = links.ptr as *const abi::wire::graph::WireSchemaLink;
+                for i in 0..links.len {
+                    let wl = *ptr.add(i as usize);
+                    let sl = graph::schema::SchemaLink {
+                        pred: wl.pred,
+                        target_kind: wl.target_kind,
+                        min: wl.min,
+                        max: wl.max,
+                    };
+                    links_vec.push(sl);
+                }
+            }
+
+            match register_schema(kind, description, props_vec, alloc::vec![], links_vec) {
                 Ok(outcome) => KernelResponse::SchemaRegistered { kind, outcome },
                 Err(e) => {
                     let msg = alloc::format!(
@@ -876,7 +979,7 @@ pub fn create_builtin_things() {
         (crate::symbols::intern("booted"), PropType::Bool),
     ];
 
-    if let Err(e) = register_schema(kind, desc, props, vec![]) {
+    if let Err(e) = register_schema(kind, desc, props, vec![], vec![]) {
         log("Failed to register KernelInfo schema");
         log(e);
     }
@@ -889,7 +992,7 @@ pub fn create_builtin_things() {
         (crate::symbols::intern("things_created"), PropType::U64),
     ];
 
-    if let Err(e) = register_schema(kind, desc, props, vec![]) {
+    if let Err(e) = register_schema(kind, desc, props, vec![], vec![]) {
         log("Failed to register BootStats schema");
         log(e);
     }

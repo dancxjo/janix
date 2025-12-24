@@ -6,6 +6,7 @@
 pub mod buffers;
 pub mod common;
 pub mod dev;
+pub mod events;
 pub mod graph;
 pub mod memory;
 pub mod process;

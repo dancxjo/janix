@@ -225,6 +225,17 @@ impl GraphStore {
         false
     }
 
+    pub fn get_link_count(&self, src: ThingId, pred: Predicate) -> usize {
+        if let Some(node) = self.things.get(&src) {
+            node.links
+                .iter()
+                .filter(|(p, _)| *p == pred)
+                .count()
+        } else {
+            0
+        }
+    }
+
     pub fn get_link(&self, src: ThingId, pred: Predicate, idx: usize) -> Option<ThingId> {
         if let Some(node) = self.things.get(&src) {
             node.links

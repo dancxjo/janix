@@ -52,6 +52,11 @@ macro_rules! for_each_syscall {
             SYSCALL_DEV_OPEN => 50,
             SYSCALL_DEV_READ => 51,
             SYSCALL_PCI_READ_CONFIG => 52,
+
+            // Events & Watches
+            SYSCALL_WATCH_REGISTER => 60,
+            SYSCALL_EVENT_NEXT => 61,
+            SYSCALL_EVENT_EMIT => 62,
         }
     };
 }

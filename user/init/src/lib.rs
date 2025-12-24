@@ -14,139 +14,98 @@ use thing_os::{
     list_things_by_kind, load_thing,
 };
 
-const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
+#[allow(unused_imports)]
+use alloc::collections::BTreeSet;
 
-#[cfg(feature = "rootfs")]
-const ROOTFS_IDENTIFIER: &str = "rootfs";
+use abi::syscall_defs::SymbolId;
+use abi::wire::graph::{WatchEvent, WatchSpec, WatchId, WatchSpecTag, WatchEventKind, WatchFlags};
+// import graph_kinds::* if needed
+use thing_models::{Host, Module};
+use thing_os::{intern, watch_open, watch_next};
+
+pub const SUPERVISOR_IDLE_NS: u64 = 100_000_000;
 
 pub fn init_main() -> ! {
-    println!("init: starting");
-
-    // Direct syscall test
-    // let msg = "Hello from direct syscall\n";
-    // unsafe {
-    //    thing_os::syscalls::syscall(abi::KernelRequest::Log { message: msg });
-    // }
-    // loop {}
+    println!("init: starting (Host model)");
 
     ensure_modes();
-    // println!("init: ensure_modes done");
+    
+    // Find Host
+    let host = find_thing::<Host>(|_| true).expect("Host not found");
+    println!("init: Found Host id={}", host.id.0);
 
-    #[cfg(feature = "rootfs")]
-    {
-        let program_images: Vec<ProgramImage> = list_things_by_kind();
-        start_rootfs(&program_images);
+    // Create Watch on Host for HAS_MODULE
+    let pred_has_module = graph_kinds::LINK_HAS_MODULE;
+    let spec = WatchSpec {
+        tag: WatchSpecTag::Link,
+        thing: host.id,
+        key: SymbolId(pred_has_module.0 as u32),
+        flags: WatchFlags { bits: WatchFlags::LINK_ADDED },
+    };
+
+    let watch_id = watch_open(&spec).expect("Failed to open watch on Host");
+    println!("init: Watch opened id={}", watch_id.0);
+
+    // Enumerate existing modules
+    let modules = link_targets(host.id, graph_kinds::LINK_HAS_MODULE);
+    let mut spawned = BTreeSet::new();
+
+    for mod_id in modules {
+        process_module(mod_id, &mut spawned);
     }
 
-    let boot_profile = wait_for_boot_profile();
-    println!("init: BootProfile version {}", boot_profile.version);
-
-    let launch_ids = link_targets(boot_profile.id, graph_kinds::LINK_LAUNCHES);
-
-    let mut programs = Vec::new();
-    collect_boot_programs(&mut programs, launch_ids.as_slice());
-
-    if programs.is_empty() {
-        println!("init: no BootProgram links; waiting briefly for rootfs");
-        println!("init: entering supervision loop");
-        loop {
-            sleep(Duration::from_nanos(SUPERVISOR_IDLE_NS));
-
-            let refresh_ids = link_targets(boot_profile.id, graph_kinds::LINK_LAUNCHES);
-            collect_boot_programs(&mut programs, refresh_ids.as_slice());
-            if !programs.is_empty() {
-                break;
-            }
-        }
-    }
-
-    if programs.is_empty() {
-        println!("init: still no BootPrograms after waiting; scanning all BootProgram Things");
-        programs = list_things_by_kind();
-    }
-
-    if programs.is_empty() {
-        println!("init: no BootPrograms found after full scan; system will idle");
-    }
-
-    let init_process =
-        find_process_by_pid(1).unwrap_or_else(|| fatal("init Process Thing (pid=1) missing"));
-
-    let program_images: Vec<ProgramImage> = list_things_by_kind();
-
-    for _ in programs.iter().filter(|program| is_rootfs(program)) {
-        println!("init: skipping rootfs BootProgram entry (already handled)");
-    }
-
-    let (driver_programs, app_programs): (Vec<&BootProgram>, Vec<&BootProgram>) = programs
-        .iter()
-        .filter(|program| !is_rootfs(program))
-        .partition(|program| is_driver(program));
-
-    let (compositor_programs, other_app_programs): (Vec<&BootProgram>, Vec<&BootProgram>) =
-        app_programs
-            .iter()
-            .copied()
-            .partition(|program| is_compositor(program));
-
-    // 1. Boot Manifest Audit
-    validate_boot_manifest(&programs, &program_images);
-
-    // Explicitly launch debug_alloc early
-    if let Some(debug_alloc) = programs.iter().find(|p| p.binary == "debug_alloc") {
-        println!("init: launching allocation smoke test: debug_alloc");
-        spawn_boot_program(&init_process, &program_images, debug_alloc);
-    }
-
-    if !driver_programs.is_empty() {
-        println!(
-            "init: launching {} driver BootProgram(s) before user",
-            driver_programs.len()
-        );
-    }
-
-    // 2. Launch Drivers
-    for program in driver_programs.iter().copied() {
-        if program.binary == "init" {
-            continue;
-        }
-        spawn_boot_program(&init_process, &program_images, program);
-    }
-
-    if !compositor_programs.is_empty() {
-        println!(
-            "init: launching compositor early before other user ({} entry/entries)",
-            compositor_programs.len()
-        );
-    }
-
-    // 3. Launch Compositor
-    for program in compositor_programs.iter().copied() {
-        spawn_boot_program(&init_process, &program_images, program);
-    }
-
-    /*
-    for program in other_app_programs.iter().copied() {
-        println!("init: checking program binary='{}'", program.binary);
-        if program.binary == "init" {
-            continue;
-        }
-
-        // DEBUG: Force disable window_demo for freeze debugging
-        if program.binary == "window_demo" {
-             println!("init: SKIPPING window_demo (debug disable)");
-             continue;
-        }
-        spawn_boot_program(&init_process, &program_images, program);
-    }
-    */
-
-    println!("init: entering supervision loop");
+    // Event Loop
+    let dummy = WatchEvent { 
+        kind: WatchEventKind::Overflow, 
+        src_or_thing: ThingId(0), 
+        pred_or_key: SymbolId(0), 
+        dst_or_aux: 0 
+    };
+    let mut buf = [dummy; 16];
     loop {
-        sleep(Duration::from_nanos(SUPERVISOR_IDLE_NS));
+        if let Some(count) = watch_next(watch_id, &mut buf) {
+            for i in 0..count {
+                let evt = &buf[i];
+                // Check if LinkAdded and correct pred (already filtered by kernel if specific, but useful to double check)
+                if evt.kind == WatchEventKind::LinkAdded && evt.pred_or_key == SymbolId(pred_has_module.0 as u32) {
+                    process_module(ThingId(evt.dst_or_aux), &mut spawned);
+                }
+            }
+        } else {
+             // Block/sleep if watch_next returns None/0? 
+             // watch_next should block if implemented that way, or return 0 if non-blocking.
+             // Impl said "Handles WOULD_BLOCK by sleeping".
+             // So it blocks.
+        }
     }
 }
 
+fn process_module(mod_id: ThingId, spawned: &mut BTreeSet<ThingId>) {
+    if spawned.contains(&mod_id) { return; }
+    
+    if let Some(module) = load_thing::<Module>(mod_id) {
+        println!("init: found module '{}' role='{}'", module.name, module.role);
+        
+        if module.role == "service" || module.role == "driver" {
+            // Check if it is init itself
+            if module.name == "init" {
+                spawned.insert(mod_id);
+                return;
+            }
+            
+            println!("init: spawning {}", module.name);
+            match create_process(mod_id) {
+                Ok((pid, _)) => {
+                    println!("init: spawned {} as pid={}", module.name, pid.0);
+                    spawned.insert(mod_id);
+                },
+                Err(e) => println!("init: failed to spawn {}: {}", module.name, e),
+            }
+        }
+    }
+}
+
+// Keep helper functions
 fn ensure_modes() {
     if !ensure_schema_exists_for::<Mode>() {
         fatal("Mode schema missing");
@@ -199,116 +158,6 @@ fn ensure_modes() {
     }
 }
 
-fn validate_boot_manifest(programs: &[BootProgram], images: &[ProgramImage]) {
-    use alloc::format;
-    println!("init: === Boot Manifest Audit ===");
-    println!(
-        "init: {:<20} | {:<20} | {:<10} | {:<8}",
-        "BootProgram", "Binary", "Status", "Size"
-    );
-    println!("init: {:-<20}-+-{:-<20}-+-{:-<10}-+-{:-<8}", "", "", "", "");
-
-    let mut missing = 0_u32;
-
-    for prog in programs {
-        let image = images.iter().find(|img| img.identifier == prog.binary);
-        let status = if image.is_some() { "OK" } else { "MISSING" };
-        let size = image.map(|i| i.size).unwrap_or(0);
-        let size_str = if size > 0 {
-            format!("{}b", size)
-        } else {
-            "-".to_string()
-        };
-
-        if image.is_none() {
-            missing += 1;
-        }
-
-        println!(
-            "init: {:<20} | {:<20} | {:<10} | {:<8}",
-            prog.name, prog.binary, status, size_str
-        );
-    }
-    println!("init: ===========================");
-    if missing > 0 {
-        println!(
-            "init: WARNING - {} BootProgram(s) missing ProgramImage(s)",
-            missing
-        );
-    }
-}
-
-fn spawn_boot_program(
-    init_process: &ProcessThing,
-    program_images: &[ProgramImage],
-    program: &BootProgram,
-) {
-    // Audit already checked existence, but we check again to find the image for spawning
-    if let Some(_image) = program_images
-        .iter()
-        .find(|img| img.identifier == program.binary)
-    {
-        // Found
-    } else {
-        println!(
-            "init: ERROR: Skipping spawn for '{}' - binary '{}' missing from images",
-            program.name, program.binary
-        );
-        return;
-    }
-
-    println!("init: spawning {} (id={})", program.name, program.app_id);
-
-    if let Some((process_id, _thread_id)) = create_process(program.id).ok() {
-        if !add_link(init_process.id, graph_kinds::LINK_SPAWNED, process_id) {
-            println!("init: failed to add SPAWNED link");
-        }
-    } else {
-        println!("init: create_process failed for {}", program.name);
-    }
-}
-
-fn is_driver(program: &BootProgram) -> bool {
-    looks_like_driver_identifier(&program.name) || looks_like_driver_identifier(&program.binary)
-}
-
-fn is_compositor(program: &BootProgram) -> bool {
-    program.name == "compositor" || program.binary == "compositor"
-}
-
-fn looks_like_driver_identifier(identifier: &str) -> bool {
-    // Drivers currently follow a naming convention like "ps2_keyboard_driver".
-    identifier.contains("_driver")
-        || identifier.contains("-driver")
-        || identifier == "pci"
-        || identifier == "usb"
-        || identifier == "framebuffer"
-}
-
-fn load_boot_profile() -> Option<BootProfile> {
-    let mut profiles: Vec<BootProfile> = list_things_by_kind();
-    println!(
-        "init: BootProfile query returned {} entries",
-        profiles.len()
-    );
-
-    match profiles.len() {
-        1 => profiles.pop(),
-        0 => {
-            println!("init: BootProfile not found");
-            None
-        }
-        _ => {
-            println!("init: multiple BootProfile things found");
-            None
-        }
-    }
-}
-
-fn find_process_by_pid(pid: u64) -> Option<ProcessThing> {
-    find_thing::<ProcessThing>(|p| p.pid == pid)
-}
-
 fn fatal(msg: &str) -> ! {
     println!("init fatal: {}", msg);
     loop {
@@ -316,71 +165,3 @@ fn fatal(msg: &str) -> ! {
     }
 }
 
-fn collect_boot_programs(programs: &mut Vec<BootProgram>, ids: &[ThingId]) {
-    for program_id in ids.iter().copied() {
-        if let Some(program) = load_thing::<BootProgram>(program_id) {
-            programs.push(program);
-        } else {
-            println!(
-                "init: ignoring missing BootProgram ThingId {}",
-                program_id.0
-            );
-        }
-    }
-}
-
-fn wait_for_boot_profile() -> BootProfile {
-    for _ in 0..32 {
-        if let Some(profile) = load_boot_profile() {
-            return profile;
-        }
-        sleep(Duration::from_nanos(SUPERVISOR_IDLE_NS));
-    }
-    fatal("BootProfile missing or duplicated after waiting");
-}
-
-#[cfg(feature = "rootfs")]
-fn start_rootfs(images: &[ProgramImage]) {
-    if let Some(existing) = find_thing::<BootProgram>(|bp| bp.binary == ROOTFS_IDENTIFIER) {
-        println!(
-            "init: rootfs BootProgram already exists as ThingId {}",
-            existing.id.0
-        );
-        let _ = create_process(existing.id);
-        return;
-    }
-
-    if let Some(image) = images
-        .iter()
-        .find(|img| img.identifier == ROOTFS_IDENTIFIER)
-    {
-        let temp_program = BootProgram {
-            id: ThingId(0),
-            name: String::from(ROOTFS_IDENTIFIER),
-            app_id: 0,
-            priority: 0,
-            binary: image.identifier.clone(),
-        };
-        if let Some(program_id) = create_thing(&temp_program) {
-            println!(
-                "init: created temporary rootfs BootProgram id={}",
-                program_id.0
-            );
-            let _ = create_process(program_id);
-        } else {
-            println!("init: failed to create BootProgram for rootfs");
-        }
-    } else {
-        println!("init: rootfs ProgramImage missing; skipping rootfs launch");
-    }
-}
-
-#[cfg(feature = "rootfs")]
-fn is_rootfs(program: &BootProgram) -> bool {
-    program.binary == ROOTFS_IDENTIFIER
-}
-
-#[cfg(not(feature = "rootfs"))]
-fn is_rootfs(_program: &BootProgram) -> bool {
-    false
-}

@@ -109,6 +109,7 @@ pub fn add_link(src: ThingId, pred: Predicate, dst: ThingId) -> bool {
     let success = with_store_mut(|store| store.add_link(src, dst, pred));
     if success {
         debug::print_link_created(src, pred, dst);
+        watch::emit_link_added(src, SymbolId(pred.0 as u32), dst);
     }
     success
 }

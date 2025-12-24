@@ -27,6 +27,8 @@ fn resolve_predicate(pred: Predicate) -> alloc::string::String {
         graph_kinds::LINK_ABOUT => "ABOUT".into(),
         graph_kinds::LINK_RUNNING => "RUNNING".into(),
         graph_kinds::LINK_RESPAWNED_FROM => "RESPAWNED_FROM".into(),
+        graph_kinds::LINK_HAS_MODULE => "HAS_MODULE".into(),
+        graph_kinds::LINK_HAS_CONTENT => "HAS_CONTENT".into(),
         _ => format!("PRED_{:x}", pred.0),
     }
 }

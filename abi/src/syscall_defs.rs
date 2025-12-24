@@ -17,6 +17,7 @@ impl SysError {
     pub const BUFFER_TOO_SMALL: u32 = 5;
     pub const WOULD_BLOCK: u32 = 6;
     pub const INTERNAL: u32 = 7;
+    pub const NOT_IMPLEMENTED: u32 = 8;
 }
 
 #[repr(C)]

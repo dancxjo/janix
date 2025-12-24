@@ -10,8 +10,9 @@ use kernel::resident::mapping::ResidentPage;
 use kernel::{graph, graph_kinds, log, shared_buffer, symbols, time};
 use limine::memory_map::EntryType;
 use limine::request::{HhdmRequest, KernelFileRequest, MemoryMapRequest, ModuleRequest, MpRequest};
-use thing_models::{AlarmRequest, BootProgram, FontModule, PropValue, Thing, TimeSource};
-// use thing_models::{AlarmRequest, BootProgram, FontModule, Thing, TimeSource}; // Merged into line 4
+use thing_models::{
+    AlarmRequest, BootProgram, Content, FontModule, Host, Module, PropValue, Thing, TimeSource,
+};
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -287,6 +288,143 @@ pub fn seed_display_from_limine() {
             log("display0 et CommunisBuffer ex tabula imaginis Limine seminata sunt");
         }
         Err(msg) => log(msg),
+    }
+}
+
+pub fn seed_host_and_modules() {
+    // 1. Create Host
+    let host = Host { id: ThingId(0) };
+    let mut props = Vec::new();
+    host.to_props(&mut props);
+    let kernel_props = intern_props(props);
+    let host_id = graph::create_thing(symbols::intern(Host::KIND), kernel_props);
+    log("Host creatus");
+
+    // 2. Iterate Modules
+    let Some(response) = MODULE_REQUEST.get_response() else {
+        log("Nulla modula Limine inventa");
+        return;
+    };
+
+    let hhdm_offset = HHDM_REQUEST
+        .get_response()
+        .map(|resp| resp.offset())
+        .unwrap_or(0);
+
+    for (index, module) in response.modules().iter().enumerate() {
+        // Skip fonts if handled elsewhere, or handle them as generic modules?
+        // Plan says "Convert Limine modules to Module+Content".
+        // Use classification to name them.
+        let name = match classify_limine_module((*module).string(), (*module).path(), index) {
+            ModuleKind::Program { identifier } => identifier,
+            ModuleKind::Font { name } => name,
+            ModuleKind::Raw { identifier, .. } => identifier,
+        };
+
+        let virt_addr = (*module).addr() as u64;
+        let base_phys = virt_addr.saturating_sub(hhdm_offset);
+        let size = (*module).size() as u64;
+
+        if size == 0 { continue; }
+
+        // Create SharedBuffer
+        let mut frames: heapless::Vec<PhysFrame, { shared_buffer::MAX_FRAMES_PER_BUFFER }> =
+            heapless::Vec::new();
+        
+        let mut addr = base_phys;
+        let end_addr = shared_buffer::align_up(base_phys + size, 4096);
+        let mut success = true;
+        
+        // Ensure Limine aligns modules to page boundaries ideally.
+        // If not, we round cover.
+        let page_start = base_phys & !(4096 - 1);
+        addr = page_start;
+
+        while addr < end_addr {
+            if frames.push(PhysFrame::from_start_address(addr, 4096)).is_err() {
+                log("Module too large for SharedBuffer");
+                success = false;
+                break;
+            }
+            addr += 4096;
+        }
+
+        if !success { continue; }
+
+        let buffer_id = match shared_buffer::register_shared_buffer(
+            0, 0, 0, PixelFormat::Rgba8888, frames // Dimensions 0 for raw data blob
+        ) {
+            Ok(id) => id,
+            Err(e) => {
+                log(e);
+                continue;
+            }
+        };
+
+        // Detect MIME and Role
+        // Peek at data via HHDM
+        let data_ptr = (base_phys + hhdm_offset) as *const u8;
+        let header = unsafe { core::slice::from_raw_parts(data_ptr, core::cmp::min(16, size as usize)) };
+        
+        let is_elf = header.len() >= 4 && header[0] == 0x7f && header[1] == b'E' && header[2] == b'L' && header[3] == b'F';
+        let mime = if is_elf {
+            "application/x-executable"
+        } else {
+            // Check for known extensions in name
+            let bytes = name.as_bytes();
+             if bytes.ends_with(b".txt") || bytes.ends_with(b".cfg") {
+                "text/plain"
+            } else if bytes.ends_with(b".bmp") {
+                "image/bmp"
+            } else {
+                "application/octet-stream"
+            }
+        };
+
+        let role = if name == "init" {
+            "service"
+        } else if is_elf {
+            "driver" // default for other ELFs
+        } else {
+            "asset"
+        };
+        
+        // Identify entry point if ELF
+        // We don't parse ELF here fully, module loader does. 
+        // But schema has `entry`. We can leave it empty or 0 if unknown. 
+        // Or if we have simple parser logic (not implemented here).
+        // Skip entry for now.
+
+        // Create Content
+        // Hash? Leave empty for now (TODO).
+        let content = Content {
+            id: ThingId(0),
+            mime: String::from(mime),
+            buffer_id: buffer_id.0,
+            len: size,
+            hash: String::from(""), 
+        };
+        let mut c_props = Vec::new();
+        content.to_props(&mut c_props);
+        let kern_c_props = intern_props(c_props);
+        let content_id = graph::create_thing(symbols::intern(Content::KIND), kern_c_props);
+
+        // Create Module
+        let module_thing = Module {
+            id: ThingId(0),
+            name: name.clone(),
+            role: String::from(role),
+        };
+        let mut m_props = Vec::new();
+        module_thing.to_props(&mut m_props);
+        let kern_m_props = intern_props(m_props);
+        let mod_id = graph::create_thing(symbols::intern(Module::KIND), kern_m_props);
+
+        // Links
+        let _ = graph::add_link(host_id, graph_kinds::LINK_HAS_MODULE, mod_id);
+        let _ = graph::add_link(mod_id, graph_kinds::LINK_HAS_CONTENT, content_id);
+
+        log(alloc::format!("Seeded module: {} ({})", name, role).leak());
     }
 }
 

@@ -73,9 +73,11 @@ pub fn schedule_next() -> ! {
             }
 
             if thread.is_idle {
-                // Idle thread "running" means waiting for interrupt
+                // Idle thread: spin and tick to advance fake time
                 crate::cpu::enable_interrupts();
-                crate::cpu::wait_for_interrupt();
+                let mut sched = kernel::sched::SCHEDULER.lock();
+                sched.tick();
+                sched.yield_current();
             } else {
                 CurrentArch::activate_user_address_space(thread.address_space_token);
 

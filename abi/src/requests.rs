@@ -4,7 +4,10 @@ use crate::{
     wire::{
         buffers::{PixelFormat, SharedBufferInfo},
         common::UserSlice,
-        graph::{BatchUpdateEntry as WireBatchEntry, WireProp, WireSchemaProp},
+        graph::{
+            BatchUpdateEntry as WireBatchEntry, WatchEvent, WatchId, WatchSpec, WireProp,
+            WireSchemaProp,
+        },
         memory::{FrameInfo, MapFlags, MemorySummary, SchedulerSummary},
         resident::{
             ResidentAllocResp, ResidentError, ResidentMapPerms, ResidentMapResp, RestPolicy,
@@ -110,9 +113,15 @@ pub enum KernelRequest {
     ResidentUnmap {
         thing_id: ThingId,
     },
-    ThingRest {
-        thing_id: ThingId,
-        policy: RestPolicy,
+    WatchOpen {
+        spec: WatchSpec,
+    },
+    WatchNext {
+        watch_id: WatchId,
+        out: UserSlice<WatchEvent>,
+    },
+    WatchClose {
+        watch_id: WatchId,
     },
 }
 
@@ -195,4 +204,10 @@ pub enum KernelResponse {
         resp: RestResp,
     },
     ResidentError(ResidentError),
+    WatchOpened {
+        watch_id: WatchId,
+    },
+    WatchEvents {
+        written: u64,
+    },
 }

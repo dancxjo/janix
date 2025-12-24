@@ -827,14 +827,18 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                 Err(e) => KernelResponse::ResidentError(e),
             }
         }
-        KernelRequest::ThingRest { thing_id, policy } => {
-            match resident::manager::sys_thing_rest(thing_id, policy) {
-                Ok(resp) => KernelResponse::ThingRested { resp },
-                Err(e) => KernelResponse::ResidentError(e),
-            }
-        }
+
 
         KernelRequest::ExitThread => KernelResponse::Success { data: None },
+
+        KernelRequest::WatchOpen { .. } | KernelRequest::WatchNext { .. } | KernelRequest::WatchClose { .. } => {
+            KernelResponse::Error {
+                err: abi::syscall_defs::SysError {
+                    code: abi::syscall_defs::SysError::NOT_IMPLEMENTED,
+                    detail: 0,
+                },
+            }
+        }
     }
 }
 

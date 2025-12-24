@@ -148,6 +148,11 @@ pub fn kernel_core_schemas() -> Vec<(
         BlockDevice::schema(),
     ));
 
+    // 2b. Host/Module/Content (Boot Graph)
+    schemas.push((Host::KIND, Host::DESCRIPTION, Host::schema()));
+    schemas.push((Module::KIND, Module::DESCRIPTION, Module::schema()));
+    schemas.push((Content::KIND, Content::DESCRIPTION, Content::schema()));
+
     // 3. Display Subsystem
     schemas.push((Display::KIND, Display::DESCRIPTION, Display::schema()));
     schemas.push((
@@ -214,6 +219,32 @@ pub struct ProgramImage {
     pub module_index: u64,
     pub base_phys: u64,
     pub size: u64,
+}
+
+
+
+#[derive(Thing)]
+#[thing(description = "The singleton root of the machine for this boot session.")]
+pub struct Host {
+    pub id: ThingId,
+}
+
+#[derive(Thing)]
+#[thing(description = "A distinct unit of software or data provided at boot.")]
+pub struct Module {
+    pub id: ThingId,
+    pub name: String,
+    pub role: String, // "service", "driver", "verifier", "asset", etc
+}
+
+#[derive(Thing)]
+#[thing(description = "The actual data payload of a Module.")]
+pub struct Content {
+    pub id: ThingId,
+    pub mime: String,
+    pub buffer_id: u64, // SharedBuffer ID backing this content
+    pub len: u64,
+    pub hash: String,
 }
 
 #[derive(Thing)]

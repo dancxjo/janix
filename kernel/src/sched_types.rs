@@ -14,7 +14,7 @@ pub enum ThreadState {
 }
 
 impl ThreadState {
-    pub const fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             ThreadState::New => "New",
             ThreadState::Runnable => "Runnable",

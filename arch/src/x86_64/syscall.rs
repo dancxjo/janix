@@ -149,6 +149,14 @@ unsafe fn user_ptr_mut<'a, T>(ptr: u64) -> Option<&'a mut T> {
     }
 }
 
+unsafe fn user_slice_mut<'a, T>(ptr: u64, len: u64) -> Option<&'a mut [T]> {
+    if ptr == 0 {
+        None
+    } else {
+        Some(slice::from_raw_parts_mut(ptr as *mut T, len as usize))
+    }
+}
+
 fn convert_prop(wire: &WireProp) -> (SymbolId, PropValue) {
     let key = wire.key;
     let val = match wire.value.tag {
@@ -827,17 +835,18 @@ macro_rules! dispatch_syscall {
                     }
                 } else {
                     // Have events
-                    let ptr = out_ptr as *mut WatchEvent;
-                    let out_slice = unsafe { slice::from_raw_parts_mut(ptr, max_events as usize) };
-                    
-                    let mut count = 0;
-                    while count < max_events && !watch.queue.is_empty() {
-                            if let Some(ev) = watch.queue.pop_front() {
-                                out_slice[count as usize] = ev;
-                                count += 1;
-                            }
+                    if let Some(out_slice) = unsafe { user_slice_mut::<WatchEvent>(out_ptr, max_events as u64) } {
+                        let mut count = 0;
+                        while count < max_events && !watch.queue.is_empty() {
+                                if let Some(ev) = watch.queue.pop_front() {
+                                    out_slice[count as usize] = ev;
+                                    count += 1;
+                                }
+                        }
+                        count // Return number of events
+                    } else {
+                        u64::MAX // Bad pointer
                     }
-                    count // Return number of events
                 }
             } else {
                  u64::MAX // Bad handle
@@ -847,16 +856,19 @@ macro_rules! dispatch_syscall {
 
     (SYSCALL_WATCH_CLOSE, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         let watch_id = WatchId($a1);
-        if let Some(pid) = kernel::sched::SCHEDULER.lock().current_process_id() {
-            if kernel::graph::watch::lock_registry().as_mut().unwrap().close_watch(watch_id, pid) {
-                0
-            } else {
-                u64::MAX
-            }
-        } else {
-            u64::MAX
-        }
+         if let Some(pid) = kernel::sched::SCHEDULER.lock().current_process_id() {
+             if kernel::graph::watch::close_watch_by_pid(watch_id, pid) {
+                 1
+             } else {
+                 0
+             }
+         } else {
+             u64::MAX
+         }
     }};
+
+
+
 
     (SYSCALL_ALLOC_FRAME, $frame:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr) => {{
         if let Some(frame) = kernel::memory::allocate_frame() {
@@ -1045,7 +1057,9 @@ pub extern "C" fn syscall_handler_rust(frame: &mut TrapFrame) -> u64 {
         };
     }
 
-    abi::for_each_syscall!(dispatch_helper)
+    let ret = abi::for_each_syscall!(dispatch_helper);
+    kernel::sched::SCHEDULER.lock().tick();
+    ret
 }
 
 pub fn install_handler() {

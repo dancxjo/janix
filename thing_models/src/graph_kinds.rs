@@ -62,6 +62,10 @@ pub const PROP_BAR3: &str = "bar3";
 pub const PROP_BAR4: &str = "bar4";
 pub const PROP_BAR5: &str = "bar5";
 
+pub const KIND_HOST: &str = "Host";
+pub const KIND_MODULE: &str = "Module";
+pub const KIND_CONTENT: &str = "Content";
+
 pub const KIND_SYSTEM: &str = "System";
 
 pub mod canon {
@@ -89,6 +93,8 @@ pub mod canon {
     pub const P_ABOUT: Predicate = Predicate(0x0023);
     pub const P_RUNNING: Predicate = Predicate(0x0024);
     pub const P_RESPAWNED_FROM: Predicate = Predicate(0x0025);
+    pub const P_HAS_MODULE: Predicate = Predicate(0x0026);
+    pub const P_HAS_CONTENT: Predicate = Predicate(0x0027);
 }
 
 pub const LINK_OWNS_THREAD: Predicate = canon::P_PROC_OWNS_THREAD;
@@ -112,6 +118,8 @@ pub const LINK_HAS_ACTIVE_MODE: Predicate = canon::P_HAS_ACTIVE_MODE;
 pub const LINK_ABOUT: Predicate = canon::P_ABOUT;
 pub const LINK_RUNNING: Predicate = canon::P_RUNNING;
 pub const LINK_RESPAWNED_FROM: Predicate = canon::P_RESPAWNED_FROM;
+pub const LINK_HAS_MODULE: Predicate = canon::P_HAS_MODULE;
+pub const LINK_HAS_CONTENT: Predicate = canon::P_HAS_CONTENT;
 
 pub const KIND_PROCESS_EXIT_EVENT: &str = "ProcessExitEvent";
 pub const PROP_EXIT_REASON: &str = "exit_reason";
@@ -159,7 +167,14 @@ pub const PROP_CLOSABLE: &str = "closable";
 pub const PROP_MINIMIZABLE: &str = "minimizable";
 pub const PROP_SHARED_BUFFER_ID: &str = "shared_buffer_id";
 pub const PROP_FONT_NAME: &str = "font_name";
+
 pub const PROP_RAW_KIND: &str = "raw_kind";
+
+pub const PROP_MIME: &str = "mime";
+pub const PROP_BUFFER_ID: &str = "buffer_id";
+pub const PROP_HASH: &str = "hash";
+pub const PROP_ROLE: &str = "role";
+pub const PROP_ENTRY: &str = "entry";
 
 pub const PROP_LINK_SRC: &str = "link_src";
 pub const PROP_LINK_DST: &str = "link_dst";

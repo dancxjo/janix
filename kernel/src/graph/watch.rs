@@ -6,6 +6,7 @@ use hashbrown::HashMap;
 use spin::Mutex;
 
 use crate::sched;
+use abi::syscall_defs::{SysError, SysRet};
 
 pub struct Watch {
     pub id: WatchId,
@@ -91,6 +92,42 @@ pub fn lock_registry() -> spin::MutexGuard<'static, Option<WatchRegistry>> {
         *guard = Some(WatchRegistry::new());
     }
     guard
+}
+
+pub fn close_watch_by_pid(id: WatchId, pid: ProcessId) -> bool {
+    lock_registry()
+        .as_mut()
+        .unwrap()
+        .close_watch(id, pid)
+}
+
+pub fn next_event(id: WatchId, pid: ProcessId) -> Result<WatchEvent, SysError> {
+    let mut guard = lock_registry();
+    let reg = guard.as_mut().unwrap();
+
+    if let Some(watch) = reg.watches.get_mut(&id) {
+        if watch.owner_pid != pid {
+             return Err(SysError {
+                code: SysError::PERMISSION,
+                detail: 0,
+            });
+        }
+        
+        if let Some(event) = watch.queue.pop_front() {
+            Ok(event)
+        } else {
+             watch.waiting_thread = sched::SCHEDULER.lock().current_id();
+             Err(SysError {
+                code: SysError::WOULD_BLOCK,
+                detail: 0,
+            })
+        }
+    } else {
+        Err(SysError {
+            code: SysError::NOT_FOUND,
+            detail: 0,
+        })
+    }
 }
 
 // --- Enqueue Logic ---

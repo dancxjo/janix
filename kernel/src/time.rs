@@ -218,7 +218,7 @@ pub fn poll_time() {
     }
 }
 
-fn advance_ticks(delta: u64) {
+pub fn advance_ticks(delta: u64) {
     if delta == 0 {
         return;
     }

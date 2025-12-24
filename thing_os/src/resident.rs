@@ -159,17 +159,7 @@ pub fn unmap_resident(thing_id: ThingId) -> Result<(), ResidentError> {
     }
 }
 
-pub fn rest_thing(thing_id: ThingId, policy: RestPolicy) -> Result<RestResp, ResidentError> {
-    match syscall(KernelRequest::ThingRest { thing_id, policy }) {
-        KernelResponse::ThingRested { resp } => Ok(resp),
-        KernelResponse::ResidentError(e) => Err(e),
-        _ => Err(ResidentError {
-            code: ResidentErrorCode::Unknown,
-            aux0: 0,
-            aux1: 0,
-        }),
-    }
-}
+
 
 pub unsafe fn resident_create_and_map<T>(
     kind: &str,

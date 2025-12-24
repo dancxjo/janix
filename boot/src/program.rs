@@ -6,7 +6,8 @@ use kernel::graph;
 use kernel::graph_kinds;
 use kernel::sched::SCHEDULER;
 use kernel::symbols;
-use thing_models::PropValue;
+use thing_models::{Content, Module, PropValue, SharedBuffer};
+use kernel::Thing;
 
 use crate::elf_loader::{self, LoadedElfProgram, ProgramImageData};
 
@@ -32,7 +33,7 @@ pub fn spawn_program_by_identifier(
     priority: u64,
 ) -> Result<(ThingId, ThingId), &'static str> {
     let image =
-        find_program_image(identifier).ok_or("Res ProgramImage pro identificatore non inventa")?;
+        find_program_image(identifier).ok_or("Res Module pro identificatore non inventa")?;
     let loaded = elf_loader::load_program(&image)?;
     spawn_loaded_program_named(name, priority, loaded)
 }
@@ -122,120 +123,166 @@ struct BootProgramInfo {
 fn load_boot_program_info(id: ThingId) -> Result<BootProgramInfo, &'static str> {
     graph::with_thing(id, |thing| {
         let kind_boot_prog = symbols::intern(graph_kinds::KIND_BOOT_PROGRAM);
-        if thing.kind != kind_boot_prog {
-            return Err("Res SpawnProgram BootProgram non fuit");
-        }
+        let kind_module = symbols::intern(Module::KIND);
 
-        let mut name: Option<String> = None;
-        let mut app_id: Option<u64> = None;
-        let mut priority: u64 = 0;
-        let mut binary: Option<String> = None;
-        let mut respawn_policy: Option<String> = None;
+        if thing.kind == kind_boot_prog {
+            // ... existing BootProgram logic ...
+            let mut name: Option<String> = None;
+            let mut app_id: Option<u64> = None;
+            let mut priority: u64 = 0;
+            let mut binary: Option<String> = None;
+            let mut respawn_policy: Option<String> = None;
 
-        let prop_name = symbols::intern("name");
-        let prop_app_id = symbols::intern("app_id");
-        let prop_priority = symbols::intern("priority");
-        let prop_binary = symbols::intern("binary");
-        let prop_respawn = symbols::intern(graph_kinds::PROP_RESPAWN_POLICY);
+            let prop_name = symbols::intern(graph_kinds::PROP_NAME);
+            let prop_app_id = symbols::intern("app_id");
+            let prop_priority = symbols::intern("priority");
+            let prop_binary = symbols::intern("binary");
+            let prop_respawn = symbols::intern(graph_kinds::PROP_RESPAWN_POLICY);
 
-        for prop in thing.props.iter() {
-            if prop.0 == prop_name {
-                if let PropValue::Str(s) = &prop.1 {
-                    name = Some(s.clone());
-                }
-            } else if prop.0 == prop_app_id {
-                if let PropValue::U64(v) = prop.1 {
-                    app_id = Some(v);
-                }
-            } else if prop.0 == prop_priority {
-                if let PropValue::U64(v) = prop.1 {
-                    priority = v;
-                }
-            } else if prop.0 == prop_binary {
-                if let PropValue::Str(s) = &prop.1 {
-                    binary = Some(s.clone());
-                }
-            } else if prop.0 == prop_respawn {
-                if let PropValue::Str(s) = &prop.1 {
-                    respawn_policy = Some(s.clone());
+            for prop in thing.props.iter() {
+                if prop.0 == prop_name {
+                    if let PropValue::Str(s) = &prop.1 { name = Some(s.clone()); }
+                } else if prop.0 == prop_app_id {
+                    if let PropValue::U64(v) = prop.1 { app_id = Some(v); }
+                } else if prop.0 == prop_priority {
+                    if let PropValue::U64(v) = prop.1 { priority = v; }
+                } else if prop.0 == prop_binary {
+                    if let PropValue::Str(s) = &prop.1 { binary = Some(s.clone()); }
+                } else if prop.0 == prop_respawn {
+                    if let PropValue::Str(s) = &prop.1 { respawn_policy = Some(s.clone()); }
                 }
             }
-        }
 
-        Ok(BootProgramInfo {
-            name: name.ok_or("BootProgram caret nomine")?,
-            app_id: app_id.ok_or("BootProgram caret app_id")?,
-            priority,
-            binary: binary.unwrap_or_default(),
-            respawn_policy: respawn_policy
-                .unwrap_or_else(|| String::from(graph_kinds::RESPAWN_NEVER)),
-        })
-    })
-    .unwrap_or(Err("Res BootProgram non inventa"))
+            Ok(BootProgramInfo {
+                name: name.ok_or("BootProgram caret nomine")?,
+                app_id: app_id.unwrap_or(0),
+                priority,
+                binary: binary.unwrap_or_default(),
+                respawn_policy: respawn_policy.unwrap_or_else(|| String::from(graph_kinds::RESPAWN_NEVER)),
+            })
+        } else if thing.kind == kind_module {
+            // Adapt Module to BootProgramInfo
+             let mut name: Option<String> = None;
+             let prop_name = symbols::intern("name");
+             for prop in thing.props.iter() {
+                 if prop.0 == prop_name {
+                     if let PropValue::Str(s) = &prop.1 { name = Some(s.clone()); }
+                 }
+             }
+             let name = name.ok_or("Module caret nomine")?;
+             Ok(BootProgramInfo {
+                 name: name.clone(),
+                 app_id: 0, // Generated or unused?
+                 priority: 0,
+                 binary: name, // Binary is identifier for Module lookup
+                 respawn_policy: String::from(graph_kinds::RESPAWN_NEVER),
+             })
+        } else {
+            Err("Res id non est BootProgram vel Module")
+        }
+    }).unwrap_or(Err("Res non inventa"))
 }
 
 fn find_program_image(identifier: &str) -> Option<ProgramImageData> {
-    // Iterate things logic
-    // We can't use graph::iter_things easily if it iterates internal store (which is locked).
-    // graph::iter_things was a helper?
-    // Let's assume store supports iterating.
-    // OR we use next_thing_of_kind loop again.
-
-    let kind_prog_img = symbols::intern(graph_kinds::KIND_PROGRAM_IMAGE);
+    // New logic: Find Module by name, get Content, get SharedBuffer
+    let kind_module = symbols::intern(Module::KIND);
     let mut current = ThingId(0);
 
-    // Pre-intern keys
-    let prop_ident = symbols::intern(graph_kinds::PROP_IDENTIFIER);
-    let prop_idx = symbols::intern(graph_kinds::PROP_MODULE_INDEX);
-    let prop_base = symbols::intern(graph_kinds::PROP_BASE_PHYS);
-    let prop_size = symbols::intern(graph_kinds::PROP_SIZE);
+    let prop_name = symbols::intern("name"); // Module.name
 
-    while let Some(next) = graph::next_thing_of_kind_sym(kind_prog_img, current) {
-        let mut found_ident: Option<String> = None;
-        let mut module_index = 0;
-        let mut base_phys = 0;
-        let mut size = 0;
+    while let Some(next) = graph::next_thing_of_kind_sym(kind_module, current) {
+        
+        let mut found_name: Option<String> = None;
+        let mut content_id: Option<ThingId> = None;
 
-        // Access properties via get_prop or with_thing
-        let match_found = graph::with_thing(next, |thing| {
+        graph::with_thing(next, |thing| {
             for prop in thing.props.iter() {
-                if prop.0 == prop_ident {
+                if prop.0 == prop_name {
                     if let PropValue::Str(s) = &prop.1 {
-                        found_ident = Some(s.clone());
-                    }
-                } else if prop.0 == prop_idx {
-                    if let PropValue::U64(v) = prop.1 {
-                        module_index = v;
-                    }
-                } else if prop.0 == prop_base {
-                    if let PropValue::U64(v) = prop.1 {
-                        base_phys = v;
-                    }
-                } else if prop.0 == prop_size {
-                    if let PropValue::U64(v) = prop.1 {
-                        size = v;
+                        found_name = Some(s.clone());
                     }
                 }
             }
-            if let Some(id) = &found_ident {
-                if id == identifier {
-                    return Some(ProgramImageData {
-                        identifier: id.clone(),
-                        module_index,
-                        base_phys,
-                        size,
-                    });
-                }
+            // Check link to Content directly to avoid deadlock (graph::link_target_at tries to lock again)
+            // graph_kinds::LINK_HAS_CONTENT is a Predicate
+            if let Some((_, c_id)) = thing.links.iter().find(|(p, _)| *p == graph_kinds::LINK_HAS_CONTENT) {
+                 content_id = Some(*c_id);
             }
-            None
-        })
-        .flatten();
+        });
 
-        if let Some(data) = match_found {
-            return Some(data);
+        if let Some(ref name) = found_name {
+             if name == identifier {
+                 // Found the module, now get buffer params
+                 if let Some(c_id) = content_id {
+                     return get_buffer_data(c_id, identifier);
+                 }
+             }
         }
-
         current = next;
     }
+
+
     None
+}
+
+fn get_buffer_data(content_id: ThingId, identifier: &str) -> Option<ProgramImageData> {
+     // Get buffer_id from Content
+    let prop_buf = symbols::intern(graph_kinds::PROP_BUFFER_ID); // buffer_id
+    let prop_len = symbols::intern("len");
+    let mut buffer_id = 0u64;
+    let mut content_len = 0u64;
+
+    let found = graph::with_thing(content_id, |thing| {
+        for prop in thing.props.iter() {
+            if prop.0 == prop_buf {
+                if let PropValue::U64(v) = prop.1 {
+                    buffer_id = v;
+                }
+            } else if prop.0 == prop_len {
+                if let PropValue::U64(v) = prop.1 {
+                    content_len = v;
+                }
+            }
+        }
+        buffer_id != 0
+    }).unwrap_or(false);
+
+    if !found { return None; }
+
+    // Look up SharedBuffer
+    let manager = kernel::shared_buffer::manager().lock();
+    if let Some(sb) = manager.get(&ThingId(buffer_id)) {
+        // Verify contiguous
+        if sb.frames.is_empty() { return None; }
+        let start = sb.frames[0].start_address;
+        
+        // Use Content.len if available, otherwise fallback to buffer metadata matches
+        let size = if content_len > 0 {
+            content_len
+        } else {
+            sb.size_bytes()
+        };
+          
+          // Simple contiguous check: expected end = start + ptr_range
+          // Actually, SharedBuffer frames are PhysFrame.
+          // We assume they are contiguous for program loading.
+          // We can check:
+          let mut addr = start;
+          for frame in &sb.frames {
+               if frame.start_address != addr {
+                   kernel::log("SharedBuffer non-contiguous, cannot load ELF");
+                   return None;
+               }
+               addr += 4096;
+          }
+          
+          Some(ProgramImageData {
+              identifier: String::from(identifier),
+              module_index: 0,
+              base_phys: start,
+              size,
+          })
+     } else {
+         None
+     }
 }

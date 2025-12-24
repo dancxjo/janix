@@ -9,9 +9,22 @@ use heapless::Vec;
 use spin::Mutex;
 use thing_models::PropValue;
 
+pub const MAX_THREADS: usize = 32;
+pub const MAX_PROCESSES: usize = 16;
+pub static NEED_RESCHED: AtomicBool = AtomicBool::new(false);
+
+// Until you have a real timer/preemption story, we still need forward progress
+// so that sleepers wake and userspace "ticks" without huge delays.
+const FAKE_SLICE_NS: u64 = 5_000_000; // 5ms
+
+#[derive(Copy, Clone, Debug)]
+pub struct SleepEntry {
+    pub thread_id: ThreadId,
+    pub wake_at_ns: u64,
+}
+
 pub static TICKS: AtomicU64 = AtomicU64::new(0);
 pub static PREEMPT_COUNT: AtomicU32 = AtomicU32::new(0);
-pub static NEED_RESCHED: AtomicBool = AtomicBool::new(false);
 
 pub fn preempt_disable() {
     PREEMPT_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -43,15 +56,7 @@ where
     })
 }
 
-pub const MAX_THREADS: usize = 32;
-pub const MAX_PROCESSES: usize = 16;
-const FAKE_SLICE_NS: u64 = 5_000_000;
 
-#[derive(Copy, Clone, Debug)]
-pub struct SleepEntry {
-    pub thread_id: ThreadId,
-    pub wake_at_ns: u64,
-}
 
 #[repr(align(16))]
 #[derive(Copy, Clone, Debug)]
@@ -87,6 +92,7 @@ pub struct Thread {
     pub started: bool,
     pub thing_id: Option<ThingId>,
     pub sleep_event_id: Option<ThingId>,
+    pub sleep_until_ns: u64,
     pub last_run_start_ns: u64,
     pub total_run_ns: u64,
     pub address_space_token: Option<u64>,
@@ -120,12 +126,14 @@ pub struct Process {
 }
 
 pub struct Scheduler {
-    // Simple round-robin run queue
+    // HOT PATH: keep queues in-memory; graph is a mirror, not the scheduler's brain.
     run_queue: Vec<ThreadId, MAX_THREADS>,
+    sleep_queue: Vec<SleepEntry, MAX_THREADS>,
+
     threads: [Option<Thread>; MAX_THREADS],
     processes: [Option<Process>; MAX_PROCESSES],
     current: Option<ThreadId>,
-    sleep_queue: Vec<SleepEntry, MAX_THREADS>,
+
     graph_enabled: bool,
     fake_time_ns: u64,
 }
@@ -146,10 +154,10 @@ impl Scheduler {
     pub const fn new() -> Self {
         Self {
             run_queue: Vec::new(),
+            sleep_queue: Vec::new(),
             threads: [const { None }; MAX_THREADS],
             processes: [const { None }; MAX_PROCESSES],
             current: None,
-            sleep_queue: Vec::new(),
             graph_enabled: false,
             fake_time_ns: 0,
         }
@@ -176,36 +184,37 @@ impl Scheduler {
         }
     }
 
-    pub fn sleep_current_thread(&mut self, wake_at_ns: u64) {
-        let tid = self
-            .current
-            .expect("no current thread in sleep_current_thread");
-
-        let index = thread_index(tid);
-        if self.threads[index].is_none() {
-            panic!("sleep_current_thread: missing thread");
+    pub fn set_current(&mut self, tid: ThreadId) {
+        let idx = thread_index(tid);
+        if let Some(thr) = self.threads[idx].as_mut() {
+            thr.state = ThreadState::Running;
+            thr.last_run_start_ns = self.fake_time_ns;
+            self.graph_update_thread_state(idx);
         }
+        self.current = Some(tid);
+    }
 
-        self.finish_running_thread(index);
-        if let Some(thr) = self.threads[index].as_mut() {
+    fn advance_time_slice(&mut self) {
+        // If you later wire a real monotonic clock, swap this out.
+        self.fake_time_ns = self.fake_time_ns.saturating_add(FAKE_SLICE_NS);
+    }
+
+    pub fn sleep_current_until(&mut self, wake_at_ns: u64) {
+        let tid = match self.current {
+            Some(t) => t,
+            None => return,
+        };
+        let idx = thread_index(tid);
+        if let Some(thr) = self.threads[idx].as_mut() {
             thr.state = ThreadState::Sleeping;
-        }
-        self.graph_update_thread_state(index);
-        self.graph_record_sleep_event(index, wake_at_ns);
-
-        // Remove from run_queue if it’s there.
-        if let Some(pos) = self.run_queue.iter().position(|&id| id == tid) {
-            self.run_queue.swap_remove(pos);
+            thr.sleep_until_ns = wake_at_ns;
+            self.graph_update_thread_state(idx);
+            self.graph_record_sleep_event(idx, wake_at_ns);
         }
 
-        // Register in sleep queue.
         self.sleep_queue
-            .push(SleepEntry {
-                thread_id: tid,
-                wake_at_ns,
-            })
+            .push(SleepEntry { thread_id: tid, wake_at_ns })
             .expect("sleep_queue full");
-
         self.current = None;
     }
 
@@ -214,22 +223,18 @@ impl Scheduler {
         while i < self.sleep_queue.len() {
             let entry = self.sleep_queue[i];
             if entry.wake_at_ns <= now_ns {
-                // Wake this thread.
-                let index = thread_index(entry.thread_id);
-                self.graph_clear_sleep_event(index);
-                if let Some(thr) = self.threads[index].as_mut() {
+                let idx = thread_index(entry.thread_id);
+                self.graph_clear_sleep_event(idx);
+                if let Some(thr) = self.threads[idx].as_mut() {
                     thr.state = ThreadState::Runnable;
+                    thr.sleep_until_ns = 0;
                 }
-                self.graph_update_thread_state(index);
-
-                // Put back on run queue.
+                self.graph_update_thread_state(idx);
                 self.run_queue
                     .push(entry.thread_id)
                     .expect("run_queue full while waking sleeper");
-
-                // Remove this entry from sleep_queue by swap_remove.
                 self.sleep_queue.swap_remove(i);
-                // Do NOT increment i; swapped element needs to be checked.
+                // swapped element must be checked; do not i += 1
             } else {
                 i += 1;
             }
@@ -387,6 +392,7 @@ impl Scheduler {
                     address_space_token,
                     pending_wake: false,
                     is_idle: false,
+                    sleep_until_ns: 0,
                 });
                 if self.graph_enabled {
                     self.ensure_thread_thing(i);
@@ -432,6 +438,7 @@ impl Scheduler {
                     address_space_token,
                     pending_wake: false,
                     is_idle: true,
+                    sleep_until_ns: 0,
                 });
                 if self.graph_enabled {
                     self.ensure_thread_thing(i);
@@ -447,25 +454,15 @@ impl Scheduler {
         panic!("Max threads reached creating idle thread");
     }
 
-    pub fn mark_yield(&mut self, tid: ThreadId) {
-        let index = thread_index(tid);
-        let is_running = self
-            .threads
-            .get(index)
-            .and_then(|t| t.as_ref())
-            .map(|t| t.state == ThreadState::Running)
-            .unwrap_or(false);
-
-        if is_running {
-            self.finish_running_thread(index);
-            if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
-                thread.state = ThreadState::Runnable;
-            }
-            self.graph_update_thread_state(index);
-
-            if self.run_queue.push(tid).is_err() {
-                // Should not happen if we manage queue correctly
-                panic!("Run queue full on yield");
+    pub fn yield_current(&mut self) {
+        if let Some(tid) = self.current.take() {
+            let idx = thread_index(tid);
+            if let Some(thr) = self.threads[idx].as_mut() {
+                if thr.state == ThreadState::Running {
+                    thr.state = ThreadState::Runnable;
+                    self.graph_update_thread_state(idx);
+                    self.run_queue.push(tid).expect("run_queue full on yield");
+                }
             }
         }
     }
@@ -563,45 +560,80 @@ impl Scheduler {
         }
     }
 
-    pub fn next_runnable(&mut self) -> Option<ThreadId> {
-        if self.run_queue.is_empty() {
-            return None;
-        }
+    fn choose_next_runnable(&mut self) -> Option<ThreadId> {
+        if self.run_queue.is_empty() { return None; }
 
-        // Find the index of the thread with the highest priority.
-        // We use strict priority: always pick the highest available priority.
-        // If there are ties, pick the one that appears earliest in the queue (FIFO for same priority).
-        let mut best_index = 0;
-        let mut best_prio = 0;
-
+        // Strict: highest priority wins; ties remain FIFO.
+        let mut best_index = 0usize;
+        let mut best_prio = 0u64;
         for (i, &tid) in self.run_queue.iter().enumerate() {
-            let index = thread_index(tid);
-            if let Some(thr) = self.threads[index].as_ref() {
+            let idx = thread_index(tid);
+            if let Some(thr) = self.threads[idx].as_ref() {
                 if thr.priority > best_prio {
                     best_prio = thr.priority;
                     best_index = i;
                 }
             }
         }
-
-        // Remove and return the best candidate
         Some(self.run_queue.remove(best_index))
     }
 
-    pub fn choose_next_thread(&mut self, now_ns: u64) -> Option<ScheduledThread> {
-        self.wake_sleepers(now_ns);
-        let tid = self.next_runnable()?;
-        self.set_current(tid);
-        let thread = self
-            .thread_mut(tid)
-            .expect("Scheduled thread missing backing state");
-        let entry_point = thread.entry_point;
+    pub fn tick(&mut self) {
+        // 1) move time forward (until you have a real timer)
+        self.advance_time_slice();
 
+        // Advance kernel timekeeping by 1 tick (assuming FAKE_SLICE_NS ~ 1ms)
+        // This drives TimeSource updates and Alarms.
+        crate::time::advance_ticks(1);
+
+        // 2) wake sleepers due at "now"
+        // Only wake sleepers once per second (or roughly so) to avoid excessive calls
+        // to wake_sleepers which iterates over all threads.
+        if self.fake_time_ns % 1_000_000_000 < FAKE_SLICE_NS {
+            let now = self.fake_time_ns;
+            self.wake_sleepers(now);
+        }
+
+        // 3) pick next runnable and context switch if needed
+        if self.current.is_none() {
+            if let Some(next) = self.choose_next_runnable() {
+                self.set_current(next);
+            }
+        }
+    }
+
+    // Compatibility methods for arch crate
+    pub fn sleep_current_thread(&mut self, wake_at_ns: u64) {
+        self.sleep_current_until(wake_at_ns);
+    }
+
+    pub fn mark_yield(&mut self, _tid: ThreadId) {
+        // arch calls this after saving context.
+        // We assume it means the current thread wants to yield.
+        self.yield_current();
+    }
+
+    pub fn choose_next_thread(&mut self, _now_ns: u64) -> Option<ScheduledThread> {
+        // Use fake_time_ns because that's what tick() advances
+        self.wake_sleepers(self.fake_time_ns);
+        
+        // If we don't have a current thread (e.g. yielded or slept), pick one
+        if self.current.is_none() {
+             if let Some(next) = self.choose_next_runnable() {
+                 self.set_current(next);
+             }
+        }
+
+        let tid = self.current?;
+        
+        let idx = thread_index(tid);
+        let thread = self.threads[idx].as_ref()?;
+        
         Some(ScheduledThread {
-            tid,
+            tid: thread.id,
             name: thread.name,
             started: thread.started,
-            entry_point,
+            entry_point: thread.entry_point,
             user_stack_top: thread.user_stack_top,
             user_arg: thread.user_arg,
             context: thread.context,
@@ -609,16 +641,6 @@ impl Scheduler {
             address_space_token: thread.address_space_token,
             is_idle: thread.is_idle,
         })
-    }
-
-    pub fn set_current(&mut self, tid: ThreadId) {
-        self.current = Some(tid);
-        let index = thread_index(tid);
-        if let Some(thread) = self.threads.get_mut(index).and_then(|t| t.as_mut()) {
-            thread.state = ThreadState::Running;
-            thread.last_run_start_ns = self.fake_time_ns;
-        }
-        self.graph_update_thread_state(index);
     }
 
     pub fn current_id(&self) -> Option<ThreadId> {
@@ -896,21 +918,16 @@ impl Scheduler {
 pub static SCHEDULER: Mutex<Scheduler> = Mutex::new(Scheduler::new());
 
 pub fn yield_current_thread() {
-    without_preemption(|| {
-        let mut sched = SCHEDULER.lock();
-        if let Some(tid) = sched.current {
-            sched.mark_yield(tid);
-            sched.current = None;
-        }
-    })
+    with_scheduler(|sched| {
+        sched.yield_current();
+    });
 }
 
 pub fn exit_current_thread(reason: &'static str, code: u64) {
-    without_preemption(|| {
-        let mut sched = SCHEDULER.lock();
+    with_scheduler(|sched| {
         if let Some(tid) = sched.current {
             sched.mark_terminated(tid, reason, code);
             sched.current = None;
         }
-    })
+    });
 }

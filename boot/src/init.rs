@@ -111,12 +111,11 @@ pub fn init_world_graph() {
     crate::boot_model::seed_boot_profile();
     crate::boot_model::seed_font_modules_from_limine();
 
-    let t = kernel::time::boot_span_start("seed_images");
-    crate::boot_model::seed_program_images_from_limine();
-    kernel::time::boot_span_end("seed_images", t);
-
-    crate::boot_model::seed_raw_modules_from_limine();
+    let t = kernel::time::boot_span_start("seed_host_and_modules");
+    crate::boot_model::seed_host_and_modules();
+    // Also seed BootPrograms so init/init_debug can find them
     crate::boot_model::seed_boot_programs_from_limine();
+    kernel::time::boot_span_end("seed_host_and_modules", t);
 
     crate::boot_screen::step("Moderatores instrumentorum instruuntur...");
     let t = kernel::time::boot_span_start("driver_bringup");

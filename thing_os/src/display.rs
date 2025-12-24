@@ -5,7 +5,7 @@ use alloc::string::{String, ToString};
 
 use abi::{MapFlags, SharedBufferInfo, ThingId};
 use alloc::vec::Vec;
-use thing_models::graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER;
+
 
 use crate::syscalls::syscall;
 use crate::{link_targets, list_things_by_kind};

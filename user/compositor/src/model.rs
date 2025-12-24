@@ -202,6 +202,10 @@ impl Compositor {
         let width = self.fb.info.width as i32;
         let height = self.fb.info.height as i32;
 
+        if !self.damage.is_empty() {
+             thing_os::println!("DEBUG: present_frame blitting {} rects", self.damage.len());
+        }
+
         for rect in &self.damage {
             // Clamp damage rect to screen
             let r_x = rect.x.max(0);

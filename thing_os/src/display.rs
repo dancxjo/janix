@@ -123,14 +123,9 @@ pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysE
     // Try finding the scanout directly (preferred for single-buffer/compositor-owned backbuffer mode)
     let mut targets = link_targets(display.id, graph_kinds::LINK_DISPLAY_SCANOUT);
     
-    // Fallback: try finding via "HasFrontBuffer" if scanout link isn't found
-    if targets.is_empty() {
-         targets = link_targets(display.id, LINK_DISPLAY_HAS_FRONT_BUFFER);
-    }
-
     let buffer_id = targets.pop().ok_or({
         use crate::println;
-        println!("open_primary_display: no buffer found for display {}", display.id.0);
+        println!("open_primary_display: no scanout buffer found for display {}", display.id.0);
         crate::SysError::Unexpected
     })?;
 

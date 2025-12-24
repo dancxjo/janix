@@ -1,9 +1,0 @@
-[package]
-name = "framebuffer_api"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-abi = { path = "../../../abi" }
-thing_macros = { path = "../../../thing_macros" }
-thing_models = { path = "../../../thing_models" }

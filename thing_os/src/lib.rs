@@ -53,7 +53,7 @@ use abi::syscalls::SYSCALL_THING_GET;
 pub use abi::{Predicate, ThingId};
 pub use alarm::{Alarm, sleep_until};
 pub use clock::SystemClock;
-pub use framebuffer_api::{DisplayFramebuffer, DisplayPowerState, DisplayPresentRequest};
+pub use thing_models::{DisplayFramebuffer, DisplayPowerState, DisplayPresentRequest};
 pub use thing_macros::main;
 pub use thing_models::Thing;
 pub use thing_models::{
@@ -374,6 +374,7 @@ pub fn register_schema_for<T: Thing>() -> bool {
         kind: kind_sym,
         description: desc_sym,
         props: UserSlice::from_slice(&wire_schema),
+        links: UserSlice::default(),
     };
 
     match syscalls::syscall(request) {

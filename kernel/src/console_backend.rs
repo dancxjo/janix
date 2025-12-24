@@ -16,7 +16,7 @@ pub fn init() {
 
     let props = alloc::vec![(prop_msg, PropType::Str), (prop_ts, PropType::U64),];
 
-    let _ = graph::schema::register_schema(kind_log, desc_log, props, alloc::vec![]);
+    let _ = graph::schema::register_schema(kind_log, desc_log, props, alloc::vec![], alloc::vec![]);
 }
 
 pub fn push_log(message: &str) {

@@ -4,7 +4,7 @@ extern crate alloc;
 
 use abi::{MapFlags, PixelFormat, SharedBufferInfo, ThingId};
 use alloc::string::ToString;
-use framebuffer_api::{DisplayFramebuffer, DisplayPowerState};
+use thing_models::{DisplayFramebuffer, DisplayPowerState};
 use thing_os::graph_kinds;
 use thing_os::prelude::*;
 use thing_os::{

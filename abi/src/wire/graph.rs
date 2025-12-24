@@ -18,6 +18,15 @@ pub enum ValueFormat {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WireSchemaLink {
+    pub pred: crate::Predicate,
+    pub target_kind: crate::syscall_defs::SymbolId,
+    pub min: i32,
+    pub max: i32, // -1 => unbounded
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct ValueBlobHeader {
     pub format: u8, // ValueFormat

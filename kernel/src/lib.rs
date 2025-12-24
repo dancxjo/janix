@@ -646,6 +646,7 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
             kind,
             description,
             props,
+            links,
         } => {
             let mut props_vec = alloc::vec::Vec::new();
             unsafe {
@@ -674,7 +675,22 @@ pub fn handle_request(request: KernelRequest) -> KernelResponse {
                     props_vec.push((sym, pt));
                 }
             }
-            match register_schema(kind, description, props_vec, alloc::vec![]) {
+            let mut links_vec = alloc::vec::Vec::new();
+            unsafe {
+                let ptr = links.ptr as *const abi::wire::graph::WireSchemaLink;
+                for i in 0..links.len {
+                    let wl = *ptr.add(i as usize);
+                    let sl = graph::schema::SchemaLink {
+                        pred: wl.pred,
+                        target_kind: wl.target_kind,
+                        min: wl.min,
+                        max: wl.max,
+                    };
+                    links_vec.push(sl);
+                }
+            }
+
+            match register_schema(kind, description, props_vec, alloc::vec![], links_vec) {
                 Ok(outcome) => KernelResponse::SchemaRegistered { kind, outcome },
                 Err(e) => {
                     let msg = alloc::format!(
@@ -859,7 +875,7 @@ pub fn create_builtin_things() {
         (crate::symbols::intern("booted"), PropType::Bool),
     ];
 
-    if let Err(e) = register_schema(kind, desc, props, vec![]) {
+    if let Err(e) = register_schema(kind, desc, props, vec![], vec![]) {
         log("Failed to register KernelInfo schema");
         log(e);
     }
@@ -872,7 +888,7 @@ pub fn create_builtin_things() {
         (crate::symbols::intern("things_created"), PropType::U64),
     ];
 
-    if let Err(e) = register_schema(kind, desc, props, vec![]) {
+    if let Err(e) = register_schema(kind, desc, props, vec![], vec![]) {
         log("Failed to register BootStats schema");
         log(e);
     }

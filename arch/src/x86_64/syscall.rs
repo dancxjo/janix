@@ -432,6 +432,11 @@ macro_rules! dispatch_syscall {
                 len: props_len,
                 _phantom: core::marker::PhantomData,
             },
+            links: UserSlice {
+                ptr: $a5,
+                len: $a6,
+                _phantom: core::marker::PhantomData,
+            },
         };
 
         match kernel::handle_request(req) {

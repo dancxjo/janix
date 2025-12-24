@@ -1,6 +1,6 @@
 use thing_os::prelude::*;
 
-use framebuffer_api::DisplayPresentRequest;
+use thing_models::DisplayPresentRequest;
 
 use crate::config::FRAME_INTERVAL_NS;
 use crate::graph::{

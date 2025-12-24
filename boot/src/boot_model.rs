@@ -431,6 +431,7 @@ pub fn seed_boot_programs_from_limine() {
             && identifier != "ps2_mouse_driver"
             && identifier != "framebuffer"
             && identifier != "compositor"
+            && identifier != "watch_test"
         {
             continue;
         }

@@ -52,6 +52,11 @@ macro_rules! for_each_syscall {
             SYSCALL_DEV_OPEN => 50,
             SYSCALL_DEV_READ => 51,
             SYSCALL_PCI_READ_CONFIG => 52,
+
+            // Watch
+            SYSCALL_WATCH_OPEN => 600,
+            SYSCALL_WATCH_NEXT => 601,
+            SYSCALL_WATCH_CLOSE => 602,
         }
     };
 }

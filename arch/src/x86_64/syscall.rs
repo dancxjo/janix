@@ -815,8 +815,7 @@ macro_rules! dispatch_syscall {
                         watch.waiting_thread = Some(tid);
                         drop(guard); // Unlock before switch
                         
-                        let frame = $frame;
-                        frame.rip -= 2; // Rewind
+                        $frame.rip -= 2; // Rewind
                         save_current_thread_context($frame, 0);
                         kernel::sched::with_scheduler(|sched| {
                             let _ = sched.mark_blocked(tid);
@@ -828,21 +827,17 @@ macro_rules! dispatch_syscall {
                     }
                 } else {
                     // Have events
-                    if let Some(out_slice) = unsafe { 
-                        let ptr = out_ptr as *mut WatchEvent;
-                        slice::from_raw_parts_mut(ptr, max_events as usize) 
-                    } {
-                        let mut count = 0;
-                        while count < max_events && !watch.queue.is_empty() {
-                             if let Some(ev) = watch.queue.pop_front() {
-                                 out_slice[count as usize] = ev;
-                                 count += 1;
-                             }
-                        }
-                        count // Return number of events
-                    } else {
-                        u64::MAX // Bad pointer
+                    let ptr = out_ptr as *mut WatchEvent;
+                    let out_slice = unsafe { slice::from_raw_parts_mut(ptr, max_events as usize) };
+                    
+                    let mut count = 0;
+                    while count < max_events && !watch.queue.is_empty() {
+                            if let Some(ev) = watch.queue.pop_front() {
+                                out_slice[count as usize] = ev;
+                                count += 1;
+                            }
                     }
+                    count // Return number of events
                 }
             } else {
                  u64::MAX // Bad handle

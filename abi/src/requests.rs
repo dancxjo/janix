@@ -6,7 +6,7 @@ use crate::{
         common::UserSlice,
         graph::{
             BatchUpdateEntry as WireBatchEntry, WatchEvent, WatchId, WatchSpec, WireProp,
-            WireSchemaProp,
+            WireSchemaLink, WireSchemaProp,
         },
         memory::{FrameInfo, MapFlags, MemorySummary, SchedulerSummary},
         resident::{
@@ -55,6 +55,7 @@ pub enum KernelRequest {
         kind: SymbolId,
         description: SymbolId,
         props: UserSlice<WireSchemaProp>,
+        links: UserSlice<WireSchemaLink>,
     },
     SchemaGet {
         kind: SymbolId,

@@ -240,6 +240,7 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
             kind,
             description,
             props,
+            links,
         } => {
             let ret = unsafe {
                 raw_syscall(
@@ -248,8 +249,8 @@ pub fn syscall(request: KernelRequest) -> KernelResponse {
                     description.0 as u64,
                     props.ptr,
                     props.len,
-                    0,
-                    0,
+                    links.ptr,
+                    links.len,
                 )
             };
             if ret <= 2 {

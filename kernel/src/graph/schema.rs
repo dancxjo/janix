@@ -3,14 +3,23 @@ use alloc::vec::Vec;
 use hashbrown::HashMap;
 use spin::Mutex;
 
-use abi::{ThingId, syscall_defs::SymbolId};
+use abi::{Predicate, ThingId, syscall_defs::SymbolId};
 use thing_models::{PropType, PropValue};
+
+#[derive(Clone, Copy, Debug)]
+pub struct SchemaLink {
+    pub pred: Predicate,
+    pub target_kind: SymbolId,
+    pub min: i32,
+    pub max: i32,
+}
 
 pub struct Schema {
     pub kind: SymbolId,
     pub description: SymbolId,
     pub props: HashMap<SymbolId, PropType>,
     pub indexed_props: Vec<SymbolId>,
+    pub links: Vec<SchemaLink>,
     pub fingerprint: u64,
 }
 
@@ -25,6 +34,7 @@ pub fn register_schema(
     description: SymbolId,
     props: Vec<(SymbolId, PropType)>,
     indexed_props: Vec<SymbolId>,
+    links: Vec<SchemaLink>,
 ) -> Result<abi::SchemaRegistryOutcome, &'static str> {
     let mut guard = SCHEMAS.lock();
     let schemas = guard.as_mut().expect("Schemas not initialized");
@@ -34,6 +44,14 @@ pub fn register_schema(
     // Since we receive a Vec, let's sort a view of it.
     let mut sorted_props = props.clone();
     sorted_props.sort_by(|a, b| a.0.0.cmp(&b.0.0));
+
+    let mut sorted_links = links.clone();
+    sorted_links.sort_by(|a, b| {
+        a.pred
+            .0
+            .cmp(&b.pred.0)
+            .then_with(|| a.target_kind.0.cmp(&b.target_kind.0))
+    });
 
     let mut hasher = hashbrown::hash_map::DefaultHashBuilder::default().build_hasher();
     use core::hash::{BuildHasher, Hash, Hasher};
@@ -52,6 +70,12 @@ pub fn register_schema(
     }
     for k in &indexed_props {
         k.hash(&mut hasher);
+    }
+    for l in &sorted_links {
+        l.pred.0.hash(&mut hasher);
+        l.target_kind.0.hash(&mut hasher);
+        l.min.hash(&mut hasher);
+        l.max.hash(&mut hasher);
     }
 
     let fingerprint = hasher.finish();
@@ -90,6 +114,7 @@ pub fn register_schema(
             description,
             props: prop_map,
             indexed_props,
+            links,
             fingerprint,
         },
     );
@@ -121,6 +146,31 @@ pub fn is_prop_indexed(kind: SymbolId, key: SymbolId) -> bool {
         .get(&kind)
         .map(|s| s.indexed_props.contains(&key))
         .unwrap_or(false)
+}
+
+pub fn validate_link_cardinality(
+    kind: SymbolId,
+    pred: Predicate,
+    current_count: usize,
+) -> Result<(), &'static str> {
+    let guard = SCHEMAS.lock();
+    let schemas = guard.as_ref().expect("Schemas not initialized");
+
+    let schema = match schemas.get(&kind) {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+
+    for link_def in &schema.links {
+        if link_def.pred == pred {
+            if link_def.max != -1 {
+                if current_count as i32 >= link_def.max {
+                    return Err("Cardinality violation: max links exceeded");
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 // Helper to validate props against schema

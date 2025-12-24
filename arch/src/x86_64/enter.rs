@@ -116,8 +116,6 @@ resume_user_mode_asm:
     
     swapgs
     iretq
-"#
-);
 
 .global resume_kernel_mode_asm
 resume_kernel_mode_asm:

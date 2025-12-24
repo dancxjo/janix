@@ -119,12 +119,81 @@ resume_user_mode_asm:
 "#
 );
 
+.global resume_kernel_mode_asm
+resume_kernel_mode_asm:
+    // RDI points to context
+    // Load RSP first!
+    mov rsp, [rdi + 144]
+
+    // Interrupt frame (RIP, CS, RFLAGS). For CPL0 returns, iretq pops only these.
+    mov rax, [rdi + 136] // RFLAGS
+    push rax
+    mov rax, [rdi + 128] // CS
+    push rax
+    mov rax, [rdi + 120] // RIP
+    push rax
+
+    // GPRs (RAX .. R15)
+    mov rax, [rdi + 112] // RAX
+    push rax
+    mov rax, [rdi + 104] // RDI
+    push rax
+    mov rax, [rdi + 96]  // RSI
+    push rax
+    mov rax, [rdi + 88]  // RDX
+    push rax
+    mov rax, [rdi + 80]  // RCX
+    push rax
+    mov rax, [rdi + 72]  // R8
+    push rax
+    mov rax, [rdi + 64]  // R9
+    push rax
+    mov rax, [rdi + 56]  // R10
+    push rax
+    mov rax, [rdi + 48]  // R11
+    push rax
+    mov rax, [rdi + 40]  // RBX
+    push rax
+    mov rax, [rdi + 32]  // RBP
+    push rax
+    mov rax, [rdi + 24]  // R12
+    push rax
+    mov rax, [rdi + 16]  // R13
+    push rax
+    mov rax, [rdi + 8]   // R14
+    push rax
+    mov rax, [rdi + 0]   // R15
+    push rax
+
+    // Restore GPRs
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
+
+    // No swapgs for kernel thread!
+    iretq
+"#
+);
+
 unsafe extern "C" {
     fn enter_user_mode_asm(regs: *const X86UserEntryRegs) -> !;
     fn resume_user_mode_asm(context: *const u64) -> !;
+    fn resume_kernel_mode_asm(context: *const u64) -> !;
 }
 
-pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext) -> ! {
+pub fn restore_fpu(fpu_context: &kernel::sched::FpuContext) {
     // Manually align a stack buffer to 16 bytes.
     // We allocate 512 + 16 bytes to ensure we can find a 16-byte aligned offset.
     let mut raw_buffer = [0u8; 512 + 16];
@@ -148,14 +217,63 @@ pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext
 
     let aligned_ptr = aligned_slice.as_ptr();
 
-    // Debug logging to verify context
-    let rip = context[15];
-    let rsp = context[18];
-    // Removed: logging moved to user.rs/schedule_next
-
     unsafe {
         core::arch::x86_64::_fxrstor(aligned_ptr);
+    }
+}
+
+pub fn resume_user_mode(context: &[u64], fpu_context: &kernel::sched::FpuContext) -> ! {
+    restore_fpu(fpu_context);
+    // Manually align a stack buffer to 16 bytes.
+    // We allocate 512 + 16 bytes to ensure we can find a 16-byte aligned offset.
+    let mut raw_buffer = [0u8; 512 + 16];
+    let start_addr = raw_buffer.as_ptr() as usize;
+    let align_offset = if start_addr % 16 == 0 {
+        0
+    } else {
+        16 - (start_addr % 16)
+    };
+
+    // Create a mutable slice starting at the aligned offset
+    let aligned_slice = &mut raw_buffer[align_offset..align_offset + 512];
+
+    // Copy data
+    aligned_slice.copy_from_slice(&fpu_context.data);
+
+    // Sanitize MXCSR (offset 24)
+    let mxcsr_offset = 24;
+    let default_mxcsr: u32 = 0x1F80;
+    aligned_slice[mxcsr_offset..mxcsr_offset + 4].copy_from_slice(&default_mxcsr.to_le_bytes());
+
+    let aligned_ptr = aligned_slice.as_ptr();
+
+    unsafe {
         resume_user_mode_asm(context.as_ptr())
+    }
+}
+
+#[allow(dead_code)]
+pub fn resume_kernel_mode(context: &[u64]) -> ! {
+    unsafe {
+        resume_kernel_mode_asm(context.as_ptr())
+    }
+}
+
+#[allow(dead_code)]
+pub fn start_kernel_thread(entry: u64, stack_top: u64, arg: u64) -> ! {
+    // Set stack, pass arg in RDI, and jump to entry. No iret frame needed for ring0->ring0 start.
+    unsafe {
+        core::arch::asm!(
+            "mov rsp, {stack}",
+            "mov rax, {entry}",
+            "mov rdi, {arg}",
+            "sti",
+            "jmp rax",
+            stack = in(reg) stack_top,
+            entry = in(reg) entry,
+            arg = in(reg) arg,
+            options(noreturn)
+        );
     }
 }
 

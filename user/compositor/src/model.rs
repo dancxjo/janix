@@ -63,6 +63,7 @@ pub struct MappedSurface {
 #[derive(Debug)]
 pub struct Compositor {
     pub fb: PrimaryDisplayBuffer,
+    pub back_buffer: Vec<u32>, // Software backbuffer for double buffering
     pub cursor: CursorState,
     pub cursor_sprites: CursorSprites,
     pub last_mouse_seq: u64,
@@ -95,8 +96,11 @@ impl Compositor {
     pub fn new(fb: PrimaryDisplayBuffer) -> Self {
         let cx = fb.info.width as i32 / 2;
         let cy = fb.info.height as i32 / 2;
+        let size = (fb.info.width * fb.info.height) as usize;
+        let back_buffer = vec![0u32; size];
         Self {
             fb,
+            back_buffer,
             cursor: CursorState::new(cx, cy),
             cursor_sprites: cursor::build_cursor_sprites(),
             last_mouse_seq: 0,

@@ -560,13 +560,14 @@ fn timer_tick(frame: &mut TrapFrame) {
                 thread.context[18] = frame.rsp;
                 thread.context[19] = frame.ss as u64;
 
+                thread.started = true;
+
                 // Save FPU
                 if thread.id.0 > 1 {
                     unsafe {
                         core::arch::x86_64::_fxsave(thread.fpu_context.data.as_mut_ptr());
                     }
                 }
-                thread.started = true;
             } else {
                 if let Some(tid) = sched.current_id() {
                     // Diagnostic: This path means we failed to save context for the current thread!

@@ -230,7 +230,13 @@ pub fn build_display_list(
 }
 
 pub fn render_display_list(comp: &Compositor, ops: &[DrawOp], clip: Option<LayoutRect>) {
-    let buffer = comp.fb.ptr as *mut u32;
+    // Render to the software backbuffer:
+    // We cast the const pointer from the slice to a mutable pointer because we know we own it
+    // and we need to write to it. Ideally `render_display_list` would take `&mut Compositor` or `&mut [u32]`.
+    // However, `comp` is passed as `&Compositor`. Since `back_buffer` is a `Vec`, we can get the pointer.
+    // Safety: We need to be careful about aliasing if we are reading from it too, but we typically just clear/overwrite.
+    // Actually, `Compositor` owns it.
+    let buffer = comp.back_buffer.as_ptr() as *mut u32;
     let width = comp.fb.info.width;
     let height = comp.fb.info.height;
     // Primitives expect stride in BYTES.

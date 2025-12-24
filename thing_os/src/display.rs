@@ -9,6 +9,7 @@ use thing_models::graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER;
 
 use crate::syscalls::syscall;
 use crate::{link_targets, list_things_by_kind};
+use crate::graph_kinds;
 
 #[derive(Debug)]
 pub struct SharedBufferMapping {
@@ -119,11 +120,19 @@ pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysE
         .cloned()
         .ok_or(crate::SysError::Unexpected)?;
 
-    // In single-buffered mode, we look for the "Front Buffer" which links to the scanout.
-    let mut targets = link_targets(display.id, LINK_DISPLAY_HAS_FRONT_BUFFER);
-    let buffer_id = targets.pop().ok_or(crate::SysError::Unexpected)?;
+    // Try finding the scanout directly (preferred for single-buffer/compositor-owned backbuffer mode)
+    let mut targets = link_targets(display.id, graph_kinds::LINK_DISPLAY_SCANOUT);
+    
+    // Fallback: try finding via "HasFrontBuffer" if scanout link isn't found
+    if targets.is_empty() {
+         targets = link_targets(display.id, LINK_DISPLAY_HAS_FRONT_BUFFER);
+    }
 
-    // If there were a back buffer, we ignore it.
+    let buffer_id = targets.pop().ok_or({
+        use crate::println;
+        println!("open_primary_display: no buffer found for display {}", display.id.0);
+        crate::SysError::Unexpected
+    })?;
 
     let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER);
     let mapping = map_display_buffer(buffer_id, flags).map_err(|e| {

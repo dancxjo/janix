@@ -858,9 +858,9 @@ macro_rules! dispatch_syscall {
         let watch_id = WatchId($a1);
          if let Some(pid) = kernel::sched::SCHEDULER.lock().current_process_id() {
              if kernel::graph::watch::close_watch_by_pid(watch_id, pid) {
-                 1
-             } else {
                  0
+             } else {
+                 1
              }
          } else {
              u64::MAX

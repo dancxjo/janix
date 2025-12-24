@@ -13,7 +13,8 @@ use abi::MapFlags;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::vec::Vec;
-use thing_os::{RawModule, shared_buffer_map};
+use thing_os::{RawModule, shared_buffer_map, link_targets, load_thing};
+use thing_models::{Module, Content, graph_kinds};
 
 use crate::model::ConsoleBuffer;
 use thing_os::println;
@@ -67,19 +68,23 @@ fn draw_console(compositor: &mut Compositor) {
 }
 
 fn load_background_image() -> Option<BackgroundImage> {
-    let modules = list_things_by_kind::<RawModule>();
-    let clouds_module = modules.iter().find(|m| m.identifier == "clouds.bmp")?;
+    let modules = list_things_by_kind::<Module>();
+    let clouds_module = modules.iter().find(|m| m.name == "clouds.bmp")?;
 
-    println!("compositor: mapping clouds.bmp via ResidentMap");
+    println!("compositor: mapping clouds.bmp via Module->Content");
 
-    // Map the RawModule via ResidentMap
-    let (src_ptr, src_len) = match syscall(KernelRequest::ResidentMap {
-        id: clouds_module.id,
-        perms: ResidentMapPerms::READ,
+    let targets = link_targets(clouds_module.id, graph_kinds::LINK_HAS_CONTENT);
+    let content_id = targets.first()?;
+    let content = load_thing::<Content>(*content_id)?;
+
+    // Map the Content buffer
+    let (src_ptr, src_len) = match syscall(KernelRequest::MapSharedBuffer {
+        buffer_id: abi::ThingId(content.buffer_id),
+        flags: MapFlags::READ.union(MapFlags::USER),
     }) {
-        KernelResponse::ResidentMapped { resp } => (resp.user_addr as *const u8, resp.byte_len as usize),
+        KernelResponse::SharedBufferMapped { vaddr, size } => (vaddr as *const u8, size as usize),
         _ => {
-            println!("clouds.bmp: failed to map resident module");
+            println!("clouds.bmp: failed to map content buffer");
             return None;
         }
     };

@@ -96,7 +96,10 @@ impl Compositor {
     pub fn new(fb: PrimaryDisplayBuffer) -> Self {
         let cx = fb.info.width as i32 / 2;
         let cy = fb.info.height as i32 / 2;
-        let size = (fb.info.width * fb.info.height) as usize;
+        // Use stride for allocation to match the framebuffer layout exactly.
+        // stride is in bytes. We want u32 entries.
+        let stride_pixels = (fb.info.stride / 4) as usize;
+        let size = stride_pixels * fb.info.height as usize;
         let back_buffer = vec![0u32; size];
         Self {
             fb,
@@ -190,8 +193,40 @@ impl Compositor {
         }
     }
 
-    // No-op for direct rendering
     pub fn present_frame(&mut self) {
+        // Blit damage from back_buffer to front_buffer (fb)
+        let fb_ptr = self.fb.ptr as *mut u32;
+        let bb_ptr = self.back_buffer.as_ptr();
+        let stride_bytes = self.fb.info.stride as usize;
+        let stride_px = stride_bytes / 4;
+        let width = self.fb.info.width as i32;
+        let height = self.fb.info.height as i32;
+
+        for rect in &self.damage {
+            // Clamp damage rect to screen
+            let r_x = rect.x.max(0);
+            let r_y = rect.y.max(0);
+            let r_w = (rect.w as i32).min(width - r_x);
+            let r_h = (rect.h as i32).min(height - r_y);
+
+            if r_w <= 0 || r_h <= 0 {
+                continue;
+            }
+
+            for row_y in 0..r_h {
+                let y = r_y + row_y;
+                let offset = (y as usize * stride_px) + r_x as usize;
+                
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        bb_ptr.add(offset),
+                        fb_ptr.add(offset),
+                        r_w as usize
+                    );
+                }
+            }
+        }
+
         self.frame_counter = self.frame_counter.wrapping_add(1);
 
         // Optionally update metadata on the framebuffer thing

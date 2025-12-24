@@ -7,25 +7,29 @@ impl ConsoleSink for NullSink {
     fn write_str(&self, _s: &str) {}
 }
 
+use spin::Mutex;
+
 const MAX_SINKS: usize = 4;
-static mut SINKS: [&'static dyn ConsoleSink; MAX_SINKS] = [&NullSink; MAX_SINKS];
-static mut SINK_COUNT: usize = 0;
+static SINKS: Mutex<[Option<&'static dyn ConsoleSink>; MAX_SINKS]> = Mutex::new([None; MAX_SINKS]);
 
 pub fn register_sink(sink: &'static dyn ConsoleSink) {
-    unsafe {
-        if SINK_COUNT < MAX_SINKS {
-            SINKS[SINK_COUNT] = sink;
-            SINK_COUNT += 1;
+    let mut sinks = SINKS.lock();
+    for i in 0..MAX_SINKS {
+        if sinks[i].is_none() {
+            sinks[i] = Some(sink);
+            return;
         }
     }
 }
 
 pub fn print(s: &str) {
-    unsafe {
-        for i in 0..SINK_COUNT {
-            SINKS[i].write_str(s);
+    // Disable interrupts to prevent deadlock if an ISR prints
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let sinks = SINKS.lock();
+        for sink in sinks.iter().flatten() {
+            sink.write_str(s);
         }
-    }
+    });
 }
 
 use core::fmt;

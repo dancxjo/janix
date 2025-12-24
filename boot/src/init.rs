@@ -9,6 +9,10 @@ pub fn init_machine() {
     // Initialize console early to show boot progress
     init_console();
 
+    // Disable preemption to prevent scheduler from hijacking the boot process
+    // once interrupts are enabled.
+    kernel::sched::preempt_disable();
+
     unsafe {
         // Heap is initialized in kmain
         let start = core::ptr::addr_of_mut!(crate::HEAP_MEMORY) as usize;
@@ -135,6 +139,10 @@ pub fn init_userland_and_enter_scheduler() -> ! {
     crate::boot_screen::step("Fila otiosa mittitur...");
     launch_idle_thread();
     crate::boot_screen::step("Imperium schedulatori traditur...");
+
+    // Re-enable preemption so the scheduler can work
+    kernel::sched::preempt_enable();
+
     arch::user::schedule_next();
 }
 

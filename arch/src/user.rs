@@ -33,6 +33,17 @@ pub extern "C" fn user_thread_main(app_id: u64) -> ! {
     }
 }
 
+unsafe fn enter_kernel_thread(entry: u64, stack: u64) -> ! {
+    core::arch::asm!(
+        "mov rsp, {stack}", // Switch stack
+        "push 0",           // Dummy return address for alignment/ABI
+        "jmp {entry}",      // Jump to entry
+        stack = in(reg) stack,
+        entry = in(reg) entry,
+        options(noreturn)
+    );
+}
+
 pub fn schedule_next() -> ! {
     loop {
         kernel::time::poll_time();

@@ -1,0 +1,21 @@
+[package]
+name = "kernel_x86_64"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kernel_core = { path = "../../crates/kernel_core" }
+bridge_x86_64 = { path = "../../crates/bridge_x86_64" }
+linked_list_allocator = "0.10.5"
+
+[lib]
+path = "src/main.rs"
+test = false
+doctest = false
+
+[[bin]]
+name = "kernel_x86_64"
+path = "src/main.rs"
+test = false
+doc = false

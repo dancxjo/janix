@@ -1,0 +1,8 @@
+[package]
+name = "thing_std"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+abi = { path = "../abi" }

@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install apt deps
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            qemu-system-x86 qemu-system-arm qemu-utils \
+            xorriso mtools dosfstools \
+            curl git unzip gzip python3
+
+      - name: Install Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy, rust-src
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: just check
+
+      - name: Test
+        run: just test

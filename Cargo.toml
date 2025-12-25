@@ -1,45 +1,37 @@
 [workspace]
 resolver = "2"
 members = [
-    "boot",
-    "kernel",
-    "abi",
-    "thing_os",
-    "user/clock",
-    "user/compositor",
-    "user/compositor_api",
-    "user/window_demo",
-    "libs/hal",
-    "user/drivers/usb",
-    "user/drivers/pci",
-    "thing_macros",
-    "thing_models",
-    "arch",
-    "user/init",
-    "user/drivers/framebuffer",
-    "user/drivers/ps2_keyboard",
-    "user/drivers/ps2_mouse",
-    "user/geographer",
-
-    "user/hello_world", "tools/icon-gen",
-    "user/debug_alloc",
-    "user/taskman",
-    "user/debug_input_logger",
-    "user/debug_input_events",
-    "user/init_debug",
-    "user/watch_test",
-    "smoke_tests",
+  "xtask",
+  "crates/abi",
+  "crates/models",
+  "crates/hw",
+  "crates/kernel_core",
+  "crates/thing_std",
+  "crates/bridge_x86_64",
+  "crates/bridge_aarch64",
+  "crates/bridge_hosted",
+  "kernels/x86_64",
+  "kernels/aarch64",
+  "kernels/hosted",
+  "tools/smoke_tests",
+  "tools/bdd",
 ]
 
 [workspace.package]
-version = "0.1.0"
-edition = "2024"
+edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-limine = "0.5"
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+postcard = { version = "1", features = ["alloc"] }
 
 [profile.dev]
 panic = "abort"
 
 [profile.release]
 panic = "abort"
+codegen-units = 1
+lto = true

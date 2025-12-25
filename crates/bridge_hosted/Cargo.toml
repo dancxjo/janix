@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 hw = { path = "../hw" }
+kernel_core = { path = "../kernel_core" }
+abi = { path = "../abi" }
 
 [features]
 default = ["std"]

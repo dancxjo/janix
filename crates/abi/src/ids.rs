@@ -41,10 +41,6 @@ impl ThingId {
     pub const NULL: ThingId = ThingId(0);
 }
 
-/// Symbol identifier (for property keys, kind names)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[repr(transparent)]
-pub struct SymbolId(pub u32);
 
 /// Predicate identifier for a link between Things.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

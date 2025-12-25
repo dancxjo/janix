@@ -107,7 +107,9 @@ dependencies = [
 name = "bridge_hosted"
 version = "0.2.0"
 dependencies = [
+ "abi",
  "hw",
+ "kernel_core",
 ]
 
 [[package]]
@@ -288,6 +290,7 @@ dependencies = [
 name = "kernel_hosted"
 version = "0.2.0"
 dependencies = [
+ "abi",
  "bridge_hosted",
  "kernel_core",
 ]

@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 kernel_core = { path = "../../crates/kernel_core" }
 bridge_hosted = { path = "../../crates/bridge_hosted" }
+abi = { path = "../../crates/abi" }

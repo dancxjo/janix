@@ -2,6 +2,9 @@
 
 use hw::HardwareBridge;
 
+pub mod symbol_store;
+pub use symbol_store::FileSymbolStore;
+
 pub struct HostedBridge;
 
 impl HardwareBridge for HostedBridge {

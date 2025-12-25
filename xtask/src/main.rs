@@ -2,6 +2,7 @@ use clap::Parser;
 use anyhow::Result;
 
 mod fetch;
+mod iso;
 
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Build and management tasks for ThingOS")]
@@ -37,10 +38,7 @@ fn main() -> Result<()> {
             println!("xtask build: TODO");
             Ok(())
         },
-        Commands::Iso { env } => {
-            println!("xtask iso env={}: TODO", env);
-            Ok(())
-        },
+        Commands::Iso { env } => iso::run(env), 
         Commands::Run { env } => {
             println!("xtask run env={}: TODO", env);
             Ok(())

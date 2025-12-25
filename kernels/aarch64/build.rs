@@ -1,4 +1,9 @@
+use std::env;
+use std::path::PathBuf;
+
 fn main() {
-    println!("cargo:rerun-if-changed=link.ld");
-    println!("cargo:rustc-link-arg=-Tlink.ld");
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let linker_script = PathBuf::from(manifest_dir).join("link.ld");
+    println!("cargo:rerun-if-changed={}", linker_script.display());
+    println!("cargo:rustc-link-arg=-T{}", linker_script.display());
 }

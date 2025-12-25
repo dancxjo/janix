@@ -92,7 +92,39 @@ unsafe extern "C" fn resume_user_mode_asm(_context: *const u64) -> ! {
         "pop rdi",
         "pop rax",
         // Stack now has [rip, cs, rflags, rsp, ss]
+        
+        // Check CS (at rsp + 8) to decide on swapgs
+        "test byte ptr [rsp + 8], 3",
+        "jz 1f", // Jump if kernel (0)
         "swapgs",
+        "iretq",
+
+        "1:",
+        // Kernel Return logic.
+        // We have [RIP, CS, RFLAGS, GarbageRSP, GarbageSS] on stack.
+        // iretq only pops top 3. We must move top 3 into bottom 3 slots to consume garbage.
+        
+        "push rax", // Save RAX as scratch
+        
+        // Stack offsets now +8
+        // [rsp+24] = RFLAGS
+        // [rsp+40] = Target for RFLAGS (SS slot)
+        "mov rax, [rsp + 24]",
+        "mov [rsp + 40], rax",
+        
+        // [rsp+16] = CS
+        // [rsp+32] = Target for CS (RSP slot)
+        "mov rax, [rsp + 16]",
+        "mov [rsp + 32], rax",
+        
+        // [rsp+8] = RIP
+        // [rsp+24] = Target for RIP (RFLAGS slot)
+        "mov rax, [rsp + 8]",
+        "mov [rsp + 24], rax",
+        
+        "pop rax", // Restore RAX
+        
+        "add rsp, 16", // Skip old RIP/CS slots
         "iretq"
     )
 }

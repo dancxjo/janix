@@ -55,6 +55,24 @@ pub extern "C" fn _start() -> ! {
     )
 }
 
+// Global Kernel Access
+use spin::Mutex;
+use models as thing_models;
+
+static KERNEL: Mutex<Option<Kernel<Bridge>>> = Mutex::new(None);
+
+fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
+    if let Some(mut guard) = KERNEL.try_lock() {
+        if let Some(k) = (*guard).as_mut() {
+            // Cast frame to [u64; 20]
+            let ctx_ptr = frame as *mut _ as *mut [u64; 20];
+            let ctx = unsafe { &mut *ctx_ptr };
+            k.scheduler.tick(&k.bridge, ctx);
+        }
+    }
+}
+
+
 #[no_mangle]
 pub extern "C" fn rust_main() -> ! {
     #[cfg(target_os = "thingos")]
@@ -67,7 +85,6 @@ pub extern "C" fn rust_main() -> ! {
         early_log::log_heap_init(info);
     }
 
-    
     let mut k = Kernel::new(Bridge);
 
     #[cfg(target_os = "thingos")]
@@ -95,12 +112,10 @@ pub extern "C" fn rust_main() -> ! {
         
         unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
             fn allocate_frame(&mut self) -> Option<PhysFrame> {
-                // Alloc 4k
                 let layout = Layout::from_size_align(4096, 4096).ok()?;
                 let ptr = unsafe { alloc(layout) };
                 if ptr.is_null() { return None; }
                 
-                // Translate to Phys uses temp mapper
                 let (l4_frame, _) = Cr3::read();
                 let phys_l4 = l4_frame.start_address();
                 let virt_l4 = self.hhdm_offset + phys_l4.as_u64();
@@ -123,7 +138,7 @@ pub extern "C" fn rust_main() -> ! {
         };
 
         k.bridge.log("Scanning modules...\n");
-        let mut app_load_virt_base = 0x2000_0000u64; // 512MB Virtual Base for Apps
+        let mut app_load_virt_base = 0x2000_0000u64;
 
         if let Some(resp) = MODULE_REQUEST.get_response() {
             for module in resp.modules() {
@@ -137,12 +152,10 @@ pub extern "C" fn rust_main() -> ! {
                 let data = unsafe { slice::from_raw_parts(base, len) };
                 
                 let current_app_base = app_load_virt_base;
-                app_load_virt_base += 0x1000_0000; // Increment 256MB
+                app_load_virt_base += 0x1000_0000;
 
                 let loaded = load_elf(data, |vaddr, segment| {
                     use alloc::format;
-                    // vaddr is offset from 0 (PIE).
-                    // We map frames at virtual address `current_app_base + vaddr`.
                     let target_virt_start = VirtAddr::new(current_app_base + vaddr);
                     let target_virt_end = target_virt_start + segment.len() as u64;
                     
@@ -150,41 +163,18 @@ pub extern "C" fn rust_main() -> ! {
                     let end_page = Page::<Size4KiB>::containing_address(target_virt_end - 1u64);
                     
                     for page in Page::range_inclusive(start_page, end_page) {
-                        // Allocate frame
                         let frame = frame_allocator.allocate_frame().expect("No frames");
-                        
-                        // Map as User accessible
                         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-                        
                         unsafe {
-                            // If page is already mapped, we should handle it?
-                            // Assuming clean range for each app.
                             if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
                                 map_to.flush();
-                            } else {
-                                // Already mapped. We overwrite or ignore?
-                                // If we don't map, we might be writing to wrong frame?
-                                // If it is mapped, usage determines safety.
-                                // For now, assume map success or existing persistent map.
-                                // But if existing map points to different frame, we have issue.
-                                // `map_to` fails if present.
-                                // We can use `mapper.translate_page`.
-                                // If mapped, use existing frame?
-                                // But we want separate memory for apps.
-                                // If we increment `current_app_base`, it should be free.
                             }
                         }
                         
-                        // Copy data
-                        // We copy from segment source to the allocated frame.
-                        // Access frame via HHDM.
                         let frame_phys = frame.start_address();
                         let frame_virt = hhdm_offset + frame_phys.as_u64();
-                        
-                        // Calculate offsets
                         let page_start_virt = page.start_address();
                         let page_end_virt = page_start_virt + 4096u64;
-                        
                         let overlap_start = core::cmp::max(page_start_virt, target_virt_start);
                         let overlap_end = core::cmp::min(page_end_virt, target_virt_end);
                         
@@ -195,10 +185,7 @@ pub extern "C" fn rust_main() -> ! {
                              
                              let src_ptr = unsafe { segment.as_ptr().add(seg_offset as usize) };
                              let dest_ptr = unsafe { (frame_virt.as_mut_ptr::<u8>()).add(page_offset as usize) };
-                             
-                             unsafe {
-                                 core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, copy_len as usize);
-                             }
+                             unsafe { core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, copy_len as usize); }
                         }
                     }
                 });
@@ -206,8 +193,7 @@ pub extern "C" fn rust_main() -> ! {
                 if let Some(img) = loaded {
                     k.bridge.log("Loaded app entry\n");
                     
-                    // Alloc Stack (User Accessible)
-                    let stack_bottom_virt = VirtAddr::new(current_app_base + 0x0800_0000); // 128MB offset
+                    let stack_bottom_virt = VirtAddr::new(current_app_base + 0x0800_0000);
                     let stack_size = 65536;
                     let stack_top_virt = stack_bottom_virt + stack_size;
                     
@@ -216,7 +202,7 @@ pub extern "C" fn rust_main() -> ! {
                     
                     for page in Page::range_inclusive(start_page, end_page) {
                         let frame = frame_allocator.allocate_frame().expect("No stack frames");
-                        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
                          unsafe {
                             if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
                                 map_to.flush();
@@ -224,12 +210,49 @@ pub extern "C" fn rust_main() -> ! {
                         }
                     }
 
-                    // Entry Point adjustment
                     let entry_point = current_app_base + img.entry_point;
                     k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), 0);
                 }
             }
         }
     }
-    k.boot(None); // No persistent store for now
+    
+    // Boot Initialization
+    {
+        use hw::HardwareBridge;
+        k.bridge.log(thing_models::milestones::KERNEL_ENTRY);
+        k.bridge.log("\n");
+        k.bridge.log(thing_models::milestones::BRIDGE_ONLINE);
+        k.bridge.log("\n");
+
+        k.bridge.log("THINGOS: graph init\n");
+        kernel_core::graph::seed_builtins(&mut k.graph);
+        k.bridge.log("THINGOS: graph seeded\n");
+
+        k.bridge.log("THINGOS: symbols init\n");
+        for &builtin in kernel_core::symbols::builtins::BUILTIN_SYMBOLS {
+            k.symbols.seed_builtin(builtin).expect("Builtin seed failed");
+        }
+        k.bridge.log("THINGOS: symbols ready\n");
+    }
+
+    // Handover to Scheduled Mode
+    {
+        // 1. Install Hook
+        bridge_x86_64::set_tick_hook(scheduler_tick);
+        
+        // 2. Set Global
+        *KERNEL.lock() = Some(k);
+        
+        // 3. Init Hardware Bridge (Interrupts Enabled!)
+        unsafe { Bridge::init(); }
+    }
+
+    loop {
+        use hw::HardwareBridge;
+        let bridge = Bridge;
+        bridge.log(thing_models::milestones::IDLE_LOOP);
+        bridge.log("\n");
+        bridge.idle();
+    }
 }

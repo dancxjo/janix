@@ -29,7 +29,8 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -
         GraphOp::Log { text } => {
              kernel.bridge.log(text);
              GraphReply::Ack
-        }
+        },
+        GraphOp::Watch { .. } => GraphReply::Error,
     }
 }
 

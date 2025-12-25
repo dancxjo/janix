@@ -9,6 +9,8 @@ use crate::core::process::{ProcessBody, ThreadBody};
 use crate::core::capability::CapabilityBody;
 use crate::core::vgs::{GraphBody, MountBody, GraphProviderBody};
 use crate::core::buffer::{BufferBody, StreamBody};
+use crate::core::input::{KeyboardBody, KeyEventBody};
+
 
 thing_kind! {
     kind TimeNow {
@@ -124,3 +126,28 @@ thing_kind! {
         links {}
     }
 }
+
+thing_kind! {
+    kind Keyboard {
+        id: crate::builtins::ids::THING_KEYBOARD_KIND,
+        sym: SYM_KEYBOARD,
+        version: 1,
+        body: KeyboardBody,
+        type_tag: "thingos.KeyboardBody.v1",
+        schema_id: crate::builtins::ids::THING_KEYBOARD_SCHEMA,
+        links {} // meta (0..1) implied by v0 rules
+    }
+}
+
+thing_kind! {
+    kind KeyEvent {
+        id: crate::builtins::ids::THING_KEY_EVENT_KIND,
+        sym: SYM_KEY_EVENT,
+        version: 1,
+        body: KeyEventBody,
+        type_tag: "thingos.KeyEventBody.v1",
+        schema_id: crate::builtins::ids::THING_KEY_EVENT_SCHEMA,
+        links {} // meta (0..1) implied by v0 rules
+    }
+}
+

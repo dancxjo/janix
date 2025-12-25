@@ -1,16 +1,39 @@
 #![no_std]
 #![allow(clippy::missing_safety_doc)]
+#![feature(abi_x86_interrupt)]
 
 extern crate alloc;
 
 pub mod interrupts;
-pub mod user; // Anticipating user mod
+pub mod user;
+pub mod gdt;
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;
 use hw::HardwareBridge;
 
 pub struct Bridge;
+
+// Hook for scheduler. Only set by kernel binary.
+pub static mut TICK_HOOK: Option<fn(&mut interrupts::trap::TrapFrame)> = None;
+
+pub fn set_tick_hook(hook: fn(&mut interrupts::trap::TrapFrame)) {
+    unsafe { TICK_HOOK = Some(hook); }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl Bridge {
+    pub unsafe fn init() {
+        gdt::init();
+        interrupts::idt::init();
+        interrupts::pic::init();
+        // We do NOT enable interrupts here yet. We let the kernel do it when ready.
+        // Or wait, kernel loops idle().
+        // If we don't enable, we hang.
+        // So we should enable.
+        x86_64::instructions::interrupts::enable();
+    }
+}
 
 #[cfg(target_arch = "x86_64")]
 impl HardwareBridge for Bridge {
@@ -93,8 +116,8 @@ impl HardwareBridge for Bridge {
         // RIP
         ctx[15] = entry;
         
-         // CS: User Code 0x30 | 3
-        ctx[16] = 0x33;
+         // CS: User Code
+        ctx[16] = unsafe { gdt::USER_CODE_SELECTOR.0 as u64 | 3 };
 
         // RFLAGS: IF enabled (0x200) | Reserved (0x2)
         ctx[17] = 0x202;
@@ -102,8 +125,8 @@ impl HardwareBridge for Bridge {
         // RSP
         ctx[18] = stack;
 
-        // SS: User Data 0x28 | 3
-        ctx[19] = 0x2B;
+        // SS: User Data
+        ctx[19] = unsafe { gdt::USER_DATA_SELECTOR.0 as u64 | 3 };
 
         ctx
     }

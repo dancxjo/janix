@@ -43,3 +43,15 @@ pub const SYM_HAS_CAP: SymbolId = SymbolId(fnv1a64("HAS_CAP"));
 pub const SYM_HAS_SCHEMA: SymbolId = SymbolId(fnv1a64("HAS_SCHEMA"));
 pub const SYM_MOUNTS: SymbolId = SymbolId(fnv1a64("MOUNTS"));
 pub const SYM_BACKED_BY: SymbolId = SymbolId(fnv1a64("BACKED_BY"));
+
+// Input symbols
+pub const SYM_KEYBOARD: SymbolId = SymbolId(fnv1a64("Keyboard"));
+pub const SYM_KEY_EVENT: SymbolId = SymbolId(fnv1a64("KeyEvent"));
+
+pub const SYM_BUS: SymbolId = SymbolId(fnv1a64("bus"));
+pub const SYM_DEVICE: SymbolId = SymbolId(fnv1a64("device"));
+pub const SYM_SCANCODE: SymbolId = SymbolId(fnv1a64("scancode"));
+pub const SYM_IS_RELEASE: SymbolId = SymbolId(fnv1a64("is_release"));
+
+pub const SYM_PS2: SymbolId = SymbolId(fnv1a64("ps2"));
+

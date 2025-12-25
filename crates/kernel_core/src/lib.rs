@@ -6,6 +6,8 @@ pub mod graph;
 pub mod sched;
 pub mod symbols;
 pub mod syscalls;
+pub mod input;
+
 
 use hw::HardwareBridge;
 use graph::{GraphStore, seed_builtins};
@@ -65,8 +67,12 @@ impl<B: HardwareBridge> Kernel<B> {
         }
     }
 
+
+
     pub fn boot(&mut self, mut store: Option<&mut dyn SymbolStore>) -> ! {
+        crate::input::init();
         self.bridge.log(thing_models::milestones::KERNEL_ENTRY);
+
         self.bridge.log("\n");
         self.bridge.log(thing_models::milestones::BRIDGE_ONLINE);
         self.bridge.log("\n");

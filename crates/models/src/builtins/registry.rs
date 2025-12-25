@@ -35,6 +35,9 @@ pub fn builtin_seed_things() -> Vec<Thing> {
     v.extend(crate::builtins::core_kinds::seed_graph_provider_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_buffer_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_stream_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_keyboard_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_key_event_kind().into_iter());
+
 
     v
 }

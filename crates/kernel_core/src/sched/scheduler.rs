@@ -114,17 +114,62 @@ impl Scheduler {
         if self.run_queue.is_empty() {
             return None;
         }
-        // Round robin: pop front, push back if still runnable
-        // But for now simple: pop front
         let tid = self.run_queue.remove(0);
-        // re-push to end if it's meant to run again? 
-        // For cooperative or simple slice, we re-push when it yields.
-        // But if pick_next implies we are switching to it, we don't push it back YET.
-        // We push it back when we switch OUT of it.
-        // But here we are just picking. 
-        // Actually typical simple RR:
-        // current = tid.
-        
         Some(tid)
+    }
+
+    pub fn tick<B: HardwareBridge>(&mut self, _bridge: &B, current_context: &mut [u64; 20]) {
+        // 1. Save current context if we have a current thread
+        if let Some(tid) = self.current {
+            // Only save if it still exists (it might have exited/died, but we handle that elsewhere)
+            // Ideally check state.
+            if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize) {
+                thread.context = *current_context;
+                // If Running, user is preempted. Move to Runnable.
+                if thread.state == ThreadState::Running || thread.state == ThreadState::Runnable {
+                    thread.state = ThreadState::Runnable;
+                    self.run_queue.push(tid);
+                }
+            }
+        }
+
+        // 2. Pick next
+        if let Some(next_tid) = self.pick_next() {
+            self.current = Some(next_tid);
+            if let Some(Some(thread)) = self.threads.get_mut(next_tid.0 as usize) {
+                 thread.state = ThreadState::Running;
+                 *current_context = thread.context;
+            }
+        } else {
+             // Continue running current? 
+             // If pick_next returned None, it means run_queue is empty.
+             // If we just pushed current back to run_queue, pick_next shouldn't be None!
+             // Unless current blocked or died.
+             // If current blocked, we have no threads.
+             // We must have an idle thread or just return (resume current context which is... kernel loop context?)
+             // If we were in App, and App blocks. 
+             // We are in Trap Handler.
+             // We return to App... and App just spins? No, if we return to App execution it continues.
+             // But if we want to run Idle Loop?
+             // We don't have explicit Idle context saved.
+             // We can't switch to Idle Loop easily if we are in interrupt handler on top of App stack.
+             
+             // For now, if no threads, we define current = None.
+             self.current = None;
+             
+             // If we were running an App, and we set current=None, we return to App execution?
+             // That's dangerous if we considered it "blocked".
+             // But here we only handle RR preemption.
+             // If thread blocked, it removed itself from run_queue beforehand.
+             
+             // If we return, we resume execution of whatever context is in `current_context`.
+             // If it was an App, it keeps running.
+             // This is acceptable for "Idle" behavior (spinning App).
+             // But strictly we should switch to kernel idle loop.
+             // We don't have kernel idle context saved.
+             
+             // Let's assume we maintain invariant: run_queue always has something if we have apps.
+             // Or if empty, we assume we return to kernel idle loop (if we came from it).
+        }
     }
 }

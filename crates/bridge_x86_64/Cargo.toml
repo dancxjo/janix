@@ -10,3 +10,4 @@ kernel_core = { path = "../kernel_core" }
 abi = { path = "../abi" }
 x86_64 = "0.14"
 bitflags = "2.0"
+spin = "0.9"

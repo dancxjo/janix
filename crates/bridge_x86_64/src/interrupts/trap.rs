@@ -23,14 +23,14 @@ pub struct TrapFrame {
     pub ss: u64,
 }
 
-#[no_mangle]
-pub extern "C" fn timer_interrupt_handler(_frame: &mut TrapFrame) {
-    // Stub: pic::notify_end_of_interrupt(0);
-    // timer_tick(frame);
-}
+
 
 // Stub for now. Logic needs kernel_core::sched access (Mutex) which we need to expose.
-#[allow(dead_code)]
-fn timer_tick(_frame: &mut TrapFrame) {
-    // Logic to be ported once Scheduler static is available
+// Stub for now. Logic needs kernel_core::sched access (Mutex) which we need to expose.
+pub fn timer_tick(frame: &mut TrapFrame) {
+    unsafe {
+        if let Some(hook) = crate::TICK_HOOK {
+            hook(frame);
+        }
+    }
 }

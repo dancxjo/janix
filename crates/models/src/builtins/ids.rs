@@ -68,3 +68,11 @@ pub const THING_BUFFER_SCHEMA: ThingId = ThingId(1207);
 
 pub const THING_STREAM_KIND: ThingId = ThingId(208);
 pub const THING_STREAM_SCHEMA: ThingId = ThingId(1208);
+
+
+pub const THING_KEYBOARD_KIND: ThingId = ThingId(210);
+pub const THING_KEYBOARD_SCHEMA: ThingId = ThingId(1210);
+
+pub const THING_KEY_EVENT_KIND: ThingId = ThingId(211);
+pub const THING_KEY_EVENT_SCHEMA: ThingId = ThingId(1211);
+

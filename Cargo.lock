@@ -120,6 +120,7 @@ dependencies = [
  "bitflags",
  "hw",
  "kernel_core",
+ "spin 0.9.8",
  "x86_64 0.14.13",
 ]
 
@@ -314,6 +315,7 @@ dependencies = [
  "kernel_core",
  "limine",
  "linked_list_allocator",
+ "models",
  "spin 0.10.0",
  "x86_64 0.15.4",
 ]

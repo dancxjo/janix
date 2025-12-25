@@ -106,6 +106,12 @@ mod x86_64 {
             if !flags.contains(MapFlags::EXECUTE) {
                 page_flags |= PageTableFlags::NO_EXECUTE;
             }
+            if flags.contains(MapFlags::WRITE_COMBINE) {
+                // We configured PAT Index 1 to be WC in mod.rs.
+                // Index 1 corresponds to PWT=1, PCD=0.
+                // This is PageTableFlags::WRITE_THROUGH.
+                page_flags |= PageTableFlags::WRITE_THROUGH;
+            }
 
             unsafe {
                 match mapper.map_to(page, phys_frame, page_flags, &mut table_alloc) {

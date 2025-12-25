@@ -21,6 +21,8 @@ use thing_os::println;
 use thing_os::syscalls::{sys_symbol_intern, syscall};
 use abi::{KernelRequest, KernelResponse, PixelFormat};
 use abi::resident::ResidentMapPerms;
+use abi::wire::graph::{WatchSpec, WatchSpecTag, WatchFlags, WatchEvent, WatchEventKind};
+use alloc::collections::BTreeMap;
 
 fn draw_console(compositor: &mut Compositor) {
     if let Some(cb) = &compositor.console_buffer {
@@ -33,9 +35,11 @@ fn draw_console(compositor: &mut Compositor) {
         let dest_x = (fb_w as i32 - w as i32) / 2;
         let dest_y = (fb_h as i32 - h as i32) / 2;
 
-        let dest = compositor.fb.ptr as *mut u32;
-        // Use byte stride arithmetic
-        let dest_stride_bytes = compositor.fb.info.stride as usize;
+        let dest = compositor.back_buffer.as_mut_ptr();
+        // Use byte stride arithmetic? No, back_buffer is u32 slice.
+        // Wait, draw_console uses pointer arithmetic.
+        
+        let dest_stride_px = (compositor.fb.info.stride / 4) as usize; // width of fb in u32
         let src_stride_px = (cb.stride / 4) as i32;
 
         // Simple blit
@@ -48,7 +52,7 @@ fn draw_console(compositor: &mut Compositor) {
             let row_src = unsafe { (ptr as *const u32).add((y as i32 * src_stride_px) as usize) };
 
             unsafe {
-                let row_dest = (dest as *mut u8).add(row_dest_y as usize * dest_stride_bytes) as *mut u32;
+                let row_dest = dest.add(row_dest_y as usize * dest_stride_px as usize);
 
                 // Bounds check horizontal
                 let start_x = 0.max(-dest_x);
@@ -134,31 +138,15 @@ fn load_background_image() -> Option<BackgroundImage> {
              return None;
         }
 
-        // Allocate SharedBuffer for decoded image
-        let pixel_format = PixelFormat::Bgra8888;
-        let buffer_id = match syscall(KernelRequest::CreateSharedBuffer {
-            width,
-            height,
-            pixel_format,
-        }) {
-            KernelResponse::SharedBufferCreated { buffer_id } => buffer_id,
-            _ => {
-                println!("clouds.bmp: failed to create shared buffer");
-                return None;
-            }
-        };
+        // Allocate destination buffer on User Heap (avoid overhead/bugs of large SharedBuffer mapping)
+        let dest_size = (width * height * 4) as usize;
+        let mut pixels = Vec::with_capacity(dest_size);
+        pixels.resize(dest_size, 0);
+        
+        let dest_slice = pixels.leak(); // Leak to keep it alive forever (it's the background)
+        let dest_ptr = dest_slice.as_mut_ptr();
 
-        // Map the new buffer
-        let (dest_ptr, dest_size) = match syscall(KernelRequest::MapSharedBuffer {
-            buffer_id,
-            flags: MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER),
-        }) {
-            KernelResponse::SharedBufferMapped { vaddr, size } => (vaddr as *mut u8, size),
-            _ => {
-                println!("clouds.bmp: failed to map new shared buffer");
-                return None;
-            }
-        };
+        println!("clouds.bmp: allocated heap buffer size={}", dest_size);
 
         // Decode: Convert BGR (24bpp) to BGRA (32bpp)
         // BMP lines are padded to 4-byte boundary
@@ -166,10 +154,6 @@ fn load_background_image() -> Option<BackgroundImage> {
         let dest_stride = width * 4;
         let src_data = src_ptr.add(data_offset as usize);
 
-        // BMP is usually stored bottom-up, but if height is positive it's bottom-up.
-        // If height is negative, top-down. We read abs(height) already?
-        // Wait, read_i32 returns signed. If positive, it's bottom-up.
-        // We should check sign of height.
         let height_i32 = read_i32(0x16);
         let is_top_down = height_i32 < 0;
 
@@ -325,6 +309,7 @@ pub fn main() -> ! {
 }
 
 pub fn tick_once(compositor: &mut Compositor) {
+    compositor.sync_back_from_front();
     compositor.ensure_display_contracts();
 
     // Process input EARLY using previous frame's layout (latency reduction)

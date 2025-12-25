@@ -1,4 +1,5 @@
 use abi::ThingId;
+use abi::wire::graph;
 use alloc::string::ToString;
 use thing_models::PropValue;
 use thing_models::graph_kinds;
@@ -63,7 +64,8 @@ pub struct MappedSurface {
 #[derive(Debug)]
 pub struct Compositor {
     pub fb: PrimaryDisplayBuffer,
-    pub back_buffer: Vec<u32>, // Software backbuffer for double buffering
+    pub back_buffer: Vec<u32>, // Painting happens here
+    pub front_buffer: Vec<u32>, // Copied to scanout
     pub cursor: CursorState,
     pub cursor_sprites: CursorSprites,
     pub last_mouse_seq: u64,
@@ -90,6 +92,12 @@ pub struct Compositor {
 
     pub frame_counter: u64,
     pub cached_layout: alloc::vec::Vec<StackedWindow>,
+
+    // Graph State
+    pub windows: alloc::collections::BTreeMap<ThingId, thing_os::Window>,
+    pub surfaces: alloc::collections::BTreeMap<ThingId, thing_os::Surface>,
+    pub place_watch: Option<abi::wire::graph::WatchId>,
+    pub window_watches: alloc::collections::BTreeMap<ThingId, abi::wire::graph::WatchId>,
 }
 
 impl Compositor {
@@ -101,9 +109,11 @@ impl Compositor {
         let stride_pixels = (fb.info.stride / 4) as usize;
         let size = stride_pixels * fb.info.height as usize;
         let back_buffer = vec![0u32; size];
+        let front_buffer = vec![0u32; size];
         Self {
             fb,
             back_buffer,
+            front_buffer,
             cursor: CursorState::new(cx, cy),
             cursor_sprites: cursor::build_cursor_sprites(),
             last_mouse_seq: 0,
@@ -124,6 +134,10 @@ impl Compositor {
             mouse_received: false,
             frame_counter: 0,
             cached_layout: alloc::vec::Vec::new(),
+            windows: alloc::collections::BTreeMap::new(),
+            surfaces: alloc::collections::BTreeMap::new(),
+            place_watch: None,
+            window_watches: alloc::collections::BTreeMap::new(),
         }
     }
     pub fn sync_active_from_layout(&mut self, stacked: &[StackedWindow]) {
@@ -188,42 +202,42 @@ impl Compositor {
         // Just locate the framebuffer thing for metadata/properties if needed.
         if self.framebuffer_thing_id.is_none() {
             let mut targets =
-                link_targets(self.fb.display_id, graph_kinds::LINK_DISPLAY_FRONT_BUFFER);
+                link_targets(self.fb.display_id, graph_kinds::LINK_ABOUT);
             self.framebuffer_thing_id = targets.pop();
         }
     }
 
     pub fn present_frame(&mut self) {
-        // Blit damage from back_buffer to front_buffer (fb)
+        // 1. Swap buffers so `front` has the latest frame
+        core::mem::swap(&mut self.back_buffer, &mut self.front_buffer);
+
+        // 2. Blit `front` to `fb` (Scanout)
+        // We only need to copy the dirty regions (this frame's damage).
         let fb_ptr = self.fb.ptr as *mut u32;
-        let bb_ptr = self.back_buffer.as_ptr();
+        let front_ptr = self.front_buffer.as_ptr();
         let stride_bytes = self.fb.info.stride as usize;
         let stride_px = stride_bytes / 4;
         let width = self.fb.info.width as i32;
         let height = self.fb.info.height as i32;
 
         if !self.damage.is_empty() {
-             thing_os::println!("DEBUG: present_frame blitting {} rects", self.damage.len());
+             // thing_os::println!("DEBUG: present_frame blitting {} rects", self.damage.len());
         }
 
         for rect in &self.damage {
-            // Clamp damage rect to screen
             let r_x = rect.x.max(0);
             let r_y = rect.y.max(0);
             let r_w = (rect.w as i32).min(width - r_x);
             let r_h = (rect.h as i32).min(height - r_y);
 
-            if r_w <= 0 || r_h <= 0 {
-                continue;
-            }
+            if r_w <= 0 || r_h <= 0 { continue; }
 
             for row_y in 0..r_h {
                 let y = r_y + row_y;
                 let offset = (y as usize * stride_px) + r_x as usize;
-                
                 unsafe {
                     core::ptr::copy_nonoverlapping(
-                        bb_ptr.add(offset),
+                        front_ptr.add(offset),
                         fb_ptr.add(offset),
                         r_w as usize
                     );
@@ -233,7 +247,7 @@ impl Compositor {
 
         self.frame_counter = self.frame_counter.wrapping_add(1);
 
-        // Optionally update metadata on the framebuffer thing
+        // Metadata update
         if self.frame_counter % 60 == 0 {
              if let Some(fb_id) = self.framebuffer_thing_id {
                  let now = thing_os::time::Instant::now().t_ns;
@@ -251,6 +265,40 @@ impl Compositor {
                     ],
                 );
              }
+        }
+    }
+
+    /// Bring `back_buffer` up to date with `front_buffer` by copying the regions that were changed
+    /// in the previous frame (which are now in `front`).
+    pub fn sync_back_from_front(&mut self) {
+        if self.previous_damage.is_empty() { return; }
+
+        let stride_px = (self.fb.info.stride / 4) as usize;
+        let width = self.fb.info.width as i32;
+        let height = self.fb.info.height as i32;
+        
+        let src = self.front_buffer.as_ptr();
+        let dst = self.back_buffer.as_mut_ptr();
+
+        for rect in &self.previous_damage {
+            let r_x = rect.x.max(0);
+            let r_y = rect.y.max(0);
+            let r_w = (rect.w as i32).min(width - r_x);
+            let r_h = (rect.h as i32).min(height - r_y);
+
+            if r_w <= 0 || r_h <= 0 { continue; }
+
+            for row_y in 0..r_h {
+                let y = r_y + row_y;
+                let offset = (y as usize * stride_px) + r_x as usize;
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        src.add(offset),
+                        dst.add(offset),
+                        r_w as usize
+                    );
+                }
+            }
         }
     }
 }

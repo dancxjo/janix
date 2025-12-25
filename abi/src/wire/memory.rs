@@ -33,6 +33,7 @@ impl MapFlags {
     pub const WRITE: MapFlags = MapFlags(1 << 1);
     pub const EXECUTE: MapFlags = MapFlags(1 << 2);
     pub const USER: MapFlags = MapFlags(1 << 3);
+    pub const WRITE_COMBINE: MapFlags = MapFlags(1 << 4);
 
     pub const fn bits(self) -> u64 {
         self.0

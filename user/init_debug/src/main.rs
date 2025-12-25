@@ -24,6 +24,7 @@ fn main() {
     launch_program("debug_input_events");
     launch_program("ps2_mouse_driver");
     launch_program("watch_test");
+    launch_program("window_demo");
 
     idle();
 }

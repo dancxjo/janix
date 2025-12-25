@@ -82,13 +82,12 @@ pub mod canon {
     pub const P_PLACE_WINDOW: Predicate = Predicate(0x0009);
 
     pub const P_MODE_HAS_WINDOW: Predicate = Predicate(0x0010);
-    pub const P_DISPLAY_FRONT_BUFFER: Predicate = Predicate(0x0011);
-    pub const P_DISPLAY_BACK_BUFFER: Predicate = Predicate(0x0012);
+    // 0x0011, 0x0012 deprecated (front/back buffers)
     pub const P_WINDOW_HAS_SURFACE: Predicate = Predicate(0x0013);
     pub const P_ACTIVE_MODE: Predicate = Predicate(0x0015);
     pub const P_APP_OWNS_WINDOW: Predicate = Predicate(0x0016);
-    pub const P_DISPLAY_HAS_FRONT_BUFFER: Predicate = Predicate(0x0020);
-    pub const P_DISPLAY_HAS_BACK_BUFFER: Predicate = Predicate(0x0021);
+    pub const P_DISPLAY_HAS_FRONT_BUFFER: Predicate = Predicate(0x0020); // Deprecated
+    pub const P_DISPLAY_HAS_BACK_BUFFER: Predicate = Predicate(0x0021); // Deprecated
     pub const P_HAS_ACTIVE_MODE: Predicate = Predicate(0x0022);
     pub const P_ABOUT: Predicate = Predicate(0x0023);
     pub const P_RUNNING: Predicate = Predicate(0x0024);
@@ -103,8 +102,6 @@ pub const LINK_SLEEPS_UNTIL: Predicate = canon::P_SCHED_SLEEPS_UNTIL;
 pub const LINK_LAUNCHES: Predicate = canon::P_BOOT_LAUNCHES;
 pub const LINK_SPAWNED: Predicate = canon::P_INIT_SPAWNED;
 pub const LINK_DISPLAY_SCANOUT: Predicate = canon::P_DISPLAY_SCANOUT;
-pub const LINK_DISPLAY_FRONT_BUFFER: Predicate = canon::P_DISPLAY_FRONT_BUFFER;
-pub const LINK_DISPLAY_BACK_BUFFER: Predicate = canon::P_DISPLAY_BACK_BUFFER;
 pub const LINK_MODE_PLACE: Predicate = canon::P_MODE_PLACE;
 pub const LINK_MODE_HAS_WINDOW: Predicate = canon::P_MODE_HAS_WINDOW;
 pub const LINK_WINDOW_SURFACE: Predicate = canon::P_WINDOW_SURFACE;
@@ -112,8 +109,7 @@ pub const LINK_WINDOW_HAS_SURFACE: Predicate = canon::P_WINDOW_HAS_SURFACE;
 pub const LINK_PLACE_WINDOW: Predicate = canon::P_PLACE_WINDOW;
 pub const LINK_ACTIVE_MODE: Predicate = canon::P_ACTIVE_MODE;
 pub const LINK_APP_OWNS_WINDOW: Predicate = canon::P_APP_OWNS_WINDOW;
-pub const LINK_DISPLAY_HAS_FRONT_BUFFER: Predicate = canon::P_DISPLAY_HAS_FRONT_BUFFER;
-pub const LINK_DISPLAY_HAS_BACK_BUFFER: Predicate = canon::P_DISPLAY_HAS_BACK_BUFFER;
+// Display buffers are single scanout now (LINK_DISPLAY_SCANOUT)
 pub const LINK_HAS_ACTIVE_MODE: Predicate = canon::P_HAS_ACTIVE_MODE;
 pub const LINK_ABOUT: Predicate = canon::P_ABOUT;
 pub const LINK_RUNNING: Predicate = canon::P_RUNNING;

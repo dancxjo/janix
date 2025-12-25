@@ -1,6 +1,6 @@
 use crate::graph::{self, GraphEvent};
 use crate::graph_kinds::{
-    self, LINK_DISPLAY_HAS_BACK_BUFFER, LINK_DISPLAY_HAS_FRONT_BUFFER, LINK_DISPLAY_SCANOUT,
+    self, LINK_DISPLAY_SCANOUT,
     PROP_DISPLAY_ACTIVE_BUFFER_INDEX,
 };
 use crate::shared_buffer;
@@ -29,30 +29,19 @@ fn on_event(event: &GraphEvent) {
 }
 
 fn process_display_update(display_id: abi::ThingId, active_index: i64) {
-    // 1. Identify source buffer
-    let src_pred = if active_index == 1 {
-        LINK_DISPLAY_HAS_BACK_BUFFER
-    } else {
-        LINK_DISPLAY_HAS_FRONT_BUFFER
-    };
-
-    let mut out = [None; 1];
-    graph::neighbors(display_id, src_pred, &mut out);
-    let src_buffer_id = match out[0] {
-        Some(id) => id,
-        None => return,
-    };
-
-    // 2. Identify destination buffer (the scanout VRAM wrapper)
-    let mut out = [None; 1];
-    graph::neighbors(display_id, LINK_DISPLAY_SCANOUT, &mut out);
-    let dst_buffer_id = match out[0] {
-        Some(id) => id,
-        None => return,
-    };
-
-    // 3. Perform blit
-    blit_buffers(src_buffer_id, dst_buffer_id);
+    // Legacy Double Buffering Logic Removed.
+    // The kernel previously managed blits between Front/Back buffers based on graph links.
+    // Now, the compositor owns the back buffer and blits to the scanout directly.
+    // The scanout is LINK_DISPLAY_SCANOUT.
+    
+    // If we need to support legacy kernel-side blitting (unlikely given the request),
+    // we would need new logic. But the user explicitly said:
+    // "The compositor should never draw directly to the framebuffer, but instead should quickly copy its own internal front buffer to it appropriately."
+    // implying the COMPOSITOR does the blit.
+    
+    // Thus, this kernel watcher which reacted to "ActiveBufferIndex" changes to perform blits
+    // is now likely obsolete or needs to be repurposed differently.
+    // For now, I will empty this function to stop the compilation error and logic execution.
 }
 
 fn blit_buffers(src_id: abi::ThingId, dst_id: abi::ThingId) {

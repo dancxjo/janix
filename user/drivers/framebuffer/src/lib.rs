@@ -73,20 +73,22 @@ impl FramebufferDriver {
         // The compositor uses `active_framebuffer()` which calls `open_primary_display_buffer()`.
         // `open_primary_display_buffer` looks for `LINK_DISPLAY_HAS_FRONT_BUFFER` on the display.
 
-        // Let's link the scanout buffer as LINK_DISPLAY_HAS_FRONT_BUFFER
+        // We no longer link LINK_DISPLAY_HAS_FRONT_BUFFER or LINK_DISPLAY_FRONT_BUFFER.
+        // The Kernel links LINK_DISPLAY_SCANOUT, which open_primary_display_buffer uses.
+        
+        println!("framebuffer_driver: linked framebuffer metadata (if needed)");
+        // Optional: Link metadata as "About" or similar if we want to keep it reachable.
+        // For now, let's link it as ABOUT so we can find resolution info if needed, 
+        // but not imply it's a buffer to use.
+        // Or just leave it floating for now?
+        // The user said "Remove :DISPLAY_HAS_FRONT_BUFFER and such things".
+        // Let's create the Link to the metadata using LINK_ABOUT or similar if useful, 
+        // but purely as metadata.
         let _ = add_link(
-            descriptor.display_id,
-            graph_kinds::LINK_DISPLAY_HAS_FRONT_BUFFER,
-            descriptor.scanout_buffer_id,
+             descriptor.display_id,
+             graph_kinds::LINK_ABOUT,
+             fb_id
         );
-
-        // Also link the metadata Thing to the display
-        let _ = add_link(
-            descriptor.display_id,
-            graph_kinds::LINK_DISPLAY_FRONT_BUFFER, // This is what `compositor` might look for to find the metadata thing
-            fb_id,
-        );
-        println!("framebuffer_driver: linked framebuffer to display");
 
         Ok(Self {
             display_id: descriptor.display_id,

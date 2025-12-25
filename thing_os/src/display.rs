@@ -129,7 +129,7 @@ pub fn open_primary_display_buffer() -> Result<PrimaryDisplayBuffer, crate::SysE
         crate::SysError::Unexpected
     })?;
 
-    let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER);
+    let flags = MapFlags::READ.union(MapFlags::WRITE).union(MapFlags::USER).union(MapFlags::WRITE_COMBINE);
     let mapping = map_display_buffer(buffer_id, flags).map_err(|e| {
         use crate::println;
         println!(

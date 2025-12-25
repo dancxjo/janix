@@ -21,12 +21,12 @@ const PRED_2: models::abi::ThingId = models::abi::ThingId(456);
 
 thing_kind! {
     kind TestKind {
-        id: THING_TEST_KIND_ID,
+        id: models::abi::ThingId(THING_TEST_KIND_ID),
         sym: SYM_TEST,
         version: 1,
         body: TestBody,
         type_tag: "thingos.TestBody.v1",
-        schema_id: THING_TEST_SCHEMA_ID,
+        schema_id: models::abi::ThingId(THING_TEST_SCHEMA_ID),
 
         links {
             predicate PRED_1 min 0 max 1;

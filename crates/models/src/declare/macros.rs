@@ -40,8 +40,9 @@ macro_rules! thing_kind {
         }
     ) => {
         paste::paste! {
-            pub const [<THING_ $KindName:upper _KIND>]: $crate::abi::ThingId = $crate::abi::ThingId($kind_id);
-            pub const [<THING_ $KindName:upper _SCHEMA>]: $crate::abi::ThingId = $crate::abi::ThingId($schema_id);
+// Macro updated to accept ThingId references
+            pub const [<THING_ $KindName:upper _KIND>]: $crate::abi::ThingId = $kind_id;
+            pub const [<THING_ $KindName:upper _SCHEMA>]: $crate::abi::ThingId = $schema_id;
             
             pub const [<$KindName:upper _TYPE_TAG>]: $crate::declare::TypeTag = 
                 $crate::declare::type_tag($type_tag_str);
@@ -88,6 +89,31 @@ macro_rules! thing_kind {
                 };
 
                 [kind_thing, schema_thing]
+            }
+        }
+    };
+}
+
+// Helper macro for predicate kinds
+#[macro_export]
+macro_rules! predicate_kind {
+    (
+      kind $Name:ident {
+        id: $id:expr,
+        sym: $sym:expr,
+        version: $version:expr,
+        schema_id: $schema_id:expr
+      }
+    ) => {
+        $crate::thing_kind! {
+            kind $Name {
+                id: $id,
+                sym: $sym,
+                version: $version,
+                body: $crate::builtins::predicates::PredicateBody,
+                type_tag: "thingos.PredicateBody.v1",
+                schema_id: $schema_id,
+                links {}
             }
         }
     };

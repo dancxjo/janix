@@ -11,3 +11,60 @@ pub const THING_SCHEMA_KIND: ThingId = ThingId(2);
 // Schemas for Meta-Kinds
 pub const THING_KIND_SCHEMA: ThingId = ThingId(11);
 pub const THING_SCHEMA_SCHEMA: ThingId = ThingId(12);
+
+// Core meta-circular kinds (manual or macro)
+pub const THING_LINK_KIND: ThingId = ThingId(1003);
+pub const THING_LINK_SCHEMA: ThingId = ThingId(2003);
+
+pub const THING_INTENT_KIND: ThingId = ThingId(1004);
+pub const THING_INTENT_SCHEMA: ThingId = ThingId(2004);
+
+pub const THING_OBSERVATION_KIND: ThingId = ThingId(1005);
+pub const THING_OBSERVATION_SCHEMA: ThingId = ThingId(2005);
+
+pub const THING_RESULT_KIND: ThingId = ThingId(1006);
+pub const THING_RESULT_SCHEMA: ThingId = ThingId(2006);
+
+// Predicates (100–199)
+pub const THING_OWNS_KIND: ThingId = ThingId(100);
+pub const THING_OWNS_SCHEMA: ThingId = ThingId(1100);
+
+pub const THING_HAS_CAP_KIND: ThingId = ThingId(101);
+pub const THING_HAS_CAP_SCHEMA: ThingId = ThingId(1101);
+
+pub const THING_HAS_SCHEMA_KIND: ThingId = ThingId(102);
+pub const THING_HAS_SCHEMA_SCHEMA: ThingId = ThingId(1102);
+
+pub const THING_MOUNTS_KIND: ThingId = ThingId(103);
+pub const THING_MOUNTS_SCHEMA: ThingId = ThingId(1103);
+
+pub const THING_BACKED_BY_KIND: ThingId = ThingId(104);
+pub const THING_BACKED_BY_SCHEMA: ThingId = ThingId(1104);
+
+// Core kinds (200–399)
+pub const THING_TIME_NOW_KIND: ThingId = ThingId(200);
+pub const THING_TIME_NOW_SCHEMA: ThingId = ThingId(1200);
+
+pub const THING_PROCESS_KIND: ThingId = ThingId(201);
+pub const THING_PROCESS_SCHEMA: ThingId = ThingId(1201);
+
+pub const THING_THREAD_KIND: ThingId = ThingId(202);
+pub const THING_THREAD_SCHEMA: ThingId = ThingId(1202);
+
+pub const THING_CAPABILITY_KIND: ThingId = ThingId(203);
+pub const THING_CAPABILITY_SCHEMA: ThingId = ThingId(1203);
+
+pub const THING_GRAPH_KIND: ThingId = ThingId(204);
+pub const THING_GRAPH_SCHEMA: ThingId = ThingId(1204);
+
+pub const THING_MOUNT_KIND: ThingId = ThingId(205);
+pub const THING_MOUNT_SCHEMA: ThingId = ThingId(1205);
+
+pub const THING_GRAPH_PROVIDER_KIND: ThingId = ThingId(206);
+pub const THING_GRAPH_PROVIDER_SCHEMA: ThingId = ThingId(1206);
+
+pub const THING_BUFFER_KIND: ThingId = ThingId(207);
+pub const THING_BUFFER_SCHEMA: ThingId = ThingId(1207);
+
+pub const THING_STREAM_KIND: ThingId = ThingId(208);
+pub const THING_STREAM_SCHEMA: ThingId = ThingId(1208);

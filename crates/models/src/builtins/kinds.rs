@@ -57,8 +57,25 @@ fn make_schema_thing(id: ThingId) -> Thing {
     )
 }
 
+use crate::schema::LinkRule;
+use crate::declare::type_tag::fnv1a64;
+use alloc::vec; // For vec! macro
+
 pub fn builtin_kind_schema() -> Thing {
-    make_schema_thing(THING_KIND_SCHEMA)
+    make_thing(
+        THING_KIND_SCHEMA,
+        THING_SCHEMA_KIND,
+        &SchemaBody {
+            body_type: fnv1a64("thingos.KindBody.v1"), // KindBody type tag
+            link_rules: vec![
+                LinkRule {
+                    predicate_kind: THING_HAS_SCHEMA_KIND,
+                    min: 1,
+                    max: Some(1),
+                }
+            ],
+        },
+    )
 }
 
 pub fn builtin_schema_schema() -> Thing {
@@ -69,12 +86,12 @@ pub fn builtin_schema_schema() -> Thing {
 
 thing_kind! {
     kind Link {
-        id: 1003, // THING_LINK_KIND
+        id: crate::builtins::ids::THING_LINK_KIND,
         sym: SYM_LINK,
         version: 1,
         body: crate::link::LinkBody,
         type_tag: "thingos.LinkBody.v1",
-        schema_id: 2003, // THING_LINK_SCHEMA
+        schema_id: crate::builtins::ids::THING_LINK_SCHEMA,
 
         links {
              // Link can link to anything? Or specific rules?
@@ -85,12 +102,12 @@ thing_kind! {
 
 thing_kind! {
     kind Intent {
-        id: 1004, // THING_INTENT_KIND
+        id: crate::builtins::ids::THING_INTENT_KIND,
         sym: SYM_INTENT,
         version: 1,
         body: crate::intent::IntentBody,
         type_tag: "thingos.IntentBody.v1",
-        schema_id: 2004, // THING_INTENT_SCHEMA
+        schema_id: crate::builtins::ids::THING_INTENT_SCHEMA,
 
         links {
             predicate THING_RESULT_KIND min 0 max 1;
@@ -101,12 +118,12 @@ thing_kind! {
 
 thing_kind! {
     kind Observation {
-        id: 1005, // THING_OBSERVATION_KIND
+        id: crate::builtins::ids::THING_OBSERVATION_KIND,
         sym: SYM_OBSERVATION,
         version: 1,
         body: crate::observation::ObservationBody,
         type_tag: "thingos.ObservationBody.v1",
-        schema_id: 2005, // THING_OBSERVATION_SCHEMA
+        schema_id: crate::builtins::ids::THING_OBSERVATION_SCHEMA,
 
         links {}
     }
@@ -114,12 +131,12 @@ thing_kind! {
 
 thing_kind! {
     kind Result {
-        id: 1006, // THING_RESULT_KIND
+        id: crate::builtins::ids::THING_RESULT_KIND,
         sym: SYM_RESULT,
         version: 1,
         body: crate::result::ResultBody,
         type_tag: "thingos.ResultBody.v1",
-        schema_id: 2006, // THING_RESULT_SCHEMA
+        schema_id: crate::builtins::ids::THING_RESULT_SCHEMA,
 
         links {}
     }

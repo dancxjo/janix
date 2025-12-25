@@ -24,6 +24,10 @@ pub use intent::*;
 pub use observation::*;
 pub use result::*;
 
+pub mod edge;
+pub mod core;
+pub mod typed;
+
 pub mod builtins;
 
 pub mod milestones {

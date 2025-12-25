@@ -131,7 +131,8 @@ extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
 }
 
 #[no_mangle]
-extern "C" fn keyboard_interrupt_handler(frame: &mut TrapFrame) {
+extern "C" fn keyboard_interrupt_handler(_frame: &mut TrapFrame) {
+
     // Read Scan Code
     let scancode: u8;
     unsafe {

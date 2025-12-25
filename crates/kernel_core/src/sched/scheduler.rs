@@ -123,7 +123,7 @@ impl Scheduler {
         if let Some(tid) = self.current {
             // Only save if it still exists (it might have exited/died, but we handle that elsewhere)
             // Ideally check state.
-            if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize) {
+            if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize - 1) {
                 thread.context = *current_context;
                 // If Running, user is preempted. Move to Runnable.
                 if thread.state == ThreadState::Running || thread.state == ThreadState::Runnable {
@@ -136,7 +136,7 @@ impl Scheduler {
         // 2. Pick next
         if let Some(next_tid) = self.pick_next() {
             self.current = Some(next_tid);
-            if let Some(Some(thread)) = self.threads.get_mut(next_tid.0 as usize) {
+            if let Some(Some(thread)) = self.threads.get_mut(next_tid.0 as usize - 1) {
                  thread.state = ThreadState::Running;
                  *current_context = thread.context;
             }

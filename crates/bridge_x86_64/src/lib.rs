@@ -27,12 +27,15 @@ impl Bridge {
         gdt::init();
         interrupts::idt::init();
         interrupts::pic::init();
+        interrupts::syscall::init();
+
         // We do NOT enable interrupts here yet. We let the kernel do it when ready.
         // Or wait, kernel loops idle().
         // If we don't enable, we hang.
         // So we should enable.
         x86_64::instructions::interrupts::enable();
     }
+
 }
 
 #[cfg(target_arch = "x86_64")]

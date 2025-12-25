@@ -31,7 +31,7 @@ version = "0.1.0"
 dependencies = [
  "models",
  "serde",
- "thing_std",
+ "thing_std 0.1.0",
 ]
 
 [[package]]
@@ -66,7 +66,7 @@ name = "graph_dump"
 version = "0.1.0"
 dependencies = [
  "serde",
- "thing_std",
+ "thing_std 0.1.0",
 ]
 
 [[package]]
@@ -90,6 +90,17 @@ dependencies = [
  "serde",
  "spin",
  "stable_deref_trait",
+]
+
+[[package]]
+name = "keylog"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "models",
+ "postcard",
+ "serde",
+ "thing_std 0.2.0",
 ]
 
 [[package]]
@@ -137,6 +148,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ee95bc4ef87b8d5ba32e8b7714ccc834865276eab0aed5c9958d00ec45f49e8"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "ps2_keyboard"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "models",
+ "postcard",
+ "serde",
+ "thing_std 0.2.0",
 ]
 
 [[package]]
@@ -233,6 +255,13 @@ dependencies = [
  "models",
  "postcard",
  "serde",
+]
+
+[[package]]
+name = "thing_std"
+version = "0.2.0"
+dependencies = [
+ "abi",
 ]
 
 [[package]]

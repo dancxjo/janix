@@ -64,6 +64,19 @@ static KERNEL: Mutex<Option<Kernel<Bridge>>> = Mutex::new(None);
 fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = (*guard).as_mut() {
+            // Update syscall stack to point to this thread's kernel stack?
+            // Actually, `scheduler` should handle stack management.
+            // But v0 shortcut: we reuse the same stack if we don't context switch?
+            // "Boot Stack" is unsafe if we have multiple user threads running.
+            // If we have 1 user thread, it's fine.
+            // `spawn` allocates a new stack for the thread.
+            // When we switch to that thread, we should update SYSCALL_KERNEL_RSP.
+            // But `scheduler.tick` calls `switch_to`.
+            // We can't easily hook `switch_to`.
+            // Workaround: Use a dedicated syscall stack per CPU (Global for UP).
+            // We can allocate one here or reuse BOOT_STACK logic if careful.
+            // Let's use a dedicated static stack for syscalls to avoid overflow.
+            
             // Cast frame to [u64; 20]
             let ctx_ptr = frame as *mut _ as *mut [u64; 20];
             let ctx = unsafe { &mut *ctx_ptr };
@@ -71,6 +84,28 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
         }
     }
 }
+
+fn syscall_hook(num: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize, a6: usize) -> isize {
+    // We need lock. If syscall caused by user int, we are in kernel mode (interrupts enabled?).
+    // Syscall handler enables interrupts.
+    // So we can lock.
+    loop {
+        if let Some(mut guard) = KERNEL.try_lock() {
+             if let Some(k) = (*guard).as_mut() {
+                  return kernel_core::syscalls::syscall_dispatch(k, num, a1, a2, a3, a4, a5, a6);
+
+             }
+        }
+        core::hint::spin_loop();
+    }
+}
+
+
+// Define kernel_core::syscalls::syscall_dispatch locally?
+// No, it should be in `kernel_core`.
+// I checked `kernel_core/src/syscalls/mod.rs` and it didn't have `syscall_dispatch`.
+// I MUST implement it there.
+
 
 
 #[no_mangle]
@@ -240,12 +275,14 @@ pub extern "C" fn rust_main() -> ! {
     {
         // 1. Install Hook
         bridge_x86_64::set_tick_hook(scheduler_tick);
+        bridge_x86_64::interrupts::syscall::set_syscall_hook(syscall_hook);
         
         // 2. Set Global
         *KERNEL.lock() = Some(k);
         
         // 3. Init Hardware Bridge (Interrupts Enabled!)
         unsafe { Bridge::init(); }
+
     }
 
     loop {

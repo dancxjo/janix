@@ -4,7 +4,10 @@ members = [
   "crates/thing_std",
   "apps/clock",
   "apps/graph_dump",
+  "drivers/ps2_keyboard",
+  "apps/keylog",
 ]
+
 
 [workspace.dependencies]
 postcard = { version = "1", default-features = false, features = ["alloc"] }

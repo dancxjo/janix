@@ -68,8 +68,20 @@ unsafe extern "C" fn enter_user_mode_asm(_regs: *const X86UserEntryRegs) -> ! {
 
 pub fn resume_user_mode(context: &[u64], _fpu_context: &FpuContext) -> ! {
     // Context layout: [r15...rax, rip, cs, rflags, rsp, ss]
-    unsafe { resume_user_mode_asm(context.as_ptr()) }
+    // The context slice is assumed to be at the TOP of the kernel stack for the target thread.
+    // (Or rather, populating the space just below top).
+    // The "Stack Top" (RSP0) should be calculating by taking the context address and adding its size.
+    // context.len() = 20.
+    // stack_top = context_ptr + 20 * 8.
+    let stack_top = context.as_ptr() as u64 + (context.len() * 8) as u64;
+    
+    unsafe {
+        crate::gdt::set_kernel_stack(stack_top);
+        crate::interrupts::syscall::set_kernel_stack(stack_top);
+        resume_user_mode_asm(context.as_ptr())
+    }
 }
+
 
 #[unsafe(naked)]
 unsafe extern "C" fn resume_user_mode_asm(_context: *const u64) -> ! {

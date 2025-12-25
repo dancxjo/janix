@@ -46,7 +46,8 @@ pub fn run(env: String) -> Result<()> {
 
     // 2.5 Build User Apps
     println!("==> Building user apps for {}...", env);
-    let user_apps = ["clock", "graph_dump"];
+    let user_apps = ["clock", "graph_dump", "ps2_keyboard", "keylog"];
+
     for app in user_apps {
         let status = Command::new(&cargo)
             .arg("build")

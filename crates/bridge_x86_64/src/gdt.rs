@@ -50,3 +50,10 @@ pub unsafe fn init() {
     
     load_tss(tss);
 }
+
+pub unsafe fn set_kernel_stack(stack_top: u64) {
+    let virt = VirtAddr::new(stack_top);
+    // Writes to static mut TSS are unsafe
+    TSS.privilege_stack_table[0] = virt;
+}
+

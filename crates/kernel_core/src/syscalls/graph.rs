@@ -60,6 +60,31 @@ pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str
                  Err(())
              }
         },
+        "input.key_events.next" => {
+            // Params: start_after_id: ThingId (serialized)
+            // Or simple stub: we just return "next after user provided Id"
+            if let Ok(last_seen) = postcard::from_bytes::<abi::ThingId>(_params) {
+               // Blocking wait? 
+               // "returns one event (blocking)"
+               // We need to loop/yield if None.
+               // V0: spin wait.
+               // target kind: THING_KEY_EVENT_KIND (211)
+               let kind = thing_models::builtins::ids::THING_KEY_EVENT_KIND;
+               loop {
+                   if let Some(next_id) = kernel.graph.next_thing_of_kind(kind, last_seen) {
+                       if let Some(thing) = kernel.graph.get(next_id) {
+                            // serialize Thing
+                            return to_slice(thing, out).map(|s| s.len()).map_err(|_| ());
+                       }
+                   }
+                   // Yield
+                   core::hint::spin_loop(); 
+               }
+            } else {
+                Err(())
+            }
+        },
         _ => Err(()),
+
     }
 }

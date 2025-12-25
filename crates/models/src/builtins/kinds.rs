@@ -6,6 +6,7 @@ use crate::thing::Thing;
 use crate::value::ThingBody;
 use abi::ThingId;
 use alloc::vec::Vec;
+use crate::thing_kind;
 
 // Helper to create a Thing
 fn make_thing<T: serde::Serialize>(id: ThingId, kind: ThingId, body_struct: &T) -> Thing {
@@ -17,6 +18,7 @@ fn make_thing<T: serde::Serialize>(id: ThingId, kind: ThingId, body_struct: &T) 
 }
 
 // --- Meta-Kinds (Kind, Schema) ---
+// Kept manual as requested to avoid macro bootstrapping loops or complexity
 
 pub fn builtin_kind_kind() -> Thing {
     make_thing(
@@ -42,57 +44,7 @@ pub fn builtin_schema_kind() -> Thing {
     )
 }
 
-// --- Core Kinds ---
-
-pub fn builtin_link_kind() -> Thing {
-    make_thing(
-        THING_LINK_KIND,
-        THING_KIND_KIND,
-        &KindBody {
-            name: SYM_LINK,
-            version: 1,
-            schema: THING_LINK_SCHEMA,
-        },
-    )
-}
-
-pub fn builtin_intent_kind() -> Thing {
-    make_thing(
-        THING_INTENT_KIND,
-        THING_KIND_KIND,
-        &KindBody {
-            name: SYM_INTENT,
-            version: 1,
-            schema: THING_INTENT_SCHEMA,
-        },
-    )
-}
-
-pub fn builtin_observation_kind() -> Thing {
-    make_thing(
-        THING_OBSERVATION_KIND,
-        THING_KIND_KIND,
-        &KindBody {
-            name: SYM_OBSERVATION,
-            version: 1,
-            schema: THING_OBSERVATION_SCHEMA,
-        },
-    )
-}
-
-pub fn builtin_result_kind() -> Thing {
-    make_thing(
-        THING_RESULT_KIND,
-        THING_KIND_KIND,
-        &KindBody {
-            name: SYM_RESULT,
-            version: 1,
-            schema: THING_RESULT_SCHEMA,
-        },
-    )
-}
-
-// --- Schemas ---
+// --- Schemas for Meta-Kinds ---
 
 fn make_schema_thing(id: ThingId) -> Thing {
     make_thing(
@@ -113,18 +65,62 @@ pub fn builtin_schema_schema() -> Thing {
     make_schema_thing(THING_SCHEMA_SCHEMA)
 }
 
-pub fn builtin_link_schema() -> Thing {
-    make_schema_thing(THING_LINK_SCHEMA)
+// --- Core Kinds (Macro Generated) ---
+
+thing_kind! {
+    kind Link {
+        id: 1003, // THING_LINK_KIND
+        sym: SYM_LINK,
+        version: 1,
+        body: crate::link::LinkBody,
+        type_tag: "thingos.LinkBody.v1",
+        schema_id: 2003, // THING_LINK_SCHEMA
+
+        links {
+             // Link can link to anything? Or specific rules?
+             // For now, minimal rules as placeholders if not specified
+        }
+    }
 }
 
-pub fn builtin_intent_schema() -> Thing {
-    make_schema_thing(THING_INTENT_SCHEMA)
+thing_kind! {
+    kind Intent {
+        id: 1004, // THING_INTENT_KIND
+        sym: SYM_INTENT,
+        version: 1,
+        body: crate::intent::IntentBody,
+        type_tag: "thingos.IntentBody.v1",
+        schema_id: 2004, // THING_INTENT_SCHEMA
+
+        links {
+            predicate THING_RESULT_KIND min 0 max 1;
+            predicate THING_OBSERVATION_KIND min 0 max many;
+        }
+    }
 }
 
-pub fn builtin_observation_schema() -> Thing {
-    make_schema_thing(THING_OBSERVATION_SCHEMA)
+thing_kind! {
+    kind Observation {
+        id: 1005, // THING_OBSERVATION_KIND
+        sym: SYM_OBSERVATION,
+        version: 1,
+        body: crate::observation::ObservationBody,
+        type_tag: "thingos.ObservationBody.v1",
+        schema_id: 2005, // THING_OBSERVATION_SCHEMA
+
+        links {}
+    }
 }
 
-pub fn builtin_result_schema() -> Thing {
-    make_schema_thing(THING_RESULT_SCHEMA)
+thing_kind! {
+    kind Result {
+        id: 1006, // THING_RESULT_KIND
+        sym: SYM_RESULT,
+        version: 1,
+        body: crate::result::ResultBody,
+        type_tag: "thingos.ResultBody.v1",
+        schema_id: 2006, // THING_RESULT_SCHEMA
+
+        links {}
+    }
 }

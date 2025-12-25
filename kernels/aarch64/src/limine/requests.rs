@@ -1,0 +1,26 @@
+use limine::request::{HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker, StackSizeRequest};
+use limine::BaseRevision;
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static BASE_REVISION: BaseRevision = BaseRevision::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static STACK_SIZE_REQUEST: StackSizeRequest = StackSizeRequest::new().with_size(1024 * 1024);
+
+#[used]
+#[unsafe(link_section = ".requests_start_marker")]
+static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
+
+#[used]
+#[unsafe(link_section = ".requests_end_marker")]
+static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();

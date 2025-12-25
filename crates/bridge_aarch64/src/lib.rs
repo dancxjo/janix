@@ -11,9 +11,18 @@ impl HardwareBridge for Bridge {
     fn log(&self, msg: &str) {
         // PL011 UART at 0x09000000 (QEMU virt default)
         const UART0: *mut u8 = 0x09000000 as *mut u8;
+        // FR Register offset 0x18. TXFF is bit 5?
+        // PL011: FR (Flag Register) at +0x18.
+        // TXFF (Transmit FIFO Full) is Bit 5.
+        // We wait while TXFF is 1.
+        const UARTFR: *mut u32 = 0x09000018 as *mut u32; // 0x09000000 + 0x18
+        
         for b in msg.bytes() {
             unsafe {
-                // Wait for UART to be ready check excluded for simplicity in "thin crust"
+                // Wait while TXFF (bit 5) is set
+                while (core::ptr::read_volatile(UARTFR) & (1 << 5)) != 0 {
+                    core::hint::spin_loop();
+                }
                 core::ptr::write_volatile(UART0, b);
             }
         }

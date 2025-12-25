@@ -83,6 +83,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitflags"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
+
+[[package]]
 name = "bridge_aarch64"
 version = "0.2.0"
 dependencies = [
@@ -180,16 +186,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "hash32"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47d60b12902ba28e2730cd37e95b8c9223af2808df9e902d4df49588d1470606"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "heapless"
 version = "0.7.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdc6457c0eb62c71aac4bc17216026d8410337c4126773b9c5daba343f17964f"
 dependencies = [
  "atomic-polyfill",
- "hash32",
+ "hash32 0.2.1",
  "rustc_version",
  "serde",
- "spin",
+ "spin 0.9.8",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "heapless"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad"
+dependencies = [
+ "hash32 0.3.1",
  "stable_deref_trait",
 ]
 
@@ -217,15 +242,22 @@ name = "kernel_aarch64"
 version = "0.2.0"
 dependencies = [
  "bridge_aarch64",
+ "hw",
  "kernel_core",
+ "limine",
+ "linked_list_allocator",
+ "spin 0.10.0",
 ]
 
 [[package]]
 name = "kernel_core"
 version = "0.2.0"
 dependencies = [
+ "abi",
+ "heapless 0.8.0",
  "hw",
  "models",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -241,7 +273,29 @@ name = "kernel_x86_64"
 version = "0.2.0"
 dependencies = [
  "bridge_x86_64",
+ "hw",
  "kernel_core",
+ "limine",
+ "linked_list_allocator",
+ "spin 0.10.0",
+]
+
+[[package]]
+name = "limine"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af6d2ee42712e7bd2c787365cd1dab06ef59a61becbf87bec7b32b970bd2594b"
+dependencies = [
+ "bitflags",
+]
+
+[[package]]
+name = "linked_list_allocator"
+version = "0.10.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9afa463f5405ee81cdb9cc2baf37e08ec7e4c8209442b5d72c04cfb2cd6e6286"
+dependencies = [
+ "spinning_top",
 ]
 
 [[package]]
@@ -273,7 +327,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6764c3b5dd454e283a30e6dfe78e9b31096d9e32036b5d1eaac7a6119ccb9a24"
 dependencies = [
  "cobs",
- "heapless",
+ "heapless 0.7.17",
  "serde",
 ]
 
@@ -358,6 +412,24 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "spin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "spinning_top"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b9eb1a2f4c41445a3a0ff9abc5221c5fcd28e1f13cd7c0397706f9ac938ddb0"
 dependencies = [
  "lock_api",
 ]

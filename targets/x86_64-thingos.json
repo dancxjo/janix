@@ -13,6 +13,7 @@
     "executables": true,
     "panic-strategy": "abort",
     "relocation-model": "static",
+    "code-model": "kernel",
     "disable-redzone": true,
     "frame-pointer": "always"
 }

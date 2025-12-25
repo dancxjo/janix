@@ -1,5 +1,9 @@
 #![no_std]
 
+extern crate alloc;
+
+pub mod sched;
+
 use hw::HardwareBridge;
 
 pub struct Kernel<B: HardwareBridge> {
@@ -12,13 +16,13 @@ impl<B: HardwareBridge> Kernel<B> {
     }
 
     pub fn boot(&self) -> ! {
-        self.bridge.log(models::milestones::KERNEL_ENTRY);
+        self.bridge.log(thing_models::milestones::KERNEL_ENTRY);
         self.bridge.log("\n");
-        self.bridge.log(models::milestones::BRIDGE_ONLINE);
+        self.bridge.log(thing_models::milestones::BRIDGE_ONLINE);
         self.bridge.log("\n");
 
         loop {
-            self.bridge.log(models::milestones::IDLE_LOOP);
+            self.bridge.log(thing_models::milestones::IDLE_LOOP);
             self.bridge.log("\n");
             self.bridge.idle();
         }

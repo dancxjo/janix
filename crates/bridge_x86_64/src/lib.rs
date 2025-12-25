@@ -11,6 +11,15 @@ impl HardwareBridge for Bridge {
     fn log(&self, msg: &str) {
         unsafe {
             for b in msg.bytes() {
+                // Wait for Transmit Holding Register Empty (Bit 5)
+                let mut status: u8;
+                loop {
+                    asm!("in al, dx", out("al") status, in("dx") 0x3F8u16 + 5);
+                    if status & 0x20 != 0 {
+                        break;
+                    }
+                    core::hint::spin_loop();
+                }
                 asm!("out dx, al", in("dx") 0x3F8u16, in("al") b);
             }
         }

@@ -15,6 +15,14 @@ SECTIONS {
 
     . = ALIGN(0x1000);
 
+    .requests : {
+        KEEP(*(.requests_start_marker))
+        KEEP(*(.requests))
+        KEEP(*(.requests_end_marker))
+    }
+
+    . = ALIGN(0x1000);
+
     .data : {
         *(.data .data.*)
     }

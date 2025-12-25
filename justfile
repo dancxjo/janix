@@ -6,7 +6,9 @@ fetch:
 
 check:
     cargo fmt --all --check
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --workspace --exclude kernel_x86_64 --exclude kernel_aarch64 -- -D warnings
+    cargo clippy -p kernel_x86_64 --target targets/x86_64-thingos.json -Z build-std=core,alloc -- -D warnings
+    cargo clippy -p kernel_aarch64 --target targets/aarch64-thingos.json -Z build-std=core,alloc -- -D warnings
 
 test:
     cargo test --workspace

@@ -33,7 +33,9 @@ pub fn run(env: String) -> Result<()> {
         .arg("--target")
         .arg(&target_flag)
         .arg("-Z")
-        .arg("build-std=core")
+        .arg("build-std=core,alloc,compiler_builtins")
+        .arg("-Z")
+        .arg("build-std-features=compiler-builtins-mem")
         .current_dir(&root)
         .status()
         .context("Failed to run cargo build")?;

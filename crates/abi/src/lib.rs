@@ -1,11 +1,9 @@
 #![no_std]
 
+pub mod ids;
+pub mod memory;
+
+pub use ids::{GraphId, ProcessId, ThingId, ThreadId};
+pub use memory::*;
+
 pub type SysRet = i64;
-
-#[repr(transparent)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ThingId(pub u64);
-
-#[repr(transparent)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct GraphId(pub u64);

@@ -9,12 +9,14 @@ pub mod link;
 pub mod kind;
 pub mod schema;
 
-pub use symbol::*;
-pub use value::*;
-pub use thing::*;
-pub use link::*;
 pub use kind::*;
+pub use link::*;
 pub use schema::*;
+pub use symbol::*;
+pub use thing::*;
+pub use value::*;
+
+pub mod builtins;
 
 pub mod milestones {
     pub const KERNEL_ENTRY: &str = "THINGOS: kernel entry";

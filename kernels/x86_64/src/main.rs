@@ -67,6 +67,6 @@ pub extern "C" fn rust_main() -> ! {
         early_log::log_heap_init(info);
     }
 
-    let k = Kernel::new(Bridge);
+    let mut k = Kernel::new(Bridge);
     k.boot();
 }

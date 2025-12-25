@@ -1,0 +1,7 @@
+[build]
+target = "targets/x86_64-thingos.json"
+
+[target.'cfg(target_os = "thingos")']
+rustflags = [
+  "-C", "force-frame-pointers=yes",
+]

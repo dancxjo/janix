@@ -1,0 +1,8 @@
+[package]
+name = "smoke_tests"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true

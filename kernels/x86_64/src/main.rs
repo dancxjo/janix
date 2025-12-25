@@ -6,11 +6,11 @@ use kernel_core::Kernel;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-loop {}
+    loop {}
 }
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-let k = Kernel::new(Bridge);
-k.boot();
+    let k = Kernel::new(Bridge);
+    k.boot();
 }

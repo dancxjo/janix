@@ -3,7 +3,7 @@
 use hw::HardwareBridge;
 
 pub struct Kernel<B: HardwareBridge> {
-bridge: B,
+    bridge: B,
 }
 
 impl<B: HardwareBridge> Kernel<B> {

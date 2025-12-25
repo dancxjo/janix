@@ -6,3 +6,5 @@ license.workspace = true
 
 [dependencies]
 serde.workspace = true
+postcard = { version = "1.0", default-features = false, features = ["alloc"] }
+abi = { path = "../abi" }

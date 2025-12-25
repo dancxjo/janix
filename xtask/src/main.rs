@@ -3,6 +3,7 @@ use anyhow::Result;
 
 mod fetch;
 mod iso;
+mod run;
 
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Build and management tasks for ThingOS")]
@@ -26,6 +27,9 @@ enum Commands {
     Run {
         #[arg(long, default_value = "hosted")]
         env: String,
+        /// Enable GDB stub (-s -S)
+        #[arg(long)]
+        gdb: bool,
     },
 }
 
@@ -39,9 +43,6 @@ fn main() -> Result<()> {
             Ok(())
         },
         Commands::Iso { env } => iso::run(env), 
-        Commands::Run { env } => {
-            println!("xtask run env={}: TODO", env);
-            Ok(())
-        },
+        Commands::Run { env, gdb } => run::run(run::RunArgs { env, gdb }),
     }
 }

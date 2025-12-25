@@ -1,3 +1,8 @@
 /target
 **/*.swp
 .DS_Store
+
+# Fetched assets
+/vendor/limine/
+/vendor/ovmf/
+/assets/fonts/

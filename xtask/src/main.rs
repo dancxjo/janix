@@ -30,6 +30,9 @@ enum Commands {
         /// Enable GDB stub (-s -S)
         #[arg(long)]
         gdb: bool,
+        /// Run for fixed seconds then kill (for testing)
+        #[arg(long)]
+        timeout_secs: Option<u64>,
     },
 }
 
@@ -43,6 +46,6 @@ fn main() -> Result<()> {
             Ok(())
         },
         Commands::Iso { env } => iso::run(env), 
-        Commands::Run { env, gdb } => run::run(run::RunArgs { env, gdb }),
+        Commands::Run { env, gdb, timeout_secs } => run::run(run::RunArgs { env, gdb, timeout_secs }),
     }
 }

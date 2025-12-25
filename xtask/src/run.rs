@@ -1,41 +1,76 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use crate::iso;
 
 #[derive(Debug, Clone)]
 pub struct RunArgs {
     pub env: String,
     pub gdb: bool,
+    pub timeout_secs: Option<u64>,
 }
 
 pub fn run(args: RunArgs) -> Result<()> {
     match args.env.as_str() {
-        "hosted" => run_hosted(),
-        "x86_64" => run_qemu_x86_64(args.gdb),
-        "aarch64" => run_qemu_aarch64(args.gdb),
+        "hosted" => run_hosted(args.timeout_secs),
+        "x86_64" => run_qemu_x86_64(args.gdb, args.timeout_secs),
+        "aarch64" => run_qemu_aarch64(args.gdb, args.timeout_secs),
         _ => anyhow::bail!("Unsupported env for run: {}. Use hosted, x86_64 or aarch64", args.env),
     }
 }
 
-fn run_hosted() -> Result<()> {
+fn run_with_timeout(mut cmd: Command, timeout: Option<u64>) -> Result<()> {
+    // If no timeout, just run and wait
+    if timeout.is_none() {
+        let status = cmd.status().context("Failed to run command")?;
+        if !status.success() {
+             anyhow::bail!("Command failed with status: {}", status);
+        }
+        return Ok(());
+    }
+
+    let timeout = Duration::from_secs(timeout.unwrap());
+    let mut child = cmd.spawn().context("Failed to spawn command")?;
+    let start = Instant::now();
+
+    loop {
+        if let Some(status) = child.try_wait().context("Failed to check status")? {
+            // Exited early?
+            if !status.success() {
+                anyhow::bail!("Command exited early with failure: {}", status);
+            }
+            return Ok(());
+        }
+
+        if start.elapsed() >= timeout {
+            println!("Timeout reached, killing process...");
+            child.kill().context("Failed to kill process")?;
+            child.wait().context("Failed to wait after kill")?; 
+            // We consider timeout kill 'success' for typical test usage logic where we just wanted to run for N seconds.
+            // But usually tests want to Assert stdout. 
+            // Child stdout is printed to parent stdout by default. Capture is done by caller of xtask.
+            return Ok(());
+        }
+
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+
+fn run_hosted(timeout: Option<u64>) -> Result<()> {
     println!("==> Running hosted kernel...");
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     
-    let status = Command::new(cargo)
-        .arg("run")
-        .arg("-p")
-        .arg("kernel_hosted")
-        .status()
-        .context("Failed to run hosted kernel")?;
-
-    if !status.success() {
-        anyhow::bail!("Hosted kernel run failed");
-    }
-    Ok(())
+    let mut cmd = Command::new(cargo);
+    cmd.arg("run")
+       .arg("-p")
+       .arg("kernel_hosted");
+        
+    run_with_timeout(cmd, timeout)
 }
 
-fn run_qemu_x86_64(gdb: bool) -> Result<()> {
+fn run_qemu_x86_64(gdb: bool, timeout: Option<u64>) -> Result<()> {
     // Ensure ISO exists (rebuilds kernel too)
     iso::run("x86_64".to_string())?;
 
@@ -48,7 +83,6 @@ fn run_qemu_x86_64(gdb: bool) -> Result<()> {
 
     if !ovmf_code.exists() || !ovmf_vars.exists() {
         eprintln!("[WARNING] OVMF files missing in vendor/ovmf/. QEMU might fail if they were placeholders.");
-        // We continue anyway, as per "just run ... streams serial logs" - checking failure happens at runtime.
     }
 
     println!("==> Running QEMU x86_64...");
@@ -57,13 +91,8 @@ fn run_qemu_x86_64(gdb: bool) -> Result<()> {
     cmd.arg("-M").arg("q35");
     cmd.arg("-serial").arg("stdio");
     cmd.arg("-no-reboot");
-    
-    // Firmware
-    // -drive if=pflash,format=raw,readonly=on,file=...
     cmd.arg("-drive").arg(format!("if=pflash,format=raw,readonly=on,file={}", ovmf_code.display()));
     cmd.arg("-drive").arg(format!("if=pflash,format=raw,readonly=on,file={}", ovmf_vars.display()));
-    
-    // CDROM
     cmd.arg("-cdrom").arg(&iso_path);
 
     if gdb {
@@ -71,15 +100,10 @@ fn run_qemu_x86_64(gdb: bool) -> Result<()> {
         cmd.arg("-s").arg("-S");
     }
 
-    let status = cmd.status().context("Failed to run QEMU")?;
-    if !status.success() {
-        anyhow::bail!("QEMU exited with error");
-    }
-
-    Ok(())
+    run_with_timeout(cmd, timeout)
 }
 
-fn run_qemu_aarch64(gdb: bool) -> Result<()> {
+fn run_qemu_aarch64(gdb: bool, timeout: Option<u64>) -> Result<()> {
     // Ensure ISO exists
     iso::run("aarch64".to_string())?;
 
@@ -94,27 +118,15 @@ fn run_qemu_aarch64(gdb: bool) -> Result<()> {
     cmd.arg("-cpu").arg("cortex-a72");
     cmd.arg("-serial").arg("stdio");
     cmd.arg("-no-reboot");
-    
-    // Firmware
     cmd.arg("-bios").arg(&ovmf_code);
-
-    // CDROM
     cmd.arg("-cdrom").arg(&iso_path);
-    
-    // Graphics (optional, but good for future)
-    // cmd.arg("-device").arg("ramfb"); 
 
     if gdb {
         println!("    Waiting for GDB connection on port 1234...");
         cmd.arg("-s").arg("-S");
     }
 
-    let status = cmd.status().context("Failed to run QEMU")?;
-    if !status.success() {
-        anyhow::bail!("QEMU exited with error");
-    }
-
-    Ok(())
+    run_with_timeout(cmd, timeout)
 }
 
 fn project_root() -> PathBuf {

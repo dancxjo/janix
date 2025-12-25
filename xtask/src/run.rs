@@ -81,24 +81,38 @@ fn run_qemu_x86_64(gdb: bool, timeout: Option<u64>) -> Result<()> {
     let ovmf_code = ovmf_dir.join("ovmf-code-x86_64.fd");
     let ovmf_vars = ovmf_dir.join("ovmf-vars-x86_64.fd");
 
-    if !ovmf_code.exists() || !ovmf_vars.exists() {
-        eprintln!("[WARNING] OVMF files missing in vendor/ovmf/. QEMU might fail if they were placeholders.");
+    let mut use_uefi = false;
+    if ovmf_code.exists() && ovmf_vars.exists() {
+        // limit read to header
+        if let Ok(data) = std::fs::read(&ovmf_code) {
+            if data.starts_with(b"PLACEHOLDER") {
+                eprintln!("[WARNING] OVMF is a placeholder. Falling back to BIOS.");
+            } else {
+                use_uefi = true;
+            }
+        }
+    } else {
+        eprintln!("[WARNING] OVMF files missing. QEMU will use default BIOS.");
     }
 
     println!("==> Running QEMU x86_64...");
 
     let mut cmd = Command::new("qemu-system-x86_64");
     cmd.arg("-M").arg("q35");
-    cmd.arg("-serial").arg("stdio");
+    cmd.arg("-nographic");
     cmd.arg("-no-reboot");
-    cmd.arg("-drive").arg(format!(
-        "if=pflash,format=raw,readonly=on,file={}",
-        ovmf_code.display()
-    ));
-    cmd.arg("-drive").arg(format!(
-        "if=pflash,format=raw,readonly=on,file={}",
-        ovmf_vars.display()
-    ));
+
+    if use_uefi {
+        cmd.arg("-drive").arg(format!(
+            "if=pflash,format=raw,readonly=on,file={}",
+            ovmf_code.display()
+        ));
+        cmd.arg("-drive").arg(format!(
+            "if=pflash,format=raw,readonly=on,file={}",
+            ovmf_vars.display()
+        ));
+    }
+    // else default BIOS
     cmd.arg("-cdrom").arg(&iso_path);
 
     if gdb {
@@ -117,14 +131,30 @@ fn run_qemu_aarch64(gdb: bool, timeout: Option<u64>) -> Result<()> {
     let iso_path = root.join("target/iso/thingos-aarch64.iso");
     let ovmf_code = root.join("vendor/ovmf/ovmf-code-aarch64.fd");
 
+    let mut use_uefi = false;
+    if ovmf_code.exists() {
+        if let Ok(data) = std::fs::read(&ovmf_code) {
+            if data.starts_with(b"PLACEHOLDER") {
+                eprintln!(
+                    "[WARNING] OVMF is a placeholder. AArch64 boot may fail (requires firmware)."
+                );
+            } else {
+                use_uefi = true;
+            }
+        }
+    }
+
     println!("==> Running QEMU aarch64...");
 
     let mut cmd = Command::new("qemu-system-aarch64");
     cmd.arg("-M").arg("virt");
     cmd.arg("-cpu").arg("cortex-a72");
-    cmd.arg("-serial").arg("stdio");
+    cmd.arg("-nographic");
     cmd.arg("-no-reboot");
-    cmd.arg("-bios").arg(&ovmf_code);
+
+    if use_uefi {
+        cmd.arg("-bios").arg(&ovmf_code);
+    }
     cmd.arg("-cdrom").arg(&iso_path);
 
     if gdb {

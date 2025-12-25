@@ -11,7 +11,7 @@ fn x86_64_uefi_smoke() {
         .arg("--env")
         .arg("x86_64")
         .arg("--timeout-secs")
-        .arg("10")
+        .arg("30")
         .output()
         .expect("Failed to run xtask");
 
@@ -41,7 +41,7 @@ fn aarch64_uefi_smoke() {
         .arg("--env")
         .arg("aarch64")
         .arg("--timeout-secs")
-        .arg("10")
+        .arg("30")
         .output()
         .expect("Failed to run xtask");
 

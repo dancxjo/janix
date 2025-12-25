@@ -111,7 +111,12 @@ fn fetch_ovmf(vendor: &Path) -> Result<()> {
                 "    [WARNING] Failed to download {}. Creating placeholder.",
                 dest_name
             );
-            fs::write(&dest, "PLACEHOLDER: Replace with real OVMF firmware")?;
+            // QEMU requires pflash images to be 4KB aligned.
+            // We create a 4MB zeroed file with a warning header.
+            let mut data = vec![0u8; 4 * 1024 * 1024];
+            let msg = b"PLACEHOLDER: Replace with real OVMF firmware";
+            data[..msg.len()].copy_from_slice(msg);
+            fs::write(&dest, &data)?;
         }
     }
 

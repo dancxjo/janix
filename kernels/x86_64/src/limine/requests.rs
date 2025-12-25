@@ -20,6 +20,10 @@ pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 pub static STACK_SIZE_REQUEST: StackSizeRequest = StackSizeRequest::new().with_size(1024 * 1024);
 
 #[used]
+#[unsafe(link_section = ".requests")]
+pub static MODULE_REQUEST: limine::request::ModuleRequest = limine::request::ModuleRequest::new();
+
+#[used]
 #[unsafe(link_section = ".requests_start_marker")]
 static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 

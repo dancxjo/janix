@@ -71,6 +71,46 @@ impl HardwareBridge for Bridge {
             asm!("sti");
         }
     }
+
+    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> [u64; 20] {
+        // [r15...rax, rip, cs, rflags, rsp, ss]
+        // 15 GPRs: r15..r8, rcx, rdx, rsi, rdi, rax (rbx, rbp?)
+        // Let's check user::resume_user_mode_asm layout:
+        // pop r15, r14, r13, r12, rbp, rbx, r11, r10, r9, r8, rcx, rdx, rsi, rdi, rax
+        // 15 regs.
+        // Then rip, cs, rflags, rsp, ss. Total 20.
+        // Index 13 is rdi (arg). 
+        // Index 15 is rip.
+        // Index 16 is cs. 
+        // Index 17 is rflags.
+        // Index 18 is rsp.
+        // Index 19 is ss.
+
+        let mut ctx = [0u64; 20];
+        // RDI = arg
+        ctx[13] = arg;
+
+        // RIP
+        ctx[15] = entry;
+        
+         // CS: User Code 0x30 | 3
+        ctx[16] = 0x33;
+
+        // RFLAGS: IF enabled (0x200) | Reserved (0x2)
+        ctx[17] = 0x202;
+
+        // RSP
+        ctx[18] = stack;
+
+        // SS: User Data 0x28 | 3
+        ctx[19] = 0x2B;
+
+        ctx
+    }
+
+    fn resume_user_mode(&self, context: &[u64]) -> ! {
+        crate::user::enter::resume_user_mode(context, &kernel_core::sched::fpu::FpuContext::default())
+    }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
@@ -88,4 +128,10 @@ impl HardwareBridge for Bridge {
     }
     fn irq_disable(&self) {}
     fn irq_enable(&self) {}
+    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 20] {
+        [0; 20]
+    }
+    fn resume_user_mode(&self, _context: &[u64]) -> ! {
+        loop {}
+    }
 }

@@ -44,6 +44,29 @@ pub fn run(env: String) -> Result<()> {
         anyhow::bail!("Kernel build failed");
     }
 
+    // 2.5 Build User Apps
+    println!("==> Building user apps for {}...", env);
+    let user_apps = ["clock", "graph_dump"];
+    for app in user_apps {
+        let status = Command::new(&cargo)
+            .arg("build")
+            // Use manifest path explicitly since user apps are in a different workspace
+            .arg("--manifest-path")
+            .arg("user/Cargo.toml")
+            .arg("-p")
+            .arg(app)
+            .arg("--target")
+            .arg("x86_64-unknown-none") // User workspace is configured for this target
+            .current_dir(&root)
+            .status()
+            .context(format!("Failed to build user app {}", app))?;
+
+        if !status.success() {
+            anyhow::bail!("User app {} build failed", app);
+        }
+    }
+    // Copied and cleaned up above.
+
     // 3. Assemble ISO Root
     println!("==> Assembling ISO root for {}...", env);
     let target_dir = root.join("target");
@@ -56,6 +79,8 @@ pub fn run(env: String) -> Result<()> {
 
     // Layout:
     // /boot/kernel
+    // /boot/modules/clock
+    // /boot/modules/graph_dump
     // /boot/limine/limine.conf
     // /boot/limine/limine-bios.sys, etc.
     // /EFI/BOOT/BOOTX64.EFI
@@ -79,6 +104,15 @@ pub fn run(env: String) -> Result<()> {
 
     fs::copy(&bin_path, boot_dir.join("kernel"))
         .with_context(|| format!("Failed to copy kernel from {:?}", bin_path))?;
+
+    // Copy Modules
+    let modules_dir = boot_dir.join("modules");
+    fs::create_dir_all(&modules_dir)?;
+    for app in user_apps {
+        let app_bin = root.join("user/target/x86_64-unknown-none/debug").join(app);
+        fs::copy(&app_bin, modules_dir.join(app))
+            .with_context(|| format!("Failed to copy app {} from {:?}", app, app_bin))?;
+    }
 
     // Limine Files
     let limine_dest = boot_dir.join("limine");

@@ -13,10 +13,46 @@ use graph::{GraphStore, seed_builtins};
 use symbols::{SymbolTable, SymbolError};
 use symbols::store::SymbolStore;
 
+use sched::scheduler::Scheduler;
+
 pub struct Kernel<B: HardwareBridge> {
-    bridge: B,
-    graph: GraphStore,
+    pub bridge: B, // Make bridge public so syscalls can access it in generic manner? 
+    // syscall handler uses `kernel.bridge`. So yes, or make accessors.
+    // Right now `bridge` field is private.
+    // wait, `impl Kernel` has methods.
+    // syscalls/graph.rs had `kernel.bridge.system_now()`.
+    // Wait, `bridge` in line 17 IS private.
+    // Step 135 `syscalls/graph.rs` uses `kernel.bridge.ticks()`.
+    // This implies `bridge` MUST be public or `graph.rs` is failing to compile?
+    // Step 137 `cargo check -p kernel_core` SUCCEEDED.
+    // How? `syscalls/graph.rs` is a child module of `kernel_core`.
+    // Modules in same crate can access private fields if they are in parent?
+    // `kernel_core/src/syscalls` is a submodule. It CAN access parent fields if they are pub(crate).
+    // `bridge` is private (default). Private fields are only accessible in the module defining the struct.
+    // `lib.rs` defines `Kernel`. `syscalls` is separate module.
+    // So `bridge` access should FAIL.
+    // Why did `cargo check` succeed?
+    // Maybe `B` is public? No.
+    // Ah, `syscalls/graph.rs` line 6: `pub fn handle_graph_op...`.
+    // wait, `syscalls/graph.rs` imported `crate::Kernel`.
+    // If access failed, it should error.
+    // Maybe I missed the public modifier in my file view?
+    // Step 112: `bridge: B,` line 17. No pub.
+    // Maybe `cargo check` didn't actually check `syscalls/graph.rs` content fully because it's library?
+    // Or I am mistaken about visibility rules.
+    // Private fields are visible to child modules? YES!
+    // "Functionality in the parent module is visible to child modules." - wrong.
+    // "Items in a parent module are visible to child modules, but private items are not... wait."
+    // Actually, "In Rust 2018+, child modules can access private items in parent modules." - No.
+    // Parent items are private to children unless `pub`.
+    // BUT `Kernel` struct is in `lib.rs`. `syscalls` is loaded in `lib.rs`.
+    // They are siblings? No `syscalls` is child of `lib`.
+    // Wait, visibility is tricky.
+    // Regardless, I'll make `bridge` pub to be safe and `scheduler` pub.
+    
+    pub graph: GraphStore, // Make graph pub too just in case
     pub symbols: SymbolTable,
+    pub scheduler: Scheduler,
 }
 
 impl<B: HardwareBridge> Kernel<B> {
@@ -25,6 +61,7 @@ impl<B: HardwareBridge> Kernel<B> {
             bridge,
             graph: GraphStore::new(),
             symbols: SymbolTable::new(),
+            scheduler: Scheduler::new(),
         }
     }
 

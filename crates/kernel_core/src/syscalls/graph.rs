@@ -25,6 +25,10 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -
                  },
                  None => GraphReply::Error,
              }
+        },
+        GraphOp::Log { text } => {
+             kernel.bridge.log(text);
+             GraphReply::Ack
         }
     }
 }
@@ -45,6 +49,15 @@ pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str
             }
             let resp = DumpResp { text: "ok\n" };
             to_slice(&resp, out).map(|s| s.len()).map_err(|_| ())
+        },
+        "op" => {
+             // Deserialize params as GraphOp
+             if let Ok(op) = postcard::from_bytes::<GraphOp>(_params) {
+                 let reply = handle_graph_op(kernel, op);
+                 to_slice(&reply, out).map(|s| s.len()).map_err(|_| ())
+             } else {
+                 Err(())
+             }
         },
         _ => Err(()),
     }

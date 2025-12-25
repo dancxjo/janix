@@ -6,11 +6,13 @@ use alloc::string::String;
 pub enum GraphOp<'a> {
     SymbolIntern { text: &'a str },
     SymbolResolve { id: SymbolId },
+    Log { text: &'a str },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum GraphReply {
     SymbolInterned { id: SymbolId },
     SymbolResolved { text: String },
+    Ack,
     Error,
 }

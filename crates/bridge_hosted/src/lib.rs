@@ -45,4 +45,10 @@ impl HardwareBridge for HostedBridge {
     }
     fn irq_disable(&self) {}
     fn irq_enable(&self) {}
+    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 20] {
+        [0; 20] // Hosted doesn't support user threads yet
+    }
+    fn resume_user_mode(&self, _context: &[u64]) -> ! {
+        loop {}
+    }
 }

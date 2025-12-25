@@ -6,3 +6,6 @@
 /vendor/limine/
 /vendor/ovmf/
 /assets/fonts/
+
+# Build output
+target/

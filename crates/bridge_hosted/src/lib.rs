@@ -24,6 +24,15 @@ impl HardwareBridge for HostedBridge {
         #[cfg(not(feature = "std"))]
         0
     }
+    fn system_now(&self) -> u64 {
+        #[cfg(feature = "std")]
+        {
+             use std::time::{SystemTime, UNIX_EPOCH};
+             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
+        }
+        #[cfg(not(feature = "std"))]
+        0
+    }
     fn idle(&self) {
         #[cfg(feature = "std")]
         std::thread::yield_now();

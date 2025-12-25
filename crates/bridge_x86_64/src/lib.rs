@@ -40,6 +40,10 @@ impl HardwareBridge for Bridge {
         ((edx as u64) << 32) | (eax as u64)
     }
 
+    fn system_now(&self) -> u64 {
+        0
+    }
+
     fn idle(&self) {
         unsafe {
             asm!("hlt");
@@ -73,6 +77,9 @@ impl HardwareBridge for Bridge {
 impl HardwareBridge for Bridge {
     fn log(&self, _msg: &str) {}
     fn ticks(&self) -> u64 {
+        0
+    }
+    fn system_now(&self) -> u64 {
         0
     }
     fn idle(&self) {}

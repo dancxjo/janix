@@ -10,3 +10,5 @@ thing_models = { package = "models", path = "../models" }
 abi = { path = "../abi" }
 spin = "0.9.8"
 heapless = "0.8.0"
+postcard = { workspace = true, features = ["alloc"] }
+serde = { workspace = true, features = ["derive"] }

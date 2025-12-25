@@ -283,6 +283,8 @@ dependencies = [
  "heapless 0.8.0",
  "hw",
  "models",
+ "postcard",
+ "serde",
  "spin 0.9.8",
 ]
 

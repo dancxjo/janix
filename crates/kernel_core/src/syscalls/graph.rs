@@ -2,6 +2,9 @@ use abi::wire::graph::{GraphOp, GraphReply};
 use crate::Kernel;
 use hw::HardwareBridge;
 use alloc::string::String;
+use thing_models::core::time::TimeNow;
+use postcard::to_slice;
+use serde::Serialize;
 
 pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -> GraphReply {
     match op {
@@ -23,5 +26,26 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -
                  None => GraphReply::Error,
              }
         }
+    }
+}
+
+pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str, _params: &[u8], out: &mut [u8]) -> Result<usize, ()> {
+    match query {
+        "time.now" => {
+            let resp = TimeNow {
+                system_ns: kernel.bridge.system_now(),
+                monotonic_ns: kernel.bridge.ticks(),
+            };
+            to_slice(&resp, out).map(|s| s.len()).map_err(|_| ())
+        },
+        "graph.dump" => {
+            #[derive(Serialize)]
+            struct DumpResp<'a> {
+                text: &'a str,
+            }
+            let resp = DumpResp { text: "ok\n" };
+            to_slice(&resp, out).map(|s| s.len()).map_err(|_| ())
+        },
+        _ => Err(()),
     }
 }

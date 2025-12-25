@@ -4,6 +4,7 @@
 use bridge_aarch64::Bridge;
 use kernel_core::Kernel;
 
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}

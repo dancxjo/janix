@@ -1,4 +1,3 @@
-
 #[test]
 #[ignore]
 fn x86_64_uefi_smoke() {
@@ -17,7 +16,7 @@ fn x86_64_uefi_smoke() {
         .expect("Failed to run xtask");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
+
     if !stdout.contains("THINGOS: kernel entry") {
         eprintln!("STDOUT:\n{}", stdout);
         // QEMU stderr is valuable
@@ -47,10 +46,10 @@ fn aarch64_uefi_smoke() {
         .expect("Failed to run xtask");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
+
     if !stdout.contains("THINGOS: kernel entry") {
-         eprintln!("STDOUT:\n{}", stdout);
-         eprintln!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
+        eprintln!("STDOUT:\n{}", stdout);
+        eprintln!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
     }
 
     assert!(stdout.contains("THINGOS: kernel entry"));

@@ -14,11 +14,11 @@ test:
 build:
     cargo run -p xtask -- build
 
-iso:
-    cargo run -p xtask -- iso {{arg(env, "x86_64")}}
+iso env="x86_64":
+    cargo run -p xtask -- iso {{env}}
 
-run:
-    cargo run -p xtask -- run {{arg(env, "hosted")}}
+run env="hosted":
+    cargo run -p xtask -- run {{env}}
 
 xtask:
     cargo run -p xtask --

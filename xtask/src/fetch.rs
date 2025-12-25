@@ -74,7 +74,7 @@ fn fetch_limine(vendor: &Path) -> Result<()> {
         // Sometimes binary branch has them in root, or subdirs. v9.x-binary usually has them in root.
         if !p.exists() {
             // Check if they are maybe inside? v9.x-binary puts them at top level usually.
-             ensure!(p.exists(), "Missing Limine artifact: {}", f);
+            ensure!(p.exists(), "Missing Limine artifact: {}", f);
         }
     }
     println!("    Limine fetched.");
@@ -84,12 +84,12 @@ fn fetch_limine(vendor: &Path) -> Result<()> {
 fn fetch_ovmf(vendor: &Path) -> Result<()> {
     println!("==> Fetching OVMF...");
     require_tool("curl")?;
-    
+
     let ovmf_dir = vendor.join("ovmf");
     fs::create_dir_all(&ovmf_dir)?;
 
     let base_url = "https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v2025.10.09";
-    
+
     let files = [
         ("ovmf-code-x86_64.fd", "ovmf-x86_64-code.fd"),
         ("ovmf-vars-x86_64.fd", "ovmf-x86_64-vars.fd"),
@@ -104,10 +104,13 @@ fn fetch_ovmf(vendor: &Path) -> Result<()> {
         }
         let url = format!("{}/{}", base_url, src_name);
         println!("    Downloading {}...", dest_name);
-        
+
         // Try download, if fail, create placeholder
         if download_file(&url, &dest).is_err() {
-            eprintln!("    [WARNING] Failed to download {}. Creating placeholder.", dest_name);
+            eprintln!(
+                "    [WARNING] Failed to download {}. Creating placeholder.",
+                dest_name
+            );
             fs::write(&dest, "PLACEHOLDER: Replace with real OVMF firmware")?;
         }
     }
@@ -130,17 +133,25 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
         println!("    Fetching Hack-Regular.ttf...");
         println!("    Downloading Hack-v3.003-ttf.zip");
         let zip_path = fonts_dir.join("temp_hack.zip");
-        download_file("https://github.com/source-foundry/Hack/releases/download/v3.003/Hack-v3.003-ttf.zip", &zip_path)?;
-        
-        run_cmd(Command::new("unzip").arg("-o").arg(&zip_path).current_dir(&fonts_dir))?;
-        
+        download_file(
+            "https://github.com/source-foundry/Hack/releases/download/v3.003/Hack-v3.003-ttf.zip",
+            &zip_path,
+        )?;
+
+        run_cmd(
+            Command::new("unzip")
+                .arg("-o")
+                .arg(&zip_path)
+                .current_dir(&fonts_dir),
+        )?;
+
         // Move ttf (Hack-v3.003-ttf/ttf/Hack-Regular.ttf usually)
         // We'll check recursively or specific paths
         let candidates = [
             fonts_dir.join("ttf/Hack-Regular.ttf"),
             fonts_dir.join("Hack-Regular.ttf"),
         ];
-        
+
         let mut found = false;
         for c in candidates {
             if c.exists() {
@@ -151,11 +162,11 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
                 break;
             }
         }
-        
+
         if !found {
-             // Fallback: finding it
-             // For now, if not found, we warn.
-             eprintln!("    [WARNING] Could not locate Hack-Regular.ttf after unzip.");
+            // Fallback: finding it
+            // For now, if not found, we warn.
+            eprintln!("    [WARNING] Could not locate Hack-Regular.ttf after unzip.");
         }
 
         // Cleanup
@@ -168,13 +179,13 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
     if !unifont_dest.exists() {
         println!("    Fetching unifont.hex...");
         let gz_path = fonts_dir.join("unifont.hex.gz");
-        
+
         let mut downloaded = false;
         let urls = [
             "https://ftp.gnu.org/gnu/unifont/unifont-15.1.05/unifont-15.1.05.hex.gz",
             "https://ftp.gnu.org/gnu/unifont/unifont-15.1.04/unifont-15.1.04.hex.gz",
         ];
-        
+
         for url in urls {
             if download_file(url, &gz_path).is_ok() {
                 downloaded = true;
@@ -183,24 +194,23 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
         }
 
         if downloaded {
-             if run_cmd(Command::new("gunzip").arg("-k").arg("-f").arg(&gz_path)).is_ok() {
-                 let _ = fs::remove_file(&gz_path);
-             } else {
-                 eprintln!("    [WARNING] Gunzip failed.");
-             }
+            if run_cmd(Command::new("gunzip").arg("-k").arg("-f").arg(&gz_path)).is_ok() {
+                let _ = fs::remove_file(&gz_path);
+            } else {
+                eprintln!("    [WARNING] Gunzip failed.");
+            }
         } else {
-             eprintln!("    [WARNING] Failed to download Unifont. Creating placeholder.");
-             fs::write(&unifont_dest, "PLACEHOLDER: Replace with real unifont.hex")?;
+            eprintln!("    [WARNING] Failed to download Unifont. Creating placeholder.");
+            fs::write(&unifont_dest, "PLACEHOLDER: Replace with real unifont.hex")?;
         }
     }
 
     Ok(())
 }
 
-
 fn require_tool(tool: &str) -> Result<()> {
     if Command::new("which").arg(tool).output().is_err() {
-         anyhow::bail!("Missing required tool: {}", tool);
+        anyhow::bail!("Missing required tool: {}", tool);
     }
     Ok(())
 }
@@ -209,15 +219,27 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
     // curl -fL -o dest url
     // -f: fail on HTTP error (404, etc)
     // -L: follow redirects
-    run_cmd(Command::new("curl").arg("-f").arg("-L").arg("-o").arg(dest).arg(url))
+    run_cmd(
+        Command::new("curl")
+            .arg("-f")
+            .arg("-L")
+            .arg("-o")
+            .arg(dest)
+            .arg(url),
+    )
 }
 
 fn run_cmd(cmd: &mut Command) -> Result<()> {
-    let status = cmd.status().with_context(|| format!("Failed to run {:?}", cmd))?;
+    let status = cmd
+        .status()
+        .with_context(|| format!("Failed to run {:?}", cmd))?;
     ensure!(status.success(), "Command failed: {:?}", cmd);
     Ok(())
 }
 
 fn project_root() -> PathBuf {
-    Path::new(&env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+    Path::new(&env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }

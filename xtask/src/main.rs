@@ -1,5 +1,5 @@
-use clap::Parser;
 use anyhow::Result;
+use clap::Parser;
 
 mod fetch;
 mod iso;
@@ -44,8 +44,16 @@ fn main() -> Result<()> {
         Commands::Build => {
             println!("xtask build: TODO");
             Ok(())
-        },
-        Commands::Iso { env } => iso::run(env), 
-        Commands::Run { env, gdb, timeout_secs } => run::run(run::RunArgs { env, gdb, timeout_secs }),
+        }
+        Commands::Iso { env } => iso::run(env),
+        Commands::Run {
+            env,
+            gdb,
+            timeout_secs,
+        } => run::run(run::RunArgs {
+            env,
+            gdb,
+            timeout_secs,
+        }),
     }
 }

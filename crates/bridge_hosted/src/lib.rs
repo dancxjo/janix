@@ -13,11 +13,12 @@ impl HardwareBridge for HostedBridge {
         #[cfg(feature = "std")]
         {
             use std::time::{SystemTime, UNIX_EPOCH};
-            return SystemTime::now()
+            SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64;
+                .as_millis() as u64
         }
+        #[cfg(not(feature = "std"))]
         0
     }
     fn idle(&self) {
@@ -27,6 +28,7 @@ impl HardwareBridge for HostedBridge {
     fn shutdown(&self) -> ! {
         #[cfg(feature = "std")]
         std::process::exit(0);
+        #[cfg(not(feature = "std"))]
         loop {}
     }
     fn irq_disable(&self) {}

@@ -12,17 +12,17 @@ pub fn run(env: String) -> Result<()> {
     };
 
     let root = project_root();
-    
+
     // 2. Build Kernel (ensure it exists/is fresh)
     println!("==> Building kernel for {}...", env);
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    
+
     // Note: We use check for speed in previous steps, but for ISO we need the binary.
     // Task 2 was implicit, so we do the build here "just in time".
     // We need build-std=core because we are no_std.
     // Target path is relative to repo root for `cargo`.
     // The target.json is in targets/
-    
+
     // Construct target path relative to project root purely for cargo's --target flag
     let target_flag = format!("targets/{}", target_triple);
 
@@ -37,7 +37,7 @@ pub fn run(env: String) -> Result<()> {
         .current_dir(&root)
         .status()
         .context("Failed to run cargo build")?;
-            
+
     if !status.success() {
         anyhow::bail!("Kernel build failed");
     }
@@ -46,7 +46,7 @@ pub fn run(env: String) -> Result<()> {
     println!("==> Assembling ISO root for {}...", env);
     let target_dir = root.join("target");
     let iso_root = target_dir.join("iso_root").join(&env);
-    
+
     if iso_root.exists() {
         fs::remove_dir_all(&iso_root)?;
     }
@@ -60,51 +60,61 @@ pub fn run(env: String) -> Result<()> {
 
     let boot_dir = iso_root.join("boot");
     fs::create_dir_all(&boot_dir)?;
-    
+
     // Copy Kernel
     // Binary location: target/<triple>/debug/<bin_name>
     // but <triple> might be the filename of the json... cargo puts it under target/x86_64-thingos/debug/ usually
     // if target is "targets/x86_64-thingos.json", the triple dir name is "x86_64-thingos"
-    let triple_name = Path::new(target_triple).file_stem().unwrap().to_str().unwrap();
-    let bin_path = target_dir.join(triple_name).join("debug").join(kernel_bin_name);
-    
+    let triple_name = Path::new(target_triple)
+        .file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let bin_path = target_dir
+        .join(triple_name)
+        .join("debug")
+        .join(kernel_bin_name);
+
     fs::copy(&bin_path, boot_dir.join("kernel"))
         .with_context(|| format!("Failed to copy kernel from {:?}", bin_path))?;
 
     // Limine Files
     let limine_dest = boot_dir.join("limine");
     fs::create_dir_all(&limine_dest)?;
-    
+
     // Config
-    fs::copy(root.join("kernels/limine.conf"), limine_dest.join("limine.conf"))?;
-    
+    fs::copy(
+        root.join("kernels/limine.conf"),
+        limine_dest.join("limine.conf"),
+    )?;
+
     // Vendor bins
     let vendor_limine = root.join("vendor/limine");
-    
+
     let limine_files = [
         "limine-bios.sys",
         "limine-bios-cd.bin",
         "limine-uefi-cd.bin",
     ];
-    
+
     for f in limine_files {
         let src = vendor_limine.join(f);
         if src.exists() {
             fs::copy(&src, limine_dest.join(f))?;
         } else {
-             eprintln!("    [WARNING] Missing Limine file: {:?}", src);
+            eprintln!("    [WARNING] Missing Limine file: {:?}", src);
         }
     }
-    
+
     // EFI Boot
     let efi_boot_dir = iso_root.join("EFI").join("BOOT");
     fs::create_dir_all(&efi_boot_dir)?;
-    
+
     let src_efi = vendor_limine.join(uefi_boot_name);
     if src_efi.exists() {
         fs::copy(&src_efi, efi_boot_dir.join(uefi_boot_name))?;
     } else {
-         eprintln!("    [WARNING] Missing UEFI bootloader: {:?}", src_efi);
+        eprintln!("    [WARNING] Missing UEFI bootloader: {:?}", src_efi);
     }
 
     // 4. Generate ISO
@@ -112,16 +122,19 @@ pub fn run(env: String) -> Result<()> {
     let iso_dir = target_dir.join("iso");
     fs::create_dir_all(&iso_dir)?;
     let iso_path = iso_dir.join(format!("thingos-{}.iso", env));
-    
+
     // xorriso flags for Limine hybrid (BIOS+EFI)
     // Ref: Limine docs or user prompt. "Exact flags".
     // "BIOS El Torito boot: limine-bios-cd.bin"
     // "EFI boot image: limine-uefi-cd.bin"
-    
+
     let mut cmd = Command::new("xorriso");
     cmd.arg("-as").arg("mkisofs");
     cmd.arg("-b").arg("boot/limine/limine-bios-cd.bin");
-    cmd.arg("-no-emul-boot").arg("-boot-load-size").arg("4").arg("-boot-info-table");
+    cmd.arg("-no-emul-boot")
+        .arg("-boot-load-size")
+        .arg("4")
+        .arg("-boot-info-table");
     cmd.arg("--efi-boot").arg("boot/limine/limine-uefi-cd.bin");
     cmd.arg("-efi-boot-part").arg("--efi-boot-image");
     cmd.arg("--protective-msdos-label");
@@ -132,16 +145,16 @@ pub fn run(env: String) -> Result<()> {
     if !status.success() {
         anyhow::bail!("xorriso failed");
     }
-    
+
     // 5. Limine Deploy (BIOS)
     // If x86_64, we usually need to run `limine bios-install image.iso` to install stage 1/2 to MBR/gap.
     // The user didn't explicitly ask for `limine bios-install`, but "BIOS El Torito" flags usually cover CD boot?
     // Wait, Limine usually requires post-processing for HDD boot, but for ISO (El Torito), maybe not if just CD?
     // Actually, modern Limine often requires `limine deploy` or `limine-deploy` text/binary patching?
-    // The prompt says "Build ISO via xorriso... Done when: outputs ...iso". 
+    // The prompt says "Build ISO via xorriso... Done when: outputs ...iso".
     // It does NOT mention running `limine deploy` or `limine binary` patching on the ISO.
-    // However, without it, BIOS boot from HDD image works, but CD? 
-    // Limine docs say: "For CD-ROMs... xorriso ... is enough." 
+    // However, without it, BIOS boot from HDD image works, but CD?
+    // Limine docs say: "For CD-ROMs... xorriso ... is enough."
     // BUT usually usage involves `limine bios-install` if targeting hybrid HDD/CD.
     // I will stick strictly to the user's requested instructions: "Run xorriso with the exact flags...".
     // I will NOT add extra steps unless it fails verification.
@@ -152,5 +165,8 @@ pub fn run(env: String) -> Result<()> {
 }
 
 fn project_root() -> PathBuf {
-    Path::new(&env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+    Path::new(&env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }

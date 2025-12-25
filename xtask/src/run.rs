@@ -1,8 +1,8 @@
-use anyhow::{Context, Result};
-use std::process::Command;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 use crate::iso;
+use anyhow::{Context, Result};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct RunArgs {
@@ -16,7 +16,10 @@ pub fn run(args: RunArgs) -> Result<()> {
         "hosted" => run_hosted(args.timeout_secs),
         "x86_64" => run_qemu_x86_64(args.gdb, args.timeout_secs),
         "aarch64" => run_qemu_aarch64(args.gdb, args.timeout_secs),
-        _ => anyhow::bail!("Unsupported env for run: {}. Use hosted, x86_64 or aarch64", args.env),
+        _ => anyhow::bail!(
+            "Unsupported env for run: {}. Use hosted, x86_64 or aarch64",
+            args.env
+        ),
     }
 }
 
@@ -25,7 +28,7 @@ fn run_with_timeout(mut cmd: Command, timeout: Option<u64>) -> Result<()> {
     if timeout.is_none() {
         let status = cmd.status().context("Failed to run command")?;
         if !status.success() {
-             anyhow::bail!("Command failed with status: {}", status);
+            anyhow::bail!("Command failed with status: {}", status);
         }
         return Ok(());
     }
@@ -46,9 +49,9 @@ fn run_with_timeout(mut cmd: Command, timeout: Option<u64>) -> Result<()> {
         if start.elapsed() >= timeout {
             println!("Timeout reached, killing process...");
             child.kill().context("Failed to kill process")?;
-            child.wait().context("Failed to wait after kill")?; 
+            child.wait().context("Failed to wait after kill")?;
             // We consider timeout kill 'success' for typical test usage logic where we just wanted to run for N seconds.
-            // But usually tests want to Assert stdout. 
+            // But usually tests want to Assert stdout.
             // Child stdout is printed to parent stdout by default. Capture is done by caller of xtask.
             return Ok(());
         }
@@ -57,16 +60,13 @@ fn run_with_timeout(mut cmd: Command, timeout: Option<u64>) -> Result<()> {
     }
 }
 
-
 fn run_hosted(timeout: Option<u64>) -> Result<()> {
     println!("==> Running hosted kernel...");
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    
+
     let mut cmd = Command::new(cargo);
-    cmd.arg("run")
-       .arg("-p")
-       .arg("kernel_hosted");
-        
+    cmd.arg("run").arg("-p").arg("kernel_hosted");
+
     run_with_timeout(cmd, timeout)
 }
 
@@ -77,7 +77,7 @@ fn run_qemu_x86_64(gdb: bool, timeout: Option<u64>) -> Result<()> {
     let root = project_root();
     let iso_path = root.join("target/iso/thingos-x86_64.iso");
     let ovmf_dir = root.join("vendor/ovmf");
-    
+
     let ovmf_code = ovmf_dir.join("ovmf-code-x86_64.fd");
     let ovmf_vars = ovmf_dir.join("ovmf-vars-x86_64.fd");
 
@@ -86,13 +86,19 @@ fn run_qemu_x86_64(gdb: bool, timeout: Option<u64>) -> Result<()> {
     }
 
     println!("==> Running QEMU x86_64...");
-    
+
     let mut cmd = Command::new("qemu-system-x86_64");
     cmd.arg("-M").arg("q35");
     cmd.arg("-serial").arg("stdio");
     cmd.arg("-no-reboot");
-    cmd.arg("-drive").arg(format!("if=pflash,format=raw,readonly=on,file={}", ovmf_code.display()));
-    cmd.arg("-drive").arg(format!("if=pflash,format=raw,readonly=on,file={}", ovmf_vars.display()));
+    cmd.arg("-drive").arg(format!(
+        "if=pflash,format=raw,readonly=on,file={}",
+        ovmf_code.display()
+    ));
+    cmd.arg("-drive").arg(format!(
+        "if=pflash,format=raw,readonly=on,file={}",
+        ovmf_vars.display()
+    ));
     cmd.arg("-cdrom").arg(&iso_path);
 
     if gdb {
@@ -130,5 +136,8 @@ fn run_qemu_aarch64(gdb: bool, timeout: Option<u64>) -> Result<()> {
 }
 
 fn project_root() -> PathBuf {
-    Path::new(&env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+    Path::new(&env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }

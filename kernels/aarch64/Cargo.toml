@@ -1,8 +1,12 @@
 [package]
 name = "kernel_aarch64"
 version = "0.2.0"
-edition.workspace = true
+edition = "2021"
 license.workspace = true
+
+[[bin]]
+name = "kernel_aarch64"
+test = false
 
 [dependencies]
 kernel_core = { path = "../../crates/kernel_core" }

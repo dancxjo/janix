@@ -11,9 +11,9 @@ mod heap;
 #[cfg(target_os = "thingos")]
 mod limine;
 
+use bridge_aarch64::Bridge;
 use core::arch::naked_asm;
 use kernel_core::Kernel;
-use bridge_aarch64::Bridge;
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -21,7 +21,9 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     use hw::HardwareBridge;
     let bridge = Bridge;
     bridge.log("PANIC\n");
-    loop {}
+    loop {
+        core::hint::spin_loop();
+    }
 }
 
 const BOOT_STACK_SIZE: usize = 16384;
@@ -63,5 +65,4 @@ pub extern "C" fn rust_main() -> ! {
 
     let k = Kernel::new(Bridge);
     k.boot();
-    loop {}
 }

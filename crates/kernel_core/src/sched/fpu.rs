@@ -10,7 +10,7 @@ impl Default for FpuContext {
         // FCW = 0x037F
         data[0] = 0x7F;
         data[1] = 0x03;
-        // MXCSR = 0x00001F80
+        // MXCSR = 0x1F80
         data[24] = 0x80;
         data[25] = 0x1F;
         Self { data }

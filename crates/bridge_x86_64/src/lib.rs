@@ -1,4 +1,10 @@
 #![no_std]
+#![allow(clippy::missing_safety_doc)]
+
+extern crate alloc;
+
+pub mod interrupts;
+pub mod user; // Anticipating user mod
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;

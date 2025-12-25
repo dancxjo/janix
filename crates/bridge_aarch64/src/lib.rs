@@ -1,8 +1,15 @@
 #![no_std]
+#![allow(clippy::missing_safety_doc)]
+
+extern crate alloc;
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::asm;
 use hw::HardwareBridge;
+
+pub mod interrupts;
+pub mod paging;
+pub mod user;
 
 pub struct Bridge;
 
@@ -16,7 +23,7 @@ impl HardwareBridge for Bridge {
         // TXFF (Transmit FIFO Full) is Bit 5.
         // We wait while TXFF is 1.
         const UARTFR: *mut u32 = 0x09000018 as *mut u32; // 0x09000000 + 0x18
-        
+
         for b in msg.bytes() {
             unsafe {
                 // Wait while TXFF (bit 5) is set

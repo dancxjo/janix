@@ -1,4 +1,6 @@
-use limine::request::{HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker, StackSizeRequest};
+use limine::request::{
+    HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker, StackSizeRequest,
+};
 use limine::BaseRevision;
 
 #[used]

@@ -1,4 +1,6 @@
-//! Shared scheduling-related types.
+//! Shared scheduling-related types and helpers.
+
+use core::str::FromStr;
 
 pub type CpuId = u64;
 pub type TimeNs = u64;
@@ -24,16 +26,20 @@ impl ThreadState {
             ThreadState::Exited => "Exited",
         }
     }
+}
 
-    pub fn parse(state: &str) -> Option<Self> {
+impl FromStr for ThreadState {
+    type Err = ();
+
+    fn from_str(state: &str) -> Result<Self, Self::Err> {
         match state {
-            "New" => Some(ThreadState::New),
-            "Runnable" => Some(ThreadState::Runnable),
-            "Running" => Some(ThreadState::Running),
-            "Sleeping" => Some(ThreadState::Sleeping),
-            "Blocked" => Some(ThreadState::Blocked),
-            "Exited" => Some(ThreadState::Exited),
-            _ => None,
+            "New" => Ok(ThreadState::New),
+            "Runnable" => Ok(ThreadState::Runnable),
+            "Running" => Ok(ThreadState::Running),
+            "Sleeping" => Ok(ThreadState::Sleeping),
+            "Blocked" => Ok(ThreadState::Blocked),
+            "Exited" => Ok(ThreadState::Exited),
+            _ => Err(()),
         }
     }
 }

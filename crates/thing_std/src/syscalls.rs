@@ -3,7 +3,7 @@ use abi::wire::graph::GraphOp;
 use core::arch::asm;
 
 // Raw syscall
-unsafe fn syscall2(n: usize, a1: usize, a2: usize) -> SysRet {
+pub unsafe fn syscall2(n: usize, a1: usize, a2: usize) -> SysRet {
     let ret: SysRet;
     asm!(
         "syscall",
@@ -18,7 +18,7 @@ unsafe fn syscall2(n: usize, a1: usize, a2: usize) -> SysRet {
     ret
 }
 
-unsafe fn syscall3(n: usize, a1: usize, a2: usize, a3: usize) -> SysRet {
+pub unsafe fn syscall3(n: usize, a1: usize, a2: usize, a3: usize) -> SysRet {
     let ret: SysRet;
     asm!(
         "syscall",

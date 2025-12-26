@@ -37,7 +37,7 @@ pub fn run() -> Result<()> {
             .arg("-p")
             .arg(app)
             .arg("--target")
-            .arg("x86_64-unknown-none") 
+            .arg("x86_64-unknown-none")
             .current_dir(&root)
             .status()
             .context(format!("Failed to build app {}", app))?;

@@ -37,12 +37,12 @@ pub fn load_elf(elf_data: &[u8], load_base: u64, mut phys_write: impl FnMut(u64,
         let dyn_offset = dyn_ph.offset();
         let dyn_size = dyn_ph.file_size();
         let dyn_entries = &elf_data[dyn_offset as usize..(dyn_offset + dyn_size) as usize];
-        
+
         // Parse Dyn entries manually or use xmas_elf helpers if valid.
         // xmas_elf doesn't seem to expose raw iterator over bytes easily for unknown layout (32/64).
         // But ElfFile has `.dynamic_iter()?` No?
         // Let's rely on common structure: 16 bytes per entry (Tag: u64, Val: u64) for ELF64.
-        
+
         // Find RELA, RELASZ, RELAENT
         let mut rela_addr = 0u64;
         let mut rela_sz = 0u64;
@@ -85,9 +85,9 @@ pub fn load_elf(elf_data: &[u8], load_base: u64, mut phys_write: impl FnMut(u64,
                      let r_offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
                      let r_info = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
                      let r_addend = i64::from_le_bytes(chunk[16..24].try_into().unwrap());
-                     
+
                      let r_type = r_info & 0xFFFFFFFF; // Low 32 bits
-                     
+
                      if r_type == 8 { // R_X86_64_RELATIVE
                          let value = load_base.wrapping_add(r_addend as u64);
                          phys_write(r_offset, &value.to_le_bytes());

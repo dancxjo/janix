@@ -5,9 +5,11 @@ pub mod syscalls;
 pub mod debug;
 pub mod client;
 pub mod console;
+pub mod typed;
 
 pub use client::GraphClient;
 pub use console::{Console, StdoutConsole};
+pub use typed::ThingType;
 
 extern crate alloc;
 use core::alloc::{GlobalAlloc, Layout};

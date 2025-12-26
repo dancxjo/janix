@@ -228,7 +228,7 @@ unsafe extern "C" fn syscall_handler_naked() {
         
         "mov rdi, rax", // Arg 1 (num) -> RDI. RAX is now free.
         "mov rax, r9",  // Save a6 (User R9) to RAX.
-        
+
         // Shuffle other registers
         "mov r9, r8",   // Arg 6 (a5) -> R9 (Rust Arg 6)
         "mov r8, r10",  // Arg 5 (a4) -> R8 (Rust Arg 5)
@@ -238,14 +238,14 @@ unsafe extern "C" fn syscall_handler_naked() {
         // ERROR in logic above! I overwrote RDI with RAX (num).
         // But I needed User RDI (a1) for RSI.
         // I must allow register shuffling without clobber.
-        
+
         // Correct Sequence:
         // Inputs: RAX(num), RDI(a1), RSI(a2), RDX(a3), R10(a4), R8(a5), R9(a6)
         // Outputs: RDI(num), RSI(a1), RDX(a2), RCX(a3), R8(a4), R9(a5), Stack(a6)
-        
+
         // Move a6 (R9) to Stack.
-        "push r9", 
-        
+        "push r9",
+
         // Move rest:
         "mov r9, r8",   // a5 -> R9
         "mov r8, r10",  // a4 -> R8
@@ -253,7 +253,7 @@ unsafe extern "C" fn syscall_handler_naked() {
         "mov rdx, rsi", // a2 -> RDX
         "mov rsi, rdi", // a1 -> RSI
         "mov rdi, rax", // num -> RDI (Wait, RAX was clobbered? No, RAX holds num).
-        
+
         // Safety check: Did I overwrite a source before using it?
         // r9 overwritten by r8. (Saved r9 to stack first: OK)
         // r8 overwritten by r10. (r8 used for r9: OK - done before)
@@ -271,10 +271,10 @@ unsafe extern "C" fn syscall_handler_naked() {
         // RSI source used for RDX. RSI dest is RDI. OK.
         // RDI source used for RSI. RDI dest is RAX. OK.
         // RAX source used for RDI. RAX dest... none. OK.
-        
+
         // So order: R9..RDI is safe.
         // But R9 must be pushed first.
-        
+
         // Enable interrupts
         "sti",
         

@@ -1,0 +1,10 @@
+[package]
+name = "syscall_crud_smoke"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thing_std = { path = "../../crates/thing_std" }
+postcard = { version = "1", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive"] }
+abi = { path = "../../../crates/abi" }

@@ -248,6 +248,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "syscall_crud_smoke"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "postcard",
+ "serde",
+ "thing_std 0.1.0",
+]
+
+[[package]]
 name = "thing_macros"
 version = "0.2.0"
 dependencies = [

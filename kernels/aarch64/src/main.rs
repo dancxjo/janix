@@ -27,9 +27,12 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 }
 
 const BOOT_STACK_SIZE: usize = 16384;
+#[repr(align(16))]
+struct BootStack([u8; BOOT_STACK_SIZE]);
+
 #[used]
 #[unsafe(link_section = ".bss")]
-static mut BOOT_STACK: [u8; BOOT_STACK_SIZE] = [0; BOOT_STACK_SIZE];
+static mut BOOT_STACK: BootStack = BootStack([0; BOOT_STACK_SIZE]);
 
 #[no_mangle]
 #[unsafe(naked)]

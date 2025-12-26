@@ -13,24 +13,28 @@ pub mod user;
 
 pub struct Bridge;
 
+static mut UART_BASE: u64 = 0x09000000;
+
+pub unsafe fn set_uart_base(base: u64) {
+    UART_BASE = base;
+}
+
 #[cfg(target_arch = "aarch64")]
 impl HardwareBridge for Bridge {
     fn log(&self, msg: &str) {
-        // PL011 UART at 0x09000000 (QEMU virt default)
-        const UART0: *mut u8 = 0x09000000 as *mut u8;
-        // FR Register offset 0x18. TXFF is bit 5?
-        // PL011: FR (Flag Register) at +0x18.
-        // TXFF (Transmit FIFO Full) is Bit 5.
-        // We wait while TXFF is 1.
-        const UARTFR: *mut u32 = 0x09000018 as *mut u32; // 0x09000000 + 0x18
+        // PL011 UART
+        let uart_base = unsafe { UART_BASE };
+        let uart_ptr = uart_base as *mut u8;
+        // FR Register offset 0x18. TXFF is bit 5.
+        let uart_fr = (uart_base + 0x18) as *mut u32;
 
         for b in msg.bytes() {
             unsafe {
                 // Wait while TXFF (bit 5) is set
-                while (core::ptr::read_volatile(UARTFR) & (1 << 5)) != 0 {
+                while (core::ptr::read_volatile(uart_fr) & (1 << 5)) != 0 {
                     core::hint::spin_loop();
                 }
-                core::ptr::write_volatile(UART0, b);
+                core::ptr::write_volatile(uart_ptr, b);
             }
         }
     }
@@ -78,6 +82,8 @@ impl HardwareBridge for Bridge {
     fn resume_user_mode(&self, _context: &[u64]) -> ! {
         loop {}
     }
+
+    fn set_kernel_stack(&self, _stack: u64) {}
 }
 
 #[cfg(not(target_arch = "aarch64"))]
@@ -102,4 +108,5 @@ impl HardwareBridge for Bridge {
     fn resume_user_mode(&self, _context: &[u64]) -> ! {
         loop {}
     }
+    fn set_kernel_stack(&self, _stack: u64) {}
 }

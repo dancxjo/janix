@@ -55,6 +55,13 @@ pub extern "C" fn _start() -> ! {
 pub extern "C" fn rust_main() -> ! {
     #[cfg(target_os = "thingos")]
     unsafe {
+        // 1. Get HHDM offset FIRST
+        if let Some(resp) = limine::requests::HHDM_REQUEST.get_response() {
+            let offset = resp.offset();
+            // 2. Update logic UART base (Physical 0x09000000 + Offset)
+            bridge_aarch64::set_uart_base(0x09000000 + offset);
+        }
+
         use hw::HardwareBridge;
         let bridge = Bridge;
         bridge.log("Booting ThingOS...\n");
@@ -64,5 +71,5 @@ pub extern "C" fn rust_main() -> ! {
     }
 
     let mut k = Kernel::new(Bridge);
-    k.boot();
+    k.boot(None);
 }

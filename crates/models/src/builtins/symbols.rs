@@ -55,3 +55,4 @@ pub const SYM_IS_RELEASE: SymbolId = SymbolId(fnv1a64("is_release"));
 
 pub const SYM_PS2: SymbolId = SymbolId(fnv1a64("ps2"));
 
+pub const SYM_FONT: SymbolId = SymbolId(fnv1a64("Font"));

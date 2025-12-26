@@ -6,6 +6,7 @@ pub extern crate abi;
 pub mod symbol;
 pub mod value;
 pub mod thing;
+pub mod font;
 pub mod link;
 pub mod kind;
 pub mod schema;

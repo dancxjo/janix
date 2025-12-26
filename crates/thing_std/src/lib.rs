@@ -6,6 +6,7 @@ pub mod debug;
 pub mod client;
 pub mod console;
 pub mod typed;
+pub mod font;
 
 pub use client::GraphClient;
 pub use console::{Console, StdoutConsole};
@@ -84,11 +85,13 @@ unsafe impl GlobalAlloc for SimpleAllocator {
 #[global_allocator]
 static ALLOCATOR: SimpleAllocator = SimpleAllocator;
 
+#[cfg(not(test))]
 #[alloc_error_handler]
 fn alloc_error(layout: Layout) -> ! {
     panic!("Alloc error: {:?}", layout);
 }
 
+#[cfg(all(not(test), not(feature = "std")))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     use core::fmt::Write;

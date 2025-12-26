@@ -130,6 +130,19 @@ thing_kind! {
 }
 
 thing_kind! {
+    kind Font {
+        id: crate::builtins::ids::THING_FONT_KIND,
+        sym: SYM_FONT,
+        version: 1,
+        body: crate::font::FontBody,
+        type_tag: "thingos.FontBody.v1",
+        schema_id: crate::builtins::ids::THING_FONT_SCHEMA,
+
+        links {}
+    }
+}
+
+thing_kind! {
     kind Result {
         id: crate::builtins::ids::THING_RESULT_KIND,
         sym: SYM_RESULT,

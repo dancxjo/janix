@@ -179,10 +179,7 @@ static mut SYSCALL_KERNEL_RSP: u64 = 0;
 unsafe extern "C" fn syscall_handler_naked() {
     naked_asm!(
         // 1. Save User RSP
-        "mov gs:[0], rsp", // Wait, do we have GS? 
-        // If no GS, use RIP-relative addressing to global? 
-        // Only if mapped.
-        // Let's try RIP-relative to `SYSCALL_USER_RSP`.
+        // We use RIP-relative addressing to global since we lack full GS setup in v0.
         "mov [rip + {0}], rsp",
         
         // 2. Load Kernel RSP

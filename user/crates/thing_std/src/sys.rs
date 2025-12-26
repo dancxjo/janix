@@ -5,13 +5,27 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SysErr(pub i64);
 
-pub fn sys_graph(_query: &str, _params: &[u8], _out: &mut [u8]) -> Result<usize, SysErr> {
-    // TODO: wire to actual syscall once userland ABI is stable.
-    // For now, this must compile. In hosted tests it can be a mocked shim.
-    // In a real build, this would define the syscall logic.
-    // Since we are building "cleanly" but maybe not running on bare metal immediately (or the user will link it),
-    // we return a dummy error so it compiles. 
-    // IF the user wanted a real syscall, I'd use inline asm, but they said "No assumptions about arch calling convention... unimplemented!() behind a feature flag or just error".
-    // "Err(SysErr(-1))" is fine.
-    Err(SysErr(-1))
+pub fn sys_graph(query: &str, params: &[u8], out: &mut [u8]) -> Result<usize, SysErr> {
+    let ret: isize;
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            in("rax") 1, // SYSCALL_GRAPH
+            in("rdi") query.as_ptr() as usize,
+            in("rsi") query.len(),
+            in("rdx") params.as_ptr() as usize,
+            in("r10") params.len(),
+            in("r8") out.as_mut_ptr() as usize,
+            in("r9") out.len(),
+            lateout("rax") ret,
+            out("rcx") _, // Clobbered by syscall
+            out("r11") _, // Clobbered by syscall
+        );
+    }
+    
+    if ret < 0 {
+        Err(SysErr(ret as i64))
+    } else {
+        Ok(ret as usize)
+    }
 }

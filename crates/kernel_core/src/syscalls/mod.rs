@@ -39,6 +39,7 @@ pub fn syscall_dispatch<B: HardwareBridge>(
              // Debug: Catch bad pointers
              if a1 < 4096 {
                   kernel.bridge.log("SYSCALL GRAPH: Bad Ptr\n");
+                  return -1;
              }
 
              // a1: query_ptr, a2: query_len

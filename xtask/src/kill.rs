@@ -46,6 +46,13 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
+    if pids.len() == 1 {
+        let pid = pids[0];
+        println!("Only one instance found. Killing PID {}...", pid);
+        let _ = Command::new("kill").arg(pid.to_string()).status();
+        return Ok(());
+    }
+
     print!("\nKill all? [y/N]: ");
     io::stdout().flush()?;
 

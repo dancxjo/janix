@@ -515,10 +515,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "thing_macros"
+version = "0.2.0"
+dependencies = [
+ "abi",
+ "postcard",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "thing_std"
 version = "0.2.0"
 dependencies = [
  "abi",
+ "postcard",
+ "serde",
+ "thing_macros",
 ]
 
 [[package]]

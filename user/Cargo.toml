@@ -6,12 +6,13 @@ members = [
   "apps/graph_dump",
   "drivers/ps2_keyboard",
   "apps/keylog",
+  "apps/typed_test",
 ]
 
 
 [workspace.dependencies]
 postcard = { version = "1", default-features = false, features = ["alloc"] }
-serde = { version = "1", default-features = false, features = ["derive"] }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
 
 [workspace.package]
 edition = "2021"

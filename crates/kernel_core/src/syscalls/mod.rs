@@ -1,5 +1,6 @@
 pub mod graph;
 pub mod driver;
+pub mod typed;
 
 use crate::Kernel;
 use hw::HardwareBridge;
@@ -21,6 +22,12 @@ pub fn syscall_dispatch<B: HardwareBridge>(
         },
         SYSCALL_DRIVER_PUBLISH => {
             driver::sys_driver_publish(kernel, a1 as *const u8, a2) as isize
+        },
+        SYSCALL_TYPEDEF_REGISTER => {
+            typed::sys_typedef_register(a1, a2) as isize
+        },
+        SYSCALL_TYPEDEF_GET => {
+            typed::sys_typedef_get(a1, a2, a3) as isize
         },
         // SYSCALL_GRAPH (1)
         1 => {

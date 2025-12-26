@@ -3,6 +3,8 @@
 
 pub mod syscalls;
 pub mod debug;
+pub mod typed;
+pub use typed::ThingType;
 
 extern crate alloc;
 use core::alloc::{GlobalAlloc, Layout};

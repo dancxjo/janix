@@ -1,0 +1,10 @@
+[package]
+name = "typed_test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thing_std = { path = "../../../crates/thing_std" }
+abi = { path = "../../../crates/abi" }
+postcard = { workspace = true, features = ["alloc"] }
+serde = { workspace = true, features = ["derive", "alloc"] }

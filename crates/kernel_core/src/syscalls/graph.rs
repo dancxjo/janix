@@ -30,6 +30,10 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -
              kernel.bridge.log(text);
              GraphReply::Ack
         },
+        GraphOp::WriteTyped { path: _, value: _ } => {
+             // Placeholder for graph storage integration
+             GraphReply::Ack
+        },
         GraphOp::Watch { .. } => GraphReply::Error,
     }
 }

@@ -6,3 +6,6 @@ license.workspace = true
 
 [dependencies]
 abi = { path = "../abi" }
+serde = { workspace = true, features = ["derive", "alloc"] }
+postcard = { workspace = true, features = ["alloc"] }
+thing_macros = { path = "../thing_macros" }

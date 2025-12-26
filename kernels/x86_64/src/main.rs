@@ -29,9 +29,12 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 }
 
 const BOOT_STACK_SIZE: usize = 16384;
+#[repr(align(16))]
+struct AlignedStack([u8; BOOT_STACK_SIZE]);
+
 #[used]
 #[unsafe(link_section = ".bss")]
-static mut BOOT_STACK: [u8; BOOT_STACK_SIZE] = [0; BOOT_STACK_SIZE];
+static mut BOOT_STACK: AlignedStack = AlignedStack([0; BOOT_STACK_SIZE]);
 
 #[no_mangle]
 #[unsafe(naked)]
@@ -64,21 +67,9 @@ static KERNEL: Mutex<Option<Kernel<Bridge>>> = Mutex::new(None);
 fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = (*guard).as_mut() {
-            // Update syscall stack to point to this thread's kernel stack?
-            // Actually, `scheduler` should handle stack management.
-            // But v0 shortcut: we reuse the same stack if we don't context switch?
-            // "Boot Stack" is unsafe if we have multiple user threads running.
-            // If we have 1 user thread, it's fine.
-            // `spawn` allocates a new stack for the thread.
-            // When we switch to that thread, we should update SYSCALL_KERNEL_RSP.
-            // But `scheduler.tick` calls `switch_to`.
-            // We can't easily hook `switch_to`.
-            // Workaround: Use a dedicated syscall stack per CPU (Global for UP).
-            // We can allocate one here or reuse BOOT_STACK logic if careful.
-            // Let's use a dedicated static stack for syscalls to avoid overflow.
-            
-            // Cast frame to [u64; 20]
-            let ctx_ptr = frame as *mut _ as *mut [u64; 20];
+            // Cast frame to ThreadContext (aligned)
+            use kernel_core::sched::scheduler::ThreadContext;
+            let ctx_ptr = frame as *mut _ as *mut ThreadContext;
             let ctx = unsafe { &mut *ctx_ptr };
             k.scheduler.tick(&k.bridge, ctx);
         }
@@ -89,11 +80,11 @@ fn syscall_hook(num: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usiz
     // We need lock. If syscall caused by user int, we are in kernel mode (interrupts enabled?).
     // Syscall handler enables interrupts.
     // So we can lock.
+    use hw::HardwareBridge;
     loop {
         if let Some(mut guard) = KERNEL.try_lock() {
              if let Some(k) = (*guard).as_mut() {
                   return kernel_core::syscalls::syscall_dispatch(k, num, a1, a2, a3, a4, a5, a6);
-
              }
         }
         core::hint::spin_loop();
@@ -121,6 +112,9 @@ pub extern "C" fn rust_main() -> ! {
     }
 
     let mut k = Kernel::new(Bridge);
+
+    // Init Bridge (GDT/IDT/PIC) EARLY so selectors are ready for spawn
+    unsafe { Bridge::init(); }
 
     #[cfg(target_os = "thingos")]
     {
@@ -178,6 +172,10 @@ pub extern "C" fn rust_main() -> ! {
         if let Some(resp) = MODULE_REQUEST.get_response() {
             for module in resp.modules() {
                 let name = module.path().to_str().unwrap_or("unknown");
+                if name.contains("keylog") {
+                    k.bridge.log("Skipping keylog module.\n");
+                    continue;
+                }
                 k.bridge.log("Found module: ");
                 k.bridge.log(name);
                 k.bridge.log("\n");
@@ -189,7 +187,7 @@ pub extern "C" fn rust_main() -> ! {
                 let current_app_base = app_load_virt_base;
                 app_load_virt_base += 0x1000_0000;
 
-                let loaded = load_elf(data, |vaddr, segment| {
+                let loaded = load_elf(data, current_app_base, |vaddr, segment| {
                     use alloc::format;
                     let target_virt_start = VirtAddr::new(current_app_base + vaddr);
                     let target_virt_end = target_virt_start + segment.len() as u64;
@@ -198,17 +196,25 @@ pub extern "C" fn rust_main() -> ! {
                     let end_page = Page::<Size4KiB>::containing_address(target_virt_end - 1u64);
                     
                     for page in Page::range_inclusive(start_page, end_page) {
-                        let frame = frame_allocator.allocate_frame().expect("No frames");
-                        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-                        unsafe {
-                            if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
-                                map_to.flush();
+                        let frame_phys: PhysAddr;
+                        let page_start_virt = page.start_address();
+
+                        // Check if mapped
+                        if let Some(phys) = mapper.translate_addr(page_start_virt) {
+                            frame_phys = phys;
+                        } else {
+                            // Map new frame
+                            let frame = frame_allocator.allocate_frame().expect("No frames");
+                            frame_phys = frame.start_address();
+                            let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                            unsafe {
+                                if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                                    map_to.flush();
+                                }
                             }
                         }
                         
-                        let frame_phys = frame.start_address();
                         let frame_virt = hhdm_offset + frame_phys.as_u64();
-                        let page_start_virt = page.start_address();
                         let page_end_virt = page_start_virt + 4096u64;
                         let overlap_start = core::cmp::max(page_start_virt, target_virt_start);
                         let overlap_end = core::cmp::min(page_end_virt, target_virt_end);
@@ -246,6 +252,18 @@ pub extern "C" fn rust_main() -> ! {
                     }
 
                     let entry_point = current_app_base + img.entry_point;
+                    k.bridge.log("Spawning app: ");
+                    k.bridge.log(name);
+                    k.bridge.log(" Entry: ");
+                    // rudimentary hex print
+                    for i in (0..8).rev() {
+                        let digit = (entry_point >> (i * 4)) & 0xF;
+                        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
+                        k.bridge.log(core::str::from_utf8(&[c]).unwrap());
+                    }
+                    k.bridge.log("\n");
+
+                    
                     k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), 0);
                 }
             }
@@ -280,9 +298,13 @@ pub extern "C" fn rust_main() -> ! {
         // 2. Set Global
         *KERNEL.lock() = Some(k);
         
-        // 3. Init Hardware Bridge (Interrupts Enabled!)
-        unsafe { Bridge::init(); }
-
+        // 3. Enable Interrupts
+        unsafe { 
+             use hw::HardwareBridge;
+             let bridge = Bridge;
+             bridge.log("BRIDGE: enabling interrupts...\n");
+             x86_64::instructions::interrupts::enable(); 
+        }
     }
 
     loop {

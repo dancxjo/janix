@@ -5,6 +5,11 @@ pub mod syscalls;
 pub mod debug;
 pub mod typed;
 pub use typed::ThingType;
+pub mod client;
+pub mod console;
+
+pub use client::GraphClient;
+pub use console::{Console, StdoutConsole};
 
 extern crate alloc;
 use core::alloc::{GlobalAlloc, Layout};
@@ -85,6 +90,13 @@ fn alloc_error(layout: Layout) -> ! {
 }
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    use core::fmt::Write;
+    let _ = debug::PortWrites.write_str("USER PANIC: ");
+    if let Some(loc) = info.location() {
+        let _ = debug::PortWrites.write_fmt(format_args!("at {}:{}: ", loc.file(), loc.line()));
+    }
+    let msg = info.message();
+    let _ = debug::PortWrites.write_fmt(format_args!("{}\n", msg));
     loop {}
 }

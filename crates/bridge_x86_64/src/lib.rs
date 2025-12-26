@@ -24,16 +24,16 @@ pub fn set_tick_hook(hook: fn(&mut interrupts::trap::TrapFrame)) {
 #[cfg(target_arch = "x86_64")]
 impl Bridge {
     pub unsafe fn init() {
+        use hw::HardwareBridge;
+        let b = Bridge;
+        b.log("BRIDGE: gdt::init\n");
         gdt::init();
+        b.log("BRIDGE: idt::init\n");
         interrupts::idt::init();
+        b.log("BRIDGE: pic::init\n");
         interrupts::pic::init();
+        b.log("BRIDGE: syscall::init\n");
         interrupts::syscall::init();
-
-        // We do NOT enable interrupts here yet. We let the kernel do it when ready.
-        // Or wait, kernel loops idle().
-        // If we don't enable, we hang.
-        // So we should enable.
-        x86_64::instructions::interrupts::enable();
     }
 
 }
@@ -122,8 +122,8 @@ impl HardwareBridge for Bridge {
          // CS: User Code
         ctx[16] = unsafe { gdt::USER_CODE_SELECTOR.0 as u64 | 3 };
 
-        // RFLAGS: IF enabled (0x200) | Reserved (0x2)
-        ctx[17] = 0x202;
+        // RFLAGS: Interrupts enabled (0x200). IOPL 3 (0x3000) -> 0x3202
+        ctx[17] = 0x3202;
 
         // RSP
         ctx[18] = stack;
@@ -136,6 +136,13 @@ impl HardwareBridge for Bridge {
 
     fn resume_user_mode(&self, context: &[u64]) -> ! {
         crate::user::enter::resume_user_mode(context, &kernel_core::sched::fpu::FpuContext::default())
+    }
+
+    fn set_kernel_stack(&self, stack_top: u64) {
+        unsafe {
+            gdt::set_kernel_stack(stack_top);
+            interrupts::syscall::set_kernel_stack(stack_top);
+        }
     }
 }
 

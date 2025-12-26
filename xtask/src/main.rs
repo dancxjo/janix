@@ -4,6 +4,7 @@ use clap::Parser;
 mod fetch;
 mod iso;
 mod run;
+mod build;
 
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Build and management tasks for ThingOS")]
@@ -41,10 +42,7 @@ fn main() -> Result<()> {
 
     match args.command {
         Commands::Fetch(args) => fetch::run(args),
-        Commands::Build => {
-            println!("xtask build: TODO");
-            Ok(())
-        }
+        Commands::Build => build::run(),
         Commands::Iso { env } => iso::run(env),
         Commands::Run {
             env,

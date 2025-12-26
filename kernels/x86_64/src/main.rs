@@ -10,6 +10,7 @@ mod early_log;
 mod heap;
 #[cfg(target_os = "thingos")]
 mod limine;
+mod memory_intrinsics;
 
 use bridge_x86_64::Bridge;
 use core::arch::naked_asm;

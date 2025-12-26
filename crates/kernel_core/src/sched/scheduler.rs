@@ -26,7 +26,7 @@ pub struct Thread {
     pub entry_point: u64,
     pub user_arg: u64,
     pub user_stack_top: u64,
-    pub kernel_stack: Vec<u8>,
+    pub kernel_stack: Vec<u128>,
     pub kernel_stack_top: u64,
     pub context: ThreadContext,
     pub fpu_context: FpuContext,
@@ -90,7 +90,8 @@ impl Scheduler {
         };
         self.processes.push(Some(process));
 
-        let mut kernel_stack = alloc::vec![0u8; 16384];
+        // 16KB stack, 16-byte aligned. 16384 bytes / 16 bytes/u128 = 1024 u128s.
+        let mut kernel_stack = alloc::vec![0u128; 1024];
         let kernel_stack_top = kernel_stack.as_ptr() as u64 + 16384;
         let context = bridge.init_thread_context(entry, stack_top, arg);
 

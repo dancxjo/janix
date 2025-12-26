@@ -8,6 +8,7 @@ pub mod symbols;
 pub mod syscalls;
 pub mod input;
 pub mod types;
+pub mod diag;
 
 
 use hw::HardwareBridge;

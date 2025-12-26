@@ -24,100 +24,68 @@ pub fn init() {
     }
 }
 
-extern "x86-interrupt" fn breakpoint_handler(_stack_frame: InterruptStackFrame) {
-    use crate::Bridge;
-    use crate::HardwareBridge;
-    let bridge = Bridge;
-    bridge.log("EXCEPTION: BREAKPOINT\n");
+extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
+    kernel_core::diag::record_fault(
+        stack_frame.instruction_pointer.as_u64(),
+        stack_frame.stack_pointer.as_u64(),
+        stack_frame.cpu_flags.bits(),
+        0,
+        0,
+        3, // Breakpoint trap #3
+        "BREAKPOINT"
+    );
 }
 
 extern "x86-interrupt" fn double_fault_handler(
-    stack_frame: InterruptStackFrame, _error_code: u64) -> !
+    stack_frame: InterruptStackFrame, error_code: u64) -> !
 {
-    use crate::Bridge;
-    use crate::HardwareBridge;
-    let bridge = Bridge;
-    bridge.log("EXCEPTION: DOUBLE FAULT\n");
-    // We can't format easily without alloc/fmt, but loop works.
-    // Try to access internals of stack_frame if public?
-    // standard x86_64 crate exposes fields.
+    kernel_core::diag::record_fault(
+        stack_frame.instruction_pointer.as_u64(),
+        stack_frame.stack_pointer.as_u64(),
+        stack_frame.cpu_flags.bits(),
+        0,
+        error_code,
+        8, // Double Fault #8
+        "DOUBLE FAULT"
+    );
     loop {}
 }
 
 extern "x86-interrupt" fn gp_handler(
     stack_frame: InterruptStackFrame, error_code: u64)
 {
-    use crate::Bridge;
-    use crate::HardwareBridge;
-    let bridge = Bridge;
-    bridge.log("EXCEPTION: GENERAL PROTECTION FAULT\n");
-    bridge.log("RIP: ");
-
-    let rip = stack_frame.instruction_pointer.as_u64();
-    for i in (0..8).rev() {
-        let digit = (rip >> (i * 4)) & 0xF;
-        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
-        bridge.log(core::str::from_utf8(&[c]).unwrap());
-    }
-    bridge.log("\nERR: ");
-    for i in (0..8).rev() {
-        let digit = (error_code >> (i * 4)) & 0xF;
-        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
-        bridge.log(core::str::from_utf8(&[c]).unwrap());
-    }
-    bridge.log("\n");
     use x86_64::registers::control::Cr2;
-    let addr = Cr2::read().as_u64();
-    bridge.log("ADDR: ");
-    for i in (0..8).rev() {
-        let digit = (addr >> (i * 4)) & 0xF;
-        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
-        bridge.log(core::str::from_utf8(&[c]).unwrap());
-    }
-    bridge.log("\n");
-    loop {}
+    let cr2 = Cr2::read().as_u64();
+
+    kernel_core::diag::record_fault(
+        stack_frame.instruction_pointer.as_u64(),
+        stack_frame.stack_pointer.as_u64(),
+        stack_frame.cpu_flags.bits(),
+        cr2,
+        error_code,
+        13, // GPF #13
+        "GENERAL PROTECTION FAULT"
+    );
+    panic!("GPF");
 }
 
 extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode)
 {
-    use crate::Bridge;
-    use crate::HardwareBridge;
     use x86_64::registers::control::Cr2;
-
-    let bridge = Bridge;
-    bridge.log("EXCEPTION: PAGE FAULT\n");
+    let cr2 = Cr2::read().as_u64();
     
-    let addr = Cr2::read().as_u64();
-    bridge.log("Accessed Address: 0x");
-    for i in (0..16).rev() {
-        let digit = (addr >> (i * 4)) & 0xF;
-        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
-        bridge.log(core::str::from_utf8(&[c]).unwrap());
-    }
-    bridge.log("\n");
+    kernel_core::diag::record_fault(
+        stack_frame.instruction_pointer.as_u64(),
+        stack_frame.stack_pointer.as_u64(),
+        stack_frame.cpu_flags.bits(),
+        cr2,
+        error_code.bits(),
+        14, // Page Fault #14
+        "PAGE FAULT"
+    );
 
-    bridge.log("Error Code: ");
-    // Manual debug of error code since we can't use format! easily here
-    let code_u64 = error_code.bits(); // Assuming bits() or similar exists, actually Debug impl usually prints useful stuff but we effectively have no Alloc/Format here easily if we use bridge.log primitive.
-    // Let's just print the bits.
-     for i in (0..16).rev() {
-        let digit = (code_u64 >> (i * 4)) & 0xF;
-        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
-        bridge.log(core::str::from_utf8(&[c]).unwrap());
-    }
-    bridge.log("\n");
-
-    bridge.log("RIP: 0x");
-    let rip = stack_frame.instruction_pointer.as_u64();
-    for i in (0..16).rev() {
-        let digit = (rip >> (i * 4)) & 0xF;
-        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
-        bridge.log(core::str::from_utf8(&[c]).unwrap());
-    }
-    bridge.log("\n");
-
-    loop {}
+    panic!("Page Fault");
 }
 
 /// Naked trampoline for Timer Interrupt.

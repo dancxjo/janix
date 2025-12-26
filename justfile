@@ -24,3 +24,9 @@ run env="hosted":
 
 xtask:
     cargo run -p xtask --
+
+inspect:
+    @gdb -batch -ex "target remote :1234" -ex "set pagination off" -ex "echo \n--- REGISTERS ---\n" -ex "info registers" -ex "echo \n--- BACKTRACE ---\n" -ex "bt" -ex "echo \n--- INSTRUCTIONS ---\n" -ex "x/10i \$pc" -ex "quit"
+
+die:
+    cargo run -p xtask -- kill

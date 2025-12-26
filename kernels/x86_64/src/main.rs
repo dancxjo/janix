@@ -263,7 +263,7 @@ pub extern "C" fn rust_main() -> ! {
                     }
                     k.bridge.log("\n");
 
-                    
+
                     k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), 0);
                 }
             }
@@ -299,11 +299,11 @@ pub extern "C" fn rust_main() -> ! {
         *KERNEL.lock() = Some(k);
         
         // 3. Enable Interrupts
-        unsafe { 
+        unsafe {
              use hw::HardwareBridge;
              let bridge = Bridge;
              bridge.log("BRIDGE: enabling interrupts...\n");
-             x86_64::instructions::interrupts::enable(); 
+             x86_64::instructions::interrupts::enable();
         }
     }
 

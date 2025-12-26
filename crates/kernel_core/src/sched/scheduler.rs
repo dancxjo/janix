@@ -149,7 +149,7 @@ impl Scheduler {
             if let Some(Some(thread)) = self.threads.get_mut(next_tid.0 as usize - 1) {
                  thread.state = ThreadState::Running;
                  _bridge.set_kernel_stack(thread.kernel_stack_top);
-                 
+
                  *current_context = thread.context;
             }
         } else {

@@ -52,7 +52,7 @@ extern "x86-interrupt" fn gp_handler(
     let bridge = Bridge;
     bridge.log("EXCEPTION: GENERAL PROTECTION FAULT\n");
     bridge.log("RIP: ");
-    
+
     let rip = stack_frame.instruction_pointer.as_u64();
     for i in (0..8).rev() {
         let digit = (rip >> (i * 4)) & 0xF;
@@ -97,7 +97,7 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "jz 1f",
         "swapgs",
         "1:",
-        
+
         "push rax", "push rdi", "push rsi", "push rdx", "push rcx",
         "push r8", "push r9", "push r10", "push r11", "push rbx",
         "push rbp", "push r12", "push r13", "push r14", "push r15",
@@ -126,7 +126,7 @@ unsafe extern "C" fn keyboard_interrupt_naked() {
         "jz 1f",
         "swapgs",
         "1:",
-        
+
         "push rax", "push rdi", "push rsi", "push rdx", "push rcx",
         "push r8", "push r9", "push r10", "push r11", "push rbx",
         "push rbp", "push r12", "push r13", "push r14", "push r15",

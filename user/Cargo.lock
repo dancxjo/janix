@@ -262,6 +262,8 @@ name = "thing_std"
 version = "0.2.0"
 dependencies = [
  "abi",
+ "postcard",
+ "serde",
 ]
 
 [[package]]

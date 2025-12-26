@@ -221,19 +221,67 @@ unsafe extern "C" fn syscall_handler_naked() {
         // R8 = R10
         // R9 = R8
         
-        "mov r9, r8",
-        "mov r8, r10",
-        "mov rcx, rdx",
-        "mov rdx, rsi",
-        "mov rsi, rdi",
-        "mov rdi, rax",
+        // 5. Preserver Arg 6 (User R9) which is the 7th arg for Rust (a6)
+        "mov rax, r9", // Save a6 temporarily in RAX (since RAX contains num, we move it first? No RAX has num).
+        // Wait, RAX has 'num'. R9 has 'a6'.
+        // We need to move RAX to RDI first.
         
-        // Enable interrupts?
+        "mov rdi, rax", // Arg 1 (num) -> RDI. RAX is now free.
+        "mov rax, r9",  // Save a6 (User R9) to RAX.
+        
+        // Shuffle other registers
+        "mov r9, r8",   // Arg 6 (a5) -> R9 (Rust Arg 6)
+        "mov r8, r10",  // Arg 5 (a4) -> R8 (Rust Arg 5)
+        "mov rcx, rdx", // Arg 4 (a3) -> RCX (Rust Arg 4)
+        "mov rdx, rsi", // Arg 3 (a2) -> RDX (Rust Arg 3)
+        "mov rsi, rdi", // Arg 2 (a1) -> RSI (Wait! RDI now holds num!)
+        // ERROR in logic above! I overwrote RDI with RAX (num).
+        // But I needed User RDI (a1) for RSI.
+        // I must allow register shuffling without clobber.
+        
+        // Correct Sequence:
+        // Inputs: RAX(num), RDI(a1), RSI(a2), RDX(a3), R10(a4), R8(a5), R9(a6)
+        // Outputs: RDI(num), RSI(a1), RDX(a2), RCX(a3), R8(a4), R9(a5), Stack(a6)
+        
+        // Move a6 (R9) to Stack.
+        "push r9", 
+        
+        // Move rest:
+        "mov r9, r8",   // a5 -> R9
+        "mov r8, r10",  // a4 -> R8
+        "mov rcx, rdx", // a3 -> RCX
+        "mov rdx, rsi", // a2 -> RDX
+        "mov rsi, rdi", // a1 -> RSI
+        "mov rdi, rax", // num -> RDI (Wait, RAX was clobbered? No, RAX holds num).
+        
+        // Safety check: Did I overwrite a source before using it?
+        // r9 overwritten by r8. (Saved r9 to stack first: OK)
+        // r8 overwritten by r10. (r8 used for r9: OK - done before)
+        // Wait, `mov r9, r8` reads r8. `mov r8, r10` writes r8.
+        // Order matters: Write Dest R9 first.
+        // R9 <- R8.
+        // R8 <- R10.
+        // RCX <- RDX.
+        // RDX <- RSI.
+        // RSI <- RDI.
+        // RDI <- RAX.
+        // All sources are distinct from destinations downstream?
+        // R8 source is used for R9. R8 dest is R10. OK.
+        // RDX source used for RCX. RDX dest is RSI. OK.
+        // RSI source used for RDX. RSI dest is RDI. OK.
+        // RDI source used for RSI. RDI dest is RAX. OK.
+        // RAX source used for RDI. RAX dest... none. OK.
+        
+        // So order: R9..RDI is safe.
+        // But R9 must be pushed first.
+        
+        // Enable interrupts
         "sti",
         
         "call syscall_dispatch",
         
         "cli",
+        "add rsp, 8", // Pop argument
         
         // Restore
         "pop r15",

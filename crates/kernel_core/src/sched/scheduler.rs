@@ -12,6 +12,10 @@ pub struct Process {
     pub thing_id: Option<ThingId>,
 }
 
+#[repr(C, align(16))]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ThreadContext(pub [u64; 20]);
+
 #[derive(Debug)]
 pub struct Thread {
     pub id: ThreadId,
@@ -22,7 +26,9 @@ pub struct Thread {
     pub entry_point: u64,
     pub user_arg: u64,
     pub user_stack_top: u64,
-    pub context: [u64; 20],
+    pub kernel_stack: Vec<u8>,
+    pub kernel_stack_top: u64,
+    pub context: ThreadContext,
     pub fpu_context: FpuContext,
     pub started: bool,
     pub thing_id: Option<ThingId>,
@@ -84,6 +90,8 @@ impl Scheduler {
         };
         self.processes.push(Some(process));
 
+        let mut kernel_stack = alloc::vec![0u8; 16384];
+        let kernel_stack_top = kernel_stack.as_ptr() as u64 + 16384;
         let context = bridge.init_thread_context(entry, stack_top, arg);
 
         let thread = Thread {
@@ -95,7 +103,9 @@ impl Scheduler {
             entry_point: entry,
             user_arg: arg,
             user_stack_top: stack_top,
-            context,
+            kernel_stack,
+            kernel_stack_top,
+            context: ThreadContext(context),
             fpu_context: FpuContext::default(),
             started: false,
             thing_id: None,
@@ -118,7 +128,7 @@ impl Scheduler {
         Some(tid)
     }
 
-    pub fn tick<B: HardwareBridge>(&mut self, _bridge: &B, current_context: &mut [u64; 20]) {
+    pub fn tick<B: HardwareBridge>(&mut self, _bridge: &B, current_context: &mut ThreadContext) {
         // 1. Save current context if we have a current thread
         if let Some(tid) = self.current {
             // Only save if it still exists (it might have exited/died, but we handle that elsewhere)
@@ -138,6 +148,8 @@ impl Scheduler {
             self.current = Some(next_tid);
             if let Some(Some(thread)) = self.threads.get_mut(next_tid.0 as usize - 1) {
                  thread.state = ThreadState::Running;
+                 _bridge.set_kernel_stack(thread.kernel_stack_top);
+                 
                  *current_context = thread.context;
             }
         } else {

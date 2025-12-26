@@ -25,9 +25,21 @@ fn format_hms(system_ns: u64) -> (u64, u64, u64) {
 }
 
 #[no_mangle]
-pub extern "C" fn main() -> i32 {
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
+    /*
+    unsafe {
+        core::arch::asm!(
+            "out dx, al",
+            in("dx") 0x3F8u16,
+            in("al") 0x41u8, // 'A'
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    */
     let g = GraphClient::new();
     let c = StdoutConsole;
+    c.write_str("CLOCK: Starting...\n");
     let mut out = [0u8; 256];
 
     loop {
@@ -53,6 +65,7 @@ pub extern "C" fn main() -> i32 {
 
         // v0 “sleep”: placeholder. Replace when sleep syscall exists.
         // Crude spin to avoid exploding logs too fast.
+        for _ in 0..5_000_000 { core::hint::spin_loop(); }
         for _ in 0..5_000_000 { core::hint::spin_loop(); }
     }
 }

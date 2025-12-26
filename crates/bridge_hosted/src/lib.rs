@@ -51,4 +51,5 @@ impl HardwareBridge for HostedBridge {
     fn resume_user_mode(&self, _context: &[u64]) -> ! {
         loop {}
     }
+    fn set_kernel_stack(&self, _stack_top: u64) {}
 }

@@ -25,26 +25,66 @@ pub fn init() {
 }
 
 extern "x86-interrupt" fn breakpoint_handler(_stack_frame: InterruptStackFrame) {
-    // Breakpoint
+    use crate::Bridge;
+    use crate::HardwareBridge;
+    let bridge = Bridge;
+    bridge.log("EXCEPTION: BREAKPOINT\n");
 }
 
 extern "x86-interrupt" fn double_fault_handler(
-    _stack_frame: InterruptStackFrame, _error_code: u64) -> !
+    stack_frame: InterruptStackFrame, _error_code: u64) -> !
 {
+    use crate::Bridge;
+    use crate::HardwareBridge;
+    let bridge = Bridge;
+    bridge.log("EXCEPTION: DOUBLE FAULT\n");
+    // We can't format easily without alloc/fmt, but loop works.
+    // Try to access internals of stack_frame if public?
+    // standard x86_64 crate exposes fields.
     loop {}
 }
 
 extern "x86-interrupt" fn gp_handler(
-    _stack_frame: InterruptStackFrame, _error_code: u64)
+    stack_frame: InterruptStackFrame, error_code: u64)
 {
-    // GP Fault
+    use crate::Bridge;
+    use crate::HardwareBridge;
+    let bridge = Bridge;
+    bridge.log("EXCEPTION: GENERAL PROTECTION FAULT\n");
+    bridge.log("RIP: ");
+    
+    let rip = stack_frame.instruction_pointer.as_u64();
+    for i in (0..8).rev() {
+        let digit = (rip >> (i * 4)) & 0xF;
+        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
+        bridge.log(core::str::from_utf8(&[c]).unwrap());
+    }
+    bridge.log("\nERR: ");
+    for i in (0..8).rev() {
+        let digit = (error_code >> (i * 4)) & 0xF;
+        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
+        bridge.log(core::str::from_utf8(&[c]).unwrap());
+    }
+    bridge.log("\n");
+    use x86_64::registers::control::Cr2;
+    let addr = Cr2::read().as_u64();
+    bridge.log("ADDR: ");
+    for i in (0..8).rev() {
+        let digit = (addr >> (i * 4)) & 0xF;
+        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
+        bridge.log(core::str::from_utf8(&[c]).unwrap());
+    }
+    bridge.log("\n");
     loop {}
 }
 
 extern "x86-interrupt" fn page_fault_handler(
-    _stack_frame: InterruptStackFrame, _error_code: PageFaultErrorCode)
+    stack_frame: InterruptStackFrame, _error_code: PageFaultErrorCode)
 {
-    // Page Fault
+    use crate::Bridge;
+    use crate::HardwareBridge;
+    let bridge = Bridge;
+    bridge.log("EXCEPTION: PAGE FAULT\n");
     loop {}
 }
 
@@ -52,24 +92,12 @@ extern "x86-interrupt" fn page_fault_handler(
 #[unsafe(naked)]
 unsafe extern "C" fn timer_interrupt_naked() {
     naked_asm!(
+        // Check if we came from user mode (CS & 3 == 3)
         "test byte ptr [rsp + 8], 3",
-        "jz 2f", 
-        "push rax", "push rdi", "push rsi", "push rdx", "push rcx",
-        "push r8", "push r9", "push r10", "push r11", "push rbx",
-        "push rbp", "push r12", "push r13", "push r14", "push r15",
-        
-        "mov rdi, rsp",
-        "call timer_interrupt_handler",
-        
-        "pop r15", "pop r14", "pop r13", "pop r12", "pop rbp",
-        "pop rbx", "pop r11", "pop r10", "pop r9", "pop r8",
-        "pop rcx", "pop rdx", "pop rsi", "pop rdi", "pop rax",
-        
+        "jz 1f",
         "swapgs",
-        "iretq",
-
-        "2:", // From Kernel
-        // Push GPRs.
+        "1:",
+        
         "push rax", "push rdi", "push rsi", "push rdx", "push rcx",
         "push r8", "push r9", "push r10", "push r11", "push rbx",
         "push rbp", "push r12", "push r13", "push r14", "push r15",
@@ -81,6 +109,11 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "pop rbx", "pop r11", "pop r10", "pop r9", "pop r8",
         "pop rcx", "pop rdx", "pop rsi", "pop rdi", "pop rax",
         
+        // Check if we are returning to user mode (CS & 3 == 3)
+        "test byte ptr [rsp + 8], 3",
+        "jz 2f",
+        "swapgs",
+        "2:",
         "iretq",
     );
 }
@@ -90,23 +123,10 @@ unsafe extern "C" fn timer_interrupt_naked() {
 unsafe extern "C" fn keyboard_interrupt_naked() {
     naked_asm!(
         "test byte ptr [rsp + 8], 3",
-        "jz 2f", 
-        // User
-        "push rax", "push rdi", "push rsi", "push rdx", "push rcx",
-        "push r8", "push r9", "push r10", "push r11", "push rbx",
-        "push rbp", "push r12", "push r13", "push r14", "push r15",
-        
-        "mov rdi, rsp",
-        "call keyboard_interrupt_handler",
-        
-        "pop r15", "pop r14", "pop r13", "pop r12", "pop rbp",
-        "pop rbx", "pop r11", "pop r10", "pop r9", "pop r8",
-        "pop rcx", "pop rdx", "pop rsi", "pop rdi", "pop rax",
-        
+        "jz 1f",
         "swapgs",
-        "iretq",
-
-        "2:", // Kernel
+        "1:",
+        
         "push rax", "push rdi", "push rsi", "push rdx", "push rcx",
         "push r8", "push r9", "push r10", "push r11", "push rbx",
         "push rbp", "push r12", "push r13", "push r14", "push r15",
@@ -118,6 +138,10 @@ unsafe extern "C" fn keyboard_interrupt_naked() {
         "pop rbx", "pop r11", "pop r10", "pop r9", "pop r8",
         "pop rcx", "pop rdx", "pop rsi", "pop rdi", "pop rax",
         
+        "test byte ptr [rsp + 8], 3",
+        "jz 2f",
+        "swapgs",
+        "2:",
         "iretq",
     );
 }

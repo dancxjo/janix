@@ -13,7 +13,7 @@ use models::builtins::symbols::{SYM_KEYBOARD, SYM_PS2, SYM_KEY_EVENT};
 use models::Thing;
 
 #[no_mangle]
-fn main() {
+pub extern "C" fn _start() -> ! {
     std::init();
     std::debug::log("PS/2 Driver starting...\n");
 

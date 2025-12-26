@@ -17,7 +17,7 @@ struct DumpResp {
 
 #[no_mangle]
 #[no_mangle]
-pub extern "C" fn main() -> ! {
+pub extern "C" fn _start() -> ! {
     let g = GraphClient::new();
     let c = StdoutConsole;
     let mut out = [0u8; 4096];

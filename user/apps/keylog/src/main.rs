@@ -11,7 +11,7 @@ use models::core::input::{KeyEventBody};
 use models::Thing;
 
 #[no_mangle]
-fn main() {
+pub extern "C" fn _start() -> ! {
     std::init();
     std::debug::log("Keylog App starting...\n");
 

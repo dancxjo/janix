@@ -28,7 +28,7 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     kernel_core::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags.bits(),
+        stack_frame.cpu_flags,
         0,
         0,
         3, // Breakpoint trap #3
@@ -42,7 +42,7 @@ extern "x86-interrupt" fn double_fault_handler(
     kernel_core::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags.bits(),
+        stack_frame.cpu_flags,
         0,
         error_code,
         8, // Double Fault #8
@@ -60,7 +60,7 @@ extern "x86-interrupt" fn gp_handler(
     kernel_core::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags.bits(),
+        stack_frame.cpu_flags,
         cr2,
         error_code,
         13, // GPF #13
@@ -78,7 +78,7 @@ extern "x86-interrupt" fn page_fault_handler(
     kernel_core::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags.bits(),
+        stack_frame.cpu_flags,
         cr2,
         error_code.bits(),
         14, // Page Fault #14

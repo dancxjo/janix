@@ -29,7 +29,7 @@ macro_rules! klog {
 
 // Trap-safe recording
 pub fn record_fault(
-    rip: u64, rsp: u64, rflags: u64, cr2: u64,
+    rip: u64, _rsp: u64, rflags: u64, cr2: u64,
     error_code: u64, fault_kind: u8,
     msg: &str
 ) {

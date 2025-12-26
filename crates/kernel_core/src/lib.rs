@@ -14,7 +14,7 @@ pub mod diag;
 use hw::HardwareBridge;
 use graph::{GraphStore, seed_builtins};
 
-use symbols::{SymbolTable, SymbolError};
+use symbols::SymbolTable;
 use symbols::store::SymbolStore;
 
 use sched::scheduler::Scheduler;

@@ -4,7 +4,7 @@ use alloc::string::ToString;
 use abi::{ThingId, SymbolId};
 use crate::diag::{LogRing};
 use thing_models::builtins::ids::*;
-use thing_models::builtins::symbols::*;
+
 use thing_models::diag::{LogEntryBody, ErrorBody, FaultBody};
 use thing_models::thing::Thing;
 use thing_models::value::ThingBody;
@@ -53,7 +53,7 @@ pub fn flush_diagnostics<B: HardwareBridge>(kernel: &mut Kernel<B>) {
         // Convert entry to Thing
         // Note: entry is internal. We copy out data.
 
-        let msg = unsafe {
+        let msg = {
              let len = entry.msg_len as usize;
              let slice = &entry.msg_bytes[..len];
              core::str::from_utf8(slice).unwrap_or("<invalid utf8>").to_string()

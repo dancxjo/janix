@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::thing_kind;
 use crate::declare::type_tag::fnv1a64;
 use crate::declare::type_tag;
@@ -7,9 +8,9 @@ use crate::builtins::symbols::*;
 use crate::core::time::TimeNow;
 use crate::core::process::{ProcessBody, ThreadBody};
 use crate::core::capability::CapabilityBody;
-use crate::core::vgs::{GraphBody, MountBody, GraphProviderBody};
-use crate::core::buffer::{BufferBody, StreamBody};
-use crate::core::input::{KeyboardBody, KeyEventBody};
+use crate::core::vgs::{MountBody, GraphProviderBody};
+use crate::core::buffer::BufferBody;
+use crate::core::input::KeyboardBody;
 
 
 thing_kind! {

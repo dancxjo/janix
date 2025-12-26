@@ -1,5 +1,5 @@
 use abi::wire::driver::DriverEvent;
-use alloc::vec::Vec;
+
 use alloc::collections::VecDeque;
 
 pub struct IrqRing {

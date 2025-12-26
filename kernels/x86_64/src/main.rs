@@ -362,12 +362,10 @@ pub extern "C" fn rust_main() -> ! {
         *KERNEL.lock() = Some(k);
         
         // 3. Enable Interrupts
-        unsafe {
              use hw::HardwareBridge;
              let bridge = Bridge;
              bridge.log("BRIDGE: enabling interrupts...\n");
              x86_64::instructions::interrupts::enable();
-        }
     }
 
     loop {

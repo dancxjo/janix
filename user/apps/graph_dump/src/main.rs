@@ -85,8 +85,8 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole) {
             Err(e) => {
                  let _ = c.write_str(&format!("GetThing({}) failed: {:?}\n", curr.0, e));
             },
-            _ => {
-                 let _ = c.write_str(&format!("GetThing({}) unexpected reply\n", curr.0));
+            Ok(val) => {
+                 let _ = c.write_str(&format!("GetThing({}) unexpected reply: {:?}\n", curr.0, val));
             }
         }
 

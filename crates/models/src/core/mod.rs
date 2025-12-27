@@ -5,6 +5,8 @@ pub mod vgs;
 pub mod input;
 pub mod pci;
 pub mod serial;
+pub mod block;
+pub mod fs;
 pub mod buffer;
 
 

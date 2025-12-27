@@ -122,6 +122,20 @@ fn run_qemu_x86_64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, inter
     // else default BIOS
     cmd.arg("-cdrom").arg(&iso_path);
 
+    // Create a dummy disk for AHCI testing
+    let disk_path = root.join("disk.img");
+    if !disk_path.exists() {
+        use std::io::Write;
+        println!("    Creating 64MB disk.img...");
+        let f = std::fs::File::create(&disk_path).expect("create disk.img");
+        f.set_len(64 * 1024 * 1024).expect("resize disk.img");
+    }
+
+    // Attach AHCI Controller and Disk
+    cmd.arg("-device").arg("ahci,id=ahci");
+    cmd.arg("-drive").arg(format!("id=disk,file={},if=none,format=raw", disk_path.display()));
+    cmd.arg("-device").arg("ide-hd,drive=disk,bus=ahci.0");
+
     // GDB setup
     if let Some(port) = gdb_port {
         cmd.arg("-gdb").arg(format!("tcp::{}", port));
@@ -175,7 +189,8 @@ fn run_qemu_aarch64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, inte
     if use_uefi {
         cmd.arg("-bios").arg(&ovmf_code);
     }
-    cmd.arg("-cdrom").arg(&iso_path);
+    cmd.arg("-drive").arg(format!("id=cd,file={},if=none,format=raw,readonly=on", iso_path.display()));
+    cmd.arg("-device").arg("ide-cd,drive=cd,bus=ahci.1");
 
     // GDB setup
     if let Some(port) = gdb_port {

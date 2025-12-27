@@ -9,6 +9,7 @@ pub mod syscalls;
 pub mod input;
 pub mod types;
 pub mod diag;
+pub mod fs;
 pub mod time;
 
 

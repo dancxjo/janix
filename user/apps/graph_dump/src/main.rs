@@ -62,6 +62,9 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     kind_cache.insert(THING_MOUSE_KIND, "MouseDevice".into());
     kind_cache.insert(THING_POINTER_EVENT_STREAM_KIND, "PointerStream".into());
     kind_cache.insert(THING_PCI_DEVICE_KIND, "PciDevice".into());
+    kind_cache.insert(THING_BLOCK_DEVICE_KIND, "BlockDevice".into());
+    kind_cache.insert(THING_FILESYSTEM_KIND, "Filesystem".into());
+    kind_cache.insert(THING_FILE_KIND, "File".into());
 
     loop {
         perform_dump(&g, &c, &mut kind_cache);
@@ -254,6 +257,27 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole, kind_cache: &mut BTreeMap<Th
                      if let Ok(b) = postcard::from_bytes::<PciDeviceBody>(&n.data) {
                           let _ = c.write_str(&format!("{{ loc: {:02x}:{:02x}.{}, id: {:04x}:{:04x}, class: {:02x}.{:02x} }}\n", 
                               b.bus, b.device, b.function, b.vendor_id, b.device_id, b.class_id, b.subclass_id));
+                          continue;
+                     }
+                 }
+                 if n.kind == THING_BLOCK_DEVICE_KIND {
+                     use thing_models::core::block::BlockDeviceBody;
+                     if let Ok(b) = postcard::from_bytes::<BlockDeviceBody>(&n.data) {
+                          let _ = c.write_str(&format!("{{ model: \"{}\", type: {:?}, capacity: {} }}\n", b.model, b.device_type, b.capacity_sectors));
+                          continue;
+                     }
+                 }
+                 if n.kind == THING_FILESYSTEM_KIND {
+                     use thing_models::core::fs::FilesystemBody;
+                     if let Ok(b) = postcard::from_bytes::<FilesystemBody>(&n.data) {
+                          let _ = c.write_str(&format!("{{ name: \"{}\", kind: {:?}, ro: {} }}\n", b.name, b.kind, b.read_only));
+                          continue;
+                     }
+                 }
+                 if n.kind == THING_FILE_KIND {
+                     use thing_models::core::fs::FileBody;
+                     if let Ok(b) = postcard::from_bytes::<FileBody>(&n.data) {
+                          let _ = c.write_str(&format!("{{ name: \"{}\", size: {}, is_dir: {} }}\n", b.name, b.size, b.is_dir));
                           continue;
                      }
                  }

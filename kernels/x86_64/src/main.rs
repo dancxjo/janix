@@ -206,6 +206,9 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
                         bridge_x86_64::hpet::program_oneshot(target);
                     }
                 }
+                
+                // Flush Logs to Graph
+                kernel_core::diag::flusher::flush_diagnostics(k);
             }
 
             // 3. Tick Scheduler (updates ctx if switch occurs)
@@ -555,11 +558,110 @@ pub extern "C" fn rust_main() -> ! {
              }).unwrap();
              k.graph.create_thing(THING_LINK_KIND, lb);
              
+
              k.bridge.log("PCI: Published Device ");
              print_hex(&Bridge, dev.vendor_id as u64);
              k.bridge.log(":");
              print_hex(&Bridge, dev.device_id as u64);
              k.bridge.log("\n");
+             
+             // Check for AHCI (Mass Storage (01), SATA (06), AHCI (01))
+             if dev.class_id == 0x01 && dev.subclass_id == 0x06 && dev.prog_if == 0x01 {
+                 k.bridge.log("PCI: Detected AHCI Controller. Mapping BAR5...\n");
+                 
+                 let bar5 = dev.bars[5];
+                 if bar5 != 0 && (bar5 & 1) == 0 { // Memory BAR
+                      let base = (bar5 & 0xFFFFFFF0) as u64;
+                      // HbaMem is ~4.5KB. Map 8KB.
+                      let size = 8192; 
+                      
+                      k.bridge.log("AHCI: Mapping BAR5 at ");
+                      print_hex(&Bridge, base);
+                      k.bridge.log("\n");
+                      
+                      map_region_fn(base, base + size, PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE);
+                      
+                      unsafe { bridge_x86_64::ahci::init(&dev, &mut k); }
+                      
+                      // Scan for Filesystem on Port 2 (CD-ROM) for now.
+                      // Ideally AHCI init returns list of populated ports.
+                      // We'll iterate ports 0..32 in AHCI driver? No, we need kernel-side logic.
+                      // Let's just create a raw handle here.
+                      // NOTE: We need HHDM_OFFSET from main.
+                      
+                      let hhdm = bridge_x86_64::HHDM_OFFSET.load(Ordering::Relaxed);
+                      // HHDM IS GLOBAL in bridge lib.
+                      
+                      // For now, hardcode Port 1 (disk is 0, cd is 1)
+                      // We need access to HbaMem.
+                      let abar_virt = hhdm + base;
+                      // HACK: Re-access memory
+                      
+                      // We need to define structs in bridge_x86_64::ahci as pub?
+                      // Or add a public `read_sector` helper in bridge::ahci
+                      
+                      let port_idx = 1; // CD-ROM
+                      let mut sector_buf = [0u8; 2048];
+                      let mut read_fn = |lba: u32, buf: &mut [u8]| -> bool {
+                           unsafe { bridge_x86_64::ahci::read_sector_at(base, port_idx, lba, buf, hhdm) }
+                      };
+                      
+                      k.bridge.log("FS: Scanning CD-ROM (Port 2)...\n");
+                      // We need internal buffer inside Reader
+                      use kernel_core::fs::iso9660::Iso9660Reader;
+                      let mut reader = Iso9660Reader::new(read_fn);
+                      
+                      if let Some((fs_body, files)) = reader.scan_root() {
+                          k.bridge.log("FS: Found ISO9660 Volume: ");
+                          k.bridge.log(&fs_body.name);
+                          k.bridge.log("\n");
+                          
+                          // Publish Filesystem
+                          use thing_models::builtins::ids::{THING_FILESYSTEM_KIND, THING_FILE_KIND, THING_IS_MOUNTED_ON_KIND, THING_CONTAINS_FILE_KIND};
+                          
+                          let fs_bytes = postcard::to_allocvec(&fs_body).unwrap();
+                          let fs_tb = ThingBody::from(&TypedBytes {
+                               type_id: TypeId(THING_FILESYSTEM_KIND.0 as u128),
+                               codec_id: CodecId::POSTCARD,
+                               bytes: fs_bytes,
+                          }).unwrap();
+                          let fs_id = k.graph.create_thing(THING_FILESYSTEM_KIND, fs_tb);
+                          
+                          // Find the BlockDevice Thing for Port 2?
+                          // We don't have the ID easily here.
+                          // Skip linking for this step.
+                          
+                          // Publish Files
+                          for file in files {
+                              k.bridge.log("FS: File: ");
+                              k.bridge.log(&file.name);
+                              k.bridge.log("\n");
+                              
+                              let f_bytes = postcard::to_allocvec(&file).unwrap();
+                              let f_tb = ThingBody::from(&TypedBytes {
+                                   type_id: TypeId(THING_FILE_KIND.0 as u128),
+                                   codec_id: CodecId::POSTCARD,
+                                   bytes: f_bytes,
+                              }).unwrap();
+                              let f_id = k.graph.create_thing(THING_FILE_KIND, f_tb);
+                              
+                              // Link FS -> File (CONTAINS_FILE)
+                              let link = thing_models::link::LinkBody {
+                                  from: fs_id, to: f_id, predicate: THING_CONTAINS_FILE_KIND,
+                              };
+                              let lb = ThingBody::from(&TypedBytes {
+                                  type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                                  bytes: postcard::to_allocvec(&link).unwrap()
+                              }).unwrap();
+                              k.graph.create_thing(THING_LINK_KIND, lb);
+                          }
+                      } else {
+                          k.bridge.log("FS: No valid ISO9660 on Port 2\n");
+                      }
+                 } else {
+                      k.bridge.log("AHCI: Invalid BAR5 (IO or Zero)\n");
+                 }
+             }
         }
     }
 

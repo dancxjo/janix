@@ -144,6 +144,18 @@ pub const THING_HAS_TIME_NOW_SCHEMA: ThingId = ThingId(1117);
 pub const THING_HAS_CONSOLE_KIND: ThingId = ThingId(118);
 pub const THING_HAS_CONSOLE_SCHEMA: ThingId = ThingId(1118);
 
+pub const THING_FILESYSTEM_KIND: ThingId = ThingId(227);
+pub const THING_FILESYSTEM_SCHEMA: ThingId = ThingId(1227);
+
+pub const THING_FILE_KIND: ThingId = ThingId(228);
+pub const THING_FILE_SCHEMA: ThingId = ThingId(1228);
+
+pub const THING_IS_MOUNTED_ON_KIND: ThingId = ThingId(120);
+pub const THING_IS_MOUNTED_ON_SCHEMA: ThingId = ThingId(1120);
+
+pub const THING_CONTAINS_FILE_KIND: ThingId = ThingId(121);
+pub const THING_CONTAINS_FILE_SCHEMA: ThingId = ThingId(1121);
+
 pub const THING_HAS_KEYBOARD_KIND: ThingId = ThingId(119);
 pub const THING_HAS_KEYBOARD_SCHEMA: ThingId = ThingId(1119);
 
@@ -168,3 +180,6 @@ pub const THING_SERIAL_PORT_SCHEMA: ThingId = ThingId(1224);
 
 pub const THING_LOG_STREAM_KIND: ThingId = ThingId(225);
 pub const THING_LOG_STREAM_SCHEMA: ThingId = ThingId(1225);
+
+pub const THING_BLOCK_DEVICE_KIND: ThingId = ThingId(226);
+pub const THING_BLOCK_DEVICE_SCHEMA: ThingId = ThingId(1226);

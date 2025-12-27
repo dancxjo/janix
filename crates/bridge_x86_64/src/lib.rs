@@ -12,6 +12,7 @@ pub mod pci;
 pub mod hpet;
 pub mod ps2;
 pub mod serial;
+pub mod ahci;
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;
@@ -26,9 +27,14 @@ pub fn set_tick_hook(hook: fn(&mut interrupts::trap::TrapFrame)) {
     unsafe { TICK_HOOK = Some(hook); }
 }
 
+use core::sync::atomic::{AtomicU64, Ordering};
+
+pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
+
 #[cfg(target_arch = "x86_64")]
 impl Bridge {
     pub unsafe fn init(rsdp_addr: Option<u64>, hhdm: u64) {
+        HHDM_OFFSET.store(hhdm, Ordering::Relaxed);
         use hw::HardwareBridge;
         let b = Bridge;
         b.log("BRIDGE: gdt::init\n");

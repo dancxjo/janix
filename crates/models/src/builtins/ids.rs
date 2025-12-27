@@ -95,3 +95,6 @@ pub const THING_ERROR_SCHEMA: ThingId = ThingId(1221);
 
 pub const THING_FAULT_KIND: ThingId = ThingId(222);
 pub const THING_FAULT_SCHEMA: ThingId = ThingId(1222);
+
+// Singletons (2000+)
+pub const THING_TIME_INSTANCE: ThingId = ThingId(2000);

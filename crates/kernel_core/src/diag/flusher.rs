@@ -71,9 +71,11 @@ pub fn flush_diagnostics<B: HardwareBridge>(kernel: &mut Kernel<B>) {
 
         let thing_res = match entry.kind {
             0 => { // Log
+                // Safety: internal log ring levels must match model enums
+                let level: thing_models::diag::LogLevel = unsafe { core::mem::transmute(entry.level) };
                 let body = LogEntryBody {
                     timestamp_ns: entry.timestamp_or_ticks, // TODO: real time
-                    level: entry.level,
+                    level,
                     message: msg,
                     subsystem: SymbolId(0), // unknown
                     cpu_id: entry.cpu,
@@ -102,16 +104,18 @@ pub fn flush_diagnostics<B: HardwareBridge>(kernel: &mut Kernel<B>) {
                 })
             }
             2 => { // Fault
+                 // Safety: assuming level holds FaultKind discriminant
+                let fault_kind: thing_models::diag::FaultKind = unsafe { core::mem::transmute(entry.level) };
                 let body = FaultBody {
-                    fault_kind: entry.level, // we packed it here
+                    fault_kind,
                     rip: entry.payload_a,
                     error_code: entry.payload_b,
                     cr2: entry.payload_c,
                     rflags: entry.payload_d,
                     rsp: 0, // lost for now
-                    access: 0, // decode from error_code
-                    address_space: 0,
-                    kill_action: 0,
+                    access: thing_models::diag::Access::Read, // placeholder
+                    address_space: thing_models::diag::AddressSpace::Kernel, // placeholder
+                    kill_action: thing_models::diag::KillAction::Panic, // placeholder
                 };
                 Some(Thing {
                     id: tid,

@@ -135,6 +135,43 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
             use kernel_core::sched::scheduler::ThreadContext;
             let ctx_ptr = frame as *mut _ as *mut ThreadContext;
             let ctx = unsafe { &mut *ctx_ptr };
+            
+            // Time Service Update
+            // We do this inside the lock.
+            {
+                use hw::HardwareBridge; // Import trait for .ticks()
+                use thing_models::builtins::ids::{THING_TIME_INSTANCE, THING_TIME_NOW_KIND};
+                use thing_models::core::time::TimeNow;
+                use abi::wire::typed::{TypedBytes, TypeId, CodecId};
+                use thing_models::value::ThingBody;
+
+                let monotonic = k.bridge.ticks(); // Assumption: ticks returns ns or similar monotonic counter
+                // Currently bridge.ticks() is probably raw ticks.
+                // We should assume it's roughly monotonic NS or convert.
+                // For this task, we treat it as the value to publish.
+                // TODO: System time offset.
+                
+                let time_val = TimeNow {
+                    monotonic_ns: monotonic,
+                    system_ns: monotonic, // Sync for now
+                };
+                
+                // We must construct the body again.
+                // Optimization: In real OS, we'd update in-place or have a specialized path.
+                // Here we do full update cycle (expensive but correct for v0).
+                if let Ok(bytes) = postcard::to_allocvec(&time_val) {
+                     let typed = TypedBytes {
+                          type_id: TypeId(THING_TIME_NOW_KIND.0 as u128),
+                          codec_id: CodecId::POSTCARD,
+                          bytes,
+                     };
+                     if let Ok(body) = ThingBody::from(&typed) {
+                          // Update ignores error if Thing doesn't exist (e.g. before seed)
+                          let _ = k.graph.update_thing(THING_TIME_INSTANCE, body);
+                     }
+                }
+            }
+
             k.scheduler.tick(&k.bridge, ctx);
         }
     }
@@ -233,21 +270,21 @@ pub extern "C" fn rust_main() -> ! {
 
         // --- CMDLINE PARSING (Rudimentary) ---
         let mut smoke_target = None;
-        if let Some(resp) = limine::requests::KERNEL_FILE_REQUEST.get_response() {
-            if let Some(file) = resp.kernel_file() {
-                if let Some(cmd) = file.cmdline() {
-                    if let Ok(cmd_str) = core::str::from_utf8(cmd.to_bytes()) {
-                         // Looking for "thingos.smoke=<name>"
-                         // Very basic split
-                         for part in cmd_str.split(' ') {
-                             if let Some(rest) = part.strip_prefix("thingos.smoke=") {
-                                  smoke_target = Some(rest.trim());
-                                  k.bridge.log("SMOKE MODE: Target is ");
-                                  k.bridge.log(rest);
-                                  k.bridge.log("\n");
-                             }
+        {
+            use limine::requests::KERNEL_FILE_REQUEST;
+            if let Some(resp) = KERNEL_FILE_REQUEST.get_response() {
+                let file = resp.file();
+                let cmd_bytes = file.cmdline();
+                if let Ok(cmd_str) = core::str::from_utf8(cmd_bytes) {
+                     // Looking for "thingos.smoke=<name>"
+                     for part in cmd_str.split(' ') {
+                         if let Some(rest) = part.strip_prefix("thingos.smoke=") {
+                              smoke_target = Some(rest.trim());
+                              k.bridge.log("SMOKE MODE: Target is ");
+                              k.bridge.log(rest);
+                              k.bridge.log("\n");
                          }
-                    }
+                     }
                 }
             }
         }

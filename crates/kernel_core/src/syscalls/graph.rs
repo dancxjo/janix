@@ -121,11 +121,31 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -
 pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str, _params: &[u8], out: &mut [u8]) -> Result<usize, ()> {
     match query {
         "time.now" => {
-            let resp = TimeNow {
-                system_ns: kernel.bridge.system_now(),
-                monotonic_ns: kernel.bridge.ticks(),
-            };
-            to_slice(&resp, out).map(|s| s.len()).map_err(|_| ())
+            // Verify request format (TimeNowReq is empty, but we strictly follow protocol)
+            if postcard::from_bytes::<abi::wire::time::TimeNowReq>(_params).is_ok() {
+                 use thing_models::builtins::ids::THING_TIME_INSTANCE;
+                 use thing_models::core::time::TimeNow;
+                 use abi::wire::time::TimeNowResp;
+
+                 if let Some(thing) = kernel.graph.get(THING_TIME_INSTANCE) {
+                      // Decode body
+                      if let Ok(typed) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
+                           if let Ok(time_body) = postcard::from_bytes::<TimeNow>(&typed.bytes) {
+                                let resp = TimeNowResp {
+                                    system_ns: time_body.system_ns,
+                                    monotonic_ns: time_body.monotonic_ns,
+                                };
+                                return to_slice(&resp, out).map(|s| s.len()).map_err(|_| ());
+                           }
+                      }
+                 }
+                 // If missing or decode fail, return error or fallback?
+                 // Fallback to bridge for robustness during boot?
+                 // No, strict dependency on graph ensures we verify the graph flow.
+                 Err(())
+            } else {
+                Err(())
+            }
         },
         "graph.dump" => {
             #[derive(Serialize)]

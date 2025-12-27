@@ -22,24 +22,24 @@ impl BumpAllocator {
 
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        use core::fmt::Write;
+        use crate::debug::PortWrites;
+
         let offset_ptr = self.offset.get();
         let start = *offset_ptr;
         let align_mask = layout.align() - 1;
         
-        // Calculate alignment padding
-        // We are allocating from self.heap base.
-        // address = heap_base + start
-        // we need (heap_base + start) & align_mask == 0
-        // for simplicity, let's assume heap base is aligned (it is usually)
-        // or just align the offset.
-        
         let aligned_start = (start + align_mask) & !align_mask;
         let end = aligned_start + layout.size();
+
+        // Very noisy, enable only for debug
+        // let _ = PortWrites.write_fmt(format_args!("Alloc: size={} align={} start={} end={}\n", layout.size(), layout.align(), start, end));
 
         if end <= self.heap.len() {
             *offset_ptr = end;
             (self.heap.as_ptr() as *mut u8).add(aligned_start)
         } else {
+            let _ = PortWrites.write_fmt(format_args!("Alloc FAILED: size={} align={} start={} end={} heap_len={}\n", layout.size(), layout.align(), start, end, self.heap.len()));
             null_mut()
         }
     }

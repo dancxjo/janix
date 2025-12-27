@@ -70,7 +70,20 @@ pub fn syscall_dispatch<B: HardwareBridge>(
              let params = unsafe { core::slice::from_raw_parts(params_ptr, params_len) };
              let out = unsafe { core::slice::from_raw_parts_mut(out_ptr, out_len) };
              
-             match graph::handle_graph_query(kernel, query_str, params, out) {
+             // Get PID
+             let pid = if let Some(tid) = kernel.scheduler.current {
+                 if let Some(Some(thread)) = kernel.scheduler.threads.get(tid.0 as usize - 1) {
+                     thread.process_id
+                 } else {
+                     return -1;
+                 }
+             } else {
+                 // No current thread context? Syscall usually happens in thread context.
+                 // Maybe idle/boot?
+                 return -1;
+             };
+
+             match graph::handle_graph_query(kernel, pid, query_str, params, out) {
                  Ok(len) => len as isize,
                  Err(e) => e,
              }

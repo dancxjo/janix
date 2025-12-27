@@ -70,6 +70,7 @@ impl<B: HardwareBridge> Kernel<B> {
         loop {
             self.bridge.log(thing_models::milestones::IDLE_LOOP);
             self.bridge.log("\n");
+            crate::diag::flusher::flush_diagnostics(self); // Process logs
             self.bridge.idle();
         }
     }

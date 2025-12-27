@@ -53,4 +53,16 @@ impl GraphClient {
     ) -> Result<abi::wire::graph::GraphReply, ()> {
         self.query("op", op, out_buf)
     }
+
+    pub fn call_batch(
+        &self,
+        ops: alloc::vec::Vec<abi::wire::graph::GraphOp>,
+        out_buf: &mut [u8]
+    ) -> Result<alloc::vec::Vec<abi::wire::graph::GraphReply>, ()> {
+         let batch_op = abi::wire::graph::GraphOp::Batch(ops);
+         match self.call_op(&batch_op, out_buf)? {
+             abi::wire::graph::GraphReply::BatchReply(replies) => Ok(replies),
+             _ => Err(()),
+         }
+    }
 }

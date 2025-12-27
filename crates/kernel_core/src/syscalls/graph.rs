@@ -9,7 +9,14 @@ use abi::wire::time::{TimeNowReq, TimeNowResp, TimeMonotonicReq, TimeMonotonicRe
 
 pub const SYSCALL_WAIT_FLAG: usize = 1 << 62;
 
-pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -> GraphReply {
+pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, pid: abi::ids::ProcessId, op: GraphOp) -> GraphReply {
+    use crate::graph::security;
+    if let Err(_) = security::check_write(pid, &op) {
+        // We need a PermissionDenied reply?
+        // Or generic Error.
+        return GraphReply::Error;
+    }
+
     match op {
         GraphOp::SymbolIntern { text } => {
              match kernel.symbols.intern(text) {
@@ -123,14 +130,14 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -
             for op in ops {
                 // Recursive call (handle_graph_op is &mut self on kernel, effectively)
                 // Assuming no deep recursion limit hit for now.
-                results.push(handle_graph_op(kernel, op));
+                results.push(handle_graph_op(kernel, pid, op));
             }
             GraphReply::BatchReply(results)
         },
     }
 }
 
-pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str, _params: &[u8], out: &mut [u8]) -> Result<usize, isize> {
+pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, pid: abi::ids::ProcessId, query: &str, _params: &[u8], out: &mut [u8]) -> Result<usize, isize> {
     match query {
         "time.now" => {
             // Verify request format (TimeNowReq is empty, but we strictly follow protocol)
@@ -196,7 +203,7 @@ pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str
         "op" => {
              // Deserialize params as GraphOp
              if let Ok(op) = postcard::from_bytes::<GraphOp>(_params) {
-                 let reply = handle_graph_op(kernel, op);
+                 let reply = handle_graph_op(kernel, pid, op);
                  to_slice(&reply, out).map(|s| s.len()).map_err(|_| -1)
              } else {
                  Err(-1)

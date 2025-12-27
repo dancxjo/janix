@@ -56,7 +56,10 @@ pub fn flush_diagnostics<B: HardwareBridge>(kernel: &mut Kernel<B>) {
         let msg = {
              let len = entry.msg_len as usize;
              let slice = &entry.msg_bytes[..len];
-             core::str::from_utf8(slice).unwrap_or("<invalid utf8>").to_string()
+             let s = core::str::from_utf8(slice).unwrap_or("<invalid utf8>");
+             // Echo to serial/bridge
+             kernel.bridge.log(s);
+             s.to_string()
         };
 
         // Use a static seq counter for now if entry.seq is not used

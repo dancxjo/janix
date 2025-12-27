@@ -776,6 +776,14 @@ pub extern "C" fn rust_main() -> ! {
         let bridge = Bridge;
         bridge.log(thing_models::milestones::IDLE_LOOP);
         bridge.log("\n");
+        
+        // Flush Diagnostics
+        if let Some(mut guard) = KERNEL.try_lock() {
+             if let Some(k) = (*guard).as_mut() {
+                 kernel_core::diag::flusher::flush_diagnostics(k);
+             }
+        }
+
         bridge.idle();
     }
 }

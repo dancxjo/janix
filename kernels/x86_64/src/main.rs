@@ -230,24 +230,80 @@ pub extern "C" fn rust_main() -> ! {
             OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
         };
 
+
+        // --- CMDLINE PARSING (Rudimentary) ---
+        let mut smoke_target = None;
+        if let Some(resp) = limine::requests::KERNEL_FILE_REQUEST.get_response() {
+            if let Some(file) = resp.kernel_file() {
+                if let Some(cmd) = file.cmdline() {
+                    if let Ok(cmd_str) = core::str::from_utf8(cmd.to_bytes()) {
+                         // Looking for "thingos.smoke=<name>"
+                         // Very basic split
+                         for part in cmd_str.split(' ') {
+                             if let Some(rest) = part.strip_prefix("thingos.smoke=") {
+                                  smoke_target = Some(rest.trim());
+                                  k.bridge.log("SMOKE MODE: Target is ");
+                                  k.bridge.log(rest);
+                                  k.bridge.log("\n");
+                             }
+                         }
+                    }
+                }
+            }
+        }
+
+
+        // --- MODULE LOADING ---
         k.bridge.log("Scanning modules...\n");
         let mut app_load_virt_base = 0x2000_0000u64;
+
+        enum ModuleRole {
+            App,
+            Driver,
+            Debug,
+            Ignore,
+        }
+
+        fn get_module_role(name: &str) -> ModuleRole {
+            if name.contains("syscall_crud_smoke") { return ModuleRole::Debug; }
+            if name.contains("keylog") { return ModuleRole::Driver; } // Or Debug/Ignore
+            if name.contains("ps2_keyboard") { return ModuleRole::Driver; }
+            ModuleRole::App
+        }
 
         if let Some(resp) = MODULE_REQUEST.get_response() {
             for module in resp.modules() {
                 let name = module.path().to_str().unwrap_or("unknown");
-                if name.contains("keylog") {
-                    k.bridge.log("Skipping keylog module.\n");
-                    continue;
-                }
-                if name.contains("syscall_crud_smoke") {
-                    k.bridge.log("Skipping syscall_crud_smoke module.\n");
-                    continue;
-                }
-                if name.contains("ps2_keyboard") {
-                     k.bridge.log("Skipping ps2_keyboard module.\n");
-                     continue;
-                }
+                let role = get_module_role(name);
+                
+                let should_spawn = match role {
+                    ModuleRole::App => true,
+                    ModuleRole::Driver => {
+                         k.bridge.log("Skipping module '");
+                         k.bridge.log(name);
+                         k.bridge.log("' (role=driver, not enabled)\n");
+                         false
+                    },
+                    ModuleRole::Debug => {
+                        let is_target = smoke_target.map(|t| name.contains(t)).unwrap_or(false);
+                         if is_target {
+                             true
+                         } else {
+                             k.bridge.log("Skipping module '");
+                             k.bridge.log(name);
+                             k.bridge.log("' (role=debug, smoke mode not enabled)\n");
+                             false
+                         }
+                    },
+                    ModuleRole::Ignore => {
+                         k.bridge.log("Skipping module '");
+                         k.bridge.log(name);
+                         k.bridge.log("' (role=ignore)\n");
+                         false
+                    },
+                };
+
+                if !should_spawn { continue; }
 
                 let base = module.addr();
                 let len = module.size() as usize;
@@ -370,16 +426,17 @@ pub extern "C" fn rust_main() -> ! {
                                   type_id: TypeId(THING_LINK_KIND.0 as u128),
                                   codec_id: CodecId::POSTCARD,
                                   bytes: link_bytes,
-                             };
-                             
-                             if let Ok(lb) = ThingBody::from(&typed_link) {
-                                  k.graph.create_thing(THING_LINK_KIND, lb);
-                             }
+                              };
+                              
+                              if let Ok(lb) = ThingBody::from(&typed_link) {
+                                   k.graph.create_thing(THING_LINK_KIND, lb);
+                              }
                         }
                     }
                 }
             }
         }
+
     }
     
     // Boot Initialization

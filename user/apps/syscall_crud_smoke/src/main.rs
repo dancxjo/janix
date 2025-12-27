@@ -11,7 +11,7 @@ use abi::wire::typed::{TypedBytes, TypeId, CodecId};
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     let c = StdoutConsole;
-    c.write_str("\n[TEST] Starting Syscall CRUD Smoke Test...\n");
+    c.write_str("\nSYSCALL_CRUD_SMOKE: START\n");
 
     let client = GraphClient::new();
     let mut buf = [0u8; 4096];

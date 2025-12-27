@@ -15,6 +15,9 @@ pub mod intent;
 pub mod observation;
 pub mod result;
 pub mod diag;
+pub mod prelude;
+pub mod macros;
+pub mod thing_builders;
 
 pub use kind::*;
 pub use link::*;

@@ -124,20 +124,22 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     fs::copy(&bin_path, boot_dir.join("kernel"))
         .with_context(|| format!("Failed to copy kernel from {:?}", bin_path))?;
 
-    // Copy Modules
-    let modules_dir = boot_dir.join("modules");
-    fs::create_dir_all(&modules_dir)?;
-    for app in &user_apps {
-        let app_bin = root.join("user/target/x86_64-unknown-none/debug").join(app);
-        fs::copy(&app_bin, modules_dir.join(app))
-            .with_context(|| format!("Failed to copy app {} from {:?}", app, app_bin))?;
-    }
 
-    // Create dummy for the other architecture's RTC driver to satisfy limine.conf
-    if env == "x86_64" {
-        fs::write(modules_dir.join("rtc_aarch64"), "dummy")?;
-    } else {
-        fs::write(modules_dir.join("rtc_x86"), "dummy")?;
+    // Copy Apps and Drivers (New Layout)
+    let apps_dir = boot_dir.join("apps");
+    fs::create_dir_all(&apps_dir)?;
+    let drivers_dir = boot_dir.join("drivers");
+    fs::create_dir_all(&drivers_dir)?;
+
+    let driver_names = ["ps2_keyboard", "ps2_mouse", "rtc_x86", "rtc_aarch64"];
+
+    for app in &user_apps {
+        let is_driver = driver_names.contains(app);
+        let dest_dir = if is_driver { &drivers_dir } else { &apps_dir };
+
+        let app_bin = root.join("user/target/x86_64-unknown-none/debug").join(app);
+        fs::copy(&app_bin, dest_dir.join(app))
+            .with_context(|| format!("Failed to copy app/driver {} from {:?}", app, app_bin))?;
     }
 
     // Copy Fonts

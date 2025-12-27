@@ -26,7 +26,6 @@ pub extern "C" fn _start() -> ! {
     loop {
         // 1. Locate SystemTime if unknown
         if sys_time_id.is_none() {
-             // Scan simple range
              // Scan dynamic range
               for i in 268435456..268435556 {
                   let op = GraphOp::GetThing { id: abi::ids::ThingId(i) };
@@ -47,14 +46,16 @@ pub extern "C" fn _start() -> ! {
                         // Decode body
                         if let Ok(props) = postcard::from_bytes::<SystemTimeProps>(&tb.bytes) {
                              let (h, m, s) = format_hms(props.unix_seconds);
-                             c.write_str("\rCLOCK: ");
+                             c.write_str("CLOCK: ");
                              c.write_2d(h);
                              c.write_str(":");
                              c.write_2d(m);
                              c.write_str(":");
                              c.write_2d(s);
-                             c.write_str("   \n");
+                             c.write_str("   \r"); // Use \r to overwrite line but let's see logging first
                         }
+             } else {
+                 c.write_str("CLOCK: GetThing failed\n");
              }
         } else {
              c.write_str("CLOCK: Waiting for SystemTime...\n");

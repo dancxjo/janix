@@ -93,6 +93,7 @@ fn print_hex(bridge: &Bridge, val: u64) {
 }
 
 const BOOT_STACK_SIZE: usize = 65536;
+
 #[repr(align(16))]
 struct AlignedStack([u8; BOOT_STACK_SIZE]);
 
@@ -447,7 +448,7 @@ pub extern "C" fn rust_main() -> ! {
                     sniff: sniff_val,
                     valid: is_valid,
                 };
-
+                
                 let mod_id_bytes = postcard::to_allocvec(&mod_body).unwrap();
                 let mod_tb = ThingBody::from(&TypedBytes {
                     type_id: TypeId(THING_MODULE_KIND.0 as u128),

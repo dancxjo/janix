@@ -62,20 +62,6 @@ fn run() -> Result<(), ()> {
         Err(_) => debug::log("RTC: Link failed\n"),
     }
 
-    loop {
-        let mut sample = RtcSample::default();
-        match local_rtc_read(&mut sample) {
-            Ok(_) => {
-                let unix_ts = ymd_to_unix(sample);
-                
-                let props = SystemTimeProps { unix_seconds: unix_ts };
-                let bytes = postcard::to_allocvec(&props).map_err(|_| ())?;
-                let body = TypedBytes { 
-                    type_id: TypeId(200), 
-                    codec_id: CodecId::POSTCARD, 
-                    bytes 
-                };
-                
                 let op = GraphOp::UpdateThing { id: sys_time_id, value: body };
                 let _ = client.call_op(&op, &mut buf);
             },

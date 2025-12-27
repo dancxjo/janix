@@ -13,3 +13,6 @@ pub const SYSCALL_TYPEDEF_GET: usize = 201;
 
 pub const SYSCALL_YIELD: usize = 2;
 pub const SYS_EAGAIN: isize = -11;
+
+// Time
+pub const SYSCALL_RTC_READ: usize = 300;

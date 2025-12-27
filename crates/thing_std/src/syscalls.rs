@@ -1,4 +1,4 @@
-use abi::{SysRet, SYSCALL_DRIVER_WAIT, SYSCALL_DRIVER_PUBLISH, SYSCALL_GRAPH};
+use abi::{SysRet, SYSCALL_DRIVER_WAIT, SYSCALL_DRIVER_PUBLISH, SYSCALL_GRAPH, SYSCALL_RTC_READ};
 use abi::wire::graph::GraphOp;
 use core::arch::asm;
 
@@ -32,6 +32,17 @@ pub unsafe fn syscall3(n: usize, a1: usize, a2: usize, a3: usize) -> SysRet {
         options(nostack, preserves_flags)
     );
     ret
+}
+
+pub fn rtc_read(out: &mut abi::wire::time::RtcSample) -> Result<(), ()> {
+    let ret = unsafe {
+        syscall2(SYSCALL_RTC_READ, out as *mut _ as usize, 0)
+    };
+    if ret == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
 }
 
 pub fn driver_wait(out_buf: &mut [u8]) -> Result<usize, ()> {
@@ -120,7 +131,7 @@ unsafe fn syscall6(n: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usi
     ret
 }
 
-pub fn graph_query(query: &str, params: &[u8], out: &mut [u8]) -> Result<usize, ()> {
+pub fn graph_query(query: &str, params: &[u8], out: &mut [u8]) -> Result<usize, isize> {
     let ret = unsafe {
         syscall6(
             SYSCALL_GRAPH,
@@ -135,7 +146,7 @@ pub fn graph_query(query: &str, params: &[u8], out: &mut [u8]) -> Result<usize, 
     if ret >= 0 {
         Ok(ret as usize)
     } else {
-        Err(())
+        Err(ret)
     }
 }
 

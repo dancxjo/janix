@@ -12,6 +12,7 @@ pub mod font;
 pub use client::GraphClient;
 pub use console::{Console, StdoutConsole};
 pub use typed::ThingType;
+pub use syscalls::rtc_read;
 
 extern crate alloc;
 use core::alloc::{GlobalAlloc, Layout};

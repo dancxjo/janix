@@ -28,7 +28,19 @@ impl GraphClient {
         // Syscall
         // We reuse out_buf for the raw response bytes?
         // `query` takes `out` buffer.
-        let used = syscalls::graph_query(method, req_slice, out_buf)?;
+        // Loop until success or non-retryable error
+        let used = loop {
+            match syscalls::graph_query(method, req_slice, out_buf) {
+                Ok(len) => break len,
+                Err(e) if e == abi::syscall_defs::SYS_EAGAIN => {
+                     // Busy wait / yield
+                     // In real OS we might sched_yield, here we rely on preemption
+                     core::hint::spin_loop();
+                     continue;
+                },
+                Err(_) => return Err(()),
+            }
+        };
 
         let resp_slice = &out_buf[..used];
         let resp = postcard::from_bytes(resp_slice).map_err(|_| ())?;

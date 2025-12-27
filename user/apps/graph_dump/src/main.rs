@@ -14,6 +14,8 @@ use thing_models::abi::wire::graph::{GraphOp, GraphReply};
 use thing_models::abi::{ThingId, SymbolId};
 use thing_models::builtins::ids::*;
 use thing_models::kind::KindBody;
+use thing_models::core::process::ProcessBody;
+use thing_models::builtins::core_kinds::BootProgramBody;
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -35,6 +37,7 @@ pub extern "C" fn _start() -> ! {
     kind_cache.insert(THING_LINK_KIND, "Link".into());
     kind_cache.insert(THING_KIND_KIND, "Kind".into());
     kind_cache.insert(THING_SCHEMA_KIND, "Schema".into());
+    kind_cache.insert(THING_GRAPH_KIND, "Graph".into());
 
     loop {
         perform_dump(&g, &c, &mut kind_cache);
@@ -47,6 +50,7 @@ pub extern "C" fn _start() -> ! {
 struct NodeInfo {
     id: ThingId,
     kind: ThingId,
+    data: Vec<u8>,
 }
 
 struct LinkInfo {
@@ -72,7 +76,7 @@ fn resolve_kind_name(g: &GraphClient, id: ThingId, cache: &mut BTreeMap<ThingId,
     // 1. Get the Thing (Type Definition)
     let op_get = GraphOp::GetThing { id };
     if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op_get, buf) {
-         // 2. Decode as KindBody
+         // 2. Decode as KindBody (Types are Things!)
         if let Ok(kind_body) = postcard::from_bytes::<KindBody>(&tb.bytes) {
             // 3. Resolve Symbol
             if let Some(name) = resolve_symbol(g, kind_body.name, buf) {
@@ -104,7 +108,11 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole, kind_cache: &mut BTreeMap<Th
     while let Some(curr) = frontier.pop_front() {
         let op_get = GraphOp::GetThing { id: curr };
         if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op_get, &mut buf_scratch) {
-             nodes_out.push(NodeInfo { id: curr, kind: ThingId(tb.type_id.0 as u64) });
+             nodes_out.push(NodeInfo { 
+                 id: curr, 
+                 kind: ThingId(tb.type_id.0 as u64),
+                 data: tb.bytes.to_vec() 
+            });
         }
 
         let op_scan = GraphOp::ScanLinks { from: Some(curr), to: None, kind: None };
@@ -132,7 +140,30 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole, kind_cache: &mut BTreeMap<Th
     
     for n in nodes_out {
         let kind_str = resolve_kind_name(g, n.kind, kind_cache, &mut buf_scratch, c);
-        let _ = c.write_str(&format!("(t{} :{}) {{}}\n", n.id.0, kind_str));
+        // Print header part
+        let _ = c.write_str(&format!("(t{} :{}) ", n.id.0, kind_str));
+        
+        // Print body part
+        match n.kind {
+            THING_PROCESS_KIND => {
+                 if let Ok(b) = postcard::from_bytes::<ProcessBody>(&n.data) {
+                      let name_str = resolve_symbol(g, b.name, &mut buf_scratch).unwrap_or_else(|| format!("{}", b.name.0));
+                      let _ = c.write_str(&format!("{{ pid: {}, name: \"{}\", state: {:?} }}\n", b.pid, name_str, b.state));
+                 } else {
+                      let _ = c.write_str("{ <decode failed> }\n");
+                 }
+            },
+            THING_BOOT_PROGRAM_KIND => {
+                 if let Ok(b) = postcard::from_bytes::<BootProgramBody>(&n.data) {
+                     let _ = c.write_str(&format!("{{ name: \"{}\", binary: \"{}\", priority: {} }}\n", b.name, b.binary, b.priority));
+                 } else {
+                      let _ = c.write_str("{ <decode failed> }\n");
+                 }
+            },
+            _ => {
+                 let _ = c.write_str("{}\n");
+            }
+        }
     }
 
     for l in links_out {

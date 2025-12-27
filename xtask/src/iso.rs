@@ -46,9 +46,14 @@ pub fn run(env: String) -> Result<()> {
 
     // 2.5 Build User Apps
     println!("==> Building user apps for {}...", env);
-    let user_apps = ["graph_dump", "ps2_keyboard", "keylog", "syscall_crud_smoke", "clock", "sleep_smoke"];
+    let mut user_apps = vec!["graph_dump", "ps2_keyboard", "keylog", "syscall_crud_smoke", "clock", "sleep_smoke"];
+    if env == "x86_64" {
+        user_apps.push("rtc_x86");
+    } else if env == "aarch64" {
+        user_apps.push("rtc_aarch64");
+    }
 
-    for app in user_apps {
+    for app in &user_apps {
         let status = Command::new(&cargo)
             .arg("build")
             // Use manifest path explicitly since user apps are in a different workspace
@@ -111,10 +116,17 @@ pub fn run(env: String) -> Result<()> {
     // Copy Modules
     let modules_dir = boot_dir.join("modules");
     fs::create_dir_all(&modules_dir)?;
-    for app in user_apps {
+    for app in &user_apps {
         let app_bin = root.join("user/target/x86_64-unknown-none/debug").join(app);
         fs::copy(&app_bin, modules_dir.join(app))
             .with_context(|| format!("Failed to copy app {} from {:?}", app, app_bin))?;
+    }
+
+    // Create dummy for the other architecture's RTC driver to satisfy limine.conf
+    if env == "x86_64" {
+        fs::write(modules_dir.join("rtc_aarch64"), "dummy")?;
+    } else {
+        fs::write(modules_dir.join("rtc_x86"), "dummy")?;
     }
 
     // Copy Fonts

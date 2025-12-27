@@ -1,5 +1,16 @@
 use serde::{Serialize, Deserialize};
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+#[repr(C)]
+pub struct RtcSample {
+    pub year: u16,
+    pub mon: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub min: u8,
+    pub sec: u8,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TimeNowReq {}
 

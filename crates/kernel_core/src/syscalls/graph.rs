@@ -152,7 +152,7 @@ pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str
                  let wake = now.saturating_add(req.duration_ns);
                  
                  if now < wake {
-                     // kernel.scheduler.sleep_current_until(wake); // Busy wait
+                     kernel.scheduler.sleep_current_until(wake);
                      return Err(abi::syscall_defs::SYS_EAGAIN);
                  }
                  
@@ -166,7 +166,7 @@ pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str
             if let Ok(req) = postcard::from_bytes::<TimeSleepUntilReq>(_params) {
                  let now = crate::time::monotonic_ns();
                  if now < req.wake_monotonic_ns {
-                     // kernel.scheduler.sleep_current_until(req.wake_monotonic_ns); // Busy wait
+                     kernel.scheduler.sleep_current_until(req.wake_monotonic_ns);
                      return Err(abi::syscall_defs::SYS_EAGAIN);
                  }
 
@@ -203,16 +203,13 @@ pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str
                // V0: spin wait.
                // target kind: THING_KEY_EVENT_KIND (211)
                let kind = thing_models::builtins::ids::THING_KEY_EVENT_KIND;
-               loop {
+                   // Non-blocking poll
                    if let Some(next_id) = kernel.graph.next_thing_of_kind(kind, last_seen) {
                        if let Some(thing) = kernel.graph.get(next_id) {
-                            // serialize Thing
                             return to_slice(thing, out).map(|s| s.len()).map_err(|_| -1);
                        }
                    }
-                   // Yield
-                   core::hint::spin_loop(); 
-               }
+                   return Err(abi::syscall_defs::SYS_EAGAIN);
             } else {
                 Err(-1)
             }

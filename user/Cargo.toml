@@ -9,6 +9,8 @@ members = [
   "apps/typed_test",
   "apps/syscall_crud_smoke",
   "apps/sleep_smoke",
+  "drivers/rtc_x86",
+  "drivers/rtc_aarch64",
 ]
 
 

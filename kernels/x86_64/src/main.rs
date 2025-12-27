@@ -321,10 +321,10 @@ pub extern "C" fn rust_main() -> ! {
                 let should_spawn = match role {
                     ModuleRole::App => true,
                     ModuleRole::Driver => {
-                         k.bridge.log("Skipping module '");
+                         k.bridge.log("Spawning driver '");
                          k.bridge.log(name);
-                         k.bridge.log("' (role=driver, not enabled)\n");
-                         false
+                         k.bridge.log("'\n");
+                         true
                     },
                     ModuleRole::Debug => {
                         let is_target = smoke_target.map(|t| name.contains(t)).unwrap_or(false);

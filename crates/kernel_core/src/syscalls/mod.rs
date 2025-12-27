@@ -1,6 +1,7 @@
 pub mod graph;
 pub mod driver;
 pub mod typed;
+pub mod time;
 
 use crate::Kernel;
 use hw::HardwareBridge;
@@ -21,6 +22,9 @@ pub fn syscall_dispatch<B: HardwareBridge>(
     // bridge log usually takes &str.
     // Let's use if/match to print only interesting ones.
     match num {
+        SYSCALL_RTC_READ => {
+             time::sys_rtc_read(kernel, a1 as *mut u8) as isize
+        },
         SYSCALL_YIELD => {
             // kernel.scheduler.yield_thread();
             0

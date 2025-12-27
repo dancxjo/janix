@@ -35,7 +35,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 name = "clock"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "models",
+ "postcard",
  "serde",
  "thing_std 0.1.0",
 ]
@@ -210,6 +212,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a338cc41d27e6cc6dce6cefc13a0729dfbb81c262b1f519331575dd80ef3067f"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "rtc_aarch64"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "postcard",
+ "serde",
+ "thing_std 0.1.0",
+]
+
+[[package]]
+name = "rtc_x86"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "postcard",
+ "serde",
+ "thing_std 0.1.0",
 ]
 
 [[package]]

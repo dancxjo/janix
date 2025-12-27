@@ -139,6 +139,56 @@ impl HardwareBridge for Bridge {
             interrupts::syscall::set_kernel_stack(stack_top);
         }
     }
+
+    fn rtc_read(&self, out: &mut abi::wire::time::RtcSample) {
+        unsafe {
+            // Helper to read CMOS register
+            let mut read_reg = |reg: u8| -> u8 {
+                asm!("out dx, al", in("dx") 0x70u16, in("al") reg);
+                let val: u8;
+                asm!("in al, dx", out("al") val, in("dx") 0x71u16);
+                val
+            };
+
+            // Wait for update in progress (Register A, bit 7)
+            while (read_reg(0x0A) & 0x80) != 0 {
+                core::hint::spin_loop();
+            }
+
+            let mut sec = read_reg(0x00);
+            let mut min = read_reg(0x02);
+            let mut hour = read_reg(0x04);
+            let mut day = read_reg(0x07);
+            let mut mon = read_reg(0x08);
+            let mut year = read_reg(0x09) as u16;
+
+            let reg_b = read_reg(0x0B);
+
+            // BCD conversion (if Bit 2 of Reg B is 0)
+            if (reg_b & 0x04) == 0 {
+                sec = (sec & 0x0F) + ((sec / 16) * 10);
+                min = (min & 0x0F) + ((min / 16) * 10);
+                hour = ((hour & 0x0F) + ((hour & 0x70) / 16 * 10)) | (hour & 0x80);
+                day = (day & 0x0F) + ((day / 16) * 10);
+                mon = (mon & 0x0F) + ((mon / 16) * 10);
+                year = (year & 0x0F) as u16 + ((year / 16) as u16 * 10);
+            }
+
+            // 12-hour format (if Bit 1 of Reg B is 0)
+            if (reg_b & 0x02) == 0 && (hour & 0x80) != 0 {
+                hour = ((hour & 0x7F) + 12) % 24;
+            }
+
+            // Century guessing (2000-2099)
+            // Real OS reads ACPI FADT century byte, we'll just assume 20xx
+            out.year = 2000 + year;
+            out.mon = mon;
+            out.day = day;
+            out.hour = hour;
+            out.min = min;
+            out.sec = sec;
+        }
+    }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
@@ -162,4 +212,6 @@ impl HardwareBridge for Bridge {
     fn resume_user_mode(&self, _context: &[u64]) -> ! {
         loop {}
     }
+    fn set_kernel_stack(&self, _: u64) {}
+    fn rtc_read(&self, _out: &mut abi::wire::time::RtcSample) {}
 }

@@ -229,6 +229,7 @@ name = "rtc_x86"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "models",
  "postcard",
  "serde",
  "thing_std 0.1.0",

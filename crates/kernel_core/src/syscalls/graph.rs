@@ -118,6 +118,15 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -
                  Err(_) => GraphReply::Error,
              }
         },
+        GraphOp::Batch(ops) => {
+            let mut results = alloc::vec::Vec::with_capacity(ops.len());
+            for op in ops {
+                // Recursive call (handle_graph_op is &mut self on kernel, effectively)
+                // Assuming no deep recursion limit hit for now.
+                results.push(handle_graph_op(kernel, op));
+            }
+            GraphReply::BatchReply(results)
+        },
     }
 }
 

@@ -132,6 +132,15 @@ pub const THING_SPAWNED_SCHEMA: ThingId = ThingId(1115);
 pub const THING_RUNS_KIND: ThingId = ThingId(116);
 pub const THING_RUNS_SCHEMA: ThingId = ThingId(1116);
 
+pub const THING_HAS_TIME_NOW_KIND: ThingId = ThingId(117);
+pub const THING_HAS_TIME_NOW_SCHEMA: ThingId = ThingId(1117);
+
+pub const THING_HAS_CONSOLE_KIND: ThingId = ThingId(118);
+pub const THING_HAS_CONSOLE_SCHEMA: ThingId = ThingId(1118);
+
+pub const THING_HAS_KEYBOARD_KIND: ThingId = ThingId(119);
+pub const THING_HAS_KEYBOARD_SCHEMA: ThingId = ThingId(1119);
+
 pub const THING_BOOT_ROOT: ThingId = ThingId(1000); // The Root Node
 pub const THING_LOG_ENTRY_KIND: ThingId = ThingId(220);
 pub const THING_LOG_ENTRY_SCHEMA: ThingId = ThingId(1220);

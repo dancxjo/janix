@@ -24,35 +24,7 @@ pub fn system_ns() -> u64 {
 pub fn tick(graph: &mut GraphStore, delta_ns: u64) {
     let now = MONOTONIC_NS.fetch_add(delta_ns, Ordering::Relaxed) + delta_ns;
     
-    // Update the :Time thing in the graph.
-    // We construct the body and update.
-    // note: using postcard serialization.
-    
-    // We need the struct definition. To avoid circular deps or complex imports, 
-    // we can define a local compatible struct or import from thing_models if available.
-    // Let's try to import.
-    // If thing_models is not available in kernel_core (it is, see Cargo.toml), use it.
-    
-    use thing_models::core::time::TimeNow; 
-    use thing_models::value::ThingBody;
-    use abi::wire::typed::{TypedBytes, TypeId, CodecId};
-
-    let body = TimeNow {
-        monotonic_ns: now,
-        system_ns: now, // For now equal
-    };
-
-    // Serialize
-    if let Ok(bytes) = postcard::to_allocvec(&body) {
-         let typed = TypedBytes {
-             type_id: TypeId(THING_TIME_NOW_KIND.0 as u128),
-             codec_id: CodecId::POSTCARD,
-             bytes,
-         };
-         
-         if let Ok(tb) = ThingBody::from(&typed) {
-             // Update the thing
-             let _ = graph.update_thing(THING_TIME_INSTANCE, tb);
-         }
-    }
+    // We do NOT update the graph here anymore.
+    // rtc_x86 or a userspace timekeeper is responsible for updating the TimeNow thing.
+    // This avoids conflicts and pushing graph updates from interrupt context.
 }

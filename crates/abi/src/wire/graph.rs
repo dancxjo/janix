@@ -20,6 +20,7 @@ pub enum GraphOp<'a> {
     // Link Ops
     AddLink { from: crate::ThingId, to: crate::ThingId, kind: crate::ThingId },
     ScanLinks { from: Option<crate::ThingId>, to: Option<crate::ThingId>, kind: Option<crate::ThingId> },
+    Batch(alloc::vec::Vec<GraphOp<'a>>),
     DeleteThing { id: crate::ThingId }, // Putting it here to group structure
 }
 
@@ -32,6 +33,7 @@ pub enum GraphReply {
     Thing { bytes: alloc::vec::Vec<u8> },
     TypedValue(TypedBytes),
     Links(alloc::vec::Vec<(crate::ThingId, crate::ThingId, crate::ThingId)>),
+    BatchReply(alloc::vec::Vec<GraphReply>),
     Created { id: crate::ThingId },
 }
 

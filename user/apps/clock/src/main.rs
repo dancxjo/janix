@@ -8,11 +8,9 @@ use models::Thing;
 use abi::ids::ThingId;
 use abi::wire::graph::{GraphOp, GraphReply};
 use serde::Deserialize;
+use models::core::time::TimeNow;
 
-#[derive(Deserialize)]
-struct SystemTimeProps {
-    unix_seconds: u64,
-}
+
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -26,26 +24,29 @@ pub extern "C" fn _start() -> ! {
     loop {
         // 1. Locate SystemTime if unknown
         if sys_time_id.is_none() {
-             // Scan dynamic range
-              for i in 268435456..268435556 {
-                  let op = GraphOp::GetThing { id: abi::ids::ThingId(i) };
-                  if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
-                       // In v0.2, type_id is the Kind
-                       if tb.type_id.0 == 200 {
-                            sys_time_id = Some(abi::ids::ThingId(i));
-                            c.write_str("CLOCK: Found SystemTime\n");
-                            break;
-                       }
-                  }
-              }
+             // Link based discovery
+             // Root (1000) -> HAS_TIME_NOW (117) -> ?
+             let op = GraphOp::ScanLinks { 
+                 from: Some(abi::ids::ThingId(1000)), 
+                 to: None, 
+                 kind: Some(abi::ids::ThingId(117)) 
+             };
+             
+             if let Ok(GraphReply::Links(list)) = g.call_op(&op, &mut buf) {
+                 if let Some((_, target, _)) = list.first() {
+                     sys_time_id = Some(*target);
+                     c.write_str("CLOCK: Found SystemTime via link\n");
+                 }
+             }
         }
         
         if let Some(id) = sys_time_id {
              let op = GraphOp::GetThing { id: abi::ids::ThingId(id.0) };
              if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
                         // Decode body
-                        if let Ok(props) = postcard::from_bytes::<SystemTimeProps>(&tb.bytes) {
-                             let (h, m, s) = format_hms(props.unix_seconds);
+                        if let Ok(props) = postcard::from_bytes::<TimeNow>(&tb.bytes) {
+                             // SystemTime is ns
+                             let (h, m, s) = format_hms(props.system_ns / 1_000_000_000);
                              c.write_str("CLOCK: ");
                              c.write_2d(h);
                              c.write_str(":");

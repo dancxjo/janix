@@ -39,7 +39,7 @@ pub extern "C" fn _start() -> ! {
     let root_link_body = models::link::LinkBody {
         from: THING_BOOT_ROOT,
         to: keyboard_id,
-        predicate: THING_HAS_DEVICE_KIND,
+        predicate: models::builtins::ids::THING_HAS_KEYBOARD_KIND,
     };
     let root_link_thing = Thing {
          id: root_link_id,

@@ -134,7 +134,8 @@ pub extern "C" fn _start() -> ! {
                 }
             },
             Err(_) => {
-                // Should potentially spin or yield, but syscall blocks/yields effectively now (or spins in user)
+                // Spin/Yield to avoid burning CPU
+                for _ in 0..1000 { core::hint::spin_loop(); }
             }
         }
     }

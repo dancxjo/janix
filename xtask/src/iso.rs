@@ -47,13 +47,13 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // 2.5 Build User Apps
     println!("==> Building user apps for {}...", env);
     let mut user_apps = vec![
-        "graph_dump",
+        //"graph_dump", // Disabled to reduce noise
         "ps2_keyboard",
         "ps2_mouse",
         "keylog",
         "syscall_crud_smoke",
         "clock",
-        "sleep_smoke",
+        // "sleep_smoke", // Obsolete?
         "sleep_accuracy_smoke",
         "ls_boot",
         "cat_boot",

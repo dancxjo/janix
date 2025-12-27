@@ -139,9 +139,9 @@ pub extern "C" fn _start() -> ! {
 }
 
 // Global Kernel Access
+use abi::ThingId;
 use models as thing_models;
 use spin::Mutex;
-use abi::ThingId;
 use thing_models::core::fs::{DirBody, MountBody};
 
 static KERNEL: Mutex<Option<Kernel<Bridge>>> = Mutex::new(None);
@@ -1398,10 +1398,10 @@ pub extern "C" fn rust_main() -> ! {
                 // Create /boot Mount and Dirs
                 let (apps_dir_id, drivers_dir_id, fonts_dir_id) = {
                     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
-                    use thing_models::builtins::ids::*;
-                    use thing_models::value::ThingBody;
-                    use thing_models::core::fs::{MountBody, DirBody};
                     use abi::ThingId;
+                    use thing_models::builtins::ids::*;
+                    use thing_models::core::fs::{DirBody, MountBody};
+                    use thing_models::value::ThingBody;
 
                     // 1. Mount "/boot"
                     let m_body = MountBody {

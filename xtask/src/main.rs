@@ -35,6 +35,9 @@ enum Commands {
         /// Run for fixed seconds then kill (for testing)
         #[arg(long)]
         timeout_secs: Option<u64>,
+        /// Run in interactive mode (show QEMU window)
+        #[arg(long)]
+        interactive: bool,
     },
     /// Kill running QEMU instances
     Kill,
@@ -51,10 +54,12 @@ fn main() -> Result<()> {
             env,
             gdb,
             timeout_secs,
+            interactive,
         } => run::run(run::RunArgs {
             env,
             gdb,
             timeout_secs,
+            interactive,
         }),
         Commands::Kill => kill::run(),
     }

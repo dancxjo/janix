@@ -22,6 +22,9 @@ iso env="x86_64":
 run env="hosted":
     cargo run -p xtask -- run --env {{env}}
 
+play env="x86_64":
+    cargo run -p xtask -- run --env {{env}} --interactive
+
 xtask:
     cargo run -p xtask --
 

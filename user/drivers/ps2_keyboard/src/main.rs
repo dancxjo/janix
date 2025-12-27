@@ -106,6 +106,12 @@ pub extern "C" fn _start() -> ! {
                         DriverEvent::Ps2Scancode { scancode } => {
                             let is_release = (scancode & 0x80) != 0;
                             
+                            // Debug: Log first few events
+                            if stream_body.head_seq < 20 {
+                                let msg = alloc::format!("PS2Driver: scancode={:#04x}\n", scancode);
+                                std::debug::log(&msg);
+                            }
+                            
                             // Update Stream Body
                             stream_body.head_seq += 1;
                             let compact = KeyEventCompact { scancode, is_release };

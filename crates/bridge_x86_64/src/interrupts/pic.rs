@@ -40,8 +40,8 @@ pub unsafe fn init() {
     wait();
 
     // Restore masks? No, we want to control them explicitly.
-    // Unmask only Timer (IRQ0) for now.
-    outb(PIC1_DATA, 0b11111110);
+    // Unmask Timer (IRQ0) and Keyboard (IRQ1).
+    outb(PIC1_DATA, 0b11111100);
     outb(PIC2_DATA, 0b11111111);
 
     init_pit();

@@ -4,6 +4,9 @@ use crate::interrupts::pic;
 use crate::interrupts::trap::{self, TrapFrame};
 use core::arch::naked_asm;
 
+// Debug counter for IRQ1
+pub static IRQ1_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 static mut IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();
 
 pub fn init() {
@@ -167,6 +170,21 @@ extern "C" fn keyboard_interrupt_handler(_frame: &mut TrapFrame) {
         pic::notify_end_of_interrupt(33);
     }
     
+    // Debug: Increment and log occasionally
+    use core::sync::atomic::Ordering;
+    let count = IRQ1_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    // Only log first few or every 10th to avoid flood
+    if count < 20 || (count % 10 == 0) {
+        use hw::HardwareBridge;
+        let bridge = crate::Bridge;
+        // Manual formatting since we can't easily use format! here without alloc
+        bridge.log("IRQ1: count=");
+        crate::print_u64(count); // We need a helper, or just hacking it
+        bridge.log(" scancode=");
+        crate::print_hex(scancode as u64);
+        bridge.log("\n");
+    }
+
     // Pass to kernel input system
     kernel_core::input::on_ps2_scancode(scancode);
 }

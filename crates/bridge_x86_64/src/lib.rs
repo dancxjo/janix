@@ -38,6 +38,42 @@ impl Bridge {
 
 }
 
+pub fn print_u64(val: u64) {
+    let bridge = Bridge;
+    use hw::HardwareBridge;
+    
+    if val == 0 {
+        bridge.log("0");
+        return;
+    }
+
+    let mut buffer = [0u8; 20];
+    let mut i = 0;
+    let mut n = val;
+    
+    while n > 0 {
+        buffer[i] = (n % 10) as u8 + b'0';
+        n /= 10;
+        i += 1;
+    }
+    
+    while i > 0 {
+        i -= 1;
+        bridge.log(core::str::from_utf8(&[buffer[i]]).unwrap());
+    }
+}
+
+pub fn print_hex(val: u64) {
+    let bridge = Bridge;
+    use hw::HardwareBridge;
+    bridge.log("0x");
+    for i in (0..16).rev() {
+        let digit = (val >> (i * 4)) & 0xF;
+        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
+        bridge.log(core::str::from_utf8(&[c]).unwrap());
+    }
+}
+
 #[cfg(target_arch = "x86_64")]
 impl HardwareBridge for Bridge {
     fn log(&self, msg: &str) {

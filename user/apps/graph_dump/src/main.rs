@@ -7,6 +7,7 @@ use thing_std::{GraphClient, StdoutConsole, Console};
 use alloc::vec::Vec;
 use alloc::collections::{BTreeSet, VecDeque};
 use alloc::format;
+use alloc::string::String;
 use core::fmt::Write;
 
 // We use raw postcard ops or helper structs?
@@ -14,7 +15,7 @@ use core::fmt::Write;
 // We need to construct GraphOps manually for ScanLinks and GetThing.
 
 use thing_models::abi::wire::graph::{GraphOp, GraphReply};
-use thing_models::abi::ThingId;
+use thing_models::abi::{ThingId, SymbolId};
 use thing_models::builtins::ids::THING_BOOT_ROOT;
 
 #[no_mangle]
@@ -47,10 +48,19 @@ struct LinkInfo {
     pred: ThingId,
 }
 
+fn resolve_symbol(g: &GraphClient, id: u64, buf: &mut [u8]) -> Option<String> {
+    let op = GraphOp::SymbolResolve { id: SymbolId(id) };
+    if let Ok(GraphReply::SymbolResolved { text }) = g.call_op(&op, buf) {
+        Some(text)
+    } else {
+        None
+    }
+}
+
 fn perform_dump(g: &GraphClient, c: &StdoutConsole) {
     let mut frontier = VecDeque::new();
     let mut visited_nodes = BTreeSet::new();
- 
+
     // Link has ScanLinks returns (from, to, pred) tuples, not Link IDs usually?
     // ABI ScanLinks returns `Links(Vec<(ThingId, ThingId, ThingId)>)`.
     // We should track visited (from, to, pred) to avoid dupes if graph has cycles?
@@ -62,8 +72,6 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole) {
     let root = THING_BOOT_ROOT;
     frontier.push_back(root);
     visited_nodes.insert(root);
-
-
 
     let mut buf_scratch = [0u8; 4096]; // Share buffer?
 
@@ -106,18 +114,17 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole) {
     let _ = c.write_str("\n--- GQL DUMP ---\n");
     
     for n in nodes_out {
-        // Resolve Kind Symbol?
-        // We can try to resolve `n.kind`? 
-        // type_id is u64. SymbolId is u64.
-        // It's likely not the same.
-        // This is a "Gap" in the GetThing ABI for v0.2.
-        // We'll just print ID.
-        let kind_str = format!("type_{}", n.kind.0); // Placeholder
+        let kind_str = resolve_symbol(g, n.kind.0, &mut buf_scratch)
+            .unwrap_or_else(|| format!("type_{}", n.kind.0));
+
         let _ = c.write_str(&format!("(t{} :{}) {{}}\n", n.id.0, kind_str));
     }
 
     for l in links_out {
-        let _ = c.write_str(&format!("(t{})-[:{}]->(t{})\n", l.src.0, l.pred.0, l.dst.0));
+        let pred_str = resolve_symbol(g, l.pred.0, &mut buf_scratch)
+             .unwrap_or_else(|| format!("{}", l.pred.0));
+
+        let _ = c.write_str(&format!("(t{})-[:{}]->(t{})\n", l.src.0, pred_str, l.dst.0));
     }
     
     let _ = c.write_str("--- END DUMP ---\n");

@@ -8,7 +8,7 @@ use thing_std as std;
 use abi::{ThingId, SymbolId};
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use models::core::input::{KeyboardBody, KeyEventStreamBody, KeyEventCompact};
-use models::builtins::ids::{THING_KEYBOARD_KIND, THING_KEY_EVENT_STREAM_KIND, THING_EMITS_KIND, THING_LINK_KIND};
+use models::builtins::ids::{THING_KEYBOARD_KIND, THING_KEY_EVENT_STREAM_KIND, THING_EMITS_KIND, THING_LINK_KIND, THING_BOOT_ROOT, THING_OWNS_KIND};
 use models::builtins::symbols::{SYM_KEYBOARD, SYM_PS2, SYM_KEY_EVENT};
 use models::Thing;
 
@@ -33,6 +33,25 @@ pub extern "C" fn _start() -> ! {
     let _ = std::syscalls::driver_publish(&payload_bytes);
 
     std::debug::log("Published Keyboard Device\n");
+
+    // Link Root -> OWNS -> Keyboard
+    let root_link_id = ThingId(3003);
+    let root_link_body = models::link::LinkBody {
+        from: THING_BOOT_ROOT,
+        to: keyboard_id,
+        predicate: THING_OWNS_KIND,
+    };
+    let root_link_thing = Thing {
+         id: root_link_id,
+         kind: THING_LINK_KIND,
+         body: models::ThingBody::from(&root_link_body).expect("root link"),
+    };
+    let pub_bytes = postcard::to_allocvec(&root_link_thing).expect("serialize root link");
+    let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
+    let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
+    let _ = std::syscalls::driver_publish(&payload_bytes);
+    
+    std::debug::log("Linked Root -> Keyboard\n");
 
     // Create/Publish KeyEventStream
     let stream_id = ThingId(3001);

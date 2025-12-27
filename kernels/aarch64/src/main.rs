@@ -58,7 +58,6 @@ pub extern "C" fn _start() -> ! {
 
 #[no_mangle]
 pub extern "C" fn rust_main() -> ! {
-
     #[cfg(target_os = "thingos")]
     unsafe {
         // -1. Init Bridge (Exception Vectors) EARLY
@@ -68,37 +67,35 @@ pub extern "C" fn rust_main() -> ! {
         // Limine maps this as Normal memory. We will remap as Device later.
         if let Some(resp) = limine::requests::HHDM_REQUEST.get_response() {
             let offset = resp.offset();
-            
+
             // 2. Update logic UART base (Physical 0x09000000 + Offset)
             bridge_aarch64::set_uart_base(0x09000000 + offset);
-            
+
             // Should now be able to print to Normal-mapped UART
             bootlog!("Booting ThingOS (aarch64)...");
             bootlog!("UART mapped at HHDM offset 0x{:x}", offset);
 
             // 0. Init Heap (Needed for paging)
-            let info = limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
+            let info =
+                limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
 
             // 3. Init Paging & Remap UART
             paging::init(offset);
             paging::map_device_region(0x09000000, 4096);
-            
+
             bootlog!("UART remapped as Device capability.");
             early_log::log_heap_init(info);
         } else {
-             // Fallback: Blind write to Phys
-             core::ptr::write_volatile(0x0900_0000 as *mut u8, 0x46); // 'F'
-             loop {}
+            // Fallback: Blind write to Phys
+            core::ptr::write_volatile(0x0900_0000 as *mut u8, 0x46); // 'F'
+            loop {}
         }
 
         use hw::HardwareBridge;
         let bridge = Bridge;
-        
-
 
         bootlog!("Booting ThingOS (aarch64)...");
         bootlog!("Init finished, jumping to kernel");
-
     }
 
     let mut k = Kernel::new(Bridge);

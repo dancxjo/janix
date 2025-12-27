@@ -12,10 +12,10 @@ pub trait HardwareBridge {
     fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> [u64; 34];
     fn resume_user_mode(&self, context: &[u64]) -> !;
     fn set_kernel_stack(&self, stack_top: u64);
-    
+
     // Time
     fn rtc_read(&self, out: &mut abi::wire::time::RtcSample);
-    
+
     /// Returns high-resolution monotonic time in nanoseconds.
     /// Returns 0 if not available/calibrated yet.
     fn monotonic_now(&self) -> u64;

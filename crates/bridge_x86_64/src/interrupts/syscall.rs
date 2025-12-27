@@ -1,8 +1,10 @@
+use crate::gdt::{
+    KERNEL_CODE_SELECTOR, KERNEL_DATA_SELECTOR, USER_CODE_SELECTOR, USER_DATA_SELECTOR,
+};
 use core::arch::naked_asm;
-use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask, Star, KernelGsBase};
+use x86_64::registers::model_specific::{Efer, EferFlags, KernelGsBase, LStar, SFMask, Star};
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
-use crate::gdt::{KERNEL_CODE_SELECTOR, KERNEL_DATA_SELECTOR, USER_CODE_SELECTOR, USER_DATA_SELECTOR};
 
 // Scratch Layout:
 // [0]: User RSP (Temporary storage)
@@ -36,55 +38,49 @@ pub unsafe fn init() {
             USER_CODE_SELECTOR,
             USER_DATA_SELECTOR,
             KERNEL_CODE_SELECTOR,
-            KERNEL_DATA_SELECTOR
-        ).expect("Failed to setup STAR");
+            KERNEL_DATA_SELECTOR,
+        )
+        .expect("Failed to setup STAR");
     }
 
     // 4. Setup SFMask
-    SFMask::write(RFlags::INTERRUPT_FLAG | RFlags::TRAP_FLAG); 
+    SFMask::write(RFlags::INTERRUPT_FLAG | RFlags::TRAP_FLAG);
 }
 
 #[unsafe(naked)]
 unsafe extern "C" fn syscall_handler_naked() {
     naked_asm!(
         "swapgs",
-        
         // Save User RSP to Scratch[0]
         "mov gs:[0], rsp",
-        
         // Load Kernel RSP from Scratch[1]
         "mov rsp, gs:[8]",
-        
         // Push User RSP (from Scratch) onto Kernel Stack
         // We need a reg? "push qword ptr gs:[0]" is valid x86.
         "push qword ptr gs:[0]",
-
         // Stack: [User RSP]
         // Now save user context
         "push rcx", // User RIP
         "push r11", // User RFLAGS
         "push rbp",
         "push rbx",
-        "push r12", 
-        "push r13", 
-        "push r14", 
+        "push r12",
+        "push r13",
+        "push r14",
         "push r15",
-
         // Arguments setup: (RDI=a1, RSI=a2...)
         // ABI: RAX(num), RDI, RSI, RDX, R10(a4), R8(a5), R9(a6)
         // Rust Dispatch: fn(num, a1, a2, a3, a4, a5, a6)
         // Regs: RDI, RSI, RDX, RCX, R8, R9, Stack
-        
+
         // Stack Alignment Check:
-        // Pushed so far: 
+        // Pushed so far:
         // UserRSP (1) + 8 Regs (8) = 9 words.
         // RSP is Misaligned (8 mod 16).
         // Pushing R9 (Arg 6) adds 1 word. Total 10 words.
         // 10 * 8 = 80 bytes. Aligned (0 mod 16).
         // So NO padding needed before call.
-
-        "push r9",    // Arg 6 (a6) -> Stack
-
+        "push r9", // Arg 6 (a6) -> Stack
         // Register shuffle
         // a5 (R8) -> R9
         "mov r9, r8",
@@ -98,15 +94,10 @@ unsafe extern "C" fn syscall_handler_naked() {
         "mov rsi, rdi",
         // num (RAX) -> RDI
         "mov rdi, rax",
-        
         "sti", // Enable Interrupts
-        
         "call syscall_dispatch",
-        
-        "cli", // Disable Interrupts
-        
+        "cli",        // Disable Interrupts
         "add rsp, 8", // Pop Arg6 (No Padding)
-        
         // Restore Regs
         "pop r15",
         "pop r14",
@@ -116,24 +107,26 @@ unsafe extern "C" fn syscall_handler_naked() {
         "pop rbp",
         "pop r11",
         "pop rcx",
-        
         // Restore User RSP
         // Pop user rsp into Scratch[0] (or directly to RSP? No we need swapgs)
         // We can't pop to GS:[0] directly? "pop qword ptr gs:[0]" is valid.
         "pop qword ptr gs:[0]",
-        
         // Switch stack
         "mov rsp, gs:[0]",
-        
         "swapgs",
-        
         "sysretq"
     );
 }
 
 #[no_mangle]
 extern "C" fn syscall_dispatch(
-    num: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize, a6: usize
+    num: usize,
+    a1: usize,
+    a2: usize,
+    a3: usize,
+    a4: usize,
+    a5: usize,
+    a6: usize,
 ) -> isize {
     unsafe {
         if let Some(hook) = SYSCALL_HOOK {
@@ -144,10 +137,13 @@ extern "C" fn syscall_dispatch(
     }
 }
 
-pub static mut SYSCALL_HOOK: Option<fn(usize, usize, usize, usize, usize, usize, usize) -> isize> = None;
+pub static mut SYSCALL_HOOK: Option<fn(usize, usize, usize, usize, usize, usize, usize) -> isize> =
+    None;
 
 pub fn set_syscall_hook(hook: fn(usize, usize, usize, usize, usize, usize, usize) -> isize) {
-    unsafe { SYSCALL_HOOK = Some(hook); }
+    unsafe {
+        SYSCALL_HOOK = Some(hook);
+    }
 }
 
 pub fn set_kernel_stack(stack_top: u64) {

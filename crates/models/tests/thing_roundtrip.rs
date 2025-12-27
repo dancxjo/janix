@@ -20,7 +20,7 @@ fn test_thing_body_roundtrip() {
 fn test_thing_roundtrip() {
     let original_body_content = TestStruct { a: 1, b: 2 };
     let body = ThingBody::from(&original_body_content).unwrap();
-    
+
     let thing = Thing {
         id: ThingId(10),
         kind: ThingId(20),
@@ -29,9 +29,9 @@ fn test_thing_roundtrip() {
 
     let bytes = postcard::to_allocvec(&thing).expect("encode thing");
     let decoded: Thing = postcard::from_bytes(&bytes).expect("decode thing");
-    
+
     assert_eq!(thing, decoded);
-    
+
     // Verify body content persists
     let struct_decoded: TestStruct = decoded.body.decode().expect("decode body");
     assert_eq!(struct_decoded, original_body_content);
@@ -44,7 +44,7 @@ fn test_link_body_roundtrip() {
         to: ThingId(2),
         predicate: ThingId(3),
     };
-    
+
     let bytes = postcard::to_allocvec(&link).expect("encode link");
     let decoded: LinkBody = postcard::from_bytes(&bytes).expect("decode link");
     assert_eq!(link, decoded);

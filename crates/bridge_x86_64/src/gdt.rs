@@ -1,9 +1,8 @@
-use x86_64::VirtAddr;
-use x86_64::structures::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector};
-use x86_64::structures::tss::TaskStateSegment;
-use x86_64::instructions::segmentation::{CS, DS, ES, SS, Segment};
+use x86_64::instructions::segmentation::{Segment, CS, DS, ES, SS};
 use x86_64::instructions::tables::load_tss;
-
+use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
+use x86_64::structures::tss::TaskStateSegment;
+use x86_64::VirtAddr;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
@@ -11,11 +10,16 @@ static mut TSS: TaskStateSegment = TaskStateSegment::new();
 static mut GDT: GlobalDescriptorTable = GlobalDescriptorTable::new();
 
 // Selectors
-pub static mut KERNEL_CODE_SELECTOR: SegmentSelector = SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring0);
-pub static mut KERNEL_DATA_SELECTOR: SegmentSelector = SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring0);
-pub static mut USER_CODE_SELECTOR: SegmentSelector = SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring3);
-pub static mut USER_DATA_SELECTOR: SegmentSelector = SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring3);
-pub static mut TSS_SELECTOR: SegmentSelector = SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring0);
+pub static mut KERNEL_CODE_SELECTOR: SegmentSelector =
+    SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring0);
+pub static mut KERNEL_DATA_SELECTOR: SegmentSelector =
+    SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring0);
+pub static mut USER_CODE_SELECTOR: SegmentSelector =
+    SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring3);
+pub static mut USER_DATA_SELECTOR: SegmentSelector =
+    SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring3);
+pub static mut TSS_SELECTOR: SegmentSelector =
+    SegmentSelector::new(0, x86_64::PrivilegeLevel::Ring0);
 
 pub unsafe fn init() {
     // 1. Setup TSS
@@ -33,7 +37,7 @@ pub unsafe fn init() {
     let u_data = GDT.add_entry(Descriptor::user_data_segment());
     let u_code = GDT.add_entry(Descriptor::user_code_segment());
     let tss = GDT.add_entry(Descriptor::tss_segment(&TSS));
-    
+
     KERNEL_CODE_SELECTOR = k_code;
     KERNEL_DATA_SELECTOR = k_data;
     USER_DATA_SELECTOR = u_data;
@@ -47,7 +51,7 @@ pub unsafe fn init() {
     DS::set_reg(k_data);
     ES::set_reg(k_data);
     SS::set_reg(k_data);
-    
+
     load_tss(tss);
 }
 
@@ -56,4 +60,3 @@ pub unsafe fn set_kernel_stack(stack_top: u64) {
     // Writes to static mut TSS are unsafe
     TSS.privilege_stack_table[0] = virt;
 }
-

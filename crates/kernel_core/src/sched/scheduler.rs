@@ -77,26 +77,27 @@ impl Scheduler {
             graph_enabled: false,
         }
     }
-    
+
     pub fn sleep_current_until(&mut self, wake_ns: TimeNs) {
         if let Some(tid) = self.current {
             if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize - 1) {
                 thread.state = ThreadState::Sleeping;
                 thread.sleep_until_ns = wake_ns;
-                
+
                 // Add to sleep queue
                 let entry = SleepEntry {
                     thread_id: tid,
                     wake_at_ns: wake_ns,
                 };
                 self.sleep_queue.push(entry);
-                // Keep sorted reverse (min at end) or just sort on insert? 
+                // Keep sorted reverse (min at end) or just sort on insert?
                 // Simple sort for now.
-                self.sleep_queue.sort_by(|a, b| b.wake_at_ns.cmp(&a.wake_at_ns)); // Pop from end = min
+                self.sleep_queue
+                    .sort_by(|a, b| b.wake_at_ns.cmp(&a.wake_at_ns)); // Pop from end = min
             }
         }
     }
-    
+
     pub fn wake_sleepers(&mut self, now_ns: TimeNs) {
         // Queue is sorted descending by wake time (min at end).
         // Pop while last().wake_at_ns <= now_ns
@@ -104,7 +105,7 @@ impl Scheduler {
             if last.wake_at_ns <= now_ns {
                 let entry = self.sleep_queue.pop().unwrap();
                 let tid = entry.thread_id;
-                
+
                 if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize - 1) {
                     if thread.state == ThreadState::Sleeping {
                         thread.state = ThreadState::Runnable;
@@ -202,46 +203,46 @@ impl Scheduler {
         if let Some(next_tid) = self.pick_next() {
             self.current = Some(next_tid);
             if let Some(Some(thread)) = self.threads.get_mut(next_tid.0 as usize - 1) {
-                 thread.state = ThreadState::Running;
-                 
-                 // _bridge.log("SCHED: Switch to ");
-                 // _bridge.log(&thread.name);
-                 // _bridge.log("\n");
-                 
-                 _bridge.set_kernel_stack(thread.kernel_stack_top);
+                thread.state = ThreadState::Running;
 
-                 *current_context = thread.context;
+                // _bridge.log("SCHED: Switch to ");
+                // _bridge.log(&thread.name);
+                // _bridge.log("\n");
+
+                _bridge.set_kernel_stack(thread.kernel_stack_top);
+
+                *current_context = thread.context;
             }
         } else {
-             // Continue running current? 
-             // If pick_next returned None, it means run_queue is empty.
-             // If we just pushed current back to run_queue, pick_next shouldn't be None!
-             // Unless current blocked or died.
-             // If current blocked, we have no threads.
-             // We must have an idle thread or just return (resume current context which is... kernel loop context?)
-             // If we were in App, and App blocks. 
-             // We are in Trap Handler.
-             // We return to App... and App just spins? No, if we return to App execution it continues.
-             // But if we want to run Idle Loop?
-             // We don't have explicit Idle context saved.
-             // We can't switch to Idle Loop easily if we are in interrupt handler on top of App stack.
-             
-             // For now, if no threads, we define current = None.
-             self.current = None;
-             
-             // If we were running an App, and we set current=None, we return to App execution?
-             // That's dangerous if we considered it "blocked".
-             // But here we only handle RR preemption.
-             // If thread blocked, it removed itself from run_queue beforehand.
-             
-             // If we return, we resume execution of whatever context is in `current_context`.
-             // If it was an App, it keeps running.
-             // This is acceptable for "Idle" behavior (spinning App).
-             // But strictly we should switch to kernel idle loop.
-             // We don't have kernel idle context saved.
-             
-             // Let's assume we maintain invariant: run_queue always has something if we have apps.
-             // Or if empty, we assume we return to kernel idle loop (if we came from it).
+            // Continue running current?
+            // If pick_next returned None, it means run_queue is empty.
+            // If we just pushed current back to run_queue, pick_next shouldn't be None!
+            // Unless current blocked or died.
+            // If current blocked, we have no threads.
+            // We must have an idle thread or just return (resume current context which is... kernel loop context?)
+            // If we were in App, and App blocks.
+            // We are in Trap Handler.
+            // We return to App... and App just spins? No, if we return to App execution it continues.
+            // But if we want to run Idle Loop?
+            // We don't have explicit Idle context saved.
+            // We can't switch to Idle Loop easily if we are in interrupt handler on top of App stack.
+
+            // For now, if no threads, we define current = None.
+            self.current = None;
+
+            // If we were running an App, and we set current=None, we return to App execution?
+            // That's dangerous if we considered it "blocked".
+            // But here we only handle RR preemption.
+            // If thread blocked, it removed itself from run_queue beforehand.
+
+            // If we return, we resume execution of whatever context is in `current_context`.
+            // If it was an App, it keeps running.
+            // This is acceptable for "Idle" behavior (spinning App).
+            // But strictly we should switch to kernel idle loop.
+            // We don't have kernel idle context saved.
+
+            // Let's assume we maintain invariant: run_queue always has something if we have apps.
+            // Or if empty, we assume we return to kernel idle loop (if we came from it).
         }
     }
 }

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::ring::{LogRing, EntryKind};
+    use super::super::ring::{EntryKind, LogRing};
 
     // Minimal test for ring behavior
 
@@ -18,7 +18,7 @@ mod tests {
             if count == 1 {
                 assert_eq!(entry.level, 2);
                 assert_eq!(entry.payload_a, 1);
-                 let msg = unsafe {
+                let msg = unsafe {
                     let len = entry.msg_len as usize;
                     core::str::from_utf8(&entry.msg_bytes[..len]).unwrap()
                 };

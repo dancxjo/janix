@@ -1,11 +1,15 @@
-use xmas_elf::{ElfFile, program::Type};
 use alloc::vec::Vec;
+use xmas_elf::{program::Type, ElfFile};
 
 pub struct LoadedImage {
     pub entry_point: u64,
 }
 
-pub fn load_elf(elf_data: &[u8], load_base: u64, mut phys_write: impl FnMut(u64, &[u8])) -> Option<LoadedImage> {
+pub fn load_elf(
+    elf_data: &[u8],
+    load_base: u64,
+    mut phys_write: impl FnMut(u64, &[u8]),
+) -> Option<LoadedImage> {
     let elf = ElfFile::new(elf_data).ok()?;
 
     // 1. Load Segments
@@ -20,19 +24,22 @@ pub fn load_elf(elf_data: &[u8], load_base: u64, mut phys_write: impl FnMut(u64,
                 let segment_data = &elf_data[offset as usize..(offset + file_size) as usize];
                 phys_write(vaddr, segment_data);
             }
-            
+
             // Zero fill remaining memory (bss)
             if mem_size > file_size {
-                 let zero_len = mem_size - file_size;
-                 let zeros = alloc::vec![0u8; zero_len as usize];
-                 phys_write(vaddr + file_size, &zeros);
+                let zero_len = mem_size - file_size;
+                let zeros = alloc::vec![0u8; zero_len as usize];
+                phys_write(vaddr + file_size, &zeros);
             }
         }
     }
 
     // 2. Apply Relocations (R_X86_64_RELATIVE)
     // Find Dynamic Segment
-    if let Some(dyn_ph) = elf.program_iter().find(|ph| ph.get_type().unwrap_or(Type::Null) == Type::Dynamic) {
+    if let Some(dyn_ph) = elf
+        .program_iter()
+        .find(|ph| ph.get_type().unwrap_or(Type::Null) == Type::Dynamic)
+    {
         let dyn_offset = dyn_ph.offset();
         let dyn_size = dyn_ph.file_size();
         let dyn_entries = &elf_data[dyn_offset as usize..(dyn_offset + dyn_size) as usize];
@@ -81,20 +88,23 @@ pub fn load_elf(elf_data: &[u8], load_base: u64, mut phys_write: impl FnMut(u64,
                 let ent_size = if rela_ent > 0 { rela_ent } else { 24 };
 
                 for chunk in rela_data.chunks(ent_size as usize) {
-                     let r_offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
-                     let r_info = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
-                     let r_addend = i64::from_le_bytes(chunk[16..24].try_into().unwrap());
+                    let r_offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
+                    let r_info = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
+                    let r_addend = i64::from_le_bytes(chunk[16..24].try_into().unwrap());
 
-                     let r_type = r_info & 0xFFFFFFFF; // Low 32 bits
+                    let r_type = r_info & 0xFFFFFFFF; // Low 32 bits
 
-                     if r_type == 8 { // R_X86_64_RELATIVE
-                         let value = load_base.wrapping_add(r_addend as u64);
-                         phys_write(r_offset, &value.to_le_bytes());
-                     }
+                    if r_type == 8 {
+                        // R_X86_64_RELATIVE
+                        let value = load_base.wrapping_add(r_addend as u64);
+                        phys_write(r_offset, &value.to_le_bytes());
+                    }
                 }
             }
         }
     }
-    
-    Some(LoadedImage { entry_point: elf.header.pt2.entry_point() })
+
+    Some(LoadedImage {
+        entry_point: elf.header.pt2.entry_point(),
+    })
 }

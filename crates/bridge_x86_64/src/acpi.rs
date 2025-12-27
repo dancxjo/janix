@@ -1,5 +1,5 @@
-use core::ptr::NonNull;
 use crate::Bridge;
+use core::ptr::NonNull;
 use hw::HardwareBridge;
 
 // Minimal ACPI Table Headers
@@ -35,7 +35,7 @@ static mut HHDM_OFFSET: u64 = 0;
 pub unsafe fn init(rsdp_addr: u64, hhdm: u64) {
     HHDM_OFFSET = hhdm;
     let bridge = Bridge;
-    
+
     // 1. Verify RSDP
     let rsdp = &*(to_virt(rsdp_addr).as_ptr() as *const Rsdp);
     if &rsdp.signature != b"RSD PTR " {
@@ -65,13 +65,14 @@ pub(crate) unsafe fn to_virt(phys: u64) -> NonNull<u8> {
 unsafe fn parse_xsdt(phys: u64) {
     let bridge = Bridge;
     bridge.log("ACPI: Parsing XSDT\n");
-    
+
     let header = &*(to_virt(phys).as_ptr() as *const SdtHeader);
     let entries_len = header.length as usize - core::mem::size_of::<SdtHeader>();
     let entries_count = entries_len / 8;
-    
-    let entries_ptr = (to_virt(phys).as_ptr() as *const u8).add(core::mem::size_of::<SdtHeader>()) as *const u64;
-    
+
+    let entries_ptr =
+        (to_virt(phys).as_ptr() as *const u8).add(core::mem::size_of::<SdtHeader>()) as *const u64;
+
     for i in 0..entries_count {
         let entry_phys = core::ptr::read_unaligned(entries_ptr.add(i));
         check_table(entry_phys);
@@ -81,13 +82,14 @@ unsafe fn parse_xsdt(phys: u64) {
 unsafe fn parse_rsdt(phys: u64) {
     let bridge = Bridge;
     bridge.log("ACPI: Parsing RSDT\n");
-    
+
     let header = &*(to_virt(phys).as_ptr() as *const SdtHeader);
     let entries_len = header.length as usize - core::mem::size_of::<SdtHeader>();
     let entries_count = entries_len / 4;
-    
-    let entries_ptr = (to_virt(phys).as_ptr() as *const u8).add(core::mem::size_of::<SdtHeader>()) as *const u32;
-    
+
+    let entries_ptr =
+        (to_virt(phys).as_ptr() as *const u8).add(core::mem::size_of::<SdtHeader>()) as *const u32;
+
     for i in 0..entries_count {
         let entry_phys = core::ptr::read_unaligned(entries_ptr.add(i));
         check_table(entry_phys as u64);
@@ -99,10 +101,10 @@ unsafe fn check_table(phys: u64) {
     match &header.signature {
         b"HPET" => {
             crate::hpet::init_table(phys);
-        },
+        }
         b"APIC" => {
             parse_madt(phys);
-        },
+        }
         _ => {}
     }
 }
@@ -113,7 +115,7 @@ unsafe fn check_table(phys: u64) {
 struct MadtHeader {
     sdt: SdtHeader,
     local_apic_addr: u32,
-    flags: u32, 
+    flags: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -149,9 +151,7 @@ pub static mut IO_APIC_GSI_BASE: u32 = 0;
 
 // Mappings for Legacy IRQ -> GSI
 // Index is Legacy IRQ (0..16), Value is GSI
-pub static mut ISA_OVERRIDES: [u8; 16] = [
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
-];
+pub static mut ISA_OVERRIDES: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 unsafe fn parse_madt(phys: u64) {
     let bridge = Bridge;
@@ -163,40 +163,44 @@ unsafe fn parse_madt(phys: u64) {
 
     LOCAL_APIC_ADDR = madt.local_apic_addr as u64;
 
-    let entries_start = (to_virt(phys).as_ptr() as *const u8).add(core::mem::size_of::<MadtHeader>());
+    let entries_start =
+        (to_virt(phys).as_ptr() as *const u8).add(core::mem::size_of::<MadtHeader>());
     let entries_end = (to_virt(phys).as_ptr() as *const u8).add(madt.sdt.length as usize);
-    
+
     let mut ptr = entries_start;
     while ptr < entries_end {
         let entry = core::ptr::read_unaligned(ptr as *const MadtEntryHeader);
-        
+
         if entry.length == 0 {
-             bridge.log("ACPI: Zero length MADT entry! Aborting loop.\n");
-             break;
+            bridge.log("ACPI: Zero length MADT entry! Aborting loop.\n");
+            break;
         }
 
         match entry.entry_type {
-            1 => { // IO APIC
+            1 => {
+                // IO APIC
                 let ioapic = core::ptr::read_unaligned(ptr as *const MadtIoApic);
                 IO_APIC_ADDR = ioapic.io_apic_addr as u64;
                 IO_APIC_GSI_BASE = ioapic.gsi_base;
                 bridge.log("ACPI: Found IOAPIC\n");
-            },
-            2 => { // Interrupt Source Override
+            }
+            2 => {
+                // Interrupt Source Override
                 let iso = core::ptr::read_unaligned(ptr as *const MadtIntOverride);
-                if iso.bus == 0 { // ISA Bus
+                if iso.bus == 0 {
+                    // ISA Bus
                     let source = iso.source_irq as usize;
                     if source < 16 {
                         ISA_OVERRIDES[source] = iso.gsi as u8;
                         bridge.log("ACPI: IRQ Override: ");
                         bridge.log("IRQ"); // No formatting
-                        // print_u64(source as u64)
+                                           // print_u64(source as u64)
                         bridge.log(" -> GSI ");
-                        // print_u64(iso.gsi as u64) 
+                        // print_u64(iso.gsi as u64)
                         bridge.log("\n");
                     }
                 }
-            },
+            }
             _ => {}
         }
         ptr = ptr.add(entry.length as usize);

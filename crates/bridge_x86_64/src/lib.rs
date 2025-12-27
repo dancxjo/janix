@@ -4,15 +4,15 @@
 
 extern crate alloc;
 
-pub mod interrupts;
-pub mod user;
-pub mod gdt;
 pub mod acpi;
-pub mod pci;
+pub mod ahci;
+pub mod gdt;
 pub mod hpet;
+pub mod interrupts;
+pub mod pci;
 pub mod ps2;
 pub mod serial;
-pub mod ahci;
+pub mod user;
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;
@@ -24,7 +24,9 @@ pub struct Bridge;
 pub static mut TICK_HOOK: Option<fn(&mut interrupts::trap::TrapFrame)> = None;
 
 pub fn set_tick_hook(hook: fn(&mut interrupts::trap::TrapFrame)) {
-    unsafe { TICK_HOOK = Some(hook); }
+    unsafe {
+        TICK_HOOK = Some(hook);
+    }
 }
 
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -46,10 +48,9 @@ impl Bridge {
         b.log("BRIDGE: syscall::init\n");
         interrupts::syscall::init();
 
-
         b.log("BRIDGE: ps2::init\n");
         ps2::init();
-        
+
         b.log("BRIDGE: serial::init\n");
         serial::init();
 
@@ -62,13 +63,12 @@ impl Bridge {
         b.log("BRIDGE: acpi::init\n");
         acpi::init(rsdp_addr, hhdm);
     }
-
 }
 
 pub fn print_u64(val: u64) {
     let bridge = Bridge;
     use hw::HardwareBridge;
-    
+
     if val == 0 {
         bridge.log("0");
         return;
@@ -77,13 +77,13 @@ pub fn print_u64(val: u64) {
     let mut buffer = [0u8; 20];
     let mut i = 0;
     let mut n = val;
-    
+
     while n > 0 {
         buffer[i] = (n % 10) as u8 + b'0';
         n /= 10;
         i += 1;
     }
-    
+
     while i > 0 {
         i -= 1;
         bridge.log(core::str::from_utf8(&[buffer[i]]).unwrap());
@@ -96,7 +96,11 @@ pub fn print_hex(val: u64) {
     bridge.log("0x");
     for i in (0..16).rev() {
         let digit = (val >> (i * 4)) & 0xF;
-        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
+        let c = if digit < 10 {
+            digit as u8 + b'0'
+        } else {
+            digit as u8 - 10 + b'a'
+        };
         bridge.log(core::str::from_utf8(&[c]).unwrap());
     }
 }
@@ -128,7 +132,6 @@ impl HardwareBridge for Bridge {
         }
         ((edx as u64) << 32) | (eax as u64)
     }
-
 
     fn system_now(&self) -> u64 {
         0
@@ -181,8 +184,8 @@ impl HardwareBridge for Bridge {
 
         // RIP
         ctx[15] = entry;
-        
-         // CS: User Code
+
+        // CS: User Code
         ctx[16] = unsafe { gdt::USER_CODE_SELECTOR.0 as u64 | 3 };
 
         // RFLAGS: Interrupts enabled (0x200). IOPL 3 (0x3000) -> 0x3202
@@ -198,7 +201,10 @@ impl HardwareBridge for Bridge {
     }
 
     fn resume_user_mode(&self, context: &[u64]) -> ! {
-        crate::user::enter::resume_user_mode(context, &kernel_core::sched::fpu::FpuContext::default())
+        crate::user::enter::resume_user_mode(
+            context,
+            &kernel_core::sched::fpu::FpuContext::default(),
+        )
     }
 
     fn set_kernel_stack(&self, stack_top: u64) {

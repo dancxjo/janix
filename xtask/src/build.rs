@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 
 pub fn run() -> Result<()> {
     let root = project_root();
@@ -28,7 +28,19 @@ pub fn run() -> Result<()> {
 
     // 2. Build User Apps
     println!("==> Building user apps...");
-    let user_apps = ["graph_dump", "ps2_keyboard", "keylog", "syscall_crud_smoke", "clock", "sleep_smoke", "rtc_x86", "rtc_aarch64", "sleep_accuracy_smoke"];
+    let user_apps = [
+        "graph_dump",
+        "ps2_keyboard",
+        "keylog",
+        "syscall_crud_smoke",
+        "clock",
+        "sleep_smoke",
+        "rtc_x86",
+        "rtc_aarch64",
+        "sleep_accuracy_smoke",
+        "ls_boot",
+        "cat_boot",
+    ];
     for app in user_apps {
         let status = Command::new(&cargo)
             .arg("build")
@@ -51,5 +63,8 @@ pub fn run() -> Result<()> {
 }
 
 fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }

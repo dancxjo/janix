@@ -4,9 +4,7 @@ use std::process::Command;
 
 pub fn run() -> Result<()> {
     // 1. Find processes
-    let output = Command::new("pgrep")
-        .args(["-af", "qemu-system"])
-        .output();
+    let output = Command::new("pgrep").args(["-af", "qemu-system"]).output();
 
     let output = match output {
         Ok(o) => o,

@@ -1,7 +1,7 @@
-use crate::Thing;
-use crate::LinkBody;
-use crate::ThingBody;
 use crate::builtins::ids::THING_LINK_KIND;
+use crate::LinkBody;
+use crate::Thing;
+use crate::ThingBody;
 
 #[macro_export]
 macro_rules! link_thing {
@@ -14,13 +14,12 @@ macro_rules! link_thing {
         $crate::Thing {
             id: $id,
             kind: $crate::builtins::ids::THING_LINK_KIND,
-            body: $crate::ThingBody::from(
-                &$crate::LinkBody {
-                    from: $from,
-                    to: $to,
-                    predicate: $pred,
-                }
-            ).expect("link_thing!: LinkBody encode failed"),
+            body: $crate::ThingBody::from(&$crate::LinkBody {
+                from: $from,
+                to: $to,
+                predicate: $pred,
+            })
+            .expect("link_thing!: LinkBody encode failed"),
         }
     }};
 }

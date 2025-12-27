@@ -223,8 +223,11 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
         if !dest.exists() {
             println!("    Downloading {}...", name);
             if let Err(e) = download_file(url, &dest) {
-                eprintln!("    [WARNING] Failed to download {}: {}. Creating placeholder.", name, e);
-                 fs::write(&dest, b"PLACEHOLDER FONT")?;
+                eprintln!(
+                    "    [WARNING] Failed to download {}: {}. Creating placeholder.",
+                    name, e
+                );
+                fs::write(&dest, b"PLACEHOLDER FONT")?;
             }
         }
     }

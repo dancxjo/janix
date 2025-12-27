@@ -19,7 +19,7 @@ build:
 iso env="x86_64":
     cargo run -p xtask -- iso --env {{env}}
 
-run env="hosted" port="1234":
+run env="x86_64" port="1234":
     cargo run -p xtask -- run --env {{env}} --gdb-port {{port}}
 
 play env="x86_64" port="1234":

@@ -1,19 +1,19 @@
-use core::arch::asm;
 use alloc::alloc::{alloc, Layout};
 use bridge_aarch64::paging::{
-    PTE_VALID, PTE_TABLE, PTE_PAGE, PTE_ATTR_DEVICE, PTE_AF, PTE_SH_INNER, 
-    PTE_AP_RW_EL1, PTE_UXN, PTE_PXN, 
+    PTE_AF, PTE_AP_RW_EL1, PTE_ATTR_DEVICE, PTE_PAGE, PTE_PXN, PTE_SH_INNER, PTE_TABLE, PTE_UXN,
+    PTE_VALID,
 };
+use core::arch::asm;
 
 static mut HHDM_OFFSET: u64 = 0;
 
 pub unsafe fn init(hhdm: u64) {
     HHDM_OFFSET = hhdm;
-    
+
     // Configure MAIR_EL1
     // Attr 0: Normal Write-Back (0xFF)
     // Attr 1: Device-nGnRnE (0x00)
-    let mair: u64 = 0x00_FF; 
+    let mair: u64 = 0x00_FF;
     asm!("msr mair_el1, {}", in(reg) mair);
 
     // Register hook
@@ -30,18 +30,18 @@ fn allocate_frame() -> Option<(u64, u64)> {
         }
         // Zero it
         core::ptr::write_bytes(ptr, 0, 4096);
-        
+
         let virt = ptr as u64;
         let hhdm = HHDM_OFFSET;
-        // Verify virt is in HHDM? 
+        // Verify virt is in HHDM?
         // We assume Global Allocator allocates from HHDM region (Limine Heap).
         // If so, Phys = Virt - HHDM.
         // HHDM mapping: Virt = Phys + HHDM.
         if virt < hhdm {
             // Panic or error?
-            // If alloc returns low address, it's not HHDM. 
+            // If alloc returns low address, it's not HHDM.
             // But main.rs initializes "heap" using limine heap which is usually high address.
-            return None; 
+            return None;
         }
         let phys = virt - hhdm;
         Some((phys, virt))
@@ -177,7 +177,7 @@ pub fn update_page_flags(virt: u64, set: u64, clear: u64) {
             let entry = table_ptr.add(index).read();
 
             if (entry & PTE_VALID) == 0 {
-                return; 
+                return;
             }
             if (level == 1 || level == 2) && (entry & 0x2) == 0 {
                 return;
@@ -194,7 +194,7 @@ pub fn update_page_flags(virt: u64, set: u64, clear: u64) {
         if (entry & PTE_VALID) != 0 {
             entry = (entry & !clear) | set;
             table_ptr.add(index).write(entry);
-            flush_tlb(); 
+            flush_tlb();
         }
     }
 }

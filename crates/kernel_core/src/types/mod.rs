@@ -1,6 +1,6 @@
+use abi::wire::typed::{TypeDef, TypeId};
 use alloc::collections::BTreeMap;
 use spin::RwLock;
-use abi::wire::typed::{TypeDef, TypeId};
 
 pub struct TypeRegistry {
     types: RwLock<BTreeMap<TypeId, TypeDef>>,
@@ -19,7 +19,7 @@ impl TypeRegistry {
             typedef.version,
             typedef.codec_id,
             &typedef.desc,
-            &typedef.constraints
+            &typedef.constraints,
         );
 
         if computed_id != typedef.type_id {
@@ -29,10 +29,10 @@ impl TypeRegistry {
 
         let mut map = self.types.write();
         if let Some(existing) = map.get(&typedef.type_id) {
-             if existing != &typedef {
-                 return Err(()); // Collision or replacement attempt
-             }
-             return Ok(typedef.type_id);
+            if existing != &typedef {
+                return Err(()); // Collision or replacement attempt
+            }
+            return Ok(typedef.type_id);
         }
 
         map.insert(typedef.type_id, typedef.clone());

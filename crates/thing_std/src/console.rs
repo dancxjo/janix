@@ -1,5 +1,5 @@
-use core::fmt;
 use crate::debug::PortWrites;
+use core::fmt;
 
 pub trait Console {
     fn write_str(&self, s: &str);
@@ -23,10 +23,7 @@ pub trait Console {
         let val = n % 100;
         let tens = val / 10;
         let ones = val % 10;
-        let buf = [
-            tens as u8 + b'0',
-            ones as u8 + b'0',
-        ];
+        let buf = [tens as u8 + b'0', ones as u8 + b'0'];
         self.write_str(core::str::from_utf8(&buf).unwrap_or("??"));
     }
 }
@@ -58,10 +55,7 @@ impl Console for StdoutConsole {
         let val = n % 100;
         let tens = val / 10;
         let ones = val % 10;
-        let buf = [
-            tens as u8 + b'0',
-            ones as u8 + b'0',
-        ];
+        let buf = [tens as u8 + b'0', ones as u8 + b'0'];
         self.write_str(core::str::from_utf8(&buf).unwrap_or("??"));
     }
 }

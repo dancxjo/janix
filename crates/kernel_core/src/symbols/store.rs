@@ -1,6 +1,6 @@
 extern crate alloc;
-use alloc::vec::Vec;
 use abi::SymbolId;
+use alloc::vec::Vec;
 
 pub trait SymbolStore {
     /// Load persisted mappings. Returns a list of (id, utf8 bytes).

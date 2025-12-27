@@ -1,36 +1,36 @@
 #![no_std]
 
-extern crate alloc;
 pub extern crate abi;
+extern crate alloc;
 
-pub mod symbol;
-pub mod value;
-pub mod thing;
-pub mod font;
-pub mod link;
-pub mod kind;
-pub mod schema;
 pub mod declare;
-pub mod intent;
-pub mod observation;
-pub mod result;
 pub mod diag;
-pub mod prelude;
+pub mod font;
+pub mod intent;
+pub mod kind;
+pub mod link;
 pub mod macros;
+pub mod observation;
+pub mod prelude;
+pub mod result;
+pub mod schema;
+pub mod symbol;
+pub mod thing;
 pub mod thing_builders;
+pub mod value;
 
+pub use intent::*;
 pub use kind::*;
 pub use link::*;
+pub use observation::*;
+pub use result::*;
 pub use schema::*;
 pub use symbol::*;
 pub use thing::*;
 pub use value::*;
-pub use intent::*;
-pub use observation::*;
-pub use result::*;
 
-pub mod edge;
 pub mod core;
+pub mod edge;
 pub mod typed;
 
 pub mod builtins;

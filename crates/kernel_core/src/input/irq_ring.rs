@@ -6,7 +6,7 @@ pub struct IrqRing {
     events: VecDeque<DriverEvent>,
     // Wakers could be stored here if we implement proper blocking
     // For now, we might spin or use a condvar-like mechanism if the scheduler supported it
-    // v0: we might just return immediately if empty? 
+    // v0: we might just return immediately if empty?
     // User requested "blocks current thread until event available".
     // This requires scheduler cooperation.
 }

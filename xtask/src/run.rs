@@ -16,11 +16,22 @@ pub struct RunArgs {
 
 pub fn run(args: RunArgs) -> Result<()> {
     match args.env.as_str() {
-        "hosted" => run_hosted(args.timeout_secs),
-        "x86_64" => run_qemu_x86_64(args.gdb, args.gdb_port, args.timeout_secs, args.interactive, args.cmdline),
-        "aarch64" => run_qemu_aarch64(args.gdb, args.gdb_port, args.timeout_secs, args.interactive, args.cmdline),
+        "x86_64" => run_qemu_x86_64(
+            args.gdb,
+            args.gdb_port,
+            args.timeout_secs,
+            args.interactive,
+            args.cmdline,
+        ),
+        "aarch64" => run_qemu_aarch64(
+            args.gdb,
+            args.gdb_port,
+            args.timeout_secs,
+            args.interactive,
+            args.cmdline,
+        ),
         _ => anyhow::bail!(
-            "Unsupported env for run: {}. Use hosted, x86_64 or aarch64",
+            "Unsupported env for run: {}. Use x86_64 or aarch64",
             args.env
         ),
     }
@@ -63,17 +74,13 @@ fn run_with_timeout(mut cmd: Command, timeout: Option<u64>) -> Result<()> {
     }
 }
 
-fn run_hosted(timeout: Option<u64>) -> Result<()> {
-    println!("==> Running hosted kernel...");
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-
-    let mut cmd = Command::new(cargo);
-    cmd.arg("run").arg("-p").arg("kernel_hosted");
-
-    run_with_timeout(cmd, timeout)
-}
-
-fn run_qemu_x86_64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, interactive: bool, cmdline: Option<String>) -> Result<()> {
+fn run_qemu_x86_64(
+    gdb: bool,
+    gdb_port: Option<u16>,
+    timeout: Option<u64>,
+    interactive: bool,
+    cmdline: Option<String>,
+) -> Result<()> {
     // Ensure ISO exists (rebuilds kernel too)
     iso::run("x86_64".to_string(), cmdline)?;
 
@@ -127,7 +134,6 @@ fn run_qemu_x86_64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, inter
     // Create a dummy disk for AHCI testing
     let disk_path = root.join("disk.img");
     if !disk_path.exists() {
-        use std::io::Write;
         println!("    Creating 64MB disk.img...");
         let f = std::fs::File::create(&disk_path).expect("create disk.img");
         f.set_len(64 * 1024 * 1024).expect("resize disk.img");
@@ -135,7 +141,10 @@ fn run_qemu_x86_64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, inter
 
     // Attach AHCI Controller and Disk
     cmd.arg("-device").arg("ahci,id=ahci");
-    cmd.arg("-drive").arg(format!("id=disk,file={},if=none,format=raw", disk_path.display()));
+    cmd.arg("-drive").arg(format!(
+        "id=disk,file={},if=none,format=raw",
+        disk_path.display()
+    ));
     cmd.arg("-device").arg("ide-hd,drive=disk,bus=ahci.0");
 
     // GDB setup
@@ -155,7 +164,13 @@ fn run_qemu_x86_64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, inter
     run_with_timeout(cmd, timeout)
 }
 
-fn run_qemu_aarch64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, interactive: bool, cmdline: Option<String>) -> Result<()> {
+fn run_qemu_aarch64(
+    gdb: bool,
+    gdb_port: Option<u16>,
+    timeout: Option<u64>,
+    interactive: bool,
+    cmdline: Option<String>,
+) -> Result<()> {
     // Ensure ISO exists
     iso::run("aarch64".to_string(), cmdline)?;
 
@@ -191,7 +206,10 @@ fn run_qemu_aarch64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, inte
     if use_uefi {
         cmd.arg("-bios").arg(&ovmf_code);
     }
-    cmd.arg("-drive").arg(format!("id=cd,file={},if=none,format=raw,readonly=on", iso_path.display()));
+    cmd.arg("-drive").arg(format!(
+        "id=cd,file={},if=none,format=raw,readonly=on",
+        iso_path.display()
+    ));
     cmd.arg("-device").arg("ide-cd,drive=cd,bus=ahci.0");
 
     // GDB setup

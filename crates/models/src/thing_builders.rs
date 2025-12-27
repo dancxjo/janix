@@ -1,6 +1,6 @@
+use crate::builtins::ids::{THING_ERROR_KIND, THING_FAULT_KIND, THING_LOG_ENTRY_KIND};
+use crate::diag::{ErrorBody, FaultBody, LogEntryBody};
 use crate::Thing;
-use crate::diag::{LogEntryBody, ErrorBody, FaultBody};
-use crate::builtins::ids::{THING_LOG_ENTRY_KIND, THING_ERROR_KIND, THING_FAULT_KIND};
 use abi::ThingId;
 
 impl Thing {

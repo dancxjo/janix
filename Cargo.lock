@@ -110,15 +110,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bridge_hosted"
-version = "0.2.0"
-dependencies = [
- "abi",
- "hw",
- "kernel_core",
-]
-
-[[package]]
 name = "bridge_x86_64"
 version = "0.2.0"
 dependencies = [
@@ -343,15 +334,6 @@ dependencies = [
  "serde",
  "spin 0.9.8",
  "xmas-elf",
-]
-
-[[package]]
-name = "kernel_hosted"
-version = "0.2.0"
-dependencies = [
- "abi",
- "bridge_hosted",
- "kernel_core",
 ]
 
 [[package]]

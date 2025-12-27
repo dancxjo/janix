@@ -72,7 +72,6 @@ pub const THING_BUFFER_SCHEMA: ThingId = ThingId(1207);
 pub const THING_STREAM_KIND: ThingId = ThingId(208);
 pub const THING_STREAM_SCHEMA: ThingId = ThingId(1208);
 
-
 pub const THING_KEYBOARD_KIND: ThingId = ThingId(210);
 pub const THING_KEYBOARD_SCHEMA: ThingId = ThingId(1210);
 

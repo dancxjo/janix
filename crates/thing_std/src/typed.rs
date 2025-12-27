@@ -1,7 +1,7 @@
-use abi::wire::typed::{TypeDef, TypeDesc, TypeId, Constraints};
-use serde::{Serialize, Deserialize};
-use postcard;
+use abi::wire::typed::{Constraints, TypeDef, TypeDesc, TypeId};
 use alloc::vec::Vec;
+use postcard;
+use serde::{Deserialize, Serialize};
 
 pub use thing_macros::ThingType;
 
@@ -41,30 +41,24 @@ macro_rules! impl_primitive_thing_type {
             }
 
             fn typedef() -> TypeDef {
-                 // Primitives might not need full TypeDef registration if they are base types,
-                 // but consistency is good.
-                 let desc = Self::type_desc();
-                 let constraints = Constraints::default();
-                 let codec_id = abi::wire::typed::CodecId::POSTCARD;
-                 let version = 1;
-                 let name = abi::symbols::sym(stringify!($type));
+                // Primitives might not need full TypeDef registration if they are base types,
+                // but consistency is good.
+                let desc = Self::type_desc();
+                let constraints = Constraints::default();
+                let codec_id = abi::wire::typed::CodecId::POSTCARD;
+                let version = 1;
+                let name = abi::symbols::sym(stringify!($type));
 
-                 let type_id = TypeDef::compute_hash(
-                    name,
-                    version,
-                    codec_id,
-                    &desc,
-                    &constraints
-                 );
+                let type_id = TypeDef::compute_hash(name, version, codec_id, &desc, &constraints);
 
-                 TypeDef {
+                TypeDef {
                     type_id,
                     name: abi::symbols::sym(stringify!($type)),
                     codec_id: abi::wire::typed::CodecId::POSTCARD,
                     version: 1,
                     desc: Self::type_desc(),
                     constraints: Constraints::default(),
-                 }
+                }
             }
         }
     };
@@ -80,31 +74,25 @@ impl ThingType for alloc::string::String {
     fn type_id() -> TypeId {
         Self::typedef().type_id
     }
-     fn type_desc() -> TypeDesc {
+    fn type_desc() -> TypeDesc {
         TypeDesc::Primitive(abi::wire::typed::PrimitiveType::String)
     }
     fn typedef() -> TypeDef {
-         let desc = Self::type_desc();
-         let constraints = Constraints::default();
-         let codec_id = abi::wire::typed::CodecId::POSTCARD;
-         let version = 1;
-         let name = abi::symbols::sym("String");
+        let desc = Self::type_desc();
+        let constraints = Constraints::default();
+        let codec_id = abi::wire::typed::CodecId::POSTCARD;
+        let version = 1;
+        let name = abi::symbols::sym("String");
 
-         let type_id = TypeDef::compute_hash(
-            name,
-            version,
-            codec_id,
-            &desc,
-            &constraints
-         );
+        let type_id = TypeDef::compute_hash(name, version, codec_id, &desc, &constraints);
 
-         TypeDef {
+        TypeDef {
             type_id,
             name,
             codec_id,
             version,
             desc,
             constraints,
-         }
+        }
     }
 }

@@ -1,8 +1,8 @@
 extern crate alloc;
-use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
-use abi::SymbolId;
 use crate::symbols::hash::fnv1a64;
+use abi::SymbolId;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 #[derive(Debug)]
 pub enum SymbolError {
@@ -18,7 +18,11 @@ pub struct SymbolTable {
 }
 
 impl SymbolTable {
-    pub fn new() -> Self { Self { map: BTreeMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            map: BTreeMap::new(),
+        }
+    }
 
     pub fn seed_builtin(&mut self, text: &'static str) -> Result<SymbolId, SymbolError> {
         let id = SymbolId(fnv1a64(text));
@@ -51,7 +55,7 @@ impl SymbolTable {
 
     pub fn load_from_store(
         &mut self,
-        store: &mut dyn crate::symbols::store::SymbolStore
+        store: &mut dyn crate::symbols::store::SymbolStore,
     ) -> Result<(), SymbolError> {
         let entries = store.load().map_err(|_| SymbolError::Store)?;
         for (id, bytes) in entries {
@@ -62,7 +66,7 @@ impl SymbolTable {
 
     pub fn persist_to_store(
         &self,
-        store: &mut dyn crate::symbols::store::SymbolStore
+        store: &mut dyn crate::symbols::store::SymbolStore,
     ) -> Result<(), SymbolError> {
         // produce deterministic snapshot
         let mut snapshot: Vec<(SymbolId, &[u8])> = Vec::new();

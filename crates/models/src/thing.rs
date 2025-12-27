@@ -1,5 +1,5 @@
-use abi::ThingId;
 use crate::value::ThingBody;
+use abi::ThingId;
 
 use serde::{Deserialize, Serialize};
 

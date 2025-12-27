@@ -1,5 +1,5 @@
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 // Const size ring buffer. No alloc.
 const RING_SIZE: usize = 1024;
@@ -56,9 +56,16 @@ unsafe impl Sync for LogRing {}
 
 const INIT_ENTRY: RingEntry = RingEntry {
     ready: AtomicBool::new(false),
-    kind: 0, level: 0, cpu: 0, timestamp_or_ticks: 0,
-    payload_a: 0, payload_b: 0, payload_c: 0, payload_d: 0,
-    msg_len: 0, msg_bytes: [0; MSG_MAX]
+    kind: 0,
+    level: 0,
+    cpu: 0,
+    timestamp_or_ticks: 0,
+    payload_a: 0,
+    payload_b: 0,
+    payload_c: 0,
+    payload_d: 0,
+    msg_len: 0,
+    msg_bytes: [0; MSG_MAX],
 };
 
 static GLOBAL_RING: LogRing = LogRing {
@@ -72,16 +79,12 @@ impl LogRing {
         &GLOBAL_RING
     }
 
-    pub fn push(&self, kind: EntryKind, level: u8, msg: &str,
-                a: u64, b: u64, c: u64, d: u64) {
-
+    pub fn push(&self, kind: EntryKind, level: u8, msg: &str, a: u64, b: u64, c: u64, d: u64) {
         // Reserve slot
         let head = self.head.fetch_add(1, Ordering::Relaxed);
         let idx = head % RING_SIZE;
 
-        let entry_ptr = unsafe {
-            &mut (*self.buffer.get())[idx] as *mut RingEntry
-        };
+        let entry_ptr = unsafe { &mut (*self.buffer.get())[idx] as *mut RingEntry };
 
         unsafe {
             // Signal write in progress (if overwritting)
@@ -101,7 +104,11 @@ impl LogRing {
             (*entry_ptr).msg_len = len as u16;
 
             // memcpy
-            core::ptr::copy_nonoverlapping(bytes.as_ptr(), (*entry_ptr).msg_bytes.as_mut_ptr(), len);
+            core::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                (*entry_ptr).msg_bytes.as_mut_ptr(),
+                len,
+            );
 
             // Commit
             (*entry_ptr).ready.store(true, Ordering::Release);
@@ -109,7 +116,8 @@ impl LogRing {
     }
 
     pub fn drain<F>(&self, mut f: F) -> usize
-    where F: FnMut(&RingEntry)
+    where
+        F: FnMut(&RingEntry),
     {
         let mut count = 0;
         loop {

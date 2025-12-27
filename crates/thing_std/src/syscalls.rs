@@ -1,5 +1,5 @@
-use abi::{SysRet, SYSCALL_DRIVER_WAIT, SYSCALL_DRIVER_PUBLISH, SYSCALL_GRAPH, SYSCALL_RTC_READ};
 use abi::wire::graph::GraphOp;
+use abi::{SysRet, SYSCALL_DRIVER_PUBLISH, SYSCALL_DRIVER_WAIT, SYSCALL_GRAPH, SYSCALL_RTC_READ};
 use core::arch::asm;
 
 // Raw syscall
@@ -35,9 +35,7 @@ pub unsafe fn syscall3(n: usize, a1: usize, a2: usize, a3: usize) -> SysRet {
 }
 
 pub fn rtc_read(out: &mut abi::wire::time::RtcSample) -> Result<(), ()> {
-    let ret = unsafe {
-        syscall2(SYSCALL_RTC_READ, out as *mut _ as usize, 0)
-    };
+    let ret = unsafe { syscall2(SYSCALL_RTC_READ, out as *mut _ as usize, 0) };
     if ret == 0 {
         Ok(())
     } else {
@@ -47,7 +45,11 @@ pub fn rtc_read(out: &mut abi::wire::time::RtcSample) -> Result<(), ()> {
 
 pub fn driver_wait(out_buf: &mut [u8]) -> Result<usize, ()> {
     let ret = unsafe {
-        syscall2(SYSCALL_DRIVER_WAIT, out_buf.as_mut_ptr() as usize, out_buf.len())
+        syscall2(
+            SYSCALL_DRIVER_WAIT,
+            out_buf.as_mut_ptr() as usize,
+            out_buf.len(),
+        )
     };
     if ret >= 0 {
         Ok(ret as usize)
@@ -57,17 +59,13 @@ pub fn driver_wait(out_buf: &mut [u8]) -> Result<usize, ()> {
 }
 
 pub fn driver_publish(data: &[u8]) -> Result<(), isize> {
-    let ret = unsafe {
-        syscall2(SYSCALL_DRIVER_PUBLISH, data.as_ptr() as usize, data.len())
-    };
+    let ret = unsafe { syscall2(SYSCALL_DRIVER_PUBLISH, data.as_ptr() as usize, data.len()) };
     if ret == 0 {
         Ok(())
     } else {
-        Err(ret)
+        Err(ret as isize)
     }
 }
-
-
 
 pub fn graph_op(op: &GraphOp) -> Result<(), ()> {
     // Serialize Op? Wait, original ABI might differ.
@@ -91,13 +89,21 @@ pub fn graph_op(op: &GraphOp) -> Result<(), ()> {
     // But let's assume `sys_graph(ptr, len) -> ret`.
     // We need to pass the Op.
     // Let's defer implementation until we check dispatch.
-    
+
     // For now, let's just serialize op? No.
     // Let's implement `graph_query` instead.
     Err(())
 }
 
-unsafe fn syscall6(n: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize, a6: usize) -> SysRet {
+unsafe fn syscall6(
+    n: usize,
+    a1: usize,
+    a2: usize,
+    a3: usize,
+    a4: usize,
+    a5: usize,
+    a6: usize,
+) -> SysRet {
     let ret: SysRet;
     asm!(
         "syscall",
@@ -105,7 +111,7 @@ unsafe fn syscall6(n: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usi
         in("rdi") a1,
         in("rsi") a2,
         in("rdx") a3,
-        in("r10") a4, // RCX clobbered by syscall, so R10 used for arg4 in syscall ABI? 
+        in("r10") a4, // RCX clobbered by syscall, so R10 used for arg4 in syscall ABI?
                       // NO. x86_64 syscall ABI uses R10 for Arg4, not RCX.
                       // System V function ABI uses RCX for Arg4.
                       // Linux Syscall ABI: RDI, RSI, RDX, R10, R8, R9.
@@ -118,11 +124,11 @@ unsafe fn syscall6(n: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usi
                       // Syscall R10 -> Rust A4 (RCX)
                       // Syscall R8  -> Rust A5 (R8)
                       // Syscall R9  -> Rust A6 (R9)
-                      
+
                       // So here in userspace:
                       // I must put Arg1 in RDI, Arg2 in RSI, Arg3 in RDX, Arg4 in R10, Arg5 in R8, Arg6 in R9.
                       // Syscall instruction destroys RCX and R11.
-                      
+
         in("r8") a5,
         in("r9") a6,
         lateout("rax") ret,
@@ -142,7 +148,7 @@ pub fn graph_query(query: &str, params: &[u8], out: &mut [u8]) -> Result<usize, 
             params.as_ptr() as usize,
             params.len(),
             out.as_mut_ptr() as usize,
-            out.len()
+            out.len(),
         )
     };
     if ret >= 0 {
@@ -151,4 +157,3 @@ pub fn graph_query(query: &str, params: &[u8], out: &mut [u8]) -> Result<usize, 
         Err(ret as isize)
     }
 }
-

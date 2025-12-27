@@ -42,10 +42,10 @@ impl GraphStore {
 
         self.things.insert(id, thing);
         self.kind_index.entry(kind).or_default().push(id);
-        
+
         let list = self.kind_index.get_mut(&kind).unwrap();
         if list.len() > 1 && id < list[list.len() - 2] {
-             list.sort();
+            list.sort();
         }
 
         Ok(())
@@ -54,14 +54,10 @@ impl GraphStore {
     pub fn create_thing(&mut self, kind: ThingId, body: thing_models::value::ThingBody) -> ThingId {
         let id = ThingId(self.next_id);
         self.next_id += 1;
-        
+
         // TODO: Reuse logic but avoid clone?
-        let thing = Thing {
-            id,
-            kind,
-            body,
-        };
-        
+        let thing = Thing { id, kind, body };
+
         match self.insert_thing(thing) {
             Ok(_) => id,
             Err(_) => {
@@ -71,16 +67,20 @@ impl GraphStore {
             }
         }
     }
-    
-    pub fn update_thing(&mut self, id: ThingId, body: thing_models::value::ThingBody) -> Result<(), ()> {
-         if let Some(thing) = self.things.get_mut(&id) {
-             thing.body = body;
-             Ok(())
-         } else {
-             Err(())
-         }
+
+    pub fn update_thing(
+        &mut self,
+        id: ThingId,
+        body: thing_models::value::ThingBody,
+    ) -> Result<(), ()> {
+        if let Some(thing) = self.things.get_mut(&id) {
+            thing.body = body;
+            Ok(())
+        } else {
+            Err(())
+        }
     }
-    
+
     pub fn delete_thing(&mut self, id: ThingId) -> Result<(), ()> {
         if let Some(thing) = self.things.remove(&id) {
             // Remove from kind_index

@@ -1,8 +1,8 @@
 extern crate alloc;
-use models::thing_kind;
-use models::builtins::symbols::*;
 use models::abi::ThingId;
+use models::builtins::symbols::*;
 use models::declare::type_tag;
+use models::thing_kind;
 
 // Dummy bodies for testing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -46,7 +46,7 @@ fn test_macro_expansion_and_seeding() {
     // Check Kind Thing
     assert_eq!(kind_thing.id.0, THING_TEST_KIND_ID);
     assert_eq!(kind_thing.kind, models::builtins::ids::THING_KIND_KIND);
-    
+
     let kind_body: models::KindBody = kind_thing.body.decode().expect("decode kind body");
     assert_eq!(kind_body.name, SYM_TEST);
     assert_eq!(kind_body.version, 1);
@@ -56,8 +56,9 @@ fn test_macro_expansion_and_seeding() {
     assert_eq!(schema_thing.id.0, THING_TEST_SCHEMA_ID);
     assert_eq!(schema_thing.kind, models::builtins::ids::THING_SCHEMA_KIND);
 
-    let schema_body: models::schema::SchemaBody = schema_thing.body.decode().expect("decode schema body");
-    
+    let schema_body: models::schema::SchemaBody =
+        schema_thing.body.decode().expect("decode schema body");
+
     // Check TypeTag
     let expected_tag = type_tag("thingos.TestBody.v1");
     // models::declare::type_tag uses FNV1a
@@ -65,7 +66,7 @@ fn test_macro_expansion_and_seeding() {
 
     // Check Link Rules
     assert_eq!(schema_body.link_rules.len(), 2);
-    
+
     let rule1 = &schema_body.link_rules[0];
     assert_eq!(rule1.predicate_kind.0, 123);
     assert_eq!(rule1.min, 0);

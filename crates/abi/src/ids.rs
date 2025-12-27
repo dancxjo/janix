@@ -21,7 +21,9 @@ pub struct GraphId(pub u64);
 pub struct NodeId(pub u64);
 
 /// Thing identifier
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize,
+)]
 #[repr(transparent)]
 pub struct ThingId(pub u64);
 
@@ -40,7 +42,6 @@ impl ThingId {
 
     pub const NULL: ThingId = ThingId(0);
 }
-
 
 /// Predicate identifier for a link between Things.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

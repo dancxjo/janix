@@ -1,23 +1,21 @@
 #![allow(unused_imports)]
-use crate::thing_kind;
-use crate::declare::type_tag::fnv1a64;
-use crate::declare::type_tag;
 use crate::builtins::ids::*;
 use crate::builtins::symbols::*;
+use crate::declare::type_tag;
+use crate::declare::type_tag::fnv1a64;
+use crate::thing_kind;
 // Use the core module types
-use crate::core::time::TimeNow;
-use crate::core::process::{ProcessBody, ThreadBody};
-use crate::core::capability::CapabilityBody;
-use crate::core::vgs::{MountBody, GraphProviderBody};
-use crate::core::buffer::BufferBody;
-use crate::core::input::{KeyboardBody, KeyEventBody, KeyEventStreamBody};
-use crate::core::serial::{SerialPortBody, LogStreamBody};
-use crate::core::pci::PciDeviceBody;
-use crate::core::fs::{VolumeBody, DirBody, FileBody};
 use crate::core::block::BlockDeviceBody;
-use crate::diag::{LogEntryBody, ErrorBody, FaultBody};
-
-
+use crate::core::buffer::BufferBody;
+use crate::core::capability::CapabilityBody;
+use crate::core::fs::{DirBody, FileBody, VolumeBody};
+use crate::core::input::{KeyEventBody, KeyEventStreamBody, KeyboardBody};
+use crate::core::pci::PciDeviceBody;
+use crate::core::process::{ProcessBody, ThreadBody};
+use crate::core::serial::{LogStreamBody, SerialPortBody};
+use crate::core::time::TimeNow;
+use crate::core::vgs::{GraphProviderBody, MountBody};
+use crate::diag::{ErrorBody, FaultBody, LogEntryBody};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct BootProgramBody {
@@ -60,7 +58,6 @@ pub struct BitmapBody {
     pub width: u32,
     pub height: u32,
 }
-
 
 thing_kind! {
     kind TimeNow {
@@ -279,8 +276,8 @@ thing_kind! {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub struct FileSystemBody { 
-    pub name: alloc::string::String 
+pub struct FileSystemBody {
+    pub name: alloc::string::String,
 }
 
 thing_kind! {
@@ -420,4 +417,3 @@ thing_kind! {
         }
     }
 }
-

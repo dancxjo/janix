@@ -3,15 +3,20 @@ use crate::builtins::symbols::*;
 use crate::kind::KindBody;
 use crate::schema::SchemaBody;
 use crate::thing::Thing;
+use crate::thing_kind;
 use crate::value::ThingBody;
 use abi::ThingId;
 use alloc::vec::Vec;
-use crate::thing_kind;
 
-use abi::wire::typed::{TypedBytes, TypeId, CodecId};
+use abi::wire::typed::{CodecId, TypeId, TypedBytes};
 
 // Helper to create a Thing
-fn make_thing<T: serde::Serialize>(id: ThingId, kind: ThingId, body_struct: &T, body_type_id: ThingId) -> Thing {
+fn make_thing<T: serde::Serialize>(
+    id: ThingId,
+    kind: ThingId,
+    body_struct: &T,
+    body_type_id: ThingId,
+) -> Thing {
     let bytes = postcard::to_allocvec(body_struct).expect("builtin encode failed");
     let typed = TypedBytes {
         type_id: TypeId(body_type_id.0 as u128),
@@ -68,8 +73,8 @@ fn make_schema_thing(id: ThingId) -> Thing {
     )
 }
 
-use crate::schema::LinkRule;
 use crate::declare::type_tag::fnv1a64;
+use crate::schema::LinkRule;
 use alloc::vec; // For vec! macro
 
 pub fn builtin_kind_schema() -> Thing {
@@ -78,13 +83,11 @@ pub fn builtin_kind_schema() -> Thing {
         THING_SCHEMA_KIND,
         &SchemaBody {
             body_type: fnv1a64("thingos.KindBody.v1"), // KindBody type tag
-            link_rules: vec![
-                LinkRule {
-                    predicate_kind: THING_HAS_SCHEMA_KIND,
-                    min: 1,
-                    max: Some(1),
-                }
-            ],
+            link_rules: vec![LinkRule {
+                predicate_kind: THING_HAS_SCHEMA_KIND,
+                min: 1,
+                max: Some(1),
+            }],
         },
         THING_SCHEMA_KIND,
     )

@@ -2,6 +2,7 @@
 #![no_main]
 
 extern crate alloc;
+use alloc::vec::Vec;
 
 use thing_std as std;
 use thing_std::{GraphClient, StdoutConsole, Console};
@@ -24,7 +25,6 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     let _ = c.write_str("CAT_BOOT: Starting...\n");
 
     // 1. Find /boot
-    // Simplified: Just scan from Root for Mounts
     let mut mount_id = None;
     let op = GraphOp::ScanLinks { from: Some(THING_BOOT_ROOT), to: None, kind: Some(THING_HAS_MOUNT_KIND) };
     if let Ok(GraphReply::Links(links)) = g.call_op(&op, &mut buf) {
@@ -49,40 +49,45 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                 let root_dir_id = links[0].1;
                 
                 // 3. Find First File
-                let op = GraphOp::ScanLinks { from: Some(root_dir_id), to: None, kind: None };
+                // Filter by HAS_ENTRY_KIND to avoid catching the Volume thing as a file
+                let op = GraphOp::ScanLinks { from: Some(root_dir_id), to: None, kind: Some(THING_HAS_ENTRY_KIND) };
                 if let Ok(GraphReply::Links(entries)) = g.call_op(&op, &mut buf) {
                      for (_src, dst, _pd) in entries {
                          // Check if file
                          let op = GraphOp::GetThing { id: dst };
                          if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
-                              if let Ok(f) = postcard::from_bytes::<FileBody>(&tb.bytes) {
-                                  let _ = c.write_str(&format!("Found File: {} ({} bytes). Reading...\n", f.name, f.size));
-                                  
-                                  // 4. READ CONTENT
-                                  if let Ok(data) = g.read_file_chunk(dst, 0, 64, &mut buf) {
-                                      let _ = c.write_str("--- Content Start ---\n");
-                                      // Print formatted
-                                      for chunk in data.chunks(16) {
-                                          for b in chunk {
-                                              let _ = c.write_str(&format!("{:02X} ", b));
-                                          }
-                                          let _ = c.write_str(" | ");
-                                          for b in chunk {
-                                              if *b >= 0x20 && *b < 0x7F {
-                                                  let _ = c.write_str(&format!("{}", *b as char));
-                                              } else {
-                                                  let _ = c.write_str(".");
+                              // Ensure it is a File Kind (Safety)
+                              if tb.type_id.0 == THING_FILE_KIND.0 as u128 {
+                                  if let Ok(f) = postcard::from_bytes::<FileBody>(&tb.bytes) {
+                                      let _ = c.write_str(&format!("Found File: {} ({} bytes). Reading...\n", f.name, f.size));
+                                      
+                                      // 4. READ CONTENT
+                                      // Use read_bytes which returns Vec<u8>
+                                      if let Ok(data) = g.read_bytes(dst, 0, 64, &mut buf) {
+                                          let _ = c.write_str("--- Content Start ---\n");
+                                          // Print formatted
+                                          for chunk in data.chunks(16) {
+                                              for b in chunk {
+                                                  let _ = c.write_str(&format!("{:02X} ", b));
                                               }
+                                              let _ = c.write_str(" | ");
+                                              for b in chunk {
+                                                  if *b >= 0x20 && *b < 0x7F {
+                                                      let _ = c.write_str(&format!("{}", *b as char));
+                                                  } else {
+                                                      let _ = c.write_str(".");
+                                                  }
+                                              }
+                                              let _ = c.write_str("\n");
                                           }
-                                          let _ = c.write_str("\n");
+                                          let _ = c.write_str("--- Content End ---\n");
+                                      } else {
+                                          let _ = c.write_str("Failed to read file content.\n");
                                       }
-                                      let _ = c.write_str("--- Content End ---\n");
-                                  } else {
-                                      let _ = c.write_str("Failed to read file content.\n");
+                                      
+                                      // Wait a bit then exit/loop
+                                      loop {}
                                   }
-                                  
-                                  // Wait a bit then exit/loop
-                                  loop {}
                               }
                          }
                      }

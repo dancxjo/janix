@@ -1,11 +1,22 @@
 use abi::SymbolId;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ProcessState { New, Running, Exiting, Dead }
+pub enum ProcessState {
+    New,
+    Running,
+    Exiting,
+    Dead,
+}
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ThreadState { New, Runnable, Running, Sleeping, Dead }
+pub enum ThreadState {
+    New,
+    Runnable,
+    Running,
+    Sleeping,
+    Dead,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProcessBody {

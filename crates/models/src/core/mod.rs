@@ -1,19 +1,17 @@
-pub mod time;
-pub mod process;
+pub mod block;
+pub mod buffer;
 pub mod capability;
-pub mod vgs;
+pub mod fs;
 pub mod input;
 pub mod pci;
+pub mod process;
 pub mod serial;
-pub mod block;
-pub mod fs;
-pub mod buffer;
+pub mod time;
+pub mod vgs;
 
-
-pub use time::*;
-pub use process::*;
-pub use capability::*;
-pub use vgs::*;
 pub use buffer::*;
+pub use capability::*;
 pub use input::*;
-
+pub use process::*;
+pub use time::*;
+pub use vgs::*;

@@ -1,6 +1,8 @@
 #[macro_export]
 macro_rules! sym {
-    ($s:literal) => { $crate::abi::symbols::sym($s) };
+    ($s:literal) => {
+        $crate::abi::symbols::sym($s)
+    };
 }
 
 #[macro_export]
@@ -20,7 +22,11 @@ macro_rules! thing {
 #[macro_export]
 macro_rules! link {
     ($from:expr, $pred:expr, $to:expr) => {
-        $crate::link::LinkBody { from: $from, to: $to, predicate: $pred }
+        $crate::link::LinkBody {
+            from: $from,
+            to: $to,
+            predicate: $pred,
+        }
     };
 }
 
@@ -30,7 +36,7 @@ macro_rules! typed_thing {
         let v = &$val;
         // Allows using this macro where thing_std is available as a crate
         // or re-exported.
-        use ::thing_std::typed::ThingType; 
+        use ::thing_std::typed::ThingType;
         let bytes = ThingType::encode(v).expect("encode failed");
         $crate::Thing {
             id: $id,

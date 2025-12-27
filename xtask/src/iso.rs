@@ -46,7 +46,18 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
 
     // 2.5 Build User Apps
     println!("==> Building user apps for {}...", env);
-    let mut user_apps = vec!["graph_dump", "ps2_keyboard", "ps2_mouse", "keylog", "syscall_crud_smoke", "clock", "sleep_smoke", "sleep_accuracy_smoke", "ls_boot", "cat_boot"];
+    let mut user_apps = vec![
+        "graph_dump",
+        "ps2_keyboard",
+        "ps2_mouse",
+        "keylog",
+        "syscall_crud_smoke",
+        "clock",
+        "sleep_smoke",
+        "sleep_accuracy_smoke",
+        "ls_boot",
+        "cat_boot",
+    ];
     if env == "x86_64" {
         user_apps.push("rtc_x86");
     } else if env == "aarch64" {
@@ -149,7 +160,6 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         eprintln!("    [WARNING] fonts directory missing: {:?}", fonts_src);
     }
 
-
     // Limine Files
     let limine_dest = boot_dir.join("limine");
     fs::create_dir_all(&limine_dest)?;
@@ -158,7 +168,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // Config
     let conf_src = root.join("kernels/limine.conf");
     let mut conf_data = fs::read_to_string(&conf_src)?;
-    
+
     if let Some(cmd) = cmdline {
         // Inject cmdline into /ThingOS entry
         // We look for "kernel_path: boot():/boot/kernel"

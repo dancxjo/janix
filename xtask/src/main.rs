@@ -1,11 +1,11 @@
 use anyhow::Result;
 use clap::Parser;
 
+mod build;
 mod fetch;
 mod iso;
-mod run;
-mod build;
-mod kill; // Add module
+mod kill;
+mod run; // Add module
 
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Build and management tasks for ThingOS")]
@@ -29,7 +29,7 @@ enum Commands {
     },
     /// Run the OS (hosted or qemu)
     Run {
-        #[arg(long, default_value = "hosted")]
+        #[arg(long, default_value = "x86_64")]
         env: String,
         /// Enable GDB stub (-s -S)
         #[arg(long)]

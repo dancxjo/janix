@@ -1,18 +1,18 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
-pub mod syscalls;
-pub mod debug;
 pub mod client;
-pub mod time;
 pub mod console;
-pub mod typed;
+pub mod debug;
 pub mod font;
+pub mod syscalls;
+pub mod time;
+pub mod typed;
 
 pub use client::GraphClient;
 pub use console::{Console, StdoutConsole};
-pub use typed::ThingType;
 pub use syscalls::rtc_read;
+pub use typed::ThingType;
 
 extern crate alloc;
 use core::alloc::{GlobalAlloc, Layout};
@@ -34,7 +34,9 @@ pub mod allocator {
     use core::alloc::{GlobalAlloc, Layout};
     pub struct Dummy;
     unsafe impl GlobalAlloc for Dummy {
-        unsafe fn alloc(&self, _layout: Layout) -> *mut u8 { core::ptr::null_mut() }
+        unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
+            core::ptr::null_mut()
+        }
         unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
     }
 }
@@ -66,16 +68,16 @@ unsafe impl GlobalAlloc for SimpleAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
         let align = layout.align();
-        
+
         let mut top = HEAP_TOP;
         let start = (HEAP.as_ptr() as usize + top);
         let modulo = start % align;
         let offset = if modulo == 0 { 0 } else { align - modulo };
-        
+
         if top + offset + size > HEAP_SIZE {
             return core::ptr::null_mut();
         }
-        
+
         HEAP_TOP += offset + size;
         (HEAP.as_ptr() as usize + top + offset) as *mut u8
     }

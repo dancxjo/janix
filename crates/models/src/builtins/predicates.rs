@@ -1,5 +1,5 @@
 use crate::predicate_kind;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PredicateBody {}
@@ -39,8 +39,6 @@ predicate_kind! {
         schema_id: crate::builtins::ids::THING_MOUNTS_SCHEMA
     }
 }
-
-
 
 predicate_kind! {
     kind BackedBy {

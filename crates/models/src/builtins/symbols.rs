@@ -1,6 +1,5 @@
-use abi::SymbolId;
 use crate::declare::type_tag::fnv1a64;
-
+use abi::SymbolId;
 
 // Deterministic symbol IDs.
 // Hash FNV-1a 64-bit of canonical strings.
@@ -161,5 +160,3 @@ pub const SYM_HAS_KEYBOARD: SymbolId = SymbolId(fnv1a64("HAS_KEYBOARD"));
 // Other IDs seen in dump or ids.rs
 pub const SYM_HAS_CONSOLE: SymbolId = SymbolId(fnv1a64("HAS_CONSOLE"));
 pub const SYM_HAS_TIME_NOW: SymbolId = SymbolId(fnv1a64("HAS_TIME_NOW"));
-
-

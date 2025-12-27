@@ -35,17 +35,17 @@ pub unsafe fn set_irq_vector(gsi: u32, vector: u8, dest_apic_id: u8) {
     // Each Entry is 64-bits (2 registers)
     let low_index = IOREDTBL + (gsi * 2);
     let high_index = low_index + 1;
-    
+
     // Lower 32-bits:
-    // Vector (0-7), Delivery Mode (8-10), Dest Mode (11), Status (12), 
+    // Vector (0-7), Delivery Mode (8-10), Dest Mode (11), Status (12),
     // Polarity (13), Remote IRR (14), Trigger Mode (15), Mask (16)
-    
+
     // Default: Fixed delivery (0), Physical Dest (0), Active High (0), Edge (0), Unmasked (0)
-    let low_val = vector as u32; 
-    
+    let low_val = vector as u32;
+
     // Upper 32-bits: Dest Field (56-63)
     let high_val = (dest_apic_id as u32) << 24;
-    
+
     write(high_index, high_val);
     write(low_index, low_val);
 }

@@ -1,7 +1,7 @@
 pub mod irq_ring;
+use abi::wire::driver::DriverEvent;
 use irq_ring::IrqRing;
 use spin::Mutex;
-use abi::wire::driver::DriverEvent;
 
 static GLOBAL_INPUT_RING: Mutex<Option<IrqRing>> = Mutex::new(None);
 

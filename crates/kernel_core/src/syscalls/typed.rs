@@ -1,5 +1,5 @@
-use abi::wire::typed::{TypeDef, TypeId};
 use crate::types::TYPE_REGISTRY;
+use abi::wire::typed::{TypeDef, TypeId};
 use core::slice;
 
 // Syscall handler for registering a TypeDef
@@ -20,7 +20,7 @@ pub fn sys_typedef_register(ptr: usize, len: usize) -> usize {
 
     // 3. Register
     match TYPE_REGISTRY.register_typedef(typedef) {
-        Ok(_) => 0, // Success
+        Ok(_) => 0,  // Success
         Err(_) => 2, // Error code 2: Registration failed (hash mismatch or collision)
     }
 }
@@ -38,19 +38,19 @@ pub fn sys_typedef_get(id_ptr: usize, buf_ptr: usize, buf_len: usize) -> usize {
     };
 
     if let Some(typedef) = TYPE_REGISTRY.get_typedef(type_id) {
-         let encoded = match postcard::to_allocvec(&typedef) {
-             Ok(v) => v,
-             Err(_) => return 0,
-         };
+        let encoded = match postcard::to_allocvec(&typedef) {
+            Ok(v) => v,
+            Err(_) => return 0,
+        };
 
-         if encoded.len() > buf_len {
-             return 0; // Buffer too small
-         }
+        if encoded.len() > buf_len {
+            return 0; // Buffer too small
+        }
 
-         let out_slice = unsafe { slice::from_raw_parts_mut(buf_ptr as *mut u8, encoded.len()) };
-         out_slice.copy_from_slice(&encoded);
+        let out_slice = unsafe { slice::from_raw_parts_mut(buf_ptr as *mut u8, encoded.len()) };
+        out_slice.copy_from_slice(&encoded);
 
-         encoded.len()
+        encoded.len()
     } else {
         0 // Not found
     }

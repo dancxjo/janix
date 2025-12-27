@@ -2,7 +2,7 @@ use crate::thing::Thing;
 use crate::value::ThingBody;
 use abi::ThingId;
 use core::marker::PhantomData;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct TypedThing<T> {
@@ -12,7 +12,10 @@ pub struct TypedThing<T> {
 
 impl<T> TypedThing<T> {
     pub fn new(thing: Thing) -> Self {
-        Self { thing, _marker: PhantomData }
+        Self {
+            thing,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -32,7 +35,11 @@ impl ThingTypedExt for Thing {
     }
 }
 
-pub fn make_thing<T: Serialize>(id: ThingId, kind: ThingId, body: &T) -> Result<Thing, postcard::Error> {
+pub fn make_thing<T: Serialize>(
+    id: ThingId,
+    kind: ThingId,
+    body: &T,
+) -> Result<Thing, postcard::Error> {
     Ok(Thing {
         id,
         kind,

@@ -48,7 +48,9 @@ impl HardwareBridge for Bridge {
 
     fn ticks(&self) -> u64 {
         let cntpct: u64;
-        unsafe { asm!("mrs {}, cntpct_el0", out(reg) cntpct); }
+        unsafe {
+            asm!("mrs {}, cntpct_el0", out(reg) cntpct);
+        }
         cntpct
     }
 
@@ -87,15 +89,17 @@ impl HardwareBridge for Bridge {
     fn monotonic_now(&self) -> u64 {
         let cntpct: u64;
         let cntfrq: u64;
-        unsafe { 
+        unsafe {
             asm!("mrs {}, cntpct_el0", out(reg) cntpct);
             asm!("mrs {}, cntfrq_el0", out(reg) cntfrq);
         }
-        if cntfrq == 0 { return 0; }
+        if cntfrq == 0 {
+            return 0;
+        }
         // (cntpct * 1_000_000_000) / cntfrq
-        // Be careful of overflow. 
-        // 1GHz ticks = 1e9 per sec. 
-        // u64 max is 1.8e19. 
+        // Be careful of overflow.
+        // 1GHz ticks = 1e9 per sec.
+        // u64 max is 1.8e19.
         // If uptime is small, we are fine.
         // For robustness, use u128?
         ((cntpct as u128 * 1_000_000_000) / (cntfrq as u128)) as u64
@@ -104,7 +108,7 @@ impl HardwareBridge for Bridge {
     fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> [u64; 34] {
         // [x0..x29, x30, sp_el0, elr, spsr]
         let mut ctx = [0u64; 34];
-        
+
         let _uer = user::UserEntryRegs {
             entry_point: entry,
             user_stack: stack,
@@ -114,22 +118,22 @@ impl HardwareBridge for Bridge {
         // We can't easily pack UserEntryRegs into regs.
         // But wait! enter_user_mode uses UserEntryRegs struct pointer.
         // resume_user_mode uses array.
-        
+
         // We need to set up the array such that `resume_user_mode_asm` restores it correctly.
         // resume_user_mode_asm:
         // x0..x29, x30, sp_el0, elr_el1, spsr_el1.
-        
+
         // Return to EL0:
         // SPSR_EL1 [3:0] = 0000 (EL0t). M[3:0]=0000.
         // SPSR = 0.
-        ctx[33] = 0; 
-        
+        ctx[33] = 0;
+
         // ELR_EL1 = entry
         ctx[32] = entry;
 
         // SP_EL0 = stack
         ctx[31] = stack;
-        
+
         // x0 = arg
         ctx[0] = arg;
 
@@ -161,10 +165,12 @@ impl HardwareBridge for Bridge {
             t -= sec_year;
             year += 1;
         }
-        
+
         out.year = year as u16;
         let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-        if is_leap { days_in_month[1] = 29; }
+        if is_leap {
+            days_in_month[1] = 29;
+        }
 
         let mut mon = 0;
         loop {

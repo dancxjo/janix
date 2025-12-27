@@ -1,5 +1,4 @@
-pub mod graph;
 pub mod driver;
-pub mod typed;
+pub mod graph;
 pub mod time;
-
+pub mod typed;

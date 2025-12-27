@@ -1,6 +1,6 @@
 use abi::SymbolId;
-use serde::{Deserialize, Serialize};
 use alloc::string::String;
+use serde::{Deserialize, Serialize};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

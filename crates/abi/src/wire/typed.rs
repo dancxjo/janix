@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use crate::symbols::SymbolId;
-use alloc::vec::Vec;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 
 // TypeId is a stable hash of the canonical TypeDef
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -40,11 +40,18 @@ pub struct TypeDef {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TypeDesc {
     Primitive(PrimitiveType),
-    Struct { fields: Vec<Field> },
-    Enum { variants: Vec<Variant> },
+    Struct {
+        fields: Vec<Field>,
+    },
+    Enum {
+        variants: Vec<Variant>,
+    },
     Option(Box<TypeDesc>),
     List(Box<TypeDesc>),
-    Map { key: Box<TypeDesc>, value: Box<TypeDesc> },
+    Map {
+        key: Box<TypeDesc>,
+        value: Box<TypeDesc>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,7 +92,7 @@ impl TypeDef {
         version: u32,
         codec_id: CodecId,
         desc: &TypeDesc,
-        constraints: &Constraints
+        constraints: &Constraints,
     ) -> TypeId {
         // Canonical encoding: serialize fields in order using postcard, then hash.
         // We use a temporary buffer. Since we are in abi, we might not have alloc

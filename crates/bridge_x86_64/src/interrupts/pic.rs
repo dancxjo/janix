@@ -42,7 +42,7 @@ pub unsafe fn init() {
     // Restore masks? No, we want to control them explicitly.
     // Unmask Timer (IRQ0) and Keyboard (IRQ1) and Cascade (IRQ2).
     outb(PIC1_DATA, 0b11111000); // 0xF8
-    // Unmask Mouse (IRQ12 = Slave IRQ4)
+                                 // Unmask Mouse (IRQ12 = Slave IRQ4)
     outb(PIC2_DATA, 0b11101111); // 0xEF
 
     init_pit();
@@ -54,7 +54,7 @@ unsafe fn init_pit() {
     const PIT_FREQUENCY: u32 = 1193182;
     const TARGET_FREQUENCY: u32 = 100;
     let divisor = PIT_FREQUENCY / TARGET_FREQUENCY;
-    
+
     // Command: Channel 0, Access Lo/Hi, Mode 3 (Square Wave), Binary
     outb(PIT_COMMAND, 0x36);
     // Low byte
@@ -93,4 +93,3 @@ pub unsafe fn disable() {
     outb(PIC1_DATA, 0xFF);
     outb(PIC2_DATA, 0xFF);
 }
-

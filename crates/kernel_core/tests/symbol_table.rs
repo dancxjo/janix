@@ -1,5 +1,5 @@
-use kernel_core::symbols::{SymbolTable, SymbolError};
 use abi::symbols::sym;
+use kernel_core::symbols::{SymbolError, SymbolTable};
 
 #[test]
 fn test_intern_round_trip() {
@@ -26,7 +26,7 @@ fn test_collision_rejected() {
     // Since we can't call private methods, and we can't generate conflicting hashes easily,
     // we might skip this unless we expose a test-only method or use a mock hasher (which we can't inject).
     // Reviewing requirements: "collision_rejected (synthetic): insert_exact(id, "a") then insert_exact(same id, "b")"
-    
+
     // We can test double-intern (idempotency)
     let mut table = SymbolTable::new();
     let id1 = table.intern("apple").unwrap();

@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields};
+use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
 #[proc_macro_derive(ThingType, attributes(thing))]
 pub fn derive_thing_type(input: TokenStream) -> TokenStream {
@@ -31,19 +31,19 @@ pub fn derive_thing_type(input: TokenStream) -> TokenStream {
                             fields: alloc::vec![#(#field_constructions),*]
                         }
                     }
-                },
+                }
                 Fields::Unnamed(_) => {
                     quote! { abi::wire::typed::TypeDesc::Struct { fields: alloc::vec![] } }
-                },
+                }
                 Fields::Unit => {
                     quote! { abi::wire::typed::TypeDesc::Struct { fields: alloc::vec![] } }
                 }
             }
-        },
+        }
         Data::Enum(_) => {
-             // TODO: Enum support
-             quote! { abi::wire::typed::TypeDesc::Enum { variants: alloc::vec![] } }
-        },
+            // TODO: Enum support
+            quote! { abi::wire::typed::TypeDesc::Enum { variants: alloc::vec![] } }
+        }
         Data::Union(_) => {
             quote! { abi::wire::typed::TypeDesc::Struct { fields: alloc::vec![] } }
         }

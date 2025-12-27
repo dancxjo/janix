@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use crate::syscalls;
+use serde::{Deserialize, Serialize};
 
 pub struct GraphClient;
 
@@ -12,7 +12,7 @@ impl GraphClient {
         &self,
         method: &str,
         req: &S,
-        out_buf: &mut [u8]
+        out_buf: &mut [u8],
     ) -> Result<D, ()> {
         // Serialize request
         // We use a local buffer for request serialization?
@@ -33,11 +33,11 @@ impl GraphClient {
             match syscalls::graph_query(method, req_slice, out_buf) {
                 Ok(len) => break len,
                 Err(e) if e == abi::syscall_defs::SYS_EAGAIN => {
-                     // Busy wait / yield
-                     // In real OS we might sched_yield, here we rely on preemption
-                     core::hint::spin_loop();
-                     continue;
-                },
+                    // Busy wait / yield
+                    // In real OS we might sched_yield, here we rely on preemption
+                    core::hint::spin_loop();
+                    continue;
+                }
                 Err(_) => return Err(()),
             }
         };
@@ -49,7 +49,7 @@ impl GraphClient {
     pub fn call_op(
         &self,
         op: &abi::wire::graph::GraphOp,
-        out_buf: &mut [u8]
+        out_buf: &mut [u8],
     ) -> Result<abi::wire::graph::GraphReply, ()> {
         self.query("op", op, out_buf)
     }
@@ -57,20 +57,26 @@ impl GraphClient {
     pub fn call_batch(
         &self,
         ops: alloc::vec::Vec<abi::wire::graph::GraphOp>,
-        out_buf: &mut [u8]
+        out_buf: &mut [u8],
     ) -> Result<alloc::vec::Vec<abi::wire::graph::GraphReply>, ()> {
-         let batch_op = abi::wire::graph::GraphOp::Batch(ops);
-         match self.call_op(&batch_op, out_buf)? {
-             abi::wire::graph::GraphReply::BatchReply(replies) => Ok(replies),
-             _ => Err(()),
-         }
+        let batch_op = abi::wire::graph::GraphOp::Batch(ops);
+        match self.call_op(&batch_op, out_buf)? {
+            abi::wire::graph::GraphReply::BatchReply(replies) => Ok(replies),
+            _ => Err(()),
+        }
     }
 
-    pub fn read_file_chunk(&self, id: abi::ThingId, offset: u64, len: u32, scratch_buf: &mut [u8]) -> Result<alloc::vec::Vec<u8>, ()> {
-         let op = abi::wire::graph::GraphOp::ReadContent { id, offset, len };
-         match self.call_op(&op, scratch_buf)? {
-             abi::wire::graph::GraphReply::Content { bytes } => Ok(bytes),
-             _ => Err(()),
-         }
+    pub fn read_file_chunk(
+        &self,
+        id: abi::ThingId,
+        offset: u64,
+        len: u32,
+        scratch_buf: &mut [u8],
+    ) -> Result<alloc::vec::Vec<u8>, ()> {
+        let op = abi::wire::graph::GraphOp::ReadBytes { id, offset, len };
+        match self.call_op(&op, scratch_buf)? {
+            abi::wire::graph::GraphReply::Bytes { bytes } => Ok(bytes),
+            _ => Err(()),
+        }
     }
 }

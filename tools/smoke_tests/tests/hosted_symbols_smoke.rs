@@ -1,13 +1,19 @@
 use std::env;
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 
 #[test]
 fn test_hosted_symbol_persistence() {
     let temp_dir = std::env::temp_dir().join("thingos_smoke");
     std::fs::create_dir_all(&temp_dir).unwrap();
-    let sym_file = temp_dir.join(format!("symbols_{}.tsym", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-    
+    let sym_file = temp_dir.join(format!(
+        "symbols_{}.tsym",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+
     // 1. Intern "smoke_test_symbol"
     let output1 = Command::new("cargo")
         .args(&["run", "--bin", "kernel_hosted"])
@@ -25,7 +31,10 @@ fn test_hosted_symbol_persistence() {
         panic!("Intern step failed");
     }
 
-    let id_line = stdout1.lines().find(|l| l.starts_with("ID: ")).expect("No ID returned");
+    let id_line = stdout1
+        .lines()
+        .find(|l| l.starts_with("ID: "))
+        .expect("No ID returned");
     let id_str = id_line.trim_start_matches("ID: ");
     let id: u64 = id_str.parse().expect("Failed to parse ID");
 
@@ -46,10 +55,16 @@ fn test_hosted_symbol_persistence() {
         panic!("Resolve step failed");
     }
 
-    let val_line = stdout2.lines().find(|l| l.starts_with("VAL: ")).expect("No VAL returned");
+    let val_line = stdout2
+        .lines()
+        .find(|l| l.starts_with("VAL: "))
+        .expect("No VAL returned");
     let val = val_line.trim_start_matches("VAL: ");
-    
-    assert_eq!(val, "smoke_test_symbol", "Persistence failed: resolved value mismatch");
+
+    assert_eq!(
+        val, "smoke_test_symbol",
+        "Persistence failed: resolved value mismatch"
+    );
 
     // Cleanup
     let _ = std::fs::remove_file(sym_file);

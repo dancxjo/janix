@@ -1,12 +1,12 @@
-use x86_64::instructions::port::Port;
 use alloc::vec::Vec;
 use models::core::pci::PciDeviceBody;
+use x86_64::instructions::port::Port;
 
 const CONFIG_ADDRESS: u16 = 0xCF8;
 const CONFIG_DATA: u16 = 0xCFC;
 
 pub unsafe fn read_config_32(bus: u8, device: u8, func: u8, offset: u8) -> u32 {
-    let address = 0x80000000 
+    let address = 0x80000000
         | ((bus as u32) << 16)
         | ((device as u32) << 11)
         | ((func as u32) << 8)
@@ -41,7 +41,9 @@ pub fn scan_pci() -> Vec<PciDeviceBody> {
         for device in 0..32 {
             // Check Function 0 to see if device exists
             let vendor_id = unsafe { read_config_16(bus, device, 0, 0) };
-            if vendor_id == 0xFFFF { continue; }
+            if vendor_id == 0xFFFF {
+                continue;
+            }
 
             // Check for Multi-function
             let header_type = unsafe { read_config_8(bus, device, 0, 0x0E) };
@@ -49,7 +51,9 @@ pub fn scan_pci() -> Vec<PciDeviceBody> {
 
             for func in 0..func_count {
                 let vid = unsafe { read_config_16(bus, device, func, 0) };
-                if vid == 0xFFFF { continue; }
+                if vid == 0xFFFF {
+                    continue;
+                }
 
                 let did = unsafe { read_config_16(bus, device, func, 2) };
                 let class_id = unsafe { read_config_8(bus, device, func, 0x0B) };
@@ -63,10 +67,11 @@ pub fn scan_pci() -> Vec<PciDeviceBody> {
                 // We crudely read 6 for now, but mask based on header type?
                 // Actually header type 0x00 is device, 0x01 is pci-to-pci bridge.
                 let htype = unsafe { read_config_8(bus, device, func, 0x0E) } & 0x7F;
-                
+
                 if htype == 0x00 {
                     for i in 0..6 {
-                        bars[i] = unsafe { read_config_32(bus, device, func, 0x10 + (i as u8) * 4) };
+                        bars[i] =
+                            unsafe { read_config_32(bus, device, func, 0x10 + (i as u8) * 4) };
                     }
                 }
 
@@ -86,6 +91,6 @@ pub fn scan_pci() -> Vec<PciDeviceBody> {
             }
         }
     }
-    
+
     devices
 }

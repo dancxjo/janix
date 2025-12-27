@@ -11,11 +11,9 @@ members = [
 
 "crates/bridge_x86_64",
 "crates/bridge_aarch64",
-"crates/bridge_hosted",
 
 "kernels/x86_64",
 "kernels/aarch64",
-"kernels/hosted",
 
 "tools/smoke_tests",
 "tools/bdd",

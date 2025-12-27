@@ -64,29 +64,22 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
             let root_dir_id = links[0].1;
 
             // 3. List entries
-            let op = GraphOp::ScanLinks { from: Some(root_dir_id), to: None, kind: Some(THING_HAS_ENTRY_KIND) }; // Assuming HAS_ENTRY_KIND check in kernel main.rs used this.
-            // Wait, main.rs used `THING_LINK_KIND` for the Link Thing, but `predicate` field was used.
-            // If I look at main.rs (Step 653): `predicate: THING_HAS_ENTRY_KIND`. No, `THING_CONTAINS_FILE_KIND` was removed.
-            // I should check `main.rs` link logic.
-            // Line 816: `predicate: THING_MOUNTS_KIND`.
-            // Line 823: `predicate: THING_ON_VOLUME_KIND`.
-            // Lines 866-880: Linking Dirs/Files?
-            // "Link Dir -> ON_VOLUME"?
-            // "Link Dir -> HAS_ENTRY -> File"?
-            // I'll assume HAS_ENTRY or similar.
-            // I'll check builtins/ids.rs later if needed, but for now I'll use None for kind to list ALL links.
-            
-            let op = GraphOp::ScanLinks { from: Some(root_dir_id), to: None, kind: None };
+            // Properly filter for directory entries only
+            let op = GraphOp::ScanLinks { from: Some(root_dir_id), to: None, kind: Some(THING_HAS_ENTRY_KIND) };
             let reply = g.call_op(&op, &mut buf);
              if let Ok(GraphReply::Links(links)) = reply {
                  let _ = c.write_str("Entries in /boot:\n");
                  for (_from, to, _kind) in links {
                      let op = GraphOp::GetThing { id: to };
                      if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
-                          if let Ok(f) = postcard::from_bytes::<FileBody>(&tb.bytes) {
-                              let _ = c.write_str(&format!("FILE: {} ({} bytes)\n", f.name, f.size));
-                          } else if let Ok(d) = postcard::from_bytes::<DirBody>(&tb.bytes) {
-                              let _ = c.write_str(&format!("DIR:  {}\n", d.name));
+                          if tb.type_id.0 == THING_FILE_KIND.0 as u128 {
+                              if let Ok(f) = postcard::from_bytes::<FileBody>(&tb.bytes) {
+                                  let _ = c.write_str(&format!("FILE: {} ({} bytes)\n", f.name, f.size));
+                              }
+                          } else if tb.type_id.0 == THING_DIR_KIND.0 as u128 {
+                              if let Ok(d) = postcard::from_bytes::<DirBody>(&tb.bytes) {
+                                  let _ = c.write_str(&format!("DIR:  {}\n", d.name));
+                              }
                           }
                      }
                  }

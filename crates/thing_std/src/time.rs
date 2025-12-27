@@ -11,14 +11,20 @@ pub fn time_now(g: &GraphClient) -> Result<TimeNowResp, SysRet> {
 pub fn monotonic_ns(g: &GraphClient) -> Result<u64, SysRet> {
     let req = TimeMonotonicReq {};
     let mut buf = [0u8; 64];
-    let resp: TimeMonotonicResp = g.query("time.monotonic_ns", &req, &mut buf).map_err(|_| -1)?;
+    let resp: TimeMonotonicResp = g
+        .query("time.monotonic_ns", &req, &mut buf)
+        .map_err(|_| -1)?;
     Ok(resp.monotonic_ns)
 }
 
 pub fn sleep_until_ns(g: &GraphClient, wake_ns: u64) -> Result<u64, SysRet> {
-    let req = TimeSleepUntilReq { wake_monotonic_ns: wake_ns };
+    let req = TimeSleepUntilReq {
+        wake_monotonic_ns: wake_ns,
+    };
     let mut buf = [0u8; 64];
-    let resp: TimeSleepUntilResp = g.query("time.sleep_until_ns", &req, &mut buf).map_err(|_| -1)?;
+    let resp: TimeSleepUntilResp = g
+        .query("time.sleep_until_ns", &req, &mut buf)
+        .map_err(|_| -1)?;
     Ok(resp.woke_at_monotonic_ns)
 }
 

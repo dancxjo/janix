@@ -23,8 +23,6 @@ pub struct TrapFrame {
     pub ss: u64,
 }
 
-
-
 // Stub for now. Logic needs kernel_core::sched access (Mutex) which we need to expose.
 // Stub for now. Logic needs kernel_core::sched access (Mutex) which we need to expose.
 pub fn timer_tick(frame: &mut TrapFrame) {

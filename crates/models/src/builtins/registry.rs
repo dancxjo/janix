@@ -1,5 +1,5 @@
-use alloc::vec::Vec;
 use crate::Thing;
+use alloc::vec::Vec;
 
 pub fn builtin_seed_things() -> Vec<Thing> {
     let mut v = Vec::new();
@@ -67,7 +67,7 @@ pub fn builtin_seed_things() -> Vec<Thing> {
     v.extend(crate::builtins::core_kinds::seed_file_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_dir_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_volume_kind().into_iter());
-    
+
     // New Diag
     v.extend(crate::builtins::core_kinds::seed_log_entry_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_error_kind().into_iter());

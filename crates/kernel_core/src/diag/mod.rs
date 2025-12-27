@@ -1,10 +1,10 @@
-pub mod ring;
 pub mod flusher;
+pub mod ring;
 
 #[cfg(test)]
 mod tests;
 
-pub use ring::{LogRing, EntryKind};
+pub use ring::{EntryKind, LogRing};
 
 // Macros for logging
 #[macro_export]
@@ -14,7 +14,10 @@ macro_rules! klog {
             $crate::diag::EntryKind::Log,
             $level,
             $msg,
-            0, 0, 0, 0
+            0,
+            0,
+            0,
+            0,
         );
     };
     ($level:expr, $msg:expr, $a:expr) => {
@@ -22,16 +25,23 @@ macro_rules! klog {
             $crate::diag::EntryKind::Log,
             $level,
             $msg,
-            $a as u64, 0, 0, 0
+            $a as u64,
+            0,
+            0,
+            0,
         );
     };
 }
 
 // Trap-safe recording
 pub fn record_fault(
-    rip: u64, _rsp: u64, rflags: u64, cr2: u64,
-    error_code: u64, fault_kind: u8,
-    msg: &str
+    rip: u64,
+    _rsp: u64,
+    rflags: u64,
+    cr2: u64,
+    error_code: u64,
+    fault_kind: u8,
+    msg: &str,
 ) {
     LogRing::global().push(
         EntryKind::Fault,
@@ -40,7 +50,7 @@ pub fn record_fault(
         rip,
         error_code,
         cr2,
-        rflags
+        rflags,
     );
 }
 
@@ -50,6 +60,9 @@ pub fn record_panic(msg: &str) {
         EntryKind::Error,
         5, // Fatal
         msg,
-        0, 0, 0, 0
+        0,
+        0,
+        0,
+        0,
     );
 }

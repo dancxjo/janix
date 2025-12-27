@@ -2,7 +2,7 @@ use super::UserEntryRegs;
 use core::arch::global_asm;
 extern crate alloc;
 use super::super::paging; // Access paging from root
-use alloc::alloc::{Layout, alloc_zeroed};
+use alloc::alloc::{alloc_zeroed, Layout};
 use core::ptr::NonNull;
 
 global_asm!(
@@ -93,15 +93,15 @@ pub fn alloc_user_stack() -> u64 {
     let stack_ptr = NonNull::new(stack_ptr).expect("alloc_user_stack: allocation failed");
     let stack_addr = stack_ptr.as_ptr() as u64;
 
-        // Map as user accessible + Normal memory
-        let start = stack_addr;
-        let end = stack_addr + USER_STACK_SIZE as u64;
-        let mut curr = start;
-        while curr < end {
-            // We want AP[1]=1 (EL0 access) and Normal memory type
-            paging::update_page_flags(curr, paging::DESC_AP_EL0 | paging::ATTR_NORMAL, 0);
-            curr += 4096;
-        }
+    // Map as user accessible + Normal memory
+    let start = stack_addr;
+    let end = stack_addr + USER_STACK_SIZE as u64;
+    let mut curr = start;
+    while curr < end {
+        // We want AP[1]=1 (EL0 access) and Normal memory type
+        paging::update_page_flags(curr, paging::DESC_AP_EL0 | paging::ATTR_NORMAL, 0);
+        curr += 4096;
+    }
 
     // Stack grows down, so return end
     let stack_top = stack_addr + USER_STACK_SIZE as u64;
@@ -111,7 +111,7 @@ pub fn alloc_user_stack() -> u64 {
 
 pub unsafe fn init_user_stack(_phys_mem_offset: u64) {
     // Map user_thread_main as user accessible
-    // For now we assume the function is accessible. 
+    // For now we assume the function is accessible.
     // The previous code had a reference to crate::user::user_thread_main but that might not exist here.
     // Let's keep it commented or check where it is.
     // In bridge v0.2, user entry is passed from outside.

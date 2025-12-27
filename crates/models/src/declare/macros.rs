@@ -43,8 +43,8 @@ macro_rules! thing_kind {
 // Macro updated to accept ThingId references
             pub const [<THING_ $KindName:upper _KIND>]: $crate::abi::ThingId = $kind_id;
             pub const [<THING_ $KindName:upper _SCHEMA>]: $crate::abi::ThingId = $schema_id;
-            
-            pub const [<$KindName:upper _TYPE_TAG>]: $crate::declare::TypeTag = 
+
+            pub const [<$KindName:upper _TYPE_TAG>]: $crate::declare::TypeTag =
                 $crate::declare::type_tag($type_tag_str);
 
             #[allow(unused_imports)]
@@ -98,7 +98,7 @@ macro_rules! thing_kind {
 
                 let kind_thing = $crate::Thing {
                     id: [<THING_ $KindName:upper _KIND>],
-                    kind: THING_KIND_KIND, 
+                    kind: THING_KIND_KIND,
                     body: ThingBody::from(&kind_typed).expect("kind encode failed"),
                 };
 
@@ -136,6 +136,10 @@ macro_rules! predicate_kind {
 /// Helper to handle `max many` vs `max N` syntax
 #[macro_export]
 macro_rules! thing_kind_max {
-    (many) => { None };
-    ($n:literal) => { Some($n) };
+    (many) => {
+        None
+    };
+    ($n:literal) => {
+        Some($n)
+    };
 }

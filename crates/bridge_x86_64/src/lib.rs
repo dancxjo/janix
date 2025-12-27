@@ -11,6 +11,7 @@ pub mod acpi;
 pub mod pci;
 pub mod hpet;
 pub mod ps2;
+pub mod serial;
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;
@@ -39,8 +40,12 @@ impl Bridge {
         b.log("BRIDGE: syscall::init\n");
         interrupts::syscall::init();
 
+
         b.log("BRIDGE: ps2::init\n");
         ps2::init();
+        
+        b.log("BRIDGE: serial::init\n");
+        serial::init();
 
         // ACPI init moved to explicit call
     }

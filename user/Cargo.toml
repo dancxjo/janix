@@ -12,7 +12,7 @@ members = [
   "drivers/rtc_x86",
   "drivers/rtc_aarch64",
   "drivers/ps2_mouse",
-  "apps/sleep_accuracy_smoke",
+  "apps/sleep_accuracy_smoke", "apps/log_viewer",
 ]
 
 

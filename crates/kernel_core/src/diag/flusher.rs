@@ -2,142 +2,127 @@ use crate::Kernel;
 use hw::HardwareBridge;
 use alloc::string::ToString;
 use abi::{ThingId, SymbolId};
-use crate::diag::{LogRing};
+use crate::diag::{LogRing, EntryKind};
 use thing_models::builtins::ids::*;
 
-use thing_models::diag::{LogEntryBody, ErrorBody, FaultBody};
+use thing_models::core::serial::{LogStreamBody, LogEntryCompact};
 use thing_models::thing::Thing;
 use thing_models::value::ThingBody;
 use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use abi::wire::typed::{TypedBytes, TypeId, CodecId};
+
+// Log Stream Thing ID (Singleton-ish for now)
+const LOG_STREAM_ID: ThingId = ThingId(3020);
 
 // State for the flusher
 static GRAPH_HEALTHY: AtomicBool = AtomicBool::new(true);
 static LAST_SEQ: AtomicU64 = AtomicU64::new(0);
 
-// Boot Session ID
-static BOOT_SESSION_ID: AtomicU64 = AtomicU64::new(0);
-static BOOT_SESSION_CREATED: AtomicBool = AtomicBool::new(false);
-
-fn ensure_boot_session<B: HardwareBridge>(_kernel: &mut Kernel<B>) {
-    if !BOOT_SESSION_CREATED.load(Ordering::Relaxed) {
-        // Create BootSession Thing
-        // TODO: use timestamp or random
-        let boot_id = 12345; // Placeholder
-        BOOT_SESSION_ID.store(boot_id, Ordering::Relaxed);
-        BOOT_SESSION_CREATED.store(true, Ordering::Relaxed);
-
-        // Actually insert Thing?
-        // Skipped for brevity, but we should create a Thing for the boot session here.
-    }
-}
+static LOG_STREAM_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 pub fn flush_diagnostics<B: HardwareBridge>(kernel: &mut Kernel<B>) {
-    if !GRAPH_HEALTHY.load(Ordering::Relaxed) {
-        return;
+    // 1. Ensure Stream Thing Exists
+    if !LOG_STREAM_INITIALIZED.load(Ordering::Relaxed) {
+        let body = LogStreamBody {
+            head_seq: 0,
+            capacity: 256,
+            dropped: 0,
+            entries: alloc::vec::Vec::new(),
+        };
+        
+        let body_bytes = postcard::to_allocvec(&body).unwrap();
+        let tb = ThingBody::from(&TypedBytes {
+             type_id: TypeId(THING_LOG_STREAM_KIND.0 as u128),
+             codec_id: CodecId::POSTCARD,
+             bytes: body_bytes,
+        }).unwrap();
+        
+
+        let thing = Thing {
+            id: LOG_STREAM_ID,
+            kind: THING_LOG_STREAM_KIND,
+            body: tb,
+        };
+        let _ = kernel.graph.insert_thing(thing);
+        
+        // Link Root -> LogStream (EMITS? or HAS_CONSOLE?)
+        // Let's us EMITS from Root for now.
+        let link = thing_models::link::LinkBody {
+             from: THING_BOOT_ROOT,
+             to: LOG_STREAM_ID,
+             predicate: THING_EMITS_KIND,
+        };
+        let lb = ThingBody::from(&TypedBytes {
+             type_id: TypeId(THING_LINK_KIND.0 as u128),
+             codec_id: CodecId::POSTCARD,
+             bytes: postcard::to_allocvec(&link).unwrap() 
+        }).unwrap();
+        let _ = kernel.graph.create_thing(THING_LINK_KIND, lb);
+        
+        LOG_STREAM_INITIALIZED.store(true, Ordering::Relaxed);
     }
-
-    ensure_boot_session(kernel);
-
+    
+    // 2. Read new entries
     let ring = LogRing::global();
-
-    // We limit processing to avoid starving the system
-    let max_entries = 50;
-    let mut processed = 0;
-
+    let mut new_entries = alloc::vec::Vec::new();
+    
     ring.drain(|entry| {
-        if processed >= max_entries {
-            return;
-        }
-        processed += 1;
-
-        // Convert entry to Thing
-        // Note: entry is internal. We copy out data.
-
         let msg = {
              let len = entry.msg_len as usize;
              let slice = &entry.msg_bytes[..len];
              let s = core::str::from_utf8(slice).unwrap_or("<invalid utf8>");
-             // Echo to serial/bridge
+             // Echo to serial/bridge (Redundant if we trust stream, but good for debug)
              kernel.bridge.log(s);
              s.to_string()
         };
-
-        // Use a static seq counter for now if entry.seq is not used
+        
+        // Filter out low level noise? No, we want everything.
+        
         let seq = LAST_SEQ.fetch_add(1, Ordering::Relaxed);
-        let boot_id = BOOT_SESSION_ID.load(Ordering::Relaxed);
-
-        // Generate a deterministic ID based on boot + seq
-        // Simple hash: boot_id << 32 | seq (if seq < 32 bits)
-        // Or just some mix.
-        let unique_id = boot_id.wrapping_add(seq).wrapping_add(2000000); // Placeholder mix
-        let tid = ThingId(unique_id);
-
-        let thing_res = match entry.kind {
-            0 => { // Log
-                // Safety: internal log ring levels must match model enums
-                let level: thing_models::diag::LogLevel = unsafe { core::mem::transmute(entry.level) };
-                let body = LogEntryBody {
-                    timestamp_ns: entry.timestamp_or_ticks, // TODO: real time
-                    level,
-                    message: msg,
-                    subsystem: SymbolId(0), // unknown
-                    cpu_id: entry.cpu,
-                    thread_id: 0,
-                    process_id: 0,
-                    seq,
-                };
-
-                Some(Thing {
-                    id: tid,
-                    kind: THING_LOG_ENTRY_KIND,
-                    body: ThingBody::from(&body).unwrap(),
-                })
-            }
-            1 => { // Error
-                let body = ErrorBody {
-                    code: SymbolId(0),
-                    message: msg,
-                    severity: entry.level,
-                    recoverable: false,
-                };
-                Some(Thing {
-                    id: tid,
-                    kind: THING_ERROR_KIND,
-                    body: ThingBody::from(&body).unwrap(),
-                })
-            }
-            2 => { // Fault
-                 // Safety: assuming level holds FaultKind discriminant
-                let fault_kind: thing_models::diag::FaultKind = unsafe { core::mem::transmute(entry.level) };
-                let body = FaultBody {
-                    fault_kind,
-                    rip: entry.payload_a,
-                    error_code: entry.payload_b,
-                    cr2: entry.payload_c,
-                    rflags: entry.payload_d,
-                    rsp: 0, // lost for now
-                    access: thing_models::diag::Access::Read, // placeholder
-                    address_space: thing_models::diag::AddressSpace::Kernel, // placeholder
-                    kill_action: thing_models::diag::KillAction::Panic, // placeholder
-                };
-                Some(Thing {
-                    id: tid,
-                    kind: THING_FAULT_KIND,
-                    body: ThingBody::from(&body).unwrap(),
-                })
-            }
-            _ => None,
+        let compact = LogEntryCompact {
+            seq,
+            timestamp_ns: entry.timestamp_or_ticks, // Approximate
+            level: entry.level,
+            message: msg,
         };
-
-        if let Some(thing) = thing_res {
-             match kernel.graph.insert_thing(thing) {
-                 Ok(_) => {},
-                 Err(_) => {
-                     // If graph full or error, mark unhealthy
-                     GRAPH_HEALTHY.store(false, Ordering::Relaxed);
-                     // Fallback logging?
-                 }
-             }
-        }
+        new_entries.push(compact);
     });
+
+    if new_entries.is_empty() { return; }
+
+    // 3. Update Thing
+    // We need to read existing body, append, and write back.
+    // GraphStore doesn't support partial updates yet.
+    // This is expensive (deserialize -> append -> serialize), but correct for the model.
+    
+    let current_bytes = if let Some(thing) = kernel.graph.get(LOG_STREAM_ID) {
+         thing.body.bytes.clone()
+    } else {
+         return;
+    };
+
+     if let Ok(mut body) = postcard::from_bytes::<LogStreamBody>(&current_bytes) {
+          // Append
+          for e in new_entries {
+              body.entries.push(e);
+              body.head_seq += 1;
+          }
+          
+          // Trim
+          while body.entries.len() > body.capacity as usize {
+              body.entries.remove(0);
+              body.dropped += 1;
+          }
+          
+          // Write Back
+          let new_body_bytes = postcard::to_allocvec(&body).unwrap();
+          
+          let new_tb = ThingBody::from(&TypedBytes {
+                type_id: TypeId(THING_LOG_STREAM_KIND.0 as u128),
+                codec_id: CodecId::POSTCARD,
+                bytes: new_body_bytes,
+           }).unwrap();
+
+          let _ = kernel.graph.update_thing(LOG_STREAM_ID, new_tb);
+     }
 }

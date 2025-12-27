@@ -4,6 +4,7 @@ pub mod capability;
 pub mod vgs;
 pub mod input;
 pub mod pci;
+pub mod serial;
 pub mod buffer;
 
 

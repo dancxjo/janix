@@ -127,6 +127,8 @@ dependencies = [
  "hw",
  "kernel_core",
  "models",
+ "postcard",
+ "serde",
  "spin 0.9.8",
  "x86_64 0.14.13",
 ]

@@ -162,3 +162,9 @@ pub const THING_TIME_INSTANCE: ThingId = ThingId(2000);
 
 pub const THING_PCI_DEVICE_KIND: ThingId = ThingId(223);
 pub const THING_PCI_DEVICE_SCHEMA: ThingId = ThingId(1223);
+
+pub const THING_SERIAL_PORT_KIND: ThingId = ThingId(224);
+pub const THING_SERIAL_PORT_SCHEMA: ThingId = ThingId(1224);
+
+pub const THING_LOG_STREAM_KIND: ThingId = ThingId(225);
+pub const THING_LOG_STREAM_SCHEMA: ThingId = ThingId(1225);

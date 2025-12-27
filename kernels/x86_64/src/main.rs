@@ -518,6 +518,8 @@ pub extern "C" fn rust_main() -> ! {
         }
         k.bridge.log("THINGOS: symbols ready\n");
 
+        unsafe { bridge_x86_64::serial::publish_serial_thing(&mut k) };
+
         // --- PCI ENUMERATION ---
         k.bridge.log("PCI: Scanning...\n");
         let pci_devices = unsafe { bridge_x86_64::pci::scan_pci() };

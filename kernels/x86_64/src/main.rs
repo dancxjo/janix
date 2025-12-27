@@ -606,7 +606,7 @@ pub extern "C" fn rust_main() -> ! {
                            unsafe { bridge_x86_64::ahci::read_sector_at(base, port_idx, lba, buf, hhdm) }
                       };
                       
-                      k.bridge.log("FS: Scanning CD-ROM (Port 2)...\n");
+                      k.bridge.log("FS: Scanning CD-ROM (Port 1)...\n");
                       // We need internal buffer inside Reader
                       use kernel_core::fs::iso9660::Iso9660Reader;
                       let mut reader = Iso9660Reader::new(read_fn);
@@ -656,7 +656,7 @@ pub extern "C" fn rust_main() -> ! {
                               k.graph.create_thing(THING_LINK_KIND, lb);
                           }
                       } else {
-                          k.bridge.log("FS: No valid ISO9660 on Port 2\n");
+                          k.bridge.log("FS: No valid ISO9660 on Port 1\n");
                       }
                  } else {
                       k.bridge.log("AHCI: Invalid BAR5 (IO or Zero)\n");

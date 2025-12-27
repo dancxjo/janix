@@ -18,7 +18,7 @@ use thing_models::core::process::ProcessBody;
 use thing_models::builtins::core_kinds::BootProgramBody;
 use thing_models::builtins::core_kinds::{ModuleBody, FontBody, BitmapBody, ProgramImageBody};
 use thing_models::core::time::TimeNow;
-use thing_models::core::input::{KeyboardBody, KeyEventStreamBody};
+use thing_models::core::input::{KeyboardBody, KeyEventStreamBody, MouseBody, PointerEventStreamBody};
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -55,6 +55,9 @@ pub extern "C" fn _start() -> ! {
     kind_cache.insert(THING_EMITS_KIND, "EMITS".into());
     kind_cache.insert(THING_SPAWNED_KIND, "SPAWNED".into());
     kind_cache.insert(THING_RUNS_KIND, "RUNS".into());
+    
+    kind_cache.insert(THING_MOUSE_KIND, "MouseDevice".into());
+    kind_cache.insert(THING_POINTER_EVENT_STREAM_KIND, "PointerStream".into());
 
     loop {
         perform_dump(&g, &c, &mut kind_cache);
@@ -187,6 +190,18 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole, kind_cache: &mut BTreeMap<Th
                  if n.kind == THING_MODULE_KIND {
                      if let Ok(b) = postcard::from_bytes::<ModuleBody>(&n.data) {
                          let _ = c.write_str(&format!("{{ path: \"{}\", kind: \"{}\", role: \"{}\", size: {}, valid: {}, sniff: 0x{:08X} }}\n", b.path, b.kind, b.role, b.size_bytes, b.valid, b.sniff));
+                         continue;
+                     }
+                 }
+                 if n.kind == THING_MOUSE_KIND {
+                     if let Ok(b) = postcard::from_bytes::<MouseBody>(&n.data) {
+                         let _ = c.write_str(&format!("{{ bus: {} }}\n", b.bus.0));
+                         continue;
+                     }
+                 }
+                 if n.kind == THING_POINTER_EVENT_STREAM_KIND {
+                     if let Ok(b) = postcard::from_bytes::<PointerEventStreamBody>(&n.data) {
+                         let _ = c.write_str(&format!("{{ head_seq: {}, capacity: {}, events: {} }}\n", b.head_seq, b.capacity, b.events.len()));
                          continue;
                      }
                  }

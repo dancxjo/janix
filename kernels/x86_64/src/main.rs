@@ -514,6 +514,8 @@ pub extern "C" fn rust_main() -> ! {
             enum ModuleRole { App, Driver, Debug, Asset, Ignore }
             fn get_module_role(name: &str, mtype: &ModuleType) -> ModuleRole {
                 if name.contains("syscall_crud_smoke") { return ModuleRole::Debug; }
+                if name.contains("sleep_smoke") { return ModuleRole::Debug; }
+                if name.contains("sleep_accuracy_smoke") { return ModuleRole::Debug; }
                 if name.contains("keylog") { return ModuleRole::Driver; } 
                 if name.contains("ps2_keyboard") { return ModuleRole::Driver; }
                 if name.contains("ps2_mouse") { return ModuleRole::Driver; }

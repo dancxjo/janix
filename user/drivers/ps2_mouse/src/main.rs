@@ -28,6 +28,7 @@ pub extern "C" fn _start() -> ! {
         body: models::ThingBody::from(&MouseBody { bus: SYM_PS2 }).expect("mouse body"),
     };
 
+    std::debug::log("About to publish mouse...\n");
     publish_thing(&mouse);
     std::debug::log("Published Mouse Device\n");
 
@@ -67,6 +68,7 @@ pub extern "C" fn _start() -> ! {
     };
     publish_link(link_id, link_body);
     std::debug::log("Linked Mouse -> Stream\n");
+    std::debug::log("!!! MOUSE ALIVE !!!\n");
 
     // Work Loop
     let mut packet = [0u8; 3];
@@ -107,7 +109,10 @@ pub extern "C" fn _start() -> ! {
                                 let pub_bytes = postcard::to_allocvec(&thing).unwrap();
                                 let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
                                 let payload_bytes = postcard::to_allocvec(&payload).unwrap();
-                                let _ = std::syscalls::driver_publish(&payload_bytes);
+                let res = std::syscalls::driver_publish(&payload_bytes);
+                                if let Err(e) = res {
+                                     std::debug::log("Stream Update Failed!\n");
+                                }
                             }
                         },
                         _ => {}
@@ -163,7 +168,14 @@ fn publish_thing(thing: &Thing) {
     let pub_bytes = postcard::to_allocvec(thing).expect("serialize thing");
     let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
     let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
-    let _ = std::syscalls::driver_publish(&payload_bytes);
+    std::debug::log("Calling driver_publish...\n");
+    let res = std::syscalls::driver_publish(&payload_bytes);
+    if let Err(e) = res {
+        std::debug::log("Publish Thing Failed: ");
+        if e == -2 { std::debug::log("E_BADMSG\n"); }
+        else if e == -3 { std::debug::log("E_FAIL\n"); }
+        else { std::debug::log("Other Err\n"); }
+    }
 }
 
 fn publish_link(id: ThingId, body: models::link::LinkBody) {

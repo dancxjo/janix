@@ -53,10 +53,14 @@ unsafe impl GlobalAlloc for BumpAllocator {
 static ALLOCATOR: BumpAllocator = BumpAllocator::new();
 
 #[panic_handler]
+#[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    // Try to print "PANIC" to console if possible, but we don't have easy access to Console here
-    // without circular deps or global instance.
-    // For v0, just loop.
-    let _ = info;
+    use core::fmt::Write;
+    use crate::debug::PortWrites;
+    let _ = PortWrites.write_str("\n!!! USER PANIC !!!\n");
+    if let Some(loc) = info.location() {
+        let _ = PortWrites.write_fmt(format_args!("at {}:{}\n", loc.file(), loc.line()));
+    }
+    let _ = PortWrites.write_fmt(format_args!("{}\n", info.message()));
     loop {}
 }

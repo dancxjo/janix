@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use thing_std as std;
 use thing_std::{GraphClient, StdoutConsole, Console};
 use alloc::vec::Vec;
 use alloc::collections::{BTreeSet, VecDeque, BTreeMap};
@@ -21,7 +22,9 @@ use thing_models::core::time::TimeNow;
 use thing_models::core::input::{KeyboardBody, KeyEventStreamBody, MouseBody, PointerEventStreamBody};
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(heap_start: u64) -> ! {
+    unsafe { std::rt::init_heap(heap_start as usize, 1024 * 1024); }
+    std::init();
     let g = GraphClient::new();
     let c = StdoutConsole;
     

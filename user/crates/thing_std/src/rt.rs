@@ -6,7 +6,8 @@ use core::ptr::null_mut;
 // SAFETY: This is NOT thread safe. It assumes single threaded execution for now.
 pub struct BumpAllocator {
     offset: UnsafeCell<usize>,
-    heap: [u8; 1024 * 1024], // 1MB heap
+    start: UnsafeCell<usize>,
+    end: UnsafeCell<usize>,
 }
 
 unsafe impl Sync for BumpAllocator {}
@@ -15,8 +16,18 @@ impl BumpAllocator {
     pub const fn new() -> Self {
         Self {
             offset: UnsafeCell::new(0),
-            heap: [0; 1024 * 1024],
+            start: UnsafeCell::new(0),
+            end: UnsafeCell::new(0),
         }
+    }
+}
+
+pub unsafe fn init_heap(start: usize, size: usize) {
+    let alloc = &ALLOCATOR;
+    unsafe {
+        *alloc.start.get() = start;
+        *alloc.end.get() = start + size;
+        *alloc.offset.get() = start;
     }
 }
 
@@ -25,21 +36,19 @@ unsafe impl GlobalAlloc for BumpAllocator {
         use core::fmt::Write;
         use crate::debug::PortWrites;
 
-        let offset_ptr = self.offset.get();
-        let start = *offset_ptr;
-        let align_mask = layout.align() - 1;
+        let current_ptr = self.offset.get();
+        let current = *current_ptr;
+        let end_limit = *self.end.get();
         
-        let aligned_start = (start + align_mask) & !align_mask;
-        let end = aligned_start + layout.size();
+        let align_mask = layout.align() - 1;
+        let aligned_start = (current + align_mask) & !align_mask;
+        let new_end = aligned_start + layout.size();
 
-        // Very noisy, enable only for debug
-        // let _ = PortWrites.write_fmt(format_args!("Alloc: size={} align={} start={} end={}\n", layout.size(), layout.align(), start, end));
-
-        if end <= self.heap.len() {
-            *offset_ptr = end;
-            (self.heap.as_ptr() as *mut u8).add(aligned_start)
+        if new_end <= end_limit {
+            *current_ptr = new_end;
+            aligned_start as *mut u8
         } else {
-            let _ = PortWrites.write_fmt(format_args!("Alloc FAILED: size={} align={} start={} end={} heap_len={}\n", layout.size(), layout.align(), start, end, self.heap.len()));
+            let _ = PortWrites.write_fmt(format_args!("Alloc FAILED: size={} align={} current={:x} limit={:x}\n", layout.size(), layout.align(), current, end_limit));
             null_mut()
         }
     }
@@ -52,7 +61,6 @@ unsafe impl GlobalAlloc for BumpAllocator {
 #[global_allocator]
 static ALLOCATOR: BumpAllocator = BumpAllocator::new();
 
-#[panic_handler]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     use core::fmt::Write;

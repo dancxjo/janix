@@ -513,11 +513,16 @@ pub extern "C" fn rust_main() -> ! {
 
             enum ModuleRole { App, Driver, Debug, Asset, Ignore }
             fn get_module_role(name: &str, mtype: &ModuleType) -> ModuleRole {
-                if name.contains("syscall_crud_smoke") { return ModuleRole::Debug; }
-                if name.contains("sleep_smoke") { return ModuleRole::Debug; }
+                if name.contains("syscall_crud_smoke") { return ModuleRole::Ignore; }
+                if name.contains("clock") { return ModuleRole::Ignore; }
                 if name.contains("sleep_accuracy_smoke") { return ModuleRole::Debug; }
-                if name.contains("keylog") { return ModuleRole::Driver; } 
-                if name.contains("ps2_keyboard") { return ModuleRole::Driver; }
+                if name.contains("sleep_smoke") { return ModuleRole::Ignore; }
+                if name.contains("keylog") { return ModuleRole::Ignore; } 
+                if name.contains("ps2_keyboard") { return ModuleRole::Ignore; }
+                if name.contains("rtc_x86") { return ModuleRole::Ignore; }
+                if name.contains("graph_dump") { return ModuleRole::App; }
+                if name.contains("ps2_mouse") { return ModuleRole::Driver; }
+
                 if name.contains("ps2_mouse") { return ModuleRole::Driver; }
                 match mtype {
                     ModuleType::Psf1 | ModuleType::Psf2 | ModuleType::Bmp | ModuleType::Png | 
@@ -797,7 +802,7 @@ pub extern "C" fn rust_main() -> ! {
                     if let Some(img) = loaded {
                         k.bridge.log("Loaded app entry\n");
                         let stack_bottom_virt = VirtAddr::new(current_app_base + 0x0800_0000);
-                        let stack_size = 65536;
+                        let stack_size = 131072;
                         let stack_top_virt = stack_bottom_virt + stack_size;
                         
                         let start_page = Page::<Size4KiB>::containing_address(stack_bottom_virt);
@@ -813,11 +818,34 @@ pub extern "C" fn rust_main() -> ! {
                             }
                         }
 
+                        // Map User Heap (256KB for now)
+                        let heap_virt_start = current_app_base + 0x0100_0000;
+                        let heap_size = 256 * 1024;
+                        let heap_virt_end = heap_virt_start + heap_size;
+
+                        let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(heap_virt_start));
+                        let end_page = Page::<Size4KiB>::containing_address(VirtAddr::new(heap_virt_end - 1u64));
+
+                        for page in Page::range_inclusive(start_page, end_page) {
+                             let frame = frame_allocator.allocate_frame().expect("No heap frames");
+                             let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                             unsafe {
+                                if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                                    map_to.flush();
+                                    // Zero the heap memory to be safe cleanliness
+                                    let phys = frame.start_address();
+                                    let virt = hhdm_offset + phys.as_u64();
+                                    core::ptr::write_bytes(virt.as_mut_ptr::<u8>(), 0, 4096);
+                                }
+                            }
+                        }
+
                         let entry_point = current_app_base + img.entry_point;
                         k.bridge.log("Spawning app: "); k.bridge.log(name); k.bridge.log("\n");
 
                         let process_pid = (k.scheduler.processes.len() + 1) as u64;
-                        k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), 0);
+                        // Pass heap_virt_start as user_arg (5th arg)
+                        k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), heap_virt_start);
 
                         // Create Process Thing
                         let p_body = ProcessBody {

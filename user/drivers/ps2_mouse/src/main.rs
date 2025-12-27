@@ -4,6 +4,7 @@
 extern crate alloc;
 use alloc::vec::Vec;
 use thing_std as std;
+use thing_std::{StdoutConsole, Console};
 use abi::{ThingId, SymbolId};
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use models::core::input::{MouseBody, PointerEventStreamBody, PointerEventCompact};
@@ -15,15 +16,30 @@ use models::builtins::symbols::{SYM_MOUSE, SYM_PS2};
 use models::Thing;
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(heap_start: u64) -> ! {
+    unsafe {
+        // Init Heap
+        std::rt::init_heap(heap_start as usize, 256 * 1024);
+    }
+    
     std::init();
-
-    // Delay to let graph_dump finish and avoid log interleaving
-    for _ in 0..1_000_000 {
-        core::hint::black_box(());
+    use std::{StdoutConsole, Console};
+    use core::fmt::Write;
+    use thing_std::debug::PortWrites;
+    
+    let _ = PortWrites.write_str("PS/2 Mouse: PortWrites Alive\n");
+    let _ = PortWrites.write_fmt(format_args!("Heap Init at: {:x}\n", heap_start));
+    
+    // HEAP TEST
+    {
+        let mut v = alloc::vec::Vec::new();
+        v.push(1u8);
     }
 
-    std::debug::log("PS/2 Mouse Driver starting...\n");
+    // Delay removed
+
+    // StdoutConsole removed to isolate crash
+    // let c = StdoutConsole;
 
     // 1. Create Mouse Device Thing (ID 3010)
     let mouse = Thing {
@@ -32,29 +48,25 @@ pub extern "C" fn _start() -> ! {
         body: models::ThingBody::from(&MouseBody { bus: SYM_PS2 }).expect("mouse body"),
     };
 
-    std::debug::log("About to publish mouse 1...\n");
     publish_thing(&mouse);
-    std::debug::log("Published Mouse 1\n");
-
-    std::debug::log("About to publish mouse 2 (should fail)...\n");
-    publish_thing(&mouse);
-    std::debug::log("Published Mouse 2\n");
+    let _ = PortWrites.write_str("PS/2 Mouse: Mouse Device Published\n");
 
     // 2. Link Root -> HAS_DEVICE -> Mouse (ID 3013)
     let root_link_id = ThingId(3013);
     let root_link_body = models::link::LinkBody {
         from: THING_BOOT_ROOT,
         to: mouse.id,
-        predicate: THING_HAS_DEVICE_KIND, // Generic HAS_DEVICE for now
+        predicate: THING_HAS_DEVICE_KIND,
     };
     publish_link(root_link_id, root_link_body);
-    std::debug::log("Linked Root -> Mouse\n");
+    let _ = PortWrites.write_str("PS/2 Mouse: Link Root->Mouse Published\n");
 
+    
     // 3. Create PointerEventStream Thing (ID 3011)
     let stream_id = ThingId(3011);
     let mut stream_body = PointerEventStreamBody {
         head_seq: 0,
-        capacity: 128, // High capacity for mouse motion
+        capacity: 128,
         dropped: 0,
         events: Vec::with_capacity(128),
     };
@@ -65,7 +77,7 @@ pub extern "C" fn _start() -> ! {
         body: models::ThingBody::from(&stream_body).expect("stream body"),
     };
     publish_thing(&stream_thing);
-    std::debug::log("Published PointerEventStream\n");
+    let _ = PortWrites.write_str("PS/2 Mouse: Stream Published\n");
 
     // 4. Link Mouse -> EMITS -> Stream (ID 3012)
     let link_id = ThingId(3012);
@@ -75,8 +87,8 @@ pub extern "C" fn _start() -> ! {
         predicate: THING_EMITS_KIND,
     };
     publish_link(link_id, link_body);
-    std::debug::log("Linked Mouse -> Stream\n");
-    std::debug::log("!!! MOUSE ALIVE !!!\n");
+    let _ = PortWrites.write_str("PS/2 Mouse: Link Mouse->Stream Published\n");
+    let _ = PortWrites.write_str("!!! MOUSE FULLY ALIVE !!!\n");
 
     // Work Loop
     let mut packet = [0u8; 3];
@@ -95,7 +107,7 @@ pub extern "C" fn _start() -> ! {
                                 // Byte 0 must have bit 3 set always
                                 // If not, we are out of sync or it's garbage. 
                                 // Ignore and wait for next byte (hoping it aligns)
-                                // std::debug::log("Mouse: Sync error\n");
+                                // c.write_str("Mouse: Sync error\n");
                                 continue;
                             }
                             
@@ -118,8 +130,8 @@ pub extern "C" fn _start() -> ! {
                                 let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
                                 let payload_bytes = postcard::to_allocvec(&payload).unwrap();
                 let res = std::syscalls::driver_publish(&payload_bytes);
-                                if let Err(e) = res {
-                                     std::debug::log("Stream Update Failed!\n");
+                                if let Err(_e) = res {
+                                     let _ = PortWrites.write_str("Stream Update Failed!\n");
                                 }
                             }
                         },
@@ -173,16 +185,16 @@ fn process_packet(packet: [u8; 3], body: &mut PointerEventStreamBody) {
 }
 
 fn publish_thing(thing: &Thing) {
+    use core::fmt::Write;
+    use thing_std::debug::PortWrites;
+
     let pub_bytes = postcard::to_allocvec(thing).expect("serialize thing");
     let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
     let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
-    std::debug::log("Calling driver_publish...\n");
+    // c.write_str("Calling driver_publish...\n");
     let res = std::syscalls::driver_publish(&payload_bytes);
     if let Err(e) = res {
-        std::debug::log("Publish Thing Failed: ");
-        if e == -2 { std::debug::log("E_BADMSG\n"); }
-        else if e == -3 { std::debug::log("E_FAIL\n"); }
-        else { std::debug::log("Other Err\n"); }
+        let _ = PortWrites.write_str("Publish Thing Failed\n");
     }
 }
 

@@ -1,7 +1,12 @@
 use crate::graph::GraphStore;
 
 pub fn seed_builtins(store: &mut GraphStore) {
-    for t in thing_models::builtins::builtin_seed_things() {
+    crate::klog!(1, "SEED: Generating things...");
+    let things = thing_models::builtins::builtin_seed_things();
+    crate::klog!(1, "SEED: Generated things.", things.len());
+
+    for (i, t) in things.into_iter().enumerate() {
+        crate::klog!(1, "SEED: Inserting item", i);
         store.insert_seed(t);
     }
 

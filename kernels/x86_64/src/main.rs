@@ -393,18 +393,77 @@ pub extern "C" fn rust_main() -> ! {
         }
 
 
-        // Now Init ACPI
+        // Now Init ACPI & APIC
         k.bridge.log("ACPI: Pre-Init\n");
         if let Some(r) = rsdp_addr {
             unsafe { 
                 Bridge::init_acpi(r, hhdm_offset_u64);
                 use bridge_x86_64::hpet;
-                // If HPET initialized successfully, switch to Legacy Mode for IRQ0
+                use bridge_x86_64::interrupts::{pic, apic, ioapic};
+                use bridge_x86_64::acpi;
+
+                // 1. Disable PIC
+                pic::disable();
+                k.bridge.log("PIC: Disabled\n");
+
+                // 2. Init Local APIC
+                // We rely on parsed MADT addr.
+                if acpi::LOCAL_APIC_ADDR != 0 {
+                    apic::init(acpi::LOCAL_APIC_ADDR);
+                } else {
+                    k.bridge.log("PANIC: No Local APIC found in MADT\n");
+                    loop {}
+                }
+
+                // 3. Init IOAPIC
+                if acpi::IO_APIC_ADDR != 0 {
+                    ioapic::init(acpi::IO_APIC_ADDR);
+                    
+                    // Route Keyboard (IRQ 1) -> Vector 33
+                    // Check ISA Overrides
+                    let irq1_gsi = acpi::ISA_OVERRIDES[1] as u32;
+                    k.bridge.log("IOAPIC: Routing Keyboard IRQ1 -> GSI ");
+                    print_hex(&Bridge, irq1_gsi as u64);
+                    k.bridge.log(" -> Vector 33\n");
+                    ioapic::set_irq_vector(irq1_gsi, 33, apic::id() as u8);
+
+                    // Route Mouse (IRQ 12) -> Vector 44
+                    let irq12_gsi = acpi::ISA_OVERRIDES[12] as u32;
+                    k.bridge.log("IOAPIC: Routing Mouse IRQ12 -> GSI ");
+                    print_hex(&Bridge, irq12_gsi as u64);
+                    k.bridge.log(" -> Vector 44\n");
+                    ioapic::set_irq_vector(irq12_gsi, 44, apic::id() as u8);
+
+                } else {
+                    k.bridge.log("WARNING: No IOAPIC found in MADT (Input will die)\n");
+                }
+
+
+                // 4. Timer Setup (HPET + LAPIC Timer)
                 if hpet::read_ticks() != 0 {
-                    k.bridge.log("HPET: Switching to Legacy Replacement Mode\n");
-                    hpet::enable_legacy_mode();
-                    // Kickstart the first interrupt (10ms)
-                    hpet::program_oneshot(hpet::read_ns() + 10_000_000);
+                    k.bridge.log("HPET: Alive. Disabling Legacy Replacement (Using APIC timer)\n");
+                    // We DO NOT enable legacy replacement mode if we use APIC.
+                    // Actually, if we use IOAPIC for IRQ 0 (timer), we need override.
+                    // BUT, we want to use Local APIC Timer for scheduling ticks!
+                    
+                    // Enable Local APIC Timer -> Vector 32
+                    apic::enable_timer(32);
+                    
+                    // We still use HPET for *monotonic time reading* and *sleep deadlines*?
+                    // Yes. But we don't need HPET interrupts for periodic ticks if LAPIC does it.
+                    // WAIT. The scheduler plan was:
+                    // - HPET provides monotonic time.
+                    // - SLEEP relies on *some* interrupt to wake up.
+                    //   If we use HPET one-shot for sleep deadlines, we need HPET interrupt.
+                    //   If we user LAPIC timer for periodic ticks, that wakes us up too.
+                    
+                    // Plan: 
+                    // 1. LAPIC Timer provides 10ms heartbeat (for now).
+                    // 2. HPET provides time reading.
+                    // 3. Future: Use HPET comparators for precise sleep.
+                    
+                    // For now, let's stick to: LAPIC Timer = Scheduler Tick (Vector 32).
+                    // HPET = Time Source. 
                 }
             }
         } else {

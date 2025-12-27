@@ -9,6 +9,13 @@ static mut HHDM_OFFSET: u64 = 0;
 
 pub unsafe fn init(hhdm: u64) {
     HHDM_OFFSET = hhdm;
+    
+    // Configure MAIR_EL1
+    // Attr 0: Normal Write-Back (0xFF)
+    // Attr 1: Device-nGnRnE (0x00)
+    let mair: u64 = 0x00_FF; 
+    asm!("msr mair_el1, {}", in(reg) mair);
+
     // Register hook
     bridge_aarch64::paging::UPDATE_FLAGS_FN = Some(update_page_flags);
 }

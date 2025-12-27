@@ -61,7 +61,10 @@ pub extern "C" fn rust_main() -> ! {
 
     #[cfg(target_os = "thingos")]
     unsafe {
-        // 1. Get HHDM offset FIRST
+        // 0. Init Heap FIRST (needed for paging/alloc)
+        let info = limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
+
+        // 1. Get HHDM offset
         if let Some(resp) = limine::requests::HHDM_REQUEST.get_response() {
             let offset = resp.offset();
             // Init paging with HHDM offset
@@ -72,6 +75,13 @@ pub extern "C" fn rust_main() -> ! {
 
             // 3. Map UART (Physical 0x09000000)
             paging::map_device_region(0x09000000, 4096);
+            
+            bootlog!("UART mapped at HHDM offset 0x{:x}", offset);
+        } else {
+            // If HHDM fails, we can't print easily unless we assume identity map for UART
+            // Try blind write to 0x09000000 as last resort
+             core::ptr::write_volatile(0x0900_0000 as *mut u8, 0x46); // 'F'
+             loop {}
         }
 
         use hw::HardwareBridge;
@@ -80,10 +90,9 @@ pub extern "C" fn rust_main() -> ! {
         // 4. Init Bridge (Exception Vectors)
         Bridge::init();
 
-        bridge.log("Booting ThingOS...\n");
-        bridge.log("Init finished, jumping to kernel\n");
+        bootlog!("Booting ThingOS (aarch64)...");
+        bootlog!("Init finished, jumping to kernel");
 
-        let info = limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
         early_log::log_heap_init(info);
     }
 

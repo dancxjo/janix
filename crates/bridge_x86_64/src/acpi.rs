@@ -99,6 +99,87 @@ unsafe fn check_table(phys: u64) {
         b"HPET" => {
             crate::hpet::init_table(header as *const _ as u64);
         },
+        b"APIC" => {
+            parse_madt(header as *const _ as u64);
+        },
         _ => {}
+    }
+}
+
+// MADT Structures
+#[repr(C, packed)]
+struct MadtHeader {
+    sdt: SdtHeader,
+    local_apic_addr: u32,
+    flags: u32, 
+}
+
+#[repr(C, packed)]
+struct MadtEntryHeader {
+    entry_type: u8,
+    length: u8,
+}
+
+#[repr(C, packed)]
+struct MadtIoApic {
+    header: MadtEntryHeader,
+    io_apic_id: u8,
+    reserved: u8,
+    io_apic_addr: u32,
+    gsi_base: u32,
+}
+
+#[repr(C, packed)]
+struct MadtIntOverride {
+    header: MadtEntryHeader,
+    bus: u8,
+    source_irq: u8,
+    gsi: u32,
+    flags: u16,
+}
+
+pub static mut LOCAL_APIC_ADDR: u64 = 0;
+pub static mut IO_APIC_ADDR: u64 = 0;
+pub static mut IO_APIC_GSI_BASE: u32 = 0;
+
+// Mappings for Legacy IRQ -> GSI
+// Index is Legacy IRQ (0..16), Value is GSI
+pub static mut ISA_OVERRIDES: [u8; 16] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+];
+
+unsafe fn parse_madt(phys: u64) {
+    let bridge = Bridge;
+    bridge.log("ACPI: Parsing MADT (APIC)\n");
+
+    let madt = &*(to_virt(phys).as_ptr() as *const MadtHeader);
+    LOCAL_APIC_ADDR = madt.local_apic_addr as u64;
+
+    let entries_start = (to_virt(phys).as_ptr() as *const u8).add(core::mem::size_of::<MadtHeader>());
+    let entries_end = (to_virt(phys).as_ptr() as *const u8).add(madt.sdt.length as usize);
+    
+    let mut ptr = entries_start;
+    while ptr < entries_end {
+        let entry = &*(ptr as *const MadtEntryHeader);
+        match entry.entry_type {
+            1 => { // IO APIC
+                let ioapic = &*(ptr as *const MadtIoApic);
+                IO_APIC_ADDR = ioapic.io_apic_addr as u64;
+                IO_APIC_GSI_BASE = ioapic.gsi_base;
+                bridge.log("ACPI: Found IOAPIC\n");
+            },
+            2 => { // Interrupt Source Override
+                // Valid for Legacy IRQ -> GSI mapping
+                let iso = &*(ptr as *const MadtIntOverride);
+                if iso.bus == 0 { // ISA Bus
+                    let source = iso.source_irq as usize;
+                    if source < 16 {
+                        ISA_OVERRIDES[source] = iso.gsi as u8;
+                    }
+                }
+            },
+            _ => {}
+        }
+        ptr = ptr.add(entry.length as usize);
     }
 }

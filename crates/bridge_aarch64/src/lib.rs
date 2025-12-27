@@ -84,6 +84,23 @@ impl HardwareBridge for Bridge {
         self.ticks()
     }
 
+    fn monotonic_now(&self) -> u64 {
+        let cntpct: u64;
+        let cntfrq: u64;
+        unsafe { 
+            asm!("mrs {}, cntpct_el0", out(reg) cntpct);
+            asm!("mrs {}, cntfrq_el0", out(reg) cntfrq);
+        }
+        if cntfrq == 0 { return 0; }
+        // (cntpct * 1_000_000_000) / cntfrq
+        // Be careful of overflow. 
+        // 1GHz ticks = 1e9 per sec. 
+        // u64 max is 1.8e19. 
+        // If uptime is small, we are fine.
+        // For robustness, use u128?
+        ((cntpct as u128 * 1_000_000_000) / (cntfrq as u128)) as u64
+    }
+
     fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> [u64; 34] {
         // [x0..x29, x30, sp_el0, elr, spsr]
         let mut ctx = [0u64; 34];
@@ -185,6 +202,9 @@ impl HardwareBridge for Bridge {
     fn irq_disable(&self) {}
     fn irq_enable(&self) {}
     fn system_now(&self) -> u64 {
+        0
+    }
+    fn monotonic_now(&self) -> u64 {
         0
     }
     fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 34] {

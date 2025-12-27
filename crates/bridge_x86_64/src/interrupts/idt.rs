@@ -183,7 +183,7 @@ unsafe extern "C" fn mouse_interrupt_naked() {
 #[no_mangle]
 extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
     unsafe {
-        pic::notify_end_of_interrupt(32);
+        crate::interrupts::apic::end_of_interrupt();
     }
     trap::timer_tick(frame);
 }
@@ -198,7 +198,7 @@ extern "C" fn keyboard_interrupt_handler(_frame: &mut TrapFrame) {
         let mut port = Port::new(0x60);
         scancode = port.read();
         
-        pic::notify_end_of_interrupt(33);
+        crate::interrupts::apic::end_of_interrupt();
     }
     
     // Debug: Increment and log occasionally
@@ -227,7 +227,7 @@ extern "C" fn mouse_interrupt_handler(_frame: &mut TrapFrame) {
         use x86_64::instructions::port::Port;
         let mut port = Port::new(0x60);
         byte = port.read();
-        pic::notify_end_of_interrupt(44);
+        crate::interrupts::apic::end_of_interrupt();
     }
     kernel_core::input::on_ps2_mouse(byte);
 }

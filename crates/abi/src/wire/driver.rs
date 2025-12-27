@@ -6,6 +6,7 @@ use serde::{Serialize, Deserialize};
 pub enum DriverEvent {
     Irq { irq: u8 },
     Ps2Scancode { scancode: u8 },
+    Ps2MouseByte { byte: u8 },
     Shutdown,
 }
 

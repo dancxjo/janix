@@ -99,6 +99,12 @@ pub const THING_PROGRAM_IMAGE_SCHEMA: ThingId = ThingId(1216);
 pub const THING_BITMAP_KIND: ThingId = ThingId(217);
 pub const THING_BITMAP_SCHEMA: ThingId = ThingId(1217);
 
+pub const THING_MOUSE_KIND: ThingId = ThingId(218);
+pub const THING_MOUSE_SCHEMA: ThingId = ThingId(1218);
+
+pub const THING_POINTER_EVENT_STREAM_KIND: ThingId = ThingId(219);
+pub const THING_POINTER_EVENT_STREAM_SCHEMA: ThingId = ThingId(1219);
+
 pub const THING_EMITS_KIND: ThingId = ThingId(106);
 pub const THING_EMITS_SCHEMA: ThingId = ThingId(1106);
 

@@ -21,6 +21,9 @@ pub fn init() {
 
         // Keyboard Interrupt (IRQ 1 = 33)
         IDT[33].set_handler_addr(VirtAddr::new(keyboard_interrupt_naked as *const () as u64));
+        
+        // Mouse Interrupt (IRQ 12 = 44)
+        IDT[44].set_handler_addr(VirtAddr::new(mouse_interrupt_naked as *const () as u64));
 
         IDT.load();
 
@@ -149,6 +152,34 @@ unsafe extern "C" fn keyboard_interrupt_naked() {
     );
 }
 
+/// Naked trampoline for Mouse Interrupt (IRQ 12).
+#[unsafe(naked)]
+unsafe extern "C" fn mouse_interrupt_naked() {
+    naked_asm!(
+        "test byte ptr [rsp + 8], 3",
+        "jz 1f",
+        "swapgs",
+        "1:",
+
+        "push rax", "push rdi", "push rsi", "push rdx", "push rcx",
+        "push r8", "push r9", "push r10", "push r11", "push rbx",
+        "push rbp", "push r12", "push r13", "push r14", "push r15",
+        
+        "mov rdi, rsp",
+        "call mouse_interrupt_handler",
+        
+        "pop r15", "pop r14", "pop r13", "pop r12", "pop rbp",
+        "pop rbx", "pop r11", "pop r10", "pop r9", "pop r8",
+        "pop rcx", "pop rdx", "pop rsi", "pop rdi", "pop rax",
+        
+        "test byte ptr [rsp + 8], 3",
+        "jz 2f",
+        "swapgs",
+        "2:",
+        "iretq",
+    );
+}
+
 #[no_mangle]
 extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
     unsafe {
@@ -187,5 +218,17 @@ extern "C" fn keyboard_interrupt_handler(_frame: &mut TrapFrame) {
 
     // Pass to kernel input system
     kernel_core::input::on_ps2_scancode(scancode);
+}
+
+#[no_mangle]
+extern "C" fn mouse_interrupt_handler(_frame: &mut TrapFrame) {
+    let byte: u8;
+    unsafe {
+        use x86_64::instructions::port::Port;
+        let mut port = Port::new(0x60);
+        byte = port.read();
+        pic::notify_end_of_interrupt(44);
+    }
+    kernel_core::input::on_ps2_mouse(byte);
 }
 

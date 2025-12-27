@@ -516,6 +516,7 @@ pub extern "C" fn rust_main() -> ! {
                 if name.contains("syscall_crud_smoke") { return ModuleRole::Debug; }
                 if name.contains("keylog") { return ModuleRole::Driver; } 
                 if name.contains("ps2_keyboard") { return ModuleRole::Driver; }
+                if name.contains("ps2_mouse") { return ModuleRole::Driver; }
                 match mtype {
                     ModuleType::Psf1 | ModuleType::Psf2 | ModuleType::Bmp | ModuleType::Png | 
                     ModuleType::Ttf | ModuleType::Otf | ModuleType::Woff | ModuleType::Woff2 => ModuleRole::Asset,

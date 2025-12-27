@@ -206,6 +206,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps2_mouse"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "models",
+ "postcard",
+ "serde",
+ "thing_std 0.1.0",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"

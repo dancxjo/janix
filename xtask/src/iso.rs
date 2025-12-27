@@ -46,7 +46,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
 
     // 2.5 Build User Apps
     println!("==> Building user apps for {}...", env);
-    let mut user_apps = vec!["graph_dump", "ps2_keyboard", "keylog", "syscall_crud_smoke", "clock", "sleep_smoke", "sleep_accuracy_smoke"];
+    let mut user_apps = vec!["graph_dump", "ps2_keyboard", "ps2_mouse", "keylog", "syscall_crud_smoke", "clock", "sleep_smoke", "sleep_accuracy_smoke"];
     if env == "x86_64" {
         user_apps.push("rtc_x86");
     } else if env == "aarch64" {

@@ -1,0 +1,11 @@
+[package]
+name = "ps2_mouse"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+abi = { path = "../../../crates/abi" }
+models = { path = "../../../crates/models" }
+postcard = { workspace = true, features = ["alloc"] }
+serde = { workspace = true, features = ["derive"] }
+thing_std = { path = "../../crates/thing_std" }

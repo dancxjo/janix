@@ -50,6 +50,15 @@ pub const SYM_KEYBOARD: SymbolId = SymbolId(fnv1a64("Keyboard"));
 
 pub const SYM_KEY_EVENT: SymbolId = SymbolId(fnv1a64("KeyEvent"));
 pub const SYM_KEY_EVENT_STREAM: SymbolId = SymbolId(fnv1a64("KeyEventStream"));
+
+pub const SYM_MOUSE: SymbolId = SymbolId(fnv1a64("Mouse"));
+pub const SYM_POINTER_EVENT: SymbolId = SymbolId(fnv1a64("PointerEvent"));
+pub const SYM_POINTER_EVENT_STREAM: SymbolId = SymbolId(fnv1a64("PointerEventStream"));
+pub const SYM_DX: SymbolId = SymbolId(fnv1a64("dx"));
+pub const SYM_DY: SymbolId = SymbolId(fnv1a64("dy"));
+pub const SYM_SCROLL: SymbolId = SymbolId(fnv1a64("scroll"));
+pub const SYM_BUTTONS: SymbolId = SymbolId(fnv1a64("buttons"));
+
 pub const SYM_EMITS: SymbolId = SymbolId(fnv1a64("EMITS"));
 pub const SYM_SUBSCRIBES_TO: SymbolId = SymbolId(fnv1a64("SUBSCRIBES_TO"));
 

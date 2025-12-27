@@ -9,6 +9,7 @@ pub mod user;
 pub mod gdt;
 pub mod acpi;
 pub mod hpet;
+pub mod ps2;
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;
@@ -36,6 +37,9 @@ impl Bridge {
         interrupts::pic::init();
         b.log("BRIDGE: syscall::init\n");
         interrupts::syscall::init();
+
+        b.log("BRIDGE: ps2::init\n");
+        ps2::init();
 
         // ACPI init moved to explicit call
     }

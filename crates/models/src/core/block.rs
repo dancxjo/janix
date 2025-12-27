@@ -3,6 +3,8 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BlockDeviceBody {
+    pub bus: String,
+    pub port: u32,
     pub model: String,
     pub serial: String,
     pub capacity_sectors: u64,

@@ -63,7 +63,9 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     kind_cache.insert(THING_POINTER_EVENT_STREAM_KIND, "PointerStream".into());
     kind_cache.insert(THING_PCI_DEVICE_KIND, "PciDevice".into());
     kind_cache.insert(THING_BLOCK_DEVICE_KIND, "BlockDevice".into());
-    kind_cache.insert(THING_FILESYSTEM_KIND, "Filesystem".into());
+    kind_cache.insert(THING_VOLUME_KIND, "Volume".into());
+    kind_cache.insert(THING_MOUNT_KIND, "Mount".into());
+    kind_cache.insert(THING_DIR_KIND, "Dir".into());
     kind_cache.insert(THING_FILE_KIND, "File".into());
 
     loop {
@@ -267,17 +269,31 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole, kind_cache: &mut BTreeMap<Th
                           continue;
                      }
                  }
-                 if n.kind == THING_FILESYSTEM_KIND {
-                     use thing_models::core::fs::FilesystemBody;
-                     if let Ok(b) = postcard::from_bytes::<FilesystemBody>(&n.data) {
-                          let _ = c.write_str(&format!("{{ name: \"{}\", kind: {:?}, ro: {} }}\n", b.name, b.kind, b.read_only));
+                 if n.kind == THING_VOLUME_KIND {
+                     use thing_models::core::fs::VolumeBody;
+                     if let Ok(b) = postcard::from_bytes::<VolumeBody>(&n.data) {
+                          let _ = c.write_str(&format!("{{ fs: \"{}\", vol_id: \"{}\" }}\n", b.fs, b.volume_id));
+                          continue;
+                     }
+                 }
+                 if n.kind == THING_MOUNT_KIND {
+                     use thing_models::core::fs::MountBody;
+                     if let Ok(b) = postcard::from_bytes::<MountBody>(&n.data) {
+                          let _ = c.write_str(&format!("{{ path: \"{}\", ro: {} }}\n", b.path, b.readonly));
+                          continue;
+                     }
+                 }
+                 if n.kind == THING_DIR_KIND {
+                     use thing_models::core::fs::DirBody;
+                     if let Ok(b) = postcard::from_bytes::<DirBody>(&n.data) {
+                          let _ = c.write_str(&format!("{{ name: \"{}\", expanded: {} }}\n", b.name, b.expanded));
                           continue;
                      }
                  }
                  if n.kind == THING_FILE_KIND {
                      use thing_models::core::fs::FileBody;
                      if let Ok(b) = postcard::from_bytes::<FileBody>(&n.data) {
-                          let _ = c.write_str(&format!("{{ name: \"{}\", size: {}, is_dir: {} }}\n", b.name, b.size, b.is_dir));
+                          let _ = c.write_str(&format!("{{ name: \"{}\", size: {} }}\n", b.name, b.size));
                           continue;
                      }
                  }

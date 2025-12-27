@@ -102,6 +102,7 @@ fn run_qemu_x86_64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, inter
 
     let mut cmd = Command::new("qemu-system-x86_64");
     cmd.arg("-M").arg("q35");
+    cmd.arg("-m").arg("512");
     if !interactive {
         cmd.arg("-nographic");
     } else {

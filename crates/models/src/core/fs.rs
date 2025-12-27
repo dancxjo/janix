@@ -2,25 +2,32 @@ use alloc::string::String;
 use serde::{Serialize, Deserialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FilesystemBody {
-    pub name: String,
-    pub kind: FilesystemKind,
-    pub read_only: bool,
+pub struct VolumeBody {
+    pub fs: String,
+    pub volume_id: String,
+    pub pvd_lba: u32,
+    pub root_dir_lba: u32,
+    pub root_dir_size: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum FilesystemKind {
-    Iso9660,
-    Fat32,
-    Ext2,
-    Unknown,
+pub struct MountBody {
+    pub path: String,
+    pub readonly: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DirBody {
+    pub name: String,
+    pub lba: u32,
+    pub size: u32,
+    pub expanded: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileBody {
     pub name: String,
     pub size: u64,
-    pub is_dir: bool,
-    // For ISO9660, we might need the sector location
-    pub start_sector: u32,
+    pub lba: u32,
+    pub flags: u8,
 }

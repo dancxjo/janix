@@ -35,4 +35,12 @@ impl GraphClient {
     ) -> Result<abi::wire::graph::GraphReply, GraphError> {
         self.call("op", op, out_buf)
     }
+
+    pub fn read_file_chunk(&self, id: abi::ThingId, offset: u64, len: u32, scratch_buf: &mut [u8]) -> Result<alloc::vec::Vec<u8>, GraphError> {
+         let op = abi::wire::graph::GraphOp::ReadContent { id, offset, len };
+         match self.call_op(&op, scratch_buf)? {
+             abi::wire::graph::GraphReply::Content { bytes } => Ok(bytes),
+             _ => Err(GraphError::Decode), // Or a schema mismatch error
+         }
+    }
 }

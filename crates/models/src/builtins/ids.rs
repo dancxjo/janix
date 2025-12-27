@@ -183,3 +183,29 @@ pub const THING_LOG_STREAM_SCHEMA: ThingId = ThingId(1225);
 
 pub const THING_BLOCK_DEVICE_KIND: ThingId = ThingId(226);
 pub const THING_BLOCK_DEVICE_SCHEMA: ThingId = ThingId(1226);
+
+// GraphFS
+pub const THING_DIR_KIND: ThingId = ThingId(229);
+pub const THING_DIR_SCHEMA: ThingId = ThingId(1229);
+
+pub const THING_VOLUME_KIND: ThingId = ThingId(230);
+pub const THING_VOLUME_SCHEMA: ThingId = ThingId(1230);
+
+// Links
+pub const THING_HAS_BLOCK_DEVICE_KIND: ThingId = ThingId(122);
+pub const THING_HAS_BLOCK_DEVICE_SCHEMA: ThingId = ThingId(1122);
+
+pub const THING_HAS_VOLUME_KIND: ThingId = ThingId(123);
+pub const THING_HAS_VOLUME_SCHEMA: ThingId = ThingId(1123);
+
+pub const THING_HAS_MOUNT_KIND: ThingId = ThingId(124);
+pub const THING_HAS_MOUNT_SCHEMA: ThingId = ThingId(1124);
+
+pub const THING_HAS_ENTRY_KIND: ThingId = ThingId(126);
+pub const THING_HAS_ENTRY_SCHEMA: ThingId = ThingId(1126);
+
+pub const THING_BACKED_BY_DEVICE_KIND: ThingId = ThingId(127);
+pub const THING_BACKED_BY_DEVICE_SCHEMA: ThingId = ThingId(1127);
+
+pub const THING_ON_VOLUME_KIND: ThingId = ThingId(128);
+pub const THING_ON_VOLUME_SCHEMA: ThingId = ThingId(1128);

@@ -117,6 +117,8 @@ pub unsafe fn init(dev: &PciDeviceBody, k: &mut Kernel<Bridge>) {
                     capacity_sectors: 0, // Unknown
                     sector_size: 512,
                     device_type: kind,
+                    bus: alloc::string::String::from("ahci"),
+                    port: i as u32,
                 };
                 
                 let body_bytes = postcard::to_allocvec(&body).unwrap();

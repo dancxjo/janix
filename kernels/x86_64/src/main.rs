@@ -610,52 +610,15 @@ pub extern "C" fn rust_main() -> ! {
                       }
                       */
                       
-                      // Fallback: Create "Boot Filesystem" from Limine Modules
-                      use thing_models::builtins::ids::{THING_FILESYSTEM_KIND, THING_FILE_KIND, THING_CONTAINS_FILE_KIND, THING_LINK_KIND};
-                      use thing_models::core::fs::{FilesystemBody, FileBody};
-                      
-                      let boot_fs = FilesystemBody {
-                           name: "Boot Ramdisk".into(),
-                      };
-                      let fs_bytes = postcard::to_allocvec(&boot_fs).unwrap();
-                      let fs_tb = ThingBody::from(&TypedBytes {
-                           type_id: TypeId(THING_FILESYSTEM_KIND.0 as u128),
-                           codec_id: CodecId::POSTCARD,
-                           bytes: fs_bytes,
-                      }).unwrap();
-                      let fs_id = k.graph.create_thing(THING_FILESYSTEM_KIND, fs_tb);
-                      
+                      // Legacy AHCI/Module scan disabled in favor of GraphFS logic below.
+                      /*
                       if let Some(modules) = modules_req.get_response() {
-                          for module in modules.modules() {
-                               let path = module.path().to_str().unwrap().to_string();
-                               let file = FileBody {
-                                   name: path.clone(),
-                                   size: module.size(),
-                               };
-                               
-                               let f_bytes = postcard::to_allocvec(&file).unwrap();
-                               let f_tb = ThingBody::from(&TypedBytes {
-                                   type_id: TypeId(THING_FILE_KIND.0 as u128),
-                                   codec_id: CodecId::POSTCARD,
-                                   bytes: f_bytes,
-                               }).unwrap();
-                               let f_id = k.graph.create_thing(THING_FILE_KIND, f_tb);
-                               
-                               // Link FS -> File
-                               let link = thing_models::link::LinkBody {
-                                   from: fs_id, to: f_id, predicate: THING_CONTAINS_FILE_KIND,
-                               };
-                               let lb = ThingBody::from(&TypedBytes {
-                                   type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
-                                   bytes: postcard::to_allocvec(&link).unwrap()
-                               }).unwrap();
-                               k.graph.create_thing(THING_LINK_KIND, lb);
-                          }
+                          // ...
                       }
-                 } else {
-                      k.bridge.log("AHCI: Invalid BAR5 (IO or Zero)\n");
-                 }
-             }
+                      */
+                      // Proceed to main loop
+                  }
+              }
         }
     }
 
@@ -734,18 +697,98 @@ pub extern "C" fn rust_main() -> ! {
                 }
             }
 
-            // Create Boot Filesystem (Ramdisk)
-            use thing_models::core::fs::{FilesystemBody, FileBody};
-            let boot_fs_id = {
-                 let boot_fs = FilesystemBody { name: "Boot Ramdisk".into() };
-                 let fs_bytes = postcard::to_allocvec(&boot_fs).unwrap();
-                 let fs_tb = ThingBody::from(&TypedBytes {
-                      type_id: TypeId(THING_FILESYSTEM_KIND.0 as u128),
-                      codec_id: CodecId::POSTCARD,
-                      bytes: fs_bytes,
+            // --- GraphFS: Boot Ramdisk Setup ---
+            use thing_models::core::fs::{VolumeBody, MountBody, DirBody, FileBody};
+            use thing_models::core::block::{BlockDeviceBody, BlockDeviceType};
+            use thing_models::builtins::ids::*;
+            use abi::wire::typed::{TypedBytes, TypeId, CodecId};
+            use thing_models::value::ThingBody;
+            
+            // 1. Block Device (Virtual RAM)
+            let block_id = {
+                 let body = BlockDeviceBody {
+                     bus: "ram".into(), port: 0,
+                     model: "Limine Boot Modules".into(),
+                     serial: "RAMDISK001".into(),
+                     capacity_sectors: 0, // dynamic
+                     sector_size: 1,
+                     device_type: BlockDeviceType::RAM,
+                 };
+                 let b = postcard::to_allocvec(&body).unwrap();
+                 let tb = ThingBody::from(&TypedBytes {
+                     type_id: TypeId(THING_BLOCK_DEVICE_KIND.0 as u128), codec_id: CodecId::POSTCARD, bytes: b
                  }).unwrap();
-                 k.graph.create_thing(THING_FILESYSTEM_KIND, fs_tb)
+                 k.graph.create_thing(THING_BLOCK_DEVICE_KIND, tb)
             };
+            
+            // Link Root -> HAS_BLOCK -> Block
+            {
+                 let link = thing_models::link::LinkBody { from: THING_BOOT_ROOT, to: block_id, predicate: THING_HAS_BLOCK_DEVICE_KIND };
+                 let lb = ThingBody::from(&TypedBytes { type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD, bytes: postcard::to_allocvec(&link).unwrap() }).unwrap();
+                 k.graph.create_thing(THING_LINK_KIND, lb);
+            }
+
+            // 2. Volume (Boot Volume)
+            let vol_id = {
+                 let body = VolumeBody {
+                     fs: "ramdisk".into(),
+                     volume_id: "ThingOS_Boot".into(),
+                     pvd_lba: 0, root_dir_lba: 0, root_dir_size: 0,
+                 };
+                 let b = postcard::to_allocvec(&body).unwrap();
+                 let tb = ThingBody::from(&TypedBytes {
+                     type_id: TypeId(THING_VOLUME_KIND.0 as u128), codec_id: CodecId::POSTCARD, bytes: b
+                 }).unwrap();
+                 k.graph.create_thing(THING_VOLUME_KIND, tb)
+            };
+
+            // Link Block -> HAS_VOLUME -> Volume
+            {
+                 let link = thing_models::link::LinkBody { from: block_id, to: vol_id, predicate: THING_HAS_VOLUME_KIND };
+                 let lb = ThingBody::from(&TypedBytes { type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD, bytes: postcard::to_allocvec(&link).unwrap() }).unwrap();
+                 k.graph.create_thing(THING_LINK_KIND, lb);
+            }
+
+            // 3. Mount (/boot)
+            let mount_id = {
+                 let body = MountBody { path: "/boot".into(), readonly: true };
+                 let b = postcard::to_allocvec(&body).unwrap();
+                 let tb = ThingBody::from(&TypedBytes {
+                     type_id: TypeId(THING_MOUNT_KIND.0 as u128), codec_id: CodecId::POSTCARD, bytes: b
+                 }).unwrap();
+                 k.graph.create_thing(THING_MOUNT_KIND, tb)
+            };
+
+            // Link Root -> HAS_MOUNT -> Mount
+            {
+                 let link = thing_models::link::LinkBody { from: THING_BOOT_ROOT, to: mount_id, predicate: THING_HAS_MOUNT_KIND };
+                 let lb = ThingBody::from(&TypedBytes { type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD, bytes: postcard::to_allocvec(&link).unwrap() }).unwrap();
+                 k.graph.create_thing(THING_LINK_KIND, lb);
+            }
+
+            // 4. Root Directory
+            let root_dir_id = {
+                 let body = DirBody { name: "".into(), lba: 0, size: 0, expanded: true };
+                 let b = postcard::to_allocvec(&body).unwrap();
+                 let tb = ThingBody::from(&TypedBytes {
+                     type_id: TypeId(THING_DIR_KIND.0 as u128), codec_id: CodecId::POSTCARD, bytes: b
+                 }).unwrap();
+                 k.graph.create_thing(THING_DIR_KIND, tb)
+            };
+
+            // Link Mount -> MOUNTS -> Dir
+            {
+                 let link = thing_models::link::LinkBody { from: mount_id, to: root_dir_id, predicate: THING_MOUNTS_KIND }; // Kind 103
+                 let lb = ThingBody::from(&TypedBytes { type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD, bytes: postcard::to_allocvec(&link).unwrap() }).unwrap();
+                 k.graph.create_thing(THING_LINK_KIND, lb);
+            }
+            
+            // Link Dir -> ON_VOLUME -> Volume
+            {
+                 let link = thing_models::link::LinkBody { from: root_dir_id, to: vol_id, predicate: THING_ON_VOLUME_KIND };
+                 let lb = ThingBody::from(&TypedBytes { type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD, bytes: postcard::to_allocvec(&link).unwrap() }).unwrap();
+                 k.graph.create_thing(THING_LINK_KIND, lb);
+            }
 
             for (idx, module) in resp.modules().iter().enumerate() {
                 let name = module.path().to_str().unwrap_or("unknown");
@@ -758,7 +801,12 @@ pub extern "C" fn rust_main() -> ! {
                 
                 // --- 0. Graph: Create File Thing ---
                 let file_id = {
-                     let file = FileBody { name: alloc::string::String::from(name), size: len as u64 };
+                     let file = FileBody { 
+                         name: alloc::string::String::from(name), 
+                         size: len as u64,
+                         lba: 0, 
+                         flags: 1 // RAMDISK Provider Flag
+                     };
                      let f_bytes = postcard::to_allocvec(&file).unwrap();
                      let f_tb = ThingBody::from(&TypedBytes {
                          type_id: TypeId(THING_FILE_KIND.0 as u128), codec_id: CodecId::POSTCARD,
@@ -767,9 +815,19 @@ pub extern "C" fn rust_main() -> ! {
                      k.graph.create_thing(THING_FILE_KIND, f_tb)
                 };
                 
-                // Link FS -> File
+                // Link RootDir -> HAS_ENTRY -> File
                 {
-                    let link = thing_models::link::LinkBody { from: boot_fs_id, to: file_id, predicate: THING_CONTAINS_FILE_KIND };
+                    let link = thing_models::link::LinkBody { from: root_dir_id, to: file_id, predicate: THING_HAS_ENTRY_KIND };
+                    let lb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&link).unwrap()
+                    }).unwrap();
+                    k.graph.create_thing(THING_LINK_KIND, lb);
+                }
+                
+                // Link File -> ON_VOLUME -> Volume
+                {
+                    let link = thing_models::link::LinkBody { from: file_id, to: vol_id, predicate: THING_ON_VOLUME_KIND };
                     let lb = ThingBody::from(&TypedBytes {
                         type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
                         bytes: postcard::to_allocvec(&link).unwrap()

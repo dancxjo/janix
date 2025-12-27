@@ -125,6 +125,46 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, pid: abi::ids:
                  Err(_) => GraphReply::Error,
              }
         },
+        GraphOp::ReadContent { id, offset, len } => {
+             if let Some(thing) = kernel.graph.get(id) {
+                  // Decode FileBody
+                  if let Ok(file_body) = thing.body.decode::<thing_models::core::fs::FileBody>() {
+                       // Check flags/provider
+                       if (file_body.flags & 0x01) != 0 {
+                           // Ramdisk: Find Module with same name
+                           let mod_kind = thing_models::builtins::ids::THING_MODULE_KIND;
+                           let mut curr = abi::ThingId(0);
+                           // Inefficient scan of modules, but fine for boot ramdisk
+                           while let Some(mid) = kernel.graph.next_thing_of_kind(mod_kind, curr) {
+                                curr = mid;
+                                if let Some(mthing) = kernel.graph.get(mid) {
+                                     if let Ok(mbody) = mthing.body.decode::<thing_models::builtins::core_kinds::ModuleBody>() {
+                                         if mbody.path == file_body.name {
+                                              // Found match! Read memory
+                                              let base = mbody.base_phys;
+                                              let size = mbody.size_bytes;
+                                              if offset >= size { 
+                                                  return GraphReply::Content { bytes: alloc::vec::Vec::new() }; 
+                                              }
+                                              let read_len = core::cmp::min(len as u64, size - offset) as usize;
+                                              let slice = unsafe { core::slice::from_raw_parts((base + offset) as *const u8, read_len) };
+                                              return GraphReply::Content { bytes: slice.to_vec() };
+                                         }
+                                     }
+                                }
+                           }
+                           GraphReply::Error // Module not found
+                       } else {
+                           // Block Device / AHCI Read (Not implemented)
+                           GraphReply::Error 
+                       }
+                  } else {
+                       GraphReply::Error // Not a File
+                  }
+             } else {
+                 GraphReply::Error
+             }
+        },
         GraphOp::Batch(ops) => {
             let mut results = alloc::vec::Vec::with_capacity(ops.len());
             for op in ops {

@@ -17,7 +17,7 @@ impl ThingType for FontBody {
         // But we can just rely on the derive macro in userspace if we had it.
         // Here we implement manually.
         use abi::symbols;
-        use abi::wire::typed::{Field, Variant};
+        use abi::wire::typed::Field;
 
         TypeDesc::Struct {
             fields: alloc::vec![Field {

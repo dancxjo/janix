@@ -1,7 +1,3 @@
-use crate::builtins::ids::THING_LINK_KIND;
-use crate::LinkBody;
-use crate::Thing;
-use crate::ThingBody;
 
 #[macro_export]
 macro_rules! link_thing {

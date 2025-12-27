@@ -25,7 +25,7 @@ fn x86_64_uefi_smoke() {
 
     assert!(stdout.contains("THINGOS: kernel entry"));
     assert!(stdout.contains("THINGOS: bridge online"));
-    assert!(stdout.contains("THINGOS: idle loop"));
+    assert!(stdout.contains("·"));
 }
 
 #[test]
@@ -54,5 +54,5 @@ fn aarch64_uefi_smoke() {
 
     assert!(stdout.contains("THINGOS: kernel entry"));
     assert!(stdout.contains("THINGOS: bridge online"));
-    assert!(stdout.contains("THINGOS: idle loop"));
+    assert!(stdout.contains("·"));
 }

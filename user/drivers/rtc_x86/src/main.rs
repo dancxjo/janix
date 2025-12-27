@@ -5,14 +5,8 @@ extern crate alloc;
 
 use thing_std::{GraphClient, debug};
 use abi::wire::time::RtcSample;
-use abi::wire::graph::{GraphOp, GraphReply};
+use abi::wire::graph::GraphOp;
 use abi::wire::typed::{TypedBytes, TypeId, CodecId};
-use serde::{Serialize, Deserialize};
-
-#[derive(Serialize, Deserialize)]
-struct SystemTimeProps {
-    unix_seconds: u64,
-}
 
 #[no_mangle]
 pub extern "C" fn _start(heap_start: u64) -> ! {
@@ -47,8 +41,6 @@ fn run() -> Result<(), ()> {
                 let unix_sec = ymd_to_unix(sample);
                 
                 // Get Monotonic from Kernel
-                let mut buf_time = [0u8; 16];
-                let mut mono_ns = 0;
                 // We use GraphOp? No, syscall "time.monotonic_ns" is a QUERY.
                 // client.call_query ?
                 // The `GraphClient` has `call_op`. The `call` on client is generic?

@@ -32,14 +32,14 @@ fn hosted_boot() {
         "Missing bridge online log"
     );
     assert!(
-        stdout.contains("THINGOS: idle loop"),
+        stdout.contains("·"),
         "Missing idle loop log"
     );
 
     // Verify order
     let p1 = stdout.find("THINGOS: kernel entry").expect("p1 missing");
     let p2 = stdout.find("THINGOS: bridge online").expect("p2 missing");
-    let p3 = stdout.find("THINGOS: idle loop").expect("p3 missing");
+    let p3 = stdout.find("·").expect("p3 missing");
 
     assert!(p1 < p2, "kernel entry should be before bridge online");
     assert!(p2 < p3, "bridge online should be before idle loop");

@@ -69,8 +69,8 @@ unsafe impl GlobalAlloc for SimpleAllocator {
         let size = layout.size();
         let align = layout.align();
 
-        let mut top = HEAP_TOP;
-        let start = (HEAP.as_ptr() as usize + top);
+        let top = HEAP_TOP;
+        let start = HEAP.as_ptr() as usize + top;
         let modulo = start % align;
         let offset = if modulo == 0 { 0 } else { align - modulo };
 

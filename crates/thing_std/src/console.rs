@@ -1,5 +1,4 @@
 use crate::debug::PortWrites;
-use core::fmt;
 
 pub trait Console {
     fn write_str(&self, s: &str);

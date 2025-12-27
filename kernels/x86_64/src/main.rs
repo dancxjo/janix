@@ -1391,7 +1391,6 @@ let _ = boot_fs_device;
         use hw::HardwareBridge;
         let bridge = Bridge;
         bridge.log(thing_models::milestones::IDLE_LOOP);
-        bridge.log("\n");
 
         // Flush Diagnostics
         if let Some(mut guard) = KERNEL.try_lock() {

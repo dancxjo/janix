@@ -17,26 +17,34 @@ use models::Thing;
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     std::init();
+
+    // Delay to let graph_dump finish and avoid log interleaving
+    for _ in 0..1_000_000 {
+        core::hint::black_box(());
+    }
+
     std::debug::log("PS/2 Mouse Driver starting...\n");
 
     // 1. Create Mouse Device Thing (ID 3010)
-    let mouse_id = ThingId(3010);
-    
     let mouse = Thing {
-        id: mouse_id,
+        id: ThingId(3010),
         kind: THING_MOUSE_KIND,
         body: models::ThingBody::from(&MouseBody { bus: SYM_PS2 }).expect("mouse body"),
     };
 
-    std::debug::log("About to publish mouse...\n");
+    std::debug::log("About to publish mouse 1...\n");
     publish_thing(&mouse);
-    std::debug::log("Published Mouse Device\n");
+    std::debug::log("Published Mouse 1\n");
+
+    std::debug::log("About to publish mouse 2 (should fail)...\n");
+    publish_thing(&mouse);
+    std::debug::log("Published Mouse 2\n");
 
     // 2. Link Root -> HAS_DEVICE -> Mouse (ID 3013)
     let root_link_id = ThingId(3013);
     let root_link_body = models::link::LinkBody {
         from: THING_BOOT_ROOT,
-        to: mouse_id,
+        to: mouse.id,
         predicate: THING_HAS_DEVICE_KIND, // Generic HAS_DEVICE for now
     };
     publish_link(root_link_id, root_link_body);
@@ -62,7 +70,7 @@ pub extern "C" fn _start() -> ! {
     // 4. Link Mouse -> EMITS -> Stream (ID 3012)
     let link_id = ThingId(3012);
     let link_body = models::link::LinkBody {
-        from: mouse_id,
+        from: mouse.id,
         to: stream_id,
         predicate: THING_EMITS_KIND,
     };
@@ -133,11 +141,11 @@ fn process_packet(packet: [u8; 3], body: &mut PointerEventStreamBody) {
     
     // X
     let mut x: i16 = b1 as i16;
-    if (b0 & 0x10) != 0 { x |= (0xFF00u16 as i16); } // Sign extend
+    if (b0 & 0x10) != 0 { x |= 0xFF00u16 as i16; } // Sign extend
     
     // Y
     let mut y: i16 = b2 as i16;
-    if (b0 & 0x20) != 0 { y |= (0xFF00u16 as i16); } // Sign extend
+    if (b0 & 0x20) != 0 { y |= 0xFF00u16 as i16; } // Sign extend
     
     // Invert Y? Usually mouse sends +Y UP. Screen is +Y DOWN.
     // Let's invert it so userspace gets "Screen Delta".

@@ -6,7 +6,7 @@ use core::ptr::null_mut;
 // SAFETY: This is NOT thread safe. It assumes single threaded execution for now.
 pub struct BumpAllocator {
     offset: UnsafeCell<usize>,
-    heap: [u8; 64 * 1024], // 64KB heap
+    heap: [u8; 1024 * 1024], // 1MB heap
 }
 
 unsafe impl Sync for BumpAllocator {}
@@ -15,7 +15,7 @@ impl BumpAllocator {
     pub const fn new() -> Self {
         Self {
             offset: UnsafeCell::new(0),
-            heap: [0; 64 * 1024],
+            heap: [0; 1024 * 1024],
         }
     }
 }

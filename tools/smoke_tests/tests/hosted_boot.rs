@@ -31,10 +31,7 @@ fn hosted_boot() {
         stdout.contains("THINGOS: bridge online"),
         "Missing bridge online log"
     );
-    assert!(
-        stdout.contains("·"),
-        "Missing idle loop log"
-    );
+    assert!(stdout.contains("·"), "Missing idle loop log");
 
     // Verify order
     let p1 = stdout.find("THINGOS: kernel entry").expect("p1 missing");

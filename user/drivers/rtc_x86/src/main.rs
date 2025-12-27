@@ -22,9 +22,9 @@ fn run() -> Result<(), ()> {
     let mut buf = [0u8; 1024];
 
     // IDs
-    let root_id = abi::ids::ThingId(1000);
-    let time_id = abi::ids::ThingId(2000);
-    let has_time_link = abi::ids::ThingId(117);
+    let root_id = models::builtins::ids::THING_BOOT_ROOT;
+    let time_id = models::builtins::ids::THING_TIME_INSTANCE;
+    let has_time_link = models::builtins::ids::THING_HAS_TIME_NOW_KIND;
 
     // 1. Link Root -> TimeNow
     let link_op = GraphOp::AddLink { from: root_id, to: time_id, kind: has_time_link };
@@ -80,7 +80,7 @@ fn run() -> Result<(), ()> {
                 
                 let body_bytes = postcard::to_allocvec(&body).map_err(|_| ())?;
                 let typed = TypedBytes {
-                     type_id: TypeId(abi::ids::ThingId(200).0 as u128),
+                     type_id: TypeId(models::builtins::ids::THING_TIME_NOW_KIND.0 as u128),
                      codec_id: CodecId::POSTCARD,
                      bytes: body_bytes,
                 };

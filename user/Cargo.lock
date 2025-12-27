@@ -147,6 +147,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "input_service"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "models",
+ "postcard",
+ "serde",
+ "thing_std 0.1.0",
+]
+
+[[package]]
 name = "keylog"
 version = "0.1.0"
 dependencies = [

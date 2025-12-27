@@ -1,4 +1,4 @@
-use abi::ThingId;
+// use abi::ThingId; // Removed by agent
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -8,15 +8,11 @@ pub struct KeyboardBody {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct KeyEventBody {
-    /// The keyboard device ThingId that originated the event
-    pub device: ThingId,
-
-    /// Raw PS/2 set 1 scancode byte (v0)
-    pub scancode: u8,
-
-    /// True if this is a key release (break) event (v0 set-1: high bit set)
-    pub is_release: bool,
+pub struct RawKeyEventStreamBody {
+    pub head_seq: u64,
+    pub capacity: u32,
+    pub dropped: u64,
+    pub events: alloc::vec::Vec<abi::wire::input::RawKeyEvent>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -30,7 +26,15 @@ pub struct KeyEventStreamBody {
     pub head_seq: u64,
     pub capacity: u32,
     pub dropped: u64,
-    pub events: alloc::vec::Vec<KeyEventCompact>,
+    pub events: alloc::vec::Vec<abi::wire::input::KeyEvent>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TextEventStreamBody {
+    pub head_seq: u64,
+    pub capacity: u32,
+    pub dropped: u64,
+    pub events: alloc::vec::Vec<abi::wire::input::TextEvent>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -53,4 +57,9 @@ pub struct PointerEventStreamBody {
     pub capacity: u32,
     pub dropped: u64,
     pub events: alloc::vec::Vec<PointerEventCompact>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyEventBody {
+    pub event: abi::wire::input::KeyEvent,
 }

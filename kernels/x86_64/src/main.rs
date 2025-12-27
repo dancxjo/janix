@@ -141,6 +141,8 @@ pub extern "C" fn _start() -> ! {
 // Global Kernel Access
 use models as thing_models;
 use spin::Mutex;
+use abi::ThingId;
+use thing_models::core::fs::{DirBody, MountBody};
 
 static KERNEL: Mutex<Option<Kernel<Bridge>>> = Mutex::new(None);
 use core::sync::atomic::AtomicU64;
@@ -587,7 +589,6 @@ pub extern "C" fn rust_main() -> ! {
 
             unsafe { bridge_x86_64::serial::publish_serial_thing(&mut k) };
 
-
             // --- PCI ENUMERATION ---
             k.bridge.log("PCI: Scanning...\n");
             let pci_devices = unsafe { bridge_x86_64::pci::scan_pci() };
@@ -663,7 +664,13 @@ pub extern "C" fn rust_main() -> ! {
                         for p in 0..32 {
                             let mut buf = alloc::vec![0u8; 2048];
                             if unsafe {
-                                bridge_x86_64::ahci::read_sector_at(base, p, 16, &mut buf, hhdm_offset_u64)
+                                bridge_x86_64::ahci::read_sector_at(
+                                    base,
+                                    p,
+                                    16,
+                                    &mut buf,
+                                    hhdm_offset_u64,
+                                )
                             } {
                                 if &buf[1..6] == b"CD001" {
                                     k.bridge.log("bootfs: found iso9660 on port ");
@@ -699,7 +706,7 @@ pub extern "C" fn rust_main() -> ! {
                 }
             }
         }
-let _ = boot_fs_device;
+        let _ = boot_fs_device;
         // --- FILESYSTEM SCANNING ---
         k.bridge.log("Scanning boot filesystem...\n");
         let mut app_load_virt_base = 0x2000_0000u64;
@@ -803,8 +810,8 @@ let _ = boot_fs_device;
             Ignore,
         }
         fn get_module_role(name: &str, mtype: &ModuleType) -> ModuleRole {
-            if name.contains("ps2_") {
-                 return ModuleRole::Driver;
+            if name.contains("/drivers/") || name.contains("ps2_") {
+                return ModuleRole::Driver;
             }
             match mtype {
                 ModuleType::Elf => ModuleRole::App,
@@ -829,7 +836,12 @@ let _ = boot_fs_device;
             }
         }
 
-        let mut process_file = |k: &mut Kernel<Bridge>, name: &str, data: &[u8], idx: usize, spawn_override: Option<bool>| {
+        let mut process_file = |k: &mut Kernel<Bridge>,
+                                parent_dir_id: Option<ThingId>,
+                                name: &str,
+                                data: &[u8],
+                                idx: usize,
+                                spawn_override: Option<bool>| {
             let mtype = classify_bytes(data);
             let role_enum = get_module_role(name, &mtype);
 
@@ -839,7 +851,7 @@ let _ = boot_fs_device;
             use thing_models::core::fs::{DirBody, FileBody, MountBody, VolumeBody};
             use thing_models::value::ThingBody;
 
-             let file_id = {
+            let file_id = {
                 let file = FileBody {
                     name: alloc::string::String::from(name),
                     size: data.len() as u64,
@@ -854,7 +866,22 @@ let _ = boot_fs_device;
                 })
                 .unwrap();
                 k.graph.create_thing(THING_FILE_KIND, f_tb)
-             };
+            };
+
+            if let Some(parent) = parent_dir_id {
+                let link = thing_models::link::LinkBody {
+                    from: parent,
+                    to: file_id,
+                    predicate: THING_HAS_ENTRY_KIND,
+                };
+                let lb = ThingBody::from(&TypedBytes {
+                    type_id: TypeId(THING_LINK_KIND.0 as u128),
+                    codec_id: CodecId::POSTCARD,
+                    bytes: postcard::to_allocvec(&link).unwrap(),
+                })
+                .unwrap();
+                k.graph.create_thing(THING_LINK_KIND, lb);
+            }
 
             // --- 1. Graph: Create Module Thing ---
             use thing_models::builtins::core_kinds::{
@@ -1004,13 +1031,13 @@ let _ = boot_fs_device;
                     };
 
                     if matches!(mtype, ModuleType::Psf1) {
-                         if data.len() >= 4 {
+                        if data.len() >= 4 {
                             let mode = data[2];
                             let charsize = data[3];
                             w = 8;
                             h = charsize as u16;
                             count = if (mode & 1) != 0 { 512 } else { 256 };
-                         }
+                        }
                     } else if matches!(mtype, ModuleType::Psf2) {
                         if data.len() >= 32 {
                             let read_u32 = |off: usize| -> u32 {
@@ -1092,7 +1119,7 @@ let _ = boot_fs_device;
                     }
                 }
                 _ if mime_str.starts_with("image/") => {
-                     let bmp_body = BitmapBody {
+                    let bmp_body = BitmapBody {
                         format: alloc::string::String::from(mime_str),
                         width: 0,
                         height: 0,
@@ -1129,13 +1156,19 @@ let _ = boot_fs_device;
                 match role_enum {
                     ModuleRole::App => true,
                     ModuleRole::Driver => {
-                        k.bridge.log("Spawning driver '"); k.bridge.log(name); k.bridge.log("'\n");
+                        k.bridge.log("Spawning driver '");
+                        k.bridge.log(name);
+                        k.bridge.log("'\n");
                         true
                     }
                     ModuleRole::Debug => {
                         let is_target = smoke_target.map(|t| name.contains(t)).unwrap_or(false);
-                        if is_target { true } else {
-                            k.bridge.log("Skipping debug module '"); k.bridge.log(name); k.bridge.log("'\n");
+                        if is_target {
+                            true
+                        } else {
+                            k.bridge.log("Skipping debug module '");
+                            k.bridge.log(name);
+                            k.bridge.log("'\n");
                             false
                         }
                     }
@@ -1164,9 +1197,13 @@ let _ = boot_fs_device;
                         } else {
                             let frame = frame_allocator.allocate_frame().expect("No frames");
                             frame_phys = frame.start_address();
-                            let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                            let flags = PageTableFlags::PRESENT
+                                | PageTableFlags::WRITABLE
+                                | PageTableFlags::USER_ACCESSIBLE;
                             unsafe {
-                                if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                                if let Ok(map_to) =
+                                    mapper.map_to(page, frame, flags, &mut frame_allocator)
+                                {
                                     map_to.flush();
                                 }
                             }
@@ -1182,8 +1219,16 @@ let _ = boot_fs_device;
                             let seg_offset = overlap_start - target_virt_start;
                             let page_offset = overlap_start - page_start_virt;
                             let src_ptr = unsafe { segment.as_ptr().add(seg_offset as usize) };
-                            let dest_ptr = unsafe { (frame_virt.as_mut_ptr::<u8>()).add(page_offset as usize) };
-                            unsafe { core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, copy_len as usize); }
+                            let dest_ptr = unsafe {
+                                (frame_virt.as_mut_ptr::<u8>()).add(page_offset as usize)
+                            };
+                            unsafe {
+                                core::ptr::copy_nonoverlapping(
+                                    src_ptr,
+                                    dest_ptr,
+                                    copy_len as usize,
+                                );
+                            }
                         }
                     }
                 });
@@ -1199,9 +1244,13 @@ let _ = boot_fs_device;
 
                     for page in Page::range_inclusive(start_page, end_page) {
                         let frame = frame_allocator.allocate_frame().expect("No stack frames");
-                        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                        let flags = PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::USER_ACCESSIBLE;
                         unsafe {
-                            if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                            if let Ok(map_to) =
+                                mapper.map_to(page, frame, flags, &mut frame_allocator)
+                            {
                                 map_to.flush();
                             }
                         }
@@ -1211,14 +1260,20 @@ let _ = boot_fs_device;
                     let heap_size = 256 * 1024;
                     let heap_virt_end = heap_virt_start + heap_size;
 
-                    let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(heap_virt_start));
-                    let end_page = Page::<Size4KiB>::containing_address(VirtAddr::new(heap_virt_end - 1u64));
+                    let start_page =
+                        Page::<Size4KiB>::containing_address(VirtAddr::new(heap_virt_start));
+                    let end_page =
+                        Page::<Size4KiB>::containing_address(VirtAddr::new(heap_virt_end - 1u64));
 
                     for page in Page::range_inclusive(start_page, end_page) {
                         let frame = frame_allocator.allocate_frame().expect("No heap frames");
-                        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                        let flags = PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::USER_ACCESSIBLE;
                         unsafe {
-                            if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                            if let Ok(map_to) =
+                                mapper.map_to(page, frame, flags, &mut frame_allocator)
+                            {
                                 map_to.flush();
                                 let phys = frame.start_address();
                                 let virt = hhdm_offset + phys.as_u64();
@@ -1228,20 +1283,32 @@ let _ = boot_fs_device;
                     }
 
                     let entry_point = current_app_base + img.entry_point;
-                    k.bridge.log("Spawning app: "); k.bridge.log(name); k.bridge.log("\n");
+                    k.bridge.log("Spawning app: ");
+                    k.bridge.log(name);
+                    k.bridge.log("\n");
                     let process_pid = (k.scheduler.processes.len() + 1) as u64;
-                    k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), heap_virt_start);
+                    k.scheduler.spawn(
+                        &k.bridge,
+                        name,
+                        entry_point,
+                        stack_top_virt.as_u64(),
+                        heap_virt_start,
+                    );
 
                     let p_body = ProcessBody {
                         pid: process_pid,
-                        name: k.symbols.intern(name).unwrap_or(thing_models::builtins::symbols::SYM_PROCESS),
+                        name: k
+                            .symbols
+                            .intern(name)
+                            .unwrap_or(thing_models::builtins::symbols::SYM_PROCESS),
                         state: ProcessState::Running,
                     };
                     let tb = ThingBody::from(&TypedBytes {
                         type_id: TypeId(THING_PROCESS_KIND.0 as u128),
                         codec_id: CodecId::POSTCARD,
                         bytes: postcard::to_allocvec(&p_body).unwrap(),
-                    }).unwrap();
+                    })
+                    .unwrap();
                     let process_id = k.graph.create_thing(THING_PROCESS_KIND, tb);
 
                     {
@@ -1254,7 +1321,8 @@ let _ = boot_fs_device;
                             type_id: TypeId(THING_LINK_KIND.0 as u128),
                             codec_id: CodecId::POSTCARD,
                             bytes: postcard::to_allocvec(&link).unwrap(),
-                        }).unwrap();
+                        })
+                        .unwrap();
                         k.graph.create_thing(THING_LINK_KIND, lb);
                     }
 
@@ -1268,7 +1336,8 @@ let _ = boot_fs_device;
                         type_id: TypeId(THING_BOOT_PROGRAM_KIND.0 as u128),
                         codec_id: CodecId::POSTCARD,
                         bytes: postcard::to_allocvec(&bp).unwrap(),
-                    }).unwrap();
+                    })
+                    .unwrap();
                     let prog_id = k.graph.create_thing(THING_BOOT_PROGRAM_KIND, tb);
 
                     {
@@ -1281,7 +1350,8 @@ let _ = boot_fs_device;
                             type_id: TypeId(THING_LINK_KIND.0 as u128),
                             codec_id: CodecId::POSTCARD,
                             bytes: postcard::to_allocvec(&link).unwrap(),
-                        }).unwrap();
+                        })
+                        .unwrap();
                         k.graph.create_thing(THING_LINK_KIND, lb);
                     }
 
@@ -1295,7 +1365,8 @@ let _ = boot_fs_device;
                             type_id: TypeId(THING_LINK_KIND.0 as u128),
                             codec_id: CodecId::POSTCARD,
                             bytes: postcard::to_allocvec(&link).unwrap(),
-                        }).unwrap();
+                        })
+                        .unwrap();
                         k.graph.create_thing(THING_LINK_KIND, lb);
                     }
 
@@ -1309,7 +1380,8 @@ let _ = boot_fs_device;
                             type_id: TypeId(THING_LINK_KIND.0 as u128),
                             codec_id: CodecId::POSTCARD,
                             bytes: postcard::to_allocvec(&link).unwrap(),
-                        }).unwrap();
+                        })
+                        .unwrap();
                         k.graph.create_thing(THING_LINK_KIND, lb);
                     }
                 }
@@ -1317,127 +1389,247 @@ let _ = boot_fs_device;
         };
 
         if let Some((base, port)) = boot_fs_device {
-             use kernel_core::fs::iso9660::Iso9660Reader;
-             if let Some(mut iso) = Iso9660Reader::new(|lba, buf: &mut [u8]| {
-                 unsafe { bridge_x86_64::ahci::read_sector_at(base, port, lba, buf, hhdm_offset_u64) }
-             }) {
-                 k.bridge.log("bootfs: ISO Reader Ready.\n");
+            use kernel_core::fs::iso9660::Iso9660Reader;
+            if let Some(mut iso) = Iso9660Reader::new(|lba, buf: &mut [u8]| unsafe {
+                bridge_x86_64::ahci::read_sector_at(base, port, lba, buf, hhdm_offset_u64)
+            }) {
+                k.bridge.log("bootfs: ISO Reader Ready.\n");
 
-                 // 1. Read Policy (init.txt)
-                 let mut whitelist = None;
-                 if let Some(h) = iso.open("/boot/init.txt") {
-                     let mut data = alloc::vec![0u8; h.size as usize];
-                     iso.read(&h, 0, h.size as usize, &mut data);
-                     if let Ok(s) = core::str::from_utf8(&data) {
-                         let list: alloc::vec::Vec<alloc::string::String> = s.lines()
-                             .map(|l| l.trim().to_ascii_lowercase())
-                             .filter(|l| !l.is_empty())
-                             .collect();
-                         k.bridge.log("bootfs: init.txt policy loaded (");
-                         use alloc::string::ToString; // Ensure we can print number or just ignore
-                         k.bridge.log(" entries)\n");
-                         whitelist = Some(list);
-                     }
-                 }
+                // Create /boot Mount and Dirs
+                let (apps_dir_id, drivers_dir_id, fonts_dir_id) = {
+                    use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+                    use thing_models::builtins::ids::*;
+                    use thing_models::value::ThingBody;
+                    use thing_models::core::fs::{MountBody, DirBody};
+                    use abi::ThingId;
 
-                 // Helper to scan and spawn
-                 // We need to move `iso` into closure? No, we can borrow iso.
-                 // But `load_elf` inside `process_file` uses `mapper` which is borrowed check...
-                 // `process_file` borrows `k`.
-                 // We are inside a big unsafe block or big scope.
+                    // 1. Mount "/boot"
+                    let m_body = MountBody {
+                        path: alloc::string::String::from("/boot"),
+                        readonly: true,
+                    };
+                    let m_tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_MOUNT_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&m_body).unwrap(),
+                    })
+                    .unwrap();
+                    let m_id = k.graph.create_thing(THING_MOUNT_KIND, m_tb);
 
-                 // 2. Scan /boot/apps
-                 k.bridge.log("bootfs: scanning /boot/apps\n");
-                 let mut entries = iso.read_dir("/boot/apps").unwrap_or_default();
-                 entries.sort_by(|a, b| a.name.cmp(&b.name));
-                 k.bridge.log("bootfs: found ");
-                 print_hex(&Bridge, entries.len() as u64);
-                 k.bridge.log(" entries in apps\n");
+                    // Link BootRoot -> Mount
+                    let l_root = thing_models::link::LinkBody {
+                        from: THING_BOOT_ROOT,
+                        to: m_id,
+                        predicate: THING_HAS_MOUNT_KIND,
+                    };
+                    let l_root_tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_LINK_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&l_root).unwrap(),
+                    })
+                    .unwrap();
+                    k.graph.create_thing(THING_LINK_KIND, l_root_tb);
 
-                 for entry in entries {
-                     let name = &entry.name;
-                     if entry.is_dir { continue; }
-                     
-                     let should_run = if !name.ends_with(".elf") {
-                         k.bridge.log("init: skipped "); k.bridge.log(name); k.bridge.log(" (not .elf)\n");
-                         false
-                     } else {
-                         if let Some(wl) = &whitelist {
-                             if wl.contains(name) {
-                                 true
-                             } else {
-                                 k.bridge.log("init: policy skipped "); k.bridge.log(name); k.bridge.log("\n");
-                                 false
-                             }
-                         } else {
-                             true
-                         }
-                     };
+                    // 2. Root Dir (of the mount)
+                    let d_body = DirBody {
+                        name: alloc::string::String::from("/boot"),
+                        lba: 0,
+                        size: 0,
+                        expanded: true,
+                    };
+                    let d_tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_DIR_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&d_body).unwrap(),
+                    })
+                    .unwrap();
+                    let root_id = k.graph.create_thing(THING_DIR_KIND, d_tb);
 
-                     if !should_run {
-                         // We might still want to intern them as 'files' or 'assets'?
-                         // For now, let's skip totally if it's just noise, OR load as asset?
-                         // User said "Skip with reason otherwise (log it)".
-                         // But if I want assets to be available (e.g. README), I should `process_file` with spawn=false.
-                         // But `process_file` does heavy lifting.
-                         // Let's load everything but spawn only candidates.
-                     }
+                    // Link Mount -> Root Dir
+                    let l_mnt = thing_models::link::LinkBody {
+                        from: m_id,
+                        to: root_id,
+                        predicate: THING_MOUNTS_KIND,
+                    };
+                    let l_mnt_tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_LINK_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&l_mnt).unwrap(),
+                    })
+                    .unwrap();
+                    k.graph.create_thing(THING_LINK_KIND, l_mnt_tb);
 
-                     let path = alloc::format!("/boot/apps/{}", entry.name); // Using normalized name for path
-                     if let Some(handle) = iso.open(&path) {
-                          let mut data = alloc::vec![0u8; handle.size as usize];
-                          iso.read(&handle, 0, handle.size as usize, &mut data);
-                          // We pass should_run to process_file
-                          process_file(&mut k, &path, &data, 0, Some(should_run));
-                     }
-                 }
+                    // Helper to make dir
+                    let mut make_dir = |name: &str, parent: ThingId| {
+                        let body = DirBody {
+                            name: alloc::string::String::from(name),
+                            lba: 0,
+                            size: 0,
+                            expanded: false,
+                        };
+                        let tb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_DIR_KIND.0 as u128),
+                            codec_id: CodecId::POSTCARD,
+                            bytes: postcard::to_allocvec(&body).unwrap(),
+                        })
+                        .unwrap();
+                        let did = k.graph.create_thing(THING_DIR_KIND, tb);
+                        let l = thing_models::link::LinkBody {
+                            from: parent,
+                            to: did,
+                            predicate: THING_HAS_ENTRY_KIND,
+                        };
+                        let l_tb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_LINK_KIND.0 as u128),
+                            codec_id: CodecId::POSTCARD,
+                            bytes: postcard::to_allocvec(&l).unwrap(),
+                        })
+                        .unwrap();
+                        k.graph.create_thing(THING_LINK_KIND, l_tb);
+                        did
+                    };
 
-                 // 3. Scan /boot/drivers (Optional scope)
-                 k.bridge.log("bootfs: scanning /boot/drivers\n");
-                 let mut drv_entries = iso.read_dir("/boot/drivers").unwrap_or_default();
-                 drv_entries.sort_by(|a, b| a.name.cmp(&b.name));
+                    let apps = make_dir("apps", root_id);
+                    let drivers = make_dir("drivers", root_id);
+                    let fonts = make_dir("fonts", root_id);
 
-                 for entry in drv_entries {
-                     if entry.is_dir { continue; }
-                     let name = &entry.name;
+                    (apps, drivers, fonts)
+                };
 
-                     // Drivers: Only spawn if in whitelist!
-                     let should_run = if let Some(wl) = &whitelist {
-                         if wl.contains(name) { true } else { false }
-                     } else {
-                         false // Default: Do NOT auto-run drivers unless listed
-                     };
+                // 1. Read Policy (init.txt)
+                let mut whitelist = None;
+                if let Some(h) = iso.open("/boot/init.txt") {
+                    let mut data = alloc::vec![0u8; h.size as usize];
+                    iso.read(&h, 0, h.size as usize, &mut data);
+                    if let Ok(s) = core::str::from_utf8(&data) {
+                        let list: alloc::vec::Vec<alloc::string::String> = s
+                            .lines()
+                            .map(|l| l.trim().to_ascii_lowercase())
+                            .filter(|l| !l.is_empty())
+                            .collect();
+                        k.bridge.log("bootfs: init.txt policy loaded (");
+                        use alloc::string::ToString; // Ensure we can print number or just ignore
+                        k.bridge.log(" entries)\n");
+                        whitelist = Some(list);
+                    }
+                }
 
-                     let path = alloc::format!("/boot/drivers/{}", entry.name);
-                     if let Some(handle) = iso.open(&path) {
-                          let mut data = alloc::vec![0u8; handle.size as usize];
-                          iso.read(&handle, 0, handle.size as usize, &mut data);
-                          process_file(&mut k, &path, &data, 0, Some(should_run));
-                     }
-                 }
-                 
-                 // 4. Scan /boot/fonts (Legacy/Asset) - Scan but don't spawn
-                 let fonts = iso.read_dir("/boot/fonts").unwrap_or_default();
-                 for entry in fonts {
-                     let path = alloc::format!("/boot/fonts/{}", entry.name);
-                     if let Some(handle) = iso.open(&path) {
-                         let mut data = alloc::vec![0u8; handle.size as usize];
-                         iso.read(&handle, 0, handle.size as usize, &mut data);
-                         process_file(&mut k, &path, &data, 0, Some(false));
-                     }
-                 }
+                // Helper to scan and spawn
+                // We need to move `iso` into closure? No, we can borrow iso.
+                // But `load_elf` inside `process_file` uses `mapper` which is borrowed check...
+                // `process_file` borrows `k`.
+                // We are inside a big unsafe block or big scope.
 
-             }
+                // 2. Scan /boot/apps
+                k.bridge.log("bootfs: scanning /boot/apps\n");
+                let mut entries = iso.read_dir("/boot/apps").unwrap_or_default();
+                entries.sort_by(|a, b| a.name.cmp(&b.name));
+                k.bridge.log("bootfs: found ");
+                print_hex(&Bridge, entries.len() as u64);
+                k.bridge.log(" entries in apps\n");
+
+                for entry in entries {
+                    let name = &entry.name;
+                    if entry.is_dir {
+                        continue;
+                    }
+
+                    let should_run = if !name.ends_with(".elf") {
+                        k.bridge.log("init: skipped ");
+                        k.bridge.log(name);
+                        k.bridge.log(" (not .elf)\n");
+                        false
+                    } else {
+                        if let Some(wl) = &whitelist {
+                            if wl.contains(name) {
+                                true
+                            } else {
+                                k.bridge.log("init: policy skipped ");
+                                k.bridge.log(name);
+                                k.bridge.log("\n");
+                                false
+                            }
+                        } else {
+                            true
+                        }
+                    };
+
+                    if !should_run {
+                        // We might still want to intern them as 'files' or 'assets'?
+                        // For now, let's skip totally if it's just noise, OR load as asset?
+                        // User said "Skip with reason otherwise (log it)".
+                        // But if I want assets to be available (e.g. README), I should `process_file` with spawn=false.
+                        // But `process_file` does heavy lifting.
+                        // Let's load everything but spawn only candidates.
+                    }
+
+                    let path = alloc::format!("/boot/apps/{}", entry.name); // Using normalized name for path
+                    if let Some(handle) = iso.open(&path) {
+                        let mut data = alloc::vec![0u8; handle.size as usize];
+                        iso.read(&handle, 0, handle.size as usize, &mut data);
+                        // We pass should_run to process_file
+                        process_file(&mut k, Some(apps_dir_id), &path, &data, 0, Some(should_run));
+                    }
+                }
+
+                // 3. Scan /boot/drivers (Optional scope)
+                k.bridge.log("bootfs: scanning /boot/drivers\n");
+                let mut drv_entries = iso.read_dir("/boot/drivers").unwrap_or_default();
+                drv_entries.sort_by(|a, b| a.name.cmp(&b.name));
+
+                for entry in drv_entries {
+                    if entry.is_dir {
+                        continue;
+                    }
+                    let name = &entry.name;
+
+                    // Drivers: Only spawn if in whitelist!
+                    let should_run = if let Some(wl) = &whitelist {
+                        if wl.contains(name) {
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false // Default: Do NOT auto-run drivers unless listed
+                    };
+
+                    let path = alloc::format!("/boot/drivers/{}", entry.name);
+                    if let Some(handle) = iso.open(&path) {
+                        let mut data = alloc::vec![0u8; handle.size as usize];
+                        iso.read(&handle, 0, handle.size as usize, &mut data);
+                        process_file(
+                            &mut k,
+                            Some(drivers_dir_id),
+                            &path,
+                            &data,
+                            0,
+                            Some(should_run),
+                        );
+                    }
+                }
+
+                // 4. Scan /boot/fonts (Legacy/Asset) - Scan but don't spawn
+                let fonts = iso.read_dir("/boot/fonts").unwrap_or_default();
+                for entry in fonts {
+                    let path = alloc::format!("/boot/fonts/{}", entry.name);
+                    if let Some(handle) = iso.open(&path) {
+                        let mut data = alloc::vec![0u8; handle.size as usize];
+                        iso.read(&handle, 0, handle.size as usize, &mut data);
+                        process_file(&mut k, Some(fonts_dir_id), &path, &data, 0, Some(false));
+                    }
+                }
+            }
         } else {
-             if let Some(resp) = MODULE_REQUEST.get_response() {
-                  for (idx, module) in resp.modules().iter().enumerate() {
-                      let name = module.path().to_str().unwrap_or("unknown");
-                      let base = module.addr();
-                      let len = module.size() as usize;
-                      let data = unsafe { slice::from_raw_parts(base, len) };
-                      process_file(&mut k, name, data, idx, None);
-                  }
-             }
+            if let Some(resp) = MODULE_REQUEST.get_response() {
+                for (idx, module) in resp.modules().iter().enumerate() {
+                    let name = module.path().to_str().unwrap_or("unknown");
+                    let base = module.addr();
+                    let len = module.size() as usize;
+                    let data = unsafe { slice::from_raw_parts(base, len) };
+                    process_file(&mut k, None, name, data, idx, None);
+                }
+            }
         }
     }
     // Handover to Scheduled Mode

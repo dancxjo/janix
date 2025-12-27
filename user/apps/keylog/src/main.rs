@@ -2,94 +2,81 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::format;
-
 use thing_std as std;
-use abi::ThingId;
-use models::core::input::{KeyEventStreamBody};
+use abi::{ThingId};
+use abi::wire::graph::{GraphOp, GraphReply};
+use abi::wire::input::{Key, KeyState};
+use models::core::input::{KeyEventStreamBody, TextEventStreamBody};
 use models::Thing;
 use std::GraphClient;
-use models::abi::wire::graph::{GraphOp, GraphReply};
-use models::builtins::ids::{THING_EMITS_KIND, THING_KEYBOARD_KIND};
-use models::abi::wire::typed::TypedBytes; // Ensure access
 
 #[no_mangle]
 pub extern "C" fn _start(heap_start: u64) -> ! {
     unsafe { std::rt::init_heap(heap_start as usize, 1024 * 1024); }
     std::init();
-    std::debug::log("Keylog App starting...\n");
+    std::debug::log("Keylog App (Input Service Client) starting...\n");
 
     let g = GraphClient::new();
-    let mut buf = [0u8; 4096]; // Larger buffer for responses
+    let mut buf = [0u8; 4096];
 
-    // 1. Find Keyboard Stream
-    // Scan for links with Predicate = EMITS
-    // For each, check if Source is Keyboard. If so, Destination is Stream.
-    
-    let mut stream_id = ThingId(0);
-    let mut found = false;
+    let key_stream_id = ThingId(3100);
+    let text_stream_id = ThingId(3200);
 
-    // Retry discovery loop
-    while !found {
-        let op = GraphOp::ScanLinks { from: None, to: None, kind: Some(THING_EMITS_KIND) };
-        if let Ok(GraphReply::Links(links)) = g.call_op(&op, &mut buf) {
-             for (src, dst, _pred) in links {
-                 // Check src kind
-                 let op_get = GraphOp::GetThing { id: src };
-                 if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op_get, &mut buf) {
-                      // Check if kind is KEYBOARD (Thing type_id is Kind ID)
-                      if tb.type_id.0 as u64 == THING_KEYBOARD_KIND.0 {
-                           stream_id = dst;
-                           found = true;
-                           std::debug::log(&format!("Found Keyboard Stream: t{}\n", dst.0));
-                           break;
-                      }
-                 }
-             }
-        }
-        
-        if !found {
-            // wait and retry
-            core::hint::spin_loop();
-        }
-    }
-
-    let mut last_seq = 0u64;
+    let mut last_key_seq = 0u64;
+     let mut last_text_seq = 0u64;
     
     loop {
-        // Poll Stream
-        let op_get = GraphOp::GetThing { id: stream_id };
-        if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op_get, &mut buf) {
-            // Decode Stream Body
-             if let Ok(stream) = postcard::from_bytes::<KeyEventStreamBody>(&tb.bytes) {
-                  // Process new events
-                  // Events are in a sliding window.
-                  // We need to print events with seq > last_seq.
-                  // We can infer seq of each event by (head_seq - (len - 1 - index)) ?
-                  // Or just iterate.
-                  
-                  // Latest event has seq = head_seq.
-                  // Event at index i has seq = head_seq - (len - 1 - i).
-                  
-                  let len = stream.events.len();
-                  if len > 0 {
-                       let first_seq_in_buf = stream.head_seq - (len as u64) + 1;
-                       
-                       for (i, evt) in stream.events.iter().enumerate() {
-                            let seq = first_seq_in_buf + (i as u64);
-                            if seq > last_seq {
-                                 let msg = format!("Key: Scancode={:#x} Rel={} Seq={}\n", evt.scancode, evt.is_release, seq);
-                                 std::debug::log(&msg);
-                                 last_seq = seq;
-                            }
-                       }
+        // Poll Key Stream
+        let op_key = GraphOp::GetThing { id: key_stream_id };
+        if let Ok(GraphReply::Thing { bytes }) = g.call_op(&op_key, &mut buf) {
+             if let Ok(thing) = postcard::from_bytes::<Thing>(&bytes) {
+                  // Decode TypedBytes
+                  use abi::wire::typed::TypedBytes;
+                  if let Ok(typed) = postcard::from_bytes::<TypedBytes>(&thing.body.bytes) {
+                      if let Ok(stream) = postcard::from_bytes::<KeyEventStreamBody>(&thing.body.bytes) {
+                           let head = stream.head_seq;
+                           if head > last_key_seq {
+                               let len = stream.events.len() as u64;
+                               let start = head.saturating_sub(len);
+                               for (i, evt) in stream.events.iter().enumerate() {
+                                   let seq = start + (i as u64) + 1;
+                                   if seq > last_key_seq {
+                                       let state_str = if evt.state == KeyState::Down { "DN" } else { "UP" };
+                                       std::debug::log(&format!("KEY: {:?} {} [Mods: S={} C={} A={}]\n", evt.key, state_str, evt.mods.shift, evt.mods.ctrl, evt.mods.alt));
+                                       last_key_seq = seq;
+                                   }
+                               }
+                           }
+                      }
                   }
              }
         }
         
-        // Yield/Sleep
-        // Simple busy wait for v0
+        // Poll Text Stream
+        let op_text = GraphOp::GetThing { id: text_stream_id };
+        if let Ok(GraphReply::Thing { bytes }) = g.call_op(&op_text, &mut buf) {
+             if let Ok(thing) = postcard::from_bytes::<Thing>(&bytes) {
+                  use abi::wire::typed::TypedBytes;
+                  if let Ok(typed) = postcard::from_bytes::<TypedBytes>(&thing.body.bytes) {
+                      if let Ok(stream) = postcard::from_bytes::<TextEventStreamBody>(&thing.body.bytes) {
+                           let head = stream.head_seq;
+                           if head > last_text_seq {
+                               let len = stream.events.len() as u64;
+                               let start = head.saturating_sub(len);
+                               for (i, evt) in stream.events.iter().enumerate() {
+                                   let seq = start + (i as u64) + 1;
+                                   if seq > last_text_seq {
+                                       std::debug::log(&format!("TEXT: '{}' (Kind: {:?})\n", evt.text, evt.kind));
+                                       last_text_seq = seq;
+                                   }
+                               }
+                           }
+                      }
+                  }
+             }
+        }
+        
         for _ in 0..10_000 { core::hint::spin_loop(); }
     }
 }

@@ -4,10 +4,8 @@
 extern crate alloc;
 
 use thing_std::{GraphClient, StdoutConsole, Console};
-use models::Thing;
 use abi::ids::ThingId;
 use abi::wire::graph::{GraphOp, GraphReply};
-use serde::Deserialize;
 use models::core::time::TimeNow;
 
 
@@ -23,20 +21,20 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     let mut sys_time_id: Option<ThingId> = None;
     
     loop {
-        // 1. Locate SystemTime if unknown
+        // 1. Locate TimeNow if unknown
         if sys_time_id.is_none() {
              // Link based discovery
-             // Root (1000) -> HAS_TIME_NOW (117) -> ?
+             // Root -> HAS_TIME_NOW -> ?
              let op = GraphOp::ScanLinks { 
-                 from: Some(abi::ids::ThingId(1000)), 
+                 from: Some(models::builtins::ids::THING_BOOT_ROOT), 
                  to: None, 
-                 kind: Some(abi::ids::ThingId(117)) 
+                 kind: Some(models::builtins::ids::THING_HAS_TIME_NOW_KIND) 
              };
              
              if let Ok(GraphReply::Links(list)) = g.call_op(&op, &mut buf) {
                  if let Some((_, target, _)) = list.first() {
                      sys_time_id = Some(*target);
-                     c.write_str("CLOCK: Found SystemTime via link\n");
+                     c.write_str("CLOCK: Found TimeNow via link\n");
                  }
              }
         }
@@ -54,16 +52,16 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                              c.write_2d(m);
                              c.write_str(":");
                              c.write_2d(s);
-                             c.write_str("   \r"); // Use \r to overwrite line but let's see logging first
+                             c.write_str("   \r");
                         }
              } else {
                  c.write_str("CLOCK: GetThing failed\n");
              }
         } else {
-             c.write_str("CLOCK: Waiting for SystemTime...\n");
+             c.write_str("CLOCK: Waiting for TimeNow link...\n");
         }
         
-        thing_std::time::sleep_ms(&g, 1000);
+        let _ = thing_std::time::sleep_ms(&g, 1000);
     }
 }
 

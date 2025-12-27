@@ -190,6 +190,12 @@ pub const THING_DIR_SCHEMA: ThingId = ThingId(1229);
 pub const THING_VOLUME_KIND: ThingId = ThingId(230);
 pub const THING_VOLUME_SCHEMA: ThingId = ThingId(1230);
 
+pub const THING_RAW_KEY_EVENT_STREAM_KIND: ThingId = ThingId(231);
+pub const THING_RAW_KEY_EVENT_STREAM_SCHEMA: ThingId = ThingId(1231);
+
+pub const THING_TEXT_EVENT_STREAM_KIND: ThingId = ThingId(232);
+pub const THING_TEXT_EVENT_STREAM_SCHEMA: ThingId = ThingId(1232);
+
 // Links
 pub const THING_HAS_BLOCK_DEVICE_KIND: ThingId = ThingId(122);
 pub const THING_HAS_BLOCK_DEVICE_SCHEMA: ThingId = ThingId(1122);

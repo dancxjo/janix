@@ -57,6 +57,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         "sleep_accuracy_smoke",
         "ls_boot",
         "cat_boot",
+        "input_service",
     ];
     if env == "x86_64" {
         user_apps.push("rtc_x86");
@@ -124,7 +125,6 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     fs::copy(&bin_path, boot_dir.join("kernel"))
         .with_context(|| format!("Failed to copy kernel from {:?}", bin_path))?;
 
-
     // Copy Apps and Drivers (New Layout)
     let apps_dir = boot_dir.join("apps");
     fs::create_dir_all(&apps_dir)?;
@@ -140,7 +140,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         let dest_dir = if is_driver { &drivers_dir } else { &apps_dir };
 
         let app_bin = root.join("user/target/x86_64-unknown-none/debug").join(app);
-        
+
         // Ensure .elf extension
         let dest_name = format!("{}.elf", app);
         let dest_path = dest_dir.join(&dest_name);
@@ -153,8 +153,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
 
     // Write init.txt policy
     let init_txt_content = init_whitelist.join("\n");
-    fs::write(boot_dir.join("init.txt"), init_txt_content)
-        .context("Failed to write init.txt")?;
+    fs::write(boot_dir.join("init.txt"), init_txt_content).context("Failed to write init.txt")?;
 
     // Copy Fonts
     // Copy Fonts

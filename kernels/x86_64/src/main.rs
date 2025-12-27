@@ -9,7 +9,7 @@ mod early_log;
 #[cfg(target_os = "thingos")]
 mod heap;
 #[cfg(target_os = "thingos")]
-mod limine;
+mod limine_local;
 mod memory_intrinsics;
 
 use bridge_x86_64::Bridge;
@@ -159,9 +159,30 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
                 let last = LAST_TICKS.swap(now_raw, Ordering::Relaxed);
                 
                 // If first run (last=0) or valid delta
-                // Note: on first run if now_raw is huge, delta is huge. 
-                // We assume ticks start near 0.
-                let delta = if now_raw >= last { now_raw - last } else { 0 };
+                // Use monotonic_now for precision if available
+                let now_ns = k.bridge.monotonic_now();
+                
+                // If now_ns is > 0, we trust it. If 0, fallback to ticks delta?
+                // For now, let's just use it if we have it.
+                // But `tick` function expects a delta currently.
+                // We planned to change `tick` or just calc delta here.
+                
+                // If we have HPET (which we should), now_ns is absolute.
+                // We can just diff against last *ns*. 
+                // But `LAST_TICKS` stores *raw ticks*.
+                // Let's change LAST_TICKS to LAST_NS if we switch fully.
+                // For this step, let's keep it simple: 
+                // If now_ns > 0: use it.
+                
+                let delta = if now_ns > 0 {
+                    let last_ns = LAST_TICKS.swap(now_ns, Ordering::Relaxed);
+                    if now_ns >= last_ns && last_ns > 0 { now_ns - last_ns } else { 0 }
+                } else {
+                     // Fallback to TSC ticks (uncalibrated)
+                     let now_raw = k.bridge.ticks();
+                     let last = LAST_TICKS.swap(now_raw, Ordering::Relaxed);
+                     if now_raw >= last { now_raw - last } else { 0 }
+                };
                 
                 // 1. Advance kernel time (and update Graph)
                 kernel_core::time::tick(&mut k.graph, delta);
@@ -214,19 +235,42 @@ pub extern "C" fn rust_main() -> ! {
         let bridge = Bridge;
         bridge.log("Booting ThingOS...\n");
 
-        let info = limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
+        let info = limine_local::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
         early_log::log_heap_init(info);
     }
 
     let mut k = Kernel::new(Bridge);
 
     // Init Bridge (GDT/IDT/PIC) EARLY so selectors are ready for spawn
-    unsafe { Bridge::init(); }
+    // Init Bridge (GDT/IDT/PIC) EARLY so selectors are ready for spawn
+    // We need RSDP for ACPI/HPET, but that might be fine later?
+    // Actually, we should probably grab HHDM/RSDP early if we can.
+    // But HHDM relies on memory map which is available.
+    // Let's grab them inside the unsafe block or move init later?
+    // Bridge::init now *requires* arguments.
+    // Let's move Bridge::init down, OR grab requests early.
+    // Limine requests are static, we can access them.
+    
+    let hhdm_offset_u64 = limine_local::requests::HHDM_REQUEST.get_response().map(|r| r.offset()).unwrap_or(0);
+    // Limine address() returns usize, cast to u64
+    let rsdp_addr = limine_local::requests::RSDP_REQUEST.get_response().map(|r| r.address() as u64);
+
+    unsafe {
+        use hw::HardwareBridge;
+        Bridge.log("HHDM: ");
+        print_hex(&Bridge, hhdm_offset_u64);
+        Bridge.log("\n");
+        Bridge.log("RSDP: ");
+        if let Some(r) = rsdp_addr { print_hex(&Bridge, r); } else { Bridge.log("None"); }
+        Bridge.log("\n");
+
+        Bridge::init(rsdp_addr, hhdm_offset_u64); 
+    }
 
     #[cfg(target_os = "thingos")]
     {
         use hw::HardwareBridge;
-        use limine::requests::MODULE_REQUEST;
+        use limine_local::requests::MODULE_REQUEST;
         use kernel_core::sched::elf::load_elf;
         use core::slice;
         use alloc::string::ToString;
@@ -238,7 +282,7 @@ pub extern "C" fn rust_main() -> ! {
         use alloc::alloc::{alloc, Layout};
 
         // Get HHDM
-        let hhdm_offset_u64 = limine::requests::HHDM_REQUEST.get_response().unwrap().offset();
+        let hhdm_offset_u64 = limine_local::requests::HHDM_REQUEST.get_response().unwrap().offset();
         let hhdm_offset = VirtAddr::new(hhdm_offset_u64);
 
         // Frame Allocator wrapping Global Allocator
@@ -272,6 +316,76 @@ pub extern "C" fn rust_main() -> ! {
             let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
             OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
         };
+
+        // Ensure all physical memory regions are mapped in HHDM
+        // Limine is supposed to do this, but we are seeing faults in ACPI regions (Reserved/Reclaim).
+        // We will iterate the memory map and map everything to be safe.
+
+
+        // Helper helper? No, we can't define valid closure here easily with generic types?
+        // Let's just inline the logic or define a local function if possible? 
+        // Rust supports specific nested functions.
+        // Or just copy-paste logic for now since I can't easily refactor entire file.
+        // Wait, I can define a local closure `map_region`.
+        
+        let mut map_region_fn = |start: u64, end: u64, flags: PageTableFlags| {
+             let start_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(start));
+             let end_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(end - 1));
+             for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
+                  let phys = frame.start_address();
+                  let virt = hhdm_offset + phys.as_u64();
+                  if mapper.translate_addr(virt).is_none() {
+                       let page = Page::<Size4KiB>::containing_address(virt);
+                       unsafe {
+                           if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                               map_to.flush();
+                           }
+                       }
+                  }
+             }
+        };
+
+        // Redo the loop using the closure to avoid code duplication
+        if let Some(resp) = limine_local::requests::MEMORY_MAP_REQUEST.get_response() {
+            for entry in resp.entries() {
+                use limine::memory_map::EntryType;
+                match entry.entry_type {
+                     EntryType::ACPI_RECLAIMABLE | EntryType::ACPI_NVS => {
+                         // Map as cached RAM
+                         let start = entry.base;
+                         let end = start + entry.length;
+                         map_region_fn(start, end, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+                     },
+                     EntryType::RESERVED => {
+                         // Map reserved memory if it's in likely RAM range (< 3GB)
+                         let start = entry.base;
+                         let end = start + entry.length;
+                         if start < 0xC0000000 {
+                             let end_cap = core::cmp::min(end, 0xC0000000);
+                             map_region_fn(start, end_cap, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+                         }
+                     },
+                     _ => {}
+                }
+            }
+        }
+
+        // Explicitly map MMIO range for HPET/IO-APIC (standard PC locations)
+        // 0xFEC00000 (IO-APIC) to 0xFEEFFFFF (Local APIC / HPET usually in between)
+        {
+            let mmio_start = 0xFEC00000;
+            let mmio_end = 0xFEF00000; // 3MB covering standard range
+            map_region_fn(mmio_start, mmio_end, PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE);
+        }
+
+
+        // Now Init ACPI
+        k.bridge.log("ACPI: Pre-Init\n");
+        if let Some(r) = rsdp_addr {
+            unsafe { Bridge::init_acpi(r, hhdm_offset_u64); }
+        } else {
+             k.bridge.log("Skipping ACPI init (No RSDP)\n");
+        }
 
     // Boot Initialization
     {
@@ -325,7 +439,7 @@ pub extern "C" fn rust_main() -> ! {
         // --- CMDLINE PARSING (Rudimentary) ---
         let mut smoke_target = None;
         {
-            use limine::requests::KERNEL_FILE_REQUEST;
+            use limine_local::requests::KERNEL_FILE_REQUEST;
             if let Some(resp) = KERNEL_FILE_REQUEST.get_response() {
                 let file = resp.file();
                 let cmd_bytes = file.cmdline();

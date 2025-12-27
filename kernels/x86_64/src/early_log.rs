@@ -1,4 +1,4 @@
-use crate::limine::heap_init::HeapInitInfo;
+use crate::limine_local::heap_init::HeapInitInfo;
 use bridge_x86_64::Bridge;
 use hw::HardwareBridge;
 

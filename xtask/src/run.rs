@@ -10,13 +10,14 @@ pub struct RunArgs {
     pub gdb: bool,
     pub timeout_secs: Option<u64>,
     pub interactive: bool,
+    pub cmdline: Option<String>,
 }
 
 pub fn run(args: RunArgs) -> Result<()> {
     match args.env.as_str() {
         "hosted" => run_hosted(args.timeout_secs),
-        "x86_64" => run_qemu_x86_64(args.gdb, args.timeout_secs, args.interactive),
-        "aarch64" => run_qemu_aarch64(args.gdb, args.timeout_secs, args.interactive),
+        "x86_64" => run_qemu_x86_64(args.gdb, args.timeout_secs, args.interactive, args.cmdline),
+        "aarch64" => run_qemu_aarch64(args.gdb, args.timeout_secs, args.interactive, args.cmdline),
         _ => anyhow::bail!(
             "Unsupported env for run: {}. Use hosted, x86_64 or aarch64",
             args.env
@@ -71,9 +72,9 @@ fn run_hosted(timeout: Option<u64>) -> Result<()> {
     run_with_timeout(cmd, timeout)
 }
 
-fn run_qemu_x86_64(gdb: bool, timeout: Option<u64>, interactive: bool) -> Result<()> {
+fn run_qemu_x86_64(gdb: bool, timeout: Option<u64>, interactive: bool, cmdline: Option<String>) -> Result<()> {
     // Ensure ISO exists (rebuilds kernel too)
-    iso::run("x86_64".to_string())?;
+    iso::run("x86_64".to_string(), cmdline)?;
 
     let root = project_root();
     let iso_path = root.join("target/iso/thingos-x86_64.iso");
@@ -133,9 +134,9 @@ fn run_qemu_x86_64(gdb: bool, timeout: Option<u64>, interactive: bool) -> Result
     run_with_timeout(cmd, timeout)
 }
 
-fn run_qemu_aarch64(gdb: bool, timeout: Option<u64>, interactive: bool) -> Result<()> {
+fn run_qemu_aarch64(gdb: bool, timeout: Option<u64>, interactive: bool, cmdline: Option<String>) -> Result<()> {
     // Ensure ISO exists
-    iso::run("aarch64".to_string())?;
+    iso::run("aarch64".to_string(), cmdline)?;
 
     let root = project_root();
     let iso_path = root.join("target/iso/thingos-aarch64.iso");

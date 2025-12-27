@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub fn run(env: String) -> Result<()> {
+pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // 1. Determine Target
     let (target_triple, kernel_bin_name, uefi_boot_name) = match env.as_str() {
         "x86_64" => ("x86_64-thingos.json", "kernel_x86_64", "BOOTX64.EFI"),
@@ -155,10 +155,23 @@ pub fn run(env: String) -> Result<()> {
     fs::create_dir_all(&limine_dest)?;
 
     // Config
-    fs::copy(
-        root.join("kernels/limine.conf"),
-        limine_dest.join("limine.conf"),
-    )?;
+    // Config
+    let conf_src = root.join("kernels/limine.conf");
+    let mut conf_data = fs::read_to_string(&conf_src)?;
+    
+    if let Some(cmd) = cmdline {
+        // Inject cmdline into /ThingOS entry
+        // We look for "kernel_path: boot():/boot/kernel"
+        // and append the cmdline after it.
+        let needle = "kernel_path: boot():/boot/kernel";
+        let insertion = format!("\n    cmdline: {}", cmd);
+        // We only want to replace the first occurrence (main entry), or maybe all?
+        // The second entry is "/ThingOS Smoke Mode", which has a hardcoded cmdline.
+        // Let's just replace the first one.
+        conf_data = conf_data.replacen(needle, &format!("{}{}", needle, insertion), 1);
+    }
+
+    fs::write(limine_dest.join("limine.conf"), conf_data)?;
 
     // Vendor bins
     let vendor_limine = root.join("vendor/limine");

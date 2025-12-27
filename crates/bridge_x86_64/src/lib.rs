@@ -7,6 +7,8 @@ extern crate alloc;
 pub mod interrupts;
 pub mod user;
 pub mod gdt;
+pub mod acpi;
+pub mod hpet;
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;
@@ -23,7 +25,7 @@ pub fn set_tick_hook(hook: fn(&mut interrupts::trap::TrapFrame)) {
 
 #[cfg(target_arch = "x86_64")]
 impl Bridge {
-    pub unsafe fn init() {
+    pub unsafe fn init(rsdp_addr: Option<u64>, hhdm: u64) {
         use hw::HardwareBridge;
         let b = Bridge;
         b.log("BRIDGE: gdt::init\n");
@@ -34,6 +36,15 @@ impl Bridge {
         interrupts::pic::init();
         b.log("BRIDGE: syscall::init\n");
         interrupts::syscall::init();
+
+        // ACPI init moved to explicit call
+    }
+
+    pub unsafe fn init_acpi(rsdp_addr: u64, hhdm: u64) {
+        use hw::HardwareBridge;
+        let b = Bridge;
+        b.log("BRIDGE: acpi::init\n");
+        acpi::init(rsdp_addr, hhdm);
     }
 
 }
@@ -102,8 +113,13 @@ impl HardwareBridge for Bridge {
         ((edx as u64) << 32) | (eax as u64)
     }
 
+
     fn system_now(&self) -> u64 {
         0
+    }
+
+    fn monotonic_now(&self) -> u64 {
+        hpet::read_ns()
     }
 
     fn idle(&self) {
@@ -233,7 +249,13 @@ impl HardwareBridge for Bridge {
     fn ticks(&self) -> u64 {
         0
     }
+    fn monotonic_now(&self) -> u64 {
+        0
+    }
     fn system_now(&self) -> u64 {
+        0
+    }
+    fn monotonic_now(&self) -> u64 {
         0
     }
     fn idle(&self) {}

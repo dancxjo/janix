@@ -8,4 +8,5 @@
 /assets/fonts/
 
 # Build output
-target/
+**target/
+**/*.log

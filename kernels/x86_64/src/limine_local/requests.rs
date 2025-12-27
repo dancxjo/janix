@@ -29,6 +29,10 @@ pub static MODULE_REQUEST: limine::request::ModuleRequest = limine::request::Mod
 #[unsafe(link_section = ".requests")]
 pub static KERNEL_FILE_REQUEST: limine::request::ExecutableFileRequest = limine::request::ExecutableFileRequest::new();
 
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static RSDP_REQUEST: limine::request::RsdpRequest = limine::request::RsdpRequest::new();
+
 
 
 #[used]

@@ -24,6 +24,8 @@ enum Commands {
     Iso {
         #[arg(long, default_value = "x86_64")]
         env: String,
+        #[arg(long)]
+        cmdline: Option<String>,
     },
     /// Run the OS (hosted or qemu)
     Run {
@@ -38,6 +40,9 @@ enum Commands {
         /// Run in interactive mode (show QEMU window)
         #[arg(long)]
         interactive: bool,
+        /// Kernel command line arguments
+        #[arg(long)]
+        cmdline: Option<String>,
     },
     /// Kill running QEMU instances
     Kill,
@@ -49,17 +54,19 @@ fn main() -> Result<()> {
     match args.command {
         Commands::Fetch(args) => fetch::run(args),
         Commands::Build => build::run(),
-        Commands::Iso { env } => iso::run(env),
+        Commands::Iso { env, cmdline } => iso::run(env, cmdline),
         Commands::Run {
             env,
             gdb,
             timeout_secs,
             interactive,
+            cmdline,
         } => run::run(run::RunArgs {
             env,
             gdb,
             timeout_secs,
             interactive,
+            cmdline,
         }),
         Commands::Kill => kill::run(),
     }

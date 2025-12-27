@@ -15,4 +15,8 @@ pub trait HardwareBridge {
     
     // Time
     fn rtc_read(&self, out: &mut abi::wire::time::RtcSample);
+    
+    /// Returns high-resolution monotonic time in nanoseconds.
+    /// Returns 0 if not available/calibrated yet.
+    fn monotonic_now(&self) -> u64;
 }

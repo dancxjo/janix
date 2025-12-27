@@ -23,10 +23,12 @@ pub fn sleep_until_ns(g: &GraphClient, wake_ns: u64) -> Result<u64, SysRet> {
 }
 
 pub fn sleep_ns(g: &GraphClient, duration_ns: u64) -> Result<u64, SysRet> {
-    let req = TimeSleepNsReq { duration_ns };
-    let mut buf = [0u8; 64];
-    let resp: TimeSleepNsResp = g.query("time.sleep_ns", &req, &mut buf).map_err(|_| -1)?;
-    Ok(resp.woke_at_monotonic_ns)
+    // We cannot use relative sleep syscall directly because GraphClient retries on EAGAIN with the same payload.
+    // Relative sleep would reset the timer on every retry, leading to infinite wait.
+    // We must convert to absolute time and use sleep_until.
+    let now = monotonic_ns(g)?;
+    let target = now.saturating_add(duration_ns);
+    sleep_until_ns(g, target)
 }
 
 pub fn sleep_ms(g: &GraphClient, ms: u64) -> Result<u64, SysRet> {

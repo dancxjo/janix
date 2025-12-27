@@ -1,3 +1,5 @@
+.section .text
+.global exception_vector_table
 
 .macro SAVE_REGS
     sub sp, sp, #34 * 8
@@ -74,7 +76,6 @@
 .endm
 
 .align 11
-.global exception_vector_table
 exception_vector_table:
     // Current EL with SP0
     TRAMPOLINE handler_0_0
@@ -100,6 +101,15 @@ exception_vector_table:
     TRAMPOLINE handler_3_2
     TRAMPOLINE handler_3_3
 
+.global kmain_inner_asm
+kmain_inner_asm:
+    // Jump into the Rust entry point on the new SP_EL1 stack.
+    bl kmain_inner
+    // kmain_inner should never return; if it does, halt.
+    b .
+
+
+// Implementations
 HANDLER_IMPL 0, 0, handler_0_0
 HANDLER_IMPL 0, 1, handler_0_1
 HANDLER_IMPL 0, 2, handler_0_2

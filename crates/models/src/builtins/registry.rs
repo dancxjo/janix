@@ -24,6 +24,7 @@ pub fn builtin_seed_things() -> Vec<Thing> {
     v.extend(crate::builtins::predicates::seed_has_schema_kind().into_iter());
     v.extend(crate::builtins::predicates::seed_mounts_kind().into_iter());
     v.extend(crate::builtins::predicates::seed_backed_by_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_launches_kind().into_iter());
 
     // 4. Core Kinds (this task)
     v.extend(crate::builtins::core_kinds::seed_time_now_kind().into_iter());
@@ -37,6 +38,7 @@ pub fn builtin_seed_things() -> Vec<Thing> {
     v.extend(crate::builtins::core_kinds::seed_stream_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_keyboard_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_key_event_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_boot_program_kind().into_iter());
 
 
     v

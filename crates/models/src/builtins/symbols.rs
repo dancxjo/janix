@@ -43,6 +43,7 @@ pub const SYM_HAS_CAP: SymbolId = SymbolId(fnv1a64("HAS_CAP"));
 pub const SYM_HAS_SCHEMA: SymbolId = SymbolId(fnv1a64("HAS_SCHEMA"));
 pub const SYM_MOUNTS: SymbolId = SymbolId(fnv1a64("MOUNTS"));
 pub const SYM_BACKED_BY: SymbolId = SymbolId(fnv1a64("BACKED_BY"));
+pub const SYM_LAUNCHES: SymbolId = SymbolId(fnv1a64("LAUNCHES"));
 
 // Input symbols
 pub const SYM_KEYBOARD: SymbolId = SymbolId(fnv1a64("Keyboard"));
@@ -56,6 +57,10 @@ pub const SYM_IS_RELEASE: SymbolId = SymbolId(fnv1a64("is_release"));
 pub const SYM_PS2: SymbolId = SymbolId(fnv1a64("ps2"));
 
 pub const SYM_FONT: SymbolId = SymbolId(fnv1a64("Font"));
+pub const SYM_BOOT_ROOT: SymbolId = SymbolId(fnv1a64("BootRoot"));
+pub const SYM_BOOT_PROGRAM: SymbolId = SymbolId(fnv1a64("BootProgram"));
+pub const SYM_BINARY: SymbolId = SymbolId(fnv1a64("binary"));
+pub const SYM_PRIORITY: SymbolId = SymbolId(fnv1a64("priority"));
 // Diag / Logging
 pub const SYM_LOG_ENTRY: SymbolId = SymbolId(fnv1a64("LogEntry"));
 pub const SYM_ERROR: SymbolId = SymbolId(fnv1a64("Error"));

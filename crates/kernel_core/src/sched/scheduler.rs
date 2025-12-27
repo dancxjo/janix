@@ -13,8 +13,14 @@ pub struct Process {
 }
 
 #[repr(C, align(16))]
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ThreadContext(pub [u64; 20]);
+#[derive(Debug, Clone, Copy)]
+pub struct ThreadContext(pub [u64; 34]);
+
+impl Default for ThreadContext {
+    fn default() -> Self {
+        Self([0; 34])
+    }
+}
 
 #[derive(Debug)]
 pub struct Thread {
@@ -155,9 +161,9 @@ impl Scheduler {
             if let Some(Some(thread)) = self.threads.get_mut(next_tid.0 as usize - 1) {
                  thread.state = ThreadState::Running;
                  
-                 _bridge.log("SCHED: Switch to ");
-                 _bridge.log(&thread.name);
-                 _bridge.log("\n");
+                 // _bridge.log("SCHED: Switch to ");
+                 // _bridge.log(&thread.name);
+                 // _bridge.log("\n");
                  
                  _bridge.set_kernel_stack(thread.kernel_stack_top);
 

@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 thing_std = { path = "../../crates/thing_std" }
+thing_models = { package = "models", path = "../../../crates/models" }
 serde = { workspace = true, features = ["derive"] }

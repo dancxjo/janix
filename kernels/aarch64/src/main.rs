@@ -56,18 +56,31 @@ pub extern "C" fn _start() -> ! {
 
 #[no_mangle]
 pub extern "C" fn rust_main() -> ! {
+mod paging;
+
     #[cfg(target_os = "thingos")]
     unsafe {
         // 1. Get HHDM offset FIRST
         if let Some(resp) = limine::requests::HHDM_REQUEST.get_response() {
             let offset = resp.offset();
+            // Init paging with HHDM offset
+            paging::init(offset);
+
             // 2. Update logic UART base (Physical 0x09000000 + Offset)
             bridge_aarch64::set_uart_base(0x09000000 + offset);
+
+            // 3. Map UART (Physical 0x09000000)
+            paging::map_device_region(0x09000000, 4096);
         }
 
         use hw::HardwareBridge;
         let bridge = Bridge;
+        
+        // 4. Init Bridge (Exception Vectors)
+        Bridge::init();
+
         bridge.log("Booting ThingOS...\n");
+        bridge.log("Init finished, jumping to kernel\n");
 
         let info = limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
         early_log::log_heap_init(info);

@@ -40,11 +40,22 @@ predicate_kind! {
     }
 }
 
+
+
 predicate_kind! {
     kind BackedBy {
         id: crate::builtins::ids::THING_BACKED_BY_KIND,
         sym: crate::builtins::symbols::SYM_BACKED_BY,
         version: 1,
         schema_id: crate::builtins::ids::THING_BACKED_BY_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind Launches {
+        id: crate::builtins::ids::THING_LAUNCHES_KIND,
+        sym: crate::builtins::symbols::SYM_LAUNCHES,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_LAUNCHES_SCHEMA
     }
 }

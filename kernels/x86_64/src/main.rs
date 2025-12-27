@@ -240,6 +240,18 @@ pub extern "C" fn rust_main() -> ! {
                     k.bridge.log("Skipping keylog module.\n");
                     continue;
                 }
+                if name.contains("syscall_crud_smoke") {
+                    k.bridge.log("Skipping syscall_crud_smoke module.\n");
+                    continue;
+                }
+                if name.contains("ps2_keyboard") {
+                     k.bridge.log("Skipping ps2_keyboard module.\n");
+                     continue;
+                }
+                if name.contains("clock") {
+                     k.bridge.log("Skipping clock module.\n");
+                     continue;
+                }
                 k.bridge.log("Found module: ");
                 k.bridge.log(name);
                 k.bridge.log("\n");
@@ -329,6 +341,33 @@ pub extern "C" fn rust_main() -> ! {
 
 
                     k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), 0);
+
+                    // Graph injection for Boot Program
+                    {
+                        use thing_models::builtins::ids::*;
+                        use thing_models::builtins::core_kinds::BootProgramBody;
+                        use thing_models::value::ThingBody;
+
+                        let body = BootProgramBody {
+                            name: alloc::string::String::from(name),
+                            binary: alloc::string::String::from(name), // simplistic
+                            priority: 0,
+                        };
+                        
+                        if let Ok(thing_body) = ThingBody::from(&body) {
+                             let prog_id = k.graph.create_thing(THING_BOOT_PROGRAM_KIND, thing_body);
+                             
+                             // Link Root -> Program
+                             let link_body = thing_models::link::LinkBody {
+                                 from: THING_BOOT_ROOT,
+                                 to: prog_id,
+                                 predicate: THING_LAUNCHES_KIND,
+                             };
+                             if let Ok(lb) = ThingBody::from(&link_body) {
+                                  k.graph.create_thing(THING_LINK_KIND, lb);
+                             }
+                        }
+                    }
                 }
             }
         }
@@ -344,6 +383,26 @@ pub extern "C" fn rust_main() -> ! {
 
         k.bridge.log("THINGOS: graph init\n");
         kernel_core::graph::seed_builtins(&mut k.graph);
+        
+        // Seed Boot Root
+        // We need symbol for "kernel"
+        let kernel_name_sym = k.symbols.intern("kernel").unwrap_or(thing_models::builtins::symbols::SYM_PROCESS);
+        
+        let boot_root_body = thing_models::core::process::ProcessBody {
+            pid: 0,
+            name: kernel_name_sym,
+            state: thing_models::core::process::ProcessState::Running,
+        };
+
+        if let Ok(tr_body) = thing_models::value::ThingBody::from(&boot_root_body) {
+            let boot_root = thing_models::Thing {
+                id: thing_models::builtins::ids::THING_BOOT_ROOT,
+                kind: thing_models::builtins::ids::THING_PROCESS_KIND,
+                body: tr_body,
+            };
+            k.graph.insert_seed(boot_root);
+        }
+
         k.bridge.log("THINGOS: graph seeded\n");
 
         k.bridge.log("THINGOS: symbols init\n");

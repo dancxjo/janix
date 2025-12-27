@@ -98,21 +98,16 @@ impl HardwareBridge for Bridge {
         }
     }
 
-    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> [u64; 20] {
+    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> [u64; 34] {
         // [r15...rax, rip, cs, rflags, rsp, ss]
         // 15 GPRs: r15..r8, rcx, rdx, rsi, rdi, rax (rbx, rbp?)
         // Let's check user::resume_user_mode_asm layout:
         // pop r15, r14, r13, r12, rbp, rbx, r11, r10, r9, r8, rcx, rdx, rsi, rdi, rax
         // 15 regs.
         // Then rip, cs, rflags, rsp, ss. Total 20.
-        // Index 13 is rdi (arg). 
-        // Index 15 is rip.
-        // Index 16 is cs. 
-        // Index 17 is rflags.
-        // Index 18 is rsp.
-        // Index 19 is ss.
+        // We now pad to 34 for AArch64 compatibility.
 
-        let mut ctx = [0u64; 20];
+        let mut ctx = [0u64; 34];
         // RDI = arg
         ctx[13] = arg;
 
@@ -161,8 +156,8 @@ impl HardwareBridge for Bridge {
     }
     fn irq_disable(&self) {}
     fn irq_enable(&self) {}
-    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 20] {
-        [0; 20]
+    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 34] {
+        [0; 34]
     }
     fn resume_user_mode(&self, _context: &[u64]) -> ! {
         loop {}

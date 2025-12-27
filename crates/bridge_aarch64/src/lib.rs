@@ -20,6 +20,13 @@ pub unsafe fn set_uart_base(base: u64) {
 }
 
 #[cfg(target_arch = "aarch64")]
+impl Bridge {
+    pub unsafe fn init() {
+        interrupts::trap::init();
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
 impl HardwareBridge for Bridge {
     fn log(&self, msg: &str) {
         // PL011 UART
@@ -40,7 +47,9 @@ impl HardwareBridge for Bridge {
     }
 
     fn ticks(&self) -> u64 {
-        0 // TODO
+        let cntpct: u64;
+        unsafe { asm!("mrs {}, cntpct_el0", out(reg) cntpct); }
+        cntpct
     }
 
     fn idle(&self) {
@@ -72,15 +81,46 @@ impl HardwareBridge for Bridge {
     }
 
     fn system_now(&self) -> u64 {
-        0
+        self.ticks()
     }
 
-    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 20] {
-        [0; 20]
+    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> [u64; 34] {
+        // [x0..x29, x30, sp_el0, elr, spsr]
+        let mut ctx = [0u64; 34];
+        
+        let uer = user::UserEntryRegs {
+            entry_point: entry,
+            user_stack: stack,
+            arg0: arg,
+        };
+
+        // We can't easily pack UserEntryRegs into regs.
+        // But wait! enter_user_mode uses UserEntryRegs struct pointer.
+        // resume_user_mode uses array.
+        
+        // We need to set up the array such that `resume_user_mode_asm` restores it correctly.
+        // resume_user_mode_asm:
+        // x0..x29, x30, sp_el0, elr_el1, spsr_el1.
+        
+        // Return to EL0:
+        // SPSR_EL1 [3:0] = 0000 (EL0t). M[3:0]=0000.
+        // SPSR = 0.
+        ctx[33] = 0; 
+        
+        // ELR_EL1 = entry
+        ctx[32] = entry;
+
+        // SP_EL0 = stack
+        ctx[31] = stack;
+        
+        // x0 = arg
+        ctx[0] = arg;
+
+        ctx
     }
 
-    fn resume_user_mode(&self, _context: &[u64]) -> ! {
-        loop {}
+    fn resume_user_mode(&self, context: &[u64]) -> ! {
+        user::enter::resume_user_mode(context, &kernel_core::sched::fpu::FpuContext::default())
     }
 
     fn set_kernel_stack(&self, _stack: u64) {}
@@ -102,8 +142,8 @@ impl HardwareBridge for Bridge {
     fn system_now(&self) -> u64 {
         0
     }
-    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 20] {
-        [0; 20]
+    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 34] {
+        [0; 34]
     }
     fn resume_user_mode(&self, _context: &[u64]) -> ! {
         loop {}

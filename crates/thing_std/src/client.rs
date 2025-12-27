@@ -34,4 +34,11 @@ impl GraphClient {
         let resp = postcard::from_bytes(resp_slice).map_err(|_| ())?;
         Ok(resp)
     }
+    pub fn call_op(
+        &self,
+        op: &abi::wire::graph::GraphOp,
+        out_buf: &mut [u8]
+    ) -> Result<abi::wire::graph::GraphReply, ()> {
+        self.call("op", op, out_buf)
+    }
 }

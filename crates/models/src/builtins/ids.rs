@@ -41,6 +41,9 @@ pub const THING_MOUNTS_SCHEMA: ThingId = ThingId(1103);
 pub const THING_BACKED_BY_KIND: ThingId = ThingId(104);
 pub const THING_BACKED_BY_SCHEMA: ThingId = ThingId(1104);
 
+pub const THING_LAUNCHES_KIND: ThingId = ThingId(105);
+pub const THING_LAUNCHES_SCHEMA: ThingId = ThingId(1105);
+
 // Core kinds (200–399)
 pub const THING_TIME_NOW_KIND: ThingId = ThingId(200);
 pub const THING_TIME_NOW_SCHEMA: ThingId = ThingId(1200);
@@ -77,7 +80,13 @@ pub const THING_KEY_EVENT_KIND: ThingId = ThingId(211);
 pub const THING_KEY_EVENT_SCHEMA: ThingId = ThingId(1211);
 
 pub const THING_FONT_KIND: ThingId = ThingId(212);
+
 pub const THING_FONT_SCHEMA: ThingId = ThingId(1212);
+
+pub const THING_BOOT_PROGRAM_KIND: ThingId = ThingId(213);
+pub const THING_BOOT_PROGRAM_SCHEMA: ThingId = ThingId(1213);
+
+pub const THING_BOOT_ROOT: ThingId = ThingId(1000); // The Root Node
 pub const THING_LOG_ENTRY_KIND: ThingId = ThingId(220);
 pub const THING_LOG_ENTRY_SCHEMA: ThingId = ThingId(1220);
 

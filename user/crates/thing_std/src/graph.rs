@@ -27,4 +27,12 @@ impl GraphClient {
         let n = crate::sys::sys_graph(query, &params, out).map_err(|e| GraphError::Sys(e.0))?;
         postcard::from_bytes(&out[..n]).map_err(|_| GraphError::Decode)
     }
+
+    pub fn call_op(
+        &self,
+        op: &abi::wire::graph::GraphOp,
+        out_buf: &mut [u8],
+    ) -> Result<abi::wire::graph::GraphReply, GraphError> {
+        self.call("op", op, out_buf)
+    }
 }

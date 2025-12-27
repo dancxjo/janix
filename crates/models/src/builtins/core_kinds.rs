@@ -13,6 +13,15 @@ use crate::core::buffer::BufferBody;
 use crate::core::input::KeyboardBody;
 
 
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct BootProgramBody {
+    pub name: alloc::string::String,
+    pub binary: alloc::string::String,
+    pub priority: u64,
+}
+
+
 thing_kind! {
     kind TimeNow {
         id: crate::builtins::ids::THING_TIME_NOW_KIND,
@@ -149,6 +158,18 @@ thing_kind! {
         type_tag: "thingos.KeyEventBody.v1",
         schema_id: crate::builtins::ids::THING_KEY_EVENT_SCHEMA,
         links {} // meta (0..1) implied by v0 rules
+    }
+}
+
+thing_kind! {
+    kind BootProgram {
+        id: crate::builtins::ids::THING_BOOT_PROGRAM_KIND,
+        sym: SYM_BOOT_PROGRAM,
+        version: 1,
+        body: BootProgramBody,
+        type_tag: "thingos.BootProgramBody.v1",
+        schema_id: crate::builtins::ids::THING_BOOT_PROGRAM_SCHEMA,
+        links {}
     }
 }
 

@@ -127,6 +127,8 @@ use spin::Mutex;
 use models as thing_models;
 
 static KERNEL: Mutex<Option<Kernel<Bridge>>> = Mutex::new(None);
+use core::sync::atomic::AtomicU64;
+static LAST_TICKS: AtomicU64 = AtomicU64::new(0);
 
 fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
@@ -136,40 +138,23 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
             let ctx_ptr = frame as *mut _ as *mut ThreadContext;
             let ctx = unsafe { &mut *ctx_ptr };
             
-            // Time Service Update
-            // We do this inside the lock.
+            // Time Service Update & Sleep Management
             {
-                use hw::HardwareBridge; // Import trait for .ticks()
-                use thing_models::builtins::ids::{THING_TIME_INSTANCE, THING_TIME_NOW_KIND};
-                use thing_models::core::time::TimeNow;
-                use abi::wire::typed::{TypedBytes, TypeId, CodecId};
-                use thing_models::value::ThingBody;
-
-                let monotonic = k.bridge.ticks(); // Assumption: ticks returns ns or similar monotonic counter
-                // Currently bridge.ticks() is probably raw ticks.
-                // We should assume it's roughly monotonic NS or convert.
-                // For this task, we treat it as the value to publish.
-                // TODO: System time offset.
+                use hw::HardwareBridge; 
+                let now_raw = k.bridge.ticks();
+                let last = LAST_TICKS.swap(now_raw, Ordering::Relaxed);
                 
-                let time_val = TimeNow {
-                    monotonic_ns: monotonic,
-                    system_ns: monotonic, // Sync for now
-                };
+                // If first run (last=0) or valid delta
+                // Note: on first run if now_raw is huge, delta is huge. 
+                // We assume ticks start near 0.
+                let delta = if now_raw >= last { now_raw - last } else { 0 };
                 
-                // We must construct the body again.
-                // Optimization: In real OS, we'd update in-place or have a specialized path.
-                // Here we do full update cycle (expensive but correct for v0).
-                if let Ok(bytes) = postcard::to_allocvec(&time_val) {
-                     let typed = TypedBytes {
-                          type_id: TypeId(THING_TIME_NOW_KIND.0 as u128),
-                          codec_id: CodecId::POSTCARD,
-                          bytes,
-                     };
-                     if let Ok(body) = ThingBody::from(&typed) {
-                          // Update ignores error if Thing doesn't exist (e.g. before seed)
-                          let _ = k.graph.update_thing(THING_TIME_INSTANCE, body);
-                     }
-                }
+                // 1. Advance kernel time (and update Graph)
+                kernel_core::time::tick(&mut k.graph, delta);
+                
+                // 2. Wake sleepers
+                let monotonic = kernel_core::time::monotonic_ns();
+                k.scheduler.wake_sleepers(monotonic);
             }
 
             k.scheduler.tick(&k.bridge, ctx);
@@ -178,10 +163,9 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
 }
 
 fn syscall_hook(num: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize, a6: usize) -> isize {
-    // We need lock. If syscall caused by user int, we are in kernel mode (interrupts enabled?).
-    // Syscall handler enables interrupts.
-    // So we can lock.
-    use hw::HardwareBridge;
+    // We need lock.
+    use hw::HardwareBridge; 
+    // Simple loop-spin is fine for lock, but we don't need 'hlt' loop logic for wait flag.
     loop {
         if let Some(mut guard) = KERNEL.try_lock() {
              if let Some(k) = (*guard).as_mut() {

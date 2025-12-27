@@ -69,23 +69,37 @@ macro_rules! thing_kind {
                 };
 
                 // The Schema Thing
+                let schema_bytes = postcard::to_allocvec(&schema_body).expect("schema encode failed");
+                let schema_typed = $crate::abi::wire::typed::TypedBytes {
+                    type_id: $crate::abi::wire::typed::TypeId(THING_SCHEMA_KIND.0 as u128),
+                    codec_id: $crate::abi::wire::typed::CodecId::POSTCARD,
+                    bytes: schema_bytes,
+                };
+
                 let schema_thing = $crate::Thing {
                     id: [<THING_ $KindName:upper _SCHEMA>],
                     kind: THING_SCHEMA_KIND,
-                    body: ThingBody::from(&schema_body).expect("schema encode failed"),
+                    body: ThingBody::from(&schema_typed).expect("schema encode failed"),
                 };
 
+                // The Kind Thing
                 let kind_body = KindBody {
                     name: $kind_sym,
                     version: $version,
                     schema: [<THING_ $KindName:upper _SCHEMA>],
                 };
 
-                // The Kind Thing
+                let kind_bytes = postcard::to_allocvec(&kind_body).expect("kind encode failed");
+                let kind_typed = $crate::abi::wire::typed::TypedBytes {
+                    type_id: $crate::abi::wire::typed::TypeId(THING_KIND_KIND.0 as u128),
+                    codec_id: $crate::abi::wire::typed::CodecId::POSTCARD,
+                    bytes: kind_bytes,
+                };
+
                 let kind_thing = $crate::Thing {
                     id: [<THING_ $KindName:upper _KIND>],
                     kind: THING_KIND_KIND, 
-                    body: ThingBody::from(&kind_body).expect("kind encode failed"),
+                    body: ThingBody::from(&kind_typed).expect("kind encode failed"),
                 };
 
                 [kind_thing, schema_thing]

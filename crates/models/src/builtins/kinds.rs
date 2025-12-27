@@ -8,12 +8,20 @@ use abi::ThingId;
 use alloc::vec::Vec;
 use crate::thing_kind;
 
+use abi::wire::typed::{TypedBytes, TypeId, CodecId};
+
 // Helper to create a Thing
-fn make_thing<T: serde::Serialize>(id: ThingId, kind: ThingId, body_struct: &T) -> Thing {
+fn make_thing<T: serde::Serialize>(id: ThingId, kind: ThingId, body_struct: &T, body_type_id: ThingId) -> Thing {
+    let bytes = postcard::to_allocvec(body_struct).expect("builtin encode failed");
+    let typed = TypedBytes {
+        type_id: TypeId(body_type_id.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes,
+    };
     Thing {
         id,
         kind,
-        body: ThingBody::from(body_struct).expect("builtin encode failed"),
+        body: ThingBody::from(&typed).expect("builtin encode failed"),
     }
 }
 
@@ -29,6 +37,7 @@ pub fn builtin_kind_kind() -> Thing {
             version: 1,
             schema: THING_KIND_SCHEMA,
         },
+        THING_KIND_KIND,
     )
 }
 
@@ -41,6 +50,7 @@ pub fn builtin_schema_kind() -> Thing {
             version: 1,
             schema: THING_SCHEMA_SCHEMA,
         },
+        THING_KIND_KIND,
     )
 }
 
@@ -54,6 +64,7 @@ fn make_schema_thing(id: ThingId) -> Thing {
             body_type: 0, // Placeholder
             link_rules: Vec::new(),
         },
+        THING_SCHEMA_KIND,
     )
 }
 
@@ -75,6 +86,7 @@ pub fn builtin_kind_schema() -> Thing {
                 }
             ],
         },
+        THING_SCHEMA_KIND,
     )
 }
 

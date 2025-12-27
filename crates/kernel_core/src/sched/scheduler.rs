@@ -77,6 +77,46 @@ impl Scheduler {
             graph_enabled: false,
         }
     }
+    
+    pub fn sleep_current_until(&mut self, wake_ns: TimeNs) {
+        if let Some(tid) = self.current {
+            if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize - 1) {
+                thread.state = ThreadState::Sleeping;
+                thread.sleep_until_ns = wake_ns;
+                
+                // Add to sleep queue
+                let entry = SleepEntry {
+                    thread_id: tid,
+                    wake_at_ns: wake_ns,
+                };
+                self.sleep_queue.push(entry);
+                // Keep sorted reverse (min at end) or just sort on insert? 
+                // Simple sort for now.
+                self.sleep_queue.sort_by(|a, b| b.wake_at_ns.cmp(&a.wake_at_ns)); // Pop from end = min
+            }
+        }
+    }
+    
+    pub fn wake_sleepers(&mut self, now_ns: TimeNs) {
+        // Queue is sorted descending by wake time (min at end).
+        // Pop while last().wake_at_ns <= now_ns
+        while let Some(last) = self.sleep_queue.last() {
+            if last.wake_at_ns <= now_ns {
+                let entry = self.sleep_queue.pop().unwrap();
+                let tid = entry.thread_id;
+                
+                if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize - 1) {
+                    if thread.state == ThreadState::Sleeping {
+                        thread.state = ThreadState::Runnable;
+                        thread.pending_wake = true; // flag if useful
+                        self.run_queue.push(tid);
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+    }
 
     pub fn spawn<B: HardwareBridge>(
         &mut self,
@@ -143,13 +183,12 @@ impl Scheduler {
             if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize - 1) {
                 thread.context = *current_context;
                 // If Running, user is preempted. Move to Runnable.
-                if thread.state == ThreadState::Running || thread.state == ThreadState::Runnable {
-                    // _bridge.log("SCHED: Preempting Thread "); // Use strings if possible or custom logger
-                    // Since we don't have easy format! with _bridge, we skip detailed name logging for now or use basic chars?
-                    // Let's try to assume we can print basic strings if we are careful.
-                    // Actually, let's just use the bridge to print a distinct mark.
-                     // _bridge.log("SCHED: P reempt\n");
+                // If Running, user is preempted. Move to Runnable.
+                // If Sleeping, we LEAVE IT SLEEPING and do NOT push to run_queue.
+                if thread.state == ThreadState::Running {
                     thread.state = ThreadState::Runnable;
+                    self.run_queue.push(tid);
+                } else if thread.state == ThreadState::Runnable {
                     self.run_queue.push(tid);
                 }
             }

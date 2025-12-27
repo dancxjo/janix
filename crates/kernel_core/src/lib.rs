@@ -9,6 +9,7 @@ pub mod syscalls;
 pub mod input;
 pub mod types;
 pub mod diag;
+pub mod time;
 
 
 use hw::HardwareBridge;

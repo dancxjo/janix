@@ -1,10 +1,9 @@
 [package]
-name = "graph_dump"
+name = "sleep_smoke"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 thing_std = { path = "../../crates/thing_std" }
-thing_models = { package = "models", path = "../../../crates/models" }
+postcard = { workspace = true, features = ["alloc"] }
 serde = { workspace = true, features = ["derive"] }
-postcard = { workspace = true }

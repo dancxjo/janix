@@ -7,6 +7,7 @@ pub mod debug;
 pub mod graph;
 pub mod console;
 pub mod rt;
+pub mod time;
 
 pub fn init() {}
 

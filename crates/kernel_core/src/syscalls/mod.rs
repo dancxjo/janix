@@ -21,6 +21,10 @@ pub fn syscall_dispatch<B: HardwareBridge>(
     // bridge log usually takes &str.
     // Let's use if/match to print only interesting ones.
     match num {
+        SYSCALL_YIELD => {
+            // kernel.scheduler.yield_thread();
+            0
+        },
 
         SYSCALL_DRIVER_WAIT => {
             driver::sys_driver_wait(kernel, a1 as *mut u8, a2) as isize
@@ -64,7 +68,7 @@ pub fn syscall_dispatch<B: HardwareBridge>(
              
              match graph::handle_graph_query(kernel, query_str, params, out) {
                  Ok(len) => len as isize,
-                 Err(_) => -1,
+                 Err(e) => e,
              }
         },
         _ => -1,

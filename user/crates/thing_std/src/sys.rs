@@ -29,3 +29,14 @@ pub fn sys_graph(query: &str, params: &[u8], out: &mut [u8]) -> Result<usize, Sy
         Ok(ret as usize)
     }
 }
+
+pub fn sys_yield() {
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            in("rax") 2, // SYSCALL_YIELD
+            out("rcx") _,
+            out("r11") _,
+        );
+    }
+}

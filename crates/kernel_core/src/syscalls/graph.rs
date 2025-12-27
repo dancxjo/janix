@@ -5,6 +5,9 @@ use alloc::string::String;
 use thing_models::core::time::TimeNow;
 use postcard::to_slice;
 use serde::Serialize;
+use abi::wire::time::{TimeNowReq, TimeNowResp, TimeMonotonicReq, TimeMonotonicResp, TimeSleepNsReq, TimeSleepNsResp, TimeSleepUntilReq, TimeSleepUntilResp};
+
+pub const SYSCALL_WAIT_FLAG: usize = 1 << 62;
 
 pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -> GraphReply {
     match op {
@@ -118,33 +121,59 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -
     }
 }
 
-pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str, _params: &[u8], out: &mut [u8]) -> Result<usize, ()> {
+pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str, _params: &[u8], out: &mut [u8]) -> Result<usize, isize> {
     match query {
         "time.now" => {
             // Verify request format (TimeNowReq is empty, but we strictly follow protocol)
-            if postcard::from_bytes::<abi::wire::time::TimeNowReq>(_params).is_ok() {
-                 use thing_models::builtins::ids::THING_TIME_INSTANCE;
-                 use thing_models::core::time::TimeNow;
-                 use abi::wire::time::TimeNowResp;
-
-                 if let Some(thing) = kernel.graph.get(THING_TIME_INSTANCE) {
-                      // Decode body
-                      if let Ok(typed) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
-                           if let Ok(time_body) = postcard::from_bytes::<TimeNow>(&typed.bytes) {
-                                let resp = TimeNowResp {
-                                    system_ns: time_body.system_ns,
-                                    monotonic_ns: time_body.monotonic_ns,
-                                };
-                                return to_slice(&resp, out).map(|s| s.len()).map_err(|_| ());
-                           }
-                      }
-                 }
-                 // If missing or decode fail, return error or fallback?
-                 // Fallback to bridge for robustness during boot?
-                 // No, strict dependency on graph ensures we verify the graph flow.
-                 Err(())
+            if postcard::from_bytes::<TimeNowReq>(_params).is_ok() {
+                 let now = crate::time::monotonic_ns(); 
+                 let sys = crate::time::system_ns();
+                 let resp = TimeNowResp {
+                     system_ns: sys,
+                     monotonic_ns: now,
+                  };
+                 to_slice(&resp, out).map(|s| s.len()).map_err(|_| -1)
             } else {
-                Err(())
+                Err(-1)
+            }
+        },
+        "time.monotonic_ns" => {
+            if postcard::from_bytes::<TimeMonotonicReq>(_params).is_ok() {
+                 let now = crate::time::monotonic_ns();
+                 let resp = TimeMonotonicResp { monotonic_ns: now };
+                 to_slice(&resp, out).map(|s| s.len()).map_err(|_| -1)
+            } else {
+                 Err(-1)
+            }
+        },
+        "time.sleep_ns" => {
+            if let Ok(req) = postcard::from_bytes::<TimeSleepNsReq>(_params) {
+                 let now = crate::time::monotonic_ns();
+                 let wake = now.saturating_add(req.duration_ns);
+                 
+                 if now < wake {
+                     // kernel.scheduler.sleep_current_until(wake); // Busy wait
+                     return Err(abi::syscall_defs::SYS_EAGAIN);
+                 }
+                 
+                 let resp = TimeSleepNsResp { woke_at_monotonic_ns: wake };
+                 to_slice(&resp, out).map(|s| s.len()).map_err(|_| -1)
+            } else {
+                 Err(-1)
+            }
+        },
+        "time.sleep_until_ns" => {
+            if let Ok(req) = postcard::from_bytes::<TimeSleepUntilReq>(_params) {
+                 let now = crate::time::monotonic_ns();
+                 if now < req.wake_monotonic_ns {
+                     // kernel.scheduler.sleep_current_until(req.wake_monotonic_ns); // Busy wait
+                     return Err(abi::syscall_defs::SYS_EAGAIN);
+                 }
+
+                 let resp = TimeSleepUntilResp { woke_at_monotonic_ns: req.wake_monotonic_ns };
+                 to_slice(&resp, out).map(|s| s.len()).map_err(|_| -1)
+            } else {
+                 Err(-1)
             }
         },
         "graph.dump" => {
@@ -153,15 +182,15 @@ pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str
                 text: &'a str,
             }
             let resp = DumpResp { text: "ok\n" };
-            to_slice(&resp, out).map(|s| s.len()).map_err(|_| ())
+            to_slice(&resp, out).map(|s| s.len()).map_err(|_| -1)
         },
         "op" => {
              // Deserialize params as GraphOp
              if let Ok(op) = postcard::from_bytes::<GraphOp>(_params) {
                  let reply = handle_graph_op(kernel, op);
-                 to_slice(&reply, out).map(|s| s.len()).map_err(|_| ())
+                 to_slice(&reply, out).map(|s| s.len()).map_err(|_| -1)
              } else {
-                 Err(())
+                 Err(-1)
              }
         },
         "input.key_events.next" => {
@@ -178,17 +207,17 @@ pub fn handle_graph_query<B: HardwareBridge>(kernel: &mut Kernel<B>, query: &str
                    if let Some(next_id) = kernel.graph.next_thing_of_kind(kind, last_seen) {
                        if let Some(thing) = kernel.graph.get(next_id) {
                             // serialize Thing
-                            return to_slice(thing, out).map(|s| s.len()).map_err(|_| ());
+                            return to_slice(thing, out).map(|s| s.len()).map_err(|_| -1);
                        }
                    }
                    // Yield
                    core::hint::spin_loop(); 
                }
             } else {
-                Err(())
+                Err(-1)
             }
         },
-        _ => Err(()),
-
+        _ => Err(-1),
     }
 }
+

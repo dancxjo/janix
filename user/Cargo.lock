@@ -94,6 +94,7 @@ name = "graph_dump"
 version = "0.1.0"
 dependencies = [
  "models",
+ "postcard",
  "serde",
  "thing_std 0.1.0",
 ]
@@ -260,6 +261,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "sleep_smoke"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "serde",
+ "thing_std 0.1.0",
 ]
 
 [[package]]

@@ -10,3 +10,6 @@ pub const SYSCALL_DRIVER_PUBLISH: usize = 101;
 // Typedefs
 pub const SYSCALL_TYPEDEF_REGISTER: usize = 200;
 pub const SYSCALL_TYPEDEF_GET: usize = 201;
+
+pub const SYSCALL_YIELD: usize = 2;
+pub const SYS_EAGAIN: isize = -11;

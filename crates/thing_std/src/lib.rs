@@ -4,6 +4,7 @@
 pub mod syscalls;
 pub mod debug;
 pub mod client;
+pub mod time;
 pub mod console;
 pub mod typed;
 pub mod font;

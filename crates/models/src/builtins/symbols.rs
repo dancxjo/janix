@@ -47,7 +47,11 @@ pub const SYM_LAUNCHES: SymbolId = SymbolId(fnv1a64("LAUNCHES"));
 
 // Input symbols
 pub const SYM_KEYBOARD: SymbolId = SymbolId(fnv1a64("Keyboard"));
+
 pub const SYM_KEY_EVENT: SymbolId = SymbolId(fnv1a64("KeyEvent"));
+pub const SYM_KEY_EVENT_STREAM: SymbolId = SymbolId(fnv1a64("KeyEventStream"));
+pub const SYM_EMITS: SymbolId = SymbolId(fnv1a64("EMITS"));
+pub const SYM_SUBSCRIBES_TO: SymbolId = SymbolId(fnv1a64("SUBSCRIBES_TO"));
 
 pub const SYM_BUS: SymbolId = SymbolId(fnv1a64("bus"));
 pub const SYM_DEVICE: SymbolId = SymbolId(fnv1a64("device"));
@@ -85,3 +89,10 @@ pub const SYM_ERROR_CODE: SymbolId = SymbolId(fnv1a64("error_code"));
 pub const SYM_ACCESS: SymbolId = SymbolId(fnv1a64("access"));
 pub const SYM_ADDRESS_SPACE: SymbolId = SymbolId(fnv1a64("address_space"));
 pub const SYM_KILL_ACTION: SymbolId = SymbolId(fnv1a64("kill_action"));
+
+pub const SYM_DROPPED: SymbolId = SymbolId(fnv1a64("dropped"));
+pub const SYM_HEAD_SEQ: SymbolId = SymbolId(fnv1a64("head_seq"));
+pub const SYM_CAPACITY: SymbolId = SymbolId(fnv1a64("capacity"));
+pub const SYM_LAYOUT: SymbolId = SymbolId(fnv1a64("layout"));
+pub const SYM_EVENTS: SymbolId = SymbolId(fnv1a64("events"));
+

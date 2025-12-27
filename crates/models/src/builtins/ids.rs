@@ -86,6 +86,15 @@ pub const THING_FONT_SCHEMA: ThingId = ThingId(1212);
 pub const THING_BOOT_PROGRAM_KIND: ThingId = ThingId(213);
 pub const THING_BOOT_PROGRAM_SCHEMA: ThingId = ThingId(1213);
 
+pub const THING_KEY_EVENT_STREAM_KIND: ThingId = ThingId(214);
+pub const THING_KEY_EVENT_STREAM_SCHEMA: ThingId = ThingId(1214);
+
+pub const THING_EMITS_KIND: ThingId = ThingId(106);
+pub const THING_EMITS_SCHEMA: ThingId = ThingId(1106);
+
+pub const THING_SUBSCRIBES_TO_KIND: ThingId = ThingId(107);
+pub const THING_SUBSCRIBES_TO_SCHEMA: ThingId = ThingId(1107);
+
 pub const THING_BOOT_ROOT: ThingId = ThingId(1000); // The Root Node
 pub const THING_LOG_ENTRY_KIND: ThingId = ThingId(220);
 pub const THING_LOG_ENTRY_SCHEMA: ThingId = ThingId(1220);

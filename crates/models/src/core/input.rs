@@ -18,3 +18,17 @@ pub struct KeyEventBody {
     /// True if this is a key release (break) event (v0 set-1: high bit set)
     pub is_release: bool,
 }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyEventCompact {
+    pub scancode: u8,
+    pub is_release: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyEventStreamBody {
+    pub head_seq: u64,
+    pub capacity: u32,
+    pub dropped: u64,
+    pub events: alloc::vec::Vec<KeyEventCompact>,
+}

@@ -30,6 +30,9 @@ pub struct ModuleBody {
     pub index: u32,
     pub role: alloc::string::String,
     pub mime: alloc::string::String,
+    pub kind: alloc::string::String,
+    pub sniff: u32,
+    pub valid: bool,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

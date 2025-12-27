@@ -54,6 +54,9 @@ pub fn builtin_seed_things() -> Vec<Thing> {
     v.extend(crate::builtins::predicates::seed_provides_font_kind().into_iter());
     v.extend(crate::builtins::predicates::seed_default_font_kind().into_iter());
     v.extend(crate::builtins::predicates::seed_uses_module_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_has_device_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_spawned_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_runs_kind().into_iter());
     
     v
 }

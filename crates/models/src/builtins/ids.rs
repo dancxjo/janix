@@ -123,6 +123,15 @@ pub const THING_DEFAULT_FONT_SCHEMA: ThingId = ThingId(1112);
 pub const THING_USES_MODULE_KIND: ThingId = ThingId(113);
 pub const THING_USES_MODULE_SCHEMA: ThingId = ThingId(1113);
 
+pub const THING_HAS_DEVICE_KIND: ThingId = ThingId(114);
+pub const THING_HAS_DEVICE_SCHEMA: ThingId = ThingId(1114);
+
+pub const THING_SPAWNED_KIND: ThingId = ThingId(115);
+pub const THING_SPAWNED_SCHEMA: ThingId = ThingId(1115);
+
+pub const THING_RUNS_KIND: ThingId = ThingId(116);
+pub const THING_RUNS_SCHEMA: ThingId = ThingId(1116);
+
 pub const THING_BOOT_ROOT: ThingId = ThingId(1000); // The Root Node
 pub const THING_LOG_ENTRY_KIND: ThingId = ThingId(220);
 pub const THING_LOG_ENTRY_SCHEMA: ThingId = ThingId(1220);

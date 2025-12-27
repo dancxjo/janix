@@ -113,3 +113,30 @@ predicate_kind! {
         schema_id: crate::builtins::ids::THING_USES_MODULE_SCHEMA
     }
 }
+
+predicate_kind! {
+    kind HasDevice {
+        id: crate::builtins::ids::THING_HAS_DEVICE_KIND,
+        sym: crate::builtins::symbols::SYM_HAS_DEVICE,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_HAS_DEVICE_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind Spawned {
+        id: crate::builtins::ids::THING_SPAWNED_KIND,
+        sym: crate::builtins::symbols::SYM_SPAWNED,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_SPAWNED_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind Runs {
+        id: crate::builtins::ids::THING_RUNS_KIND,
+        sym: crate::builtins::symbols::SYM_RUNS,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_RUNS_SCHEMA
+    }
+}

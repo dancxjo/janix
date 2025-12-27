@@ -51,6 +51,10 @@ pub extern "C" fn _start() -> ! {
     kind_cache.insert(THING_BINARY_IMAGE_KIND, "BINARY_IMAGE".into());
     kind_cache.insert(THING_ASSET_KIND, "ASSET".into());
     kind_cache.insert(THING_USES_MODULE_KIND, "USES_MODULE".into());
+    kind_cache.insert(THING_HAS_DEVICE_KIND, "HAS_DEVICE".into());
+    kind_cache.insert(THING_EMITS_KIND, "EMITS".into());
+    kind_cache.insert(THING_SPAWNED_KIND, "SPAWNED".into());
+    kind_cache.insert(THING_RUNS_KIND, "RUNS".into());
 
     loop {
         perform_dump(&g, &c, &mut kind_cache);
@@ -182,7 +186,7 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole, kind_cache: &mut BTreeMap<Th
                  // Try new kinds
                  if n.kind == THING_MODULE_KIND {
                      if let Ok(b) = postcard::from_bytes::<ModuleBody>(&n.data) {
-                         let _ = c.write_str(&format!("{{ path: \"{}\", role: \"{}\", size: {}, mime: \"{}\" }}\n", b.path, b.role, b.size_bytes, b.mime));
+                         let _ = c.write_str(&format!("{{ path: \"{}\", kind: \"{}\", role: \"{}\", size: {}, valid: {}, sniff: 0x{:08X} }}\n", b.path, b.kind, b.role, b.size_bytes, b.valid, b.sniff));
                          continue;
                      }
                  }

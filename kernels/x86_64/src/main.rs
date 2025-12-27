@@ -348,10 +348,17 @@ pub extern "C" fn rust_main() -> ! {
         let mut app_load_virt_base = 0x2000_0000u64;
 
         if let Some(resp) = MODULE_REQUEST.get_response() {
-            enum ModuleType { Elf, Psf1, Psf2, Bmp, Png, Unknown, Other(alloc::string::String) }
+            enum ModuleType { Elf, Psf1, Psf2, Bmp, Png, Ttf, Otf, Woff, Woff2, Unknown, Other(alloc::string::String) }
             fn classify_bytes(data: &[u8]) -> ModuleType {
+                if data.len() >= 4 && data[0] == 0x7F && data[1] == b'E' && data[2] == b'L' && data[3] == b'F' { return ModuleType::Elf; }
+                if data.len() >= 4 && data[0] == 0x00 && data[1] == 0x01 && data[2] == 0x00 && data[3] == 0x00 { return ModuleType::Ttf; }
+                if data.len() >= 4 && data[0] == b'O' && data[1] == b'T' && data[2] == b'T' && data[3] == b'O' { return ModuleType::Otf; }
+                if data.len() >= 4 && data[0] == b'w' && data[1] == b'O' && data[2] == b'F' && data[3] == b'F' { return ModuleType::Woff; }
+                if data.len() >= 4 && data[0] == b'w' && data[1] == b'O' && data[2] == b'F' && data[3] == b'2' { return ModuleType::Woff2; }
                 if data.len() >= 2 && data[0] == 0x36 && data[1] == 0x04 { return ModuleType::Psf1; }
                 if data.len() >= 4 && data[0] == 0x72 && data[1] == 0xB5 && data[2] == 0x4A && data[3] == 0x86 { return ModuleType::Psf2; }
+                if data.len() >= 2 && data[0] == b'B' && data[1] == b'M' { return ModuleType::Bmp; }
+                if data.len() >= 4 && data[0] == 0x89 && data[1] == b'P' && data[2] == b'N' && data[3] == b'G' { return ModuleType::Png; }
                 
                 if let Some(kind) = infer::get(data) {
                     match kind.mime_type() {
@@ -371,7 +378,8 @@ pub extern "C" fn rust_main() -> ! {
                 if name.contains("keylog") { return ModuleRole::Driver; } 
                 if name.contains("ps2_keyboard") { return ModuleRole::Driver; }
                 match mtype {
-                    ModuleType::Psf1 | ModuleType::Psf2 | ModuleType::Bmp | ModuleType::Png => ModuleRole::Asset,
+                    ModuleType::Psf1 | ModuleType::Psf2 | ModuleType::Bmp | ModuleType::Png | 
+                    ModuleType::Ttf | ModuleType::Otf | ModuleType::Woff | ModuleType::Woff2 => ModuleRole::Asset,
                     ModuleType::Elf => ModuleRole::App,
                     ModuleType::Other(s) if s.starts_with("image/") || s.starts_with("font/") => ModuleRole::Asset,
                     _ => if name.contains("font") { ModuleRole::Asset } else { ModuleRole::Ignore },
@@ -390,6 +398,7 @@ pub extern "C" fn rust_main() -> ! {
                 // --- 1. Graph: Create Module Thing ---
                 use thing_models::builtins::ids::*;
                 use thing_models::builtins::core_kinds::{BootProgramBody, ModuleBody, FontBody, BitmapBody, ProgramImageBody};
+                use thing_models::core::process::{ProcessState, ProcessBody};
                 use thing_models::value::ThingBody;
                 use abi::wire::typed::{TypedBytes, TypeId, CodecId};
                 
@@ -401,9 +410,30 @@ pub extern "C" fn rust_main() -> ! {
                 let mime_str = match &mtype {
                     ModuleType::Elf => "application/x-elf",
                     ModuleType::Psf1 => "font/psf1", ModuleType::Psf2 => "font/psf2",
+                    ModuleType::Ttf => "font/ttf", ModuleType::Otf => "font/otf",
+                    ModuleType::Woff => "font/woff", ModuleType::Woff2 => "font/woff2",
                     ModuleType::Bmp => "image/bmp", ModuleType::Png => "image/png",
                     ModuleType::Unknown => "application/octet-stream",
                     ModuleType::Other(s) => s.as_str(),
+                };
+                
+                let kind_str = match &mtype {
+                    ModuleType::Elf => "elf",
+                    ModuleType::Psf1 | ModuleType::Psf2 | ModuleType::Ttf | ModuleType::Otf | ModuleType::Woff | ModuleType::Woff2 => "font",
+                    ModuleType::Bmp | ModuleType::Png => "bitmap",
+                    ModuleType::Unknown => "unknown",
+                    ModuleType::Other(_) => "other",
+                };
+
+                let sniff_val = if data.len() >= 4 {
+                    u32::from_be_bytes([data[0], data[1], data[2], data[3]])
+                } else {
+                    0 // short module
+                };
+                
+                let is_valid = match role_enum {
+                    ModuleRole::Ignore => false,
+                    _ => !matches!(mtype, ModuleType::Unknown),
                 };
 
                 let mod_body = ModuleBody {
@@ -413,6 +443,9 @@ pub extern "C" fn rust_main() -> ! {
                     index: idx as u32,
                     role: alloc::string::String::from(role_str),
                     mime: alloc::string::String::from(mime_str),
+                    kind: alloc::string::String::from(kind_str),
+                    sniff: sniff_val,
+                    valid: is_valid,
                 };
 
                 let mod_id_bytes = postcard::to_allocvec(&mod_body).unwrap();
@@ -455,8 +488,15 @@ pub extern "C" fn rust_main() -> ! {
                         }).unwrap();
                         k.graph.create_thing(THING_LINK_KIND, lb);
                     },
-                    ModuleType::Psf1 | ModuleType::Psf2 => {
+                    ModuleType::Psf1 | ModuleType::Psf2 | ModuleType::Ttf | ModuleType::Otf | ModuleType::Woff | ModuleType::Woff2 => {
                          let mut w = 0u16; let mut h = 0u16; let mut count = 0u32;
+                         let fmt_str = match mtype {
+                             ModuleType::Psf1 => "psf1", ModuleType::Psf2 => "psf2",
+                             ModuleType::Ttf => "ttf", ModuleType::Otf => "otf",
+                             ModuleType::Woff => "woff", ModuleType::Woff2 => "woff2",
+                             _ => "unknown"
+                         };
+
                          if matches!(mtype, ModuleType::Psf1) {
                              if data.len() >= 4 {
                                  let mode = data[2];
@@ -465,7 +505,7 @@ pub extern "C" fn rust_main() -> ! {
                                  h = charsize as u16;
                                  count = if (mode & 1) != 0 { 512 } else { 256 };
                              }
-                         } else {
+                         } else if matches!(mtype, ModuleType::Psf2) {
                              if data.len() >= 32 {
                                  let read_u32 = |off: usize| -> u32 {
                                      u32::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3]])
@@ -478,7 +518,7 @@ pub extern "C" fn rust_main() -> ! {
 
                         let font_body = FontBody {
                             name: alloc::string::String::from(name),
-                            format: alloc::string::String::from(if matches!(mtype, ModuleType::Psf1) { "psf1" } else { "psf2" }),
+                            format: alloc::string::String::from(fmt_str),
                             glyph_width: w, glyph_height: h, glyph_count: count,
                         };
                         let tb = ThingBody::from(&TypedBytes {
@@ -511,7 +551,7 @@ pub extern "C" fn rust_main() -> ! {
                             k.graph.create_thing(THING_LINK_KIND, lb);
                         }
 
-                        if name.contains("default") || name.contains("unifont") || name.contains("zap-light16") {
+                        if name.contains("NotoSans-Regular") || name.contains("default") || name.contains("unifont") || name.contains("zap-light16") {
                             let link = thing_models::link::LinkBody {
                                 from: THING_BOOT_ROOT, to: font_id, predicate: THING_DEFAULT_FONT_KIND,
                             };
@@ -634,7 +674,32 @@ pub extern "C" fn rust_main() -> ! {
                         let entry_point = current_app_base + img.entry_point;
                         k.bridge.log("Spawning app: "); k.bridge.log(name); k.bridge.log("\n");
 
+                        let process_pid = (k.scheduler.processes.len() + 1) as u64;
                         k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), 0);
+
+                        // Create Process Thing
+                        let p_body = ProcessBody {
+                            pid: process_pid,
+                            name: k.symbols.intern(name).unwrap_or(thing_models::builtins::symbols::SYM_PROCESS),
+                            state: ProcessState::Running,
+                        };
+                        let tb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_PROCESS_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                            bytes: postcard::to_allocvec(&p_body).unwrap()
+                        }).unwrap();
+                        let process_id = k.graph.create_thing(THING_PROCESS_KIND, tb);
+
+                        // Link Root -> SPAWNED -> Process
+                        {
+                             let link = thing_models::link::LinkBody {
+                                from: THING_BOOT_ROOT, to: process_id, predicate: THING_SPAWNED_KIND,
+                            };
+                             let lb = ThingBody::from(&TypedBytes {
+                                type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                                bytes: postcard::to_allocvec(&link).unwrap() 
+                            }).unwrap();
+                            k.graph.create_thing(THING_LINK_KIND, lb);
+                        }
 
                          let bp = BootProgramBody {
                             name: alloc::string::String::from(name),
@@ -651,6 +716,18 @@ pub extern "C" fn rust_main() -> ! {
                         {
                             let link = thing_models::link::LinkBody {
                                 from: prog_id, to: module_id, predicate: THING_USES_MODULE_KIND,
+                            };
+                             let lb = ThingBody::from(&TypedBytes {
+                                type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                                bytes: postcard::to_allocvec(&link).unwrap() 
+                            }).unwrap();
+                            k.graph.create_thing(THING_LINK_KIND, lb);
+                        }
+
+                        // Link Process -> RUNS -> BootProgram
+                        {
+                            let link = thing_models::link::LinkBody {
+                                from: process_id, to: prog_id, predicate: THING_RUNS_KIND,
                             };
                              let lb = ThingBody::from(&TypedBytes {
                                 type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,

@@ -112,6 +112,14 @@ pub const SYM_ACCESS: SymbolId = SymbolId(fnv1a64("access"));
 pub const SYM_ADDRESS_SPACE: SymbolId = SymbolId(fnv1a64("address_space"));
 pub const SYM_KILL_ACTION: SymbolId = SymbolId(fnv1a64("kill_action"));
 
+pub const SYM_SNIFF: SymbolId = SymbolId(fnv1a64("sniff"));
+pub const SYM_VALID: SymbolId = SymbolId(fnv1a64("valid"));
+pub const SYM_KIND_STR: SymbolId = SymbolId(fnv1a64("kind"));
+
+pub const SYM_HAS_DEVICE: SymbolId = SymbolId(fnv1a64("HAS_DEVICE"));
+pub const SYM_SPAWNED: SymbolId = SymbolId(fnv1a64("SPAWNED"));
+pub const SYM_RUNS: SymbolId = SymbolId(fnv1a64("RUNS"));
+
 pub const SYM_DROPPED: SymbolId = SymbolId(fnv1a64("dropped"));
 pub const SYM_HEAD_SEQ: SymbolId = SymbolId(fnv1a64("head_seq"));
 pub const SYM_CAPACITY: SymbolId = SymbolId(fnv1a64("capacity"));

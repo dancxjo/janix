@@ -8,7 +8,7 @@ use thing_std as std;
 use abi::{ThingId, SymbolId};
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use models::core::input::{KeyboardBody, KeyEventStreamBody, KeyEventCompact};
-use models::builtins::ids::{THING_KEYBOARD_KIND, THING_KEY_EVENT_STREAM_KIND, THING_EMITS_KIND, THING_LINK_KIND, THING_BOOT_ROOT, THING_OWNS_KIND};
+use models::builtins::ids::{THING_KEYBOARD_KIND, THING_KEY_EVENT_STREAM_KIND, THING_EMITS_KIND, THING_LINK_KIND, THING_BOOT_ROOT, THING_HAS_DEVICE_KIND};
 use models::builtins::symbols::{SYM_KEYBOARD, SYM_PS2, SYM_KEY_EVENT};
 use models::Thing;
 
@@ -34,12 +34,12 @@ pub extern "C" fn _start() -> ! {
 
     std::debug::log("Published Keyboard Device\n");
 
-    // Link Root -> OWNS -> Keyboard
+    // Link Root -> HAS_DEVICE -> Keyboard
     let root_link_id = ThingId(3003);
     let root_link_body = models::link::LinkBody {
         from: THING_BOOT_ROOT,
         to: keyboard_id,
-        predicate: THING_OWNS_KIND,
+        predicate: THING_HAS_DEVICE_KIND,
     };
     let root_link_thing = Thing {
          id: root_link_id,

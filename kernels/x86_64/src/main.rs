@@ -133,11 +133,24 @@ static LAST_TICKS: AtomicU64 = AtomicU64::new(0);
 fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = (*guard).as_mut() {
-            // Cast frame to ThreadContext (aligned)
-            use kernel_core::sched::scheduler::ThreadContext;
-            let ctx_ptr = frame as *mut _ as *mut ThreadContext;
-            let ctx = unsafe { &mut *ctx_ptr };
+            // Fix: Do NOT cast TrapFrame directly to ThreadContext.
+            // TrapFrame is 160 bytes (20 u64s). ThreadContext is 272 bytes (34 u64s).
+            // Casting implies we can write 272 bytes to the stack, which overflows 
+            // the interrupt frame and corrupts the stack (e.g. return address).
             
+            // 1. Create local ThreadContext (on stack, 272 bytes)
+            use kernel_core::sched::scheduler::ThreadContext;
+            let mut ctx = ThreadContext::default();
+            
+            // 2. Copy TrapFrame (20 u64s) into local Context
+            // We assume ThreadContext layout starts with the same fields as TrapFrame.
+            // [r15...rax, rip, cs, rflags, rsp, ss] -> 20 words
+            unsafe {
+                let frame_ptr = frame as *const _ as *const u64;
+                let ctx_ptr = ctx.0.as_mut_ptr();
+                core::ptr::copy_nonoverlapping(frame_ptr, ctx_ptr, 20);
+            }
+
             // Time Service Update & Sleep Management
             {
                 use hw::HardwareBridge; 
@@ -157,7 +170,15 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
                 k.scheduler.wake_sleepers(monotonic);
             }
 
-            k.scheduler.tick(&k.bridge, ctx);
+            // 3. Tick Scheduler (updates ctx if switch occurs)
+            k.scheduler.tick(&k.bridge, &mut ctx);
+            
+            // 4. Copy Back (only 20 u64s) to TrapFrame
+            unsafe {
+                let ctx_ptr = ctx.0.as_ptr();
+                let frame_ptr = frame as *mut _ as *mut u64;
+                core::ptr::copy_nonoverlapping(ctx_ptr, frame_ptr, 20);
+            }
         }
     }
 }

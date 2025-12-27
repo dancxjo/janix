@@ -76,6 +76,8 @@ pub const THING_KEYBOARD_SCHEMA: ThingId = ThingId(1210);
 pub const THING_KEY_EVENT_KIND: ThingId = ThingId(211);
 pub const THING_KEY_EVENT_SCHEMA: ThingId = ThingId(1211);
 
+pub const THING_FONT_KIND: ThingId = ThingId(212);
+pub const THING_FONT_SCHEMA: ThingId = ThingId(1212);
 pub const THING_LOG_ENTRY_KIND: ThingId = ThingId(220);
 pub const THING_LOG_ENTRY_SCHEMA: ThingId = ThingId(1220);
 

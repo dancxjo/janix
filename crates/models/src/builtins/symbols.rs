@@ -55,6 +55,7 @@ pub const SYM_IS_RELEASE: SymbolId = SymbolId(fnv1a64("is_release"));
 
 pub const SYM_PS2: SymbolId = SymbolId(fnv1a64("ps2"));
 
+pub const SYM_FONT: SymbolId = SymbolId(fnv1a64("Font"));
 // Diag / Logging
 pub const SYM_LOG_ENTRY: SymbolId = SymbolId(fnv1a64("LogEntry"));
 pub const SYM_ERROR: SymbolId = SymbolId(fnv1a64("Error"));

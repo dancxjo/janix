@@ -58,6 +58,8 @@ pub fn run(env: String) -> Result<()> {
             .arg(app)
             .arg("--target")
             .arg("x86_64-unknown-none") // User workspace is configured for this target
+            .arg("-Z")
+            .arg("build-std=core,alloc,compiler_builtins")
             .current_dir(&root)
             .status()
             .context(format!("Failed to build user app {}", app))?;
@@ -114,6 +116,28 @@ pub fn run(env: String) -> Result<()> {
         fs::copy(&app_bin, modules_dir.join(app))
             .with_context(|| format!("Failed to copy app {} from {:?}", app, app_bin))?;
     }
+
+    // Copy Fonts
+    let fonts_src = root.join("assets/fonts");
+    let fonts_dst = boot_dir.join("fonts");
+    fs::create_dir_all(&fonts_dst)?;
+
+    let font_files = [
+        "NotoSans-Regular.ttf",
+        "NotoSerif-Regular.ttf",
+        "NotoSansSymbol-Regular.ttf",
+        "NotoSansSymbol2-Regular.ttf",
+    ];
+
+    for f in font_files {
+        let src = fonts_src.join(f);
+        if src.exists() {
+            fs::copy(&src, fonts_dst.join(f))?;
+        } else {
+             eprintln!("    [WARNING] Missing font file: {:?}", src);
+        }
+    }
+
 
     // Limine Files
     let limine_dest = boot_dir.join("limine");

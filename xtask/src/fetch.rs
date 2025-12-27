@@ -210,6 +210,25 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
         }
     }
 
+    // Noto Fonts
+    let noto_fonts = [
+        ("NotoSans-Regular.ttf", "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSans/NotoSans-Regular.ttf"),
+        ("NotoSerif-Regular.ttf", "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSerif/NotoSerif-Regular.ttf"),
+        ("NotoSansSymbol-Regular.ttf", "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSansSymbols/NotoSansSymbols-Regular.ttf"),
+        ("NotoSansSymbol2-Regular.ttf", "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf"),
+    ];
+
+    for (name, url) in noto_fonts {
+        let dest = fonts_dir.join(name);
+        if !dest.exists() {
+            println!("    Downloading {}...", name);
+            if let Err(e) = download_file(url, &dest) {
+                eprintln!("    [WARNING] Failed to download {}: {}. Creating placeholder.", name, e);
+                 fs::write(&dest, b"PLACEHOLDER FONT")?;
+            }
+        }
+    }
+
     Ok(())
 }
 

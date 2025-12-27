@@ -4,7 +4,9 @@ use abi::{SysRet, SYSCALL_DRIVER_WAIT, SYSCALL_DRIVER_PUBLISH};
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use postcard::from_bytes;
 
-pub fn sys_driver_wait<B: HardwareBridge>(kernel: &mut Kernel<B>, out_ptr: *mut u8, out_len: usize) -> SysRet {
+/// # Safety
+/// Pointers must be valid user memory.
+pub unsafe fn sys_driver_wait<B: HardwareBridge>(kernel: &mut Kernel<B>, out_ptr: *mut u8, out_len: usize) -> SysRet {
     // V0: Non-blocking poll.
     // If we loop here, we hold the KERNEL lock (BKL) from syscall_hook,
     // preventing the scheduler from ticking (which also needs BKL).
@@ -12,7 +14,7 @@ pub fn sys_driver_wait<B: HardwareBridge>(kernel: &mut Kernel<B>, out_ptr: *mut 
     
     if let Some(event) = crate::input::try_pop_event(&kernel.bridge) {
          // Serialize
-         let slice = unsafe { core::slice::from_raw_parts_mut(out_ptr, out_len) };
+         let slice = core::slice::from_raw_parts_mut(out_ptr, out_len);
          match postcard::to_slice(&event, slice) {
              Ok(used) => return used.len() as SysRet,
              Err(_) => return -1, // Enobufs
@@ -24,9 +26,11 @@ pub fn sys_driver_wait<B: HardwareBridge>(kernel: &mut Kernel<B>, out_ptr: *mut 
     -1 
 }
 
-pub fn sys_driver_publish<B: HardwareBridge>(kernel: &mut Kernel<B>, ptr: *const u8, len: usize) -> SysRet {
+/// # Safety
+/// Pointers must be valid user memory.
+pub unsafe fn sys_driver_publish<B: HardwareBridge>(kernel: &mut Kernel<B>, ptr: *const u8, len: usize) -> SysRet {
     // Read buffer
-    let slice = unsafe { core::slice::from_raw_parts(ptr, len) };
+    let slice = core::slice::from_raw_parts(ptr, len);
     let publish: DriverPublish = match from_bytes(slice) {
         Ok(p) => p,
         Err(_) => return -2, // Ebadmsg

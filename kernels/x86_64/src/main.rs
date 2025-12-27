@@ -75,6 +75,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
             print_hex(&bridge, entry.payload_c);
             bridge.log("\n");
         }
+        true
     });
     bridge.log("--- END DUMP ---\n");
 

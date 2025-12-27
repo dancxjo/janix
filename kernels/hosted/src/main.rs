@@ -35,7 +35,7 @@ fn main() {
             "intern" => {
                 let val = env::var("THINGOS_SMOKE_VAL").expect("Need VAL");
                 let op = GraphOp::SymbolIntern { text: &val };
-                if let GraphReply::SymbolInterned { id } = handle_graph_op(&mut kernel, op) {
+                if let GraphReply::SymbolInterned { id } = handle_graph_op(&mut kernel, abi::ProcessId(0), op) {
                     println!("ID: {}", id.0);
                     // Persist
                     kernel.symbols.persist_to_store(&mut store).expect("Save failed");
@@ -47,7 +47,7 @@ fn main() {
                 let id_s = env::var("THINGOS_SMOKE_ID").expect("Need ID");
                 let id = abi::SymbolId(id_s.parse().expect("Invalid ID"));
                 let op = GraphOp::SymbolResolve { id };
-                if let GraphReply::SymbolResolved { text } = handle_graph_op(&mut kernel, op) {
+                if let GraphReply::SymbolResolved { text } = handle_graph_op(&mut kernel, abi::ProcessId(0), op) {
                     println!("VAL: {}", text);
                 } else {
                     panic!("Resolve failed");

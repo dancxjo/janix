@@ -31,10 +31,14 @@ pub fn syscall_dispatch<B: HardwareBridge>(
         },
 
         SYSCALL_DRIVER_WAIT => {
-            driver::sys_driver_wait(kernel, a1 as *mut u8, a2) as isize
+            unsafe {
+                driver::sys_driver_wait(kernel, a1 as *mut u8, a2) as isize
+            }
         },
         SYSCALL_DRIVER_PUBLISH => {
-            driver::sys_driver_publish(kernel, a1 as *const u8, a2) as isize
+            unsafe {
+                driver::sys_driver_publish(kernel, a1 as *const u8, a2) as isize
+            }
         },
         SYSCALL_TYPEDEF_REGISTER => {
             typed::sys_typedef_register(a1, a2) as isize
@@ -91,7 +95,3 @@ pub fn syscall_dispatch<B: HardwareBridge>(
         _ => -1,
     }
 }
-
-
-
-

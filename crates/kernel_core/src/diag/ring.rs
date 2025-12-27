@@ -54,6 +54,7 @@ pub struct LogRing {
 
 unsafe impl Sync for LogRing {}
 
+#[allow(clippy::declare_interior_mutable_const)]
 const INIT_ENTRY: RingEntry = RingEntry {
     ready: AtomicBool::new(false),
     kind: 0, level: 0, cpu: 0, timestamp_or_ticks: 0,
@@ -72,6 +73,7 @@ impl LogRing {
         &GLOBAL_RING
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn push(&self, kind: EntryKind, level: u8, msg: &str,
                 a: u64, b: u64, c: u64, d: u64) {
 
@@ -109,7 +111,7 @@ impl LogRing {
     }
 
     pub fn drain<F>(&self, mut f: F) -> usize
-    where F: FnMut(&RingEntry)
+    where F: FnMut(&RingEntry) -> bool
     {
         let mut count = 0;
         loop {
@@ -138,7 +140,10 @@ impl LogRing {
                 break;
             }
 
-            f(entry);
+            if !f(entry) {
+                // Consumer stopped.
+                break;
+            }
 
             // Mark consumed (optional)
             entry.ready.store(false, Ordering::Relaxed);

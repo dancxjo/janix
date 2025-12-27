@@ -46,7 +46,7 @@ pub fn flush_diagnostics<B: HardwareBridge>(kernel: &mut Kernel<B>) {
 
     ring.drain(|entry| {
         if processed >= max_entries {
-            return;
+            return false;
         }
         processed += 1;
 
@@ -139,5 +139,6 @@ pub fn flush_diagnostics<B: HardwareBridge>(kernel: &mut Kernel<B>) {
                  }
              }
         }
+        true
     });
 }

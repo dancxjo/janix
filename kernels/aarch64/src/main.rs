@@ -61,6 +61,14 @@ pub extern "C" fn rust_main() -> ! {
 
     #[cfg(target_os = "thingos")]
     unsafe {
+        panic!("Test Panic");
+        
+        // -1. Init Bridge (Exception Vectors) EARLY
+        Bridge::init();
+
+        // TEST: Trigger exception to prove vectors are working
+        // core::arch::asm!("brk #0");
+
         // 0. Init Heap FIRST (needed for paging/alloc)
         let info = limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
 
@@ -87,8 +95,7 @@ pub extern "C" fn rust_main() -> ! {
         use hw::HardwareBridge;
         let bridge = Bridge;
         
-        // 4. Init Bridge (Exception Vectors)
-        Bridge::init();
+
 
         bootlog!("Booting ThingOS (aarch64)...");
         bootlog!("Init finished, jumping to kernel");

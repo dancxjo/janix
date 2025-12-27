@@ -1,4 +1,5 @@
 use crate::Bridge;
+use hw::HardwareBridge;
 
 static mut IOAPIC_ADDR: u64 = 0;
 

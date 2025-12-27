@@ -281,10 +281,8 @@ pub unsafe fn read_atapi_sector(port: &mut HbaPort, lba: u32, buf: &mut [u8], hh
     let cl_slice = core::slice::from_raw_parts_mut(cl_virt as *mut HbaCmdHeader, 32);
     let header = &mut cl_slice[0];
 
-    header.cfl = 5; // 5 DWORDS for Host to Device FIS
-    header.pm = 0x20; // ATAPI (Bit 5) | Prefetch?? No, just ATAPI.
-                      // Length is bytes. Buffer must be mapped.
-                      // PRDTL = 1
+    header.cfl = 5 | 0x20; // 5 DWORDS | ATAPI (Bit 5)
+    header.pm = 0;
 
     // 3. Setup Command Table
     let ct_phys = ((header.ctbau as u64) << 32) | (header.ctba as u64);

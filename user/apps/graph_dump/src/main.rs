@@ -77,40 +77,36 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole) {
         // If not, we construct Op and call via "op" method.
         
         let op_get = GraphOp::GetThing { id: curr };
-        if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op_get, &mut buf_scratch) {
-             // Decode body? For now we just get Kind from... existing GetThing doesn't return Kind?
-             // Ah, `GetThing` in kernel returns `Thing`.
-             // But `GraphOp::GetThing` reply is `TypedValue(tb)`. `tb` is the body properly?
-             // Wait, `Thing` struct has `kind`.
-             // `GraphOp::GetThing` logic in `kernel_core/src/syscalls/graph.rs`:
-             // it returns `TypedValue(tb)` which is `thing.body`. 
-             // IT DOES NOT RETURN KIND.
-             // This is a gap in existing ABI `GetThing`.
-             // But we are "updating" graph_dump. 
-             // If reasonable, we should have fixed GetThing to return `Thing` or added `GetKind`.
-             // OR: the `TypedBytes` generally includes TypeTag? No, `type_id` in TypedBytes might be the Schema ID?
-             // `type_id` in `TypedBytes` usually maps to a Schema or TypeDef.
-             // Let's assume we can map `tb.type_id` to Kind?
-             // In v0, Schema ~ Kind often.
-             // Let's print `(t<id> :<tb.type_id>)`.
-             
-             // Or better: Use `type_id` as the hint.
-             
-             nodes_out.push(NodeInfo { id: curr, kind: ThingId(tb.type_id.0 as u64) });
-        } else {
-             // Failed to get thing (maybe deleted?), skip links?
-             // Keep going.
+        match g.call_op(&op_get, &mut buf_scratch) {
+            Ok(GraphReply::TypedValue(tb)) => {
+                 // c.write_str("Found node\n");
+                 nodes_out.push(NodeInfo { id: curr, kind: ThingId(tb.type_id.0 as u64) });
+            },
+            Err(e) => {
+                 let _ = c.write_str(&format!("GetThing({}) failed: {:?}\n", curr.0, e));
+            },
+            _ => {
+                 let _ = c.write_str(&format!("GetThing({}) unexpected reply\n", curr.0));
+            }
         }
 
         // 2. Scan Links
         let op_scan = GraphOp::ScanLinks { from: Some(curr), to: None, kind: None };
-        if let Ok(GraphReply::Links(links)) = g.call_op(&op_scan, &mut buf_scratch) {
-            for (src, dst, pred) in links {
-                links_out.push(LinkInfo { src, dst, pred });
-                if !visited_nodes.contains(&dst) {
-                    visited_nodes.insert(dst);
-                    frontier.push_back(dst);
+        match g.call_op(&op_scan, &mut buf_scratch) {
+            Ok(GraphReply::Links(links)) => {
+                for (src, dst, pred) in links {
+                    links_out.push(LinkInfo { src, dst, pred });
+                    if !visited_nodes.contains(&dst) {
+                        visited_nodes.insert(dst);
+                        frontier.push_back(dst);
+                    }
                 }
+            },
+            Err(e) => {
+                 let _ = c.write_str(&format!("ScanLinks({}) failed: {:?}\n", curr.0, e));
+            },
+             _ => {
+                 let _ = c.write_str(&format!("ScanLinks({}) unexpected reply\n", curr.0));
             }
         }
     }

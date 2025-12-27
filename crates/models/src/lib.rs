@@ -14,6 +14,7 @@ pub mod declare;
 pub mod intent;
 pub mod observation;
 pub mod result;
+pub mod diag;
 
 pub use kind::*;
 pub use link::*;

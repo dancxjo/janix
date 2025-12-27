@@ -16,7 +16,8 @@ struct DumpResp {
 }
 
 #[no_mangle]
-pub extern "C" fn main() -> i32 {
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
     let g = GraphClient::new();
     let c = StdoutConsole;
     let mut out = [0u8; 4096];
@@ -25,11 +26,15 @@ pub extern "C" fn main() -> i32 {
         Ok(resp) => {
             c.write_str(&resp.text);
             c.write_str("\n");
-            0
         }
         Err(_) => {
             c.write_str("graph_dump: error\n");
-            1
         }
+    }
+    
+    loop {
+        // Yield?
+        // simple spin for now to avoid exit crash
+         core::hint::spin_loop();
     }
 }

@@ -8,12 +8,13 @@ pub mod symbols;
 pub mod syscalls;
 pub mod input;
 pub mod types;
+pub mod diag;
 
 
 use hw::HardwareBridge;
 use graph::{GraphStore, seed_builtins};
 
-use symbols::{SymbolTable, SymbolError};
+use symbols::SymbolTable;
 use symbols::store::SymbolStore;
 
 use sched::scheduler::Scheduler;

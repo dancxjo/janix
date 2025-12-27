@@ -26,7 +26,7 @@ pub struct Thread {
     pub entry_point: u64,
     pub user_arg: u64,
     pub user_stack_top: u64,
-    pub kernel_stack: Vec<u8>,
+    pub kernel_stack: Vec<u128>,
     pub kernel_stack_top: u64,
     pub context: ThreadContext,
     pub fpu_context: FpuContext,
@@ -90,7 +90,8 @@ impl Scheduler {
         };
         self.processes.push(Some(process));
 
-        let mut kernel_stack = alloc::vec![0u8; 16384];
+        // 16KB stack, 16-byte aligned. 16384 bytes / 16 bytes/u128 = 1024 u128s.
+        let mut kernel_stack = alloc::vec![0u128; 1024];
         let kernel_stack_top = kernel_stack.as_ptr() as u64 + 16384;
         let context = bridge.init_thread_context(entry, stack_top, arg);
 
@@ -137,6 +138,11 @@ impl Scheduler {
                 thread.context = *current_context;
                 // If Running, user is preempted. Move to Runnable.
                 if thread.state == ThreadState::Running || thread.state == ThreadState::Runnable {
+                    // _bridge.log("SCHED: Preempting Thread "); // Use strings if possible or custom logger
+                    // Since we don't have easy format! with _bridge, we skip detailed name logging for now or use basic chars?
+                    // Let's try to assume we can print basic strings if we are careful.
+                    // Actually, let's just use the bridge to print a distinct mark.
+                     // _bridge.log("SCHED: P reempt\n");
                     thread.state = ThreadState::Runnable;
                     self.run_queue.push(tid);
                 }
@@ -148,6 +154,11 @@ impl Scheduler {
             self.current = Some(next_tid);
             if let Some(Some(thread)) = self.threads.get_mut(next_tid.0 as usize - 1) {
                  thread.state = ThreadState::Running;
+                 
+                 // _bridge.log("SCHED: Switch to ");
+                 // _bridge.log(&thread.name);
+                 // _bridge.log("\n");
+                 
                  _bridge.set_kernel_stack(thread.kernel_stack_top);
 
                  *current_context = thread.context;

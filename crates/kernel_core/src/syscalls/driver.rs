@@ -4,12 +4,13 @@ use abi::{SysRet, SYSCALL_DRIVER_WAIT, SYSCALL_DRIVER_PUBLISH};
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use postcard::from_bytes;
 
-pub fn sys_driver_wait<B: HardwareBridge>(kernel: &mut Kernel<B>, out_ptr: *mut u8, out_len: usize) -> SysRet {
+pub fn sys_driver_wait<B: HardwareBridge>(_kernel: &mut Kernel<B>, out_ptr: *mut u8, out_len: usize) -> SysRet {
     // V0: Busy-wait / yield loop
     // In a real OS, we would put thread to sleep and register a waker.
     loop {
         if let Some(event) = crate::input::try_pop_event() {
             // Serialize
+            // let out_ptr = ...; // already passed in
             let slice = unsafe { core::slice::from_raw_parts_mut(out_ptr, out_len) };
             match postcard::to_slice(&event, slice) {
                 Ok(used) => return used.len() as SysRet,

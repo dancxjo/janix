@@ -7,6 +7,7 @@ members = [
   "drivers/ps2_keyboard",
   "apps/keylog",
   "apps/typed_test",
+  "apps/syscall_crud_smoke",
 ]
 
 

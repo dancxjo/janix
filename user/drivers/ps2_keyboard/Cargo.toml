@@ -8,4 +8,4 @@ abi = { path = "../../../crates/abi" }
 models = { path = "../../../crates/models" }
 postcard = { workspace = true, features = ["alloc"] }
 serde = { workspace = true, features = ["derive"] }
-thing_std = { path = "../../../crates/thing_std" }
+thing_std = { path = "../../crates/thing_std" }

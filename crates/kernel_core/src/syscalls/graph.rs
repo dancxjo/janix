@@ -35,6 +35,86 @@ pub fn handle_graph_op<B: HardwareBridge>(kernel: &mut Kernel<B>, op: GraphOp) -
              GraphReply::Ack
         },
         GraphOp::Watch { .. } => GraphReply::Error,
+        // CRUD Ops
+        GraphOp::CreateThing { kind, value } => {
+             match thing_models::value::ThingBody::from(&value) {
+                 Ok(body) => {
+                     let id = kernel.graph.create_thing(kind, body);
+                     GraphReply::Created { id }
+                 },
+                 Err(_) => GraphReply::Error,
+             }
+        },
+        GraphOp::GetThing { id } => {
+            if let Some(thing) = kernel.graph.get(id) {
+                // Decode body to TypedBytes
+                match thing.body.decode::<abi::wire::typed::TypedBytes>() {
+                    Ok(tb) => GraphReply::TypedValue(tb),
+                    Err(_) => GraphReply::Error,
+                }
+            } else {
+                GraphReply::Error
+            }
+        },
+        GraphOp::UpdateThing { id, value } => {
+            match thing_models::value::ThingBody::from(&value) {
+                Ok(body) => {
+                     match kernel.graph.update_thing(id, body) {
+                         Ok(_) => GraphReply::Ack,
+                         Err(_) => GraphReply::Error,
+                     }
+                },
+                Err(_) => GraphReply::Error,
+            }
+        },
+        GraphOp::AddLink { from, to, kind } => {
+             let body_struct = thing_models::link::LinkBody { from, to, predicate: kind };
+             match postcard::to_allocvec(&body_struct) {
+                  Ok(link_bytes) => {
+                      // Wrap in TypedBytes
+                      let typed = abi::wire::typed::TypedBytes {
+                          type_id: abi::wire::typed::TypeId(thing_models::builtins::ids::THING_LINK_KIND.0 as u128),
+                          codec_id: abi::wire::typed::CodecId::POSTCARD,
+                          bytes: link_bytes,
+                      };
+                      match thing_models::value::ThingBody::from(&typed) {
+                          Ok(body) => {
+                               let id = kernel.graph.create_thing(thing_models::builtins::ids::THING_LINK_KIND, body);
+                               GraphReply::Created { id }
+                          },
+                          Err(_) => GraphReply::Error,
+                      }
+                  },
+                  Err(_) => GraphReply::Error,
+             }
+        },
+        GraphOp::ScanLinks { from, to, kind } => {
+            let mut results = alloc::vec::Vec::new();
+            let link_kind = thing_models::builtins::ids::THING_LINK_KIND;
+            
+            // Inefficient scan for v0.2 smoke test. 
+            // Phase 4 should optimize using index.
+            for thing in kernel.graph.list() {
+                 if thing.kind == link_kind {
+                     if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
+                          if let Ok(link) = postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes) {
+                               if let Some(f) = from { if link.from != f { continue; } }
+                               if let Some(t) = to { if link.to != t { continue; } }
+                               if let Some(k) = kind { if link.predicate != k { continue; } }
+                               
+                               results.push((link.from, link.to, link.predicate));
+                          }
+                     }
+                 }
+            }
+            GraphReply::Links(results)
+        },
+        GraphOp::DeleteThing { id } => {
+             match kernel.graph.delete_thing(id) {
+                 Ok(_) => GraphReply::Ack,
+                 Err(_) => GraphReply::Error,
+             }
+        },
     }
 }
 

@@ -115,9 +115,14 @@ fn run_qemu_x86_64(gdb: bool, timeout: Option<u64>) -> Result<()> {
     // else default BIOS
     cmd.arg("-cdrom").arg(&iso_path);
 
+    // Always enable GDB stub
+    cmd.arg("-s");
+
     if gdb {
-        println!("    Waiting for GDB connection on port 1234...");
-        cmd.arg("-s").arg("-S");
+        println!("    Waiting for GDB connection on port 1234 (frozen)...");
+        cmd.arg("-S");
+    } else {
+        println!("    GDB stub enabled on port 1234...");
     }
 
     run_with_timeout(cmd, timeout)
@@ -157,9 +162,14 @@ fn run_qemu_aarch64(gdb: bool, timeout: Option<u64>) -> Result<()> {
     }
     cmd.arg("-cdrom").arg(&iso_path);
 
+    // Always enable GDB stub
+    cmd.arg("-s");
+
     if gdb {
-        println!("    Waiting for GDB connection on port 1234...");
-        cmd.arg("-s").arg("-S");
+        println!("    Waiting for GDB connection on port 1234 (frozen)...");
+        cmd.arg("-S");
+    } else {
+        println!("    GDB stub enabled on port 1234...");
     }
 
     run_with_timeout(cmd, timeout)

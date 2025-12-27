@@ -5,6 +5,7 @@ mod fetch;
 mod iso;
 mod run;
 mod build;
+mod kill; // Add module
 
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Build and management tasks for ThingOS")]
@@ -35,6 +36,8 @@ enum Commands {
         #[arg(long)]
         timeout_secs: Option<u64>,
     },
+    /// Kill running QEMU instances
+    Kill,
 }
 
 fn main() -> Result<()> {
@@ -53,5 +56,6 @@ fn main() -> Result<()> {
             gdb,
             timeout_secs,
         }),
+        Commands::Kill => kill::run(),
     }
 }

@@ -1,6 +1,5 @@
-use xmas_elf::{ElfFile, program::{ProgramHeader, Type}};
+use xmas_elf::{ElfFile, program::Type};
 use alloc::vec::Vec;
-use core::slice;
 
 pub struct LoadedImage {
     pub entry_point: u64,

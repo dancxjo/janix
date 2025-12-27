@@ -11,6 +11,7 @@ pub enum GraphError {
 pub struct GraphStore {
     things: BTreeMap<ThingId, Thing>,
     kind_index: BTreeMap<ThingId, Vec<ThingId>>,
+    next_id: u64,
 }
 
 impl GraphStore {
@@ -18,6 +19,7 @@ impl GraphStore {
         Self {
             things: BTreeMap::new(),
             kind_index: BTreeMap::new(),
+            next_id: 0x10000000,
         }
     }
 
@@ -41,22 +43,56 @@ impl GraphStore {
         self.things.insert(id, thing);
         self.kind_index.entry(kind).or_default().push(id);
         
-        // Ensure index order (monotonic IDs)
-        // If IDs are not inserted in order, we might need to sort.
-        // Assuming insert_thing is called with largely monotonic IDs or we mitigate.
-        // trunk assumed monotonic creation. Here we might have random inserts.
-        // We should sort or rely on usage.
-        // Let's sort to be safe for next_thing_of_kind binary_search.
-        // But sorting on every insert is O(N log N) or O(N).
-        // `trunk` pushed and assumed order because `create_thing` generated sequential IDs.
-        // Here, we accept arbitrary IDs. So we must maintain order.
-        let list = self.kind_index.get_mut(&kind).unwrap(); // we just pushed, so it exists
-        // If the new ID is larger than the last (common case), we are good.
+        let list = self.kind_index.get_mut(&kind).unwrap();
         if list.len() > 1 && id < list[list.len() - 2] {
              list.sort();
         }
 
         Ok(())
+    }
+
+    pub fn create_thing(&mut self, kind: ThingId, body: thing_models::value::ThingBody) -> ThingId {
+        let id = ThingId(self.next_id);
+        self.next_id += 1;
+        
+        // TODO: Reuse logic but avoid clone?
+        let thing = Thing {
+            id,
+            kind,
+            body,
+        };
+        
+        match self.insert_thing(thing) {
+            Ok(_) => id,
+            Err(_) => {
+                // If collision (very unlikely with counter), retry once?
+                // panic for v0.2
+                panic!("GraphStore ID collision on create");
+            }
+        }
+    }
+    
+    pub fn update_thing(&mut self, id: ThingId, body: thing_models::value::ThingBody) -> Result<(), ()> {
+         if let Some(thing) = self.things.get_mut(&id) {
+             thing.body = body;
+             Ok(())
+         } else {
+             Err(())
+         }
+    }
+    
+    pub fn delete_thing(&mut self, id: ThingId) -> Result<(), ()> {
+        if let Some(thing) = self.things.remove(&id) {
+            // Remove from kind_index
+            if let Some(list) = self.kind_index.get_mut(&thing.kind) {
+                if let Ok(idx) = list.binary_search(&id) {
+                    list.remove(idx);
+                }
+            }
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     pub fn get(&self, id: ThingId) -> Option<&Thing> {
@@ -69,8 +105,6 @@ impl GraphStore {
 
     pub fn next_thing_of_kind(&self, kind: ThingId, start_after: ThingId) -> Option<ThingId> {
         if let Some(list) = self.kind_index.get(&kind) {
-            // list should be sorted by ThingId
-            // find first element > start_after
             let idx = match list.binary_search(&start_after) {
                 Ok(i) => i + 1,
                 Err(i) => i,

@@ -56,3 +56,27 @@ pub const SYM_IS_RELEASE: SymbolId = SymbolId(fnv1a64("is_release"));
 pub const SYM_PS2: SymbolId = SymbolId(fnv1a64("ps2"));
 
 pub const SYM_FONT: SymbolId = SymbolId(fnv1a64("Font"));
+// Diag / Logging
+pub const SYM_LOG_ENTRY: SymbolId = SymbolId(fnv1a64("LogEntry"));
+pub const SYM_ERROR: SymbolId = SymbolId(fnv1a64("Error"));
+pub const SYM_FAULT: SymbolId = SymbolId(fnv1a64("Fault"));
+
+pub const SYM_LEVEL: SymbolId = SymbolId(fnv1a64("level"));
+pub const SYM_MESSAGE: SymbolId = SymbolId(fnv1a64("message"));
+pub const SYM_SUBSYSTEM: SymbolId = SymbolId(fnv1a64("subsystem"));
+pub const SYM_CPU_ID: SymbolId = SymbolId(fnv1a64("cpu_id"));
+pub const SYM_THREAD_ID: SymbolId = SymbolId(fnv1a64("thread_id"));
+pub const SYM_PROCESS_ID: SymbolId = SymbolId(fnv1a64("process_id"));
+pub const SYM_SEQ: SymbolId = SymbolId(fnv1a64("seq"));
+pub const SYM_CODE: SymbolId = SymbolId(fnv1a64("code"));
+pub const SYM_SEVERITY: SymbolId = SymbolId(fnv1a64("severity"));
+pub const SYM_RECOVERABLE: SymbolId = SymbolId(fnv1a64("recoverable"));
+pub const SYM_FAULT_KIND: SymbolId = SymbolId(fnv1a64("fault_kind"));
+pub const SYM_RIP: SymbolId = SymbolId(fnv1a64("rip"));
+pub const SYM_RSP: SymbolId = SymbolId(fnv1a64("rsp"));
+pub const SYM_RFLAGS: SymbolId = SymbolId(fnv1a64("rflags"));
+pub const SYM_CR2: SymbolId = SymbolId(fnv1a64("cr2"));
+pub const SYM_ERROR_CODE: SymbolId = SymbolId(fnv1a64("error_code"));
+pub const SYM_ACCESS: SymbolId = SymbolId(fnv1a64("access"));
+pub const SYM_ADDRESS_SPACE: SymbolId = SymbolId(fnv1a64("address_space"));
+pub const SYM_KILL_ACTION: SymbolId = SymbolId(fnv1a64("kill_action"));

@@ -179,10 +179,7 @@ static mut SYSCALL_KERNEL_RSP: u64 = 0;
 unsafe extern "C" fn syscall_handler_naked() {
     naked_asm!(
         // 1. Save User RSP
-        "mov gs:[0], rsp", // Wait, do we have GS? 
-        // If no GS, use RIP-relative addressing to global? 
-        // Only if mapped.
-        // Let's try RIP-relative to `SYSCALL_USER_RSP`.
+        // We use RIP-relative addressing to global since we lack full GS setup in v0.
         "mov [rip + {0}], rsp",
         
         // 2. Load Kernel RSP
@@ -222,15 +219,31 @@ unsafe extern "C" fn syscall_handler_naked() {
         // R9 = R8
         
         // 5. Preserver Arg 6 (User R9) which is the 7th arg for Rust (a6)
-        "mov rax, r9", // Save a6 temporarily in RAX (since RAX contains num, we move it first? No RAX has num).
-        // Wait, RAX has 'num'. R9 has 'a6'.
-        // We need to move RAX to RDI first.
         
-        "mov rdi, rax", // Arg 1 (num) -> RDI. RAX is now free.
-        "mov rax, r9",  // Save a6 (User R9) to RAX.
+        // Correct Sequence:
+        // Inputs: RAX(num), RDI(a1), RSI(a2), RDX(a3), R10(a4), R8(a5), R9(a6)
+        // Outputs: RDI(num), RSI(a1), RDX(a2), RCX(a3), R8(a4), R9(a5), Stack(a6)
 
-        // Shuffle other registers
-        "mov r9, r8",   // Arg 6 (a5) -> R9 (Rust Arg 6)
+        // Stack Alignment:
+        // Current Stack (after 8 pushes) is Aligned (16 bytes).
+        // We need to push 1 argument (8 bytes).
+        // To maintain 16-byte alignment *before* the CALL instruction, we need padding.
+        // We push padding (8 bytes) then Argument (8 bytes). 
+        // Or sub rsp, 8 then push r9.
+        
+        "sub rsp, 8", // Padding
+        "push r9",    // Arg 6 (a6)
+
+        // Stack is now Aligned (Base - 16).
+        // Call pushes RIP (8 bytes). Function sees RSP aligned to 16? No.
+        // System V ABI: "The stack pointer (RSP) value must be 16-byte aligned before making a call."
+        // (i.e. before `call` instruction executes).
+        // My stack: Pushed 8 regs (64 bytes). Aligned.
+        // Sub 8 + Push 8 = 16 bytes. Aligned.
+        // So this is correct.
+
+        // Move rest:
+        "mov r9, r8",   // a5 -> R9
         "mov r8, r10",  // Arg 5 (a4) -> R8 (Rust Arg 5)
         "mov rcx, rdx", // Arg 4 (a3) -> RCX (Rust Arg 4)
         "mov rdx, rsi", // Arg 3 (a2) -> RDX (Rust Arg 3)
@@ -238,42 +251,19 @@ unsafe extern "C" fn syscall_handler_naked() {
         // ERROR in logic above! I overwrote RDI with RAX (num).
         // But I needed User RDI (a1) for RSI.
         // I must allow register shuffling without clobber.
-
-        // Correct Sequence:
-        // Inputs: RAX(num), RDI(a1), RSI(a2), RDX(a3), R10(a4), R8(a5), R9(a6)
-        // Outputs: RDI(num), RSI(a1), RDX(a2), RCX(a3), R8(a4), R9(a5), Stack(a6)
-
-        // Move a6 (R9) to Stack.
-        "push r9",
-
-        // Move rest:
-        "mov r9, r8",   // a5 -> R9
-        "mov r8, r10",  // a4 -> R8
-        "mov rcx, rdx", // a3 -> RCX
-        "mov rdx, rsi", // a2 -> RDX
+        // Since I removed the clobbering "mov rax, r9" instructions, I must be careful not to reproduce it.
+        // Wait, did I fix the clobbering in Step 70? Yes.
+        // So I just need to verify the moves below.
+        
+        // "mov r9, r8" - Safe (R9 saved)
+        // "mov r8, r10" - Safe
+        // "mov rcx, rdx" - Safe
+        // "mov rdx, rsi" - Safe (RSI source)
+        // "mov rsi, rdi" - Safe (RDI source)
+        // "mov rdi, rax" - Safe (RAX source)
+        
         "mov rsi, rdi", // a1 -> RSI
-        "mov rdi, rax", // num -> RDI (Wait, RAX was clobbered? No, RAX holds num).
-
-        // Safety check: Did I overwrite a source before using it?
-        // r9 overwritten by r8. (Saved r9 to stack first: OK)
-        // r8 overwritten by r10. (r8 used for r9: OK - done before)
-        // Wait, `mov r9, r8` reads r8. `mov r8, r10` writes r8.
-        // Order matters: Write Dest R9 first.
-        // R9 <- R8.
-        // R8 <- R10.
-        // RCX <- RDX.
-        // RDX <- RSI.
-        // RSI <- RDI.
-        // RDI <- RAX.
-        // All sources are distinct from destinations downstream?
-        // R8 source is used for R9. R8 dest is R10. OK.
-        // RDX source used for RCX. RDX dest is RSI. OK.
-        // RSI source used for RDX. RSI dest is RDI. OK.
-        // RDI source used for RSI. RDI dest is RAX. OK.
-        // RAX source used for RDI. RAX dest... none. OK.
-
-        // So order: R9..RDI is safe.
-        // But R9 must be pushed first.
+        "mov rdi, rax", // num -> RDI
 
         // Enable interrupts
         "sti",
@@ -281,7 +271,7 @@ unsafe extern "C" fn syscall_handler_naked() {
         "call syscall_dispatch",
         
         "cli",
-        "add rsp, 8", // Pop argument
+        "add rsp, 16", // Pop argument + Padding
         
         // Restore
         "pop r15",

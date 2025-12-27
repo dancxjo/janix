@@ -16,7 +16,12 @@ pub fn syscall_dispatch<B: HardwareBridge>(
     a5: usize,
     a6: usize,
 ) -> isize {
+    // Debug log
+    // kernel.bridge.log(alloc::format!("SYSCALL: {}\n", num).as_str()); // Need alloc
+    // bridge log usually takes &str.
+    // Let's use if/match to print only interesting ones.
     match num {
+
         SYSCALL_DRIVER_WAIT => {
             driver::sys_driver_wait(kernel, a1 as *mut u8, a2) as isize
         },
@@ -31,6 +36,12 @@ pub fn syscall_dispatch<B: HardwareBridge>(
         },
         // SYSCALL_GRAPH (1)
         1 => {
+             // Debug: Catch bad pointers
+             if a1 < 4096 {
+                  kernel.bridge.log("SYSCALL GRAPH: Bad Ptr\n");
+                  return -1;
+             }
+
              // a1: query_ptr, a2: query_len
              // a3: params_ptr, a4: params_len
              // a5: out_ptr, a6: out_len

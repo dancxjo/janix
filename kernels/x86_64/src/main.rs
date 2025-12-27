@@ -10,21 +10,85 @@ mod early_log;
 mod heap;
 #[cfg(target_os = "thingos")]
 mod limine;
+mod memory_intrinsics;
 
 use bridge_x86_64::Bridge;
 use core::arch::naked_asm;
 use kernel_core::Kernel;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+static PANICKING: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(test))]
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
     use hw::HardwareBridge;
+
+    // Recursion guard
+    if PANICKING.swap(true, Ordering::Relaxed) {
+        loop { core::hint::spin_loop(); }
+    }
+
     let bridge = Bridge;
+
+    // Capture to ring
+    // We try to extract string if possible, or just "PANIC"
+    kernel_core::diag::record_panic("PANIC");
+
     bridge.log("PANIC\n");
-    // Print args if possible? PanicInfo has display? require fmt.
-    // simpler: just panic marker.
+    if let Some(loc) = info.location() {
+        bridge.log("File: ");
+        bridge.log(loc.file());
+        bridge.log("\n");
+        // Line?
+    }
+
+    // Dump Ring to Serial
+    bridge.log("\n--- RING DUMP ---\n");
+    let ring = kernel_core::diag::LogRing::global();
+    ring.drain(|entry| {
+        // Simple formatter
+        let level_char = match entry.level {
+            0 => 'T', 1 => 'D', 2 => 'I', 3 => 'W', 4 => 'E', 5 => 'F', _ => '?'
+        };
+        // Print level
+        bridge.log(core::str::from_utf8(&[level_char as u8]).unwrap());
+        bridge.log(": ");
+
+        let len = entry.msg_len as usize;
+        if len > 0 && len <= 256 { // MSG_MAX
+             if let Ok(s) = core::str::from_utf8(&entry.msg_bytes[..len]) {
+                 bridge.log(s);
+             } else {
+                 bridge.log("<utf8 error>");
+             }
+        }
+        bridge.log("\n");
+
+        // Print payload if Fault
+        if entry.kind == 2 {
+            bridge.log("  RIP: ");
+            print_hex(&bridge, entry.payload_a);
+            bridge.log(" ERR: ");
+            print_hex(&bridge, entry.payload_b);
+            bridge.log(" CR2: ");
+            print_hex(&bridge, entry.payload_c);
+            bridge.log("\n");
+        }
+    });
+    bridge.log("--- END DUMP ---\n");
+
     loop {
         core::hint::spin_loop();
+    }
+}
+
+fn print_hex(bridge: &Bridge, val: u64) {
+    use hw::HardwareBridge;
+    for i in (0..16).rev() {
+        let digit = (val >> (i * 4)) & 0xF;
+        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
+        bridge.log(core::str::from_utf8(&[c]).unwrap());
     }
 }
 
@@ -299,12 +363,10 @@ pub extern "C" fn rust_main() -> ! {
         *KERNEL.lock() = Some(k);
         
         // 3. Enable Interrupts
-        unsafe {
              use hw::HardwareBridge;
              let bridge = Bridge;
              bridge.log("BRIDGE: enabling interrupts...\n");
              x86_64::instructions::interrupts::enable();
-        }
     }
 
     loop {

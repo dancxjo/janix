@@ -120,6 +120,7 @@ fn run_qemu_x86_64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, inter
         ));
     }
     // else default BIOS
+    // else default BIOS
     cmd.arg("-cdrom").arg(&iso_path);
 
     // Create a dummy disk for AHCI testing
@@ -190,7 +191,7 @@ fn run_qemu_aarch64(gdb: bool, gdb_port: Option<u16>, timeout: Option<u64>, inte
         cmd.arg("-bios").arg(&ovmf_code);
     }
     cmd.arg("-drive").arg(format!("id=cd,file={},if=none,format=raw,readonly=on", iso_path.display()));
-    cmd.arg("-device").arg("ide-cd,drive=cd,bus=ahci.0,unit=1");
+    cmd.arg("-device").arg("ide-cd,drive=cd,bus=ahci.0");
 
     // GDB setup
     if let Some(port) = gdb_port {

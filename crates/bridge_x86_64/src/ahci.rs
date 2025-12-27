@@ -296,16 +296,13 @@ pub unsafe fn read_atapi_sector(port: &mut HbaPort, lba: u32, buf: &mut [u8], hh
     table.cfis[3] = 0x01; // Features: DMA (Bit 0)
     
     // 5. Setup ATAPI Command (SCSI READ 12 - 0xA8)
-    // [0xA8, 0, MSB, ..., LSB, TransferLen(32), 0]
-    // Only READ 10 (0x28) or READ 12 (0xA8)? CD-ROM usually supports 0xA8 or 0x28.
-    // LBA is usually Big Endian in SCSI.
     table.acmd[0] = 0xA8;
     table.acmd[2] = (lba >> 24) as u8;
     table.acmd[3] = (lba >> 16) as u8;
     table.acmd[4] = (lba >> 8) as u8;
     table.acmd[5] = lba as u8;
     
-    let count: u32 = 1; // 1 sector (2048 bytes usually)
+    let count: u32 = 1; // 1 sector
     table.acmd[6] = (count >> 24) as u8;
     table.acmd[7] = (count >> 16) as u8;
     table.acmd[8] = (count >> 8) as u8;
@@ -320,20 +317,26 @@ pub unsafe fn read_atapi_sector(port: &mut HbaPort, lba: u32, buf: &mut [u8], hh
     entry.rsv0 = 0;
     
     // 7. Issue Command
-    // Wait for PxTFD.BSY and PxTFD.DRQ to be 0
+    // Wait for BSY
     let mut timeout = 1000000;
     while (port.tfd & (0x80 | 0x08)) != 0 && timeout > 0 {
         timeout -= 1;
         core::hint::spin_loop();
     }
-    if timeout == 0 { bridge.log("AHCI: Timeout setup\n"); return false; }
     
+    port.is = 0xFFFFFFFF; // Clear interrupts
     port.ci = 1; // Issue Slot 0
     
     // 8. Wait for Completion
     timeout = 10000000;
-    while (port.ci & 1) != 0 && timeout > 0 {
+    loop {
+         if (port.ci & 1) == 0 { break; } // Done
+         if (port.is & (1<<30)) != 0 { // TFES (Task File Error Status)
+             bridge.log("AHCI: TFES Error\n");
+             break;
+         }
          timeout -= 1;
+         if timeout == 0 { break; }
          core::hint::spin_loop();
     }
     if timeout == 0 {

@@ -11,6 +11,7 @@ members = [
   "apps/sleep_smoke",
   "drivers/rtc_x86",
   "drivers/rtc_aarch64",
+  "apps/sleep_accuracy_smoke",
 ]
 
 

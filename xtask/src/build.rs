@@ -28,7 +28,7 @@ pub fn run() -> Result<()> {
 
     // 2. Build User Apps
     println!("==> Building user apps...");
-    let user_apps = ["graph_dump", "ps2_keyboard", "keylog"];
+    let user_apps = ["graph_dump", "ps2_keyboard", "keylog", "syscall_crud_smoke", "clock", "sleep_smoke", "rtc_x86", "rtc_aarch64", "sleep_accuracy_smoke"];
     for app in user_apps {
         let status = Command::new(&cargo)
             .arg("build")

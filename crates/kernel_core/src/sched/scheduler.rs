@@ -118,6 +118,10 @@ impl Scheduler {
         }
     }
 
+    pub fn next_wakeup_deadline(&self) -> Option<TimeNs> {
+        self.sleep_queue.last().map(|entry| entry.wake_at_ns)
+    }
+
     pub fn spawn<B: HardwareBridge>(
         &mut self,
         bridge: &B,

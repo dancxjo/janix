@@ -190,6 +190,20 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
                 // 2. Wake sleepers
                 let monotonic = kernel_core::time::monotonic_ns();
                 k.scheduler.wake_sleepers(monotonic);
+
+                // 3. Program Next Deadline (HPET)
+                // We acknowledge *before* or *after*?
+                // Ack should clear the status.
+                unsafe { bridge_x86_64::hpet::ack_interrupt(); }
+
+                if now_ns > 0 {
+                    unsafe {
+                        let next_wake = k.scheduler.next_wakeup_deadline().unwrap_or(u64::MAX);
+                        let tick_target = monotonic + 10_000_000; // 10ms default tick for RR
+                        let target = core::cmp::min(tick_target, next_wake);
+                        bridge_x86_64::hpet::program_oneshot(target);
+                    }
+                }
             }
 
             // 3. Tick Scheduler (updates ctx if switch occurs)
@@ -382,7 +396,17 @@ pub extern "C" fn rust_main() -> ! {
         // Now Init ACPI
         k.bridge.log("ACPI: Pre-Init\n");
         if let Some(r) = rsdp_addr {
-            unsafe { Bridge::init_acpi(r, hhdm_offset_u64); }
+            unsafe { 
+                Bridge::init_acpi(r, hhdm_offset_u64);
+                use bridge_x86_64::hpet;
+                // If HPET initialized successfully, switch to Legacy Mode for IRQ0
+                if hpet::read_ticks() != 0 {
+                    k.bridge.log("HPET: Switching to Legacy Replacement Mode\n");
+                    hpet::enable_legacy_mode();
+                    // Kickstart the first interrupt (10ms)
+                    hpet::program_oneshot(hpet::read_ns() + 10_000_000);
+                }
+            }
         } else {
              k.bridge.log("Skipping ACPI init (No RSDP)\n");
         }

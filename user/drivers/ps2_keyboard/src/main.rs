@@ -13,7 +13,8 @@ use models::builtins::symbols::{SYM_KEYBOARD, SYM_PS2, SYM_KEY_EVENT};
 use models::Thing;
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(heap_start: u64) -> ! {
+    unsafe { std::rt::init_heap(heap_start as usize, 1024 * 1024); }
     std::init();
     std::debug::log("PS/2 Driver starting...\n");
 

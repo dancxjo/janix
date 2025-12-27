@@ -15,7 +15,8 @@ use models::builtins::ids::{THING_EMITS_KIND, THING_KEYBOARD_KIND};
 use models::abi::wire::typed::TypedBytes; // Ensure access
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(heap_start: u64) -> ! {
+    unsafe { std::rt::init_heap(heap_start as usize, 1024 * 1024); }
     std::init();
     std::debug::log("Keylog App starting...\n");
 

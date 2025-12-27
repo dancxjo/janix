@@ -16,7 +16,8 @@ struct Window {
 }
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(heap_start: u64) -> ! {
+    unsafe { thing_std::rt::init_heap(heap_start as usize, 1024 * 1024); }
     // thing_std::init(); // Initialize allocator if needed (thing_std doesn't have init public yet, but it defines global allocator)
 
     // 1. Register Typedef

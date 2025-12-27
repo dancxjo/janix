@@ -6,7 +6,8 @@ use alloc::vec::Vec;
 use thing_std::{GraphClient, StdoutConsole, Console};
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(heap_start: u64) -> ! {
+    unsafe { thing_std::rt::init_heap(heap_start as usize, 1024 * 1024); }
     let g = GraphClient::new();
     let c = StdoutConsole;
     c.write_str("SLEEP ACCURACY SMOKE: Starting...\n");

@@ -518,7 +518,7 @@ pub extern "C" fn rust_main() -> ! {
                 if name.contains("sleep_accuracy_smoke") { return ModuleRole::Debug; }
                 if name.contains("sleep_smoke") { return ModuleRole::Ignore; }
                 if name.contains("keylog") { return ModuleRole::Ignore; } 
-                if name.contains("ps2_keyboard") { return ModuleRole::Ignore; }
+                if name.contains("ps2_keyboard") { return ModuleRole::Driver; }
                 if name.contains("rtc_x86") { return ModuleRole::Ignore; }
                 if name.contains("graph_dump") { return ModuleRole::App; }
                 if name.contains("ps2_mouse") { return ModuleRole::Driver; }

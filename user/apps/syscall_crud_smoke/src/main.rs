@@ -9,7 +9,8 @@ use abi::wire::graph::{GraphOp, GraphReply};
 use abi::wire::typed::{TypedBytes, TypeId, CodecId};
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(heap_start: u64) -> ! {
+    unsafe { thing_std::rt::init_heap(heap_start as usize, 1024 * 1024); }
     let c = StdoutConsole;
     c.write_str("\nSYSCALL_CRUD_SMOKE: START\n");
 

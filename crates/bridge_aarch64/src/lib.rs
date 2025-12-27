@@ -88,7 +88,7 @@ impl HardwareBridge for Bridge {
         // [x0..x29, x30, sp_el0, elr, spsr]
         let mut ctx = [0u64; 34];
         
-        let uer = user::UserEntryRegs {
+        let _uer = user::UserEntryRegs {
             entry_point: entry,
             user_stack: stack,
             arg0: arg,

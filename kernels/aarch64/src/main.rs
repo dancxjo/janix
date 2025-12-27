@@ -34,6 +34,8 @@ struct BootStack([u8; BOOT_STACK_SIZE]);
 #[unsafe(link_section = ".bss")]
 static mut BOOT_STACK: BootStack = BootStack([0; BOOT_STACK_SIZE]);
 
+mod paging;
+
 #[no_mangle]
 #[unsafe(naked)]
 pub extern "C" fn _start() -> ! {
@@ -56,7 +58,6 @@ pub extern "C" fn _start() -> ! {
 
 #[no_mangle]
 pub extern "C" fn rust_main() -> ! {
-mod paging;
 
     #[cfg(target_os = "thingos")]
     unsafe {

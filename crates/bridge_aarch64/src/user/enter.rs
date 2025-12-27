@@ -93,7 +93,6 @@ pub fn alloc_user_stack() -> u64 {
     let stack_ptr = NonNull::new(stack_ptr).expect("alloc_user_stack: allocation failed");
     let stack_addr = stack_ptr.as_ptr() as u64;
 
-    unsafe {
         // Map as user accessible + Normal memory
         let start = stack_addr;
         let end = stack_addr + USER_STACK_SIZE as u64;
@@ -103,7 +102,6 @@ pub fn alloc_user_stack() -> u64 {
             paging::update_page_flags(curr, paging::DESC_AP_EL0 | paging::ATTR_NORMAL, 0);
             curr += 4096;
         }
-    }
 
     // Stack grows down, so return end
     let stack_top = stack_addr + USER_STACK_SIZE as u64;

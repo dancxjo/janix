@@ -133,14 +133,28 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
 
     let driver_names = ["ps2_keyboard", "ps2_mouse", "rtc_x86", "rtc_aarch64"];
 
+    let mut init_whitelist = Vec::new();
+
     for app in &user_apps {
         let is_driver = driver_names.contains(app);
         let dest_dir = if is_driver { &drivers_dir } else { &apps_dir };
 
         let app_bin = root.join("user/target/x86_64-unknown-none/debug").join(app);
-        fs::copy(&app_bin, dest_dir.join(app))
+        
+        // Ensure .elf extension
+        let dest_name = format!("{}.elf", app);
+        let dest_path = dest_dir.join(&dest_name);
+
+        fs::copy(&app_bin, &dest_path)
             .with_context(|| format!("Failed to copy app/driver {} from {:?}", app, app_bin))?;
+
+        init_whitelist.push(dest_name);
     }
+
+    // Write init.txt policy
+    let init_txt_content = init_whitelist.join("\n");
+    fs::write(boot_dir.join("init.txt"), init_txt_content)
+        .context("Failed to write init.txt")?;
 
     // Copy Fonts
     // Copy Fonts
@@ -235,6 +249,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     cmd.arg("--efi-boot").arg("boot/limine/limine-uefi-cd.bin");
     cmd.arg("-efi-boot-part").arg("--efi-boot-image");
     cmd.arg("--protective-msdos-label");
+    cmd.arg("-full-iso9660-filenames");
     cmd.arg("-o").arg(&iso_path);
     cmd.arg(&iso_root);
 

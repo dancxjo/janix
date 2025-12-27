@@ -25,6 +25,7 @@ pub struct Iso9660Reader<R: BlockReader> {
 #[derive(Debug, Clone)]
 pub struct DirEntry {
     pub name: String,
+    pub name_raw: String,
     pub lba: u32,
     pub size: u32,
     pub is_dir: bool,
@@ -37,7 +38,7 @@ pub struct FileHandle {
 
 impl<R: BlockReader> Iso9660Reader<R> {
     pub fn new(mut reader: R) -> Option<Self> {
-        let mut buf = [0u8; SECTOR_SIZE];
+        let mut buf = alloc::vec![0u8; SECTOR_SIZE];
 
         // PVD is usually at sector 16
         if !reader.read_sector(16, &mut buf) {
@@ -51,7 +52,7 @@ impl<R: BlockReader> Iso9660Reader<R> {
 
         // Root Directory Record is at offset 156
         // Parse root record to get location/size
-        let (lba, len, _flags, _name) = Self::parse_dir_record(&buf, 156)?;
+        let (lba, len, _flags, _name, _name_raw) = Self::parse_dir_record(&buf, 156)?;
 
         Some(Self {
             reader,
@@ -60,7 +61,7 @@ impl<R: BlockReader> Iso9660Reader<R> {
         })
     }
 
-    fn parse_dir_record(buf: &[u8], offset: usize) -> Option<(u32, u32, u8, String)> {
+    fn parse_dir_record(buf: &[u8], offset: usize) -> Option<(u32, u32, u8, String, String)> {
         if offset + 33 > buf.len() {
             return None;
         }
@@ -80,19 +81,18 @@ impl<R: BlockReader> Iso9660Reader<R> {
         }
 
         let name_bytes = &buf[offset + 33..offset + 33 + name_len];
-        let name = if name_len == 1 && name_bytes[0] == 0 {
-            String::from(".")
+        let (name, name_raw) = if name_len == 1 && name_bytes[0] == 0 {
+            (String::from("."), String::from("."))
         } else if name_len == 1 && name_bytes[0] == 1 {
-            String::from("..")
+            (String::from(".."), String::from(".."))
         } else {
-            // Handle RockRidge / Joliet? For now assume ASCII/UTF8
             // ISO9660 usually has ";1" suffix.
             let s = core::str::from_utf8(name_bytes).ok()?;
-            let clean = s.split(';').next().unwrap_or(s);
-            String::from(clean)
+            let clean = s.split(';').next().unwrap_or(s).to_ascii_lowercase();
+            (clean, String::from(s))
         };
 
-        Some((extent_lba, data_len, flags, name))
+        Some((extent_lba, data_len, flags, name, name_raw))
     }
 
     pub fn open(&mut self, path: &str) -> Option<FileHandle> {
@@ -138,7 +138,7 @@ impl<R: BlockReader> Iso9660Reader<R> {
 
     fn find_entry(&mut self, dir_lba: u32, dir_len: u32, name: &str) -> Option<DirEntry> {
         let num_sectors = (dir_len + SECTOR_SIZE as u32 - 1) / SECTOR_SIZE as u32;
-        let mut buf = [0u8; SECTOR_SIZE];
+        let mut buf = alloc::vec![0u8; SECTOR_SIZE];
 
         for i in 0..num_sectors {
             if !self.reader.read_sector(dir_lba + i, &mut buf) {
@@ -152,10 +152,11 @@ impl<R: BlockReader> Iso9660Reader<R> {
                     break;
                 } // End of records in this sector
 
-                if let Some((lba, size, flags, entry_name)) = Self::parse_dir_record(&buf, offset) {
+                if let Some((lba, size, flags, entry_name, name_raw)) = Self::parse_dir_record(&buf, offset) {
                     if entry_name.eq_ignore_ascii_case(name) {
                         return Some(DirEntry {
                             name: entry_name,
+                            name_raw,
                             lba,
                             size,
                             is_dir: (flags & 2) != 0,
@@ -172,7 +173,7 @@ impl<R: BlockReader> Iso9660Reader<R> {
         let start_sector = offset / SECTOR_SIZE;
         let end_sector = (offset + len + SECTOR_SIZE - 1) / SECTOR_SIZE;
         let mut read_len = 0;
-        let mut sector_buf = [0u8; SECTOR_SIZE];
+        let mut sector_buf = alloc::vec![0u8; SECTOR_SIZE];
 
         for i in start_sector..end_sector {
             if !self.reader.read_sector(handle.lba + i as u32, &mut sector_buf) {
@@ -203,15 +204,16 @@ impl<R: BlockReader> Iso9660Reader<R> {
         read_len
     }
 
-    pub fn list_dir(&mut self, path: &str) -> Option<Vec<String>> {
+    pub fn read_dir(&mut self, path: &str) -> Option<Vec<DirEntry>> {
         let handle = self.open(path)?;
+        if handle.size == 0 { return Some(Vec::new()); }
 
         let dir_lba = handle.lba;
         let dir_len = handle.size;
 
-        let mut names = Vec::new();
+        let mut entries = Vec::new();
         let num_sectors = (dir_len + SECTOR_SIZE as u32 - 1) / SECTOR_SIZE as u32;
-        let mut buf = [0u8; SECTOR_SIZE];
+        let mut buf = alloc::vec![0u8; SECTOR_SIZE];
 
         for i in 0..num_sectors {
              if !self.reader.read_sector(dir_lba + i, &mut buf) {
@@ -222,14 +224,25 @@ impl<R: BlockReader> Iso9660Reader<R> {
                  let rec_len = buf[offset];
                  if rec_len == 0 { break; }
 
-                 if let Some((_, _, _, name)) = Self::parse_dir_record(&buf, offset) {
+                 if let Some((lba, size, flags, name, name_raw)) = Self::parse_dir_record(&buf, offset) {
                       if name != "." && name != ".." {
-                          names.push(name);
+                          entries.push(DirEntry {
+                                name,
+                                name_raw,
+                                lba,
+                                size,
+                                is_dir: (flags & 2) != 0,
+                          });
                       }
                  }
                  offset += rec_len as usize;
              }
         }
-        Some(names)
+        Some(entries)
+    }
+
+    pub fn list_dir(&mut self, path: &str) -> Option<Vec<String>> {
+        self.read_dir(path).map(|entries| entries.into_iter().map(|e| e.name).collect())
     }
 }
+

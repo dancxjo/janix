@@ -661,7 +661,7 @@ pub extern "C" fn rust_main() -> ! {
 
                         // Scan for ISO9660
                         for p in 0..32 {
-                            let mut buf = [0u8; 2048];
+                            let mut buf = alloc::vec![0u8; 2048];
                             if unsafe {
                                 bridge_x86_64::ahci::read_sector_at(base, p, 16, &mut buf, hhdm_offset_u64)
                             } {
@@ -803,34 +803,11 @@ let _ = boot_fs_device;
             Ignore,
         }
         fn get_module_role(name: &str, mtype: &ModuleType) -> ModuleRole {
-            if name.contains("syscall_crud_smoke") {
-                return ModuleRole::Ignore;
-            }
-            if name.contains("clock") {
-                return ModuleRole::Ignore;
-            }
-            if name.contains("sleep_accuracy_smoke") {
-                return ModuleRole::Debug;
-            }
-            if name.contains("sleep_smoke") {
-                return ModuleRole::Ignore;
-            }
-            if name.contains("keylog") {
-                return ModuleRole::Ignore;
-            }
-            if name.contains("ps2_keyboard") {
-                return ModuleRole::Driver;
-            }
-            if name.contains("rtc_x86") {
-                return ModuleRole::Ignore;
-            }
-            if name.contains("graph_dump") {
-                return ModuleRole::App;
-            }
-            if name.contains("ps2_mouse") {
-                return ModuleRole::Driver;
+            if name.contains("ps2_") {
+                 return ModuleRole::Driver;
             }
             match mtype {
+                ModuleType::Elf => ModuleRole::App,
                 ModuleType::Psf1
                 | ModuleType::Psf2
                 | ModuleType::Bmp
@@ -839,7 +816,6 @@ let _ = boot_fs_device;
                 | ModuleType::Otf
                 | ModuleType::Woff
                 | ModuleType::Woff2 => ModuleRole::Asset,
-                ModuleType::Elf => ModuleRole::App,
                 ModuleType::Other(s) if s.starts_with("image/") || s.starts_with("font/") => {
                     ModuleRole::Asset
                 }
@@ -853,7 +829,7 @@ let _ = boot_fs_device;
             }
         }
 
-        let mut process_file = |k: &mut Kernel<Bridge>, name: &str, data: &[u8], idx: usize| {
+        let mut process_file = |k: &mut Kernel<Bridge>, name: &str, data: &[u8], idx: usize, spawn_override: Option<bool>| {
             let mtype = classify_bytes(data);
             let role_enum = get_module_role(name, &mtype);
 
@@ -1147,20 +1123,24 @@ let _ = boot_fs_device;
                 _ => {}
             }
 
-            let should_spawn = match role_enum {
-                ModuleRole::App => true,
-                ModuleRole::Driver => {
-                    k.bridge.log("Spawning driver '"); k.bridge.log(name); k.bridge.log("'\n");
-                    true
-                }
-                ModuleRole::Debug => {
-                    let is_target = smoke_target.map(|t| name.contains(t)).unwrap_or(false);
-                    if is_target { true } else {
-                        k.bridge.log("Skipping debug module '"); k.bridge.log(name); k.bridge.log("'\n");
-                        false
+            let should_spawn = if let Some(s) = spawn_override {
+                s
+            } else {
+                match role_enum {
+                    ModuleRole::App => true,
+                    ModuleRole::Driver => {
+                        k.bridge.log("Spawning driver '"); k.bridge.log(name); k.bridge.log("'\n");
+                        true
                     }
+                    ModuleRole::Debug => {
+                        let is_target = smoke_target.map(|t| name.contains(t)).unwrap_or(false);
+                        if is_target { true } else {
+                            k.bridge.log("Skipping debug module '"); k.bridge.log(name); k.bridge.log("'\n");
+                            false
+                        }
+                    }
+                    ModuleRole::Ignore | ModuleRole::Asset => false,
                 }
-                ModuleRole::Ignore | ModuleRole::Asset => false,
             };
 
             if should_spawn {
@@ -1342,22 +1322,111 @@ let _ = boot_fs_device;
                  unsafe { bridge_x86_64::ahci::read_sector_at(base, port, lba, buf, hhdm_offset_u64) }
              }) {
                  k.bridge.log("bootfs: ISO Reader Ready.\n");
-                 let mut load_from_dir = |k: &mut Kernel<Bridge>, dir: &str| {
-                     if let Some(files) = iso.list_dir(dir) {
-                         for fname in files {
-                              let path = alloc::format!("{}/{}", dir, fname);
-                              if let Some(handle) = iso.open(&path) {
-                                  let mut data = alloc::vec![0u8; handle.size as usize];
-                                  iso.read(&handle, 0, handle.size as usize, &mut data);
-                                  k.bridge.log("bootfs: loaded "); k.bridge.log(&path); k.bridge.log("\n");
-                                  process_file(k, &fname, &data, 0);
-                              }
-                         }
+
+                 // 1. Read Policy (init.txt)
+                 let mut whitelist = None;
+                 if let Some(h) = iso.open("/boot/init.txt") {
+                     let mut data = alloc::vec![0u8; h.size as usize];
+                     iso.read(&h, 0, h.size as usize, &mut data);
+                     if let Ok(s) = core::str::from_utf8(&data) {
+                         let list: alloc::vec::Vec<alloc::string::String> = s.lines()
+                             .map(|l| l.trim().to_ascii_lowercase())
+                             .filter(|l| !l.is_empty())
+                             .collect();
+                         k.bridge.log("bootfs: init.txt policy loaded (");
+                         use alloc::string::ToString; // Ensure we can print number or just ignore
+                         k.bridge.log(" entries)\n");
+                         whitelist = Some(list);
                      }
-                 };
-                 load_from_dir(&mut k, "/boot/apps");
-                 load_from_dir(&mut k, "/boot/drivers");
-                 load_from_dir(&mut k, "/boot/fonts");
+                 }
+
+                 // Helper to scan and spawn
+                 // We need to move `iso` into closure? No, we can borrow iso.
+                 // But `load_elf` inside `process_file` uses `mapper` which is borrowed check...
+                 // `process_file` borrows `k`.
+                 // We are inside a big unsafe block or big scope.
+
+                 // 2. Scan /boot/apps
+                 k.bridge.log("bootfs: scanning /boot/apps\n");
+                 let mut entries = iso.read_dir("/boot/apps").unwrap_or_default();
+                 entries.sort_by(|a, b| a.name.cmp(&b.name));
+                 k.bridge.log("bootfs: found ");
+                 print_hex(&Bridge, entries.len() as u64);
+                 k.bridge.log(" entries in apps\n");
+
+                 for entry in entries {
+                     let name = &entry.name;
+                     if entry.is_dir { continue; }
+                     
+                     let should_run = if !name.ends_with(".elf") {
+                         k.bridge.log("init: skipped "); k.bridge.log(name); k.bridge.log(" (not .elf)\n");
+                         false
+                     } else {
+                         if let Some(wl) = &whitelist {
+                             if wl.contains(name) {
+                                 true
+                             } else {
+                                 k.bridge.log("init: policy skipped "); k.bridge.log(name); k.bridge.log("\n");
+                                 false
+                             }
+                         } else {
+                             true
+                         }
+                     };
+
+                     if !should_run {
+                         // We might still want to intern them as 'files' or 'assets'?
+                         // For now, let's skip totally if it's just noise, OR load as asset?
+                         // User said "Skip with reason otherwise (log it)".
+                         // But if I want assets to be available (e.g. README), I should `process_file` with spawn=false.
+                         // But `process_file` does heavy lifting.
+                         // Let's load everything but spawn only candidates.
+                     }
+
+                     let path = alloc::format!("/boot/apps/{}", entry.name); // Using normalized name for path
+                     if let Some(handle) = iso.open(&path) {
+                          let mut data = alloc::vec![0u8; handle.size as usize];
+                          iso.read(&handle, 0, handle.size as usize, &mut data);
+                          // We pass should_run to process_file
+                          process_file(&mut k, &path, &data, 0, Some(should_run));
+                     }
+                 }
+
+                 // 3. Scan /boot/drivers (Optional scope)
+                 k.bridge.log("bootfs: scanning /boot/drivers\n");
+                 let mut drv_entries = iso.read_dir("/boot/drivers").unwrap_or_default();
+                 drv_entries.sort_by(|a, b| a.name.cmp(&b.name));
+
+                 for entry in drv_entries {
+                     if entry.is_dir { continue; }
+                     let name = &entry.name;
+
+                     // Drivers: Only spawn if in whitelist!
+                     let should_run = if let Some(wl) = &whitelist {
+                         if wl.contains(name) { true } else { false }
+                     } else {
+                         false // Default: Do NOT auto-run drivers unless listed
+                     };
+
+                     let path = alloc::format!("/boot/drivers/{}", entry.name);
+                     if let Some(handle) = iso.open(&path) {
+                          let mut data = alloc::vec![0u8; handle.size as usize];
+                          iso.read(&handle, 0, handle.size as usize, &mut data);
+                          process_file(&mut k, &path, &data, 0, Some(should_run));
+                     }
+                 }
+                 
+                 // 4. Scan /boot/fonts (Legacy/Asset) - Scan but don't spawn
+                 let fonts = iso.read_dir("/boot/fonts").unwrap_or_default();
+                 for entry in fonts {
+                     let path = alloc::format!("/boot/fonts/{}", entry.name);
+                     if let Some(handle) = iso.open(&path) {
+                         let mut data = alloc::vec![0u8; handle.size as usize];
+                         iso.read(&handle, 0, handle.size as usize, &mut data);
+                         process_file(&mut k, &path, &data, 0, Some(false));
+                     }
+                 }
+
              }
         } else {
              if let Some(resp) = MODULE_REQUEST.get_response() {
@@ -1366,7 +1435,7 @@ let _ = boot_fs_device;
                       let base = module.addr();
                       let len = module.size() as usize;
                       let data = unsafe { slice::from_raw_parts(base, len) };
-                      process_file(&mut k, name, data, idx);
+                      process_file(&mut k, name, data, idx, None);
                   }
              }
         }

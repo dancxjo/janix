@@ -17,6 +17,9 @@ pub unsafe fn init() {
     let gs_base = VirtAddr::new(core::ptr::addr_of!(GS_SCRATCH) as u64);
     KernelGsBase::write(gs_base);
 
+    // Activate Kernel GS (so Active GS = Scratch, MSR = 0/User)
+    core::arch::asm!("swapgs", options(nostack, preserves_flags));
+
     // 1. Enable syscall/sysret instruction via EFER
     let mut efer = Efer::read();
     efer.insert(EferFlags::SYSTEM_CALL_EXTENSIONS);
@@ -72,7 +75,14 @@ unsafe extern "C" fn syscall_handler_naked() {
         // Rust Dispatch: fn(num, a1, a2, a3, a4, a5, a6)
         // Regs: RDI, RSI, RDX, RCX, R8, R9, Stack
         
-        "sub rsp, 8", // Padding for 16-byte alignment
+        // Stack Alignment Check:
+        // Pushed so far: 
+        // UserRSP (1) + 8 Regs (8) = 9 words.
+        // RSP is Misaligned (8 mod 16).
+        // Pushing R9 (Arg 6) adds 1 word. Total 10 words.
+        // 10 * 8 = 80 bytes. Aligned (0 mod 16).
+        // So NO padding needed before call.
+
         "push r9",    // Arg 6 (a6) -> Stack
 
         // Register shuffle
@@ -95,7 +105,7 @@ unsafe extern "C" fn syscall_handler_naked() {
         
         "cli", // Disable Interrupts
         
-        "add rsp, 16", // Pop Arg6 + Padding
+        "add rsp, 8", // Pop Arg6 (No Padding)
         
         // Restore Regs
         "pop r15",

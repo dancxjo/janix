@@ -77,36 +77,19 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole) {
         // If not, we construct Op and call via "op" method.
         
         let op_get = GraphOp::GetThing { id: curr };
-        match g.call_op(&op_get, &mut buf_scratch) {
-            Ok(GraphReply::TypedValue(tb)) => {
-                 // c.write_str("Found node\n");
-                 nodes_out.push(NodeInfo { id: curr, kind: ThingId(tb.type_id.0 as u64) });
-            },
-            Err(e) => {
-                 let _ = c.write_str(&format!("GetThing({}) failed: {:?}\n", curr.0, e));
-            },
-            Ok(val) => {
-                 let _ = c.write_str(&format!("GetThing({}) unexpected reply: {:?}\n", curr.0, val));
-            }
+        if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op_get, &mut buf_scratch) {
+             nodes_out.push(NodeInfo { id: curr, kind: ThingId(tb.type_id.0 as u64) });
         }
 
         // 2. Scan Links
         let op_scan = GraphOp::ScanLinks { from: Some(curr), to: None, kind: None };
-        match g.call_op(&op_scan, &mut buf_scratch) {
-            Ok(GraphReply::Links(links)) => {
-                for (src, dst, pred) in links {
-                    links_out.push(LinkInfo { src, dst, pred });
-                    if !visited_nodes.contains(&dst) {
-                        visited_nodes.insert(dst);
-                        frontier.push_back(dst);
-                    }
+        if let Ok(GraphReply::Links(links)) = g.call_op(&op_scan, &mut buf_scratch) {
+            for (src, dst, pred) in links {
+                links_out.push(LinkInfo { src, dst, pred });
+                if !visited_nodes.contains(&dst) {
+                    visited_nodes.insert(dst);
+                    frontier.push_back(dst);
                 }
-            },
-            Err(e) => {
-                 let _ = c.write_str(&format!("ScanLinks({}) failed: {:?}\n", curr.0, e));
-            },
-             _ => {
-                 let _ = c.write_str(&format!("ScanLinks({}) unexpected reply\n", curr.0));
             }
         }
     }

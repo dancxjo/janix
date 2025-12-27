@@ -101,12 +101,6 @@ exception_vector_table:
     TRAMPOLINE handler_3_2
     TRAMPOLINE handler_3_3
 
-.global kmain_inner_asm
-kmain_inner_asm:
-    // Jump into the Rust entry point on the new SP_EL1 stack.
-    bl kmain_inner
-    // kmain_inner should never return; if it does, halt.
-    b .
 
 
 // Implementations

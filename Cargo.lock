@@ -349,12 +349,14 @@ dependencies = [
 name = "kernel_x86_64"
 version = "0.2.0"
 dependencies = [
+ "abi",
  "bridge_x86_64",
  "hw",
  "kernel_core",
  "limine",
  "linked_list_allocator",
  "models",
+ "postcard",
  "spin 0.10.0",
  "x86_64 0.15.4",
 ]

@@ -248,13 +248,6 @@ pub extern "C" fn rust_main() -> ! {
                      k.bridge.log("Skipping ps2_keyboard module.\n");
                      continue;
                 }
-                if name.contains("clock") {
-                     k.bridge.log("Skipping clock module.\n");
-                     continue;
-                }
-                k.bridge.log("Found module: ");
-                k.bridge.log(name);
-                k.bridge.log("\n");
 
                 let base = module.addr();
                 let len = module.size() as usize;
@@ -347,6 +340,7 @@ pub extern "C" fn rust_main() -> ! {
                         use thing_models::builtins::ids::*;
                         use thing_models::builtins::core_kinds::BootProgramBody;
                         use thing_models::value::ThingBody;
+                        use abi::wire::typed::{TypedBytes, TypeId, CodecId};
 
                         let body = BootProgramBody {
                             name: alloc::string::String::from(name),
@@ -354,7 +348,14 @@ pub extern "C" fn rust_main() -> ! {
                             priority: 0,
                         };
                         
-                        if let Ok(thing_body) = ThingBody::from(&body) {
+                        let body_bytes = postcard::to_allocvec(&body).unwrap();
+                        let typed_body = TypedBytes {
+                             type_id: TypeId(THING_BOOT_PROGRAM_KIND.0 as u128),
+                             codec_id: CodecId::POSTCARD,
+                             bytes: body_bytes,
+                        };
+                        
+                        if let Ok(thing_body) = ThingBody::from(&typed_body) {
                              let prog_id = k.graph.create_thing(THING_BOOT_PROGRAM_KIND, thing_body);
                              
                              // Link Root -> Program
@@ -363,7 +364,15 @@ pub extern "C" fn rust_main() -> ! {
                                  to: prog_id,
                                  predicate: THING_LAUNCHES_KIND,
                              };
-                             if let Ok(lb) = ThingBody::from(&link_body) {
+                             
+                             let link_bytes = postcard::to_allocvec(&link_body).unwrap();
+                             let typed_link = TypedBytes {
+                                  type_id: TypeId(THING_LINK_KIND.0 as u128),
+                                  codec_id: CodecId::POSTCARD,
+                                  bytes: link_bytes,
+                             };
+                             
+                             if let Ok(lb) = ThingBody::from(&typed_link) {
                                   k.graph.create_thing(THING_LINK_KIND, lb);
                              }
                         }
@@ -376,6 +385,7 @@ pub extern "C" fn rust_main() -> ! {
     // Boot Initialization
     {
         use hw::HardwareBridge;
+        use abi::wire::typed::{TypedBytes, TypeId, CodecId};
         k.bridge.log(thing_models::milestones::KERNEL_ENTRY);
         k.bridge.log("\n");
         k.bridge.log(thing_models::milestones::BRIDGE_ONLINE);
@@ -393,8 +403,15 @@ pub extern "C" fn rust_main() -> ! {
             name: kernel_name_sym,
             state: thing_models::core::process::ProcessState::Running,
         };
+        
+        let root_bytes = postcard::to_allocvec(&boot_root_body).unwrap();
+        let typed_root = TypedBytes {
+             type_id: TypeId(thing_models::builtins::ids::THING_PROCESS_KIND.0 as u128),
+             codec_id: CodecId::POSTCARD,
+             bytes: root_bytes,
+        };
 
-        if let Ok(tr_body) = thing_models::value::ThingBody::from(&boot_root_body) {
+        if let Ok(tr_body) = thing_models::value::ThingBody::from(&typed_root) {
             let boot_root = thing_models::Thing {
                 id: thing_models::builtins::ids::THING_BOOT_ROOT,
                 kind: thing_models::builtins::ids::THING_PROCESS_KIND,

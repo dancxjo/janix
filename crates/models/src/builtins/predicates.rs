@@ -59,3 +59,57 @@ predicate_kind! {
         schema_id: crate::builtins::ids::THING_LAUNCHES_SCHEMA
     }
 }
+
+predicate_kind! {
+    kind HasModule {
+        id: crate::builtins::ids::THING_HAS_MODULE_KIND,
+        sym: crate::builtins::symbols::SYM_HAS_MODULE,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_HAS_MODULE_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind BinaryImage {
+        id: crate::builtins::ids::THING_BINARY_IMAGE_KIND,
+        sym: crate::builtins::symbols::SYM_BINARY_IMAGE,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_BINARY_IMAGE_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind Asset {
+        id: crate::builtins::ids::THING_ASSET_KIND,
+        sym: crate::builtins::symbols::SYM_ASSET,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_ASSET_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind ProvidesFont {
+        id: crate::builtins::ids::THING_PROVIDES_FONT_KIND,
+        sym: crate::builtins::symbols::SYM_PROVIDES_FONT,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_PROVIDES_FONT_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind DefaultFont {
+        id: crate::builtins::ids::THING_DEFAULT_FONT_KIND,
+        sym: crate::builtins::symbols::SYM_DEFAULT_FONT,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_DEFAULT_FONT_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind UsesModule {
+        id: crate::builtins::ids::THING_USES_MODULE_KIND,
+        sym: crate::builtins::symbols::SYM_USES_MODULE,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_USES_MODULE_SCHEMA
+    }
+}

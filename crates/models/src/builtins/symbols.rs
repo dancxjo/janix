@@ -65,6 +65,28 @@ pub const SYM_BOOT_ROOT: SymbolId = SymbolId(fnv1a64("BootRoot"));
 pub const SYM_BOOT_PROGRAM: SymbolId = SymbolId(fnv1a64("BootProgram"));
 pub const SYM_BINARY: SymbolId = SymbolId(fnv1a64("binary"));
 pub const SYM_PRIORITY: SymbolId = SymbolId(fnv1a64("priority"));
+
+// Module / Asset Symbols
+pub const SYM_MODULE: SymbolId = SymbolId(fnv1a64("Module"));
+pub const SYM_PROGRAM_IMAGE: SymbolId = SymbolId(fnv1a64("ProgramImage"));
+pub const SYM_BITMAP: SymbolId = SymbolId(fnv1a64("Bitmap"));
+pub const SYM_HAS_MODULE: SymbolId = SymbolId(fnv1a64("HAS_MODULE"));
+pub const SYM_BINARY_IMAGE: SymbolId = SymbolId(fnv1a64("BINARY_IMAGE"));
+pub const SYM_ASSET: SymbolId = SymbolId(fnv1a64("ASSET"));
+pub const SYM_PROVIDES_FONT: SymbolId = SymbolId(fnv1a64("PROVIDES_FONT"));
+pub const SYM_DEFAULT_FONT: SymbolId = SymbolId(fnv1a64("DEFAULT_FONT"));
+pub const SYM_USES_MODULE: SymbolId = SymbolId(fnv1a64("USES_MODULE"));
+
+pub const SYM_MIME: SymbolId = SymbolId(fnv1a64("mime"));
+pub const SYM_MODULE_TYPE: SymbolId = SymbolId(fnv1a64("module_type"));
+pub const SYM_ROLE: SymbolId = SymbolId(fnv1a64("role"));
+pub const SYM_SIZE_BYTES: SymbolId = SymbolId(fnv1a64("size_bytes"));
+pub const SYM_BASE_PHYS: SymbolId = SymbolId(fnv1a64("base_phys"));
+pub const SYM_MODULE_INDEX: SymbolId = SymbolId(fnv1a64("module_index"));
+pub const SYM_GLYPH_WIDTH: SymbolId = SymbolId(fnv1a64("glyph_width"));
+pub const SYM_GLYPH_HEIGHT: SymbolId = SymbolId(fnv1a64("glyph_height"));
+pub const SYM_GLYPH_COUNT: SymbolId = SymbolId(fnv1a64("glyph_count"));
+pub const SYM_FORMAT: SymbolId = SymbolId(fnv1a64("format"));
 // Diag / Logging
 pub const SYM_LOG_ENTRY: SymbolId = SymbolId(fnv1a64("LogEntry"));
 pub const SYM_ERROR: SymbolId = SymbolId(fnv1a64("Error"));

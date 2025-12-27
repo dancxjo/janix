@@ -16,6 +16,9 @@ use thing_models::builtins::ids::*;
 use thing_models::kind::KindBody;
 use thing_models::core::process::ProcessBody;
 use thing_models::builtins::core_kinds::BootProgramBody;
+use thing_models::builtins::core_kinds::{ModuleBody, FontBody, BitmapBody, ProgramImageBody};
+use thing_models::core::time::TimeNow;
+use thing_models::core::input::{KeyboardBody, KeyEventStreamBody};
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -38,6 +41,15 @@ pub extern "C" fn _start() -> ! {
     kind_cache.insert(THING_KIND_KIND, "Kind".into());
     kind_cache.insert(THING_SCHEMA_KIND, "Schema".into());
     kind_cache.insert(THING_GRAPH_KIND, "Graph".into());
+    kind_cache.insert(THING_MODULE_KIND, "Module".into());
+    kind_cache.insert(THING_FONT_KIND, "Font".into());
+    kind_cache.insert(THING_BITMAP_KIND, "Bitmap".into());
+    kind_cache.insert(THING_PROGRAM_IMAGE_KIND, "ProgramImage".into());
+    kind_cache.insert(THING_HAS_MODULE_KIND, "HAS_MODULE".into());
+    kind_cache.insert(THING_PROVIDES_FONT_KIND, "PROVIDES_FONT".into());
+    kind_cache.insert(THING_DEFAULT_FONT_KIND, "DEFAULT_FONT".into());
+    kind_cache.insert(THING_BINARY_IMAGE_KIND, "BINARY_IMAGE".into());
+    kind_cache.insert(THING_ASSET_KIND, "ASSET".into());
 
     loop {
         perform_dump(&g, &c, &mut kind_cache);
@@ -57,6 +69,11 @@ struct LinkInfo {
     src: ThingId,
     dst: ThingId,
     pred: ThingId,
+}
+
+#[derive(serde::Deserialize)]
+struct SystemTimeProps {
+    unix_seconds: u64,
 }
 
 fn resolve_symbol(g: &GraphClient, id: SymbolId, buf: &mut [u8]) -> Option<String> {
@@ -161,6 +178,54 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole, kind_cache: &mut BTreeMap<Th
                  }
             },
             _ => {
+                 // Try new kinds
+                 if n.kind == THING_MODULE_KIND {
+                     if let Ok(b) = postcard::from_bytes::<ModuleBody>(&n.data) {
+                         let _ = c.write_str(&format!("{{ path: \"{}\", role: \"{}\", size: {}, mime: \"{}\" }}\n", b.path, b.role, b.size_bytes, b.mime));
+                         continue;
+                     }
+                 }
+                 if n.kind == THING_FONT_KIND {
+                     if let Ok(b) = postcard::from_bytes::<FontBody>(&n.data) {
+                         let _ = c.write_str(&format!("{{ name: \"{}\", format: \"{}\", glyphs: {}x{} ({}) }}\n", b.name, b.format, b.glyph_width, b.glyph_height, b.glyph_count));
+                         continue;
+                     }
+                 }
+                 if n.kind == THING_TIME_NOW_KIND {
+                     if let Ok(b) = postcard::from_bytes::<TimeNow>(&n.data) {
+                         let _ = c.write_str(&format!("{{ system_ns: {}, monotonic_ns: {} }}\n", b.system_ns, b.monotonic_ns));
+                         continue;
+                     }
+                     if let Ok(b) = postcard::from_bytes::<SystemTimeProps>(&n.data) {
+                         let _ = c.write_str(&format!("{{ unix_seconds: {} }}\n", b.unix_seconds));
+                         continue;
+                     }
+                 }
+                 if n.kind == THING_BITMAP_KIND {
+                     if let Ok(b) = postcard::from_bytes::<BitmapBody>(&n.data) {
+                         let _ = c.write_str(&format!("{{ format: \"{}\", {}x{} }}\n", b.format, b.width, b.height));
+                         continue;
+                     }
+                 }
+                 if n.kind == THING_PROGRAM_IMAGE_KIND {
+                     if let Ok(b) = postcard::from_bytes::<ProgramImageBody>(&n.data) {
+                         let _ = c.write_str(&format!("{{ format: \"{}\" }}\n", b.format));
+                         continue;
+                     }
+                 }
+                 if n.kind == THING_KEYBOARD_KIND {
+                     if let Ok(b) = postcard::from_bytes::<KeyboardBody>(&n.data) {
+                         let _ = c.write_str(&format!("{{ bus: {} }}\n", b.bus.0));
+                         continue;
+                     }
+                 }
+                 if n.kind == THING_KEY_EVENT_STREAM_KIND {
+                     if let Ok(b) = postcard::from_bytes::<KeyEventStreamBody>(&n.data) {
+                         let _ = c.write_str(&format!("{{ head_seq: {}, capacity: {}, events: {} }}\n", b.head_seq, b.capacity, b.events.len()));
+                         continue;
+                     }
+                 }
+                 
                  let _ = c.write_str("{}\n");
             }
         }

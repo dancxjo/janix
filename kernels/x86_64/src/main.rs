@@ -272,215 +272,6 @@ pub extern "C" fn rust_main() -> ! {
             OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
         };
 
-
-        // --- CMDLINE PARSING (Rudimentary) ---
-        let mut smoke_target = None;
-        {
-            use limine::requests::KERNEL_FILE_REQUEST;
-            if let Some(resp) = KERNEL_FILE_REQUEST.get_response() {
-                let file = resp.file();
-                let cmd_bytes = file.cmdline();
-                if let Ok(cmd_str) = core::str::from_utf8(cmd_bytes) {
-                     // Looking for "thingos.smoke=<name>"
-                     for part in cmd_str.split(' ') {
-                         if let Some(rest) = part.strip_prefix("thingos.smoke=") {
-                              smoke_target = Some(rest.trim());
-                              k.bridge.log("SMOKE MODE: Target is ");
-                              k.bridge.log(rest);
-                              k.bridge.log("\n");
-                         }
-                     }
-                }
-            }
-        }
-
-
-        // --- MODULE LOADING ---
-        k.bridge.log("Scanning modules...\n");
-        let mut app_load_virt_base = 0x2000_0000u64;
-
-        enum ModuleRole {
-            App,
-            Driver,
-            Debug,
-            Ignore,
-        }
-
-        fn get_module_role(name: &str) -> ModuleRole {
-            if name.contains("syscall_crud_smoke") { return ModuleRole::Debug; }
-            if name.contains("keylog") { return ModuleRole::Driver; } // Or Debug/Ignore
-            if name.contains("ps2_keyboard") { return ModuleRole::Driver; }
-            ModuleRole::App
-        }
-
-        if let Some(resp) = MODULE_REQUEST.get_response() {
-            for module in resp.modules() {
-                let name = module.path().to_str().unwrap_or("unknown");
-                let role = get_module_role(name);
-                
-                let should_spawn = match role {
-                    ModuleRole::App => true,
-                    ModuleRole::Driver => {
-                         k.bridge.log("Spawning driver '");
-                         k.bridge.log(name);
-                         k.bridge.log("'\n");
-                         true
-                    },
-                    ModuleRole::Debug => {
-                        let is_target = smoke_target.map(|t| name.contains(t)).unwrap_or(false);
-                         if is_target {
-                             true
-                         } else {
-                             k.bridge.log("Skipping module '");
-                             k.bridge.log(name);
-                             k.bridge.log("' (role=debug, smoke mode not enabled)\n");
-                             false
-                         }
-                    },
-                    ModuleRole::Ignore => {
-                         k.bridge.log("Skipping module '");
-                         k.bridge.log(name);
-                         k.bridge.log("' (role=ignore)\n");
-                         false
-                    },
-                };
-
-                if !should_spawn { continue; }
-
-                let base = module.addr();
-                let len = module.size() as usize;
-                let data = unsafe { slice::from_raw_parts(base, len) };
-                
-                let current_app_base = app_load_virt_base;
-                app_load_virt_base += 0x1000_0000;
-
-                let loaded = load_elf(data, current_app_base, |vaddr, segment| {
-                    use alloc::format;
-                    let target_virt_start = VirtAddr::new(current_app_base + vaddr);
-                    let target_virt_end = target_virt_start + segment.len() as u64;
-                    
-                    let start_page = Page::<Size4KiB>::containing_address(target_virt_start);
-                    let end_page = Page::<Size4KiB>::containing_address(target_virt_end - 1u64);
-                    
-                    for page in Page::range_inclusive(start_page, end_page) {
-                        let frame_phys: PhysAddr;
-                        let page_start_virt = page.start_address();
-
-                        // Check if mapped
-                        if let Some(phys) = mapper.translate_addr(page_start_virt) {
-                            frame_phys = phys;
-                        } else {
-                            // Map new frame
-                            let frame = frame_allocator.allocate_frame().expect("No frames");
-                            frame_phys = frame.start_address();
-                            let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-                            unsafe {
-                                if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
-                                    map_to.flush();
-                                }
-                            }
-                        }
-                        
-                        let frame_virt = hhdm_offset + frame_phys.as_u64();
-                        let page_end_virt = page_start_virt + 4096u64;
-                        let overlap_start = core::cmp::max(page_start_virt, target_virt_start);
-                        let overlap_end = core::cmp::min(page_end_virt, target_virt_end);
-                        
-                        if overlap_end > overlap_start {
-                             let copy_len = overlap_end - overlap_start;
-                             let seg_offset = overlap_start - target_virt_start;
-                             let page_offset = overlap_start - page_start_virt;
-                             
-                             let src_ptr = unsafe { segment.as_ptr().add(seg_offset as usize) };
-                             let dest_ptr = unsafe { (frame_virt.as_mut_ptr::<u8>()).add(page_offset as usize) };
-                             unsafe { core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, copy_len as usize); }
-                        }
-                    }
-                });
-
-                if let Some(img) = loaded {
-                    k.bridge.log("Loaded app entry\n");
-                    
-                    let stack_bottom_virt = VirtAddr::new(current_app_base + 0x0800_0000);
-                    let stack_size = 65536;
-                    let stack_top_virt = stack_bottom_virt + stack_size;
-                    
-                    let start_page = Page::<Size4KiB>::containing_address(stack_bottom_virt);
-                    let end_page = Page::<Size4KiB>::containing_address(stack_top_virt - 1u64);
-                    
-                    for page in Page::range_inclusive(start_page, end_page) {
-                        let frame = frame_allocator.allocate_frame().expect("No stack frames");
-                         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-                         unsafe {
-                            if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
-                                map_to.flush();
-                            }
-                        }
-                    }
-
-                    let entry_point = current_app_base + img.entry_point;
-                    k.bridge.log("Spawning app: ");
-                    k.bridge.log(name);
-                    k.bridge.log(" Entry: ");
-                    // rudimentary hex print
-                    for i in (0..8).rev() {
-                        let digit = (entry_point >> (i * 4)) & 0xF;
-                        let c = if digit < 10 { digit as u8 + b'0' } else { digit as u8 - 10 + b'a' };
-                        k.bridge.log(core::str::from_utf8(&[c]).unwrap());
-                    }
-                    k.bridge.log("\n");
-
-
-                    k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), 0);
-
-                    // Graph injection for Boot Program
-                    {
-                        use thing_models::builtins::ids::*;
-                        use thing_models::builtins::core_kinds::BootProgramBody;
-                        use thing_models::value::ThingBody;
-                        use abi::wire::typed::{TypedBytes, TypeId, CodecId};
-
-                        let body = BootProgramBody {
-                            name: alloc::string::String::from(name),
-                            binary: alloc::string::String::from(name), // simplistic
-                            priority: 0,
-                        };
-                        
-                        let body_bytes = postcard::to_allocvec(&body).unwrap();
-                        let typed_body = TypedBytes {
-                             type_id: TypeId(THING_BOOT_PROGRAM_KIND.0 as u128),
-                             codec_id: CodecId::POSTCARD,
-                             bytes: body_bytes,
-                        };
-                        
-                        if let Ok(thing_body) = ThingBody::from(&typed_body) {
-                             let prog_id = k.graph.create_thing(THING_BOOT_PROGRAM_KIND, thing_body);
-                             
-                             // Link Root -> Program
-                             let link_body = thing_models::link::LinkBody {
-                                 from: THING_BOOT_ROOT,
-                                 to: prog_id,
-                                 predicate: THING_LAUNCHES_KIND,
-                             };
-                             
-                             let link_bytes = postcard::to_allocvec(&link_body).unwrap();
-                             let typed_link = TypedBytes {
-                                  type_id: TypeId(THING_LINK_KIND.0 as u128),
-                                  codec_id: CodecId::POSTCARD,
-                                  bytes: link_bytes,
-                              };
-                              
-                              if let Ok(lb) = ThingBody::from(&typed_link) {
-                                   k.graph.create_thing(THING_LINK_KIND, lb);
-                              }
-                        }
-                    }
-                }
-            }
-        }
-
-    }
-    
     // Boot Initialization
     {
         use hw::HardwareBridge;
@@ -527,6 +318,364 @@ pub extern "C" fn rust_main() -> ! {
         }
         k.bridge.log("THINGOS: symbols ready\n");
     }
+
+
+
+        // --- CMDLINE PARSING (Rudimentary) ---
+        let mut smoke_target = None;
+        {
+            use limine::requests::KERNEL_FILE_REQUEST;
+            if let Some(resp) = KERNEL_FILE_REQUEST.get_response() {
+                let file = resp.file();
+                let cmd_bytes = file.cmdline();
+                if let Ok(cmd_str) = core::str::from_utf8(cmd_bytes) {
+                     // Looking for "thingos.smoke=<name>"
+                     for part in cmd_str.split(' ') {
+                         if let Some(rest) = part.strip_prefix("thingos.smoke=") {
+                              smoke_target = Some(rest.trim());
+                              k.bridge.log("SMOKE MODE: Target is ");
+                              k.bridge.log(rest);
+                              k.bridge.log("\n");
+                         }
+                     }
+                }
+            }
+        }
+
+
+        // --- MODULE LOADING ---
+        k.bridge.log("Scanning modules...\n");
+        let mut app_load_virt_base = 0x2000_0000u64;
+
+        if let Some(resp) = MODULE_REQUEST.get_response() {
+            enum ModuleType { Elf, Psf1, Psf2, Bmp, Png, Unknown, Other(alloc::string::String) }
+            fn classify_bytes(data: &[u8]) -> ModuleType {
+                if data.len() >= 2 && data[0] == 0x36 && data[1] == 0x04 { return ModuleType::Psf1; }
+                if data.len() >= 4 && data[0] == 0x72 && data[1] == 0xB5 && data[2] == 0x4A && data[3] == 0x86 { return ModuleType::Psf2; }
+                
+                if let Some(kind) = infer::get(data) {
+                    match kind.mime_type() {
+                        "application/x-executable" | "application/x-elf" | "application/x-sharedlib" => ModuleType::Elf,
+                        "image/bmp" => ModuleType::Bmp,
+                        "image/png" => ModuleType::Png,
+                        other => ModuleType::Other(alloc::string::String::from(other)),
+                    }
+                } else {
+                    ModuleType::Unknown
+                }
+            }
+
+            enum ModuleRole { App, Driver, Debug, Asset, Ignore }
+            fn get_module_role(name: &str, mtype: &ModuleType) -> ModuleRole {
+                if name.contains("syscall_crud_smoke") { return ModuleRole::Debug; }
+                if name.contains("keylog") { return ModuleRole::Driver; } 
+                if name.contains("ps2_keyboard") { return ModuleRole::Driver; }
+                match mtype {
+                    ModuleType::Psf1 | ModuleType::Psf2 | ModuleType::Bmp | ModuleType::Png => ModuleRole::Asset,
+                    ModuleType::Elf => ModuleRole::App,
+                    ModuleType::Other(s) if s.starts_with("image/") || s.starts_with("font/") => ModuleRole::Asset,
+                    _ => if name.contains("font") { ModuleRole::Asset } else { ModuleRole::Ignore },
+                }
+            }
+
+            for (idx, module) in resp.modules().iter().enumerate() {
+                let name = module.path().to_str().unwrap_or("unknown");
+                let base = module.addr();
+                let len = module.size() as usize;
+                let data = unsafe { slice::from_raw_parts(base, len) };
+                
+                let mtype = classify_bytes(data);
+                let role_enum = get_module_role(name, &mtype);
+
+                // --- 1. Graph: Create Module Thing ---
+                use thing_models::builtins::ids::*;
+                use thing_models::builtins::core_kinds::{BootProgramBody, ModuleBody, FontBody, BitmapBody, ProgramImageBody};
+                use thing_models::value::ThingBody;
+                use abi::wire::typed::{TypedBytes, TypeId, CodecId};
+                
+                let role_str = match role_enum {
+                    ModuleRole::App => "app", ModuleRole::Driver => "driver",
+                    ModuleRole::Debug => "debug", ModuleRole::Asset => "asset",
+                    ModuleRole::Ignore => "ignore",
+                };
+                let mime_str = match &mtype {
+                    ModuleType::Elf => "application/x-elf",
+                    ModuleType::Psf1 => "font/psf1", ModuleType::Psf2 => "font/psf2",
+                    ModuleType::Bmp => "image/bmp", ModuleType::Png => "image/png",
+                    ModuleType::Unknown => "application/octet-stream",
+                    ModuleType::Other(s) => s.as_str(),
+                };
+
+                let mod_body = ModuleBody {
+                    path: alloc::string::String::from(name),
+                    size_bytes: len as u64,
+                    base_phys: base as u64,
+                    index: idx as u32,
+                    role: alloc::string::String::from(role_str),
+                    mime: alloc::string::String::from(mime_str),
+                };
+
+                let mod_id_bytes = postcard::to_allocvec(&mod_body).unwrap();
+                let mod_tb = ThingBody::from(&TypedBytes {
+                    type_id: TypeId(THING_MODULE_KIND.0 as u128),
+                    codec_id: CodecId::POSTCARD,
+                    bytes: mod_id_bytes,
+                }).unwrap();
+                let module_id = k.graph.create_thing(THING_MODULE_KIND, mod_tb);
+
+                // Link Root -> Module (HAS_MODULE)
+                {
+                    let link = thing_models::link::LinkBody {
+                        from: THING_BOOT_ROOT, to: module_id, predicate: THING_HAS_MODULE_KIND,
+                    };
+                    let lb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                         bytes: postcard::to_allocvec(&link).unwrap() 
+                    }).unwrap();
+                    k.graph.create_thing(THING_LINK_KIND, lb);
+                }
+
+                // --- 2. Graph: Classify & Specific Things ---
+                match &mtype {
+                    ModuleType::Elf => {
+                        let prog_img = ProgramImageBody { format: alloc::string::String::from("elf") };
+                        let tb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_PROGRAM_IMAGE_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                            bytes: postcard::to_allocvec(&prog_img).unwrap()
+                        }).unwrap();
+                        let img_id = k.graph.create_thing(THING_PROGRAM_IMAGE_KIND, tb);
+                        
+                        // Link Module -> ProgramImage (BINARY_IMAGE)
+                         let link = thing_models::link::LinkBody {
+                            from: module_id, to: img_id, predicate: THING_BINARY_IMAGE_KIND,
+                        };
+                         let lb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                             bytes: postcard::to_allocvec(&link).unwrap() 
+                        }).unwrap();
+                        k.graph.create_thing(THING_LINK_KIND, lb);
+                    },
+                    ModuleType::Psf1 | ModuleType::Psf2 => {
+                         let mut w = 0u16; let mut h = 0u16; let mut count = 0u32;
+                         if matches!(mtype, ModuleType::Psf1) {
+                             if data.len() >= 4 {
+                                 let mode = data[2];
+                                 let charsize = data[3];
+                                 w = 8;
+                                 h = charsize as u16;
+                                 count = if (mode & 1) != 0 { 512 } else { 256 };
+                             }
+                         } else {
+                             if data.len() >= 32 {
+                                 let read_u32 = |off: usize| -> u32 {
+                                     u32::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3]])
+                                 };
+                                 count = read_u32(16);
+                                 h = read_u32(24) as u16;
+                                 w = read_u32(28) as u16;
+                             }
+                         }
+
+                        let font_body = FontBody {
+                            name: alloc::string::String::from(name),
+                            format: alloc::string::String::from(if matches!(mtype, ModuleType::Psf1) { "psf1" } else { "psf2" }),
+                            glyph_width: w, glyph_height: h, glyph_count: count,
+                        };
+                        let tb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_FONT_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                            bytes: postcard::to_allocvec(&font_body).unwrap()
+                        }).unwrap();
+                        let font_id = k.graph.create_thing(THING_FONT_KIND, tb);
+
+                        // Link Root -> Font (PROVIDES_FONT)
+                        {
+                            let link = thing_models::link::LinkBody {
+                                from: THING_BOOT_ROOT, to: font_id, predicate: THING_PROVIDES_FONT_KIND,
+                            };
+                            let lb = ThingBody::from(&TypedBytes {
+                                type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                                bytes: postcard::to_allocvec(&link).unwrap() 
+                            }).unwrap();
+                            k.graph.create_thing(THING_LINK_KIND, lb);
+                        }
+                        
+                         // Link Font -> Module (BACKED_BY)
+                        {
+                            let link = thing_models::link::LinkBody {
+                                from: font_id, to: module_id, predicate: THING_BACKED_BY_KIND,
+                            };
+                            let lb = ThingBody::from(&TypedBytes {
+                                type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                                bytes: postcard::to_allocvec(&link).unwrap() 
+                            }).unwrap();
+                            k.graph.create_thing(THING_LINK_KIND, lb);
+                        }
+
+                        if name.contains("default") || name.contains("unifont") || name.contains("zap-light16") {
+                            let link = thing_models::link::LinkBody {
+                                from: THING_BOOT_ROOT, to: font_id, predicate: THING_DEFAULT_FONT_KIND,
+                            };
+                            let lb = ThingBody::from(&TypedBytes {
+                                type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                                bytes: postcard::to_allocvec(&link).unwrap() 
+                            }).unwrap();
+                            k.graph.create_thing(THING_LINK_KIND, lb);
+                        }
+                    },
+                    _ if mime_str.starts_with("image/") => {
+                        let bmp_body = BitmapBody {
+                             format: alloc::string::String::from(mime_str),
+                             width: 0, height: 0,
+                        };
+                         let tb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_BITMAP_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                            bytes: postcard::to_allocvec(&bmp_body).unwrap()
+                        }).unwrap();
+                        let bmp_id = k.graph.create_thing(THING_BITMAP_KIND, tb);
+                        
+                        {
+                            let link = thing_models::link::LinkBody {
+                                from: module_id, to: bmp_id, predicate: THING_ASSET_KIND,
+                            };
+                             let lb = ThingBody::from(&TypedBytes {
+                                type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                                bytes: postcard::to_allocvec(&link).unwrap() 
+                            }).unwrap();
+                            k.graph.create_thing(THING_LINK_KIND, lb);
+                        }
+                    },
+                    _ => {}
+                }
+
+                // --- 3. Execution (Spawn) ---
+                let should_spawn = match role_enum {
+                    ModuleRole::App => true,
+                    ModuleRole::Driver => {
+                         k.bridge.log("Spawning driver '"); k.bridge.log(name); k.bridge.log("'\n");
+                         true
+                    },
+                    ModuleRole::Debug => {
+                        let is_target = smoke_target.map(|t| name.contains(t)).unwrap_or(false);
+                         if is_target { true } else {
+                             k.bridge.log("Skipping debug module '"); k.bridge.log(name); k.bridge.log("'\n");
+                             false
+                         }
+                    },
+                    ModuleRole::Ignore | ModuleRole::Asset => false,
+                };
+
+                if should_spawn {
+                    let current_app_base = app_load_virt_base;
+                    app_load_virt_base += 0x1000_0000;
+                    
+                    let loaded = load_elf(data, current_app_base, |vaddr, segment| {
+                        use alloc::format;
+                        let target_virt_start = VirtAddr::new(current_app_base + vaddr);
+                        let target_virt_end = target_virt_start + segment.len() as u64;
+                        
+                        let start_page = Page::<Size4KiB>::containing_address(target_virt_start);
+                        let end_page = Page::<Size4KiB>::containing_address(target_virt_end - 1u64);
+                        
+                        for page in Page::range_inclusive(start_page, end_page) {
+                            let frame_phys: PhysAddr;
+                            let page_start_virt = page.start_address();
+    
+                            // Check if mapped
+                            if let Some(phys) = mapper.translate_addr(page_start_virt) {
+                                frame_phys = phys;
+                            } else {
+                                // Map new frame
+                                let frame = frame_allocator.allocate_frame().expect("No frames");
+                                frame_phys = frame.start_address();
+                                let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                                unsafe {
+                                    if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                                        map_to.flush();
+                                    }
+                                }
+                            }
+                            
+                            let frame_virt = hhdm_offset + frame_phys.as_u64();
+                            let page_end_virt = page_start_virt + 4096u64;
+                            let overlap_start = core::cmp::max(page_start_virt, target_virt_start);
+                            let overlap_end = core::cmp::min(page_end_virt, target_virt_end);
+                            
+                            if overlap_end > overlap_start {
+                                 let copy_len = overlap_end - overlap_start;
+                                 let seg_offset = overlap_start - target_virt_start;
+                                 let page_offset = overlap_start - page_start_virt;
+                                 
+                                 let src_ptr = unsafe { segment.as_ptr().add(seg_offset as usize) };
+                                 let dest_ptr = unsafe { (frame_virt.as_mut_ptr::<u8>()).add(page_offset as usize) };
+                                 unsafe { core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, copy_len as usize); }
+                            }
+                        }
+                    });
+
+                    if let Some(img) = loaded {
+                        k.bridge.log("Loaded app entry\n");
+                        let stack_bottom_virt = VirtAddr::new(current_app_base + 0x0800_0000);
+                        let stack_size = 65536;
+                        let stack_top_virt = stack_bottom_virt + stack_size;
+                        
+                        let start_page = Page::<Size4KiB>::containing_address(stack_bottom_virt);
+                        let end_page = Page::<Size4KiB>::containing_address(stack_top_virt - 1u64);
+                        
+                        for page in Page::range_inclusive(start_page, end_page) {
+                             let frame = frame_allocator.allocate_frame().expect("No stack frames");
+                             let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                             unsafe {
+                                if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                                    map_to.flush();
+                                }
+                            }
+                        }
+
+                        let entry_point = current_app_base + img.entry_point;
+                        k.bridge.log("Spawning app: "); k.bridge.log(name); k.bridge.log("\n");
+
+                        k.scheduler.spawn(&k.bridge, name, entry_point, stack_top_virt.as_u64(), 0);
+
+                         let bp = BootProgramBody {
+                            name: alloc::string::String::from(name),
+                            binary: alloc::string::String::from(name), 
+                            priority: 0,
+                            entry_point: entry_point as u64,
+                        };
+                        let tb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_BOOT_PROGRAM_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                            bytes: postcard::to_allocvec(&bp).unwrap()
+                        }).unwrap();
+                        let prog_id = k.graph.create_thing(THING_BOOT_PROGRAM_KIND, tb);
+
+                        {
+                            let link = thing_models::link::LinkBody {
+                                from: prog_id, to: module_id, predicate: THING_USES_MODULE_KIND,
+                            };
+                             let lb = ThingBody::from(&TypedBytes {
+                                type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                                bytes: postcard::to_allocvec(&link).unwrap() 
+                            }).unwrap();
+                            k.graph.create_thing(THING_LINK_KIND, lb);
+                        }
+
+                        {
+                            let link = thing_models::link::LinkBody {
+                                from: THING_BOOT_ROOT, to: prog_id, predicate: THING_LAUNCHES_KIND,
+                            };
+                             let lb = ThingBody::from(&TypedBytes {
+                                type_id: TypeId(THING_LINK_KIND.0 as u128), codec_id: CodecId::POSTCARD,
+                                bytes: postcard::to_allocvec(&link).unwrap() 
+                            }).unwrap();
+                            k.graph.create_thing(THING_LINK_KIND, lb);
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+    
 
     // Handover to Scheduled Mode
     {

@@ -87,13 +87,41 @@ pub const THING_BOOT_PROGRAM_KIND: ThingId = ThingId(213);
 pub const THING_BOOT_PROGRAM_SCHEMA: ThingId = ThingId(1213);
 
 pub const THING_KEY_EVENT_STREAM_KIND: ThingId = ThingId(214);
+pub const SYM_KEY_EVENT_STREAM_SCHEMA: ThingId = ThingId(1214);
 pub const THING_KEY_EVENT_STREAM_SCHEMA: ThingId = ThingId(1214);
+
+pub const THING_MODULE_KIND: ThingId = ThingId(215);
+pub const THING_MODULE_SCHEMA: ThingId = ThingId(1215);
+
+pub const THING_PROGRAM_IMAGE_KIND: ThingId = ThingId(216);
+pub const THING_PROGRAM_IMAGE_SCHEMA: ThingId = ThingId(1216);
+
+pub const THING_BITMAP_KIND: ThingId = ThingId(217);
+pub const THING_BITMAP_SCHEMA: ThingId = ThingId(1217);
 
 pub const THING_EMITS_KIND: ThingId = ThingId(106);
 pub const THING_EMITS_SCHEMA: ThingId = ThingId(1106);
 
 pub const THING_SUBSCRIBES_TO_KIND: ThingId = ThingId(107);
 pub const THING_SUBSCRIBES_TO_SCHEMA: ThingId = ThingId(1107);
+
+pub const THING_HAS_MODULE_KIND: ThingId = ThingId(108);
+pub const THING_HAS_MODULE_SCHEMA: ThingId = ThingId(1108);
+
+pub const THING_BINARY_IMAGE_KIND: ThingId = ThingId(109);
+pub const THING_BINARY_IMAGE_SCHEMA: ThingId = ThingId(1109);
+
+pub const THING_ASSET_KIND: ThingId = ThingId(110);
+pub const THING_ASSET_SCHEMA: ThingId = ThingId(1110);
+
+pub const THING_PROVIDES_FONT_KIND: ThingId = ThingId(111);
+pub const THING_PROVIDES_FONT_SCHEMA: ThingId = ThingId(1111);
+
+pub const THING_DEFAULT_FONT_KIND: ThingId = ThingId(112);
+pub const THING_DEFAULT_FONT_SCHEMA: ThingId = ThingId(1112);
+
+pub const THING_USES_MODULE_KIND: ThingId = ThingId(113);
+pub const THING_USES_MODULE_SCHEMA: ThingId = ThingId(1113);
 
 pub const THING_BOOT_ROOT: ThingId = ThingId(1000); // The Root Node
 pub const THING_LOG_ENTRY_KIND: ThingId = ThingId(220);

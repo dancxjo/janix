@@ -19,6 +19,38 @@ pub struct BootProgramBody {
     pub name: alloc::string::String,
     pub binary: alloc::string::String,
     pub priority: u64,
+    pub entry_point: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ModuleBody {
+    pub path: alloc::string::String,
+    pub size_bytes: u64,
+    pub base_phys: u64,
+    pub index: u32,
+    pub role: alloc::string::String,
+    pub mime: alloc::string::String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ProgramImageBody {
+    pub format: alloc::string::String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct FontBody {
+    pub name: alloc::string::String,
+    pub format: alloc::string::String,
+    pub glyph_width: u16,
+    pub glyph_height: u16,
+    pub glyph_count: u32,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct BitmapBody {
+    pub format: alloc::string::String,
+    pub width: u32,
+    pub height: u32,
 }
 
 
@@ -170,6 +202,59 @@ thing_kind! {
         type_tag: "thingos.BootProgramBody.v1",
         schema_id: crate::builtins::ids::THING_BOOT_PROGRAM_SCHEMA,
         links {}
+    }
+}
+
+thing_kind! {
+    kind Module {
+        id: crate::builtins::ids::THING_MODULE_KIND,
+        sym: SYM_MODULE,
+        version: 1,
+        body: ModuleBody,
+        type_tag: "thingos.ModuleBody.v1",
+        schema_id: crate::builtins::ids::THING_MODULE_SCHEMA,
+        links {
+            predicate THING_BINARY_IMAGE_KIND min 0 max 1;
+            predicate THING_ASSET_KIND min 0 max many;
+        }
+    }
+}
+
+thing_kind! {
+    kind ProgramImage {
+        id: crate::builtins::ids::THING_PROGRAM_IMAGE_KIND,
+        sym: SYM_PROGRAM_IMAGE,
+        version: 1,
+        body: ProgramImageBody,
+        type_tag: "thingos.ProgramImageBody.v1",
+        schema_id: crate::builtins::ids::THING_PROGRAM_IMAGE_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind Bitmap {
+        id: crate::builtins::ids::THING_BITMAP_KIND,
+        sym: SYM_BITMAP,
+        version: 1,
+        body: BitmapBody,
+        type_tag: "thingos.BitmapBody.v1",
+        schema_id: crate::builtins::ids::THING_BITMAP_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind Font {
+        id: crate::builtins::ids::THING_FONT_KIND,
+        sym: SYM_FONT,
+        version: 1,
+        body: FontBody,
+        type_tag: "thingos.FontBody.v1",
+        schema_id: crate::builtins::ids::THING_FONT_SCHEMA,
+        links {
+             predicate THING_BACKED_BY_KIND min 0 max 1;
+        }
     }
 }
 

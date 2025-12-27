@@ -517,6 +517,48 @@ pub extern "C" fn rust_main() -> ! {
             k.symbols.seed_builtin(builtin).expect("Builtin seed failed");
         }
         k.bridge.log("THINGOS: symbols ready\n");
+
+        // --- PCI ENUMERATION ---
+        k.bridge.log("PCI: Scanning...\n");
+        let pci_devices = unsafe { bridge_x86_64::pci::scan_pci() };
+        k.bridge.log("PCI: Found ");
+        print_hex(&Bridge, pci_devices.len() as u64);
+        k.bridge.log(" devices\n");
+
+        for dev in pci_devices {
+             use thing_models::builtins::ids::*;
+             use thing_models::value::ThingBody;
+             use abi::wire::typed::{TypedBytes, TypeId, CodecId};
+             
+             // Create Thing
+             let body_bytes = postcard::to_allocvec(&dev).unwrap();
+             let tb = ThingBody::from(&TypedBytes {
+                 type_id: TypeId(THING_PCI_DEVICE_KIND.0 as u128),
+                 codec_id: CodecId::POSTCARD,
+                 bytes: body_bytes,
+             }).unwrap();
+             
+             let dev_id = k.graph.create_thing(THING_PCI_DEVICE_KIND, tb);
+             
+             // Link Root -> Device
+             let link = thing_models::link::LinkBody {
+                 from: THING_BOOT_ROOT,
+                 to: dev_id,
+                 predicate: THING_HAS_DEVICE_KIND,
+             };
+             let lb = ThingBody::from(&TypedBytes {
+                 type_id: TypeId(THING_LINK_KIND.0 as u128),
+                 codec_id: CodecId::POSTCARD,
+                 bytes: postcard::to_allocvec(&link).unwrap() 
+             }).unwrap();
+             k.graph.create_thing(THING_LINK_KIND, lb);
+             
+             k.bridge.log("PCI: Published Device ");
+             print_hex(&Bridge, dev.vendor_id as u64);
+             k.bridge.log(":");
+             print_hex(&Bridge, dev.device_id as u64);
+             k.bridge.log("\n");
+        }
     }
 
 

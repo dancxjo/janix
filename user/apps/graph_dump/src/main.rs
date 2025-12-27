@@ -61,6 +61,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     
     kind_cache.insert(THING_MOUSE_KIND, "MouseDevice".into());
     kind_cache.insert(THING_POINTER_EVENT_STREAM_KIND, "PointerStream".into());
+    kind_cache.insert(THING_PCI_DEVICE_KIND, "PciDevice".into());
 
     loop {
         perform_dump(&g, &c, &mut kind_cache);
@@ -246,6 +247,14 @@ fn perform_dump(g: &GraphClient, c: &StdoutConsole, kind_cache: &mut BTreeMap<Th
                      if let Ok(b) = postcard::from_bytes::<KeyEventStreamBody>(&n.data) {
                          let _ = c.write_str(&format!("{{ head_seq: {}, capacity: {}, events: {} }}\n", b.head_seq, b.capacity, b.events.len()));
                          continue;
+                     }
+                 }
+                 if n.kind == THING_PCI_DEVICE_KIND {
+                     use thing_models::core::pci::PciDeviceBody;
+                     if let Ok(b) = postcard::from_bytes::<PciDeviceBody>(&n.data) {
+                          let _ = c.write_str(&format!("{{ loc: {:02x}:{:02x}.{}, id: {:04x}:{:04x}, class: {:02x}.{:02x} }}\n", 
+                              b.bus, b.device, b.function, b.vendor_id, b.device_id, b.class_id, b.subclass_id));
+                          continue;
                      }
                  }
                  

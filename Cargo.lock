@@ -126,6 +126,7 @@ dependencies = [
  "bitflags",
  "hw",
  "kernel_core",
+ "models",
  "spin 0.9.8",
  "x86_64 0.14.13",
 ]

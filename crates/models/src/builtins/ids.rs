@@ -159,3 +159,6 @@ pub const THING_FAULT_SCHEMA: ThingId = ThingId(1222);
 
 // Singletons (2000+)
 pub const THING_TIME_INSTANCE: ThingId = ThingId(2000);
+
+pub const THING_PCI_DEVICE_KIND: ThingId = ThingId(223);
+pub const THING_PCI_DEVICE_SCHEMA: ThingId = ThingId(1223);

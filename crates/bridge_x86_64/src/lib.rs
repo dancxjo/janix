@@ -8,6 +8,7 @@ pub mod interrupts;
 pub mod user;
 pub mod gdt;
 pub mod acpi;
+pub mod pci;
 pub mod hpet;
 pub mod ps2;
 

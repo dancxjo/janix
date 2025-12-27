@@ -92,7 +92,7 @@ fn print_hex(bridge: &Bridge, val: u64) {
     }
 }
 
-const BOOT_STACK_SIZE: usize = 16384;
+const BOOT_STACK_SIZE: usize = 65536;
 #[repr(align(16))]
 struct AlignedStack([u8; BOOT_STACK_SIZE]);
 

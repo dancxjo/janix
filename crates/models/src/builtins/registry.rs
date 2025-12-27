@@ -41,8 +41,6 @@ pub fn builtin_seed_things() -> Vec<Thing> {
     v.extend(crate::builtins::core_kinds::seed_boot_program_kind().into_iter());
 
     // Missing Core Kinds
-    // Missing Core Kinds
-    /*
     v.extend(crate::builtins::core_kinds::seed_module_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_program_image_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_bitmap_kind().into_iter());
@@ -56,7 +54,6 @@ pub fn builtin_seed_things() -> Vec<Thing> {
     v.extend(crate::builtins::predicates::seed_provides_font_kind().into_iter());
     v.extend(crate::builtins::predicates::seed_default_font_kind().into_iter());
     v.extend(crate::builtins::predicates::seed_uses_module_kind().into_iter());
-    */
-
+    
     v
 }

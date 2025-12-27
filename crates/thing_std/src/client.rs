@@ -8,7 +8,7 @@ impl GraphClient {
         Self
     }
 
-    pub fn call<S: Serialize, D: for<'de> Deserialize<'de>>(
+    pub fn query<S: Serialize, D: for<'de> Deserialize<'de>>(
         &self,
         method: &str,
         req: &S,
@@ -51,6 +51,6 @@ impl GraphClient {
         op: &abi::wire::graph::GraphOp,
         out_buf: &mut [u8]
     ) -> Result<abi::wire::graph::GraphReply, ()> {
-        self.call("op", op, out_buf)
+        self.query("op", op, out_buf)
     }
 }

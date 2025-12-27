@@ -146,7 +146,7 @@ pub fn graph_query(query: &str, params: &[u8], out: &mut [u8]) -> Result<usize, 
     if ret >= 0 {
         Ok(ret as usize)
     } else {
-        Err(ret)
+        Err(ret as isize)
     }
 }
 

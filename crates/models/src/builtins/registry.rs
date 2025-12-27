@@ -40,6 +40,20 @@ pub fn builtin_seed_things() -> Vec<Thing> {
     v.extend(crate::builtins::core_kinds::seed_key_event_kind().into_iter());
     v.extend(crate::builtins::core_kinds::seed_boot_program_kind().into_iter());
 
+    // Missing Core Kinds
+    v.extend(crate::builtins::core_kinds::seed_module_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_program_image_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_bitmap_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_font_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_key_event_stream_kind().into_iter());
+
+    // Missing Predicate Kinds
+    v.extend(crate::builtins::predicates::seed_has_module_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_binary_image_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_asset_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_provides_font_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_default_font_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_uses_module_kind().into_iter());
 
     v
 }

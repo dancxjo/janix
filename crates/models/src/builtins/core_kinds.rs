@@ -10,7 +10,7 @@ use crate::core::process::{ProcessBody, ThreadBody};
 use crate::core::capability::CapabilityBody;
 use crate::core::vgs::{MountBody, GraphProviderBody};
 use crate::core::buffer::BufferBody;
-use crate::core::input::KeyboardBody;
+use crate::core::input::{KeyboardBody, KeyEventBody, KeyEventStreamBody};
 
 
 
@@ -255,6 +255,18 @@ thing_kind! {
         links {
              predicate THING_BACKED_BY_KIND min 0 max 1;
         }
+    }
+}
+
+thing_kind! {
+    kind KeyEventStream {
+        id: crate::builtins::ids::THING_KEY_EVENT_STREAM_KIND,
+        sym: SYM_KEY_EVENT_STREAM,
+        version: 1,
+        body: KeyEventStreamBody,
+        type_tag: "thingos.KeyEventStreamBody.v1",
+        schema_id: crate::builtins::ids::THING_KEY_EVENT_STREAM_SCHEMA,
+        links {}
     }
 }
 

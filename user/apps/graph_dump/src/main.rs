@@ -50,6 +50,7 @@ pub extern "C" fn _start() -> ! {
     kind_cache.insert(THING_DEFAULT_FONT_KIND, "DEFAULT_FONT".into());
     kind_cache.insert(THING_BINARY_IMAGE_KIND, "BINARY_IMAGE".into());
     kind_cache.insert(THING_ASSET_KIND, "ASSET".into());
+    kind_cache.insert(THING_USES_MODULE_KIND, "USES_MODULE".into());
 
     loop {
         perform_dump(&g, &c, &mut kind_cache);

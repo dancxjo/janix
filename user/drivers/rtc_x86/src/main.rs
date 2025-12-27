@@ -32,7 +32,7 @@ fn run() -> Result<(), ()> {
     let initial_props = SystemTimeProps { unix_seconds: 0 };
     let initial_bytes = postcard::to_allocvec(&initial_props).map_err(|_| ())?;
     let typed_body = TypedBytes { 
-        type_id: TypeId(0), 
+        type_id: TypeId(200), 
         codec_id: CodecId::POSTCARD, 
         bytes: initial_bytes 
     };
@@ -41,17 +41,26 @@ fn run() -> Result<(), ()> {
     let reply = client.call_op(&op, &mut buf).map_err(|_| ())?;
     
     let sys_time_id = match reply {
-        GraphReply::Created { id } => id,
+        GraphReply::Created { id } => {
+            use thing_std::console::{Console, StdoutConsole};
+            let c = StdoutConsole;
+            c.write_str("RTC: CreateThing success ID: ");
+            c.write_u64(id.0);
+            c.write_str("\n");
+            id
+        },
         _ => {
             debug::log("RTC: CreateThing failed\n");
             return Err(());
         }
     };
 
-    let link_op = GraphOp::AddLink { from: abi::ids::ThingId(1000), to: sys_time_id, kind: abi::ids::ThingId(1) };
-    let _ = client.call_op(&link_op, &mut buf);
-    
-    // debug::log("RTC: SystemTime created\n");
+    let link_op = GraphOp::AddLink { from: abi::ids::ThingId(1000), to: sys_time_id, kind: abi::ids::ThingId(100) };
+    let reply_link = client.call_op(&link_op, &mut buf);
+    match reply_link {
+        Ok(_) => debug::log("RTC: Linked SystemTime to Root\n"),
+        Err(_) => debug::log("RTC: Link failed\n"),
+    }
 
     loop {
         let mut sample = RtcSample::default();
@@ -62,7 +71,7 @@ fn run() -> Result<(), ()> {
                 let props = SystemTimeProps { unix_seconds: unix_ts };
                 let bytes = postcard::to_allocvec(&props).map_err(|_| ())?;
                 let body = TypedBytes { 
-                    type_id: TypeId(0), 
+                    type_id: TypeId(200), 
                     codec_id: CodecId::POSTCARD, 
                     bytes 
                 };

@@ -4,26 +4,24 @@ use abi::{SysRet, SYSCALL_DRIVER_WAIT, SYSCALL_DRIVER_PUBLISH};
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use postcard::from_bytes;
 
-pub fn sys_driver_wait<B: HardwareBridge>(_kernel: &mut Kernel<B>, out_ptr: *mut u8, out_len: usize) -> SysRet {
-    // V0: Busy-wait / yield loop
-    // In a real OS, we would put thread to sleep and register a waker.
-    loop {
-        if let Some(event) = crate::input::try_pop_event() {
-            // Serialize
-            // let out_ptr = ...; // already passed in
-            let slice = unsafe { core::slice::from_raw_parts_mut(out_ptr, out_len) };
-            match postcard::to_slice(&event, slice) {
-                Ok(used) => return used.len() as SysRet,
-                Err(_) => return -1, // Enobufs
-            }
-        }
-        // Yield
-        // kernel.scheduler.yield_thread(); // Not easily available via generic B? 
-        // We can just hint spin loop.
-        core::hint::spin_loop(); 
-        // Or better: kernel.bridge.idle(); if appropriate, but inside syscall we are in a thread context.
-        // For now, minimal spin.
+pub fn sys_driver_wait<B: HardwareBridge>(kernel: &mut Kernel<B>, out_ptr: *mut u8, out_len: usize) -> SysRet {
+    // V0: Non-blocking poll.
+    // If we loop here, we hold the KERNEL lock (BKL) from syscall_hook,
+    // preventing the scheduler from ticking (which also needs BKL).
+    // So we must return to user mode if no event, letting user spin.
+    
+    if let Some(event) = crate::input::try_pop_event(&kernel.bridge) {
+         // Serialize
+         let slice = unsafe { core::slice::from_raw_parts_mut(out_ptr, out_len) };
+         match postcard::to_slice(&event, slice) {
+             Ok(used) => return used.len() as SysRet,
+             Err(_) => return -1, // Enobufs
+         }
     }
+    
+    // No event: Return error so user loops.
+    // Use a distinguishable error? For V0, -1 is fine (User ignores Err).
+    -1 
 }
 
 pub fn sys_driver_publish<B: HardwareBridge>(kernel: &mut Kernel<B>, ptr: *const u8, len: usize) -> SysRet {

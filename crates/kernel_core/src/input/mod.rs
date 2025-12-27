@@ -18,10 +18,13 @@ pub fn on_ps2_scancode(scancode: u8) {
     }
 }
 
-pub fn try_pop_event() -> Option<DriverEvent> {
-    if let Some(ref mut ring) = *GLOBAL_INPUT_RING.lock() {
+pub fn try_pop_event<B: hw::HardwareBridge>(bridge: &B) -> Option<DriverEvent> {
+    bridge.irq_disable();
+    let result = if let Some(ref mut ring) = *GLOBAL_INPUT_RING.lock() {
         ring.pop()
     } else {
         None
-    }
+    };
+    bridge.irq_enable();
+    result
 }

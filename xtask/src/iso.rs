@@ -118,24 +118,23 @@ pub fn run(env: String) -> Result<()> {
     }
 
     // Copy Fonts
+    // Copy Fonts
     let fonts_src = root.join("assets/fonts");
     let fonts_dst = boot_dir.join("fonts");
     fs::create_dir_all(&fonts_dst)?;
 
-    let font_files = [
-        "NotoSans-Regular.ttf",
-        "NotoSerif-Regular.ttf",
-        "NotoSansSymbol-Regular.ttf",
-        "NotoSansSymbol2-Regular.ttf",
-    ];
-
-    for f in font_files {
-        let src = fonts_src.join(f);
-        if src.exists() {
-            fs::copy(&src, fonts_dst.join(f))?;
-        } else {
-             eprintln!("    [WARNING] Missing font file: {:?}", src);
+    // Copy all TTF files from assets/fonts
+    if fonts_src.exists() {
+        for entry in fs::read_dir(&fonts_src).context("Failed to read fonts directory")? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("ttf") {
+                let file_name = path.file_name().unwrap();
+                fs::copy(&path, fonts_dst.join(file_name))?;
+            }
         }
+    } else {
+        eprintln!("    [WARNING] fonts directory missing: {:?}", fonts_src);
     }
 
 

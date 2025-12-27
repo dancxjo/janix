@@ -44,7 +44,7 @@ static mut CLK_PERIOD_FS: u64 = 0; // Femtoseconds per tick
 
 pub unsafe fn init_table(ptr: u64) {
     let bridge = Bridge;
-    let table = &*(ptr as *const HpetTable);
+    let table = &*(crate::acpi::to_virt(ptr).as_ptr() as *const HpetTable);
     
     bridge.log("ACPI: Found HPET\n");
     

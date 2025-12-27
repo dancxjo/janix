@@ -40,7 +40,9 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         bridge.log("File: ");
         bridge.log(loc.file());
         bridge.log("\n");
-        // Line?
+        bridge.log("Line: ");
+        print_hex(&bridge, loc.line() as u64);
+        bridge.log("\n");
     }
 
     // Dump Ring to Serial

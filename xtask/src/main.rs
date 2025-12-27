@@ -34,6 +34,9 @@ enum Commands {
         /// Enable GDB stub (-s -S)
         #[arg(long)]
         gdb: bool,
+        /// Custom GDB port (default: 1234)
+        #[arg(long)]
+        gdb_port: Option<u16>,
         /// Run for fixed seconds then kill (for testing)
         #[arg(long)]
         timeout_secs: Option<u64>,
@@ -58,12 +61,14 @@ fn main() -> Result<()> {
         Commands::Run {
             env,
             gdb,
+            gdb_port,
             timeout_secs,
             interactive,
             cmdline,
         } => run::run(run::RunArgs {
             env,
             gdb,
+            gdb_port,
             timeout_secs,
             interactive,
             cmdline,

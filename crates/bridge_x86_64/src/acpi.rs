@@ -16,6 +16,7 @@ struct Rsdp {
     reserved: [u8; 3],
 }
 
+#[derive(Clone, Copy)]
 #[repr(C, packed)]
 struct SdtHeader {
     signature: [u8; 4],
@@ -97,16 +98,17 @@ unsafe fn check_table(phys: u64) {
     let header = &*(to_virt(phys).as_ptr() as *const SdtHeader);
     match &header.signature {
         b"HPET" => {
-            crate::hpet::init_table(header as *const _ as u64);
+            crate::hpet::init_table(phys);
         },
         b"APIC" => {
-            parse_madt(header as *const _ as u64);
+            parse_madt(phys);
         },
         _ => {}
     }
 }
 
 // MADT Structures
+#[derive(Clone, Copy)]
 #[repr(C, packed)]
 struct MadtHeader {
     sdt: SdtHeader,
@@ -114,12 +116,14 @@ struct MadtHeader {
     flags: u32, 
 }
 
+#[derive(Clone, Copy)]
 #[repr(C, packed)]
 struct MadtEntryHeader {
     entry_type: u8,
     length: u8,
 }
 
+#[derive(Clone, Copy)]
 #[repr(C, packed)]
 struct MadtIoApic {
     header: MadtEntryHeader,
@@ -129,6 +133,7 @@ struct MadtIoApic {
     gsi_base: u32,
 }
 
+#[derive(Clone, Copy)]
 #[repr(C, packed)]
 struct MadtIntOverride {
     header: MadtEntryHeader,
@@ -152,7 +157,10 @@ unsafe fn parse_madt(phys: u64) {
     let bridge = Bridge;
     bridge.log("ACPI: Parsing MADT (APIC)\n");
 
-    let madt = &*(to_virt(phys).as_ptr() as *const MadtHeader);
+    // READ UNALIGNED
+    let sdt_ptr = to_virt(phys).as_ptr() as *const MadtHeader;
+    let madt = core::ptr::read_unaligned(sdt_ptr);
+
     LOCAL_APIC_ADDR = madt.local_apic_addr as u64;
 
     let entries_start = (to_virt(phys).as_ptr() as *const u8).add(core::mem::size_of::<MadtHeader>());
@@ -160,21 +168,32 @@ unsafe fn parse_madt(phys: u64) {
     
     let mut ptr = entries_start;
     while ptr < entries_end {
-        let entry = &*(ptr as *const MadtEntryHeader);
+        let entry = core::ptr::read_unaligned(ptr as *const MadtEntryHeader);
+        
+        if entry.length == 0 {
+             bridge.log("ACPI: Zero length MADT entry! Aborting loop.\n");
+             break;
+        }
+
         match entry.entry_type {
             1 => { // IO APIC
-                let ioapic = &*(ptr as *const MadtIoApic);
+                let ioapic = core::ptr::read_unaligned(ptr as *const MadtIoApic);
                 IO_APIC_ADDR = ioapic.io_apic_addr as u64;
                 IO_APIC_GSI_BASE = ioapic.gsi_base;
                 bridge.log("ACPI: Found IOAPIC\n");
             },
             2 => { // Interrupt Source Override
-                // Valid for Legacy IRQ -> GSI mapping
-                let iso = &*(ptr as *const MadtIntOverride);
+                let iso = core::ptr::read_unaligned(ptr as *const MadtIntOverride);
                 if iso.bus == 0 { // ISA Bus
                     let source = iso.source_irq as usize;
                     if source < 16 {
                         ISA_OVERRIDES[source] = iso.gsi as u8;
+                        bridge.log("ACPI: IRQ Override: ");
+                        bridge.log("IRQ"); // No formatting
+                        // print_u64(source as u64)
+                        bridge.log(" -> GSI ");
+                        // print_u64(iso.gsi as u64) 
+                        bridge.log("\n");
                     }
                 }
             },

@@ -38,9 +38,9 @@ impl HardwareBridge for Bridge {
         for b in msg.bytes() {
             unsafe {
                 // Wait while TXFF (bit 5) is set
-                while (core::ptr::read_volatile(uart_fr) & (1 << 5)) != 0 {
-                    core::hint::spin_loop();
-                }
+                // while (core::ptr::read_volatile(uart_fr) & (1 << 5)) != 0 {
+                //    core::hint::spin_loop();
+                // }
                 core::ptr::write_volatile(uart_ptr, b);
             }
         }

@@ -61,33 +61,32 @@ pub extern "C" fn rust_main() -> ! {
 
     #[cfg(target_os = "thingos")]
     unsafe {
-        panic!("Test Panic");
-        
         // -1. Init Bridge (Exception Vectors) EARLY
         Bridge::init();
 
-        // TEST: Trigger exception to prove vectors are working
-        // core::arch::asm!("brk #0");
-
-        // 0. Init Heap FIRST (needed for paging/alloc)
-        let info = limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
-
-        // 1. Get HHDM offset
+        // 1. Get HHDM offset (Before Heap!)
+        // Limine maps this as Normal memory. We will remap as Device later.
         if let Some(resp) = limine::requests::HHDM_REQUEST.get_response() {
             let offset = resp.offset();
-            // Init paging with HHDM offset
-            paging::init(offset);
-
+            
             // 2. Update logic UART base (Physical 0x09000000 + Offset)
             bridge_aarch64::set_uart_base(0x09000000 + offset);
+            
+            // Should now be able to print to Normal-mapped UART
+            bootlog!("Booting ThingOS (aarch64)...");
+            bootlog!("UART mapped at HHDM offset 0x{:x}", offset);
 
-            // 3. Map UART (Physical 0x09000000)
+            // 0. Init Heap (Needed for paging)
+            let info = limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
+
+            // 3. Init Paging & Remap UART
+            paging::init(offset);
             paging::map_device_region(0x09000000, 4096);
             
-            bootlog!("UART mapped at HHDM offset 0x{:x}", offset);
+            bootlog!("UART remapped as Device capability.");
+            early_log::log_heap_init(info);
         } else {
-            // If HHDM fails, we can't print easily unless we assume identity map for UART
-            // Try blind write to 0x09000000 as last resort
+             // Fallback: Blind write to Phys
              core::ptr::write_volatile(0x0900_0000 as *mut u8, 0x46); // 'F'
              loop {}
         }
@@ -100,7 +99,6 @@ pub extern "C" fn rust_main() -> ! {
         bootlog!("Booting ThingOS (aarch64)...");
         bootlog!("Init finished, jumping to kernel");
 
-        early_log::log_heap_init(info);
     }
 
     let mut k = Kernel::new(Bridge);

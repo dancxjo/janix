@@ -57,6 +57,34 @@ pub fn builtin_seed_things() -> Vec<Thing> {
     v.extend(crate::builtins::predicates::seed_has_device_kind().into_iter());
     v.extend(crate::builtins::predicates::seed_spawned_kind().into_iter());
     v.extend(crate::builtins::predicates::seed_runs_kind().into_iter());
+
+    // New Devices & GraphFS
+    v.extend(crate::builtins::core_kinds::seed_pci_device_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_serial_port_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_log_stream_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_block_device_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_file_system_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_file_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_dir_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_volume_kind().into_iter());
     
+    // New Diag
+    v.extend(crate::builtins::core_kinds::seed_log_entry_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_error_kind().into_iter());
+    v.extend(crate::builtins::core_kinds::seed_fault_kind().into_iter());
+
+    // New Predicates
+    v.extend(crate::builtins::predicates::seed_has_block_device_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_has_volume_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_has_mount_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_has_entry_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_backed_by_device_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_on_volume_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_is_mounted_on_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_contains_file_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_has_keyboard_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_has_console_kind().into_iter());
+    v.extend(crate::builtins::predicates::seed_has_time_now_kind().into_iter());
+
     v
 }

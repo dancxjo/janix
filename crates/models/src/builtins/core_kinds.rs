@@ -11,6 +11,11 @@ use crate::core::capability::CapabilityBody;
 use crate::core::vgs::{MountBody, GraphProviderBody};
 use crate::core::buffer::BufferBody;
 use crate::core::input::{KeyboardBody, KeyEventBody, KeyEventStreamBody};
+use crate::core::serial::{SerialPortBody, LogStreamBody};
+use crate::core::pci::PciDeviceBody;
+use crate::core::fs::{VolumeBody, DirBody, FileBody};
+use crate::core::block::BlockDeviceBody;
+use crate::diag::{LogEntryBody, ErrorBody, FaultBody};
 
 
 
@@ -270,6 +275,149 @@ thing_kind! {
         type_tag: "thingos.KeyEventStreamBody.v1",
         schema_id: crate::builtins::ids::THING_KEY_EVENT_STREAM_SCHEMA,
         links {}
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct FileSystemBody { 
+    pub name: alloc::string::String 
+}
+
+thing_kind! {
+    kind LogEntry {
+        id: crate::builtins::ids::THING_LOG_ENTRY_KIND,
+        sym: SYM_LOG_ENTRY,
+        version: 1,
+        body: LogEntryBody,
+        type_tag: "thingos.LogEntryBody.v1",
+        schema_id: crate::builtins::ids::THING_LOG_ENTRY_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind Error {
+        id: crate::builtins::ids::THING_ERROR_KIND,
+        sym: SYM_ERROR,
+        version: 1,
+        body: ErrorBody,
+        type_tag: "thingos.ErrorBody.v1",
+        schema_id: crate::builtins::ids::THING_ERROR_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind Fault {
+        id: crate::builtins::ids::THING_FAULT_KIND,
+        sym: SYM_FAULT,
+        version: 1,
+        body: FaultBody,
+        type_tag: "thingos.FaultBody.v1",
+        schema_id: crate::builtins::ids::THING_FAULT_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind PciDevice {
+        id: crate::builtins::ids::THING_PCI_DEVICE_KIND,
+        sym: SYM_PCI_DEVICE,
+        version: 1,
+        body: PciDeviceBody,
+        type_tag: "thingos.PciDeviceBody.v1",
+        schema_id: crate::builtins::ids::THING_PCI_DEVICE_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind SerialPort {
+        id: crate::builtins::ids::THING_SERIAL_PORT_KIND,
+        sym: SYM_SERIAL_PORT,
+        version: 1,
+        body: SerialPortBody,
+        type_tag: "thingos.SerialPortBody.v1",
+        schema_id: crate::builtins::ids::THING_SERIAL_PORT_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind LogStream {
+        id: crate::builtins::ids::THING_LOG_STREAM_KIND,
+        sym: SYM_LOG_STREAM,
+        version: 1,
+        body: LogStreamBody,
+        type_tag: "thingos.LogStreamBody.v1",
+        schema_id: crate::builtins::ids::THING_LOG_STREAM_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind BlockDevice {
+        id: crate::builtins::ids::THING_BLOCK_DEVICE_KIND,
+        sym: SYM_BLOCK_DEVICE,
+        version: 1,
+        body: BlockDeviceBody,
+        type_tag: "thingos.BlockDeviceBody.v1",
+        schema_id: crate::builtins::ids::THING_BLOCK_DEVICE_SCHEMA,
+        links {
+             predicate THING_ON_VOLUME_KIND min 0 max 1;
+        }
+    }
+}
+
+thing_kind! {
+    kind FileSystem {
+        id: crate::builtins::ids::THING_FILESYSTEM_KIND,
+        sym: SYM_FILESYSTEM,
+        version: 1,
+        body: FileSystemBody,
+        type_tag: "thingos.FileSystemBody.v1",
+        schema_id: crate::builtins::ids::THING_FILESYSTEM_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind File {
+        id: crate::builtins::ids::THING_FILE_KIND,
+        sym: SYM_FILE,
+        version: 1,
+        body: FileBody,
+        type_tag: "thingos.FileBody.v1",
+        schema_id: crate::builtins::ids::THING_FILE_SCHEMA,
+        links {}
+    }
+}
+
+thing_kind! {
+    kind Dir {
+        id: crate::builtins::ids::THING_DIR_KIND,
+        sym: SYM_DIR,
+        version: 1,
+        body: DirBody,
+        type_tag: "thingos.DirBody.v1",
+        schema_id: crate::builtins::ids::THING_DIR_SCHEMA,
+        links {
+            predicate THING_CONTAINS_FILE_KIND min 0 max many;
+        }
+    }
+}
+
+thing_kind! {
+     kind Volume {
+        id: crate::builtins::ids::THING_VOLUME_KIND,
+        sym: SYM_VOLUME,
+        version: 1,
+        body: VolumeBody,
+        type_tag: "thingos.VolumeBody.v1",
+        schema_id: crate::builtins::ids::THING_VOLUME_SCHEMA,
+        links {
+             predicate THING_HAS_MOUNT_KIND min 0 max many;
+        }
     }
 }
 

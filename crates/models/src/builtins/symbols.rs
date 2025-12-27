@@ -135,3 +135,31 @@ pub const SYM_CAPACITY: SymbolId = SymbolId(fnv1a64("capacity"));
 pub const SYM_LAYOUT: SymbolId = SymbolId(fnv1a64("layout"));
 pub const SYM_EVENTS: SymbolId = SymbolId(fnv1a64("events"));
 
+// Devices
+pub const SYM_PCI_DEVICE: SymbolId = SymbolId(fnv1a64("PciDevice"));
+pub const SYM_SERIAL_PORT: SymbolId = SymbolId(fnv1a64("SerialPort"));
+pub const SYM_LOG_STREAM: SymbolId = SymbolId(fnv1a64("LogStream"));
+pub const SYM_BLOCK_DEVICE: SymbolId = SymbolId(fnv1a64("BlockDevice"));
+
+// GraphFS
+pub const SYM_FILESYSTEM: SymbolId = SymbolId(fnv1a64("FileSystem"));
+pub const SYM_FILE: SymbolId = SymbolId(fnv1a64("File"));
+pub const SYM_DIR: SymbolId = SymbolId(fnv1a64("Dir"));
+pub const SYM_VOLUME: SymbolId = SymbolId(fnv1a64("Volume"));
+
+// Links
+pub const SYM_HAS_BLOCK_DEVICE: SymbolId = SymbolId(fnv1a64("HAS_BLOCK_DEVICE"));
+pub const SYM_HAS_VOLUME: SymbolId = SymbolId(fnv1a64("HAS_VOLUME"));
+pub const SYM_HAS_MOUNT: SymbolId = SymbolId(fnv1a64("HAS_MOUNT"));
+pub const SYM_HAS_ENTRY: SymbolId = SymbolId(fnv1a64("HAS_ENTRY"));
+pub const SYM_BACKED_BY_DEVICE: SymbolId = SymbolId(fnv1a64("BACKED_BY_DEVICE"));
+pub const SYM_ON_VOLUME: SymbolId = SymbolId(fnv1a64("ON_VOLUME"));
+pub const SYM_IS_MOUNTED_ON: SymbolId = SymbolId(fnv1a64("IS_MOUNTED_ON"));
+pub const SYM_CONTAINS_FILE: SymbolId = SymbolId(fnv1a64("CONTAINS_FILE"));
+pub const SYM_HAS_KEYBOARD: SymbolId = SymbolId(fnv1a64("HAS_KEYBOARD"));
+
+// Other IDs seen in dump or ids.rs
+pub const SYM_HAS_CONSOLE: SymbolId = SymbolId(fnv1a64("HAS_CONSOLE"));
+pub const SYM_HAS_TIME_NOW: SymbolId = SymbolId(fnv1a64("HAS_TIME_NOW"));
+
+

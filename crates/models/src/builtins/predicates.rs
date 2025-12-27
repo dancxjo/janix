@@ -140,3 +140,102 @@ predicate_kind! {
         schema_id: crate::builtins::ids::THING_RUNS_SCHEMA
     }
 }
+
+predicate_kind! {
+    kind HasTimeNow {
+        id: crate::builtins::ids::THING_HAS_TIME_NOW_KIND,
+        sym: crate::builtins::symbols::SYM_HAS_TIME_NOW,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_HAS_TIME_NOW_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind HasConsole {
+        id: crate::builtins::ids::THING_HAS_CONSOLE_KIND,
+        sym: crate::builtins::symbols::SYM_HAS_CONSOLE,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_HAS_CONSOLE_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind HasKeyboard {
+        id: crate::builtins::ids::THING_HAS_KEYBOARD_KIND,
+        sym: crate::builtins::symbols::SYM_HAS_KEYBOARD,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_HAS_KEYBOARD_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind IsMountedOn {
+        id: crate::builtins::ids::THING_IS_MOUNTED_ON_KIND,
+        sym: crate::builtins::symbols::SYM_IS_MOUNTED_ON,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_IS_MOUNTED_ON_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind ContainsFile {
+        id: crate::builtins::ids::THING_CONTAINS_FILE_KIND,
+        sym: crate::builtins::symbols::SYM_CONTAINS_FILE,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_CONTAINS_FILE_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind HasBlockDevice {
+        id: crate::builtins::ids::THING_HAS_BLOCK_DEVICE_KIND,
+        sym: crate::builtins::symbols::SYM_HAS_BLOCK_DEVICE,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_HAS_BLOCK_DEVICE_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind HasVolume {
+        id: crate::builtins::ids::THING_HAS_VOLUME_KIND,
+        sym: crate::builtins::symbols::SYM_HAS_VOLUME,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_HAS_VOLUME_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind HasMount {
+        id: crate::builtins::ids::THING_HAS_MOUNT_KIND,
+        sym: crate::builtins::symbols::SYM_HAS_MOUNT,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_HAS_MOUNT_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind HasEntry {
+        id: crate::builtins::ids::THING_HAS_ENTRY_KIND,
+        sym: crate::builtins::symbols::SYM_HAS_ENTRY,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_HAS_ENTRY_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind BackedByDevice {
+        id: crate::builtins::ids::THING_BACKED_BY_DEVICE_KIND,
+        sym: crate::builtins::symbols::SYM_BACKED_BY_DEVICE,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_BACKED_BY_DEVICE_SCHEMA
+    }
+}
+
+predicate_kind! {
+    kind OnVolume {
+        id: crate::builtins::ids::THING_ON_VOLUME_KIND,
+        sym: crate::builtins::symbols::SYM_ON_VOLUME,
+        version: 1,
+        schema_id: crate::builtins::ids::THING_ON_VOLUME_SCHEMA
+    }
+}

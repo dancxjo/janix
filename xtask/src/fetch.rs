@@ -295,29 +295,29 @@ fn fetch_cursors(assets: &Path) -> Result<()> {
     let cursors_dir = assets.join("cursors");
     fs::create_dir_all(&cursors_dir)?;
 
-    // 1. Bibata (Main Theme)
-    let bibata_dir = cursors_dir.join("Bibata-Modern-Classic");
-    if !bibata_dir.exists() {
-        println!("    Fetching Bibata-Modern-Classic...");
+    // 1. Plain Cursors (Public Domain)
+    let plain_dir = cursors_dir.join("plain");
+    if !plain_dir.exists() {
+        println!("    Fetching Plain Cursors...");
         require_tool("curl")?;
-        require_tool("tar")?;
-        require_tool("xz")?; // Bibata is usually .tar.xz
+        require_tool("unzip")?;
 
-        let url = "https://github.com/ful1e5/Bibata_Cursor/releases/download/v2.0.7/Bibata-Modern-Classic.tar.xz";
-        let archive = cursors_dir.join("Bibata.tar.xz");
-        
-        if download_file(url, &archive).is_ok() {
-            println!("    Extracting Bibata...");
-            // tar -xJf archive.tar.xz
+        let url = "https://www.rw-designer.com/cursor-downloadset/plain.zip";
+        let zip_path = cursors_dir.join("plain.zip");
+
+        if download_file(url, &zip_path).is_ok() {
+            println!("    Extracting Plain Cursors...");
+            fs::create_dir_all(&plain_dir)?;
             run_cmd(
-                Command::new("tar")
-                    .arg("-xJf")
-                    .arg(&archive)
-                    .current_dir(&cursors_dir)
+                Command::new("unzip")
+                    .arg("-o") // Overwrite
+                    .arg(&zip_path)
+                    .arg("-d") // Extract to directory
+                    .arg(&plain_dir)
             )?;
-            let _ = fs::remove_file(&archive);
+            let _ = fs::remove_file(&zip_path);
         } else {
-             eprintln!("    [WARNING] Failed to download Bibata Cursors.");
+             eprintln!("    [WARNING] Failed to download Plain Cursors.");
         }
     }
 

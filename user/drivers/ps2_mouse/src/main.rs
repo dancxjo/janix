@@ -41,14 +41,19 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     // StdoutConsole removed to isolate crash
     // let c = StdoutConsole;
 
+    let mut packet_count: u64 = 0;
+
     // 1. Create Mouse Device Thing (ID 3010)
-    let mouse = Thing {
+    let mut mouse = Thing {
         id: ThingId(3010),
         kind: THING_MOUSE_KIND,
         body: models::ThingBody::from(&MouseBody { bus: SYM_PS2 }).expect("mouse body"),
     };
 
-    publish_thing(&mouse);
+    if let Some(id) = publish_thing(&mouse) {
+        mouse.id = id;
+    }
+    let _ = PortWrites.write_fmt(format_args!("PS/2 Mouse: Mouse Kind Constant: {}\n", THING_MOUSE_KIND.0));
     let _ = PortWrites.write_str("PS/2 Mouse: Mouse Device Published\n");
 
     // 2. Link Root -> HAS_DEVICE -> Mouse (ID 3013)
@@ -63,7 +68,8 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
 
     
     // 3. Create PointerEventStream Thing (ID 3011)
-    let stream_id = ThingId(3011);
+    // 3. Create PointerEventStream Thing (ID 3011)
+    let mut stream_id = ThingId(3011);
     let mut stream_body = PointerEventStreamBody {
         head_seq: 0,
         capacity: 128,
@@ -76,7 +82,9 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         kind: THING_POINTER_EVENT_STREAM_KIND,
         body: models::ThingBody::from(&stream_body).expect("stream body"),
     };
-    publish_thing(&stream_thing);
+    if let Some(id) = publish_thing(&stream_thing) {
+        stream_id = id;
+    }
     let _ = PortWrites.write_str("PS/2 Mouse: Stream Published\n");
 
     // 4. Link Mouse -> EMITS -> Stream (ID 3012)
@@ -121,6 +129,12 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                                 // Publish Update (batched? No, every packet for now)
                                 // Mouse can be high frequency (100Hz). 
                                 // Ideally we batch or update shm. For Graph, we update Thing.
+                                
+                                packet_count += 1;
+                                if packet_count % 100 == 0 {
+                                     let _ = PortWrites.write_fmt(format_args!("Mouse: 100 packets processed. Total: {}\n", packet_count));
+                                }
+
                                 let thing = Thing {
                                     id: stream_id,
                                     kind: THING_POINTER_EVENT_STREAM_KIND,
@@ -184,7 +198,7 @@ fn process_packet(packet: [u8; 3], body: &mut PointerEventStreamBody) {
     }
 }
 
-fn publish_thing(thing: &Thing) {
+fn publish_thing(thing: &Thing) -> Option<ThingId> {
     use core::fmt::Write;
     use thing_std::debug::PortWrites;
 
@@ -193,16 +207,34 @@ fn publish_thing(thing: &Thing) {
     let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
     // c.write_str("Calling driver_publish...\n");
     let res = std::syscalls::driver_publish(&payload_bytes);
-    if let Err(_e) = res {
-        let _ = PortWrites.write_str("Publish Thing Failed\n");
+    match res {
+        Ok(id_val) => Some(ThingId(id_val as u64)),
+        Err(_e) => {
+            let _ = PortWrites.write_str("Publish Thing Failed\n");
+            None
+        }
     }
 }
 
 fn publish_link(id: ThingId, body: models::link::LinkBody) {
+    use models::builtins::ids::THING_LINK_KIND;
+
+    // 1. Serialize LinkBody
+    let link_bytes = postcard::to_allocvec(&body).expect("serialize link body");
+
+    // 2. Wrap in TypedBytes
+    // Note: LinkBody itself doesn't have a SCHEMA constant easily accessible here?
+    // ids.rs: THING_LINK_SCHEMA (2003)
+    let typed = abi::wire::typed::TypedBytes {
+        type_id: abi::wire::typed::TypeId(2003), // THING_LINK_SCHEMA
+        codec_id: abi::wire::typed::CodecId::POSTCARD,
+        bytes: link_bytes,
+    };
+
     let thing = Thing {
         id, 
         kind: THING_LINK_KIND,
-        body: models::ThingBody::from(&body).expect("link body"),
+        body: models::ThingBody::from(&typed).expect("link thing body"),
     };
     publish_thing(&thing);
 }

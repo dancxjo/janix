@@ -4,13 +4,15 @@
 extern crate alloc;
 use thing_std as std;
 use thing_std::{StdoutConsole, Console, GraphClient};
+use core::fmt::Write;
+use thing_std::debug::PortWrites;
 use abi::wire::graph::{GraphOp, GraphReply};
 use abi::ids::ThingId;
 use thing_models::builtins::core_kinds::DisplayFramebufferBody;
 use thing_models::builtins::ids::{
     THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_DISPLAY_FRAMEBUFFER_KIND,
     THING_MODULE_KIND, THING_POINTER_EVENT_STREAM_KIND, THING_WINDOW_KIND,
-    // THING_EMITS_KIND
+    THING_EMITS_KIND, THING_MOUSE_KIND
 };
 use thing_models::schema::bitmap::BitmapBody;
 use thing_models::core::input::PointerEventStreamBody;
@@ -24,9 +26,10 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
 
     let c = StdoutConsole;
     let _ = c.write_str("COMPOSITOR: Starting...\n");
+    let mut last_log_time = 0;
 
     let g = GraphClient::new();
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 8192];
     let mut fb_thing_id: Option<ThingId> = None;
 
     let mut cursor_x: i32 = 512;
@@ -42,12 +45,18 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
             to: None,
             kind: Some(THING_HAS_DEVICE_KIND)
         };
-
+        // ...
         if let Ok(GraphReply::Links(list)) = g.call_op(&op, &mut buf) {
-            for (_, target, _) in list {
+             let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: Scan returned {} links.\n", list.len()));
+             for (_, target, _) in list {
+                 let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: Scan Target: {}\n", target.0));
                  let get_op = GraphOp::GetThing { id: target };
                  if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&get_op, &mut buf) {
                      let type_id = tb.type_id.0 as u128;
+                     // let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: Scan Found Type: {}\n", type_id));
+                     if type_id != 2 { // Filter connection kinds if noisy? No, just log all.
+                         let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: Scan Found Type: {}\n", type_id));
+                     }
                      if type_id == THING_DISPLAY_FRAMEBUFFER_KIND.0 as u128 {
                          if fb_thing_id.is_none() {
                              fb_thing_id = Some(target);
@@ -64,6 +73,27 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                                  }
                              }
                          }
+                     } else if type_id == THING_MOUSE_KIND.0 as u128 {
+                         c.write_str("COMPOSITOR: Found Mouse! Scanning for stream...\n");
+                         let sub_op = GraphOp::ScanLinks {
+                             from: Some(target),
+                             to: None,
+                             kind: Some(THING_EMITS_KIND)
+                         };
+                         let mut sub_buf = [0u8; 1024];
+                         if let Ok(GraphReply::Links(sub_list)) = g.call_op(&sub_op, &mut sub_buf) {
+                             for (_, stream_target, _) in sub_list {
+                                 let get_stream = GraphOp::GetThing { id: stream_target };
+                                 if let Ok(GraphReply::TypedValue(stb)) = g.call_op(&get_stream, &mut sub_buf) {
+                                     if stb.type_id.0 as u128 == THING_POINTER_EVENT_STREAM_KIND.0 as u128 {
+                                         if pointer_stream_id.is_none() {
+                                             pointer_stream_id = Some(stream_target);
+                                             c.write_str("COMPOSITOR: Found Pointer Stream!\n");
+                                         }
+                                     }
+                                 }
+                             }
+                         }
                      } else if type_id == THING_POINTER_EVENT_STREAM_KIND.0 as u128 {
                          if pointer_stream_id.is_none() {
                              pointer_stream_id = Some(target);
@@ -74,11 +104,16 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
             }
         }
         
-        if fb_thing_id.is_some() {
+        if fb_thing_id.is_some() && pointer_stream_id.is_some() {
             break 'scan;
         }
 
-        let _ = std::time::sleep_ms(&g, 100);
+        c.write_str("COMPOSITOR: Sleeping (Busy Loop)...\n");
+        // let _ = std::time::sleep_ms(&g, 100);
+        for _ in 0..100000 {
+             unsafe { core::arch::asm!("nop"); } 
+        }
+        c.write_str("COMPOSITOR: Woke up!\n");
     }
 
     // 2. Main Loop
@@ -98,6 +133,11 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                             cursor_x += event.dx as i32;
                             cursor_y += event.dy as i32;
                             last_seq = seq;
+                            
+                            // Log occasionally
+                            if seq % 100 == 0 {
+                                let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: Cursor Stream Alive. Seq: {}, X: {}, Y: {}\n", seq, cursor_x, cursor_y));
+                            }
                         }
                     }
                 }
@@ -220,7 +260,8 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
             }
         }
         
-        let _ = std::time::sleep_ms(&g, 16);
+        // let _ = std::time::sleep_ms(&g, 16);
+        for _ in 0..16000 { unsafe { core::arch::asm!("nop"); } }
     }
 }
 

@@ -114,36 +114,52 @@ pub fn handle_graph_op<B: HardwareBridge>(
         GraphOp::ScanLinks { from, to, kind } => {
             let mut results = alloc::vec::Vec::new();
             let link_kind = thing_models::builtins::ids::THING_LINK_KIND;
+            
+            kernel.bridge.log("Kernel: ScanLinks Start");
 
-            // Inefficient scan for v0.2 smoke test.
-            // Phase 4 should optimize using index.
+            let mut count_all = 0;
+            let mut count_links = 0;
+            let mut count_decoded = 0;
+            let mut count_matched = 0;
+
             for thing in kernel.graph.list() {
+                count_all += 1;
                 if thing.kind == link_kind {
+                    count_links += 1;
                     if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
                         if let Ok(link) =
                             postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes)
                         {
-                            if let Some(f) = from {
-                                if link.from != f {
-                                    continue;
+                            count_decoded += 1;
+                            match (link.from, link.to, link.predicate) {
+                                (f, t, p) => {
+                                    if let Some(target_from) = from {
+                                        if f != target_from { continue; }
+                                    }
+                                    if let Some(target_to) = to {
+                                        if t != target_to { continue; }
+                                    }
+                                    if let Some(target_kind) = kind {
+                                        if p != target_kind { continue; }
+                                    }
+                                    kernel.bridge.log(alloc::format!("Kernel: MATCHED Link Root->{} (Pred {})", t.0, p.0).as_str());
+                                    count_matched += 1;
+                                    results.push((f, t, p));
                                 }
                             }
-                            if let Some(t) = to {
-                                if link.to != t {
-                                    continue;
-                                }
-                            }
-                            if let Some(k) = kind {
-                                if link.predicate != k {
-                                    continue;
-                                }
-                            }
-
-                            results.push((link.from, link.to, link.predicate));
+                        } else {
+                            kernel.bridge.log("Kernel: Failed to decode LinkBody from TypedBytes");
                         }
+                    } else {
+                        kernel.bridge.log("Kernel: Failed to decode TypedBytes from ThingBody");
                     }
                 }
             }
+            kernel.bridge.log(alloc::format!(
+                "Kernel: Scanned {} things. Found {} Links. Decoded {}. Matched {}. Returning {}", 
+                count_all, count_links, count_decoded, count_matched, results.len()
+            ).as_str());
+            
             GraphReply::Links(results)
         }
         GraphOp::DeleteThing { id } => match kernel.graph.delete_thing(id) {

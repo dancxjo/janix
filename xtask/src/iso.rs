@@ -43,7 +43,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     let mut user_apps = vec![
         //"graph_dump", // Disabled to reduce noise
         "ps2_keyboard",
-        // "ps2_mouse", // We are implementing kernel mouse, but maybe keep it? Or disable if not found.
+        "ps2_mouse", // We are implementing kernel mouse, but maybe keep it? Or disable if not found.
         "keylog",
         "syscall_crud_smoke",
         "clock",
@@ -57,9 +57,10 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     ];
 
     // Check if ps2_mouse exists in user/drivers (it does)
-    if root.join("user/drivers/ps2_mouse").exists() {
-         user_apps.push("ps2_mouse");
-    }
+    // Check if ps2_mouse exists in user/drivers (it does)
+    // if root.join("user/drivers/ps2_mouse").exists() {
+    //      user_apps.push("ps2_mouse");
+    // }
 
     if env == "x86_64" {
         user_apps.push("rtc_x86");

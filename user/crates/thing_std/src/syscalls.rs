@@ -45,12 +45,12 @@ pub fn driver_wait(out_buf: &mut [u8]) -> Result<usize, ()> {
     }
 }
 
-pub fn driver_publish(data: &[u8]) -> Result<(), isize> {
+pub fn driver_publish(data: &[u8]) -> Result<usize, isize> {
     let ret = unsafe {
         syscall2(SYSCALL_DRIVER_PUBLISH, data.as_ptr() as usize, data.len())
     };
-    if ret == 0 {
-        Ok(())
+    if ret >= 0 {
+        Ok(ret as usize)
     } else {
         Err(ret as isize)
     }

@@ -26,43 +26,29 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     std::debug::log("PS/2 Driver starting...\n");
 
     // Create Keyboard Device Thing
-    let keyboard_id = ThingId(3000);
-    
-    let keyboard = Thing {
-        id: keyboard_id,
+    let mut keyboard = Thing {
+        id: ThingId(3000),
         kind: THING_KEYBOARD_KIND,
         body: models::ThingBody::from(&KeyboardBody { bus: SYM_PS2 }).expect("body"),
     };
 
-    // Publish Keyboard Device
-    let pub_bytes = postcard::to_allocvec(&keyboard).expect("serialize thing");
-    let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
-    let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
-    let _ = std::syscalls::driver_publish(&payload_bytes);
-
+    if let Some(id) = publish_thing(&keyboard) {
+        keyboard.id = id;
+    }
     std::debug::log("Published Keyboard Device\n");
 
     // Link Root -> HAS_KEYBOARD -> Keyboard
     let root_link_id = ThingId(3003);
     let root_link_body = models::link::LinkBody {
         from: THING_BOOT_ROOT,
-        to: keyboard_id,
+        to: keyboard.id,
         predicate: THING_HAS_KEYBOARD_KIND,
     };
-    let root_link_thing = Thing {
-         id: root_link_id,
-         kind: THING_LINK_KIND,
-         body: models::ThingBody::from(&root_link_body).expect("root link"),
-    };
-    let pub_bytes = postcard::to_allocvec(&root_link_thing).expect("serialize root link");
-    let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
-    let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
-    let _ = std::syscalls::driver_publish(&payload_bytes);
-    
+    publish_link(root_link_id, root_link_body);
     std::debug::log("Linked Root -> Keyboard\n");
 
     // Create/Publish RawKeyEventStream
-    let stream_id = ThingId(3001);
+    let mut stream_id = ThingId(3001);
     let mut stream_body = RawKeyEventStreamBody {
         head_seq: 0,
         capacity: 32,
@@ -76,32 +62,19 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         body: models::ThingBody::from(&stream_body).expect("stream body"),
     };
     
-    let pub_bytes = postcard::to_allocvec(&stream_thing).expect("serialize stream");
-    let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
-    let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
-    let _ = std::syscalls::driver_publish(&payload_bytes);
-    
+    if let Some(id) = publish_thing(&stream_thing) {
+        stream_id = id;
+    }
     std::debug::log("Published RawKeyEventStream\n");
 
     // Link: Keyboard -> EMITS -> Stream
     let link_id = ThingId(3002);
     let link_body = models::link::LinkBody {
-        from: keyboard_id,
+        from: keyboard.id,
         to: stream_id,
         predicate: THING_EMITS_KIND,
     };
-    
-    let link_thing = Thing {
-        id: link_id,
-        kind: THING_LINK_KIND,
-        body: models::ThingBody::from(&link_body).expect("link body"),
-    };
-    
-    let pub_bytes = postcard::to_allocvec(&link_thing).expect("serialize link");
-    let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
-    let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
-    let _ = std::syscalls::driver_publish(&payload_bytes);
-    
+    publish_link(link_id, link_body);
     std::debug::log("Linked Keyboard -> Raw Stream\n");
 
     let mut out_buf = [0u8; 128];
@@ -125,7 +98,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                             e0_pending = false;
 
                             let raw_event = RawKeyEvent {
-                                source: keyboard_id,
+                                source: keyboard.id,
                                 time_ns: 0,
                                 kind: RawKeyKind::ScancodeSet1,
                                 code,
@@ -149,11 +122,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                                 kind: THING_RAW_KEY_EVENT_STREAM_KIND,
                                 body: models::ThingBody::from(&stream_body).unwrap(),
                             };
-                            
-                            let pub_bytes = postcard::to_allocvec(&thing).unwrap();
-                            let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
-                            let payload_bytes = postcard::to_allocvec(&payload).unwrap();
-                            let _ = std::syscalls::driver_publish(&payload_bytes);
+                            publish_thing(&thing);
                         },
                         _ => {}
                     }
@@ -165,4 +134,33 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
             }
         }
     }
+}
+
+fn publish_thing(thing: &Thing) -> Option<ThingId> {
+    let pub_bytes = postcard::to_allocvec(thing).expect("serialize thing");
+    let payload = DriverPublish::Observation { thing_bytes: pub_bytes };
+    let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
+    let res = std::syscalls::driver_publish(&payload_bytes);
+    match res {
+        Ok(id_val) => Some(ThingId(id_val as u64)),
+        Err(_) => None,
+    }
+}
+
+fn publish_link(id: ThingId, body: models::link::LinkBody) {
+    use models::builtins::ids::THING_LINK_KIND;
+
+    let link_bytes = postcard::to_allocvec(&body).expect("serialize link body");
+    let typed = abi::wire::typed::TypedBytes {
+        type_id: abi::wire::typed::TypeId(2003), // THING_LINK_SCHEMA
+        codec_id: abi::wire::typed::CodecId::POSTCARD,
+        bytes: link_bytes,
+    };
+
+    let thing = Thing {
+        id, 
+        kind: THING_LINK_KIND,
+        body: models::ThingBody::from(&typed).expect("link thing body"),
+    };
+    publish_thing(&thing);
 }

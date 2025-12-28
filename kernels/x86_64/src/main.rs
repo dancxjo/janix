@@ -535,6 +535,7 @@ pub extern "C" fn rust_main() -> ! {
         }
 
         spawn_compositor(&mut k);
+        spawn_drivers(&mut k);
         spawn_kernel_init_task(&mut k);
 
         bridge_x86_64::set_tick_hook(scheduler_tick);
@@ -583,6 +584,43 @@ unsafe fn spawn_compositor(k: &mut Kernel<Bridge>) {
         }
     }
     k.bridge.log("BOOT: WARNING: Compositor not found!\n");
+}
+
+unsafe fn spawn_drivers(k: &mut Kernel<Bridge>) {
+    use limine_local::requests::MODULE_REQUEST;
+    use hw::HardwareBridge;
+    
+    if let Some(resp) = MODULE_REQUEST.get_response() {
+        let resp: &limine::response::ModuleResponse = resp;
+        for module in resp.modules() {
+             let path = module.path().to_str().unwrap_or("?");
+             // Heuristic: If it's in /boot/drivers or starts with ps2_, spawn it.
+             // Also strictly check for .elf extension to avoid spawning assets as executables accidentally.
+             let is_driver = (path.contains("/drivers/") || path.contains("ps2_")) && path.ends_with(".elf");
+             
+             if is_driver {
+                 k.bridge.log("BOOT: Spawning Driver: ");
+                 k.bridge.log(path);
+                 k.bridge.log("\n");
+                 
+                 use limine_local::requests::HHDM_REQUEST;
+                 let hhdm_offset = HHDM_REQUEST.get_response().unwrap().offset();
+                 
+                 let data = core::slice::from_raw_parts(module.addr() as *const u8, module.size() as usize);
+                 let name = path.rsplit('/').next().unwrap_or(path);
+
+                 process_file(
+                     k, 
+                     None, 
+                     name,
+                     data,
+                     0, 
+                     Some(true), // Force spawn
+                     hhdm_offset
+                 );
+             }
+        }
+    }
 }
 
 unsafe fn spawn_kernel_init_task(k: &mut Kernel<Bridge>) {

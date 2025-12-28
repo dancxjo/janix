@@ -139,10 +139,10 @@ struct HeapFrameAllocator {
 
 unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        use alloc::alloc::{alloc, Layout};
+        use alloc::alloc::{alloc_zeroed, Layout};
         let layout = Layout::from_size_align(4096, 4096).ok()?;
         // Bridge.log("loader: HFA Alloc start\n");
-        let ptr = unsafe { alloc(layout) };
+        let ptr = unsafe { alloc_zeroed(layout) };
         if ptr.is_null() {
             return None;
         }
@@ -874,26 +874,10 @@ pub fn process_file(
                     let flags = PageTableFlags::PRESENT
                         | PageTableFlags::WRITABLE
                         | PageTableFlags::USER_ACCESSIBLE;
-                    
-                    // DEBUG: Check for NX
-                    if flags.contains(PageTableFlags::NO_EXECUTE) {
-                         unsafe { Bridge.log("loader: NX bit IS SET in request!\n"); }
-                    }
-
                     unsafe {
                         if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator)
                         {
                             map_to.flush();
-                            
-                            // Verify Flags in PTE?
-                            // Difficult without walking tables manually.
-                            // But we can check if we accidentally enabled it globally?
-                            // No. 
-                            
-                            if page_start_virt.as_u64() == target_virt_start.as_u64() {
-                                 let s = alloc::format!("loader: Mapped start of segment {:#x} with flags {:?}\n", page_start_virt.as_u64(), flags);
-                                 Bridge.log(&s);
-                            }
                         }
                     }
                 }

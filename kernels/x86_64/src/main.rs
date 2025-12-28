@@ -17,6 +17,9 @@ mod memory_intrinsics;
 pub(crate) mod limine_local;
 
 use bridge_x86_64::Bridge;
+
+// Global state for loader to map framebuffer
+pub static mut FRAMEBUFFER_INFO: Option<(u64, u64)> = None;
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicBool, Ordering};
 use kernel_core::Kernel;
@@ -504,7 +507,31 @@ pub extern "C" fn rust_main() -> ! {
         }
         // -----------------------------------------------------------------
 
-        publish_framebuffer(&mut k);
+        // Default to Limine FB
+        let mut use_qemu = false;
+
+        if let Some(file) = limine_local::requests::KERNEL_FILE_REQUEST.get_response().map(|r| r.file()) {
+             let cmdline_bytes = file.cmdline();
+             if let Ok(cmdline) = core::str::from_utf8(cmdline_bytes) {
+                 if cmdline.contains("thingos.driver=qemu") {
+                     use_qemu = true;
+                 }
+             }
+        }
+
+        if !use_qemu {
+            // Pass the Framebuffer Response to the generic driver
+            let fb_response = limine_local::requests::FRAMEBUFFER_REQUEST.get_response();
+            kernel_core::drivers::limine_fb::init(&mut k, fb_response);
+
+            // Capture info for loader
+            if let Some(resp) = fb_response {
+                if let Some(fb) = resp.framebuffers().next() {
+                    FRAMEBUFFER_INFO = Some((fb.addr() as u64, (fb.pitch() as u64) * (fb.height() as u64)));
+                }
+            }
+        }
+
         spawn_compositor(&mut k);
         spawn_kernel_init_task(&mut k);
 
@@ -523,53 +550,6 @@ pub extern "C" fn rust_main() -> ! {
     }
 }
 
-unsafe fn publish_framebuffer(k: &mut Kernel<Bridge>) {
-    use hw::HardwareBridge;
-    use limine_local::requests::{FRAMEBUFFER_REQUEST, HHDM_REQUEST};
-    use thing_models::builtins::ids::{THING_DISPLAY_FRAMEBUFFER_KIND, THING_HAS_DEVICE_KIND, THING_BOOT_ROOT};
-    use thing_models::builtins::core_kinds::DisplayFramebufferBody;
-    use thing_models::value::ThingBody;
-    use abi::wire::typed::{CodecId, TypeId, TypedBytes};
-
-    if let Some(resp) = FRAMEBUFFER_REQUEST.get_response() {
-        if let Some(fb) = resp.framebuffers().next() {
-            k.bridge.log("FRAMEBUFFER: Publishing...\n");
-            
-            let user_virt_addr = 0x1_0000_0000u64;
-
-            let fb_body = DisplayFramebufferBody {
-                 width: fb.width(),
-                 height: fb.height(),
-                 pitch: fb.pitch(),
-                 format: 32, 
-                 address: user_virt_addr,
-            };
-
-            let bytes = postcard::to_allocvec(&fb_body).unwrap();
-            let tb = ThingBody::from(&TypedBytes {
-                 type_id: TypeId(THING_DISPLAY_FRAMEBUFFER_KIND.0 as u128),
-                 codec_id: CodecId::POSTCARD,
-                 bytes: postcard::to_allocvec(&fb_body).unwrap(),
-            }).unwrap();
-
-            let fb_id = k.graph.create_thing(THING_DISPLAY_FRAMEBUFFER_KIND, tb);
-            
-             use thing_models::link::LinkBody;
-             use thing_models::builtins::ids::THING_LINK_KIND;
-            let link = LinkBody {
-                 from: THING_BOOT_ROOT,
-                 to: fb_id,
-                 predicate: THING_HAS_DEVICE_KIND
-            };
-            let lb = ThingBody::from(&TypedBytes {
-                 type_id: TypeId(THING_LINK_KIND.0 as u128),
-                 codec_id: CodecId::POSTCARD,
-                 bytes: postcard::to_allocvec(&link).unwrap()
-            }).unwrap();
-            k.graph.create_thing(THING_LINK_KIND, lb);
-        }
-    }
-}
 
 unsafe fn spawn_compositor(k: &mut Kernel<Bridge>) {
     use limine_local::requests::MODULE_REQUEST;
@@ -643,6 +623,21 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                 if let Some(k) = (*guard).as_mut() {
                      use hw::HardwareBridge;
                      k.bridge.log("INIT: Publishing PCI Check...\n");
+
+                     let mut use_qemu = false;
+                     if let Some(file) = limine_local::requests::KERNEL_FILE_REQUEST.get_response().map(|r| r.file()) {
+                         let cmdline_bytes = file.cmdline();
+                         if let Ok(cmdline) = core::str::from_utf8(cmdline_bytes) {
+                             if cmdline.contains("thingos.driver=qemu") {
+                                 use_qemu = true;
+                             }
+                         }
+                     }
+
+                     if use_qemu {
+                         let info = unsafe { bridge_x86_64::drivers::qemu_vga::init(k, &pci_devices) };
+                         unsafe { FRAMEBUFFER_INFO = info; }
+                     }
                      
                      for dev in &pci_devices {
                          use abi::wire::typed::{CodecId, TypeId, TypedBytes};

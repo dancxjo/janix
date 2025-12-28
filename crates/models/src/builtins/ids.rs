@@ -214,3 +214,6 @@ pub const THING_BACKED_BY_DEVICE_SCHEMA: ThingId = ThingId(1127);
 
 pub const THING_ON_VOLUME_KIND: ThingId = ThingId(128);
 pub const THING_ON_VOLUME_SCHEMA: ThingId = ThingId(1128);
+
+pub const THING_FONT_CATALOG_KIND: ThingId = ThingId(233);
+pub const THING_FONT_CATALOG_SCHEMA: ThingId = ThingId(1233);

@@ -15,6 +15,7 @@ pub mod prelude;
 pub mod result;
 pub mod schema;
 pub mod symbol;
+pub mod font_cache;
 pub mod thing;
 pub mod thing_builders;
 pub mod value;

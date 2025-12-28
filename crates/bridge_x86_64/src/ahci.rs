@@ -285,7 +285,13 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
     let slot;
 
     // 1. Find Free Slot (Thread Safe)
-    let _guard = PORT_LOCKS[port_idx].lock();
+
+    let _guard = loop {
+        if let Some(g) = PORT_LOCKS[port_idx].try_lock() {
+            break g;
+        }
+        yield_fn();
+    };
     {
         let slots = port.ci | port.sact;
         let mut found = None;
@@ -377,7 +383,6 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             bridge.log("AHCI: No free slots!\n");
             return false;
         }
-        
     } // Unlock
     // Note: If we return false inside the block, guard is dropped correctly.
 

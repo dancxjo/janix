@@ -175,7 +175,21 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     let hhdm = args.hhdm;
     
     let reader = move |lba, buf: &mut [u8]| unsafe {
-        bridge_x86_64::ahci::read_sector_yielding(base, port, lba, buf, hhdm, || x86_64::instructions::hlt())
+        use alloc::alloc::{alloc, dealloc, Layout};
+        // Allocate 2048-byte aligned buffer to ensure physical contiguity and handle partial reads
+        let layout = Layout::from_size_align(2048, 2048).unwrap();
+        let ptr = alloc(layout);
+        if ptr.is_null() { return false; }
+        let bounce = core::slice::from_raw_parts_mut(ptr, 2048);
+
+        let res = bridge_x86_64::ahci::read_sector_yielding(base, port, lba, bounce, hhdm, || x86_64::instructions::hlt());
+        
+        if res {
+            let len = core::cmp::min(buf.len(), 2048);
+            core::ptr::copy_nonoverlapping(ptr, buf.as_mut_ptr(), len);
+        }
+        dealloc(ptr, layout);
+        res
     };
     
     // Create IsoReader
@@ -407,37 +421,90 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     }
     */
     
-    // 5. Fonts (Parallel)
-    let font_entries = iso.read_dir("/boot/fonts").unwrap_or_default();
-    for entry in font_entries {
-         let path = alloc::format!("/boot/fonts/{}", entry.name);
-         let f_args = FileArgs {
-            iso: iso.clone(),
-            path,
-            dir_id: Some(fonts_dir_id),
-            should_spawn: false,
-            hhdm,
-        };
-        let args_box = Box::new(f_args);
-        let args_ptr = Box::into_raw(args_box) as u64;
+    // 5. Fonts (Metadata Cache)
+    if let Some(h) = iso.open("/boot/.fontcache") {
+        Bridge.log("loader: Loading .fontcache...\n");
+        let mut data = alloc::vec![0u8; h.size as usize];
+        iso.read(&h, 0, h.size as usize, &mut data);
         
-        let mut guard = KERNEL.lock();
-        if let Some(k) = guard.as_mut() {
-             // Allocate Aligned Stack (64KB)
-             let layout = Layout::from_size_align(64 * 1024, 16).unwrap();
-             let stack_ptr = unsafe { alloc(layout) };
-             // Subtract 8 to satisfy System V ABI
-             let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
-             
-               k.scheduler.spawn(
-                &k.bridge,
-                "font_loader",
-                file_loader_task as usize as u64,
-                stack_top, 
-                args_ptr
-               );
+        use models::font_cache::FontCache;
+        if let Ok(cache) = postcard::from_bytes::<FontCache>(&data) {
+             Bridge.log("loader: Parsed FontCache. Registering...\n");
+
+             // Create Catalog Thing
+             {
+                 let mut guard = KERNEL.lock();
+                 if let Some(k) = guard.as_mut() {
+                     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+                     use models::builtins::ids::*;
+
+                     let tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_FONT_CATALOG_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&cache).unwrap(),
+                     }).unwrap();
+
+                     let cat_id = k.graph.create_thing(THING_FONT_CATALOG_KIND, tb);
+
+                     // Link FontsDir -> Catalog
+                     let link = models::link::LinkBody {
+                        from: fonts_dir_id,
+                        to: cat_id,
+                        predicate: THING_HAS_ENTRY_KIND,
+                     };
+                     let l_tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_LINK_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&link).unwrap(),
+                     }).unwrap();
+                     k.graph.create_thing(THING_LINK_KIND, l_tb);
+                 }
+             }
+
+             // Spawn loaders for minimal fonts
+             for entry in &cache.entries {
+                 // Tactical: Load "Hack" and "Noto Sans" (Regular)
+                 let lower_fam = entry.family.to_lowercase();
+                 // Note: Noto Sans usually has weight 400 for Regular.
+                 let is_hack = lower_fam.contains("hack") && entry.weight == 400 && !entry.italic;
+                 let is_noto = lower_fam.contains("noto sans") && entry.weight == 400 && !entry.italic;
+
+                 if is_hack || is_noto {
+                      Bridge.log("loader: Spawning preload for "); Bridge.log(&entry.family); Bridge.log("\n");
+                       let path = alloc::format!("{}", entry.path);
+                       let f_args = FileArgs {
+                            iso: iso.clone(),
+                            path,
+                            dir_id: Some(fonts_dir_id),
+                            should_spawn: false,
+                            hhdm,
+                        };
+                        let args_box = Box::new(f_args);
+                        let args_ptr = Box::into_raw(args_box) as u64;
+
+                        let mut guard = KERNEL.lock();
+                        if let Some(k) = guard.as_mut() {
+                             // Allocate Aligned Stack (64KB)
+                             let layout = Layout::from_size_align(64 * 1024, 16).unwrap();
+                             let stack_ptr = unsafe { alloc(layout) };
+                             let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
+
+                             k.scheduler.spawn(
+                                &k.bridge,
+                                "font_preload",
+                                file_loader_task as usize as u64,
+                                stack_top, 
+                                args_ptr
+                               );
+                        }
+                 }
+             }
+
+        } else {
+             Bridge.log("loader: Failed to parse .fontcache\n");
         }
-        // file_loader_task(args_ptr);
+    } else {
+         Bridge.log("loader: No .fontcache found.\n");
     }
     
     Bridge.log("loader: All scan tasks spawned.\n");
@@ -451,10 +518,10 @@ pub extern "C" fn file_loader_task(arg: u64) {
     // NOTE: arg.iso is Arc, so access is efficient.
     // open() calls read_sector_yielding internally.
     if let Some(handle) = args.iso.open(&args.path) {
-         // Bridge.log("loader: Opened "); Bridge.log(&args.path); Bridge.log("\n");
+         Bridge.log("loader: Opened "); Bridge.log(&args.path); Bridge.log("\n");
          let mut data = alloc::vec![0u8; handle.size as usize];
          args.iso.read(&handle, 0, handle.size as usize, &mut data);
-         // Bridge.log("loader: Read complete\n");
+         Bridge.log("loader: Read complete\n");
          
          // Process (Serialized by Kernel Lock)
          let mut guard = KERNEL.lock();
@@ -485,7 +552,7 @@ pub fn process_file(
     spawn_override: Option<bool>,
     hhdm_u64: u64,
 ) {
-    // Bridge.log("loader: processing file "); Bridge.log(name); Bridge.log("\n");
+    Bridge.log("loader: processing file "); Bridge.log(name); Bridge.log("\n");
     let mtype = classify_bytes(data);
     let role_enum = get_module_role(name, &mtype);
     

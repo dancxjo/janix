@@ -95,41 +95,46 @@ fn blit_glyph(
     h: i32,
     color: u32
 ) {
+    let color_a = (color >> 24) & 0xFF;
+    let color_r = (color >> 16) & 0xFF;
+    let color_g = (color >> 8) & 0xFF;
+    let color_b = color & 0xFF;
+
     for row in 0..h {
+        let draw_y = y + row;
+        if draw_y < 0 || draw_y >= fb_height as i32 { continue; }
+
         for col in 0..w {
-            let coverage = bitmap[(row * w + col) as usize];
+            let draw_x = x + col;
+            if draw_x < 0 || draw_x >= fb_width as i32 { continue; }
+
+            let coverage = bitmap[(row * w + col) as usize] as u32;
             if coverage == 0 { continue; }
             
-            // Alpha blend?
-            // coverage is alpha (0-255).
-            // Combine with `color` alpha?
-            // Assuming color is solid, coverage is alpha.
-            // Simple: just draw pixel if > threshold?
-            // Or use set_pixel_clamped with alpha blending?
-            // `fill_rect` implemented alpha logic?
-            // `primitives.rs` `blit_image` handles alpha.
-            // But `set_pixel_clamped` does NOT handle read-back blending usually (it's unsafe setter).
-            // Wait, trunk `text.rs` used `set_pixel_clamped`! 
-            // `set_pixel_clamped` in trunk `primitives.rs` (which I pasted in step 336) DOES handle blending?
-            // Let's check `primitives.rs` from Step 336.
-            // `fn set_pixel_clamped(...)`
-            // It calculates index.
-            // `*ptr = color;`
-            // NO BLENDING in `set_pixel_clamped` usually.
-            // Blending is in `blit_image`.
-            // But `text.rs` from trunk called `set_pixel_clamped`.
-            // Does it ignore alpha?
-            // If I draw text on solid bg, it looks jagged without alpha.
-            // But for "First Pass", jagged is fine.
+            // Combine font coverage with text color alpha
+            let final_alpha = (coverage * color_a) / 255;
             
-            // I'll implement simple threshold alpha for now.
-            if coverage > 128 {
-                 unsafe {
-                    set_pixel_clamped(
-                        buffer, stride_bytes, fb_width as i32, fb_height as i32,
-                        x + col, y + row,
-                        color, None
-                    );
+            if final_alpha == 0 { continue; }
+
+            unsafe {
+                let row_ptr = (buffer as *mut u8).add(draw_y as usize * stride_bytes as usize) as *mut u32;
+                let pixel_ptr = row_ptr.add(draw_x as usize);
+                
+                if final_alpha == 255 {
+                    *pixel_ptr = color;
+                } else {
+                    let dst = *pixel_ptr;
+                    let dst_r = (dst >> 16) & 0xFF;
+                    let dst_g = (dst >> 8) & 0xFF;
+                    let dst_b = dst & 0xFF;
+
+                    let inv_a = 255 - final_alpha;
+
+                    let out_r = (color_r * final_alpha + dst_r * inv_a) / 255;
+                    let out_g = (color_g * final_alpha + dst_g * inv_a) / 255;
+                    let out_b = (color_b * final_alpha + dst_b * inv_a) / 255;
+
+                    *pixel_ptr = (0xFF << 24) | (out_r << 16) | (out_g << 8) | out_b;
                 }
             }
         }

@@ -195,11 +195,12 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = (*guard).as_mut() {
             use kernel::sched::scheduler::ThreadContext;
-            let mut ctx = ThreadContext::default();
+            use bridge_x86_64::ArchContext;
+            let mut ctx: ThreadContext<ArchContext> = ThreadContext::default();
 
             unsafe {
                 let frame_ptr = frame as *const _ as *const u64;
-                let ctx_ptr = ctx.0.as_mut_ptr();
+                let ctx_ptr = ctx.0.0.as_mut_ptr();
                 core::ptr::copy_nonoverlapping(frame_ptr, ctx_ptr, 20);
             }
 
@@ -244,7 +245,7 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
             k.scheduler.tick(&k.bridge, &mut ctx);
 
             unsafe {
-                let ctx_ptr = ctx.0.as_ptr();
+                let ctx_ptr = ctx.0.0.as_ptr();
                 let frame_ptr = frame as *mut _ as *mut u64;
                 core::ptr::copy_nonoverlapping(ctx_ptr, frame_ptr, 20);
             }

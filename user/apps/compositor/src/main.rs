@@ -18,6 +18,7 @@ use thing_models::builtins::ids::{
 use thing_models::schema::bitmap::BitmapBody;
 use thing_models::core::input::PointerEventStreamBody;
 use thing_models::builtins::core_kinds::ModuleBody;
+use crate::boot_scene::BootScene;
 
 
 #[no_mangle]
@@ -126,6 +127,11 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
 
     // 2. Main Loop
     let mut log_stream_id: Option<ThingId> = None;
+    let mut last_log_seq: u64 = 0;
+    
+    // Boot Scene
+    let mut boot_scene = BootScene::new();
+    
     let mut frame_count: u64 = 0;
     c.write_str("COMPOSITOR: Entering Main Loop.\n");
 
@@ -213,27 +219,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                         if cursor_x >= fb_width as i32 { cursor_x = fb_width as i32 - 1; }
                         if cursor_y >= fb_height as i32 { cursor_y = fb_height as i32 - 1; }
 
-                        // Clear Background
-                        render::primitives::fill_rect(
-                            ptr, pitch, fb_width, fb_height,
-                            0, 0, fb.width as i32, fb.height as i32,
-                            0xFF2E80D1,
-                            None
-                        );
-
-                        if frame_count == 1 {
-                             let _ = PortWrites.write_str("COMPOSITOR: Wrote Background.\n");
-                        }
-                    
-                        // Debug Text
-                        render::text::draw_text(
-                            ptr, pitch, fb_width, fb_height,
-                            20, 20,
-                            "Compositor Online",
-                            0xFFFFFFFF
-                        );
-
-                        // Log Stream
+                        // 1. Log Stream Processing (Feed Boot Scene)
                         if log_stream_id.is_none() {
                             log_stream_id = Some(ThingId(3020)); 
                         }
@@ -242,21 +228,25 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                             let op = GraphOp::GetThing { id: lid };
                             if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
                                  if let Ok(stream) = postcard::from_bytes::<thing_models::core::serial::LogStreamBody>(&tb.bytes) {
-                                     if let Some(last) = stream.entries.last() {
-                                         let msg = &last.message;
-                                         let y = fb_height as i32 - 40;
-                                         render::text::draw_text(
-                                             ptr, pitch, fb_width, fb_height,
-                                             20, y,
-                                             msg.as_str(),
-                                             0xFFFFFFFF
-                                         );
+                                     // Iterate and add new entries
+                                     for entry in &stream.entries {
+                                         if entry.seq > last_log_seq {
+                                             last_log_seq = entry.seq;
+                                             // Filter debug noise (level < 2 is Trace/Debug)
+                                             if entry.level >= 2 {
+                                                 boot_scene.add_milestone(&entry.message);
+                                             }
+                                         }
                                      }
                                  }
                             }
                         }
 
-                        // Window Logic
+                        // 2. Window Logic (Detect Desktop)
+                        let mut has_windows = false;
+                        let mut window_ids = [ThingId(0); 16];
+                        let mut count = 0;
+
                         let scan_op = GraphOp::ScanLinks {
                             from: Some(THING_BOOT_ROOT),
                             to: None,
@@ -264,15 +254,35 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                         };
 
                         if let Ok(GraphReply::Links(list)) = g.call_op(&scan_op, &mut buf) {
-                             let mut window_ids = [ThingId(0); 16];
-                             let mut count = 0;
                              for (_, target, _) in list {
                                  if count < window_ids.len() {
                                      window_ids[count] = target;
                                      count += 1;
                                  }
                              }
+                             
+                             if count > 0 { has_windows = true; }
+                        }
 
+                        // 3. Update Boot Scene
+                        if has_windows {
+                             boot_scene.desktop_ready = true;
+                        }
+                        boot_scene.update();
+                        
+                        // 4. Rendering Strategy
+                        let should_draw_desktop = !boot_scene.is_active || boot_scene.global_alpha < 1.0;
+                         
+                        if should_draw_desktop {
+                            // Clear Background (Desktop Blue)
+                            render::primitives::fill_rect(
+                                ptr, pitch, fb_width, fb_height,
+                                0, 0, fb.width as i32, fb.height as i32,
+                                0xFF2E80D1,
+                                None
+                            );
+                            
+                             // Draw Windows
                              for i in 0..count {
                                  let wid = window_ids[i];
                                  let get_w = GraphOp::GetThing { id: wid };
@@ -283,7 +293,17 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                                  }
                              }
                         }
+                        
+                        // Boot Scene Overlay
+                        if boot_scene.is_active {
+                             boot_scene.render(ptr, pitch, fb_width, fb_height);
+                        }
 
+                        if frame_count == 1 {
+                             let _ = PortWrites.write_str("COMPOSITOR: Wrote Background.\n");
+                        }
+                        
+                        // 5. Cursor
                         if let Some(ref bmp) = cursor_bitmap {
                             render::draw_bitmap(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, bmp);
                         } else {
@@ -335,3 +355,4 @@ fn draw_window(fb_ptr: *mut u32, pitch: u32, fb_w: u32, fb_h: u32, window: &thin
 
 mod render;
 mod layout;
+mod boot_scene;

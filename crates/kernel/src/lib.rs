@@ -30,7 +30,7 @@ pub struct Kernel<B: HardwareBridge> {
     pub bridge: B,
     pub graph: GraphStore,
     pub symbols: SymbolTable,
-    pub scheduler: Scheduler,
+    pub scheduler: Scheduler<B::Context>,
 }
 
 impl<B: HardwareBridge> Kernel<B> {

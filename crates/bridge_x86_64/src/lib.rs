@@ -12,6 +12,16 @@ pub mod user;
 use core::arch::asm;
 use kernel::bridge::HardwareBridge;
 
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub struct ArchContext(pub [u64; 34]);
+
+impl Default for ArchContext {
+    fn default() -> Self {
+        Self([0; 34])
+    }
+}
+
 pub struct Bridge;
 
 // Hook for scheduler. Only set by kernel binary.
@@ -127,6 +137,8 @@ pub fn print_hex(val: u64) {
 
 #[cfg(target_arch = "x86_64")]
 impl HardwareBridge for Bridge {
+    type Context = ArchContext;
+
     fn log(&self, msg: &str) {
         unsafe {
             for b in msg.bytes() {
@@ -235,15 +247,9 @@ impl HardwareBridge for Bridge {
         }
     }
 
-    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> [u64; 34] {
+    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> Self::Context {
         // [r15...rax, rip, cs, rflags, rsp, ss]
-        // 15 GPRs: r15..r8, rcx, rdx, rsi, rdi, rax (rbx, rbp?)
-        // Let's check user::resume_user_mode_asm layout:
-        // pop r15, r14, r13, r12, rbp, rbx, r11, r10, r9, r8, rcx, rdx, rsi, rdi, rax
-        // 15 regs.
-        // Then rip, cs, rflags, rsp, ss. Total 20.
-        // We now pad to 34 for AArch64 compatibility.
-
+        // ...
         let mut ctx = [0u64; 34];
         // RDI = arg
         ctx[13] = arg;
@@ -274,12 +280,12 @@ impl HardwareBridge for Bridge {
             ctx[19] = unsafe { gdt::USER_DATA_SELECTOR.0 as u64 | 3 };
         }
 
-        ctx
+        ArchContext(ctx)
     }
 
-    fn resume_user_mode(&self, context: &[u64]) -> ! {
+    fn resume_user_mode(&self, context: &Self::Context) -> ! {
         crate::user::enter::resume_user_mode(
-            context,
+            &context.0,
             &kernel::sched::fpu::FpuContext::default(),
         )
     }
@@ -360,6 +366,8 @@ impl HardwareBridge for Bridge {
 
 #[cfg(not(target_arch = "x86_64"))]
 impl HardwareBridge for Bridge {
+    type Context = ArchContext;
+
     fn log(&self, _msg: &str) {}
     fn hhdm_offset(&self) -> u64 { 0 }
     fn port_outb(&self, _port: u16, _val: u8) {}
@@ -387,10 +395,10 @@ impl HardwareBridge for Bridge {
     }
     fn irq_disable(&self) {}
     fn irq_enable(&self) {}
-    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 34] {
-        [0; 34]
+    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> Self::Context {
+        ArchContext([0; 34])
     }
-    fn resume_user_mode(&self, _context: &[u64]) -> ! {
+    fn resume_user_mode(&self, _context: &Self::Context) -> ! {
         loop {}
     }
     fn set_kernel_stack(&self, _: u64) {}

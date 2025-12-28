@@ -16,17 +16,11 @@ pub struct Process {
 }
 
 #[repr(C, align(16))]
-#[derive(Debug, Clone, Copy)]
-pub struct ThreadContext(pub [u64; 34]);
-
-impl Default for ThreadContext {
-    fn default() -> Self {
-        Self([0; 34])
-    }
-}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ThreadContext<C>(pub C);
 
 #[derive(Debug)]
-pub struct Thread {
+pub struct Thread<C> {
     pub id: ThreadId,
     pub process_id: ProcessId,
     pub name: String,
@@ -37,7 +31,7 @@ pub struct Thread {
     pub user_stack_top: u64,
     pub kernel_stack: Vec<u128>,
     pub kernel_stack_top: u64,
-    pub context: ThreadContext,
+    pub context: ThreadContext<C>,
     pub fpu_context: FpuContext,
     pub started: bool,
     pub thing_id: Option<ThingId>,
@@ -48,8 +42,8 @@ pub struct Thread {
     pub pending_wake: bool,
 }
 
-pub struct Scheduler {
-    pub threads: Vec<Option<Thread>>,
+pub struct Scheduler<C> {
+    pub threads: Vec<Option<Thread<C>>>,
     pub processes: Vec<Option<Process>>,
     pub current: Option<ThreadId>,
     pub run_queue: VecDeque<ThreadId>,
@@ -63,13 +57,13 @@ pub struct SleepEntry {
     pub wake_at_ns: TimeNs,
 }
 
-impl Default for Scheduler {
+impl<C> Default for Scheduler<C> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Scheduler {
+impl<C> Scheduler<C> {
     pub const fn new() -> Self {
         Self {
             threads: Vec::new(),
@@ -94,17 +88,6 @@ impl Scheduler {
                 };
 
                 // Optimized insertion: Maintain sorted order (descending by wake time).
-                // Min wake time (earliest deadline) should be at the END for efficient pop().
-                // We want to find index i such that for all j < i, element > new, and all k >= i, element <= new.
-                // partition_point returns the index of the first element satisfying the predicate NO (if we use |x| x > new).
-                // Wait, partition_point returns the index of the first element for which the predicate is FALSE.
-                // We want predicate: x.wake_at_ns > wake_ns.
-                // So elements [100, 50, 40] where we insert 45.
-                // 100 > 45 (True)
-                // 50 > 45 (True)
-                // 40 > 45 (False) -> Index 2.
-                // Insert at 2 -> [100, 50, 45, 40]. Correct.
-
                 let idx = self.sleep_queue.partition_point(|x| x.wake_at_ns > wake_ns);
                 self.sleep_queue.insert(idx, entry);
             }
@@ -136,7 +119,7 @@ impl Scheduler {
         self.sleep_queue.last().map(|entry| entry.wake_at_ns)
     }
 
-    pub fn spawn<B: HardwareBridge>(
+    pub fn spawn<B>(
         &mut self,
         bridge: &B,
         name: &str,
@@ -145,7 +128,7 @@ impl Scheduler {
         arg: u64,
         heap_start: u64,
         heap_end: u64,
-    ) {
+    ) where B: HardwareBridge<Context = C> {
         let pid = ProcessId(self.processes.len() as u64 + 1);
         let tid = ThreadId(self.threads.len() as u64 + 1);
 
@@ -193,7 +176,8 @@ impl Scheduler {
         self.run_queue.pop_front()
     }
 
-    pub fn tick<B: HardwareBridge>(&mut self, _bridge: &B, current_context: &mut ThreadContext) {
+    pub fn tick<B>(&mut self, _bridge: &B, current_context: &mut ThreadContext<C>)
+    where B: HardwareBridge<Context = C>, C: Copy {
         // 1. Save current context if we have a current thread
         if let Some(tid) = self.current {
             // Only save if it still exists (it might have exited/died, but we handle that elsewhere)
@@ -242,14 +226,11 @@ impl Scheduler {
             // But if we want to run Idle Loop?
             // We don't have explicit Idle context saved.
             // We can't switch to Idle Loop easily if we are in interrupt handler on top of App stack.
+            // We don't have explicit Idle context saved.
+            // We can't switch to Idle Loop easily if we are in interrupt handler on top of App stack.
 
             // For now, if no threads, we define current = None.
             self.current = None;
-
-            // If we were running an App, and we set current=None, we return to App execution?
-            // That's dangerous if we considered it "blocked".
-            // But here we only handle RR preemption.
-            // If thread blocked, it removed itself from run_queue beforehand.
 
             // If we return, we resume execution of whatever context is in `current_context`.
             // If it was an App, it keeps running.
@@ -262,3 +243,4 @@ impl Scheduler {
         }
     }
 }
+

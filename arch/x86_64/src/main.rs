@@ -45,8 +45,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         bridge.log("File: ");
         bridge.log(loc.file());
         bridge.log("\n");
-        bridge.log("Line: 0x");
-        print_hex(&bridge, loc.line() as u64);
+        bridge.log("Line: ");
+        print_dec(&bridge, loc.line() as u64);
         bridge.log("\n");
     }
 
@@ -112,6 +112,36 @@ fn print_hex(bridge: &Bridge, val: u64) {
             bridge.log(core::str::from_utf8(&[c]).unwrap());
             printed = true;
         }
+    }
+}
+
+fn print_dec(bridge: &Bridge, val: u64) {
+    use kernel::bridge::HardwareBridge;
+    if val == 0 {
+        bridge.log("0");
+        return;
+    }
+
+    let mut div = 1_000_000_000_000_000_000; // 10^18
+    // Check if we need 10^19 (u64 max is roughly 1.8e19)
+    if val >= 10_000_000_000_000_000_000 {
+        div = 10_000_000_000_000_000_000;
+    }
+
+    // Skip leading zeros
+    while div > val {
+        div /= 10;
+    }
+
+    let mut rest = val;
+    while div > 0 {
+        let digit = rest / div;
+        rest %= div;
+        div /= 10;
+        
+        // Same unsafe/unwrap pattern as print_hex
+        let c = (digit as u8) + b'0';
+        bridge.log(core::str::from_utf8(&[c]).unwrap());
     }
 }
 

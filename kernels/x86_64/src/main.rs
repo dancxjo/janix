@@ -770,7 +770,8 @@ pub extern "C" fn rust_main() -> ! {
                  let mut guard = KERNEL.lock();
                  if let Some(k) = guard.as_mut() {
                      for (idx, module) in resp.modules().iter().enumerate() {
-                        let name = module.path().to_str().unwrap_or("unknown");
+                        let full_path = module.path().to_str().unwrap_or("unknown");
+                        let name = full_path.rsplit('/').next().unwrap_or(full_path);
                         let base = module.addr();
                         let len = module.size() as usize;
                         let data = unsafe { slice::from_raw_parts(base, len) };

@@ -377,10 +377,13 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             bridge.log("AHCI: No free slots!\n");
             return false;
         }
+        
     } // Unlock
+    // Note: If we return false inside the block, guard is dropped correctly.
 
     // 6. Spin Wait (Yielding)
-    let mut timeout = 100_000_000; // 100M spins ~ 0.5-1s?
+    // Use u64::MAX to effectively disable timeout deallocation hazard.
+    let mut timeout: u64 = u64::MAX;
     loop {
         let ci_ptr = core::ptr::addr_of!(port.ci);
         let ci = unsafe { core::ptr::read_volatile(ci_ptr) };

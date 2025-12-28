@@ -191,7 +191,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     Bridge.log("loader: ISO Reader Ready. Scanning...\n");
     
     // 1. Mount /boot and Dirs (Needs Kernel Lock)
-    let (apps_dir_id, drivers_dir_id, fonts_dir_id) = {
+    let (apps_dir_id, _drivers_dir_id, fonts_dir_id) = {
         let mut guard = KERNEL.lock();
         if let Some(k) = guard.as_mut() {
             use abi::wire::typed::{CodecId, TypeId, TypedBytes};
@@ -358,7 +358,12 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
         // file_loader_task(args_ptr);
     }
     
-    // 4. Drivers (Serial? Or Parallel? might as well parallel)
+    // 4. Drivers
+    // Drivers are now loaded as modules by Limine (see xtask/src/iso.rs).
+    // The kernel main.rs processes modules early.
+    // We do NOT scan /boot/drivers here to avoid duplicate loading/spawning.
+    
+    /*
     let drv_entries = iso.read_dir("/boot/drivers").unwrap_or_default();
     Bridge.log("loader: Spawning driver loaders...\n");
     for entry in drv_entries {
@@ -400,6 +405,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
           } // drop lock
           // file_loader_task(args_ptr);
     }
+    */
     
     // 5. Fonts (Parallel)
     let font_entries = iso.read_dir("/boot/fonts").unwrap_or_default();

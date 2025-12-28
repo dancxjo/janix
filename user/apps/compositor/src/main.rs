@@ -10,7 +10,7 @@ use thing_models::builtins::core_kinds::DisplayFramebufferBody;
 use thing_models::builtins::ids::{
     THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_DISPLAY_FRAMEBUFFER_KIND,
     THING_MODULE_KIND, THING_POINTER_EVENT_STREAM_KIND, THING_WINDOW_KIND,
-    THING_EMITS_KIND
+    // THING_EMITS_KIND
 };
 use thing_models::schema::bitmap::BitmapBody;
 use thing_models::core::input::PointerEventStreamBody;
@@ -145,7 +145,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                             kind: Some(thing_models::builtins::ids::THING_EMITS_KIND)
                         };
                          if let Ok(GraphReply::Links(list)) = g.call_op(&scan_op, &mut buf) {
-                             for (_, target, _) in list {
+                             for (_, _target, _) in list {
                                  // Check kind
                                  // We need to fetch the thing to check the kind (Link doesn't contain target kind)
                                  // Optimistically assume the first EMITS is it, or better, check type.

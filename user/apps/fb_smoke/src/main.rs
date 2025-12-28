@@ -59,14 +59,14 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                      // Draw Gradient
                      draw_pattern(&fb);
                      
-                     thing_std::time::sleep_ms(&g, 1000);
+                     let _ = thing_std::time::sleep_ms(&g, 1000);
                 } else {
                     c.write_str("FB_SMOKE: Postcard decode failed\n");
                 }
             }
         }
         
-        thing_std::time::sleep_ms(&g, 500);
+        let _ = thing_std::time::sleep_ms(&g, 500);
     }
 }
 

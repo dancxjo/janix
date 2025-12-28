@@ -4,15 +4,15 @@
 extern crate alloc;
 use alloc::vec::Vec;
 use thing_std as std;
-use thing_std::{StdoutConsole, Console};
-use abi::{ThingId, SymbolId};
+// use thing_std::{StdoutConsole, Console};
+use abi::ThingId;
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use models::core::input::{MouseBody, PointerEventStreamBody, PointerEventCompact};
 use models::builtins::ids::{
     THING_MOUSE_KIND, THING_POINTER_EVENT_STREAM_KIND, 
     THING_EMITS_KIND, THING_LINK_KIND, THING_BOOT_ROOT, THING_HAS_DEVICE_KIND
 };
-use models::builtins::symbols::{SYM_MOUSE, SYM_PS2};
+use models::builtins::symbols::SYM_PS2;
 use models::Thing;
 
 #[no_mangle]
@@ -23,7 +23,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     }
     
     std::init();
-    use std::{StdoutConsole, Console};
+    // use std::{StdoutConsole, Console};
     use core::fmt::Write;
     use thing_std::debug::PortWrites;
     
@@ -193,7 +193,7 @@ fn publish_thing(thing: &Thing) {
     let payload_bytes = postcard::to_allocvec(&payload).expect("serialize payload");
     // c.write_str("Calling driver_publish...\n");
     let res = std::syscalls::driver_publish(&payload_bytes);
-    if let Err(e) = res {
+    if let Err(_e) = res {
         let _ = PortWrites.write_str("Publish Thing Failed\n");
     }
 }

@@ -1,5 +1,6 @@
 use core::cmp::{max, min};
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PixelFormat {
     Bgra8888,
@@ -25,6 +26,7 @@ fn clip_span(start: i32, len: i32, clip_start: i32, clip_len: i32) -> Option<(i3
 
 // Interpolate between two colors
 // This matches the logic from v0.1 boot screen, allowing fast fades without readback.
+#[allow(dead_code)]
 pub fn lerp_color(start: u32, end: u32, step: usize, total_steps: usize) -> u32 {
     if total_steps == 0 {
         return end;
@@ -126,6 +128,7 @@ pub fn fill_rect(
     }
 }
 
+#[allow(dead_code)]
 pub fn draw_tiled_image(
     buffer: *mut u32,
     stride_bytes: u32,
@@ -209,6 +212,7 @@ pub fn draw_tiled_image(
 }
 
 
+#[allow(dead_code)]
 pub fn blit_image(
     buffer: *mut u32,
     stride_bytes: u32,
@@ -247,7 +251,7 @@ pub fn blit_image(
     }
 
     let is_bgra = matches!(pixel_format, PixelFormat::Bgra8888);
-    let is_rgba = matches!(pixel_format, PixelFormat::Rgba8888);
+    let _is_rgba = matches!(pixel_format, PixelFormat::Rgba8888);
 
     for dest_y in start_y..end_y {
         let src_y = dest_y - y;

@@ -1,9 +1,9 @@
 extern crate alloc;
-use alloc::vec::Vec;
+// use alloc::vec::Vec;
 use fontdue::{Font, FontSettings};
 use spin::Once;
 
-use crate::render::primitives::{set_pixel_clamped, PixelFormat};
+use crate::render::primitives::{set_pixel_clamped};
 
 // Embed the font for now to ensure working rendering without complex graph discovery first.
 // This aligns with "Reintroduce v0.1 features" (which had embedded fonts).

@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+// use alloc::vec::Vec;
 use thing_models::schema::bitmap::BitmapBody;
 
 pub fn parse_bmp(data: &[u8]) -> Option<BitmapBody> {

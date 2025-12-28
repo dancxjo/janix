@@ -207,7 +207,7 @@ fn update_stream<T: serde::Serialize>(client: &std::GraphClient, id: ThingId, sc
         codec_id: CodecId::POSTCARD,
         bytes,
     };
-    let thing_body = models::ThingBody::from(&typed).expect("tb from typed");
+    let _thing_body = models::ThingBody::from(&typed).expect("tb from typed");
 
     let mut out_buf = [0u8; 1024]; 
     let _ = client.call_op(&GraphOp::UpdateThing { id, value: typed }, &mut out_buf);

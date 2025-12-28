@@ -41,6 +41,7 @@ pub fn run() -> Result<()> {
         "ls_boot",
         "cat_boot",
         "fb_smoke",
+        "compositor",
     ];
 
     for app in user_apps {
@@ -52,6 +53,8 @@ pub fn run() -> Result<()> {
             .arg(app)
             .arg("--target")
             .arg("x86_64-unknown-none")
+            .arg("-Z")
+            .arg("build-std=core,alloc,compiler_builtins")
             .current_dir(&root)
             .status()
             .context(format!("Failed to build app {}", app))?;

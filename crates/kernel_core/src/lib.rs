@@ -3,6 +3,7 @@
 extern crate alloc;
 
 pub mod diag;
+pub mod drivers;
 pub mod fs;
 pub mod graph;
 pub mod input;

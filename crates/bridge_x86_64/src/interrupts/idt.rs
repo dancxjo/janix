@@ -122,21 +122,24 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "sub rsp, 16",          // Create gap
         "push rax",             // Scratch
         
-        // Move RFLAGS, CS, RIP down
-        "mov rax, [rsp + 40]",  // Old RFLAGS
-        "mov [rsp + 24], rax",  // New RFLAGS
-        "mov rax, [rsp + 32]",  // Old CS
-        "mov [rsp + 16], rax",  // New CS
-        "mov rax, [rsp + 24]",  // Old RIP
-        "mov [rsp + 8], rax",   // New RIP
+        // Correct Order: Low to High to avoid overwriting invalidating sources
+        // Source RIP is at +24. Dest is at +8.
+        "mov rax, [rsp + 24]",  // RIP
+        "mov [rsp + 8], rax",   // New RIP position
+        
+        // Source CS is at +32. Dest is at +16.
+        "mov rax, [rsp + 32]",  // CS
+        "mov [rsp + 16], rax",  // New CS position
+        
+        // Source RFLAGS is at +40. Dest is at +24.
+        "mov rax, [rsp + 40]",  // RFLAGS
+        "mov [rsp + 24], rax",  // New RFLAGS position
         
         // Synthesize SS and RSP
         "mov rax, ss",
         "mov [rsp + 40], rax",  // SS at top
         
-        "lea rax, [rsp + 48]",  // Original RSP was at start + 24? 
-                                // We did sub 16 (total 40), push rax (total 48).
-                                // So [rsp + 48] is the byte ABOVE the original interrupt frame.
+        "lea rax, [rsp + 48]",  // Original RSP
         "mov [rsp + 32], rax",  // RSP
         
         "pop rax",              // Restore scratch
@@ -198,30 +201,39 @@ unsafe extern "C" fn timer_interrupt_naked() {
 
         "3:",
         // Return to Kernel
-        // Stack has 5 items. iretq pops 3. We must consume the other 2 (RSP/SS) 
-        // to avoid stack leak/corruption.
-        // Logic: Move top 3 items (RIP,CS,RFLAGS) UP by 16 bytes.
-        // Stack: [RIP, CS, RFLAGS, RSP, SS]
-        // Target: [Gap, Gap, RIP, CS, RFLAGS] (so iretq pops from +16, effectively dropping RSP/SS)
+        // Stack: [RIP, CS, RFLAGS, RSP(dummy), SS(dummy)]
+        // We want: [Gap, Gap, RIP, CS, RFLAGS]
         
-        // Actually, we can just `add rsp, 16` BEFORE popping? No, RIP is at bottom.
-        // We need to pop RIP, CS, RFLAGS into registers? No.
-        // We shuffle.
+        "push rax", // Scratch. rsp -= 8. 
+        // Offsets relative to current rsp:
+        // +8: RIP
+        // +16: CS
+        // +24: RFLAGS
+        // +32: RSP (dummy)
+        // +40: SS (dummy)
         
-        "push rax", // Scratch
+        // Dest offsets relative to current rsp:
+        // We want final rsp to be +24 (skipping scratch, and 16 byte gap).
+        // So RIP should be at +24.
+        // CS should be at +32.
+        // RFLAGS should be at +40.
         
-        // Correct Order: High to Low to avoid overwriting
-        "mov rax, [rsp + 24]", // RFLAGS
-        "mov [rsp + 40], rax", // Place at New Top
+        // Order: High to Low (Dest > Source) to avoid overwrite.
         
-        "mov rax, [rsp + 16]", // CS
-        "mov [rsp + 32], rax", // Place at SS slot
+        // 1. Move RFLAGS (Src +24 -> Dest +40)
+        "mov rax, [rsp + 24]",
+        "mov [rsp + 40], rax",
         
-        "mov rax, [rsp + 8]",  // RIP
-        "mov [rsp + 24], rax", // Place at RSP slot (which is actually new RIP slot)
+        // 2. Move CS (Src +16 -> Dest +32)
+        "mov rax, [rsp + 16]",
+        "mov [rsp + 32], rax",
         
-        "pop rax",
-        "add rsp, 16", // Point to new RIP
+        // 3. Move RIP (Src +8 -> Dest +24)
+        "mov rax, [rsp + 8]",
+        "mov [rsp + 24], rax",
+        
+        "pop rax",     // rsp += 8.
+        "add rsp, 16", // rsp += 16. Points to new RIP.
         "iretq",
     );
 }

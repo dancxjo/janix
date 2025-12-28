@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![cfg_attr(target_os = "thingos", feature(alloc_error_handler))]
+#![allow(unused)]
 
 extern crate alloc;
 
@@ -70,22 +71,23 @@ pub extern "C" fn rust_main() -> ! {
             // 1. Init Bridge (and set HHDM)
             Bridge::init(offset);
 
-            // 2. Update logic UART base (Physical 0x09000000 + Offset)
-            bridge_aarch64::set_uart_base(0x09000000 + offset);
 
-            // Should now be able to print to Normal-mapped UART
-            bootlog!("Booting ThingOS (aarch64)...");
-            bootlog!("UART mapped at HHDM offset 0x{:x}", offset);
 
-            // 0. Init Heap (Needed for paging)
+            // 2. Init Heap (Needed for paging)
             let info =
                 limine::heap_init::init_heap_from_limine(heap::KERNEL_HEAP_SIZE_BYTES as u64);
 
-            // 3. Init Paging & Remap UART
+            // 3. Init Paging & Remap UART (Mapped as Device Memory)
             paging::init(offset);
             paging::map_device_region(0x09000000, 4096);
 
-            bootlog!("UART remapped as Device capability.");
+            // 4. Update logic UART base (Physical 0x09000000 + Offset)
+            bridge_aarch64::set_uart_base(0x09000000 + offset);
+
+            // Should now be able to print to Device-mapped UART
+            bootlog!("Booting ThingOS (aarch64)...");
+            bootlog!("UART mapped at HHDM offset 0x{:x} (Device)", offset);
+            
             early_log::log_heap_init(info);
         } else {
             // Fallback: Blind write to Phys

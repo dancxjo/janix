@@ -1,4 +1,7 @@
 #![no_std]
+#![allow(unused)]
+#![allow(static_mut_refs)]
+#![allow(private_interfaces)]
 extern crate alloc;
 
 pub mod diag;

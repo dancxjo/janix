@@ -202,17 +202,18 @@ fn run_qemu_aarch64(
         cmd.arg("-serial").arg("stdio");
     }
     cmd.arg("-no-reboot");
+    cmd.arg("-d").arg("int");
+    cmd.arg("-D").arg("qemu.log");
 
     if use_uefi {
         cmd.arg("-bios").arg(&ovmf_code);
     }
-    // Add AHCI controller
-    cmd.arg("-device").arg("ahci,id=ahci");
-    cmd.arg("-drive").arg(format!(
-        "id=cd,file={},if=none,format=raw,readonly=on",
-        iso_path.display()
-    ));
-    cmd.arg("-device").arg("virtio-blk-pci,drive=cd,bootindex=0");
+
+    cmd.arg("-device").arg("ramfb");
+    cmd.arg("-device").arg("qemu-xhci");
+    cmd.arg("-device").arg("usb-kbd");
+    cmd.arg("-device").arg("usb-mouse");
+    cmd.arg("-cdrom").arg(&iso_path);
 
     // GDB setup
     if let Some(port) = gdb_port {

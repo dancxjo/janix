@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(unused)]
 #![allow(clippy::missing_safety_doc)]
 
 extern crate alloc;
@@ -36,8 +37,14 @@ pub unsafe fn set_uart_base(base: u64) {
 impl Bridge {
     pub unsafe fn init(hhdm: u64) {
         HHDM_OFFSET.store(hhdm, Ordering::Relaxed);
+        set_uart_base(0x09000000 + hhdm);
         interrupts::trap::init();
     }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+impl Bridge {
+    pub unsafe fn init(_hhdm: u64) {}
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -49,7 +56,7 @@ impl HardwareBridge for Bridge {
         let uart_base = unsafe { UART_BASE };
         let uart_ptr = uart_base as *mut u8;
         // FR Register offset 0x18. TXFF is bit 5.
-        let _uart_fr = (uart_base + 0x18) as *mut u32;
+        // let _uart_fr = (uart_base + 0x18) as *mut u32;
 
         for b in msg.bytes() {
             unsafe {
@@ -59,6 +66,11 @@ impl HardwareBridge for Bridge {
                 // }
                 core::ptr::write_volatile(uart_ptr, b);
             }
+        }
+        unsafe {
+            // Ensure write completes
+             asm!("dc cvac, {0}", in(reg) uart_ptr);
+             asm!("dsb ish");
         }
     }
 

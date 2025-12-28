@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
+#![allow(unused)]
 
 extern crate alloc;
 
@@ -270,10 +271,24 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
 
             k.scheduler.tick(&k.bridge, &mut ctx);
 
+            k.bridge.log("TICK: Out RIP=");
+            print_hex(&k.bridge, ctx.0.0[15]);
+            k.bridge.log("\n");
+
             unsafe {
                 let ctx_ptr = ctx.0.0.as_ptr();
                 let frame_ptr = frame as *mut _ as *mut u64;
+                
+                k.bridge.log("Frame Ptr: ");
+                print_hex(&k.bridge, frame_ptr as u64);
+                k.bridge.log("\n");
+
                 core::ptr::copy_nonoverlapping(ctx_ptr, frame_ptr, 20);
+                
+                let read_back = (*frame).rip;
+                k.bridge.log("Frame RIP Readback: ");
+                print_hex(&k.bridge, read_back);
+                k.bridge.log("\n");
             }
         }
     }

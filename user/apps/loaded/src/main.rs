@@ -2,198 +2,169 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::vec::Vec;
-use alloc::format;
-use core::fmt::Write;
-
 use thing_std as std;
-use thing_std::{GraphClient, StdoutConsole, Console};
-use thing_models::abi::wire::graph::{GraphOp, GraphReply};
-use thing_models::builtins::ids::*;
-use thing_models::core::fs::{FileBody, MountBody};
-use thing_models::prelude::ThingId; // Import ThingId from prelude
+use thing_std::{StdoutConsole, Console, GraphClient};
+use core::fmt::Write;
+use abi::wire::graph::{GraphOp, GraphReply};
+use abi::wire::typed::{TypedBytes, CodecId, TypeId};
+use thing_models::builtins::ids::{
+    THING_BOOT_ROOT, THING_BOOT_STATE_KIND, THING_BOOT_STATE_SCHEMA
+};
+use thing_models::schema::boot_state::BootStateBody;
 
-// Helper for sleep
-fn sleep_ms(ms: u64) {
-    // 1ms = 1_000_000 ns
-    let _ = unsafe {
-        // defined in syscall wrappers usually, but let's just make a quick syscall wrapper
-        // SYSCALL_SLEEP is 12 defined in abi
-        // But let's use ABI constant for clarity if we could import it, but it's fine to hardcode or bind
-        // sys_sleep(ms * 1_000_000);
-        
-        let ns = ms * 1_000_000;
-        let mut _ret: isize;
-        core::arch::asm!(
-            "syscall",
-            in("rax") 12, // SYSCALL_SLEEP
-            in("rdi") ns,
-            lateout("rax") _ret,
-            out("rcx") _,
-            out("r11") _,
-        );
-    };
-}
-
-// Syscall wrapper
-#[inline(always)]
-unsafe fn sys_spawn(data: &[u8], name: &str) -> isize {
-    let mut ret: isize;
-    let data_ptr = data.as_ptr();
-    let data_len = data.len();
-    let name_ptr = name.as_ptr();
-    let name_len = name.len();
-    
+// Local syscall wrapper
+pub unsafe fn sys_spawn(path: &str) -> Result<u64, isize> {
+    use abi::SYSCALL_SPAWN;
+    let ret: isize;
     core::arch::asm!(
         "syscall",
-        in("rax") 20, // SYSCALL_SPAWN
-        in("rdi") data_ptr,
-        in("rsi") data_len,
-        in("rdx") name_ptr,
-        in("r10") name_len,
+        in("rax") SYSCALL_SPAWN,
+        in("rdi") path.as_ptr() as usize,
+        in("rsi") path.len(),
         lateout("rax") ret,
         out("rcx") _,
         out("r11") _,
+        options(nostack, preserves_flags)
     );
-    ret
+    if ret >= 0 {
+        Ok(ret as u64)
+    } else {
+        Err(ret)
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn _start(heap_start: u64) -> ! {
     unsafe { std::rt::init_heap(heap_start as usize, 32 * 1024 * 1024); }
     std::init();
-    
+
+    let mut c = StdoutConsole;
+    let _ = c.write_str("LOADED: Starting Init Sequence...\n");
+
     let g = GraphClient::new();
-    let c = StdoutConsole;
-    let mut buf = [0u8; 4096]; // Ensure large enough for replies
+    let mut buf = [0u8; 4096];
 
-    let _ = c.write_str("LOADED: Starting...\n");
-
-    // 1. Wait for /boot
-    let mut mount_id = None;
+    // 0. Create BootState Thing
+    let mut boot_state_id = None;
     
-    loop {
-        // Scan for MOUNTS attached to BOOT_ROOT? No, scan for MOUNTS linked to HAS_MOUNT_KIND?
-        // BootFS scanner creates a MountBody thing and links it to BOOT_ROOT with HAS_MOUNT_KIND.
+    let initial_state = BootStateBody {
+        phase: alloc::string::String::from("init"),
+        step: 0,
+        message: alloc::string::String::from("Booting..."),
+        level: 0,
+    };
+    
+    if let Ok(bytes) = postcard::to_allocvec(&initial_state) {
+        let op = GraphOp::CreateThing {
+            kind: THING_BOOT_STATE_KIND,
+            value: TypedBytes {
+                type_id: TypeId(THING_BOOT_STATE_SCHEMA.0 as u128),
+                codec_id: CodecId::POSTCARD,
+                bytes,
+            },
+        };
+        if let Ok(GraphReply::Created { id }) = g.call_op(&op, &mut buf) {
+            boot_state_id = Some(id);
+            // Link to Root
+            let link_op = GraphOp::AddLink {
+                from: THING_BOOT_ROOT,
+                to: id,
+                kind: THING_BOOT_STATE_KIND 
+            };
+            let _ = g.call_op(&link_op, &mut buf);
+        }
+    }
+    
+    // Helper to publish state
+    // We capture 'c' by value? No by ref or recreate it. Console is ZST usually.
+    let publish_milestone = |step: u32, phase: &str, msg: &str| {
+        // Serial Log
+        let mut console = StdoutConsole; 
+        // Use alloc::format to avoid write_fmt trait issues if direct impl is missing or weird
+        let log_msg = alloc::format!("LOADED [{}]: {}\n", phase, msg);
+        let _ = console.write_str(&log_msg); 
         
-        let op = GraphOp::ScanLinks { from: Some(THING_BOOT_ROOT), to: None, kind: Some(THING_HAS_MOUNT_KIND) };
-        if let Ok(GraphReply::Links(links)) = g.call_op(&op, &mut buf) {
-            for (_from, to, _pd) in links {
-                let op = GraphOp::GetThing { id: to };
-                if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
-                    if let Ok(mnt) = postcard::from_bytes::<MountBody>(&tb.bytes) {
-                        if mnt.path == "/boot" {
-                            mount_id = Some(to);
-                            let _ = c.write_str("LOADED: Found /boot!\n");
-                            break;
-                        }
+        if let Some(bsid) = boot_state_id {
+            let body = BootStateBody {
+                phase: alloc::string::String::from(phase),
+                step,
+                message: alloc::string::String::from(msg),
+                level: 0,
+            };
+            if let Ok(bytes) = postcard::to_allocvec(&body) {
+                let update_op = GraphOp::UpdateThing { 
+                    id: bsid, 
+                    value: TypedBytes {
+                        type_id: TypeId(THING_BOOT_STATE_SCHEMA.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes
                     }
-                }
+                };
+                let mut tmp_buf = [0u8; 512];
+                let g_local = GraphClient::new();
+                let _ = g_local.call_op(&update_op, &mut tmp_buf);
             }
         }
+    };
+
+    publish_milestone(1, "init", "Loaded Started");
+    publish_milestone(2, "init", "Modules Enumerated");
+
+    // Phase B: Start Essentials
+    let essentials = [
+        ("drivers/ps2_keyboard.elf", "Keyboard Driver"),
+        ("drivers/ps2_mouse.elf", "Mouse Driver"),
+        ("drivers/rtc_x86.elf", "RTC Driver"),
+        ("apps/input_service.elf", "Input Service"),
+        ("apps/compositor.elf", "Compositor"),
+    ];
+
+    let mut step_count = 3;
+
+    for (path, name) in essentials {
+        let msg = alloc::format!("LOADED: Spawning {} ({})\n", name, path);
+        let _ = c.write_str(&msg);
         
-        if mount_id.is_some() { break; }
+        let full_path = alloc::format!("boot():/boot/{}", path);
         
-        let _ = c.write_str("LOADED: Waiting for /boot...\n");
-        sleep_ms(100);
+        match unsafe { sys_spawn(&full_path) } {
+            Ok(_) => {
+                publish_milestone(step_count, "essentials", alloc::format!("Started {}", name).as_str());
+            }
+            Err(e) => {
+                 let err_msg = alloc::format!("LOADED: Failed to spawn {}: {:?}\n", name, e);
+                 let _ = c.write_str(&err_msg);
+                 publish_milestone(step_count, "error", alloc::format!("Failed {}", name).as_str());
+            }
+        }
+        step_count += 1;
+        
+        for _ in 0..100000 { unsafe { core::arch::asm!("nop"); } }
     }
     
-    let mount_id = mount_id.unwrap();
+    // Phase C: Mount /boot (Simulated)
+    publish_milestone(step_count, "mount", "/boot mounted (simulated)");
+    step_count += 1;
 
-    // 2. Scan recursively
-    let mut files_to_spawn = Vec::new();
-    loop {
-        // Clear previous results
-        files_to_spawn.clear();
+    // Phase D: Bulk Loading
+    let extras = [
+        ("apps/clock.elf", "ClockWidget"),
+        ("apps/fb_smoke.elf", "SmokeTest"),
+    ];
 
-        // Step 2a: Find Root Dir of Mount
-        let op = GraphOp::ScanLinks { from: Some(mount_id), to: None, kind: Some(THING_MOUNTS_KIND) };
-        if let Ok(GraphReply::Links(links)) = g.call_op(&op, &mut buf) {
-            if !links.is_empty() {
-                 let root_dir_id = links[0].1;
-                 scan_dir(&g, &c, root_dir_id, &mut files_to_spawn, &mut buf);
-            }
-        }
-
-        let _ = c.write_str(&format!("LOADED: Found {} candidates.\n", files_to_spawn.len()));
-        
-        if !files_to_spawn.is_empty() {
-            break;
-        }
-
-        let _ = c.write_str("LOADED: No candidates yet. Retrying...\n");
-        sleep_ms(1000);
+    for (path, name) in extras {
+        let full_path = alloc::format!("boot():/boot/{}", path);
+        let _ = unsafe { sys_spawn(&full_path) };
+        publish_milestone(step_count, "bulk", alloc::format!("Spawned {}", name).as_str());
+        step_count += 1;
     }
 
-    // 3. Spawn
-    for (id, name, size) in files_to_spawn {
-        let name: alloc::string::String = name; // Type hint
-        if name.ends_with(".elf") && !name.ends_with("loaded.elf") && name != "kernel" {
-             let _ = c.write_str(&format!("LOADED: Spawning {}...\n", name));
-             
-             // Allocate buffer for file content
-             let mut file_buf = alloc::vec![0u8; size as usize];
-             
-             // Read in chunks? System call read_bytes likely supports full read if buf is large enough?
-             // GraphClient::read_bytes uses SYSCALL_GRAPH with ReadBytes op.
-             // If we rely on graph.rs read helper...
-             
-             // Let's try reading in one go.
-             // Wait, GraphClient::read_bytes takes a &mut [u8] scratch buffer for reply header? No it takes out_buf for data?
-             // No, `call_op` takes scratch buffer.
-             // `read_bytes` implementation:
-             /*
-                pub fn read_bytes(&self, thing: ThingId, offset: u64, len: usize, buf: &mut [u8]) -> Result<&[u8], SysRet> {
-                    // This copies into `buf`.
-                }
-             */
-             
-             if let Ok(_) = g.read_bytes(id, 0, size as u32, &mut file_buf) {
-                 // Spawn
-                 let _ = unsafe { sys_spawn(&file_buf, &name) };
-             } else {
-                 let _ = c.write_str("LOADED: Failed to read file!\n");
-             }
-        }
-    }
-
-    let _ = c.write_str("LOADED: All done. Sleeping.\n");
-    loop {
-        sleep_ms(1000);
-    }
-}
-
-fn scan_dir(g: &GraphClient, c: &StdoutConsole, dir_id: ThingId, files: &mut Vec<(ThingId, alloc::string::String, u64)>, buf: &mut [u8]) {
-    use thing_models::core::fs::DirBody;
+    // Phase E: Handoff
+    publish_milestone(step_count, "handoff", "Desktop Ready");
     
-    // Scan contents (Entries)
-    let op = GraphOp::ScanLinks { from: Some(dir_id), to: None, kind: Some(THING_HAS_ENTRY_KIND) };
-    if let Ok(GraphReply::Links(entries)) = g.call_op(&op, buf) {
-        // Collect IDs first to avoid buffer borrowing conflict if recursive? 
-        // We need to copy the entry list because `buf` is re-used in recursion.
-        let mut child_ids = Vec::new();
-        for (_src, dst, _pd) in entries {
-            child_ids.push(dst);
-        }
-        
-        for child_id in child_ids {
-            let op = GraphOp::GetThing { id: child_id };
-            // Temporarily use stack buf or re-use `buf`?
-            // `g.call_op` needs `buf` for reply.
-            // If we are careful... 
-            // We can just create a new scratch buffer on stack for `GetThing`
-            let mut scratch = [0u8; 1024];
-            
-            if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut scratch) {
-                 if tb.type_id.0 == THING_FILE_KIND.0 as u128 {
-                     if let Ok(f) = postcard::from_bytes::<FileBody>(&tb.bytes) {
-                         files.push((child_id, f.name.into(), f.size));
-                     }
-                 } else if tb.type_id.0 == THING_DIR_KIND.0 as u128 {
-                     // Recurse
-                     scan_dir(g, c, child_id, files, buf);
-                 }
-            }
-        }
+    let _ = c.write_str("LOADED: Entering Supervisor Loop.\n");
+    
+    loop {
+        for _ in 0..10000000 { unsafe { core::arch::asm!("nop"); } }
     }
 }

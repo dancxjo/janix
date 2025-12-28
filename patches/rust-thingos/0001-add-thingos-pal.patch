@@ -1,0 +1,13 @@
+--- a/library/std/src/sys/pal/mod.rs
++++ b/library/std/src/sys/pal/mod.rs
+@@ -79,6 +79,10 @@
+         mod zkvm;
+         pub use self::zkvm::*;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++        pub use self::thingos::*;
++    }
+     _ => {
+         mod unsupported;
+         pub use self::unsupported::*;

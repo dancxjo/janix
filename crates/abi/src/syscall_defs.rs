@@ -14,5 +14,9 @@ pub const SYSCALL_TYPEDEF_GET: usize = 201;
 pub const SYSCALL_YIELD: usize = 2;
 pub const SYS_EAGAIN: isize = -11;
 
+pub const SYSCALL_LOG: usize = 10;
+pub const SYSCALL_TIME: usize = 11;
+pub const SYSCALL_SLEEP: usize = 12;
+
 // Time
 pub const SYSCALL_RTC_READ: usize = 300;

@@ -1,4 +1,6 @@
 pub mod irq_ring;
+pub mod mouse;
+
 use abi::wire::driver::DriverEvent;
 use irq_ring::IrqRing;
 use spin::Mutex;
@@ -19,6 +21,7 @@ pub fn on_ps2_scancode(scancode: u8) {
 }
 
 pub fn on_ps2_mouse(byte: u8) {
+    mouse::update_packet(byte); // Update kernel cursor
     if let Some(ref mut ring) = *GLOBAL_INPUT_RING.lock() {
         ring.push(DriverEvent::Ps2MouseByte { byte });
     }

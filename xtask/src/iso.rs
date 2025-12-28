@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use image::ImageReader;
 
 pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // 1. Determine Target
@@ -17,13 +18,6 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     println!("==> Building kernel for {}...", env);
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
 
-    // Note: We use check for speed in previous steps, but for ISO we need the binary.
-    // Task 2 was implicit, so we do the build here "just in time".
-    // We need build-std=core because we are no_std.
-    // Target path is relative to repo root for `cargo`.
-    // The target.json is in targets/
-
-    // Construct target path relative to project root purely for cargo's --target flag
     let target_flag = format!("targets/{}", target_triple);
 
     let status = Command::new(&cargo)
@@ -49,7 +43,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     let mut user_apps = vec![
         //"graph_dump", // Disabled to reduce noise
         "ps2_keyboard",
-        "ps2_mouse",
+        // "ps2_mouse", // We are implementing kernel mouse, but maybe keep it? Or disable if not found.
         "keylog",
         "syscall_crud_smoke",
         "clock",
@@ -61,6 +55,11 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         "fb_smoke",
         "compositor",
     ];
+
+    // Check if ps2_mouse exists in user/drivers (it does)
+    if root.join("user/drivers/ps2_mouse").exists() {
+         user_apps.push("ps2_mouse");
+    }
 
     if env == "x86_64" {
         user_apps.push("rtc_x86");
@@ -100,21 +99,10 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     }
     fs::create_dir_all(&iso_root)?;
 
-    // Layout:
-    // /boot/kernel
-    // /boot/modules/clock
-    // /boot/modules/graph_dump
-    // /boot/limine/limine.conf
-    // /boot/limine/limine-bios.sys, etc.
-    // /EFI/BOOT/BOOTX64.EFI
-
     let boot_dir = iso_root.join("boot");
     fs::create_dir_all(&boot_dir)?;
 
     // Copy Kernel
-    // Binary location: target/<triple>/debug/<bin_name>
-    // but <triple> might be the filename of the json... cargo puts it under target/x86_64-thingos/debug/ usually
-    // if target is "targets/x86_64-thingos.json", the triple dir name is "x86_64-thingos"
     let triple_name = Path::new(target_triple)
         .file_stem()
         .unwrap()
@@ -128,7 +116,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     fs::copy(&bin_path, boot_dir.join("kernel"))
         .with_context(|| format!("Failed to copy kernel from {:?}", bin_path))?;
 
-    // Copy Apps and Drivers (New Layout)
+    // Copy Apps and Drivers
     let apps_dir = boot_dir.join("apps");
     fs::create_dir_all(&apps_dir)?;
     let drivers_dir = boot_dir.join("drivers");
@@ -144,7 +132,6 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
 
         let app_bin = root.join("user/target/x86_64-unknown-none/debug").join(app);
 
-        // Ensure .elf extension
         let dest_name = format!("{}.elf", app);
         let dest_path = dest_dir.join(&dest_name);
 
@@ -162,36 +149,78 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     let init_txt_content = init_whitelist.join("\n");
     fs::write(boot_dir.join("init.txt"), init_txt_content).context("Failed to write init.txt")?;
 
-    // Copy Fonts (Minimal Set)
+    // Copy Fonts
     let fonts_src = root.join("assets/fonts");
     let fonts_dst = boot_dir.join("fonts");
     fs::create_dir_all(&fonts_dst)?;
 
     let allowed_fonts = ["Hack-Regular.ttf", "NotoSans-Regular.ttf"];
-    let mut included_fonts = Vec::new();
+    let mut included_modules = Vec::new();
 
     if fonts_src.exists() {
-        println!("==> Processing fonts (Minimal Set)...");
+        println!("==> Processing fonts...");
         for font_name in allowed_fonts {
             let src_path = fonts_src.join(font_name);
             if src_path.exists() {
                 let dest_path = fonts_dst.join(font_name);
                 fs::copy(&src_path, &dest_path)?;
-                included_fonts.push(font_name);
+                included_modules.push(format!("fonts/{}", font_name));
                 println!("    Included: {}", font_name);
-            } else {
-                println!("    [WARNING] Missing font: {}", font_name);
             }
         }
-    } else {
-        eprintln!("    [WARNING] fonts directory missing: {:?}", fonts_src);
+    }
+
+    // Process Icons
+    let icons_src = root.join("assets/icons");
+    let icons_dst = boot_dir.join("icons");
+    fs::create_dir_all(&icons_dst)?;
+
+    if icons_src.exists() {
+        println!("==> Processing icons...");
+        for entry in fs::read_dir(&icons_src)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "png") {
+                let name = path.file_stem().unwrap().to_string_lossy();
+                println!("    Converting {} to BMP...", name);
+
+                let img = ImageReader::open(&path)?.decode()?;
+                let dest_path = icons_dst.join(format!("{}.bmp", name));
+
+                // Save as BMP
+                img.save(&dest_path)?;
+                included_modules.push(format!("icons/{}.bmp", name));
+            }
+        }
+    }
+
+    // Process Cursors
+    let cursors_src = root.join("assets/cursors");
+    let cursors_dst = boot_dir.join("cursors");
+    fs::create_dir_all(&cursors_dst)?;
+
+    if cursors_src.exists() {
+        println!("==> Processing cursors...");
+        for entry in fs::read_dir(&cursors_src)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "png") {
+                 let name = path.file_stem().unwrap().to_string_lossy();
+                 println!("    Converting {} to BMP...", name);
+
+                 let img = ImageReader::open(&path)?.decode()?;
+                 let dest_path = cursors_dst.join(format!("{}.bmp", name));
+
+                 img.save(&dest_path)?;
+                 included_modules.push(format!("cursors/{}.bmp", name));
+            }
+        }
     }
 
     // Limine Files
     let limine_dest = boot_dir.join("limine");
     fs::create_dir_all(&limine_dest)?;
 
-    // Config
     // Config
     let conf_src = root.join("kernels/limine.conf");
     let mut conf_data = fs::read_to_string(&conf_src)?;
@@ -200,32 +229,24 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     let mut module_lines = String::new();
     for app in &user_apps {
         if driver_names.contains(app) {
-            // It's a driver, so it's in /boot/drivers
             let line = format!("    module_path: boot():/boot/drivers/{}.elf\n", app);
             module_lines.push_str(&line);
         } else {
-            // It's a regular app, so it's in /boot/apps
             let line = format!("    module_path: boot():/boot/apps/{}.elf\n", app);
             module_lines.push_str(&line);
         }
     }
-    for font in &included_fonts {
-        let line = format!("    module_path: boot():/boot/fonts/{}\n", font);
+
+    for mod_path in &included_modules {
+        let line = format!("    module_path: boot():/boot/{}\n", mod_path);
         module_lines.push_str(&line);
     }
 
-    // 1. Inject Cmdline (if any) to the first entry.
     if let Some(cmd) = cmdline {
         let needle = "kernel_path: boot():/boot/kernel";
         let insertion = format!("\n    cmdline: {}", cmd);
         conf_data = conf_data.replacen(needle, &format!("{}{}", needle, insertion), 1);
     }
-
-    // 2. Inject Modules to ALL entries
-    // The needle is still "kernel_path: boot():/boot/kernel"
-    // (cmdline injection appended AFTER it, so the needle string is still present?)
-    // Yes, 'replacen' replaced "needle" with "needle + insertion".
-    // So "kernel_path..." is still there.
 
     let needle = "kernel_path: boot():/boot/kernel";
     let with_modules = format!("{}\n{}", needle, module_lines);
@@ -268,11 +289,6 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     fs::create_dir_all(&iso_dir)?;
     let iso_path = iso_dir.join(format!("thingos-{}.iso", env));
 
-    // xorriso flags for Limine hybrid (BIOS+EFI)
-    // Ref: Limine docs or user prompt. "Exact flags".
-    // "BIOS El Torito boot: limine-bios-cd.bin"
-    // "EFI boot image: limine-uefi-cd.bin"
-
     let mut cmd = Command::new("xorriso");
     cmd.arg("-as").arg("mkisofs");
     cmd.arg("-b").arg("boot/limine/limine-bios-cd.bin");
@@ -291,19 +307,6 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     if !status.success() {
         anyhow::bail!("xorriso failed");
     }
-
-    // 5. Limine Deploy (BIOS)
-    // If x86_64, we usually need to run `limine bios-install image.iso` to install stage 1/2 to MBR/gap.
-    // The user didn't explicitly ask for `limine bios-install`, but "BIOS El Torito" flags usually cover CD boot?
-    // Wait, Limine usually requires post-processing for HDD boot, but for ISO (El Torito), maybe not if just CD?
-    // Actually, modern Limine often requires `limine deploy` or `limine-deploy` text/binary patching?
-    // The prompt says "Build ISO via xorriso... Done when: outputs ...iso".
-    // It does NOT mention running `limine deploy` or `limine binary` patching on the ISO.
-    // However, without it, BIOS boot from HDD image works, but CD?
-    // Limine docs say: "For CD-ROMs... xorriso ... is enough."
-    // BUT usually usage involves `limine bios-install` if targeting hybrid HDD/CD.
-    // I will stick strictly to the user's requested instructions: "Run xorriso with the exact flags...".
-    // I will NOT add extra steps unless it fails verification.
 
     println!("ISO created at: {}", iso_path.display());
 

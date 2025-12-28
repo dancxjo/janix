@@ -11,3 +11,4 @@ clap = { version = "4", features = ["derive"] }
 ttf-parser = "0.25"
 postcard = { version = "1.0", features = ["alloc"] }
 serde = { version = "1.0", features = ["derive"] }
+image = { version = "0.25.9", features = ["bmp", "png"] }

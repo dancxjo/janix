@@ -504,7 +504,12 @@ pub extern "C" fn rust_main() -> ! {
         }
         // -----------------------------------------------------------------
 
-        publish_framebuffer(&mut k);
+        let fb = publish_framebuffer(&mut k);
+        let cursor = ingest_bitmaps(&mut k);
+        if let (Some(f), Some(c)) = (fb, cursor) {
+            k.bridge.log("BOOT: Initializing Cursor...\n");
+            kernel_core::graph::cursor::init(&f, &c);
+        }
         spawn_compositor(&mut k);
         spawn_kernel_init_task(&mut k);
 
@@ -523,7 +528,7 @@ pub extern "C" fn rust_main() -> ! {
     }
 }
 
-unsafe fn publish_framebuffer(k: &mut Kernel<Bridge>) {
+unsafe fn publish_framebuffer(k: &mut Kernel<Bridge>) -> Option<thing_models::builtins::core_kinds::DisplayFramebufferBody> {
     use hw::HardwareBridge;
     use limine_local::requests::{FRAMEBUFFER_REQUEST, HHDM_REQUEST};
     use thing_models::builtins::ids::{THING_DISPLAY_FRAMEBUFFER_KIND, THING_HAS_DEVICE_KIND, THING_BOOT_ROOT};
@@ -544,6 +549,8 @@ unsafe fn publish_framebuffer(k: &mut Kernel<Bridge>) {
                  format: 32, 
                  address: user_virt_addr,
             };
+
+            let ret_body = fb_body.clone();
 
             let bytes = postcard::to_allocvec(&fb_body).unwrap();
             let tb = ThingBody::from(&TypedBytes {
@@ -567,8 +574,11 @@ unsafe fn publish_framebuffer(k: &mut Kernel<Bridge>) {
                  bytes: postcard::to_allocvec(&link).unwrap()
             }).unwrap();
             k.graph.create_thing(THING_LINK_KIND, lb);
+
+            return Some(ret_body);
         }
     }
+    None
 }
 
 unsafe fn spawn_compositor(k: &mut Kernel<Bridge>) {
@@ -765,4 +775,100 @@ unsafe fn u_sleep(count: u64) {
     for _ in 0..count {
         core::hint::spin_loop();
     }
+}
+
+unsafe fn ingest_bitmaps(k: &mut Kernel<Bridge>) -> Option<thing_models::schema::bitmap::BitmapBody> {
+    use limine_local::requests::MODULE_REQUEST;
+    use hw::HardwareBridge;
+    use thing_models::builtins::ids::{THING_BITMAP_KIND, THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_LINK_KIND};
+    use thing_models::schema::bitmap::BitmapBody;
+    use thing_models::value::ThingBody;
+    use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+    use thing_models::link::LinkBody;
+
+    let mut cursor: Option<BitmapBody> = None;
+
+    if let Some(resp) = MODULE_REQUEST.get_response() {
+        for module in resp.modules() {
+             let path = module.path().to_str().unwrap_or("?");
+             if path.ends_with(".bmp") {
+                 k.bridge.log("BOOT: Ingesting Bitmap ");
+                 k.bridge.log(path);
+                 k.bridge.log("\n");
+
+                 let data = core::slice::from_raw_parts(module.addr() as *const u8, module.size() as usize);
+
+                 if let Some(bitmap) = parse_bmp(data) {
+                     if path.ends_with("cursor.bmp") {
+                         cursor = Some(bitmap.clone());
+                     }
+                     let bytes = postcard::to_allocvec(&bitmap).unwrap();
+                     let tb = ThingBody::from(&TypedBytes {
+                         type_id: TypeId(THING_BITMAP_KIND.0 as u128),
+                         codec_id: CodecId::POSTCARD,
+                         bytes,
+                     }).unwrap();
+
+                     let id = k.graph.create_thing(THING_BITMAP_KIND, tb);
+
+                     let link = LinkBody {
+                         from: THING_BOOT_ROOT,
+                         to: id,
+                         predicate: THING_HAS_DEVICE_KIND
+                     };
+
+                     let lb = ThingBody::from(&TypedBytes {
+                         type_id: TypeId(THING_LINK_KIND.0 as u128),
+                         codec_id: CodecId::POSTCARD,
+                         bytes: postcard::to_allocvec(&link).unwrap()
+                     }).unwrap();
+                     k.graph.create_thing(THING_LINK_KIND, lb);
+                 } else {
+                     k.bridge.log("BOOT: Failed to parse BMP\n");
+                 }
+             }
+        }
+    }
+    cursor
+}
+
+fn parse_bmp(data: &[u8]) -> Option<thing_models::schema::bitmap::BitmapBody> {
+    if data.len() < 54 || &data[0..2] != b"BM" { return None; }
+    let pixel_offset = u32::from_le_bytes(data[10..14].try_into().ok()?) as usize;
+    let width = i32::from_le_bytes(data[18..22].try_into().ok()?) as u32;
+    let height = i32::from_le_bytes(data[22..26].try_into().ok()?);
+    let bpp = u16::from_le_bytes(data[28..30].try_into().ok()?);
+
+    if bpp != 32 { return None; }
+
+    let height_abs = height.abs() as u32;
+    let row_size = (width * 4) as usize;
+    let pixels_len = (width * height_abs * 4) as usize;
+
+    if data.len() < pixel_offset + pixels_len { return None; }
+
+    let mut pixels = alloc::vec![0u8; pixels_len];
+    let src_pixels = &data[pixel_offset..];
+
+    for y in 0..height_abs {
+        let src_row_idx = if height > 0 {
+            (height_abs - 1 - y) as usize
+        } else {
+            y as usize
+        };
+
+        let src_start = src_row_idx * row_size;
+        let dst_start = (y as usize) * row_size;
+
+        if src_start + row_size <= src_pixels.len() && dst_start + row_size <= pixels.len() {
+             pixels[dst_start..dst_start+row_size].copy_from_slice(&src_pixels[src_start..src_start+row_size]);
+        }
+    }
+
+    Some(thing_models::schema::bitmap::BitmapBody {
+        width,
+        height: height_abs,
+        format: 0,
+        pixels
+    })
 }

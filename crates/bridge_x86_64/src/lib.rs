@@ -300,6 +300,22 @@ impl HardwareBridge for Bridge {
             out.sec = sec;
         }
     }
+
+    fn save_fpu(&self, area: &mut [u8; 512]) {
+        unsafe {
+            // fxsave [rax]
+            let ptr = area.as_mut_ptr();
+            asm!("fxsave [{}]", in(reg) ptr);
+        }
+    }
+
+    fn restore_fpu(&self, area: &[u8; 512]) {
+        unsafe {
+            // fxrstor [rax]
+            let ptr = area.as_ptr();
+            asm!("fxrstor [{}]", in(reg) ptr);
+        }
+    }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
@@ -331,4 +347,6 @@ impl HardwareBridge for Bridge {
     }
     fn set_kernel_stack(&self, _: u64) {}
     fn rtc_read(&self, _out: &mut abi::wire::time::RtcSample) {}
+    fn save_fpu(&self, _area: &mut [u8; 512]) {}
+    fn restore_fpu(&self, _area: &[u8; 512]) {}
 }

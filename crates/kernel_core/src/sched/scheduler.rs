@@ -200,6 +200,8 @@ impl Scheduler {
             // Ideally check state.
             if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize - 1) {
                 thread.context = *current_context;
+                _bridge.save_fpu(&mut thread.fpu_context.data);
+                
                 // If Running, user is preempted. Move to Runnable.
                 // If Running, user is preempted. Move to Runnable.
                 // If Sleeping, we LEAVE IT SLEEPING and do NOT push to run_queue.
@@ -223,6 +225,7 @@ impl Scheduler {
                 // _bridge.log("\n");
 
                 _bridge.set_kernel_stack(thread.kernel_stack_top);
+                _bridge.restore_fpu(&thread.fpu_context.data);
 
                 *current_context = thread.context;
             }

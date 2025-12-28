@@ -9,3 +9,5 @@ models = { path = "../../../crates/models" }
 serde = { workspace = true, features = ["derive"] }
 postcard = { workspace = true }
 abi = { path = "../../../crates/abi" }
+heapless = { version = "0.8", default-features = false, features = ["serde"] }
+

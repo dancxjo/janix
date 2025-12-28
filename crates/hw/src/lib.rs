@@ -19,4 +19,7 @@ pub trait HardwareBridge {
     /// Returns high-resolution monotonic time in nanoseconds.
     /// Returns 0 if not available/calibrated yet.
     fn monotonic_now(&self) -> u64;
+
+    fn save_fpu(&self, area: &mut [u8; 512]);
+    fn restore_fpu(&self, area: &[u8; 512]);
 }

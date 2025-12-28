@@ -22,7 +22,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     let mut fb_thing_id: Option<ThingId> = None;
 
     // 1. Locate Framebuffer
-    loop {
+    'scan: loop {
         if fb_thing_id.is_none() {
             c.write_str("COMPOSITOR: Scanning for Framebuffer...\n");
             let op = GraphOp::ScanLinks {
@@ -38,7 +38,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                          if tb.type_id.0 == THING_DISPLAY_FRAMEBUFFER_KIND.0 as u128 {
                              fb_thing_id = Some(target);
                              c.write_str("COMPOSITOR: Found DisplayFramebuffer!\n");
-                             break;
+                             break 'scan;
                          }
                      }
                 }
@@ -85,11 +85,114 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
              }
         }
 
-        let _ = std::time::sleep_ms(&g, 1000);
+    }
+
+    // 2. Main Loop
+
+    loop {
+        if let Some(fb_id) = fb_thing_id {
+            // Get FB details first
+            let op = GraphOp::GetThing { id: fb_id };
+            if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
+                if let Ok(fb) = postcard::from_bytes::<DisplayFramebufferBody>(&tb.bytes) {
+                    let ptr = fb.address as *mut u32;
+                    let pitch = fb.pitch as u32;
+                    let fb_width = fb.width as u32;
+                    let fb_height = fb.height as u32;
+
+                    // Clear Background (Desktop)
+                    render::primitives::fill_rect(
+                        ptr, pitch, fb_width, fb_height,
+                        0, 0, fb.width as i32, fb.height as i32,
+                        0xFF333333, // Dark Grey
+                        None
+                    );
+
+                    // Scan for Windows
+                    // Scan for Windows
+                    let scan_op = GraphOp::ScanLinks {
+                        from: Some(thing_models::builtins::ids::THING_BOOT_ROOT), // Ideally we'd have a Windows container, but root scan for now
+                        to: None,
+                        kind: Some(thing_models::builtins::ids::THING_WINDOW_KIND)
+                    };
+
+                    if let Ok(GraphReply::Links(list)) = g.call_op(&scan_op, &mut buf) {
+                         // We need a separate buffer for window fetching since 'list' borrows 'buf'?
+                         // Actually, 'list' is just a slice of (u128, u128, u128) tuples, completely POD. 
+                         // But we can't reuse 'buf' for the next call while iterating 'list' if 'list' points into 'buf'.
+                         // We need to copy the IDs we want to process.
+                         
+                         let mut window_ids = [ThingId(0); 16];
+                         let mut count = 0;
+                         for (_, target, _) in list {
+                             if count < window_ids.len() {
+                                 window_ids[count] = target;
+                                 count += 1;
+                             }
+                         }
+
+                         for i in 0..count {
+                             let wid = window_ids[i];
+                             let get_w = GraphOp::GetThing { id: wid };
+                             // We can reuse 'buf' now
+                             if let Ok(GraphReply::TypedValue(w_tb)) = g.call_op(&get_w, &mut buf) {
+                                 if let Ok(window) = postcard::from_bytes::<thing_models::schema::window::WindowBody>(&w_tb.bytes) {
+                                     draw_window(ptr, pitch, fb_width, fb_height, &window);
+                                 }
+                             }
+                         }
+                    }
+                }
+            }
+        }
+        
+        let _ = std::time::sleep_ms(&g, 16); // ~60 FPS polling
+    }
+}
+
+fn draw_window(fb_ptr: *mut u32, pitch: u32, fb_w: u32, fb_h: u32, window: &thing_models::schema::window::WindowBody) {
+    let x = window.x;
+    let y = window.y;
+    let w = window.width as i32;
+    let h = window.height as i32;
+    
+    // 1. Chrome (Border + Title Bar)
+    // Border
+    render::primitives::fill_rect(fb_ptr, pitch, fb_w, fb_h, x - 2, y - 22, w + 4, h + 24, 0xFFCCCCCC, None);
+    // Title Bar
+    render::primitives::fill_rect(fb_ptr, pitch, fb_w, fb_h, x, y - 20, w, 20, 0xFF000088, None);
+    // Title Text
+    render::text::draw_text(fb_ptr, pitch, fb_w, fb_h, x + 4, y - 18, window.title.as_str(), 0xFFFFFFFF);
+    
+    // Body Background
+    render::primitives::fill_rect(fb_ptr, pitch, fb_w, fb_h, x, y, w, h, 0xFF000000, None);
+
+    // 2. Content
+    // Center logic? Or just primitive top-left? User said "center text (for clock)".
+    // Let's blindly center it for now as a default for single-line text? 
+    // Or check if it contains newlines?
+    
+    if window.content.contains('\n') {
+        // Multi-line (Keylog), just draw top-left with padding
+        let mut row = 0;
+        for line in window.content.split('\n') {
+            render::text::draw_text(fb_ptr, pitch, fb_w, fb_h, x + 4, y + 4 + (row * 10), line, 0xFFFFFFFF);
+            row += 1;
+        }
+    } else {
+        // Single line (Clock), center it
+        let content_len = window.content.len() as u32;
+        // Approx char width 8, height 8? (from primitives usually)
+        let text_size = layout::Size { width: content_len * 8, height: 8 };
+        let bounds = layout::Rect::new(x, y, window.width, window.height);
+        let pos = layout::center_text(bounds, text_size);
+        render::text::draw_text(fb_ptr, pitch, fb_w, fb_h, pos.x, pos.y, window.content.as_str(), 0xFFFFFFFF);
     }
 }
 
 mod render;
+mod layout;
+
 
 fn draw_red_screen(fb: &DisplayFramebufferBody) {
     let ptr = fb.address as *mut u32;

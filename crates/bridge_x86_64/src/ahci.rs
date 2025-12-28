@@ -101,7 +101,7 @@ static PORT_LOCKS: [Mutex<()>; 32] = [
 
 // --- Driver Logic ---
 
-pub unsafe fn init(dev: &PciDeviceBody, k: &mut Kernel<Bridge>) {
+pub unsafe fn init(dev: &PciDeviceBody, k: &mut Kernel<Bridge>) -> u32 {
     let bridge = Bridge;
     bridge.log("AHCI: Init\n");
 
@@ -113,7 +113,7 @@ pub unsafe fn init(dev: &PciDeviceBody, k: &mut Kernel<Bridge>) {
     let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
     if hhdm == 0 {
         bridge.log("AHCI: HHDM not set!\n");
-        return;
+        return 0;
     }
     let abar_virt = hhdm + abar_phys;
     let hba = &mut *(abar_virt as *mut HbaMem);
@@ -122,6 +122,7 @@ pub unsafe fn init(dev: &PciDeviceBody, k: &mut Kernel<Bridge>) {
     hba.ghc |= 0x80000000;
 
     // 4. Scan Ports
+    let mut active_ports = 0u32;
     let pi = hba.pi;
     for i in 0..32 {
         if (pi & (1 << i)) != 0 {
@@ -190,10 +191,12 @@ pub unsafe fn init(dev: &PciDeviceBody, k: &mut Kernel<Bridge>) {
                 if sig == 0x00000101 || sig == 0xEB140101 {
                     // ATA or ATAPI
                     init_port(port, i, hhdm);
+                    active_ports |= 1 << i;
                 }
             }
         }
     }
+    active_ports
 }
 
 use alloc::alloc::{alloc, dealloc, Layout};

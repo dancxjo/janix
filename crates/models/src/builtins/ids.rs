@@ -223,3 +223,6 @@ pub const THING_DISPLAY_FRAMEBUFFER_SCHEMA: ThingId = ThingId(1234);
 
 pub const THING_DISPLAY_SCANOUT_BUFFER_KIND: ThingId = ThingId(235);
 pub const THING_DISPLAY_SCANOUT_BUFFER_SCHEMA: ThingId = ThingId(1235);
+
+pub const THING_WINDOW_KIND: ThingId = ThingId(236);
+pub const THING_WINDOW_SCHEMA: ThingId = ThingId(1236);

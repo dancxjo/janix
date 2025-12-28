@@ -710,6 +710,43 @@ pub fn process_file(
                   }
              }
              
+             // --- FRAMEBUFFER MAPPING ---
+             // Map to fixed address 0x1_0000_0000 (4GB)
+             if let Some(resp) = crate::limine_local::requests::FRAMEBUFFER_REQUEST.get_response() {
+                 if let Some(fb) = resp.framebuffers().next() {
+                     let mut phys_base = fb.addr() as u64;
+                     
+                     // Fix: Subtract HHDM offset to get physical
+                     if let Some(hhdm) = crate::limine_local::requests::HHDM_REQUEST.get_response() {
+                         let offset = hhdm.offset();
+                         if phys_base >= offset {
+                             phys_base -= offset;
+                         }
+                     }
+                     
+                     let size = (fb.pitch() as u64) * (fb.height() as u64);
+                     // 4GB base
+                     let virt_base = 0x1_0000_0000;
+                     
+                     
+                     let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(virt_base));
+                     let end_page = Page::<Size4KiB>::containing_address(VirtAddr::new(virt_base + size - 1));
+                     
+                     for page in Page::range_inclusive(start_page, end_page) {
+                         let offset = page.start_address().as_u64() - virt_base;
+                         let phys = PhysFrame::containing_address(x86_64::PhysAddr::new(phys_base + offset));
+                         // User | RW | NoCache (generic safe default)
+                         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::NO_CACHE;
+                         
+                         unsafe {
+                             if let Ok(map_to) = mapper.map_to(page, phys, flags, &mut frame_allocator) {
+                                 map_to.flush();
+                             }
+                         }
+                     }
+                 }
+             }
+
              // Spawn
              k.scheduler.spawn(&k.bridge, name, current_app_base + img.entry_point, stack_top_virt.as_u64(), heap_virt_start);
              

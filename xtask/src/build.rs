@@ -40,7 +40,9 @@ pub fn run() -> Result<()> {
         "sleep_accuracy_smoke",
         "ls_boot",
         "cat_boot",
+        "fb_smoke",
     ];
+
     for app in user_apps {
         let status = Command::new(&cargo)
             .arg("build")

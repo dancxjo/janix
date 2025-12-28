@@ -58,7 +58,9 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         "ls_boot",
         "cat_boot",
         "input_service",
+        "fb_smoke",
     ];
+
     if env == "x86_64" {
         user_apps.push("rtc_x86");
     } else if env == "aarch64" {
@@ -199,6 +201,10 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         if driver_names.contains(app) {
             // It's a driver, so it's in /boot/drivers
             let line = format!("    module_path: boot():/boot/drivers/{}.elf\n", app);
+            module_lines.push_str(&line);
+        } else {
+            // It's an app, so it's in /boot/apps
+            let line = format!("    module_path: boot():/boot/apps/{}.elf\n", app);
             module_lines.push_str(&line);
         }
     }

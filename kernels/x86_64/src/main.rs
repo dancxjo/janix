@@ -700,6 +700,62 @@ pub extern "C" fn rust_main() -> ! {
             }
         }
 
+        // --- FRAMEBUFFER PUBLICATION ---
+        {
+             use limine_local::requests::FRAMEBUFFER_REQUEST;
+             if let Some(resp) = FRAMEBUFFER_REQUEST.get_response() {
+                 if let Some(fb) = resp.framebuffers().next() {
+                     k.bridge.log("FRAMEBUFFER: Publishing DisplayFramebuffer...\n");
+                     
+                     // Schema: DisplayFramebuffer { width, height, pitch, format, address }
+                     // We need to define the struct body or use a generic Map/Struct if schema allows.
+                     // The Types are not defined in `models` yet?
+                     // We need to verify `models/src/lib.rs` or define a local struct.
+                     // For now, let's assume we can define a struct here or use a dynamic one?
+                     // Postcard requires a defined struct.
+                     
+                     use thing_models::builtins::core_kinds::DisplayFramebufferBody;
+                     
+                     let kind_id = thing_models::builtins::ids::THING_DISPLAY_FRAMEBUFFER_KIND;
+                     
+                     let body = DisplayFramebufferBody {
+                         width: fb.width(),
+                         height: fb.height(),
+                         pitch: fb.pitch(),
+                         format: 32, // BGRA typically
+                         address: 0x1_0000_0000, 
+                     };
+                     
+                     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+                     use thing_models::value::ThingBody;
+                     
+                     let tb = ThingBody::from(&TypedBytes {
+                         type_id: TypeId(kind_id.0 as u128),
+                         codec_id: CodecId::POSTCARD,
+                         bytes: postcard::to_allocvec(&body).unwrap(),
+                     }).unwrap();
+                     
+                     let fb_id = k.graph.create_thing(kind_id, tb);
+                     
+                     // Link Root -> Framebuffer? Or Display -> Framebuffer?
+                     // Root -> DisplayFramebuffer
+                     let l = thing_models::link::LinkBody {
+                         from: thing_models::builtins::ids::THING_BOOT_ROOT,
+                         to: fb_id,
+                         predicate: thing_models::builtins::ids::THING_HAS_DEVICE_KIND,
+                     };
+                     let lbs = ThingBody::from(&TypedBytes {
+                         type_id: TypeId(thing_models::builtins::ids::THING_LINK_KIND.0 as u128),
+                         codec_id: CodecId::POSTCARD,
+                         bytes: postcard::to_allocvec(&l).unwrap(),
+                     }).unwrap();
+                     k.graph.create_thing(thing_models::builtins::ids::THING_LINK_KIND, lbs);
+                     
+                     k.bridge.log("FRAMEBUFFER: Published.\n");
+                 }
+             }
+        }
+
         // --- CMDLINE PARSING (Rudimentary) ---
         let mut smoke_target = None;
         {

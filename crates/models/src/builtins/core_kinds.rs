@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 use crate::builtins::ids::*;
 use crate::builtins::symbols::*;
+use crate::builtins::symbols::{SYM_DISPLAY_FRAMEBUFFER, SYM_SCANOUT_BUFFER};
 use crate::declare::type_tag;
 use crate::declare::type_tag::fnv1a64;
 use crate::thing_kind;
@@ -58,6 +59,22 @@ pub struct BitmapBody {
     pub width: u32,
     pub height: u32,
 }
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DisplayFramebufferBody {
+    pub width: u64,
+    pub height: u64,
+    pub pitch: u64,
+    pub format: u32, 
+    pub address: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ScanoutBufferBody {
+    pub address: u64,
+    pub len: u64,
+}
+
 
 thing_kind! {
     kind TimeNow {
@@ -417,3 +434,30 @@ thing_kind! {
         }
     }
 }
+
+thing_kind! {
+    kind DisplayFramebuffer {
+        id: crate::builtins::ids::THING_DISPLAY_FRAMEBUFFER_KIND,
+        sym: SYM_DISPLAY_FRAMEBUFFER,
+        version: 1,
+        body: DisplayFramebufferBody,
+        type_tag: "thingos.DisplayFramebufferBody.v1",
+        schema_id: crate::builtins::ids::THING_DISPLAY_FRAMEBUFFER_SCHEMA,
+        links {
+            predicate THING_DISPLAY_SCANOUT_BUFFER_KIND min 0 max 1;
+        }
+    }
+}
+
+thing_kind! {
+    kind ScanoutBuffer {
+        id: crate::builtins::ids::THING_DISPLAY_SCANOUT_BUFFER_KIND,
+        sym: SYM_SCANOUT_BUFFER,
+        version: 1,
+        body: ScanoutBufferBody,
+        type_tag: "thingos.ScanoutBufferBody.v1",
+        schema_id: crate::builtins::ids::THING_DISPLAY_SCANOUT_BUFFER_SCHEMA,
+        links {}
+    }
+}
+

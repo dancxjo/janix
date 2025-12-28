@@ -217,3 +217,10 @@ pub const THING_ON_VOLUME_SCHEMA: ThingId = ThingId(1128);
 
 pub const THING_FONT_CATALOG_KIND: ThingId = ThingId(233);
 pub const THING_FONT_CATALOG_SCHEMA: ThingId = ThingId(1233);
+
+pub const THING_DISPLAY_FRAMEBUFFER_KIND: ThingId = ThingId(234);
+pub const THING_DISPLAY_FRAMEBUFFER_SCHEMA: ThingId = ThingId(1234);
+
+pub const THING_DISPLAY_SCANOUT_BUFFER_KIND: ThingId = ThingId(235);
+pub const THING_DISPLAY_SCANOUT_BUFFER_SCHEMA: ThingId = ThingId(1235);
+

@@ -1,5 +1,6 @@
 use limine::request::{
     HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker, StackSizeRequest,
+    FramebufferRequest,
 };
 use limine::BaseRevision;
 
@@ -31,6 +32,10 @@ pub static KERNEL_FILE_REQUEST: limine::request::ExecutableFileRequest =
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static RSDP_REQUEST: limine::request::RsdpRequest = limine::request::RsdpRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]

@@ -14,6 +14,7 @@ members = [
   "drivers/ps2_mouse",
   "apps/sleep_accuracy_smoke", "apps/log_viewer",
   "apps/ls_boot", "apps/cat_boot",
+  "apps/fb_smoke",
   "services/input_service",
 ]
 

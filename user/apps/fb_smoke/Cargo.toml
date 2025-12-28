@@ -1,0 +1,11 @@
+[package]
+name = "fb_smoke"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thing_std = { path = "../../crates/thing_std" }
+models = { path = "../../../crates/models" }
+serde = { workspace = true, features = ["derive"] }
+postcard = { workspace = true }
+abi = { path = "../../../crates/abi" }

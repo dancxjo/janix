@@ -160,3 +160,8 @@ pub const SYM_HAS_KEYBOARD: SymbolId = SymbolId(fnv1a64("HAS_KEYBOARD"));
 // Other IDs seen in dump or ids.rs
 pub const SYM_HAS_CONSOLE: SymbolId = SymbolId(fnv1a64("HAS_CONSOLE"));
 pub const SYM_HAS_TIME_NOW: SymbolId = SymbolId(fnv1a64("HAS_TIME_NOW"));
+
+// Framebuffer
+pub const SYM_DISPLAY_FRAMEBUFFER: SymbolId = SymbolId(fnv1a64("DisplayFramebuffer"));
+pub const SYM_SCANOUT_BUFFER: SymbolId = SymbolId(fnv1a64("ScanoutBuffer"));
+

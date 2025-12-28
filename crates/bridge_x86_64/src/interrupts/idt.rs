@@ -209,15 +209,16 @@ unsafe extern "C" fn timer_interrupt_naked() {
         // We shuffle.
         
         "push rax", // Scratch
-        "mov rax, [rsp + 8]",  // RIP
-        "mov [rsp + 24], rax", // Place at RSP slot
+        
+        // Correct Order: High to Low to avoid overwriting
+        "mov rax, [rsp + 24]", // RFLAGS
+        "mov [rsp + 40], rax", // Place at New Top
+        
         "mov rax, [rsp + 16]", // CS
         "mov [rsp + 32], rax", // Place at SS slot
-        "mov rax, [rsp + 24]", // RFLAGS
-        "mov [rsp + 40], rax", // Place above SS (New Top)
         
-        // Current stack: [rax, RIP(old), CS(old), RFLAGS(old), RIP(new), CS(new), RFLAGS(new)]
-        // We want rsp to point to RIP(new) eventually.
+        "mov rax, [rsp + 8]",  // RIP
+        "mov [rsp + 24], rax", // Place at RSP slot (which is actually new RIP slot)
         
         "pop rax",
         "add rsp, 16", // Point to new RIP

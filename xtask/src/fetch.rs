@@ -291,19 +291,50 @@ fn fetch_icons(assets: &Path) -> Result<()> {
 }
 
 fn fetch_cursors(assets: &Path) -> Result<()> {
-    println!("==> Generatng Cursor...");
+    println!("==> Fetching Cursors...");
     let cursors_dir = assets.join("cursors");
     fs::create_dir_all(&cursors_dir)?;
 
-    let cursor_path = cursors_dir.join("cursor.png");
-    if cursor_path.exists() {
-        println!("    Cursor already exists.");
-        return Ok(());
+    // 1. Bibata (Main Theme)
+    let bibata_dir = cursors_dir.join("Bibata-Modern-Classic");
+    if !bibata_dir.exists() {
+        println!("    Fetching Bibata-Modern-Classic...");
+        require_tool("curl")?;
+        require_tool("tar")?;
+        require_tool("xz")?; // Bibata is usually .tar.xz
+
+        let url = "https://github.com/ful1e5/Bibata_Cursor/releases/download/v2.0.7/Bibata-Modern-Classic.tar.xz";
+        let archive = cursors_dir.join("Bibata.tar.xz");
+        
+        if download_file(url, &archive).is_ok() {
+            println!("    Extracting Bibata...");
+            // tar -xJf archive.tar.xz
+            run_cmd(
+                Command::new("tar")
+                    .arg("-xJf")
+                    .arg(&archive)
+                    .current_dir(&cursors_dir)
+            )?;
+            let _ = fs::remove_file(&archive);
+        } else {
+             eprintln!("    [WARNING] Failed to download Bibata Cursors.");
+        }
     }
 
-    let img = generate_arrow_cursor(32);
-    img.save(&cursor_path)?;
-    println!("    Generated cursor.png");
+    // 2. Fallback Cursor (cursor.bmp)
+    let cursor_path = cursors_dir.join("cursor.bmp");
+    if cursor_path.exists() {
+        println!("    Fallback cursor.bmp already exists.");
+        // return Ok(()); // Don't return, check others if we add more
+    } else {
+        println!("    Generating fallback cursor.bmp...");
+        let img = generate_arrow_cursor(32);
+        // Save as BMP. The 'image' crate infers from extension.
+        // Note: Compositor expects 32-bit BMP (BGRA/RGBA). 
+        // Image crate usually handles this if RgbaImage is saved.
+        img.save(&cursor_path)?;
+    }
+
     Ok(())
 }
 

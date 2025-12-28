@@ -529,7 +529,11 @@ pub extern "C" fn rust_main() -> ! {
             // Capture info for loader
             if let Some(resp) = fb_response {
                 if let Some(fb) = resp.framebuffers().next() {
-                    FRAMEBUFFER_INFO = Some((fb.addr() as u64, (fb.pitch() as u64) * (fb.height() as u64)));
+                    let mut addr = fb.addr() as u64;
+                    if addr >= hhdm_offset_u64 {
+                        addr -= hhdm_offset_u64;
+                    }
+                    FRAMEBUFFER_INFO = Some((addr, (fb.pitch() as u64) * (fb.height() as u64)));
                 }
             }
         }

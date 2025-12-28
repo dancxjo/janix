@@ -12,7 +12,8 @@ use thing_models::builtins::core_kinds::DisplayFramebufferBody;
 use thing_models::builtins::ids::{
     THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_DISPLAY_FRAMEBUFFER_KIND,
     THING_MODULE_KIND, THING_POINTER_EVENT_STREAM_KIND, THING_WINDOW_KIND,
-    THING_EMITS_KIND, THING_MOUSE_KIND
+    THING_EMITS_KIND, THING_MOUSE_KIND,
+    THING_MOUSE_SCHEMA, THING_POINTER_EVENT_STREAM_SCHEMA, THING_MODULE_SCHEMA
 };
 use thing_models::schema::bitmap::BitmapBody;
 use thing_models::core::input::PointerEventStreamBody;
@@ -62,7 +63,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                              fb_thing_id = Some(target);
                              c.write_str("COMPOSITOR: Found DisplayFramebuffer!\n");
                          }
-                     } else if type_id == THING_MODULE_KIND.0 as u128 {
+                     } else if type_id == THING_MODULE_SCHEMA.0 as u128 {
                          if cursor_bitmap.is_none() {
                              if let Ok(module) = postcard::from_bytes::<ModuleBody>(&tb.bytes) {
                                  if module.path.ends_with("cursor.bmp") {
@@ -73,7 +74,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                                  }
                              }
                          }
-                     } else if type_id == THING_MOUSE_KIND.0 as u128 {
+                     } else if type_id == THING_MOUSE_SCHEMA.0 as u128 {
                          c.write_str("COMPOSITOR: Found Mouse! Scanning for stream...\n");
                          let sub_op = GraphOp::ScanLinks {
                              from: Some(target),
@@ -85,7 +86,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                              for (_, stream_target, _) in sub_list {
                                  let get_stream = GraphOp::GetThing { id: stream_target };
                                  if let Ok(GraphReply::TypedValue(stb)) = g.call_op(&get_stream, &mut sub_buf) {
-                                     if stb.type_id.0 as u128 == THING_POINTER_EVENT_STREAM_KIND.0 as u128 {
+                                     if stb.type_id.0 as u128 == THING_POINTER_EVENT_STREAM_SCHEMA.0 as u128 {
                                          if pointer_stream_id.is_none() {
                                              pointer_stream_id = Some(stream_target);
                                              c.write_str("COMPOSITOR: Found Pointer Stream!\n");
@@ -94,7 +95,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                                  }
                              }
                          }
-                     } else if type_id == THING_POINTER_EVENT_STREAM_KIND.0 as u128 {
+                     } else if type_id == THING_POINTER_EVENT_STREAM_SCHEMA.0 as u128 {
                          if pointer_stream_id.is_none() {
                              pointer_stream_id = Some(target);
                              c.write_str("COMPOSITOR: Found Pointer Stream!\n");
@@ -105,6 +106,13 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         }
         
         if fb_thing_id.is_some() && pointer_stream_id.is_some() {
+            c.write_str("COMPOSITOR: FB and Stream found! Breaking scan loop.\n");
+            // Log bitmap status
+            if cursor_bitmap.is_some() {
+                 c.write_str("COMPOSITOR: Cursor Bitmap is LOADED.\n");
+            } else {
+                 c.write_str("COMPOSITOR: Cursor Bitmap is MISSING. Will use fallback.\n");
+            }
             break 'scan;
         }
 
@@ -118,144 +126,176 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
 
     // 2. Main Loop
     let mut log_stream_id: Option<ThingId> = None;
+    let mut frame_count: u64 = 0;
+    c.write_str("COMPOSITOR: Entering Main Loop.\n");
 
     loop {
+        frame_count += 1;
+        if frame_count % 60 == 0 {
+             let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: Main Loop Cycle {}\n", frame_count));
+        }
+
+        // Lazy Load Cursor Bitmap
+        if cursor_bitmap.is_none() {
+             let scan_op = GraphOp::ScanLinks {
+                 from: Some(THING_BOOT_ROOT),
+                 to: None,
+                 kind: Some(THING_MODULE_SCHEMA)
+             };
+             if let Ok(GraphReply::Links(list)) = g.call_op(&scan_op, &mut buf) {
+                 for (_, target, _) in list {
+                     let get_op = GraphOp::GetThing { id: target };
+                     if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&get_op, &mut buf) {
+                         if let Ok(module) = postcard::from_bytes::<ModuleBody>(&tb.bytes) {
+                             if module.path.ends_with("cursor.bmp") {
+                                 if let Some(bmp) = bitmap_parser::parse_bmp(&module.data) {
+                                     cursor_bitmap = Some(bmp);
+                                     c.write_str("COMPOSITOR: Parsed Cursor Bitmap (Lazy)!\n");
+                                 }
+                             }
+                         }
+                     }
+                 }
+             }
+        }
+
         if let Some(pid) = pointer_stream_id {
             let op = GraphOp::GetThing { id: pid };
-            if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
-                if let Ok(stream) = postcard::from_bytes::<PointerEventStreamBody>(&tb.bytes) {
-                    let count = stream.events.len() as u64;
-                    let start_seq = stream.head_seq.saturating_sub(count).saturating_add(1);
+            let _ = PortWrites.write_str("COMPOSITOR: Before GetThing(Stream)...\n");
+            match g.call_op(&op, &mut buf) {
+                Ok(GraphReply::TypedValue(tb)) => {
+                    let _ = PortWrites.write_str("COMPOSITOR: Got TypedValue. Decoding...\n");
+                    if let Ok(stream) = postcard::from_bytes::<PointerEventStreamBody>(&tb.bytes) {
+                        let _ = PortWrites.write_str("COMPOSITOR: Decoded Stream.\n");
+                        let count = stream.events.len() as u64;
+                        let start_seq = stream.head_seq.saturating_sub(count).saturating_add(1);
 
-                    for (i, event) in stream.events.iter().enumerate() {
-                        let seq = start_seq + i as u64;
-                        if seq > last_seq {
-                            cursor_x += event.dx as i32;
-                            cursor_y += event.dy as i32;
-                            last_seq = seq;
-                            
-                            // Log occasionally
-                            if seq % 100 == 0 {
-                                let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: Cursor Stream Alive. Seq: {}, X: {}, Y: {}\n", seq, cursor_x, cursor_y));
+                        for (i, event) in stream.events.iter().enumerate() {
+                            let seq = start_seq + i as u64;
+                            if seq > last_seq {
+                                cursor_x += event.dx as i32;
+                                cursor_y += event.dy as i32;
+                                last_seq = seq;
                             }
                         }
+                    } else {
+                        let _ = PortWrites.write_str("COMPOSITOR: Failed to decode StreamBody!\n");
                     }
                 }
+                Ok(reply) => {
+                     let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: GetThing(Stream) Unexpected Reply: {:?}\n", reply));
+                }
+                Err(e) => {
+                     let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: GetThing(Stream) Failed: {:?}\n", e));
+                }
             }
+            let _ = PortWrites.write_str("COMPOSITOR: After GetThing(Stream).\n");
         }
 
         if let Some(fb_id) = fb_thing_id {
             let op = GraphOp::GetThing { id: fb_id };
-            if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
-                if let Ok(fb) = postcard::from_bytes::<DisplayFramebufferBody>(&tb.bytes) {
-                    let ptr = fb.address as *mut u32;
-                    let pitch = fb.pitch as u32;
-                    let fb_width = fb.width as u32;
-                    let fb_height = fb.height as u32;
+            match g.call_op(&op, &mut buf) {
+                Ok(GraphReply::TypedValue(tb)) => {
+                    if let Ok(fb) = postcard::from_bytes::<DisplayFramebufferBody>(&tb.bytes) {
+                        let ptr = fb.address as *mut u32;
+                        
+                        if frame_count == 1 {
+                             let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: FB Address: {:#x}\n", fb.address));
+                             let _ = PortWrites.write_str("COMPOSITOR: About to write to FB...\n");
+                        }
 
-                    if cursor_x < 0 { cursor_x = 0; }
-                    if cursor_y < 0 { cursor_y = 0; }
-                    if cursor_x >= fb_width as i32 { cursor_x = fb_width as i32 - 1; }
-                    if cursor_y >= fb_height as i32 { cursor_y = fb_height as i32 - 1; }
+                        let pitch = fb.pitch as u32;
+                        let fb_width = fb.width as u32;
+                        let fb_height = fb.height as u32;
 
-                    // Clear Background (Boot Blue)
-                    render::primitives::fill_rect(
-                        ptr, pitch, fb_width, fb_height,
-                        0, 0, fb.width as i32, fb.height as i32,
-                        0xFF2E80D1, // #2E80D1 (BGR: D1 80 2E in memory)
-                        None
-                    );
+                        if cursor_x < 0 { cursor_x = 0; }
+                        if cursor_y < 0 { cursor_y = 0; }
+                        if cursor_x >= fb_width as i32 { cursor_x = fb_width as i32 - 1; }
+                        if cursor_y >= fb_height as i32 { cursor_y = fb_height as i32 - 1; }
+
+                        // Clear Background
+                        render::primitives::fill_rect(
+                            ptr, pitch, fb_width, fb_height,
+                            0, 0, fb.width as i32, fb.height as i32,
+                            0xFF2E80D1,
+                            None
+                        );
+
+                        if frame_count == 1 {
+                             let _ = PortWrites.write_str("COMPOSITOR: Wrote Background.\n");
+                        }
                     
-                    // Debug Text
-                    render::text::draw_text(
-                        ptr, pitch, fb_width, fb_height,
-                        20, 20,
-                        "Compositor Online",
-                        0xFFFFFFFF
-                    );
+                        // Debug Text
+                        render::text::draw_text(
+                            ptr, pitch, fb_width, fb_height,
+                            20, 20,
+                            "Compositor Online",
+                            0xFFFFFFFF
+                        );
 
-                    // ---------------------------------------------------------
-                    // Log Stream Logic
-                    // ---------------------------------------------------------
-                    if log_stream_id.is_none() {
-                        // Scan for LogStream
+                        // Log Stream
+                        if log_stream_id.is_none() {
+                            log_stream_id = Some(ThingId(3020)); 
+                        }
+
+                        if let Some(lid) = log_stream_id {
+                            let op = GraphOp::GetThing { id: lid };
+                            if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
+                                 if let Ok(stream) = postcard::from_bytes::<thing_models::core::serial::LogStreamBody>(&tb.bytes) {
+                                     if let Some(last) = stream.entries.last() {
+                                         let msg = &last.message;
+                                         let y = fb_height as i32 - 40;
+                                         render::text::draw_text(
+                                             ptr, pitch, fb_width, fb_height,
+                                             20, y,
+                                             msg.as_str(),
+                                             0xFFFFFFFF
+                                         );
+                                     }
+                                 }
+                            }
+                        }
+
+                        // Window Logic
                         let scan_op = GraphOp::ScanLinks {
                             from: Some(THING_BOOT_ROOT),
                             to: None,
-                            kind: Some(thing_models::builtins::ids::THING_EMITS_KIND)
+                            kind: Some(THING_WINDOW_KIND)
                         };
-                         if let Ok(GraphReply::Links(list)) = g.call_op(&scan_op, &mut buf) {
-                             for (_, _target, _) in list {
-                                 // Check kind
-                                 // We need to fetch the thing to check the kind (Link doesn't contain target kind)
-                                 // Optimistically assume the first EMITS is it, or better, check type.
-                                 // Actually better to just GetThing(3020) if we knew it, but dynamic is better.
-                                 // Let's check kind.
-                                 // We need to be careful with buffer reuse.
-                                 // Make a copy of targets to check.
-                             }
-                             // Hack: we know flusher makes it 3020.
-                             // But let's try to verify.
-                        }
-                        // Fallback/Fast-path:
-                        log_stream_id = Some(ThingId(3020)); 
-                    }
 
-                    if let Some(lid) = log_stream_id {
-                        let op = GraphOp::GetThing { id: lid };
-                        if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
-                             if let Ok(stream) = postcard::from_bytes::<thing_models::core::serial::LogStreamBody>(&tb.bytes) {
-                                 if let Some(last) = stream.entries.last() {
-                                     // Draw Status Message
-                                     let msg = &last.message;
-                                     let y = fb_height as i32 - 40;
-                                     render::text::draw_text(
-                                         ptr, pitch, fb_width, fb_height,
-                                         20, y,
-                                         msg.as_str(),
-                                         0xFFFFFFFF
-                                     );
+                        if let Ok(GraphReply::Links(list)) = g.call_op(&scan_op, &mut buf) {
+                             let mut window_ids = [ThingId(0); 16];
+                             let mut count = 0;
+                             for (_, target, _) in list {
+                                 if count < window_ids.len() {
+                                     window_ids[count] = target;
+                                     count += 1;
+                                 }
+                             }
+
+                             for i in 0..count {
+                                 let wid = window_ids[i];
+                                 let get_w = GraphOp::GetThing { id: wid };
+                                 if let Ok(GraphReply::TypedValue(w_tb)) = g.call_op(&get_w, &mut buf) {
+                                     if let Ok(window) = postcard::from_bytes::<thing_models::schema::window::WindowBody>(&w_tb.bytes) {
+                                         draw_window(ptr, pitch, fb_width, fb_height, &window);
+                                     }
                                  }
                              }
                         }
+
+                        if let Some(ref bmp) = cursor_bitmap {
+                            render::draw_bitmap(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, bmp);
+                        } else {
+                            render::primitives::fill_rect(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, 10, 10, 0xFFFFFFFF, None);
+                        }
                     }
-
-                    // ---------------------------------------------------------
-                    // Window Logic
-                    // ---------------------------------------------------------
-                    // Scan for Windows
-                    let scan_op = GraphOp::ScanLinks {
-                        from: Some(THING_BOOT_ROOT),
-                        to: None,
-                        kind: Some(THING_WINDOW_KIND)
-                    };
-
-                    if let Ok(GraphReply::Links(list)) = g.call_op(&scan_op, &mut buf) {
-                         let mut window_ids = [ThingId(0); 16];
-                         let mut count = 0;
-                         for (_, target, _) in list {
-                             if count < window_ids.len() {
-                                 window_ids[count] = target;
-                                 count += 1;
-                             }
-                         }
-
-                         for i in 0..count {
-                             let wid = window_ids[i];
-                             let get_w = GraphOp::GetThing { id: wid };
-                             if let Ok(GraphReply::TypedValue(w_tb)) = g.call_op(&get_w, &mut buf) {
-                                 if let Ok(window) = postcard::from_bytes::<thing_models::schema::window::WindowBody>(&w_tb.bytes) {
-                                     draw_window(ptr, pitch, fb_width, fb_height, &window);
-                                 }
-                             }
-                         }
-                    }
-
-                    if let Some(ref bmp) = cursor_bitmap {
-                        render::draw_bitmap(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, bmp);
-                    } else {
-                        render::primitives::fill_rect(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, 10, 10, 0xFFFFFFFF, None);
-                    }
+                }
+                Ok(reply) => {
+                     let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: GetThing(FB) Unexpected Reply: {:?}\n", reply));
+                }
+                Err(e) => {
+                     let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: GetThing(FB) Failed: {:?}\n", e));
                 }
             }
         }

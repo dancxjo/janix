@@ -44,10 +44,18 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     let mut packet_count: u64 = 0;
 
     // 1. Create Mouse Device Thing (ID 3010)
+    let mouse_body = models::core::input::MouseBody { bus: SYM_PS2 };
+    let body_bytes = postcard::to_allocvec(&mouse_body).expect("serialize mouse body");
+    let typed_body = abi::wire::typed::TypedBytes {
+        type_id: abi::wire::typed::TypeId(models::builtins::ids::THING_MOUSE_SCHEMA.0 as u128),
+        codec_id: abi::wire::typed::CodecId::POSTCARD,
+        bytes: body_bytes,
+    };
+
     let mut mouse = Thing {
         id: ThingId(3010),
         kind: THING_MOUSE_KIND,
-        body: models::ThingBody::from(&MouseBody { bus: SYM_PS2 }).expect("mouse body"),
+        body: models::ThingBody::from(&typed_body).expect("mouse thing body"),
     };
 
     if let Some(id) = publish_thing(&mouse) {
@@ -80,7 +88,11 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     let stream_thing = Thing {
         id: stream_id,
         kind: THING_POINTER_EVENT_STREAM_KIND,
-        body: models::ThingBody::from(&stream_body).expect("stream body"),
+        body: models::ThingBody::from(&abi::wire::typed::TypedBytes {
+            type_id: abi::wire::typed::TypeId(models::builtins::ids::THING_POINTER_EVENT_STREAM_SCHEMA.0 as u128),
+            codec_id: abi::wire::typed::CodecId::POSTCARD,
+            bytes: postcard::to_allocvec(&stream_body).expect("serialize stream body"),
+        }).expect("stream thing body"),
     };
     if let Some(id) = publish_thing(&stream_thing) {
         stream_id = id;

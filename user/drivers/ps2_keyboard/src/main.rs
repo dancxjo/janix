@@ -26,10 +26,17 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     std::debug::log("PS/2 Driver starting...\n");
 
     // Create Keyboard Device Thing
+    let body_bytes = postcard::to_allocvec(&models::core::input::KeyboardBody { bus: SYM_PS2 }).expect("body");
+    let typed_body = abi::wire::typed::TypedBytes {
+        type_id: abi::wire::typed::TypeId(models::builtins::ids::THING_KEYBOARD_SCHEMA.0 as u128),
+        codec_id: abi::wire::typed::CodecId::POSTCARD,
+        bytes: body_bytes,
+    };
+
     let mut keyboard = Thing {
         id: ThingId(3000),
         kind: THING_KEYBOARD_KIND,
-        body: models::ThingBody::from(&KeyboardBody { bus: SYM_PS2 }).expect("body"),
+        body: models::ThingBody::from(&typed_body).expect("body"),
     };
 
     if let Some(id) = publish_thing(&keyboard) {
@@ -56,10 +63,17 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         events: Vec::new(),
     };
 
+    let stream_bytes = postcard::to_allocvec(&stream_body).expect("serialize stream body");
+    let typed_stream = abi::wire::typed::TypedBytes {
+        type_id: abi::wire::typed::TypeId(models::builtins::ids::THING_RAW_KEY_EVENT_STREAM_SCHEMA.0 as u128),
+        codec_id: abi::wire::typed::CodecId::POSTCARD,
+        bytes: stream_bytes,
+    };
+
     let stream_thing = Thing {
         id: stream_id,
         kind: THING_RAW_KEY_EVENT_STREAM_KIND,
-        body: models::ThingBody::from(&stream_body).expect("stream body"),
+        body: models::ThingBody::from(&typed_stream).expect("stream body"),
     };
     
     if let Some(id) = publish_thing(&stream_thing) {
@@ -120,7 +134,11 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                             let thing = Thing {
                                 id: stream_id,
                                 kind: THING_RAW_KEY_EVENT_STREAM_KIND,
-                                body: models::ThingBody::from(&stream_body).unwrap(),
+                                body: models::ThingBody::from(&abi::wire::typed::TypedBytes {
+                                    type_id: abi::wire::typed::TypeId(models::builtins::ids::THING_RAW_KEY_EVENT_STREAM_SCHEMA.0 as u128),
+                                    codec_id: abi::wire::typed::CodecId::POSTCARD,
+                                    bytes: postcard::to_allocvec(&stream_body).unwrap(),
+                                }).unwrap(),
                             };
                             publish_thing(&thing);
                         },

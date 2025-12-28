@@ -798,6 +798,37 @@ pub fn process_file(
             OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
         };
 
+        // Map Framebuffer (User Space 0x1_0000_0000)
+        // Matches kernel_core/src/drivers/limine_fb.rs
+        unsafe {
+            if let Some((fb_phys, fb_size)) = crate::FRAMEBUFFER_INFO {
+                 unsafe {
+                     let s = alloc::format!("loader: Mapping FB Phys={:#x} Size={:#x}\n", fb_phys, fb_size);
+                     Bridge.log(&s);
+                 }
+
+                 use x86_64::structures::paging::{PageTableFlags, PhysFrame, Size4KiB, Page, Mapper};
+                 use x86_64::PhysAddr;
+                 
+                 let start_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(fb_phys));
+                 let end_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(fb_phys + fb_size - 1));
+                 
+                 let user_virt_base = VirtAddr::new(0x1_0000_0000);
+                 let mut virt_iter = user_virt_base;
+                 
+                 for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
+                     let page = Page::<Size4KiB>::containing_address(virt_iter);
+                     let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::NO_CACHE;
+                     if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                         map_to.flush(); 
+                     }
+                     virt_iter += 4096u64;
+                 }
+                 
+                 Bridge.log("loader: Mapped User Framebuffer at 0x1_0000_0000\n");
+            }
+        }
+
         Bridge.log("loader: calling load_elf\n");
         let loaded = load_elf(data, current_app_base, |vaddr, segment| {
             Bridge.log("loader: load_elf callback\n");

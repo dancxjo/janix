@@ -47,14 +47,15 @@ pub fn sys_driver_publish<B: HardwareBridge>(
             // We need to parse Thing.
             match postcard::from_bytes::<thing_models::Thing>(&thing_bytes) {
                 Ok(thing) => {
+                    kernel.bridge.log(alloc::format!("Kernel: SysDriverPublish Received Kind {}", thing.kind.0).as_str());
+
                     // Check capability? "Require calling process has CAP_GRAPH_WRITE_WITNESS"
                     // V0: skip check for now or check dummy.
 
-                    // Insert
-                    match kernel.graph.insert_thing(thing) {
-                        Ok(_) => 0,
-                        Err(_) => -3, // Efail
-                    }
+                    // Create Thing with Dynamic ID
+                    // Ignoring the ID provided in `thing` struct.
+                    let id = kernel.graph.create_thing(thing.kind, thing.body);
+                    id.0 as SysRet
                 }
                 Err(_) => -2,
             }

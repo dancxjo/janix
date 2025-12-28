@@ -5,7 +5,7 @@ members = [
 
 "crates/abi",
 "crates/models",
-"crates/kernel_core",
+"crates/kernel",
 "crates/thing_std",
 
 "crates/bridge_x86_64",
@@ -13,8 +13,8 @@ members = [
 "crates/boot",
 
 
-"kernels/x86_64",
-"kernels/aarch64",
+"arch/x86_64",
+"arch/aarch64",
 
 "tools/smoke_tests",
 "tools/bdd",

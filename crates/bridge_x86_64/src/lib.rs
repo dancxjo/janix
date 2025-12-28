@@ -4,20 +4,13 @@
 
 extern crate alloc;
 
-pub mod acpi;
-pub mod ahci;
-pub mod drivers;
 pub mod gdt;
-pub mod hpet;
 pub mod interrupts;
-pub mod pci;
-pub mod ps2;
-pub mod serial;
 pub mod user;
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;
-use kernel_core::bridge::HardwareBridge;
+use kernel::bridge::HardwareBridge;
 
 pub struct Bridge;
 
@@ -60,7 +53,7 @@ pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 impl Bridge {
     pub unsafe fn init(rsdp_addr: Option<u64>, hhdm: u64) {
         HHDM_OFFSET.store(hhdm, Ordering::Relaxed);
-        use kernel_core::bridge::HardwareBridge;
+        use kernel::bridge::HardwareBridge;
         let b = Bridge;
         b.log("BRIDGE: gdt::init\n");
         gdt::init();
@@ -72,25 +65,25 @@ impl Bridge {
         interrupts::syscall::init();
 
         b.log("BRIDGE: ps2::init\n");
-        ps2::init();
+        kernel::drivers::ps2::init(&b);
 
         b.log("BRIDGE: serial::init\n");
-        serial::init();
+        kernel::drivers::serial::init(&b);
 
         // ACPI init moved to explicit call
     }
 
     pub unsafe fn init_acpi(rsdp_addr: u64, hhdm: u64) {
-        use kernel_core::bridge::HardwareBridge;
+        use kernel::bridge::HardwareBridge;
         let b = Bridge;
         b.log("BRIDGE: acpi::init\n");
-        acpi::init(rsdp_addr, hhdm);
+        kernel::platform::acpi::init(&b, rsdp_addr, hhdm);
     }
 }
 
 pub fn print_u64(val: u64) {
     let bridge = Bridge;
-    use kernel_core::bridge::HardwareBridge;
+    use kernel::bridge::HardwareBridge;
 
     if val == 0 {
         bridge.log("0");
@@ -115,7 +108,7 @@ pub fn print_u64(val: u64) {
 
 pub fn print_hex(val: u64) {
     let bridge = Bridge;
-    use kernel_core::bridge::HardwareBridge;
+    use kernel::bridge::HardwareBridge;
     bridge.log("0x");
     let mut printed = false;
     for i in (0..16).rev() {
@@ -155,6 +148,48 @@ impl HardwareBridge for Bridge {
         HHDM_OFFSET.load(Ordering::Relaxed)
     }
 
+    fn port_outb(&self, port: u16, val: u8) {
+        unsafe {
+            asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack, preserves_flags));
+        }
+    }
+
+    fn port_inb(&self, port: u16) -> u8 {
+        let val: u8;
+        unsafe {
+            asm!("in al, dx", out("al") val, in("dx") port, options(nomem, nostack, preserves_flags));
+        }
+        val
+    }
+
+    fn port_outw(&self, port: u16, val: u16) {
+        unsafe {
+            asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack, preserves_flags));
+        }
+    }
+
+    fn port_inw(&self, port: u16) -> u16 {
+        let val: u16;
+        unsafe {
+            asm!("in ax, dx", out("ax") val, in("dx") port, options(nomem, nostack, preserves_flags));
+        }
+        val
+    }
+
+    fn port_outd(&self, port: u16, val: u32) {
+        unsafe {
+            asm!("out dx, eax", in("dx") port, in("eax") val, options(nomem, nostack, preserves_flags));
+        }
+    }
+
+    fn port_ind(&self, port: u16) -> u32 {
+        let val: u32;
+        unsafe {
+            asm!("in eax, dx", out("eax") val, in("dx") port, options(nomem, nostack, preserves_flags));
+        }
+        val
+    }
+
     fn ticks(&self) -> u64 {
         let eax: u32;
         let edx: u32;
@@ -169,7 +204,7 @@ impl HardwareBridge for Bridge {
     }
 
     fn monotonic_now(&self) -> u64 {
-        hpet::read_ns()
+        kernel::drivers::hpet::read_ns()
     }
 
     fn idle(&self) {
@@ -245,7 +280,7 @@ impl HardwareBridge for Bridge {
     fn resume_user_mode(&self, context: &[u64]) -> ! {
         crate::user::enter::resume_user_mode(
             context,
-            &kernel_core::sched::fpu::FpuContext::default(),
+            &kernel::sched::fpu::FpuContext::default(),
         )
     }
 
@@ -327,6 +362,13 @@ impl HardwareBridge for Bridge {
 impl HardwareBridge for Bridge {
     fn log(&self, _msg: &str) {}
     fn hhdm_offset(&self) -> u64 { 0 }
+    fn port_outb(&self, _port: u16, _val: u8) {}
+    fn port_inb(&self, _port: u16) -> u8 { 0 }
+    fn port_outw(&self, _port: u16, _val: u16) {}
+    fn port_inw(&self, _port: u16) -> u16 { 0 }
+    fn port_outd(&self, _port: u16, _val: u32) {}
+    fn port_ind(&self, _port: u16) -> u32 { 0 }
+
     fn ticks(&self) -> u64 {
         0
     }

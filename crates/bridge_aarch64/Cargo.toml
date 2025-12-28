@@ -6,5 +6,5 @@ license.workspace = true
 
 [dependencies]
 hw = { path = "../hw" }
-kernel_core = { path = "../kernel_core" }
+kernel = { path = "../kernel" }
 abi = { path = "../abi" }

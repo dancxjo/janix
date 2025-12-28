@@ -1,7 +1,7 @@
 use super::UserEntryRegs;
 use alloc::alloc::{alloc_zeroed, Layout};
 use core::sync::atomic::{AtomicU64, Ordering};
-use kernel_core::sched::fpu::FpuContext;
+use kernel::sched::fpu::FpuContext;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::PhysFrame as X86PhysFrame;
 use x86_64::PhysAddr;

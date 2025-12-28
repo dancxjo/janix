@@ -1,5 +1,5 @@
 use crate::Bridge;
-use kernel_core::bridge::HardwareBridge;
+use kernel::bridge::HardwareBridge;
 
 static mut IOAPIC_ADDR: u64 = 0;
 
@@ -17,7 +17,9 @@ pub unsafe fn init(addr: u64) {
 }
 
 unsafe fn read(reg: u32) -> u32 {
-    let base = crate::acpi::to_virt(IOAPIC_ADDR).as_ptr() as *mut u32;
+    use core::sync::atomic::Ordering;
+    let hhdm = crate::HHDM_OFFSET.load(Ordering::Relaxed);
+    let base = kernel::platform::acpi::to_virt(IOAPIC_ADDR, hhdm).as_ptr() as *mut u32;
     // Write Register Index to IOREGSEL
     core::ptr::write_volatile(base, reg);
     // Read Value from IOWIN
@@ -25,7 +27,9 @@ unsafe fn read(reg: u32) -> u32 {
 }
 
 unsafe fn write(reg: u32, val: u32) {
-    let base = crate::acpi::to_virt(IOAPIC_ADDR).as_ptr() as *mut u32;
+    use core::sync::atomic::Ordering;
+    let hhdm = crate::HHDM_OFFSET.load(Ordering::Relaxed);
+    let base = kernel::platform::acpi::to_virt(IOAPIC_ADDR, hhdm).as_ptr() as *mut u32;
     core::ptr::write_volatile(base, reg);
     core::ptr::write_volatile(base.add(4), val);
 }

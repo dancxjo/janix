@@ -72,12 +72,12 @@ pub fn graph_op(_op: &GraphOp) -> Result<(), ()> {
     // Usually we act on struct?
     // "graph_op" in userland might wrap a "call" or "send".
     // Wait, the ABI for SYSCALL_GRAPH needs to be defined.
-    // crates/kernel_core/src/syscalls/mod.rs => graph.rs
-    // Look at `crates/kernel_core/src/syscalls/graph.rs` again?
+    // crates/kernel/src/syscalls/mod.rs => graph.rs
+    // Look at `crates/kernel/src/syscalls/graph.rs` again?
     // Step 108: `pub fn handle_graph_op...`
     // Step 122: `pub fn handle_graph_query...`
     // But how are they exposed as SYSCALLs?
-    // I need to find the `syscall_dispatch` routine in `kernel_core/src/syscalls/mod.rs` or similar.
+    // I need to find the `syscall_dispatch` routine in `kernel/src/syscalls/mod.rs` or similar.
     // If not, I am guessing.
     // Let's assume SYSCALL_GRAPH (1) dispatching is: (ptr, len, out_ptr, out_len) -> ret?
     // User request: apps use exactly one syscall: sys_graph(ptr,len).

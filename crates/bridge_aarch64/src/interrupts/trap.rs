@@ -124,7 +124,7 @@ pub unsafe fn jump_to_el1_stack(stack_top: u64, entry: unsafe extern "C" fn() ->
 // NOTE: We might need to expose this for scheduler later
 fn save_current_thread_context(tf: &TrapFrame) {
     /*
-    let mut sched = kernel_core::sched::SCHEDULER.lock();
+    let mut sched = kernel::sched::SCHEDULER.lock();
     if let Some(tid) = sched.current_id() {
         if let Some(thread) = sched.thread_mut(tid) {
             let regs_ptr = tf as *const TrapFrame as *const u64;

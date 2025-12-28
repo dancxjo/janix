@@ -1,4 +1,4 @@
-use crate::interrupts::pic;
+
 use crate::interrupts::trap::{self, TrapFrame};
 use core::arch::naked_asm;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
@@ -33,7 +33,7 @@ pub fn init() {
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    kernel_core::diag::record_fault(
+    kernel::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
         stack_frame.cpu_flags.bits(),
@@ -48,7 +48,7 @@ extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) -> ! {
-    kernel_core::diag::record_fault(
+    kernel::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
         stack_frame.cpu_flags.bits(),
@@ -64,7 +64,7 @@ extern "x86-interrupt" fn gp_handler(stack_frame: InterruptStackFrame, error_cod
     use x86_64::registers::control::Cr2;
     let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
 
-    kernel_core::diag::record_fault(
+    kernel::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
         stack_frame.cpu_flags.bits(),
@@ -92,7 +92,7 @@ extern "x86-interrupt" fn page_fault_handler(
         }
     }
 
-    kernel_core::diag::record_fault(
+    kernel::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
         stack_frame.cpu_flags.bits(),
@@ -276,7 +276,7 @@ extern "C" fn keyboard_interrupt_handler(_frame: &mut TrapFrame) {
     // let count = IRQ1_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
     // // Only log first few or every 10th to avoid flood
     // if count < 20 || (count % 10 == 0) {
-    //     use kernel_core::bridge::HardwareBridge;
+    //     use kernel::bridge::HardwareBridge;
     //     let bridge = crate::Bridge;
     //     // Manual formatting since we can't easily use format! here without alloc
     //     bridge.log("IRQ1: count=");
@@ -287,7 +287,7 @@ extern "C" fn keyboard_interrupt_handler(_frame: &mut TrapFrame) {
     // }
 
     // Pass to kernel input system
-    kernel_core::input::on_ps2_scancode(scancode);
+    kernel::input::on_ps2_scancode(scancode);
 }
 
 #[no_mangle]
@@ -299,5 +299,5 @@ extern "C" fn mouse_interrupt_handler(_frame: &mut TrapFrame) {
         byte = port.read();
         crate::interrupts::apic::end_of_interrupt();
     }
-    kernel_core::input::on_ps2_mouse(byte);
+    kernel::input::on_ps2_mouse(byte);
 }

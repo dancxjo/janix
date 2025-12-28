@@ -5,7 +5,7 @@ extern crate alloc;
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::asm;
-use hw::HardwareBridge;
+use kernel::bridge::HardwareBridge;
 
 pub mod interrupts;
 pub mod paging;
@@ -141,7 +141,7 @@ impl HardwareBridge for Bridge {
     }
 
     fn resume_user_mode(&self, context: &[u64]) -> ! {
-        user::enter::resume_user_mode(context, &kernel_core::sched::fpu::FpuContext::default())
+        user::enter::resume_user_mode(context, &kernel::sched::fpu::FpuContext::default())
     }
 
     fn set_kernel_stack(&self, _stack: u64) {}

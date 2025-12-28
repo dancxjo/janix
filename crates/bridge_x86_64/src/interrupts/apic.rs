@@ -1,5 +1,5 @@
 use crate::Bridge;
-use kernel_core::bridge::HardwareBridge;
+use kernel::bridge::HardwareBridge;
 
 // Local APIC Registers (Offsets)
 const LAPIC_ID: u32 = 0x020;
@@ -43,14 +43,18 @@ pub unsafe fn id() -> u32 {
 
 // Read/Write Registers
 unsafe fn read_reg(offset: u32) -> u32 {
+    use core::sync::atomic::Ordering;
     let phys = LAPIC_BASE + offset as u64;
-    let virt = crate::acpi::to_virt(phys).as_ptr() as *const u32;
+    let hhdm = crate::HHDM_OFFSET.load(Ordering::Relaxed);
+    let virt = kernel::platform::acpi::to_virt(phys, hhdm).as_ptr() as *const u32;
     core::ptr::read_volatile(virt)
 }
 
 unsafe fn write_reg(offset: u32, val: u32) {
+    use core::sync::atomic::Ordering;
     let phys = LAPIC_BASE + offset as u64;
-    let virt = crate::acpi::to_virt(phys).as_ptr() as *mut u32;
+    let hhdm = crate::HHDM_OFFSET.load(Ordering::Relaxed);
+    let virt = kernel::platform::acpi::to_virt(phys, hhdm).as_ptr() as *mut u32;
     core::ptr::write_volatile(virt, val);
 }
 

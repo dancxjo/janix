@@ -23,6 +23,28 @@ fn clip_span(start: i32, len: i32, clip_start: i32, clip_len: i32) -> Option<(i3
     }
 }
 
+// Interpolate between two colors
+// This matches the logic from v0.1 boot screen, allowing fast fades without readback.
+pub fn lerp_color(start: u32, end: u32, step: usize, total_steps: usize) -> u32 {
+    if total_steps == 0 {
+        return end;
+    }
+    let t = step as u32;
+    let total = total_steps as u32;
+    
+    let sr = (start >> 16) & 0xFF;
+    let sg = (start >> 8) & 0xFF;
+    let sb = start & 0xFF;
+
+    let er = (end >> 16) & 0xFF;
+    let eg = (end >> 8) & 0xFF;
+    let eb = end & 0xFF;
+
+    let lerp = |s, e| s + ((e as i32 - s as i32) * t as i32 / total as i32) as u32;
+
+    (0xFF << 24) | (lerp(sr, er) << 16) | (lerp(sg, eg) << 8) | lerp(sb, eb)
+}
+
 pub unsafe fn set_pixel_clamped(
     buffer: *mut u32,
     stride_bytes: u32,

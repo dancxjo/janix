@@ -40,7 +40,7 @@ impl FramebufferView {
             let color = lerp_color(start, end, step, steps);
             self.fill_solid(color);
             // Delay for visibility
-            for _ in 0..1_000_000 {
+            for _ in 0..40_000 {
                 spin_loop();
             }
         }

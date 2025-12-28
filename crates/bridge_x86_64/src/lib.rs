@@ -29,6 +29,28 @@ pub fn set_tick_hook(hook: fn(&mut interrupts::trap::TrapFrame)) {
     }
 }
 
+// Hook for page faults. Returns true if handled.
+// args: (stack_frame, fault_addr, error_code)
+pub static mut PAGE_FAULT_HOOK: Option<
+    fn(
+        &x86_64::structures::idt::InterruptStackFrame,
+        u64,
+        x86_64::structures::idt::PageFaultErrorCode,
+    ) -> bool,
+> = None;
+
+pub fn set_page_fault_hook(
+    hook: fn(
+        &x86_64::structures::idt::InterruptStackFrame,
+        u64,
+        x86_64::structures::idt::PageFaultErrorCode,
+    ) -> bool,
+) {
+    unsafe {
+        PAGE_FAULT_HOOK = Some(hook);
+    }
+}
+
 use core::sync::atomic::{AtomicU64, Ordering};
 
 pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);

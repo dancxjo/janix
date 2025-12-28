@@ -263,6 +263,122 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
     }
 }
 
+// Hook Implementation
+fn page_fault_hook_impl(
+    _stack_frame: &x86_64::structures::idt::InterruptStackFrame,
+    fault_addr: u64,
+    error_code: x86_64::structures::idt::PageFaultErrorCode,
+) -> bool {
+    // 1. Must be User Mode (U-bit set in error code)
+    use x86_64::structures::idt::PageFaultErrorCode;
+    if !error_code.contains(PageFaultErrorCode::USER_MODE) {
+        return false;
+    }
+    
+    use hw::HardwareBridge; // Fix missing log import
+    use x86_64::structures::paging::Translate; // Fix Translate trait import
+    #[allow(unused_imports)]
+    use x86_64::structures::paging::FrameAllocator; // Fix FrameAllocator trait import
+    
+    // 2. Lock Kernel to access Process info
+    if let Some(mut guard) = KERNEL.try_lock() {
+        if let Some(k) = (*guard).as_mut() {
+            // we need frame allocator.
+            // But we can't easily get the one from main() scope.
+            // We need a global or reconstruct it.
+            // Reconstructing HeapFrameAllocator is cheap (just needs hhdm_offset).
+            use limine_local::requests::HHDM_REQUEST;
+            let hhdm_offset_u64 = HHDM_REQUEST.get_response().unwrap().offset();
+            let hhdm_offset = x86_64::VirtAddr::new(hhdm_offset_u64);
+
+            struct HeapFrameAllocator {
+                hhdm_offset: x86_64::VirtAddr,
+            }
+
+            unsafe impl x86_64::structures::paging::FrameAllocator<x86_64::structures::paging::Size4KiB>
+                for HeapFrameAllocator
+            {
+                fn allocate_frame(
+                    &mut self,
+                ) -> Option<x86_64::structures::paging::PhysFrame> {
+                    use alloc::alloc::{alloc, Layout};
+                    let layout = Layout::from_size_align(4096, 4096).ok()?;
+                    let ptr = unsafe { alloc(layout) };
+                    if ptr.is_null() {
+                        return None;
+                    }
+                    use x86_64::registers::control::Cr3;
+                    use x86_64::structures::paging::{Mapper, OffsetPageTable};
+                    let (l4_frame, _) = Cr3::read();
+                    let phys_l4 = l4_frame.start_address();
+                    let virt_l4 = self.hhdm_offset + phys_l4.as_u64();
+                    let page_table_ptr = virt_l4.as_mut_ptr();
+                    let mut mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
+                    let virt_addr = x86_64::VirtAddr::new(ptr as u64);
+                    mapper
+                        .translate_addr(virt_addr)
+                        .map(|phys| x86_64::structures::paging::PhysFrame::containing_address(phys))
+                }
+            }
+            let mut frame_allocator = HeapFrameAllocator { hhdm_offset };
+
+            // 3. Identify Process
+            if let Some(current_tid) = k.scheduler.current {
+                // Find Process
+                 // Threads are Option<Thread>, index = tid.0 - 1
+                 if let Some(Some(thread)) = k.scheduler.threads.get(current_tid.0 as usize - 1) {
+                     let pid = thread.process_id;
+                     if let Some(Some(process)) = k.scheduler.processes.get(pid.0 as usize - 1) {
+                         // Check Heap Bounds
+                         if fault_addr >= process.heap_virt_start
+                             && fault_addr < process.heap_virt_end
+                         {
+                             // ALLOCATE!
+                             use x86_64::structures::paging::{
+                                 Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB,
+                             };
+                             use x86_64::registers::control::Cr3;
+
+                             // Mapper
+                             let (l4_frame, _) = Cr3::read();
+                             let phys_l4 = l4_frame.start_address();
+                             let virt_l4 = hhdm_offset + phys_l4.as_u64();
+                             let page_table_ptr = virt_l4.as_mut_ptr();
+                             let mut mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset) };
+
+                             let page = Page::<Size4KiB>::containing_address(x86_64::VirtAddr::new(fault_addr));
+                             if let Some(frame) = frame_allocator.allocate_frame() {
+                                  let flags = PageTableFlags::PRESENT
+                                     | PageTableFlags::WRITABLE
+                                     | PageTableFlags::USER_ACCESSIBLE;
+                                 unsafe {
+                                     if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                                         // Zero memory
+                                         {
+                                              let phys = frame.start_address();
+                                              let virt = hhdm_offset + phys.as_u64();
+                                              core::ptr::write_bytes(virt.as_mut_ptr::<u8>(), 0, 4096);
+                                         }
+                                         map_to.flush();
+                                         k.bridge.log("PF: Demand Alloc ");
+                                         print_hex(&k.bridge, fault_addr);
+                                         k.bridge.log("\n");
+                                         return true; // HANDLED
+                                     }
+                                 }
+                             } else {
+                                 k.bridge.log("PF: OOM in Demand Alloc\n");
+                             }
+                         }
+                     }
+                 }
+            }
+        }
+    }
+
+    false // Not handled
+}
+
 fn syscall_hook(
     num: usize,
     a1: usize,
@@ -864,6 +980,8 @@ pub extern "C" fn rust_main() -> ! {
         {
             bridge_x86_64::set_tick_hook(scheduler_tick);
             bridge_x86_64::interrupts::syscall::set_syscall_hook(syscall_hook);
+            use x86_64::structures::idt::{InterruptStackFrame, PageFaultErrorCode};
+            bridge_x86_64::set_page_fault_hook(page_fault_hook_impl as fn(&InterruptStackFrame, u64, PageFaultErrorCode) -> bool);
             *KERNEL.lock() = Some(k);
 
             use hw::HardwareBridge;

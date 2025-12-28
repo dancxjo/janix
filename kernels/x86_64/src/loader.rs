@@ -380,6 +380,8 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
                 file_loader_task as usize as u64,
                 stack_top,
                 args_ptr,
+                0, // Heap Start (Kernel task, no user heap)
+                0, // Heap End
             );
         } // drop lock
           // file_loader_task(args_ptr);
@@ -513,6 +515,8 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
                             file_loader_task as usize as u64,
                             stack_top,
                             args_ptr,
+                            0, // Heap Start
+                            0, // Heap End
                         );
                     }
                 }
@@ -745,42 +749,11 @@ pub fn process_file(
             }
 
             let heap_virt_start = current_app_base + 0x0100_0000;
-            // Default 2MB heap. Override for compositor (32MB).
-            let heap_size = if name.contains("compositor") {
-                32 * 1024 * 1024
-            } else {
-                2 * 1024 * 1024
-            };
-            let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(heap_virt_start));
-            let end_page = Page::<Size4KiB>::containing_address(VirtAddr::new(
-                heap_virt_start + heap_size - 1u64,
-            ));
-            for page in Page::range_inclusive(start_page, end_page) {
-                let frame = match frame_allocator.allocate_frame() {
-                    Some(f) => f,
-                    None => {
-                        Bridge.log("loader: OOM allocating user heap for ");
-                        Bridge.log(name);
-                        Bridge.log("\n");
-                        return;
-                    }
-                };
-                let flags = PageTableFlags::PRESENT
-                    | PageTableFlags::WRITABLE
-                    | PageTableFlags::USER_ACCESSIBLE;
-                unsafe {
-                    // Zero the heap
-                    if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
-                        map_to.flush();
-                        let phys = frame.start_address();
-                        let virt = hhdm_offset + phys.as_u64();
-                        core::ptr::write_bytes(virt.as_mut_ptr::<u8>(), 0, 4096);
-                    }
-                }
-            }
+            // Default 128MB heap (Virtual only - no physical cost yet).
+            let heap_size = 128 * 1024 * 1024;
+            let heap_virt_end = heap_virt_start + heap_size;
 
-            // --- FRAMEBUFFER MAPPING ---
-            // Map to fixed address 0x1_0000_0000 (4GB)
+             // Map Framebuffer
             if let Some(resp) = crate::limine_local::requests::FRAMEBUFFER_REQUEST.get_response() {
                 if let Some(fb) = resp.framebuffers().next() {
                     let mut phys_base = fb.addr() as u64;
@@ -830,6 +803,8 @@ pub fn process_file(
                 current_app_base + img.entry_point,
                 stack_top_virt.as_u64(),
                 heap_virt_start,
+                heap_virt_start,
+                heap_virt_end,
             );
 
             // Create Process Thing (Simplified)

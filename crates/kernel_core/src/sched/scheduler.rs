@@ -11,6 +11,8 @@ pub struct Process {
     pub id: ProcessId,
     pub name: String,
     pub thing_id: Option<ThingId>,
+    pub heap_virt_start: u64,
+    pub heap_virt_end: u64,
 }
 
 #[repr(C, align(16))]
@@ -141,6 +143,8 @@ impl Scheduler {
         entry: u64,
         stack_top: u64,
         arg: u64,
+        heap_start: u64,
+        heap_end: u64,
     ) {
         let pid = ProcessId(self.processes.len() as u64 + 1);
         let tid = ThreadId(self.threads.len() as u64 + 1);
@@ -149,6 +153,8 @@ impl Scheduler {
             id: pid,
             name: name.to_string(),
             thing_id: None,
+            heap_virt_start: heap_start,
+            heap_virt_end: heap_end,
         };
         self.processes.push(Some(process));
 

@@ -33,7 +33,7 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     kernel_core::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags,
+        stack_frame.cpu_flags.bits(),
         0,
         0,
         3, // Breakpoint trap #3
@@ -48,7 +48,7 @@ extern "x86-interrupt" fn double_fault_handler(
     kernel_core::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags,
+        stack_frame.cpu_flags.bits(),
         0,
         error_code,
         8, // Double Fault #8
@@ -59,12 +59,12 @@ extern "x86-interrupt" fn double_fault_handler(
 
 extern "x86-interrupt" fn gp_handler(stack_frame: InterruptStackFrame, error_code: u64) {
     use x86_64::registers::control::Cr2;
-    let cr2 = Cr2::read().as_u64();
+    let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
 
     kernel_core::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags,
+        stack_frame.cpu_flags.bits(),
         cr2,
         error_code,
         13, // GPF #13
@@ -78,12 +78,21 @@ extern "x86-interrupt" fn page_fault_handler(
     error_code: PageFaultErrorCode,
 ) {
     use x86_64::registers::control::Cr2;
-    let cr2 = Cr2::read().as_u64();
+    let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
+    
+    // Check hook first
+    unsafe {
+        if let Some(hook) = crate::PAGE_FAULT_HOOK {
+            if hook(&stack_frame, cr2, error_code) {
+                return;
+            }
+        }
+    }
 
     kernel_core::diag::record_fault(
         stack_frame.instruction_pointer.as_u64(),
         stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags,
+        stack_frame.cpu_flags.bits(),
         cr2,
         error_code.bits(),
         14, // Page Fault #14

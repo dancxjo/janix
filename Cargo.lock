@@ -121,7 +121,7 @@ dependencies = [
  "postcard",
  "serde",
  "spin 0.9.8",
- "x86_64 0.14.13",
+ "x86_64",
 ]
 
 [[package]]
@@ -350,7 +350,7 @@ dependencies = [
  "models",
  "postcard",
  "spin 0.10.0",
- "x86_64 0.15.4",
+ "x86_64",
 ]
 
 [[package]]
@@ -633,18 +633,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "x86_64"
-version = "0.14.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c101112411baafbb4bf8d33e4c4a80ab5b02d74d2612331c61e8192fc9710491"
-dependencies = [
- "bit_field",
- "bitflags",
- "rustversion",
- "volatile",
 ]
 
 [[package]]

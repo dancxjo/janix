@@ -32,11 +32,11 @@ pub unsafe fn init() {
     TSS.privilege_stack_table[0] = stack_end; // Also use for Ring 0 stack? No, that's dangerous if shared.
 
     // 2. Setup GDT
-    let k_code = GDT.add_entry(Descriptor::kernel_code_segment());
-    let k_data = GDT.add_entry(Descriptor::kernel_data_segment());
-    let u_data = GDT.add_entry(Descriptor::user_data_segment());
-    let u_code = GDT.add_entry(Descriptor::user_code_segment());
-    let tss = GDT.add_entry(Descriptor::tss_segment(&TSS));
+    let k_code = GDT.append(Descriptor::kernel_code_segment());
+    let k_data = GDT.append(Descriptor::kernel_data_segment());
+    let u_data = GDT.append(Descriptor::user_data_segment());
+    let u_code = GDT.append(Descriptor::user_code_segment());
+    let tss = GDT.append(Descriptor::tss_segment(&TSS));
 
     KERNEL_CODE_SELECTOR = k_code;
     KERNEL_DATA_SELECTOR = k_data;

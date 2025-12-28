@@ -16,14 +16,18 @@ pub fn log_heap_init(info: HeapInitInfo) {
 
 fn print_hex(bridge: &Bridge, val: u64) {
     bridge.log("0x");
+    let mut printed = false;
     for i in (0..16).rev() {
         let digit = (val >> (i * 4)) & 0xF;
-        let c = if digit < 10 {
-            b'0' + digit as u8
-        } else {
-            b'a' + (digit - 10) as u8
-        };
-        let s = unsafe { core::str::from_utf8_unchecked(core::slice::from_ref(&c)) };
-        bridge.log(s);
+        if digit != 0 || printed || i == 0 {
+            let c = if digit < 10 {
+                b'0' + digit as u8
+            } else {
+                b'a' + (digit - 10) as u8
+            };
+            let s = unsafe { core::str::from_utf8_unchecked(core::slice::from_ref(&c)) };
+            bridge.log(s);
+            printed = true;
+        }
     }
 }

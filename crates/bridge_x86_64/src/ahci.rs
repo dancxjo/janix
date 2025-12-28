@@ -13,6 +13,7 @@ use models::core::block::{BlockDeviceBody, BlockDeviceType};
 use models::core::pci::PciDeviceBody;
 use models::value::ThingBody;
 use models::Thing;
+use spin::Mutex;
 
 // --- AHCI Constants & Structs ---
 
@@ -61,6 +62,18 @@ struct HbaMem {
     vendor: [u8; 0x100 - 0xA0],
     ports: [HbaPort; 32],
 }
+
+// Global locks for ports to allow concurrent slot allocation
+static PORT_LOCKS: [Mutex<()>; 32] = [
+    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
+    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
+    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
+    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
+    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
+    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
+    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
+    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
+];
 
 // --- Driver Logic ---
 
@@ -159,7 +172,7 @@ pub unsafe fn init(dev: &PciDeviceBody, k: &mut Kernel<Bridge>) {
     }
 }
 
-use alloc::alloc::{alloc, Layout};
+use alloc::alloc::{alloc, dealloc, Layout};
 
 unsafe fn init_port(port: &mut HbaPort, port_no: usize, hhdm: u64) {
     let bridge = Bridge;
@@ -170,43 +183,33 @@ unsafe fn init_port(port: &mut HbaPort, port_no: usize, hhdm: u64) {
     // Command List Base (1K aligned)
     let cl_layout = Layout::from_size_align(1024, 1024).unwrap();
     let cl_ptr = alloc(cl_layout);
+    if cl_ptr.is_null() {
+        bridge.log("AHCI: Failed to alloc CL\n");
+        return;
+    }
     // Zero out
     core::ptr::write_bytes(cl_ptr, 0, 1024);
 
     // FIS Base (256 aligned)
     let fis_layout = Layout::from_size_align(256, 256).unwrap();
     let fis_ptr = alloc(fis_layout);
+    if fis_ptr.is_null() {
+        bridge.log("AHCI: Failed to alloc FIS\n");
+        // Leak cl_ptr for now, panic is imminent
+        return;
+    }
     core::ptr::write_bytes(fis_ptr, 0, 256);
 
-    // Command Table (128 bytes + PRDT, 128 aligned)
-    // We only use Slot 0 for simplicity right now.
-    // Table Size = 0x80 + (PRDT_count * 16)
-    // Let's alloc 4KB to be safe and cover PRDTs
-    let ct_layout = Layout::from_size_align(4096, 128).unwrap();
-    let ct_ptr = alloc(ct_layout);
-    core::ptr::write_bytes(ct_ptr, 0, 4096);
-
-    // Get Phys Addrs via HHDM reverse lookup?
-    // Wait, HHDM is "Virt = Phys + Offset". So "Phys = Virt - Offset".
-    // This ONLY works if heap is direct-mapped.
-    // Our heap is direct mapped via HHDM!
+    // NOTE: We do NOT allocate Command Table here anymore.
+    // read_sector_yielding will allocate it dynamically per slot.
 
     let cl_phys = (cl_ptr as u64) - hhdm;
     let fis_phys = (fis_ptr as u64) - hhdm;
-    let ct_phys = (ct_ptr as u64) - hhdm;
 
     port.clb = cl_phys as u32;
     port.clbu = (cl_phys >> 32) as u32;
     port.fb = fis_phys as u32;
     port.fbu = (fis_phys >> 32) as u32;
-
-    // Link Command Header 0 to Command Table
-    let cl_slice = core::slice::from_raw_parts_mut(cl_ptr as *mut HbaCmdHeader, 32);
-    let header = &mut cl_slice[0];
-    header.ctba = ct_phys as u32;
-    header.ctbau = (ct_phys >> 32) as u32;
-    // Assume 1 PRDT entry max for now
-    header.prdtl = 1;
 
     bridge.log("AHCI: Port ");
     crate::print_u64(port_no as u64);
@@ -270,110 +273,166 @@ struct HbaPrdtEntry {
     dbc: u32, // Byte count - 1 (Bit 31 = Interrupt on complete)
 }
 
-pub unsafe fn read_atapi_sector(port: &mut HbaPort, lba: u32, buf: &mut [u8], hhdm: u64) -> bool {
+pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
+    port: &mut HbaPort,
+    port_idx: usize,
+    lba: u32,
+    buf: &mut [u8],
+    hhdm: u64,
+    yield_fn: F,
+) -> bool {
     let bridge = Bridge;
-    // 1. Find Slot (We hardcode Slot 0)
-    port.ci = 0; // Clear commands? No, check status.
+    bridge.log("AHCI: Read LBA ");
+    
+    // Convert LBA to string manually or use format! if available?
+    // Minimal log for now to avoid allocation inside AHCI if possible?
+    // But we are in a bridge, maybe we can use alloc.
+    // Let's just log start.
+    // bridge.log("AHCI: Issue\n"); 
+    
+    // We can use alloc::format! if we import it? 
+    // bridge.log(&alloc::format!("{} Slot {}\n", lba, slot));
+    let slot;
 
-    // 2. Setup Command Header (Slot 0)
+    // 1. Find Free Slot (Thread Safe)
+    {
+        let _guard = PORT_LOCKS[port_idx].lock();
+        let slots = port.ci | port.sact;
+        let mut found = None;
+        for i in 0..32 {
+            if (slots & (1 << i)) == 0 {
+                found = Some(i);
+                break;
+            }
+        }
+        if let Some(s) = found {
+            slot = s;
+            // Optimistically set bit in CI? No, we set it when we issue.
+            // But if we release guard, someone else might take it.
+            // Actually, we can't set CI before table is ready.
+            // But we must Reserve it.
+            // Standard AHCI does not have "reserve" bit.
+            // We just have to hope no one else takes it? NO.
+            // We must hold the lock UNTIL we write CI.
+            // This means setup must happen UNDER LOCK.
+            // OR use a software bitmap if we want longer setup without lock.
+            // For now, setup is fast (memory write). Hold lock.
+            
+            // 2. Alloc Command Table (4KB)
+            let ct_layout = Layout::from_size_align(4096, 128).unwrap();
+            let ct_ptr = alloc(ct_layout);
+            if ct_ptr.is_null() {
+                 bridge.log("AHCI: Failed to alloc CT\n");
+                 return false;
+            }
+            core::ptr::write_bytes(ct_ptr, 0, 4096);
+            
+            let ct_phys = (ct_ptr as u64) - hhdm;
+
+            // 3. Setup Command Header (Slot 'slot')
+            let cl_phys = ((port.clbu as u64) << 32) | (port.clb as u64);
+            let cl_virt = hhdm + cl_phys;
+            let cl_slice = core::slice::from_raw_parts_mut(cl_virt as *mut HbaCmdHeader, 32);
+            let header = &mut cl_slice[slot];
+
+            header.cfl = 5 | 0x20; // 5 DWORDS | ATAPI
+            header.pm = 0;
+            header.ctba = ct_phys as u32;
+            header.ctbau = (ct_phys >> 32) as u32;
+            header.prdtl = 1;
+
+            // 4. Setup Command Table
+            let ct_virt = hhdm + ct_phys;
+            let table = &mut *(ct_virt as *mut HbaCmdTable);
+
+            // FIS
+            table.cfis[0] = 0x27; 
+            table.cfis[1] = 0x80; 
+            table.cfis[2] = 0xA0; 
+            table.cfis[3] = 0x01; 
+
+            // ATAPI Packet
+            table.acmd[0] = 0xA8;
+            table.acmd[2] = (lba >> 24) as u8;
+            table.acmd[3] = (lba >> 16) as u8;
+            table.acmd[4] = (lba >> 8) as u8;
+            table.acmd[5] = lba as u8;
+            let count: u32 = 1; 
+            table.acmd[6] = (count >> 24) as u8;
+            table.acmd[7] = (count >> 16) as u8;
+            table.acmd[8] = (count >> 8) as u8;
+            table.acmd[9] = count as u8;
+
+            // PRDT
+            let buf_phys = (buf.as_ptr() as u64) - hhdm; 
+            let entry = &mut table.prdt_entry[0];
+            entry.dba = buf_phys as u32;
+            entry.dbau = (buf_phys >> 32) as u32;
+            entry.dbc = (2048 - 1); 
+            entry.rsv0 = 0;
+
+            // 5. Issue Command
+            // Use volatile to ensure immediate write to MMIO
+            let ci_ptr = core::ptr::addr_of_mut!(port.ci);
+            let mut ci = unsafe { core::ptr::read_volatile(ci_ptr) };
+            ci |= 1 << slot;
+            unsafe { core::ptr::write_volatile(ci_ptr, ci) };
+            
+            // Now we can release lock! The slot is marked busy in HW.
+        } else {
+            bridge.log("AHCI: No free slots!\n");
+            return false;
+        }
+    } // Unlock
+
+    // 6. Spin Wait (Yielding)
+    let mut timeout = 100_000_000; // 100M spins ~ 0.5-1s?
+    loop {
+        let ci_ptr = core::ptr::addr_of!(port.ci);
+        let ci = unsafe { core::ptr::read_volatile(ci_ptr) };
+        if (ci & (1 << slot)) == 0 {
+            break;
+        } 
+        if (port.is & (1 << 30)) != 0 {
+             bridge.log("AHCI: TFES Error\n");
+             break;
+        }
+        if timeout == 0 { break; }
+        
+        yield_fn();
+        core::hint::spin_loop();
+    }
+    
+    // 7. Cleanup (Get lock to modify Header? No, Header is owned by HW/Us? CTBA is ours?)
+    // We allocated CT. We must free it.
+    // Use lock? No, slot is done (CI bit cleared). We own the slot cleanup.
+    // However, if we want to be super safe?
+    // Accessing Header[slot] is ours since CI bit is 0.
+
     let cl_phys = ((port.clbu as u64) << 32) | (port.clb as u64);
     let cl_virt = hhdm + cl_phys;
     let cl_slice = core::slice::from_raw_parts_mut(cl_virt as *mut HbaCmdHeader, 32);
-    let header = &mut cl_slice[0];
-
-    header.cfl = 5 | 0x20; // 5 DWORDS | ATAPI (Bit 5)
-    header.pm = 0;
-
-    // 3. Setup Command Table
+    let header = &mut cl_slice[slot];
     let ct_phys = ((header.ctbau as u64) << 32) | (header.ctba as u64);
-    let ct_virt = hhdm + ct_phys;
-    let table = &mut *(ct_virt as *mut HbaCmdTable);
+    
+    // Free CT
+    let ct_ptr = (hhdm + ct_phys) as *mut u8;
+    let ct_layout = Layout::from_size_align(4096, 128).unwrap();
+    dealloc(ct_ptr, ct_layout);
 
-    // Clear Table
-    core::ptr::write_bytes(
-        table as *mut _ as *mut u8,
-        0,
-        core::mem::size_of::<HbaCmdTable>(),
-    );
-
-    // 4. Setup FIS (RegH2D) - 0x27
-    table.cfis[0] = 0x27; // FIS Type
-    table.cfis[1] = 0x80; // Command (Bit 7) - C bit? No, for 0x27, bit 7 is 'C' (Command).
-    table.cfis[2] = 0xA0; // Command: PACKET
-                          // Feature? DMA?
-    table.cfis[3] = 0x01; // Features: DMA (Bit 0)
-
-    // 5. Setup ATAPI Command (SCSI READ 12 - 0xA8)
-    table.acmd[0] = 0xA8;
-    table.acmd[2] = (lba >> 24) as u8;
-    table.acmd[3] = (lba >> 16) as u8;
-    table.acmd[4] = (lba >> 8) as u8;
-    table.acmd[5] = lba as u8;
-
-    let count: u32 = 1; // 1 sector
-    table.acmd[6] = (count >> 24) as u8;
-    table.acmd[7] = (count >> 16) as u8;
-    table.acmd[8] = (count >> 8) as u8;
-    table.acmd[9] = count as u8;
-
-    // 6. Setup PRDT
-    let buf_phys = (buf.as_ptr() as u64) - hhdm; // Assume buffer is in HHDM heap
-    let entry = &mut table.prdt_entry[0];
-    entry.dba = buf_phys as u32;
-    entry.dbau = (buf_phys >> 32) as u32;
-    entry.dbc = (2048 - 1); // 2048 bytes
-    entry.rsv0 = 0;
-
-    // 7. Issue Command
-    // Wait for BSY
-    let mut timeout = 1000000;
-    while (port.tfd & (0x80 | 0x08)) != 0 && timeout > 0 {
-        timeout -= 1;
-        core::hint::spin_loop();
-    }
-
-    port.is = 0xFFFFFFFF; // Clear interrupts
-    port.ci = 1; // Issue Slot 0
-
-    // 8. Wait for Completion
-    timeout = 10000000;
-    loop {
-        if (port.ci & 1) == 0 {
-            break;
-        } // Done
-        if (port.is & (1 << 30)) != 0 {
-            // TFES (Task File Error Status)
-            bridge.log("AHCI: TFES Error\n");
-            break;
-        }
-        timeout -= 1;
-        if timeout == 0 {
-            break;
-        }
-        core::hint::spin_loop();
-    }
     if timeout == 0 {
-        bridge.log("AHCI: Timeout exec. TFD: ");
-        crate::print_hex(port.tfd as u64);
-        bridge.log(" SERR: ");
-        crate::print_hex(port.serr as u64);
-        bridge.log("\n");
+        bridge.log("AHCI: Timeout exec.\n");
         return false;
     }
-
-    // Check Error
     if (port.tfd & 1) != 0 {
-        bridge.log("AHCI: Disk Error. TFD: ");
-        crate::print_hex(port.tfd as u64);
-        bridge.log(" SERR: ");
-        crate::print_hex(port.serr as u64);
-        bridge.log("\n");
+        bridge.log("AHCI: Disk Error.\n");
         return false;
     }
 
     true
 }
 
+// Wrapper for existing "unsafe" blocking call
 pub unsafe fn read_sector_at(
     abar_base: u64,
     port_idx: usize,
@@ -381,16 +440,32 @@ pub unsafe fn read_sector_at(
     buf: &mut [u8],
     hhdm: u64,
 ) -> bool {
-    // Reconstruct HbaMem pointer
     let abar_virt = hhdm + abar_base;
     let hba = &mut *(abar_virt as *mut HbaMem);
     let port = &mut hba.ports[port_idx];
 
-    // Determine type? For now assume ATAPI if we are asking to read.
-    // Ideally we check port.sig.
     if port.sig == 0xEB140101 {
-        // ATAPI
-        read_atapi_sector(port, lba, buf, hhdm)
+        // Use spin loop for default behavior
+        read_atapi_sector_yielding(port, port_idx, lba, buf, hhdm, || core::hint::spin_loop())
+    } else {
+        false
+    }
+}
+
+pub unsafe fn read_sector_yielding<F: Fn()>(
+    abar_base: u64,
+    port_idx: usize,
+    lba: u32,
+    buf: &mut [u8],
+    hhdm: u64,
+    yield_fn: F,
+) -> bool {
+    let abar_virt = hhdm + abar_base;
+    let hba = &mut *(abar_virt as *mut HbaMem);
+    let port = &mut hba.ports[port_idx];
+
+    if port.sig == 0xEB140101 {
+        read_atapi_sector_yielding(port, port_idx, lba, buf, hhdm, yield_fn)
     } else {
         false
     }

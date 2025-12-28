@@ -94,14 +94,18 @@ pub fn print_hex(val: u64) {
     let bridge = Bridge;
     use hw::HardwareBridge;
     bridge.log("0x");
+    let mut printed = false;
     for i in (0..16).rev() {
         let digit = (val >> (i * 4)) & 0xF;
-        let c = if digit < 10 {
-            digit as u8 + b'0'
-        } else {
-            digit as u8 - 10 + b'a'
-        };
-        bridge.log(core::str::from_utf8(&[c]).unwrap());
+        if digit != 0 || printed || i == 0 {
+            let c = if digit < 10 {
+                digit as u8 + b'0'
+            } else {
+                digit as u8 - 10 + b'a'
+            };
+            bridge.log(core::str::from_utf8(&[c]).unwrap());
+            printed = true;
+        }
     }
 }
 
@@ -185,17 +189,28 @@ impl HardwareBridge for Bridge {
         // RIP
         ctx[15] = entry;
 
-        // CS: User Code
-        ctx[16] = unsafe { gdt::USER_CODE_SELECTOR.0 as u64 | 3 };
+        // If entry is in higher half, use Kernel Segments. Else User.
+        let is_kernel = entry >= 0xFFFF_8000_0000_0000; 
 
-        // RFLAGS: Interrupts enabled (0x200). IOPL 3 (0x3000) -> 0x3202
-        ctx[17] = 0x3202;
-
-        // RSP
-        ctx[18] = stack;
-
-        // SS: User Data
-        ctx[19] = unsafe { gdt::USER_DATA_SELECTOR.0 as u64 | 3 };
+        if is_kernel {
+             // CS: Kernel Code
+             ctx[16] = unsafe { gdt::KERNEL_CODE_SELECTOR.0 as u64 }; 
+             // RFLAGS: Interrupts enabled (0x200). IOPL 0.
+             ctx[17] = 0x202;
+             // RSP
+             ctx[18] = stack;
+             // SS: Kernel Data
+             ctx[19] = unsafe { gdt::KERNEL_DATA_SELECTOR.0 as u64 };
+        } else {
+             // CS: User Code (RPL 3)
+             ctx[16] = unsafe { gdt::USER_CODE_SELECTOR.0 as u64 | 3 };
+             // RFLAGS: Interrupts enabled (0x200). IOPL 3 (0x3000) -> 0x3202
+             ctx[17] = 0x3202;
+             // RSP
+             ctx[18] = stack;
+             // SS: User Data (RPL 3)
+             ctx[19] = unsafe { gdt::USER_DATA_SELECTOR.0 as u64 | 3 };
+        }
 
         ctx
     }

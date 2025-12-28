@@ -37,6 +37,8 @@ pub struct ModuleBody {
     pub kind: alloc::string::String,
     pub sniff: u32,
     pub valid: bool,
+    #[serde(default)]
+    pub data: alloc::vec::Vec<u8>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

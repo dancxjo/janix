@@ -9,10 +9,11 @@ use abi::ids::ThingId;
 use thing_models::builtins::core_kinds::DisplayFramebufferBody;
 use thing_models::builtins::ids::{
     THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_DISPLAY_FRAMEBUFFER_KIND,
-    THING_BITMAP_KIND, THING_POINTER_EVENT_STREAM_KIND, THING_WINDOW_KIND
+    THING_MODULE_KIND, THING_POINTER_EVENT_STREAM_KIND, THING_WINDOW_KIND
 };
 use thing_models::schema::bitmap::BitmapBody;
 use thing_models::core::input::PointerEventStreamBody;
+use thing_models::builtins::core_kinds::ModuleBody;
 
 #[no_mangle]
 pub extern "C" fn _start(heap_start: u64) -> ! {
@@ -50,11 +51,15 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                              fb_thing_id = Some(target);
                              c.write_str("COMPOSITOR: Found DisplayFramebuffer!\n");
                          }
-                     } else if type_id == THING_BITMAP_KIND.0 as u128 {
+                     } else if type_id == THING_MODULE_KIND.0 as u128 {
                          if cursor_bitmap.is_none() {
-                             if let Ok(bmp) = postcard::from_bytes::<BitmapBody>(&tb.bytes) {
-                                 cursor_bitmap = Some(bmp);
-                                 c.write_str("COMPOSITOR: Found Cursor Bitmap!\n");
+                             if let Ok(module) = postcard::from_bytes::<ModuleBody>(&tb.bytes) {
+                                 if module.path.ends_with("cursor.bmp") {
+                                     if let Some(bmp) = bitmap_parser::parse_bmp(&module.data) {
+                                         cursor_bitmap = Some(bmp);
+                                         c.write_str("COMPOSITOR: Parsed Cursor Bitmap!\n");
+                                     }
+                                 }
                              }
                          }
                      } else if type_id == THING_POINTER_EVENT_STREAM_KIND.0 as u128 {
@@ -154,6 +159,8 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         let _ = std::time::sleep_ms(&g, 16);
     }
 }
+
+mod bitmap_parser;
 
 fn draw_window(fb_ptr: *mut u32, pitch: u32, fb_w: u32, fb_h: u32, window: &thing_models::schema::window::WindowBody) {
     let x = window.x;

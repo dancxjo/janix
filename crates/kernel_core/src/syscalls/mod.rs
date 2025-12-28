@@ -24,8 +24,38 @@ pub fn syscall_dispatch<B: HardwareBridge>(
     match num {
         SYSCALL_RTC_READ => time::sys_rtc_read(kernel, a1 as *mut u8) as isize,
         SYSCALL_YIELD => {
-            // kernel.scheduler.yield_thread();
+            kernel.scheduler.yield_thread();
             0
+        }
+        SYSCALL_SLEEP => {
+            // a1: duration_ns
+            kernel.scheduler.sleep(a1 as u64);
+            0
+        }
+        SYSCALL_TIME => {
+            // a1: out_ptr (u64 monotonic, u64 system)
+            let out_ptr = a1 as *mut u64;
+            // Validate pointer?
+            if out_ptr as u64 == 0 { return -1; }
+            let mono = kernel.bridge.monotonic_now();
+            let sys = kernel.bridge.system_now();
+            unsafe {
+                *out_ptr = mono;
+                *out_ptr.add(1) = sys;
+            }
+            0
+        }
+        SYSCALL_LOG => {
+            // a1: ptr, a2: len
+            let ptr = a1 as *const u8;
+            let len = a2;
+            let bytes = unsafe { core::slice::from_raw_parts(ptr, len) };
+            if let Ok(s) = core::str::from_utf8(bytes) {
+                kernel.bridge.log(s);
+                len as isize
+            } else {
+                -1
+            }
         }
 
         SYSCALL_DRIVER_WAIT => driver::sys_driver_wait(kernel, a1 as *mut u8, a2) as isize,

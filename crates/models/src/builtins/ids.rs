@@ -226,3 +226,4 @@ pub const THING_DISPLAY_SCANOUT_BUFFER_SCHEMA: ThingId = ThingId(1235);
 
 pub const THING_WINDOW_KIND: ThingId = ThingId(236);
 pub const THING_WINDOW_SCHEMA: ThingId = ThingId(1236);
+pub const THING_BOOT_STATE_KIND: ThingId = ThingId(237); pub const THING_BOOT_STATE_SCHEMA: ThingId = ThingId(1237);

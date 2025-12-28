@@ -232,7 +232,7 @@ version = "0.2.0"
 dependencies = [
  "abi",
  "hw",
- "kernel_core",
+ "kernel",
 ]
 
 [[package]]
@@ -241,7 +241,7 @@ version = "0.2.0"
 dependencies = [
  "abi",
  "bitflags",
- "kernel_core",
+ "kernel",
  "lazy_static",
  "models",
  "postcard",
@@ -723,19 +723,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kernel_aarch64"
-version = "0.2.0"
-dependencies = [
- "bridge_aarch64",
- "hw",
- "kernel_core",
- "limine",
- "linked_list_allocator",
- "spin 0.10.0",
-]
-
-[[package]]
-name = "kernel_core"
+name = "kernel"
 version = "0.2.0"
 dependencies = [
  "abi",
@@ -749,6 +737,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel_aarch64"
+version = "0.2.0"
+dependencies = [
+ "bridge_aarch64",
+ "hw",
+ "kernel",
+ "limine",
+ "linked_list_allocator",
+ "spin 0.10.0",
+]
+
+[[package]]
 name = "kernel_x86_64"
 version = "0.2.0"
 dependencies = [
@@ -756,7 +756,7 @@ dependencies = [
  "boot",
  "bridge_x86_64",
  "infer",
- "kernel_core",
+ "kernel",
  "linked_list_allocator",
  "models",
  "postcard",

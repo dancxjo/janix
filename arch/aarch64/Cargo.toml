@@ -1,0 +1,17 @@
+[package]
+name = "kernel_aarch64"
+version = "0.2.0"
+edition = "2021"
+license.workspace = true
+
+[[bin]]
+name = "kernel_aarch64"
+test = false
+
+[dependencies]
+kernel = { path = "../../crates/kernel" }
+bridge_aarch64 = { path = "../../crates/bridge_aarch64" }
+hw = { path = "../../crates/hw" }
+linked_list_allocator = { version = "0.10", default-features = false, features = ["use_spin"] }
+spin = "0.10"
+limine = "0.5"

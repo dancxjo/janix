@@ -5,7 +5,17 @@ extern crate alloc;
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::asm;
-use hw::HardwareBridge;
+use kernel::bridge::HardwareBridge;
+
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub struct ArchContext(pub [u64; 34]);
+
+impl Default for ArchContext {
+    fn default() -> Self {
+        Self([0; 34])
+    }
+}
 
 pub mod interrupts;
 pub mod paging;
@@ -28,6 +38,8 @@ impl Bridge {
 
 #[cfg(target_arch = "aarch64")]
 impl HardwareBridge for Bridge {
+    type Context = ArchContext;
+
     fn log(&self, msg: &str) {
         // PL011 UART
         let uart_base = unsafe { UART_BASE };
@@ -105,7 +117,7 @@ impl HardwareBridge for Bridge {
         ((cntpct as u128 * 1_000_000_000) / (cntfrq as u128)) as u64
     }
 
-    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> [u64; 34] {
+    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> Self::Context {
         // [x0..x29, x30, sp_el0, elr, spsr]
         let mut ctx = [0u64; 34];
 
@@ -137,11 +149,11 @@ impl HardwareBridge for Bridge {
         // x0 = arg
         ctx[0] = arg;
 
-        ctx
+        ArchContext(ctx)
     }
 
-    fn resume_user_mode(&self, context: &[u64]) -> ! {
-        user::enter::resume_user_mode(context, &kernel_core::sched::fpu::FpuContext::default())
+    fn resume_user_mode(&self, context: &Self::Context) -> ! {
+        user::enter::resume_user_mode(&context.0, &kernel::sched::fpu::FpuContext::default())
     }
 
     fn set_kernel_stack(&self, _stack: u64) {}
@@ -196,6 +208,8 @@ impl HardwareBridge for Bridge {
 
 #[cfg(not(target_arch = "aarch64"))]
 impl HardwareBridge for Bridge {
+    type Context = ArchContext;
+
     fn log(&self, _msg: &str) {}
     fn ticks(&self) -> u64 {
         0
@@ -213,10 +227,10 @@ impl HardwareBridge for Bridge {
     fn monotonic_now(&self) -> u64 {
         0
     }
-    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> [u64; 34] {
-        [0; 34]
+    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> Self::Context {
+        ArchContext([0; 34])
     }
-    fn resume_user_mode(&self, _context: &[u64]) -> ! {
+    fn resume_user_mode(&self, _context: &Self::Context) -> ! {
         loop {}
     }
     fn set_kernel_stack(&self, _stack: u64) {}

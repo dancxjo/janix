@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 
-kernel_core = { path = "../kernel_core" }
+kernel = { path = "../kernel" }
 abi = { path = "../abi" }
 models = { path = "../models" }
 x86_64 = "0.15.4"

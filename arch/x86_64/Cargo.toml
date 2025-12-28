@@ -1,0 +1,22 @@
+[package]
+name = "kernel_x86_64"
+version = "0.2.0"
+edition = "2021"
+license.workspace = true
+
+[[bin]]
+name = "kernel_x86_64"
+test = false
+
+[dependencies]
+kernel = { path = "../../crates/kernel" }
+bridge_x86_64 = { path = "../../crates/bridge_x86_64" }
+
+models = { path = "../../crates/models" }
+linked_list_allocator = { version = "0.10", default-features = false, features = ["use_spin"] }
+spin = "0.10"
+boot = { path = "../../crates/boot" }
+x86_64 = "0.15.4"
+abi = { path = "../../crates/abi" }
+postcard = { version = "1.0", default-features = false, features = ["alloc"] }
+infer = { version = "0.19.0", default-features = false, features = ["alloc"] }

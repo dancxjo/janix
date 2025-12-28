@@ -223,7 +223,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     fs::create_dir_all(&limine_dest)?;
 
     // Config
-    let conf_src = root.join("kernels/limine.conf");
+    let conf_src = root.join("arch/limine.conf");
     let mut conf_data = fs::read_to_string(&conf_src)?;
 
     // Generate Module List

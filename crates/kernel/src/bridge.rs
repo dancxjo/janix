@@ -1,7 +1,8 @@
-#![no_std]
+
 
 pub trait HardwareBridge {
     fn log(&self, msg: &str);
+    fn hhdm_offset(&self) -> u64;
     fn ticks(&self) -> u64;
     fn system_now(&self) -> u64;
     fn idle(&self);
@@ -21,6 +22,14 @@ pub trait HardwareBridge {
     /// Returns high-resolution monotonic time in nanoseconds.
     /// Returns 0 if not available/calibrated yet.
     fn monotonic_now(&self) -> u64;
+
+    // IO
+    fn port_outb(&self, port: u16, val: u8);
+    fn port_inb(&self, port: u16) -> u8;
+    fn port_outw(&self, port: u16, val: u16);
+    fn port_inw(&self, port: u16) -> u16;
+    fn port_outd(&self, port: u16, val: u32);
+    fn port_ind(&self, port: u16) -> u32;
 
     fn save_fpu(&self, area: &mut [u8; 512]);
     fn restore_fpu(&self, area: &[u8; 512]);

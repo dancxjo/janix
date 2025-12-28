@@ -1,6 +1,7 @@
 use crate::sched::fpu::FpuContext;
 use crate::sched::types::{ThreadState, TimeNs};
 use abi::ids::{ProcessId, ThingId, ThreadId};
+use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use hw::HardwareBridge;
@@ -49,7 +50,7 @@ pub struct Scheduler {
     pub threads: Vec<Option<Thread>>,
     pub processes: Vec<Option<Process>>,
     pub current: Option<ThreadId>,
-    pub run_queue: Vec<ThreadId>,
+    pub run_queue: VecDeque<ThreadId>,
     pub sleep_queue: Vec<SleepEntry>,
     pub graph_enabled: bool,
 }
@@ -72,7 +73,7 @@ impl Scheduler {
             threads: Vec::new(),
             processes: Vec::new(),
             current: None,
-            run_queue: Vec::new(),
+            run_queue: VecDeque::new(),
             sleep_queue: Vec::new(),
             graph_enabled: false,
         }
@@ -89,11 +90,21 @@ impl Scheduler {
                     thread_id: tid,
                     wake_at_ns: wake_ns,
                 };
-                self.sleep_queue.push(entry);
-                // Keep sorted reverse (min at end) or just sort on insert?
-                // Simple sort for now.
-                self.sleep_queue
-                    .sort_by(|a, b| b.wake_at_ns.cmp(&a.wake_at_ns)); // Pop from end = min
+
+                // Optimized insertion: Maintain sorted order (descending by wake time).
+                // Min wake time (earliest deadline) should be at the END for efficient pop().
+                // We want to find index i such that for all j < i, element > new, and all k >= i, element <= new.
+                // partition_point returns the index of the first element satisfying the predicate NO (if we use |x| x > new).
+                // Wait, partition_point returns the index of the first element for which the predicate is FALSE.
+                // We want predicate: x.wake_at_ns > wake_ns.
+                // So elements [100, 50, 40] where we insert 45.
+                // 100 > 45 (True)
+                // 50 > 45 (True)
+                // 40 > 45 (False) -> Index 2.
+                // Insert at 2 -> [100, 50, 45, 40]. Correct.
+
+                let idx = self.sleep_queue.partition_point(|x| x.wake_at_ns > wake_ns);
+                self.sleep_queue.insert(idx, entry);
             }
         }
     }
@@ -110,7 +121,7 @@ impl Scheduler {
                     if thread.state == ThreadState::Sleeping {
                         thread.state = ThreadState::Runnable;
                         thread.pending_wake = true; // flag if useful
-                        self.run_queue.push(tid);
+                        self.run_queue.push_back(tid);
                     }
                 }
             } else {
@@ -169,15 +180,11 @@ impl Scheduler {
         };
 
         self.threads.push(Some(thread));
-        self.run_queue.push(tid);
+        self.run_queue.push_back(tid);
     }
 
     pub fn pick_next(&mut self) -> Option<ThreadId> {
-        if self.run_queue.is_empty() {
-            return None;
-        }
-        let tid = self.run_queue.remove(0);
-        Some(tid)
+        self.run_queue.pop_front()
     }
 
     pub fn tick<B: HardwareBridge>(&mut self, _bridge: &B, current_context: &mut ThreadContext) {
@@ -192,9 +199,9 @@ impl Scheduler {
                 // If Sleeping, we LEAVE IT SLEEPING and do NOT push to run_queue.
                 if thread.state == ThreadState::Running {
                     thread.state = ThreadState::Runnable;
-                    self.run_queue.push(tid);
+                    self.run_queue.push_back(tid);
                 } else if thread.state == ThreadState::Runnable {
-                    self.run_queue.push(tid);
+                    self.run_queue.push_back(tid);
                 }
             }
         }

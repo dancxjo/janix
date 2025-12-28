@@ -7,26 +7,29 @@ use x86_64::VirtAddr;
 // Debug counter for IRQ1
 pub static IRQ1_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
-static mut IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();
+use lazy_static::lazy_static;
 
-pub fn init() {
-    unsafe {
-        IDT.double_fault.set_handler_fn(double_fault_handler);
-        IDT.breakpoint.set_handler_fn(breakpoint_handler);
-        IDT.general_protection_fault.set_handler_fn(gp_handler);
-        IDT.page_fault.set_handler_fn(page_fault_handler);
+lazy_static! {
+    static ref IDT: InterruptDescriptorTable = {
+        let mut idt = InterruptDescriptorTable::new();
+        idt.double_fault.set_handler_fn(double_fault_handler);
+        idt.breakpoint.set_handler_fn(breakpoint_handler);
+        idt.general_protection_fault.set_handler_fn(gp_handler);
+        idt.page_fault.set_handler_fn(page_fault_handler);
 
         // Timer Interrupt (IRQ 0 = 32)
-        IDT[32].set_handler_addr(VirtAddr::new(timer_interrupt_naked as *const () as u64));
+        unsafe {
+            idt[32].set_handler_addr(VirtAddr::new(timer_interrupt_naked as *const () as u64));
+            idt[33].set_handler_addr(VirtAddr::new(keyboard_interrupt_naked as *const () as u64));
+            idt[44].set_handler_addr(VirtAddr::new(mouse_interrupt_naked as *const () as u64));
+        }
 
-        // Keyboard Interrupt (IRQ 1 = 33)
-        IDT[33].set_handler_addr(VirtAddr::new(keyboard_interrupt_naked as *const () as u64));
+        idt
+    };
+}
 
-        // Mouse Interrupt (IRQ 12 = 44)
-        IDT[44].set_handler_addr(VirtAddr::new(mouse_interrupt_naked as *const () as u64));
-
-        IDT.load();
-    }
+pub fn init() {
+    IDT.load();
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {

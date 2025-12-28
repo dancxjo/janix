@@ -9,12 +9,13 @@ use abi::ids::ThingId;
 use thing_models::builtins::core_kinds::DisplayFramebufferBody;
 use thing_models::builtins::ids::{
     THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_DISPLAY_FRAMEBUFFER_KIND,
-    THING_MODULE_KIND, THING_POINTER_EVENT_STREAM_KIND, THING_WINDOW_KIND
+    THING_MODULE_KIND, THING_POINTER_EVENT_STREAM_KIND, THING_WINDOW_KIND,
+    THING_EMITS_KIND
 };
 use thing_models::schema::bitmap::BitmapBody;
 use thing_models::core::input::PointerEventStreamBody;
 use thing_models::builtins::core_kinds::ModuleBody;
-use thing_models::builtins::ids::{THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_DISPLAY_FRAMEBUFFER_KIND, THING_EMITS_KIND};
+
 
 #[no_mangle]
 pub extern "C" fn _start(heap_start: u64) -> ! {

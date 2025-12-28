@@ -155,7 +155,7 @@ pub extern "C" fn _start() -> ! {
 }
 
 // Global Kernel Access
-use abi::ThingId;
+
 use models as thing_models;
 use spin::Mutex;
 
@@ -182,7 +182,7 @@ unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
             return None;
         }
         use x86_64::registers::control::Cr3;
-        use x86_64::structures::paging::{Mapper, OffsetPageTable};
+        use x86_64::structures::paging::{OffsetPageTable};
         let (l4_frame, _) = Cr3::read();
         let phys_l4 = l4_frame.start_address();
         let virt_l4 = self.hhdm_offset + phys_l4.as_u64();
@@ -268,7 +268,7 @@ fn page_fault_hook_impl(
     }
     
     use hw::HardwareBridge; 
-    use x86_64::structures::paging::Translate;
+
     #[allow(unused_imports)]
     use x86_64::structures::paging::FrameAllocator;
     
@@ -289,7 +289,7 @@ fn page_fault_hook_impl(
                              && fault_addr < process.heap_virt_end
                          {
                              use x86_64::structures::paging::{
-                                 Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB,
+                                 Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB,
                              };
                              use x86_64::registers::control::Cr3;
 
@@ -341,7 +341,7 @@ fn syscall_hook(
     a6: usize,
 ) -> isize {
     // We need lock.
-    use hw::HardwareBridge;
+
     loop {
         if let Some(mut guard) = KERNEL.try_lock() {
             if let Some(k) = (*guard).as_mut() {
@@ -416,7 +416,7 @@ pub extern "C" fn rust_main() -> ! {
 
         // --- Memory Mapping & ACPI Setup (Moved from kernel_init_task) ---
         {
-            use limine_local::requests::{MEMORY_MAP_REQUEST, RSDP_REQUEST};
+            use limine_local::requests::{MEMORY_MAP_REQUEST};
             use x86_64::structures::paging::{PageTableFlags, PhysFrame, Size4KiB, Page, OffsetPageTable, Translate, Mapper};
             use x86_64::registers::control::Cr3;
             
@@ -507,7 +507,7 @@ pub extern "C" fn rust_main() -> ! {
         }
         // -----------------------------------------------------------------
 
-        publish_framebuffer(&mut k);
+
         ingest_bitmaps(&mut k);
         // Default to Limine FB
         let mut use_qemu = false;
@@ -558,6 +558,7 @@ unsafe fn spawn_compositor(k: &mut Kernel<Bridge>) {
     use hw::HardwareBridge;
     
     if let Some(resp) = MODULE_REQUEST.get_response() {
+        let resp: &limine::response::ModuleResponse = resp;
         for module in resp.modules() {
              let path = module.path().to_str().unwrap_or("?");
              if path.ends_with("compositor.elf") {
@@ -627,7 +628,8 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                      k.bridge.log("INIT: Publishing PCI Check...\n");
 
                      let mut use_qemu = false;
-                     if let Some(file) = limine_local::requests::KERNEL_FILE_REQUEST.get_response().map(|r| r.file()) {
+                     if let Some(file) = limine_local::requests::KERNEL_FILE_REQUEST.get_response().map(|r: &limine::response::ExecutableFileResponse| r.file()) {
+                         let file: &limine::file::File = file;
                          let cmdline_bytes = file.cmdline();
                          if let Ok(cmdline) = core::str::from_utf8(cmdline_bytes) {
                              if cmdline.contains("thingos.driver=qemu") {
@@ -672,7 +674,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                                     use x86_64::structures::paging::{PageTableFlags, PhysFrame, Size4KiB, Page, OffsetPageTable, Translate, Mapper};
                                     use x86_64::{VirtAddr, PhysAddr};
                                     use x86_64::registers::control::Cr3;
-                                    use alloc::alloc::{alloc, Layout};
+
                                     // HeapFrameAllocator is now defined at module level
                                     let mut frame_allocator = HeapFrameAllocator { hhdm_offset: VirtAddr::new(hhdm_offset_u64) };
                                     let (l4_frame, _) = Cr3::read();
@@ -732,7 +734,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
              if let Some(mut guard) = KERNEL.try_lock() {
                  if let Some(k) = (*guard).as_mut() {
                      use hw::HardwareBridge;
-                     use alloc::boxed::Box;
+
                      k.bridge.log("INIT: BootFS Scan...\n");
                  }
                  break; 
@@ -768,12 +770,13 @@ unsafe fn ingest_bitmaps(k: &mut Kernel<Bridge>) {
     use limine_local::requests::MODULE_REQUEST;
     use hw::HardwareBridge;
     use thing_models::builtins::ids::{THING_BITMAP_KIND, THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_LINK_KIND};
-    use thing_models::schema::bitmap::BitmapBody;
+
     use thing_models::value::ThingBody;
     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
     use thing_models::link::LinkBody;
 
     if let Some(resp) = MODULE_REQUEST.get_response() {
+        let resp: &limine::response::ModuleResponse = resp;
         for module in resp.modules() {
              let path = module.path().to_str().unwrap_or("?");
              if path.ends_with(".bmp") {

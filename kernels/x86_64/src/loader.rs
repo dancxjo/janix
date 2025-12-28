@@ -141,6 +141,7 @@ unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         use alloc::alloc::{alloc, Layout};
         let layout = Layout::from_size_align(4096, 4096).ok()?;
+        // Bridge.log("loader: HFA Alloc start\n");
         let ptr = unsafe { alloc(layout) };
         if ptr.is_null() {
             return None;
@@ -149,14 +150,39 @@ unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
         use x86_64::registers::control::Cr3;
         let (l4_frame, _) = Cr3::read();
         let phys_l4 = l4_frame.start_address();
-        let virt_l4 = self.hhdm_offset + phys_l4.as_u64();
+        // Safe HHDM Add
+        let raw_virt_l4 = self.hhdm_offset.as_u64().wrapping_add(phys_l4.as_u64());
+        let virt_l4 = match VirtAddr::try_new(raw_virt_l4) {
+             Ok(a) => a,
+             Err(_) => {
+                 unsafe { Bridge.log("loader: HFA VirtAddr Add Fail!\n"); }
+                 return None;
+             }
+        };
         let page_table_ptr = virt_l4.as_mut_ptr();
         let mut mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
 
-        let virt_addr = VirtAddr::new(ptr as u64);
-        mapper
+        let virt_addr = VirtAddr::try_new(ptr as u64).ok()?;
+        // Log allocated virt addr
+        unsafe {
+             let s = alloc::format!("loader: HFA Alloc Virt: {:#x}\n", ptr as u64);
+             Bridge.log(&s);
+        }
+        
+        let phys_frame = mapper
             .translate_addr(virt_addr)
-            .map(|phys| PhysFrame::containing_address(phys))
+            .map(|phys| PhysFrame::containing_address(phys));
+            
+        if let Some(f) = phys_frame {
+             unsafe {
+                 let s = alloc::format!("loader: HFA Alloc Phys: {:#x}\n", f.start_address().as_u64());
+                 Bridge.log(&s);
+             }
+        } else {
+             unsafe { Bridge.log("loader: HFA Translate Fail!\n"); }
+        }
+        
+        phys_frame
     }
 }
 
@@ -737,23 +763,73 @@ pub fn process_file(
         // Atomic Increment
         let current_app_base = APP_LOAD_ADDR.fetch_add(0x1000_0000, Ordering::Relaxed);
 
-        let hhdm_offset = VirtAddr::new(hhdm_u64);
+        let hhdm_offset = match VirtAddr::try_new(hhdm_u64) {
+            Ok(a) => a,
+            Err(_) => {
+                unsafe {
+                    Bridge.log("loader: Invalid HHDM Offset!\n");
+                }
+                return;
+            }
+        };
+
+        unsafe {
+             let s = alloc::format!("loader: HHDM Offset: {:#x}\n", hhdm_offset.as_u64());
+             Bridge.log(&s);
+        }
 
         // Mapper
         let mut frame_allocator = HeapFrameAllocator { hhdm_offset };
         let mut mapper = unsafe {
             let (level_4_table_frame, _) = Cr3::read();
             let phys = level_4_table_frame.start_address();
-            let virt = hhdm_offset + phys.as_u64();
+            let raw_virt = hhdm_offset.as_u64().wrapping_add(phys.as_u64());
+            let virt = match VirtAddr::try_new(raw_virt) {
+                 Ok(a) => a,
+                 Err(_) => {
+                     unsafe { Bridge.log("loader: PageTable VirtAddr Add Fail!\n"); }
+                     // Panic here manually or return dummy to fail later?
+                     // We can't return from unsafe block easily.
+                     // But we can panic with message
+                     panic!("loader: PageTable VirtAddr Add Fail: {:#x}", raw_virt);
+                 }
+            };
             let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
             OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
         };
 
+        Bridge.log("loader: calling load_elf\n");
         let loaded = load_elf(data, current_app_base, |vaddr, segment| {
+            Bridge.log("loader: load_elf callback\n");
             // LOAD ELF Logic (Inline or copy)
             // Simplified:
-            let target_virt_start = VirtAddr::new(current_app_base + vaddr);
-            let target_virt_end = target_virt_start + segment.len() as u64;
+            let raw_addr = current_app_base + vaddr;
+            let target_virt_start = match VirtAddr::try_new(raw_addr) {
+                Ok(addr) => addr,
+                Err(_) => {
+                    unsafe {
+                        Bridge.log("loader: Invalid VirtAddr: ");
+                        // Simple hex print hack if no formatting
+                        // But Bridge.log takes &str.
+                        // We can use alloc::format!
+                        let s = alloc::format!("{:#x} (base={:#x}, vaddr={:#x})\n", raw_addr, current_app_base, vaddr);
+                        Bridge.log(&s);
+                    }
+                    return;
+                }
+            };
+            let raw_end = raw_addr + segment.len() as u64;
+            let target_virt_end = match VirtAddr::try_new(raw_end) {
+                Ok(addr) => addr,
+                Err(_) => {
+                    unsafe {
+                        let s = alloc::format!("Invalid End: {:#x}\n", raw_end);
+                        Bridge.log(&s);
+                    }
+                    return;
+                }
+            };
+            
             let start_page = Page::<Size4KiB>::containing_address(target_virt_start);
             let end_page = Page::<Size4KiB>::containing_address(target_virt_end - 1u64);
 
@@ -784,7 +860,14 @@ pub fn process_file(
                     // Need Phys frame again to write via HHDM?
                     // We can translate via mapper
                     let phys = mapper.translate_addr(page_start_virt).unwrap();
-                    let frame_virt = hhdm_offset + phys.as_u64();
+                    let raw_frame_virt = hhdm_offset.as_u64().wrapping_add(phys.as_u64());
+                    let frame_virt = match VirtAddr::try_new(raw_frame_virt) {
+                         Ok(a) => a,
+                         Err(_) => {
+                             unsafe { Bridge.log("loader: Segment Copy VirtAddr Add Fail!\n"); }
+                             VirtAddr::try_new(0).unwrap() // Dummy to prevent panic, will likely crash on write but log printed
+                         }
+                    };
 
                     let src_ptr = unsafe { segment.as_ptr().add(seg_offset as usize) };
                     let dest_ptr =
@@ -796,20 +879,45 @@ pub fn process_file(
             }
         });
 
+        Bridge.log("loader: load_elf success check\n");
+
         if let Some(img) = loaded {
+            Bridge.log("loader: setting up stack\n");
             // Stack and Heap (Simplified alloc)
-            let stack_bottom_virt = VirtAddr::new(current_app_base + 0x0800_0000);
+            let raw_stack_bottom = current_app_base + 0x0800_0000;
+            let stack_bottom_virt = match VirtAddr::try_new(raw_stack_bottom) {
+                 Ok(a) => a,
+                 Err(_) => {
+                     unsafe { Bridge.log("loader: Stack Bottom VirtAddr Invalid!\n"); }
+                     return;
+                 }
+            };
             let stack_size = 131072;
-            let stack_top_virt = stack_bottom_virt + stack_size;
+            let raw_stack_top = raw_stack_bottom + stack_size;
+            let stack_top_virt = match VirtAddr::try_new(raw_stack_top) {
+                Ok(a) => a,
+                Err(_) => {
+                     unsafe { Bridge.log("loader: Stack Top VirtAddr Invalid!\n"); }
+                     return;
+                }
+            };
+
             let start_page = Page::<Size4KiB>::containing_address(stack_bottom_virt);
-            let end_page = Page::<Size4KiB>::containing_address(stack_top_virt - 1u64);
+            
+            let raw_end_addr = raw_stack_top - 1;
+             let end_addr_virt = match VirtAddr::try_new(raw_end_addr) {
+                Ok(a) => a,
+                Err(_) => {
+                     unsafe { Bridge.log("loader: Stack End VirtAddr Invalid!\n"); }
+                     return;
+                }
+            };
+            let end_page = Page::<Size4KiB>::containing_address(end_addr_virt);
             for page in Page::range_inclusive(start_page, end_page) {
                 let frame = match frame_allocator.allocate_frame() {
                     Some(f) => f,
                     None => {
-                        Bridge.log("loader: OOM allocating user stack for ");
-                        Bridge.log(name);
-                        Bridge.log("\n");
+                        Bridge.log("loader: Stack Alloc OOM\n");
                         return;
                     }
                 };
@@ -817,10 +925,9 @@ pub fn process_file(
                     | PageTableFlags::WRITABLE
                     | PageTableFlags::USER_ACCESSIBLE;
                 unsafe {
-                    mapper
-                        .map_to(page, frame, flags, &mut frame_allocator)
-                        .unwrap()
-                        .flush();
+                    if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                        map_to.flush();
+                    }
                 }
             }
 
@@ -830,9 +937,19 @@ pub fn process_file(
             let heap_virt_end = heap_virt_start + heap_size;
 
              // Map Framebuffer
+            unsafe { Bridge.log("loader: checking fb_info\n"); }
             let fb_info = unsafe { crate::FRAMEBUFFER_INFO };
             if let Some((phys_base_raw, size)) = fb_info {
-                let mut phys_base = phys_base_raw;
+                 unsafe { 
+                    let s = alloc::format!("loader: mapping framebuffer. Base={:#x} Size={:#x}\n", phys_base_raw, size);
+                    Bridge.log(&s); 
+                 }
+                // Fix: Limine returns a Virtual Address (HHDM mapped). Convert to physical.
+                let phys_base = if phys_base_raw >= hhdm_offset.as_u64() {
+                    phys_base_raw - hhdm_offset.as_u64()
+                } else {
+                    phys_base_raw
+                };
                 // Fix: Subtract HHDM offset to get physical IF needed
                 // If it came from Limine FB, Limine provides HHDM-mapped address? No, Limine provides physical.
                 // But let's check HHDM just in case someone stored virtual.
@@ -841,9 +958,22 @@ pub fn process_file(
                 // 4GB base
                 let virt_base = 0x1_0000_0000;
 
-                let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(virt_base));
-                let end_page =
-                    Page::<Size4KiB>::containing_address(VirtAddr::new(virt_base + size - 1));
+            let raw_heap_start = virt_base;
+            let raw_heap_end = virt_base + size - 1;
+            
+            let start_page = if let Ok(addr) = VirtAddr::try_new(raw_heap_start) {
+                Page::<Size4KiB>::containing_address(addr)
+            } else {
+                 unsafe { Bridge.log("loader: Heap Start VirtAddr Invalid!\n"); }
+                 return;
+            };
+
+            let end_page = if let Ok(addr) = VirtAddr::try_new(raw_heap_end) {
+                Page::<Size4KiB>::containing_address(addr)
+            } else {
+                 unsafe { Bridge.log("loader: Heap End VirtAddr Invalid!\n"); }
+                 return;
+            };
 
                 for page in Page::range_inclusive(start_page, end_page) {
                     let offset = page.start_address().as_u64() - virt_base;

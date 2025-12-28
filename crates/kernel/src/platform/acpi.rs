@@ -30,9 +30,15 @@ struct SdtHeader {
 }
 
 pub fn init(bridge: &impl HardwareBridge, rsdp_addr: u64, hhdm: u64) {
+    if rsdp_addr == 0 {
+        bridge.log("ACPI: No RSDP address provided. Skipping ACPI init.\n");
+        return;
+    }
+
     // 1. Verify RSDP
     let rsdp = unsafe { &*(to_virt(rsdp_addr, hhdm).as_ptr() as *const Rsdp) };
-    if &rsdp.signature != b"RSD PTR " {
+    let signature = rsdp.signature; // Copy packed field
+    if &signature != b"RSD PTR " {
         bridge.log("ACPI: Invalid RSDP signature\n");
         return;
     }
@@ -90,7 +96,8 @@ unsafe fn parse_rsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
 
 unsafe fn check_table(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
     let header = &*(to_virt(phys, hhdm).as_ptr() as *const SdtHeader);
-    match &header.signature {
+    let signature = header.signature; // Copy packed field
+    match &signature {
         b"HPET" => {
             crate::drivers::hpet::init_table(bridge, phys, hhdm);
         }

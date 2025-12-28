@@ -45,7 +45,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         bridge.log("File: ");
         bridge.log(loc.file());
         bridge.log("\n");
-        bridge.log("Line: ");
+        bridge.log("Line: 0x");
         print_hex(&bridge, loc.line() as u64);
         bridge.log("\n");
     }
@@ -404,18 +404,19 @@ fn main() {}
 #[cfg(target_os = "thingos")]
 #[no_mangle]
 pub extern "C" fn rust_main() -> ! {
-    let boot_info = boot::collect();
-    let hhdm_offset_u64 = boot_info.hhdm_offset;
-    let rsdp_addr = boot_info.rsdp_addr.unwrap_or(0);
+    // 1. Zero-Allocation Early Boot Setup
+    let hhdm_offset_u64 = boot::get_hhdm();
+    let rsdp_addr = boot::get_rsdp().unwrap_or(0);
 
     unsafe {
         Bridge::init(Some(rsdp_addr), hhdm_offset_u64);
         Bridge.log("BOOT: Bridge Online\n");
 
-        // Heap Selection
+        // Heap Selection using Iterator (No Vec Allocation)
         let heap_size = heap::KERNEL_HEAP_SIZE_BYTES as u64;
         let mut heap_region = None;
-        for entry in &boot_info.memory_map {
+        
+        for entry in boot::get_memory_map() {
              if entry.kind == boot::bootinfo::MemoryRegionKind::Usable {
                  let region_end = entry.end;
                  if let Some(raw_start) = region_end.checked_sub(heap_size) {
@@ -440,6 +441,9 @@ pub extern "C" fn rust_main() -> ! {
             size
         });
     }
+
+    // 2. Safe to Allocate now (Vec, String, etc.)
+    let boot_info = boot::collect();
 
     let mut k = Kernel::new(Bridge);
 

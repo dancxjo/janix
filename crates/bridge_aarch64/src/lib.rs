@@ -67,11 +67,6 @@ impl HardwareBridge for Bridge {
                 core::ptr::write_volatile(uart_ptr, b);
             }
         }
-        unsafe {
-            // Ensure write completes
-             asm!("dc cvac, {0}", in(reg) uart_ptr);
-             asm!("dsb ish");
-        }
     }
 
     fn ticks(&self) -> u64 {

@@ -45,6 +45,7 @@ pub extern "C" fn _start() -> ! {
         "add x9, x9, :lo12:{2}",
         "add x9, x9, {0}",
         "mov sp, x9",
+        "msr daifset, #0xf",
         "mov x0, #(3 << 20)",
         "msr cpacr_el1, x0",
         "isb",
@@ -70,8 +71,6 @@ pub extern "C" fn rust_main() -> ! {
             let offset = resp.offset();
             // 1. Init Bridge (and set HHDM)
             Bridge::init(offset);
-
-
 
             // 2. Init Heap (Needed for paging)
             let info =

@@ -200,40 +200,50 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "iretq",
 
         "3:",
-        // Return to Kernel
-        // Stack: [RIP, CS, RFLAGS, RSP(dummy), SS(dummy)]
-        // We want: [Gap, Gap, RIP, CS, RFLAGS]
+        // Return to Kernel: Must Pivot Stack if RSP changed!
         
-        "push rax", // Scratch. rsp -= 8. 
-        // Offsets relative to current rsp:
-        // +8: RIP
-        // +16: CS
-        // +24: RFLAGS
-        // +32: RSP (dummy)
-        // +40: SS (dummy)
+        // 1. Save RAX (Scratch/Return Value)
+        "push rax", 
+        // Stack: [RAX, RIP, CS, RFLAGS, RSP, SS]
+        // Offsets: 0, 8, 16, 24, 32, 40
         
-        // Dest offsets relative to current rsp:
-        // We want final rsp to be +24 (skipping scratch, and 16 byte gap).
-        // So RIP should be at +24.
-        // CS should be at +32.
-        // RFLAGS should be at +40.
+        // 2. Load Target RSP (from +32)
+        "mov rax, [rsp + 32]", 
+        "sub rax, 24",         // Reserve space for RIP, CS, RFLAGS
         
-        // Order: High to Low (Dest > Source) to avoid overwrite.
+        // 3. Save RBX (Scratch)
+        "push rbx", 
+        // Stack: [RBX, RAX, RIP, CS, RFLAGS, RSP, SS]
+        // Offsets: 0, 8, 16, 24, 32, 40, 48
         
-        // 1. Move RFLAGS (Src +24 -> Dest +40)
-        "mov rax, [rsp + 24]",
-        "mov [rsp + 40], rax",
+        // 4. Copy Interrupt Frame to Target Stack
+        // Copy RIP (Src: +16 -> Dest: [rax])
+        "mov rbx, [rsp + 16]",
+        "mov [rax], rbx",
         
-        // 2. Move CS (Src +16 -> Dest +32)
-        "mov rax, [rsp + 16]",
-        "mov [rsp + 32], rax",
+        // Copy CS (Src: +24 -> Dest: [rax+8])
+        "mov rbx, [rsp + 24]",
+        "mov [rax + 8], rbx",
         
-        // 3. Move RIP (Src +8 -> Dest +24)
-        "mov rax, [rsp + 8]",
-        "mov [rsp + 24], rax",
+        // Copy RFLAGS (Src: +32 -> Dest: [rax+16])
+        "mov rbx, [rsp + 32]",
+        "mov [rax + 16], rbx",
         
-        "pop rax",     // rsp += 8.
-        "add rsp, 16", // rsp += 16. Points to new RIP.
+        // 5. Restore Saved RAX to Target Stack (Src: +8 -> Dest: [rax-8])
+        // We want to simulate that RAX was pushed *before* the interrupt frame on the new stack?
+        // No, we just want to restore RAX register.
+        // We will do: mov rsp, rax; sub rsp, 8; pop rax.
+        // So we need to write RAX to [rax - 8].
+        "mov rbx, [rsp + 8]",
+        "mov [rax - 8], rbx",
+        
+        "pop rbx", // Restore RBX
+        
+        // 6. Pivot
+        "mov rsp, rax",
+        "sub rsp, 8", // Point to saved RAX
+        "pop rax",    // Restore RAX
+        
         "iretq",
     );
 }

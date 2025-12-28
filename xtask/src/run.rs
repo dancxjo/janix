@@ -209,10 +209,10 @@ fn run_qemu_aarch64(
         cmd.arg("-bios").arg(&ovmf_code);
     }
 
-    cmd.arg("-device").arg("ramfb");
-    cmd.arg("-device").arg("qemu-xhci");
-    cmd.arg("-device").arg("usb-kbd");
-    cmd.arg("-device").arg("usb-mouse");
+    // cmd.arg("-device").arg("ramfb");
+    // cmd.arg("-device").arg("qemu-xhci");
+    // cmd.arg("-device").arg("usb-kbd");
+    // cmd.arg("-device").arg("usb-mouse");
     cmd.arg("-cdrom").arg(&iso_path);
 
     // GDB setup

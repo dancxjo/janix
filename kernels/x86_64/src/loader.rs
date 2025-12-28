@@ -209,7 +209,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     Bridge.log("loader: ISO Reader Ready. Scanning...\n");
 
     // 1. Mount /boot and Dirs (Needs Kernel Lock)
-    let (apps_dir_id, _drivers_dir_id, fonts_dir_id) = {
+    let (apps_dir_id, _drivers_dir_id, fonts_dir_id, cursors_dir_id, icons_dir_id) = {
         let mut guard = KERNEL.lock();
         if let Some(k) = guard.as_mut() {
             use abi::wire::typed::{CodecId, TypeId, TypedBytes};
@@ -304,9 +304,11 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
             let apps = make_dir("apps", root_id);
             let drivers = make_dir("drivers", root_id);
             let fonts = make_dir("fonts", root_id);
+            let cursors = make_dir("cursors", root_id);
+            let icons = make_dir("icons", root_id);
 
             Bridge.log("loader: Mounts created\n");
-            (apps, drivers, fonts)
+            (apps, drivers, fonts, cursors, icons)
         } else {
             return;
         }
@@ -435,6 +437,40 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
           // file_loader_task(args_ptr);
     }
     */
+
+    // 4.5 Assets (Cursors, Icons)
+    let asset_dirs = [("/boot/cursors", cursors_dir_id), ("/boot/icons", icons_dir_id)];
+    for (path, dir_id) in asset_dirs {
+        let entries = iso.read_dir(path).unwrap_or_default();
+        for entry in entries {
+            if entry.is_dir { continue; }
+            let full_path = alloc::format!("{}/{}", path, entry.name);
+            let f_args = FileArgs {
+                iso: iso.clone(),
+                path: full_path,
+                dir_id: Some(dir_id),
+                should_spawn: false,
+                hhdm,
+            };
+            let args_box = Box::new(f_args);
+            let args_ptr = Box::into_raw(args_box) as u64;
+
+            let mut guard = KERNEL.lock();
+            if let Some(k) = guard.as_mut() {
+                 let layout = Layout::from_size_align(64 * 1024, 16).unwrap();
+                 let stack_ptr = unsafe { alloc(layout) };
+                 let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
+                 k.scheduler.spawn(
+                    &k.bridge,
+                    "asset_loader",
+                    file_loader_task as usize as u64,
+                    stack_top,
+                    args_ptr,
+                    0, 0
+                );
+            }
+        }
+    }
 
     // 5. Fonts (Metadata Cache)
     if let Some(h) = iso.open("/boot/.fontcache") {
@@ -638,6 +674,46 @@ pub fn process_file(
         ModuleRole::Asset => "asset",
         ModuleRole::Ignore => "ignore",
     };
+
+    if let ModuleRole::Asset = role_enum {
+        use models::builtins::core_kinds::ModuleBody;
+        use models::builtins::ids::THING_MODULE_KIND;
+
+        let mod_body = ModuleBody {
+            path: String::from(name),
+            size_bytes: data.len() as u64,
+            base_phys: 0,
+            index: 0,
+            role: String::from("asset"),
+            mime: String::from("application/octet-stream"),
+            kind: String::from("asset"),
+            sniff: 0,
+            valid: true,
+            data: data.to_vec(),
+        };
+
+        let m_bytes = postcard::to_allocvec(&mod_body).unwrap();
+        let m_tb = ThingBody::from(&TypedBytes {
+            type_id: TypeId(THING_MODULE_KIND.0 as u128),
+            codec_id: CodecId::POSTCARD,
+            bytes: m_bytes,
+        }).unwrap();
+
+        let mod_id = k.graph.create_thing(THING_MODULE_KIND, m_tb);
+
+        use models::builtins::ids::THING_BACKED_BY_KIND;
+        let link = models::link::LinkBody {
+            from: file_id,
+            to: mod_id,
+            predicate: THING_BACKED_BY_KIND,
+        };
+        let lb = ThingBody::from(&TypedBytes {
+            type_id: TypeId(THING_LINK_KIND.0 as u128),
+            codec_id: CodecId::POSTCARD,
+            bytes: postcard::to_allocvec(&link).unwrap(),
+        }).unwrap();
+        k.graph.create_thing(THING_LINK_KIND, lb);
+    }
 
     // Skipped ModuleBody and Font body logic to match main.rs needs?
     // I should probably copy the full logic if I want exact behavior.

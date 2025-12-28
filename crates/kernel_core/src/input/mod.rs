@@ -1,4 +1,5 @@
 pub mod irq_ring;
+
 use abi::wire::driver::DriverEvent;
 use irq_ring::IrqRing;
 use spin::Mutex;

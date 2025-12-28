@@ -18,7 +18,7 @@ use kernel::Kernel;
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    use hw::HardwareBridge;
+    use kernel::bridge::HardwareBridge;
     let bridge = Bridge;
     bridge.log("PANIC\n");
     loop {
@@ -61,12 +61,14 @@ pub extern "C" fn rust_main() -> ! {
     #[cfg(target_os = "thingos")]
     unsafe {
         // -1. Init Bridge (Exception Vectors) EARLY
-        Bridge::init();
+
 
         // 1. Get HHDM offset (Before Heap!)
         // Limine maps this as Normal memory. We will remap as Device later.
         if let Some(resp) = limine::requests::HHDM_REQUEST.get_response() {
             let offset = resp.offset();
+            // 1. Init Bridge (and set HHDM)
+            Bridge::init(offset);
 
             // 2. Update logic UART base (Physical 0x09000000 + Offset)
             bridge_aarch64::set_uart_base(0x09000000 + offset);
@@ -91,7 +93,7 @@ pub extern "C" fn rust_main() -> ! {
             loop {}
         }
 
-        use hw::HardwareBridge;
+        use kernel::bridge::HardwareBridge;
         let bridge = Bridge;
 
         bootlog!("Booting ThingOS (aarch64)...");

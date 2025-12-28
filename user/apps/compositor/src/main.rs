@@ -323,8 +323,6 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                             let bmp = &frames[cursor_frame_idx].bitmap;
                             render::draw_bitmap(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, bmp);
                         } else if let Some(ref bmp) = cursor_bitmap {
-                        // 5. Cursor
-                        if let Some(ref bmp) = cursor_bitmap {
                             render::draw_bitmap(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, bmp);
                         } else {
                             render::primitives::fill_rect(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, 10, 10, 0xFFFFFFFF, None);

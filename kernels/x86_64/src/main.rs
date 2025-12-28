@@ -738,7 +738,8 @@ pub extern "C" fn rust_main() -> ! {
         }
         
         // 2. Spawn Boot Scanner (Async)
-        // This task will discover files and spawn loader tasks.
+        // DEFERRED: Bootfs scanning is disabled in favor of direct module loading.
+        /*
         if let Some((base, port)) = boot_fs_device {
              use alloc::boxed::Box;
              let args = ScanArgs { 
@@ -762,6 +763,7 @@ pub extern "C" fn rust_main() -> ! {
                   k.scheduler.spawn(&k.bridge, "boot_scanner", scan_boot_fs_task as u64 as u64, stack_top, args_ptr);
              }
         }
+        */
         
         // 3. Load Ramdisk Modules (Synchronous fallback)
         {
@@ -769,13 +771,114 @@ pub extern "C" fn rust_main() -> ! {
              if let Some(resp) = MODULE_REQUEST.get_response() {
                  let mut guard = KERNEL.lock();
                  if let Some(k) = guard.as_mut() {
+                     // --- Synthesize Directory Structure ---
+                     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+                     use thing_models::builtins::ids::*;
+                     use thing_models::core::fs::{DirBody, MountBody};
+                     use thing_models::value::ThingBody;
+
+                     // 1. Mount "/boot"
+                     let m_body = MountBody {
+                         path: alloc::string::String::from("/boot"),
+                         readonly: true,
+                     };
+                     let m_tb = ThingBody::from(&TypedBytes {
+                         type_id: TypeId(THING_MOUNT_KIND.0 as u128),
+                         codec_id: CodecId::POSTCARD,
+                         bytes: postcard::to_allocvec(&m_body).unwrap(),
+                     }).unwrap();
+                     let m_id = k.graph.create_thing(THING_MOUNT_KIND, m_tb);
+
+                     // Link BootRoot -> Mount
+                     let l_root = thing_models::link::LinkBody {
+                         from: THING_BOOT_ROOT,
+                         to: m_id,
+                         predicate: THING_HAS_MOUNT_KIND,
+                     };
+                     let l_root_tb = ThingBody::from(&TypedBytes {
+                         type_id: TypeId(THING_LINK_KIND.0 as u128),
+                         codec_id: CodecId::POSTCARD,
+                         bytes: postcard::to_allocvec(&l_root).unwrap(),
+                     }).unwrap();
+                     k.graph.create_thing(THING_LINK_KIND, l_root_tb);
+
+                     // 2. Root Dir "/boot"
+                     let d_body = DirBody {
+                         name: alloc::string::String::from("/boot"),
+                         lba: 0,
+                         size: 0,
+                         expanded: true,
+                     };
+                     let d_tb = ThingBody::from(&TypedBytes {
+                         type_id: TypeId(THING_DIR_KIND.0 as u128),
+                         codec_id: CodecId::POSTCARD,
+                         bytes: postcard::to_allocvec(&d_body).unwrap(),
+                     }).unwrap();
+                     let root_id = k.graph.create_thing(THING_DIR_KIND, d_tb);
+
+                     // Link Mount -> Root Dir
+                     let l_mnt = thing_models::link::LinkBody {
+                         from: m_id,
+                         to: root_id,
+                         predicate: THING_MOUNTS_KIND,
+                     };
+                     let l_mnt_tb = ThingBody::from(&TypedBytes {
+                         type_id: TypeId(THING_LINK_KIND.0 as u128),
+                         codec_id: CodecId::POSTCARD,
+                         bytes: postcard::to_allocvec(&l_mnt).unwrap(),
+                     }).unwrap();
+                     k.graph.create_thing(THING_LINK_KIND, l_mnt_tb);
+
+                     let mut make_dir = |name: &str, parent: ThingId| {
+                         let body = DirBody {
+                             name: alloc::string::String::from(name),
+                             lba: 0,
+                             size: 0,
+                             expanded: false,
+                         };
+                         let tb = ThingBody::from(&TypedBytes {
+                             type_id: TypeId(THING_DIR_KIND.0 as u128),
+                             codec_id: CodecId::POSTCARD,
+                             bytes: postcard::to_allocvec(&body).unwrap(),
+                         }).unwrap();
+                         let did = k.graph.create_thing(THING_DIR_KIND, tb);
+                         let l = thing_models::link::LinkBody {
+                             from: parent,
+                             to: did,
+                             predicate: THING_HAS_ENTRY_KIND,
+                         };
+                         let l_tb = ThingBody::from(&TypedBytes {
+                             type_id: TypeId(THING_LINK_KIND.0 as u128),
+                             codec_id: CodecId::POSTCARD,
+                             bytes: postcard::to_allocvec(&l).unwrap(),
+                         }).unwrap();
+                         k.graph.create_thing(THING_LINK_KIND, l_tb);
+                         did
+                     };
+
+                     let apps_dir_id = make_dir("apps", root_id);
+                     let drivers_dir_id = make_dir("drivers", root_id);
+                     let fonts_dir_id = make_dir("fonts", root_id);
+
                      for (idx, module) in resp.modules().iter().enumerate() {
                         let full_path = module.path().to_str().unwrap_or("unknown");
                         let name = full_path.rsplit('/').next().unwrap_or(full_path);
                         let base = module.addr();
                         let len = module.size() as usize;
                         let data = unsafe { slice::from_raw_parts(base, len) };
-                        process_file(k, None, name, data, idx, None, hhdm_offset_u64);
+                        
+                        // Determine Parent
+                        let parent_id = if name.ends_with(".ttf") {
+                            Some(fonts_dir_id)
+                        } else if name.contains("driver") || name.contains("ps2_") || name.contains("rtc_") {
+                            Some(drivers_dir_id)
+                        } else if name.ends_with(".elf") {
+                            Some(apps_dir_id)
+                        } else {
+                            Some(root_id)
+                        };
+
+                        process_file(k, parent_id, name, data, idx, None, hhdm_offset_u64);
                      }
                  }
              }

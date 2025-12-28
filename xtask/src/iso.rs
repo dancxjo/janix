@@ -159,59 +159,27 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     let init_txt_content = init_whitelist.join("\n");
     fs::write(boot_dir.join("init.txt"), init_txt_content).context("Failed to write init.txt")?;
 
-    // Copy Fonts
-    // Copy Fonts & Build Cache
+    // Copy Fonts (Minimal Set)
     let fonts_src = root.join("assets/fonts");
     let fonts_dst = boot_dir.join("fonts");
     fs::create_dir_all(&fonts_dst)?;
 
-    let mut font_entries = Vec::new();
+    let allowed_fonts = ["Hack-Regular.ttf", "NotoSans-Regular.ttf"];
+    let mut included_fonts = Vec::new();
 
     if fonts_src.exists() {
-        println!("==> Processing fonts and building .fontcache...");
-        for entry in fs::read_dir(&fonts_src).context("Failed to read fonts directory")? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("ttf") {
-                let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
-                let dest_path = fonts_dst.join(&file_name);
-                
-                // Read and Copy
-                let data = fs::read(&path)?;
-                fs::write(&dest_path, &data)?; // Write to destination
-                
-                // Parse Metadata
-                use ttf_parser::Face;
-                if let Ok(face) = Face::parse(&data, 0) {
-                     // Try to get Family Name (NameID 1)
-                     let family = face.names().into_iter()
-                        .find(|n| n.name_id == ttf_parser::name_id::FAMILY && n.is_unicode())
-                        .and_then(|n| n.to_string())
-                        .unwrap_or_else(|| "Unknown".to_string());
-                     
-                     let weight = face.weight().to_number();
-                     let italic = face.is_italic();
-                     
-                     font_entries.push(models::font_cache::FontCacheEntry {
-                         path: format!("/boot/fonts/{}", file_name),
-                         family: family.clone(),
-                         weight,
-                         italic
-                     });
-                     println!("    Mapped: {} -> {}, w:{}, i:{}", file_name, family, weight, italic);
-                } else {
-                    println!("    [WARNING] Failed to parse font: {}", file_name);
-                }
+        println!("==> Processing fonts (Minimal Set)...");
+        for font_name in allowed_fonts {
+            let src_path = fonts_src.join(font_name);
+            if src_path.exists() {
+                let dest_path = fonts_dst.join(font_name);
+                fs::copy(&src_path, &dest_path)?;
+                included_fonts.push(font_name);
+                println!("    Included: {}", font_name);
+            } else {
+                println!("    [WARNING] Missing font: {}", font_name);
             }
         }
-        
-        // Write Cache
-        let cache = models::font_cache::FontCache { entries: font_entries };
-        // Use postcard to serialize
-        let bytes = postcard::to_allocvec(&cache).map_err(|e| anyhow::anyhow!("Serialization failed: {:?}", e))?;
-        fs::write(boot_dir.join(".fontcache"), bytes)?;
-        println!("==> Wrote .fontcache");
-
     } else {
         eprintln!("    [WARNING] fonts directory missing: {:?}", fonts_src);
     }
@@ -233,6 +201,10 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
             let line = format!("    module_path: boot():/boot/drivers/{}.elf\n", app);
             module_lines.push_str(&line);
         }
+    }
+    for font in &included_fonts {
+        let line = format!("    module_path: boot():/boot/fonts/{}\n", font);
+        module_lines.push_str(&line);
     }
 
 

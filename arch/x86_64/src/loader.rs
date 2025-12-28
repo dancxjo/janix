@@ -98,8 +98,10 @@ fn classify_bytes(data: &[u8]) -> ModuleType {
 enum ModuleRole {
     App,
     Driver,
+    #[allow(dead_code)]
     Debug,
     Asset,
+    #[allow(dead_code)]
     Ignore,
 }
 
@@ -156,31 +158,27 @@ unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
         let virt_l4 = match VirtAddr::try_new(raw_virt_l4) {
              Ok(a) => a,
              Err(_) => {
-                 unsafe { Bridge.log("loader: HFA VirtAddr Add Fail!\n"); }
+                 Bridge.log("loader: HFA VirtAddr Add Fail!\n");
                  return None;
              }
         };
         let page_table_ptr = virt_l4.as_mut_ptr();
-        let mut mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
+        let mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
 
         let virt_addr = VirtAddr::try_new(ptr as u64).ok()?;
         // Log allocated virt addr
-        unsafe {
-             let s = alloc::format!("loader: HFA Alloc Virt: {:#x}\n", ptr as u64);
-             Bridge.log(&s);
-        }
+         let s = alloc::format!("loader: HFA Alloc Virt: {:#x}\n", ptr as u64);
+         Bridge.log(&s);
         
         let phys_frame = mapper
             .translate_addr(virt_addr)
             .map(|phys| PhysFrame::containing_address(phys));
             
         if let Some(f) = phys_frame {
-             unsafe {
-                 let s = alloc::format!("loader: HFA Alloc Phys: {:#x}\n", f.start_address().as_u64());
-                 Bridge.log(&s);
-             }
+             let s = alloc::format!("loader: HFA Alloc Phys: {:#x}\n", f.start_address().as_u64());
+             Bridge.log(&s);
         } else {
-             unsafe { Bridge.log("loader: HFA Translate Fail!\n"); }
+             Bridge.log("loader: HFA Translate Fail!\n");
         }
         
         phys_frame
@@ -226,9 +224,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     let iso = match Iso9660Reader::new(boxed_reader) {
         Some(i) => Arc::new(i),
         None => {
-            unsafe {
-                Bridge.log("loader: Failed to init ISO reader\n");
-            }
+            Bridge.log("loader: Failed to init ISO reader\n");
             return;
         }
     };

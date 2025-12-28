@@ -212,7 +212,7 @@ fn run_qemu_aarch64(
         "id=cd,file={},if=none,format=raw,readonly=on",
         iso_path.display()
     ));
-    cmd.arg("-device").arg("ide-cd,drive=cd,bus=ahci.0");
+    cmd.arg("-device").arg("virtio-blk-pci,drive=cd,bootindex=0");
 
     // GDB setup
     if let Some(port) = gdb_port {

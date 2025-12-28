@@ -233,13 +233,17 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
                 let ctx_ptr = ctx.0.0.as_mut_ptr();
                 core::ptr::copy_nonoverlapping(frame_ptr, ctx_ptr, 20);
             }
+            k.bridge.log("TICK: In RIP=");
+            print_hex(&k.bridge, ctx.0.0[15]);
+            k.bridge.log("\n");
 
             {
                 use kernel::bridge::HardwareBridge;
                 let now_raw = k.bridge.ticks();
                 let last = LAST_TICKS.swap(now_raw, Ordering::Relaxed);
                 let now_ns = k.bridge.monotonic_now();
-
+            
+                // Force tick to always be large enough for update
                 let delta = if now_ns > 0 {
                     let last_ns = LAST_TICKS.swap(now_ns, Ordering::Relaxed);
                     if now_ns >= last_ns && last_ns > 0 {
@@ -248,11 +252,7 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
                         0
                     }
                 } else {
-                    if now_raw >= last {
-                        now_raw - last
-                    } else {
-                        0
-                    }
+                     if now_raw >= last { now_raw - last } else { 0 }
                 };
 
                 kernel::time::tick(&mut k.graph, delta);
@@ -273,6 +273,10 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
             }
 
             k.scheduler.tick(&k.bridge, &mut ctx);
+
+            k.bridge.log("TICK: Out RIP=");
+            print_hex(&k.bridge, ctx.0.0[15]);
+            k.bridge.log("\n");
 
             unsafe {
                 let ctx_ptr = ctx.0.0.as_ptr();

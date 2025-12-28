@@ -2,7 +2,7 @@ use core::arch::global_asm;
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::string::ToString;
-use hw::HardwareBridge; // For logging
+use kernel::bridge::HardwareBridge; // For logging
 
 global_asm!(include_str!("trap.S"));
 
@@ -122,7 +122,7 @@ pub unsafe fn jump_to_el1_stack(stack_top: u64, entry: unsafe extern "C" fn() ->
 }
 
 // NOTE: We might need to expose this for scheduler later
-fn save_current_thread_context(tf: &TrapFrame) {
+fn save_current_thread_context(_tf: &TrapFrame) {
     /*
     let mut sched = kernel::sched::SCHEDULER.lock();
     if let Some(tid) = sched.current_id() {

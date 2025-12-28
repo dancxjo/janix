@@ -23,6 +23,9 @@ pub mod user;
 
 pub struct Bridge;
 
+use core::sync::atomic::{AtomicU64, Ordering};
+pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
+
 static mut UART_BASE: u64 = 0x09000000;
 
 pub unsafe fn set_uart_base(base: u64) {
@@ -31,7 +34,8 @@ pub unsafe fn set_uart_base(base: u64) {
 
 #[cfg(target_arch = "aarch64")]
 impl Bridge {
-    pub unsafe fn init() {
+    pub unsafe fn init(hhdm: u64) {
+        HHDM_OFFSET.store(hhdm, Ordering::Relaxed);
         interrupts::trap::init();
     }
 }
@@ -45,7 +49,7 @@ impl HardwareBridge for Bridge {
         let uart_base = unsafe { UART_BASE };
         let uart_ptr = uart_base as *mut u8;
         // FR Register offset 0x18. TXFF is bit 5.
-        let uart_fr = (uart_base + 0x18) as *mut u32;
+        let _uart_fr = (uart_base + 0x18) as *mut u32;
 
         for b in msg.bytes() {
             unsafe {
@@ -204,6 +208,66 @@ impl HardwareBridge for Bridge {
         out.min = (t / 60) as u8;
         out.sec = (t % 60) as u8;
     }
+    fn save_fpu(&self, area: &mut [u8; 512]) {
+        unsafe {
+            let ptr = area.as_mut_ptr();
+            asm!(
+                "stp q0, q1, [{0}, #0]",
+                "stp q2, q3, [{0}, #32]",
+                "stp q4, q5, [{0}, #64]",
+                "stp q6, q7, [{0}, #96]",
+                "stp q8, q9, [{0}, #128]",
+                "stp q10, q11, [{0}, #160]",
+                "stp q12, q13, [{0}, #192]",
+                "stp q14, q15, [{0}, #224]",
+                "stp q16, q17, [{0}, #256]",
+                "stp q18, q19, [{0}, #288]",
+                "stp q20, q21, [{0}, #320]",
+                "stp q22, q23, [{0}, #352]",
+                "stp q24, q25, [{0}, #384]",
+                "stp q26, q27, [{0}, #416]",
+                "stp q28, q29, [{0}, #448]",
+                "stp q30, q31, [{0}, #480]",
+                in(reg) ptr,
+            );
+        }
+    }
+
+    fn restore_fpu(&self, area: &[u8; 512]) {
+        unsafe {
+            let ptr = area.as_ptr();
+            asm!(
+                "ldp q0, q1, [{0}, #0]",
+                "ldp q2, q3, [{0}, #32]",
+                "ldp q4, q5, [{0}, #64]",
+                "ldp q6, q7, [{0}, #96]",
+                "ldp q8, q9, [{0}, #128]",
+                "ldp q10, q11, [{0}, #160]",
+                "ldp q12, q13, [{0}, #192]",
+                "ldp q14, q15, [{0}, #224]",
+                "ldp q16, q17, [{0}, #256]",
+                "ldp q18, q19, [{0}, #288]",
+                "ldp q20, q21, [{0}, #320]",
+                "ldp q22, q23, [{0}, #352]",
+                "ldp q24, q25, [{0}, #384]",
+                "ldp q26, q27, [{0}, #416]",
+                "ldp q28, q29, [{0}, #448]",
+                "ldp q30, q31, [{0}, #480]",
+                in(reg) ptr,
+            );
+        }
+    }
+
+    fn hhdm_offset(&self) -> u64 {
+        HHDM_OFFSET.load(Ordering::Relaxed)
+    }
+
+    fn port_outb(&self, _port: u16, _val: u8) { unimplemented!("Port IO not supported on AArch64") }
+    fn port_inb(&self, _port: u16) -> u8 { unimplemented!("Port IO not supported on AArch64") }
+    fn port_outw(&self, _port: u16, _val: u16) { unimplemented!("Port IO not supported on AArch64") }
+    fn port_inw(&self, _port: u16) -> u16 { unimplemented!("Port IO not supported on AArch64") }
+    fn port_outd(&self, _port: u16, _val: u32) { unimplemented!("Port IO not supported on AArch64") }
+    fn port_ind(&self, _port: u16) -> u32 { unimplemented!("Port IO not supported on AArch64") }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
@@ -235,4 +299,14 @@ impl HardwareBridge for Bridge {
     }
     fn set_kernel_stack(&self, _stack: u64) {}
     fn rtc_read(&self, _out: &mut abi::wire::time::RtcSample) {}
+
+    fn hhdm_offset(&self) -> u64 { 0 }
+    fn port_outb(&self, _port: u16, _val: u8) {}
+    fn port_inb(&self, _port: u16) -> u8 { 0 }
+    fn port_outw(&self, _port: u16, _val: u16) {}
+    fn port_inw(&self, _port: u16) -> u16 { 0 }
+    fn port_outd(&self, _port: u16, _val: u32) {}
+    fn port_ind(&self, _port: u16) -> u32 { 0 }
+    fn save_fpu(&self, _area: &mut [u8; 512]) {}
+    fn restore_fpu(&self, _area: &[u8; 512]) {}
 }

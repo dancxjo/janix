@@ -875,7 +875,7 @@ pub fn process_file(
 
         Bridge.log("loader: calling load_elf\n");
         let loaded = load_elf(data, current_app_base, |vaddr, segment| {
-            Bridge.log("loader: load_elf callback\n");
+            // Bridge.log("loader: load_elf callback\n");
             // LOAD ELF Logic (Inline or copy)
             // Simplified:
             let raw_addr = current_app_base + vaddr;

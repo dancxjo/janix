@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-hw = { path = "../hw" }
+
 kernel_core = { path = "../kernel_core" }
 abi = { path = "../abi" }
 models = { path = "../models" }

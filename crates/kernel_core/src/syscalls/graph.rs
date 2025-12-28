@@ -5,7 +5,7 @@ use abi::wire::time::{
     TimeSleepUntilReq, TimeSleepUntilResp,
 };
 use alloc::string::String;
-use hw::HardwareBridge;
+use crate::bridge::HardwareBridge;
 use postcard::to_slice;
 use serde::Serialize;
 use thing_models::core::time::TimeNow;

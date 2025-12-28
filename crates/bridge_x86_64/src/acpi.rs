@@ -1,6 +1,6 @@
 use crate::Bridge;
 use core::ptr::NonNull;
-use hw::HardwareBridge;
+use kernel_core::bridge::HardwareBridge;
 
 // Minimal ACPI Table Headers
 #[repr(C, packed)]

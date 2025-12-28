@@ -1,7 +1,7 @@
 use crate::Kernel;
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use abi::{SysRet, SYSCALL_DRIVER_PUBLISH, SYSCALL_DRIVER_WAIT};
-use hw::HardwareBridge;
+use crate::bridge::HardwareBridge;
 use postcard::from_bytes;
 
 pub fn sys_driver_wait<B: HardwareBridge>(

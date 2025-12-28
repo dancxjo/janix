@@ -4,7 +4,7 @@ use abi::ids::{ProcessId, ThingId, ThreadId};
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use hw::HardwareBridge;
+use crate::bridge::HardwareBridge;
 
 #[derive(Debug)]
 pub struct Process {

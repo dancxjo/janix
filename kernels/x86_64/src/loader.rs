@@ -8,8 +8,8 @@ use abi::ThingId;
 
 use crate::KERNEL;
 use bridge_x86_64::Bridge;
+use kernel_core::bridge::HardwareBridge;
 use core::sync::atomic::{AtomicU64, Ordering};
-use hw::HardwareBridge;
 use kernel_core::fs::iso9660::{BlockReader, Iso9660Reader};
 use kernel_core::Kernel;
 use models::value::ThingBody;

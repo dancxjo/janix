@@ -1,7 +1,7 @@
 use crate::Kernel;
 use abi::syscall_defs::SYS_EAGAIN;
 use abi::wire::time::RtcSample;
-use hw::HardwareBridge;
+use crate::bridge::HardwareBridge;
 
 pub fn sys_rtc_read<B: HardwareBridge>(kernel: &mut Kernel<B>, out_ptr: *mut u8) -> isize {
     // Safety: User pointer validation required in real OS.

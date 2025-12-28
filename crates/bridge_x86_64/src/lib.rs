@@ -17,7 +17,7 @@ pub mod user;
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;
-use hw::HardwareBridge;
+use kernel_core::bridge::HardwareBridge;
 
 pub struct Bridge;
 
@@ -60,7 +60,7 @@ pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 impl Bridge {
     pub unsafe fn init(rsdp_addr: Option<u64>, hhdm: u64) {
         HHDM_OFFSET.store(hhdm, Ordering::Relaxed);
-        use hw::HardwareBridge;
+        use kernel_core::bridge::HardwareBridge;
         let b = Bridge;
         b.log("BRIDGE: gdt::init\n");
         gdt::init();
@@ -81,7 +81,7 @@ impl Bridge {
     }
 
     pub unsafe fn init_acpi(rsdp_addr: u64, hhdm: u64) {
-        use hw::HardwareBridge;
+        use kernel_core::bridge::HardwareBridge;
         let b = Bridge;
         b.log("BRIDGE: acpi::init\n");
         acpi::init(rsdp_addr, hhdm);
@@ -90,7 +90,7 @@ impl Bridge {
 
 pub fn print_u64(val: u64) {
     let bridge = Bridge;
-    use hw::HardwareBridge;
+    use kernel_core::bridge::HardwareBridge;
 
     if val == 0 {
         bridge.log("0");
@@ -115,7 +115,7 @@ pub fn print_u64(val: u64) {
 
 pub fn print_hex(val: u64) {
     let bridge = Bridge;
-    use hw::HardwareBridge;
+    use kernel_core::bridge::HardwareBridge;
     bridge.log("0x");
     let mut printed = false;
     for i in (0..16).rev() {
@@ -149,6 +149,10 @@ impl HardwareBridge for Bridge {
                 asm!("out dx, al", in("dx") 0x3F8u16, in("al") b);
             }
         }
+    }
+
+    fn hhdm_offset(&self) -> u64 {
+        HHDM_OFFSET.load(Ordering::Relaxed)
     }
 
     fn ticks(&self) -> u64 {
@@ -322,6 +326,7 @@ impl HardwareBridge for Bridge {
 #[cfg(not(target_arch = "x86_64"))]
 impl HardwareBridge for Bridge {
     fn log(&self, _msg: &str) {}
+    fn hhdm_offset(&self) -> u64 { 0 }
     fn ticks(&self) -> u64 {
         0
     }

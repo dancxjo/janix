@@ -5,7 +5,7 @@ pub mod typed;
 
 use crate::Kernel;
 use abi::syscall_defs::*;
-use hw::HardwareBridge; // e.g. SYSCALL_DRIVER_WAIT, etc.
+use crate::bridge::HardwareBridge; // e.g. SYSCALL_DRIVER_WAIT, etc.
 
 pub fn syscall_dispatch<B: HardwareBridge>(
     kernel: &mut Kernel<B>,

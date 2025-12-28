@@ -1,7 +1,7 @@
 use crate::Kernel;
 use abi::ThingId;
 use alloc::vec::Vec;
-use hw::HardwareBridge;
+use crate::bridge::HardwareBridge;
 use thing_models::builtins::ids::{THING_BACKED_BY_KIND, THING_FILE_KIND, THING_MODULE_KIND};
 
 pub fn read_file_bytes<B: HardwareBridge>(

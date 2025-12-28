@@ -25,7 +25,7 @@ pub fn on_ps2_mouse(byte: u8) {
     }
 }
 
-pub fn try_pop_event<B: hw::HardwareBridge>(bridge: &B) -> Option<DriverEvent> {
+pub fn try_pop_event<B: crate::bridge::HardwareBridge>(bridge: &B) -> Option<DriverEvent> {
     bridge.irq_disable();
     let result = if let Some(ref mut ring) = *GLOBAL_INPUT_RING.lock() {
         ring.pop()

@@ -1,5 +1,5 @@
 use crate::Kernel;
-use hw::HardwareBridge;
+use crate::bridge::HardwareBridge;
 
 pub unsafe fn init<B: HardwareBridge>(k: &mut Kernel<B>, fb_response: Option<&limine::response::FramebufferResponse>) {
     use thing_models::builtins::ids::{THING_DISPLAY_FRAMEBUFFER_KIND, THING_HAS_DEVICE_KIND, THING_BOOT_ROOT};

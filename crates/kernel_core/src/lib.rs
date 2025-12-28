@@ -3,6 +3,7 @@
 extern crate alloc;
 
 pub mod diag;
+pub mod bridge;
 pub mod drivers;
 pub mod fs;
 pub mod graph;
@@ -14,7 +15,7 @@ pub mod time;
 pub mod types;
 
 use graph::{seed_builtins, GraphStore};
-use hw::HardwareBridge;
+use crate::bridge::HardwareBridge;
 
 use symbols::store::SymbolStore;
 use symbols::SymbolTable;

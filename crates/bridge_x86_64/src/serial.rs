@@ -12,7 +12,7 @@ pub const SERIAL_IO_PORT: u16 = 0x3F8;
 
 pub unsafe fn init() {
     let bridge = crate::Bridge;
-    use hw::HardwareBridge;
+    use kernel_core::bridge::HardwareBridge;
 
     bridge.log("SERIAL: Initializing COM1...\n");
     // Standard COM1 initialization

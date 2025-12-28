@@ -1,6 +1,12 @@
-use crate::limine_local::heap_init::HeapInitInfo;
 use bridge_x86_64::Bridge;
-use hw::HardwareBridge;
+use kernel_core::bridge::HardwareBridge;
+
+#[derive(Clone, Copy)]
+pub struct HeapInitInfo {
+    pub phys_start: u64,
+    pub virt_start: u64,
+    pub size: u64,
+}
 
 pub fn log_heap_init(info: HeapInitInfo) {
     let bridge = Bridge;

@@ -2,7 +2,7 @@ use x86_64::instructions::port::Port;
 
 pub unsafe fn init() {
     let bridge = crate::Bridge;
-    use hw::HardwareBridge;
+    use kernel_core::bridge::HardwareBridge;
 
     bridge.log("PS2: Initializing...\n");
 

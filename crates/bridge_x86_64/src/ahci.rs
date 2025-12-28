@@ -3,7 +3,7 @@ use abi::wire::typed::{CodecId, TypeId, TypedBytes};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
-use hw::HardwareBridge;
+use kernel_core::bridge::HardwareBridge;
 use kernel_core::Kernel;
 use models::builtins::ids::{
     THING_BLOCK_DEVICE_KIND, THING_BOOT_ROOT, THING_EMITS_KIND, THING_HAS_DEVICE_KIND,

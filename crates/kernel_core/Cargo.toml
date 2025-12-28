@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-hw = { path = "../hw" }
+
 thing_models = { package = "models", path = "../models" }
 abi = { path = "../abi" }
 spin = "0.9.8"

@@ -215,6 +215,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "boot"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "limine",
+ "log",
+ "models",
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "bridge_aarch64"
 version = "0.2.0"
 dependencies = [
@@ -229,7 +241,6 @@ version = "0.2.0"
 dependencies = [
  "abi",
  "bitflags",
- "hw",
  "kernel_core",
  "lazy_static",
  "models",
@@ -729,7 +740,6 @@ version = "0.2.0"
 dependencies = [
  "abi",
  "heapless 0.8.0",
- "hw",
  "limine",
  "models",
  "postcard",
@@ -743,11 +753,10 @@ name = "kernel_x86_64"
 version = "0.2.0"
 dependencies = [
  "abi",
+ "boot",
  "bridge_x86_64",
- "hw",
  "infer",
  "kernel_core",
- "limine",
  "linked_list_allocator",
  "models",
  "postcard",

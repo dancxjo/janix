@@ -1,6 +1,6 @@
 use crate::Bridge;
 use core::ptr::NonNull;
-use hw::HardwareBridge;
+use kernel_core::bridge::HardwareBridge;
 
 #[repr(C, packed)]
 pub struct HpetTable {
@@ -177,7 +177,7 @@ pub unsafe fn program_oneshot(deadline_ns: u64) {
 
     // DEBUG
     let bridge = Bridge;
-    use hw::HardwareBridge;
+    use kernel_core::bridge::HardwareBridge;
     // bridge.log("HPET: P\n");
 
     core::ptr::write_volatile(regs.add(REG_T0_COMP) as *mut u64, target_ticks);
@@ -193,7 +193,7 @@ pub unsafe fn ack_interrupt() {
     let status = core::ptr::read_volatile(regs.add(REG_GEN_INT_STATUS) as *const u64);
     if status & 1 != 0 {
         let bridge = Bridge;
-        use hw::HardwareBridge;
+        use kernel_core::bridge::HardwareBridge;
         // bridge.log("HPET: Ack\n");
         core::ptr::write_volatile(regs.add(REG_GEN_INT_STATUS) as *mut u64, 1);
     }

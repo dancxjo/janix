@@ -5,5 +5,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-serde = { workspace = true, features = ["derive", "alloc"] }
+serde = { workspace = true, default-features = false, features = ["derive", "alloc"] }
 postcard = { workspace = true, features = ["alloc"] }

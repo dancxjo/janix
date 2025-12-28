@@ -1,6 +1,6 @@
 use crate::Bridge;
 use kernel_core::Kernel;
-use hw::HardwareBridge;
+use kernel_core::bridge::HardwareBridge;
 
 // Bochs VBE ports
 const VBE_DISPI_IOPORT_INDEX: u16 = 0x01CE;

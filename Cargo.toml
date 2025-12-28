@@ -5,12 +5,13 @@ members = [
 
 "crates/abi",
 "crates/models",
-"crates/hw",
 "crates/kernel_core",
 "crates/thing_std",
 
 "crates/bridge_x86_64",
 "crates/bridge_aarch64",
+"crates/boot",
+
 
 "kernels/x86_64",
 "kernels/aarch64",

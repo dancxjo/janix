@@ -276,7 +276,7 @@ extern "C" fn keyboard_interrupt_handler(_frame: &mut TrapFrame) {
     // let count = IRQ1_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
     // // Only log first few or every 10th to avoid flood
     // if count < 20 || (count % 10 == 0) {
-    //     use hw::HardwareBridge;
+    //     use kernel_core::bridge::HardwareBridge;
     //     let bridge = crate::Bridge;
     //     // Manual formatting since we can't easily use format! here without alloc
     //     bridge.log("IRQ1: count=");

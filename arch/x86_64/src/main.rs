@@ -289,6 +289,16 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
                 k.bridge.log("Frame RIP Readback: ");
                 print_hex(&k.bridge, read_back);
                 k.bridge.log("\n");
+
+                let rsp_val = (*frame).rsp;
+                k.bridge.log("Frame RSP: ");
+                print_hex(&k.bridge, rsp_val);
+                k.bridge.log("\n");
+
+                let cs_val = (*frame).cs;
+                k.bridge.log("Frame CS: ");
+                print_hex(&k.bridge, cs_val);
+                k.bridge.log("\n");
             }
         }
     }

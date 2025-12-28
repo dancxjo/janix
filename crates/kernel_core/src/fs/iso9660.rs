@@ -1,6 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::alloc::{alloc, Layout};
+use alloc::alloc::{alloc, dealloc, Layout};
+use core::ops::{Deref, DerefMut};
 
 const SECTOR_SIZE: usize = 2048;
 
@@ -29,6 +30,42 @@ pub struct Iso9660Reader<R: BlockReader> {
     root_len: u32,
 }
 
+struct AlignedBuffer {
+    ptr: *mut u8,
+    layout: Layout,
+}
+
+impl AlignedBuffer {
+    fn new(size: usize) -> Option<Self> {
+        let layout = Layout::from_size_align(size, 4096).ok()?;
+        let ptr = unsafe { alloc(layout) };
+        if ptr.is_null() {
+            None
+        } else {
+            Some(Self { ptr, layout })
+        }
+    }
+}
+
+impl Drop for AlignedBuffer {
+    fn drop(&mut self) {
+        unsafe { dealloc(self.ptr, self.layout) };
+    }
+}
+
+impl Deref for AlignedBuffer {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::slice::from_raw_parts(self.ptr, self.layout.size()) }
+    }
+}
+
+impl DerefMut for AlignedBuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { core::slice::from_raw_parts_mut(self.ptr, self.layout.size()) }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DirEntry {
     pub name: String,
@@ -45,15 +82,11 @@ pub struct FileHandle {
 
 impl<R: BlockReader> Iso9660Reader<R> {
     pub fn new(reader: R) -> Option<Self> {
-        // Allocate aligned buffer manually
-        let layout = Layout::from_size_align(SECTOR_SIZE, 4096).ok()?;
-        let ptr = unsafe { alloc(layout) };
-        if ptr.is_null() { return None; }
-        let mut buf_backing = unsafe { Vec::from_raw_parts(ptr, SECTOR_SIZE, SECTOR_SIZE) };
-        let buf = &mut buf_backing;
+        // Use aligned buffer for PVD read
+        let mut buf = AlignedBuffer::new(SECTOR_SIZE)?;
 
         // PVD is usually at sector 16
-        if !reader.read_sector(16, buf) {
+        if !reader.read_sector(16, &mut buf) {
             return None;
         }
 
@@ -63,13 +96,15 @@ impl<R: BlockReader> Iso9660Reader<R> {
         }
 
         // Root Directory Record is at offset 156
-        // Parse root record to get location/size
-        let (lba, len, _flags, _name, _name_raw) = Self::parse_dir_record(&buf, 156)?;
+        // 34 bytes is min size for a dir record
+        let root_entry_ptr = &buf[156..156 + 34];
+        let root_lba = u32::from_le_bytes(root_entry_ptr[2..6].try_into().unwrap());
+        let root_len = u32::from_le_bytes(root_entry_ptr[10..14].try_into().unwrap());
 
         Some(Self {
             reader,
-            root_lba: lba,
-            root_len: len,
+            root_lba,
+            root_len,
         })
     }
 
@@ -151,33 +186,33 @@ impl<R: BlockReader> Iso9660Reader<R> {
     fn find_entry(&self, dir_lba: u32, dir_len: u32, name: &str) -> Option<DirEntry> {
         let num_sectors = (dir_len + SECTOR_SIZE as u32 - 1) / SECTOR_SIZE as u32;
         
-        let layout = Layout::from_size_align(SECTOR_SIZE, 4096).ok()?;
-        let ptr = unsafe { alloc(layout) };
-        if ptr.is_null() { return None; }
-        let mut buf_backing = unsafe { Vec::from_raw_parts(ptr, SECTOR_SIZE, SECTOR_SIZE) };
-        let buf = &mut buf_backing;
+        let mut buf = AlignedBuffer::new(SECTOR_SIZE)?;
+        let sector_buf = &mut buf[0..SECTOR_SIZE];
 
         for i in 0..num_sectors {
-            if !self.reader.read_sector(dir_lba + i, buf) {
+            if !self.reader.read_sector(dir_lba + i, sector_buf) {
                 return None;
             }
 
             let mut offset = 0;
             while offset < SECTOR_SIZE {
-                let rec_len = buf[offset];
+                let rec_len = sector_buf[offset];
                 if rec_len == 0 {
                     break;
                 } // End of records in this sector
 
-                if let Some((lba, size, flags, entry_name, name_raw)) =
-                    Self::parse_dir_record(&buf, offset)
+                if let Some((_lba, _len, _flags, entry_name, _entry_name_raw)) =
+                    Self::parse_dir_record(sector_buf, offset)
                 {
-                    if entry_name.eq_ignore_ascii_case(name) {
+                    if entry_name == name {
+                        // Found match!
+                        let (lba, len, flags, name, name_raw) =
+                            Self::parse_dir_record(sector_buf, offset)?;
                         return Some(DirEntry {
-                            name: entry_name,
+                            name,
                             name_raw,
                             lba,
-                            size,
+                            size: len,
                             is_dir: (flags & 2) != 0,
                         });
                     }
@@ -195,46 +230,67 @@ impl<R: BlockReader> Iso9660Reader<R> {
         len: usize,
         out: &mut [u8],
     ) -> usize {
-        let start_sector = offset / SECTOR_SIZE;
-        let end_sector = (offset + len + SECTOR_SIZE - 1) / SECTOR_SIZE;
+        // limit to 4KB (1 page) to ensure physical contiguity for AHCI
+        // (allocator only guarantees contiguity within a page)
+        let chunk_size = 4096;
+        let sectors_per_chunk = chunk_size / SECTOR_SIZE;
+        
+        let start_sector_abs = offset / SECTOR_SIZE;
+        let end_sector_abs = (offset + len + SECTOR_SIZE - 1) / SECTOR_SIZE;
+        
+        // Use local AlignedBuffer
+        let mut chunk_buf = match AlignedBuffer::new(chunk_size) {
+            Some(b) => b,
+            None => return 0,
+        };
+
+        let mut current_sector = start_sector_abs;
         let mut read_len = 0;
-        let layout = Layout::from_size_align(SECTOR_SIZE, 4096).unwrap();
-        let ptr = unsafe { alloc(layout) };
-        // If alloc fails, we panic (read returns usize, can't easily return error without change signature)
-        // Ideally should handle error, but for now wrap in Vec
-        let mut buf_backing = unsafe { Vec::from_raw_parts(ptr, SECTOR_SIZE, SECTOR_SIZE) };
-        let sector_buf = &mut buf_backing;
 
-        for i in start_sector..end_sector {
-            if !self
-                .reader
-                .read_sector(handle.lba + i as u32, sector_buf)
-            {
-                break;
+        while current_sector < end_sector_abs {
+            // How many sectors to read? Min(remaining in file, chunk_capacity)
+            let remaining_sectors = end_sector_abs - current_sector;
+            let sectors_to_read = core::cmp::min(remaining_sectors, sectors_per_chunk);
+            let bytes_to_read = sectors_to_read * SECTOR_SIZE;
+            
+            // Adjust buffer size for this read
+            let current_buf = &mut chunk_buf[0..bytes_to_read];
+            
+            if !self.reader.read_sector(handle.lba + current_sector as u32, current_buf) {
+                 break;
             }
-
-            let sector_offset = if i == start_sector {
-                offset % SECTOR_SIZE
-            } else {
-                0
-            };
-
-            let remaining_req = len - read_len;
-            let available_in_sector = SECTOR_SIZE - sector_offset;
-            // Also limit by file size?
-            // Handle size check
-            let file_remaining = (handle.size as usize).saturating_sub(offset + read_len);
-
-            let copy_len = core::cmp::min(remaining_req, available_in_sector);
-            let copy_len = core::cmp::min(copy_len, file_remaining);
-
-            if copy_len == 0 {
-                break;
-            }
-
-            out[read_len..read_len + copy_len]
-                .copy_from_slice(&sector_buf[sector_offset..sector_offset + copy_len]);
-            read_len += copy_len;
+            
+            // Copy relevant bytes to output
+             let _chunk_start_offset = current_sector * SECTOR_SIZE;
+             
+             for i in 0..sectors_to_read {
+                 let sector_idx = current_sector + i;
+                 let sector_file_offset = sector_idx * SECTOR_SIZE;
+                 
+                 let copy_start_in_sector = if sector_file_offset < offset {
+                     offset - sector_file_offset
+                 } else {
+                     0
+                 };
+                 
+                 let val_start = sector_file_offset + copy_start_in_sector;
+                 // How much to copy? Min(available in sector, remaining req)
+                 
+                 let available = SECTOR_SIZE - copy_start_in_sector;
+                 let need = len - read_len;
+                 let file_left = (handle.size as usize).saturating_sub(val_start);
+                 
+                 let copy = core::cmp::min(available, need);
+                 let copy = core::cmp::min(copy, file_left);
+                 
+                 if copy > 0 {
+                     let src_start = i * SECTOR_SIZE + copy_start_in_sector;
+                     out[read_len..read_len + copy].copy_from_slice(&current_buf[src_start..src_start + copy]);
+                     read_len += copy;
+                 }
+             }
+             
+            current_sector += sectors_to_read;
         }
         read_len
     }
@@ -251,25 +307,22 @@ impl<R: BlockReader> Iso9660Reader<R> {
         let mut entries = Vec::new();
         let num_sectors = (dir_len + SECTOR_SIZE as u32 - 1) / SECTOR_SIZE as u32;
         
-        let layout = Layout::from_size_align(SECTOR_SIZE, 4096).ok()?;
-        let ptr = unsafe { alloc(layout) };
-        if ptr.is_null() { return None; }
-        let mut buf_backing = unsafe { Vec::from_raw_parts(ptr, SECTOR_SIZE, SECTOR_SIZE) };
-        let buf = &mut buf_backing;
+        let mut buf = AlignedBuffer::new(SECTOR_SIZE)?;
+        let sector_buf = &mut buf[0..SECTOR_SIZE];
 
         for i in 0..num_sectors {
-            if !self.reader.read_sector(dir_lba + i, buf) {
+            if !self.reader.read_sector(dir_lba + i, sector_buf) {
                 return None;
             }
             let mut offset = 0;
             while offset < SECTOR_SIZE {
-                let rec_len = buf[offset];
+                let rec_len = sector_buf[offset];
                 if rec_len == 0 {
                     break;
                 }
 
                 if let Some((lba, size, flags, name, name_raw)) =
-                    Self::parse_dir_record(&buf, offset)
+                    Self::parse_dir_record(sector_buf, offset)
                 {
                     if name != "." && name != ".." {
                         entries.push(DirEntry {

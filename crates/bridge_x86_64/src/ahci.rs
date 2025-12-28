@@ -282,21 +282,11 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
     yield_fn: F,
 ) -> bool {
     let bridge = Bridge;
-    bridge.log("AHCI: Read LBA ");
-    
-    // Convert LBA to string manually or use format! if available?
-    // Minimal log for now to avoid allocation inside AHCI if possible?
-    // But we are in a bridge, maybe we can use alloc.
-    // Let's just log start.
-    // bridge.log("AHCI: Issue\n"); 
-    
-    // We can use alloc::format! if we import it? 
-    // bridge.log(&alloc::format!("{} Slot {}\n", lba, slot));
     let slot;
 
     // 1. Find Free Slot (Thread Safe)
+    let _guard = PORT_LOCKS[port_idx].lock();
     {
-        let _guard = PORT_LOCKS[port_idx].lock();
         let slots = port.ci | port.sact;
         let mut found = None;
         for i in 0..32 {
@@ -316,7 +306,7 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             // We must hold the lock UNTIL we write CI.
             // This means setup must happen UNDER LOCK.
             // OR use a software bitmap if we want longer setup without lock.
-            // For now, setup is fast (memory write). Hold lock.
+            // We must hold the lock UNTIL we write CI to prevent race.
             
             // 2. Alloc Command Table (4KB)
             let ct_layout = Layout::from_size_align(4096, 128).unwrap();
@@ -357,7 +347,11 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             table.acmd[3] = (lba >> 16) as u8;
             table.acmd[4] = (lba >> 8) as u8;
             table.acmd[5] = lba as u8;
-            let count: u32 = 1; 
+            table.acmd[4] = (lba >> 8) as u8;
+            table.acmd[5] = lba as u8;
+            
+            // Calculate sector count (rounding up, but caller should ideally align to 2048)
+            let count: u32 = (buf.len() as u32 + 2047) / 2048;
             table.acmd[6] = (count >> 24) as u8;
             table.acmd[7] = (count >> 16) as u8;
             table.acmd[8] = (count >> 8) as u8;
@@ -368,7 +362,7 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             let entry = &mut table.prdt_entry[0];
             entry.dba = buf_phys as u32;
             entry.dbau = (buf_phys >> 32) as u32;
-            entry.dbc = (2048 - 1); 
+            entry.dbc = (buf.len() as u32) - 1; 
             entry.rsv0 = 0;
 
             // 5. Issue Command
@@ -394,9 +388,11 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             break;
         } 
         if (port.is & (1 << 30)) != 0 {
-             bridge.log("AHCI: TFES Error\n");
+             // bridge.log("AHCI: TFES Error\n");
              break;
         }
+        
+        timeout -= 1;
         if timeout == 0 { break; }
         
         yield_fn();
@@ -421,11 +417,11 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
     dealloc(ct_ptr, ct_layout);
 
     if timeout == 0 {
-        bridge.log("AHCI: Timeout exec.\n");
+        // bridge.log("AHCI: Timeout exec.\n");
         return false;
     }
     if (port.tfd & 1) != 0 {
-        bridge.log("AHCI: Disk Error.\n");
+        // bridge.log("AHCI: Disk Error.\n");
         return false;
     }
 

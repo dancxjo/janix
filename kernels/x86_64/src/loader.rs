@@ -347,8 +347,15 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
              // Subtract 8 to satisfy System V ABI
              let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
              
+             k.scheduler.spawn(
+                &k.bridge,
+                "app_loader",
+                file_loader_task as usize as u64,
+                stack_top,
+                args_ptr
+            );
         } // drop lock
-        file_loader_task(args_ptr);
+        // file_loader_task(args_ptr);
     }
     
     // 4. Drivers (Serial? Or Parallel? might as well parallel)
@@ -380,11 +387,18 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
              // Allocate Aligned Stack (64KB)
              let layout = Layout::from_size_align(64 * 1024, 16).unwrap();
              let stack_ptr = unsafe { alloc(layout) };
-             // Subtract 8 to satisfy System V ABI
-             let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
-
-         } // drop lock
-         file_loader_task(args_ptr);
+              // Subtract 8 to satisfy System V ABI
+              let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
+              
+             k.scheduler.spawn(
+                &k.bridge,
+                "driver_loader",
+                file_loader_task as usize as u64,
+                stack_top,
+                args_ptr
+            );
+          } // drop lock
+          // file_loader_task(args_ptr);
     }
     
     // 5. Fonts (Parallel)
@@ -409,9 +423,15 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
              // Subtract 8 to satisfy System V ABI
              let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
              
-               // k.scheduler.spawn(&k.bridge, "font_loader", file_loader_task as u64 as u64, stack_top, args_ptr);
+               k.scheduler.spawn(
+                &k.bridge,
+                "font_loader",
+                file_loader_task as usize as u64,
+                stack_top, 
+                args_ptr
+               );
         }
-        file_loader_task(args_ptr);
+        // file_loader_task(args_ptr);
     }
     
     Bridge.log("loader: All scan tasks spawned.\n");
@@ -425,10 +445,10 @@ pub extern "C" fn file_loader_task(arg: u64) {
     // NOTE: arg.iso is Arc, so access is efficient.
     // open() calls read_sector_yielding internally.
     if let Some(handle) = args.iso.open(&args.path) {
-         Bridge.log("loader: Opened "); Bridge.log(&args.path); Bridge.log("\n");
+         // Bridge.log("loader: Opened "); Bridge.log(&args.path); Bridge.log("\n");
          let mut data = alloc::vec![0u8; handle.size as usize];
          args.iso.read(&handle, 0, handle.size as usize, &mut data);
-         Bridge.log("loader: Read complete\n");
+         // Bridge.log("loader: Read complete\n");
          
          // Process (Serialized by Kernel Lock)
          let mut guard = KERNEL.lock();
@@ -459,7 +479,7 @@ pub fn process_file(
     spawn_override: Option<bool>,
     hhdm_u64: u64,
 ) {
-    Bridge.log("loader: processing file "); Bridge.log(name); Bridge.log("\n");
+    // Bridge.log("loader: processing file "); Bridge.log(name); Bridge.log("\n");
     let mtype = classify_bytes(data);
     let role_enum = get_module_role(name, &mtype);
     

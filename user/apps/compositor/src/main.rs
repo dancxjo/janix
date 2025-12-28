@@ -37,6 +37,9 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     let mut cursor_x: i32 = 512;
     let mut cursor_y: i32 = 384;
     let mut cursor_bitmap: Option<BitmapBody> = None;
+    let mut cursor_frames: Option<alloc::vec::Vec<cursor_parser::Frame>> = None;
+    let mut cursor_frame_idx = 0;
+    let mut cursor_frame_timer = 0;
     let mut pointer_stream_id: Option<ThingId> = None;
     let mut last_seq: u64 = 0;
     
@@ -73,13 +76,28 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                              c.write_str("COMPOSITOR: Found BootState via Link!\n");
                          }
                      } else if type_id == THING_MODULE_SCHEMA.0 as u128 {
-                         if cursor_bitmap.is_none() {
+                         if cursor_bitmap.is_none() && cursor_frames.is_none() {
                              if let Ok(module) = postcard::from_bytes::<ModuleBody>(&tb.bytes) {
-                                 if module.path.ends_with("cursor.bmp") {
-                                     if let Some(bmp) = bitmap_parser::parse_bmp(&module.data) {
-                                         cursor_bitmap = Some(bmp);
-                                         c.write_str("COMPOSITOR: Parsed Cursor Bitmap!\n");
-                                     }
+                                 // Prefer Working.ani or Normal.cur
+                                 if module.path.ends_with("Normal.cur") || module.path.ends_with("Working.ani") || module.path.ends_with("cursor.bmp") {
+                                      if let Some(parsed) = cursor_parser::parse(&module.data) {
+                                          match parsed {
+                                              cursor_parser::CursorType::Static(bmp) => {
+                                                  cursor_bitmap = Some(bmp);
+                                                  c.write_str("COMPOSITOR: Parsed Static Cursor!\n");
+                                              }
+                                              cursor_parser::CursorType::Animated(frames) => {
+                                                  cursor_frames = Some(frames);
+                                                  c.write_str("COMPOSITOR: Parsed Animated Cursor!\n");
+                                              }
+                                          }
+                                      } else if module.path.ends_with("cursor.bmp") {
+                                         // Fallback to BMP parser
+                                         if let Some(bmp) = bitmap_parser::parse_bmp(&module.data) {
+                                             cursor_bitmap = Some(bmp);
+                                             c.write_str("COMPOSITOR: Parsed Cursor Bitmap!\n");
+                                         }
+                                      }
                                  }
                              }
                          }
@@ -129,6 +147,52 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
 
     loop {
         frame_count += 1;
+        if frame_count % 60 == 0 {
+             let _ = PortWrites.write_fmt(format_args!("COMPOSITOR: Main Loop Cycle {}\n", frame_count));
+        }
+
+        // Lazy Load Cursor
+        if cursor_bitmap.is_none() && cursor_frames.is_none() {
+             let scan_op = GraphOp::ScanLinks {
+                 from: Some(THING_BOOT_ROOT),
+                 to: None,
+                 kind: Some(THING_MODULE_SCHEMA)
+             };
+             if let Ok(GraphReply::Links(list)) = g.call_op(&scan_op, &mut buf) {
+                 for (_, target, _) in list {
+                     let get_op = GraphOp::GetThing { id: target };
+                     if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&get_op, &mut buf) {
+                         if let Ok(module) = postcard::from_bytes::<ModuleBody>(&tb.bytes) {
+                              if module.path.ends_with("Normal.cur") || module.path.ends_with("Working.ani") {
+                                  if let Some(parsed) = cursor_parser::parse(&module.data) {
+                                      match parsed {
+                                          cursor_parser::CursorType::Static(bmp) => {
+                                              cursor_bitmap = Some(bmp);
+                                          }
+                                          cursor_parser::CursorType::Animated(frames) => {
+                                              cursor_frames = Some(frames);
+                                          }
+                                      }
+                                  }
+                              }
+                         }
+                     }
+                 }
+             }
+        }
+
+        // Animation update
+        if let Some(ref frames) = cursor_frames {
+            // Assume ~16ms per loop iteration (sleep + overhead)
+            // Or use proper time. For now, simple counter.
+            cursor_frame_timer += 16;
+            let current_frame = &frames[cursor_frame_idx];
+            if cursor_frame_timer >= current_frame.duration_ms {
+                cursor_frame_timer = 0;
+                cursor_frame_idx = (cursor_frame_idx + 1) % frames.len();
+            }
+        }
+
 
         // Lazy Load Cursor Bitmap if missing
         // ... (existing lazy load code omitted for brevity but preserved in replacement) ...
@@ -255,6 +319,10 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                              boot_scene.render(ptr, pitch, fb_width, fb_height);
                         }
 
+                        if let Some(ref frames) = cursor_frames {
+                            let bmp = &frames[cursor_frame_idx].bitmap;
+                            render::draw_bitmap(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, bmp);
+                        } else if let Some(ref bmp) = cursor_bitmap {
                         // 5. Cursor
                         if let Some(ref bmp) = cursor_bitmap {
                             render::draw_bitmap(ptr, pitch, fb_width, fb_height, cursor_x, cursor_y, bmp);
@@ -272,6 +340,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
 }
 
 mod bitmap_parser;
+mod cursor_parser;
 
 fn draw_window(fb_ptr: *mut u32, pitch: u32, fb_w: u32, fb_h: u32, window: &thing_models::schema::window::WindowBody) {
     let x = window.x;

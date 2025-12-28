@@ -35,6 +35,12 @@ pub fn init(bridge: &impl HardwareBridge, rsdp_addr: u64, hhdm: u64) {
         return;
     }
 
+    bridge.log("ACPI: Init. RSDP: ");
+    crate::bridge::print_hex(rsdp_addr);
+    bridge.log(" HHDM: ");
+    crate::bridge::print_hex(hhdm);
+    bridge.log("\n");
+
     // 1. Verify RSDP
     let rsdp = unsafe { &*(to_virt(rsdp_addr, hhdm).as_ptr() as *const Rsdp) };
     let signature = rsdp.signature; // Copy packed field

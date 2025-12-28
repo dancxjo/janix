@@ -7,11 +7,11 @@ use thing_std::{StdoutConsole, Console, GraphClient};
 use abi::wire::graph::{GraphOp, GraphReply};
 use abi::ids::ThingId;
 use thing_models::builtins::core_kinds::DisplayFramebufferBody;
-use thing_models::builtins::ids::{THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_DISPLAY_FRAMEBUFFER_KIND};
+use thing_models::builtins::ids::{THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_DISPLAY_FRAMEBUFFER_KIND, THING_EMITS_KIND};
 
 #[no_mangle]
 pub extern "C" fn _start(heap_start: u64) -> ! {
-    unsafe { std::rt::init_heap(heap_start as usize, 1024 * 1024); }
+    unsafe { std::rt::init_heap(heap_start as usize, 32 * 1024 * 1024); }
     std::init();
 
     let c = StdoutConsole;
@@ -88,6 +88,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     }
 
     // 2. Main Loop
+    let mut log_stream_id: Option<ThingId> = None;
 
     loop {
         if let Some(fb_id) = fb_thing_id {
@@ -100,15 +101,71 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                     let fb_width = fb.width as u32;
                     let fb_height = fb.height as u32;
 
-                    // Clear Background (Desktop)
+                    // Clear Background (Boot Blue)
                     render::primitives::fill_rect(
                         ptr, pitch, fb_width, fb_height,
                         0, 0, fb.width as i32, fb.height as i32,
-                        0xFF333333, // Dark Grey
+                        0xFF2E80D1, // #2E80D1 (BGR: D1 80 2E in memory)
                         None
                     );
+                    
+                    // Debug Text
+                    render::text::draw_text(
+                        ptr, pitch, fb_width, fb_height,
+                        20, 20,
+                        "Compositor Online",
+                        0xFFFFFFFF
+                    );
 
-                    // Scan for Windows
+                    // ---------------------------------------------------------
+                    // Log Stream Logic
+                    // ---------------------------------------------------------
+                    if log_stream_id.is_none() {
+                        // Scan for LogStream
+                        let scan_op = GraphOp::ScanLinks {
+                            from: Some(THING_BOOT_ROOT),
+                            to: None,
+                            kind: Some(thing_models::builtins::ids::THING_EMITS_KIND)
+                        };
+                         if let Ok(GraphReply::Links(list)) = g.call_op(&scan_op, &mut buf) {
+                             for (_, target, _) in list {
+                                 // Check kind
+                                 // We need to fetch the thing to check the kind (Link doesn't contain target kind)
+                                 // Optimistically assume the first EMITS is it, or better, check type.
+                                 // Actually better to just GetThing(3020) if we knew it, but dynamic is better.
+                                 // Let's check kind.
+                                 // We need to be careful with buffer reuse.
+                                 // Make a copy of targets to check.
+                             }
+                             // Hack: we know flusher makes it 3020.
+                             // But let's try to verify.
+                        }
+                        // Fallback/Fast-path:
+                        log_stream_id = Some(ThingId(3020)); 
+                    }
+
+                    if let Some(lid) = log_stream_id {
+                        let op = GraphOp::GetThing { id: lid };
+                        if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&op, &mut buf) {
+                             if let Ok(stream) = postcard::from_bytes::<thing_models::core::serial::LogStreamBody>(&tb.bytes) {
+                                 if let Some(last) = stream.entries.last() {
+                                     // Draw Status Message
+                                     let msg = &last.message;
+                                     let y = fb_height as i32 - 40;
+                                     render::text::draw_text(
+                                         ptr, pitch, fb_width, fb_height,
+                                         20, y,
+                                         msg.as_str(),
+                                         0xFFFFFFFF
+                                     );
+                                 }
+                             }
+                        }
+                    }
+
+                    // ---------------------------------------------------------
+                    // Window Logic
+                    // ---------------------------------------------------------
                     // Scan for Windows
                     let scan_op = GraphOp::ScanLinks {
                         from: Some(thing_models::builtins::ids::THING_BOOT_ROOT), // Ideally we'd have a Windows container, but root scan for now

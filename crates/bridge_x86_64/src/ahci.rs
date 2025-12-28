@@ -319,7 +319,8 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
         }
         yield_fn();
     };
-    {
+
+    // We hold the lock for the duraction of the command to prevent concurrency issues with ATAPI
         let slots = port.ci | port.sact;
         let mut found = None;
         for i in 0..32 {
@@ -410,7 +411,7 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             bridge.log("AHCI: No free slots!\n");
             return false;
         }
-    } // Unlock
+    // } // Unlock (Scope removed to hold lock)
       // Note: If we return false inside the block, guard is dropped correctly.
 
     // 6. Spin Wait (Yielding)

@@ -309,9 +309,9 @@ fn page_fault_hook_impl(
                                               core::ptr::write_bytes(virt.as_mut_ptr::<u8>(), 0, 4096);
                                          }
                                          map_to.flush();
-                                         k.bridge.log("PF: Demand Alloc ");
-                                         print_hex(&k.bridge, fault_addr);
-                                         k.bridge.log("\n");
+                                        //  k.bridge.log("PF: Demand Alloc ");
+                                        //  print_hex(&k.bridge, fault_addr);
+                                        //  k.bridge.log("\n");
                                          return true; 
                                      }
                                  }

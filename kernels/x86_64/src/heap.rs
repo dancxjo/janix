@@ -7,7 +7,7 @@ use linked_list_allocator::LockedHeap;
 
 // ===== CONFIG =====
 // Keep this modest for bring-up. Increase later when paging/mem map is real.
-pub const KERNEL_HEAP_SIZE_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
+pub const KERNEL_HEAP_SIZE_BYTES: usize = 256 * 1024 * 1024; // 256 MiB
 
 #[global_allocator]
 static KERNEL_ALLOCATOR: LockedHeap = LockedHeap::empty();

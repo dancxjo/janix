@@ -130,6 +130,10 @@ pub fn syscall_dispatch<B: HardwareBridge>(
                 Err(e) => e,
             }
         }
+        SYSCALL_SPAWN => {
+             // Handled by Arch Hook
+             -1
+        }
         _ => -1,
     }
 }

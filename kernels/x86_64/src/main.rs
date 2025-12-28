@@ -333,14 +333,65 @@ fn page_fault_hook_impl(
 
 fn syscall_hook(
     num: usize,
-    a1: usize,
-    a2: usize,
-    a3: usize,
-    a4: usize,
+    a1: usize, // data_ptr
+    a2: usize, // data_len
+    a3: usize, // name_ptr
+    a4: usize, // name_len
     a5: usize,
     a6: usize,
 ) -> isize {
-    // We need lock.
+    use abi::syscall_defs::SYSCALL_SPAWN;
+
+    // Intercept SYSCALL_SPAWN
+    if num == SYSCALL_SPAWN {
+         let data_ptr = a1 as *const u8;
+         let data_len = a2;
+         let name_ptr = a3 as *const u8;
+         let name_len = a4;
+         
+         if data_ptr as usize == 0 || data_len == 0 { return -1; }
+         
+         // Safety: We assume user passed valid mapped pointers.
+         // Since we are in the same address space (kernel high/user low with user pages accessible),
+         // we can just read them. 
+         // TODO: Validate user pointers against user memory range.
+         
+         let data = unsafe { core::slice::from_raw_parts(data_ptr, data_len) };
+         
+         let name = if name_ptr as usize != 0 && name_len > 0 {
+             let name_bytes = unsafe { core::slice::from_raw_parts(name_ptr, name_len) };
+             core::str::from_utf8(name_bytes).unwrap_or("unknown")
+         } else {
+             "unknown"
+         };
+         
+         if let Some(mut guard) = KERNEL.try_lock() {
+             if let Some(k) = (*guard).as_mut() {
+                 use limine_local::requests::HHDM_REQUEST;
+                 use hw::HardwareBridge;
+
+                 // k.bridge.log("SYSCALL SPAWN: ");
+                 // k.bridge.log(name);
+                 // k.bridge.log("\n");
+
+                 let hhdm_offset_u64 = HHDM_REQUEST.get_response().unwrap().offset();
+                 
+                 unsafe {
+                     process_file(
+                         k, 
+                         None, 
+                         name,
+                         data,
+                         0, 
+                         None, // Not force, rely on defaults
+                         hhdm_offset_u64
+                     );
+                 }
+                 return 0;
+             }
+         }
+         return -1;
+    }
 
     loop {
         if let Some(mut guard) = KERNEL.try_lock() {
@@ -538,8 +589,7 @@ pub extern "C" fn rust_main() -> ! {
             }
         }
 
-        spawn_compositor(&mut k);
-        spawn_drivers(&mut k);
+        spawn_loaded(&mut k);
         spawn_kernel_init_task(&mut k);
 
         bridge_x86_64::set_tick_hook(scheduler_tick);
@@ -558,7 +608,7 @@ pub extern "C" fn rust_main() -> ! {
 }
 
 
-unsafe fn spawn_compositor(k: &mut Kernel<Bridge>) {
+unsafe fn spawn_loaded(k: &mut Kernel<Bridge>) {
     use limine_local::requests::MODULE_REQUEST;
     use hw::HardwareBridge;
     
@@ -566,8 +616,8 @@ unsafe fn spawn_compositor(k: &mut Kernel<Bridge>) {
         let resp: &limine::response::ModuleResponse = resp;
         for module in resp.modules() {
              let path = module.path().to_str().unwrap_or("?");
-             if path.ends_with("compositor.elf") {
-                 k.bridge.log("BOOT: Spawning Compositor...\n");
+             if path.ends_with("loaded.elf") {
+                 k.bridge.log("BOOT: Spawning loaded...\n");
                  
                  use limine_local::requests::HHDM_REQUEST;
                  let hhdm_offset = HHDM_REQUEST.get_response().unwrap().offset();
@@ -577,7 +627,7 @@ unsafe fn spawn_compositor(k: &mut Kernel<Bridge>) {
                  process_file(
                      k, 
                      None, 
-                     "compositor.elf",
+                     "loaded.elf",
                      data,
                      0, 
                      None,
@@ -587,44 +637,7 @@ unsafe fn spawn_compositor(k: &mut Kernel<Bridge>) {
              }
         }
     }
-    k.bridge.log("BOOT: WARNING: Compositor not found!\n");
-}
-
-unsafe fn spawn_drivers(k: &mut Kernel<Bridge>) {
-    use limine_local::requests::MODULE_REQUEST;
-    use hw::HardwareBridge;
-    
-    if let Some(resp) = MODULE_REQUEST.get_response() {
-        let resp: &limine::response::ModuleResponse = resp;
-        for module in resp.modules() {
-             let path = module.path().to_str().unwrap_or("?");
-             // Heuristic: If it's in /boot/drivers or starts with ps2_, spawn it.
-             // Also strictly check for .elf extension to avoid spawning assets as executables accidentally.
-             let is_driver = (path.contains("/drivers/") || path.contains("ps2_")) && path.ends_with(".elf");
-             
-             if is_driver {
-                 k.bridge.log("BOOT: Spawning Driver: ");
-                 k.bridge.log(path);
-                 k.bridge.log("\n");
-                 
-                 use limine_local::requests::HHDM_REQUEST;
-                 let hhdm_offset = HHDM_REQUEST.get_response().unwrap().offset();
-                 
-                 let data = core::slice::from_raw_parts(module.addr() as *const u8, module.size() as usize);
-                 let name = path.rsplit('/').next().unwrap_or(path);
-
-                 process_file(
-                     k, 
-                     None, 
-                     name,
-                     data,
-                     0, 
-                     Some(true), // Force spawn
-                     hhdm_offset
-                 );
-             }
-        }
-    }
+    k.bridge.log("BOOT: WARNING: loaded.elf not found!\n");
 }
 
 unsafe fn spawn_kernel_init_task(k: &mut Kernel<Bridge>) {

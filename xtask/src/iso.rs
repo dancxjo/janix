@@ -54,6 +54,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         "input_service",
         "fb_smoke",
         "compositor",
+        "loaded",
     ];
 
     // Check if ps2_mouse exists in user/drivers (it does)
@@ -226,7 +227,10 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     let conf_src = root.join("kernels/limine.conf");
     let mut conf_data = fs::read_to_string(&conf_src)?;
 
-    // Generate Module List
+    // Generate Module List (Only loaded.elf)
+    let module_lines = "    module_path: boot():/boot/apps/loaded.elf\n".to_string();
+
+    /*
     let mut module_lines = String::new();
     for app in &user_apps {
         if driver_names.contains(app) {
@@ -242,6 +246,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         let line = format!("    module_path: boot():/boot/{}\n", mod_path);
         module_lines.push_str(&line);
     }
+    */
 
     if let Some(cmd) = cmdline {
         let needle = "kernel_path: boot():/boot/kernel";

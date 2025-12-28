@@ -416,11 +416,8 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     }
 
     // 4. Drivers
-    // Drivers are now loaded as modules by Limine (see xtask/src/iso.rs).
-    // The kernel main.rs processes modules early.
-    // We do NOT scan /boot/drivers here to avoid duplicate loading/spawning.
-
-    /*
+    // Drivers are NOT loaded as modules anymore (only loaded.elf is).
+    // So we MUST scan /boot/drivers here.
     let drv_entries = iso.read_dir("/boot/drivers").unwrap_or_default();
     Bridge.log("loader: Spawning driver loaders...\n");
     for entry in drv_entries {
@@ -430,14 +427,19 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
          let should_run = if let Some(wl) = &whitelist {
              wl.contains(&entry.name)
          } else {
-             false
+             false // Drivers should not be auto-spawned by loader?
+                   // Wait, if loaded app spawns them, loader shouldn't spawn them as processes.
+                   // But loader MUST create the Things in the graph.
+                   // file_loader_task does both: creates thing AND spawns if should_spawn is true.
+                   // loaded app will spawn them via syscall.
+                   // So here should_run should be FALSE.
          };
 
          let path = alloc::format!("/boot/drivers/{}", entry.name);
          let f_args = FileArgs {
             iso: iso.clone(),
             path,
-            dir_id: Some(drivers_dir_id),
+            dir_id: Some(_drivers_dir_id),
             should_spawn: should_run,
             hhdm,
         };
@@ -457,12 +459,12 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
                 "driver_loader",
                 file_loader_task as usize as u64,
                 stack_top,
-                args_ptr
+                args_ptr,
+                0, 0
             );
           } // drop lock
           // file_loader_task(args_ptr);
     }
-    */
 
     // 4.5 Assets (Cursors, Icons)
     let asset_dirs = [("/boot/cursors", cursors_dir_id), ("/boot/icons", icons_dir_id)];

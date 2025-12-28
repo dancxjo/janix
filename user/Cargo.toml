@@ -17,6 +17,7 @@ members = [
   "apps/fb_smoke",
   "services/input_service",
   "apps/compositor",
+  "apps/loaded",
 ]
 
 

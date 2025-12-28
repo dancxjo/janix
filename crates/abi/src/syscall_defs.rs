@@ -20,3 +20,6 @@ pub const SYSCALL_SLEEP: usize = 12;
 
 // Time
 pub const SYSCALL_RTC_READ: usize = 300;
+
+// Process
+pub const SYSCALL_SPAWN: usize = 20;

@@ -14,9 +14,10 @@ use kernel::fs::iso9660::{BlockReader, Iso9660Reader};
 use kernel::Kernel;
 use models::value::ThingBody;
 use x86_64::structures::paging::{
-    FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
-    Translate,
+    FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
+    Size2MiB, Size4KiB, Translate,
 };
+use x86_64::structures::paging::mapper::TranslateError;
 use x86_64::VirtAddr;
 
 // --- SHARED STRUCTS ---
@@ -797,6 +798,47 @@ pub fn process_file(
                  }
             };
             let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
+            let table = &mut *page_table_ptr;
+            
+            // Fix: Limine might have mapped P4[0] (Identity) with NX.
+            // User Space (0x2000_0000) is in P4[0] -> P3[0].
+            // We must clear NX to allow executing user code.
+            if !table[0].is_unused() {
+                 // Clear NX
+                 let flags = table[0].flags();
+                 unsafe {
+                    let s = alloc::format!("loader: PML4[0] Flags: {:?}\n", flags);
+                    Bridge.log(&s);
+                 }
+                 
+                 if flags.contains(PageTableFlags::NO_EXECUTE) {
+                     unsafe { Bridge.log("loader: Clearing NX from PML4[0]\n"); }
+                     table[0].set_flags(flags & !PageTableFlags::NO_EXECUTE);
+                 }
+
+                 // Check P3[0]
+                 let p3_phys = table[0].addr();
+                 let p3_virt = hhdm_offset.as_u64().wrapping_add(p3_phys.as_u64());
+                 if let Ok(p3_virt_addr) = VirtAddr::try_new(p3_virt) {
+                     let p3_ptr: *mut PageTable = p3_virt_addr.as_mut_ptr();
+                     let p3 = &mut *p3_ptr;
+                     if !p3[0].is_unused() {
+                         let f3 = p3[0].flags();
+                         unsafe {
+                            let s = alloc::format!("loader: PDP[0] Flags: {:?}\n", f3);
+                            Bridge.log(&s);
+                         }
+
+                         if f3.contains(PageTableFlags::NO_EXECUTE) {
+                             unsafe { Bridge.log("loader: Clearing NX from PDP[0]\n"); }
+                             p3[0].set_flags(f3 & !PageTableFlags::NO_EXECUTE);
+                         }
+                     }
+                 }
+                 
+                 x86_64::instructions::tlb::flush_all();
+            }
+            
             OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
         };
 
@@ -869,7 +911,41 @@ pub fn process_file(
             for page in Page::range_inclusive(start_page, end_page) {
                 // Map Frame
                 let page_start_virt = page.start_address();
-                if mapper.translate_addr(page_start_virt).is_none() {
+                let mut needs_alloc = true;
+                let mut needs_copy = true;
+
+                match mapper.translate_page(page) {
+                    Ok(_) => {
+                         // Already mapped 4KB. Ensure flags.
+                         let new_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                         unsafe {
+                             if let Ok(flush) = mapper.update_flags(page, new_flags) {
+                                 flush.flush();
+                             }
+                         }
+                         needs_alloc = false;
+                    }
+                    Err(TranslateError::ParentEntryHugePage) => {
+                         // Existing Huge Page. Unmap it.
+                         let huge_page = Page::<Size2MiB>::containing_address(page_start_virt);
+                         unsafe {
+                            if let Ok((_phys, flush)) = mapper.unmap(huge_page) {
+                                flush.flush();
+                                Bridge.log("loader: Unmapped conflicting Huge Page\n");
+                            }
+                         }
+                         // needs_alloc = true
+                    }
+                    Err(TranslateError::PageNotMapped) => {
+                        // needs_alloc = true
+                    }
+                    Err(_) => {
+                         unsafe { Bridge.log("loader: Translate Error!\n"); }
+                         return;
+                    }
+                }
+
+                if needs_alloc {
                     let frame = frame_allocator.allocate_frame().expect("No frames");
                     let flags = PageTableFlags::PRESENT
                         | PageTableFlags::WRITABLE
@@ -913,8 +989,19 @@ pub fn process_file(
         });
 
         Bridge.log("loader: load_elf success check\n");
-
+        
         if let Some(img) = loaded {
+            unsafe {
+                use x86_64::structures::paging::Translate;
+                use x86_64::structures::paging::mapper::TranslateResult;
+                let entry_virt = VirtAddr::new(current_app_base + img.entry_point);
+                if let TranslateResult::Mapped { flags, .. } = mapper.translate(entry_virt) {
+                     let s = alloc::format!("loader: Entry Point {:#x} Flags: {:?}\n", entry_virt.as_u64(), flags);
+                     Bridge.log(&s);
+                } else {
+                     Bridge.log("loader: Entry Point NOT MAPPED!\n");
+                }
+            }
             Bridge.log("loader: setting up stack\n");
             // Stack and Heap (Simplified alloc)
             let raw_stack_bottom = current_app_base + 0x0800_0000;

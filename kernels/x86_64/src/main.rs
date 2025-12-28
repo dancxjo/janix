@@ -504,12 +504,8 @@ pub extern "C" fn rust_main() -> ! {
         }
         // -----------------------------------------------------------------
 
-        let fb = publish_framebuffer(&mut k);
-        let cursor = ingest_bitmaps(&mut k);
-        if let (Some(f), Some(c)) = (fb, cursor) {
-            k.bridge.log("BOOT: Initializing Cursor...\n");
-            kernel_core::graph::cursor::init(&f, &c);
-        }
+        publish_framebuffer(&mut k);
+        ingest_bitmaps(&mut k);
         spawn_compositor(&mut k);
         spawn_kernel_init_task(&mut k);
 
@@ -528,7 +524,7 @@ pub extern "C" fn rust_main() -> ! {
     }
 }
 
-unsafe fn publish_framebuffer(k: &mut Kernel<Bridge>) -> Option<thing_models::builtins::core_kinds::DisplayFramebufferBody> {
+unsafe fn publish_framebuffer(k: &mut Kernel<Bridge>) {
     use hw::HardwareBridge;
     use limine_local::requests::{FRAMEBUFFER_REQUEST, HHDM_REQUEST};
     use thing_models::builtins::ids::{THING_DISPLAY_FRAMEBUFFER_KIND, THING_HAS_DEVICE_KIND, THING_BOOT_ROOT};
@@ -549,8 +545,6 @@ unsafe fn publish_framebuffer(k: &mut Kernel<Bridge>) -> Option<thing_models::bu
                  format: 32, 
                  address: user_virt_addr,
             };
-
-            let ret_body = fb_body.clone();
 
             let bytes = postcard::to_allocvec(&fb_body).unwrap();
             let tb = ThingBody::from(&TypedBytes {
@@ -574,11 +568,8 @@ unsafe fn publish_framebuffer(k: &mut Kernel<Bridge>) -> Option<thing_models::bu
                  bytes: postcard::to_allocvec(&link).unwrap()
             }).unwrap();
             k.graph.create_thing(THING_LINK_KIND, lb);
-
-            return Some(ret_body);
         }
     }
-    None
 }
 
 unsafe fn spawn_compositor(k: &mut Kernel<Bridge>) {
@@ -777,7 +768,7 @@ unsafe fn u_sleep(count: u64) {
     }
 }
 
-unsafe fn ingest_bitmaps(k: &mut Kernel<Bridge>) -> Option<thing_models::schema::bitmap::BitmapBody> {
+unsafe fn ingest_bitmaps(k: &mut Kernel<Bridge>) {
     use limine_local::requests::MODULE_REQUEST;
     use hw::HardwareBridge;
     use thing_models::builtins::ids::{THING_BITMAP_KIND, THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_LINK_KIND};
@@ -785,8 +776,6 @@ unsafe fn ingest_bitmaps(k: &mut Kernel<Bridge>) -> Option<thing_models::schema:
     use thing_models::value::ThingBody;
     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
     use thing_models::link::LinkBody;
-
-    let mut cursor: Option<BitmapBody> = None;
 
     if let Some(resp) = MODULE_REQUEST.get_response() {
         for module in resp.modules() {
@@ -799,9 +788,6 @@ unsafe fn ingest_bitmaps(k: &mut Kernel<Bridge>) -> Option<thing_models::schema:
                  let data = core::slice::from_raw_parts(module.addr() as *const u8, module.size() as usize);
 
                  if let Some(bitmap) = parse_bmp(data) {
-                     if path.ends_with("cursor.bmp") {
-                         cursor = Some(bitmap.clone());
-                     }
                      let bytes = postcard::to_allocvec(&bitmap).unwrap();
                      let tb = ThingBody::from(&TypedBytes {
                          type_id: TypeId(THING_BITMAP_KIND.0 as u128),
@@ -829,7 +815,6 @@ unsafe fn ingest_bitmaps(k: &mut Kernel<Bridge>) -> Option<thing_models::schema:
              }
         }
     }
-    cursor
 }
 
 fn parse_bmp(data: &[u8]) -> Option<thing_models::schema::bitmap::BitmapBody> {

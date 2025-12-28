@@ -103,6 +103,14 @@ impl GraphStore {
         self.things.values()
     }
 
+    pub fn iter_kind(&self, kind: ThingId) -> impl Iterator<Item = &Thing> {
+        self.kind_index
+            .get(&kind)
+            .into_iter()
+            .flat_map(|ids| ids.iter())
+            .filter_map(|id| self.things.get(id))
+    }
+
     pub fn next_thing_of_kind(&self, kind: ThingId, start_after: ThingId) -> Option<ThingId> {
         if let Some(list) = self.kind_index.get(&kind) {
             let idx = match list.binary_search(&start_after) {

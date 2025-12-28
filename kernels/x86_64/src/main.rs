@@ -6,11 +6,15 @@ extern crate alloc;
 
 #[cfg(target_os = "thingos")]
 mod early_log;
+pub mod font;
+pub mod framebuffer;
 #[cfg(target_os = "thingos")]
 mod heap;
 #[cfg(target_os = "thingos")]
-mod limine_local;
 mod memory_intrinsics;
+
+#[cfg(target_os = "thingos")]
+pub(crate) mod limine_local;
 
 use bridge_x86_64::Bridge;
 use core::arch::naked_asm;
@@ -111,6 +115,8 @@ fn print_hex(bridge: &Bridge, val: u64) {
     }
 }
 
+pub const HEAP_SIZE: usize = 128 * 1024 * 1024;
+
 const BOOT_STACK_SIZE: usize = 65536;
 
 #[repr(align(16))]
@@ -149,10 +155,8 @@ use abi::ThingId;
 use models as thing_models;
 use spin::Mutex;
 
-
 pub mod loader;
-use loader::{ScanArgs, process_file, scan_boot_fs_task};
-
+use loader::{process_file, scan_boot_fs_task, ScanArgs};
 
 static KERNEL: Mutex<Option<Kernel<Bridge>>> = Mutex::new(None);
 use core::sync::atomic::AtomicU64;
@@ -296,6 +300,11 @@ pub extern "C" fn rust_main() -> ! {
     unsafe {
         use hw::HardwareBridge;
         let bridge = Bridge;
+        framebuffer::fill_framebuffer_progress(
+            framebuffer::BOOT_DOMINANT_COLOR,
+            0.1,
+            Some("Booting ThingOS..."),
+        );
         bridge.log("Booting ThingOS...\n");
 
         let info =
@@ -338,6 +347,11 @@ pub extern "C" fn rust_main() -> ! {
         Bridge.log("\n");
 
         Bridge::init(rsdp_addr, hhdm_offset_u64);
+        framebuffer::fill_framebuffer_progress(
+            framebuffer::BOOT_DOMINANT_COLOR,
+            0.25,
+            Some("Heap & Bridge Init"),
+        );
     }
 
     #[cfg(target_os = "thingos")]
@@ -590,6 +604,11 @@ pub extern "C" fn rust_main() -> ! {
                 };
                 k.graph.insert_seed(boot_root);
             }
+            framebuffer::fill_framebuffer_progress(
+                framebuffer::BOOT_DOMINANT_COLOR,
+                0.4,
+                Some("Graph Seeded"),
+            );
 
             k.bridge.log("THINGOS: graph seeded\n");
 
@@ -645,6 +664,12 @@ pub extern "C" fn rust_main() -> ! {
                 k.bridge.log(":");
                 print_hex(&Bridge, dev.device_id as u64);
                 k.bridge.log("\n");
+
+                framebuffer::fill_framebuffer_progress(
+                    framebuffer::BOOT_DOMINANT_COLOR,
+                    0.6,
+                    Some("PCI Scanned"),
+                );
 
                 // Check for AHCI (Mass Storage (01), SATA (06), AHCI (01))
                 if dev.class_id == 0x01 && dev.subclass_id == 0x06 && dev.prog_if == 0x01 {
@@ -702,58 +727,112 @@ pub extern "C" fn rust_main() -> ! {
 
         // --- FRAMEBUFFER PUBLICATION ---
         {
-             use limine_local::requests::FRAMEBUFFER_REQUEST;
-             if let Some(resp) = FRAMEBUFFER_REQUEST.get_response() {
-                 if let Some(fb) = resp.framebuffers().next() {
-                     k.bridge.log("FRAMEBUFFER: Publishing DisplayFramebuffer...\n");
-                     
-                     // Schema: DisplayFramebuffer { width, height, pitch, format, address }
-                     // We need to define the struct body or use a generic Map/Struct if schema allows.
-                     // The Types are not defined in `models` yet?
-                     // We need to verify `models/src/lib.rs` or define a local struct.
-                     // For now, let's assume we can define a struct here or use a dynamic one?
-                     // Postcard requires a defined struct.
-                     
-                     use thing_models::builtins::core_kinds::DisplayFramebufferBody;
-                     
-                     let kind_id = thing_models::builtins::ids::THING_DISPLAY_FRAMEBUFFER_KIND;
-                     
-                     let body = DisplayFramebufferBody {
-                         width: fb.width(),
-                         height: fb.height(),
-                         pitch: fb.pitch(),
-                         format: 32, // BGRA typically
-                         address: 0x1_0000_0000, 
-                     };
-                     
-                     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
-                     use thing_models::value::ThingBody;
-                     
-                     let tb = ThingBody::from(&TypedBytes {
-                         type_id: TypeId(kind_id.0 as u128),
-                         codec_id: CodecId::POSTCARD,
-                         bytes: postcard::to_allocvec(&body).unwrap(),
-                     }).unwrap();
-                     
-                     let fb_id = k.graph.create_thing(kind_id, tb);
-                     
-                     // Link Root -> Framebuffer? Or Display -> Framebuffer?
-                     // Root -> DisplayFramebuffer
-                     let l = thing_models::link::LinkBody {
-                         from: thing_models::builtins::ids::THING_BOOT_ROOT,
-                         to: fb_id,
-                         predicate: thing_models::builtins::ids::THING_HAS_DEVICE_KIND,
-                     };
-                     let lbs = ThingBody::from(&TypedBytes {
-                         type_id: TypeId(thing_models::builtins::ids::THING_LINK_KIND.0 as u128),
-                         codec_id: CodecId::POSTCARD,
-                         bytes: postcard::to_allocvec(&l).unwrap(),
-                     }).unwrap();
-                     k.graph.create_thing(thing_models::builtins::ids::THING_LINK_KIND, lbs);
-                     
-                     k.bridge.log("FRAMEBUFFER: Published.\n");
-                 }
-             }
+            use limine_local::requests::FRAMEBUFFER_REQUEST;
+            if let Some(resp) = FRAMEBUFFER_REQUEST.get_response() {
+                if let Some(fb) = resp.framebuffers().next() {
+                    k.bridge
+                        .log("FRAMEBUFFER: Publishing DisplayFramebuffer...\n");
+
+                    // Schema: DisplayFramebuffer { width, height, pitch, format, address }
+                    // We need to define the struct body or use a generic Map/Struct if schema allows.
+                    // The Types are not defined in `models` yet?
+                    // We need to verify `models/src/lib.rs` or define a local struct.
+                    // For now, let's assume we can define a struct here or use a dynamic one?
+                    // Postcard requires a defined struct.
+
+                    use thing_models::builtins::core_kinds::DisplayFramebufferBody;
+
+                    let kind_id = thing_models::builtins::ids::THING_DISPLAY_FRAMEBUFFER_KIND;
+
+                    let fb_virt_raw = fb.addr() as u64;
+                    let phys_addr = mapper
+                        .translate_addr(VirtAddr::new(fb_virt_raw))
+                        .expect("Framebuffer not mapped in kernel")
+                        .as_u64();
+
+                    let virt_addr = 0x1_0000_0000; // 4GB Base
+                    let size = (fb.pitch() * fb.height()) as u64;
+
+                    k.bridge.log("FRAMEBUFFER: Mapping Phys ");
+                    print_hex(&Bridge, phys_addr);
+                    k.bridge.log(" -> Virt ");
+                    print_hex(&Bridge, virt_addr);
+                    k.bridge.log("\n");
+
+                    // Manual mapping to handle Virtual Address != HHDM
+                    {
+                        use x86_64::structures::paging::PageTableFlags as Flags;
+                        let start_frame =
+                            PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(phys_addr));
+                        let end_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(
+                            phys_addr + size - 1,
+                        ));
+
+                        let start_page =
+                            Page::<Size4KiB>::containing_address(VirtAddr::new(virt_addr));
+
+                        let mut page_iter = Page::range_inclusive(
+                            start_page,
+                            start_page + (end_frame - start_frame),
+                        );
+
+                        for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
+                            let page = page_iter.next().unwrap();
+                            unsafe {
+                                if let Ok(map_to) = mapper.map_to(
+                                    page,
+                                    frame,
+                                    Flags::PRESENT
+                                        | Flags::WRITABLE
+                                        | Flags::USER_ACCESSIBLE
+                                        | Flags::NO_CACHE,
+                                    &mut frame_allocator,
+                                ) {
+                                    map_to.flush();
+                                }
+                            }
+                        }
+                    }
+
+                    let body = DisplayFramebufferBody {
+                        width: fb.width(),
+                        height: fb.height(),
+                        pitch: fb.pitch(),
+                        format: 32, // BGRA typically
+                        address: virt_addr,
+                    };
+
+                    use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+                    use thing_models::value::ThingBody;
+
+                    let tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(kind_id.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&body).unwrap(),
+                    })
+                    .unwrap();
+
+                    let fb_id = k.graph.create_thing(kind_id, tb);
+
+                    // Link Root -> Framebuffer? Or Display -> Framebuffer?
+                    // Root -> DisplayFramebuffer
+                    let l = thing_models::link::LinkBody {
+                        from: thing_models::builtins::ids::THING_BOOT_ROOT,
+                        to: fb_id,
+                        predicate: thing_models::builtins::ids::THING_HAS_DEVICE_KIND,
+                    };
+                    let lbs = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(thing_models::builtins::ids::THING_LINK_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&l).unwrap(),
+                    })
+                    .unwrap();
+                    k.graph
+                        .create_thing(thing_models::builtins::ids::THING_LINK_KIND, lbs);
+
+                    k.bridge.log("FRAMEBUFFER: Published.\n");
+                }
+            }
         }
 
         // --- CMDLINE PARSING (Rudimentary) ---
@@ -779,31 +858,31 @@ pub extern "C" fn rust_main() -> ! {
         let _ = boot_fs_device;
         // --- FILESYSTEM SCANNING ---
         // --- THREADED BOOT LAUNCH ---
-        
+
         // 1. Publish Kernel & Enable Interrupts Early
         // This allows tasks to be spawned and run immediately.
         {
-             bridge_x86_64::set_tick_hook(scheduler_tick);
-             bridge_x86_64::interrupts::syscall::set_syscall_hook(syscall_hook);
-             *KERNEL.lock() = Some(k);
-             
-             use hw::HardwareBridge;
-             let bridge = Bridge;
-             // bridge.log("BRIDGE: enabling interrupts (threaded-boot)...\n");
-             // x86_64::instructions::interrupts::enable(); // Moved to end
+            bridge_x86_64::set_tick_hook(scheduler_tick);
+            bridge_x86_64::interrupts::syscall::set_syscall_hook(syscall_hook);
+            *KERNEL.lock() = Some(k);
+
+            use hw::HardwareBridge;
+            let bridge = Bridge;
+            // bridge.log("BRIDGE: enabling interrupts (threaded-boot)...\n");
+            // x86_64::instructions::interrupts::enable(); // Moved to end
         }
-        
+
         // 2. Spawn Boot Scanner (Async)
         // DEFERRED: Bootfs scanning is disabled in favor of direct module loading.
         /*
         if let Some((base, port)) = boot_fs_device {
              use alloc::boxed::Box;
-             let args = ScanArgs { 
+             let args = ScanArgs {
                 base, // HBA Base
                 port, // Port Index
-                hhdm: hhdm_offset_u64 
+                hhdm: hhdm_offset_u64
              };
-             
+
              let args_box = Box::new(args);
              let args_ptr = Box::into_raw(args_box) as u64;
 
@@ -813,120 +892,129 @@ pub extern "C" fn rust_main() -> ! {
              // Subtract 8 to satisfy System V ABI (stack = 8 mod 16 at entry)
              let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
              // We intentionally leak this memory (no counterpart dealloc yet)
-             
+
              let mut k_lock = KERNEL.lock();
              if let Some(k) = k_lock.as_mut() {
                   k.scheduler.spawn(&k.bridge, "boot_scanner", scan_boot_fs_task as u64 as u64, stack_top, args_ptr);
              }
         }
         */
-        
+
         // 3. Load Ramdisk Modules (Synchronous fallback)
         {
-             use limine_local::requests::MODULE_REQUEST;
-             if let Some(resp) = MODULE_REQUEST.get_response() {
-                 let mut guard = KERNEL.lock();
-                 if let Some(k) = guard.as_mut() {
-                     // --- Synthesize Directory Structure ---
-                     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
-                     use thing_models::builtins::ids::*;
-                     use thing_models::core::fs::{DirBody, MountBody};
-                     use thing_models::value::ThingBody;
+            use limine_local::requests::MODULE_REQUEST;
+            if let Some(resp) = MODULE_REQUEST.get_response() {
+                let mut guard = KERNEL.lock();
+                if let Some(k) = guard.as_mut() {
+                    // --- Synthesize Directory Structure ---
+                    use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+                    use thing_models::builtins::ids::*;
+                    use thing_models::core::fs::{DirBody, MountBody};
+                    use thing_models::value::ThingBody;
 
-                     // 1. Mount "/boot"
-                     let m_body = MountBody {
-                         path: alloc::string::String::from("/boot"),
-                         readonly: true,
-                     };
-                     let m_tb = ThingBody::from(&TypedBytes {
-                         type_id: TypeId(THING_MOUNT_KIND.0 as u128),
-                         codec_id: CodecId::POSTCARD,
-                         bytes: postcard::to_allocvec(&m_body).unwrap(),
-                     }).unwrap();
-                     let m_id = k.graph.create_thing(THING_MOUNT_KIND, m_tb);
+                    // 1. Mount "/boot"
+                    let m_body = MountBody {
+                        path: alloc::string::String::from("/boot"),
+                        readonly: true,
+                    };
+                    let m_tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_MOUNT_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&m_body).unwrap(),
+                    })
+                    .unwrap();
+                    let m_id = k.graph.create_thing(THING_MOUNT_KIND, m_tb);
 
-                     // Link BootRoot -> Mount
-                     let l_root = thing_models::link::LinkBody {
-                         from: THING_BOOT_ROOT,
-                         to: m_id,
-                         predicate: THING_HAS_MOUNT_KIND,
-                     };
-                     let l_root_tb = ThingBody::from(&TypedBytes {
-                         type_id: TypeId(THING_LINK_KIND.0 as u128),
-                         codec_id: CodecId::POSTCARD,
-                         bytes: postcard::to_allocvec(&l_root).unwrap(),
-                     }).unwrap();
-                     k.graph.create_thing(THING_LINK_KIND, l_root_tb);
+                    // Link BootRoot -> Mount
+                    let l_root = thing_models::link::LinkBody {
+                        from: THING_BOOT_ROOT,
+                        to: m_id,
+                        predicate: THING_HAS_MOUNT_KIND,
+                    };
+                    let l_root_tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_LINK_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&l_root).unwrap(),
+                    })
+                    .unwrap();
+                    k.graph.create_thing(THING_LINK_KIND, l_root_tb);
 
-                     // 2. Root Dir "/boot"
-                     let d_body = DirBody {
-                         name: alloc::string::String::from("/boot"),
-                         lba: 0,
-                         size: 0,
-                         expanded: true,
-                     };
-                     let d_tb = ThingBody::from(&TypedBytes {
-                         type_id: TypeId(THING_DIR_KIND.0 as u128),
-                         codec_id: CodecId::POSTCARD,
-                         bytes: postcard::to_allocvec(&d_body).unwrap(),
-                     }).unwrap();
-                     let root_id = k.graph.create_thing(THING_DIR_KIND, d_tb);
+                    // 2. Root Dir "/boot"
+                    let d_body = DirBody {
+                        name: alloc::string::String::from("/boot"),
+                        lba: 0,
+                        size: 0,
+                        expanded: true,
+                    };
+                    let d_tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_DIR_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&d_body).unwrap(),
+                    })
+                    .unwrap();
+                    let root_id = k.graph.create_thing(THING_DIR_KIND, d_tb);
 
-                     // Link Mount -> Root Dir
-                     let l_mnt = thing_models::link::LinkBody {
-                         from: m_id,
-                         to: root_id,
-                         predicate: THING_MOUNTS_KIND,
-                     };
-                     let l_mnt_tb = ThingBody::from(&TypedBytes {
-                         type_id: TypeId(THING_LINK_KIND.0 as u128),
-                         codec_id: CodecId::POSTCARD,
-                         bytes: postcard::to_allocvec(&l_mnt).unwrap(),
-                     }).unwrap();
-                     k.graph.create_thing(THING_LINK_KIND, l_mnt_tb);
+                    // Link Mount -> Root Dir
+                    let l_mnt = thing_models::link::LinkBody {
+                        from: m_id,
+                        to: root_id,
+                        predicate: THING_MOUNTS_KIND,
+                    };
+                    let l_mnt_tb = ThingBody::from(&TypedBytes {
+                        type_id: TypeId(THING_LINK_KIND.0 as u128),
+                        codec_id: CodecId::POSTCARD,
+                        bytes: postcard::to_allocvec(&l_mnt).unwrap(),
+                    })
+                    .unwrap();
+                    k.graph.create_thing(THING_LINK_KIND, l_mnt_tb);
 
-                     let mut make_dir = |name: &str, parent: ThingId| {
-                         let body = DirBody {
-                             name: alloc::string::String::from(name),
-                             lba: 0,
-                             size: 0,
-                             expanded: false,
-                         };
-                         let tb = ThingBody::from(&TypedBytes {
-                             type_id: TypeId(THING_DIR_KIND.0 as u128),
-                             codec_id: CodecId::POSTCARD,
-                             bytes: postcard::to_allocvec(&body).unwrap(),
-                         }).unwrap();
-                         let did = k.graph.create_thing(THING_DIR_KIND, tb);
-                         let l = thing_models::link::LinkBody {
-                             from: parent,
-                             to: did,
-                             predicate: THING_HAS_ENTRY_KIND,
-                         };
-                         let l_tb = ThingBody::from(&TypedBytes {
-                             type_id: TypeId(THING_LINK_KIND.0 as u128),
-                             codec_id: CodecId::POSTCARD,
-                             bytes: postcard::to_allocvec(&l).unwrap(),
-                         }).unwrap();
-                         k.graph.create_thing(THING_LINK_KIND, l_tb);
-                         did
-                     };
+                    let mut make_dir = |name: &str, parent: ThingId| {
+                        let body = DirBody {
+                            name: alloc::string::String::from(name),
+                            lba: 0,
+                            size: 0,
+                            expanded: false,
+                        };
+                        let tb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_DIR_KIND.0 as u128),
+                            codec_id: CodecId::POSTCARD,
+                            bytes: postcard::to_allocvec(&body).unwrap(),
+                        })
+                        .unwrap();
+                        let did = k.graph.create_thing(THING_DIR_KIND, tb);
+                        let l = thing_models::link::LinkBody {
+                            from: parent,
+                            to: did,
+                            predicate: THING_HAS_ENTRY_KIND,
+                        };
+                        let l_tb = ThingBody::from(&TypedBytes {
+                            type_id: TypeId(THING_LINK_KIND.0 as u128),
+                            codec_id: CodecId::POSTCARD,
+                            bytes: postcard::to_allocvec(&l).unwrap(),
+                        })
+                        .unwrap();
+                        k.graph.create_thing(THING_LINK_KIND, l_tb);
+                        did
+                    };
 
-                     let apps_dir_id = make_dir("apps", root_id);
-                     let drivers_dir_id = make_dir("drivers", root_id);
-                     let fonts_dir_id = make_dir("fonts", root_id);
+                    let apps_dir_id = make_dir("apps", root_id);
+                    let drivers_dir_id = make_dir("drivers", root_id);
+                    let fonts_dir_id = make_dir("fonts", root_id);
 
-                     for (idx, module) in resp.modules().iter().enumerate() {
+                    for (idx, module) in resp.modules().iter().enumerate() {
                         let full_path = module.path().to_str().unwrap_or("unknown");
                         let name = full_path.rsplit('/').next().unwrap_or(full_path);
                         let base = module.addr();
                         let len = module.size() as usize;
                         let data = unsafe { slice::from_raw_parts(base, len) };
-                        
+
                         // Determine Parent
                         let parent_id = if name.ends_with(".ttf") {
                             Some(fonts_dir_id)
-                        } else if name.contains("driver") || name.contains("ps2_") || name.contains("rtc_") {
+                        } else if name.contains("driver")
+                            || name.contains("ps2_")
+                            || name.contains("rtc_")
+                        {
                             Some(drivers_dir_id)
                         } else if name.ends_with(".elf") {
                             Some(apps_dir_id)
@@ -935,21 +1023,28 @@ pub extern "C" fn rust_main() -> ! {
                         };
 
                         process_file(k, parent_id, name, data, idx, None, hhdm_offset_u64);
-                     }
-                 }
-             }
+                    }
+                }
+            }
+            framebuffer::fill_framebuffer_progress(
+                framebuffer::BOOT_DOMINANT_COLOR,
+                0.8,
+                Some("Modules Loaded"),
+            );
         }
 
         // 4. Enable Interrupts (Start Scheduler)
         {
             use hw::HardwareBridge;
+            framebuffer::fill_framebuffer_progress(
+                framebuffer::BOOT_DOMINANT_COLOR,
+                1.0,
+                Some("System Ready"),
+            );
             Bridge.log("BRIDGE: enabling interrupts (threaded-boot)...\n");
             x86_64::instructions::interrupts::enable();
         }
-
     } // End cfg(target_os="thingos") block
-
-
 
     loop {
         use hw::HardwareBridge;

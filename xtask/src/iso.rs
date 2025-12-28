@@ -59,6 +59,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         "cat_boot",
         "input_service",
         "fb_smoke",
+        "compositor",
     ];
 
     if env == "x86_64" {
@@ -151,9 +152,9 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
             .with_context(|| format!("Failed to copy app/driver {} from {:?}", app, app_bin))?;
 
         if is_driver {
-             init_whitelist.push(dest_name.clone());
+            init_whitelist.push(dest_name.clone());
         } else {
-             init_whitelist.push(dest_name);
+            init_whitelist.push(dest_name);
         }
     }
 
@@ -203,7 +204,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
             let line = format!("    module_path: boot():/boot/drivers/{}.elf\n", app);
             module_lines.push_str(&line);
         } else {
-            // It's an app, so it's in /boot/apps
+            // It's a regular app, so it's in /boot/apps
             let line = format!("    module_path: boot():/boot/apps/{}.elf\n", app);
             module_lines.push_str(&line);
         }
@@ -213,25 +214,22 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         module_lines.push_str(&line);
     }
 
-
-    
     // 1. Inject Cmdline (if any) to the first entry.
     if let Some(cmd) = cmdline {
         let needle = "kernel_path: boot():/boot/kernel";
         let insertion = format!("\n    cmdline: {}", cmd);
         conf_data = conf_data.replacen(needle, &format!("{}{}", needle, insertion), 1);
     }
-    
+
     // 2. Inject Modules to ALL entries
-    // The needle is still "kernel_path: boot():/boot/kernel" 
+    // The needle is still "kernel_path: boot():/boot/kernel"
     // (cmdline injection appended AFTER it, so the needle string is still present?)
     // Yes, 'replacen' replaced "needle" with "needle + insertion".
     // So "kernel_path..." is still there.
-    
+
     let needle = "kernel_path: boot():/boot/kernel";
     let with_modules = format!("{}\n{}", needle, module_lines);
     conf_data = conf_data.replace(needle, &with_modules);
-
 
     fs::write(limine_dest.join("limine.conf"), conf_data)?;
 

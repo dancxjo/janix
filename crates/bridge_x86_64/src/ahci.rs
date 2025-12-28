@@ -65,14 +65,38 @@ struct HbaMem {
 
 // Global locks for ports to allow concurrent slot allocation
 static PORT_LOCKS: [Mutex<()>; 32] = [
-    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
-    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
-    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
-    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
-    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
-    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
-    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
-    Mutex::new(()), Mutex::new(()), Mutex::new(()), Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
+    Mutex::new(()),
 ];
 
 // --- Driver Logic ---
@@ -313,16 +337,16 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             // This means setup must happen UNDER LOCK.
             // OR use a software bitmap if we want longer setup without lock.
             // We must hold the lock UNTIL we write CI to prevent race.
-            
+
             // 2. Alloc Command Table (4KB)
             let ct_layout = Layout::from_size_align(4096, 128).unwrap();
             let ct_ptr = alloc(ct_layout);
             if ct_ptr.is_null() {
-                 bridge.log("AHCI: Failed to alloc CT\n");
-                 return false;
+                bridge.log("AHCI: Failed to alloc CT\n");
+                return false;
             }
             core::ptr::write_bytes(ct_ptr, 0, 4096);
-            
+
             let ct_phys = (ct_ptr as u64) - hhdm;
 
             // 3. Setup Command Header (Slot 'slot')
@@ -342,10 +366,10 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             let table = &mut *(ct_virt as *mut HbaCmdTable);
 
             // FIS
-            table.cfis[0] = 0x27; 
-            table.cfis[1] = 0x80; 
-            table.cfis[2] = 0xA0; 
-            table.cfis[3] = 0x01; 
+            table.cfis[0] = 0x27;
+            table.cfis[1] = 0x80;
+            table.cfis[2] = 0xA0;
+            table.cfis[3] = 0x01;
 
             // ATAPI Packet
             table.acmd[0] = 0xA8;
@@ -355,7 +379,7 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             table.acmd[5] = lba as u8;
             table.acmd[4] = (lba >> 8) as u8;
             table.acmd[5] = lba as u8;
-            
+
             // Calculate sector count (rounding up, but caller should ideally align to 2048)
             let count: u32 = (buf.len() as u32 + 2047) / 2048;
             table.acmd[6] = (count >> 24) as u8;
@@ -364,11 +388,11 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             table.acmd[9] = count as u8;
 
             // PRDT
-            let buf_phys = (buf.as_ptr() as u64) - hhdm; 
+            let buf_phys = (buf.as_ptr() as u64) - hhdm;
             let entry = &mut table.prdt_entry[0];
             entry.dba = buf_phys as u32;
             entry.dbau = (buf_phys >> 32) as u32;
-            entry.dbc = (buf.len() as u32) - 1; 
+            entry.dbc = (buf.len() as u32) - 1;
             entry.rsv0 = 0;
 
             // 5. Issue Command
@@ -377,14 +401,14 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
             let mut ci = unsafe { core::ptr::read_volatile(ci_ptr) };
             ci |= 1 << slot;
             unsafe { core::ptr::write_volatile(ci_ptr, ci) };
-            
+
             // Now we can release lock! The slot is marked busy in HW.
         } else {
             bridge.log("AHCI: No free slots!\n");
             return false;
         }
     } // Unlock
-    // Note: If we return false inside the block, guard is dropped correctly.
+      // Note: If we return false inside the block, guard is dropped correctly.
 
     // 6. Spin Wait (Yielding)
     // Use u64::MAX to effectively disable timeout deallocation hazard.
@@ -394,19 +418,21 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
         let ci = unsafe { core::ptr::read_volatile(ci_ptr) };
         if (ci & (1 << slot)) == 0 {
             break;
-        } 
-        if (port.is & (1 << 30)) != 0 {
-             // bridge.log("AHCI: TFES Error\n");
-             break;
         }
-        
+        if (port.is & (1 << 30)) != 0 {
+            // bridge.log("AHCI: TFES Error\n");
+            break;
+        }
+
         timeout -= 1;
-        if timeout == 0 { break; }
-        
+        if timeout == 0 {
+            break;
+        }
+
         yield_fn();
         core::hint::spin_loop();
     }
-    
+
     // 7. Cleanup (Get lock to modify Header? No, Header is owned by HW/Us? CTBA is ours?)
     // We allocated CT. We must free it.
     // Use lock? No, slot is done (CI bit cleared). We own the slot cleanup.
@@ -418,7 +444,7 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
     let cl_slice = core::slice::from_raw_parts_mut(cl_virt as *mut HbaCmdHeader, 32);
     let header = &mut cl_slice[slot];
     let ct_phys = ((header.ctbau as u64) << 32) | (header.ctba as u64);
-    
+
     // Free CT
     let ct_ptr = (hhdm + ct_phys) as *mut u8;
     let ct_layout = Layout::from_size_align(4096, 128).unwrap();

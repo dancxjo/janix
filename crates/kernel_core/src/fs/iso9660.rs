@@ -1,6 +1,6 @@
+use alloc::alloc::{alloc, dealloc, Layout};
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::alloc::{alloc, dealloc, Layout};
 use core::ops::{Deref, DerefMut};
 
 const SECTOR_SIZE: usize = 2048;
@@ -185,7 +185,7 @@ impl<R: BlockReader> Iso9660Reader<R> {
 
     fn find_entry(&self, dir_lba: u32, dir_len: u32, name: &str) -> Option<DirEntry> {
         let num_sectors = (dir_len + SECTOR_SIZE as u32 - 1) / SECTOR_SIZE as u32;
-        
+
         let mut buf = AlignedBuffer::new(SECTOR_SIZE)?;
         let sector_buf = &mut buf[0..SECTOR_SIZE];
 
@@ -223,21 +223,15 @@ impl<R: BlockReader> Iso9660Reader<R> {
         None
     }
 
-    pub fn read(
-        &self,
-        handle: &FileHandle,
-        offset: usize,
-        len: usize,
-        out: &mut [u8],
-    ) -> usize {
+    pub fn read(&self, handle: &FileHandle, offset: usize, len: usize, out: &mut [u8]) -> usize {
         // limit to 4KB (1 page) to ensure physical contiguity for AHCI
         // (allocator only guarantees contiguity within a page)
         let chunk_size = 4096;
         let sectors_per_chunk = chunk_size / SECTOR_SIZE;
-        
+
         let start_sector_abs = offset / SECTOR_SIZE;
         let end_sector_abs = (offset + len + SECTOR_SIZE - 1) / SECTOR_SIZE;
-        
+
         // Use local AlignedBuffer
         let mut chunk_buf = match AlignedBuffer::new(chunk_size) {
             Some(b) => b,
@@ -252,44 +246,48 @@ impl<R: BlockReader> Iso9660Reader<R> {
             let remaining_sectors = end_sector_abs - current_sector;
             let sectors_to_read = core::cmp::min(remaining_sectors, sectors_per_chunk);
             let bytes_to_read = sectors_to_read * SECTOR_SIZE;
-            
+
             // Adjust buffer size for this read
             let current_buf = &mut chunk_buf[0..bytes_to_read];
-            
-            if !self.reader.read_sector(handle.lba + current_sector as u32, current_buf) {
-                 break;
+
+            if !self
+                .reader
+                .read_sector(handle.lba + current_sector as u32, current_buf)
+            {
+                break;
             }
-            
+
             // Copy relevant bytes to output
-             let _chunk_start_offset = current_sector * SECTOR_SIZE;
-             
-             for i in 0..sectors_to_read {
-                 let sector_idx = current_sector + i;
-                 let sector_file_offset = sector_idx * SECTOR_SIZE;
-                 
-                 let copy_start_in_sector = if sector_file_offset < offset {
-                     offset - sector_file_offset
-                 } else {
-                     0
-                 };
-                 
-                 let val_start = sector_file_offset + copy_start_in_sector;
-                 // How much to copy? Min(available in sector, remaining req)
-                 
-                 let available = SECTOR_SIZE - copy_start_in_sector;
-                 let need = len - read_len;
-                 let file_left = (handle.size as usize).saturating_sub(val_start);
-                 
-                 let copy = core::cmp::min(available, need);
-                 let copy = core::cmp::min(copy, file_left);
-                 
-                 if copy > 0 {
-                     let src_start = i * SECTOR_SIZE + copy_start_in_sector;
-                     out[read_len..read_len + copy].copy_from_slice(&current_buf[src_start..src_start + copy]);
-                     read_len += copy;
-                 }
-             }
-             
+            let _chunk_start_offset = current_sector * SECTOR_SIZE;
+
+            for i in 0..sectors_to_read {
+                let sector_idx = current_sector + i;
+                let sector_file_offset = sector_idx * SECTOR_SIZE;
+
+                let copy_start_in_sector = if sector_file_offset < offset {
+                    offset - sector_file_offset
+                } else {
+                    0
+                };
+
+                let val_start = sector_file_offset + copy_start_in_sector;
+                // How much to copy? Min(available in sector, remaining req)
+
+                let available = SECTOR_SIZE - copy_start_in_sector;
+                let need = len - read_len;
+                let file_left = (handle.size as usize).saturating_sub(val_start);
+
+                let copy = core::cmp::min(available, need);
+                let copy = core::cmp::min(copy, file_left);
+
+                if copy > 0 {
+                    let src_start = i * SECTOR_SIZE + copy_start_in_sector;
+                    out[read_len..read_len + copy]
+                        .copy_from_slice(&current_buf[src_start..src_start + copy]);
+                    read_len += copy;
+                }
+            }
+
             current_sector += sectors_to_read;
         }
         read_len
@@ -306,7 +304,7 @@ impl<R: BlockReader> Iso9660Reader<R> {
 
         let mut entries = Vec::new();
         let num_sectors = (dir_len + SECTOR_SIZE as u32 - 1) / SECTOR_SIZE as u32;
-        
+
         let mut buf = AlignedBuffer::new(SECTOR_SIZE)?;
         let sector_buf = &mut buf[0..SECTOR_SIZE];
 

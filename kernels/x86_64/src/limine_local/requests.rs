@@ -1,6 +1,6 @@
 use limine::request::{
-    HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker, StackSizeRequest,
-    FramebufferRequest,
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, RequestsEndMarker, RequestsStartMarker,
+    StackSizeRequest,
 };
 use limine::BaseRevision;
 

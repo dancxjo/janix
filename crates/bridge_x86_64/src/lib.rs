@@ -190,26 +190,26 @@ impl HardwareBridge for Bridge {
         ctx[15] = entry;
 
         // If entry is in higher half, use Kernel Segments. Else User.
-        let is_kernel = entry >= 0xFFFF_8000_0000_0000; 
+        let is_kernel = entry >= 0xFFFF_8000_0000_0000;
 
         if is_kernel {
-             // CS: Kernel Code
-             ctx[16] = unsafe { gdt::KERNEL_CODE_SELECTOR.0 as u64 }; 
-             // RFLAGS: Interrupts enabled (0x200). IOPL 0.
-             ctx[17] = 0x202;
-             // RSP
-             ctx[18] = stack;
-             // SS: Kernel Data
-             ctx[19] = unsafe { gdt::KERNEL_DATA_SELECTOR.0 as u64 };
+            // CS: Kernel Code
+            ctx[16] = unsafe { gdt::KERNEL_CODE_SELECTOR.0 as u64 };
+            // RFLAGS: Interrupts enabled (0x200). IOPL 0.
+            ctx[17] = 0x202;
+            // RSP
+            ctx[18] = stack;
+            // SS: Kernel Data
+            ctx[19] = unsafe { gdt::KERNEL_DATA_SELECTOR.0 as u64 };
         } else {
-             // CS: User Code (RPL 3)
-             ctx[16] = unsafe { gdt::USER_CODE_SELECTOR.0 as u64 | 3 };
-             // RFLAGS: Interrupts enabled (0x200). IOPL 3 (0x3000) -> 0x3202
-             ctx[17] = 0x3202;
-             // RSP
-             ctx[18] = stack;
-             // SS: User Data (RPL 3)
-             ctx[19] = unsafe { gdt::USER_DATA_SELECTOR.0 as u64 | 3 };
+            // CS: User Code (RPL 3)
+            ctx[16] = unsafe { gdt::USER_CODE_SELECTOR.0 as u64 | 3 };
+            // RFLAGS: Interrupts enabled (0x200). IOPL 3 (0x3000) -> 0x3202
+            ctx[17] = 0x3202;
+            // RSP
+            ctx[18] = stack;
+            // SS: User Data (RPL 3)
+            ctx[19] = unsafe { gdt::USER_DATA_SELECTOR.0 as u64 | 3 };
         }
 
         ctx

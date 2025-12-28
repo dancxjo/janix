@@ -16,6 +16,7 @@ members = [
   "apps/ls_boot", "apps/cat_boot",
   "apps/fb_smoke",
   "services/input_service",
+  "apps/compositor",
 ]
 
 

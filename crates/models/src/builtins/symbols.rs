@@ -164,4 +164,3 @@ pub const SYM_HAS_TIME_NOW: SymbolId = SymbolId(fnv1a64("HAS_TIME_NOW"));
 // Framebuffer
 pub const SYM_DISPLAY_FRAMEBUFFER: SymbolId = SymbolId(fnv1a64("DisplayFramebuffer"));
 pub const SYM_SCANOUT_BUFFER: SymbolId = SymbolId(fnv1a64("ScanoutBuffer"));
-

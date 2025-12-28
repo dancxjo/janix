@@ -65,7 +65,7 @@ pub struct DisplayFramebufferBody {
     pub width: u64,
     pub height: u64,
     pub pitch: u64,
-    pub format: u32, 
+    pub format: u32,
     pub address: u64,
 }
 
@@ -74,7 +74,6 @@ pub struct ScanoutBufferBody {
     pub address: u64,
     pub len: u64,
 }
-
 
 thing_kind! {
     kind TimeNow {
@@ -460,4 +459,3 @@ thing_kind! {
         links {}
     }
 }
-

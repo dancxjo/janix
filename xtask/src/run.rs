@@ -206,6 +206,8 @@ fn run_qemu_aarch64(
     if use_uefi {
         cmd.arg("-bios").arg(&ovmf_code);
     }
+    // Add AHCI controller
+    cmd.arg("-device").arg("ahci,id=ahci");
     cmd.arg("-drive").arg(format!(
         "id=cd,file={},if=none,format=raw,readonly=on",
         iso_path.display()

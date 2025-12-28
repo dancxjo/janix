@@ -5,10 +5,13 @@ use kernel::bridge::HardwareBridge;
 const LAPIC_ID: u32 = 0x020;
 const LAPIC_EOI: u32 = 0x0B0;
 const LAPIC_SIV: u32 = 0x0F0; // Spurious Interrupt Vector
+#[allow(dead_code)]
 const LAPIC_ICR_LO: u32 = 0x300;
+#[allow(dead_code)]
 const LAPIC_ICR_HI: u32 = 0x310;
 const LAPIC_LVT_TIMER: u32 = 0x320;
 const LAPIC_TIMER_INIT: u32 = 0x380;
+#[allow(dead_code)]
 const LAPIC_TIMER_CUR: u32 = 0x390;
 const LAPIC_TIMER_DIV: u32 = 0x3E0;
 

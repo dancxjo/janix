@@ -93,8 +93,7 @@ pub extern "C" fn rust_main() -> ! {
             loop {}
         }
 
-        use kernel::bridge::HardwareBridge;
-        let bridge = Bridge;
+
 
         bootlog!("Booting ThingOS (aarch64)...");
         bootlog!("Init finished, jumping to kernel");

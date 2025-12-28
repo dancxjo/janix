@@ -61,7 +61,7 @@ pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(target_arch = "x86_64")]
 impl Bridge {
-    pub unsafe fn init(rsdp_addr: Option<u64>, hhdm: u64) {
+    pub unsafe fn init(_rsdp_addr: Option<u64>, hhdm: u64) {
         HHDM_OFFSET.store(hhdm, Ordering::Relaxed);
         use kernel::bridge::HardwareBridge;
         let b = Bridge;
@@ -306,7 +306,7 @@ impl HardwareBridge for Bridge {
     fn rtc_read(&self, out: &mut abi::wire::time::RtcSample) {
         unsafe {
             // Helper to read CMOS register
-            let mut read_reg = |reg: u8| -> u8 {
+            let read_reg = |reg: u8| -> u8 {
                 asm!("out dx, al", in("dx") 0x70u16, in("al") reg);
                 let val: u8;
                 asm!("in al, dx", out("al") val, in("dx") 0x71u16);

@@ -212,7 +212,7 @@ unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
         let phys_l4 = l4_frame.start_address();
         let virt_l4 = self.hhdm_offset + phys_l4.as_u64();
         let page_table_ptr = virt_l4.as_mut_ptr();
-        let mut mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
+        let mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
         let virt_addr = VirtAddr::new(ptr as u64);
         mapper
             .translate_addr(virt_addr)
@@ -233,17 +233,13 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
                 let ctx_ptr = ctx.0.0.as_mut_ptr();
                 core::ptr::copy_nonoverlapping(frame_ptr, ctx_ptr, 20);
             }
-            k.bridge.log("TICK: In RIP=");
-            print_hex(&k.bridge, ctx.0.0[15]);
-            k.bridge.log("\n");
 
             {
                 use kernel::bridge::HardwareBridge;
                 let now_raw = k.bridge.ticks();
                 let last = LAST_TICKS.swap(now_raw, Ordering::Relaxed);
                 let now_ns = k.bridge.monotonic_now();
-            
-                // Force tick to always be large enough for update
+
                 let delta = if now_ns > 0 {
                     let last_ns = LAST_TICKS.swap(now_ns, Ordering::Relaxed);
                     if now_ns >= last_ns && last_ns > 0 {
@@ -273,10 +269,6 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
             }
 
             k.scheduler.tick(&k.bridge, &mut ctx);
-
-            k.bridge.log("TICK: Out RIP=");
-            print_hex(&k.bridge, ctx.0.0[15]);
-            k.bridge.log("\n");
 
             unsafe {
                 let ctx_ptr = ctx.0.0.as_ptr();
@@ -404,17 +396,15 @@ fn syscall_hook(
 
                  let hhdm_offset_u64 = k.bridge.hhdm_offset();
                  
-                 unsafe {
-                     process_file(
-                         k, 
-                         None, 
-                         name,
-                         data,
-                         0, 
-                         None, // Not force, rely on defaults
-                         hhdm_offset_u64
-                     );
-                 }
+                 process_file(
+                     k, 
+                     None, 
+                     name,
+                     data,
+                     0, 
+                     None, // Not force, rely on defaults
+                     hhdm_offset_u64
+                 );
                  return 0;
              }
          }
@@ -432,6 +422,7 @@ fn syscall_hook(
 }
 
 #[cfg(not(target_os = "thingos"))]
+#[allow(unused)]
 fn main() {}
 
 
@@ -725,7 +716,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
     // We proceed directly to PCI Scan.
     
     unsafe { u_sleep(100); }
-    let pci_devices = unsafe { kernel::drivers::pci::scan_pci(&Bridge) };
+    let pci_devices = kernel::drivers::pci::scan_pci(&Bridge);
     
     let mut boot_args: Option<ScanArgs> = None;
     
@@ -739,7 +730,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                      let use_qemu = USE_QEMU_DRIVER.load(Ordering::Relaxed);
 
                      if use_qemu {
-                         let info = unsafe { kernel::drivers::video::qemu_vga::init(k, &pci_devices) };
+                         let info = kernel::drivers::video::qemu_vga::init(k, &pci_devices);
                          unsafe { FRAMEBUFFER_INFO = info; }
                      }
                      
@@ -800,7 +791,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                                 
                                 // Init and Check Ports
                                 // We use bridge::ahci::init which now returns u32 active ports.
-                                let ports = unsafe { kernel::drivers::ahci::init(dev, k) };
+                                let ports = kernel::drivers::ahci::init(dev, k);
                                 if ports > 0 {
                                      let _virt_base = hhdm_offset_u64 + base;
                                      // Find first
@@ -824,7 +815,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                 }
                 break;
             }
-            unsafe { core::hint::spin_loop(); } 
+            core::hint::spin_loop(); 
         }
     }
     
@@ -839,24 +830,20 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                  }
                  break; 
              }
-             unsafe { core::hint::spin_loop(); }
+             core::hint::spin_loop();
          }
          
          scan_boot_fs_task(alloc::boxed::Box::into_raw(alloc::boxed::Box::new(args)) as u64);
     } else {
-        unsafe {
-             use kernel::bridge::HardwareBridge;
-             Bridge.log("INIT: No AHCI boot device found.\n");
-        }
+         use kernel::bridge::HardwareBridge;
+         Bridge.log("INIT: No AHCI boot device found.\n");
     }
     
-    unsafe {
-         use kernel::bridge::HardwareBridge;
-         Bridge.log("INIT: Complete. Parking.\n");
-    }
+    use kernel::bridge::HardwareBridge;
+    Bridge.log("INIT: Complete. Parking.\n");
     
     loop {
-         unsafe { core::hint::spin_loop(); }
+         core::hint::spin_loop();
     }
 }
 

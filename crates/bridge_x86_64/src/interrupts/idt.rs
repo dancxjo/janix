@@ -109,11 +109,46 @@ extern "x86-interrupt" fn page_fault_handler(
 #[unsafe(naked)]
 unsafe extern "C" fn timer_interrupt_naked() {
     naked_asm!(
-        // Check if we came from user mode (CS & 3 == 3)
+        // 1. Check if we came from user mode (CS & 3 == 3)
+        // CS is at [rsp + 8] (since HW pushed RIP, CS, RFLAGS)
         "test byte ptr [rsp + 8], 3",
-        "jz 1f",
-        "swapgs",
+        "jnz 1f",
+
+        // --- KERNEL MODE ENTRY ---
+        // Stack: [RIP, CS, RFLAGS]
+        // We need to expand to [RIP, CS, RFLAGS, RSP, SS]
+        // to match TrapFrame layout and prevent stack corruption when overwriting.
+        
+        "sub rsp, 16",          // Create gap
+        "push rax",             // Scratch
+        
+        // Move RFLAGS, CS, RIP down
+        "mov rax, [rsp + 40]",  // Old RFLAGS
+        "mov [rsp + 24], rax",  // New RFLAGS
+        "mov rax, [rsp + 32]",  // Old CS
+        "mov [rsp + 16], rax",  // New CS
+        "mov rax, [rsp + 24]",  // Old RIP
+        "mov [rsp + 8], rax",   // New RIP
+        
+        // Synthesize SS and RSP
+        "mov rax, ss",
+        "mov [rsp + 40], rax",  // SS at top
+        
+        "lea rax, [rsp + 48]",  // Original RSP was at start + 24? 
+                                // We did sub 16 (total 40), push rax (total 48).
+                                // So [rsp + 48] is the byte ABOVE the original interrupt frame.
+        "mov [rsp + 32], rax",  // RSP
+        
+        "pop rax",              // Restore scratch
+        "jmp 2f",
+
         "1:",
+        // --- USER MODE ENTRY ---
+        // Stack: [RIP, CS, RFLAGS, RSP, SS] (HW Pushed 5 items)
+        "swapgs",
+        
+        "2:",
+        // Common: Push GPRs (TrapFrame items 0..14)
         "push rax",
         "push rdi",
         "push rsi",
@@ -129,8 +164,12 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "push r13",
         "push r14",
         "push r15",
+        
+        // Call Handler
         "mov rdi, rsp",
         "call timer_interrupt_handler",
+        
+        // Restore GPRs
         "pop r15",
         "pop r14",
         "pop r13",
@@ -146,11 +185,42 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "pop rsi",
         "pop rdi",
         "pop rax",
-        // Check if we are returning to user mode (CS & 3 == 3)
+
+        // --- RETURN ---
+        // Check if returning to user mode (CS & 3 == 3)
+        // Stack: [RIP, CS, RFLAGS, RSP, SS]
         "test byte ptr [rsp + 8], 3",
-        "jz 2f",
+        "jz 3f",
+
+        // Return to User
         "swapgs",
-        "2:",
+        "iretq",
+
+        "3:",
+        // Return to Kernel
+        // Stack has 5 items. iretq pops 3. We must consume the other 2 (RSP/SS) 
+        // to avoid stack leak/corruption.
+        // Logic: Move top 3 items (RIP,CS,RFLAGS) UP by 16 bytes.
+        // Stack: [RIP, CS, RFLAGS, RSP, SS]
+        // Target: [Gap, Gap, RIP, CS, RFLAGS] (so iretq pops from +16, effectively dropping RSP/SS)
+        
+        // Actually, we can just `add rsp, 16` BEFORE popping? No, RIP is at bottom.
+        // We need to pop RIP, CS, RFLAGS into registers? No.
+        // We shuffle.
+        
+        "push rax", // Scratch
+        "mov rax, [rsp + 8]",  // RIP
+        "mov [rsp + 24], rax", // Place at RSP slot
+        "mov rax, [rsp + 16]", // CS
+        "mov [rsp + 32], rax", // Place at SS slot
+        "mov rax, [rsp + 24]", // RFLAGS
+        "mov [rsp + 40], rax", // Place above SS (New Top)
+        
+        // Current stack: [rax, RIP(old), CS(old), RFLAGS(old), RIP(new), CS(new), RFLAGS(new)]
+        // We want rsp to point to RIP(new) eventually.
+        
+        "pop rax",
+        "add rsp, 16", // Point to new RIP
         "iretq",
     );
 }

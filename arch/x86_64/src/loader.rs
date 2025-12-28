@@ -406,7 +406,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
             k.scheduler.spawn(
                 &k.bridge,
                 "app_loader",
-                file_loader_task as usize as u64,
+                file_loader_task as *const () as usize as u64,
                 stack_top,
                 args_ptr,
                 0, // Heap Start (Kernel task, no user heap)
@@ -458,7 +458,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
              k.scheduler.spawn(
                 &k.bridge,
                 "driver_loader",
-                file_loader_task as usize as u64,
+                file_loader_task as *const () as usize as u64,
                 stack_top,
                 args_ptr,
                 0, 0
@@ -492,7 +492,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
                  k.scheduler.spawn(
                     &k.bridge,
                     "asset_loader",
-                    file_loader_task as usize as u64,
+                    file_loader_task as *const () as usize as u64,
                     stack_top,
                     args_ptr,
                     0, 0
@@ -577,7 +577,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
                         k.scheduler.spawn(
                             &k.bridge,
                             "font_preload",
-                            file_loader_task as usize as u64,
+                            file_loader_task as *const () as usize as u64,
                             stack_top,
                             args_ptr,
                             0, // Heap Start
@@ -812,7 +812,7 @@ pub fn process_file(
                  }
                  
                  if flags.contains(PageTableFlags::NO_EXECUTE) {
-                     unsafe { Bridge.log("loader: Clearing NX from PML4[0]\n"); }
+                     Bridge.log("loader: Clearing NX from PML4[0]\n");
                      table[0].set_flags(flags & !PageTableFlags::NO_EXECUTE);
                  }
 
@@ -830,7 +830,7 @@ pub fn process_file(
                          }
 
                          if f3.contains(PageTableFlags::NO_EXECUTE) {
-                             unsafe { Bridge.log("loader: Clearing NX from PDP[0]\n"); }
+                             Bridge.log("loader: Clearing NX from PDP[0]\n");
                              p3[0].set_flags(f3 & !PageTableFlags::NO_EXECUTE);
                          }
                      }
@@ -897,10 +897,8 @@ pub fn process_file(
             let target_virt_end = match VirtAddr::try_new(raw_end) {
                 Ok(addr) => addr,
                 Err(_) => {
-                    unsafe {
-                        let s = alloc::format!("Invalid End: {:#x}\n", raw_end);
-                        Bridge.log(&s);
-                    }
+                    let s = alloc::format!("Invalid End: {:#x}\n", raw_end);
+                    Bridge.log(&s);
                     return;
                 }
             };
@@ -912,7 +910,7 @@ pub fn process_file(
                 // Map Frame
                 let page_start_virt = page.start_address();
                 let mut needs_alloc = true;
-                let mut needs_copy = true;
+                let _needs_copy = true;
 
                 match mapper.translate_page(page) {
                     Ok(_) => {
@@ -940,7 +938,7 @@ pub fn process_file(
                         // needs_alloc = true
                     }
                     Err(_) => {
-                         unsafe { Bridge.log("loader: Translate Error!\n"); }
+                         Bridge.log("loader: Translate Error!\n");
                          return;
                     }
                 }
@@ -973,7 +971,7 @@ pub fn process_file(
                     let frame_virt = match VirtAddr::try_new(raw_frame_virt) {
                          Ok(a) => a,
                          Err(_) => {
-                             unsafe { Bridge.log("loader: Segment Copy VirtAddr Add Fail!\n"); }
+                             Bridge.log("loader: Segment Copy VirtAddr Add Fail!\n");
                              VirtAddr::try_new(0).unwrap() // Dummy to prevent panic, will likely crash on write but log printed
                          }
                     };
@@ -1008,7 +1006,7 @@ pub fn process_file(
             let stack_bottom_virt = match VirtAddr::try_new(raw_stack_bottom) {
                  Ok(a) => a,
                  Err(_) => {
-                     unsafe { Bridge.log("loader: Stack Bottom VirtAddr Invalid!\n"); }
+                     Bridge.log("loader: Stack Bottom VirtAddr Invalid!\n");
                      return;
                  }
             };
@@ -1017,7 +1015,7 @@ pub fn process_file(
             let stack_top_virt = match VirtAddr::try_new(raw_stack_top) {
                 Ok(a) => a,
                 Err(_) => {
-                     unsafe { Bridge.log("loader: Stack Top VirtAddr Invalid!\n"); }
+                     Bridge.log("loader: Stack Top VirtAddr Invalid!\n");
                      return;
                 }
             };
@@ -1028,7 +1026,7 @@ pub fn process_file(
              let end_addr_virt = match VirtAddr::try_new(raw_end_addr) {
                 Ok(a) => a,
                 Err(_) => {
-                     unsafe { Bridge.log("loader: Stack End VirtAddr Invalid!\n"); }
+                     Bridge.log("loader: Stack End VirtAddr Invalid!\n");
                      return;
                 }
             };
@@ -1057,13 +1055,11 @@ pub fn process_file(
             let heap_virt_end = heap_virt_start + heap_size;
 
              // Map Framebuffer
-            unsafe { Bridge.log("loader: checking fb_info\n"); }
+            Bridge.log("loader: checking fb_info\n");
             let fb_info = unsafe { crate::FRAMEBUFFER_INFO };
-            if let Some((phys_base_raw, size)) = fb_info {
-                 unsafe { 
-                    let s = alloc::format!("loader: mapping framebuffer. Base={:#x} Size={:#x}\n", phys_base_raw, size);
-                    Bridge.log(&s); 
-                 }
+            if let Some((phys_base_raw, size)) = fb_info { 
+                let s = alloc::format!("loader: mapping framebuffer. Base={:#x} Size={:#x}\n", phys_base_raw, size);
+                Bridge.log(&s);
                 // Fix: Limine returns a Virtual Address (HHDM mapped). Convert to physical.
                 let phys_base = if phys_base_raw >= hhdm_offset.as_u64() {
                     phys_base_raw - hhdm_offset.as_u64()
@@ -1084,14 +1080,14 @@ pub fn process_file(
             let start_page = if let Ok(addr) = VirtAddr::try_new(raw_heap_start) {
                 Page::<Size4KiB>::containing_address(addr)
             } else {
-                 unsafe { Bridge.log("loader: Heap Start VirtAddr Invalid!\n"); }
+                 Bridge.log("loader: Heap Start VirtAddr Invalid!\n");
                  return;
             };
 
             let end_page = if let Ok(addr) = VirtAddr::try_new(raw_heap_end) {
                 Page::<Size4KiB>::containing_address(addr)
             } else {
-                 unsafe { Bridge.log("loader: Heap End VirtAddr Invalid!\n"); }
+                 Bridge.log("loader: Heap End VirtAddr Invalid!\n");
                  return;
             };
 

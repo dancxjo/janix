@@ -8,6 +8,7 @@ extern crate alloc;
 mod early_log;
 mod heap;
 mod memory_intrinsics;
+mod sse;
 
 use bridge_x86_64::Bridge;
 
@@ -509,6 +510,7 @@ pub extern "C" fn rust_main() -> ! {
         alloc::alloc::alloc(layout)
     }
     boot_screen::set_boot_alloc(boot_alloc_impl);
+    boot_screen::set_blit_hook(sse::sse_blit);
 
     // 2. Safe to Allocate now (Vec, String, etc.)
     let boot_info = boot::collect();

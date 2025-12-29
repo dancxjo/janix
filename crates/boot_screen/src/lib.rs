@@ -31,6 +31,13 @@ pub fn set_boot_alloc(alloc: BootAlloc) {
     BOOT_ALLOC.store(alloc as *mut core::ffi::c_void, Ordering::SeqCst);
 }
 
+pub type BlitFn = unsafe fn(dst: *mut u8, src: *const u8, len: usize, scale: u32);
+static BLIT_HOOK: AtomicPtr<core::ffi::c_void> = AtomicPtr::new(core::ptr::null_mut());
+
+pub fn set_blit_hook(f: BlitFn) {
+    BLIT_HOOK.store(f as *mut core::ffi::c_void, Ordering::SeqCst);
+}
+
 pub struct BootScreen<'a> {
     fb: FramebufferInfo,
     shadow: &'a mut [u8], // Stored as BGRA bytes
@@ -326,12 +333,24 @@ impl<'a> BootScreen<'a> {
 
             if start + width_bytes > self.shadow.len() { continue; }
 
-            // Use pointer arithmetic for critical boot performance (shadow-to-fb)
+            let dst_ptr = unsafe { self.fb.addr.add(start) };
+            let src_ptr = self.shadow.as_ptr().wrapping_add(start);
+
+            let blit_ptr = BLIT_HOOK.load(Ordering::Relaxed);
+            if !blit_ptr.is_null() {
+                 unsafe {
+                     let blit_fn: BlitFn = core::mem::transmute(blit_ptr);
+                     blit_fn(dst_ptr, src_ptr, width_bytes, scale);
+                 }
+                 continue;
+            }
+
+            // Fallback: Use pointer arithmetic for critical boot performance (shadow-to-fb)
             // Safety: We verified bounds in `blit_shadow_to_fb` entry check and `min_size` check.
             let len = width_bytes / 4;
             unsafe {
-                let mut s_ptr = self.shadow.as_ptr().wrapping_add(start);
-                let mut d_ptr = self.fb.addr.wrapping_add(start);
+                let mut s_ptr = src_ptr;
+                let mut d_ptr = dst_ptr;
                 
                 for _ in 0..len {
                      let b = *s_ptr;

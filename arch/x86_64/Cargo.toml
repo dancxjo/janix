@@ -16,6 +16,7 @@ models = { path = "../../crates/models" }
 linked_list_allocator = { version = "0.10", default-features = false, features = ["use_spin"] }
 spin = "0.10"
 boot = { path = "../../crates/boot" }
+boot_screen = { path = "../../crates/boot_screen" }
 x86_64 = "0.15.4"
 abi = { path = "../../crates/abi" }
 postcard = { version = "1.0", default-features = false, features = ["alloc"] }

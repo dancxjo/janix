@@ -11,6 +11,7 @@ members = [
 "crates/bridge_x86_64",
 "crates/bridge_aarch64",
 "crates/boot",
+"crates/boot_screen",
 
 
 "arch/x86_64",

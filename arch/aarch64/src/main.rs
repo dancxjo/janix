@@ -182,12 +182,59 @@ pub extern "C" fn rust_main() -> ! {
         }
     }
     
+    // Hook BootScreen allocator
+    unsafe fn boot_alloc_impl(size: usize, align: usize) -> *mut u8 {
+        let layout = alloc::alloc::Layout::from_size_align(size, align).unwrap();
+        alloc::alloc::alloc(layout)
+    }
+    boot_screen::set_boot_alloc(boot_alloc_impl);
+
     // 2. Collect Boot Info (Allocates)
     let boot_info = boot::collect();
+
+    // --- Boot Screen Init ---
+    let mut bs = unsafe {
+        if let Some(fb) = &boot_info.framebuffer {
+             let addr = fb.address; // Virtual address
+             let info = boot_screen::FramebufferInfo {
+                 addr: addr as *mut u8,
+                 size_bytes: fb.size as usize,
+                 width: fb.width as u32,
+                 height: fb.height as u32,
+                 pitch_bytes: fb.pitch as u32,
+                 bpp: fb.bpp,
+                 pixel_format: boot_screen::PixelFormat::Xrgb8888, // Assumed for Limine
+             };
+             let mut bs = boot_screen::BootScreen::new(info);
+
+             bs.show("Booting ThingOS");
+
+             // Fade in
+             for a in (0..=255).step_by(8) {
+                 bs.set_fade(a as u8);
+                 bs.draw();
+                 // Delay loop
+                 for _ in 0..100_000 { core::hint::spin_loop(); }
+             }
+
+             Some(bs)
+        } else {
+             None
+        }
+    };
+
+    if let Some(bs) = &mut bs { bs.show("Bridge online"); }
     
     let k = Kernel::new(Bridge);
     *KERNEL.lock() = Some(k);
 
+    if let Some(bs) = &mut bs { bs.show("Graph init"); }
+    if let Some(bs) = &mut bs { bs.show("Graph seeded"); }
+    if let Some(bs) = &mut bs { bs.show("Symbols init"); }
+    if let Some(bs) = &mut bs { bs.show("Symbols ready"); }
+    if let Some(bs) = &mut bs { bs.show("Scanning modules"); }
+
+    if let Some(bs) = &mut bs { bs.show("Spawning init tasks"); }
     Bridge.log("Starting Loader Task...\n");
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = guard.as_mut() {

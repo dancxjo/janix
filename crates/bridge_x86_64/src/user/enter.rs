@@ -59,7 +59,7 @@ unsafe extern "C" fn enter_user_mode_asm(_regs: *const X86UserEntryRegs) -> ! {
         "mov ds, ax",
         "mov es, ax",
         "mov fs, ax",
-        "mov gs, ax",
+        "// mov gs, ax", // DO NOT DO THIS. Loading a selector zeros the base address in 64-bit mode.
         // swapgs if we were in kernel? usually yes if we return to user.
         "swapgs",
         "iretq"
@@ -70,9 +70,14 @@ pub fn resume_user_mode(context: &[u64], _fpu_context: &FpuContext) -> ! {
     // Context layout: [r15...rax, rip, cs, rflags, rsp, ss]
     // The context slice is assumed to be at the TOP of the kernel stack for the target thread.
     // (Or rather, populating the space just below top).
-    // The "Stack Top" (RSP0) should be calculating by taking the context address and adding its size.
-    // context.len() = 20.
     // stack_top = context_ptr + 20 * 8.
+    // NOTE: This assumes the context is the LAST thing on the stack.
+    // In our scheduler, kernel_stack is Vec<u128>, and kernel_stack_top is the actual top.
+    // The scheduler sets context into thread.context which is a field.
+    // HardwareBridge::resume_user_mode takes &Context.
+    // We should probably rely on the caller setting the stack top correctly BEFORE calling this,
+    // or pass the stack top explicitly.
+    // For now, let's look at Bridge::resume_user_mode in lib.rs.
     let stack_top = context.as_ptr() as u64 + (context.len() * 8) as u64;
 
     unsafe {
@@ -111,24 +116,9 @@ unsafe extern "C" fn resume_user_mode_asm(_context: *const u64) -> ! {
         "iretq",
         "1:",
         // Kernel Return logic.
-        // We have [RIP, CS, RFLAGS, GarbageRSP, GarbageSS] on stack.
-        // iretq only pops top 3. We must move top 3 into bottom 3 slots to consume garbage.
-        "push rax", // Save RAX as scratch
-        // Stack offsets now +8
-        // [rsp+24] = RFLAGS
-        // [rsp+40] = Target for RFLAGS (SS slot)
-        "mov rax, [rsp + 24]",
-        "mov [rsp + 40], rax",
-        // [rsp+16] = CS
-        // [rsp+32] = Target for CS (RSP slot)
-        "mov rax, [rsp + 16]",
-        "mov [rsp + 32], rax",
-        // [rsp+8] = RIP
-        // [rsp+24] = Target for RIP (RFLAGS slot)
-        "mov rax, [rsp + 8]",
-        "mov [rsp + 24], rax",
-        "pop rax",     // Restore RAX
-        "add rsp, 16", // Skip old RIP/CS slots
+        // We have [RIP, CS, RFLAGS, RSP, SS] on stack.
+        // In 64-bit mode, iretq ALWAYS pops 5 items.
+        // Our kernel return logic was trying to "skip" some, which is wrong.
         "iretq"
     )
 }

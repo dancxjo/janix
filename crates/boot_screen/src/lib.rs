@@ -164,7 +164,7 @@ impl<'a> BootScreen<'a> {
         if let Some(old) = self.last_text_rect {
             d = d.union(&old);
         }
-        // Inflate to cover shadow (2px offset)
+        // Inflate to cover shadow (1px offset)
         d = d.inflate(4);
 
         self.add_damage(d);
@@ -212,8 +212,8 @@ impl<'a> BootScreen<'a> {
 
             self.clear_shadow_rect(&d);
             
-            // Pass 1: Shadow (Offset 2,2, Black)
-            self.draw_text(2, 2, 0xFF000000, &d);
+            // Pass 1: Shadow (Offset 1,1, Black)
+            self.draw_text(1, 1, 0xFF000000, &d);
             
             // Pass 2: Main Text (Offset 0,0, White)
             self.draw_text(0, 0, 0xFFFFFFFF, &d);

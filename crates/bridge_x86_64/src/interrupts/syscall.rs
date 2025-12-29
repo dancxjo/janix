@@ -128,19 +128,35 @@ extern "C" fn syscall_dispatch(
     a6: usize,
 ) -> isize {
     static LOG_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
-    if LOG_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 4 {
+    if LOG_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 16 {
         use kernel::bridge::HardwareBridge;
         let bridge = crate::Bridge;
         let rsp: *const u64;
         unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp) };
-        // Stack layout in handler before call:
-        // [0]=r9,1=r15,2=r14,3=r13,4=r12,5=rbx,6=rbp,7=r11,8=rcx,9=user_rsp
-        let saved_rip = unsafe { *rsp.add(8) };
-        let saved_rsp = unsafe { *rsp.add(9) };
+        
+        bridge.log("SYSCALL STACK DUMP (rsp=");
+        crate::print_hex(rsp as u64);
+        bridge.log("):\n");
+        for i in 0..16 {
+            bridge.log("  [");
+            crate::print_u64(i as u64);
+            bridge.log("] ");
+            let val = unsafe { *rsp.add(i) };
+            crate::print_hex(val);
+            if i % 4 == 3 { bridge.log("\n"); }
+        }
+        bridge.log("\n");
+
+        let saved_flags = unsafe { *rsp.add(12) };
+        let saved_rip = unsafe { *rsp.add(13) };
+        let saved_rsp = unsafe { *rsp.add(11) };
+        
         bridge.log("SYSCALL entry num=");
         crate::print_hex(num as u64);
         bridge.log(" rip=");
         crate::print_hex(saved_rip);
+        bridge.log(" rflags=");
+        crate::print_hex(saved_flags);
         bridge.log(" ursp=");
         crate::print_hex(saved_rsp);
         bridge.log("\n");

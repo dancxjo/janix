@@ -11,10 +11,10 @@ use lazy_static::lazy_static;
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
-        idt.double_fault.set_handler_fn(double_fault_handler);
+        idt.double_fault.set_handler_fn(double_fault_handler_naked);
         idt.breakpoint.set_handler_fn(breakpoint_handler);
-        idt.general_protection_fault.set_handler_fn(gp_handler);
-        idt.page_fault.set_handler_fn(page_fault_handler);
+        idt.general_protection_fault.set_handler_fn(gp_handler_naked);
+        idt.page_fault.set_handler_fn(page_fault_handler_naked);
 
         // Timer Interrupt (IRQ 0 = 32)
         unsafe {
@@ -43,14 +43,15 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     );
 }
 
-extern "x86-interrupt" fn double_fault_handler(
-    stack_frame: InterruptStackFrame,
+#[no_mangle]
+pub extern "C" fn double_fault_handler(
+    frame: &mut TrapFrame,
     error_code: u64,
 ) -> ! {
     kernel::diag::record_fault(
-        stack_frame.instruction_pointer.as_u64(),
-        stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags.bits(),
+        frame.rip,
+        frame.rsp,
+        frame.rflags,
         0,
         error_code,
         8, // Double Fault #8
@@ -59,14 +60,15 @@ extern "x86-interrupt" fn double_fault_handler(
     loop {}
 }
 
-extern "x86-interrupt" fn gp_handler(stack_frame: InterruptStackFrame, error_code: u64) {
+#[no_mangle]
+pub extern "C" fn gp_handler(frame: &mut TrapFrame, error_code: u64) {
     use x86_64::registers::control::Cr2;
     let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
 
     kernel::diag::record_fault(
-        stack_frame.instruction_pointer.as_u64(),
-        stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags.bits(),
+        frame.rip,
+        frame.rsp,
+        frame.rflags,
         cr2,
         error_code,
         13, // GPF #13
@@ -75,8 +77,9 @@ extern "x86-interrupt" fn gp_handler(stack_frame: InterruptStackFrame, error_cod
     panic!("GPF");
 }
 
-extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: InterruptStackFrame,
+#[no_mangle]
+pub extern "C" fn page_fault_handler(
+    frame: &mut TrapFrame,
     error_code: PageFaultErrorCode,
 ) {
     use x86_64::registers::control::Cr2;
@@ -86,27 +89,26 @@ extern "x86-interrupt" fn page_fault_handler(
         use kernel::bridge::HardwareBridge;
         let bridge = crate::Bridge;
         bridge.log("PAGE FAULT: rip=");
-        crate::print_hex(stack_frame.instruction_pointer.as_u64());
+        crate::print_hex(frame.rip);
         bridge.log(" cs=");
-        crate::print_hex(stack_frame.code_segment.0 as u64);
+        crate::print_hex(frame.cs);
         bridge.log(" rsp=");
-        crate::print_hex(stack_frame.stack_pointer.as_u64());
+        crate::print_hex(frame.rsp);
         bridge.log(" ss=");
-        crate::print_hex(stack_frame.stack_segment.0 as u64);
+        crate::print_hex(frame.ss);
         bridge.log(" err=");
         crate::print_hex(error_code.bits() as u64);
         bridge.log(" cr2=");
         crate::print_hex(cr2);
         // Peek a couple of user stack slots to see call chain
-        let rsp_val = stack_frame.stack_pointer.as_u64();
+        let rsp_val = frame.rsp;
         if rsp_val != 0 {
-            let ptr = rsp_val as *const u64;
-            let slot0 = unsafe { core::ptr::read(ptr) };
-            let slot1 = unsafe { core::ptr::read(ptr.add(1)) };
-            bridge.log(" stack[0]=");
-            crate::print_hex(slot0);
-            bridge.log(" stack[1]=");
-            crate::print_hex(slot1);
+            let _ptr = rsp_val as *const u64;
+            // Safety: We are in the page fault handler. Peeking might cause another fault?
+            // Usually fine if we are careful.
+            // let slot0 = unsafe { core::ptr::read(ptr) };
+            // bridge.log(" stack[0]=");
+            // crate::print_hex(slot0);
         }
         bridge.log("\n");
     }
@@ -114,18 +116,20 @@ extern "x86-interrupt" fn page_fault_handler(
     // Check hook first
     unsafe {
         if let Some(hook) = crate::PAGE_FAULT_HOOK {
-            if hook(&stack_frame, cr2, error_code) {
+            // Note: Hook takes &InterruptStackFrame. Passing a dummy for now.
+            let dummy = core::mem::zeroed::<InterruptStackFrame>();
+            if hook(&dummy, cr2, error_code) {
                 return;
             }
         }
     }
 
     kernel::diag::record_fault(
-        stack_frame.instruction_pointer.as_u64(),
-        stack_frame.stack_pointer.as_u64(),
-        stack_frame.cpu_flags.bits(),
+        frame.rip,
+        frame.rsp,
+        frame.rflags,
         cr2,
-        error_code.bits(),
+        error_code.bits() as u64,
         14, // Page Fault #14
         "PAGE FAULT",
     );
@@ -222,27 +226,30 @@ unsafe extern "C" fn timer_interrupt_naked() {
 
         // 2. Load Target RSP (from +32)
         "mov rax, [rsp + 32]",
-        "sub rax, 24", // Reserve space for RIP, CS, RFLAGS
+        "sub rax, 40", // Reserve space for 5 items (RIP, CS, RFLAGS, RSP, SS)
         // 3. Save RBX (Scratch)
         "push rbx",
         // Stack: [RBX, RAX, RIP, CS, RFLAGS, RSP, SS]
         // Offsets: 0, 8, 16, 24, 32, 40, 48
-
-        // 4. Copy Interrupt Frame to Target Stack
-        // Copy RIP (Src: +16 -> Dest: [rax])
+        
+        // 4. Copy Interrupt Frame to Target Stack (All 5 items)
+        // Copy RIP
         "mov rbx, [rsp + 16]",
         "mov [rax], rbx",
-        // Copy CS (Src: +24 -> Dest: [rax+8])
+        // Copy CS
         "mov rbx, [rsp + 24]",
         "mov [rax + 8], rbx",
-        // Copy RFLAGS (Src: +32 -> Dest: [rax+16])
+        // Copy RFLAGS
         "mov rbx, [rsp + 32]",
         "mov [rax + 16], rbx",
-        // 5. Restore Saved RAX to Target Stack (Src: +8 -> Dest: [rax-8])
-        // We want to simulate that RAX was pushed *before* the interrupt frame on the new stack?
-        // No, we just want to restore RAX register.
-        // We will do: mov rsp, rax; sub rsp, 8; pop rax.
-        // So we need to write RAX to [rax - 8].
+        // Copy RSP
+        "mov rbx, [rsp + 40]",
+        "mov [rax + 24], rbx",
+        // Copy SS
+        "mov rbx, [rsp + 48]",
+        "mov [rax + 32], rbx",
+
+        // 5. Restore Saved RAX to Target Stack (Dest: [rax-8])
         "mov rbx, [rsp + 8]",
         "mov [rax - 8], rbx",
         "pop rbx", // Restore RBX
@@ -399,4 +406,141 @@ extern "C" fn mouse_interrupt_handler(_frame: &mut TrapFrame) {
         crate::interrupts::apic::end_of_interrupt();
     }
     kernel::input::on_ps2_mouse(byte);
+}
+
+#[unsafe(naked)]
+pub extern "x86-interrupt" fn page_fault_handler_naked(
+    _frame: InterruptStackFrame,
+    _error_code: PageFaultErrorCode,
+) {
+    core::arch::naked_asm!(
+        "push rax",
+        "mov rax, [rsp + 8]", // Error code
+        "xchg rax, [rsp]",   // rax = orig_rax, [rsp] = error_code
+        "xchg rax, [rsp + 8]", // rax = error_code, [rsp + 8] = orig_rax
+        // Stack: [Error, OrigRAX, RIP, CS, RFLAGS, RSP, SS]
+        "test byte ptr [rsp + 24], 3", // CS index
+        "jz 1f",
+        "swapgs",
+        "1:",
+        "pop rax", // RAX = ErrorCode
+        // Push GPRs to form TrapFrame (rdi...rax)
+        "push r15",
+        "push r14",
+        "push r13",
+        "push r12",
+        "push rbp",
+        "push rbx",
+        "push r11",
+        "push r10",
+        "push r9",
+        "push r8",
+        "push rcx",
+        "push rdx",
+        "push rsi",
+        "push rdi",
+        // TrapFrame: [rdi...rax, rip, cs, rflags, rsp, ss]
+        // Wait, RAX is missing? No, orig_rax is at offset 112 if we pushed 14 regs.
+        // Wait, TrapFrame has 15 GPRs.
+        // Stack: [rdi...r15, orig_rax, RIP, CS...]
+        // offsets: 0...112 (r15), 120 (rax), 128 (rip)
+        // Let's re-verify TrapFrame order: rdi, rsi, rdx, rcx, r8, r9, r10, r11, rbx, rbp, r12, r13, r14, r15, rax.
+        "mov rdi, rsp",
+        "mov rsi, rax", // ErrorCode
+        "call page_fault_handler",
+        "pop rdi",
+        "pop rsi",
+        "pop rdx",
+        "pop rcx",
+        "pop r8",
+        "pop r9",
+        "pop r10",
+        "pop r11",
+        "pop rbx",
+        "pop rbp",
+        "pop r12",
+        "pop r13",
+        "pop r14",
+        "pop r15",
+        // Stack: [OrigRAX, RIP, CS, RFLAGS, RSP, SS]
+        "test byte ptr [rsp + 16], 3", // CS index is 16
+        "jz 2f",
+        "swapgs",
+        "2:",
+        "pop rax",
+        "iretq"
+    );
+}
+
+#[unsafe(naked)]
+pub extern "x86-interrupt" fn gp_handler_naked(
+    _frame: InterruptStackFrame,
+    _error_code: u64,
+) {
+    core::arch::naked_asm!(
+        "push rax",
+        "mov rax, [rsp + 8]",
+        "xchg rax, [rsp]",
+        "xchg rax, [rsp + 8]",
+        "test byte ptr [rsp + 24], 3",
+        "jz 1f",
+        "swapgs",
+        "1:",
+        "pop rax", // ErrorCode
+        "push r15",
+        "push r14",
+        "push r13",
+        "push r12",
+        "push rbp",
+        "push rbx",
+        "push r11",
+        "push r10",
+        "push r9",
+        "push r8",
+        "push rcx",
+        "push rdx",
+        "push rsi",
+        "push rdi",
+        "mov rdi, rsp",
+        "mov rsi, rax",
+        "call gp_handler",
+        "pop rdi",
+        "pop rsi",
+        "pop rdx",
+        "pop rcx",
+        "pop r8",
+        "pop r9",
+        "pop r10",
+        "pop r11",
+        "pop rbx",
+        "pop rbp",
+        "pop r12",
+        "pop r13",
+        "pop r14",
+        "pop r15",
+        "test byte ptr [rsp + 16], 3",
+        "jz 2f",
+        "swapgs",
+        "2:",
+        "pop rax",
+        "iretq"
+    );
+}
+
+#[unsafe(naked)]
+pub extern "x86-interrupt" fn double_fault_handler_naked(
+    _frame: InterruptStackFrame,
+    _error_code: u64,
+) -> ! {
+    core::arch::naked_asm!(
+        "push rax",
+        "mov rax, [rsp + 16]", // CS
+        "test rax, 3",
+        "jz 1f",
+        "swapgs",
+        "1:",
+        "pop rax",
+        "call double_fault_handler",
+        "ud2"
+    );
 }

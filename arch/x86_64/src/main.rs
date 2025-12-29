@@ -321,71 +321,51 @@ fn page_fault_hook_impl(
     #[allow(unused_imports)]
     use x86_64::structures::paging::FrameAllocator;
 
-    if let Some(mut guard) = KERNEL.try_lock() {
-        if let Some(k) = (*guard).as_mut() {
-            let hhdm_offset_u64 = k.bridge.hhdm_offset();
-            let hhdm_offset = x86_64::VirtAddr::new(hhdm_offset_u64);
+    loop {
+        let mut guard_opt = None;
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            if let Some(guard) = KERNEL.try_lock() {
+                guard_opt = Some(guard);
+            }
+        });
 
-            // HeapFrameAllocator is now defined at module level
-            let mut frame_allocator = HeapFrameAllocator { hhdm_offset };
+        if let Some(mut guard) = guard_opt {
+            if let Some(k) = (*guard).as_mut() {
+                let hhdm_offset_u64 = k.bridge.hhdm_offset();
+                let hhdm_offset = x86_64::VirtAddr::new(hhdm_offset_u64);
+                let mut frame_allocator = HeapFrameAllocator { hhdm_offset };
 
-            if let Some(current_tid) = k.scheduler.current {
-                if let Some(Some(thread)) = k.scheduler.threads.get(current_tid.0 as usize - 1) {
-                    let pid = thread.process_id;
-                    if let Some(Some(process)) = k.scheduler.processes.get(pid.0 as usize - 1) {
-                        if fault_addr >= process.heap_virt_start
-                            && fault_addr < process.heap_virt_end
-                        {
-                            use x86_64::registers::control::Cr3;
-                            use x86_64::structures::paging::{
-                                Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB,
-                            };
+                if let Some(current_tid) = k.scheduler.current {
+                    if let Some(Some(thread)) = k.scheduler.threads.get(current_tid.0 as usize - 1) {
+                        let pid = thread.process_id;
+                        if let Some(Some(process)) = k.scheduler.processes.get(pid.0 as usize - 1) {
+                            if fault_addr >= process.heap_virt_start && fault_addr < process.heap_virt_end {
+                                use x86_64::registers::control::Cr3;
+                                use x86_64::structures::paging::{Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB};
 
-                            let (l4_frame, _) = Cr3::read();
-                            let phys_l4 = l4_frame.start_address();
-                            let virt_l4 = hhdm_offset + phys_l4.as_u64();
-                            let page_table_ptr = virt_l4.as_mut_ptr();
-                            let mut mapper =
-                                unsafe { OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset) };
+                                let (l4_frame, _) = Cr3::read();
+                                let mut mapper = unsafe { OffsetPageTable::new(&mut *(hhdm_offset + l4_frame.start_address().as_u64()).as_mut_ptr(), hhdm_offset) };
+                                let page = Page::<Size4KiB>::containing_address(x86_64::VirtAddr::new(fault_addr));
 
-                            let page = Page::<Size4KiB>::containing_address(x86_64::VirtAddr::new(
-                                fault_addr,
-                            ));
-                            if let Some(frame) = frame_allocator.allocate_frame() {
-                                let flags = PageTableFlags::PRESENT
-                                    | PageTableFlags::WRITABLE
-                                    | PageTableFlags::USER_ACCESSIBLE;
-                                unsafe {
-                                    if let Ok(map_to) =
-                                        mapper.map_to(page, frame, flags, &mut frame_allocator)
-                                    {
-                                        {
-                                            let phys = frame.start_address();
-                                            let virt = hhdm_offset + phys.as_u64();
-                                            core::ptr::write_bytes(
-                                                virt.as_mut_ptr::<u8>(),
-                                                0,
-                                                4096,
-                                            );
+                                if let Some(frame) = frame_allocator.allocate_frame() {
+                                    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                                    unsafe {
+                                        if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                                            core::ptr::write_bytes((hhdm_offset + frame.start_address().as_u64()).as_mut_ptr::<u8>(), 0, 4096);
+                                            map_to.flush();
+                                            return true;
                                         }
-                                        map_to.flush();
-                                        //  k.bridge.log("PF: Demand Alloc ");
-                                        //  print_hex(&k.bridge, fault_addr);
-                                        //  k.bridge.log("\n");
-                                        return true;
                                     }
                                 }
-                            } else {
-                                k.bridge.log("PF: OOM in Demand Alloc\n");
                             }
                         }
                     }
                 }
             }
+            return false; // Lock acquired but address not handled or mapping failed
         }
+        core::hint::spin_loop();
     }
-
-    false
 }
 
 fn syscall_hook(
@@ -450,10 +430,16 @@ fn syscall_hook(
     }
 
     loop {
-        if let Some(mut guard) = KERNEL.try_lock() {
-            if let Some(k) = (*guard).as_mut() {
-                return kernel::syscalls::syscall_dispatch(k, num, a1, a2, a3, a4, a5, a6);
+        let mut result = None;
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            if let Some(mut guard) = KERNEL.try_lock() {
+                if let Some(k) = (*guard).as_mut() {
+                    result = Some(kernel::syscalls::syscall_dispatch(k, num, a1, a2, a3, a4, a5, a6));
+                }
             }
+        });
+        if let Some(r) = result {
+            return r;
         }
         core::hint::spin_loop();
     }
@@ -831,131 +817,158 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
     let mut boot_args: Option<ScanArgs> = None;
 
     {
-        loop {
-            if let Some(mut guard) = KERNEL.try_lock() {
-                if let Some(k) = (*guard).as_mut() {
-                    use kernel::bridge::HardwareBridge;
-                    k.bridge.log("INIT: Publishing PCI Check...\n");
+        Bridge.log("INIT: Publishing PCI Check...\n");
+        let use_qemu = USE_QEMU_DRIVER.load(Ordering::Relaxed);
 
-                    let use_qemu = USE_QEMU_DRIVER.load(Ordering::Relaxed);
-
-                    if use_qemu {
+        if use_qemu {
+            loop {
+                let mut guard_opt = None;
+                x86_64::instructions::interrupts::without_interrupts(|| {
+                    if let Some(guard) = KERNEL.try_lock() {
+                        guard_opt = Some(guard);
+                    }
+                });
+                if let Some(mut guard) = guard_opt {
+                    if let Some(k) = (*guard).as_mut() {
                         let info = kernel::drivers::video::qemu_vga::init(k, &pci_devices);
                         unsafe {
                             FRAMEBUFFER_INFO = info;
                         }
                     }
+                    break;
+                }
+                core::hint::spin_loop();
+            }
+        }
 
-                    for dev in &pci_devices {
-                        use abi::wire::typed::{CodecId, TypeId, TypedBytes};
-                        use thing_models::builtins::ids::*;
-                        use thing_models::link::LinkBody;
-                        use thing_models::value::ThingBody;
+        for dev in &pci_devices {
+            Bridge.log("INIT: Publishing Dev ");
+            print_hex(&Bridge, dev.vendor_id as u64);
+            Bridge.log(":");
+            print_hex(&Bridge, dev.device_id as u64);
+            Bridge.log("\n");
 
-                        let body = postcard::to_allocvec(dev).unwrap();
-                        let tb = ThingBody::from(&TypedBytes {
-                            type_id: TypeId(THING_PCI_DEVICE_KIND.0 as u128),
-                            codec_id: CodecId::POSTCARD,
-                            bytes: body,
-                        })
-                        .unwrap();
-                        let dev_id = k.graph.create_thing(THING_PCI_DEVICE_KIND, tb);
+            use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+            use thing_models::builtins::ids::*;
+            use thing_models::link::LinkBody;
+            use thing_models::value::ThingBody;
 
-                        let link = LinkBody {
-                            from: THING_BOOT_ROOT,
-                            to: dev_id,
-                            predicate: THING_HAS_DEVICE_KIND,
+            // These allocations happen OUTSIDE the KERNEL lock to avoid deadlocks with PF handler
+            let pci_body_bytes = postcard::to_allocvec(dev).unwrap();
+            let pci_tb = ThingBody::from(&TypedBytes {
+                type_id: TypeId(THING_PCI_DEVICE_KIND.0 as u128),
+                codec_id: CodecId::POSTCARD,
+                bytes: pci_body_bytes,
+            })
+            .unwrap();
+
+            let link_body = LinkBody {
+                from: THING_BOOT_ROOT,
+                to: THING_BOOT_ROOT, // Placeholder, updated below
+                predicate: THING_HAS_DEVICE_KIND,
+            };
+
+            loop {
+                let mut done = false;
+                x86_64::instructions::interrupts::without_interrupts(|| {
+                    if let Some(mut guard) = KERNEL.try_lock() {
+                        if let Some(k) = (*guard).as_mut() {
+                            let dev_id = k.graph.create_thing(THING_PCI_DEVICE_KIND, pci_tb.clone());
+                            let mut final_link = link_body.clone();
+                            final_link.to = dev_id;
+                            
+                            let lb = ThingBody::from(&TypedBytes {
+                                type_id: TypeId(THING_LINK_KIND.0 as u128),
+                                codec_id: CodecId::POSTCARD,
+                                bytes: postcard::to_allocvec(&final_link).unwrap(),
+                            })
+                            .unwrap();
+                            k.graph.create_thing(THING_LINK_KIND, lb);
+                            done = true;
+                        }
+                    }
+                });
+                if done { break; }
+                core::hint::spin_loop();
+            }
+
+            // AHCI Check
+            if dev.class_id == 0x01 && dev.subclass_id == 0x06 && dev.prog_if == 0x01 {
+                Bridge.log("INIT: AHCI Found\n");
+                let bar5 = dev.bars[5];
+                if bar5 != 0 && (bar5 & 1) == 0 {
+                    let base = (bar5 & 0xFFFFFFF0) as u64;
+                    let size = 8192;
+
+                    unsafe {
+                        // Quick Map
+                        use x86_64::registers::control::Cr3;
+                        use x86_64::structures::paging::{
+                            Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
                         };
-                        let lb = ThingBody::from(&TypedBytes {
-                            type_id: TypeId(THING_LINK_KIND.0 as u128),
-                            codec_id: CodecId::POSTCARD,
-                            bytes: postcard::to_allocvec(&link).unwrap(),
-                        })
-                        .unwrap();
-                        k.graph.create_thing(THING_LINK_KIND, lb);
+                        use x86_64::{PhysAddr, VirtAddr};
 
-                        // AHCI Check
-                        if dev.class_id == 0x01 && dev.subclass_id == 0x06 && dev.prog_if == 0x01 {
-                            k.bridge.log("INIT: AHCI Found\n");
-                            let bar5 = dev.bars[5];
-                            if bar5 != 0 && (bar5 & 1) == 0 {
-                                let base = (bar5 & 0xFFFFFFF0) as u64;
-                                let size = 8192;
+                        let mut frame_allocator = HeapFrameAllocator {
+                            hhdm_offset: VirtAddr::new(hhdm_offset_u64),
+                        };
+                        let (l4_frame, _) = Cr3::read();
+                        let phys_l4 = l4_frame.start_address();
+                        let virt_l4 = hhdm_offset + phys_l4.as_u64();
+                        let page_table_ptr = virt_l4.as_mut_ptr();
+                        let mut mapper = OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset);
 
-                                unsafe {
-                                    // Quick Map
-                                    use x86_64::registers::control::Cr3;
-                                    use x86_64::structures::paging::{
-                                        Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame,
-                                        Size4KiB, Translate,
-                                    };
-                                    use x86_64::{PhysAddr, VirtAddr};
-
-                                    // HeapFrameAllocator is now defined at module level
-                                    let mut frame_allocator = HeapFrameAllocator {
-                                        hhdm_offset: VirtAddr::new(hhdm_offset_u64),
-                                    };
-                                    let (l4_frame, _) = Cr3::read();
-                                    let phys_l4 = l4_frame.start_address();
-                                    let virt_l4 = hhdm_offset + phys_l4.as_u64();
-                                    let page_table_ptr = virt_l4.as_mut_ptr();
-                                    let mut mapper =
-                                        OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset);
-
-                                    let start_frame = PhysFrame::<Size4KiB>::containing_address(
-                                        PhysAddr::new(base),
-                                    );
-                                    let end_frame = PhysFrame::<Size4KiB>::containing_address(
-                                        PhysAddr::new(base + size - 1),
-                                    );
-                                    let flags = PageTableFlags::PRESENT
-                                        | PageTableFlags::WRITABLE
-                                        | PageTableFlags::NO_CACHE;
-                                    for frame in PhysFrame::range_inclusive(start_frame, end_frame)
-                                    {
-                                        let phys = frame.start_address();
-                                        let virt = hhdm_offset + phys.as_u64();
-                                        if mapper.translate_addr(virt).is_none() {
-                                            let page = Page::<Size4KiB>::containing_address(virt);
-                                            if let Ok(map_to) = mapper.map_to(
-                                                page,
-                                                frame,
-                                                flags,
-                                                &mut frame_allocator,
-                                            ) {
-                                                map_to.flush();
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Init and Check Ports
-                                // We use bridge::ahci::init which now returns u32 active ports.
-                                let ports = kernel::drivers::ahci::init(dev, k);
-                                if ports > 0 {
-                                    let _virt_base = hhdm_offset_u64 + base;
-                                    // Find first
-                                    for p in 0..32 {
-                                        if (ports & (1 << p)) != 0 {
-                                            k.bridge.log("INIT: Booting from Port ");
-                                            print_hex(&Bridge, p as u64);
-                                            k.bridge.log("\n");
-                                            boot_args = Some(ScanArgs {
-                                                base, // Physical Address (AHCI driver adds HHDM internally)
-                                                port: p,
-                                                hhdm: hhdm_offset_u64,
-                                            });
-                                            break;
-                                        }
-                                    }
+                        let start_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(base));
+                        let end_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(base + size - 1));
+                        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE;
+                        for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
+                            let phys = frame.start_address();
+                            let virt = hhdm_offset + phys.as_u64();
+                            if mapper.translate_addr(virt).is_none() {
+                                let page = Page::<Size4KiB>::containing_address(virt);
+                                if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                                    map_to.flush();
                                 }
                             }
                         }
                     }
+
+                    // Init and Check Ports
+                    // We hold the lock for the duration of AHCI init because it modifies the graph.
+                    loop {
+                        let mut boot_port_args = None;
+                        x86_64::instructions::interrupts::without_interrupts(|| {
+                            if let Some(mut guard) = KERNEL.try_lock() {
+                                if let Some(k) = (*guard).as_mut() {
+                                    let ports = kernel::drivers::ahci::init(dev, k);
+                                    if ports > 0 {
+                                        for p in 0..32 {
+                                            if (ports & (1 << p)) != 0 {
+                                                // Bridge.log("INIT: Booting from Port ");
+                                                // print_dec(&Bridge, p as u64);
+                                                
+                                                // For v0.2, just pick the first AHCI port as boot port if not set.
+                                                if boot_port_args.is_none() {
+                                                    boot_port_args = Some(ScanArgs {
+                                                        base,
+                                                        port: p,
+                                                        hhdm: hhdm_offset_u64,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if boot_port_args.is_some() {
+                                    boot_args = boot_port_args;
+                                }
+                                return; // Success
+                            }
+                        });
+                        if boot_args.is_some() { break; }
+                        core::hint::spin_loop();
+                    }
                 }
-                break;
             }
-            core::hint::spin_loop();
         }
     }
 

@@ -34,4 +34,5 @@ pub trait HardwareBridge {
 
     // VM
     fn map_new_user_page(&self, virt_addr: u64, flags: u64) -> Result<(), ()>;
+    fn map_user_mmio(&self, virt_addr: u64, phys_addr: u64, flags: u64) -> Result<(), ()>;
 }

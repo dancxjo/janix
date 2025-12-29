@@ -155,6 +155,10 @@ impl HardwareBridge for Bridge {
         // Not implemented for AArch64 yet
         Err(())
     }
+
+    fn map_user_mmio(&self, _virt_addr: u64, _phys_addr: u64, _flags: u64) -> Result<(), ()> {
+        Err(())
+    }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
@@ -206,6 +210,10 @@ impl HardwareBridge for Bridge {
     fn restore_fpu(&self, _area: &[u8; 512]) {}
 
     fn map_new_user_page(&self, _virt_addr: u64, _flags: u64) -> Result<(), ()> {
+        Err(())
+    }
+
+    fn map_user_mmio(&self, _virt_addr: u64, _phys_addr: u64, _flags: u64) -> Result<(), ()> {
         Err(())
     }
 }

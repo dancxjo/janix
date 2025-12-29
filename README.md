@@ -19,3 +19,6 @@ just run env=aarch64
 ```
 
 > `xtask` owns the real build/run logic.
+
+## Documentation
+- [Architecture Boundaries](docs/architecture/boundaries.md)

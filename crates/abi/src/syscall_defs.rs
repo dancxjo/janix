@@ -6,6 +6,10 @@ pub const SYSCALL_GRAPH: usize = 1;
 // Driver Surface
 pub const SYSCALL_DRIVER_WAIT: usize = 100;
 pub const SYSCALL_DRIVER_PUBLISH: usize = 101;
+pub const SYSCALL_MMIO_MAP: usize = 102;
+pub const SYSCALL_DMA_ALLOC: usize = 103;
+pub const SYSCALL_IRQ_REGISTER: usize = 104;
+pub const SYSCALL_PORT_IO: usize = 105;
 
 // Typedefs
 pub const SYSCALL_TYPEDEF_REGISTER: usize = 200;

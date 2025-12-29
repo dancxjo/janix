@@ -17,6 +17,7 @@ pub mod symbols;
 pub mod syscalls;
 pub mod time;
 pub mod types;
+pub mod boot_fs;
 
 pub mod platform {
     pub mod acpi;

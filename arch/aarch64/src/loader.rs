@@ -95,6 +95,9 @@ fn apply_relative_relocations(
         let mut rela_addr = 0u64;
         let mut rela_sz = 0u64;
         let mut rela_ent = 0u64;
+        let mut symtab_addr = 0u64;
+        let mut strtab_addr = 0u64;
+        let mut syment = 0u64;
         
         for chunk in dyn_entries.chunks(16) {
              if chunk.len() < 16 { break; }
@@ -104,6 +107,9 @@ fn apply_relative_relocations(
                  7 => rela_addr = val, // DT_RELA
                  8 => rela_sz = val,
                  9 => rela_ent = val,
+                 6 => symtab_addr = val, // DT_SYMTAB
+                 5 => strtab_addr = val, // DT_STRTAB
+                 11 => syment = val,     // DT_SYMENT
                  0 => break,
                  _ => {}
              }
@@ -111,41 +117,90 @@ fn apply_relative_relocations(
         
         if rela_addr == 0 || rela_sz == 0 { return 0; }
         
-        let mut file_offset = None;
+        // Find file offsets for tables
+        let mut rela_offset = None;
+        let mut symtab_offset = None;
+        
+        // We assume VAddr == Offset mostly for PIE, but let's verify via PHDRs
         for ph in elf.program_iter() {
              if ph.get_type().unwrap_or(Type::Null) == Type::Load {
                  let vaddr = ph.virtual_addr();
                  let mem_sz = ph.mem_size();
+                 let file_off = ph.offset();
+                 
+                 // Check RELA
                  if rela_addr >= vaddr && rela_addr < vaddr + mem_sz {
-                     file_offset = Some(ph.offset() + (rela_addr - vaddr));
-                     break;
+                     rela_offset = Some(file_off + (rela_addr - vaddr));
                  }
+                 // Check SYMTAB
+                 if symtab_addr != 0 && symtab_addr >= vaddr && symtab_addr < vaddr + mem_sz {
+                     symtab_offset = Some(file_off + (symtab_addr - vaddr));
+                 }
+                 // Check STRTAB (Optional)
+                 // if strtab_addr ...
              }
         }
         
-        if let Some(file_off) = file_offset {
-             let rela_data = &elf_data[file_off as usize..(file_off + rela_sz) as usize];
-             let ent_size = if rela_ent > 0 { rela_ent } else { 24 };
-             let mut applied = 0;
-             
-             for chunk in rela_data.chunks(ent_size as usize) {
-                 if chunk.len() < 24 { break; }
-                 let r_offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
-                 let r_info = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
-                 let r_addend = i64::from_le_bytes(chunk[16..24].try_into().unwrap());
-                 let r_type = r_info & 0xFFFF_FFFF;
-                 
-                 // R_AARCH64_RELATIVE = 1027
-                 if r_type == 1027 {
-                     let value = load_base.wrapping_add(r_addend as u64);
-                     let target_addr = load_base + r_offset;
-                     
-                     write_user_bytes(target_addr, &value.to_le_bytes(), root_table, hhdm_offset);
-                     applied += 1;
+        let file_off = if let Some(off) = rela_offset { off } else { return 0; };
+        let rela_data = &elf_data[file_off as usize..(file_off + rela_sz) as usize];
+        let ent_size = if rela_ent > 0 { rela_ent } else { 24 };
+        let mut applied = 0;
+        let mut unhandled_count = 0;
+        let mut first_unhandled = 0;
+        
+        let sym_ent_size = if syment > 0 { syment } else { 24 }; // Elf64_Sym is 24 bytes
+        
+        for chunk in rela_data.chunks(ent_size as usize) {
+            if chunk.len() < 24 { break; }
+            let r_offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
+            let r_info = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
+            let r_addend = i64::from_le_bytes(chunk[16..24].try_into().unwrap());
+            
+            let r_type = r_info & 0xFFFF_FFFF;
+            let r_sym = r_info >> 32;
+            
+            // R_AARCH64_RELATIVE = 1027
+            // R_AARCH64_GLOB_DAT = 1025
+            // R_AARCH64_JUMP_SLOT = 1026
+            // R_AARCH64_ABS64     = 257
+            
+            let mut val_to_write = None;
+            
+            if r_type == 1027 {
+                 val_to_write = Some(load_base.wrapping_add(r_addend as u64));
+            } else if r_type == 1025 || r_type == 1026 || r_type == 257 {
+                 if let Some(sym_off) = symtab_offset {
+                     // Read symbol
+                     let sym_idx = r_sym;
+                     let sym_loc = sym_off + (sym_idx * sym_ent_size);
+                     if (sym_loc as usize + 24) <= elf_data.len() {
+                         let sym_bytes = &elf_data[sym_loc as usize..sym_loc as usize + 24];
+                         // st_value is at offset 8 (u64)
+                         let st_value = u64::from_le_bytes(sym_bytes[8..16].try_into().unwrap());
+                         // st_shndx is at offset 6 (u16). If UNDEF (0), usually 0 value?
+                         // For static PIE, symbols should be defined.
+                         // Val = Base + SymVal + Addend
+                         val_to_write = Some(load_base.wrapping_add(st_value).wrapping_add(r_addend as u64));
+                     }
                  }
-             }
-             return applied;
+            }
+
+            if let Some(value) = val_to_write {
+                let target_addr = load_base + r_offset;
+                write_user_bytes(target_addr, &value.to_le_bytes(), root_table, hhdm_offset);
+                applied += 1;
+            } else {
+                 if unhandled_count == 0 { first_unhandled = r_type; }
+                 unhandled_count += 1;
+            }
         }
+        
+        if unhandled_count > 0 {
+             unsafe {
+                 bridge_aarch64::Bridge.log(alloc::format!("loader: {} unhandled relocs. First type: {}\n", unhandled_count, first_unhandled).as_str());
+             }
+        }
+        return applied;
     }
     0
 }

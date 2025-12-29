@@ -73,9 +73,8 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     };
 
     for app in &user_apps {
-        let status = Command::new(&cargo)
-            .arg("build")
-            // Use manifest path explicitly since user apps are in a different workspace
+        let mut cmd = Command::new(&cargo);
+        cmd.arg("build")
             .arg("--manifest-path")
             .arg("user/Cargo.toml")
             .arg("-p")
@@ -84,8 +83,10 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
             .arg(user_target)
             .arg("-Z")
             .arg("build-std=core,alloc,compiler_builtins")
-            .current_dir(&root)
-            .status()
+            .current_dir(&root);
+        
+
+        let status = cmd.status()
             .context(format!("Failed to build user app {}", app))?;
 
         if !status.success() {

@@ -42,26 +42,74 @@ pub fn sys_driver_publish<B: HardwareBridge>(
 
     match publish {
         DriverPublish::Observation { thing_bytes } => {
-            // Decode Thing from bytes?
-            // "if Observation { thing_bytes }: decode Thing from bytes... insert into graph"
-            // We need to parse Thing.
             match postcard::from_bytes::<thing_models::Thing>(&thing_bytes) {
                 Ok(thing) => {
-                    kernel.bridge.log(
-                        alloc::format!("Kernel: SysDriverPublish Received Kind {}", thing.kind.0)
-                            .as_str(),
-                    );
-
-                    // Check capability? "Require calling process has CAP_GRAPH_WRITE_WITNESS"
-                    // V0: skip check for now or check dummy.
-
-                    // Create Thing with Dynamic ID
-                    // Ignoring the ID provided in `thing` struct.
+                    kernel.bridge.log(alloc::format!("Kernel: SysDriverPublish Received Kind {}", thing.kind.0).as_str());
                     let id = kernel.graph.create_thing(thing.kind, thing.body);
                     id.0 as SysRet
                 }
                 Err(_) => -2,
             }
+        }
+    }
+}
+
+pub fn sys_mmio_map<B: HardwareBridge>(
+    kernel: &mut Kernel<B>,
+    phys_addr: u64,
+    len: u64,
+) -> SysRet {
+    // Identity map MMIO into user space (Low memory)
+    // TODO: Use VMA allocator to avoid conflicts.
+    // MMIO is usually < 4GB. Code is at 256GB (0x40...).
+    // So identity mapping is safe for now.
+    
+    let start_page = phys_addr & !0xFFF;
+    let end_addr = phys_addr + len;
+    let end_page_align = (end_addr + 0xFFF) & !0xFFF;
+    
+    let mut curr = start_page;
+    while curr < end_page_align {
+        match kernel.bridge.map_user_mmio(curr, curr, 0) { // Flags handled by bridge default (NO_CACHE etc)
+            Ok(_) => {},
+            Err(_) => return -1, // ENOMEM
+        }
+        curr += 4096;
+    }
+    
+    phys_addr as SysRet // Return virt address (identity)
+}
+
+pub fn sys_irq_register<B: HardwareBridge>(
+    _kernel: &mut Kernel<B>,
+    _irq: usize,
+) -> SysRet {
+    // TODO: Register IRQ owner in interrupt router.
+    // For now, standard PC interrupts are broadcast or we assume single driver.
+    0
+}
+
+pub fn sys_port_io<B: HardwareBridge>(
+    kernel: &mut Kernel<B>,
+    port: u16,
+    val: u32,
+    width: u8,
+    write: bool,
+) -> SysRet {
+    if write {
+        match width {
+            1 => kernel.bridge.port_outb(port, val as u8),
+            2 => kernel.bridge.port_outw(port, val as u16),
+            4 => kernel.bridge.port_outd(port, val),
+            _ => return -1,
+        }
+        0
+    } else {
+        match width {
+            1 => kernel.bridge.port_inb(port) as SysRet,
+            2 => kernel.bridge.port_inw(port) as SysRet,
+            4 => kernel.bridge.port_ind(port) as SysRet,
+            _ => -1,
         }
     }
 }

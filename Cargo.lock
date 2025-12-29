@@ -227,6 +227,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "boot_screen"
+version = "0.1.0"
+
+[[package]]
 name = "bridge_aarch64"
 version = "0.2.0"
 dependencies = [
@@ -742,6 +746,7 @@ version = "0.2.0"
 dependencies = [
  "abi",
  "boot",
+ "boot_screen",
  "bridge_aarch64",
  "hw",
  "infer",
@@ -760,6 +765,7 @@ version = "0.2.0"
 dependencies = [
  "abi",
  "boot",
+ "boot_screen",
  "bridge_x86_64",
  "infer",
  "kernel",

@@ -182,12 +182,74 @@ pub extern "C" fn rust_main() -> ! {
         }
     }
     
+    // Hook BootScreen allocator
+    unsafe fn boot_alloc_impl(size: usize, align: usize) -> *mut u8 {
+        let layout = alloc::alloc::Layout::from_size_align(size, align).unwrap();
+        alloc::alloc::alloc(layout)
+    }
+    boot_screen::set_boot_alloc(boot_alloc_impl);
+
     // 2. Collect Boot Info (Allocates)
     let boot_info = boot::collect();
+
+    // --- Boot Screen Init ---
+    let mut bs = unsafe {
+        if let Some(fb) = &boot_info.framebuffer {
+             if fb.bpp != 32 {
+                 use kernel::bridge::HardwareBridge;
+                 Bridge.log("BOOTSCREEN: Unsupported BPP (needs 32)\n");
+                 None
+             } else {
+                 let addr = fb.address; // Virtual address
+
+                 // Pixel Format Detection
+                 let pixel_format = if fb.red_mask_shift == 16 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 0 {
+                      boot_screen::PixelFormat::Xrgb8888
+                 } else if fb.red_mask_shift == 0 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 16 {
+                      boot_screen::PixelFormat::Bgra8888
+                 } else {
+                      boot_screen::PixelFormat::Xrgb8888
+                 };
+
+                 let info = boot_screen::FramebufferInfo {
+                     addr: addr as *mut u8,
+                     size_bytes: fb.size as usize,
+                     width: fb.width as u32,
+                     height: fb.height as u32,
+                     pitch_bytes: fb.pitch as u32,
+                     bpp: fb.bpp,
+                     pixel_format,
+                 };
+
+                 if let Some(mut bs) = unsafe { boot_screen::BootScreenOwned::new(info) } {
+                     use boot_screen::milestones;
+                     boot_screen::fade_in(&mut bs, boot_spin_delay);
+                     Some(bs)
+                 } else {
+                     use kernel::bridge::HardwareBridge;
+                     Bridge.log("BOOTSCREEN: Init Failed (Alloc/Size)\n");
+                     None
+                 }
+             }
+        } else {
+             use kernel::bridge::HardwareBridge;
+             Bridge.log("BOOTSCREEN: No Framebuffer\n");
+             None
+        }
+    };
+
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::BRIDGE_ONLINE); }
     
     let k = Kernel::new(Bridge);
     *KERNEL.lock() = Some(k);
 
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_INIT); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_SEEDED); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_INIT); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_READY); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SCANNING_MODULES); }
+
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SPAWNING_INIT); }
     Bridge.log("Starting Loader Task...\n");
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = guard.as_mut() {
@@ -234,6 +296,13 @@ pub extern "C" fn rust_main() -> ! {
         loop {
             Bridge.idle();
         }
+    }
+}
+
+#[inline(always)]
+fn boot_spin_delay(count: u64) {
+    for _ in 0..count {
+        core::hint::spin_loop();
     }
 }
 

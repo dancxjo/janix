@@ -187,8 +187,9 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
 
         let mut downloaded = false;
         let urls = [
+            "https://ftp.gnu.org/gnu/unifont/unifont-17.0.03/unifont_all-17.0.03.hex.gz",
+            "https://ftp.gnu.org/gnu/unifont/unifont-16.0.01/unifont-16.0.01.hex.gz",
             "https://ftp.gnu.org/gnu/unifont/unifont-15.1.05/unifont-15.1.05.hex.gz",
-            "https://ftp.gnu.org/gnu/unifont/unifont-15.1.04/unifont-15.1.04.hex.gz",
         ];
 
         for url in urls {

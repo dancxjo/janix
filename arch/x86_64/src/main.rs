@@ -503,10 +503,65 @@ pub extern "C" fn rust_main() -> ! {
         });
     }
 
+    // Hook BootScreen allocator
+    unsafe fn boot_alloc_impl(size: usize, align: usize) -> *mut u8 {
+        let layout = alloc::alloc::Layout::from_size_align(size, align).unwrap();
+        alloc::alloc::alloc(layout)
+    }
+    boot_screen::set_boot_alloc(boot_alloc_impl);
+
     // 2. Safe to Allocate now (Vec, String, etc.)
     let boot_info = boot::collect();
 
+    // --- Boot Screen Init ---
+    let mut bs = unsafe {
+        if let Some(fb) = &boot_info.framebuffer {
+             if fb.bpp != 32 {
+                 use kernel::bridge::HardwareBridge;
+                 Bridge.log("BOOTSCREEN: Unsupported BPP (needs 32)\n");
+                 None
+             } else {
+                 let addr = fb.address; // Virtual address (HHDM)
+
+                 // Pixel Format Detection
+                 let pixel_format = if fb.red_mask_shift == 16 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 0 {
+                      boot_screen::PixelFormat::Xrgb8888
+                 } else if fb.red_mask_shift == 0 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 16 {
+                      boot_screen::PixelFormat::Bgra8888 // or Abgr8888 depending on alpha pos, assumes 32bpp
+                 } else {
+                      // Fallback or log? Limine usually gives Xrgb8888 compatible
+                      boot_screen::PixelFormat::Xrgb8888
+                 };
+
+                 let info = boot_screen::FramebufferInfo {
+                     addr: addr as *mut u8,
+                     size_bytes: fb.size as usize,
+                     width: fb.width as u32,
+                     height: fb.height as u32,
+                     pitch_bytes: fb.pitch as u32,
+                     bpp: fb.bpp,
+                     pixel_format,
+                 };
+
+                 if let Some(mut bs) = unsafe { boot_screen::BootScreenOwned::new(info) } {
+                     use boot_screen::milestones;
+                     boot_screen::fade_in(&mut bs, boot_spin_delay);
+                     Some(bs)
+                 } else {
+                     use kernel::bridge::HardwareBridge;
+                     Bridge.log("BOOTSCREEN: Init Failed (Alloc/Size)\n");
+                     None
+                 }
+             }
+        } else {
+             use kernel::bridge::HardwareBridge;
+             Bridge.log("BOOTSCREEN: No Framebuffer\n");
+             None
+        }
+    };
+
     let mut k = Kernel::new(Bridge);
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::BRIDGE_ONLINE); }
 
     unsafe {
         use kernel::bridge::HardwareBridge;
@@ -514,12 +569,16 @@ pub extern "C" fn rust_main() -> ! {
         k.bridge.log(thing_models::milestones::KERNEL_ENTRY);
         k.bridge.log("\n");
 
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_INIT); }
         kernel::graph::seed_builtins(&mut k.graph);
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_SEEDED); }
 
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_INIT); }
         let kernel_name_sym = k
             .symbols
             .intern("kernel")
             .unwrap_or(thing_models::builtins::symbols::SYM_PROCESS);
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_READY); }
 
         let boot_root_body = thing_models::core::process::ProcessBody {
             pid: 0,
@@ -653,6 +712,7 @@ pub extern "C" fn rust_main() -> ! {
         }
         // -----------------------------------------------------------------
 
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SCANNING_MODULES); }
         ingest_bitmaps(&mut k, &boot_info);
         // Default to Limine FB
         let mut use_qemu = false;
@@ -690,6 +750,8 @@ pub extern "C" fn rust_main() -> ! {
         }
 
         spawn_loaded(&mut k, &boot_info);
+
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SPAWNING_INIT); }
         spawn_kernel_init_task(&mut k, &boot_info);
 
         bridge_x86_64::set_tick_hook(scheduler_tick);
@@ -928,6 +990,13 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
 }
 
 unsafe fn u_sleep(count: u64) {
+    for _ in 0..count {
+        core::hint::spin_loop();
+    }
+}
+
+#[inline(always)]
+fn boot_spin_delay(count: u64) {
     for _ in 0..count {
         core::hint::spin_loop();
     }

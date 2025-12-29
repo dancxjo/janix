@@ -1,0 +1,8 @@
+[package]
+name = "boot_screen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# No external dependencies for now.
+# Uses core and alloc implicitly.

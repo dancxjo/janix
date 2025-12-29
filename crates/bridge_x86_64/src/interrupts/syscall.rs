@@ -134,19 +134,11 @@ extern "C" fn syscall_dispatch(
         let rsp: *const u64;
         unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp) };
         
-        bridge.log("SYSCALL STACK DUMP (rsp=");
-        crate::print_hex(rsp as u64);
-        bridge.log("):\n");
-        for i in 0..16 {
-            bridge.log("  [");
-            crate::print_u64(i as u64);
-            bridge.log("] ");
-            let val = unsafe { *rsp.add(i) };
-            crate::print_hex(val);
-            if i % 4 == 3 { bridge.log("\n"); }
-        }
-        bridge.log("\n");
-
+        // Indices verified by diffing stack dump.
+        // Stack Layout (relative to rsp here):
+        // [11] = User RSP
+        // [12] = User RFLAGS
+        // [13] = User RIP
         let saved_flags = unsafe { *rsp.add(12) };
         let saved_rip = unsafe { *rsp.add(13) };
         let saved_rsp = unsafe { *rsp.add(11) };

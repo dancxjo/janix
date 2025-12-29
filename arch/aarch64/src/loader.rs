@@ -142,6 +142,11 @@ fn apply_relative_relocations(
                      
                      write_user_bytes(target_addr, &value.to_le_bytes(), root_table, hhdm_offset);
                      applied += 1;
+                 } else {
+                     unsafe {
+                         use bridge_aarch64::Bridge;
+                         Bridge.log(alloc::format!("loader: Unhandled R_TYPE {} at offset {:#x}\n", r_type, r_offset).as_str());
+                     }
                  }
              }
              return applied;
@@ -284,6 +289,12 @@ pub fn process_file(
              });
              let t_ptr = Box::into_raw(t_args) as u64;
              
+             unsafe {
+                 k.bridge.log("loader: computed entry: ");
+                 k.bridge.log(alloc::format!("{:#x}", current_app_base + img.entry_point).as_str());
+                 k.bridge.log("\n");
+             }
+             
              k.scheduler.spawn(
                  &k.bridge,
                  name,
@@ -305,6 +316,10 @@ struct TrampolineArgs {
 pub extern "C" fn trampoline(arg: u64) {
     let args = unsafe { Box::from_raw(arg as *mut TrampolineArgs) };
     unsafe {
+       Bridge.log("trampoline: jumping to: ");
+       Bridge.log(alloc::format!("{:#x}", args.entry).as_str());
+       Bridge.log("\n");
+
        core::arch::asm!("msr ttbr0_el1, {}", in(reg) args.root);
        core::arch::asm!("isb"); 
        

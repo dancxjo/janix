@@ -517,19 +517,14 @@ pub extern "C" fn rust_main() -> ! {
     let mut bs = unsafe {
         if let Some(fb) = &boot_info.framebuffer {
              if fb.bpp != 32 {
-                 use kernel::bridge::HardwareBridge;
-                 Bridge.log("BOOTSCREEN: Unsupported BPP (needs 32)\n");
                  None
              } else {
                  let addr = fb.address; // Virtual address (HHDM)
-
-                 // Pixel Format Detection
                  let pixel_format = if fb.red_mask_shift == 16 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 0 {
                       boot_screen::PixelFormat::Xrgb8888
                  } else if fb.red_mask_shift == 0 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 16 {
-                      boot_screen::PixelFormat::Abgr8888 // Red at 0, Green at 8, Blue at 16
+                      boot_screen::PixelFormat::Abgr8888
                  } else {
-                      // Fallback or log? Limine usually gives Xrgb8888 compatible
                       boot_screen::PixelFormat::Xrgb8888
                  };
 
@@ -543,25 +538,28 @@ pub extern "C" fn rust_main() -> ! {
                      pixel_format,
                  };
 
-                 if let Some(mut bs) = unsafe { boot_screen::BootScreenOwned::new(info) } {
-                     use boot_screen::milestones;
-                     boot_screen::fade_in(&mut bs, boot_spin_delay);
+                 // Allocate the screen structures
+                 if let Some(mut bs) = boot_screen::BootScreenOwned::new(info) {
+                     // Fast Initialization:
+                     // Set background color and fade immediately. 
+                     // Clearing happens in the shadow buffer during draw().
+                     bs.set_background_color(0x00002244);
+                     bs.set_fade(255);
+                     
+                     bs.show(boot_screen::milestones::BOOTING);
+                     
                      Some(bs)
                  } else {
-                     use kernel::bridge::HardwareBridge;
-                     Bridge.log("BOOTSCREEN: Init Failed (Alloc/Size)\n");
                      None
                  }
              }
         } else {
-             use kernel::bridge::HardwareBridge;
-             Bridge.log("BOOTSCREEN: No Framebuffer\n");
              None
         }
     };
 
     let mut k = Kernel::new(Bridge);
-    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::BRIDGE_ONLINE); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::BRIDGE_ONLINE); bs.draw(); }
 
     unsafe {
         use kernel::bridge::HardwareBridge;
@@ -569,16 +567,16 @@ pub extern "C" fn rust_main() -> ! {
         k.bridge.log(thing_models::milestones::KERNEL_ENTRY);
         k.bridge.log("\n");
 
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_INIT); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_INIT); bs.draw(); }
         kernel::graph::seed_builtins(&mut k.graph);
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_SEEDED); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_SEEDED); bs.draw(); }
 
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_INIT); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_INIT); bs.draw(); }
         let kernel_name_sym = k
             .symbols
             .intern("kernel")
             .unwrap_or(thing_models::builtins::symbols::SYM_PROCESS);
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_READY); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_READY); bs.draw(); }
 
         let boot_root_body = thing_models::core::process::ProcessBody {
             pid: 0,
@@ -995,12 +993,7 @@ unsafe fn u_sleep(count: u64) {
     }
 }
 
-#[inline(always)]
-fn boot_spin_delay(count: u64) {
-    for _ in 0..count {
-        core::hint::spin_loop();
-    }
-}
+
 
 unsafe fn ingest_bitmaps(k: &mut Kernel<Bridge>, boot_info: &boot::BootInfo) {
     use kernel::bridge::HardwareBridge;

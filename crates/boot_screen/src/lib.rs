@@ -40,6 +40,7 @@ pub struct BootScreen<'a> {
     damage: Option<Rect>,
     width_center: u32,
     height_center: u32,
+    bg_color: u32, // ARGB
 }
 
 pub struct BootScreenOwned {
@@ -57,6 +58,10 @@ impl BootScreenOwned {
         if alloc_ptr.is_null() {
             return None;
         }
+
+        if fb.addr.is_null() {
+            return None;
+        }
         let alloc_fn: BootAlloc = core::mem::transmute(alloc_ptr);
 
         let min_size = (fb.pitch_bytes as usize).checked_mul(fb.height as usize)?;
@@ -68,7 +73,6 @@ impl BootScreenOwned {
         if ptr.is_null() {
             return None;
         }
-
         core::ptr::write_bytes(ptr, 0, fb.size_bytes);
 
         // Create 'static slice because we leak the memory (it persists for boot)
@@ -87,6 +91,7 @@ impl BootScreenOwned {
             damage: Some(Rect::new(0, 0, fb.width, fb.height)),
             width_center,
             height_center,
+            bg_color: 0, // Default to Black
         };
 
         Some(Self {
@@ -94,6 +99,10 @@ impl BootScreenOwned {
             _shadow_ptr: ptr,
             _shadow_len: fb.size_bytes,
         })
+    }
+
+    pub fn set_background_color(&mut self, argb: u32) {
+        self.inner.set_background_color(argb);
     }
 
     pub fn milestone(&mut self, msg: &'static str) {
@@ -116,7 +125,7 @@ impl BootScreenOwned {
 // Fade helper
 pub fn fade_in<F: FnMut(u64)>(bs: &mut BootScreenOwned, mut delay: F) {
     bs.show(milestones::BOOTING);
-    for a in (0..=255).step_by(8) {
+    for a in (0..=255).step_by(32) {
         bs.set_fade(a as u8);
         bs.draw();
         delay(100_000);
@@ -161,6 +170,13 @@ impl<'a> BootScreen<'a> {
         }
     }
 
+    fn set_background_color(&mut self, argb: u32) {
+        if self.bg_color != argb {
+            self.bg_color = argb;
+            self.add_damage(Rect::new(0, 0, self.fb.width, self.fb.height));
+        }
+    }
+
     fn show(&mut self, msg: &'static str) {
         self.milestone(msg);
         self.draw();
@@ -193,11 +209,29 @@ impl<'a> BootScreen<'a> {
     }
 
     fn clear_shadow_rect(&mut self, rect: &Rect) {
+        let b = (self.bg_color & 0xFF) as u8;
+        let g = ((self.bg_color >> 8) & 0xFF) as u8;
+        let r = ((self.bg_color >> 16) & 0xFF) as u8;
+        let a = ((self.bg_color >> 24) & 0xFF) as u8;
+
         for y in rect.y .. (rect.y + rect.h) {
             let start = (y as usize * self.fb.pitch_bytes as usize) + (rect.x as usize * 4);
-            let end = start + (rect.w as usize * 4);
-            if end <= self.shadow.len() {
-                self.shadow[start..end].fill(0);
+            let width_bytes = rect.w as usize * 4;
+            
+            if start + width_bytes <= self.shadow.len() {
+                // Optimization: If all bytes are the same, use fill
+                if b == g && g == r && r == a {
+                    self.shadow[start..start+width_bytes].fill(b);
+                } else {
+                    // Manual fill for complex colors
+                    for i in 0..rect.w as usize {
+                        let base = start + i * 4;
+                        self.shadow[base] = b;
+                        self.shadow[base+1] = g;
+                        self.shadow[base+2] = r;
+                        self.shadow[base+3] = a;
+                    }
+                }
             }
         }
     }
@@ -292,35 +326,40 @@ impl<'a> BootScreen<'a> {
 
             if start + width_bytes > self.shadow.len() { continue; }
 
-            let src_slice = &self.shadow[start .. start + width_bytes];
-            let dst_ptr = unsafe { self.fb.addr.add(start) };
+            // Use pointer arithmetic for critical boot performance (shadow-to-fb)
+            // Safety: We verified bounds in `blit_shadow_to_fb` entry check and `min_size` check.
+            let len = width_bytes / 4;
+            unsafe {
+                let mut s_ptr = self.shadow.as_ptr().wrapping_add(start);
+                let mut d_ptr = self.fb.addr.wrapping_add(start);
+                
+                for _ in 0..len {
+                     let b = *s_ptr;
+                     let g = *s_ptr.wrapping_add(1);
+                     let r = *s_ptr.wrapping_add(2);
+                     let a = *s_ptr.wrapping_add(3);
 
-            // Use chunks_exact for efficient iteration (replaces step_by)
-            for (i, chunk) in src_slice.chunks_exact(4).enumerate() {
-                 let b = chunk[0];
-                 let g = chunk[1];
-                 let r = chunk[2];
-                 let a = chunk[3];
+                     // Fast alpha blending: (color * (alpha + 1)) >> 8
+                     // eliminates expensive division
+                     // We use u32 casts for the multiply
+                     let r_out = ((r as u32 * scale) >> 8) as u8;
+                     let g_out = ((g as u32 * scale) >> 8) as u8;
+                     let b_out = ((b as u32 * scale) >> 8) as u8;
+                     // For packed output, we need to respect format. 
+                     // Assuming Xrgb8888/Abgr8888 as per boot_screen init.
+                     
+                     // Optimization: Use direct u32 write if possible, but packing is safer.
+                     let argb_out = ((a as u32) << 24) | ((r_out as u32) << 16) | ((g_out as u32) << 8) | (b_out as u32);
+                     let final_val = self.fb.pixel_format.pack_le_bytes(argb_out).to_le_bytes();
 
-                 // Fast alpha blending: (color * (alpha + 1)) >> 8
-                 // eliminates expensive division
-                 let r_out = ((r as u32 * scale) >> 8) as u8;
-                 let g_out = ((g as u32 * scale) >> 8) as u8;
-                 let b_out = ((b as u32 * scale) >> 8) as u8;
-                 let a_out = a;
+                     *d_ptr = final_val[0];
+                     *d_ptr.wrapping_add(1) = final_val[1];
+                     *d_ptr.wrapping_add(2) = final_val[2];
+                     *d_ptr.wrapping_add(3) = final_val[3];
 
-                 let argb_out = ((a_out as u32) << 24) | ((r_out as u32) << 16) | ((g_out as u32) << 8) | (b_out as u32);
-
-                 let final_val = self.fb.pixel_format.pack_le_bytes(argb_out);
-                 let final_bytes = final_val.to_le_bytes();
-
-                 unsafe {
-                     let dst_offset = i * 4;
-                     *dst_ptr.add(dst_offset) = final_bytes[0];
-                     *dst_ptr.add(dst_offset+1) = final_bytes[1];
-                     *dst_ptr.add(dst_offset+2) = final_bytes[2];
-                     *dst_ptr.add(dst_offset+3) = final_bytes[3];
-                 }
+                     s_ptr = s_ptr.wrapping_add(4);
+                     d_ptr = d_ptr.wrapping_add(4);
+                }
             }
         }
     }

@@ -17,12 +17,11 @@ static mut GS_SCRATCH: Scratch = Scratch([0; 2]);
 
 pub unsafe fn init() {
     // 0. Setup KernelGSBase
-    // MSR 0xC0000102
+    // We are in Kernel Mode, so Active GS Base should point to Scratch.
+    // The "Shadow" (MSR) should point to User (0), so swapgs loads it.
     let gs_base = VirtAddr::new(core::ptr::addr_of!(GS_SCRATCH) as u64);
-    KernelGsBase::write(gs_base);
-    // Ensure current GS base is the "user" side (zeroed) so swapgs
-    // during syscall entry loads the kernel scratch region.
-    GsBase::write(VirtAddr::zero());
+    GsBase::write(gs_base);
+    KernelGsBase::write(VirtAddr::zero());
 
     // 1. Enable syscall/sysret instruction via EFER
     let mut efer = Efer::read();

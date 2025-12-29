@@ -1,59 +1,94 @@
 
-const FONT_DATA: &str = include_str!("../../../assets/fonts/unifont.hex");
+const FONT_DATA: &[u8] = include_bytes!("../../../assets/fonts/unifont.hex");
 
 pub fn get_glyph(ch: char) -> Option<[u8; 16]> {
     let target = ch as u32;
-    let mut rest = FONT_DATA;
+    let data = FONT_DATA;
 
-    while !rest.is_empty() {
-        // Parse 4-digit hex at start
-        if rest.len() < 5 { break; } // XXXX:
+    let mut left = 0;
+    let mut right = data.len();
 
-        // Safety check for format
-        let bytes = rest.as_bytes();
-        if bytes.len() > 4 && bytes[4] == b':' {
-            if let Some(val) = parse_hex_4(bytes) {
-                if val == target {
-                    // Match! Parse bitmap.
-                    // The bitmap follows ':'.
-                    // Width check? "Duospaced".
-                    // 8x16 = 32 hex chars.
-                    // 16x16 = 64 hex chars.
-                    // We only support 8x16 (32 hex chars) for this boot screen logic?
-                    // Or we can try to render wide?
-                    // BootScreen assumes 8x16. If we get 64 hex chars, we might fail or clip.
-                    // For now, assume we want [u8; 16].
-                    // If the line is 32 chars long, we parse.
-                    // Check length to newline.
-                    let end_of_line = rest.find('\n').unwrap_or(rest.len());
-                    let hex_len = end_of_line - 5; // skip XXXX:
-                    if hex_len == 32 {
-                        return parse_bitmap_32(&rest[5..5+32]);
-                    } else {
-                        // Ignore wide glyphs or wrong format
-                        return None;
-                    }
-                } else if val > target {
-                    // Sorted file: target not found
-                    return None;
-                }
-            }
+    while left < right {
+        let mid = left + (right - left) / 2;
+
+        // Align to start of line (scan backwards)
+        let mut line_start = mid;
+        while line_start > 0 && data[line_start - 1] != b'\n' {
+            line_start -= 1;
         }
 
-        // Next line
-        if let Some(idx) = rest.find('\n') {
-             rest = &rest[idx+1..];
+        // If we scanned back before 'left', we might be stuck in a loop if we don't advance?
+        // Standard binary search on lines:
+        // If line_start < left, it means mid fell into the line starting before left.
+        // But left is always a line start. So line_start should generally be >= left.
+        // Except if range is small.
+        // If line_start < left, we force line_start to next line? No.
+
+        // Safe bet: line_start is a valid start of a line.
+        // We parse it.
+
+        if line_start >= right {
+            break;
+        }
+
+        let line = &data[line_start..];
+
+        // Parse CodePoint:
+        let mut colon_idx = 0;
+        while colon_idx < 8 && colon_idx < line.len() && line[colon_idx] != b':' {
+            colon_idx += 1;
+        }
+
+        if colon_idx >= line.len() || line[colon_idx] != b':' {
+            // Should not happen on valid lines
+            break;
+        }
+
+        let cp_bytes = &line[..colon_idx];
+        let cp = parse_hex_bytes(cp_bytes)?;
+
+        if cp == target {
+            // Found
+            let hex_start = colon_idx + 1;
+            let mut hex_end = hex_start;
+            while hex_end < line.len() && line[hex_end] != b'\n' {
+                hex_end += 1;
+            }
+
+            let hex_len = hex_end - hex_start;
+            if hex_len == 32 {
+                return parse_bitmap_32(&line[hex_start..hex_end]);
+            } else {
+                // Wide glyph or unknown format
+                return None;
+            }
+        } else if cp < target {
+            // Target is after this line.
+            // Move left to start of next line.
+            let mut next_line = line_start + hex_end_offset(line);
+            // Ensure we advance
+            if next_line == line_start { next_line += 1; } // Should imply \n was processed
+            left = next_line;
         } else {
-             break;
+            // Target is before this line.
+            right = line_start;
         }
     }
+
     None
 }
 
-fn parse_hex_4(bytes: &[u8]) -> Option<u32> {
+fn hex_end_offset(line: &[u8]) -> usize {
+    let mut i = 0;
+    while i < line.len() && line[i] != b'\n' {
+        i += 1;
+    }
+    if i < line.len() { i + 1 } else { i }
+}
+
+fn parse_hex_bytes(bytes: &[u8]) -> Option<u32> {
     let mut v = 0u32;
-    for i in 0..4 {
-        let b = bytes[i];
+    for &b in bytes {
         let d = match b {
             b'0'..=b'9' => b - b'0',
             b'A'..=b'F' => b - b'A' + 10,
@@ -65,9 +100,8 @@ fn parse_hex_4(bytes: &[u8]) -> Option<u32> {
     Some(v)
 }
 
-fn parse_bitmap_32(hex: &str) -> Option<[u8; 16]> {
+fn parse_bitmap_32(bytes: &[u8]) -> Option<[u8; 16]> {
     let mut out = [0u8; 16];
-    let bytes = hex.as_bytes();
     if bytes.len() < 32 { return None; }
 
     for i in 0..16 {

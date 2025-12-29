@@ -11,6 +11,7 @@ mod early_log;
 mod heap;
 #[cfg(target_os = "thingos")]
 mod limine;
+mod neon;
 
 use boot;
 use bridge_aarch64::Bridge;
@@ -188,6 +189,7 @@ pub extern "C" fn rust_main() -> ! {
         alloc::alloc::alloc(layout)
     }
     boot_screen::set_boot_alloc(boot_alloc_impl);
+    boot_screen::set_blit_hook(neon::neon_blit);
 
     // 2. Collect Boot Info (Allocates)
     let boot_info = boot::collect();
@@ -222,8 +224,10 @@ pub extern "C" fn rust_main() -> ! {
                  };
 
                  if let Some(mut bs) = unsafe { boot_screen::BootScreenOwned::new(info) } {
-                     use boot_screen::milestones;
-                     boot_screen::fade_in(&mut bs, boot_spin_delay);
+                     // Fast Init: Start at Black
+                     bs.set_background_color(0x00000000);
+                     bs.set_fade(255);
+                     bs.show(boot_screen::milestones::BOOTING);
                      Some(bs)
                  } else {
                      use kernel::bridge::HardwareBridge;
@@ -238,15 +242,30 @@ pub extern "C" fn rust_main() -> ! {
         }
     };
 
-    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::BRIDGE_ONLINE); }
+    if let Some(bs) = &mut bs { 
+        bs.set_background_color(0x00091929);
+        bs.show(boot_screen::milestones::BRIDGE_ONLINE); 
+    }
     
     let k = Kernel::new(Bridge);
     *KERNEL.lock() = Some(k);
 
-    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_INIT); }
-    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_SEEDED); }
-    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_INIT); }
-    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_READY); }
+    if let Some(bs) = &mut bs { 
+        bs.set_background_color(0x00123353);
+        bs.show(boot_screen::milestones::GRAPH_INIT); 
+    }
+    if let Some(bs) = &mut bs { 
+        bs.set_background_color(0x001B4C7D);
+        bs.show(boot_screen::milestones::GRAPH_SEEDED); 
+    }
+    if let Some(bs) = &mut bs { 
+        bs.set_background_color(0x002466A7);
+        bs.show(boot_screen::milestones::SYMBOLS_INIT); 
+    }
+    if let Some(bs) = &mut bs { 
+        bs.set_background_color(0x002E80D1); // Final Desktop Color
+        bs.show(boot_screen::milestones::SYMBOLS_READY); 
+    }
     if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SCANNING_MODULES); }
 
     if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SPAWNING_INIT); }

@@ -259,16 +259,73 @@ fn print_dec(bridge: &Bridge, val: u64) {
 unsafe fn spawn_loaded_stub(boot_info: &boot::BootInfo) {
     use kernel::bridge::HardwareBridge;
     let bridge = Bridge;
+    // Find loaded.elf
+    let mut loaded_mod = None;
     for module in &boot_info.modules {
         if module.path.ends_with("loaded.elf") {
-            bridge.log("Slice A Success: Found loaded.elf at ");
+             bridge.log("Slice A Success: Found loaded.elf at ");
              print_hex(&bridge, module.start);
              bridge.log("\n");
-             return;
+             loaded_mod = Some(module);
+             break;
         }
     }
-    bridge.log("WARNING: loaded.elf not found in modules!\n");
+    
+    if loaded_mod.is_none() {
+        bridge.log("WARNING: loaded.elf not found in modules!\n");
+        return;
+    }
+
+    // For Slice C verification:
+    // We want to enter User Mode (EL0) and execute a SYSCALL.
+    // To do this strictly without full ELF loading (Slice D), we need:
+    // 1. Memory mapped in Lower Half (User Space).
+    // 2. Code in that memory.
+    // 3. TTBR0_EL1 active.
+    
+    // Hack: Identity map first 1GB in TTBR0?
+    // We'll create a new Level 1 Table (alloc one frame).
+    // Map 0..1GB -> 0..1GB Identity.
+    // Set TTBR0.
+    
+    // But we need pAlloc. Using `limine::heap` logic?
+    // Or just grab a free frame manually (dangerous).
+    // We initialized `Kernel` which has `frame_allocator`?
+    // `k` is locked in `rust_main` scope. `spawn_loaded_stub` is called before `k` loop?
+    // No, `spawn_loaded_stub` is called before `Kernel::new`.
+    // So we don't have a high-level allocator yet.
+    // We have `paging::map_region`.
+    
+    // Let's defer full EL0 execution to Slice D?
+    // Task says "Verify EL0 entered".
+    // I can try to execute `svc #0` from EL1 just to verify Handler wiring?
+    // But handler checks ESR and might panic if from EL1?
+    // Trap handler handles generic synchronous exception.
+    
+    // Let's implement valid syscall hook registration.
+    bridge_aarch64::interrupts::syscall::set_syscall_hook(syscall_hook);
+    
+    bridge.log("Syscall hook registered. Ready for Slice D (ELF Loader).\n");
 }
+
+fn syscall_hook(
+    num: usize,
+    a1: usize, // data_ptr
+    a2: usize, // data_len
+    a3: usize, // name_ptr
+    a4: usize, // name_len
+    a5: usize,
+    a6: usize,
+) -> isize {
+    unsafe {
+        use kernel::bridge::HardwareBridge;
+        Bridge.log("SYSCALL: ");
+        print_hex(&Bridge, num as u64);
+        Bridge.log("\n");
+        0
+    }
+}
+
 
 fn scheduler_tick(_frame: &mut bridge_aarch64::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {

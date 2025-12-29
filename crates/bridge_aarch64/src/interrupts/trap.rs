@@ -56,24 +56,23 @@ macro_rules! log {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
-    let esr: u64;
-    unsafe { core::arch::asm!("mrs {}, esr_el1", out(reg) esr) };
-    let ec = (esr >> 26) & 0x3F;
+    // x8 is syscall number in AArch64 ABI
+    let num = tf.x8 as usize;
+    let a1 = tf.x0 as usize;
+    let a2 = tf.x1 as usize;
+    let a3 = tf.x2 as usize;
+    let a4 = tf.x3 as usize;
+    let a5 = tf.x4 as usize;
+    let a6 = tf.x5 as usize;
 
-    if ec != 0x15 {
-        let far: u64;
-        unsafe { core::arch::asm!("mrs {}, far_el1", out(reg) far) };
-        log!("EXCEPTION: AArch64 Trap (Not SVC)");
-        log!("ESR: {:#x}", esr);
-        log!("FAR: {:#x}", far);
-        log!("{:#?}", tf);
-        loop {}
+    unsafe {
+        if let Some(hook) = super::syscall::SYSCALL_HOOK {
+            hook(num, a1, a2, a3, a4, a5, a6) as u64
+        } else {
+            // -1 (isize) cast to u64 is usually all 1s
+            (!0u64) 
+        }
     }
-
-    // Stub implementation due to ABI drift
-    log!("AArch64 Syscall handler not implemented yet due to ABI drift.");
-    log!("Syscall number: {}", tf.x8);
-    loop {}
 }
 
 #[unsafe(no_mangle)]

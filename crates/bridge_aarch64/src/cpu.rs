@@ -46,3 +46,18 @@ pub fn irq_enable() {
         asm!("msr daifclr, #2");
     }
 }
+
+pub unsafe fn enter_user_mode(entry: u64, stack: u64, arg: u64) -> ! {
+    asm!(
+        "msr sp_el0, {stack}",
+        "msr elr_el1, {entry}",
+        "msr spsr_el1, {spsr}",
+        "mov x0, {arg}",
+        "eret",
+        stack = in(reg) stack,
+        entry = in(reg) entry,
+        spsr = in(reg) 0u64,
+        arg = in(reg) arg,
+        options(noreturn)
+    );
+}

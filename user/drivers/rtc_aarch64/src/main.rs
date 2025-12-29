@@ -103,17 +103,25 @@ fn ymd_to_unix(sample: RtcSample) -> u64 {
 }
 
 fn local_rtc_read(out: &mut RtcSample) -> Result<(), ()> {
-    let n = abi::syscall_defs::SYSCALL_RTC_READ;
-    let ret: usize;
-    unsafe {
-        core::arch::asm!(
-            "svc #0",
-            in("x8") n,
-            in("x0") (out as *mut RtcSample as usize),
-            in("x1") 0,
-            lateout("x0") ret,
-            options(nostack)
-        );
+    #[cfg(target_arch = "aarch64")]
+    {
+        let n = abi::syscall_defs::SYSCALL_RTC_READ;
+        let ret: usize;
+        unsafe {
+            core::arch::asm!(
+                "svc #0",
+                in("x8") n,
+                in("x0") (out as *mut RtcSample as usize),
+                in("x1") 0,
+                lateout("x0") ret,
+                options(nostack)
+            );
+        }
+        if ret == 0 { Ok(()) } else { Err(()) }
     }
-    if ret == 0 { Ok(()) } else { Err(()) }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = out;
+        Err(())
+    }
 }

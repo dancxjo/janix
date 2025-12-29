@@ -164,7 +164,8 @@ impl<'a> BootScreen<'a> {
         if let Some(old) = self.last_text_rect {
             d = d.union(&old);
         }
-        d = d.inflate(2);
+        // Inflate to cover shadow (2px offset)
+        d = d.inflate(4);
 
         self.add_damage(d);
         self.last_text_rect = Some(new_rect);
@@ -210,7 +211,13 @@ impl<'a> BootScreen<'a> {
             };
 
             self.clear_shadow_rect(&d);
-            self.draw_text_shadow(&d);
+            
+            // Pass 1: Shadow (Offset 2,2, Black)
+            self.draw_text(2, 2, 0xFF000000, &d);
+            
+            // Pass 2: Main Text (Offset 0,0, White)
+            self.draw_text(0, 0, 0xFFFFFFFF, &d);
+
             self.blit_shadow_to_fb(&d);
         }
     }
@@ -243,7 +250,7 @@ impl<'a> BootScreen<'a> {
         }
     }
 
-    fn draw_text_shadow(&mut self, clip: &Rect) {
+    fn draw_text(&mut self, offset_x: i32, offset_y: i32, color: u32, clip: &Rect) {
         if self.current_msg.is_empty() {
             return;
         }
@@ -251,25 +258,23 @@ impl<'a> BootScreen<'a> {
         let msg_len = self.current_msg.bytes().count() as u32;
         let text_w = msg_len * (8 + 1) - 1;
         let text_h = 16;
-        let start_x = self.width_center.saturating_sub(text_w / 2);
-        let start_y = self.height_center.saturating_sub(text_h / 2);
+        let base_x = self.width_center.saturating_sub(text_w / 2);
+        let base_y = self.height_center.saturating_sub(text_h / 2);
 
-        let text_rect = Rect::new(start_x, start_y, text_w, text_h);
-        if text_rect.intersection(clip).is_none() {
-            return;
-        }
+        let start_x = (base_x as i32 + offset_x) as u32;
+        let start_y = (base_y as i32 + offset_y) as u32;
 
         let mut cx = start_x;
         for byte in self.current_msg.bytes() {
-             let char_rect = Rect::new(cx, start_y, 8, 16);
-             if char_rect.intersection(clip).is_some() {
-                 self.draw_char_shadow(cx, start_y, byte, 0xFFFFFFFF, clip);
-             }
-             cx += 8 + 1;
+            let char_rect = Rect::new(cx, start_y, 8, 16);
+            if char_rect.intersection(clip).is_some() {
+                self.draw_char(cx, start_y, byte, color, clip);
+            }
+            cx += 8 + 1;
         }
     }
 
-    fn draw_char_shadow(&mut self, x: u32, y: u32, ch: u8, color: u32, clip: &Rect) {
+    fn draw_char(&mut self, x: u32, y: u32, ch: u8, color: u32, clip: &Rect) {
         let glyph = if let Some(g) = unifont::get_glyph(ch as char) {
             g
         } else if let Some(g) = unifont::get_glyph('?') {
@@ -285,19 +290,16 @@ impl<'a> BootScreen<'a> {
 
         for row in 0..16 {
             let py = y + row as u32;
-            if py < clip_y0 || py >= clip_y1 || py >= self.fb.height { continue; }
+            if py < clip_y0 || py >= clip_y1 || py >= self.fb.height {
+                continue;
+            }
 
             let row_data = glyph[row];
             for col in 0..8 {
                 if (row_data & (0x80 >> col)) != 0 {
                     let px = x + col;
-                    if px < clip_x0 || px >= clip_x1 || px >= self.fb.width { continue; }
-
-                    let sx = px + 1;
-                    let sy = py + 1;
-
-                    if sx < self.fb.width && sy < self.fb.height {
-                         self.put_pixel_shadow_bgra(sx, sy, 0xFF000000);
+                    if px < clip_x0 || px >= clip_x1 || px >= self.fb.width {
+                        continue;
                     }
 
                     self.put_pixel_shadow_bgra(px, py, color);

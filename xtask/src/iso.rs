@@ -86,6 +86,11 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
             .current_dir(&root);
         
 
+        if env == "aarch64" {
+            cmd.arg("--config")
+               .arg("target.aarch64-unknown-none.rustflags=['-C', 'relocation-model=pie', '-C', 'link-arg=-pie']");
+        }
+
         let status = cmd.status()
             .context(format!("Failed to build user app {}", app))?;
 

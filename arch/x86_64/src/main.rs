@@ -545,7 +545,7 @@ pub extern "C" fn rust_main() -> ! {
                      // Fast Initialization:
                      // Set background color and fade immediately. 
                      // Clearing happens in the shadow buffer during draw().
-                     bs.set_background_color(0x00002244);
+                     bs.set_background_color(0xFF002244);
                      bs.set_fade(255);
                      
                      bs.show(boot_screen::milestones::BOOTING);

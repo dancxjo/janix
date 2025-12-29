@@ -543,15 +543,9 @@ pub extern "C" fn rust_main() -> ! {
                      pixel_format,
                  };
 
-                 if let Some(mut bs) = boot_screen::BootScreen::new(info) {
-                     bs.show("Booting ThingOS");
-
-                     // Fade in
-                     for a in (0..=255).step_by(8) {
-                         bs.set_fade(a as u8);
-                         bs.draw();
-                         boot_delay(100_000);
-                     }
+                 if let Some(mut bs) = unsafe { boot_screen::BootScreenOwned::new(info) } {
+                     use boot_screen::milestones;
+                     boot_screen::fade_in(&mut bs, boot_spin_delay);
                      Some(bs)
                  } else {
                      use kernel::bridge::HardwareBridge;
@@ -567,7 +561,7 @@ pub extern "C" fn rust_main() -> ! {
     };
 
     let mut k = Kernel::new(Bridge);
-    if let Some(bs) = &mut bs { bs.show("Bridge online"); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::BRIDGE_ONLINE); }
 
     unsafe {
         use kernel::bridge::HardwareBridge;
@@ -575,16 +569,16 @@ pub extern "C" fn rust_main() -> ! {
         k.bridge.log(thing_models::milestones::KERNEL_ENTRY);
         k.bridge.log("\n");
 
-        if let Some(bs) = &mut bs { bs.show("Graph init"); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_INIT); }
         kernel::graph::seed_builtins(&mut k.graph);
-        if let Some(bs) = &mut bs { bs.show("Graph seeded"); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_SEEDED); }
 
-        if let Some(bs) = &mut bs { bs.show("Symbols init"); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_INIT); }
         let kernel_name_sym = k
             .symbols
             .intern("kernel")
             .unwrap_or(thing_models::builtins::symbols::SYM_PROCESS);
-        if let Some(bs) = &mut bs { bs.show("Symbols ready"); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_READY); }
 
         let boot_root_body = thing_models::core::process::ProcessBody {
             pid: 0,
@@ -718,7 +712,7 @@ pub extern "C" fn rust_main() -> ! {
         }
         // -----------------------------------------------------------------
 
-        if let Some(bs) = &mut bs { bs.show("Scanning modules"); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SCANNING_MODULES); }
         ingest_bitmaps(&mut k, &boot_info);
         // Default to Limine FB
         let mut use_qemu = false;
@@ -757,7 +751,7 @@ pub extern "C" fn rust_main() -> ! {
 
         spawn_loaded(&mut k, &boot_info);
 
-        if let Some(bs) = &mut bs { bs.show("Spawning init tasks"); }
+        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SPAWNING_INIT); }
         spawn_kernel_init_task(&mut k, &boot_info);
 
         bridge_x86_64::set_tick_hook(scheduler_tick);
@@ -996,11 +990,13 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
 }
 
 unsafe fn u_sleep(count: u64) {
-    boot_delay(count);
+    for _ in 0..count {
+        core::hint::spin_loop();
+    }
 }
 
 #[inline(always)]
-fn boot_delay(count: u64) {
+fn boot_spin_delay(count: u64) {
     for _ in 0..count {
         core::hint::spin_loop();
     }

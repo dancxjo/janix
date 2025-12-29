@@ -221,15 +221,9 @@ pub extern "C" fn rust_main() -> ! {
                      pixel_format,
                  };
 
-                 if let Some(mut bs) = boot_screen::BootScreen::new(info) {
-                     bs.show("Booting ThingOS");
-
-                     // Fade in
-                     for a in (0..=255).step_by(8) {
-                         bs.set_fade(a as u8);
-                         bs.draw();
-                         boot_delay(100_000);
-                     }
+                 if let Some(mut bs) = unsafe { boot_screen::BootScreenOwned::new(info) } {
+                     use boot_screen::milestones;
+                     boot_screen::fade_in(&mut bs, boot_spin_delay);
                      Some(bs)
                  } else {
                      use kernel::bridge::HardwareBridge;
@@ -244,18 +238,18 @@ pub extern "C" fn rust_main() -> ! {
         }
     };
 
-    if let Some(bs) = &mut bs { bs.show("Bridge online"); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::BRIDGE_ONLINE); }
     
     let k = Kernel::new(Bridge);
     *KERNEL.lock() = Some(k);
 
-    if let Some(bs) = &mut bs { bs.show("Graph init"); }
-    if let Some(bs) = &mut bs { bs.show("Graph seeded"); }
-    if let Some(bs) = &mut bs { bs.show("Symbols init"); }
-    if let Some(bs) = &mut bs { bs.show("Symbols ready"); }
-    if let Some(bs) = &mut bs { bs.show("Scanning modules"); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_INIT); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_SEEDED); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_INIT); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_READY); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SCANNING_MODULES); }
 
-    if let Some(bs) = &mut bs { bs.show("Spawning init tasks"); }
+    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SPAWNING_INIT); }
     Bridge.log("Starting Loader Task...\n");
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = guard.as_mut() {
@@ -306,7 +300,7 @@ pub extern "C" fn rust_main() -> ! {
 }
 
 #[inline(always)]
-fn boot_delay(count: u64) {
+fn boot_spin_delay(count: u64) {
     for _ in 0..count {
         core::hint::spin_loop();
     }

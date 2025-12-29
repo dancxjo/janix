@@ -1,4 +1,3 @@
-
 const FONT_DATA: &[u8] = include_bytes!("../../../assets/fonts/unifont.hex");
 
 static mut ASCII_CACHE: [Option<[u8; 16]>; 128] = [None; 128];
@@ -76,7 +75,9 @@ fn get_glyph_slow(ch: char) -> Option<[u8; 16]> {
             // Move left to start of next line.
             let mut next_line = line_start + hex_end_offset(line);
             // Ensure we advance
-            if next_line == line_start { next_line += 1; } // Should imply \n was processed
+            if next_line == line_start {
+                next_line += 1;
+            } // Should imply \n was processed
             left = next_line;
         } else {
             // Target is before this line.
@@ -92,7 +93,11 @@ fn hex_end_offset(line: &[u8]) -> usize {
     while i < line.len() && line[i] != b'\n' {
         i += 1;
     }
-    if i < line.len() { i + 1 } else { i }
+    if i < line.len() {
+        i + 1
+    } else {
+        i
+    }
 }
 
 fn parse_hex_bytes(bytes: &[u8]) -> Option<u32> {
@@ -111,11 +116,13 @@ fn parse_hex_bytes(bytes: &[u8]) -> Option<u32> {
 
 fn parse_bitmap_32(bytes: &[u8]) -> Option<[u8; 16]> {
     let mut out = [0u8; 16];
-    if bytes.len() < 32 { return None; }
+    if bytes.len() < 32 {
+        return None;
+    }
 
     for i in 0..16 {
-        let hi_c = bytes[i*2];
-        let lo_c = bytes[i*2+1];
+        let hi_c = bytes[i * 2];
+        let lo_c = bytes[i * 2 + 1];
 
         let hi = match hi_c {
             b'0'..=b'9' => hi_c - b'0',

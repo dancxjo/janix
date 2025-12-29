@@ -1,9 +1,9 @@
 #![no_std]
 
 mod damage;
-mod unifont;
-mod pixel;
 pub mod milestones;
+mod pixel;
+mod unifont;
 
 pub use damage::Rect;
 pub use pixel::PixelFormat;
@@ -128,12 +128,12 @@ impl<'a> BootScreen<'a> {
         self.current_msg = msg;
 
         if msg.is_empty() {
-             if let Some(old) = self.last_text_rect {
-                  let d = old.inflate(2);
-                  self.add_damage(d);
-             }
-             self.last_text_rect = None;
-             return;
+            if let Some(old) = self.last_text_rect {
+                let d = old.inflate(2);
+                self.add_damage(d);
+            }
+            self.last_text_rect = None;
+            return;
         }
 
         let msg_len = msg.bytes().count() as u32;
@@ -193,7 +193,7 @@ impl<'a> BootScreen<'a> {
     }
 
     fn clear_shadow_rect(&mut self, rect: &Rect) {
-        for y in rect.y .. (rect.y + rect.h) {
+        for y in rect.y..(rect.y + rect.h) {
             let start = (y as usize * self.fb.pitch_bytes as usize) + (rect.x as usize * 4);
             let end = start + (rect.w as usize * 4);
             if end <= self.shadow.len() {
@@ -220,11 +220,11 @@ impl<'a> BootScreen<'a> {
 
         let mut cx = start_x;
         for byte in self.current_msg.bytes() {
-             let char_rect = Rect::new(cx, start_y, 8, 16);
-             if char_rect.intersection(clip).is_some() {
-                 self.draw_char_shadow(cx, start_y, byte, 0xFFFFFFFF, clip);
-             }
-             cx += 8 + 1;
+            let char_rect = Rect::new(cx, start_y, 8, 16);
+            if char_rect.intersection(clip).is_some() {
+                self.draw_char_shadow(cx, start_y, byte, 0xFFFFFFFF, clip);
+            }
+            cx += 8 + 1;
         }
     }
 
@@ -244,19 +244,23 @@ impl<'a> BootScreen<'a> {
 
         for row in 0..16 {
             let py = y + row as u32;
-            if py < clip_y0 || py >= clip_y1 || py >= self.fb.height { continue; }
+            if py < clip_y0 || py >= clip_y1 || py >= self.fb.height {
+                continue;
+            }
 
             let row_data = glyph[row];
             for col in 0..8 {
                 if (row_data & (0x80 >> col)) != 0 {
                     let px = x + col;
-                    if px < clip_x0 || px >= clip_x1 || px >= self.fb.width { continue; }
+                    if px < clip_x0 || px >= clip_x1 || px >= self.fb.width {
+                        continue;
+                    }
 
                     let sx = px + 1;
                     let sy = py + 1;
 
                     if sx < self.fb.width && sy < self.fb.height {
-                         self.put_pixel_shadow_bgra(sx, sy, 0xFF000000);
+                        self.put_pixel_shadow_bgra(sx, sy, 0xFF000000);
                     }
 
                     self.put_pixel_shadow_bgra(px, py, color);
@@ -267,7 +271,9 @@ impl<'a> BootScreen<'a> {
 
     fn put_pixel_shadow_bgra(&mut self, x: u32, y: u32, argb: u32) {
         let offset = (y as usize * self.fb.pitch_bytes as usize) + (x as usize * 4);
-        if offset + 4 > self.shadow.len() { return; }
+        if offset + 4 > self.shadow.len() {
+            return;
+        }
 
         let a = ((argb >> 24) & 0xFF) as u8;
         let r = ((argb >> 16) & 0xFF) as u8;
@@ -275,9 +281,9 @@ impl<'a> BootScreen<'a> {
         let b = (argb & 0xFF) as u8;
 
         self.shadow[offset] = b;
-        self.shadow[offset+1] = g;
-        self.shadow[offset+2] = r;
-        self.shadow[offset+3] = a;
+        self.shadow[offset + 1] = g;
+        self.shadow[offset + 2] = r;
+        self.shadow[offset + 3] = a;
     }
 
     fn blit_shadow_to_fb(&mut self, rect: &Rect) {
@@ -285,42 +291,47 @@ impl<'a> BootScreen<'a> {
         let alpha = self.fade_alpha as u32;
         let scale = alpha + 1; // Used for fast shift approximation
 
-        for y in rect.y .. (rect.y + rect.h) {
+        for y in rect.y..(rect.y + rect.h) {
             let row_offset = y as usize * self.fb.pitch_bytes as usize;
             let start = row_offset + (rect.x as usize * 4);
             let width_bytes = rect.w as usize * 4;
 
-            if start + width_bytes > self.shadow.len() { continue; }
+            if start + width_bytes > self.shadow.len() {
+                continue;
+            }
 
-            let src_slice = &self.shadow[start .. start + width_bytes];
+            let src_slice = &self.shadow[start..start + width_bytes];
             let dst_ptr = unsafe { self.fb.addr.add(start) };
 
             // Use chunks_exact for efficient iteration (replaces step_by)
             for (i, chunk) in src_slice.chunks_exact(4).enumerate() {
-                 let b = chunk[0];
-                 let g = chunk[1];
-                 let r = chunk[2];
-                 let a = chunk[3];
+                let b = chunk[0];
+                let g = chunk[1];
+                let r = chunk[2];
+                let a = chunk[3];
 
-                 // Fast alpha blending: (color * (alpha + 1)) >> 8
-                 // eliminates expensive division
-                 let r_out = ((r as u32 * scale) >> 8) as u8;
-                 let g_out = ((g as u32 * scale) >> 8) as u8;
-                 let b_out = ((b as u32 * scale) >> 8) as u8;
-                 let a_out = a;
+                // Fast alpha blending: (color * (alpha + 1)) >> 8
+                // eliminates expensive division
+                let r_out = ((r as u32 * scale) >> 8) as u8;
+                let g_out = ((g as u32 * scale) >> 8) as u8;
+                let b_out = ((b as u32 * scale) >> 8) as u8;
+                let a_out = a;
 
-                 let argb_out = ((a_out as u32) << 24) | ((r_out as u32) << 16) | ((g_out as u32) << 8) | (b_out as u32);
+                let argb_out = ((a_out as u32) << 24)
+                    | ((r_out as u32) << 16)
+                    | ((g_out as u32) << 8)
+                    | (b_out as u32);
 
-                 let final_val = self.fb.pixel_format.pack_le_bytes(argb_out);
-                 let final_bytes = final_val.to_le_bytes();
+                let final_val = self.fb.pixel_format.pack_le_bytes(argb_out);
+                let final_bytes = final_val.to_le_bytes();
 
-                 unsafe {
-                     let dst_offset = i * 4;
-                     *dst_ptr.add(dst_offset) = final_bytes[0];
-                     *dst_ptr.add(dst_offset+1) = final_bytes[1];
-                     *dst_ptr.add(dst_offset+2) = final_bytes[2];
-                     *dst_ptr.add(dst_offset+3) = final_bytes[3];
-                 }
+                unsafe {
+                    let dst_offset = i * 4;
+                    *dst_ptr.add(dst_offset) = final_bytes[0];
+                    *dst_ptr.add(dst_offset + 1) = final_bytes[1];
+                    *dst_ptr.add(dst_offset + 2) = final_bytes[2];
+                    *dst_ptr.add(dst_offset + 3) = final_bytes[3];
+                }
             }
         }
     }

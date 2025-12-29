@@ -2,9 +2,8 @@ use core::arch::global_asm;
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::string::ToString;
-use kernel::bridge::HardwareBridge; // For logging
 use core::arch::asm;
-
+use kernel::bridge::HardwareBridge; // For logging
 
 global_asm!(include_str!("trap.S"));
 
@@ -80,25 +79,27 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
                 hook(num, a1, a2, a3, a4, a5, a6) as u64
             } else {
                 // -1 (isize) cast to u64 is usually all 1s
-                (!0u64) 
+                (!0u64)
             }
         }
     } else {
         // Not a syscall (e.g. Data Abort, Instruction Abort)
-        
+
         let far: u64;
-        unsafe { asm!("mrs {}, far_el1", out(reg) far); }
+        unsafe {
+            asm!("mrs {}, far_el1", out(reg) far);
+        }
 
         // EC 0x20 = I-Abort Lower EL, 0x21 = I-Abort Curr EL
         // EC 0x24 = D-Abort Lower EL, 0x25 = D-Abort Curr EL
         if ec == 0x20 || ec == 0x24 {
-             unsafe {
-                 if let Some(hook) = crate::PAGE_FAULT_HOOK {
-                     hook(tf, far, esr);
-                     // If hook returns, we resume
-                     return 0;
-                 }
-             }
+            unsafe {
+                if let Some(hook) = crate::PAGE_FAULT_HOOK {
+                    hook(tf, far, esr);
+                    // If hook returns, we resume
+                    return 0;
+                }
+            }
         }
 
         // Delegate to invalid_exception(tf, kind=2 (Lower EL), source=0 (Sync))
@@ -123,15 +124,15 @@ pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) 
 }
 
 #[unsafe(no_mangle)]
-    pub extern "C" fn irq_handler(tf: &mut TrapFrame) {
-        let id = unsafe { super::gic::acknowledge_irq() };
-        
-        // Spurious check (1023)
-        if id >= 1020 {
-            return;
-        }
+pub extern "C" fn irq_handler(tf: &mut TrapFrame) {
+    let id = unsafe { super::gic::acknowledge_irq() };
 
-        if id == 30 {
+    // Spurious check (1023)
+    if id >= 1020 {
+        return;
+    }
+
+    if id == 30 {
         // Timer
         crate::timer::next_match();
 
@@ -143,7 +144,7 @@ pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) 
     } else {
         log!("IRQ: {}", id as u64);
     }
-    
+
     unsafe { super::gic::end_of_irq(id) };
 }
 

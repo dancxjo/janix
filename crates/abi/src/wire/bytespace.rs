@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct ByteSpaceCreateReq {
@@ -18,7 +18,7 @@ pub struct ByteSpaceMapReq {
     pub user_va_hint: u64,
     pub offset: u64,
     pub len: u64,
-    pub prot: u32, // Prot flags (READ/WRITE/EXEC)
+    pub prot: u32,  // Prot flags (READ/WRITE/EXEC)
     pub flags: u32, // Map flags (SHARED/PRIVATE/FIXED)
 }
 

@@ -90,7 +90,7 @@ pub fn read_file_bytes<B: HardwareBridge>(
 
     if let Some(mid) = module_target {
         if let Some(_) = kernel.graph.get(mid) {
-             return read_module_bytes(kernel, mid, offset, len);
+            return read_module_bytes(kernel, mid, offset, len);
         }
     }
 
@@ -121,27 +121,27 @@ fn read_module_bytes<B: HardwareBridge>(
     // Use ByteSpace
     if mbody.bytes.id != 0 {
         if let Some(bs) = kernel.bytespaces.get(mbody.bytes.id) {
-             let mut result = Vec::with_capacity(read_len);
-             let mut current_off = offset;
-             let mut remaining = read_len;
-             
-             // Simple loop to copy bytes. Optimization: calculate start page.
-             let start_page = (current_off / 4096) as usize;
-             let page_off = (current_off % 4096) as usize;
-             
-             let mut i = start_page;
-             let mut page_cursor = page_off;
-             
-             while remaining > 0 && i < bs.pages.len() {
-                 let chunk = &bs.pages[i];
-                 let chunk_slice = chunk.as_slice();
-                 let to_copy = core::cmp::min(remaining, 4096 - page_cursor);
-                 result.extend_from_slice(&chunk_slice[page_cursor..page_cursor+to_copy]);
-                 remaining -= to_copy;
-                 page_cursor = 0;
-                 i += 1;
-             }
-             return Ok(result);
+            let mut result = Vec::with_capacity(read_len);
+            let mut current_off = offset;
+            let mut remaining = read_len;
+
+            // Simple loop to copy bytes. Optimization: calculate start page.
+            let start_page = (current_off / 4096) as usize;
+            let page_off = (current_off % 4096) as usize;
+
+            let mut i = start_page;
+            let mut page_cursor = page_off;
+
+            while remaining > 0 && i < bs.pages.len() {
+                let chunk = &bs.pages[i];
+                let chunk_slice = chunk.as_slice();
+                let to_copy = core::cmp::min(remaining, 4096 - page_cursor);
+                result.extend_from_slice(&chunk_slice[page_cursor..page_cursor + to_copy]);
+                remaining -= to_copy;
+                page_cursor = 0;
+                i += 1;
+            }
+            return Ok(result);
         }
     }
 

@@ -84,9 +84,9 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
             .arg("-Z")
             .arg("build-std=core,alloc,compiler_builtins")
             .current_dir(&root);
-        
 
-        let status = cmd.status()
+        let status = cmd
+            .status()
             .context(format!("Failed to build user app {}", app))?;
 
         if !status.success() {
@@ -136,7 +136,11 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         let is_driver = driver_names.contains(app);
         let dest_dir = if is_driver { &drivers_dir } else { &apps_dir };
 
-        let app_bin = root.join("user/target").join(user_target).join("debug").join(app);
+        let app_bin = root
+            .join("user/target")
+            .join(user_target)
+            .join("debug")
+            .join(app);
 
         let dest_name = format!("{}.elf", app);
         let dest_path = dest_dir.join(&dest_name);

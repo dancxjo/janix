@@ -1,13 +1,13 @@
+use alloc::alloc::{alloc, Layout};
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use alloc::alloc::{alloc, Layout};
 
-use abi::ThingId;
-use crate::Kernel;
 use crate::bridge::HardwareBridge;
 use crate::fs::iso9660::{BlockReader, Iso9660Reader};
+use crate::Kernel;
+use abi::ThingId;
 use thing_models::value::ThingBody;
 
 pub struct FileArgs {
@@ -228,14 +228,16 @@ pub fn mount_and_scan<B: HardwareBridge>(
     kernel.bridge.log("loader: Spawning app loaders...\n");
 
     for entry in apps_entries {
-        if entry.is_dir { continue; }
+        if entry.is_dir {
+            continue;
+        }
         let should_run = if !entry.name.ends_with(".elf") {
             false
         } else {
             if let Some(wl) = &whitelist {
                 wl.contains(&entry.name)
             } else {
-                false 
+                false
             }
         };
 
@@ -261,23 +263,26 @@ pub fn mount_and_scan<B: HardwareBridge>(
             loader_entry,
             stack_top,
             args_ptr,
-            0, 0,
+            0,
+            0,
         );
     }
-    
+
     // drivers
     let drv_entries = iso.read_dir("/boot/drivers").unwrap_or_default();
     kernel.bridge.log("loader: Spawning driver loaders...\n");
     for entry in drv_entries {
-        if entry.is_dir { continue; }
+        if entry.is_dir {
+            continue;
+        }
         let should_run = if let Some(wl) = &whitelist {
-             wl.contains(&entry.name)
+            wl.contains(&entry.name)
         } else {
-             false
+            false
         };
 
         let path = alloc::format!("/boot/drivers/{}", entry.name);
-         let f_args = FileArgs {
+        let f_args = FileArgs {
             iso: iso.clone(),
             path,
             dir_id: Some(drivers),
@@ -297,19 +302,19 @@ pub fn mount_and_scan<B: HardwareBridge>(
             loader_entry,
             stack_top,
             args_ptr,
-            0, 0,
+            0,
+            0,
         );
     }
-    
+
     // assets
-     let asset_dirs = [
-        ("/boot/cursors", cursors),
-        ("/boot/icons", icons),
-    ];
+    let asset_dirs = [("/boot/cursors", cursors), ("/boot/icons", icons)];
     for (path, dir_id) in asset_dirs {
         let entries = iso.read_dir(path).unwrap_or_default();
         for entry in entries {
-            if entry.is_dir { continue; }
+            if entry.is_dir {
+                continue;
+            }
             let full_path = alloc::format!("{}/{}", path, entry.name);
             let f_args = FileArgs {
                 iso: iso.clone(),
@@ -321,9 +326,9 @@ pub fn mount_and_scan<B: HardwareBridge>(
             let args_box = Box::new(f_args);
             let args_ptr = Box::into_raw(args_box) as u64;
 
-             let layout = unsafe { Layout::from_size_align_unchecked(64 * 1024, 16) };
-             let stack_ptr = unsafe { alloc(layout) };
-             let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
+            let layout = unsafe { Layout::from_size_align_unchecked(64 * 1024, 16) };
+            let stack_ptr = unsafe { alloc(layout) };
+            let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
 
             kernel.scheduler.spawn(
                 &kernel.bridge,
@@ -331,20 +336,21 @@ pub fn mount_and_scan<B: HardwareBridge>(
                 loader_entry,
                 stack_top,
                 args_ptr,
-                0, 0,
+                0,
+                0,
             );
         }
     }
-    
+
     // Fonts (simplified)
     if let Some(h) = iso.open("/boot/.fontcache") {
         kernel.bridge.log("loader: Loading .fontcache...\n");
         let mut data = alloc::vec![0u8; h.size as usize];
         iso.read(&h, 0, h.size as usize, &mut data);
-        
+
         // Need FontCache definition? It's in `models`.
         // assuming standard postcard
     }
-    
+
     kernel.bridge.log("loader: All scan tasks spawned.\n");
 }

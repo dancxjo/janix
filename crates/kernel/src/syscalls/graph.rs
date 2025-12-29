@@ -21,7 +21,7 @@ pub fn handle_graph_op<B: HardwareBridge>(
         kernel.bridge.log("GraphOp::ReadBytes received");
     }
     use crate::graph::security;
-    if let Err(_) = security::check_write(pid, &op) {
+    if security::check_write(pid, &op).is_err() {
         // We need a PermissionDenied reply?
         // Or generic Error.
         return GraphReply::Error;
@@ -42,19 +42,21 @@ pub fn handle_graph_op<B: HardwareBridge>(
         GraphOp::Log { text } => {
             kernel.bridge.log(text);
             GraphReply::Ack
-        },
+        }
         GraphOp::WriteTyped { path: _, value: _ } => {
             // Placeholder for graph storage integration
             GraphReply::Ack
-        },
+        }
         GraphOp::Watch { .. } => GraphReply::Error,
-        GraphOp::CreateThing { kind, value } => match thing_models::value::ThingBody::from(&value) {
-            Ok(body) => {
-                let id = kernel.graph.create_thing(kind, body);
-                GraphReply::Created { id }
+        GraphOp::CreateThing { kind, value } => {
+            match thing_models::value::ThingBody::from(&value) {
+                Ok(body) => {
+                    let id = kernel.graph.create_thing(kind, body);
+                    GraphReply::Created { id }
+                }
+                Err(_) => GraphReply::Error,
             }
-            Err(_) => GraphReply::Error,
-        },
+        }
         GraphOp::GetThing { id } => {
             if let Some(thing) = kernel.graph.get(id) {
                 match thing.body.decode::<abi::wire::typed::TypedBytes>() {
@@ -64,7 +66,7 @@ pub fn handle_graph_op<B: HardwareBridge>(
             } else {
                 GraphReply::Error
             }
-        },
+        }
         GraphOp::UpdateThing { id, value } => match thing_models::value::ThingBody::from(&value) {
             Ok(body) => match kernel.graph.update_thing(id, body) {
                 Ok(_) => GraphReply::Ack,
@@ -99,66 +101,42 @@ pub fn handle_graph_op<B: HardwareBridge>(
                 }
                 Err(_) => GraphReply::Error,
             }
-        },
+        }
         GraphOp::ScanLinks { from, to, kind } => {
             let mut results = alloc::vec::Vec::new();
             let link_kind = thing_models::builtins::ids::THING_LINK_KIND;
 
-            kernel.bridge.log("Kernel: ScanLinks Start");
-
-            let mut count_all = 0;
-            let mut count_links = 0;
-            let mut count_decoded = 0;
-            let mut count_matched = 0;
-
-            for thing in kernel.graph.list() {
-                count_all += 1;
-                if thing.kind == link_kind {
-                    count_links += 1;
-                    if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
-                        if let Ok(link) = postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes) {
-                            count_decoded += 1;
-                            let f = link.from;
-                            let t = link.to;
-                            let p = link.predicate;
-                            if let Some(target_from) = from {
-                                if f != target_from {
-                                    continue;
-                                }
+            // Optimization: iterate only links, not all things
+            for thing in kernel.graph.iter_kind(link_kind) {
+                if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
+                    if let Ok(link) =
+                        postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes)
+                    {
+                        let f = link.from;
+                        let t = link.to;
+                        let p = link.predicate;
+                        if let Some(target_from) = from {
+                            if f != target_from {
+                                continue;
                             }
-                            if let Some(target_to) = to {
-                                if t != target_to {
-                                    continue;
-                                }
-                            }
-                            if let Some(target_kind) = kind {
-                                if p != target_kind {
-                                    continue;
-                                }
-                            }
-                            kernel.bridge.log(
-                                alloc::format!("Kernel: MATCHED Link Root->{} (Pred {})", t.0, p.0).as_str(),
-                            );
-                            count_matched += 1;
-                            results.push((f, t, p));
-                        } else {
-                            kernel.bridge.log("Kernel: Failed to decode LinkBody from TypedBytes");
                         }
-                    } else {
-                        kernel.bridge.log("Kernel: Failed to decode TypedBytes from ThingBody");
+                        if let Some(target_to) = to {
+                            if t != target_to {
+                                continue;
+                            }
+                        }
+                        if let Some(target_kind) = kind {
+                            if p != target_kind {
+                                continue;
+                            }
+                        }
+                        results.push((f, t, p));
                     }
                 }
             }
-            kernel.bridge.log(
-                alloc::format!(
-                    "Kernel: Scanned {} things. Found {} Links. Decoded {}. Matched {}. Returning {}",
-                    count_all, count_links, count_decoded, count_matched, results.len()
-                )
-                .as_str(),
-            );
 
             GraphReply::Links(results)
-        },
+        }
         GraphOp::DeleteThing { id } => match kernel.graph.delete_thing(id) {
             Ok(_) => GraphReply::Ack,
             Err(_) => GraphReply::Error,
@@ -168,7 +146,7 @@ pub fn handle_graph_op<B: HardwareBridge>(
                 Ok(bytes) => GraphReply::Bytes { bytes },
                 Err(_) => GraphReply::Error,
             }
-        },
+        }
         GraphOp::Batch(ops) => {
             let mut results = alloc::vec::Vec::with_capacity(ops.len());
             for op in ops {
@@ -177,7 +155,7 @@ pub fn handle_graph_op<B: HardwareBridge>(
                 results.push(handle_graph_op(kernel, pid, op));
             }
             GraphReply::BatchReply(results)
-        },
+        }
     }
 }
 
@@ -279,7 +257,7 @@ pub fn handle_graph_query<B: HardwareBridge>(
                         return to_slice(thing, out).map(|s| s.len()).map_err(|_| -1);
                     }
                 }
-                return Err(abi::syscall_defs::SYS_EAGAIN);
+                Err(abi::syscall_defs::SYS_EAGAIN)
             } else {
                 Err(-1)
             }

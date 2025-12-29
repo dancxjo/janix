@@ -1,8 +1,8 @@
+pub mod bytespace;
 pub mod driver;
 pub mod graph;
 pub mod time;
 pub mod typed;
-pub mod bytespace;
 
 use crate::bridge::HardwareBridge;
 use crate::Kernel;
@@ -83,11 +83,13 @@ pub fn syscall_dispatch<B: HardwareBridge>(
             }
         }
 
-        SYSCALL_DRIVER_WAIT => driver::sys_driver_wait(kernel, a1 as *mut u8, a2) as isize,
-        SYSCALL_DRIVER_PUBLISH => driver::sys_driver_publish(kernel, a1 as *const u8, a2) as isize,
+        SYSCALL_DRIVER_WAIT => unsafe { driver::sys_driver_wait(kernel, a1 as *mut u8, a2) as isize },
+        SYSCALL_DRIVER_PUBLISH => unsafe { driver::sys_driver_publish(kernel, a1 as *const u8, a2) as isize },
         SYSCALL_MMIO_MAP => driver::sys_mmio_map(kernel, a1 as u64, a2 as u64) as isize,
         SYSCALL_IRQ_REGISTER => driver::sys_irq_register(kernel, a1) as isize,
-        SYSCALL_PORT_IO => driver::sys_port_io(kernel, a1 as u16, a2 as u32, a3 as u8, a4 != 0) as isize,
+        SYSCALL_PORT_IO => {
+            driver::sys_port_io(kernel, a1 as u16, a2 as u32, a3 as u8, a4 != 0) as isize
+        }
         SYSCALL_TYPEDEF_REGISTER => typed::sys_typedef_register(a1, a2) as isize,
         SYSCALL_TYPEDEF_GET => typed::sys_typedef_get(a1, a2, a3) as isize,
         // SYSCALL_GRAPH (1)

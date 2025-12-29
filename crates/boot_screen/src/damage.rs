@@ -21,8 +21,14 @@ impl Rect {
 
         let x0 = core::cmp::min(self.x, other.x);
         let y0 = core::cmp::min(self.y, other.y);
-        let x1 = core::cmp::max(self.x.saturating_add(self.w), other.x.saturating_add(other.w));
-        let y1 = core::cmp::max(self.y.saturating_add(self.h), other.y.saturating_add(other.h));
+        let x1 = core::cmp::max(
+            self.x.saturating_add(self.w),
+            other.x.saturating_add(other.w),
+        );
+        let y1 = core::cmp::max(
+            self.y.saturating_add(self.h),
+            other.y.saturating_add(other.h),
+        );
 
         Rect {
             x: x0,
@@ -45,20 +51,26 @@ impl Rect {
     }
 
     pub fn intersection(&self, other: &Rect) -> Option<Rect> {
-         let x0 = core::cmp::max(self.x, other.x);
-         let y0 = core::cmp::max(self.y, other.y);
-         let x1 = core::cmp::min(self.x.saturating_add(self.w), other.x.saturating_add(other.w));
-         let y1 = core::cmp::min(self.y.saturating_add(self.h), other.y.saturating_add(other.h));
+        let x0 = core::cmp::max(self.x, other.x);
+        let y0 = core::cmp::max(self.y, other.y);
+        let x1 = core::cmp::min(
+            self.x.saturating_add(self.w),
+            other.x.saturating_add(other.w),
+        );
+        let y1 = core::cmp::min(
+            self.y.saturating_add(self.h),
+            other.y.saturating_add(other.h),
+        );
 
-         if x1 > x0 && y1 > y0 {
-             Some(Rect {
-                 x: x0,
-                 y: y0,
-                 w: x1 - x0,
-                 h: y1 - y0,
-             })
-         } else {
-             None
-         }
+        if x1 > x0 && y1 > y0 {
+            Some(Rect {
+                x: x0,
+                y: y0,
+                w: x1 - x0,
+                h: y1 - y0,
+            })
+        } else {
+            None
+        }
     }
 }

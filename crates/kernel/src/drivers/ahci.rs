@@ -242,16 +242,16 @@ unsafe fn stop_cmd(port: &mut HbaPort) {
     port.cmd &= !HBA_PX_CMD_ST;
     port.cmd &= !HBA_PX_CMD_FRE;
 
-    while (port.cmd & HBA_PX_CMD_FR) != 0 {
+    while (core::ptr::read_volatile(core::ptr::addr_of!(port.cmd)) & HBA_PX_CMD_FR) != 0 {
         core::hint::spin_loop();
     }
-    while (port.cmd & HBA_PX_CMD_CR) != 0 {
+    while (core::ptr::read_volatile(core::ptr::addr_of!(port.cmd)) & HBA_PX_CMD_CR) != 0 {
         core::hint::spin_loop();
     }
 }
 
 unsafe fn start_cmd(port: &mut HbaPort) {
-    while (port.cmd & HBA_PX_CMD_CR) != 0 {
+    while (core::ptr::read_volatile(core::ptr::addr_of!(port.cmd)) & HBA_PX_CMD_CR) != 0 {
         core::hint::spin_loop();
     }
 

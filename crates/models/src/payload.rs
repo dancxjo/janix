@@ -18,6 +18,31 @@ impl ThingPayload for ByteSpace {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Region {
+    pub offset: u64,
+    pub len: u64,
+}
+impl ThingPayload for Region { const KIND: SymbolId = sym("core.region"); }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Image2D {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub pixel_format: SymbolId,
+}
+impl ThingPayload for Image2D { const KIND: SymbolId = sym("core.image2d"); }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Ring {
+    pub capacity: u64,
+    pub head_off: u64,
+    pub tail_off: u64,
+    pub elem_size: u32,
+}
+impl ThingPayload for Ring { const KIND: SymbolId = sym("core.ring"); }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Stream {
     pub cursor: u64,
     pub mode: u32,         // READ/WRITE/APPEND/RING
@@ -101,6 +126,10 @@ pub const HAS_BYTES: SymbolId = sym("core.has_bytes");
 pub const HAS_PIXELS: SymbolId = sym("core.has_pixels");
 pub const HAS_FONT_DATA: SymbolId = sym("core.has_font_data");
 pub const BACKED_BY: SymbolId = sym("core.backed_by");
+
+pub const IN: SymbolId = sym("core.in");
+pub const DATA: SymbolId = sym("core.data");
+pub const HAS_VIEW: SymbolId = sym("core.has_view");
 
 // Other Predicates (migrated from ThingId)
 pub const HAS_ENTRY: SymbolId = sym("core.has_entry");

@@ -12,6 +12,7 @@ pub mod syscalls;
 pub mod time;
 pub mod typed;
 pub mod bytespace;
+pub mod view;
 
 pub use client::GraphClient;
 pub use console::{Console, StdoutConsole};

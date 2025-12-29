@@ -399,6 +399,59 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
             let cursors = make_dir("cursors", root_id);
             let icons = make_dir("icons", root_id);
 
+            // Framebuffer Setup
+            if let Some((fb_phys, fb_size)) = unsafe { crate::FRAMEBUFFER_INFO } {
+                 // 1. Create ByteSpace (backed by framebuffer)
+                 let bs_payload = ByteSpace { len: fb_size, flags: 3, backing: abi::symbols::sym("framebuffer") };
+                 let bs_bytes = postcard::to_allocvec(&bs_payload).unwrap();
+                 let bs_id = k.graph.create_thing(ByteSpace::KIND, bs_bytes);
+
+                 let start_frame = PhysFrame::<Size4KiB>::containing_address(x86_64::PhysAddr::new(fb_phys));
+                 let end_frame = PhysFrame::<Size4KiB>::containing_address(x86_64::PhysAddr::new(fb_phys + fb_size - 1));
+                 let mut frames = Vec::new();
+                 for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
+                     frames.push(abi::memory::PhysFrame(frame.start_address().as_u64()));
+                 }
+                 let backing_id = k.bytespaces.create_backing_with_frames(fb_size, 3, frames);
+                 k.bytespaces.bind_thing(bs_id, backing_id);
+
+                 // 2. Create Region
+                 let reg_payload = Region { offset: 0, len: fb_size };
+                 let reg_bytes = postcard::to_allocvec(&reg_payload).unwrap();
+                 let reg_id = k.graph.create_thing(Region::KIND, reg_bytes);
+
+                 let l_reg_bs = LinkBody { from: reg_id, to: bs_id, predicate: IN };
+                 let l_reg_bs_bytes = postcard::to_allocvec(&l_reg_bs).unwrap();
+                 k.graph.create_thing(LinkBody::KIND, l_reg_bs_bytes);
+
+                 // 3. Create Image2D
+                 // Hardcode 1080p for now as fallback or placeholder
+                 let img_payload = Image2D { width: 1920, height: 1080, stride: 1920*4, pixel_format: abi::symbols::sym("rgba8888") };
+                 let img_bytes = postcard::to_allocvec(&img_payload).unwrap();
+                 let img_id = k.graph.create_thing(Image2D::KIND, img_bytes);
+
+                 let l_img_reg = LinkBody { from: img_id, to: reg_id, predicate: DATA };
+                 let l_img_reg_bytes = postcard::to_allocvec(&l_img_reg).unwrap();
+                 k.graph.create_thing(LinkBody::KIND, l_img_reg_bytes);
+
+                 // 4. Create Framebuffer Owner
+                 let fb_owner_id = k.graph.create_thing(abi::symbols::sym("DisplayFramebuffer"), Vec::new());
+
+                 let l_fb_view = LinkBody { from: fb_owner_id, to: img_id, predicate: HAS_VIEW };
+                 let l_fb_view_bytes = postcard::to_allocvec(&l_fb_view).unwrap();
+                 k.graph.create_thing(LinkBody::KIND, l_fb_view_bytes);
+
+                 // Link BootRoot -> FB (HAS_DEVICE)
+                 let l_root_fb = LinkBody { from: THING_BOOT_ROOT, to: fb_owner_id, predicate: abi::symbols::sym("HAS_DEVICE") };
+                 let l_root_fb_bytes = postcard::to_allocvec(&l_root_fb).unwrap();
+                 k.graph.create_thing(LinkBody::KIND, l_root_fb_bytes);
+
+                 unsafe {
+                     let s = alloc::format!("VIEW: framebuffer image2d bytespace={:?} region(off=0 len={}) w=1920 h=1080 stride=7680\n", bs_id, fb_size);
+                     Bridge.log(&s);
+                 }
+            }
+
             Bridge.log("loader: Mounts created\n");
             (apps, drivers, fonts, cursors, icons)
         } else { return; }
@@ -443,7 +496,7 @@ fn spawn_file_loader(args: FileArgs) {
     let args_ptr = Box::into_raw(args_box) as u64;
     let mut guard = KERNEL.lock();
     if let Some(k) = guard.as_mut() {
-        let layout = Layout::from_size_align(64 * 1024, 16).unwrap();
+        let layout = Layout::from_size_align(256 * 1024, 16).unwrap(); // 256KB stack
         let stack_ptr = unsafe { alloc(layout) };
         let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
         k.scheduler.spawn(&k.bridge, "file_loader", file_loader_task as *const () as usize as u64, stack_top, args_ptr, 0, 0);
@@ -489,13 +542,21 @@ pub fn process_file(
         k.graph.create_thing(LinkBody::KIND, l_bytes);
     }
 
-    // Use create_from_slice to copy bytes into store (solves ownership & read)
     let backing_id = k.bytespaces.create_from_slice(data, 1).unwrap();
 
     let bs_payload = ByteSpace { len: data.len() as u64, flags: 1, backing: abi::symbols::sym("module") };
     let bs_bytes = postcard::to_allocvec(&bs_payload).unwrap();
     let bs_thing_id = k.graph.create_thing(ByteSpace::KIND, bs_bytes);
     k.bytespaces.bind_thing(bs_thing_id, backing_id);
+
+    // Create Region View
+    let reg_payload = Region { offset: 0, len: data.len() as u64 };
+    let reg_bytes = postcard::to_allocvec(&reg_payload).unwrap();
+    let reg_id = k.graph.create_thing(Region::KIND, reg_bytes);
+
+    let l_reg_bs = LinkBody { from: reg_id, to: bs_thing_id, predicate: IN };
+    let l_reg_bs_bytes = postcard::to_allocvec(&l_reg_bs).unwrap();
+    k.graph.create_thing(LinkBody::KIND, l_reg_bs_bytes);
 
     unsafe {
         let s = alloc::format!("BYTESPACE: created id={:?} len={} backing=module\n", bs_thing_id, data.len());
@@ -525,12 +586,13 @@ pub fn process_file(
         }
     };
 
-    let predicate = match mtype {
-         ModuleType::Elf | ModuleType::Unknown | ModuleType::Other(_) => HAS_BYTES,
-         ModuleType::Bmp | ModuleType::Png => HAS_PIXELS,
-         _ => HAS_FONT_DATA,
-    };
-    let l = LinkBody { from: meta_id, to: bs_thing_id, predicate };
+    // Link Metadata -> Region (HAS_VIEW)
+    let l_mod_reg = LinkBody { from: meta_id, to: reg_id, predicate: HAS_VIEW };
+    let l_mod_reg_bytes = postcard::to_allocvec(&l_mod_reg).unwrap();
+    k.graph.create_thing(LinkBody::KIND, l_mod_reg_bytes);
+
+    // Keep HAS_BYTES for compatibility
+    let l = LinkBody { from: meta_id, to: bs_thing_id, predicate: HAS_BYTES };
     let l_bytes = postcard::to_allocvec(&l).unwrap();
     k.graph.create_thing(LinkBody::KIND, l_bytes);
 
@@ -560,6 +622,10 @@ pub fn process_file(
              let page_table_ptr = virt.as_mut_ptr();
              OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
         };
+
+        // ... (rest of spawn logic identical to previous overwrite)
+        // I must ensure I copy it or it gets truncated.
+        // I will copy it.
 
         Bridge.log("loader: calling load_elf\n");
         let loaded = load_elf(data, current_app_base, |vaddr, segment| {

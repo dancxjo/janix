@@ -1,142 +1,28 @@
-use alloc::alloc::{alloc, Layout};
+use alloc::alloc::{alloc, dealloc, Layout};
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use abi::{ThingId, SymbolId};
-use abi::symbols::sym;
-
-use crate::KERNEL;
-use bridge_x86_64::Bridge;
-use core::sync::atomic::{AtomicU64, Ordering};
+use abi::boot::{LoadedBootArgs, UserBootBlob};
+use kernel::boot::{BootAddrKind, BootBlob, blob_as_slice};
+use kernel::userimg::{load_elf_user_image, LoadedImage};
 use kernel::bridge::HardwareBridge;
 use kernel::fs::iso9660::{BlockReader, Iso9660Reader};
 use kernel::Kernel;
-use thing_models::payload::*;
-use thing_models::link::LinkBody;
-use thing_models::Thing;
-use x86_64::structures::paging::mapper::TranslateError;
+use crate::KERNEL;
+use bridge_x86_64::Bridge;
+use core::sync::atomic::{AtomicU64, Ordering};
 use x86_64::structures::paging::{
-    FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
-    Size2MiB, Size4KiB, Translate,
+    FrameAllocator, Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
 };
-use x86_64::VirtAddr;
-use xmas_elf::{program::Type, ElfFile};
-
-// --- SHARED STRUCTS ---
+use x86_64::{PhysAddr, VirtAddr};
 
 pub struct ScanArgs {
     pub base: u64,
     pub port: usize,
     pub hhdm: u64,
 }
-
-pub struct FileArgs {
-    pub iso: Arc<Iso9660Reader<Box<dyn BlockReader + Send + Sync>>>,
-    pub path: String,
-    pub dir_id: Option<ThingId>,
-    pub should_spawn: bool,
-    pub hhdm: u64,
-}
-
-// --- HELPER ENUMS ---
-
-enum ModuleType {
-    Elf,
-    Psf1,
-    Psf2,
-    Bmp,
-    Png,
-    Ttf,
-    Otf,
-    Woff,
-    Woff2,
-    Unknown,
-    Other(String),
-}
-
-fn classify_bytes(data: &[u8]) -> ModuleType {
-    if data.len() >= 4 && data[0] == 0x7F && data[1] == b'E' && data[2] == b'L' && data[3] == b'F' {
-        return ModuleType::Elf;
-    }
-    if data.len() >= 4 && data[0] == 0x00 && data[1] == 0x01 && data[2] == 0x00 && data[3] == 0x00 {
-        return ModuleType::Ttf;
-    }
-    if data.len() >= 4 && data[0] == b'O' && data[1] == b'T' && data[2] == b'T' && data[3] == b'O' {
-        return ModuleType::Otf;
-    }
-    if data.len() >= 4 && data[0] == b'w' && data[1] == b'O' && data[2] == b'F' && data[3] == b'F' {
-        return ModuleType::Woff;
-    }
-    if data.len() >= 4 && data[0] == b'w' && data[1] == b'O' && data[2] == b'F' && data[3] == b'2' {
-        return ModuleType::Woff2;
-    }
-    if data.len() >= 2 && data[0] == 0x36 && data[1] == 0x04 {
-        return ModuleType::Psf1;
-    }
-    if data.len() >= 4 && data[0] == 0x72 && data[1] == 0xB5 && data[2] == 0x4A && data[3] == 0x86 {
-        return ModuleType::Psf2;
-    }
-    if data.len() >= 2 && data[0] == b'B' && data[1] == b'M' {
-        return ModuleType::Bmp;
-    }
-    if data.len() >= 4 && data[0] == 0x89 && data[1] == b'P' && data[2] == b'N' && data[3] == b'G' {
-        return ModuleType::Png;
-    }
-
-    if let Some(kind) = infer::get(data) {
-        match kind.mime_type() {
-            "application/x-executable" | "application/x-elf" | "application/x-sharedlib" => {
-                ModuleType::Elf
-            }
-            "image/bmp" => ModuleType::Bmp,
-            "image/png" => ModuleType::Png,
-            other => ModuleType::Other(String::from(other)),
-        }
-    } else {
-        ModuleType::Unknown
-    }
-}
-
-enum ModuleRole {
-    App,
-    Driver,
-    #[allow(dead_code)]
-    Debug,
-    Asset,
-    #[allow(dead_code)]
-    Ignore,
-}
-
-fn get_module_role(name: &str, mtype: &ModuleType) -> ModuleRole {
-    if name.contains("/drivers/") || name.contains("ps2_") {
-        return ModuleRole::Driver;
-    }
-    match mtype {
-        ModuleType::Elf => ModuleRole::App,
-        ModuleType::Psf1
-        | ModuleType::Psf2
-        | ModuleType::Bmp
-        | ModuleType::Png
-        | ModuleType::Ttf
-        | ModuleType::Otf
-        | ModuleType::Woff
-        | ModuleType::Woff2 => ModuleRole::Asset,
-        ModuleType::Other(s) if s.starts_with("image/") || s.starts_with("font/") => {
-            ModuleRole::Asset
-        }
-        _ => {
-            if name.contains("font") {
-                ModuleRole::Asset
-            } else {
-                ModuleRole::Ignore
-            }
-        }
-    }
-}
-
-// --- BOOT LOGIC ---
 
 static APP_LOAD_ADDR: AtomicU64 = AtomicU64::new(0x40_0000_0000);
 
@@ -146,9 +32,8 @@ struct HeapFrameAllocator {
 
 unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        use alloc::alloc::{alloc_zeroed, Layout};
         let layout = Layout::from_size_align(4096, 4096).ok()?;
-        let ptr = unsafe { alloc_zeroed(layout) };
+        let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
         if ptr.is_null() {
             return None;
         }
@@ -156,173 +41,14 @@ unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
         use x86_64::registers::control::Cr3;
         let (l4_frame, _) = Cr3::read();
         let phys_l4 = l4_frame.start_address();
-        // Safe HHDM Add
         let raw_virt_l4 = self.hhdm_offset.as_u64().wrapping_add(phys_l4.as_u64());
-        let virt_l4 = match VirtAddr::try_new(raw_virt_l4) {
-            Ok(a) => a,
-            Err(_) => {
-                Bridge.log("loader: HFA VirtAddr Add Fail!\n");
-                return None;
-            }
-        };
+        let virt_l4 = VirtAddr::new(raw_virt_l4);
         let page_table_ptr = virt_l4.as_mut_ptr();
         let mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
 
-        let virt_addr = VirtAddr::try_new(ptr as u64).ok()?;
-        let phys_frame = mapper
-            .translate_addr(virt_addr)
-            .map(|phys| PhysFrame::containing_address(phys));
-
-        if phys_frame.is_none() {
-            Bridge.log("loader: HFA Translate Fail!\n");
-        }
-
-        phys_frame
+        let virt_addr = VirtAddr::new(ptr as u64);
+        mapper.translate_addr(virt_addr).map(|phys| PhysFrame::containing_address(phys))
     }
-}
-
-fn write_user_bytes(
-    raw_addr: u64,
-    data: &[u8],
-    mapper: &mut OffsetPageTable<'static>,
-    frame_allocator: &mut HeapFrameAllocator,
-    hhdm_offset: VirtAddr,
-) {
-    use x86_64::structures::paging::{mapper::TranslateError, mapper::TranslateResult, Mapper, Page, PageTableFlags, Size2MiB};
-
-    let start = VirtAddr::new(raw_addr);
-    let end = VirtAddr::new(raw_addr + data.len() as u64);
-    let start_page = Page::<Size4KiB>::containing_address(start);
-    let end_page = Page::<Size4KiB>::containing_address(end - 1u64);
-
-    for page in Page::range_inclusive(start_page, end_page) {
-        let page_start_virt = page.start_address();
-        let mut needs_alloc = true;
-
-        match mapper.translate_page(page) {
-            Ok(_) => {
-                let new_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-                unsafe {
-                    if let Ok(flush) = mapper.update_flags(page, new_flags) {
-                        flush.flush();
-                    }
-                }
-                needs_alloc = false;
-            }
-            Err(TranslateError::ParentEntryHugePage) => {
-                 let huge_page = Page::<Size2MiB>::containing_address(page_start_virt);
-                unsafe {
-                    if let Ok((_phys, flush)) = mapper.unmap(huge_page) {
-                        flush.flush();
-                    }
-                }
-            }
-            Err(TranslateError::PageNotMapped) => {}
-            Err(_) => { return; }
-        }
-
-        if needs_alloc {
-            if let Some(frame) = frame_allocator.allocate_frame() {
-                let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
-                unsafe {
-                    if let Ok(map_to) = mapper.map_to(page, frame, flags, frame_allocator) {
-                        map_to.flush();
-                    }
-                }
-            } else {
-                return;
-            }
-        }
-
-        let overlap_start = core::cmp::max(page_start_virt, start);
-        let overlap_end = core::cmp::min(page_start_virt + 4096u64, end);
-        if overlap_end <= overlap_start { continue; }
-
-        let copy_len = overlap_end - overlap_start;
-        let seg_offset = overlap_start - start;
-        let page_offset = overlap_start - page_start_virt;
-
-        if let TranslateResult::Mapped { frame, offset, .. } = mapper.translate(page_start_virt) {
-            let phys = frame.start_address() + offset;
-            let frame_virt = hhdm_offset + phys.as_u64();
-            let src_ptr = unsafe { data.as_ptr().add(seg_offset as usize) };
-            let dest_ptr = unsafe { (frame_virt.as_mut_ptr::<u8>()).add(page_offset as usize) };
-            unsafe {
-                core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, copy_len as usize);
-            }
-        }
-    }
-}
-
-fn apply_relative_relocations(
-    elf_data: &[u8],
-    load_base: u64,
-    mapper: &mut OffsetPageTable<'static>,
-    frame_allocator: &mut HeapFrameAllocator,
-    hhdm_offset: VirtAddr,
-) -> usize {
-    let elf = match ElfFile::new(elf_data) {
-        Ok(e) => e,
-        Err(_) => return 0,
-    };
-
-    let dyn_ph = elf.program_iter().find(|ph| ph.get_type().map(|t| t == Type::Dynamic).unwrap_or(false));
-    if let Some(dyn_ph) = dyn_ph {
-        let dyn_offset = dyn_ph.offset();
-        let dyn_size = dyn_ph.file_size();
-        let dyn_entries = &elf_data[dyn_offset as usize..(dyn_offset + dyn_size) as usize];
-        let mut rela_addr = 0u64;
-        let mut rela_sz = 0u64;
-        let mut rela_ent = 0u64;
-
-        for chunk in dyn_entries.chunks(16) {
-             if chunk.len() < 16 { break; }
-            let tag = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
-            let val = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
-            match tag {
-                7 => rela_addr = val,
-                8 => rela_sz = val,
-                9 => rela_ent = val,
-                0 => break,
-                _ => {}
-            }
-        }
-
-        if rela_addr == 0 || rela_sz == 0 { return 0; }
-
-        let mut file_offset = None;
-        for ph in elf.program_iter() {
-            if ph.get_type().unwrap_or(Type::Null) == Type::Load {
-                let vaddr = ph.virtual_addr();
-                let mem_sz = ph.mem_size();
-                if rela_addr >= vaddr && rela_addr < vaddr + mem_sz {
-                    file_offset = Some(ph.offset() + (rela_addr - vaddr));
-                    break;
-                }
-            }
-        }
-
-        if let Some(file_off) = file_offset {
-            let rela_data = &elf_data[file_off as usize..(file_off + rela_sz) as usize];
-            let ent_size = if rela_ent > 0 { rela_ent } else { 24 };
-            let mut applied = 0usize;
-            for chunk in rela_data.chunks(ent_size as usize) {
-                 if chunk.len() < 24 { break; }
-                let r_offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
-                let r_info = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
-                let r_addend = i64::from_le_bytes(chunk[16..24].try_into().unwrap());
-                let r_type = r_info & 0xFFFF_FFFF;
-
-                if r_type == 8 {
-                    let value = load_base.wrapping_add(r_addend as u64);
-                    write_user_bytes(load_base + r_offset, &value.to_le_bytes(), mapper, frame_allocator, hhdm_offset);
-                    applied += 1;
-                }
-            }
-            return applied;
-        }
-    }
-    0
 }
 
 pub extern "C" fn scan_boot_fs_task(arg: u64) {
@@ -332,8 +58,8 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     let port = args.port;
     let hhdm = args.hhdm;
 
+    // ISO Reader Setup
     let reader = move |lba, buf: &mut [u8]| unsafe {
-        use alloc::alloc::{alloc, dealloc, Layout};
         let layout = Layout::from_size_align(2048, 2048).unwrap();
         let ptr = alloc(layout);
         if ptr.is_null() { return false; }
@@ -357,328 +83,224 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
 
     Bridge.log("loader: ISO Reader Ready. Scanning...\n");
 
-    let (apps_dir_id, _drivers_dir_id, fonts_dir_id, cursors_dir_id, icons_dir_id) = {
-        let mut guard = KERNEL.lock();
-        if let Some(k) = guard.as_mut() {
-            // New Payload Usage
-            use models::builtins::ids::*;
+    let mut blobs = Vec::new();
+    let dirs = ["/boot/apps", "/boot/drivers", "/boot/fonts", "/boot/cursors", "/boot/icons"];
 
-            // 1. Mount "/boot"
-            let m_payload = Mount { path: String::from("/boot"), readonly: true };
-            let m_bytes = postcard::to_allocvec(&m_payload).unwrap();
-            let m_id = k.graph.create_thing(Mount::KIND, m_bytes);
+    for dir in dirs {
+        if let Some(entries) = iso.read_dir(dir) {
+            for entry in entries {
+                if !entry.is_dir {
+                    let path = alloc::format!("{}/{}", dir, entry.name);
+                    if let Some(handle) = iso.open(&path) {
+                        let size = handle.size as usize;
+                        let layout = Layout::from_size_align(size, 4096).unwrap_or(Layout::from_size_align(4096, 4096).unwrap());
+                        let ptr = unsafe { alloc(layout) };
+                        if !ptr.is_null() {
+                            let buf = unsafe { core::slice::from_raw_parts_mut(ptr, size) };
+                            iso.read(&handle, 0, size, buf);
 
-            // Link BootRoot -> Mount
-            let l_root = LinkBody { from: THING_BOOT_ROOT, to: m_id, predicate: HAS_MOUNT };
-            let l_root_bytes = postcard::to_allocvec(&l_root).unwrap();
-            k.graph.create_thing(LinkBody::KIND, l_root_bytes);
+                            blobs.push(BootBlob {
+                                path,
+                                start: ptr as u64,
+                                size: size as u64,
+                                addr_kind: BootAddrKind::Virt,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
 
-            // 2. Root Dir
-            let d_payload = Dir { name: String::from("/boot") };
-            let d_bytes = postcard::to_allocvec(&d_payload).unwrap();
-            let root_id = k.graph.create_thing(Dir::KIND, d_bytes);
+    Bridge.log(alloc::format!("loader: Scanned {} blobs\n", blobs.len()).as_str());
 
-            // Link Mount -> Root Dir
-            let l_mnt = LinkBody { from: m_id, to: root_id, predicate: MOUNTS };
-            let l_mnt_bytes = postcard::to_allocvec(&l_mnt).unwrap();
-            k.graph.create_thing(LinkBody::KIND, l_mnt_bytes);
+    let loaded_blob = blobs.iter().find(|b| b.path.ends_with("/loaded.elf") || b.path == "loaded.elf");
 
-            let mut make_dir = |name: &str, parent: ThingId| {
-                let payload = Dir { name: String::from(name) };
-                let bytes = postcard::to_allocvec(&payload).unwrap();
-                let did = k.graph.create_thing(Dir::KIND, bytes);
+    if let Some(lb) = loaded_blob {
+        spawn_loaded(lb, &blobs, hhdm);
+    } else {
+        Bridge.log("loader: loaded.elf not found!\n");
+    }
 
-                let l = LinkBody { from: parent, to: did, predicate: HAS_ENTRY };
-                let l_bytes = postcard::to_allocvec(&l).unwrap();
-                k.graph.create_thing(LinkBody::KIND, l_bytes);
-                did
-            };
+    loop { x86_64::instructions::hlt(); }
+}
 
-            let apps = make_dir("apps", root_id);
-            let drivers = make_dir("drivers", root_id);
-            let fonts = make_dir("fonts", root_id);
-            let cursors = make_dir("cursors", root_id);
-            let icons = make_dir("icons", root_id);
+fn spawn_loaded(elf_blob: &BootBlob, all_blobs: &[BootBlob], hhdm: u64) {
+    use x86_64::registers::control::Cr3;
+    let elf_data = unsafe { blob_as_slice(elf_blob, hhdm) };
+    let current_app_base = APP_LOAD_ADDR.fetch_add(0x1000_0000, Ordering::Relaxed);
+    let hhdm_offset = VirtAddr::new(hhdm);
+    let mut frame_allocator = HeapFrameAllocator { hhdm_offset };
 
-            // Framebuffer Setup
-            if let Some((fb_phys, fb_size)) = unsafe { crate::FRAMEBUFFER_INFO } {
-                 // 1. Create ByteSpace (backed by framebuffer)
-                 let bs_payload = ByteSpace { len: fb_size, flags: 3, backing: abi::symbols::sym("framebuffer") };
-                 let bs_bytes = postcard::to_allocvec(&bs_payload).unwrap();
-                 let bs_id = k.graph.create_thing(ByteSpace::KIND, bs_bytes);
+    let mut mapper = unsafe {
+         let (l4_frame, _) = Cr3::read();
+         let phys = l4_frame.start_address();
+         let virt = hhdm_offset + phys.as_u64();
+         let page_table_ptr = virt.as_mut_ptr();
+         OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
+    };
 
-                 let start_frame = PhysFrame::<Size4KiB>::containing_address(x86_64::PhysAddr::new(fb_phys));
-                 let end_frame = PhysFrame::<Size4KiB>::containing_address(x86_64::PhysAddr::new(fb_phys + fb_size - 1));
-                 let mut frames = Vec::new();
-                 for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
-                     frames.push(abi::memory::PhysFrame(frame.start_address().as_u64()));
-                 }
-                 let backing_id = k.bytespaces.create_backing_with_frames(fb_size, 3, frames);
-                 k.bytespaces.bind_thing(bs_id, backing_id);
+    let loaded_image = load_elf_user_image(elf_data, current_app_base, |vaddr, segment| {
+        let raw_addr = current_app_base + vaddr;
+        let start = VirtAddr::new(raw_addr);
+        let end = VirtAddr::new(raw_addr + segment.len() as u64);
+        let start_page = Page::<Size4KiB>::containing_address(start);
+        let end_page = Page::<Size4KiB>::containing_address(end - 1u64);
 
-                 // 2. Create Region
-                 let reg_payload = Region { offset: 0, len: fb_size };
-                 let reg_bytes = postcard::to_allocvec(&reg_payload).unwrap();
-                 let reg_id = k.graph.create_thing(Region::KIND, reg_bytes);
-
-                 let l_reg_bs = LinkBody { from: reg_id, to: bs_id, predicate: IN };
-                 let l_reg_bs_bytes = postcard::to_allocvec(&l_reg_bs).unwrap();
-                 k.graph.create_thing(LinkBody::KIND, l_reg_bs_bytes);
-
-                 // 3. Create Image2D
-                 // Hardcode 1080p for now as fallback or placeholder
-                 let img_payload = Image2D { width: 1920, height: 1080, stride: 1920*4, pixel_format: abi::symbols::sym("rgba8888") };
-                 let img_bytes = postcard::to_allocvec(&img_payload).unwrap();
-                 let img_id = k.graph.create_thing(Image2D::KIND, img_bytes);
-
-                 let l_img_reg = LinkBody { from: img_id, to: reg_id, predicate: DATA };
-                 let l_img_reg_bytes = postcard::to_allocvec(&l_img_reg).unwrap();
-                 k.graph.create_thing(LinkBody::KIND, l_img_reg_bytes);
-
-                 // 4. Create Framebuffer Owner
-                 let fb_owner_id = k.graph.create_thing(abi::symbols::sym("DisplayFramebuffer"), Vec::new());
-
-                 let l_fb_view = LinkBody { from: fb_owner_id, to: img_id, predicate: HAS_VIEW };
-                 let l_fb_view_bytes = postcard::to_allocvec(&l_fb_view).unwrap();
-                 k.graph.create_thing(LinkBody::KIND, l_fb_view_bytes);
-
-                 // Link BootRoot -> FB (HAS_DEVICE)
-                 let l_root_fb = LinkBody { from: THING_BOOT_ROOT, to: fb_owner_id, predicate: abi::symbols::sym("HAS_DEVICE") };
-                 let l_root_fb_bytes = postcard::to_allocvec(&l_root_fb).unwrap();
-                 k.graph.create_thing(LinkBody::KIND, l_root_fb_bytes);
-
-                 unsafe {
-                     let s = alloc::format!("VIEW: framebuffer image2d bytespace={:?} region(off=0 len={}) w=1920 h=1080 stride=7680\n", bs_id, fb_size);
-                     Bridge.log(&s);
-                 }
+        for page in Page::range_inclusive(start_page, end_page) {
+            if mapper.translate_page(page).is_err() {
+                if let Some(frame) = frame_allocator.allocate_frame() {
+                    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                    unsafe { mapper.map_to(page, frame, flags, &mut frame_allocator).unwrap().flush(); }
+                }
             }
 
-            Bridge.log("loader: Mounts created\n");
-            (apps, drivers, fonts, cursors, icons)
-        } else { return; }
-    };
+            if let Some(phys) = mapper.translate_page(page) {
+                let frame_virt = hhdm_offset + phys.start_address().as_u64();
+                let page_start_virt = page.start_address();
 
-    let apps_entries = iso.read_dir("/boot/apps").unwrap_or_default();
-    Bridge.log("loader: Spawning app loaders...\n");
+                let overlap_start = core::cmp::max(page_start_virt, start);
+                let overlap_end = core::cmp::min(page_start_virt + 4096u64, end);
+                if overlap_end > overlap_start {
+                    let copy_len = overlap_end - overlap_start;
+                    let seg_offset = overlap_start - start;
+                    let page_offset = overlap_start - page_start_virt;
 
-    for entry in apps_entries {
-        if entry.is_dir { continue; }
-        let path = alloc::format!("/boot/apps/{}", entry.name);
-        let f_args = FileArgs { iso: iso.clone(), path, dir_id: Some(apps_dir_id), should_spawn: entry.name.ends_with(".elf"), hhdm };
-        spawn_file_loader(f_args);
-    }
-
-    let drv_entries = iso.read_dir("/boot/drivers").unwrap_or_default();
-    Bridge.log("loader: Spawning driver loaders...\n");
-    for entry in drv_entries {
-        if entry.is_dir { continue; }
-         let path = alloc::format!("/boot/drivers/{}", entry.name);
-         let f_args = FileArgs { iso: iso.clone(), path, dir_id: Some(_drivers_dir_id), should_spawn: false, hhdm };
-         spawn_file_loader(f_args);
-    }
-
-    let asset_dirs = [("/boot/cursors", cursors_dir_id), ("/boot/icons", icons_dir_id)];
-    for (path, dir_id) in asset_dirs {
-        let entries = iso.read_dir(path).unwrap_or_default();
-        for entry in entries {
-            if entry.is_dir { continue; }
-            let full_path = alloc::format!("{}/{}", path, entry.name);
-            let f_args = FileArgs { iso: iso.clone(), path: full_path, dir_id: Some(dir_id), should_spawn: false, hhdm };
-            spawn_file_loader(f_args);
+                    let src_ptr = unsafe { segment.as_ptr().add(seg_offset as usize) };
+                    let dest_ptr = unsafe { (frame_virt.as_mut_ptr::<u8>()).add(page_offset as usize) };
+                    unsafe { core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, copy_len as usize); }
+                }
+            }
         }
-    }
+    });
 
-    Bridge.log("loader: All scan tasks spawned.\n");
-    loop { x86_64::instructions::hlt(); }
-}
+    if let Some(img) = loaded_image {
+        let mut user_blob_ptr = (img.max_mapped + 0x100000 + 4095) & !4095;
+        user_blob_ptr = (user_blob_ptr + 0xFFFFF) & !0xFFFFF;
 
-fn spawn_file_loader(args: FileArgs) {
-    let args_box = Box::new(args);
-    let args_ptr = Box::into_raw(args_box) as u64;
-    let mut guard = KERNEL.lock();
-    if let Some(k) = guard.as_mut() {
-        let layout = Layout::from_size_align(256 * 1024, 16).unwrap(); // 256KB stack
-        let stack_ptr = unsafe { alloc(layout) };
-        let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 } - 8;
-        k.scheduler.spawn(&k.bridge, "file_loader", file_loader_task as *const () as usize as u64, stack_top, args_ptr, 0, 0);
-    }
-}
+        let mut user_blobs = Vec::new();
 
-pub extern "C" fn file_loader_task(arg: u64) {
-    let args = unsafe { Box::from_raw(arg as *mut FileArgs) };
-    if let Some(handle) = args.iso.open(&args.path) {
-        Bridge.log("loader: Opened "); Bridge.log(&args.path); Bridge.log("\n");
-        let mut data = alloc::vec![0u8; handle.size as usize];
-        args.iso.read(&handle, 0, handle.size as usize, &mut data);
-        Bridge.log("loader: Read complete\n");
+        for blob in all_blobs {
+            let blob_data = unsafe { blob_as_slice(blob, hhdm) };
+            let blob_len = blob_data.len() as u64;
+            let blob_start = user_blob_ptr;
+
+            let pages = (blob_len + 4095) / 4096;
+            for i in 0..pages {
+                let page = Page::<Size4KiB>::containing_address(VirtAddr::new(blob_start + i * 4096));
+                if let Some(frame) = frame_allocator.allocate_frame() {
+                     let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                     unsafe { mapper.map_to(page, frame, flags, &mut frame_allocator).unwrap().flush(); }
+
+                     let phys = frame.start_address();
+                     let frame_virt = hhdm_offset + phys.as_u64();
+                     let offset = i * 4096;
+                     let len = core::cmp::min(4096, blob_len - offset);
+                     let src = unsafe { blob_data.as_ptr().add(offset as usize) };
+                     let dst = frame_virt.as_mut_ptr::<u8>();
+                     unsafe { core::ptr::copy_nonoverlapping(src, dst, len as usize); }
+                }
+            }
+            user_blob_ptr += (blob_len + 4095) & !4095;
+
+            let path_bytes = blob.path.as_bytes();
+            let path_len = path_bytes.len() as u64;
+            let path_start = user_blob_ptr;
+            let path_pages = (path_len + 4095) / 4096;
+             for i in 0..path_pages {
+                let page = Page::<Size4KiB>::containing_address(VirtAddr::new(path_start + i * 4096));
+                if let Some(frame) = frame_allocator.allocate_frame() {
+                     let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                     unsafe { mapper.map_to(page, frame, flags, &mut frame_allocator).unwrap().flush(); }
+
+                     let phys = frame.start_address();
+                     let frame_virt = hhdm_offset + phys.as_u64();
+                     let offset = i * 4096;
+                     let len = core::cmp::min(4096, path_len - offset);
+                     let src = unsafe { path_bytes.as_ptr().add(offset as usize) };
+                     let dst = frame_virt.as_mut_ptr::<u8>();
+                     unsafe { core::ptr::copy_nonoverlapping(src, dst, len as usize); }
+                }
+            }
+            user_blob_ptr += (path_len + 4095) & !4095;
+
+            user_blobs.push(UserBootBlob {
+                start: blob_start,
+                size: blob_len,
+                path_ptr: path_start,
+                path_len,
+            });
+        }
+
+        let array_len = (user_blobs.len() * core::mem::size_of::<UserBootBlob>()) as u64;
+        let array_start = user_blob_ptr;
+        let array_pages = (array_len + 4095) / 4096;
+        for i in 0..array_pages {
+             let page = Page::<Size4KiB>::containing_address(VirtAddr::new(array_start + i * 4096));
+                if let Some(frame) = frame_allocator.allocate_frame() {
+                     let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                     unsafe { mapper.map_to(page, frame, flags, &mut frame_allocator).unwrap().flush(); }
+
+                     let phys = frame.start_address();
+                     let frame_virt = hhdm_offset + phys.as_u64();
+                     let offset = i * 4096;
+                     let len = core::cmp::min(4096, array_len - offset);
+                     let src_slice = unsafe {
+                         core::slice::from_raw_parts(user_blobs.as_ptr() as *const u8, array_len as usize)
+                     };
+                     let src = unsafe { src_slice.as_ptr().add(offset as usize) };
+                     let dst = frame_virt.as_mut_ptr::<u8>();
+                     unsafe { core::ptr::copy_nonoverlapping(src, dst, len as usize); }
+                }
+        }
+        user_blob_ptr += (array_len + 4095) & !4095;
+
+        let stack_bottom = user_blob_ptr + 0x10000;
+        let stack_size = 256 * 1024;
+        let stack_top = stack_bottom + stack_size;
+        for i in 0..(stack_size/4096) {
+             let page = Page::<Size4KiB>::containing_address(VirtAddr::new(stack_bottom + i*4096));
+             if let Some(frame) = frame_allocator.allocate_frame() {
+                  unsafe { mapper.map_to(page, frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE, &mut frame_allocator).unwrap().flush(); }
+             }
+        }
+
+        let heap_start = stack_top + 0x10000;
+
+        let fb_info = unsafe { crate::FRAMEBUFFER_INFO };
+        let args = LoadedBootArgs {
+            hhdm,
+            framebuffer: fb_info,
+            blobs_ptr: array_start,
+            blobs_len: user_blobs.len() as u64,
+            heap_start,
+            heap_size: 128 * 1024 * 1024,
+        };
+
+        let args_size = core::mem::size_of::<LoadedBootArgs>() as u64;
+        let args_addr = stack_top - args_size;
+        let page = Page::<Size4KiB>::containing_address(VirtAddr::new(args_addr));
+        if let Some(phys) = mapper.translate_page(page) {
+             let frame_virt = hhdm_offset + phys.start_address().as_u64();
+             let page_offset = args_addr % 4096;
+             let dst = unsafe { frame_virt.as_mut_ptr::<u8>().add(page_offset as usize) };
+             let src = &args as *const _ as *const u8;
+             unsafe { core::ptr::copy_nonoverlapping(src, dst, args_size as usize); }
+        }
 
         let mut guard = KERNEL.lock();
         if let Some(k) = guard.as_mut() {
-            let name = args.path.rsplit('/').next().unwrap_or(&args.path);
-            process_file(k, args.dir_id, name, &data, 0, Some(args.should_spawn), args.hhdm);
-        }
-    }
-    loop { x86_64::instructions::hlt(); }
-}
-
-pub fn process_file(
-    k: &mut Kernel<Bridge>,
-    parent_dir_id: Option<ThingId>,
-    name: &str,
-    data: &[u8],
-    _idx: usize,
-    spawn_override: Option<bool>,
-    hhdm_u64: u64,
-) {
-    let mtype = classify_bytes(data);
-    let role_enum = get_module_role(name, &mtype);
-
-    // 1. Create File Thing
-    let file_payload = File { name: String::from(name), size: data.len() as u64 };
-    let file_bytes = postcard::to_allocvec(&file_payload).unwrap();
-    let file_id = k.graph.create_thing(File::KIND, file_bytes);
-
-    if let Some(parent) = parent_dir_id {
-        let link = LinkBody { from: parent, to: file_id, predicate: HAS_ENTRY };
-        let l_bytes = postcard::to_allocvec(&link).unwrap();
-        k.graph.create_thing(LinkBody::KIND, l_bytes);
-    }
-
-    // 2. Create ByteSpace
-    let backing_id = k.bytespaces.create_from_slice(data, 1).unwrap();
-
-    let bs_payload = ByteSpace { len: data.len() as u64, flags: 1, backing: abi::symbols::sym("module") };
-    let bs_bytes = postcard::to_allocvec(&bs_payload).unwrap();
-    let bs_thing_id = k.graph.create_thing(ByteSpace::KIND, bs_bytes);
-    k.bytespaces.bind_thing(bs_thing_id, backing_id);
-
-    unsafe {
-        let s = alloc::format!("BYTESPACE: created id={:?} len={} backing=module\n", bs_thing_id, data.len());
-        Bridge.log(&s);
-    }
-
-    // Link File -> ByteSpace
-    let l_file_bs = LinkBody { from: file_id, to: bs_thing_id, predicate: HAS_BYTES };
-    let l_file_bs_bytes = postcard::to_allocvec(&l_file_bs).unwrap();
-    k.graph.create_thing(LinkBody::KIND, l_file_bs_bytes);
-
-    // 3. Create Meta Thing
-    let (kind_sym, mime_sym, abi_sym, type_sym) = match mtype {
-        ModuleType::Elf => (sym("module.elf"), sym("application/x-elf"), Some(sym("thingos.user")), Some(sym("app"))),
-        ModuleType::Bmp => (sym("asset.image"), sym("image/bmp"), None, None),
-        ModuleType::Png => (sym("asset.image"), sym("image/png"), None, None),
-        ModuleType::Ttf => (sym("asset.font"), sym("font/ttf"), None, None),
-        ModuleType::Otf => (sym("asset.font"), sym("font/otf"), None, None),
-        ModuleType::Woff => (sym("asset.font"), sym("font/woff"), None, None),
-        ModuleType::Woff2 => (sym("asset.font"), sym("font/woff2"), None, None),
-        ModuleType::Psf1 => (sym("asset.font"), sym("font/psf1"), None, None),
-        ModuleType::Psf2 => (sym("asset.font"), sym("font/psf2"), None, None),
-        _ => (sym("unknown"), sym("application/octet-stream"), None, None),
-    };
-
-    // Parse ELF if needed
-    let (entry_vaddr, preferred_base) = if matches!(mtype, ModuleType::Elf) {
-         if let Ok(elf) = ElfFile::new(data) {
-             (Some(elf.header.pt2.entry_point()), None)
-         } else { (None, None) }
-    } else { (None, None) };
-
-    let meta = Meta {
-        kind: kind_sym,
-        mime: mime_sym,
-        size_bytes: data.len() as u64,
-        sha256: None,
-        entry_vaddr,
-        preferred_base,
-        abi: abi_sym,
-        module_type: type_sym,
-    };
-
-    let meta_bytes = postcard::to_allocvec(&meta).unwrap();
-    let meta_id = k.graph.create_thing(Meta::KIND, meta_bytes);
-
-    // Link File -> Meta
-    let l_file_meta = LinkBody { from: file_id, to: meta_id, predicate: HAS_META };
-    let l_file_meta_bytes = postcard::to_allocvec(&l_file_meta).unwrap();
-    k.graph.create_thing(LinkBody::KIND, l_file_meta_bytes);
-
-    // Link BootRoot -> File (Discovery)
-    use models::builtins::ids::THING_BOOT_ROOT;
-    let l_root_file = LinkBody { from: THING_BOOT_ROOT, to: file_id, predicate: HAS_MODULE };
-    let l_root_file_bytes = postcard::to_allocvec(&l_root_file).unwrap();
-    k.graph.create_thing(LinkBody::KIND, l_root_file_bytes);
-
-    // 4. Spawn Logic
-    let should_spawn = if let Some(s) = spawn_override { s } else {
-         match role_enum {
-             ModuleRole::App | ModuleRole::Driver => true,
-             _ => false,
-         }
-    };
-
-    if should_spawn && matches!(mtype, ModuleType::Elf) {
-        use kernel::sched::elf::load_elf;
-        use x86_64::registers::control::Cr3;
-
-        let current_app_base = APP_LOAD_ADDR.fetch_add(0x1000_0000, Ordering::Relaxed);
-        let hhdm_offset = VirtAddr::new(hhdm_u64);
-        let mut frame_allocator = HeapFrameAllocator { hhdm_offset };
-
-        let mut mapper = unsafe {
-             let (l4_frame, _) = Cr3::read();
-             let phys = l4_frame.start_address();
-             let virt = hhdm_offset + phys.as_u64();
-             let page_table_ptr = virt.as_mut_ptr();
-             OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
-        };
-
-        Bridge.log("loader: calling load_elf\n");
-        let loaded = load_elf(data, current_app_base, |vaddr, segment| {
-            let raw_addr = current_app_base + vaddr;
-            write_user_bytes(raw_addr, segment, &mut mapper, &mut frame_allocator, hhdm_offset);
-        });
-
-        if let Some(img) = loaded {
-             apply_relative_relocations(data, current_app_base, &mut mapper, &mut frame_allocator, hhdm_offset);
-
-             let stack_bottom = current_app_base + 0x0800_0000;
-             let stack_size = 131072;
-             let stack_top = stack_bottom + stack_size;
-             for i in 0..(stack_size/4096) {
-                 let page = Page::<Size4KiB>::containing_address(VirtAddr::new(stack_bottom + i*4096));
-                 if let Some(frame) = frame_allocator.allocate_frame() {
-                      unsafe { mapper.map_to(page, frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE, &mut frame_allocator).unwrap().flush(); }
-                 }
-             }
-
-             let heap_start = current_app_base + 0x0100_0000;
-
-             k.scheduler.spawn(
+            k.scheduler.spawn(
                 &k.bridge,
-                name,
-                current_app_base + img.entry_point,
-                stack_top - 8,
+                "loaded",
+                current_app_base + img.entry,
+                args_addr,
                 heap_start,
                 heap_start,
                 heap_start + 128 * 1024 * 1024,
             );
-            
-            // Create Process Thing and BootProgram Thing
-            let p_payload = Process { pid: k.scheduler.processes.len() as u64, name: abi::symbols::sym(name), state: 0 };
-            let p_bytes = postcard::to_allocvec(&p_payload).unwrap();
-            let pid = k.graph.create_thing(Process::KIND, p_bytes);
-
-            let bp_payload = BootProgram { name: String::from(name), entry: current_app_base + img.entry_point };
-            let bp_bytes = postcard::to_allocvec(&bp_payload).unwrap();
-            let bp_id = k.graph.create_thing(BootProgram::KIND, bp_bytes);
-
-            let l = LinkBody { from: pid, to: bp_id, predicate: RUNS };
-            let l_bytes = postcard::to_allocvec(&l).unwrap();
-            k.graph.create_thing(LinkBody::KIND, l_bytes);
-
-            let l_spawn = LinkBody { from: THING_BOOT_ROOT, to: pid, predicate: SPAWNED };
-            let l_s_bytes = postcard::to_allocvec(&l_spawn).unwrap();
-            k.graph.create_thing(LinkBody::KIND, l_s_bytes);
         }
+    } else {
+        Bridge.log("loader: Failed to load loaded.elf user image\n");
     }
 }

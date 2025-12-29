@@ -9,3 +9,5 @@ thing_models = { package = "models", path = "../../../crates/models" }
 abi = { path = "../../../crates/abi" }
 postcard = { version = "1.0", default-features = false, features = ["alloc"] }
 serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
+infer = { version = "0.19.0", default-features = false, features = ["alloc"] }
+xmas-elf = { version = "0.9", default-features = false }

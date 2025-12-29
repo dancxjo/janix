@@ -1,26 +1,21 @@
 use alloc::alloc::{alloc, Layout};
 use alloc::boxed::Box;
-use alloc::string::String;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use abi::ThingId;
-
+use abi::boot::{LoadedBootArgs, UserBootBlob};
+use kernel::boot::{BootAddrKind, BootBlob, blob_as_slice};
+use kernel::userimg::{load_elf_user_image, LoadedImage};
+use kernel::bridge::HardwareBridge;
+use kernel::Kernel;
 use crate::KERNEL;
 use bridge_aarch64::Bridge;
 use core::sync::atomic::{AtomicU64, Ordering};
-use kernel::bridge::HardwareBridge;
-use kernel::Kernel;
-use models::value::ThingBody;
-
-use xmas_elf::{program::Type, ElfFile};
-
 use crate::paging::{self, PTE_AF, PTE_AP_RW_EL0, PTE_ATTR_DEVICE, PTE_ATTR_NORMAL, PTE_PAGE, PTE_SH_INNER, PTE_UXN, PTE_VALID};
 
 // --- SHARED STRUCTS ---
 
 pub struct ScanArgs {
-    pub bb_info: Option<u64>, // placeholder
+    pub bb_info: Option<u64>,
     pub hhdm: u64,
     pub fb_phys: u64,
     pub fb_size: usize,
@@ -74,82 +69,6 @@ fn write_user_bytes(
     }
 }
 
-fn apply_relative_relocations(
-    elf_data: &[u8],
-    load_base: u64,
-    root_table: u64,
-    hhdm_offset: u64,
-) -> usize {
-    let elf = match ElfFile::new(elf_data) {
-        Ok(e) => e,
-        Err(_) => return 0,
-    };
-    
-    let dyn_ph = elf.program_iter().find(|ph| ph.get_type().map(|t| t == Type::Dynamic).unwrap_or(false));
-    
-    if let Some(dyn_ph) = dyn_ph {
-        let dyn_offset = dyn_ph.offset();
-        let dyn_size = dyn_ph.file_size();
-        let dyn_entries = &elf_data[dyn_offset as usize..(dyn_offset + dyn_size) as usize];
-        
-        let mut rela_addr = 0u64;
-        let mut rela_sz = 0u64;
-        let mut rela_ent = 0u64;
-        
-        for chunk in dyn_entries.chunks(16) {
-             if chunk.len() < 16 { break; }
-             let tag = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
-             let val = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
-             match tag {
-                 7 => rela_addr = val, // DT_RELA
-                 8 => rela_sz = val,
-                 9 => rela_ent = val,
-                 0 => break,
-                 _ => {}
-             }
-        }
-        
-        if rela_addr == 0 || rela_sz == 0 { return 0; }
-        
-        let mut file_offset = None;
-        for ph in elf.program_iter() {
-             if ph.get_type().unwrap_or(Type::Null) == Type::Load {
-                 let vaddr = ph.virtual_addr();
-                 let mem_sz = ph.mem_size();
-                 if rela_addr >= vaddr && rela_addr < vaddr + mem_sz {
-                     file_offset = Some(ph.offset() + (rela_addr - vaddr));
-                     break;
-                 }
-             }
-        }
-        
-        if let Some(file_off) = file_offset {
-             let rela_data = &elf_data[file_off as usize..(file_off + rela_sz) as usize];
-             let ent_size = if rela_ent > 0 { rela_ent } else { 24 };
-             let mut applied = 0;
-             
-             for chunk in rela_data.chunks(ent_size as usize) {
-                 if chunk.len() < 24 { break; }
-                 let r_offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
-                 let r_info = u64::from_le_bytes(chunk[8..16].try_into().unwrap());
-                 let r_addend = i64::from_le_bytes(chunk[16..24].try_into().unwrap());
-                 let r_type = r_info & 0xFFFF_FFFF;
-                 
-                 // R_AARCH64_RELATIVE = 1027
-                 if r_type == 1027 {
-                     let value = load_base.wrapping_add(r_addend as u64);
-                     let target_addr = load_base + r_offset;
-                     
-                     write_user_bytes(target_addr, &value.to_le_bytes(), root_table, hhdm_offset);
-                     applied += 1;
-                 }
-             }
-             return applied;
-        }
-    }
-    0
-}
-
 pub extern "C" fn scan_boot_fs_task(arg: u64) {
     let args_ptr = arg as *mut ScanArgs;
     let args = unsafe { Box::from_raw(args_ptr) };
@@ -161,32 +80,24 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
 
     unsafe { Bridge.log("loader: Scanning modules...\n"); }
 
-    for module in modules {
-        if module.path.ends_with("loaded.elf") {
-             unsafe { Bridge.log("loader: Found loaded.elf in modules!\n"); }
-             let phys_start = module.start;
-             let size = module.size;
-             let virt_start = phys_start; // Already virtual (HHDM)
-             
-             let slice = unsafe { core::slice::from_raw_parts(virt_start as *const u8, size as usize) };
-             
-             // Spawn it
-             let mut guard = KERNEL.lock();
-             if let Some(k) = guard.as_mut() {
-                 let name = "loaded";
-                 process_file(
-                     k,
-                     None,
-                     name,
-                     slice,
-                     0,
-                     Some(true),
-                     hhdm,
-                     fb_phys,
-                     fb_size
-                 );
-             }
-        }
+    // 1. Convert to BootBlobs
+    let mut blobs = Vec::new();
+    for m in modules {
+        blobs.push(BootBlob {
+            path: m.path.clone(),
+            start: m.start,
+            size: m.size,
+            addr_kind: BootAddrKind::Phys,
+        });
+    }
+
+    // 2. Find loaded.elf
+    let loaded_blob = blobs.iter().find(|b| b.path.ends_with("loaded.elf"));
+
+    if let Some(lb) = loaded_blob {
+        spawn_loaded(lb, &blobs, hhdm, fb_phys, fb_size);
+    } else {
+        unsafe { Bridge.log("loader: loaded.elf not found!\n"); }
     }
     
     loop {
@@ -194,99 +105,129 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     }
 }
 
-pub fn process_file(
-    k: &mut Kernel<Bridge>,
-    parent_dir_id: Option<ThingId>,
-    name: &str,
-    data: &[u8],
-    _idx: usize,
-    spawn_override: Option<bool>,
-    hhdm_u64: u64,
-    fb_phys: u64,
-    fb_size: usize,
-) {
-    if spawn_override == Some(true) {
-        use kernel::sched::elf::load_elf;
-        
-        let current_app_base = APP_LOAD_ADDR.fetch_add(0x1000_0000, Ordering::Relaxed);
-        
-        let root_table = unsafe { paging::create_user_root().expect("OOM Root") };
-        unsafe {
-             k.bridge.log(alloc::format!("loader: Created User Root at {:#x}\n", root_table).as_str());
+fn spawn_loaded(elf_blob: &BootBlob, all_blobs: &[BootBlob], hhdm: u64, fb_phys: u64, fb_size: usize) {
+    let elf_data = unsafe { blob_as_slice(elf_blob, hhdm) };
+    let current_app_base = APP_LOAD_ADDR.fetch_add(0x1000_0000, Ordering::Relaxed);
+
+    let root_table = unsafe { paging::create_user_root().expect("OOM Root") };
+
+    // Shared Loader
+    let loaded_image = load_elf_user_image(elf_data, current_app_base, |vaddr, segment| {
+        let raw_addr = current_app_base + vaddr;
+        write_user_bytes(raw_addr, segment, root_table, hhdm);
+    });
+
+    if let Some(img) = loaded_image {
+        // Map Stack
+        let stack_size = 128 * 1024;
+        let stack_bottom = current_app_base + 0x0800_0000;
+        let stack_top = stack_bottom + stack_size;
+        {
+             let map_flags = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL0 | PTE_ATTR_NORMAL;
+             let mut current = stack_bottom;
+             while current < stack_top {
+                 let (p, _v) = unsafe { paging::allocate_frame().expect("OOM Stack") };
+                 unsafe { paging::map_page_at_root(root_table, p, current, map_flags) };
+                 current += 4096;
+             }
         }
         
-        let loaded = load_elf(data, current_app_base, |vaddr, segment| {
-             let raw_addr = current_app_base + vaddr;
-             write_user_bytes(raw_addr, segment, root_table, hhdm_u64);
-        });
+        // Map Heap
+        let heap_start = current_app_base + 0x0100_0000;
+        let heap_size = 16 * 1024 * 1024;
+        let heap_end = heap_start + heap_size;
+        {
+              let map_flags = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL0 | PTE_ATTR_NORMAL;
+              let mut current = heap_start;
+              while current < heap_end {
+                  let (p, _v) = unsafe { paging::allocate_frame().expect("OOM Heap") };
+                  unsafe { paging::map_page_at_root(root_table, p, current, map_flags) };
+                  current += 4096;
+              }
+        }
         
-        if let Some(img) = loaded {
-             apply_relative_relocations(data, current_app_base, root_table, hhdm_u64);
-             
-             let stack_size = 128 * 1024;
-             let stack_bottom = current_app_base + 0x0800_0000;
-             let stack_top = stack_bottom + stack_size;
-             
-             {
-                 let map_flags = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL0 | PTE_ATTR_NORMAL;
-                 let mut current = stack_bottom;
-                 while current < stack_top {
-                     let (p, _v) = unsafe { paging::allocate_frame().expect("OOM Stack") };
-                     unsafe { paging::map_page_at_root(root_table, p, current, map_flags) };
-                     current += 4096;
-                 }
-                 unsafe { k.bridge.log("loader: Mapped Stack\n"); }
-             }
-             
-             let heap_start = current_app_base + 0x0100_0000;
-             let heap_size = 16 * 1024 * 1024;
-             let heap_end = heap_start + heap_size;
+        // Map Framebuffer
+        if fb_size > 0 {
+              let user_fb = 0x80_0000_0000;
+              let map_flags = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL0 | PTE_ATTR_DEVICE | PTE_UXN;
+              let mut current = 0;
+              while current < fb_size {
+                  let phys = fb_phys + current as u64;
+                  unsafe { paging::map_page_at_root(root_table, phys, user_fb + current as u64, map_flags) };
+                  current += 4096;
+              }
+        }
+        
+        // Map Blobs
+        let mut user_blob_ptr = (img.max_mapped + 0x100000 + 4095) & !4095;
+        // Align to 1MB
+        user_blob_ptr = (user_blob_ptr + 0xFFFFF) & !0xFFFFF;
+        let mut user_blobs = Vec::new();
+        
+        for blob in all_blobs {
+            let blob_data = unsafe { blob_as_slice(blob, hhdm) };
+            let blob_len = blob_data.len() as u64;
+            let blob_start = user_blob_ptr;
+            write_user_bytes(blob_start, blob_data, root_table, hhdm);
+            user_blob_ptr += (blob_len + 4095) & !4095;
             
-             {
-                  let map_flags = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL0 | PTE_ATTR_NORMAL;
-                  let mut current = heap_start;
-                  while current < heap_end {
-                      let (p, _v) = unsafe { paging::allocate_frame().expect("OOM Heap") };
-                      unsafe { paging::map_page_at_root(root_table, p, current, map_flags) };
-                      current += 4096;
-                  }
-             }
+            let path_bytes = blob.path.as_bytes();
+            let path_len = path_bytes.len() as u64;
+            let path_start = user_blob_ptr;
+            write_user_bytes(path_start, path_bytes, root_table, hhdm);
+            user_blob_ptr += (path_len + 4095) & !4095;
 
-             unsafe {
-                 if fb_size > 0 {
-                      let user_fb = 0x80_0000_0000;
-                      let map_flags = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL0 | PTE_ATTR_DEVICE | PTE_UXN;
-                      let mut current = 0;
-                      while current < fb_size {
-                          let phys = fb_phys + current as u64;
-                          paging::map_page_at_root(root_table, phys, user_fb + current as u64, map_flags);
-                          current += 4096;
-                      }
-                      k.bridge.log("loader: Mapped Framebuffer\n");
-                 }
-             }
-             
-             unsafe {
-                 core::arch::asm!("msr ttbr0_el1, {}", in(reg) root_table);
-                 core::arch::asm!("isb"); 
-                 k.bridge.log("loader: Activated TTBR0\n");
-             }
-             
-             struct TrampolineArgs {
-                 entry: u64,
-                 stack: u64,
-                 root: u64,
-             }
-             let t_args = Box::new(TrampolineArgs {
-                 entry: current_app_base + img.entry_point,
-                 stack: stack_top,
-                 root: root_table,
-             });
-             let t_ptr = Box::into_raw(t_args) as u64;
-             
+            user_blobs.push(UserBootBlob {
+                start: blob_start,
+                size: blob_len,
+                path_ptr: path_start,
+                path_len,
+            });
+        }
+
+        // Map UserBlobs array
+        let array_len = (user_blobs.len() * core::mem::size_of::<UserBootBlob>()) as u64;
+        let array_start = user_blob_ptr;
+        let array_bytes = unsafe { core::slice::from_raw_parts(user_blobs.as_ptr() as *const u8, array_len as usize) };
+        write_user_bytes(array_start, array_bytes, root_table, hhdm);
+        user_blob_ptr += (array_len + 4095) & !4095;
+
+        // Construct Args
+        let args = LoadedBootArgs {
+            hhdm,
+            framebuffer: if fb_size > 0 { Some((fb_phys, fb_size)) } else { None },
+            blobs_ptr: array_start,
+            blobs_len: user_blobs.len() as u64,
+            heap_start,
+            heap_size: 16 * 1024 * 1024,
+        };
+
+        // Push args to stack
+        let args_size = core::mem::size_of::<LoadedBootArgs>() as u64;
+        let args_addr = stack_top - args_size;
+        let args_bytes = unsafe { core::slice::from_raw_parts(&args as *const _ as *const u8, args_size as usize) };
+        write_user_bytes(args_addr, args_bytes, root_table, hhdm);
+
+        // Spawn
+        struct TrampolineArgs {
+             entry: u64,
+             stack: u64,
+             root: u64,
+             arg0: u64,
+        }
+        let t_args = Box::new(TrampolineArgs {
+             entry: current_app_base + img.entry,
+             stack: stack_top, // Original stack top (args are at the very top)
+             root: root_table,
+             arg0: args_addr,
+        });
+        let t_ptr = Box::into_raw(t_args) as u64;
+
+        let mut guard = KERNEL.lock();
+        if let Some(k) = guard.as_mut() {
              k.scheduler.spawn(
                  &k.bridge,
-                 name,
+                 "loaded",
                  trampoline as *const () as usize as u64,
                  0,
                  t_ptr,
@@ -300,6 +241,7 @@ struct TrampolineArgs {
     entry: u64,
     stack: u64,
     root: u64,
+    arg0: u64,
 }
 
 pub extern "C" fn trampoline(arg: u64) {
@@ -308,6 +250,6 @@ pub extern "C" fn trampoline(arg: u64) {
        core::arch::asm!("msr ttbr0_el1, {}", in(reg) args.root);
        core::arch::asm!("isb"); 
        
-       bridge_aarch64::cpu::enter_user_mode(args.entry, args.stack, 0);
+       bridge_aarch64::cpu::enter_user_mode(args.entry, args.stack, args.arg0);
     }
 }

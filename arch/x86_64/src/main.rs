@@ -527,7 +527,7 @@ pub extern "C" fn rust_main() -> ! {
                  let pixel_format = if fb.red_mask_shift == 16 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 0 {
                       boot_screen::PixelFormat::Xrgb8888
                  } else if fb.red_mask_shift == 0 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 16 {
-                      boot_screen::PixelFormat::Bgra8888 // or Abgr8888 depending on alpha pos, assumes 32bpp
+                      boot_screen::PixelFormat::Abgr8888 // Red at 0, Green at 8, Blue at 16
                  } else {
                       // Fallback or log? Limine usually gives Xrgb8888 compatible
                       boot_screen::PixelFormat::Xrgb8888

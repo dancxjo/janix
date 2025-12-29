@@ -1,7 +1,26 @@
 
 const FONT_DATA: &[u8] = include_bytes!("../../../assets/fonts/unifont.hex");
 
+static mut ASCII_CACHE: [Option<[u8; 16]>; 128] = [None; 128];
+static mut ASCII_CACHE_VALID: [bool; 128] = [false; 128];
+
 pub fn get_glyph(ch: char) -> Option<[u8; 16]> {
+    let cp = ch as u32;
+    if cp < 128 {
+        unsafe {
+            if ASCII_CACHE_VALID[cp as usize] {
+                return ASCII_CACHE[cp as usize];
+            }
+            let g = get_glyph_slow(ch);
+            ASCII_CACHE[cp as usize] = g;
+            ASCII_CACHE_VALID[cp as usize] = true;
+            return g;
+        }
+    }
+    get_glyph_slow(ch)
+}
+
+fn get_glyph_slow(ch: char) -> Option<[u8; 16]> {
     let target = ch as u32;
     let data = FONT_DATA;
 
@@ -16,16 +35,6 @@ pub fn get_glyph(ch: char) -> Option<[u8; 16]> {
         while line_start > 0 && data[line_start - 1] != b'\n' {
             line_start -= 1;
         }
-
-        // If we scanned back before 'left', we might be stuck in a loop if we don't advance?
-        // Standard binary search on lines:
-        // If line_start < left, it means mid fell into the line starting before left.
-        // But left is always a line start. So line_start should generally be >= left.
-        // Except if range is small.
-        // If line_start < left, we force line_start to next line? No.
-
-        // Safe bet: line_start is a valid start of a line.
-        // We parse it.
 
         if line_start >= right {
             break;

@@ -149,8 +149,13 @@ fn apply_relative_relocations(
                      }
                  }
              }
+             unsafe { bridge_aarch64::Bridge.log(alloc::format!("loader: Applied {} relocations\n", applied).as_str()); }
              return applied;
+        } else {
+             unsafe { bridge_aarch64::Bridge.log("loader: Could not find file offset for RELA vaddr\n"); }
         }
+    } else {
+         unsafe { bridge_aarch64::Bridge.log("loader: No Dynamic PHDR found\n"); }
     }
     0
 }
@@ -226,7 +231,10 @@ pub fn process_file(
         });
         
         if let Some(img) = loaded {
-             apply_relative_relocations(data, current_app_base, root_table, hhdm_u64);
+             let applied_count = apply_relative_relocations(data, current_app_base, root_table, hhdm_u64);
+             unsafe {
+                 k.bridge.log(alloc::format!("loader: Applied {} relocations\n", applied_count).as_str());
+             }
              
              let stack_size = 128 * 1024;
              let stack_bottom = current_app_base + 0x0800_0000;

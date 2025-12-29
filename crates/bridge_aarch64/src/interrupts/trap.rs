@@ -92,15 +92,15 @@ pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn irq_handler(tf: &mut TrapFrame) {
-    let id = unsafe { super::gic::acknowledge_irq() };
-    
-    // Spurious check (1023)
-    if id >= 1020 {
-        return;
-    }
+    pub extern "C" fn irq_handler(tf: &mut TrapFrame) {
+        let id = unsafe { super::gic::acknowledge_irq() };
+        
+        // Spurious check (1023)
+        if id >= 1020 {
+            return;
+        }
 
-    if id == 30 {
+        if id == 30 {
         // Timer
         crate::timer::next_match();
 

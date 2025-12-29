@@ -16,10 +16,13 @@ use boot;
 use bridge_aarch64::Bridge;
 use kernel::bridge::HardwareBridge;
 use core::arch::naked_asm;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use kernel::Kernel;
+use spin::Mutex;
 
 static PANICKING: AtomicBool = AtomicBool::new(false);
+static KERNEL: Mutex<Option<Kernel<Bridge>>> = Mutex::new(None);
+static LAST_TICKS: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -113,6 +116,7 @@ pub extern "C" fn _start() -> ! {
         "adrp x9, {2}",
         "add x9, x9, :lo12:{2}",
         "add x9, x9, {0}",
+        "msr spsel, #1",
         "mov sp, x9",
         "msr daifset, #0xf",
         "mov x0, #(3 << 20)",
@@ -143,9 +147,6 @@ pub extern "C" fn rust_main() -> ! {
             
             // Force mask interrupts (Limit/UEFI might have left them on, and init might unmask)
             Bridge.irq_disable();
-            
-            // Force mask interrupts (Limit/UEFI might have left them on, and init might unmask)
-            Bridge.irq_disable();
 
             // 2. Init Heap (Needed for paging)
             let info =
@@ -162,7 +163,7 @@ pub extern "C" fn rust_main() -> ! {
             paging::map_device_region(0x08010000, 4096); // CPU
 
             // Now safe to init Platform (GIC + Timer)
-            // Bridge::init_platform(offset); // Disabled for Slice A to avoid IRQ storm
+            Bridge::init_platform(offset);
 
             // 4. Update logic UART base (Physical 0x09000000 + Offset)
             bridge_aarch64::set_uart_base(0x09000000 + offset);
@@ -186,58 +187,39 @@ pub extern "C" fn rust_main() -> ! {
         use kernel::bridge::HardwareBridge;
         let bridge = Bridge;
         bridge.log("\n--- BootInfo (AArch64) ---\n");
-        bridge.log("Cmdline: ");
-        if let Some(cmd) = &boot_info.cmdline {
-             bridge.log(cmd);
-        } else {
-             bridge.log("None");
-        }
-        bridge.log("\n");
-
+       
         // Map ACPI / Reserved Regions
         use paging::{map_region, PTE_VALID, PTE_PAGE, PTE_AF, PTE_SH_INNER, PTE_AP_RW_EL1, PTE_UXN, PTE_PXN};
-        
-        // Normal Memory Flags (No PTE_ATTR_DEVICE)
         let normal_flags = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL1 | PTE_UXN | PTE_PXN;
 
         for entry in &boot_info.memory_map {
              use boot::bootinfo::MemoryRegionKind;
-             // We only care about ensuring ACPI tables are mapped. Limine usually maps them?
-             // But validatable parity means we map them explicitly if outside HHDM?
-             // Actually Limine HHDM covers all *RAM*?
-             // ACPI might be in RAM or Reserved.
-             // We'll iterate and map ACPI regions if they exist.
-             
              match entry.kind {
                  MemoryRegionKind::AcpiReclaimable | MemoryRegionKind::AcpiNvs => {
-                      bridge.log("Mapping ACPI Region: ");
-                      print_hex(&bridge, entry.start);
-                      bridge.log("\n");
                       map_region(entry.start, (entry.end - entry.start) as usize, normal_flags);
                  }
                  _ => {}
              }
         }
         
-        // List Modules
-        bridge.log("Modules:\n");
-        for module in &boot_info.modules {
-             bridge.log(" - ");
-             bridge.log(&module.path);
-             bridge.log("\n");
-        }
-        
         spawn_loaded_stub(&boot_info);
     }
     
-    // Skip full kernel boot for now, just idle loop to confirm log parity
-    // let mut k = Kernel::new(Bridge);
-    // k.boot(None);
+    // Init Kernel Global
+    let mut k = Kernel::new(Bridge);
     
     unsafe {
         use kernel::bridge::HardwareBridge;
-        Bridge.log("AArch64 Catch-up Slice A Complete. Idling.\n");
-        loop { Bridge.idle(); }
+        Bridge.log("Slice B: Enabling Interrupts...\n");
+        
+        *KERNEL.lock() = Some(k);
+        bridge_aarch64::set_tick_hook(scheduler_tick);
+        
+        Bridge.irq_enable();
+        
+        loop {
+            Bridge.idle();
+        }
     }
 }
 
@@ -286,4 +268,25 @@ unsafe fn spawn_loaded_stub(boot_info: &boot::BootInfo) {
         }
     }
     bridge.log("WARNING: loaded.elf not found in modules!\n");
+}
+
+fn scheduler_tick(_frame: &mut bridge_aarch64::interrupts::trap::TrapFrame) {
+    if let Some(mut guard) = KERNEL.try_lock() {
+        if let Some(k) = (*guard).as_mut() {
+             use bridge_aarch64::ArchContext;
+             use kernel::sched::scheduler::ThreadContext;
+             use kernel::bridge::HardwareBridge;
+
+             // We need to sync the TrapFrame to the ArchContext if we were in a thread.
+             // But for now, just the basic tick logic.
+             
+             {
+                let now_raw = k.bridge.ticks();
+                let last = LAST_TICKS.swap(now_raw, Ordering::Relaxed);
+                let now_ns = k.bridge.monotonic_now();
+             }
+
+             k.bridge.log("TICK\n");
+        }
+    }
 }

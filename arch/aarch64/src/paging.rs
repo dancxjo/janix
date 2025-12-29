@@ -1,7 +1,7 @@
 use alloc::alloc::{alloc, Layout};
 pub use bridge_aarch64::paging::{
-    PTE_AF, PTE_AP_RW_EL1, PTE_ATTR_DEVICE, PTE_PAGE, PTE_PXN, PTE_SH_INNER, PTE_TABLE, PTE_UXN,
-    PTE_VALID,
+    PTE_AF, PTE_AP_RW_EL0, PTE_AP_RW_EL1, PTE_ATTR_DEVICE, PTE_ATTR_NORMAL, PTE_PAGE, PTE_PXN,
+    PTE_SH_INNER, PTE_TABLE, PTE_UXN, PTE_VALID,
 };
 use core::arch::asm;
 
@@ -20,7 +20,7 @@ pub unsafe fn init(hhdm: u64) {
     bridge_aarch64::paging::UPDATE_FLAGS_FN = Some(update_page_flags);
 }
 
-fn allocate_frame() -> Option<(u64, u64)> {
+pub fn allocate_frame() -> Option<(u64, u64)> {
     // Returns (Phys, Virt)
     let layout = Layout::from_size_align(4096, 4096).ok()?;
     unsafe {
@@ -102,6 +102,16 @@ pub unsafe fn map_region(phys: u64, size: usize, flags: u64) {
     flush_tlb();
 }
 
+pub unsafe fn create_user_root() -> Option<u64> {
+    let (phys, _virt) = allocate_frame()?;
+    Some(phys)
+}
+
+pub unsafe fn map_page_at_root(root_table_phys: u64, phys: u64, virt: u64, flags: u64) {
+    // Assume 4 levels for User Space (T0SZ=16 usually for 48-bit)
+    map_page(root_table_phys, phys, virt, 4, flags);
+}
+
 unsafe fn map_page(root_table_phys: u64, phys: u64, virt: u64, levels: usize, flags: u64) {
     let indexes = [
         (virt >> 39) & 0x1FF, // L0
@@ -123,7 +133,15 @@ unsafe fn map_page(root_table_phys: u64, phys: u64, virt: u64, levels: usize, fl
             let (frame_phys, _frame_virt) = allocate_frame().expect("OOM mapping device");
             // frame_virt is already zeroed by allocate_frame
 
-            let new_entry = frame_phys | PTE_TABLE | PTE_VALID;
+            let new_entry = frame_phys | PTE_TABLE | PTE_VALID | PTE_AP_RW_EL1 | PTE_AF | PTE_SH_INNER; 
+            // NOTE: Intermediate tables need valid access. RW EL1 is fine.
+            // But for User walk? Does table descriptor AP affect validation?
+            // AArch64: Table descriptors (L0-L2) refer to next level.
+            // AP bits in Table format (bit 61/62) are overrides?
+            // Usually we just set Valid and Table.
+            // My previous code set: `frame_phys | PTE_TABLE | PTE_VALID`. Use that.
+            // Oh existing code: `let new_entry = frame_phys | PTE_TABLE | PTE_VALID;`
+            
             table_ptr.add(index).write(new_entry);
 
             table_phys = frame_phys;
@@ -141,6 +159,39 @@ unsafe fn map_page(root_table_phys: u64, phys: u64, virt: u64, levels: usize, fl
     let entry = phys | flags;
 
     table_ptr.add(index).write(entry);
+}
+
+pub unsafe fn get_phys(root_table_phys: u64, virt: u64) -> Option<u64> {
+    let indexes = [
+        (virt >> 39) & 0x1FF,
+        (virt >> 30) & 0x1FF,
+        (virt >> 21) & 0x1FF,
+        (virt >> 12) & 0x1FF,
+    ];
+    let mut table_phys = root_table_phys;
+    // Assume 4 levels
+    for level in 0..3 {
+        let index = indexes[level] as usize;
+        let table_ptr = (table_phys + HHDM_OFFSET) as *mut u64;
+        let entry = table_ptr.add(index).read();
+
+        if (entry & PTE_VALID) == 0 {
+            return None;
+        }
+        if (level == 1 || level == 2) && (entry & 0x2) == 0 {
+             return None; // No huge pages supported
+        }
+        table_phys = entry & TABLE_MASK;
+    }
+
+    let index = indexes[3] as usize;
+    let table_ptr = (table_phys + HHDM_OFFSET) as *mut u64;
+    let entry = table_ptr.add(index).read();
+    if (entry & PTE_VALID) == 0 {
+        return None;
+    }
+    let phys = entry & TABLE_MASK;
+    Some(phys)
 }
 
 pub fn update_page_flags(virt: u64, set: u64, clear: u64) {

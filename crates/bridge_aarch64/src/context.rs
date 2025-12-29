@@ -19,12 +19,20 @@ pub fn init_thread_context(entry: u64, stack: u64, arg: u64) -> ArchContext {
         arg0: arg,
     };
 
-    // SPSR_EL1 = 0 => Return to EL0t
-    ctx[33] = 0;
+    // SPSR
+    // If entry is high half (Kernel), use EL1h (0x5) to use SP_EL1 stack.
+    // If entry is low half (User), use EL0t (0x0).
+    if entry & (1 << 63) != 0 {
+        ctx[33] = 0x05; // EL1h
+        // SP_EL0 is not used as stack in EL1h mode
+        ctx[31] = 0;
+    } else {
+        ctx[33] = 0x00; // EL0t
+        // SP_EL0 = stack
+        ctx[31] = stack;
+    }
     // ELR_EL1 = entry
     ctx[32] = entry;
-    // SP_EL0 = stack
-    ctx[31] = stack;
     // x0 = arg
     ctx[0] = arg;
 

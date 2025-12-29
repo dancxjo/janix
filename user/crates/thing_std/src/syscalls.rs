@@ -5,6 +5,7 @@ use core::arch::asm;
 // Raw syscall
 pub unsafe fn syscall2(n: usize, a1: usize, a2: usize) -> SysRet {
     let ret: SysRet;
+    #[cfg(target_arch = "x86_64")]
     asm!(
         "syscall",
         in("rax") n,
@@ -15,11 +16,21 @@ pub unsafe fn syscall2(n: usize, a1: usize, a2: usize) -> SysRet {
         out("r11") _,
         options(nostack, preserves_flags)
     );
+    #[cfg(target_arch = "aarch64")]
+    asm!(
+        "svc #0",
+        in("x8") n,
+        in("x0") a1,
+        in("x1") a2,
+        lateout("x0") ret,
+        options(nostack)
+    );
     ret
 }
 
 pub unsafe fn syscall3(n: usize, a1: usize, a2: usize, a3: usize) -> SysRet {
     let ret: SysRet;
+    #[cfg(target_arch = "x86_64")]
     asm!(
         "syscall",
         in("rax") n,
@@ -30,6 +41,16 @@ pub unsafe fn syscall3(n: usize, a1: usize, a2: usize, a3: usize) -> SysRet {
         out("rcx") _,
         out("r11") _,
         options(nostack, preserves_flags)
+    );
+    #[cfg(target_arch = "aarch64")]
+    asm!(
+        "svc #0",
+        in("x8") n,
+        in("x0") a1,
+        in("x1") a2,
+        in("x2") a3,
+        lateout("x0") ret,
+        options(nostack)
     );
     ret
 }
@@ -86,6 +107,7 @@ pub fn graph_op(_op: &GraphOp) -> Result<(), ()> {
 
 unsafe fn syscall6(n: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize, a6: usize) -> SysRet {
     let ret: SysRet;
+    #[cfg(target_arch = "x86_64")]
     asm!(
         "syscall",
         in("rax") n,
@@ -116,6 +138,19 @@ unsafe fn syscall6(n: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usi
         out("rcx") _,
         out("r11") _,
         options(nostack, preserves_flags)
+    );
+    #[cfg(target_arch = "aarch64")]
+    asm!(
+        "svc #0",
+        in("x8") n,
+        in("x0") a1,
+        in("x1") a2,
+        in("x2") a3,
+        in("x3") a4,
+        in("x4") a5,
+        in("x5") a6,
+        lateout("x0") ret,
+        options(nostack)
     );
     ret
 }

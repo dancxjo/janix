@@ -107,14 +107,12 @@ fn local_rtc_read(out: &mut RtcSample) -> Result<(), ()> {
     let ret: usize;
     unsafe {
         core::arch::asm!(
-            "syscall",
-            in("rax") n,
-            in("rdi") (out as *mut RtcSample as usize),
-            in("rsi") 0,
-            lateout("rax") ret,
-            out("rcx") _,
-            out("r11") _,
-            options(nostack, preserves_flags)
+            "svc #0",
+            in("x8") n,
+            in("x0") (out as *mut RtcSample as usize),
+            in("x1") 0,
+            lateout("x0") ret,
+            options(nostack)
         );
     }
     if ret == 0 { Ok(()) } else { Err(()) }

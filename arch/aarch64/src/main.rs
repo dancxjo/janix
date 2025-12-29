@@ -108,7 +108,9 @@ struct BootStack([u8; BOOT_STACK_SIZE]);
 static mut BOOT_STACK: BootStack = BootStack([0; BOOT_STACK_SIZE]);
 
 mod paging;
+mod loader;
 
+#[no_mangle]
 #[no_mangle]
 #[unsafe(naked)]
 pub extern "C" fn _start() -> ! {
@@ -183,37 +185,48 @@ pub extern "C" fn rust_main() -> ! {
     // 2. Collect Boot Info (Allocates)
     let boot_info = boot::collect();
     
-    unsafe {
-        use kernel::bridge::HardwareBridge;
-        let bridge = Bridge;
-        bridge.log("\n--- BootInfo (AArch64) ---\n");
-       
-        // Map ACPI / Reserved Regions
-        use paging::{map_region, PTE_VALID, PTE_PAGE, PTE_AF, PTE_SH_INNER, PTE_AP_RW_EL1, PTE_UXN, PTE_PXN};
-        let normal_flags = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL1 | PTE_UXN | PTE_PXN;
+    let k = Kernel::new(Bridge);
+    *KERNEL.lock() = Some(k);
 
-        for entry in &boot_info.memory_map {
-             use boot::bootinfo::MemoryRegionKind;
-             match entry.kind {
-                 MemoryRegionKind::AcpiReclaimable | MemoryRegionKind::AcpiNvs => {
-                      map_region(entry.start, (entry.end - entry.start) as usize, normal_flags);
-                 }
-                 _ => {}
-             }
+    Bridge.log("Starting Loader Task...\n");
+    if let Some(mut guard) = KERNEL.try_lock() {
+        if let Some(k) = guard.as_mut() {
+             use alloc::alloc::{alloc, Layout};
+             let layout = Layout::from_size_align(64 * 1024, 16).unwrap();
+                 let stack_ptr = unsafe { alloc(layout) };
+                 let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 };
+             
+             let fb_phys = if let Some(fb) = boot_info.framebuffer.as_ref() { fb.address } else { 0 };
+             let fb_size = if let Some(fb) = boot_info.framebuffer.as_ref() { (fb.pitch * fb.height) as usize } else { 0 };
+
+             let args = alloc::boxed::Box::new(loader::ScanArgs {
+                 bb_info: None,
+                 hhdm: boot_info.hhdm_offset,
+                 fb_phys,
+                 fb_size,
+                 modules: boot_info.modules.clone(),
+             });
+             let args_ptr = alloc::boxed::Box::into_raw(args) as u64;
+             
+             let entry = loader::scan_boot_fs_task as *const () as usize as u64;
+             Bridge.log("Spawning loader at: ");
+             print_hex(&Bridge, entry);
+             Bridge.log("\n");
+
+             k.scheduler.spawn(
+                 &k.bridge,
+                 "scan_boot_fs",
+                 entry,
+                 stack_top,
+                 args_ptr,
+                 0, 0
+             );
+             Bridge.log("Spawned loader task.\n");
         }
-        
-        spawn_loaded_stub(&boot_info);
     }
-    
-    // Init Kernel Global
-    let mut k = Kernel::new(Bridge);
-    
     unsafe {
-        use kernel::bridge::HardwareBridge;
-        Bridge.log("Slice B: Enabling Interrupts...\n");
-        
-        *KERNEL.lock() = Some(k);
         bridge_aarch64::set_tick_hook(scheduler_tick);
+        bridge_aarch64::interrupts::syscall::set_syscall_hook(syscall_hook);
         
         Bridge.irq_enable();
         
@@ -256,57 +269,7 @@ fn print_dec(bridge: &Bridge, val: u64) {
     bridge.log(core::str::from_utf8(&buf[i..]).unwrap());
 }
 
-unsafe fn spawn_loaded_stub(boot_info: &boot::BootInfo) {
-    use kernel::bridge::HardwareBridge;
-    let bridge = Bridge;
-    // Find loaded.elf
-    let mut loaded_mod = None;
-    for module in &boot_info.modules {
-        if module.path.ends_with("loaded.elf") {
-             bridge.log("Slice A Success: Found loaded.elf at ");
-             print_hex(&bridge, module.start);
-             bridge.log("\n");
-             loaded_mod = Some(module);
-             break;
-        }
-    }
-    
-    if loaded_mod.is_none() {
-        bridge.log("WARNING: loaded.elf not found in modules!\n");
-        return;
-    }
 
-    // For Slice C verification:
-    // We want to enter User Mode (EL0) and execute a SYSCALL.
-    // To do this strictly without full ELF loading (Slice D), we need:
-    // 1. Memory mapped in Lower Half (User Space).
-    // 2. Code in that memory.
-    // 3. TTBR0_EL1 active.
-    
-    // Hack: Identity map first 1GB in TTBR0?
-    // We'll create a new Level 1 Table (alloc one frame).
-    // Map 0..1GB -> 0..1GB Identity.
-    // Set TTBR0.
-    
-    // But we need pAlloc. Using `limine::heap` logic?
-    // Or just grab a free frame manually (dangerous).
-    // We initialized `Kernel` which has `frame_allocator`?
-    // `k` is locked in `rust_main` scope. `spawn_loaded_stub` is called before `k` loop?
-    // No, `spawn_loaded_stub` is called before `Kernel::new`.
-    // So we don't have a high-level allocator yet.
-    // We have `paging::map_region`.
-    
-    // Let's defer full EL0 execution to Slice D?
-    // Task says "Verify EL0 entered".
-    // I can try to execute `svc #0` from EL1 just to verify Handler wiring?
-    // But handler checks ESR and might panic if from EL1?
-    // Trap handler handles generic synchronous exception.
-    
-    // Let's implement valid syscall hook registration.
-    bridge_aarch64::interrupts::syscall::set_syscall_hook(syscall_hook);
-    
-    bridge.log("Syscall hook registered. Ready for Slice D (ELF Loader).\n");
-}
 
 fn syscall_hook(
     num: usize,
@@ -327,23 +290,20 @@ fn syscall_hook(
 }
 
 
-fn scheduler_tick(_frame: &mut bridge_aarch64::interrupts::trap::TrapFrame) {
+fn scheduler_tick(frame: &mut bridge_aarch64::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = (*guard).as_mut() {
              use bridge_aarch64::ArchContext;
              use kernel::sched::scheduler::ThreadContext;
              use kernel::bridge::HardwareBridge;
 
-             // We need to sync the TrapFrame to the ArchContext if we were in a thread.
-             // But for now, just the basic tick logic.
+             let ctx_ptr = frame as *mut bridge_aarch64::interrupts::trap::TrapFrame as *mut ThreadContext<ArchContext>;
+             let ctx = unsafe { &mut *ctx_ptr };
              
-             {
-                let now_raw = k.bridge.ticks();
-                let last = LAST_TICKS.swap(now_raw, Ordering::Relaxed);
-                let now_ns = k.bridge.monotonic_now();
-             }
-
-             k.bridge.log("TICK\n");
+             let now_ns = k.bridge.monotonic_now();
+             
+             k.scheduler.wake_sleepers(now_ns);
+             k.scheduler.tick(&k.bridge, ctx);
         }
     }
 }

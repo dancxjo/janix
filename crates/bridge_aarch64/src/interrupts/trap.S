@@ -114,7 +114,7 @@ exception_vector_table:
 
 // Implementations
 HANDLER_IMPL 0, 0, handler_0_0
-HANDLER_IMPL 0, 1, handler_0_1
+IRQ_HANDLER_IMPL handler_0_1
 HANDLER_IMPL 0, 2, handler_0_2
 HANDLER_IMPL 0, 3, handler_0_3
 

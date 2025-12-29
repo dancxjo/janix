@@ -27,7 +27,7 @@ pub struct FramebufferInfo {
     pub blue_mask_shift: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModuleInfo {
     pub path: String,
     pub start: u64,

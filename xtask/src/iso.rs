@@ -41,33 +41,36 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // 2.5 Build User Apps
     println!("==> Building user apps for {}...", env);
     let mut user_apps = vec![
-        //"graph_dump", // Disabled to reduce noise
-        "ps2_keyboard",
-        "ps2_mouse", // We are implementing kernel mouse, but maybe keep it? Or disable if not found.
-        "keylog",
-        "syscall_crud_smoke",
+        "loaded",
+        "compositor",
+        "input_service",
         "clock",
-        // "sleep_smoke", // Obsolete?
+        "fb_smoke",
+        "graph_dump",
+        "syscall_crud_smoke",
+        "sleep_smoke",
         "sleep_accuracy_smoke",
         "ls_boot",
         "cat_boot",
-        "input_service",
-        "fb_smoke",
-        "compositor",
-        "loaded",
     ];
 
     // Check if ps2_mouse exists in user/drivers (it does)
     // Check if ps2_mouse exists in user/drivers (it does)
     // if root.join("user/drivers/ps2_mouse").exists() {
-    //      user_apps.push("ps2_mouse");
-    // }
-
+    //      if env == "x86_64" {
     if env == "x86_64" {
+        user_apps.push("ps2_keyboard");
+        user_apps.push("ps2_mouse");
         user_apps.push("rtc_x86");
     } else if env == "aarch64" {
         user_apps.push("rtc_aarch64");
     }
+
+    let user_target = if env == "x86_64" {
+        "x86_64-unknown-none"
+    } else {
+        "aarch64-unknown-none"
+    };
 
     for app in &user_apps {
         let status = Command::new(&cargo)
@@ -78,7 +81,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
             .arg("-p")
             .arg(app)
             .arg("--target")
-            .arg("x86_64-unknown-none") // User workspace is configured for this target
+            .arg(user_target)
             .arg("-Z")
             .arg("build-std=core,alloc,compiler_builtins")
             .current_dir(&root)
@@ -132,7 +135,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         let is_driver = driver_names.contains(app);
         let dest_dir = if is_driver { &drivers_dir } else { &apps_dir };
 
-        let app_bin = root.join("user/target/x86_64-unknown-none/debug").join(app);
+        let app_bin = root.join("user/target").join(user_target).join("debug").join(app);
 
         let dest_name = format!("{}.elf", app);
         let dest_path = dest_dir.join(&dest_name);

@@ -59,6 +59,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     // Raw debug - syscall log (Early)
     let msg = "LOADED: RAW START\n";
     unsafe {
+        #[cfg(target_arch = "x86_64")]
         core::arch::asm!(
             "syscall",
             in("rax") 10, // SYSCALL_LOG
@@ -66,6 +67,15 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
             in("rsi") msg.len(),
             out("rcx") _,
             out("r11") _,
+        );
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!(
+            "svc #0",
+            in("x8") 10, // SYSCALL_LOG
+            in("x0") msg.as_ptr() as usize,
+            in("x1") msg.len(),
+            lateout("x0") _,
+            options(nostack)
         );
     }
     unsafe { std::rt::init_heap(heap_start as usize, 32 * 1024 * 1024); }

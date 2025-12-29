@@ -15,7 +15,7 @@ pub mod timer;
 pub use context::ArchContext;
 
 #[cfg(target_arch = "aarch64")]
-mod cpu;
+pub mod cpu;
 #[cfg(target_arch = "aarch64")]
 mod fpu;
 #[cfg(target_arch = "aarch64")]

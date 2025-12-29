@@ -29,10 +29,17 @@ pub use uart::set_uart_base;
 
 // Hook for scheduler. Only set by kernel binary.
 pub static mut TICK_HOOK: Option<fn(&mut interrupts::trap::TrapFrame)> = None;
+pub static mut PAGE_FAULT_HOOK: Option<fn(&mut interrupts::trap::TrapFrame, u64, u64)> = None;
 
 pub fn set_tick_hook(hook: fn(&mut interrupts::trap::TrapFrame)) {
     unsafe {
         TICK_HOOK = Some(hook);
+    }
+}
+
+pub fn set_page_fault_hook(hook: fn(&mut interrupts::trap::TrapFrame, u64, u64)) {
+    unsafe {
+        PAGE_FAULT_HOOK = Some(hook);
     }
 }
 

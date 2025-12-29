@@ -3,6 +3,8 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use kernel::bridge::HardwareBridge; // For logging
+use core::arch::asm;
+
 
 global_asm!(include_str!("trap.S"));
 
@@ -56,22 +58,52 @@ macro_rules! log {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
-    // x8 is syscall number in AArch64 ABI
-    let num = tf.x8 as usize;
-    let a1 = tf.x0 as usize;
-    let a2 = tf.x1 as usize;
-    let a3 = tf.x2 as usize;
-    let a4 = tf.x3 as usize;
-    let a5 = tf.x4 as usize;
-    let a6 = tf.x5 as usize;
-
+    let esr: u64;
     unsafe {
-        if let Some(hook) = super::syscall::SYSCALL_HOOK {
-            hook(num, a1, a2, a3, a4, a5, a6) as u64
-        } else {
-            // -1 (isize) cast to u64 is usually all 1s
-            (!0u64) 
+        core::arch::asm!("mrs {}, esr_el1", out(reg) esr);
+    }
+    let ec = (esr >> 26) & 0x3F;
+
+    // EC 0x15 = SVC in AArch64
+    if ec == 0x15 {
+        // x8 is syscall number in AArch64 ABI
+        let num = tf.x8 as usize;
+        let a1 = tf.x0 as usize;
+        let a2 = tf.x1 as usize;
+        let a3 = tf.x2 as usize;
+        let a4 = tf.x3 as usize;
+        let a5 = tf.x4 as usize;
+        let a6 = tf.x5 as usize;
+
+        unsafe {
+            if let Some(hook) = super::syscall::SYSCALL_HOOK {
+                hook(num, a1, a2, a3, a4, a5, a6) as u64
+            } else {
+                // -1 (isize) cast to u64 is usually all 1s
+                (!0u64) 
+            }
         }
+    } else {
+        // Not a syscall (e.g. Data Abort, Instruction Abort)
+        
+        let far: u64;
+        unsafe { asm!("mrs {}, far_el1", out(reg) far); }
+
+        // EC 0x20 = I-Abort Lower EL, 0x21 = I-Abort Curr EL
+        // EC 0x24 = D-Abort Lower EL, 0x25 = D-Abort Curr EL
+        if ec == 0x20 || ec == 0x24 {
+             unsafe {
+                 if let Some(hook) = crate::PAGE_FAULT_HOOK {
+                     hook(tf, far, esr);
+                     // If hook returns, we resume
+                     return 0;
+                 }
+             }
+        }
+
+        // Delegate to invalid_exception(tf, kind=2 (Lower EL), source=0 (Sync))
+        invalid_exception(tf, 2, 0);
+        0
     }
 }
 

@@ -227,6 +227,7 @@ pub extern "C" fn rust_main() -> ! {
     unsafe {
         bridge_aarch64::set_tick_hook(scheduler_tick);
         bridge_aarch64::interrupts::syscall::set_syscall_hook(syscall_hook);
+        bridge_aarch64::set_page_fault_hook(page_fault_hook);
         
         Bridge.irq_enable();
         
@@ -271,6 +272,36 @@ fn print_dec(bridge: &Bridge, val: u64) {
 
 
 
+
+fn page_fault_hook(
+    frame: &mut bridge_aarch64::interrupts::trap::TrapFrame,
+    fault_addr: u64,
+    esr: u64
+) {
+     unsafe {
+        use kernel::bridge::HardwareBridge;
+        Bridge.log("PAGE FAULT\n");
+        Bridge.log("FAR: ");
+        print_hex(&Bridge, fault_addr);
+        Bridge.log(" ESR: ");
+        print_hex(&Bridge, esr);
+        Bridge.log("\n");
+        
+        if let Some(mut guard) = KERNEL.try_lock() {
+            if let Some(k) = (*guard).as_mut() {
+                 // TODO: Route to kernel demand paging
+                 // k.handle_page_fault(fault_addr, ...);
+                 
+                 // For now, if it's user mode (EC & 0b11 == 0), kill task?
+                 // Current scheduler doesn't expose easy kill yet from here?
+                 // Just loop to prevent "return to faulting instruction"
+                 Bridge.log("Spinning...\n");
+                 loop { core::hint::spin_loop(); }
+            }
+        }
+    }
+}
+
 fn syscall_hook(
     num: usize,
     a1: usize, // data_ptr
@@ -282,9 +313,9 @@ fn syscall_hook(
 ) -> isize {
     unsafe {
         use kernel::bridge::HardwareBridge;
-        Bridge.log("SYSCALL: ");
-        print_hex(&Bridge, num as u64);
-        Bridge.log("\n");
+        // Bridge.log("SYSCALL: ");
+        // print_hex(&Bridge, num as u64);
+        // Bridge.log("\n");
         0
     }
 }

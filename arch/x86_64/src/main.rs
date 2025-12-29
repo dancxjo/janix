@@ -516,30 +516,37 @@ pub extern "C" fn rust_main() -> ! {
     // --- Boot Screen Init ---
     let mut bs = unsafe {
         if let Some(fb) = &boot_info.framebuffer {
-             let addr = fb.address; // Virtual address (HHDM)
-             let info = boot_screen::FramebufferInfo {
-                 addr: addr as *mut u8,
-                 size_bytes: fb.size as usize,
-                 width: fb.width as u32,
-                 height: fb.height as u32,
-                 pitch_bytes: fb.pitch as u32,
-                 bpp: fb.bpp,
-                 pixel_format: boot_screen::PixelFormat::Xrgb8888, // Assumed for Limine
-             };
-             let mut bs = boot_screen::BootScreen::new(info);
+             if fb.bpp != 32 {
+                 use kernel::bridge::HardwareBridge;
+                 Bridge.log("BOOTSCREEN: Unsupported BPP (needs 32)\n");
+                 None
+             } else {
+                 let addr = fb.address; // Virtual address (HHDM)
+                 let info = boot_screen::FramebufferInfo {
+                     addr: addr as *mut u8,
+                     size_bytes: fb.size as usize,
+                     width: fb.width as u32,
+                     height: fb.height as u32,
+                     pitch_bytes: fb.pitch as u32,
+                     bpp: fb.bpp,
+                     pixel_format: boot_screen::PixelFormat::Xrgb8888, // Assumed for Limine
+                 };
+                 let mut bs = boot_screen::BootScreen::new(info);
 
-             bs.show("Booting ThingOS");
+                 bs.show("Booting ThingOS");
 
-             // Fade in
-             for a in (0..=255).step_by(8) {
-                 bs.set_fade(a as u8);
-                 bs.draw();
-                 // Delay loop
-                 for _ in 0..100_000 { core::hint::spin_loop(); }
+                 // Fade in
+                 for a in (0..=255).step_by(8) {
+                     bs.set_fade(a as u8);
+                     bs.draw();
+                     boot_delay(100_000);
+                 }
+
+                 Some(bs)
              }
-
-             Some(bs)
         } else {
+             use kernel::bridge::HardwareBridge;
+             Bridge.log("BOOTSCREEN: No Framebuffer\n");
              None
         }
     };
@@ -974,6 +981,11 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
 }
 
 unsafe fn u_sleep(count: u64) {
+    boot_delay(count);
+}
+
+#[inline(always)]
+fn boot_delay(count: u64) {
     for _ in 0..count {
         core::hint::spin_loop();
     }

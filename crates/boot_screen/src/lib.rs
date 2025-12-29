@@ -32,7 +32,7 @@ pub fn set_boot_alloc(alloc: BootAlloc) {
 
 pub struct BootScreen<'a> {
     fb: FramebufferInfo,
-    shadow: &'a mut [u8],
+    shadow: &'a mut [u8], // Stored as BGRA bytes
     current_msg: &'a str,
     last_text_rect: Option<Rect>,
     fade_alpha: u8,
@@ -87,8 +87,18 @@ impl<'a> BootScreen<'a> {
     pub fn milestone(&mut self, msg: &'a str) {
         self.current_msg = msg;
 
+        if msg.is_empty() {
+             if let Some(old) = self.last_text_rect {
+                  let d = old.inflate(2);
+                  self.add_damage(d);
+             }
+             self.last_text_rect = None;
+             return;
+        }
+
         // Calculate new text rect
-        let text_w = (msg.len() as u32) * (font8x16::FONT_WIDTH + 1) - 1;
+        let msg_len = msg.bytes().count() as u32;
+        let text_w = msg_len * (font8x16::FONT_WIDTH + 1) - 1;
         let text_h = font8x16::FONT_HEIGHT;
         let x = self.width_center.saturating_sub(text_w / 2);
         let y = self.height_center.saturating_sub(text_h / 2);
@@ -141,16 +151,7 @@ impl<'a> BootScreen<'a> {
             };
 
             // 1. Render to shadow buffer (Ideal, Alpha=255) within damage rect
-            // Currently, we just clear to black and draw text.
-            // Optimization: Only clear/redraw the affected area.
-
-            // For simplicity in this task:
-            // Since we don't have a complex scene, we can just clear the damaged area to black
-            // and then redraw the text if it intersects the damaged area.
-            // But wait, if text moved, we need to clear old text position.
-            // Damage rect covers both old and new.
-            // So we clear the damage rect in shadow.
-
+            // Clear damaged area to black
             self.clear_shadow_rect(&d);
 
             // Draw text into shadow (if visible)
@@ -165,8 +166,9 @@ impl<'a> BootScreen<'a> {
         for y in rect.y .. (rect.y + rect.h) {
             let start = (y as usize * self.fb.pitch_bytes as usize) + (rect.x as usize * 4);
             let end = start + (rect.w as usize * 4);
-            // Black = 0x00000000
-            self.shadow[start..end].fill(0);
+            if end <= self.shadow.len() {
+                self.shadow[start..end].fill(0);
+            }
         }
     }
 
@@ -175,7 +177,8 @@ impl<'a> BootScreen<'a> {
             return;
         }
 
-        let text_w = (self.current_msg.len() as u32) * (font8x16::FONT_WIDTH + 1) - 1;
+        let msg_len = self.current_msg.bytes().count() as u32;
+        let text_w = msg_len * (font8x16::FONT_WIDTH + 1) - 1;
         let text_h = font8x16::FONT_HEIGHT;
         let start_x = self.width_center.saturating_sub(text_w / 2);
         let start_y = self.height_center.saturating_sub(text_h / 2);
@@ -211,31 +214,32 @@ impl<'a> BootScreen<'a> {
                     let sx = px + 1;
                     let sy = py + 1;
                     if sx < self.fb.width && sy < self.fb.height {
-                        // Shadow color is black (or dark), but background is black.
-                        // "Render white text with a subtle black shadow (1px offset) for readability."
-                        // If bg is black, shadow is invisible unless bg is not black.
-                        // Currently bg is black. So shadow is redundant but requested.
-                        // We will write 0xFF000000 (Black opaque) or just skip if BG is black.
-                        // Let's write it anyway for correctness if we change BG.
-                        // But wait, if we clear to black, writing black does nothing.
+                        // Shadow color is black 0xFF000000
+                        self.put_pixel_shadow_bgra(sx, sy, 0xFF000000);
                     }
 
                     // Draw Foreground
-                    self.put_pixel_shadow(px, py, color);
+                    self.put_pixel_shadow_bgra(px, py, color);
                 }
             }
         }
     }
 
-    fn put_pixel_shadow(&mut self, x: u32, y: u32, argb: u32) {
+    fn put_pixel_shadow_bgra(&mut self, x: u32, y: u32, argb: u32) {
         let offset = (y as usize * self.fb.pitch_bytes as usize) + (x as usize * 4);
-        // Shadow is stored as native u32 (but we are writing bytes)
-        // Let's store as ARGB8888 in shadow for simplicity, convert on blit.
-        let bytes = argb.to_le_bytes(); // Little endian u32
-        self.shadow[offset] = bytes[0];     // B
-        self.shadow[offset+1] = bytes[1];   // G
-        self.shadow[offset+2] = bytes[2];   // R
-        self.shadow[offset+3] = bytes[3];   // A
+        if offset + 4 > self.shadow.len() { return; }
+
+        // Convert ARGB to BGRA bytes for shadow storage
+        let a = ((argb >> 24) & 0xFF) as u8;
+        let r = ((argb >> 16) & 0xFF) as u8;
+        let g = ((argb >> 8) & 0xFF) as u8;
+        let b = (argb & 0xFF) as u8;
+
+        // Store as BGRA
+        self.shadow[offset] = b;
+        self.shadow[offset+1] = g;
+        self.shadow[offset+2] = r;
+        self.shadow[offset+3] = a;
     }
 
     fn blit_shadow_to_fb(&mut self, rect: &Rect) {
@@ -244,6 +248,8 @@ impl<'a> BootScreen<'a> {
             let start = row_offset + (rect.x as usize * 4);
             let width_bytes = rect.w as usize * 4;
 
+            if start + width_bytes > self.shadow.len() { continue; }
+
             let src_slice = &self.shadow[start .. start + width_bytes];
 
             // We need to apply fade and format conversion
@@ -251,23 +257,23 @@ impl<'a> BootScreen<'a> {
             let dst_ptr = unsafe { self.fb.addr.add(start) };
 
             for i in (0..width_bytes).step_by(4) {
-                 // Read ARGB from shadow
+                 // Read BGRA from shadow
                  let b = src_slice[i];
                  let g = src_slice[i+1];
                  let r = src_slice[i+2];
                  let a = src_slice[i+3];
 
-                 // Apply fade
+                 // Apply fade to RGB channels only
                  let alpha_scale = self.fade_alpha as u32;
                  // out = (in * alpha) / 255
                  let r_out = ((r as u32 * alpha_scale) / 255) as u8;
                  let g_out = ((g as u32 * alpha_scale) / 255) as u8;
                  let b_out = ((b as u32 * alpha_scale) / 255) as u8;
-                 let a_out = ((a as u32 * alpha_scale) / 255) as u8; // Scale alpha too? Usually yes.
+                 let a_out = a; // Do NOT scale alpha
 
                  let argb_out = ((a_out as u32) << 24) | ((r_out as u32) << 16) | ((g_out as u32) << 8) | (b_out as u32);
 
-                 let final_val = self.fb.pixel_format.convert(argb_out);
+                 let final_val = self.fb.pixel_format.pack_le_bytes(argb_out);
                  let final_bytes = final_val.to_le_bytes();
 
                  unsafe {

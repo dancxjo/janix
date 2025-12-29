@@ -21,14 +21,14 @@ impl Rect {
 
         let x0 = core::cmp::min(self.x, other.x);
         let y0 = core::cmp::min(self.y, other.y);
-        let x1 = core::cmp::max(self.x + self.w, other.x + other.w);
-        let y1 = core::cmp::max(self.y + self.h, other.y + other.h);
+        let x1 = core::cmp::max(self.x.saturating_add(self.w), other.x.saturating_add(other.w));
+        let y1 = core::cmp::max(self.y.saturating_add(self.h), other.y.saturating_add(other.h));
 
         Rect {
             x: x0,
             y: y0,
-            w: x1 - x0,
-            h: y1 - y0,
+            w: x1.saturating_sub(x0),
+            h: y1.saturating_sub(y0),
         }
     }
 
@@ -38,16 +38,17 @@ impl Rect {
         }
         let x = self.x.saturating_sub(amount);
         let y = self.y.saturating_sub(amount);
-        let w = self.w + amount * 2;
-        let h = self.h + amount * 2;
+        // w + amount*2 can overflow
+        let w = self.w.saturating_add(amount.saturating_mul(2));
+        let h = self.h.saturating_add(amount.saturating_mul(2));
         Rect { x, y, w, h }
     }
 
     pub fn intersection(&self, other: &Rect) -> Option<Rect> {
          let x0 = core::cmp::max(self.x, other.x);
          let y0 = core::cmp::max(self.y, other.y);
-         let x1 = core::cmp::min(self.x + self.w, other.x + other.w);
-         let y1 = core::cmp::min(self.y + self.h, other.y + other.h);
+         let x1 = core::cmp::min(self.x.saturating_add(self.w), other.x.saturating_add(other.w));
+         let y1 = core::cmp::min(self.y.saturating_add(self.h), other.y.saturating_add(other.h));
 
          if x1 > x0 && y1 > y0 {
              Some(Rect {

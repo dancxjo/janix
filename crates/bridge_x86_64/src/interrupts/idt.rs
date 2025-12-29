@@ -98,6 +98,17 @@ extern "x86-interrupt" fn page_fault_handler(
         crate::print_hex(error_code.bits() as u64);
         bridge.log(" cr2=");
         crate::print_hex(cr2);
+        // Peek a couple of user stack slots to see call chain
+        let rsp_val = stack_frame.stack_pointer.as_u64();
+        if rsp_val != 0 {
+            let ptr = rsp_val as *const u64;
+            let slot0 = unsafe { core::ptr::read(ptr) };
+            let slot1 = unsafe { core::ptr::read(ptr.add(1)) };
+            bridge.log(" stack[0]=");
+            crate::print_hex(slot0);
+            bridge.log(" stack[1]=");
+            crate::print_hex(slot1);
+        }
         bridge.log("\n");
     }
     

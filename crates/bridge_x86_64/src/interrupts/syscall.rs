@@ -94,9 +94,7 @@ unsafe extern "C" fn syscall_handler_naked() {
         "mov rsi, rdi",
         // num (RAX) -> RDI
         "mov rdi, rax",
-        "sti", // Enable Interrupts
         "call syscall_dispatch",
-        "cli",        // Disable Interrupts
         "add rsp, 8", // Pop Arg6 (No Padding)
         // Restore Regs
         "pop r15",
@@ -128,6 +126,25 @@ extern "C" fn syscall_dispatch(
     a5: usize,
     a6: usize,
 ) -> isize {
+    static LOG_ONCE: core::sync::atomic::AtomicBool =
+        core::sync::atomic::AtomicBool::new(true);
+    if LOG_ONCE.swap(false, core::sync::atomic::Ordering::Relaxed) {
+        use kernel::bridge::HardwareBridge;
+        let bridge = crate::Bridge;
+        let rsp: *const u64;
+        unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp) };
+        // Stack layout in handler before call:
+        // [0]=r9,1=r15,2=r14,3=r13,4=r12,5=rbx,6=rbp,7=r11,8=rcx,9=user_rsp
+        let saved_rip = unsafe { *rsp.add(8) };
+        let saved_rsp = unsafe { *rsp.add(9) };
+        bridge.log("SYSCALL entry num=");
+        crate::print_hex(num as u64);
+        bridge.log(" rip=");
+        crate::print_hex(saved_rip);
+        bridge.log(" ursp=");
+        crate::print_hex(saved_rsp);
+        bridge.log("\n");
+    }
     unsafe {
         if let Some(hook) = SYSCALL_HOOK {
             hook(num, a1, a2, a3, a4, a5, a6)

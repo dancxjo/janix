@@ -91,6 +91,31 @@ pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) 
     loop {}
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn irq_handler(tf: &mut TrapFrame) {
+    let id = unsafe { super::gic::acknowledge_irq() };
+    
+    // Spurious check (1023)
+    if id >= 1020 {
+        return;
+    }
+
+    if id == 30 {
+        // Timer
+        crate::timer::next_match();
+
+        unsafe {
+            if let Some(hook) = crate::TICK_HOOK {
+                hook(tf);
+            }
+        }
+    } else {
+        log!("IRQ: {}", id as u64);
+    }
+    
+    unsafe { super::gic::end_of_irq(id) };
+}
+
 pub fn init() {
     unsafe extern "C" {
         static exception_vector_table: u8;

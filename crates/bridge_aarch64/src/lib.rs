@@ -11,6 +11,7 @@ pub mod paging;
 pub mod user;
 
 mod context;
+pub mod timer;
 pub use context::ArchContext;
 
 #[cfg(target_arch = "aarch64")]
@@ -26,6 +27,15 @@ mod uart;
 #[cfg(target_arch = "aarch64")]
 pub use uart::set_uart_base;
 
+// Hook for scheduler. Only set by kernel binary.
+pub static mut TICK_HOOK: Option<fn(&mut interrupts::trap::TrapFrame)> = None;
+
+pub fn set_tick_hook(hook: fn(&mut interrupts::trap::TrapFrame)) {
+    unsafe {
+        TICK_HOOK = Some(hook);
+    }
+}
+
 pub struct Bridge;
 
 #[cfg(target_arch = "aarch64")]
@@ -33,6 +43,8 @@ impl Bridge {
     pub unsafe fn init(hhdm: u64) {
         uart::init(hhdm);
         interrupts::trap::init();
+        interrupts::gic::init(hhdm);
+        timer::init();
     }
 }
 

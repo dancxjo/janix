@@ -70,6 +70,15 @@
     eret
 .endm
 
+.macro IRQ_HANDLER_IMPL label
+\label:
+    SAVE_REGS
+    mov x0, sp
+    bl irq_handler
+    RESTORE_REGS
+    eret
+.endm
+
 .macro TRAMPOLINE label
     .align 7
     b \label
@@ -110,12 +119,12 @@ HANDLER_IMPL 0, 2, handler_0_2
 HANDLER_IMPL 0, 3, handler_0_3
 
 HANDLER_IMPL 1, 0, handler_1_0
-HANDLER_IMPL 1, 1, handler_1_1
+IRQ_HANDLER_IMPL handler_1_1
 HANDLER_IMPL 1, 2, handler_1_2
 HANDLER_IMPL 1, 3, handler_1_3
 
 SYSCALL_HANDLER_IMPL handler_syscall
-HANDLER_IMPL 2, 1, handler_2_1
+IRQ_HANDLER_IMPL handler_2_1
 HANDLER_IMPL 2, 2, handler_2_2
 HANDLER_IMPL 2, 3, handler_2_3
 

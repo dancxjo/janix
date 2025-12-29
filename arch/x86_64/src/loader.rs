@@ -918,10 +918,16 @@ pub fn process_file(
         kind: String::from(role_str),
         sniff: 0,
         valid: true,
-        data: data.to_vec(),
+        data: data.to_vec(), // Potential huge allocation
     };
 
+    k.bridge.log(alloc::format!("loader: created ModuleBody for {}, data len={}\n", name, data.len()).as_str());
+
+    k.bridge.log("loader: serializing mod_body...\n");
     let m_bytes = postcard::to_allocvec(&mod_body).unwrap();
+    k.bridge.log(alloc::format!("loader: serialized mod_body, size={}\n", m_bytes.len()).as_str());
+
+    k.bridge.log("loader: creating ThingBody...\n");
     let m_tb = ThingBody::from(&TypedBytes {
         type_id: TypeId(THING_MODULE_KIND.0 as u128),
         codec_id: CodecId::POSTCARD,

@@ -23,6 +23,8 @@ pub fn log(msg: &str) {
     let uart_base = unsafe { UART_BASE };
     let uart_ptr = uart_base as *mut u8;
 
+    unsafe { core::arch::asm!("dsb ish") };
+
     for b in msg.bytes() {
         unsafe {
             core::ptr::write_volatile(uart_ptr, b);

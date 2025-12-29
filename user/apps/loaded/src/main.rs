@@ -56,6 +56,18 @@ struct ServiceDesc<'a> {
 
 #[no_mangle]
 pub extern "C" fn _start(heap_start: u64) -> ! {
+    // Raw debug - syscall log (Early)
+    let msg = "LOADED: RAW START\n";
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            in("rax") 10, // SYSCALL_LOG
+            in("rdi") msg.as_ptr() as usize,
+            in("rsi") msg.len(),
+            out("rcx") _,
+            out("r11") _,
+        );
+    }
     unsafe { std::rt::init_heap(heap_start as usize, 32 * 1024 * 1024); }
     std::init();
 
@@ -70,16 +82,20 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         last_wait_log: 0,
     };
 
+
+
     ctx.log("LOADED: start\n");
     ensure_boot_state(&mut ctx);
 
     // Phase 0 — Entry
     ctx.publish_state(LEVEL_INFO, "entry", "loaded starting", true);
 
-    let mut scratch = [0u8; 16 * 1024];
+    // Use Heap for scratch to avoid stack probe issues
+    let mut scratch_vec = alloc::vec![0u8; 16 * 1024];
+    let scratch = scratch_vec.as_mut_slice();
 
     // Phase 1 — Module Inventory
-    let modules = enumerate_modules(&ctx.g, &mut scratch);
+    let modules = enumerate_modules(&ctx.g, scratch);
     let msg = format!("modules enumerated ({})", modules.len());
     ctx.publish_state(LEVEL_INFO, "modules", &msg, true);
 
@@ -136,21 +152,21 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     ];
 
     for svc in services.iter() {
-        start_service(&mut ctx, &mut scratch, svc);
+        start_service(&mut ctx, scratch, svc);
     }
 
     // Phase 3 — Hardware & Environment Facts
-    let hw_summary = summarize_hardware(&ctx.g, &mut scratch);
+    let hw_summary = summarize_hardware(&ctx.g, scratch);
     ctx.publish_state(LEVEL_INFO, "hardware", &hw_summary, true);
 
     // Phase 4 — Mount /boot (slow path)
-    let mount_dir = wait_for_boot_mount(&mut ctx, &mut scratch);
+    let mount_dir = wait_for_boot_mount(&mut ctx, scratch);
     if mount_dir.is_some() {
         ctx.publish_state(LEVEL_INFO, "mount", "/boot mounted", true);
     }
 
     // Phase 5 — Bulk Loading (non-fatal)
-    let launched = launch_optional_apps(&mut ctx, &mut scratch);
+    let launched = launch_optional_apps(&mut ctx, scratch);
     let launch_msg = format!("apps launched: {}", launched);
     ctx.publish_state(LEVEL_INFO, "bulk", &launch_msg, true);
     ctx.publish_state(LEVEL_INFO, "assets", "assets loaded", true);

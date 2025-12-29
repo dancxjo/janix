@@ -522,6 +522,17 @@ pub extern "C" fn rust_main() -> ! {
                  None
              } else {
                  let addr = fb.address; // Virtual address (HHDM)
+
+                 // Pixel Format Detection
+                 let pixel_format = if fb.red_mask_shift == 16 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 0 {
+                      boot_screen::PixelFormat::Xrgb8888
+                 } else if fb.red_mask_shift == 0 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 16 {
+                      boot_screen::PixelFormat::Bgra8888 // or Abgr8888 depending on alpha pos, assumes 32bpp
+                 } else {
+                      // Fallback or log? Limine usually gives Xrgb8888 compatible
+                      boot_screen::PixelFormat::Xrgb8888
+                 };
+
                  let info = boot_screen::FramebufferInfo {
                      addr: addr as *mut u8,
                      size_bytes: fb.size as usize,
@@ -529,20 +540,24 @@ pub extern "C" fn rust_main() -> ! {
                      height: fb.height as u32,
                      pitch_bytes: fb.pitch as u32,
                      bpp: fb.bpp,
-                     pixel_format: boot_screen::PixelFormat::Xrgb8888, // Assumed for Limine
+                     pixel_format,
                  };
-                 let mut bs = boot_screen::BootScreen::new(info);
 
-                 bs.show("Booting ThingOS");
+                 if let Some(mut bs) = boot_screen::BootScreen::new(info) {
+                     bs.show("Booting ThingOS");
 
-                 // Fade in
-                 for a in (0..=255).step_by(8) {
-                     bs.set_fade(a as u8);
-                     bs.draw();
-                     boot_delay(100_000);
+                     // Fade in
+                     for a in (0..=255).step_by(8) {
+                         bs.set_fade(a as u8);
+                         bs.draw();
+                         boot_delay(100_000);
+                     }
+                     Some(bs)
+                 } else {
+                     use kernel::bridge::HardwareBridge;
+                     Bridge.log("BOOTSCREEN: Init Failed (Alloc/Size)\n");
+                     None
                  }
-
-                 Some(bs)
              }
         } else {
              use kernel::bridge::HardwareBridge;

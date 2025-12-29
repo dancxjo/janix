@@ -143,6 +143,11 @@ impl HardwareBridge for Bridge {
     fn port_ind(&self, port: u16) -> u32 {
         ports::ind(port)
     }
+
+    fn map_new_user_page(&self, _virt_addr: u64, _flags: u64) -> Result<(), ()> {
+        // Not implemented for AArch64 yet
+        Err(())
+    }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
@@ -192,4 +197,8 @@ impl HardwareBridge for Bridge {
     }
     fn save_fpu(&self, _area: &mut [u8; 512]) {}
     fn restore_fpu(&self, _area: &[u8; 512]) {}
+
+    fn map_new_user_page(&self, _virt_addr: u64, _flags: u64) -> Result<(), ()> {
+        Err(())
+    }
 }

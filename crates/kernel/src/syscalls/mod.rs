@@ -2,6 +2,7 @@ pub mod driver;
 pub mod graph;
 pub mod time;
 pub mod typed;
+pub mod bytespace;
 
 use crate::bridge::HardwareBridge;
 use crate::Kernel;
@@ -136,6 +137,10 @@ pub fn syscall_dispatch<B: HardwareBridge>(
             // Handled by Arch Hook
             -1
         }
+        SYSCALL_BYTESPACE_CREATE => bytespace::sys_bytespace_create(kernel, a1, a2, a3, a4),
+        SYSCALL_BYTESPACE_MAP => bytespace::sys_bytespace_map(kernel, a1, a2, a3, a4),
+        SYSCALL_BYTESPACE_READ => bytespace::sys_bytespace_read(kernel, a1, a2, a3, a4),
+        SYSCALL_BYTESPACE_WRITE => bytespace::sys_bytespace_write(kernel, a1, a2, a3, a4),
         _ => -1,
     }
 }

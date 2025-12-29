@@ -228,3 +228,15 @@ pub const THING_WINDOW_KIND: ThingId = ThingId(236);
 pub const THING_WINDOW_SCHEMA: ThingId = ThingId(1236);
 pub const THING_BOOT_STATE_KIND: ThingId = ThingId(237);
 pub const THING_BOOT_STATE_SCHEMA: ThingId = ThingId(1237);
+
+pub const THING_BYTESPACE_KIND: ThingId = ThingId(238);
+pub const THING_BYTESPACE_SCHEMA: ThingId = ThingId(1238);
+
+pub const THING_HAS_BYTES_KIND: ThingId = ThingId(129);
+pub const THING_HAS_BYTES_SCHEMA: ThingId = ThingId(1129);
+
+pub const THING_HAS_HEAP_KIND: ThingId = ThingId(130);
+pub const THING_HAS_HEAP_SCHEMA: ThingId = ThingId(1130);
+
+pub const THING_HAS_STACK_KIND: ThingId = ThingId(131);
+pub const THING_HAS_STACK_SCHEMA: ThingId = ThingId(1131);

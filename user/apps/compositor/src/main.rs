@@ -79,24 +79,26 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                          if cursor_bitmap.is_none() && cursor_frames.is_none() {
                              if let Ok(module) = postcard::from_bytes::<ModuleBody>(&tb.bytes) {
                                  // Prefer Working.ani or Normal.cur
-                                 if module.path.ends_with("Normal.cur") || module.path.ends_with("Working.ani") || module.path.ends_with("cursor.bmp") {
-                                      if let Some(parsed) = cursor_parser::parse(&module.data) {
-                                          match parsed {
-                                              cursor_parser::CursorType::Static(bmp) => {
-                                                  cursor_bitmap = Some(bmp);
-                                                  c.write_str("COMPOSITOR: Parsed Static Cursor!\n");
+                              if module.path.ends_with("Normal.cur") || module.path.ends_with("Working.ani") || module.path.ends_with("cursor.bmp") {
+                                      if let Some(data) = fetch_module_data(&g, target, module.size_bytes, &mut buf) {
+                                          if let Some(parsed) = cursor_parser::parse(&data) {
+                                              match parsed {
+                                                  cursor_parser::CursorType::Static(bmp) => {
+                                                      cursor_bitmap = Some(bmp);
+                                                      c.write_str("COMPOSITOR: Parsed Static Cursor!\n");
+                                                  }
+                                                  cursor_parser::CursorType::Animated(frames) => {
+                                                      cursor_frames = Some(frames);
+                                                      c.write_str("COMPOSITOR: Parsed Animated Cursor!\n");
+                                                  }
                                               }
-                                              cursor_parser::CursorType::Animated(frames) => {
-                                                  cursor_frames = Some(frames);
-                                                  c.write_str("COMPOSITOR: Parsed Animated Cursor!\n");
-                                              }
+                                          } else if module.path.ends_with("cursor.bmp") {
+                                             // Fallback to BMP parser
+                                             if let Some(bmp) = bitmap_parser::parse_bmp(&data) {
+                                                 cursor_bitmap = Some(bmp);
+                                                 c.write_str("COMPOSITOR: Parsed Cursor Bitmap!\n");
+                                             }
                                           }
-                                      } else if module.path.ends_with("cursor.bmp") {
-                                         // Fallback to BMP parser
-                                         if let Some(bmp) = bitmap_parser::parse_bmp(&module.data) {
-                                             cursor_bitmap = Some(bmp);
-                                             c.write_str("COMPOSITOR: Parsed Cursor Bitmap!\n");
-                                         }
                                       }
                                  }
                              }
@@ -164,13 +166,15 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
                      if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&get_op, &mut buf) {
                          if let Ok(module) = postcard::from_bytes::<ModuleBody>(&tb.bytes) {
                               if module.path.ends_with("Normal.cur") || module.path.ends_with("Working.ani") {
-                                  if let Some(parsed) = cursor_parser::parse(&module.data) {
-                                      match parsed {
-                                          cursor_parser::CursorType::Static(bmp) => {
-                                              cursor_bitmap = Some(bmp);
-                                          }
-                                          cursor_parser::CursorType::Animated(frames) => {
-                                              cursor_frames = Some(frames);
+                                  if let Some(data) = fetch_module_data(&g, target, module.size_bytes, &mut buf) {
+                                      if let Some(parsed) = cursor_parser::parse(&data) {
+                                          match parsed {
+                                              cursor_parser::CursorType::Static(bmp) => {
+                                                  cursor_bitmap = Some(bmp);
+                                              }
+                                              cursor_parser::CursorType::Animated(frames) => {
+                                                  cursor_frames = Some(frames);
+                                              }
                                           }
                                       }
                                   }
@@ -369,3 +373,12 @@ fn draw_window(fb_ptr: *mut u32, pitch: u32, fb_w: u32, fb_h: u32, window: &thin
 mod render;
 mod layout;
 mod boot_scene;
+
+fn fetch_module_data(g: &GraphClient, id: ThingId, size: u64, buf: &mut [u8]) -> Option<alloc::vec::Vec<u8>> {
+    let len = core::cmp::min(size, core::u32::MAX as u64) as u32;
+    let op = GraphOp::ReadBytes { id, offset: 0, len };
+    match g.call_op(&op, buf) {
+        Ok(GraphReply::Bytes { bytes }) => Some(bytes),
+        _ => None,
+    }
+}

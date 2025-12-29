@@ -31,4 +31,7 @@ pub trait HardwareBridge {
 
     fn save_fpu(&self, area: &mut [u8; 512]);
     fn restore_fpu(&self, area: &[u8; 512]);
+
+    // VM
+    fn map_new_user_page(&self, virt_addr: u64, flags: u64) -> Result<(), ()>;
 }

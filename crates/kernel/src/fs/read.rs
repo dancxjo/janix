@@ -16,7 +16,7 @@ pub fn read_file_bytes<B: HardwareBridge>(
     let thing = kernel.graph.get(file_id).ok_or(())?;
 
     if thing.kind == THING_MODULE_KIND {
-        return read_module_bytes(thing, offset, len);
+        return read_module_bytes(kernel, file_id, offset, len);
     }
 
     if thing.kind != THING_FILE_KIND {
@@ -89,8 +89,8 @@ pub fn read_file_bytes<B: HardwareBridge>(
     }
 
     if let Some(mid) = module_target {
-        if let Some(mthing) = kernel.graph.get(mid) {
-            return read_module_bytes(mthing, offset, len);
+        if let Some(_) = kernel.graph.get(mid) {
+             return read_module_bytes(kernel, mid, offset, len);
         }
     }
 
@@ -98,7 +98,13 @@ pub fn read_file_bytes<B: HardwareBridge>(
     Err(())
 }
 
-fn read_module_bytes(module: &thing_models::Thing, offset: u64, len: u32) -> Result<Vec<u8>, ()> {
+fn read_module_bytes<B: HardwareBridge>(
+    kernel: &mut Kernel<B>,
+    module_id: ThingId,
+    offset: u64,
+    len: u32,
+) -> Result<Vec<u8>, ()> {
+    let module = kernel.graph.get(module_id).ok_or(())?;
     let mtb = module
         .body
         .decode::<abi::wire::typed::TypedBytes>()
@@ -112,14 +118,31 @@ fn read_module_bytes(module: &thing_models::Thing, offset: u64, len: u32) -> Res
     }
     let read_len = core::cmp::min(len as u64, size - offset) as usize;
 
-    // Prefer embedded data, fallback to physical base.
-    if !mbody.data.is_empty() {
-        let start = offset as usize;
-        let end = core::cmp::min(start.saturating_add(read_len), mbody.data.len());
-        if start >= end || end > mbody.data.len() {
-            return Ok(Vec::new());
+    // Use ByteSpace
+    if mbody.bytes.id != 0 {
+        if let Some(bs) = kernel.bytespaces.get(mbody.bytes.id) {
+             let mut result = Vec::with_capacity(read_len);
+             let mut current_off = offset;
+             let mut remaining = read_len;
+             
+             // Simple loop to copy bytes. Optimization: calculate start page.
+             let start_page = (current_off / 4096) as usize;
+             let page_off = (current_off % 4096) as usize;
+             
+             let mut i = start_page;
+             let mut page_cursor = page_off;
+             
+             while remaining > 0 && i < bs.pages.len() {
+                 let chunk = &bs.pages[i];
+                 let chunk_slice = chunk.as_slice();
+                 let to_copy = core::cmp::min(remaining, 4096 - page_cursor);
+                 result.extend_from_slice(&chunk_slice[page_cursor..page_cursor+to_copy]);
+                 remaining -= to_copy;
+                 page_cursor = 0;
+                 i += 1;
+             }
+             return Ok(result);
         }
-        return Ok(mbody.data[start..end].to_vec());
     }
 
     if mbody.base_phys != 0 {

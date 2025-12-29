@@ -5,6 +5,7 @@
 extern crate alloc;
 
 pub mod bridge;
+pub mod bytespace;
 pub mod diag;
 pub mod drivers;
 pub mod font;
@@ -32,6 +33,7 @@ use sched::scheduler::Scheduler;
 pub struct Kernel<B: HardwareBridge> {
     pub bridge: B,
     pub graph: GraphStore,
+    pub bytespaces: bytespace::ByteSpaceStore,
     pub symbols: SymbolTable,
     pub scheduler: Scheduler<B::Context>,
 }
@@ -41,6 +43,7 @@ impl<B: HardwareBridge> Kernel<B> {
         Self {
             bridge,
             graph: GraphStore::new(),
+            bytespaces: bytespace::ByteSpaceStore::new(),
             symbols: SymbolTable::new(),
             scheduler: Scheduler::new(),
         }

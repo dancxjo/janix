@@ -164,3 +164,8 @@ pub const SYM_HAS_TIME_NOW: SymbolId = SymbolId(fnv1a64("HAS_TIME_NOW"));
 // Framebuffer
 pub const SYM_DISPLAY_FRAMEBUFFER: SymbolId = SymbolId(fnv1a64("DisplayFramebuffer"));
 pub const SYM_SCANOUT_BUFFER: SymbolId = SymbolId(fnv1a64("ScanoutBuffer"));
+
+pub const SYM_BYTESPACE: SymbolId = SymbolId(fnv1a64("ByteSpace"));
+pub const SYM_HAS_BYTES: SymbolId = SymbolId(fnv1a64("HAS_BYTES"));
+pub const SYM_HAS_HEAP: SymbolId = SymbolId(fnv1a64("HAS_HEAP"));
+pub const SYM_HAS_STACK: SymbolId = SymbolId(fnv1a64("HAS_STACK"));

@@ -167,20 +167,12 @@ unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
         let mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
 
         let virt_addr = VirtAddr::try_new(ptr as u64).ok()?;
-        // Log allocated virt addr
-        let s = alloc::format!("loader: HFA Alloc Virt: {:#x}\n", ptr as u64);
-        Bridge.log(&s);
-
         let phys_frame = mapper
             .translate_addr(virt_addr)
             .map(|phys| PhysFrame::containing_address(phys));
 
         if let Some(f) = phys_frame {
-            let s = alloc::format!(
-                "loader: HFA Alloc Phys: {:#x}\n",
-                f.start_address().as_u64()
-            );
-            Bridge.log(&s);
+            // HFA Logging reduced
         } else {
             Bridge.log("loader: HFA Translate Fail!\n");
         }
@@ -913,6 +905,29 @@ pub fn process_file(
     use models::builtins::core_kinds::ModuleBody;
     use models::builtins::ids::THING_MODULE_KIND;
 
+    // --- ByteSpace Logic ---
+    use models::builtins::core_kinds::{ByteSpaceRef, ByteSpaceBody};
+    use models::builtins::ids::{THING_BYTESPACE_KIND, THING_BACKED_BY_KIND, THING_HAS_BYTES_KIND};
+    use models::builtins::symbols::SYM_BYTESPACE;
+
+    // 1. Store Bytes in Kernel Store
+    // flags: 1 = READ (just metadata flag for now)
+    let bs_id = k.bytespaces.create_from_slice(data, 1).unwrap_or(0); 
+
+    // 2. Create ByteSpace Thing
+    let bs_body = ByteSpaceBody {
+        store_id: bs_id,
+        len: data.len() as u64,
+        flags: 1,
+        backing: SYM_BYTESPACE,
+    };
+    let bs_tb = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_BYTESPACE_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&bs_body).unwrap(),
+    }).unwrap();
+    let bs_thing_id = k.graph.create_thing(THING_BYTESPACE_KIND, bs_tb);
+
     // Track physical base if memory is identity or HHDM mapped.
     let base_ptr = data.as_ptr() as u64;
     let base_phys = if base_ptr >= hhdm_u64 {
@@ -931,16 +946,19 @@ pub fn process_file(
         kind: String::from(role_str),
         sniff: 0,
         valid: true,
-        data: data.to_vec(), // Potential huge allocation
+        bytes: ByteSpaceRef {
+            id: bs_id,
+            len: data.len() as u64,
+        },
     };
 
-    k.bridge.log(alloc::format!("loader: created ModuleBody for {}, data len={}\n", name, data.len()).as_str());
+    // k.bridge.log(alloc::format!("loader: created ModuleBody for {}, data len={}\n", name, data.len()).as_str());
 
-    k.bridge.log("loader: serializing mod_body...\n");
+    // k.bridge.log("loader: serializing mod_body...\n");
     let m_bytes = postcard::to_allocvec(&mod_body).unwrap();
-    k.bridge.log(alloc::format!("loader: serialized mod_body, size={}\n", m_bytes.len()).as_str());
+    // k.bridge.log(alloc::format!("loader: serialized mod_body, size={}\n", m_bytes.len()).as_str());
 
-    k.bridge.log("loader: creating ThingBody...\n");
+    // k.bridge.log("loader: creating ThingBody...\n");
     let m_tb = ThingBody::from(&TypedBytes {
         type_id: TypeId(THING_MODULE_KIND.0 as u128),
         codec_id: CodecId::POSTCARD,
@@ -950,7 +968,19 @@ pub fn process_file(
 
     let mod_id = k.graph.create_thing(THING_MODULE_KIND, m_tb);
 
-    use models::builtins::ids::{THING_BACKED_BY_KIND, THING_BOOT_ROOT, THING_HAS_MODULE_KIND};
+    // Link Module -> ByteSpace (HAS_BYTES)
+    let link_bytes = models::link::LinkBody {
+        from: mod_id,
+        to: bs_thing_id,
+        predicate: THING_HAS_BYTES_KIND,
+    };
+    let lb_bytes = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_LINK_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&link_bytes).unwrap(),
+    }).unwrap();
+    k.graph.create_thing(THING_LINK_KIND, lb_bytes);
+
     let link = models::link::LinkBody {
         from: file_id,
         to: mod_id,

@@ -19,6 +19,26 @@ use crate::core::vgs::{GraphProviderBody, MountBody};
 use crate::diag::{ErrorBody, FaultBody, LogEntryBody};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ByteSpaceRef {
+    pub id: u64,
+    pub len: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ByteSpaceBody {
+    pub store_id: u64,
+    pub len: u64,
+    pub flags: u32,
+    pub backing: crate::abi::SymbolId,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct StreamBody {
+    pub cursor: u64,
+    pub mode: u32,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct BootProgramBody {
     pub name: alloc::string::String,
     pub binary: alloc::string::String,
@@ -37,8 +57,7 @@ pub struct ModuleBody {
     pub kind: alloc::string::String,
     pub sniff: u32,
     pub valid: bool,
-    #[serde(default)]
-    pub data: alloc::vec::Vec<u8>,
+    pub bytes: ByteSpaceRef,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -53,6 +72,7 @@ pub struct FontBody {
     pub glyph_width: u16,
     pub glyph_height: u16,
     pub glyph_count: u32,
+    pub bytes: ByteSpaceRef,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -60,6 +80,7 @@ pub struct BitmapBody {
     pub format: alloc::string::String,
     pub width: u32,
     pub height: u32,
+    pub bytes: ByteSpaceRef,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -188,6 +209,20 @@ thing_kind! {
         body: StreamBody,
         type_tag: "thingos.StreamBody.v1",
         schema_id: crate::builtins::ids::THING_STREAM_SCHEMA,
+        links {
+            predicate THING_BACKED_BY_KIND min 0 max 1;
+        }
+    }
+}
+
+thing_kind! {
+    kind ByteSpace {
+        id: crate::builtins::ids::THING_BYTESPACE_KIND,
+        sym: SYM_BYTESPACE,
+        version: 1,
+        body: ByteSpaceBody,
+        type_tag: "thingos.ByteSpaceBody.v1",
+        schema_id: crate::builtins::ids::THING_BYTESPACE_SCHEMA,
         links {}
     }
 }
@@ -239,6 +274,7 @@ thing_kind! {
         links {
             predicate THING_BINARY_IMAGE_KIND min 0 max 1;
             predicate THING_ASSET_KIND min 0 max many;
+            predicate THING_HAS_BYTES_KIND min 0 max 1;
         }
     }
 }
@@ -263,7 +299,9 @@ thing_kind! {
         body: BitmapBody,
         type_tag: "thingos.BitmapBody.v1",
         schema_id: crate::builtins::ids::THING_BITMAP_SCHEMA,
-        links {}
+        links {
+             predicate THING_HAS_BYTES_KIND min 0 max 1;
+        }
     }
 }
 
@@ -277,6 +315,7 @@ thing_kind! {
         schema_id: crate::builtins::ids::THING_FONT_SCHEMA,
         links {
              predicate THING_BACKED_BY_KIND min 0 max 1;
+             predicate THING_HAS_BYTES_KIND min 0 max 1;
         }
     }
 }

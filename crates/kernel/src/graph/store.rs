@@ -101,6 +101,14 @@ impl GraphStore {
         self.things.values()
     }
 
+    pub fn iter_kind(&self, kind: ThingId) -> impl Iterator<Item = &Thing> {
+        self.kind_index
+            .get(&kind)
+            .into_iter()
+            .flat_map(|ids| ids.iter())
+            .filter_map(|id| self.things.get(id))
+    }
+
     pub fn next_thing_of_kind(&self, kind: ThingId, start_after: ThingId) -> Option<ThingId> {
         if let Some(set) = self.kind_index.get(&kind) {
             use core::ops::Bound::{Excluded, Unbounded};

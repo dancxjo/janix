@@ -1,22 +1,20 @@
-/target
-**/*.swp
-.DS_Store
-
-# Fetched assets
-/vendor/limine/
-/vendor/ovmf/
-/assets/fonts/
-/assets/icons/
-/assets/cursors/
 
 # Build output
-**target/
+# Fetched assets
 **/*.log
-
+**/*.swp
+**target/
+.DS_Store
+.tmp_tools/
 .worktrees/**
-
-disk.img
+/assets/cursors/
+/assets/fonts/
+/assets/icons/
+/target
+/vendor/limine/
+/vendor/ovmf/
 check_output.txt
 compile_errors.txt
+disk.img
 symbols.txt
 symbols_raw.txt

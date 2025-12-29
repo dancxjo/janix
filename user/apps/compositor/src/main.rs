@@ -10,11 +10,9 @@ use abi::wire::graph::{GraphOp, GraphReply};
 use abi::ids::ThingId;
 use thing_models::builtins::core_kinds::DisplayFramebufferBody;
 use thing_models::builtins::ids::{
-    THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_DISPLAY_FRAMEBUFFER_KIND,
-    THING_MODULE_KIND, THING_POINTER_EVENT_STREAM_KIND, THING_WINDOW_KIND,
-    THING_EMITS_KIND, THING_MOUSE_KIND,
+    THING_BOOT_ROOT, THING_DISPLAY_FRAMEBUFFER_KIND, THING_WINDOW_KIND,
     THING_MOUSE_SCHEMA, THING_POINTER_EVENT_STREAM_SCHEMA, THING_MODULE_SCHEMA,
-    THING_BOOT_STATE_KIND, THING_BOOT_STATE_SCHEMA
+    THING_BOOT_STATE_KIND, THING_BOOT_STATE_SCHEMA, THING_EMITS_KIND
 };
 use thing_models::schema::bitmap::BitmapBody;
 use thing_models::core::input::PointerEventStreamBody;

@@ -12,7 +12,7 @@ use models::core::input::{
     RawKeyEventStreamBody, KeyEventStreamBody, TextEventStreamBody
 };
 use models::builtins::ids::{
-    THING_RAW_KEY_EVENT_STREAM_KIND,
+
     THING_TEXT_EVENT_STREAM_KIND,
     THING_KEY_EVENT_STREAM_KIND,
     THING_KEY_EVENT_STREAM_SCHEMA,
@@ -191,14 +191,14 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     }
 }
 
-fn create_stream_body<T: serde::Serialize>(client: &std::GraphClient, id: ThingId, kind: ThingId, schema: ThingId, body: &T) {
+fn create_stream_body<T: serde::Serialize>(client: &std::GraphClient, id: ThingId, _kind: ThingId, schema: ThingId, body: &T) {
     let bytes = postcard::to_allocvec(body).expect("serialize");
     let typed = TypedBytes {
         type_id: TypeId(schema.0 as u128),
         codec_id: CodecId::POSTCARD,
         bytes,
     };
-    let thing_body = models::ThingBody::from(&typed).expect("tb from typed");
+    let _thing_body = models::ThingBody::from(&typed).expect("tb from typed");
     
     let mut out_buf = [0u8; 512];
     let _ = client.call_op(&GraphOp::UpdateThing { id, value: typed }, &mut out_buf);

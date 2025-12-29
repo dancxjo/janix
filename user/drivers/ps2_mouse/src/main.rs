@@ -7,10 +7,10 @@ use thing_std as std;
 // use thing_std::{StdoutConsole, Console};
 use abi::ThingId;
 use abi::wire::driver::{DriverEvent, DriverPublish};
-use models::core::input::{MouseBody, PointerEventStreamBody, PointerEventCompact};
+use models::core::input::{PointerEventStreamBody, PointerEventCompact};
 use models::builtins::ids::{
     THING_MOUSE_KIND, THING_POINTER_EVENT_STREAM_KIND, 
-    THING_EMITS_KIND, THING_LINK_KIND, THING_BOOT_ROOT, THING_HAS_DEVICE_KIND
+    THING_EMITS_KIND, THING_BOOT_ROOT, THING_HAS_DEVICE_KIND
 };
 use models::builtins::symbols::SYM_PS2;
 use models::Thing;

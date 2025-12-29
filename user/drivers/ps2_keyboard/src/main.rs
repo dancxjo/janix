@@ -7,12 +7,12 @@ use thing_std as std;
 use abi::{ThingId};
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use abi::wire::input::{RawKeyEvent, RawKeyKind, KeyState};
-use models::core::input::{KeyboardBody, RawKeyEventStreamBody};
+use models::core::input::{RawKeyEventStreamBody};
 use models::builtins::ids::{
     THING_KEYBOARD_KIND, 
     THING_RAW_KEY_EVENT_STREAM_KIND, 
     THING_EMITS_KIND, 
-    THING_LINK_KIND, 
+ 
     THING_BOOT_ROOT, 
     THING_HAS_KEYBOARD_KIND
 };

@@ -354,7 +354,7 @@ impl HardwareBridge for Bridge {
         use x86_64::structures::paging::{
             mapper::Mapper, FrameAllocator, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
         };
-        use x86_64::{PhysAddr, VirtAddr};
+        use x86_64::VirtAddr;
         use core::alloc::Layout;
 
         // 1. Allocate a page from Kernel Heap (physically backed)

@@ -47,6 +47,7 @@ pub fn lerp_color(start: u32, end: u32, step: usize, total_steps: usize) -> u32 
     (0xFF << 24) | (lerp(sr, er) << 16) | (lerp(sg, eg) << 8) | lerp(sb, eb)
 }
 
+#[allow(dead_code)]
 pub unsafe fn set_pixel_clamped(
     buffer: *mut u32,
     stride_bytes: u32,

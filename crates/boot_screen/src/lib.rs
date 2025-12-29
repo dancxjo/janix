@@ -281,6 +281,10 @@ impl<'a> BootScreen<'a> {
     }
 
     fn blit_shadow_to_fb(&mut self, rect: &Rect) {
+        // Optimization: Pre-calculate alpha scale
+        let alpha = self.fade_alpha as u32;
+        let scale = alpha + 1; // Used for fast shift approximation
+
         for y in rect.y .. (rect.y + rect.h) {
             let row_offset = y as usize * self.fb.pitch_bytes as usize;
             let start = row_offset + (rect.x as usize * 4);
@@ -291,16 +295,18 @@ impl<'a> BootScreen<'a> {
             let src_slice = &self.shadow[start .. start + width_bytes];
             let dst_ptr = unsafe { self.fb.addr.add(start) };
 
-            for i in (0..width_bytes).step_by(4) {
-                 let b = src_slice[i];
-                 let g = src_slice[i+1];
-                 let r = src_slice[i+2];
-                 let a = src_slice[i+3];
+            // Use chunks_exact for efficient iteration (replaces step_by)
+            for (i, chunk) in src_slice.chunks_exact(4).enumerate() {
+                 let b = chunk[0];
+                 let g = chunk[1];
+                 let r = chunk[2];
+                 let a = chunk[3];
 
-                 let alpha_scale = self.fade_alpha as u32;
-                 let r_out = ((r as u32 * alpha_scale) / 255) as u8;
-                 let g_out = ((g as u32 * alpha_scale) / 255) as u8;
-                 let b_out = ((b as u32 * alpha_scale) / 255) as u8;
+                 // Fast alpha blending: (color * (alpha + 1)) >> 8
+                 // eliminates expensive division
+                 let r_out = ((r as u32 * scale) >> 8) as u8;
+                 let g_out = ((g as u32 * scale) >> 8) as u8;
+                 let b_out = ((b as u32 * scale) >> 8) as u8;
                  let a_out = a;
 
                  let argb_out = ((a_out as u32) << 24) | ((r_out as u32) << 16) | ((g_out as u32) << 8) | (b_out as u32);
@@ -309,10 +315,11 @@ impl<'a> BootScreen<'a> {
                  let final_bytes = final_val.to_le_bytes();
 
                  unsafe {
-                     *dst_ptr.add(i) = final_bytes[0];
-                     *dst_ptr.add(i+1) = final_bytes[1];
-                     *dst_ptr.add(i+2) = final_bytes[2];
-                     *dst_ptr.add(i+3) = final_bytes[3];
+                     let dst_offset = i * 4;
+                     *dst_ptr.add(dst_offset) = final_bytes[0];
+                     *dst_ptr.add(dst_offset+1) = final_bytes[1];
+                     *dst_ptr.add(dst_offset+2) = final_bytes[2];
+                     *dst_ptr.add(dst_offset+3) = final_bytes[3];
                  }
             }
         }

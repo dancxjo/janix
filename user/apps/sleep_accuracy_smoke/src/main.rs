@@ -2,7 +2,7 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::vec::Vec;
+
 use thing_std::{GraphClient, StdoutConsole, Console};
 
 #[no_mangle]

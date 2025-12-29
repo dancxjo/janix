@@ -18,7 +18,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     
     // 2. Sleep 200ms
     c.write_str("Sleeping 200ms...\n");
-    let target_wake = start + 200_000_000;
+    let _target_wake = start + 200_000_000;
     
     // We expect to wake around target_wake (or slightly after)
     let waking_at = thing_std::time::sleep_ms(&g, 200).unwrap_or(0);

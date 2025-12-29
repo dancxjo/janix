@@ -361,7 +361,7 @@ fn generate_arrow_cursor(size: u32) -> RgbaImage {
             // Or simpler: x < y/2 (roughly)
 
             // Draw Outline (Black) and Fill (White)
-            let is_inside = x < (size - y / 2) && x < (y / 2 + 5); // Just random math? No.
+            let _is_inside = x < (size - y / 2) && x < (y / 2 + 5); // Just random math? No.
 
             // Let's use specific coordinates
             // Top: 0,0
@@ -396,7 +396,7 @@ fn generate_arrow_cursor(size: u32) -> RgbaImage {
 
                 // I'll draw a simple white triangle with black border.
 
-                let slope = x as f32 / y as f32; // 0 at x=0
+                let _slope = x as f32 / y as f32; // 0 at x=0
 
                 // 3 vertices: (0,0), (0, 22), (15, 15)
                 // Inside test

@@ -1,4 +1,4 @@
-use abi::wire::input::{Key, ModState, KeyState, KeyEvent, TextEvent, TextEventKind};
+use abi::wire::input::{Key, KeyState, KeyEvent, TextEvent, TextEventKind};
 use alloc::string::{String, ToString};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

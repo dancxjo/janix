@@ -2,12 +2,12 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::vec::Vec;
+
 
 use thing_std as std;
 use thing_std::{GraphClient, StdoutConsole, Console};
 use alloc::format;
-use core::fmt::Write;
+
 
 use thing_models::abi::wire::graph::{GraphOp, GraphReply};
 use thing_models::builtins::ids::*;

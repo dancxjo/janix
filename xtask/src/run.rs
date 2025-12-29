@@ -112,8 +112,9 @@ fn run_qemu_x86_64(
     cmd.arg("-m").arg("512");
     if !interactive {
         cmd.arg("-nographic");
+    } else {
+        cmd.arg("-serial").arg("stdio");
     }
-    cmd.arg("-serial").arg("stdio");
     cmd.arg("-no-reboot");
 
     if use_uefi {

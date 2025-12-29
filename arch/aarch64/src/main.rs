@@ -144,7 +144,16 @@ pub extern "C" fn rust_main() -> ! {
 
             // 3. Init Paging & Remap UART (Mapped as Device Memory)
             paging::init(offset);
+            
+            // Map UART (0x0900_0000)
             paging::map_device_region(0x09000000, 4096);
+            
+            // Map GIC Distributor (0x0800_0000) & CPU Interface (0x0801_0000)
+            paging::map_device_region(0x08000000, 4096); // Dist
+            paging::map_device_region(0x08010000, 4096); // CPU
+
+            // Now safe to init Platform (GIC + Timer)
+            Bridge::init_platform(offset);
 
             // 4. Update logic UART base (Physical 0x09000000 + Offset)
             bridge_aarch64::set_uart_base(0x09000000 + offset);

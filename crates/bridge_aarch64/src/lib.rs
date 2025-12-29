@@ -43,6 +43,9 @@ impl Bridge {
     pub unsafe fn init(hhdm: u64) {
         uart::init(hhdm);
         interrupts::trap::init();
+    }
+
+    pub unsafe fn init_platform(hhdm: u64) {
         interrupts::gic::init(hhdm);
         timer::init();
     }

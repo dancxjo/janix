@@ -135,7 +135,7 @@ fn get_module_role(name: &str, mtype: &ModuleType) -> ModuleRole {
 
 // --- BOOT LOGIC ---
 
-static APP_LOAD_ADDR: AtomicU64 = AtomicU64::new(0x2000_0000);
+static APP_LOAD_ADDR: AtomicU64 = AtomicU64::new(0x40_0000_0000);
 
 struct HeapFrameAllocator {
     hhdm_offset: VirtAddr,
@@ -227,7 +227,8 @@ fn write_user_bytes(
                 unsafe {
                     if let Ok((_phys, flush)) = mapper.unmap(huge_page) {
                         flush.flush();
-                        Bridge.log("loader: Unmapped conflicting Huge Page\n");
+                        let s = alloc::format!("loader: Unmapped conflicting Huge Page: {:?} (phys frame: {:?})\n", huge_page.start_address(), _phys.start_address());
+                        Bridge.log(&s);
                     }
                 }
             }
@@ -347,6 +348,13 @@ fn apply_relative_relocations(
                 let r_addend = i64::from_le_bytes(chunk[16..24].try_into().unwrap());
                 let r_type = r_info & 0xFFFF_FFFF;
 
+                // Debug: Print every relocation type to catch non-RELATIVE ones
+                // match r_type {
+                //    8 => { ... } // R_X86_64_RELATIVE
+                //    6 => { ... } // R_X86_64_GLOB_DAT
+                //    ...
+                // } 
+                
                 if r_type == 8 {
                     let value = load_base.wrapping_add(r_addend as u64);
                     write_user_bytes(
@@ -356,7 +364,13 @@ fn apply_relative_relocations(
                         frame_allocator,
                         hhdm_offset,
                     );
+                    
+                    if applied < 5 {
+                         Bridge.log(alloc::format!("loader: Reloc R_X86_64_RELATIVE: off={:#x} addend={:#x} val={:#x}\n", r_offset, r_addend, value).as_str());
+                    }
                     applied += 1;
+                } else {
+                     Bridge.log(alloc::format!("loader: Unknown Relocation Type: {}\n", r_type).as_str());
                 }
             }
 
@@ -1087,7 +1101,7 @@ pub fn process_file(
                 let end_frame =
                     PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(fb_phys + fb_size - 1));
 
-                let user_virt_base = VirtAddr::new(0x1_0000_0000);
+                let user_virt_base = VirtAddr::new(0x80_0000_0000);
                 let mut virt_iter = user_virt_base;
 
                 for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
@@ -1102,7 +1116,7 @@ pub fn process_file(
                     virt_iter += 4096u64;
                 }
 
-                Bridge.log("loader: Mapped User Framebuffer at 0x1_0000_0000\n");
+                Bridge.log("loader: Mapped User Framebuffer at 0x80_0000_0000\n");
             }
         }
 

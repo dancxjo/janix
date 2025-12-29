@@ -142,20 +142,10 @@ fn apply_relative_relocations(
                      
                      write_user_bytes(target_addr, &value.to_le_bytes(), root_table, hhdm_offset);
                      applied += 1;
-                 } else {
-                     unsafe {
-                         use bridge_aarch64::Bridge;
-                         Bridge.log(alloc::format!("loader: Unhandled R_TYPE {} at offset {:#x}\n", r_type, r_offset).as_str());
-                     }
                  }
              }
-             unsafe { bridge_aarch64::Bridge.log(alloc::format!("loader: Applied {} relocations\n", applied).as_str()); }
              return applied;
-        } else {
-             unsafe { bridge_aarch64::Bridge.log("loader: Could not find file offset for RELA vaddr\n"); }
         }
-    } else {
-         unsafe { bridge_aarch64::Bridge.log("loader: No Dynamic PHDR found\n"); }
     }
     0
 }

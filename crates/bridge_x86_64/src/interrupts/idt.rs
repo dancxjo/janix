@@ -82,6 +82,24 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     use x86_64::registers::control::Cr2;
     let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
+    // Debug dump of fault frame to help root-cause early boot faults
+    {
+        use kernel::bridge::HardwareBridge;
+        let bridge = crate::Bridge;
+        bridge.log("PAGE FAULT: rip=");
+        crate::print_hex(stack_frame.instruction_pointer.as_u64());
+        bridge.log(" cs=");
+        crate::print_hex(stack_frame.code_segment.0 as u64);
+        bridge.log(" rsp=");
+        crate::print_hex(stack_frame.stack_pointer.as_u64());
+        bridge.log(" ss=");
+        crate::print_hex(stack_frame.stack_segment.0 as u64);
+        bridge.log(" err=");
+        crate::print_hex(error_code.bits() as u64);
+        bridge.log(" cr2=");
+        crate::print_hex(cr2);
+        bridge.log("\n");
+    }
     
     // Check hook first
     unsafe {

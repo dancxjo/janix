@@ -14,14 +14,81 @@ mod limine;
 
 use bridge_aarch64::Bridge;
 use core::arch::naked_asm;
+use core::sync::atomic::{AtomicBool, Ordering};
 use kernel::Kernel;
+
+static PANICKING: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(test))]
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
     use kernel::bridge::HardwareBridge;
+    use kernel::diag::LogRing;
+
+    // Recursion guard
+    if PANICKING.swap(true, Ordering::Relaxed) {
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+
     let bridge = Bridge;
     bridge.log("PANIC\n");
+    kernel::diag::record_panic("PANIC");
+
+    if let Some(payload) = info.payload().downcast_ref::<&str>() {
+        bridge.log("Message: ");
+        bridge.log(payload);
+        bridge.log("\n");
+    }
+    if let Some(loc) = info.location() {
+        bridge.log("File: ");
+        bridge.log(loc.file());
+        bridge.log("\n");
+        bridge.log("Line: ");
+        print_dec(&bridge, loc.line() as u64);
+        bridge.log("\n");
+    }
+
+    // Dump ring buffer for recent logs/faults
+    bridge.log("\n--- RING DUMP ---\n");
+    let ring = LogRing::global();
+    ring.drain(|entry| {
+        let level_char = match entry.level {
+            0 => 'T',
+            1 => 'D',
+            2 => 'I',
+            3 => 'W',
+            4 => 'E',
+            5 => 'F',
+            6 => '?',
+            _ => '?',
+        };
+        bridge.log(core::str::from_utf8(&[level_char as u8]).unwrap());
+        bridge.log(": ");
+
+        let len = entry.msg_len as usize;
+        if len > 0 && len <= 256 {
+            if let Ok(s) = core::str::from_utf8(&entry.msg_bytes[..len]) {
+                bridge.log(s);
+            } else {
+                bridge.log("<utf8 error>");
+            }
+        }
+        bridge.log("\n");
+
+        if entry.kind == 2 {
+            bridge.log("  RIP: ");
+            print_hex(&bridge, entry.payload_a);
+            bridge.log(" ERR: ");
+            print_hex(&bridge, entry.payload_b);
+            bridge.log(" CR2: ");
+            print_hex(&bridge, entry.payload_c);
+            bridge.log("\n");
+        }
+    });
+    bridge.log("--- END DUMP ---\n");
+
     loop {
         core::hint::spin_loop();
     }
@@ -102,4 +169,37 @@ pub extern "C" fn rust_main() -> ! {
 
     let mut k = Kernel::new(Bridge);
     k.boot(None);
+}
+
+fn print_hex(bridge: &Bridge, val: u64) {
+    use kernel::bridge::HardwareBridge;
+    let mut printed = false;
+    for i in (0..16).rev() {
+        let digit = (val >> (i * 4)) & 0xF;
+        if digit != 0 || printed || i == 0 {
+            let c = if digit < 10 {
+                digit as u8 + b'0'
+            } else {
+                digit as u8 - 10 + b'a'
+            };
+            bridge.log(core::str::from_utf8(&[c]).unwrap());
+            printed = true;
+        }
+    }
+}
+
+fn print_dec(bridge: &Bridge, val: u64) {
+    use kernel::bridge::HardwareBridge;
+    let mut buf = [0u8; 20]; // enough for u64
+    let mut n = val;
+    let mut i = buf.len();
+    loop {
+        i -= 1;
+        buf[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    bridge.log(core::str::from_utf8(&buf[i..]).unwrap());
 }

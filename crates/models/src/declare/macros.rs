@@ -40,7 +40,6 @@ macro_rules! thing_kind {
         }
     ) => {
         paste::paste! {
-// Macro updated to accept ThingId references
             pub const [<THING_ $KindName:upper _KIND>]: $crate::abi::ThingId = $kind_id;
             pub const [<THING_ $KindName:upper _SCHEMA>]: $crate::abi::ThingId = $schema_id;
 
@@ -78,8 +77,8 @@ macro_rules! thing_kind {
 
                 let schema_thing = $crate::Thing {
                     id: [<THING_ $KindName:upper _SCHEMA>],
-                    kind: THING_SCHEMA_KIND,
-                    body: ThingBody::from(&schema_typed).expect("schema encode failed"),
+                    kind: $crate::builtins::symbols::SYM_SCHEMA,
+                    payload: ThingBody::from(&schema_typed).expect("schema encode failed").bytes,
                 };
 
                 // The Kind Thing
@@ -98,8 +97,8 @@ macro_rules! thing_kind {
 
                 let kind_thing = $crate::Thing {
                     id: [<THING_ $KindName:upper _KIND>],
-                    kind: THING_KIND_KIND,
-                    body: ThingBody::from(&kind_typed).expect("kind encode failed"),
+                    kind: $crate::builtins::symbols::SYM_KIND,
+                    payload: ThingBody::from(&kind_typed).expect("kind encode failed").bytes,
                 };
 
                 [kind_thing, schema_thing]

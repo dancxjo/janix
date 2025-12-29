@@ -1,6 +1,6 @@
 use crate::thing::Thing;
 use crate::value::ThingBody;
-use abi::ThingId;
+use abi::{ThingId, SymbolId};
 use core::marker::PhantomData;
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -21,7 +21,7 @@ impl<T> TypedThing<T> {
 
 impl<T: DeserializeOwned> TypedThing<T> {
     pub fn decode(&self) -> Result<T, postcard::Error> {
-        self.thing.body.decode()
+        self.thing.body().decode()
     }
 }
 
@@ -31,18 +31,18 @@ pub trait ThingTypedExt {
 
 impl ThingTypedExt for Thing {
     fn decode<T: DeserializeOwned>(&self) -> Result<T, postcard::Error> {
-        self.body.decode()
+        self.body().decode()
     }
 }
 
 pub fn make_thing<T: Serialize>(
     id: ThingId,
-    kind: ThingId,
+    kind: SymbolId,
     body: &T,
 ) -> Result<Thing, postcard::Error> {
     Ok(Thing {
         id,
         kind,
-        body: ThingBody::from(body)?,
+        payload: postcard::to_allocvec(body)?,
     })
 }

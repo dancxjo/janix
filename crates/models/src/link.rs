@@ -1,5 +1,6 @@
-use abi::ThingId;
+use abi::{ThingId, SymbolId};
 use serde::{Deserialize, Serialize};
+use crate::payload::ThingPayload;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkEndpoints {
@@ -11,5 +12,9 @@ pub struct LinkEndpoints {
 pub struct LinkBody {
     pub from: ThingId,
     pub to: ThingId,
-    pub predicate: ThingId,
+    pub predicate: SymbolId,
+}
+
+impl ThingPayload for LinkBody {
+    const KIND: SymbolId = abi::sym("core.link");
 }

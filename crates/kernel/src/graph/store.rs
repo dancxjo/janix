@@ -1,6 +1,10 @@
-use abi::ThingId;
+use abi::{ThingId, SymbolId};
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::vec::Vec;
 use thing_models::Thing;
+
+// Canonical stored representation
+pub type ThingRecord = Thing;
 
 #[derive(Debug)]
 pub enum GraphError {
@@ -10,11 +14,7 @@ pub enum GraphError {
 pub struct GraphStore {
     things: BTreeMap<ThingId, Thing>,
     /// Index of Things by Kind.
-    /// Changed from Vec<ThingId> to BTreeSet<ThingId> (Bolt Optimization):
-    /// - Improves deletion complexity from O(N) to O(log N).
-    /// - Maintains sorted order for efficient pagination via range queries.
-    /// - Critical for performance as number of things (e.g., LogEntry) grows.
-    kind_index: BTreeMap<ThingId, BTreeSet<ThingId>>,
+    kind_index: BTreeMap<SymbolId, BTreeSet<ThingId>>,
     next_id: u64,
 }
 
@@ -51,12 +51,11 @@ impl GraphStore {
         Ok(())
     }
 
-    pub fn create_thing(&mut self, kind: ThingId, body: thing_models::value::ThingBody) -> ThingId {
+    pub fn create_thing(&mut self, kind: SymbolId, payload: Vec<u8>) -> ThingId {
         let id = ThingId(self.next_id);
         self.next_id += 1;
 
-        // TODO: Reuse logic but avoid clone?
-        let thing = Thing { id, kind, body };
+        let thing = Thing { id, kind, payload };
 
         match self.insert_thing(thing) {
             Ok(_) => id,
@@ -71,10 +70,10 @@ impl GraphStore {
     pub fn update_thing(
         &mut self,
         id: ThingId,
-        body: thing_models::value::ThingBody,
+        payload: Vec<u8>,
     ) -> Result<(), ()> {
         if let Some(thing) = self.things.get_mut(&id) {
-            thing.body = body;
+            thing.payload = payload;
             Ok(())
         } else {
             Err(())
@@ -101,7 +100,7 @@ impl GraphStore {
         self.things.values()
     }
 
-    pub fn iter_kind(&self, kind: ThingId) -> impl Iterator<Item = &Thing> {
+    pub fn iter_kind(&self, kind: SymbolId) -> impl Iterator<Item = &Thing> {
         self.kind_index
             .get(&kind)
             .into_iter()
@@ -109,7 +108,7 @@ impl GraphStore {
             .filter_map(|id| self.things.get(id))
     }
 
-    pub fn next_thing_of_kind(&self, kind: ThingId, start_after: ThingId) -> Option<ThingId> {
+    pub fn next_thing_of_kind(&self, kind: SymbolId, start_after: ThingId) -> Option<ThingId> {
         if let Some(set) = self.kind_index.get(&kind) {
             use core::ops::Bound::{Excluded, Unbounded};
             // Efficiently find the first item strictly greater than start_after.

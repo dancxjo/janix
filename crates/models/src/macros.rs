@@ -41,7 +41,7 @@ macro_rules! typed_thing {
         $crate::Thing {
             id: $id,
             kind: $kind,
-            body: $crate::ThingBody { bytes },
+            payload: bytes,
         }
     }};
 }

@@ -5,7 +5,7 @@ use crate::schema::SchemaBody;
 use crate::thing::Thing;
 use crate::thing_kind;
 use crate::value::ThingBody;
-use abi::ThingId;
+use abi::{ThingId, SymbolId};
 use alloc::vec::Vec;
 
 use abi::wire::typed::{CodecId, TypeId, TypedBytes};
@@ -13,7 +13,7 @@ use abi::wire::typed::{CodecId, TypeId, TypedBytes};
 // Helper to create a Thing
 fn make_thing<T: serde::Serialize>(
     id: ThingId,
-    kind: ThingId,
+    kind: SymbolId,
     body_struct: &T,
     body_type_id: ThingId,
 ) -> Thing {
@@ -26,17 +26,16 @@ fn make_thing<T: serde::Serialize>(
     Thing {
         id,
         kind,
-        body: ThingBody::from(&typed).expect("builtin encode failed"),
+        payload: ThingBody::from(&typed).expect("builtin encode failed").bytes,
     }
 }
 
 // --- Meta-Kinds (Kind, Schema) ---
-// Kept manual as requested to avoid macro bootstrapping loops or complexity
 
 pub fn builtin_kind_kind() -> Thing {
     make_thing(
         THING_KIND_KIND,
-        THING_KIND_KIND, // Meta-circular
+        SYM_KIND,
         &KindBody {
             name: SYM_KIND,
             version: 1,
@@ -49,7 +48,7 @@ pub fn builtin_kind_kind() -> Thing {
 pub fn builtin_schema_kind() -> Thing {
     make_thing(
         THING_SCHEMA_KIND,
-        THING_KIND_KIND, // It is a Kind
+        SYM_KIND,
         &KindBody {
             name: SYM_SCHEMA,
             version: 1,
@@ -64,7 +63,7 @@ pub fn builtin_schema_kind() -> Thing {
 fn make_schema_thing(id: ThingId) -> Thing {
     make_thing(
         id,
-        THING_SCHEMA_KIND, // Schema Things have Kind = SYSTEM_SCHEMA
+        SYM_SCHEMA,
         &SchemaBody {
             body_type: 0, // Placeholder
             link_rules: Vec::new(),
@@ -80,7 +79,7 @@ use alloc::vec; // For vec! macro
 pub fn builtin_kind_schema() -> Thing {
     make_thing(
         THING_KIND_SCHEMA,
-        THING_SCHEMA_KIND,
+        SYM_SCHEMA,
         &SchemaBody {
             body_type: fnv1a64("thingos.KindBody.v1"), // KindBody type tag
             link_rules: vec![LinkRule {

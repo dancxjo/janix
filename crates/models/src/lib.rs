@@ -19,6 +19,7 @@ pub mod symbol;
 pub mod thing;
 pub mod thing_builders;
 pub mod value;
+pub mod payload;
 
 pub use intent::*;
 pub use kind::*;
@@ -29,6 +30,7 @@ pub use schema::*;
 pub use symbol::*;
 pub use thing::*;
 pub use value::*;
+pub use payload::*;
 
 pub mod core;
 pub mod edge;

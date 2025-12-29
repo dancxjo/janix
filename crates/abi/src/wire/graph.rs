@@ -16,35 +16,33 @@ pub enum GraphOp<'a> {
     },
     Watch {
         query: &'a str,
-    }, // Blocking next item
+    },
     WriteTyped {
         path: &'a str,
         value: TypedBytes,
     },
     // CRUD Ops
     CreateThing {
-        kind: crate::ThingId,
-        value: crate::wire::typed::TypedBytes,
+        kind: crate::SymbolId,
+        value: alloc::vec::Vec<u8>,
     },
     GetThing {
         id: crate::ThingId,
     },
     UpdateThing {
         id: crate::ThingId,
-        value: crate::wire::typed::TypedBytes,
+        value: alloc::vec::Vec<u8>,
     },
-    // SetProp { id: crate::ThingId, prop: u32, value: crate::wire::typed::TypedBytes }, // Deprecated for v0.2 smoke
-
     // Link Ops
     AddLink {
         from: crate::ThingId,
         to: crate::ThingId,
-        kind: crate::ThingId,
+        kind: crate::SymbolId,
     },
     ScanLinks {
         from: Option<crate::ThingId>,
         to: Option<crate::ThingId>,
-        kind: Option<crate::ThingId>,
+        kind: Option<crate::SymbolId>,
     },
     Batch(alloc::vec::Vec<GraphOp<'a>>),
     DeleteThing {
@@ -65,7 +63,7 @@ pub enum GraphReply {
     Error,
     Thing { bytes: alloc::vec::Vec<u8> },
     TypedValue(TypedBytes),
-    Links(alloc::vec::Vec<(crate::ThingId, crate::ThingId, crate::ThingId)>),
+    Links(alloc::vec::Vec<(crate::ThingId, crate::ThingId, crate::SymbolId)>),
     BatchReply(alloc::vec::Vec<GraphReply>),
     Created { id: crate::ThingId },
     Bytes { bytes: alloc::vec::Vec<u8> },

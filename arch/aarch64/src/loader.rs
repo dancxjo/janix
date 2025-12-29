@@ -221,9 +221,9 @@ pub fn process_file(
         });
         
         if let Some(img) = loaded {
-             let applied_count = apply_relative_relocations(data, current_app_base, root_table, hhdm_u64);
-             unsafe {
-                 k.bridge.log(alloc::format!("loader: Applied {} relocations\n", applied_count).as_str());
+             let applied = apply_relative_relocations(data, current_app_base, root_table, hhdm_u64);
+             if applied == 0 {
+                 unsafe { k.bridge.log("loader: WARN: Applied 0 relocations!\n"); }
              }
              
              let stack_size = 128 * 1024;

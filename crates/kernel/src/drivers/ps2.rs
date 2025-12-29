@@ -40,7 +40,7 @@ pub fn init(bridge: &impl HardwareBridge) {
     let ack = bridge.port_inb(data_port);
 
     bridge.log("PS2: Mouse init ACK=");
-    // crate::print_hex(ack as u64); 
+    // crate::print_hex(ack as u64);
     if ack == 0xFA {
         bridge.log("OK");
     } else {

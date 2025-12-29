@@ -160,13 +160,21 @@ impl HardwareBridge for Bridge {
     fn set_kernel_stack(&self, _stack: u64) {}
     fn rtc_read(&self, _out: &mut abi::wire::time::RtcSample) {}
 
-    fn hhdm_offset(&self) -> u64 { 0 }
+    fn hhdm_offset(&self) -> u64 {
+        0
+    }
     fn port_outb(&self, _port: u16, _val: u8) {}
-    fn port_inb(&self, _port: u16) -> u8 { 0 }
+    fn port_inb(&self, _port: u16) -> u8 {
+        0
+    }
     fn port_outw(&self, _port: u16, _val: u16) {}
-    fn port_inw(&self, _port: u16) -> u16 { 0 }
+    fn port_inw(&self, _port: u16) -> u16 {
+        0
+    }
     fn port_outd(&self, _port: u16, _val: u32) {}
-    fn port_ind(&self, _port: u16) -> u32 { 0 }
+    fn port_ind(&self, _port: u16) -> u32 {
+        0
+    }
     fn save_fpu(&self, _area: &mut [u8; 512]) {}
     fn restore_fpu(&self, _area: &[u8; 512]) {}
 }

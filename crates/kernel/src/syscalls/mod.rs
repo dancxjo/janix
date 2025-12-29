@@ -3,9 +3,9 @@ pub mod graph;
 pub mod time;
 pub mod typed;
 
+use crate::bridge::HardwareBridge;
 use crate::Kernel;
-use abi::syscall_defs::*;
-use crate::bridge::HardwareBridge; // e.g. SYSCALL_DRIVER_WAIT, etc.
+use abi::syscall_defs::*; // e.g. SYSCALL_DRIVER_WAIT, etc.
 
 pub fn syscall_dispatch<B: HardwareBridge>(
     kernel: &mut Kernel<B>,
@@ -26,7 +26,7 @@ pub fn syscall_dispatch<B: HardwareBridge>(
         SYSCALL_YIELD => {
             // kernel.scheduler.yield_thread();
             // TODO: Implement explicit yield. For now relying on Preemption Ticket.
-            core::hint::spin_loop(); 
+            core::hint::spin_loop();
             0
         }
         SYSCALL_SLEEP => {
@@ -34,11 +34,11 @@ pub fn syscall_dispatch<B: HardwareBridge>(
             let duration = a1 as u64;
             let now = kernel.bridge.monotonic_now();
             kernel.scheduler.sleep_current_until(now + duration);
-            // We must force a reschedule? 
+            // We must force a reschedule?
             // If we just mark it sleeping, next tick picks new thread.
             // But we return to THIS thread now?
             // If we return 0, we go back to user. User continues?
-            // User loop: syscall(SLEEP). 
+            // User loop: syscall(SLEEP).
             // If we return, user thinks sleep done?
             // We need to NOT return to user until wake?
             // But syscall dispatch is synchronous.
@@ -49,7 +49,7 @@ pub fn syscall_dispatch<B: HardwareBridge>(
             // But we have kernel stacks per thread.
             // If we block here, we block the CPU?
             // We should yield.
-            // Since we don't have yield... 
+            // Since we don't have yield...
             // WE rely on `driver_wait` approach: loop in userland?
             // Or `sys_yield`?
             0
@@ -58,7 +58,9 @@ pub fn syscall_dispatch<B: HardwareBridge>(
             // a1: out_ptr (u64 monotonic, u64 system)
             let out_ptr = a1 as *mut u64;
             // Validate pointer?
-            if out_ptr as u64 == 0 { return -1; }
+            if out_ptr as u64 == 0 {
+                return -1;
+            }
             let mono = kernel.bridge.monotonic_now();
             let sys = kernel.bridge.system_now();
             unsafe {
@@ -131,8 +133,8 @@ pub fn syscall_dispatch<B: HardwareBridge>(
             }
         }
         SYSCALL_SPAWN => {
-             // Handled by Arch Hook
-             -1
+            // Handled by Arch Hook
+            -1
         }
         _ => -1,
     }

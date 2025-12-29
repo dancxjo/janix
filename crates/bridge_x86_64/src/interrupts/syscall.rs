@@ -2,7 +2,9 @@ use crate::gdt::{
     KERNEL_CODE_SELECTOR, KERNEL_DATA_SELECTOR, USER_CODE_SELECTOR, USER_DATA_SELECTOR,
 };
 use core::arch::naked_asm;
-use x86_64::registers::model_specific::{Efer, EferFlags, KernelGsBase, LStar, SFMask, Star};
+use x86_64::registers::model_specific::{
+    Efer, EferFlags, GsBase, KernelGsBase, LStar, SFMask, Star,
+};
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
 
@@ -18,9 +20,9 @@ pub unsafe fn init() {
     // MSR 0xC0000102
     let gs_base = VirtAddr::new(core::ptr::addr_of!(GS_SCRATCH) as u64);
     KernelGsBase::write(gs_base);
-
-    // Activate Kernel GS (so Active GS = Scratch, MSR = 0/User)
-    core::arch::asm!("swapgs", options(nostack, preserves_flags));
+    // Ensure current GS base is the "user" side (zeroed) so swapgs
+    // during syscall entry loads the kernel scratch region.
+    GsBase::write(VirtAddr::zero());
 
     // 1. Enable syscall/sysret instruction via EFER
     let mut efer = Efer::read();
@@ -126,9 +128,8 @@ extern "C" fn syscall_dispatch(
     a5: usize,
     a6: usize,
 ) -> isize {
-    static LOG_ONCE: core::sync::atomic::AtomicBool =
-        core::sync::atomic::AtomicBool::new(true);
-    if LOG_ONCE.swap(false, core::sync::atomic::Ordering::Relaxed) {
+    static LOG_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+    if LOG_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 4 {
         use kernel::bridge::HardwareBridge;
         let bridge = crate::Bridge;
         let rsp: *const u64;

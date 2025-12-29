@@ -1,11 +1,17 @@
+use crate::bridge::HardwareBridge;
 use alloc::vec::Vec;
 use thing_models::core::pci::PciDeviceBody;
-use crate::bridge::HardwareBridge;
 
 const CONFIG_ADDRESS: u16 = 0xCF8;
 const CONFIG_DATA: u16 = 0xCFC;
 
-pub fn read_config_32(bridge: &impl HardwareBridge, bus: u8, device: u8, func: u8, offset: u8) -> u32 {
+pub fn read_config_32(
+    bridge: &impl HardwareBridge,
+    bus: u8,
+    device: u8,
+    func: u8,
+    offset: u8,
+) -> u32 {
     let address = 0x80000000
         | ((bus as u32) << 16)
         | ((device as u32) << 11)
@@ -16,7 +22,13 @@ pub fn read_config_32(bridge: &impl HardwareBridge, bus: u8, device: u8, func: u
     bridge.port_ind(CONFIG_DATA)
 }
 
-pub fn read_config_16(bridge: &impl HardwareBridge, bus: u8, device: u8, func: u8, offset: u8) -> u16 {
+pub fn read_config_16(
+    bridge: &impl HardwareBridge,
+    bus: u8,
+    device: u8,
+    func: u8,
+    offset: u8,
+) -> u16 {
     let val = read_config_32(bridge, bus, device, func, offset);
     if (offset & 2) != 0 {
         (val >> 16) as u16
@@ -25,7 +37,13 @@ pub fn read_config_16(bridge: &impl HardwareBridge, bus: u8, device: u8, func: u
     }
 }
 
-pub fn read_config_8(bridge: &impl HardwareBridge, bus: u8, device: u8, func: u8, offset: u8) -> u8 {
+pub fn read_config_8(
+    bridge: &impl HardwareBridge,
+    bus: u8,
+    device: u8,
+    func: u8,
+    offset: u8,
+) -> u8 {
     let val = read_config_32(bridge, bus, device, func, offset);
     let shift = (offset & 3) * 8;
     ((val >> shift) & 0xFF) as u8
@@ -67,8 +85,7 @@ pub fn scan_pci(bridge: &impl HardwareBridge) -> Vec<PciDeviceBody> {
 
                 if htype == 0x00 {
                     for i in 0..6 {
-                        bars[i] =
-                            read_config_32(bridge, bus, device, func, 0x10 + (i as u8) * 4);
+                        bars[i] = read_config_32(bridge, bus, device, func, 0x10 + (i as u8) * 4);
                     }
                 }
 

@@ -1,8 +1,8 @@
+use crate::bridge::HardwareBridge;
 use crate::diag::{EntryKind, LogRing};
 use crate::Kernel;
 use abi::{SymbolId, ThingId};
 use alloc::string::ToString;
-use crate::bridge::HardwareBridge;
 use thing_models::builtins::ids::*;
 
 use abi::wire::typed::{CodecId, TypeId, TypedBytes};

@@ -6,5 +6,5 @@ extern crate alloc;
 pub mod bootinfo;
 pub mod limine;
 
-pub use limine::{collect, get_hhdm, get_rsdp, get_cmdline, get_memory_map};
 pub use bootinfo::*;
+pub use limine::{collect, get_cmdline, get_hhdm, get_memory_map, get_rsdp};

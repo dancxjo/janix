@@ -4,9 +4,10 @@
 #![allow(private_interfaces)]
 extern crate alloc;
 
-pub mod diag;
 pub mod bridge;
+pub mod diag;
 pub mod drivers;
+pub mod font;
 pub mod fs;
 pub mod graph;
 pub mod input;
@@ -15,14 +16,13 @@ pub mod symbols;
 pub mod syscalls;
 pub mod time;
 pub mod types;
-pub mod font;
 
 pub mod platform {
-     pub mod acpi;
+    pub mod acpi;
 }
 
-use graph::{seed_builtins, GraphStore};
 use crate::bridge::HardwareBridge;
+use graph::{seed_builtins, GraphStore};
 
 use symbols::store::SymbolStore;
 use symbols::SymbolTable;

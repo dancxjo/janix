@@ -1,7 +1,7 @@
 pub mod rules;
 
 pub use rules::*;
-pub mod window;
 pub mod bitmap;
+pub mod window;
 
 pub mod boot_state;

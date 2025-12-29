@@ -1,5 +1,5 @@
-use core::ptr::NonNull;
 use crate::bridge::HardwareBridge;
+use core::ptr::NonNull;
 
 // Minimal ACPI Table Headers
 #[repr(C, packed)]
@@ -39,9 +39,9 @@ pub fn init(bridge: &impl HardwareBridge, rsdp_addr: u64, hhdm: u64) {
     // SAFETY: We blindly trust rsdp_addr is valid.
     // Check if rsdp_addr is already virtual (Limine standard)
     let rsdp_virt = if rsdp_addr >= hhdm {
-         rsdp_addr
+        rsdp_addr
     } else {
-         to_virt(rsdp_addr, hhdm).as_ptr() as u64
+        to_virt(rsdp_addr, hhdm).as_ptr() as u64
     };
 
     let rsdp_ptr = rsdp_virt as *const Rsdp;
@@ -64,9 +64,13 @@ pub fn init(bridge: &impl HardwareBridge, rsdp_addr: u64, hhdm: u64) {
     };
 
     if let Some(addr) = xsdt_addr {
-        unsafe { parse_xsdt(bridge, addr, hhdm); }
+        unsafe {
+            parse_xsdt(bridge, addr, hhdm);
+        }
     } else {
-        unsafe { parse_rsdt(bridge, rsdt_addr_val as u64, hhdm); }
+        unsafe {
+            parse_rsdt(bridge, rsdt_addr_val as u64, hhdm);
+        }
     }
 }
 
@@ -99,7 +103,7 @@ unsafe fn parse_xsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
 
     let ptr = to_virt(phys, hhdm).as_ptr();
     let header = core::ptr::read_unaligned(ptr as *const SdtHeader);
-    
+
     bridge.log("ACPI: XSDT Length: ");
     print_hex(bridge, header.length as u64);
     bridge.log("\n");
@@ -151,7 +155,7 @@ unsafe fn parse_rsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
 unsafe fn check_table(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
     let ptr = to_virt(phys, hhdm).as_ptr();
     let header = core::ptr::read_unaligned(ptr as *const SdtHeader);
-    
+
     // Log signature
     bridge.log("ACPI: Table ");
     bridge.log(core::str::from_utf8(&header.signature).unwrap_or("????"));

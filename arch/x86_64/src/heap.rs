@@ -16,15 +16,11 @@ pub struct SafeLockedHeap(LockedHeap);
 
 unsafe impl core::alloc::GlobalAlloc for SafeLockedHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        x86_64::instructions::interrupts::without_interrupts(|| {
-            self.0.alloc(layout)
-        })
+        x86_64::instructions::interrupts::without_interrupts(|| self.0.alloc(layout))
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        x86_64::instructions::interrupts::without_interrupts(|| {
-            self.0.dealloc(ptr, layout)
-        })
+        x86_64::instructions::interrupts::without_interrupts(|| self.0.dealloc(ptr, layout))
     }
 }
 

@@ -1,5 +1,5 @@
-use core::ptr::NonNull;
 use crate::bridge::HardwareBridge;
+use core::ptr::NonNull;
 
 #[repr(C, packed)]
 pub struct HpetTable {

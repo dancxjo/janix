@@ -131,7 +131,6 @@ pub extern "C" fn rust_main() -> ! {
     unsafe {
         // -1. Init Bridge (Exception Vectors) EARLY
 
-
         // 1. Get HHDM offset (Before Heap!)
         // Limine maps this as Normal memory. We will remap as Device later.
         if let Some(resp) = limine::requests::HHDM_REQUEST.get_response() {
@@ -153,15 +152,13 @@ pub extern "C" fn rust_main() -> ! {
             // Should now be able to print to Device-mapped UART
             bootlog!("Booting ThingOS (aarch64)...");
             bootlog!("UART mapped at HHDM offset 0x{:x} (Device)", offset);
-            
+
             early_log::log_heap_init(info);
         } else {
             // Fallback: Blind write to Phys
             core::ptr::write_volatile(0x0900_0000 as *mut u8, 0x46); // 'F'
             loop {}
         }
-
-
 
         bootlog!("Booting ThingOS (aarch64)...");
         bootlog!("Init finished, jumping to kernel");

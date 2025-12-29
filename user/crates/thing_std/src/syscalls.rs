@@ -56,7 +56,7 @@ pub fn driver_publish(data: &[u8]) -> Result<usize, isize> {
     }
 }
 
-pub fn graph_op(op: &GraphOp) -> Result<(), ()> {
+pub fn graph_op(_op: &GraphOp) -> Result<(), ()> {
     // Serialize Op? Wait, original ABI might differ.
     // Usually we act on struct?
     // "graph_op" in userland might wrap a "call" or "send".
@@ -138,4 +138,3 @@ pub fn graph_query(query: &str, params: &[u8], out: &mut [u8]) -> Result<usize, 
         Err(())
     }
 }
-

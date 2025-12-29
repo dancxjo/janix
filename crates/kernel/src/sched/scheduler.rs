@@ -1,10 +1,10 @@
+use crate::bridge::HardwareBridge;
 use crate::sched::fpu::FpuContext;
 use crate::sched::types::{ThreadState, TimeNs};
 use abi::ids::{ProcessId, ThingId, ThreadId};
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use crate::bridge::HardwareBridge;
 
 #[derive(Debug)]
 pub struct Process {
@@ -128,7 +128,9 @@ impl<C> Scheduler<C> {
         arg: u64,
         heap_start: u64,
         heap_end: u64,
-    ) where B: HardwareBridge<Context = C> {
+    ) where
+        B: HardwareBridge<Context = C>,
+    {
         let pid = ProcessId(self.processes.len() as u64 + 1);
         let tid = ThreadId(self.threads.len() as u64 + 1);
 
@@ -177,7 +179,10 @@ impl<C> Scheduler<C> {
     }
 
     pub fn tick<B>(&mut self, _bridge: &B, current_context: &mut ThreadContext<C>)
-    where B: HardwareBridge<Context = C>, C: Copy {
+    where
+        B: HardwareBridge<Context = C>,
+        C: Copy,
+    {
         // 1. Save current context if we have a current thread
         if let Some(tid) = self.current {
             // Only save if it still exists (it might have exited/died, but we handle that elsewhere)
@@ -185,7 +190,7 @@ impl<C> Scheduler<C> {
             if let Some(Some(thread)) = self.threads.get_mut(tid.0 as usize - 1) {
                 thread.context = *current_context;
                 _bridge.save_fpu(&mut thread.fpu_context.data);
-                
+
                 // If Running, user is preempted. Move to Runnable.
                 // If Running, user is preempted. Move to Runnable.
                 // If Sleeping, we LEAVE IT SLEEPING and do NOT push to run_queue.
@@ -243,4 +248,3 @@ impl<C> Scheduler<C> {
         }
     }
 }
-

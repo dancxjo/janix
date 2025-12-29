@@ -1,3 +1,4 @@
+use crate::bridge::HardwareBridge;
 use crate::Kernel;
 use abi::wire::graph::{GraphOp, GraphReply};
 use abi::wire::time::{
@@ -5,7 +6,6 @@ use abi::wire::time::{
     TimeSleepUntilReq, TimeSleepUntilResp,
 };
 use alloc::string::String;
-use crate::bridge::HardwareBridge;
 use postcard::to_slice;
 use serde::Serialize;
 use thing_models::core::time::TimeNow;
@@ -31,109 +31,95 @@ pub fn handle_graph_op<B: HardwareBridge>(
     match op {
         GraphOp::SymbolIntern { text } => match kernel.symbols.intern(text) {
             Ok(id) => GraphReply::SymbolInterned { id },
-            Err(_) => GraphReply::Error,
-        },
-        GraphOp::SymbolResolve { id } => {
-            match kernel.symbols.resolve(id) {
-                Some(bytes) => {
-                    // We validate utf8 on insert, so this should remain valid
-                    match String::from_utf8(bytes.to_vec()) {
-                        Ok(s) => GraphReply::SymbolResolved { text: s },
-                        Err(_) => GraphReply::Error,
-                    }
-                }
-                None => GraphReply::Error,
-            }
-        }
-        GraphOp::Log { text } => {
-            kernel.bridge.log(text);
-            GraphReply::Ack
-        }
-        GraphOp::WriteTyped { path: _, value: _ } => {
-            // Placeholder for graph storage integration
-            GraphReply::Ack
-        }
-        GraphOp::Watch { .. } => GraphReply::Error,
-        // CRUD Ops
-        GraphOp::CreateThing { kind, value } => {
-            match thing_models::value::ThingBody::from(&value) {
-                Ok(body) => {
-                    let id = kernel.graph.create_thing(kind, body);
-                    GraphReply::Created { id }
-                }
-                Err(_) => GraphReply::Error,
-            }
-        }
-        GraphOp::GetThing { id } => {
-            if let Some(thing) = kernel.graph.get(id) {
-                // Decode body to TypedBytes
-                match thing.body.decode::<abi::wire::typed::TypedBytes>() {
-                    Ok(tb) => GraphReply::TypedValue(tb),
-                    Err(_) => GraphReply::Error,
-                }
-            } else {
-                GraphReply::Error
-            }
-        }
-        GraphOp::UpdateThing { id, value } => match thing_models::value::ThingBody::from(&value) {
-            Ok(body) => match kernel.graph.update_thing(id, body) {
-                Ok(_) => GraphReply::Ack,
-                Err(_) => GraphReply::Error,
-            },
-            Err(_) => GraphReply::Error,
-        },
-        GraphOp::AddLink { from, to, kind } => {
-            let body_struct = thing_models::link::LinkBody {
-                from,
-                to,
-                predicate: kind,
-            };
-            match postcard::to_allocvec(&body_struct) {
-                Ok(link_bytes) => {
-                    // Wrap in TypedBytes
-                    let typed = abi::wire::typed::TypedBytes {
-                        type_id: abi::wire::typed::TypeId(
-                            thing_models::builtins::ids::THING_LINK_KIND.0 as u128,
-                        ),
-                        codec_id: abi::wire::typed::CodecId::POSTCARD,
-                        bytes: link_bytes,
-                    };
-                    match thing_models::value::ThingBody::from(&typed) {
-                        Ok(body) => {
-                            let id = kernel
-                                .graph
-                                .create_thing(thing_models::builtins::ids::THING_LINK_KIND, body);
-                            GraphReply::Created { id }
-                        }
-                        Err(_) => GraphReply::Error,
-                    }
-                }
-                Err(_) => GraphReply::Error,
-            }
-        }
-        GraphOp::ScanLinks { from, to, kind } => {
-            let mut results = alloc::vec::Vec::new();
-            let link_kind = thing_models::builtins::ids::THING_LINK_KIND;
+            GraphOp::ScanLinks { from, to, kind } => {
+                let mut results = alloc::vec::Vec::new();
+                let link_kind = thing_models::builtins::ids::THING_LINK_KIND;
 
-            kernel.bridge.log("Kernel: ScanLinks Start");
+                kernel.bridge.log("Kernel: ScanLinks Start");
 
-            let mut count_links = 0;
-            let mut count_decoded = 0;
-            let mut count_matched = 0;
+                let mut count_all = 0;
+                let mut count_links = 0;
+                let mut count_decoded = 0;
+                let mut count_matched = 0;
 
-            for thing in kernel.graph.iter_kind(link_kind) {
-                count_links += 1;
-                if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
-                    if let Ok(link) =
-                        postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes)
-                    {
-                        count_decoded += 1;
-                        match (link.from, link.to, link.predicate) {
-                            (f, t, p) => {
+                for thing in kernel.graph.list() {
+                    count_all += 1;
+                    if thing.kind == link_kind {
+                        count_links += 1;
+                        if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
+                            if let Ok(link) = postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes) {
+                                count_decoded += 1;
+                                let f = link.from;
+                                let t = link.to;
+                                let p = link.predicate;
                                 if let Some(target_from) = from {
                                     if f != target_from {
                                         continue;
                                     }
+                                }
+                                if let Some(target_to) = to {
+                                    if t != target_to {
+                                        continue;
+                                    }
+                                }
+                                if let Some(target_kind) = kind {
+                                    if p != target_kind {
+                                        continue;
+                                    }
+                                }
+                                kernel.bridge.log(
+                                    alloc::format!(
+                                        "Kernel: MATCHED Link Root->{} (Pred {})",
+                                        t.0,
+                                        p.0
+                                    )
+                                    .as_str(),
+                                );
+                                count_matched += 1;
+                                results.push((f, t, p));
+                            } else {
+                                kernel.bridge.log("Kernel: Failed to decode LinkBody from TypedBytes");
+                            }
+                        } else {
+                            kernel.bridge.log("Kernel: Failed to decode TypedBytes from ThingBody");
+                        }
+                    }
+                }
+                kernel.bridge.log(
+                    alloc::format!(
+                        "Kernel: Scanned {} things. Found {} Links. Decoded {}. Matched {}. Returning {}",
+                        count_all, count_links, count_decoded, count_matched, results.len()
+                    )
+                    .as_str(),
+                );
+
+                GraphReply::Links(results)
+            }
+                                        if f != target_from {
+                                            continue;
+                                        }
+                                    }
+                                    if let Some(target_to) = to {
+                                        if t != target_to {
+                                            continue;
+                                        }
+                                    }
+                                    if let Some(target_kind) = kind {
+                                        if p != target_kind {
+                                            continue;
+                                        }
+                                    }
+                                    kernel.bridge.log(
+                                        alloc::format!(
+                                            "Kernel: MATCHED Link Root->{} (Pred {})",
+                                            t.0,
+                                            p.0
+                                        )
+                                        .as_str(),
+                                    );
+                                    count_matched += 1;
+                                    results.push((f, t, p));
+>>>>>>> 9a293e4 (Refactor syscalls and improve boot state handling)
                                 }
                                 if let Some(target_to) = to {
                                     if t != target_to {
@@ -151,11 +137,22 @@ pub fn handle_graph_op<B: HardwareBridge>(
                                 count_matched += 1;
                                 results.push((f, t, p));
                             }
+<<<<<<< HEAD
+=======
+                        } else {
+                            kernel
+                                .bridge
+                                .log("Kernel: Failed to decode LinkBody from TypedBytes");
+>>>>>>> 9a293e4 (Refactor syscalls and improve boot state handling)
                         }
                     } else {
                         kernel
                             .bridge
+<<<<<<< HEAD
                             .log("Kernel: Failed to decode LinkBody from TypedBytes");
+=======
+                            .log("Kernel: Failed to decode TypedBytes from ThingBody");
+>>>>>>> 9a293e4 (Refactor syscalls and improve boot state handling)
                     }
                 } else {
                     kernel
@@ -165,12 +162,18 @@ pub fn handle_graph_op<B: HardwareBridge>(
             }
             kernel.bridge.log(
                 alloc::format!(
+<<<<<<< HEAD
                     "Kernel: Scanned {} Links. Decoded {}. Matched {}. Returning {}",
                     count_links,
                     count_decoded,
                     count_matched,
                     results.len()
                 )
+=======
+                "Kernel: Scanned {} things. Found {} Links. Decoded {}. Matched {}. Returning {}",
+                count_all, count_links, count_decoded, count_matched, results.len()
+            )
+>>>>>>> 9a293e4 (Refactor syscalls and improve boot state handling)
                 .as_str(),
             );
 

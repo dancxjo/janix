@@ -1,12 +1,12 @@
+use crate::bridge::HardwareBridge;
 use abi::wire::typed::{CodecId, TypeId, TypedBytes};
 use abi::{SymbolId, ThingId};
 use thing_models::builtins::ids::{
-    THING_SERIAL_PORT_KIND, THING_HAS_DEVICE_KIND, THING_BOOT_ROOT, THING_LINK_KIND
+    THING_BOOT_ROOT, THING_HAS_DEVICE_KIND, THING_LINK_KIND, THING_SERIAL_PORT_KIND,
 };
 use thing_models::core::serial::SerialPortBody;
 use thing_models::value::ThingBody;
 use thing_models::Thing;
-use crate::bridge::HardwareBridge;
 
 pub const SERIAL_IO_PORT: u16 = 0x3F8;
 
@@ -16,7 +16,7 @@ pub fn init(bridge: &impl HardwareBridge) {
     // Standard COM1 initialization
     // Interrupt Enable (Base + 1)
     bridge.port_outb(SERIAL_IO_PORT + 1, 0x00); // Disable interrupts
-    
+
     // Line Control (Base + 3)
     bridge.port_outb(SERIAL_IO_PORT + 3, 0x80); // Enable DLAB (set baud rate divisor)
 
@@ -28,13 +28,13 @@ pub fn init(bridge: &impl HardwareBridge) {
 
     // Line Control (Base + 3)
     bridge.port_outb(SERIAL_IO_PORT + 3, 0x03); // 8 bits, no parity, one stop bit hiding DLAB
-    
+
     // FIFO Control (Base + 2)
     bridge.port_outb(SERIAL_IO_PORT + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-    
+
     // Modem Control (Base + 4)
     bridge.port_outb(SERIAL_IO_PORT + 4, 0x0B); // IRQs enabled, RTS/DSR set
-    
+
     // Interrupt Enable again (Base + 1)
     bridge.port_outb(SERIAL_IO_PORT + 1, 0x00); // Disable interrupts for now (we poll for logs)
 

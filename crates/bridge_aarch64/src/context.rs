@@ -33,10 +33,7 @@ pub fn init_thread_context(entry: u64, stack: u64, arg: u64) -> ArchContext {
 
 #[cfg(target_arch = "aarch64")]
 pub fn resume_user_mode(context: &ArchContext) -> ! {
-    crate::user::enter::resume_user_mode(
-        &context.0,
-        &kernel::sched::fpu::FpuContext::default(),
-    )
+    crate::user::enter::resume_user_mode(&context.0, &kernel::sched::fpu::FpuContext::default())
 }
 
 #[cfg(target_arch = "aarch64")]

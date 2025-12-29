@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 // use abi::SysRet; // Unused for now in this signature, but good to have if we expand.
+use abi::SYSCALL_SPAWN;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SysErr(pub i64);
@@ -38,5 +39,29 @@ pub fn sys_yield() {
             out("rcx") _,
             out("r11") _,
         );
+    }
+}
+
+pub fn sys_spawn_image(image: &[u8], name: &str) -> Result<isize, isize> {
+    let ret: isize;
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            in("rax") SYSCALL_SPAWN,
+            in("rdi") image.as_ptr() as usize,
+            in("rsi") image.len(),
+            in("rdx") name.as_ptr() as usize,
+            in("r10") name.len(),
+            lateout("rax") ret,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack, preserves_flags)
+        );
+    }
+
+    if ret >= 0 {
+        Ok(ret)
+    } else {
+        Err(ret)
     }
 }

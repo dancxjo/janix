@@ -1,5 +1,3 @@
-
-
 pub trait HardwareBridge {
     fn log(&self, msg: &str);
     fn hhdm_offset(&self) -> u64;

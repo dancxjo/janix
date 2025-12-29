@@ -1,8 +1,8 @@
 use anyhow::{ensure, Context, Result};
+use image::{Rgba, RgbaImage};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use image::{Rgba, RgbaImage};
 
 #[derive(clap::Args, Debug)]
 pub struct FetchArgs {
@@ -251,14 +251,16 @@ fn fetch_icons(assets: &Path) -> Result<()> {
 
     let root = project_root();
     let temp_dir = root.join("target/temp_icons");
-    if temp_dir.exists() { fs::remove_dir_all(&temp_dir)?; }
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir)?;
+    }
     fs::create_dir_all(&temp_dir)?;
 
     let tango_tar = temp_dir.join("tango.tar.gz");
     println!("    Downloading Tango...");
     download_file(
         "http://tango.freedesktop.org/releases/tango-icon-theme-0.8.90.tar.gz",
-        &tango_tar
+        &tango_tar,
     )?;
 
     println!("    Extracting specific icons...");
@@ -274,15 +276,15 @@ fn fetch_icons(assets: &Path) -> Result<()> {
                 .arg("-xzf")
                 .arg(&tango_tar)
                 .arg(t)
-                .current_dir(&temp_dir)
+                .current_dir(&temp_dir),
         )?;
 
         let name = Path::new(t).file_name().unwrap();
         let src = temp_dir.join(t);
         let dst = icons_dir.join(name);
         if src.exists() {
-             fs::rename(&src, &dst)?;
-             println!("    Installed {}", name.to_string_lossy());
+            fs::rename(&src, &dst)?;
+            println!("    Installed {}", name.to_string_lossy());
         }
     }
 
@@ -313,11 +315,11 @@ fn fetch_cursors(assets: &Path) -> Result<()> {
                     .arg("-o") // Overwrite
                     .arg(&zip_path)
                     .arg("-d") // Extract to directory
-                    .arg(&plain_dir)
+                    .arg(&plain_dir),
             )?;
             let _ = fs::remove_file(&zip_path);
         } else {
-             eprintln!("    [WARNING] Failed to download Plain Cursors.");
+            eprintln!("    [WARNING] Failed to download Plain Cursors.");
         }
     }
 
@@ -330,7 +332,7 @@ fn fetch_cursors(assets: &Path) -> Result<()> {
         println!("    Generating fallback cursor.bmp...");
         let img = generate_arrow_cursor(32);
         // Save as BMP. The 'image' crate infers from extension.
-        // Note: Compositor expects 32-bit BMP (BGRA/RGBA). 
+        // Note: Compositor expects 32-bit BMP (BGRA/RGBA).
         // Image crate usually handles this if RgbaImage is saved.
         img.save(&cursor_path)?;
     }
@@ -358,7 +360,7 @@ fn generate_arrow_cursor(size: u32) -> RgbaImage {
             // Or simpler: x < y/2 (roughly)
 
             // Draw Outline (Black) and Fill (White)
-            let is_inside = x < (size - y/2) && x < (y/2 + 5); // Just random math? No.
+            let is_inside = x < (size - y / 2) && x < (y / 2 + 5); // Just random math? No.
 
             // Let's use specific coordinates
             // Top: 0,0
@@ -410,24 +412,28 @@ fn generate_arrow_cursor(size: u32) -> RgbaImage {
 
                 // Let's just enable pixels
                 if x == 0 && y < 22 {
-                     color = Rgba([0, 0, 0, 255]); // Left edge
+                    color = Rgba([0, 0, 0, 255]); // Left edge
                 } else if x == y && x < 16 {
-                     color = Rgba([0, 0, 0, 255]); // Diagonal
+                    color = Rgba([0, 0, 0, 255]); // Diagonal
                 } else if y == 22 && x < 6 {
-                     color = Rgba([0, 0, 0, 255]); // Bottom
-                } else if 7*x + 15*y == 330 {
-                     // color = Rgba([0, 0, 0, 255]);
+                    color = Rgba([0, 0, 0, 255]); // Bottom
+                } else if 7 * x + 15 * y == 330 {
+                    // color = Rgba([0, 0, 0, 255]);
                 }
 
                 // Fill
-                if x > 0 && x < y && (7*x + 15*y < 320) {
+                if x > 0 && x < y && (7 * x + 15 * y < 320) {
                     color = Rgba([255, 255, 255, 255]);
                 }
 
                 // Border override
-                if x == 0 && y < 22 { color = Rgba([0,0,0,255]); }
-                else if (x as i32 - y as i32).abs() <= 1 && x < 16 { color = Rgba([0,0,0,255]); }
-                else if (7*x + 15*y > 310) && (7*x + 15*y < 340) && x < 16 && y > 10 { color = Rgba([0,0,0,255]); }
+                if x == 0 && y < 22 {
+                    color = Rgba([0, 0, 0, 255]);
+                } else if (x as i32 - y as i32).abs() <= 1 && x < 16 {
+                    color = Rgba([0, 0, 0, 255]);
+                } else if (7 * x + 15 * y > 310) && (7 * x + 15 * y < 340) && x < 16 && y > 10 {
+                    color = Rgba([0, 0, 0, 255]);
+                }
             }
 
             img.put_pixel(x, y, color);

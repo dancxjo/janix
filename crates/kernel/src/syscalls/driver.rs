@@ -1,7 +1,7 @@
+use crate::bridge::HardwareBridge;
 use crate::Kernel;
 use abi::wire::driver::{DriverEvent, DriverPublish};
 use abi::{SysRet, SYSCALL_DRIVER_PUBLISH, SYSCALL_DRIVER_WAIT};
-use crate::bridge::HardwareBridge;
 use postcard::from_bytes;
 
 pub fn sys_driver_wait<B: HardwareBridge>(
@@ -47,7 +47,10 @@ pub fn sys_driver_publish<B: HardwareBridge>(
             // We need to parse Thing.
             match postcard::from_bytes::<thing_models::Thing>(&thing_bytes) {
                 Ok(thing) => {
-                    kernel.bridge.log(alloc::format!("Kernel: SysDriverPublish Received Kind {}", thing.kind.0).as_str());
+                    kernel.bridge.log(
+                        alloc::format!("Kernel: SysDriverPublish Received Kind {}", thing.kind.0)
+                            .as_str(),
+                    );
 
                     // Check capability? "Require calling process has CAP_GRAPH_WRITE_WITNESS"
                     // V0: skip check for now or check dummy.

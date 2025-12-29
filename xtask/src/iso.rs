@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
+use image::ImageReader;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use image::ImageReader;
 
 pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // 1. Determine Target
@@ -208,11 +208,11 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
             let path = entry.path();
             if let Some(ext) = path.extension() {
                 if ext == "ani" || ext == "cur" {
-                     let name = path.file_name().unwrap().to_string_lossy();
-                     let dest_path = cursors_dst.join(name.as_ref());
-                     fs::copy(&path, &dest_path)?;
-                     included_modules.push(format!("cursors/{}", name));
-                     println!("    Included Cursor: {}", name);
+                    let name = path.file_name().unwrap().to_string_lossy();
+                    let dest_path = cursors_dst.join(name.as_ref());
+                    fs::copy(&path, &dest_path)?;
+                    included_modules.push(format!("cursors/{}", name));
+                    println!("    Included Cursor: {}", name);
                 }
             }
         }

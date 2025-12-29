@@ -80,7 +80,7 @@ impl Bridge {
 
         b.log("BRIDGE: ps2::init\n");
         kernel::drivers::ps2::init(&b);
-        
+
         // Serial was already initialized above
 
         // ACPI init moved to explicit call
@@ -290,10 +290,7 @@ impl HardwareBridge for Bridge {
     }
 
     fn resume_user_mode(&self, context: &Self::Context) -> ! {
-        crate::user::enter::resume_user_mode(
-            &context.0,
-            &kernel::sched::fpu::FpuContext::default(),
-        )
+        crate::user::enter::resume_user_mode(&context.0, &kernel::sched::fpu::FpuContext::default())
     }
 
     fn set_kernel_stack(&self, stack_top: u64) {
@@ -375,13 +372,21 @@ impl HardwareBridge for Bridge {
     type Context = ArchContext;
 
     fn log(&self, _msg: &str) {}
-    fn hhdm_offset(&self) -> u64 { 0 }
+    fn hhdm_offset(&self) -> u64 {
+        0
+    }
     fn port_outb(&self, _port: u16, _val: u8) {}
-    fn port_inb(&self, _port: u16) -> u8 { 0 }
+    fn port_inb(&self, _port: u16) -> u8 {
+        0
+    }
     fn port_outw(&self, _port: u16, _val: u16) {}
-    fn port_inw(&self, _port: u16) -> u16 { 0 }
+    fn port_inw(&self, _port: u16) -> u16 {
+        0
+    }
     fn port_outd(&self, _port: u16, _val: u32) {}
-    fn port_ind(&self, _port: u16) -> u32 { 0 }
+    fn port_ind(&self, _port: u16) -> u32 {
+        0
+    }
 
     fn ticks(&self) -> u64 {
         0

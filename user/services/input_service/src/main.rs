@@ -17,6 +17,8 @@ use models::builtins::ids::{
     THING_KEY_EVENT_STREAM_KIND,
     THING_KEY_EVENT_STREAM_SCHEMA,
     THING_TEXT_EVENT_STREAM_SCHEMA,
+    THING_BOOT_ROOT,
+    THING_OWNS_KIND,
 };
 use models::Thing;
 
@@ -99,6 +101,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         dropped: 0,
         events: Vec::new(),
     });
+    link_stream_to_root(&client, key_stream_id);
     
     // Create/Publish TextEventStream (3200)
     create_stream_body(&client, text_stream_id, THING_TEXT_EVENT_STREAM_KIND, THING_TEXT_EVENT_STREAM_SCHEMA, &TextEventStreamBody {
@@ -107,6 +110,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         dropped: 0,
         events: Vec::new(),
     });
+    link_stream_to_root(&client, text_stream_id);
     
     // Key Stream Body State
     let mut key_stream = KeyEventStreamBody {
@@ -211,4 +215,9 @@ fn update_stream<T: serde::Serialize>(client: &std::GraphClient, id: ThingId, sc
 
     let mut out_buf = [0u8; 1024]; 
     let _ = client.call_op(&GraphOp::UpdateThing { id, value: typed }, &mut out_buf);
+}
+
+fn link_stream_to_root(client: &std::GraphClient, stream_id: ThingId) {
+    let mut out_buf = [0u8; 256];
+    let _ = client.call_op(&GraphOp::AddLink { from: THING_BOOT_ROOT, to: stream_id, kind: THING_OWNS_KIND }, &mut out_buf);
 }

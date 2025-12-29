@@ -1,6 +1,6 @@
 use crate::limine::heap_init::HeapInitInfo;
 use bridge_aarch64::Bridge;
-use hw::HardwareBridge;
+use kernel::bridge::HardwareBridge;
 
 // Early print macro that doesn't rely on global logger or allocator
 #[macro_export]

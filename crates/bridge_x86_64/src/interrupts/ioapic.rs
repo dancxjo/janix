@@ -4,7 +4,9 @@ use kernel::bridge::HardwareBridge;
 static mut IOAPIC_ADDR: u64 = 0;
 
 // IOAPIC Registers
+#[allow(dead_code)]
 const IOREGSEL: u32 = 0x00;
+#[allow(dead_code)]
 const IOWIN: u32 = 0x10;
 
 // IOAPIC Redirection Table Base
@@ -16,6 +18,7 @@ pub unsafe fn init(addr: u64) {
     bridge.log("IOAPIC: Init\n");
 }
 
+#[allow(dead_code)]
 unsafe fn read(reg: u32) -> u32 {
     use core::sync::atomic::Ordering;
     let hhdm = crate::HHDM_OFFSET.load(Ordering::Relaxed);

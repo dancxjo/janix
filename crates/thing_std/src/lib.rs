@@ -1,5 +1,8 @@
 #![no_std]
 #![feature(alloc_error_handler)]
+#![allow(unused)]
+#![allow(static_mut_refs)]
+#![allow(unexpected_cfgs)]
 
 pub mod client;
 pub mod console;

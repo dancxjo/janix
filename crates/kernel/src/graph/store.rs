@@ -1,6 +1,5 @@
 use abi::ThingId;
-use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
+use alloc::collections::{BTreeMap, BTreeSet};
 use thing_models::Thing;
 
 #[derive(Debug)]
@@ -10,7 +9,12 @@ pub enum GraphError {
 
 pub struct GraphStore {
     things: BTreeMap<ThingId, Thing>,
-    kind_index: BTreeMap<ThingId, Vec<ThingId>>,
+    /// Index of Things by Kind.
+    /// Changed from Vec<ThingId> to BTreeSet<ThingId> (Bolt Optimization):
+    /// - Improves deletion complexity from O(N) to O(log N).
+    /// - Maintains sorted order for efficient pagination via range queries.
+    /// - Critical for performance as number of things (e.g., LogEntry) grows.
+    kind_index: BTreeMap<ThingId, BTreeSet<ThingId>>,
     next_id: u64,
 }
 
@@ -41,12 +45,8 @@ impl GraphStore {
         let kind = thing.kind;
 
         self.things.insert(id, thing);
-        self.kind_index.entry(kind).or_default().push(id);
-
-        let list = self.kind_index.get_mut(&kind).unwrap();
-        if list.len() > 1 && id < list[list.len() - 2] {
-            list.sort();
-        }
+        // BTreeSet handles sorting automatically on insertion.
+        self.kind_index.entry(kind).or_default().insert(id);
 
         Ok(())
     }
@@ -84,10 +84,8 @@ impl GraphStore {
     pub fn delete_thing(&mut self, id: ThingId) -> Result<(), ()> {
         if let Some(thing) = self.things.remove(&id) {
             // Remove from kind_index
-            if let Some(list) = self.kind_index.get_mut(&thing.kind) {
-                if let Ok(idx) = list.binary_search(&id) {
-                    list.remove(idx);
-                }
+            if let Some(set) = self.kind_index.get_mut(&thing.kind) {
+                set.remove(&id);
             }
             Ok(())
         } else {
@@ -112,16 +110,12 @@ impl GraphStore {
     }
 
     pub fn next_thing_of_kind(&self, kind: ThingId, start_after: ThingId) -> Option<ThingId> {
-        if let Some(list) = self.kind_index.get(&kind) {
-            let idx = match list.binary_search(&start_after) {
-                Ok(i) => i + 1,
-                Err(i) => i,
-            };
-            if idx < list.len() {
-                Some(list[idx])
-            } else {
-                None
-            }
+        if let Some(set) = self.kind_index.get(&kind) {
+            use core::ops::Bound::{Excluded, Unbounded};
+            // Efficiently find the first item strictly greater than start_after.
+            set.range((Excluded(start_after), Unbounded))
+                .next()
+                .copied()
         } else {
             None
         }

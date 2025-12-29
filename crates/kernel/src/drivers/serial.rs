@@ -10,6 +10,7 @@ use crate::bridge::HardwareBridge;
 
 pub const SERIAL_IO_PORT: u16 = 0x3F8;
 
+#[cfg(target_arch = "x86_64")]
 pub fn init(bridge: &impl HardwareBridge) {
     bridge.log("SERIAL: Initializing COM1...\n");
     // Standard COM1 initialization
@@ -38,6 +39,32 @@ pub fn init(bridge: &impl HardwareBridge) {
     bridge.port_outb(SERIAL_IO_PORT + 1, 0x00); // Disable interrupts for now (we poll for logs)
 
     bridge.log("SERIAL: COM1 Ready\n");
+}
+
+#[cfg(target_arch = "aarch64")]
+const PL011_BASE: u64 = 0x0900_0000;
+
+#[cfg(target_arch = "aarch64")]
+pub fn init(bridge: &impl HardwareBridge) {
+    bridge.log("SERIAL: Initializing PL011...\n");
+
+    let base = (PL011_BASE + bridge.hhdm_offset()) as *mut u32;
+
+    unsafe {
+        // Disable UART
+        core::ptr::write_volatile(base.add(0x30 / 4), 0);
+        // Clear interrupts
+        core::ptr::write_volatile(base.add(0x44 / 4), 0x7FF);
+        // Set baud to ~115200 for 24MHz clock: IBRD=13, FBRD=2
+        core::ptr::write_volatile(base.add(0x24 / 4), 13);
+        core::ptr::write_volatile(base.add(0x28 / 4), 2);
+        // 8 bits, FIFO enable, no parity
+        core::ptr::write_volatile(base.add(0x2C / 4), 0x70);
+        // Enable UART, TX, RX
+        core::ptr::write_volatile(base.add(0x30 / 4), 0x301);
+    }
+
+    bridge.log("SERIAL: PL011 Ready\n");
 }
 
 pub fn publish_serial_thing<B: HardwareBridge>(k: &mut crate::Kernel<B>) {

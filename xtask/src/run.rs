@@ -112,9 +112,8 @@ fn run_qemu_x86_64(
     cmd.arg("-m").arg("512");
     if !interactive {
         cmd.arg("-nographic");
-    } else {
-        cmd.arg("-serial").arg("stdio");
     }
+    cmd.arg("-serial").arg("stdio");
     cmd.arg("-no-reboot");
 
     if use_uefi {
@@ -196,21 +195,25 @@ fn run_qemu_aarch64(
     let mut cmd = Command::new("qemu-system-aarch64");
     cmd.arg("-M").arg("virt");
     cmd.arg("-cpu").arg("cortex-a72");
+    cmd.arg("-m").arg("2048"); // match trunk defaults (2G)
     if !interactive {
         cmd.arg("-nographic");
     } else {
         cmd.arg("-serial").arg("stdio");
     }
     cmd.arg("-no-reboot");
+    cmd.arg("-d").arg("int,cpu_reset");
+    cmd.arg("-D").arg("qemu.log");
 
     if use_uefi {
         cmd.arg("-bios").arg(&ovmf_code);
     }
-    cmd.arg("-drive").arg(format!(
-        "id=cd,file={},if=none,format=raw,readonly=on",
-        iso_path.display()
-    ));
-    cmd.arg("-device").arg("ide-cd,drive=cd,bus=ahci.0");
+
+    cmd.arg("-device").arg("ramfb");
+    cmd.arg("-device").arg("qemu-xhci");
+    cmd.arg("-device").arg("usb-kbd");
+    cmd.arg("-device").arg("usb-mouse");
+    cmd.arg("-cdrom").arg(&iso_path);
 
     // GDB setup
     if let Some(port) = gdb_port {

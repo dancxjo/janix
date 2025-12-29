@@ -16,3 +16,5 @@
 check_output.txt
 compile_errors.txt
 disk.img
+symbols.txt
+symbols_raw.txt

@@ -30,16 +30,35 @@ struct SdtHeader {
 }
 
 pub fn init(bridge: &impl HardwareBridge, rsdp_addr: u64, hhdm: u64) {
+    if rsdp_addr == 0 {
+        bridge.log("ACPI: No RSDP address provided. Skipping ACPI init.\n");
+        return;
+    }
+
     // 1. Verify RSDP
-    let rsdp = unsafe { &*(to_virt(rsdp_addr, hhdm).as_ptr() as *const Rsdp) };
+    // SAFETY: We blindly trust rsdp_addr is valid.
+    // Check if rsdp_addr is already virtual (Limine standard)
+    let rsdp_virt = if rsdp_addr >= hhdm {
+         rsdp_addr
+    } else {
+         to_virt(rsdp_addr, hhdm).as_ptr() as u64
+    };
+
+    let rsdp_ptr = rsdp_virt as *const Rsdp;
+    let rsdp = unsafe { core::ptr::read_unaligned(rsdp_ptr) };
+
     if &rsdp.signature != b"RSD PTR " {
         bridge.log("ACPI: Invalid RSDP signature\n");
         return;
     }
 
     // 2. Use XSDT if revision > 0, else RSDT
-    let xsdt_addr = if rsdp.revision > 0 && rsdp.xsdt_addr != 0 {
-        Some(rsdp.xsdt_addr)
+    // Use u64 for address checks to avoid unaligned reference hazards
+    let xsdt_addr_val = rsdp.xsdt_addr;
+    let rsdt_addr_val = rsdp.rsdt_addr;
+
+    let xsdt_addr = if rsdp.revision > 0 && xsdt_addr_val != 0 {
+        Some(xsdt_addr_val)
     } else {
         None
     };
@@ -47,24 +66,53 @@ pub fn init(bridge: &impl HardwareBridge, rsdp_addr: u64, hhdm: u64) {
     if let Some(addr) = xsdt_addr {
         unsafe { parse_xsdt(bridge, addr, hhdm); }
     } else {
-        unsafe { parse_rsdt(bridge, rsdp.rsdt_addr as u64, hhdm); }
+        unsafe { parse_rsdt(bridge, rsdt_addr_val as u64, hhdm); }
     }
 }
 
 pub fn to_virt(phys: u64, hhdm: u64) -> NonNull<u8> {
-    let virt = phys + hhdm;
+    let virt = phys.wrapping_add(hhdm);
     NonNull::new(virt as *mut u8).unwrap()
 }
 
-unsafe fn parse_xsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
-    bridge.log("ACPI: Parsing XSDT\n");
+unsafe fn print_hex(bridge: &impl HardwareBridge, val: u64) {
+    bridge.log("0x");
+    let mut printed = false;
+    for i in (0..16).rev() {
+        let digit = (val >> (i * 4)) & 0xF;
+        if digit != 0 || printed || i == 0 {
+            let c = if digit < 10 {
+                digit as u8 + b'0'
+            } else {
+                digit as u8 - 10 + b'a'
+            };
+            bridge.log(core::str::from_utf8_unchecked(&[c]));
+            printed = true;
+        }
+    }
+}
 
-    let header = &*(to_virt(phys, hhdm).as_ptr() as *const SdtHeader);
+unsafe fn parse_xsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
+    bridge.log("ACPI: Parsing XSDT at ");
+    print_hex(bridge, phys);
+    bridge.log("\n");
+
+    let ptr = to_virt(phys, hhdm).as_ptr();
+    let header = core::ptr::read_unaligned(ptr as *const SdtHeader);
+    
+    bridge.log("ACPI: XSDT Length: ");
+    print_hex(bridge, header.length as u64);
+    bridge.log("\n");
+
+    if (header.length as usize) < core::mem::size_of::<SdtHeader>() {
+        bridge.log("ACPI: Invalid XSDT length!\n");
+        return;
+    }
+
     let entries_len = header.length as usize - core::mem::size_of::<SdtHeader>();
     let entries_count = entries_len / 8;
 
-    let entries_ptr =
-        (to_virt(phys, hhdm).as_ptr() as *const u8).add(core::mem::size_of::<SdtHeader>()) as *const u64;
+    let entries_ptr = ptr.add(core::mem::size_of::<SdtHeader>()) as *const u64;
 
     for i in 0..entries_count {
         let entry_phys = core::ptr::read_unaligned(entries_ptr.add(i));
@@ -73,14 +121,26 @@ unsafe fn parse_xsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
 }
 
 unsafe fn parse_rsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
-    bridge.log("ACPI: Parsing RSDT\n");
+    bridge.log("ACPI: Parsing RSDT at ");
+    print_hex(bridge, phys);
+    bridge.log("\n");
 
-    let header = &*(to_virt(phys, hhdm).as_ptr() as *const SdtHeader);
+    let ptr = to_virt(phys, hhdm).as_ptr();
+    let header = core::ptr::read_unaligned(ptr as *const SdtHeader);
+
+    bridge.log("ACPI: RSDT Length: ");
+    print_hex(bridge, header.length as u64);
+    bridge.log("\n");
+
+    if (header.length as usize) < core::mem::size_of::<SdtHeader>() {
+        bridge.log("ACPI: Invalid RSDT length!\n");
+        return;
+    }
+
     let entries_len = header.length as usize - core::mem::size_of::<SdtHeader>();
     let entries_count = entries_len / 4;
 
-    let entries_ptr =
-        (to_virt(phys, hhdm).as_ptr() as *const u8).add(core::mem::size_of::<SdtHeader>()) as *const u32;
+    let entries_ptr = ptr.add(core::mem::size_of::<SdtHeader>()) as *const u32;
 
     for i in 0..entries_count {
         let entry_phys = core::ptr::read_unaligned(entries_ptr.add(i));
@@ -89,7 +149,14 @@ unsafe fn parse_rsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
 }
 
 unsafe fn check_table(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
-    let header = &*(to_virt(phys, hhdm).as_ptr() as *const SdtHeader);
+    let ptr = to_virt(phys, hhdm).as_ptr();
+    let header = core::ptr::read_unaligned(ptr as *const SdtHeader);
+    
+    // Log signature
+    bridge.log("ACPI: Table ");
+    bridge.log(core::str::from_utf8(&header.signature).unwrap_or("????"));
+    bridge.log("\n");
+
     match &header.signature {
         b"HPET" => {
             crate::drivers::hpet::init_table(bridge, phys, hhdm);

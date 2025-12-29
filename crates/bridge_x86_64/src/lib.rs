@@ -61,10 +61,14 @@ pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(target_arch = "x86_64")]
 impl Bridge {
-    pub unsafe fn init(rsdp_addr: Option<u64>, hhdm: u64) {
+    pub unsafe fn init(_rsdp_addr: Option<u64>, hhdm: u64) {
         HHDM_OFFSET.store(hhdm, Ordering::Relaxed);
         use kernel::bridge::HardwareBridge;
         let b = Bridge;
+
+        // Initialize Serial first to prevent logging hangs
+        kernel::drivers::serial::init(&b);
+
         b.log("BRIDGE: gdt::init\n");
         gdt::init();
         b.log("BRIDGE: idt::init\n");
@@ -76,9 +80,8 @@ impl Bridge {
 
         b.log("BRIDGE: ps2::init\n");
         kernel::drivers::ps2::init(&b);
-
-        b.log("BRIDGE: serial::init\n");
-        kernel::drivers::serial::init(&b);
+        
+        // Serial was already initialized above
 
         // ACPI init moved to explicit call
     }
@@ -142,6 +145,9 @@ impl HardwareBridge for Bridge {
     fn log(&self, msg: &str) {
         unsafe {
             for b in msg.bytes() {
+                // 0xE9 Debugcon (Fire and Forget)
+                asm!("out dx, al", in("dx") 0xE9u16, in("al") b);
+
                 // Wait for Transmit Holding Register Empty (Bit 5)
                 let mut status: u8;
                 loop {
@@ -300,7 +306,7 @@ impl HardwareBridge for Bridge {
     fn rtc_read(&self, out: &mut abi::wire::time::RtcSample) {
         unsafe {
             // Helper to read CMOS register
-            let mut read_reg = |reg: u8| -> u8 {
+            let read_reg = |reg: u8| -> u8 {
                 asm!("out dx, al", in("dx") 0x70u16, in("al") reg);
                 let val: u8;
                 asm!("in al, dx", out("al") val, in("dx") 0x71u16);

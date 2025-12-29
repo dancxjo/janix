@@ -82,6 +82,35 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     use x86_64::registers::control::Cr2;
     let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
+    // Debug dump of fault frame to help root-cause early boot faults
+    {
+        use kernel::bridge::HardwareBridge;
+        let bridge = crate::Bridge;
+        bridge.log("PAGE FAULT: rip=");
+        crate::print_hex(stack_frame.instruction_pointer.as_u64());
+        bridge.log(" cs=");
+        crate::print_hex(stack_frame.code_segment.0 as u64);
+        bridge.log(" rsp=");
+        crate::print_hex(stack_frame.stack_pointer.as_u64());
+        bridge.log(" ss=");
+        crate::print_hex(stack_frame.stack_segment.0 as u64);
+        bridge.log(" err=");
+        crate::print_hex(error_code.bits() as u64);
+        bridge.log(" cr2=");
+        crate::print_hex(cr2);
+        // Peek a couple of user stack slots to see call chain
+        let rsp_val = stack_frame.stack_pointer.as_u64();
+        if rsp_val != 0 {
+            let ptr = rsp_val as *const u64;
+            let slot0 = unsafe { core::ptr::read(ptr) };
+            let slot1 = unsafe { core::ptr::read(ptr.add(1)) };
+            bridge.log(" stack[0]=");
+            crate::print_hex(slot0);
+            bridge.log(" stack[1]=");
+            crate::print_hex(slot1);
+        }
+        bridge.log("\n");
+    }
     
     // Check hook first
     unsafe {
@@ -109,11 +138,49 @@ extern "x86-interrupt" fn page_fault_handler(
 #[unsafe(naked)]
 unsafe extern "C" fn timer_interrupt_naked() {
     naked_asm!(
-        // Check if we came from user mode (CS & 3 == 3)
+        // 1. Check if we came from user mode (CS & 3 == 3)
+        // CS is at [rsp + 8] (since HW pushed RIP, CS, RFLAGS)
         "test byte ptr [rsp + 8], 3",
-        "jz 1f",
-        "swapgs",
+        "jnz 1f",
+
+        // --- KERNEL MODE ENTRY ---
+        // Stack: [RIP, CS, RFLAGS]
+        // We need to expand to [RIP, CS, RFLAGS, RSP, SS]
+        // to match TrapFrame layout and prevent stack corruption when overwriting.
+        
+        "sub rsp, 16",          // Create gap
+        "push rax",             // Scratch
+        
+        // Correct Order: Low to High to avoid overwriting invalidating sources
+        // Source RIP is at +24. Dest is at +8.
+        "mov rax, [rsp + 24]",  // RIP
+        "mov [rsp + 8], rax",   // New RIP position
+        
+        // Source CS is at +32. Dest is at +16.
+        "mov rax, [rsp + 32]",  // CS
+        "mov [rsp + 16], rax",  // New CS position
+        
+        // Source RFLAGS is at +40. Dest is at +24.
+        "mov rax, [rsp + 40]",  // RFLAGS
+        "mov [rsp + 24], rax",  // New RFLAGS position
+        
+        // Synthesize SS and RSP
+        "mov rax, ss",
+        "mov [rsp + 40], rax",  // SS at top
+        
+        "lea rax, [rsp + 48]",  // Original RSP
+        "mov [rsp + 32], rax",  // RSP
+        
+        "pop rax",              // Restore scratch
+        "jmp 2f",
+
         "1:",
+        // --- USER MODE ENTRY ---
+        // Stack: [RIP, CS, RFLAGS, RSP, SS] (HW Pushed 5 items)
+        "swapgs",
+        
+        "2:",
+        // Common: Push GPRs (TrapFrame items 0..14)
         "push rax",
         "push rdi",
         "push rsi",
@@ -129,8 +196,12 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "push r13",
         "push r14",
         "push r15",
+        
+        // Call Handler
         "mov rdi, rsp",
         "call timer_interrupt_handler",
+        
+        // Restore GPRs
         "pop r15",
         "pop r14",
         "pop r13",
@@ -146,11 +217,62 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "pop rsi",
         "pop rdi",
         "pop rax",
-        // Check if we are returning to user mode (CS & 3 == 3)
+
+        // --- RETURN ---
+        // Check if returning to user mode (CS & 3 == 3)
+        // Stack: [RIP, CS, RFLAGS, RSP, SS]
         "test byte ptr [rsp + 8], 3",
-        "jz 2f",
+        "jz 3f",
+
+        // Return to User
         "swapgs",
-        "2:",
+        "iretq",
+
+        "3:",
+        // Return to Kernel: Must Pivot Stack if RSP changed!
+        
+        // 1. Save RAX (Scratch/Return Value)
+        "push rax", 
+        // Stack: [RAX, RIP, CS, RFLAGS, RSP, SS]
+        // Offsets: 0, 8, 16, 24, 32, 40
+        
+        // 2. Load Target RSP (from +32)
+        "mov rax, [rsp + 32]", 
+        "sub rax, 24",         // Reserve space for RIP, CS, RFLAGS
+        
+        // 3. Save RBX (Scratch)
+        "push rbx", 
+        // Stack: [RBX, RAX, RIP, CS, RFLAGS, RSP, SS]
+        // Offsets: 0, 8, 16, 24, 32, 40, 48
+        
+        // 4. Copy Interrupt Frame to Target Stack
+        // Copy RIP (Src: +16 -> Dest: [rax])
+        "mov rbx, [rsp + 16]",
+        "mov [rax], rbx",
+        
+        // Copy CS (Src: +24 -> Dest: [rax+8])
+        "mov rbx, [rsp + 24]",
+        "mov [rax + 8], rbx",
+        
+        // Copy RFLAGS (Src: +32 -> Dest: [rax+16])
+        "mov rbx, [rsp + 32]",
+        "mov [rax + 16], rbx",
+        
+        // 5. Restore Saved RAX to Target Stack (Src: +8 -> Dest: [rax-8])
+        // We want to simulate that RAX was pushed *before* the interrupt frame on the new stack?
+        // No, we just want to restore RAX register.
+        // We will do: mov rsp, rax; sub rsp, 8; pop rax.
+        // So we need to write RAX to [rax - 8].
+        "mov rbx, [rsp + 8]",
+        "mov [rax - 8], rbx",
+        
+        "pop rbx", // Restore RBX
+        
+        // 6. Pivot
+        "mov rsp, rax",
+        "sub rsp, 8", // Point to saved RAX
+        "pop rax",    // Restore RAX
+        
         "iretq",
     );
 }

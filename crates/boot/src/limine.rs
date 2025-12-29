@@ -28,17 +28,47 @@ pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
 #[unsafe(link_section = ".requests")]
 pub static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
-pub fn collect() -> BootInfo {
-    let hhdm_offset = HHDM_REQUEST.get_response()
+pub fn get_hhdm() -> u64 {
+    HHDM_REQUEST.get_response()
         .map(|r| r.offset())
-        .unwrap_or(0);
+        .unwrap_or(0)
+}
 
-    let rsdp_addr = RSDP_REQUEST.get_response()
-        .map(|r| r.address() as u64);
+pub fn get_rsdp() -> Option<u64> {
+    RSDP_REQUEST.get_response()
+        .map(|r| r.address() as u64)
+}
 
-    let cmdline = KERNEL_FILE_REQUEST.get_response()
+pub fn get_cmdline() -> Option<&'static str> {
+    KERNEL_FILE_REQUEST.get_response()
         .and_then(|r| r.file().string().to_str().ok())
-        .map(|s| s.to_string());
+}
+
+pub fn get_memory_map() -> impl Iterator<Item = MemoryRegion> {
+    MEMORY_MAP_REQUEST.get_response()
+        .into_iter()
+        .flat_map(|r| r.entries().iter())
+        .map(|e| MemoryRegion {
+            start: e.base,
+            end: e.base + e.length,
+            kind: match e.entry_type {
+                EntryType::USABLE => MemoryRegionKind::Usable,
+                EntryType::RESERVED => MemoryRegionKind::Reserved,
+                EntryType::ACPI_RECLAIMABLE => MemoryRegionKind::AcpiReclaimable,
+                EntryType::ACPI_NVS => MemoryRegionKind::AcpiNvs,
+                EntryType::BAD_MEMORY => MemoryRegionKind::BadMemory,
+                EntryType::BOOTLOADER_RECLAIMABLE => MemoryRegionKind::BootloaderReclaimable,
+                EntryType::EXECUTABLE_AND_MODULES => MemoryRegionKind::Kernel,
+                EntryType::FRAMEBUFFER => MemoryRegionKind::Framebuffer,
+                _ => MemoryRegionKind::Unknown,
+            },
+        })
+}
+
+pub fn collect() -> BootInfo {
+    let hhdm_offset = get_hhdm();
+    let rsdp_addr = get_rsdp();
+    let cmdline = get_cmdline().map(|s| s.to_string());
 
     let framebuffer = FRAMEBUFFER_REQUEST.get_response()
         .and_then(|r| r.framebuffers().next())
@@ -71,23 +101,7 @@ pub fn collect() -> BootInfo {
         }).collect())
         .unwrap_or_default();
 
-    let memory_map = MEMORY_MAP_REQUEST.get_response()
-        .map(|r| r.entries().iter().map(|e| MemoryRegion {
-            start: e.base,
-            end: e.base + e.length,
-            kind: match e.entry_type {
-                EntryType::USABLE => MemoryRegionKind::Usable,
-                EntryType::RESERVED => MemoryRegionKind::Reserved,
-                EntryType::ACPI_RECLAIMABLE => MemoryRegionKind::AcpiReclaimable,
-                EntryType::ACPI_NVS => MemoryRegionKind::AcpiNvs,
-                EntryType::BAD_MEMORY => MemoryRegionKind::BadMemory,
-                EntryType::BOOTLOADER_RECLAIMABLE => MemoryRegionKind::BootloaderReclaimable,
-                EntryType::EXECUTABLE_AND_MODULES => MemoryRegionKind::Kernel,
-                EntryType::FRAMEBUFFER => MemoryRegionKind::Framebuffer,
-                _ => MemoryRegionKind::Unknown,
-            },
-        }).collect())
-        .unwrap_or_default();
+    let memory_map = get_memory_map().collect();
 
     BootInfo {
         hhdm_offset,

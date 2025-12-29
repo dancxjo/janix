@@ -197,24 +197,23 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     }
 
     // Process Cursors
-    let cursors_src = root.join("assets/cursors");
+    let cursors_src = root.join("assets/cursors/plain");
     let cursors_dst = boot_dir.join("cursors");
     fs::create_dir_all(&cursors_dst)?;
 
     if cursors_src.exists() {
-        println!("==> Processing cursors...");
+        println!("==> Processing cursors (plain)...");
         for entry in fs::read_dir(&cursors_src)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "png") {
-                 let name = path.file_stem().unwrap().to_string_lossy();
-                 println!("    Converting {} to BMP...", name);
-
-                 let img = ImageReader::open(&path)?.decode()?;
-                 let dest_path = cursors_dst.join(format!("{}.bmp", name));
-
-                 img.save(&dest_path)?;
-                 included_modules.push(format!("cursors/{}.bmp", name));
+            if let Some(ext) = path.extension() {
+                if ext == "ani" || ext == "cur" {
+                     let name = path.file_name().unwrap().to_string_lossy();
+                     let dest_path = cursors_dst.join(name.as_ref());
+                     fs::copy(&path, &dest_path)?;
+                     included_modules.push(format!("cursors/{}", name));
+                     println!("    Included Cursor: {}", name);
+                }
             }
         }
     }
@@ -229,15 +228,17 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
 
     // Generate Module List
     let mut module_lines = String::new();
+
+    // Always include loaded.elf
+    module_lines.push_str("    module_path: boot():/boot/apps/loaded.elf\n");
+
+    /*
+    // Other apps/drivers if needed as modules (currently disabled, only loaded.elf is bootstrapped)
     for app in &user_apps {
-        if driver_names.contains(app) {
-            let line = format!("    module_path: boot():/boot/drivers/{}.elf\n", app);
-            module_lines.push_str(&line);
-        } else {
-            let line = format!("    module_path: boot():/boot/apps/{}.elf\n", app);
-            module_lines.push_str(&line);
-        }
+        if app == &"loaded" { continue; }
+        // ...
     }
+    */
 
     for mod_path in &included_modules {
         let line = format!("    module_path: boot():/boot/{}\n", mod_path);

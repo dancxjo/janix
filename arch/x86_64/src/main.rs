@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
+#![allow(unused)]
 
 extern crate alloc;
 
@@ -46,7 +47,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         bridge.log(loc.file());
         bridge.log("\n");
         bridge.log("Line: ");
-        print_hex(&bridge, loc.line() as u64);
+        print_dec(&bridge, loc.line() as u64);
         bridge.log("\n");
     }
 
@@ -112,6 +113,36 @@ fn print_hex(bridge: &Bridge, val: u64) {
             bridge.log(core::str::from_utf8(&[c]).unwrap());
             printed = true;
         }
+    }
+}
+
+fn print_dec(bridge: &Bridge, val: u64) {
+    use kernel::bridge::HardwareBridge;
+    if val == 0 {
+        bridge.log("0");
+        return;
+    }
+
+    let mut div = 1_000_000_000_000_000_000; // 10^18
+    // Check if we need 10^19 (u64 max is roughly 1.8e19)
+    if val >= 10_000_000_000_000_000_000 {
+        div = 10_000_000_000_000_000_000;
+    }
+
+    // Skip leading zeros
+    while div > val {
+        div /= 10;
+    }
+
+    let mut rest = val;
+    while div > 0 {
+        let digit = rest / div;
+        rest %= div;
+        div /= 10;
+        
+        // Same unsafe/unwrap pattern as print_hex
+        let c = (digit as u8) + b'0';
+        bridge.log(core::str::from_utf8(&[c]).unwrap());
     }
 }
 
@@ -182,7 +213,7 @@ unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
         let phys_l4 = l4_frame.start_address();
         let virt_l4 = self.hhdm_offset + phys_l4.as_u64();
         let page_table_ptr = virt_l4.as_mut_ptr();
-        let mut mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
+        let mapper = unsafe { OffsetPageTable::new(&mut *page_table_ptr, self.hhdm_offset) };
         let virt_addr = VirtAddr::new(ptr as u64);
         mapper
             .translate_addr(virt_addr)
@@ -218,11 +249,7 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
                         0
                     }
                 } else {
-                    if now_raw >= last {
-                        now_raw - last
-                    } else {
-                        0
-                    }
+                     if now_raw >= last { now_raw - last } else { 0 }
                 };
 
                 kernel::time::tick(&mut k.graph, delta);
@@ -244,10 +271,34 @@ fn scheduler_tick(frame: &mut bridge_x86_64::interrupts::trap::TrapFrame) {
 
             k.scheduler.tick(&k.bridge, &mut ctx);
 
+            k.bridge.log("TICK: Out RIP=");
+            print_hex(&k.bridge, ctx.0.0[15]);
+            k.bridge.log("\n");
+
             unsafe {
                 let ctx_ptr = ctx.0.0.as_ptr();
                 let frame_ptr = frame as *mut _ as *mut u64;
+                
+                k.bridge.log("Frame Ptr: ");
+                print_hex(&k.bridge, frame_ptr as u64);
+                k.bridge.log("\n");
+
                 core::ptr::copy_nonoverlapping(ctx_ptr, frame_ptr, 20);
+                
+                let read_back = (*frame).rip;
+                k.bridge.log("Frame RIP Readback: ");
+                print_hex(&k.bridge, read_back);
+                k.bridge.log("\n");
+
+                let rsp_val = (*frame).rsp;
+                k.bridge.log("Frame RSP: ");
+                print_hex(&k.bridge, rsp_val);
+                k.bridge.log("\n");
+
+                let cs_val = (*frame).cs;
+                k.bridge.log("Frame CS: ");
+                print_hex(&k.bridge, cs_val);
+                k.bridge.log("\n");
             }
         }
     }
@@ -370,17 +421,15 @@ fn syscall_hook(
 
                  let hhdm_offset_u64 = k.bridge.hhdm_offset();
                  
-                 unsafe {
-                     process_file(
-                         k, 
-                         None, 
-                         name,
-                         data,
-                         0, 
-                         None, // Not force, rely on defaults
-                         hhdm_offset_u64
-                     );
-                 }
+                 process_file(
+                     k, 
+                     None, 
+                     name,
+                     data,
+                     0, 
+                     None, // Not force, rely on defaults
+                     hhdm_offset_u64
+                 );
                  return 0;
              }
          }
@@ -398,24 +447,26 @@ fn syscall_hook(
 }
 
 #[cfg(not(target_os = "thingos"))]
+#[allow(unused)]
 fn main() {}
 
 
 #[cfg(target_os = "thingos")]
 #[no_mangle]
 pub extern "C" fn rust_main() -> ! {
-    let boot_info = boot::collect();
-    let hhdm_offset_u64 = boot_info.hhdm_offset;
-    let rsdp_addr = boot_info.rsdp_addr.unwrap_or(0);
+    // 1. Zero-Allocation Early Boot Setup
+    let hhdm_offset_u64 = boot::get_hhdm();
+    let rsdp_addr = boot::get_rsdp().unwrap_or(0);
 
     unsafe {
         Bridge::init(Some(rsdp_addr), hhdm_offset_u64);
         Bridge.log("BOOT: Bridge Online\n");
 
-        // Heap Selection
+        // Heap Selection using Iterator (No Vec Allocation)
         let heap_size = heap::KERNEL_HEAP_SIZE_BYTES as u64;
         let mut heap_region = None;
-        for entry in &boot_info.memory_map {
+        
+        for entry in boot::get_memory_map() {
              if entry.kind == boot::bootinfo::MemoryRegionKind::Usable {
                  let region_end = entry.end;
                  if let Some(raw_start) = region_end.checked_sub(heap_size) {
@@ -440,6 +491,9 @@ pub extern "C" fn rust_main() -> ! {
             size
         });
     }
+
+    // 2. Safe to Allocate now (Vec, String, etc.)
+    let boot_info = boot::collect();
 
     let mut k = Kernel::new(Bridge);
 
@@ -687,7 +741,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
     // We proceed directly to PCI Scan.
     
     unsafe { u_sleep(100); }
-    let pci_devices = unsafe { kernel::drivers::pci::scan_pci(&Bridge) };
+    let pci_devices = kernel::drivers::pci::scan_pci(&Bridge);
     
     let mut boot_args: Option<ScanArgs> = None;
     
@@ -701,7 +755,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                      let use_qemu = USE_QEMU_DRIVER.load(Ordering::Relaxed);
 
                      if use_qemu {
-                         let info = unsafe { kernel::drivers::video::qemu_vga::init(k, &pci_devices) };
+                         let info = kernel::drivers::video::qemu_vga::init(k, &pci_devices);
                          unsafe { FRAMEBUFFER_INFO = info; }
                      }
                      
@@ -762,7 +816,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                                 
                                 // Init and Check Ports
                                 // We use bridge::ahci::init which now returns u32 active ports.
-                                let ports = unsafe { kernel::drivers::ahci::init(dev, k) };
+                                let ports = kernel::drivers::ahci::init(dev, k);
                                 if ports > 0 {
                                      let _virt_base = hhdm_offset_u64 + base;
                                      // Find first
@@ -786,7 +840,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                 }
                 break;
             }
-            unsafe { core::hint::spin_loop(); } 
+            core::hint::spin_loop(); 
         }
     }
     
@@ -801,24 +855,20 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                  }
                  break; 
              }
-             unsafe { core::hint::spin_loop(); }
+             core::hint::spin_loop();
          }
          
          scan_boot_fs_task(alloc::boxed::Box::into_raw(alloc::boxed::Box::new(args)) as u64);
     } else {
-        unsafe {
-             use kernel::bridge::HardwareBridge;
-             Bridge.log("INIT: No AHCI boot device found.\n");
-        }
+         use kernel::bridge::HardwareBridge;
+         Bridge.log("INIT: No AHCI boot device found.\n");
     }
     
-    unsafe {
-         use kernel::bridge::HardwareBridge;
-         Bridge.log("INIT: Complete. Parking.\n");
-    }
+    use kernel::bridge::HardwareBridge;
+    Bridge.log("INIT: Complete. Parking.\n");
     
     loop {
-         unsafe { core::hint::spin_loop(); }
+         core::hint::spin_loop();
     }
 }
 

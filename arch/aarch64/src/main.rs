@@ -12,7 +12,9 @@ mod heap;
 #[cfg(target_os = "thingos")]
 mod limine;
 
+use boot;
 use bridge_aarch64::Bridge;
+use kernel::bridge::HardwareBridge;
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicBool, Ordering};
 use kernel::Kernel;
@@ -129,14 +131,21 @@ pub extern "C" fn _start() -> ! {
 pub extern "C" fn rust_main() -> ! {
     #[cfg(target_os = "thingos")]
     unsafe {
+        use kernel::bridge::HardwareBridge;
         // -1. Init Bridge (Exception Vectors) EARLY
 
         // 1. Get HHDM offset (Before Heap!)
         // Limine maps this as Normal memory. We will remap as Device later.
-        if let Some(resp) = limine::requests::HHDM_REQUEST.get_response() {
+        if let Some(resp) = boot::limine::HHDM_REQUEST.get_response() {
             let offset = resp.offset();
             // 1. Init Bridge (and set HHDM)
             Bridge::init(offset);
+            
+            // Force mask interrupts (Limit/UEFI might have left them on, and init might unmask)
+            Bridge.irq_disable();
+            
+            // Force mask interrupts (Limit/UEFI might have left them on, and init might unmask)
+            Bridge.irq_disable();
 
             // 2. Init Heap (Needed for paging)
             let info =
@@ -153,7 +162,7 @@ pub extern "C" fn rust_main() -> ! {
             paging::map_device_region(0x08010000, 4096); // CPU
 
             // Now safe to init Platform (GIC + Timer)
-            Bridge::init_platform(offset);
+            // Bridge::init_platform(offset); // Disabled for Slice A to avoid IRQ storm
 
             // 4. Update logic UART base (Physical 0x09000000 + Offset)
             bridge_aarch64::set_uart_base(0x09000000 + offset);
@@ -168,13 +177,68 @@ pub extern "C" fn rust_main() -> ! {
             core::ptr::write_volatile(0x0900_0000 as *mut u8, 0x46); // 'F'
             loop {}
         }
-
-        bootlog!("Booting ThingOS (aarch64)...");
-        bootlog!("Init finished, jumping to kernel");
     }
+    
+    // 2. Collect Boot Info (Allocates)
+    let boot_info = boot::collect();
+    
+    unsafe {
+        use kernel::bridge::HardwareBridge;
+        let bridge = Bridge;
+        bridge.log("\n--- BootInfo (AArch64) ---\n");
+        bridge.log("Cmdline: ");
+        if let Some(cmd) = &boot_info.cmdline {
+             bridge.log(cmd);
+        } else {
+             bridge.log("None");
+        }
+        bridge.log("\n");
 
-    let mut k = Kernel::new(Bridge);
-    k.boot(None);
+        // Map ACPI / Reserved Regions
+        use paging::{map_region, PTE_VALID, PTE_PAGE, PTE_AF, PTE_SH_INNER, PTE_AP_RW_EL1, PTE_UXN, PTE_PXN};
+        
+        // Normal Memory Flags (No PTE_ATTR_DEVICE)
+        let normal_flags = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL1 | PTE_UXN | PTE_PXN;
+
+        for entry in &boot_info.memory_map {
+             use boot::bootinfo::MemoryRegionKind;
+             // We only care about ensuring ACPI tables are mapped. Limine usually maps them?
+             // But validatable parity means we map them explicitly if outside HHDM?
+             // Actually Limine HHDM covers all *RAM*?
+             // ACPI might be in RAM or Reserved.
+             // We'll iterate and map ACPI regions if they exist.
+             
+             match entry.kind {
+                 MemoryRegionKind::AcpiReclaimable | MemoryRegionKind::AcpiNvs => {
+                      bridge.log("Mapping ACPI Region: ");
+                      print_hex(&bridge, entry.start);
+                      bridge.log("\n");
+                      map_region(entry.start, (entry.end - entry.start) as usize, normal_flags);
+                 }
+                 _ => {}
+             }
+        }
+        
+        // List Modules
+        bridge.log("Modules:\n");
+        for module in &boot_info.modules {
+             bridge.log(" - ");
+             bridge.log(&module.path);
+             bridge.log("\n");
+        }
+        
+        spawn_loaded_stub(&boot_info);
+    }
+    
+    // Skip full kernel boot for now, just idle loop to confirm log parity
+    // let mut k = Kernel::new(Bridge);
+    // k.boot(None);
+    
+    unsafe {
+        use kernel::bridge::HardwareBridge;
+        Bridge.log("AArch64 Catch-up Slice A Complete. Idling.\n");
+        loop { Bridge.idle(); }
+    }
 }
 
 fn print_hex(bridge: &Bridge, val: u64) {
@@ -208,4 +272,18 @@ fn print_dec(bridge: &Bridge, val: u64) {
         }
     }
     bridge.log(core::str::from_utf8(&buf[i..]).unwrap());
+}
+
+unsafe fn spawn_loaded_stub(boot_info: &boot::BootInfo) {
+    use kernel::bridge::HardwareBridge;
+    let bridge = Bridge;
+    for module in &boot_info.modules {
+        if module.path.ends_with("loaded.elf") {
+            bridge.log("Slice A Success: Found loaded.elf at ");
+             print_hex(&bridge, module.start);
+             bridge.log("\n");
+             return;
+        }
+    }
+    bridge.log("WARNING: loaded.elf not found in modules!\n");
 }

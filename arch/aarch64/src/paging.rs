@@ -1,5 +1,5 @@
 use alloc::alloc::{alloc, Layout};
-use bridge_aarch64::paging::{
+pub use bridge_aarch64::paging::{
     PTE_AF, PTE_AP_RW_EL1, PTE_ATTR_DEVICE, PTE_PAGE, PTE_PXN, PTE_SH_INNER, PTE_TABLE, PTE_UXN,
     PTE_VALID,
 };
@@ -63,6 +63,18 @@ unsafe fn flush_tlb() {
 }
 
 pub unsafe fn map_device_region(phys: u64, size: usize) {
+    let device_flags = PTE_VALID
+        | PTE_PAGE
+        | PTE_AF
+        | PTE_SH_INNER
+        | PTE_AP_RW_EL1
+        | PTE_UXN
+        | PTE_PXN
+        | PTE_ATTR_DEVICE;
+    map_region(phys, size, device_flags);
+}
+
+pub unsafe fn map_region(phys: u64, size: usize, flags: u64) {
     let hhdm_offset = HHDM_OFFSET;
     let start = phys;
     let end = phys + size as u64;
@@ -83,14 +95,14 @@ pub unsafe fn map_device_region(phys: u64, size: usize) {
     let mut current_addr = start_page;
     while current_addr < end_page {
         let virt = current_addr + hhdm_offset;
-        map_page(root_table_phys, current_addr, virt, levels);
+        map_page(root_table_phys, current_addr, virt, levels, flags);
         current_addr += 4096;
     }
 
     flush_tlb();
 }
 
-unsafe fn map_page(root_table_phys: u64, phys: u64, virt: u64, levels: usize) {
+unsafe fn map_page(root_table_phys: u64, phys: u64, virt: u64, levels: usize, flags: u64) {
     let indexes = [
         (virt >> 39) & 0x1FF, // L0
         (virt >> 30) & 0x1FF, // L1
@@ -126,15 +138,7 @@ unsafe fn map_page(root_table_phys: u64, phys: u64, virt: u64, levels: usize) {
     let index = indexes[3] as usize;
     let table_ptr = (table_phys + HHDM_OFFSET) as *mut u64;
 
-    let entry = phys
-        | PTE_VALID
-        | PTE_PAGE
-        | PTE_AF
-        | PTE_SH_INNER
-        | PTE_AP_RW_EL1
-        | PTE_UXN
-        | PTE_PXN
-        | PTE_ATTR_DEVICE;
+    let entry = phys | flags;
 
     table_ptr.add(index).write(entry);
 }

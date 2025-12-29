@@ -740,12 +740,18 @@ dependencies = [
 name = "kernel_aarch64"
 version = "0.2.0"
 dependencies = [
+ "abi",
+ "boot",
  "bridge_aarch64",
  "hw",
+ "infer",
  "kernel",
  "limine",
  "linked_list_allocator",
+ "models",
+ "postcard",
  "spin 0.10.0",
+ "xmas-elf",
 ]
 
 [[package]]

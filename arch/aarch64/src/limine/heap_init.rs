@@ -10,12 +10,12 @@ pub struct HeapInitInfo {
 }
 
 pub unsafe fn init_heap_from_limine(heap_size: u64) -> HeapInitInfo {
-    let memmap = super::requests::MEMORY_MAP_REQUEST
+    let memmap = boot::limine::MEMORY_MAP_REQUEST
         .get_response()
         .expect("Limine MemoryMap request failed or unimplemented")
         .entries();
 
-    let hhdm_offset = super::requests::HHDM_REQUEST
+    let hhdm_offset = boot::limine::HHDM_REQUEST
         .get_response()
         .expect("Limine HHDM request failed or unimplemented")
         .offset();

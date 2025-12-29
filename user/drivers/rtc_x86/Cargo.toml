@@ -1,0 +1,15 @@
+[package]
+name = "rtc_x86"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thing_std = { path = "../../crates/thing_std" }
+abi = { path = "../../../crates/abi" }
+models = { path = "../../../crates/models" }
+postcard = { workspace = true }
+serde = { workspace = true }
+
+[package.metadata.boot]
+role = "driver"
+args = []

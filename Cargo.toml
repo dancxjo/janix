@@ -1,45 +1,39 @@
 [workspace]
 resolver = "2"
 members = [
-    "boot",
-    "kernel",
-    "abi",
-    "thing_os",
-    "user/clock",
-    "user/compositor",
-    "user/compositor_api",
-    "user/window_demo",
-    "libs/hal",
-    "user/drivers/usb",
-    "user/drivers/pci",
-    "thing_macros",
-    "thing_models",
-    "arch",
-    "user/init",
-    "user/drivers/framebuffer",
-    "user/drivers/ps2_keyboard",
-    "user/drivers/ps2_mouse",
-    "user/geographer",
+"xtask",
 
-    "user/hello_world", "tools/icon-gen",
-    "user/debug_alloc",
-    "user/taskman",
-    "user/debug_input_logger",
-    "user/debug_input_events",
-    "user/init_debug",
-    "user/watch_test",
-    "smoke_tests",
+"crates/abi",
+"crates/models",
+"crates/kernel",
+"crates/thing_std",
+
+"crates/bridge_x86_64",
+"crates/bridge_aarch64",
+"crates/boot",
+
+
+"arch/x86_64",
+"arch/aarch64",
+
+"tools/smoke_tests",
+"tools/bdd",
 ]
 
+
 [workspace.package]
-version = "0.1.0"
-edition = "2024"
+edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-limine = "0.5"
+anyhow = "1"
+serde = { version = "=1.0.196", default-features = false, features = ["derive"] }
+postcard = { version = "1" }
 
 [profile.dev]
 panic = "abort"
 
 [profile.release]
 panic = "abort"
+codegen-units = 1
+lto = true

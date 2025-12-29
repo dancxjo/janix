@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/thing_std",
+  "apps/clock",
+  "apps/graph_dump",
+  "drivers/ps2_keyboard",
+  "apps/keylog",
+  "apps/typed_test",
+  "apps/syscall_crud_smoke",
+  "apps/sleep_smoke",
+  "drivers/rtc_x86",
+  "drivers/rtc_aarch64",
+  "drivers/ps2_mouse",
+  "apps/sleep_accuracy_smoke", "apps/log_viewer",
+  "apps/ls_boot", "apps/cat_boot",
+  "apps/fb_smoke",
+  "services/input_service",
+  "apps/compositor",
+  "apps/loaded",
+]
+
+
+[workspace.dependencies]
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

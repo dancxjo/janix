@@ -1,0 +1,15 @@
+[package]
+name = "thing_macros"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full", "extra-traits"] }
+quote = "1"
+proc-macro2 = "1"
+postcard = { workspace = true }
+abi = { path = "../abi" }

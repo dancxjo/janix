@@ -1,0 +1,13 @@
+[package]
+name = "compositor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thing_std = { path = "../../crates/thing_std" }
+thing_models = { package = "models", path = "../../../crates/models" }
+serde = { workspace = true, features = ["derive"] }
+postcard = { workspace = true }
+abi = { path = "../../../crates/abi" }
+fontdue = { version = "0.9.2", default-features = false }
+spin = { version = "0.9.8", default-features = false, features = ["once", "mutex", "spin_mutex"] }

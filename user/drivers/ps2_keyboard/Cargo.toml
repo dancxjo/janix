@@ -1,18 +1,11 @@
 [package]
-name = "ps2_keyboard_driver"
-version.workspace = true
-edition.workspace = true
-
-[lib]
-name = "ps2_keyboard_driver"
-path = "src/lib.rs"
+name = "ps2_keyboard"
+version = "0.1.0"
+edition = "2021"
 
 [dependencies]
-
-thing_os = { path = "../../../thing_os" }
-thing_models = { path = "../../../thing_models" }
-abi = { path = "../../../abi" }
-
-[dev-dependencies]
-kernel = { path = "../../../kernel" }
-abi = { path = "../../../abi" }
+abi = { path = "../../../crates/abi" }
+models = { path = "../../../crates/models" }
+postcard = { workspace = true, features = ["alloc"] }
+serde = { workspace = true, features = ["derive"] }
+thing_std = { path = "../../crates/thing_std" }

@@ -111,11 +111,12 @@ pub fn handle_graph_op<B: HardwareBridge>(
             let mut count_decoded = 0;
             let mut count_matched = 0;
 
-            for thing in kernel.graph.list() {
+            // Optimization: iterate only links using the kind index
+            for thing in kernel.graph.iter_kind(link_kind) {
                 count_all += 1;
-                if thing.kind == link_kind {
-                    count_links += 1;
-                    if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
+                // if thing.kind == link_kind { // Implicit in iter_kind
+                count_links += 1;
+                if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
                         if let Ok(link) = postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes) {
                             count_decoded += 1;
                             let f = link.from;
@@ -147,7 +148,7 @@ pub fn handle_graph_op<B: HardwareBridge>(
                     } else {
                         kernel.bridge.log("Kernel: Failed to decode TypedBytes from ThingBody");
                     }
-                }
+                // } // End if thing.kind == link_kind
             }
             kernel.bridge.log(
                 alloc::format!(

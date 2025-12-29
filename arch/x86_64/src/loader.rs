@@ -365,12 +365,11 @@ fn apply_relative_relocations(
                         hhdm_offset,
                     );
                     
-                    if applied < 5 {
-                         Bridge.log(alloc::format!("loader: Reloc R_X86_64_RELATIVE: off={:#x} addend={:#x} val={:#x}\n", r_offset, r_addend, value).as_str());
-                    }
+
                     applied += 1;
                 } else {
                      Bridge.log(alloc::format!("loader: Unknown Relocation Type: {}\n", r_type).as_str());
+                     panic!("loader: Unknown Relocation Type: {}", r_type);
                 }
             }
 
@@ -1313,11 +1312,48 @@ pub fn process_file(
                 &k.bridge,
                 name,
                 current_app_base + img.entry_point,
-                stack_top_virt.as_u64(),
-                heap_virt_start,
-                heap_virt_start,
-                heap_virt_end,
+                stack_top_virt.as_u64() - 8, // Adjust for Canary
+                heap_virt_start, // Arg passed to main (heap_start)
+                heap_virt_start, // Process heap start
+                heap_virt_end,   // Process heap end
             );
+            
+            // Stack Canary: Write return address to top of stack to debug RIP=0
+            unsafe {
+                let stack_ptr = stack_top_virt.as_mut_ptr::<u64>();
+                // Write at -1 (top of stack, since stack grows down and RSP points here?)
+                // Actually, if we set RSP = stack_top_virt, then a RET will pop [RSP].
+                // So we write to stack_ptr.
+                // Wait, make sure we mapped it! stack_top_virt is raw_stack_top which is stack_bottom + size.
+                // containing_address(stack_top_virt) might be the *next* page if aligned?
+                // stack_top_virt is exclusive end?
+                // raw_stack_top = raw_stack_bottom + size.
+                // If size is 4096, bottom=0, top=4096.
+                // Byte at 4095 is last byte.
+                // SP usually points to *used* or *empty*? x86 SP points to Last Pushed (Valid).
+                // So if we start with empty stack, SP should be Top. PUSH decrements then writes.
+                // RET reads then increments.
+                // So if we RET immediately, we read [SP]. So SP must point to a valid value.
+                // We need to write to `stack_top_virt`? No, that's just outside.
+                // We should assume SP = stack_top_virt.
+                // But for RET to work, SP must point to data. So we need to predecrement?
+                // Or does `spawn` set RSP to `stack_top - 8`?
+                // In `spawn`: `thread.regs.rsp = stack`.
+                // If we want `ret` to consume 0xDEADBEEF, we must place it at address `stack`.
+                // And `stack` MUST be mapped.
+                // `stack_top_virt` is the boundary. The byte at `stack_top_virt` is NOT mapped likely (next page).
+                // The stack grows down from there.
+                // So we want RSP to be `stack_top_virt - 8`.
+                // And we write 0xDEADBEEF at `stack_top_virt - 8`.
+                // Then `spawn` should take `stack_top_virt - 8`.
+                // Currently `spawn` takes `stack_top_virt.as_u64()`.
+                // Let's write canary at `stack_top_virt - 8` and pass `stack_top_virt - 8` to spawn.
+                
+                let canary_addr = stack_top_virt - 8u64;
+                let canary_ptr = canary_addr.as_mut_ptr::<u64>();
+                *canary_ptr = 0xDEAD_BEEF_DEAD_BEEF;
+                Bridge.log("loader: Wrote Stack Canary 0xDEAD_BEEF_DEAD_BEEF\n");
+            }
 
             // Create Process Thing (Simplified)
             let p_body = ProcessBody {

@@ -44,7 +44,16 @@ fn resolve_to_bytespace<B: HardwareBridge>(kernel: &Kernel<B>, id: ThingId) -> R
     }
 
     if thing.kind == File::KIND {
-        // Find BACKED_BY or HAS_MODULE
+        // Find HAS_BYTES (Direct)
+        for link in kernel.graph.iter_kind(LinkBody::KIND) {
+             if let Ok(lb) = postcard::from_bytes::<LinkBody>(&link.payload) {
+                 if lb.from == id && lb.predicate == HAS_BYTES {
+                     return Ok(lb.to);
+                 }
+             }
+        }
+
+        // Fallback: BACKED_BY or HAS_MODULE (Legacy / Indirect)
         for link in kernel.graph.iter_kind(LinkBody::KIND) {
              if let Ok(lb) = postcard::from_bytes::<LinkBody>(&link.payload) {
                  if lb.from == id && (lb.predicate == BACKED_BY || lb.predicate == HAS_MODULE) {

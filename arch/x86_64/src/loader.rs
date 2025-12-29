@@ -5,6 +5,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use abi::{ThingId, SymbolId};
+use abi::symbols::sym;
 
 use crate::KERNEL;
 use bridge_x86_64::Bridge;
@@ -532,6 +533,7 @@ pub fn process_file(
     let mtype = classify_bytes(data);
     let role_enum = get_module_role(name, &mtype);
 
+    // 1. Create File Thing
     let file_payload = File { name: String::from(name), size: data.len() as u64 };
     let file_bytes = postcard::to_allocvec(&file_payload).unwrap();
     let file_id = k.graph.create_thing(File::KIND, file_bytes);
@@ -542,6 +544,7 @@ pub fn process_file(
         k.graph.create_thing(LinkBody::KIND, l_bytes);
     }
 
+    // 2. Create ByteSpace
     let backing_id = k.bytespaces.create_from_slice(data, 1).unwrap();
 
     let bs_payload = ByteSpace { len: data.len() as u64, flags: 1, backing: abi::symbols::sym("module") };
@@ -549,57 +552,63 @@ pub fn process_file(
     let bs_thing_id = k.graph.create_thing(ByteSpace::KIND, bs_bytes);
     k.bytespaces.bind_thing(bs_thing_id, backing_id);
 
-    // Create Region View
-    let reg_payload = Region { offset: 0, len: data.len() as u64 };
-    let reg_bytes = postcard::to_allocvec(&reg_payload).unwrap();
-    let reg_id = k.graph.create_thing(Region::KIND, reg_bytes);
-
-    let l_reg_bs = LinkBody { from: reg_id, to: bs_thing_id, predicate: IN };
-    let l_reg_bs_bytes = postcard::to_allocvec(&l_reg_bs).unwrap();
-    k.graph.create_thing(LinkBody::KIND, l_reg_bs_bytes);
-
     unsafe {
         let s = alloc::format!("BYTESPACE: created id={:?} len={} backing=module\n", bs_thing_id, data.len());
         Bridge.log(&s);
     }
 
-    let meta_id = match mtype {
-        ModuleType::Elf | ModuleType::Unknown | ModuleType::Other(_) => {
-            let m_payload = Module {
-                name: abi::symbols::sym(name),
-                image_len: data.len() as u64,
-                image_kind: abi::symbols::sym("elf"),
-                entry: 0
-            };
-            let m_bytes = postcard::to_allocvec(&m_payload).unwrap();
-            k.graph.create_thing(Module::KIND, m_bytes)
-        },
-        ModuleType::Bmp | ModuleType::Png => {
-             let b_payload = Bitmap { width: 0, height: 0, format: abi::symbols::sym("unknown") };
-             let b_bytes = postcard::to_allocvec(&b_payload).unwrap();
-             k.graph.create_thing(Bitmap::KIND, b_bytes)
-        },
-        ModuleType::Ttf | ModuleType::Otf | ModuleType::Woff | ModuleType::Woff2 | ModuleType::Psf1 | ModuleType::Psf2 => {
-             let f_payload = Font { family: abi::symbols::sym("unknown"), style: abi::symbols::sym("regular"), weight: 400 };
-             let f_bytes = postcard::to_allocvec(&f_payload).unwrap();
-             k.graph.create_thing(Font::KIND, f_bytes)
-        }
+    // Link File -> ByteSpace
+    let l_file_bs = LinkBody { from: file_id, to: bs_thing_id, predicate: HAS_BYTES };
+    let l_file_bs_bytes = postcard::to_allocvec(&l_file_bs).unwrap();
+    k.graph.create_thing(LinkBody::KIND, l_file_bs_bytes);
+
+    // 3. Create Meta Thing
+    let (kind_sym, mime_sym, abi_sym, type_sym) = match mtype {
+        ModuleType::Elf => (sym("module.elf"), sym("application/x-elf"), Some(sym("thingos.user")), Some(sym("app"))),
+        ModuleType::Bmp => (sym("asset.image"), sym("image/bmp"), None, None),
+        ModuleType::Png => (sym("asset.image"), sym("image/png"), None, None),
+        ModuleType::Ttf => (sym("asset.font"), sym("font/ttf"), None, None),
+        ModuleType::Otf => (sym("asset.font"), sym("font/otf"), None, None),
+        ModuleType::Woff => (sym("asset.font"), sym("font/woff"), None, None),
+        ModuleType::Woff2 => (sym("asset.font"), sym("font/woff2"), None, None),
+        ModuleType::Psf1 => (sym("asset.font"), sym("font/psf1"), None, None),
+        ModuleType::Psf2 => (sym("asset.font"), sym("font/psf2"), None, None),
+        _ => (sym("unknown"), sym("application/octet-stream"), None, None),
     };
 
-    // Link Metadata -> Region (HAS_VIEW)
-    let l_mod_reg = LinkBody { from: meta_id, to: reg_id, predicate: HAS_VIEW };
-    let l_mod_reg_bytes = postcard::to_allocvec(&l_mod_reg).unwrap();
-    k.graph.create_thing(LinkBody::KIND, l_mod_reg_bytes);
+    // Parse ELF if needed
+    let (entry_vaddr, preferred_base) = if matches!(mtype, ModuleType::Elf) {
+         if let Ok(elf) = ElfFile::new(data) {
+             (Some(elf.header.pt2.entry_point()), None)
+         } else { (None, None) }
+    } else { (None, None) };
 
-    // Keep HAS_BYTES for compatibility
-    let l = LinkBody { from: meta_id, to: bs_thing_id, predicate: HAS_BYTES };
-    let l_bytes = postcard::to_allocvec(&l).unwrap();
-    k.graph.create_thing(LinkBody::KIND, l_bytes);
+    let meta = Meta {
+        kind: kind_sym,
+        mime: mime_sym,
+        size_bytes: data.len() as u64,
+        sha256: None,
+        entry_vaddr,
+        preferred_base,
+        abi: abi_sym,
+        module_type: type_sym,
+    };
 
-    let l_fm = LinkBody { from: file_id, to: meta_id, predicate: HAS_MODULE };
-    let l_fm_bytes = postcard::to_allocvec(&l_fm).unwrap();
-    k.graph.create_thing(LinkBody::KIND, l_fm_bytes);
+    let meta_bytes = postcard::to_allocvec(&meta).unwrap();
+    let meta_id = k.graph.create_thing(Meta::KIND, meta_bytes);
 
+    // Link File -> Meta
+    let l_file_meta = LinkBody { from: file_id, to: meta_id, predicate: HAS_META };
+    let l_file_meta_bytes = postcard::to_allocvec(&l_file_meta).unwrap();
+    k.graph.create_thing(LinkBody::KIND, l_file_meta_bytes);
+
+    // Link BootRoot -> File (Discovery)
+    use models::builtins::ids::THING_BOOT_ROOT;
+    let l_root_file = LinkBody { from: THING_BOOT_ROOT, to: file_id, predicate: HAS_MODULE };
+    let l_root_file_bytes = postcard::to_allocvec(&l_root_file).unwrap();
+    k.graph.create_thing(LinkBody::KIND, l_root_file_bytes);
+
+    // 4. Spawn Logic
     let should_spawn = if let Some(s) = spawn_override { s } else {
          match role_enum {
              ModuleRole::App | ModuleRole::Driver => true,
@@ -622,10 +631,6 @@ pub fn process_file(
              let page_table_ptr = virt.as_mut_ptr();
              OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
         };
-
-        // ... (rest of spawn logic identical to previous overwrite)
-        // I must ensure I copy it or it gets truncated.
-        // I will copy it.
 
         Bridge.log("loader: calling load_elf\n");
         let loaded = load_elf(data, current_app_base, |vaddr, segment| {
@@ -658,6 +663,7 @@ pub fn process_file(
                 heap_start + 128 * 1024 * 1024,
             );
             
+            // Create Process Thing and BootProgram Thing
             let p_payload = Process { pid: k.scheduler.processes.len() as u64, name: abi::symbols::sym(name), state: 0 };
             let p_bytes = postcard::to_allocvec(&p_payload).unwrap();
             let pid = k.graph.create_thing(Process::KIND, p_bytes);

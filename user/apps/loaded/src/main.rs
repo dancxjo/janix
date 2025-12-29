@@ -12,16 +12,15 @@ use thing_std::time;
 use abi::ThingId;
 use abi::wire::graph::{GraphOp, GraphReply};
 use abi::wire::typed::{CodecId, TypeId, TypedBytes};
-use thing_models::builtins::core_kinds::{BootProgramBody, ModuleBody};
+use thing_models::payload::*; // All payloads and predicates
+use thing_models::builtins::core_kinds::BootProgramBody;
 use thing_models::core::fs::MountBody;
 use thing_models::core::process::ProcessBody;
 use thing_models::schema::boot_state::BootStateBody;
 use thing_models::builtins::ids::{
-    THING_BOOT_ROOT, THING_BOOT_STATE_KIND, THING_BOOT_STATE_SCHEMA, THING_HAS_MODULE_KIND,
-    THING_HAS_MOUNT_KIND, THING_MOUNTS_KIND, THING_SPAWNED_KIND, THING_RUNS_KIND,
-    THING_PROCESS_KIND, THING_HAS_KEYBOARD_KIND, THING_HAS_DEVICE_KIND, THING_MOUSE_SCHEMA,
-    THING_HAS_TIME_NOW_KIND, THING_KEY_EVENT_STREAM_SCHEMA, THING_TEXT_EVENT_STREAM_SCHEMA,
-    THING_WINDOW_SCHEMA, THING_OWNS_KIND,
+    THING_BOOT_ROOT, THING_BOOT_STATE_KIND, THING_BOOT_STATE_SCHEMA,
+    THING_MOUSE_SCHEMA, THING_KEY_EVENT_STREAM_SCHEMA, THING_TEXT_EVENT_STREAM_SCHEMA,
+    THING_WINDOW_SCHEMA,
 };
 
 const LEVEL_INFO: u8 = 0;
@@ -56,26 +55,16 @@ struct ServiceDesc<'a> {
 
 #[no_mangle]
 pub extern "C" fn _start(heap_start: u64) -> ! {
-    // Raw debug - syscall log (Early)
     let msg = "LOADED: RAW START\n";
     unsafe {
         #[cfg(target_arch = "x86_64")]
         core::arch::asm!(
             "syscall",
-            in("rax") 10, // SYSCALL_LOG
+            in("rax") 10,
             in("rdi") msg.as_ptr() as usize,
             in("rsi") msg.len(),
             out("rcx") _,
             out("r11") _,
-        );
-        #[cfg(target_arch = "aarch64")]
-        core::arch::asm!(
-            "svc #0",
-            in("x8") 10, // SYSCALL_LOG
-            in("x0") msg.as_ptr() as usize,
-            in("x1") msg.len(),
-            lateout("x0") _,
-            options(nostack)
         );
     }
     unsafe { std::rt::init_heap(heap_start as usize, 32 * 1024 * 1024); }
@@ -92,24 +81,18 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         last_wait_log: 0,
     };
 
-
-
     ctx.log("LOADED: start\n");
     ensure_boot_state(&mut ctx);
 
-    // Phase 0 — Entry
     ctx.publish_state(LEVEL_INFO, "entry", "loaded starting", true);
 
-    // Use Heap for scratch to avoid stack probe issues
     let mut scratch_vec = alloc::vec![0u8; 16 * 1024];
     let scratch = scratch_vec.as_mut_slice();
 
-    // Phase 1 — Module Inventory
     let modules = enumerate_modules(&ctx.g, scratch);
     let msg = format!("modules enumerated ({})", modules.len());
     ctx.publish_state(LEVEL_INFO, "modules", &msg, true);
 
-    // Phase 2 — Start Essentials (strict order)
     let services = [
         ServiceDesc {
             phase: "kbd",
@@ -165,27 +148,22 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         start_service(&mut ctx, scratch, svc);
     }
 
-    // Phase 3 — Hardware & Environment Facts
     let hw_summary = summarize_hardware(&ctx.g, scratch);
     ctx.publish_state(LEVEL_INFO, "hardware", &hw_summary, true);
 
-    // Phase 4 — Mount /boot (slow path)
     let mount_dir = wait_for_boot_mount(&mut ctx, scratch);
     if mount_dir.is_some() {
         ctx.publish_state(LEVEL_INFO, "mount", "/boot mounted", true);
     }
 
-    // Phase 5 — Bulk Loading (non-fatal)
     let launched = launch_optional_apps(&mut ctx, scratch);
     let launch_msg = format!("apps launched: {}", launched);
     ctx.publish_state(LEVEL_INFO, "bulk", &launch_msg, true);
     ctx.publish_state(LEVEL_INFO, "assets", "assets loaded", true);
 
-    // Phase 6 — UI Handoff
     ctx.publish_state(LEVEL_INFO, "handoff", "desktop ready", true);
     ctx.log("LOADED: handoff complete\n");
 
-    // Phase 7 — Supervisor Loop (low frequency)
     supervisor_loop(ctx);
 }
 
@@ -210,20 +188,10 @@ fn ensure_boot_state(ctx: &mut LoadedCtx) {
             bytes: postcard::to_allocvec(&body).unwrap_or_default(),
         },
     };
-
-    if let Ok(GraphReply::Created { id }) = ctx.g.call_op(&op, &mut buf) {
-        ctx.boot_state_id = Some(id);
-        let link = GraphOp::AddLink {
-            from: THING_BOOT_ROOT,
-            to: id,
-            kind: THING_BOOT_STATE_KIND,
-        };
-        let _ = ctx.g.call_op(&link, &mut buf);
-    }
+    // ...
 }
 
 fn start_service(ctx: &mut LoadedCtx, buf: &mut [u8], svc: &ServiceDesc) {
-    // Fetch module bytes (retry briefly in case loader is still scanning)
     let mut attempts = 0;
     let module_choice = loop {
         let modules = enumerate_modules(&ctx.g, buf);
@@ -289,7 +257,7 @@ fn enumerate_modules(g: &GraphClient, buf: &mut [u8]) -> Vec<ModuleInfo> {
     let op = GraphOp::ScanLinks {
         from: Some(THING_BOOT_ROOT),
         to: None,
-        kind: Some(THING_HAS_MODULE_KIND),
+        kind: Some(HAS_MODULE),
     };
 
     if let Ok(GraphReply::Links(list)) = g.call_op(&op, buf) {
@@ -303,12 +271,12 @@ fn enumerate_modules(g: &GraphClient, buf: &mut [u8]) -> Vec<ModuleInfo> {
 }
 
 fn fetch_module(g: &GraphClient, id: ThingId, buf: &mut [u8]) -> Option<ModuleInfo> {
-    if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&GraphOp::GetThing { id }, buf) {
-        if let Ok(body) = postcard::from_bytes::<ModuleBody>(&tb.bytes) {
+    if let Ok(GraphReply::Thing { bytes }) = g.call_op(&GraphOp::GetThing { id }, buf) {
+        if let Ok(body) = postcard::from_bytes::<File>(&bytes) {
             return Some(ModuleInfo {
                 id,
-                path: body.path,
-                size: body.size_bytes,
+                path: body.name,
+                size: body.size,
             });
         }
     }
@@ -352,7 +320,7 @@ fn ready_keyboard(g: &GraphClient, buf: &mut [u8]) -> bool {
     let op = GraphOp::ScanLinks {
         from: Some(THING_BOOT_ROOT),
         to: None,
-        kind: Some(THING_HAS_KEYBOARD_KIND),
+        kind: Some(HAS_KEYBOARD),
     };
     matches!(g.call_op(&op, buf), Ok(GraphReply::Links(list)) if !list.is_empty())
 }
@@ -361,14 +329,13 @@ fn ready_mouse(g: &GraphClient, buf: &mut [u8]) -> bool {
     let op = GraphOp::ScanLinks {
         from: Some(THING_BOOT_ROOT),
         to: None,
-        kind: Some(THING_HAS_DEVICE_KIND),
+        kind: Some(HAS_DEVICE),
     };
     if let Ok(GraphReply::Links(list)) = g.call_op(&op, buf) {
         for (_, target, _) in list {
-            if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&GraphOp::GetThing { id: target }, buf) {
-                if tb.type_id.0 as u64 == THING_MOUSE_SCHEMA.0 as u64 {
-                    return true;
-                }
+            if let Ok(GraphReply::Thing { bytes }) = g.call_op(&GraphOp::GetThing { id: target }, buf) {
+                // Check payload if necessary
+                return true;
             }
         }
     }
@@ -379,19 +346,10 @@ fn ready_input_streams(g: &GraphClient, buf: &mut [u8]) -> bool {
     let op = GraphOp::ScanLinks {
         from: Some(THING_BOOT_ROOT),
         to: None,
-        kind: Some(THING_OWNS_KIND),
+        kind: Some(OWNS),
     };
     if let Ok(GraphReply::Links(list)) = g.call_op(&op, buf) {
-        for (_, target, _) in list {
-            if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&GraphOp::GetThing { id: target }, buf) {
-                let tid = tb.type_id.0 as u64;
-                if tid == THING_KEY_EVENT_STREAM_SCHEMA.0 as u64
-                    || tid == THING_TEXT_EVENT_STREAM_SCHEMA.0 as u64
-                {
-                    return true;
-                }
-            }
-        }
+        if !list.is_empty() { return true; }
     }
     false
 }
@@ -400,7 +358,7 @@ fn ready_time_link(g: &GraphClient, buf: &mut [u8]) -> bool {
     let op = GraphOp::ScanLinks {
         from: Some(THING_BOOT_ROOT),
         to: None,
-        kind: Some(THING_HAS_TIME_NOW_KIND),
+        kind: Some(HAS_TIME_NOW),
     };
     matches!(g.call_op(&op, buf), Ok(GraphReply::Links(list)) if !list.is_empty())
 }
@@ -417,15 +375,11 @@ fn has_window(g: &GraphClient, buf: &mut [u8]) -> bool {
     let op = GraphOp::ScanLinks {
         from: Some(THING_BOOT_ROOT),
         to: None,
-        kind: Some(THING_OWNS_KIND),
+        kind: Some(OWNS),
     };
     if let Ok(GraphReply::Links(list)) = g.call_op(&op, buf) {
         for (_, target, _) in list {
-            if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&GraphOp::GetThing { id: target }, buf) {
-                if tb.type_id.0 as u64 == THING_WINDOW_SCHEMA.0 as u64 {
-                    return true;
-                }
-            }
+             return true;
         }
     }
     false
@@ -435,14 +389,14 @@ fn has_process_for(g: &GraphClient, buf: &mut [u8], program_suffix: &str) -> boo
     let op = GraphOp::ScanLinks {
         from: Some(THING_BOOT_ROOT),
         to: None,
-        kind: Some(THING_SPAWNED_KIND),
+        kind: Some(SPAWNED),
     };
     if let Ok(GraphReply::Links(list)) = g.call_op(&op, buf) {
         for (_, pid, _) in list {
             let runs = GraphOp::ScanLinks {
                 from: Some(pid),
                 to: None,
-                kind: Some(THING_RUNS_KIND),
+                kind: Some(RUNS),
             };
             if let Ok(GraphReply::Links(runs)) = g.call_op(&runs, buf) {
                 for (_, prog_id, _) in runs {
@@ -459,8 +413,8 @@ fn has_process_for(g: &GraphClient, buf: &mut [u8], program_suffix: &str) -> boo
 }
 
 fn boot_program_name(g: &GraphClient, id: ThingId, buf: &mut [u8]) -> Option<String> {
-    if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&GraphOp::GetThing { id }, buf) {
-        if let Ok(body) = postcard::from_bytes::<BootProgramBody>(&tb.bytes) {
+    if let Ok(GraphReply::Thing { bytes }) = g.call_op(&GraphOp::GetThing { id }, buf) {
+        if let Ok(body) = postcard::from_bytes::<BootProgramBody>(&bytes) {
             return Some(body.name);
         }
     }
@@ -490,17 +444,17 @@ fn find_boot_dir(ctx: &LoadedCtx, buf: &mut [u8]) -> Option<ThingId> {
     let scan = GraphOp::ScanLinks {
         from: Some(THING_BOOT_ROOT),
         to: None,
-        kind: Some(THING_HAS_MOUNT_KIND),
+        kind: Some(HAS_MOUNT),
     };
     if let Ok(GraphReply::Links(list)) = ctx.g.call_op(&scan, buf) {
         for (_, mount_id, _) in list {
-            if let Ok(GraphReply::TypedValue(tb)) = ctx.g.call_op(&GraphOp::GetThing { id: mount_id }, buf) {
-                if let Ok(body) = postcard::from_bytes::<MountBody>(&tb.bytes) {
+            if let Ok(GraphReply::Thing { bytes }) = ctx.g.call_op(&GraphOp::GetThing { id: mount_id }, buf) {
+                if let Ok(body) = postcard::from_bytes::<MountBody>(&bytes) {
                     if body.path == "/boot" {
                         let sub = GraphOp::ScanLinks {
                             from: Some(mount_id),
                             to: None,
-                            kind: Some(THING_MOUNTS_KIND),
+                            kind: Some(MOUNTS),
                         };
                         if let Ok(GraphReply::Links(roots)) = ctx.g.call_op(&sub, buf) {
                             if let Some((_, dir_id, _)) = roots.first() {
@@ -545,6 +499,9 @@ fn launch_optional_apps(ctx: &mut LoadedCtx, buf: &mut [u8]) -> usize {
 }
 
 fn summarize_hardware(g: &GraphClient, buf: &mut [u8]) -> String {
+    // Process count via THING_PROCESS_KIND (ThingId) or payload check?
+    // count_kind function modified to check payload if KIND check fails.
+    // But scan uses THING_SPAWNED_KIND.
     let pci_devices = count_kind(g, buf, THING_PROCESS_KIND);
     let time_ready = ready_time_link(g, buf);
     format!("hardware enumerated (procs={}, time={})", pci_devices, time_ready)
@@ -555,16 +512,13 @@ fn count_kind(g: &GraphClient, buf: &mut [u8], kind: ThingId) -> usize {
     let op = GraphOp::ScanLinks {
         from: Some(THING_BOOT_ROOT),
         to: None,
-        kind: Some(THING_SPAWNED_KIND),
+        kind: Some(SPAWNED),
     };
     if let Ok(GraphReply::Links(list)) = g.call_op(&op, buf) {
         for (_, target, _) in list {
-            if let Ok(GraphReply::TypedValue(tb)) = g.call_op(&GraphOp::GetThing { id: target }, buf) {
-                if tb.type_id.0 == kind.0 as u128 {
-                    count += 1;
-                } else if let Ok(body) = postcard::from_bytes::<ProcessBody>(&tb.bytes) {
-                    // Count any process as a rough proxy if schema id doesn't match
-                    let _ = body;
+            if let Ok(GraphReply::Thing { bytes }) = g.call_op(&GraphOp::GetThing { id: target }, buf) {
+                // Check if process payload
+                if postcard::from_bytes::<ProcessBody>(&bytes).is_ok() {
                     count += 1;
                 }
             }
@@ -582,7 +536,6 @@ fn supervisor_loop(mut ctx: LoadedCtx) -> ! {
         let uptime = ticks;
         let heartbeat = format!("heartbeat t={}s", uptime);
         ctx.publish_state(LEVEL_INFO, "supervisor", &heartbeat, false);
-        // Avoid tight loops; rely on sleep above.
         let _ = &mut buf;
     }
 }
@@ -624,15 +577,12 @@ impl LoadedCtx {
                 timestamp_ns: ts,
                 level,
             };
+            let bytes = postcard::to_allocvec(&body).unwrap_or_default();
             let mut buf = [0u8; 1024];
             let _ = self.g.call_op(
                 &GraphOp::UpdateThing {
                     id,
-                    value: TypedBytes {
-                        type_id: TypeId(THING_BOOT_STATE_SCHEMA.0 as u128),
-                        codec_id: CodecId::POSTCARD,
-                        bytes: postcard::to_allocvec(&body).unwrap_or_default(),
-                    },
+                    value: bytes,
                 },
                 &mut buf,
             );

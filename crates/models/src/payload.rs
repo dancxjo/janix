@@ -18,6 +18,19 @@ impl ThingPayload for ByteSpace {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Meta {
+    pub kind: SymbolId,
+    pub mime: SymbolId,
+    pub size_bytes: u64,
+    pub sha256: Option<[u8; 32]>,
+    pub entry_vaddr: Option<u64>,
+    pub preferred_base: Option<u64>,
+    pub abi: Option<SymbolId>,
+    pub module_type: Option<SymbolId>,
+}
+impl ThingPayload for Meta { const KIND: SymbolId = sym("core.meta"); }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Region {
     pub offset: u64,
     pub len: u64,
@@ -130,6 +143,7 @@ pub const BACKED_BY: SymbolId = sym("core.backed_by");
 pub const IN: SymbolId = sym("core.in");
 pub const DATA: SymbolId = sym("core.data");
 pub const HAS_VIEW: SymbolId = sym("core.has_view");
+pub const HAS_META: SymbolId = sym("core.has_meta");
 
 // Other Predicates (migrated from ThingId)
 pub const HAS_ENTRY: SymbolId = sym("core.has_entry");
@@ -138,3 +152,8 @@ pub const HAS_MOUNT: SymbolId = sym("core.has_mount");
 pub const SPAWNED: SymbolId = sym("core.spawned");
 pub const RUNS: SymbolId = sym("core.runs");
 pub const HAS_MODULE: SymbolId = sym("core.has_module");
+
+pub const HAS_KEYBOARD: SymbolId = sym("core.has_keyboard");
+pub const HAS_DEVICE: SymbolId = sym("core.has_device");
+pub const OWNS: SymbolId = sym("core.owns");
+pub const HAS_TIME_NOW: SymbolId = sym("core.has_time_now");

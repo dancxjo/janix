@@ -36,3 +36,23 @@ pub trait HardwareBridge {
     fn map_new_user_page(&self, virt_addr: u64, flags: u64) -> Result<(), ()>;
     fn map_user_mmio(&self, virt_addr: u64, phys_addr: u64, flags: u64) -> Result<(), ()>;
 }
+
+pub trait ProviderBridge {
+    fn monotonic_now(&self) -> u64;
+    fn irq_disable(&self);
+    fn irq_enable(&self);
+}
+
+impl<T: HardwareBridge> ProviderBridge for T {
+    fn monotonic_now(&self) -> u64 {
+        HardwareBridge::monotonic_now(self)
+    }
+
+    fn irq_disable(&self) {
+        HardwareBridge::irq_disable(self)
+    }
+
+    fn irq_enable(&self) {
+        HardwareBridge::irq_enable(self)
+    }
+}

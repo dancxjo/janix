@@ -4,74 +4,102 @@ use abi::wire::driver::DriverEvent;
 use irq_ring::IrqRing;
 use spin::Mutex;
 
-static GLOBAL_KBD_RING: Mutex<Option<IrqRing>> = Mutex::new(None);
-static GLOBAL_MOUSE_RING: Mutex<Option<IrqRing>> = Mutex::new(None);
+pub struct Ps2Controller {
+    kbd_ring: IrqRing,
+    mouse_ring: IrqRing,
+}
+
+impl Ps2Controller {
+    pub fn new() -> Self {
+        Self {
+            kbd_ring: IrqRing::new(),
+            mouse_ring: IrqRing::new(),
+        }
+    }
+
+    fn push_kbd(&mut self, scancode: u8) {
+        self.kbd_ring.push(DriverEvent::Ps2Scancode { scancode });
+    }
+
+    fn push_mouse(&mut self, byte: u8) {
+        self.mouse_ring.push(DriverEvent::Ps2MouseByte { byte });
+    }
+
+    fn pop_kbd(&mut self) -> Option<DriverEvent> {
+        self.kbd_ring.pop()
+    }
+
+    fn pop_mouse(&mut self) -> Option<DriverEvent> {
+        self.mouse_ring.pop()
+    }
+}
+
+static PS2_CONTROLLER: Mutex<Option<Ps2Controller>> = Mutex::new(None);
 
 pub fn init() {
-    *GLOBAL_KBD_RING.lock() = Some(IrqRing::new());
-    *GLOBAL_MOUSE_RING.lock() = Some(IrqRing::new());
+    *PS2_CONTROLLER.lock() = Some(Ps2Controller::new());
 }
 
 // Called by arch trap handler
 pub fn on_ps2_scancode(scancode: u8) {
-    if let Some(ref mut ring) = *GLOBAL_KBD_RING.lock() {
-        ring.push(DriverEvent::Ps2Scancode { scancode });
+    if let Some(ref mut ctrl) = *PS2_CONTROLLER.lock() {
+        ctrl.push_kbd(scancode);
     }
 }
 
 pub fn on_ps2_mouse(byte: u8) {
-    if let Some(ref mut ring) = *GLOBAL_MOUSE_RING.lock() {
-        ring.push(DriverEvent::Ps2MouseByte { byte });
+    if let Some(ref mut ctrl) = *PS2_CONTROLLER.lock() {
+        ctrl.push_mouse(byte);
     }
 }
 
-pub fn try_pop_keyboard<B: crate::bridge::HardwareBridge>(bridge: &B) -> Option<u8> {
+pub fn try_pop_keyboard<B: crate::bridge::ProviderBridge + ?Sized>(bridge: &B) -> Option<u8> {
     bridge.irq_disable();
-    let result = if let Some(ref mut ring) = *GLOBAL_KBD_RING.lock() {
-        match ring.pop() {
+    let result = PS2_CONTROLLER
+        .lock()
+        .as_mut()
+        .and_then(|ctrl| match ctrl.pop_kbd() {
             Some(DriverEvent::Ps2Scancode { scancode }) => Some(scancode),
             _ => None,
-        }
-    } else {
-        None
-    };
+        });
     bridge.irq_enable();
     result
 }
 
-pub fn try_pop_mouse<B: crate::bridge::HardwareBridge>(bridge: &B) -> Option<u8> {
+pub fn try_pop_mouse<B: crate::bridge::ProviderBridge + ?Sized>(bridge: &B) -> Option<u8> {
     bridge.irq_disable();
-    let result = if let Some(ref mut ring) = *GLOBAL_MOUSE_RING.lock() {
-        match ring.pop() {
+    let result = PS2_CONTROLLER
+        .lock()
+        .as_mut()
+        .and_then(|ctrl| match ctrl.pop_mouse() {
             Some(DriverEvent::Ps2MouseByte { byte }) => Some(byte),
             _ => None,
-        }
-    } else {
-        None
-    };
+        });
     bridge.irq_enable();
     result
 }
 
-pub fn try_pop_event<B: crate::bridge::HardwareBridge>(bridge: &B) -> Option<DriverEvent> {
+pub fn try_pop_event<B: crate::bridge::ProviderBridge + ?Sized>(bridge: &B) -> Option<DriverEvent> {
     bridge.irq_disable();
     // Check Keyboard first
-    let kbd = if let Some(ref mut ring) = *GLOBAL_KBD_RING.lock() {
-        ring.pop()
-    } else {
-        None
-    };
+    let kbd = PS2_CONTROLLER
+        .lock()
+        .as_mut()
+        .and_then(|ctrl| ctrl.pop_kbd());
     if kbd.is_some() {
         bridge.irq_enable();
         return kbd;
     }
 
     // Check Mouse
-    let mouse = if let Some(ref mut ring) = *GLOBAL_MOUSE_RING.lock() {
-        ring.pop()
-    } else {
-        None
-    };
+    let mouse = PS2_CONTROLLER
+        .lock()
+        .as_mut()
+        .and_then(|ctrl| ctrl.pop_mouse());
     bridge.irq_enable();
     mouse
+}
+
+pub fn controller_mutex() -> &'static Mutex<Option<Ps2Controller>> {
+    &PS2_CONTROLLER
 }

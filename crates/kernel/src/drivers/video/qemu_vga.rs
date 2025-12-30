@@ -80,6 +80,16 @@ pub fn init<B: HardwareBridge>(
 
     // We publish the Thing.
 
+    let fb_info = abi::wire::machine::FbGetInfoResp {
+        width: width as u32,
+        height: height as u32,
+        stride: (width * (bpp / 8)) as u32,
+        format: 32,
+        addr: 0x1_0000_0000,
+        size: fb_size,
+    };
+    crate::drivers::limine_fb::init_with_info(k, fb_info);
+
     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
     use thing_models::builtins::core_kinds::DisplayFramebufferBody;
     use thing_models::builtins::ids::THING_LINK_KIND;

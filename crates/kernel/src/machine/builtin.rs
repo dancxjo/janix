@@ -1,5 +1,5 @@
 use crate::bridge::HardwareBridge;
-use super::{Machine, MachineError};
+use super::{MachineError, ProviderMeta};
 use abi::wire::machine::*;
 use alloc::vec::Vec;
 
@@ -12,7 +12,6 @@ pub enum BuiltinEndpoint {
 }
 
 pub fn dispatch<B: HardwareBridge>(
-    machine: &Machine,
     bridge: &B,
     ep: BuiltinEndpoint,
     op: u32,
@@ -20,9 +19,18 @@ pub fn dispatch<B: HardwareBridge>(
 ) -> Result<Vec<u8>, MachineError> {
     match ep {
         BuiltinEndpoint::Rtc => dispatch_rtc(bridge, op, req),
-        BuiltinEndpoint::Framebuffer => dispatch_fb(machine, op, req),
+        BuiltinEndpoint::Framebuffer => dispatch_fb(op, req),
         BuiltinEndpoint::Keyboard => dispatch_kbd(bridge, op, req),
         BuiltinEndpoint::Mouse => dispatch_mouse(bridge, op, req),
+    }
+}
+
+pub fn meta_for(_ep: BuiltinEndpoint) -> ProviderMeta {
+    use abi::symbols::sym;
+    ProviderMeta {
+        name: sym("driver.builtin"),
+        kind: sym("sys.driver"),
+        lane: sym("direct"),
     }
 }
 
@@ -36,10 +44,9 @@ fn dispatch_rtc<B: HardwareBridge>(bridge: &B, op: u32, _req: &[u8]) -> Result<V
     }
 }
 
-fn dispatch_fb(machine: &Machine, op: u32, _req: &[u8]) -> Result<Vec<u8>, MachineError> {
+fn dispatch_fb(op: u32, _req: &[u8]) -> Result<Vec<u8>, MachineError> {
     if op == OP_FB_GET_INFO {
-        let info = machine.fb_info.as_ref().ok_or(MachineError::NotFound)?;
-        postcard::to_allocvec(info).map_err(|_| MachineError::InternalError)
+        Err(MachineError::NotFound)
     } else if op == OP_FB_PRESENT {
         let resp = FbPresentResp {};
         postcard::to_allocvec(&resp).map_err(|_| MachineError::InternalError)

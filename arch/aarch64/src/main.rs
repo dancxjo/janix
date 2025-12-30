@@ -247,7 +247,24 @@ pub extern "C" fn rust_main() -> ! {
         bs.show(boot_screen::milestones::BRIDGE_ONLINE); 
     }
     
-    let k = Kernel::new(Bridge);
+    let mut k = Kernel::new(Bridge);
+    kernel::input::init();
+    kernel::graph::seed_builtins(&mut k.graph);
+    k.register_machine_providers();
+
+    if let Some(fb) = boot_info.framebuffer {
+        let fb_info = abi::wire::machine::FbGetInfoResp {
+            width: fb.width as u32,
+            height: fb.height as u32,
+            stride: fb.pitch as u32,
+            format: 32,
+            addr: 0x1_0000_0000,
+            size: fb.size,
+        };
+        kernel::drivers::limine_fb::init_with_info(&mut k, fb_info);
+    }
+
+    k.machine.reflect_into_graph(&mut k.graph);
     *KERNEL.lock() = Some(k);
 
     if let Some(bs) = &mut bs { 

@@ -569,8 +569,10 @@ pub extern "C" fn rust_main() -> ! {
         k.bridge.log(thing_models::milestones::KERNEL_ENTRY);
         k.bridge.log("\n");
 
+        kernel::input::init();
         if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_INIT); bs.draw(); }
         kernel::graph::seed_builtins(&mut k.graph);
+        k.register_machine_providers();
         if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_SEEDED); bs.draw(); }
 
         if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_INIT); bs.draw(); }
@@ -746,8 +748,20 @@ pub extern "C" fn rust_main() -> ! {
                     addr -= hhdm_offset_u64;
                 }
                 FRAMEBUFFER_INFO = Some((addr, fb.size));
+
+                let fb_info = abi::wire::machine::FbGetInfoResp {
+                    width: fb.width as u32,
+                    height: fb.height as u32,
+                    stride: fb.pitch as u32,
+                    format: 32,
+                    addr: 0x1_0000_0000,
+                    size: fb.size,
+                };
+                kernel::drivers::limine_fb::init_with_info(&mut k, fb_info);
             }
         }
+
+        k.machine.reflect_into_graph(&mut k.graph);
 
         spawn_loaded(&mut k, &boot_info);
 
@@ -848,6 +862,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                         unsafe {
                             FRAMEBUFFER_INFO = info;
                         }
+                        k.machine.reflect_into_graph(&mut k.graph);
                     }
                     break;
                 }

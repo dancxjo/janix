@@ -39,6 +39,7 @@ pub struct Kernel<B: HardwareBridge> {
     pub symbols: SymbolTable,
     pub scheduler: Scheduler<B::Context>,
     pub machine: machine::Machine,
+    pub machine_providers: machine::providers::ProviderStorage,
 }
 
 impl<B: HardwareBridge> Kernel<B> {
@@ -50,18 +51,51 @@ impl<B: HardwareBridge> Kernel<B> {
             symbols: SymbolTable::new(),
             scheduler: Scheduler::new(),
             machine: machine::Machine::new(),
+            machine_providers: machine::providers::ProviderStorage::new(),
         }
     }
 
-    fn register_machine_builtins(&mut self) {
-        use abi::wire::machine::*;
+    pub fn register_machine_providers(&mut self) {
         use abi::symbols::sym;
-        use crate::machine::BuiltinEndpoint;
+        use abi::wire::machine::*;
 
-        self.machine.register_builtin(sym(IFACE_RTC), 1, sym("rtc0"), BuiltinEndpoint::Rtc);
-        self.machine.register_builtin(sym(IFACE_FRAMEBUFFER), 1, sym("fb0"), BuiltinEndpoint::Framebuffer);
-        self.machine.register_builtin(sym(IFACE_KEYBOARD), 1, sym("kbd0"), BuiltinEndpoint::Keyboard);
-        self.machine.register_builtin(sym(IFACE_MOUSE), 1, sym("mouse0"), BuiltinEndpoint::Mouse);
+        if self.machine_providers.rtc.is_none() {
+            self.machine_providers.rtc = Some(machine::providers::rtc::RtcProvider::new());
+        }
+        if let Some(provider) = &self.machine_providers.rtc {
+            let ctx = provider as *const _ as *const ();
+            self.machine.register_provider(
+                sym(IFACE_RTC),
+                1,
+                sym("rtc0"),
+                machine::providers::rtc::RtcProvider::META,
+                &machine::providers::rtc::RtcProvider::VTABLE,
+                ctx,
+            );
+        }
+
+        if self.machine_providers.ps2.is_none() {
+            self.machine_providers.ps2 = Some(machine::providers::ps2::Ps2Provider::new());
+        }
+        if let Some(provider) = &self.machine_providers.ps2 {
+            let ctx = provider as *const _ as *const ();
+            self.machine.register_provider(
+                sym(IFACE_KEYBOARD),
+                1,
+                sym("kbd0"),
+                machine::providers::ps2::Ps2Provider::META,
+                &machine::providers::ps2::Ps2Provider::VTABLE,
+                ctx,
+            );
+            self.machine.register_provider(
+                sym(IFACE_MOUSE),
+                1,
+                sym("mouse0"),
+                machine::providers::ps2::Ps2Provider::META,
+                &machine::providers::ps2::Ps2Provider::VTABLE,
+                ctx,
+            );
+        }
     }
 
     pub fn boot(&mut self, mut store: Option<&mut dyn SymbolStore>) -> ! {
@@ -75,7 +109,8 @@ impl<B: HardwareBridge> Kernel<B> {
 
         self.bridge.log("THINGOS: graph init\n");
         seed_builtins(&mut self.graph);
-        self.register_machine_builtins();
+        crate::input::init();
+        self.register_machine_providers();
         self.machine.reflect_into_graph(&mut self.graph);
         self.bridge.log("THINGOS: graph seeded\n");
 

@@ -5,6 +5,7 @@ use abi::SymbolId;
 
 pub mod builtin;
 pub mod providers;
+pub mod driver_loader;
 pub use builtin::BuiltinEndpoint;
 
 pub struct Machine {
@@ -39,6 +40,13 @@ pub enum Endpoint {
         ctx: *const (),
     },
     Builtin(BuiltinEndpoint),
+    ModuleRpc {
+        driver_name: SymbolId,
+        iface: SymbolId,
+        ver: u16,
+        instance: SymbolId,
+        rpc_fn: unsafe extern "C" fn(op:u32, req:*const u8, req_len:u32, out:*mut u8, out_cap:u32) -> i32,
+    }
 }
 
 unsafe impl Send for Endpoint {}
@@ -94,6 +102,26 @@ impl Machine {
         );
     }
 
+    pub fn register_module(
+        &mut self,
+        driver_name: SymbolId,
+        iface: SymbolId,
+        ver: u16,
+        instance: SymbolId,
+        rpc_fn: unsafe extern "C" fn(op:u32, req:*const u8, req_len:u32, out:*mut u8, out_cap:u32) -> i32,
+    ) {
+        self.registry.endpoints.insert(
+            (iface, ver, instance),
+            Endpoint::ModuleRpc {
+                driver_name,
+                iface,
+                ver,
+                instance,
+                rpc_fn,
+            }
+        );
+    }
+
     pub fn call<B: HardwareBridge>(
         &self,
         bridge: &B,
@@ -112,6 +140,26 @@ impl Machine {
         match ep {
             Endpoint::Provider { meta: _, vtable, ctx } => (vtable.call)(*ctx, bridge, op, req),
             Endpoint::Builtin(builtin) => builtin::dispatch(bridge, *builtin, op, req),
+            Endpoint::ModuleRpc { rpc_fn, .. } => {
+                // Allocate buffer (4096 bytes max response for now)
+                let mut out_buf = alloc::vec![0u8; 4096];
+                let ret = unsafe {
+                    rpc_fn(op, req.as_ptr(), req.len() as u32, out_buf.as_mut_ptr(), out_buf.len() as u32)
+                };
+
+                if ret < 0 {
+                    // Map negative return to MachineError (generic for now)
+                    Err(MachineError::InternalError)
+                } else {
+                    let len = ret as usize;
+                    if len > out_buf.len() {
+                        Err(MachineError::InternalError) // Should not happen if driver is well behaved
+                    } else {
+                        out_buf.truncate(len);
+                        Ok(out_buf)
+                    }
+                }
+            }
         }
     }
 
@@ -199,6 +247,13 @@ impl Machine {
                     let meta = builtin::meta_for(*builtin);
                     drivers.entry(meta.name).or_insert(meta);
                 }
+                Endpoint::ModuleRpc { driver_name, .. } => {
+                    drivers.entry(*driver_name).or_insert(ProviderMeta {
+                        name: *driver_name,
+                        kind: sym("sys.driver"), // Default kind
+                        lane: sym("module_rpc"),
+                    });
+                }
             }
         }
 
@@ -243,6 +298,14 @@ impl Machine {
             let meta = match ep {
                 Endpoint::Provider { meta, .. } => *meta,
                 Endpoint::Builtin(builtin) => builtin::meta_for(*builtin),
+                Endpoint::ModuleRpc { driver_name, .. } => {
+                     // Reconstruct meta for ModuleRpc
+                     ProviderMeta {
+                        name: *driver_name,
+                        kind: sym("sys.driver"),
+                        lane: sym("module_rpc"),
+                    }
+                }
             };
 
             let iface_id = abi::ThingId(iface.0);

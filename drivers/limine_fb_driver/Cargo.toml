@@ -1,0 +1,11 @@
+[package]
+name = "limine_fb_driver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Zero dependencies to ensure clean PIE build on bare metal
+
+[[bin]]
+name = "limine_fb_driver"
+path = "src/lib.rs"

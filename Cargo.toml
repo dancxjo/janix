@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "drivers/limine_fb_driver",
 "xtask",
 
 "crates/abi",

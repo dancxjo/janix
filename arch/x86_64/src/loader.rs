@@ -22,6 +22,9 @@ use x86_64::VirtAddr;
 use xmas_elf::{program::Type, ElfFile};
 use kernel::boot_fs::{mount_and_scan, FileArgs, classify_bytes, ModuleType, ModuleRole, get_module_role};
 
+use xmas_elf::symbol_table::Entry;
+use kernel::sched::elf::load_elf; // Imported here
+
 // --- SHARED STRUCTS ---
 
 pub struct ScanArgs {
@@ -552,100 +555,163 @@ pub fn process_file(
         }
     };
 
-    if should_spawn {
-        use kernel::sched::elf::load_elf;
+    let hhdm_offset = match VirtAddr::try_new(hhdm_u64) {
+        Ok(a) => a,
+        Err(_) => {
+            unsafe {
+                Bridge.log("loader: Invalid HHDM Offset!\n");
+            }
+            return;
+        }
+    };
+
+    // Mapper setup for both drivers and apps
+    let mut frame_allocator = HeapFrameAllocator { hhdm_offset };
+    let mut mapper = unsafe {
         use x86_64::registers::control::Cr3;
-
-        // Atomic Increment
-        let current_app_base = APP_LOAD_ADDR.fetch_add(0x1000_0000, Ordering::Relaxed);
-
-        let hhdm_offset = match VirtAddr::try_new(hhdm_u64) {
+        let (level_4_table_frame, _) = Cr3::read();
+        let phys = level_4_table_frame.start_address();
+        let raw_virt = hhdm_offset.as_u64().wrapping_add(phys.as_u64());
+        let virt = match VirtAddr::try_new(raw_virt) {
             Ok(a) => a,
             Err(_) => {
                 unsafe {
-                    Bridge.log("loader: Invalid HHDM Offset!\n");
+                    Bridge.log("loader: PageTable VirtAddr Add Fail!\n");
                 }
-                return;
+                panic!("loader: PageTable VirtAddr Add Fail: {:#x}", raw_virt);
             }
         };
+        let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
+        let table = &mut *page_table_ptr;
+        // Fix NX...
+        if !table[0].is_unused() {
+            let flags = table[0].flags();
+            if flags.contains(PageTableFlags::NO_EXECUTE) {
+                Bridge.log("loader: Clearing NX from PML4[0]\n");
+                table[0].set_flags(flags & !PageTableFlags::NO_EXECUTE);
+            }
+            let p3_phys = table[0].addr();
+            let p3_virt = hhdm_offset.as_u64().wrapping_add(p3_phys.as_u64());
+            if let Ok(p3_virt_addr) = VirtAddr::try_new(p3_virt) {
+                let p3_ptr: *mut PageTable = p3_virt_addr.as_mut_ptr();
+                let p3 = &mut *p3_ptr;
+                if !p3[0].is_unused() {
+                    let f3 = p3[0].flags();
+                    if f3.contains(PageTableFlags::NO_EXECUTE) {
+                        Bridge.log("loader: Clearing NX from PDP[0]\n");
+                        p3[0].set_flags(f3 & !PageTableFlags::NO_EXECUTE);
+                    }
+                }
+            }
+            x86_64::instructions::tlb::flush_all();
+        }
+        OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
+    };
+
+    if role_enum == ModuleRole::Driver {
+        Bridge.log("loader: Loading Driver Module...\n");
+
+        let load_base = APP_LOAD_ADDR.fetch_add(0x1000_0000, Ordering::Relaxed);
+
+        let loaded = load_elf(data, load_base, |vaddr, segment| {
+            let raw_addr = load_base + vaddr;
+            write_user_bytes(
+                raw_addr,
+                segment,
+                &mut mapper,
+                &mut frame_allocator,
+                hhdm_offset,
+            );
+        });
+
+        if let Some(img) = loaded {
+            apply_relative_relocations(
+                data,
+                load_base,
+                &mut mapper,
+                &mut frame_allocator,
+                hhdm_offset,
+            );
+
+            let elf = ElfFile::new(data).unwrap();
+
+            let find_symbol = |name: &str| -> Option<u64> {
+                for sect in elf.section_iter() {
+                    if let Ok(xmas_elf::sections::SectionData::SymbolTable64(entries)) = sect.get_data(&elf) {
+                        for entry in entries {
+                            if let Ok(sym_name) = entry.get_name(&elf) {
+                                if sym_name == name {
+                                    return Some(entry.value());
+                                }
+                            }
+                        }
+                    }
+                }
+                None
+            };
+
+            let init_addr = find_symbol("thingos_driver_init");
+            let rpc_addr = find_symbol("thingos_driver_rpc");
+            let desc_addr = find_symbol("DRIVER_DESCRIPTOR");
+
+            if let (Some(init_val), Some(rpc_val), Some(desc_val)) = (init_addr, rpc_addr, desc_addr) {
+                let init_fn_ptr = (load_base + init_val) as *const ();
+                let rpc_fn_ptr = (load_base + rpc_val) as *const ();
+                let desc_ptr = (load_base + desc_val) as *const abi::driver::DriverDescriptor;
+
+                unsafe {
+                    // Safe access to packed field
+                    let name_val = { (*desc_ptr).name.0 };
+                    let s = alloc::format!("loader: Found driver descriptor for {}\n", name_val);
+                    Bridge.log(&s);
+
+                    let name = abi::SymbolId(name_val);
+
+                    let init_fn: unsafe extern "C" fn(*mut abi::driver::DriverContext) -> i32 = core::mem::transmute(init_fn_ptr);
+                    let rpc_fn: unsafe extern "C" fn(u32, *const u8, u32, *mut u8, u32) -> i32 = core::mem::transmute(rpc_fn_ptr);
+
+                    // PASS FULL METADATA
+                    let fb_info_unwrapped = crate::FRAMEBUFFER_INFO.map(|(a,w,h,s,f,sz)| {
+                        (a, w, h, s, f, sz)
+                    });
+
+                    // Call loader
+                    use kernel::machine::driver_loader::load_driver;
+                    let res = load_driver(
+                        k,
+                        name,
+                        rpc_fn,
+                        init_fn,
+                        fb_info_unwrapped
+                    );
+
+                    let s = alloc::format!("loader: Driver init returned {}\n", res);
+                    Bridge.log(&s);
+                }
+            } else {
+                 Bridge.log("loader: Failed to resolve driver symbols!\n");
+            }
+        }
+
+    } else if should_spawn {
+
+        // Atomic Increment
+        let current_app_base = APP_LOAD_ADDR.fetch_add(0x1000_0000, Ordering::Relaxed);
 
         unsafe {
             let s = alloc::format!("loader: HHDM Offset: {:#x}\n", hhdm_offset.as_u64());
             Bridge.log(&s);
         }
 
-        // Mapper
-        let mut frame_allocator = HeapFrameAllocator { hhdm_offset };
-        let mut mapper = unsafe {
-            let (level_4_table_frame, _) = Cr3::read();
-            let phys = level_4_table_frame.start_address();
-            let raw_virt = hhdm_offset.as_u64().wrapping_add(phys.as_u64());
-            let virt = match VirtAddr::try_new(raw_virt) {
-                Ok(a) => a,
-                Err(_) => {
-                    unsafe {
-                        Bridge.log("loader: PageTable VirtAddr Add Fail!\n");
-                    }
-                    // Panic here manually or return dummy to fail later?
-                    // We can't return from unsafe block easily.
-                    // But we can panic with message
-                    panic!("loader: PageTable VirtAddr Add Fail: {:#x}", raw_virt);
-                }
-            };
-            let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
-            let table = &mut *page_table_ptr;
-
-            // Fix: Limine might have mapped P4[0] (Identity) with NX.
-            // User Space (0x2000_0000) is in P4[0] -> P3[0].
-            // We must clear NX to allow executing user code.
-            if !table[0].is_unused() {
-                // Clear NX
-                let flags = table[0].flags();
-                unsafe {
-                    let s = alloc::format!("loader: PML4[0] Flags: {:?}\n", flags);
-                    Bridge.log(&s);
-                }
-
-                if flags.contains(PageTableFlags::NO_EXECUTE) {
-                    Bridge.log("loader: Clearing NX from PML4[0]\n");
-                    table[0].set_flags(flags & !PageTableFlags::NO_EXECUTE);
-                }
-
-                // Check P3[0]
-                let p3_phys = table[0].addr();
-                let p3_virt = hhdm_offset.as_u64().wrapping_add(p3_phys.as_u64());
-                if let Ok(p3_virt_addr) = VirtAddr::try_new(p3_virt) {
-                    let p3_ptr: *mut PageTable = p3_virt_addr.as_mut_ptr();
-                    let p3 = &mut *p3_ptr;
-                    if !p3[0].is_unused() {
-                        let f3 = p3[0].flags();
-                        unsafe {
-                            let s = alloc::format!("loader: PDP[0] Flags: {:?}\n", f3);
-                            Bridge.log(&s);
-                        }
-
-                        if f3.contains(PageTableFlags::NO_EXECUTE) {
-                            Bridge.log("loader: Clearing NX from PDP[0]\n");
-                            p3[0].set_flags(f3 & !PageTableFlags::NO_EXECUTE);
-                        }
-                    }
-                }
-
-                x86_64::instructions::tlb::flush_all();
-            }
-
-            OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset)
-        };
-
         // Map Framebuffer (User Space 0x1_0000_0000)
         // Matches kernel/src/drivers/limine_fb.rs
         unsafe {
-            if let Some((fb_phys, fb_size)) = crate::FRAMEBUFFER_INFO {
+            if let Some((fb_phys, _w, _h, _stride, _fmt, size)) = crate::FRAMEBUFFER_INFO {
                 unsafe {
                     let s = alloc::format!(
                         "loader: Mapping FB Phys={:#x} Size={:#x}\n",
                         fb_phys,
-                        fb_size
+                        size
                     );
                     Bridge.log(&s);
                 }
@@ -657,7 +723,7 @@ pub fn process_file(
 
                 let start_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(fb_phys));
                 let end_frame =
-                    PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(fb_phys + fb_size - 1));
+                    PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(fb_phys + size - 1));
 
                 let user_virt_base = VirtAddr::new(0x80_0000_0000);
                 let mut virt_iter = user_virt_base;
@@ -810,7 +876,7 @@ pub fn process_file(
             // Map Framebuffer
             Bridge.log("loader: checking fb_info\n");
             let fb_info = unsafe { crate::FRAMEBUFFER_INFO };
-            if let Some((phys_base_raw, size)) = fb_info {
+            if let Some((phys_base_raw, _w, _h, _s, _f, size)) = fb_info {
                 let s = alloc::format!(
                     "loader: mapping framebuffer. Base={:#x} Size={:#x}\n",
                     phys_base_raw,

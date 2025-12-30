@@ -26,7 +26,33 @@ pub fn run() -> Result<()> {
         anyhow::bail!("Kernel build failed");
     }
 
-    // 2. Build User Apps
+    // 2. Build Drivers
+    println!("==> Building drivers...");
+    let drivers = ["limine_fb_driver"];
+
+    for drv in drivers {
+        let status = Command::new(&cargo)
+            .arg("build")
+            .arg("-p")
+            .arg(drv)
+            // Use custom target
+            .arg("--target")
+            .arg("targets/x86_64-thingos-module.json")
+            .arg("-Z")
+            .arg("build-std=core,alloc,compiler_builtins")
+            .arg("-Z")
+            .arg("build-std-features=compiler-builtins-mem")
+            // No extra rustflags
+            .current_dir(&root)
+            .status()
+            .context(format!("Failed to build driver {}", drv))?;
+
+        if !status.success() {
+            anyhow::bail!("Driver {} build failed", drv);
+        }
+    }
+
+    // 3. Build User Apps
     println!("==> Building user apps...");
     let user_apps = [
         "graph_dump",

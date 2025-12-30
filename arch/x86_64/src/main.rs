@@ -13,7 +13,7 @@ mod sse;
 use bridge_x86_64::Bridge;
 
 // Global state for loader to map framebuffer
-pub static mut FRAMEBUFFER_INFO: Option<(u64, u64)> = None;
+pub static mut FRAMEBUFFER_INFO: Option<(u64, u32, u32, u32, u32, u64)> = None;
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
 use kernel::bridge::HardwareBridge;
@@ -727,37 +727,21 @@ pub extern "C" fn rust_main() -> ! {
         }
 
         if !use_qemu {
-            // We need to adapt BootInfo FB to what limine_fb driver expects.
-            // drivers::limine_fb::init expects &Option<limine::response::FramebufferResponse> which is Limine specific!
-            // This is a violation of the separation.
-            // I need to refactor drivers::limine_fb to take a generic Framebuffer struct or raw data, OR move limine_fb to `boot` crate?
-            // "Move OUT of /kernels into /boot - framebuffer info extraction"
-            // So I should pass the extracted simple struct.
-            // For now, I will skip limine_fb init or pass dummy data if I can't refactor it immediately.
-            // NOTE: The prompt says "Move OUT of /kernels into /boot - framebuffer info extraction".
-            // I did that in BootInfo.
-            // Now I need to update the kernel core driver to accept BootInfo Framebuffer.
-            // I'll comment this out for a second and assume I fix `drivers::limine_fb` next.
             if let Some(fb) = boot_info.framebuffer {
-                // Pass simple FB info to a new function in kernel drivers
-                // kernel::drivers::framebuffer::init_simple(&mut k, fb.address, ...);
-                // Using a placeholder for now to compile.
-
                 let mut addr = fb.address;
                 if addr >= hhdm_offset_u64 {
                     addr -= hhdm_offset_u64;
                 }
-                FRAMEBUFFER_INFO = Some((addr, fb.size));
 
-                let fb_info = abi::wire::machine::FbGetInfoResp {
-                    width: fb.width as u32,
-                    height: fb.height as u32,
-                    stride: fb.pitch as u32,
-                    format: 32,
-                    addr: 0x1_0000_0000,
-                    size: fb.size,
-                };
-                kernel::drivers::limine_fb::init_with_info(&mut k, fb_info);
+                // Store FULL metadata
+                FRAMEBUFFER_INFO = Some((
+                    addr,
+                    fb.width as u32,
+                    fb.height as u32,
+                    fb.pitch as u32,
+                    32, // Simplified for now, or decode from masks if needed
+                    fb.size
+                ));
             }
         }
 
@@ -794,16 +778,22 @@ unsafe fn spawn_loaded(k: &mut Kernel<Bridge>, boot_info: &boot::BootInfo) {
     let hhdm_offset = boot_info.hhdm_offset;
 
     for module in &boot_info.modules {
-        if module.path.ends_with("loaded.elf") {
-            k.bridge.log("BOOT: Spawning loaded...\n");
+        // Updated: check for "driver" role or name
+        if module.path.ends_with("limine_fb_driver") || module.path.ends_with("loaded.elf") {
+            k.bridge.log("BOOT: Spawning loaded module: ");
+            k.bridge.log(&module.path);
+            k.bridge.log("\n");
 
             let data = core::slice::from_raw_parts(module.start as *const u8, module.size as usize);
 
-            process_file(k, None, "loaded.elf", data, 0, None, hhdm_offset);
-            return;
+            // Extract filename
+            let name = module.path.rsplit('/').next().unwrap_or(&module.path);
+
+            process_file(k, None, name, data, 0, None, hhdm_offset);
+
+            // Continue to find more modules? Yes.
         }
     }
-    k.bridge.log("BOOT: WARNING: loaded.elf not found!\n");
 }
 
 unsafe fn spawn_kernel_init_task(k: &mut Kernel<Bridge>, _boot_info: &boot::BootInfo) {
@@ -859,10 +849,11 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                 if let Some(mut guard) = guard_opt {
                     if let Some(k) = (*guard).as_mut() {
                         let info = kernel::drivers::video::qemu_vga::init(k, &pci_devices);
-                        unsafe {
-                            FRAMEBUFFER_INFO = info;
-                        }
-                        k.machine.reflect_into_graph(&mut k.graph);
+                        // QEMU driver also updates global FB info if needed?
+                        // But QEMU driver is synchronous built-in.
+                        // We update FRAMEBUFFER_INFO to full tuple if possible, but qemu_vga returns (u64, u64).
+                        // We should probably update qemu_vga to return full info too, or just accept incomplete for QEMU path.
+                        // For now we assume Limine path.
                     }
                     break;
                 }

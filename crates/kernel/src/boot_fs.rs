@@ -68,6 +68,7 @@ pub fn classify_bytes(data: &[u8]) -> ModuleType {
     ModuleType::Unknown
 }
 
+#[derive(PartialEq, Debug)]
 pub enum ModuleRole {
     App,
     Driver,
@@ -77,7 +78,7 @@ pub enum ModuleRole {
 }
 
 pub fn get_module_role(name: &str, mtype: &ModuleType) -> ModuleRole {
-    if name.contains("/drivers/") || name.contains("ps2_") {
+    if name.contains("/drivers/") || name.contains("ps2_") || name.contains("_driver") {
         return ModuleRole::Driver;
     }
     match mtype {

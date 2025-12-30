@@ -38,8 +38,8 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         anyhow::bail!("Kernel build failed");
     }
 
-    // 2.5 Build User Apps
-    println!("==> Building user apps for {}...", env);
+    // 2.5 Build User Apps & Drivers
+    println!("==> Building user apps & drivers for {}...", env);
     let mut user_apps = vec![
         "loaded",
         "compositor",
@@ -54,10 +54,11 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         "cat_boot",
     ];
 
-    // Check if ps2_mouse exists in user/drivers (it does)
-    // Check if ps2_mouse exists in user/drivers (it does)
-    // if root.join("user/drivers/ps2_mouse").exists() {
-    //      if env == "x86_64" {
+    // Modules to load
+    let mut driver_modules = vec![
+        "limine_fb_driver",
+    ];
+
     if env == "x86_64" {
         user_apps.push("ps2_keyboard");
         user_apps.push("ps2_mouse");
@@ -72,6 +73,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         "aarch64-unknown-none"
     };
 
+    // Apps
     for app in &user_apps {
         let mut cmd = Command::new(&cargo);
         cmd.arg("build")
@@ -96,6 +98,27 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
 
         if !status.success() {
             anyhow::bail!("User app {} build failed", app);
+        }
+    }
+
+    // Drivers
+    for drv in &driver_modules {
+         let mut cmd = Command::new(&cargo);
+        cmd.arg("build")
+            //.arg("--manifest-path") // using root Cargo.toml for drivers
+            .arg("-p")
+            .arg(drv)
+            .arg("--target")
+            .arg(&target_flag) // Drivers use ThingOS target
+            .arg("-Z")
+            .arg("build-std=core,alloc,compiler_builtins")
+            .current_dir(&root);
+
+         let status = cmd.status()
+            .context(format!("Failed to build driver {}", drv))?;
+
+        if !status.success() {
+            anyhow::bail!("Driver {} build failed", drv);
         }
     }
     // Copied and cleaned up above.
@@ -154,6 +177,55 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         } else {
             init_whitelist.push(dest_name);
         }
+    }
+
+    // Copy Module Drivers
+    for drv in &driver_modules {
+         // Assuming built into target/triple_name/debug/
+         // Wait, `limine_fb_driver` is `cdylib`. It produces `.so` or `.dll`?
+         // On linux/unix it produces `.so`.
+         // But we are bare metal target.
+         // Let's check filename.
+         // It might be `liblimine_fb_driver.so`.
+         // But for ThingOS target?
+         // We should check what cargo output is.
+         // Assuming standard lib prefix.
+
+         let drv_bin_base = target_dir
+            .join(triple_name)
+            .join("debug");
+
+         // Try lib prefix first
+         let lib_name = format!("lib{}.so", drv);
+         let mut drv_bin = drv_bin_base.join(&lib_name);
+
+         if !drv_bin.exists() {
+             // Try without lib?
+             let name = format!("{}.so", drv);
+             drv_bin = drv_bin_base.join(&name);
+             if !drv_bin.exists() {
+                  // Try no extension?
+                 let name = format!("{}", drv);
+                 drv_bin = drv_bin_base.join(&name);
+             }
+         }
+
+         // If still not found, just try to copy it as is, maybe let user know.
+         // But we need to rename it to something simple like "limine_fb_driver" (no extension needed for loader, or .elf)
+         // Our loader doesn't care about extension strictly but path check used .elf or ends_with driver.
+
+         // Use the module name as destination filename.
+         let dest_name = format!("{}", drv);
+         let dest_path = drivers_dir.join(&dest_name);
+
+         fs::copy(&drv_bin, &dest_path)
+             .with_context(|| format!("Failed to copy driver module {} from {:?}", drv, drv_bin))?;
+
+         // Add to limine modules
+         // We track module drivers separately or with init_whitelist?
+         // init_whitelist creates init.txt policy.
+         // Limine modules are separate.
+         // Let's rely on Limine modules loop below.
     }
 
     // Write init.txt policy
@@ -225,6 +297,12 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
                 }
             }
         }
+    }
+
+    // Process Module Drivers
+    for drv in &driver_modules {
+        included_modules.push(format!("drivers/{}", drv));
+        println!("    Included Driver Module: {}", drv);
     }
 
     // Limine Files

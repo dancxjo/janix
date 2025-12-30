@@ -5,6 +5,7 @@ extern crate alloc;
 pub mod ids;
 pub mod memory;
 pub mod wire;
+pub mod driver;
 
 pub mod symbols;
 pub use ids::{GraphId, ProcessId, ThingId, ThreadId};

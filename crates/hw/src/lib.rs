@@ -1,27 +1,30 @@
 #![no_std]
 
+//! Hardware Bridge trait - the canonical definition is in `kernel::bridge`.
+//! This crate is deprecated; use `kernel::bridge::HardwareBridge` instead.
+
+/// See `kernel::bridge::HardwareBridge` for the canonical definition.
+/// This is a minimal stub for backwards compatibility.
+#[deprecated(note = "Use kernel::bridge::HardwareBridge instead")]
 pub trait HardwareBridge {
     fn log(&self, msg: &str);
     fn ticks(&self) -> u64;
-    fn system_now(&self) -> u64;
     fn idle(&self);
     fn shutdown(&self) -> !;
-    fn irq_disable(&self);
-    fn irq_enable(&self);
-    type Context: Copy + Clone + core::fmt::Debug + Default + Send + Sync + 'static;
 
-    // Context size is bridge-specific but we use fixed 20 u64s for now as per Scheduler struct
+    type IrqState: Copy + Clone + core::fmt::Debug + Default;
+    fn irq_disable(&self) -> Self::IrqState;
+    fn irq_restore(&self, state: Self::IrqState);
+
+    type Context: Copy + Clone + core::fmt::Debug + Default + Send + Sync + 'static;
     fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> Self::Context;
     fn resume_user_mode(&self, context: &Self::Context) -> !;
     fn set_kernel_stack(&self, stack_top: u64);
 
-    // Time
     fn rtc_read(&self, out: &mut abi::wire::time::RtcSample);
-
-    /// Returns high-resolution monotonic time in nanoseconds.
-    /// Returns 0 if not available/calibrated yet.
     fn monotonic_now(&self) -> u64;
 
-    fn save_fpu(&self, area: &mut [u8; 512]);
-    fn restore_fpu(&self, area: &[u8; 512]);
+    type FpuState: Default + Copy + Clone + core::fmt::Debug;
+    fn save_fpu(&self, out: &mut Self::FpuState);
+    fn restore_fpu(&self, state: &Self::FpuState);
 }

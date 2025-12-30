@@ -49,6 +49,20 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 
 #[no_mangle]
 pub extern "C" fn double_fault_handler(frame: &mut TrapFrame, error_code: u64) -> ! {
+    // Direct output to debugcon before anything else
+    unsafe {
+        use kernel::bridge::HardwareBridge;
+        let bridge = crate::Bridge;
+        bridge.log("\n!!! DOUBLE FAULT !!!\n");
+        bridge.log("RIP: ");
+        crate::print_hex(&bridge, frame.rip);
+        bridge.log(" RSP: ");
+        crate::print_hex(&bridge, frame.rsp);
+        bridge.log(" ERR: ");
+        crate::print_hex(&bridge, error_code);
+        bridge.log("\n");
+    }
+    
     kernel::diag::record_fault(
         frame.rip,
         frame.rsp,
@@ -149,6 +163,14 @@ pub extern "C" fn page_fault_handler(frame: &mut TrapFrame, error_code: PageFaul
 #[unsafe(naked)]
 unsafe extern "C" fn timer_interrupt_naked() {
     naked_asm!(
+        // DEBUG: Very first thing - output 'X' to debugcon
+        "push rax",
+        "push rdx",
+        "mov al, 0x58",  // 'X'
+        "mov dx, 0xe9",
+        "out dx, al",
+        "pop rdx",
+        "pop rax",
         // Check CPL from hardware frame CS (at [rsp + 8] for no-error interrupts)
         "test byte ptr [rsp + 8], 3",
         "jz 0f",
@@ -358,6 +380,13 @@ unsafe extern "C" fn mouse_interrupt_naked() {
 #[no_mangle]
 extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
     unsafe {
+        // Debug: Early log to see if we even reach the handler
+        core::arch::asm!(
+            "out dx, al",
+            in("dx") 0xe9u16,
+            in("al") b'T',
+            options(nomem, nostack, preserves_flags)
+        );
         crate::bringup::interrupts::apic::end_of_interrupt();
     }
     trap::timer_tick(frame);
@@ -580,6 +609,14 @@ pub extern "x86-interrupt" fn double_fault_handler_naked(
     _error_code: u64,
 ) -> ! {
     core::arch::naked_asm!(
+        // DEBUG: Output 'D' for double fault
+        "push rax",
+        "push rdx",
+        "mov al, 0x44",  // 'D'
+        "mov dx, 0xe9",
+        "out dx, al",
+        "pop rdx",
+        "pop rax",
         "push rax",
         "mov rax, [rsp + 16]", // CS
         "test rax, 3",

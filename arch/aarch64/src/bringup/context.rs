@@ -41,7 +41,7 @@ pub fn init_thread_context(entry: u64, stack: u64, arg: u64) -> ArchContext {
 
 #[cfg(target_arch = "aarch64")]
 pub fn resume_user_mode(context: &ArchContext) -> ! {
-    super::user::enter::resume_user_mode(&context.0, &kernel::sched::fpu::FpuContext::default())
+    super::user::enter::resume_user_mode(&context.0)
 }
 
 #[cfg(target_arch = "aarch64")]

@@ -81,7 +81,9 @@ pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
     unsafe { enter_user_mode_asm(regs) }
 }
 
-pub fn resume_user_mode(context: &[u64], _fpu_context: &kernel::sched::fpu::FpuContext) -> ! {
+/// Resume user mode execution with the given context.
+/// Note: FPU state should already be restored by the scheduler before calling this.
+pub fn resume_user_mode(context: &[u64]) -> ! {
     unsafe { resume_user_mode_asm(context.as_ptr()) }
 }
 

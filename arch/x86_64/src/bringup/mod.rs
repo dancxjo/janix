@@ -8,11 +8,11 @@ pub mod user;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
-pub struct ArchContext(pub [u64; 34]);
+pub struct ArchContext(pub [u64; 20]);
 
 impl Default for ArchContext {
     fn default() -> Self {
-        Self([0; 34])
+        Self([0; 20])
     }
 }
 

@@ -627,6 +627,11 @@ unsafe extern "C" fn rust_main() -> ! {
     boot_screen::set_blit_hook(simd::sse_blit);
 
     // 2. Safe to Allocate now (Vec, String, etc.)
+    
+    // CRITICAL: Initialize GDT, IDT, PIC, and syscall BEFORE any interrupts
+    // This was previously missing, causing triple faults when interrupts were enabled.
+    Bridge::init(None, hhdm_offset_u64);
+    
     let boot_info = crate::boot::loader::collect();
     let rsdp_addr = boot_info.rsdp_addr.unwrap_or(0);
 
@@ -941,8 +946,45 @@ unsafe extern "C" fn rust_main() -> ! {
         );
 
         k.bridge.log("BOOT: Enabling Interrupts & Scheduler\n");
+        // Debug: Before lock
+        unsafe {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0xe9u16,
+                in("al") b'1',
+                options(nomem, nostack, preserves_flags)
+            );
+        }
         *KERNEL.lock() = Some(k);
-        Bridge.irq_enable();
+        // Debug: After lock, before sti
+        unsafe {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0xe9u16,
+                in("al") b'2',
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+        Bridge.irq_enable();  // Enable interrupts for the first time
+        // Debug: Immediately after sti
+        unsafe {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0xe9u16,
+                in("al") b'3',
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    }
+
+    // Debug: Before idle loop
+    unsafe {
+        core::arch::asm!(
+            "out dx, al",
+            in("dx") 0xe9u16,
+            in("al") b'4',
+            options(nomem, nostack, preserves_flags)
+        );
     }
 
     loop {

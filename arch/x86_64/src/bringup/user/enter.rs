@@ -1,7 +1,6 @@
 use super::UserEntryRegs;
 use alloc::alloc::{alloc_zeroed, Layout};
 use core::sync::atomic::{AtomicU64, Ordering};
-use kernel::sched::fpu::FpuContext;
 use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::structures::paging::PhysFrame as X86PhysFrame;
 use x86_64::PhysAddr;
@@ -72,7 +71,9 @@ unsafe extern "C" fn enter_user_mode_asm(_regs: *const X86UserEntryRegs) -> ! {
     )
 }
 
-pub fn resume_user_mode(context: &[u64], _fpu_context: &FpuContext) -> ! {
+/// Resume user mode execution with the given context.
+/// Note: FPU state should already be restored by the scheduler before calling this.
+pub fn resume_user_mode(context: &[u64]) -> ! {
     // Context layout: [r15...rax, rip, cs, rflags, rsp, ss]
     // The context slice is assumed to be at the TOP of the kernel stack for the target thread.
     // (Or rather, populating the space just below top).

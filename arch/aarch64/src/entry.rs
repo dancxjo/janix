@@ -154,7 +154,7 @@ unsafe extern "C" fn rust_main() -> ! {
     if let Some(resp) = hhdm_req {
         let offset = resp.offset();
         Bridge::init(offset);
-        Bridge.irq_disable();
+        let _ = Bridge.irq_disable();  // Discard state - we're at boot
 
         // 2. Heap Init (Manual)
         let heap_size = heap::KERNEL_HEAP_SIZE_BYTES as u64;
@@ -323,7 +323,7 @@ unsafe extern "C" fn rust_main() -> ! {
         crate::bringup::interrupts::syscall::set_syscall_hook(syscall_hook);
         crate::bridge::set_page_fault_hook(page_fault_hook);
 
-        Bridge.irq_enable();
+        Bridge.irq_restore(crate::bridge::IrqState(true));  // Enable interrupts for the first time
 
         loop {
             Bridge.idle();

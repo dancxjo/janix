@@ -48,6 +48,16 @@ pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 #[cfg(target_arch = "x86_64")]
 impl Bridge {
     pub unsafe fn init(_rsdp_addr: Option<u64>, hhdm: u64) {
+        // Debug: very first thing - output to debugcon
+        unsafe {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0xe9u16,
+                in("al") b'B',
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+        
         HHDM_OFFSET.store(hhdm, Ordering::Relaxed);
         use kernel::bridge::HardwareBridge;
         let b = Bridge;
@@ -182,7 +192,7 @@ impl HardwareBridge for Bridge {
     }
 
     fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> Self::Context {
-        let mut ctx = [0u64; 34];
+        let mut ctx = [0u64; 20];
         ctx[13] = arg;
         ctx[15] = entry;
 
@@ -204,7 +214,7 @@ impl HardwareBridge for Bridge {
     }
 
     fn resume_user_mode(&self, context: &Self::Context) -> ! {
-        crate::bringup::user::enter::resume_user_mode(&context.0, &kernel::sched::fpu::FpuContext::default())
+        crate::bringup::user::enter::resume_user_mode(&context.0)
     }
 
     fn set_kernel_stack(&self, stack_top: u64) {
@@ -429,7 +439,7 @@ impl HardwareBridge for Bridge {
     fn irq_disable(&self) {}
     fn irq_enable(&self) {}
     fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> Self::Context {
-         bringup::ArchContext([0; 34])
+         bringup::ArchContext([0; 20])
     }
     fn resume_user_mode(&self, _context: &Self::Context) -> ! { loop {} }
     fn set_kernel_stack(&self, _: u64) {}

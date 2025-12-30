@@ -354,6 +354,11 @@ pub extern "C" fn file_loader_task(arg: u64) {
             // Implementing here.
 
             let name = args.path.rsplit('/').next().unwrap_or(&args.path);
+            
+            // Shared Ingestion
+            kernel::boot_fs::ingest_module(k, name, &data, args.dir_id, args.hhdm);
+
+            // Spawn Logic
             process_file(
                 k,
                 args.dir_id,
@@ -389,46 +394,10 @@ pub fn process_file(
     let mtype = classify_bytes(data);
     let role_enum = get_module_role(name, &mtype);
 
-    use abi::wire::typed::{CodecId, TypeId, TypedBytes};
-    use models::builtins::ids::*;
-    use models::core::fs::FileBody;
-
-    use models::builtins::core_kinds::BootProgramBody;
-    use models::core::process::{ProcessBody, ProcessState};
-
-    let file_id = {
-        let file = FileBody {
-            name: String::from(name),
-            size: data.len() as u64,
-            lba: 0,
-            flags: 1, // Ram-backed by module data
-        };
-        let f_bytes = postcard::to_allocvec(&file).unwrap();
-        let f_tb = ThingBody::from(&TypedBytes {
-            type_id: TypeId(THING_FILE_KIND.0 as u128),
-            codec_id: CodecId::POSTCARD,
-            bytes: f_bytes,
-        })
-        .unwrap();
-        k.graph.create_thing(THING_FILE_KIND, f_tb)
-    };
-
-    if let Some(parent) = parent_dir_id {
-        let link = models::link::LinkBody {
-            from: parent,
-            to: file_id,
-            predicate: THING_HAS_ENTRY_KIND,
-        };
-        let lb = ThingBody::from(&TypedBytes {
-            type_id: TypeId(THING_LINK_KIND.0 as u128),
-            codec_id: CodecId::POSTCARD,
-            bytes: postcard::to_allocvec(&link).unwrap(),
-        })
-        .unwrap();
-        k.graph.create_thing(THING_LINK_KIND, lb);
-    }
-
     // --- Graph: Create Module Thing ---
+    // REMOVED: Now handled by kernel::boot_fs::ingest_module (called in file_loader_task)
+    
+    // We still classify locally for spawn decision
     let role_str = match role_enum {
         ModuleRole::App => "app",
         ModuleRole::Driver => "driver",
@@ -436,114 +405,6 @@ pub fn process_file(
         ModuleRole::Asset => "asset",
         ModuleRole::Ignore => "ignore",
     };
-
-    use models::builtins::core_kinds::ModuleBody;
-    use models::builtins::ids::THING_MODULE_KIND;
-
-    // --- ByteSpace Logic ---
-    use models::builtins::core_kinds::{ByteSpaceBody, ByteSpaceRef};
-    use models::builtins::ids::{THING_BACKED_BY_KIND, THING_BYTESPACE_KIND, THING_HAS_BYTES_KIND};
-    use models::builtins::symbols::SYM_BYTESPACE;
-
-    // 1. Store Bytes in Kernel Store
-    // flags: 1 = READ (just metadata flag for now)
-    let bs_id = k.bytespaces.create_from_slice(data, 1).unwrap_or(0);
-
-    // 2. Create ByteSpace Thing
-    let bs_body = ByteSpaceBody {
-        store_id: bs_id,
-        len: data.len() as u64,
-        flags: 1,
-        backing: SYM_BYTESPACE,
-    };
-    let bs_tb = ThingBody::from(&TypedBytes {
-        type_id: TypeId(THING_BYTESPACE_KIND.0 as u128),
-        codec_id: CodecId::POSTCARD,
-        bytes: postcard::to_allocvec(&bs_body).unwrap(),
-    })
-    .unwrap();
-    let bs_thing_id = k.graph.create_thing(THING_BYTESPACE_KIND, bs_tb);
-
-    // Track physical base if memory is identity or HHDM mapped.
-    let base_ptr = data.as_ptr() as u64;
-    let base_phys = if base_ptr >= hhdm_u64 {
-        base_ptr - hhdm_u64
-    } else {
-        0
-    };
-
-    let mod_body = ModuleBody {
-        path: String::from(name),
-        size_bytes: data.len() as u64,
-        base_phys,
-        index: 0,
-        role: String::from(role_str),
-        mime: String::from("application/octet-stream"),
-        kind: String::from(role_str),
-        sniff: 0,
-        valid: true,
-        bytes: ByteSpaceRef {
-            id: bs_id,
-            len: data.len() as u64,
-        },
-    };
-
-    // k.bridge.log(alloc::format!("loader: created ModuleBody for {}, data len={}\n", name, data.len()).as_str());
-
-    // k.bridge.log("loader: serializing mod_body...\n");
-    let m_bytes = postcard::to_allocvec(&mod_body).unwrap();
-    // k.bridge.log(alloc::format!("loader: serialized mod_body, size={}\n", m_bytes.len()).as_str());
-
-    // k.bridge.log("loader: creating ThingBody...\n");
-    let m_tb = ThingBody::from(&TypedBytes {
-        type_id: TypeId(THING_MODULE_KIND.0 as u128),
-        codec_id: CodecId::POSTCARD,
-        bytes: m_bytes,
-    })
-    .unwrap();
-
-    let mod_id = k.graph.create_thing(THING_MODULE_KIND, m_tb);
-
-    // Link Module -> ByteSpace (HAS_BYTES)
-    let link_bytes = models::link::LinkBody {
-        from: mod_id,
-        to: bs_thing_id,
-        predicate: THING_HAS_BYTES_KIND,
-    };
-    let lb_bytes = ThingBody::from(&TypedBytes {
-        type_id: TypeId(THING_LINK_KIND.0 as u128),
-        codec_id: CodecId::POSTCARD,
-        bytes: postcard::to_allocvec(&link_bytes).unwrap(),
-    })
-    .unwrap();
-    k.graph.create_thing(THING_LINK_KIND, lb_bytes);
-
-    let link = models::link::LinkBody {
-        from: file_id,
-        to: mod_id,
-        predicate: THING_BACKED_BY_KIND,
-    };
-    let lb = ThingBody::from(&TypedBytes {
-        type_id: TypeId(THING_LINK_KIND.0 as u128),
-        codec_id: CodecId::POSTCARD,
-        bytes: postcard::to_allocvec(&link).unwrap(),
-    })
-    .unwrap();
-    k.graph.create_thing(THING_LINK_KIND, lb);
-
-    // Root -> Module link for discovery
-    let root_link = models::link::LinkBody {
-        from: THING_BOOT_ROOT,
-        to: mod_id,
-        predicate: THING_HAS_MODULE_KIND,
-    };
-    let rl_tb = ThingBody::from(&TypedBytes {
-        type_id: TypeId(THING_LINK_KIND.0 as u128),
-        codec_id: CodecId::POSTCARD,
-        bytes: postcard::to_allocvec(&root_link).unwrap(),
-    })
-    .unwrap();
-    k.graph.create_thing(THING_LINK_KIND, rl_tb);
 
     // Skipped ModuleBody and Font body logic to match main.rs needs?
     // I should probably copy the full logic if I want exact behavior.
@@ -931,65 +792,8 @@ pub fn process_file(
                 Bridge.log("loader: Wrote Stack Canary 0xDEAD_BEEF_DEAD_BEEF\n");
             }
 
-            // Create Process Thing (Simplified)
-            let p_body = ProcessBody {
-                pid: (k.scheduler.processes.len()) as u64, // Estimate
-                name: k
-                    .symbols
-                    .intern(name)
-                    .unwrap_or(models::builtins::symbols::SYM_PROCESS),
-                state: ProcessState::Running,
-            };
-            let tb = ThingBody::from(&TypedBytes {
-                type_id: TypeId(THING_PROCESS_KIND.0 as u128),
-                codec_id: CodecId::POSTCARD,
-                bytes: postcard::to_allocvec(&p_body).unwrap(),
-            })
-            .unwrap();
-            let process_id = k.graph.create_thing(THING_PROCESS_KIND, tb);
-
-            let link = models::link::LinkBody {
-                from: THING_BOOT_ROOT,
-                to: process_id,
-                predicate: models::builtins::ids::THING_SPAWNED_KIND,
-            };
-            let l_tb = ThingBody::from(&TypedBytes {
-                type_id: TypeId(THING_LINK_KIND.0 as u128),
-                codec_id: CodecId::POSTCARD,
-                bytes: postcard::to_allocvec(&link).unwrap(),
-            })
-            .unwrap();
-            k.graph.create_thing(THING_LINK_KIND, l_tb);
-
-            // Create BootProgram and links (To match main.rs)
-            let bp = BootProgramBody {
-                name: alloc::string::String::from(name),
-                binary: alloc::string::String::from(name),
-                priority: 0,
-                entry_point: current_app_base + img.entry_point,
-            };
-            let tb = ThingBody::from(&TypedBytes {
-                type_id: TypeId(models::builtins::ids::THING_BOOT_PROGRAM_KIND.0 as u128),
-                codec_id: CodecId::POSTCARD,
-                bytes: postcard::to_allocvec(&bp).unwrap(),
-            })
-            .unwrap();
-            let prog_id = k
-                .graph
-                .create_thing(models::builtins::ids::THING_BOOT_PROGRAM_KIND, tb);
-
-            let link = models::link::LinkBody {
-                from: process_id,
-                to: prog_id,
-                predicate: models::builtins::ids::THING_RUNS_KIND,
-            };
-            let lb = ThingBody::from(&TypedBytes {
-                type_id: TypeId(THING_LINK_KIND.0 as u128),
-                codec_id: CodecId::POSTCARD,
-                bytes: postcard::to_allocvec(&link).unwrap(),
-            })
-            .unwrap();
-            k.graph.create_thing(THING_LINK_KIND, lb);
+            // Create Process Thing (via Kernel Helper)
+            let _process_id = kernel::boot_fs::register_boot_process(k, name, current_app_base + img.entry_point);
         }
     }
 }

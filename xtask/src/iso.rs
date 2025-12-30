@@ -247,13 +247,15 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // Always include loaded.elf
     module_lines.push_str("    module_path: boot():/boot/apps/loaded.elf\n");
 
-    /*
-    // Other apps/drivers if needed as modules (currently disabled, only loaded.elf is bootstrapped)
+    // Other apps/drivers if needed as modules
     for app in &user_apps {
         if app == &"loaded" { continue; }
-        // ...
+        
+        let is_driver = driver_names.contains(app);
+        let subdir = if is_driver { "drivers" } else { "apps" };
+        let line = format!("    module_path: boot():/boot/{}/{}.elf\n", subdir, app);
+        module_lines.push_str(&line);
     }
-    */
 
     for mod_path in &included_modules {
         let line = format!("    module_path: boot():/boot/{}\n", mod_path);

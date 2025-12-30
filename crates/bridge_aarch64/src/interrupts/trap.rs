@@ -116,10 +116,13 @@ pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) 
         core::arch::asm!("mrs {}, esr_el1", out(reg) esr);
         core::arch::asm!("mrs {}, far_el1", out(reg) far);
     }
-    log!("EXCEPTION: AArch64 Trap");
-    log!("Kind: {}, Source: {}", kind, source);
-    log!("ESR: {:#x}, FAR: {:#x}", esr, far);
-    log!("{:#?}", tf);
+    // Simplified logging to avoid alloc/format panic loops
+    unsafe {
+        crate::Bridge.log("EXCEPTION: AArch64 Trap (Raw)\n");
+    }
+    // log!("Kind: {}, Source: {}", kind, source);
+    // log!("ESR: {:#x}, FAR: {:#x}", esr, far);
+    // log!("{:#?}", tf);
     loop {}
 }
 

@@ -15,6 +15,7 @@ mod neon;
 
 use boot;
 use bridge_aarch64::Bridge;
+use core::arch::asm;
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use kernel::bridge::HardwareBridge;

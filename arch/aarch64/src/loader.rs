@@ -242,6 +242,20 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     }
 
     for module in modules {
+        // Shared Ingestion Logic (Refactored)
+        let _id = unsafe {
+            let data_slice = core::slice::from_raw_parts(module.start as *const u8, module.size as usize);
+            // Assuming Limine modules are HHDM mapped already, or identity. 
+            // In Limine, modules are usually in HHDM.
+            
+            let mut guard = KERNEL.lock();
+            if let Some(k) = guard.as_mut() {
+                 kernel::boot_fs::ingest_module(k, &module.path, data_slice, None, hhdm)
+            } else {
+                abi::ThingId(0)
+            }
+        };
+
         if module.path.ends_with("loaded.elf") {
             unsafe {
                 Bridge.log("loader: Found loaded.elf in modules!\n");
@@ -257,6 +271,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
             let mut guard = KERNEL.lock();
             if let Some(k) = guard.as_mut() {
                 let name = "loaded";
+                // Only spawn here. Graph ingestion happened above.
                 process_file(k, None, name, slice, 0, Some(true), hhdm, fb_phys, fb_size);
             }
         }
@@ -278,20 +293,52 @@ pub fn process_file(
     fb_phys: u64,
     fb_size: usize,
 ) {
-    if spawn_override == Some(true) {
+
+    // --- Graph: Create Module Thing ---
+    // REMOVED: Now handled by kernel::boot_fs::ingest_module before this function is called.
+    // This function focuses on Spawning (ELF Loading) only.
+
+    let should_spawn = if let Some(s) = spawn_override {
+        s
+    } else {
+        // Fallback or panic? For now, we only call this when we want to spawn.
+        true 
+    };
+
+    if should_spawn {
         use kernel::sched::elf::load_elf;
 
+        // Note: AArch64 doesn't use x86_64 registers, but the code below seems to have copy-pasted/adapted names.
+        // Actually, the previous file view showed process_file had minimal graph logic, it was mostly ELF logic.
+        // Wait, looking at lines 386+ in the previous view...
+        // Ah, the previous view (Step 456) of process_file in `arch/aarch64/src/loader.rs` does NOT show the graph ingestion logic I saw in x86.
+        // It starts at line 285.
+        // Line 296 checks spawn_override.
+        // It jumps straight into `load_elf`.
+        //
+        // CONCLUSION: The AArch64 `process_file` WAS ALREADY MISSING the graph ingestion logic!
+        // That's why the user had the bug.
+        // And that's why my previous step (adding ingest_module call in the loop) was the correct fix.
+        //
+        // So I don't need to "remove" anything from `process_file` because it wasn't there.
+        //
+        // I should just verify the file passes compilation.
+        
+        Bridge.log("loader: Spawning...\n");
+
         let current_app_base = APP_LOAD_ADDR.fetch_add(0x1000_0000, Ordering::Relaxed);
-
         let root_table = unsafe { paging::create_user_root().expect("OOM Root") };
-        unsafe {
-            k.bridge
-                .log(alloc::format!("loader: Created User Root at {:#x}\n", root_table).as_str());
-        }
 
+        // ... (rest of spawning logic)
+
+        let mut max_loaded_addr = current_app_base;
         let loaded = load_elf(data, current_app_base, |vaddr, segment| {
             let raw_addr = current_app_base + vaddr;
             write_user_bytes(raw_addr, segment, root_table, hhdm_u64);
+            let end_addr = raw_addr + segment.len() as u64;
+            if end_addr > max_loaded_addr {
+                max_loaded_addr = end_addr;
+            }
         });
 
         if let Some(img) = loaded {
@@ -373,6 +420,16 @@ pub fn process_file(
                 k.bridge.log("\n");
             }
 
+            // Ensure I-Cache is coherent with D-Cache for the loaded code
+            let total_len = max_loaded_addr - current_app_base;
+            unsafe {
+                sync_icache(current_app_base, total_len as usize + 0x1000); 
+            }
+
+            unsafe {
+                k.bridge.log("loader: I-Cache Synced\n");
+            }
+
             // Spawn user thread directly (no trampoline). Pass heap start as arg like x86 path.
             k.scheduler.spawn(
                 &k.bridge,
@@ -383,6 +440,39 @@ pub fn process_file(
                 heap_start,
                 heap_end,
             );
+
+            // Register in Graph
+            let _process_id = kernel::boot_fs::register_boot_process(k, name, current_app_base + img.entry_point);
         }
     }
+    
+    unsafe {
+        Bridge.log("loader: Setup complete. Sleeping...\n");
+    }
+
+    loop {
+        unsafe { core::arch::asm!("wfi") };
+    }
+}
+
+unsafe fn sync_icache
+(start: u64, len: usize) {
+    let mut addr = start & !63; // Align to cache line (assume 64 bytes for simplicity, safe bet)
+    let end = start + len as u64;
+
+    // 1. Clean D-Cache to Point of Unification (PoU)
+    while addr < end {
+        core::arch::asm!("dc cvau, {}", in(reg) addr);
+        addr += 64;
+    }
+    core::arch::asm!("dsb ish");
+
+    // 2. Invalidate I-Cache to Point of Unification (PoU)
+    addr = start & !63;
+    while addr < end {
+        core::arch::asm!("ic ivau, {}", in(reg) addr);
+        addr += 64;
+    }
+    core::arch::asm!("dsb ish");
+    core::arch::asm!("isb");
 }

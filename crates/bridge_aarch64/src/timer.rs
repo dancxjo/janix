@@ -1,4 +1,6 @@
 use core::arch::asm;
+use kernel::bridge::HardwareBridge;
+use alloc::format;
 
 // ARM Generic Timer (EL1 Physical)
 // CNTP_TVAL_EL1: Timer Value (Downcounter)
@@ -15,6 +17,8 @@ pub fn init() {
         // Read Frequency
         let frq: u64;
         asm!("mrs {}, cntfrq_el0", out(reg) frq);
+        
+        crate::Bridge.log(alloc::format!("timer: frequency = {}\n", frq).as_str());
 
         // Set Interval (e.g. 100Hz = frq / 100)
         // If frq is 0 (should not happen on proper HW/QEMU), prevent div by zero
@@ -23,6 +27,9 @@ pub fn init() {
             asm!("msr cntp_tval_el0, {}", in(reg) interval);
             // Enable
             asm!("msr cntp_ctl_el0, {}", in(reg) CNT_CTL_ENABLE);
+            crate::Bridge.log("timer: enabled\n");
+        } else {
+            crate::Bridge.log("timer: frequency is 0!\n");
         }
     }
 }

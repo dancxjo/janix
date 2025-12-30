@@ -355,3 +355,235 @@ pub fn mount_and_scan<B: HardwareBridge>(
 
     kernel.bridge.log("loader: All scan tasks spawned.\n");
 }
+
+pub fn ingest_module<B: HardwareBridge>(
+    kernel: &mut Kernel<B>,
+    name: &str,
+    data: &[u8],
+    parent_dir_id: Option<ThingId>,
+    hhdm_u64: u64,
+) -> ThingId {
+    use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+    use thing_models::builtins::ids::*;
+    use thing_models::core::fs::FileBody;
+    use thing_models::builtins::core_kinds::ModuleBody;
+    use thing_models::builtins::core_kinds::{ByteSpaceBody, ByteSpaceRef};
+    use thing_models::builtins::symbols::SYM_BYTESPACE;
+
+    // kernel.bridge.log(alloc::format!("ingest: processing file {}\n", name).as_str());
+
+    let mtype = classify_bytes(data);
+    let role_enum = get_module_role(name, &mtype);
+
+    let file_id = {
+        let file = FileBody {
+            name: String::from(name),
+            size: data.len() as u64,
+            lba: 0,
+            flags: 1, // Ram-backed
+        };
+        let f_bytes = postcard::to_allocvec(&file).unwrap();
+        let f_tb = ThingBody::from(&TypedBytes {
+            type_id: TypeId(THING_FILE_KIND.0 as u128),
+            codec_id: CodecId::POSTCARD,
+            bytes: f_bytes,
+        })
+        .unwrap();
+        kernel.graph.create_thing(THING_FILE_KIND, f_tb)
+    };
+
+    if let Some(parent) = parent_dir_id {
+        let link = thing_models::link::LinkBody {
+            from: parent,
+            to: file_id,
+            predicate: THING_HAS_ENTRY_KIND,
+        };
+        let lb = ThingBody::from(&TypedBytes {
+            type_id: TypeId(THING_LINK_KIND.0 as u128),
+            codec_id: CodecId::POSTCARD,
+            bytes: postcard::to_allocvec(&link).unwrap(),
+        })
+        .unwrap();
+        kernel.graph.create_thing(THING_LINK_KIND, lb);
+    }
+
+    // --- Module Thing ---
+    let role_str = match role_enum {
+        ModuleRole::App => "app",
+        ModuleRole::Driver => "driver",
+        ModuleRole::Debug => "debug",
+        ModuleRole::Asset => "asset",
+        ModuleRole::Ignore => "ignore",
+    };
+
+    // 1. Store Bytes
+    let bs_id = kernel.bytespaces.create_from_slice(data, 1).unwrap_or(0);
+
+    // 2. ByteSpace Thing
+    let bs_body = ByteSpaceBody {
+        store_id: bs_id,
+        len: data.len() as u64,
+        flags: 1,
+        backing: SYM_BYTESPACE,
+    };
+    let bs_tb = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_BYTESPACE_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&bs_body).unwrap(),
+    })
+    .unwrap();
+    let bs_thing_id = kernel.graph.create_thing(THING_BYTESPACE_KIND, bs_tb);
+
+    // Track physical base if HHDM mapped (Limine modules are usually HHDM)
+    let base_ptr = data.as_ptr() as u64;
+    let base_phys = if base_ptr >= hhdm_u64 {
+        base_ptr - hhdm_u64
+    } else {
+        0
+    };
+
+    let mod_body = ModuleBody {
+        path: String::from(name),
+        size_bytes: data.len() as u64,
+        base_phys,
+        index: 0,
+        role: String::from(role_str),
+        mime: String::from("application/octet-stream"),
+        kind: String::from(role_str),
+        sniff: 0,
+        valid: true,
+        bytes: ByteSpaceRef {
+            id: bs_id,
+            len: data.len() as u64,
+        },
+    };
+
+    let m_bytes = postcard::to_allocvec(&mod_body).unwrap();
+    let m_tb = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_MODULE_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: m_bytes,
+    })
+    .unwrap();
+
+    let mod_id = kernel.graph.create_thing(THING_MODULE_KIND, m_tb);
+
+    // Link Module -> ByteSpace (HAS_BYTES)
+    let link_bytes = thing_models::link::LinkBody {
+        from: mod_id,
+        to: bs_thing_id,
+        predicate: THING_HAS_BYTES_KIND,
+    };
+    let lb_bytes = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_LINK_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&link_bytes).unwrap(),
+    })
+    .unwrap();
+    kernel.graph.create_thing(THING_LINK_KIND, lb_bytes);
+
+    // Link File -> Module (BACKED_BY)
+    let link = thing_models::link::LinkBody {
+        from: file_id,
+        to: mod_id,
+        predicate: THING_BACKED_BY_KIND,
+    };
+    let lb = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_LINK_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&link).unwrap(),
+    })
+    .unwrap();
+    kernel.graph.create_thing(THING_LINK_KIND, lb);
+
+    // Root -> Module link for discovery
+    let root_link = thing_models::link::LinkBody {
+        from: THING_BOOT_ROOT,
+        to: mod_id,
+        predicate: THING_HAS_MODULE_KIND,
+    };
+    let rl_tb = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_LINK_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&root_link).unwrap(),
+    })
+    .unwrap();
+    kernel.graph.create_thing(THING_LINK_KIND, rl_tb);
+
+    mod_id
+}
+
+pub fn register_boot_process<B: HardwareBridge>(
+    kernel: &mut Kernel<B>,
+    name: &str,
+    entry_point: u64,
+) -> ThingId {
+    use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+    use thing_models::builtins::ids::*;
+    use thing_models::core::process::{ProcessBody, ProcessState};
+    use thing_models::builtins::core_kinds::BootProgramBody;
+
+    // Create Process Thing
+    let p_body = ProcessBody {
+        pid: (kernel.scheduler.processes.len()) as u64, // Estimate
+        name: kernel
+            .symbols
+            .intern(name)
+            .unwrap_or(thing_models::builtins::symbols::SYM_PROCESS),
+        state: ProcessState::Running,
+    };
+    let tb = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_PROCESS_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&p_body).unwrap(),
+    })
+    .unwrap();
+    let process_id = kernel.graph.create_thing(THING_PROCESS_KIND, tb);
+
+    // Link BootRoot -> Process (SPAWNED)
+    let link = thing_models::link::LinkBody {
+        from: THING_BOOT_ROOT,
+        to: process_id,
+        predicate: thing_models::builtins::ids::THING_SPAWNED_KIND,
+    };
+    let l_tb = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_LINK_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&link).unwrap(),
+    })
+    .unwrap();
+    kernel.graph.create_thing(THING_LINK_KIND, l_tb);
+
+    // Create BootProgram and links
+    let bp = BootProgramBody {
+        name: alloc::string::String::from(name),
+        binary: alloc::string::String::from(name),
+        priority: 0,
+        entry_point,
+    };
+    let tb = ThingBody::from(&TypedBytes {
+        type_id: TypeId(thing_models::builtins::ids::THING_BOOT_PROGRAM_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&bp).unwrap(),
+    })
+    .unwrap();
+    let prog_id = kernel
+        .graph
+        .create_thing(thing_models::builtins::ids::THING_BOOT_PROGRAM_KIND, tb);
+
+    // Link Process -> BootProgram (RUNS)
+    let link = thing_models::link::LinkBody {
+        from: process_id,
+        to: prog_id,
+        predicate: thing_models::builtins::ids::THING_RUNS_KIND,
+    };
+    let lb = ThingBody::from(&TypedBytes {
+        type_id: TypeId(THING_LINK_KIND.0 as u128),
+        codec_id: CodecId::POSTCARD,
+        bytes: postcard::to_allocvec(&link).unwrap(),
+    })
+    .unwrap();
+    kernel.graph.create_thing(THING_LINK_KIND, lb);
+
+    process_id
+}

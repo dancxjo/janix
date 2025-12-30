@@ -34,7 +34,7 @@ pub const USER_STACK_OFFSET: u64 = 0x0800_0000;
 pub const USER_HEAP_OFFSET: u64 = 0x0100_0000;
 
 const USER_STACK_SIZE: u64 = 128 * 1024;
-const USER_HEAP_SIZE: u64 = 16 * 1024 * 1024;
+const USER_HEAP_SIZE: u64 = 1 * 1024 * 1024;
 const LOAD_STRIDE: u64 = 0x1000_0000;
 const PAGE_SIZE: u64 = 4096;
 

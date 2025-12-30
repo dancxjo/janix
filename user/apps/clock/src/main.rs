@@ -18,6 +18,57 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
     c.write_str("CLOCK: Starting...\n");
     
     let mut buf = [0u8; 4096]; // Increased buffer
+
+    // Machine Probe
+    {
+        c.write_str("CLOCK: Probing Machine...\n");
+        use abi::wire::machine::*;
+
+        // RTC Probe
+        let op = GraphOp::MachineCall {
+            iface: abi::symbols::sym(IFACE_RTC),
+            ver: 1,
+            instance: abi::symbols::sym("rtc0"),
+            op: OP_RTC_NOW_NS,
+            payload: &[],
+        };
+
+        if let Ok(GraphReply::Bytes { bytes }) = g.call_op(&op, &mut buf) {
+             if let Ok(resp) = postcard::from_bytes::<RtcNowResp>(&bytes) {
+                 use core::fmt::Write;
+                 let mut s: heapless::String<64> = heapless::String::new();
+                 write!(s, "RTC: {}\n", resp.system_ns).unwrap();
+                 c.write_str(s.as_str());
+             } else {
+                 c.write_str("CLOCK: RTC Decode Failed\n");
+             }
+        } else {
+             c.write_str("CLOCK: RTC Probe Failed (GraphErr)\n");
+        }
+
+        // FB Probe
+        let op = GraphOp::MachineCall {
+            iface: abi::symbols::sym(IFACE_FRAMEBUFFER),
+            ver: 1,
+            instance: abi::symbols::sym("fb0"),
+            op: OP_FB_GET_INFO,
+            payload: &[],
+        };
+
+        if let Ok(GraphReply::Bytes { bytes }) = g.call_op(&op, &mut buf) {
+             if let Ok(resp) = postcard::from_bytes::<FbGetInfoResp>(&bytes) {
+                 use core::fmt::Write;
+                 let mut s: heapless::String<128> = heapless::String::new();
+                 write!(s, "FB: {}x{} @ {:x}\n", resp.width, resp.height, resp.addr).unwrap();
+                 c.write_str(s.as_str());
+             } else {
+                 c.write_str("CLOCK: FB Decode Failed\n");
+             }
+        } else {
+             c.write_str("CLOCK: FB Probe Failed (GraphErr)\n");
+        }
+    }
+
     let mut sys_time_id: Option<ThingId> = None;
     let mut window_id: Option<ThingId> = None;
 

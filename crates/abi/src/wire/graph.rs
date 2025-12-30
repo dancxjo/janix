@@ -55,6 +55,13 @@ pub enum GraphOp<'a> {
         offset: u64,
         len: u32,
     },
+    MachineCall {
+        iface: SymbolId,
+        ver: u16,
+        instance: SymbolId,
+        op: u32,
+        payload: &'a [u8],
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]

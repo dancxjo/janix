@@ -52,6 +52,8 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         "sleep_accuracy_smoke",
         "ls_boot",
         "cat_boot",
+        "cat_boot",
+        "limine_fb_driver",
     ];
 
     // Check if ps2_mouse exists in user/drivers (it does)
@@ -133,7 +135,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     let drivers_dir = boot_dir.join("drivers");
     fs::create_dir_all(&drivers_dir)?;
 
-    let driver_names = ["ps2_keyboard", "ps2_mouse", "rtc_x86", "rtc_aarch64"];
+    let driver_names = ["ps2_keyboard", "ps2_mouse", "rtc_x86", "rtc_aarch64", "limine_fb_driver"];
 
     let mut init_whitelist = Vec::new();
 

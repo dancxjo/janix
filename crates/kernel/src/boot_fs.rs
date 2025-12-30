@@ -68,6 +68,7 @@ pub fn classify_bytes(data: &[u8]) -> ModuleType {
     ModuleType::Unknown
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ModuleRole {
     App,
     Driver,

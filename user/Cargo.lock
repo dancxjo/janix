@@ -215,6 +215,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "limine_fb_driver"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "models",
+ "postcard",
+ "serde",
+ "thing_std 0.1.0",
+]
+
+[[package]]
 name = "loaded"
 version = "0.1.0"
 dependencies = [

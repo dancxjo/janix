@@ -99,3 +99,27 @@ pub fn sys_spawn_image(image: &[u8], name: &str) -> Result<isize, isize> {
         Err(ret)
     }
 }
+
+pub unsafe fn sys_driver_publish(ptr: *const u8, len: usize) -> isize {
+    let ret: isize;
+    #[cfg(target_arch = "x86_64")]
+    core::arch::asm!(
+        "syscall",
+        in("rax") 101, // SYSCALL_DRIVER_PUBLISH
+        in("rdi") ptr as usize,
+        in("rsi") len,
+        lateout("rax") ret,
+        out("rcx") _,
+        out("r11") _,
+    );
+     #[cfg(target_arch = "aarch64")]
+    core::arch::asm!(
+        "svc #0",
+        in("x8") 101,
+        in("x0") ptr as usize,
+        in("x1") len,
+        lateout("x0") ret,
+        options(nostack)
+    );
+    ret
+}

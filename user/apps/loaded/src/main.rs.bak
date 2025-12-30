@@ -76,7 +76,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         quiet: false,
     };
 
-    ctx.log("LOADED: RAW START\n");
+    println!("LOADED: RAW START");
 
     // return; // DEBUG: Stop here to see if it survives.
     

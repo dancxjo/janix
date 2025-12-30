@@ -874,11 +874,20 @@ pub fn process_file(
                 }
             }
 
+            // Verify driver symbol if applicable (thingos_driver_init)
+            let mut final_entry_point = current_app_base + img.entry_point;
+            if role_enum == ModuleRole::Driver {
+                 if let Some(offset) = kernel::sched::elf::find_symbol(data, "thingos_driver_init") {
+                     unsafe { Bridge.log("loader: Found thingos_driver_init override!\n"); }
+                     final_entry_point = current_app_base + offset;
+                 }
+            }
+
             // Spawn
             k.scheduler.spawn(
                 &k.bridge,
                 name,
-                current_app_base + img.entry_point,
+                final_entry_point,
                 stack_top_virt.as_u64() - 8, // Adjust for Canary
                 heap_virt_start,             // Arg passed to main (heap_start)
                 heap_virt_start,             // Process heap start

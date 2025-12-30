@@ -336,41 +336,77 @@ fn page_fault_hook_impl(
                 let mut frame_allocator = HeapFrameAllocator { hhdm_offset };
 
                 if let Some(current_tid) = k.scheduler.current {
-                    if let Some(Some(thread)) = k.scheduler.threads.get(current_tid.0 as usize - 1) {
+                    if let Some(Some(thread)) = k.scheduler.threads.get(current_tid.0 as usize - 1)
+                    {
                         let pid = thread.process_id;
                         if let Some(Some(process)) = k.scheduler.processes.get(pid.0 as usize - 1) {
                             // LOGGING (Temporary)
                             unsafe {
                                 use kernel::bridge::HardwareBridge;
-                                let s = alloc::format!("PF Hook: Addr={:#x} PID={} HeapStart={:#x} HeapEnd={:#x}\n", fault_addr, pid.0, process.heap_virt_start, process.heap_virt_end);
+                                let s = alloc::format!(
+                                    "PF Hook: Addr={:#x} PID={} HeapStart={:#x} HeapEnd={:#x}\n",
+                                    fault_addr,
+                                    pid.0,
+                                    process.heap_virt_start,
+                                    process.heap_virt_end
+                                );
                                 k.bridge.log(&s);
                             }
 
-                            if fault_addr >= process.heap_virt_start && fault_addr < process.heap_virt_end {
+                            if fault_addr >= process.heap_virt_start
+                                && fault_addr < process.heap_virt_end
+                            {
                                 use x86_64::registers::control::Cr3;
-                                use x86_64::structures::paging::{Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB};
+                                use x86_64::structures::paging::{
+                                    Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB,
+                                };
 
                                 let (l4_frame, _) = Cr3::read();
-                                let mut mapper = unsafe { OffsetPageTable::new(&mut *(hhdm_offset + l4_frame.start_address().as_u64()).as_mut_ptr(), hhdm_offset) };
-                                let page = Page::<Size4KiB>::containing_address(x86_64::VirtAddr::new(fault_addr));
+                                let mut mapper = unsafe {
+                                    OffsetPageTable::new(
+                                        &mut *(hhdm_offset + l4_frame.start_address().as_u64())
+                                            .as_mut_ptr(),
+                                        hhdm_offset,
+                                    )
+                                };
+                                let page = Page::<Size4KiB>::containing_address(
+                                    x86_64::VirtAddr::new(fault_addr),
+                                );
 
                                 if let Some(frame) = frame_allocator.allocate_frame() {
-                                    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+                                    let flags = PageTableFlags::PRESENT
+                                        | PageTableFlags::WRITABLE
+                                        | PageTableFlags::USER_ACCESSIBLE;
                                     unsafe {
-                                        if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
-                                            core::ptr::write_bytes((hhdm_offset + frame.start_address().as_u64()).as_mut_ptr::<u8>(), 0, 4096);
+                                        if let Ok(map_to) =
+                                            mapper.map_to(page, frame, flags, &mut frame_allocator)
+                                        {
+                                            core::ptr::write_bytes(
+                                                (hhdm_offset + frame.start_address().as_u64())
+                                                    .as_mut_ptr::<u8>(),
+                                                0,
+                                                4096,
+                                            );
                                             map_to.flush();
-                                            unsafe { k.bridge.log("PF Hook: Mapped!\n"); }
+                                            unsafe {
+                                                k.bridge.log("PF Hook: Mapped!\n");
+                                            }
                                             return true;
                                         } else {
-                                             unsafe { k.bridge.log("PF Hook: Map Failed!\n"); }
+                                            unsafe {
+                                                k.bridge.log("PF Hook: Map Failed!\n");
+                                            }
                                         }
                                     }
                                 } else {
-                                     unsafe { k.bridge.log("PF Hook: OOM!\n"); }
+                                    unsafe {
+                                        k.bridge.log("PF Hook: OOM!\n");
+                                    }
                                 }
                             } else {
-                                 unsafe { k.bridge.log("PF Hook: Out of Bounds!\n"); }
+                                unsafe {
+                                    k.bridge.log("PF Hook: Out of Bounds!\n");
+                                }
                             }
                         }
                     }
@@ -448,7 +484,9 @@ fn syscall_hook(
         x86_64::instructions::interrupts::without_interrupts(|| {
             if let Some(mut guard) = KERNEL.try_lock() {
                 if let Some(k) = (*guard).as_mut() {
-                    result = Some(kernel::syscalls::syscall_dispatch(k, num, a1, a2, a3, a4, a5, a6));
+                    result = Some(kernel::syscalls::syscall_dispatch(
+                        k, num, a1, a2, a3, a4, a5, a6,
+                    ));
                 }
             }
         });
@@ -518,50 +556,59 @@ pub extern "C" fn rust_main() -> ! {
     // --- Boot Screen Init ---
     let mut bs = unsafe {
         if let Some(fb) = &boot_info.framebuffer {
-             if fb.bpp != 32 {
-                 None
-             } else {
-                 let addr = fb.address; // Virtual address (HHDM)
-                 let pixel_format = if fb.red_mask_shift == 16 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 0 {
-                      boot_screen::PixelFormat::Xrgb8888
-                 } else if fb.red_mask_shift == 0 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 16 {
-                      boot_screen::PixelFormat::Abgr8888
-                 } else {
-                      boot_screen::PixelFormat::Xrgb8888
-                 };
+            if fb.bpp != 32 {
+                None
+            } else {
+                let addr = fb.address; // Virtual address (HHDM)
+                let pixel_format = if fb.red_mask_shift == 16
+                    && fb.green_mask_shift == 8
+                    && fb.blue_mask_shift == 0
+                {
+                    boot_screen::PixelFormat::Xrgb8888
+                } else if fb.red_mask_shift == 0
+                    && fb.green_mask_shift == 8
+                    && fb.blue_mask_shift == 16
+                {
+                    boot_screen::PixelFormat::Abgr8888
+                } else {
+                    boot_screen::PixelFormat::Xrgb8888
+                };
 
-                 let info = boot_screen::FramebufferInfo {
-                     addr: addr as *mut u8,
-                     size_bytes: fb.size as usize,
-                     width: fb.width as u32,
-                     height: fb.height as u32,
-                     pitch_bytes: fb.pitch as u32,
-                     bpp: fb.bpp,
-                     pixel_format,
-                 };
+                let info = boot_screen::FramebufferInfo {
+                    addr: addr as *mut u8,
+                    size_bytes: fb.size as usize,
+                    width: fb.width as u32,
+                    height: fb.height as u32,
+                    pitch_bytes: fb.pitch as u32,
+                    bpp: fb.bpp,
+                    pixel_format,
+                };
 
-                 // Allocate the screen structures
-                 if let Some(mut bs) = boot_screen::BootScreenOwned::new(info) {
-                     // Fast Initialization:
-                     // Set background color and fade immediately. 
-                     // Clearing happens in the shadow buffer during draw().
-                     bs.set_background_color(0xFF002244);
-                     bs.set_fade(255);
-                     
-                     bs.show(boot_screen::milestones::BOOTING);
-                     
-                     Some(bs)
-                 } else {
-                     None
-                 }
-             }
+                // Allocate the screen structures
+                if let Some(mut bs) = boot_screen::BootScreenOwned::new(info) {
+                    // Fast Initialization:
+                    // Set background color and fade immediately.
+                    // Clearing happens in the shadow buffer during draw().
+                    bs.set_background_color(0xFF002244);
+                    bs.set_fade(255);
+
+                    bs.show(boot_screen::milestones::BOOTING);
+
+                    Some(bs)
+                } else {
+                    None
+                }
+            }
         } else {
-             None
+            None
         }
     };
 
     let mut k = Kernel::new(Bridge);
-    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::BRIDGE_ONLINE); bs.draw(); }
+    if let Some(bs) = &mut bs {
+        bs.show(boot_screen::milestones::BRIDGE_ONLINE);
+        bs.draw();
+    }
 
     unsafe {
         use kernel::bridge::HardwareBridge;
@@ -570,17 +617,29 @@ pub extern "C" fn rust_main() -> ! {
         k.bridge.log("\n");
 
         kernel::input::init();
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_INIT); bs.draw(); }
+        if let Some(bs) = &mut bs {
+            bs.show(boot_screen::milestones::GRAPH_INIT);
+            bs.draw();
+        }
         kernel::graph::seed_builtins(&mut k.graph);
         k.register_machine_providers();
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::GRAPH_SEEDED); bs.draw(); }
+        if let Some(bs) = &mut bs {
+            bs.show(boot_screen::milestones::GRAPH_SEEDED);
+            bs.draw();
+        }
 
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_INIT); bs.draw(); }
+        if let Some(bs) = &mut bs {
+            bs.show(boot_screen::milestones::SYMBOLS_INIT);
+            bs.draw();
+        }
         let kernel_name_sym = k
             .symbols
             .intern("kernel")
             .unwrap_or(thing_models::builtins::symbols::SYM_PROCESS);
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SYMBOLS_READY); bs.draw(); }
+        if let Some(bs) = &mut bs {
+            bs.show(boot_screen::milestones::SYMBOLS_READY);
+            bs.draw();
+        }
 
         let boot_root_body = thing_models::core::process::ProcessBody {
             pid: 0,
@@ -714,7 +773,9 @@ pub extern "C" fn rust_main() -> ! {
         }
         // -----------------------------------------------------------------
 
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SCANNING_MODULES); }
+        if let Some(bs) = &mut bs {
+            bs.show(boot_screen::milestones::SCANNING_MODULES);
+        }
         ingest_bitmaps(&mut k, &boot_info);
         // Default to Limine FB
         let mut use_qemu = false;
@@ -765,7 +826,9 @@ pub extern "C" fn rust_main() -> ! {
 
         spawn_loaded(&mut k, &boot_info);
 
-        if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SPAWNING_INIT); }
+        if let Some(bs) = &mut bs {
+            bs.show(boot_screen::milestones::SPAWNING_INIT);
+        }
         spawn_kernel_init_task(&mut k, &boot_info);
 
         bridge_x86_64::set_tick_hook(scheduler_tick);
@@ -902,10 +965,11 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                 x86_64::instructions::interrupts::without_interrupts(|| {
                     if let Some(mut guard) = KERNEL.try_lock() {
                         if let Some(k) = (*guard).as_mut() {
-                            let dev_id = k.graph.create_thing(THING_PCI_DEVICE_KIND, pci_tb.clone());
+                            let dev_id =
+                                k.graph.create_thing(THING_PCI_DEVICE_KIND, pci_tb.clone());
                             let mut final_link = link_body.clone();
                             final_link.to = dev_id;
-                            
+
                             let lb = ThingBody::from(&TypedBytes {
                                 type_id: TypeId(THING_LINK_KIND.0 as u128),
                                 codec_id: CodecId::POSTCARD,
@@ -917,7 +981,9 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                         }
                     }
                 });
-                if done { break; }
+                if done {
+                    break;
+                }
                 core::hint::spin_loop();
             }
 
@@ -933,7 +999,8 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                         // Quick Map
                         use x86_64::registers::control::Cr3;
                         use x86_64::structures::paging::{
-                            Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
+                            Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB,
+                            Translate,
                         };
                         use x86_64::{PhysAddr, VirtAddr};
 
@@ -946,15 +1013,22 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                         let page_table_ptr = virt_l4.as_mut_ptr();
                         let mut mapper = OffsetPageTable::new(&mut *page_table_ptr, hhdm_offset);
 
-                        let start_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(base));
-                        let end_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(base + size - 1));
-                        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE;
+                        let start_frame =
+                            PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(base));
+                        let end_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(
+                            base + size - 1,
+                        ));
+                        let flags = PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::NO_CACHE;
                         for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
                             let phys = frame.start_address();
                             let virt = hhdm_offset + phys.as_u64();
                             if mapper.translate_addr(virt).is_none() {
                                 let page = Page::<Size4KiB>::containing_address(virt);
-                                if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
+                                if let Ok(map_to) =
+                                    mapper.map_to(page, frame, flags, &mut frame_allocator)
+                                {
                                     map_to.flush();
                                 }
                             }
@@ -974,7 +1048,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                                             if (ports & (1 << p)) != 0 {
                                                 // Bridge.log("INIT: Booting from Port ");
                                                 // print_dec(&Bridge, p as u64);
-                                                
+
                                                 // For v0.2, just pick the first AHCI port as boot port if not set.
                                                 if boot_port_args.is_none() {
                                                     boot_port_args = Some(ScanArgs {
@@ -993,7 +1067,9 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
                                 return; // Success
                             }
                         });
-                        if boot_args.is_some() { break; }
+                        if boot_args.is_some() {
+                            break;
+                        }
                         core::hint::spin_loop();
                     }
                 }
@@ -1036,8 +1112,6 @@ unsafe fn u_sleep(count: u64) {
         core::hint::spin_loop();
     }
 }
-
-
 
 unsafe fn ingest_bitmaps(k: &mut Kernel<Bridge>, boot_info: &boot::BootInfo) {
     use kernel::bridge::HardwareBridge;

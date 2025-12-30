@@ -1,8 +1,8 @@
+pub mod bytespace;
 pub mod driver;
 pub mod graph;
 pub mod time;
 pub mod typed;
-pub mod bytespace;
 
 use crate::bridge::HardwareBridge;
 use crate::Kernel;
@@ -66,7 +66,9 @@ pub fn syscall_dispatch<B: HardwareBridge>(
         SYSCALL_DRIVER_PUBLISH => driver::sys_driver_publish(kernel, a1 as *const u8, a2) as isize,
         SYSCALL_MMIO_MAP => driver::sys_mmio_map(kernel, a1 as u64, a2 as u64) as isize,
         SYSCALL_IRQ_REGISTER => driver::sys_irq_register(kernel, a1) as isize,
-        SYSCALL_PORT_IO => driver::sys_port_io(kernel, a1 as u16, a2 as u32, a3 as u8, a4 != 0) as isize,
+        SYSCALL_PORT_IO => {
+            driver::sys_port_io(kernel, a1 as u16, a2 as u32, a3 as u8, a4 != 0) as isize
+        }
         SYSCALL_TYPEDEF_REGISTER => typed::sys_typedef_register(a1, a2) as isize,
         SYSCALL_TYPEDEF_GET => typed::sys_typedef_get(a1, a2, a3) as isize,
         1 => {
@@ -92,10 +94,12 @@ pub fn syscall_dispatch<B: HardwareBridge>(
             // Kernel starts at 0xFFFF_8000_0000_0000.
             // Be conservative: < 0x8000_0000_0000.
             const USER_MAX: usize = 0x8000_0000_0000;
-            
+
             if (a1 + a2) >= USER_MAX || (a3 + a4) >= USER_MAX || (a5 + a6) >= USER_MAX {
-                 kernel.bridge.log("SYSCALL GRAPH: Security Violation (Ptr > User)\n");
-                 return -1;
+                kernel
+                    .bridge
+                    .log("SYSCALL GRAPH: Security Violation (Ptr > User)\n");
+                return -1;
             }
 
             // Safety: We validated range.

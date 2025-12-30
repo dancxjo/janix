@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 
 // Interface IDs
 pub const IFACE_RTC: &str = "machine.rtc";

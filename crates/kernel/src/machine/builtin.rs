@@ -1,5 +1,5 @@
-use crate::bridge::HardwareBridge;
 use super::{MachineError, ProviderMeta};
+use crate::bridge::HardwareBridge;
 use abi::wire::machine::*;
 use alloc::vec::Vec;
 
@@ -34,7 +34,11 @@ pub fn meta_for(_ep: BuiltinEndpoint) -> ProviderMeta {
     }
 }
 
-fn dispatch_rtc<B: HardwareBridge>(bridge: &B, op: u32, _req: &[u8]) -> Result<Vec<u8>, MachineError> {
+fn dispatch_rtc<B: HardwareBridge>(
+    bridge: &B,
+    op: u32,
+    _req: &[u8],
+) -> Result<Vec<u8>, MachineError> {
     if op == OP_RTC_NOW_NS {
         let ns = bridge.monotonic_now();
         let resp = RtcNowResp { system_ns: ns };
@@ -55,16 +59,23 @@ fn dispatch_fb(op: u32, _req: &[u8]) -> Result<Vec<u8>, MachineError> {
     }
 }
 
-fn dispatch_kbd<B: HardwareBridge>(bridge: &B, op: u32, req: &[u8]) -> Result<Vec<u8>, MachineError> {
+fn dispatch_kbd<B: HardwareBridge>(
+    bridge: &B,
+    op: u32,
+    req: &[u8],
+) -> Result<Vec<u8>, MachineError> {
     if op == OP_KBD_READ_EVENTS {
         let req: KbdReadReq = postcard::from_bytes(req).map_err(|_| MachineError::EncodingError)?;
         let mut events = Vec::new();
         for _ in 0..req.max {
-             if let Some(ev) = crate::input::try_pop_keyboard(bridge) {
-                 events.push(KeyEvent { scancode: ev, pressed: (ev & 0x80) == 0 });
-             } else {
-                 break;
-             }
+            if let Some(ev) = crate::input::try_pop_keyboard(bridge) {
+                events.push(KeyEvent {
+                    scancode: ev,
+                    pressed: (ev & 0x80) == 0,
+                });
+            } else {
+                break;
+            }
         }
         let resp = KbdReadResp { events };
         postcard::to_allocvec(&resp).map_err(|_| MachineError::InternalError)
@@ -73,20 +84,25 @@ fn dispatch_kbd<B: HardwareBridge>(bridge: &B, op: u32, req: &[u8]) -> Result<Ve
     }
 }
 
-fn dispatch_mouse<B: HardwareBridge>(bridge: &B, op: u32, req: &[u8]) -> Result<Vec<u8>, MachineError> {
+fn dispatch_mouse<B: HardwareBridge>(
+    bridge: &B,
+    op: u32,
+    req: &[u8],
+) -> Result<Vec<u8>, MachineError> {
     if op == OP_MOUSE_READ_EVENTS {
-        let req: MouseReadReq = postcard::from_bytes(req).map_err(|_| MachineError::EncodingError)?;
-         let mut events = Vec::new();
+        let req: MouseReadReq =
+            postcard::from_bytes(req).map_err(|_| MachineError::EncodingError)?;
+        let mut events = Vec::new();
         for _ in 0..req.max {
-             if let Some(ev) = crate::input::try_pop_mouse(bridge) {
-                 events.push(MouseEvent { byte: ev });
-             } else {
-                 break;
-             }
+            if let Some(ev) = crate::input::try_pop_mouse(bridge) {
+                events.push(MouseEvent { byte: ev });
+            } else {
+                break;
+            }
         }
         let resp = MouseReadResp { events };
-         postcard::to_allocvec(&resp).map_err(|_| MachineError::InternalError)
+        postcard::to_allocvec(&resp).map_err(|_| MachineError::InternalError)
     } else {
-         Err(MachineError::InvalidOp)
+        Err(MachineError::InvalidOp)
     }
 }

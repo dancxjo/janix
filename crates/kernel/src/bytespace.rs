@@ -116,7 +116,7 @@ impl ByteSpaceStore {
     pub fn get(&self, id: u64) -> Option<&ByteSpace> {
         self.spaces.get(&id)
     }
-    
+
     pub fn get_mut(&mut self, id: u64) -> Option<&mut ByteSpace> {
         self.spaces.get_mut(&id)
     }

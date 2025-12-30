@@ -24,11 +24,11 @@ pub fn init_thread_context(entry: u64, stack: u64, arg: u64) -> ArchContext {
     // If entry is low half (User), use EL0t (0x0).
     if entry & (1 << 63) != 0 {
         ctx[33] = 0x05; // EL1h
-        // SP_EL0 is not used as stack in EL1h mode
+                        // SP_EL0 is not used as stack in EL1h mode
         ctx[31] = 0;
     } else {
         ctx[33] = 0x00; // EL0t
-        // SP_EL0 = stack
+                        // SP_EL0 = stack
         ctx[31] = stack;
     }
     // ELR_EL1 = entry

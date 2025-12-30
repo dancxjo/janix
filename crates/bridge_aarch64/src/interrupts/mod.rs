@@ -1,3 +1,3 @@
 pub mod gic;
-pub mod trap;
 pub mod syscall;
+pub mod trap;

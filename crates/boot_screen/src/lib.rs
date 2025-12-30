@@ -1,9 +1,9 @@
 #![no_std]
 
 mod damage;
-mod unifont;
-mod pixel;
 pub mod milestones;
+mod pixel;
+mod unifont;
 
 pub use damage::Rect;
 pub use pixel::PixelFormat;
@@ -144,12 +144,12 @@ impl<'a> BootScreen<'a> {
         self.current_msg = msg;
 
         if msg.is_empty() {
-             if let Some(old) = self.last_text_rect {
-                  let d = old.inflate(2);
-                  self.add_damage(d);
-             }
-             self.last_text_rect = None;
-             return;
+            if let Some(old) = self.last_text_rect {
+                let d = old.inflate(2);
+                self.add_damage(d);
+            }
+            self.last_text_rect = None;
+            return;
         }
 
         let msg_len = msg.bytes().count() as u32;
@@ -211,7 +211,7 @@ impl<'a> BootScreen<'a> {
             };
 
             self.clear_shadow_rect(&d);
-            
+
             // Pass 1: Soft shadow passes (approximated box blur)
             // Accumulate soft alpha for "antialiased" look
             // Offsets chosen to create a nice spread
@@ -237,22 +237,22 @@ impl<'a> BootScreen<'a> {
         let r = ((self.bg_color >> 16) & 0xFF) as u8;
         let a = ((self.bg_color >> 24) & 0xFF) as u8;
 
-        for y in rect.y .. (rect.y + rect.h) {
+        for y in rect.y..(rect.y + rect.h) {
             let start = (y as usize * self.fb.pitch_bytes as usize) + (rect.x as usize * 4);
             let width_bytes = rect.w as usize * 4;
-            
+
             if start + width_bytes <= self.shadow.len() {
                 // Optimization: If all bytes are the same, use fill
                 if b == g && g == r && r == a {
-                    self.shadow[start..start+width_bytes].fill(b);
+                    self.shadow[start..start + width_bytes].fill(b);
                 } else {
                     // Manual fill for complex colors
                     for i in 0..rect.w as usize {
                         let base = start + i * 4;
                         self.shadow[base] = b;
-                        self.shadow[base+1] = g;
-                        self.shadow[base+2] = r;
-                        self.shadow[base+3] = a;
+                        self.shadow[base + 1] = g;
+                        self.shadow[base + 2] = r;
+                        self.shadow[base + 3] = a;
                     }
                 }
             }
@@ -262,12 +262,26 @@ impl<'a> BootScreen<'a> {
     fn draw_text(&mut self, offset_x: i32, offset_y: i32, color: u32, clip: &Rect) {
         self.draw_text_internal(offset_x, offset_y, color, 255, clip);
     }
-    
-    fn draw_text_blended(&mut self, offset_x: i32, offset_y: i32, color: u32, alpha: u8, clip: &Rect) {
+
+    fn draw_text_blended(
+        &mut self,
+        offset_x: i32,
+        offset_y: i32,
+        color: u32,
+        alpha: u8,
+        clip: &Rect,
+    ) {
         self.draw_text_internal(offset_x, offset_y, color, alpha, clip);
     }
 
-    fn draw_text_internal(&mut self, offset_x: i32, offset_y: i32, color: u32, alpha: u8, clip: &Rect) {
+    fn draw_text_internal(
+        &mut self,
+        offset_x: i32,
+        offset_y: i32,
+        color: u32,
+        alpha: u8,
+        clip: &Rect,
+    ) {
         if self.current_msg.is_empty() {
             return;
         }
@@ -320,9 +334,9 @@ impl<'a> BootScreen<'a> {
                     }
 
                     if alpha_factor == 255 {
-                         self.put_pixel_shadow_bgra(px, py, color);
+                        self.put_pixel_shadow_bgra(px, py, color);
                     } else {
-                         self.blend_pixel_shadow_bgra(px, py, color, alpha_factor);
+                        self.blend_pixel_shadow_bgra(px, py, color, alpha_factor);
                     }
                 }
             }
@@ -331,7 +345,9 @@ impl<'a> BootScreen<'a> {
 
     fn put_pixel_shadow_bgra(&mut self, x: u32, y: u32, argb: u32) {
         let offset = (y as usize * self.fb.pitch_bytes as usize) + (x as usize * 4);
-        if offset + 4 > self.shadow.len() { return; }
+        if offset + 4 > self.shadow.len() {
+            return;
+        }
 
         let a = ((argb >> 24) & 0xFF) as u8;
         let r = ((argb >> 16) & 0xFF) as u8;
@@ -339,14 +355,16 @@ impl<'a> BootScreen<'a> {
         let b = (argb & 0xFF) as u8;
 
         self.shadow[offset] = b;
-        self.shadow[offset+1] = g;
-        self.shadow[offset+2] = r;
-        self.shadow[offset+3] = a;
+        self.shadow[offset + 1] = g;
+        self.shadow[offset + 2] = r;
+        self.shadow[offset + 3] = a;
     }
 
     fn blend_pixel_shadow_bgra(&mut self, x: u32, y: u32, argb: u32, alpha_factor: u8) {
         let offset = (y as usize * self.fb.pitch_bytes as usize) + (x as usize * 4);
-        if offset + 4 > self.shadow.len() { return; }
+        if offset + 4 > self.shadow.len() {
+            return;
+        }
 
         let src_a = ((argb >> 24) & 0xFF) as u8;
         let src_r = ((argb >> 16) & 0xFF) as u8;
@@ -358,38 +376,40 @@ impl<'a> BootScreen<'a> {
         let src_a = ((src_a as u32 * f) >> 8) as u8;
 
         // If source is fully transparent, do nothing
-        if src_a == 0 { return; }
+        if src_a == 0 {
+            return;
+        }
 
         // If source is fully opaque (unlikely with alpha_factor < 255), overwrite
         if src_a == 255 {
-             self.shadow[offset] = src_b;
-             self.shadow[offset+1] = src_g;
-             self.shadow[offset+2] = src_r;
-             self.shadow[offset+3] = src_a;
-             return;
+            self.shadow[offset] = src_b;
+            self.shadow[offset + 1] = src_g;
+            self.shadow[offset + 2] = src_r;
+            self.shadow[offset + 3] = src_a;
+            return;
         }
-        
+
         // Dest colors
         let dst_b = self.shadow[offset];
-        let dst_g = self.shadow[offset+1];
-        let dst_r = self.shadow[offset+2];
-        let dst_a = self.shadow[offset+3];
+        let dst_g = self.shadow[offset + 1];
+        let dst_r = self.shadow[offset + 2];
+        let dst_a = self.shadow[offset + 3];
 
         // Porter-Duff Source Over
         // out = src * alpha + dst * (1 - alpha)
         // using 255-based fixed point
-        
+
         let inv_a = 255 - src_a as u32;
         let out_a = src_a as u32 + ((dst_a as u32 * inv_a) >> 8);
-        
+
         let out_r = ((src_r as u32 * src_a as u32) + (dst_r as u32 * inv_a)) >> 8;
         let out_g = ((src_g as u32 * src_a as u32) + (dst_g as u32 * inv_a)) >> 8;
         let out_b = ((src_b as u32 * src_a as u32) + (dst_b as u32 * inv_a)) >> 8;
 
         self.shadow[offset] = out_b as u8;
-        self.shadow[offset+1] = out_g as u8;
-        self.shadow[offset+2] = out_r as u8;
-        self.shadow[offset+3] = out_a as u8;
+        self.shadow[offset + 1] = out_g as u8;
+        self.shadow[offset + 2] = out_r as u8;
+        self.shadow[offset + 3] = out_a as u8;
     }
 
     fn blit_shadow_to_fb(&mut self, rect: &Rect) {
@@ -397,23 +417,25 @@ impl<'a> BootScreen<'a> {
         let alpha = self.fade_alpha as u32;
         let scale = alpha + 1; // Used for fast shift approximation
 
-        for y in rect.y .. (rect.y + rect.h) {
+        for y in rect.y..(rect.y + rect.h) {
             let row_offset = y as usize * self.fb.pitch_bytes as usize;
             let start = row_offset + (rect.x as usize * 4);
             let width_bytes = rect.w as usize * 4;
 
-            if start + width_bytes > self.shadow.len() { continue; }
+            if start + width_bytes > self.shadow.len() {
+                continue;
+            }
 
             let dst_ptr = unsafe { self.fb.addr.add(start) };
             let src_ptr = self.shadow.as_ptr().wrapping_add(start);
 
             let blit_ptr = BLIT_HOOK.load(Ordering::Relaxed);
             if !blit_ptr.is_null() {
-                 unsafe {
-                     let blit_fn: BlitFn = core::mem::transmute(blit_ptr);
-                     blit_fn(dst_ptr, src_ptr, width_bytes, scale);
-                 }
-                 continue;
+                unsafe {
+                    let blit_fn: BlitFn = core::mem::transmute(blit_ptr);
+                    blit_fn(dst_ptr, src_ptr, width_bytes, scale);
+                }
+                continue;
             }
 
             // Fallback: Use pointer arithmetic for critical boot performance (shadow-to-fb)
@@ -422,33 +444,36 @@ impl<'a> BootScreen<'a> {
             unsafe {
                 let mut s_ptr = src_ptr;
                 let mut d_ptr = dst_ptr;
-                
+
                 for _ in 0..len {
-                     let b = *s_ptr;
-                     let g = *s_ptr.wrapping_add(1);
-                     let r = *s_ptr.wrapping_add(2);
-                     let a = *s_ptr.wrapping_add(3);
+                    let b = *s_ptr;
+                    let g = *s_ptr.wrapping_add(1);
+                    let r = *s_ptr.wrapping_add(2);
+                    let a = *s_ptr.wrapping_add(3);
 
-                     // Fast alpha blending: (color * (alpha + 1)) >> 8
-                     // eliminates expensive division
-                     // We use u32 casts for the multiply
-                     let r_out = ((r as u32 * scale) >> 8) as u8;
-                     let g_out = ((g as u32 * scale) >> 8) as u8;
-                     let b_out = ((b as u32 * scale) >> 8) as u8;
-                     // For packed output, we need to respect format. 
-                     // Assuming Xrgb8888/Abgr8888 as per boot_screen init.
-                     
-                     // Optimization: Use direct u32 write if possible, but packing is safer.
-                     let argb_out = ((a as u32) << 24) | ((r_out as u32) << 16) | ((g_out as u32) << 8) | (b_out as u32);
-                     let final_val = self.fb.pixel_format.pack_le_bytes(argb_out).to_le_bytes();
+                    // Fast alpha blending: (color * (alpha + 1)) >> 8
+                    // eliminates expensive division
+                    // We use u32 casts for the multiply
+                    let r_out = ((r as u32 * scale) >> 8) as u8;
+                    let g_out = ((g as u32 * scale) >> 8) as u8;
+                    let b_out = ((b as u32 * scale) >> 8) as u8;
+                    // For packed output, we need to respect format.
+                    // Assuming Xrgb8888/Abgr8888 as per boot_screen init.
 
-                     *d_ptr = final_val[0];
-                     *d_ptr.wrapping_add(1) = final_val[1];
-                     *d_ptr.wrapping_add(2) = final_val[2];
-                     *d_ptr.wrapping_add(3) = final_val[3];
+                    // Optimization: Use direct u32 write if possible, but packing is safer.
+                    let argb_out = ((a as u32) << 24)
+                        | ((r_out as u32) << 16)
+                        | ((g_out as u32) << 8)
+                        | (b_out as u32);
+                    let final_val = self.fb.pixel_format.pack_le_bytes(argb_out).to_le_bytes();
 
-                     s_ptr = s_ptr.wrapping_add(4);
-                     d_ptr = d_ptr.wrapping_add(4);
+                    *d_ptr = final_val[0];
+                    *d_ptr.wrapping_add(1) = final_val[1];
+                    *d_ptr.wrapping_add(2) = final_val[2];
+                    *d_ptr.wrapping_add(3) = final_val[3];
+
+                    s_ptr = s_ptr.wrapping_add(4);
+                    d_ptr = d_ptr.wrapping_add(4);
                 }
             }
         }

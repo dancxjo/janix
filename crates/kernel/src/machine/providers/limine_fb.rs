@@ -1,7 +1,9 @@
 use crate::bridge::ProviderBridge;
 use crate::machine::{MachineError, ProviderMeta, ProviderVtable};
 use abi::symbols::sym;
-use abi::wire::machine::{FbGetInfoResp, FbPresentReq, FbPresentResp, OP_FB_GET_INFO, OP_FB_PRESENT};
+use abi::wire::machine::{
+    FbGetInfoResp, FbPresentReq, FbPresentResp, OP_FB_GET_INFO, OP_FB_PRESENT,
+};
 use alloc::vec::Vec;
 
 pub struct LimineFramebufferProvider {
@@ -30,7 +32,9 @@ impl LimineFramebufferProvider {
         let provider = unsafe { &*(ctx as *const LimineFramebufferProvider) };
 
         match op {
-            OP_FB_GET_INFO => postcard::to_allocvec(&provider.info).map_err(|_| MachineError::InternalError),
+            OP_FB_GET_INFO => {
+                postcard::to_allocvec(&provider.info).map_err(|_| MachineError::InternalError)
+            }
             OP_FB_PRESENT => {
                 let _ = postcard::from_bytes::<FbPresentReq>(req)
                     .map_err(|_| MachineError::EncodingError)?;

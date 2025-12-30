@@ -40,8 +40,8 @@ pub unsafe fn init() {
         // 63-48: User Base (0x10 - KERNEL_DATA_SELECTOR) -> CS=0x20, SS=0x18
         // 47-32: Kernel Base (0x8 - KERNEL_CODE_SELECTOR) -> CS=0x8, SS=0x10?
         // 31-0:  Reserved (EIP)
-        let star_val: u64 = ((KERNEL_DATA_SELECTOR.0 as u64) << 48)
-                          | ((KERNEL_CODE_SELECTOR.0 as u64) << 32);
+        let star_val: u64 =
+            ((KERNEL_DATA_SELECTOR.0 as u64) << 48) | ((KERNEL_CODE_SELECTOR.0 as u64) << 32);
         x86_64::registers::model_specific::Msr::new(0xC0000081).write(star_val);
     }
 
@@ -105,9 +105,9 @@ unsafe extern "C" fn syscall_handler_naked() {
         "pop r12",
         "pop rbx",
         "pop rbp",
-        "pop r11",     // user RFLAGS
-        "pop rcx",     // user RIP
-        "pop rax",     // user RSP
+        "pop r11", // user RFLAGS
+        "pop rcx", // user RIP
+        "pop rax", // user RSP
         "mov rsp, rax",
         "swapgs",
         "sysretq"
@@ -130,7 +130,7 @@ extern "C" fn syscall_dispatch(
         let bridge = crate::Bridge;
         let rsp: *const u64;
         unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp) };
-        
+
         // Stack layout at entry:
         //  [0] return addr into syscall_handler_naked
         //  [1] saved r9 (arg6)
@@ -139,7 +139,7 @@ extern "C" fn syscall_dispatch(
         let saved_flags = unsafe { *rsp.add(8) };
         let saved_rip = unsafe { *rsp.add(9) };
         let saved_rsp = unsafe { *rsp.add(10) };
-        
+
         bridge.log("SYSCALL entry num=");
         crate::print_hex(num as u64);
         bridge.log(" rip=");

@@ -9,6 +9,9 @@ use abi::ThingId;
 use crate::KERNEL;
 use bridge_x86_64::Bridge;
 use core::sync::atomic::{AtomicU64, Ordering};
+use kernel::boot_fs::{
+    classify_bytes, get_module_role, mount_and_scan, FileArgs, ModuleRole, ModuleType,
+};
 use kernel::bridge::HardwareBridge;
 use kernel::fs::iso9660::{BlockReader, Iso9660Reader};
 use kernel::Kernel;
@@ -20,7 +23,6 @@ use x86_64::structures::paging::{
 };
 use x86_64::VirtAddr;
 use xmas_elf::{program::Type, ElfFile};
-use kernel::boot_fs::{mount_and_scan, FileArgs, classify_bytes, ModuleType, ModuleRole, get_module_role};
 
 // --- SHARED STRUCTS ---
 
@@ -29,7 +31,6 @@ pub struct ScanArgs {
     pub port: usize,
     pub hhdm: u64,
 }
-
 
 // --- BOOT LOGIC ---
 
@@ -117,7 +118,11 @@ fn write_user_bytes(
                 unsafe {
                     if let Ok((_phys, flush)) = mapper.unmap(huge_page) {
                         flush.flush();
-                        let s = alloc::format!("loader: Unmapped conflicting Huge Page: {:?} (phys frame: {:?})\n", huge_page.start_address(), _phys.start_address());
+                        let s = alloc::format!(
+                            "loader: Unmapped conflicting Huge Page: {:?} (phys frame: {:?})\n",
+                            huge_page.start_address(),
+                            _phys.start_address()
+                        );
                         Bridge.log(&s);
                     }
                 }
@@ -243,8 +248,8 @@ fn apply_relative_relocations(
                 //    8 => { ... } // R_X86_64_RELATIVE
                 //    6 => { ... } // R_X86_64_GLOB_DAT
                 //    ...
-                // } 
-                
+                // }
+
                 if r_type == 8 {
                     let value = load_base.wrapping_add(r_addend as u64);
                     write_user_bytes(
@@ -254,12 +259,13 @@ fn apply_relative_relocations(
                         frame_allocator,
                         hhdm_offset,
                     );
-                    
 
                     applied += 1;
                 } else {
-                     Bridge.log(alloc::format!("loader: Unknown Relocation Type: {}\n", r_type).as_str());
-                     panic!("loader: Unknown Relocation Type: {}", r_type);
+                    Bridge.log(
+                        alloc::format!("loader: Unknown Relocation Type: {}\n", r_type).as_str(),
+                    );
+                    panic!("loader: Unknown Relocation Type: {}", r_type);
                 }
             }
 
@@ -320,7 +326,7 @@ pub extern "C" fn scan_boot_fs_task(arg: u64) {
     if let Some(k) = guard.as_mut() {
         mount_and_scan(k, iso, file_loader_task as *const () as usize as u64, hhdm);
     }
-    
+
     loop {
         x86_64::instructions::hlt();
     }
@@ -435,13 +441,13 @@ pub fn process_file(
     use models::builtins::ids::THING_MODULE_KIND;
 
     // --- ByteSpace Logic ---
-    use models::builtins::core_kinds::{ByteSpaceRef, ByteSpaceBody};
-    use models::builtins::ids::{THING_BYTESPACE_KIND, THING_BACKED_BY_KIND, THING_HAS_BYTES_KIND};
+    use models::builtins::core_kinds::{ByteSpaceBody, ByteSpaceRef};
+    use models::builtins::ids::{THING_BACKED_BY_KIND, THING_BYTESPACE_KIND, THING_HAS_BYTES_KIND};
     use models::builtins::symbols::SYM_BYTESPACE;
 
     // 1. Store Bytes in Kernel Store
     // flags: 1 = READ (just metadata flag for now)
-    let bs_id = k.bytespaces.create_from_slice(data, 1).unwrap_or(0); 
+    let bs_id = k.bytespaces.create_from_slice(data, 1).unwrap_or(0);
 
     // 2. Create ByteSpace Thing
     let bs_body = ByteSpaceBody {
@@ -454,7 +460,8 @@ pub fn process_file(
         type_id: TypeId(THING_BYTESPACE_KIND.0 as u128),
         codec_id: CodecId::POSTCARD,
         bytes: postcard::to_allocvec(&bs_body).unwrap(),
-    }).unwrap();
+    })
+    .unwrap();
     let bs_thing_id = k.graph.create_thing(THING_BYTESPACE_KIND, bs_tb);
 
     // Track physical base if memory is identity or HHDM mapped.
@@ -507,7 +514,8 @@ pub fn process_file(
         type_id: TypeId(THING_LINK_KIND.0 as u128),
         codec_id: CodecId::POSTCARD,
         bytes: postcard::to_allocvec(&link_bytes).unwrap(),
-    }).unwrap();
+    })
+    .unwrap();
     k.graph.create_thing(THING_LINK_KIND, lb_bytes);
 
     let link = models::link::LinkBody {
@@ -872,11 +880,11 @@ pub fn process_file(
                 name,
                 current_app_base + img.entry_point,
                 stack_top_virt.as_u64() - 8, // Adjust for Canary
-                heap_virt_start, // Arg passed to main (heap_start)
-                heap_virt_start, // Process heap start
-                heap_virt_end,   // Process heap end
+                heap_virt_start,             // Arg passed to main (heap_start)
+                heap_virt_start,             // Process heap start
+                heap_virt_end,               // Process heap end
             );
-            
+
             // Stack Canary: Write return address to top of stack to debug RIP=0
             unsafe {
                 let stack_ptr = stack_top_virt.as_mut_ptr::<u64>();
@@ -907,7 +915,7 @@ pub fn process_file(
                 // Then `spawn` should take `stack_top_virt - 8`.
                 // Currently `spawn` takes `stack_top_virt.as_u64()`.
                 // Let's write canary at `stack_top_virt - 8` and pass `stack_top_virt - 8` to spawn.
-                
+
                 let canary_addr = stack_top_virt - 8u64;
                 let canary_ptr = canary_addr.as_mut_ptr::<u64>();
                 *canary_ptr = 0xDEAD_BEEF_DEAD_BEEF;

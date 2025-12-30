@@ -133,7 +133,8 @@ unsafe fn map_page(root_table_phys: u64, phys: u64, virt: u64, levels: usize, fl
             let (frame_phys, _frame_virt) = allocate_frame().expect("OOM mapping device");
             // frame_virt is already zeroed by allocate_frame
 
-            let new_entry = frame_phys | PTE_TABLE | PTE_VALID | PTE_AP_RW_EL1 | PTE_AF | PTE_SH_INNER; 
+            let new_entry =
+                frame_phys | PTE_TABLE | PTE_VALID | PTE_AP_RW_EL1 | PTE_AF | PTE_SH_INNER;
             // NOTE: Intermediate tables need valid access. RW EL1 is fine.
             // But for User walk? Does table descriptor AP affect validation?
             // AArch64: Table descriptors (L0-L2) refer to next level.
@@ -141,7 +142,7 @@ unsafe fn map_page(root_table_phys: u64, phys: u64, virt: u64, levels: usize, fl
             // Usually we just set Valid and Table.
             // My previous code set: `frame_phys | PTE_TABLE | PTE_VALID`. Use that.
             // Oh existing code: `let new_entry = frame_phys | PTE_TABLE | PTE_VALID;`
-            
+
             table_ptr.add(index).write(new_entry);
 
             table_phys = frame_phys;
@@ -179,7 +180,7 @@ pub unsafe fn get_phys(root_table_phys: u64, virt: u64) -> Option<u64> {
             return None;
         }
         if (level == 1 || level == 2) && (entry & 0x2) == 0 {
-             return None; // No huge pages supported
+            return None; // No huge pages supported
         }
         table_phys = entry & TABLE_MASK;
     }

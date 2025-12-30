@@ -25,7 +25,7 @@ pub unsafe fn init(hhdm_offset: u64) {
 
     // CPU: Enable | Priority Mask 0xF0 (Allow all)
     write_reg(GICC_BASE_VIRT, GICC_PMR, 0xF0); // Priority Mask
-    write_reg(GICC_BASE_VIRT, GICC_CTLR, 1);   // Enable
+    write_reg(GICC_BASE_VIRT, GICC_CTLR, 1); // Enable
 
     // Enable Timer IRQ (ID 30 for Non-Secure Physical, or 27 for Virtual)
     // QEMU usually maps CNTP (Physical EL1) to 30.

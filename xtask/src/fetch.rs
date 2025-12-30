@@ -341,6 +341,7 @@ fn fetch_cursors(assets: &Path) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::if_same_then_else)]
 fn generate_arrow_cursor(size: u32) -> RgbaImage {
     let mut img = RgbaImage::new(size, size);
 
@@ -433,7 +434,6 @@ fn generate_arrow_cursor(size: u32) -> RgbaImage {
                 } else if (x as i32 - y as i32).abs() <= 1 && x < 16 {
                     color = Rgba([0, 0, 0, 255]);
                 } else if (7 * x + 15 * y > 310) && (7 * x + 15 * y < 340) && x < 16 && y > 10 {
-                    #[allow(clippy::if_same_then_else)]
                     color = Rgba([0, 0, 0, 255]);
                 }
             }

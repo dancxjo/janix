@@ -68,63 +68,68 @@ impl Machine {
         use thing_models::builtins::ids::{THING_LINK_KIND, THING_KIND_KIND};
         use postcard::to_allocvec;
 
-        // Define symbols
-        const KIND_SYS_MACHINE: SymbolId = sym("sys.machine");
-        const KIND_SYS_INTERFACE: SymbolId = sym("sys.interface");
-        const KIND_SYS_DRIVER: SymbolId = sym("sys.driver");
-        const KIND_HW_DEVICE: SymbolId = sym("hw.device");
+        // Symbols
+        let kind_sys_machine = sym("sys.machine");
+        let kind_sys_interface = sym("sys.interface");
+        let kind_sys_driver = sym("sys.driver");
+        let kind_hw_device = sym("hw.device");
 
-        const PRED_HAS_DRIVER: SymbolId = sym("HAS_DRIVER");
-        const PRED_IMPLEMENTS: SymbolId = sym("IMPLEMENTS");
-        const PRED_PROVIDES: SymbolId = sym("PROVIDES");
-        const PRED_DRIVEN_BY: SymbolId = sym("DRIVEN_BY");
+        let pred_has_driver = sym("HAS_DRIVER");
+        let pred_implements = sym("IMPLEMENTS");
+        let pred_provides = sym("PROVIDES");
+        let pred_driven_by = sym("DRIVEN_BY");
 
-        // Seed Kinds
-        let mut seed_kind = |g: &mut GraphStore, id: SymbolId| {
-            let tid = abi::ThingId(id.0);
-            if g.get(tid).is_none() {
+        // Helper: Ensure a thing exists with a specific ID
+        let mut ensure = |g: &mut GraphStore, id: abi::ThingId, kind: abi::ThingId, payload: Vec<u8>| {
+             if g.get(id).is_none() {
                  let t = thing_models::Thing {
-                     id: tid,
-                     kind: THING_KIND_KIND,
-                     body: ThingBody { bytes: Vec::new() },
+                     id,
+                     kind,
+                     body: ThingBody { bytes: payload },
                  };
                  g.insert_seed(t);
-            }
+             }
         };
 
-        seed_kind(graph, KIND_SYS_MACHINE);
-        seed_kind(graph, KIND_SYS_INTERFACE);
-        seed_kind(graph, KIND_SYS_DRIVER);
-        seed_kind(graph, KIND_HW_DEVICE);
-
-        // Helpers
-        let mut create = |g: &mut GraphStore, kind: SymbolId, payload: Vec<u8>| {
-             g.create_thing(abi::ThingId(kind.0), ThingBody { bytes: payload })
+        // Ensure Kinds
+        let mut ensure_kind = |g: &mut GraphStore, id: abi::SymbolId| {
+            let tid = abi::ThingId(id.0);
+            ensure(g, tid, THING_KIND_KIND, Vec::new());
         };
 
-        let mut link = |g: &mut GraphStore, from: abi::ThingId, to: abi::ThingId, pred: SymbolId| {
+        ensure_kind(graph, kind_sys_machine);
+        ensure_kind(graph, kind_sys_interface);
+        ensure_kind(graph, kind_sys_driver);
+        ensure_kind(graph, kind_hw_device);
+
+        // Helper: Ensure Link
+        let mut ensure_link = |g: &mut GraphStore, from: abi::ThingId, to: abi::ThingId, pred: abi::SymbolId| {
+            let mix = from.0.wrapping_add(to.0).wrapping_add(pred.0).wrapping_mul(0x9e3779b97f4a7c15);
+            let lid = abi::ThingId(mix);
+
             #[derive(serde::Serialize)]
-            struct LinkBody { from: abi::ThingId, to: abi::ThingId, predicate: SymbolId }
+            struct LinkBody { from: abi::ThingId, to: abi::ThingId, predicate: abi::SymbolId }
             let body = LinkBody { from, to, predicate: pred };
-            let payload = to_allocvec(&body).unwrap();
-            g.create_thing(THING_LINK_KIND, ThingBody { bytes: payload });
+            ensure(g, lid, THING_LINK_KIND, to_allocvec(&body).unwrap());
         };
 
-        // 1. Create Machine
+        // 1. Machine
         #[derive(serde::Serialize)]
         struct MachineBody { name: &'static str }
-        let mach_id = create(graph, KIND_SYS_MACHINE, to_allocvec(&MachineBody{name: "machine0"}).unwrap());
+        let mach_id = abi::ThingId(sym("machine0").0);
+        ensure(graph, mach_id, abi::ThingId(kind_sys_machine.0), to_allocvec(&MachineBody{name: "machine0"}).unwrap());
 
-        // 2. Create Driver
+        // 2. Driver
         #[derive(serde::Serialize)]
         struct DriverBody { name: &'static str, lane: &'static str, state: &'static str }
-        let driver_id = create(graph, KIND_SYS_DRIVER, to_allocvec(&DriverBody{
+        let drv_id = abi::ThingId(sym("bridge_builtin").0);
+        ensure(graph, drv_id, abi::ThingId(kind_sys_driver.0), to_allocvec(&DriverBody{
             name: "bridge_builtin", lane: "builtin", state: "running"
         }).unwrap());
 
-        link(graph, mach_id, driver_id, PRED_HAS_DRIVER);
+        ensure_link(graph, mach_id, drv_id, pred_has_driver);
 
-        // 3. Create Interfaces and Devices
+        // 3. Interfaces and Devices
         #[derive(serde::Serialize)]
         struct InterfaceBody { name: SymbolId, version: u16 }
 
@@ -142,21 +147,24 @@ impl Machine {
              let iface_sym = sym(iface_str);
              let dev_sym = sym(dev_name);
 
+             let iface_id = abi::ThingId(iface_sym.0);
+             let dev_id = abi::ThingId(dev_sym.0);
+
              // Interface Node
-             let iface_id = create(graph, KIND_SYS_INTERFACE, to_allocvec(&InterfaceBody{
+             ensure(graph, iface_id, abi::ThingId(kind_sys_interface.0), to_allocvec(&InterfaceBody{
                  name: iface_sym, version: 1
              }).unwrap());
 
              // Device Node
-             let dev_id = create(graph, KIND_HW_DEVICE, to_allocvec(&DeviceBody{
+             ensure(graph, dev_id, abi::ThingId(kind_hw_device.0), to_allocvec(&DeviceBody{
                  name: dev_sym, class
              }).unwrap());
 
              // Links
-             link(graph, driver_id, iface_id, PRED_IMPLEMENTS);
-             link(graph, driver_id, dev_id, PRED_PROVIDES);
-             link(graph, dev_id, iface_id, PRED_IMPLEMENTS);
-             link(graph, dev_id, driver_id, PRED_DRIVEN_BY);
+             ensure_link(graph, drv_id, iface_id, pred_implements);
+             ensure_link(graph, drv_id, dev_id, pred_provides);
+             ensure_link(graph, dev_id, iface_id, pred_implements);
+             ensure_link(graph, dev_id, drv_id, pred_driven_by);
         }
     }
 }

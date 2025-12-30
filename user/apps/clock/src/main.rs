@@ -30,7 +30,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
             ver: 1,
             instance: abi::symbols::sym("rtc0"),
             op: OP_RTC_NOW_NS,
-            payload: alloc::vec![],
+            payload: &[],
         };
 
         if let Ok(GraphReply::Bytes { bytes }) = g.call_op(&op, &mut buf) {
@@ -52,7 +52,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
             ver: 1,
             instance: abi::symbols::sym("fb0"),
             op: OP_FB_GET_INFO,
-            payload: alloc::vec![],
+            payload: &[],
         };
 
         if let Ok(GraphReply::Bytes { bytes }) = g.call_op(&op, &mut buf) {

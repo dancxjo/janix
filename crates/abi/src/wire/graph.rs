@@ -60,7 +60,7 @@ pub enum GraphOp<'a> {
         ver: u16,
         instance: SymbolId,
         op: u32,
-        payload: alloc::vec::Vec<u8>,
+        payload: &'a [u8],
     },
 }
 

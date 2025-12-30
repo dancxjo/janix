@@ -53,8 +53,25 @@ pub fn try_pop_mouse<B: crate::bridge::HardwareBridge>(bridge: &B) -> Option<u8>
     result
 }
 
-// Keep generic for backward compatibility if needed, but it was just reading the single ring.
-// If anyone calls `try_pop_event`, they will fail now if I remove it.
-// I'll check usages. `read_pr_comments` mentioned `user/apps` might use it? No, user apps use syscalls.
-// Kernel code might use it. `crates/kernel/src/syscalls/driver.rs` likely uses it.
-// I should check `crates/kernel/src/syscalls/driver.rs`.
+pub fn try_pop_event<B: crate::bridge::HardwareBridge>(bridge: &B) -> Option<DriverEvent> {
+    bridge.irq_disable();
+    // Check Keyboard first
+    let kbd = if let Some(ref mut ring) = *GLOBAL_KBD_RING.lock() {
+        ring.pop()
+    } else {
+        None
+    };
+    if kbd.is_some() {
+        bridge.irq_enable();
+        return kbd;
+    }
+
+    // Check Mouse
+    let mouse = if let Some(ref mut ring) = *GLOBAL_MOUSE_RING.lock() {
+        ring.pop()
+    } else {
+        None
+    };
+    bridge.irq_enable();
+    mouse
+}

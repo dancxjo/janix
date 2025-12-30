@@ -171,7 +171,7 @@ pub fn handle_graph_op<B: HardwareBridge>(
             }
         },
         GraphOp::MachineCall { iface, ver, instance, op, payload } => {
-            match kernel.machine.call(&kernel.bridge, iface, ver, instance, op, &payload) {
+            match kernel.machine.call(&kernel.bridge, iface, ver, instance, op, payload) {
                 Ok(bytes) => GraphReply::Bytes { bytes },
                 Err(_) => GraphReply::Error,
             }

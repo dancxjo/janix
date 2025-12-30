@@ -4,13 +4,13 @@ To maintain a clean and sustainable architecture, ThingOS follows strict package
 
 ## 1. /arch/<arch> (Hardware Plumbing)
 
-**Purpose**: Hardware bring-up, entering the kernel, and satisfying the `HardwareBridge` trait.
+**Purpose**: Hardware bring-up, entering the kernel, and satisfying the bridge traits (`CpuBridge` / `FullMachineBridge`).
 
 **Allowed**:
 - CPU/board bring-up (GDT, IDT, paging, interrupts).
 - Extracting boot facts (memory map, module list) into generic structs.
 - Wiring `Kernel<BridgeImpl>`.
-- Minimal glue for `HardwareBridge`.
+- Minimal glue for the bridge traits.
 
 **Forbidden**:
 - **Policy**: "Load these modules first", "Spawn compositor".
@@ -33,7 +33,7 @@ To maintain a clean and sustainable architecture, ThingOS follows strict package
 
 **Forbidden**:
 - **Bootloader specifics**: No `limine` imports.
-- **Arch-specifics**: No direct register manipulation (use `HardwareBridge`).
+- **Arch-specifics**: No direct register manipulation (use the bridge traits).
 - **Hardcoded Startup**: No "Start compositor" logic.
 
 ## 3. /drivers/* (Capability Modules)

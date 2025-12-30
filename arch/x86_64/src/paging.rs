@@ -11,12 +11,7 @@ use x86_64::VirtAddr;
 ///
 /// # Safety
 /// Caller must ensure the parameters are valid and the mapping is safe.
-pub unsafe fn map_region(
-    phys_base: u64,
-    virt_base: u64,
-    size: u64,
-    flags: u64,
-) -> Result<(), ()> {
+pub unsafe fn map_region(phys_base: u64, virt_base: u64, size: u64, flags: u64) -> Result<(), ()> {
     // Stub on x86_64; actual implementation uses x86_64 crate's OffsetPageTable.
     // TODO: Implement proper region mapping.
     // For now, this is a stub for API symmetry.

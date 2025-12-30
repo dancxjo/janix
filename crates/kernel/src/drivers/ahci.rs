@@ -1,4 +1,4 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::{CpuBridge, FullMachineBridge};
 use crate::Kernel;
 use abi::wire::typed::{CodecId, TypeId, TypedBytes};
 use alloc::boxed::Box;
@@ -100,7 +100,7 @@ static PORT_LOCKS: [Mutex<()>; 32] = [
 
 // --- Driver Logic ---
 
-pub fn init<B: HardwareBridge>(dev: &PciDeviceBody, k: &mut Kernel<B>) -> u32 {
+pub fn init<B: FullMachineBridge>(dev: &PciDeviceBody, k: &mut Kernel<B>) -> u32 {
     k.bridge.log("AHCI: Init\n");
 
     // 1. Get ABAR from BAR 5
@@ -198,7 +198,7 @@ pub fn init<B: HardwareBridge>(dev: &PciDeviceBody, k: &mut Kernel<B>) -> u32 {
 
 use alloc::alloc::{alloc, dealloc, Layout};
 
-unsafe fn init_port(bridge: &impl HardwareBridge, port: &mut HbaPort, port_no: usize, hhdm: u64) {
+unsafe fn init_port(bridge: &impl CpuBridge, port: &mut HbaPort, port_no: usize, hhdm: u64) {
     // Stop Port
     stop_cmd(port);
 
@@ -294,7 +294,7 @@ struct HbaPrdtEntry {
 }
 
 pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
-    bridge: &impl HardwareBridge,
+    bridge: &impl CpuBridge,
     port: &mut HbaPort,
     port_idx: usize,
     lba: u32,
@@ -447,7 +447,7 @@ pub unsafe fn read_atapi_sector_yielding<F: Fn()>(
 
 // Wrapper for existing "unsafe" blocking call
 pub unsafe fn read_sector_at(
-    bridge: &impl HardwareBridge,
+    bridge: &impl CpuBridge,
     abar_base: u64,
     port_idx: usize,
     lba: u32,
@@ -469,7 +469,7 @@ pub unsafe fn read_sector_at(
 }
 
 pub unsafe fn read_sector_yielding<F: Fn()>(
-    bridge: &impl HardwareBridge,
+    bridge: &impl CpuBridge,
     abar_base: u64,
     port_idx: usize,
     lba: u32,

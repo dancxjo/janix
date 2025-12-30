@@ -99,14 +99,16 @@ impl CpuBridge for Bridge {
     }
 
     fn idle(&self) {
-        unsafe { asm!("wfi"); }
+        unsafe {
+            asm!("wfi");
+        }
     }
 
     fn irq_disable(&self) -> Self::IrqState {
         let daif: u64;
         unsafe {
             asm!("mrs {}, daif", out(reg) daif);
-            asm!("msr daifset, #2");  // Set I bit (disable IRQ)
+            asm!("msr daifset, #2"); // Set I bit (disable IRQ)
         }
         // I bit is bit 7 in DAIF; 0 = interrupts enabled
         IrqState((daif & (1 << 7)) == 0)
@@ -114,7 +116,9 @@ impl CpuBridge for Bridge {
 
     fn irq_restore(&self, state: Self::IrqState) {
         if state.0 {
-            unsafe { asm!("msr daifclr, #2"); }  // Clear I bit (enable IRQ)
+            unsafe {
+                asm!("msr daifclr, #2");
+            } // Clear I bit (enable IRQ)
         }
         // If state.0 is false, leave interrupts disabled
     }
@@ -185,7 +189,9 @@ impl Rtc for Bridge {
 impl Power for Bridge {
     fn shutdown(&self) -> ! {
         loop {
-            unsafe { asm!("wfi"); }
+            unsafe {
+                asm!("wfi");
+            }
         }
     }
 }
@@ -210,10 +216,16 @@ impl CpuBridge for Bridge {
     type FpuState = FpuState;
 
     fn log(&self, _msg: &str) {}
-    fn ticks(&self) -> u64 { 0 }
-    fn ticks_per_second(&self) -> u64 { 0 }
+    fn ticks(&self) -> u64 {
+        0
+    }
+    fn ticks_per_second(&self) -> u64 {
+        0
+    }
     fn idle(&self) {}
-    fn irq_disable(&self) -> Self::IrqState { IrqState::default() }
+    fn irq_disable(&self) -> Self::IrqState {
+        IrqState::default()
+    }
     fn irq_restore(&self, _state: Self::IrqState) {}
     fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> Self::Context {
         context::ArchContext([0; 34])
@@ -226,17 +238,25 @@ impl CpuBridge for Bridge {
 
 #[cfg(not(target_arch = "aarch64"))]
 impl MachineBridge for Bridge {
-    fn hhdm_offset(&self) -> u64 { 0 }
+    fn hhdm_offset(&self) -> u64 {
+        0
+    }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
 impl PortIo for Bridge {
     fn port_outb(&self, _port: u16, _val: u8) {}
-    fn port_inb(&self, _port: u16) -> u8 { 0 }
+    fn port_inb(&self, _port: u16) -> u8 {
+        0
+    }
     fn port_outw(&self, _port: u16, _val: u16) {}
-    fn port_inw(&self, _port: u16) -> u16 { 0 }
+    fn port_inw(&self, _port: u16) -> u16 {
+        0
+    }
     fn port_outd(&self, _port: u16, _val: u32) {}
-    fn port_ind(&self, _port: u16) -> u32 { 0 }
+    fn port_ind(&self, _port: u16) -> u32 {
+        0
+    }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
@@ -246,11 +266,17 @@ impl Rtc for Bridge {
 
 #[cfg(not(target_arch = "aarch64"))]
 impl Power for Bridge {
-    fn shutdown(&self) -> ! { loop {} }
+    fn shutdown(&self) -> ! {
+        loop {}
+    }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
 impl VmMapper for Bridge {
-    fn map_new_user_page(&self, _virt_addr: u64, _flags: u64) -> Result<(), ()> { Err(()) }
-    fn map_user_mmio(&self, _virt_addr: u64, _phys_addr: u64, _flags: u64) -> Result<(), ()> { Err(()) }
+    fn map_new_user_page(&self, _virt_addr: u64, _flags: u64) -> Result<(), ()> {
+        Err(())
+    }
+    fn map_user_mmio(&self, _virt_addr: u64, _phys_addr: u64, _flags: u64) -> Result<(), ()> {
+        Err(())
+    }
 }

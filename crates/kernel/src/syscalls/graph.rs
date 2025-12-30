@@ -1,4 +1,4 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::FullMachineBridge;
 use crate::Kernel;
 use abi::wire::graph::{GraphOp, GraphReply};
 use abi::wire::time::{
@@ -11,7 +11,7 @@ use serde::Serialize;
 
 pub const SYSCALL_WAIT_FLAG: usize = 1 << 62;
 
-pub fn handle_graph_op<B: HardwareBridge>(
+pub fn handle_graph_op<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     pid: abi::ids::ProcessId,
     op: GraphOp,
@@ -207,7 +207,7 @@ pub fn handle_graph_op<B: HardwareBridge>(
     }
 }
 
-pub fn handle_graph_query<B: HardwareBridge>(
+pub fn handle_graph_query<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     pid: abi::ids::ProcessId,
     query: &str,

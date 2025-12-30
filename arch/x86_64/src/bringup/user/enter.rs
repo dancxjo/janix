@@ -81,7 +81,7 @@ pub fn resume_user_mode(context: &[u64]) -> ! {
     // NOTE: This assumes the context is the LAST thing on the stack.
     // In our scheduler, kernel_stack is Vec<u128>, and kernel_stack_top is the actual top.
     // The scheduler sets context into thread.context which is a field.
-    // HardwareBridge::resume_user_mode takes &Context.
+    // CpuBridge::switch calls into this path with &Context.
     // We should probably rely on the caller setting the stack top correctly BEFORE calling this,
     // or pass the stack top explicitly.
     // For now, let's look at Bridge::resume_user_mode in lib.rs.

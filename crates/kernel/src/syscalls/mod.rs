@@ -4,11 +4,11 @@ pub mod graph;
 pub mod time;
 pub mod typed;
 
-use crate::bridge::HardwareBridge;
+use crate::bridge::FullMachineBridge;
 use crate::Kernel;
 use abi::syscall_defs::*; // e.g. SYSCALL_DRIVER_WAIT, etc.
 
-pub fn syscall_dispatch<B: HardwareBridge>(
+pub fn syscall_dispatch<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     num: usize,
     a1: usize,

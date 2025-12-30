@@ -14,7 +14,9 @@ impl RtcProvider {
     };
 
     pub fn vtable<B: ProviderBridge + ?Sized>() -> ProviderVtable<B> {
-        ProviderVtable { call: Self::call::<B> }
+        ProviderVtable {
+            call: Self::call::<B>,
+        }
     }
 
     pub fn new() -> Self {

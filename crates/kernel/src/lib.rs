@@ -8,10 +8,10 @@
 #![allow(private_interfaces)]
 extern crate alloc;
 
+pub mod arch;
 pub mod boot_fs;
 pub mod bridge;
 pub mod bytespace;
-pub mod arch;
 pub mod diag;
 pub mod drivers;
 pub mod font;

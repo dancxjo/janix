@@ -92,38 +92,71 @@ fn fetch_limine(vendor: &Path) -> Result<()> {
 fn fetch_ovmf(vendor: &Path) -> Result<()> {
     println!("==> Fetching OVMF...");
     require_tool("curl")?;
+    require_tool("tar")?;
 
     let ovmf_dir = vendor.join("ovmf");
     fs::create_dir_all(&ovmf_dir)?;
 
-    let base_url = "https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v2025.10.09";
+    // The latest drops occasionally regress; pin to a known-good build but let users override.
+    let release = std::env::var("THINGOS_OVMF_RELEASE")
+        .unwrap_or_else(|_| "edk2-stable202411-r1".to_string());
+    let archive_name = format!("{}-bin.tar.xz", release);
+    let archive_url = format!(
+        "https://github.com/rust-osdev/ovmf-prebuilt/releases/download/{}/{}",
+        release, archive_name
+    );
+    let archive_path = ovmf_dir.join(&archive_name);
 
-    let files = [
-        ("ovmf-code-x86_64.fd", "ovmf-x86_64-code.fd"),
-        ("ovmf-vars-x86_64.fd", "ovmf-x86_64-vars.fd"),
-        ("ovmf-code-aarch64.fd", "ovmf-aarch64-code.fd"),
-        ("ovmf-vars-aarch64.fd", "ovmf-aarch64-vars.fd"),
+    println!("    Using OVMF release: {}", release);
+    if !archive_path.exists() {
+        println!("    Downloading {}...", archive_name);
+        download_file(&archive_url, &archive_path)
+            .with_context(|| format!("Failed to download {}", archive_url))?;
+    } else {
+        println!("    Reusing cached {}", archive_name);
+    }
+
+    let extract_dir = ovmf_dir.join(format!("extract-{}", release));
+    if extract_dir.exists() {
+        fs::remove_dir_all(&extract_dir)?;
+    }
+    fs::create_dir_all(&extract_dir)?;
+
+    run_cmd(
+        Command::new("tar")
+            .arg("-xJf")
+            .arg(&archive_path)
+            .arg("-C")
+            .arg(&extract_dir),
+    )
+    .context("Failed to unpack OVMF archive")?;
+
+    let base = extract_dir.join(format!("{}-bin", release));
+    let mappings = [
+        ("x64/code.fd", "ovmf-code-x86_64.fd"),
+        ("x64/vars.fd", "ovmf-vars-x86_64.fd"),
+        ("aarch64/code.fd", "ovmf-code-aarch64.fd"),
+        ("aarch64/vars.fd", "ovmf-vars-aarch64.fd"),
     ];
 
-    for (dest_name, src_name) in files {
+    for (src_rel, dest_name) in mappings {
+        let src = base.join(src_rel);
+        ensure!(
+            src.exists(),
+            "OVMF artifact missing from release {}: {}",
+            release,
+            src_rel
+        );
         let dest = ovmf_dir.join(dest_name);
-        if dest.exists() {
-            continue;
-        }
-        let url = format!("{}/{}", base_url, src_name);
-        println!("    Downloading {}...", dest_name);
-
-        if download_file(&url, &dest).is_err() {
-            eprintln!(
-                "    [WARNING] Failed to download {}. Creating placeholder.",
-                dest_name
-            );
-            let mut data = vec![0u8; 4 * 1024 * 1024];
-            let msg = b"PLACEHOLDER: Replace with real OVMF firmware";
-            data[..msg.len()].copy_from_slice(msg);
-            fs::write(&dest, &data)?;
-        }
+        println!(
+            "    Installing {} -> {}",
+            src_rel,
+            dest.file_name().unwrap().to_string_lossy()
+        );
+        fs::copy(&src, &dest).with_context(|| format!("Failed to install {}", dest_name))?;
     }
+
+    fs::remove_dir_all(&extract_dir).context("Failed to clean temporary OVMF extraction dir")?;
 
     Ok(())
 }

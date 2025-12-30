@@ -1,4 +1,4 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::CpuBridge;
 use core::ptr::NonNull;
 
 #[repr(C, packed)]
@@ -41,7 +41,7 @@ const TN_CONF_32MODE_CNF: u64 = 1 << 8;
 static mut HPET_BASE: u64 = 0;
 static mut CLK_PERIOD_FS: u64 = 0; // Femtoseconds per tick
 
-pub unsafe fn init_table(bridge: &impl HardwareBridge, ptr: u64, hhdm: u64) {
+pub unsafe fn init_table(bridge: &impl CpuBridge, ptr: u64, hhdm: u64) {
     // Note: acpi was moved to crate::platform::acpi
     let table = &*(crate::platform::acpi::to_virt(ptr, hhdm).as_ptr() as *const HpetTable);
 

@@ -1,7 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::alloc::Layout;
-// use crate::bridge::HardwareBridge; // Not needed for store logic yet if we don't map vertically
+// use crate::bridge::FullMachineBridge; // Not needed for store logic yet if we don't map vertically
 
 #[derive(Debug)]
 pub struct ByteSpace {

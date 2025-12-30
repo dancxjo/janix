@@ -4,7 +4,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use crate::bridge::HardwareBridge;
+use crate::bridge::FullMachineBridge;
 use crate::fs::iso9660::{BlockReader, Iso9660Reader};
 use crate::Kernel;
 use abi::ThingId;
@@ -104,7 +104,7 @@ pub fn get_module_role(name: &str, mtype: &ModuleType) -> ModuleRole {
     }
 }
 
-pub fn mount_and_scan<B: HardwareBridge>(
+pub fn mount_and_scan<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     iso: Arc<Iso9660Reader<Box<dyn BlockReader + Send + Sync>>>,
     loader_entry: u64,
@@ -356,7 +356,7 @@ pub fn mount_and_scan<B: HardwareBridge>(
     kernel.bridge.log("loader: All scan tasks spawned.\n");
 }
 
-pub fn ingest_module<B: HardwareBridge>(
+pub fn ingest_module<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     name: &str,
     data: &[u8],
@@ -513,7 +513,7 @@ pub fn ingest_module<B: HardwareBridge>(
     mod_id
 }
 
-pub fn register_boot_process<B: HardwareBridge>(
+pub fn register_boot_process<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     name: &str,
     entry_point: u64,

@@ -2,13 +2,10 @@
 //!
 //! Forwarding layer from bridge to bringup implementation.
 
-pub use crate::bringup::user::UserEntryRegs;
 pub use crate::bringup::user::enter::{
-    enter_user_mode,
-    resume_user_mode,
-    alloc_user_stack,
-    activate_address_space,
+    activate_address_space, alloc_user_stack, enter_user_mode, resume_user_mode,
 };
+pub use crate::bringup::user::UserEntryRegs;
 
 /// Enter user mode with the given parameters.
 ///

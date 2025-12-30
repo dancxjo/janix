@@ -1,4 +1,4 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::FullMachineBridge;
 use abi::wire::typed::{CodecId, TypeId, TypedBytes};
 use abi::{SymbolId, ThingId};
 use thing_models::builtins::ids::{
@@ -11,7 +11,7 @@ use thing_models::Thing;
 pub const SERIAL_IO_PORT: u16 = 0x3F8;
 
 #[cfg(target_arch = "x86_64")]
-pub fn init(bridge: &impl HardwareBridge) {
+pub fn init(bridge: &impl FullMachineBridge) {
     bridge.log("SERIAL: Initializing COM1...\n");
     // Standard COM1 initialization
     // Interrupt Enable (Base + 1)
@@ -45,7 +45,7 @@ pub fn init(bridge: &impl HardwareBridge) {
 const PL011_BASE: u64 = 0x0900_0000;
 
 #[cfg(target_arch = "aarch64")]
-pub fn init(bridge: &impl HardwareBridge) {
+pub fn init(bridge: &impl FullMachineBridge) {
     bridge.log("SERIAL: Initializing PL011...\n");
 
     let base = (PL011_BASE + bridge.hhdm_offset()) as *mut u32;
@@ -67,7 +67,7 @@ pub fn init(bridge: &impl HardwareBridge) {
     bridge.log("SERIAL: PL011 Ready\n");
 }
 
-pub fn publish_serial_thing<B: HardwareBridge>(k: &mut crate::Kernel<B>) {
+pub fn publish_serial_thing<B: FullMachineBridge>(k: &mut crate::Kernel<B>) {
     let dev_body = SerialPortBody {
         port_base: SERIAL_IO_PORT,
         irq: 4,

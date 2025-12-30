@@ -1,4 +1,4 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::FullMachineBridge;
 use crate::Kernel;
 use abi::ThingId;
 use alloc::vec::Vec;
@@ -6,7 +6,7 @@ use thing_models::builtins::ids::{
     THING_BACKED_BY_KIND, THING_FILE_KIND, THING_LINK_KIND, THING_MODULE_KIND,
 };
 
-pub fn read_file_bytes<B: HardwareBridge>(
+pub fn read_file_bytes<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     file_id: ThingId,
     offset: u64,
@@ -98,7 +98,7 @@ pub fn read_file_bytes<B: HardwareBridge>(
     Err(())
 }
 
-fn read_module_bytes<B: HardwareBridge>(
+fn read_module_bytes<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     module_id: ThingId,
     offset: u64,

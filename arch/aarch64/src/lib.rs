@@ -8,16 +8,16 @@ extern crate alloc;
 pub mod boot;
 pub mod bridge;
 pub mod bringup;
-pub mod entry;
 pub mod early_log;
+pub mod entry;
 pub mod heap;
 pub mod loader;
+pub mod memory_intrinsics;
 pub mod paging;
 pub mod simd;
-pub mod memory_intrinsics;
 
 // Re-export key items for convenience
-pub use bridge::{Bridge, TICK_HOOK, PAGE_FAULT_HOOK, set_tick_hook, set_page_fault_hook};
+pub use bridge::{set_page_fault_hook, set_tick_hook, Bridge, PAGE_FAULT_HOOK, TICK_HOOK};
 
 /// Boot log macro for early boot messages.
 #[macro_export]

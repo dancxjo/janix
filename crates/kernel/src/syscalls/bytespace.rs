@@ -1,8 +1,8 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::FullMachineBridge;
 use crate::Kernel;
 use abi::wire::bytespace::*;
 
-pub fn sys_bytespace_create<B: HardwareBridge>(
+pub fn sys_bytespace_create<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     req_ptr: usize,
     req_len: usize,
@@ -29,7 +29,7 @@ pub fn sys_bytespace_create<B: HardwareBridge>(
     }
 }
 
-pub fn sys_bytespace_map<B: HardwareBridge>(
+pub fn sys_bytespace_map<B: FullMachineBridge>(
     kernel: &mut Kernel<B>,
     req_ptr: usize,
     req_len: usize,
@@ -125,7 +125,7 @@ pub fn sys_bytespace_map<B: HardwareBridge>(
     }
 }
 
-pub fn sys_bytespace_read<B: HardwareBridge>(
+pub fn sys_bytespace_read<B: FullMachineBridge>(
     _kernel: &mut Kernel<B>,
     _req_ptr: usize,
     _req_len: usize,
@@ -137,7 +137,7 @@ pub fn sys_bytespace_read<B: HardwareBridge>(
     -1
 }
 
-pub fn sys_bytespace_write<B: HardwareBridge>(
+pub fn sys_bytespace_write<B: FullMachineBridge>(
     _kernel: &mut Kernel<B>,
     _req_ptr: usize,
     _req_len: usize,

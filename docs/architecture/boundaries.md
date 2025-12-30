@@ -17,7 +17,7 @@ This document defines the strict boundaries between architecture-specific code, 
 - Early heap init + HHDM mapping needed to reach kernel entry
 - Interrupt controller setup (IDT/GDT on x86_64; exception vectors / GIC basics on aarch64)
 - Timer tick wiring (hooking the scheduler tick into the arch timer/irq)
-- Very small arch shims that implement `kernel::bridge::HardwareBridge` or similar
+- Very small arch shims that implement `kernel::bridge::CpuBridge` / `FullMachineBridge`
 
 **Not allowed:**
 - Filesystem parsing, ISO9660, ELF parsing, module scanning logic

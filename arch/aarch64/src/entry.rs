@@ -2,18 +2,18 @@
 //!
 //! This module contains the architecture-specific boot flow and main loop.
 
-use core::iter::Iterator;
 use ::boot::BootFacts;
+use core::iter::Iterator;
 
 use crate::boot;
+use crate::bootlog;
 use crate::bridge::{self, Bridge};
 use crate::bringup;
 use crate::early_log;
 use crate::heap;
-use crate::simd;
 use crate::loader;
 use crate::paging;
-use crate::bootlog;
+use crate::simd;
 
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -29,7 +29,7 @@ static mut FRAMEBUFFER_INFO: Option<(u64, usize)> = None;
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-        use kernel::diag::LogRing;
+    use kernel::diag::LogRing;
 
     // Recursion guard
     if PANICKING.swap(true, Ordering::Relaxed) {
@@ -108,7 +108,6 @@ struct BootStack([u8; BOOT_STACK_SIZE]);
 #[unsafe(link_section = ".bss")]
 static mut BOOT_STACK: BootStack = BootStack([0; BOOT_STACK_SIZE]);
 
-
 /// Architecture entry point called from lib.rs Arch::boot().
 /// Forwards to the naked _start function.
 pub fn arch_entry() -> ! {
@@ -144,7 +143,6 @@ pub extern "C" fn _start() -> ! {
 #[no_mangle]
 #[no_mangle]
 unsafe extern "C" fn rust_main() -> ! {
-    
     // 1. HHDM & Hardware Init
     let hhdm_req = boot::loader::HHDM_REQUEST.get_response();
     let memmap_req = boot::loader::MEMORY_MAP_REQUEST.get_response();
@@ -152,7 +150,7 @@ unsafe extern "C" fn rust_main() -> ! {
     if let Some(resp) = hhdm_req {
         let offset = resp.offset();
         Bridge::init(offset);
-        let _ = Bridge.irq_disable();  // Discard state - we're at boot
+        let _ = Bridge.irq_disable(); // Discard state - we're at boot
 
         // 2. Heap Init (Manual)
         let heap_size = heap::KERNEL_HEAP_SIZE_BYTES as u64;
@@ -208,7 +206,7 @@ unsafe extern "C" fn rust_main() -> ! {
     let mut bs = unsafe {
         if let Some(fb) = &boot_info.framebuffer {
             if fb.bpp != 32 {
-                                Bridge.log("BOOTSCREEN: Unsupported BPP (needs 32)\n");
+                Bridge.log("BOOTSCREEN: Unsupported BPP (needs 32)\n");
                 None
             } else {
                 let addr = fb.address; // Virtual address
@@ -248,12 +246,12 @@ unsafe extern "C" fn rust_main() -> ! {
                     bs.show(boot_screen::milestones::BOOTING);
                     Some(bs)
                 } else {
-                                        Bridge.log("BOOTSCREEN: Init Failed (Alloc/Size)\n");
+                    Bridge.log("BOOTSCREEN: Init Failed (Alloc/Size)\n");
                     None
                 }
             }
         } else {
-                        Bridge.log("BOOTSCREEN: No Framebuffer\n");
+            Bridge.log("BOOTSCREEN: No Framebuffer\n");
             None
         }
     };
@@ -318,7 +316,7 @@ unsafe extern "C" fn rust_main() -> ! {
         crate::bringup::interrupts::syscall::set_syscall_hook(syscall_hook);
         crate::bridge::set_page_fault_hook(page_fault_hook);
 
-        Bridge.irq_restore(crate::bridge::IrqState(true));  // Enable interrupts for the first time
+        Bridge.irq_restore(crate::bridge::IrqState(true)); // Enable interrupts for the first time
 
         loop {
             Bridge.idle();
@@ -327,7 +325,6 @@ unsafe extern "C" fn rust_main() -> ! {
 }
 
 unsafe fn ingest_all_modules(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
-    
     k.bridge.log("BOOT: Ingesting RAM Modules...\n");
     let hhdm = boot_info.hhdm_offset;
 
@@ -347,7 +344,6 @@ unsafe fn ingest_all_modules(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
 }
 
 unsafe fn spawn_sprout(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
-    
     let hhdm_offset = boot_info.hhdm_offset;
     let (fb_phys, fb_size) = if let Some(fb) = &boot_info.framebuffer {
         (fb.address, fb.size as usize)
@@ -376,8 +372,7 @@ unsafe fn spawn_sprout(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
         }
     }
 
-    k.bridge
-        .log("BOOT: WARNING: sprout.elf not found!\n");
+    k.bridge.log("BOOT: WARNING: sprout.elf not found!\n");
 }
 fn boot_spin_delay(count: u64) {
     for _ in 0..count {
@@ -386,7 +381,7 @@ fn boot_spin_delay(count: u64) {
 }
 
 fn print_hex(bridge: &Bridge, val: u64) {
-        let mut printed = false;
+    let mut printed = false;
     for i in (0..16).rev() {
         let digit = (val >> (i * 4)) & 0xF;
         if digit != 0 || printed || i == 0 {
@@ -402,7 +397,7 @@ fn print_hex(bridge: &Bridge, val: u64) {
 }
 
 fn print_dec(bridge: &Bridge, val: u64) {
-        let mut buf = [0u8; 20]; // enough for u64
+    let mut buf = [0u8; 20]; // enough for u64
     let mut n = val;
     let mut i = buf.len();
     loop {
@@ -422,7 +417,7 @@ fn page_fault_hook(
     esr: u64,
 ) {
     unsafe {
-                Bridge.log("PAGE FAULT\n");
+        Bridge.log("PAGE FAULT\n");
         Bridge.log("FAR: ");
         print_hex(&Bridge, fault_addr);
         Bridge.log(" ESR: ");
@@ -478,7 +473,7 @@ fn syscall_hook(
 
         if let Some(mut guard) = KERNEL.try_lock() {
             if let Some(k) = (*guard).as_mut() {
-                                let hhdm_offset_u64 = k.bridge.hhdm_offset();
+                let hhdm_offset_u64 = k.bridge.hhdm_offset();
 
                 let (fb_phys, fb_size) = unsafe { FRAMEBUFFER_INFO.unwrap_or((0, 0)) };
 
@@ -520,7 +515,7 @@ fn scheduler_tick(frame: &mut crate::bringup::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = (*guard).as_mut() {
             use crate::bringup::ArchContext;
-                        use kernel::sched::scheduler::ThreadContext;
+            use kernel::sched::scheduler::ThreadContext;
 
             let ctx_ptr = frame as *mut crate::bringup::interrupts::trap::TrapFrame
                 as *mut ThreadContext<ArchContext>;

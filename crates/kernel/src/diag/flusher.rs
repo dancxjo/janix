@@ -1,4 +1,4 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::FullMachineBridge;
 use crate::diag::{EntryKind, LogRing};
 use crate::Kernel;
 use abi::{SymbolId, ThingId};
@@ -20,7 +20,7 @@ static LAST_SEQ: AtomicU64 = AtomicU64::new(0);
 
 static LOG_STREAM_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-pub fn flush_diagnostics<B: HardwareBridge>(kernel: &mut Kernel<B>) {
+pub fn flush_diagnostics<B: FullMachineBridge>(kernel: &mut Kernel<B>) {
     // 1. Ensure Stream Thing Exists
     if !LOG_STREAM_INITIALIZED.load(Ordering::Relaxed) {
         let body = LogStreamBody {

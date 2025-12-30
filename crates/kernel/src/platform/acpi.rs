@@ -1,4 +1,4 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::CpuBridge;
 use core::ptr::NonNull;
 
 // Minimal ACPI Table Headers
@@ -29,7 +29,7 @@ struct SdtHeader {
     creator_revision: u32,
 }
 
-pub fn init(bridge: &impl HardwareBridge, rsdp_addr: u64, hhdm: u64) {
+pub fn init(bridge: &impl CpuBridge, rsdp_addr: u64, hhdm: u64) {
     if rsdp_addr == 0 {
         bridge.log("ACPI: No RSDP address provided. Skipping ACPI init.\n");
         return;
@@ -79,7 +79,7 @@ pub fn to_virt(phys: u64, hhdm: u64) -> NonNull<u8> {
     NonNull::new(virt as *mut u8).unwrap()
 }
 
-unsafe fn print_hex(bridge: &impl HardwareBridge, val: u64) {
+unsafe fn print_hex(bridge: &impl CpuBridge, val: u64) {
     bridge.log("0x");
     let mut printed = false;
     for i in (0..16).rev() {
@@ -96,7 +96,7 @@ unsafe fn print_hex(bridge: &impl HardwareBridge, val: u64) {
     }
 }
 
-unsafe fn parse_xsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
+unsafe fn parse_xsdt(bridge: &impl CpuBridge, phys: u64, hhdm: u64) {
     bridge.log("ACPI: Parsing XSDT at ");
     print_hex(bridge, phys);
     bridge.log("\n");
@@ -124,7 +124,7 @@ unsafe fn parse_xsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
     }
 }
 
-unsafe fn parse_rsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
+unsafe fn parse_rsdt(bridge: &impl CpuBridge, phys: u64, hhdm: u64) {
     bridge.log("ACPI: Parsing RSDT at ");
     print_hex(bridge, phys);
     bridge.log("\n");
@@ -152,7 +152,7 @@ unsafe fn parse_rsdt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
     }
 }
 
-unsafe fn check_table(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
+unsafe fn check_table(bridge: &impl CpuBridge, phys: u64, hhdm: u64) {
     let ptr = to_virt(phys, hhdm).as_ptr();
     let header = core::ptr::read_unaligned(ptr as *const SdtHeader);
 
@@ -216,7 +216,7 @@ pub static mut IO_APIC_GSI_BASE: u32 = 0;
 // Index is Legacy IRQ (0..16), Value is GSI
 pub static mut ISA_OVERRIDES: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
-unsafe fn parse_madt(bridge: &impl HardwareBridge, phys: u64, hhdm: u64) {
+unsafe fn parse_madt(bridge: &impl CpuBridge, phys: u64, hhdm: u64) {
     bridge.log("ACPI: Parsing MADT (APIC)\n");
 
     // READ UNALIGNED

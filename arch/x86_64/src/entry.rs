@@ -2,18 +2,18 @@
 //!
 //! This module contains the architecture-specific boot flow and main loop.
 
-use alloc;
 use ::boot::{BootFacts, MemoryRegionKind};
+use alloc;
 
 use crate::boot;
 use crate::bridge::{self, Bridge};
 use crate::bringup::{self, gdt};
 use crate::early_log;
 use crate::heap;
-use crate::simd;
 use crate::loader;
-use crate::paging;
 use crate::memory_intrinsics;
+use crate::paging;
+use crate::simd;
 
 // Global state for loader to map framebuffer
 pub static mut FRAMEBUFFER_INFO: Option<(u64, u64)> = None;
@@ -28,7 +28,6 @@ static PANICKING: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    
     // Recursion guard
     if PANICKING.swap(true, Ordering::Relaxed) {
         loop {
@@ -101,7 +100,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 fn print_hex(bridge: &Bridge, val: u64) {
-        let mut printed = false;
+    let mut printed = false;
     for i in (0..16).rev() {
         let digit = (val >> (i * 4)) & 0xF;
         if digit != 0 || printed || i == 0 {
@@ -117,7 +116,7 @@ fn print_hex(bridge: &Bridge, val: u64) {
 }
 
 fn print_dec(bridge: &Bridge, val: u64) {
-        if val == 0 {
+    if val == 0 {
         bridge.log("0");
         return;
     }
@@ -242,7 +241,7 @@ fn scheduler_tick_legacy(frame: &mut crate::bringup::interrupts::trap::TrapFrame
             }
 
             {
-                                let now_raw = k.bridge.ticks();
+                let now_raw = k.bridge.ticks();
                 let last = LAST_TICKS.swap(now_raw, Ordering::Relaxed);
                 let now_ns = k.bridge.monotonic_now();
 
@@ -340,7 +339,7 @@ fn page_fault_hook_impl(
             );
         }
     }
-    
+
     #[allow(unused_imports)]
     use x86_64::structures::paging::FrameAllocator;
 
@@ -365,7 +364,7 @@ fn page_fault_hook_impl(
                         if let Some(Some(process)) = k.scheduler.processes.get(pid.0 as usize - 1) {
                             // LOGGING (Temporary)
                             unsafe {
-                                                                let s = alloc::format!(
+                                let s = alloc::format!(
                                     "PF Hook: Addr={:#x} PID={} HeapStart={:#x} HeapEnd={:#x}\n",
                                     fault_addr,
                                     pid.0,
@@ -478,7 +477,6 @@ fn syscall_hook(
 
         if let Some(mut guard) = KERNEL.try_lock() {
             if let Some(k) = (*guard).as_mut() {
-                
                 // k.bridge.log("SYSCALL SPAWN: ");
                 // k.bridge.log(name);
                 // k.bridge.log("\n");
@@ -522,7 +520,7 @@ fn scheduler_tick(frame: &mut crate::bringup::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = (*guard).as_mut() {
             use crate::bringup::ArchContext;
-                        use kernel::sched::scheduler::ThreadContext;
+            use kernel::sched::scheduler::ThreadContext;
 
             // Cast frame to context
             // x86 TrapFrame might differ from ArchContext layout exactly on stack?
@@ -619,11 +617,11 @@ unsafe extern "C" fn rust_main() -> ! {
     boot_screen::set_blit_hook(simd::sse_blit);
 
     // 2. Safe to Allocate now (Vec, String, etc.)
-    
+
     // CRITICAL: Initialize GDT, IDT, PIC, and syscall BEFORE any interrupts
     // This was previously missing, causing triple faults when interrupts were enabled.
     Bridge::init(None, hhdm_offset_u64);
-    
+
     let boot_info = crate::boot::loader::collect();
     let rsdp_addr = boot_info.rsdp_addr.unwrap_or(0);
 
@@ -685,7 +683,7 @@ unsafe extern "C" fn rust_main() -> ! {
     }
 
     unsafe {
-                k.bridge.log("BOOT: Kernel Initialized\n");
+        k.bridge.log("BOOT: Kernel Initialized\n");
         k.bridge.log(thing_models::milestones::KERNEL_ENTRY);
         k.bridge.log("\n");
 
@@ -821,7 +819,7 @@ unsafe extern "C" fn rust_main() -> ! {
         }
 
         {
-                        k.bridge.log("INIT: ACPI Setup...\n");
+            k.bridge.log("INIT: ACPI Setup...\n");
 
             if rsdp_addr != 0 {
                 // Bridge::init_acpi already called via Bridge::init (if I updated Bridge::init to do it, or I need to call it manually).
@@ -954,8 +952,8 @@ unsafe extern "C" fn rust_main() -> ! {
                 options(nomem, nostack, preserves_flags)
             );
         }
-        Bridge.irq_enable();  // Enable interrupts for the first time
-        // Debug: Immediately after sti
+        Bridge.irq_enable(); // Enable interrupts for the first time
+                             // Debug: Immediately after sti
         unsafe {
             core::arch::asm!(
                 "out dx, al",
@@ -978,13 +976,12 @@ unsafe extern "C" fn rust_main() -> ! {
 
     loop {
         unsafe {
-                        Bridge.idle();
+            Bridge.idle();
         }
     }
 }
 
 unsafe fn spawn_sprout(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
-    
     let hhdm_offset = boot_info.hhdm_offset;
 
     for module in &boot_info.modules {
@@ -998,12 +995,11 @@ unsafe fn spawn_sprout(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
         }
     }
 
-    k.bridge
-        .log("BOOT: WARNING: sprout.elf not found!\n");
+    k.bridge.log("BOOT: WARNING: sprout.elf not found!\n");
 }
 
 unsafe fn spawn_kernel_init_task(k: &mut Kernel<Bridge>, _boot_info: &BootFacts) {
-        k.bridge.log("BOOT: Spawning Kernel Init Task...\n");
+    k.bridge.log("BOOT: Spawning Kernel Init Task...\n");
 
     let stack_layout = alloc::alloc::Layout::from_size_align(65536, 16).unwrap();
     let stack_ptr = alloc::alloc::alloc(stack_layout);
@@ -1029,7 +1025,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
     let hhdm_offset_u64 = HHDM_OFFSET.load(Ordering::Relaxed);
     let hhdm_offset = VirtAddr::new(hhdm_offset_u64);
 
-        Bridge.log("INIT: Entered kernel_init_task_entry\n");
+    Bridge.log("INIT: Entered kernel_init_task_entry\n");
 
     // Memory and ACPI are now initialized in rust_main before we run.
     // We proceed directly to PCI Scan.
@@ -1126,7 +1122,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
 
             // AHCI Check
         }
-                Bridge.log("INIT: Kernel Init Task Complete (No Disk Scan).\n");
+        Bridge.log("INIT: Kernel Init Task Complete (No Disk Scan).\n");
 
         Bridge.log("INIT: Complete. Parking.\n");
 
@@ -1143,7 +1139,6 @@ unsafe fn u_sleep(count: u64) {
 }
 
 unsafe fn ingest_all_modules(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
-    
     k.bridge.log("BOOT: Ingesting RAM Modules...\n");
     let hhdm = boot_info.hhdm_offset;
 

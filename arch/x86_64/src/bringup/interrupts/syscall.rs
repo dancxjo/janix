@@ -2,12 +2,12 @@ use crate::bringup::gdt::{
     KERNEL_CODE_SELECTOR, KERNEL_DATA_SELECTOR, USER_CODE_SELECTOR, USER_DATA_SELECTOR,
 };
 use core::arch::naked_asm;
+use kernel::bridge::CpuBridge;
 use x86_64::registers::model_specific::{
     Efer, EferFlags, GsBase, KernelGsBase, LStar, SFMask, Star,
 };
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
-use kernel::bridge::CpuBridge;
 
 // Scratch Layout:
 // [0]: User RSP (Temporary storage)
@@ -127,7 +127,7 @@ extern "C" fn syscall_dispatch(
 ) -> isize {
     static LOG_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
     if LOG_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 16 {
-                let bridge = crate::Bridge;
+        let bridge = crate::Bridge;
         let rsp: *const u64;
         unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp) };
 

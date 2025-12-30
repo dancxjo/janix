@@ -1,6 +1,6 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::PortIo;
 
-pub fn init(bridge: &impl HardwareBridge) {
+pub fn init(bridge: &impl PortIo) {
     bridge.log("PS2: Initializing...\n");
 
     let cmd_port = 0x64;
@@ -49,7 +49,7 @@ pub fn init(bridge: &impl HardwareBridge) {
     bridge.log("\n");
 }
 
-fn wait_write(bridge: &impl HardwareBridge, port: u16) {
+fn wait_write(bridge: &impl PortIo, port: u16) {
     // Wait for bit 1 (Input Buffer Full) of Status Register (0x64) to be 0
     let mut count = 0;
     while bridge.port_inb(port) & 2 != 0 {
@@ -61,7 +61,7 @@ fn wait_write(bridge: &impl HardwareBridge, port: u16) {
     }
 }
 
-fn wait_read(bridge: &impl HardwareBridge, port: u16) {
+fn wait_read(bridge: &impl PortIo, port: u16) {
     // Wait for bit 0 (Output Buffer Full) of Status Register (0x64) to be 1
     let mut count = 0;
     while bridge.port_inb(port) & 1 == 0 {

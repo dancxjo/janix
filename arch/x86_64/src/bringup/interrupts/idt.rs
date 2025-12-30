@@ -1,8 +1,8 @@
 use crate::bringup::interrupts::trap::{self, TrapFrame};
 use core::arch::naked_asm;
+use kernel::bridge::CpuBridge;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use x86_64::VirtAddr;
-use kernel::bridge::CpuBridge;
 
 // Debug counter for IRQ1
 pub static IRQ1_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
@@ -52,7 +52,7 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 pub extern "C" fn double_fault_handler(frame: &mut TrapFrame, error_code: u64) -> ! {
     // Direct output to debugcon before anything else
     unsafe {
-                let bridge = crate::Bridge;
+        let bridge = crate::Bridge;
         bridge.log("\n!!! DOUBLE FAULT !!!\n");
         bridge.log("RIP: ");
         crate::print_hex(&bridge, frame.rip);
@@ -62,7 +62,7 @@ pub extern "C" fn double_fault_handler(frame: &mut TrapFrame, error_code: u64) -
         crate::print_hex(&bridge, error_code);
         bridge.log("\n");
     }
-    
+
     kernel::diag::record_fault(
         frame.rip,
         frame.rsp,
@@ -108,7 +108,7 @@ pub extern "C" fn page_fault_handler(frame: &mut TrapFrame, error_code: PageFaul
     let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
     // Debug dump of fault frame to help root-cause early boot faults
     {
-                let bridge = crate::Bridge;
+        let bridge = crate::Bridge;
         bridge.log("PAGE FAULT: rip=");
         crate::print_hex(&bridge, frame.rip);
         bridge.log(" cs=");
@@ -165,7 +165,7 @@ unsafe extern "C" fn timer_interrupt_naked() {
         // DEBUG: Very first thing - output 'X' to debugcon
         "push rax",
         "push rdx",
-        "mov al, 0x58",  // 'X'
+        "mov al, 0x58", // 'X'
         "mov dx, 0xe9",
         "out dx, al",
         "pop rdx",
@@ -223,7 +223,6 @@ unsafe extern "C" fn timer_interrupt_naked() {
         // Call Handler
         "mov rdi, rsp",
         "call timer_interrupt_handler",
-
         // IMPORTANT: The handler (Scheduler) may have modified the TrapFrame (rsp)
         // to switch contexts. We MUST copy the potentially modified RIP, CS, RFLAGS, RSP, SS
         // back to the Hardware Frame (at rsp + 168) so iretq executes the switch.
@@ -237,11 +236,9 @@ unsafe extern "C" fn timer_interrupt_naked() {
         // 3. RFLAGS (Offset 136 -> 184)
         "mov rax, [rsp + 136]",
         "mov [rsp + 184], rax",
-
         // Check CS (now in rax) for CPL. If Kernel (0), skip RSP/SS restore.
         "test al, 3",
         "jz 4f",
-
         // 4. RSP (Offset 144 -> 192)
         "mov rax, [rsp + 144]",
         "mov [rsp + 192], rax",
@@ -249,7 +246,6 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "mov rax, [rsp + 152]",
         "mov [rsp + 200], rax",
         "4:",
-
         // Restore GPRs
         "mov r15, [rsp + 0]",
         "mov r14, [rsp + 8]",
@@ -610,7 +606,7 @@ pub extern "x86-interrupt" fn double_fault_handler_naked(
         // DEBUG: Output 'D' for double fault
         "push rax",
         "push rdx",
-        "mov al, 0x44",  // 'D'
+        "mov al, 0x44", // 'D'
         "mov dx, 0xe9",
         "out dx, al",
         "pop rdx",

@@ -6,9 +6,19 @@ use std::process::Command;
 
 pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // 1. Determine Target
-    let (target_triple, kernel_bin_name, uefi_boot_name) = match env.as_str() {
-        "x86_64" => ("x86_64-thingos.json", "kernel_x86_64", "BOOTX64.EFI"),
-        "aarch64" => ("aarch64-thingos.json", "kernel_aarch64", "BOOTAA64.EFI"),
+    let (target_triple, kernel_package, kernel_artifact, uefi_boot_name) = match env.as_str() {
+        "x86_64" => (
+            "x86_64-thingos.json",
+            "kernel_x86_64",
+            "kernel_x86_64",
+            "BOOTX64.EFI",
+        ),
+        "aarch64" => (
+            "aarch64-thingos.json",
+            "kernel_aarch64",
+            "kernel_aarch64",
+            "BOOTAA64.EFI",
+        ),
         _ => anyhow::bail!("Unsupported env for iso: {}. Use x86_64 or aarch64", env),
     };
 
@@ -23,7 +33,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     let status = Command::new(&cargo)
         .arg("build")
         .arg("-p")
-        .arg(kernel_bin_name)
+        .arg(kernel_package)
         .arg("--target")
         .arg(&target_flag)
         .arg("-Z")
@@ -116,15 +126,22 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     fs::create_dir_all(&boot_dir)?;
 
     // Copy Kernel
-    let triple_name = Path::new(target_triple)
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap();
-    let bin_path = target_dir
-        .join(triple_name)
+    let target_path = Path::new(target_triple);
+    let triple_stem = target_path.file_stem().unwrap().to_str().unwrap();
+    let mut bin_path = target_dir
+        .join(triple_stem)
         .join("debug")
-        .join(kernel_bin_name);
+        .join(kernel_artifact);
+    if !bin_path.exists() {
+        // Fallback for custom target files that include a parent directory (e.g., targets/foo.json)
+        if let Some(parent) = Path::new(&target_flag).parent() {
+            bin_path = target_dir
+                .join(parent)
+                .join(triple_stem)
+                .join("debug")
+                .join(kernel_artifact);
+        }
+    }
 
     fs::copy(&bin_path, boot_dir.join("kernel"))
         .with_context(|| format!("Failed to copy kernel from {:?}", bin_path))?;

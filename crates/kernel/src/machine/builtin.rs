@@ -1,5 +1,5 @@
 use super::{MachineError, ProviderMeta};
-use crate::bridge::HardwareBridge;
+use crate::bridge::CpuBridge;
 use abi::wire::machine::*;
 use alloc::vec::Vec;
 
@@ -11,7 +11,7 @@ pub enum BuiltinEndpoint {
     Mouse,
 }
 
-pub fn dispatch<B: HardwareBridge>(
+pub fn dispatch<B: CpuBridge>(
     bridge: &B,
     ep: BuiltinEndpoint,
     op: u32,
@@ -34,11 +34,7 @@ pub fn meta_for(_ep: BuiltinEndpoint) -> ProviderMeta {
     }
 }
 
-fn dispatch_rtc<B: HardwareBridge>(
-    bridge: &B,
-    op: u32,
-    _req: &[u8],
-) -> Result<Vec<u8>, MachineError> {
+fn dispatch_rtc<B: CpuBridge>(bridge: &B, op: u32, _req: &[u8]) -> Result<Vec<u8>, MachineError> {
     if op == OP_RTC_NOW_NS {
         let ns = bridge.monotonic_now();
         let resp = RtcNowResp { system_ns: ns };
@@ -59,11 +55,7 @@ fn dispatch_fb(op: u32, _req: &[u8]) -> Result<Vec<u8>, MachineError> {
     }
 }
 
-fn dispatch_kbd<B: HardwareBridge>(
-    bridge: &B,
-    op: u32,
-    req: &[u8],
-) -> Result<Vec<u8>, MachineError> {
+fn dispatch_kbd<B: CpuBridge>(bridge: &B, op: u32, req: &[u8]) -> Result<Vec<u8>, MachineError> {
     if op == OP_KBD_READ_EVENTS {
         let req: KbdReadReq = postcard::from_bytes(req).map_err(|_| MachineError::EncodingError)?;
         let mut events = Vec::new();
@@ -84,11 +76,7 @@ fn dispatch_kbd<B: HardwareBridge>(
     }
 }
 
-fn dispatch_mouse<B: HardwareBridge>(
-    bridge: &B,
-    op: u32,
-    req: &[u8],
-) -> Result<Vec<u8>, MachineError> {
+fn dispatch_mouse<B: CpuBridge>(bridge: &B, op: u32, req: &[u8]) -> Result<Vec<u8>, MachineError> {
     if op == OP_MOUSE_READ_EVENTS {
         let req: MouseReadReq =
             postcard::from_bytes(req).map_err(|_| MachineError::EncodingError)?;

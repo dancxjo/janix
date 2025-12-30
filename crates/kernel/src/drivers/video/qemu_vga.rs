@@ -1,4 +1,4 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::{FullMachineBridge, PortIo};
 use crate::Kernel;
 
 // Bochs VBE ports
@@ -23,17 +23,17 @@ const VBE_DISPI_LFB_ENABLED: u16 = 0x40;
 
 use thing_models::core::pci::PciDeviceBody;
 
-fn write_reg(bridge: &impl HardwareBridge, index: u16, val: u16) {
+fn write_reg(bridge: &impl PortIo, index: u16, val: u16) {
     bridge.port_outw(VBE_DISPI_IOPORT_INDEX, index);
     bridge.port_outw(VBE_DISPI_IOPORT_DATA, val);
 }
 
-fn read_reg(bridge: &impl HardwareBridge, index: u16) -> u16 {
+fn read_reg(bridge: &impl PortIo, index: u16) -> u16 {
     bridge.port_outw(VBE_DISPI_IOPORT_INDEX, index);
     bridge.port_inw(VBE_DISPI_IOPORT_DATA)
 }
 
-pub fn init<B: HardwareBridge>(
+pub fn init<B: FullMachineBridge>(
     k: &mut Kernel<B>,
     pci_devices: &[PciDeviceBody],
 ) -> Option<(u64, u64)> {
@@ -138,7 +138,7 @@ pub fn init<B: HardwareBridge>(
     Some((lfb_phys, fb_size))
 }
 
-pub fn set_mode(bridge: &impl HardwareBridge, width: u16, height: u16, bpp: u16) {
+pub fn set_mode(bridge: &impl PortIo, width: u16, height: u16, bpp: u16) {
     write_reg(bridge, VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
     write_reg(bridge, VBE_DISPI_INDEX_XRES, width);
     write_reg(bridge, VBE_DISPI_INDEX_YRES, height);

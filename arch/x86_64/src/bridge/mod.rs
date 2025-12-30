@@ -163,7 +163,9 @@ impl CpuBridge for Bridge {
     }
 
     fn idle(&self) {
-        unsafe { asm!("hlt"); }
+        unsafe {
+            asm!("hlt");
+        }
     }
 
     fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> Self::Context {
@@ -407,62 +409,62 @@ impl VmMapper for Bridge {
     }
 
     fn map_user_mmio(&self, virt_addr: u64, phys_addr: u64, flags: u64) -> Result<(), ()> {
-         use core::alloc::Layout;
-         use x86_64::structures::paging::{
-             mapper::Mapper, FrameAllocator, OffsetPageTable, Page, PageTableFlags, PhysFrame,
-             Size4KiB, Translate,
-         };
-         use x86_64::VirtAddr;
+        use core::alloc::Layout;
+        use x86_64::structures::paging::{
+            mapper::Mapper, FrameAllocator, OffsetPageTable, Page, PageTableFlags, PhysFrame,
+            Size4KiB, Translate,
+        };
+        use x86_64::VirtAddr;
 
-         unsafe {
-             let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
-             let (l4_frame, _) = x86_64::registers::control::Cr3::read();
-             let phys_l4 = l4_frame.start_address();
-             let virt_l4 = VirtAddr::new(hhdm + phys_l4.as_u64());
-             let page_table_ptr = virt_l4.as_mut_ptr();
-             let mut mapper = OffsetPageTable::new(&mut *page_table_ptr, VirtAddr::new(hhdm));
+        unsafe {
+            let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
+            let (l4_frame, _) = x86_64::registers::control::Cr3::read();
+            let phys_l4 = l4_frame.start_address();
+            let virt_l4 = VirtAddr::new(hhdm + phys_l4.as_u64());
+            let page_table_ptr = virt_l4.as_mut_ptr();
+            let mut mapper = OffsetPageTable::new(&mut *page_table_ptr, VirtAddr::new(hhdm));
 
-             let user_page = Page::<Size4KiB>::containing_address(VirtAddr::new(virt_addr));
-             let phys_frame =
-                 PhysFrame::<Size4KiB>::containing_address(x86_64::PhysAddr::new(phys_addr));
-             let map_flags = PageTableFlags::from_bits_truncate(flags)
-                 | PageTableFlags::PRESENT
-                 | PageTableFlags::USER_ACCESSIBLE
-                 | PageTableFlags::NO_CACHE
-                 | PageTableFlags::WRITE_THROUGH;
+            let user_page = Page::<Size4KiB>::containing_address(VirtAddr::new(virt_addr));
+            let phys_frame =
+                PhysFrame::<Size4KiB>::containing_address(x86_64::PhysAddr::new(phys_addr));
+            let map_flags = PageTableFlags::from_bits_truncate(flags)
+                | PageTableFlags::PRESENT
+                | PageTableFlags::USER_ACCESSIBLE
+                | PageTableFlags::NO_CACHE
+                | PageTableFlags::WRITE_THROUGH;
 
-             struct HeapFrameAllocator;
-             unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
-                 fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
-                     let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
-                     let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
-                     if ptr.is_null() {
-                         return None;
-                     }
-                     let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
-                     let virt = ptr as u64;
-                     unsafe {
-                         let (l4_frame, _) = x86_64::registers::control::Cr3::read();
-                         let phys_l4 = l4_frame.start_address();
-                         let virt_l4 = VirtAddr::new(hhdm + phys_l4.as_u64());
-                         let page_table_ptr = virt_l4.as_mut_ptr();
-                         let mapper =
-                             OffsetPageTable::new(&mut *page_table_ptr, VirtAddr::new(hhdm));
-                         mapper
-                             .translate_addr(VirtAddr::new(virt))
-                             .map(|p| PhysFrame::containing_address(p))
-                     }
-                 }
-             }
-             let mut allocator = HeapFrameAllocator;
-             match mapper.map_to(user_page, phys_frame, map_flags, &mut allocator) {
-                 Ok(flush) => {
-                     flush.flush();
-                     Ok(())
-                 }
-                 Err(_) => Err(()),
-             }
-         }
+            struct HeapFrameAllocator;
+            unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
+                fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+                    let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
+                    let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
+                    if ptr.is_null() {
+                        return None;
+                    }
+                    let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
+                    let virt = ptr as u64;
+                    unsafe {
+                        let (l4_frame, _) = x86_64::registers::control::Cr3::read();
+                        let phys_l4 = l4_frame.start_address();
+                        let virt_l4 = VirtAddr::new(hhdm + phys_l4.as_u64());
+                        let page_table_ptr = virt_l4.as_mut_ptr();
+                        let mapper =
+                            OffsetPageTable::new(&mut *page_table_ptr, VirtAddr::new(hhdm));
+                        mapper
+                            .translate_addr(VirtAddr::new(virt))
+                            .map(|p| PhysFrame::containing_address(p))
+                    }
+                }
+            }
+            let mut allocator = HeapFrameAllocator;
+            match mapper.map_to(user_page, phys_frame, map_flags, &mut allocator) {
+                Ok(flush) => {
+                    flush.flush();
+                    Ok(())
+                }
+                Err(_) => Err(()),
+            }
+        }
     }
 }
 
@@ -473,14 +475,22 @@ impl CpuBridge for Bridge {
     type FpuState = FpuState;
     const CONTEXT_WORDS: usize = 20;
     fn log(&self, _msg: &str) {}
-    fn ticks(&self) -> u64 { 0 }
-    fn ticks_per_second(&self) -> u64 { 0 }
+    fn ticks(&self) -> u64 {
+        0
+    }
+    fn ticks_per_second(&self) -> u64 {
+        0
+    }
     fn idle(&self) {}
-    fn shutdown(&self) -> ! { loop {} }
-    fn irq_disable(&self) -> Self::IrqState { IrqState::default() }
+    fn shutdown(&self) -> ! {
+        loop {}
+    }
+    fn irq_disable(&self) -> Self::IrqState {
+        IrqState::default()
+    }
     fn irq_restore(&self, _state: Self::IrqState) {}
     fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> Self::Context {
-         bringup::ArchContext([0; 20])
+        bringup::ArchContext([0; 20])
     }
     fn switch(&self, _from: &mut Self::Context, _to: &Self::Context) {}
     fn set_kernel_stack(&self, _: u64) {}
@@ -490,17 +500,25 @@ impl CpuBridge for Bridge {
 
 #[cfg(not(target_arch = "x86_64"))]
 impl MachineBridge for Bridge {
-    fn hhdm_offset(&self) -> u64 { 0 }
+    fn hhdm_offset(&self) -> u64 {
+        0
+    }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
 impl PortIo for Bridge {
     fn port_outb(&self, _port: u16, _val: u8) {}
-    fn port_inb(&self, _port: u16) -> u8 { 0 }
+    fn port_inb(&self, _port: u16) -> u8 {
+        0
+    }
     fn port_outw(&self, _port: u16, _val: u16) {}
-    fn port_inw(&self, _port: u16) -> u16 { 0 }
+    fn port_inw(&self, _port: u16) -> u16 {
+        0
+    }
     fn port_outd(&self, _port: u16, _val: u32) {}
-    fn port_ind(&self, _port: u16) -> u32 { 0 }
+    fn port_ind(&self, _port: u16) -> u32 {
+        0
+    }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
@@ -510,11 +528,17 @@ impl Rtc for Bridge {
 
 #[cfg(not(target_arch = "x86_64"))]
 impl Power for Bridge {
-    fn shutdown(&self) -> ! { loop {} }
+    fn shutdown(&self) -> ! {
+        loop {}
+    }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
 impl VmMapper for Bridge {
-    fn map_new_user_page(&self, _virt_addr: u64, _flags: u64) -> Result<(), ()> { Err(()) }
-    fn map_user_mmio(&self, _virt_addr: u64, _phys_addr: u64, _flags: u64) -> Result<(), ()> { Err(()) }
+    fn map_new_user_page(&self, _virt_addr: u64, _flags: u64) -> Result<(), ()> {
+        Err(())
+    }
+    fn map_user_mmio(&self, _virt_addr: u64, _phys_addr: u64, _flags: u64) -> Result<(), ()> {
+        Err(())
+    }
 }

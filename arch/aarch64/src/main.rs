@@ -24,6 +24,7 @@ use spin::Mutex;
 static PANICKING: AtomicBool = AtomicBool::new(false);
 static KERNEL: Mutex<Option<Kernel<Bridge>>> = Mutex::new(None);
 static LAST_TICKS: AtomicU64 = AtomicU64::new(0);
+static mut FRAMEBUFFER_INFO: Option<(u64, usize)> = None;
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -203,6 +204,9 @@ pub extern "C" fn rust_main() -> ! {
                  None
              } else {
                  let addr = fb.address; // Virtual address
+
+                 // Store for syscalls
+                 FRAMEBUFFER_INFO = Some((addr, fb.size as usize));
 
                  // Pixel Format Detection
                  let pixel_format = if fb.red_mask_shift == 16 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 0 {
@@ -416,12 +420,63 @@ fn syscall_hook(
     a5: usize,
     a6: usize,
 ) -> isize {
-    unsafe {
-        use kernel::bridge::HardwareBridge;
-        // Bridge.log("SYSCALL: ");
-        // print_hex(&Bridge, num as u64);
-        // Bridge.log("\n");
-        0
+    use abi::syscall_defs::SYSCALL_SPAWN;
+
+    if num == SYSCALL_SPAWN {
+        let data_ptr = a1 as *const u8;
+        let data_len = a2;
+        let name_ptr = a3 as *const u8;
+        let name_len = a4;
+
+        if data_ptr as usize == 0 || data_len == 0 {
+            return -1;
+        }
+
+        let data = unsafe { core::slice::from_raw_parts(data_ptr, data_len) };
+
+        let name = if name_ptr as usize != 0 && name_len > 0 {
+            let name_bytes = unsafe { core::slice::from_raw_parts(name_ptr, name_len) };
+            core::str::from_utf8(name_bytes).unwrap_or("unknown")
+        } else {
+            "unknown"
+        };
+
+        if let Some(mut guard) = KERNEL.try_lock() {
+            if let Some(k) = (*guard).as_mut() {
+                use kernel::bridge::HardwareBridge;
+                let hhdm_offset_u64 = k.bridge.hhdm_offset();
+                
+                let (fb_phys, fb_size) = unsafe { FRAMEBUFFER_INFO.unwrap_or((0, 0)) };
+                
+                loader::process_file(
+                    k,
+                    None,
+                    name,
+                    data,
+                    0,
+                    None,
+                    hhdm_offset_u64,
+                    fb_phys,
+                    fb_size,
+                );
+                return 0;
+            }
+        }
+        return -1;
+    }
+
+    // Default Dispatch
+    loop {
+        let mut result = None;
+        if let Some(mut guard) = KERNEL.try_lock() {
+            if let Some(k) = (*guard).as_mut() {
+                 result = Some(kernel::syscalls::syscall_dispatch(k, num, a1, a2, a3, a4, a5, a6));
+            }
+        }
+        if let Some(r) = result {
+            return r;
+        }
+        core::hint::spin_loop();
     }
 }
 

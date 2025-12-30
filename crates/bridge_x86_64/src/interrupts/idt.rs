@@ -145,69 +145,84 @@ pub extern "C" fn page_fault_handler(
 #[unsafe(naked)]
 unsafe extern "C" fn timer_interrupt_naked() {
     naked_asm!(
-        // 1. Check if we came from user mode (CS & 3 == 3)
-        // CS is at [rsp + 8] (since HW pushed RIP, CS, RFLAGS)
+        // Check CPL from hardware frame CS (at [rsp + 8] for no-error interrupts)
         "test byte ptr [rsp + 8], 3",
+        "jz 0f",
+        "swapgs",
+        "0:",
+        // Save RAX then allocate TrapFrame
+        "push rax",
+        "sub rsp, 160",
+        // Save GPRs r15..rdi
+        "mov [rsp + 0], r15",
+        "mov [rsp + 8], r14",
+        "mov [rsp + 16], r13",
+        "mov [rsp + 24], r12",
+        "mov [rsp + 32], rbp",
+        "mov [rsp + 40], rbx",
+        "mov [rsp + 48], r11",
+        "mov [rsp + 56], r10",
+        "mov [rsp + 64], r9",
+        "mov [rsp + 72], r8",
+        "mov [rsp + 80], rcx",
+        "mov [rsp + 88], rdx",
+        "mov [rsp + 96], rsi",
+        "mov [rsp + 104], rdi",
+        // Saved orig RAX is at rsp + 160
+        "mov rax, [rsp + 160]",
+        "mov [rsp + 112], rax",
+        // Hardware frame (no error): rip=+168, cs=+176, rflags=+184, rsp=+192, ss=+200
+        "mov rax, [rsp + 168]",
+        "mov [rsp + 120], rax", // rip
+        "mov rax, [rsp + 176]",
+        "mov [rsp + 128], rax", // cs
+        "mov rax, [rsp + 184]",
+        "mov [rsp + 136], rax", // rflags
+        // Saved RSP/SS depend on CPL
+        "mov rax, [rsp + 176]", // cs
+        "test al, 3",
         "jnz 1f",
-        // --- KERNEL MODE ENTRY ---
-        // Stack: [RIP, CS, RFLAGS] at current RSP.
-        // Append synthetic RSP (pre-interrupt) and SS without moving the frame.
-        "mov rax, rsp",        // RAX = &RIP (hardware frame start)
-        "lea rcx, [rax + 24]", // RCX = pre-interrupt RSP (after 3 slots)
-        "mov [rax + 24], rcx", // Store synthetic RSP
+        // Kernel mode interrupt: synthesize RSP/SS
+        "lea rcx, [rsp + 192]", // pre-interrupt RSP
+        "mov [rsp + 144], rcx",
         "mov rcx, ss",
-        "mov [rax + 32], rcx", // Store synthetic SS
+        "mov [rsp + 152], rcx",
         "jmp 2f",
         "1:",
-        // --- USER MODE ENTRY ---
-        // Stack: [RIP, CS, RFLAGS, RSP, SS] (HW Pushed 5 items)
-        "swapgs",
+        // User mode interrupt: hardware provided RSP/SS
+        "mov rcx, [rsp + 192]",
+        "mov [rsp + 144], rcx",
+        "mov rcx, [rsp + 200]",
+        "mov [rsp + 152], rcx",
         "2:",
-        // Common: Push GPRs (TrapFrame items 0..14)
-        "push rax",
-        "push rdi",
-        "push rsi",
-        "push rdx",
-        "push rcx",
-        "push r8",
-        "push r9",
-        "push r10",
-        "push r11",
-        "push rbx",
-        "push rbp",
-        "push r12",
-        "push r13",
-        "push r14",
-        "push r15",
         // Call Handler
         "mov rdi, rsp",
         "call timer_interrupt_handler",
         // Restore GPRs
-        "pop r15",
-        "pop r14",
-        "pop r13",
-        "pop r12",
-        "pop rbp",
-        "pop rbx",
-        "pop r11",
-        "pop r10",
-        "pop r9",
-        "pop r8",
-        "pop rcx",
-        "pop rdx",
-        "pop rsi",
-        "pop rdi",
+        "mov r15, [rsp + 0]",
+        "mov r14, [rsp + 8]",
+        "mov r13, [rsp + 16]",
+        "mov r12, [rsp + 24]",
+        "mov rbp, [rsp + 32]",
+        "mov rbx, [rsp + 40]",
+        "mov r11, [rsp + 48]",
+        "mov r10, [rsp + 56]",
+        "mov r9,  [rsp + 64]",
+        "mov r8,  [rsp + 72]",
+        "mov rcx, [rsp + 80]",
+        "mov rdx, [rsp + 88]",
+        "mov rsi, [rsp + 96]",
+        "mov rdi, [rsp + 104]",
+        "mov rax, [rsp + 112]",
+        // Tear down TrapFrame and saved rax
+        "add rsp, 160",
         "pop rax",
-        // --- RETURN ---
-        // Check if returning to user mode (CS & 3 == 3)
-        // Stack: [RIP, CS, RFLAGS, RSP, SS]
+        // Return: swapgs only for user-mode
         "test byte ptr [rsp + 8], 3",
         "jz 3f",
-        // Return to User
         "swapgs",
         "iretq",
         "3:",
-        // Kernel return (we synthesized SS/RSP on entry)
         "iretq",
     );
 }
@@ -366,6 +381,11 @@ pub extern "x86-interrupt" fn page_fault_handler_naked(
 ) {
     core::arch::naked_asm!(
         // Stack on entry (CPU): [Error, RIP, CS, RFLAGS, (RSP, SS)?]
+        // Swap GS if coming from user mode
+        "test byte ptr [rsp + 16], 3",
+        "jz 0f",
+        "swapgs",
+        "0:",
         // Save original RAX
         "push rax",
         // Allocate TrapFrame (20 * 8 = 160 bytes)
@@ -440,7 +460,6 @@ pub extern "x86-interrupt" fn page_fault_handler_naked(
         "add rsp, 8",
         "test byte ptr [rsp + 8], 3", // CS
         "jnz 3f",
-        "add rsp, 16", // kernel: drop RSP/SS
         "iretq",
         "3:",
         "swapgs",
@@ -454,6 +473,10 @@ pub extern "x86-interrupt" fn gp_handler_naked(
     _error_code: u64,
 ) {
     core::arch::naked_asm!(
+        "test byte ptr [rsp + 16], 3",
+        "jz 0f",
+        "swapgs",
+        "0:",
         "push rax",
         "sub rsp, 160",
         "mov [rsp + 0], r15",
@@ -515,7 +538,6 @@ pub extern "x86-interrupt" fn gp_handler_naked(
         "add rsp, 8", // drop error
         "test byte ptr [rsp + 8], 3",
         "jnz 3f",
-        "add rsp, 16",
         "iretq",
         "3:",
         "swapgs",

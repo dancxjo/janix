@@ -339,6 +339,13 @@ fn page_fault_hook_impl(
                     if let Some(Some(thread)) = k.scheduler.threads.get(current_tid.0 as usize - 1) {
                         let pid = thread.process_id;
                         if let Some(Some(process)) = k.scheduler.processes.get(pid.0 as usize - 1) {
+                            // LOGGING (Temporary)
+                            unsafe {
+                                use kernel::bridge::HardwareBridge;
+                                let s = alloc::format!("PF Hook: Addr={:#x} PID={} HeapStart={:#x} HeapEnd={:#x}\n", fault_addr, pid.0, process.heap_virt_start, process.heap_virt_end);
+                                k.bridge.log(&s);
+                            }
+
                             if fault_addr >= process.heap_virt_start && fault_addr < process.heap_virt_end {
                                 use x86_64::registers::control::Cr3;
                                 use x86_64::structures::paging::{Mapper, OffsetPageTable, Page, PageTableFlags, Size4KiB};
@@ -353,16 +360,23 @@ fn page_fault_hook_impl(
                                         if let Ok(map_to) = mapper.map_to(page, frame, flags, &mut frame_allocator) {
                                             core::ptr::write_bytes((hhdm_offset + frame.start_address().as_u64()).as_mut_ptr::<u8>(), 0, 4096);
                                             map_to.flush();
+                                            unsafe { k.bridge.log("PF Hook: Mapped!\n"); }
                                             return true;
+                                        } else {
+                                             unsafe { k.bridge.log("PF Hook: Map Failed!\n"); }
                                         }
                                     }
+                                } else {
+                                     unsafe { k.bridge.log("PF Hook: OOM!\n"); }
                                 }
+                            } else {
+                                 unsafe { k.bridge.log("PF Hook: Out of Bounds!\n"); }
                             }
                         }
                     }
                 }
             }
-            return false; // Lock acquired but address not handled or mapping failed
+            return false;
         }
         core::hint::spin_loop();
     }

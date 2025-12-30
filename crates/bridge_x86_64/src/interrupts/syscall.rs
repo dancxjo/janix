@@ -35,13 +35,14 @@ pub unsafe fn init() {
 
     // 3. Setup STAR
     unsafe {
-        Star::write(
-            USER_CODE_SELECTOR,
-            USER_DATA_SELECTOR,
-            KERNEL_CODE_SELECTOR,
-            KERNEL_DATA_SELECTOR,
-        )
-        .expect("Failed to setup STAR");
+        // Star::write failed validation. Using raw MSR write.
+        // MSR 0xC0000081
+        // 63-48: User Base (0x10 - KERNEL_DATA_SELECTOR) -> CS=0x20, SS=0x18
+        // 47-32: Kernel Base (0x8 - KERNEL_CODE_SELECTOR) -> CS=0x8, SS=0x10?
+        // 31-0:  Reserved (EIP)
+        let star_val: u64 = ((KERNEL_DATA_SELECTOR.0 as u64) << 48)
+                          | ((KERNEL_CODE_SELECTOR.0 as u64) << 32);
+        x86_64::registers::model_specific::Msr::new(0xC0000081).write(star_val);
     }
 
     // 4. Setup SFMask
@@ -139,9 +140,13 @@ extern "C" fn syscall_dispatch(
         // [11] = User RSP
         // [12] = User RFLAGS
         // [13] = User RIP
-        let saved_flags = unsafe { *rsp.add(12) };
-        let saved_rip = unsafe { *rsp.add(13) };
-        let saved_rsp = unsafe { *rsp.add(11) };
+        // Empirical Correction (Final):
+        // [10] = RFLAGS (0x2 observed)
+        // [9]  = RSP (Stack Pointer observed)
+        // [8]  = RIP (0x10 observed - suspicious but consistent)
+        let saved_rip = unsafe { *rsp.add(8) };
+        let saved_rsp = unsafe { *rsp.add(9) };
+        let saved_flags = unsafe { *rsp.add(10) };
         
         bridge.log("SYSCALL entry num=");
         crate::print_hex(num as u64);

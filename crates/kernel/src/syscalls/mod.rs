@@ -69,7 +69,6 @@ pub fn syscall_dispatch<B: HardwareBridge>(
         SYSCALL_PORT_IO => driver::sys_port_io(kernel, a1 as u16, a2 as u32, a3 as u8, a4 != 0) as isize,
         SYSCALL_TYPEDEF_REGISTER => typed::sys_typedef_register(a1, a2) as isize,
         SYSCALL_TYPEDEF_GET => typed::sys_typedef_get(a1, a2, a3) as isize,
-        // SYSCALL_GRAPH (1)
         1 => {
             // Debug: Catch bad pointers
             if a1 < 4096 {
@@ -88,7 +87,18 @@ pub fn syscall_dispatch<B: HardwareBridge>(
             let out_ptr = a5 as *mut u8;
             let out_len = a6;
 
-            // Safety: user pointers must be validated. v0: assume valid.
+            // VALIDATION: Ensure all pointers are in User Range (Lower Half).
+            // Canonical split is at 0x0000_7FFF_FFFF_FFFF.
+            // Kernel starts at 0xFFFF_8000_0000_0000.
+            // Be conservative: < 0x8000_0000_0000.
+            const USER_MAX: usize = 0x8000_0000_0000;
+            
+            if (a1 + a2) >= USER_MAX || (a3 + a4) >= USER_MAX || (a5 + a6) >= USER_MAX {
+                 kernel.bridge.log("SYSCALL GRAPH: Security Violation (Ptr > User)\n");
+                 return -1;
+            }
+
+            // Safety: We validated range.
             let query_bytes = unsafe { core::slice::from_raw_parts(query_ptr, query_len) };
             let query_str = match core::str::from_utf8(query_bytes) {
                 Ok(s) => s,

@@ -50,7 +50,7 @@ rustup component add llvm-tools-preview
 From the repository root:
 
 ```sh
-just iso env=x86_64
+just iso x86_64
 ```
 
 This will:
@@ -64,7 +64,7 @@ The ISO will appear under:
 ### Run in QEMU
 
 ```sh
-just run env=x86_64
+just run x86_64
 ```
 
 You should see:
@@ -85,7 +85,7 @@ That’s normal during development.
 To enable QEMU with GDB:
 
 ```sh
-just run env=x86_64
+just run x86_64
 ```
 (It listens on port 1234 by default for GDB)
 

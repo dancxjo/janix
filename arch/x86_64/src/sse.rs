@@ -2,7 +2,7 @@ use core::arch::x86_64::*;
 
 /// SSE-optimized blit for 32bpp framebuffers.
 /// Fallbacks to `rep movsb` if scale is 256 (opaque).
-/// 
+///
 /// Safety: dst and src must be valid for len bytes. len must be a multiple of 4.
 #[target_feature(enable = "sse2")]
 pub unsafe fn sse_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
@@ -32,7 +32,7 @@ pub unsafe fn sse_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
 
     while i + 16 <= len {
         let s = _mm_load_si128(src.add(i) as *const __m128i);
-        
+
         // Unpack bytes to words to multiply
         // Low 8 bytes -> [b0, g0, r0, a0, b1, g1, r1, a1]
         let lo = _mm_unpacklo_epi8(s, v_zero);
@@ -50,7 +50,7 @@ pub unsafe fn sse_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
         let res = _mm_packus_epi16(res_lo, res_hi);
 
         _mm_store_si128(dst.add(i) as *mut __m128i, res);
-        
+
         i += 16;
     }
 
@@ -62,9 +62,9 @@ pub unsafe fn sse_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
         let a = *src.add(i + 3);
 
         *dst.add(i) = ((b as u32 * scale) >> 8) as u8;
-        *dst.add(i+1) = ((g as u32 * scale) >> 8) as u8;
-        *dst.add(i+2) = ((r as u32 * scale) >> 8) as u8;
-        *dst.add(i+3) = ((a as u32 * scale) >> 8) as u8;
+        *dst.add(i + 1) = ((g as u32 * scale) >> 8) as u8;
+        *dst.add(i + 2) = ((r as u32 * scale) >> 8) as u8;
+        *dst.add(i + 3) = ((a as u32 * scale) >> 8) as u8;
 
         i += 4;
     }

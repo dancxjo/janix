@@ -2,7 +2,7 @@ use crate::bridge::ProviderBridge;
 use crate::machine::{MachineError, ProviderMeta, ProviderVtable};
 use abi::symbols::sym;
 use abi::wire::machine::{
-    KeyEvent, KbdReadReq, KbdReadResp, MouseEvent, MouseReadReq, MouseReadResp, OP_KBD_READ_EVENTS,
+    KbdReadReq, KbdReadResp, KeyEvent, MouseEvent, MouseReadReq, MouseReadResp, OP_KBD_READ_EVENTS,
     OP_MOUSE_READ_EVENTS,
 };
 use alloc::vec::Vec;

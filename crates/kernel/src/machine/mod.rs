@@ -1,7 +1,7 @@
-use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
 use crate::bridge::HardwareBridge;
 use abi::SymbolId;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 pub mod builtin;
 pub mod providers;
@@ -110,7 +110,11 @@ impl Machine {
             .ok_or(MachineError::NotFound)?;
 
         match ep {
-            Endpoint::Provider { meta: _, vtable, ctx } => (vtable.call)(*ctx, bridge, op, req),
+            Endpoint::Provider {
+                meta: _,
+                vtable,
+                ctx,
+            } => (vtable.call)(*ctx, bridge, op, req),
             Endpoint::Builtin(builtin) => builtin::dispatch(bridge, *builtin, op, req),
         }
     }
@@ -160,20 +164,26 @@ impl Machine {
         };
 
         // Helper: Ensure Link
-        let mut ensure_link =
-            |g: &mut crate::graph::GraphStore, from: abi::ThingId, to: abi::ThingId, pred: abi::SymbolId| {
-                let x = from.0 ^ pred.0.rotate_left(21) ^ to.0.rotate_left(42);
-                let lid = abi::ThingId(mix64(x));
+        let mut ensure_link = |g: &mut crate::graph::GraphStore,
+                               from: abi::ThingId,
+                               to: abi::ThingId,
+                               pred: abi::SymbolId| {
+            let x = from.0 ^ pred.0.rotate_left(21) ^ to.0.rotate_left(42);
+            let lid = abi::ThingId(mix64(x));
 
-                #[derive(serde::Serialize)]
-                struct LinkBody {
-                    from: abi::ThingId,
-                    to: abi::ThingId,
-                    predicate: abi::SymbolId,
-                }
-                let body = LinkBody { from, to, predicate: pred };
-                ensure(g, lid, THING_LINK_KIND, to_allocvec(&body).unwrap());
+            #[derive(serde::Serialize)]
+            struct LinkBody {
+                from: abi::ThingId,
+                to: abi::ThingId,
+                predicate: abi::SymbolId,
+            }
+            let body = LinkBody {
+                from,
+                to,
+                predicate: pred,
             };
+            ensure(g, lid, THING_LINK_KIND, to_allocvec(&body).unwrap());
+        };
 
         // 1. Machine
         #[derive(serde::Serialize)]

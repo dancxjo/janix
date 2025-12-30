@@ -6,8 +6,8 @@ use x86_64::VirtAddr;
 // Debug counter for IRQ1
 pub static IRQ1_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
-use lazy_static::lazy_static;
 use core::sync::atomic::{AtomicU64, Ordering};
+use lazy_static::lazy_static;
 
 // Debug guard to log only a few kernel-mode timer interrupts
 static TIMER_KERNEL_LOG: AtomicU64 = AtomicU64::new(0);
@@ -48,10 +48,7 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 }
 
 #[no_mangle]
-pub extern "C" fn double_fault_handler(
-    frame: &mut TrapFrame,
-    error_code: u64,
-) -> ! {
+pub extern "C" fn double_fault_handler(frame: &mut TrapFrame, error_code: u64) -> ! {
     kernel::diag::record_fault(
         frame.rip,
         frame.rsp,
@@ -82,10 +79,7 @@ pub extern "C" fn gp_handler(frame: &mut TrapFrame, error_code: u64) {
 }
 
 #[no_mangle]
-pub extern "C" fn page_fault_handler(
-    frame: &mut TrapFrame,
-    error_code: PageFaultErrorCode,
-) {
+pub extern "C" fn page_fault_handler(frame: &mut TrapFrame, error_code: PageFaultErrorCode) {
     use x86_64::registers::control::Cr2;
     let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
     // Debug dump of fault frame to help root-cause early boot faults
@@ -434,7 +428,7 @@ pub extern "x86-interrupt" fn page_fault_handler_naked(
         "mov [rsp + 152], rcx",
         "2:",
         // Call handler
-        "mov rdi, rsp",        // &TrapFrame
+        "mov rdi, rsp",         // &TrapFrame
         "mov rsi, [rsp + 168]", // error code
         "call page_fault_handler",
         // Restore GPRs
@@ -468,10 +462,7 @@ pub extern "x86-interrupt" fn page_fault_handler_naked(
 }
 
 #[unsafe(naked)]
-pub extern "x86-interrupt" fn gp_handler_naked(
-    _frame: InterruptStackFrame,
-    _error_code: u64,
-) {
+pub extern "x86-interrupt" fn gp_handler_naked(_frame: InterruptStackFrame, _error_code: u64) {
     core::arch::naked_asm!(
         "test byte ptr [rsp + 16], 3",
         "jz 0f",

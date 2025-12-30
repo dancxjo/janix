@@ -1,24 +1,316 @@
 # ThingOS
 
-ThingOS is a graph-first operating system. This repo is intentionally structured to keep the kernel core portable across:
-- hosted (normal process)
-- x86_64 bare metal (UEFI via OVMF + Limine)
-- aarch64 bare metal (UEFI via OVMF + Limine)
+ThingOS is an experimental operating system built around a single idea:
 
-## Quickstart
+**Everything is a Thing, and the graph is the system.**
+
+Rather than centering the OS on files, processes, or syscalls, ThingOS uses a typed, queryable graph as the primary model for all state:
+hardware, memory, drivers, services, windows, input events, time, and user programs.
+
+If you can describe it, you can put it in the graph.
+If it’s in the graph, you can observe it, link to it, and act on it.
+
+## Quick Start (x86_64, QEMU)
+
+ThingOS is developed primarily on Linux using Rust nightly and QEMU.
+
+### Prerequisites
+
+You’ll need:
+
+* Rust (nightly)
+* `cargo`
+* `qemu-system-x86_64`
+* `llvm-tools-preview`
+* `xorriso`
+* `just`
+
+On Debian/Ubuntu-like systems:
 
 ```sh
-just fetch
-just check
-just test
-just run env=hosted
-just iso env=x86_64
-just run env=x86_64
-just iso env=aarch64
-just run env=aarch64
+sudo apt install \
+  qemu-system-x86 \
+  xorriso \
+  clang \
+  lld \
+  llvm \
+  just
 ```
 
-> `xtask` owns the real build/run logic.
+Install Rust nightly:
 
-## Documentation
-- [Architecture Boundaries](docs/architecture/boundaries.md)
+```sh
+rustup toolchain install nightly
+rustup default nightly
+rustup component add llvm-tools-preview
+```
+
+### Build the System
+
+From the repository root:
+
+```sh
+just iso x86_64
+```
+
+This will:
+* build the kernel
+* build userland programs and drivers
+* assemble a bootable ISO using Limine
+
+The ISO will appear under:
+`target/iso/`
+
+### Run in QEMU
+
+```sh
+just run x86_64
+```
+
+You should see:
+* early boot logs over serial
+* graph initialization
+* drivers loading
+* userland programs starting
+* framebuffer output once the compositor comes up
+
+If the screen is black but logs are scrolling, that usually means:
+* the framebuffer driver is alive
+* the compositor hasn’t claimed the screen yet
+
+That’s normal during development.
+
+### Debugging
+
+To enable QEMU with GDB:
+
+```sh
+just run x86_64
+```
+(It listens on port 1234 by default for GDB)
+
+Then in another terminal:
+
+```sh
+gdb target/x86_64/debug/kernel
+```
+(And connect with `target remote :1234`)
+
+Serial logs are your best friend.
+If something feels stuck, it usually is — on a lock, an interrupt, or a graph dependency.
+
+### Supported Architectures
+
+* ✅ x86_64 (primary)
+* 🚧 aarch64 (in progress)
+
+### What to Try First
+
+Good entry points for exploration:
+* `user/apps/clock` — simple userland program
+* `user/apps/graph_dump` — inspect the live system graph
+* `kernel/graph` — the heart of the system
+* `crates/abi` — the contract between kernel and userland
+
+## What Makes ThingOS Different
+
+### 1. The Graph Is the Kernel API
+
+There is no traditional POSIX interface.
+
+Instead, user programs and drivers communicate with the kernel by issuing graph operations:
+
+* Create Things
+* Link Things
+* Update Things
+* Observe changes
+
+The kernel enforces safety, ownership, and scheduling — but the shape of the system lives in the graph.
+
+Think of it as:
+
+* a filesystem that understands relationships,
+* an object model that spans kernel and userland,
+* and an event system where state itself is observable.
+
+### 2. Drivers Are Just Programs (With Privileges)
+
+Drivers are not magical kernel modules.
+
+They are:
+
+* user programs,
+* with explicit capabilities,
+* that speak to hardware through a thin hardware bridge layer.
+
+A keyboard driver, a framebuffer driver, and a clock driver all look structurally similar:
+they observe Things, react to changes, and update the graph.
+
+This keeps the kernel small and moves complexity outward where it belongs.
+
+### 3. No Fake Abstractions
+
+ThingOS avoids pretending things are simpler than they are.
+
+There is:
+
+* no fake “everything is a file” story,
+* no hidden global state,
+* no opaque IOCTL jungles.
+
+If something exists, it exists as a Thing.
+If something happens, it happens as a graph change.
+
+## System Architecture (High Level)
+
+```
+┌─────────────────────────┐
+│        User Apps        │
+│  (clock, compositor…)   │
+└───────────┬─────────────┘
+            │ GraphOps
+┌───────────▼─────────────┐
+│        Kernel            │
+│  - Scheduler             │
+│  - Memory                │
+│  - Graph Engine          │
+│  - Capability Checks    │
+└───────────┬─────────────┘
+            │ Bridge Calls
+┌───────────▼─────────────┐
+│   Hardware Bridges       │
+│ (x86_64, aarch64…)       │
+└───────────┬─────────────┘
+            │
+        Real Hardware
+```
+
+The kernel owns:
+
+* scheduling,
+* memory,
+* isolation,
+* and the authoritative graph.
+
+Everything else is layered on top.
+
+## The Graph Model (In Brief)
+
+* **Things**: Typed nodes with structured data.
+* **Links**: Directed, typed relationships between Things.
+* **Symbols**: Interned identifiers for stable naming across kernel and userland.
+* **Observation**: Programs can watch the graph and react to changes instead of polling.
+
+This makes the system naturally reactive:
+windows redraw because the graph changed,
+input flows because keys became Things,
+time passes because the clock updates state.
+
+## Userland
+
+User programs are:
+
+* `no_std`
+* written in Rust
+* linked as ELF binaries
+* launched by the kernel loader
+
+They interact with the system via a small ThingOS standard library, which:
+
+* wraps graph operations,
+* provides basic services (console output, time, sleep),
+* avoids baking in policy.
+
+There is no libc, and no POSIX compatibility layer by default.
+
+**This is intentional.**
+
+## Boot Process (Simplified)
+
+1. **Bootloader (Limine)**
+   * Sets up the environment and loads initial modules.
+2. **Kernel Init**
+   * Memory initialization
+   * Hardware bridge setup
+   * Graph initialization
+   * Symbol table seeding
+3. **Loader Program**
+   * Loads drivers and services
+   * Spawns initial user programs
+   * Brings up the compositor and input stack
+4. **The System Becomes Alive**
+   * The graph starts changing
+   * Programs observe and react
+   * The UI appears as a side effect
+
+## Current Status
+
+ThingOS is actively evolving and not yet stable.
+
+**What exists today:**
+
+* A working kernel for x86_64 and aarch64
+* A functioning graph engine
+* Userland programs
+* Input drivers
+* Framebuffer output
+* A compositor in progress
+* Real scheduling and isolation
+
+**What does not exist yet:**
+
+* Persistent storage
+* Networking
+* Security hardening
+* ABI stability
+* Documentation beyond this README (you’re reading it)
+
+Breaking changes are expected.
+
+## Why Build This?
+
+Because existing operating systems:
+
+* hide too much,
+* lie about structure,
+* and make introspection painful.
+
+ThingOS is an attempt to build an OS that is:
+
+* honest about its state,
+* inspectable at runtime,
+* composable instead of monolithic,
+* and pleasant to reason about.
+
+It is a research project, a playground, and a serious attempt — all at once.
+
+## Non-Goals
+
+ThingOS is not:
+
+* Linux-compatible
+* POSIX-compliant
+* fast (yet)
+* safe for real workloads
+* intended for end users
+
+It is intended for learning, experimentation, and rethinking assumptions.
+
+## Contributing
+
+This project is exploratory and opinionated.
+
+If you’re interested in:
+
+* operating systems,
+* graph-based models,
+* kernels without historical baggage,
+* or simply strange ideas taken seriously,
+
+then contributions, questions, and discussion are welcome.
+
+Expect sharp edges.
+
+## License
+
+MIT License.

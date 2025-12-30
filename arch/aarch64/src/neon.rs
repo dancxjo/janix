@@ -1,7 +1,7 @@
 use core::arch::aarch64::*;
 
 /// NEON-optimized blit for 32bpp framebuffers on AArch64.
-/// 
+///
 /// Safety: dst and src must be valid for len bytes. len must be a multiple of 4.
 pub unsafe fn neon_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
     if scale >= 256 {
@@ -17,7 +17,7 @@ pub unsafe fn neon_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
     // NEON Alpha blending: (color * scale) >> 8
     // Process 4 pixels (16 bytes) at a time
     let mut i = 0;
-    
+
     // vdupq_n_u16 creates a vector of 8x 16-bit values
     let v_scale = vdupq_n_u16(scale as u16);
 
@@ -44,7 +44,7 @@ pub unsafe fn neon_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
 
         // Store
         vst1q_u8(dst.add(i), res);
-        
+
         i += 16;
     }
 
@@ -56,9 +56,9 @@ pub unsafe fn neon_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
         let a = *src.add(i + 3);
 
         *dst.add(i) = ((b as u32 * scale) >> 8) as u8;
-        *dst.add(i+1) = ((g as u32 * scale) >> 8) as u8;
-        *dst.add(i+2) = ((r as u32 * scale) >> 8) as u8;
-        *dst.add(i+3) = ((a as u32 * scale) >> 8) as u8;
+        *dst.add(i + 1) = ((g as u32 * scale) >> 8) as u8;
+        *dst.add(i + 2) = ((r as u32 * scale) >> 8) as u8;
+        *dst.add(i + 3) = ((a as u32 * scale) >> 8) as u8;
 
         i += 4;
     }

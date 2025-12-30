@@ -15,9 +15,9 @@ mod neon;
 
 use boot;
 use bridge_aarch64::Bridge;
-use kernel::bridge::HardwareBridge;
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use kernel::bridge::HardwareBridge;
 use kernel::Kernel;
 use spin::Mutex;
 
@@ -109,8 +109,8 @@ struct BootStack([u8; BOOT_STACK_SIZE]);
 #[unsafe(link_section = ".bss")]
 static mut BOOT_STACK: BootStack = BootStack([0; BOOT_STACK_SIZE]);
 
-mod paging;
 mod loader;
+mod paging;
 
 #[no_mangle]
 #[no_mangle]
@@ -148,7 +148,7 @@ pub extern "C" fn rust_main() -> ! {
             let offset = resp.offset();
             // 1. Init Bridge (and set HHDM)
             Bridge::init(offset);
-            
+
             // Force mask interrupts (Limit/UEFI might have left them on, and init might unmask)
             Bridge.irq_disable();
 
@@ -158,10 +158,10 @@ pub extern "C" fn rust_main() -> ! {
 
             // 3. Init Paging & Remap UART (Mapped as Device Memory)
             paging::init(offset);
-            
+
             // Map UART (0x0900_0000)
             paging::map_device_region(0x09000000, 4096);
-            
+
             // Map GIC Distributor (0x0800_0000) & CPU Interface (0x0801_0000)
             paging::map_device_region(0x08000000, 4096); // Dist
             paging::map_device_region(0x08010000, 4096); // CPU
@@ -183,7 +183,7 @@ pub extern "C" fn rust_main() -> ! {
             loop {}
         }
     }
-    
+
     // Hook BootScreen allocator
     unsafe fn boot_alloc_impl(size: usize, align: usize) -> *mut u8 {
         let layout = alloc::alloc::Layout::from_size_align(size, align).unwrap();
@@ -198,59 +198,65 @@ pub extern "C" fn rust_main() -> ! {
     // --- Boot Screen Init ---
     let mut bs = unsafe {
         if let Some(fb) = &boot_info.framebuffer {
-             if fb.bpp != 32 {
-                 use kernel::bridge::HardwareBridge;
-                 Bridge.log("BOOTSCREEN: Unsupported BPP (needs 32)\n");
-                 None
-             } else {
-                 let addr = fb.address; // Virtual address
+            if fb.bpp != 32 {
+                use kernel::bridge::HardwareBridge;
+                Bridge.log("BOOTSCREEN: Unsupported BPP (needs 32)\n");
+                None
+            } else {
+                let addr = fb.address; // Virtual address
 
-                 // Store for syscalls
-                 FRAMEBUFFER_INFO = Some((addr, fb.size as usize));
+                // Store for syscalls
+                FRAMEBUFFER_INFO = Some((addr, fb.size as usize));
 
-                 // Pixel Format Detection
-                 let pixel_format = if fb.red_mask_shift == 16 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 0 {
-                      boot_screen::PixelFormat::Xrgb8888
-                 } else if fb.red_mask_shift == 0 && fb.green_mask_shift == 8 && fb.blue_mask_shift == 16 {
-                      boot_screen::PixelFormat::Bgra8888
-                 } else {
-                      boot_screen::PixelFormat::Xrgb8888
-                 };
+                // Pixel Format Detection
+                let pixel_format = if fb.red_mask_shift == 16
+                    && fb.green_mask_shift == 8
+                    && fb.blue_mask_shift == 0
+                {
+                    boot_screen::PixelFormat::Xrgb8888
+                } else if fb.red_mask_shift == 0
+                    && fb.green_mask_shift == 8
+                    && fb.blue_mask_shift == 16
+                {
+                    boot_screen::PixelFormat::Bgra8888
+                } else {
+                    boot_screen::PixelFormat::Xrgb8888
+                };
 
-                 let info = boot_screen::FramebufferInfo {
-                     addr: addr as *mut u8,
-                     size_bytes: fb.size as usize,
-                     width: fb.width as u32,
-                     height: fb.height as u32,
-                     pitch_bytes: fb.pitch as u32,
-                     bpp: fb.bpp,
-                     pixel_format,
-                 };
+                let info = boot_screen::FramebufferInfo {
+                    addr: addr as *mut u8,
+                    size_bytes: fb.size as usize,
+                    width: fb.width as u32,
+                    height: fb.height as u32,
+                    pitch_bytes: fb.pitch as u32,
+                    bpp: fb.bpp,
+                    pixel_format,
+                };
 
-                 if let Some(mut bs) = unsafe { boot_screen::BootScreenOwned::new(info) } {
-                     // Fast Init: Start at Black
-                     bs.set_background_color(0x00000000);
-                     bs.set_fade(255);
-                     bs.show(boot_screen::milestones::BOOTING);
-                     Some(bs)
-                 } else {
-                     use kernel::bridge::HardwareBridge;
-                     Bridge.log("BOOTSCREEN: Init Failed (Alloc/Size)\n");
-                     None
-                 }
-             }
+                if let Some(mut bs) = unsafe { boot_screen::BootScreenOwned::new(info) } {
+                    // Fast Init: Start at Black
+                    bs.set_background_color(0x00000000);
+                    bs.set_fade(255);
+                    bs.show(boot_screen::milestones::BOOTING);
+                    Some(bs)
+                } else {
+                    use kernel::bridge::HardwareBridge;
+                    Bridge.log("BOOTSCREEN: Init Failed (Alloc/Size)\n");
+                    None
+                }
+            }
         } else {
-             use kernel::bridge::HardwareBridge;
-             Bridge.log("BOOTSCREEN: No Framebuffer\n");
-             None
+            use kernel::bridge::HardwareBridge;
+            Bridge.log("BOOTSCREEN: No Framebuffer\n");
+            None
         }
     };
 
-    if let Some(bs) = &mut bs { 
+    if let Some(bs) = &mut bs {
         bs.set_background_color(0x00091929);
-        bs.show(boot_screen::milestones::BRIDGE_ONLINE); 
+        bs.show(boot_screen::milestones::BRIDGE_ONLINE);
     }
-    
+
     let mut k = Kernel::new(Bridge);
     kernel::input::init();
     kernel::graph::seed_builtins(&mut k.graph);
@@ -271,68 +277,74 @@ pub extern "C" fn rust_main() -> ! {
     k.machine.reflect_into_graph(&mut k.graph);
     *KERNEL.lock() = Some(k);
 
-    if let Some(bs) = &mut bs { 
+    if let Some(bs) = &mut bs {
         bs.set_background_color(0x00123353);
-        bs.show(boot_screen::milestones::GRAPH_INIT); 
+        bs.show(boot_screen::milestones::GRAPH_INIT);
     }
-    if let Some(bs) = &mut bs { 
+    if let Some(bs) = &mut bs {
         bs.set_background_color(0x001B4C7D);
-        bs.show(boot_screen::milestones::GRAPH_SEEDED); 
+        bs.show(boot_screen::milestones::GRAPH_SEEDED);
     }
-    if let Some(bs) = &mut bs { 
+    if let Some(bs) = &mut bs {
         bs.set_background_color(0x002466A7);
-        bs.show(boot_screen::milestones::SYMBOLS_INIT); 
+        bs.show(boot_screen::milestones::SYMBOLS_INIT);
     }
-    if let Some(bs) = &mut bs { 
+    if let Some(bs) = &mut bs {
         bs.set_background_color(0x002E80D1); // Final Desktop Color
-        bs.show(boot_screen::milestones::SYMBOLS_READY); 
+        bs.show(boot_screen::milestones::SYMBOLS_READY);
     }
-    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SCANNING_MODULES); }
+    if let Some(bs) = &mut bs {
+        bs.show(boot_screen::milestones::SCANNING_MODULES);
+    }
 
-    if let Some(bs) = &mut bs { bs.show(boot_screen::milestones::SPAWNING_INIT); }
+    if let Some(bs) = &mut bs {
+        bs.show(boot_screen::milestones::SPAWNING_INIT);
+    }
     Bridge.log("Starting Loader Task...\n");
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = guard.as_mut() {
-             use alloc::alloc::{alloc, Layout};
-             let layout = Layout::from_size_align(64 * 1024, 16).unwrap();
-                 let stack_ptr = unsafe { alloc(layout) };
-                 let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 };
-             
-             let fb_phys = if let Some(fb) = boot_info.framebuffer.as_ref() { fb.address } else { 0 };
-             let fb_size = if let Some(fb) = boot_info.framebuffer.as_ref() { (fb.pitch * fb.height) as usize } else { 0 };
+            use alloc::alloc::{alloc, Layout};
+            let layout = Layout::from_size_align(64 * 1024, 16).unwrap();
+            let stack_ptr = unsafe { alloc(layout) };
+            let stack_top = unsafe { stack_ptr.add(layout.size()) as u64 };
 
-             let args = alloc::boxed::Box::new(loader::ScanArgs {
-                 bb_info: None,
-                 hhdm: boot_info.hhdm_offset,
-                 fb_phys,
-                 fb_size,
-                 modules: boot_info.modules.clone(),
-             });
-             let args_ptr = alloc::boxed::Box::into_raw(args) as u64;
-             
-             let entry = loader::scan_boot_fs_task as *const () as usize as u64;
-             Bridge.log("Spawning loader at: ");
-             print_hex(&Bridge, entry);
-             Bridge.log("\n");
+            let fb_phys = if let Some(fb) = boot_info.framebuffer.as_ref() {
+                fb.address
+            } else {
+                0
+            };
+            let fb_size = if let Some(fb) = boot_info.framebuffer.as_ref() {
+                (fb.pitch * fb.height) as usize
+            } else {
+                0
+            };
 
-             k.scheduler.spawn(
-                 &k.bridge,
-                 "scan_boot_fs",
-                 entry,
-                 stack_top,
-                 args_ptr,
-                 0, 0
-             );
-             Bridge.log("Spawned loader task.\n");
+            let args = alloc::boxed::Box::new(loader::ScanArgs {
+                bb_info: None,
+                hhdm: boot_info.hhdm_offset,
+                fb_phys,
+                fb_size,
+                modules: boot_info.modules.clone(),
+            });
+            let args_ptr = alloc::boxed::Box::into_raw(args) as u64;
+
+            let entry = loader::scan_boot_fs_task as *const () as usize as u64;
+            Bridge.log("Spawning loader at: ");
+            print_hex(&Bridge, entry);
+            Bridge.log("\n");
+
+            k.scheduler
+                .spawn(&k.bridge, "scan_boot_fs", entry, stack_top, args_ptr, 0, 0);
+            Bridge.log("Spawned loader task.\n");
         }
     }
     unsafe {
         bridge_aarch64::set_tick_hook(scheduler_tick);
         bridge_aarch64::interrupts::syscall::set_syscall_hook(syscall_hook);
         bridge_aarch64::set_page_fault_hook(page_fault_hook);
-        
+
         Bridge.irq_enable();
-        
+
         loop {
             Bridge.idle();
         }
@@ -379,15 +391,12 @@ fn print_dec(bridge: &Bridge, val: u64) {
     bridge.log(core::str::from_utf8(&buf[i..]).unwrap());
 }
 
-
-
-
 fn page_fault_hook(
     frame: &mut bridge_aarch64::interrupts::trap::TrapFrame,
     fault_addr: u64,
-    esr: u64
+    esr: u64,
 ) {
-     unsafe {
+    unsafe {
         use kernel::bridge::HardwareBridge;
         Bridge.log("PAGE FAULT\n");
         Bridge.log("FAR: ");
@@ -395,17 +404,19 @@ fn page_fault_hook(
         Bridge.log(" ESR: ");
         print_hex(&Bridge, esr);
         Bridge.log("\n");
-        
+
         if let Some(mut guard) = KERNEL.try_lock() {
             if let Some(k) = (*guard).as_mut() {
-                 // TODO: Route to kernel demand paging
-                 // k.handle_page_fault(fault_addr, ...);
-                 
-                 // For now, if it's user mode (EC & 0b11 == 0), kill task?
-                 // Current scheduler doesn't expose easy kill yet from here?
-                 // Just loop to prevent "return to faulting instruction"
-                 Bridge.log("Spinning...\n");
-                 loop { core::hint::spin_loop(); }
+                // TODO: Route to kernel demand paging
+                // k.handle_page_fault(fault_addr, ...);
+
+                // For now, if it's user mode (EC & 0b11 == 0), kill task?
+                // Current scheduler doesn't expose easy kill yet from here?
+                // Just loop to prevent "return to faulting instruction"
+                Bridge.log("Spinning...\n");
+                loop {
+                    core::hint::spin_loop();
+                }
             }
         }
     }
@@ -445,9 +456,9 @@ fn syscall_hook(
             if let Some(k) = (*guard).as_mut() {
                 use kernel::bridge::HardwareBridge;
                 let hhdm_offset_u64 = k.bridge.hhdm_offset();
-                
+
                 let (fb_phys, fb_size) = unsafe { FRAMEBUFFER_INFO.unwrap_or((0, 0)) };
-                
+
                 loader::process_file(
                     k,
                     None,
@@ -470,7 +481,9 @@ fn syscall_hook(
         let mut result = None;
         if let Some(mut guard) = KERNEL.try_lock() {
             if let Some(k) = (*guard).as_mut() {
-                 result = Some(kernel::syscalls::syscall_dispatch(k, num, a1, a2, a3, a4, a5, a6));
+                result = Some(kernel::syscalls::syscall_dispatch(
+                    k, num, a1, a2, a3, a4, a5, a6,
+                ));
             }
         }
         if let Some(r) = result {
@@ -480,21 +493,21 @@ fn syscall_hook(
     }
 }
 
-
 fn scheduler_tick(frame: &mut bridge_aarch64::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = (*guard).as_mut() {
-             use bridge_aarch64::ArchContext;
-             use kernel::sched::scheduler::ThreadContext;
-             use kernel::bridge::HardwareBridge;
+            use bridge_aarch64::ArchContext;
+            use kernel::bridge::HardwareBridge;
+            use kernel::sched::scheduler::ThreadContext;
 
-             let ctx_ptr = frame as *mut bridge_aarch64::interrupts::trap::TrapFrame as *mut ThreadContext<ArchContext>;
-             let ctx = unsafe { &mut *ctx_ptr };
-             
-             let now_ns = k.bridge.monotonic_now();
-             
-             k.scheduler.wake_sleepers(now_ns);
-             k.scheduler.tick(&k.bridge, ctx);
+            let ctx_ptr = frame as *mut bridge_aarch64::interrupts::trap::TrapFrame
+                as *mut ThreadContext<ArchContext>;
+            let ctx = unsafe { &mut *ctx_ptr };
+
+            let now_ns = k.bridge.monotonic_now();
+
+            k.scheduler.wake_sleepers(now_ns);
+            k.scheduler.tick(&k.bridge, ctx);
         }
     }
 }

@@ -351,11 +351,12 @@ impl HardwareBridge for Bridge {
     }
 
     fn map_new_user_page(&self, virt_addr: u64, flags: u64) -> Result<(), ()> {
+        use core::alloc::Layout;
         use x86_64::structures::paging::{
-            mapper::Mapper, FrameAllocator, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
+            mapper::Mapper, FrameAllocator, OffsetPageTable, Page, PageTableFlags, PhysFrame,
+            Size4KiB, Translate,
         };
         use x86_64::VirtAddr;
-        use core::alloc::Layout;
 
         // 1. Allocate a page from Kernel Heap (physically backed)
         let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
@@ -387,7 +388,9 @@ impl HardwareBridge for Bridge {
 
             // 3. Map to User Virtual Address
             let user_page = Page::<Size4KiB>::containing_address(VirtAddr::new(virt_addr));
-            let map_flags = PageTableFlags::from_bits_truncate(flags) | PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
+            let map_flags = PageTableFlags::from_bits_truncate(flags)
+                | PageTableFlags::PRESENT
+                | PageTableFlags::USER_ACCESSIBLE;
 
             // We need a FrameAllocator for page tables.
             // We can reuse the kernel heap allocator logic ad-hoc?
@@ -396,32 +399,37 @@ impl HardwareBridge for Bridge {
             struct HeapFrameAllocator;
             unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
                 fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
-                   let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
-                   let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
-                   if ptr.is_null() { return None; }
-                   
-                   let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
-                   let virt = ptr as u64;
-                   
-                   unsafe {
-                       // Translate:
+                    let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
+                    let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
+                    if ptr.is_null() {
+                        return None;
+                    }
+
+                    let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
+                    let virt = ptr as u64;
+
+                    unsafe {
+                        // Translate:
                         let (l4_frame, _) = x86_64::registers::control::Cr3::read();
                         let phys_l4 = l4_frame.start_address();
                         let virt_l4 = VirtAddr::new(hhdm + phys_l4.as_u64());
                         let page_table_ptr = virt_l4.as_mut_ptr();
-                        let mapper = OffsetPageTable::new(&mut *page_table_ptr, VirtAddr::new(hhdm));
-                        mapper.translate_addr(VirtAddr::new(virt)).map(|p| PhysFrame::containing_address(p))
-                   }
+                        let mapper =
+                            OffsetPageTable::new(&mut *page_table_ptr, VirtAddr::new(hhdm));
+                        mapper
+                            .translate_addr(VirtAddr::new(virt))
+                            .map(|p| PhysFrame::containing_address(p))
+                    }
                 }
             }
 
             let mut allocator = HeapFrameAllocator;
-            
+
             match mapper.map_to(user_page, phys_frame, map_flags, &mut allocator) {
                 Ok(flush) => {
                     flush.flush();
                     Ok(())
-                },
+                }
                 Err(_) => {
                     alloc::alloc::dealloc(ptr, layout);
                     Err(())
@@ -431,11 +439,12 @@ impl HardwareBridge for Bridge {
     }
 
     fn map_user_mmio(&self, virt_addr: u64, phys_addr: u64, flags: u64) -> Result<(), ()> {
+        use core::alloc::Layout;
         use x86_64::structures::paging::{
-            mapper::Mapper, FrameAllocator, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
+            mapper::Mapper, FrameAllocator, OffsetPageTable, Page, PageTableFlags, PhysFrame,
+            Size4KiB, Translate,
         };
         use x86_64::VirtAddr;
-        use core::alloc::Layout;
 
         unsafe {
             let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
@@ -446,25 +455,35 @@ impl HardwareBridge for Bridge {
             let mut mapper = OffsetPageTable::new(&mut *page_table_ptr, VirtAddr::new(hhdm));
 
             let user_page = Page::<Size4KiB>::containing_address(VirtAddr::new(virt_addr));
-            let phys_frame = PhysFrame::<Size4KiB>::containing_address(x86_64::PhysAddr::new(phys_addr));
-            let map_flags = PageTableFlags::from_bits_truncate(flags) | PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::NO_CACHE | PageTableFlags::WRITE_THROUGH;
+            let phys_frame =
+                PhysFrame::<Size4KiB>::containing_address(x86_64::PhysAddr::new(phys_addr));
+            let map_flags = PageTableFlags::from_bits_truncate(flags)
+                | PageTableFlags::PRESENT
+                | PageTableFlags::USER_ACCESSIBLE
+                | PageTableFlags::NO_CACHE
+                | PageTableFlags::WRITE_THROUGH;
 
             struct HeapFrameAllocator;
             unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
-                 fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
-                   let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
-                   let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
-                   if ptr.is_null() { return None; }
-                   let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
-                   let virt = ptr as u64; 
-                   unsafe {
+                fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+                    let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
+                    let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
+                    if ptr.is_null() {
+                        return None;
+                    }
+                    let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
+                    let virt = ptr as u64;
+                    unsafe {
                         let (l4_frame, _) = x86_64::registers::control::Cr3::read();
                         let phys_l4 = l4_frame.start_address();
                         let virt_l4 = VirtAddr::new(hhdm + phys_l4.as_u64());
                         let page_table_ptr = virt_l4.as_mut_ptr();
-                        let mapper = OffsetPageTable::new(&mut *page_table_ptr, VirtAddr::new(hhdm));
-                        mapper.translate_addr(VirtAddr::new(virt)).map(|p| PhysFrame::containing_address(p))
-                   }
+                        let mapper =
+                            OffsetPageTable::new(&mut *page_table_ptr, VirtAddr::new(hhdm));
+                        mapper
+                            .translate_addr(VirtAddr::new(virt))
+                            .map(|p| PhysFrame::containing_address(p))
+                    }
                 }
             }
             let mut allocator = HeapFrameAllocator;
@@ -472,8 +491,8 @@ impl HardwareBridge for Bridge {
                 Ok(flush) => {
                     flush.flush();
                     Ok(())
-                },
-                Err(_) => Err(())
+                }
+                Err(_) => Err(()),
             }
         }
     }
@@ -545,7 +564,7 @@ impl HardwareBridge for Bridge {
     fn map_new_user_page(&self, _virt_addr: u64, _flags: u64) -> Result<(), ()> {
         Err(())
     }
-    
+
     fn map_user_mmio(&self, _virt_addr: u64, _phys_addr: u64, _flags: u64) -> Result<(), ()> {
         Err(())
     }

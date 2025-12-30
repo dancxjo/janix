@@ -55,7 +55,7 @@ pub fn sys_bytespace_map<B: HardwareBridge>(
     let start_addr = if req.user_va_hint != 0 {
         req.user_va_hint
     } else {
-        // Fallback: This is risky without a VMM. 
+        // Fallback: This is risky without a VMM.
         // For now, return error if no hint. User (loaded) should provide address.
         return -1;
     };
@@ -77,7 +77,7 @@ pub fn sys_bytespace_map<B: HardwareBridge>(
         // Real implementation would map ReadWrite, Copy, then Remap ReadOnly.
         // Simplify: Always Map ReadWrite for now (User Flags | 2).
         if let Err(_) = kernel.bridge.map_new_user_page(current_addr, 2 | 4) {
-             return -1;
+            return -1;
         }
 
         // 2. Copy data
@@ -85,22 +85,24 @@ pub fn sys_bytespace_map<B: HardwareBridge>(
         // Page index = current_offset / 4096
         let page_idx = (current_offset / 4096) as usize;
         if let Some(chunk) = bs.pages.get(page_idx) {
-             let src = chunk.as_slice();
-             let dst = unsafe { core::slice::from_raw_parts_mut(current_addr as *mut u8, 4096) };
-             
-             // Calculate how much to copy for this page (handle last partial page)
-             let space_rem = bs.len - current_offset;
-             let req_rem = (req.offset + req.len) - current_offset;
-             let to_copy = core::cmp::min(4096, core::cmp::min(space_rem, req_rem));
-             
-             dst[..to_copy as usize].copy_from_slice(&src[..to_copy as usize]);
+            let src = chunk.as_slice();
+            let dst = unsafe { core::slice::from_raw_parts_mut(current_addr as *mut u8, 4096) };
+
+            // Calculate how much to copy for this page (handle last partial page)
+            let space_rem = bs.len - current_offset;
+            let req_rem = (req.offset + req.len) - current_offset;
+            let to_copy = core::cmp::min(4096, core::cmp::min(space_rem, req_rem));
+
+            dst[..to_copy as usize].copy_from_slice(&src[..to_copy as usize]);
         }
 
         current_addr += 4096;
         current_offset += 4096;
     }
 
-    let resp = ByteSpaceMapResp { user_addr: start_addr };
+    let resp = ByteSpaceMapResp {
+        user_addr: start_addr,
+    };
     match postcard::to_slice(&resp, unsafe {
         core::slice::from_raw_parts_mut(out_ptr as *mut u8, out_len)
     }) {

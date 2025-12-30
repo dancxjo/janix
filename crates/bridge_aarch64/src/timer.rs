@@ -11,11 +11,11 @@ pub fn init() {
     unsafe {
         // Disable first
         asm!("msr cntp_ctl_el0, {}", in(reg) 0u64);
-        
+
         // Read Frequency
         let frq: u64;
         asm!("mrs {}, cntfrq_el0", out(reg) frq);
-        
+
         // Set Interval (e.g. 100Hz = frq / 100)
         // If frq is 0 (should not happen on proper HW/QEMU), prevent div by zero
         if frq > 0 {
@@ -32,7 +32,7 @@ pub fn next_match() {
         // Read Frequency
         let frq: u64;
         asm!("mrs {}, cntfrq_el0", out(reg) frq);
-        
+
         if frq > 0 {
             let interval = frq / 100;
             asm!("msr cntp_tval_el0, {}", in(reg) interval);

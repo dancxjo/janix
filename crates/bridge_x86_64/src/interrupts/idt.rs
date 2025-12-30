@@ -216,12 +216,18 @@ unsafe extern "C" fn timer_interrupt_naked() {
         // 3. RFLAGS (Offset 136 -> 184)
         "mov rax, [rsp + 136]",
         "mov [rsp + 184], rax",
+
+        // Check CS (now in rax) for CPL. If Kernel (0), skip RSP/SS restore.
+        "test al, 3",
+        "jz 4f",
+
         // 4. RSP (Offset 144 -> 192)
         "mov rax, [rsp + 144]",
         "mov [rsp + 192], rax",
         // 5. SS (Offset 152 -> 200)
         "mov rax, [rsp + 152]",
         "mov [rsp + 200], rax",
+        "4:",
 
         // Restore GPRs
         "mov r15, [rsp + 0]",

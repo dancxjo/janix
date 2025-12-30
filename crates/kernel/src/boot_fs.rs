@@ -364,11 +364,11 @@ pub fn ingest_module<B: HardwareBridge>(
     hhdm_u64: u64,
 ) -> ThingId {
     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
-    use thing_models::builtins::ids::*;
-    use thing_models::core::fs::FileBody;
     use thing_models::builtins::core_kinds::ModuleBody;
     use thing_models::builtins::core_kinds::{ByteSpaceBody, ByteSpaceRef};
+    use thing_models::builtins::ids::*;
     use thing_models::builtins::symbols::SYM_BYTESPACE;
+    use thing_models::core::fs::FileBody;
 
     // kernel.bridge.log(alloc::format!("ingest: processing file {}\n", name).as_str());
 
@@ -519,9 +519,9 @@ pub fn register_boot_process<B: HardwareBridge>(
     entry_point: u64,
 ) -> ThingId {
     use abi::wire::typed::{CodecId, TypeId, TypedBytes};
+    use thing_models::builtins::core_kinds::BootProgramBody;
     use thing_models::builtins::ids::*;
     use thing_models::core::process::{ProcessBody, ProcessState};
-    use thing_models::builtins::core_kinds::BootProgramBody;
 
     // Create Process Thing
     let p_body = ProcessBody {

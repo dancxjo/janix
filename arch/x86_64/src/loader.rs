@@ -6,14 +6,11 @@ use alloc::vec::Vec;
 
 use abi::ThingId;
 
+use crate::bridge::Bridge;
 use crate::KERNEL;
-use bridge_x86_64::Bridge;
 use core::sync::atomic::{AtomicU64, Ordering};
-use kernel::boot_fs::{
-    classify_bytes, get_module_role, mount_and_scan, FileArgs, ModuleRole, ModuleType,
-};
+use kernel::boot_fs;
 use kernel::bridge::HardwareBridge;
-use kernel::fs::iso9660::{BlockReader, Iso9660Reader};
 use kernel::Kernel;
 use models::value::ThingBody;
 use x86_64::structures::paging::mapper::TranslateError;
@@ -26,11 +23,7 @@ use xmas_elf::{program::Type, ElfFile};
 
 // --- SHARED STRUCTS ---
 
-pub struct ScanArgs {
-    pub base: u64,
-    pub port: usize,
-    pub hhdm: u64,
-}
+// ScanArgs removed
 
 // --- BOOT LOGIC ---
 
@@ -276,110 +269,9 @@ fn apply_relative_relocations(
     0
 }
 
-pub extern "C" fn scan_boot_fs_task(arg: u64) {
-    let args_ptr = arg as *mut ScanArgs;
-    let args = unsafe { Box::from_raw(args_ptr) }; // Take ownership
+// scan_boot_fs_task and file_loader_task removed (Hardware Loader Killed)
 
-    let base = args.base;
-    let port = args.port;
-    let hhdm = args.hhdm;
-
-    let reader = move |lba, buf: &mut [u8]| unsafe {
-        use alloc::alloc::{alloc, dealloc, Layout};
-        let layout = Layout::from_size_align(2048, 2048).unwrap();
-        let ptr = alloc(layout);
-        if ptr.is_null() {
-            return false;
-        }
-        let bounce = core::slice::from_raw_parts_mut(ptr, 2048);
-
-        let res = kernel::drivers::ahci::read_sector_yielding(
-            &bridge_x86_64::Bridge,
-            base,
-            port,
-            lba,
-            bounce,
-            hhdm,
-            || x86_64::instructions::hlt(),
-        );
-
-        if res {
-            let len = core::cmp::min(buf.len(), 2048);
-            core::ptr::copy_nonoverlapping(ptr, buf.as_mut_ptr(), len);
-        }
-        dealloc(ptr, layout);
-        res
-    };
-
-    let boxed_reader: Box<dyn BlockReader + Send + Sync> = Box::new(reader);
-    let iso = match Iso9660Reader::new(boxed_reader) {
-        Some(i) => Arc::new(i),
-        None => {
-            Bridge.log("loader: Failed to init ISO reader\n");
-            return;
-        }
-    };
-
-    Bridge.log("loader: ISO Reader Ready. Delegating to Kernel Boot Scan...\n");
-
-    let mut guard = KERNEL.lock();
-    if let Some(k) = guard.as_mut() {
-        mount_and_scan(k, iso, file_loader_task as *const () as usize as u64, hhdm);
-    }
-
-    loop {
-        x86_64::instructions::hlt();
-    }
-}
-
-pub extern "C" fn file_loader_task(arg: u64) {
-    let args = unsafe { Box::from_raw(arg as *mut FileArgs) };
-
-    // Open and Read (Concurrent IO)
-    // NOTE: arg.iso is Arc, so access is efficient.
-    // open() calls read_sector_yielding internally.
-    if let Some(handle) = args.iso.open(&args.path) {
-        Bridge.log("loader: Opened ");
-        Bridge.log(&args.path);
-        Bridge.log("\n");
-        let mut data = alloc::vec![0u8; handle.size as usize];
-        args.iso.read(&handle, 0, handle.size as usize, &mut data);
-        Bridge.log("loader: Read complete\n");
-
-        // Process (Serialized by Kernel Lock)
-        let mut guard = KERNEL.lock();
-        if let Some(k) = guard.as_mut() {
-            // We reuse process_file.
-            // But we need to define it or import.
-            // Implementing here.
-
-            let name = args.path.rsplit('/').next().unwrap_or(&args.path);
-            
-            // Shared Ingestion
-            kernel::boot_fs::ingest_module(k, name, &data, args.dir_id, args.hhdm);
-
-            // Spawn Logic
-            process_file(
-                k,
-                args.dir_id,
-                name,
-                &data,
-                0,
-                Some(args.should_spawn),
-                args.hhdm,
-            );
-        }
-    } else {
-        Bridge.log("loader: Failed to open ");
-        Bridge.log(&args.path);
-        Bridge.log("\n");
-    }
-    loop {
-        x86_64::instructions::hlt();
-    }
-}
-
-pub fn process_file(
+pub fn spawn_elf(
     k: &mut Kernel<Bridge>,
     parent_dir_id: Option<ThingId>,
     name: &str,
@@ -388,38 +280,11 @@ pub fn process_file(
     spawn_override: Option<bool>,
     hhdm_u64: u64,
 ) {
-    Bridge.log("loader: processing file ");
+    Bridge.log("loader: spawn_elf ");
     Bridge.log(name);
     Bridge.log("\n");
-    let mtype = classify_bytes(data);
-    let role_enum = get_module_role(name, &mtype);
-
-    // --- Graph: Create Module Thing ---
-    // REMOVED: Now handled by kernel::boot_fs::ingest_module (called in file_loader_task)
-    
-    // We still classify locally for spawn decision
-    let role_str = match role_enum {
-        ModuleRole::App => "app",
-        ModuleRole::Driver => "driver",
-        ModuleRole::Debug => "debug",
-        ModuleRole::Asset => "asset",
-        ModuleRole::Ignore => "ignore",
-    };
-
-    // Skipped ModuleBody and Font body logic to match main.rs needs?
-    // I should probably copy the full logic if I want exact behavior.
-    // However, for this task, I'll include the "Spawn App" logic which is critical.
-
-    let should_spawn = if let Some(s) = spawn_override {
-        s
-    } else {
-        match role_enum {
-            ModuleRole::App => true,
-            ModuleRole::Driver => true,
-            ModuleRole::Debug => false, // No smoke check here for now
-            _ => false,
-        }
-    };
+    // Removal of Arch-side policy: We only spawn if explicitly requested by the caller (Kernel).
+    let should_spawn = spawn_override.unwrap_or(false);
 
     if should_spawn {
         use kernel::sched::elf::load_elf;
@@ -735,13 +600,15 @@ pub fn process_file(
                 }
             }
 
-            // Verify driver symbol if applicable (thingos_driver_init)
+            // Verify driver symbol (heuristic: if symbol exists, use it)
+            // Verify driver symbol (heuristic: if symbol exists, use it)
+            // Logic is now generic.
             let mut final_entry_point = current_app_base + img.entry_point;
-            if role_enum == ModuleRole::Driver {
-                 if let Some(offset) = kernel::sched::elf::find_symbol(data, "thingos_driver_init") {
-                     unsafe { Bridge.log("loader: Found thingos_driver_init override!\n"); }
-                     final_entry_point = current_app_base + offset;
-                 }
+            if let Some(offset) = kernel::sched::elf::find_symbol(data, "thingos_driver_init") {
+                unsafe {
+                    Bridge.log("loader: Found thingos_driver_init override!\n");
+                }
+                final_entry_point = current_app_base + offset;
             }
 
             // Spawn
@@ -793,7 +660,8 @@ pub fn process_file(
             }
 
             // Create Process Thing (via Kernel Helper)
-            let _process_id = kernel::boot_fs::register_boot_process(k, name, current_app_base + img.entry_point);
+            let _process_id =
+                kernel::boot_fs::register_boot_process(k, name, current_app_base + img.entry_point);
         }
     }
 }

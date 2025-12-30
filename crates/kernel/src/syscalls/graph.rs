@@ -21,7 +21,8 @@ pub fn handle_graph_op<B: HardwareBridge>(
         kernel.bridge.log("GraphOp::ReadBytes received");
     }
     use crate::graph::security;
-    if let Err(_) = security::check_write(pid, &op) {
+    // 1. Security Check
+    if security::check_write(pid, &op).is_err() {
         // We need a PermissionDenied reply?
         // Or generic Error.
         return GraphReply::Error;
@@ -244,7 +245,9 @@ pub fn handle_graph_query<B: HardwareBridge>(
 
                 if now < wake {
                     kernel.scheduler.sleep_current_until(wake);
-                    return Err(abi::syscall_defs::SYS_EAGAIN);
+                    if kernel.machine.check_buffers(pid).is_err() {
+                        return Err(abi::syscall_defs::SYS_EAGAIN);
+                    }
                 }
 
                 let resp = TimeSleepNsResp {

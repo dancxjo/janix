@@ -5,9 +5,12 @@ edition = "2021"
 license.workspace = true
 
 [dependencies]
-limine = "0.5"
 postcard = { workspace = true, features = ["alloc"] }
 serde = { workspace = true, default-features = false }
 models = { path = "../models" }
 abi = { path = "../abi" }
 log = "0.4"
+limine = { version = "0.5", optional = true }
+
+[features]
+limine = ["dep:limine"]

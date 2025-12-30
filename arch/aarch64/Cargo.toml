@@ -4,18 +4,21 @@ version = "0.2.0"
 edition = "2021"
 license.workspace = true
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "kernel_aarch64"
+path = "src/entry.rs"
 test = false
 
 [dependencies]
 kernel = { path = "../../crates/kernel" }
-bridge_aarch64 = { path = "../../crates/bridge_aarch64" }
 hw = { path = "../../crates/hw" }
 linked_list_allocator = { version = "0.10", default-features = false, features = ["use_spin"] }
 spin = "0.10"
 limine = "0.5"
-boot = { path = "../../crates/boot" }
+boot = { path = "../../crates/boot", features = ["limine"] }
 boot_screen = { path = "../../crates/boot_screen" }
 models = { path = "../../crates/models" }
 abi = { path = "../../crates/abi" }

@@ -6,6 +6,12 @@ pub struct TypeRegistry {
     types: RwLock<BTreeMap<TypeId, TypeDef>>,
 }
 
+impl Default for TypeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeRegistry {
     pub const fn new() -> Self {
         Self {

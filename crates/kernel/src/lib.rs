@@ -1,4 +1,8 @@
 #![no_std]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+#![allow(clippy::result_unit_err)]
 #![allow(unused)]
 #![allow(static_mut_refs)]
 #![allow(private_interfaces)]

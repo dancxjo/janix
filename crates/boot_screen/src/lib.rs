@@ -1,5 +1,7 @@
 #![no_std]
 
+extern crate alloc;
+
 mod damage;
 pub mod milestones;
 mod pixel;
@@ -60,27 +62,53 @@ impl BootScreenOwned {
     /// Create a new BootScreenOwned using the global boot allocator.
     /// Returns None if allocator not set or allocation fails.
     /// Safety: fb.addr must be valid.
+    /// # Safety
+    ///
+    /// The caller must ensure that the `FramebufferInfo` provided is valid and points to correct memory.
     pub unsafe fn new(fb: FramebufferInfo) -> Option<Self> {
-        let alloc_ptr = BOOT_ALLOC.load(Ordering::SeqCst);
-        if alloc_ptr.is_null() {
+        if fb.pixel_format != PixelFormat::Xrgb8888 && fb.pixel_format != PixelFormat::Abgr8888 {
             return None;
         }
+
+        // Must allocate a shadow buffer of the same size
+        // We need a global allocator for this crate to work?
+        // Yes, this crate is `no_std` but expects `alloc`.
+
+        let alloc_ptr = BOOT_ALLOC.load(Ordering::SeqCst);
+        let alloc_fn: Option<BootAlloc> = if alloc_ptr.is_null() {
+            None
+        } else {
+            Some(core::mem::transmute::<*mut core::ffi::c_void, BootAlloc>(
+                alloc_ptr,
+            ))
+        };
 
         if fb.addr.is_null() {
             return None;
         }
-        let alloc_fn: BootAlloc = core::mem::transmute(alloc_ptr);
 
         let min_size = (fb.pitch_bytes as usize).checked_mul(fb.height as usize)?;
         if fb.size_bytes < min_size {
             return None;
         }
 
-        let ptr = alloc_fn(fb.size_bytes, 4096);
+        let len = fb.size_bytes;
+        // Verify we can allocate
+        let ptr = if let Some(alloc_fn) = alloc_fn {
+            alloc_fn(len, 4096)
+        } else {
+            // Fallback to global allocator if BOOT_ALLOC not set
+            use alloc::alloc::{alloc, Layout};
+            let layout = Layout::from_size_align(len, 4096).ok()?;
+            alloc(layout)
+        };
+
         if ptr.is_null() {
             return None;
         }
-        core::ptr::write_bytes(ptr, 0, fb.size_bytes);
+
+        // Zero shadow
+        core::ptr::write_bytes(ptr, 0, len);
 
         // Create 'static slice because we leak the memory (it persists for boot)
         let shadow = core::slice::from_raw_parts_mut(ptr, fb.size_bytes);
@@ -152,7 +180,7 @@ impl<'a> BootScreen<'a> {
             return;
         }
 
-        let msg_len = msg.bytes().count() as u32;
+        let msg_len = msg.len() as u32;
         let text_w = msg_len * (8 + 1) - 1;
         let text_h = 16;
         let x = self.width_center.saturating_sub(text_w / 2);
@@ -286,7 +314,7 @@ impl<'a> BootScreen<'a> {
             return;
         }
 
-        let msg_len = self.current_msg.bytes().count() as u32;
+        let msg_len = self.current_msg.len() as u32;
         let text_w = msg_len * (8 + 1) - 1;
         let text_h = 16;
         let base_x = self.width_center.saturating_sub(text_w / 2);
@@ -319,13 +347,11 @@ impl<'a> BootScreen<'a> {
         let clip_y0 = clip.y;
         let clip_y1 = clip.y + clip.h;
 
-        for row in 0..16 {
+        for (row, &row_data) in glyph.iter().enumerate() {
             let py = y + row as u32;
             if py < clip_y0 || py >= clip_y1 || py >= self.fb.height {
                 continue;
             }
-
-            let row_data = glyph[row];
             for col in 0..8 {
                 if (row_data & (0x80 >> col)) != 0 {
                     let px = x + col;

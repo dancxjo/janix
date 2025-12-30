@@ -52,11 +52,23 @@ pub enum MachineError {
     InternalError,
 }
 
+impl Default for MachineRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MachineRegistry {
     pub fn new() -> Self {
         Self {
             endpoints: BTreeMap::new(),
         }
+    }
+}
+
+impl Default for Machine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -184,9 +196,9 @@ impl Machine {
             };
 
             let typed = abi::wire::typed::TypedBytes {
-                 type_id: abi::wire::typed::TypeId(THING_LINK_KIND.0 as u128),
-                 codec_id: abi::wire::typed::CodecId::POSTCARD,
-                 bytes: to_allocvec(&body).unwrap(),
+                type_id: abi::wire::typed::TypeId(THING_LINK_KIND.0 as u128),
+                codec_id: abi::wire::typed::CodecId::POSTCARD,
+                bytes: to_allocvec(&body).unwrap(),
             };
 
             ensure(g, lid, THING_LINK_KIND, to_allocvec(&typed).unwrap());

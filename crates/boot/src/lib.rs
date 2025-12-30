@@ -4,7 +4,8 @@
 extern crate alloc;
 
 pub mod bootinfo;
+
+#[cfg(feature = "limine")]
 pub mod limine;
 
 pub use bootinfo::*;
-pub use limine::{collect, get_cmdline, get_hhdm, get_memory_map, get_rsdp};

@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use xmas_elf::{program::Type, ElfFile, symbol_table::Entry};
+use xmas_elf::{program::Type, symbol_table::Entry, ElfFile};
 
 pub struct LoadedImage {
     pub entry_point: u64,
@@ -110,47 +110,51 @@ pub fn load_elf(
 }
 
 pub fn find_symbol(elf_data: &[u8], symbol_name: &str) -> Option<u64> {
-     let elf = ElfFile::new(elf_data).ok()?;
-     
-     // Iterate sections to find .symtab or .dynsym
-     // Ideally we check .symtab for static linking or .dynsym for dynamic?
-     // Drivers are likely statically linked ELFs (executables) but might export symbols via .symtab.
-     // If they are dynamic libs, .dynsym.
-     // "limine_fb_driver" is an executable.
-     // Rust binaries usually preserve .symtab unless stripped.
-     
-     for section in elf.section_iter() {
-         if let Ok(name) = section.get_name(&elf) {
-             if name == ".symtab" {
-                 if let Ok(xmas_elf::sections::SectionData::SymbolTable64(entries)) = section.get_data(&elf) {
-                     for entry in entries {
-                         if let Ok(sym_name) = entry.get_name(&elf) {
-                             if sym_name == symbol_name {
-                                 return Some(entry.value());
-                             }
-                         }
-                     }
-                 }
-             }
-         }
-     }
-     
-     // Fallback to dynsym
-     for section in elf.section_iter() {
-         if let Ok(name) = section.get_name(&elf) {
-             if name == ".dynsym" {
-                 if let Ok(xmas_elf::sections::SectionData::DynSymbolTable64(entries)) = section.get_data(&elf) {
-                     for entry in entries {
-                         if let Ok(sym_name) = entry.get_name(&elf) {
-                             if sym_name == symbol_name {
-                                  return Some(entry.value());
-                             }
-                         }
-                     }
-                 }
-             }
-         }
-     }
-     
-     None
+    let elf = ElfFile::new(elf_data).ok()?;
+
+    // Iterate sections to find .symtab or .dynsym
+    // Ideally we check .symtab for static linking or .dynsym for dynamic?
+    // Drivers are likely statically linked ELFs (executables) but might export symbols via .symtab.
+    // If they are dynamic libs, .dynsym.
+    // "limine_fb_driver" is an executable.
+    // Rust binaries usually preserve .symtab unless stripped.
+
+    for section in elf.section_iter() {
+        if let Ok(name) = section.get_name(&elf) {
+            if name == ".symtab" {
+                if let Ok(xmas_elf::sections::SectionData::SymbolTable64(entries)) =
+                    section.get_data(&elf)
+                {
+                    for entry in entries {
+                        if let Ok(sym_name) = entry.get_name(&elf) {
+                            if sym_name == symbol_name {
+                                return Some(entry.value());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback to dynsym
+    for section in elf.section_iter() {
+        if let Ok(name) = section.get_name(&elf) {
+            if name == ".dynsym" {
+                if let Ok(xmas_elf::sections::SectionData::DynSymbolTable64(entries)) =
+                    section.get_data(&elf)
+                {
+                    for entry in entries {
+                        if let Ok(sym_name) = entry.get_name(&elf) {
+                            if sym_name == symbol_name {
+                                return Some(entry.value());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }

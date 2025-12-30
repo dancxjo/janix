@@ -1,5 +1,6 @@
 use alloc::alloc::{alloc, Layout};
-pub use bridge_aarch64::paging::{
+// Re-export specific constants from bringup paging
+pub use crate::bringup::paging::{
     PTE_AF, PTE_AP_RW_EL0, PTE_AP_RW_EL1, PTE_ATTR_DEVICE, PTE_ATTR_NORMAL, PTE_PAGE, PTE_PXN,
     PTE_SH_INNER, PTE_TABLE, PTE_UXN, PTE_VALID,
 };
@@ -17,7 +18,7 @@ pub unsafe fn init(hhdm: u64) {
     asm!("msr mair_el1, {}", in(reg) mair);
 
     // Register hook
-    bridge_aarch64::paging::UPDATE_FLAGS_FN = Some(update_page_flags);
+    crate::bringup::paging::UPDATE_FLAGS_FN = Some(update_page_flags);
 }
 
 pub fn allocate_frame() -> Option<(u64, u64)> {
@@ -39,8 +40,11 @@ pub fn allocate_frame() -> Option<(u64, u64)> {
         // HHDM mapping: Virt = Phys + HHDM.
         if virt < hhdm {
             // Panic or error?
-            // If alloc returns low address, it's not HHDM.
-            // But main.rs initializes "heap" using limine heap which is usually high address.
+            unsafe {
+                use kernel::bridge::HardwareBridge;
+                let b = crate::bridge::Bridge;
+                b.log("ALLOC_FRAME: Virt < HHDM!\n");
+            }
             return None;
         }
         let phys = virt - hhdm;
@@ -162,7 +166,7 @@ unsafe fn map_page(root_table_phys: u64, phys: u64, virt: u64, levels: usize, fl
     table_ptr.add(index).write(entry);
 }
 
-pub unsafe fn get_phys(root_table_phys: u64, virt: u64) -> Option<u64> {
+pub unsafe fn translate(root_table_phys: u64, virt: u64) -> Option<u64> {
     let indexes = [
         (virt >> 39) & 0x1FF,
         (virt >> 30) & 0x1FF,

@@ -1,29 +1,8 @@
 use crate::bridge::HardwareBridge;
 use crate::Kernel;
 
-pub unsafe fn init<B: HardwareBridge>(
-    k: &mut Kernel<B>,
-    fb_response: Option<&limine::response::FramebufferResponse>,
-) {
-    if let Some(resp) = fb_response {
-        if let Some(fb) = resp.framebuffers().next() {
-            k.bridge.log("DRIVER(limine_fb): Publishing...\n");
-
-            let user_virt_addr = 0x1_0000_0000u64;
-
-            // Populate Machine FB info
-            let info = abi::wire::machine::FbGetInfoResp {
-                width: fb.width() as u32,
-                height: fb.height() as u32,
-                stride: fb.pitch() as u32,
-                format: 32,
-                addr: user_virt_addr,
-                size: (fb.height() * fb.pitch()) as u64,
-            };
-            init_with_info(k, info);
-        }
-    }
-}
+// Function `init` removed to avoid `limine` dependency in kernel.
+// Use `init_with_info` instead, extracting data in `arch`.
 
 pub fn init_with_info<B: HardwareBridge>(
     k: &mut Kernel<B>,

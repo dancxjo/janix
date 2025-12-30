@@ -1,4 +1,3 @@
-use crate::limine::heap_init::HeapInitInfo;
 use bridge_aarch64::Bridge;
 use kernel::bridge::HardwareBridge;
 
@@ -22,9 +21,9 @@ impl core::fmt::Write for EarlyUart {
     }
 }
 
-pub fn log_heap_init(info: HeapInitInfo) {
+pub fn log_heap_init(phys_start: u64, virt_start: u64, size: u64) {
     bootlog!("Heap Init:");
-    bootlog!("  Phys: 0x{:x}", info.phys_start);
-    bootlog!("  Virt: 0x{:x}", info.virt_start);
-    bootlog!("  Size: 0x{:x}", info.size);
+    bootlog!("  Phys: 0x{:x}", phys_start);
+    bootlog!("  Virt: 0x{:x}", virt_start);
+    bootlog!("  Size: 0x{:x}", size);
 }

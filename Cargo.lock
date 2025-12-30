@@ -231,30 +231,6 @@ name = "boot_screen"
 version = "0.1.0"
 
 [[package]]
-name = "bridge_aarch64"
-version = "0.2.0"
-dependencies = [
- "abi",
- "hw",
- "kernel",
-]
-
-[[package]]
-name = "bridge_x86_64"
-version = "0.2.0"
-dependencies = [
- "abi",
- "bitflags",
- "kernel",
- "lazy_static",
- "models",
- "postcard",
- "serde",
- "spin 0.9.8",
- "x86_64",
-]
-
-[[package]]
 name = "built"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -731,8 +707,8 @@ name = "kernel"
 version = "0.2.0"
 dependencies = [
  "abi",
+ "boot",
  "heapless 0.8.0",
- "limine",
  "models",
  "postcard",
  "serde",
@@ -747,7 +723,6 @@ dependencies = [
  "abi",
  "boot",
  "boot_screen",
- "bridge_aarch64",
  "hw",
  "infer",
  "kernel",
@@ -766,24 +741,15 @@ dependencies = [
  "abi",
  "boot",
  "boot_screen",
- "bridge_x86_64",
  "infer",
  "kernel",
+ "limine",
  "linked_list_allocator",
  "models",
  "postcard",
  "spin 0.10.0",
  "x86_64",
  "xmas-elf",
-]
-
-[[package]]
-name = "lazy_static"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
-dependencies = [
- "spin 0.9.8",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 #[derive(Debug)]
-pub struct BootInfo {
+pub struct BootFacts {
     pub hhdm_offset: u64,
     pub rsdp_addr: Option<u64>,
     pub cmdline: Option<String>,

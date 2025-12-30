@@ -17,6 +17,12 @@ pub struct SymbolTable {
     map: BTreeMap<SymbolId, Vec<u8>>,
 }
 
+impl Default for SymbolTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SymbolTable {
     pub fn new() -> Self {
         Self {

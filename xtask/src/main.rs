@@ -1,11 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
 
+mod boundary; // Add module
 mod build;
 mod fetch;
 mod iso;
 mod kill;
-mod run; // Add module
+mod run;
 
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Build and management tasks for ThingOS")]
@@ -16,6 +17,8 @@ struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
+    /// Check architecture boundaries
+    BoundaryCheck,
     /// Fetch vendor assets (Limine, OVMF, Fonts)
     Fetch(fetch::FetchArgs),
     /// Build the kernel and bridges
@@ -55,6 +58,7 @@ fn main() -> Result<()> {
     let args = Cli::parse();
 
     match args.command {
+        Commands::BoundaryCheck => boundary::run(),
         Commands::Fetch(args) => fetch::run(args),
         Commands::Build => build::run(),
         Commands::Iso { env, cmdline } => iso::run(env, cmdline),

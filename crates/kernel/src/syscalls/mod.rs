@@ -23,7 +23,7 @@ pub fn syscall_dispatch<B: HardwareBridge>(
     // bridge log usually takes &str.
     // Let's use if/match to print only interesting ones.
     match num {
-        SYSCALL_RTC_READ => time::sys_rtc_read(kernel, a1 as *mut u8) as isize,
+        SYSCALL_RTC_READ => time::sys_rtc_read(kernel, a1 as *mut u8),
         SYSCALL_YIELD => {
             // Just return for now, next tick will preempt or we can implement real yield later.
             0

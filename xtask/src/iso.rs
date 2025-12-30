@@ -135,7 +135,13 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     let drivers_dir = boot_dir.join("drivers");
     fs::create_dir_all(&drivers_dir)?;
 
-    let driver_names = ["ps2_keyboard", "ps2_mouse", "rtc_x86", "rtc_aarch64", "limine_fb_driver"];
+    let driver_names = [
+        "ps2_keyboard",
+        "ps2_mouse",
+        "rtc_x86",
+        "rtc_aarch64",
+        "limine_fb_driver",
+    ];
 
     let mut init_whitelist = Vec::new();
 
@@ -197,7 +203,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         for entry in fs::read_dir(&icons_src)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "png") {
+            if path.extension().is_some_and(|e| e == "png") {
                 let name = path.file_stem().unwrap().to_string_lossy();
                 println!("    Converting {} to BMP...", name);
 
@@ -249,8 +255,10 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
 
     // Other apps/drivers if needed as modules
     for app in &user_apps {
-        if app == &"loaded" { continue; }
-        
+        if app == &"loaded" {
+            continue;
+        }
+
         let is_driver = driver_names.contains(app);
         let subdir = if is_driver { "drivers" } else { "apps" };
         let line = format!("    module_path: boot():/boot/{}/{}.elf\n", subdir, app);

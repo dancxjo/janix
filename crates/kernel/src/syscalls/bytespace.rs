@@ -60,12 +60,22 @@ pub fn sys_bytespace_map<B: HardwareBridge>(
         return -1;
     };
 
-    // Ensure alignment
-    if start_addr % 4096 != 0 || req.offset % 4096 != 0 {
-        return -1;
+    // Align checks
+    if !req.offset.is_multiple_of(4096) {
+        return abi::syscall_defs::SYS_EINVAL as isize;
     }
 
-    let num_pages = (req.len + 4095) / 4096;
+    // Determine number of pages
+    let num_pages = req.len.div_ceil(4096);
+    let size_bytes = num_pages * 4096;
+
+    // Allocate in ByteSpace
+    // (Optimization: We could check if we have enough RAM first,
+    // but the allocator will fail if not)
+
+    // Map pages into Current Process
+    // For v0.2 MVP we loop. In future we use batch map.
+    // Address must be page aligned.
     let mut current_addr = start_addr;
     let mut current_offset = req.offset;
 
@@ -76,7 +86,11 @@ pub fn sys_bytespace_map<B: HardwareBridge>(
         // Even if user asked for ReadOnly, we must Write initial data.
         // Real implementation would map ReadWrite, Copy, then Remap ReadOnly.
         // Simplify: Always Map ReadWrite for now (User Flags | 2).
-        if let Err(_) = kernel.bridge.map_new_user_page(current_addr, 2 | 4) {
+        if kernel
+            .bridge
+            .map_new_user_page(current_addr, 2 | 4)
+            .is_err()
+        {
             return -1;
         }
 

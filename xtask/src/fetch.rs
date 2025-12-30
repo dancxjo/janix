@@ -65,7 +65,7 @@ fn fetch_limine(vendor: &Path) -> Result<()> {
     run_cmd(
         Command::new("git")
             .arg("clone")
-            .arg("--branch=v9.x-binary")
+            .arg("--branch=v10.x-binary")
             .arg("--depth=1")
             .arg("https://github.com/limine-bootloader/limine.git")
             .arg(&limine_dir),

@@ -18,6 +18,17 @@ pub unsafe fn init<B: HardwareBridge>(
 
             let user_virt_addr = 0x1_0000_0000u64;
 
+            // Populate Machine FB info
+            let info = abi::wire::machine::FbGetInfoResp {
+                width: fb.width() as u32,
+                height: fb.height() as u32,
+                stride: fb.pitch() as u32,
+                format: 32,
+                addr: user_virt_addr,
+                size: (fb.height() * fb.pitch()) as u64,
+            };
+            k.machine.fb_info = Some(info);
+
             let fb_body = DisplayFramebufferBody {
                 width: fb.width(),
                 height: fb.height(),

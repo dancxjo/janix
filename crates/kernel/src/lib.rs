@@ -11,6 +11,7 @@ pub mod drivers;
 pub mod font;
 pub mod fs;
 pub mod graph;
+pub mod machine;
 pub mod input;
 pub mod sched;
 pub mod symbols;
@@ -37,6 +38,7 @@ pub struct Kernel<B: HardwareBridge> {
     pub bytespaces: bytespace::ByteSpaceStore,
     pub symbols: SymbolTable,
     pub scheduler: Scheduler<B::Context>,
+    pub machine: machine::Machine,
 }
 
 impl<B: HardwareBridge> Kernel<B> {
@@ -47,7 +49,19 @@ impl<B: HardwareBridge> Kernel<B> {
             bytespaces: bytespace::ByteSpaceStore::new(),
             symbols: SymbolTable::new(),
             scheduler: Scheduler::new(),
+            machine: machine::Machine::new(),
         }
+    }
+
+    fn register_machine_builtins(&mut self) {
+        use abi::wire::machine::*;
+        use abi::symbols::sym;
+        use crate::machine::BuiltinEndpoint;
+
+        self.machine.register_builtin(sym(IFACE_RTC), 1, sym("rtc0"), BuiltinEndpoint::Rtc);
+        self.machine.register_builtin(sym(IFACE_FRAMEBUFFER), 1, sym("fb0"), BuiltinEndpoint::Framebuffer);
+        self.machine.register_builtin(sym(IFACE_KEYBOARD), 1, sym("kbd0"), BuiltinEndpoint::Keyboard);
+        self.machine.register_builtin(sym(IFACE_MOUSE), 1, sym("mouse0"), BuiltinEndpoint::Mouse);
     }
 
     pub fn boot(&mut self, mut store: Option<&mut dyn SymbolStore>) -> ! {
@@ -61,6 +75,8 @@ impl<B: HardwareBridge> Kernel<B> {
 
         self.bridge.log("THINGOS: graph init\n");
         seed_builtins(&mut self.graph);
+        self.register_machine_builtins();
+        self.machine.reflect_into_graph(&mut self.graph);
         self.bridge.log("THINGOS: graph seeded\n");
 
         self.bridge.log("THINGOS: symbols init\n");

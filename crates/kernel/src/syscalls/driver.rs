@@ -14,8 +14,17 @@ pub fn sys_driver_wait<B: HardwareBridge>(
     // preventing the scheduler from ticking (which also needs BKL).
     // So we must return to user mode if no event, letting user spin.
 
-    if let Some(event) = crate::input::try_pop_event(&kernel.bridge) {
-        // Serialize
+    if let Some(scancode) = crate::input::try_pop_keyboard(&kernel.bridge) {
+        let event = DriverEvent::Ps2Scancode { scancode };
+        let slice = unsafe { core::slice::from_raw_parts_mut(out_ptr, out_len) };
+        match postcard::to_slice(&event, slice) {
+            Ok(used) => return used.len() as SysRet,
+            Err(_) => return -1, // Enobufs
+        }
+    }
+
+    if let Some(byte) = crate::input::try_pop_mouse(&kernel.bridge) {
+        let event = DriverEvent::Ps2MouseByte { byte };
         let slice = unsafe { core::slice::from_raw_parts_mut(out_ptr, out_len) };
         match postcard::to_slice(&event, slice) {
             Ok(used) => return used.len() as SysRet,

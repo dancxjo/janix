@@ -170,6 +170,12 @@ pub fn handle_graph_op<B: HardwareBridge>(
                 Err(_) => GraphReply::Error,
             }
         },
+        GraphOp::MachineCall { iface, ver, instance, op, payload } => {
+            match kernel.machine.call(&kernel.bridge, iface, ver, instance, op, &payload) {
+                Ok(bytes) => GraphReply::Bytes { bytes },
+                Err(_) => GraphReply::Error,
+            }
+        },
         GraphOp::Batch(ops) => {
             let mut results = alloc::vec::Vec::with_capacity(ops.len());
             for op in ops {

@@ -1,5 +1,5 @@
 use crate::bridge::Bridge;
-use kernel::bridge::HardwareBridge;
+use kernel::bridge::CpuBridge;
 
 #[derive(Clone, Copy)]
 pub struct HeapInitInfo {

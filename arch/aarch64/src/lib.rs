@@ -23,7 +23,7 @@ pub use bridge::{Bridge, TICK_HOOK, PAGE_FAULT_HOOK, set_tick_hook, set_page_fau
 #[macro_export]
 macro_rules! bootlog {
     ($($arg:tt)*) => {{
-        use kernel::bridge::HardwareBridge;
+        use kernel::bridge::CpuBridge;
         $crate::bridge::Bridge.log(alloc::format!($($arg)*).as_str());
         $crate::bridge::Bridge.log("\n");
     }}

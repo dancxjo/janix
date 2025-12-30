@@ -11,6 +11,7 @@ extern crate alloc;
 pub mod boot_fs;
 pub mod bridge;
 pub mod bytespace;
+pub mod arch;
 pub mod diag;
 pub mod drivers;
 pub mod font;
@@ -28,7 +29,7 @@ pub mod platform {
     pub mod acpi;
 }
 
-use crate::bridge::HardwareBridge;
+use crate::bridge::FullMachineBridge;
 use graph::{seed_builtins, GraphStore};
 
 use symbols::store::SymbolStore;
@@ -36,17 +37,17 @@ use symbols::SymbolTable;
 
 use sched::scheduler::Scheduler;
 
-pub struct Kernel<B: HardwareBridge> {
+pub struct Kernel<B: FullMachineBridge> {
     pub bridge: B,
     pub graph: GraphStore,
     pub bytespaces: bytespace::ByteSpaceStore,
     pub symbols: SymbolTable,
-    pub scheduler: Scheduler<B::Context>,
-    pub machine: machine::Machine,
+    pub scheduler: Scheduler<B>,
+    pub machine: machine::Machine<B>,
     pub machine_providers: machine::providers::ProviderStorage,
 }
 
-impl<B: HardwareBridge> Kernel<B> {
+impl<B: FullMachineBridge> Kernel<B> {
     pub fn new(bridge: B) -> Self {
         Self {
             bridge,
@@ -73,7 +74,7 @@ impl<B: HardwareBridge> Kernel<B> {
                 1,
                 sym("rtc0"),
                 machine::providers::rtc::RtcProvider::META,
-                &machine::providers::rtc::RtcProvider::VTABLE,
+                machine::providers::rtc::RtcProvider::vtable(),
                 ctx,
             );
         }
@@ -88,7 +89,7 @@ impl<B: HardwareBridge> Kernel<B> {
                 1,
                 sym("kbd0"),
                 machine::providers::ps2::Ps2Provider::META,
-                &machine::providers::ps2::Ps2Provider::VTABLE,
+                machine::providers::ps2::Ps2Provider::vtable(),
                 ctx,
             );
             self.machine.register_provider(
@@ -96,7 +97,7 @@ impl<B: HardwareBridge> Kernel<B> {
                 1,
                 sym("mouse0"),
                 machine::providers::ps2::Ps2Provider::META,
-                &machine::providers::ps2::Ps2Provider::VTABLE,
+                machine::providers::ps2::Ps2Provider::vtable(),
                 ctx,
             );
         }

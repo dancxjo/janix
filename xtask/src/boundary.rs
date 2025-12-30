@@ -52,15 +52,15 @@ pub fn run() -> Result<()> {
                         }
                     }
                 }
-                // 'loaded' allowed only if it is "spawn loaded"
+                // 'sprout' allowed only if it is "spawn sprout"
                 for line in content.lines() {
-                    if line.contains("spawn") && line.contains("loaded") {
-                        // if it creates 'loaded', it's allowed in loader entry.
+                    if line.contains("spawn") && line.contains("sprout") {
+                        // if it creates 'sprout', it's allowed in loader entry.
                         // But we want to catch if it's doing policy decisions based on it?
-                        // The instruction says: allow in arch entry only if it’s literally “spawn loaded” and nothing else.
-                        // For now, let's just warn if we see "spawn" and "loaded" combined with other things?
-                        // Actually, "loaded" is the init process, so spawning it is the ONE thing arch is allowed to do.
-                        // So we permit "loaded".
+                        // The instruction says: allow in arch entry only if it’s literally “spawn sprout” and nothing else.
+                        // For now, let's just warn if we see "spawn" and "sprout" combined with other things?
+                        // Actually, "sprout" is the init process, so spawning it is the ONE thing arch is allowed to do.
+                        // So we permit "sprout".
                     }
                 }
             })?;

@@ -8,7 +8,7 @@ use abi::ThingId;
 
 use crate::bridge::Bridge;
 use core::sync::atomic::{AtomicU64, Ordering};
-use kernel::bridge::HardwareBridge;
+use kernel::bridge::CpuBridge;
 use kernel::Kernel;
 use models::value::ThingBody;
 

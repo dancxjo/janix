@@ -7,6 +7,7 @@ use x86_64::registers::model_specific::{
 };
 use x86_64::registers::rflags::RFlags;
 use x86_64::VirtAddr;
+use kernel::bridge::CpuBridge;
 
 // Scratch Layout:
 // [0]: User RSP (Temporary storage)
@@ -126,8 +127,7 @@ extern "C" fn syscall_dispatch(
 ) -> isize {
     static LOG_COUNT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
     if LOG_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 16 {
-        use kernel::bridge::HardwareBridge;
-        let bridge = crate::Bridge;
+                let bridge = crate::Bridge;
         let rsp: *const u64;
         unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp) };
 

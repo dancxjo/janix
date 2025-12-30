@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::arch::asm;
-use kernel::bridge::HardwareBridge; // For logging
+use kernel::bridge::CpuBridge; // For logging
 
 global_asm!(include_str!("trap.S"));
 

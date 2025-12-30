@@ -2,6 +2,7 @@ use crate::bringup::interrupts::trap::{self, TrapFrame};
 use core::arch::naked_asm;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use x86_64::VirtAddr;
+use kernel::bridge::CpuBridge;
 
 // Debug counter for IRQ1
 pub static IRQ1_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
@@ -51,8 +52,7 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 pub extern "C" fn double_fault_handler(frame: &mut TrapFrame, error_code: u64) -> ! {
     // Direct output to debugcon before anything else
     unsafe {
-        use kernel::bridge::HardwareBridge;
-        let bridge = crate::Bridge;
+                let bridge = crate::Bridge;
         bridge.log("\n!!! DOUBLE FAULT !!!\n");
         bridge.log("RIP: ");
         crate::print_hex(&bridge, frame.rip);
@@ -108,8 +108,7 @@ pub extern "C" fn page_fault_handler(frame: &mut TrapFrame, error_code: PageFaul
     let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
     // Debug dump of fault frame to help root-cause early boot faults
     {
-        use kernel::bridge::HardwareBridge;
-        let bridge = crate::Bridge;
+                let bridge = crate::Bridge;
         bridge.log("PAGE FAULT: rip=");
         crate::print_hex(&bridge, frame.rip);
         bridge.log(" cs=");
@@ -409,8 +408,7 @@ extern "C" fn keyboard_interrupt_handler(_frame: &mut TrapFrame) {
     // let count = IRQ1_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
     // // Only log first few or every 10th to avoid flood
     // if count < 20 || (count % 10 == 0) {
-    //     use kernel::bridge::HardwareBridge;
-    //     let bridge = crate::Bridge;
+    //         //     let bridge = crate::Bridge;
     //     // Manual formatting since we can't easily use format! here without alloc
     //     bridge.log("IRQ1: count=");
     //     crate::print_u64(count); // We need a helper, or just hacking it

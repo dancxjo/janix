@@ -1,8 +1,7 @@
-
-use kernel::bridge::HardwareBridge;
+use crate::bringup::{self, gdt, interrupts};
 use core::arch::asm;
 use core::sync::atomic::{AtomicU64, Ordering};
-use crate::bringup::{self, gdt, interrupts};
+use kernel::bridge::{CpuBridge, MachineBridge, PortIo, Power, Rtc, VmMapper};
 
 pub mod ports;
 pub mod rtc;
@@ -11,6 +10,27 @@ pub mod uart;
 pub mod user;
 
 pub struct Bridge;
+
+/// Interrupt mask token captures the IF flag state.
+#[derive(Copy, Clone, Debug)]
+pub struct IrqState(pub bool);
+
+impl Default for IrqState {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
+/// Saved FPU/SIMD state; fxsave/fxrstor expects 16-byte alignment.
+#[repr(C, align(16))]
+#[derive(Copy, Clone, Debug)]
+pub struct FpuState(pub [u8; 512]);
+
+impl Default for FpuState {
+    fn default() -> Self {
+        Self([0u8; 512])
+    }
+}
 
 // Hook for scheduler. Only set by kernel binary.
 pub static mut TICK_HOOK: Option<fn(&mut interrupts::trap::TrapFrame)> = None;
@@ -42,7 +62,6 @@ pub fn set_page_fault_hook(
     }
 }
 
-
 pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(target_arch = "x86_64")]
@@ -57,9 +76,8 @@ impl Bridge {
                 options(nomem, nostack, preserves_flags)
             );
         }
-        
+
         HHDM_OFFSET.store(hhdm, Ordering::Relaxed);
-        use kernel::bridge::HardwareBridge;
         let b = Bridge;
 
         // Initialize Serial first
@@ -79,17 +97,18 @@ impl Bridge {
     }
 
     pub unsafe fn init_acpi(rsdp_addr: u64, hhdm: u64) {
-        use kernel::bridge::HardwareBridge;
         let b = Bridge;
         b.log("BRIDGE: acpi::init\n");
         kernel::platform::acpi::init(&b, rsdp_addr, hhdm);
     }
 }
 
-
 #[cfg(target_arch = "x86_64")]
-impl HardwareBridge for Bridge {
+impl CpuBridge for Bridge {
+    type IrqState = IrqState;
     type Context = bringup::ArchContext;
+    type FpuState = FpuState;
+    const CONTEXT_WORDS: usize = 20;
 
     fn log(&self, msg: &str) {
         unsafe {
@@ -111,10 +130,100 @@ impl HardwareBridge for Bridge {
         }
     }
 
+    fn irq_disable(&self) -> Self::IrqState {
+        let flags: u64;
+        unsafe {
+            asm!(
+                "pushfq",
+                "pop {}",
+                "cli",
+                out(reg) flags,
+                options(nomem, preserves_flags)
+            );
+        }
+        IrqState(flags & (1 << 9) != 0)
+    }
+
+    fn irq_restore(&self, state: Self::IrqState) {
+        unsafe {
+            if state.0 {
+                asm!("sti", options(nomem, nostack, preserves_flags));
+            } else {
+                asm!("cli", options(nomem, nostack, preserves_flags));
+            }
+        }
+    }
+
+    fn ticks(&self) -> u64 {
+        kernel::drivers::hpet::read_ticks()
+    }
+
+    fn ticks_per_second(&self) -> u64 {
+        kernel::drivers::hpet::ticks_per_second()
+    }
+
+    fn idle(&self) {
+        unsafe { asm!("hlt"); }
+    }
+
+    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> Self::Context {
+        let mut ctx = [0u64; 20];
+        ctx[13] = arg;
+        ctx[15] = entry;
+
+        let is_kernel = entry >= 0xFFFF_8000_0000_0000;
+
+        if is_kernel {
+            ctx[16] = unsafe { gdt::KERNEL_CODE_SELECTOR.0 as u64 };
+            ctx[17] = 0x202;
+            ctx[18] = stack;
+            ctx[19] = unsafe { gdt::KERNEL_DATA_SELECTOR.0 as u64 };
+        } else {
+            ctx[16] = unsafe { gdt::USER_CODE_SELECTOR.0 as u64 | 3 };
+            ctx[17] = 0x3202;
+            ctx[18] = stack;
+            ctx[19] = unsafe { gdt::USER_DATA_SELECTOR.0 as u64 | 3 };
+        }
+
+        bringup::ArchContext(ctx)
+    }
+
+    fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
+        *from = *to;
+        crate::bringup::user::enter::resume_user_mode(&to.0);
+    }
+
+    fn set_kernel_stack(&self, stack_top: u64) {
+        unsafe {
+            gdt::set_kernel_stack(stack_top);
+            interrupts::syscall::set_kernel_stack(stack_top);
+        }
+    }
+
+    fn save_fpu(&self, area: &mut Self::FpuState) {
+        unsafe {
+            let ptr = area.0.as_mut_ptr();
+            asm!("fxsave [{}]", in(reg) ptr);
+        }
+    }
+
+    fn restore_fpu(&self, area: &Self::FpuState) {
+        unsafe {
+            let ptr = area.0.as_ptr();
+            asm!("fxrstor [{}]", in(reg) ptr);
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl MachineBridge for Bridge {
     fn hhdm_offset(&self) -> u64 {
         HHDM_OFFSET.load(Ordering::Relaxed)
     }
+}
 
+#[cfg(target_arch = "x86_64")]
+impl PortIo for Bridge {
     fn port_outb(&self, port: u16, val: u8) {
         unsafe {
             asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack, preserves_flags));
@@ -156,74 +265,10 @@ impl HardwareBridge for Bridge {
         }
         val
     }
+}
 
-    fn ticks(&self) -> u64 {
-        let eax: u32;
-        let edx: u32;
-        unsafe {
-            asm!("rdtsc", out("eax") eax, out("edx") edx, options(nomem, nostack));
-        }
-        ((edx as u64) << 32) | (eax as u64)
-    }
-
-    fn system_now(&self) -> u64 { 0 }
-
-    fn monotonic_now(&self) -> u64 {
-        kernel::drivers::hpet::read_ns()
-    }
-
-    fn idle(&self) {
-        unsafe { asm!("hlt"); }
-    }
-
-    fn shutdown(&self) -> ! {
-        unsafe {
-            asm!("out dx, ax", in("dx") 0x604u16, in("ax") 0x2000u16);
-            loop { asm!("hlt"); }
-        }
-    }
-
-    fn irq_disable(&self) {
-        unsafe { asm!("cli"); }
-    }
-
-    fn irq_enable(&self) {
-        unsafe { asm!("sti"); }
-    }
-
-    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> Self::Context {
-        let mut ctx = [0u64; 20];
-        ctx[13] = arg;
-        ctx[15] = entry;
-
-        let is_kernel = entry >= 0xFFFF_8000_0000_0000;
-
-        if is_kernel {
-            ctx[16] = unsafe { gdt::KERNEL_CODE_SELECTOR.0 as u64 };
-            ctx[17] = 0x202;
-            ctx[18] = stack;
-            ctx[19] = unsafe { gdt::KERNEL_DATA_SELECTOR.0 as u64 };
-        } else {
-            ctx[16] = unsafe { gdt::USER_CODE_SELECTOR.0 as u64 | 3 };
-            ctx[17] = 0x3202;
-            ctx[18] = stack;
-            ctx[19] = unsafe { gdt::USER_DATA_SELECTOR.0 as u64 | 3 };
-        }
-
-        bringup::ArchContext(ctx)
-    }
-
-    fn resume_user_mode(&self, context: &Self::Context) -> ! {
-        crate::bringup::user::enter::resume_user_mode(&context.0)
-    }
-
-    fn set_kernel_stack(&self, stack_top: u64) {
-        unsafe {
-            gdt::set_kernel_stack(stack_top);
-            interrupts::syscall::set_kernel_stack(stack_top);
-        }
-    }
-
+#[cfg(target_arch = "x86_64")]
+impl Rtc for Bridge {
     fn rtc_read(&self, out: &mut abi::wire::time::RtcSample) {
         unsafe {
             let read_reg = |reg: u8| -> u8 {
@@ -267,7 +312,22 @@ impl HardwareBridge for Bridge {
             out.sec = sec;
         }
     }
+}
 
+#[cfg(target_arch = "x86_64")]
+impl Power for Bridge {
+    fn shutdown(&self) -> ! {
+        loop {
+            unsafe {
+                asm!("out dx, ax", in("dx") 0x604u16, in("ax") 0x2000u16);
+                asm!("hlt");
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl VmMapper for Bridge {
     fn map_new_user_page(&self, virt_addr: u64, flags: u64) -> Result<(), ()> {
         use core::alloc::Layout;
         use x86_64::structures::paging::{
@@ -404,48 +464,57 @@ impl HardwareBridge for Bridge {
              }
          }
     }
-
-    fn save_fpu(&self, area: &mut [u8; 512]) {
-        unsafe {
-            let ptr = area.as_mut_ptr();
-            asm!("fxsave [{}]", in(reg) ptr);
-        }
-    }
-
-    fn restore_fpu(&self, area: &[u8; 512]) {
-        unsafe {
-            let ptr = area.as_ptr();
-            asm!("fxrstor [{}]", in(reg) ptr);
-        }
-    }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-impl HardwareBridge for Bridge {
+impl CpuBridge for Bridge {
+    type IrqState = IrqState;
     type Context = bringup::ArchContext;
+    type FpuState = FpuState;
+    const CONTEXT_WORDS: usize = 20;
     fn log(&self, _msg: &str) {}
+    fn ticks(&self) -> u64 { 0 }
+    fn ticks_per_second(&self) -> u64 { 0 }
+    fn idle(&self) {}
+    fn shutdown(&self) -> ! { loop {} }
+    fn irq_disable(&self) -> Self::IrqState { IrqState::default() }
+    fn irq_restore(&self, _state: Self::IrqState) {}
+    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> Self::Context {
+         bringup::ArchContext([0; 20])
+    }
+    fn switch(&self, _from: &mut Self::Context, _to: &Self::Context) {}
+    fn set_kernel_stack(&self, _: u64) {}
+    fn save_fpu(&self, _area: &mut Self::FpuState) {}
+    fn restore_fpu(&self, _area: &Self::FpuState) {}
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+impl MachineBridge for Bridge {
     fn hhdm_offset(&self) -> u64 { 0 }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+impl PortIo for Bridge {
     fn port_outb(&self, _port: u16, _val: u8) {}
     fn port_inb(&self, _port: u16) -> u8 { 0 }
     fn port_outw(&self, _port: u16, _val: u16) {}
     fn port_inw(&self, _port: u16) -> u16 { 0 }
     fn port_outd(&self, _port: u16, _val: u32) {}
     fn port_ind(&self, _port: u16) -> u32 { 0 }
-    fn ticks(&self) -> u64 { 0 }
-    fn monotonic_now(&self) -> u64 { 0 }
-    fn system_now(&self) -> u64 { 0 }
-    fn idle(&self) {}
-    fn shutdown(&self) -> ! { loop {} }
-    fn irq_disable(&self) {}
-    fn irq_enable(&self) {}
-    fn init_thread_context(&self, _entry: u64, _stack: u64, _arg: u64) -> Self::Context {
-         bringup::ArchContext([0; 20])
-    }
-    fn resume_user_mode(&self, _context: &Self::Context) -> ! { loop {} }
-    fn set_kernel_stack(&self, _: u64) {}
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+impl Rtc for Bridge {
     fn rtc_read(&self, _out: &mut abi::wire::time::RtcSample) {}
-    fn save_fpu(&self, _area: &mut [u8; 512]) {}
-    fn restore_fpu(&self, _area: &[u8; 512]) {}
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+impl Power for Bridge {
+    fn shutdown(&self) -> ! { loop {} }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+impl VmMapper for Bridge {
     fn map_new_user_page(&self, _virt_addr: u64, _flags: u64) -> Result<(), ()> { Err(()) }
     fn map_user_mmio(&self, _virt_addr: u64, _phys_addr: u64, _flags: u64) -> Result<(), ()> { Err(()) }
 }

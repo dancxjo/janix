@@ -41,8 +41,8 @@ pub fn syscall_dispatch<B: HardwareBridge>(
             if out_ptr as u64 == 0 {
                 return -1;
             }
-            let mono = kernel.bridge.monotonic_now();
-            let sys = kernel.bridge.system_now();
+            let mono = crate::time::monotonic_ns();
+            let sys = crate::time::system_ns();
             unsafe {
                 *out_ptr = mono;
                 *out_ptr.add(1) = sys;

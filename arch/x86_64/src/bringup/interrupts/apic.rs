@@ -1,5 +1,5 @@
 use crate::Bridge;
-use kernel::bridge::HardwareBridge;
+use kernel::bridge::CpuBridge;
 
 // Local APIC Registers (Offsets)
 const LAPIC_ID: u32 = 0x020;

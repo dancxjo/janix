@@ -1,4 +1,5 @@
 use alloc::alloc::{alloc, Layout};
+use kernel::bridge::CpuBridge;
 // Re-export specific constants from bringup paging
 pub use crate::bringup::paging::{
     PTE_AF, PTE_AP_RW_EL0, PTE_AP_RW_EL1, PTE_ATTR_DEVICE, PTE_ATTR_NORMAL, PTE_PAGE, PTE_PXN,
@@ -41,7 +42,6 @@ pub fn allocate_frame() -> Option<(u64, u64)> {
         if virt < hhdm {
             // Panic or error?
             unsafe {
-                use kernel::bridge::HardwareBridge;
                 let b = crate::bridge::Bridge;
                 b.log("ALLOC_FRAME: Virt < HHDM!\n");
             }

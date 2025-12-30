@@ -41,7 +41,7 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // 2.5 Build User Apps
     println!("==> Building user apps for {}...", env);
     let mut user_apps = vec![
-        "loaded",
+        "sprout",
         "compositor",
         "input_service",
         "clock",
@@ -250,12 +250,12 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     // Generate Module List
     let mut module_lines = String::new();
 
-    // Always include loaded.elf
-    module_lines.push_str("    module_path: boot():/boot/apps/loaded.elf\n");
+    // Always include sprout.elf
+    module_lines.push_str("    module_path: boot():/boot/apps/sprout.elf\n");
 
     // Other apps/drivers if needed as modules
     for app in &user_apps {
-        if app == &"loaded" {
+        if app == &"sprout" {
             continue;
         }
 

@@ -54,7 +54,7 @@ pub fn on_ps2_mouse(byte: u8) {
 }
 
 pub fn try_pop_keyboard<B: crate::bridge::ProviderBridge + ?Sized>(bridge: &B) -> Option<u8> {
-    bridge.irq_disable();
+    let irq = bridge.irq_disable();
     let result = PS2_CONTROLLER
         .lock()
         .as_mut()
@@ -62,12 +62,12 @@ pub fn try_pop_keyboard<B: crate::bridge::ProviderBridge + ?Sized>(bridge: &B) -
             Some(DriverEvent::Ps2Scancode { scancode }) => Some(scancode),
             _ => None,
         });
-    bridge.irq_enable();
+    bridge.irq_restore(irq);
     result
 }
 
 pub fn try_pop_mouse<B: crate::bridge::ProviderBridge + ?Sized>(bridge: &B) -> Option<u8> {
-    bridge.irq_disable();
+    let irq = bridge.irq_disable();
     let result = PS2_CONTROLLER
         .lock()
         .as_mut()
@@ -75,19 +75,19 @@ pub fn try_pop_mouse<B: crate::bridge::ProviderBridge + ?Sized>(bridge: &B) -> O
             Some(DriverEvent::Ps2MouseByte { byte }) => Some(byte),
             _ => None,
         });
-    bridge.irq_enable();
+    bridge.irq_restore(irq);
     result
 }
 
 pub fn try_pop_event<B: crate::bridge::ProviderBridge + ?Sized>(bridge: &B) -> Option<DriverEvent> {
-    bridge.irq_disable();
+    let irq = bridge.irq_disable();
     // Check Keyboard first
     let kbd = PS2_CONTROLLER
         .lock()
         .as_mut()
         .and_then(|ctrl| ctrl.pop_kbd());
     if kbd.is_some() {
-        bridge.irq_enable();
+        bridge.irq_restore(irq);
         return kbd;
     }
 
@@ -96,7 +96,7 @@ pub fn try_pop_event<B: crate::bridge::ProviderBridge + ?Sized>(bridge: &B) -> O
         .lock()
         .as_mut()
         .and_then(|ctrl| ctrl.pop_mouse());
-    bridge.irq_enable();
+    bridge.irq_restore(irq);
     mouse
 }
 

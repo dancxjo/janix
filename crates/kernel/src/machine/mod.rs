@@ -1,4 +1,4 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::{FullMachineBridge, ProviderBridge};
 use abi::SymbolId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -7,12 +7,12 @@ pub mod builtin;
 pub mod providers;
 pub use builtin::BuiltinEndpoint;
 
-pub struct Machine {
-    registry: MachineRegistry,
+pub struct Machine<B: FullMachineBridge> {
+    registry: MachineRegistry<B>,
 }
 
-pub struct MachineRegistry {
-    endpoints: BTreeMap<(SymbolId, u16, SymbolId), Endpoint>,
+pub struct MachineRegistry<B: FullMachineBridge> {
+    endpoints: BTreeMap<(SymbolId, u16, SymbolId), Endpoint<B>>,
 }
 
 #[derive(Clone, Copy)]
@@ -22,27 +22,28 @@ pub struct ProviderMeta {
     pub lane: abi::SymbolId,
 }
 
-pub struct ProviderVtable {
+#[derive(Clone, Copy)]
+pub struct ProviderVtable<B: ProviderBridge + ?Sized> {
     pub call: fn(
         ctx: *const (),
-        bridge: &dyn crate::bridge::ProviderBridge,
+        bridge: &B,
         op: u32,
         req: &[u8],
     ) -> Result<alloc::vec::Vec<u8>, MachineError>,
 }
 
 #[derive(Clone, Copy)]
-pub enum Endpoint {
+pub enum Endpoint<B: ProviderBridge + ?Sized> {
     Provider {
         meta: ProviderMeta,
-        vtable: &'static ProviderVtable,
+        vtable: ProviderVtable<B>,
         ctx: *const (),
     },
     Builtin(BuiltinEndpoint),
 }
 
-unsafe impl Send for Endpoint {}
-unsafe impl Sync for Endpoint {}
+unsafe impl<B: ProviderBridge + ?Sized> Send for Endpoint<B> {}
+unsafe impl<B: ProviderBridge + ?Sized> Sync for Endpoint<B> {}
 
 #[derive(Debug)]
 pub enum MachineError {
@@ -52,13 +53,13 @@ pub enum MachineError {
     InternalError,
 }
 
-impl Default for MachineRegistry {
+impl<B: FullMachineBridge> Default for MachineRegistry<B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MachineRegistry {
+impl<B: FullMachineBridge> MachineRegistry<B> {
     pub fn new() -> Self {
         Self {
             endpoints: BTreeMap::new(),
@@ -66,13 +67,13 @@ impl MachineRegistry {
     }
 }
 
-impl Default for Machine {
+impl<B: FullMachineBridge> Default for Machine<B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Machine {
+impl<B: FullMachineBridge> Machine<B> {
     pub fn new() -> Self {
         Self {
             registry: MachineRegistry::new(),
@@ -105,7 +106,7 @@ impl Machine {
         ver: u16,
         instance: SymbolId,
         meta: ProviderMeta,
-        vtable: &'static ProviderVtable,
+        vtable: ProviderVtable<B>,
         ctx: *const (),
     ) {
         self.registry.endpoints.insert(
@@ -114,7 +115,7 @@ impl Machine {
         );
     }
 
-    pub fn call<B: HardwareBridge>(
+    pub fn call(
         &self,
         bridge: &B,
         iface: SymbolId,

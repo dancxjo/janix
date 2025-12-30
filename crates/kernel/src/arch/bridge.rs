@@ -93,6 +93,9 @@ impl<T: MachineBridge + PortIo + VmMapper + Power + Rtc> FullMachineBridge for T
 pub trait ProviderBridge {
     type IrqState: Copy + Clone + Debug + Default;
     fn monotonic_nanos(&self) -> u64;
+    fn monotonic_now(&self) -> u64 {
+        self.monotonic_nanos()
+    }
     fn irq_disable(&self) -> Self::IrqState;
     fn irq_restore(&self, state: Self::IrqState);
 }

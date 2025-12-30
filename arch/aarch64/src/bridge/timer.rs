@@ -1,6 +1,6 @@
 use alloc::format;
 use core::arch::asm;
-use kernel::bridge::HardwareBridge;
+use kernel::bridge::CpuBridge;
 
 // ARM Generic Timer (EL1 Physical)
 // CNTP_TVAL_EL1: Timer Value (Downcounter)

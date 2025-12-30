@@ -17,7 +17,7 @@ members = [
   "apps/fb_smoke",
   "services/input_service",
   "apps/compositor",
-  "apps/loaded",
+  "apps/sprout",
   "drivers/limine_fb_driver",
 ]
 

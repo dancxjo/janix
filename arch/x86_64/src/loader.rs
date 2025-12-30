@@ -9,7 +9,7 @@ use abi::ThingId;
 use crate::bridge::Bridge;
 use core::sync::atomic::{AtomicU64, Ordering};
 use kernel::boot_fs;
-use kernel::bridge::HardwareBridge;
+use kernel::bridge::CpuBridge;
 use kernel::Kernel;
 use models::value::ThingBody;
 use x86_64::structures::paging::mapper::TranslateError;

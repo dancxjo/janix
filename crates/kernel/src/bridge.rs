@@ -1,58 +1,9 @@
-pub trait HardwareBridge {
-    fn log(&self, msg: &str);
-    fn hhdm_offset(&self) -> u64;
-    fn ticks(&self) -> u64;
-    fn system_now(&self) -> u64;
-    fn idle(&self);
-    fn shutdown(&self) -> !;
-    fn irq_disable(&self);
-    fn irq_enable(&self);
-    type Context: Copy + Clone + core::fmt::Debug + Default + Send + Sync + 'static;
+pub use crate::arch::bridge::{
+    CpuBridge, FullMachineBridge, MachineBridge, PortIo, Power, ProviderBridge, Rtc, VmMapper,
+};
 
-    // Context size is bridge-specific but we use fixed 20 u64s for now as per Scheduler struct
-    fn init_thread_context(&self, entry: u64, stack: u64, arg: u64) -> Self::Context;
-    fn resume_user_mode(&self, context: &Self::Context) -> !;
-    fn set_kernel_stack(&self, stack_top: u64);
+/// Compatibility shim: legacy HardwareBridge name maps to the full in-kernel bridge stack.
+#[deprecated(note = "Use CpuBridge / MachineBridge / Rtc / Power instead")]
+pub trait HardwareBridge: FullMachineBridge {}
 
-    // Time
-    fn rtc_read(&self, out: &mut abi::wire::time::RtcSample);
-
-    /// Returns high-resolution monotonic time in nanoseconds.
-    /// Returns 0 if not available/calibrated yet.
-    fn monotonic_now(&self) -> u64;
-
-    // IO
-    fn port_outb(&self, port: u16, val: u8);
-    fn port_inb(&self, port: u16) -> u8;
-    fn port_outw(&self, port: u16, val: u16);
-    fn port_inw(&self, port: u16) -> u16;
-    fn port_outd(&self, port: u16, val: u32);
-    fn port_ind(&self, port: u16) -> u32;
-
-    fn save_fpu(&self, area: &mut [u8; 512]);
-    fn restore_fpu(&self, area: &[u8; 512]);
-
-    // VM
-    fn map_new_user_page(&self, virt_addr: u64, flags: u64) -> Result<(), ()>;
-    fn map_user_mmio(&self, virt_addr: u64, phys_addr: u64, flags: u64) -> Result<(), ()>;
-}
-
-pub trait ProviderBridge {
-    fn monotonic_now(&self) -> u64;
-    fn irq_disable(&self);
-    fn irq_enable(&self);
-}
-
-impl<T: HardwareBridge> ProviderBridge for T {
-    fn monotonic_now(&self) -> u64 {
-        HardwareBridge::monotonic_now(self)
-    }
-
-    fn irq_disable(&self) {
-        HardwareBridge::irq_disable(self)
-    }
-
-    fn irq_enable(&self) {
-        HardwareBridge::irq_enable(self)
-    }
-}
+impl<T: FullMachineBridge> HardwareBridge for T {}

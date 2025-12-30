@@ -3,11 +3,14 @@ use serde::{Deserialize, Serialize};
 
 // Interface IDs
 pub const IFACE_RTC: &str = "machine.rtc";
+pub const IFACE_CLOCK: &str = "machine.clock";
 pub const IFACE_FRAMEBUFFER: &str = "machine.framebuffer";
 pub const IFACE_KEYBOARD: &str = "machine.input.keyboard";
 pub const IFACE_MOUSE: &str = "machine.input.mouse";
 
 // Op IDs
+pub const OP_RTC_READ_SAMPLE: u32 = 0x0001;
+pub const OP_CLOCK_NOW: u32 = 0x0001;
 pub const OP_RTC_NOW_NS: u32 = 0x0101;
 pub const OP_KBD_READ_EVENTS: u32 = 0x0201;
 pub const OP_MOUSE_READ_EVENTS: u32 = 0x0202;
@@ -20,6 +23,39 @@ pub struct RtcNowReq {}
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RtcNowResp {
     pub system_ns: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+pub struct RtcReadSampleReq {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct RtcReadSampleResp {
+    pub sample: crate::wire::time::RtcSample,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+pub struct ClockNowReq {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct ClockNowResp {
+    pub epoch_ns: u64,
+    pub monotonic_ns: u64,
+    pub quality: ClockQuality,
+    pub seq: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum ClockQuality {
+    Unset,
+    FreeRunning,
+    Rtc,
+}
+
+impl Default for ClockQuality {
+    fn default() -> Self {
+        ClockQuality::Unset
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -126,6 +126,16 @@ pub fn ns_to_ticks(ns: u64) -> u64 {
     }
 }
 
+pub fn ticks_per_second() -> u64 {
+    unsafe {
+        if CLK_PERIOD_FS == 0 {
+            return 0;
+        }
+        // 1 second = 1e15 femtoseconds.
+        1_000_000_000_000_000u64 / CLK_PERIOD_FS
+    }
+}
+
 pub unsafe fn enable_legacy_mode() {
     if HPET_BASE == 0 {
         return;

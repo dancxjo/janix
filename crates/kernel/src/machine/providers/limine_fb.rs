@@ -17,15 +17,17 @@ impl LimineFramebufferProvider {
         lane: sym("direct"),
     };
 
-    pub const VTABLE: ProviderVtable = ProviderVtable { call: Self::call };
+    pub fn vtable<B: ProviderBridge + ?Sized>() -> ProviderVtable<B> {
+        ProviderVtable { call: Self::call::<B> }
+    }
 
     pub fn new(info: FbGetInfoResp) -> Self {
         Self { info }
     }
 
-    fn call(
+    fn call<B: ProviderBridge + ?Sized>(
         ctx: *const (),
-        _bridge: &dyn ProviderBridge,
+        _bridge: &B,
         op: u32,
         req: &[u8],
     ) -> Result<Vec<u8>, MachineError> {

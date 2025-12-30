@@ -1,5 +1,5 @@
 use crate::Bridge;
-use kernel::bridge::HardwareBridge;
+use kernel::bridge::CpuBridge;
 
 static mut IOAPIC_ADDR: u64 = 0;
 

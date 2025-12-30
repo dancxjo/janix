@@ -1,5 +1,5 @@
 use core::ptr::{read_volatile, write_volatile};
-use kernel::bridge::HardwareBridge;
+use kernel::bridge::CpuBridge;
 
 // QEMU Virt Machine GICv2 Addresses
 pub const GIC_DIST_BASE: u64 = 0x08000000;

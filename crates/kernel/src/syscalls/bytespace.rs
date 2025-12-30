@@ -56,7 +56,7 @@ pub fn sys_bytespace_map<B: HardwareBridge>(
         req.user_va_hint
     } else {
         // Fallback: This is risky without a VMM.
-        // For now, return error if no hint. User (loaded) should provide address.
+        // For now, return error if no hint. User (sprout) should provide address.
         return -1;
     };
 
@@ -133,7 +133,7 @@ pub fn sys_bytespace_read<B: HardwareBridge>(
     _out_len: usize,
 ) -> isize {
     // TODO: Implement Read (Stream-like or random access)
-    // For now, MAP is sufficient for `loaded`
+    // For now, MAP is sufficient for `sprout`
     -1
 }
 

@@ -16,15 +16,17 @@ impl Ps2Provider {
         lane: sym("direct"),
     };
 
-    pub const VTABLE: ProviderVtable = ProviderVtable { call: Self::call };
+    pub fn vtable<B: ProviderBridge + ?Sized>() -> ProviderVtable<B> {
+        ProviderVtable { call: Self::call::<B> }
+    }
 
     pub fn new() -> Self {
         Self
     }
 
-    fn call(
+    fn call<B: ProviderBridge + ?Sized>(
         _ctx: *const (),
-        bridge: &dyn ProviderBridge,
+        bridge: &B,
         op: u32,
         req: &[u8],
     ) -> Result<Vec<u8>, MachineError> {

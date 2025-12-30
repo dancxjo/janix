@@ -618,6 +618,7 @@ name = "hw"
 version = "0.2.0"
 dependencies = [
  "abi",
+ "kernel",
 ]
 
 [[package]]

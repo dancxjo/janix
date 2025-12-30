@@ -1,10 +1,10 @@
-use crate::bridge::HardwareBridge;
+use crate::bridge::FullMachineBridge;
 use crate::Kernel;
 
 // Function `init` removed to avoid `limine` dependency in kernel.
 // Use `init_with_info` instead, extracting data in `arch`.
 
-pub fn init_with_info<B: HardwareBridge>(
+pub fn init_with_info<B: FullMachineBridge>(
     k: &mut Kernel<B>,
     info: abi::wire::machine::FbGetInfoResp,
 ) {
@@ -37,7 +37,7 @@ pub fn init_with_info<B: HardwareBridge>(
             1,
             sym("fb0"),
             LimineFramebufferProvider::META,
-            &LimineFramebufferProvider::VTABLE,
+            LimineFramebufferProvider::vtable(),
             ctx,
         );
     }

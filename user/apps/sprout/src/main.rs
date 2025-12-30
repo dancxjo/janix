@@ -23,7 +23,7 @@ const LEVEL_INFO: u8 = 0;
 const LEVEL_WARN: u8 = 1;
 const LEVEL_ERROR: u8 = 2;
 
-struct LoadedCtx {
+struct SproutCtx {
     g: GraphClient,
     console: StdoutConsole,
     boot_state_id: Option<ThingId>,
@@ -42,7 +42,7 @@ struct ModuleInfo {
 #[no_mangle]
 pub extern "C" fn _start(heap_start: u64) -> ! {
     // Raw debug - syscall log (Early)
-    let msg = "LOADED: RAW START\n";
+    let msg = "SPROUT: RAW START\n";
     unsafe {
         #[cfg(target_arch = "x86_64")]
         core::arch::asm!(
@@ -68,7 +68,7 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
 
     let console = StdoutConsole;
     let g = GraphClient::new();
-    let mut ctx = LoadedCtx {
+    let mut ctx = SproutCtx {
         g,
         console,
         boot_state_id: None,
@@ -76,29 +76,29 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
         quiet: false,
     };
 
-    ctx.log("LOADED: RAW START\n");
+    ctx.log("SPROUT: RAW START\n");
 
     // return; // DEBUG: Stop here to see if it survives.
     
     // 2. Ensure BootState
     /*
-    println!("LOADED: Ensuring BootState...");
+    println!("SPROUT: Ensuring BootState...");
     // let mut bs_id = thing_models::builtins::ids::THING_BOOT_STATE_KIND;
     // ensure_boot_state(&mut g, &mut bs_id);
-    // println!("LOADED: BootState OK. ID {:?}", bs_id);
+    // println!("SPROUT: BootState OK. ID {:?}", bs_id);
     */
-    // ctx.log("LOADED: start\n");
+    // ctx.log("SPROUT: start\n");
     // ensure_boot_state(&mut ctx);
-    // ctx.publish_state(LEVEL_INFO, "entry", "loaded starting", true);
+    // ctx.publish_state(LEVEL_INFO, "entry", "sprout starting", true);
 
     let mut buf = alloc::vec![0u8; 16 * 1024];
     let scratch = buf.as_mut_slice();
 
     // 1. Enumerate Modules
     /*
-    println!("LOADED: Enumerating modules...");
+    println!("SPROUT: Enumerating modules...");
     let modules = enumerate_modules(&mut g);
-    println!("LOADED [modules]: modules enumerated ({})", modules.len());
+    println!("SPROUT [modules]: modules enumerated ({})", modules.len());
     */
     let modules = enumerate_modules(&ctx.g, scratch);
     if modules.is_empty() {
@@ -156,14 +156,14 @@ pub extern "C" fn _start(heap_start: u64) -> ! {
 
 // --- Helpers ---
 
-fn ensure_boot_state(ctx: &mut LoadedCtx) {
+fn ensure_boot_state(ctx: &mut SproutCtx) {
     if ctx.boot_state_id.is_some() {
         return;
     }
     let body = BootStateBody {
         phase: String::from("entry"),
         step: 0,
-        message: String::from("loaded"),
+        message: String::from("sprout"),
         timestamp_ns: timestamp_ns(&ctx.g),
         level: LEVEL_INFO,
     };
@@ -230,7 +230,7 @@ fn pick_module(mods: &[ModuleInfo], target: &str) -> Option<ModuleInfo> {
     None
 }
 
-fn spawn_module(ctx: &mut LoadedCtx, buf: &mut [u8], m: &ModuleInfo, phase: &str) {
+fn spawn_module(ctx: &mut SproutCtx, buf: &mut [u8], m: &ModuleInfo, phase: &str) {
     if let Some(bytes) = read_module_bytes(&ctx.g, m, buf) {
         match sys_spawn_image(&bytes, &m.path) {
             Ok(_) => {
@@ -262,7 +262,7 @@ fn read_module_bytes(g: &GraphClient, m: &ModuleInfo, buf: &mut [u8]) -> Option<
 }
 
 fn wait_ready(
-    ctx: &mut LoadedCtx,
+    ctx: &mut SproutCtx,
     buf: &mut [u8],
     timeout_ms: u64,
     check: fn(&GraphClient, &mut [u8]) -> bool,
@@ -311,7 +311,7 @@ fn timestamp_ns(g: &GraphClient) -> u64 {
     time::monotonic_ns(g).unwrap_or(0)
 }
 
-impl LoadedCtx {
+impl SproutCtx {
     fn log(&self, msg: &str) {
         if !self.quiet {
             let _ = self.console.write_str(msg);
@@ -334,7 +334,7 @@ impl LoadedCtx {
             self.step = self.step.saturating_add(1);
         }
         let ts = timestamp_ns(&self.g);
-        let log_line = format!("LOADED [{}]: {}\n", phase, message);
+        let log_line = format!("SPROUT [{}]: {}\n", phase, message);
         self.log(&log_line);
 
         if self.boot_state_id.is_none() {

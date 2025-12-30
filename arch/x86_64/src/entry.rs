@@ -19,7 +19,7 @@ use crate::memory_intrinsics;
 pub static mut FRAMEBUFFER_INFO: Option<(u64, u64)> = None;
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
-use kernel::bridge::HardwareBridge;
+use kernel::bridge::{CpuBridge, MachineBridge, Power};
 use kernel::Kernel;
 
 static USE_QEMU_DRIVER: AtomicBool = AtomicBool::new(false);
@@ -28,8 +28,7 @@ static PANICKING: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    use kernel::bridge::HardwareBridge;
-
+    
     // Recursion guard
     if PANICKING.swap(true, Ordering::Relaxed) {
         loop {
@@ -102,8 +101,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 fn print_hex(bridge: &Bridge, val: u64) {
-    use kernel::bridge::HardwareBridge;
-    let mut printed = false;
+        let mut printed = false;
     for i in (0..16).rev() {
         let digit = (val >> (i * 4)) & 0xF;
         if digit != 0 || printed || i == 0 {
@@ -119,8 +117,7 @@ fn print_hex(bridge: &Bridge, val: u64) {
 }
 
 fn print_dec(bridge: &Bridge, val: u64) {
-    use kernel::bridge::HardwareBridge;
-    if val == 0 {
+        if val == 0 {
         bridge.log("0");
         return;
     }
@@ -245,8 +242,7 @@ fn scheduler_tick_legacy(frame: &mut crate::bringup::interrupts::trap::TrapFrame
             }
 
             {
-                use kernel::bridge::HardwareBridge;
-                let now_raw = k.bridge.ticks();
+                                let now_raw = k.bridge.ticks();
                 let last = LAST_TICKS.swap(now_raw, Ordering::Relaxed);
                 let now_ns = k.bridge.monotonic_now();
 
@@ -344,8 +340,7 @@ fn page_fault_hook_impl(
             );
         }
     }
-    use kernel::bridge::HardwareBridge;
-
+    
     #[allow(unused_imports)]
     use x86_64::structures::paging::FrameAllocator;
 
@@ -370,8 +365,7 @@ fn page_fault_hook_impl(
                         if let Some(Some(process)) = k.scheduler.processes.get(pid.0 as usize - 1) {
                             // LOGGING (Temporary)
                             unsafe {
-                                use kernel::bridge::HardwareBridge;
-                                let s = alloc::format!(
+                                                                let s = alloc::format!(
                                     "PF Hook: Addr={:#x} PID={} HeapStart={:#x} HeapEnd={:#x}\n",
                                     fault_addr,
                                     pid.0,
@@ -484,8 +478,7 @@ fn syscall_hook(
 
         if let Some(mut guard) = KERNEL.try_lock() {
             if let Some(k) = (*guard).as_mut() {
-                use kernel::bridge::HardwareBridge;
-
+                
                 // k.bridge.log("SYSCALL SPAWN: ");
                 // k.bridge.log(name);
                 // k.bridge.log("\n");
@@ -529,8 +522,7 @@ fn scheduler_tick(frame: &mut crate::bringup::interrupts::trap::TrapFrame) {
     if let Some(mut guard) = KERNEL.try_lock() {
         if let Some(k) = (*guard).as_mut() {
             use crate::bringup::ArchContext;
-            use kernel::bridge::HardwareBridge;
-            use kernel::sched::scheduler::ThreadContext;
+                        use kernel::sched::scheduler::ThreadContext;
 
             // Cast frame to context
             // x86 TrapFrame might differ from ArchContext layout exactly on stack?
@@ -693,8 +685,7 @@ unsafe extern "C" fn rust_main() -> ! {
     }
 
     unsafe {
-        use kernel::bridge::HardwareBridge;
-        k.bridge.log("BOOT: Kernel Initialized\n");
+                k.bridge.log("BOOT: Kernel Initialized\n");
         k.bridge.log(thing_models::milestones::KERNEL_ENTRY);
         k.bridge.log("\n");
 
@@ -830,8 +821,7 @@ unsafe extern "C" fn rust_main() -> ! {
         }
 
         {
-            use kernel::bridge::HardwareBridge;
-            k.bridge.log("INIT: ACPI Setup...\n");
+                        k.bridge.log("INIT: ACPI Setup...\n");
 
             if rsdp_addr != 0 {
                 // Bridge::init_acpi already called via Bridge::init (if I updated Bridge::init to do it, or I need to call it manually).
@@ -854,8 +844,7 @@ unsafe extern "C" fn rust_main() -> ! {
                     // IRQ 0 (Timer) -> Vector 32
                     let irq0 = acpi::ISA_OVERRIDES[0] as u32;
                     // unsafe {
-                    //    use kernel::bridge::HardwareBridge;
-                    //    Bridge.log("IOAPIC: Mapping IRQ 0 GSIOverride=");
+                    //                        //    Bridge.log("IOAPIC: Mapping IRQ 0 GSIOverride=");
                     //    print_hex(&Bridge, irq0 as u64);
                     //    Bridge.log("\n");
                     // }
@@ -931,7 +920,7 @@ unsafe extern "C" fn rust_main() -> ! {
 
         k.machine.reflect_into_graph(&mut k.graph);
 
-        spawn_loaded(&mut k, &boot_info);
+        spawn_sprout(&mut k, &boot_info);
 
         if let Some(bs) = &mut bs {
             bs.show(boot_screen::milestones::SPAWNING_INIT);
@@ -989,33 +978,32 @@ unsafe extern "C" fn rust_main() -> ! {
 
     loop {
         unsafe {
-            use kernel::bridge::HardwareBridge;
-            Bridge.idle();
+                        Bridge.idle();
         }
     }
 }
 
-unsafe fn spawn_loaded(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
-    use kernel::bridge::HardwareBridge;
-
+unsafe fn spawn_sprout(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
+    
     let hhdm_offset = boot_info.hhdm_offset;
 
     for module in &boot_info.modules {
-        if module.path.ends_with("loaded.elf") {
-            k.bridge.log("BOOT: Spawning loaded...\n");
+        if module.path.ends_with("sprout.elf") {
+            k.bridge.log("BOOT: Spawning sprout...\n");
 
             let data = core::slice::from_raw_parts(module.start as *const u8, module.size as usize);
 
-            spawn_elf(k, None, "loaded.elf", data, 0, None, hhdm_offset);
+            spawn_elf(k, None, "sprout.elf", data, 0, None, hhdm_offset);
             return;
         }
     }
-    k.bridge.log("BOOT: WARNING: loaded.elf not found!\n");
+
+    k.bridge
+        .log("BOOT: WARNING: sprout.elf not found!\n");
 }
 
 unsafe fn spawn_kernel_init_task(k: &mut Kernel<Bridge>, _boot_info: &BootFacts) {
-    use kernel::bridge::HardwareBridge;
-    k.bridge.log("BOOT: Spawning Kernel Init Task...\n");
+        k.bridge.log("BOOT: Spawning Kernel Init Task...\n");
 
     let stack_layout = alloc::alloc::Layout::from_size_align(65536, 16).unwrap();
     let stack_ptr = alloc::alloc::alloc(stack_layout);
@@ -1041,8 +1029,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
     let hhdm_offset_u64 = HHDM_OFFSET.load(Ordering::Relaxed);
     let hhdm_offset = VirtAddr::new(hhdm_offset_u64);
 
-    use kernel::bridge::HardwareBridge;
-    Bridge.log("INIT: Entered kernel_init_task_entry\n");
+        Bridge.log("INIT: Entered kernel_init_task_entry\n");
 
     // Memory and ACPI are now initialized in rust_main before we run.
     // We proceed directly to PCI Scan.
@@ -1139,8 +1126,7 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
 
             // AHCI Check
         }
-        use kernel::bridge::HardwareBridge;
-        Bridge.log("INIT: Kernel Init Task Complete (No Disk Scan).\n");
+                Bridge.log("INIT: Kernel Init Task Complete (No Disk Scan).\n");
 
         Bridge.log("INIT: Complete. Parking.\n");
 
@@ -1157,8 +1143,7 @@ unsafe fn u_sleep(count: u64) {
 }
 
 unsafe fn ingest_all_modules(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
-    use kernel::bridge::HardwareBridge;
-
+    
     k.bridge.log("BOOT: Ingesting RAM Modules...\n");
     let hhdm = boot_info.hhdm_offset;
 

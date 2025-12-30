@@ -98,21 +98,17 @@ unsafe extern "C" fn syscall_handler_naked() {
         "mov rdi, rax",
         "call syscall_dispatch",
         "add rsp, 8", // Pop Arg6 (No Padding)
-        // Restore Regs
+        // Restore Regs and user state
         "pop r15",
         "pop r14",
         "pop r13",
         "pop r12",
         "pop rbx",
         "pop rbp",
-        "pop r11",
-        "pop rcx",
-        // Restore User RSP
-        // Pop user rsp into Scratch[0] (or directly to RSP? No we need swapgs)
-        // We can't pop to GS:[0] directly? "pop qword ptr gs:[0]" is valid.
-        "pop qword ptr gs:[0]",
-        // Switch stack
-        "mov rsp, gs:[0]",
+        "pop r11",     // user RFLAGS
+        "pop rcx",     // user RIP
+        "pop rax",     // user RSP
+        "mov rsp, rax",
         "swapgs",
         "sysretq"
     );
@@ -135,18 +131,14 @@ extern "C" fn syscall_dispatch(
         let rsp: *const u64;
         unsafe { core::arch::asm!("mov {}, rsp", out(reg) rsp) };
         
-        // Indices verified by diffing stack dump.
-        // Stack Layout (relative to rsp here):
-        // [11] = User RSP
-        // [12] = User RFLAGS
-        // [13] = User RIP
-        // Empirical Correction (Final):
-        // [10] = RFLAGS (0x2 observed)
-        // [9]  = RSP (Stack Pointer observed)
-        // [8]  = RIP (0x10 observed - suspicious but consistent)
-        let saved_rip = unsafe { *rsp.add(8) };
-        let saved_rsp = unsafe { *rsp.add(9) };
-        let saved_flags = unsafe { *rsp.add(10) };
+        // Stack layout at entry:
+        //  [0] return addr into syscall_handler_naked
+        //  [1] saved r9 (arg6)
+        //  [2] r15, [3] r14, [4] r13, [5] r12, [6] rbx, [7] rbp
+        //  [8] user rflags (from r11), [9] user rip (from rcx), [10] user rsp
+        let saved_flags = unsafe { *rsp.add(8) };
+        let saved_rip = unsafe { *rsp.add(9) };
+        let saved_rsp = unsafe { *rsp.add(10) };
         
         bridge.log("SYSCALL entry num=");
         crate::print_hex(num as u64);

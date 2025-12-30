@@ -7,6 +7,10 @@ use x86_64::VirtAddr;
 pub static IRQ1_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 use lazy_static::lazy_static;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+// Debug guard to log only a few kernel-mode timer interrupts
+static TIMER_KERNEL_LOG: AtomicU64 = AtomicU64::new(0);
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -146,27 +150,13 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "test byte ptr [rsp + 8], 3",
         "jnz 1f",
         // --- KERNEL MODE ENTRY ---
-        // Stack: [RIP, CS, RFLAGS]
-        // We need to expand to [RIP, CS, RFLAGS, RSP, SS]
-        // to match TrapFrame layout and prevent stack corruption when overwriting.
-        "sub rsp, 16", // Create gap
-        "push rax",    // Scratch
-        // Correct Order: Low to High to avoid overwriting invalidating sources
-        // Source RIP is at +24. Dest is at +8.
-        "mov rax, [rsp + 24]", // RIP
-        "mov [rsp + 8], rax",  // New RIP position
-        // Source CS is at +32. Dest is at +16.
-        "mov rax, [rsp + 32]", // CS
-        "mov [rsp + 16], rax", // New CS position
-        // Source RFLAGS is at +40. Dest is at +24.
-        "mov rax, [rsp + 40]", // RFLAGS
-        "mov [rsp + 24], rax", // New RFLAGS position
-        // Synthesize SS and RSP
-        "mov rax, ss",
-        "mov [rsp + 40], rax", // SS at top
-        "lea rax, [rsp + 48]", // Original RSP
-        "mov [rsp + 32], rax", // RSP
-        "pop rax",             // Restore scratch
+        // Stack: [RIP, CS, RFLAGS] at current RSP.
+        // Append synthetic RSP (pre-interrupt) and SS without moving the frame.
+        "mov rax, rsp",        // RAX = &RIP (hardware frame start)
+        "lea rcx, [rax + 24]", // RCX = pre-interrupt RSP (after 3 slots)
+        "mov [rax + 24], rcx", // Store synthetic RSP
+        "mov rcx, ss",
+        "mov [rax + 32], rcx", // Store synthetic SS
         "jmp 2f",
         "1:",
         // --- USER MODE ENTRY ---
@@ -217,46 +207,7 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "swapgs",
         "iretq",
         "3:",
-        // Return to Kernel: Must Pivot Stack if RSP changed!
-
-        // 1. Save RAX (Scratch/Return Value)
-        "push rax",
-        // Stack: [RAX, RIP, CS, RFLAGS, RSP, SS]
-        // Offsets: 0, 8, 16, 24, 32, 40
-
-        // 2. Load Target RSP (from +32)
-        "mov rax, [rsp + 32]",
-        "sub rax, 40", // Reserve space for 5 items (RIP, CS, RFLAGS, RSP, SS)
-        // 3. Save RBX (Scratch)
-        "push rbx",
-        // Stack: [RBX, RAX, RIP, CS, RFLAGS, RSP, SS]
-        // Offsets: 0, 8, 16, 24, 32, 40, 48
-        
-        // 4. Copy Interrupt Frame to Target Stack (All 5 items)
-        // Copy RIP
-        "mov rbx, [rsp + 16]",
-        "mov [rax], rbx",
-        // Copy CS
-        "mov rbx, [rsp + 24]",
-        "mov [rax + 8], rbx",
-        // Copy RFLAGS
-        "mov rbx, [rsp + 32]",
-        "mov [rax + 16], rbx",
-        // Copy RSP
-        "mov rbx, [rsp + 40]",
-        "mov [rax + 24], rbx",
-        // Copy SS
-        "mov rbx, [rsp + 48]",
-        "mov [rax + 32], rbx",
-
-        // 5. Restore Saved RAX to Target Stack (Dest: [rax-8])
-        "mov rbx, [rsp + 8]",
-        "mov [rax - 8], rbx",
-        "pop rbx", // Restore RBX
-        // 6. Pivot
-        "mov rsp, rax",
-        "sub rsp, 8", // Point to saved RAX
-        "pop rax",    // Restore RAX
+        // Kernel return (we synthesized SS/RSP on entry)
         "iretq",
     );
 }
@@ -414,60 +365,85 @@ pub extern "x86-interrupt" fn page_fault_handler_naked(
     _error_code: PageFaultErrorCode,
 ) {
     core::arch::naked_asm!(
+        // Stack on entry (CPU): [Error, RIP, CS, RFLAGS, (RSP, SS)?]
+        // Save original RAX
         "push rax",
-        "mov rax, [rsp + 8]", // Error code
-        "xchg rax, [rsp]",   // rax = orig_rax, [rsp] = error_code
-        "xchg rax, [rsp + 8]", // rax = error_code, [rsp + 8] = orig_rax
-        // Stack: [Error, OrigRAX, RIP, CS, RFLAGS, RSP, SS]
-        "test byte ptr [rsp + 24], 3", // CS index
-        "jz 1f",
-        "swapgs",
+        // Allocate TrapFrame (20 * 8 = 160 bytes)
+        "sub rsp, 160",
+        // Save GPRs into TrapFrame order r15..rax
+        "mov [rsp + 0], r15",
+        "mov [rsp + 8], r14",
+        "mov [rsp + 16], r13",
+        "mov [rsp + 24], r12",
+        "mov [rsp + 32], rbp",
+        "mov [rsp + 40], rbx",
+        "mov [rsp + 48], r11",
+        "mov [rsp + 56], r10",
+        "mov [rsp + 64], r9",
+        "mov [rsp + 72], r8",
+        "mov [rsp + 80], rcx",
+        "mov [rsp + 88], rdx",
+        "mov [rsp + 96], rsi",
+        "mov [rsp + 104], rdi",
+        // Saved orig RAX is at rsp + 160
+        "mov rax, [rsp + 160]",
+        "mov [rsp + 112], rax", // rax slot
+        // Hardware frame offsets relative to current rsp:
+        // 168=error, 176=rip, 184=cs, 192=rflags, 200=rsp?, 208=ss?
+        "mov rax, [rsp + 176]",
+        "mov [rsp + 120], rax", // rip
+        "mov rax, [rsp + 184]",
+        "mov [rsp + 128], rax", // cs
+        "mov rax, [rsp + 192]",
+        "mov [rsp + 136], rax", // rflags
+        // Determine saved RSP / SS
+        "mov rax, [rsp + 184]", // cs
+        "test al, 3",
+        "jnz 1f",
+        // Kernel mode fault: synthesize RSP/SS
+        "lea rcx, [rsp + 200]", // original rsp (before CPU push)
+        "mov [rsp + 144], rcx",
+        "mov rcx, ss",
+        "mov [rsp + 152], rcx",
+        "jmp 2f",
         "1:",
-        "pop rax", // RAX = ErrorCode
-        // Push GPRs to form TrapFrame (rdi...rax)
-        "push rdi",
-        "push rsi",
-        "push rdx",
-        "push rcx",
-        "push r8",
-        "push r9",
-        "push r10",
-        "push r11",
-        "push rbx",
-        "push rbp",
-        "push r12",
-        "push r13",
-        "push r14",
-        "push r15",
-        // TrapFrame: [rdi...rax, rip, cs, rflags, rsp, ss]
-        // Wait, RAX is missing? No, orig_rax is at offset 112 if we pushed 14 regs.
-        // Wait, TrapFrame has 15 GPRs.
-        // Stack: [rdi...r15, orig_rax, RIP, CS...]
-        // offsets: 0...112 (r15), 120 (rax), 128 (rip)
-        // Let's re-verify TrapFrame order: rdi, rsi, rdx, rcx, r8, r9, r10, r11, rbx, rbp, r12, r13, r14, r15, rax.
-        "mov rdi, rsp",
-        "mov rsi, rax", // ErrorCode
-        "call page_fault_handler",
-        "pop r15",
-        "pop r14",
-        "pop r13",
-        "pop r12",
-        "pop rbp",
-        "pop rbx",
-        "pop r11",
-        "pop r10",
-        "pop r9",
-        "pop r8",
-        "pop rcx",
-        "pop rdx",
-        "pop rsi",
-        "pop rdi",
-        // Stack: [OrigRAX, RIP, CS, RFLAGS, RSP, SS]
-        "test byte ptr [rsp + 16], 3", // CS index is 16
-        "jz 2f",
-        "swapgs",
+        // User mode fault: hardware provided RSP/SS
+        "mov rcx, [rsp + 200]",
+        "mov [rsp + 144], rcx",
+        "mov rcx, [rsp + 208]",
+        "mov [rsp + 152], rcx",
         "2:",
-        "pop rax",
+        // Call handler
+        "mov rdi, rsp",        // &TrapFrame
+        "mov rsi, [rsp + 168]", // error code
+        "call page_fault_handler",
+        // Restore GPRs
+        "mov r15, [rsp + 0]",
+        "mov r14, [rsp + 8]",
+        "mov r13, [rsp + 16]",
+        "mov r12, [rsp + 24]",
+        "mov rbp, [rsp + 32]",
+        "mov rbx, [rsp + 40]",
+        "mov r11, [rsp + 48]",
+        "mov r10, [rsp + 56]",
+        "mov r9,  [rsp + 64]",
+        "mov r8,  [rsp + 72]",
+        "mov rcx, [rsp + 80]",
+        "mov rdx, [rsp + 88]",
+        "mov rsi, [rsp + 96]",
+        "mov rdi, [rsp + 104]",
+        "mov rax, [rsp + 112]",
+        // Tear down TrapFrame and saved rax
+        "add rsp, 160",
+        "pop rax", // saved orig rax
+        // Drop error code to get to hardware frame RIP
+        "add rsp, 8",
+        "test byte ptr [rsp + 8], 3", // CS
+        "jnz 3f",
+        "add rsp, 16", // kernel: drop RSP/SS
+        "iretq",
+        "3:",
+        "swapgs",
         "iretq"
     );
 }
@@ -479,50 +455,70 @@ pub extern "x86-interrupt" fn gp_handler_naked(
 ) {
     core::arch::naked_asm!(
         "push rax",
-        "mov rax, [rsp + 8]",
-        "xchg rax, [rsp]",
-        "xchg rax, [rsp + 8]",
-        "test byte ptr [rsp + 24], 3",
-        "jz 1f",
-        "swapgs",
+        "sub rsp, 160",
+        "mov [rsp + 0], r15",
+        "mov [rsp + 8], r14",
+        "mov [rsp + 16], r13",
+        "mov [rsp + 24], r12",
+        "mov [rsp + 32], rbp",
+        "mov [rsp + 40], rbx",
+        "mov [rsp + 48], r11",
+        "mov [rsp + 56], r10",
+        "mov [rsp + 64], r9",
+        "mov [rsp + 72], r8",
+        "mov [rsp + 80], rcx",
+        "mov [rsp + 88], rdx",
+        "mov [rsp + 96], rsi",
+        "mov [rsp + 104], rdi",
+        "mov rax, [rsp + 160]",
+        "mov [rsp + 112], rax",
+        "mov rax, [rsp + 176]",
+        "mov [rsp + 120], rax",
+        "mov rax, [rsp + 184]",
+        "mov [rsp + 128], rax",
+        "mov rax, [rsp + 192]",
+        "mov [rsp + 136], rax",
+        "mov rax, [rsp + 184]",
+        "test al, 3",
+        "jnz 1f",
+        "lea rcx, [rsp + 200]",
+        "mov [rsp + 144], rcx",
+        "mov rcx, ss",
+        "mov [rsp + 152], rcx",
+        "jmp 2f",
         "1:",
-        "pop rax", // ErrorCode
-        "push rdi",
-        "push rsi",
-        "push rdx",
-        "push rcx",
-        "push r8",
-        "push r9",
-        "push r10",
-        "push r11",
-        "push rbx",
-        "push rbp",
-        "push r12",
-        "push r13",
-        "push r14",
-        "push r15",
-        "mov rdi, rsp",
-        "mov rsi, rax",
-        "call gp_handler",
-        "pop r15",
-        "pop r14",
-        "pop r13",
-        "pop r12",
-        "pop rbp",
-        "pop rbx",
-        "pop r11",
-        "pop r10",
-        "pop r9",
-        "pop r8",
-        "pop rcx",
-        "pop rdx",
-        "pop rsi",
-        "pop rdi",
-        "test byte ptr [rsp + 16], 3",
-        "jz 2f",
-        "swapgs",
+        "mov rcx, [rsp + 200]",
+        "mov [rsp + 144], rcx",
+        "mov rcx, [rsp + 208]",
+        "mov [rsp + 152], rcx",
         "2:",
+        "mov rdi, rsp",
+        "mov rsi, [rsp + 168]",
+        "call gp_handler",
+        "mov r15, [rsp + 0]",
+        "mov r14, [rsp + 8]",
+        "mov r13, [rsp + 16]",
+        "mov r12, [rsp + 24]",
+        "mov rbp, [rsp + 32]",
+        "mov rbx, [rsp + 40]",
+        "mov r11, [rsp + 48]",
+        "mov r10, [rsp + 56]",
+        "mov r9,  [rsp + 64]",
+        "mov r8,  [rsp + 72]",
+        "mov rcx, [rsp + 80]",
+        "mov rdx, [rsp + 88]",
+        "mov rsi, [rsp + 96]",
+        "mov rdi, [rsp + 104]",
+        "mov rax, [rsp + 112]",
+        "add rsp, 160",
         "pop rax",
+        "add rsp, 8", // drop error
+        "test byte ptr [rsp + 8], 3",
+        "jnz 3f",
+        "add rsp, 16",
+        "iretq",
+        "3:",
+        "swapgs",
         "iretq"
     );
 }

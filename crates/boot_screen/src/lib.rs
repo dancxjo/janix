@@ -212,10 +212,19 @@ impl<'a> BootScreen<'a> {
 
             self.clear_shadow_rect(&d);
             
-            // Pass 1: Shadow (Offset 1,1, Black)
-            self.draw_text(1, 1, 0xFF000000, &d);
-            
+            // Pass 1: Soft shadow passes (approximated box blur)
+            // Accumulate soft alpha for "antialiased" look
+            // Offsets chosen to create a nice spread
+            // Center
+            self.draw_text_blended(1, 1, 0xFF000000, 60, &d);
+            // Cross
+            self.draw_text_blended(2, 1, 0xFF000000, 30, &d);
+            self.draw_text_blended(1, 2, 0xFF000000, 30, &d);
+            self.draw_text_blended(0, 1, 0xFF000000, 30, &d);
+            self.draw_text_blended(1, 0, 0xFF000000, 30, &d);
+
             // Pass 2: Main Text (Offset 0,0, White)
+            // We draw this opaque on top
             self.draw_text(0, 0, 0xFFFFFFFF, &d);
 
             self.blit_shadow_to_fb(&d);
@@ -251,6 +260,14 @@ impl<'a> BootScreen<'a> {
     }
 
     fn draw_text(&mut self, offset_x: i32, offset_y: i32, color: u32, clip: &Rect) {
+        self.draw_text_internal(offset_x, offset_y, color, 255, clip);
+    }
+    
+    fn draw_text_blended(&mut self, offset_x: i32, offset_y: i32, color: u32, alpha: u8, clip: &Rect) {
+        self.draw_text_internal(offset_x, offset_y, color, alpha, clip);
+    }
+
+    fn draw_text_internal(&mut self, offset_x: i32, offset_y: i32, color: u32, alpha: u8, clip: &Rect) {
         if self.current_msg.is_empty() {
             return;
         }
@@ -268,13 +285,13 @@ impl<'a> BootScreen<'a> {
         for byte in self.current_msg.bytes() {
             let char_rect = Rect::new(cx, start_y, 8, 16);
             if char_rect.intersection(clip).is_some() {
-                self.draw_char(cx, start_y, byte, color, clip);
+                self.draw_char(cx, start_y, byte, color, alpha, clip);
             }
             cx += 8 + 1;
         }
     }
 
-    fn draw_char(&mut self, x: u32, y: u32, ch: u8, color: u32, clip: &Rect) {
+    fn draw_char(&mut self, x: u32, y: u32, ch: u8, color: u32, alpha_factor: u8, clip: &Rect) {
         let glyph = if let Some(g) = unifont::get_glyph(ch as char) {
             g
         } else if let Some(g) = unifont::get_glyph('?') {
@@ -302,7 +319,11 @@ impl<'a> BootScreen<'a> {
                         continue;
                     }
 
-                    self.put_pixel_shadow_bgra(px, py, color);
+                    if alpha_factor == 255 {
+                         self.put_pixel_shadow_bgra(px, py, color);
+                    } else {
+                         self.blend_pixel_shadow_bgra(px, py, color, alpha_factor);
+                    }
                 }
             }
         }
@@ -321,6 +342,54 @@ impl<'a> BootScreen<'a> {
         self.shadow[offset+1] = g;
         self.shadow[offset+2] = r;
         self.shadow[offset+3] = a;
+    }
+
+    fn blend_pixel_shadow_bgra(&mut self, x: u32, y: u32, argb: u32, alpha_factor: u8) {
+        let offset = (y as usize * self.fb.pitch_bytes as usize) + (x as usize * 4);
+        if offset + 4 > self.shadow.len() { return; }
+
+        let src_a = ((argb >> 24) & 0xFF) as u8;
+        let src_r = ((argb >> 16) & 0xFF) as u8;
+        let src_g = ((argb >> 8) & 0xFF) as u8;
+        let src_b = (argb & 0xFF) as u8;
+
+        // Scale source alpha by the factor
+        let f = alpha_factor as u32;
+        let src_a = ((src_a as u32 * f) >> 8) as u8;
+
+        // If source is fully transparent, do nothing
+        if src_a == 0 { return; }
+
+        // If source is fully opaque (unlikely with alpha_factor < 255), overwrite
+        if src_a == 255 {
+             self.shadow[offset] = src_b;
+             self.shadow[offset+1] = src_g;
+             self.shadow[offset+2] = src_r;
+             self.shadow[offset+3] = src_a;
+             return;
+        }
+        
+        // Dest colors
+        let dst_b = self.shadow[offset];
+        let dst_g = self.shadow[offset+1];
+        let dst_r = self.shadow[offset+2];
+        let dst_a = self.shadow[offset+3];
+
+        // Porter-Duff Source Over
+        // out = src * alpha + dst * (1 - alpha)
+        // using 255-based fixed point
+        
+        let inv_a = 255 - src_a as u32;
+        let out_a = src_a as u32 + ((dst_a as u32 * inv_a) >> 8);
+        
+        let out_r = ((src_r as u32 * src_a as u32) + (dst_r as u32 * inv_a)) >> 8;
+        let out_g = ((src_g as u32 * src_a as u32) + (dst_g as u32 * inv_a)) >> 8;
+        let out_b = ((src_b as u32 * src_a as u32) + (dst_b as u32 * inv_a)) >> 8;
+
+        self.shadow[offset] = out_b as u8;
+        self.shadow[offset+1] = out_g as u8;
+        self.shadow[offset+2] = out_r as u8;
+        self.shadow[offset+3] = out_a as u8;
     }
 
     fn blit_shadow_to_fb(&mut self, rect: &Rect) {

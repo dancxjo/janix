@@ -159,6 +159,13 @@ pub extern "C" fn page_fault_handler(frame: &mut TrapFrame, error_code: PageFaul
 }
 
 /// Naked trampoline for Timer Interrupt.
+/// 
+/// CRITICAL: x86_64 hardware frame layout differs by privilege:
+/// - User mode (CPL 3→0): SS, RSP, RFLAGS, CS, RIP (5 values)  
+/// - Kernel mode (CPL 0→0): RFLAGS, CS, RIP only (3 values, NO RSP/SS!)
+///
+/// To enable context switching between kernel and user threads, we NORMALIZE
+/// the stack to always have a 5-element frame on entry.
 #[unsafe(naked)]
 unsafe extern "C" fn timer_interrupt_naked() {
     naked_asm!(
@@ -170,15 +177,58 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "out dx, al",
         "pop rdx",
         "pop rax",
+        
         // Check CPL from hardware frame CS (at [rsp + 8] for no-error interrupts)
+        // If from user mode, swapgs and skip stack normalization
         "test byte ptr [rsp + 8], 3",
-        "jz 0f",
+        "jnz 10f",
+        
+        // === KERNEL MODE INTERRUPT ===
+        // CPU only pushed RIP, CS, RFLAGS (3 values at rsp+0, rsp+8, rsp+16)
+        // We need to make room for RSP, SS to normalize to 5-element frame
+        // Current stack: [RIP] [CS] [RFLAGS] ...
+        // Target stack:  [RIP] [CS] [RFLAGS] [RSP] [SS] ...
+        
+        // Save the 3 hardware values temporarily
+        "mov rax, [rsp + 0]",   // RIP
+        "mov rcx, [rsp + 8]",   // CS  
+        "mov rdx, [rsp + 16]",  // RFLAGS
+        
+        // Make room for 2 more qwords (RSP, SS)
+        "sub rsp, 16",
+        
+        // Put hardware values back in new positions
+        "mov [rsp + 0], rax",   // RIP
+        "mov [rsp + 8], rcx",   // CS
+        "mov [rsp + 16], rdx",  // RFLAGS
+        
+        // Synthesize RSP (what it was before the interrupt)
+        // Before our 'sub rsp, 16', RSP pointed at the original hardware frame.
+        // The original RSP before CPU pushed anything was: current_rsp + 16 + 24 = current_rsp + 40
+        "lea rax, [rsp + 40]",
+        "mov [rsp + 24], rax",  // RSP slot
+        
+        // Synthesize SS (current kernel SS)
+        "mov rax, ss",
+        "mov [rsp + 32], rax",  // SS slot
+        
+        // Now stack is normalized to 5-element frame
+        "jmp 11f",
+        
+        // === USER MODE INTERRUPT ===
+        "10:",
         "swapgs",
-        "0:",
-        // Save RAX then allocate TrapFrame
+        // Stack already has 5-element frame from CPU
+        
+        "11:",
+        // === COMMON PATH: Build TrapFrame ===
+        // Stack now has: [RIP] [CS] [RFLAGS] [RSP] [SS] for both cases
+        
+        // Save RAX then allocate TrapFrame (15 GPRs * 8 = 120 bytes)
         "push rax",
         "sub rsp, 160",
-        // Save GPRs r15..rdi
+        
+        // Save GPRs r15..rdi into TrapFrame
         "mov [rsp + 0], r15",
         "mov [rsp + 8], r14",
         "mov [rsp + 16], r13",
@@ -193,59 +243,47 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "mov [rsp + 88], rdx",
         "mov [rsp + 96], rsi",
         "mov [rsp + 104], rdi",
+        
         // Saved orig RAX is at rsp + 160
         "mov rax, [rsp + 160]",
         "mov [rsp + 112], rax",
-        // Hardware frame (no error): rip=+168, cs=+176, rflags=+184, rsp=+192, ss=+200
+        
+        // Hardware frame is now at consistent offsets for both cases:
+        // rip=+168, cs=+176, rflags=+184, rsp=+192, ss=+200
         "mov rax, [rsp + 168]",
         "mov [rsp + 120], rax", // rip
         "mov rax, [rsp + 176]",
         "mov [rsp + 128], rax", // cs
         "mov rax, [rsp + 184]",
         "mov [rsp + 136], rax", // rflags
-        // Saved RSP/SS depend on CPL
-        "mov rax, [rsp + 176]", // cs
-        "test al, 3",
-        "jnz 1f",
-        // Kernel mode interrupt: synthesize RSP/SS
-        "lea rcx, [rsp + 192]", // pre-interrupt RSP
-        "mov [rsp + 144], rcx",
-        "mov rcx, ss",
-        "mov [rsp + 152], rcx",
-        "jmp 2f",
-        "1:",
-        // User mode interrupt: hardware provided RSP/SS
-        "mov rcx, [rsp + 192]",
-        "mov [rsp + 144], rcx",
-        "mov rcx, [rsp + 200]",
-        "mov [rsp + 152], rcx",
-        "2:",
+        "mov rax, [rsp + 192]",
+        "mov [rsp + 144], rax", // rsp
+        "mov rax, [rsp + 200]",
+        "mov [rsp + 152], rax", // ss
+        
         // Call Handler
         "mov rdi, rsp",
         "call timer_interrupt_handler",
-        // IMPORTANT: The handler (Scheduler) may have modified the TrapFrame (rsp)
-        // to switch contexts. We MUST copy the potentially modified RIP, CS, RFLAGS, RSP, SS
-        // back to the Hardware Frame (at rsp + 168) so iretq executes the switch.
-
-        // 1. RIP (Offset 120 -> 168)
+        
+        // === RETURN PATH ===
+        // The handler may have switched contexts. Copy TrapFrame back to hardware frame.
+        
+        // RIP
         "mov rax, [rsp + 120]",
         "mov [rsp + 168], rax",
-        // 2. CS (Offset 128 -> 176)
+        // CS
         "mov rax, [rsp + 128]",
         "mov [rsp + 176], rax",
-        // 3. RFLAGS (Offset 136 -> 184)
+        // RFLAGS
         "mov rax, [rsp + 136]",
         "mov [rsp + 184], rax",
-        // Check CS (now in rax) for CPL. If Kernel (0), skip RSP/SS restore.
-        "test al, 3",
-        "jz 4f",
-        // 4. RSP (Offset 144 -> 192)
+        // RSP
         "mov rax, [rsp + 144]",
         "mov [rsp + 192], rax",
-        // 5. SS (Offset 152 -> 200)
+        // SS
         "mov rax, [rsp + 152]",
         "mov [rsp + 200], rax",
-        "4:",
+        
         // Restore GPRs
         "mov r15, [rsp + 0]",
         "mov r14, [rsp + 8]",
@@ -262,19 +300,28 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "mov rsi, [rsp + 96]",
         "mov rdi, [rsp + 104]",
         "mov rax, [rsp + 112]",
+        
         // Tear down TrapFrame and saved rax
         "add rsp, 160",
         "pop rax",
-        // Return: swapgs only if returning to USER mode.
-        // We check the CS we are ABOUT TO POP (at rsp + 8)
+        
+        // Now at the normalized 5-element hardware frame
+        // Check the CS we are ABOUT TO return to (at rsp + 8)
         "test byte ptr [rsp + 8], 3",
-        "jz 3f",
+        "jz 12f",
+        
+        // === RETURNING TO USER MODE ===
         "swapgs",
         "iretq",
-        "3:",
+        
+        // === RETURNING TO KERNEL MODE ===
+        "12:",
+        // iretq with full 5-element frame works fine for kernel mode too
+        // (CPU will just load the RSP/SS we synthesized, which is what we want)
         "iretq",
     );
 }
+
 
 /// Naked trampoline for Keyboard Interrupt (IRQ 1).
 #[unsafe(naked)]

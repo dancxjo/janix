@@ -4,6 +4,9 @@ default:
 fetch:
     cargo run -p xtask -- fetch
 
+clean:
+    cargo run -p xtask -- clean
+
 check:
     cargo fmt --all --check
     cargo clippy --workspace --exclude kernel_x86_64 --exclude kernel_aarch64 --exclude thing_std -- -D warnings

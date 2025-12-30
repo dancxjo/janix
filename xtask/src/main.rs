@@ -3,6 +3,7 @@ use clap::Parser;
 
 mod boundary; // Add module
 mod build;
+mod clean;
 mod fetch;
 mod iso;
 mod kill;
@@ -23,6 +24,8 @@ enum Commands {
     Fetch(fetch::FetchArgs),
     /// Build the kernel and bridges
     Build,
+    /// Remove fetched assets and build artifacts
+    Clean,
     /// Create bootable ISO
     Iso {
         #[arg(long, default_value = "x86_64")]
@@ -61,6 +64,7 @@ fn main() -> Result<()> {
         Commands::BoundaryCheck => boundary::run(),
         Commands::Fetch(args) => fetch::run(args),
         Commands::Build => build::run(),
+        Commands::Clean => clean::run(),
         Commands::Iso { env, cmdline } => iso::run(env, cmdline),
         Commands::Run {
             env,

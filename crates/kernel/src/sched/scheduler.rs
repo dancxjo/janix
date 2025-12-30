@@ -197,14 +197,19 @@ impl<C> Scheduler<C> {
                 if thread.state == ThreadState::Running {
                     thread.state = ThreadState::Runnable;
                     self.run_queue.push_back(tid);
+                    // _bridge.log("SCHED: Re-queued Running\n");
                 } else if thread.state == ThreadState::Runnable {
                     self.run_queue.push_back(tid);
+                    // _bridge.log("SCHED: Re-queued Runnable\n");
+                } else {
+                    // _bridge.log("SCHED: Thread not re-queued. dropped.\n");
                 }
             }
         }
 
         // 2. Pick next
         if let Some(next_tid) = self.pick_next() {
+            // _bridge.log("SCHED: Picked next\n");
             self.current = Some(next_tid);
             if let Some(Some(thread)) = self.threads.get_mut(next_tid.0 as usize - 1) {
                 thread.state = ThreadState::Running;

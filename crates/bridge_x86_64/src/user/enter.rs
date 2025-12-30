@@ -7,16 +7,22 @@ use x86_64::structures::paging::PhysFrame as X86PhysFrame;
 use x86_64::PhysAddr;
 
 // Hardcoded selectors corresponding to standard ThingOS layout (KCode=8, KData=16, TSS=24, UData=40, UCode=48)
-const USER_CODE_SELECTOR: u16 = 0x30 | 3; // RPL 3
-const USER_DATA_SELECTOR: u16 = 0x28 | 3; // RPL 3
+// Removed hardcoded selectors. Using crate::gdt instead.
 
 pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
+    let (cs, ss) = unsafe {
+        (
+            crate::gdt::USER_CODE_SELECTOR.0,
+            crate::gdt::USER_DATA_SELECTOR.0,
+        )
+    };
+
     let x86_regs = X86UserEntryRegs {
         rip: regs.entry_point,
         rsp: regs.user_stack & !0xF, // Align 16
         rflags: 0x202,               // IF=1, bit 1=1
-        user_cs: USER_CODE_SELECTOR as u64,
-        user_ss: USER_DATA_SELECTOR as u64,
+        user_cs: cs as u64 | 3,
+        user_ss: ss as u64 | 3,
         rdi: regs.arg0,
     };
 
@@ -55,7 +61,7 @@ unsafe extern "C" fn enter_user_mode_asm(_regs: *const X86UserEntryRegs) -> ! {
         "mov rax, [rcx]", // rip
         "push rax",
         // Clear segments?
-        "mov ax, 0x2b", // User data 0x28 | 3
+        "mov ax, [rcx + 32]", // Load SS (User Data selector)
         "mov ds, ax",
         "mov es, ax",
         "mov fs, ax",

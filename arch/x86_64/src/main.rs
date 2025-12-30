@@ -313,9 +313,26 @@ fn page_fault_hook_impl(
 ) -> bool {
     use x86_64::structures::idt::PageFaultErrorCode;
     if !error_code.contains(PageFaultErrorCode::USER_MODE) {
-        return false;
+        unsafe {
+             // Raw 'P' to 0xE9
+             core::arch::asm!(
+                 "out dx, al",
+                 in("dx") 0xe9u16,
+                 in("al") b'P',
+                 options(nomem, nostack, preserves_flags)
+             );
+        }
+    } else {
+        unsafe {
+             // Raw 'U' to 0xE9 (User Fault)
+             core::arch::asm!(
+                 "out dx, al",
+                 in("dx") 0xe9u16,
+                 in("al") b'U',
+                 options(nomem, nostack, preserves_flags)
+             );
+        }
     }
-
     use kernel::bridge::HardwareBridge;
 
     #[allow(unused_imports)]
@@ -760,6 +777,23 @@ pub extern "C" fn rust_main() -> ! {
 
                 if acpi::IO_APIC_ADDR != 0 {
                     ioapic::init(acpi::IO_APIC_ADDR);
+                    
+                    // IRQ 0 (Timer) -> Vector 32
+                    let irq0 = acpi::ISA_OVERRIDES[0] as u32;
+                    // unsafe {
+                    //    use kernel::bridge::HardwareBridge;
+                    //    Bridge.log("IOAPIC: Mapping IRQ 0 GSIOverride=");
+                    //    print_hex(&Bridge, irq0 as u64);
+                    //    Bridge.log("\n");
+                    // }
+                    ioapic::set_irq_vector(irq0, 32, apic::id() as u8);
+
+                    // Safety net: Force map GSI 2 if override was 0 (standard PC often uses GSI 2 for legacy timer)
+                    if irq0 == 0 {
+                         // unsafe { Bridge.log("IOAPIC: Force mapping GSI 2 -> Vector 32\n"); }
+                         ioapic::set_irq_vector(2, 32, apic::id() as u8);
+                    }
+
                     let irq1 = acpi::ISA_OVERRIDES[1] as u32;
                     ioapic::set_irq_vector(irq1, 33, apic::id() as u8);
                     let irq12 = acpi::ISA_OVERRIDES[12] as u32;

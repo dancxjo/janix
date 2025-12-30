@@ -66,6 +66,16 @@ pub extern "C" fn gp_handler(frame: &mut TrapFrame, error_code: u64) {
     use x86_64::registers::control::Cr2;
     let cr2 = Cr2::read().unwrap_or(VirtAddr::zero()).as_u64();
 
+    unsafe {
+        // Raw 'G' to 0xE9
+        core::arch::asm!(
+            "out dx, al",
+            in("dx") 0xe9u16,
+            in("al") b'G',
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+
     kernel::diag::record_fault(
         frame.rip,
         frame.rsp,
@@ -192,6 +202,27 @@ unsafe extern "C" fn timer_interrupt_naked() {
         // Call Handler
         "mov rdi, rsp",
         "call timer_interrupt_handler",
+
+        // IMPORTANT: The handler (Scheduler) may have modified the TrapFrame (rsp)
+        // to switch contexts. We MUST copy the potentially modified RIP, CS, RFLAGS, RSP, SS
+        // back to the Hardware Frame (at rsp + 168) so iretq executes the switch.
+
+        // 1. RIP (Offset 120 -> 168)
+        "mov rax, [rsp + 120]",
+        "mov [rsp + 168], rax",
+        // 2. CS (Offset 128 -> 176)
+        "mov rax, [rsp + 128]",
+        "mov [rsp + 176], rax",
+        // 3. RFLAGS (Offset 136 -> 184)
+        "mov rax, [rsp + 136]",
+        "mov [rsp + 184], rax",
+        // 4. RSP (Offset 144 -> 192)
+        "mov rax, [rsp + 144]",
+        "mov [rsp + 192], rax",
+        // 5. SS (Offset 152 -> 200)
+        "mov rax, [rsp + 152]",
+        "mov [rsp + 200], rax",
+
         // Restore GPRs
         "mov r15, [rsp + 0]",
         "mov r14, [rsp + 8]",
@@ -211,7 +242,8 @@ unsafe extern "C" fn timer_interrupt_naked() {
         // Tear down TrapFrame and saved rax
         "add rsp, 160",
         "pop rax",
-        // Return: swapgs only for user-mode
+        // Return: swapgs only if returning to USER mode.
+        // We check the CS we are ABOUT TO POP (at rsp + 8)
         "test byte ptr [rsp + 8], 3",
         "jz 3f",
         "swapgs",

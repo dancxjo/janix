@@ -38,7 +38,7 @@ fn dispatch_rtc<B: HardwareBridge>(bridge: &B, op: u32, _req: &[u8]) -> Result<V
 
 fn dispatch_fb(machine: &Machine, op: u32, _req: &[u8]) -> Result<Vec<u8>, MachineError> {
     if op == OP_FB_GET_INFO {
-        let info = machine.fb_info.as_ref().ok_or(MachineError::InternalError)?;
+        let info = machine.fb_info.as_ref().ok_or(MachineError::NotFound)?;
         postcard::to_allocvec(info).map_err(|_| MachineError::InternalError)
     } else if op == OP_FB_PRESENT {
         let resp = FbPresentResp {};

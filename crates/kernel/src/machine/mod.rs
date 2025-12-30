@@ -65,7 +65,7 @@ impl Machine {
         use abi::symbols::sym;
         use crate::graph::GraphStore;
         use thing_models::value::ThingBody;
-        use thing_models::builtins::ids::{THING_LINK_KIND, THING_KIND_KIND};
+        use thing_models::builtins::ids::{THING_LINK_KIND};
         use postcard::to_allocvec;
 
         // Symbols
@@ -74,10 +74,11 @@ impl Machine {
         let kind_sys_driver = sym("sys.driver");
         let kind_hw_device = sym("hw.device");
 
-        let pred_has_driver = sym("HAS_DRIVER");
-        let pred_implements = sym("IMPLEMENTS");
-        let pred_provides = sym("PROVIDES");
-        let pred_driven_by = sym("DRIVEN_BY");
+        // Namespaced Predicates
+        let pred_has_driver = sym("sys.has_driver");
+        let pred_implements = sym("sys.implements");
+        let pred_provides = sym("sys.provides");
+        let pred_driven_by = sym("sys.driven_by");
 
         // Helper: Ensure a thing exists with a specific ID
         let mut ensure = |g: &mut GraphStore, id: abi::ThingId, kind: abi::ThingId, payload: Vec<u8>| {
@@ -91,21 +92,23 @@ impl Machine {
              }
         };
 
-        // Ensure Kinds
-        let mut ensure_kind = |g: &mut GraphStore, id: abi::SymbolId| {
-            let tid = abi::ThingId(id.0);
-            ensure(g, tid, THING_KIND_KIND, Vec::new());
-        };
+        // Note: Kinds are assumed to be seeded by seed_builtins or other mechanism.
+        // We do not re-seed them here to avoid conflicts or bad schema.
 
-        ensure_kind(graph, kind_sys_machine);
-        ensure_kind(graph, kind_sys_interface);
-        ensure_kind(graph, kind_sys_driver);
-        ensure_kind(graph, kind_hw_device);
+        // Mixer for link IDs
+        let mix64 = |mut x: u64| -> u64 {
+            x ^= x >> 30;
+            x = x.wrapping_mul(0xbf58476d1ce4e5b9);
+            x ^= x >> 27;
+            x = x.wrapping_mul(0x94d049bb133111eb);
+            x ^= x >> 31;
+            x
+        };
 
         // Helper: Ensure Link
         let mut ensure_link = |g: &mut GraphStore, from: abi::ThingId, to: abi::ThingId, pred: abi::SymbolId| {
-            let mix = from.0.wrapping_add(to.0).wrapping_add(pred.0).wrapping_mul(0x9e3779b97f4a7c15);
-            let lid = abi::ThingId(mix);
+            let x = from.0 ^ pred.0.rotate_left(21) ^ to.0.rotate_left(42);
+            let lid = abi::ThingId(mix64(x));
 
             #[derive(serde::Serialize)]
             struct LinkBody { from: abi::ThingId, to: abi::ThingId, predicate: abi::SymbolId }

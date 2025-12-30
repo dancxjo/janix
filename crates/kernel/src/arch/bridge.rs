@@ -2,6 +2,85 @@
 
 use core::fmt::Debug;
 
+/// Minimal user page flags used across architectures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UserPageFlags(pub u64);
+
+impl UserPageFlags {
+    pub const NONE: Self = Self(0);
+    pub const READ: Self = Self(1 << 0);
+    pub const WRITE: Self = Self(1 << 1);
+    pub const EXEC: Self = Self(1 << 2);
+    pub const USER: Self = Self(1 << 3);
+    pub const DEVICE: Self = Self(1 << 4);
+
+    pub const RW: Self = Self(Self::READ.0 | Self::WRITE.0);
+
+    pub fn bits(self) -> u64 {
+        self.0
+    }
+
+    pub fn contains(self, other: Self) -> bool {
+        (self.0 & other.0) == other.0
+    }
+}
+
+impl core::ops::BitOr for UserPageFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        UserPageFlags(self.0 | rhs.0)
+    }
+}
+
+impl core::ops::BitOrAssign for UserPageFlags {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl core::ops::BitAnd for UserPageFlags {
+    type Output = Self;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        UserPageFlags(self.0 & rhs.0)
+    }
+}
+
+impl core::ops::BitAndAssign for UserPageFlags {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
+    }
+}
+
+/// Per-architecture user address space control used by the kernel spawn path.
+pub trait UserAddressSpace {
+    type Root;
+
+    /// Create a fresh user root page table / address space anchor.
+    unsafe fn create_user_root() -> Self::Root;
+
+    /// Map a single user page with the requested flags.
+    unsafe fn map_user_page(root: &mut Self::Root, vaddr: u64, paddr: u64, flags: UserPageFlags);
+
+    /// Allocate a zeroed physical frame.
+    unsafe fn alloc_frame() -> u64;
+
+    /// Activate the given user root (CR3 / TTBR0).
+    unsafe fn activate_user_root(root: &Self::Root);
+
+    /// Write bytes into user space, mapping pages as needed with the provided flags.
+    unsafe fn write_user(
+        root: &mut Self::Root,
+        vaddr: u64,
+        bytes: &[u8],
+        writable_flags: UserPageFlags,
+    );
+
+    /// Ensure instruction cache coherency for the given range.
+    unsafe fn sync_icache(vaddr: u64, len: usize);
+}
+
 /// Tier-0 CPU bridge: minimal primitives required by the kernel core.
 pub trait CpuBridge {
     /// Best-effort logging; should be IRQ-safe.
@@ -85,9 +164,15 @@ pub trait VmMapper: MachineBridge {
 }
 
 /// Compatibility: combine common Tier-1 extensions.
-pub trait FullMachineBridge: MachineBridge + PortIo + VmMapper + Power + Rtc {}
+pub trait FullMachineBridge:
+    MachineBridge + PortIo + VmMapper + Power + Rtc + UserAddressSpace
+{
+}
 
-impl<T: MachineBridge + PortIo + VmMapper + Power + Rtc> FullMachineBridge for T {}
+impl<T: MachineBridge + PortIo + VmMapper + Power + Rtc + UserAddressSpace> FullMachineBridge
+    for T
+{
+}
 
 /// Provider-side bridge view (used by machine providers).
 pub trait ProviderBridge {

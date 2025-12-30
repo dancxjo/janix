@@ -18,11 +18,10 @@ use crate::simd;
 // Global state for loader to map framebuffer
 pub static mut FRAMEBUFFER_INFO: Option<(u64, u64)> = None;
 use core::arch::naked_asm;
-use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use kernel::bridge::{CpuBridge, MachineBridge, Power};
 use kernel::Kernel;
 
-static USE_QEMU_DRIVER: AtomicBool = AtomicBool::new(false);
 static PANICKING: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(test))]
@@ -483,15 +482,7 @@ fn syscall_hook(
 
                 let hhdm_offset_u64 = k.bridge.hhdm_offset();
 
-                loader::spawn_elf(
-                    k,
-                    None,
-                    name,
-                    data,
-                    0,
-                    None, // Not force, rely on defaults
-                    hhdm_offset_u64,
-                );
+                loader::spawn_elf(k, None, name, data, 0, None);
                 return 0;
             }
         }
@@ -739,11 +730,34 @@ unsafe extern "C" fn rust_main() -> ! {
         {
             use x86_64::registers::control::Cr3;
             use x86_64::structures::paging::{
-                Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
+                FrameAllocator, Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB,
+                Translate,
             };
 
             let hhdm_offset = VirtAddr::new(hhdm_offset_u64);
-            let mut frame_allocator = loader::HeapFrameAllocator { hhdm_offset };
+            struct BootFrameAllocator {
+                hhdm_offset: VirtAddr,
+            }
+            unsafe impl FrameAllocator<Size4KiB> for BootFrameAllocator {
+                fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+                    use alloc::alloc::{alloc_zeroed, Layout};
+                    let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
+                    let ptr = unsafe { alloc_zeroed(layout) };
+                    if ptr.is_null() {
+                        return None;
+                    }
+                    let (l4_frame, _) = Cr3::read();
+                    let virt_l4 = self.hhdm_offset + l4_frame.start_address().as_u64();
+                    let pml4_ptr: *mut x86_64::structures::paging::PageTable = virt_l4.as_mut_ptr();
+                    let mut mapper =
+                        unsafe { OffsetPageTable::new(&mut *pml4_ptr, self.hhdm_offset) };
+                    mapper
+                        .translate_addr(VirtAddr::new(ptr as u64))
+                        .map(|p| PhysFrame::containing_address(p))
+                }
+            }
+
+            let mut frame_allocator = BootFrameAllocator { hhdm_offset };
             let (level_4_table_frame, _) = Cr3::read();
             let phys = level_4_table_frame.start_address();
             let virt = hhdm_offset + phys.as_u64();
@@ -871,49 +885,26 @@ unsafe extern "C" fn rust_main() -> ! {
             bs.show(boot_screen::milestones::SCANNING_MODULES);
         }
         ingest_all_modules(&mut k, &boot_info);
-        // Default to Limine FB
-        let mut use_qemu = false;
-
-        if let Some(cmdline) = &boot_info.cmdline {
-            if cmdline.contains("thingos.driver=qemu") {
-                USE_QEMU_DRIVER.store(true, Ordering::Relaxed);
-                use_qemu = true;
+        if let Some(fb) = boot_info.framebuffer {
+            let mut phys_addr = fb.address;
+            if phys_addr >= hhdm_offset_u64 {
+                phys_addr -= hhdm_offset_u64;
             }
-        }
+            FRAMEBUFFER_INFO = Some((phys_addr, fb.size));
 
-        if !use_qemu {
-            // We need to adapt BootInfo FB to what limine_fb driver expects.
-            // drivers::limine_fb::init expects &Option<limine::response::FramebufferResponse> which is Limine specific!
-            // This is a violation of the separation.
-            // I need to refactor drivers::limine_fb to take a generic Framebuffer struct or raw data, OR move limine_fb to `boot` crate?
-            // "Move OUT of /kernels into /boot - framebuffer info extraction"
-            // So I should pass the extracted simple struct.
-            // For now, I will skip limine_fb init or pass dummy data if I can't refactor it immediately.
-            // NOTE: The prompt says "Move OUT of /kernels into /boot - framebuffer info extraction".
-            // I did that in BootInfo.
-            // Now I need to update the kernel core driver to accept BootInfo Framebuffer.
-            // I'll comment this out for a second and assume I fix `drivers::limine_fb` next.
-            if let Some(fb) = boot_info.framebuffer {
-                // Pass simple FB info to a new function in kernel drivers
-                // kernel::drivers::framebuffer::init_simple(&mut k, fb.address, ...);
-                // Using a placeholder for now to compile.
-
-                let mut addr = fb.address;
-                if addr >= hhdm_offset_u64 {
-                    addr -= hhdm_offset_u64;
-                }
-                FRAMEBUFFER_INFO = Some((addr, fb.size));
-
-                let fb_info = abi::wire::machine::FbGetInfoResp {
+            let discovered = kernel::drivers::video::DiscoveredFramebuffer {
+                lfb_phys: phys_addr,
+                size: fb.size,
+                info: abi::wire::machine::FbGetInfoResp {
                     width: fb.width as u32,
                     height: fb.height as u32,
                     stride: fb.pitch as u32,
                     format: 32,
-                    addr: 0x1_0000_0000,
+                    addr: phys_addr,
                     size: fb.size,
-                };
-                // kernel::drivers::limine_fb::init_with_info(&mut k, fb_info);
-            }
+                },
+            };
+            kernel::drivers::video::framebuffer::publish_framebuffer(&mut k, &discovered);
         }
 
         k.machine.reflect_into_graph(&mut k.graph);
@@ -982,15 +973,13 @@ unsafe extern "C" fn rust_main() -> ! {
 }
 
 unsafe fn spawn_sprout(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
-    let hhdm_offset = boot_info.hhdm_offset;
-
     for module in &boot_info.modules {
         if module.path.ends_with("sprout.elf") {
             k.bridge.log("BOOT: Spawning sprout...\n");
 
             let data = core::slice::from_raw_parts(module.start as *const u8, module.size as usize);
 
-            spawn_elf(k, None, "sprout.elf", data, 0, None, hhdm_offset);
+            spawn_elf(k, None, "sprout.elf", data, 0, None);
             return;
         }
     }
@@ -1036,36 +1025,13 @@ extern "C" fn kernel_init_task_entry(_arg: u64) {
     // Bridge.log("INIT: Calling scan_pci\n");
     // let pci_devices = kernel::drivers::pci::scan_pci(&Bridge);
     // Bridge.log("INIT: scan_pci returned\n");
-    let pci_devices = alloc::vec::Vec::new(); // Bypass PCI scan
+    let pci_devices: alloc::vec::Vec<thing_models::core::pci::PciDeviceBody> =
+        alloc::vec::Vec::new(); // Bypass PCI scan
 
     // let mut boot_args: Option<ScanArgs> = None; // Removed
 
     {
         Bridge.log("INIT: Publishing PCI Check...\n");
-        let use_qemu = USE_QEMU_DRIVER.load(Ordering::Relaxed);
-
-        if use_qemu {
-            loop {
-                let mut guard_opt = None;
-                x86_64::instructions::interrupts::without_interrupts(|| {
-                    if let Some(guard) = KERNEL.try_lock() {
-                        guard_opt = Some(guard);
-                    }
-                });
-                if let Some(mut guard) = guard_opt {
-                    if let Some(k) = (*guard).as_mut() {
-                        let info = kernel::drivers::video::qemu_vga::init(k, &pci_devices);
-                        unsafe {
-                            FRAMEBUFFER_INFO = info;
-                        }
-                        k.machine.reflect_into_graph(&mut k.graph);
-                    }
-                    break;
-                }
-                core::hint::spin_loop();
-            }
-        }
-
         for dev in &pci_devices {
             Bridge.log("INIT: Publishing Dev ");
             print_hex(&Bridge, dev.vendor_id as u64);

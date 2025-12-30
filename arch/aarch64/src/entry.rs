@@ -203,6 +203,7 @@ unsafe extern "C" fn rust_main() -> ! {
     let boot_info = crate::boot::loader::collect();
 
     // --- Boot Screen Init ---
+    let hhdm_offset = boot_info.hhdm_offset;
     let mut bs = unsafe {
         if let Some(fb) = &boot_info.framebuffer {
             if fb.bpp != 32 {
@@ -211,8 +212,13 @@ unsafe extern "C" fn rust_main() -> ! {
             } else {
                 let addr = fb.address; // Virtual address
 
-                // Store for syscalls
-                FRAMEBUFFER_INFO = Some((addr, fb.size as usize));
+                // Store for syscalls (physical)
+                let phys_addr = if addr >= hhdm_offset {
+                    addr - hhdm_offset
+                } else {
+                    addr
+                };
+                FRAMEBUFFER_INFO = Some((phys_addr, fb.size as usize));
 
                 // Pixel Format Detection
                 let pixel_format = if fb.red_mask_shift == 16
@@ -267,15 +273,26 @@ unsafe extern "C" fn rust_main() -> ! {
     k.register_machine_providers();
 
     if let Some(fb) = boot_info.framebuffer {
-        let fb_info = abi::wire::machine::FbGetInfoResp {
-            width: fb.width as u32,
-            height: fb.height as u32,
-            stride: fb.pitch as u32,
-            format: 32,
-            addr: 0x1_0000_0000,
+        let hhdm_offset = boot_info.hhdm_offset;
+        let mut phys_addr = fb.address;
+        if phys_addr >= hhdm_offset {
+            phys_addr -= hhdm_offset;
+        }
+        FRAMEBUFFER_INFO = Some((phys_addr, fb.size as usize));
+
+        let discovered = kernel::drivers::video::DiscoveredFramebuffer {
+            lfb_phys: phys_addr,
             size: fb.size,
+            info: abi::wire::machine::FbGetInfoResp {
+                width: fb.width as u32,
+                height: fb.height as u32,
+                stride: fb.pitch as u32,
+                format: 32,
+                addr: phys_addr,
+                size: fb.size,
+            },
         };
-        // kernel::drivers::limine_fb::init_with_info(&mut k, fb_info);
+        kernel::drivers::video::framebuffer::publish_framebuffer(&mut k, &discovered);
     }
 
     unsafe {
@@ -344,7 +361,6 @@ unsafe fn ingest_all_modules(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
 }
 
 unsafe fn spawn_sprout(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
-    let hhdm_offset = boot_info.hhdm_offset;
     let (fb_phys, fb_size) = if let Some(fb) = &boot_info.framebuffer {
         (fb.address, fb.size as usize)
     } else {
@@ -364,7 +380,6 @@ unsafe fn spawn_sprout(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
                 data,
                 0,
                 None,
-                hhdm_offset,
                 fb_phys,
                 fb_size,
             );
@@ -473,8 +488,6 @@ fn syscall_hook(
 
         if let Some(mut guard) = KERNEL.try_lock() {
             if let Some(k) = (*guard).as_mut() {
-                let hhdm_offset_u64 = k.bridge.hhdm_offset();
-
                 let (fb_phys, fb_size) = unsafe { FRAMEBUFFER_INFO.unwrap_or((0, 0)) };
 
                 loader::spawn_elf(
@@ -484,7 +497,6 @@ fn syscall_hook(
                     data,
                     0,
                     None,
-                    hhdm_offset_u64,
                     fb_phys,
                     fb_size,
                 );

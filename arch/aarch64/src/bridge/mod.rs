@@ -1,6 +1,8 @@
 use crate::bringup::{context, fpu, interrupts};
 use core::arch::asm;
-use kernel::bridge::{CpuBridge, MachineBridge, PortIo, Power, Rtc, VmMapper};
+use kernel::bridge::{
+    CpuBridge, MachineBridge, PortIo, Power, Rtc, UserAddressSpace, UserPageFlags, VmMapper,
+};
 
 pub mod ports;
 pub mod rtc;
@@ -205,6 +207,144 @@ impl VmMapper for Bridge {
     fn map_user_mmio(&self, _virt_addr: u64, _phys_addr: u64, _flags: u64) -> Result<(), ()> {
         Err(())
     }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn flags_to_pte(flags: UserPageFlags) -> u64 {
+    use crate::paging::{
+        PTE_AF, PTE_AP_RW_EL0, PTE_ATTR_DEVICE, PTE_ATTR_NORMAL, PTE_PAGE, PTE_SH_INNER, PTE_UXN,
+        PTE_VALID,
+    };
+
+    let mut out = PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_AP_RW_EL0 | PTE_ATTR_NORMAL;
+    if flags.contains(UserPageFlags::DEVICE) {
+        out = PTE_VALID
+            | PTE_PAGE
+            | PTE_AF
+            | PTE_SH_INNER
+            | PTE_AP_RW_EL0
+            | PTE_ATTR_DEVICE
+            | PTE_UXN;
+    } else if !flags.contains(UserPageFlags::EXEC) {
+        out |= PTE_UXN;
+    }
+
+    out
+}
+
+#[cfg(target_arch = "aarch64")]
+impl UserAddressSpace for Bridge {
+    type Root = u64;
+
+    unsafe fn create_user_root() -> Self::Root {
+        crate::paging::create_user_root().expect("failed to allocate user root")
+    }
+
+    unsafe fn map_user_page(
+        root: &mut Self::Root,
+        vaddr: u64,
+        paddr: u64,
+        flags: UserPageFlags,
+    ) {
+        crate::paging::map_page_at_root(*root, paddr, vaddr, flags_to_pte(flags));
+    }
+
+    unsafe fn alloc_frame() -> u64 {
+        crate::paging::allocate_frame().map(|(phys, _)| phys).unwrap_or(0)
+    }
+
+    unsafe fn activate_user_root(root: &Self::Root) {
+        asm!("msr ttbr0_el1, {}", in(reg) *root);
+        asm!("isb");
+    }
+
+    unsafe fn write_user(
+        root: &mut Self::Root,
+        vaddr: u64,
+        bytes: &[u8],
+        writable_flags: UserPageFlags,
+    ) {
+        use core::cmp::{max, min};
+
+        if bytes.is_empty() {
+            return;
+        }
+
+        let start = vaddr;
+        let end = vaddr + bytes.len() as u64;
+        let start_page = start & !0xFFF;
+        let end_page = (end - 1) & !0xFFF;
+        let map_flags = flags_to_pte(writable_flags);
+        let hhdm = Bridge.hhdm_offset();
+
+        let mut page = start_page;
+        while page <= end_page {
+            if crate::paging::translate(*root, page).is_none() {
+                let phys = Self::alloc_frame();
+                if phys == 0 {
+                    return;
+                }
+                crate::paging::map_page_at_root(*root, phys, page, map_flags);
+            }
+
+            if let Some(phys_page) = crate::paging::translate(*root, page) {
+                let page_start = page;
+                let overlap_start = max(page_start, start);
+                let overlap_end = min(page_start + 4096, end);
+                let page_offset = overlap_start - page_start;
+                let buf_offset = overlap_start - start;
+                let len = overlap_end - overlap_start;
+
+                let dest = (phys_page + page_offset + hhdm) as *mut u8;
+                let src = bytes.as_ptr().add(buf_offset as usize);
+                core::ptr::copy_nonoverlapping(src, dest, len as usize);
+            }
+
+            if page == end_page {
+                break;
+            }
+            page += 4096;
+        }
+    }
+
+    unsafe fn sync_icache(vaddr: u64, len: usize) {
+        let mut addr = vaddr & !63;
+        let end = vaddr + len as u64;
+
+        while addr < end {
+            core::arch::asm!("dc cvau, {}", in(reg) addr);
+            addr += 64;
+        }
+        core::arch::asm!("dsb ish");
+
+        addr = vaddr & !63;
+        while addr < end {
+            core::arch::asm!("ic ivau, {}", in(reg) addr);
+            addr += 64;
+        }
+        core::arch::asm!("dsb ish");
+        core::arch::asm!("isb");
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+impl UserAddressSpace for Bridge {
+    type Root = ();
+
+    unsafe fn create_user_root() -> Self::Root {}
+    unsafe fn map_user_page(_root: &mut Self::Root, _: u64, _: u64, _: UserPageFlags) {}
+    unsafe fn alloc_frame() -> u64 {
+        0
+    }
+    unsafe fn activate_user_root(_root: &Self::Root) {}
+    unsafe fn write_user(
+        _root: &mut Self::Root,
+        _vaddr: u64,
+        _bytes: &[u8],
+        _writable_flags: UserPageFlags,
+    ) {
+    }
+    unsafe fn sync_icache(_vaddr: u64, _len: usize) {}
 }
 
 #[cfg(not(target_arch = "aarch64"))]

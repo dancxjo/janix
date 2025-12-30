@@ -1,7 +1,10 @@
 use crate::bringup::{self, gdt, interrupts};
 use core::arch::asm;
 use core::sync::atomic::{AtomicU64, Ordering};
-use kernel::bridge::{CpuBridge, MachineBridge, PortIo, Power, Rtc, VmMapper};
+use kernel::bridge::{
+    CpuBridge, MachineBridge, PortIo, Power, Rtc, UserAddressSpace, UserPageFlags, VmMapper,
+};
+use x86_64::structures::paging::Translate;
 
 pub mod ports;
 pub mod rtc;
@@ -30,6 +33,13 @@ impl Default for FpuState {
     fn default() -> Self {
         Self([0u8; 512])
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct UserRoot {
+    pub pml4: *mut x86_64::structures::paging::PageTable,
+    pub hhdm_offset: x86_64::VirtAddr,
+    pub cr3_frame: x86_64::structures::paging::PhysFrame,
 }
 
 // Hook for scheduler. Only set by kernel binary.
@@ -214,6 +224,244 @@ impl CpuBridge for Bridge {
             let ptr = area.0.as_ptr();
             asm!("fxrstor [{}]", in(reg) ptr);
         }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn page_flags_from_user(flags: UserPageFlags) -> x86_64::structures::paging::PageTableFlags {
+    use x86_64::structures::paging::PageTableFlags;
+
+    let mut out = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
+    if flags.contains(UserPageFlags::WRITE) {
+        out |= PageTableFlags::WRITABLE;
+    }
+    if !flags.contains(UserPageFlags::EXEC) {
+        out |= PageTableFlags::NO_EXECUTE;
+    }
+    if flags.contains(UserPageFlags::DEVICE) {
+        out |= PageTableFlags::NO_CACHE | PageTableFlags::WRITE_THROUGH;
+    }
+    out
+}
+
+#[cfg(target_arch = "x86_64")]
+fn table_allocator(
+    hhdm_offset: x86_64::VirtAddr,
+) -> impl x86_64::structures::paging::FrameAllocator<
+    x86_64::structures::paging::Size4KiB,
+> {
+    use alloc::alloc::{alloc_zeroed, Layout};
+    use x86_64::registers::control::Cr3;
+    use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PhysFrame, Size4KiB};
+    use x86_64::VirtAddr;
+
+    struct HeapFrameAllocator {
+        hhdm_offset: x86_64::VirtAddr,
+    }
+
+    unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
+        fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+            let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
+            let ptr = unsafe { alloc_zeroed(layout) };
+            if ptr.is_null() {
+                return None;
+            }
+
+            let (l4_frame, _) = Cr3::read();
+            let virt_l4 = self.hhdm_offset + l4_frame.start_address().as_u64();
+            let pml4_ptr: *mut x86_64::structures::paging::PageTable = virt_l4.as_mut_ptr();
+            let mut mapper =
+                unsafe { OffsetPageTable::new(&mut *pml4_ptr, self.hhdm_offset) };
+            mapper
+                .translate_addr(VirtAddr::new(ptr as u64))
+                .map(|p| PhysFrame::containing_address(p))
+        }
+    }
+
+    HeapFrameAllocator { hhdm_offset }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn mapper_from_root<'a>(
+    root: &'a mut UserRoot,
+) -> x86_64::structures::paging::OffsetPageTable<'a> {
+    unsafe { x86_64::structures::paging::OffsetPageTable::new(&mut *root.pml4, root.hhdm_offset) }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl UserAddressSpace for Bridge {
+    type Root = UserRoot;
+
+    unsafe fn create_user_root() -> Self::Root {
+        use x86_64::registers::control::Cr3;
+        let (frame, _) = Cr3::read();
+        let hhdm_offset = x86_64::VirtAddr::new(HHDM_OFFSET.load(Ordering::Relaxed));
+        let virt_l4 = hhdm_offset + frame.start_address().as_u64();
+        let pml4 = virt_l4.as_mut_ptr();
+
+        UserRoot {
+            pml4,
+            hhdm_offset,
+            cr3_frame: frame,
+        }
+    }
+
+    unsafe fn map_user_page(
+        root: &mut Self::Root,
+        vaddr: u64,
+        paddr: u64,
+        flags: UserPageFlags,
+    ) {
+        use x86_64::structures::paging::mapper::TranslateError;
+        use x86_64::structures::paging::{
+            Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
+        };
+        use x86_64::VirtAddr;
+
+        let hhdm = root.hhdm_offset;
+        let mut mapper = mapper_from_root(root);
+        let page = Page::<Size4KiB>::containing_address(VirtAddr::new(vaddr));
+        let phys_frame = PhysFrame::containing_address(x86_64::PhysAddr::new(paddr));
+        let map_flags: PageTableFlags = page_flags_from_user(flags);
+        let mut allocator = table_allocator(hhdm);
+
+        match mapper.translate_page(page) {
+            Ok(_) => {
+                if let Ok(flush) = mapper.update_flags(page, map_flags) {
+                    flush.flush();
+                }
+                return;
+            }
+            Err(TranslateError::ParentEntryHugePage) => {
+                if let Ok((_phys, flush)) =
+                    mapper.unmap(Page::<Size2MiB>::containing_address(VirtAddr::new(vaddr)))
+                {
+                    flush.flush();
+                }
+            }
+            Err(TranslateError::PageNotMapped) => {}
+            Err(_) => return,
+        }
+
+        if let Ok(flush) = mapper.map_to(page, phys_frame, map_flags, &mut allocator) {
+            flush.flush();
+        }
+    }
+
+    unsafe fn alloc_frame() -> u64 {
+        use alloc::alloc::{alloc_zeroed, Layout};
+        use x86_64::registers::control::Cr3;
+        use x86_64::structures::paging::{OffsetPageTable, PhysFrame, Size4KiB};
+        use x86_64::VirtAddr;
+
+        let layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
+        let ptr = unsafe { alloc_zeroed(layout) };
+        if ptr.is_null() {
+            return 0;
+        }
+
+        let (l4_frame, _) = Cr3::read();
+        let hhdm_offset = x86_64::VirtAddr::new(HHDM_OFFSET.load(Ordering::Relaxed));
+        let virt_l4 = hhdm_offset + l4_frame.start_address().as_u64();
+        let pml4_ptr: *mut x86_64::structures::paging::PageTable = virt_l4.as_mut_ptr();
+        let mut mapper = unsafe { OffsetPageTable::new(&mut *pml4_ptr, hhdm_offset) };
+
+        mapper
+            .translate_addr(VirtAddr::new(ptr as u64))
+            .map(|p| PhysFrame::<Size4KiB>::containing_address(p).start_address().as_u64())
+            .unwrap_or(0)
+    }
+
+    unsafe fn activate_user_root(root: &Self::Root) {
+        use x86_64::registers::control::{Cr3, Cr3Flags};
+        Cr3::write(root.cr3_frame, Cr3Flags::empty());
+    }
+
+    unsafe fn write_user(
+        root: &mut Self::Root,
+        vaddr: u64,
+        bytes: &[u8],
+        writable_flags: UserPageFlags,
+    ) {
+        use core::cmp::{max, min};
+        use x86_64::structures::paging::mapper::TranslateError;
+        use x86_64::structures::paging::{
+            mapper::TranslateResult, Mapper, Page, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
+            Translate,
+        };
+        use x86_64::VirtAddr;
+
+        if bytes.is_empty() {
+            return;
+        }
+
+        let hhdm = root.hhdm_offset;
+        let mut mapper = mapper_from_root(root);
+        let start = VirtAddr::new(vaddr);
+        let end = VirtAddr::new(vaddr + bytes.len() as u64);
+        let start_page = Page::<Size4KiB>::containing_address(start);
+        let end_page = Page::<Size4KiB>::containing_address(end - 1u64);
+        let map_flags: PageTableFlags = page_flags_from_user(writable_flags);
+        let mut allocator = table_allocator(hhdm);
+
+        for page in Page::range_inclusive(start_page, end_page) {
+            let page_start_virt = page.start_address();
+            let mut needs_alloc = true;
+
+            match mapper.translate_page(page) {
+                Ok(_) => {
+                    if let Ok(flush) = mapper.update_flags(page, map_flags) {
+                        flush.flush();
+                    }
+                    needs_alloc = false;
+                }
+                Err(TranslateError::ParentEntryHugePage) => {
+                    if let Ok((_phys, flush)) = mapper
+                        .unmap(Page::<Size2MiB>::containing_address(page_start_virt))
+                    {
+                        flush.flush();
+                    }
+                }
+                Err(TranslateError::PageNotMapped) => {}
+                Err(_) => continue,
+            }
+
+            if needs_alloc {
+                let phys = Self::alloc_frame();
+                if phys == 0 {
+                    continue;
+                }
+                let frame = PhysFrame::<Size4KiB>::containing_address(x86_64::PhysAddr::new(phys));
+                if let Ok(flush) = mapper.map_to(page, frame, map_flags, &mut allocator) {
+                    flush.flush();
+                }
+            }
+
+            let overlap_start = max(page_start_virt, start);
+            let overlap_end = min(page_start_virt + 4096u64, end);
+            if overlap_end <= overlap_start {
+                continue;
+            }
+
+            if let TranslateResult::Mapped { frame, offset, .. } =
+                mapper.translate(page_start_virt)
+            {
+                let phys = frame.start_address() + offset;
+                let frame_virt = hhdm + phys.as_u64();
+
+                let seg_offset = overlap_start - start;
+                let page_offset = overlap_start - page_start_virt;
+                let copy_len = overlap_end - overlap_start;
+
+                let src_ptr = bytes.as_ptr().add(seg_offset as usize);
+                let dest_ptr = (frame_virt.as_mut_ptr::<u8>()).add(page_offset as usize);
+                core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, copy_len as usize);
+            }
+        }
+    }
+
+    unsafe fn sync_icache(_vaddr: u64, _len: usize) {
+        // x86_64 maintains coherent I-cache; nothing to do.
     }
 }
 

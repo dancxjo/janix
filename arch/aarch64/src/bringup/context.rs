@@ -13,7 +13,7 @@ pub fn init_thread_context(entry: u64, stack: u64, arg: u64) -> ArchContext {
     // [x0..x29, x30, sp_el0, elr, spsr]
     let mut ctx = [0u64; 34];
 
-    let _uer = crate::user::UserEntryRegs {
+    let _uer = super::user::UserEntryRegs {
         entry_point: entry,
         user_stack: stack,
         arg0: arg,
@@ -41,7 +41,7 @@ pub fn init_thread_context(entry: u64, stack: u64, arg: u64) -> ArchContext {
 
 #[cfg(target_arch = "aarch64")]
 pub fn resume_user_mode(context: &ArchContext) -> ! {
-    crate::user::enter::resume_user_mode(&context.0, &kernel::sched::fpu::FpuContext::default())
+    super::user::enter::resume_user_mode(&context.0, &kernel::sched::fpu::FpuContext::default())
 }
 
 #[cfg(target_arch = "aarch64")]

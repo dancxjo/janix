@@ -1,15 +1,5 @@
-use bridge_aarch64::Bridge;
+use crate::bridge::Bridge;
 use kernel::bridge::HardwareBridge;
-
-// Early print macro that doesn't rely on global logger or allocator
-#[macro_export]
-macro_rules! bootlog {
-    ($($arg:tt)*) => {{
-        use core::fmt::Write;
-        let mut sink = $crate::early_log::EarlyUart;
-        let _ = writeln!(sink, $($arg)*);
-    }};
-}
 
 pub struct EarlyUart;
 
@@ -22,8 +12,8 @@ impl core::fmt::Write for EarlyUart {
 }
 
 pub fn log_heap_init(phys_start: u64, virt_start: u64, size: u64) {
-    bootlog!("Heap Init:");
-    bootlog!("  Phys: 0x{:x}", phys_start);
-    bootlog!("  Virt: 0x{:x}", virt_start);
-    bootlog!("  Size: 0x{:x}", size);
+    crate::bootlog!("Heap Init:");
+    crate::bootlog!("  Phys: 0x{:x}", phys_start);
+    crate::bootlog!("  Virt: 0x{:x}", virt_start);
+    crate::bootlog!("  Size: 0x{:x}", size);
 }

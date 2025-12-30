@@ -42,7 +42,7 @@ pub unsafe fn init(hhdm_offset: u64) {
 
     // Barrier to ensure GIC config is visible
     core::arch::asm!("dsb sy");
-    crate::Bridge.log("GIC: Init Complete\n");
+    crate::bridge::Bridge.log("GIC: Init Complete\n");
 }
 
 const GICD_IGROUPR: u64 = 0x080;

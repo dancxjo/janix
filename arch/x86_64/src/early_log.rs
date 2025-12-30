@@ -1,4 +1,4 @@
-use bridge_x86_64::Bridge;
+use crate::bridge::Bridge;
 use kernel::bridge::HardwareBridge;
 
 #[derive(Clone, Copy)]
@@ -20,7 +20,7 @@ pub fn log_heap_init(info: HeapInitInfo) {
     bridge.log("\n");
 }
 
-fn print_hex(bridge: &Bridge, val: u64) {
+pub fn print_hex(bridge: &Bridge, val: u64) {
     bridge.log("0x");
     let mut printed = false;
     for i in (0..16).rev() {

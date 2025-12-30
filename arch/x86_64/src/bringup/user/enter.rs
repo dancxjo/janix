@@ -12,8 +12,8 @@ use x86_64::PhysAddr;
 pub fn enter_user_mode(regs: &UserEntryRegs) -> ! {
     let (cs, ss) = unsafe {
         (
-            crate::gdt::USER_CODE_SELECTOR.0,
-            crate::gdt::USER_DATA_SELECTOR.0,
+            crate::bringup::gdt::USER_CODE_SELECTOR.0,
+            crate::bringup::gdt::USER_DATA_SELECTOR.0,
         )
     };
 
@@ -87,8 +87,8 @@ pub fn resume_user_mode(context: &[u64], _fpu_context: &FpuContext) -> ! {
     let stack_top = context.as_ptr() as u64 + (context.len() * 8) as u64;
 
     unsafe {
-        crate::gdt::set_kernel_stack(stack_top);
-        crate::interrupts::syscall::set_kernel_stack(stack_top);
+        crate::bringup::gdt::set_kernel_stack(stack_top);
+        crate::bringup::interrupts::syscall::set_kernel_stack(stack_top);
         resume_user_mode_asm(context.as_ptr())
     }
 }

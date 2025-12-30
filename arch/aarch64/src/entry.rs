@@ -2,8 +2,8 @@
 //!
 //! This module contains the architecture-specific boot flow and main loop.
 
-use alloc;
-use ::boot::{BootFacts, MemoryRegionKind};
+use core::iter::Iterator;
+use ::boot::BootFacts;
 
 use crate::boot;
 use crate::bridge::{self, Bridge};
@@ -13,8 +13,8 @@ use crate::heap;
 use crate::simd;
 use crate::loader;
 use crate::paging;
+use crate::bootlog;
 
-use core::arch::asm;
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use kernel::bridge::HardwareBridge;
@@ -109,6 +109,15 @@ struct BootStack([u8; BOOT_STACK_SIZE]);
 #[unsafe(link_section = ".bss")]
 static mut BOOT_STACK: BootStack = BootStack([0; BOOT_STACK_SIZE]);
 
+
+/// Architecture entry point called from lib.rs Arch::boot().
+/// Forwards to the naked _start function.
+pub fn arch_entry() -> ! {
+    extern "C" {
+        fn _start() -> !;
+    }
+    unsafe { _start() }
+}
 
 #[no_mangle]
 #[no_mangle]

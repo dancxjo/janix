@@ -6,8 +6,7 @@ use alloc::vec::Vec;
 
 use abi::ThingId;
 
-use crate::KERNEL;
-use bridge_aarch64::Bridge;
+use crate::bridge::Bridge;
 use core::sync::atomic::{AtomicU64, Ordering};
 use kernel::bridge::HardwareBridge;
 use kernel::Kernel;

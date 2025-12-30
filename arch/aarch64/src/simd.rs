@@ -1,3 +1,4 @@
+#[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
 /// Initialize SIMD (NEON) on AArch64.
@@ -11,6 +12,7 @@ pub unsafe fn init_simd() {
 /// NEON-optimized blit for 32bpp framebuffers on AArch64.
 ///
 /// Safety: dst and src must be valid for len bytes. len must be a multiple of 4.
+#[cfg(target_arch = "aarch64")]
 pub unsafe fn neon_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
     if scale >= 256 {
         // Fast path: Opaque copy
@@ -69,5 +71,23 @@ pub unsafe fn neon_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
         *dst.add(i + 3) = ((a as u32 * scale) >> 8) as u8;
 
         i += 4;
+    }
+}
+
+/// Fallback neon_blit for non-aarch64 builds (e.g. host compile checks).
+#[cfg(not(target_arch = "aarch64"))]
+pub unsafe fn neon_blit(dst: *mut u8, src: *const u8, len: usize, scale: u32) {
+    if scale >= 256 {
+        core::ptr::copy_nonoverlapping(src, dst, len);
+        return;
+    }
+    if scale == 0 {
+        return;
+    }
+    let mut i = 0;
+    while i < len {
+        let val = *src.add(i);
+        *dst.add(i) = ((val as u32 * scale) >> 8) as u8;
+        i += 1;
     }
 }

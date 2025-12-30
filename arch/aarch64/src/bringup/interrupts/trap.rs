@@ -50,8 +50,8 @@ pub struct TrapFrame {
 macro_rules! log {
     ($($arg:tt)*) => ({
         let s = alloc::format!($($arg)*);
-        crate::Bridge.log(&s);
-        crate::Bridge.log("\n");
+        crate::bridge::Bridge.log(&s);
+        crate::bridge::Bridge.log("\n");
     })
 }
 
@@ -94,7 +94,7 @@ pub extern "C" fn syscall_handler_rust(tf: &mut TrapFrame) -> u64 {
         // EC 0x24 = D-Abort Lower EL, 0x25 = D-Abort Curr EL
         if ec == 0x20 || ec == 0x24 {
             unsafe {
-                if let Some(hook) = crate::PAGE_FAULT_HOOK {
+                if let Some(hook) = crate::bridge::PAGE_FAULT_HOOK {
                     hook(tf, far, esr);
                     // If hook returns, we resume
                     return 0;
@@ -118,7 +118,7 @@ pub extern "C" fn invalid_exception(tf: &TrapFrame, kind: usize, source: usize) 
     }
     // Simplified logging to avoid alloc/format panic loops
     unsafe {
-        crate::Bridge.log("EXCEPTION: AArch64 Trap (Raw)\n");
+        crate::bridge::Bridge.log("EXCEPTION: AArch64 Trap (Raw)\n");
     }
     // log!("Kind: {}, Source: {}", kind, source);
     // log!("ESR: {:#x}, FAR: {:#x}", esr, far);
@@ -137,10 +137,10 @@ pub extern "C" fn irq_handler(tf: &mut TrapFrame) {
 
     if id == 30 {
         // Timer
-        crate::timer::next_match();
+        crate::bridge::timer::next_match();
 
         unsafe {
-            if let Some(hook) = crate::TICK_HOOK {
+            if let Some(hook) = crate::bridge::TICK_HOOK {
                 hook(tf);
             }
         }

@@ -7,7 +7,6 @@ use alloc::vec::Vec;
 use abi::ThingId;
 
 use crate::bridge::Bridge;
-use crate::KERNEL;
 use core::sync::atomic::{AtomicU64, Ordering};
 use kernel::boot_fs;
 use kernel::bridge::HardwareBridge;
@@ -29,8 +28,8 @@ use xmas_elf::{program::Type, ElfFile};
 
 static APP_LOAD_ADDR: AtomicU64 = AtomicU64::new(0x40_0000_0000);
 
-struct HeapFrameAllocator {
-    hhdm_offset: VirtAddr,
+pub struct HeapFrameAllocator {
+    pub hhdm_offset: VirtAddr,
 }
 
 unsafe impl FrameAllocator<Size4KiB> for HeapFrameAllocator {
@@ -374,7 +373,7 @@ pub fn spawn_elf(
         // Map Framebuffer (User Space 0x1_0000_0000)
         // Matches kernel/src/drivers/limine_fb.rs
         unsafe {
-            if let Some((fb_phys, fb_size)) = crate::FRAMEBUFFER_INFO {
+            if let Some((fb_phys, fb_size)) = crate::entry::FRAMEBUFFER_INFO {
                 unsafe {
                     let s = alloc::format!(
                         "loader: Mapping FB Phys={:#x} Size={:#x}\n",
@@ -543,7 +542,7 @@ pub fn spawn_elf(
 
             // Map Framebuffer
             Bridge.log("loader: checking fb_info\n");
-            let fb_info = unsafe { crate::FRAMEBUFFER_INFO };
+            let fb_info = unsafe { crate::entry::FRAMEBUFFER_INFO };
             if let Some((phys_base_raw, size)) = fb_info {
                 let s = alloc::format!(
                     "loader: mapping framebuffer. Base={:#x} Size={:#x}\n",

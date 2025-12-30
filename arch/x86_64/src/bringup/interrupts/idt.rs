@@ -1,4 +1,4 @@
-use crate::interrupts::trap::{self, TrapFrame};
+use crate::bringup::interrupts::trap::{self, TrapFrame};
 use core::arch::naked_asm;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use x86_64::VirtAddr;
@@ -97,17 +97,17 @@ pub extern "C" fn page_fault_handler(frame: &mut TrapFrame, error_code: PageFaul
         use kernel::bridge::HardwareBridge;
         let bridge = crate::Bridge;
         bridge.log("PAGE FAULT: rip=");
-        crate::print_hex(frame.rip);
+        crate::print_hex(&bridge, frame.rip);
         bridge.log(" cs=");
-        crate::print_hex(frame.cs);
+        crate::print_hex(&bridge, frame.cs);
         bridge.log(" rsp=");
-        crate::print_hex(frame.rsp);
+        crate::print_hex(&bridge, frame.rsp);
         bridge.log(" ss=");
-        crate::print_hex(frame.ss);
+        crate::print_hex(&bridge, frame.ss);
         bridge.log(" err=");
-        crate::print_hex(error_code.bits() as u64);
+        crate::print_hex(&bridge, error_code.bits() as u64);
         bridge.log(" cr2=");
-        crate::print_hex(cr2);
+        crate::print_hex(&bridge, cr2);
         // Peek a couple of user stack slots to see call chain
         let rsp_val = frame.rsp;
         if rsp_val != 0 {
@@ -116,14 +116,14 @@ pub extern "C" fn page_fault_handler(frame: &mut TrapFrame, error_code: PageFaul
             // Usually fine if we are careful.
             // let slot0 = unsafe { core::ptr::read(ptr) };
             // bridge.log(" stack[0]=");
-            // crate::print_hex(slot0);
+            // crate::print_hex(&bridge, slot0);
         }
         bridge.log("\n");
     }
 
     // Check hook first
     unsafe {
-        if let Some(hook) = crate::PAGE_FAULT_HOOK {
+        if let Some(hook) = crate::bridge::PAGE_FAULT_HOOK {
             // Note: Hook takes &InterruptStackFrame. Passing a dummy for now.
             let dummy = core::mem::zeroed::<InterruptStackFrame>();
             if hook(&dummy, cr2, error_code) {
@@ -358,7 +358,7 @@ unsafe extern "C" fn mouse_interrupt_naked() {
 #[no_mangle]
 extern "C" fn timer_interrupt_handler(frame: &mut TrapFrame) {
     unsafe {
-        crate::interrupts::apic::end_of_interrupt();
+        crate::bringup::interrupts::apic::end_of_interrupt();
     }
     trap::timer_tick(frame);
 }
@@ -372,7 +372,7 @@ extern "C" fn keyboard_interrupt_handler(_frame: &mut TrapFrame) {
         let mut port = Port::new(0x60);
         scancode = port.read();
 
-        crate::interrupts::apic::end_of_interrupt();
+        crate::bringup::interrupts::apic::end_of_interrupt();
     }
 
     // Debug: Increment and log occasionally (DISABLED)
@@ -401,7 +401,7 @@ extern "C" fn mouse_interrupt_handler(_frame: &mut TrapFrame) {
         use x86_64::instructions::port::Port;
         let mut port = Port::new(0x60);
         byte = port.read();
-        crate::interrupts::apic::end_of_interrupt();
+        crate::bringup::interrupts::apic::end_of_interrupt();
     }
     kernel::input::on_ps2_mouse(byte);
 }

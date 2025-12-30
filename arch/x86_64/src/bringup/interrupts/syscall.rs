@@ -1,4 +1,4 @@
-use crate::gdt::{
+use crate::bringup::gdt::{
     KERNEL_CODE_SELECTOR, KERNEL_DATA_SELECTOR, USER_CODE_SELECTOR, USER_DATA_SELECTOR,
 };
 use core::arch::naked_asm;
@@ -141,13 +141,13 @@ extern "C" fn syscall_dispatch(
         let saved_rsp = unsafe { *rsp.add(10) };
 
         bridge.log("SYSCALL entry num=");
-        crate::print_hex(num as u64);
+        crate::print_hex(&bridge, num as u64);
         bridge.log(" rip=");
-        crate::print_hex(saved_rip);
+        crate::print_hex(&bridge, saved_rip);
         bridge.log(" rflags=");
-        crate::print_hex(saved_flags);
+        crate::print_hex(&bridge, saved_flags);
         bridge.log(" ursp=");
-        crate::print_hex(saved_rsp);
+        crate::print_hex(&bridge, saved_rsp);
         bridge.log("\n");
     }
     unsafe {

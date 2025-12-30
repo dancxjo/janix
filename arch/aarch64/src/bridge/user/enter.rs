@@ -1,12 +1,24 @@
 //! Bridge user entry for AArch64.
 //!
-//! Stub on AArch64; required for API symmetry.
-//! The actual user transition lives in bringup/user/enter.rs.
+//! Forwarding layer from bridge to bringup implementation.
 
-/// Enter user mode.
+pub use crate::bringup::user::UserEntryRegs;
+pub use crate::bringup::user::enter::{
+    enter_user_mode,
+    resume_user_mode,
+    alloc_user_stack,
+    activate_address_space,
+};
+
+/// Enter user mode with the given parameters.
 ///
 /// # Safety
 /// Caller must ensure entry, stack_top, and arg0 are valid.
 pub unsafe fn enter_user(entry: u64, stack_top: u64, arg0: u64) -> ! {
-    crate::bringup::user::enter::enter_user(entry, stack_top, arg0)
+    let regs = UserEntryRegs {
+        entry_point: entry,
+        user_stack: stack_top,
+        arg0,
+    };
+    enter_user_mode(&regs)
 }

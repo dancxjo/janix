@@ -160,6 +160,15 @@ struct AlignedStack([u8; BOOT_STACK_SIZE]);
 #[unsafe(link_section = ".bss")]
 static mut BOOT_STACK: AlignedStack = AlignedStack([0; BOOT_STACK_SIZE]);
 
+/// Architecture entry point called from lib.rs Arch::boot().
+/// Forwards to the naked _start function.
+pub fn arch_entry() -> ! {
+    extern "C" {
+        fn _start() -> !;
+    }
+    unsafe { _start() }
+}
+
 #[cfg(target_os = "thingos")]
 #[no_mangle]
 #[unsafe(naked)]
@@ -482,7 +491,6 @@ fn syscall_hook(
                 // k.bridge.log("\n");
 
                 let hhdm_offset_u64 = k.bridge.hhdm_offset();
-                let (fb_phys, fb_size) = unsafe { FRAMEBUFFER_INFO.unwrap_or((0, 0)) };
 
                 loader::spawn_elf(
                     k,
@@ -492,8 +500,6 @@ fn syscall_hook(
                     0,
                     None, // Not force, rely on defaults
                     hhdm_offset_u64,
-                    fb_phys,
-                    fb_size,
                 );
                 return 0;
             }
@@ -743,7 +749,7 @@ unsafe extern "C" fn rust_main() -> ! {
             };
 
             let hhdm_offset = VirtAddr::new(hhdm_offset_u64);
-            let mut frame_allocator = heap::HeapFrameAllocator { hhdm_offset };
+            let mut frame_allocator = loader::HeapFrameAllocator { hhdm_offset };
             let (level_4_table_frame, _) = Cr3::read();
             let phys = level_4_table_frame.start_address();
             let virt = hhdm_offset + phys.as_u64();

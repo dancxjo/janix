@@ -743,6 +743,7 @@ dependencies = [
  "boot_screen",
  "infer",
  "kernel",
+ "lazy_static",
  "limine",
  "linked_list_allocator",
  "models",
@@ -750,6 +751,15 @@ dependencies = [
  "spin 0.10.0",
  "x86_64",
  "xmas-elf",
+]
+
+[[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+dependencies = [
+ "spin 0.9.8",
 ]
 
 [[package]]

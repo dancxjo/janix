@@ -324,58 +324,28 @@ pub fn process_file(
                  }
              }
              
-             unsafe {
-                 core::arch::asm!("msr ttbr0_el1, {}", in(reg) root_table);
-                 core::arch::asm!("isb"); 
-                 k.bridge.log("loader: Activated TTBR0\n");
-             }
-             
-             struct TrampolineArgs {
-                 entry: u64,
-                 stack: u64,
-                 root: u64,
-             }
-             let t_args = Box::new(TrampolineArgs {
-                 entry: current_app_base + img.entry_point,
-                 stack: stack_top,
-                 root: root_table,
-             });
-             let t_ptr = Box::into_raw(t_args) as u64;
-             
+            unsafe {
+                core::arch::asm!("msr ttbr0_el1, {}", in(reg) root_table);
+                core::arch::asm!("isb"); 
+                k.bridge.log("loader: Activated TTBR0\n");
+            }
+
              unsafe {
                  k.bridge.log("loader: computed entry: ");
                  k.bridge.log(alloc::format!("{:#x}", current_app_base + img.entry_point).as_str());
                  k.bridge.log("\n");
              }
-             
+
+             // Spawn user thread directly (no trampoline). Pass heap start as arg like x86 path.
              k.scheduler.spawn(
                  &k.bridge,
                  name,
-                 trampoline as *const () as usize as u64,
-                 0,
-                 t_ptr,
-                 0, 0
+                 current_app_base + img.entry_point,
+                 stack_top,
+                 heap_start,
+                 heap_start,
+                 heap_end,
              );
         }
-    }
-}
-
-struct TrampolineArgs {
-    entry: u64,
-    stack: u64,
-    root: u64,
-}
-
-pub extern "C" fn trampoline(arg: u64) {
-    let args = unsafe { Box::from_raw(arg as *mut TrampolineArgs) };
-    unsafe {
-       Bridge.log("trampoline: jumping to: ");
-       Bridge.log(alloc::format!("{:#x}", args.entry).as_str());
-       Bridge.log("\n");
-
-       core::arch::asm!("msr ttbr0_el1, {}", in(reg) args.root);
-       core::arch::asm!("isb"); 
-       
-       bridge_aarch64::cpu::enter_user_mode(args.entry, args.stack, 0);
     }
 }

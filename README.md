@@ -64,7 +64,8 @@ The ISO will appear under:
 ### Run in QEMU
 
 ```sh
-just run x86_64
+just run x86_64 # no screen
+just play aarch64 # qemu screen visible
 ```
 
 You should see:

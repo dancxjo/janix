@@ -79,6 +79,14 @@ impl Machine {
         }
     }
 
+    /// Check process buffers for validity.
+    /// 
+    /// Stub implementation for v0.2 MVP. Returns Ok always.
+    /// TODO: Implement proper buffer validation when IPC is ready.
+    pub fn check_buffers(&self, _pid: abi::ProcessId) -> Result<(), MachineError> {
+        Ok(())
+    }
+
     pub fn register_builtin(
         &mut self,
         iface: SymbolId,

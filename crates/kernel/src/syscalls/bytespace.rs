@@ -62,7 +62,7 @@ pub fn sys_bytespace_map<B: HardwareBridge>(
 
     // Align checks
     if !req.offset.is_multiple_of(4096) {
-        return abi::syscall_defs::SYS_EINVAL as isize;
+        return abi::errno::neg(abi::errno::Errno::EINVAL);
     }
 
     // Determine number of pages

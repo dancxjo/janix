@@ -11,6 +11,7 @@ pub use ids::{GraphId, ProcessId, ThingId, ThreadId};
 pub use memory::*;
 pub use symbols::SymbolId;
 
+pub mod errno;
 pub mod syscall_defs;
 pub use syscall_defs::*;
 

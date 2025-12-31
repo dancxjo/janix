@@ -5,6 +5,7 @@ members = [
     "crates/kernel",
     "crates/sprout",
     "tools/bdd",
+    "tools/ci-bdd-runner",
 ]
 
 [workspace.package]

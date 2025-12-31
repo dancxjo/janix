@@ -1,0 +1,18 @@
+[package]
+name = "ci-bdd-runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+cucumber = "0.22"
+tokio-util = "0.7"
+futures = "0.3"
+lazy_static = "1.4"
+rand = "0.8"
+uuid = { version = "1.0", features = ["v4"] }

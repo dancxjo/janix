@@ -304,4 +304,4 @@ distclean: clean
 
 .PHONY: bdd
 bdd:
-	cargo test -p bdd --test bdd
+	cargo run -p ci-bdd-runner

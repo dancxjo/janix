@@ -1,0 +1,186 @@
+use anyhow::{Context, Result};
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::UnixStream;
+use tokio::process::{Child, Command};
+use tokio::time::{sleep, Duration};
+
+use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+
+pub struct QemuProcess {
+    child: Child,
+    qmp_sock_path: PathBuf,
+    qmp_reader: Option<BufReader<OwnedReadHalf>>,
+    qmp_writer: Option<OwnedWriteHalf>,
+    pub log_buffer: Arc<Mutex<String>>,
+}
+
+impl QemuProcess {
+    pub async fn spawn(
+        arch: &str,
+        iso_path: &Path,
+        ovmf_code: &Path,
+        ovmf_vars: &Path,
+        qmp_sock_path: &Path,
+    ) -> Result<Self> {
+        let qemu_bin = match arch {
+            "x86_64" => "qemu-system-x86_64",
+            "aarch64" => "qemu-system-aarch64",
+            "riscv64" => "qemu-system-riscv64",
+            "loongarch64" => "qemu-system-loongarch64",
+            _ => anyhow::bail!("Unsupported architecture: {}", arch),
+        };
+
+        let mut args = vec![
+            "-m".to_string(), "2G".to_string(),
+            "-display".to_string(), "none".to_string(),
+            "-serial".to_string(), "stdio".to_string(),
+            "-no-reboot".to_string(),
+            "-qmp".to_string(), format!("unix:{},server,nowait", qmp_sock_path.display()),
+        ];
+
+        match arch {
+            "x86_64" => {
+                args.extend_from_slice(&[
+                    "-M".to_string(), "q35".to_string(),
+                    "-drive".to_string(), format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
+                    "-drive".to_string(), format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                    "-cdrom".to_string(), iso_path.to_string_lossy().to_string(),
+                    "-device".to_string(), "isa-debug-exit,iobase=0xf4,iosize=0x04".to_string(),
+                ]);
+            }
+            "aarch64" => {
+                args.extend_from_slice(&[
+                    "-M".to_string(), "virt".to_string(),
+                    "-cpu".to_string(), "cortex-a72".to_string(),
+                    "-device".to_string(), "ramfb".to_string(),
+                    "-device".to_string(), "qemu-xhci".to_string(),
+                    "-device".to_string(), "usb-kbd".to_string(),
+                    "-device".to_string(), "usb-mouse".to_string(),
+                    "-drive".to_string(), format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
+                    "-drive".to_string(), format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                    "-cdrom".to_string(), iso_path.to_string_lossy().to_string(),
+                ]);
+            }
+            _ => {}
+        }
+
+        println!("Spawning QEMU: {} {}", qemu_bin, args.join(" "));
+
+        let mut child = Command::new(qemu_bin)
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("Failed to spawn QEMU")?;
+
+        let stdout = child.stdout.take().context("Failed to take stdout")?;
+        let log_buffer = Arc::new(Mutex::new(String::new()));
+        let log_clone = log_buffer.clone();
+
+        tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                // Echo to stdout for user visibility
+                println!("{}", line);
+
+                let mut buf = log_clone.lock().unwrap();
+                buf.push_str(&line);
+                buf.push('\n');
+            }
+        });
+
+        Ok(Self {
+            child,
+            qmp_sock_path: qmp_sock_path.to_path_buf(),
+            qmp_reader: None,
+            qmp_writer: None,
+            log_buffer,
+        })
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.qmp_writer.is_some()
+    }
+
+    pub async fn connect_qmp(&mut self) -> Result<()> {
+        let start = std::time::Instant::now();
+        loop {
+            if start.elapsed() > Duration::from_secs(5) {
+                anyhow::bail!("Timeout waiting for QMP socket");
+            }
+            match UnixStream::connect(&self.qmp_sock_path).await {
+                Ok(stream) => {
+                    let (read_half, mut write_half) = stream.into_split();
+                    let mut reader = BufReader::new(read_half);
+                    
+                    // Handshake
+                    let mut line = String::new();
+                    reader.read_line(&mut line).await.context("Failed to read QMP greeting")?;
+
+                    write_half.write_all(br#"{"execute": "qmp_capabilities"}"#).await?;
+                    write_half.write_all(b"\n").await?;
+
+                    line.clear();
+                    reader.read_line(&mut line).await.context("Failed to read QMP capabilities response")?;
+                    if !line.contains("return") {
+                        anyhow::bail!("QMP handshake failed: {}", line);
+                    }
+
+                    self.qmp_reader = Some(reader);
+                    self.qmp_writer = Some(write_half);
+                    break;
+                }
+                Err(_) => {
+                    sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn screendump(&mut self, path: &Path) -> Result<()> {
+        if let (Some(writer), Some(reader)) = (&mut self.qmp_writer, &mut self.qmp_reader) {
+            let abs_path = if path.is_absolute() {
+                path.to_string_lossy().to_string()
+            } else {
+                std::env::current_dir()?.join(path).to_string_lossy().to_string()
+            };
+
+            let cmd = format!(r#"{{"execute": "screendump", "arguments": {{"filename": "{}"}}}}"#, abs_path);
+            writer.write_all(cmd.as_bytes()).await?;
+            writer.write_all(b"\n").await?;
+
+            // Read output
+            // QMP screendump returns `{"return": {}}` or error.
+            // We need to read lines until we find a return.
+            // But usually it's the next line.
+            
+            let mut line = String::new();
+            reader.read_line(&mut line).await?;
+            
+            if !line.contains("return") {
+                 // Might start with error?
+                 if line.contains("error") {
+                     eprintln!("QMP screendump error: {}", line);
+                 }
+            }
+            return Ok(());
+        }
+        anyhow::bail!("QMP not connected")
+    }
+
+    pub async fn kill(&mut self) -> Result<()> {
+        self.child.kill().await.context("Failed to kill QEMU")
+    }
+}
+
+impl Drop for QemuProcess {
+    fn drop(&mut self) {
+        // Attempt to kill QEMU when dropped
+        let _ = self.child.start_kill();
+    }
+}

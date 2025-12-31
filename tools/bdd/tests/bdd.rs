@@ -136,6 +136,7 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
 
     cmd.stdout(Stdio::piped())
        .stderr(Stdio::piped())
+       .kill_on_drop(true)
        .current_dir(&root);
 
     // 4. Run QEMU and capture output
@@ -169,6 +170,7 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
             }).await;
 
             let _ = child.kill().await;
+            let _ = child.wait().await;
 
             let captured = output_buffer.lock().expect("Failed to lock output buffer").clone();
             

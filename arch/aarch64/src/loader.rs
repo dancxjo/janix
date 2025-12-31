@@ -1,6 +1,7 @@
 use abi::ThingId;
 use crate::bridge::Bridge;
 use crate::user_space::Aarch64UserSpace;
+use kernel::arch::user_space::UserSpace;
 use kernel::sched::spawn::{spawn_user_elf, FramebufferMap};
 use kernel::Kernel;
 use kernel::bridge::CpuBridge;

@@ -15,6 +15,7 @@ pub mod loader;
 pub mod memory_intrinsics;
 pub mod paging;
 pub mod simd;
+pub mod user_space;
 
 // Re-export key items for convenience
 pub use bridge::{set_page_fault_hook, set_tick_hook, Bridge, PAGE_FAULT_HOOK, TICK_HOOK};

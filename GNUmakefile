@@ -168,7 +168,7 @@ run-hdd-bios: $(IMAGE_NAME).hdd
 		$(QEMUFLAGS)
 
 # OVMF pinned release - the latest drops occasionally regress
-OVMF_RELEASE ?= edk2-stable202411-r1
+OVMF_RELEASE ?= edk2-stable202508-r1
 OVMF_ARCHIVE = $(OVMF_RELEASE)-bin.tar.xz
 OVMF_URL = https://github.com/rust-osdev/ovmf-prebuilt/releases/download/$(OVMF_RELEASE)/$(OVMF_ARCHIVE)
 
@@ -196,6 +196,13 @@ ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd: ovmf/$(OVMF_ARCHIVE)
 	mv ovmf/riscv64/code.fd ovmf/ovmf-code-riscv64.fd
 	mv ovmf/riscv64/vars.fd ovmf/ovmf-vars-riscv64.fd
 	rmdir ovmf/riscv64
+
+ovmf/ovmf-code-loongarch64.fd ovmf/ovmf-vars-loongarch64.fd: ovmf/$(OVMF_ARCHIVE)
+	mkdir -p ovmf
+	tar -xJf ovmf/$(OVMF_ARCHIVE) -C ovmf --strip-components=1 $(OVMF_RELEASE)-bin/loongarch64/code.fd $(OVMF_RELEASE)-bin/loongarch64/vars.fd
+	mv ovmf/loongarch64/code.fd ovmf/ovmf-code-loongarch64.fd
+	mv ovmf/loongarch64/vars.fd ovmf/ovmf-vars-loongarch64.fd
+	rmdir ovmf/loongarch64
 
 
 limine/limine:

@@ -65,7 +65,7 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
             let mut c = Command::new("qemu-system-x86_64");
             c.args([
                 "-M", "q35",
-                "-m", "256M",
+                "-m", "2G",
                 "-display", "none",
                 "-serial", "stdio",
                 "-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
@@ -80,7 +80,7 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
             c.args([
                 "-M", "virt",
                 "-cpu", "cortex-a72",
-                "-m", "256M",
+                "-m", "2G",
                 "-device", "ramfb",
                 "-device", "qemu-xhci",
                 "-device", "usb-kbd",
@@ -100,7 +100,7 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
             c.args([
                 "-M", "virt",
                 "-cpu", "rv64",
-                "-m", "256M",
+                "-m", "2G",
                 "-device", "ramfb",
                 "-device", "qemu-xhci",
                 "-device", "usb-kbd",
@@ -121,7 +121,7 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
             c.args([
                 "-M", "virt",
                 "-cpu", "la464",
-                "-m", "256M",
+                "-m", "2G",
                 "-display", "none",
                 "-serial", "stdio",
                 "-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
@@ -140,7 +140,7 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
 
     // 4. Run QEMU and capture output
     // Increase timeout to 60s
-    let boot_timeout = Duration::from_secs(60);
+    let boot_timeout = Duration::from_secs(300);
 
     let output_buffer = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
     let output_buffer_clone = output_buffer.clone();

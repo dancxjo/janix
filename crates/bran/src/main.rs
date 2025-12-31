@@ -91,31 +91,13 @@ fn early_putc(c: u8) {
             // COM1 (0x3F8) - I/O ports don't use paging
             asm!("out dx, al", in("dx") 0x3F8u16, in("al") c, options(nomem, nostack, preserves_flags));
         }
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64", target_arch = "loongarch64"))]
         {
-            // PL011 (0x0900_0000)
-            let addr = 0x0900_0000 + hhdm_offset;
-            // Only attempt write if we have a non-zero offset (likely mapped) or if we are desperate
-            // Writing to 0x0900_0000 virtual (if hhdm_offset is 0) will fault.
-            if hhdm_offset != 0 {
-                 core::ptr::write_volatile(addr as *mut u32, c as u32);
-            }
-        }
-        #[cfg(target_arch = "riscv64")]
-        {
-            // 16550 (0x1000_0000)
-            let addr = 0x1000_0000 + hhdm_offset;
-            if hhdm_offset != 0 {
-                 core::ptr::write_volatile(addr as *mut u8, c);
-            }
-        }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            // 16550 (0x1fe001e0)
-            let addr = 0x1fe001e0 + hhdm_offset;
-            if hhdm_offset != 0 {
-                 core::ptr::write_volatile(addr as *mut u8, c);
-            }
+            // Direct MMIO write is unsafe here because HHDM likely doesn't map MMIO regions (only RAM).
+            // Writing to (HHDM + Phys) causes a Page Fault if the page is not mapped.
+            // Since Bran is too simple to set up page tables, and Limine Terminal is not available,
+            // we must remain silent during Bran stage on these architectures.
+            // Control will be handed to Kernel, which will map UART properly.
         }
     }
 }

@@ -1,7 +1,0 @@
-[package]
-name = "limine-rust-template"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-limine = "0.5"

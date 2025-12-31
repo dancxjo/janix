@@ -47,6 +47,9 @@ pub struct BootContext {
 /// ctx is a Bag of Facts (no behavior).
 /// This function never returns.
 pub fn boot(ctx: &'static mut BootContext) -> ! {
+    // Phase 0: Initialize serial mapping (CRITICAL for MMIO architectures)
+    crate::serial::init(ctx.hhdm_offset);
+
     // Phase 1: Initialize logging (enables debug output)
     log::init(ctx);
     

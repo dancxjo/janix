@@ -18,6 +18,11 @@ pub fn putc(c: u8) {
     SERIAL.putc(c);
 }
 
+pub fn init(hhdm_offset: u64) {
+    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+    SERIAL.init(hhdm_offset);
+}
+
 pub fn write(bytes: &[u8]) {
     SERIAL.write(bytes);
 }

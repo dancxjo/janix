@@ -9,6 +9,6 @@ Feature: Boot milestones
       | x86_64      |
       | aarch64     |
       | riscv64     |
-      # | loongarch64 |
+      | loongarch64 |
 
 

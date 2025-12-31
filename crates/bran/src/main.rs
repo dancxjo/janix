@@ -29,6 +29,8 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[unsafe(link_section = ".requests")]
 static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
+
+
 #[used]
 #[unsafe(link_section = ".requests")]
 static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
@@ -93,11 +95,12 @@ fn early_putc(c: u8) {
         }
         #[cfg(any(target_arch = "aarch64", target_arch = "riscv64", target_arch = "loongarch64"))]
         {
-            // Direct MMIO write is unsafe here because HHDM likely doesn't map MMIO regions (only RAM).
-            // Writing to (HHDM + Phys) causes a Page Fault if the page is not mapped.
-            // Since Bran is too simple to set up page tables, and Limine Terminal is not available,
-            // we must remain silent during Bran stage on these architectures.
-            // Control will be handed to Kernel, which will map UART properly.
+            // Direct MMIO write is unsafe if unmapped. 
+            // We cannot use Limine Terminal (unavailable in crate 0.5.0).
+            // So we remain silent in Bran.
+            
+            // Note: Kernel tries to use HHDM offset to print. 
+            // If HHDM doesn't map MMIO, Kernel will also be silent/crash.
         }
     }
 }

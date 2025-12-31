@@ -1,8 +1,9 @@
 //! aarch64 PL011 UART driver
 
 use core::ptr;
+use core::sync::atomic::{AtomicU64, Ordering};
 
-const PL011_BASE: usize = 0x0900_0000;
+static BASE: AtomicU64 = AtomicU64::new(0x0900_0000);
 
 pub struct Serial;
 
@@ -11,9 +12,17 @@ impl Serial {
         Self
     }
 
+    pub fn init(&self, offset: u64) {
+        BASE.store(0x0900_0000 + offset, Ordering::Relaxed);
+    }
+
+    fn base(&self) -> u64 {
+        BASE.load(Ordering::Relaxed)
+    }
+
     fn is_transmit_ready(&self) -> bool {
         unsafe {
-            let fr = ptr::read_volatile((PL011_BASE + 0x18) as *const u32);
+            let fr = ptr::read_volatile((self.base() + 0x18) as *const u32);
             (fr & (1 << 5)) == 0
         }
     }
@@ -23,7 +32,7 @@ impl Serial {
             core::hint::spin_loop();
         }
         unsafe {
-            ptr::write_volatile((PL011_BASE + 0x00) as *mut u32, c as u32);
+            ptr::write_volatile((self.base() + 0x00) as *mut u32, c as u32);
         }
     }
 

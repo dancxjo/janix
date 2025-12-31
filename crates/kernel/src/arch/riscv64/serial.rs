@@ -1,8 +1,9 @@
 //! riscv64 16550 UART driver
 
 use core::ptr;
+use core::sync::atomic::{AtomicU64, Ordering};
 
-const UART_BASE: usize = 0x1000_0000;
+static BASE: AtomicU64 = AtomicU64::new(0x1000_0000);
 
 pub struct Serial;
 
@@ -11,9 +12,17 @@ impl Serial {
         Self
     }
 
+    pub fn init(&self, offset: u64) {
+        BASE.store(0x1000_0000 + offset, Ordering::Relaxed);
+    }
+
+    fn base(&self) -> u64 {
+        BASE.load(Ordering::Relaxed)
+    }
+
     fn is_transmit_ready(&self) -> bool {
         unsafe {
-            let lsr = ptr::read_volatile((UART_BASE + 0x05) as *const u8);
+            let lsr = ptr::read_volatile((self.base() + 0x05) as *const u8);
             (lsr & 0x20) != 0
         }
     }
@@ -23,7 +32,7 @@ impl Serial {
             core::hint::spin_loop();
         }
         unsafe {
-            ptr::write_volatile((UART_BASE + 0x00) as *mut u8, c);
+            ptr::write_volatile((self.base() + 0x00) as *mut u8, c);
         }
     }
 

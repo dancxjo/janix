@@ -256,7 +256,7 @@ ifeq ($(KARCH),riscv64)
 endif
 ifeq ($(KARCH),loongarch64)
 	cp -v limine/limine-uefi-cd.bin iso_root_$(KARCH)/boot/limine/
-	# cp -v limine/BOOTLOONGARCH64.EFI iso_root_$(KARCH)/EFI/BOOT/
+	cp -v limine/BOOTLOONGARCH64.EFI iso_root_$(KARCH)/EFI/BOOT/
 	xorriso -as mkisofs \
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
@@ -287,7 +287,7 @@ ifeq ($(KARCH),riscv64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTRISCV64.EFI ::/EFI/BOOT
 endif
 ifeq ($(KARCH),loongarch64)
-	# mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT
+	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT
 endif
 
 .PHONY: clean

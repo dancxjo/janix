@@ -22,6 +22,14 @@ async fn main() -> anyhow::Result<()> {
     let feature_str = env::var("FEATURE_PATH").unwrap_or_else(|_| "tools/bdd/features".to_string());
     let feature_path = PathBuf::from(feature_str);
 
+    // Install panic hook
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("Panic occurred: {:?}", info);
+        if let Some(s) = info.payload().downcast_ref::<&str>() {
+            eprintln!("Panic payload: {}", s);
+        }
+    }));
+
     println!("Starting CI BDD Runner for arch: {}", arch);
     println!("Artifacts will be saved to: {}", out.display());
     println!("Running features from: {}", feature_path.display());
@@ -43,15 +51,20 @@ async fn main() -> anyhow::Result<()> {
         step_index: 0,
     };
 
+    println!("Starting Cucumber...");
     BootWorld::cucumber()
         .max_concurrent_scenarios(1)
         .with_writer(writer)
         .run(feature_path)
         .await;
+    println!("Cucumber finished.");
 
     println!("Generating report...");
-    report::generate_report(&out)?;
-    println!("Report generated at {}/index.md", out.display());
+    match report::generate_report(&out) {
+        Ok(_) => println!("Report generated at {}/index.md", out.display()),
+        Err(e) => eprintln!("Failed to generate report: {:?}", e),
+    }
+    println!("Done.");
     
     Ok(())
 }

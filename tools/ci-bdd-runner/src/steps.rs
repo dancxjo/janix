@@ -83,7 +83,12 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) -> Result<()> {
 #[then(expr = "I expect to see {string} in the serial console")]
 async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Result<()> {
     // Wait for output to appear (up to timeout)
-    let timeout = Duration::from_secs(120);
+    let timeout_secs = std::env::var("BDD_TIMEOUT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
+    let timeout = Duration::from_secs(timeout_secs);
+    println!("Waiting for serial output (timeout: {}s)...", timeout_secs);
     let start = std::time::Instant::now();
     
     loop {
@@ -113,6 +118,15 @@ async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Resul
         }
 
         if start.elapsed() > timeout {
+            // Kill QEMU before erroring to prevent writer from trying to snapshot a hung process
+            {
+                 let mut guard = GLOBAL_QEMU.lock().await;
+                 if let Some(qemu) = guard.as_mut() {
+                     println!("Timeout reached ({}s). Killing QEMU...", timeout_secs);
+                     let _ = qemu.kill().await;
+                 }
+            }
+
             return Err(anyhow!(
                 "Expected '{}' in serial output. Got:\n--- START ---\n{}\n--- END ---",
                 expected, log_text

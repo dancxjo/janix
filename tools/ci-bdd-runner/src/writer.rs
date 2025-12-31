@@ -99,11 +99,6 @@ impl cucumber::writer::Normalized for ArtifactWriter {}
 
 impl ArtifactWriter {
     async fn capture_artifact(&self, step_text: &str, status: &str) {
-        // ... (slugify setup) ...
-        // I'll assume capture_artifact internal logic is fine, but I need to call qemu properly.
-        // Let's replace only handle_event first, assuming capture_artifact is below.
-        // Wait, I need to replace capture_artifact too because of `qemu.qmp_stream.is_none()` usage.
-        
         let feature_slug = slugify(&self.current_feature);
         let scenario_slug = slugify(&self.current_scenario);
         let step_slug = format!("{:03}_{}", self.step_index, slugify(step_text));
@@ -137,6 +132,7 @@ impl ArtifactWriter {
             },
         };
 
+
         // Take screenshot and grab log
         let mut guard = GLOBAL_QEMU.lock().await;
         if let Some(qemu) = guard.as_mut() {
@@ -146,34 +142,30 @@ impl ArtifactWriter {
             }
 
             // Screenshot
-            // Screenshot
             let screen_path_ppm = step_dir.join("screen.ppm");
-            let screen_path_png = step_dir.join("screen.png");
             
             if qemu.screendump(&screen_path_ppm).await.is_ok() {
                  if screen_path_ppm.exists() {
-                    // Convert to PNG using the image crate
-                    // We spawn blocking because image conversion is CPU intensive
-                    // and we don't want to block the async runtime logic too much, 
-                    // though for this tool it's likely fine.
-                    let ppm_path = screen_path_ppm.clone();
-                    let png_path = screen_path_png.clone();
-                    
-                    let conversion_result = tokio::task::spawn_blocking(move || {
-                        if let Ok(img) = image::open(&ppm_path) {
-                            if img.save(&png_path).is_ok() {
-                                return true;
-                            }
-                        }
-                        false
-                    }).await;
+                     let ppm_path = screen_path_ppm.clone();
+                     let png_path = step_dir.join("screen.png");
+                     
+                     let conversion_result = tokio::task::spawn_blocking(move || {
+                         if let Ok(img) = image::open(&ppm_path) {
+                             if img.save(&png_path).is_ok() {
+                                 return true;
+                             }
+                         }
+                         false
+                     }).await;
 
-                    if let Ok(true) = conversion_result {
-                         meta.artifacts.screenshot = Some("screen.png".to_string());
-                         let _ = std::fs::remove_file(&screen_path_ppm);
-                    }
+                     if let Ok(true) = conversion_result {
+                          meta.artifacts.screenshot = Some("screen.png".to_string());
+                          let _ = std::fs::remove_file(&screen_path_ppm);
+                     }
                  }
             }
+
+            // Log tail
 
             // Log tail
             if let Ok(log) = qemu.log_buffer.lock() {
@@ -186,8 +178,16 @@ impl ArtifactWriter {
         }
         
         let meta_path = step_dir.join("meta.json");
-        let file = fs::File::create(meta_path).unwrap();
-        serde_json::to_writer_pretty(file, &meta).unwrap();
+        match fs::File::create(&meta_path) {
+            Ok(file) => {
+                if let Err(e) = serde_json::to_writer_pretty(file, &meta) {
+                    eprintln!("Failed to write meta.json: {}", e);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to create meta.json at {}: {}", meta_path.display(), e);
+            }
+        }
     }
 }
 

@@ -191,40 +191,49 @@ impl ArtifactWriter {
             // Screenshot
             let screen_path_ppm = step_dir.join("screen.ppm");
 
-            match qemu.screendump(&screen_path_ppm).await {
-                Ok(_) => {
-                    if screen_path_ppm.exists() {
-                        let ppm_path = screen_path_ppm.clone();
-                        let png_path = step_dir.join("screen.png");
+            let dump_res = qemu.screendump(&screen_path_ppm).await;
 
-                        let conversion_result = tokio::task::spawn_blocking(move || {
-                            let res = (|| -> anyhow::Result<()> {
-                                let img = image::open(&ppm_path)
-                                    .map_err(|e| anyhow::anyhow!("Open failed: {}", e))?;
-                                img.save(&png_path)
-                                    .map_err(|e| anyhow::anyhow!("Save failed: {}", e))?;
-                                Ok(())
-                            })();
-                            res
-                        })
-                        .await;
+            if let Ok(_) = dump_res {
+                if screen_path_ppm.exists() {
+                    // Give filesystem a moment to flush?
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-                        match conversion_result {
-                            Ok(Ok(_)) => {
-                                meta.artifacts.screenshot = Some("screen.png".to_string());
-                            }
-                            Ok(Err(e)) => {
-                                eprintln!("Image conversion failed: {}", e);
-                            }
-                            Err(e) => {
-                                eprintln!("Image conversion task panicked: {}", e);
-                            }
+                    let ppm_path = screen_path_ppm.clone();
+                    let png_path = step_dir.join("screen.png");
+
+                    let conversion_result = tokio::task::spawn_blocking(move || {
+                        let res = (|| -> anyhow::Result<()> {
+                            let img = image::open(&ppm_path)
+                                .map_err(|e| anyhow::anyhow!("Open failed: {}", e))?;
+                            img.save(&png_path)
+                                .map_err(|e| anyhow::anyhow!("Save failed: {}", e))?;
+                            Ok(())
+                        })();
+                        res
+                    })
+                    .await;
+
+                    match conversion_result {
+                        Ok(Ok(_)) => {
+                            meta.artifacts.screenshot = Some("screen.png".to_string());
                         }
-                        // Always clean up PPM
-                        let _ = std::fs::remove_file(&screen_path_ppm);
+                        Ok(Err(e)) => {
+                            eprintln!("Image conversion failed: {}", e);
+                        }
+                        Err(e) => {
+                            eprintln!("Image conversion task panicked: {}", e);
+                        }
                     }
                 }
-                Err(_) => {}
+            } else if let Err(e) = dump_res {
+                eprintln!("Screendump failed: {}", e);
+            }
+
+            // Always clean up PPM, even on failure, as it might be partial
+            if screen_path_ppm.exists() {
+                if let Err(e) = std::fs::remove_file(&screen_path_ppm) {
+                    eprintln!("Failed to remove PPM: {}", e);
+                }
             }
 
             // Log tail

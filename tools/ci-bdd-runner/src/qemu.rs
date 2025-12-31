@@ -216,7 +216,7 @@ impl QemuProcess {
     }
 
     pub async fn screendump(&mut self, path: &Path) -> Result<()> {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             if let (Some(writer), Some(reader)) = (&mut self.qmp_writer, &mut self.qmp_reader) {
                 let abs_path = if path.is_absolute() {
                     path.to_string_lossy().to_string()

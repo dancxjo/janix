@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 limine = "0.5"
+kernel = { path = "../kernel" }
+

@@ -4,6 +4,8 @@ MAKEFLAGS += -rR
 
 # Sprout is a user-mode process.
 override OUTPUT := sprout
+override OUTPUT_DIR = bin-$(KARCH)
+override OUTPUT_PATH = $(OUTPUT_DIR)/$(OUTPUT)
 
 # Convenience macro to reliably declare user overridable variables.
 override USER_VARIABLE = $(if $(filter $(origin $(1)),default undefined),$(eval override $(1) := $(2)))
@@ -33,13 +35,14 @@ all:
 	# Use PIE for user-space applications to allow loading at any address
 	# -C link-arg=-pie is valid for lld on some targets, or just relocation-model=pic
 	RUSTFLAGS="-C relocation-model=pic -C link-arg=-pie" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE)
-	cp ../../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/sprout $(OUTPUT)
+	mkdir -p $(OUTPUT_DIR)
+	cp ../../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/sprout $(OUTPUT_PATH)
 
 # Remove object files and the final executable.
 .PHONY: clean
 clean:
 	cargo clean
-	rm -rf $(OUTPUT)
+	rm -rf bin-*
 
 .PHONY: distclean
 distclean: clean

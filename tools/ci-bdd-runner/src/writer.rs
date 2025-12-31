@@ -1,5 +1,5 @@
-use crate::shared::{GLOBAL_QEMU, GLOBAL_LAST_ERROR};
-use cucumber::event::{Event, Cucumber};
+use crate::shared::{GLOBAL_LAST_ERROR, GLOBAL_QEMU};
+use cucumber::event::{Cucumber, Event};
 use cucumber::Writer;
 use serde::Serialize;
 use std::fs;
@@ -64,18 +64,25 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                         self.current_scenario = s.name.clone();
                         match retryable_scenario.event {
                             Scenario::Started => {
+                                println!(
+                                    "\nFeature: {}  Scenario: {}",
+                                    self.current_feature, self.current_scenario
+                                );
                                 self.step_index = 0;
                             }
                             Scenario::Step(step, step_event) => {
                                 match step_event {
+                                    Step::Started => {
+                                        println!("→ Step {}: {}", self.step_index + 1, step.value);
+                                    }
                                     Step::Passed(..) | Step::Failed(..) | Step::Skipped => {
                                         let mut status = match step_event {
                                             Step::Passed(..) => "passed",
                                             Step::Failed(..) => "failed",
                                             Step::Skipped => "skipped",
-                                            _ => "unknown",
+                                            Step::Started => unreachable!(),
                                         };
-                                        
+
                                         // Check for soft fail
                                         if status == "passed" {
                                             let guard = GLOBAL_LAST_ERROR.lock().await;
@@ -85,20 +92,32 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                                             }
                                         }
 
+                                        let status_label = match status {
+                                            "passed" => "PASS",
+                                            "failed" => "FAIL",
+                                            "skipped" => "SKIP",
+                                            _ => "???",
+                                        };
+                                        println!(
+                                            "[{}] Step {}: {}",
+                                            status_label,
+                                            self.step_index + 1,
+                                            step.value
+                                        );
+
                                         self.capture_artifact(&step.value, status).await;
-                                        
-                                        // Clear error after handling step? 
+
+                                        // Clear error after handling step?
                                         // Actually, we want to clear it so next step doesn't inherit failure.
-                                        // But if we returned Ok, cucumber continues. 
+                                        // But if we returned Ok, cucumber continues.
                                         // So we need to reset it.
                                         {
-                                             let mut guard = GLOBAL_LAST_ERROR.lock().await;
-                                             *guard = None;
+                                            let mut guard = GLOBAL_LAST_ERROR.lock().await;
+                                            *guard = None;
                                         }
 
                                         self.step_index += 1;
                                     }
-                                    _ => {}
                                 }
                             }
                             Scenario::Finished => {
@@ -131,7 +150,8 @@ impl ArtifactWriter {
         let scenario_slug = slugify(&self.current_scenario);
         let step_slug = format!("{:03}_{}", self.step_index, slugify(step_text));
 
-        let step_dir = self.out_dir
+        let step_dir = self
+            .out_dir
             .join(&self.arch)
             .join(&feature_slug)
             .join(&scenario_slug)
@@ -160,61 +180,71 @@ impl ArtifactWriter {
             },
         };
 
-
         // Take screenshot and grab log
         let mut guard = GLOBAL_QEMU.lock().await;
         if let Some(qemu) = guard.as_mut() {
             // Re-connect if steam is Missing?
             if !qemu.is_connected() {
-                 let _ = qemu.connect_qmp().await;
+                let _ = qemu.connect_qmp().await;
             }
 
             // Screenshot
             let screen_path_ppm = step_dir.join("screen.ppm");
-            
+
             match qemu.screendump(&screen_path_ppm).await {
                 Ok(_) => {
-                     if screen_path_ppm.exists() {
-                         let ppm_path = screen_path_ppm.clone();
-                         let png_path = step_dir.join("screen.png");
-                         
-                         let conversion_result = tokio::task::spawn_blocking(move || {
-                             let res = (|| -> anyhow::Result<()> {
-                                 let img = image::open(&ppm_path).map_err(|e| anyhow::anyhow!("Open failed: {}", e))?;
-                                 img.save(&png_path).map_err(|e| anyhow::anyhow!("Save failed: {}", e))?;
-                                 Ok(())
-                             })();
-                             res
-                         }).await;
+                    if screen_path_ppm.exists() {
+                        let ppm_path = screen_path_ppm.clone();
+                        let png_path = step_dir.join("screen.png");
 
-                         match conversion_result {
-                             Ok(Ok(_)) => {
-                                 meta.artifacts.screenshot = Some("screen.png".to_string());
-                             }
-                             Ok(Err(e)) => {
-                                 eprintln!("Image conversion failed: {}", e);
-                             }
-                             Err(e) => {
-                                 eprintln!("Image conversion task panicked: {}", e);
-                             }
-                         }
-                         // Always clean up PPM
-                         let _ = std::fs::remove_file(&screen_path_ppm);
-                     }
+                        let conversion_result = tokio::task::spawn_blocking(move || {
+                            let res = (|| -> anyhow::Result<()> {
+                                let img = image::open(&ppm_path)
+                                    .map_err(|e| anyhow::anyhow!("Open failed: {}", e))?;
+                                img.save(&png_path)
+                                    .map_err(|e| anyhow::anyhow!("Save failed: {}", e))?;
+                                Ok(())
+                            })();
+                            res
+                        })
+                        .await;
+
+                        match conversion_result {
+                            Ok(Ok(_)) => {
+                                meta.artifacts.screenshot = Some("screen.png".to_string());
+                            }
+                            Ok(Err(e)) => {
+                                eprintln!("Image conversion failed: {}", e);
+                            }
+                            Err(e) => {
+                                eprintln!("Image conversion task panicked: {}", e);
+                            }
+                        }
+                        // Always clean up PPM
+                        let _ = std::fs::remove_file(&screen_path_ppm);
+                    }
                 }
                 Err(_) => {}
             }
 
             // Log tail
             if let Ok(log) = qemu.log_buffer.lock() {
-                let tail = log.lines().rev().take(50).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+                let tail = log
+                    .lines()
+                    .rev()
+                    .take(50)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 let log_path = step_dir.join("serial_tail.txt");
                 if let Ok(_) = fs::write(&log_path, tail) {
                     meta.artifacts.serial_tail = Some("serial_tail.txt".to_string());
                 }
             }
         }
-        
+
         let meta_path = step_dir.join("meta.json");
         match fs::File::create(&meta_path) {
             Ok(file) => {
@@ -223,15 +253,24 @@ impl ArtifactWriter {
                 }
             }
             Err(e) => {
-                eprintln!("Failed to create meta.json at {}: {}", meta_path.display(), e);
+                eprintln!(
+                    "Failed to create meta.json at {}: {}",
+                    meta_path.display(),
+                    e
+                );
             }
         }
     }
 }
 
-
 fn slugify(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
         .collect()
 }

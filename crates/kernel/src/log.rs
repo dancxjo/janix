@@ -6,10 +6,10 @@
 use alloc::vec::Vec;
 use spin::Mutex;
 
-use crate::graph::{self, ThingId};
 use crate::boot::BootContext;
-use crate::symbols::{self, SymbolId};
+use crate::graph::{self, ThingId};
 use crate::serial;
+use crate::symbols::{self, SymbolId};
 
 /// Log level
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -35,7 +35,7 @@ impl Level {
 }
 
 /// Log entry payload format (inline bytes for now)
-/// 
+///
 /// Format: [level:1][subsystem_len:2][subsystem:N][message:M]
 #[derive(Clone, Debug)]
 pub struct LogEntry {
@@ -49,16 +49,16 @@ impl LogEntry {
     pub fn to_payload(&self) -> Vec<u8> {
         let mut payload = Vec::new();
         payload.push(self.level as u8);
-        
+
         // Subsystem as u64 (SymbolId)
         let sym_bytes = self.subsystem.0.to_le_bytes();
         payload.extend_from_slice(&sym_bytes);
-        
+
         // Message length and content
         let len = self.message.len() as u16;
         payload.extend_from_slice(&len.to_le_bytes());
         payload.extend_from_slice(&self.message);
-        
+
         payload
     }
 }
@@ -69,7 +69,7 @@ static CONTEXT: Mutex<Option<&'static BootContext>> = Mutex::new(None);
 /// Initialize logging with boot context
 pub fn init(ctx: &'static BootContext) {
     *CONTEXT.lock() = Some(ctx);
-    
+
     // Check if early output is requested
     if let Some(early_putc) = ctx.early_putc {
         // Use early putc for the very first notification
@@ -92,24 +92,24 @@ fn serial_write(bytes: &[u8]) {
 pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<ThingId> {
     // Always output to serial for debugging
     serial_log(level, subsystem, message);
-    
+
     // Create graph entry if graph is initialized
     let kind = symbols::sym_log_entry();
     if kind == SymbolId::INVALID {
         return None;
     }
-    
+
     let schema = symbols::well_known(b"models.core.log.LogEntry");
     let id = graph::thing_create(kind, schema, 1);
-    
+
     let entry = LogEntry {
         level,
         subsystem,
         message: message.to_vec(),
     };
-    
+
     graph::thing_set_inline_payload(id, &entry.to_payload());
-    
+
     Some(id)
 }
 
@@ -127,7 +127,7 @@ fn serial_log(_level: Level, subsystem: SymbolId, message: &[u8]) {
     } else {
         serial::write(b"SYM:");
     }
-    
+
     serial::write(b": ");
     serial::write(message);
     serial::write(b"\n");

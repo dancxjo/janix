@@ -9,11 +9,11 @@
 #![no_main]
 
 use core::arch::asm;
-use limine::BaseRevision;
 use limine::request::{
-    FramebufferRequest, MemoryMapRequest, ModuleRequest, HhdmRequest,
-    RequestsEndMarker, RequestsStartMarker,
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest, RequestsEndMarker,
+    RequestsStartMarker,
 };
+use limine::BaseRevision;
 
 use kernel::boot::{BootContext, FramebufferInfo, ModuleInfo};
 
@@ -28,8 +28,6 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
-
-
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -93,13 +91,17 @@ fn early_putc(c: u8) {
             // COM1 (0x3F8) - I/O ports don't use paging
             asm!("out dx, al", in("dx") 0x3F8u16, in("al") c, options(nomem, nostack, preserves_flags));
         }
-        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64", target_arch = "loongarch64"))]
+        #[cfg(any(
+            target_arch = "aarch64",
+            target_arch = "riscv64",
+            target_arch = "loongarch64"
+        ))]
         {
-            // Direct MMIO write is unsafe if unmapped. 
+            // Direct MMIO write is unsafe if unmapped.
             // We cannot use Limine Terminal (unavailable in crate 0.5.0).
             // So we remain silent in Bran.
-            
-            // Note: Kernel tries to use HHDM offset to print. 
+
+            // Note: Kernel tries to use HHDM offset to print.
             // If HHDM doesn't map MMIO, Kernel will also be silent/crash.
         }
     }
@@ -151,7 +153,6 @@ static ALLOCATOR: BumpAllocator = BumpAllocator;
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
-
     // Verify Limine protocol
     if !BASE_REVISION.is_supported() {
         early_putc(b'!');
@@ -171,7 +172,7 @@ unsafe extern "C" fn kmain() -> ! {
     if let Some(hhdm) = HHDM_REQUEST.get_response() {
         BOOT_CTX.hhdm_offset = hhdm.offset();
     }
-    
+
     if let Some(mmap) = MEMORY_MAP_REQUEST.get_response() {
         let mut total_mem = 0;
         for entry in mmap.entries() {
@@ -193,12 +194,13 @@ unsafe extern "C" fn kmain() -> ! {
         }
     }
 
-
     // 3. Collect Modules
     if let Some(mod_res) = MODULE_REQUEST.get_response() {
         let mut count = 0;
         for (i, m) in mod_res.modules().iter().enumerate() {
-            if count >= 64 { break; }
+            if count >= 64 {
+                break;
+            }
             MODULE_LIST[count] = ModuleInfo {
                 index: i,
                 path: m.path().to_str().unwrap_or("unknown"),

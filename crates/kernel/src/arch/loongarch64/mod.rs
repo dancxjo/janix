@@ -1,7 +1,7 @@
 //! loongarch64 architecture implementation
 
-use core::arch::asm;
 use super::Arch;
+use core::arch::asm;
 
 pub mod serial;
 

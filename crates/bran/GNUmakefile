@@ -5,6 +5,8 @@ MAKEFLAGS += -rR
 # This is the name that our final executable will have.
 # Change as needed.
 override OUTPUT := kernel
+override OUTPUT_DIR = bin-$(KARCH)
+override OUTPUT_PATH = $(OUTPUT_DIR)/$(OUTPUT)
 
 # Convenience macro to reliably declare user overridable variables.
 override USER_VARIABLE = $(if $(filter $(origin $(1)),default undefined),$(eval override $(1) := $(2)))
@@ -31,14 +33,15 @@ endif
 # Default target.
 .PHONY: all
 all:
+	mkdir -p $(OUTPUT_DIR)
 	RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE)
-	cp ../../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/bran kernel
+	cp ../../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/bran $(OUTPUT_PATH)
 
 # Remove object files and the final executable.
 .PHONY: clean
 clean:
 	cargo clean
-	rm -rf kernel
+	rm -rf bin-*
 
 .PHONY: distclean
 distclean: clean

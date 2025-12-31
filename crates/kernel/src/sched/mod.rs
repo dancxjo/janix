@@ -7,9 +7,9 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-use crate::log::{self, Level};
-use crate::arch::ARCH;
 use crate::arch::Arch;
+use crate::arch::ARCH;
+use crate::log::{self, Level};
 
 /// Thread identifier
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -65,23 +65,23 @@ impl Scheduler {
             _initialized: false,
         }
     }
-    
+
     fn spawn(&mut self, name: &'static str) -> ThreadId {
         let id = ThreadId(self.next_id);
         self.next_id += 1;
-        
+
         let thread = Thread {
             id,
             state: ThreadState::Ready,
             name,
         };
-        
+
         self.threads.push(thread);
         self.run_queue.push_back(id);
-        
+
         id
     }
-    
+
     fn thread_count(&self) -> usize {
         self.threads.len()
     }
@@ -92,7 +92,7 @@ pub fn init() {
     let mut sched = Scheduler::new();
     sched._initialized = true;
     *SCHEDULER.lock() = Some(sched);
-    
+
     log::klog(Level::Info, "KERNEL", "scheduler init");
 }
 
@@ -114,21 +114,24 @@ pub fn thread_count() -> usize {
 /// Run the scheduler loop (never returns)
 pub fn run() -> ! {
     log::klog(Level::Info, "KERNEL", "scheduler running");
-    
+
     // For now, just idle forever
     // In the future, this will pick threads from the run queue
     loop {
         // Check if there are any runnable threads
         let has_runnable = {
             let guard = SCHEDULER.lock();
-            guard.as_ref().map(|s| !s.run_queue.is_empty()).unwrap_or(false)
+            guard
+                .as_ref()
+                .map(|s| !s.run_queue.is_empty())
+                .unwrap_or(false)
         };
-        
+
         if has_runnable {
             // TODO: Context switch to next thread
             // For now, just log and idle
         }
-        
+
         // Idle until next interrupt
         ARCH.idle();
     }

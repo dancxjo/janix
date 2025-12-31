@@ -13,21 +13,20 @@
 
 extern crate alloc;
 
-pub mod machine;
-pub mod boot;
-pub mod log;
-pub mod symbols;
-pub mod graph;
-pub mod syscall;
-pub mod sched;
 pub mod arch;
+pub mod boot;
+pub mod graph;
+pub mod log;
+pub mod machine;
+pub mod sched;
 pub mod serial;
-
+pub mod symbols;
+pub mod syscall;
 
 // Stub modules
-pub mod proc;
 pub mod bytespace;
 pub mod caps;
+pub mod proc;
 
 // Re-export the main entry point
 pub use boot::boot;

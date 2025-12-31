@@ -36,22 +36,22 @@ impl SymbolTable {
             next_id: 1, // 0 is reserved for INVALID
         }
     }
-    
+
     fn intern(&mut self, s: &[u8]) -> SymbolId {
         if let Some(&id) = self.string_to_id.get(s) {
             return id;
         }
-        
+
         let id = SymbolId(self.next_id);
         self.next_id += 1;
-        
+
         let bytes = s.to_vec();
         self.string_to_id.insert(bytes.clone(), id);
         self.id_to_string.insert(id, bytes);
-        
+
         id
     }
-    
+
     fn resolve(&self, id: SymbolId) -> Option<&[u8]> {
         self.id_to_string.get(&id).map(|v| v.as_slice())
     }
@@ -60,7 +60,7 @@ impl SymbolTable {
 /// Initialize the symbol table and seed core symbols
 pub fn init() {
     let mut table = SymbolTable::new();
-    
+
     // Seed core symbols
     seed_symbol(&mut table, b"models.core.log.LogEntry");
     seed_symbol(&mut table, b"models.core.Schema");
@@ -72,7 +72,7 @@ pub fn init() {
     seed_symbol(&mut table, b"predicate.kind");
     seed_symbol(&mut table, b"predicate.schema");
     seed_symbol(&mut table, b"predicate.version");
-    
+
     *SYMBOLS.lock() = Some(table);
 }
 
@@ -96,9 +96,9 @@ pub fn intern(s: &[u8]) -> SymbolId {
 pub fn resolve(id: SymbolId) -> Option<String> {
     let guard = SYMBOLS.lock();
     guard.as_ref().and_then(|table| {
-        table.resolve(id).and_then(|bytes| {
-            core::str::from_utf8(bytes).ok().map(String::from)
-        })
+        table
+            .resolve(id)
+            .and_then(|bytes| core::str::from_utf8(bytes).ok().map(String::from))
     })
 }
 

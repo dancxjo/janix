@@ -18,12 +18,12 @@ impl ThingId {
     pub fn from_parts(high: u64, low: u64) -> Self {
         ThingId(((high as u128) << 64) | (low as u128))
     }
-    
+
     /// Get the high 64 bits
     pub fn high(&self) -> u64 {
         (self.0 >> 64) as u64
     }
-    
+
     /// Get the low 64 bits
     pub fn low(&self) -> u64 {
         self.0 as u64
@@ -31,7 +31,7 @@ impl ThingId {
 }
 
 /// Thing header - metadata for each Thing
-/// 
+///
 /// Layout matches v0.3 ABI direction (compact representation)
 #[derive(Clone, Debug)]
 pub struct ThingHeader {
@@ -83,13 +83,13 @@ impl GraphStore {
             tick: 0,
         }
     }
-    
+
     fn generate_id(&mut self) -> ThingId {
         let id = ThingId(self.next_id);
         self.next_id += 1;
         id
     }
-    
+
     fn create_thing(&mut self, kind: SymbolId, schema: SymbolId, version: u32) -> ThingId {
         let id = self.generate_id();
         let header = ThingHeader {
@@ -98,13 +98,16 @@ impl GraphStore {
             version,
             created_at: self.tick,
         };
-        self.things.insert(id, Thing {
-            header,
-            payload: Vec::new(),
-        });
+        self.things.insert(
+            id,
+            Thing {
+                header,
+                payload: Vec::new(),
+            },
+        );
         id
     }
-    
+
     fn set_payload(&mut self, id: ThingId, payload: &[u8]) -> bool {
         if let Some(thing) = self.things.get_mut(&id) {
             thing.payload = payload.to_vec();
@@ -113,24 +116,28 @@ impl GraphStore {
             false
         }
     }
-    
+
     fn get_header(&self, id: ThingId) -> Option<&ThingHeader> {
         self.things.get(&id).map(|t| &t.header)
     }
-    
+
     fn get_payload(&self, id: ThingId) -> Option<&[u8]> {
         self.things.get(&id).map(|t| t.payload.as_slice())
     }
-    
+
     fn create_link(&mut self, src: ThingId, predicate: SymbolId, dst: ThingId) {
-        let link = Link { src, predicate, dst };
+        let link = Link {
+            src,
+            predicate,
+            dst,
+        };
         self.links.insert(link, ());
     }
-    
+
     fn thing_count(&self) -> usize {
         self.things.len()
     }
-    
+
     fn link_count(&self) -> usize {
         self.links.len()
     }
@@ -162,13 +169,17 @@ pub fn thing_set_inline_payload(id: ThingId, payload: &[u8]) -> bool {
 /// Get the header of a Thing
 pub fn get_header(id: ThingId) -> Option<ThingHeader> {
     let guard = GRAPH.lock();
-    guard.as_ref().and_then(|store| store.get_header(id).cloned())
+    guard
+        .as_ref()
+        .and_then(|store| store.get_header(id).cloned())
 }
 
 /// Get the payload of a Thing
 pub fn get_payload(id: ThingId) -> Option<Vec<u8>> {
     let guard = GRAPH.lock();
-    guard.as_ref().and_then(|store| store.get_payload(id).map(Vec::from))
+    guard
+        .as_ref()
+        .and_then(|store| store.get_payload(id).map(Vec::from))
 }
 
 /// Create a link between two Things

@@ -48,12 +48,18 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        panic!("Failed to build ISO for {}.\nSTDOUT:\n{}\nSTDERR:\n{}", arch, stdout, stderr);
+        panic!(
+            "Failed to build ISO for {}.\nSTDOUT:\n{}\nSTDERR:\n{}",
+            arch, stdout, stderr
+        );
     }
 
-
     let iso_path = root.join(format!("template-{}.iso", arch));
-    assert!(iso_path.exists(), "ISO file not found at {}", iso_path.display());
+    assert!(
+        iso_path.exists(),
+        "ISO file not found at {}",
+        iso_path.display()
+    );
 
     // 2. Prepare OVMF paths
     let ovmf_code = root.join(format!("ovmf/ovmf-code-{}.fd", arch));
@@ -64,13 +70,23 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
         "x86_64" => {
             let mut c = Command::new("qemu-system-x86_64");
             c.args([
-                "-M", "q35",
-                "-m", "2G",
-                "-display", "none",
-                "-serial", "stdio",
-                "-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
-                "-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
-                "-cdrom", &iso_path.to_string_lossy(),
+                "-M",
+                "q35",
+                "-m",
+                "2G",
+                "-display",
+                "none",
+                "-serial",
+                "stdio",
+                "-drive",
+                &format!(
+                    "if=pflash,unit=0,format=raw,file={},readonly=on",
+                    ovmf_code.display()
+                ),
+                "-drive",
+                &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                "-cdrom",
+                &iso_path.to_string_lossy(),
                 "-no-reboot",
             ]);
             c
@@ -78,38 +94,69 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
         "aarch64" => {
             let mut c = Command::new("qemu-system-aarch64");
             c.args([
-                "-M", "virt",
-                "-cpu", "cortex-a72",
-                "-m", "2G",
-                "-device", "ramfb",
-                "-device", "qemu-xhci",
-                "-device", "usb-kbd",
-                "-device", "usb-mouse",
-                "-display", "none",
-                "-serial", "stdio",
-                "-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
-                "-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
-                "-cdrom", &iso_path.to_string_lossy(),
+                "-M",
+                "virt",
+                "-cpu",
+                "cortex-a72",
+                "-m",
+                "2G",
+                "-device",
+                "ramfb",
+                "-device",
+                "qemu-xhci",
+                "-device",
+                "usb-kbd",
+                "-device",
+                "usb-mouse",
+                "-display",
+                "none",
+                "-serial",
+                "stdio",
+                "-drive",
+                &format!(
+                    "if=pflash,unit=0,format=raw,file={},readonly=on",
+                    ovmf_code.display()
+                ),
+                "-drive",
+                &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                "-cdrom",
+                &iso_path.to_string_lossy(),
                 "-no-reboot",
-                "-d", "guest_errors", // Debug aid
+                "-d",
+                "guest_errors", // Debug aid
             ]);
             c
         }
         "riscv64" => {
             let mut c = Command::new("qemu-system-riscv64");
             c.args([
-                "-M", "virt",
-                "-cpu", "rv64",
-                "-m", "2G",
-                "-device", "ramfb",
-                "-device", "qemu-xhci",
-                "-device", "usb-kbd",
-                "-device", "usb-mouse",
-                "-display", "none",
-                "-serial", "stdio",
-                "-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
-                "-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
-                "-cdrom", &iso_path.to_string_lossy(),
+                "-M",
+                "virt",
+                "-cpu",
+                "rv64",
+                "-m",
+                "2G",
+                "-device",
+                "ramfb",
+                "-device",
+                "qemu-xhci",
+                "-device",
+                "usb-kbd",
+                "-device",
+                "usb-mouse",
+                "-display",
+                "none",
+                "-serial",
+                "stdio",
+                "-drive",
+                &format!(
+                    "if=pflash,unit=0,format=raw,file={},readonly=on",
+                    ovmf_code.display()
+                ),
+                "-drive",
+                &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                "-cdrom",
+                &iso_path.to_string_lossy(),
                 "-no-reboot",
             ]);
             c
@@ -119,14 +166,25 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
             // but we'll try standard way. If it fails, it fails.
             let mut c = Command::new("qemu-system-loongarch64");
             c.args([
-                "-M", "virt",
-                "-cpu", "la464",
-                "-m", "2G",
-                "-display", "none",
-                "-serial", "stdio",
-                "-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
-                "-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
-                "-cdrom", &iso_path.to_string_lossy(),
+                "-M",
+                "virt",
+                "-cpu",
+                "la464",
+                "-m",
+                "2G",
+                "-display",
+                "none",
+                "-serial",
+                "stdio",
+                "-drive",
+                &format!(
+                    "if=pflash,unit=0,format=raw,file={},readonly=on",
+                    ovmf_code.display()
+                ),
+                "-drive",
+                &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                "-cdrom",
+                &iso_path.to_string_lossy(),
                 "-no-reboot",
             ]);
             c
@@ -135,9 +193,9 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
     };
 
     cmd.stdout(Stdio::piped())
-       .stderr(Stdio::piped())
-       .kill_on_drop(true)
-       .current_dir(&root);
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .current_dir(&root);
 
     // 4. Run QEMU and capture output
     // Increase timeout to 60s
@@ -154,11 +212,13 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
             let result = timeout(boot_timeout, async move {
                 while let Ok(Some(line)) = reader.next_line().await {
                     {
-                        let mut buf = output_buffer_clone.lock().expect("Failed to lock output buffer");
+                        let mut buf = output_buffer_clone
+                            .lock()
+                            .expect("Failed to lock output buffer");
                         buf.push_str(&line);
                         buf.push('\n');
                     }
-                    
+
                     if line.contains("Booted.") {
                         return true;
                     }
@@ -167,13 +227,17 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
                     }
                 }
                 false
-            }).await;
+            })
+            .await;
 
             let _ = child.kill().await;
             let _ = child.wait().await;
 
-            let captured = output_buffer.lock().expect("Failed to lock output buffer").clone();
-            
+            let captured = output_buffer
+                .lock()
+                .expect("Failed to lock output buffer")
+                .clone();
+
             if let Err(_) = result {
                 world.serial_output = format!("TIMEOUT (60s). Captured so far:\n{}", captured);
             } else {

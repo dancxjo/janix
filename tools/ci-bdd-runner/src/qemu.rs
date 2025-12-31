@@ -17,8 +17,6 @@ pub struct QemuProcess {
     pub log_buffer: Arc<Mutex<String>>,
 }
 
-
-
 impl QemuProcess {
     pub async fn spawn(
         arch: &str,
@@ -36,44 +34,77 @@ impl QemuProcess {
         };
 
         let mut args = vec![
-            "-m".to_string(), "2G".to_string(),
-            "-display".to_string(), "none".to_string(),
-            "-serial".to_string(), "stdio".to_string(),
+            "-m".to_string(),
+            "2G".to_string(),
+            "-display".to_string(),
+            "none".to_string(),
+            "-serial".to_string(),
+            "stdio".to_string(),
             "-no-reboot".to_string(),
-            "-qmp".to_string(), format!("unix:{},server,nowait", qmp_sock_path.display()),
+            "-qmp".to_string(),
+            format!("unix:{},server,nowait", qmp_sock_path.display()),
         ];
 
         // Check for /dev/kvm and architecture match
         let host_arch = std::env::consts::ARCH;
         if std::path::Path::new("/dev/kvm").exists() && host_arch == arch {
-            println!("Probing KVM: available and arch matches ({}). Using -accel kvm", host_arch);
+            println!(
+                "Probing KVM: available and arch matches ({}). Using -accel kvm",
+                host_arch
+            );
             args.extend_from_slice(&["-accel".to_string(), "kvm".to_string()]);
         } else {
-            println!("Probing KVM: missing or arch mismatch (host: {}, target: {}). Using -accel tcg", host_arch, arch);
+            println!(
+                "Probing KVM: missing or arch mismatch (host: {}, target: {}). Using -accel tcg",
+                host_arch, arch
+            );
             args.extend_from_slice(&["-accel".to_string(), "tcg".to_string()]);
         }
+
+        // Quiet stdio by default. Toggle via env when debugging.
+        let verbose_stdio = std::env::var("BDD_VERBOSE_STDIO").is_ok();
 
         match arch {
             "x86_64" => {
                 args.extend_from_slice(&[
-                    "-M".to_string(), "q35".to_string(),
-                    "-drive".to_string(), format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
-                    "-drive".to_string(), format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
-                    "-cdrom".to_string(), iso_path.to_string_lossy().to_string(),
-                    "-device".to_string(), "isa-debug-exit,iobase=0xf4,iosize=0x04".to_string(),
+                    "-M".to_string(),
+                    "q35".to_string(),
+                    "-drive".to_string(),
+                    format!(
+                        "if=pflash,unit=0,format=raw,file={},readonly=on",
+                        ovmf_code.display()
+                    ),
+                    "-drive".to_string(),
+                    format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                    "-cdrom".to_string(),
+                    iso_path.to_string_lossy().to_string(),
+                    "-device".to_string(),
+                    "isa-debug-exit,iobase=0xf4,iosize=0x04".to_string(),
                 ]);
             }
             "aarch64" => {
                 args.extend_from_slice(&[
-                    "-M".to_string(), "virt".to_string(),
-                    "-cpu".to_string(), "cortex-a72".to_string(),
-                    "-device".to_string(), "ramfb".to_string(),
-                    "-device".to_string(), "qemu-xhci".to_string(),
-                    "-device".to_string(), "usb-kbd".to_string(),
-                    "-device".to_string(), "usb-mouse".to_string(),
-                    "-drive".to_string(), format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
-                    "-drive".to_string(), format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
-                    "-cdrom".to_string(), iso_path.to_string_lossy().to_string(),
+                    "-M".to_string(),
+                    "virt".to_string(),
+                    "-cpu".to_string(),
+                    "cortex-a72".to_string(),
+                    "-device".to_string(),
+                    "ramfb".to_string(),
+                    "-device".to_string(),
+                    "qemu-xhci".to_string(),
+                    "-device".to_string(),
+                    "usb-kbd".to_string(),
+                    "-device".to_string(),
+                    "usb-mouse".to_string(),
+                    "-drive".to_string(),
+                    format!(
+                        "if=pflash,unit=0,format=raw,file={},readonly=on",
+                        ovmf_code.display()
+                    ),
+                    "-drive".to_string(),
+                    format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                    "-cdrom".to_string(),
+                    iso_path.to_string_lossy().to_string(),
                 ]);
             }
             _ => {}
@@ -91,15 +122,17 @@ impl QemuProcess {
         let stdout = child.stdout.take().context("Failed to take stdout")?;
         let stderr = child.stderr.take().context("Failed to take stderr")?;
         let log_buffer = Arc::new(Mutex::new(String::new()));
-        
+
         // Spawn stdout reader
         let log_clone = log_buffer.clone();
+        let verbose_out = verbose_stdio;
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                // Echo to stdout for user visibility
-                println!("[QEMU IMPERIAL] {}", line);
+                if verbose_out {
+                    println!("[QEMU IMPERIAL] {}", line);
+                }
 
                 let mut buf = log_clone.lock().unwrap();
                 buf.push_str(&line);
@@ -109,12 +142,14 @@ impl QemuProcess {
 
         // Spawn stderr reader
         let log_clone_err = log_buffer.clone();
+        let verbose_err = verbose_stdio;
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                // Echo to stderr for user visibility
-                eprintln!("[QEMU IMPERIAL ERR] {}", line);
+                if verbose_err {
+                    eprintln!("[QEMU IMPERIAL ERR] {}", line);
+                }
 
                 let mut buf = log_clone_err.lock().unwrap();
                 buf.push_str("STDERR: ");
@@ -146,16 +181,24 @@ impl QemuProcess {
                 Ok(stream) => {
                     let (read_half, mut write_half) = stream.into_split();
                     let mut reader = BufReader::new(read_half);
-                    
+
                     // Handshake
                     let mut line = String::new();
-                    reader.read_line(&mut line).await.context("Failed to read QMP greeting")?;
+                    reader
+                        .read_line(&mut line)
+                        .await
+                        .context("Failed to read QMP greeting")?;
 
-                    write_half.write_all(br#"{"execute": "qmp_capabilities"}"#).await?;
+                    write_half
+                        .write_all(br#"{"execute": "qmp_capabilities"}"#)
+                        .await?;
                     write_half.write_all(b"\n").await?;
 
                     line.clear();
-                    reader.read_line(&mut line).await.context("Failed to read QMP capabilities response")?;
+                    reader
+                        .read_line(&mut line)
+                        .await
+                        .context("Failed to read QMP capabilities response")?;
                     if !line.contains("return") {
                         anyhow::bail!("QMP handshake failed: {}", line);
                     }
@@ -178,27 +221,35 @@ impl QemuProcess {
                 let abs_path = if path.is_absolute() {
                     path.to_string_lossy().to_string()
                 } else {
-                    std::env::current_dir()?.join(path).to_string_lossy().to_string()
+                    std::env::current_dir()?
+                        .join(path)
+                        .to_string_lossy()
+                        .to_string()
                 };
 
-                let cmd = format!(r#"{{"execute": "screendump", "arguments": {{"filename": "{}"}}}}"#, abs_path);
+                let cmd = format!(
+                    r#"{{"execute": "screendump", "arguments": {{"filename": "{}"}}}}"#,
+                    abs_path
+                );
                 writer.write_all(cmd.as_bytes()).await?;
                 writer.write_all(b"\n").await?;
 
                 // Read output
                 let mut line = String::new();
                 reader.read_line(&mut line).await?;
-                
+
                 if !line.contains("return") {
-                     // Might start with error?
-                     if line.contains("error") {
-                         eprintln!("QMP screendump error: {}", line);
-                     }
+                    // Might start with error?
+                    if line.contains("error") {
+                        eprintln!("QMP screendump error: {}", line);
+                    }
                 }
                 return Ok(());
             }
             anyhow::bail!("QMP not connected")
-        }).await.context("Screendump timed out")?
+        })
+        .await
+        .context("Screendump timed out")?
     }
 
     pub async fn kill(&mut self) -> Result<()> {
@@ -224,5 +275,3 @@ impl Drop for QemuProcess {
         let _ = self.child.start_kill();
     }
 }
-
-

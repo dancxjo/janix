@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct ArtifactMeta {
@@ -35,7 +35,10 @@ pub fn generate_report(out_dir: &Path) -> Result<()> {
 
     // Group by Arch -> Feature -> Scenario
     // Map<Arch, Map<Feature, Map<Scenario, Vec<(PathBuf, ArtifactMeta)>>>>
-    let mut tree: BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(PathBuf, ArtifactMeta)>>>> = BTreeMap::new();
+    let mut tree: BTreeMap<
+        String,
+        BTreeMap<String, BTreeMap<String, Vec<(PathBuf, ArtifactMeta)>>>,
+    > = BTreeMap::new();
 
     for (path, meta) in metas {
         tree.entry(meta.arch.clone())
@@ -59,7 +62,7 @@ pub fn generate_report(out_dir: &Path) -> Result<()> {
     // Generate Index
     let encoded = generate_index(out_dir, &tree);
     fs::write(out_dir.join("index.md"), encoded).context("Failed to write index.md")?;
-    
+
     Ok(())
 }
 
@@ -88,7 +91,7 @@ fn generate_scenario_report(
     arch: &str,
     feature: &str,
     scenario: &str,
-    steps: &Vec<(PathBuf, ArtifactMeta)>
+    steps: &Vec<(PathBuf, ArtifactMeta)>,
 ) -> Result<()> {
     if steps.is_empty() {
         return Ok(());
@@ -99,7 +102,7 @@ fn generate_scenario_report(
     md.push_str(&format!("# Scenario: {}\n\n", scenario));
     md.push_str(&format!("**Architecture**: `{}`  \n", arch));
     md.push_str(&format!("**Feature**: `{}`\n\n", feature));
-    
+
     md.push_str("[Back to Index](../../../../index.md)\n\n");
 
     let mut sorted_steps = steps.clone();
@@ -117,7 +120,7 @@ fn generate_scenario_report(
             "skipped" => "⏭️",
             _ => "❓",
         };
-        
+
         let mut artifacts_str = String::new();
         if meta.artifacts.screenshot.is_some() {
             artifacts_str.push_str("📸 ");
@@ -126,24 +129,25 @@ fn generate_scenario_report(
             artifacts_str.push_str("📝 ");
         }
 
-        md.push_str(&format!("| {} | {} | {} | {} |\n", 
-            meta.step.index, 
-            meta.step.text, 
-            status_emoji,
-            artifacts_str
+        md.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            meta.step.index, meta.step.text, status_emoji, artifacts_str
         ));
     }
     md.push_str("\n");
 
     // Detailed Steps
     md.push_str("## Execution Details\n\n");
-    
+
     for (step_path, meta) in &sorted_steps {
-        md.push_str(&format!("### {}. {} {}\n\n", meta.step.index + 1, meta.step.text, 
+        md.push_str(&format!(
+            "### {}. {} {}\n\n",
+            meta.step.index + 1,
+            meta.step.text,
             match meta.step.status.as_str() {
                 "passed" => "✅",
                 "failed" => "❌",
-                 _ => ""
+                _ => "",
             }
         ));
 
@@ -151,41 +155,41 @@ fn generate_scenario_report(
         if let Some(screen_file) = &meta.artifacts.screenshot {
             // Determine relative path to image. step_path is absolute.
             // We want path relative to THIS report file.
-            // THIS report file is at: 
+            // THIS report file is at:
             // base_dir/arch/feature/scenario/report.md
             // Image is at:
             // step_path/screen.png
-            
+
             // Actually, step_path IS the step directory.
             // So relative path is just "steps/<step_slug>/screen.png"
             // Let's verify directory structure from writer.rs:
             // out_dir/arch/feature/scenario/steps/step_slug
-            
+
             // step_path is .../steps/step_slug
             let step_slug = step_path.file_name().unwrap().to_string_lossy();
             let rel_img_path = format!("steps/{}/{}", step_slug, screen_file);
-            
+
             md.push_str(&format!("![Screenshot]({})\n\n", rel_img_path));
         }
 
         // Serial Log
-         if let Some(log_file) = &meta.artifacts.serial_tail {
+        if let Some(log_file) = &meta.artifacts.serial_tail {
             let step_slug = step_path.file_name().unwrap().to_string_lossy();
             let rel_log_path = step_path.join(log_file);
-            
+
             // Read content to embed or link? Let's link for now, maybe embed if short.
             // User asked for "with pictures embedded".
             // Let's embed the log in a block code for ease of reading.
             if let Ok(content) = fs::read_to_string(&rel_log_path) {
-                 md.push_str("```\n");
-                 md.push_str(&content);
-                 md.push_str("\n```\n\n");
+                md.push_str("```\n");
+                md.push_str(&content);
+                md.push_str("\n```\n\n");
             } else {
-                 let rel_log_link = format!("steps/{}/{}", step_slug, log_file);
-                 md.push_str(&format!("[Serial Log]({})\n\n", rel_log_link));
+                let rel_log_link = format!("steps/{}/{}", step_slug, log_file);
+                md.push_str(&format!("[Serial Log]({})\n\n", rel_log_link));
             }
         }
-        
+
         md.push_str("---\n\n");
     }
 
@@ -195,10 +199,10 @@ fn generate_scenario_report(
     // steps[0].0 is .../features/scenario/steps/step001
     // Parent is .../features/scenario/steps
     // Grandparent is .../features/scenario
-    
+
     let first_step_path = &steps[0].0;
     let scenario_dir = first_step_path.parent().unwrap().parent().unwrap();
-    
+
     fs::write(scenario_dir.join("report.md"), md).context("Failed to write scenario report")?;
 
     Ok(())
@@ -206,28 +210,34 @@ fn generate_scenario_report(
 
 fn generate_index(
     out_dir: &Path,
-    tree: &BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(PathBuf, ArtifactMeta)>>>>
+    tree: &BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(PathBuf, ArtifactMeta)>>>>,
 ) -> String {
     let mut md = String::new();
     md.push_str("# BDD Test Report Index\n\n");
 
     for (arch, features) in tree {
         md.push_str(&format!("## Architecture: {}\n\n", arch));
-        
+
         for (feature, scenarios) in features {
             md.push_str(&format!("### Feature: {}\n\n", feature));
-            
+
             md.push_str("| Scenario | Status | Steps | Report |\n");
             md.push_str("| --- | :---: | :---: | :---: |\n");
-            
+
             for (scenario, steps) in scenarios {
                 let count = steps.len();
                 // Determine overall status
                 let all_passed = steps.iter().all(|(_, m)| m.step.status == "passed");
                 let any_failed = steps.iter().any(|(_, m)| m.step.status == "failed");
-                
-                let emoji = if any_failed { "❌" } else if all_passed { "✅" } else { "⚠️" };
-                
+
+                let emoji = if any_failed {
+                    "❌"
+                } else if all_passed {
+                    "✅"
+                } else {
+                    "⚠️"
+                };
+
                 // Link to report.md in the scenario directory
                 // We need to reconstruct the path: arch/feature/scenario/report.md
                 // But wait, feature and scenario are slugified in directories but plain text here.
@@ -238,9 +248,10 @@ fn generate_index(
                 let rel_scenario_dir = scenario_dir.strip_prefix(out_dir).unwrap_or(scenario_dir);
                 let report_link = rel_scenario_dir.join("report.md");
 
-                md.push_str(&format!("| {} | {} | {} | [View Report]({}) |\n", 
-                    scenario, 
-                    emoji, 
+                md.push_str(&format!(
+                    "| {} | {} | {} | [View Report]({}) |\n",
+                    scenario,
+                    emoji,
                     count,
                     report_link.display()
                 ));
@@ -261,12 +272,12 @@ mod tests {
     fn test_generate_report() -> Result<()> {
         let dir = tempdir()?;
         let root = dir.path();
-        
+
         // Setup mock structure
         // x86_64/feature_a/scenario_b/steps/001_step_slug/meta.json
         let step_dir = root.join("x86_64/feature_a/scenario_b/steps/001_step_slug");
         fs::create_dir_all(&step_dir)?;
-        
+
         // Mock meta.json
         let meta = ArtifactMeta {
             version: 1,
@@ -284,7 +295,7 @@ mod tests {
                 serial_tail: Some("serial_tail.txt".to_string()),
             },
         };
-        
+
         let meta_json = serde_json::to_string(&meta)?;
         fs::write(step_dir.join("meta.json"), meta_json)?;
         fs::write(step_dir.join("screen.png"), "fake image")?;

@@ -13,7 +13,19 @@ impl Serial {
     }
 
     pub fn init(&self, offset: u64) {
-        BASE.store(0x1000_0000 + offset, Ordering::Relaxed);
+        let base = 0x1000_0000 + offset;
+        BASE.store(base, Ordering::Relaxed);
+
+        unsafe {
+            // Bring 16550 up at 115200 8N1
+            ptr::write_volatile((base + 1) as *mut u8, 0x00); // IER: disable interrupts
+            ptr::write_volatile((base + 3) as *mut u8, 0x80); // LCR: enable DLAB
+            ptr::write_volatile((base + 0) as *mut u8, 0x01); // DLL
+            ptr::write_volatile((base + 1) as *mut u8, 0x00); // DLM
+            ptr::write_volatile((base + 3) as *mut u8, 0x03); // LCR: 8N1
+            ptr::write_volatile((base + 2) as *mut u8, 0x07); // FCR: enable FIFO, clear RX/TX
+            ptr::write_volatile((base + 4) as *mut u8, 0x03); // MCR: assert DTR/RTS
+        }
     }
 
     fn base(&self) -> u64 {

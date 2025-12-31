@@ -76,15 +76,15 @@ fn sys_log_emit(level_raw: u64, _msg_ptr: u64, _msg_len: u64) -> SyscallResult {
         4 => Level::Error,
         _ => return (err::EINVAL, 0, 0),
     };
-    
+
     // For now, we can't safely read user memory, so just log a placeholder
     // In a real implementation, we'd validate the pointer and copy the data
     let subsystem = symbols::well_known(b"userland");
-    
+
     // TODO: Properly read from user memory with validation
     // For now, log that we received a log request
     let placeholder = b"[user log request]";
-    
+
     if let Some(id) = log::log_emit(level, subsystem, placeholder) {
         (0, id.high(), id.low())
     } else {

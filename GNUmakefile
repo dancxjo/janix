@@ -12,6 +12,8 @@ $(call USER_VARIABLE,KARCH,x86_64)
 $(call USER_VARIABLE,QEMUFLAGS,-m 2G -serial stdio)
 
 override IMAGE_NAME := template-$(KARCH)
+override BRAN_BIN = crates/bran/bin-$(KARCH)/kernel
+override SPROUT_BIN = crates/sprout/bin-$(KARCH)/sprout
 
 .PHONY: all
 all: $(IMAGE_NAME).iso
@@ -222,8 +224,8 @@ $(IMAGE_NAME).iso: limine/limine bran sprout
 	rm -rf iso_root_$(KARCH)
 	mkdir -p iso_root_$(KARCH)/boot
 	mkdir -p iso_root_$(KARCH)/boot/modules
-	cp -v crates/bran/kernel iso_root_$(KARCH)/boot/
-	cp -v crates/sprout/sprout iso_root_$(KARCH)/boot/modules/
+	cp -v $(BRAN_BIN) iso_root_$(KARCH)/boot/
+	cp -v $(SPROUT_BIN) iso_root_$(KARCH)/boot/modules/
 	mkdir -p iso_root_$(KARCH)/boot/limine
 	cp -v limine.conf iso_root_$(KARCH)/boot/limine/
 	mkdir -p iso_root_$(KARCH)/EFI/BOOT
@@ -273,7 +275,7 @@ ifeq ($(KARCH),x86_64)
 endif
 	mformat -i $(IMAGE_NAME).hdd@@1M
 	mmd -i $(IMAGE_NAME).hdd@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine
-	mcopy -i $(IMAGE_NAME).hdd@@1M crates/bran/bin-$(KARCH)/kernel ::/boot
+	mcopy -i $(IMAGE_NAME).hdd@@1M $(BRAN_BIN) ::/boot
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine.conf ::/boot/limine
 ifeq ($(KARCH),x86_64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/limine-bios.sys ::/boot/limine

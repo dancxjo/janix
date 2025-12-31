@@ -1,9 +1,9 @@
+use crate::qemu::QemuProcess;
+use crate::shared::{ANY_FAILURE, GLOBAL_LAST_ERROR, GLOBAL_QEMU};
 use anyhow::{anyhow, Context, Result};
 use cucumber::{given, then, World};
 use std::path::PathBuf;
 use tokio::process::Command;
-use crate::qemu::QemuProcess;
-use crate::shared::{GLOBAL_QEMU, GLOBAL_LAST_ERROR, ANY_FAILURE};
 use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Default, World)]
@@ -25,21 +25,27 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) -> Result<()> {
     world.arch = arch.clone();
     let root = project_root();
 
-    // 1. Build ISO
-    println!("Building ISO for {} (streaming output)...", arch);
-    let mut child = Command::new("make")
+    // 1. Build ISO quietly (capture output for error reporting)
+    let output = Command::new("make")
         .args([&format!("template-{}.iso", arch)])
         .env("KARCH", &arch)
         .current_dir(&root)
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .spawn()
-        .context("Failed to spawn make")?;
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .context("Failed to run make")?;
 
-    let status = child.wait().await.context("Failed to wait for make")?;
-
-    if !status.success() {
-        return Err(anyhow!("Failed to build ISO for {}. Exit status: {}", arch, status));
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "Failed to build ISO for {}. Exit status: {}.\nstdout:\n{}\nstderr:\n{}",
+            arch,
+            output.status,
+            stdout,
+            stderr
+        ));
     }
 
     let iso_path = root.join(format!("template-{}.iso", arch));
@@ -55,7 +61,7 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) -> Result<()> {
     // Use a random or specific path
     let rand_id: u32 = rand::random();
     let qmp_sock = std::env::temp_dir().join(format!("thingos-qmp-{}.sock", rand_id));
-    
+
     // Ensure previous QEMU is killed?
     {
         let mut g = GLOBAL_QEMU.lock().await;
@@ -65,17 +71,13 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) -> Result<()> {
     }
 
     // 4. Spawn QEMU
-    let mut qemu = QemuProcess::spawn(
-        &arch,
-        &iso_path,
-        &ovmf_code,
-        &ovmf_vars,
-        &qmp_sock
-    ).await.context("Failed to spawn QEMU")?;
-    
+    let mut qemu = QemuProcess::spawn(&arch, &iso_path, &ovmf_code, &ovmf_vars, &qmp_sock)
+        .await
+        .context("Failed to spawn QEMU")?;
+
     // Connect QMP now so it's ready for steps
     qemu.connect_qmp().await.context("Failed to connect QMP")?;
-    
+
     *GLOBAL_QEMU.lock().await = Some(qemu);
 
     Ok(())
@@ -89,9 +91,8 @@ async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Resul
         .and_then(|s| s.parse().ok())
         .unwrap_or(30);
     let timeout = Duration::from_secs(timeout_secs);
-    println!("Waiting for serial output (timeout: {}s)...", timeout_secs);
     let start = std::time::Instant::now();
-    
+
     loop {
         let current_log = {
             let mut guard = GLOBAL_QEMU.lock().await;
@@ -118,16 +119,19 @@ async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Resul
             } else {
                 log_text
             };
-            let err_msg = format!("QEMU exited unexpectedly with status: {:?}\nLogs captured so far:\n---\n{}\n---", status, truncated_log);
+            let err_msg = format!(
+                "QEMU exited unexpectedly with status: {:?}\nLogs captured so far:\n---\n{}\n---",
+                status, truncated_log
+            );
             eprintln!("SOFT FAIL: {}", err_msg);
-            
-             // Set global error state
+
+            // Set global error state
             {
                 let mut guard = GLOBAL_LAST_ERROR.lock().await;
                 *guard = Some(err_msg);
             }
             ANY_FAILURE.store(true, std::sync::atomic::Ordering::SeqCst);
-            
+
             return Ok(());
         }
 
@@ -141,8 +145,11 @@ async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Resul
             } else {
                 log_text
             };
-            
-            let err_msg = format!("Expected '{}' in serial output. Got:\n--- START ---\n{}\n--- END ---", expected, truncated_log);
+
+            let err_msg = format!(
+                "Expected '{}' in serial output. Got:\n--- START ---\n{}\n--- END ---",
+                expected, truncated_log
+            );
             eprintln!("SOFT FAIL: {}", err_msg);
 
             // Set global error state
@@ -151,7 +158,7 @@ async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Resul
                 *guard = Some(err_msg);
             }
             ANY_FAILURE.store(true, std::sync::atomic::Ordering::SeqCst);
-            
+
             // Return Ok to prevent cucumber abort
             return Ok(());
         }

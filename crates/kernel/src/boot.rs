@@ -29,7 +29,6 @@ pub struct FramebufferInfo {
     pub bpp: u16,
 }
 
-
 /// Bag of facts provided by the bootloader
 pub struct BootContext {
     pub hhdm_offset: u64,
@@ -52,24 +51,24 @@ pub fn boot(ctx: &'static mut BootContext) -> ! {
 
     // Phase 1: Initialize logging (enables debug output)
     log::init(ctx);
-    
+
     // Phase 2: Initialize symbol table
     symbols::init();
     log::klog(Level::Info, "KERNEL", "symbols init");
-    
+
     // Phase 3: Initialize graph store
     graph::init();
     log::klog(Level::Info, "KERNEL", "graph init");
-    
+
     // Phase 4: Initialize syscall dispatch
     syscall::init();
-    
+
     // Phase 5: Initialize scheduler
     sched::init();
-    
+
     // Phase 6: Spawn Sprout
     spawn_sprout(ctx);
-    
+
     // Phase 7: Enter scheduler loop
     sched::run()
 }
@@ -79,15 +78,19 @@ use alloc::format;
 /// Spawn the Sprout init process
 fn spawn_sprout(ctx: &'static BootContext) {
     log::klog(Level::Info, "KERNEL", "spawning sprout");
-    
+
     // Look for a module named "sprout"
     let mut found_sprout = false;
     for &module in ctx.modules {
         if module.path.ends_with("sprout") {
             found_sprout = true;
             let virt_addr = module.phys_addr + ctx.hhdm_offset;
-            log::klog(Level::Info, "KERNEL", &format!("found sprout at {:#x} (size: {})", virt_addr, module.size));
-            
+            log::klog(
+                Level::Info,
+                "KERNEL",
+                &format!("found sprout at {:#x} (size: {})", virt_addr, module.size),
+            );
+
             // Simple ELF-64 header parsing to find entry point
             // e_entry is at offset 24
             if module.size >= 64 {
@@ -95,8 +98,12 @@ fn spawn_sprout(ctx: &'static BootContext) {
                     let ptr = (virt_addr + 24) as *const u64;
                     *ptr
                 };
-                log::klog(Level::Info, "KERNEL", &format!("sprout entry point: {:#x}", entry_point));
-                
+                log::klog(
+                    Level::Info,
+                    "KERNEL",
+                    &format!("sprout entry point: {:#x}", entry_point),
+                );
+
                 // TODO: Enter user mode at entry_point
             } else {
                 log::klog(Level::Error, "KERNEL", "sprout module too small");
@@ -104,7 +111,7 @@ fn spawn_sprout(ctx: &'static BootContext) {
             break;
         }
     }
-    
+
     if !found_sprout {
         log::klog(Level::Warn, "KERNEL", "sprout module not found");
     }

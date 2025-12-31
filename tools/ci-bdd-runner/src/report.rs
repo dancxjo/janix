@@ -113,7 +113,7 @@ fn generate_markdown(
                     let mut links = Vec::new();
                     if meta.artifacts.screenshot.is_some() {
                         // Assuming screen.ppm
-                         let link = rel_step_dir.join("screen.ppm");
+                         let link = rel_step_dir.join("screen.png");
                          links.push(format!("[Screen]({})", link.display()));
                     }
                     if meta.artifacts.serial_tail.is_some() {

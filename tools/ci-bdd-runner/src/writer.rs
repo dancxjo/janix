@@ -146,13 +146,33 @@ impl ArtifactWriter {
             }
 
             // Screenshot
-            let screen_path = step_dir.join("screen.ppm");
-            if let Err(_e) = qemu.screendump(&screen_path).await {
-                // Ignore errors
-            } else {
-                if screen_path.exists() {
-                     meta.artifacts.screenshot = Some("screen.ppm".to_string());
-                }
+            // Screenshot
+            let screen_path_ppm = step_dir.join("screen.ppm");
+            let screen_path_png = step_dir.join("screen.png");
+            
+            if qemu.screendump(&screen_path_ppm).await.is_ok() {
+                 if screen_path_ppm.exists() {
+                    // Convert to PNG using the image crate
+                    // We spawn blocking because image conversion is CPU intensive
+                    // and we don't want to block the async runtime logic too much, 
+                    // though for this tool it's likely fine.
+                    let ppm_path = screen_path_ppm.clone();
+                    let png_path = screen_path_png.clone();
+                    
+                    let conversion_result = tokio::task::spawn_blocking(move || {
+                        if let Ok(img) = image::open(&ppm_path) {
+                            if img.save(&png_path).is_ok() {
+                                return true;
+                            }
+                        }
+                        false
+                    }).await;
+
+                    if let Ok(true) = conversion_result {
+                         meta.artifacts.screenshot = Some("screen.png".to_string());
+                         let _ = std::fs::remove_file(&screen_path_ppm);
+                    }
+                 }
             }
 
             // Log tail

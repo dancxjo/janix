@@ -143,34 +143,32 @@ impl QemuProcess {
     }
 
     pub async fn screendump(&mut self, path: &Path) -> Result<()> {
-        if let (Some(writer), Some(reader)) = (&mut self.qmp_writer, &mut self.qmp_reader) {
-            let abs_path = if path.is_absolute() {
-                path.to_string_lossy().to_string()
-            } else {
-                std::env::current_dir()?.join(path).to_string_lossy().to_string()
-            };
+        tokio::time::timeout(Duration::from_secs(5), async {
+            if let (Some(writer), Some(reader)) = (&mut self.qmp_writer, &mut self.qmp_reader) {
+                let abs_path = if path.is_absolute() {
+                    path.to_string_lossy().to_string()
+                } else {
+                    std::env::current_dir()?.join(path).to_string_lossy().to_string()
+                };
 
-            let cmd = format!(r#"{{"execute": "screendump", "arguments": {{"filename": "{}"}}}}"#, abs_path);
-            writer.write_all(cmd.as_bytes()).await?;
-            writer.write_all(b"\n").await?;
+                let cmd = format!(r#"{{"execute": "screendump", "arguments": {{"filename": "{}"}}}}"#, abs_path);
+                writer.write_all(cmd.as_bytes()).await?;
+                writer.write_all(b"\n").await?;
 
-            // Read output
-            // QMP screendump returns `{"return": {}}` or error.
-            // We need to read lines until we find a return.
-            // But usually it's the next line.
-            
-            let mut line = String::new();
-            reader.read_line(&mut line).await?;
-            
-            if !line.contains("return") {
-                 // Might start with error?
-                 if line.contains("error") {
-                     eprintln!("QMP screendump error: {}", line);
-                 }
+                // Read output
+                let mut line = String::new();
+                reader.read_line(&mut line).await?;
+                
+                if !line.contains("return") {
+                     // Might start with error?
+                     if line.contains("error") {
+                         eprintln!("QMP screendump error: {}", line);
+                     }
+                }
+                return Ok(());
             }
-            return Ok(());
-        }
-        anyhow::bail!("QMP not connected")
+            anyhow::bail!("QMP not connected")
+        }).await.context("Screendump timed out")?
     }
 
     pub async fn kill(&mut self) -> Result<()> {

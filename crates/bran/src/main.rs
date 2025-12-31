@@ -91,18 +91,40 @@ fn early_putc(c: u8) {
             // COM1 (0x3F8) - I/O ports don't use paging
             asm!("out dx, al", in("dx") 0x3F8u16, in("al") c, options(nomem, nostack, preserves_flags));
         }
-        #[cfg(any(
-            target_arch = "aarch64",
-            target_arch = "riscv64",
-            target_arch = "loongarch64"
-        ))]
+        #[cfg(target_arch = "aarch64")]
         {
-            // Direct MMIO write is unsafe if unmapped.
-            // We cannot use Limine Terminal (unavailable in crate 0.5.0).
-            // So we remain silent in Bran.
-
-            // Note: Kernel tries to use HHDM offset to print.
-            // If HHDM doesn't map MMIO, Kernel will also be silent/crash.
+            // QEMU virt: PL011 at 0x0900_0000
+            let phys = 0x0900_0000;
+            // Only write if we have HHDM offset (paging is on)
+            if hhdm_offset != 0 {
+                let addr = (phys + hhdm_offset) as *mut u32;
+                // Wait for TXFF (bit 5) to be clear in FR (offset 0x18)
+                // while core::ptr::read_volatile(addr.add(6)) & 0x20 != 0 {}
+                // Write to DR (offset 0x00)
+                core::ptr::write_volatile(addr, c as u32);
+            }
+        }
+        #[cfg(target_arch = "riscv64")]
+        {
+            // QEMU virt: NS16550 at 0x1000_0000
+            let phys = 0x1000_0000;
+            if hhdm_offset != 0 {
+                let addr = (phys + hhdm_offset) as *mut u8;
+                // Wait for THRE (bit 5) in LSR (offset 5)
+                // while core::ptr::read_volatile(addr.add(5)) & 0x20 == 0 {}
+                // Write to THR (offset 0)
+                core::ptr::write_volatile(addr, c);
+            }
+        }
+        #[cfg(target_arch = "loongarch64")]
+        {
+            // QEMU virt: Serial at 0x1fe001e0
+            let phys = 0x1fe001e0;
+             if hhdm_offset != 0 {
+                let addr = (phys + hhdm_offset) as *mut u8;
+                // Write to data reg
+                core::ptr::write_volatile(addr, c);
+            }
         }
     }
 }

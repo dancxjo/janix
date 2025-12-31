@@ -69,6 +69,10 @@ pub fn boot(ctx: &'static mut BootContext) -> ! {
     // Phase 6: Spawn Sprout
     spawn_sprout(ctx);
 
+    // Phase 6.5: Signal boot completion
+    // This is the signal for the BDD runner to stop deciding the test passed
+    crate::serial::write(b"Booted.\n");
+
     // Phase 7: Enter scheduler loop
     sched::run()
 }

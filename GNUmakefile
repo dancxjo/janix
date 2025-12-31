@@ -306,4 +306,5 @@ distclean: clean
 
 .PHONY: bdd
 bdd:
-	cargo run -p ci-bdd-runner
+	ARCH=$(if $(ARCH),$(ARCH),all) cargo run -p ci-bdd-runner
+

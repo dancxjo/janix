@@ -80,7 +80,8 @@ pub fn init(ctx: &'static BootContext) {
 
     // Now switch to internal serial drivers for the anchor lines
     serial::write(b"LOG: serial backend installed\n");
-    serial::write(b"Booted.\n");
+    // "Booted." will now be printed by kernel::boot at the very end
+    // serial::write(b"Booted.\n");
 }
 
 /// Write raw bytes to serial (the unified path)

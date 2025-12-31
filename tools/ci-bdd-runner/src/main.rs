@@ -12,7 +12,7 @@ mod writer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let arch = env::var("ARCH").unwrap_or_else(|_| "x86_64".to_string());
+    let arch = env::var("ARCH").unwrap_or_else(|_| "all".to_string());
 
     // Default artifacts dir
     let out_str = env::var("ARTIFACTS").unwrap_or_else(|_| "artifacts".to_string());
@@ -44,11 +44,29 @@ async fn main() -> anyhow::Result<()> {
     };
 
     println!("Starting Cucumber...");
-    BootWorld::cucumber()
+    let runner = BootWorld::cucumber()
         .max_concurrent_scenarios(1)
-        .with_writer(writer)
-        .run(feature_path)
-        .await;
+        .with_writer(writer);
+
+    if arch != "all" {
+        // Create regex to match "for <arch>"
+        let pattern = if arch.contains(',') {
+            let parts: Vec<&str> = arch.split(',').collect();
+            format!("for ({})", parts.join("|"))
+        } else {
+            format!("for {}", arch)
+        };
+        println!("Filtering scenarios with pattern: '{}'", pattern);
+        let regex = regex::Regex::new(&pattern).expect("Invalid regex");
+        
+        runner.filter_run(feature_path, move |_, _, scenario| {
+            regex.is_match(&scenario.name)
+        }).await;
+    } else {
+        println!("Running all architectures.");
+        runner.run(feature_path).await;
+    }
+
     println!("Cucumber finished.");
 
     println!("Generating report...");

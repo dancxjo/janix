@@ -20,6 +20,9 @@ pub mod symbols;
 pub mod graph;
 pub mod syscall;
 pub mod sched;
+pub mod arch;
+pub mod serial;
+
 
 // Stub modules
 pub mod proc;

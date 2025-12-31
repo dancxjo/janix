@@ -8,8 +8,8 @@ use alloc::vec::Vec;
 use spin::Mutex;
 
 use crate::log::{self, Level};
-use crate::machine::Machine;
-use crate::symbols;
+use crate::arch::ARCH;
+use crate::arch::Arch;
 
 /// Thread identifier
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -48,11 +48,11 @@ struct Scheduler {
     /// Run queue (ready threads)
     run_queue: VecDeque<ThreadId>,
     /// Currently running thread
-    current: Option<ThreadId>,
+    _current: Option<ThreadId>,
     /// Next thread ID
     next_id: u64,
     /// Initialized flag
-    initialized: bool,
+    _initialized: bool,
 }
 
 impl Scheduler {
@@ -60,9 +60,9 @@ impl Scheduler {
         Self {
             threads: Vec::new(),
             run_queue: VecDeque::new(),
-            current: None,
+            _current: None,
             next_id: 1,
-            initialized: false,
+            _initialized: false,
         }
     }
     
@@ -88,9 +88,9 @@ impl Scheduler {
 }
 
 /// Initialize the scheduler
-pub fn init(machine: &'static dyn Machine) {
+pub fn init() {
     let mut sched = Scheduler::new();
-    sched.initialized = true;
+    sched._initialized = true;
     *SCHEDULER.lock() = Some(sched);
     
     log::klog(Level::Info, "KERNEL", "scheduler init");
@@ -112,7 +112,7 @@ pub fn thread_count() -> usize {
 }
 
 /// Run the scheduler loop (never returns)
-pub fn run(machine: &'static dyn Machine) -> ! {
+pub fn run() -> ! {
     log::klog(Level::Info, "KERNEL", "scheduler running");
     
     // For now, just idle forever
@@ -130,7 +130,7 @@ pub fn run(machine: &'static dyn Machine) -> ! {
         }
         
         // Idle until next interrupt
-        machine.arch().idle();
+        ARCH.idle();
     }
 }
 

@@ -66,7 +66,7 @@ fn sys_version_get() -> SyscallResult {
 /// a2: message length
 ///
 /// Returns: (0, thing_id_high, thing_id_low) or (error, 0, 0)
-fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult {
+fn sys_log_emit(level_raw: u64, msg_ptr: u64, _msg_len: u64) -> SyscallResult {
     // Validate level
     let level = match level_raw {
         0 => Level::Trace,
@@ -98,7 +98,7 @@ fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult {
 /// a1: string length
 ///
 /// Returns: (0, symbol_id, 0) or (error, 0, 0)
-fn sys_symbol_intern(str_ptr: u64, str_len: u64) -> SyscallResult {
+fn sys_symbol_intern(_str_ptr: u64, _str_len: u64) -> SyscallResult {
     // TODO: Properly read from user memory with validation
     // For now, return a placeholder symbol
     let placeholder = b"user_symbol";

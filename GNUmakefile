@@ -166,6 +166,14 @@ ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd: ovmf/$(OVMF_ARCHIVE)
 	mv ovmf/aarch64/vars.fd ovmf/ovmf-vars-aarch64.fd
 	rmdir ovmf/aarch64
 
+ovmf/ovmf-code-riscv64.fd ovmf/ovmf-vars-riscv64.fd: ovmf/$(OVMF_ARCHIVE)
+	mkdir -p ovmf
+	tar -xJf ovmf/$(OVMF_ARCHIVE) -C ovmf --strip-components=1 $(OVMF_RELEASE)-bin/riscv64/code.fd $(OVMF_RELEASE)-bin/riscv64/vars.fd
+	mv ovmf/riscv64/code.fd ovmf/ovmf-code-riscv64.fd
+	mv ovmf/riscv64/vars.fd ovmf/ovmf-vars-riscv64.fd
+	rmdir ovmf/riscv64
+
+
 limine/limine:
 	rm -rf limine
 	git clone https://github.com/limine-bootloader/limine.git --branch=v10.x-binary --depth=1
@@ -176,48 +184,48 @@ bran:
 	$(MAKE) -C crates/bran
 
 $(IMAGE_NAME).iso: limine/limine bran
-	rm -rf iso_root
-	mkdir -p iso_root/boot
-	cp -v crates/bran/kernel iso_root/boot/
-	mkdir -p iso_root/boot/limine
-	cp -v limine.conf iso_root/boot/limine/
-	mkdir -p iso_root/EFI/BOOT
+	rm -rf iso_root_$(KARCH)
+	mkdir -p iso_root_$(KARCH)/boot
+	cp -v crates/bran/kernel iso_root_$(KARCH)/boot/
+	mkdir -p iso_root_$(KARCH)/boot/limine
+	cp -v limine.conf iso_root_$(KARCH)/boot/limine/
+	mkdir -p iso_root_$(KARCH)/EFI/BOOT
 ifeq ($(KARCH),x86_64)
-	cp -v limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/boot/limine/
-	cp -v limine/BOOTX64.EFI iso_root/EFI/BOOT/
-	cp -v limine/BOOTIA32.EFI iso_root/EFI/BOOT/
+	cp -v limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root_$(KARCH)/boot/limine/
+	cp -v limine/BOOTX64.EFI iso_root_$(KARCH)/EFI/BOOT/
+	cp -v limine/BOOTIA32.EFI iso_root_$(KARCH)/EFI/BOOT/
 	xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
 		-no-emul-boot -boot-load-size 4 -boot-info-table \
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o $(IMAGE_NAME).iso
+		iso_root_$(KARCH) -o $(IMAGE_NAME).iso
 	./limine/limine bios-install $(IMAGE_NAME).iso
 endif
 ifeq ($(KARCH),aarch64)
-	cp -v limine/limine-uefi-cd.bin iso_root/boot/limine/
-	cp -v limine/BOOTAA64.EFI iso_root/EFI/BOOT/
+	cp -v limine/limine-uefi-cd.bin iso_root_$(KARCH)/boot/limine/
+	cp -v limine/BOOTAA64.EFI iso_root_$(KARCH)/EFI/BOOT/
 	xorriso -as mkisofs \
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o $(IMAGE_NAME).iso
+		iso_root_$(KARCH) -o $(IMAGE_NAME).iso
 endif
 ifeq ($(KARCH),riscv64)
-	cp -v limine/limine-uefi-cd.bin iso_root/boot/limine/
-	cp -v limine/BOOTRISCV64.EFI iso_root/EFI/BOOT/
+	cp -v limine/limine-uefi-cd.bin iso_root_$(KARCH)/boot/limine/
+	cp -v limine/BOOTRISCV64.EFI iso_root_$(KARCH)/EFI/BOOT/
 	xorriso -as mkisofs \
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o $(IMAGE_NAME).iso
+		iso_root_$(KARCH) -o $(IMAGE_NAME).iso
 endif
 ifeq ($(KARCH),loongarch64)
-	cp -v limine/limine-uefi-cd.bin iso_root/boot/limine/
-	cp -v limine/BOOTLOONGARCH64.EFI iso_root/EFI/BOOT/
+	cp -v limine/limine-uefi-cd.bin iso_root_$(KARCH)/boot/limine/
+	# cp -v limine/BOOTLOONGARCH64.EFI iso_root_$(KARCH)/EFI/BOOT/
 	xorriso -as mkisofs \
 		--efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o $(IMAGE_NAME).iso
+		iso_root_$(KARCH) -o $(IMAGE_NAME).iso
 endif
-	rm -rf iso_root
+	rm -rf iso_root_$(KARCH)
 
 $(IMAGE_NAME).hdd: limine/limine bran
 	rm -f $(IMAGE_NAME).hdd
@@ -242,13 +250,13 @@ ifeq ($(KARCH),riscv64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTRISCV64.EFI ::/EFI/BOOT
 endif
 ifeq ($(KARCH),loongarch64)
-	mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT
+	# mcopy -i $(IMAGE_NAME).hdd@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT
 endif
 
 .PHONY: clean
 clean:
 	$(MAKE) -C crates/bran clean
-	rm -rf iso_root $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
+	rm -rf iso_root_* $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
 
 .PHONY: distclean
 distclean: clean

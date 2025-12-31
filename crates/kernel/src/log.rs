@@ -1,14 +1,15 @@
 //! Kernel logging subsystem
 //!
 //! Provides graph-native logging. Each log entry becomes a Thing in the graph.
-//! All serial output goes through Architecture::serial_write for consistency.
+//! All serial output goes through the kernel's internal serial drivers.
 
 use alloc::vec::Vec;
 use spin::Mutex;
 
 use crate::graph::{self, ThingId};
-use crate::machine::Machine;
+use crate::boot::BootContext;
 use crate::symbols::{self, SymbolId};
+use crate::serial;
 
 /// Log level
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -62,31 +63,32 @@ impl LogEntry {
     }
 }
 
-/// Global machine reference for logging
-static MACHINE: Mutex<Option<&'static dyn Machine>> = Mutex::new(None);
+/// Global context reference for logging
+static CONTEXT: Mutex<Option<&'static BootContext>> = Mutex::new(None);
 
-/// Initialize logging with machine reference
-pub fn init(machine: &'static dyn Machine) {
-    *MACHINE.lock() = Some(machine);
+/// Initialize logging with boot context
+pub fn init(ctx: &'static BootContext) {
+    *CONTEXT.lock() = Some(ctx);
     
-    // Print the BDD anchor line - this is what the tests look for
-    serial_write(b"Booted.\n");
-    
-    // Log that the serial backend is installed
-    serial_write(b"LOG: serial backend installed\n");
+    // Check if early output is requested
+    if let Some(early_putc) = ctx.early_putc {
+        // Use early putc for the very first notification
+        for &b in b"KERNEL: handoff accepted\n" {
+            early_putc(b);
+        }
+    }
+
+    // Now switch to internal serial drivers for the anchor lines
+    serial::write(b"LOG: serial backend installed\n");
+    serial::write(b"Booted.\n");
 }
 
 /// Write raw bytes to serial (the unified path)
 fn serial_write(bytes: &[u8]) {
-    let guard = MACHINE.lock();
-    if let Some(machine) = *guard {
-        machine.arch().serial_write(bytes);
-    }
+    serial::write(bytes);
 }
 
 /// Emit a log entry
-/// 
-/// Creates a LogEntry Thing in the graph and outputs to serial.
 pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<ThingId> {
     // Always output to serial for debugging
     serial_log(level, subsystem, message);
@@ -111,7 +113,7 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
     Some(id)
 }
 
-/// Kernel log helper - logs with "KERNEL" subsystem
+/// Kernel log helper
 pub fn klog(level: Level, subsystem: &str, message: &str) {
     let sub_sym = symbols::intern(subsystem.as_bytes());
     log_emit(level, sub_sym, message.as_bytes());
@@ -119,29 +121,24 @@ pub fn klog(level: Level, subsystem: &str, message: &str) {
 
 /// Serial output for structured logging
 fn serial_log(_level: Level, subsystem: SymbolId, message: &[u8]) {
-    let guard = MACHINE.lock();
-    if let Some(machine) = *guard {
-        let arch = machine.arch();
-        
-        // Format: "SUBSYSTEM: message\n"
-        if let Some(sub_str) = symbols::resolve(subsystem) {
-            arch.serial_write(sub_str.as_bytes());
-        } else {
-            arch.serial_write(b"SYM:");
-        }
-        
-        arch.serial_write(b": ");
-        arch.serial_write(message);
-        arch.serial_write(b"\n");
+    // Format: "SUBSYSTEM: message\n"
+    if let Some(sub_str) = symbols::resolve(subsystem) {
+        serial::write(sub_str.as_bytes());
+    } else {
+        serial::write(b"SYM:");
     }
+    
+    serial::write(b": ");
+    serial::write(message);
+    serial::write(b"\n");
 }
 
-/// Simple kernel print (bypasses graph, direct to serial)
+/// Simple kernel print
 pub fn kprint(message: &str) {
     serial_write(message.as_bytes());
 }
 
-/// Simple kernel println (bypasses graph, direct to serial)
+/// Simple kernel println
 pub fn kprintln(message: &str) {
     kprint(message);
     kprint("\n");

@@ -119,6 +119,17 @@ pub trait Architecture: Sync {
     
     /// Write a byte to the debug serial port (for early logging)
     fn debug_putc(&self, c: u8);
+    
+    /// Write bytes to the serial port
+    /// 
+    /// This is the canonical serial output path. All kernel logging
+    /// should go through this method.
+    fn serial_write(&self, bytes: &[u8]) {
+        // Default implementation uses debug_putc
+        for &b in bytes {
+            self.debug_putc(b);
+        }
+    }
 }
 
 /// Module listing/mapping abstraction

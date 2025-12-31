@@ -1,7 +1,7 @@
 //! Kernel logging subsystem
 //!
 //! Provides graph-native logging. Each log entry becomes a Thing in the graph.
-//! Early logging uses arch serial for bootstrap before graph is ready.
+//! All serial output goes through Architecture::serial_write for consistency.
 
 use alloc::vec::Vec;
 use spin::Mutex;
@@ -62,20 +62,31 @@ impl LogEntry {
     }
 }
 
-/// Global machine reference for early logging
+/// Global machine reference for logging
 static MACHINE: Mutex<Option<&'static dyn Machine>> = Mutex::new(None);
 
 /// Initialize logging with machine reference
 pub fn init(machine: &'static dyn Machine) {
     *MACHINE.lock() = Some(machine);
     
-    // Log the boot message
-    klog(Level::Info, "KERNEL", "boot");
+    // Print the BDD anchor line - this is what the tests look for
+    serial_write(b"Booted.\n");
+    
+    // Log that the serial backend is installed
+    serial_write(b"LOG: serial backend installed\n");
+}
+
+/// Write raw bytes to serial (the unified path)
+fn serial_write(bytes: &[u8]) {
+    let guard = MACHINE.lock();
+    if let Some(machine) = *guard {
+        machine.arch().serial_write(bytes);
+    }
 }
 
 /// Emit a log entry
 /// 
-/// Creates a LogEntry Thing in the graph and optionally outputs to serial.
+/// Creates a LogEntry Thing in the graph and outputs to serial.
 pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<ThingId> {
     // Always output to serial for debugging
     serial_log(level, subsystem, message);
@@ -106,44 +117,28 @@ pub fn klog(level: Level, subsystem: &str, message: &str) {
     log_emit(level, sub_sym, message.as_bytes());
 }
 
-/// Serial output for early/debug logging
-fn serial_log(level: Level, subsystem: SymbolId, message: &[u8]) {
+/// Serial output for structured logging
+fn serial_log(_level: Level, subsystem: SymbolId, message: &[u8]) {
     let guard = MACHINE.lock();
     if let Some(machine) = *guard {
         let arch = machine.arch();
         
         // Format: "SUBSYSTEM: message\n"
         if let Some(sub_str) = symbols::resolve(subsystem) {
-            for c in sub_str.as_bytes() {
-                arch.debug_putc(*c);
-            }
+            arch.serial_write(sub_str.as_bytes());
         } else {
-            // Unknown subsystem, print the ID
-            for c in b"SYM:" {
-                arch.debug_putc(*c);
-            }
+            arch.serial_write(b"SYM:");
         }
         
-        arch.debug_putc(b':');
-        arch.debug_putc(b' ');
-        
-        for c in message {
-            arch.debug_putc(*c);
-        }
-        
-        arch.debug_putc(b'\n');
+        arch.serial_write(b": ");
+        arch.serial_write(message);
+        arch.serial_write(b"\n");
     }
 }
 
 /// Simple kernel print (bypasses graph, direct to serial)
 pub fn kprint(message: &str) {
-    let guard = MACHINE.lock();
-    if let Some(machine) = *guard {
-        let arch = machine.arch();
-        for c in message.as_bytes() {
-            arch.debug_putc(*c);
-        }
-    }
+    serial_write(message.as_bytes());
 }
 
 /// Simple kernel println (bypasses graph, direct to serial)

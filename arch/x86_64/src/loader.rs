@@ -1,8 +1,8 @@
 use abi::ThingId;
 
 use crate::bridge::Bridge;
-use kernel::bridge::CpuBridge;
-use kernel::sched::spawn_elf::{spawn_user_elf, FramebufferSpec, SpawnSpec, USER_FB_BASE};
+use crate::user_space::X64UserSpace;
+use kernel::sched::spawn::{spawn_user_elf, FramebufferMap};
 use kernel::Kernel;
 
 pub fn spawn_elf(
@@ -19,27 +19,14 @@ pub fn spawn_elf(
     }
 
     let fb = unsafe { crate::entry::FRAMEBUFFER_INFO }
-        .map(|(phys, size)| FramebufferSpec {
+        .map(|(phys, size)| FramebufferMap {
             phys,
             size: size as u64,
-            user_virt: USER_FB_BASE,
         });
 
-    let spec = SpawnSpec {
-        name,
-        elf: data,
-        spawn: true,
-        fb,
-    };
-
-    if let Some((entry, layout)) = spawn_user_elf(k, spec) {
-        k.bridge.log(&alloc::format!(
-            "loader: spawn_user_elf entry={:#x} stack_top={:#x} heap=[{:#x},{:#x})\n",
-            entry,
-            layout.stack_top,
-            layout.heap_start,
-            layout.heap_end
-        ));
+    let mut us = X64UserSpace;
+    if let Some(_res) = spawn_user_elf(k, &mut us, name, data, fb) {
+        // Logging is already handled in spawn_user_elf
     } else {
         k.bridge.log("loader: spawn_user_elf failed\n");
     }

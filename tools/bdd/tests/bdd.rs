@@ -142,34 +142,41 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) {
     // Increase timeout to 60s
     let boot_timeout = Duration::from_secs(60);
 
+    let output_buffer = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let output_buffer_clone = output_buffer.clone();
+
     match cmd.spawn() {
         Ok(mut child) => {
             let stdout = child.stdout.take().expect("stdout");
             let mut reader = BufReader::new(stdout).lines();
 
-            let result = timeout(boot_timeout, async {
-                let mut output = String::new();
+            let result = timeout(boot_timeout, async move {
                 while let Ok(Some(line)) = reader.next_line().await {
-                    output.push_str(&line);
-                    output.push('\n');
+                    {
+                        let mut buf = output_buffer_clone.lock().expect("Failed to lock output buffer");
+                        buf.push_str(&line);
+                        buf.push('\n');
+                    }
                     
                     if line.contains("Booted.") {
-                        return output; // Early exit on success
+                        return true;
                     }
                     if line.contains("panic") || line.contains("PANIC") {
-                        // Keep reading a bit more? No, just return
-                        return output;
+                        return true;
                     }
                 }
-                output
+                false
             }).await;
 
             let _ = child.kill().await;
 
-            world.serial_output = match result {
-                Ok(out) => out,
-                Err(_) => format!("TIMEOUT (60s). Captured so far:\n{}", world.serial_output),
-            };
+            let captured = output_buffer.lock().expect("Failed to lock output buffer").clone();
+            
+            if let Err(_) = result {
+                world.serial_output = format!("TIMEOUT (60s). Captured so far:\n{}", captured);
+            } else {
+                world.serial_output = captured;
+            }
         }
         Err(e) => {
             world.serial_output = format!("ERROR: Failed to start QEMU: {}", e);

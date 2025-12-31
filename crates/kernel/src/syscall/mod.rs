@@ -4,7 +4,7 @@
 //! by number and return (status, val0, val1).
 
 use crate::log::{self, Level};
-use crate::symbols::{self, SymbolId};
+use crate::symbols;
 
 /// Syscall numbers
 pub mod nr {
@@ -41,7 +41,7 @@ pub fn init() {
 ///
 /// Called by the architecture layer when a syscall trap occurs.
 /// Returns (status, value0, value1).
-pub fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> SyscallResult {
+pub fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, _a3: u64, _a4: u64, _a5: u64) -> SyscallResult {
     match nr {
         nr::SYS_VERSION_GET => sys_version_get(),
         nr::SYS_LOG_EMIT => sys_log_emit(a0, a1, a2),
@@ -66,7 +66,7 @@ fn sys_version_get() -> SyscallResult {
 /// a2: message length
 ///
 /// Returns: (0, thing_id_high, thing_id_low) or (error, 0, 0)
-fn sys_log_emit(level_raw: u64, msg_ptr: u64, _msg_len: u64) -> SyscallResult {
+fn sys_log_emit(level_raw: u64, _msg_ptr: u64, _msg_len: u64) -> SyscallResult {
     // Validate level
     let level = match level_raw {
         0 => Level::Trace,

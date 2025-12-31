@@ -33,7 +33,7 @@ const USER_FB_BASE: u64 = 0x80_0000_0000;
 
 static APP_LOAD_ADDR: AtomicU64 = AtomicU64::new(LOAD_BASE_START);
 
-pub fn spawn_user_elf<A: UserSpace, B: crate::bridge::CpuBridge>(
+pub fn spawn_user_elf<A: UserSpace, B: crate::arch::bridge::FullMachineBridge>(
     k: &mut Kernel<B>,
     _arch: &mut A, // Not strictly needed if A functions are static/unsafe, but following signature
     name: &str,
@@ -140,7 +140,7 @@ pub fn spawn_user_elf<A: UserSpace, B: crate::bridge::CpuBridge>(
     }
 
     // Map framebuffer if present
-    if let Some(fb_map) = fb {
+    if let Some(ref fb_map) = fb {
         let mut offs = 0;
         while offs < fb_map.size {
             unsafe {

@@ -16,6 +16,7 @@ pub mod loader;
 pub mod memory_intrinsics;
 pub mod paging;
 pub mod simd;
+pub mod user_space;
 
 // Re-export key items for convenience
 pub use bridge::{

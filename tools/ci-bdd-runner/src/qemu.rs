@@ -17,6 +17,8 @@ pub struct QemuProcess {
     pub log_buffer: Arc<Mutex<String>>,
 }
 
+use std::os::unix::process::ExitStatusExt;
+
 impl QemuProcess {
     pub async fn spawn(
         arch: &str,
@@ -77,17 +79,35 @@ impl QemuProcess {
             .context("Failed to spawn QEMU")?;
 
         let stdout = child.stdout.take().context("Failed to take stdout")?;
+        let stderr = child.stderr.take().context("Failed to take stderr")?;
         let log_buffer = Arc::new(Mutex::new(String::new()));
+        
+        // Spawn stdout reader
         let log_clone = log_buffer.clone();
-
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 // Echo to stdout for user visibility
-                println!("{}", line);
+                println!("[QEMU IMPERIAL] {}", line);
 
                 let mut buf = log_clone.lock().unwrap();
+                buf.push_str(&line);
+                buf.push('\n');
+            }
+        });
+
+        // Spawn stderr reader
+        let log_clone_err = log_buffer.clone();
+        tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                // Echo to stderr for user visibility
+                eprintln!("[QEMU IMPERIAL ERR] {}", line);
+
+                let mut buf = log_clone_err.lock().unwrap();
+                buf.push_str("STDERR: ");
                 buf.push_str(&line);
                 buf.push('\n');
             }
@@ -173,6 +193,17 @@ impl QemuProcess {
 
     pub async fn kill(&mut self) -> Result<()> {
         self.child.kill().await.context("Failed to kill QEMU")
+    }
+
+    pub fn check_status(&mut self) -> Option<std::process::ExitStatus> {
+        match self.child.try_wait() {
+            Ok(Some(status)) => Some(status),
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("Error waiting for QEMU status: {}", e);
+                None
+            }
+        }
     }
 }
 

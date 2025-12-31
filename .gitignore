@@ -7,3 +7,4 @@ target/
 iso_root_*
 check.log
 artifacts/
+crates/sprout/sprout

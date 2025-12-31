@@ -88,23 +88,34 @@ async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Resul
     
     loop {
         let current_log = {
-            let guard = GLOBAL_QEMU.lock().await;
-            if let Some(qemu) = guard.as_ref() {
-                let log = qemu.log_buffer.lock().unwrap();
-                log.clone()
+            let mut guard = GLOBAL_QEMU.lock().await;
+            if let Some(qemu) = guard.as_mut() {
+                let log = qemu.log_buffer.lock().unwrap().clone();
+                // Check status inside the lock but after releasing log lock
+                let status = qemu.check_status();
+                (log, status)
             } else {
-                String::new()
+                (String::new(), None)
             }
         };
 
-        if current_log.contains(&expected) {
+        let (log_text, qemu_status) = current_log;
+
+        if log_text.contains(&expected) {
             return Ok(());
+        }
+
+        if let Some(status) = qemu_status {
+            return Err(anyhow!(
+                "QEMU exited unexpectedly with status: {:?}\nLogs captured so far:\n---\n{}\n---",
+                status, log_text
+            ));
         }
 
         if start.elapsed() > timeout {
             return Err(anyhow!(
                 "Expected '{}' in serial output. Got:\n--- START ---\n{}\n--- END ---",
-                expected, current_log
+                expected, log_text
             ));
         }
 

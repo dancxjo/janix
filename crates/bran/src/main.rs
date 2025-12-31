@@ -11,7 +11,7 @@
 use core::arch::asm;
 use limine::BaseRevision;
 use limine::request::{
-    FramebufferRequest, MemoryMapRequest, ModuleRequest,
+    FramebufferRequest, MemoryMapRequest, ModuleRequest, HhdmRequest,
     RequestsEndMarker, RequestsStartMarker,
 };
 
@@ -28,6 +28,10 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -70,26 +74,48 @@ static mut BOOT_CTX: BootContext = BootContext {
 // =============================================================================
 
 fn early_putc(c: u8) {
+    // Limine Console/Terminal request removed due to compilation issues.
+    // We fall back to direct serial input below.
+
+    // On MMIO architectures, we need the HHDM offset because we are in virtual mode
+    // but only have the physical address of the UART.
+    let hhdm_offset = if let Some(hhdm) = HHDM_REQUEST.get_response() {
+        hhdm.offset()
+    } else {
+        0
+    };
+
     unsafe {
         #[cfg(target_arch = "x86_64")]
         {
-            // COM1 (0x3F8)
+            // COM1 (0x3F8) - I/O ports don't use paging
             asm!("out dx, al", in("dx") 0x3F8u16, in("al") c, options(nomem, nostack, preserves_flags));
         }
         #[cfg(target_arch = "aarch64")]
         {
             // PL011 (0x0900_0000)
-            core::ptr::write_volatile(0x0900_0000 as *mut u32, c as u32);
+            let addr = 0x0900_0000 + hhdm_offset;
+            // Only attempt write if we have a non-zero offset (likely mapped) or if we are desperate
+            // Writing to 0x0900_0000 virtual (if hhdm_offset is 0) will fault.
+            if hhdm_offset != 0 {
+                 core::ptr::write_volatile(addr as *mut u32, c as u32);
+            }
         }
         #[cfg(target_arch = "riscv64")]
         {
             // 16550 (0x1000_0000)
-            core::ptr::write_volatile(0x1000_0000 as *mut u8, c);
+            let addr = 0x1000_0000 + hhdm_offset;
+            if hhdm_offset != 0 {
+                 core::ptr::write_volatile(addr as *mut u8, c);
+            }
         }
         #[cfg(target_arch = "loongarch64")]
         {
             // 16550 (0x1fe001e0)
-            core::ptr::write_volatile(0x1fe001e0 as *mut u8, c);
+            let addr = 0x1fe001e0 + hhdm_offset;
+            if hhdm_offset != 0 {
+                 core::ptr::write_volatile(addr as *mut u8, c);
+            }
         }
     }
 }
@@ -157,6 +183,10 @@ unsafe extern "C" fn kmain() -> ! {
     bran_log("BRAN: starting");
 
     // 1. Collect HHDM and Memory Map info
+    if let Some(hhdm) = HHDM_REQUEST.get_response() {
+        BOOT_CTX.hhdm_offset = hhdm.offset();
+    }
+    
     if let Some(mmap) = MEMORY_MAP_REQUEST.get_response() {
         let mut total_mem = 0;
         for entry in mmap.entries() {

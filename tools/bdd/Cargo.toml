@@ -1,0 +1,16 @@
+[package]
+name = "bdd"
+version = "0.3.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "process", "time", "io-util"] }
+
+[dev-dependencies]
+cucumber = "0.22"
+
+[[test]]
+name = "bdd"
+harness = false
+path = "tests/bdd.rs"

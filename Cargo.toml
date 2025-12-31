@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/bran",
+    "tools/bdd",
 ]
 
 [workspace.package]

@@ -143,23 +143,28 @@ run-hdd-bios: $(IMAGE_NAME).hdd
 		-hda $(IMAGE_NAME).hdd \
 		$(QEMUFLAGS)
 
-ovmf/ovmf-code-$(KARCH).fd:
-	mkdir -p ovmf
-	curl -Lo $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/ovmf-code-$(KARCH).fd
-	case "$(KARCH)" in \
-		aarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=67108864 2>/dev/null;; \
-		loongarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=5242880 2>/dev/null;; \
-		riscv64) dd if=/dev/zero of=$@ bs=1 count=0 seek=33554432 2>/dev/null;; \
-	esac
+# OVMF pinned release - the latest drops occasionally regress
+OVMF_RELEASE ?= edk2-stable202411-r1
+OVMF_ARCHIVE = $(OVMF_RELEASE)-bin.tar.xz
+OVMF_URL = https://github.com/rust-osdev/ovmf-prebuilt/releases/download/$(OVMF_RELEASE)/$(OVMF_ARCHIVE)
 
-ovmf/ovmf-vars-$(KARCH).fd:
+ovmf/$(OVMF_ARCHIVE):
 	mkdir -p ovmf
-	curl -Lo $@ https://github.com/osdev0/edk2-ovmf-nightly/releases/latest/download/ovmf-vars-$(KARCH).fd
-	case "$(KARCH)" in \
-		aarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=67108864 2>/dev/null;; \
-		loongarch64) dd if=/dev/zero of=$@ bs=1 count=0 seek=5242880 2>/dev/null;; \
-		riscv64) dd if=/dev/zero of=$@ bs=1 count=0 seek=33554432 2>/dev/null;; \
-	esac
+	curl -fLo $@ $(OVMF_URL)
+
+ovmf/ovmf-code-x86_64.fd ovmf/ovmf-vars-x86_64.fd: ovmf/$(OVMF_ARCHIVE)
+	mkdir -p ovmf
+	tar -xJf ovmf/$(OVMF_ARCHIVE) -C ovmf --strip-components=1 $(OVMF_RELEASE)-bin/x64/code.fd $(OVMF_RELEASE)-bin/x64/vars.fd
+	mv ovmf/x64/code.fd ovmf/ovmf-code-x86_64.fd
+	mv ovmf/x64/vars.fd ovmf/ovmf-vars-x86_64.fd
+	rmdir ovmf/x64
+
+ovmf/ovmf-code-aarch64.fd ovmf/ovmf-vars-aarch64.fd: ovmf/$(OVMF_ARCHIVE)
+	mkdir -p ovmf
+	tar -xJf ovmf/$(OVMF_ARCHIVE) -C ovmf --strip-components=1 $(OVMF_RELEASE)-bin/aarch64/code.fd $(OVMF_RELEASE)-bin/aarch64/vars.fd
+	mv ovmf/aarch64/code.fd ovmf/ovmf-code-aarch64.fd
+	mv ovmf/aarch64/vars.fd ovmf/ovmf-vars-aarch64.fd
+	rmdir ovmf/aarch64
 
 limine/limine:
 	rm -rf limine
@@ -249,3 +254,7 @@ clean:
 distclean: clean
 	$(MAKE) -C crates/bran distclean
 	rm -rf limine ovmf
+
+.PHONY: bdd
+bdd:
+	cargo test -p bdd --test bdd

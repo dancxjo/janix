@@ -1,4 +1,4 @@
-use crate::shared::GLOBAL_QEMU;
+use crate::shared::{GLOBAL_QEMU, GLOBAL_LAST_ERROR};
 use cucumber::event::{Event, Cucumber};
 use cucumber::Writer;
 use serde::Serialize;
@@ -32,7 +32,7 @@ struct Artifacts {
 pub struct ArtifactWriter {
     pub out_dir: PathBuf,
     pub arch: String,
-    pub run_id: String,
+    pub _run_id: String,
     pub current_feature: String,
     pub current_scenario: String,
     pub step_index: usize,
@@ -46,7 +46,7 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
         event: cucumber::parser::Result<Event<Cucumber<World>>>,
         _cli: &Self::Cli,
     ) {
-        use cucumber::event::{Cucumber, Feature, Rule, Scenario, Step};
+        use cucumber::event::{Cucumber, Feature, Scenario, Step};
 
         let event = match event {
             Ok(e) => e,
@@ -69,16 +69,44 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                             Scenario::Step(step, step_event) => {
                                 match step_event {
                                     Step::Passed(..) | Step::Failed(..) | Step::Skipped => {
-                                        let status = match step_event {
+                                        let mut status = match step_event {
                                             Step::Passed(..) => "passed",
                                             Step::Failed(..) => "failed",
                                             Step::Skipped => "skipped",
                                             _ => "unknown",
                                         };
+                                        
+                                        // Check for soft fail
+                                        if status == "passed" {
+                                            let guard = GLOBAL_LAST_ERROR.lock().await;
+                                            if guard.is_some() {
+                                                status = "failed";
+                                                println!("Writer: Soft Fail detected. Marking step as failed.");
+                                            }
+                                        }
+
                                         self.capture_artifact(&step.value, status).await;
+                                        
+                                        // Clear error after handling step? 
+                                        // Actually, we want to clear it so next step doesn't inherit failure.
+                                        // But if we returned Ok, cucumber continues. 
+                                        // So we need to reset it.
+                                        {
+                                             let mut guard = GLOBAL_LAST_ERROR.lock().await;
+                                             *guard = None;
+                                        }
+
                                         self.step_index += 1;
                                     }
                                     _ => {}
+                                }
+                            }
+                            Scenario::Finished => {
+                                // Ensure QEMU is killed at the end of the scenario
+                                let mut guard = GLOBAL_QEMU.lock().await;
+                                if let Some(qemu) = guard.as_mut() {
+                                    println!("Scenario finished. Killing QEMU...");
+                                    let _ = qemu.kill().await;
                                 }
                             }
                             _ => {}
@@ -144,28 +172,38 @@ impl ArtifactWriter {
             // Screenshot
             let screen_path_ppm = step_dir.join("screen.ppm");
             
-            if qemu.screendump(&screen_path_ppm).await.is_ok() {
-                 if screen_path_ppm.exists() {
-                     let ppm_path = screen_path_ppm.clone();
-                     let png_path = step_dir.join("screen.png");
-                     
-                     let conversion_result = tokio::task::spawn_blocking(move || {
-                         if let Ok(img) = image::open(&ppm_path) {
-                             if img.save(&png_path).is_ok() {
-                                 return true;
+            match qemu.screendump(&screen_path_ppm).await {
+                Ok(_) => {
+                     if screen_path_ppm.exists() {
+                         let ppm_path = screen_path_ppm.clone();
+                         let png_path = step_dir.join("screen.png");
+                         
+                         let conversion_result = tokio::task::spawn_blocking(move || {
+                             let res = (|| -> anyhow::Result<()> {
+                                 let img = image::open(&ppm_path).map_err(|e| anyhow::anyhow!("Open failed: {}", e))?;
+                                 img.save(&png_path).map_err(|e| anyhow::anyhow!("Save failed: {}", e))?;
+                                 Ok(())
+                             })();
+                             res
+                         }).await;
+
+                         match conversion_result {
+                             Ok(Ok(_)) => {
+                                 meta.artifacts.screenshot = Some("screen.png".to_string());
+                             }
+                             Ok(Err(e)) => {
+                                 eprintln!("Image conversion failed: {}", e);
+                             }
+                             Err(e) => {
+                                 eprintln!("Image conversion task panicked: {}", e);
                              }
                          }
-                         false
-                     }).await;
-
-                     if let Ok(true) = conversion_result {
-                          meta.artifacts.screenshot = Some("screen.png".to_string());
-                          let _ = std::fs::remove_file(&screen_path_ppm);
+                         // Always clean up PPM
+                         let _ = std::fs::remove_file(&screen_path_ppm);
                      }
-                 }
+                }
+                Err(_) => {}
             }
-
-            // Log tail
 
             // Log tail
             if let Ok(log) = qemu.log_buffer.lock() {

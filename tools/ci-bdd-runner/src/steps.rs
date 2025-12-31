@@ -3,7 +3,7 @@ use cucumber::{given, then, World};
 use std::path::PathBuf;
 use tokio::process::Command;
 use crate::qemu::QemuProcess;
-use crate::shared::GLOBAL_QEMU;
+use crate::shared::{GLOBAL_QEMU, GLOBAL_LAST_ERROR, ANY_FAILURE};
 use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Default, World)]
@@ -26,19 +26,20 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) -> Result<()> {
     let root = project_root();
 
     // 1. Build ISO
-    println!("Building ISO for {}...", arch);
-    let output = Command::new("make")
+    println!("Building ISO for {} (streaming output)...", arch);
+    let mut child = Command::new("make")
         .args([&format!("template-{}.iso", arch)])
         .env("KARCH", &arch)
         .current_dir(&root)
-        .output()
-        .await
-        .context("Failed to run make")?;
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .context("Failed to spawn make")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(anyhow!("Failed to build ISO for {}.\nSTDOUT:\n{}\nSTDERR:\n{}", arch, stdout, stderr));
+    let status = child.wait().await.context("Failed to wait for make")?;
+
+    if !status.success() {
+        return Err(anyhow!("Failed to build ISO for {}. Exit status: {}", arch, status));
     }
 
     let iso_path = root.join(format!("template-{}.iso", arch));
@@ -111,26 +112,48 @@ async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Resul
         }
 
         if let Some(status) = qemu_status {
-            return Err(anyhow!(
-                "QEMU exited unexpectedly with status: {:?}\nLogs captured so far:\n---\n{}\n---",
-                status, log_text
-            ));
+            let len = log_text.len();
+            let truncated_log = if len > 2000 {
+                format!("... (last 2000 chars)\n{}", &log_text[len - 2000..])
+            } else {
+                log_text
+            };
+            let err_msg = format!("QEMU exited unexpectedly with status: {:?}\nLogs captured so far:\n---\n{}\n---", status, truncated_log);
+            eprintln!("SOFT FAIL: {}", err_msg);
+            
+             // Set global error state
+            {
+                let mut guard = GLOBAL_LAST_ERROR.lock().await;
+                *guard = Some(err_msg);
+            }
+            ANY_FAILURE.store(true, std::sync::atomic::Ordering::SeqCst);
+            
+            return Ok(());
         }
 
         if start.elapsed() > timeout {
-            // Kill QEMU before erroring to prevent writer from trying to snapshot a hung process
-            {
-                 let mut guard = GLOBAL_QEMU.lock().await;
-                 if let Some(qemu) = guard.as_mut() {
-                     println!("Timeout reached ({}s). Killing QEMU...", timeout_secs);
-                     let _ = qemu.kill().await;
-                 }
-            }
+            // Note: We do NOT kill QEMU here. We let the writer capture the state (screenshot/logs)
+            // and then the writer or the start of the next scenario will kill it.
+            // Explicit cleanup should happen on Scenario::Finished in the writer.
+            let len = log_text.len();
+            let truncated_log = if len > 2000 {
+                format!("... (last 2000 chars)\n{}", &log_text[len - 2000..])
+            } else {
+                log_text
+            };
+            
+            let err_msg = format!("Expected '{}' in serial output. Got:\n--- START ---\n{}\n--- END ---", expected, truncated_log);
+            eprintln!("SOFT FAIL: {}", err_msg);
 
-            return Err(anyhow!(
-                "Expected '{}' in serial output. Got:\n--- START ---\n{}\n--- END ---",
-                expected, log_text
-            ));
+            // Set global error state
+            {
+                let mut guard = GLOBAL_LAST_ERROR.lock().await;
+                *guard = Some(err_msg);
+            }
+            ANY_FAILURE.store(true, std::sync::atomic::Ordering::SeqCst);
+            
+            // Return Ok to prevent cucumber abort
+            return Ok(());
         }
 
         sleep(Duration::from_millis(500)).await;

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
 use tokio::time::{sleep, Duration};
@@ -17,7 +17,7 @@ pub struct QemuProcess {
     pub log_buffer: Arc<Mutex<String>>,
 }
 
-use std::os::unix::process::ExitStatusExt;
+
 
 impl QemuProcess {
     pub async fn spawn(
@@ -42,6 +42,16 @@ impl QemuProcess {
             "-no-reboot".to_string(),
             "-qmp".to_string(), format!("unix:{},server,nowait", qmp_sock_path.display()),
         ];
+
+        // Check for /dev/kvm and architecture match
+        let host_arch = std::env::consts::ARCH;
+        if std::path::Path::new("/dev/kvm").exists() && host_arch == arch {
+            println!("Probing KVM: available and arch matches ({}). Using -accel kvm", host_arch);
+            args.extend_from_slice(&["-accel".to_string(), "kvm".to_string()]);
+        } else {
+            println!("Probing KVM: missing or arch mismatch (host: {}, target: {}). Using -accel tcg", host_arch, arch);
+            args.extend_from_slice(&["-accel".to_string(), "tcg".to_string()]);
+        }
 
         match arch {
             "x86_64" => {
@@ -210,6 +220,9 @@ impl QemuProcess {
 impl Drop for QemuProcess {
     fn drop(&mut self) {
         // Attempt to kill QEMU when dropped
+        // Use blocking kill in drop if needed, but start_kill is non-blocking
         let _ = self.child.start_kill();
     }
 }
+
+

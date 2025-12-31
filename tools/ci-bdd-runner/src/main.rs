@@ -1,6 +1,6 @@
 use crate::steps::BootWorld;
 use crate::writer::ArtifactWriter;
-use cucumber::{Cucumber, World};
+use cucumber::World;
 use std::env;
 use std::path::PathBuf;
 
@@ -22,13 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let feature_str = env::var("FEATURE_PATH").unwrap_or_else(|_| "tools/bdd/features".to_string());
     let feature_path = PathBuf::from(feature_str);
 
-    // Install panic hook
-    std::panic::set_hook(Box::new(|info| {
-        eprintln!("Panic occurred: {:?}", info);
-        if let Some(s) = info.payload().downcast_ref::<&str>() {
-            eprintln!("Panic payload: {}", s);
-        }
-    }));
+
 
     println!("Starting CI BDD Runner for arch: {}", arch);
     println!("Artifacts will be saved to: {}", out.display());
@@ -45,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     let writer = ArtifactWriter {
         out_dir: out.clone(),
         arch: arch.clone(),
-        run_id: uuid::Uuid::new_v4().to_string(),
+        _run_id: uuid::Uuid::new_v4().to_string(),
         current_feature: String::new(),
         current_scenario: String::new(),
         step_index: 0,
@@ -60,11 +54,19 @@ async fn main() -> anyhow::Result<()> {
     println!("Cucumber finished.");
 
     println!("Generating report...");
-    match report::generate_report(&out) {
-        Ok(_) => println!("Report generated at {}/index.md", out.display()),
-        Err(e) => eprintln!("Failed to generate report: {:?}", e),
+    // Generate report
+    if let Err(e) = report::generate_report(&out) {
+        eprintln!("Failed to generate report: {:?}", e);
+    } else {
+        println!("Report generated at {}/index.md", out.display());
     }
     println!("Done.");
     
+    // Check for soft failures
+    if crate::shared::ANY_FAILURE.load(std::sync::atomic::Ordering::SeqCst) {
+        eprintln!("CI Failure: One or more steps failed.");
+        std::process::exit(1);
+    }
+
     Ok(())
 }

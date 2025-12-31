@@ -6,6 +6,8 @@ Feature: Boot milestones
     Then I should see "Booted." in the serial console
 
     Examples:
-      | arch    |
-      | x86_64  |
-      | aarch64 |
+      | arch        |
+      | x86_64      |
+      | aarch64     |
+      | riscv64     |
+      | loongarch64 |

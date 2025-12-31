@@ -112,6 +112,36 @@ async fn boot_system(world: &mut BootWorld) {
             ]);
             c
         }
+        "riscv64" => {
+            let mut c = Command::new("qemu-system-riscv64");
+            c.args([
+                "-M", "virt",
+                "-cpu", "rv64",
+                "-m", "256M",
+                "-nographic",
+                "-serial", "stdio",
+                "-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
+                "-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                "-cdrom", &iso_path.to_string_lossy(),
+                "-no-reboot",
+            ]);
+            c
+        }
+        "loongarch64" => {
+            let mut c = Command::new("qemu-system-loongarch64");
+            c.args([
+                "-M", "virt",
+                "-cpu", "la464",
+                "-m", "256M",
+                "-nographic",
+                "-serial", "stdio",
+                "-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code.display()),
+                "-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                "-cdrom", &iso_path.to_string_lossy(),
+                "-no-reboot",
+            ]);
+            c
+        }
         _ => {
             world.serial_output = format!("ERROR: Unsupported architecture: {}", world.arch);
             return;

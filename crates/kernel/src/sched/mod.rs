@@ -5,6 +5,7 @@
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
+use alloc::format;
 use spin::Mutex;
 
 use crate::machine::abi::setup_new_task_stack;
@@ -27,7 +28,17 @@ pub enum TaskState {
     /// Blocked on something
     Blocked,
     /// Terminated
+    Terminated,
     Dead,
+}
+
+/// Task role
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TaskRole {
+    /// Normal user task
+    Normal,
+    /// The blessed Init task
+    Init,
 }
 
 /// Task control block
@@ -38,6 +49,8 @@ pub struct Task {
     pub state: TaskState,
     /// Task name (for debugging)
     pub name: &'static str,
+    /// Task role
+    pub role: TaskRole,
     
     /// Architecture context (saved stack pointer)
     pub ctx: Context,
@@ -86,6 +99,7 @@ impl Scheduler {
             id,
             state: TaskState::Ready,
             name,
+            role: TaskRole::Normal,
             ctx: Context::default(),
             kstack: alloc::vec![0u8; 16 * 1024], // 16KB kernel stack
             image_base: 0,
@@ -238,6 +252,42 @@ pub fn set_current_task(id: TaskId) {
     }
 }
 
+/// Mark a task as the Init task
+pub fn mark_as_init(id: TaskId) {
+    let mut guard = SCHEDULER.lock();
+    if let Some(sched) = guard.as_mut() {
+        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
+            task.role = TaskRole::Init;
+            log::klog(Level::Info, "KERNEL", &format!("init task designated (pid {:?})", id));
+        }
+    }
+}
+
+/// Exit the current task
+pub fn exit_current_task(code: i32) {
+    // 1. Mark dead
+    {
+        let mut guard = SCHEDULER.lock();
+        if let Some(sched) = guard.as_mut() {
+            if let Some(current_id) = sched.current {
+                 if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == current_id) {
+                     log::klog(Level::Info, "SCHED", &format!("task {:?} exiting with code {}", current_id, code));
+                     
+                     if task.role == TaskRole::Init {
+                         log::klog(Level::Error, "KERNEL", &format!("init task exited, reason = code {}", code));
+                         panic!("Init task exited!");
+                     }
+                     
+                     task.state = TaskState::Dead;
+                 }
+            }
+        }
+    }
+    
+    // 2. Yield (will remove from runqueue)
+    yield_current();
+}
+
 /// Run the scheduler loop (never returns)
 pub fn run() -> ! {
     log::klog(Level::Info, "KERNEL", "scheduler running");
@@ -260,6 +310,10 @@ pub fn run() -> ! {
                         // If we jump-start it here:
                         if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == next) {
                             task.state = TaskState::Running;
+                            if task.role == TaskRole::Init {
+                                log::klog(Level::Info, "KERNEL", &format!("init task alive (pid {:?})", next));
+                            }
+
                             let new_ctx = &task.ctx as *const Context;
                             
                             // We need a dummy old context to save "scheduler loop" state?
@@ -311,8 +365,18 @@ pub fn yield_current() {
         let mut guard = SCHEDULER.lock();
         if let Some(sched) = guard.as_mut() {
             if let Some(current_id) = sched.current {
-                // Round robin: push current to back of queue
-                sched.run_queue.push_back(current_id);
+                // Round robin: push current to back of queue IF not dead
+                let current_state = sched.tasks.iter().find(|t| t.id == current_id).map(|t| t.state);
+                if let Some(TaskState::Running) = current_state {
+                    sched.run_queue.push_back(current_id);
+                } else if let Some(TaskState::Ready) = current_state {
+                    // Should be running if we are yielding? 
+                    // But if we just set it to Ready, yes push back.
+                    // But typically yield comes from running.
+                    sched.run_queue.push_back(current_id);
+                } else {
+                    // Dead or Blocked - don't schedule
+                }
                 
                 // Pop next
                 if let Some(next_id) = sched.run_queue.pop_front() {
@@ -329,8 +393,16 @@ pub fn yield_current() {
                         
                         if let (Some(old_i), Some(new_i)) = (old_idx, new_idx) {
                              // Update states
-                             sched.tasks[old_i].state = TaskState::Ready;
+                             if sched.tasks[old_i].state == TaskState::Running {
+                                 sched.tasks[old_i].state = TaskState::Ready;
+                             }
                              sched.tasks[new_i].state = TaskState::Running;
+
+                             if sched.tasks[new_i].role == TaskRole::Init {
+                                 // Log alive if just starting? 
+                                 // Or just trust the run() loop for initial start.
+                                 // For now silent here to avoid spam.
+                             }
                              
                              let old_ptr = &mut sched.tasks[old_i].ctx as *mut Context;
                              let new_ptr = &sched.tasks[new_i].ctx as *const Context;

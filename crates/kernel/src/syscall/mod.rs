@@ -84,6 +84,7 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64
         nr::SYS_GET_ROOT_PLACE => sys_get_root_place(),
         nr::SYS_PLACE_OP => sys_place_op(a0, a1, a2, a3),
         nr::SYS_PROC_SPAWN => sys_proc_spawn(a0, a1),
+        nr::SYS_PROC_EXIT => sys_proc_exit(a0),
         nr::SYS_HEAP_GROW => sys_heap_grow(a0),
         nr::SYS_SCHED_YIELD => sys_sched_yield(),
         nr::SYS_WATCH => sys_watch(a0, a1),
@@ -324,6 +325,14 @@ fn sys_proc_spawn(name_ptr: u64, name_len: u64) -> SyscallResult {
     // If spawn_module returns, it means it didn't jump (e.g. error or multitasking supported)
     // But currently it jumps and never returns. 
     // In a multitasking system, this would return the new process ID.
+    SyscallResult::new(0, 0, 0)
+}
+
+/// SYS_PROC_EXIT: Exit the current process
+/// a0: exit code
+fn sys_proc_exit(code: u64) -> SyscallResult {
+    crate::sched::exit_current_task(code as i32);
+    // Should not return
     SyscallResult::new(0, 0, 0)
 }
 

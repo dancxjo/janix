@@ -97,6 +97,11 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
         return None;
     }
 
+    // Optimization: Only graph Warn/Error to save memory
+    if level < Level::Warn {
+        return None;
+    }
+
     let kind = symbols::intern(b"kind.LogEntry");
     let _schema = symbols::intern(b"models.core.log.LogEntry");
     // TODO: Update graph::store to accept schema/version if needed, or update this call

@@ -122,6 +122,23 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
         FaultKind::Syscall => {
             panic!("Syscall not implemented yet");
         }
+        FaultKind::DataAbort => {
+             if let Some(fault_addr) = addr {
+                 // Lazy mapping for kernel heap/BSS
+                 if in_kernel && fault_addr >= 0xffffffff80000000 {
+                     use crate::machine::MmioFlags;
+                     let aligned = fault_addr & !0xfff;
+                     // Map RW
+                     let flags = MmioFlags::READ | MmioFlags::WRITE;
+                     
+                     // Try to map assuming linear physical backing
+                     if unsafe { super::ARCH_MACHINE_IMPL.map_kernel_region(aligned, 0x1000, flags) } {
+                         return 0; // Retry
+                     }
+                 }
+             }
+             panic!("Data Abort at {:?}: Limit reached.\n{:#?}", addr, ctx);
+        }
         _ => {
             panic!("Unhandled AArch64 Exception: Limit reached.\n{:#?}", ctx);
         }

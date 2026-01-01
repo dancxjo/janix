@@ -3,7 +3,6 @@ use super::gic;
 
 // Timer CTL bits
 const CNTP_CTL_ENABLE: u64 = 1;
-const CNTP_CTL_IMASK: u64 = 2; // 1 = masked
 
 // Interrupt ID for CNTP_NS (Physical Non-Secure)
 // On QEMU virt: 30

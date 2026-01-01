@@ -1,7 +1,7 @@
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-use crate::log::{self, Level};
+// use crate::log;
 use crate::trap::{self, TrapRecord, FaultKind, Arch};
-use graph::store; // For PlaceStore
+// use graph::store; // For PlaceStore
 
 static mut IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();
 

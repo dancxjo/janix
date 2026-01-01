@@ -139,7 +139,7 @@ impl ArchMachine {
             .wrapping_add(self.kernel_phys_base())
     }
 
-    fn kernel_root_table(&self) -> Option<*mut u64> {
+    pub fn kernel_root_table(&self) -> Option<*mut u64> {
         let ttbr1: u64;
         unsafe {
             asm!("mrs {}, ttbr1_el1", out(reg) ttbr1, options(nomem, preserves_flags));
@@ -173,21 +173,31 @@ impl ArchMachine {
     fn page_desc(&self, phys: u64, flags: MmioFlags) -> u64 {
         let mut desc = (phys & !0xfff) | 0b11;
 
-        // AttrIndx=2 (Device), SH=inner shareable, AF=1, RW EL1, execute-never.
-        // Limine sets MAIR indices 0/1 to Normal 0xFF, and 2..7 to 0x00 (Device).
-        // So we must use index 2 for Device-nGnRnE.
-        desc |= 2 << 2; // Original Device-nGnRnE assumption
-        // desc |= 0 << 2; // Debug fallback: Use Index 0 (Normal) to avoid potential MAIR mismatch
-        desc |= 0b11 << 8;
-        desc |= 1 << 10;
-        desc |= 1 << 53; // PXN
-        desc |= 1 << 54; // UXN
-
-        if !flags.contains(MmioFlags::READ) && !flags.contains(MmioFlags::WRITE) {
-            // Default to readable if neither flag set to avoid accidental faults.
-            desc |= 0 << 6;
+        if flags.contains(MmioFlags::DEVICE) {
+            // AttrIndx=2 (Device-nGnRnE)
+            desc |= 2 << 2; 
+        } else {
+            // AttrIndx=0 (Normal Writeback)
+            desc |= 0 << 2;
+            // Mark as Inner Shareable explicitly (bit 8,9 -> 11)
+            desc |= 0b11 << 8; 
         }
 
+        desc |= 1 << 10; // AF=1
+
+        if !flags.contains(MmioFlags::READ) && !flags.contains(MmioFlags::WRITE) {
+             // Default to readable if unspecified? No, strict.
+             // But existing code did: "Default to readable if neither flag set"
+             desc |= 0 << 6;
+        }
+
+        // Execute Permissions
+        desc |= 1 << 53; // PXN (Privileged Execute-Never) - Default to true for now
+        desc |= 1 << 54; // UXN (Unprivileged Execute-Never)
+
+        // TODO: If we want Exec, we need MmioFlags::EXEC. 
+        // For now, Heap is NX.
+        
         desc
     }
 
@@ -301,6 +311,15 @@ impl ArchMachine {
         self.uart_base.store(mapping.virt, Ordering::Relaxed);
 
         Some(mapping.virt)
+    }
+
+    /// Explicitly map a kernel virtual region to its linear physical backing.
+    /// Used for demand-paging the kernel heap/BSS.
+    pub unsafe fn map_kernel_region(&self, virt: u64, len: usize, flags: MmioFlags) -> bool {
+        let phys = self.kernel_virt_to_phys(virt);
+        // Ensure flags do not include DEVICE unless explicitly requested (they shouldn't for RAM)
+        // Map it.
+        self.map_range(virt, phys, len, flags)
     }
 }
 

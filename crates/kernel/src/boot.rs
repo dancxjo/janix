@@ -228,7 +228,7 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             let ph_num = unsafe { *((virt_addr + 56) as *const u16) };
             let ph_size = unsafe { *((virt_addr + 54) as *const u16) };
 
-            let total_size = 1024 * 1024; // 1MB allocation
+            let total_size = 80 * 1024; // 80KB
             image_size = total_size;
 
             // Create RAM Bytespace for the loaded specific instance
@@ -352,7 +352,7 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         }
 
         // Dedicated Stack Bytespace
-        let stack_size = 64 * 1024;
+        let stack_size = 24 * 1024;
         let stack_bs = Bytespace::new_ram(stack_size);
         let stack_base = stack_bs.backing_ptr().unwrap() as u64;
         let stack_top = (stack_base + stack_size as u64) & !0xf;

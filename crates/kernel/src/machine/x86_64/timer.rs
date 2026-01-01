@@ -1,16 +1,14 @@
 // use x86_64::instructions::port::Port;
-use x86_64::registers::model_specific::Msr;
-
 // Local APIC Base Address MSR
-const IA32_APIC_BASE: u32 = 0x1b;
+const _IA32_APIC_BASE: u32 = 0x1b;
 
 // Offsets
-const APIC_EOI: u32 = 0x0b0;
-const APIC_SVR: u32 = 0x0f0;
-const APIC_LVT_TIMER: u32 = 0x320;
-const APIC_TIMER_INIT: u32 = 0x380;
-const APIC_TIMER_CURRENT: u32 = 0x390;
-const APIC_TIMER_DIV: u32 = 0x3e0;
+const _APIC_EOI: u32 = 0x0b0;
+const _APIC_SVR: u32 = 0x0f0;
+const _APIC_LVT_TIMER: u32 = 0x320;
+const _APIC_TIMER_INIT: u32 = 0x380;
+const _APIC_TIMER_CURRENT: u32 = 0x390;
+const _APIC_TIMER_DIV: u32 = 0x3e0;
 
 use x86_64::instructions::port::Port;
 
@@ -44,8 +42,8 @@ unsafe fn remap_pics() {
     let mut cmd2 = Port::<u8>::new(PIC2_CMD);
     let mut data2 = Port::<u8>::new(PIC2_DATA);
     
-    let a1 = data1.read();
-    let a2 = data2.read();
+    let _a1 = data1.read();
+    let _a2 = data2.read();
     
     // ICW1: Init
     cmd1.write(0x11);

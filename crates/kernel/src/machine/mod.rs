@@ -1,13 +1,26 @@
 //! Machine interface for hardware abstraction.
 //!
-//! Provides the physical abstraction layer for the kernel.
+pub use bitflags::bitflags;
 
-use bitflags::bitflags;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::abi;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::abi;
+#[cfg(target_arch = "riscv64")]
+pub use riscv64::abi;
+#[cfg(target_arch = "loongarch64")]
+pub use loongarch64::abi;
+
+// pub mod abi; // Deleted/Moved
 
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
+#[cfg(target_arch = "riscv64")]
+pub mod riscv64;
+#[cfg(target_arch = "loongarch64")]
+pub mod loongarch64;
 
 
 
@@ -15,6 +28,10 @@ pub mod aarch64;
 pub use x86_64::ARCH_MACHINE;
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::ARCH_MACHINE;
+#[cfg(target_arch = "riscv64")]
+pub use riscv64::ARCH_MACHINE;
+#[cfg(target_arch = "loongarch64")]
+pub use loongarch64::ARCH_MACHINE;
 
 /// Physical MMIO range.
 pub struct MmioRange {

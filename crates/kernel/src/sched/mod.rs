@@ -7,7 +7,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-use crate::arch::setup_new_task_stack;
+use crate::machine::abi::setup_new_task_stack;
 // use crate::arch::Context; <-- Removed
 use crate::log::{self, Level};
 use crate::{graph, symbols, machine::Context, machine::machine};

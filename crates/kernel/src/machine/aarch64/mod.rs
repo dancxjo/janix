@@ -10,6 +10,7 @@ global_asm!(include_str!("switch.S"));
 use core::sync::atomic::{AtomicU64, Ordering};
 
 mod serial;
+pub mod abi;
 use serial::Serial;
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange};
 

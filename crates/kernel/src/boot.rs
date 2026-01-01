@@ -89,9 +89,13 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         kernel_phys_base: ctx.kernel_phys_base,
         kernel_virt_base: ctx.kernel_virt_base,
     });
+    
+    // Initialize Platform (Capability Registry)
+    let _ = crate::platform::init();
+
     crate::serial::write(b"KERNEL: handoff accepted\n");
-    crate::serial::write(b"MACHINE: installed\n");
-    crate::serial::write(b"MACHINE: mmio ok\n");
+    crate::serial::write(b"KERNEL: machine installed\n");
+    crate::serial::write(b"KERNEL: platform initialized\n");
 
     // Phase 1: Initialize logging (enables debug output)
     log::init(ctx);

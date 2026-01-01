@@ -14,7 +14,7 @@
 
 extern crate alloc;
 
-pub mod arch;
+
 pub mod boot;
 pub mod graph;
 pub mod log;

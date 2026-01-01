@@ -11,7 +11,7 @@
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use limine::request::{
-    FramebufferRequest, HhdmRequest, KernelAddressRequest, MemoryMapRequest, ModuleRequest,
+    FramebufferRequest, HhdmRequest, ExecutableAddressRequest, MemoryMapRequest, ModuleRequest,
     RequestsEndMarker, RequestsStartMarker,
 };
 use limine::BaseRevision;
@@ -45,7 +45,7 @@ static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
-static KERNEL_ADDRESS_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
+static EXECUTABLE_ADDRESS_REQUEST: ExecutableAddressRequest = ExecutableAddressRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]
@@ -171,7 +171,7 @@ unsafe extern "C" fn kmain() -> ! {
         .unwrap_or(0);
 
     // Get kernel physical/virtual base addresses for MMIO page table setup
-    let (kernel_phys_base, kernel_virt_base) = KERNEL_ADDRESS_REQUEST.get_response()
+    let (kernel_phys_base, kernel_virt_base) = EXECUTABLE_ADDRESS_REQUEST.get_response()
         .map(|r| (r.physical_base(), r.virtual_base()))
         .unwrap_or((0, 0));
 

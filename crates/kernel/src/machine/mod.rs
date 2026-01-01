@@ -1,9 +1,20 @@
-//! Machine interface for architecture-specific I/O.
+//! Machine interface for hardware abstraction.
 //!
-//! Provides a single choke point the kernel uses for early console output and
-//! MMIO mappings. Architectures install their implementation during boot.
+//! Provides the physical abstraction layer for the kernel.
 
 use bitflags::bitflags;
+
+#[cfg(target_arch = "x86_64")]
+pub mod x86_64;
+#[cfg(target_arch = "aarch64")]
+pub mod aarch64;
+
+
+
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::ARCH_MACHINE;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::ARCH_MACHINE;
 
 /// Physical MMIO range.
 pub struct MmioRange {
@@ -27,14 +38,56 @@ bitflags! {
     }
 }
 
-/// Machine operations exposed to the kernel.
+/// Saved context for task switching (stack pointer)
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct Context {
+    pub sp: u64,
+}
+
+/// Information needed for machine initialization (handoff from Bran).
+#[derive(Clone, Copy)]
+pub struct PreBootInfo {
+    /// HHDM offset for physical memory access
+    pub hhdm_offset: u64,
+    /// Kernel physical load address
+    pub kernel_phys_base: u64,
+    /// Kernel virtual base address  
+    pub kernel_virt_base: u64,
+}
+
+/// Machine interface: Physics + Boot I/O.
+/// 
+/// This trait isolates the kernel from the hardware reality.
+/// It provides:
+/// 1. CPU primitives (execution physics) required by the scheduler.
+/// 2. Early I/O (console, MMIO) required for boot and Platform bootstrapping.
 pub trait Machine: Sync {
+    /// Initialize the machine with handoff info.
+    fn init(&self, _info: PreBootInfo) {}
+
+    // --- I/O (Capabilities) ---
+
     /// Write bytes to the early console.
     fn console_write(&self, bytes: &[u8]) -> usize;
 
     /// Map a physical MMIO range and return a virtual mapping.
     /// Implementations must not assume an HHDM covers device ranges.
     fn mmio_map(&self, range: MmioRange, flags: MmioFlags) -> Option<MmioMapping>;
+    
+    // --- CPU (Physics) ---
+
+    fn irq_disable(&self) -> u64;
+    fn irq_restore(&self, token: u64);
+    fn halt(&self) -> !;
+    fn idle(&self);
+    fn cpu_id(&self) -> u32 { 0 }
+    
+    /// Switch context from old to new
+    fn switch_to(&self, old_ctx: &mut Context, new_ctx: &Context);
+    
+    /// Entry point stub address for new tasks
+    fn task_entry_stub(&self) -> u64;
 }
 
 static mut MACHINE: Option<&'static dyn Machine> = None;
@@ -51,3 +104,4 @@ pub unsafe fn install(machine: &'static dyn Machine) {
 pub fn machine() -> &'static dyn Machine {
     unsafe { MACHINE.expect("machine not installed") }
 }
+

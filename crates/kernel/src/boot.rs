@@ -4,7 +4,7 @@
 
 use crate::log::{self, Level};
 use crate::{graph, machine, sched, symbols, syscall};
-use crate::arch::machine::ARCH_MACHINE;
+use crate::machine::{ARCH_MACHINE, PreBootInfo};
 use abi::ids::SymbolId;
 use abi::bodies::{SurfaceBody, BytespaceBody, BYTESPACE_FLAG_HAS_PHYS_BASE};
 
@@ -56,16 +56,7 @@ pub fn get_boot_ctx() -> &'static BootContext {
     unsafe { GLOBAL_BOOT_CONTEXT.expect("BootContext not initialized") }
 }
 
-/// Information needed for pre-boot machine initialization.
-#[derive(Clone, Copy)]
-pub struct PreBootInfo {
-    /// HHDM offset for physical memory access
-    pub hhdm_offset: u64,
-    /// Kernel physical load address
-    pub kernel_phys_base: u64,
-    /// Kernel virtual base address  
-    pub kernel_virt_base: u64,
-}
+
 
 /// Pre-boot initialization for early console output.
 ///
@@ -78,8 +69,8 @@ pub fn pre_boot(info: PreBootInfo) {
     if MACHINE_INSTALLED.swap(true, Ordering::SeqCst) {
         return; // Already installed
     }
-    ARCH_MACHINE.init_machine(info);
-    unsafe { machine::install(&ARCH_MACHINE) };
+    ARCH_MACHINE.init(info);
+    unsafe { machine::install(ARCH_MACHINE) };
     crate::serial::init();
 }
 
@@ -104,6 +95,11 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
 
     // Phase 1: Initialize logging (enables debug output)
     log::init(ctx);
+    
+    // Phase 1.5: Architecture initialization (GDT/IDT/etc)
+    crate::arch::init();
+    
+    unsafe { verify_exec_pool_is_executable(); }
 
     // Phase 2: Initialize symbol table
     symbols::init();
@@ -136,10 +132,36 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     sched::run()
 }
 
-#[link_section = ".text"]
-static mut SPROUT_BUFFER: [u8; 1024 * 1024] = [0u8; 1024 * 1024];
-
 use alloc::format;
+
+// Executable memory pool (placed in .text to ensure/hope it's executable)
+// We rely on the linker keeping this writable or Limine mapping it RWX.
+#[link_section = ".text"]
+static mut EXEC_POOL: [u8; 4 * 1024 * 1024] = [0u8; 4 * 1024 * 1024];
+static mut EXEC_POS: usize = 0;
+
+unsafe fn alloc_exec(size: usize) -> Option<(&'static mut [u8], u64)> {
+    let pos = EXEC_POS;
+    if pos + size > EXEC_POOL.len() {
+        return None;
+    }
+    EXEC_POS += size;
+    let ptr = EXEC_POOL.as_mut_ptr().add(pos);
+    let slice = core::slice::from_raw_parts_mut(ptr, size);
+    Some((slice, ptr as u64))
+}
+
+unsafe fn verify_exec_pool_is_executable() {
+    log::klog(Level::Info, "EXEC", "verifying execution permission...");
+    // 1. Alloc a tiny slice
+    let (slice, addr) = alloc_exec(16).unwrap();
+    // 2. Write 'ret' (0xC3)
+    slice[0] = 0xC3;
+    // 3. Jump to it
+    let func: extern "C" fn() = core::mem::transmute(addr);
+    func();
+    log::klog(Level::Info, "EXEC", "verification passed!");
+}
 
 /// Spawn a module by name from the boot modules.
 pub fn spawn_module(ctx: &'static BootContext, name: &str) {
@@ -173,7 +195,13 @@ pub fn spawn_module(ctx: &'static BootContext, name: &str) {
                     let ph_num = unsafe { *((virt_addr + 56) as *const u16) };
                     let ph_size = unsafe { *((virt_addr + 54) as *const u16) };
 
-                    let buffer_base = unsafe { SPROUT_BUFFER.as_mut_ptr() as u64 };
+                    let image_size = 1024 * 1024; // 1MB buffer
+                    let (_image_slice, buffer_addr) = unsafe { 
+                         alloc_exec(image_size).expect("Out of executable memory") 
+                    };
+                    let buffer_base = buffer_addr;
+                    // Note: image_slice is already valid &mut [u8]. We don't need to forget it because it's a reference to static pool.
+                    
                     log::klog(Level::Info, "ELF", &format!("loading PIE into executable buffer at {:#x}", buffer_base));
 
                     // Copy LOAD segments and zero BSS
@@ -280,56 +308,44 @@ pub fn spawn_module(ctx: &'static BootContext, name: &str) {
                 // Dedicated stack
                 const STACK_SIZE: usize = 64 * 1024;
                 let mut stack = alloc::vec![0u8; STACK_SIZE];
-                let stack_top = (stack.as_mut_ptr() as u64 + STACK_SIZE as u64) & !0xf;
+                let stack_base = stack.as_ptr() as u64;
+                let _stack_top = (stack.as_mut_ptr() as u64 + STACK_SIZE as u64) & !0xf;
                 core::mem::forget(stack);
+                
+                // Create Task for tracking
+                // Note: name string lifetime is tricky here, but "sprout" is static str literal usually
+                // or we just trust it lives long enough (it's from boot context modules).
+                // Actually kernel task name is &'static str in struct.
+                // We'll use a hack to pass a static name or just "task".
+                let task_id = crate::sched::spawn_kernel_task("sprout");
+                crate::sched::set_current_task(task_id);
+                
+                // Configure memory
+                
+                // Heap: Allocate from kernel heap
+                const HEAP_SIZE: usize = 4 * 1024; // 4KB
+                let heap = alloc::vec![0u8; HEAP_SIZE];
+                let heap_base = heap.as_ptr() as u64;
+                let heap_size = HEAP_SIZE as u64;
+                core::mem::forget(heap);
 
-                log::klog(Level::Info, "SPROUT", &format!("jumping to {:#x} with stack {:#x}", final_entry, stack_top));
+                // Image base - derived from final entry
+                // We allocated this earlier in the ELF loading block.
+                let image_base = final_entry - entry_point;
+                let image_size = 1024 * 1024; // 1MB fixed
+                crate::sched::configure_task_memory(
+                    task_id, 
+                    (image_base, image_size as u64),
+                    (stack_base, STACK_SIZE as u64),
+                    (heap_base, heap_size, heap_base) // brk starts at base
+                );
 
-                unsafe {
-                    #[cfg(target_arch = "x86_64")]
-                    core::arch::asm!(
-                        "mov rsp, {stack_top}",
-                        "xor rbp, rbp",
-                        "jmp {entry}",
-                        stack_top = in(reg) stack_top,
-                        entry = in(reg) final_entry,
-                        in("rdi") crate::syscall::dispatch as *mut () as u64,
-                        options(noreturn)
-                    );
+                // Configure context (trampoline)
+                crate::sched::configure_task_context(task_id, final_entry);
 
-                    #[cfg(target_arch = "aarch64")]
-                    core::arch::asm!(
-                        "mov sp, {stack_top}",
-                        "mov x29, xzr",
-                        "br {entry}",
-                        stack_top = in(reg) stack_top,
-                        entry = in(reg) final_entry,
-                        in("x0") crate::syscall::dispatch as *mut () as u64,
-                        options(noreturn)
-                    );
-
-                    #[cfg(target_arch = "riscv64")]
-                    core::arch::asm!(
-                        "mv sp, {stack_top}",
-                        "mv s0, zero",
-                        "jr {entry}",
-                        stack_top = in(reg) stack_top,
-                        entry = in(reg) final_entry,
-                        in("a0") crate::syscall::dispatch as *mut () as u64,
-                        options(noreturn)
-                    );
-
-                    #[cfg(target_arch = "loongarch64")]
-                    core::arch::asm!(
-                        "move $sp, {stack_top}",
-                        "move $fp, $zero",
-                        "jirl $zero, {entry}, 0",
-                        stack_top = in(reg) stack_top,
-                        entry = in(reg) final_entry,
-                        in("$a0") crate::syscall::dispatch as *mut () as u64,
-                        options(noreturn)
-                    );
-                }
+                log::klog(Level::Info, "SPROUT", &format!("task ready {:#x}", final_entry));
+                
+                // No jump! We return and let the scheduler pick it up.
             }
             break;
         }

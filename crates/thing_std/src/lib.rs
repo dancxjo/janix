@@ -5,39 +5,51 @@ extern crate alloc;
 use core::alloc::{GlobalAlloc, Layout};
 use core::cell::UnsafeCell;
 
-struct BumpAllocator {
-    heap: UnsafeCell<[u8; 64 * 1024]>,
-    pos: UnsafeCell<usize>,
-}
+struct BumpAllocator;
 
 unsafe impl Sync for BumpAllocator {}
 
 #[global_allocator]
-static ALLOCATOR: BumpAllocator = BumpAllocator {
-    heap: UnsafeCell::new([0; 64 * 1024]),
-    pos: UnsafeCell::new(0),
-};
+static ALLOCATOR: BumpAllocator = BumpAllocator;
 
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let pos = self.pos.get();
-        let heap = self.heap.get() as *mut u8;
-
-        let align = layout.align();
-        let size = layout.size();
-
-        let current = *pos;
-        let aligned_pos = (current + align - 1) & !(align - 1);
-        if aligned_pos + size > 64 * 1024 {
-            return core::ptr::null_mut();
-        }
-        let ptr = heap.add(aligned_pos);
-        *pos = aligned_pos + size;
-        ptr
+        // 1. Get current break to calculate alignment
+        let current_brk = heap_grow(0);
+        if current_brk == 0 { return core::ptr::null_mut(); } // Syscall failed or early boot?
+        
+        let align = layout.align() as u64;
+        let size = layout.size() as u64;
+        
+        // Calculate padding needed for alignment
+        let new_start = (current_brk + align - 1) & !(align - 1);
+        let padding = new_start - current_brk;
+        
+        // 2. Allocate needed space (padding + size)
+        let ptr = heap_grow(padding + size);
+        if ptr == 0 { return core::ptr::null_mut(); }
+        
+        // ptr should == current_brk. The valid memory starts at ptr + padding.
+        (ptr + padding) as *mut u8
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
+        // No-op: we never free
+    }
 }
+
+fn heap_grow(increment: u64) -> u64 {
+    unsafe {
+        let res = syscall(120, increment, 0, 0, 0); // SYS_HEAP_GROW
+        if res.status != 0 {
+            0
+        } else {
+            res.val0
+        }
+    }
+}
+
+
 
 use abi::ids::{PlaceId, RelationshipId, SymbolId, ThingId};
 use abi::wire::SyscallResult;

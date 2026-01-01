@@ -10,7 +10,7 @@ use crate::log::{self, Level};
 use crate::machine::{self, MmioFlags, MmioRange};
 use crate::symbols;
 use crate::graph;
-use crate::arch::Arch;
+
 use abi::ids::ThingId;
 
 /// Syscall numbers
@@ -24,6 +24,7 @@ pub mod nr {
     pub const SYS_LINK_CREATE: u32 = 20;
     pub const SYS_PROC_SPAWN: u32 = 100;
     pub const SYS_PROC_EXIT: u32 = 101;
+    pub const SYS_HEAP_GROW: u32 = 120;
     pub const SYS_SCHED_YIELD: u32 = 200;
     
     /// Get the root PlaceId
@@ -50,6 +51,8 @@ pub mod err {
     pub const EINVAL: i32 = -22;
     /// Bad address
     pub const EFAULT: i32 = -14;
+    /// Out of memory
+    pub const ENOMEM: i32 = -12;
 }
 
 /// Syscall result type
@@ -69,6 +72,10 @@ pub fn init() {
 /// Returns (status, value0, value1).
 #[unsafe(no_mangle)]
 pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64, _a5: u64) -> SyscallResult {
+    // Debug for Sprout bringup
+    if nr == 1 {
+        log::klog(Level::Info, "SYSCALL", "log_emit called");
+    }
     match nr {
         nr::SYS_VERSION_GET => sys_version_get(),
         nr::SYS_LOG_EMIT => sys_log_emit(a0, a1, a2),
@@ -77,6 +84,7 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64
         nr::SYS_GET_ROOT_PLACE => sys_get_root_place(),
         nr::SYS_PLACE_OP => sys_place_op(a0, a1, a2, a3),
         nr::SYS_PROC_SPAWN => sys_proc_spawn(a0, a1),
+        nr::SYS_HEAP_GROW => sys_heap_grow(a0),
         nr::SYS_SCHED_YIELD => sys_sched_yield(),
         nr::SYS_WATCH => sys_watch(a0, a1),
         nr::SYS_WAIT_EVENT => sys_wait_event(a0),
@@ -321,8 +329,7 @@ fn sys_proc_spawn(name_ptr: u64, name_len: u64) -> SyscallResult {
 
 /// SYS_SCHED_YIELD: Yield execution
 fn sys_sched_yield() -> SyscallResult {
-    // Cooperative yield: halt CPU until interrupt
-    crate::arch::ARCH.idle();
+    crate::sched::yield_current();
     SyscallResult::new(0, 0, 0)
 }
 
@@ -355,8 +362,35 @@ fn sys_wait_event(watcher_low: u64) -> SyscallResult {
         if let Some(event_id) = graph::dequeue_event(watcher) {
             return SyscallResult::new(0, event_id.high(), event_id.low());
         }
-        // No event, park carefully
-        crate::arch::ARCH.idle();
+        // Yield to other tasks
+        crate::sched::yield_current();
     }
+}
+
+/// SYS_HEAP_GROW: Grow the heap
+/// a0: increment (bytes)
+fn sys_heap_grow(increment: u64) -> SyscallResult {
+    crate::sched::with_current_task(|task| {
+        let old_brk = task.heap_brk;
+        if increment == 0 {
+             return SyscallResult::new(0, old_brk, 0);
+        }
+        
+        let new_brk = old_brk + increment;
+        // Check hard limit (heap_base + heap_size)
+        // If heap_size is the reserved region size.
+        if new_brk > task.heap_base + task.heap_size {
+             return SyscallResult::new(err::ENOMEM, 0, 0);
+        }
+        
+        task.heap_brk = new_brk;
+        
+        // Zero the new memory (safety: we assume it's mapped)
+        unsafe {
+            core::ptr::write_bytes(old_brk as *mut u8, 0, increment as usize);
+        }
+
+        SyscallResult::new(0, old_brk, 0)
+    }).unwrap_or(SyscallResult::new(err::EFAULT, 0, 0))
 }
 

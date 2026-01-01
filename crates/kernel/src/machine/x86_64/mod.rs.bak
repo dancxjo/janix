@@ -1,0 +1,82 @@
+//! x86_64 architecture implementation
+
+use crate::machine::{Machine, Context};
+use core::arch::asm;
+
+pub mod machine;
+pub mod serial;
+pub mod gdt;
+pub mod idt;
+pub mod percpu;
+
+pub fn init() {
+    unsafe {
+        use machine::{BSP_GDT, PERCPU_BSP};
+        use percpu::init_gs_base;
+        
+        // 1. PerCpu
+        init_gs_base(&mut PERCPU_BSP);
+        
+        // 2. GDT/TSS
+        gdt::init(&mut BSP_GDT);
+        
+        // 3. IDT
+        idt::init();
+    }
+}
+
+pub struct X86Arch;
+
+// Temporary adapter until we fully cut over
+impl Machine for X86Arch {
+    fn console_write(&self, _bytes: &[u8]) -> usize {
+        0 // Handled by ArchMachine for now
+    }
+
+    fn mmio_map(&self, _range: crate::machine::MmioRange, _flags: crate::machine::MmioFlags) -> Option<crate::machine::MmioMapping> {
+        None 
+    }
+    fn irq_disable(&self) -> u64 {
+        let flags: u64;
+        unsafe {
+            asm!("pushfq; pop {}; cli", out(reg) flags, options(nomem, preserves_flags));
+        }
+        flags
+    }
+
+    fn irq_restore(&self, token: u64) {
+        unsafe {
+            if token & 0x200 != 0 {
+                asm!("sti", options(nomem, preserves_flags));
+            }
+        }
+    }
+
+    fn halt(&self) -> ! {
+        loop {
+            unsafe {
+                asm!("cli; hlt");
+            }
+        }
+    }
+
+    fn idle(&self) {
+        unsafe {
+            asm!("hlt");
+        }
+    }
+
+    fn cpu_id(&self) -> u32 {
+        0 // Single CPU for now
+    }
+
+    fn switch_to(&self, old_ctx: &mut Context, new_ctx: &Context) {
+        machine::ARCH_MACHINE.switch_to(old_ctx, new_ctx);
+    }
+    
+    fn task_entry_stub(&self) -> u64 {
+        machine::ARCH_MACHINE.task_entry_stub()
+    }
+}
+
+

@@ -107,7 +107,7 @@ use core::alloc::{GlobalAlloc, Layout};
 
 struct BumpAllocator;
 
-const HEAP_SIZE: usize = 1024 * 1024;
+const HEAP_SIZE: usize = 4 * 1024 * 1024;
 
 #[repr(align(16))]
 struct HeapBuf<const N: usize>(UnsafeCell<[u8; N]>);

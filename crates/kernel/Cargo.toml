@@ -11,3 +11,6 @@ spin = "0.9"
 bitflags = { version = "2", default-features = false }
 abi = { path = "../abi" }
 models = { path = "../models" }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = "0.14.2"

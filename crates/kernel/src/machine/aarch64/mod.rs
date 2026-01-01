@@ -4,9 +4,13 @@
 //! assuming the HHDM covers device space.
 
 use core::arch::asm;
+use core::arch::global_asm;
+
+global_asm!(include_str!("switch.S"));
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::serial::Serial;
+mod serial;
+use serial::Serial;
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange};
 
 const UART_PHYS: u64 = 0x0900_0000;
@@ -37,7 +41,8 @@ pub struct ArchMachine {
     uart_base: AtomicU64,
 }
 
-pub static ARCH_MACHINE: ArchMachine = ArchMachine::new();
+static ARCH_MACHINE_IMPL: ArchMachine = ArchMachine::new();
+pub static ARCH_MACHINE: &'static dyn Machine = &ARCH_MACHINE_IMPL;
 
 impl ArchMachine {
     pub const fn new() -> Self {
@@ -50,7 +55,7 @@ impl ArchMachine {
         }
     }
 
-    pub fn init_machine(&self, info: crate::boot::PreBootInfo) {
+    pub fn init_machine(&self, info: crate::machine::PreBootInfo) {
         self.hhdm_offset.store(info.hhdm_offset, Ordering::Relaxed);
         self.kernel_phys_base.store(info.kernel_phys_base, Ordering::Relaxed);
         self.kernel_virt_base.store(info.kernel_virt_base, Ordering::Relaxed);
@@ -74,6 +79,7 @@ impl ArchMachine {
     }
 
     /// Translate HHDM virtual address back to physical
+    #[allow(dead_code)]
     fn virt_to_phys(&self, virt: u64) -> u64 {
         virt.wrapping_sub(self.hhdm_offset())
     }
@@ -139,14 +145,14 @@ impl ArchMachine {
         let l0_index = ((virt >> 39) & 0x1ff) as usize;
         let l1_slot = l0.add(l0_index);
         if l1_slot.read() & 1 == 0 {
-            l1_slot.write(self.table_desc(&MMIO_L1));
+            l1_slot.write(self.table_desc(unsafe { &*core::ptr::addr_of!(MMIO_L1) }));
         }
 
         let l1 = self.table_from_desc(l1_slot.read());
         let l1_index = ((virt >> 30) & 0x1ff) as usize;
         let l2_slot = l1.add(l1_index);
         if l2_slot.read() & 1 == 0 {
-            l2_slot.write(self.table_desc(&MMIO_L2));
+            l2_slot.write(self.table_desc(unsafe { &*core::ptr::addr_of!(MMIO_L2) }));
         }
 
         let l2 = self.table_from_desc(l2_slot.read());
@@ -219,6 +225,11 @@ impl ArchMachine {
     }
 }
 
+extern "C" {
+    fn aarch64_switch_to(old_sp: *mut u64, new_sp: *const u64);
+    fn aarch64_task_entry_stub() -> !;
+}
+
 impl Machine for ArchMachine {
     fn console_write(&self, bytes: &[u8]) -> usize {
         if self.ensure_uart().is_none() {
@@ -230,5 +241,41 @@ impl Machine for ArchMachine {
 
     fn mmio_map(&self, range: MmioRange, flags: MmioFlags) -> Option<MmioMapping> {
         self.map_mmio(range, flags)
+    }
+
+    fn irq_disable(&self) -> u64 {
+        let flags: u64;
+        unsafe {
+            asm!("mrs {}, daif; msr daifset, #0xf", out(reg) flags, options(nomem, preserves_flags));
+        }
+        flags
+    }
+
+    fn irq_restore(&self, token: u64) {
+        unsafe {
+            asm!("msr daif, {}", in(reg) token, options(nomem, preserves_flags));
+        }
+    }
+
+    fn halt(&self) -> ! {
+        loop {
+            unsafe { asm!("wfi"); }
+        }
+    }
+
+    fn idle(&self) {
+        unsafe { asm!("wfi"); }
+    }
+
+    fn switch_to(&self, old_ctx: &mut crate::machine::Context, new_ctx: &crate::machine::Context) {
+        unsafe {
+            // Context has `sp` as first field (u64).
+            // Matches user's cast: &mut old_ctx.sp as *mut u64
+            aarch64_switch_to(&mut old_ctx.sp as *mut u64, &new_ctx.sp as *const u64);
+        }
+    }
+
+    fn task_entry_stub(&self) -> u64 {
+        aarch64_task_entry_stub as usize as u64
     }
 }

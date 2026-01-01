@@ -2,8 +2,8 @@
 //!
 //! Provides the primary API for interacting with system state through
 //! the Place/Thing/Relationship ontology.
-use crate::graph;
-use crate::symbols;
+use graph::store;
+use graph::symbols;
 use abi::ids::{PlaceId, RelationshipId, SymbolId, ThingId};
 use alloc::vec::Vec;
 
@@ -26,23 +26,14 @@ pub trait Place {
 ///
 /// This is a derived query over relationships_from(place, predicate.contains)
 pub fn contained_in(place: PlaceId) -> Vec<ThingId> {
-    let pred_contains = symbols::well_known(b"predicate.contains");
-    let rels = graph::relationships_from(place);
+    let pred_contains = symbols::intern(b"predicate.contains");
+    let rels = store::relationships_from(place);
     
     let mut things = Vec::new();
-    for rel_id in rels {
-        if let Some(payload) = graph::get_payload(rel_id) {
-            // RelationshipBody encoding: [from_u128, to_u128, pred_u64]
-            if payload.len() >= 40 {
-                let to_bytes = &payload[16..32];
-                let pred_bytes = &payload[32..40];
-                
-                let to = u128::from_le_bytes(to_bytes.try_into().unwrap());
-                let pred = u64::from_le_bytes(pred_bytes.try_into().unwrap());
-                
-                if pred == pred_contains.0 {
-                    things.push(ThingId(to));
-                }
+    for &rel_id in rels.iter() {
+        if let Some(rel) = store::get_relationship(rel_id) {
+            if rel.kind == pred_contains {
+                things.push(rel.to);
             }
         }
     }

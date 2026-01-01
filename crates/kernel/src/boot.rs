@@ -3,10 +3,10 @@
 //! Orchestrates kernel initialization in strict order.
 
 use crate::log::{self, Level};
-use crate::{graph, machine, sched, symbols, syscall};
+use crate::{machine, sched, syscall};
 use crate::machine::{ARCH_MACHINE, PreBootInfo};
-use abi::ids::SymbolId;
-use abi::bodies::{SurfaceBody, BytespaceBody, BYTESPACE_FLAG_HAS_PHYS_BASE};
+// use graph::symbols; // graph crate is now external
+// use abi::bodies::{SurfaceBody, BytespaceBody, BYTESPACE_FLAG_HAS_PHYS_BASE};
 
 /// Information about a boot module
 #[derive(Clone, Copy)]
@@ -107,16 +107,29 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     
     unsafe { verify_exec_pool_is_executable(); }
 
-    // Phase 2: Initialize symbol table
-    symbols::init();
-    log::klog(Level::Info, "KERNEL", "symbols init");
+    // Phase 2: Initialize symbol table (Now part of Graph)
+    // symbols::init(); 
+    // log::klog(Level::Info, "KERNEL", "symbols init");
 
-    // Phase 3: Initialize place store
+    // Phase 3: Initialize graph store
     graph::init();
-    log::klog(Level::Info, "KERNEL", "place store init");
+    log::klog(Level::Info, "KERNEL", "graph init (symbols+store)");
 
     // Phase 3.5: Seed core ontology
-    seed_ontology(ctx);
+    graph::seed_minimal();
+    log::klog(Level::Info, "KERNEL", "graph seeded");
+
+    // Phase 3.6: Verify Graph
+    if let Err(e) = graph::debug_dump_roots() {
+         crate::serial::write(b"GRAPH VERIFICATION FAILED: ");
+         crate::serial::write(e.as_bytes());
+         crate::serial::write(b"\n");
+         // For now, continuing, but this is a critical failure in strict mode
+    } else {
+         log::klog(Level::Info, "GRAPH", "verification passed");
+    }
+
+    // seed_ontology(ctx); // Removed - using graph::seed_minimal
 
     // Save context for syscalls
     unsafe { GLOBAL_BOOT_CONTEXT = Some(ctx) };
@@ -400,105 +413,4 @@ pub fn spawn_module(ctx: &'static BootContext, name: &str) {
 }
 
 
-use crate::place;
-
-/// Seed the core ontology: root place, kernel identity, and containment
-fn seed_ontology(ctx: &BootContext) {
-    let kind_place = symbols::well_known(b"kind.Place");
-    let kind_thing = symbols::well_known(b"kind.Thing");
-    let pred_contains = symbols::well_known(b"predicate.contains");
-
-    // 1. Create root place
-    let root_id = graph::thing_create(kind_place, SymbolId::INVALID, 1);
-    let root_name = symbols::intern(b"place.root");
-    let mut payload = alloc::vec::Vec::new();
-    payload.extend_from_slice(&root_name.0.to_le_bytes());
-    graph::thing_set_inline_payload(root_id, &payload);
-    graph::thing_register_name(root_id, root_name);
-
-    log::klog(Level::Info, "PLACE", &format!("root created: {:?}", root_id));
-
-    // 2. Create kernel identity
-    let kernel_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
-    let kernel_name = symbols::intern(b"thing.kernel");
-    graph::thing_register_name(kernel_id, kernel_name);
-    
-    // Relate kernel to root
-    graph::relationship_create(root_id, kernel_id, pred_contains);
-
-    // 3. Create Core Places
-    let places = [
-        "place.scheduler",
-        "place.devices",
-        "place.processes",
-        "place.events",
-        "place.log",
-    ];
-
-    for name_str in places {
-        let name = symbols::intern(name_str.as_bytes());
-        let id = graph::thing_create(kind_place, SymbolId::INVALID, 1);
-        graph::thing_register_name(id, name);
-        graph::relationship_create(root_id, id, pred_contains);
-        log::klog(Level::Info, "PLACE", &format!("created core place: {} ({:?})", name_str, id));
-    }
-
-    // 4. Seed Framebuffer (if present)
-    if let Some(fb) = ctx.framebuffer.as_ref() {
-        // Symbols
-        let kind_device_display = symbols::intern(b"kind.device.display");
-        let kind_surface = symbols::intern(b"kind.surface");
-        let kind_bytespace = symbols::intern(b"kind.bytespace");
-        let pred_provides = symbols::intern(b"predicate.provides");
-        let pred_backed_by = symbols::intern(b"predicate.backed_by");
-        
-        let place_devices = graph::find_thing_by_name(symbols::intern(b"place.devices"))
-            .expect("place.devices missing");
-
-        // thing.device.display.primary
-        let dev_id = graph::thing_create(kind_device_display, SymbolId::INVALID, 1);
-        graph::thing_register_name(dev_id, symbols::intern(b"thing.device.display.primary"));
-        graph::relationship_create(place_devices, dev_id, pred_contains);
-
-        // thing.bytespace.framebuffer.primary
-        let bs_body = BytespaceBody {
-            len: (fb.pitch * fb.height) as u64,
-            flags: BYTESPACE_FLAG_HAS_PHYS_BASE,
-            _pad: 0,
-            phys_base: fb.addr,
-        };
-        let bs_id = graph::thing_create(kind_bytespace, SymbolId::INVALID, 1);
-        graph::thing_register_name(bs_id, symbols::intern(b"thing.bytespace.framebuffer.primary"));
-        graph::thing_set_inline_payload(bs_id, &bs_body.to_le_bytes());
-
-        // thing.surface.framebuffer.primary
-        // Assuming format is XRGB8888 for now as we don't have full Limine translation logic
-        // or we can intern what we have. For minimal compliance:
-        let fmt_sym = symbols::intern(b"pixel.format.xrgb8888"); 
-        
-        let surf_body = SurfaceBody {
-            width: fb.width as u32,
-            height: fb.height as u32,
-            stride_bytes: fb.pitch as u32,
-            format: fmt_sym,
-        };
-        let surf_id = graph::thing_create(kind_surface, SymbolId::INVALID, 1);
-        graph::thing_register_name(surf_id, symbols::intern(b"thing.surface.framebuffer.primary"));
-        graph::thing_set_inline_payload(surf_id, &surf_body.to_le_bytes());
-
-        // Relationships
-        graph::relationship_create(dev_id, surf_id, pred_provides);
-        graph::relationship_create(surf_id, bs_id, pred_backed_by);
-
-        log::klog(Level::Info, "PLACE", "seeded framebuffer ontology");
-    }
-
-    // Index rebuild test
-    graph::rebuild_indexes();
-    log::klog(Level::Info, "KERNEL", "place store indexes rebuilt");
-
-    // Verify containment
-    let contained = place::contained_in(root_id);
-    log::klog(Level::Info, "PLACE", &format!("root contains {} things", contained.len()));
-}
 

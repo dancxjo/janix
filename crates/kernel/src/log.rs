@@ -7,9 +7,9 @@ use alloc::vec::Vec;
 use spin::Mutex;
 
 use crate::boot::BootContext;
-use crate::graph;
 use crate::serial;
-use crate::symbols;
+use graph::store;
+use graph::symbols;
 use abi::ids::{SymbolId, ThingId};
 
 /// Log level
@@ -93,9 +93,16 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
     serial_log(level, subsystem, message);
 
     // Create graph entry if graph is initialized
-    let kind = symbols::well_known(b"kind.LogEntry");
-    let schema = symbols::well_known(b"models.core.log.LogEntry");
-    let id = graph::thing_create(kind, schema, 1);
+    if !store::is_initialized() {
+        return None;
+    }
+
+    let kind = symbols::intern(b"kind.LogEntry");
+    let schema = symbols::intern(b"models.core.log.LogEntry");
+    // TODO: Update graph::store to accept schema/version if needed, or update this call
+    // Current store::thing_create only takes kind.
+    let id = store::thing_create(kind);
+    // Ignoring schema/version for now as per Task 01 Simplification
 
     let entry = LogEntry {
         level,
@@ -103,13 +110,13 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
         message: message.to_vec(),
     };
 
-    graph::thing_set_inline_payload(id, &entry.to_payload());
+    store::thing_set_inline_payload(id, &entry.to_payload());
 
     // Link to place.log
-    let place_log_sym = symbols::well_known(b"place.log");
-    if let Some(place_log) = graph::find_thing_by_name(place_log_sym) {
-        let pred_contains = symbols::well_known(b"predicate.contains");
-        graph::relationship_create(place_log, id, pred_contains);
+    let place_log_sym = symbols::intern(b"place.log");
+    if let Some(place_log) = store::find_thing_by_name(place_log_sym) {
+        let pred_contains = symbols::intern(b"predicate.contains");
+        store::relationship_create(pred_contains, place_log, id);
     }
 
     Some(id)

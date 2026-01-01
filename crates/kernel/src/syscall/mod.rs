@@ -8,8 +8,8 @@ use alloc::format;
 
 use crate::log::{self, Level};
 use crate::machine::{self, MmioFlags, MmioRange};
-use crate::symbols;
-use crate::graph;
+use graph::store;
+use graph::symbols;
 
 use abi::ids::ThingId;
 
@@ -126,7 +126,7 @@ fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult {
         core::slice::from_raw_parts(msg_ptr as *const u8, msg_len as usize)
     };
 
-    let subsystem = symbols::well_known(b"userland");
+    let subsystem = symbols::intern(b"userland");
 
     if let Some(id) = log::log_emit(level, subsystem, msg) {
         SyscallResult::new(0, id.high(), id.low())
@@ -208,16 +208,18 @@ fn sys_get_root_place() -> SyscallResult {
 /// SYS_PLACE_OP: Perform an ontology operation
 fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
     match op {
-        // OP_THING_CREATE: a1=kind_low, a2=schema_low, a3=version
+        // OP_THING_CREATE: a1=kind_low
         10 => {
-            let id = graph::thing_create(abi::ids::SymbolId(a1), abi::ids::SymbolId(a2), a3 as u32);
+            // Ignored schema(a2) and version(a3) for now
+            let id = store::thing_create(abi::ids::SymbolId(a1));
             SyscallResult::new(0, id.high(), id.low())
         }
 
-        // OP_THING_CREATE_NAMED: a1=name_low, a2=kind_low, a3=schema_low
+        // OP_THING_CREATE_NAMED: a1=name_low, a2=kind_low
         11 => {
-            let id = graph::thing_create(abi::ids::SymbolId(a2), abi::ids::SymbolId(a3), 1);
-            graph::thing_register_name(id, abi::ids::SymbolId(a1));
+             // Ignored schema(a3) for now
+            let id = store::thing_create(abi::ids::SymbolId(a2));
+            store::thing_register_name(id, abi::ids::SymbolId(a1));
             SyscallResult::new(0, id.high(), id.low())
         }
 
@@ -225,7 +227,7 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
         12 => {
             // Safety: assume valid kernel/user shared memory for now
             let payload = unsafe { core::slice::from_raw_parts(a2 as *const u8, a3 as usize) };
-            if graph::thing_set_inline_payload(ThingId(a1 as u128), payload) {
+            if store::thing_set_inline_payload(ThingId(a1 as u128), payload) {
                 SyscallResult::new(0, 0, 0)
             } else {
                 SyscallResult::new(err::EINVAL, 0, 0)
@@ -234,7 +236,7 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
 
         // OP_THING_GET_PAYLOAD: a1=id_low, a2=ptr, a3=len
         13 => {
-            if let Some(payload) = graph::get_payload(ThingId(a1 as u128)) {
+            if let Some(payload) = store::get_payload(ThingId(a1 as u128)) {
                 let len = core::cmp::min(payload.len(), a3 as usize);
                 let target = unsafe { core::slice::from_raw_parts_mut(a2 as *mut u8, len) };
                 target.copy_from_slice(&payload[..len]);
@@ -246,12 +248,13 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
         
         // OP_REL_CREATE: a1=from_low, a2=to_low, a3=pred_low
         20 => {
-            let pred_provides = symbols::well_known(b"predicate.provides");
-            let sym_desktop = symbols::well_known(b"place.desktop");
-            let desktop_id = graph::find_thing_by_name(sym_desktop).unwrap_or(ThingId(0));
+            let pred_provides = symbols::intern(b"predicate.provides");
+            let sym_desktop = symbols::intern(b"place.desktop");
+            let desktop_id = store::find_thing_by_name(sym_desktop).unwrap_or(ThingId(0));
 
             // Note: thing_std currently only passes low 64 bits of ThingId
-            let id = graph::relationship_create(ThingId(a1 as u128), ThingId(a2 as u128), abi::ids::SymbolId(a3));
+            // Args: kind (predicate), from, to
+            let id = store::relationship_create(abi::ids::SymbolId(a3), ThingId(a1 as u128), ThingId(a2 as u128));
             
             if abi::ids::SymbolId(a3) == pred_provides && ThingId(a2 as u128) == desktop_id {
                 log::klog(Level::Info, "KERNEL", &format!("desktop provider: {:?}", ThingId(a1 as u128)));
@@ -268,7 +271,7 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
 
         // OP_THING_FIND_BY_NAME: a1=name_low
         40 => {
-            if let Some(id) = graph::find_thing_by_name(abi::ids::SymbolId(a1)) {
+            if let Some(id) = store::find_thing_by_name(abi::ids::SymbolId(a1)) {
                 SyscallResult::new(0, id.high(), id.low())
             } else {
                 SyscallResult::new(err::EINVAL, 0, 0)
@@ -278,7 +281,7 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
         // OP_REL_GET_OUTGOING: a1=id_low, a2=buf_ptr, a3=buf_len
         50 => {
             let id = ThingId(a1 as u128);
-            let rels = graph::relationships_from(id);
+            let rels = store::relationships_from(id);
             
             let buf_len = a3 as usize;
             if buf_len == 0 {
@@ -350,13 +353,13 @@ fn sys_watch(watcher_low: u64, target_low: u64) -> SyscallResult {
     let target = ThingId(target_low as u128);
     
     // 1. Subscribe in PlaceStore (memory)
-    graph::watch(watcher, target);
+    store::watch(watcher, target);
 
     // 2. Create Relationship (Graph Truth)
     // This mutation will trigger an emit_event for the target,
     // which the watcher (just subscribed) should receive.
-    let pred_watches = symbols::well_known(b"predicate.watches");
-    graph::relationship_create(watcher, target, pred_watches);
+    let pred_watches = symbols::intern(b"predicate.watches");
+    store::relationship_create(pred_watches, watcher, target);
 
     SyscallResult::new(0, 0, 0)
 }
@@ -368,7 +371,7 @@ fn sys_wait_event(watcher_low: u64) -> SyscallResult {
     
     // Block until event is available
     loop {
-        if let Some(event_id) = graph::dequeue_event(watcher) {
+        if let Some(event_id) = store::dequeue_event(watcher) {
             return SyscallResult::new(0, event_id.high(), event_id.low());
         }
         // Yield to other tasks

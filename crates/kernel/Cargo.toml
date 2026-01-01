@@ -9,7 +9,9 @@ crate-type = ["rlib"]
 [dependencies]
 spin = "0.9"
 bitflags = { version = "2", default-features = false }
+log = "0.4"
 abi = { path = "../abi" }
+graph = { path = "../graph" }
 models = { path = "../models" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]

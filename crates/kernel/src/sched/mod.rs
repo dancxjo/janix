@@ -11,7 +11,8 @@ use spin::Mutex;
 use crate::machine::abi::setup_new_task_stack;
 // use crate::arch::Context; <-- Removed
 use crate::log::{self, Level};
-use crate::{graph, symbols, machine::Context, machine::machine};
+use graph::{store, symbols};
+use crate::{machine::Context, machine::machine};
 use abi::ids::SymbolId;
 
 /// Task identifier
@@ -120,39 +121,39 @@ impl Scheduler {
 
 /// Seed the scheduler ontology
 fn seed_scheduler() {
-    let kind_thing = symbols::well_known(b"kind.Thing");
-    let pred_contains = symbols::well_known(b"predicate.contains");
-    let pred_state = symbols::sym_pred_state();
+    let kind_thing = symbols::sym::KIND_THING;
+    let pred_contains = symbols::sym::PRED_CONTAINS;
+    let pred_state = symbols::intern(b"predicate.state");
 
     // 1. Find Scheduler Place
-    let sched_name = symbols::sym_scheduler();
-    let sched_id = graph::find_thing_by_name(sched_name).expect("Scheduler place should be seeded by kernel");
+    let sched_name = symbols::sym::PLACE_SCHEDULER;
+    let sched_id = store::find_thing_by_name(sched_name).expect("Scheduler place should be seeded by kernel");
     log::klog(Level::Info, "SCHED", "scheduler place found");
 
     // 2. Create Runqueue (Thing)
-    let runqueue_name = symbols::sym_runqueue_default();
-    let runqueue_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
-    graph::thing_register_name(runqueue_id, runqueue_name);
+    let runqueue_name = symbols::intern(b"thing.runqueue.default");
+    let runqueue_id = store::thing_create(kind_thing);
+    store::thing_register_name(runqueue_id, runqueue_name);
 
     // Relate: scheduler contains runqueue
-    graph::relationship_create(sched_id, runqueue_id, pred_contains);
+    store::relationship_create(pred_contains, sched_id, runqueue_id);
 
     // 3. Create Task (Sprout)
-    let task_name = symbols::sym_task_sprout();
-    let task_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
-    graph::thing_register_name(task_id, task_name);
+    let task_name = symbols::intern(b"thing.task.sprout");
+    let task_id = store::thing_create(kind_thing);
+    store::thing_register_name(task_id, task_name);
     log::klog(Level::Info, "SCHED", "task created: thing.task.sprout");
 
     // Relate: runqueue contains task
-    graph::relationship_create(runqueue_id, task_id, pred_contains);
+    store::relationship_create(pred_contains, runqueue_id, task_id);
 
     // 4. Create State (Running)
-    let state_running_name = symbols::sym_state_running();
-    let state_running_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
-    graph::thing_register_name(state_running_id, state_running_name);
+    let state_running_name = symbols::intern(b"state.running");
+    let state_running_id = store::thing_create(kind_thing);
+    store::thing_register_name(state_running_id, state_running_name);
 
     // Relate: task has state running
-    graph::relationship_create(task_id, state_running_id, pred_state);
+    store::relationship_create(pred_state, task_id, state_running_id);
     log::klog(Level::Info, "SCHED", "task state set: running");
 }
 

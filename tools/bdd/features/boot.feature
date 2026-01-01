@@ -1,7 +1,7 @@
 Feature: Boot milestones
   The system MUST narrate its own birth clearly, deterministically, and honestly.
 
-  Scenario Outline: Bootloader Handoff on <arch>
+  Scenario Outline: Bootloader Handoff
     Given I boot the OS in qemu for "<arch>"
     Then the serial console log must contain the following lines in order:
       | BRAN: starting                                       |
@@ -16,7 +16,7 @@ Feature: Boot milestones
       | riscv64     |
       | loongarch64 |
 
-  Scenario Outline: Kernel Initialization on <arch>
+  Scenario Outline: Kernel Initialization
     Given I boot the OS in qemu for "<arch>"
     Then the serial console log must contain the following lines in order:
       | LOG: serial backend installed                        |
@@ -30,7 +30,7 @@ Feature: Boot milestones
         | riscv64     |
         | loongarch64 |
 
-  Scenario Outline: Ontology Seeding on <arch>
+  Scenario Outline: Ontology Seeding
     Given I boot the OS in qemu for "<arch>"
     Then the serial console log must contain the following lines in order:
       | PLACE: root created                                  |
@@ -46,7 +46,7 @@ Feature: Boot milestones
         | riscv64     |
         | loongarch64 |
 
-  Scenario Outline: Scheduler and Sprout on <arch>
+  Scenario Outline: Scheduler and Sprout
     Given I boot the OS in qemu for "<arch>"
     Then the serial console log must contain the following lines in order:
       | KERNEL: scheduler init                               |
@@ -62,7 +62,7 @@ Feature: Boot milestones
       | riscv64     |
       | loongarch64 |
 
-  Scenario Outline: Kernel refuses premature execution on <arch>
+  Scenario Outline: Kernel refuses premature execution
     Given I boot the OS in qemu for "<arch>"
     Then I expect NOT to see "KERNEL: symbols init" before "LOG: serial backend installed"
     And I expect NOT to see "KERNEL: place store init" before "KERNEL: symbols init"
@@ -75,7 +75,7 @@ Feature: Boot milestones
       | riscv64     |
       | loongarch64 |
 
-  Scenario Outline: Degraded early logging on <arch>
+  Scenario Outline: Degraded early logging
     Given I boot the OS in qemu for "<arch>"
     Then the serial console MAY miss any line starting with "BRAN:"
     But I MUST see "LOG: serial backend installed"
@@ -96,7 +96,7 @@ Feature: Boot milestones
     Given I boot the OS in qemu for "x86_64"
     Then "LOG: serial backend installed" appears exactly once in the serial console
 
-  Scenario Outline: Sprout world interaction demo for <arch>
+  Scenario Outline: Sprout world interaction demo
     Given I boot the OS in qemu for "<arch>"
     Then the serial console log must contain the following lines in order:
       | SCHED: task state set: running                        |

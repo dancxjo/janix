@@ -3,72 +3,71 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use walkdir::WalkDir;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct RunReport {
-    feature: String,
-    scenario: String,
-    arch: String,
-    status: String,
-    artifacts_dir: String,
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+struct RunMeta {
+    pub git_sha: Option<String>,
+    pub timestamp: String,
 }
 
-#[derive(Serialize)]
-struct ScenarioSummary {
-    name: String,
-    results: HashMap<String, String>, // arch -> status
-    artifacts: HashMap<String, String>, // arch -> dir
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct ResultsStore {
+    #[serde(default)]
+    pub run: RunMeta,
+    #[serde(default)]
+    pub scenarios: Vec<ScenarioResult>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct ScenarioResult {
+    pub feature: String,
+    pub scenario: String,
+    pub results: HashMap<String, String>, // arch -> status
 }
 
 fn main() -> Result<()> {
-    let artifacts_dir = PathBuf::from("artifacts/bdd");
-    if !artifacts_dir.exists() {
-        println!("No BDD artifacts found at {}", artifacts_dir.display());
-        return Ok(());
+    let results_path = PathBuf::from("artifacts/bdd/results.json");
+    if !results_path.exists() {
+        eprintln!("Error: canonical results.json not found at {}", results_path.display());
+        std::process::exit(1);
     }
 
-    println!("Scanning artifacts...");
-    let mut reports = Vec::new();
+    println!("Loading BDD results from {}", results_path.display());
+    let content = fs::read_to_string(&results_path)?;
+    let store: ResultsStore = serde_json::from_str(&content)?;
 
-    for entry in WalkDir::new(&artifacts_dir).into_iter().filter_map(|e| e.ok()) {
-        if entry.path().extension().map_or(false, |e| e == "json") {
-            let content = fs::read_to_string(entry.path())?;
-            if let Ok(report) = serde_json::from_str::<RunReport>(&content) {
-                reports.push(report);
-            }
-        }
+    println!("Found {} scenarios.", store.scenarios.len());
+
+    // Group by feature
+    let mut features: HashMap<String, Vec<&ScenarioResult>> = HashMap::new();
+    for scen in &store.scenarios {
+        features.entry(scen.feature.clone()).or_default().push(scen);
     }
-
-    println!("Found {} reports.", reports.len());
-
-    let mut features: HashMap<String, HashMap<String, ScenarioSummary>> = HashMap::new();
-
-    for report in reports {
-        let feat = features.entry(report.feature.clone()).or_default();
-        let scen = feat.entry(report.scenario.clone()).or_insert_with(|| ScenarioSummary {
-            name: report.scenario.clone(),
-            results: HashMap::new(),
-            artifacts: HashMap::new(),
-        });
-        
-        scen.results.insert(report.arch.clone(), report.status.clone());
-        scen.artifacts.insert(report.arch.clone(), report.artifacts_dir.clone());
-    }
+    
+    // Sort features for stable output
+    let mut sorted_features: Vec<_> = features.keys().collect();
+    sorted_features.sort();
 
     // Generate Markdown
     let mut md = String::new();
     md.push_str("## Test Status\n\n");
+    md.push_str("> _This section is auto-generated from BDD test results. Do not edit by hand._\n\n");
     
     let arches = vec!["x86_64", "aarch64", "riscv64", "loongarch64"];
     
-    for (feat_name, scenarios) in features {
+    for feat_name in sorted_features {
         md.push_str(&format!("### {}\n\n", feat_name));
         md.push_str("| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |\n");
         md.push_str("|----------|--------|---------|---------|-------------|\n");
         
-        for (_, scen) in scenarios {
-            md.push_str(&format!("| {} |", scen.name));
+        let scenarios = &features[feat_name];
+        // Sort scenarios by name
+        let mut sorted_scenarios = scenarios.clone();
+        sorted_scenarios.sort_by_key(|s| &s.scenario);
+
+        for scen in sorted_scenarios {
+            md.push_str(&format!("| {} |", scen.scenario));
             for arch in &arches {
                 let status = scen.results.get(*arch).map(|s| s.as_str()).unwrap_or("-");
                 let icon = match status {

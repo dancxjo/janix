@@ -194,6 +194,26 @@ impl ArtifactWriter {
         if let Ok(file) = fs::File::create(path) {
              let _ = serde_json::to_writer_pretty(file, &meta);
         }
+
+        // --- NEW: Canonical Results Store Update ---
+        let results_path = self.out_dir.join("bdd/results.json");
+        let mut store = crate::store::ResultsStore::load(&results_path).unwrap_or_default();
+        
+        // Update run metadata if not set
+        if store.run.timestamp.is_empty() {
+             store.run.timestamp = chrono::Utc::now().to_rfc3339();
+        }
+        
+        store.update_result(
+            self.current_feature.clone(),
+            self.current_scenario.clone(),
+            self.arch.clone(),
+            status.to_string(),
+        );
+        
+        if let Err(e) = store.save(&results_path) {
+            eprintln!("Failed to save canonical results.json: {}", e);
+        }
     }
 
     async fn capture_artifact(&self, step_text: &str, status: &str) {

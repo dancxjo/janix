@@ -8,6 +8,7 @@ mod qemu;
 mod report;
 mod shared;
 mod steps;
+mod store;
 mod writer;
 
 #[tokio::main]

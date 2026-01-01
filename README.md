@@ -15,24 +15,26 @@ If it’s in the graph, you can observe it, link to it, and act on it.
 <!-- DOCGEN:STATUS:BEGIN -->
 ## Test Status
 
+> _This section is auto-generated from BDD test results. Do not edit by hand._
+
+### Boot milestones
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| Bootloader Handoff | ✅ | ⚪ | ⚪ | ⚪ |
+| Kernel Initialization | ✅ | ⚪ | ⚪ | ⚪ |
+| Kernel refuses premature execution | ✅ | ⚪ | ⚪ | ⚪ |
+| Ontology Seeding | ✅ | ⚪ | ⚪ | ⚪ |
+| Scheduler and Sprout | ✅ | ⚪ | ⚪ | ⚪ |
+| Serial backend is installed exactly once | ✅ | ⚪ | ⚪ | ⚪ |
+| Sprout world interaction demo | ✅ | ⚪ | ⚪ | ⚪ |
+
 ### Init Contract
 
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
 | Init task is designated and alive | ✅ | ⚪ | ⚪ | ⚪ |
 | Kernel panics when init exits | ✅ | ⚪ | ⚪ | ⚪ |
-
-### Boot milestones
-
-| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
-|----------|--------|---------|---------|-------------|
-| Serial backend is installed exactly once | ✅ | ⚪ | ⚪ | ⚪ |
-| Kernel refuses premature execution on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
-| Bootloader Handoff on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
-| Ontology Seeding on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
-| Sprout world interaction demo for x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
-| Scheduler and Sprout on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
-| Kernel Initialization on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
 
 <!-- DOCGEN:STATUS:END -->
 

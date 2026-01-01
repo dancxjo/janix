@@ -110,16 +110,15 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) -> Result<()> {
     world.arch = arch.clone();
     let root = project_root();
 
-    // 1. Build ISO quietly (capture output for error reporting)
-    let output = Command::new("make")
-        .args([&format!("template-{}.iso", arch)])
-        .env("KARCH", &arch)
+    // 1. Build ISO using xtask
+    let output = Command::new("cargo")
+        .args(["run", "-p", "xtask", "--", "iso", "--env", &arch])
         .current_dir(&root)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .output()
         .await
-        .context("Failed to run make")?;
+        .context("Failed to run xtask iso")?;
 
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -133,14 +132,15 @@ async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) -> Result<()> {
         ));
     }
 
-    let iso_path = root.join(format!("template-{}.iso", arch));
+    let iso_path = root.join("target/iso").join(format!("thingos-{}.iso", arch));
     if !iso_path.exists() {
         return Err(anyhow!("ISO file not found at {}", iso_path.display()));
     }
 
     // 2. Prepare OVMF paths
-    let ovmf_code = root.join(format!("ovmf/ovmf-code-{}.fd", arch));
-    let ovmf_vars = root.join(format!("ovmf/ovmf-vars-{}.fd", arch));
+    // xtask/fetch.rs puts them in vendor/ovmf/
+    let ovmf_code = root.join(format!("vendor/ovmf/ovmf-code-{}.fd", arch));
+    let ovmf_vars = root.join(format!("vendor/ovmf/ovmf-vars-{}.fd", arch));
 
     // 3. Socket path
     // Use a random or specific path

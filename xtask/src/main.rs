@@ -118,6 +118,12 @@ fn main() -> Result<()> {
             fix_terminal();
             res
         }
+        Commands::Inspect { env, port } => inspect::run(env, port),
+        Commands::Iso {
+            env,
+            cmdline,
+            init_module,
+        } => iso::run(env, cmdline, init_module),
     }
 }
 

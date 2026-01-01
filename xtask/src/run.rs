@@ -128,7 +128,7 @@ fn run_qemu_aarch64(args: RunArgs) -> Result<()> {
     let iso_path = root.join(format!("target/iso/thingos-{}.iso", args.env));
     let ovmf_dir = root.join("vendor/ovmf");
     let ovmf_code = ovmf_dir.join("ovmf-code-aarch64.fd");
-    let ovmf_vars = ovmf_dir.join("ovmf-vars-aarch64.fd");
+    let _ovmf_vars = ovmf_dir.join("ovmf-vars-aarch64.fd");
 
     println!("==> Running QEMU aarch64...");
     let mut cmd = Command::new("qemu-system-aarch64");

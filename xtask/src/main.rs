@@ -33,6 +33,9 @@ enum Commands {
     Test {
         #[arg(long, default_value = "all")]
         arch: String,
+        /// Run only smoke tests
+        #[arg(long)]
+        smoke: bool,
     },
     /// Inspect running kernel with GDB
     Inspect {
@@ -87,7 +90,7 @@ fn main() -> Result<()> {
         Commands::Fetch => fetch::fetch(),
         Commands::Build { env } => build::run(&env),
         Commands::Clean => clean::run(),
-        Commands::Test { arch } => test::run(Some(arch)),
+        Commands::Test { arch, smoke } => test::run(Some(arch), smoke),
 
         Commands::UpdateDocs => {
             Command::new("cargo")

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::env;
 use std::process::Command;
 
-pub fn run(arch: Option<String>) -> Result<()> {
+pub fn run(arch: Option<String>, smoke: bool) -> Result<()> {
     let arch = arch.unwrap_or_else(|| "all".to_string());
     let root = project_root();
 
@@ -23,6 +23,7 @@ pub fn run(arch: Option<String>) -> Result<()> {
         .arg("-p")
         .arg("bdd")
         .env("ARCH", &arch)
+        .env("SMOKE_TEST", if smoke { "1" } else { "0" })
         .current_dir(&root)
         .status()
         .context("Failed to run ci-bdd-runner")?;

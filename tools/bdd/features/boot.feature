@@ -16,6 +16,7 @@ Feature: Boot milestones
       | riscv64     |
       | loongarch64 |
 
+  @smoke
   Scenario Outline: Kernel Initialization
     Given I boot the OS in qemu for "<arch>"
     Then the serial console log must contain the following lines in order:

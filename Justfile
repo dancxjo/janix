@@ -20,6 +20,9 @@ update-docs:
 test arch="all":
     cargo run -p xtask -- test --arch {{arch}}
 
+smoke arch="all":
+    cargo run -p xtask -- test --arch {{arch}} --smoke
+
 build:
     cargo run -p xtask -- build
 
@@ -62,6 +65,16 @@ test-riscv64:
     @just test riscv64
 test-loongarch64:
     @just test loongarch64
+
+# smoke aliases
+smoke-x86_64:
+    @just smoke x86_64
+smoke-aarch64:
+    @just smoke aarch64
+smoke-riscv64:
+    @just smoke riscv64
+smoke-loongarch64:
+    @just smoke loongarch64
 
 # debug aliases
 debug-x86_64:

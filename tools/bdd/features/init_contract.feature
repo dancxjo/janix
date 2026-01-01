@@ -1,5 +1,6 @@
 Feature: Init Contract
 
+  @smoke
   Scenario: Init task is designated and alive
     Given I boot the OS in qemu for "x86_64"
     Then the serial console log must contain the following lines in order:

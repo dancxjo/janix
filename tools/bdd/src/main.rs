@@ -50,7 +50,9 @@ async fn main() -> anyhow::Result<()> {
         .max_concurrent_scenarios(1)
         .with_writer(writer);
 
-    if arch != "all" {
+    let is_smoke = env::var("SMOKE_TEST").map(|v| v == "1").unwrap_or(false);
+
+    if arch != "all" || is_smoke {
         // Create list of architectures to match
         let archs: Vec<String> = if arch.contains(',') {
             arch.split(',').map(|s| s.to_string()).collect()
@@ -58,9 +60,25 @@ async fn main() -> anyhow::Result<()> {
             vec![arch.clone()]
         };
         
+        if is_smoke {
+            println!("Filtering for SMOKE tests only.");
+        }
+        
         println!("Filtering scenarios for architectures: {:?}", archs);
         
         runner.filter_run(feature_path, move |_, _, scenario| {
+            // If smoke test is requested, strictly require @smoke tag
+            if is_smoke {
+                 if !scenario.tags.iter().any(|t| t == "smoke") {
+                     return false;
+                 }
+            }
+
+            // If arch is all (and we are here only because of smoke), we don't filter by arch
+            if arch == "all" {
+                return true;
+            }
+
             // Check if scenario name contains "for <arch>"
             for a in &archs {
                 if scenario.name.contains(&format!("for {}", a)) {

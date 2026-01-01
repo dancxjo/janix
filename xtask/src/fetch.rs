@@ -14,9 +14,122 @@ pub fn fetch() -> Result<()> {
         fs::create_dir_all(&assets)?;
     }
 
+    let vendor = root.join("vendor");
+    if !vendor.exists() {
+        fs::create_dir_all(&vendor)?;
+    }
+
+    fetch_limine(&vendor)?;
+    fetch_ovmf(&vendor)?;
     fetch_fonts(&assets)?;
     fetch_icons(&assets)?;
     fetch_cursors(&assets)?;
+
+    Ok(())
+}
+
+fn fetch_limine(vendor: &Path) -> Result<()> {
+    println!("==> Fetching Limine...");
+    require_tool("git")?;
+
+    let limine_dir = vendor.join("limine");
+    if limine_dir.join(".git").exists() {
+        println!("    Removing existing limine repo...");
+        fs::remove_dir_all(&limine_dir)?;
+    }
+
+    run_cmd(
+        Command::new("git")
+            .arg("clone")
+            .arg("--branch=v10.x-binary")
+            .arg("--depth=1")
+            .arg("https://github.com/limine-bootloader/limine.git")
+            .arg(&limine_dir),
+    )?;
+
+    // Verify
+    let required = [
+        "limine-bios.sys",
+        "limine-bios-cd.bin",
+        "limine-uefi-cd.bin",
+        "BOOTX64.EFI",
+        "BOOTAA64.EFI",
+    ];
+    for f in required {
+        let p = limine_dir.join(f);
+        if !p.exists() {
+            ensure!(p.exists(), "Missing Limine artifact: {}", f);
+        }
+    }
+    println!("    Limine fetched.");
+    Ok(())
+}
+
+fn fetch_ovmf(vendor: &Path) -> Result<()> {
+    println!("==> Fetching OVMF...");
+    require_tool("curl")?;
+    require_tool("tar")?;
+
+    let ovmf_dir = vendor.join("ovmf");
+    fs::create_dir_all(&ovmf_dir)?;
+
+    let release = std::env::var("THINGOS_OVMF_RELEASE")
+        .unwrap_or_else(|_| "edk2-stable202411-r1".to_string());
+    let archive_name = format!("{}-bin.tar.xz", release);
+    let archive_url = format!(
+        "https://github.com/rust-osdev/ovmf-prebuilt/releases/download/{}/{}",
+        release, archive_name
+    );
+    let archive_path = ovmf_dir.join(&archive_name);
+
+    println!("    Using OVMF release: {}", release);
+    if !archive_path.exists() {
+        println!("    Downloading {}...", archive_name);
+        download_file(&archive_url, &archive_path)
+            .with_context(|| format!("Failed to download {}", archive_url))?;
+    } else {
+        println!("    Reusing cached {}", archive_name);
+    }
+
+    let extract_dir = ovmf_dir.join(format!("extract-{}", release));
+    if extract_dir.exists() {
+        fs::remove_dir_all(&extract_dir)?;
+    }
+    fs::create_dir_all(&extract_dir)?;
+
+    run_cmd(
+        Command::new("tar")
+            .arg("-xJf")
+            .arg(&archive_path)
+            .arg("-C")
+            .arg(&extract_dir),
+    )
+    .context("Failed to unpack OVMF archive")?;
+
+    let base = extract_dir.join(format!("{}-bin", release));
+    let mappings = [
+        ("x64/code.fd", "ovmf-code-x86_64.fd"),
+        ("x64/vars.fd", "ovmf-vars-x86_64.fd"),
+        ("aarch64/code.fd", "ovmf-code-aarch64.fd"),
+        ("aarch64/vars.fd", "ovmf-vars-aarch64.fd"),
+    ];
+
+    for (src_rel, dest_name) in mappings {
+        let src = base.join(src_rel);
+        if src.exists() {
+            let dest = ovmf_dir.join(dest_name);
+            println!(
+                "    Installing {} -> {}",
+                src_rel,
+                dest.file_name().unwrap().to_string_lossy()
+            );
+            fs::copy(&src, &dest).with_context(|| format!("Failed to install {}", dest_name))?;
+        } else {
+             eprintln!("    [WARNING] Missing OVMF artifact: {}", src_rel);
+        }
+    }
+
+    fs::remove_dir_all(&extract_dir).context("Failed to clean temporary OVMF extraction dir")?;
 
     Ok(())
 }

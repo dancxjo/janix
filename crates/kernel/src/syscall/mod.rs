@@ -3,7 +3,10 @@
 //! Provides the kernel's system call interface. Syscalls are dispatched
 //! by number and return (status, val0, val1).
 
+use core::slice;
+
 use crate::log::{self, Level};
+use crate::machine::{self, MmioFlags, MmioRange};
 use crate::symbols;
 
 /// Syscall numbers
@@ -11,12 +14,19 @@ pub mod nr {
     pub const SYS_VERSION_GET: u32 = 0;
     pub const SYS_LOG_EMIT: u32 = 1;
     pub const SYS_SYMBOL_INTERN: u32 = 2;
+    pub const SYS_MACHINE: u32 = 3;
     pub const SYS_THING_CREATE: u32 = 10;
     pub const SYS_THING_SET_PAYLOAD: u32 = 11;
     pub const SYS_LINK_CREATE: u32 = 20;
     pub const SYS_PROC_SPAWN: u32 = 100;
     pub const SYS_PROC_EXIT: u32 = 101;
     pub const SYS_SCHED_YIELD: u32 = 200;
+}
+
+/// Machine syscall operations
+pub mod machine_op {
+    pub const CONSOLE_WRITE: u64 = 0;
+    pub const MMIO_MAP: u64 = 1;
 }
 
 /// Error codes
@@ -41,11 +51,12 @@ pub fn init() {
 ///
 /// Called by the architecture layer when a syscall trap occurs.
 /// Returns (status, value0, value1).
-pub fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, _a3: u64, _a4: u64, _a5: u64) -> SyscallResult {
+pub fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64, _a5: u64) -> SyscallResult {
     match nr {
         nr::SYS_VERSION_GET => sys_version_get(),
         nr::SYS_LOG_EMIT => sys_log_emit(a0, a1, a2),
         nr::SYS_SYMBOL_INTERN => sys_symbol_intern(a0, a1),
+        nr::SYS_MACHINE => sys_machine(a0, a1, a2, a3),
         _ => (err::ENOSYS, 0, 0),
     }
 }
@@ -104,4 +115,51 @@ fn sys_symbol_intern(_str_ptr: u64, _str_len: u64) -> SyscallResult {
     let placeholder = b"user_symbol";
     let id = symbols::intern(placeholder);
     (0, id.0, 0)
+}
+
+/// SYS_MACHINE: Machine operations
+///
+/// a0: op (0=console_write, 1=mmio_map)
+/// a1..a3: op-specific arguments
+fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
+    match op {
+        machine_op::CONSOLE_WRITE => sys_machine_console_write(a1, a2),
+        machine_op::MMIO_MAP => sys_machine_mmio_map(a1, a2, a3),
+        _ => (err::EINVAL, 0, 0),
+    }
+}
+
+/// SYS_MACHINE[console_write]: write bytes to the machine console
+fn sys_machine_console_write(ptr: u64, len: u64) -> SyscallResult {
+    if ptr == 0 {
+        return (err::EFAULT, 0, 0);
+    }
+
+    // For now, assume kernel/user share address space for early logging.
+    let bytes = unsafe { slice::from_raw_parts(ptr as *const u8, len as usize) };
+    let written = machine::machine().console_write(bytes) as u64;
+    (0, written, 0)
+}
+
+/// SYS_MACHINE[mmio_map]: map a physical MMIO range
+fn sys_machine_mmio_map(phys: u64, len: u64, flags_raw: u64) -> SyscallResult {
+    if len == 0 {
+        return (err::EINVAL, 0, 0);
+    }
+
+    let flags = match MmioFlags::from_bits(flags_raw as u32) {
+        Some(f) => f,
+        None => return (err::EINVAL, 0, 0),
+    };
+
+    let range = MmioRange {
+        phys,
+        len: len as usize,
+    };
+
+    if let Some(mapping) = machine::machine().mmio_map(range, flags) {
+        (0, mapping.virt, mapping.len as u64)
+    } else {
+        (err::EFAULT, 0, 0)
+    }
 }

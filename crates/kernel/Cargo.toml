@@ -8,3 +8,4 @@ crate-type = ["rlib"]
 
 [dependencies]
 spin = "0.9"
+bitflags = "2"

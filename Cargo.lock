@@ -786,6 +786,7 @@ dependencies = [
 name = "kernel"
 version = "0.3.0"
 dependencies = [
+ "bitflags 2.10.0",
  "spin",
 ]
 

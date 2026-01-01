@@ -2,6 +2,7 @@ pub mod abi;
 pub mod trap;
 pub mod timer;
 pub mod mmu;
+mod serial;
 pub use mmu::AddressSpace;
 
 pub type TrapFrame = trap::TrapContext; // Added
@@ -81,5 +82,9 @@ impl Machine for LoongArchMachine {
 
     fn task_entry_stub(&self) -> u64 {
         0
+    }
+
+    fn virt_to_phys(&self, virt: u64) -> u64 {
+        virt
     }
 }

@@ -57,6 +57,9 @@ pub extern "C" fn task_dispatch(_dispatch_ptr: u64, entry: extern "C" fn()) {
 
 pub struct ArchMachine {
     serial: Serial,
+    hhdm_offset: core::sync::atomic::AtomicU64,
+    kernel_phys_base: core::sync::atomic::AtomicU64,
+    kernel_virt_base: core::sync::atomic::AtomicU64,
 }
 
 static ARCH_MACHINE_IMPL: ArchMachine = ArchMachine::new();
@@ -66,6 +69,9 @@ impl ArchMachine {
     pub const fn new() -> Self {
         Self {
             serial: Serial::new(),
+            hhdm_offset: core::sync::atomic::AtomicU64::new(0),
+            kernel_phys_base: core::sync::atomic::AtomicU64::new(0),
+            kernel_virt_base: core::sync::atomic::AtomicU64::new(0),
         }
     }
 }
@@ -128,7 +134,11 @@ core::arch::global_asm!(
 );
 
 impl Machine for ArchMachine {
-    fn init(&self, _info: PreBootInfo) {
+    fn init(&self, info: PreBootInfo) {
+        self.hhdm_offset.store(info.hhdm_offset, core::sync::atomic::Ordering::Relaxed);
+        self.kernel_phys_base.store(info.kernel_phys_base, core::sync::atomic::Ordering::Relaxed);
+        self.kernel_virt_base.store(info.kernel_virt_base, core::sync::atomic::Ordering::Relaxed);
+
         // Initialize PerCpu, GDT, IDT
         init();
     }
@@ -178,5 +188,20 @@ impl Machine for ArchMachine {
     
     fn task_entry_stub(&self) -> u64 {
         task_entry as *const () as u64
+    }
+
+    fn virt_to_phys(&self, virt: u64) -> u64 {
+         let hhdm = self.hhdm_offset.load(core::sync::atomic::Ordering::Relaxed);
+         let k_virt = self.kernel_virt_base.load(core::sync::atomic::Ordering::Relaxed);
+         let k_phys = self.kernel_phys_base.load(core::sync::atomic::Ordering::Relaxed);
+
+         if virt >= hhdm && hhdm != 0 {
+             virt - hhdm
+         } else if virt >= k_virt && k_virt != 0 {
+             virt - k_virt + k_phys
+         } else {
+             // Fallback or identity?
+             virt
+         }
     }
 }

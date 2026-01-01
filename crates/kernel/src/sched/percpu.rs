@@ -1,5 +1,4 @@
 use crate::sched::task::TaskId;
-use crate::sched::Task;
 use abi::ids::ThingId;
 
 pub struct PerCpu {

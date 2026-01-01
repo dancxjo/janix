@@ -4,9 +4,9 @@
 //! Decodes ESR_EL1 to classify faults.
 
 use crate::trap::{self, TrapRecord, FaultKind, Arch};
-use crate::machine::aarch64::serial; // For panic logging if needed
-use core::arch::asm;
-use graph::store;
+// use crate::machine::aarch64::serial; // For panic logging if needed
+// use core::arch::asm;
+// use graph::store;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -30,7 +30,7 @@ pub struct ExceptionContext {
 pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u64) -> u64 {
     let esr = ctx.esr_el1;
     let ec = (esr >> 26) & 0x3f;
-    let iss = esr & 0x1ffffff;
+    let _iss = esr & 0x1ffffff;
     
     // Default mappings
     let mut kind = FaultKind::Unknown;

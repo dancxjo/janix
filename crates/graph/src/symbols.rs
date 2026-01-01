@@ -148,7 +148,16 @@ pub fn init() {
         "perm.user",
         "perm.kernel",
         "perm.device",
-        "perm.normal",
+        "kind.Byteslice",
+        "bytespace_kind.ram",
+        "bytespace_kind.device",
+        "bytespace_kind.module",
+        "bytespace_kind.framebuffer",
+        "bytespace_kind.file",
+        "bytespace_kind.shared",
+        "predicate.slice_of",
+        "predicate.size",
+        "predicate.base_phys",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -264,5 +273,15 @@ pub mod sym {
     pub const PERM_USER: SymbolId = SymbolId(71);
     pub const PERM_KERNEL: SymbolId = SymbolId(72);
     pub const PERM_DEVICE: SymbolId = SymbolId(73);
-    pub const PERM_NORMAL: SymbolId = SymbolId(74);
+    pub const KIND_BYTESLICE: SymbolId = SymbolId(75);
+    pub const KIND_BYTESPACE_RAM: SymbolId = SymbolId(76);
+    pub const KIND_BYTESPACE_DEVICE: SymbolId = SymbolId(77);
+    pub const KIND_BYTESPACE_MODULE: SymbolId = SymbolId(78);
+    pub const KIND_BYTESPACE_FRAMEBUFFER: SymbolId = SymbolId(79);
+    pub const KIND_BYTESPACE_FILE: SymbolId = SymbolId(80);
+    pub const KIND_BYTESPACE_SHARED: SymbolId = SymbolId(81);
+
+    pub const PRED_SLICE_OF: SymbolId = SymbolId(82);
+    pub const PRED_SIZE: SymbolId = SymbolId(83);
+    pub const PRED_BASE_PHYS: SymbolId = SymbolId(84);
 }

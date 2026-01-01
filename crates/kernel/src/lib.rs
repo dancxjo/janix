@@ -27,7 +27,7 @@ pub mod trap;
 pub mod memory;
 
 // Stub modules
-pub mod bytespace;
+
 pub mod caps;
 pub mod proc;
 

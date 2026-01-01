@@ -1,7 +1,5 @@
 
 use crate::trap::{self, TrapRecord, FaultKind, Arch};
-use graph::store;
-use core::arch::asm;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -19,7 +17,7 @@ pub unsafe extern "C" fn loongarch64_handle_trap(ctx: &mut TrapContext) -> u64 {
     let ecode = (estat >> 16) & 0x3f; // ECODE is bits 16-21
     let is_interrupt = (estat & 0x1fff) != 0; // IS bits 0-12
     
-    let mut kind = FaultKind::Unknown;
+    let mut kind;
     let mut addr = None;
     
     if is_interrupt {

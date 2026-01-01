@@ -323,7 +323,7 @@ fn sys_proc_spawn(name_ptr: u64, name_len: u64) -> SyscallResult {
     };
 
     let ctx = crate::boot::get_boot_ctx();
-    crate::boot::spawn_module(ctx, name);
+    crate::boot::spawn_module_by_name(ctx, name);
 
     // If spawn_module returns, it means it didn't jump (e.g. error or multitasking supported)
     // But currently it jumps and never returns. 
@@ -336,7 +336,6 @@ fn sys_proc_spawn(name_ptr: u64, name_len: u64) -> SyscallResult {
 fn sys_proc_exit(code: u64) -> SyscallResult {
     crate::sched::exit_current_task(code as i32);
     // Should not return
-    SyscallResult::new(0, 0, 0)
 }
 
 /// SYS_SCHED_YIELD: Yield execution

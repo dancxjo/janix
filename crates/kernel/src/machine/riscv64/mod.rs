@@ -79,4 +79,8 @@ impl Machine for Riscv64Machine {
     fn task_entry_stub(&self) -> u64 {
         0
     }
+
+    fn virt_to_phys(&self, virt: u64) -> u64 {
+        virt
+    }
 }

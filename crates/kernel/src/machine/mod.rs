@@ -113,6 +113,12 @@ pub trait Machine: Sync {
     
     /// Entry point stub address for new tasks
     fn task_entry_stub(&self) -> u64;
+
+    /// Translate kernel virtual address to physical address in canonical zones.
+    /// This should handle:
+    /// 1. HHDM (virt >= hhdm_offset) -> virt - hhdm_offset
+    /// 2. Kernel Code/Data (virt >= kernel_virt_base) -> virt - virt_base + phys_base
+    fn virt_to_phys(&self, virt: u64) -> u64;
 }
 
 static mut MACHINE: Option<&'static dyn Machine> = None;
@@ -164,6 +170,12 @@ pub fn irq_enable() {
         core::arch::asm!("msr daifclr, #0xf", options(nomem, preserves_flags));
         #[cfg(target_arch = "riscv64")]
         core::arch::asm!("csrsi sstatus, 2", options(nomem, preserves_flags));
+        #[cfg(target_arch = "loongarch64")]
+        {
+             let mut val = 4u64;
+             core::arch::asm!("csrxchg {}, {}, 0x0", inout(reg) val, in(reg) val);
+             let _ = val;
+        }
     }
 }
 

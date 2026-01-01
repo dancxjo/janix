@@ -1,5 +1,4 @@
-use crate::machine::Context;
-use alloc::vec::Vec;
+
 use graph::store;
 use graph::symbols::sym;
 use abi::ids::{ThingId, SymbolId};
@@ -72,7 +71,7 @@ impl Task {
         // Let's create a new Thing with Kind = state_symbol.
         
         let state_kind = new_state.to_symbol();
-        if let Ok(state_thing) = place.create_thing(sym::KIND_THING) { // Generic thing for now or Kind=State?
+        if let Ok(_state_thing) = place.create_thing(sym::KIND_THING) { // Generic thing for now or Kind=State?
             // Actually, maybe we should just set the predicate to point to a "Concept" thing or just a Thing with that kind.
             // Let's create a Thing with Kind=StateSymbol.
             // place.create_thing(state_kind) works if state_kind is a valid kind?

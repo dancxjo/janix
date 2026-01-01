@@ -1,9 +1,8 @@
 use alloc::vec::Vec;
 use spin::Mutex;
 use crate::log::{self, Level};
-use graph::{store, symbols};
+use graph::store;
 use graph::symbols::sym;
-use crate::machine::abi::setup_new_task_stack;
 use crate::memory::space::AddressSpace;
 use alloc::sync::Arc;
 
@@ -34,7 +33,7 @@ impl Scheduler {
         }
     }
 
-    fn spawn(&mut self, name: &'static str) -> TaskId {
+    fn spawn(&mut self, _name: &'static str) -> TaskId {
         let id = TaskId(self.next_id);
         self.next_id += 1;
 
@@ -77,7 +76,7 @@ pub fn init() {
     log::klog(Level::Info, "SCHED", "initializing...");
 
     // Seed Graph (scheduler.main, cpu.0, run_queue.0)
-    let (sched_thing, cpu_thing, rq_thing) = store::with_store(|s| {
+    let (_sched_thing, cpu_thing, rq_thing) = store::with_store(|s| {
         let place_tasks = s.find_by_name(sym::PLACE_TASKS).expect("place.tasks missing");
         
         // scheduler.main
@@ -124,11 +123,11 @@ pub fn yield_current() {
 }
 
 // Sprout helpers
-pub fn mark_as_init(id: TaskId) {
+pub fn mark_as_init(_id: TaskId) {
     // Mark in graph?
 }
 
-pub fn configure_task_memory(id: TaskId, img: (u64, u64), stack: (u64, u64), heap: (u64, u64, u64)) {
+pub fn configure_task_memory(id: TaskId, _img: (u64, u64), _stack: (u64, u64), heap: (u64, u64, u64)) {
     let mut guard = SCHEDULER.lock();
     if let Some(sched) = guard.as_mut() {
         if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == id) {
@@ -142,15 +141,73 @@ pub fn configure_task_memory(id: TaskId, img: (u64, u64), stack: (u64, u64), hea
 pub fn configure_task_context(id: TaskId, entry: u64) {
     let mut guard = SCHEDULER.lock();
     if let Some(sched) = guard.as_mut() {
-        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == id) {
-             // We need to setup a context that jumps to `entry`.
-             // We can use `machine::abi::setup_new_task_stack` if generalized.
-             // Or manually write stack frame.
+        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
+             let stack_top = (task.stack_ptr & !0xf) as *mut u64;
+
+             unsafe {
+                #[cfg(target_arch = "x86_64")]
+                {
+                     let mut sp = stack_top.sub(1);
+                     *sp = 0xdeadbeef; // Align
+
+                     // CPU Frame (5 words)
+                     sp = sp.sub(1); *sp = 0x10; // SS (Kernel Data)
+                     sp = sp.sub(1); *sp = stack_top as u64; // RSP
+                     sp = sp.sub(1); *sp = 0x202; // RFLAGS
+                     sp = sp.sub(1); *sp = 0x8; // CS (Kernel Code)
+                     sp = sp.sub(1); *sp = entry; // RIP 
+
+                     // Regs
+                     sp = sp.sub(15);
+                     core::ptr::write_bytes(sp as *mut u8, 0, 15 * 8);
+                     
+                     task.stack_ptr = sp as u64;
+                }
+
+                #[cfg(target_arch = "aarch64")]
+                {
+                     use crate::machine::aarch64::TrapFrame;
+                     let layout = core::alloc::Layout::new::<TrapFrame>();
+                     let mut sp = stack_top as *mut u8;
+                     sp = sp.sub(layout.size());
+                     core::ptr::write_bytes(sp, 0, layout.size());
+                     let frame = &mut *(sp as *mut TrapFrame);
+                     frame.elr_el1 = entry;
+                     frame.spsr_el1 = 0x3c5; 
+                     task.stack_ptr = sp as u64;
+                }
+
+                #[cfg(target_arch = "riscv64")]
+                {
+                     use crate::machine::riscv64::TrapFrame;
+                     let layout = core::alloc::Layout::new::<TrapFrame>();
+                     let mut sp = stack_top as *mut u8;
+                     sp = sp.sub(layout.size());
+                     core::ptr::write_bytes(sp, 0, layout.size());
+                     let frame = &mut *(sp as *mut TrapFrame);
+                     frame.sepc = entry;
+                     frame.sstatus = (1 << 8) | (1 << 5); 
+                     task.stack_ptr = sp as u64;
+                }
+
+                #[cfg(target_arch = "loongarch64")]
+                {
+                     use crate::machine::loongarch64::TrapFrame;
+                     let layout = core::alloc::Layout::new::<TrapFrame>();
+                     let mut sp = stack_top as *mut u8;
+                     sp = sp.sub(layout.size());
+                     core::ptr::write_bytes(sp, 0, layout.size());
+                     let frame = &mut *(sp as *mut TrapFrame);
+                     frame.era = entry;
+                     frame.prmd = 0x4;
+                     task.stack_ptr = sp as u64;
+                }
+             }
         }
     }
 }
 
-pub fn exit_current_task(code: i32) -> ! {
+pub fn exit_current_task(_code: i32) -> ! {
     loop { crate::machine::idle(); }
 }
 
@@ -159,6 +216,13 @@ pub fn with_current_task<F, R>(f: F) -> Option<R> where F: FnOnce(&mut Task) -> 
     let sched = guard.as_mut()?; // Return None if not init
     let curr = sched.cpu.current_task?; // Return None if no current task
     let t = sched.tasks.iter_mut().find(|t| t.id == curr).unwrap();
+    Some(f(t))
+}
+
+pub fn with_task<F, R>(id: TaskId, f: F) -> Option<R> where F: FnOnce(&mut Task) -> R {
+    let mut guard = SCHEDULER.lock();
+    let sched = guard.as_mut()?;
+    let t = sched.tasks.iter_mut().find(|t| t.id == id)?;
     Some(f(t))
 }
 
@@ -171,8 +235,8 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
     let task = sched.tasks.iter_mut().find(|t| t.id == id).unwrap();
     
     // Setup Context
-    use crate::machine::{abi, Context};
-    let mut ctx = Context::default();
+    use crate::machine::Context;
+    let mut _ctx = Context::default();
     
     // stack_ptr in Task currently points to top of stack (u64).
     // We need pointer to mutable memory.

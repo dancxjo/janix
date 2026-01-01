@@ -6,9 +6,8 @@
 use abi::ids::ThingId;
 // use abi::types::{Thing, Value}; // types is unlikely, wire or ids.
 // Looking at error, I'll remove unused imports or use specific ones.
-use graph::store::{self, PlaceStore}; 
-use graph::symbols::{self, sym};
-use alloc::vec::Vec;
+use graph::store::{self, PlaceStore};
+use graph::symbols::sym;
 use crate::log::{self, Level};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

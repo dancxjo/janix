@@ -98,7 +98,7 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
     }
 
     let kind = symbols::intern(b"kind.LogEntry");
-    let schema = symbols::intern(b"models.core.log.LogEntry");
+    let _schema = symbols::intern(b"models.core.log.LogEntry");
     // TODO: Update graph::store to accept schema/version if needed, or update this call
     // Current store::thing_create only takes kind.
     let id = store::thing_create(kind);

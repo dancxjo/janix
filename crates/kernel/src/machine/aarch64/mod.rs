@@ -45,6 +45,11 @@ static mut MMIO_L2: PageTable = PageTable::new();
 static mut MMIO_L3: [PageTable; 512] = [const { PageTable::new() }; 512];
 static mut BOOT_L0: PageTable = PageTable::new();
 
+#[no_mangle]
+pub extern "C" fn task_dispatch(_dispatch_ptr: u64, entry: extern "C" fn()) {
+    entry();
+}
+
 pub struct ArchMachine {
     serial: Serial,
     hhdm_offset: AtomicU64,
@@ -81,8 +86,25 @@ impl ArchMachine {
              asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
              asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
              
-             // Initialize GIC and Timer
-             gic::init();
+             // Initialize GIC (Map Disributor and CPU Interface)
+             // We need to map them first.
+             // We can't use `self.map_mmio` easily inside `unsafe` block if we want to be clean,
+             // but `self` is available.
+             // However, `map_mmio` takes `MmioRange`.
+             // And `init_machine` is not unsafe, but this block is.
+             // Let's step out of unsafe for mapping if possible, or just call map_mmio.
+             
+             let flags = MmioFlags::DEVICE | MmioFlags::READ | MmioFlags::WRITE;
+             
+             // GICD
+             let gicd_map = self.map_mmio(MmioRange { phys: gic::GICD_PHYS, len: 0x1000 }, flags)
+                 .expect("GICD map fail");
+                 
+             // GICC
+             let gicc_map = self.map_mmio(MmioRange { phys: gic::GICC_PHYS, len: 0x1000 }, flags)
+                 .expect("GICC map fail");
+
+             gic::init(gicd_map.virt, gicc_map.virt);
              timer::init();
         }
     }
@@ -338,5 +360,15 @@ impl Machine for ArchMachine {
 
     fn task_entry_stub(&self) -> u64 {
         aarch64_task_entry_stub as usize as u64
+    }
+
+    fn virt_to_phys(&self, virt: u64) -> u64 {
+        if virt >= self.hhdm_offset() && self.hhdm_offset() != 0 {
+            virt.wrapping_sub(self.hhdm_offset())
+        } else if virt >= self.kernel_virt_base() && self.kernel_virt_base() != 0 {
+            self.kernel_virt_to_phys(virt)
+        } else {
+            virt // Fallback
+        }
     }
 }

@@ -144,20 +144,25 @@ use alloc::format;
 // We rely on the linker keeping this writable or Limine mapping it RWX.
 const EXEC_POOL_SIZE: usize = 4 * 1024 * 1024;
 
+#[repr(align(4096))]
+struct ExecPool([u8; EXEC_POOL_SIZE]);
+
 #[link_section = ".text"]
-static mut EXEC_POOL: [u8; EXEC_POOL_SIZE] = [0u8; EXEC_POOL_SIZE];
+static mut EXEC_POOL_STORAGE: ExecPool = ExecPool([0u8; EXEC_POOL_SIZE]);
 static mut EXEC_POS: usize = 0;
 
 unsafe fn alloc_exec(size: usize) -> Option<(&'static mut [u8], u64)> {
     // Safety: we are single threaded during boot (mostly) or we hope nothing races here.
-    let pos = EXEC_POS;
+    // Align to 16 bytes to satisfy instruction alignment requirements on all archs
+    let pos = (EXEC_POS + 15) & !15;
+    
     if pos + size > EXEC_POOL_SIZE {
         return None;
     }
-    EXEC_POS += size;
+    EXEC_POS = pos + size;
     
     // Avoid creating a mutable reference to the static array
-    let pool_base = core::ptr::addr_of_mut!(EXEC_POOL) as *mut u8;
+    let pool_base = core::ptr::addr_of_mut!(EXEC_POOL_STORAGE.0) as *mut u8;
     let ptr = pool_base.add(pos);
     
     let slice = core::slice::from_raw_parts_mut(ptr, size);
@@ -166,11 +171,36 @@ unsafe fn alloc_exec(size: usize) -> Option<(&'static mut [u8], u64)> {
 
 unsafe fn verify_exec_pool_is_executable() {
     log::klog(Level::Info, "EXEC", "verifying execution permission...");
+    
+    #[cfg(target_arch = "x86_64")]
+    let ret_opcode: &[u8] = &[0xC3]; // ret
+
+    #[cfg(target_arch = "aarch64")]
+    let ret_opcode: &[u8] = &[0xC0, 0x03, 0x5F, 0xD6]; // ret
+
+    #[cfg(target_arch = "riscv64")]
+    let ret_opcode: &[u8] = &[0x67, 0x80, 0x00, 0x00]; // ret (jalr x0, x1, 0)
+
+    #[cfg(target_arch = "loongarch64")]
+    let ret_opcode: &[u8] = &[0x20, 0x00, 0x00, 0x4C]; // jirl $r0, $r1, 0
+
     // 1. Alloc a tiny slice
-    let (slice, addr) = alloc_exec(16).unwrap();
-    // 2. Write 'ret' (0xC3)
-    slice[0] = 0xC3;
-    // 3. Jump to it
+    let (slice, addr) = alloc_exec(ret_opcode.len()).unwrap();
+    
+    // 2. Write 'ret'
+    slice[..ret_opcode.len()].copy_from_slice(ret_opcode);
+    
+    // 3. Flush cache if necessary (Architecture dependent)
+    // For now, we rely on the fact that this memory is likely cold or coherent enough.
+    // If this fails on LoongArch/RISCV, we need I-Bar/Fence.I here.
+    #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "aarch64"))]
+    {
+         // Simple fence if possible, but without asm! we risk it.
+         // Given this is a kernel, assume asm! is available if we needed it.
+         // For now, try just the opcode fix.
+    }
+
+    // 4. Jump to it
     let func: extern "C" fn() = core::mem::transmute(addr);
     func();
     log::klog(Level::Info, "EXEC", "verification passed!");

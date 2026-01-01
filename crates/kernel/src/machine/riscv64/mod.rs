@@ -1,7 +1,10 @@
 pub mod serial;
 pub mod serial;
 pub mod abi;
-pub mod trap; // Added
+pub mod trap;
+pub mod timer;
+
+pub type TrapFrame = trap::TrapContext; // Added
 
 use core::arch::global_asm;
 global_asm!(include_str!("vectors.S"));

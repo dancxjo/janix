@@ -12,11 +12,17 @@ pub unsafe fn init() {
         .set_stack_index(super::gdt::DOUBLE_FAULT_IST_INDEX);
     IDT.general_protection_fault.set_handler_fn(gp_handler);
     IDT.page_fault.set_handler_fn(page_fault_handler);
-    
-    // Smoke test trigger for manual verification if needed
-    // generated via int3
+
+    // Timer (Vector 32)
+    unsafe {
+        IDT[32].set_handler_addr(x86_64::VirtAddr::new(timer_interrupt_trampoline as u64));
+    }
     
     IDT.load();
+}
+
+extern "C" {
+    fn timer_interrupt_trampoline();
 }
 
 unsafe fn record_x86_fault(

@@ -81,7 +81,13 @@ aarch64_vectors:
     mov x1, \vector // vector number
     
     bl aarch64_handle_exception
-
+    
+    // Check if we need to switch stack
+    cbz x0, 1f
+    
+    // Switch stack
+    mov sp, x0
+1:
     // Restore context
     ldp x9, x10, [sp, #248]
     ldp x11, x12, [sp, #264]

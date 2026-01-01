@@ -27,7 +27,7 @@ pub struct ExceptionContext {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn aarch64_handle_exception(ctx: &ExceptionContext, vector: u64) {
+pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u64) -> u64 {
     let esr = ctx.esr_el1;
     let ec = (esr >> 26) & 0x3f;
     let iss = esr & 0x1ffffff;
@@ -55,14 +55,6 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &ExceptionContext, vector
             kind = FaultKind::Breakpoint;
         }
         _ => {
-            // Check for IRQ/FIQ from vector (though vector arg is mostly used for source)
-            // Vectors: 
-            // 0-3: Current EL with SP0
-            // 4-7: Current EL with SPx
-            // 8-11: Lower EL using AArch64
-            // 12-15: Lower EL using AArch32
-            
-            // Offsets inside group: 0=Sync, 1=IRQ, 2=FIQ, 3=SError
             let offset = vector & 0x3;
             if offset == 1 {
                 kind = FaultKind::Irq;
@@ -74,45 +66,58 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &ExceptionContext, vector
         }
     }
 
-    let in_kernel = (ctx.spsr_el1 & 0xF) == 0x4 || (ctx.spsr_el1 & 0xF) == 0x5; // EL1h or EL1t roughly
+    let in_kernel = (ctx.spsr_el1 & 0xF) == 0x4 || (ctx.spsr_el1 & 0xF) == 0x5;
 
-    graph::store::with_store(|store| {
-         let rec = TrapRecord {
-            arch: Arch::Aarch64,
-            kind,
-            ip: ctx.elr_el1,
-            sp: ctx.sp_el0, // Roughly, or access SP_EL1 if saved
-            addr,
-            code: esr,
-            vector: vector as u32,
-            cpu: 0,
-            in_kernel, // Simplified check
-            task: None,
-        };
-        trap::record_fault(store, &rec);
-    });
+    // We only record serious faults, not IRQs (spam) unless for debug
+    if kind != FaultKind::Irq {
+        graph::store::with_store(|store| {
+             let rec = TrapRecord {
+                arch: Arch::Aarch64,
+                kind,
+                ip: ctx.elr_el1,
+                sp: ctx.sp_el0,
+                addr,
+                code: esr,
+                vector: vector as u32,
+                cpu: 0,
+                in_kernel,
+                task: None,
+            };
+            trap::record_fault(store, &rec);
+        });
+    }
 
     match kind {
         FaultKind::Breakpoint => {
-             // Skip BRK instruction?
-             // Usually ELR points to the BRK instruction. We need to skip 4 bytes to continue?
-             // Or debugger handles it. 
-             // For smoke test, we verify record and perform simple skip if needed or just return.
-             // If we don't skip, we loop.
-             // Try skipping:
-             // Note: ctx is reference, but we need to modify return state which is on stack.
-             // Since we passed &Context, we can't easily modify without mutable access to stack or return value.
-             // BUT `aarch64_handle_exception` is called from assembly which restores from `ctx`.
-             // Depending on ASM implementation, `ctx` might be mutable pointer to stack.
-             // I'll define ctx as `&mut ExceptionContext` in signature to be safe if I want to write back.
-             // But for now, let's just log and panic if not handled, or return if it is just a record.
-             // If it's a BRK #0 (smoke), we might want to advance ELR.
-             return; 
+             // For smoke test, we just continue.
+             return 0; 
         }
         FaultKind::Irq => {
-            // TODO: dispatch IRQ
-            panic!("IRQ not implemented yet");
-            // return;
+            // ACK GIC
+            let irq_id = super::gic::ack_irq();
+            // 1023 = Spurious
+            if irq_id == 1023 {
+                return 0;
+            }
+            
+            if irq_id == super::timer::TIMER_IRQ {
+                super::timer::ack(); // Rearm (and EOI internal?)
+                // Actually my timer::ack calls eoi(30).
+                // So GIC is happy.
+                
+                // Tick!
+                let current_sp = ctx as *mut ExceptionContext as u64;
+                // Wait, ctx is POINTER to stack struct. `current_sp` IS `ctx`.
+                
+                // Call sched::tick
+                if let Some(new_sp) = crate::sched::tick(current_sp) {
+                    return new_sp;
+                }
+            } else {
+                // EOI unknown IRQ
+                super::gic::eoi(irq_id);
+            }
+            return 0;
         }
         FaultKind::Syscall => {
             panic!("Syscall not implemented yet");

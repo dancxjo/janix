@@ -68,6 +68,9 @@ pub unsafe fn init(gdt_tss: &'static mut GdtTss) {
     DS::set_reg(k_data);
     ES::set_reg(k_data);
     SS::set_reg(k_data);
+    use x86_64::instructions::segmentation::{FS, GS};
+    FS::set_reg(k_data);
+    GS::set_reg(k_data);
 
     load_tss(tss);
 }

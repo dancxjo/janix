@@ -9,7 +9,7 @@ pub mod symbols;
 // use store::PlaceStore;
 use symbols::sym;
 // use abi::ids::ThingId;
-use abi::ids::SymbolId;
+// use abi::ids::SymbolId;
 
 /// Initialize the canonical graph.
 /// 
@@ -43,7 +43,6 @@ pub fn seed_minimal() {
     let core_places = [
         sym::PLACE_KERNEL,
         sym::PLACE_DEVICES,
-        sym::PLACE_SCHEDULER,
         sym::PLACE_MEMORY,
         sym::PLACE_TASKS,
         sym::PLACE_LOGS,

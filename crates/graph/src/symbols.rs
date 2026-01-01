@@ -110,6 +110,24 @@ pub fn init() {
         "fault_kind.instruction_abort",
         "fault_kind.general_protection",
         "fault_kind.double_fault",
+        // Scheduler Symbols
+        "scheduler.main",
+        "kind.Task",
+        "kind.TaskContext",
+        "kind.RunQueue",
+        "kind.Cpu",
+        "kind.Scheduler",
+        "task_state.ready",
+        "task_state.running",
+        "task_state.blocked",
+        "task_state.dead",
+        "task_state.new",
+        "predicate.on_cpu",
+        "predicate.in_run_queue",
+        "predicate.has_context",
+        "predicate.state",
+        "predicate.has_stack",
+        "predicate.owned_by",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -181,4 +199,25 @@ pub mod sym {
     pub const FAULT_KIND_INSTRUCTION_ABORT: SymbolId = SymbolId(35);
     pub const FAULT_KIND_GENERAL_PROTECTION: SymbolId = SymbolId(36);
     pub const FAULT_KIND_DOUBLE_FAULT: SymbolId = SymbolId(37);
+
+    // Scheduler
+    pub const SCHEDULER_MAIN: SymbolId = SymbolId(38);
+    pub const KIND_TASK: SymbolId = SymbolId(39);
+    pub const KIND_TASK_CONTEXT: SymbolId = SymbolId(40);
+    pub const KIND_RUN_QUEUE: SymbolId = SymbolId(41);
+    pub const KIND_CPU: SymbolId = SymbolId(42);
+    pub const KIND_SCHEDULER: SymbolId = SymbolId(43);
+    
+    pub const TASK_STATE_READY: SymbolId = SymbolId(44);
+    pub const TASK_STATE_RUNNING: SymbolId = SymbolId(45);
+    pub const TASK_STATE_BLOCKED: SymbolId = SymbolId(46);
+    pub const TASK_STATE_DEAD: SymbolId = SymbolId(47);
+    pub const TASK_STATE_NEW: SymbolId = SymbolId(48);
+
+    pub const PRED_ON_CPU: SymbolId = SymbolId(49);
+    pub const PRED_IN_RUN_QUEUE: SymbolId = SymbolId(50);
+    pub const PRED_HAS_CONTEXT: SymbolId = SymbolId(51);
+    pub const PRED_STATE: SymbolId = SymbolId(52);
+    pub const PRED_HAS_STACK: SymbolId = SymbolId(53);
+    pub const PRED_OWNED_BY: SymbolId = SymbolId(54);
 }

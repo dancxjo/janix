@@ -151,13 +151,31 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     }
 
     // Phase 6: Spawn Sprout
-    spawn_module(ctx, "sprout");
+    // spawn_module(ctx, "sprout");
 
     // Phase 6.5: Signal boot completion
     // Handed off to Sprout - never returns
 
+    // Phase 6.5: Spawn Ping-Pong Verification
+    crate::sched::spawn_kernel_task("ping", ping_task);
+    crate::sched::spawn_kernel_task("pong", pong_task);
+
     // Phase 7: Enter scheduler loop
     sched::run()
+}
+
+extern "C" fn ping_task() {
+    loop {
+        crate::serial::write(b"ping\n");
+        for _ in 0..10000000 { core::hint::spin_loop(); }
+    }
+}
+
+extern "C" fn pong_task() {
+    loop {
+        crate::serial::write(b"pong\n");
+        for _ in 0..10000000 { core::hint::spin_loop(); }
+    }
 }
 
 use alloc::format;
@@ -381,7 +399,7 @@ pub fn spawn_module(ctx: &'static BootContext, name: &str) {
                 // Note: name string lifetime is tricky here, but "sprout" is static str literal usually
                 // or we just trust it lives long enough (it's from boot context modules).
                 // Actually kernel task name is &'static str in struct.
-                let task_id = crate::sched::spawn_kernel_task("sprout");
+                let task_id = crate::sched::spawn_empty("sprout");
                 crate::sched::mark_as_init(task_id);
                 // crate::sched::set_current_task(task_id); // Removed to let scheduler pick it up
                 

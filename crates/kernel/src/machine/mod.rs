@@ -140,3 +140,29 @@ pub fn smoke_fault() {
     unsafe { core::arch::asm!("break 0") }; // or equivalent
 }
 
+pub fn idle() {
+    machine().idle();
+}
+
+pub fn halt() -> ! {
+    machine().halt()
+}
+
+pub fn irq_enable() {
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        core::arch::asm!("sti", options(nomem, preserves_flags));
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!("msr daifclr, #0xf", options(nomem, preserves_flags));
+        #[cfg(target_arch = "riscv64")]
+        core::arch::asm!("csrsi sstatus, 2", options(nomem, preserves_flags));
+    }
+}
+
+pub fn irq_disable() -> u64 {
+    machine().irq_disable()
+}
+
+pub fn irq_restore(token: u64) {
+    machine().irq_restore(token)
+}

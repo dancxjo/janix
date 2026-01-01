@@ -1,14 +1,53 @@
 //! x86_64 architecture implementation
+global_asm!(include_str!("interrupts.S"));
 
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange, Context, PreBootInfo};
+use crate::sched;
 use core::arch::asm;
+use core::arch::global_asm;
 use self::serial::Serial;
 
 pub mod abi;
 pub mod serial;
-pub mod gdt;
 pub mod idt;
 pub mod percpu;
+pub mod timer;
+pub mod gdt;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TrapFrame {
+    // Pushed by us
+    pub rax: u64, pub rbx: u64, pub rcx: u64, pub rdx: u64,
+    pub rsi: u64, pub rdi: u64, pub rbp: u64,
+    pub r8:  u64, pub r9:  u64, pub r10: u64, pub r11: u64,
+    pub r12: u64, pub r13: u64, pub r14: u64, pub r15: u64,
+    
+    // Pushed by CPU
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+}
+
+#[no_mangle]
+pub extern "C" fn sched_tick_asm_helper(sp: u64) -> u64 {
+    match sched::tick(sp) {
+        Some(new_sp) => new_sp,
+        None => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn timer_ack_asm_helper() {
+    unsafe { timer::ack(); }
+}
+
+#[no_mangle]
+pub extern "C" fn task_dispatch(_dispatch_ptr: u64, entry: extern "C" fn()) {
+    entry();
+}
 
 // -----------------------------------------------------------------------------
 // Machine Implementation
@@ -46,6 +85,9 @@ pub fn init() {
         
         // 3. IDT
         idt::init();
+
+        // 4. Timer
+        timer::init();
     }
 }
 

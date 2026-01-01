@@ -11,8 +11,14 @@ global_asm!(include_str!("vectors.S"));
 use core::sync::atomic::{AtomicU64, Ordering};
 
 mod exception;
+mod exception;
 mod serial;
+pub mod gic;
+pub mod timer;
 pub mod abi;
+
+// TrapFrame alias for generic Scheduler usage
+pub type TrapFrame = exception::ExceptionContext;
 use serial::Serial;
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange};
 
@@ -71,6 +77,11 @@ impl ArchMachine {
         unsafe {
              let vectors_addr = core::ptr::addr_of!(aarch64_vectors) as u64;
              asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
+             asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
+             
+             // Initialize GIC and Timer
+             gic::init();
+             timer::init();
         }
     }
 

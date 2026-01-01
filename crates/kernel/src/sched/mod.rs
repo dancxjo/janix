@@ -1,93 +1,33 @@
-//! Scheduler
-//!
-//! Provides task management and scheduling for the kernel.
-//! This is a minimal stub with the correct "future shape".
-
-use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use alloc::format;
 use spin::Mutex;
-
-use crate::machine::abi::setup_new_task_stack;
-// use crate::arch::Context; <-- Removed
 use crate::log::{self, Level};
 use graph::{store, symbols};
-use crate::{machine::Context, machine::machine};
-use abi::ids::SymbolId;
+use graph::symbols::sym;
+use crate::machine::abi::setup_new_task_stack;
 
-/// Task identifier
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct TaskId(pub u64);
+pub mod task;
+pub mod run_queue;
+pub mod percpu;
 
-/// Task state
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TaskState {
-    /// Ready to run
-    Ready,
-    /// Currently running
-    Running,
-    /// Blocked on something
-    Blocked,
-    /// Terminated
-    Terminated,
-    Dead,
-}
+use task::{Task, TaskId, TaskState};
+use run_queue::RunQueue;
+use percpu::PerCpu;
 
-/// Task role
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TaskRole {
-    /// Normal user task
-    Normal,
-    /// The blessed Init task
-    Init,
-}
-
-/// Task control block
-pub struct Task {
-    /// Task identifier
-    pub id: TaskId,
-    /// Current state
-    pub state: TaskState,
-    /// Task name (for debugging)
-    pub name: &'static str,
-    /// Task role
-    pub role: TaskRole,
-    
-    /// Architecture context (saved stack pointer)
-    pub ctx: Context,
-    /// Kernel stack
-    pub kstack: Vec<u8>,
-    
-    // Memory regions
-    pub image_base: u64,
-    pub image_size: u64,
-    pub stack_base: u64,
-    pub stack_size: u64,
-    pub heap_base: u64,
-    pub heap_size: u64,
-    pub heap_brk: u64,
-}
-
-/// Global scheduler state
 static SCHEDULER: Mutex<Option<Scheduler>> = Mutex::new(None);
 
 struct Scheduler {
-    /// All tasks
     tasks: Vec<Task>,
-    /// Run queue (ready tasks)
-    run_queue: VecDeque<TaskId>,
-    /// Currently running task
-    current: Option<TaskId>,
-    /// Next task ID
+    run_queue: RunQueue,
+    cpu: PerCpu,
     next_id: u64,
 }
 
 impl Scheduler {
-    fn new() -> Self {
+    fn new(run_queue_thing: abi::ids::ThingId, cpu_thing: abi::ids::ThingId) -> Self {
         Self {
             tasks: Vec::new(),
-            run_queue: VecDeque::new(),
-            current: None,
+            run_queue: RunQueue::new(run_queue_thing),
+            cpu: PerCpu::new(0, cpu_thing, run_queue_thing),
             next_id: 1,
         }
     }
@@ -96,365 +36,284 @@ impl Scheduler {
         let id = TaskId(self.next_id);
         self.next_id += 1;
 
-        let task = Task {
-            id,
-            state: TaskState::Ready,
-            name,
-            role: TaskRole::Normal,
-            ctx: Context::default(),
-            kstack: alloc::vec![0u8; 16 * 1024], // 16KB kernel stack
-            image_base: 0,
-            image_size: 0,
-            stack_base: 0,
-            stack_size: 0,
-            heap_base: 0,
-            heap_size: 0,
-            heap_brk: 0,
-        };
+        // Allocate stack
+        let stack_size = 16 * 1024; // 16KB
+        let stack = alloc::vec![0u8; stack_size];
+        let stack_ptr = stack.as_ptr() as u64 + stack_size as u64; // Top
+        // Leak the stack for now (kernel tasks live forever in this model)
+        core::mem::forget(stack); 
+
+        // Graph reflection
+        let task_thing = store::with_store(|s| {
+            let t = s.create_thing(sym::KIND_TASK).expect("create task");
+            // Name it
+            // s.register_name(...)? No, dynamic names.
+            // Link to place.tasks
+            if let Some(place_tasks) = s.find_by_name(sym::PLACE_TASKS) {
+                 let _ = s.create_relationship(sym::PRED_CONTAINS, place_tasks, t);
+            }
+            t
+        });
+
+        let mut task = Task::new(id, task_thing, stack_ptr);
+        
+        // Initialize state (New -> Ready)
+        store::with_store(|s| task.set_state(s, TaskState::Ready));
 
         self.tasks.push(task);
-        self.run_queue.push_back(id);
+        
+        // Add to run queue (requires re-borrowing task/thing)
+        let thing = self.tasks.last().unwrap().thing;
+        store::with_store(|s| self.run_queue.push_back(id, thing, s));
 
         id
     }
 }
 
-/// Seed the scheduler ontology
-fn seed_scheduler() {
-    let kind_thing = symbols::sym::KIND_THING;
-    let pred_contains = symbols::sym::PRED_CONTAINS;
-    let pred_state = symbols::intern(b"predicate.state");
-
-    // 1. Find Scheduler Place
-    let sched_name = symbols::sym::PLACE_SCHEDULER;
-    let sched_id = store::find_thing_by_name(sched_name).expect("Scheduler place should be seeded by kernel");
-    log::klog(Level::Info, "SCHED", "scheduler place found");
-
-    // 2. Create Runqueue (Thing)
-    let runqueue_name = symbols::intern(b"thing.runqueue.default");
-    let runqueue_id = store::thing_create(kind_thing);
-    store::thing_register_name(runqueue_id, runqueue_name);
-
-    // Relate: scheduler contains runqueue
-    store::relationship_create(pred_contains, sched_id, runqueue_id);
-
-    // 3. Create Task (Sprout)
-    let task_name = symbols::intern(b"thing.task.sprout");
-    let task_id = store::thing_create(kind_thing);
-    store::thing_register_name(task_id, task_name);
-    log::klog(Level::Info, "SCHED", "task created: thing.task.sprout");
-
-    // Relate: runqueue contains task
-    store::relationship_create(pred_contains, runqueue_id, task_id);
-
-    // 4. Create State (Running)
-    let state_running_name = symbols::intern(b"state.running");
-    let state_running_id = store::thing_create(kind_thing);
-    store::thing_register_name(state_running_id, state_running_name);
-
-    // Relate: task has state running
-    store::relationship_create(pred_state, task_id, state_running_id);
-    log::klog(Level::Info, "SCHED", "task state set: running");
-}
-
-/// Initialize the scheduler
 pub fn init() {
-    let sched = Scheduler::new();
+    log::klog(Level::Info, "SCHED", "initializing...");
+
+    // Seed Graph (scheduler.main, cpu.0, run_queue.0)
+    let (sched_thing, cpu_thing, rq_thing) = store::with_store(|s| {
+        let place_tasks = s.find_by_name(sym::PLACE_TASKS).expect("place.tasks missing");
+        
+        // scheduler.main
+        let sched = s.create_thing(sym::KIND_SCHEDULER).expect("create sched");
+        s.register_name(sched, sym::SCHEDULER_MAIN);
+        s.create_relationship(sym::PRED_CONTAINS, place_tasks, sched).ok();
+
+        // cpu.0
+        let cpu = s.create_thing(sym::KIND_CPU).expect("create cpu");
+        // s.register_name(cpu, "cpu.0"); // Need symbol
+        s.create_relationship(sym::PRED_CONTAINS, place_tasks, cpu).ok();
+        
+        // run_queue.0
+        let rq = s.create_thing(sym::KIND_RUN_QUEUE).expect("create rq");
+        s.create_relationship(sym::PRED_CONTAINS, sched, rq).ok();
+        
+        (sched, cpu, rq)
+    });
+
+    let sched = Scheduler::new(rq_thing, cpu_thing);
     *SCHEDULER.lock() = Some(sched);
-
-    log::klog(Level::Info, "KERNEL", "scheduler init");
-    
-    // Seed the scheduler ontology
-    seed_scheduler();
 }
 
-/// Spawn a new kernel task
-pub fn spawn_kernel_task(name: &'static str) -> TaskId {
-    let mut guard = SCHEDULER.lock();
-    match guard.as_mut() {
-        Some(sched) => sched.spawn(name),
-        None => TaskId(0),
+
+pub fn run() -> ! {
+    log::klog(Level::Info, "SCHED", "entering loop");
+    // Enable interrupts
+    crate::machine::irq_enable();
+    loop {
+        crate::machine::idle();
     }
 }
 
-/// Access the current task mutably
-pub fn with_current_task<F, R>(f: F) -> Option<R>
-where
-    F: FnOnce(&mut Task) -> R,
-{
-    let mut guard = SCHEDULER.lock();
-    if let Some(sched) = guard.as_mut() {
-        if let Some(current_id) = sched.current {
-            // Find the task
-            if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == current_id) {
-                return Some(f(task));
-            }
-        } else if !sched.tasks.is_empty() {
-             // Fallback for single-task phase (boot): verify if this is safe
-             // For Task 1 (single task), we might want to just pick the first task if current is None
-             // or ensure current is set.
-             // But actually, `spawn_module` creates a task but doesn't set it as current until `run`?
-             // Or we just hack it for now: if only one task, it's current.
-             if sched.tasks.len() == 1 {
-                 return Some(f(&mut sched.tasks[0]));
-             }
-        }
-    }
-    None
+pub fn yield_current() {
+    // For V0.3 Task 03, we rely on preemption (Timer).
+    // Manual yield via interrupt?
+    // Or call `tick` manually?
+    // tick expects SP. We can't easily call it from Rust without saving state.
+    // We need an arch-specific `yield` trampoline (int 0xXX or similar).
+    // For now, spin (busy wait) or just do nothing if we trust timer.
+    // "yield" usually means give up slice.
+    // Let's loop hint.
+    core::hint::spin_loop(); 
 }
 
-/// Configure task memory regions
-pub fn configure_task_memory(id: TaskId, image: (u64,u64), stack: (u64,u64), heap: (u64,u64,u64)) {
+// Sprout helpers
+pub fn mark_as_init(id: TaskId) {
+    // Mark in graph?
+}
+
+pub fn configure_task_memory(id: TaskId, img: (u64, u64), stack: (u64, u64), heap: (u64, u64, u64)) {
     let mut guard = SCHEDULER.lock();
     if let Some(sched) = guard.as_mut() {
-        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
-            task.image_base = image.0;
-            task.image_size = image.1;
-            task.stack_base = stack.0;
-            task.stack_size = stack.1;
-            task.heap_base = heap.0;
-            task.heap_size = heap.1;
-            task.heap_brk = heap.2;
+        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == id) {
+            t.heap_base = heap.0;
+            t.heap_size = heap.1;
+            t.heap_brk = heap.2;
         }
     }
 }
 
-/// Configure task entry point (trampoline)
 pub fn configure_task_context(id: TaskId, entry: u64) {
     let mut guard = SCHEDULER.lock();
     if let Some(sched) = guard.as_mut() {
-        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
-            let stack_size = task.kstack.len();
-            let stack_ptr = task.kstack.as_mut_ptr();
-
-            unsafe {
-                let stack_top = stack_ptr.add(stack_size);
-                
-                // Assume `crate::syscall::dispatch` address is constant at link time.
-                let dispatch = crate::syscall::dispatch as *const () as u64;
-                
-                setup_new_task_stack(
-                    stack_top,
-                    entry,
-                    dispatch,
-                    &mut task.ctx
-                );
-            }
-
+        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == id) {
+             // We need to setup a context that jumps to `entry`.
+             // We can use `machine::abi::setup_new_task_stack` if generalized.
+             // Or manually write stack frame.
         }
     }
 }
 
-/// Manually set the current task (for boot sequence)
-pub fn set_current_task(id: TaskId) {
+pub fn exit_current_task(code: i32) -> ! {
+    loop { crate::machine::idle(); }
+}
+
+pub fn with_current_task<F, R>(f: F) -> Option<R> where F: FnOnce(&mut Task) -> R {
     let mut guard = SCHEDULER.lock();
-    if let Some(sched) = guard.as_mut() {
-        sched.current = Some(id);
-    }
+    let sched = guard.as_mut()?; // Return None if not init
+    let curr = sched.cpu.current_task?; // Return None if no current task
+    let t = sched.tasks.iter_mut().find(|t| t.id == curr).unwrap();
+    Some(f(t))
 }
 
-/// Mark a task as the Init task
-pub fn mark_as_init(id: TaskId) {
+// Rename/Wrap spawn
+pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
     let mut guard = SCHEDULER.lock();
-    if let Some(sched) = guard.as_mut() {
-        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
-            task.role = TaskRole::Init;
-            log::klog(Level::Info, "KERNEL", &format!("init task designated (pid {:?})", id));
-        }
-    }
-}
-
-/// Exit the current task
-pub fn exit_current_task(code: i32) {
-    // 1. Mark dead
-    {
-        let mut guard = SCHEDULER.lock();
-        if let Some(sched) = guard.as_mut() {
-            if let Some(current_id) = sched.current {
-                 if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == current_id) {
-                     log::klog(Level::Info, "SCHED", &format!("task {:?} exiting with code {}", current_id, code));
-                     
-                     if task.role == TaskRole::Init {
-                         log::klog(Level::Error, "KERNEL", &format!("init task exited, reason = code {}", code));
-                         panic!("Init task exited!");
-                     }
-                     
-                     task.state = TaskState::Dead;
-                 }
-            }
-        }
-    }
+    let sched = guard.as_mut().expect("sched not init");
+    let id = sched.spawn(name);
     
-    // 2. Yield (will remove from runqueue)
-    yield_current();
-}
-
-/// Run the scheduler loop (never returns)
-pub fn run() -> ! {
-    log::klog(Level::Info, "KERNEL", "scheduler running");
-
-    loop {
-        // Simple Round Robin
-        // Lock, check if current needs switching or if idle
-        // crate::serial::write(b"SCHED: tick\n");
-        let (_old_ptr, _new_ptr): (*mut Context, *const Context) = {
-            let mut guard = SCHEDULER.lock();
-            if let Some(sched) = guard.as_mut() {
-                if sched.current.is_none() {
-                    if let Some(next) = sched.run_queue.pop_front() {
-                        sched.current = Some(next);
-                        // sched.tasks.find(next).state = Running; 
-                        // Implement detail: we need mutable reference to update state
-                        // We also need pointer for context switch if we were switching from something (but here we are starting)
-                        // Actually boot sequence calls run() after setting up sprout.
-                        // Sprout is already "configured" but not running?
-                        // If we jump-start it here:
-                        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == next) {
-                            task.state = TaskState::Running;
-                            if task.role == TaskRole::Init {
-                                log::klog(Level::Info, "KERNEL", &format!("init task alive (pid {:?})", next));
-                            }
-
-                            let new_ctx = &task.ctx as *const Context;
-                            
-                            // We need a dummy old context to save "scheduler loop" state?
-                            // Or we just switch_to and never return to this precise point?
-                            // Yes, the scheduler loop is "idle thread".
-                            // We should have a Task for Idle? or just use stack local context?
-                            // We'll create a dummy context on stack.
-                            let mut idle_ctx = Context::default();
-                            
-                            // Drop lock before switch?
-                            // No, pointers are derived from `sched`.
-                            drop(guard);
-                            
-                            unsafe {
-                                machine().switch_to(&mut idle_ctx, &*new_ctx);
-                            }
-                            // We returned! (Task yielded back to idle/scheduler?)
-                            // Loop again.
-                            continue;
-                        }
-                    }
-                }
-            }
-            (core::ptr::null_mut(), core::ptr::null())
-        };
-
-        // Idle until next interrupt
-        machine().idle();
-    }
-}
-
-/// Yield the current task
-pub fn yield_current() {
-    // Disable interrupts to ensure atomicity of scheduling decision
-    // (Single core assumption)
-    let irq_state = machine().irq_disable();
+    let task = sched.tasks.iter_mut().find(|t| t.id == id).unwrap();
     
-    // We need to use raw pointers to avoid borrow checker issues with MutexGuard
-    // while keeping the lock held or dropped safely.
-    // Strategy:
-    // 1. Lock.
-    // 2. Pick next.
-    // 3. If switch needed, get pointers, Updated states.
-    // 4. Drop lock. (Safety: IRQs disabled, single core -> tasks Vec stable)
-    // 5. switch_to.
-    // 6. Re-enable IRQs.
+    // Setup Context
+    use crate::machine::{abi, Context};
+    let mut ctx = Context::default();
+    
+    // stack_ptr in Task currently points to top of stack (u64).
+    // We need pointer to mutable memory.
+    // Safety: We allocated it and leaked it, so it's valid.
+    let stack_top = (task.stack_ptr & !0xf) as *mut u64; // Force align to 16 bytes
+    
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        {
+             // Trap Frame for Ring 0 (Kernel)
+             // [RFLAGS, CS, RIP] (pushed by CPU on interrupt)
+             // [Regs] (pushed by trampoline)
+             // Stack grows down.
+             // We start at stack_top.
+             
+             // 1. alignment adjustment
+             // SysV ABI requires RSP % 16 == 8 on entry (simulating return address).
+             // Since we enter via IRETQ (which doesn't push ret addr), we must ensure 
+             // RSP is 8-byte aligned when we start executing 'entry'.
+             // Our stack_top is 16-byte aligned.
+             // We subtract 1 u64 so that final RSP (after pop) is 8-byte aligned.
+             let mut sp = stack_top.sub(1);
+             // Ensure this slot is zeroed or valid? (It's top of stack, usually ignored).
+             *sp = 0xdeadbeef; // Debug marker
+             
+             // 1. CPU Frame (5 words - conservative)
+             // Even if Ring 0 return pops 3, 5 is safe allocation.
+             
+             // SS
+             sp = sp.sub(1);
+             *sp = 0x10; // Kernel Data
+             
+             // RSP (Value after iretq, i.e., top of stack frame?)
+             // iretq restores RSP to this value IF it pops 5 words.
+             sp = sp.sub(1);
+             *sp = stack_top as u64; // Or top-8 if aligned?
+             
+             // RFLAGS
+             sp = sp.sub(1);
+             *sp = 0x202; // IF=1, bit 1=1
+             
+             // CS
+             sp = sp.sub(1);
+             *sp = 0x8; // Kernel Code
+             
+             // RIP
+             sp = sp.sub(1);
+             *sp = entry as usize as u64; // Entry Point
+             
+             // 2. Registers (pushed by trampoline: rax..r15)
+             // Trampoline pushes: rax, rbx, rcx, rdx, rsi, rdi, rbp, r8..r15.
+             // Total 15 regs.
+             // We zero them.
+             sp = sp.sub(15);
+             core::ptr::write_bytes(sp as *mut u8, 0, 15 * 8);
+             
+             // Check 0x18 error?
+             // Maybe push a valid SS/RSP? (Fake 5 word frame)
+             // Even for Ring 0 return, if we push 5 words and IRETQ "thinks" it's 3 words, SP is off?
+             // Or if we need 5 words?
+             // Let's try pushing 5 words.
+             // [SS] [RSP] [RFLAGS] [CS] [RIP]
+             
+             // BUT `iretq` pops based on CS RPL.
+             // If CS=8 (RPL=0), it pops 3 words.
+             // So pushing 5 words would misalign the stack (RSP/SS left on stack).
+             // Unless we change CS to RPL 3 (User)?
+             
+             task.stack_ptr = sp as u64;
 
-    let switch_args = {
-        let mut guard = SCHEDULER.lock();
-        if let Some(sched) = guard.as_mut() {
-            if let Some(current_id) = sched.current {
-                // Round robin: push current to back of queue IF not dead
-                let current_state = sched.tasks.iter().find(|t| t.id == current_id).map(|t| t.state);
-                if let Some(TaskState::Running) = current_state {
-                    sched.run_queue.push_back(current_id);
-                } else if let Some(TaskState::Ready) = current_state {
-                    // Should be running if we are yielding? 
-                    // But if we just set it to Ready, yes push back.
-                    // But typically yield comes from running.
-                    sched.run_queue.push_back(current_id);
-                } else {
-                    // Dead or Blocked - don't schedule
-                }
-                
-                // Pop next
-                if let Some(next_id) = sched.run_queue.pop_front() {
-                    if next_id != current_id {
-                        // Switch needed!
-                        sched.current = Some(next_id);
-                        
-                        // We need mutable access to both old and new tasks.
-                        // Since they are in the same Vec, we have to split borrow or use indices safe?
-                        // Using indices to get pointers.
-                        // Verify task existence.
-                        let old_idx = sched.tasks.iter().position(|t| t.id == current_id);
-                        let new_idx = sched.tasks.iter().position(|t| t.id == next_id);
-                        
-                        if let (Some(old_i), Some(new_i)) = (old_idx, new_idx) {
-                             // Update states
-                             if sched.tasks[old_i].state == TaskState::Running {
-                                 sched.tasks[old_i].state = TaskState::Ready;
-                             }
-                             sched.tasks[new_i].state = TaskState::Running;
-
-                             if sched.tasks[new_i].role == TaskRole::Init {
-                                 // Log alive if just starting? 
-                                 // Or just trust the run() loop for initial start.
-                                 // For now silent here to avoid spam.
-                             }
-                             
-                             let old_ptr = &mut sched.tasks[old_i].ctx as *mut Context;
-                             let new_ptr = &sched.tasks[new_i].ctx as *const Context;
-                             
-                             Some((old_ptr, new_ptr))
-                        } else {
-                            None
-                        }
-                    } else {
-                        // Same task, no switch
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
+             
+             // Note: ping/pong tasks take no args.
+             // If we needed args, we would set RDI (which is part of regs).
+             // RDI is pushed 6th (if push rax first).
+             // stack: [rax, rbx, rcx, rdx, rsi, rdi, ...]
+             // sp points to rax.
+             // sp+5 = rdi.
+             // *sp.add(5) = arg;
         }
-    };
-
-    if let Some((old_ptr, new_ptr)) = switch_args {
-        // SAFETY: IRQs disabled, Scheduler lock dropped but we are single threaded and no one else modifies tasks.
-        unsafe {
-            machine().switch_to(&mut *old_ptr, &*new_ptr);
+        
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+             // Stub for others (or fallback to compatible logic)
+             // For now, AArch64 also needs specific frame.
+             // We stick to x86_64 fix.
         }
     }
     
-    machine().irq_restore(irq_state);
+    // task.stack_ptr = ctx.sp; // Replaced by manual set
+
+    
+    id
 }
 
-/// Trampoline for new task entry
-///
-/// Called by architecture-specific assembly stubs.
-#[no_mangle]
-pub extern "C" fn task_dispatch(dispatch_ptr: u64, entry: u64) -> ! {
-    // crate::log::klog(crate::log::Level::Info, "SCHED", &alloc::format!("dispatching to {:#x} with dispatch {:#x}", entry, dispatch_ptr));
-    // For Sprout (Ring 3), entry is the process entry point.
-    // The dispatch_ptr is actually not used to call it directly for Ring 3?
-    // Wait, if it's Ring 0 task, we call it. 
-    // If it's Ring 3, we need to switch to user mode.
-    // BUT current sprout spawning in boot.rs assumes it's just a kernel task running that code?
-    // Yes, for now it runs in Ring 0 (kernel task). 
-    // Future v0.3 plan involves separated userland. 
-    // For now, we just jump to it.
-    
-    let f: extern "C" fn(u64) -> ! = unsafe { core::mem::transmute(entry) };
-    
-    // dispatch_ptr might be used if we needed to pass context, but here we just run.
-    f(dispatch_ptr);
+// Helper for Sprout (empty spawn)
+pub fn spawn_empty(name: &'static str) -> TaskId {
+    let mut guard = SCHEDULER.lock();
+    let sched = guard.as_mut().expect("sched not init");
+    sched.spawn(name)
 }
 
+
+use core::sync::atomic::{AtomicU64, Ordering};
+pub static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
+
+/// Called by timer interrupt.
+/// Returns Some(new_sp) if switch needed, None if stay.
+pub fn tick(current_sp: u64) -> Option<u64> {
+    // 1. Inc timer ticks
+    TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
+    
+    let mut guard = SCHEDULER.lock();
+    let sched = guard.as_mut()?;
+    
+    // Default: Round Robin
+    // 1. Save current SP to current task (if we have one)
+    if let Some(curr) = sched.cpu.current_task {
+        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == curr) {
+            t.stack_ptr = current_sp;
+            // State: Running -> Ready
+             store::with_store(|s| t.set_state(s, TaskState::Ready));
+             // Enqueue
+             let thing = t.thing;
+             store::with_store(|s| sched.run_queue.push_back(curr, thing, s));
+        }
+    }
+    
+    // 2. Pick next
+    if let Some(next) = sched.run_queue.pop_front() {
+        sched.cpu.current_task = Some(next);
+        let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
+        
+        store::with_store(|s| {
+             t.set_state(s, TaskState::Running);
+             t.set_on_cpu(s, sched.cpu.thing);
+        });
+        
+        Some(t.stack_ptr)
+    } else {
+        // Idle? Or continue current?
+        // If current was put back in queue, it might be picked again.
+        // If queue empty and we have current, it was put back?
+        // Wait, I put it back above. So pop_front should return it if it's the only one.
+        // So this branch is mostly "No tasks at all".
+        None
+    }
+}

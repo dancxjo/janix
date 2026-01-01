@@ -68,6 +68,11 @@ pub fn init() {
     seed_symbol(&mut table, b"kind.Relationship");
     seed_symbol(&mut table, b"kind.Thing");
     seed_symbol(&mut table, b"predicate.contains");
+    seed_symbol(&mut table, b"thing.bloom");
+    seed_symbol(&mut table, b"place.desktop");
+    seed_symbol(&mut table, b"thing.display.primary");
+    seed_symbol(&mut table, b"thing.pointer");
+    seed_symbol(&mut table, b"thing.wallpaper.sky");
 
     *SYMBOLS.lock() = Some(table);
 }
@@ -113,5 +118,21 @@ pub fn sym_sprout() -> SymbolId {
 }
 
 pub fn sym_bloom() -> SymbolId {
-    well_known(b"bloom")
+    well_known(b"thing.bloom")
+}
+
+pub fn sym_desktop() -> SymbolId {
+    well_known(b"place.desktop")
+}
+
+pub fn sym_display_primary() -> SymbolId {
+    well_known(b"thing.display.primary")
+}
+
+pub fn sym_pointer() -> SymbolId {
+    well_known(b"thing.pointer")
+}
+
+pub fn sym_wallpaper_sky() -> SymbolId {
+    well_known(b"thing.wallpaper.sky")
 }

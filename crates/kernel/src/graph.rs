@@ -42,6 +42,8 @@ struct PlaceStore {
     out_index: BTreeMap<ThingId, Vec<RelationshipId>>,
     /// Inbound relationship index: to -> [rel_id]
     in_index: BTreeMap<ThingId, Vec<RelationshipId>>,
+    /// Name index: name (symbol ID) -> ThingId
+    name_index: BTreeMap<SymbolId, ThingId>,
     /// Counter for generating unique IDs
     next_id: u128,
     /// Tick counter for timestamps
@@ -54,6 +56,7 @@ impl PlaceStore {
             things: BTreeMap::new(),
             out_index: BTreeMap::new(),
             in_index: BTreeMap::new(),
+            name_index: BTreeMap::new(),
             next_id: 1,
             tick: 0,
         }
@@ -230,6 +233,20 @@ pub fn rebuild_indexes() {
     if let Some(store) = guard.as_mut() {
         store.rebuild_indexes();
     }
+}
+
+/// Register a name for a Thing
+pub fn thing_register_name(id: ThingId, name: SymbolId) {
+    let mut guard = PLACE_STORE.lock();
+    if let Some(store) = guard.as_mut() {
+        store.name_index.insert(name, id);
+    }
+}
+
+/// Find a Thing ID by its registered name
+pub fn find_thing_by_name(name: SymbolId) -> Option<ThingId> {
+    let guard = PLACE_STORE.lock();
+    guard.as_ref().and_then(|store| store.name_index.get(&name).cloned())
 }
 
 

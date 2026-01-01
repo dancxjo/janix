@@ -1,8 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/abi",
     "crates/bran",
     "crates/kernel",
+    "crates/models",
     "crates/sprout",
     "tools/bdd",
     "tools/ci-bdd-runner",

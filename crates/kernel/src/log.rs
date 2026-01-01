@@ -7,9 +7,10 @@ use alloc::vec::Vec;
 use spin::Mutex;
 
 use crate::boot::BootContext;
-use crate::graph::{self, ThingId};
+use crate::graph;
 use crate::serial;
-use crate::symbols::{self, SymbolId};
+use crate::symbols;
+use abi::ids::{SymbolId, ThingId};
 
 /// Log level
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]

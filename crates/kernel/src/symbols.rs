@@ -8,13 +8,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-/// Symbol identifier - a stable u64 mapping
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct SymbolId(pub u64);
-
-impl SymbolId {
-    pub const INVALID: SymbolId = SymbolId(0);
-}
+use abi::ids::SymbolId;
 
 /// Global symbol table
 static SYMBOLS: Mutex<Option<SymbolTable>> = Mutex::new(None);
@@ -69,9 +63,11 @@ pub fn init() {
     seed_symbol(&mut table, b"models.core.Link");
     seed_symbol(&mut table, b"sprout");
     seed_symbol(&mut table, b"bloom");
-    seed_symbol(&mut table, b"predicate.kind");
-    seed_symbol(&mut table, b"predicate.schema");
     seed_symbol(&mut table, b"predicate.version");
+    seed_symbol(&mut table, b"kind.Place");
+    seed_symbol(&mut table, b"kind.Relationship");
+    seed_symbol(&mut table, b"kind.Thing");
+    seed_symbol(&mut table, b"predicate.contains");
 
     *SYMBOLS.lock() = Some(table);
 }

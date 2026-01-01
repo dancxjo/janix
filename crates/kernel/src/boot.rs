@@ -5,6 +5,7 @@
 use crate::log::{self, Level};
 use crate::{graph, machine, sched, symbols, syscall};
 use crate::arch::machine::ARCH_MACHINE;
+use abi::ids::SymbolId;
 
 /// Information about a boot module
 #[derive(Clone, Copy)]
@@ -102,9 +103,13 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     symbols::init();
     log::klog(Level::Info, "KERNEL", "symbols init");
 
-    // Phase 3: Initialize graph store
+    // Phase 3: Initialize place store
     graph::init();
-    log::klog(Level::Info, "KERNEL", "graph init");
+    log::klog(Level::Info, "KERNEL", "place store init");
+
+    // Phase 3.5: Seed core ontology
+    seed_ontology();
+
 
     // Phase 4: Initialize syscall dispatch
     syscall::init();
@@ -166,3 +171,42 @@ fn spawn_sprout(ctx: &'static BootContext) {
         log::klog(Level::Warn, "KERNEL", "sprout module not found");
     }
 }
+
+use crate::place;
+
+/// Seed the core ontology: root place, kernel identity, and containment
+fn seed_ontology() {
+    let kind_place = symbols::well_known(b"kind.Place");
+    let kind_thing = symbols::well_known(b"kind.Thing");
+    let pred_contains = symbols::well_known(b"predicate.contains");
+
+    // Create root place
+    let root_id = graph::thing_create(kind_place, SymbolId::INVALID, 1);
+    let root_name = symbols::intern(b"place.root");
+    // PlaceBody { name: root_name }
+    let mut payload = alloc::vec::Vec::new();
+    payload.extend_from_slice(&root_name.0.to_le_bytes());
+    graph::thing_set_inline_payload(root_id, &payload);
+
+    log::klog(Level::Info, "PLACE", &format!("root created: {:?}", root_id));
+
+    // Create kernel identity
+    let kernel_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
+    log::klog(Level::Info, "THING", &format!("kernel identity created: {:?}", kernel_id));
+
+    // Relate kernel to root (root contains kernel)
+    let rel_id = graph::relationship_create(root_id, kernel_id, pred_contains);
+    log::klog(Level::Info, "REL", &format!("contains created: {:?} from={:?} to={:?}", rel_id, root_id, kernel_id));
+
+    // Verify containment
+    let contained = place::contained_in(root_id);
+    log::klog(Level::Info, "PLACE", &format!("root contains {} things", contained.len()));
+    
+    // Tiny self-test
+    if contained.len() == 1 && contained[0] == kernel_id {
+        log::klog(Level::Info, "KERNEL", "ontology self-test passed");
+    } else {
+        log::klog(Level::Error, "KERNEL", "ontology self-test FAILED");
+    }
+}
+

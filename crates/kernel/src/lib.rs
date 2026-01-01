@@ -18,6 +18,7 @@ pub mod boot;
 pub mod graph;
 pub mod log;
 pub mod machine;
+pub mod place;
 pub mod sched;
 pub mod serial;
 pub mod symbols;

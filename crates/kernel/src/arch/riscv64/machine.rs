@@ -31,13 +31,16 @@ impl ArchMachine {
     pub fn init_machine(&self, info: crate::boot::PreBootInfo) {
         self.hhdm_offset.store(info.hhdm_offset, Ordering::Relaxed);
         
-        // Try to access UART via HHDM
-        // On RISC-V QEMU virt, Limine should set up HHDM that includes MMIO regions
-        if info.hhdm_offset != 0 {
-            let uart_virt = UART_PHYS.wrapping_add(info.hhdm_offset);
-            self.serial.init(uart_virt);
-            self.uart_initialized.store(true, Ordering::Relaxed);
-        }
+        // Initialize serial using HHDM if available, otherwise try physical address
+        // On RISC-V QEMU virt with Limine, HHDM should cover UART at 0x10000000
+        let uart_virt = if info.hhdm_offset != 0 {
+            UART_PHYS.wrapping_add(info.hhdm_offset)
+        } else {
+            // Fallback to physical address - may work if there's an identity map
+            UART_PHYS
+        };
+        self.serial.init(uart_virt);
+        self.uart_initialized.store(true, Ordering::Relaxed);
     }
 }
 

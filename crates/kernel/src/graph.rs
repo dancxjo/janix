@@ -1,34 +1,15 @@
-//! Graph store
+//! Place store
 //!
-//! Minimal in-kernel Thing/Link storage for the v0.3 core.
+//! Minimal in-kernel Thing/Relationship storage for the v0.3 core.
 //! This provides the foundational data structure for all system state.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-use crate::symbols::SymbolId;
-
-/// Thing identifier - a 128-bit UUID
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct ThingId(pub u128);
-
-impl ThingId {
-    /// Create a new ThingId from high and low parts
-    pub fn from_parts(high: u64, low: u64) -> Self {
-        ThingId(((high as u128) << 64) | (low as u128))
-    }
-
-    /// Get the high 64 bits
-    pub fn high(&self) -> u64 {
-        (self.0 >> 64) as u64
-    }
-
-    /// Get the low 64 bits
-    pub fn low(&self) -> u64 {
-        self.0 as u64
-    }
-}
+use crate::symbols;
+use abi::ids::{RelationshipId, SymbolId, ThingId};
+use models::RelationshipBody;
 
 /// Thing header - metadata for each Thing
 ///
@@ -52,33 +33,28 @@ struct Thing {
     payload: Vec<u8>,
 }
 
-/// A link between Things
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Link {
-    pub src: ThingId,
-    pub predicate: SymbolId,
-    pub dst: ThingId,
-}
+/// Global place store
+static PLACE_STORE: Mutex<Option<PlaceStore>> = Mutex::new(None);
 
-/// Global graph store
-static GRAPH: Mutex<Option<GraphStore>> = Mutex::new(None);
-
-struct GraphStore {
+struct PlaceStore {
     /// Thing table: ThingId -> Thing
     things: BTreeMap<ThingId, Thing>,
-    /// Link set: (src, pred, dst) for efficient queries
-    links: BTreeMap<Link, ()>,
+    /// Outbound relationship index: from -> [rel_id]
+    out_index: BTreeMap<ThingId, Vec<RelationshipId>>,
+    /// Inbound relationship index: to -> [rel_id]
+    in_index: BTreeMap<ThingId, Vec<RelationshipId>>,
     /// Counter for generating unique IDs
     next_id: u128,
     /// Tick counter for timestamps
     tick: u64,
 }
 
-impl GraphStore {
+impl PlaceStore {
     fn new() -> Self {
         Self {
             things: BTreeMap::new(),
-            links: BTreeMap::new(),
+            out_index: BTreeMap::new(),
+            in_index: BTreeMap::new(),
             next_id: 1,
             tick: 0,
         }
@@ -125,32 +101,42 @@ impl GraphStore {
         self.things.get(&id).map(|t| t.payload.as_slice())
     }
 
-    fn create_link(&mut self, src: ThingId, predicate: SymbolId, dst: ThingId) {
-        let link = Link {
-            src,
-            predicate,
-            dst,
-        };
-        self.links.insert(link, ());
+    fn create_relationship(&mut self, from: ThingId, to: ThingId, predicate: SymbolId) -> RelationshipId {
+        let kind_rel = symbols::well_known(b"kind.Relationship");
+        let rel_id = self.create_thing(kind_rel, SymbolId::INVALID, 1);
+        
+        // Encode RelationshipBody into payload
+        // Minimal encoding: [from_u128, to_u128, pred_u64]
+        let mut payload = Vec::with_capacity(40);
+        payload.extend_from_slice(&from.0.to_le_bytes());
+        payload.extend_from_slice(&to.0.to_le_bytes());
+        payload.extend_from_slice(&predicate.0.to_le_bytes());
+        self.set_payload(rel_id, &payload);
+
+        // Update indexes
+        self.out_index.entry(from).or_insert_with(Vec::new).push(rel_id);
+        self.in_index.entry(to).or_insert_with(Vec::new).push(rel_id);
+
+        rel_id
     }
 
     fn thing_count(&self) -> usize {
         self.things.len()
     }
 
-    fn link_count(&self) -> usize {
-        self.links.len()
+    fn rel_count(&self) -> usize {
+        self.out_index.values().map(|v| v.len()).sum()
     }
 }
 
-/// Initialize the graph store
+/// Initialize the place store
 pub fn init() {
-    *GRAPH.lock() = Some(GraphStore::new());
+    *PLACE_STORE.lock() = Some(PlaceStore::new());
 }
 
 /// Create a new Thing with the given kind, schema, and version
 pub fn thing_create(kind: SymbolId, schema: SymbolId, version: u32) -> ThingId {
-    let mut guard = GRAPH.lock();
+    let mut guard = PLACE_STORE.lock();
     match guard.as_mut() {
         Some(store) => store.create_thing(kind, schema, version),
         None => ThingId(0),
@@ -159,7 +145,7 @@ pub fn thing_create(kind: SymbolId, schema: SymbolId, version: u32) -> ThingId {
 
 /// Set the inline payload for a Thing
 pub fn thing_set_inline_payload(id: ThingId, payload: &[u8]) -> bool {
-    let mut guard = GRAPH.lock();
+    let mut guard = PLACE_STORE.lock();
     match guard.as_mut() {
         Some(store) => store.set_payload(id, payload),
         None => false,
@@ -168,7 +154,7 @@ pub fn thing_set_inline_payload(id: ThingId, payload: &[u8]) -> bool {
 
 /// Get the header of a Thing
 pub fn get_header(id: ThingId) -> Option<ThingHeader> {
-    let guard = GRAPH.lock();
+    let guard = PLACE_STORE.lock();
     guard
         .as_ref()
         .and_then(|store| store.get_header(id).cloned())
@@ -176,33 +162,51 @@ pub fn get_header(id: ThingId) -> Option<ThingHeader> {
 
 /// Get the payload of a Thing
 pub fn get_payload(id: ThingId) -> Option<Vec<u8>> {
-    let guard = GRAPH.lock();
+    let guard = PLACE_STORE.lock();
     guard
         .as_ref()
         .and_then(|store| store.get_payload(id).map(Vec::from))
 }
 
-/// Create a link between two Things
-pub fn link_create(src: ThingId, predicate: SymbolId, dst: ThingId) {
-    let mut guard = GRAPH.lock();
-    if let Some(store) = guard.as_mut() {
-        store.create_link(src, predicate, dst);
+/// Create a relationship between two Things
+pub fn relationship_create(from: ThingId, to: ThingId, predicate: SymbolId) -> RelationshipId {
+    let mut guard = PLACE_STORE.lock();
+    match guard.as_mut() {
+        Some(store) => store.create_relationship(from, to, predicate),
+        None => ThingId(0),
     }
 }
 
-/// Get statistics about the graph
+/// Get relationships from a Thing
+pub fn relationships_from(from: ThingId) -> Vec<RelationshipId> {
+    let guard = PLACE_STORE.lock();
+    guard.as_ref().map(|store| {
+        store.out_index.get(&from).cloned().unwrap_or_default()
+    }).unwrap_or_default()
+}
+
+/// Get relationships to a Thing
+pub fn relationships_to(to: ThingId) -> Vec<RelationshipId> {
+    let guard = PLACE_STORE.lock();
+    guard.as_ref().map(|store| {
+        store.in_index.get(&to).cloned().unwrap_or_default()
+    }).unwrap_or_default()
+}
+
+/// Get statistics about the store
 pub fn stats() -> (usize, usize) {
-    let guard = GRAPH.lock();
+    let guard = PLACE_STORE.lock();
     match guard.as_ref() {
-        Some(store) => (store.thing_count(), store.link_count()),
+        Some(store) => (store.thing_count(), store.rel_count()),
         None => (0, 0),
     }
 }
 
-/// Advance the graph tick (for timestamps)
+/// Advance the place store tick (for timestamps)
 pub fn tick() {
-    let mut guard = GRAPH.lock();
+    let mut guard = PLACE_STORE.lock();
     if let Some(store) = guard.as_mut() {
         store.tick += 1;
     }
 }
+

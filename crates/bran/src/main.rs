@@ -240,9 +240,24 @@ unsafe extern "C" fn kmain() -> ! {
     kernel::boot(&mut BOOT_CTX)
 }
 
+use core::fmt::{self, Write};
+
+struct SerialWriter;
+
+impl fmt::Write for SerialWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for b in s.bytes() {
+            early_putc(b);
+        }
+        Ok(())
+    }
+}
+
 #[panic_handler]
-fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
-    bran_log("BRAN: PANIC!");
+fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+    let mut writer = SerialWriter;
+    let _ = writeln!(writer, "\nBRAN: PANIC: {}", info);
+
     loop {
         unsafe {
             #[cfg(target_arch = "x86_64")]

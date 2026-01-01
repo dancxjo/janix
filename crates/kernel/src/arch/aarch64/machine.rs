@@ -27,7 +27,7 @@ impl PageTable {
 
 static mut MMIO_L1: PageTable = PageTable::new();
 static mut MMIO_L2: PageTable = PageTable::new();
-static mut MMIO_L3: [PageTable; 512] = [PageTable::new(); 512];
+static mut MMIO_L3: [PageTable; 512] = [const { PageTable::new() }; 512];
 
 pub struct ArchMachine {
     serial: Serial,

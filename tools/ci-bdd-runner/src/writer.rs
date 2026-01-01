@@ -1,4 +1,5 @@
 use crate::shared::{GLOBAL_LAST_ERROR, GLOBAL_QEMU};
+use crate::steps::strip_ansi_codes;
 use cucumber::event::{Cucumber, Event};
 use cucumber::Writer;
 use serde::Serialize;
@@ -238,7 +239,8 @@ impl ArtifactWriter {
 
             // Log tail
             if let Ok(log) = qemu.log_buffer.lock() {
-                let tail = log
+                let cleaned_log = strip_ansi_codes(&log);
+                let tail = cleaned_log
                     .lines()
                     .rev()
                     .take(50)

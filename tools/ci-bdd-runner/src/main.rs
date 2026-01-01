@@ -49,18 +49,33 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(writer);
 
     if arch != "all" {
-        // Create regex to match "for <arch>"
-        let pattern = if arch.contains(',') {
-            let parts: Vec<&str> = arch.split(',').collect();
-            format!("for ({})", parts.join("|"))
+        // Create list of architectures to match
+        let archs: Vec<String> = if arch.contains(',') {
+            arch.split(',').map(|s| s.to_string()).collect()
         } else {
-            format!("for {}", arch)
+            vec![arch.clone()]
         };
-        println!("Filtering scenarios with pattern: '{}'", pattern);
-        let regex = regex::Regex::new(&pattern).expect("Invalid regex");
+        
+        println!("Filtering scenarios for architectures: {:?}", archs);
         
         runner.filter_run(feature_path, move |_, _, scenario| {
-            regex.is_match(&scenario.name)
+            // Check if scenario name contains "for <arch>"
+            for a in &archs {
+                if scenario.name.contains(&format!("for {}", a)) {
+                    return true;
+                }
+            }
+            
+            // Check if any step boots one of the target architectures
+            for step in &scenario.steps {
+                for a in &archs {
+                    if step.value.contains(&format!("for \"{}\"", a)) {
+                        return true;
+                    }
+                }
+            }
+            
+            false
         }).await;
     } else {
         println!("Running all architectures.");

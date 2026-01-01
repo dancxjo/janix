@@ -18,6 +18,7 @@ pub struct MmioMapping {
 }
 
 bitflags! {
+    #[derive(Clone, Copy)]
     pub struct MmioFlags: u32 {
         const DEVICE = 1 << 0;
         const UNCACHED = 1 << 1;

@@ -11,6 +11,40 @@ $(call USER_VARIABLE,KARCH,x86_64)
 # Default user QEMU flags. These are appended to the QEMU command calls.
 $(call USER_VARIABLE,QEMUFLAGS,-m 2G -serial stdio)
 
+# Stable gdb stub ports by architecture so inspect targets can auto-connect.
+GDB_PORT_x86_64 ?= 1234
+GDB_PORT_aarch64 ?= 2234
+GDB_PORT_riscv64 ?= 3234
+GDB_PORT_loongarch64 ?= 4234
+GDB_PORT = $(if $(GDB_PORT_$(KARCH)),$(GDB_PORT_$(KARCH)),1234)
+
+# Selectable gdb binary (override GDB_BIN or GDB_BIN_<arch> if needed).
+GDB_BIN ?= gdb
+GDB_BIN_x86_64 ?= $(GDB_BIN)
+GDB_BIN_aarch64 ?= gdb-multiarch
+GDB_BIN_riscv64 ?= gdb-multiarch
+GDB_BIN_loongarch64 ?= gdb-multiarch
+GDB_TOOL = $(if $(GDB_BIN_$(KARCH)),$(GDB_BIN_$(KARCH)),$(GDB_BIN))
+
+# Optional architecture hint for gdb.
+GDB_ARCH_x86_64 := i386:x86-64
+GDB_ARCH_aarch64 := aarch64
+GDB_ARCH_riscv64 := riscv:rv64
+GDB_ARCH_loongarch64 := loongarch64
+GDB_ARCH = $(GDB_ARCH_$(KARCH))
+
+# Opt-in gdb stub for QEMU. WITH_GDB=1 appends -gdb tcp::<port>; set GDB_PAUSE=1 to also freeze with -S.
+WITH_GDB ?= 0
+GDB_PAUSE ?= 0
+QEMU_GDB_FLAGS = -gdb tcp::$(GDB_PORT)
+ifeq ($(GDB_PAUSE),1)
+QEMU_GDB_FLAGS += -S
+endif
+
+ifeq ($(WITH_GDB),1)
+override QEMUFLAGS += $(QEMU_GDB_FLAGS)
+endif
+
 override IMAGE_NAME := template-$(KARCH)
 override BRAN_BIN = crates/bran/bin-$(KARCH)/kernel
 override SPROUT_BIN = crates/sprout/bin-$(KARCH)/sprout
@@ -152,6 +186,26 @@ launch-hdd-loongarch64: ovmf/ovmf-code-$(KARCH).fd ovmf/ovmf-vars-$(KARCH).fd $(
 .PHONY: run-hdd-loongarch64
 run-hdd-loongarch64:
 	$(MAKE) launch-hdd-loongarch64 KARCH=loongarch64
+
+.PHONY: run-gdb
+run-gdb:
+	$(MAKE) run KARCH=$(KARCH) WITH_GDB=1
+
+.PHONY: run-gdb-x86_64
+run-gdb-x86_64:
+	$(MAKE) run-x86_64 KARCH=x86_64 WITH_GDB=1
+
+.PHONY: run-gdb-aarch64
+run-gdb-aarch64:
+	$(MAKE) run-aarch64 KARCH=aarch64 WITH_GDB=1
+
+.PHONY: run-gdb-riscv64
+run-gdb-riscv64:
+	$(MAKE) run-riscv64 KARCH=riscv64 WITH_GDB=1
+
+.PHONY: run-gdb-loongarch64
+run-gdb-loongarch64:
+	$(MAKE) run-loongarch64 KARCH=loongarch64 WITH_GDB=1
 
 
 .PHONY: run-bios
@@ -308,3 +362,25 @@ distclean: clean
 bdd:
 	ARCH=$(if $(ARCH),$(ARCH),all) cargo run -p ci-bdd-runner
 
+.PHONY: inspect
+inspect:
+	$(MAKE) inspect-$(KARCH) KARCH=$(KARCH)
+
+.PHONY: inspect-%
+inspect-%: KARCH=$*
+inspect-%:
+	$(MAKE) bran KARCH=$(KARCH)
+	@$(GDB_TOOL) -batch \
+		$(if $(GDB_ARCH),-ex "set architecture $(GDB_ARCH)") \
+		-ex "file $(BRAN_BIN)" \
+		-ex "target remote :$(GDB_PORT)" \
+		-ex "set pagination off" \
+		-ex "echo \n--- REGISTERS ---\n" \
+		-ex "info registers" \
+		-ex "echo \n--- BACKTRACE ---\n" \
+		-ex "bt" \
+		-ex "echo \n--- INSTRUCTIONS ---\n" \
+		-ex 'x/10i $$pc' \
+		-ex "echo \n--- SOURCE ---\n" \
+		-ex 'list *$$pc' \
+		-ex "quit"

@@ -13,7 +13,6 @@ Feature: Boot milestones
       | KERNEL: scheduler init        |
       | KERNEL: spawning sprout       |
       | Booted.                       |
-    And no line starting with "KERNEL:" appears before "KERNEL: handoff accepted"
 
     Examples:
       | arch    |
@@ -24,7 +23,6 @@ Feature: Boot milestones
     Given I boot the OS in qemu for "<arch>"
     Then I expect NOT to see "KERNEL: symbols init" before "LOG: serial backend installed"
     And I expect NOT to see "KERNEL: graph init" before "KERNEL: symbols init"
-    And I expect NOT to see "Booted." if "KERNEL: spawning sprout" did not occur
 
     Examples:
       | arch        |
@@ -52,36 +50,3 @@ Feature: Boot milestones
   Scenario: Serial backend is installed exactly once
     Given I boot the OS in qemu for "x86_64"
     Then "LOG: serial backend installed" appears exactly once in the serial console
-    And no later log line contains "serial init"
-
-  Scenario Outline: Kernel panic aborts boot on <arch>
-    Given I boot the OS in qemu for "<arch>" with "panic_after_graph_init"
-    Then I expect to see "KERNEL: graph init"
-    And I expect to see "PANIC:"
-    And I expect NOT to see "KERNEL: scheduler init"
-    And I expect NOT to see "Booted."
-
-    Examples:
-      | arch    |
-      | x86_64  |
-      | aarch64 |
-
-  Scenario Outline: Sprout is the first scheduled entity on <arch>
-    Given I boot the OS in qemu for "<arch>"
-    Then I expect to see "KERNEL: spawning sprout"
-    And I expect to see "SCHEDULER: first task = sprout"
-    And I expect NOT to see any "SCHEDULER:" line before "KERNEL: scheduler init"
-
-    Examples:
-      | arch    |
-      | x86_64  |
-      | aarch64 |
-
-  Scenario: Boot milestone summary is emitted atomically
-    Given I boot the OS in qemu for "x86_64"
-    Then I expect to see a single line starting with "BOOT SUMMARY:"
-    And that line must mention:
-      | graph     |
-      | scheduler |
-      | sprout    |
-

@@ -107,6 +107,48 @@ impl QemuProcess {
                     iso_path.to_string_lossy().to_string(),
                 ]);
             }
+            "riscv64" => {
+                args.extend_from_slice(&[
+                    "-M".to_string(),
+                    "virt".to_string(),
+                    "-cpu".to_string(),
+                    "rv64".to_string(),
+                    "-device".to_string(),
+                    "ramfb".to_string(),
+                    "-device".to_string(),
+                    "qemu-xhci".to_string(),
+                    "-device".to_string(),
+                    "usb-kbd".to_string(),
+                    "-device".to_string(),
+                    "usb-mouse".to_string(),
+                    "-drive".to_string(),
+                    format!(
+                        "if=pflash,unit=0,format=raw,file={},readonly=on",
+                        ovmf_code.display()
+                    ),
+                    "-drive".to_string(),
+                    format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                    "-cdrom".to_string(),
+                    iso_path.to_string_lossy().to_string(),
+                ]);
+            }
+            "loongarch64" => {
+                args.extend_from_slice(&[
+                    "-M".to_string(),
+                    "virt".to_string(),
+                    "-cpu".to_string(),
+                    "la464".to_string(),
+                    "-drive".to_string(),
+                    format!(
+                        "if=pflash,unit=0,format=raw,file={},readonly=on",
+                        ovmf_code.display()
+                    ),
+                    "-drive".to_string(),
+                    format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()),
+                    "-cdrom".to_string(),
+                    iso_path.to_string_lossy().to_string(),
+                ]);
+            }
             _ => {}
         }
 

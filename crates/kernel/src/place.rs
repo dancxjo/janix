@@ -2,7 +2,6 @@
 //!
 //! Provides the primary API for interacting with system state through
 //! the Place/Thing/Relationship ontology.
-
 use crate::graph;
 use crate::symbols;
 use abi::ids::{PlaceId, RelationshipId, SymbolId, ThingId};

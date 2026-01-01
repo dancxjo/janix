@@ -8,6 +8,8 @@ use core::slice;
 use crate::log::{self, Level};
 use crate::machine::{self, MmioFlags, MmioRange};
 use crate::symbols;
+use crate::graph;
+use abi::ids::ThingId;
 
 /// Syscall numbers
 pub mod nr {
@@ -21,6 +23,11 @@ pub mod nr {
     pub const SYS_PROC_SPAWN: u32 = 100;
     pub const SYS_PROC_EXIT: u32 = 101;
     pub const SYS_SCHED_YIELD: u32 = 200;
+
+    /// Get the root PlaceId
+    pub const SYS_GET_ROOT_PLACE: u32 = 300;
+    /// Multi-purpose ontology operation
+    pub const SYS_PLACE_OP: u32 = 301;
 }
 
 /// Machine syscall operations
@@ -40,7 +47,10 @@ pub mod err {
 }
 
 /// Syscall result type
-pub type SyscallResult = (i32, u64, u64);
+pub use abi::wire::SyscallResult;
+
+/// Syscall dispatch function type
+pub type SyscallDispatch = extern "C" fn(u32, u64, u64, u64, u64, u64, u64) -> SyscallResult;
 
 /// Initialize syscall dispatch
 pub fn init() {
@@ -51,13 +61,16 @@ pub fn init() {
 ///
 /// Called by the architecture layer when a syscall trap occurs.
 /// Returns (status, value0, value1).
-pub fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64, _a5: u64) -> SyscallResult {
+#[unsafe(no_mangle)]
+pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> SyscallResult {
     match nr {
         nr::SYS_VERSION_GET => sys_version_get(),
         nr::SYS_LOG_EMIT => sys_log_emit(a0, a1, a2),
         nr::SYS_SYMBOL_INTERN => sys_symbol_intern(a0, a1),
         nr::SYS_MACHINE => sys_machine(a0, a1, a2, a3),
-        _ => (err::ENOSYS, 0, 0),
+        nr::SYS_GET_ROOT_PLACE => sys_get_root_place(),
+        nr::SYS_PLACE_OP => sys_place_op(a0, a1, a2, a3),
+        _ => SyscallResult::new(err::ENOSYS, 0, 0),
     }
 }
 
@@ -67,7 +80,7 @@ pub fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64, _a5: u64)
 fn sys_version_get() -> SyscallResult {
     const MAJOR: u64 = 0;
     const MINOR: u64 = 3;
-    (0, MAJOR, MINOR)
+    SyscallResult::new(0, MAJOR, MINOR)
 }
 
 /// SYS_LOG_EMIT: Emit a log message
@@ -77,7 +90,7 @@ fn sys_version_get() -> SyscallResult {
 /// a2: message length
 ///
 /// Returns: (0, thing_id_high, thing_id_low) or (error, 0, 0)
-fn sys_log_emit(level_raw: u64, _msg_ptr: u64, _msg_len: u64) -> SyscallResult {
+fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult {
     // Validate level
     let level = match level_raw {
         0 => Level::Trace,
@@ -85,21 +98,21 @@ fn sys_log_emit(level_raw: u64, _msg_ptr: u64, _msg_len: u64) -> SyscallResult {
         2 => Level::Info,
         3 => Level::Warn,
         4 => Level::Error,
-        _ => return (err::EINVAL, 0, 0),
+        _ => return SyscallResult::new(err::EINVAL, 0, 0),
     };
 
-    // For now, we can't safely read user memory, so just log a placeholder
-    // In a real implementation, we'd validate the pointer and copy the data
+    // Safety: In Ring 0 demo, we assume msg_ptr/len are valid kernel memory.
+    // In a real implementation with userland, we MUST validate and/or copy this.
+    let msg = unsafe {
+        core::slice::from_raw_parts(msg_ptr as *const u8, msg_len as usize)
+    };
+
     let subsystem = symbols::well_known(b"userland");
 
-    // TODO: Properly read from user memory with validation
-    // For now, log that we received a log request
-    let placeholder = b"[user log request]";
-
-    if let Some(id) = log::log_emit(level, subsystem, placeholder) {
-        (0, id.high(), id.low())
+    if let Some(id) = log::log_emit(level, subsystem, msg) {
+        SyscallResult::new(0, id.high(), id.low())
     } else {
-        (err::EFAULT, 0, 0)
+        SyscallResult::new(err::EFAULT, 0, 0)
     }
 }
 
@@ -109,12 +122,13 @@ fn sys_log_emit(level_raw: u64, _msg_ptr: u64, _msg_len: u64) -> SyscallResult {
 /// a1: string length
 ///
 /// Returns: (0, symbol_id, 0) or (error, 0, 0)
-fn sys_symbol_intern(_str_ptr: u64, _str_len: u64) -> SyscallResult {
-    // TODO: Properly read from user memory with validation
-    // For now, return a placeholder symbol
-    let placeholder = b"user_symbol";
-    let id = symbols::intern(placeholder);
-    (0, id.0, 0)
+fn sys_symbol_intern(str_ptr: u64, str_len: u64) -> SyscallResult {
+    // Safety: In Ring 0 demo, we assume str_ptr/len are valid kernel memory.
+    let name = unsafe {
+        core::slice::from_raw_parts(str_ptr as *const u8, str_len as usize)
+    };
+    let id = symbols::intern(name);
+    SyscallResult::new(0, id.0, 0)
 }
 
 /// SYS_MACHINE: Machine operations
@@ -125,31 +139,31 @@ fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
     match op {
         machine_op::CONSOLE_WRITE => sys_machine_console_write(a1, a2),
         machine_op::MMIO_MAP => sys_machine_mmio_map(a1, a2, a3),
-        _ => (err::EINVAL, 0, 0),
+        _ => SyscallResult::new(err::EINVAL, 0, 0),
     }
 }
 
 /// SYS_MACHINE[console_write]: write bytes to the machine console
 fn sys_machine_console_write(ptr: u64, len: u64) -> SyscallResult {
     if ptr == 0 {
-        return (err::EFAULT, 0, 0);
+        return SyscallResult::new(err::EFAULT, 0, 0);
     }
 
     // For now, assume kernel/user share address space for early logging.
     let bytes = unsafe { slice::from_raw_parts(ptr as *const u8, len as usize) };
     let written = machine::machine().console_write(bytes) as u64;
-    (0, written, 0)
+    SyscallResult::new(0, written, 0)
 }
 
 /// SYS_MACHINE[mmio_map]: map a physical MMIO range
 fn sys_machine_mmio_map(phys: u64, len: u64, flags_raw: u64) -> SyscallResult {
     if len == 0 {
-        return (err::EINVAL, 0, 0);
+        return SyscallResult::new(err::EINVAL, 0, 0);
     }
 
     let flags = match MmioFlags::from_bits(flags_raw as u32) {
         Some(f) => f,
-        None => return (err::EINVAL, 0, 0),
+        None => return SyscallResult::new(err::EINVAL, 0, 0),
     };
 
     let range = MmioRange {
@@ -158,8 +172,43 @@ fn sys_machine_mmio_map(phys: u64, len: u64, flags_raw: u64) -> SyscallResult {
     };
 
     if let Some(mapping) = machine::machine().mmio_map(range, flags) {
-        (0, mapping.virt, mapping.len as u64)
+        SyscallResult::new(0, mapping.virt, mapping.len as u64)
     } else {
-        (err::EFAULT, 0, 0)
+        SyscallResult::new(err::EFAULT, 0, 0)
     }
 }
+
+
+/// SYS_GET_ROOT_PLACE: Get the ID of the root place
+fn sys_get_root_place() -> SyscallResult {
+    // For now, place.root is hardcoded to ID 2 (first thing created after symbols)
+    let root_id = ThingId(2);
+    SyscallResult::new(0, root_id.high(), root_id.low())
+}
+
+/// SYS_PLACE_OP: Perform an ontology operation
+fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
+    match op {
+        // OP_THING_CREATE: a1=kind_low, a2=schema_low, a3=version
+        10 => {
+            let id = graph::thing_create(abi::ids::SymbolId(a1), abi::ids::SymbolId(a2), a3 as u32);
+            SyscallResult::new(0, id.high(), id.low())
+        }
+        
+        // OP_REL_CREATE: a1=from_low, a2=to_low, a3=pred_low
+        20 => {
+            // Note: thing_std currently only passes low 64 bits of ThingId
+            let id = graph::relationship_create(ThingId(a1 as u128), ThingId(a2 as u128), abi::ids::SymbolId(a3));
+            SyscallResult::new(0, id.high(), id.low())
+        }
+        
+        // OP_CONTAINED_IN: a1=place_low
+        30 => {
+            let contained = crate::place::contained_in(ThingId(a1 as u128));
+            SyscallResult::new(0, contained.len() as u64, 0)
+        }
+
+        _ => SyscallResult::new(err::ENOSYS, 0, 0),
+    }
+}
+

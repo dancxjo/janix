@@ -1346,6 +1346,10 @@ dependencies = [
 [[package]]
 name = "sprout"
 version = "0.1.0"
+dependencies = [
+ "abi",
+ "thing_std",
+]
 
 [[package]]
 name = "strsim"
@@ -1429,6 +1433,13 @@ dependencies = [
  "smawk",
  "unicode-linebreak",
  "unicode-width",
+]
+
+[[package]]
+name = "thing_std"
+version = "0.1.0"
+dependencies = [
+ "abi",
 ]
 
 [[package]]

@@ -128,15 +128,18 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     sched::run()
 }
 
+#[link_section = ".text"]
+static mut SPROUT_BUFFER: [u8; 1024 * 1024] = [0u8; 1024 * 1024];
+
 use alloc::format;
 
-/// Spawn the Sprout init process
+/// Spawn the Sprout init process by locating it in boot modules and jumping into it.
+/// For the v0.3 demo, we load into an RX buffer and jump in Ring 0.
 fn spawn_sprout(ctx: &'static BootContext) {
     log::klog(Level::Info, "KERNEL", "spawning sprout");
 
-    // Look for a module named "sprout"
     let mut found_sprout = false;
-    for &module in ctx.modules {
+    for module in ctx.modules {
         if module.path.ends_with("sprout") {
             found_sprout = true;
             let virt_addr = module.phys_addr.wrapping_add(ctx.hhdm_offset);
@@ -146,20 +149,136 @@ fn spawn_sprout(ctx: &'static BootContext) {
                 &format!("found sprout at {:#x} (size: {})", virt_addr, module.size),
             );
 
-            // Simple ELF-64 header parsing to find entry point
-            // e_entry is at offset 24
             if module.size >= 64 {
                 let entry_point = unsafe {
                     let ptr = (virt_addr + 24) as *const u64;
                     *ptr
                 };
-                log::klog(
-                    Level::Info,
-                    "KERNEL",
-                    &format!("sprout entry point: {:#x}", entry_point),
-                );
+                log::klog(Level::Info, "KERNEL", &format!("sprout entry point: {:#x}", entry_point));
 
-                // TODO: Enter user mode at entry_point
+                let elf_type = unsafe { *((virt_addr + 16) as *const u16) };
+                log::klog(Level::Info, "ELF", &format!("header type: {}", elf_type));
+
+                let final_entry: u64;
+
+                if elf_type == 3 { // ET_DYN (PIE)
+                    let ph_off = unsafe { *((virt_addr + 32) as *const u64) };
+                    let ph_num = unsafe { *((virt_addr + 56) as *const u16) };
+                    let ph_size = unsafe { *((virt_addr + 54) as *const u16) };
+
+                    let buffer_base = unsafe { SPROUT_BUFFER.as_mut_ptr() as u64 };
+                    log::klog(Level::Info, "ELF", &format!("loading PIE into executable buffer at {:#x}", buffer_base));
+
+                    // Copy LOAD segments and zero BSS
+                    for i in 0..ph_num {
+                        let ph_addr = virt_addr + ph_off + (i as u64 * ph_size as u64);
+                        let p_type = unsafe { *(ph_addr as *const u32) };
+                        if p_type == 1 { // PT_LOAD
+                            let p_offset = unsafe { *((ph_addr + 8) as *const u64) };
+                            let p_vaddr = unsafe { *((ph_addr + 16) as *const u64) };
+                            let p_filesz = unsafe { *((ph_addr + 32) as *const u64) };
+                            let p_memsz = unsafe { *((ph_addr + 40) as *const u64) };
+                            
+                            unsafe {
+                                core::ptr::copy_nonoverlapping(
+                                    (virt_addr + p_offset) as *const u8,
+                                    (buffer_base + p_vaddr) as *mut u8,
+                                    p_filesz as usize
+                                );
+                                if p_memsz > p_filesz {
+                                    core::ptr::write_bytes(
+                                        (buffer_base + p_vaddr + p_filesz) as *mut u8,
+                                        0,
+                                        (p_memsz - p_filesz) as usize
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    // Relocations
+                    let mut rela_vaddr = 0u64;
+                    let mut rela_size = 0u64;
+                    let mut rela_ent = 24u64;
+
+                    for i in 0..ph_num {
+                        let ph_addr = virt_addr + ph_off + (i as u64 * ph_size as u64);
+                        let p_type = unsafe { *(ph_addr as *const u32) };
+                        if p_type == 2 { // PT_DYNAMIC
+                            let p_offset = unsafe { *((ph_addr + 8) as *const u64) };
+                            let p_filesz = unsafe { *((ph_addr + 32) as *const u64) };
+                            let dynamic_addr = virt_addr + p_offset;
+                            for j in 0..(p_filesz / 16) {
+                                let tag = unsafe { *((dynamic_addr + j * 16) as *const u64) };
+                                let val = unsafe { *((dynamic_addr + j * 16 + 8) as *const u64) };
+                                match tag {
+                                    7 => rela_vaddr = val, // DT_RELA
+                                    8 => rela_size = val,  // DT_RELASZ
+                                    9 => rela_ent = val,   // DT_RELAENT
+                                    0 => break,
+                                    _ => {}
+                                }
+                            }
+                            break;
+                        }
+                    }
+
+                    if rela_vaddr != 0 && rela_size > 0 {
+                        log::klog(Level::Info, "ELF", &format!("applying {} rels", rela_size / rela_ent));
+                        let mut rela_file_off = 0u64;
+                        for i in 0..ph_num {
+                            let ph_addr = virt_addr + ph_off + (i as u64 * ph_size as u64);
+                            let p_type = unsafe { *(ph_addr as *const u32) };
+                            if p_type == 1 { // PT_LOAD
+                                let p_vaddr = unsafe { *((ph_addr + 16) as *const u64) };
+                                let p_memsz = unsafe { *((ph_addr + 40) as *const u64) };
+                                let p_offset = unsafe { *((ph_addr + 8) as *const u64) };
+                                if rela_vaddr >= p_vaddr && rela_vaddr < p_vaddr + p_memsz {
+                                    rela_file_off = p_offset + (rela_vaddr - p_vaddr);
+                                    break;
+                                }
+                            }
+                        }
+
+                        if rela_file_off != 0 {
+                            let rela_data_ptr = (virt_addr + rela_file_off) as *const u8;
+                            for k in 0..(rela_size / rela_ent) {
+                                let entry_ptr = unsafe { rela_data_ptr.add((k * rela_ent) as usize) };
+                                let r_offset = unsafe { *(entry_ptr as *const u64) };
+                                let r_info = unsafe { *((entry_ptr.add(8)) as *const u64) };
+                                let r_addend = unsafe { *((entry_ptr.add(16)) as *const i64) };
+                                let r_type = r_info & 0xffffffff;
+                                if r_type == 8 { // R_X86_64_RELATIVE
+                                    let target_ptr = (buffer_base + r_offset) as *mut u64;
+                                    unsafe { *target_ptr = buffer_base.wrapping_add(r_addend as u64); }
+                                }
+                            }
+                        }
+                    }
+                    final_entry = buffer_base + entry_point;
+                } else {
+                    final_entry = virt_addr + entry_point;
+                }
+
+                // Dedicated stack
+                const STACK_SIZE: usize = 64 * 1024;
+                let mut stack = alloc::vec![0u8; STACK_SIZE];
+                let stack_top = (stack.as_mut_ptr() as u64 + STACK_SIZE as u64) & !0xf;
+                core::mem::forget(stack);
+
+                log::klog(Level::Info, "SPROUT", &format!("jumping to {:#x} with stack {:#x}", final_entry, stack_top));
+
+                unsafe {
+                    core::arch::asm!(
+                        "mov rsp, {stack_top}",
+                        "xor rbp, rbp",
+                        "jmp {entry}",
+                        stack_top = in(reg) stack_top,
+                        entry = in(reg) final_entry,
+                        in("rdi") crate::syscall::dispatch as *const () as u64,
+                        options(noreturn)
+                    );
+                }
             } else {
                 log::klog(Level::Error, "KERNEL", "sprout module too small");
             }
@@ -171,6 +290,7 @@ fn spawn_sprout(ctx: &'static BootContext) {
         log::klog(Level::Warn, "KERNEL", "sprout module not found");
     }
 }
+
 
 use crate::place;
 
@@ -197,6 +317,10 @@ fn seed_ontology() {
     // Relate kernel to root (root contains kernel)
     let rel_id = graph::relationship_create(root_id, kernel_id, pred_contains);
     log::klog(Level::Info, "REL", &format!("contains created: {:?} from={:?} to={:?}", rel_id, root_id, kernel_id));
+
+    // Index rebuild test
+    graph::rebuild_indexes();
+    log::klog(Level::Info, "KERNEL", "place store indexes rebuilt");
 
     // Verify containment
     let contained = place::contained_in(root_id);

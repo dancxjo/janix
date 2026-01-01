@@ -9,7 +9,6 @@ use spin::Mutex;
 
 use crate::symbols;
 use abi::ids::{RelationshipId, SymbolId, ThingId};
-use models::RelationshipBody;
 
 /// Thing header - metadata for each Thing
 ///
@@ -127,6 +126,29 @@ impl PlaceStore {
     fn rel_count(&self) -> usize {
         self.out_index.values().map(|v| v.len()).sum()
     }
+
+    fn rebuild_indexes(&mut self) {
+        self.out_index.clear();
+        self.in_index.clear();
+
+        let kind_rel = symbols::well_known(b"kind.Relationship");
+        
+        for (&id, thing) in &self.things {
+            if thing.header.kind == kind_rel {
+                // Decode RelationshipBody from payload
+                if thing.payload.len() >= 40 {
+                    let from_bytes = &thing.payload[0..16];
+                    let to_bytes = &thing.payload[16..32];
+                    
+                    let from = ThingId(u128::from_le_bytes(from_bytes.try_into().unwrap()));
+                    let to = ThingId(u128::from_le_bytes(to_bytes.try_into().unwrap()));
+                    
+                    self.out_index.entry(from).or_insert_with(Vec::new).push(id);
+                    self.in_index.entry(to).or_insert_with(Vec::new).push(id);
+                }
+            }
+        }
+    }
 }
 
 /// Initialize the place store
@@ -201,6 +223,15 @@ pub fn stats() -> (usize, usize) {
         None => (0, 0),
     }
 }
+
+/// Rebuild all indexes from Relationship Things in the store
+pub fn rebuild_indexes() {
+    let mut guard = PLACE_STORE.lock();
+    if let Some(store) = guard.as_mut() {
+        store.rebuild_indexes();
+    }
+}
+
 
 /// Advance the place store tick (for timestamps)
 pub fn tick() {

@@ -23,7 +23,7 @@ fn panic(_info: &PanicInfo) -> ! {
 #[unsafe(no_mangle)]
 pub extern "C" fn _start(syscall_ptr: u64) -> ! {
     thing_std::init(syscall_ptr);
-    log_info("BLOOM: starting desktop seeding");
+    console_write("BLOOM: starting desktop seeding\n");
 
     let kind_place = symbol_intern("kind.Place");
     let kind_thing = symbol_intern("kind.Thing");
@@ -43,7 +43,7 @@ pub extern "C" fn _start(syscall_ptr: u64) -> ! {
 
     // 2. Create Desktop Place
     let desktop_sym = symbol_intern("place.desktop");
-    let desktop_id = thing_create_named(desktop_sym, kind_place, SymbolId::INVALID);
+    let desktop_id = thing_create_named(desktop_sym, kind_place, root_id);
     log_info("BLOOM: desktop place created");
 
     // 3. Publish provides relationship
@@ -70,23 +70,23 @@ pub extern "C" fn _start(syscall_ptr: u64) -> ! {
 
     // Create a font thing
     let font_sym = symbol_intern("thing.font.unifont");
-    let font_id = thing_create_named(font_sym, kind_thing, SymbolId::INVALID);
+    let font_id = thing_create_named(font_sym, kind_thing, desktop_id);
     thing_set_payload(font_id, FONT_BYTES);
     relationship_create(desktop_id, font_id, pred_contains);
 
     // Create Icon things
     let icon_folder_sym = symbol_intern("thing.icon.folder");
-    let icon_folder_id = thing_create_named(icon_folder_sym, kind_thing, SymbolId::INVALID);
+    let icon_folder_id = thing_create_named(icon_folder_sym, kind_thing, desktop_id);
     thing_set_payload(icon_folder_id, ICON_FOLDER);
     relationship_create(desktop_id, icon_folder_id, pred_contains);
 
     let icon_text_sym = symbol_intern("thing.icon.text");
-    let icon_text_id = thing_create_named(icon_text_sym, kind_thing, SymbolId::INVALID);
+    let icon_text_id = thing_create_named(icon_text_sym, kind_thing, desktop_id);
     thing_set_payload(icon_text_id, ICON_TEXT);
     relationship_create(desktop_id, icon_text_id, pred_contains);
 
     let icon_term_sym = symbol_intern("thing.icon.terminal");
-    let icon_term_id = thing_create_named(icon_term_sym, kind_thing, SymbolId::INVALID);
+    let icon_term_id = thing_create_named(icon_term_sym, kind_thing, desktop_id);
     thing_set_payload(icon_term_id, ICON_TERM);
     relationship_create(desktop_id, icon_term_id, pred_contains);
 

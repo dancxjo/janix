@@ -223,6 +223,13 @@ pub fn get_relationship(id: RelationshipId) -> Option<Relationship> {
         .relationships.get(&id).cloned()
 }
 
+pub fn get_thing_header(id: ThingId) -> Option<ThingHeader> {
+    let guard = PLACE_STORE.lock();
+    guard.as_ref()
+        .expect("PlaceStore not initialized")
+        .things.get(&id).map(|t| t.header.clone())
+}
+
 pub fn thing_set_inline_payload(id: ThingId, payload: &[u8]) -> bool {
     let mut guard = PLACE_STORE.lock();
     guard.as_mut()

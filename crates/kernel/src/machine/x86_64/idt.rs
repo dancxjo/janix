@@ -89,18 +89,18 @@ extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame, _error_code: u64) -> !
 {
     // We can try to record, but DF implies stack issues often.
-    unsafe {
-        record_x86_fault(FaultKind::DoubleFault, &stack_frame, _error_code, None, 8);
-    }
+    // unsafe {
+    //     record_x86_fault(FaultKind::DoubleFault, &stack_frame, _error_code, None, 8);
+    // }
     panic!("DOUBLE FAULT\n{:#?}", stack_frame);
 }
 
 extern "x86-interrupt" fn gp_handler(
     stack_frame: InterruptStackFrame, error_code: u64)
 {
-    unsafe {
-        record_x86_fault(FaultKind::GeneralProtection, &stack_frame, error_code, None, 13);
-    }
+    // unsafe {
+    //     record_x86_fault(FaultKind::GeneralProtection, &stack_frame, error_code, None, 13);
+    // }
     panic!("GENERAL PROTECTION FAULT: error_code={}\n{:#?}", error_code, stack_frame);
 }
 
@@ -109,8 +109,8 @@ extern "x86-interrupt" fn page_fault_handler(
 {
     use x86_64::registers::control::Cr2;
     let addr = Cr2::read().as_u64();
-    unsafe {
-        record_x86_fault(FaultKind::PageFault, &stack_frame, error_code.bits(), Some(addr), 14);
-    }
+    // unsafe {
+    //     record_x86_fault(FaultKind::PageFault, &stack_frame, error_code.bits(), Some(addr), 14);
+    // }
     panic!("PAGE FAULT: accessed {:x}\nerror code: {:?}\n{:#?}", addr, error_code, stack_frame);
 }

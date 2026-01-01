@@ -1,0 +1,106 @@
+//! Capability Enforcement
+//!
+//! Checks if the current task has the required capability to perform an operation.
+//! 
+//! Semantic Rules:
+//! - A Task is valid if it holds a `capability` Thing.
+//! - `task --[has_cap]--> capability`
+//! - `capability --[target]--> target_thing`
+//! - `capability --[permits]--> permission_symbol`
+//! 
+//! For v0.3:
+//! - Target match is EXACT (no subtree recursion).
+//! - Permissions must match exactly.
+
+use abi::ids::{ThingId, SymbolId};
+use abi::syscall::err;
+use abi::wire::SyscallResult;
+use graph::store;
+use graph::symbols;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapOp {
+    Log,
+    GraphCreate, // Requires: target (parent)
+    GraphLink,   // Requires: target (from)
+    GraphUnlink, // Requires: target (from)
+    GraphRead,   // Requires: target
+    GraphWatch,  // Requires: target
+    MemManage,   // Requires: target (address space, implicit self for now)
+    Hardware,    // Requires: capability.hardware
+}
+
+pub fn check(op: CapOp, target: Option<ThingId>) -> Result<(), SyscallResult> {
+    // 1. Get Current Task
+    // Using simple option mapper
+    let task_id = crate::sched::current_task_id().ok_or(SyscallResult::new(err::EFAULT, 0, 0))?;
+
+    // 2. Define Required Permission Symbol
+    let req_perm = match op {
+        CapOp::Log => symbols::intern(b"perm.log"),
+        CapOp::GraphCreate => symbols::intern(b"perm.create"),
+        CapOp::GraphLink => symbols::intern(b"perm.link"),
+        CapOp::GraphUnlink => symbols::intern(b"perm.unlink"),
+        CapOp::GraphRead => symbols::intern(b"perm.read"),
+        CapOp::GraphWatch => symbols::intern(b"perm.watch"),
+        CapOp::MemManage => symbols::intern(b"perm.mem"),
+        CapOp::Hardware => symbols::intern(b"perm.dictator"), // :)
+    };
+    
+    // 3. Define predicates
+    let pred_has_cap = symbols::intern(b"predicate.has_cap");
+    let pred_target = symbols::intern(b"predicate.target");
+    let pred_permits = symbols::intern(b"predicate.permits");
+    
+    // 4. Iterate Capabilities
+    // task --[has_cap]--> cap
+    // 4. Iterate Capabilities
+    // task --[has_cap]--> cap
+    let caps_rel_ids = store::relationships_from(task_id);
+    
+    for rel_id in caps_rel_ids {
+        if let Some(rel) = store::get_relationship(rel_id) {
+             if rel.kind == pred_has_cap {
+                 let cap_id = rel.to; // Target is 'to'
+                 
+                 // Check Permits
+                 let has_perm = check_rel(cap_id, pred_permits, ThingId(req_perm.0 as u128));
+                 
+                 if has_perm {
+                     // If operation requires target, check target match
+                     if let Some(req_target) = target {
+                         if check_rel(cap_id, pred_target, req_target) {
+                             return Ok(());
+                         }
+                     } else {
+                         return Ok(());
+                     }
+                 }
+             }
+        }
+    }
+    
+    // For Kernel Tasks (e.g. Sprout/Init/Ping/Pong), they might effectively have Superuser.
+    // Boot Grants should handle this. 
+    // If no cap found:
+    crate::log::klog(crate::log::Level::Warn, "CAP", &alloc::format!("Denied {:?} on {:?} for task {:?}", op, target, task_id));
+    
+    Err(SyscallResult::new(err::EPERM, 0, 0))
+}
+
+// Helper to check existence of a relationship
+fn check_rel(from: ThingId, kind: SymbolId, to: ThingId) -> bool {
+    // We can iterate 'from' edges.
+    let edge_ids = store::relationships_from(from);
+    for eid in edge_ids {
+        if let Some(e) = store::get_relationship(eid) {
+            if e.kind == kind && e.to == to {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// Removed local err mod re-definition to avoid conflict
+

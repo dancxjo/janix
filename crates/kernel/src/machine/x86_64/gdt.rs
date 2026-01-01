@@ -74,3 +74,8 @@ pub unsafe fn init(gdt_tss: &'static mut GdtTss) {
 
     load_tss(tss);
 }
+
+pub unsafe fn set_tss_rsp0(top: u64) {
+    use crate::machine::x86_64::BSP_GDT;
+    BSP_GDT.tss.privilege_stack_table[0] = VirtAddr::new(top);
+}

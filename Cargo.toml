@@ -11,6 +11,9 @@ members = [
     "tools/bdd",
     "xtask", "crates/sprout_exit", "tools/docgen",
     "crates/heap_smoke",
+    "apps/graph_smoke",
+    "apps/log_smoke",
+    "apps/cap_fail",
 ]
 
 [workspace.package]

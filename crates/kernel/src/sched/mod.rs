@@ -138,23 +138,24 @@ pub fn configure_task_memory(id: TaskId, _img: (u64, u64), _stack: (u64, u64), h
     }
 }
 
-pub fn configure_task_context(id: TaskId, entry: u64) {
+pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
     let mut guard = SCHEDULER.lock();
     if let Some(sched) = guard.as_mut() {
         if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
-             let stack_top = (task.stack_ptr & !0xf) as *mut u64;
+             // Use Kernel Stack Top implicitly allocated by spawn
+             let k_stack_top = (task.stack_ptr & !0xf) as *mut u64;
 
              unsafe {
                 #[cfg(target_arch = "x86_64")]
                 {
-                     let mut sp = stack_top.sub(1);
+                     let mut sp = k_stack_top.sub(1);
                      *sp = 0xdeadbeef; // Align
 
                      // CPU Frame (5 words)
-                     sp = sp.sub(1); *sp = 0x10; // SS (Kernel Data)
-                     sp = sp.sub(1); *sp = stack_top as u64; // RSP
+                     sp = sp.sub(1); *sp = 0x1b; // SS (User Data)
+                     sp = sp.sub(1); *sp = user_stack; // RSP (User Stack)
                      sp = sp.sub(1); *sp = 0x202; // RFLAGS
-                     sp = sp.sub(1); *sp = 0x8; // CS (Kernel Code)
+                     sp = sp.sub(1); *sp = 0x23; // CS (User Code)
                      sp = sp.sub(1); *sp = entry; // RIP 
 
                      // Regs
@@ -168,7 +169,7 @@ pub fn configure_task_context(id: TaskId, entry: u64) {
                 {
                      use crate::machine::aarch64::TrapFrame;
                      let layout = core::alloc::Layout::new::<TrapFrame>();
-                     let mut sp = stack_top as *mut u8;
+                     let mut sp = k_stack_top as *mut u8;
                      sp = sp.sub(layout.size());
                      core::ptr::write_bytes(sp, 0, layout.size());
                      let frame = &mut *(sp as *mut TrapFrame);
@@ -181,7 +182,7 @@ pub fn configure_task_context(id: TaskId, entry: u64) {
                 {
                      use crate::machine::riscv64::TrapFrame;
                      let layout = core::alloc::Layout::new::<TrapFrame>();
-                     let mut sp = stack_top as *mut u8;
+                     let mut sp = k_stack_top as *mut u8;
                      sp = sp.sub(layout.size());
                      core::ptr::write_bytes(sp, 0, layout.size());
                      let frame = &mut *(sp as *mut TrapFrame);
@@ -194,7 +195,7 @@ pub fn configure_task_context(id: TaskId, entry: u64) {
                 {
                      use crate::machine::loongarch64::TrapFrame;
                      let layout = core::alloc::Layout::new::<TrapFrame>();
-                     let mut sp = stack_top as *mut u8;
+                     let mut sp = k_stack_top as *mut u8;
                      sp = sp.sub(layout.size());
                      core::ptr::write_bytes(sp, 0, layout.size());
                      let frame = &mut *(sp as *mut TrapFrame);
@@ -224,6 +225,16 @@ pub fn with_task<F, R>(id: TaskId, f: F) -> Option<R> where F: FnOnce(&mut Task)
     let sched = guard.as_mut()?;
     let t = sched.tasks.iter_mut().find(|t| t.id == id)?;
     Some(f(t))
+}
+
+pub fn current_task_id() -> Option<abi::ids::ThingId> {
+    let guard = SCHEDULER.lock();
+    let sched = guard.as_ref()?;
+    let tid = sched.cpu.current_task?;
+    // Find the task's ThingId? 
+    // Task struct has `thing: ThingId`!
+    let task = sched.tasks.iter().find(|t| t.id == tid)?;
+    Some(task.thing) // This is the Graph ThingId, not the scheduler TaskId (u64).
 }
 
 // Rename/Wrap spawn
@@ -267,7 +278,7 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
              
              // SS
              sp = sp.sub(1);
-             *sp = 0x1b; // User Data (RPL 3)
+             *sp = 0x10; // Kernel Data
              
              // RSP (Value after iretq, i.e., top of stack frame?)
              // iretq restores RSP to this value IF it pops 5 words.
@@ -280,7 +291,7 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
              
              // CS
              sp = sp.sub(1);
-             *sp = 0x23; // User Code (RPL 3)
+             *sp = 0x08; // Kernel Code
              
              // RIP
              sp = sp.sub(1);
@@ -399,7 +410,10 @@ pub static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 /// Returns Some(new_sp) if switch needed, None if stay.
 pub fn tick(current_sp: u64) -> Option<u64> {
     // 1. Inc timer ticks
-    TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
+    let ticks = TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
+    if ticks == 0 {
+        log::klog(Level::Info, "SCHED", "first tick!");
+    }
     
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut()?;
@@ -424,8 +438,12 @@ pub fn tick(current_sp: u64) -> Option<u64> {
         
         store::with_store(|s| {
              t.set_state(s, TaskState::Running);
+             t.set_state(s, TaskState::Running);
              t.set_on_cpu(s, sched.cpu.thing);
         });
+
+        // Set Kernel Stack for Syscall/Traps
+        crate::machine::machine().set_kernel_stack(t.stack_top);
 
         // Activate Address Space
         t.address_space.activate();

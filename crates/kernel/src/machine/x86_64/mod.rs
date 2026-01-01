@@ -85,17 +85,20 @@ pub fn init() {
         // use machine::{BSP_GDT, PERCPU_BSP}; // Now local
         use percpu::init_gs_base;
         
-        // 1. PerCpu
-        init_gs_base(&mut *(&raw mut PERCPU_BSP));
-        
-        // 2. GDT/TSS
+        // 1. GDT/TSS (Reloads Segments, clearing GS Base)
         gdt::init(&mut *(&raw mut BSP_GDT));
+
+        // 2. PerCpu (Sets GS Base)
+        init_gs_base(&mut *(&raw mut PERCPU_BSP));
         
         // 3. IDT
         idt::init();
 
         // 4. Timer
         timer::init();
+
+        // 5. Syscall
+        syscall_init();
     }
 }
 
@@ -190,21 +193,62 @@ impl Machine for ArchMachine {
         task_entry as *const () as u64
     }
 
+    fn set_kernel_stack(&self, top: u64) {
+        // Update per-cpu kernel_rsp
+        // We can get per-cpu via GS.
+        // Or if we are in kernel, we can use the PerCpu structure if we have a pointer.
+        // Easier: use asm to write to gs:32.
+        unsafe {
+            core::arch::asm!("mov {}, %gs:32", in(reg) top, options(att_syntax));
+        }
+        // Update TSS RSP0
+        // We need to access the GDT/TSS.
+        // gdt::set_tss_rsp0(top); // Needs to be exposed
+        unsafe {
+            gdt::set_tss_rsp0(top);
+        }
+    }
+
     fn virt_to_phys(&self, virt: u64) -> u64 {
          let hhdm = self.hhdm_offset.load(core::sync::atomic::Ordering::Relaxed);
          let k_virt = self.kernel_virt_base.load(core::sync::atomic::Ordering::Relaxed);
          let k_phys = self.kernel_phys_base.load(core::sync::atomic::Ordering::Relaxed);
 
-
-
-         // Prioritize Kernel Image (higher half, usually fixed range) over HHDM
          if virt >= k_virt && k_virt != 0 {
              virt - k_virt + k_phys
          } else if virt >= hhdm && hhdm != 0 {
              virt - hhdm
          } else {
-             // Fallback or identity?
              virt
          }
+    }
+}
+
+pub fn syscall_init() {
+    use x86_64::registers::model_specific::{Efer, EferFlags, Msr, Star, LStar, SFMask};
+    use x86_64::registers::rflags::RFlags;
+    
+    extern "C" {
+        fn syscall_entry();
+    }
+
+    // Enable syscall extension
+    unsafe {
+        let mut efer = Efer::read();
+        efer |= EferFlags::SYSTEM_CALL_EXTENSIONS;
+        Efer::write(efer);
+        
+        let handler_addr = syscall_entry as u64;
+        LStar::write(x86_64::VirtAddr::new(handler_addr));
+        
+        let _ = Star::write(
+            x86_64::structures::gdt::SegmentSelector(0x0013), // User Base (CS=Base+16, SS=Base+8)
+            x86_64::structures::gdt::SegmentSelector(0x0013),
+            x86_64::structures::gdt::SegmentSelector(0x0008), // Kernel Base (CS=Base, SS=Base+8)
+            x86_64::structures::gdt::SegmentSelector(0x0008),
+        );
+        
+        // Flags mask (flags to clear on syscall)
+        SFMask::write(RFlags::INTERRUPT_FLAG | RFlags::TRAP_FLAG | RFlags::DIRECTION_FLAG); 
     }
 }

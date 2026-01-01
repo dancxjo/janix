@@ -59,6 +59,19 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
              .with_context(|| format!("Failed to copy heap_smoke from {:?}", heap_smoke_src))?;
     }
 
+    // Copy Apps
+    let apps = ["graph_smoke", "log_smoke", "cap_fail"];
+    for app in apps {
+        let src = bin_src.join(app);
+        if src.exists() {
+            fs::copy(&src, modules_dir.join(app))
+                .with_context(|| format!("Failed to copy {} from {:?}", app, src))?;
+        } else {
+             eprintln!("    [WARNING] App binary not found: {:?}", src);
+        }
+    }
+
+
     // Limine Config
     let conf_src = root.join("limine.conf");
     let limine_dest = boot_dir.join("limine");

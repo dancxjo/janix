@@ -35,6 +35,7 @@ pub struct Task {
     pub thing: ThingId,
     pub state: TaskState,
     pub stack_ptr: u64,
+    pub stack_top: u64,
     pub address_space: Arc<AddressSpace>,
     pub heap_base: u64,
     pub heap_size: u64,
@@ -48,6 +49,7 @@ impl Task {
             thing,
             state: TaskState::New,
             stack_ptr,
+            stack_top: stack_ptr, // Initially same as ptr (empty stack)
             address_space,
             heap_base: 0,
             heap_size: 0,

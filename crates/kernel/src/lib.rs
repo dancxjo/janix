@@ -28,7 +28,7 @@ pub mod memory;
 
 // Stub modules
 
-pub mod caps;
+
 pub mod proc;
 
 // Re-export the main entry points

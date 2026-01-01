@@ -106,7 +106,7 @@ fn bran_log(msg: &str) {
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-const HEAP_SIZE: usize = 128 * 1024; // 128 KiB
+const HEAP_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
 
 struct HeapBuf<const N: usize>(UnsafeCell<[u8; N]>);
 
@@ -126,14 +126,19 @@ static HEAP: HeapState<{ HEAP_SIZE }> = HeapState {
 
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let heap_base = HEAP.buf.0.get() as *mut u8;
+        let heap_ptr = HEAP.buf.0.get() as *mut u8;
+        let heap_addr = heap_ptr as usize;
         let align = layout.align();
         let size = layout.size();
 
         // Loop for atomic update
         let mut current = HEAP.pos.load(Ordering::Relaxed);
         loop {
-            let aligned_pos = (current + align - 1) & !(align - 1);
+            let current_addr = heap_addr + current;
+            let aligned_addr = (current_addr + align - 1) & !(align - 1);
+            let padding = aligned_addr - current_addr;
+            let aligned_pos = current + padding;
+            
             if aligned_pos + size > HEAP_SIZE {
                 return core::ptr::null_mut();
             }
@@ -146,7 +151,7 @@ unsafe impl GlobalAlloc for BumpAllocator {
                 Ordering::Relaxed
             ) {
                 Ok(_) => {
-                    return heap_base.add(aligned_pos);
+                    return heap_ptr.add(aligned_pos);
                 }
                 Err(updated) => {
                     current = updated;

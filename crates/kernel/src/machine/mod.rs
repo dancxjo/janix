@@ -119,6 +119,9 @@ pub trait Machine: Sync {
     /// 1. HHDM (virt >= hhdm_offset) -> virt - hhdm_offset
     /// 2. Kernel Code/Data (virt >= kernel_virt_base) -> virt - virt_base + phys_base
     fn virt_to_phys(&self, virt: u64) -> u64;
+
+    /// Update the kernel stack for the current CPU (for syscall/interrupt entry).
+    fn set_kernel_stack(&self, _top: u64) {}
 }
 
 static mut MACHINE: Option<&'static dyn Machine> = None;

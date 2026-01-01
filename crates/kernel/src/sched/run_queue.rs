@@ -19,22 +19,12 @@ impl RunQueue {
 
     pub fn push_back(&mut self, task_id: TaskId, task_thing: ThingId, place: &mut PlaceStore) {
         self.queue.push_back(task_id);
-        if self.queue.len() % 1000 == 0 {
-             crate::log::klog(crate::log::Level::Warn, "SCHED", &alloc::format!("RunQueue Len: {}", self.queue.len()));
-        }
         // task --[in_run_queue]--> run_queue.0
         let _ = place.create_relationship(sym::PRED_IN_RUN_QUEUE, task_thing, self.thing);
     }
 
     pub fn pop_front(&mut self) -> Option<TaskId> {
         self.queue.pop_front()
-        // We do NOT remove the graph relationship explicitly because we don't track the specific edge ID easily.
-        // This is a known leak/inconsistency for V0.3 Task 03.
-        // Ideal: We'd verify "in_run_queue" represents "was ever in run queue" or we wipe relations.
-        // For now, accumulation is acceptable per "no ordering edges in the graph yet".
-        // Actually, "membership edge exists if enqueued" implies it shouldn't exist if not.
-        // But removing is hard without the RelId.
-        // We accept the divergence for now or we scan to remove (expensive).
     }
     
     pub fn len(&self) -> usize {

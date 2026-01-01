@@ -115,6 +115,30 @@ pub fn run(env: &str) -> Result<()> {
         anyhow::bail!("Heap Smoke build failed");
     }
 
+    // 6. Build Apps (graph_smoke, log_smoke, cap_fail)
+    let apps = ["graph_smoke", "log_smoke", "cap_fail"];
+    for app in apps {
+        println!("    Building {}...", app);
+        let status = Command::new(&cargo)
+            .arg("build")
+            .arg("--manifest-path")
+            .arg(format!("apps/{}/Cargo.toml", app))
+            .arg("--target")
+            .arg(target)
+            .arg("-Z")
+            .arg("build-std=core,alloc,compiler_builtins")
+            .env("RUSTFLAGS", "-C relocation-model=pic -C link-arg=-pie")
+            .env("RUSTC_BOOTSTRAP", "1")
+            .current_dir(&root)
+            .status()
+            .context(format!("Failed to build {}", app))?;
+
+        if !status.success() {
+            anyhow::bail!("{} build failed", app);
+        }
+    }
+
+
     Ok(())
 }
 

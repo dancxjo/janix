@@ -131,7 +131,9 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
          log::klog(Level::Info, "GRAPH", "verification passed");
     }
 
-    // seed_ontology(ctx); // Removed - using graph::seed_minimal
+    // Phase 3.7: Seed Capability Ontology
+    seed_capabilities();
+    log::klog(Level::Info, "BOOT", "capability ontology seeded");
 
     // Save context for syscalls
     unsafe { GLOBAL_BOOT_CONTEXT = Some(ctx) };
@@ -167,7 +169,9 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         // Use physical address directly for Bytespace base
         let bs = Bytespace::new_module(module.phys_addr, module.size as usize);
         
-        if module.path.ends_with("sprout") || module.path.ends_with("heap_smoke") {
+        if module.path.ends_with("sprout") || module.path.ends_with("bloom")
+            || module.path.ends_with("graph_smoke") || module.path.ends_with("log_smoke") || module.path.ends_with("cap_fail")
+        {
              spawn_module(ctx, module, &bs);
         }
     }
@@ -228,7 +232,8 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             let ph_num = unsafe { *((virt_addr + 56) as *const u16) };
             let ph_size = unsafe { *((virt_addr + 54) as *const u16) };
 
-            let total_size = 80 * 1024; // 80KB
+            // Heuristic for size: module size + 1MB stack/bss slush, aligned to 4k
+            let total_size = (info.size as usize + 1024 * 1024 + 4095) & !4095;
             image_size = total_size;
 
             // Create RAM Bytespace for the loaded specific instance
@@ -254,7 +259,7 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
                     let p_memsz = unsafe { *((ph_addr + 40) as *const u64) };
                     
                     unsafe {
-                        core::ptr::copy_nonoverlapping(
+                        core::ptr::copy(
                             (virt_addr + p_offset) as *const u8,
                             (buffer_base + p_vaddr) as *mut u8,
                             p_filesz as usize
@@ -395,11 +400,18 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
              // We MUST set task.stack_ptr BEFORE calling configure_task_context?
              // YES.
              
-             t.stack_ptr = stack_top;
-             crate::log::klog(crate::log::Level::Info, "BOOT", &alloc::format!("Sprout t.stack_ptr set to {:x}", t.stack_ptr));
+             // t.stack_ptr = stack_top; // REMOVED: Keep Kernel Stack
+             // t.stack_top = stack_top; // REMOVED
+             crate::log::klog(crate::log::Level::Info, "BOOT", &alloc::format!("Sprout User Stack: {:x}", stack_top));
         });
         
-        crate::sched::configure_task_context(task_id, final_entry);
+        crate::sched::configure_task_context(task_id, final_entry, stack_top);
+
+        // Grant Initial Capabilities
+        crate::log::klog(Level::Info, "BOOT", "granting initial capabilities...");
+        let task_thing_id = crate::sched::with_task(task_id, |t| t.thing).expect("task missing");
+        grant_initial_caps(task_thing_id);
+
 
         // Note: configure_task_context currently empty.
         // We rely on spawn_empty + manual context fixup?
@@ -431,5 +443,116 @@ pub fn spawn_module_by_name(ctx: &'static BootContext, name: &str) {
         }
     }
     crate::log::klog(crate::log::Level::Warn, "SYSCALL", &alloc::format!("module '{}' not found", name));
+}
+
+
+fn seed_capabilities() {
+    use graph::symbols;
+    use graph::store;
+    use abi::ids::ThingId;
+
+    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: start");
+    // Ensure Capability Kinds exist
+    let _ = store::thing_create(symbols::intern(b"kind.capability")); 
+    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: kind.capability created");
+    
+    // Ensure Permission Symbols are interned (implied by usage, but good to likely ensure they are known)
+    // We don't usually create Things for symbols unless they are Kinds/Predicates.
+    // Permissions are just Symbols in the `permits` edge value?
+    // User requirement: "capability --[predicate.permits]--> perm.*" implies perm is a target?
+    // Or is perm an edge property?
+    // Graph semantics: Edge connects Thing -> Thing (with Kind).
+    // So `perm.*` must be a Thing (probably a Symbol Thing or just a Thing representing the perm).
+    // Or we use `relationship_create(pred, from, to)`. `to` must be a ThingId.
+    // So we MUST create Permission Things.
+    
+    let perms = [
+        "perm.log", "perm.create", "perm.link", "perm.unlink", "perm.read", "perm.watch", "perm.mem", "perm.dictator"
+    ];
+    
+    // Create a "Permissions" place?
+    let kind_place = symbols::intern(b"kind.place");
+    let place_perms = store::thing_create(kind_place);
+    store::thing_register_name(place_perms, symbols::intern(b"place.permissions"));
+    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: place.permissions created");
+    // Link to root
+    // Link to root
+    let root_sym = symbols::intern(b"place.root");
+    let root = store::find_thing_by_name(root_sym).expect("place.root missing"); 
+    let pred_contains = symbols::intern(b"predicate.contains");
+    store::relationship_create(pred_contains, root, place_perms);
+    
+    let kind_perm = symbols::intern(b"kind.permission");
+    
+    for p in perms {
+        crate::log::klog(crate::log::Level::Info, "DEBUG", &alloc::format!("seed_capabilities: creating {}", p));
+        let sym = symbols::intern(p.as_bytes());
+        // Check if exists first? (Name lookup not fully robust yet? Using create logic)
+        // Just create new ones for now, assuming idempotent seeding or fresh boot.
+        let perm_thing = store::thing_create(kind_perm);
+        store::thing_register_name(perm_thing, sym);
+        store::relationship_create(pred_contains, place_perms, perm_thing);
+    }
+    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: done");
+}
+
+fn grant_initial_caps(task_id: abi::ids::ThingId) {
+    use graph::symbols;
+    use graph::store;
+    use abi::ids::{ThingId, SymbolId};
+
+    // 1. Create a private User Place for the task
+    // place.user.<task_id>
+    let kind_place = symbols::intern(b"kind.place");
+    let user_place = store::thing_create(kind_place);
+    // Name it? (Optional, but nice for debug)
+    // store::thing_register_name(user_place, symbols::intern(format!("place.user.{:?}", task_id).as_bytes()));
+    
+    // Link to Root (or place.tasks if it existed)
+    // Link to Root (or place.tasks if it existed)
+    let root_sym = symbols::intern(b"place.root");
+    let root = store::find_thing_by_name(root_sym).expect("place.root missing");
+    let pred_contains = symbols::intern(b"predicate.contains");
+    store::relationship_create(pred_contains, root, user_place);
+    
+    // 2. Grant Graph Capabilities
+    // task --[has_cap]--> cap --[target]--> user_place
+    //                       --[permits]--> perm.create, perm.link...
+    
+    let kind_cap = symbols::intern(b"kind.capability");
+    let pred_has_cap = symbols::intern(b"predicate.has_cap");
+    let pred_target = symbols::intern(b"predicate.target");
+    let pred_permits = symbols::intern(b"predicate.permits");
+    
+    // Helper to grant one perm
+    let grant = |target: ThingId, perms: &[&str]| {
+        let cap = store::thing_create(kind_cap);
+        store::relationship_create(pred_has_cap, task_id, cap);
+        store::relationship_create(pred_target, cap, target);
+        
+        for p_name in perms {
+             let p_sym = symbols::intern(p_name.as_bytes());
+             // We need the ThingId of the permission!
+             // `store::find_thing_by_name` is the way.
+             if let Some(p_id) = store::find_thing_by_name(p_sym) {
+                 store::relationship_create(pred_permits, cap, p_id);
+             } else {
+                 crate::log::klog(Level::Warn, "BOOT", &format!("perm {} not found!", p_name));
+             }
+        }
+    };
+    
+    // Grant Graph Access to User Place
+    grant(user_place, &["perm.create", "perm.link", "perm.unlink", "perm.read", "perm.watch"]);
+    
+    // Grant Log Access
+    let place_logs_sym = symbols::intern(b"place.logs");
+    if let Some(place_logs) = store::find_thing_by_name(place_logs_sym) {
+        grant(place_logs, &["perm.log"]);
+    }
+    
+    // Grant Mem Access (Target self? For now, target None/Ignored by cap::check, but strict CapOp::MemManage check)
+    // Using task_id as target for semantics
+    grant(task_id, &["perm.mem", "perm.dictator"]);
 }
 

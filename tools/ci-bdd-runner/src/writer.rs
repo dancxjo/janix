@@ -194,10 +194,10 @@ impl ArtifactWriter {
             let dump_res = qemu.screendump(&screen_path_ppm).await;
 
             if let Ok(_) = dump_res {
-                if screen_path_ppm.exists() {
-                    // Give filesystem a moment to flush?
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                // Give filesystem a moment to flush
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
+                if screen_path_ppm.exists() {
                     let ppm_path = screen_path_ppm.clone();
                     let png_path = step_dir.join("screen.png");
 

@@ -135,9 +135,16 @@ async fn boot_os_impl(world: &mut BootWorld, arch: String, variant: Option<Strin
         }
     }
 
+    println!("BDD: boot_os_impl starting for arch: {}", arch);
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+
     // 1. Build ISO using xtask
     let mut build_cmd = Command::new("cargo");
     build_cmd.args(["run", "-p", "xtask", "--", "iso", "--env", &arch]);
+    
+    println!("BDD: Running xtask iso...");
+    let _ = std::io::stdout().flush();
     
     if let Some(mod_name) = init_module {
         build_cmd.arg("--init-module").arg(mod_name);

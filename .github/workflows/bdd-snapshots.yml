@@ -32,7 +32,7 @@ jobs:
       - name: Run BDD Tests (x86_64)
         env:
           ARCH: x86_64
-          ARTIFACTS: artifacts/x86_64
+          ARTIFACTS: artifacts
         run: |
           # Ensure KVM is available or use TCG?
           # Github runners usually don't have KVM. QEMU will use TCG (slow but works).

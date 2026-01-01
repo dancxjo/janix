@@ -14,7 +14,7 @@ pub struct TrapContext {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn loongarch64_handle_trap(ctx: &mut TrapContext) {
+pub unsafe extern "C" fn loongarch64_handle_trap(ctx: &mut TrapContext) -> u64 {
     let estat = ctx.estat;
     let ecode = (estat >> 16) & 0x3f; // ECODE is bits 16-21
     let is_interrupt = (estat & 0x1fff) != 0; // IS bits 0-12
@@ -89,8 +89,16 @@ pub unsafe extern "C" fn loongarch64_handle_trap(ctx: &mut TrapContext) {
         FaultKind::Breakpoint => {
             // Advance ERA by 4? 
             ctx.era += 4;
-            return;
+            return 0;
+        }
+        FaultKind::Timer => {
+            super::timer::ack();
+            let current_sp = ctx as *mut TrapContext as u64;
+            if let Some(new_sp) = crate::sched::tick(current_sp) {
+                return new_sp;
+            }
         }
         _ => {}
     }
+    0
 }

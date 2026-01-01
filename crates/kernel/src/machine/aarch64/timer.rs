@@ -7,7 +7,7 @@ const CNTP_CTL_IMASK: u64 = 2; // 1 = masked
 
 // Interrupt ID for CNTP_NS (Physical Non-Secure)
 // On QEMU virt: 30
-const TIMER_IRQ: u32 = 30; 
+pub const TIMER_IRQ: u32 = 30; 
 
 pub unsafe fn init() {
     // 1. Initialize GIC (if not already?)

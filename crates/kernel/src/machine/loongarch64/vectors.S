@@ -62,6 +62,11 @@ loongarch64_trap_vector:
     
     bl loongarch64_handle_trap
     
+    // Check switch (a0 != 0)
+    beqz $a0, 1f
+    move $sp, $a0
+1:
+    
     // Restore CSRs (ERA might change)
     ld.d $t0, $sp, 248
     ld.d $t1, $sp, 256 // ESTAT? Need to write back? Maybe interrupt clear?

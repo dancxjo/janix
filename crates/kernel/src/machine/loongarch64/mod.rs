@@ -25,6 +25,8 @@ impl Machine for LoongArchMachine {
              let vector_addr = core::ptr::addr_of!(loongarch64_trap_vector) as u64;
              // Set EBASE (CSR 0x4)
              core::arch::asm!("csrwr {}, 0x4", in(reg) vector_addr);
+             
+             timer::init();
         }
     }
 

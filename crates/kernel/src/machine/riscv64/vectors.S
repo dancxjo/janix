@@ -54,6 +54,11 @@ riscv64_trap_vector:
     mv a0, sp // ctx pointer
     
     call riscv64_handle_trap
+    
+    // Check if we need to switch stack (a0 != 0)
+    beqz a0, 1f
+    mv sp, a0
+1:
 
     // Restore CSRs (sepc might change)
     ld t0, 248(sp)

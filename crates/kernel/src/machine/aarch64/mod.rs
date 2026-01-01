@@ -11,7 +11,7 @@ global_asm!(include_str!("vectors.S"));
 use core::sync::atomic::{AtomicU64, Ordering};
 
 mod exception;
-mod exception;
+
 mod serial;
 pub mod gic;
 pub mod timer;

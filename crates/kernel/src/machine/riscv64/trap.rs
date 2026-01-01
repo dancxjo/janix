@@ -14,7 +14,7 @@ pub struct TrapContext {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) {
+pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) -> u64 {
     let scause = ctx.scause;
     let is_interrupt = (scause >> 63) != 0;
     let cause_code = scause & 0xfff; // bottom 12 bits? or full masked?
@@ -85,16 +85,18 @@ pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) {
         FaultKind::Breakpoint => {
             // Advance SEPC to avoid loop for ebreak (4 bytes)
             ctx.sepc += 4;
-            return;
+            return 0;
         }
         FaultKind::Timer => {
-            // Panic for now or just return (timer needs handling!)
-            // panic!("Timer interrupt");
-            // Clear pending?
+            super::timer::ack();
+            let current_sp = ctx as *mut TrapContext as u64;
+            if let Some(new_sp) = crate::sched::tick(current_sp) {
+                return new_sp;
+            }
         }
         _ => {
             // panic!("Unhandled RISC-V Trap: {:?} scause={:#x} sepc={:#x}", kind, scause, ctx.sepc);
-            // Don't panic yet if smoke test triggers unknown
         }
     }
+    0
 }

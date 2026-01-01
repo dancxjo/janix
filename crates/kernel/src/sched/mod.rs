@@ -240,8 +240,67 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
              
              task.stack_ptr = sp as u64;
 
-             
              // Note: ping/pong tasks take no args.
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+             use crate::machine::aarch64::TrapFrame;
+             // Layout: 36 u64s (288 bytes)
+             let layout = core::alloc::Layout::new::<TrapFrame>();
+             let mut sp = stack_top as *mut u8;
+             sp = sp.sub(layout.size());
+             
+             // Zero the frame
+             core::ptr::write_bytes(sp, 0, layout.size());
+             
+             let frame = &mut *(sp as *mut TrapFrame);
+             
+             frame.elr_el1 = entry as usize as u64;
+             frame.spsr_el1 = 0x3c5; // EL1h, DAIF=1111 (Masked on entry) -> Task enables IRQ if it wants?
+                                     // Actually, kernel threads usually start with IRQs enabled?
+                                     // If we use 0x05 (DAIF=0000), IRQs are enabled.
+                                     // Let's enable them later via irq_enable?
+                                     // Safer to start masked.
+             
+             task.stack_ptr = sp as u64;
+        }
+
+        #[cfg(target_arch = "riscv64")]
+        {
+             use crate::machine::riscv64::TrapFrame;
+             let layout = core::alloc::Layout::new::<TrapFrame>();
+             let mut sp = stack_top as *mut u8;
+             sp = sp.sub(layout.size());
+             
+             core::ptr::write_bytes(sp, 0, layout.size());
+             
+             let frame = &mut *(sp as *mut TrapFrame);
+             
+             frame.sepc = entry as usize as u64;
+             // sstatus: SPP=1 (Supervisor), SPIE=1 (Enable IRQ on restore)
+             frame.sstatus = (1 << 8) | (1 << 5); 
+             
+             task.stack_ptr = sp as u64;
+        }
+
+        #[cfg(target_arch = "loongarch64")]
+        {
+             use crate::machine::loongarch64::TrapFrame;
+             let layout = core::alloc::Layout::new::<TrapFrame>();
+             let mut sp = stack_top as *mut u8;
+             sp = sp.sub(layout.size());
+             
+             core::ptr::write_bytes(sp, 0, layout.size());
+             
+             let frame = &mut *(sp as *mut TrapFrame);
+             
+             frame.era = entry as usize as u64;
+             // PRMD: PPLV=0 (Kernel), PIE=1 (Enable IRQ on restore)
+             frame.prmd = 0x4;
+             
+             task.stack_ptr = sp as u64;
+        }
              // If we needed args, we would set RDI (which is part of regs).
              // RDI is pushed 6th (if push rax first).
              // stack: [rax, rbx, rcx, rdx, rsi, rdi, ...]
@@ -250,13 +309,7 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
              // *sp.add(5) = arg;
         }
         
-        #[cfg(not(target_arch = "x86_64"))]
-        {
-             // Stub for others (or fallback to compatible logic)
-             // For now, AArch64 also needs specific frame.
-             // We stick to x86_64 fix.
-        }
-    }
+
     
     // task.stack_ptr = ctx.sp; // Replaced by manual set
 

@@ -19,7 +19,7 @@ pub enum Arch {
     LoongArch64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FaultKind {
     Unknown,
     Syscall,

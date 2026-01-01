@@ -25,6 +25,9 @@ impl Machine for Riscv64Machine {
              let vector_addr = core::ptr::addr_of!(riscv64_trap_vector) as u64;
              // Mode = Direct (0)
              core::arch::asm!("csrw stvec, {}", in(reg) vector_addr);
+             
+             // Init Timer
+             timer::init();
         }
     }
 

@@ -88,7 +88,7 @@ fn spawn_sprout(ctx: &'static BootContext) {
     for &module in ctx.modules {
         if module.path.ends_with("sprout") {
             found_sprout = true;
-            let virt_addr = module.phys_addr + ctx.hhdm_offset;
+            let virt_addr = module.phys_addr.wrapping_add(ctx.hhdm_offset);
             log::klog(
                 Level::Info,
                 "KERNEL",

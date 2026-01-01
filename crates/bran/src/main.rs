@@ -226,7 +226,7 @@ unsafe extern "C" fn kmain() -> ! {
             MODULE_LIST[count] = ModuleInfo {
                 index: i,
                 path: m.path().to_str().unwrap_or("unknown"),
-                phys_addr: m.addr() as u64,
+                phys_addr: (m.addr() as u64).wrapping_sub(BOOT_CTX.hhdm_offset),
                 size: m.size() as u64,
             };
             count += 1;

@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 use core::panic::PanicInfo;
 use thing_std::*;
 use abi::ids::SymbolId;
@@ -62,8 +64,26 @@ pub extern "C" fn _start(syscall_ptr: u64) -> ! {
     log_info("BLOOM: entering event loop");
     loop {
         let event_id = wait_event(bloom_id);
-        log_info("BLOOM: event received");
-        // In the future: decode event, check targets, react.
-        // For now, just logging proves the signal path.
+        let view = thing_std::event::decode_event(event_id);
+        
+        if let (Some(from), Some(to), Some(pred)) = (view.rel_from, view.rel_to, view.rel_predicate) {
+            // Format: BLOOM: event relationship_created from=X to=Y predicate=Z
+            // Note: we can't easily stringify Symbols/Ids in userland yet without alloc/format which we might have but keeping it simple.
+            // We'll log raw IDs/Symbols if we can't lookup names.
+            // Wait, we have `alloc::format`? Yes, thing_std has `alloc`.
+            // But we don't have symbol reverse lookup (id -> string) in thing_std!
+            // We only have `symbol_intern` (string -> id).
+            // So we log IDs.
+            // "predicate contains (SymbolId(X))"
+            
+            let msg = alloc::format!("BLOOM: event relationship_created from={:?} to={:?} predicate={:?}", from, to, pred);
+            log_info(&msg);
+        } else {
+            log_info("BLOOM: event received (opaque target)");
+            if let Some(target) = view.target {
+                let msg = alloc::format!("BLOOM: target={:?}", target);
+                log_info(&msg);
+            }
+        }
     }
 }

@@ -266,6 +266,32 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
             }
         }
 
+        // OP_REL_GET_OUTGOING: a1=id_low, a2=buf_ptr, a3=buf_len
+        50 => {
+            let id = ThingId(a1 as u128);
+            let rels = graph::relationships_from(id);
+            
+            let buf_len = a3 as usize;
+            if buf_len == 0 {
+                 return SyscallResult::new(0, rels.len() as u64, 0);
+            }
+
+            // Safety: user buffer
+            let buffer = unsafe { core::slice::from_raw_parts_mut(a2 as *mut u8, buf_len) };
+            
+            let mut count = 0;
+            for (i, rel_id) in rels.iter().enumerate() {
+                let start = i * 16;
+                if start + 16 > buffer.len() {
+                    break;
+                }
+                buffer[start..start+16].copy_from_slice(&rel_id.0.to_le_bytes());
+                count += 1;
+            }
+            
+            SyscallResult::new(0, count as u64, 0)
+        }
+
         _ => SyscallResult::new(err::ENOSYS, 0, 0),
     }
 }

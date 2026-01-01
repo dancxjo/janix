@@ -116,11 +116,21 @@ pub fn thing_find_by_name(name: SymbolId) -> Option<ThingId> {
         None
     }
 }
-
 pub fn symbol_intern(name: &str) -> SymbolId {
     let res = unsafe { syscall(2, name.as_ptr() as u64, name.len() as u64, 0, 0) };
     SymbolId(res.val0)
 }
+
+pub fn relationships_from_into(id: ThingId, out: &mut [ThingId]) -> usize {
+    let buf_len = out.len() * 16;
+    let ptr = out.as_mut_ptr() as u64;
+    
+    // Syscall returns NUMBER OF RELATIONSHIPS copied
+    let res = unsafe { syscall(301, 50, id.0 as u64, ptr, buf_len as u64) };
+    res.val0 as usize
+}
+
+pub mod event;
 
 pub fn sched_yield() {
     unsafe { syscall(200, 0, 0, 0, 0) };

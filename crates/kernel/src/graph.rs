@@ -182,7 +182,7 @@ pub fn thing_create(kind: SymbolId, schema: SymbolId, version: u32) -> ThingId {
             None => return ThingId(0),
         }
     };
-    emit_event_mutation(id);
+    emit_event_mutation(id, None);
     id
 }
 
@@ -197,7 +197,7 @@ pub fn thing_set_inline_payload(id: ThingId, payload: &[u8]) -> bool {
     };
     if result {
         // Payload change is a mutation? Not in simple spec, but let's emit for target
-        emit_event_mutation(id);
+        emit_event_mutation(id, None);
     }
     result
 }
@@ -227,15 +227,15 @@ pub fn relationship_create(from: ThingId, to: ThingId, predicate: SymbolId) -> R
             None => return ThingId(0),
         }
     };
-    emit_event_mutation(from);
+    emit_event_mutation(from, Some(id));
     // Also emit for 'to'? Spec says "On mutation touching watched target". 
     // Creating a relationship touches both 'from' and 'to'.
-    emit_event_mutation(to);
+    emit_event_mutation(to, Some(id));
     id
 }
 
 // Internal helper for event emission
-fn emit_event_mutation(target: ThingId) {
+fn emit_event_mutation(target: ThingId, cause: Option<ThingId>) {
     let mut guard = PLACE_STORE.lock();
     let store = match guard.as_mut() {
         Some(s) => s,
@@ -259,6 +259,11 @@ fn emit_event_mutation(target: ThingId) {
     // Create Relationship event --targets--> target
     let pred_targets = symbols::well_known(b"predicate.targets");
     store.create_relationship_internal(event_id, target, pred_targets);
+
+    // If cause is provided, link it too
+    if let Some(cause_id) = cause {
+        store.create_relationship_internal(event_id, cause_id, pred_targets);
+    }
 
     // Enqueue
     for watcher in watchers {

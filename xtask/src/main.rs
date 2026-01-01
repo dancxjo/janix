@@ -50,6 +50,8 @@ enum Commands {
         #[arg(long)]
         init_module: Option<String>,
     },
+    /// Update documentation from BDD artifacts
+    UpdateDocs,
     /// Run the OS (hosted or qemu)
     Run {
         #[arg(long, default_value = "x86_64")]
@@ -85,6 +87,14 @@ fn main() -> Result<()> {
         Commands::Test { arch } => test::run(Some(arch)),
         Commands::Inspect { env, port } => inspect::run(env, port),
         Commands::Iso { env, cmdline, init_module } => iso::run(env, cmdline, init_module),
+        Commands::Inspect { env, port } => inspect::run(env, port),
+        Commands::Iso { env, cmdline, init_module } => iso::run(env, cmdline, init_module),
+        Commands::UpdateDocs => {
+            Command::new("cargo")
+                .args(["run", "-p", "docgen"])
+                .status()?;
+            Ok(())
+        }
         Commands::Run {
             env,
             gdb,

@@ -1,16 +1,24 @@
 [package]
 name = "bdd"
-version = "0.3.0"
+version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+tokio = { version = "1", features = ["full"] }
 anyhow = "1"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "process", "time", "io-util"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+cucumber = "0.22"
+tokio-util = "0.7"
+futures = "0.3"
+lazy_static = "1.4"
+rand = "0.8"
+uuid = { version = "1.0", features = ["v4"] }
+image = "0.24"
+regex = "1"
+
 
 [dev-dependencies]
-cucumber = "0.22"
-
-[[test]]
-name = "bdd"
-harness = false
-path = "tests/bdd.rs"
+tempfile = "3"

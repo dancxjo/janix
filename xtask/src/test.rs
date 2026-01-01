@@ -21,7 +21,7 @@ pub fn run(arch: Option<String>) -> Result<()> {
     let status = Command::new("cargo")
         .arg("run")
         .arg("-p")
-        .arg("ci-bdd-runner")
+        .arg("bdd")
         .env("ARCH", &arch)
         .current_dir(&root)
         .status()

@@ -9,8 +9,7 @@ members = [
     "crates/thing_std",
     "crates/bloom",
     "tools/bdd",
-    "tools/ci-bdd-runner",
-    "xtask", "crates/sprout_exit",
+    "xtask", "crates/sprout_exit", "tools/docgen",
 ]
 
 [workspace.package]

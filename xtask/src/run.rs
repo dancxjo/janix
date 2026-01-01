@@ -86,7 +86,7 @@ fn append_common_args(cmd: &mut Command, args: &RunArgs, default_gdb_port: u16) 
 }
 
 fn run_qemu_x86_64(args: RunArgs) -> Result<()> {
-    iso::run(args.env.clone(), args.cmdline.clone())?;
+    iso::run(args.env.clone(), args.cmdline.clone(), None)?;
 
     let root = project_root();
     let iso_path = root.join(format!("target/iso/thingos-{}.iso", args.env));
@@ -115,7 +115,7 @@ fn run_qemu_x86_64(args: RunArgs) -> Result<()> {
 }
 
 fn run_qemu_aarch64(args: RunArgs) -> Result<()> {
-    iso::run(args.env.clone(), args.cmdline.clone())?;
+    iso::run(args.env.clone(), args.cmdline.clone(), None)?;
     let root = project_root();
     let iso_path = root.join(format!("target/iso/thingos-{}.iso", args.env));
     let ovmf_dir = root.join("vendor/ovmf");
@@ -140,7 +140,7 @@ fn run_qemu_aarch64(args: RunArgs) -> Result<()> {
 }
 
 fn run_qemu_riscv64(args: RunArgs) -> Result<()> {
-    iso::run(args.env.clone(), args.cmdline.clone())?;
+    iso::run(args.env.clone(), args.cmdline.clone(), None)?;
     let root = project_root();
     let iso_path = root.join(format!("target/iso/thingos-{}.iso", args.env));
     let ovmf_dir = root.join("vendor/ovmf");
@@ -166,7 +166,7 @@ fn run_qemu_riscv64(args: RunArgs) -> Result<()> {
 }
 
 fn run_qemu_loongarch64(args: RunArgs) -> Result<()> {
-    iso::run(args.env.clone(), args.cmdline.clone())?;
+    iso::run(args.env.clone(), args.cmdline.clone(), None)?;
     let root = project_root();
     let iso_path = root.join(format!("target/iso/thingos-{}.iso", args.env));
     let ovmf_dir = root.join("vendor/ovmf");

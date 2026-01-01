@@ -10,6 +10,23 @@ hardware, memory, drivers, services, windows, input events, time, and user progr
 If you can describe it, you can put it in the graph.
 If it’s in the graph, you can observe it, link to it, and act on it.
 
+## Status
+
+<!-- DOCGEN:STATUS:BEGIN -->
+## Test Status
+
+### Boot milestones
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| Kernel Initialization on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
+| Scheduler and Sprout on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
+| Ontology Seeding on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
+| Kernel refuses premature execution on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
+| Bootloader Handoff on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
+
+<!-- DOCGEN:STATUS:END -->
+
 ## Quick Start (x86_64, QEMU)
 
 ThingOS is developed primarily on Linux using Rust nightly and QEMU.

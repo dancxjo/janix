@@ -7,6 +7,13 @@ fetch:
 clean:
     cargo run -p xtask -- clean
 
+die:
+    @echo "Killing all QEMU and xtask instances..."
+    -pkill -f "[q]emu-system-"
+    -pkill -f "target/debug/[x]task"
+    @echo "Resetting terminal..."
+    reset
+
 test arch="all":
     cargo run -p xtask -- test --arch {{arch}}
 

@@ -41,6 +41,7 @@ SECTIONS
 
         /* Place the sections that contain the Limine requests as part of the .data */
         /* output section. */
+        . = ALIGN(8);
         KEEP(*(.requests_start_marker))
         KEEP(*(.requests))
         KEEP(*(.requests_end_marker))

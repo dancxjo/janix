@@ -220,16 +220,6 @@ async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Resul
 
 #[then("the serial console log must contain the following lines in order:")]
 async fn check_ordered_lines(_world: &mut BootWorld, step: &Step) -> Result<()> {
-    // Wait for boot to complete
-    let log = match wait_for_boot_completion().await {
-        Ok(l) => l,
-        Err(e) => {
-            soft_fail(format!("Boot did not complete: {}", e)).await;
-            return Ok(());
-        }
-    };
-
-    // Extract expected lines from data table
     let table = step.table.as_ref().ok_or_else(|| anyhow!("No data table in step"))?;
     let expected_lines: Vec<String> = table
         .rows
@@ -237,24 +227,64 @@ async fn check_ordered_lines(_world: &mut BootWorld, step: &Step) -> Result<()> 
         .filter_map(|row| row.first().map(|s| s.trim().to_string()))
         .collect();
 
-    // Find each line in order
-    let mut search_pos = 0;
-    for expected in &expected_lines {
-        if let Some(pos) = log[search_pos..].find(expected) {
-            search_pos += pos + expected.len();
-        } else {
-            let err_msg = format!(
-                "Line '{}' not found in order. Log from position {}:\n{}",
-                expected,
-                search_pos,
-                &log[search_pos..]
-            );
-            soft_fail(err_msg).await;
-            return Ok(());
-        }
+    if expected_lines.is_empty() {
+        return Ok(());
     }
 
-    Ok(())
+    let timeout_secs = std::env::var("BDD_TIMEOUT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(60); // Default to 60s for partial matches
+    let timeout = Duration::from_secs(timeout_secs);
+    let start = std::time::Instant::now();
+
+    loop {
+        let log = get_clean_log().await;
+        
+        // Try to match all lines in order
+        let mut search_pos = 0;
+        let mut all_found = true;
+        
+        for expected in &expected_lines {
+            if let Some(pos) = log[search_pos..].find(expected) {
+                search_pos += pos + expected.len();
+            } else {
+                all_found = false;
+                break;
+            }
+        }
+
+        if all_found {
+            return Ok(());
+        }
+
+        // Check QEMU status
+        {
+            let mut guard = GLOBAL_QEMU.lock().await;
+            if let Some(qemu) = guard.as_mut() {
+                if let Some(status) = qemu.check_status() {
+                     // If QEMU exited, we must have found everything already, otherwise it's a fail
+                     let err_msg = format!(
+                        "QEMU exited with status {:?}. Failed to match all lines in order.",
+                        status
+                     );
+                     soft_fail(err_msg).await;
+                     return Ok(());
+                }
+            }
+        }
+
+        if start.elapsed() > timeout {
+             let err_msg = format!(
+                "Timeout waiting for ordered lines.\nLast searched log size: {}\nMissing content.",
+                log.len()
+             );
+             soft_fail(err_msg).await;
+             return Ok(());
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
 }
 
 #[then(expr = "I expect NOT to see {string} before {string}")]

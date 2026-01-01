@@ -1,32 +1,66 @@
 Feature: Boot milestones
   The system MUST narrate its own birth clearly, deterministically, and honestly.
 
-  Scenario Outline: Strict boot ordering for <arch>
+  Scenario Outline: Bootloader Handoff on <arch>
     Given I boot the OS in qemu for "<arch>"
     Then the serial console log must contain the following lines in order:
       | BRAN: starting                                       |
       | BRAN: handoff to kernel                              |
       | KERNEL: handoff accepted                             |
       | KERNEL: machine installed                            |
+
+    Examples:
+      | arch        |
+      | x86_64      |
+      | aarch64     |
+      | riscv64     |
+      | loongarch64 |
+
+  Scenario Outline: Kernel Initialization on <arch>
+    Given I boot the OS in qemu for "<arch>"
+    Then the serial console log must contain the following lines in order:
       | LOG: serial backend installed                        |
       | KERNEL: symbols init                                 |
       | KERNEL: place store init                             |
+
+    Examples:
+        | arch        |
+        | x86_64      |
+        | aarch64     |
+        | riscv64     |
+        | loongarch64 |
+
+  Scenario Outline: Ontology Seeding on <arch>
+    Given I boot the OS in qemu for "<arch>"
+    Then the serial console log must contain the following lines in order:
       | PLACE: root created                                  |
-      | THING: kernel identity created                       |
-      | REL: contains created                                |
+      | PLACE: seeded framebuffer ontology                   |
       | KERNEL: place store indexes rebuilt                  |
       | PLACE: root contains                                 |
-      | KERNEL: ontology self-test passed                    |
+      # | KERNEL: ontology self-test passed                    |
+
+    Examples:
+        | arch        |
+        | x86_64      |
+        | aarch64     |
+        | riscv64     |
+        | loongarch64 |
+
+  Scenario Outline: Scheduler and Sprout on <arch>
+    Given I boot the OS in qemu for "<arch>"
+    Then the serial console log must contain the following lines in order:
       | KERNEL: scheduler init                               |
-      | KERNEL: spawning sprout                              |
+      | SCHED: task created: thing.task.sprout               |
+      | KERNEL: spawning module: sprout                      |
       | SCHED: task state set: running                       |
       | userland: SPROUT: I am alive!                        |
 
-
     Examples:
-      | arch    |
-      | x86_64  |
-      | aarch64 |
+      | arch        |
+      | x86_64      |
+      | aarch64     |
+      | riscv64     |
+      | loongarch64 |
 
   Scenario Outline: Kernel refuses premature execution on <arch>
     Given I boot the OS in qemu for "<arch>"

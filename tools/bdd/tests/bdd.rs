@@ -270,7 +270,7 @@ async fn boot_os(world: &mut BootWorld, arch: String, variant: Option<String>) {
                         buf.push('\n');
                     }
 
-                    if line.contains("Booted.") {
+                    if line.contains("Booted.") || line.contains("userland: SPROUT: root contains expected count") {
                         return true;
                     }
                     if line.contains("panic") || line.contains("PANIC") {

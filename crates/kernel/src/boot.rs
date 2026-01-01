@@ -122,8 +122,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     spawn_sprout(ctx);
 
     // Phase 6.5: Signal boot completion
-    // This is the signal for the BDD runner to stop deciding the test passed
-    crate::serial::write(b"Booted.\n");
+    // Handed off to Sprout - never returns
 
     // Phase 7: Enter scheduler loop
     sched::run()

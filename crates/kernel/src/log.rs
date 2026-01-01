@@ -72,11 +72,8 @@ pub fn init(ctx: &'static BootContext) {
     *CONTEXT.lock() = Some(ctx);
 
     // Check if early output is requested
-    if let Some(early_putc) = ctx.early_putc {
-        // Use early putc for the very first notification
-        for &b in b"KERNEL: handoff accepted\n" {
-            early_putc(b);
-        }
+    if let Some(_early_putc) = ctx.early_putc {
+        // Handled in boot.rs
     }
 
     // Now switch to internal serial drivers for the anchor lines

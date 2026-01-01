@@ -27,8 +27,8 @@ If it’s in the graph, you can observe it, link to it, and act on it.
 
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
-| Bootloader Handoff | ✅ | ⚪ | ⚪ | ⚪ |
-| Kernel Initialization | ✅ | ⚪ | ⚪ | ⚪ |
+| Bootloader Handoff | ✅ | ✅ | ✅ | ✅ |
+| Kernel Initialization | ✅ | ✅ | ✅ | ✅ |
 | Kernel refuses premature execution | ✅ | ⚪ | ⚪ | ⚪ |
 | Ontology Seeding | ✅ | ⚪ | ⚪ | ⚪ |
 | Scheduler and Sprout | ✅ | ⚪ | ⚪ | ⚪ |
@@ -300,7 +300,7 @@ ThingOS is actively evolving and not yet stable.
 * Networking
 * Security hardening
 * ABI stability
-* Documentation beyond this README (see `docs/` directory)
+* Documentation beyond this README
 
 Breaking changes are expected.
 
@@ -350,4 +350,4 @@ Expect sharp edges.
 
 ## License
 
-MIT License.
+Apache License 2.0.

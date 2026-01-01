@@ -38,7 +38,7 @@ pub extern "C" fn _start(syscall_ptr: u64) -> ! {
 
     // 3. Publish provides relationship
     relationship_create(bloom_id, desktop_id, pred_provides);
-    log_info("userland: BLOOM: published provides relationship");
+    log_info("BLOOM: published provides relationship");
 
     // Ensure desktop is in root
     relationship_create(root_id, desktop_id, pred_contains);

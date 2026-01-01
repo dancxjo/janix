@@ -33,7 +33,7 @@ endif
 .PHONY: all
 all:
 	# Use PIE for user-space applications to allow loading at any address
-	RUSTFLAGS="-C relocation-model=pic -C link-arg=-pie" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE)
+	RUSTC_BOOTSTRAP=1 RUSTFLAGS="-C relocation-model=pic -C link-arg=-pie" cargo build -Z build-std=core,alloc,compiler_builtins --target $(RUST_TARGET) --profile $(RUST_PROFILE)
 	mkdir -p $(OUTPUT_DIR)
 	cp ../../target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/bloom $(OUTPUT_PATH)
 

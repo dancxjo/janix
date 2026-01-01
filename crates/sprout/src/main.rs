@@ -28,7 +28,7 @@ pub extern "C" fn _start(syscall_ptr: u64) -> ! {
 
     // 3. Publish spawns relationship
     relationship_create(sprout_id, bloom_id, pred_spawns);
-    log_info("userland: SPROUT: published spawns relationship");
+    log_info("SPROUT: published spawns relationship");
 
     // 4. Create handoff Thing for Bloom to find its ID
     let handoff_sym = symbol_intern("thing.handoff.bloom");

@@ -237,7 +237,7 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
             let id = graph::relationship_create(ThingId(a1 as u128), ThingId(a2 as u128), abi::ids::SymbolId(a3));
             
             if abi::ids::SymbolId(a3) == pred_provides && ThingId(a2 as u128) == desktop_id {
-                log::klog(Level::Info, "KERNEL", &format!("desktop provider: ThingId({:?})", ThingId(a1 as u128)));
+                log::klog(Level::Info, "KERNEL", &format!("desktop provider: {:?}", ThingId(a1 as u128)));
             }
 
             SyscallResult::new(0, id.high(), id.low())

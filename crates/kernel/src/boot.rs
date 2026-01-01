@@ -97,7 +97,9 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     log::init(ctx);
     
     // Phase 1.5: Architecture initialization (GDT/IDT/etc)
-    crate::arch::init();
+    // Phase 1.5: Architecture initialization
+    // Machine::init (called by pre_boot) already handles GDT/IDT/PerCpu.
+    // crate::arch::init(); // REDUNDANT - Causes "GDT full" panic
     
     unsafe { verify_exec_pool_is_executable(); }
 

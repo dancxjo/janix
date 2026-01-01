@@ -89,3 +89,10 @@ Feature: Boot milestones
     Examples:
       | arch   |
       | x86_64 |
+
+  Scenario: Framebuffer Ontology
+    Given the machine has a display
+    When the system boots
+    Then "place.devices" should contain "thing.device.display.primary"
+    And "thing.device.display.primary" should provide "thing.surface.framebuffer.primary"
+    And "thing.surface.framebuffer.primary" should be backed by "thing.bytespace.framebuffer.primary"

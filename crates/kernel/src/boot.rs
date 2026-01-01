@@ -6,6 +6,7 @@ use crate::log::{self, Level};
 use crate::{graph, machine, sched, symbols, syscall};
 use crate::arch::machine::ARCH_MACHINE;
 use abi::ids::SymbolId;
+use abi::bodies::{SurfaceBody, BytespaceBody, BYTESPACE_FLAG_HAS_PHYS_BASE};
 
 /// Information about a boot module
 #[derive(Clone, Copy)]
@@ -113,7 +114,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     log::klog(Level::Info, "KERNEL", "place store init");
 
     // Phase 3.5: Seed core ontology
-    seed_ontology();
+    seed_ontology(ctx);
 
     // Save context for syscalls
     unsafe { GLOBAL_BOOT_CONTEXT = Some(ctx) };
@@ -343,7 +344,7 @@ pub fn spawn_module(ctx: &'static BootContext, name: &str) {
 use crate::place;
 
 /// Seed the core ontology: root place, kernel identity, and containment
-fn seed_ontology() {
+fn seed_ontology(ctx: &BootContext) {
     let kind_place = symbols::well_known(b"kind.Place");
     let kind_thing = symbols::well_known(b"kind.Thing");
     let pred_contains = symbols::well_known(b"predicate.contains");
@@ -381,6 +382,56 @@ fn seed_ontology() {
         graph::thing_register_name(id, name);
         graph::relationship_create(root_id, id, pred_contains);
         log::klog(Level::Info, "PLACE", &format!("created core place: {} ({:?})", name_str, id));
+    }
+
+    // 4. Seed Framebuffer (if present)
+    if let Some(fb) = ctx.framebuffer.as_ref() {
+        // Symbols
+        let kind_device_display = symbols::intern(b"kind.device.display");
+        let kind_surface = symbols::intern(b"kind.surface");
+        let kind_bytespace = symbols::intern(b"kind.bytespace");
+        let pred_provides = symbols::intern(b"predicate.provides");
+        let pred_backed_by = symbols::intern(b"predicate.backed_by");
+        
+        let place_devices = graph::find_thing_by_name(symbols::intern(b"place.devices"))
+            .expect("place.devices missing");
+
+        // thing.device.display.primary
+        let dev_id = graph::thing_create(kind_device_display, SymbolId::INVALID, 1);
+        graph::thing_register_name(dev_id, symbols::intern(b"thing.device.display.primary"));
+        graph::relationship_create(place_devices, dev_id, pred_contains);
+
+        // thing.bytespace.framebuffer.primary
+        let bs_body = BytespaceBody {
+            len: (fb.pitch * fb.height) as u64,
+            flags: BYTESPACE_FLAG_HAS_PHYS_BASE,
+            _pad: 0,
+            phys_base: fb.addr,
+        };
+        let bs_id = graph::thing_create(kind_bytespace, SymbolId::INVALID, 1);
+        graph::thing_register_name(bs_id, symbols::intern(b"thing.bytespace.framebuffer.primary"));
+        graph::thing_set_inline_payload(bs_id, &bs_body.to_le_bytes());
+
+        // thing.surface.framebuffer.primary
+        // Assuming format is XRGB8888 for now as we don't have full Limine translation logic
+        // or we can intern what we have. For minimal compliance:
+        let fmt_sym = symbols::intern(b"pixel.format.xrgb8888"); 
+        
+        let surf_body = SurfaceBody {
+            width: fb.width as u32,
+            height: fb.height as u32,
+            stride_bytes: fb.pitch as u32,
+            format: fmt_sym,
+        };
+        let surf_id = graph::thing_create(kind_surface, SymbolId::INVALID, 1);
+        graph::thing_register_name(surf_id, symbols::intern(b"thing.surface.framebuffer.primary"));
+        graph::thing_set_inline_payload(surf_id, &surf_body.to_le_bytes());
+
+        // Relationships
+        graph::relationship_create(dev_id, surf_id, pred_provides);
+        graph::relationship_create(surf_id, bs_id, pred_backed_by);
+
+        log::klog(Level::Info, "PLACE", "seeded framebuffer ontology");
     }
 
     // Index rebuild test

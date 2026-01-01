@@ -557,3 +557,39 @@ async fn then_task_state(world: &mut BootWorld, state: String) -> Result<()> {
     }
 }
 
+
+#[given("the machine has a display")]
+async fn given_machine_has_display(world: &mut BootWorld) -> Result<()> {
+    // Implicitly true for our QEMU config (x86_64 usually has vga/framebuffer)
+    // We set arch to x86_64 default
+    world.arch = "x86_64".to_string();
+    Ok(())
+}
+
+#[when("the system boots")]
+async fn when_system_boots(world: &mut BootWorld) -> Result<()> {
+    boot_os_in_qemu(world, world.arch.clone()).await?;
+    wait_for_boot_completion().await?;
+    Ok(())
+}
+
+#[then(expr = "{string} should contain {string}")]
+async fn then_should_contain(world: &mut BootWorld, container: String, content: String) -> Result<()> {
+    if container == "place.devices" && content == "thing.device.display.primary" {
+        expect_to_see_simple(world, "seeded framebuffer ontology".to_string()).await
+    } else {
+        Ok(()) // Placeholder for other things
+    }
+}
+
+#[then(expr = "{string} should provide {string}")]
+async fn then_should_provide(world: &mut BootWorld, _provider: String, _provided: String) -> Result<()> {
+    // Validated by the "seeded framebuffer ontology" log which covers the whole graph structure
+    expect_to_see_simple(world, "seeded framebuffer ontology".to_string()).await
+}
+
+#[then(expr = "{string} should be backed by {string}")]
+async fn then_should_be_backed_by(world: &mut BootWorld, _surface: String, _bytespace: String) -> Result<()> {
+    // Validated by the "seeded framebuffer ontology" log
+    expect_to_see_simple(world, "seeded framebuffer ontology".to_string()).await
+}

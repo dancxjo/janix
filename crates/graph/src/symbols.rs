@@ -87,6 +87,29 @@ pub fn init() {
         "predicate.contains",
         "predicate.owns",
         "predicate.references",
+        "place.faults",
+        "kind.Fault",
+        "predicate.has_kind",
+        "predicate.at_ip",
+        "predicate.at_sp",
+        "predicate.at_addr",
+        "predicate.has_field",
+        "predicate.caused_by",
+        "predicate.value",
+        "fault_kind.unknown",
+        "fault_kind.syscall",
+        "fault_kind.irq",
+        "fault_kind.timer",
+        "fault_kind.external_interrupt",
+        "fault_kind.software_interrupt",
+        "fault_kind.breakpoint",
+        "fault_kind.illegal_instruction",
+        "fault_kind.page_fault",
+        "fault_kind.access_fault",
+        "fault_kind.data_abort",
+        "fault_kind.instruction_abort",
+        "fault_kind.general_protection",
+        "fault_kind.double_fault",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -132,4 +155,30 @@ pub mod sym {
     pub const PRED_CONTAINS: SymbolId = SymbolId(12);
     pub const PRED_OWNS: SymbolId = SymbolId(13);
     pub const PRED_REFERENCES: SymbolId = SymbolId(14);
+
+    pub const PLACE_FAULTS: SymbolId = SymbolId(15);
+    pub const KIND_FAULT: SymbolId = SymbolId(16);
+    pub const PRED_HAS_KIND: SymbolId = SymbolId(17);
+    pub const PRED_AT_IP: SymbolId = SymbolId(18);
+    pub const PRED_AT_SP: SymbolId = SymbolId(19);
+    pub const PRED_AT_ADDR: SymbolId = SymbolId(20);
+    pub const PRED_HAS_FIELD: SymbolId = SymbolId(21);
+    pub const PRED_CAUSED_BY: SymbolId = SymbolId(22);
+    pub const PRED_VALUE: SymbolId = SymbolId(23); // Generic value predicate if needed, or specific for values
+
+    // Fault Kinds
+    pub const FAULT_KIND_UNKNOWN: SymbolId = SymbolId(24);
+    pub const FAULT_KIND_SYSCALL: SymbolId = SymbolId(25);
+    pub const FAULT_KIND_IRQ: SymbolId = SymbolId(26);
+    pub const FAULT_KIND_TIMER: SymbolId = SymbolId(27);
+    pub const FAULT_KIND_EXTERNAL_INTERRUPT: SymbolId = SymbolId(28);
+    pub const FAULT_KIND_SOFTWARE_INTERRUPT: SymbolId = SymbolId(29);
+    pub const FAULT_KIND_BREAKPOINT: SymbolId = SymbolId(30);
+    pub const FAULT_KIND_ILLEGAL_INSTRUCTION: SymbolId = SymbolId(31);
+    pub const FAULT_KIND_PAGE_FAULT: SymbolId = SymbolId(32);
+    pub const FAULT_KIND_ACCESS_FAULT: SymbolId = SymbolId(33);
+    pub const FAULT_KIND_DATA_ABORT: SymbolId = SymbolId(34);
+    pub const FAULT_KIND_INSTRUCTION_ABORT: SymbolId = SymbolId(35);
+    pub const FAULT_KIND_GENERAL_PROTECTION: SymbolId = SymbolId(36);
+    pub const FAULT_KIND_DOUBLE_FAULT: SymbolId = SymbolId(37);
 }

@@ -7,8 +7,10 @@ use core::arch::asm;
 use core::arch::global_asm;
 
 global_asm!(include_str!("switch.S"));
+global_asm!(include_str!("vectors.S"));
 use core::sync::atomic::{AtomicU64, Ordering};
 
+mod exception;
 mod serial;
 pub mod abi;
 use serial::Serial;
@@ -61,6 +63,15 @@ impl ArchMachine {
         self.hhdm_offset.store(info.hhdm_offset, Ordering::Relaxed);
         self.kernel_phys_base.store(info.kernel_phys_base, Ordering::Relaxed);
         self.kernel_virt_base.store(info.kernel_virt_base, Ordering::Relaxed);
+        
+        // Install VBAR_EL1
+        extern "C" {
+             static aarch64_vectors: u8; // Symbol
+        }
+        unsafe {
+             let vectors_addr = core::ptr::addr_of!(aarch64_vectors) as u64;
+             asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
+        }
     }
 
     fn hhdm_offset(&self) -> u64 {

@@ -1,5 +1,10 @@
 pub mod serial;
+pub mod serial;
 pub mod abi;
+pub mod trap; // Added
+
+use core::arch::global_asm;
+global_asm!(include_str!("vectors.S"));
 
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange, Context};
 
@@ -8,6 +13,18 @@ pub static ARCH_MACHINE: &'static dyn Machine = &LoongArchMachine;
 struct LoongArchMachine;
 
 impl Machine for LoongArchMachine {
+    fn init(&self, _info: crate::machine::PreBootInfo) {
+        // Install trap vector
+        extern "C" {
+             static loongarch64_trap_vector: u8; // Symbol
+        }
+        unsafe {
+             let vector_addr = core::ptr::addr_of!(loongarch64_trap_vector) as u64;
+             // Set EBASE (CSR 0x4)
+             core::arch::asm!("csrwr {}, 0x4", in(reg) vector_addr);
+        }
+    }
+
     fn console_write(&self, bytes: &[u8]) -> usize {
         serial::Serial::new().write(bytes);
         bytes.len()

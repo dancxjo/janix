@@ -23,6 +23,7 @@ pub mod place;
 pub mod sched;
 pub mod serial;
 pub mod syscall;
+pub mod trap;
 
 // Stub modules
 pub mod bytespace;

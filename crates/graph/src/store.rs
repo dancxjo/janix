@@ -100,7 +100,7 @@ impl PlaceStore {
         id
     }
 
-    fn create_thing(&mut self, kind: SymbolId) -> Result<ThingId, &'static str> {
+    pub fn create_thing(&mut self, kind: SymbolId) -> Result<ThingId, &'static str> {
         if kind == SymbolId::INVALID {
             return Err("invalid kind");
         }
@@ -116,7 +116,7 @@ impl PlaceStore {
         self.things.get(&id)
     }
 
-    fn create_relationship(&mut self, kind: SymbolId, from: ThingId, to: ThingId) -> Result<RelationshipId, &'static str> {
+    pub fn create_relationship(&mut self, kind: SymbolId, from: ThingId, to: ThingId) -> Result<RelationshipId, &'static str> {
         if !self.things.contains_key(&from) {
             return Err("source thing not found");
         }
@@ -134,11 +134,11 @@ impl PlaceStore {
         Ok(id)
     }
 
-    fn relationships_from(&self, from: ThingId) -> &[RelationshipId] {
+    pub fn relationships_from(&self, from: ThingId) -> &[RelationshipId] {
         self.from_index.get(&from).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
-    fn set_payload(&mut self, id: ThingId, payload: &[u8]) -> bool {
+    pub fn set_payload(&mut self, id: ThingId, payload: &[u8]) -> bool {
         if let Some(thing) = self.things.get_mut(&id) {
             thing.payload = payload.to_vec();
             true
@@ -151,15 +151,15 @@ impl PlaceStore {
         self.things.get(&id).map(|t| t.payload.as_slice())
     }
 
-    fn register_name(&mut self, id: ThingId, name: SymbolId) {
+    pub fn register_name(&mut self, id: ThingId, name: SymbolId) {
         self.name_index.insert(name, id);
     }
 
-    fn find_by_name(&self, name: SymbolId) -> Option<ThingId> {
+    pub fn find_by_name(&self, name: SymbolId) -> Option<ThingId> {
         self.name_index.get(&name).cloned()
     }
 
-    fn watch(&mut self, watcher: ThingId, target: ThingId) {
+    pub fn watch(&mut self, watcher: ThingId, target: ThingId) {
         self.watchers.entry(target).or_default().push(watcher);
     }
 
@@ -264,4 +264,13 @@ pub fn dequeue_event(watcher: ThingId) -> Option<ThingId> {
     guard.as_mut()
         .expect("PlaceStore not initialized")
         .dequeue(watcher)
+}
+
+pub fn with_store<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut PlaceStore) -> R,
+{
+    let mut guard = PLACE_STORE.lock();
+    let store = guard.as_mut().expect("PlaceStore not initialized");
+    f(store)
 }

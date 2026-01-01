@@ -122,3 +122,21 @@ pub fn machine() -> &'static dyn Machine {
     unsafe { MACHINE.expect("machine not installed") }
 }
 
+/// Trigger a benign fault (breakpoint) for smoke testing trap recording.
+pub fn smoke_fault() {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use ::x86_64::instructions::interrupts;
+        interrupts::int3();
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("brk #0") };
+
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::arch::asm!("ebreak") };
+
+    #[cfg(target_arch = "loongarch64")]
+    unsafe { core::arch::asm!("break 0") }; // or equivalent
+}
+

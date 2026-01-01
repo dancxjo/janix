@@ -48,6 +48,7 @@ pub fn seed_minimal() {
         sym::PLACE_TASKS,
         sym::PLACE_LOGS,
         sym::PLACE_TIME,
+        sym::PLACE_FAULTS,
     ];
 
     for &place_sym in &core_places {

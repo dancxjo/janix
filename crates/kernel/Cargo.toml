@@ -6,6 +6,9 @@ edition = "2021"
 [lib]
 crate-type = ["rlib"]
 
+[features]
+fault_smoke = []
+
 [dependencies]
 spin = "0.9"
 bitflags = { version = "2", default-features = false }

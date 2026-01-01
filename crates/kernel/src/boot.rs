@@ -141,6 +141,15 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     // Phase 5: Initialize scheduler
     sched::init();
 
+    // Phase 5.5: Smoke test faults (if enabled)
+    #[cfg(feature = "fault_smoke")]
+    {
+        log::klog(Level::Info, "SMOKE", "triggering fault...");
+        machine::smoke_fault();
+        // Dump faults to verify
+        crate::trap::debug_dump_faults(5); // Verify strictly?
+    }
+
     // Phase 6: Spawn Sprout
     spawn_module(ctx, "sprout");
 

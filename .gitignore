@@ -15,3 +15,7 @@ ci-bdd-runner
 *.log
 
 crates/**/bin-*/
+
+/assets/cursors/
+/assets/fonts/
+/assets/icons/

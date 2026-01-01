@@ -10,6 +10,7 @@ members = [
     "crates/bloom",
     "tools/bdd",
     "tools/ci-bdd-runner",
+    "xtask",
 ]
 
 [workspace.package]

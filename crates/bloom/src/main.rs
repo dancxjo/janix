@@ -7,6 +7,14 @@ use core::panic::PanicInfo;
 use thing_std::*;
 use abi::ids::SymbolId;
 
+
+const WALLPAPER_BYTES: &[u8] = include_bytes!("../../../assets/wallpapers/clouds.bmp");
+const CURSOR_BYTES: &[u8] = include_bytes!("../../../assets/cursors/cursor.bmp");
+const FONT_BYTES: &[u8] = include_bytes!("../../../assets/fonts/unifont.hex");
+const ICON_FOLDER: &[u8] = include_bytes!("../../../assets/icons/folder.png");
+const ICON_TEXT: &[u8] = include_bytes!("../../../assets/icons/text-x-generic.png");
+const ICON_TERM: &[u8] = include_bytes!("../../../assets/icons/utilities-terminal.png");
+
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     loop {}
@@ -54,7 +62,33 @@ pub extern "C" fn _start(syscall_ptr: u64) -> ! {
     relationship_create(desktop_id, pointer_id, pred_contains);
     relationship_create(desktop_id, wallpaper_id, pred_contains);
 
+
     log_info("BLOOM: desktop contains display/pointer/wallpaper");
+
+    thing_set_payload(pointer_id, CURSOR_BYTES);
+    thing_set_payload(wallpaper_id, WALLPAPER_BYTES);
+
+    // Create a font thing
+    let font_sym = symbol_intern("thing.font.unifont");
+    let font_id = thing_create_named(font_sym, kind_thing, SymbolId::INVALID);
+    thing_set_payload(font_id, FONT_BYTES);
+    relationship_create(desktop_id, font_id, pred_contains);
+
+    // Create Icon things
+    let icon_folder_sym = symbol_intern("thing.icon.folder");
+    let icon_folder_id = thing_create_named(icon_folder_sym, kind_thing, SymbolId::INVALID);
+    thing_set_payload(icon_folder_id, ICON_FOLDER);
+    relationship_create(desktop_id, icon_folder_id, pred_contains);
+
+    let icon_text_sym = symbol_intern("thing.icon.text");
+    let icon_text_id = thing_create_named(icon_text_sym, kind_thing, SymbolId::INVALID);
+    thing_set_payload(icon_text_id, ICON_TEXT);
+    relationship_create(desktop_id, icon_text_id, pred_contains);
+
+    let icon_term_sym = symbol_intern("thing.icon.terminal");
+    let icon_term_id = thing_create_named(icon_term_sym, kind_thing, SymbolId::INVALID);
+    thing_set_payload(icon_term_id, ICON_TERM);
+    relationship_create(desktop_id, icon_term_id, pred_contains);
 
     // 4. Watch place.desktop
     watch(bloom_id, desktop_id);

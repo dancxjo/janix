@@ -249,7 +249,17 @@ fn spawn_sprout(ctx: &'static BootContext) {
                                 let r_info = unsafe { *((entry_ptr.add(8)) as *const u64) };
                                 let r_addend = unsafe { *((entry_ptr.add(16)) as *const i64) };
                                 let r_type = r_info & 0xffffffff;
-                                if r_type == 8 { // R_X86_64_RELATIVE
+                                
+                                #[cfg(target_arch = "x86_64")]
+                                let is_relative = r_type == 8; // R_X86_64_RELATIVE
+                                #[cfg(target_arch = "aarch64")]
+                                let is_relative = r_type == 1027; // R_AARCH64_RELATIVE
+                                #[cfg(target_arch = "riscv64")]
+                                let is_relative = r_type == 3; // R_RISCV_RELATIVE
+                                #[cfg(target_arch = "loongarch64")]
+                                let is_relative = r_type == 3; // R_LARCH_RELATIVE
+
+                                if is_relative {
                                     let target_ptr = (buffer_base + r_offset) as *mut u64;
                                     unsafe { *target_ptr = buffer_base.wrapping_add(r_addend as u64); }
                                 }
@@ -270,13 +280,47 @@ fn spawn_sprout(ctx: &'static BootContext) {
                 log::klog(Level::Info, "SPROUT", &format!("jumping to {:#x} with stack {:#x}", final_entry, stack_top));
 
                 unsafe {
+                    #[cfg(target_arch = "x86_64")]
                     core::arch::asm!(
                         "mov rsp, {stack_top}",
                         "xor rbp, rbp",
                         "jmp {entry}",
                         stack_top = in(reg) stack_top,
                         entry = in(reg) final_entry,
-                        in("rdi") crate::syscall::dispatch as *const () as u64,
+                        in("rdi") crate::syscall::dispatch as *mut () as u64,
+                        options(noreturn)
+                    );
+
+                    #[cfg(target_arch = "aarch64")]
+                    core::arch::asm!(
+                        "mov sp, {stack_top}",
+                        "mov x29, xzr",
+                        "br {entry}",
+                        stack_top = in(reg) stack_top,
+                        entry = in(reg) final_entry,
+                        in("x0") crate::syscall::dispatch as *mut () as u64,
+                        options(noreturn)
+                    );
+
+                    #[cfg(target_arch = "riscv64")]
+                    core::arch::asm!(
+                        "mv sp, {stack_top}",
+                        "mv s0, zero",
+                        "jr {entry}",
+                        stack_top = in(reg) stack_top,
+                        entry = in(reg) final_entry,
+                        in("a0") crate::syscall::dispatch as *mut () as u64,
+                        options(noreturn)
+                    );
+
+                    #[cfg(target_arch = "loongarch64")]
+                    core::arch::asm!(
+                        "move $sp, {stack_top}",
+                        "move $fp, $zero",
+                        "jirl $zero, {entry}, 0",
+                        stack_top = in(reg) stack_top,
+                        entry = in(reg) final_entry,
+                        in("$a0") crate::syscall::dispatch as *mut () as u64,
                         options(noreturn)
                     );
                 }

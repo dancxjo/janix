@@ -11,17 +11,11 @@ impl Serial {
         Self
     }
 
-    fn is_transmit_ready(&self) -> bool {
-        unsafe {
-            let lsr = ptr::read_volatile((UART_BASE + 0x05) as *const u8);
-            (lsr & 0x20) != 0
-        }
-    }
 
+
+    // Blind write for early diagnostics - prevents hangs if UART is unmapped or busy
     pub fn putc(&self, c: u8) {
-        while !self.is_transmit_ready() {
-            core::hint::spin_loop();
-        }
+        // No wait loop - blind fire
         unsafe {
             ptr::write_volatile((UART_BASE + 0x00) as *mut u8, c);
         }
@@ -30,6 +24,7 @@ impl Serial {
     pub fn write(&self, bytes: &[u8]) {
         for &b in bytes {
             self.putc(b);
+            // Optional: crude delay if needed, but usually redundant with blind write
         }
     }
 }

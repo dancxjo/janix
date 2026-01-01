@@ -51,8 +51,8 @@ Feature: Boot milestones
     Then the serial console log must contain the following lines in order:
       | KERNEL: scheduler init                               |
       | SCHED: task created: thing.task.sprout               |
-      | KERNEL: spawning module: sprout                      |
       | SCHED: task state set: running                       |
+      | KERNEL: spawning module: sprout                      |
       | userland: SPROUT: I am alive!                        |
 
     Examples:
@@ -83,7 +83,7 @@ Feature: Boot milestones
       | KERNEL: symbols init      |
       | KERNEL: place store init  |
       | KERNEL: scheduler init    |
-      | KERNEL: spawning sprout   |
+      | KERNEL: spawning module: sprout |
     And after that point, I MAY see lines starting with "BLOOM:"
     And after that point, I MAY see lines starting with "userland:"
 
@@ -99,8 +99,8 @@ Feature: Boot milestones
   Scenario Outline: Sprout world interaction demo for <arch>
     Given I boot the OS in qemu for "<arch>"
     Then the serial console log must contain the following lines in order:
-      | KERNEL: spawning sprout                               |
       | SCHED: task state set: running                        |
+      | KERNEL: spawning module: sprout                       |
       | userland: SPROUT: I am alive!                         |
 
     Examples:

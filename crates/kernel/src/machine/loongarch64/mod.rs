@@ -3,13 +3,14 @@ pub mod abi;
 
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange, Context};
 
-pub static ARCH_MACHINE: &'static dyn Machine = &PlaceholderMachine;
+pub static ARCH_MACHINE: &'static dyn Machine = &LoongArchMachine;
 
-struct PlaceholderMachine;
+struct LoongArchMachine;
 
-impl Machine for PlaceholderMachine {
-    fn console_write(&self, _bytes: &[u8]) -> usize {
-        0 
+impl Machine for LoongArchMachine {
+    fn console_write(&self, bytes: &[u8]) -> usize {
+        serial::Serial::new().write(bytes);
+        bytes.len()
     }
 
     fn mmio_map(&self, _range: MmioRange, _flags: MmioFlags) -> Option<MmioMapping> {

@@ -4,6 +4,7 @@ use clap::Parser;
 mod build;
 mod clean;
 mod fetch;
+mod inspect;
 mod iso;
 mod run;
 mod test;
@@ -20,13 +21,23 @@ enum Commands {
     /// Fetch vendor assets (Limine, OVMF, Fonts)
     Fetch,
     /// Build the kernel and bridges
-    Build,
+    Build {
+        #[arg(long, default_value = "x86_64")]
+        env: String,
+    },
     /// Remove fetched assets and build artifacts
     Clean,
     /// Run BDD verification suite
     Test {
         #[arg(long, default_value = "all")]
         arch: String,
+    },
+    /// Inspect running kernel with GDB
+    Inspect {
+        #[arg(long, default_value = "x86_64")]
+        env: String,
+        #[arg(long)]
+        port: Option<u16>,
     },
     /// Create bootable ISO
     Iso {
@@ -62,9 +73,10 @@ fn main() -> Result<()> {
 
     match args.command {
         Commands::Fetch => fetch::fetch(),
-        Commands::Build => build::run(),
+        Commands::Build { env } => build::run(&env),
         Commands::Clean => clean::run(),
         Commands::Test { arch } => test::run(Some(arch)),
+        Commands::Inspect { env, port } => inspect::run(env, port),
         Commands::Iso { env, cmdline } => iso::run(env, cmdline),
         Commands::Run {
             env,

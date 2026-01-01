@@ -16,14 +16,14 @@ build:
 iso env="x86_64":
     cargo run -p xtask -- iso --env {{env}}
 
-run env="x86_64" port="1234":
-    cargo run -p xtask -- run --env {{env}} --gdb-port {{port}} --interactive
+run env="x86_64":
+    cargo run -p xtask -- run --env {{env}} --interactive --gdb
 
-run-headless env="x86_64" port="1234":
-    cargo run -p xtask -- run --env {{env}} --gdb-port {{port}}
+run-headless env="x86_64":
+    cargo run -p xtask -- run --env {{env}} --gdb
 
-debug env="x86_64" port="1234":
+debug env="x86_64" port="":
     cargo run -p xtask -- run --env {{env}} --gdb --gdb-port {{port}} --interactive
 
-inspect env="x86_64" port="1234":
-    gdb -batch -ex "file target/x86_64-unknown-none/debug/bran" -ex "target remote :{{port}}" -ex "bt"
+inspect env="x86_64" port="":
+    cargo run -p xtask -- inspect --env {{env}} --port {{port}}

@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use core::alloc::{GlobalAlloc, Layout};
-use core::cell::UnsafeCell;
+
 
 struct BumpAllocator;
 

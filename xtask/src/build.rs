@@ -2,18 +2,28 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Command;
 
-pub fn run() -> Result<()> {
+pub fn run(env: &str) -> Result<()> {
     let root = project_root();
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
 
+    let target = match env {
+        "x86_64" => "x86_64-unknown-none",
+        "aarch64" => "aarch64-unknown-none",
+        "riscv64" => "riscv64gc-unknown-none-elf",
+        "loongarch64" => "loongarch64-unknown-none",
+        _ => anyhow::bail!("Unsupported architecture for build: {}", env),
+    };
+
+    println!("==> Building for {} (target: {})...", env, target);
+
     // 1. Build Bran (Kernel)
-    println!("==> Building bran (x86_64)...");
+    println!("    Building bran...");
     let status = Command::new(&cargo)
         .arg("build")
         .arg("--manifest-path")
         .arg("crates/bran/Cargo.toml")
         .arg("--target")
-        .arg("x86_64-unknown-none") // Bran makefile uses this by default
+        .arg(target)
         .env("RUSTFLAGS", "-C relocation-model=static")
         .env("RUSTC_BOOTSTRAP", "1")
         .current_dir(&root)
@@ -25,13 +35,13 @@ pub fn run() -> Result<()> {
     }
 
     // 2. Build Sprout (Userland)
-    println!("==> Building sprout (x86_64)...");
+    println!("    Building sprout...");
     let status = Command::new(&cargo)
         .arg("build")
         .arg("--manifest-path")
         .arg("crates/sprout/Cargo.toml")
         .arg("--target")
-        .arg("x86_64-unknown-none")
+        .arg(target)
         .arg("-Z")
         .arg("build-std=core,alloc,compiler_builtins")
         .env("RUSTFLAGS", "-C relocation-model=pic -C link-arg=-pie")
@@ -45,16 +55,16 @@ pub fn run() -> Result<()> {
     }
 
     // 3. Build Bloom (Desktop)
-    println!("==> Building bloom (x86_64)...");
+    println!("    Building bloom...");
     let status = Command::new(&cargo)
         .arg("build")
         .arg("--manifest-path")
         .arg("crates/bloom/Cargo.toml")
         .arg("--target")
-        .arg("x86_64-unknown-none")
+        .arg(target)
         .arg("-Z")
         .arg("build-std=core,alloc,compiler_builtins")
-        .env("RUSTFLAGS", "-C relocation-model=pic -C link-arg=-pie") // Assumed same as Sprout
+        .env("RUSTFLAGS", "-C relocation-model=pic -C link-arg=-pie")
         .env("RUSTC_BOOTSTRAP", "1")
         .current_dir(&root)
         .status()

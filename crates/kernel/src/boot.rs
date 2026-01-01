@@ -142,17 +142,24 @@ use alloc::format;
 
 // Executable memory pool (placed in .text to ensure/hope it's executable)
 // We rely on the linker keeping this writable or Limine mapping it RWX.
+const EXEC_POOL_SIZE: usize = 4 * 1024 * 1024;
+
 #[link_section = ".text"]
-static mut EXEC_POOL: [u8; 4 * 1024 * 1024] = [0u8; 4 * 1024 * 1024];
+static mut EXEC_POOL: [u8; EXEC_POOL_SIZE] = [0u8; EXEC_POOL_SIZE];
 static mut EXEC_POS: usize = 0;
 
 unsafe fn alloc_exec(size: usize) -> Option<(&'static mut [u8], u64)> {
+    // Safety: we are single threaded during boot (mostly) or we hope nothing races here.
     let pos = EXEC_POS;
-    if pos + size > EXEC_POOL.len() {
+    if pos + size > EXEC_POOL_SIZE {
         return None;
     }
     EXEC_POS += size;
-    let ptr = EXEC_POOL.as_mut_ptr().add(pos);
+    
+    // Avoid creating a mutable reference to the static array
+    let pool_base = core::ptr::addr_of_mut!(EXEC_POOL) as *mut u8;
+    let ptr = pool_base.add(pos);
+    
     let slice = core::slice::from_raw_parts_mut(ptr, size);
     Some((slice, ptr as u64))
 }

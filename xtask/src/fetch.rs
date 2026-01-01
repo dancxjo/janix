@@ -54,6 +54,8 @@ fn fetch_limine(vendor: &Path) -> Result<()> {
         "limine-uefi-cd.bin",
         "BOOTX64.EFI",
         "BOOTAA64.EFI",
+        "BOOTRISCV64.EFI",
+        "BOOTLOONGARCH64.EFI",
     ];
     for f in required {
         let p = limine_dir.join(f);
@@ -112,6 +114,10 @@ fn fetch_ovmf(vendor: &Path) -> Result<()> {
         ("x64/vars.fd", "ovmf-vars-x86_64.fd"),
         ("aarch64/code.fd", "ovmf-code-aarch64.fd"),
         ("aarch64/vars.fd", "ovmf-vars-aarch64.fd"),
+        ("riscv64/code.fd", "ovmf-code-riscv64.fd"),
+        ("riscv64/vars.fd", "ovmf-vars-riscv64.fd"),
+        ("loongarch64/code.fd", "ovmf-code-loongarch64.fd"),
+        ("loongarch64/vars.fd", "ovmf-vars-loongarch64.fd"),
     ];
 
     for (src_rel, dest_name) in mappings {

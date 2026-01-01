@@ -131,6 +131,6 @@ impl Machine for ArchMachine {
     }
     
     fn task_entry_stub(&self) -> u64 {
-        task_entry as u64
+        task_entry as *const () as u64
     }
 }

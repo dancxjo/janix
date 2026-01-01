@@ -543,7 +543,7 @@ async fn then_rel_target(world: &mut BootWorld, val: String) -> Result<()> {
 }
 
 #[then("exactly one Task Thing must be present")]
-async fn then_one_task_exists(world: &mut BootWorld) -> Result<()> {
+async fn then_one_task_exists(_world: &mut BootWorld) -> Result<()> {
     // Validated by logs or implicit logic
     Ok(())
 }

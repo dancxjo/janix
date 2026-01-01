@@ -3,14 +3,14 @@
 
 use core::panic::PanicInfo;
 extern crate alloc;
-use alloc::vec::Vec;
+
 use thing_std::*;
-use abi::ids::SymbolId;
+
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     log_info("SPROUT: PANIC!");
-    if let Some(location) = info.location() {
+    if let Some(_location) = info.location() {
         // No format! in no_std easily without alloc formatted string, but we have alloc now!
         // or just log hardcoded strings
         log_info("SPROUT: panic at location");

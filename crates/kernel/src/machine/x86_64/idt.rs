@@ -3,6 +3,7 @@ use crate::log::{self, Level};
 
 static mut IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();
 
+#[allow(static_mut_refs)]
 pub unsafe fn init() {
     IDT.breakpoint.set_handler_fn(breakpoint_handler);
     IDT.double_fault.set_handler_fn(double_fault_handler)

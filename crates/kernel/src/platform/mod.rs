@@ -60,6 +60,7 @@ impl Platform {
 
 static mut PLATFORM: Option<Platform> = None;
 
+#[allow(static_mut_refs)]
 pub fn init() -> &'static Platform {
     unsafe {
         PLATFORM = Some(Platform::new());
@@ -69,6 +70,7 @@ pub fn init() -> &'static Platform {
     }
 }
 
+#[allow(static_mut_refs)]
 pub fn platform() -> &'static Platform {
     unsafe { PLATFORM.as_ref().expect("platform not initialized") }
 }

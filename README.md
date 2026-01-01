@@ -10,6 +10,12 @@ hardware, memory, drivers, services, windows, input events, time, and user progr
 If you can describe it, you can put it in the graph.
 If it’s in the graph, you can observe it, link to it, and act on it.
 
+**Essential Reading:** 
+* [ThingOS Manifesto](MANIFESTO.md) - The core philosophy and agent guidelines.
+* [Architectural Manifesto](ARCHITECTURE.md) - The structural axes: Platform, Machine, and Driver.
+* [Growth Model](GROWTH_MODEL.md) - The lifecycle phases: BRAN, Seed, Sprout, and Bloom.
+* [Agent Operational Briefing](AGENTS.md) - **Read this if you are an AI agent.**
+
 ## Status
 
 <!-- DOCGEN:STATUS:BEGIN -->

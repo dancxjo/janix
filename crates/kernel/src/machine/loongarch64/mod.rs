@@ -1,16 +1,62 @@
 pub mod serial;
+pub mod abi;
 
-pub static ARCH_MACHINE: &'static dyn crate::machine::Machine = &PlaceholderMachine;
+use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange, Context};
+
+pub static ARCH_MACHINE: &'static dyn Machine = &PlaceholderMachine;
 
 struct PlaceholderMachine;
 
-impl crate::machine::Machine for PlaceholderMachine {
-    fn console_write(&self, _bytes: &[u8]) {}
-    fn mmio_map(&self, _addr: usize, _size: usize) -> Option<usize> { None }
-    fn irq_disable(&self) -> u64 { 0 }
-    fn irq_restore(&self, _flags: u64) {}
-    fn halt(&self) -> ! { loop {} }
+impl Machine for PlaceholderMachine {
+    fn console_write(&self, _bytes: &[u8]) -> usize {
+        0 
+    }
 
-    fn switch_to(&self, _next: &mut crate::machine::Context) {}
-    fn task_entry_stub(&self) -> u64 { 0 }
+    fn mmio_map(&self, _range: MmioRange, _flags: MmioFlags) -> Option<MmioMapping> {
+        None
+    }
+
+    fn irq_disable(&self) -> u64 {
+        let crmd: u64;
+        unsafe {
+             // Read CRMD (Current Request Mode Definition) - CSR 0x0
+             core::arch::asm!("csrrd {}, 0x0", out(reg) crmd);
+             // Clear IE (Interrupt Enable) - bit 2
+             let new_crmd = crmd & !0x4;
+             core::arch::asm!("csrwr {}, 0x0", in(reg) new_crmd);
+        }
+        crmd
+    }
+
+    fn irq_restore(&self, token: u64) {
+        let ie = token & 0x4;
+        unsafe {
+            let mut current: u64;
+            core::arch::asm!("csrrd {}, 0x0", out(reg) current);
+            if ie != 0 {
+                current |= 0x4;
+            } else {
+                current &= !0x4;
+            }
+            core::arch::asm!("csrwr {}, 0x0", in(reg) current);
+        }
+    }
+
+    fn halt(&self) -> ! {
+        loop {
+            unsafe { core::arch::asm!("idle 0"); }
+        }
+    }
+
+    fn idle(&self) {
+        unsafe { core::arch::asm!("idle 0"); }
+    }
+
+    fn switch_to(&self, _old_ctx: &mut Context, _new_ctx: &Context) {
+        // Placeholder
+    }
+
+    fn task_entry_stub(&self) -> u64 {
+        0
+    }
 }

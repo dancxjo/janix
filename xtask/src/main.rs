@@ -47,6 +47,8 @@ enum Commands {
         cmdline: Option<String>,
     },
     /// Run the OS (hosted or qemu)
+    /// Run the OS (hosted or qemu)
+    /// Run the OS (hosted or qemu)
     Run {
         #[arg(long, default_value = "x86_64")]
         env: String,
@@ -62,6 +64,9 @@ enum Commands {
         /// Run in interactive mode (show QEMU window)
         #[arg(long)]
         interactive: bool,
+        /// Start in frozen state (wait for GDB)
+        #[arg(long)]
+        frozen: bool,
         /// Kernel command line arguments
         #[arg(long)]
         cmdline: Option<String>,
@@ -84,6 +89,7 @@ fn main() -> Result<()> {
             gdb_port,
             timeout_secs,
             interactive,
+            frozen,
             cmdline,
         } => run::run(run::RunArgs {
             env,
@@ -91,6 +97,7 @@ fn main() -> Result<()> {
             gdb_port,
             timeout_secs,
             interactive,
+            frozen,
             cmdline,
         }),
     }

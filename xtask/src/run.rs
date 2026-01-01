@@ -11,6 +11,7 @@ pub struct RunArgs {
     pub gdb_port: Option<u16>,
     pub timeout_secs: Option<u64>,
     pub interactive: bool,
+    pub frozen: bool,
     pub cmdline: Option<String>,
 }
 
@@ -65,15 +66,17 @@ fn append_common_args(cmd: &mut Command, args: &RunArgs, default_gdb_port: u16) 
     cmd.arg("-no-reboot");
 
     // GDB setup
-    if let Some(port) = args.gdb_port {
-        cmd.arg("-gdb").arg(format!("tcp::{}", port));
-        println!("    GDB stub enabled on custom port {}...", port);
-    } else if args.gdb {
-         cmd.arg("-gdb").arg(format!("tcp::{}", default_gdb_port));
-         println!("    GDB stub enabled on default port {}...", default_gdb_port);
+    let gdb_port = match args.gdb_port {
+        Some(p) if p > 0 => p,
+        _ => default_gdb_port,
+    };
+
+    if args.gdb || args.frozen || args.gdb_port.is_some() {
+        cmd.arg("-gdb").arg(format!("tcp::{}", gdb_port));
+        println!("    GDB stub enabled on port {}...", gdb_port);
     }
 
-    if args.gdb {
+    if args.frozen {
         println!("    Waiting for GDB connection (frozen)...");
         cmd.arg("-S");
     }

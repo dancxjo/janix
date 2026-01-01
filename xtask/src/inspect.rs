@@ -13,8 +13,11 @@ pub fn run(env: String, port: Option<u16>) -> Result<()> {
         _ => anyhow::bail!("Unsupported env for inspect: {}", env),
     };
 
-    let port = port.unwrap_or(default_port);
-
+    let final_port = match port {
+        Some(p) if p > 0 => p,
+        _ => default_port,
+    };
+    
     let kernel_path = root.join("target").join(target_triple).join("debug/bran");
     if !kernel_path.exists() {
         anyhow::bail!("Kernel binary not found at {}. Run `just build` first.", kernel_path.display());
@@ -22,7 +25,7 @@ pub fn run(env: String, port: Option<u16>) -> Result<()> {
 
     println!("==> Starting GDB for {}...", env);
     println!("    Binary: {}", kernel_path.display());
-    println!("    Target: localhost:{}", port);
+    println!("    Target: localhost:{}", final_port);
 
     // Prefer GDB from env if set
     let gdb_bin = std::env::var("GDB_BIN").unwrap_or_else(|_| gdb_bin.to_string());
@@ -41,7 +44,7 @@ pub fn run(env: String, port: Option<u16>) -> Result<()> {
         cmd.arg("-ex").arg(format!("set architecture {}", gdb_arch));
     }
     cmd.arg("-ex").arg(format!("file {}", kernel_path.display()));
-    cmd.arg("-ex").arg(format!("target remote :{}", port));
+    cmd.arg("-ex").arg(format!("target remote :{}", final_port));
     cmd.arg("-ex").arg("set pagination off");
     
     // Commands from makefile

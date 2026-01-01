@@ -76,7 +76,7 @@ fn fetch_ovmf(vendor: &Path) -> Result<()> {
     fs::create_dir_all(&ovmf_dir)?;
 
     let release = std::env::var("THINGOS_OVMF_RELEASE")
-        .unwrap_or_else(|_| "edk2-stable202411-r1".to_string());
+        .unwrap_or_else(|_| "edk2-stable202508-r1".to_string());
     let archive_name = format!("{}-bin.tar.xz", release);
     let archive_url = format!(
         "https://github.com/rust-osdev/ovmf-prebuilt/releases/download/{}/{}",

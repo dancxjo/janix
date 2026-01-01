@@ -19,17 +19,8 @@ If it’s in the graph, you can observe it, link to it, and act on it.
 
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
-| Bootloader Handoff on loongarch64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Kernel Initialization on aarch64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Bootloader Handoff on aarch64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Bootloader Handoff on riscv64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Kernel Initialization on loongarch64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Kernel Initialization on riscv64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Ontology Seeding on x86_64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Ontology Seeding on aarch64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Kernel Initialization on x86_64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Bootloader Handoff on x86_64 | ⚪ | ⚪ | ⚪ | ⚪ |
-| Ontology Seeding on riscv64 | ⚪ | ⚪ | ⚪ | ⚪ |
+| Scheduler and Sprout on aarch64 | ⚪ | ⚪ | ⚪ | ⚪ |
+| Bootloader Handoff on x86_64 | ✅ | ⚪ | ⚪ | ⚪ |
 
 <!-- DOCGEN:STATUS:END -->
 

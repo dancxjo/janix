@@ -1,8 +1,8 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use walkdir::WalkDir;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -12,12 +12,6 @@ struct RunReport {
     arch: String,
     status: String,
     artifacts_dir: String,
-}
-
-#[derive(Serialize)]
-struct FeatureSummary {
-    name: String,
-    scenarios: Vec<ScenarioSummary>,
 }
 
 #[derive(Serialize)]

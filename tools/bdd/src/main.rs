@@ -41,6 +41,7 @@ async fn main() -> anyhow::Result<()> {
         current_feature: String::new(),
         current_scenario: String::new(),
         step_index: 0,
+        scenario_failed: false,
     };
 
     println!("Starting Cucumber...");

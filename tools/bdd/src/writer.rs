@@ -37,6 +37,7 @@ pub struct ArtifactWriter {
     pub current_feature: String,
     pub current_scenario: String,
     pub step_index: usize,
+    pub scenario_failed: bool,
 }
 
 impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter {
@@ -70,6 +71,7 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                                     self.current_feature, self.current_scenario
                                 );
                                 self.step_index = 0;
+                                self.scenario_failed = false;
                             }
                             Scenario::Step(step, step_event) => {
                                 match step_event {
@@ -91,6 +93,10 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                                                 status = "failed";
                                                 println!("Writer: Soft Fail detected. Marking step as failed.");
                                             }
+                                        }
+
+                                        if status == "failed" {
+                                            self.scenario_failed = true;
                                         }
 
                                         let status_label = match status {
@@ -172,11 +178,13 @@ impl ArtifactWriter {
         // Better: Keep track in ArtifactWriter struct. 
         // But for minimal changes, we can just dump what we know.
         
+        let status = if self.scenario_failed { "failed" } else { "pass" };
+        
         let meta = serde_json::json!({
             "feature": self.current_feature,
             "scenario": self.current_scenario,
             "arch": self.arch,
-            "status": "pass", // Placeholder, ideally specific
+            "status": status,
             "artifacts_dir": format!("{}/{}/{}", self.arch, feature_slug, scenario_slug)
         });
         

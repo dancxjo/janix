@@ -10,6 +10,8 @@ use spin::Mutex;
 use crate::arch::Arch;
 use crate::arch::ARCH;
 use crate::log::{self, Level};
+use crate::{graph, symbols};
+use abi::ids::SymbolId;
 
 /// Thread identifier
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -87,6 +89,46 @@ impl Scheduler {
     }
 }
 
+/// Seed the scheduler ontology
+fn seed_scheduler() {
+    let kind_place = symbols::well_known(b"kind.Place");
+    let kind_thing = symbols::well_known(b"kind.Thing");
+    let pred_contains = symbols::well_known(b"predicate.contains");
+    let pred_state = symbols::sym_pred_state();
+
+    // 1. Create Scheduler Place
+    let sched_name = symbols::sym_scheduler();
+    let sched_id = graph::thing_create(kind_place, SymbolId::INVALID, 1);
+    graph::thing_register_name(sched_id, sched_name);
+    log::klog(Level::Info, "SCHED", "scheduler place created");
+
+    // 2. Create Runqueue (Thing)
+    let runqueue_name = symbols::sym_runqueue_default();
+    let runqueue_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
+    graph::thing_register_name(runqueue_id, runqueue_name);
+
+    // Relate: scheduler contains runqueue
+    graph::relationship_create(sched_id, runqueue_id, pred_contains);
+
+    // 3. Create Task (Sprout)
+    let task_name = symbols::sym_task_sprout();
+    let task_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
+    graph::thing_register_name(task_id, task_name);
+    log::klog(Level::Info, "SCHED", "task created: thing.task.sprout");
+
+    // Relate: runqueue contains task
+    graph::relationship_create(runqueue_id, task_id, pred_contains);
+
+    // 4. Create State (Running)
+    let state_running_name = symbols::sym_state_running();
+    let state_running_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
+    graph::thing_register_name(state_running_id, state_running_name);
+
+    // Relate: task has state running
+    graph::relationship_create(task_id, state_running_id, pred_state);
+    log::klog(Level::Info, "SCHED", "task state set: running");
+}
+
 /// Initialize the scheduler
 pub fn init() {
     let mut sched = Scheduler::new();
@@ -94,6 +136,9 @@ pub fn init() {
     *SCHEDULER.lock() = Some(sched);
 
     log::klog(Level::Info, "KERNEL", "scheduler init");
+    
+    // Seed the scheduler ontology
+    seed_scheduler();
 }
 
 /// Spawn a new kernel thread

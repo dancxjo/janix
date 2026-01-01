@@ -75,6 +75,16 @@ pub fn init() {
     seed_symbol(&mut table, b"thing.wallpaper.sky");
     seed_symbol(&mut table, b"predicate.spawns");
     seed_symbol(&mut table, b"predicate.provides");
+    // Scheduler ontology
+    seed_symbol(&mut table, b"place.scheduler");
+    seed_symbol(&mut table, b"thing.runqueue.default");
+    seed_symbol(&mut table, b"thing.task.sprout");
+    seed_symbol(&mut table, b"predicate.state");
+    seed_symbol(&mut table, b"state.runnable");
+    seed_symbol(&mut table, b"state.running");
+    seed_symbol(&mut table, b"state.blocked");
+    seed_symbol(&mut table, b"priority.normal");
+    seed_symbol(&mut table, b"predicate.priority");
 
     *SYMBOLS.lock() = Some(table);
 }
@@ -137,4 +147,25 @@ pub fn sym_pointer() -> SymbolId {
 
 pub fn sym_wallpaper_sky() -> SymbolId {
     well_known(b"thing.wallpaper.sky")
+}
+
+// Scheduler symbols
+pub fn sym_scheduler() -> SymbolId {
+    well_known(b"place.scheduler")
+}
+
+pub fn sym_runqueue_default() -> SymbolId {
+    well_known(b"thing.runqueue.default")
+}
+
+pub fn sym_task_sprout() -> SymbolId {
+    well_known(b"thing.task.sprout")
+}
+
+pub fn sym_pred_state() -> SymbolId {
+    well_known(b"predicate.state")
+}
+
+pub fn sym_state_running() -> SymbolId {
+    well_known(b"state.running")
 }

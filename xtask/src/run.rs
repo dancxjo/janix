@@ -13,6 +13,7 @@ pub struct RunArgs {
     pub interactive: bool,
     pub frozen: bool,
     pub cmdline: Option<String>,
+    pub debug: bool,
 }
 
 pub fn run(args: RunArgs) -> Result<()> {
@@ -58,7 +59,10 @@ fn run_with_timeout(mut cmd: Command, timeout: Option<u64>) -> Result<()> {
 }
 
 fn append_common_args(cmd: &mut Command, args: &RunArgs, default_gdb_port: u16) {
-    if !args.interactive {
+    if args.debug {
+        cmd.arg("-serial").arg("unix:/tmp/thingos-serial.sock,server,nowait");
+        cmd.arg("-display").arg("none");
+    } else if !args.interactive {
         cmd.arg("-nographic");
     } else {
         cmd.arg("-serial").arg("stdio");
@@ -71,12 +75,12 @@ fn append_common_args(cmd: &mut Command, args: &RunArgs, default_gdb_port: u16) 
         _ => default_gdb_port,
     };
 
-    if args.gdb || args.frozen || args.gdb_port.is_some() {
+    if args.gdb || args.frozen || args.gdb_port.is_some() || args.debug {
         cmd.arg("-gdb").arg(format!("tcp::{}", gdb_port));
         println!("    GDB stub enabled on port {}...", gdb_port);
     }
 
-    if args.frozen {
+    if args.frozen || args.debug {
         println!("    Waiting for GDB connection (frozen)...");
         cmd.arg("-S");
     }
@@ -104,6 +108,10 @@ fn run_qemu_x86_64(args: RunArgs) -> Result<()> {
     cmd.arg("-M").arg("q35");
 
     append_common_args(&mut cmd, &args, 1234);
+
+    if args.debug {
+        cmd.arg("-device").arg("isa-debug-exit,iobase=0xf4,iosize=0x04");
+    }
 
     if use_uefi {
         cmd.arg("-drive").arg(format!("if=pflash,format=raw,readonly=on,file={}", ovmf_code.display()));

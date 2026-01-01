@@ -121,6 +121,8 @@ If something feels stuck, it usually is — on a lock, an interrupt, or a graph 
 
 * ✅ x86_64 (primary)
 * 🚧 aarch64 (in progress)
+* 🚧 riscv64 (in progress)
+* 🚧 loongarch64 (in progress)
 
 ### What to Try First
 
@@ -267,7 +269,7 @@ ThingOS is actively evolving and not yet stable.
 
 **What exists today:**
 
-* A working kernel for x86_64 and aarch64
+* A working kernel for x86_64, aarch64, riscv64, and loongarch64
 * A functioning graph engine
 * Userland programs
 * Input drivers

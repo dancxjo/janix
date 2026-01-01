@@ -74,6 +74,9 @@ enum Commands {
         /// Kernel command line arguments
         #[arg(long)]
         cmdline: Option<String>,
+        /// Enable debug mode (socket serial, frozen, clean panic)
+        #[arg(long)]
+        debug: bool,
     },
 }
 
@@ -103,6 +106,7 @@ fn main() -> Result<()> {
             interactive,
             frozen,
             cmdline,
+            debug,
         } => {
             let res = run::run(run::RunArgs {
                 env,
@@ -112,6 +116,7 @@ fn main() -> Result<()> {
                 interactive,
                 frozen,
                 cmdline,
+                debug,
             });
             fix_terminal();
             res

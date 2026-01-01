@@ -29,8 +29,11 @@ run env="x86_64":
 run-headless env="x86_64":
     cargo run -p xtask -- run --env {{env}} --gdb
 
-debug env="x86_64" port="0":
-    cargo run -p xtask -- run --env {{env}} --gdb --gdb-port {{port}} --interactive --frozen
+debug env="x86_64":
+    cargo run -p xtask -- run --env {{env}} --debug
+
+debug-console:
+    socat -,raw,echo=0 unix-connect:/tmp/thingos-serial.sock
 
 inspect env="x86_64" port="0":
     cargo run -p xtask -- inspect --env {{env}} --port {{port}}

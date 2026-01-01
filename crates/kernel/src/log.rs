@@ -93,11 +93,7 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
     serial_log(level, subsystem, message);
 
     // Create graph entry if graph is initialized
-    let kind = symbols::sym_log_entry();
-    if kind == SymbolId::INVALID {
-        return None;
-    }
-
+    let kind = symbols::well_known(b"kind.LogEntry");
     let schema = symbols::well_known(b"models.core.log.LogEntry");
     let id = graph::thing_create(kind, schema, 1);
 
@@ -108,6 +104,13 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
     };
 
     graph::thing_set_inline_payload(id, &entry.to_payload());
+
+    // Link to place.log
+    let place_log_sym = symbols::well_known(b"place.log");
+    if let Some(place_log) = graph::find_thing_by_name(place_log_sym) {
+        let pred_contains = symbols::well_known(b"predicate.contains");
+        graph::relationship_create(place_log, id, pred_contains);
+    }
 
     Some(id)
 }

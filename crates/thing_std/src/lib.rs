@@ -86,6 +86,12 @@ pub fn log_info(msg: &str) {
     }
 }
 
+pub fn console_write(msg: &str) {
+    unsafe {
+        syscall(3, 0, msg.as_ptr() as u64, msg.len() as u64, 0);
+    }
+}
+
 pub fn proc_spawn(name: &str) {
     unsafe {
         syscall(100, name.as_ptr() as u64, name.len() as u64, 0, 0);

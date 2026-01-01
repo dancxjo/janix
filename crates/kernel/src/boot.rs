@@ -372,6 +372,7 @@ fn seed_ontology() {
         "place.devices",
         "place.processes",
         "place.events",
+        "place.log",
     ];
 
     for name_str in places {

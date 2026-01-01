@@ -4,6 +4,7 @@
 //! by number and return (status, val0, val1).
 
 use core::slice;
+use alloc::format;
 
 use crate::log::{self, Level};
 use crate::machine::{self, MmioFlags, MmioRange};
@@ -62,7 +63,7 @@ pub fn init() {
 /// Called by the architecture layer when a syscall trap occurs.
 /// Returns (status, value0, value1).
 #[unsafe(no_mangle)]
-pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> SyscallResult {
+pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64, _a5: u64) -> SyscallResult {
     match nr {
         nr::SYS_VERSION_GET => sys_version_get(),
         nr::SYS_LOG_EMIT => sys_log_emit(a0, a1, a2),
@@ -195,11 +196,50 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
             let id = graph::thing_create(abi::ids::SymbolId(a1), abi::ids::SymbolId(a2), a3 as u32);
             SyscallResult::new(0, id.high(), id.low())
         }
+
+        // OP_THING_CREATE_NAMED: a1=name_low, a2=kind_low, a3=schema_low
+        11 => {
+            let id = graph::thing_create(abi::ids::SymbolId(a2), abi::ids::SymbolId(a3), 1);
+            graph::thing_register_name(id, abi::ids::SymbolId(a1));
+            SyscallResult::new(0, id.high(), id.low())
+        }
+
+        // OP_THING_SET_PAYLOAD: a1=id_low, a2=ptr, a3=len
+        12 => {
+            // Safety: assume valid kernel/user shared memory for now
+            let payload = unsafe { core::slice::from_raw_parts(a2 as *const u8, a3 as usize) };
+            if graph::thing_set_inline_payload(ThingId(a1 as u128), payload) {
+                SyscallResult::new(0, 0, 0)
+            } else {
+                SyscallResult::new(err::EINVAL, 0, 0)
+            }
+        }
+
+        // OP_THING_GET_PAYLOAD: a1=id_low, a2=ptr, a3=len
+        13 => {
+            if let Some(payload) = graph::get_payload(ThingId(a1 as u128)) {
+                let len = core::cmp::min(payload.len(), a3 as usize);
+                let target = unsafe { core::slice::from_raw_parts_mut(a2 as *mut u8, len) };
+                target.copy_from_slice(&payload[..len]);
+                SyscallResult::new(0, payload.len() as u64, 0)
+            } else {
+                SyscallResult::new(err::EINVAL, 0, 0)
+            }
+        }
         
         // OP_REL_CREATE: a1=from_low, a2=to_low, a3=pred_low
         20 => {
+            let pred_provides = symbols::well_known(b"predicate.provides");
+            let sym_desktop = symbols::well_known(b"place.desktop");
+            let desktop_id = graph::find_thing_by_name(sym_desktop).unwrap_or(ThingId(0));
+
             // Note: thing_std currently only passes low 64 bits of ThingId
             let id = graph::relationship_create(ThingId(a1 as u128), ThingId(a2 as u128), abi::ids::SymbolId(a3));
+            
+            if abi::ids::SymbolId(a3) == pred_provides && ThingId(a2 as u128) == desktop_id {
+                log::klog(Level::Info, "KERNEL", &format!("desktop provider: ThingId({:?})", ThingId(a1 as u128)));
+            }
+
             SyscallResult::new(0, id.high(), id.low())
         }
         
@@ -207,6 +247,15 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
         30 => {
             let contained = crate::place::contained_in(ThingId(a1 as u128));
             SyscallResult::new(0, contained.len() as u64, 0)
+        }
+
+        // OP_THING_FIND_BY_NAME: a1=name_low
+        40 => {
+            if let Some(id) = graph::find_thing_by_name(abi::ids::SymbolId(a1)) {
+                SyscallResult::new(0, id.high(), id.low())
+            } else {
+                SyscallResult::new(err::EINVAL, 0, 0)
+            }
         }
 
         _ => SyscallResult::new(err::ENOSYS, 0, 0),

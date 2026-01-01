@@ -18,29 +18,29 @@ pub extern "C" fn _start(syscall_ptr: u64) -> ! {
     let kind_place = symbol_intern("kind.Place");
     let kind_thing = symbol_intern("kind.Thing");
     let pred_contains = symbol_intern("predicate.contains");
+    let pred_provides = symbol_intern("predicate.provides");
 
-    let bloom_sym = symbol_intern("thing.bloom");
-    let desktop_sym = symbol_intern("place.desktop");
-    let display_sym = symbol_intern("thing.display_primary");
-    let pointer_sym = symbol_intern("thing.pointer");
-    let wallpaper_sym = symbol_intern("thing.wallpaper_sky");
+    // 1. Find Bloom identity from handoff
+    let handoff_sym = symbol_intern("thing.handoff.bloom");
+    let handoff_id = thing_find_by_name(handoff_sym).expect("Bloom handoff Thing not found");
+    
+    let mut bloom_id_bytes = [0u8; 16];
+    thing_get_payload(handoff_id, &mut bloom_id_bytes);
+    let bloom_id = abi::ids::ThingId(u128::from_le_bytes(bloom_id_bytes));
+    log_info("BLOOM: acquired identity from handoff");
 
     let root_id = get_root_place();
 
-    // Create Bloom Thing
-    let bloom_id = thing_create(kind_thing, SymbolId::INVALID, 1);
-    // Note: symbols are already registered in kernel for v0.3 demo, 
-    // but we can't easily register names from userland yet without a dedicated syscall 
-    // if thing_std doesn't support it.
-    // For now, let's just create and link.
-    log_info("BLOOM: bloom thing created");
-
-    // Create Desktop Place
-    let desktop_id = thing_create(kind_place, SymbolId::INVALID, 1);
+    // 2. Create Desktop Place
+    let desktop_sym = symbol_intern("place.desktop");
+    let desktop_id = thing_create_named(desktop_sym, kind_place, SymbolId::INVALID);
     log_info("BLOOM: desktop place created");
 
-    // Ensure they are in root
-    relationship_create(root_id, bloom_id, pred_contains);
+    // 3. Publish provides relationship
+    relationship_create(bloom_id, desktop_id, pred_provides);
+    log_info("userland: BLOOM: published provides relationship");
+
+    // Ensure desktop is in root
     relationship_create(root_id, desktop_id, pred_contains);
 
     // Create desktop facts

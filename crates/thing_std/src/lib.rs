@@ -92,6 +92,31 @@ pub fn proc_spawn(name: &str) {
     }
 }
 
+pub fn thing_create_named(name: SymbolId, kind: SymbolId, schema: SymbolId) -> ThingId {
+    let res = unsafe { syscall(301, 11, name.0, kind.0, schema.0) };
+    ThingId(((res.val0 as u128) << 64) | (res.val1 as u128))
+}
+
+pub fn thing_set_payload(id: ThingId, payload: &[u8]) {
+    unsafe {
+        syscall(301, 12, id.0 as u64, payload.as_ptr() as u64, payload.len() as u64);
+    }
+}
+
+pub fn thing_get_payload(id: ThingId, buffer: &mut [u8]) -> usize {
+    let res = unsafe { syscall(301, 13, id.0 as u64, buffer.as_mut_ptr() as u64, buffer.len() as u64) };
+    res.val0 as usize
+}
+
+pub fn thing_find_by_name(name: SymbolId) -> Option<ThingId> {
+    let res = unsafe { syscall(301, 40, name.0, 0, 0) };
+    if res.status == 0 {
+        Some(ThingId(((res.val0 as u128) << 64) | (res.val1 as u128)))
+    } else {
+        None
+    }
+}
+
 pub fn symbol_intern(name: &str) -> SymbolId {
     let res = unsafe { syscall(2, name.as_ptr() as u64, name.len() as u64, 0, 0) };
     SymbolId(res.val0)

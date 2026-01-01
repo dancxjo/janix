@@ -73,6 +73,8 @@ pub fn init() {
     seed_symbol(&mut table, b"thing.display.primary");
     seed_symbol(&mut table, b"thing.pointer");
     seed_symbol(&mut table, b"thing.wallpaper.sky");
+    seed_symbol(&mut table, b"predicate.spawns");
+    seed_symbol(&mut table, b"predicate.provides");
 
     *SYMBOLS.lock() = Some(table);
 }

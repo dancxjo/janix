@@ -26,10 +26,14 @@ Feature: Boot milestones
       | KERNEL: spawning sprout                              |
       | SPROUT: jumping to                                   |
       | userland: SPROUT: starting world interaction demo    |
-      | userland: SPROUT: acquired root place                |
-      | userland: SPROUT: created demo thing                 |
-      | userland: SPROUT: linked into place.root via contains |
-      | userland: SPROUT: root contains expected count        |
+      | userland: SPROUT: published spawns relationship      |
+      | userland: SPROUT: launching bloom                    |
+      | userland: BLOOM: starting desktop seeding            |
+      | BLOOM: acquired identity from handoff                |
+      | BLOOM: desktop place created                         |
+      | userland: BLOOM: published provides relationship     |
+      | KERNEL: desktop provider: ThingId(                   |
+      | BLOOM: desktop contains expected count (3)           |
 
     Examples:
       | arch    |
@@ -76,10 +80,11 @@ Feature: Boot milestones
       | KERNEL: spawning sprout                               |
       | SPROUT: jumping to                                   |
       | userland: SPROUT: starting world interaction demo    |
-      | userland: SPROUT: acquired root place                |
-      | userland: SPROUT: created demo thing                 |
-      | userland: SPROUT: linked into place.root via contains |
-      | userland: SPROUT: root contains expected count        |
+      | userland: SPROUT: published spawns relationship      |
+      | userland: SPROUT: launching bloom                    |
+      | userland: BLOOM: starting desktop seeding            |
+      | userland: BLOOM: published provides relationship     |
+      | KERNEL: desktop provider: ThingId(                   |
 
     Examples:
       | arch   |

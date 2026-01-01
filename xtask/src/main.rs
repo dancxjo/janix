@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use std::process::Command;
 
 mod build;
 mod clean;
@@ -16,8 +17,6 @@ struct Cli {
     command: Commands,
 }
 
-
-use std::process::Command;
 
 #[derive(clap::Subcommand, Debug)]
 enum Commands {

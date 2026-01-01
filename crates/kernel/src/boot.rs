@@ -329,9 +329,8 @@ pub fn spawn_module(ctx: &'static BootContext, name: &str) {
                 // Note: name string lifetime is tricky here, but "sprout" is static str literal usually
                 // or we just trust it lives long enough (it's from boot context modules).
                 // Actually kernel task name is &'static str in struct.
-                // We'll use a hack to pass a static name or just "task".
                 let task_id = crate::sched::spawn_kernel_task("sprout");
-                crate::sched::set_current_task(task_id);
+                // crate::sched::set_current_task(task_id); // Removed to let scheduler pick it up
                 
                 // Configure memory
                 

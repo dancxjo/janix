@@ -1,8 +1,10 @@
 pub mod serial;
-pub mod serial;
+
 pub mod abi;
 pub mod trap;
 pub mod timer;
+pub mod mmu;
+pub use mmu::AddressSpace;
 
 pub type TrapFrame = trap::TrapContext; // Added
 

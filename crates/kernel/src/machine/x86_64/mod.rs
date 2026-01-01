@@ -13,6 +13,8 @@ pub mod idt;
 pub mod percpu;
 pub mod timer;
 pub mod gdt;
+pub mod mmu;
+pub use mmu::AddressSpace;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]

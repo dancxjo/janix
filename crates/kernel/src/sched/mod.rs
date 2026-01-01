@@ -4,6 +4,8 @@ use crate::log::{self, Level};
 use graph::{store, symbols};
 use graph::symbols::sym;
 use crate::machine::abi::setup_new_task_stack;
+use crate::memory::space::AddressSpace;
+use alloc::sync::Arc;
 
 pub mod task;
 pub mod run_queue;
@@ -55,7 +57,8 @@ impl Scheduler {
             t
         });
 
-        let mut task = Task::new(id, task_thing, stack_ptr);
+        let address_space = Arc::new(AddressSpace::new().expect("failed create AS"));
+        let mut task = Task::new(id, task_thing, stack_ptr, address_space);
         
         // Initialize state (New -> Ready)
         store::with_store(|s| task.set_state(s, TaskState::Ready));
@@ -359,6 +362,9 @@ pub fn tick(current_sp: u64) -> Option<u64> {
              t.set_state(s, TaskState::Running);
              t.set_on_cpu(s, sched.cpu.thing);
         });
+
+        // Activate Address Space
+        t.address_space.activate();
         
         Some(t.stack_ptr)
     } else {

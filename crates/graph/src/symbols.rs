@@ -128,6 +128,27 @@ pub fn init() {
         "predicate.state",
         "predicate.has_stack",
         "predicate.owned_by",
+        // Memory symbols
+        "kind.AddressSpace",
+        "kind.Mapping",
+        "kind.PageTable",
+        "kind.ByteSpace",
+        "kind.ValueU64",
+        "kind.ValuePerms",
+        "predicate.has_space",
+        "predicate.maps",
+        "predicate.backs",
+        "predicate.range",
+        "predicate.perms",
+        "predicate.user",    // used as predicate or flag? "predicate.is_user"? or relationship?
+        "predicate.kernel",
+        "perm.read",
+        "perm.write",
+        "perm.exec",
+        "perm.user",
+        "perm.kernel",
+        "perm.device",
+        "perm.normal",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -220,4 +241,28 @@ pub mod sym {
     pub const PRED_STATE: SymbolId = SymbolId(52);
     pub const PRED_HAS_STACK: SymbolId = SymbolId(53);
     pub const PRED_OWNED_BY: SymbolId = SymbolId(54);
+
+    // Memory
+    pub const KIND_ADDRESS_SPACE: SymbolId = SymbolId(55);
+    pub const KIND_MAPPING: SymbolId = SymbolId(56);
+    pub const KIND_PAGE_TABLE: SymbolId = SymbolId(57);
+    pub const KIND_BYTE_SPACE: SymbolId = SymbolId(58);
+    pub const KIND_VALUE_U64: SymbolId = SymbolId(59);
+    pub const KIND_VALUE_PERMS: SymbolId = SymbolId(60);
+
+    pub const PRED_HAS_SPACE: SymbolId = SymbolId(61);
+    pub const PRED_MAPS: SymbolId = SymbolId(62);
+    pub const PRED_BACKS: SymbolId = SymbolId(63);
+    pub const PRED_RANGE: SymbolId = SymbolId(64);
+    pub const PRED_PERMS: SymbolId = SymbolId(65);
+    pub const PRED_USER: SymbolId = SymbolId(66);
+    pub const PRED_KERNEL: SymbolId = SymbolId(67);
+
+    pub const PERM_READ: SymbolId = SymbolId(68);
+    pub const PERM_WRITE: SymbolId = SymbolId(69);
+    pub const PERM_EXEC: SymbolId = SymbolId(70);
+    pub const PERM_USER: SymbolId = SymbolId(71);
+    pub const PERM_KERNEL: SymbolId = SymbolId(72);
+    pub const PERM_DEVICE: SymbolId = SymbolId(73);
+    pub const PERM_NORMAL: SymbolId = SymbolId(74);
 }

@@ -24,6 +24,7 @@ pub mod sched;
 pub mod serial;
 pub mod syscall;
 pub mod trap;
+pub mod memory;
 
 // Stub modules
 pub mod bytespace;

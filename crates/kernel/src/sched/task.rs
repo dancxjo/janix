@@ -28,23 +28,28 @@ impl TaskState {
     }
 }
 
+use crate::memory::space::AddressSpace;
+use alloc::sync::Arc;
+
 pub struct Task {
     pub id: TaskId,
     pub thing: ThingId,
     pub state: TaskState,
-    pub stack_ptr: u64, // Saved SP (top of kernel stack)
+    pub stack_ptr: u64,
+    pub address_space: Arc<AddressSpace>,
     pub heap_base: u64,
     pub heap_size: u64,
     pub heap_brk: u64,
 }
 
 impl Task {
-    pub fn new(id: TaskId, thing: ThingId, stack_ptr: u64) -> Self {
+    pub fn new(id: TaskId, thing: ThingId, stack_ptr: u64, address_space: Arc<AddressSpace>) -> Self {
         Self {
             id,
             thing,
             state: TaskState::New,
             stack_ptr,
+            address_space,
             heap_base: 0,
             heap_size: 0,
             heap_brk: 0,

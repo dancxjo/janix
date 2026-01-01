@@ -104,44 +104,55 @@ fn bran_log(msg: &str) {
 // =============================================================================
 
 use core::alloc::{GlobalAlloc, Layout};
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+const HEAP_SIZE: usize = 128 * 1024; // 128 KiB
+
+struct HeapBuf<const N: usize>(UnsafeCell<[u8; N]>);
 
 struct BumpAllocator;
 
-const HEAP_SIZE: usize = 2 * 1024 * 1024;
-
-#[repr(align(16))]
-struct HeapBuf<const N: usize>(UnsafeCell<[u8; N]>);
-
-unsafe impl<const N: usize> Sync for HeapBuf<N> {}
-
 struct HeapState<const N: usize> {
-    pos: UnsafeCell<usize>,
+    pos: AtomicUsize,
     buf: HeapBuf<N>,
 }
 
 unsafe impl<const N: usize> Sync for HeapState<N> {}
 
 static HEAP: HeapState<{ HEAP_SIZE }> = HeapState {
-    pos: UnsafeCell::new(0),
+    pos: AtomicUsize::new(0),
     buf: HeapBuf(UnsafeCell::new([0; HEAP_SIZE])),
 };
 
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let pos = HEAP.pos.get();
         let heap_base = HEAP.buf.0.get() as *mut u8;
-
         let align = layout.align();
         let size = layout.size();
 
-        let current = *pos;
-        let aligned_pos = (current + align - 1) & !(align - 1);
-        if aligned_pos + size > HEAP_SIZE {
-            return core::ptr::null_mut();
+        // Loop for atomic update
+        let mut current = HEAP.pos.load(Ordering::Relaxed);
+        loop {
+            let aligned_pos = (current + align - 1) & !(align - 1);
+            if aligned_pos + size > HEAP_SIZE {
+                return core::ptr::null_mut();
+            }
+            
+            // Try to reserve
+            match HEAP.pos.compare_exchange_weak(
+                current,
+                aligned_pos + size,
+                Ordering::SeqCst,
+                Ordering::Relaxed
+            ) {
+                Ok(_) => {
+                    return heap_base.add(aligned_pos);
+                }
+                Err(updated) => {
+                    current = updated;
+                }
+            }
         }
-        let ptr = heap_base.add(aligned_pos);
-        *pos = aligned_pos + size;
-        ptr
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}

@@ -267,7 +267,7 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
              
              // SS
              sp = sp.sub(1);
-             *sp = 0x10; // Kernel Data
+             *sp = 0x1b; // User Data (RPL 3)
              
              // RSP (Value after iretq, i.e., top of stack frame?)
              // iretq restores RSP to this value IF it pops 5 words.
@@ -280,7 +280,7 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
              
              // CS
              sp = sp.sub(1);
-             *sp = 0x8; // Kernel Code
+             *sp = 0x23; // User Code (RPL 3)
              
              // RIP
              sp = sp.sub(1);

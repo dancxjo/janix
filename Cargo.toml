@@ -10,6 +10,7 @@ members = [
     "crates/bloom",
     "tools/bdd",
     "xtask", "crates/sprout_exit", "tools/docgen",
+    "crates/heap_smoke",
 ]
 
 [workspace.package]

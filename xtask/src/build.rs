@@ -95,6 +95,26 @@ pub fn run(env: &str) -> Result<()> {
         anyhow::bail!("Sprout Exit build failed");
     }
 
+    // 5. Build Heap Smoke (Test Module)
+    println!("    Building heap_smoke...");
+    let status = Command::new(&cargo)
+        .arg("build")
+        .arg("--manifest-path")
+        .arg("crates/heap_smoke/Cargo.toml")
+        .arg("--target")
+        .arg(target)
+        .arg("-Z")
+        .arg("build-std=core,alloc,compiler_builtins")
+        .env("RUSTFLAGS", "-C relocation-model=pic -C link-arg=-pie")
+        .env("RUSTC_BOOTSTRAP", "1")
+        .current_dir(&root)
+        .status()
+        .context("Failed to build heap_smoke")?;
+
+    if !status.success() {
+        anyhow::bail!("Heap Smoke build failed");
+    }
+
     Ok(())
 }
 

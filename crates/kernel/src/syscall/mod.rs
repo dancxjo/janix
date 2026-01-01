@@ -73,24 +73,131 @@ pub fn init() {
 #[unsafe(no_mangle)]
 pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64, _a5: u64) -> SyscallResult {
     // Debug for Sprout bringup
-    if nr == 1 {
+    if nr == abi::syscall::SYSCALL_LOG as u32 || nr == 1 {
         log::klog(Level::Info, "SYSCALL", "log_emit called");
     }
-    match nr {
-        nr::SYS_VERSION_GET => sys_version_get(),
-        nr::SYS_LOG_EMIT => sys_log_emit(a0, a1, a2),
-        nr::SYS_SYMBOL_INTERN => sys_symbol_intern(a0, a1),
-        nr::SYS_MACHINE => sys_machine(a0, a1, a2, a3),
-        nr::SYS_GET_ROOT_PLACE => sys_get_root_place(),
-        nr::SYS_PLACE_OP => sys_place_op(a0, a1, a2, a3),
-        nr::SYS_PROC_SPAWN => sys_proc_spawn(a0, a1),
-        nr::SYS_PROC_EXIT => sys_proc_exit(a0),
-        nr::SYS_HEAP_GROW => sys_heap_grow(a0),
-        nr::SYS_SCHED_YIELD => sys_sched_yield(),
-        nr::SYS_WATCH => sys_watch(a0, a1),
-        nr::SYS_WAIT_EVENT => sys_wait_event(a0),
+
+    match nr as u64 {
+        abi::syscall::SYSCALL_LOG => sys_log_emit(a0, a1, a2),
+        abi::syscall::SYSCALL_HEAP_GROW => sys_heap_grow(a0),
+        abi::syscall::SYSCALL_BYTESPACE_CREATE => SyscallResult::new(err::ENOSYS, 0, 0), // TODO
+        abi::syscall::SYSCALL_SPACE_MAP => SyscallResult::new(err::ENOSYS, 0, 0), // TODO
+        
+        // Legacy/Internal mappings (keep for internal components if any)
+        0 => sys_version_get(),
+        1 => sys_log_emit(a0, a1, a2), // Alias 1 to LOG for compatibility if needed
+        2 => sys_symbol_intern(a0, a1),
+        3 => sys_machine(a0, a1, a2, a3),
+        10 => sys_place_op(10, a0, a1, a2), // THING_CREATE
+        100 => sys_proc_spawn(a0, a1),
+        101 => sys_proc_exit(a0),
+        120 => sys_heap_grow(a0),
+        200 => sys_sched_yield(),
+        300 => sys_get_root_place(),
+        500 => sys_watch(a0, a1),
+        501 => sys_wait_event(a0),
+        
+        // Broad catch-all for legacy place_op mapping?
+        // For now, explicit mapping is safer.
+        
         _ => SyscallResult::new(err::ENOSYS, 0, 0),
     }
+}
+
+// ... logic ...
+
+/// SYS_HEAP_GROW: Grow the heap
+/// a0: increment (bytes)
+fn sys_heap_grow(increment: u64) -> SyscallResult {
+    use crate::memory::bytespace::Bytespace;
+    use crate::memory::map::MapPerms;
+
+    crate::sched::with_current_task(|task| {
+        let old_brk = task.heap_brk;
+        crate::log::klog(crate::log::Level::Info, "SYSCALL", &alloc::format!("sys_heap_grow: increment={} old_brk={:x}", increment, old_brk));
+
+        if increment == 0 {
+             return SyscallResult::new(0, old_brk, 0);
+        }
+        
+        let _new_brk = old_brk + increment;
+        
+        // If we exceed hard limit? (e.g. 1GB?)
+        // For now, no hard limit check other than address space arithmetic.
+        
+        // We need to map new memory backing this growth.
+        // We assume contiguous virtual growth.
+        // We check if (old_brk .. new_brk) is mapped.
+        // Currently we map lazily or eagerly?
+        // Task 06 says: "kernel creates bytespace... maps it".
+        
+        // Calculate required bytespace size
+        // We allocate EXACTLY what's requested + padding?
+        // Or Page Aligned?
+        // User (thing_std) requests aligned chunk.
+        
+        // We need page alignment for mapping.
+        // old_brk must be page aligned? NO. Heap structure doesn't require page align.
+        // BUT mapping require page align.
+        // If old_brk is 0x...120. We can't map at 0x...120.
+        // We must map at next Page Boundary.
+        
+        // Strategy:
+        // Check if `new_brk` is covered by existing mappings.
+        // Mapped Top = task.heap_brk (if we consider brk = mapped top).
+        // If `increment` implies growing execution-accessible memory.
+        
+        // wait. `heap_brk` usually means "end of valid heap".
+        // Backing memory usually grows in Pages.
+        // Does `heap_brk` track mapped limit or used limit?
+        // Usually `brk` is "end of data segment".
+        // `thing_std` allocator calls `heap_grow` when it needs more space.
+        // It expects valid memory up to returned address + increment.
+        
+        // Simple strategy:
+        // Always allocate a NEW Bytespace for the increment.
+        // Map it at `old_brk`?
+        // MMU requires Page Aligned Virtual Address.
+        // If `old_brk` is NOT page aligned, we have a problem.
+        // We can't map at `...120`.
+        
+        // Solution:
+        // Round `old_brk` UP to next page?
+        // But then we have a hole.
+        // `thing_std` allocator expects contiguous.
+        
+        // Correct Solution:
+        // `heap_brk` should track the VIRTUAL END.
+        // But mappings are GRANULAR (4KB).
+        // We should track `mapped_top`.
+        // If `new_brk > mapped_top`, we allocate (new_brk - mapped_top) rounded up to page.
+        // Map it at `mapped_top`.
+        // Update `mapped_top`.
+        
+        // `Task` struct needs `heap_mapped_limit`.
+        // Currently it only has `heap_brk`?
+        // Let's assume `heap_brk` IS the mapped limit (aligned).
+        // If `thing_std` calls `heap_grow(100)`, we move `heap_brk` by 4096 (min).
+        // And return old_brk.
+        // But `thing_std` manages sub-page allocation.
+        // So Kernel `sys_heap_grow` is essentially `sbrk` but granular.
+        
+        // Let's round up increment to 4KB.
+        let page_size = 4096;
+        let alloc_size = (increment + page_size - 1) & !(page_size - 1);
+        
+        let bs = Bytespace::new_ram(alloc_size as usize);
+        let map_addr = old_brk; // Assume old_brk is page aligned (enforced by boot.rs and previous grows)
+        
+        // Map it
+        // task.address_space is Arc<AddressSpace>. &Arc coerces to &AddressSpace.
+        // MapPerms::USER is CRITICAL
+        task.address_space.map_bytespace_shared(map_addr, &bs, 0, alloc_size as usize, MapPerms::READ | MapPerms::WRITE | MapPerms::USER).unwrap();
+        
+        task.heap_brk = map_addr + alloc_size;
+        
+        SyscallResult::new(0, map_addr, 0)
+    }).unwrap_or(SyscallResult::new(err::EFAULT, 0, 0))
 }
 
 /// SYS_VERSION_GET: Get kernel version
@@ -376,32 +483,5 @@ fn sys_wait_event(watcher_low: u64) -> SyscallResult {
         // Yield to other tasks
         crate::sched::yield_current();
     }
-}
-
-/// SYS_HEAP_GROW: Grow the heap
-/// a0: increment (bytes)
-fn sys_heap_grow(increment: u64) -> SyscallResult {
-    crate::sched::with_current_task(|task| {
-        let old_brk = task.heap_brk;
-        if increment == 0 {
-             return SyscallResult::new(0, old_brk, 0);
-        }
-        
-        let new_brk = old_brk + increment;
-        // Check hard limit (heap_base + heap_size)
-        // If heap_size is the reserved region size.
-        if new_brk > task.heap_base + task.heap_size {
-             return SyscallResult::new(err::ENOMEM, 0, 0);
-        }
-        
-        task.heap_brk = new_brk;
-        
-        // Zero the new memory (safety: we assume it's mapped)
-        unsafe {
-            core::ptr::write_bytes(old_brk as *mut u8, 0, increment as usize);
-        }
-
-        SyscallResult::new(0, old_brk, 0)
-    }).unwrap_or(SyscallResult::new(err::EFAULT, 0, 0))
 }
 

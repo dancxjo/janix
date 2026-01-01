@@ -22,6 +22,7 @@ impl AddressSpace {
 
     pub fn map(&mut self, virt: u64, phys: u64, len: usize, perms: MapPerms) -> MapResult<()> {
         use x86_64::structures::paging::Page;
+        crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("mapping {:x}->{:x} len {:x}", virt, phys, len));
         
         let start = VirtAddr::new(virt);
         let end_addr = start + len as u64;
@@ -29,10 +30,17 @@ impl AddressSpace {
         let end_page = Page::<Size4KiB>::containing_address(end_addr - 1u64);
 
         let pml4 = unsafe { get_table_mut(self.pml4_table) };
-
-        for page in Page::range_inclusive(start_page, end_page) {
-            let offset = page.start_address() - start;
-            let frame_phys = PhysAddr::new(phys + offset);
+        
+        // Calculate physical address of the first page start
+        // phys passed is for 'virt'. If virt is unaligned, phys is unaligned.
+        // We need the page-aligned physical address.
+        // phys_page_base = phys - (virt % 4096)
+        let page_offset = virt % 4096;
+        let start_phys = phys.checked_sub(page_offset).expect("phys addr underflow");
+        
+        for (i, page) in Page::range_inclusive(start_page, end_page).enumerate() {
+            let frame_start = start_phys + (i as u64 * 4096);
+            let frame_phys = PhysAddr::new(frame_start);
             let frame = PhysFrame::<Size4KiB>::from_start_address(frame_phys).map_err(|_| MapError::InvalidAddress)?;
 
             let p4_entry = &mut pml4[page.p4_index()];
@@ -55,11 +63,6 @@ impl AddressSpace {
             p1_entry.set_addr(frame.start_address(), flags);
         }
         
-        // Flush TLB? 
-        // Logic might be needed, but since we modify current CR3 if active...
-        // For now, simple invlpg? 
-        // Using x86_64::instructions::tlb::flush_all() is heavy but safe.
-        // Or invlpg for range.
         x86_64::instructions::tlb::flush_all();
 
         Ok(())

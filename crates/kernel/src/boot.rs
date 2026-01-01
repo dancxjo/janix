@@ -167,7 +167,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         // Use physical address directly for Bytespace base
         let bs = Bytespace::new_module(module.phys_addr, module.size as usize);
         
-        if module.path.ends_with("sprout") {
+        if module.path.ends_with("sprout") || module.path.ends_with("heap_smoke") {
              spawn_module(ctx, module, &bs);
         }
     }
@@ -343,7 +343,7 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             
             // Map the image Bytespace into the Task
             crate::sched::with_task(task_id, |t| {
-                 t.address_space.as_ref().map_bytespace_shared(image_base_virt, &image_bs, 0, image_size, MapPerms::READ | MapPerms::WRITE | MapPerms::EXEC).unwrap();
+                 t.address_space.as_ref().map_bytespace_shared(image_base_virt, &image_bs, 0, image_size, MapPerms::READ | MapPerms::WRITE | MapPerms::EXEC | MapPerms::USER).unwrap();
             });
 
         } else {
@@ -352,13 +352,13 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         }
 
         // Dedicated Stack Bytespace
-        let stack_size = 24 * 1024;
+        let stack_size = 32 * 1024;
         let stack_bs = Bytespace::new_ram(stack_size);
         let stack_base = stack_bs.backing_ptr().unwrap() as u64;
         let stack_top = (stack_base + stack_size as u64) & !0xf;
         
         crate::sched::with_task(task_id, |t| {
-             t.address_space.as_ref().map_bytespace_shared(stack_base, &stack_bs, 0, stack_size, MapPerms::READ | MapPerms::WRITE).unwrap();
+             t.address_space.as_ref().map_bytespace_shared(stack_base, &stack_bs, 0, stack_size, MapPerms::READ | MapPerms::WRITE | MapPerms::USER).unwrap();
         });
 
         // Heap Bytespace
@@ -367,16 +367,39 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         let heap_base = heap_bs.backing_ptr().unwrap() as u64;
 
         crate::sched::with_task(task_id, |t| {
-             t.address_space.as_ref().map_bytespace_shared(heap_base, &heap_bs, 0, heap_size, MapPerms::READ | MapPerms::WRITE).unwrap();
+             t.address_space.as_ref().map_bytespace_shared(heap_base, &heap_bs, 0, heap_size, MapPerms::READ | MapPerms::WRITE | MapPerms::USER).unwrap();
         });
 
         // Configure Context (Entry/Stack)
+        crate::log::klog(crate::log::Level::Info, "BOOT", &alloc::format!("Sprout entry: {:x} stack_top: {:x}", final_entry, stack_top));
+
         crate::sched::configure_task_memory(
             task_id, 
             (image_base_virt, image_size as u64),
             (stack_base, stack_size as u64),
             (heap_base, heap_size as u64, heap_base)
         );
+
+        crate::sched::with_task(task_id, |t| {
+             // Set Stack Pointer
+             let _sp = (stack_top as u64) & !0xf; // Ensure alignment
+             
+             // We need to update the stack pointer in the Task struct so the scheduler picks it up
+             // configure_task_context already sets t.stack_ptr, but we need to ensure it matches specific stack_top
+             // actually configure_task_context uses with_task internally to set stack_ptr.
+             // But it uses t.stack_ptr logic inside.
+             // Wait. configure_task_context takes 'entry'. It uses 't.stack_ptr' calculation logic internally or expects it set?
+             // Let's check sched/mod.rs again.
+             // It uses: "let stack_top = (task.stack_ptr & !0xf) as *mut u64;"
+             // So it READS stack_ptr from task.
+             // We MUST set task.stack_ptr BEFORE calling configure_task_context?
+             // YES.
+             
+             t.stack_ptr = stack_top;
+             crate::log::klog(crate::log::Level::Info, "BOOT", &alloc::format!("Sprout t.stack_ptr set to {:x}", t.stack_ptr));
+        });
+        
+        crate::sched::configure_task_context(task_id, final_entry);
 
         // Note: configure_task_context currently empty.
         // We rely on spawn_empty + manual context fixup?
@@ -407,8 +430,6 @@ pub fn spawn_module_by_name(ctx: &'static BootContext, name: &str) {
              return;
         }
     }
-    log::klog(Level::Warn, "SYSCALL", &format!("module '{}' not found", name));
+    crate::log::klog(crate::log::Level::Warn, "SYSCALL", &alloc::format!("module '{}' not found", name));
 }
-
-
 

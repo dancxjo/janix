@@ -19,6 +19,9 @@ impl RunQueue {
 
     pub fn push_back(&mut self, task_id: TaskId, task_thing: ThingId, place: &mut PlaceStore) {
         self.queue.push_back(task_id);
+        if self.queue.len() % 1000 == 0 {
+             crate::log::klog(crate::log::Level::Warn, "SCHED", &alloc::format!("RunQueue Len: {}", self.queue.len()));
+        }
         // task --[in_run_queue]--> run_queue.0
         let _ = place.create_relationship(sym::PRED_IN_RUN_QUEUE, task_thing, self.thing);
     }

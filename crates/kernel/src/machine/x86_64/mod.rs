@@ -195,10 +195,13 @@ impl Machine for ArchMachine {
          let k_virt = self.kernel_virt_base.load(core::sync::atomic::Ordering::Relaxed);
          let k_phys = self.kernel_phys_base.load(core::sync::atomic::Ordering::Relaxed);
 
-         if virt >= hhdm && hhdm != 0 {
-             virt - hhdm
-         } else if virt >= k_virt && k_virt != 0 {
+
+
+         // Prioritize Kernel Image (higher half, usually fixed range) over HHDM
+         if virt >= k_virt && k_virt != 0 {
              virt - k_virt + k_phys
+         } else if virt >= hhdm && hhdm != 0 {
+             virt - hhdm
          } else {
              // Fallback or identity?
              virt

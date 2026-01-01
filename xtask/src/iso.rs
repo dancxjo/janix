@@ -52,6 +52,13 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
     fs::copy(&bloom_src, modules_dir.join("bloom"))
          .with_context(|| format!("Failed to copy bloom from {:?}", bloom_src))?;
 
+    // Copy Heap Smoke -> /boot/modules/heap_smoke
+    let heap_smoke_src = bin_src.join("heap_smoke");
+    if heap_smoke_src.exists() {
+         fs::copy(&heap_smoke_src, modules_dir.join("heap_smoke"))
+             .with_context(|| format!("Failed to copy heap_smoke from {:?}", heap_smoke_src))?;
+    }
+
     // Limine Config
     let conf_src = root.join("limine.conf");
     let limine_dest = boot_dir.join("limine");

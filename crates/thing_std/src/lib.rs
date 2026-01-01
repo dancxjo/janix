@@ -38,9 +38,9 @@ unsafe impl GlobalAlloc for BumpAllocator {
     }
 }
 
-fn heap_grow(increment: u64) -> u64 {
+pub fn heap_grow(increment: u64) -> u64 {
     unsafe {
-        let res = syscall(120, increment, 0, 0, 0); // SYS_HEAP_GROW
+        let res = syscall(abi::syscall::SYSCALL_HEAP_GROW as u32, increment, 0, 0, 0);
         if res.status != 0 {
             0
         } else {
@@ -48,6 +48,8 @@ fn heap_grow(increment: u64) -> u64 {
         }
     }
 }
+
+
 
 
 
@@ -94,7 +96,7 @@ pub fn contained_in(place: PlaceId) -> usize {
 
 pub fn log_info(msg: &str) {
     unsafe {
-        syscall(1, 2, msg.as_ptr() as u64, msg.len() as u64, 0);
+        syscall(abi::syscall::SYSCALL_LOG as u32, 2, msg.as_ptr() as u64, msg.len() as u64, 0);
     }
 }
 

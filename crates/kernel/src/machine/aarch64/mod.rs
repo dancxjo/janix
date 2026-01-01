@@ -64,7 +64,12 @@ impl ArchMachine {
     }
 
     fn hhdm_offset(&self) -> u64 {
-        self.hhdm_offset.load(Ordering::Relaxed)
+        let val = self.hhdm_offset.load(Ordering::Relaxed);
+        if val == 0 {
+            0xffff_8000_0000_0000
+        } else {
+            val
+        }
     }
 
     fn kernel_phys_base(&self) -> u64 {

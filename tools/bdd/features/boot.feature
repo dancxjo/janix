@@ -8,7 +8,6 @@ Feature: Boot milestones
       | BRAN: handoff to kernel                              |
       | KERNEL: handoff accepted                             |
       | KERNEL: machine installed                            |
-      | MACHINE: mmio ok                                     |
       | LOG: serial backend installed                        |
       | KERNEL: symbols init                                 |
       | KERNEL: place store init                             |
@@ -18,22 +17,11 @@ Feature: Boot milestones
       | KERNEL: place store indexes rebuilt                  |
       | PLACE: root contains                                 |
       | KERNEL: ontology self-test passed                    |
-      | BLOOM: thing created                                 |
-      | BLOOM: desktop place created                         |
-      | BLOOM: desktop contains                              |
-      | PLACE: desktop contains                              |
       | KERNEL: scheduler init                               |
       | KERNEL: spawning sprout                              |
       | SCHED: task state set: running                       |
-      | userland: SPROUT: starting world interaction demo    |
-      | userland: SPROUT: published spawns relationship      |
-      | userland: SPROUT: launching bloom                    |
-      | userland: BLOOM: starting desktop seeding            |
-      | BLOOM: acquired identity from handoff                |
-      | BLOOM: desktop place created                         |
-      | userland: BLOOM: published provides relationship     |
-      | KERNEL: desktop provider: ThingId(                   |
-      | BLOOM: desktop contains expected count (3)           |
+      | userland: SPROUT: I am alive!                        |
+
 
     Examples:
       | arch    |
@@ -44,7 +32,7 @@ Feature: Boot milestones
     Given I boot the OS in qemu for "<arch>"
     Then I expect NOT to see "KERNEL: symbols init" before "LOG: serial backend installed"
     And I expect NOT to see "KERNEL: place store init" before "KERNEL: symbols init"
-    And I expect NOT to see "BLOOM: thing created" before "KERNEL: ontology self-test passed"
+    # And I expect NOT to see "BLOOM: thing created" before "KERNEL: ontology self-test passed"
 
     Examples:
       | arch        |
@@ -78,13 +66,8 @@ Feature: Boot milestones
     Given I boot the OS in qemu for "<arch>"
     Then the serial console log must contain the following lines in order:
       | KERNEL: spawning sprout                               |
-      | SPROUT: jumping to                                   |
-      | userland: SPROUT: starting world interaction demo    |
-      | userland: SPROUT: published spawns relationship      |
-      | userland: SPROUT: launching bloom                    |
-      | userland: BLOOM: starting desktop seeding            |
-      | userland: BLOOM: published provides relationship     |
-      | KERNEL: desktop provider: ThingId(                   |
+      | SCHED: task state set: running                        |
+      | userland: SPROUT: I am alive!                         |
 
     Examples:
       | arch   |

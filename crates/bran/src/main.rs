@@ -10,12 +10,13 @@
 
 use core::arch::asm;
 use limine::request::{
-    FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest, RequestsEndMarker,
-    RequestsStartMarker,
+    FramebufferRequest, HhdmRequest, KernelAddressRequest, MemoryMapRequest, ModuleRequest,
+    RequestsEndMarker, RequestsStartMarker,
 };
 use limine::BaseRevision;
 
 use kernel::boot::{BootContext, FramebufferInfo, ModuleInfo};
+use kernel::PreBootInfo;
 
 // =============================================================================
 // Limine Requests
@@ -40,6 +41,10 @@ static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
 #[used]
 #[unsafe(link_section = ".requests")]
 static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+static KERNEL_ADDRESS_REQUEST: KernelAddressRequest = KernelAddressRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]
@@ -67,63 +72,19 @@ static mut BOOT_CTX: BootContext = BootContext {
     framebuffer: None,
     modules: &[],
     early_putc: Some(early_putc),
+    kernel_phys_base: 0,
+    kernel_virt_base: 0,
 };
 
 // =============================================================================
 // Early Bringup Utilities
 // =============================================================================
 
+/// Write a byte to the console via the kernel's Machine interface.
+///
+/// After pre_boot() is called, this routes through proper MMIO mappings.
 fn early_putc(c: u8) {
-    // Limine Console/Terminal request removed due to compilation issues.
-    // We fall back to direct serial input below.
-
-    #[cfg(target_arch = "loongarch64")]
-    let hhdm_offset = if let Some(hhdm) = HHDM_REQUEST.get_response() {
-        hhdm.offset()
-    } else {
-        0
-    };
-
-    unsafe {
-        #[cfg(target_arch = "x86_64")]
-        {
-            // COM1 (0x3F8) - I/O ports don't use paging
-            // Wait for THRE (bit 5) in LSR (port 0x3FD)
-            let mut lsr: u8;
-            loop {
-                asm!("in al, dx", out("al") lsr, in("dx") 0x3FDu16, options(nomem, nostack, preserves_flags));
-                if lsr & 0x20 != 0 { break; }
-            }
-            asm!("out dx, al", in("dx") 0x3F8u16, in("al") c, options(nomem, nostack, preserves_flags));
-        }
-        #[cfg(target_arch = "aarch64")]
-        {
-            // QEMU virt: PL011 at 0x0900_0000
-            // Use physical address directly to avoid HHDM assumptions.
-            let addr = 0x0900_0000 as *mut u8;
-            core::ptr::write_volatile(addr, c);
-        }
-        #[cfg(target_arch = "riscv64")]
-        {
-            // QEMU virt: NS16550 at 0x1000_0000
-            // Use physical address directly to avoid HHDM assumptions.
-            let addr = 0x1000_0000 as *mut u8;
-            core::ptr::write_volatile(addr, c);
-        }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            // QEMU virt: Serial at 0x1fe001e0
-            // LoongArch might need HHDM, but let's be consistent if we want blind writes.
-            // But LoongArch was working before? Let's keep the check if we are unsure,
-            // or remove it if we want consistency. Let's JUST do AArch64/RISC-V modification for now.
-             if hhdm_offset != 0 {
-                let addr = (0x1fe001e0 + hhdm_offset) as *mut u8;
-                // Wait for THRE (bit 5) in LSR (offset 5)
-                while core::ptr::read_volatile(addr.add(5)) & 0x20 == 0 {}
-                core::ptr::write_volatile(addr, c);
-            }
-        }
-    }
+    kernel::serial::putc(c);
 }
 
 fn bran_log(msg: &str) {
@@ -174,8 +135,7 @@ static ALLOCATOR: BumpAllocator = BumpAllocator;
 unsafe extern "C" fn kmain() -> ! {
     // Verify Limine protocol
     if !BASE_REVISION.is_supported() {
-        // Just try to print '!' without HHDM or init, desperate measure
-        early_putc(b'!');
+        // Protocol mismatch - halt immediately (can't log safely)
         loop {
             #[cfg(target_arch = "x86_64")]
             asm!("cli; hlt");
@@ -186,12 +146,31 @@ unsafe extern "C" fn kmain() -> ! {
         }
     }
 
+    // Get HHDM offset first - needed for MMIO mapping
+    let hhdm_offset = HHDM_REQUEST.get_response()
+        .map(|h| h.offset())
+        .unwrap_or(0);
+
+    // Get kernel physical/virtual base addresses for MMIO page table setup
+    let (kernel_phys_base, kernel_virt_base) = KERNEL_ADDRESS_REQUEST.get_response()
+        .map(|r| (r.physical_base(), r.virtual_base()))
+        .unwrap_or((0, 0));
+
+    // Initialize Machine interface before ANY logging
+    // This maps UART MMIO on AArch64/RISC-V, making serial output safe
+    kernel::pre_boot(PreBootInfo {
+        hhdm_offset,
+        kernel_phys_base,
+        kernel_virt_base,
+    });
+
     bran_log("BRAN: starting");
 
     // 1. Collect HHDM and Memory Map info
-    if let Some(hhdm) = HHDM_REQUEST.get_response() {
-        BOOT_CTX.hhdm_offset = hhdm.offset();
-    }
+    // (already obtained above for pre_boot)
+    BOOT_CTX.hhdm_offset = hhdm_offset;
+    BOOT_CTX.kernel_phys_base = kernel_phys_base;
+    BOOT_CTX.kernel_virt_base = kernel_virt_base;
 
     if let Some(mmap) = MEMORY_MAP_REQUEST.get_response() {
         let mut total_mem = 0;

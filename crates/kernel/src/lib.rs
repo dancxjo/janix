@@ -28,5 +28,5 @@ pub mod bytespace;
 pub mod caps;
 pub mod proc;
 
-// Re-export the main entry point
-pub use boot::boot;
+// Re-export the main entry points
+pub use boot::{boot, pre_boot, PreBootInfo};

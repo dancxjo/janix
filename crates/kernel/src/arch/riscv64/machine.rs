@@ -31,6 +31,8 @@ static mut MMIO_L0: [PageTable; 512] = [const { PageTable::new() }; 512];
 pub struct ArchMachine {
     serial: Serial,
     hhdm_offset: AtomicU64,
+    kernel_phys_base: AtomicU64,
+    kernel_virt_base: AtomicU64,
     uart_base: AtomicU64,
 }
 
@@ -41,16 +43,28 @@ impl ArchMachine {
         Self {
             serial: Serial::new(),
             hhdm_offset: AtomicU64::new(0),
+            kernel_phys_base: AtomicU64::new(0),
+            kernel_virt_base: AtomicU64::new(0),
             uart_base: AtomicU64::new(0),
         }
     }
 
-    pub fn init_machine(&self, hhdm_offset: u64) {
-        self.hhdm_offset.store(hhdm_offset, Ordering::Relaxed);
+    pub fn init_machine(&self, info: crate::boot::PreBootInfo) {
+        self.hhdm_offset.store(info.hhdm_offset, Ordering::Relaxed);
+        self.kernel_phys_base.store(info.kernel_phys_base, Ordering::Relaxed);
+        self.kernel_virt_base.store(info.kernel_virt_base, Ordering::Relaxed);
     }
 
     fn hhdm_offset(&self) -> u64 {
         self.hhdm_offset.load(Ordering::Relaxed)
+    }
+
+    fn kernel_phys_base(&self) -> u64 {
+        self.kernel_phys_base.load(Ordering::Relaxed)
+    }
+
+    fn kernel_virt_base(&self) -> u64 {
+        self.kernel_virt_base.load(Ordering::Relaxed)
     }
 
     fn phys_to_virt(&self, phys: u64) -> u64 {
@@ -59,6 +73,12 @@ impl ArchMachine {
 
     fn virt_to_phys(&self, virt: u64) -> u64 {
         virt.wrapping_sub(self.hhdm_offset())
+    }
+
+    /// Translate kernel virtual address (BSS/data segment) to physical
+    fn kernel_virt_to_phys(&self, virt: u64) -> u64 {
+        virt.wrapping_sub(self.kernel_virt_base())
+            .wrapping_add(self.kernel_phys_base())
     }
 
     fn kernel_root_table(&self) -> Option<*mut usize> {
@@ -85,7 +105,8 @@ impl ArchMachine {
     }
 
     fn table_pte(&self, table: &PageTable) -> usize {
-        let phys = self.virt_to_phys(table as *const _ as u64);
+        // table is a kernel BSS address, not an HHDM address
+        let phys = self.kernel_virt_to_phys(table as *const _ as u64);
         (((phys >> 12) as usize) << 10) | 0b001
     }
 

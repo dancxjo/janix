@@ -39,6 +39,41 @@ pub struct BootContext {
     pub modules: &'static [ModuleInfo],
     /// Optional early serial output function provided by Bran
     pub early_putc: Option<fn(u8)>,
+    /// Kernel physical load address
+    pub kernel_phys_base: u64,
+    /// Kernel virtual base address
+    pub kernel_virt_base: u64,
+}
+
+use core::sync::atomic::{AtomicBool, Ordering};
+
+static MACHINE_INSTALLED: AtomicBool = AtomicBool::new(false);
+
+/// Information needed for pre-boot machine initialization.
+#[derive(Clone, Copy)]
+pub struct PreBootInfo {
+    /// HHDM offset for physical memory access
+    pub hhdm_offset: u64,
+    /// Kernel physical load address
+    pub kernel_phys_base: u64,
+    /// Kernel virtual base address  
+    pub kernel_virt_base: u64,
+}
+
+/// Pre-boot initialization for early console output.
+///
+/// Bran calls this with addressing info before any logging.
+/// This initializes the Machine interface and maps UART MMIO,
+/// enabling safe console output on all architectures.
+///
+/// Safe to call multiple times (idempotent).
+pub fn pre_boot(info: PreBootInfo) {
+    if MACHINE_INSTALLED.swap(true, Ordering::SeqCst) {
+        return; // Already installed
+    }
+    ARCH_MACHINE.init_machine(info);
+    unsafe { machine::install(&ARCH_MACHINE) };
+    crate::serial::init();
 }
 
 /// Main kernel entry point
@@ -47,10 +82,13 @@ pub struct BootContext {
 /// ctx is a Bag of Facts (no behavior).
 /// This function never returns.
 pub fn boot(ctx: &'static mut BootContext) -> ! {
-    // Phase 0: Install machine backend
-    ARCH_MACHINE.init_machine(ctx.hhdm_offset);
-    unsafe { machine::install(&ARCH_MACHINE) };
-    crate::serial::init();
+    // Phase 0: Install machine backend (idempotent - may already be done by pre_boot)
+    pre_boot(PreBootInfo {
+        hhdm_offset: ctx.hhdm_offset,
+        kernel_phys_base: ctx.kernel_phys_base,
+        kernel_virt_base: ctx.kernel_virt_base,
+    });
+    crate::serial::write(b"KERNEL: handoff accepted\n");
     crate::serial::write(b"MACHINE: installed\n");
     crate::serial::write(b"MACHINE: mmio ok\n");
 

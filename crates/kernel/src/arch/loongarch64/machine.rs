@@ -16,7 +16,9 @@ impl ArchMachine {
         }
     }
 
-    pub fn init_machine(&self, _hhdm_offset: u64) {}
+    pub fn init_machine(&self, _info: crate::boot::PreBootInfo) {
+        // LoongArch64 uses HHDM which already covers UART
+    }
 }
 
 impl Machine for ArchMachine {

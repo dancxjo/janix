@@ -16,7 +16,9 @@ impl ArchMachine {
         }
     }
 
-    pub fn init_machine(&self, _hhdm_offset: u64) {}
+    pub fn init_machine(&self, _info: crate::boot::PreBootInfo) {
+        // x86_64 uses port I/O, no MMIO mapping needed
+    }
 }
 
 impl Machine for ArchMachine {

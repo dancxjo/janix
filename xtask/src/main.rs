@@ -109,5 +109,5 @@ fn main() -> Result<()> {
 
 fn fix_terminal() {
     // Restore terminal cursor and cooked mode
-    let _ = Command::new("reset").status();
+    // let _ = Command::new("reset").status();
 }

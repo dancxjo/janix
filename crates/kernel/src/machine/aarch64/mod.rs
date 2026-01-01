@@ -152,7 +152,7 @@ impl ArchMachine {
         let boot_l0_virt = core::ptr::addr_of_mut!(BOOT_L0);
         let boot_l0_phys = self.kernel_virt_to_phys(boot_l0_virt as u64);
 
-        let l0_phys = if (current_ttbr1 & !0xfff) != (boot_l0_phys & !0xfff) {
+        let _l0_phys = if (current_ttbr1 & !0xfff) != (boot_l0_phys & !0xfff) {
             // Need to switch to our own L0 table
             let old_l0_phys = current_ttbr1 & !0xfff;
             let old_l0_virt = self.phys_to_virt(old_l0_phys) as *const u64;
@@ -264,6 +264,10 @@ extern "C" {
 }
 
 impl Machine for ArchMachine {
+    fn init(&self, info: crate::machine::PreBootInfo) {
+        self.init_machine(info);
+    }
+
     fn console_write(&self, bytes: &[u8]) -> usize {
         if self.ensure_uart().is_none() {
             return 0;

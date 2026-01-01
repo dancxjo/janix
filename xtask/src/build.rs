@@ -70,8 +70,29 @@ pub fn run(env: &str) -> Result<()> {
         .status()
         .context("Failed to build bloom")?;
 
+
     if !status.success() {
         anyhow::bail!("Bloom build failed");
+    }
+
+    // 4. Build Sprout Exit (Test Module)
+    println!("    Building sprout_exit...");
+    let status = Command::new(&cargo)
+        .arg("build")
+        .arg("--manifest-path")
+        .arg("crates/sprout_exit/Cargo.toml")
+        .arg("--target")
+        .arg(target)
+        .arg("-Z")
+        .arg("build-std=core,alloc,compiler_builtins")
+        .env("RUSTFLAGS", "-C relocation-model=pic -C link-arg=-pie")
+        .env("RUSTC_BOOTSTRAP", "1")
+        .current_dir(&root)
+        .status()
+        .context("Failed to build sprout_exit")?;
+
+    if !status.success() {
+        anyhow::bail!("Sprout Exit build failed");
     }
 
     Ok(())

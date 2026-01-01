@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
+pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) -> Result<()> {
     let root = project_root();
     
     // 1. Build artifacts
@@ -41,9 +41,11 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
         .with_context(|| format!("Failed to copy kernel from {:?}", bran_src))?;
 
     // Copy Sprout -> /boot/modules/sprout
-    let sprout_src = bin_src.join("sprout");
+    let sprout_module_name = init_module.unwrap_or_else(|| "sprout".to_string());
+    let sprout_src = bin_src.join(&sprout_module_name);
+    // We always name it 'sprout' in the ISO so limine.conf finds it
     fs::copy(&sprout_src, modules_dir.join("sprout"))
-         .with_context(|| format!("Failed to copy sprout from {:?}", sprout_src))?;
+         .with_context(|| format!("Failed to copy {} from {:?}", sprout_module_name, sprout_src))?;
 
     // Copy Bloom -> /boot/modules/bloom
     let bloom_src = bin_src.join("bloom");

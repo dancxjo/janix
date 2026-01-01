@@ -1,0 +1,8 @@
+[package]
+name = "sprout_exit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thing_std = { path = "../thing_std" }
+abi = { path = "../abi" }

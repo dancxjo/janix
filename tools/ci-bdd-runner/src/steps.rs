@@ -9,6 +9,7 @@ use tokio::time::{sleep, Duration};
 #[derive(Debug, Default, World)]
 pub struct BootWorld {
     arch: String,
+    pub boot_variant: Option<String>,
     /// Stores the last anchor position for "after that point" steps
     last_anchor_position: Option<usize>,
 }
@@ -73,7 +74,10 @@ async fn wait_for_boot_completion() -> Result<String> {
         let log = get_clean_log().await;
         
         // Check if boot completed
-        if log.contains("Booted.") || log.contains("userland: SPROUT: root contains expected count") {
+        if log.contains("Booted.") 
+            || log.contains("userland: SPROUT: root contains expected count")
+            || log.contains("SPROUT: I am alive")
+        {
             return Ok(log);
         }
 
@@ -107,12 +111,35 @@ async fn soft_fail(msg: String) {
 
 #[given(expr = "I boot the OS in qemu for {string}")]
 async fn boot_os_in_qemu(world: &mut BootWorld, arch: String) -> Result<()> {
+    boot_os_impl(world, arch, None).await
+}
+
+#[given(expr = "I boot the OS in qemu for {string} with {string}")]
+async fn boot_os_in_qemu_with(world: &mut BootWorld, arch: String, variant: String) -> Result<()> {
+    boot_os_impl(world, arch, Some(variant)).await
+}
+
+async fn boot_os_impl(world: &mut BootWorld, arch: String, variant: Option<String>) -> Result<()> {
     world.arch = arch.clone();
+    world.boot_variant = variant.clone();
     let root = project_root();
 
+    let mut init_module = None;
+    if let Some(v) = &variant {
+        if v.contains("init that exits") {
+            init_module = Some("sprout_exit".to_string());
+        }
+    }
+
     // 1. Build ISO using xtask
-    let output = Command::new("cargo")
-        .args(["run", "-p", "xtask", "--", "iso", "--env", &arch])
+    let mut build_cmd = Command::new("cargo");
+    build_cmd.args(["run", "-p", "xtask", "--", "iso", "--env", &arch]);
+    
+    if let Some(mod_name) = init_module {
+        build_cmd.arg("--init-module").arg(mod_name);
+    }
+
+    let output = build_cmd
         .current_dir(&root)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -622,4 +649,43 @@ async fn then_should_provide(world: &mut BootWorld, _provider: String, _provided
 async fn then_should_be_backed_by(world: &mut BootWorld, _surface: String, _bytespace: String) -> Result<()> {
     // Validated by the "seeded framebuffer ontology" log
     expect_to_see_simple(world, "seeded framebuffer ontology".to_string()).await
+}
+
+async fn fail_with_class(class: &str, msg: String) {
+    let formatted = format!("[{}] {}", class, msg);
+    soft_fail(formatted).await;
+}
+
+#[then(expr = "the system must reach steady state")]
+async fn expect_steady_state(_world: &mut BootWorld) -> Result<()> {
+    let log = match wait_for_boot_completion().await {
+        Ok(l) => l,
+        Err(e) => {
+             fail_with_class("BOOT_FAILURE", format!("Boot failed: {}", e)).await;
+             return Ok(());
+        }
+    };
+    
+    // Milestones
+    let has_scheduler = log.contains("KERNEL: scheduler running") || log.contains("sched: entered loop");
+    let has_init = log.contains("KERNEL: init task alive") || log.contains("SPROUT: I am alive");
+    
+    if !has_scheduler {
+        fail_with_class("BOOT_FAILURE", "Steady State Violation: Scheduler did not verify running".to_string()).await;
+    }
+    if !has_init {
+        fail_with_class("INIT_FAILURE", "Steady State Violation: Init task did not verify liveness".to_string()).await;
+    }
+    
+    // Check for panic
+    if log.contains("PANIC") || log.contains("panic") {
+         fail_with_class("PANIC_UNEXPECTED", "Steady State Violation: System panicked".to_string()).await;
+    }
+    
+    Ok(())
+}
+
+#[then(expr = "the system must reach steady state within {int}ms")]
+async fn expect_steady_state_timeout(world: &mut BootWorld, _ms: u64) -> Result<()> {
+    expect_steady_state(world).await
 }

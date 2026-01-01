@@ -163,3 +163,8 @@ pub fn wait_event(watcher: ThingId) -> ThingId {
     ThingId(((res.val0 as u128) << 64) | (res.val1 as u128))
 }
 
+
+pub fn sys_exit(code: i32) -> ! {
+    unsafe { syscall(101, code as u64, 0, 0, 0) };
+    loop {}
+}

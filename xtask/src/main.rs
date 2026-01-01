@@ -47,6 +47,8 @@ enum Commands {
         env: String,
         #[arg(long)]
         cmdline: Option<String>,
+        #[arg(long)]
+        init_module: Option<String>,
     },
     /// Run the OS (hosted or qemu)
     Run {
@@ -82,7 +84,7 @@ fn main() -> Result<()> {
         Commands::Clean => clean::run(),
         Commands::Test { arch } => test::run(Some(arch)),
         Commands::Inspect { env, port } => inspect::run(env, port),
-        Commands::Iso { env, cmdline } => iso::run(env, cmdline),
+        Commands::Iso { env, cmdline, init_module } => iso::run(env, cmdline, init_module),
         Commands::Run {
             env,
             gdb,

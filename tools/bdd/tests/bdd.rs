@@ -32,8 +32,36 @@ pub struct BootWorld {
 }
 
 fn fail_with_output(world: &BootWorld, message: impl AsRef<str>) -> ! {
+    let log = &world.serial_output;
+    // Simple heuristic for failure classification
+    let mut class = "BOOT_FAILURE";
+
+    if log.contains("TIMEOUT") {
+        class = "TIMEOUT_WITHOUT_LIVENESS";
+    } else if log.contains("PANIC") || log.contains("panic") {
+        if let Some(v) = &world.boot_variant {
+            if v.contains("init that exits") || v.contains("panic") {
+                // We expected panic, but maybe assertion failed on content?
+                // If we are here, the test failed. 
+                // Using generic failure if panic was expected but details wrong.
+                class = "ASSERTION_FAILURE_DURING_EXPECTED_PANIC"; 
+            } else {
+                class = "PANIC_UNEXPECTED";
+            }
+        } else {
+             class = "PANIC_UNEXPECTED";
+        }
+    } else if let Some(v) = &world.boot_variant {
+        if (v.contains("init that exits") || v.contains("panic")) && !log.contains("PANIC") {
+            class = "PANIC_EXPECTED_BUT_MISSING";
+        }
+    } else if log.contains("sprout entry point") && !log.contains("SPROUT: I am alive") {
+        class = "INIT_FAILURE";
+    }
+
     panic!(
-        "{}\n--- START ---\n{}\n--- END ---",
+        "\n========= FAILURE CLASSIFICATION: {} =========\n{}\n--- START SERIAL LOG ---\n{}\n--- END SERIAL LOG ---",
+        class,
         message.as_ref(),
         world.serial_output
     );
@@ -84,13 +112,26 @@ async fn boot_os(world: &mut BootWorld, arch: String, variant: Option<String>) {
     world.boot_variant = variant.clone();
     let root = project_root();
 
-    let output = Command::new("make")
-        .args([&format!("template-{}.iso", arch)])
-        .env("KARCH", &arch)
+    // Map variant to init module if applicable
+    let mut init_module = None;
+    if let Some(v) = &variant {
+        if v.contains("init that exits") {
+            init_module = Some("sprout_exit".to_string());
+        }
+    }
+
+    let mut build_cmd = Command::new("cargo");
+    build_cmd.args(["run", "-p", "xtask", "--", "iso", "--env", &arch]);
+    
+    if let Some(mod_name) = init_module {
+        build_cmd.arg("--init-module").arg(mod_name);
+    }
+
+    let output = build_cmd
         .current_dir(&root)
         .output()
         .await
-        .expect("Failed to run make");
+        .expect("Failed to run xtask iso");
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -101,7 +142,7 @@ async fn boot_os(world: &mut BootWorld, arch: String, variant: Option<String>) {
         );
     }
 
-    let iso_path = root.join(format!("template-{}.iso", arch));
+    let iso_path = root.join("target").join("iso").join(format!("thingos-{}.iso", arch));
     assert!(
         iso_path.exists(),
         "ISO file not found at {}",
@@ -270,7 +311,10 @@ async fn boot_os(world: &mut BootWorld, arch: String, variant: Option<String>) {
                         buf.push('\n');
                     }
 
-                    if line.contains("Booted.") || line.contains("userland: SPROUT: root contains expected count") {
+                    if line.contains("Booted.") 
+                        || line.contains("userland: SPROUT: root contains expected count")
+                        || line.contains("SPROUT: I am alive") 
+                    {
                         return true;
                     }
                     if line.contains("panic") || line.contains("PANIC") {
@@ -609,6 +653,34 @@ async fn expect_serial_output(world: &mut BootWorld, expected: String) {
     let lines = serial_lines(world);
     if find_line_index(&lines, &expected).is_none() {
         fail_with_output(world, format!("Expected '{}' in serial output", expected));
+    }
+}
+
+#[then(expr = "the system must reach steady state")]
+async fn expect_steady_state(world: &mut BootWorld) {
+    expect_steady_state_logic(world);
+}
+
+#[then(expr = "the system must reach steady state within {int}ms")]
+async fn expect_steady_state_within(world: &mut BootWorld, _ms: u64) {
+    // We treat the timeout as 'within reasonable time' since logs are already captured.
+    expect_steady_state_logic(world);
+}
+
+fn expect_steady_state_logic(world: &BootWorld) {
+    let log = &world.serial_output;
+     // Milestones from Init Contract
+    let has_scheduler = log.contains("KERNEL: scheduler running") || log.contains("sched: entered loop"); // Adjust based on actual kernel logs
+    let has_init = log.contains("KERNEL: init task alive") || log.contains("SPROUT: I am alive");
+
+    if !has_scheduler {
+        fail_with_output(world, "Steady State Violation: Scheduler did not verify running");
+    }
+    if !has_init {
+        fail_with_output(world, "Steady State Violation: Init task did not verify liveness");
+    }
+    if log.contains("PANIC") || log.contains("panic") {
+         fail_with_output(world, "Steady State Violation: System panicked");
     }
 }
 

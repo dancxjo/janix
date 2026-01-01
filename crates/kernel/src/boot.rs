@@ -81,7 +81,10 @@ pub fn pre_boot(info: PreBootInfo) {
 /// Called by Bran after collecting facts from the bootloader.
 /// ctx is a Bag of Facts (no behavior).
 /// This function never returns.
-pub fn boot(ctx: &'static mut BootContext) -> ! {
+pub unsafe fn boot(ctx: *mut BootContext) -> ! {
+    // Safety: called exactly once during boot, ctx points to the single global BootContext,
+    // and no aliasing occurs after transfer.
+    let ctx: &'static mut BootContext = unsafe { &mut *ctx };
     // Phase 0: Install machine backend (idempotent - may already be done by pre_boot)
     pre_boot(PreBootInfo {
         hhdm_offset: ctx.hhdm_offset,

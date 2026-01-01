@@ -3,12 +3,13 @@
 //! Bran is thin boot glue that:
 //! 1. Handles Limine protocol parsing
 //! 2. Assembles a BootContext (Bag of Facts)
-//! 3. Calls kernel::boot(&mut BootContext) and never returns
+//! 3. Calls kernel::boot(BootContext) and never returns
 
 #![no_std]
 #![no_main]
 
 use core::arch::asm;
+use core::cell::UnsafeCell;
 use limine::request::{
     FramebufferRequest, HhdmRequest, KernelAddressRequest, MemoryMapRequest, ModuleRequest,
     RequestsEndMarker, RequestsStartMarker,
@@ -106,23 +107,41 @@ use core::alloc::{GlobalAlloc, Layout};
 
 struct BumpAllocator;
 
+const HEAP_SIZE: usize = 1024 * 1024;
+
+#[repr(align(16))]
+struct HeapBuf<const N: usize>(UnsafeCell<[u8; N]>);
+
+unsafe impl<const N: usize> Sync for HeapBuf<N> {}
+
+struct HeapState<const N: usize> {
+    pos: UnsafeCell<usize>,
+    buf: HeapBuf<N>,
+}
+
+unsafe impl<const N: usize> Sync for HeapState<N> {}
+
+static HEAP: HeapState<{ HEAP_SIZE }> = HeapState {
+    pos: UnsafeCell::new(0),
+    buf: HeapBuf(UnsafeCell::new([0; HEAP_SIZE])),
+};
+
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        static mut HEAP_POS: usize = 0;
-        static mut HEAP: [u8; 1024 * 1024] = [0; 1024 * 1024]; // 1MB heap
+        let pos = HEAP.pos.get();
+        let heap_base = HEAP.buf.0.get() as *mut u8;
 
-        unsafe {
-            let align = layout.align();
-            let size = layout.size();
+        let align = layout.align();
+        let size = layout.size();
 
-            let aligned_pos = (HEAP_POS + align - 1) & !(align - 1);
-            if aligned_pos + size > HEAP.len() {
-                return core::ptr::null_mut();
-            }
-            let ptr = HEAP.as_mut_ptr().add(aligned_pos);
-            HEAP_POS = aligned_pos + size;
-            ptr
+        let current = *pos;
+        let aligned_pos = (current + align - 1) & !(align - 1);
+        if aligned_pos + size > HEAP_SIZE {
+            return core::ptr::null_mut();
         }
+        let ptr = heap_base.add(aligned_pos);
+        *pos = aligned_pos + size;
+        ptr
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
@@ -214,7 +233,7 @@ unsafe extern "C" fn kmain() -> ! {
     bran_log("BRAN: handoff to kernel");
 
     // Hand off to kernel - never returns
-    kernel::boot(&mut BOOT_CTX)
+    unsafe { kernel::boot(&raw mut BOOT_CTX) }
 }
 
 use core::fmt::{self, Write};

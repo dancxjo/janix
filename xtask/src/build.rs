@@ -15,6 +15,7 @@ pub fn run() -> Result<()> {
         .arg("--target")
         .arg("x86_64-unknown-none") // Bran makefile uses this by default
         .env("RUSTFLAGS", "-C relocation-model=static")
+        .env("RUSTC_BOOTSTRAP", "1")
         .current_dir(&root)
         .status()
         .context("Failed to build bran")?;

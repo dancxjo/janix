@@ -19,3 +19,5 @@ crates/**/bin-*/
 /assets/cursors/
 /assets/fonts/
 /assets/icons/
+
+/vendor/

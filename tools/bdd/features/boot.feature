@@ -7,7 +7,7 @@ Feature: Boot milestones
       | BRAN: starting                                       |
       | BRAN: handoff to kernel                              |
       | KERNEL: handoff accepted                             |
-      | MACHINE: installed                                   |
+      | KERNEL: machine installed                            |
       | MACHINE: mmio ok                                     |
       | LOG: serial backend installed                        |
       | KERNEL: symbols init                                 |
@@ -24,7 +24,7 @@ Feature: Boot milestones
       | PLACE: desktop contains                              |
       | KERNEL: scheduler init                               |
       | KERNEL: spawning sprout                              |
-      | SPROUT: jumping to                                   |
+      | SCHED: task state set: running                       |
       | userland: SPROUT: starting world interaction demo    |
       | userland: SPROUT: published spawns relationship      |
       | userland: SPROUT: launching bloom                    |

@@ -16,6 +16,9 @@ struct Cli {
     command: Commands,
 }
 
+
+use std::process::Command;
+
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
     /// Fetch vendor assets (Limine, OVMF, Fonts)
@@ -46,8 +49,6 @@ enum Commands {
         #[arg(long)]
         cmdline: Option<String>,
     },
-    /// Run the OS (hosted or qemu)
-    /// Run the OS (hosted or qemu)
     /// Run the OS (hosted or qemu)
     Run {
         #[arg(long, default_value = "x86_64")]
@@ -91,14 +92,23 @@ fn main() -> Result<()> {
             interactive,
             frozen,
             cmdline,
-        } => run::run(run::RunArgs {
-            env,
-            gdb,
-            gdb_port,
-            timeout_secs,
-            interactive,
-            frozen,
-            cmdline,
-        }),
+        } => {
+            let res = run::run(run::RunArgs {
+                env,
+                gdb,
+                gdb_port,
+                timeout_secs,
+                interactive,
+                frozen,
+                cmdline,
+            });
+            fix_terminal();
+            res
+        }
     }
+}
+
+fn fix_terminal() {
+    // Restore terminal cursor and cooked mode
+    let _ = Command::new("reset").status();
 }

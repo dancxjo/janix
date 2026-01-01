@@ -76,9 +76,11 @@ core::arch::global_asm!(
 
     ".global task_entry",
     "task_entry:",
-    "pop rax", // entry_point
     "pop rdi", // dispatch_ptr
-    "jmp rax"
+    "pop rsi", // entry_point
+    "call task_dispatch",
+    "1: hlt",
+    "jmp 1b"
 );
 
 impl Machine for ArchMachine {

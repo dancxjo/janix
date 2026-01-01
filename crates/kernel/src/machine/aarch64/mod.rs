@@ -33,6 +33,7 @@ impl PageTable {
 static mut MMIO_L1: PageTable = PageTable::new();
 static mut MMIO_L2: PageTable = PageTable::new();
 static mut MMIO_L3: [PageTable; 512] = [const { PageTable::new() }; 512];
+static mut BOOT_L0: PageTable = PageTable::new();
 
 pub struct ArchMachine {
     serial: Serial,
@@ -126,8 +127,10 @@ impl ArchMachine {
     fn page_desc(&self, phys: u64, flags: MmioFlags) -> u64 {
         let mut desc = (phys & !0xfff) | 0b11;
 
-        // AttrIndx=0 (Device), SH=inner shareable, AF=1, RW EL1, execute-never.
-        desc |= 0 << 2;
+        // AttrIndx=2 (Device), SH=inner shareable, AF=1, RW EL1, execute-never.
+        // Limine sets MAIR indices 0/1 to Normal 0xFF, and 2..7 to 0x00 (Device).
+        // So we must use index 2 for Device-nGnRnE.
+        desc |= 2 << 2;
         desc |= 0b11 << 8;
         desc |= 1 << 10;
         desc |= 1 << 53; // PXN
@@ -142,7 +145,35 @@ impl ArchMachine {
     }
 
     unsafe fn ensure_mmio_tables(&self, virt: u64) -> Option<*mut u64> {
-        let l0 = self.kernel_root_table()?;
+        let current_ttbr1: u64;
+        asm!("mrs {}, ttbr1_el1", out(reg) current_ttbr1, options(nomem, preserves_flags));
+
+        let boot_l0_virt = core::ptr::addr_of_mut!(BOOT_L0);
+        let boot_l0_phys = self.kernel_virt_to_phys(boot_l0_virt as u64);
+
+        let l0_phys = if (current_ttbr1 & !0xfff) != (boot_l0_phys & !0xfff) {
+            // Need to switch to our own L0 table
+            let old_l0_phys = current_ttbr1 & !0xfff;
+            let old_l0_virt = self.phys_to_virt(old_l0_phys) as *const u64;
+            
+            // Copy entries
+            core::ptr::copy_nonoverlapping(old_l0_virt, boot_l0_virt as *mut u64, 512);
+            
+            // Switch TTBR1
+            // Use current flags but lower address bits mapped to new table
+            let new_ttbr1_val = (current_ttbr1 & 0xFFFF000000000FFF) | (boot_l0_phys & 0x0000FFFFFFFFF000);
+            
+            asm!("msr ttbr1_el1, {}", in(reg) new_ttbr1_val, options(nomem, preserves_flags));
+            asm!("isb; tlbi vmalle1; dsb ish; isb", options(nostack, preserves_flags));
+            
+            boot_l0_phys
+        } else {
+             current_ttbr1 & !0xfff
+        };
+
+        // Now we are using BOOT_L0 (or already were)
+        let l0 = boot_l0_virt as *mut u64;
+        
         let l0_index = ((virt >> 39) & 0x1ff) as usize;
         let l1_slot = l0.add(l0_index);
         if l1_slot.read() & 1 == 0 {

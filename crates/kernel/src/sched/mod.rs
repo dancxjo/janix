@@ -242,9 +242,11 @@ pub fn set_current_task(id: TaskId) {
 pub fn run() -> ! {
     log::klog(Level::Info, "KERNEL", "scheduler running");
 
+    crate::serial::write(b"SCHED: entering run loop\n");
     loop {
         // Simple Round Robin
         // Lock, check if current needs switching or if idle
+        // crate::serial::write(b"SCHED: tick\n");
         let (_old_ptr, _new_ptr): (*mut Context, *const Context) = {
             let mut guard = SCHEDULER.lock();
             if let Some(sched) = guard.as_mut() {
@@ -253,12 +255,13 @@ pub fn run() -> ! {
                     if let Some(next) = sched.run_queue.pop_front() {
                         sched.current = Some(next);
                         // sched.tasks.find(next).state = Running; 
-                        // Implementation detail: we need mutable reference to update state
+                        // Implement detail: we need mutable reference to update state
                         // We also need pointer for context switch if we were switching from something (but here we are starting)
                         // Actually boot sequence calls run() after setting up sprout.
                         // Sprout is already "configured" but not running?
                         // If we jump-start it here:
                         if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == next) {
+                            crate::serial::write(b"SCHED: switching to task\n");
                             task.state = TaskState::Running;
                             let new_ctx = &task.ctx as *const Context;
                             
@@ -368,7 +371,8 @@ pub fn yield_current() {
 ///
 /// Called by architecture-specific assembly stubs.
 #[no_mangle]
-pub extern "C" fn task_dispatch(_dispatch_ptr: u64, entry: u64) -> ! {
+pub extern "C" fn task_dispatch(dispatch_ptr: u64, entry: u64) -> ! {
+    crate::serial::write(b"SCHED: dispatching...\n");
     // For Sprout (Ring 3), entry is the process entry point.
     // The dispatch_ptr is actually not used to call it directly for Ring 3?
     // Wait, if it's Ring 0 task, we call it. 
@@ -378,9 +382,9 @@ pub extern "C" fn task_dispatch(_dispatch_ptr: u64, entry: u64) -> ! {
     // Future v0.3 plan involves separated userland. 
     // For now, we just jump to it.
     
-    let f: extern "C" fn() -> ! = unsafe { core::mem::transmute(entry) };
+    let f: extern "C" fn(u64) -> ! = unsafe { core::mem::transmute(entry) };
     
     // dispatch_ptr might be used if we needed to pass context, but here we just run.
-    f();
+    f(dispatch_ptr);
 }
 

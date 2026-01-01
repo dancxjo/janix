@@ -56,11 +56,9 @@ pub fn run(env: String, cmdline: Option<String>) -> Result<()> {
     fs::create_dir_all(&limine_dest)?;
 
     // Read config and remove modules for AArch64 debug (if env == aarch64)
+    // Reverted: modules are fine, issue was MAIR.
     let mut conf_data = fs::read_to_string(&conf_src)?;
-    if env == "aarch64" {
-         conf_data = conf_data.replace("module_path:", "# module_path:");
-    }
-
+    
     if let Some(cmd) = cmdline {
         let needle = "kernel_path: boot():/boot/kernel";
         let insertion = format!("\n    cmdline: {}", cmd);

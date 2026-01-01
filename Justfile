@@ -27,3 +27,45 @@ debug env="x86_64" port="0":
 
 inspect env="x86_64" port="0":
     cargo run -p xtask -- inspect --env {{env}} --port {{port}}
+
+# Aliases for tab completion
+
+# run aliases
+run-x86_64:
+    @just run x86_64
+run-aarch64:
+    @just run aarch64
+run-riscv64:
+    @just run riscv64
+run-loongarch64:
+    @just run loongarch64
+
+# test aliases
+test-x86_64:
+    @just test x86_64
+test-aarch64:
+    @just test aarch64
+test-riscv64:
+    @just test riscv64
+test-loongarch64:
+    @just test loongarch64
+
+# debug aliases
+debug-x86_64:
+    @just debug x86_64
+debug-aarch64:
+    @just debug aarch64
+debug-riscv64:
+    @just debug riscv64
+debug-loongarch64:
+    @just debug loongarch64
+
+# inspect aliases
+inspect-x86_64:
+    @just inspect x86_64
+inspect-aarch64:
+    @just inspect aarch64
+inspect-riscv64:
+    @just inspect riscv64
+inspect-loongarch64:
+    @just inspect loongarch64

@@ -170,6 +170,14 @@ unsafe extern "C" fn kmain() -> ! {
         .map(|h| h.offset())
         .unwrap_or(0);
 
+    // Fallback for AArch64 Limine if offset is 0 (which seems to happen or be reported wrong)
+    // We assume standard higher-half offset.
+    let hhdm_offset = if hhdm_offset == 0 {
+        0xffff_8000_0000_0000
+    } else {
+        hhdm_offset
+    };
+
     // Get kernel physical/virtual base addresses for MMIO page table setup
     let (kernel_phys_base, kernel_virt_base) = EXECUTABLE_ADDRESS_REQUEST.get_response()
         .map(|r| (r.physical_base(), r.virtual_base()))

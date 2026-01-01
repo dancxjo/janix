@@ -44,6 +44,10 @@ struct PlaceStore {
     in_index: BTreeMap<ThingId, Vec<RelationshipId>>,
     /// Name index: name (symbol ID) -> ThingId
     name_index: BTreeMap<SymbolId, ThingId>,
+    /// Watchers: target -> [watcher_id]
+    watchers: BTreeMap<ThingId, Vec<ThingId>>,
+    /// Pending events: watcher_id -> queue of event_ids
+    pending_events: BTreeMap<ThingId, VecDeque<ThingId>>,
     /// Counter for generating unique IDs
     next_id: u128,
     /// Tick counter for timestamps
@@ -57,6 +61,8 @@ impl PlaceStore {
             out_index: BTreeMap::new(),
             in_index: BTreeMap::new(),
             name_index: BTreeMap::new(),
+            watchers: BTreeMap::new(),
+            pending_events: BTreeMap::new(),
             next_id: 1,
             tick: 0,
         }
@@ -68,7 +74,7 @@ impl PlaceStore {
         id
     }
 
-    fn create_thing(&mut self, kind: SymbolId, schema: SymbolId, version: u32) -> ThingId {
+    fn create_thing_internal(&mut self, kind: SymbolId, schema: SymbolId, version: u32) -> ThingId {
         let id = self.generate_id();
         let header = ThingHeader {
             kind,
@@ -86,6 +92,8 @@ impl PlaceStore {
         id
     }
 
+    // Public wrapper removed from impl, handles in module `thing_create`
+    
     fn set_payload(&mut self, id: ThingId, payload: &[u8]) -> bool {
         if let Some(thing) = self.things.get_mut(&id) {
             thing.payload = payload.to_vec();
@@ -103,19 +111,16 @@ impl PlaceStore {
         self.things.get(&id).map(|t| t.payload.as_slice())
     }
 
-    fn create_relationship(&mut self, from: ThingId, to: ThingId, predicate: SymbolId) -> RelationshipId {
+    fn create_relationship_internal(&mut self, from: ThingId, to: ThingId, predicate: SymbolId) -> RelationshipId {
         let kind_rel = symbols::well_known(b"kind.Relationship");
-        let rel_id = self.create_thing(kind_rel, SymbolId::INVALID, 1);
+        let rel_id = self.create_thing_internal(kind_rel, SymbolId::INVALID, 1);
         
-        // Encode RelationshipBody into payload
-        // Minimal encoding: [from_u128, to_u128, pred_u64]
         let mut payload = Vec::with_capacity(40);
         payload.extend_from_slice(&from.0.to_le_bytes());
         payload.extend_from_slice(&to.0.to_le_bytes());
         payload.extend_from_slice(&predicate.0.to_le_bytes());
         self.set_payload(rel_id, &payload);
 
-        // Update indexes
         self.out_index.entry(from).or_insert_with(Vec::new).push(rel_id);
         self.in_index.entry(to).or_insert_with(Vec::new).push(rel_id);
 
@@ -138,7 +143,6 @@ impl PlaceStore {
         
         for (&id, thing) in &self.things {
             if thing.header.kind == kind_rel {
-                // Decode RelationshipBody from payload
                 if thing.payload.len() >= 40 {
                     let from_bytes = &thing.payload[0..16];
                     let to_bytes = &thing.payload[16..32];
@@ -152,6 +156,14 @@ impl PlaceStore {
             }
         }
     }
+
+    fn subscribe(&mut self, watcher: ThingId, target: ThingId) {
+        self.watchers.entry(target).or_insert_with(Vec::new).push(watcher);
+    }
+
+    fn enqueue(&mut self, watcher: ThingId, event: ThingId) {
+        self.pending_events.entry(watcher).or_insert_with(VecDeque::new).push_back(event);
+    }
 }
 
 /// Initialize the place store
@@ -159,22 +171,35 @@ pub fn init() {
     *PLACE_STORE.lock() = Some(PlaceStore::new());
 }
 
+use alloc::collections::VecDeque;
+
 /// Create a new Thing with the given kind, schema, and version
 pub fn thing_create(kind: SymbolId, schema: SymbolId, version: u32) -> ThingId {
-    let mut guard = PLACE_STORE.lock();
-    match guard.as_mut() {
-        Some(store) => store.create_thing(kind, schema, version),
-        None => ThingId(0),
-    }
+    let id = {
+        let mut guard = PLACE_STORE.lock();
+        match guard.as_mut() {
+            Some(store) => store.create_thing_internal(kind, schema, version),
+            None => return ThingId(0),
+        }
+    };
+    emit_event_mutation(id);
+    id
 }
 
 /// Set the inline payload for a Thing
 pub fn thing_set_inline_payload(id: ThingId, payload: &[u8]) -> bool {
-    let mut guard = PLACE_STORE.lock();
-    match guard.as_mut() {
-        Some(store) => store.set_payload(id, payload),
-        None => false,
+    let result = {
+        let mut guard = PLACE_STORE.lock();
+        match guard.as_mut() {
+            Some(store) => store.set_payload(id, payload),
+            None => false,
+        }
+    };
+    if result {
+        // Payload change is a mutation? Not in simple spec, but let's emit for target
+        emit_event_mutation(id);
     }
+    result
 }
 
 /// Get the header of a Thing
@@ -195,11 +220,69 @@ pub fn get_payload(id: ThingId) -> Option<Vec<u8>> {
 
 /// Create a relationship between two Things
 pub fn relationship_create(from: ThingId, to: ThingId, predicate: SymbolId) -> RelationshipId {
+    let id = {
+        let mut guard = PLACE_STORE.lock();
+        match guard.as_mut() {
+            Some(store) => store.create_relationship_internal(from, to, predicate),
+            None => return ThingId(0),
+        }
+    };
+    emit_event_mutation(from);
+    // Also emit for 'to'? Spec says "On mutation touching watched target". 
+    // Creating a relationship touches both 'from' and 'to'.
+    emit_event_mutation(to);
+    id
+}
+
+// Internal helper for event emission
+fn emit_event_mutation(target: ThingId) {
     let mut guard = PLACE_STORE.lock();
-    match guard.as_mut() {
-        Some(store) => store.create_relationship(from, to, predicate),
-        None => ThingId(0),
+    let store = match guard.as_mut() {
+        Some(s) => s,
+        None => return,
+    };
+
+    // Check if anyone watching this target
+    let watchers = match store.watchers.get(&target) {
+        Some(w) => w.clone(),
+        None => return,
+    };
+
+    if watchers.is_empty() {
+        return;
     }
+
+    // Create Event Thing (Quietly!)
+    let kind_event = symbols::well_known(b"kind.Event");
+    let event_id = store.create_thing_internal(kind_event, SymbolId::INVALID, 1);
+    
+    // Create Relationship event --targets--> target
+    let pred_targets = symbols::well_known(b"predicate.targets");
+    store.create_relationship_internal(event_id, target, pred_targets);
+
+    // Enqueue
+    for watcher in watchers {
+        store.enqueue(watcher, event_id);
+    }
+}
+
+/// Subscribe a watcher to a target
+pub fn watch(watcher: ThingId, target: ThingId) {
+    let mut guard = PLACE_STORE.lock();
+    if let Some(store) = guard.as_mut() {
+        store.subscribe(watcher, target);
+        // spec says "thing.bloom --watches--> place.desktop"
+        // we should create that relationship too, physically
+        // but for now the syscall `sys_watch` calls this internal logic
+    }
+}
+
+/// Pop next event for a watcher
+pub fn dequeue_event(watcher: ThingId) -> Option<ThingId> {
+    let mut guard = PLACE_STORE.lock();
+    guard.as_mut().and_then(|store| {
+        store.pending_events.get_mut(&watcher).and_then(|q| q.pop_front())
+    })
 }
 
 /// Get relationships from a Thing

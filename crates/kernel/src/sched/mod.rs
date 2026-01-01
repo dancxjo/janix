@@ -91,16 +91,14 @@ impl Scheduler {
 
 /// Seed the scheduler ontology
 fn seed_scheduler() {
-    let kind_place = symbols::well_known(b"kind.Place");
     let kind_thing = symbols::well_known(b"kind.Thing");
     let pred_contains = symbols::well_known(b"predicate.contains");
     let pred_state = symbols::sym_pred_state();
 
-    // 1. Create Scheduler Place
+    // 1. Find Scheduler Place
     let sched_name = symbols::sym_scheduler();
-    let sched_id = graph::thing_create(kind_place, SymbolId::INVALID, 1);
-    graph::thing_register_name(sched_id, sched_name);
-    log::klog(Level::Info, "SCHED", "scheduler place created");
+    let sched_id = graph::find_thing_by_name(sched_name).expect("Scheduler place should be seeded by kernel");
+    log::klog(Level::Info, "SCHED", "scheduler place found");
 
     // 2. Create Runqueue (Thing)
     let runqueue_name = symbols::sym_runqueue_default();

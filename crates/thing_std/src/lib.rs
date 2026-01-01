@@ -122,3 +122,16 @@ pub fn symbol_intern(name: &str) -> SymbolId {
     SymbolId(res.val0)
 }
 
+pub fn sched_yield() {
+    unsafe { syscall(200, 0, 0, 0, 0) };
+}
+
+pub fn watch(watcher: ThingId, target: ThingId) {
+    unsafe { syscall(500, watcher.0 as u64, target.0 as u64, 0, 0) };
+}
+
+pub fn wait_event(watcher: ThingId) -> ThingId {
+    let res = unsafe { syscall(501, watcher.0 as u64, 0, 0, 0) };
+    ThingId(((res.val0 as u128) << 64) | (res.val1 as u128))
+}
+

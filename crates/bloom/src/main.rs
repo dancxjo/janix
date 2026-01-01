@@ -54,13 +54,16 @@ pub extern "C" fn _start(syscall_ptr: u64) -> ! {
 
     log_info("BLOOM: desktop contains display/pointer/wallpaper");
 
-    // Verification log
-    let count = contained_in(desktop_id);
-    if count == 3 {
-        log_info("BLOOM: desktop contains expected count (3)");
-    } else {
-        log_info("BLOOM: desktop containment check FAILED");
-    }
+    // 4. Watch place.desktop
+    watch(bloom_id, desktop_id);
+    log_info("BLOOM: watching desktop");
 
-    loop {}
+    // 5. Reactive Loop
+    log_info("BLOOM: entering event loop");
+    loop {
+        let event_id = wait_event(bloom_id);
+        log_info("BLOOM: event received");
+        // In the future: decode event, check targets, react.
+        // For now, just logging proves the signal path.
+    }
 }

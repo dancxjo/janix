@@ -90,8 +90,7 @@ fn main() -> Result<()> {
         Commands::Test { arch } => test::run(Some(arch)),
         Commands::Inspect { env, port } => inspect::run(env, port),
         Commands::Iso { env, cmdline, init_module } => iso::run(env, cmdline, init_module),
-        Commands::Inspect { env, port } => inspect::run(env, port),
-        Commands::Iso { env, cmdline, init_module } => iso::run(env, cmdline, init_module),
+
         Commands::UpdateDocs => {
             Command::new("cargo")
                 .args(["run", "-p", "docgen"])

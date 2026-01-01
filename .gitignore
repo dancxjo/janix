@@ -10,7 +10,6 @@ artifacts/
 crates/bran/bin-*/
 crates/sprout/bin-*/
 crates/sprout/sprout
-ci-bdd-runner
 
 *.log
 

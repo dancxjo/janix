@@ -133,8 +133,7 @@ fn run_qemu_aarch64(args: RunArgs) -> Result<()> {
 
     append_common_args(&mut cmd, &args, 2234);
 
-    cmd.arg("-drive").arg(format!("if=pflash,unit=0,format=raw,readonly=on,file={}", ovmf_code.display()));
-    cmd.arg("-drive").arg(format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()));
+    cmd.arg("-bios").arg(&ovmf_code);
     cmd.arg("-cdrom").arg(&iso_path);
 
     run_with_timeout(cmd, args.timeout_secs)

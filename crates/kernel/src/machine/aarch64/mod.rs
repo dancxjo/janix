@@ -130,7 +130,8 @@ impl ArchMachine {
         // AttrIndx=2 (Device), SH=inner shareable, AF=1, RW EL1, execute-never.
         // Limine sets MAIR indices 0/1 to Normal 0xFF, and 2..7 to 0x00 (Device).
         // So we must use index 2 for Device-nGnRnE.
-        desc |= 2 << 2;
+        desc |= 2 << 2; // Original Device-nGnRnE assumption
+        // desc |= 0 << 2; // Debug fallback: Use Index 0 (Normal) to avoid potential MAIR mismatch
         desc |= 0b11 << 8;
         desc |= 1 << 10;
         desc |= 1 << 53; // PXN

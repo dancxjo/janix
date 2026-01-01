@@ -247,12 +247,8 @@ async fn check_ordered_lines(_world: &mut BootWorld, step: &Step) -> Result<()> 
         
         for expected in &expected_lines {
             if let Some(pos) = log[search_pos..].find(expected) {
-                println!("DEBUG: Found '{}' at {}", expected, search_pos + pos);
                 search_pos += pos + expected.len();
             } else {
-                println!("DEBUG: Failed to find '{}' after pos {}", expected, search_pos);
-                let tail: String = log[search_pos..].chars().take(200).collect();
-                println!("DEBUG: Current log tail: {:?}", tail);
                 all_found = false;
                 break;
             }

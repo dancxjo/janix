@@ -3,6 +3,7 @@
 use super::Arch;
 use core::arch::asm;
 
+pub mod machine;
 pub mod serial;
 
 pub struct Riscv64Arch;

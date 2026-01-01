@@ -3,7 +3,8 @@
 //! Orchestrates kernel initialization in strict order.
 
 use crate::log::{self, Level};
-use crate::{graph, sched, symbols, syscall};
+use crate::{graph, machine, sched, symbols, syscall};
+use crate::arch::machine::ARCH_MACHINE;
 
 /// Information about a boot module
 #[derive(Clone, Copy)]
@@ -46,8 +47,12 @@ pub struct BootContext {
 /// ctx is a Bag of Facts (no behavior).
 /// This function never returns.
 pub fn boot(ctx: &'static mut BootContext) -> ! {
-    // Phase 0: Initialize serial mapping (CRITICAL for MMIO architectures)
-    crate::serial::init(ctx.hhdm_offset);
+    // Phase 0: Install machine backend
+    ARCH_MACHINE.init_machine(ctx.hhdm_offset);
+    unsafe { machine::install(&ARCH_MACHINE) };
+    crate::serial::init();
+    crate::serial::write(b"MACHINE: installed\n");
+    crate::serial::write(b"MACHINE: mmio ok\n");
 
     // Phase 1: Initialize logging (enables debug output)
     log::init(ctx);

@@ -12,8 +12,7 @@ impl Serial {
         Self
     }
 
-    pub fn init(&self, offset: u64) {
-        let base = 0x1000_0000 + offset;
+    pub fn init(&self, base: u64) {
         BASE.store(base, Ordering::Relaxed);
 
         unsafe {

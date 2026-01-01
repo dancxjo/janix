@@ -114,6 +114,7 @@ pub fn thread_count() -> usize {
 /// Run the scheduler loop (never returns)
 pub fn run() -> ! {
     log::klog(Level::Info, "KERNEL", "scheduler running");
+    log::klog(Level::Info, "HELLO", "scheduler alive");
 
     // For now, just idle forever
     // In the future, this will pick threads from the run queue

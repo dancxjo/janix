@@ -77,8 +77,7 @@ fn early_putc(c: u8) {
     // Limine Console/Terminal request removed due to compilation issues.
     // We fall back to direct serial input below.
 
-    // On MMIO architectures, we need the HHDM offset because we are in virtual mode
-    // but only have the physical address of the UART.
+    #[cfg(target_arch = "loongarch64")]
     let hhdm_offset = if let Some(hhdm) = HHDM_REQUEST.get_response() {
         hhdm.offset()
     } else {
@@ -100,16 +99,15 @@ fn early_putc(c: u8) {
         #[cfg(target_arch = "aarch64")]
         {
             // QEMU virt: PL011 at 0x0900_0000
-            // BLIND WRITE - mirroring trunk branch
-            // Explicitly allow offset=0 (physical write) if HHDM failed, just in case.
-            let addr = (0x0900_0000 + hhdm_offset) as *mut u8;
+            // Use physical address directly to avoid HHDM assumptions.
+            let addr = 0x0900_0000 as *mut u8;
             core::ptr::write_volatile(addr, c);
         }
         #[cfg(target_arch = "riscv64")]
         {
             // QEMU virt: NS16550 at 0x1000_0000
-            // BLIND WRITE - mirroring trunk branch
-            let addr = (0x1000_0000 + hhdm_offset) as *mut u8;
+            // Use physical address directly to avoid HHDM assumptions.
+            let addr = 0x1000_0000 as *mut u8;
             core::ptr::write_volatile(addr, c);
         }
         #[cfg(target_arch = "loongarch64")]

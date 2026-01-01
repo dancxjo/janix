@@ -14,6 +14,8 @@ pub mod riscv64;
 #[cfg(target_arch = "loongarch64")]
 pub mod loongarch64;
 
+pub mod machine;
+
 /// Common architecture trait
 pub trait Arch: Sync + Send {
     fn irq_disable(&self) -> u64;

@@ -48,6 +48,7 @@ endif
 override IMAGE_NAME := template-$(KARCH)
 override BRAN_BIN = crates/bran/bin-$(KARCH)/kernel
 override SPROUT_BIN = crates/sprout/bin-$(KARCH)/sprout
+override BLOOM_BIN = crates/bloom/bin-$(KARCH)/bloom
 
 .PHONY: all
 all: $(IMAGE_NAME).iso
@@ -274,12 +275,17 @@ bran:
 sprout:
 	$(MAKE) -C crates/sprout
 
-$(IMAGE_NAME).iso: limine/limine bran sprout
+.PHONY: bloom
+bloom:
+	$(MAKE) -C crates/bloom
+
+$(IMAGE_NAME).iso: limine/limine bran sprout bloom
 	rm -rf iso_root_$(KARCH)
 	mkdir -p iso_root_$(KARCH)/boot
 	mkdir -p iso_root_$(KARCH)/boot/modules
 	cp -v $(BRAN_BIN) iso_root_$(KARCH)/boot/
 	cp -v $(SPROUT_BIN) iso_root_$(KARCH)/boot/modules/
+	cp -v $(BLOOM_BIN) iso_root_$(KARCH)/boot/modules/
 	mkdir -p iso_root_$(KARCH)/boot/limine
 	cp -v limine.conf iso_root_$(KARCH)/boot/limine/
 	mkdir -p iso_root_$(KARCH)/EFI/BOOT
@@ -350,12 +356,14 @@ endif
 clean:
 	$(MAKE) -C crates/bran clean
 	$(MAKE) -C crates/sprout clean
+	$(MAKE) -C crates/bloom clean
 	rm -rf iso_root_* $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
 
 .PHONY: distclean
 distclean: clean
 	$(MAKE) -C crates/bran distclean
 	$(MAKE) -C crates/sprout distclean
+	$(MAKE) -C crates/bloom distclean
 	rm -rf limine ovmf
 
 .PHONY: bdd

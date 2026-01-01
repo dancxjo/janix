@@ -49,6 +49,11 @@ pub struct BootContext {
 use core::sync::atomic::{AtomicBool, Ordering};
 
 static MACHINE_INSTALLED: AtomicBool = AtomicBool::new(false);
+static mut GLOBAL_BOOT_CONTEXT: Option<&'static BootContext> = None;
+
+pub fn get_boot_ctx() -> &'static BootContext {
+    unsafe { GLOBAL_BOOT_CONTEXT.expect("BootContext not initialized") }
+}
 
 /// Information needed for pre-boot machine initialization.
 #[derive(Clone, Copy)]
@@ -109,7 +114,9 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
 
     // Phase 3.5: Seed core ontology
     seed_ontology();
-    seed_bloom_desktop();
+
+    // Save context for syscalls
+    unsafe { GLOBAL_BOOT_CONTEXT = Some(ctx) };
 
 
     // Phase 4: Initialize syscall dispatch
@@ -119,7 +126,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     sched::init();
 
     // Phase 6: Spawn Sprout
-    spawn_sprout(ctx);
+    spawn_module(ctx, "sprout");
 
     // Phase 6.5: Signal boot completion
     // Handed off to Sprout - never returns
@@ -133,20 +140,19 @@ static mut SPROUT_BUFFER: [u8; 1024 * 1024] = [0u8; 1024 * 1024];
 
 use alloc::format;
 
-/// Spawn the Sprout init process by locating it in boot modules and jumping into it.
-/// For the v0.3 demo, we load into an RX buffer and jump in Ring 0.
-fn spawn_sprout(ctx: &'static BootContext) {
-    log::klog(Level::Info, "KERNEL", "spawning sprout");
+/// Spawn a module by name from the boot modules.
+pub fn spawn_module(ctx: &'static BootContext, name: &str) {
+    log::klog(Level::Info, "KERNEL", &format!("spawning module: {}", name));
 
-    let mut found_sprout = false;
+    let mut found = false;
     for module in ctx.modules {
-        if module.path.ends_with("sprout") {
-            found_sprout = true;
+        if module.path.ends_with(name) {
+            found = true;
             let virt_addr = module.phys_addr.wrapping_add(ctx.hhdm_offset);
             log::klog(
                 Level::Info,
                 "KERNEL",
-                &format!("found sprout at {:#x} (size: {})", virt_addr, module.size),
+                &format!("found {} at {:#x} (size: {})", name, virt_addr, module.size),
             );
 
             if module.size >= 64 {
@@ -323,15 +329,13 @@ fn spawn_sprout(ctx: &'static BootContext) {
                         options(noreturn)
                     );
                 }
-            } else {
-                log::klog(Level::Error, "KERNEL", "sprout module too small");
             }
             break;
         }
     }
 
-    if !found_sprout {
-        log::klog(Level::Warn, "KERNEL", "sprout module not found");
+    if !found {
+        log::klog(Level::Warn, "KERNEL", &format!("module '{}' not found", name));
     }
 }
 
@@ -371,72 +375,10 @@ fn seed_ontology() {
     let contained = place::contained_in(root_id);
     log::klog(Level::Info, "PLACE", &format!("root contains {} things", contained.len()));
     
-    // Tiny self-test
     if contained.len() == 1 && contained[0] == kernel_id {
         log::klog(Level::Info, "KERNEL", "ontology self-test passed");
     } else {
         log::klog(Level::Error, "KERNEL", "ontology self-test FAILED");
     }
-}
-
-/// Seed Bloom and the Desktop Place
-fn seed_bloom_desktop() {
-    let kind_place = symbols::well_known(b"kind.Place");
-    let kind_thing = symbols::well_known(b"kind.Thing");
-    let pred_contains = symbols::well_known(b"predicate.contains");
-
-    let root_sym = symbols::intern(b"place.root");
-    let bloom_sym = symbols::sym_bloom();
-    let desktop_sym = symbols::sym_desktop();
-    let display_sym = symbols::sym_display_primary();
-    let pointer_sym = symbols::sym_pointer();
-    let wallpaper_sym = symbols::sym_wallpaper_sky();
-
-    let root_id = graph::find_thing_by_name(root_sym).expect("root place must exist");
-
-    // Create Bloom Thing
-    let bloom_id = if let Some(id) = graph::find_thing_by_name(bloom_sym) {
-        id
-    } else {
-        let id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
-        graph::thing_register_name(id, bloom_sym);
-        log::klog(Level::Info, "BLOOM", &format!("thing created {:?}", id));
-        id
-    };
-
-    // Create Desktop Place
-    let desktop_id = if let Some(id) = graph::find_thing_by_name(desktop_sym) {
-        id
-    } else {
-        let id = graph::thing_create(kind_place, SymbolId::INVALID, 1);
-        graph::thing_register_name(id, desktop_sym);
-        
-        // PlaceBody { name: desktop_sym }
-        let mut payload = alloc::vec::Vec::new();
-        payload.extend_from_slice(&desktop_sym.0.to_le_bytes());
-        graph::thing_set_inline_payload(id, &payload);
-        
-        log::klog(Level::Info, "BLOOM", &format!("desktop place created {:?}", id));
-        id
-    };
-
-    // Ensure they are in root
-    graph::relationship_create(root_id, bloom_id, pred_contains);
-    graph::relationship_create(root_id, desktop_id, pred_contains);
-
-    // Create desktop facts
-    let display_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
-    let pointer_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
-    let wallpaper_id = graph::thing_create(kind_thing, SymbolId::INVALID, 1);
-
-    graph::relationship_create(desktop_id, display_id, pred_contains);
-    graph::relationship_create(desktop_id, pointer_id, pred_contains);
-    graph::relationship_create(desktop_id, wallpaper_id, pred_contains);
-
-    log::klog(Level::Info, "BLOOM", "desktop contains display/pointer/wallpaper");
-
-    // Verification log
-    let desktop_items = place::contained_in(desktop_id);
-    log::klog(Level::Info, "PLACE", &format!("desktop contains {} things", desktop_items.len()));
 }
 

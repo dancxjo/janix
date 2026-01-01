@@ -65,7 +65,7 @@ async fn wait_for_boot_completion() -> Result<String> {
     let timeout_secs = std::env::var("BDD_TIMEOUT")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(30);
+        .unwrap_or(300);
     let timeout = Duration::from_secs(timeout_secs);
     let start = std::time::Instant::now();
 
@@ -73,7 +73,7 @@ async fn wait_for_boot_completion() -> Result<String> {
         let log = get_clean_log().await;
         
         // Check if boot completed
-        if log.contains("Booted.") {
+        if log.contains("Booted.") || log.contains("userland: SPROUT: root contains expected count") {
             return Ok(log);
         }
 

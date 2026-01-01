@@ -7,6 +7,7 @@ members = [
     "crates/models",
     "crates/sprout",
     "crates/thing_std",
+    "crates/bloom",
     "tools/bdd",
     "tools/ci-bdd-runner",
 ]

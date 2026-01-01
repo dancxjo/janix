@@ -86,6 +86,12 @@ pub fn log_info(msg: &str) {
     }
 }
 
+pub fn proc_spawn(name: &str) {
+    unsafe {
+        syscall(100, name.as_ptr() as u64, name.len() as u64, 0, 0);
+    }
+}
+
 pub fn symbol_intern(name: &str) -> SymbolId {
     let res = unsafe { syscall(2, name.as_ptr() as u64, name.len() as u64, 0, 0) };
     SymbolId(res.val0)

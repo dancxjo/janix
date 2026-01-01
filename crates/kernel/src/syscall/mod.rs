@@ -70,6 +70,7 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
         nr::SYS_MACHINE => sys_machine(a0, a1, a2, a3),
         nr::SYS_GET_ROOT_PLACE => sys_get_root_place(),
         nr::SYS_PLACE_OP => sys_place_op(a0, a1, a2, a3),
+        nr::SYS_PROC_SPAWN => sys_proc_spawn(a0, a1),
         _ => SyscallResult::new(err::ENOSYS, 0, 0),
     }
 }
@@ -210,5 +211,28 @@ fn sys_place_op(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
 
         _ => SyscallResult::new(err::ENOSYS, 0, 0),
     }
+}
+
+/// SYS_PROC_SPAWN: Spawn a userland process by name
+///
+/// a0: name pointer
+/// a1: name length
+fn sys_proc_spawn(name_ptr: u64, name_len: u64) -> SyscallResult {
+    if name_ptr == 0 || name_len == 0 {
+        return SyscallResult::new(err::EINVAL, 0, 0);
+    }
+
+    // Safety: assume valid kernel/user shared memory for now
+    let name = unsafe {
+        core::str::from_utf8_unchecked(core::slice::from_raw_parts(name_ptr as *const u8, name_len as usize))
+    };
+
+    let ctx = crate::boot::get_boot_ctx();
+    crate::boot::spawn_module(ctx, name);
+
+    // If spawn_module returns, it means it didn't jump (e.g. error or multitasking supported)
+    // But currently it jumps and never returns. 
+    // In a multitasking system, this would return the new process ID.
+    SyscallResult::new(0, 0, 0)
 }
 

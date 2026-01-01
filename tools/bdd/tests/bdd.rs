@@ -311,26 +311,30 @@ async fn serial_console_lines_in_order(world: &mut BootWorld, step: &GherkinStep
     let mut cursor = 0usize;
 
     for row in &table.rows {
-        let expected = row.get(0).map(String::as_str).unwrap_or_else(|| {
+        let expected = row.get(0).map(|s| s.trim()).unwrap_or_else(|| {
             fail_with_output(world, "Expected table rows with at least one column")
         });
         let mut found = None;
         for (idx, line) in lines.iter().enumerate().skip(cursor) {
             if line.contains(expected) {
+                println!("    [DEBUG] Match found: '{}' matches line {}: '{}'", expected, idx + 1, line);
                 found = Some(idx + 1);
                 break;
             }
         }
         cursor = match found {
             Some(next) => next,
-            None => fail_with_output(
-                world,
-                format!(
-                    "Expected '{}' after line {}",
-                    expected,
-                    cursor.saturating_sub(1)
-                ),
-            ),
+            None => {
+                println!("    [DEBUG] Match FAILED: could not find '{}' after line {}", expected, cursor);
+                fail_with_output(
+                    world,
+                    format!(
+                        "Expected '{}' after line {}",
+                        expected,
+                        cursor.saturating_sub(1)
+                    ),
+                )
+            }
         };
     }
 }
@@ -448,7 +452,7 @@ async fn expect_after_anchor(world: &mut BootWorld, step: &GherkinStep) {
     let mut cursor = anchor.line_index + 1;
 
     for row in &table.rows {
-        let expected = row.get(0).map(String::as_str).unwrap_or_else(|| {
+        let expected = row.get(0).map(|s| s.trim()).unwrap_or_else(|| {
             fail_with_output(world, "Expected table rows with at least one column")
         });
         let mut found = None;
@@ -543,6 +547,7 @@ async fn expect_single_line_starting(world: &mut BootWorld, prefix: String) {
         .iter()
         .enumerate()
         .filter(|(_, line)| line.starts_with(&prefix))
+        .map(|(i, &l)| (i, l))
         .collect();
 
     match matches.len() {

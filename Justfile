@@ -14,6 +14,9 @@ die:
     @echo "Resetting terminal..."
     reset
 
+update-docs:
+    cargo run -p xtask -- update-docs
+
 test arch="all":
     cargo run -p xtask -- test --arch {{arch}}
 

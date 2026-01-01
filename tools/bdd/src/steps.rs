@@ -61,13 +61,17 @@ async fn get_clean_log() -> String {
     }
 }
 
-/// Wait for the boot to complete (Booted. message) or timeout
-async fn wait_for_boot_completion() -> Result<String> {
-    let timeout_secs = std::env::var("BDD_TIMEOUT")
+fn get_timeout() -> Duration {
+    let secs = std::env::var("BDD_TIMEOUT")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(300);
-    let timeout = Duration::from_secs(timeout_secs);
+        .unwrap_or(60);
+    Duration::from_secs(secs)
+}
+
+/// Wait for the boot to complete (Booted. message) or timeout
+async fn wait_for_boot_completion() -> Result<String> {
+    let timeout = get_timeout();
     let start = std::time::Instant::now();
 
     loop {
@@ -198,11 +202,7 @@ async fn boot_os_impl(world: &mut BootWorld, arch: String, variant: Option<Strin
 #[then(expr = "I expect to see {string} in the serial console")]
 async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Result<()> {
     // Wait for output to appear (up to timeout)
-    let timeout_secs = std::env::var("BDD_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(30);
-    let timeout = Duration::from_secs(timeout_secs);
+    let timeout = get_timeout();
     let start = std::time::Instant::now();
 
     loop {
@@ -258,11 +258,7 @@ async fn check_ordered_lines(_world: &mut BootWorld, step: &Step) -> Result<()> 
         return Ok(());
     }
 
-    let timeout_secs = std::env::var("BDD_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(60); // Default to 60s for partial matches
-    let timeout = Duration::from_secs(timeout_secs);
+    let timeout = get_timeout();
     let start = std::time::Instant::now();
 
     loop {

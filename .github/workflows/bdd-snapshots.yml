@@ -80,10 +80,23 @@ jobs:
       # Or just accept it for now.
       # I'll enable Archive upload.
 
+      - name: Generate Documentation
+        run: cargo run -p xtask -- update-docs
+
+      - name: Commit and Push README changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if [[ -n $(git status -s README.md) ]]; then
+            git add README.md
+            git commit -m "docs: update BDD status (CI)"
+            git push
+          fi
+
       - name: Upload Artifacts
         uses: actions/upload-pages-artifact@v3
         with:
-          path: artifacts/x86_64
+          path: artifacts
 
   deploy:
     needs: bdd-test

@@ -27,7 +27,7 @@ jobs:
           sudo apt-get install -y qemu-system-x86 qemu-system-arm qemu-system-misc qemu-utils mtools xorriso ovmf
 
       - name: Build CI BDD Runner
-        run: cargo build -p ci-bdd-runner --verbose
+        run: cargo build -p bdd --verbose
 
       - name: Run BDD Tests (x86_64)
         env:
@@ -37,7 +37,7 @@ jobs:
           # Ensure KVM is available or use TCG?
           # Github runners usually don't have KVM. QEMU will use TCG (slow but works).
           # Just run the tool.
-          cargo run -p ci-bdd-runner
+          cargo run -p bdd
 
       # Run for other architectures if desired, but x86_64 is good baseline.
       # To run multiple, we need to merge reports or run sequentially.

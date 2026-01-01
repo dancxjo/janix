@@ -88,8 +88,6 @@ fn main() -> Result<()> {
         Commands::Build { env } => build::run(&env),
         Commands::Clean => clean::run(),
         Commands::Test { arch } => test::run(Some(arch)),
-        Commands::Inspect { env, port } => inspect::run(env, port),
-        Commands::Iso { env, cmdline, init_module } => iso::run(env, cmdline, init_module),
 
         Commands::UpdateDocs => {
             Command::new("cargo")

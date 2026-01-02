@@ -142,10 +142,10 @@ fn phys_to_virt(phys: u64) -> u64 {
     // I need to make `phys_to_virt` public in `mod.rs` too?
     // Yes.
     
-    // For now, I will use `crate::boot::get_boot_ctx().hhdm_offset + phys` 
+    // For now, I will use `crate::boot::get_boot_ctx().hhdm_offset.wrapping_add(phys)` 
     // assuming HHDM is valid. 
     // Wait, get_boot_ctx() is available.
-    crate::boot::get_boot_ctx().hhdm_offset + phys
+    crate::boot::get_boot_ctx().hhdm_offset.wrapping_add(phys)
 }
 
 unsafe fn ensure_table(table: *mut u64, index: usize) -> MapResult<*mut u64> {

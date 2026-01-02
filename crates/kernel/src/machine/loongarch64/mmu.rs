@@ -178,7 +178,7 @@ unsafe fn alloc_subtable() -> MapResult<u64> {
 
 /// Convert physical address to virtual using HHDM
 fn phys_to_virt(phys: u64) -> u64 {
-    crate::boot::get_boot_ctx().hhdm_offset + phys
+    crate::boot::get_boot_ctx().hhdm_offset.wrapping_add(phys)
 }
 
 /// Ensure a table entry points to a valid subtable, allocating if needed

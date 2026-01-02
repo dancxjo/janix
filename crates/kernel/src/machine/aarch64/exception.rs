@@ -4,9 +4,6 @@
 //! Decodes ESR_EL1 to classify faults.
 
 use crate::trap::{self, TrapRecord, FaultKind, Arch};
-// use crate::machine::aarch64::serial; // For panic logging if needed
-// use core::arch::asm;
-// use graph::store;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -28,22 +25,14 @@ pub struct ExceptionContext {
 
 #[no_mangle]
 pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u64) -> u64 {
-    crate::serial::write(b"!");
     let esr = ctx.esr_el1;
-    let _elr = ctx.elr_el1;
-    let far = ctx.far_el1;
-    
     let ec = (esr >> 26) & 0x3f;
-    let _iss = esr & 0x1ffffff;
     
     // Default mappings
     let mut kind = FaultKind::Unknown;
     let mut addr = None;
     
     match ec {
-        0x01 => { // WFI/WFE
-            kind = FaultKind::Unknown; 
-        }
         0x15 => { // SVC instruction execution in AArch64 state
             kind = FaultKind::Syscall;
         }
@@ -60,20 +49,17 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
         }
         _ => {
             let offset = vector & 0x3;
-            if offset == 1 {
+            if vector == 5 || vector == 9 {
                 kind = FaultKind::Irq;
             } else if offset == 2 {
-                kind = FaultKind::ExternalInterrupt; // FIQ treated as external?
-            } else if offset == 3 {
-                kind = FaultKind::Unknown; // SError
+                kind = FaultKind::ExternalInterrupt;
             }
         }
     }
 
     let in_kernel = (ctx.spsr_el1 & 0xF) == 0x4 || (ctx.spsr_el1 & 0xF) == 0x5;
 
-    // We only record serious faults, not IRQs (spam) unless for debug
-    // Handle IRQs first (fast path)
+    // Handle IRQs first
     if kind == FaultKind::Irq {
         let irq_id = super::gic::ack_irq();
         if irq_id == 1023 { return 0; }
@@ -94,71 +80,38 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
     // Handle Lazy Mapping (Data Abort)
     if kind == FaultKind::DataAbort {
         if let Some(fault_addr) = addr {
-             // Lazy mapping for kernel heap/BSS
-             // Check if it's in Kernel Region (High Half)
              if in_kernel && fault_addr >= 0xffffffff80000000 {
                  use crate::machine::MmioFlags;
                  let aligned = fault_addr & !0xfff;
                  let flags = MmioFlags::READ | MmioFlags::WRITE;
-                 
-                 // Try to map
                  if unsafe { super::ARCH_MACHINE_IMPL.map_kernel_region(aligned, 0x1000, flags) } {
-                     return 0; // Success, retry instruction
+                     return 0; 
                  }
              }
         }
     }
 
-    // If we are here, it's a serious fault regarding logic or unrecoverable.
-    // Record it.
-    graph::store::with_store(|store| {
-            let rec = TrapRecord {
-            arch: Arch::Aarch64,
-            kind,
-            ip: ctx.elr_el1,
-            sp: ctx.sp_el0,
-            addr,
-            code: esr,
-            vector: vector as u32,
-            cpu: 0,
-            in_kernel,
-            task: None,
-        };
-        trap::record_fault(store, &rec);
-    });
-
     match kind {
         FaultKind::Breakpoint => {
+             crate::serial::write(b"BREAKPOINT HIT\n");
              return 0; 
         }
         FaultKind::Syscall => {
-            // AArch64 Syscall Convention:
-            // nr in x8, args in x0-x5
-            // Return in x0, x1, x2 (SyscallResult)
             let nr = ctx.x8 as u32;
-            let arg0 = ctx.x0;
-            let arg1 = ctx.x1;
-            let arg2 = ctx.x2;
-            let arg3 = ctx.x3;
-            let arg4 = ctx.x4;
-            let arg5 = ctx.x5;
-            
-            let res = crate::syscall::dispatch(nr, arg0, arg1, arg2, arg3, arg4, arg5);
-            
+            let res = crate::syscall::dispatch(nr, ctx.x0, ctx.x1, ctx.x2, ctx.x3, ctx.x4, ctx.x5);
             ctx.x0 = res.status as u64;
             ctx.x1 = res.val0;
             ctx.x2 = res.val1;
-            
-            // Advance PC past SVC instruction
             ctx.elr_el1 += 4;
-            
             return 0;
         }
-        FaultKind::DataAbort => {
-             panic!("Data Abort at {:?}: Limit reached.\n{:#?}", addr, ctx);
-        }
         _ => {
-            panic!("Unhandled AArch64 Exception: Limit reached.\n{:#?}", ctx);
+            crate::serial::write(b"AARCH64 FAULT: V=");
+            crate::serial::write_hex(vector);
+            crate::serial::write(b" ESR=");
+            crate::serial::write_hex(esr);
+            crate::serial::write(b"\n");
+            panic!("Unhandled AArch64 Exception\n{:#?}", ctx);
         }
     }
 }

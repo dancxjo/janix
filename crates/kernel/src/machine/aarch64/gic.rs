@@ -45,6 +45,24 @@ fn cpu() -> u64 {
     GICC_BASE.load(Ordering::Relaxed)
 }
 
+pub unsafe fn set_priority(id: u32, priority: u8) {
+    let base = dist();
+    if base == 0 { return; }
+    let p_addr = (base + 0x400 + (id as u64)) as *mut u8;
+    write_volatile(p_addr, priority);
+}
+
+pub unsafe fn set_group1(id: u32) {
+    let base = dist();
+    if base == 0 { return; }
+    let n = id / 32;
+    let offset = id % 32;
+    let g_addr = (base + 0x080 + (n as u64 * 4)) as *mut u32;
+    let mut val = read_volatile(g_addr);
+    val |= 1 << offset;
+    write_volatile(g_addr, val);
+}
+
 pub unsafe fn enable_irq(id: u32) {
     let base = dist();
     if base == 0 { return; }
@@ -52,24 +70,30 @@ pub unsafe fn enable_irq(id: u32) {
     let n = id / 32;
     let offset = id % 32;
 
-    // 0. Set Priority 0 (Highest)
-    let p_addr = (base + 0x400 + (id as u64)) as *mut u8;
-    write_volatile(p_addr, 0);
-
-    // 1. Set Group 1 (Non-Secure)
-    let g_addr = (base + 0x080 + (n as u64 * 4)) as *mut u32;
-    let g_val = read_volatile(g_addr);
-    write_volatile(g_addr, g_val | (1 << offset));
-
     // 2. Set Enable bit
     let addr = (base + GICD_ISENABLER + (n as u64 * 4)) as *mut u32;
     let val = read_volatile(addr);
     write_volatile(addr, val | (1 << offset));
     if id >= 32 {
          let t_offset = (id / 4) * 4;
-         let _t_addr = (base + GICD_ITARGETSR + t_offset as u64) as *mut u32;
-         // TODO: Set target
+         let t_addr = (base + GICD_ITARGETSR + t_offset as u64) as *mut u32;
+         let shift = (id % 4) * 8;
+         let mut current = read_volatile(t_addr);
+         current &= !(0xFF << shift);
+         current |= 0xFF << shift; // Broadcast to all possible CPUs (up to 8)
+         write_volatile(t_addr, current);
     }
+}
+
+pub unsafe fn get_pending(id: u32) -> bool {
+    let base = dist();
+    if base == 0 { return false; }
+    let n = id / 32;
+    let offset = id % 32;
+    // GICD_ISPENDR is 0x200
+    let addr = (base + 0x200 + (n as u64 * 4)) as *const u32;
+    let val = read_volatile(addr);
+    (val & (1 << offset)) != 0
 }
 
 pub unsafe fn ack_irq() -> u32 {

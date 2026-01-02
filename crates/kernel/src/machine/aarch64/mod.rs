@@ -8,6 +8,7 @@ use core::arch::global_asm;
 
 global_asm!(include_str!("switch.S"));
 global_asm!(include_str!("vectors.S"));
+use core::ptr::read_volatile;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 mod exception;
@@ -87,6 +88,14 @@ impl ArchMachine {
              let vectors_addr = core::ptr::addr_of!(aarch64_vectors) as u64;
              asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
              asm!("isb", options(nomem, preserves_flags));
+             
+             // Debug: Limit logging to initial setup
+             // crate::serial::write(b"EXT: AArch64 Machine Initialized\n");
+             
+             // Critical: Initialize SP_EL1
+             let current_sp: u64;
+             core::arch::asm!("mov {}, sp", out(reg) current_sp);
+             core::arch::asm!("msr sp_el1, {}", in(reg) current_sp);
         }
         
         // 4. Initialize Hardware
@@ -304,6 +313,16 @@ impl ArchMachine {
 
         self.serial.init(mapping.virt);
         self.uart_base.store(mapping.virt, Ordering::Relaxed);
+        
+        crate::serial::write(b"UART MAPPED AT: ");
+        crate::serial::write_hex(mapping.virt);
+        crate::serial::write(b"\n");
+
+        extern "C" { static aarch64_vectors: u8; }
+        let vbar = unsafe { core::ptr::addr_of!(aarch64_vectors) as u64 };
+        crate::serial::write(b"VBAR_EL1 SHOULD BE: ");
+        crate::serial::write_hex(vbar);
+        crate::serial::write(b"\n");
 
         Some(mapping.virt)
     }

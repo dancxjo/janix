@@ -107,9 +107,51 @@ pub fn init() {
 
 pub fn run() -> ! {
     log::klog(Level::Info, "SCHED", "entering loop");
+    
+    // Debug: Check interrupt state BEFORE enabling
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let sp: u64;
+        core::arch::asm!("mov {}, sp", out(reg) sp);
+        crate::serial::write(b"SCHED: SP=");
+        crate::serial::write_hex(sp);
+        crate::serial::write(b"\n");
+
+        let daif: u64;
+        core::arch::asm!("mrs {}, daif", out(reg) daif);
+        crate::serial::write(b"SCHED: DAIF=");
+        crate::serial::write_hex(daif);
+        
+        let cntv_ctl: u64;
+        core::arch::asm!("mrs {}, cntv_ctl_el0", out(reg) cntv_ctl);
+        crate::serial::write(b" CTL=");
+        crate::serial::write_hex(cntv_ctl);
+        
+        let cntv_tval: u64;
+        core::arch::asm!("mrs {}, cntv_tval_el0", out(reg) cntv_tval);
+        crate::serial::write(b" TVAL=");
+        crate::serial::write_hex(cntv_tval);
+        crate::serial::write(b"\n");
+        
+        if crate::machine::aarch64::gic::get_pending(27) {
+             crate::serial::write(b"GIC PENDING: 27\n");
+        }
+    }
+
     // Enable interrupts
     crate::machine::irq_enable();
+
     loop {
+        // Check for pending interrupts
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            let isr: u64;
+            core::arch::asm!("mrs {}, isr_el1", out(reg) isr);
+            if isr & 0x80 != 0 {
+                 crate::serial::write(b"I"); // IRQ Pending
+            }
+        }
+
         crate::serial::write(b".");
         crate::machine::idle();
     }

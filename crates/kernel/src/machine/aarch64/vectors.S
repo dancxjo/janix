@@ -11,8 +11,8 @@
 .align 11
 aarch64_vectors:
     // Current EL with SP0
-    VECTOR handle_sync_invalid
-    VECTOR handle_irq_invalid
+    VECTOR handle_sync_el1
+    VECTOR handle_irq_el1
     VECTOR handle_fiq_invalid
     VECTOR handle_serror_invalid
 
@@ -104,14 +104,6 @@ handle_sync_el1:
 1:  RESTORE_CONTEXT
 
 handle_irq_el1:
-    sub sp, sp, #16
-    stp x0, x1, [sp]
-    ldr x0, =0xffffffc009000000
-    mov x1, #73 // 'I'
-    str w1, [x0]
-    ldp x0, x1, [sp]
-    add sp, sp, #16
-
     SAVE_CONTEXT
     mov x0, sp
     mov x1, #5

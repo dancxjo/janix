@@ -19,6 +19,9 @@ struct LoongArchMachine;
 
 impl Machine for LoongArchMachine {
     fn init(&self, _info: crate::machine::PreBootInfo) {
+        // Capture kernel page tables before any address space switching
+        mmu::init();
+        
         // Install trap vector
         extern "C" {
              static loongarch64_trap_vector: u8; // Symbol

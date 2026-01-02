@@ -23,6 +23,12 @@ impl Machine for Riscv64Machine {
         // Capture bootloader's page tables FIRST before any address space operations
         mmu::init();
         
+        // Initialize sscratch to 0 for kernel-mode trap handling
+        // (kernel mode = sscratch is 0, user mode = sscratch is kernel stack)
+        unsafe {
+            core::arch::asm!("csrw sscratch, zero");
+        }
+        
         // Install trap vector
         extern "C" {
              static riscv64_trap_vector: u8; // Symbol

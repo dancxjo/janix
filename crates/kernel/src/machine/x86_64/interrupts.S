@@ -4,6 +4,7 @@
 .global keyboard_interrupt_trampoline
 .extern sched_tick_wrapper
 .extern keyboard_handler_asm_helper
+.extern timer_ack_asm_helper
 
 // IDT frame (pushed by CPU):
 // [SP+40] SS
@@ -79,7 +80,7 @@ timer_interrupt_trampoline:
     # We should call `ack_timer` logic here?
     # Safe to call Rust `timer::ack()`? Yes.
     
-    # call timer_ack_asm_helper
+    call timer_ack_asm_helper
     
     # 4. Restore
     pop rax

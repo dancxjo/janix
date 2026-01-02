@@ -6,7 +6,6 @@ use abi::syscall::err;
 use graph::store;
 use graph::symbols;
 use abi::types::RelationshipRef;
-use alloc::vec::Vec;
 
 pub fn sys_thing_create(kind_low: u64, parent_low: u64) -> SyscallResult {
     // Task 07: Thing Create

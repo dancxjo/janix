@@ -189,7 +189,9 @@ impl Machine for ArchMachine {
     }
 
     fn idle(&self) {
-        unsafe { asm!("hlt"); }
+        unsafe { 
+            core::arch::asm!("sti; hlt"); 
+        }
     }
     
 
@@ -208,8 +210,7 @@ impl Machine for ArchMachine {
         // Update per-cpu kernel_rsp
         // We can get per-cpu via GS.
         // We reserve 256 bytes at the top for syscall saved state (RIP, RFLAGS, etc.)
-        // This prevents interrupts from userland clobbering the saved state.
-        let reserved_top = top - 256;
+        // Landmark 6.4: Unified Stack Entry.
         
         // Landmark 6.4: Unified Stack Entry.
         // Both Syscall and Interrupts from User Mode use the absolute TOP.
@@ -236,7 +237,7 @@ impl Machine for ArchMachine {
 }
 
 pub fn syscall_init() {
-    use x86_64::registers::model_specific::{Efer, EferFlags, Star, LStar, SFMask}; // Removed Msr
+    use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask}; 
     use x86_64::registers::rflags::RFlags;
     
     extern "C" {

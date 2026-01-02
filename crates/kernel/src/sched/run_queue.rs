@@ -1,6 +1,5 @@
 use alloc::collections::VecDeque;
 use crate::sched::task::TaskId;
-use graph::store::PlaceStore;
 
 use abi::ids::ThingId;
 

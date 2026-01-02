@@ -31,9 +31,9 @@ pub unsafe fn init() {
     let mask = data.read();
     // Ensure only IRQ0 is unmasked? Or preserve others? 
     // Usually mask all others.
-    // For now: Mask ALL except IRQ0 (timer) and maybe IRQ1 (keyboard)?
-    // Safety: Mask 0xFE (11111110).
-    data.write(mask & 0xFE); 
+    // Unmask IRQ0 (Timer) and IRQ1 (Keyboard)
+    // Safety: Mask 0xFC (11111100).
+    data.write(mask & 0xFC); 
 }
 
 unsafe fn remap_pics() {

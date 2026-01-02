@@ -94,7 +94,12 @@ pub mod nr {
     
     // === Symbol Management ===
     /// Intern a symbol.
+    /// Intern a symbol.
     pub const SYS_SYMBOL_INTERN: u32 = 110;
+
+    // === Input ===
+    /// Read raw input scancodes.
+    pub const SYS_INPUT_READ: u32 = 200;
 }
 
 /// Standard Error Codes

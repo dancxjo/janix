@@ -32,6 +32,39 @@ iso env="x86_64":
 run env="x86_64":
     cargo run -p xtask -- run --env {{env}} --interactive --gdb
 
+run-all:
+    @echo "Starting all architectures in screen..."
+    # Create detached session with first window (x86_64)
+    screen -d -m -S thingos-all -t x86_64 just run x86_64
+    # Create other windows
+    screen -S thingos-all -X screen -t aarch64 just run aarch64
+    screen -S thingos-all -X screen -t riscv64 just run riscv64
+    screen -S thingos-all -X screen -t loongarch64 just run loongarch64
+    # Split vertically (Left | Right)
+    screen -S thingos-all -X split -v
+    # Focus Right
+    screen -S thingos-all -X focus
+    # Split Right Horizontally (Top Right / Bot Right)
+    screen -S thingos-all -X split
+    # Focus Bot Right, Select loongarch64 (3)
+    screen -S thingos-all -X focus
+    screen -S thingos-all -X select 3
+    # Focus Top Right, Select riscv64 (2)
+    screen -S thingos-all -X focus
+    screen -S thingos-all -X select 2
+    # Focus Left
+    screen -S thingos-all -X focus
+    # Split Left Horizontally (Top Left / Bot Left)
+    screen -S thingos-all -X split
+    # Focus Bot Left, Select aarch64 (1)
+    screen -S thingos-all -X focus
+    screen -S thingos-all -X select 1
+    # Focus Top Left, Select x86_64 (0)
+    screen -S thingos-all -X focus
+    screen -S thingos-all -X select 0
+    # Attach
+    screen -r thingos-all
+
 run-headless env="x86_64":
     cargo run -p xtask -- run --env {{env}} --gdb
 

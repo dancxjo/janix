@@ -135,8 +135,8 @@ pub fn run(env: &str) -> Result<()> {
         anyhow::bail!("Heap Smoke build failed");
     }
 
-    // 6. Build Apps (graph_smoke, log_smoke, cap_fail)
-    let apps = ["graph_smoke", "log_smoke", "cap_fail"];
+    // 6. Build Apps (graph_smoke, log_smoke, cap_fail, inputd, echo)
+    let apps = ["graph_smoke", "log_smoke", "cap_fail", "inputd", "echo"];
     for app in apps {
         println!("    Building {}...", app);
         let status = Command::new(&cargo)

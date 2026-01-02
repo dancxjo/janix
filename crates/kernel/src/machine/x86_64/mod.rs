@@ -12,6 +12,7 @@ pub mod serial;
 pub mod idt;
 pub mod percpu;
 pub mod timer;
+pub mod ps2_keyboard;
 pub mod gdt;
 pub mod mmu;
 pub use mmu::AddressSpace;
@@ -49,6 +50,14 @@ pub extern "C" fn timer_ack_asm_helper() {
 #[no_mangle]
 pub extern "C" fn task_dispatch(_dispatch_ptr: u64, entry: extern "C" fn()) {
     entry();
+}
+
+#[no_mangle]
+pub extern "C" fn keyboard_handler_asm_helper() {
+    unsafe {
+        ps2_keyboard::irq_handler();
+        timer::ack(); // Send EOI to PIC1
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -99,6 +108,9 @@ pub fn init() {
 
         // 5. Syscall
         syscall_init();
+
+        // 6. Keyboard (Arch specific init)
+        crate::machine::input::init();
     }
 }
 

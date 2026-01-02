@@ -66,7 +66,7 @@ impl Scheduler {
         
         // Add to run queue (requires re-borrowing task/thing)
         let thing = self.tasks.last().unwrap().thing;
-        store::with_store(|s| self.run_queue.push_back(id, thing, s));
+        self.run_queue.push_back(id, thing);
 
         id
     }
@@ -266,65 +266,62 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
     unsafe {
         #[cfg(target_arch = "x86_64")]
         {
-             // Trap Frame for Ring 0 (Kernel)
-             // [RFLAGS, CS, RIP] (pushed by CPU on interrupt)
-             // [Regs] (pushed by trampoline)
-             // Stack grows down.
-             // We start at stack_top.
+             // Trap Frame for Ring 0 (Kernel) -> Ring 0
+             // IRETQ from Ring 0 to Ring 0 pops: [RIP] [CS] [RFLAGS] (3 words).
+             // It does NOT pop RSP or SS.
              
-             // 1. alignment adjustment
-             // SysV ABI requires RSP % 16 == 8 on entry (simulating return address).
-             // Since we enter via IRETQ (which doesn't push ret addr), we must ensure 
-             // RSP is 8-byte aligned when we start executing 'entry'.
-             // Our stack_top is 16-byte aligned.
-             // We subtract 1 u64 so that final RSP (after pop) is 8-byte aligned.
-             // 1. alignment adjustment
-             // SysV ABI requires RSP % 16 == 8 on entry.
-             // stack_top is 16-byte aligned.
-             // After popping 3 words (24 bytes), SP ends in ...8.
-             // Matches ABI. NO padding needed.
+             // Alignment Requirements:
+             // SysV ABI requires RSP % 16 == 8 on entry to the function (simulating a 'call').
+             // After 'iretq' pops 3 words (24 bytes), we want RSP to end in ...8.
+             // implied: RSP_before_iret + 24 = ...8
+             //          RSP_before_iret + 8  = ...8 (mod 16)
+             //          RSP_before_iret      = ...0 (mod 16)
+             
+             // We start with stack_top (16-byte aligned).
+             // We push 3 words (24 bytes).
+             // To have RSP_before_iret aligned to 16, we need 8 bytes of padding.
+             // stack_top (0) - 8 (pad) - 24 (frame) = -32 = 0 (mod 16).
+             
              let mut sp = stack_top;
              
-             // 1. CPU Frame (5 words - conservative)
-             // Even if Ring 0 return pops 3, 5 is safe allocation.
+             // 1. Padding / Fake Return Address (8 bytes)
+             sp = sp.sub(1);
+             *sp = 0xdeadbeef;
              
-             // Kernel Mode Return: IRETQ pops only 3 words (RIP, CS, RFLAGS).
-             // We skip SS/RSP.
-             // Padding (at Top-1) ensures final alignment.
-             
+             // 2. CPU Frame (3 words: RFLAGS, CS, RIP)
              // RFLAGS
              sp = sp.sub(1);
              *sp = 0x202; // IF=1, enable interrupts
              
              // CS
              sp = sp.sub(1);
-             *sp = 0x08; // Kernel Code
+             *sp = 0x08; // Kernel Code (RPL 0)
              
              // RIP
              sp = sp.sub(1);
-             *sp = entry as usize as u64; // Entry Point
+             *sp = entry as usize as u64;
              
-             // 2. Registers (pushed by trampoline: rax..r15)
-             // Trampoline pushes: rax, rbx, rcx, rdx, rsi, rdi, rbp, r8..r15.
-             // Total 15 regs.
-             // We zero them.
+             // Registers?
+             // The trampoline pops registers (r15..rax). 
+             // We need to push 15 words of zeros for the registers too!
+             // Wait, `iretq` is the END of the trampoline.
+             // The `task_switch` or however we get here...
+             // Ah, `switch_to` switches context.
+             // `sched::tick` switches stack.
+             // The `timer_interrupt_trampoline` pops `regs`, THEN does `iretq`.
+             // So we MUST have the registers on the stack below the frame!
+             
+             // Full layout:
+             // [Padding 8]
+             // [RFLAGS] [CS] [RIP]  (24)
+             // [Regs 15 * 8]        (120)
+             
+             // Register push logic:
              sp = sp.sub(15);
              core::ptr::write_bytes(sp as *mut u8, 0, 15 * 8);
              
-             // Check 0x18 error?
-             // Maybe push a valid SS/RSP? (Fake 5 word frame)
-             // Even for Ring 0 return, if we push 5 words and IRETQ "thinks" it's 3 words, SP is off?
-             // Or if we need 5 words?
-             // Let's try pushing 5 words.
-             // [SS] [RSP] [RFLAGS] [CS] [RIP]
-             
-             // BUT `iretq` pops based on CS RPL.
-             // If CS=8 (RPL=0), it pops 3 words.
-             // So pushing 5 words would misalign the stack (RSP/SS left on stack).
-             // Unless we change CS to RPL 3 (User)?
-             
              task.stack_ptr = sp as u64;
-
+             
              // Note: ping/pong tasks take no args.
         }
 
@@ -419,7 +416,6 @@ pub fn tick(current_sp: u64) -> Option<u64> {
     // 1. Inc timer ticks
     let ticks = TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
     if ticks == 0 {
-        // log::klog(Level::Info, "SCHED", "first tick!"); // BAD: Allocates in IRQ
         crate::serial::write(b"SCHED: first tick!\n");
     }
     
@@ -432,10 +428,10 @@ pub fn tick(current_sp: u64) -> Option<u64> {
         if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == curr) {
             t.stack_ptr = current_sp;
             // State: Running -> Ready
-             store::with_store(|s| t.set_state(s, TaskState::Ready));
+             t.state = TaskState::Ready;
              // Enqueue
              let thing = t.thing;
-             store::with_store(|s| sched.run_queue.push_back(curr, thing, s));
+             sched.run_queue.push_back(curr, thing);
         }
     }
     
@@ -444,11 +440,9 @@ pub fn tick(current_sp: u64) -> Option<u64> {
         sched.cpu.current_task = Some(next);
         let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
         
-        store::with_store(|s| {
-             t.set_state(s, TaskState::Running);
-             t.set_state(s, TaskState::Running);
-             t.set_on_cpu(s, sched.cpu.thing);
-        });
+        t.state = TaskState::Running;
+        // set_on_cpu requires graph lock, skipping for now to avoid deadlock in IRQ
+        // store::with_store(|s| t.set_on_cpu(s, sched.cpu.thing));
 
         // Set Kernel Stack for Syscall/Traps
         crate::machine::machine().set_kernel_stack(t.stack_top);

@@ -11,6 +11,8 @@ pub use riscv64::abi;
 #[cfg(target_arch = "loongarch64")]
 pub use loongarch64::abi;
 
+pub mod input;
+
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::{TrapFrame, AddressSpace};
 #[cfg(target_arch = "aarch64")]

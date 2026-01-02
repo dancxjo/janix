@@ -1,7 +1,9 @@
 
 .section .text
 .global timer_interrupt_trampoline
+.global keyboard_interrupt_trampoline
 .extern sched_tick_wrapper
+.extern keyboard_handler_asm_helper
 
 // IDT frame (pushed by CPU):
 // [SP+40] SS
@@ -77,7 +79,7 @@ timer_interrupt_trampoline:
     # We should call `ack_timer` logic here?
     # Safe to call Rust `timer::ack()`? Yes.
     
-    call timer_ack_asm_helper
+    # call timer_ack_asm_helper
     
     # 4. Restore
     pop rax
@@ -101,6 +103,59 @@ timer_interrupt_trampoline:
     jz 3f
     swapgs
 3:
+    iretq
+
+.align 16
+keyboard_interrupt_trampoline:
+    // 1. Save generic regs (caller saved + others to be safe)
+    push r15
+    push r14
+    push r13
+    push r12
+    push r11
+    push r10
+    push r9
+    push r8
+    push rbp
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+    push rbx
+    push rax
+
+    // Check CS for User Mode
+    test byte ptr [rsp + 128], 3
+    jz 1f
+    swapgs
+1:
+    cld
+    
+    // Call handler helper (Rust)
+    call keyboard_handler_asm_helper
+    
+    // Restore
+    pop rax
+    pop rbx
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rbp
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+
+    // Check CS for User Mode
+    test byte ptr [rsp + 8], 3
+    jz 2f
+    swapgs
+2:
     iretq
 
 .global syscall_entry

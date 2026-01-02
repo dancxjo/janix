@@ -17,11 +17,8 @@ impl RunQueue {
         }
     }
 
-    pub fn push_back(&mut self, task_id: TaskId, _task_thing: ThingId, _place: &mut PlaceStore) {
+    pub fn push_back(&mut self, task_id: TaskId, _task_thing: ThingId) {
         self.queue.push_back(task_id);
-        // task --[in_run_queue]--> run_queue.0
-        // FIXME: Allocating in IRQ (tick) causes panic/deadlock.
-        // let _ = place.create_relationship(sym::PRED_IN_RUN_QUEUE, task_thing, self.thing);
     }
 
     pub fn pop_front(&mut self) -> Option<TaskId> {

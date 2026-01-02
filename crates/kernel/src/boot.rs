@@ -211,7 +211,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         
         if module.path.ends_with("sprout") || module.path.ends_with("bloom")
             || module.path.ends_with("graph_smoke") || module.path.ends_with("log_smoke") || module.path.ends_with("cap_fail")
-            || module.path.ends_with("clock")
+            || module.path.ends_with("clock") || module.path.ends_with("inputd") || module.path.ends_with("echo")
         {
              spawn_module(ctx, module, &bs);
         }

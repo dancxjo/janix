@@ -9,6 +9,7 @@ pub mod graph;
 pub mod log;
 pub mod memory;
 pub mod watch;
+pub mod input; // Added input module
 
 pub use dispatch::dispatch;
 

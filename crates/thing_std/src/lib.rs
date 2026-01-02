@@ -273,3 +273,16 @@ pub fn sys_exit(code: i32) -> ! {
     unsafe { syscall(abi::syscall::nr::SYS_PROC_EXIT, code as u64, 0, 0, 0) };
     loop {}
 }
+
+/// Read scancodes from the input subsystem.
+/// Returns the number of bytes read.
+pub fn input_read(buf: &mut [u8]) -> usize {
+    let res = unsafe {
+        syscall(abi::syscall::nr::SYS_INPUT_READ, buf.as_mut_ptr() as u64, buf.len() as u64, 0, 0)
+    };
+    if res.status == 0 {
+        res.val0 as usize
+    } else {
+        0
+    }
+}

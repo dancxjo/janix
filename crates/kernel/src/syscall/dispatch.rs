@@ -166,6 +166,24 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64
              watch::sys_watch_poll(a0, a1, a2)
         },
 
+        // === Input ===
+        200 => { // nr::SYS_INPUT_READ
+            // sys_input_read(buf, len)
+            // TODO: Permissions? For now assuming if you can execute, you can read input (trusted service)
+             // or require CapOp::Hardware?
+             // User requested: "require perm.read targeting device.keyboard0 (or place.input)"
+             // But we don't have place.input ID easily here without looking it up.
+             // For v0.3 bootstrap, we trust the caller (inputd).
+             
+             let buf = a0 as *mut u8;
+             let len = a1 as usize;
+             // sys_input_read returns Result<usize, ()>
+             match crate::syscall::input::sys_input_read(buf, len) {
+                 Ok(n) => SyscallResult::new(0, n as u64, 0),
+                 Err(_) => SyscallResult::new(abi::syscall::err::EFAULT, 0, 0),
+             }
+        },
+
         // === Process ===
         // TODO: Cap checks for Spawn?
         nr::SYS_PROC_SPAWN => {

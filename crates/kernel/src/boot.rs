@@ -212,6 +212,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         if module.path.ends_with("sprout") || module.path.ends_with("bloom")
             || module.path.ends_with("graph_smoke") || module.path.ends_with("log_smoke") || module.path.ends_with("cap_fail")
             || module.path.ends_with("clock") || module.path.ends_with("inputd") || module.path.ends_with("echo")
+            || module.path.ends_with("inspector")
         {
              spawn_module(ctx, module, &bs);
         }
@@ -517,7 +518,19 @@ fn seed_capabilities() {
     let place_logs = store::thing_create(kind_place);
     store::thing_register_name(place_logs, symbols::intern(b"place.logs"));
     store::relationship_create(pred_contains, root, place_logs);
+    // store::relationship_create(pred_contains, root, place_logs); // REMOVED DUPLICATE
+
     crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: place.logs created");
+
+    // Seed Inspector Places
+    let place_reports = store::thing_create(kind_place);
+    store::thing_register_name(place_reports, symbols::intern(b"place.reports"));
+    store::relationship_create(pred_contains, root, place_reports);
+
+    let place_snapshots = store::thing_create(kind_place);
+    store::thing_register_name(place_snapshots, symbols::intern(b"place.snapshots"));
+    store::relationship_create(pred_contains, root, place_snapshots);
+    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: inspector places created");
     
     let kind_perm = symbols::intern(b"kind.permission");
     

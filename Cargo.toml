@@ -17,6 +17,7 @@ members = [
     "apps/cap_fail",
     "apps/inputd",
     "apps/echo",
+    "apps/inspector",
 ]
 
 [workspace.package]

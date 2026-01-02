@@ -5,7 +5,8 @@ use abi::wire::SyscallResult;
 use abi::syscall::err;
 use graph::store;
 use graph::symbols;
-// use abi::types::RelationshipRef;
+use abi::types::RelationshipRef;
+use alloc::vec::Vec;
 
 pub fn sys_thing_create(kind_low: u64, parent_low: u64) -> SyscallResult {
     // Task 07: Thing Create
@@ -73,16 +74,71 @@ pub fn sys_thing_get(id_low: u64, _out_ptr: u64, out_len: u64) -> SyscallResult 
     }
 }
 
-pub fn sys_relationships_from(id_low: u64, _cursor: u64, _out_ptr: u64) -> SyscallResult {
-    // use abi::types::RelationshipRef;
+pub fn sys_relationships_from(id_low: u64, cursor: u64, out_ptr: u64, out_len: u64) -> SyscallResult {
+    // Return list of RelationshipRef
+    let id = ThingId(id_low as u128); // TODO: full 128 bit support via 2 registers?
+    // Current ABI limitation: ThingId passed as 64-bit low part (assuming high=0/1?) 
+    // OR we fix arguments. `sys_relationships(id_low, id_high, cursor, out_ptr, out_len)`?
+    // For now assuming low part sufficient or using legacy assumptions.
+    // Task 10 requirements: we need graph inspection.
+    // Let's assume passed ID is valid (low part).
     
-    let id = ThingId(id_low as u128);
-    let rels = store::relationships_from(id);
+    let rel_ids = store::relationships_from(id);
+    let total_rels = rel_ids.len() as u64;
     
-    // Simple pagination?
-    // If cursor is index.
+    let skip = cursor as usize;
+    if skip >= rel_ids.len() {
+        return SyscallResult::new(0, 0, total_rels); // 0 read, return total
+    }
     
-    SyscallResult::new(0, rels.len() as u64, 0)
+    let mut count = 0;
+    // Capacity check
+    // out_len is NUMBER of items, not bytes?
+    // User convention usually items.
+    // Verify out_ptr valid.
+    if out_ptr == 0 {
+         return SyscallResult::new(err::EINVAL, 0, total_rels);
+    }
+    
+    let user_slice = unsafe {
+        core::slice::from_raw_parts_mut(out_ptr as *mut RelationshipRef, out_len as usize)
+    };
+    
+    for (i, &rel_id) in rel_ids.iter().skip(skip).enumerate() {
+        if i >= out_len as usize {
+            break;
+        }
+        if let Some(rel) = store::get_relationship(rel_id) {
+            user_slice[i] = RelationshipRef {
+                id: rel_id,
+                kind: rel.kind,
+                target: rel.to,
+            };
+            count += 1;
+        }
+    }
+    
+    SyscallResult::new(0, count, total_rels)
+}
+
+pub fn sys_symbol_resolve(id_low: u64, out_ptr: u64, out_len: u64) -> SyscallResult {
+    let sym_id = SymbolId(id_low);
+    if let Some(s) = symbols::resolve(sym_id) {
+        let bytes = s.as_bytes();
+        let len = bytes.len() as u64;
+        
+        if out_ptr != 0 && out_len > 0 {
+            let write_len = core::cmp::min(len, out_len);
+            unsafe {
+                core::ptr::copy_nonoverlapping(bytes.as_ptr(), out_ptr as *mut u8, write_len as usize);
+            }
+            SyscallResult::new(0, write_len, len) // Return written, total
+        } else {
+            SyscallResult::new(0, 0, len) // Just query length
+        }
+    } else {
+        SyscallResult::new(err::ENOENT, 0, 0)
+    }
 }
 
 pub fn sys_thing_find(name_ptr: u64, name_len: u64) -> SyscallResult {

@@ -96,6 +96,8 @@ pub mod nr {
     /// Intern a symbol.
     /// Intern a symbol.
     pub const SYS_SYMBOL_INTERN: u32 = 110;
+    /// Resolve a symbol ID to string.
+    pub const SYS_SYMBOL_RESOLVE: u32 = 111;
 
     // === Input ===
     /// Read raw input scancodes.

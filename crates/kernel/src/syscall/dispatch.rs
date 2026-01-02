@@ -96,7 +96,11 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64
              if let Err(e) = cap::check(CapOp::GraphRead, Some(thing_id)) {
                  return e;
             }
-            graph::sys_relationships_from(a0, a1, a2)
+            graph::sys_relationships_from(a0, a1, a2, a3)
+        },
+        nr::SYS_SYMBOL_RESOLVE => {
+             // Read permission? Symbols are public.
+             graph::sys_symbol_resolve(a0, a1, a2)
         },
         nr::SYS_THING_FIND => {
             // Cap check? Find is read.

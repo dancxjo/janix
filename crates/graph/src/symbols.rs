@@ -184,6 +184,23 @@ pub fn init() {
         "predicate.presents",
         "predicate.targets",
         "predicate.frame",
+        // Inspector / Snapshot Ontology
+        "kind.snapshot",
+        "snapshot.format.json",
+        "snapshot.format.md",
+        "kind.report",
+        "report.boot_status",
+        "place.reports",
+        "place.snapshots",
+        "predicate.generated_by",
+        "predicate.at_time",
+        "predicate.summary",
+        "predicate.count",
+        "predicate.for_place",
+        // "predicate.bytes" reused from PRED_BACKS or similar? No, let's add specific if needed.
+        // "snapshot --[bytes]--> bytespace". Reuse PRED_BACKS? 
+        // Or "predicate.bytes" for explicit data ref.
+        "predicate.bytes",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -339,4 +356,23 @@ pub mod sym {
     pub const PRED_PRESENTS: SymbolId = SymbolId(107); // frame --[presents]--> surface
     pub const PRED_TARGETS: SymbolId = SymbolId(108);  // window --[targets]--> surface
     pub const PRED_FRAME: SymbolId = SymbolId(109);    // compositor --[contains]--> frame (or just use contains)
+
+    // Inspector
+    pub const KIND_SNAPSHOT: SymbolId = SymbolId(110);
+    pub const SNAPSHOT_FMT_JSON: SymbolId = SymbolId(111);
+    pub const SNAPSHOT_FMT_MD: SymbolId = SymbolId(112);
+    pub const KIND_REPORT: SymbolId = SymbolId(113);
+    pub const REPORT_BOOT_STATUS: SymbolId = SymbolId(114);
+    
+    pub const PLACE_REPORTS: SymbolId = SymbolId(115);
+    pub const PLACE_SNAPSHOTS: SymbolId = SymbolId(116);
+    
+    // PRED_FORMAT is already defined at 99
+    pub const PRED_GENERATED_BY: SymbolId = SymbolId(117);
+    pub const PRED_AT_TIME: SymbolId = SymbolId(118);
+    pub const PRED_SUMMARY: SymbolId = SymbolId(119);
+    pub const PRED_COUNT: SymbolId = SymbolId(120);
+    pub const PRED_FOR_PLACE: SymbolId = SymbolId(121);
+    pub const PRED_BYTES: SymbolId = SymbolId(122);
+
 }

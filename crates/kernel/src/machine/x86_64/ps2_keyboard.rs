@@ -19,10 +19,8 @@ static OVERFLOWED: AtomicBool = AtomicBool::new(false);
 pub fn init() {
     // For now, we assume the BIOS/Bootloader left the controller in a usable state.
     // We just flush the buffer.
-    unsafe {
-        let mut port = Port::<u8>::new(0x60);
-        // Drain existing (approximate check, can't poll indefinitely without status reg)
-    }
+    let _port = Port::<u8>::new(0x60);
+    // Drain existing (approximate check, can't poll indefinitely without status reg)
 }
 
 /// IRQ Handler for Keyboard (IRQ 1).

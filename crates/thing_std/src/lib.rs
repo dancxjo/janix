@@ -286,3 +286,54 @@ pub fn input_read(buf: &mut [u8]) -> usize {
         0
     }
 }
+
+pub use abi::types::RelationshipRef;
+
+/// Read outgoing relationships into a buffer of RelationshipRef structs.
+/// Returns the number of items written.
+pub fn read_relationships(id: ThingId, out: &mut [RelationshipRef]) -> usize {
+    let ptr = out.as_mut_ptr() as u64;
+    let len = out.len() as u64;
+    // a1 (cursor) = 0 for now. Pagination in future if needed.
+    // If we want pagination, we need to pass cursor.
+    // But for inspector's simple BFS, we might just use large buffer or 0.
+    // syscall signature: (id, cursor, out_ptr, out_len)
+    
+    // We'll expose `read_relationships_paged` later if needed. Use 0 cursor.
+    let res = unsafe { syscall(abi::syscall::nr::SYS_REL_GET_FROM, id.0 as u64, 0, ptr, len) };
+    res.val0 as usize
+}
+
+/// Resolve a SymbolId to a String.
+pub fn symbol_resolve(id: SymbolId) -> Option<alloc::string::String> {
+    // 1. First probe length (or just allocate reasonable buffer)
+    let mut buf = [0u8; 128]; // Stack buffer for common/small symbols
+    let ptr = buf.as_mut_ptr() as u64;
+    let len = buf.len() as u64;
+    
+    let res = unsafe { syscall(abi::syscall::nr::SYS_SYMBOL_RESOLVE, id.0, ptr, len, 0) };
+    
+    // val0 is written bytes, val1 is total bytes
+    if res.status != 0 {
+        return None;
+    }
+    
+    let written = res.val0 as usize;
+    let total = res.val1 as usize;
+    
+    if total <= buf.len() {
+        // Fits in stack buf
+        let s = core::str::from_utf8(&buf[..written]).ok()?;
+        Some(alloc::string::String::from(s))
+    } else {
+        // Need to allocate larger buffer and retry
+        let mut vec = alloc::vec![0u8; total];
+        let ptr = vec.as_mut_ptr() as u64;
+        let res = unsafe { syscall(abi::syscall::nr::SYS_SYMBOL_RESOLVE, id.0, ptr, total as u64, 0) };
+        if res.status != 0 { return None; }
+        
+        let written = res.val0 as usize;
+        let s = core::str::from_utf8(&vec[..written]).ok()?;
+        Some(alloc::string::String::from(s))
+    }
+}

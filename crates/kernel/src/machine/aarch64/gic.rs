@@ -27,6 +27,14 @@ pub unsafe fn init(dist_base: u64, cpu_base: u64) {
     // 2. CPU Interface: Enable + Priority Mask
     write_volatile((cpu_base + GICC_PMR) as *mut u32, 0xF0); // Priority mask
     write_volatile((cpu_base + GICC_CTLR) as *mut u32, 1);   // Enable
+
+    let pmr = read_volatile((cpu_base + GICC_PMR) as *const u32);
+    let ctlr = read_volatile((cpu_base + GICC_CTLR) as *const u32);
+    crate::serial::write(b"GIC: PMR=");
+    crate::serial::write_hex(pmr as u64);
+    crate::serial::write(b" CTLR=");
+    crate::serial::write_hex(ctlr as u64);
+    crate::serial::write(b"\n");
 }
 
 fn dist() -> u64 {

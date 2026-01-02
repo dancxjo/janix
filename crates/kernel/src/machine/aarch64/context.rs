@@ -19,21 +19,34 @@ impl ArchTask for AArch64Arch {
         entry: u64,
         stack_top: u64,
         mode: CpuMode,
-        _arg0: u64,
+        arg0: u64,
     ) {
-        // Stub: build a minimal TrapFrame on stack
-        let aligned_top = stack_top & !0xf;
+        // Build a TrapFrame on the stack that aarch64_return_from_trap will restore.
+        // Stack layout (growing down):
+        //   [TrapFrame]
+        //   ...
+        
+        let aligned_top = stack_top & !0xf; // 16-byte align
         let layout = core::alloc::Layout::new::<TrapFrame>();
         let frame_ptr = (aligned_top - layout.size() as u64) as *mut TrapFrame;
         
         unsafe {
             core::ptr::write_bytes(frame_ptr as *mut u8, 0, layout.size());
             let frame = &mut *frame_ptr;
+            
             frame.elr_el1 = entry;
-            frame.spsr_el1 = match mode {
-                CpuMode::Kernel => 0x3c5, // EL1h, DAIF masked
-                CpuMode::User => 0x0,     // EL0
-            };
+            frame.x0 = arg0; // Pass arg0 to entry point
+            
+            match mode {
+                CpuMode::Kernel => {
+                    frame.spsr_el1 = 0x3c5; // EL1h, DAIF masked (Initial state with interrupts disabled)
+                    frame.sp_el0 = 0;      // Not used in kernel mode?
+                }
+                CpuMode::User => {
+                    frame.spsr_el1 = 0x0;   // EL0t
+                    frame.sp_el0 = arg0;    // If arg0 is user stack
+                }
+            }
         }
         
         ctx.sp = frame_ptr as u64;
@@ -49,7 +62,7 @@ impl ArchTrap for AArch64Arch {
             vector: 0,
             mode: Self::mode(tf),
             pc: tf.elr_el1,
-            sp: tf.sp_el0,
+            sp: if Self::mode(tf) == CpuMode::User { tf.sp_el0 } else { tf as *const _ as u64 + core::mem::size_of::<TrapFrame>() as u64 },
             flags: tf.spsr_el1,
         }
     }
@@ -74,7 +87,7 @@ impl ArchTrap for AArch64Arch {
             CpuMode::User => tf.spsr_el1 = (tf.spsr_el1 & !0xf) | 0x0,
             CpuMode::Kernel => tf.spsr_el1 = (tf.spsr_el1 & !0xf) | 0x5,
         }
-        // DAIF bits for interrupts
+        // DAIF bits for interrupts (bits 6-9)
         if spec.interrupts_enabled {
             tf.spsr_el1 &= !(0xf << 6);
         } else {
@@ -82,8 +95,10 @@ impl ArchTrap for AArch64Arch {
         }
     }
 
-    unsafe fn return_from_trap(_tf: *const Self::TrapFrame) -> ! {
-        // Stub: would call asm eret sequence
-        loop { core::arch::asm!("wfi"); }
+    unsafe fn return_from_trap(tf: *const Self::TrapFrame) -> ! {
+        extern "C" {
+            fn aarch64_return_from_trap(tf: *const TrapFrame) -> !;
+        }
+        aarch64_return_from_trap(tf)
     }
 }

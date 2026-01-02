@@ -28,7 +28,11 @@ pub struct ExceptionContext {
 
 #[no_mangle]
 pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u64) -> u64 {
+    crate::serial::write(b"!");
     let esr = ctx.esr_el1;
+    let _elr = ctx.elr_el1;
+    let far = ctx.far_el1;
+    
     let ec = (esr >> 26) & 0x3f;
     let _iss = esr & 0x1ffffff;
     
@@ -128,7 +132,27 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
              return 0; 
         }
         FaultKind::Syscall => {
-            panic!("Syscall not implemented yet");
+            // AArch64 Syscall Convention:
+            // nr in x8, args in x0-x5
+            // Return in x0, x1, x2 (SyscallResult)
+            let nr = ctx.x8 as u32;
+            let arg0 = ctx.x0;
+            let arg1 = ctx.x1;
+            let arg2 = ctx.x2;
+            let arg3 = ctx.x3;
+            let arg4 = ctx.x4;
+            let arg5 = ctx.x5;
+            
+            let res = crate::syscall::dispatch(nr, arg0, arg1, arg2, arg3, arg4, arg5);
+            
+            ctx.x0 = res.status as u64;
+            ctx.x1 = res.val0;
+            ctx.x2 = res.val1;
+            
+            // Advance PC past SVC instruction
+            ctx.elr_el1 += 4;
+            
+            return 0;
         }
         FaultKind::DataAbort => {
              panic!("Data Abort at {:?}: Limit reached.\n{:#?}", addr, ctx);

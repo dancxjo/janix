@@ -73,8 +73,8 @@ pub fn pre_boot(info: PreBootInfo) {
     if MACHINE_INSTALLED.swap(true, Ordering::SeqCst) {
         return; // Already installed
     }
-    ARCH_MACHINE.init(info);
     unsafe { machine::install(ARCH_MACHINE) };
+    ARCH_MACHINE.init(info);
     crate::serial::init();
 }
 

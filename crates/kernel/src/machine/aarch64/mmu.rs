@@ -106,6 +106,18 @@ impl AddressSpace {
 
         entry_ptr.write(desc);
         
+        // Invalidate TLB for this address
+        unsafe {
+            asm!(
+                "dsb ishst",
+                "tlbi vaae1is, {}",
+                "dsb ish",
+                "isb",
+                in(reg) virt >> 12,
+                options(nostack, preserves_flags)
+            );
+        }
+        
         Ok(())
     }
 }

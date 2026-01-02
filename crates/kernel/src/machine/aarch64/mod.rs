@@ -74,37 +74,33 @@ impl ArchMachine {
     }
 
     pub fn init_machine(&self, info: crate::machine::PreBootInfo) {
+        // 1. Set constants first!
         self.hhdm_offset.store(info.hhdm_offset, Ordering::Relaxed);
         self.kernel_phys_base.store(info.kernel_phys_base, Ordering::Relaxed);
         self.kernel_virt_base.store(info.kernel_virt_base, Ordering::Relaxed);
         
-        // Install VBAR_EL1
+        // 2. Install VBAR_EL1
         extern "C" {
              static aarch64_vectors: u8; // Symbol
         }
         unsafe {
              let vectors_addr = core::ptr::addr_of!(aarch64_vectors) as u64;
              asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
-             asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
-             
+             asm!("isb", options(nomem, preserves_flags));
+        }
+
+        // 3. Now it is safe to log
+        crate::serial::write(b"AARCH64: machine init\n");
+        
+        // 4. Initialize Hardware
+        unsafe {
              // Initialize GIC (Map Disributor and CPU Interface)
-             // We need to map them first.
-             // We can't use `self.map_mmio` easily inside `unsafe` block if we want to be clean,
-             // but `self` is available.
-             // However, `map_mmio` takes `MmioRange`.
-             // And `init_machine` is not unsafe, but this block is.
-             // Let's step out of unsafe for mapping if possible, or just call map_mmio.
-             
-             let flags = MmioFlags::DEVICE | MmioFlags::READ | MmioFlags::WRITE;
-             
-             // GICD
+             let flags = MmioFlags::READ | MmioFlags::WRITE | MmioFlags::DEVICE;
              let gicd_map = self.map_mmio(MmioRange { phys: gic::GICD_PHYS, len: 0x1000 }, flags)
                  .expect("GICD map fail");
-                 
-             // GICC
              let gicc_map = self.map_mmio(MmioRange { phys: gic::GICC_PHYS, len: 0x1000 }, flags)
                  .expect("GICC map fail");
-
+             
              gic::init(gicd_map.virt, gicc_map.virt);
              timer::init();
         }
@@ -367,6 +363,7 @@ impl Machine for ArchMachine {
     }
 
     fn idle(&self) {
+        crate::serial::write(b"IDLE\n");
         unsafe { asm!("wfi"); }
     }
 
@@ -389,6 +386,12 @@ impl Machine for ArchMachine {
             self.kernel_virt_to_phys(virt)
         } else {
             virt // Fallback
+        }
+    }
+
+    fn set_kernel_stack(&self, top: u64) {
+        unsafe {
+            asm!("msr tpidr_el1, {}", in(reg) top, options(nomem, preserves_flags));
         }
     }
 }

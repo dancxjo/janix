@@ -2,6 +2,7 @@ pub mod abi;
 pub mod trap;
 pub mod timer;
 pub mod mmu;
+pub mod context;
 mod serial;
 pub use mmu::AddressSpace;
 

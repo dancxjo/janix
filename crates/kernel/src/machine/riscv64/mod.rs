@@ -4,6 +4,7 @@ pub mod abi;
 pub mod trap;
 pub mod timer;
 pub mod mmu;
+pub mod context;
 pub use mmu::AddressSpace;
 
 pub type TrapFrame = trap::TrapContext; // Added
@@ -19,6 +20,9 @@ struct Riscv64Machine;
 
 impl Machine for Riscv64Machine {
     fn init(&self, _info: crate::machine::PreBootInfo) {
+        // Capture bootloader's page tables FIRST before any address space operations
+        mmu::init();
+        
         // Install trap vector
         extern "C" {
              static riscv64_trap_vector: u8; // Symbol
@@ -78,6 +82,13 @@ impl Machine for Riscv64Machine {
 
     fn task_entry_stub(&self) -> u64 {
         0
+    }
+
+    fn set_kernel_stack(&self, top: u64) {
+        // Set sscratch to kernel stack top for trap entry from user mode
+        unsafe {
+            core::arch::asm!("csrw sscratch, {}", in(reg) top);
+        }
     }
 
     fn virt_to_phys(&self, virt: u64) -> u64 {

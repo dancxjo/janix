@@ -15,6 +15,7 @@ pub mod timer;
 pub mod ps2_keyboard;
 pub mod gdt;
 pub mod mmu;
+pub mod context;
 pub use mmu::AddressSpace;
 
 #[repr(C)]
@@ -36,10 +37,7 @@ pub struct TrapFrame {
 
 #[no_mangle]
 pub extern "C" fn sched_tick_asm_helper(sp: u64) -> u64 {
-    match sched::tick(sp) {
-        Some(new_sp) => new_sp,
-        None => 0,
-    }
+    sched::tick(sp)
 }
 
 #[no_mangle]
@@ -118,6 +116,7 @@ pub fn init() {
 extern "C" {
     fn x86_switch_context(old_ctx: *mut Context, new_ctx: *const Context);
     fn task_entry();
+    pub fn user_mode_trampoline();
 }
 
 core::arch::global_asm!(

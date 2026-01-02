@@ -3,13 +3,32 @@
 .global riscv64_trap_vector
 .align 4
 riscv64_trap_vector:
-    // Save context
-    // We need space for 31 regs + sstatus + sepc + scause + stval
-    // 31*8 = 248. + 4*8 = 32. Total ~280 bytes. Align 16.
+    // On trap entry, we need to determine if we came from user or kernel mode.
+    // sscratch holds kernel stack pointer when in user mode, 0 when in kernel mode.
+    // If sscratch != 0, swap sp and sscratch to get kernel stack.
+    
+    csrrw sp, sscratch, sp  // Atomically swap sp and sscratch
+    
+    // Now: if we came from U-mode, sp = kernel stack, sscratch = user stack
+    //      if we came from S-mode, sp = 0 (BAD!), sscratch = kernel stack
+    // Check if sp == 0 (means we came from S-mode and sscratch was 0)
+    bnez sp, 1f
+    
+    // Came from S-mode: restore sp from sscratch
+    csrr sp, sscratch
+    
+1:  // Now sp is the kernel stack
+    // Allocate space for TrapContext (288 bytes aligned)
     addi sp, sp, -288
 
+    // Save x1 (ra)
     sd x1, 0(sp)
-    sd x2, 8(sp) // This is SP! We saved current SP.
+    
+    // Save user sp (x2): read from sscratch if from U-mode, or use original sp
+    // For simplicity, save sscratch (which is user sp after swap, or 0 if from kernel)
+    csrr t0, sscratch
+    sd t0, 8(sp)    // Save user/original sp
+    
     sd x3, 16(sp)
     sd x4, 24(sp)
     sd x5, 32(sp)
@@ -56,21 +75,20 @@ riscv64_trap_vector:
     call riscv64_handle_trap
     
     // Check if we need to switch stack (a0 != 0)
-    beqz a0, 1f
+    beqz a0, 2f
     mv sp, a0
-1:
+2:
 
-    // Restore CSRs (sepc might change)
+    // Restore CSRs
     ld t0, 248(sp)
     ld t1, 256(sp)
-    // scause, stval usually ignored on restore
     
     csrw sstatus, t0
     csrw sepc, t1
 
     // Restore regs
     ld x1, 0(sp)
-    // skip x2 (SP) until end
+    // x2 (sp) restored at end
     ld x3, 16(sp)
     ld x4, 24(sp)
     ld x5, 32(sp)
@@ -101,8 +119,26 @@ riscv64_trap_vector:
     ld x30, 232(sp)
     ld x31, 240(sp)
     
-    // Restore SP? Actually we need to just add back.
-    // If we context switched, we might need to load NEW SP logic.
-    // For now simple restore.
+    // Load user sp into t0
+    ld t0, 8(sp)
+    
+    // Deallocate TrapContext frame (before we lose sp reference)
     addi sp, sp, 288
+    
+    // Check sstatus.SPP (bit 8): if returning to U-mode, set sscratch = kernel_sp
+    // and sp = user_sp. If returning to S-mode, set sscratch = 0.
+    csrr t1, sstatus
+    andi t1, t1, 0x100  // SPP bit
+    beqz t1, return_to_user
+    
+return_to_kernel:
+    // Returning to S-mode: sscratch should be 0
+    csrw sscratch, zero
+    // sp stays as is (kernel context)
+    sret
+    
+return_to_user:
+    // Returning to U-mode: save kernel sp to sscratch, restore user sp
+    csrw sscratch, sp
+    mv sp, t0  // User stack from saved TrapContext
     sret

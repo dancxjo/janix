@@ -40,6 +40,7 @@ pub struct Task {
     pub heap_base: u64,
     pub heap_size: u64,
     pub heap_brk: u64,
+    pub first_run: bool, // true if this task has prepared context, false if it has saved context
 }
 
 impl Task {
@@ -54,6 +55,7 @@ impl Task {
             heap_base: 0,
             heap_size: 0,
             heap_brk: 0,
+            first_run: true, // Starts with prepared context
         }
     }
 

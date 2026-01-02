@@ -77,7 +77,8 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
         if irq_id == super::timer::TIMER_IRQ {
             super::timer::ack(); 
             let current_sp = ctx as *mut ExceptionContext as u64;
-            if let Some(new_sp) = crate::sched::tick(current_sp) {
+            let new_sp = crate::sched::tick(current_sp);
+            if new_sp != 0 {
                 return new_sp;
             }
         } else {

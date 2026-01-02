@@ -101,19 +101,64 @@ fn bran_log(msg: &str) {
 
 // Global Allocator removed - provided by kernel
 
+// =============================================================================
+// Stack and Entry
+// =============================================================================
+
+#[repr(align(16))]
+struct Stack([u8; 262144]); // 256KB
+
+#[used]
+#[unsafe(no_mangle)]
+static mut BOOT_STACK: Stack = Stack([0; 262144]);
+
+#[cfg(target_arch = "x86_64")]
+core::arch::global_asm!(
+    ".section .text",
+    ".global _start",
+    "_start:",
+    "mov rsp, offset BOOT_STACK + 262144",
+    "jmp kmain"
+);
+
+#[cfg(target_arch = "aarch64")]
+core::arch::global_asm!(
+    ".section .text",
+    ".global _start",
+    "_start:",
+    "ldr x9, =BOOT_STACK",
+    "add x9, x9, #262144",
+    "mov sp, x9",
+    "b kmain"
+);
+
+#[cfg(target_arch = "riscv64")]
+core::arch::global_asm!(
+    ".section .text",
+    ".global _start",
+    "_start:",
+    "la sp, BOOT_STACK",
+    "li t0, 262144",
+    "add sp, sp, t0",
+    "tail kmain"
+);
+
+#[cfg(target_arch = "loongarch64")]
+core::arch::global_asm!(
+    ".section .text",
+    ".global _start",
+    "_start:",
+    "la.global $sp, BOOT_STACK",
+    "li.d $t0, 262144",
+    "add.d $sp, $sp, $t0",
+    "b kmain"
+);
+
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
     // Verify Limine protocol
     if !BASE_REVISION.is_supported() {
-        // Protocol mismatch - halt immediately (can't log safely)
-        loop {
-            #[cfg(target_arch = "x86_64")]
-            asm!("cli; hlt");
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-            asm!("wfi");
-            #[cfg(target_arch = "loongarch64")]
-            asm!("idle 0");
-        }
+        loop {}
     }
 
     // Get HHDM offset first - needed for MMIO mapping

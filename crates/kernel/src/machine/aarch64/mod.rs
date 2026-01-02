@@ -17,6 +17,7 @@ pub mod gic;
 pub mod timer;
 pub mod abi;
 pub mod mmu;
+pub mod context;
 pub use mmu::AddressSpace;
 
 // TrapFrame alias for generic Scheduler usage

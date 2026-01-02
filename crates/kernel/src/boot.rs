@@ -210,9 +210,10 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         let bs = Bytespace::new_module(module.phys_addr, module.size as usize);
         
         if module.path.ends_with("sprout") || module.path.ends_with("bloom")
-            || module.path.ends_with("graph_smoke") || module.path.ends_with("log_smoke") || module.path.ends_with("cap_fail")
-            || module.path.ends_with("clock") || module.path.ends_with("inputd") || module.path.ends_with("echo")
-            || module.path.ends_with("inspector")
+            || module.path.ends_with("log_smoke") 
+            // || module.path.ends_with("graph_smoke") || module.path.ends_with("cap_fail")
+            // || module.path.ends_with("clock") || module.path.ends_with("inputd") || module.path.ends_with("echo")
+            // || module.path.ends_with("inspector")
         {
              log::klog(Level::Info, "BOOT", &format!("MATCHED module: {}", module.path));
              spawn_module(ctx, module, &bs);
@@ -220,27 +221,9 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
              log::klog(Level::Info, "BOOT", &format!("SKIPPING module: {}", module.path));
         }
     }
-
-    // Phase 6.5: Spawn Ping-Pong Verification
-    // crate::sched::spawn_kernel_task("ping", ping_task);
-    // crate::sched::spawn_kernel_task("pong", pong_task);
-
+    
     // Phase 7: Enter scheduler loop
     sched::run()
-}
-
-extern "C" fn ping_task() {
-    loop {
-        crate::serial::write(b"ping\n");
-        for _ in 0..10000000 { core::hint::spin_loop(); }
-    }
-}
-
-extern "C" fn pong_task() {
-    loop {
-        crate::serial::write(b"pong\n");
-        for _ in 0..10000000 { core::hint::spin_loop(); }
-    }
 }
 
 // Obsolete ExecPool removed.

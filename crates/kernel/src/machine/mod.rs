@@ -11,6 +11,29 @@ pub use riscv64::abi;
 #[cfg(target_arch = "loongarch64")]
 pub use loongarch64::abi;
 
+pub mod context;
+pub use context::{ArchContext, ArchTask, ArchTrap, CpuMode, TrapInfo, ResumeSpec};
+
+// CurrentArch type alias - the scheduler uses this without knowing arch details
+#[cfg(target_arch = "x86_64")]
+pub type CurrentArch = x86_64::context::X86Arch;
+#[cfg(target_arch = "aarch64")]
+pub type CurrentArch = aarch64::context::AArch64Arch;
+#[cfg(target_arch = "riscv64")]
+pub type CurrentArch = riscv64::context::Riscv64Arch;
+#[cfg(target_arch = "loongarch64")]
+pub type CurrentArch = loongarch64::context::LoongArchArch;
+
+// TaskContext type alias - the per-arch task context type
+#[cfg(target_arch = "x86_64")]
+pub type TaskContext = x86_64::context::TaskContext;
+#[cfg(target_arch = "aarch64")]
+pub type TaskContext = aarch64::context::TaskContext;
+#[cfg(target_arch = "riscv64")]
+pub type TaskContext = riscv64::context::TaskContext;
+#[cfg(target_arch = "loongarch64")]
+pub type TaskContext = loongarch64::context::TaskContext;
+
 pub mod input;
 
 #[cfg(target_arch = "x86_64")]

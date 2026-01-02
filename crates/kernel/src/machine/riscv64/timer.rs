@@ -14,15 +14,11 @@ pub unsafe fn ack() {
     let current_time: u64;
     asm!("rdtime {}", out(reg) current_time);
     
-    // Schedule next tick (freq ~10MHz? QEMU is usually 10MHz or 32kHz?)
-    // QEMU riscv virt is 10MHz usually?
-    // Let's guess 100_000 cycles for 10ms.
-    let next_time = current_time + 100_000;
+    // Schedule next tick (QEMU riscv virt is 10MHz)
+    // 100_000 cycles = 10ms at 10MHz
+    let next_time = current_time.wrapping_add(100_000);
     
     // Call SBI Set Timer (Legacy EID=0, FID=0)
-    // Func: sbi_set_timer(stime_value)
-    // a0 = stime_value
-    // a7 = 0x0
     asm!(
         "ecall",
         in("a0") next_time,

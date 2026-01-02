@@ -92,7 +92,8 @@ pub unsafe extern "C" fn loongarch64_handle_trap(ctx: &mut TrapContext) -> u64 {
         FaultKind::Timer => {
             super::timer::ack();
             let current_sp = ctx as *mut TrapContext as u64;
-            if let Some(new_sp) = crate::sched::tick(current_sp) {
+            let new_sp = crate::sched::tick(current_sp);
+            if new_sp != 0 {
                 return new_sp;
             }
         }

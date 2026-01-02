@@ -17,9 +17,16 @@ pub struct TrapContext {
 pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) -> u64 {
     let scause = ctx.scause;
     let is_interrupt = (scause >> 63) != 0;
-    let cause_code = scause & 0xfff; // bottom 12 bits? or full masked?
-    // RISC-V scause: Interrupt bit + Exception Code.
-    // Exception codes are small.
+    let cause_code = scause & 0xfff;
+    
+    // DEBUG: Print scause to understand what trap we're handling
+    crate::serial::write(b"TRAP: scause=");
+    crate::serial::write_hex(scause);
+    crate::serial::write(b" int=");
+    crate::serial::write_num(if is_interrupt { 1 } else { 0 });
+    crate::serial::write(b" code=");
+    crate::serial::write_num(cause_code);
+    crate::serial::write(b"\n");
     
     let mut kind = FaultKind::Unknown;
     let mut addr = None;
@@ -65,12 +72,46 @@ pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) -> u64 {
     // sstatus.SPP (bit 8) = 1 (Supervisor), 0 (User)
     let in_kernel = (ctx.sstatus & (1 << 8)) != 0;
 
+    // Handle ALL interrupts EARLY (before any lock acquisition) to avoid deadlock
+    if is_interrupt {
+        match cause_code {
+            5 => {
+                // Supervisor Timer Interrupt
+                super::timer::ack();
+                let current_sp = ctx as *mut TrapContext as u64;
+                let new_sp = crate::sched::tick(current_sp);
+                return if new_sp != 0 { new_sp } else { 0 };
+            }
+            1 => {
+                // Supervisor Software Interrupt - just clear and return
+                // TODO: Handle IPI
+                return 0;
+            }
+            9 => {
+                // Supervisor External Interrupt
+                // TODO: Handle external IRQ via PLIC
+                return 0;
+            }
+            _ => {
+                // Unknown interrupt, just return
+                return 0;
+            }
+        }
+    }
+    
+    // Handle exceptions that can be resolved quickly
+    if kind == FaultKind::Breakpoint {
+        ctx.sepc += 4; // Skip ebreak instruction
+        return 0;
+    }
+
+    // Only record serious faults (not Timer/Breakpoint)
     graph::store::with_store(|store| {
         let rec = TrapRecord {
             arch: Arch::Riscv64,
             kind,
             ip: ctx.sepc,
-            sp: 0, // Need to fish from regs if we want it. regs[1] usually (x2)
+            sp: ctx.regs[1], // x2 = sp
             addr,
             code: scause,
             vector: cause_code as u32,
@@ -82,21 +123,12 @@ pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) -> u64 {
     });
 
     match kind {
-        FaultKind::Breakpoint => {
-            // Advance SEPC to avoid loop for ebreak (4 bytes)
-            ctx.sepc += 4;
-            return 0;
-        }
-        FaultKind::Timer => {
-            super::timer::ack();
-            let current_sp = ctx as *mut TrapContext as u64;
-            if let Some(new_sp) = crate::sched::tick(current_sp) {
-                return new_sp;
-            }
+        FaultKind::Syscall => {
+            // TODO: Handle syscalls
+            panic!("RISC-V syscall not implemented");
         }
         _ => {
-            // panic!("Unhandled RISC-V Trap: {:?} scause={:#x} sepc={:#x}", kind, scause, ctx.sepc);
+            panic!("Unhandled RISC-V Trap: {:?} scause={:#x} sepc={:#x}", kind, scause, ctx.sepc);
         }
     }
-    0
 }

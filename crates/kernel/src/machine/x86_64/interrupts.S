@@ -104,7 +104,30 @@ timer_interrupt_trampoline:
     jz 3f
     swapgs
 3:
+    # EMERGENCY FIX: Check for Null CS (0)
+    # If CS is 0, infer from RIP (Stack Top).
+    cmp qword ptr [rsp + 8], 0
+    jne 4f
+    
+    # Check MSB of RIP ([rsp+7]).
+    test byte ptr [rsp + 7], 0x80
+    jz 31f
+    
+    # Kernel (High Half) -> CS 8
+    mov qword ptr [rsp + 8], 8
+    jmp 4f
+    
+31: # User (Low Half) -> CS 0x23
+    mov qword ptr [rsp + 8], 0x23
+    
+4:
     iretq
+
+cs_is_zero_panic:
+    xchg bx, bx
+    cli
+    hlt
+    jmp cs_is_zero_panic
 
 .align 16
 keyboard_interrupt_trampoline:
@@ -278,3 +301,117 @@ syscall_entry:
     mov rsp, gs:[24]
     swapgs
     sysretq
+
+.global user_mode_trampoline
+user_mode_trampoline:
+    # 1. Restore GPRs (RAX..R15)
+    # Stack must contain [R15..RAX] (RAX at Top)
+    pop rax
+    pop rbx
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rbp
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+    
+    # 2. Check CS/SwapGS Logic (copied from timer trampoline)
+    # Check CS (RSP+8) for User Mode
+    test byte ptr [rsp + 8], 3
+    jz 1f
+    swapgs
+1:
+    # EMERGENCY FIX: Check for Null CS (0)
+    cmp qword ptr [rsp + 8], 0
+    jne 2f
+    
+    test byte ptr [rsp + 7], 0x80
+    jz 11f
+    
+    mov qword ptr [rsp + 8], 8
+    jmp 2f
+    
+11: 
+    mov qword ptr [rsp + 8], 0x23
+    
+2:
+    iretq
+
+# x86_return_from_trap: Restore from TrapFrame and iretq
+# Called from ArchTrap::return_from_trap(tf: *const TrapFrame)
+# RDI = pointer to TrapFrame (GPRs followed by iretq frame)
+#
+# TrapFrame layout (160 bytes total):
+#   +0   rax
+#   +8   rbx
+#   +16  rcx
+#   +24  rdx
+#   +32  rsi
+#   +40  rdi
+#   +48  rbp
+#   +56  r8
+#   +64  r9
+#   +72  r10
+#   +80  r11
+#   +88  r12
+#   +96  r13
+#   +104 r14
+#   +112 r15
+#   +120 rip
+#   +128 cs
+#   +136 rflags
+#   +144 rsp
+#   +152 ss
+.global x86_return_from_trap
+x86_return_from_trap:
+    # Set RSP to point at the TrapFrame
+    mov rsp, rdi
+    
+    # Restore GPRs
+    pop rax
+    pop rbx
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rbp
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+    
+    # Now RSP points at iretq frame: [RIP][CS][RFLAGS][RSP][SS]
+    
+    # Check CS for user mode (RPL != 0) and do swapgs if needed
+    test byte ptr [rsp + 8], 3
+    jz 1f
+    swapgs
+1:
+    # Handle null CS edge case
+    cmp qword ptr [rsp + 8], 0
+    jne 2f
+    
+    # Infer mode from RIP sign bit
+    test byte ptr [rsp + 7], 0x80
+    jz 3f
+    
+    # Kernel (high address)
+    mov qword ptr [rsp + 8], 8
+    jmp 2f
+    
+3:  # User (low address)
+    mov qword ptr [rsp + 8], 0x23
+    
+2:
+    iretq

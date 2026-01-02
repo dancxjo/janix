@@ -225,7 +225,7 @@ impl Machine for ArchMachine {
 }
 
 pub fn syscall_init() {
-    use x86_64::registers::model_specific::{Efer, EferFlags, Msr, Star, LStar, SFMask};
+    use x86_64::registers::model_specific::{Efer, EferFlags, Star, LStar, SFMask}; // Removed Msr
     use x86_64::registers::rflags::RFlags;
     
     extern "C" {
@@ -238,7 +238,7 @@ pub fn syscall_init() {
         efer |= EferFlags::SYSTEM_CALL_EXTENSIONS;
         Efer::write(efer);
         
-        let handler_addr = syscall_entry as u64;
+        let handler_addr = syscall_entry as *const () as u64;
         LStar::write(x86_64::VirtAddr::new(handler_addr));
         
         let _ = Star::write(

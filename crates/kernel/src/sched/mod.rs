@@ -138,7 +138,7 @@ pub fn configure_task_memory(id: TaskId, _img: (u64, u64), _stack: (u64, u64), h
     }
 }
 
-pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
+pub fn configure_task_context(id: TaskId, entry: u64, _user_stack: u64) {
     let mut guard = SCHEDULER.lock();
     if let Some(sched) = guard.as_mut() {
         if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
@@ -153,7 +153,7 @@ pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
 
                      // CPU Frame (5 words)
                      sp = sp.sub(1); *sp = 0x1b; // SS (User Data)
-                     sp = sp.sub(1); *sp = user_stack; // RSP (User Stack)
+                     sp = sp.sub(1); *sp = _user_stack; // RSP (User Stack)
                      sp = sp.sub(1); *sp = 0x202; // RFLAGS
                      sp = sp.sub(1); *sp = 0x23; // CS (User Code)
                      sp = sp.sub(1); *sp = entry; // RIP 

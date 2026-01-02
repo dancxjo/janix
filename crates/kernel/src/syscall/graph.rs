@@ -84,3 +84,44 @@ pub fn sys_relationships_from(id_low: u64, _cursor: u64, _out_ptr: u64) -> Sysca
     
     SyscallResult::new(0, rels.len() as u64, 0)
 }
+
+pub fn sys_thing_find(name_ptr: u64, name_len: u64) -> SyscallResult {
+    // 1. Validate ptr
+    if name_ptr == 0 || name_len == 0 || name_len > 1024 {
+        return SyscallResult::new(err::EINVAL, 0, 0);
+    }
+    
+    // 2. Read string
+    // TODO: Verify user memory access
+    let name_slice = unsafe {
+        core::slice::from_raw_parts(name_ptr as *const u8, name_len as usize)
+    };
+    
+    // 3. Intern symbol
+    let sym_id = symbols::intern(name_slice);
+    
+    // 4. Find in store
+    if let Some(thing_id) = store::find_thing_by_name(sym_id) {
+         SyscallResult::new(0, thing_id.high(), thing_id.low())
+    } else {
+         SyscallResult::new(err::ENOENT, 0, 0)
+    }
+}
+
+pub fn sys_thing_register_name(id_low: u64, name_ptr: u64, name_len: u64) -> SyscallResult {
+    if name_ptr == 0 || name_len == 0 || name_len > 1024 {
+        return SyscallResult::new(err::EINVAL, 0, 0);
+    }
+    
+    let thing_id = ThingId(id_low as u128); // TODO: Full ID support?
+    
+    // Safety: User slice
+    let name_slice = unsafe {
+        core::slice::from_raw_parts(name_ptr as *const u8, name_len as usize)
+    };
+    
+    let sym_id = symbols::intern(name_slice);
+    store::thing_register_name(thing_id, sym_id);
+    
+    SyscallResult::new(0, 0, 0)
+}

@@ -43,30 +43,21 @@ unsafe impl Send for Bytespace {}
 unsafe impl Sync for Bytespace {}
 
 impl Bytespace {
-    pub fn new_ram(size: usize) -> Self {
+    pub fn new_ram(size: usize) -> Result<Self, ()> {
         // Allocate backing memory
-        let layout = core::alloc::Layout::from_size_align(size, 4096).unwrap();
+        // Check size? core::alloc::Layout handles it. 
+        // We use 4096 alignment.
+        let layout = core::alloc::Layout::from_size_align(size, 4096).map_err(|_| ())?;
         let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
         if ptr.is_null() {
-            panic!("Bytespace OOM");
+            return Err(());
         }
+        
+        let phys_base = crate::machine::machine().virt_to_phys(ptr as u64);
 
         let thing = store::with_store(|s| {
             let t = s.create_thing(sym::KIND_BYTE_SPACE).expect("create bytespace");
-            let ram_kind = s.create_thing(sym::KIND_BYTESPACE_RAM).unwrap_or(ThingId(0));
-            let _ = s.create_relationship(sym::PRED_HAS_KIND, t, ram_kind); 
-            // Better: Thing Kind is ByteSpace. Predicate HasKind points to specific flavor if needed, 
-            // or we just use Attributes.
-            // Symbol table has KIND_BYTESPACE_RAM. Is that the Thing Kind or a property?
-            // "bytespace --[predicate.has_kind]--> bytespace_kind.*"
-            // So Thing Kind is KIND_BYTE_SPACE.
-            // We link to a singleton/concept for KIND_BYTESPACE_RAM.
             
-            // Actually, let's just create a thing with KIND_BYTE_SPACE and set a property or relation.
-            // We need to find or create the "Ram Kind" thing.
-            // Ideally these are pre-seeded. We didn't pre-seed them as Things, just symbols.
-            // We'll create ephemeral "Kind" things for now or rely on the symbol ID in a value.
-            // Let's use `predicate.has_kind` -> `Thing(Kind=bytespace_kind.ram)`.
             if let Ok(k) = s.create_thing(sym::KIND_BYTESPACE_RAM) {
                  let _ = s.create_relationship(sym::PRED_HAS_KIND, t, k);
             }
@@ -75,6 +66,10 @@ impl Bytespace {
             let size_val = create_val_u64(s, size as u64);
             let _ = s.create_relationship(sym::PRED_SIZE, t, size_val);
             
+            // Phys Base (for Mapping)
+            let phys_val = create_val_u64(s, phys_base);
+            let _ = s.create_relationship(sym::PRED_BASE_PHYS, t, phys_val);
+            
             // Link to memory
             if let Some(mem) = s.find_by_name(sym::PLACE_MEMORY) {
                  let _ = s.create_relationship(sym::PRED_CONTAINS, mem, t);
@@ -82,13 +77,13 @@ impl Bytespace {
             t
         });
 
-        Self {
+        Ok(Self {
             id: thing,
             kind: BytespaceKind::Ram,
             size,
-            phys_base: None, // It's virtual RAM.
+            phys_base: Some(phys_base),
             ram_backing: Some(ptr),
-        }
+        })
     }
 
     pub fn new_device(phys: u64, size: usize) -> Self {

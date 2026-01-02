@@ -158,6 +158,32 @@ pub fn init() {
         "predicate.slice_of",
         "predicate.size",
         "predicate.base_phys",
+        // Bloom / Graphics Symbols
+        "kind.device_display",
+        "kind.surface",
+        "kind.window",
+        "kind.compositor",
+        "kind.frame",
+        "kind.damage",
+        "kind.rect",
+        "kind.value_u32",
+        "kind.value_rgba",
+        "place.surfaces",
+        "place.windows",
+        "place.compositor",
+        "place.input",
+        "predicate.primary",
+        "predicate.format",
+        "predicate.stride",
+        "predicate.position",
+        "predicate.z",
+        "predicate.visible",
+        "predicate.title",
+        "predicate.owner",
+        "predicate.damage",
+        "predicate.presents",
+        "predicate.targets",
+        "predicate.frame",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -284,4 +310,33 @@ pub mod sym {
     pub const PRED_SLICE_OF: SymbolId = SymbolId(82);
     pub const PRED_SIZE: SymbolId = SymbolId(83);
     pub const PRED_BASE_PHYS: SymbolId = SymbolId(84);
+
+    // Bloom / Graphics Ontology
+    pub const KIND_DEVICE_DISPLAY: SymbolId = SymbolId(85);
+    pub const KIND_SURFACE: SymbolId = SymbolId(86);
+    pub const KIND_WINDOW: SymbolId = SymbolId(87);
+    pub const KIND_COMPOSITOR: SymbolId = SymbolId(88);
+    pub const KIND_FRAME: SymbolId = SymbolId(89);
+    pub const KIND_DAMAGE: SymbolId = SymbolId(90);
+    pub const KIND_RECT: SymbolId = SymbolId(91); // Or ValueRect?
+    pub const KIND_VALUE_U32: SymbolId = SymbolId(92);
+    pub const KIND_VALUE_RGBA: SymbolId = SymbolId(93);
+
+    pub const PLACE_SURFACES: SymbolId = SymbolId(94);
+    pub const PLACE_WINDOWS: SymbolId = SymbolId(95);
+    pub const PLACE_COMPOSITOR: SymbolId = SymbolId(96);
+    pub const PLACE_INPUT: SymbolId = SymbolId(97);
+
+    pub const PRED_PRIMARY: SymbolId = SymbolId(98);   // device --[primary]--> surface
+    pub const PRED_FORMAT: SymbolId = SymbolId(99);    // surface --[format]--> value
+    pub const PRED_STRIDE: SymbolId = SymbolId(100);   // surface --[stride]--> value
+    pub const PRED_POSITION: SymbolId = SymbolId(101); // window --[position]--> rect
+    pub const PRED_Z: SymbolId = SymbolId(102);        // window --[z]--> value
+    pub const PRED_VISIBLE: SymbolId = SymbolId(103);  // window --[visible]--> value
+    pub const PRED_TITLE: SymbolId = SymbolId(104);    // window --[title]--> value
+    pub const PRED_OWNER: SymbolId = SymbolId(105);    // window --[owner]--> task
+    pub const PRED_DAMAGE: SymbolId = SymbolId(106);   // window --[damage]--> damage
+    pub const PRED_PRESENTS: SymbolId = SymbolId(107); // frame --[presents]--> surface
+    pub const PRED_TARGETS: SymbolId = SymbolId(108);  // window --[targets]--> surface
+    pub const PRED_FRAME: SymbolId = SymbolId(109);    // compositor --[contains]--> frame (or just use contains)
 }

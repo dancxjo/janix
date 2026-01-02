@@ -52,6 +52,11 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
     fs::copy(&bloom_src, modules_dir.join("bloom"))
          .with_context(|| format!("Failed to copy bloom from {:?}", bloom_src))?;
 
+    // Copy Clock -> /boot/modules/clock
+    let clock_src = bin_src.join("clock");
+    fs::copy(&clock_src, modules_dir.join("clock"))
+         .with_context(|| format!("Failed to copy clock from {:?}", clock_src))?;
+
     // Copy Heap Smoke -> /boot/modules/heap_smoke
     let heap_smoke_src = bin_src.join("heap_smoke");
     if heap_smoke_src.exists() {

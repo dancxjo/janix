@@ -15,7 +15,7 @@ pub unsafe fn init() {
 
     // Timer (Vector 32)
     unsafe {
-        IDT[32].set_handler_addr(x86_64::VirtAddr::new(timer_interrupt_trampoline as u64));
+        IDT[32].set_handler_addr(x86_64::VirtAddr::new(timer_interrupt_trampoline as *const () as u64));
     }
     
     IDT.load();

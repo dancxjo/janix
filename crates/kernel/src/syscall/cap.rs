@@ -25,6 +25,7 @@ pub enum CapOp {
     GraphLink,   // Requires: target (from)
     GraphUnlink, // Requires: target (from)
     GraphRead,   // Requires: target
+    GraphWrite,  // Requires: target (modification/naming)
     GraphWatch,  // Requires: target
     MemManage,   // Requires: target (address space, implicit self for now)
     Hardware,    // Requires: capability.hardware
@@ -36,15 +37,26 @@ pub fn check(op: CapOp, target: Option<ThingId>) -> Result<(), SyscallResult> {
     let task_id = crate::sched::current_task_id().ok_or(SyscallResult::new(err::EFAULT, 0, 0))?;
 
     // 2. Define Required Permission Symbol
-    let req_perm = match op {
+    let req_perm_sym = match op {
         CapOp::Log => symbols::intern(b"perm.log"),
         CapOp::GraphCreate => symbols::intern(b"perm.create"),
         CapOp::GraphLink => symbols::intern(b"perm.link"),
         CapOp::GraphUnlink => symbols::intern(b"perm.unlink"),
         CapOp::GraphRead => symbols::intern(b"perm.read"),
+        CapOp::GraphWrite => symbols::intern(b"perm.write"),
         CapOp::GraphWatch => symbols::intern(b"perm.watch"),
         CapOp::MemManage => symbols::intern(b"perm.mem"),
-        CapOp::Hardware => symbols::intern(b"perm.dictator"), // :)
+        CapOp::Hardware => symbols::intern(b"perm.dictator"),
+    };
+    
+    // Resolve Permission ThingId
+    // Note: If permissions are not seeded, this fails safe (Denied).
+    let req_perm_id = match store::find_thing_by_name(req_perm_sym) {
+        Some(id) => id,
+        None => {
+            crate::log::klog(crate::log::Level::Error, "CAP", &alloc::format!("Permission {:?} not found in graph!", req_perm_sym));
+            return Err(SyscallResult::new(err::EPERM, 0, 0));
+        }
     };
     
     // 3. Define predicates
@@ -52,8 +64,6 @@ pub fn check(op: CapOp, target: Option<ThingId>) -> Result<(), SyscallResult> {
     let pred_target = symbols::intern(b"predicate.target");
     let pred_permits = symbols::intern(b"predicate.permits");
     
-    // 4. Iterate Capabilities
-    // task --[has_cap]--> cap
     // 4. Iterate Capabilities
     // task --[has_cap]--> cap
     let caps_rel_ids = store::relationships_from(task_id);
@@ -64,7 +74,7 @@ pub fn check(op: CapOp, target: Option<ThingId>) -> Result<(), SyscallResult> {
                  let cap_id = rel.to; // Target is 'to'
                  
                  // Check Permits
-                 let has_perm = check_rel(cap_id, pred_permits, ThingId(req_perm.0 as u128));
+                 let has_perm = check_rel(cap_id, pred_permits, req_perm_id);
                  
                  if has_perm {
                      // If operation requires target, check target match

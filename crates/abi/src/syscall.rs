@@ -59,6 +59,15 @@ pub mod nr {
     /// Iterate relationships (to).
     pub const SYS_REL_GET_TO: u32 = 32;
 
+    /// Find a Thing by name (returns ID or 0 if not found).
+    /// Input: a0=name_ptr, a1=name_len.
+    pub const SYS_THING_FIND: u32 = 33;
+    
+    /// Register a name for a Thing.
+    /// Input: a0=thing_id.low (or handle?), a1=name_ptr, a2=name_len.
+    pub const SYS_THING_REGISTER_NAME: u32 = 34;
+
+
     // === Memory ===
     /// Create a Bytespace.
     pub const SYS_BYTESPACE_CREATE: u32 = 40;

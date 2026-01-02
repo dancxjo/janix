@@ -59,7 +59,7 @@ pub fn run(env: &str) -> Result<()> {
     let status = Command::new(&cargo)
         .arg("build")
         .arg("--manifest-path")
-        .arg("crates/bloom/Cargo.toml")
+        .arg("apps/bloom/Cargo.toml")
         .arg("--target")
         .arg(target)
         .arg("-Z")
@@ -73,6 +73,26 @@ pub fn run(env: &str) -> Result<()> {
 
     if !status.success() {
         anyhow::bail!("Bloom build failed");
+    }
+
+    // 3.5 Build Clock (Demo App)
+    println!("    Building clock...");
+    let status = Command::new(&cargo)
+        .arg("build")
+        .arg("--manifest-path")
+        .arg("apps/clock/Cargo.toml")
+        .arg("--target")
+        .arg(target)
+        .arg("-Z")
+        .arg("build-std=core,alloc,compiler_builtins")
+        .env("RUSTFLAGS", "-C relocation-model=pic -C link-arg=-pie")
+        .env("RUSTC_BOOTSTRAP", "1")
+        .current_dir(&root)
+        .status()
+        .context("Failed to build clock")?;
+
+    if !status.success() {
+        anyhow::bail!("Clock build failed");
     }
 
     // 4. Build Sprout Exit (Test Module)

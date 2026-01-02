@@ -54,7 +54,7 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64
         nr::SYS_REL_CREATE => {
             // Args: kind_low, from_low, to_low
             let from_id = abi::ids::ThingId(a1 as u128);
-            let to_id = abi::ids::ThingId(a2 as u128);
+            let _to_id = abi::ids::ThingId(a2 as u128);
             if let Err(e) = cap::check(CapOp::GraphLink, Some(from_id)) {
                 return e;
             }
@@ -97,6 +97,26 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64
                  return e;
             }
             graph::sys_relationships_from(a0, a1, a2)
+        },
+        nr::SYS_THING_FIND => {
+            // Cap check? Find is read.
+            // Check global read cap? Or is name lookup always allowed?
+            // "Public" names.
+            // If we want to restrict visibility, we need a capability to "Read Root" or "Read Global Namespace"?
+            // For now, allow all find.
+            if let Err(e) = cap::check(CapOp::GraphRead, None) {
+                 return e;
+            }
+            graph::sys_thing_find(a0, a1)
+        },
+        nr::SYS_THING_REGISTER_NAME => {
+            // Args: a0=id_low, a1=ptr, a2=len
+            // Cap: Write/Modify on Thing?
+            let thing_id = abi::ids::ThingId(a0 as u128);
+            if let Err(e) = cap::check(CapOp::GraphWrite, Some(thing_id)) {
+                 return e;
+            }
+            graph::sys_thing_register_name(a0, a1, a2)
         },
         
         // === Memory ===

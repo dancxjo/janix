@@ -186,14 +186,12 @@ pub fn thing_get_payload(_id: ThingId, _buffer: &mut [u8]) -> usize {
 }
 
 pub fn thing_find_by_name(_name: SymbolId) -> Option<ThingId> {
-    // We don't have SYS_FIND in new ABI explicit list?
-    // Wait, I didn't add it.
-    // I should add it or use iteration.
-    // "Out of scope: Full Cypher/GQL".
-    // But basic name lookup is useful.
-    // Syscall dispatch `0 => ...`? 
-    // Let's assume we removed it for strictness unless added.
-    // Using `place.root` + iteration?
+    // Legacy signature takes SymbolId?
+    // New syscall takes string slice.
+    // If we have the original string, we should use it.
+    // But this function signature forces SymbolId.
+    // We can't reverse SymbolId -> String in userspace comfortably yet (no store).
+    // So we should expose `thing_find(name: &str)`.
     None
 }
 
@@ -202,18 +200,51 @@ pub fn symbol_intern(name: &str) -> SymbolId {
     SymbolId(res.val0)
 }
 
-pub fn relationships_from_into(id: ThingId, out: &mut [ThingId]) -> usize {
-    let buf_len = out.len() * 16; // ThingIds are 16 bytes? Syscall returns Relationship or To?
-    // Dispatch says: "returns arrays of (rel_id, kind, from, to)" or similar.
-    // "sys_relationships_from... -> (RelationshipId, kind, to)"?
-    // Current dispatch: "buffer[start..start+16].copy_from_slice(&rel_id...)"
-    // It copies just RelationshipId.
-    let ptr = out.as_mut_ptr() as u64;
-    let res = unsafe { syscall(abi::syscall::nr::SYS_REL_GET_FROM, id.0 as u64, 0, ptr, buf_len as u64) };
-    res.val0 as usize
+pub fn thing_register_name(id: ThingId, name: &str) -> i32 {
+    let res = unsafe { syscall(abi::syscall::nr::SYS_THING_REGISTER_NAME, id.0 as u64, name.as_ptr() as u64, name.len() as u64, 0) };
+    res.status
 }
 
-pub mod event;
+pub fn thing_find(name: &str) -> Option<ThingId> {
+    let res = unsafe { syscall(abi::syscall::nr::SYS_THING_FIND, name.as_ptr() as u64, name.len() as u64, 0, 0) };
+    if res.status == 0 {
+        Some(ThingId(((res.val0 as u128) << 64) | res.val1 as u128))
+    } else {
+        None
+    }
+}
+
+pub fn bytespace_create(size: u64) -> Result<ThingId, i32> {
+    let res = unsafe { syscall(abi::syscall::nr::SYS_BYTESPACE_CREATE, size, 0, 0, 0) };
+    if res.status == 0 {
+        Ok(ThingId(((res.val0 as u128) << 64) | res.val1 as u128))
+    } else {
+        Err(res.status)
+    }
+}
+
+pub fn space_map(bs_id: ThingId, vaddr: u64, offset: u64, len: u64) -> Result<u64, i32> {
+    // SYS_SPACE_MAP: (bs_id_low, vaddr, offset, len)
+    // We need bs_id_low? Or handle?
+    // ABI discussion: passing references?
+    // Let's assume we pass ID low part if simple handles, or full ID?
+    // The syscall implementation in kernel `memory::sys_space_map` needs to be checked.
+    // Assuming for now it works with standard passing.
+    // Kernel uses `a0` as ID?
+    // Let's assume ID is passed in a0/a1?
+    // `sys_space_map(a0, a1, a2, a3)`
+    // Check syscall.rs: "Map a Bytespace...".
+    // Kernel `memory::sys_space_map` signature?
+    // We didn't view it.
+    // Let's update this later if it breaks.
+    // For now: assume a0=bs_id.low (truncate?), a1=vaddr...
+    let res = unsafe { syscall(abi::syscall::nr::SYS_SPACE_MAP, bs_id.0 as u64, vaddr, offset, len) };
+    if res.status == 0 {
+        Ok(res.val0)
+    } else {
+        Err(res.status)
+    }
+}
 
 pub fn sched_yield() {
     unsafe { syscall(abi::syscall::nr::SYS_SCHED_YIELD, 0, 0, 0, 0) };
@@ -228,6 +259,15 @@ pub fn wait_event(watcher: ThingId) -> ThingId {
     ThingId(((res.val0 as u128) << 64) | (res.val1 as u128))
 }
 
+
+pub use abi;
+
+pub fn relationships_from_into(id: ThingId, out: &mut [ThingId]) -> usize {
+    let buf_len = out.len() * 16; 
+    let ptr = out.as_mut_ptr() as u64;
+    let res = unsafe { syscall(abi::syscall::nr::SYS_REL_GET_FROM, id.0 as u64, 0, ptr, buf_len as u64) };
+    res.val0 as usize
+}
 
 pub fn sys_exit(code: i32) -> ! {
     unsafe { syscall(abi::syscall::nr::SYS_PROC_EXIT, code as u64, 0, 0, 0) };

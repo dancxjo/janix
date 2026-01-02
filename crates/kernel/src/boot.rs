@@ -158,7 +158,12 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     if let Some(fb) = &ctx.framebuffer {
         log::klog(Level::Info, "BOOT", "creating framebuffer bytespace");
         let size = (fb.pitch * fb.height) as usize;
-        let _ = Bytespace::new_framebuffer(fb.addr, size);
+        let bs = Bytespace::new_framebuffer(fb.addr, size);
+        
+        // Register Name
+        graph::store::thing_register_name(bs.id, graph::symbols::intern(b"bytespace.framebuffer0"));
+        
+        seed_bloom_ontology(bs.id, fb);
     }
 
     // Phase 6: Modules and Sprout
@@ -171,6 +176,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         
         if module.path.ends_with("sprout") || module.path.ends_with("bloom")
             || module.path.ends_with("graph_smoke") || module.path.ends_with("log_smoke") || module.path.ends_with("cap_fail")
+            || module.path.ends_with("clock")
         {
              spawn_module(ctx, module, &bs);
         }
@@ -237,8 +243,9 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             image_size = total_size;
 
             // Create RAM Bytespace for the loaded specific instance
-            let image_bs = Bytespace::new_ram(total_size);
-            let buffer_base = image_bs.backing_ptr().unwrap() as u64;
+            let image_bs = Bytespace::new_ram(total_size).expect("Sprout Image Alloc");
+            // Note: Compiler might have been confused or file desynced. Re-asserting expect logic.
+            let buffer_base = image_bs.backing_ptr().expect("image backing generic") as u64;
             
             // We map it at 0x0040_0000 (standard-ish?) or just use the buffer_base if Kernel mode.
             // For now, let's Map it identity-ish or fixed?
@@ -358,8 +365,8 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
 
         // Dedicated Stack Bytespace
         let stack_size = 32 * 1024;
-        let stack_bs = Bytespace::new_ram(stack_size);
-        let stack_base = stack_bs.backing_ptr().unwrap() as u64;
+        let stack_bs = Bytespace::new_ram(stack_size).expect("Sprout Stack Alloc");
+        let stack_base = stack_bs.backing_ptr().expect("stack backing") as u64;
         let stack_top = (stack_base + stack_size as u64) & !0xf;
         
         crate::sched::with_task(task_id, |t| {
@@ -368,8 +375,8 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
 
         // Heap Bytespace
         let heap_size = 4 * 1024;
-        let heap_bs = Bytespace::new_ram(heap_size);
-        let heap_base = heap_bs.backing_ptr().unwrap() as u64;
+        let heap_bs = Bytespace::new_ram(heap_size).expect("Sprout Heap Alloc");
+        let heap_base = heap_bs.backing_ptr().expect("heap backing") as u64;
 
         crate::sched::with_task(task_id, |t| {
              t.address_space.as_ref().map_bytespace_shared(heap_base, &heap_bs, 0, heap_size, MapPerms::READ | MapPerms::WRITE | MapPerms::USER).unwrap();
@@ -385,7 +392,7 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             (heap_base, heap_size as u64, heap_base)
         );
 
-        crate::sched::with_task(task_id, |t| {
+        crate::sched::with_task(task_id, |_t| {
              // Set Stack Pointer
              let _sp = (stack_top as u64) & !0xf; // Ensure alignment
              
@@ -449,7 +456,7 @@ pub fn spawn_module_by_name(ctx: &'static BootContext, name: &str) {
 fn seed_capabilities() {
     use graph::symbols;
     use graph::store;
-    use abi::ids::ThingId;
+    // use abi::ids::ThingId; // Unused
 
     crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: start");
     // Ensure Capability Kinds exist
@@ -481,6 +488,12 @@ fn seed_capabilities() {
     let root = store::find_thing_by_name(root_sym).expect("place.root missing"); 
     let pred_contains = symbols::intern(b"predicate.contains");
     store::relationship_create(pred_contains, root, place_perms);
+
+    // Create place.logs to pin logs (and capabilities)
+    let place_logs = store::thing_create(kind_place);
+    store::thing_register_name(place_logs, symbols::intern(b"place.logs"));
+    store::relationship_create(pred_contains, root, place_logs);
+    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: place.logs created");
     
     let kind_perm = symbols::intern(b"kind.permission");
     
@@ -499,7 +512,7 @@ fn seed_capabilities() {
 fn grant_initial_caps(task_id: abi::ids::ThingId) {
     use graph::symbols;
     use graph::store;
-    use abi::ids::{ThingId, SymbolId};
+    use abi::ids::ThingId; // Removed SymbolId
 
     // 1. Create a private User Place for the task
     // place.user.<task_id>
@@ -556,3 +569,91 @@ fn grant_initial_caps(task_id: abi::ids::ThingId) {
     grant(task_id, &["perm.mem", "perm.dictator"]);
 }
 
+
+
+fn seed_bloom_ontology(fb_bs_id: abi::ids::ThingId, fb: &FramebufferInfo) {
+    use graph::symbols::{self, sym};
+    use graph::store;
+    use abi::ids::SymbolId;
+
+    crate::log::klog(crate::log::Level::Info, "BOOT", "seeding bloom ontology...");
+
+    // 1. Create Places
+    let root_sym = symbols::intern(b"place.root");
+    let root = store::find_thing_by_name(root_sym).expect("place.root missing");
+    let kind_place = sym::KIND_PLACE;
+    let pred_contains = sym::PRED_CONTAINS;
+
+    let create_place = |_name: &str, sym_id: SymbolId| {
+        let p = store::thing_create(kind_place);
+        store::thing_register_name(p, sym_id);
+        store::relationship_create(pred_contains, root, p); // Link to root
+        p
+    };
+
+    let _place_surfaces = create_place("place.surfaces", sym::PLACE_SURFACES);
+    let _place_windows = create_place("place.windows", sym::PLACE_WINDOWS);
+    let _place_compositor = create_place("place.compositor", sym::PLACE_COMPOSITOR);
+    let _place_input = create_place("place.input", sym::PLACE_INPUT);
+
+    // 2. Create Display Device
+    // place.devices should exist
+    let place_devices = store::find_thing_by_name(sym::PLACE_DEVICES).expect("place.devices missing");
+    
+    let dev_display = store::thing_create(sym::KIND_DEVICE_DISPLAY);
+    store::thing_register_name(dev_display, symbols::intern(b"device.display0"));
+    store::relationship_create(pred_contains, place_devices, dev_display);
+
+    // 3. Create Primary Surface
+    let surface = store::thing_create(sym::KIND_SURFACE);
+    store::thing_register_name(surface, symbols::intern(b"surface.display0"));
+    
+    // Link Device -> Surface (Primary)
+    store::relationship_create(sym::PRED_PRIMARY, dev_display, surface);
+    
+    // Link Surface -> Backing Bytespace
+    store::relationship_create(sym::PRED_BACKS, surface, fb_bs_id);
+    
+    // Link Surface -> Properties (Size, Stride, Format)
+    let create_val_u32 = |val: u32| {
+        let t = store::thing_create(sym::KIND_VALUE_U32); // Use generic Value or U32?
+        // store::set_payload ... (Need 4 bytes)
+        let _ = store::thing_set_inline_payload(t, &val.to_le_bytes()); 
+        t
+    };
+
+    // Size (W, H)
+    // Note: Graph schema usually (width, height) tuple or separate?
+    // User spec: `surface.display0 --[size]--> value.u32(w), value.u32(h)` separate? Or one struct?
+    // "value.u32(w)" implies separate things? Logic needs to distinguish if multiple edges?
+    // For now, let's assume we can have multiple size edges? 
+    // Better: `pred.width` and `pred.height`.
+    // But spec said: `surface.display0 --[stride]--> value`
+    // Let's use `pred.width`? No, symbols.rs has `pred.size`. Maybe it points to a Rect or Size struct?
+    // Or we hack it: `pred.size` points to a generic value that encodes w/h?
+    // Or we rely on ordering (not guaranteed).
+    // Let's store W and H as separate things if we can distinguish, 
+    // OR create a 'Size' thing.
+    // Spec: "value.u32(w), value.u32(h)". Ambiguous.
+    // Let's use `u32( (w<<16)|h )`? No.
+    // Let's create `pred.width` and `pred.height` is safer but not in list.
+    // I'll use `pred.size` -> `RectThing(0, 0, w, h)`? 
+    // `kind.rect` exists.
+    let rect_id = store::thing_create(sym::KIND_RECT);
+    let rect_payload = [
+        0u32.to_le_bytes(), 0u32.to_le_bytes(), // x, y
+        (fb.width as u32).to_le_bytes(), (fb.height as u32).to_le_bytes() // w, h
+    ].concat();
+    store::thing_set_inline_payload(rect_id, &rect_payload);
+    store::relationship_create(sym::PRED_SIZE, surface, rect_id); // Using Size pred to point to Rect
+
+    // Stride
+    let stride_val = create_val_u32(fb.pitch as u32);
+    store::relationship_create(sym::PRED_STRIDE, surface, stride_val);
+    
+    // Format
+    let format_val = create_val_u32(0x00FF0000); // XRGB8888 ? (Just a value for now)
+    store::relationship_create(sym::PRED_FORMAT, surface, format_val);
+
+    crate::log::klog(crate::log::Level::Info, "BOOT", "bloom ontology seeded");
+}

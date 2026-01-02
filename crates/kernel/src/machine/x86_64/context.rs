@@ -56,6 +56,9 @@ impl ArchTask for X86Arch {
                     (*frame).ss = 0x23;   // User data segment (index 4 | RPL 3 = 35 = 0x23)
                     (*frame).rsp = arg0;  // User stack from arg0
                     (*frame).cs = 0x2B;   // User code segment (index 5 | RPL 3 = 43 = 0x2B)
+                    (*frame).rflags = 0x202;
+                    (*frame).rip = entry;
+                    (*frame).rdi = arg0;
                 }
                 CpuMode::Kernel => {
                     (*frame).ss = 0x10;   // Kernel data segment (index 2 = 16)

@@ -126,8 +126,17 @@ extern "x86-interrupt" fn page_fault_handler(
 {
     use x86_64::registers::control::Cr2;
     let addr = Cr2::read().as_u64();
-    // unsafe {
-    //     record_x86_fault(FaultKind::PageFault, &stack_frame, error_code.bits(), Some(addr), 14);
-    // }
+    
+    // Dump stack
+    let ptr = stack_frame.stack_pointer.as_ptr::<u64>();
+    unsafe {
+        crate::serial::write(b"PF STACK DUMP:\n");
+        for i in -2..8 {
+            let val = *ptr.offset(i);
+            let s = alloc::format!("[RSP{:>+4}]: {:x}\n", i * 8, val);
+            crate::serial::write(s.as_bytes());
+        }
+    }
+
     panic!("PAGE FAULT: accessed {:x}\nerror code: {:?}\n{:#?}", addr, error_code, stack_frame);
 }

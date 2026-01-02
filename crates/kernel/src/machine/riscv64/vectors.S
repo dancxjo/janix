@@ -78,67 +78,68 @@ riscv64_trap_vector:
     beqz a0, 2f
     mv sp, a0
 2:
+    mv a0, sp
+    j riscv64_return_from_trap
+
+.global riscv64_return_from_trap
+riscv64_return_from_trap:
+    // a0 = TrapContext pointer
+    mv t4, a0          // Preserve frame base in t4 (x29)
+    mv sp, t4
+
+    // Read saved control state before restoring temporaries
+    ld t0, 248(t4)     // sstatus
+    ld t1, 256(t4)     // sepc
+    ld t2, 8(t4)       // saved user sp (x2)
+    addi t5, t4, 288   // kernel sp after popping frame
+    andi t3, t0, 0x100 // SPP bit
 
     // Restore CSRs
-    ld t0, 248(sp)
-    ld t1, 256(sp)
-    
     csrw sstatus, t0
     csrw sepc, t1
 
-    // Restore regs
-    ld x1, 0(sp)
-    // x2 (sp) restored at end
-    ld x3, 16(sp)
-    ld x4, 24(sp)
-    ld x5, 32(sp)
-    ld x6, 40(sp)
-    ld x7, 48(sp)
-    ld x8, 56(sp)
-    ld x9, 64(sp)
-    ld x10, 72(sp)
-    ld x11, 80(sp)
-    ld x12, 88(sp)
-    ld x13, 96(sp)
-    ld x14, 104(sp)
-    ld x15, 112(sp)
-    ld x16, 120(sp)
-    ld x17, 128(sp)
-    ld x18, 136(sp)
-    ld x19, 144(sp)
-    ld x20, 152(sp)
-    ld x21, 160(sp)
-    ld x22, 168(sp)
-    ld x23, 176(sp)
-    ld x24, 184(sp)
-    ld x25, 192(sp)
-    ld x26, 200(sp)
-    ld x27, 208(sp)
-    ld x28, 216(sp)
-    ld x29, 224(sp)
-    ld x30, 232(sp)
-    ld x31, 240(sp)
-    
-    // Load user sp into t0
-    ld t0, 8(sp)
-    
-    // Deallocate TrapContext frame (before we lose sp reference)
-    addi sp, sp, 288
-    
-    // Check sstatus.SPP (bit 8): if returning to U-mode, set sscratch = kernel_sp
-    // and sp = user_sp. If returning to S-mode, set sscratch = 0.
-    csrr t1, sstatus
-    andi t1, t1, 0x100  // SPP bit
-    beqz t1, return_to_user
-    
-return_to_kernel:
-    // Returning to S-mode: sscratch should be 0
+    // Restore general registers that are not used as temps
+    ld x1, 0(t4)
+    ld x3, 16(t4)
+    ld x4, 24(t4)
+    ld x8, 56(t4)
+    ld x9, 64(t4)
+    ld x10, 72(t4)
+    ld x11, 80(t4)
+    ld x12, 88(t4)
+    ld x13, 96(t4)
+    ld x14, 104(t4)
+    ld x15, 112(t4)
+    ld x16, 120(t4)
+    ld x17, 128(t4)
+    ld x18, 136(t4)
+    ld x19, 144(t4)
+    ld x20, 152(t4)
+    ld x21, 160(t4)
+    ld x22, 168(t4)
+    ld x23, 176(t4)
+    ld x24, 184(t4)
+    ld x25, 192(t4)
+    ld x26, 200(t4)
+    ld x27, 208(t4)
+
+    // Select return target stack
+    beqz t3, 2f
     csrw sscratch, zero
-    // sp stays as is (kernel context)
-    sret
-    
-return_to_user:
-    // Returning to U-mode: save kernel sp to sscratch, restore user sp
-    csrw sscratch, sp
-    mv sp, t0  // User stack from saved TrapContext
+    mv sp, t5          // Kernel mode return
+    j 3f
+
+2:  // User mode return: hand kernel stack to sscratch, restore user sp
+    csrw sscratch, t5
+    mv sp, t2
+
+3:
+    // Restore temporary registers last
+    ld x5, 32(t4)
+    ld x6, 40(t4)
+    ld x7, 48(t4)
+    ld x28, 216(t4)
+    ld x29, 224(t4)
+    ld x30, 232(t4)
+    ld x31, 240(t4)
     sret

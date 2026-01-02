@@ -211,16 +211,12 @@ impl Machine for ArchMachine {
         // This prevents interrupts from userland clobbering the saved state.
         let reserved_top = top - 256;
         
-        // Architectural Isolation (Landmark 6.4):
-        // 1. Syscall entry state (RIP, RFLAGS, etc.) is saved at the VERY TOP of the task stack.
-        // 2. Interrupts from User Mode use TSS.RSP0.
-        // By setting RSP0 below the saved state, we prevent clobbering.
-        let syscall_top = top;
-        let interrupt_top = top - 512; // 512 bytes reserved for syscall context/buffer
-        
+        // Landmark 6.4: Unified Stack Entry.
+        // Both Syscall and Interrupts from User Mode use the absolute TOP.
+        // Ring 0 interrupts will use the current stack and won't clobber it.
         unsafe {
-            core::arch::asm!("mov gs:[32], {}", in(reg) syscall_top);
-            gdt::set_tss_rsp0(interrupt_top);
+            core::arch::asm!("mov gs:[32], {}", in(reg) top);
+            gdt::set_tss_rsp0(top);
         }
     }
 

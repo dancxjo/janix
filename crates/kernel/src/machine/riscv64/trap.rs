@@ -3,7 +3,8 @@ use crate::trap::{self, TrapRecord, FaultKind, Arch};
 use graph::store;
 use core::arch::asm;
 
-#[repr(C)]
+// Align to 16 bytes so the assembly trap frame uses a 288-byte block.
+#[repr(C, align(16))]
 #[derive(Debug, Clone, Copy)]
 pub struct TrapContext {
     pub regs: [u64; 31], // x1-x31

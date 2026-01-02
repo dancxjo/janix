@@ -1,4 +1,4 @@
-//! riscv64 ArchContext implementation (stub).
+//! riscv64 ArchContext implementation.
 
 use super::TrapFrame;
 use crate::machine::context::{ArchTask, ArchTrap, CpuMode, TrapInfo, ResumeSpec};
@@ -94,8 +94,10 @@ impl ArchTrap for Riscv64Arch {
         }
     }
 
-    unsafe fn return_from_trap(_tf: *const Self::TrapFrame) -> ! {
-        // Stub: would call sret
-        loop { core::arch::asm!("wfi"); }
+    unsafe fn return_from_trap(tf: *const Self::TrapFrame) -> ! {
+        extern "C" {
+            fn riscv64_return_from_trap(tf: *const TrapFrame) -> !;
+        }
+        riscv64_return_from_trap(tf)
     }
 }

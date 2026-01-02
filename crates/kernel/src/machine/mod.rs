@@ -135,6 +135,8 @@ pub trait Machine: Sync {
     
     /// Switch context from old to new
     fn switch_to(&self, old_ctx: &mut Context, new_ctx: &Context);
+
+    fn irq_enable(&self) {}
     
     /// Entry point stub address for new tasks
     fn task_entry_stub(&self) -> u64;

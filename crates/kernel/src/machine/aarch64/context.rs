@@ -39,12 +39,12 @@ impl ArchTask for AArch64Arch {
             
             match mode {
                 CpuMode::Kernel => {
-                    frame.spsr_el1 = 0x3c5; // EL1h, DAIF masked (Initial state with interrupts disabled)
-                    frame.sp_el0 = 0;      // Not used in kernel mode?
+                    frame.spsr_el1 = 0x005; // EL1h, DAIF unmasked
+                    frame.sp = 0;      
                 }
                 CpuMode::User => {
                     frame.spsr_el1 = 0x0;   // EL0t
-                    frame.sp_el0 = arg0;    // If arg0 is user stack
+                    frame.sp = arg0;    // If arg0 is user stack
                 }
             }
         }
@@ -62,7 +62,7 @@ impl ArchTrap for AArch64Arch {
             vector: 0,
             mode: Self::mode(tf),
             pc: tf.elr_el1,
-            sp: if Self::mode(tf) == CpuMode::User { tf.sp_el0 } else { tf as *const _ as u64 + core::mem::size_of::<TrapFrame>() as u64 },
+            sp: if Self::mode(tf) == CpuMode::User { tf.sp } else { tf as *const _ as u64 + core::mem::size_of::<TrapFrame>() as u64 },
             flags: tf.spsr_el1,
         }
     }

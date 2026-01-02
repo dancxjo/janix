@@ -11,8 +11,8 @@ pub const TIMER_IRQ: u32 = 27;
 pub unsafe fn init() {
     // 2. Enable IRQ in GIC
     // GICv2: Interrupts must be Configured as Group 1 (Non-Secure) for EL1
-    gic::set_priority(TIMER_IRQ, 0); // Highest priority
-    gic::set_group1(TIMER_IRQ);      // Group 1
+    gic::set_priority(TIMER_IRQ, 1 << 4); // Priority (lower is higher)
+    // gic::set_group1(TIMER_IRQ);      // Try Group 0
     gic::enable_irq(TIMER_IRQ);
     
     // 3. Configure Timer

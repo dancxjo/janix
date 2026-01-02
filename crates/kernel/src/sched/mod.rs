@@ -14,12 +14,12 @@ use task::{Task, TaskId, TaskState};
 use run_queue::RunQueue;
 use percpu::PerCpu;
 
-static SCHEDULER: Mutex<Option<Scheduler>> = Mutex::new(None);
+pub(crate) static SCHEDULER: Mutex<Option<Scheduler>> = Mutex::new(None);
 
 struct Scheduler {
-    tasks: Vec<Task>,
-    run_queue: RunQueue,
-    cpu: PerCpu,
+    pub(crate) tasks: Vec<Task>,
+    pub(crate) run_queue: RunQueue,
+    pub(crate) cpu: PerCpu,
     next_id: u64,
 }
 
@@ -70,7 +70,11 @@ impl Scheduler {
         // Add to run queue
         let thing = self.tasks.last().unwrap().thing;
         self.run_queue.push_back(id, thing);
-        log::klog(Level::Info, "SCHED", "spawn: finished");
+        
+        log::klog(Level::Info, "SCHED", &alloc::format!(
+            "spawn: finished id={} name={} stack_top={:#x} stack_size={:#x}", 
+            id.0, name, stack_ptr, stack_size
+        ));
 
         id
     }
@@ -117,10 +121,6 @@ pub fn run() -> ! {
         crate::serial::write_hex(sp);
         crate::serial::write(b"\n");
 
-        let daif: u64;
-        core::arch::asm!("mrs {}, daif", out(reg) daif);
-        crate::serial::write(b"SCHED: DAIF=");
-        crate::serial::write_hex(daif);
         
         let cntv_ctl: u64;
         core::arch::asm!("mrs {}, cntv_ctl_el0", out(reg) cntv_ctl);
@@ -133,26 +133,23 @@ pub fn run() -> ! {
         crate::serial::write_hex(cntv_tval);
         crate::serial::write(b"\n");
         
-        if crate::machine::aarch64::gic::get_pending(27) {
-             crate::serial::write(b"GIC PENDING: 27\n");
-        }
     }
 
-    // Enable interrupts
-    crate::machine::irq_enable();
 
+    // Enable interrupts
+    crate::machine::machine().irq_enable();
+
+    let mut last_irq_check = 0;
     loop {
-        // Check for pending interrupts
+        // Probe A2: Check IRQ progress
         #[cfg(target_arch = "aarch64")]
-        unsafe {
-            let isr: u64;
-            core::arch::asm!("mrs {}, isr_el1", out(reg) isr);
-            if isr & 0x80 != 0 {
-                 crate::serial::write(b"I"); // IRQ Pending
+        {
+            let irq_hits = crate::machine::aarch64::exception::IRQ_COUNT.load(Ordering::Relaxed);
+            if irq_hits != last_irq_check {
+                 last_irq_check = irq_hits;
             }
         }
 
-        crate::serial::write(b".");
         crate::machine::idle();
     }
 }
@@ -315,9 +312,11 @@ pub fn tick(current_sp: u64) -> u64 {
     if sched.is_none() { return 0; }
     let sched = sched.unwrap();
     
+    let prev_task = sched.cpu.current_task;
+
     // Default: Round Robin
     // 1. Save current SP to current task (if we have one)
-    if let Some(curr) = sched.cpu.current_task {
+    if let Some(curr) = prev_task {
         if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == curr) {
             // Only save SP if this task has executed at least once.
             // first_run tasks have prepared contexts that must not be overwritten.
@@ -337,10 +336,26 @@ pub fn tick(current_sp: u64) -> u64 {
         sched.cpu.current_task = Some(next);
         let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
         
-        crate::serial::write(b"TICK: switching to task ");
+        crate::serial::write(b"TICK: switch ");
+        if let Some(prev) = prev_task {
+             crate::serial::write_num(prev.0);
+        } else {
+             crate::serial::write(b"IDLE");
+        }
+        crate::serial::write(b" -> ");
         crate::serial::write_num(next.0);
         crate::serial::write(b" sp=");
         crate::serial::write_hex(t.stack_ptr);
+
+        // Probe P4: Stack Sanity Check
+        if t.stack_ptr > t.stack_top {
+             crate::serial::write(b" [STACK_OVERFLOW_DETECTED]");
+        }
+        // Check alignment
+        if t.stack_ptr & 0xf != 0 {
+             crate::serial::write(b" [SP_MISALIGN]");
+        }
+
         crate::serial::write(b"\n");
         
         t.state = TaskState::Running;

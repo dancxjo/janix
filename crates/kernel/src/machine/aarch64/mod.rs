@@ -8,10 +8,10 @@ use core::arch::global_asm;
 
 global_asm!(include_str!("switch.S"));
 global_asm!(include_str!("vectors.S"));
-use core::ptr::read_volatile;
+
 use core::sync::atomic::{AtomicU64, Ordering};
 
-mod exception;
+pub mod exception;
 
 mod serial;
 pub mod gic;
@@ -88,9 +88,6 @@ impl ArchMachine {
              let vectors_addr = core::ptr::addr_of!(aarch64_vectors) as u64;
              asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
              asm!("isb", options(nomem, preserves_flags));
-             
-             // Debug: Limit logging to initial setup
-             // crate::serial::write(b"EXT: AArch64 Machine Initialized\n");
         }
         
         // 4. Initialize Hardware
@@ -210,19 +207,20 @@ impl ArchMachine {
         let _l0_phys = if (current_ttbr1 & !0xfff) != (boot_l0_phys & !0xfff) {
             // Need to switch to our own L0 table
             let old_l0_phys = current_ttbr1 & !0xfff;
-            let old_l0_virt = self.phys_to_virt(old_l0_phys) as *const u64;
             
-            // Copy entries
-            core::ptr::copy_nonoverlapping(old_l0_virt, boot_l0_virt as *mut u64, 512);
-            
-            // Switch TTBR1
-            // Use current flags but lower address bits mapped to new table
-            let new_ttbr1_val = (current_ttbr1 & 0xFFFF000000000FFF) | (boot_l0_phys & 0x0000FFFFFFFFF000);
-            
-            asm!("msr ttbr1_el1, {}", in(reg) new_ttbr1_val, options(nomem, preserves_flags));
-            asm!("isb; tlbi vmalle1; dsb ish; isb", options(nostack, preserves_flags));
-            
-            boot_l0_phys
+            if self.hhdm_offset() != 0 {
+                let old_l0_virt = self.phys_to_virt(old_l0_phys) as *const u64;
+                // Copy entries
+                core::ptr::copy_nonoverlapping(old_l0_virt, boot_l0_virt as *mut u64, 512);
+                
+                // Switch TTBR1
+                let new_ttbr1_val = (current_ttbr1 & 0x0000_0000_0000_0FFF) | boot_l0_phys;
+                asm!("msr ttbr1_el1, {}", in(reg) new_ttbr1_val, options(nomem, preserves_flags));
+                asm!("isb; tlbi vmalle1; dsb ish; isb", options(nostack, preserves_flags));
+                boot_l0_phys
+            } else {
+                current_ttbr1 & !0xfff
+            }
         } else {
              current_ttbr1 & !0xfff
         };
@@ -309,15 +307,25 @@ impl ArchMachine {
         self.serial.init(mapping.virt);
         self.uart_base.store(mapping.virt, Ordering::Relaxed);
         
-        crate::serial::write(b"UART MAPPED AT: ");
-        crate::serial::write_hex(mapping.virt);
-        crate::serial::write(b"\n");
-
         extern "C" { static aarch64_vectors: u8; }
-        let vbar = unsafe { core::ptr::addr_of!(aarch64_vectors) as u64 };
-        crate::serial::write(b"VBAR_EL1 SHOULD BE: ");
-        crate::serial::write_hex(vbar);
+        let vectors_addr = core::ptr::addr_of!(aarch64_vectors) as u64;
+        crate::serial::write(b"VBAR=");
+        crate::serial::write_hex(vectors_addr);
+        crate::serial::write(b" ");
+        
+        let daif: u64;
+        let el: u64;
+        unsafe {
+            asm!("mrs {}, daif", out(reg) daif, options(nomem, preserves_flags));
+            asm!("mrs {}, CurrentEL", out(reg) el, options(nomem, preserves_flags));
+        }
+        crate::serial::write(b"DAIF=");
+        crate::serial::write_hex(daif);
+        crate::serial::write(b" EL=");
+        crate::serial::write_num(el >> 2);
         crate::serial::write(b"\n");
+        
+        unsafe { asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags)); }
 
         Some(mapping.virt)
     }
@@ -365,6 +373,17 @@ impl Machine for ArchMachine {
     fn irq_restore(&self, token: u64) {
         unsafe {
             asm!("msr daif, {}", in(reg) token, options(nomem, preserves_flags));
+        }
+    }
+
+    fn irq_enable(&self) {
+        unsafe {
+            asm!("msr daifclr, #2", options(nomem, preserves_flags));
+            let daif: u64;
+            asm!("mrs {}, daif", out(reg) daif, options(nomem, preserves_flags));
+            crate::serial::write(b"IRQ ENABLED: DAIF=");
+            crate::serial::write_hex(daif);
+            crate::serial::write(b"\n");
         }
     }
 

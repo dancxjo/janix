@@ -3,7 +3,11 @@
 //! Handles exceptions from EL1 (kernel) and EL0 (user).
 //! Decodes ESR_EL1 to classify faults.
 
-use crate::trap::{self, TrapRecord, FaultKind, Arch};
+use crate::trap::FaultKind;
+use core::sync::atomic::{AtomicU64, Ordering};
+use core::arch::asm;
+
+pub static IRQ_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -16,7 +20,7 @@ pub struct ExceptionContext {
     pub x20: u64, pub x21: u64, pub x22: u64, pub x23: u64,
     pub x24: u64, pub x25: u64, pub x26: u64, pub x27: u64,
     pub x28: u64, pub x29: u64, pub x30: u64,
-    pub sp_el0: u64,
+    pub sp: u64,
     pub elr_el1: u64,
     pub spsr_el1: u64,
     pub esr_el1: u64,
@@ -25,34 +29,44 @@ pub struct ExceptionContext {
 
 #[no_mangle]
 pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u64) -> u64 {
-    let esr = ctx.esr_el1;
+    crate::serial::write(b"R");
+
+    let esr: u64;
+    asm!("mrs {}, esr_el1", out(reg) esr, options(nomem, preserves_flags));
     let ec = (esr >> 26) & 0x3f;
+
+    // Probes (Tightened)
+    /*
+    crate::serial::write(b" V="); crate::serial::write_num(vector);
+    crate::serial::write(b" DAIF="); crate::serial::write_hex(ctx.spsr_el1 >> 6);
+    crate::serial::write(b" ELR="); crate::serial::write_hex(ctx.elr_el1);
+    crate::serial::write(b"\n");
+    */
     
     // Default mappings
     let mut kind = FaultKind::Unknown;
     let mut addr = None;
     
-    match ec {
-        0x15 => { // SVC instruction execution in AArch64 state
-            kind = FaultKind::Syscall;
-        }
-        0x20 | 0x21 => { // Instruction Abort (Lower EL | Current EL)
-            kind = FaultKind::InstructionAbort;
-            addr = Some(ctx.far_el1);
-        }
-        0x24 | 0x25 => { // Data Abort (Lower EL | Current EL)
-            kind = FaultKind::DataAbort;
-            addr = Some(ctx.far_el1);
-        }
-        0x3C => { // BRK instruction execution in AArch64 state
-            kind = FaultKind::Breakpoint;
-        }
+    match vector {
+        1 | 5 | 9 | 13 => kind = FaultKind::Irq,
+        2 | 6 | 10 | 14 => kind = FaultKind::ExternalInterrupt,
+        3 | 7 | 11 | 15 => kind = FaultKind::Unknown, // SError
         _ => {
-            let offset = vector & 0x3;
-            if vector == 5 || vector == 9 {
-                kind = FaultKind::Irq;
-            } else if offset == 2 {
-                kind = FaultKind::ExternalInterrupt;
+            let esr: u64;
+            asm!("mrs {}, esr_el1", out(reg) esr, options(nomem, preserves_flags));
+            let ec = (esr >> 26) & 0x3f;
+            match ec {
+                0x15 => kind = FaultKind::Syscall,
+                0x20 | 0x21 => {
+                    kind = FaultKind::InstructionAbort;
+                    addr = Some(ctx.far_el1);
+                }
+                0x24 | 0x25 => {
+                    kind = FaultKind::DataAbort;
+                    addr = Some(ctx.far_el1);
+                }
+                0x3C => kind = FaultKind::Breakpoint,
+                _ => {}
             }
         }
     }
@@ -61,11 +75,13 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
 
     // Handle IRQs first
     if kind == FaultKind::Irq {
+        IRQ_COUNT.fetch_add(1, Ordering::Relaxed);
         let irq_id = super::gic::ack_irq();
         if irq_id == 1023 { return 0; }
         
         if irq_id == super::timer::TIMER_IRQ {
             super::timer::ack(); 
+            // crate::serial::write(b"TIMER IRQ!\n");
             let current_sp = ctx as *mut ExceptionContext as u64;
             let new_sp = crate::sched::tick(current_sp);
             if new_sp != 0 {
@@ -93,8 +109,16 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
 
     match kind {
         FaultKind::Breakpoint => {
-             crate::serial::write(b"BREAKPOINT HIT\n");
              return 0; 
+        }
+        FaultKind::DataAbort | FaultKind::InstructionAbort => {
+            // If it reaches here, it means lazy mapping didn't resolve it
+            crate::serial::write(b"PAGE FAULT: V=");
+            crate::serial::write_hex(vector);
+            crate::serial::write(b" ADDR=");
+            crate::serial::write_hex(addr.unwrap_or(0));
+            crate::serial::write(b"\n");
+            panic!("AArch64 Page Fault\n{:#?}", ctx);
         }
         FaultKind::Syscall => {
             let nr = ctx.x8 as u32;
@@ -115,3 +139,4 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
         }
     }
 }
+

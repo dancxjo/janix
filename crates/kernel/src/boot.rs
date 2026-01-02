@@ -277,12 +277,27 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             let ph_num = unsafe { *((virt_addr + 56) as *const u16) };
             let ph_size = unsafe { *((virt_addr + 54) as *const u16) };
 
-            // Heuristic for size: module size + 1MB stack/bss slush, aligned to 4k
-            let total_size = (info.size as usize + 1024 * 1024 + 4095) & !4095;
-            image_size = total_size;
+            // 1. Scan for Size and Min Vaddr
+            let mut min_vaddr = u64::MAX;
+            let mut max_vaddr = 0u64;
+
+            for i in 0..ph_num {
+                 let ph_addr = virt_addr + ph_off + (i as u64 * ph_size as u64);
+                 let p_type = unsafe { *(ph_addr as *const u32) };
+                 if p_type == 1 { // PT_LOAD
+                     let p_vaddr = unsafe { *((ph_addr + 16) as *const u64) };
+                     let p_memsz = unsafe { *((ph_addr + 40) as *const u64) };
+                     if p_vaddr < min_vaddr { min_vaddr = p_vaddr; }
+                     if p_vaddr + p_memsz > max_vaddr { max_vaddr = p_vaddr + p_memsz; }
+                 }
+            }
+
+            // Heuristic for size: Exact range + alignment
+            let total_size = (max_vaddr - min_vaddr + 4095) & !4095;
+            image_size = total_size as usize;
 
             // Create RAM Bytespace for the loaded specific instance
-            let image_bs = Bytespace::new_ram(total_size).expect("Sprout Image Alloc");
+            let image_bs = Bytespace::new_ram(total_size as usize).expect("Sprout Image Alloc");
             // Note: Compiler might have been confused or file desynced. Re-asserting expect logic.
             let buffer_base = image_bs.backing_ptr().expect("image backing generic") as u64;
             
@@ -290,10 +305,10 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             // We Pick 0x0020_0000 (2MB) as standard Load Address for Sprout
             let user_image_base = 0x0020_0000;
             
-            final_entry = user_image_base + entry_point;
+            final_entry = user_image_base + (entry_point - min_vaddr);
             image_base_virt = user_image_base;
 
-            log::klog(Level::Info, "ELF", &format!("loading PIE into bytespace at {:#x} (virt {:#x})", buffer_base, user_image_base));
+            log::klog(Level::Info, "ELF", &format!("loading PIE into bytespace at {:#x} (virt {:#x}) size {:#x}", buffer_base, user_image_base, total_size));
 
             // Copy LOAD segments
             for i in 0..ph_num {
@@ -305,15 +320,17 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
                     let p_filesz = unsafe { *((ph_addr + 32) as *const u64) };
                     let p_memsz = unsafe { *((ph_addr + 40) as *const u64) };
                     
+                    let target_offset = p_vaddr - min_vaddr;
+
                     unsafe {
                         core::ptr::copy(
                             (virt_addr + p_offset) as *const u8,
-                            (buffer_base + p_vaddr) as *mut u8,
+                            (buffer_base + target_offset) as *mut u8,
                             p_filesz as usize
                         );
                         if p_memsz > p_filesz {
                             core::ptr::write_bytes(
-                                (buffer_base + p_vaddr + p_filesz) as *mut u8,
+                                (buffer_base + target_offset + p_filesz) as *mut u8,
                                 0,
                                 (p_memsz - p_filesz) as usize
                             );
@@ -406,7 +423,7 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         }
 
         // Dedicated Stack Bytespace
-        let stack_size = 32 * 1024;
+        let stack_size = 64 * 1024;
         let stack_bs = Bytespace::new_ram(stack_size).expect("Sprout Stack Alloc");
         // let stack_base_backing = stack_bs.backing_ptr().expect("stack backing") as u64; // unused
         

@@ -112,11 +112,11 @@ extern "x86-interrupt" fn gp_handler(
         let rflags = *ptr.add(2);
         let s1 = alloc::format!("Target RIP: {:x} CS: {:x} RFLAGS: {:x}\n", rip, cs, rflags);
         crate::serial::write(s1.as_bytes());
-        // Also dump RSP/SS if present (assuming 5 words?)
-        let rsp = *ptr.add(3);
-        let ss = *ptr.add(4);
-        let s2 = alloc::format!("Possible RSP: {:x} SS: {:x}\n", rsp, ss);
-        crate::serial::write(s2.as_bytes());
+        for i in 3..10 {
+             let val = *ptr.add(i);
+             let s = alloc::format!("Stack[{}]: {:x}\n", i, val);
+             crate::serial::write(s.as_bytes());
+        }
     }
     panic!("GENERAL PROTECTION FAULT: error_code={}\n{:#?}", error_code, stack_frame);
 }

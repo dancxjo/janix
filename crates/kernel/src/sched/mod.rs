@@ -38,7 +38,7 @@ impl Scheduler {
         self.next_id += 1;
 
         // Allocate stack
-        let stack_size = 16 * 1024; // 16KB
+        let stack_size = 64 * 1024; // 64KB
         let stack = alloc::vec![0u8; stack_size];
         let stack_ptr = stack.as_ptr() as u64 + stack_size as u64; // Top
         // Leak the stack for now (kernel tasks live forever in this model)

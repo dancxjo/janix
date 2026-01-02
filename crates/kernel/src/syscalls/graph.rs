@@ -6,8 +6,11 @@ use abi::wire::time::{
     TimeSleepUntilReq, TimeSleepUntilResp,
 };
 use alloc::string::String;
+use alloc::boxed::Box;
 use postcard::to_slice;
 use serde::Serialize;
+use thing_models::link::LinkBody;
+use abi::wire::typed::TypedBytes;
 
 pub const SYSCALL_WAIT_FLAG: usize = 1 << 62;
 
@@ -60,7 +63,7 @@ pub fn handle_graph_op<B: FullMachineBridge>(
         }
         GraphOp::GetThing { id } => {
             if let Some(thing) = kernel.graph.get(id) {
-                match thing.body.decode::<abi::wire::typed::TypedBytes>() {
+                match thing.body.decode::<TypedBytes>() {
                     Ok(tb) => GraphReply::TypedValue(tb),
                     Err(_) => GraphReply::Error,
                 }
@@ -76,14 +79,14 @@ pub fn handle_graph_op<B: FullMachineBridge>(
             Err(_) => GraphReply::Error,
         },
         GraphOp::AddLink { from, to, kind } => {
-            let body_struct = thing_models::link::LinkBody {
+            let body_struct = LinkBody {
                 from,
                 to,
                 predicate: kind,
             };
             match postcard::to_allocvec(&body_struct) {
                 Ok(link_bytes) => {
-                    let typed = abi::wire::typed::TypedBytes {
+                    let typed = TypedBytes {
                         type_id: abi::wire::typed::TypeId(
                             thing_models::builtins::ids::THING_LINK_KIND.0 as u128,
                         ),
@@ -105,68 +108,54 @@ pub fn handle_graph_op<B: FullMachineBridge>(
         }
         GraphOp::ScanLinks { from, to, kind } => {
             let mut results = alloc::vec::Vec::new();
-            let link_kind = thing_models::builtins::ids::THING_LINK_KIND;
 
-            kernel.bridge.log("Kernel: ScanLinks Start");
+            // Steward Optimization: Use link_index in GraphStore if 'from' is present.
+            // This replaces O(N) scan of all links with O(1) lookups.
 
-            let mut count_all = 0;
-            let mut count_links = 0;
-            let mut count_decoded = 0;
-            let mut count_matched = 0;
-
-            // Optimization: iterate only links using the kind index
-            for thing in kernel.graph.iter_kind(link_kind) {
-                count_all += 1;
-                // if thing.kind == link_kind { // Implicit in iter_kind
-                count_links += 1;
-                if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
-                    if let Ok(link) =
-                        postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes)
-                    {
-                        count_decoded += 1;
-                        let f = link.from;
-                        let t = link.to;
-                        let p = link.predicate;
-                        if let Some(target_from) = from {
-                            if f != target_from {
-                                continue;
-                            }
-                        }
-                        if let Some(target_to) = to {
-                            if t != target_to {
-                                continue;
-                            }
-                        }
-                        if let Some(target_kind) = kind {
-                            if p != target_kind {
-                                continue;
-                            }
-                        }
-                        kernel.bridge.log(
-                            alloc::format!("Kernel: MATCHED Link Root->{} (Pred {})", t.0, p.0)
-                                .as_str(),
-                        );
-                        count_matched += 1;
-                        results.push((f, t, p));
-                    } else {
-                        kernel
-                            .bridge
-                            .log("Kernel: Failed to decode LinkBody from TypedBytes");
-                    }
+            if let Some(target_from) = from {
+                let iter: Box<dyn Iterator<Item = &thing_models::Thing>> = if let Some(target_kind) = kind {
+                    Box::new(kernel.graph.iter_links_from_kind(target_from, target_kind))
                 } else {
-                    kernel
-                        .bridge
-                        .log("Kernel: Failed to decode TypedBytes from ThingBody");
+                    Box::new(kernel.graph.iter_links_from(target_from))
+                };
+
+                for thing in iter {
+                    if let Ok(tb) = thing.body.decode::<TypedBytes>() {
+                        if let Ok(link) = postcard::from_bytes::<LinkBody>(&tb.bytes) {
+                             if let Some(target_to) = to {
+                                if link.to != target_to {
+                                    continue;
+                                }
+                            }
+                            results.push((link.from, link.to, link.predicate));
+                        }
+                    }
                 }
-                // } // End if thing.kind == link_kind
+            } else {
+                // Fallback to O(N) scan of all links if 'from' is not specified.
+                // This path should be rare in practice.
+
+                let link_kind = thing_models::builtins::ids::THING_LINK_KIND;
+                for thing in kernel.graph.iter_kind(link_kind) {
+                    if let Ok(tb) = thing.body.decode::<TypedBytes>() {
+                        if let Ok(link) = postcard::from_bytes::<LinkBody>(&tb.bytes) {
+                            // Filter 'to'
+                            if let Some(target_to) = to {
+                                if link.to != target_to {
+                                    continue;
+                                }
+                            }
+                            // Filter 'kind'
+                            if let Some(target_kind) = kind {
+                                if link.predicate != target_kind {
+                                    continue;
+                                }
+                            }
+                            results.push((link.from, link.to, link.predicate));
+                        }
+                    }
+                }
             }
-            kernel.bridge.log(
-                alloc::format!(
-                    "Kernel: Scanned {} things. Found {} Links. Decoded {}. Matched {}. Returning {}",
-                    count_all, count_links, count_decoded, count_matched, results.len()
-                )
-                .as_str(),
-            );
 
             GraphReply::Links(results)
         }

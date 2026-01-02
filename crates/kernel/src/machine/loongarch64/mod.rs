@@ -14,16 +14,30 @@ global_asm!(include_str!("vectors.S"));
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange, Context};
 
 use core::sync::atomic::{AtomicU64, Ordering};
-static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
+pub(crate) static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 
-struct LoongArchMachine;
+struct LoongArchMachine {
+    pub(crate) kernel_phys_base: AtomicU64,
+    pub(crate) kernel_virt_base: AtomicU64,
+}
 
-static ARCH_MACHINE_IMPL: LoongArchMachine = LoongArchMachine;
+static ARCH_MACHINE_IMPL: LoongArchMachine = LoongArchMachine {
+    kernel_phys_base: AtomicU64::new(0),
+    kernel_virt_base: AtomicU64::new(0),
+};
+
 pub static ARCH_MACHINE: &'static dyn Machine = &ARCH_MACHINE_IMPL;
+
+/// Per-CPU kernel stack top for trap entry.
+#[no_mangle]
+pub static KERNEL_STACK_TOP: AtomicU64 = AtomicU64::new(0);
 
 impl Machine for LoongArchMachine {
     fn init(&self, info: crate::machine::PreBootInfo) {
         HHDM_OFFSET.store(info.hhdm_offset, Ordering::Relaxed);
+        self.kernel_phys_base.store(info.kernel_phys_base, Ordering::Relaxed);
+        self.kernel_virt_base.store(info.kernel_virt_base, Ordering::Relaxed);
+
         // Capture kernel page tables before any address space switching
         mmu::init();
         
@@ -110,13 +124,10 @@ impl Machine for LoongArchMachine {
         if virt >= hhdm {
             virt - hhdm
         } else {
-            // Assume identities for now if not in HHDM?
-            // Or handle kernel virtual base.
-            // Limine maps kernel at 0xffffffff80000000
-            if virt >= 0xffffffff80000000 {
-                // We need kernel_phys_base too.
-                // For now, let's just return virt if we don't know.
-                virt
+            let kernel_virt = self.kernel_virt_base.load(Ordering::Relaxed);
+            let kernel_phys = self.kernel_phys_base.load(Ordering::Relaxed);
+            if virt >= kernel_virt {
+                virt - kernel_virt + kernel_phys
             } else {
                 virt
             }
@@ -124,8 +135,6 @@ impl Machine for LoongArchMachine {
     }
 
     fn set_kernel_stack(&self, top: u64) {
-        unsafe {
-            core::arch::asm!("csrwr {}, 0x30", in(reg) top);
-        }
+        KERNEL_STACK_TOP.store(top, Ordering::Release);
     }
 }

@@ -14,12 +14,41 @@ global_asm!(include_str!("vectors.S"));
 
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange, Context};
 
-pub static ARCH_MACHINE: &'static dyn Machine = &Riscv64Machine;
 
-struct Riscv64Machine;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+
+static ARCH_MACHINE_IMPL: Riscv64Machine = Riscv64Machine::new();
+pub static ARCH_MACHINE: &'static dyn Machine = &ARCH_MACHINE_IMPL;
+
+struct Riscv64Machine {
+    pub(crate) hhdm_offset: AtomicU64,
+    pub(crate) kernel_phys_base: AtomicU64,
+    pub(crate) kernel_virt_base: AtomicU64,
+}
+
+impl Riscv64Machine {
+    pub const fn new() -> Self {
+        Self {
+            hhdm_offset: AtomicU64::new(0),
+            kernel_phys_base: AtomicU64::new(0),
+            kernel_virt_base: AtomicU64::new(0),
+        }
+    }
+}
+
+/// Per-CPU kernel stack top for trap entry.
+/// This is used instead of direct sscratch write while in kernel mode
+/// to avoid corrupting recursive traps.
+#[no_mangle]
+pub static KERNEL_STACK_TOP: AtomicU64 = AtomicU64::new(0);
 
 impl Machine for Riscv64Machine {
-    fn init(&self, _info: crate::machine::PreBootInfo) {
+    fn init(&self, info: crate::machine::PreBootInfo) {
+        self.hhdm_offset.store(info.hhdm_offset, Ordering::Relaxed);
+        self.kernel_phys_base.store(info.kernel_phys_base, Ordering::Relaxed);
+        self.kernel_virt_base.store(info.kernel_virt_base, Ordering::Relaxed);
+
         // Capture bootloader's page tables FIRST before any address space operations
         mmu::init();
         
@@ -49,9 +78,6 @@ impl Machine for Riscv64Machine {
     }
 
     fn mmio_map(&self, _range: MmioRange, _flags: MmioFlags) -> Option<MmioMapping> {
-        // Placeholder identity map? Or fail?
-        // Code expects it to work for UART at least. 
-        // But for now, returning None is safer than faking it wrong.
         None
     }
 
@@ -91,13 +117,17 @@ impl Machine for Riscv64Machine {
     }
 
     fn set_kernel_stack(&self, top: u64) {
-        // Set sscratch to kernel stack top for trap entry from user mode
-        unsafe {
-            core::arch::asm!("csrw sscratch, {}", in(reg) top);
-        }
+        // We store it in a static for trap entry to fetch.
+        // This is safer than writing to sscratch while in kernel mode.
+        KERNEL_STACK_TOP.store(top, Ordering::Release);
+        
+        // However, if we are currently in user mode (we aren't), sret would use sscratch.
+        // The scheduler calls this while in S-mode.
+        // The return-to-user path in vectors.S will load from KERNEL_STACK_TOP if needed.
+        // Actually, let's keep it simple: return_from_trap will set sscratch.
     }
 
     fn virt_to_phys(&self, virt: u64) -> u64 {
-        virt
+        virt.wrapping_sub(self.hhdm_offset.load(Ordering::Relaxed))
     }
 }

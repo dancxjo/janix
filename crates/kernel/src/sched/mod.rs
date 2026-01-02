@@ -223,7 +223,8 @@ pub fn exit_current_task(_code: i32) -> ! {
 pub fn with_current_task<F, R>(f: F) -> Option<R> where F: FnOnce(&mut Task) -> R {
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut()?; // Return None if not init
-    let curr = sched.cpu.current_task?; // Return None if no current task
+    let curr = sched.cpu.current_task; 
+    if curr.0 == 0 { return None; }
     let t = sched.tasks.iter_mut().find(|t| t.id == curr).unwrap();
     Some(f(t))
 }
@@ -241,7 +242,8 @@ pub fn current_task_id() -> Option<abi::ids::ThingId> {
     let res = {
         let guard = SCHEDULER.lock();
         if let Some(sched) = guard.as_ref() {
-            if let Some(tid) = sched.cpu.current_task {
+            let tid = sched.cpu.current_task;
+            if tid.0 != 0 {
                  sched.tasks.iter().find(|t| t.id == tid).map(|t| t.thing)
             } else {
                 None
@@ -316,8 +318,8 @@ pub fn tick(current_sp: u64) -> u64 {
 
     // Default: Round Robin
     // 1. Save current SP to current task (if we have one)
-    if let Some(curr) = prev_task {
-        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == curr) {
+    if prev_task.0 != 0 {
+        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == prev_task) {
             // Only save SP if this task has executed at least once.
             // first_run tasks have prepared contexts that must not be overwritten.
             if !t.first_run {
@@ -333,12 +335,12 @@ pub fn tick(current_sp: u64) -> u64 {
     
     // 2. Pick next
     if let Some(next) = sched.run_queue.pop_front() {
-        sched.cpu.current_task = Some(next);
+        sched.cpu.current_task = next;
         let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
         
         crate::serial::write(b"TICK: switch ");
-        if let Some(prev) = prev_task {
-             crate::serial::write_num(prev.0);
+        if prev_task.0 != 0 {
+             crate::serial::write_num(prev_task.0);
         } else {
              crate::serial::write(b"IDLE");
         }

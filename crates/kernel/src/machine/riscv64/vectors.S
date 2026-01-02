@@ -1,6 +1,6 @@
-
 .section .text
 .global riscv64_trap_vector
+.extern KERNEL_STACK_TOP
 .align 4
 riscv64_trap_vector:
     // On trap entry, we need to determine if we came from user or kernel mode.
@@ -130,7 +130,12 @@ riscv64_return_from_trap:
     j 3f
 
 2:  // User mode return: hand kernel stack to sscratch, restore user sp
-    csrw sscratch, t5
+    // PRE: t5 is the kernel stack top for THIS trap.
+    // However, the NEXT trap from user mode should use KERNEL_STACK_TOP.
+    // Fetch KERNEL_STACK_TOP
+    la t6, KERNEL_STACK_TOP
+    ld t6, 0(t6)
+    csrw sscratch, t6
     mv sp, t2
 
 3:

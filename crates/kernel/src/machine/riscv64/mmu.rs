@@ -106,13 +106,14 @@ fn satp_to_root_phys(satp: u64) -> u64 {
 
 /// Convert physical address to virtual (using HHDM offset)
 fn phys_to_virt(phys: u64) -> u64 {
-    // HHDM base from limine is typically 0xffff800000000000
-    phys.wrapping_add(0xffff_8000_0000_0000)
+    let offset = super::ARCH_MACHINE_IMPL.hhdm_offset.load(Ordering::Relaxed);
+    phys.wrapping_add(offset)
 }
 
 /// Convert virtual address to physical (for HHDM addresses)
 fn virt_to_phys(virt: u64) -> u64 {
-    virt.wrapping_sub(0xffff_8000_0000_0000)
+    let offset = super::ARCH_MACHINE_IMPL.hhdm_offset.load(Ordering::Relaxed);
+    virt.wrapping_sub(offset)
 }
 
 /// Extract VPN[level] from virtual address (level 0, 1, or 2)

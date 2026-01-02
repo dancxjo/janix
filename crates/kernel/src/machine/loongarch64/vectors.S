@@ -1,6 +1,7 @@
 
 .section .text
 .global loongarch64_trap_vector
+.extern KERNEL_STACK_TOP
 .align 12 // LoongArch exception entry alignment
 
 loongarch64_trap_vector:
@@ -81,8 +82,9 @@ loongarch64_trap_restore:
     beqz $t1, 2f // PRMD.PPLV == 0, return to kernel
     
     // Returning to User Mode:
-    // 1. Store KernelSP back to KS0
-    addi.d $t0, $sp, 288
+    // 1. Store KERNEL_STACK_TOP back to KS0 for the NEXT trap
+    la.global $t0, KERNEL_STACK_TOP
+    ld.d $t0, $t0, 0
     csrwr $t0, 0x30
     
     // 2. Load UserSP into t0 for later restoration

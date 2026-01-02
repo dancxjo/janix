@@ -16,10 +16,11 @@ pub mod exception;
 mod serial;
 pub mod gic;
 pub mod timer;
-pub mod abi;
+pub mod percpu;
 pub mod mmu;
 pub mod context;
 pub use mmu::AddressSpace;
+use percpu::ArchPerCpu;
 
 // TrapFrame alias for generic Scheduler usage
 pub type TrapFrame = exception::ExceptionContext;
@@ -60,6 +61,12 @@ pub struct ArchMachine {
     uart_base: AtomicU64,
 }
 
+pub static mut PERCPU_BSP: Option<ArchPerCpu> = None;
+
+#[repr(C, align(16))]
+pub struct ExceptionStack([u8; 16384]);
+pub static mut BSP_EXCEPTION_STACK: ExceptionStack = ExceptionStack([0; 16384]);
+
 static ARCH_MACHINE_IMPL: ArchMachine = ArchMachine::new();
 pub static ARCH_MACHINE: &'static dyn Machine = &ARCH_MACHINE_IMPL;
 
@@ -80,7 +87,16 @@ impl ArchMachine {
         self.kernel_phys_base.store(info.kernel_phys_base, Ordering::Relaxed);
         self.kernel_virt_base.store(info.kernel_virt_base, Ordering::Relaxed);
         
-        // 2. Install VBAR_EL1
+        // 2. Map early console (UART)
+        // On QEMU virt, UART is at 0x09000000
+        let uart_phys = 0x0900_0000;
+        let uart_map = self.map_mmio(MmioRange { phys: uart_phys, len: 0x1000 }, MmioFlags::READ | MmioFlags::WRITE | MmioFlags::DEVICE)
+            .expect("UART map fail");
+        
+        self.serial.init(uart_map.virt);
+        self.uart_base.store(uart_map.virt, Ordering::Relaxed);
+
+        // 3. Install VBAR_EL1
         extern "C" {
              static aarch64_vectors: u8; // Symbol
         }
@@ -100,6 +116,16 @@ impl ArchMachine {
                  .expect("GICC map fail");
              
              gic::init(gicd_map.virt, gicc_map.virt);
+
+             // Initialize PerCpu
+             let cpu_thing = abi::ids::ThingId(0); // TODO: Real ID
+             let rq_thing = abi::ids::ThingId(0);
+             PERCPU_BSP = Some(ArchPerCpu::new(0, cpu_thing, rq_thing));
+             if let Some(ref mut pc) = PERCPU_BSP {
+                 pc.core.exception_stack_ptr = (&raw const BSP_EXCEPTION_STACK as u64) + 16384;
+                 percpu::init_percpu(pc);
+             }
+
              // Initialize Timer
              timer::init();
         }
@@ -421,8 +447,7 @@ impl Machine for ArchMachine {
     }
 
     fn set_kernel_stack(&self, top: u64) {
-        unsafe {
-            asm!("msr tpidr_el1, {}", in(reg) top, options(nomem, preserves_flags));
-        }
+        let pc = percpu::get_local();
+        pc.kernel_stack_top = top;
     }
 }

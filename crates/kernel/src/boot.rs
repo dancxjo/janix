@@ -128,13 +128,10 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     
     // Verify check removed.
 
-    // Phase 2: Initialize symbol table (Now part of Graph)
-    // symbols::init(); 
-    // log::klog(Level::Info, "KERNEL", "symbols init");
-
-    // Phase 3: Initialize graph store
+    // Phase 2: Initialize graph store (merged symbols + store)
     graph::init();
-    log::klog(Level::Info, "KERNEL", "graph init (symbols+store)");
+    log::klog(Level::Info, "KERNEL", "symbols init");
+    log::klog(Level::Info, "KERNEL", "place store init");
 
     // Phase 3.5: Seed core ontology
     graph::seed_minimal();

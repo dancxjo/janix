@@ -234,13 +234,22 @@ pub fn with_task<F, R>(id: TaskId, f: F) -> Option<R> where F: FnOnce(&mut Task)
 }
 
 pub fn current_task_id() -> Option<abi::ids::ThingId> {
-    let guard = SCHEDULER.lock();
-    let sched = guard.as_ref()?;
-    let tid = sched.cpu.current_task?;
-    // Find the task's ThingId? 
-    // Task struct has `thing: ThingId`!
-    let task = sched.tasks.iter().find(|t| t.id == tid)?;
-    Some(task.thing) // This is the Graph ThingId, not the scheduler TaskId (u64).
+    // Disable interrupts to prevent deadlock with Timer ISR which also locks SCHEDULER
+    let irq_token = crate::machine::irq_disable();
+    let res = {
+        let guard = SCHEDULER.lock();
+        if let Some(sched) = guard.as_ref() {
+            if let Some(tid) = sched.cpu.current_task {
+                 sched.tasks.iter().find(|t| t.id == tid).map(|t| t.thing)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+    crate::machine::irq_restore(irq_token);
+    res
 }
 
 // Rename/Wrap spawn

@@ -214,7 +214,10 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
             || module.path.ends_with("clock") || module.path.ends_with("inputd") || module.path.ends_with("echo")
             || module.path.ends_with("inspector")
         {
+             log::klog(Level::Info, "BOOT", &format!("MATCHED module: {}", module.path));
              spawn_module(ctx, module, &bs);
+        } else {
+             log::klog(Level::Info, "BOOT", &format!("SKIPPING module: {}", module.path));
         }
     }
 

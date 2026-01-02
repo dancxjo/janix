@@ -11,6 +11,9 @@ use abi::wire::SyscallResult;
 pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64, _a5: u64) -> SyscallResult {
     // Debug logging for specific syscalls can be verbose, maybe limit it?
     // crate::log::klog(crate::log::Level::Trace, "SYSCALL", &alloc::format!("nr={} a0={:x}", nr, a0));
+    if nr == abi::syscall::nr::SYS_MACHINE {
+         crate::log::klog(crate::log::Level::Info, "SYSCALL", &alloc::format!("SYS_MACHINE called by task? nr={}", nr));
+    }
 
     // Resolve arguments based on calling convention (handled by caller, passed here)
 

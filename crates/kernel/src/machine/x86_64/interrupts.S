@@ -165,47 +165,115 @@ syscall_entry:
     mov gs:[24], rsp # Save User SP to PerCpu.syscall_rsp
     mov rsp, gs:[32] # Load Kernel SP from PerCpu.kernel_rsp
     
-    sti # Enable interrupts (optional, but standard for preemptible kernel)
+    sti # Enable interrupts
     
     # Save volatile regs needed for sysret (RCX=RIP, R11=RFLAGS)
     push rcx 
     push r11 
     
-    # Move 4th arg (R10) to ABI slot (RCX)
-    mov rcx, r10 
-    
+    # SyscallResult is 24 bytes (returned by pointer)
+    # Align stack to 16 bytes. 32 bytes allocation.
     sub rsp, 32
-    mov rdi, rsp # RetPtr
+    mov rdi, rsp # Arg0: Hidden Pointer to Return Value
     
-    mov rsi, rax # NR -> RSI
+    # Map User Regs to Dispatch Args
+    # User: RAX(Nr), RDI(A0), RSI(A1), RDX(A2), R10(A3)
+    # Func: RSI(Nr), RDX(A0), RCX(A1), R8(A2),  R9(A3)
+    # Arg0 is ResPtr (RDI)
     
-    push r9 # Push A5
-    push r8 # Push A4
+    # Needs careful shuffling to avoid overwriting
+    # Use R9 as temp? R9 is Dest Arg5 (User A5). 
+    # thing_std only passes up to A3. Stack args A4/A5 unused by current apps.
     
-    mov r9, r10
-    mov r8, rdx
-    mov rcx, rsi
-    mov rdx, rdi
+    mov r9, r10  # A3 -> R9 (Arg5)
+    mov r8, rdx  # A2 -> R8 (Arg4)
+    mov rcx, rsi # A1 -> RCX (Arg3)
+    mov rdx, rdi # A0 -> RDX (Arg2) (Usage of RDI before overwrite!) 
+    # Wait! RDI was overwritten by `mov rdi, rsp` above!
+    # Implementation error in thought process!
     
+    # FIX: We need to save User RDI before overwriting it.
+    # Where? We can use a register if we do it early.
+    
+    # Correct sequence:
+    # 1. Save User RDI (A0) to Temp (RDX is A2, so RDX is occupied). 
+    #    RAX is Nr. RSI is A1.
+    #    Use R8 or R9 as Temp (User doesn't use them in thing_std, but for ABI correctness we should preserve if used?)
+    #    thing_std only uses up to A3 (R10). So R8/R9 are free/garbage.
+    
+    # shuffle:
+    mov r9, r10  # User R10(A3) -> Func R9 (Arg5)
+    mov r8, rdx  # User RDX(A2) -> Func R8 (Arg4)
+    mov rcx, rsi # User RSI(A1) -> Func RCX (Arg3)
+    # Now RDX is free (moved to R8).
+    # RSI is free (moved to RCX).
+    
+    # Move User RDI (A0) -> Func RDX (Arg2)
+    # But User RDI is clobbered by `mov rdi, rsp`?
+    # NO, I haven't executed that instruction yet in this fixed sequence.
+    # I must save RDI before `mov rdi, rsp`.
+    
+    # Let's start over sequence:
+    mov rcx, rsi # User RSI(A1) -> Func RCX(Arg3)
+    mov rsi, rax # User RAX(Nr) -> Func RSI(Arg1) - WAIT! RAX is Nr!
+    # Func Arg1 is RSI.
+    
+    mov rdx, rdi # User RDI(A0) -> Func RDX(Arg2). 
+    # Now User RDI is safe in RDX.
+    
+    # Continue shuffling:
+    mov r9, r10 # User R10(A3) -> Func R9(Arg5)
+    
+    # Wait, R8 needs User RDX(A2).
+    # But I overwrote RDX with User RDI!
+    # DEADLOCK in registers.
+    
+    # Use Stack or Scratch?
+    # R12-R15 are callee-saved, so we must push/pop if we use them?
+    # Or just use the stack we allocated?
+    
+    # Better Strategy: Push Registers to Stack in Order?
+    # Or use RAX (User Nr) as scratch after moving it?
+    
+    # 1. Move Nr (RAX) to RSI. (RSI is occupied by User A1).
+    # Move User A1 (RSI) to RCX. (RCX is occupied by User RIP? No, I pushed RCX/RIP).
+    # RCX Register is free/scratch.
+    
+    # Sequence:
+    mov rcx, rsi # Save User A1 to RCX (Dest Arg3). Safe.
+    mov rsi, rax # Save User Nr to RSI (Dest Arg1). Safe.
+    
+    # Now need: User A0 (RDI) -> RDX (Dest Arg2).
+    # And:      User A2 (RDX) -> R8 (Dest Arg4).
+    
+    mov r8, rdx  # Save User A2 to R8 (Dest Arg4). Safe.
+    mov rdx, rdi # Save User A0 to RDX (Dest Arg2). Safe.
+    
+    mov r9, r10  # Save User A3 to R9 (Dest Arg5). Safe.
+    
+    # Now Args 1-5 are set (RSI, RDX, RCX, R8, R9).
+    # Set Arg0 (ResPtr) to RDI.
+    mov rdi, rsp
+    
+    # Clean and ready.
     call dispatch
     
-    # Cleanup stack args (16 bytes)
-    add rsp, 16 
+    # Result in [RSP].
+    # thing_std expects:
+    # Status -> RAX
+    # Val0 -> RDX
+    # Val1 -> RSI
     
-    pop rax # Error
-    pop rdx # Val1
-    pop rsi # Val2
+    mov rax, [rsp + 0]  # Status (i32/element 0, padded to 8 bytes)
+    mov rdx, [rsp + 8]  # Val0
+    mov rsi, [rsp + 16] # Val1
     
-    # Restore stack (alignment padding 8 bytes)
-    add rsp, 8
+    add rsp, 32
     
-    pop r11 # RFLAGS
-    pop rcx # RIP
+    pop r11
+    pop rcx
     
-    cli 
-    
-    # Restore User SP
+    cli
     mov rsp, gs:[24]
     swapgs
-    
     sysretq

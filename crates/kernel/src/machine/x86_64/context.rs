@@ -50,16 +50,17 @@ impl ArchTask for X86Arch {
             let frame = frame_ptr as *mut TrapFrame;
             
             // Set up iretq frame (5 words)
+            // GDT: 0=Null, 8=KCode, 16=KData, 24=UCode32, 32=UData, 40=UCode64
             match mode {
                 CpuMode::User => {
-                    (*frame).ss = 0x1b;   // User data segment: Index 3 | RPL 3
+                    (*frame).ss = 0x23;   // User data segment (index 4 | RPL 3 = 35 = 0x23)
                     (*frame).rsp = arg0;  // User stack from arg0
-                    (*frame).cs = 0x23;   // User code segment: Index 4 | RPL 3
+                    (*frame).cs = 0x2B;   // User code segment (index 5 | RPL 3 = 43 = 0x2B)
                 }
                 CpuMode::Kernel => {
-                    (*frame).ss = 0x10;   // Kernel data segment
+                    (*frame).ss = 0x10;   // Kernel data segment (index 2 = 16)
                     (*frame).rsp = aligned_top; // Kernel stack top
-                    (*frame).cs = 0x08;   // Kernel code segment
+                    (*frame).cs = 0x08;   // Kernel code segment (index 1 = 8)
                 }
             }
             (*frame).rflags = 0x202;  // IF=1 (interrupts enabled)

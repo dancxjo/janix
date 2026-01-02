@@ -58,15 +58,19 @@ impl AddressSpace {
     /// Create a new address space with its own page tables.
     /// Copies kernel mappings from the current PGDL's upper half.
     pub fn new() -> MapResult<Self> {
+        crate::log::klog(crate::log::Level::Info, "MMU", "AddressSpace::new: allocating PGD...");
         // Allocate L0 table (PGD)
         let phys = unsafe { alloc_subtable()? };
+        crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("AddressSpace::new: PGD allocated at {:#x}", phys));
         
         // Copy kernel half (upper 256 entries) from kernel PGDL
         let kernel_pgd = kernel_pgdl();
+        crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("AddressSpace::new: kernel_pgd={:#x}", kernel_pgd));
         if kernel_pgd != 0 {
             let new_table = phys_to_virt(phys) as *mut u64;
             let kernel_table = phys_to_virt(kernel_pgd) as *const u64;
             
+            crate::log::klog(crate::log::Level::Info, "MMU", "AddressSpace::new: copying kernel entries...");
             // Copy upper half (entries 256-511) for kernel space
             unsafe {
                 for i in 256..512 {
@@ -74,6 +78,7 @@ impl AddressSpace {
                     new_table.add(i).write(entry);
                 }
             }
+            crate::log::klog(crate::log::Level::Info, "MMU", "AddressSpace::new: kernel entries copied");
         }
         
         Ok(Self { pgd: phys })

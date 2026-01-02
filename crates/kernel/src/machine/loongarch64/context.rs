@@ -81,8 +81,11 @@ impl ArchTrap for LoongArchArch {
         }
     }
 
-    unsafe fn return_from_trap(_tf: *const Self::TrapFrame) -> ! {
-        // Stub: would call ertn
-        loop { core::arch::asm!("idle 0"); }
+
+    unsafe fn return_from_trap(tf: *const Self::TrapFrame) -> ! {
+        extern "C" {
+            fn loongarch64_trap_restore(tf: *const TrapFrame) -> !;
+        }
+        loongarch64_trap_restore(tf)
     }
 }

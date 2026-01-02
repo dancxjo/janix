@@ -18,12 +18,27 @@
 
 .align 16
 timer_interrupt_trampoline:
-    // 1. Save GPRs
-    // Layout must match `TrapFrame` struct in Rust.
-    // We push in reverse order of struct fields?
-    // Let's define uniform order: 
-    // rax, rbx, rcx, rdx, rsi, rdi, rbp, r8, r9, r10, r11, r12, r13, r14, r15.
+    // 0. Normalize Stack Frame (Landmark 6.1)
+    test byte ptr [rsp + 8], 3  // Check CS RPL
+    jnz .Ltimer_norm_done        // User Mode: 5 words pushed. Done.
     
+    // Kernel Mode: 3 words pushed [RFLAGS][CS][RIP]. We want 5.
+    sub rsp, 16
+    push rax
+    mov rax, [rsp + 24] // Original RIP
+    mov [rsp + 8], rax  // Target RIP
+    mov rax, [rsp + 32] // Original CS
+    mov [rsp + 16], rax // Target CS
+    mov rax, [rsp + 40] // Original RFLAGS
+    mov [rsp + 24], rax // Target RFLAGS
+    
+    mov qword ptr [rsp + 40], 0x10 // SS (Target +32)
+    lea rax, [rsp + 48]            // Original RSP (Target +24)
+    mov [rsp + 32], rax
+    pop rax
+.Ltimer_norm_done:
+
+    // 1. Save GPRs (Matches TrapFrame)
     push r15
     push r14
     push r13
@@ -40,49 +55,27 @@ timer_interrupt_trampoline:
     push rbx
     push rax
     
-    # Check CS (RSP+128) for User Mode (3)
+    // Check if we came from User Mode (CS RPL=3)
     test byte ptr [rsp + 128], 3
-    jz 1f
+    jz .Ltimer_skip_swap_entry
     swapgs
-1:
+.Ltimer_skip_swap_entry:
     
-    # 2. Call sched::tick
-    # fn tick(current_sp: u64) -> Option<u64> (returns new SP or 0/None)
-    # Argument 1 (rdi) = current SP
+    // 2. Scheduler Tick
     mov rdi, rsp
-    
-    # We need to adhere to SysV ABI (align stack?)
-    # Call might clobber volatile regs, but we saved them.
-    # Direction Flag? cld.
     cld
-    
     call sched_tick_asm_helper
     
-    # Result in rax. If 0, no switch. If != 0, new SP.
+    // rax = 0 or new RSP
     test rax, rax
-    jz 2f
-    
-    # Switch stack!
+    jz .Ltimer_no_switch
     mov rsp, rax
+.Ltimer_no_switch:
     
-2:
-    # 3. Ack Interrupt? 
-    # Ideally ack before switch or after? 
-    # If we switch, the old task context is saved on old stack.
-    # The new task context is on new stack.
-    # We restore from RSP.
-    # We need to ACK the timer before IRET?
-    # If we switched, we are now "returning" into the new task.
-    # Who acks?
-    # Either `tick` called ack, or we do it.
-    # Let's assume `tick` handles logic or we assume EOI irrelevant for switch mechanics (Edge triggered?).
-    # LAPIC Timer needs EOI.
-    # We should call `ack_timer` logic here?
-    # Safe to call Rust `timer::ack()`? Yes.
-    
+    // 3. Ack Timer
     call timer_ack_asm_helper
     
-    # 4. Restore
+    // 4. Restore Context
     pop rax
     pop rbx
     pop rcx
@@ -99,28 +92,29 @@ timer_interrupt_trampoline:
     pop r14
     pop r15
     
-    # Check CS (RSP+8) for User Mode
+    // Check if returning to User Mode
     test byte ptr [rsp + 8], 3
-    jz 3f
+    jz .Ltimer_skip_swap_exit
     swapgs
-3:
-    # EMERGENCY FIX: Check for Null CS (0)
-    # If CS is 0, infer from RIP (Stack Top).
-    cmp qword ptr [rsp + 8], 0
-    jne 4f
+.Ltimer_skip_swap_exit:
     
-    # Check MSB of RIP ([rsp+7]).
+    // EMERGENCY FIX (Landmark 6.3): Correct CS if it became 0 (corrupted)
+    // CS is at [RSP + 8]
+    cmp qword ptr [rsp + 8], 0
+    jne .Ltimer_iret
+    
+    // Infer mode from RIP sign bit
     test byte ptr [rsp + 7], 0x80
     jz 31f
     
-    # Kernel (High Half) -> CS 8
+    // Kernel (High Half) -> CS 8
     mov qword ptr [rsp + 8], 8
-    jmp 4f
+    jmp .Ltimer_iret
     
-31: # User (Low Half) -> CS 0x23
-    mov qword ptr [rsp + 8], 0x23
+31: // User (Low Half) -> CS 0x2B (UCode64)
+    mov qword ptr [rsp + 8], 0x2B
     
-4:
+.Ltimer_iret:
     iretq
 
 cs_is_zero_panic:
@@ -131,7 +125,26 @@ cs_is_zero_panic:
 
 .align 16
 keyboard_interrupt_trampoline:
-    // 1. Save generic regs (caller saved + others to be safe)
+    // 0. Normalize Stack Frame (Landmark 6.1)
+    test byte ptr [rsp + 8], 3
+    jnz .Lkeyboard_norm_done
+    
+    sub rsp, 16
+    push rax
+    mov rax, [rsp + 24]
+    mov [rsp + 8], rax
+    mov rax, [rsp + 32]
+    mov [rsp + 16], rax
+    mov rax, [rsp + 40]
+    mov [rsp + 24], rax
+    
+    mov qword ptr [rsp + 40], 0x10
+    lea rax, [rsp + 48]
+    mov [rsp + 32], rax
+    pop rax
+.Lkeyboard_norm_done:
+
+    // 1. Save GPRs
     push r15
     push r14
     push r13
@@ -147,18 +160,15 @@ keyboard_interrupt_trampoline:
     push rcx
     push rbx
     push rax
-
-    // Check CS for User Mode
-    test byte ptr [rsp + 128], 3
-    jz 1f
-    swapgs
-1:
-    cld
     
-    // Call handler helper (Rust)
+    test byte ptr [rsp + 128], 3
+    jz .Lkeyboard_skip_swap_entry
+    swapgs
+.Lkeyboard_skip_swap_entry:
+    
+    cld
     call keyboard_handler_asm_helper
     
-    // Restore
     pop rax
     pop rbx
     pop rcx
@@ -174,131 +184,92 @@ keyboard_interrupt_trampoline:
     pop r13
     pop r14
     pop r15
-
-    // Check CS for User Mode
+    
     test byte ptr [rsp + 8], 3
-    jz 2f
+    jz .Lkeyboard_skip_swap_exit
     swapgs
-2:
+.Lkeyboard_skip_swap_exit:
+
+    // CS correction (Landmark 6.3)
+    cmp qword ptr [rsp + 8], 0
+    jne .Lkeyboard_iret
+    test byte ptr [rsp + 7], 0x80
+    jz 32f
+    mov qword ptr [rsp + 8], 8
+    jmp .Lkeyboard_iret
+32:
+    mov qword ptr [rsp + 8], 0x2B // UCode64
+.Lkeyboard_iret:
     iretq
 
 .global syscall_entry
 .extern dispatch
 syscall_entry:
-    swapgs # Switch to kernel GS (for per-cpu)
-    mov gs:[24], rsp # Save User SP to PerCpu.syscall_rsp
-    mov rsp, gs:[32] # Load Kernel SP from PerCpu.kernel_rsp
+    // 1. Swap to Kernel GS
+    swapgs
     
-    sti # Enable interrupts
+    // 2. Switch to Kernel Stack (Safe against preemption)
+    mov gs:[40], rax // scratch_rax
+    mov rax, rsp     // Save User RSP
+    mov rsp, gs:[32] // Load Kernel RSP
     
-    # Save volatile regs needed for sysret (RCX=RIP, R11=RFLAGS)
-    push rcx 
-    push r11 
+    // 3. Save User Context on Kernel Stack
+    // Layout: [UserRDI][UserRSP][UserRFLAGS/R11][UserRIP/RCX]
+    push rax         // User RSP
+    push rdi         // User RDI (A0) - save it before we use RDI for ResPtr
+    push r11         // User RFLAGS
+    push rcx         // User RIP (Entry point)
     
-    # SyscallResult is 24 bytes (returned by pointer)
-    # Align stack to 16 bytes. 32 bytes allocation.
-    sub rsp, 32
-    mov rdi, rsp # Arg0: Hidden Pointer to Return Value
+    // Restore RAX for syscall number
+    mov rax, gs:[40]
     
-    # Map User Regs to Dispatch Args
-    # User: RAX(Nr), RDI(A0), RSI(A1), RDX(A2), R10(A3)
-    # Func: RSI(Nr), RDX(A0), RCX(A1), R8(A2),  R9(A3)
-    # Arg0 is ResPtr (RDI)
+    // 4. Enable Interrupts (Now safe because context is on Task stack)
+    sti
     
-    # Needs careful shuffling to avoid overwriting
-    # Use R9 as temp? R9 is Dest Arg5 (User A5). 
-    # thing_std only passes up to A3. Stack args A4/A5 unused by current apps.
+    // 5. Map User Regs to Dispatch Args
+    // Nr (RAX), A0 (Stack), A1 (RSI), A2 (RDX), A3 (R10)
+    // Targets: RSI(Nr), RDX(A0), RCX(A1), R8(A2), R9(A3)
     
-    mov r9, r10  # A3 -> R9 (Arg5)
-    mov r8, rdx  # A2 -> R8 (Arg4)
-    mov rcx, rsi # A1 -> RCX (Arg3)
-    mov rdx, rdi # A0 -> RDX (Arg2) (Usage of RDI before overwrite!) 
-    # Wait! RDI was overwritten by `mov rdi, rsp` above!
-    # Implementation error in thought process!
+    // Save User A2 to R8
+    mov r8, rdx
+    // A3 -> R9
+    mov r9, r10
+    // A1 -> RCX
+    mov rcx, rsi
+    // Nr -> RSI
+    mov rsi, rax
     
-    # FIX: We need to save User RDI before overwriting it.
-    # Where? We can use a register if we do it early.
+    // 6. Setup call frame (128 bytes for Result buffer + alignment)
+    // Overkill to ensure no ABI overflow issues clobber User Context.
+    sub rsp, 128
+    mov rdi, rsp // Arg0: hidden pointer to SyscallResult
     
-    # Correct sequence:
-    # 1. Save User RDI (A0) to Temp (RDX is A2, so RDX is occupied). 
-    #    RAX is Nr. RSI is A1.
-    #    Use R8 or R9 as Temp (User doesn't use them in thing_std, but for ABI correctness we should preserve if used?)
-    #    thing_std only uses up to A3 (R10). So R8/R9 are free/garbage.
+    // A0 (from stack) -> RDX (Arg2)
+    // Offset calculation:
+    // [RSP+0..127]: Result buffer
+    // [RSP+128]: User RIP
+    // [RSP+136]: User RFLAGS
+    // [RSP+144]: User RDI
+    // [RSP+152]: User RSP
+    mov rdx, [rsp + 144] 
     
-    # shuffle:
-    mov r9, r10  # User R10(A3) -> Func R9 (Arg5)
-    mov r8, rdx  # User RDX(A2) -> Func R8 (Arg4)
-    mov rcx, rsi # User RSI(A1) -> Func RCX (Arg3)
-    # Now RDX is free (moved to R8).
-    # RSI is free (moved to RCX).
-    
-    # Move User RDI (A0) -> Func RDX (Arg2)
-    # But User RDI is clobbered by `mov rdi, rsp`?
-    # NO, I haven't executed that instruction yet in this fixed sequence.
-    # I must save RDI before `mov rdi, rsp`.
-    
-    # Let's start over sequence:
-    mov rcx, rsi # User RSI(A1) -> Func RCX(Arg3)
-    mov rsi, rax # User RAX(Nr) -> Func RSI(Arg1) - WAIT! RAX is Nr!
-    # Func Arg1 is RSI.
-    
-    mov rdx, rdi # User RDI(A0) -> Func RDX(Arg2). 
-    # Now User RDI is safe in RDX.
-    
-    # Continue shuffling:
-    mov r9, r10 # User R10(A3) -> Func R9(Arg5)
-    
-    # Wait, R8 needs User RDX(A2).
-    # But I overwrote RDX with User RDI!
-    # DEADLOCK in registers.
-    
-    # Use Stack or Scratch?
-    # R12-R15 are callee-saved, so we must push/pop if we use them?
-    # Or just use the stack we allocated?
-    
-    # Better Strategy: Push Registers to Stack in Order?
-    # Or use RAX (User Nr) as scratch after moving it?
-    
-    # 1. Move Nr (RAX) to RSI. (RSI is occupied by User A1).
-    # Move User A1 (RSI) to RCX. (RCX is occupied by User RIP? No, I pushed RCX/RIP).
-    # RCX Register is free/scratch.
-    
-    # Sequence:
-    mov rcx, rsi # Save User A1 to RCX (Dest Arg3). Safe.
-    mov rsi, rax # Save User Nr to RSI (Dest Arg1). Safe.
-    
-    # Now need: User A0 (RDI) -> RDX (Dest Arg2).
-    # And:      User A2 (RDX) -> R8 (Dest Arg4).
-    
-    mov r8, rdx  # Save User A2 to R8 (Dest Arg4). Safe.
-    mov rdx, rdi # Save User A0 to RDX (Dest Arg2). Safe.
-    
-    mov r9, r10  # Save User A3 to R9 (Dest Arg5). Safe.
-    
-    # Now Args 1-5 are set (RSI, RDX, RCX, R8, R9).
-    # Set Arg0 (ResPtr) to RDI.
-    mov rdi, rsp
-    
-    # Clean and ready.
+    cld
     call dispatch
+
+    // 7. Extract results
+    mov rax, [rsp + 0]
+    mov rdx, [rsp + 8]
+    mov rsi, [rsp + 16]
+    add rsp, 128 // Remove result buffer
     
-    # Result in [RSP].
-    # thing_std expects:
-    # Status -> RAX
-    # Val0 -> RDX
-    # Val1 -> RSI
+    // 8. Restore User Context
+    pop rcx // User RIP
+    pop r11 // User RFLAGS
+    pop rdi // User RDI (Cleanup)
+    pop rsp // User RSP
     
-    mov rax, [rsp + 0]  # Status (i32/element 0, padded to 8 bytes)
-    mov rdx, [rsp + 8]  # Val0
-    mov rsi, [rsp + 16] # Val1
-    
-    add rsp, 32
-    
-    pop r11
-    pop rcx
-    
+    // 9. Return to User
     cli
-    mov rsp, gs:[24]
     swapgs
     sysretq
 
@@ -322,53 +293,24 @@ user_mode_trampoline:
     pop r14
     pop r15
     
-    # 2. Check CS/SwapGS Logic (copied from timer trampoline)
-    # Check CS (RSP+8) for User Mode
+    # Check CS for User Mode
     test byte ptr [rsp + 8], 3
-    jz 1f
+    jz .Luser_trampoline_no_swap
     swapgs
-1:
-    # EMERGENCY FIX: Check for Null CS (0)
+.Luser_trampoline_no_swap:
+
+    # CS Fixup (Landmark 6.3)
     cmp qword ptr [rsp + 8], 0
-    jne 2f
-    
+    jne .Luser_trampoline_iret
     test byte ptr [rsp + 7], 0x80
     jz 11f
-    
     mov qword ptr [rsp + 8], 8
-    jmp 2f
-    
+    jmp .Luser_trampoline_iret
 11: 
-    mov qword ptr [rsp + 8], 0x23
-    
-2:
+    mov qword ptr [rsp + 8], 0x2B // UCode64
+.Luser_trampoline_iret:
     iretq
 
-# x86_return_from_trap: Restore from TrapFrame and iretq
-# Called from ArchTrap::return_from_trap(tf: *const TrapFrame)
-# RDI = pointer to TrapFrame (GPRs followed by iretq frame)
-#
-# TrapFrame layout (160 bytes total):
-#   +0   rax
-#   +8   rbx
-#   +16  rcx
-#   +24  rdx
-#   +32  rsi
-#   +40  rdi
-#   +48  rbp
-#   +56  r8
-#   +64  r9
-#   +72  r10
-#   +80  r11
-#   +88  r12
-#   +96  r13
-#   +104 r14
-#   +112 r15
-#   +120 rip
-#   +128 cs
-#   +136 rflags
-#   +144 rsp
-#   +152 ss
 .global x86_return_from_trap
 x86_return_from_trap:
     # Set RSP to point at the TrapFrame
@@ -391,27 +333,20 @@ x86_return_from_trap:
     pop r14
     pop r15
     
-    # Now RSP points at iretq frame: [RIP][CS][RFLAGS][RSP][SS]
-    
-    # Check CS for user mode (RPL != 0) and do swapgs if needed
+    # Check CS for user mode
     test byte ptr [rsp + 8], 3
-    jz 1f
+    jz .Ltrap_no_swap
     swapgs
-1:
-    # Handle null CS edge case
-    cmp qword ptr [rsp + 8], 0
-    jne 2f
+.Ltrap_no_swap:
     
-    # Infer mode from RIP sign bit
+    # CS Fixup
+    cmp qword ptr [rsp + 8], 0
+    jne .Ltrap_iret
     test byte ptr [rsp + 7], 0x80
     jz 3f
-    
-    # Kernel (high address)
     mov qword ptr [rsp + 8], 8
-    jmp 2f
-    
-3:  # User (low address)
-    mov qword ptr [rsp + 8], 0x23
-    
-2:
+    jmp .Ltrap_iret
+3:  
+    mov qword ptr [rsp + 8], 0x2B // UCode64
+.Ltrap_iret:
     iretq

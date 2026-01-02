@@ -28,10 +28,13 @@ impl Machine for LoongArchMachine {
         }
         unsafe {
              let vector_addr = core::ptr::addr_of!(loongarch64_trap_vector) as u64;
-             // Set EBASE (CSR 0x4)
-             core::arch::asm!("csrwr {}, 0x4", in(reg) vector_addr);
-             
-             timer::init();
+              // Set EBASE (CSR 0x4)
+              core::arch::asm!("csrwr {}, 0x4", in(reg) vector_addr);
+              
+              // Initialize KS0 to 0 (indicates kernel mode)
+              core::arch::asm!("csrwr $r0, 0x30");
+
+              timer::init();
         }
     }
 
@@ -80,15 +83,30 @@ impl Machine for LoongArchMachine {
         unsafe { core::arch::asm!("idle 0"); }
     }
 
-    fn switch_to(&self, _old_ctx: &mut Context, _new_ctx: &Context) {
-        // Placeholder
+
+    fn switch_to(&self, old_ctx: &mut Context, new_ctx: &Context) {
+        extern "C" {
+             fn loongarch64_switch_to(old_sp: &mut u64, new_sp: u64);
+        }
+        unsafe {
+             loongarch64_switch_to(&mut old_ctx.sp, new_ctx.sp);
+        }
     }
 
     fn task_entry_stub(&self) -> u64 {
-        0
+        extern "C" {
+             fn loongarch64_task_entry_stub();
+        }
+        loongarch64_task_entry_stub as *const () as usize as u64
     }
 
     fn virt_to_phys(&self, virt: u64) -> u64 {
         virt
+    }
+
+    fn set_kernel_stack(&self, top: u64) {
+        unsafe {
+            core::arch::asm!("csrwr {}, 0x30", in(reg) top);
+        }
     }
 }

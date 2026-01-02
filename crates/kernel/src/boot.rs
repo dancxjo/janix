@@ -247,18 +247,18 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         let elf_type = unsafe { *((virt_addr + 16) as *const u16) };
         log::klog(Level::Info, "ELF", &format!("header type: {}", elf_type));
 
+        let task_id = crate::sched::spawn_empty("sprout");
+        log::klog(Level::Info, "BOOT", "task spawned");
+
         let final_entry: u64;
         let image_base_virt: u64;
         let image_size: usize;
-
-        // Create the task to own everything
-        let task_id = crate::sched::spawn_empty("sprout");
-        crate::sched::mark_as_init(task_id);
 
         if elf_type == 3 { // ET_DYN (PIE)
             let ph_off = unsafe { *((virt_addr + 32) as *const u64) };
             let ph_num = unsafe { *((virt_addr + 56) as *const u16) };
             let ph_size = unsafe { *((virt_addr + 54) as *const u16) };
+            log::klog(Level::Info, "ELF", &format!("ph_off={:#x} ph_num={} ph_size={}", ph_off, ph_num, ph_size));
 
             // 1. Scan for Size and Min Vaddr
             let mut min_vaddr = u64::MAX;

@@ -33,30 +33,33 @@ impl Scheduler {
         }
     }
 
-    fn spawn(&mut self, _name: &'static str, as_opt: Option<Arc<AddressSpace>>) -> TaskId {
+    fn spawn(&mut self, name: &'static str, as_opt: Option<Arc<AddressSpace>>) -> TaskId {
+        log::klog(Level::Info, "SCHED", &alloc::format!("spawn: name={} start", name));
         let id = TaskId(self.next_id);
         self.next_id += 1;
 
         // Allocate stack
+        log::klog(Level::Info, "SCHED", "spawn: allocating stack...");
         let stack_size = 64 * 1024; // 64KB
         let stack = alloc::vec![0u8; stack_size];
         let stack_ptr = stack.as_ptr() as u64 + stack_size as u64; // Top
-        // Leak the stack for now (kernel tasks live forever in this model)
+        log::klog(Level::Info, "SCHED", "spawn: stack allocated");
+        // Leak the stack for now
         core::mem::forget(stack); 
 
         // Graph reflection
+        log::klog(Level::Info, "SCHED", "spawn: graph store start");
         let task_thing = store::with_store(|s| {
             let t = s.create_thing(sym::KIND_TASK).expect("create task");
-            // Name it
-            // s.register_name(...)? No, dynamic names.
-            // Link to place.tasks
             if let Some(place_tasks) = s.find_by_name(sym::PLACE_TASKS) {
                  let _ = s.create_relationship(sym::PRED_CONTAINS, place_tasks, t);
             }
             t
         });
+        log::klog(Level::Info, "SCHED", "spawn: graph store done");
 
         let address_space = as_opt.unwrap_or_else(|| Arc::new(AddressSpace::new().expect("failed create AS")));
+        log::klog(Level::Info, "SCHED", "spawn: address space handled");
         let mut task = Task::new(id, task_thing, stack_ptr, address_space);
         
         // Initialize state (New -> Ready)
@@ -64,9 +67,10 @@ impl Scheduler {
 
         self.tasks.push(task);
         
-        // Add to run queue (requires re-borrowing task/thing)
+        // Add to run queue
         let thing = self.tasks.last().unwrap().thing;
         self.run_queue.push_back(id, thing);
+        log::klog(Level::Info, "SCHED", "spawn: finished");
 
         id
     }
@@ -241,9 +245,13 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
 
 // Helper for Sprout (empty spawn)
 pub fn spawn_empty(name: &'static str) -> TaskId {
+    log::klog(Level::Info, "SCHED", "spawn_empty: locking...");
     let mut guard = SCHEDULER.lock();
+    log::klog(Level::Info, "SCHED", "spawn_empty: locked");
     let sched = guard.as_mut().expect("sched not init");
-    sched.spawn(name, None)
+    let res = sched.spawn(name, None);
+    log::klog(Level::Info, "SCHED", "spawn_empty: done");
+    res
 }
 
 

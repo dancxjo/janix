@@ -207,16 +207,20 @@ impl Machine for ArchMachine {
     fn set_kernel_stack(&self, top: u64) {
         // Update per-cpu kernel_rsp
         // We can get per-cpu via GS.
-        // Or if we are in kernel, we can use the PerCpu structure if we have a pointer.
-        // Easier: use asm to write to gs:32.
+        // We reserve 256 bytes at the top for syscall saved state (RIP, RFLAGS, etc.)
+        // This prevents interrupts from userland clobbering the saved state.
+        let reserved_top = top - 256;
+        
+        // Architectural Isolation (Landmark 6.4):
+        // 1. Syscall entry state (RIP, RFLAGS, etc.) is saved at the VERY TOP of the task stack.
+        // 2. Interrupts from User Mode use TSS.RSP0.
+        // By setting RSP0 below the saved state, we prevent clobbering.
+        let syscall_top = top;
+        let interrupt_top = top - 512; // 512 bytes reserved for syscall context/buffer
+        
         unsafe {
-            core::arch::asm!("mov gs:[32], {}", in(reg) top);
-        }
-        // Update TSS RSP0
-        // We need to access the GDT/TSS.
-        // gdt::set_tss_rsp0(top); // Needs to be exposed
-        unsafe {
-            gdt::set_tss_rsp0(top);
+            core::arch::asm!("mov gs:[32], {}", in(reg) syscall_top);
+            gdt::set_tss_rsp0(interrupt_top);
         }
     }
 
@@ -252,11 +256,23 @@ pub fn syscall_init() {
         let handler_addr = syscall_entry as *const () as u64;
         LStar::write(x86_64::VirtAddr::new(handler_addr));
         
-        let _ = Star::write(
-            x86_64::structures::gdt::SegmentSelector(0x0013), // User Base (CS=Base+16, SS=Base+8)
-            x86_64::structures::gdt::SegmentSelector(0x0013),
-            x86_64::structures::gdt::SegmentSelector(0x0008), // Kernel Base (CS=Base, SS=Base+8)
-            x86_64::structures::gdt::SegmentSelector(0x0008),
+        // Manual STAR MSR Write (0xC0000081)
+        // High 32 bits: [Base(16bits)][Base(16bits)] for sysret (Wait! NO.)
+        // Intel SDM: 
+        // 63:48 -> UserBase (sysret CS = Base+16, SS = Base+8)
+        // 47:32 -> KernelBase (syscall CS = Base, SS = Base+8)
+        // 31:0  -> Reserved
+        
+        let kernel_base = 0x0008u64;
+        let user_base = 0x0018u64; // index 3
+        let star_val = (user_base << 48) | (kernel_base << 32);
+        
+        core::arch::asm!(
+            "wrmsr",
+            in("ecx") 0xC0000081u32,
+            in("eax") (star_val & 0xFFFFFFFF) as u32,
+            in("edx") (star_val >> 32) as u32,
+            options(nostack)
         );
         
         // Flags mask (flags to clear on syscall)

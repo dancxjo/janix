@@ -195,7 +195,7 @@ pub fn irq_enable() {
         #[cfg(target_arch = "x86_64")]
         core::arch::asm!("sti", options(nomem, preserves_flags));
         #[cfg(target_arch = "aarch64")]
-        core::arch::asm!("msr daifclr, #0xf", options(nomem, preserves_flags));
+        core::arch::asm!("msr daifclr, #2", options(nomem, preserves_flags));
         #[cfg(target_arch = "riscv64")]
         core::arch::asm!("csrsi sstatus, 2", options(nomem, preserves_flags));
         #[cfg(target_arch = "loongarch64")]

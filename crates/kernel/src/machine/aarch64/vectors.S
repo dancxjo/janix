@@ -104,11 +104,13 @@ handle_sync_el1:
 1:  RESTORE_CONTEXT
 
 handle_irq_el1:
-    msr tpidrro_el0, x0
+    sub sp, sp, #16
+    stp x0, x1, [sp]
     ldr x0, =0xffffffc009000000
     mov x1, #73 // 'I'
     str w1, [x0]
-    mrs x0, tpidrro_el0
+    ldp x0, x1, [sp]
+    add sp, sp, #16
 
     SAVE_CONTEXT
     mov x0, sp

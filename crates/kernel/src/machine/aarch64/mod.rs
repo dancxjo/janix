@@ -88,9 +88,6 @@ impl ArchMachine {
              asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
              asm!("isb", options(nomem, preserves_flags));
         }
-
-        // 3. Now it is safe to log
-        crate::serial::write(b"AARCH64: machine init\n");
         
         // 4. Initialize Hardware
         unsafe {
@@ -102,6 +99,7 @@ impl ArchMachine {
                  .expect("GICC map fail");
              
              gic::init(gicd_map.virt, gicc_map.virt);
+             // Initialize Timer
              timer::init();
         }
     }
@@ -363,8 +361,8 @@ impl Machine for ArchMachine {
     }
 
     fn idle(&self) {
-        crate::serial::write(b"IDLE\n");
-        unsafe { asm!("wfi"); }
+        // crate::serial::write(b"IDLE\n");
+        unsafe { core::arch::asm!("nop"); }
     }
 
     fn switch_to(&self, old_ctx: &mut crate::machine::Context, new_ctx: &crate::machine::Context) {

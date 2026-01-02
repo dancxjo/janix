@@ -110,6 +110,7 @@ pub fn run() -> ! {
     // Enable interrupts
     crate::machine::irq_enable();
     loop {
+        crate::serial::write(b".");
         crate::machine::idle();
     }
 }

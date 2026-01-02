@@ -21,12 +21,12 @@ pub unsafe fn init(dist_base: u64, cpu_base: u64) {
     GICD_BASE.store(dist_base, Ordering::Relaxed);
     GICC_BASE.store(cpu_base, Ordering::Relaxed);
 
-    // 1. Distributor: Enable
-    write_volatile((dist_base + GICD_CTLR) as *mut u32, 1);
+    // 1. Distributor: Enable Group 0 and 1
+    write_volatile((dist_base + GICD_CTLR) as *mut u32, 3);
     
-    // 2. CPU Interface: Enable + Priority Mask
+    // 2. CPU Interface: Enable Group 0 and 1 + Priority Mask
     write_volatile((cpu_base + GICC_PMR) as *mut u32, 0xF0); // Priority mask
-    write_volatile((cpu_base + GICC_CTLR) as *mut u32, 1);   // Enable
+    write_volatile((cpu_base + GICC_CTLR) as *mut u32, 3);   // Enable
 
     let pmr = read_volatile((cpu_base + GICC_PMR) as *const u32);
     let ctlr = read_volatile((cpu_base + GICC_CTLR) as *const u32);
@@ -51,13 +51,20 @@ pub unsafe fn enable_irq(id: u32) {
 
     let n = id / 32;
     let offset = id % 32;
-    
-    // Set Enable bit
+
+    // 0. Set Priority 0 (Highest)
+    let p_addr = (base + 0x400 + (id as u64)) as *mut u8;
+    write_volatile(p_addr, 0);
+
+    // 1. Set Group 1 (Non-Secure)
+    let g_addr = (base + 0x080 + (n as u64 * 4)) as *mut u32;
+    let g_val = read_volatile(g_addr);
+    write_volatile(g_addr, g_val | (1 << offset));
+
+    // 2. Set Enable bit
     let addr = (base + GICD_ISENABLER + (n as u64 * 4)) as *mut u32;
     let val = read_volatile(addr);
     write_volatile(addr, val | (1 << offset));
-    
-    // Route to CPU0 (Target Register)
     if id >= 32 {
          let t_offset = (id / 4) * 4;
          let _t_addr = (base + GICD_ITARGETSR + t_offset as u64) as *mut u32;

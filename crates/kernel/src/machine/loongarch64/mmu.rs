@@ -6,8 +6,8 @@ pub struct AddressSpace {
 }
 
 impl AddressSpace {
-    pub fn new() -> Self {
-        Self { pgd: 0 }
+    pub fn new() -> MapResult<Self> {
+        Ok(Self { pgd: 0 })
     }
 
     pub fn activate(&self) {

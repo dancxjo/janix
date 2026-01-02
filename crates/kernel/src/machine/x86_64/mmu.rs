@@ -8,9 +8,27 @@ pub struct AddressSpace {
 }
 
 impl AddressSpace {
-    pub fn new() -> Self {
-        let (frame, _) = x86_64::registers::control::Cr3::read();
-        Self { pml4_table: frame.start_address().as_u64() }
+    pub fn new() -> MapResult<Self> {
+        // 1. Allocate new PML4
+        let frame = allocate_frame()?;
+        let new_table = unsafe { get_table_mut(frame.start_address().as_u64()) };
+        
+        // 2. Clear User Half (0..256) - Box::new(PageTable::new()) implies zeroed, but explicitly:
+        // (It's already zeroed by PageTable constructor)
+        
+        // 3. Copy Kernel Half (256..512) from current active CR3
+        let (current_frame, _) = Cr3::read();
+        let current_table = unsafe { get_table_mut(current_frame.start_address().as_u64()) };
+        
+        for i in 256..512 {
+            new_table[i] = current_table[i].clone();
+        }
+        
+        Ok(Self { pml4_table: frame.start_address().as_u64() })
+    }
+
+    pub fn from_existing(pml4: u64) -> Self {
+        Self { pml4_table: pml4 }
     }
 
     pub fn activate(&self) {

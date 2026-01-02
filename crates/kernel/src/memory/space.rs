@@ -21,7 +21,31 @@ impl AddressSpace {
         });
         Ok(Self {
             id,
-            arch: Mutex::new(ArchAddressSpace::new()),
+            arch: Mutex::new(ArchAddressSpace::new()?),
+        })
+    }
+
+    pub fn new_kernel_share() -> MapResult<Self> {
+        let id = store::with_store(|s| {
+             s.create_thing(sym::KIND_ADDRESS_SPACE).expect("create Kernel AS")
+        });
+        
+        #[cfg(target_arch = "x86_64")]
+        let arch = {
+            use x86_64::registers::control::Cr3;
+            let (frame, _) = Cr3::read();
+            ArchAddressSpace::from_existing(frame.start_address().as_u64())
+        };
+
+        #[cfg(target_arch = "aarch64")]
+        let arch = ArchAddressSpace::new()?; // Fallback for aarch64 pending impl
+
+        #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
+        let arch = ArchAddressSpace::new()?;
+
+        Ok(Self {
+            id,
+            arch: Mutex::new(arch),
         })
     }
 

@@ -8,11 +8,11 @@ pub struct AddressSpace {
 }
 
 impl AddressSpace {
-    pub fn new() -> Self {
+    pub fn new() -> MapResult<Self> {
         // Allocate L0 table (512GB range per entry, covers 256TB)
         // AArch64 usually uses 4 levels (48-bit VA). L0 is root.
         let phys = unsafe { alloc_subtable() };
-        Self { ttbr0: phys } 
+        Ok(Self { ttbr0: phys })
     }
 
     pub fn activate(&self) {

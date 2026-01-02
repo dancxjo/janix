@@ -101,6 +101,21 @@ extern "x86-interrupt" fn gp_handler(
     // unsafe {
     //     record_x86_fault(FaultKind::GeneralProtection, &stack_frame, error_code, None, 13);
     // }
+    crate::serial::write(b"GENERAL PROTECTION FAULT: stack content:\n");
+    let sp = stack_frame.stack_pointer.as_u64();
+    let ptr = sp as *const u64;
+    unsafe {
+        let rip = *ptr;
+        let cs = *ptr.add(1);
+        let rflags = *ptr.add(2);
+        let s1 = alloc::format!("Target RIP: {:x} CS: {:x} RFLAGS: {:x}\n", rip, cs, rflags);
+        crate::serial::write(s1.as_bytes());
+        // Also dump RSP/SS if present (assuming 5 words?)
+        let rsp = *ptr.add(3);
+        let ss = *ptr.add(4);
+        let s2 = alloc::format!("Possible RSP: {:x} SS: {:x}\n", rsp, ss);
+        crate::serial::write(s2.as_bytes());
+    }
     panic!("GENERAL PROTECTION FAULT: error_code={}\n{:#?}", error_code, stack_frame);
 }
 

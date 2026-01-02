@@ -33,7 +33,7 @@ impl Scheduler {
         }
     }
 
-    fn spawn(&mut self, _name: &'static str) -> TaskId {
+    fn spawn(&mut self, _name: &'static str, as_opt: Option<Arc<AddressSpace>>) -> TaskId {
         let id = TaskId(self.next_id);
         self.next_id += 1;
 
@@ -56,7 +56,7 @@ impl Scheduler {
             t
         });
 
-        let address_space = Arc::new(AddressSpace::new().expect("failed create AS"));
+        let address_space = as_opt.unwrap_or_else(|| Arc::new(AddressSpace::new().expect("failed create AS")));
         let mut task = Task::new(id, task_thing, stack_ptr, address_space);
         
         // Initialize state (New -> Ready)
@@ -148,6 +148,12 @@ pub fn configure_task_context(id: TaskId, entry: u64, _user_stack: u64) {
              unsafe {
                 #[cfg(target_arch = "x86_64")]
                 {
+                     // Alignment: 
+                     // Stack Top (16 aligned).
+                     // Pushes: SS, RSP, RFLAGS, CS, RIP (5 words, 40 bytes).
+                     // Regs (15 words, 120 bytes).
+                     // Total 160 bytes. 16-byte aligned.
+                     // Matches ABI. NO padding needed.
                      let mut sp = k_stack_top.sub(1);
                      *sp = 0xdeadbeef; // Align
 
@@ -241,7 +247,10 @@ pub fn current_task_id() -> Option<abi::ids::ThingId> {
 pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut().expect("sched not init");
-    let id = sched.spawn(name);
+    
+    // Use Shared Kernel Address Space for kernel threads
+    let k_as = AddressSpace::new_kernel_share().expect("failed share kernel AS");
+    let id = sched.spawn(name, Some(Arc::new(k_as)));
     
     let task = sched.tasks.iter_mut().find(|t| t.id == id).unwrap();
     
@@ -269,25 +278,23 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
              // RSP is 8-byte aligned when we start executing 'entry'.
              // Our stack_top is 16-byte aligned.
              // We subtract 1 u64 so that final RSP (after pop) is 8-byte aligned.
-             let mut sp = stack_top.sub(1);
-             // Ensure this slot is zeroed or valid? (It's top of stack, usually ignored).
-             *sp = 0xdeadbeef; // Debug marker
+             // 1. alignment adjustment
+             // SysV ABI requires RSP % 16 == 8 on entry.
+             // stack_top is 16-byte aligned.
+             // After popping 3 words (24 bytes), SP ends in ...8.
+             // Matches ABI. NO padding needed.
+             let mut sp = stack_top;
              
              // 1. CPU Frame (5 words - conservative)
              // Even if Ring 0 return pops 3, 5 is safe allocation.
              
-             // SS
-             sp = sp.sub(1);
-             *sp = 0x10; // Kernel Data
-             
-             // RSP (Value after iretq, i.e., top of stack frame?)
-             // iretq restores RSP to this value IF it pops 5 words.
-             sp = sp.sub(1);
-             *sp = stack_top as u64; // Or top-8 if aligned?
+             // Kernel Mode Return: IRETQ pops only 3 words (RIP, CS, RFLAGS).
+             // We skip SS/RSP.
+             // Padding (at Top-1) ensures final alignment.
              
              // RFLAGS
              sp = sp.sub(1);
-             *sp = 0x202; // IF=1, bit 1=1
+             *sp = 0x202; // IF=1, enable interrupts
              
              // CS
              sp = sp.sub(1);
@@ -399,7 +406,7 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
 pub fn spawn_empty(name: &'static str) -> TaskId {
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut().expect("sched not init");
-    sched.spawn(name)
+    sched.spawn(name, None)
 }
 
 
@@ -412,7 +419,8 @@ pub fn tick(current_sp: u64) -> Option<u64> {
     // 1. Inc timer ticks
     let ticks = TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
     if ticks == 0 {
-        log::klog(Level::Info, "SCHED", "first tick!");
+        // log::klog(Level::Info, "SCHED", "first tick!"); // BAD: Allocates in IRQ
+        crate::serial::write(b"SCHED: first tick!\n");
     }
     
     let mut guard = SCHEDULER.lock();

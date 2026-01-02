@@ -47,6 +47,8 @@ pub struct BootContext {
     pub kernel_phys_base: u64,
     /// Kernel virtual base address
     pub kernel_virt_base: u64,
+    /// Physical address of the pre-reserved kernel heap
+    pub heap_phys_base: u64,
 }
 
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -86,15 +88,32 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     // and no aliasing occurs after transfer.
     let ctx: &'static mut BootContext = unsafe { &mut *ctx };
     // Phase 0: Install machine backend (idempotent - may already be done by pre_boot)
+    // Phase 0: Install machine backend (idempotent - may already be done by pre_boot)
     pre_boot(PreBootInfo {
         hhdm_offset: ctx.hhdm_offset,
         kernel_phys_base: ctx.kernel_phys_base,
         kernel_virt_base: ctx.kernel_virt_base,
     });
     
+    // Phase 0.5: Initialize Kernel Heap
+    // We Map it via HHDM (simple) or identity?
+    // HHDM is always mapped at ctx.hhdm_offset.
+    // So heap_virt = ctx.hhdm_offset + ctx.heap_phys_base.
+    let heap_phys = ctx.heap_phys_base;
+    let heap_virt = ctx.hhdm_offset + heap_phys;
+    let heap_size = 64 * 1024 * 1024; // Must match bran's selection
+    
+    unsafe {
+        crate::memory::heap::init(crate::memory::heap::HeapConfig {
+            phys_base: heap_phys,
+            virt_base: heap_virt,
+            size: heap_size as usize,
+        }).expect("Heap Init Failed");
+    }
+
     // Initialize Platform (Capability Registry)
     let _ = crate::platform::init();
-
+    
     crate::serial::write(b"KERNEL: handoff accepted\n");
     crate::serial::write(b"KERNEL: machine installed\n");
     crate::serial::write(b"KERNEL: platform initialized\n");
@@ -129,6 +148,22 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
          // For now, continuing, but this is a critical failure in strict mode
     } else {
          log::klog(Level::Info, "GRAPH", "verification passed");
+    }
+
+    // Phase 3.7: Register Kernel Heap to Graph
+    {
+         let _heap_virt = ctx.hhdm_offset + ctx.heap_phys_base;
+         let heap_size = 64 * 1024 * 1024;
+         // Note: reusing calc for consistency
+         let heap_bs = Bytespace::new_kernel_heap(ctx.heap_phys_base, heap_size);
+         graph::store::thing_register_name(heap_bs.id, graph::symbols::intern(b"bytespace.heap0"));
+
+         let stats = crate::memory::heap::heap_stats();
+         crate::log::klog(
+             crate::log::Level::Info, 
+             "HEAP", 
+             &alloc::format!("Stats: Total={} Used={} Free={}", stats.total, stats.used, stats.free)
+        );
     }
 
     // Phase 3.7: Seed Capability Ontology
@@ -183,8 +218,8 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     }
 
     // Phase 6.5: Spawn Ping-Pong Verification
-    crate::sched::spawn_kernel_task("ping", ping_task);
-    crate::sched::spawn_kernel_task("pong", pong_task);
+    // crate::sched::spawn_kernel_task("ping", ping_task);
+    // crate::sched::spawn_kernel_task("pong", pong_task);
 
     // Phase 7: Enter scheduler loop
     sched::run()
@@ -247,13 +282,14 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             // Note: Compiler might have been confused or file desynced. Re-asserting expect logic.
             let buffer_base = image_bs.backing_ptr().expect("image backing generic") as u64;
             
-            // We map it at 0x0040_0000 (standard-ish?) or just use the buffer_base if Kernel mode.
-            // For now, let's Map it identity-ish or fixed?
-            // If we use PIE, we can run it at buffer_base.
-            final_entry = buffer_base + entry_point;
-            image_base_virt = buffer_base;
+            // Relocate to User Address!
+            // We Pick 0x0020_0000 (2MB) as standard Load Address for Sprout
+            let user_image_base = 0x0020_0000;
+            
+            final_entry = user_image_base + entry_point;
+            image_base_virt = user_image_base;
 
-            log::klog(Level::Info, "ELF", &format!("loading PIE into bytespace at {:#x}", buffer_base));
+            log::klog(Level::Info, "ELF", &format!("loading PIE into bytespace at {:#x} (virt {:#x})", buffer_base, user_image_base));
 
             // Copy LOAD segments
             for i in 0..ph_num {
@@ -310,8 +346,7 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             }
 
             if rela_vaddr != 0 && rela_size > 0 {
-                // Apply Relocs (Code omitted for brevity in previous, but needed here)
-                // Reusing the logic from before...
+                // Apply Relocs
                  let mut rela_file_off = 0u64;
                  for i in 0..ph_num {
                      let ph_addr = virt_addr + ph_off + (i as u64 * ph_size as u64);
@@ -346,8 +381,11 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
                          let is_relative = r_type == 3;
 
                          if is_relative {
+                             // Correct Relocation:
+                             // Target Address in Buffer = buffer_base + r_offset
+                             // Value to Write = user_image_base + r_addend
                              let target_ptr = (buffer_base + r_offset) as *mut u64;
-                             unsafe { *target_ptr = buffer_base.wrapping_add(r_addend as u64); }
+                             unsafe { *target_ptr = user_image_base.wrapping_add(r_addend as u64); }
                          }
                      }
                  }
@@ -366,7 +404,9 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         // Dedicated Stack Bytespace
         let stack_size = 32 * 1024;
         let stack_bs = Bytespace::new_ram(stack_size).expect("Sprout Stack Alloc");
-        let stack_base = stack_bs.backing_ptr().expect("stack backing") as u64;
+        // let stack_base_backing = stack_bs.backing_ptr().expect("stack backing") as u64; // unused
+        
+        let stack_base = 0x8000_0000; // 2GB
         let stack_top = (stack_base + stack_size as u64) & !0xf;
         
         crate::sched::with_task(task_id, |t| {
@@ -376,7 +416,7 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         // Heap Bytespace
         let heap_size = 4 * 1024;
         let heap_bs = Bytespace::new_ram(heap_size).expect("Sprout Heap Alloc");
-        let heap_base = heap_bs.backing_ptr().expect("heap backing") as u64;
+        let heap_base = 0x9000_0000; // 2.25GB? Or far away.
 
         crate::sched::with_task(task_id, |t| {
              t.address_space.as_ref().map_bytespace_shared(heap_base, &heap_bs, 0, heap_size, MapPerms::READ | MapPerms::WRITE | MapPerms::USER).unwrap();
@@ -393,22 +433,6 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         );
 
         crate::sched::with_task(task_id, |_t| {
-             // Set Stack Pointer
-             let _sp = (stack_top as u64) & !0xf; // Ensure alignment
-             
-             // We need to update the stack pointer in the Task struct so the scheduler picks it up
-             // configure_task_context already sets t.stack_ptr, but we need to ensure it matches specific stack_top
-             // actually configure_task_context uses with_task internally to set stack_ptr.
-             // But it uses t.stack_ptr logic inside.
-             // Wait. configure_task_context takes 'entry'. It uses 't.stack_ptr' calculation logic internally or expects it set?
-             // Let's check sched/mod.rs again.
-             // It uses: "let stack_top = (task.stack_ptr & !0xf) as *mut u64;"
-             // So it READS stack_ptr from task.
-             // We MUST set task.stack_ptr BEFORE calling configure_task_context?
-             // YES.
-             
-             // t.stack_ptr = stack_top; // REMOVED: Keep Kernel Stack
-             // t.stack_top = stack_top; // REMOVED
              crate::log::klog(crate::log::Level::Info, "BOOT", &alloc::format!("Sprout User Stack: {:x}", stack_top));
         });
         

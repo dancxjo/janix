@@ -6,8 +6,8 @@ pub struct AddressSpace {
 }
 
 impl AddressSpace {
-    pub fn new() -> Self {
-        Self { satp: 0 } // Bare mode
+    pub fn new() -> MapResult<Self> {
+        Ok(Self { satp: 0 }) // Bare mode
     }
 
     pub fn activate(&self) {

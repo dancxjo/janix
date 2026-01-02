@@ -11,6 +11,7 @@
 
 #![no_std]
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
+#![feature(alloc_error_handler)]
 
 extern crate alloc;
 

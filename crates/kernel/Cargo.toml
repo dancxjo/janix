@@ -16,6 +16,7 @@ log = "0.4"
 abi = { path = "../abi" }
 graph = { path = "../graph" }
 models = { path = "../models" }
+linked_list_allocator = "0.10.5"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.14.2"

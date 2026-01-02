@@ -69,74 +69,67 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
     let in_kernel = (ctx.spsr_el1 & 0xF) == 0x4 || (ctx.spsr_el1 & 0xF) == 0x5;
 
     // We only record serious faults, not IRQs (spam) unless for debug
-    if kind != FaultKind::Irq {
-        graph::store::with_store(|store| {
-             let rec = TrapRecord {
-                arch: Arch::Aarch64,
-                kind,
-                ip: ctx.elr_el1,
-                sp: ctx.sp_el0,
-                addr,
-                code: esr,
-                vector: vector as u32,
-                cpu: 0,
-                in_kernel,
-                task: None,
-            };
-            trap::record_fault(store, &rec);
-        });
+    // Handle IRQs first (fast path)
+    if kind == FaultKind::Irq {
+        let irq_id = super::gic::ack_irq();
+        if irq_id == 1023 { return 0; }
+        
+        if irq_id == super::timer::TIMER_IRQ {
+            super::timer::ack(); 
+            let current_sp = ctx as *mut ExceptionContext as u64;
+            if let Some(new_sp) = crate::sched::tick(current_sp) {
+                return new_sp;
+            }
+        } else {
+            super::gic::eoi(irq_id);
+        }
+        return 0;
     }
+
+    // Handle Lazy Mapping (Data Abort)
+    if kind == FaultKind::DataAbort {
+        if let Some(fault_addr) = addr {
+             // Lazy mapping for kernel heap/BSS
+             // Check if it's in Kernel Region (High Half)
+             if in_kernel && fault_addr >= 0xffffffff80000000 {
+                 use crate::machine::MmioFlags;
+                 let aligned = fault_addr & !0xfff;
+                 let flags = MmioFlags::READ | MmioFlags::WRITE;
+                 
+                 // Try to map
+                 if unsafe { super::ARCH_MACHINE_IMPL.map_kernel_region(aligned, 0x1000, flags) } {
+                     return 0; // Success, retry instruction
+                 }
+             }
+        }
+    }
+
+    // If we are here, it's a serious fault regarding logic or unrecoverable.
+    // Record it.
+    graph::store::with_store(|store| {
+            let rec = TrapRecord {
+            arch: Arch::Aarch64,
+            kind,
+            ip: ctx.elr_el1,
+            sp: ctx.sp_el0,
+            addr,
+            code: esr,
+            vector: vector as u32,
+            cpu: 0,
+            in_kernel,
+            task: None,
+        };
+        trap::record_fault(store, &rec);
+    });
 
     match kind {
         FaultKind::Breakpoint => {
-             // For smoke test, we just continue.
              return 0; 
-        }
-        FaultKind::Irq => {
-            // ACK GIC
-            let irq_id = super::gic::ack_irq();
-            // 1023 = Spurious
-            if irq_id == 1023 {
-                return 0;
-            }
-            
-            if irq_id == super::timer::TIMER_IRQ {
-                super::timer::ack(); // Rearm (and EOI internal?)
-                // Actually my timer::ack calls eoi(30).
-                // So GIC is happy.
-                
-                // Tick!
-                let current_sp = ctx as *mut ExceptionContext as u64;
-                // Wait, ctx is POINTER to stack struct. `current_sp` IS `ctx`.
-                
-                // Call sched::tick
-                if let Some(new_sp) = crate::sched::tick(current_sp) {
-                    return new_sp;
-                }
-            } else {
-                // EOI unknown IRQ
-                super::gic::eoi(irq_id);
-            }
-            return 0;
         }
         FaultKind::Syscall => {
             panic!("Syscall not implemented yet");
         }
         FaultKind::DataAbort => {
-             if let Some(fault_addr) = addr {
-                 // Lazy mapping for kernel heap/BSS
-                 if in_kernel && fault_addr >= 0xffffffff80000000 {
-                     use crate::machine::MmioFlags;
-                     let aligned = fault_addr & !0xfff;
-                     // Map RW
-                     let flags = MmioFlags::READ | MmioFlags::WRITE;
-                     
-                     // Try to map assuming linear physical backing
-                     if unsafe { super::ARCH_MACHINE_IMPL.map_kernel_region(aligned, 0x1000, flags) } {
-                         return 0; // Retry
-                     }
-                 }
-             }
              panic!("Data Abort at {:?}: Limit reached.\n{:#?}", addr, ctx);
         }
         _ => {

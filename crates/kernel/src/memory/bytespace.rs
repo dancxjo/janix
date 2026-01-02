@@ -15,6 +15,7 @@ pub enum BytespaceKind {
     Device,
     Module,
     Framebuffer,
+    KernelHeap,
 }
 
 impl BytespaceKind {
@@ -24,6 +25,7 @@ impl BytespaceKind {
             BytespaceKind::Device => sym::KIND_BYTESPACE_DEVICE,
             BytespaceKind::Module => sym::KIND_BYTESPACE_MODULE,
             BytespaceKind::Framebuffer => sym::KIND_BYTESPACE_FRAMEBUFFER,
+            BytespaceKind::KernelHeap => sym::KIND_BYTESPACE_RAM, // Reuse RAM kind or new? Let's use RAM for now as it IS RAM.
         }
     }
 }
@@ -96,6 +98,10 @@ impl Bytespace {
 
     pub fn new_module(phys: u64, size: usize) -> Self {
         Self::create_external(BytespaceKind::Module, phys, size, sym::PLACE_MEMORY)
+    }
+
+    pub fn new_kernel_heap(phys: u64, size: usize) -> Self {
+         Self::create_external(BytespaceKind::KernelHeap, phys, size, sym::PLACE_MEMORY)
     }
 
     fn create_external(kind: BytespaceKind, phys: u64, size: usize, place_sym: SymbolId) -> Self {

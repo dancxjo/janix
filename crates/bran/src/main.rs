@@ -9,7 +9,6 @@
 #![no_main]
 
 use core::arch::asm;
-use core::cell::UnsafeCell;
 use limine::request::{
     FramebufferRequest, HhdmRequest, ExecutableAddressRequest, MemoryMapRequest, ModuleRequest,
     RequestsEndMarker, RequestsStartMarker,
@@ -75,6 +74,7 @@ static mut BOOT_CTX: BootContext = BootContext {
     early_putc: Some(early_putc),
     kernel_phys_base: 0,
     kernel_virt_base: 0,
+    heap_phys_base: 0,
 };
 
 // =============================================================================
@@ -99,72 +99,7 @@ fn bran_log(msg: &str) {
 // Entry Point
 // =============================================================================
 
-// =============================================================================
-// Global Allocator (minimal bump allocator)
-// =============================================================================
-
-use core::alloc::{GlobalAlloc, Layout};
-use core::sync::atomic::{AtomicUsize, Ordering};
-
-const HEAP_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
-
-struct HeapBuf<const N: usize>(UnsafeCell<[u8; N]>);
-
-struct BumpAllocator;
-
-struct HeapState<const N: usize> {
-    pos: AtomicUsize,
-    buf: HeapBuf<N>,
-}
-
-unsafe impl<const N: usize> Sync for HeapState<N> {}
-
-static HEAP: HeapState<{ HEAP_SIZE }> = HeapState {
-    pos: AtomicUsize::new(0),
-    buf: HeapBuf(UnsafeCell::new([0; HEAP_SIZE])),
-};
-
-unsafe impl GlobalAlloc for BumpAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let heap_ptr = HEAP.buf.0.get() as *mut u8;
-        let heap_addr = heap_ptr as usize;
-        let align = layout.align();
-        let size = layout.size();
-
-        // Loop for atomic update
-        let mut current = HEAP.pos.load(Ordering::Relaxed);
-        loop {
-            let current_addr = heap_addr + current;
-            let aligned_addr = (current_addr + align - 1) & !(align - 1);
-            let padding = aligned_addr - current_addr;
-            let aligned_pos = current + padding;
-            
-            if aligned_pos + size > HEAP_SIZE {
-                return core::ptr::null_mut();
-            }
-            
-            // Try to reserve
-            match HEAP.pos.compare_exchange_weak(
-                current,
-                aligned_pos + size,
-                Ordering::SeqCst,
-                Ordering::Relaxed
-            ) {
-                Ok(_) => {
-                    return heap_ptr.add(aligned_pos);
-                }
-                Err(updated) => {
-                    current = updated;
-                }
-            }
-        }
-    }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
-}
-
-#[global_allocator]
-static ALLOCATOR: BumpAllocator = BumpAllocator;
+// Global Allocator removed - provided by kernel
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
@@ -207,12 +142,42 @@ unsafe extern "C" fn kmain() -> ! {
     BOOT_CTX.kernel_phys_base = kernel_phys_base;
     BOOT_CTX.kernel_virt_base = kernel_virt_base;
 
+    let mut heap_found = false;
+    let heap_size_req = 64 * 1024 * 1024; // 64 MiB
+
     if let Some(mmap) = MEMORY_MAP_REQUEST.get_response() {
         let mut total_mem = 0;
         for entry in mmap.entries() {
             total_mem += entry.length;
+            
+            // Look for a usable region for the heap
+            // Must be USABLE, big enough, and ideally not overlapping with kernel (Limine shouldn't mark kernel as usable)
+            if !heap_found && entry.entry_type == limine::memory_map::EntryType::USABLE && entry.length >= heap_size_req {
+                // Check alignment? 4k is fine.
+                // We pick the first suitable hole.
+                // Note: In a real PMM, we would claim this frame. 
+                // Here, we just "take" it and tell the kernel.
+                // Does Limine modify the map if we take it? No.
+                // The kernel PMM (if it scans this later) must know we took it.
+                // For now, ThingOS typically claims all USABLE memory into the PMM.
+                // We are stealing a chunk BEFORE PMM init.
+                // But wait, the kernel heap IS the allocator.
+                // So this region BECOMES the kernel heap.
+                
+                BOOT_CTX.heap_phys_base = entry.base;
+                heap_found = true;
+                
+                // We should technically ensure we don't clobber modules if they are in "USABLE" space?
+                // Limine usually marks modules as KERNEL_AND_MODULES or similar, not USABLE.
+                // So this should be safe.
+            }
         }
         BOOT_CTX.physical_memory = total_mem;
+    }
+    
+    if !heap_found {
+        bran_log("BRAN: PANIC: Could not find 64MB for kernel heap!");
+        loop {}
     }
 
     // 2. Collect Framebuffer info

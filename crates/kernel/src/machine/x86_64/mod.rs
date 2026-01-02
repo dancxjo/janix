@@ -199,7 +199,7 @@ impl Machine for ArchMachine {
         // Or if we are in kernel, we can use the PerCpu structure if we have a pointer.
         // Easier: use asm to write to gs:32.
         unsafe {
-            core::arch::asm!("mov {}, %gs:32", in(reg) top, options(att_syntax));
+            core::arch::asm!("mov gs:[32], {}", in(reg) top);
         }
         // Update TSS RSP0
         // We need to access the GDT/TSS.

@@ -91,11 +91,6 @@ impl ArchMachine {
              
              // Debug: Limit logging to initial setup
              // crate::serial::write(b"EXT: AArch64 Machine Initialized\n");
-             
-             // Critical: Initialize SP_EL1
-             let current_sp: u64;
-             core::arch::asm!("mov {}, sp", out(reg) current_sp);
-             core::arch::asm!("msr sp_el1, {}", in(reg) current_sp);
         }
         
         // 4. Initialize Hardware

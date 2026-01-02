@@ -18,6 +18,9 @@ static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 
 struct LoongArchMachine;
 
+static ARCH_MACHINE_IMPL: LoongArchMachine = LoongArchMachine;
+pub static ARCH_MACHINE: &'static dyn Machine = &ARCH_MACHINE_IMPL;
+
 impl Machine for LoongArchMachine {
     fn init(&self, info: crate::machine::PreBootInfo) {
         HHDM_OFFSET.store(info.hhdm_offset, Ordering::Relaxed);

@@ -13,12 +13,14 @@ global_asm!(include_str!("vectors.S"));
 
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange, Context};
 
-pub static ARCH_MACHINE: &'static dyn Machine = &LoongArchMachine;
+use core::sync::atomic::{AtomicU64, Ordering};
+static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 
 struct LoongArchMachine;
 
 impl Machine for LoongArchMachine {
-    fn init(&self, _info: crate::machine::PreBootInfo) {
+    fn init(&self, info: crate::machine::PreBootInfo) {
+        HHDM_OFFSET.store(info.hhdm_offset, Ordering::Relaxed);
         // Capture kernel page tables before any address space switching
         mmu::init();
         
@@ -101,7 +103,21 @@ impl Machine for LoongArchMachine {
     }
 
     fn virt_to_phys(&self, virt: u64) -> u64 {
-        virt
+        let hhdm = HHDM_OFFSET.load(Ordering::Relaxed);
+        if virt >= hhdm {
+            virt - hhdm
+        } else {
+            // Assume identities for now if not in HHDM?
+            // Or handle kernel virtual base.
+            // Limine maps kernel at 0xffffffff80000000
+            if virt >= 0xffffffff80000000 {
+                // We need kernel_phys_base too.
+                // For now, let's just return virt if we don't know.
+                virt
+            } else {
+                virt
+            }
+        }
     }
 
     fn set_kernel_stack(&self, top: u64) {

@@ -90,13 +90,15 @@ aarch64_vectors:
 
     ldp x18, x19, [sp, #144]
     ldr x9, [sp, #248]         // Saved SP (user sp_el0 or kernel sp)
-    ldr x10, [sp, #264]        // spsr_el1 (already restored to system reg, but read for check)
 
     // For EL0 returns, we must set sp_el0 instead of sp
+    // Read SPSR from system register (already restored earlier)
     // SPSR_EL1 bits 3:0: 0x0 = EL0, 0x4/0x5 = EL1
-    and x11, x10, #0xf
-    cbnz x11, 1f               // If returning to EL1, branch
+    mrs x10, spsr_el1
+    and x10, x10, #0xf
+    cbnz x10, 1f               // If returning to EL1, branch
     msr sp_el0, x9             // Restore user stack to SP_EL0
+    ldr x10, [sp, #80]         // Re-restore x10 from saved context
     b 2f
 1:  mov sp, x9                 // Restore kernel stack to SP
 2:

@@ -1,7 +1,7 @@
 use crate::qemu::QemuProcess;
 use crate::shared::{ANY_FAILURE, GLOBAL_LAST_ERROR, GLOBAL_QEMU};
 use anyhow::{anyhow, Context, Result};
-use cucumber::{given, World};
+use cucumber::{gherkin::Step, given, when, then, World};
 use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};

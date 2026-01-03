@@ -159,11 +159,11 @@ handle_irq_el1:
     mov sp, x0
 1:  RESTORE_CONTEXT
 
-handle_sync_el0:
-    // EL0 -> EL1: Use TPIDR_EL1 + 88 (kernel_stack_top)
+    handle_sync_el0:
+    // EL0 -> EL1: Use TPIDR_EL1 + 104 (kernel_stack_top)
     msr tpidrro_el0, x0
     mrs x0, tpidr_el1
-    ldr x0, [x0, #96] // kernel_stack_top
+    ldr x0, [x0, #104] // kernel_stack_top
     sub x0, x0, #288
     mrs x18, sp_el0  // Incoming SP is SP_EL0
     mov sp, x0
@@ -229,6 +229,9 @@ handle_irq_invalid: wfi; b handle_irq_invalid
 handle_fiq_invalid: wfi; b handle_fiq_invalid
 handle_serror_invalid: wfi; b handle_serror_invalid
 
+.global aarch64_return_from_trap
+.global aarch64_restore_context
 aarch64_return_from_trap:
     mov sp, x0
+aarch64_restore_context:
     RESTORE_CONTEXT

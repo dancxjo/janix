@@ -34,13 +34,14 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
     let esr: u64;
     asm!("mrs {}, esr_el1", out(reg) esr, options(nomem, preserves_flags));
     let ec = (esr >> 26) & 0x3f;
+    crate::serial::write(b" ec="); crate::serial::write_hex(esr); let far: u64; asm!("mrs {}, far_el1", out(reg) far, options(nomem, preserves_flags)); let elr: u64; asm!("mrs {}, elr_el1", out(reg) elr, options(nomem, preserves_flags)); crate::serial::write(b" far="); crate::serial::write_hex(far); crate::serial::write(b" elr="); crate::serial::write_hex(elr); crate::serial::write(b"\n");
 
     // Probes (Tightened)
     /*
     crate::serial::write(b" V="); crate::serial::write_num(vector);
     crate::serial::write(b" DAIF="); crate::serial::write_hex(ctx.spsr_el1 >> 6);
     crate::serial::write(b" ELR="); crate::serial::write_hex(ctx.elr_el1);
-    crate::serial::write(b"\n");
+    let far: u64; asm!("mrs {}, far_el1", out(reg) far, options(nomem, preserves_flags)); let elr: u64; asm!("mrs {}, elr_el1", out(reg) elr, options(nomem, preserves_flags)); crate::serial::write(b" far="); crate::serial::write_hex(far); crate::serial::write(b" elr="); crate::serial::write_hex(elr); crate::serial::write(b"\n");
     */
     
     // Default mappings
@@ -55,6 +56,7 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
             let esr: u64;
             asm!("mrs {}, esr_el1", out(reg) esr, options(nomem, preserves_flags));
             let ec = (esr >> 26) & 0x3f;
+    crate::serial::write(b" ec="); crate::serial::write_hex(esr); let far: u64; asm!("mrs {}, far_el1", out(reg) far, options(nomem, preserves_flags)); let elr: u64; asm!("mrs {}, elr_el1", out(reg) elr, options(nomem, preserves_flags)); crate::serial::write(b" far="); crate::serial::write_hex(far); crate::serial::write(b" elr="); crate::serial::write_hex(elr); crate::serial::write(b"\n");
             match ec {
                 0x15 => kind = FaultKind::Syscall,
                 0x20 | 0x21 => {
@@ -117,7 +119,7 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
             crate::serial::write_hex(vector);
             crate::serial::write(b" ADDR=");
             crate::serial::write_hex(addr.unwrap_or(0));
-            crate::serial::write(b"\n");
+            let far: u64; asm!("mrs {}, far_el1", out(reg) far, options(nomem, preserves_flags)); let elr: u64; asm!("mrs {}, elr_el1", out(reg) elr, options(nomem, preserves_flags)); crate::serial::write(b" far="); crate::serial::write_hex(far); crate::serial::write(b" elr="); crate::serial::write_hex(elr); crate::serial::write(b"\n");
             panic!("AArch64 Page Fault\n{:#?}", ctx);
         }
         FaultKind::Syscall => {
@@ -134,7 +136,7 @@ pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, ve
             crate::serial::write_hex(vector);
             crate::serial::write(b" ESR=");
             crate::serial::write_hex(esr);
-            crate::serial::write(b"\n");
+            let far: u64; asm!("mrs {}, far_el1", out(reg) far, options(nomem, preserves_flags)); let elr: u64; asm!("mrs {}, elr_el1", out(reg) elr, options(nomem, preserves_flags)); crate::serial::write(b" far="); crate::serial::write_hex(far); crate::serial::write(b" elr="); crate::serial::write_hex(elr); crate::serial::write(b"\n");
             panic!("Unhandled AArch64 Exception\n{:#?}", ctx);
         }
     }

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "Sprout starts and publishes its presence in the graph",
+  "step": {
+    "index": 0,
+    "text": "the system has reached \"userland start\"",
+    "status": "skipped",
+    "timestamp": "2026-01-03T19:43:16.908206525+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

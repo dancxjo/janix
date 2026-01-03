@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Graph as the system",
+  "scenario": "A task is linked to its owning process",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "skipped",
+    "timestamp": "2026-01-03T19:43:17.332415477+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

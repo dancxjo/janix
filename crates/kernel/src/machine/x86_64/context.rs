@@ -104,7 +104,9 @@ impl ArchTask for X86Arch {
             // "pop r15" -> rsp increments. So r15 is at current RSP.
             // So we just need to reserve space for 6 regs.
             sp -= 48; 
-            // We can leave them zeroed.
+            
+            // Padding for 16-byte alignment
+            sp -= 8;
             
             ctx.sp = sp;
         }

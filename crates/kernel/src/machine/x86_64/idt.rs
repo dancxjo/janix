@@ -37,7 +37,7 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 extern "x86-interrupt" fn gp_handler(
-    stack_frame: InterruptStackFrame, error_code: u64)
+    stack_frame: InterruptStackFrame, _error_code: u64)
 {
     crate::serial::write(b"GENERAL PROTECTION FAULT\n");
     panic!("GPF");
@@ -62,4 +62,3 @@ extern "x86-interrupt" fn ud_handler(
     crate::serial::write(b"INVALID OPCODE\n");
     panic!("UD");
 }
-

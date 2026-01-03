@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Demo app vertical slice",
+  "scenario": "logview exits without tearing down the world",
+  "step": {
+    "index": 0,
+    "text": "\"logview\" is running",
+    "status": "skipped",
+    "timestamp": "2026-01-03T19:43:17.121173850+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

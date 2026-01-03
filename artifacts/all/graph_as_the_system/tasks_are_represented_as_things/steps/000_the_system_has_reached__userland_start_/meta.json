@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Graph as the system",
+  "scenario": "Tasks are represented as Things",
+  "step": {
+    "index": 0,
+    "text": "the system has reached \"userland start\"",
+    "status": "skipped",
+    "timestamp": "2026-01-03T19:43:17.309021291+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

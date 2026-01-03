@@ -1,0 +1,7 @@
+{
+  "arch": "all",
+  "artifacts_dir": "all/demo_app_vertical_slice/logview_logs_through_syscall_and_appears_in_the_graph",
+  "feature": "Demo app vertical slice",
+  "scenario": "logview logs through syscall and appears in the graph",
+  "status": "pass"
+}

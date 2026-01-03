@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Bytespaces and address spaces",
+  "scenario": "Unmapping removes access",
+  "step": {
+    "index": 0,
+    "text": "\"logview\" has a mapped bytespace",
+    "status": "skipped",
+    "timestamp": "2026-01-03T19:43:17.545222339+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

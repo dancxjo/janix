@@ -1,0 +1,7 @@
+{
+  "arch": "all",
+  "artifacts_dir": "all/swappable_display_backends/limine_framebuffer_provider_exposes_a_primary_display_bytespace",
+  "feature": "Swappable display backends",
+  "scenario": "Limine framebuffer provider exposes a primary display bytespace",
+  "status": "pass"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Swappable display backends",
+  "scenario": "Limine framebuffer provider exposes a primary display bytespace",
+  "step": {
+    "index": 0,
+    "text": "I boot ThingOS on \"x86_64\" with display provider \"limine_fb\"",
+    "status": "skipped",
+    "timestamp": "2026-01-03T19:43:17.144554611+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -21,6 +21,7 @@ fn panic(info: &PanicInfo) -> ! {
 #[unsafe(no_mangle)]
 pub extern "C" fn _start(syscall_ptr: u64) -> ! {
     thing_std::init(syscall_ptr);
+    log_info("KERNEL: init task alive");
     log_info("SPROUT: I am alive!");
 
     loop {

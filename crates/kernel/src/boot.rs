@@ -250,7 +250,11 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         let elf_type = unsafe { *((virt_addr + 16) as *const u16) };
         log::klog(Level::Info, "ELF", &format!("header type: {}", elf_type));
 
-        let task_id = crate::sched::spawn_empty("sprout");
+        if name == "sprout" {
+            log::klog(Level::Info, "KERNEL", "init task designated");
+        }
+
+        let task_id = crate::sched::spawn_empty(name);
         log::klog(Level::Info, "BOOT", "task spawned");
 
         let final_entry: u64;

@@ -99,7 +99,7 @@ pub fn init() {
 
         // cpu.0
         let cpu = s.create_thing(sym::KIND_CPU).expect("create cpu");
-        // s.register_name(cpu, "cpu.0"); // Need symbol
+        // s.register_name(cpu, \"cpu.0\"); // Need symbol
         s.create_relationship(sym::PRED_CONTAINS, place_tasks, cpu).ok();
         
         // run_queue.0
@@ -117,45 +117,8 @@ pub fn init() {
 pub fn run() -> ! {
     log::klog(Level::Info, "SCHED", "entering loop");
     
-    // Debug: Check interrupt state BEFORE enabling
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        let sp: u64;
-        core::arch::asm!("mov {}, sp", out(reg) sp);
-        crate::serial::write(b"SCHED: SP=");
-        crate::serial::write_hex(sp);
-        crate::serial::write(b"\n");
-
-        
-        let cntv_ctl: u64;
-        core::arch::asm!("mrs {}, cntv_ctl_el0", out(reg) cntv_ctl);
-        crate::serial::write(b" CTL=");
-        crate::serial::write_hex(cntv_ctl);
-        
-        let cntv_tval: u64;
-        core::arch::asm!("mrs {}, cntv_tval_el0", out(reg) cntv_tval);
-        crate::serial::write(b" TVAL=");
-        crate::serial::write_hex(cntv_tval);
-        crate::serial::write(b"\n");
-        
-    }
-
-
     // Enable interrupts
     crate::serial::write(b"SCHED: calling irq_enable...\n");
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        let tpidr: u64;
-        core::arch::asm!("mrs {}, tpidr_el1", out(reg) tpidr);
-        crate::serial::write(b"SCHED: TPIDR_EL1=");
-        crate::serial::write_hex(tpidr);
-        if tpidr != 0 {
-            let exc_stack = *(tpidr as *const u64).add(9); // offset 72 = 9*8
-            crate::serial::write(b" EXC_STACK=");
-            crate::serial::write_hex(exc_stack);
-        }
-        crate::serial::write(b"\n");
-    }
     crate::machine::machine().irq_enable();
 
     let mut last_irq_check = 0;
@@ -174,14 +137,6 @@ pub fn run() -> ! {
 }
 
 pub fn yield_current() {
-    // For V0.3 Task 03, we rely on preemption (Timer).
-    // Manual yield via interrupt?
-    // Or call tick manually?
-    // tick expects SP. We can't easily call it from Rust without saving state.
-    // We need an arch-specific yield trampoline (int 0xXX or similar).
-    // For now, spin (busy wait) or just do nothing if we trust timer.
-    // "yield" usually means give up slice.
-    // Let's loop hint.
     core::hint::spin_loop(); 
 }
 
@@ -390,6 +345,8 @@ pub fn tick(current_sp: u64) -> u64 {
         sched.cpu.current_task = next;
         let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
         
+        /* 
+        // SILENCED LOGS
         crate::serial::write(b"TICK: switch ");
         if prev_task.0 != 0 {
              crate::serial::write_num(prev_task.0);
@@ -401,16 +358,14 @@ pub fn tick(current_sp: u64) -> u64 {
         crate::serial::write(b" sp=");
         crate::serial::write_hex(t.stack_ptr);
 
-        // Probe P4: Stack Sanity Check
         if t.stack_ptr > t.stack_top {
              crate::serial::write(b" [STACK_OVERFLOW_DETECTED]");
         }
-        // Check alignment
         if t.stack_ptr & 0xf != 0 {
              crate::serial::write(b" [SP_MISALIGN]");
         }
-
         crate::serial::write(b"\n");
+        */
         
         t.state = TaskState::Running;
         t.first_run = false; // Mark as having started execution

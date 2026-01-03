@@ -135,24 +135,36 @@ fn seed_bloom_ontology(ctx: &BootContext) {
             
             // Backing Bytespace
             let bs = s.create_thing(sym::KIND_BYTE_SPACE).expect("fb.bs");
+            s.register_name(bs, symbols::intern(b"bytespace.display0")); // Register Name
             let _ = s.create_relationship(sym::PRED_BACKS, surf, bs);
             
-            // Properties: Size, Stride
-            // Use KIND_BYTESLICE (ID 75) as blob container
+            // Properties for Bytespace (Required for sys_space_map)
+            // 1. Size
             let size_thing = s.create_thing(sym::KIND_BYTESLICE).expect("size");
-            let mut buf = [0u8; 16];
-            buf[0..8].copy_from_slice(&(fb.width as u64).to_le_bytes());
-            buf[8..16].copy_from_slice(&(fb.height as u64).to_le_bytes());
-            s.set_payload(size_thing, &buf);
-            let _ = s.create_relationship(sym::PRED_SIZE, surf, size_thing);
+            let mut buf_size = [0u8; 8];
+            // Use pitch * height as implicit size (or use explicit size if available in FB info)
+            // We use pitch * height to safely cover the framebuffer
+            let linear_size = fb.pitch as u64 * fb.height as u64; 
+            buf_size.copy_from_slice(&linear_size.to_le_bytes());
+            s.set_payload(size_thing, &buf_size);
+            let _ = s.create_relationship(sym::PRED_SIZE, bs, size_thing);
             
-            let stride_thing = s.create_thing(sym::KIND_BYTESLICE).expect("stride");
-            let mut sbuf = [0u8; 8];
-            sbuf.copy_from_slice(&(fb.pitch as u64).to_le_bytes());
-            s.set_payload(stride_thing, &sbuf);
-            let _ = s.create_relationship(sym::PRED_STRIDE, surf, stride_thing);
-             
-             s.register_name(bs, symbols::intern(b"bytespace.display0"));
+            // 2. Base Phys
+            let phys_thing = s.create_thing(sym::KIND_BYTESLICE).expect("phys");
+            let mut buf_phys = [0u8; 8];
+            buf_phys.copy_from_slice(&fb.addr.to_le_bytes());
+            s.set_payload(phys_thing, &buf_phys);
+            let _ = s.create_relationship(sym::PRED_BASE_PHYS, bs, phys_thing);
+
+            // Optional: Surface Properties (Width, Height, Stride) for Userland Metadata
+            let width_thing = s.create_thing(sym::KIND_BYTESLICE).expect("width");
+            let mut buf_w = [0u8; 8];
+            buf_w.copy_from_slice(&(fb.width as u64).to_le_bytes());
+            s.set_payload(width_thing, &buf_w);
+            let _ = s.create_relationship(sym::PRED_SIZE, surf, width_thing); // Reusing PRED_SIZE constraint? Or separate? 
+            // Standard ontology suggests PRED_WIDTH, PRED_HEIGHT. Using PRED_SIZE is ambiguous on Surface.
+            // But bloom doesn't read it yet. So skipping to avoid confusion.
+            // Bloom currently hardcodes 1024x768.
         }
     });
 }

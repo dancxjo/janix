@@ -51,7 +51,7 @@ impl QemuProcess {
 
         // Check for /dev/kvm and architecture match
         let host_arch = std::env::consts::ARCH;
-        if std::path::Path::new("/dev/kvm").exists() && host_arch == arch {
+        if false /* std::path::Path::new("/dev/kvm").exists() && host_arch == arch */ {
             println!(
                 "Probing KVM: available and arch matches ({}). Using -accel kvm",
                 host_arch

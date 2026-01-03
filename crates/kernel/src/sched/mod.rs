@@ -1,22 +1,27 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
+
+use abi::types::WakeReason;
 use crate::log::{self, Level};
+use crate::memory::space::AddressSpace;
+use crate::watch;
 use graph::store;
 use graph::symbols::sym;
-use crate::memory::space::AddressSpace;
-use alloc::sync::Arc;
 
 pub mod task;
 pub mod run_queue;
 pub mod percpu;
 
 use task::{Task, TaskId, TaskState};
+pub use task::BlockReason;
 use run_queue::RunQueue;
 use percpu::PerCpu;
 
 pub(crate) static SCHEDULER: Mutex<Option<Scheduler>> = Mutex::new(None);
 
-struct Scheduler {
+pub(crate) struct Scheduler {
     pub(crate) tasks: Vec<Task>,
     pub(crate) run_queue: RunQueue,
     pub(crate) cpu: PerCpu,
@@ -33,7 +38,7 @@ impl Scheduler {
         }
     }
 
-    fn spawn(&mut self, name: &'static str, as_opt: Option<Arc<AddressSpace>>) -> TaskId {
+    pub(crate) fn spawn(&mut self, name: &'static str, as_opt: Option<Arc<AddressSpace>>) -> TaskId {
         log::klog(Level::Info, "SCHED", &alloc::format!("spawn: name={} start", name));
         let id = TaskId(self.next_id);
         self.next_id += 1;
@@ -171,9 +176,9 @@ pub fn run() -> ! {
 pub fn yield_current() {
     // For V0.3 Task 03, we rely on preemption (Timer).
     // Manual yield via interrupt?
-    // Or call `tick` manually?
+    // Or call tick manually?
     // tick expects SP. We can't easily call it from Rust without saving state.
-    // We need an arch-specific `yield` trampoline (int 0xXX or similar).
+    // We need an arch-specific yield trampoline (int 0xXX or similar).
     // For now, spin (busy wait) or just do nothing if we trust timer.
     // "yield" usually means give up slice.
     // Let's loop hint.
@@ -231,6 +236,9 @@ pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
 }
 
 pub fn exit_current_task(_code: i32) -> ! {
+    if let Some(task) = current_task_handle() {
+        crate::watch::unregister_wait(task);
+    }
     loop { crate::machine::idle(); }
 }
 
@@ -265,6 +273,23 @@ pub fn current_task_id() -> Option<abi::ids::ThingId> {
         } else {
             None
         }
+    };
+    crate::machine::irq_restore(irq_token);
+    res
+}
+
+pub fn current_task_handle() -> Option<TaskId> {
+    let irq_token = crate::machine::irq_disable();
+    let res = {
+        let guard = SCHEDULER.lock();
+        guard.as_ref().and_then(|sched| {
+            let tid = sched.cpu.current_task;
+            if tid.0 != 0 {
+                Some(tid)
+            } else {
+                None
+            }
+        })
     };
     crate::machine::irq_restore(irq_token);
     res
@@ -311,7 +336,6 @@ pub fn spawn_empty(name: &'static str) -> TaskId {
 }
 
 
-use core::sync::atomic::{AtomicU64, Ordering};
 pub static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 
 pub fn tick(current_sp: u64) -> u64 {
@@ -328,10 +352,15 @@ pub fn tick(current_sp: u64) -> u64 {
     sched.cpu.in_switch = true;
 
     // 1. Inc timer ticks
-    let ticks = TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
-    if ticks == 0 {
+    let ticks = TIMER_TICKS.fetch_add(1, Ordering::Relaxed) + 1;
+    if ticks == 1 {
         crate::serial::write(b"SCHED: first tick!\n");
     }
+
+    // 1.5 handle wait timeouts
+    let mut wake_list = watch::WakeList::new();
+    watch::check_timeouts(ticks, &mut wake_list);
+    apply_wake_list(sched, &wake_list);
     
     let prev_task = sched.cpu.current_task;
 
@@ -344,11 +373,15 @@ pub fn tick(current_sp: u64) -> u64 {
             if !t.first_run {
                 t.stack_ptr = current_sp;
             }
-            // State: Running -> Ready
-             t.state = TaskState::Ready;
-             // Enqueue
-             let thing = t.thing;
-             sched.run_queue.push_back(prev_task, thing);
+            match t.state {
+                TaskState::Blocked(_) | TaskState::Dead => {}
+                _ => {
+                    t.state = TaskState::Ready;
+                    // Enqueue
+                    let thing = t.thing;
+                    sched.run_queue.push_back(prev_task, thing);
+                }
+            }
         }
     }
     
@@ -398,4 +431,70 @@ pub fn tick(current_sp: u64) -> u64 {
         sched.cpu.in_switch = false;
         0
     }
+}
+
+fn apply_wake_list(sched: &mut Scheduler, wakes: &watch::WakeList) {
+    for (task_id, reason) in wakes.iter() {
+        wake_task_locked(sched, task_id, reason);
+    }
+}
+
+fn wake_task_locked(sched: &mut Scheduler, task_id: TaskId, reason: WakeReason) {
+    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == task_id) {
+        task.wake_reason = Some(reason);
+        if matches!(task.state, TaskState::Blocked(_)) {
+            task.state = TaskState::Ready;
+            let thing = task.thing;
+            sched.run_queue.push_back(task_id, thing);
+        }
+    }
+}
+
+pub fn wake_task(task_id: TaskId, reason: WakeReason) {
+    let irq_token = crate::machine::irq_disable();
+    {
+        let mut guard = SCHEDULER.lock();
+        if let Some(sched) = guard.as_mut() {
+            wake_task_locked(sched, task_id, reason);
+        }
+    }
+    crate::machine::irq_restore(irq_token);
+}
+
+pub fn wake_from_watch_list(list: &watch::WakeList) {
+    if list.is_empty() {
+        return;
+    }
+    let irq_token = crate::machine::irq_disable();
+    {
+        let mut guard = SCHEDULER.lock();
+        if let Some(sched) = guard.as_mut() {
+            apply_wake_list(sched, list);
+        }
+    }
+    crate::machine::irq_restore(irq_token);
+}
+
+pub fn block_current(reason: BlockReason) -> Option<TaskId> {
+    let irq_token = crate::machine::irq_disable();
+    let res = {
+        let mut guard = SCHEDULER.lock();
+        let sched = guard.as_mut()?;
+        let curr = sched.cpu.current_task;
+        if curr.0 == 0 {
+            None
+        } else {
+            if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == curr) {
+                task.state = TaskState::Blocked(reason);
+                task.wake_reason = None;
+            }
+            Some(curr)
+        }
+    };
+    crate::machine::irq_restore(irq_token);
+    res
+}
+
+pub fn take_wake_reason() -> Option<WakeReason> {
+    with_current_task(|t| t.wake_reason.take()).flatten()
 }

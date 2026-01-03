@@ -1,6 +1,6 @@
 //! Syscall Dispatch Router
 
-use crate::syscall::{cap, graph, log, memory, watch, surface};
+use crate::syscall::{cap, graph, log, memory, surface, wait, watch};
 use crate::syscall::cap::CapOp;
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
@@ -133,6 +133,14 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
              watch::sys_watch_poll(a0, a1, a2)
         },
 
+        // === Wait ===
+        nr::SYS_WAIT => {
+            if let Err(e) = cap::check(CapOp::GraphWatch, None) {
+                return e;
+            }
+            wait::sys_wait(a0, a1, a2, a3)
+        },
+
         // === Input ===
         nr::SYS_INPUT_READ => { 
              let buf = a0 as *mut u8;
@@ -143,11 +151,10 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
              }
         },
 
-        // === Display ===
+        // === Display (Deprecated) ===
         nr::SYS_DISPLAY_PRIMARY => {
-             let ptr = a0 as *mut abi::display::DisplayInfo;
-             let len = a1 as usize;
-             crate::syscall::display::sys_display_primary(ptr, len)
+             // Deprecated in favor of Graph Discovery
+             SyscallResult::new(abi::syscall::err::ENOSYS, 0, 0)
         },
 
         // === Graphics ===

@@ -148,9 +148,9 @@ core::arch::global_asm!(
     ".section .text",
     ".global _start",
     "_start:",
-    "la.global $sp, BOOT_STACK",
-    "li.d $t0, 262144",
-    "add.d $sp, $sp, $t0",
+    "la.global , BOOT_STACK",
+    "li.d , 262144",
+    "add.d , , ",
     "b kmain"
 );
 
@@ -173,7 +173,7 @@ unsafe extern "C" fn kmain() -> ! {
 
     // Initialize Machine interface before ANY logging
     // This maps UART MMIO on AArch64/RISC-V, making serial output safe
-    kernel::pre_boot(PreBootInfo {
+    kernel::boot::pre_boot(PreBootInfo {
         hhdm_offset,
         kernel_phys_base,
         kernel_virt_base,
@@ -244,35 +244,5 @@ unsafe extern "C" fn kmain() -> ! {
     bran_log("BRAN: handoff to kernel");
 
     // Hand off to kernel - never returns
-    unsafe { kernel::boot(&mut BOOT_CTX) }
-}
-
-use core::fmt::{self, Write};
-
-struct SerialWriter;
-
-impl fmt::Write for SerialWriter {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for b in s.bytes() {
-            early_putc(b);
-        }
-        Ok(())
-    }
-}
-
-#[panic_handler]
-fn rust_panic(info: &core::panic::PanicInfo) -> ! {
-    let mut writer = SerialWriter;
-    let _ = writeln!(writer, "\nBRAN: PANIC: {}", info);
-
-    loop {
-        unsafe {
-            #[cfg(target_arch = "x86_64")]
-            asm!("cli; hlt");
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-            asm!("wfi");
-            #[cfg(target_arch = "loongarch64")]
-            asm!("idle 0");
-        }
-    }
+    unsafe { kernel::boot::boot(&mut BOOT_CTX) }
 }

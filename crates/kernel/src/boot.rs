@@ -1,30 +1,21 @@
-//! Boot sequence
-//!
-//! Orchestrates kernel initialization in strict order.
+use alloc::string::String;
+use alloc::vec::Vec;
+use crate::machine::{Machine, PreBootInfo};
 
-use crate::log::{self, Level};
-use crate::{machine, sched, syscall};
-use crate::machine::{ARCH_MACHINE, PreBootInfo};
-use crate::memory::bytespace::Bytespace;
-use crate::memory::map::MapPerms;
-use alloc::format;
-
-/// Information about a boot module
 #[derive(Clone, Copy)]
-pub struct ModuleInfo {
-    pub index: usize,
-    pub path: &'static str,
-    pub phys_addr: u64,
-    pub size: u64,
+pub struct BootContext {
+    pub hhdm_offset: u64,
+    pub physical_memory: u64,
+    pub cmdline: Option<&'static str>,
+    pub framebuffer: Option<FramebufferInfo>,
+    pub modules: &'static [ModuleInfo],
+    pub early_putc: Option<fn(u8)>,
+    pub kernel_phys_base: u64,
+    pub kernel_virt_base: u64,
+    pub heap_phys_base: u64,
 }
 
-/// A mapped module ready for reading
-pub struct MappedModule {
-    pub virt_addr: *const u8,
-    pub size: usize,
-}
-
-/// Information about the framebuffer provided by bootloader
+#[derive(Clone, Copy, Debug)]
 pub struct FramebufferInfo {
     pub addr: u64,
     pub width: u64,
@@ -33,562 +24,135 @@ pub struct FramebufferInfo {
     pub bpp: u16,
 }
 
-/// Bag of facts provided by the bootloader
-pub struct BootContext {
-    pub hhdm_offset: u64,
-    pub physical_memory: u64,
-    pub cmdline: Option<&'static str>,
-    pub framebuffer: Option<FramebufferInfo>,
-    pub modules: &'static [ModuleInfo],
-    /// Optional early serial output function provided by Bran
-    pub early_putc: Option<fn(u8)>,
-    /// Kernel physical load address
-    pub kernel_phys_base: u64,
-    /// Kernel virtual base address
-    pub kernel_virt_base: u64,
-    /// Physical address of the pre-reserved kernel heap
-    pub heap_phys_base: u64,
+#[derive(Clone, Copy, Debug)]
+pub struct ModuleInfo {
+    pub index: usize,
+    pub path: &'static str,
+    pub phys_addr: u64,
+    pub size: u64,
 }
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
-static MACHINE_INSTALLED: AtomicBool = AtomicBool::new(false);
-static mut GLOBAL_BOOT_CONTEXT: Option<&'static BootContext> = None;
+static mut BOOT_CTX: Option<BootContext> = None;
 
 pub fn get_boot_ctx() -> &'static BootContext {
-    unsafe { GLOBAL_BOOT_CONTEXT.expect("BootContext not initialized") }
+    unsafe { BOOT_CTX.as_ref().expect("boot ctx not init") }
 }
 
-/// Pre-boot initialization for early console output.
-pub fn pre_boot(info: PreBootInfo) {
-    if MACHINE_INSTALLED.swap(true, Ordering::SeqCst) {
-        return; // Already installed
-    }
-    unsafe { machine::install(ARCH_MACHINE) };
-    ARCH_MACHINE.init(info);
-    crate::serial::init();
-}
-
-/// Main kernel entry point
-pub unsafe fn boot(ctx: *mut BootContext) -> ! {
-    let ctx: &'static mut BootContext = unsafe { &mut *ctx };
-    
-    // Phase 0: Install machine backend
-    pre_boot(PreBootInfo {
-        hhdm_offset: ctx.hhdm_offset,
-        kernel_phys_base: ctx.kernel_phys_base,
-        kernel_virt_base: ctx.kernel_virt_base,
-    });
-    
-    // Phase 0.5: Initialize Kernel Heap
-    let heap_phys = ctx.heap_phys_base;
-    let heap_virt = ctx.hhdm_offset + heap_phys;
-    let heap_size = 64 * 1024 * 1024;
-    
-    unsafe {
-        crate::memory::heap::init(crate::memory::heap::HeapConfig {
-            phys_base: heap_phys,
-            virt_base: heap_virt,
-            size: heap_size as usize,
-        }).expect("Heap Init Failed");
-    }
-
-    // Initialize Platform
-    let _ = crate::platform::init();
-    crate::serial::write(b"KERNEL: handoff accepted\n");
-
-    // Phase 1: Initialize logging
-    log::init(ctx);
-    
-    // Phase 2: Initialize graph store
-    graph::init();
-    log::klog(Level::Info, "KERNEL", "graph init");
-
-    // Phase 3.5: Seed core ontology
-    graph::seed_minimal();
-    seed_permissions();
-    log::klog(Level::Info, "KERNEL", "graph seeded");
-    
-    for name in &["place.root", "place.devices", "place.tasks", "place.input", "scheduler.main"] {
-        log::klog(Level::Info, "GRAPH", &format!("register name: {}", name));
-    }
-
-    // Phase 3.6: Verify Graph
-    if let Err(e) = graph::debug_dump_roots() {
-         crate::serial::write(b"GRAPH VERIFICATION FAILED: ");
-         crate::serial::write(e.as_bytes());
-         crate::serial::write(b"\n");
-    } else {
-         log::klog(Level::Info, "GRAPH", "verification passed");
-    }
-
-    // Phase 3.7: Register Kernel Heap to Graph
-    {
-         let heap_bs = Bytespace::new_kernel_heap(ctx.heap_phys_base, heap_size);
-         graph::store::thing_register_name(heap_bs.id, graph::symbols::intern(b"bytespace.heap0"));
-    }
-
-    // Phase 3.7: Seed Capability Ontology
-    seed_capabilities();
-    log::klog(Level::Info, "BOOT", "capability ontology seeded");
-
-    // Save context for syscalls
-    unsafe { GLOBAL_BOOT_CONTEXT = Some(ctx) };
-
-    // Phase 4: Initialize syscall dispatch
-    syscall::init();
-
-    // Phase 5: Initialize scheduler
-    sched::init();
-
-    // Framebuffer
-    if let Some(fb) = &ctx.framebuffer {
-        log::klog(Level::Info, "BOOT", "creating framebuffer bytespace");
-        let size = (fb.pitch * fb.height) as usize;
-        let bs = Bytespace::new_framebuffer(fb.addr, size);
-        
-        // Register Name
-        graph::store::thing_register_name(bs.id, graph::symbols::intern(b"bytespace.framebuffer0"));
-        
-        seed_bloom_ontology(bs.id, fb);
-        
-        // Register Primary Display for Syscall
-        let display_info = abi::display::DisplayInfo {
-            bytespace: bs.id,
-            byte_len: size as u64,
-            width: fb.width as u32,
-            height: fb.height as u32,
-            pitch: fb.pitch as u32,
-            format: abi::display::PixelFormat::XRGB8888 as u32, 
-        };
-        crate::display::set_primary(display_info);
-    }
-
-    // Phase 6: Modules and Sprout
-    log::klog(Level::Info, "BOOT", "scanning modules...");
-    let modules = ctx.modules;
-    for module in modules {
-        log::klog(Level::Info, "KERNEL", &format!("creating bytespace for module: {}", module.path));
-        let bs = Bytespace::new_module(module.phys_addr, module.size as usize);
-        
-        if module.path.ends_with("sprout") || module.path.ends_with("bloom")
-            || module.path.ends_with("log_smoke") || module.path.ends_with("logview")
-        {
-             log::klog(Level::Info, "BOOT", &format!("MATCHED module: {}", module.path));
-             spawn_module(ctx, module, &bs);
-        } else {
-             log::klog(Level::Info, "BOOT", &format!("SKIPPING module: {}", module.path));
-        }
-    }
-    
-    // Phase 7: Enter scheduler loop
-    sched::run()
-}
-
-/// Spawn a module by name from the boot modules.
-pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Bytespace) {
-    let name = info.path;
-    log::klog(Level::Info, "KERNEL", &format!("spawning module: {}", name));
-
-    // 1. Get Base
-    let virt_addr = backing.backing_ptr().expect("module backing generic") as u64;
-
-    if info.size >= 64 {
-        let entry_point = unsafe {
-            let ptr = (virt_addr + 24) as *const u64;
-            *ptr
-        };
-        log::klog(Level::Info, "KERNEL", &format!("sprout entry point: {:#x}", entry_point));
-
-        let elf_type = unsafe { *((virt_addr + 16) as *const u16) };
-
-        if name.ends_with("sprout") {
-            log::klog(Level::Info, "KERNEL", "init task designated");
-        }
-
-        let task_id = crate::sched::spawn_empty(name);
-        log::klog(Level::Info, "BOOT", "task spawned");
-
-        let final_entry: u64;
-        let image_base_virt: u64;
-        let image_size: usize;
-
-        if elf_type == 3 { // ET_DYN (PIE)
-            let ph_off = unsafe { *((virt_addr + 32) as *const u64) };
-            let ph_num = unsafe { *((virt_addr + 56) as *const u16) };
-            let ph_size = unsafe { *((virt_addr + 54) as *const u16) };
-
-            // 1. Scan for Size and Min Vaddr
-            let mut min_vaddr = u64::MAX;
-            let mut max_vaddr = 0u64;
-
-            for i in 0..ph_num {
-                 let ph_addr = virt_addr + ph_off + (i as u64 * ph_size as u64);
-                 let p_type = unsafe { *(ph_addr as *const u32) };
-                 if p_type == 1 { // PT_LOAD
-                     let p_vaddr = unsafe { *((ph_addr + 16) as *const u64) };
-                     let p_memsz = unsafe { *((ph_addr + 40) as *const u64) };
-                     if p_vaddr < min_vaddr { min_vaddr = p_vaddr; }
-                     if p_vaddr + p_memsz > max_vaddr { max_vaddr = p_vaddr + p_memsz; }
-                 }
-            }
-
-            let total_size = (max_vaddr - min_vaddr + 4095) & !4095;
-            image_size = total_size as usize;
-
-            let image_bs = Bytespace::new_ram(total_size as usize).expect("Sprout Image Alloc");
-            let buffer_base = image_bs.backing_ptr().expect("image backing generic") as u64;
-            
-            // Relocate to User Address!
-            let user_image_base = 0x0020_0000;
-            
-            final_entry = user_image_base + (entry_point - min_vaddr);
-            image_base_virt = user_image_base;
-
-            log::klog(Level::Info, "ELF", &format!("loading PIE into bytespace at {:#x} (virt {:#x}) size {:#x}", buffer_base, user_image_base, total_size));
-
-            // Copy LOAD segments
-            for i in 0..ph_num {
-                let ph_addr = virt_addr + ph_off + (i as u64 * ph_size as u64);
-                let p_type = unsafe { *(ph_addr as *const u32) };
-                if p_type == 1 { // PT_LOAD
-                    let p_offset = unsafe { *((ph_addr + 8) as *const u64) };
-                    let p_vaddr = unsafe { *((ph_addr + 16) as *const u64) };
-                    let p_filesz = unsafe { *((ph_addr + 32) as *const u64) };
-                    let p_memsz = unsafe { *((ph_addr + 40) as *const u64) };
-                    
-                    let target_offset = p_vaddr - min_vaddr;
-
-                    unsafe {
-                        core::ptr::copy(
-                            (virt_addr + p_offset) as *const u8,
-                            (buffer_base + target_offset) as *mut u8,
-                            p_filesz as usize
-                        );
-                        if p_memsz > p_filesz {
-                            core::ptr::write_bytes(
-                                (buffer_base + target_offset + p_filesz) as *mut u8,
-                                0,
-                                (p_memsz - p_filesz) as usize
-                            );
-                        }
-                    }
-                }
-            }
-
-            // Relocations
-            let mut rela_vaddr = 0u64;
-            let mut rela_size = 0u64;
-            let mut rela_ent = 24u64;
-
-            for i in 0..ph_num {
-                let ph_addr = virt_addr + ph_off + (i as u64 * ph_size as u64);
-                let p_type = unsafe { *(ph_addr as *const u32) };
-                if p_type == 2 { // PT_DYNAMIC
-                    let p_offset = unsafe { *((ph_addr + 8) as *const u64) };
-                    let p_filesz = unsafe { *((ph_addr + 32) as *const u64) };
-                    let dynamic_addr = virt_addr + p_offset;
-                    for j in 0..(p_filesz / 16) {
-                        let tag = unsafe { *((dynamic_addr + j * 16) as *const u64) };
-                        let val = unsafe { *((dynamic_addr + j * 16 + 8) as *const u64) };
-                        match tag {
-                            7 => rela_vaddr = val, // DT_RELA
-                            8 => rela_size = val,  // DT_RELASZ
-                            9 => rela_ent = val,   // DT_RELAENT
-                            0 => break,
-                            _ => {}
-                        }
-                    }
-                    break;
-                }
-            }
-
-            if rela_vaddr != 0 && rela_size > 0 {
-                // Apply Relocs
-                 let mut rela_file_off = 0u64;
-                 for i in 0..ph_num {
-                     let ph_addr = virt_addr + ph_off + (i as u64 * ph_size as u64);
-                     let p_type = unsafe { *(ph_addr as *const u32) };
-                     if p_type == 1 { // PT_LOAD
-                         let p_vaddr = unsafe { *((ph_addr + 16) as *const u64) };
-                         let p_memsz = unsafe { *((ph_addr + 40) as *const u64) };
-                         let p_offset = unsafe { *((ph_addr + 8) as *const u64) };
-                         if rela_vaddr >= p_vaddr && rela_vaddr < p_vaddr + p_memsz {
-                             rela_file_off = p_offset + (rela_vaddr - p_vaddr);
-                             break;
-                         }
-                     }
-                 }
-
-                 if rela_file_off != 0 {
-                     let rela_data_ptr = (virt_addr + rela_file_off) as *const u8;
-                     for k in 0..(rela_size / rela_ent) {
-                         let entry_ptr = unsafe { rela_data_ptr.add((k * rela_ent) as usize) };
-                         let r_offset = unsafe { *(entry_ptr as *const u64) };
-                         let r_info = unsafe { *((entry_ptr.add(8)) as *const u64) };
-                         let r_addend = unsafe { *((entry_ptr.add(16)) as *const i64) };
-                         let r_type = r_info & 0xffffffff;
-                         
-                         #[cfg(target_arch = "x86_64")]
-                         let is_relative = r_type == 8;
-                         #[cfg(target_arch = "aarch64")]
-                         let is_relative = r_type == 1027;
-                         #[cfg(target_arch = "riscv64")]
-                         let is_relative = r_type == 3;
-                         #[cfg(target_arch = "loongarch64")]
-                         let is_relative = r_type == 3;
-
-                         if is_relative {
-                             // Correct Relocation:
-                             // Target Address in Buffer = buffer_base + r_offset
-                             // Value to Write = user_image_base + r_addend
-                             let target_ptr = (buffer_base + r_offset) as *mut u64;
-                             unsafe { *target_ptr = user_image_base.wrapping_add(r_addend as u64); }
-                         }
-                     }
-                 }
-            }
-            
-            // Map the image Bytespace into the Task
-            crate::sched::with_task(task_id, |t| {
-                 t.address_space.as_ref().map_bytespace_shared(image_base_virt, &image_bs, 0, image_size, MapPerms::READ | MapPerms::WRITE | MapPerms::EXEC | MapPerms::USER).unwrap();
-            });
-
-        } else {
-             panic!("Sprout must be PIE");
-        }
-
-        // Dedicated Stack Bytespace
-        let stack_size = 64 * 1024;
-        let stack_bs = Bytespace::new_ram(stack_size).expect("Sprout Stack Alloc");
-        
-        let stack_base = 0x8000_0000; // 2GB
-        let stack_top = (stack_base + stack_size as u64) & !0xf;
-        
-        crate::sched::with_task(task_id, |t| {
-             t.address_space.as_ref().map_bytespace_shared(stack_base, &stack_bs, 0, stack_size, MapPerms::READ | MapPerms::WRITE | MapPerms::USER).unwrap();
-        });
-
-        // Heap Bytespace
-        let heap_size = 4 * 1024;
-        let heap_bs = Bytespace::new_ram(heap_size).expect("Sprout Heap Alloc");
-        let heap_base = 0x9000_0000; // 2.25GB? Or far away.
-
-        crate::sched::with_task(task_id, |t| {
-             t.address_space.as_ref().map_bytespace_shared(heap_base, &heap_bs, 0, heap_size, MapPerms::READ | MapPerms::WRITE | MapPerms::USER).unwrap();
-        });
-
-        // Configure Context (Entry/Stack)
-        crate::log::klog(crate::log::Level::Info, "BOOT", &alloc::format!("Sprout entry: {:x} stack_top: {:x}", final_entry, stack_top));
-
-        crate::sched::configure_task_memory(
-            task_id, 
-            (image_base_virt, image_size as u64),
-            (stack_base, stack_size as u64),
-            (heap_base, heap_size as u64, heap_base)
-        );
-
-        crate::sched::with_task(task_id, |_t| {
-             crate::log::klog(crate::log::Level::Info, "BOOT", &alloc::format!("Sprout User Stack: {:x}", stack_top));
-        });
-        
-        crate::sched::configure_task_context(task_id, final_entry, stack_top);
-
-        // Grant Initial Capabilities
-        crate::log::klog(Level::Info, "BOOT", "granting initial capabilities...");
-        let task_thing_id = crate::sched::with_task(task_id, |t| t.thing).expect("task missing");
-        grant_initial_caps(task_thing_id);
-
-        log::klog(Level::Info, "SPROUT", &format!("task ready {:#x} stack {:#x}", final_entry, stack_top));
-    }
-}
-
-pub fn spawn_module_by_name(ctx: &'static BootContext, name: &str) {
-    for module in ctx.modules {
-        if module.path.ends_with(name) {
-             let bs = Bytespace::new_module(module.phys_addr, module.size as usize);
-             spawn_module(ctx, module, &bs);
+pub fn spawn_module_by_name(ctx: &BootContext, name: &str) {
+    for m in ctx.modules {
+        if m.path == name || m.path.contains(name) {
+             crate::proc::spawn_kernel_module(m).ok();
              return;
         }
     }
-    crate::log::klog(crate::log::Level::Warn, "SYSCALL", &alloc::format!("module '{}' not found", name));
 }
 
-fn seed_capabilities() {
-    use graph::symbols;
-    use graph::store;
-
-    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: start");
-    let _ = store::thing_create(symbols::intern(b"kind.capability")); 
-    
-    // Ensure Permission Symbols are interned
-    let perms = [
-        "perm.log", "perm.create", "perm.link", "perm.unlink", "perm.read", "perm.watch", "perm.mem", "perm.dictator"
-    ];
-    
-    let kind_place = symbols::intern(b"kind.place");
-    let place_perms = store::thing_create(kind_place);
-    store::thing_register_name(place_perms, symbols::intern(b"place.permissions"));
-    
-    let root_sym = symbols::intern(b"place.root");
-    let root = store::find_thing_by_name(root_sym).expect("place.root missing"); 
-    let pred_contains = symbols::intern(b"predicate.contains");
-    store::relationship_create(pred_contains, root, place_perms);
-
-    let place_logs = store::thing_create(kind_place);
-    store::thing_register_name(place_logs, symbols::intern(b"place.logs"));
-    store::relationship_create(pred_contains, root, place_logs);
-
-    let place_reports = store::thing_create(kind_place);
-    store::thing_register_name(place_reports, symbols::intern(b"place.reports"));
-    store::relationship_create(pred_contains, root, place_reports);
-
-    let place_snapshots = store::thing_create(kind_place);
-    store::thing_register_name(place_snapshots, symbols::intern(b"place.snapshots"));
-    store::relationship_create(pred_contains, root, place_snapshots);
-    
-    let kind_perm = symbols::intern(b"kind.permission");
-    
-    for p in perms {
-        let sym = symbols::intern(p.as_bytes());
-        let perm_thing = store::thing_create(kind_perm);
-        store::thing_register_name(perm_thing, sym);
-        store::relationship_create(pred_contains, place_perms, perm_thing);
+pub fn pre_boot(info: PreBootInfo) {
+    unsafe {
+        crate::machine::install(
+            #[cfg(target_arch = "x86_64")]
+            crate::machine::x86_64::ARCH_MACHINE,
+            #[cfg(target_arch = "aarch64")]
+            crate::machine::aarch64::ARCH_MACHINE,
+            #[cfg(target_arch = "riscv64")]
+            crate::machine::riscv64::ARCH_MACHINE,
+            #[cfg(target_arch = "loongarch64")]
+            crate::machine::loongarch64::ARCH_MACHINE,
+        );
     }
+    crate::machine::machine().init(info);
 }
 
-fn grant_initial_caps(task_id: abi::ids::ThingId) {
-    use graph::symbols;
-    use graph::store;
-    use abi::ids::ThingId;
+pub unsafe fn boot(ctx: *mut BootContext) -> ! {
+    let ctx = &mut *ctx;
+    BOOT_CTX = Some(*ctx);
+    
+    // 1. Memory Init
+    let heap_size = 64 * 1024 * 1024;
+    let config = crate::memory::heap::HeapConfig {
+        phys_base: ctx.heap_phys_base,
+        virt_base: ctx.heap_phys_base.wrapping_add(ctx.hhdm_offset),
+        size: heap_size,
+    };
+    crate::memory::init_heap_raw(config).expect("heap init failed");
+    
+    // 2. Graph Init
+    crate::serial::write(b"BOOT: init graph...\n");
+    graph::store::init();
+    
+    // 3. Seed Ontology (Display, place.tasks, etc.)
+    seed_bloom_ontology(ctx);
+    
+    // 4. Scheduler Init
+    crate::serial::write(b"BOOT: init sched...\n");
+    crate::sched::init();
 
-    let kind_place = symbols::intern(b"kind.place");
-    let user_place = store::thing_create(kind_place);
-    
-    let root_sym = symbols::intern(b"place.root");
-    let _root = store::find_thing_by_name(root_sym).expect("place.root missing");
-    let pred_contains = symbols::intern(b"predicate.contains");
-    store::relationship_create(pred_contains, _root, user_place);
-    
-    let kind_cap = symbols::intern(b"kind.capability");
-    let pred_has_cap = symbols::intern(b"predicate.has_cap");
-    let pred_target = symbols::intern(b"predicate.target");
-    let pred_permits = symbols::intern(b"predicate.permits");
-    
-    let grant = |target: ThingId, perms: &[&str]| {
-        let cap = store::thing_create(kind_cap);
-        store::relationship_create(pred_has_cap, task_id, cap);
-        store::relationship_create(pred_target, cap, target);
-        
-        for p_name in perms {
-             let p_sym = symbols::intern(p_name.as_bytes());
-             if let Some(p_id) = store::find_thing_by_name(p_sym) {
-                 store::relationship_create(pred_permits, cap, p_id);
-             } else {
-                 crate::log::klog(Level::Warn, "BOOT", &format!("perm {} not found!", p_name));
+    // 5. Load Modules (Sprout)
+    crate::serial::write(b"BOOT: loading modules...\n");
+    for m in ctx.modules {
+        crate::serial::write(b"MOD: ");
+        crate::serial::write(m.path.as_bytes());
+        crate::serial::write(b"\n");
+        // Spawn Sprout (init) and Bloom (compositor)
+        if m.path.contains("sprout") || m.path.contains("bloom") {
+             if let Err(_) = crate::proc::spawn_kernel_module(m) {
+                 crate::serial::write(b"PROC: failed to spawn module\n");
              }
         }
-    };
-    
-    grant(user_place, &["perm.create", "perm.link", "perm.unlink", "perm.read", "perm.watch"]);
-    
-    let place_logs_sym = symbols::intern(b"place.logs");
-    if let Some(place_logs) = store::find_thing_by_name(place_logs_sym) {
-        grant(place_logs, &["perm.log"]);
     }
-    
-    grant(task_id, &["perm.mem", "perm.dictator"]);
+
+    // 6. Start Scheduler
+    crate::sched::run()
 }
 
-fn seed_permissions() {
-    use graph::symbols;
+fn seed_bloom_ontology(ctx: &BootContext) {
     use graph::store;
-    
-    let kind_perm = symbols::intern(b"kind.permission");
-    let pred_contains = symbols::intern(b"predicate.contains");
-    
-    let root_sym = symbols::intern(b"place.root");
-    let root = store::find_thing_by_name(root_sym).expect("place.root missing");
-    
-    let place_perms = store::thing_create(symbols::intern(b"kind.place"));
-    store::thing_register_name(place_perms, symbols::intern(b"place.perms"));
-    store::relationship_create(pred_contains, root, place_perms);
-
-    let perms = [
-        "perm.read", "perm.write", "perm.create", "perm.link", "perm.unlink",
-        "perm.watch", "perm.log", "perm.mem", "perm.dictator"
-    ];
-
-    for p_name in perms {
-        let p = store::thing_create(kind_perm);
-        store::thing_register_name(p, symbols::intern(p_name.as_bytes()));
-        store::relationship_create(pred_contains, place_perms, p);
-    }
-}
-
-
-fn seed_bloom_ontology(fb_bs_id: abi::ids::ThingId, fb: &FramebufferInfo) {
     use graph::symbols::{self, sym};
-    use graph::store;
-    use abi::ids::SymbolId;
-
-    crate::log::klog(crate::log::Level::Info, "BOOT", "seeding bloom ontology...");
-
-    // 1. Create Places
-    let root_sym = symbols::intern(b"place.root");
-    let root = store::find_thing_by_name(root_sym).expect("place.root missing");
-    let kind_place = sym::KIND_PLACE;
-    let pred_contains = sym::PRED_CONTAINS;
-
-    let create_place = |_name: &str, sym_id: SymbolId| {
-        let p = store::thing_create(kind_place);
-        store::thing_register_name(p, sym_id);
-        store::relationship_create(pred_contains, root, p); // Link to root
-        p
-    };
-
-    let _place_surfaces = create_place("place.surfaces", sym::PLACE_SURFACES);
-    let _place_windows = create_place("place.windows", sym::PLACE_WINDOWS);
-    let _place_compositor = create_place("place.compositor", sym::PLACE_COMPOSITOR);
-    let _place_input = create_place("place.input", sym::PLACE_INPUT);
-
-    // 2. Create Display Device
-    let place_devices = store::find_thing_by_name(sym::PLACE_DEVICES).expect("place.devices missing");
     
-    let dev_display = store::thing_create(sym::KIND_DEVICE_DISPLAY);
-    store::thing_register_name(dev_display, symbols::intern(b"device.display0"));
-    store::relationship_create(pred_contains, place_devices, dev_display);
+    store::with_store(|s| {
+        // Ensure root places exist
+        let place_root = s.create_thing(sym::KIND_PLACE).expect("place.root");
+        s.register_name(place_root, sym::PLACE_ROOT);
+        
+        let place_devices = s.create_thing(sym::KIND_PLACE).expect("place.devices");
+        s.register_name(place_devices, sym::PLACE_DEVICES);
+        let _ = s.create_relationship(sym::PRED_CONTAINS, place_root, place_devices);
+        
+        let place_tasks = s.create_thing(sym::KIND_PLACE).expect("place.tasks");
+        s.register_name(place_tasks, sym::PLACE_TASKS);
+        let _ = s.create_relationship(sym::PRED_CONTAINS, place_root, place_tasks);
 
-    // 3. Create Primary Surface
-    let surface = store::thing_create(sym::KIND_SURFACE);
-    store::thing_register_name(surface, symbols::intern(b"surface.display0"));
-    
-    // Link Device -> Surface (Primary)
-    store::relationship_create(sym::PRED_PRIMARY, dev_display, surface);
-    
-    // Link Surface -> Backing Bytespace
-    store::relationship_create(sym::PRED_BACKS, surface, fb_bs_id);
-    
-    // Link Surface -> Properties
-    let rect_id = store::thing_create(sym::KIND_RECT);
-    let rect_payload = [
-        0u32.to_le_bytes(), 0u32.to_le_bytes(), // x, y
-        (fb.width as u32).to_le_bytes(), (fb.height as u32).to_le_bytes() // w, h
-    ].concat();
-    store::thing_set_inline_payload(rect_id, &rect_payload);
-    store::relationship_create(sym::PRED_SIZE, surface, rect_id);
-
-    let create_val_u32 = |val: u32| {
-        let t = store::thing_create(sym::KIND_VALUE_U32); 
-        let _ = store::thing_set_inline_payload(t, &val.to_le_bytes()); 
-        t
-    };
-
-    let stride_val = create_val_u32(fb.pitch as u32);
-    store::relationship_create(sym::PRED_STRIDE, surface, stride_val);
-    
-    let format_val = create_val_u32(0x00FF0000); 
-    store::relationship_create(sym::PRED_FORMAT, surface, format_val);
-
-    crate::log::klog(crate::log::Level::Info, "BOOT", "bloom ontology seeded");
+        // Display
+        if let Some(fb) = ctx.framebuffer {
+            let dev = s.create_thing(sym::KIND_DEVICE_DISPLAY).expect("dev.display");
+            s.register_name(dev, symbols::intern(b"device.display0"));
+            let _ = s.create_relationship(sym::PRED_CONTAINS, place_devices, dev);
+            
+            let surf = s.create_thing(sym::KIND_SURFACE).expect("surface");
+            s.register_name(surf, symbols::intern(b"surface.display0"));
+            
+            let _ = s.create_relationship(sym::PRED_PRIMARY, dev, surf);
+            
+            // Backing Bytespace
+            let bs = s.create_thing(sym::KIND_BYTE_SPACE).expect("fb.bs");
+            let _ = s.create_relationship(sym::PRED_BACKS, surf, bs);
+            
+            // Properties: Size, Stride
+            // Use KIND_BYTESLICE (ID 75) as blob container
+            let size_thing = s.create_thing(sym::KIND_BYTESLICE).expect("size");
+            let mut buf = [0u8; 16];
+            buf[0..8].copy_from_slice(&(fb.width as u64).to_le_bytes());
+            buf[8..16].copy_from_slice(&(fb.height as u64).to_le_bytes());
+            s.set_payload(size_thing, &buf);
+            let _ = s.create_relationship(sym::PRED_SIZE, surf, size_thing);
+            
+            let stride_thing = s.create_thing(sym::KIND_BYTESLICE).expect("stride");
+            let mut sbuf = [0u8; 8];
+            sbuf.copy_from_slice(&(fb.pitch as u64).to_le_bytes());
+            s.set_payload(stride_thing, &sbuf);
+            let _ = s.create_relationship(sym::PRED_STRIDE, surf, stride_thing);
+             
+             s.register_name(bs, symbols::intern(b"bytespace.display0"));
+        }
+    });
 }

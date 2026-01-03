@@ -22,6 +22,7 @@ pub mod nr {
     
     pub const SYS_WATCH_CREATE: u32 = 40;
     pub const SYS_WATCH_POLL: u32 = 41;
+    pub const SYS_WAIT: u32 = 42;
     
     pub const SYS_SURFACE_CREATE: u32 = 50;
     pub const SYS_SURFACE_DRAW: u32 = 51;

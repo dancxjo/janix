@@ -11,8 +11,16 @@ pub enum TaskState {
     New,
     Ready,
     Running,
-    Blocked,
+    Yielded,
+    Blocked(BlockReason),
     Dead,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BlockReason {
+    WatchWait,
+    Timeout,
+    Other,
 }
 
 impl TaskState {
@@ -21,7 +29,10 @@ impl TaskState {
             TaskState::New => sym::TASK_STATE_NEW,
             TaskState::Ready => sym::TASK_STATE_READY,
             TaskState::Running => sym::TASK_STATE_RUNNING,
-            TaskState::Blocked => sym::TASK_STATE_BLOCKED,
+            TaskState::Yielded => sym::TASK_STATE_YIELDED,
+            TaskState::Blocked(BlockReason::WatchWait) => sym::TASK_STATE_BLOCKED_WATCH,
+            TaskState::Blocked(BlockReason::Timeout) => sym::TASK_STATE_BLOCKED_TIMEOUT,
+            TaskState::Blocked(BlockReason::Other) => sym::TASK_STATE_BLOCKED,
             TaskState::Dead => sym::TASK_STATE_DEAD,
         }
     }
@@ -40,6 +51,7 @@ pub struct Task {
     pub heap_base: u64,
     pub heap_size: u64,
     pub heap_brk: u64,
+    pub wake_reason: Option<abi::types::WakeReason>,
     pub first_run: bool, // true if this task has prepared context, false if it has saved context
 }
 
@@ -55,6 +67,7 @@ impl Task {
             heap_base: 0,
             heap_size: 0,
             heap_brk: 0,
+            wake_reason: None,
             first_run: true, // Starts with prepared context
         }
     }

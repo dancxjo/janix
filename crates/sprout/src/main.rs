@@ -1,26 +1,12 @@
 #![no_std]
 #![no_main]
 
-use core::panic::PanicInfo;
 extern crate alloc;
-
 use thing_std::*;
 
-
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    log_info("SPROUT: PANIC!");
-    if let Some(_location) = info.location() {
-        // No format! in no_std easily without alloc formatted string, but we have alloc now!
-        // or just log hardcoded strings
-        log_info("SPROUT: panic at location");
-    }
-    loop {}
-}
-
 #[unsafe(no_mangle)]
-pub extern "C" fn _start(syscall_ptr: u64) -> ! {
-    thing_std::init(syscall_ptr);
+pub extern "C" fn main() {
+    thing_std::init(0); // Dummy init
     log_info("KERNEL: init task alive");
     log_info("SPROUT: I am alive!");
 
@@ -28,4 +14,3 @@ pub extern "C" fn _start(syscall_ptr: u64) -> ! {
         sched_yield();
     }
 }
-

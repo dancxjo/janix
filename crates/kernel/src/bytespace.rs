@@ -3,7 +3,7 @@
 //! Will provide large binary data storage separate from graph.
 //! Currently returns ENOSYS for all operations.
 
-use crate::syscall::err::ENOSYS;
+use abi::syscall::err::ENOSYS;
 
 /// ByteSpace identifier
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

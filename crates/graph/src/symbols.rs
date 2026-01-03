@@ -201,6 +201,10 @@ pub fn init() {
         // "snapshot --[bytes]--> bytespace". Reuse PRED_BACKS? 
         // Or "predicate.bytes" for explicit data ref.
         "predicate.bytes",
+        // Scheduler extended states
+        "task_state.yielded",
+        "task_state.blocked.watch",
+        "task_state.blocked.timeout",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -374,5 +378,8 @@ pub mod sym {
     pub const PRED_COUNT: SymbolId = SymbolId(120);
     pub const PRED_FOR_PLACE: SymbolId = SymbolId(121);
     pub const PRED_BYTES: SymbolId = SymbolId(122);
+    pub const TASK_STATE_YIELDED: SymbolId = SymbolId(123);
+    pub const TASK_STATE_BLOCKED_WATCH: SymbolId = SymbolId(124);
+    pub const TASK_STATE_BLOCKED_TIMEOUT: SymbolId = SymbolId(125);
 
 }

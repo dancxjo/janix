@@ -32,4 +32,8 @@ impl SymbolId {
     pub const INVALID: SymbolId = SymbolId(0);
 }
 
+/// Watch identifier - opaque handle for graph/watch events
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct WatchId(pub u64);
+
 pub type PredicateId = SymbolId;

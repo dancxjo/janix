@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Surfaces and compositing",
+  "scenario": "The display backend is swappable",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "skipped",
+    "timestamp": "2026-01-03T18:19:28.639956579+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

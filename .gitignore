@@ -6,7 +6,9 @@
 target/
 iso_root_*
 check.log
-artifacts/
+# artifacts/  # Commit test artifacts
+
+
 crates/bran/bin-*/
 crates/sprout/bin-*/
 crates/sprout/sprout

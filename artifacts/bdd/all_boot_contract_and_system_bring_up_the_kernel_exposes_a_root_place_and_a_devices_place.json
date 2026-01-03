@@ -1,0 +1,7 @@
+{
+  "arch": "all",
+  "artifacts_dir": "all/boot_contract_and_system_bring_up/the_kernel_exposes_a_root_place_and_a_devices_place",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "The Kernel exposes a root Place and a devices Place",
+  "status": "pass"
+}

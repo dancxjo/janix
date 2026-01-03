@@ -1,0 +1,7 @@
+{
+  "arch": "all",
+  "artifacts_dir": "all/input_pipeline_and_focus_model/inputd_publishes_keyevent_things_to_the_graph",
+  "feature": "Input pipeline and focus model",
+  "scenario": "inputd publishes KeyEvent Things to the graph",
+  "status": "pass"
+}

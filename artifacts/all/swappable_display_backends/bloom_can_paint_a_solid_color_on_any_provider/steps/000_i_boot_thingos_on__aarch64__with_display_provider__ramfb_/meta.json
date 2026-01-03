@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Swappable display backends",
+  "scenario": "Bloom can paint a solid color on any provider",
+  "step": {
+    "index": 0,
+    "text": "I boot ThingOS on \"aarch64\" with display provider \"ramfb\"",
+    "status": "skipped",
+    "timestamp": "2026-01-03T18:19:28.632420857+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

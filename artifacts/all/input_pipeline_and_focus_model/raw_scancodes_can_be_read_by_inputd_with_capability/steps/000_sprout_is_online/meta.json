@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Input pipeline and focus model",
+  "scenario": "Raw scancodes can be read by inputd with capability",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "skipped",
+    "timestamp": "2026-01-03T18:19:28.641001546+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

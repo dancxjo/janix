@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "all",
+  "feature": "Surfaces and compositing",
+  "scenario": "A surface is a Thing with ownership and bounds",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "skipped",
+    "timestamp": "2026-01-03T18:19:28.639040485+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

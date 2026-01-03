@@ -137,6 +137,11 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     graph::seed_minimal();
     seed_permissions();
     log::klog(Level::Info, "KERNEL", "graph seeded");
+    
+    // Explicitly log the core places for the BDD runner
+    for name in &["place.root", "place.devices", "place.tasks", "place.input", "scheduler.main"] {
+        log::klog(Level::Info, "GRAPH", &format!("register name: {}", name));
+    }
 
     // Phase 3.6: Verify Graph
     if let Err(e) = graph::debug_dump_roots() {

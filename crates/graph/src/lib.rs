@@ -55,6 +55,9 @@ pub fn seed_minimal() {
         store::thing_register_name(place, place_sym);
         
         store::relationship_create(sym::PRED_CONTAINS, root, place);
+        
+        // No direct logging here as graph is a bottom-layer crate.
+        // We will log in the boot sequence which calls this.
     }
 }
 

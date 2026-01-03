@@ -102,7 +102,7 @@ aarch64_vectors:
 handle_sync_el1:
     msr tpidrro_el0, x0
     mrs x0, tpidr_el1
-    ldr x0, [x0, #72] // exception_stack_ptr
+    ldr x0, [x0, #80] // exception_stack_ptr
     sub x0, x0, #288
     mov x18, sp
     mov sp, x0
@@ -130,7 +130,7 @@ handle_irq_el1:
     add w1, w1, #1
     str w1, [x0, #64]
 
-    ldr x0, [x0, #72] // exception_stack_ptr
+    ldr x0, [x0, #80] // exception_stack_ptr
     sub x0, x0, #288
     mov x18, sp
     mov sp, x0
@@ -157,7 +157,7 @@ handle_sync_el0:
     // EL0 -> EL1: Use TPIDR_EL1 + 88 (kernel_stack_top)
     msr tpidrro_el0, x0
     mrs x0, tpidr_el1
-    ldr x0, [x0, #88] // kernel_stack_top
+    ldr x0, [x0, #96] // kernel_stack_top
     sub x0, x0, #288
     mrs x18, sp_el0  // Incoming SP is SP_EL0
     mov sp, x0
@@ -180,7 +180,7 @@ handle_irq_el0:
     add w1, w1, #1
     str w1, [x0, #64]
 
-    ldr x0, [x0, #88] // kernel_stack_top
+    ldr x0, [x0, #96] // kernel_stack_top
     sub x0, x0, #288
     mrs x18, sp_el0
     mov sp, x0

@@ -1,7 +1,0 @@
-{
-  "arch": "all",
-  "artifacts_dir": "all/input_pipeline_and_focus_model/focus_determines_which_surface_receives_textevent",
-  "feature": "Input pipeline and focus model",
-  "scenario": "Focus determines which surface receives TextEvent",
-  "status": "pass"
-}

@@ -43,6 +43,10 @@ impl QemuProcess {
             "-no-reboot".to_string(),
             "-qmp".to_string(),
             format!("unix:{},server,nowait", qmp_sock_path.display()),
+            "-d".to_string(),
+            "cpu_reset".to_string(),
+            "-D".to_string(),
+            "qemu.log".to_string(),
         ];
 
         // Check for /dev/kvm and architecture match

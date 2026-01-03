@@ -21,7 +21,10 @@ impl AddressSpace {
         let current_table = unsafe { get_table_mut(current_frame.start_address().as_u64()) };
         
         for i in 256..512 {
-            new_table[i] = current_table[i].clone();
+            if current_table[i].flags().contains(PageTableFlags::PRESENT) {
+                 crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("copy kernel pml4[{}]", i));
+                 new_table[i] = current_table[i].clone();
+            }
         }
         
         Ok(Self { pml4_table: frame.start_address().as_u64() })

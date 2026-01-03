@@ -1,7 +1,0 @@
-{
-  "arch": "all",
-  "artifacts_dir": "all/demo_app_vertical_slice/logview_starts_as_a_user_task_with_a_heap",
-  "feature": "Demo app vertical slice",
-  "scenario": "logview starts as a user task with a heap",
-  "status": "pass"
-}

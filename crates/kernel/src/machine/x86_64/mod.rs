@@ -46,8 +46,8 @@ pub extern "C" fn timer_ack_asm_helper() {
 }
 
 #[no_mangle]
-pub extern "C" fn task_dispatch(_dispatch_ptr: u64, entry: extern "C" fn()) {
-    entry();
+pub extern "C" fn task_dispatch(dispatch_ptr: u64, entry: extern "C" fn(u64) -> !) {
+    entry(dispatch_ptr);
 }
 
 #[no_mangle]

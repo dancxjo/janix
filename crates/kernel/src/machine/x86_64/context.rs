@@ -50,30 +50,64 @@ impl ArchTask for X86Arch {
             let frame = frame_ptr as *mut TrapFrame;
             
             // Set up iretq frame (5 words)
-            // GDT: 0=Null, 8=KCode, 16=KData, 24=UCode32, 32=UData, 40=UCode64
             match mode {
                 CpuMode::User => {
-                    (*frame).ss = 0x23;   // User data segment (index 4 | RPL 3 = 35 = 0x23)
+                    (*frame).cs = 0x2b; // User Code 64 (Index 5 | 3)
+                    (*frame).ss = 0x23; // User Data (Index 4 | 3)
                     (*frame).rsp = arg0;  // User stack from arg0
-                    (*frame).cs = 0x2B;   // User code segment (index 5 | RPL 3 = 43 = 0x2B)
-                    (*frame).rflags = 0x202;
+                    (*frame).rflags = 0x202; // IF=1
                     (*frame).rip = entry;
-                    (*frame).rdi = arg0;
                 }
                 CpuMode::Kernel => {
-                    (*frame).ss = 0x10;   // Kernel data segment (index 2 = 16)
+                    (*frame).cs = 0x08;   // Kernel code segment
+                    (*frame).ss = 0x10;   // Kernel data segment
                     (*frame).rsp = aligned_top; // Kernel stack top
-                    (*frame).cs = 0x08;   // Kernel code segment (index 1 = 8)
+                    (*frame).rflags = 0x202;
+                    (*frame).rip = entry;
                 }
             }
-            (*frame).rflags = 0x202;  // IF=1 (interrupts enabled)
-            (*frame).rip = entry;
             
-            // Set first argument in RDI
+            // Set first argument in RDI (NOT needed for TrapFrame return, but for consistency)
             (*frame).rdi = arg0;
+            
+            // --- CONTEXT SWITCH FRAME SETUP ---
+            // x86_switch_context expects the stack to allow returning to 'task_entry'.
+            // task_entry expects [dispatch_ptr, entry_point] on stack.
+            // Stack layout (growing down from frame_ptr):
+            //   [x86_return_from_trap] (rsi / entry for task_entry)
+            //   [frame_ptr]            (rdi / dispatch_ptr for task_entry)
+            //   [task_entry]           (Return address for switch_to)
+            //   [r15]..[rbx]           (Callee saved registers for switch_to)
+            
+            let mut sp = frame_ptr as u64;
+            
+            extern "C" {
+                fn task_entry();
+                fn x86_return_from_trap(tf: *const TrapFrame) -> !;
+            }
+            
+            // Push arguments for task_entry
+            sp -= 8;
+            *(sp as *mut u64) = x86_return_from_trap as usize as u64; // rsi
+            sp -= 8;
+            *(sp as *mut u64) = frame_ptr as u64; // rdi
+            
+            // Push Return Address for switch_to
+            sp -= 8;
+            *(sp as *mut u64) = task_entry as usize as u64;
+            
+            // Push Callee Saved Registers (rbx, rbp, r12, r13, r14, r15) - 6 registers
+            // x86_switch_context: pop r15..r12, pop rbp, pop rbx.
+            // Order on stack (bottom up): r15, r14, r13, r12, rbp, rbx.
+            // Since we push downwards: rbx first? No, pop reverses push.
+            // switch_to pops r15 first. So r15 is at top of stack (lowest address)?
+            // "pop r15" -> rsp increments. So r15 is at current RSP.
+            // So we just need to reserve space for 6 regs.
+            sp -= 48; 
+            // We can leave them zeroed.
+            
+            ctx.sp = sp;
         }
-        
-        ctx.sp = frame_ptr as u64;
     }
 }
 
@@ -116,8 +150,8 @@ impl ArchTrap for X86Arch {
         // Set privilege level via CS
         match spec.mode {
             CpuMode::User => {
-                tf.cs = 0x23;
-                tf.ss = 0x1b;
+                tf.cs = 0x2b; // User Code 64 (Index 5 | 3)
+                tf.ss = 0x23; // User Data (Index 4 | 3)
             }
             CpuMode::Kernel => {
                 tf.cs = 0x08;

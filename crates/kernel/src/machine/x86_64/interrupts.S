@@ -65,6 +65,9 @@ timer_interrupt_trampoline:
     jz 1f
     swapgs
 1:
+    // Increment irq_depth (gs[64])
+    inc dword ptr gs:[64]
+
     mov rdi, rsp
     cld
     call sched_tick_asm_helper
@@ -73,6 +76,9 @@ timer_interrupt_trampoline:
     mov rsp, rax
 2:
     call timer_ack_asm_helper
+
+    // Decrement irq_depth
+    dec dword ptr gs:[64]
 
     test byte ptr [rsp + 128], 3
     jz 3f
@@ -93,8 +99,14 @@ keyboard_interrupt_trampoline:
     jz 1f
     swapgs
 1:
+    // Increment irq_depth
+    inc dword ptr gs:[64]
+
     cld
     call keyboard_handler_asm_helper
+
+    // Decrement irq_depth
+    dec dword ptr gs:[64]
 
     test byte ptr [rsp + 128], 3
     jz 3f
@@ -107,31 +119,57 @@ keyboard_interrupt_trampoline:
 
 syscall_entry:
     swapgs
-    mov gs:[40], rax
+    mov gs:[104], rax // scratch_rax (nr)
     mov rax, rsp
-    mov rsp, gs:[32]
+    mov rsp, gs:[72] // exception_stack_ptr (kernel_rsp)
     
-    push 0x23
-    push rax
-    push r11
-    push 0x2B
-    push rcx
-    push rdi
+    push 0x23        // SS
+    push rax         // RSP
+    push r11         // RFLAGS
+    push 0x2B        // CS
+    push rcx         // RIP
+    push rdi         // a0
     
-    mov rax, gs:[40]
+    // Results space (32) + Stack arguments space (16)
+    sub rsp, 48      
+    
+    // Position a4, a5 where dispatch expects them (immediately above RET)
+    mov [rsp + 0], r8 // a4
+    mov [rsp + 8], r9 // a5
+    
+    // Prepare register arguments
+    // User: rdi=a0, rsi=a1, rdx=a2, r10=a3, r8=a4, r9=a5
+    // [rsp+48] = a0 (pushed at 131)
+    mov rcx, rsi      // a1 -> RCX (4th arg)
+    mov r8, rdx       // a2 -> R8 (5th arg)
+    mov rdx, [rsp + 48] // a0 -> RDX (3rd arg)
+    mov rsi, gs:[104] // nr -> RSI (2nd arg)
+    mov r9, r10       // a3 -> R9 (6th arg)
+    
+    // Hidden result pointer (1st arg)
+    lea rdi, [rsp + 16] // Put result at [rsp+16]..[rsp+39]
+    
     sti
-
-    mov r9, r10; mov r8, rdx; mov rcx, rsi; mov rsi, rax; mov rdx, [rsp]
-    sub rsp, 64
-    mov rdi, rsp
     cld
     call dispatch
     
-    mov rax, [rsp + 0]; mov rdx, [rsp + 8]; mov rsi, [rsp + 16]
-    add rsp, 64
+    // Recover results from [rsp + 16]
+    mov rax, [rsp + 16 + 0]
+    mov rdx, [rsp + 16 + 8]
+    mov rsi, [rsp + 16 + 16]
     
-    pop rdi; pop rcx; add rsp, 8; pop r11; pop rax; add rsp, 8
-    mov rsp, rax
+    add rsp, 48      // Clean up stack
+    
+    pop rdi          // a0
+    pop rcx          // user RIP
+    add rsp, 8       // CS
+    pop r11          // RFLAGS
+    
+    pop r10          // user RSP
+    add rsp, 8       // SS
+    
+    mov rsp, r10
+    
     cli
     swapgs
     sysretq

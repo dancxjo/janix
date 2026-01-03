@@ -2,41 +2,45 @@
 //!
 //! Accessed via GS segment base.
 
-use crate::proc::Thread;
+use crate::sched::percpu::PerCpu;
 
 #[repr(C)]
-pub struct PerCpu {
-    /// Self-reference for validation/access
-    pub this: *const PerCpu,
+pub struct x86PerCpu {
+    /// Core scheduler state
+    pub core: PerCpu,
     
-    /// Current logical CPU ID
-    pub cpu_id: u32,
+    /// Self-reference for validation/access
+    pub this: *const x86PerCpu,
     
     /// LAPIC ID
     pub lapic_id: u32,
     
-    /// Current running thread
-    pub current_thread: *mut Thread,
-    
     /// User->Kernel transition stack (SYSCALL)
     pub syscall_rsp: u64,
     
-    /// Interrupt entry stack (RSP0) - currently unused if TSS handles it
-    pub kernel_rsp: u64,
-
     /// Scratch space for syscall entry
     pub scratch_rax: u64,
 }
 
-impl PerCpu {
+impl x86PerCpu {
     pub const fn new(cpu_id: u32, lapic_id: u32) -> Self {
         Self {
+            core: PerCpu {
+                cpu_id,
+                _padding: 0,
+                thing: abi::ids::ThingId(0),
+                current_task: crate::sched::task::TaskId(0),
+                idle_task: crate::sched::task::TaskId(0),
+                run_queue_thing: abi::ids::ThingId(0),
+                in_switch: false,
+                _padding2: [0; 3],
+                preempt_disabled: 0,
+                irq_depth: 0,
+                exception_stack_ptr: 0,
+            },
             this: core::ptr::null(),
-            cpu_id,
             lapic_id,
-            current_thread: core::ptr::null_mut(),
             syscall_rsp: 0,
-            kernel_rsp: 0,
             scratch_rax: 0,
         }
     }
@@ -45,7 +49,7 @@ impl PerCpu {
 /// Initialize GS base for the current CPU
 ///
 /// Safety: Argument must be a valid static PerCpu lifetime.
-pub unsafe fn init_gs_base(percpu: &'static mut PerCpu) {
+pub unsafe fn init_gs_base(percpu: &'static mut x86PerCpu) {
     percpu.this = percpu as *const _;
     
     let addr = percpu as *const _ as u64;

@@ -99,9 +99,14 @@ pub mod nr {
     /// Resolve a symbol ID to string.
     pub const SYS_SYMBOL_RESOLVE: u32 = 111;
 
-    // === Input ===
     /// Read raw input scancodes.
     pub const SYS_INPUT_READ: u32 = 200;
+
+    // === Graphics ===
+    /// Create a surface.
+    pub const SYS_SURFACE_CREATE: u32 = 150;
+    /// Draw to a surface.
+    pub const SYS_SURFACE_DRAW: u32 = 151;
 }
 
 /// Standard Error Codes

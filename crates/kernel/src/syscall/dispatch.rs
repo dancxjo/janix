@@ -1,6 +1,6 @@
 //! Syscall Dispatch Router
 
-use crate::syscall::{cap, graph, log, memory, watch};
+use crate::syscall::{cap, graph, log, memory, watch, surface};
 use crate::syscall::cap::CapOp;
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
@@ -8,9 +8,12 @@ use abi::wire::SyscallResult;
 
 /// Main syscall dispatch function
 #[no_mangle]
-pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64, _a5: u64) -> SyscallResult {
-    // Debug logging for specific syscalls can be verbose, maybe limit it?
-    // crate::log::klog(crate::log::Level::Trace, "SYSCALL", &alloc::format!("nr={} a0={:x}", nr, a0));
+pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> SyscallResult {
+    // Trace all syscalls for debugging
+    // crate::log::klog(crate::log::Level::Trace, "SYSCALL", &alloc::format!("nr={} a0={:x} a1={:x}", nr, a0, a1));
+    // Actually, let's use kprintln for guaranteed serial output if klog is struggling
+    crate::machine::machine().console_write(alloc::format!("SC: nr={} a0={:x}\n", nr, a0).as_bytes());
+
     if nr == abi::syscall::nr::SYS_MACHINE {
          crate::log::klog(crate::log::Level::Info, "SYSCALL", &alloc::format!("SYS_MACHINE called by task? nr={}", nr));
     }
@@ -189,6 +192,22 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, _a4: u64
                  Ok(n) => SyscallResult::new(0, n as u64, 0),
                  Err(_) => SyscallResult::new(abi::syscall::err::EFAULT, 0, 0),
              }
+        },
+
+        // === Graphics ===
+        nr::SYS_SURFACE_CREATE => {
+            if let Err(e) = cap::check(cap::CapOp::GraphCreate, None) {
+                return e;
+            }
+            surface::sys_surface_create(a0, a1, a2)
+        },
+        nr::SYS_SURFACE_DRAW => {
+            // Permission check: Write on surface
+            let surface_id = abi::ids::ThingId(((a1 as u128) << 64) | (a0 as u128));
+            if let Err(e) = cap::check(cap::CapOp::GraphWrite, Some(surface_id)) {
+                return e;
+            }
+            surface::sys_surface_draw(a0, a1, a2, a3, a4, a5)
         },
 
         // === Process ===

@@ -40,7 +40,7 @@ unsafe impl GlobalAlloc for BumpAllocator {
 
 pub fn heap_grow(increment: u64) -> u64 {
     unsafe {
-        let res = syscall(abi::syscall::nr::SYS_HEAP_GROW, increment, 0, 0, 0);
+        let res = syscall(abi::syscall::nr::SYS_HEAP_GROW, increment, 0, 0, 0, 0, 0);
         if res.status != 0 {
             0
         } else {
@@ -66,7 +66,7 @@ pub fn init(ptr: u64) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe fn syscall(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
+pub unsafe fn syscall(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> SyscallResult {
     #[cfg(target_arch = "x86_64")]
     {
         let status: u64;
@@ -80,6 +80,8 @@ pub unsafe fn syscall(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64) -> SyscallRes
             in("rsi") a1,
             in("rdx") a2,
             in("r10") a3,
+            in("r8") a4,
+            in("r9") a5,
             lateout("rax") status,
             lateout("rdx") val0,
             lateout("rsi") val1,
@@ -89,7 +91,7 @@ pub unsafe fn syscall(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64) -> SyscallRes
         );
         
         SyscallResult {
-            status: status as i32,
+            status: status,
             val0,
             val1
         }
@@ -98,7 +100,7 @@ pub unsafe fn syscall(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64) -> SyscallRes
     #[cfg(not(target_arch = "x86_64"))]
     {
         if let Some(dispatch) = SYSCALL_DISPATCH {
-            dispatch(nr, a0, a1, a2, a3, 0, 0)
+            dispatch(nr, a0, a1, a2, a3, a4, a5)
         } else {
             SyscallResult::new(-1, 0, 0)
         }
@@ -136,12 +138,12 @@ pub fn thing_create(_kind: SymbolId, _schema: SymbolId, _version: u32) -> ThingI
 }
 
 pub fn thing_create_under(kind: SymbolId, parent: ThingId) -> ThingId {
-    let res = unsafe { syscall(abi::syscall::nr::SYS_THING_CREATE, kind.0, parent.0 as u64, 0, 0) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_THING_CREATE, kind.0, parent.0 as u64, 0, 0, 0, 0) };
     ThingId(((res.val0 as u128) << 64) | (res.val1 as u128))
 }
 
 pub fn relationship_create(from: ThingId, to: ThingId, predicate: SymbolId) -> RelationshipId {
-    let res = unsafe { syscall(abi::syscall::nr::SYS_REL_CREATE, predicate.0, from.0 as u64, to.0 as u64, 0) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_REL_CREATE, predicate.0, from.0 as u64, to.0 as u64, 0, 0, 0) };
     ThingId(((res.val0 as u128) << 64) | (res.val1 as u128))
 }
 
@@ -150,20 +152,20 @@ pub fn relationship_create(from: ThingId, to: ThingId, predicate: SymbolId) -> R
 
 pub fn log_info(msg: &str) {
     unsafe {
-        syscall(abi::syscall::nr::SYS_LOG, 2, msg.as_ptr() as u64, msg.len() as u64, 0);
+        syscall(abi::syscall::nr::SYS_LOG, 2, msg.as_ptr() as u64, msg.len() as u64, 0, 0, 0);
     }
 }
 
 pub fn console_write(msg: &str) {
     unsafe {
         // SYS_MACHINE checked in dispatch?
-        syscall(abi::syscall::nr::SYS_MACHINE, 0, msg.as_ptr() as u64, msg.len() as u64, 0);
+        syscall(abi::syscall::nr::SYS_MACHINE, 0, msg.as_ptr() as u64, msg.len() as u64, 0, 0, 0);
     }
 }
 
 pub fn proc_spawn(name: &str) {
     unsafe {
-        syscall(abi::syscall::nr::SYS_PROC_SPAWN, name.as_ptr() as u64, name.len() as u64, 0, 0);
+        syscall(abi::syscall::nr::SYS_PROC_SPAWN, name.as_ptr() as u64, name.len() as u64, 0, 0, 0, 0);
     }
 }
 
@@ -196,17 +198,17 @@ pub fn thing_find_by_name(_name: SymbolId) -> Option<ThingId> {
 }
 
 pub fn symbol_intern(name: &str) -> SymbolId {
-    let res = unsafe { syscall(abi::syscall::nr::SYS_SYMBOL_INTERN, name.as_ptr() as u64, name.len() as u64, 0, 0) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_SYMBOL_INTERN, name.as_ptr() as u64, name.len() as u64, 0, 0, 0, 0) };
     SymbolId(res.val0)
 }
 
 pub fn thing_register_name(id: ThingId, name: &str) -> i32 {
-    let res = unsafe { syscall(abi::syscall::nr::SYS_THING_REGISTER_NAME, id.0 as u64, name.as_ptr() as u64, name.len() as u64, 0) };
-    res.status
+    let res = unsafe { syscall(abi::syscall::nr::SYS_THING_REGISTER_NAME, id.0 as u64, name.as_ptr() as u64, name.len() as u64, 0, 0, 0) };
+    res.status as i32
 }
 
 pub fn thing_find(name: &str) -> Option<ThingId> {
-    let res = unsafe { syscall(abi::syscall::nr::SYS_THING_FIND, name.as_ptr() as u64, name.len() as u64, 0, 0) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_THING_FIND, name.as_ptr() as u64, name.len() as u64, 0, 0, 0, 0) };
     if res.status == 0 {
         Some(ThingId(((res.val0 as u128) << 64) | res.val1 as u128))
     } else {
@@ -215,11 +217,11 @@ pub fn thing_find(name: &str) -> Option<ThingId> {
 }
 
 pub fn bytespace_create(size: u64) -> Result<ThingId, i32> {
-    let res = unsafe { syscall(abi::syscall::nr::SYS_BYTESPACE_CREATE, size, 0, 0, 0) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_BYTESPACE_CREATE, size, 0, 0, 0, 0, 0) };
     if res.status == 0 {
         Ok(ThingId(((res.val0 as u128) << 64) | res.val1 as u128))
     } else {
-        Err(res.status)
+        Err(res.status as i32)
     }
 }
 
@@ -238,24 +240,24 @@ pub fn space_map(bs_id: ThingId, vaddr: u64, offset: u64, len: u64) -> Result<u6
     // We didn't view it.
     // Let's update this later if it breaks.
     // For now: assume a0=bs_id.low (truncate?), a1=vaddr...
-    let res = unsafe { syscall(abi::syscall::nr::SYS_SPACE_MAP, bs_id.0 as u64, vaddr, offset, len) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_SPACE_MAP, bs_id.0 as u64, vaddr, offset, len, 0, 0) };
     if res.status == 0 {
         Ok(res.val0)
     } else {
-        Err(res.status)
+        Err(res.status as i32)
     }
 }
 
 pub fn sched_yield() {
-    unsafe { syscall(abi::syscall::nr::SYS_SCHED_YIELD, 0, 0, 0, 0) };
+    unsafe { syscall(abi::syscall::nr::SYS_SCHED_YIELD, 0, 0, 0, 0, 0, 0) };
 }
 
 pub fn watch(watcher: ThingId, target: ThingId) {
-    unsafe { syscall(abi::syscall::nr::SYS_WATCH_CREATE, watcher.0 as u64, target.0 as u64, 0, 0) };
+    unsafe { syscall(abi::syscall::nr::SYS_WATCH_CREATE, watcher.0 as u64, target.0 as u64, 0, 0, 0, 0) };
 }
 
 pub fn wait_event(watcher: ThingId) -> ThingId {
-    let res = unsafe { syscall(abi::syscall::nr::SYS_WATCH_POLL, watcher.0 as u64, 0, 0, 0) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_WATCH_POLL, watcher.0 as u64, 0, 0, 0, 0, 0) };
     ThingId(((res.val0 as u128) << 64) | (res.val1 as u128))
 }
 
@@ -265,12 +267,12 @@ pub use abi;
 pub fn relationships_from_into(id: ThingId, out: &mut [ThingId]) -> usize {
     let buf_len = out.len() * 16; 
     let ptr = out.as_mut_ptr() as u64;
-    let res = unsafe { syscall(abi::syscall::nr::SYS_REL_GET_FROM, id.0 as u64, 0, ptr, buf_len as u64) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_REL_GET_FROM, id.0 as u64, 0, ptr, buf_len as u64, 0, 0) };
     res.val0 as usize
 }
 
 pub fn sys_exit(code: i32) -> ! {
-    unsafe { syscall(abi::syscall::nr::SYS_PROC_EXIT, code as u64, 0, 0, 0) };
+    unsafe { syscall(abi::syscall::nr::SYS_PROC_EXIT, code as u64, 0, 0, 0, 0, 0) };
     loop {}
 }
 
@@ -278,7 +280,7 @@ pub fn sys_exit(code: i32) -> ! {
 /// Returns the number of bytes read.
 pub fn input_read(buf: &mut [u8]) -> usize {
     let res = unsafe {
-        syscall(abi::syscall::nr::SYS_INPUT_READ, buf.as_mut_ptr() as u64, buf.len() as u64, 0, 0)
+        syscall(abi::syscall::nr::SYS_INPUT_READ, buf.as_mut_ptr() as u64, buf.len() as u64, 0, 0, 0, 0)
     };
     if res.status == 0 {
         res.val0 as usize
@@ -300,18 +302,17 @@ pub fn read_relationships(id: ThingId, out: &mut [RelationshipRef]) -> usize {
     // syscall signature: (id, cursor, out_ptr, out_len)
     
     // We'll expose `read_relationships_paged` later if needed. Use 0 cursor.
-    let res = unsafe { syscall(abi::syscall::nr::SYS_REL_GET_FROM, id.0 as u64, 0, ptr, len) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_REL_GET_FROM, id.0 as u64, 0, ptr, len, 0, 0) };
     res.val0 as usize
 }
 
-/// Resolve a SymbolId to a String.
 pub fn symbol_resolve(id: SymbolId) -> Option<alloc::string::String> {
     // 1. First probe length (or just allocate reasonable buffer)
     let mut buf = [0u8; 128]; // Stack buffer for common/small symbols
     let ptr = buf.as_mut_ptr() as u64;
     let len = buf.len() as u64;
     
-    let res = unsafe { syscall(abi::syscall::nr::SYS_SYMBOL_RESOLVE, id.0, ptr, len, 0) };
+    let res = unsafe { syscall(abi::syscall::nr::SYS_SYMBOL_RESOLVE, id.0, ptr, len, 0, 0, 0) };
     
     // val0 is written bytes, val1 is total bytes
     if res.status != 0 {
@@ -329,11 +330,35 @@ pub fn symbol_resolve(id: SymbolId) -> Option<alloc::string::String> {
         // Need to allocate larger buffer and retry
         let mut vec = alloc::vec![0u8; total];
         let ptr = vec.as_mut_ptr() as u64;
-        let res = unsafe { syscall(abi::syscall::nr::SYS_SYMBOL_RESOLVE, id.0, ptr, total as u64, 0) };
+        let res = unsafe { syscall(abi::syscall::nr::SYS_SYMBOL_RESOLVE, id.0, ptr, total as u64, 0, 0, 0) };
         if res.status != 0 { return None; }
         
         let written = res.val0 as usize;
         let s = core::str::from_utf8(&vec[..written]).ok()?;
         Some(alloc::string::String::from(s))
     }
+}
+
+pub fn surface_create(w: u64, h: u64, format: u64) -> Result<ThingId, i32> {
+    let res = unsafe { syscall(abi::syscall::nr::SYS_SURFACE_CREATE, w, h, format, 0, 0, 0) };
+    if res.status == 0 {
+        Ok(ThingId(((res.val0 as u128) << 64) | res.val1 as u128))
+    } else {
+        Err(res.status as i32)
+    }
+}
+
+pub fn surface_draw(surface: ThingId, buffer: &[u8], x: u32, y: u32, w: u32, h: u32) -> i32 {
+    let res = unsafe {
+        syscall(
+            abi::syscall::nr::SYS_SURFACE_DRAW,
+            (surface.0 & 0xFFFFFFFFFFFFFFFF) as u64,
+            (surface.0 >> 64) as u64,
+            buffer.as_ptr() as u64,
+            ((x as u64) << 32) | (y as u64),
+            ((w as u64) << 32) | (h as u64),
+            0,
+        )
+    };
+    res.status as i32
 }

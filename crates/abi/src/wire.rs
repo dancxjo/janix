@@ -4,14 +4,14 @@ use crate::ids::{PlaceId, RelationshipId, SymbolId, ThingId};
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SyscallResult {
-    pub status: i32,
+    pub status: u64,
     pub val0: u64,
     pub val1: u64,
 }
 
 impl SyscallResult {
     pub fn new(status: i32, val0: u64, val1: u64) -> Self {
-        Self { status, val0, val1 }
+        Self { status: status as u64, val0, val1 }
     }
 }
 

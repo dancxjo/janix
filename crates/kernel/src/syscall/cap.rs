@@ -98,6 +98,17 @@ pub fn check(op: CapOp, target: Option<ThingId>) -> Result<(), SyscallResult> {
     Err(SyscallResult::new(err::EPERM, 0, 0))
 }
 
+pub fn grant_perm(task_id: ThingId, target_id: ThingId, perm_name: &str) {
+    let cap_id = store::thing_create(symbols::intern(b"kind.capability"));
+    store::relationship_create(symbols::intern(b"predicate.has_cap"), task_id, cap_id);
+    store::relationship_create(symbols::intern(b"predicate.target"), cap_id, target_id);
+    
+    let p_sym = symbols::intern(perm_name.as_bytes());
+    if let Some(p_id) = store::find_thing_by_name(p_sym) {
+        store::relationship_create(symbols::intern(b"predicate.permits"), cap_id, p_id);
+    }
+}
+
 // Helper to check existence of a relationship
 fn check_rel(from: ThingId, kind: SymbolId, to: ThingId) -> bool {
     // We can iterate 'from' edges.

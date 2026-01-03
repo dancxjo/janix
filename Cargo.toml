@@ -7,6 +7,7 @@ members = [
     "crates/models",
     "crates/sprout",
     "crates/thing_std",
+    "crates/scancodes",
     "apps/bloom",
     "apps/clock",
     "tools/bdd",
@@ -18,6 +19,7 @@ members = [
     "apps/inputd",
     "apps/echo",
     "apps/inspector",
+    "apps/logview",
 ]
 
 [workspace.package]

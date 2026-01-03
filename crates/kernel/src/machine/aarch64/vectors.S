@@ -99,10 +99,13 @@ aarch64_vectors:
 .endm
 
 handle_sync_el1:
-    // Switch to exception stack
+    msr tpidrro_el0, x0
+    mrs x0, tpidr_el1
+    ldr x0, [x0, #72] // exception_stack_ptr
+    sub x0, x0, #288
     mov x18, sp
-    ldr x19, =exception_stack_top
-    mov sp, x19
+    mov sp, x0
+    mrs x0, tpidrro_el0
     
     SAVE_CONTEXT
     mov x0, sp
@@ -113,34 +116,49 @@ handle_sync_el1:
 1:  RESTORE_CONTEXT
     // eret is in RESTORE_CONTEXT
 
-.section .bss
-.align 12
-exception_stack:
-    .skip 16384
-exception_stack_top:
+// Old global exception stack removed. Now per-CPU.
 
 .section .text
 
 handle_irq_el1:
-    // Switch to exception stack
+    msr tpidrro_el0, x0
+    mrs x0, tpidr_el1
+    
+    // Increment irq_depth
+    ldr w1, [x0, #64] // irq_depth
+    add w1, w1, #1
+    str w1, [x0, #64]
+
+    ldr x0, [x0, #72] // exception_stack_ptr
+    sub x0, x0, #288
     mov x18, sp
-    ldr x19, =exception_stack_top
-    mov sp, x19
+    mov sp, x0
+    mrs x0, tpidrro_el0
 
     SAVE_CONTEXT
-    
     mov x0, sp
     mov x1, #5
     bl aarch64_handle_exception
+    
+    // Decrement irq_depth
+    msr tpidrro_el0, x0
+    mrs x0, tpidr_el1
+    ldr w1, [x0, #64]
+    sub w1, w1, #1
+    str w1, [x0, #64]
+    mrs x0, tpidrro_el0
+    
     cbz x0, 1f
     mov sp, x0
 1:  RESTORE_CONTEXT
 
 handle_sync_el0:
-    // EL0 -> EL1: Use TPIDR_EL1 as top
+    // EL0 -> EL1: Use TPIDR_EL1 + 88 (kernel_stack_top)
     msr tpidrro_el0, x0
-    mrs x18, sp_el0     // Incoming SP is SP_EL0
     mrs x0, tpidr_el1
+    ldr x0, [x0, #88] // kernel_stack_top
+    sub x0, x0, #288
+    mov x18, sp_el0  // Incoming SP is SP_EL0
     mov sp, x0
     mrs x0, tpidrro_el0
     
@@ -154,8 +172,16 @@ handle_sync_el0:
 
 handle_irq_el0:
     msr tpidrro_el0, x0
-    mrs x18, sp_el0     // Incoming SP is SP_EL0
     mrs x0, tpidr_el1
+    
+    // Increment irq_depth
+    ldr w1, [x0, #64]
+    add w1, w1, #1
+    str w1, [x0, #64]
+
+    ldr x0, [x0, #88] // kernel_stack_top
+    sub x0, x0, #288
+    mov x18, sp_el0
     mov sp, x0
     mrs x0, tpidrro_el0
 
@@ -163,6 +189,15 @@ handle_irq_el0:
     mov x0, sp
     mov x1, #9
     bl aarch64_handle_exception
+
+    // Decrement irq_depth
+    msr tpidrro_el0, x0
+    mrs x0, tpidr_el1
+    ldr w1, [x0, #64]
+    sub w1, w1, #1
+    str w1, [x0, #64]
+    mrs x0, tpidrro_el0
+
     cbz x0, 1f
     mov sp, x0
 1:  RESTORE_CONTEXT

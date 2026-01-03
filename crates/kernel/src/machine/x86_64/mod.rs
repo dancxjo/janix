@@ -84,7 +84,7 @@ impl ArchMachine {
 }
 
 // BSP PerCore structures
-pub static mut PERCPU_BSP: self::percpu::PerCpu = self::percpu::PerCpu::new(0, 0);
+pub static mut PERCPU_BSP: self::percpu::x86PerCpu = self::percpu::x86PerCpu::new(0, 0);
 pub static mut BSP_GDT: self::gdt::GdtTss = self::gdt::GdtTss::new();
 
 pub fn init() {
@@ -207,16 +207,10 @@ impl Machine for ArchMachine {
     }
 
     fn set_kernel_stack(&self, top: u64) {
-        // Update per-cpu kernel_rsp
-        // We can get per-cpu via GS.
-        // We reserve 256 bytes at the top for syscall saved state (RIP, RFLAGS, etc.)
-        // Landmark 6.4: Unified Stack Entry.
-        
-        // Landmark 6.4: Unified Stack Entry.
-        // Both Syscall and Interrupts from User Mode use the absolute TOP.
-        // Ring 0 interrupts will use the current stack and won't clobber it.
+        // Update per-cpu exception_stack_ptr (offset 72)
+        // This is used by syscall_entry in interrupts.S
         unsafe {
-            core::arch::asm!("mov gs:[32], {}", in(reg) top);
+            core::arch::asm!("mov gs:[72], {}", in(reg) top);
             gdt::set_tss_rsp0(top);
         }
     }

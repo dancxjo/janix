@@ -300,19 +300,24 @@ pub fn spawn_empty(name: &'static str) -> TaskId {
 use core::sync::atomic::{AtomicU64, Ordering};
 pub static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 
-/// Called by timer interrupt.
-/// Returns new_sp or 0 if no switch.
 pub fn tick(current_sp: u64) -> u64 {
+    let mut guard = SCHEDULER.lock();
+    let sched = guard.as_mut();
+    if sched.is_none() { return 0; }
+    let sched = sched.unwrap();
+
+    if sched.cpu.in_switch || sched.cpu.preempt_disabled > 0 {
+        return 0; // Defer if already switching or preemption disabled
+    }
+    
+    // Set in_switch guard
+    sched.cpu.in_switch = true;
+
     // 1. Inc timer ticks
     let ticks = TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
     if ticks == 0 {
         crate::serial::write(b"SCHED: first tick!\n");
     }
-    
-    let mut guard = SCHEDULER.lock();
-    let sched = guard.as_mut();
-    if sched.is_none() { return 0; }
-    let sched = sched.unwrap();
     
     let prev_task = sched.cpu.current_task;
 
@@ -329,7 +334,7 @@ pub fn tick(current_sp: u64) -> u64 {
              t.state = TaskState::Ready;
              // Enqueue
              let thing = t.thing;
-             sched.run_queue.push_back(curr, thing);
+             sched.run_queue.push_back(prev_task, thing);
         }
     }
     
@@ -368,24 +373,15 @@ pub fn tick(current_sp: u64) -> u64 {
         // Set Kernel Stack for Syscall/Traps
         crate::machine::machine().set_kernel_stack(t.stack_top);
 
-        // DON'T activate address space yet - we're still on the old stack!
-        // The interrupt handler will switch stacks first, then we activate.
-        // Actually, we need to return info about whether to switch AS.
-        // For now, let's defer activation.
-        
         let new_sp = t.stack_ptr;
-        
-        // Now activate AFTER we have the SP but before we return
-        // This way the stack switch in assembly happens with the new AS active
         t.address_space.activate();
         
+        // Clear in_switch before return
+        sched.cpu.in_switch = false;
         new_sp
     } else {
-        // Idle? Or continue current?
-        // If current was put back in queue, it might be picked again.
-        // If queue empty and we have current, it was put back?
-        // Wait, I put it back above. So pop_front should return it if it's the only one.
-        // So this branch is mostly "No tasks at all".
+        // Clear in_switch before return
+        sched.cpu.in_switch = false;
         0
     }
 }

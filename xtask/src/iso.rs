@@ -65,7 +65,7 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
     }
 
     // Copy Apps
-    let apps = ["graph_smoke", "log_smoke", "cap_fail", "inputd", "echo", "inspector"];
+    let apps = ["graph_smoke", "log_smoke", "cap_fail", "inputd", "echo", "inspector", "logview"];
     for app in apps {
         let src = bin_src.join(app);
         if src.exists() {

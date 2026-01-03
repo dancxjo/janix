@@ -135,6 +135,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
 
     // Phase 3.5: Seed core ontology
     graph::seed_minimal();
+    seed_permissions();
     log::klog(Level::Info, "KERNEL", "graph seeded");
 
     // Phase 3.6: Verify Graph
@@ -207,7 +208,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         let bs = Bytespace::new_module(module.phys_addr, module.size as usize);
         
         if module.path.ends_with("sprout") || module.path.ends_with("bloom")
-            || module.path.ends_with("log_smoke") 
+            || module.path.ends_with("log_smoke") || module.path.ends_with("logview")
             // || module.path.ends_with("graph_smoke") || module.path.ends_with("cap_fail")
             // || module.path.ends_with("clock") || module.path.ends_with("inputd") || module.path.ends_with("echo")
             // || module.path.ends_with("inspector")
@@ -606,6 +607,31 @@ fn grant_initial_caps(task_id: abi::ids::ThingId) {
     grant(task_id, &["perm.mem", "perm.dictator"]);
 }
 
+fn seed_permissions() {
+    use graph::symbols;
+    use graph::store;
+    
+    let kind_perm = symbols::intern(b"kind.permission");
+    let pred_contains = symbols::intern(b"predicate.contains");
+    
+    let root_sym = symbols::intern(b"place.root");
+    let root = store::find_thing_by_name(root_sym).expect("place.root missing");
+    
+    let place_perms = store::thing_create(symbols::intern(b"kind.place"));
+    store::thing_register_name(place_perms, symbols::intern(b"place.perms"));
+    store::relationship_create(pred_contains, root, place_perms);
+
+    let perms = [
+        "perm.read", "perm.write", "perm.create", "perm.link", "perm.unlink",
+        "perm.watch", "perm.log", "perm.mem", "perm.dictator"
+    ];
+
+    for p_name in perms {
+        let p = store::thing_create(kind_perm);
+        store::thing_register_name(p, symbols::intern(p_name.as_bytes()));
+        store::relationship_create(pred_contains, place_perms, p);
+    }
+}
 
 
 fn seed_bloom_ontology(fb_bs_id: abi::ids::ThingId, fb: &FramebufferInfo) {

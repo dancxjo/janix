@@ -5,9 +5,11 @@ Feature: Boot contract and system bring-up
   @boot @smoke
   Scenario: Bran hands off a boot contract to the Kernel
     Given I boot ThingOS on "x86_64"
-    Then the serial log should contain "bran:"
-    And the serial log should contain "kernel:"
-    And the system should not panic
+    Then the serial output contains "bran:"
+    And the serial output contains "kernel:"
+    And the serial output contains "TICK: switch"
+    And the serial output contains "SPROUT: I am alive"
+    And it does not panic
 
   @boot @graph @wip
   Scenario: The Kernel exposes a root Place and a devices Place

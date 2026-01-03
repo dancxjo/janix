@@ -1,7 +1,0 @@
-{
-  "arch": "all",
-  "artifacts_dir": "all/boot_contract_and_system_bring_up/sprout_starts_core_services",
-  "feature": "Boot contract and system bring-up",
-  "scenario": "Sprout starts core services",
-  "status": "pass"
-}

@@ -345,8 +345,7 @@ pub fn tick(current_sp: u64) -> u64 {
         sched.cpu.current_task = next;
         let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
         
-        /* 
-        // SILENCED LOGS
+        
         crate::serial::write(b"TICK: switch ");
         if prev_task.0 != 0 {
              crate::serial::write_num(prev_task.0);
@@ -365,7 +364,7 @@ pub fn tick(current_sp: u64) -> u64 {
              crate::serial::write(b" [SP_MISALIGN]");
         }
         crate::serial::write(b"\n");
-        */
+        
         
         t.state = TaskState::Running;
         t.first_run = false; // Mark as having started execution

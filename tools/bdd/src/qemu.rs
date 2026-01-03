@@ -44,14 +44,14 @@ impl QemuProcess {
             "-qmp".to_string(),
             format!("unix:{},server,nowait", qmp_sock_path.display()),
             "-d".to_string(),
-            "cpu_reset".to_string(),
+            "guest_errors".to_string(),
             "-D".to_string(),
             "qemu.log".to_string(),
         ];
 
         // Check for /dev/kvm and architecture match
         let host_arch = std::env::consts::ARCH;
-        if false /* std::path::Path::new("/dev/kvm").exists() && host_arch == arch */ {
+        if std::path::Path::new("/dev/kvm").exists() && host_arch == arch {
             println!(
                 "Probing KVM: available and arch matches ({}). Using -accel kvm",
                 host_arch

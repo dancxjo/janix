@@ -29,7 +29,7 @@ pub struct ExceptionContext {
 
 #[no_mangle]
 pub unsafe extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u64) -> u64 {
-    crate::serial::write(b"R"); crate::serial::write_num(vector); crate::serial::write(b"e"); crate::serial::write_hex((esr >> 26) & 0x3f);
+    crate::serial::write(b"R");
 
     let esr: u64;
     asm!("mrs {}, esr_el1", out(reg) esr, options(nomem, preserves_flags));

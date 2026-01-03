@@ -89,13 +89,17 @@ aarch64_vectors:
     ldr x30, [sp, #240]
 
     ldp x18, x19, [sp, #144]
-    ldr x9, [sp, #248]
-    
-    // Restore SP from our saved copy in x18
-    // If x18 was sp_el0, we need to decide if we restore sp_el0 or sp_el1
-    // Actually, we just want to restore SP to what it was.
-    mov sp, x9
-    
+    ldr x9, [sp, #248]         // Saved SP (user sp_el0 or kernel sp)
+    ldr x10, [sp, #264]        // spsr_el1 (already restored to system reg, but read for check)
+
+    // For EL0 returns, we must set sp_el0 instead of sp
+    // SPSR_EL1 bits 3:0: 0x0 = EL0, 0x4/0x5 = EL1
+    and x11, x10, #0xf
+    cbnz x11, 1f               // If returning to EL1, branch
+    msr sp_el0, x9             // Restore user stack to SP_EL0
+    b 2f
+1:  mov sp, x9                 // Restore kernel stack to SP
+2:
     eret
 .endm
 

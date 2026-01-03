@@ -36,6 +36,9 @@ enum Commands {
         /// Run only smoke tests
         #[arg(long)]
         smoke: bool,
+        /// Run only a specific feature (matches filename in tools/bdd/features)
+        #[arg(long, default_value = "all")]
+        feature: String,
     },
     /// Inspect running kernel with GDB
     Inspect {
@@ -90,7 +93,7 @@ fn main() -> Result<()> {
         Commands::Fetch => fetch::fetch(),
         Commands::Build { env } => build::run(&env),
         Commands::Clean => clean::run(),
-        Commands::Test { arch, smoke } => test::run(Some(arch), smoke),
+        Commands::Test { arch, smoke, feature } => test::run(Some(arch), smoke, Some(feature)),
 
         Commands::UpdateDocs => {
             Command::new("cargo")

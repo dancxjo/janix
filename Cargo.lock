@@ -192,13 +192,11 @@ dependencies = [
 name = "bdd"
 version = "0.1.0"
 dependencies = [
- "abi",
  "anyhow",
  "chrono",
  "clap",
  "cucumber",
  "futures",
- "graph",
  "image 0.24.9",
  "lazy_static",
  "rand 0.8.5",

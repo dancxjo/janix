@@ -2,30 +2,35 @@ use anyhow::{Context, Result};
 use std::env;
 use std::process::Command;
 
-pub fn run(arch: Option<String>, smoke: bool) -> Result<()> {
+pub fn run(arch: Option<String>, smoke: bool, feature: Option<String>) -> Result<()> {
     let arch = arch.unwrap_or_else(|| "all".to_string());
+    let feature = feature.unwrap_or_else(|| "all".to_string());
     let root = project_root();
 
-    println!("==> Running BDD tests for arch: {}...", arch);
+    println!("==> Running BDD tests for arch: {}, feature: {}...", arch, feature);
 
-    // Ensure we have a fresh build first?
-    // Usually BDD runner might expect built artifacts.
-    // The previous `make bdd` didn't explicitly depend on build, but `ci-bdd-runner` probably just runs QEMU which uses the ISO.
-    // Let's protect the user by ensuring build/iso exists or just rely on them running `just build` first.
-    // Ideally `xtask test` should do it all, but re-building every time is slow.
-    // Let's assume user flow is `just build` then `just test`.
-    // OR we can check if artifacts exist.
-    
-    // For now, let's just invoke the runner.
-    
-    let status = Command::new("cargo")
-        .arg("run")
+    let mut cmd = Command::new("cargo");
+    cmd.arg("run")
         .arg("-p")
         .arg("bdd")
         .env("ARCH", &arch)
         .env("SMOKE_TEST", if smoke { "1" } else { "0" })
-        .current_dir(&root)
-        .status()
+        .current_dir(&root);
+
+    if feature != "all" {
+        let feature_filename = if feature.ends_with(".feature") {
+            feature.clone()
+        } else {
+            format!("{}.feature", feature)
+        };
+        let feature_path = root.join("tools/bdd/features").join(feature_filename);
+        if !feature_path.exists() {
+            anyhow::bail!("Feature file not found: {}", feature_path.display());
+        }
+        cmd.env("FEATURE_PATH", feature_path);
+    }
+
+    let status = cmd.status()
         .context("Failed to run ci-bdd-runner")?;
 
     if !status.success() {

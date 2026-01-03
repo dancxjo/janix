@@ -79,17 +79,18 @@ async fn main() -> anyhow::Result<()> {
                 return true;
             }
 
-            // Check if scenario name contains "for <arch>"
+            // Check if arch name appears in scenario name
             for a in &archs {
-                if scenario.name.contains(&format!("for {}", a)) {
+                if scenario.name.contains(a) || scenario.name.contains(&a.to_uppercase()) {
                     return true;
                 }
             }
             
-            // Check if any step boots one of the target architectures
+            // Check if any step value mentions the arch
             for step in &scenario.steps {
                 for a in &archs {
-                    if step.value.contains(&format!("for \"{}\"", a)) {
+                    // Match "arch", "\"arch\"", etc.
+                    if step.value.contains(a) || step.value.contains(&format!("\"{}\"", a)) {
                         return true;
                     }
                 }

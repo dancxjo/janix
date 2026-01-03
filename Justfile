@@ -17,11 +17,11 @@ die:
 update-docs:
     cargo run -p xtask -- update-docs
 
-test arch="all":
-    cargo run -p xtask -- test --arch {{arch}}
+test arch="all" feature="all":
+    cargo run -p xtask -- test --arch {{arch}} --feature {{feature}}
 
-smoke arch="all":
-    cargo run -p xtask -- test --arch {{arch}} --smoke
+smoke arch="all" feature="all":
+    cargo run -p xtask -- test --arch {{arch}} --smoke --feature {{feature}}
 
 build:
     cargo run -p xtask -- build

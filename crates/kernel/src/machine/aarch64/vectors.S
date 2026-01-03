@@ -158,7 +158,7 @@ handle_sync_el0:
     mrs x0, tpidr_el1
     ldr x0, [x0, #88] // kernel_stack_top
     sub x0, x0, #288
-    mov x18, sp_el0  // Incoming SP is SP_EL0
+    mrs x18, sp_el0  // Incoming SP is SP_EL0
     mov sp, x0
     mrs x0, tpidrro_el0
     
@@ -181,7 +181,7 @@ handle_irq_el0:
 
     ldr x0, [x0, #88] // kernel_stack_top
     sub x0, x0, #288
-    mov x18, sp_el0
+    mrs x18, sp_el0
     mov sp, x0
     mrs x0, tpidrro_el0
 

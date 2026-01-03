@@ -12,6 +12,7 @@ global_asm!(include_str!("vectors.S"));
 use core::sync::atomic::{AtomicU64, Ordering};
 
 pub mod exception;
+pub mod abi;
 
 mod serial;
 pub mod gic;
@@ -65,7 +66,12 @@ pub static mut PERCPU_BSP: Option<ArchPerCpu> = None;
 
 #[repr(C, align(16))]
 pub struct ExceptionStack([u8; 16384]);
+
+#[no_mangle]
 pub static mut BSP_EXCEPTION_STACK: ExceptionStack = ExceptionStack([0; 16384]);
+
+#[no_mangle]
+pub static mut exception_stack_top: u64 = 0; // Will be set in init_machine
 
 static ARCH_MACHINE_IMPL: ArchMachine = ArchMachine::new();
 pub static ARCH_MACHINE: &'static dyn Machine = &ARCH_MACHINE_IMPL;
@@ -118,11 +124,15 @@ impl ArchMachine {
              gic::init(gicd_map.virt, gicc_map.virt);
 
              // Initialize PerCpu
-             let cpu_thing = abi::ids::ThingId(0); // TODO: Real ID
-             let rq_thing = abi::ids::ThingId(0);
+             let cpu_thing = ::abi::ids::ThingId(0); // TODO: Real ID
+             let rq_thing = ::abi::ids::ThingId(0);
              PERCPU_BSP = Some(ArchPerCpu::new(0, cpu_thing, rq_thing));
+             
+             let stack_top = (&raw const BSP_EXCEPTION_STACK as u64) + 16384;
+             exception_stack_top = stack_top;
+
              if let Some(ref mut pc) = PERCPU_BSP {
-                 pc.core.exception_stack_ptr = (&raw const BSP_EXCEPTION_STACK as u64) + 16384;
+                 pc.core.exception_stack_ptr = stack_top;
                  percpu::init_percpu(pc);
              }
 

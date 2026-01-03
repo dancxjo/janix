@@ -250,7 +250,7 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         let elf_type = unsafe { *((virt_addr + 16) as *const u16) };
         log::klog(Level::Info, "ELF", &format!("header type: {}", elf_type));
 
-        if name == "sprout" {
+        if name.ends_with("sprout") {
             log::klog(Level::Info, "KERNEL", "init task designated");
         }
 

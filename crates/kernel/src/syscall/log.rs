@@ -26,6 +26,9 @@ pub fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult
     let msg = unsafe {
         core::slice::from_raw_parts(msg_ptr as *const u8, msg_len as usize)
     };
+    
+    // Log to serial for BDD/Debug visibility
+    crate::log::klog(_level, "USER", core::str::from_utf8(msg).unwrap_or("INVALID_UTF8"));
 
     // 3. Create Log Thing
     let kind_log = symbols::intern(b"kind.log_entry");

@@ -1,7 +1,7 @@
 use crate::qemu::QemuProcess;
 use crate::shared::{ANY_FAILURE, GLOBAL_LAST_ERROR, GLOBAL_QEMU};
 use anyhow::{anyhow, Context, Result};
-use cucumber::{gherkin::Step, given, when, then, World};
+use cucumber::{given, World};
 use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};
@@ -949,7 +949,7 @@ async fn serial_contains_simple(world: &mut BootWorld, expected: String) -> Resu
 }
 
 #[then("the framebuffer contains visible evidence of the log")]
-async fn fb_has_log_evidence(world: &mut BootWorld) -> Result<()> {
+async fn fb_has_log_evidence(_world: &mut BootWorld) -> Result<()> {
     // screendump and check?
     let mut guard = GLOBAL_QEMU.lock().await;
     if let Some(qemu) = guard.as_mut() {
@@ -969,7 +969,7 @@ async fn boot_with_fb_simple(world: &mut BootWorld, arch: String) -> Result<()> 
 }
 
 #[given(expr = "{word} starts as a user task")]
-async fn user_task_starts(world: &mut BootWorld, app: String) -> Result<()> {
+async fn user_task_starts(_world: &mut BootWorld, _app: String) -> Result<()> {
     Ok(())
 }
 

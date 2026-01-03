@@ -137,6 +137,20 @@ pub fn run() -> ! {
 
 
     // Enable interrupts
+    crate::serial::write(b"SCHED: calling irq_enable...\n");
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let tpidr: u64;
+        core::arch::asm!("mrs {}, tpidr_el1", out(reg) tpidr);
+        crate::serial::write(b"SCHED: TPIDR_EL1=");
+        crate::serial::write_hex(tpidr);
+        if tpidr != 0 {
+            let exc_stack = *(tpidr as *const u64).add(9); // offset 72 = 9*8
+            crate::serial::write(b" EXC_STACK=");
+            crate::serial::write_hex(exc_stack);
+        }
+        crate::serial::write(b"\n");
+    }
     crate::machine::machine().irq_enable();
 
     let mut last_irq_check = 0;

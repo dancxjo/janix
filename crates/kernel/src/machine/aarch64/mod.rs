@@ -133,7 +133,15 @@ impl ArchMachine {
 
              if let Some(ref mut pc) = PERCPU_BSP {
                  pc.core.exception_stack_ptr = stack_top;
+                 crate::serial::write(b"INIT: EXC_STACK set to ");
+                 crate::serial::write_hex(stack_top);
+                 crate::serial::write(b"\n");
                  percpu::init_percpu(pc);
+                 let t: u64;
+                 core::arch::asm!("mrs {}, tpidr_el1", out(reg) t);
+                 crate::serial::write(b"INIT: TPIDR_EL1 set to ");
+                 crate::serial::write_hex(t);
+                 crate::serial::write(b"\n");
              }
 
              // Initialize Timer

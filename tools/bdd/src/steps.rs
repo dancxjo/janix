@@ -452,6 +452,12 @@ async fn expect_to_see_simple(_world: &mut BootWorld, expected: String) -> Resul
 }
 
 
+#[then("the system must reach steady state")]
+async fn system_reaches_steady_state(_world: &mut BootWorld) -> Result<()> {
+    wait_for_boot_completion().await?;
+    Ok(())
+}
+
 #[given("the system has completed kernel initialization")]
 async fn given_kernel_init(world: &mut BootWorld) -> Result<()> {
     boot_os_in_qemu(world, "x86_64".to_string()).await?;

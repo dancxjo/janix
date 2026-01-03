@@ -1,13 +1,13 @@
-use kernel::arch::user_space::{UserPageFlags, UserSpace};
 use crate::bridge::{UserRoot, HHDM_OFFSET};
+use alloc::alloc::{alloc_zeroed, Layout};
 use core::sync::atomic::Ordering;
+use kernel::arch::user_space::{UserPageFlags, UserSpace};
 use x86_64::structures::paging::{
     mapper::{Mapper, TranslateError},
     FrameAllocator, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
     Translate,
 };
 use x86_64::{PhysAddr, VirtAddr};
-use alloc::alloc::{alloc_zeroed, Layout};
 
 pub struct X64UserSpace;
 
@@ -25,9 +25,7 @@ fn page_flags_from_user(flags: UserPageFlags) -> PageTableFlags {
     out
 }
 
-fn table_allocator(
-    hhdm_offset: VirtAddr,
-) -> impl FrameAllocator<Size4KiB> {
+fn table_allocator(hhdm_offset: VirtAddr) -> impl FrameAllocator<Size4KiB> {
     struct HeapFrameAllocator {
         hhdm_offset: VirtAddr,
     }
@@ -50,8 +48,7 @@ fn table_allocator(
             let (l4_frame, _) = Cr3::read();
             let virt_l4 = self.hhdm_offset + l4_frame.start_address().as_u64();
             let pml4_ptr: *mut x86_64::structures::paging::PageTable = virt_l4.as_mut_ptr();
-            let mut mapper =
-                unsafe { OffsetPageTable::new(&mut *pml4_ptr, self.hhdm_offset) };
+            let mut mapper = unsafe { OffsetPageTable::new(&mut *pml4_ptr, self.hhdm_offset) };
 
             mapper
                 .translate_addr(VirtAddr::new(ptr as u64))
@@ -62,9 +59,7 @@ fn table_allocator(
     HeapFrameAllocator { hhdm_offset }
 }
 
-fn mapper_from_root<'a>(
-    root: &'a mut UserRoot,
-) -> OffsetPageTable<'a> {
+fn mapper_from_root<'a>(root: &'a mut UserRoot) -> OffsetPageTable<'a> {
     unsafe { OffsetPageTable::new(&mut *root.pml4, root.hhdm_offset) }
 }
 
@@ -108,16 +103,15 @@ impl UserSpace for X64UserSpace {
 
         mapper
             .translate_addr(VirtAddr::new(ptr as u64))
-            .map(|p| PhysFrame::<Size4KiB>::containing_address(p).start_address().as_u64())
+            .map(|p| {
+                PhysFrame::<Size4KiB>::containing_address(p)
+                    .start_address()
+                    .as_u64()
+            })
             .unwrap_or(0)
     }
 
-    unsafe fn map_4k(
-        root: &mut Self::Root,
-        vaddr: u64,
-        paddr: u64,
-        flags: UserPageFlags,
-    ) {
+    unsafe fn map_4k(root: &mut Self::Root, vaddr: u64, paddr: u64, flags: UserPageFlags) {
         let hhdm = root.hhdm_offset;
         let mut mapper = mapper_from_root(root);
         let page = Page::<Size4KiB>::containing_address(VirtAddr::new(vaddr));
@@ -149,11 +143,7 @@ impl UserSpace for X64UserSpace {
         }
     }
 
-    unsafe fn write_bytes(
-        root: &mut Self::Root,
-        vaddr: u64,
-        bytes: &[u8],
-    ) {
+    unsafe fn write_bytes(root: &mut Self::Root, vaddr: u64, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }
@@ -189,7 +179,8 @@ impl UserSpace for X64UserSpace {
         // Default flags for implicit mapping during load:
         // The prompt says: "write_bytes: ensure page exists + map writable + copy bytes using HHDM mapping."
         // We'll use User + RW.
-        let map_flags = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::WRITABLE;
+        let map_flags =
+            PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::WRITABLE;
 
         for page in Page::range_inclusive(start_page, end_page) {
             let page_start_virt = page.start_address();
@@ -198,17 +189,19 @@ impl UserSpace for X64UserSpace {
             // Check if mapped
             match mapper.translate_page(page) {
                 Ok(_) => {
-                     // Update flags to be writable if it wasn't?
-                     // If it's already mapped, we assume we can write to it via HHDM alias,
-                     // so user-side permissions don't strictly matter for kernel writing via HHDM.
-                     // But we should ensure it is backed by RAM.
-                     needs_alloc = false;
+                    // Update flags to be writable if it wasn't?
+                    // If it's already mapped, we assume we can write to it via HHDM alias,
+                    // so user-side permissions don't strictly matter for kernel writing via HHDM.
+                    // But we should ensure it is backed by RAM.
+                    needs_alloc = false;
                 }
                 Err(TranslateError::ParentEntryHugePage) => {
-                     // Split? Or just unmap and remap 4k?
-                     if let Ok((_phys, flush)) = mapper.unmap(Page::<Size2MiB>::containing_address(page_start_virt)) {
-                         flush.flush();
-                     }
+                    // Split? Or just unmap and remap 4k?
+                    if let Ok((_phys, flush)) =
+                        mapper.unmap(Page::<Size2MiB>::containing_address(page_start_virt))
+                    {
+                        flush.flush();
+                    }
                 }
                 Err(TranslateError::PageNotMapped) => {}
                 Err(_) => continue,
@@ -227,8 +220,11 @@ impl UserSpace for X64UserSpace {
 
             // Now copy
             // We need to find the physical address of the page we just ensured is there.
-            if let x86_64::structures::paging::mapper::TranslateResult::Mapped { frame, offset, .. } =
-                mapper.translate(page_start_virt)
+            if let x86_64::structures::paging::mapper::TranslateResult::Mapped {
+                frame,
+                offset,
+                ..
+            } = mapper.translate(page_start_virt)
             {
                 let phys = frame.start_address() + offset;
                 let frame_virt = hhdm + phys.as_u64();

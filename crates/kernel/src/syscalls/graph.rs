@@ -1,16 +1,17 @@
 use crate::bridge::FullMachineBridge;
+use crate::syscalls::helpers::collect_links;
 use crate::Kernel;
 use abi::wire::graph::{GraphOp, GraphReply};
 use abi::wire::time::{
     TimeMonotonicReq, TimeMonotonicResp, TimeNowReq, TimeNowResp, TimeSleepNsReq, TimeSleepNsResp,
     TimeSleepUntilReq, TimeSleepUntilResp,
 };
-use alloc::string::String;
+use abi::wire::typed::TypedBytes;
 use alloc::boxed::Box;
+use alloc::string::String;
 use postcard::to_slice;
 use serde::Serialize;
 use thing_models::link::LinkBody;
-use abi::wire::typed::TypedBytes;
 
 pub const SYSCALL_WAIT_FLAG: usize = 1 << 62;
 
@@ -113,24 +114,16 @@ pub fn handle_graph_op<B: FullMachineBridge>(
             // This replaces O(N) scan of all links with O(1) lookups.
 
             if let Some(target_from) = from {
-                let iter: Box<dyn Iterator<Item = &thing_models::Thing>> = if let Some(target_kind) = kind {
-                    Box::new(kernel.graph.iter_links_from_kind(target_from, target_kind))
+                // Remove Box allocation by using a generic helper
+                if let Some(target_kind) = kind {
+                    collect_links(
+                        kernel.graph.iter_links_from_kind(target_from, target_kind),
+                        to,
+                        &mut results,
+                    );
                 } else {
-                    Box::new(kernel.graph.iter_links_from(target_from))
+                    collect_links(kernel.graph.iter_links_from(target_from), to, &mut results);
                 };
-
-                for thing in iter {
-                    if let Ok(tb) = thing.body.decode::<TypedBytes>() {
-                        if let Ok(link) = postcard::from_bytes::<LinkBody>(&tb.bytes) {
-                             if let Some(target_to) = to {
-                                if link.to != target_to {
-                                    continue;
-                                }
-                            }
-                            results.push((link.from, link.to, link.predicate));
-                        }
-                    }
-                }
             } else {
                 // Fallback to O(N) scan of all links if 'from' is not specified.
                 // This path should be rare in practice.

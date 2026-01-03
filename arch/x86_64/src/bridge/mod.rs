@@ -247,9 +247,7 @@ fn page_flags_from_user(flags: UserPageFlags) -> x86_64::structures::paging::Pag
 #[cfg(target_arch = "x86_64")]
 fn table_allocator(
     hhdm_offset: x86_64::VirtAddr,
-) -> impl x86_64::structures::paging::FrameAllocator<
-    x86_64::structures::paging::Size4KiB,
-> {
+) -> impl x86_64::structures::paging::FrameAllocator<x86_64::structures::paging::Size4KiB> {
     use alloc::alloc::{alloc_zeroed, Layout};
     use x86_64::registers::control::Cr3;
     use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PhysFrame, Size4KiB};
@@ -270,8 +268,7 @@ fn table_allocator(
             let (l4_frame, _) = Cr3::read();
             let virt_l4 = self.hhdm_offset + l4_frame.start_address().as_u64();
             let pml4_ptr: *mut x86_64::structures::paging::PageTable = virt_l4.as_mut_ptr();
-            let mut mapper =
-                unsafe { OffsetPageTable::new(&mut *pml4_ptr, self.hhdm_offset) };
+            let mut mapper = unsafe { OffsetPageTable::new(&mut *pml4_ptr, self.hhdm_offset) };
             mapper
                 .translate_addr(VirtAddr::new(ptr as u64))
                 .map(|p| PhysFrame::containing_address(p))
@@ -282,9 +279,7 @@ fn table_allocator(
 }
 
 #[cfg(target_arch = "x86_64")]
-fn mapper_from_root<'a>(
-    root: &'a mut UserRoot,
-) -> x86_64::structures::paging::OffsetPageTable<'a> {
+fn mapper_from_root<'a>(root: &'a mut UserRoot) -> x86_64::structures::paging::OffsetPageTable<'a> {
     unsafe { x86_64::structures::paging::OffsetPageTable::new(&mut *root.pml4, root.hhdm_offset) }
 }
 
@@ -306,12 +301,7 @@ impl UserAddressSpace for Bridge {
         }
     }
 
-    unsafe fn map_user_page(
-        root: &mut Self::Root,
-        vaddr: u64,
-        paddr: u64,
-        flags: UserPageFlags,
-    ) {
+    unsafe fn map_user_page(root: &mut Self::Root, vaddr: u64, paddr: u64, flags: UserPageFlags) {
         use x86_64::structures::paging::mapper::TranslateError;
         use x86_64::structures::paging::{
             Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size2MiB, Size4KiB,
@@ -368,7 +358,11 @@ impl UserAddressSpace for Bridge {
 
         mapper
             .translate_addr(VirtAddr::new(ptr as u64))
-            .map(|p| PhysFrame::<Size4KiB>::containing_address(p).start_address().as_u64())
+            .map(|p| {
+                PhysFrame::<Size4KiB>::containing_address(p)
+                    .start_address()
+                    .as_u64()
+            })
             .unwrap_or(0)
     }
 
@@ -416,8 +410,8 @@ impl UserAddressSpace for Bridge {
                     needs_alloc = false;
                 }
                 Err(TranslateError::ParentEntryHugePage) => {
-                    if let Ok((_phys, flush)) = mapper
-                        .unmap(Page::<Size2MiB>::containing_address(page_start_virt))
+                    if let Ok((_phys, flush)) =
+                        mapper.unmap(Page::<Size2MiB>::containing_address(page_start_virt))
                     {
                         flush.flush();
                     }
@@ -443,8 +437,7 @@ impl UserAddressSpace for Bridge {
                 continue;
             }
 
-            if let TranslateResult::Mapped { frame, offset, .. } =
-                mapper.translate(page_start_virt)
+            if let TranslateResult::Mapped { frame, offset, .. } = mapper.translate(page_start_virt)
             {
                 let phys = frame.start_address() + offset;
                 let frame_virt = hhdm + phys.as_u64();

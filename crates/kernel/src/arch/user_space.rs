@@ -1,9 +1,8 @@
-
 pub struct UserPageFlags {
     pub writable: bool,
     pub executable: bool,
-    pub device: bool,     // framebuffer MMIO / uncached
-    pub user: bool,       // always true for user mappings
+    pub device: bool, // framebuffer MMIO / uncached
+    pub user: bool,   // always true for user mappings
 }
 
 pub trait UserSpace {

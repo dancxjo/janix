@@ -1,10 +1,10 @@
-use abi::ThingId;
 use crate::bridge::Bridge;
 use crate::user_space::Aarch64UserSpace;
+use abi::ThingId;
 use kernel::arch::user_space::UserSpace;
+use kernel::bridge::CpuBridge;
 use kernel::sched::spawn::{spawn_user_elf, FramebufferMap};
 use kernel::Kernel;
-use kernel::bridge::CpuBridge;
 
 pub fn spawn_elf(
     k: &mut Kernel<Bridge>,
@@ -32,7 +32,7 @@ pub fn spawn_elf(
 
     let mut us = Aarch64UserSpace;
     if let Some(_res) = spawn_user_elf(k, &mut us, name, data, fb) {
-       // Logging handled in spawn_user_elf
+        // Logging handled in spawn_user_elf
     } else {
         k.bridge.log("loader: spawn_user_elf failed\n");
     }

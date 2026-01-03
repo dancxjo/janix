@@ -240,17 +240,14 @@ impl UserAddressSpace for Bridge {
         crate::paging::create_user_root().expect("failed to allocate user root")
     }
 
-    unsafe fn map_user_page(
-        root: &mut Self::Root,
-        vaddr: u64,
-        paddr: u64,
-        flags: UserPageFlags,
-    ) {
+    unsafe fn map_user_page(root: &mut Self::Root, vaddr: u64, paddr: u64, flags: UserPageFlags) {
         crate::paging::map_page_at_root(*root, paddr, vaddr, flags_to_pte(flags));
     }
 
     unsafe fn alloc_frame() -> u64 {
-        crate::paging::allocate_frame().map(|(phys, _)| phys).unwrap_or(0)
+        crate::paging::allocate_frame()
+            .map(|(phys, _)| phys)
+            .unwrap_or(0)
     }
 
     unsafe fn activate_user_root(root: &Self::Root) {

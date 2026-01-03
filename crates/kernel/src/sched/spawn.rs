@@ -1,4 +1,3 @@
-use core::sync::atomic::{AtomicU64, Ordering};
 use crate::arch::user_space::{UserPageFlags, UserSpace};
 use crate::boot_fs;
 use crate::sched::elf::load_elf;
@@ -6,6 +5,7 @@ use crate::sched::elf_reloc::{apply_relative_relocations, RelocationError};
 use crate::Kernel;
 use alloc::format;
 use core::cmp::max;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub struct SpawnResult {
     pub entry: u64,

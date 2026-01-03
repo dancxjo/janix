@@ -1,7 +1,7 @@
-use kernel::arch::user_space::{UserPageFlags, UserSpace};
 use crate::paging;
 use core::arch::asm;
 use core::cmp::{max, min};
+use kernel::arch::user_space::{UserPageFlags, UserSpace};
 
 pub struct Aarch64UserSpace;
 
@@ -43,20 +43,11 @@ impl UserSpace for Aarch64UserSpace {
         paging::allocate_frame().map(|(phys, _)| phys).unwrap_or(0)
     }
 
-    unsafe fn map_4k(
-        root: &mut Self::Root,
-        vaddr: u64,
-        paddr: u64,
-        flags: UserPageFlags,
-    ) {
+    unsafe fn map_4k(root: &mut Self::Root, vaddr: u64, paddr: u64, flags: UserPageFlags) {
         paging::map_page_at_root(*root, paddr, vaddr, flags_to_pte(flags));
     }
 
-    unsafe fn write_bytes(
-        root: &mut Self::Root,
-        vaddr: u64,
-        bytes: &[u8],
-    ) {
+    unsafe fn write_bytes(root: &mut Self::Root, vaddr: u64, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }

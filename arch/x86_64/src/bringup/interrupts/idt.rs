@@ -159,7 +159,7 @@ pub extern "C" fn page_fault_handler(frame: &mut TrapFrame, error_code: PageFaul
 }
 
 /// Naked trampoline for Timer Interrupt.
-/// 
+///
 /// CRITICAL: x86_64 hardware frame layout differs by privilege:
 /// - User mode (CPL 3→0): SS, RSP, RFLAGS, CS, RIP (5 values)  
 /// - Kernel mode (CPL 0→0): RFLAGS, CS, RIP only (3 values, NO RSP/SS!)
@@ -177,82 +177,69 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "out dx, al",
         "pop rdx",
         "pop rax",
-        
         // Check CPL from hardware frame CS (at [rsp + 8] for no-error interrupts)
         // If from user mode, swapgs and skip stack normalization
         "test byte ptr [rsp + 8], 3",
         "jnz 10f",
-        
         // === KERNEL MODE INTERRUPT ===
         // CPU only pushed RIP, CS, RFLAGS (3 values at rsp+0, rsp+8, rsp+16)
         // We need to expand to 5-element frame: RIP, CS, RFLAGS, RSP, SS
         //
         // CRITICAL: We can ONLY use rax as scratch, and we must save it first!
         // We absolutely cannot touch ANY other register before saving the TrapFrame.
-        
+
         // Save rax to stack
         "push rax",
         // Stack: [saved_rax] [RIP] [CS] [RFLAGS] ...
         //        rsp+0       rsp+8 rsp+16 rsp+24
-        
+
         // Calculate what RSP was before the interrupt (for iretq)
         // Pre-interrupt RSP = current_rsp + 8(saved_rax) + 24(CPU frame) = rsp + 32
         // But we need 16 more bytes for RSP+SS slots
         // After expansion, we want RSP slot to hold: current_rsp + 8 + 24 + 16 = current_rsp + 48
-        
+
         // Expand stack by 16 bytes
         "sub rsp, 16",
         // Stack: [??] [??] [saved_rax] [RIP] [CS] [RFLAGS] ...
         //        rsp+0 rsp+8 rsp+16    rsp+24 rsp+32 rsp+40
-        
+
         // Move saved_rax down to rsp+0
         "mov rax, [rsp + 16]",
         "mov [rsp + 0], rax",
-        
         // Move RIP down to rsp+8
         "mov rax, [rsp + 24]",
         "mov [rsp + 8], rax",
-        
         // Move CS down to rsp+16
         "mov rax, [rsp + 32]",
         "mov [rsp + 16], rax",
-        
         // Move RFLAGS down to rsp+24
         "mov rax, [rsp + 40]",
         "mov [rsp + 24], rax",
-        
         // Synthesize RSP at rsp+32 (pre-interrupt RSP)
         // Original RSP = current_rsp + 16 (our gap) + 8 (saved_rax) + 24 (orig CPU frame) = current_rsp + 48
         "lea rax, [rsp + 48]",
         "mov [rsp + 32], rax",
-        
         // Synthesize SS at rsp+40
         "mov rax, ss",
         "mov [rsp + 40], rax",
-        
         // Restore original rax
         "mov rax, [rsp]",
-        
         // Adjust stack to pop saved_rax placeholder
         "add rsp, 8",
         // Stack now: [RIP] [CS] [RFLAGS] [RSP] [SS] - normalized!
         //            rsp+0 rsp+8 rsp+16  rsp+24 rsp+32
-        
         "jmp 11f",
-        
         // === USER MODE INTERRUPT ===
         "10:",
         "swapgs",
         // Stack already has 5-element frame from CPU
-        
         "11:",
         // === COMMON PATH: Build TrapFrame ===
         // Stack now has: [RIP] [CS] [RFLAGS] [RSP] [SS] for both cases
-        
+
         // Save RAX then allocate TrapFrame
         "push rax",
         "sub rsp, 160",
-        
         // Save GPRs r15..rdi into TrapFrame
         "mov [rsp + 0], r15",
         "mov [rsp + 8], r14",
@@ -268,11 +255,9 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "mov [rsp + 88], rdx",
         "mov [rsp + 96], rsi",
         "mov [rsp + 104], rdi",
-        
         // Saved orig RAX is at rsp + 160
         "mov rax, [rsp + 160]",
         "mov [rsp + 112], rax",
-        
         // Hardware frame: rip=+168, cs=+176, rflags=+184, rsp=+192, ss=+200
         "mov rax, [rsp + 168]",
         "mov [rsp + 120], rax", // rip
@@ -284,11 +269,9 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "mov [rsp + 144], rax", // rsp
         "mov rax, [rsp + 200]",
         "mov [rsp + 152], rax", // ss
-        
         // Call Handler
         "mov rdi, rsp",
         "call timer_interrupt_handler",
-        
         // === RETURN PATH ===
         // Copy TrapFrame back to hardware frame
         "mov rax, [rsp + 120]",
@@ -301,7 +284,6 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "mov [rsp + 192], rax", // RSP
         "mov rax, [rsp + 152]",
         "mov [rsp + 200], rax", // SS
-        
         // Restore GPRs
         "mov r15, [rsp + 0]",
         "mov r14, [rsp + 8]",
@@ -318,16 +300,13 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "mov rsi, [rsp + 96]",
         "mov rdi, [rsp + 104]",
         "mov rax, [rsp + 112]",
-        
         // Tear down TrapFrame and saved rax
         "add rsp, 160",
         "pop rax",
-        
         // Now at the normalized 5-element hardware frame
         // Check the CS we are ABOUT TO return to (at rsp + 8)
         "test byte ptr [rsp + 8], 3",
         "jz 12f",
-        
         // === RETURNING TO USER MODE ===
         // DEBUG: Output 'U' to debugcon
         "push rax",
@@ -337,11 +316,9 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "out dx, al",
         "pop rdx",
         "pop rax",
-        
         // iretq will pop all 5 values: RIP, CS, RFLAGS, RSP, SS
         "swapgs",
         "iretq",
-        
         // === RETURNING TO KERNEL MODE ===
         "12:",
         // DEBUG: Output 'K' to debugcon
@@ -352,46 +329,41 @@ unsafe extern "C" fn timer_interrupt_naked() {
         "out dx, al",
         "pop rdx",
         "pop rax",
-        
         // For kernel-to-kernel return, iretq only pops RIP/CS/RFLAGS (not RSP/SS).
         // We must manually set up the stack so RSP ends up at the correct location.
         //
         // Current layout: [RIP] [CS] [RFLAGS] [target_RSP] [target_SS]
         //                 rsp+0 rsp+8 rsp+16   rsp+24       rsp+32
         //
-        // Strategy: 
+        // Strategy:
         // 1. Save rax and r11 (they'll be our scratch registers)
         // 2. Copy RIP/CS/RFLAGS to just below target_RSP
         // 3. Copy saved rax and r11 to new stack so we can restore them
         // 4. Point RSP to new location, restore regs, iretq
-        
+
         // Save scratch registers
         "push rax",
         "push r11",
         // Stack: [r11] [rax] [RIP] [CS] [RFLAGS] [target_RSP] [target_SS]
         //        rsp+0 rsp+8 rsp+16 rsp+24 rsp+32  rsp+40       rsp+48
-        
-        "mov rax, [rsp + 40]",  // target_RSP
-        
+        "mov rax, [rsp + 40]", // target_RSP
         // Copy iret frame to just below target_RSP using r11 as scratch
-        "mov r11, [rsp + 16]",  // RIP
+        "mov r11, [rsp + 16]", // RIP
         "mov [rax - 24], r11",
-        "mov r11, [rsp + 24]",  // CS
+        "mov r11, [rsp + 24]", // CS
         "mov [rax - 16], r11",
-        "mov r11, [rsp + 32]",  // RFLAGS
+        "mov r11, [rsp + 32]", // RFLAGS
         "mov [rax - 8], r11",
-        
         // Copy saved r11 and rax to new stack (in reverse order for pop)
-        "mov r11, [rsp + 8]",   // saved rax
-        "mov [rax - 32], r11",  
-        "mov r11, [rsp + 0]",   // saved r11
+        "mov r11, [rsp + 8]", // saved rax
+        "mov [rax - 32], r11",
+        "mov r11, [rsp + 0]", // saved r11
         "mov [rax - 40], r11",
-        
         // Switch to new stack location
         "lea rsp, [rax - 40]",
         // New stack: [saved_r11] [saved_rax] [RIP] [CS] [RFLAGS]
         //            rsp+0       rsp+8       rsp+16 rsp+24 rsp+32
-        
+
         // Restore r11 and rax, then iretq
         "pop r11",
         "pop rax",

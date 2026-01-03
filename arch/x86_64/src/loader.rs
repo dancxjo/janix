@@ -20,11 +20,10 @@ pub fn spawn_elf(
         return;
     }
 
-    let fb = unsafe { crate::entry::FRAMEBUFFER_INFO }
-        .map(|(phys, size)| FramebufferMap {
-            phys,
-            size: size as u64,
-        });
+    let fb = unsafe { crate::entry::FRAMEBUFFER_INFO }.map(|(phys, size)| FramebufferMap {
+        phys,
+        size: size as u64,
+    });
 
     let mut us = X64UserSpace;
     if let Some(_res) = spawn_user_elf(k, &mut us, name, data, fb) {

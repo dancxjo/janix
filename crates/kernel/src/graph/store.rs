@@ -98,7 +98,9 @@ impl GraphStore {
             // First remove the old entry from index.
             if thing.kind == thing_models::builtins::ids::THING_LINK_KIND {
                 if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
-                    if let Ok(link) = postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes) {
+                    if let Ok(link) =
+                        postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes)
+                    {
                         if let Some(preds) = self.link_index.get_mut(&link.from) {
                             if let Some(set) = preds.get_mut(&link.predicate) {
                                 set.remove(&id);
@@ -118,8 +120,10 @@ impl GraphStore {
 
             // Now re-insert into index with new body
             if thing.kind == thing_models::builtins::ids::THING_LINK_KIND {
-                 if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
-                    if let Ok(link) = postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes) {
+                if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
+                    if let Ok(link) =
+                        postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes)
+                    {
                         self.link_index
                             .entry(link.from)
                             .or_default()
@@ -145,7 +149,9 @@ impl GraphStore {
             // Remove from link_index if applicable
             if thing.kind == thing_models::builtins::ids::THING_LINK_KIND {
                 if let Ok(tb) = thing.body.decode::<abi::wire::typed::TypedBytes>() {
-                    if let Ok(link) = postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes) {
+                    if let Ok(link) =
+                        postcard::from_bytes::<thing_models::link::LinkBody>(&tb.bytes)
+                    {
                         if let Some(preds) = self.link_index.get_mut(&link.from) {
                             if let Some(set) = preds.get_mut(&link.predicate) {
                                 set.remove(&id);
@@ -192,8 +198,12 @@ impl GraphStore {
             .filter_map(|id| self.things.get(id))
     }
 
-    pub fn iter_links_from_kind(&self, from: ThingId, predicate: ThingId) -> impl Iterator<Item = &Thing> {
-         self.link_index
+    pub fn iter_links_from_kind(
+        &self,
+        from: ThingId,
+        predicate: ThingId,
+    ) -> impl Iterator<Item = &Thing> {
+        self.link_index
             .get(&from)
             .and_then(|preds| preds.get(&predicate))
             .into_iter()
@@ -217,12 +227,12 @@ impl GraphStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi::ThingId;
-    use thing_models::builtins::ids::{THING_BOOT_ROOT, THING_LINK_KIND};
-    use thing_models::link::LinkBody;
     use abi::wire::typed::TypedBytes;
+    use abi::ThingId;
     use alloc::vec;
     use alloc::vec::Vec;
+    use thing_models::builtins::ids::{THING_BOOT_ROOT, THING_LINK_KIND};
+    use thing_models::link::LinkBody;
 
     #[test]
     fn test_link_index() {
@@ -235,7 +245,11 @@ mod tests {
 
         // Helper to create link body
         let create_link = |from, to, predicate| {
-            let body = LinkBody { from, to, predicate };
+            let body = LinkBody {
+                from,
+                to,
+                predicate,
+            };
             let bytes = postcard::to_allocvec(&body).unwrap();
             let typed = TypedBytes {
                 type_id: abi::wire::typed::TypeId(THING_LINK_KIND.0 as u128),
@@ -273,18 +287,25 @@ mod tests {
         assert!(links_from_node2.contains(&l3));
 
         // Verify iter_links_from_kind
-        let links_from_node1_pred1: Vec<ThingId> = store.iter_links_from_kind(node1, pred1).map(|t| t.id).collect();
+        let links_from_node1_pred1: Vec<ThingId> = store
+            .iter_links_from_kind(node1, pred1)
+            .map(|t| t.id)
+            .collect();
         assert_eq!(links_from_node1_pred1.len(), 2); // l1, l2
         assert!(links_from_node1_pred1.contains(&l1));
         assert!(links_from_node1_pred1.contains(&l2));
 
-        let links_from_node1_pred2: Vec<ThingId> = store.iter_links_from_kind(node1, pred2).map(|t| t.id).collect();
+        let links_from_node1_pred2: Vec<ThingId> = store
+            .iter_links_from_kind(node1, pred2)
+            .map(|t| t.id)
+            .collect();
         assert_eq!(links_from_node1_pred2.len(), 1); // l4
         assert!(links_from_node1_pred2.contains(&l4));
 
         // Verify deletion
         store.delete_thing(l1).unwrap();
-        let links_from_node1_after: Vec<ThingId> = store.iter_links_from(node1).map(|t| t.id).collect();
+        let links_from_node1_after: Vec<ThingId> =
+            store.iter_links_from(node1).map(|t| t.id).collect();
         assert_eq!(links_from_node1_after.len(), 2); // l2, l4
         assert!(!links_from_node1_after.contains(&l1));
 
@@ -300,10 +321,12 @@ mod tests {
         let new_body_moved = create_link(node2, node1, pred2); // Move l4 from node1 to node2
         store.update_thing(l4, new_body_moved).unwrap();
 
-        let links_from_node1_moved: Vec<ThingId> = store.iter_links_from(node1).map(|t| t.id).collect();
+        let links_from_node1_moved: Vec<ThingId> =
+            store.iter_links_from(node1).map(|t| t.id).collect();
         assert_eq!(links_from_node1_moved.len(), 1); // Only l2 remaining
 
-        let links_from_node2_moved: Vec<ThingId> = store.iter_links_from(node2).map(|t| t.id).collect();
+        let links_from_node2_moved: Vec<ThingId> =
+            store.iter_links_from(node2).map(|t| t.id).collect();
         assert_eq!(links_from_node2_moved.len(), 2); // l3 and l4
         assert!(links_from_node2_moved.contains(&l4));
     }

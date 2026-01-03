@@ -373,16 +373,7 @@ unsafe fn spawn_sprout(k: &mut Kernel<Bridge>, boot_info: &BootFacts) {
 
             let data = core::slice::from_raw_parts(module.start as *const u8, module.size as usize);
 
-            loader::spawn_elf(
-                k,
-                None,
-                "sprout.elf",
-                data,
-                0,
-                None,
-                fb_phys,
-                fb_size,
-            );
+            loader::spawn_elf(k, None, "sprout.elf", data, 0, None, fb_phys, fb_size);
             return;
         }
     }
@@ -490,16 +481,7 @@ fn syscall_hook(
             if let Some(k) = (*guard).as_mut() {
                 let (fb_phys, fb_size) = unsafe { FRAMEBUFFER_INFO.unwrap_or((0, 0)) };
 
-                loader::spawn_elf(
-                    k,
-                    None,
-                    name,
-                    data,
-                    0,
-                    None,
-                    fb_phys,
-                    fb_size,
-                );
+                loader::spawn_elf(k, None, name, data, 0, None, fb_phys, fb_size);
                 return 0;
             }
         }

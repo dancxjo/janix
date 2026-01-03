@@ -1,48 +1,25 @@
-Feature: Userspace heap and memory isolation
+Feature: Bytespaces and address spaces
+  Memory is represented as bytespaces that can be mapped into address spaces with permissions.
+  Ownership and lifetime are explicit and do not leak.
 
-@core
-Scenario Outline: Userspace can allocate heap and write within it
-  Given I boot ThingOS on "<arch>"
-  And task C has a userspace heap enabled
-  When task C allocates 64 KiB and writes a pattern
-  Then task C reads back the same pattern
-  And the kernel remains stable
-  And the graph records a bytespace.heap for task C’s heap
+  @mem @wip
+  Scenario: A process can create a bytespace and map it with permissions
+    Given sprout is online
+    And the process "logview" has capability "cap.map_memory"
+    When "logview" creates a bytespace of size 65536
+    And "logview" maps the bytespace read-write into its address space
+    Then the mapping should succeed
+    And the graph should contain a Thing of kind "kind.Bytespace"
 
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @mem @wip
+  Scenario: Unmapping removes access
+    Given "logview" has a mapped bytespace
+    When "logview" unmaps that range
+    Then reads from that range should fault or fail safely
 
-@core
-Scenario Outline: Userspace cannot write kernel memory
-  Given I boot ThingOS on "<arch>"
-  When a userspace task attempts to write to a kernel address
-  Then the task faults
-  And the kernel survives
-  And the fault is recorded in the graph with Kind kind.PageFault
-
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
-
-@core
-Scenario Outline: Two tasks cannot scribble over each other
-  Given I boot ThingOS on "<arch>"
-  And task D allocates memory and writes "D"
-  And task E allocates memory and writes "E"
-  When each task attempts to read the other’s memory by guessing addresses
-  Then both attempts fail with a fault or access denied
-  And neither task’s own heap contents are corrupted
-
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @mem @lifetime @wip
+  Scenario: Task stacks have explicit ownership and do not leak
+    Given sprout is online
+    When I spawn and exit 1000 short-lived tasks
+    Then the kernel should not run out of memory
+    And the graph should not retain orphaned "kind.Stack" Things

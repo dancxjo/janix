@@ -1,35 +1,26 @@
-Feature: Input pipeline and focus
+Feature: Input pipeline and focus model
+  Input enters the system as raw device events, is translated in userspace,
+  and becomes graph events routed to the focused surface/window.
 
-@core
-Scenario Outline: Raw scancodes flow kernel -> userspace inputd -> graph KeyEvent
-  Given I boot ThingOS on "<arch>"
-  And the keyboard device is present
-  And inputd is running
-  When I inject a key press "A"
-  Then the kernel receives a scancode into a ring buffer
-  And inputd reads scancodes via sys_input_read
-  And the graph contains a KeyEvent node with key=A state=Pressed
-  And a TextEvent node with text="a" is published
+  @input @wip
+  Scenario: Raw scancodes can be read by inputd with capability
+    Given sprout is online
+    And the process "inputd" has capability "cap.read_input"
+    When I press the key "A"
+    Then "inputd" should receive at least 1 raw scancode
 
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @input @translate @wip
+  Scenario: inputd publishes KeyEvent Things to the graph
+    Given "inputd" is online
+    When I press the key "A"
+    Then the graph should contain a Thing of kind "kind.KeyEvent"
+    And the event should be linked to Place "place.input"
 
-@core
-Scenario Outline: Focus determines where text events go
-  Given I boot ThingOS on "<arch>"
-  And there are two windows window.1 and window.2
-  And place.input --[focused]--> window.2
-  When I type "hi"
-  Then the graph publishes TextEvent nodes linked to window.2
-  And no TextEvent nodes are linked to window.1
-
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @input @focus @wip
+  Scenario: Focus determines which surface receives TextEvent
+    Given sprout is online
+    And there are two surfaces "win.left" and "win.right"
+    And the graph indicates focus is "win.right"
+    When I type the text "hello"
+    Then a TextEvent should be delivered to "win.right"
+    And no TextEvent should be delivered to "win.left"

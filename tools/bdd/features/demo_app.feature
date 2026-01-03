@@ -1,38 +1,32 @@
-Feature: One vertical slice demo app behaves like a citizen
+Feature: Demo app vertical slice
+  A user application can allocate heap, draw, receive input, log through syscalls,
+  appear in the graph, and exit cleanly.
 
-@core
-Scenario Outline: apps/logview is a complete citizen
-  Given I boot ThingOS on "<arch>" with framebuffer
-  And the init system starts apps/logview as a user task
-  When logview allocates heap memory
-  And logview draws UI text to its surface
-  And logview receives a keypress event
-  And logview logs "got key A" through sys_log
-  Then the log appears in serial
-  And the log appears in the graph linked to logview’s task
-  And logview exits cleanly
-  And the kernel keeps running and schedules remaining tasks
-  And graph nodes for logview transition to Exited
+  @demo @wip
+  Scenario: logview starts as a user task with a heap
+    Given sprout is online
+    When the process "logview" starts
+    Then it should allocate heap memory successfully
+    And it should appear in the graph as a "kind.Process"
 
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @demo @wip
+  Scenario: logview draws and receives input
+    Given "logview" is running
+    When "logview" draws a frame
+    Then the display should update
+    When I press the key "Q"
+    Then "logview" should receive a KeyEvent
 
-@core
-Scenario Outline: Exiting a task does not tear down shared system services
-  Given I boot ThingOS on "<arch>"
-  And tasks include inputd, compositor/bloom, and apps/logview
-  When apps/logview exits
-  Then inputd remains running
-  And bloom remains running
-  And place.devices, place.input, and place.tasks remain intact
+  @demo @wip
+  Scenario: logview logs through syscall and appears in the graph
+    Given "logview" is running
+    When "logview" logs "hello from logview"
+    Then the serial log should contain "hello from logview"
+    And the graph should contain a Thing of kind "kind.LogEntry"
 
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @demo @wip
+  Scenario: logview exits without tearing down the world
+    Given "logview" is running
+    When "logview" exits cleanly
+    Then the system should remain running
+    And other services should remain online

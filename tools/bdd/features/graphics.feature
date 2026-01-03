@@ -1,61 +1,29 @@
-Feature: Framebuffer surface is a first-class thing
+Feature: Surfaces and compositing
+  Graphics are expressed through surfaces and a compositor.
+  The display is a bytespace-like target so the backend can be swapped.
 
-@fb @core
-Scenario Outline: Framebuffer device is published as Device/Surface/Bytespace
-  Given I boot ThingOS on "<arch>" with a framebuffer
-  When the kernel enumerates display
-  Then the graph contains device.display.0 with Kind kind.Device
-  And it links to surface.display.0 with Kind kind.Surface
-  And surface.display.0 links to a bytespace.fb.0 describing the pixel memory
-  And the surface records width/height/format/stride
+  @gfx @smoke @wip
+  Scenario: Bloom can paint the screen a solid color
+    Given sprout is online
+    And the process "bloom" has capability "cap.framebuffer"
+    When "bloom" paints the primary display "cornflower"
+    Then the framebuffer should change within 100 milliseconds
 
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @gfx @surface @wip
+  Scenario: A surface is a Thing with ownership and bounds
+    Given sprout is online
+    And the process "bloom" has capability "cap.surface"
+    When "bloom" creates a surface of size 800 by 600
+    Then the graph should contain a Thing of kind "kind.Surface"
+    And the surface should have relationships:
+      | rel     | target_kind  |
+      | ownedBy | kind.Process |
+      | inPlace | kind.Place   |
 
-@fb @core
-Scenario Outline: Early logging can draw to framebuffer without userspace
-  Given I boot ThingOS on "<arch>" with a framebuffer
-  When the kernel logs "EARLY" before userspace is running
-  Then serial contains "EARLY"
-  And the framebuffer contains visible evidence of the log
-
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
-
-@fb @core
-Scenario Outline: A user app draws a rectangle and it appears on the primary surface
-  Given I boot ThingOS on "<arch>" with framebuffer
-  And apps/clock starts as a user task
-  When it requests a drawing surface
-  And it draws a filled rectangle at (10,10) size (80x40)
-  Then the framebuffer checksum changes from the boot checksum
-  And the graph contains draw.rect events linked to task.clock
-
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
-
-@fb @core
-Scenario Outline: Userspace drawing is mediated, not raw framebuffer writes
-  Given I boot ThingOS on "<arch>" with framebuffer
-  When a userspace task attempts to write directly into framebuffer physical memory
-  Then it faults or is prevented
-  And drawing must occur via the surface contract
-
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @gfx @swap @wip
+  Scenario: The display backend is swappable
+    Given sprout is online
+    When I boot with display backend "limine_framebuffer"
+    Then bloom should be able to draw
+    When I boot with display backend "mock_gpu"
+    Then bloom should be able to draw

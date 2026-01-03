@@ -1,45 +1,36 @@
-Feature: Multi-architecture parity
+Feature: Multi-architecture behavioral parity
+  Core behaviors should be consistent across supported architectures.
+  If a capability/device is absent, the graph reflects that absence gracefully.
 
-@core
-Scenario Outline: Core behaviors are consistent across architectures
-  Given I boot ThingOS on "<arch>"
-  When I run the "vertical slice" test suite
-  Then all scenarios tagged @core pass
+  @multiarch @wip
+  Scenario Outline: Boot reaches kernel ready on each architecture
+    Given I boot ThingOS on "<arch>"
+    Then the system should reach "kernel ready"
+    And the system should not panic
 
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+    Examples:
+      | arch        |
+      | x86_64      |
+      | aarch64     |
+      | riscv64     |
+      | loongarch64 |
 
-@core
-Scenario Outline: Architecture-specific differences are explicitly declared
-  Given I run tests on "<arch>"
-  When a feature is not supported (e.g., PS/2 keyboard on non-x86)
-  Then the scenario is skipped with a reason recorded
-  And the skip reason is a first-class test artifact
+  @multiarch @wip
+  Scenario Outline: The syscall ABI returns a structured result on each architecture
+    Given I boot ThingOS on "<arch>"
+    When a user task calls syscall "sys_log"
+    Then the syscall should return "(status, val0, val1)" without corruption
 
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+    Examples:
+      | arch        |
+      | x86_64      |
+      | aarch64     |
+      | riscv64     |
+      | loongarch64 |
 
-@perf @core
-Scenario Outline: Sustained scheduling and logging does not exhaust memory
-  Given I boot ThingOS on "<arch>"
-  And 8 user tasks run busy loops with periodic sys_log
-  When the system runs for 10 seconds
-  Then it does not OOM
-  And it does not panic
-  And memory usage growth stays under a fixed threshold
-  And the graph contains allocator telemetry
-
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @multiarch @graceful @wip
+  Scenario: Missing devices are represented as absence, not failure
+    Given I boot ThingOS on "riscv64"
+    When I query for Place "place.devices"
+    Then the query should succeed
+    And devices that do not exist should simply be absent

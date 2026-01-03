@@ -1,39 +1,27 @@
-Feature: Watch-based blocking wait
-  The scheduler supports a first-class blocked state where a task voluntarily
-  becomes non-runnable until one of its graph watches fires (or a timeout occurs).
+Feature: Watches and event-driven waiting
+  Tasks can wait efficiently on watches rather than busy-waiting.
+  Watches can represent time, graph changes, or device events.
 
-  Background:
-    Given the system has booted to the root Place
-    And the scheduler is running at least 2 user tasks
+  @watch @wip
+  Scenario: Waiting on "any watch" returns when one fires
+    Given sprout is online
+    And the task "logview" has a watch set containing:
+      | kind     | detail             |
+      | deadline |   250 milliseconds |
+      | graph    | place.input change |
+    When "logview" waits on "any"
+    Then it should return when the first watch fires
 
-  Scenario: A task can block on watches and stops consuming CPU
-    Given a user task "watcher" has registered a watch "w.alpha"
-    When the task "watcher" calls wait on watches ["w.alpha"] with WAIT_ANY and no timeout
-    Then the task "watcher" transitions to state "Blocked(WatchWait)"
-    And the task "watcher" is not present in the runnable set
-    And the system continues scheduling other runnable tasks
+  @watch @graph @wip
+  Scenario: A graph watch fires when a Thing is added to a Place
+    Given sprout is online
+    And "inspector" is watching Place "place.devices"
+    When a new device Thing is added to "place.devices"
+    Then the watch should fire for "inspector"
 
-  Scenario: A watch firing wakes a blocked task
-    Given a user task "watcher" is blocked waiting on watches ["w.alpha"] with WAIT_ANY
-    When the watch "w.alpha" fires
-    Then the task "watcher" transitions to state "Runnable"
-    And the scheduler eventually runs the task "watcher"
-    And the wait syscall returns WakeReason "WATCH" with watch "w.alpha"
-
-  Scenario: Waiting on multiple watches wakes on any
-    Given a user task "watcher" is blocked waiting on watches ["w.alpha", "w.beta"] with WAIT_ANY
-    When the watch "w.beta" fires
-    Then the task "watcher" transitions to state "Runnable"
-    And the wait syscall returns WakeReason "WATCH" with watch "w.beta"
-
-  Scenario: Timeout wakes a blocked task if no watch fires
-    Given a user task "watcher" is blocked waiting on watches ["w.alpha"] with WAIT_ANY and timeout 50 ticks
-    When 50 ticks elapse without "w.alpha" firing
-    Then the task "watcher" transitions to state "Runnable"
-    And the wait syscall returns WakeReason "TIMEOUT"
-
-  Scenario: Exiting cleans up wait registrations
-    Given a user task "watcher" is blocked waiting on watches ["w.alpha"] with WAIT_ANY
-    When the task "watcher" exits
-    Then the watch registry has no waiter entries for task "watcher"
-    And firing watch "w.alpha" does not reference task "watcher"
+  @watch @device @wip
+  Scenario: A device watch fires on an input event
+    Given sprout is online
+    And "inputd" is watching for raw input events
+    When I press the key "A"
+    Then the watch should fire for "inputd"

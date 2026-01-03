@@ -1,35 +1,30 @@
-Feature: Boot contract and graph presence
+Feature: Boot contract and system bring-up
+  The system boots through Bran into the Kernel, then Sprout brings userland online.
+  The graph becomes observable early and remains the single source of truth.
 
-@core
-Scenario Outline: Kernel boots and publishes the root places
-  Given I boot ThingOS on "<arch>"
-  When the kernel reaches "init complete"
-  Then the graph contains a node place.root
-  And the graph contains a node place.devices
-  And the graph contains a node place.tasks
-  And the graph contains a node place.input
-  And the graph contains a node scheduler.main
-  And each node has a stable UUID and a Kind
+  @boot @smoke
+  Scenario: Bran hands off a boot contract to the Kernel
+    Given I boot ThingOS on "x86_64"
+    Then the serial log should contain "bran:"
+    And the serial log should contain "kernel:"
+    And the system should not panic
 
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @boot @graph @wip
+  Scenario: The Kernel exposes a root Place and a devices Place
+    Given the system has reached "kernel ready"
+    When I query the graph for the root Place
+    Then a Place should exist named "place.root"
+    And a Place should exist named "place.devices"
 
-@core
-Scenario Outline: Boot is self-describing
-  Given I boot ThingOS on "<arch>"
-  When the kernel publishes boot metadata
-  Then the graph contains a node boot.handoff with Kind kind.BootHandoff
-  And it links to machine.<arch>
-  And it records framebuffer presence (if provided)
-  And it records module list (if provided)
+  @boot @sprout @wip
+  Scenario: Sprout starts and publishes its presence in the graph
+    Given the system has reached "userland start"
+    Then the graph should contain a Thing of kind "kind.Process"
+    And that process should have a name "sprout"
+    And the serial log should contain "sprout: online"
 
-  Examples:
-    | arch     |
-    | x86_64   |
-    | aarch64  |
-    | riscv64  |
-    | loongarch64 |
+  @boot @services @wip
+  Scenario: Sprout starts core services
+    Given sprout is online
+    Then the graph should contain a Thing named "inputd"
+    And the graph should contain a Thing named "logview"

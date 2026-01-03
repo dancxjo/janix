@@ -89,11 +89,12 @@ aarch64_vectors:
     ldr x30, [sp, #240]
 
     ldp x18, x19, [sp, #144]
+    ldr x9, [sp, #248]
     
     // Restore SP from our saved copy in x18
     // If x18 was sp_el0, we need to decide if we restore sp_el0 or sp_el1
     // Actually, we just want to restore SP to what it was.
-    mov sp, x18
+    mov sp, x9
     
     eret
 .endm

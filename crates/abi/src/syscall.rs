@@ -15,18 +15,14 @@
 // Return Values:
 //   All architectures return distinct (status, val0, val1).
 //
-//   x86_64:      rax (status), rdx (val0), rcx (val1)
-//                *Note: rcx is usually destroyed by syscall, so we might need to pick another for val1 if we want to preserve it,
-//                 BUT currently SyscallResult uses (u64, u64, u64).
-//                 Linux uses rax for ret. ThingOS returns a struct.
-//                 We need to verify the low-level asm return path maps these correctly.
+//   x86_64:      rax (status), rdx (val0), r8 (val1)
+//                *Note: r8 is used instead of rcx to avoid clobbering by sysret.
 //
 //   aarch64:     x0 (status), x1 (val0), x2 (val1)
 //
-// Note: The `SyscallResult` struct in Rust is returned in registers according
-// to the "small struct return" ABI of the platform.
-// For (u64, u64, u64), it likely spills to memory on some ABIs if not careful,
-// but our ASM trampolines specifically handle unpacking.
+// Note: This is our logical wire ABI. Assembly trampolines must map these
+// to/from the kernel's internal dispatch function. 
+// No hidden sret pointers or stack arguments are used across the privilege boundary.
 
 /// Syscall Numbers
 pub mod nr {

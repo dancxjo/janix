@@ -130,46 +130,45 @@ syscall_entry:
     push rcx         // RIP
     push rdi         // a0
     
-    // Results space (32) + Stack arguments space (16)
-    sub rsp, 48      
+    // 1. Allot result area (32 bytes) and stack arguments (16 bytes)
+    sub rsp, 48
     
-    // Position a4, a5 where dispatch expects them (immediately above RET)
+    // Position a4, a5 on stack for dispatch
     mov [rsp + 0], r8 // a4
     mov [rsp + 8], r9 // a5
     
-    // Prepare register arguments
-    // User: rdi=a0, rsi=a1, rdx=a2, r10=a3, r8=a4, r9=a5
-    // [rsp+48] = a0 (pushed at 131)
-    mov rcx, rsi      // a1 -> RCX (4th arg)
-    mov r8, rdx       // a2 -> R8 (5th arg)
-    mov rdx, [rsp + 48] // a0 -> RDX (3rd arg)
-    mov rsi, gs:[104] // nr -> RSI (2nd arg)
-    mov r9, r10       // a3 -> R9 (6th arg)
+    // 2. Prepare register arguments for dispatch
+    // User registers: rdi=a0, rsi=a1, rdx=a2, r10=a3, r8=a4, r9=a5
+    // a0 was pushed at offset 131, so it's at [rsp + 48]
+    mov rcx, rsi      // a1 -> rcx (4th arg)
+    mov r8, rdx       // a2 -> r8 (5th arg)
+    mov rdx, [rsp + 48] // a0 -> rdx (3rd arg)
+    mov rsi, gs:[104] // nr -> rsi (2nd arg)
+    mov r9, r10       // a3 -> r9 (6th arg)
     
-    // Hidden result pointer (1st arg)
-    lea rdi, [rsp + 16] // Put result at [rsp+16]..[rsp+39]
+    // Result pointer (1st arg)
+    lea rdi, [rsp + 16] // Put result at [rsp+16..47]
     
     sti
     cld
     call dispatch
     
-    // Recover results from [rsp + 16]
-    mov rax, [rsp + 16 + 0]
-    mov rdx, [rsp + 16 + 8]
-    mov rsi, [rsp + 16 + 16]
+    // 3. Unpack result into reconciled ABI return registers
+    mov rax, [rsp + 16 + 0]  // result.status
+    mov rdx, [rsp + 16 + 8]  // result.val0
+    mov r8,  [rsp + 16 + 16] // result.val1
     
-    add rsp, 48      // Clean up stack
+    add rsp, 48 // Clean up dispatch stack frame
     
-    pop rdi          // a0
-    pop rcx          // user RIP
-    add rsp, 8       // CS
-    pop r11          // RFLAGS
+    // 4. Restore user context
+    pop rdi  // a0
+    pop rcx  // RIP
+    add rsp, 8 // CS
+    pop r11  // RFLAGS
+    pop r10  // User RSP (temporary)
+    add rsp, 8 // SS
     
-    pop r10          // user RSP
-    add rsp, 8       // SS
-    
-    mov rsp, r10
-    
+    mov rsp, r10 // Switch back to user stack
     cli
     swapgs
     sysretq

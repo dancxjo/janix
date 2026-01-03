@@ -84,7 +84,7 @@ pub unsafe fn syscall(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: 
             in("r9") a5,
             lateout("rax") status,
             lateout("rdx") val0,
-            lateout("rsi") val1,
+            lateout("r8") val1,
             out("rcx") _,
             out("r11") _,
             options(nostack, preserves_flags) 

@@ -9,10 +9,9 @@ use abi::wire::SyscallResult;
 /// Main syscall dispatch function
 #[no_mangle]
 pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> SyscallResult {
-    // Trace all syscalls for debugging
-    // crate::log::klog(crate::log::Level::Trace, "SYSCALL", &alloc::format!("nr={} a0={:x} a1={:x}", nr, a0, a1));
-    // Actually, let's use kprintln for guaranteed serial output if klog is struggling
-    crate::machine::machine().console_write(alloc::format!("SC: nr={} a0={:x}\n", nr, a0).as_bytes());
+    // Note: We keep 7 arguments for now to match the assembly bridge, 
+    // but the reconciliation will eventually enforce a strict 6-argument limit.
+    // The ASM bridge will map (status, val0, val1) into (rax, rdx, r8).
 
     if nr == abi::syscall::nr::SYS_MACHINE {
          crate::log::klog(crate::log::Level::Info, "SYSCALL", &alloc::format!("SYS_MACHINE called by task? nr={}", nr));

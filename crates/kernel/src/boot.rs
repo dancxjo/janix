@@ -5,11 +5,10 @@
 use crate::log::{self, Level};
 use crate::{machine, sched, syscall};
 use crate::machine::{ARCH_MACHINE, PreBootInfo};
-// use graph::symbols; // graph crate is now external
-// use abi::bodies::{SurfaceBody, BytespaceBody, BYTESPACE_FLAG_HAS_PHYS_BASE};
 use crate::memory::bytespace::Bytespace;
 use crate::memory::map::MapPerms;
 use alloc::format;
+
 /// Information about a boot module
 #[derive(Clone, Copy)]
 pub struct ModuleInfo {
@@ -60,15 +59,7 @@ pub fn get_boot_ctx() -> &'static BootContext {
     unsafe { GLOBAL_BOOT_CONTEXT.expect("BootContext not initialized") }
 }
 
-
-
 /// Pre-boot initialization for early console output.
-///
-/// Bran calls this with addressing info before any logging.
-/// This initializes the Machine interface and maps UART MMIO,
-/// enabling safe console output on all architectures.
-///
-/// Safe to call multiple times (idempotent).
 pub fn pre_boot(info: PreBootInfo) {
     if MACHINE_INSTALLED.swap(true, Ordering::SeqCst) {
         return; // Already installed
@@ -79,16 +70,10 @@ pub fn pre_boot(info: PreBootInfo) {
 }
 
 /// Main kernel entry point
-///
-/// Called by Bran after collecting facts from the bootloader.
-/// ctx is a Bag of Facts (no behavior).
-/// This function never returns.
 pub unsafe fn boot(ctx: *mut BootContext) -> ! {
-    // Safety: called exactly once during boot, ctx points to the single global BootContext,
-    // and no aliasing occurs after transfer.
     let ctx: &'static mut BootContext = unsafe { &mut *ctx };
-    // Phase 0: Install machine backend (idempotent - may already be done by pre_boot)
-    // Phase 0: Install machine backend (idempotent - may already be done by pre_boot)
+    
+    // Phase 0: Install machine backend
     pre_boot(PreBootInfo {
         hhdm_offset: ctx.hhdm_offset,
         kernel_phys_base: ctx.kernel_phys_base,
@@ -96,12 +81,9 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     });
     
     // Phase 0.5: Initialize Kernel Heap
-    // We Map it via HHDM (simple) or identity?
-    // HHDM is always mapped at ctx.hhdm_offset.
-    // So heap_virt = ctx.hhdm_offset + ctx.heap_phys_base.
     let heap_phys = ctx.heap_phys_base;
     let heap_virt = ctx.hhdm_offset + heap_phys;
-    let heap_size = 64 * 1024 * 1024; // Must match bran's selection
+    let heap_size = 64 * 1024 * 1024;
     
     unsafe {
         crate::memory::heap::init(crate::memory::heap::HeapConfig {
@@ -111,34 +93,22 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         }).expect("Heap Init Failed");
     }
 
-    // Initialize Platform (Capability Registry)
+    // Initialize Platform
     let _ = crate::platform::init();
-    
     crate::serial::write(b"KERNEL: handoff accepted\n");
-    crate::serial::write(b"KERNEL: machine installed\n");
-    crate::serial::write(b"KERNEL: platform initialized\n");
 
-    // Phase 1: Initialize logging (enables debug output)
+    // Phase 1: Initialize logging
     log::init(ctx);
     
-    // Phase 1.5: Architecture initialization (GDT/IDT/etc)
-    // Phase 1.5: Architecture initialization
-    // Machine::init (called by pre_boot) already handles GDT/IDT/PerCpu.
-    // crate::arch::init(); // REDUNDANT - Causes "GDT full" panic
-    
-    // Verify check removed.
-
-    // Phase 2: Initialize graph store (merged symbols + store)
+    // Phase 2: Initialize graph store
     graph::init();
-    log::klog(Level::Info, "KERNEL", "symbols init");
-    log::klog(Level::Info, "KERNEL", "place store init");
+    log::klog(Level::Info, "KERNEL", "graph init");
 
     // Phase 3.5: Seed core ontology
     graph::seed_minimal();
     seed_permissions();
     log::klog(Level::Info, "KERNEL", "graph seeded");
     
-    // Explicitly log the core places for the BDD runner
     for name in &["place.root", "place.devices", "place.tasks", "place.input", "scheduler.main"] {
         log::klog(Level::Info, "GRAPH", &format!("register name: {}", name));
     }
@@ -148,25 +118,14 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
          crate::serial::write(b"GRAPH VERIFICATION FAILED: ");
          crate::serial::write(e.as_bytes());
          crate::serial::write(b"\n");
-         // For now, continuing, but this is a critical failure in strict mode
     } else {
          log::klog(Level::Info, "GRAPH", "verification passed");
     }
 
     // Phase 3.7: Register Kernel Heap to Graph
     {
-         let _heap_virt = ctx.hhdm_offset + ctx.heap_phys_base;
-         let heap_size = 64 * 1024 * 1024;
-         // Note: reusing calc for consistency
          let heap_bs = Bytespace::new_kernel_heap(ctx.heap_phys_base, heap_size);
          graph::store::thing_register_name(heap_bs.id, graph::symbols::intern(b"bytespace.heap0"));
-
-         let stats = crate::memory::heap::heap_stats();
-         crate::log::klog(
-             crate::log::Level::Info, 
-             "HEAP", 
-             &alloc::format!("Stats: Total={} Used={} Free={}", stats.total, stats.used, stats.free)
-        );
     }
 
     // Phase 3.7: Seed Capability Ontology
@@ -176,21 +135,11 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     // Save context for syscalls
     unsafe { GLOBAL_BOOT_CONTEXT = Some(ctx) };
 
-
     // Phase 4: Initialize syscall dispatch
     syscall::init();
 
     // Phase 5: Initialize scheduler
     sched::init();
-
-    // Phase 5.5: Smoke test faults (if enabled)
-    #[cfg(feature = "fault_smoke")]
-    {
-        log::klog(Level::Info, "SMOKE", "triggering fault...");
-        machine::smoke_fault();
-        // Dump faults to verify
-        crate::trap::debug_dump_faults(5); // Verify strictly?
-    }
 
     // Framebuffer
     if let Some(fb) = &ctx.framebuffer {
@@ -202,6 +151,17 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         graph::store::thing_register_name(bs.id, graph::symbols::intern(b"bytespace.framebuffer0"));
         
         seed_bloom_ontology(bs.id, fb);
+        
+        // Register Primary Display for Syscall
+        let display_info = abi::display::DisplayInfo {
+            bytespace: bs.id,
+            byte_len: size as u64,
+            width: fb.width as u32,
+            height: fb.height as u32,
+            pitch: fb.pitch as u32,
+            format: abi::display::PixelFormat::XRGB8888 as u32, 
+        };
+        crate::display::set_primary(display_info);
     }
 
     // Phase 6: Modules and Sprout
@@ -209,14 +169,10 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     let modules = ctx.modules;
     for module in modules {
         log::klog(Level::Info, "KERNEL", &format!("creating bytespace for module: {}", module.path));
-        // Use physical address directly for Bytespace base
         let bs = Bytespace::new_module(module.phys_addr, module.size as usize);
         
         if module.path.ends_with("sprout") || module.path.ends_with("bloom")
             || module.path.ends_with("log_smoke") || module.path.ends_with("logview")
-            // || module.path.ends_with("graph_smoke") || module.path.ends_with("cap_fail")
-            // || module.path.ends_with("clock") || module.path.ends_with("inputd") || module.path.ends_with("echo")
-            // || module.path.ends_with("inspector")
         {
              log::klog(Level::Info, "BOOT", &format!("MATCHED module: {}", module.path));
              spawn_module(ctx, module, &bs);
@@ -229,8 +185,6 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     sched::run()
 }
 
-// Obsolete ExecPool removed.
-
 /// Spawn a module by name from the boot modules.
 pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Bytespace) {
     let name = info.path;
@@ -238,7 +192,6 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
 
     // 1. Get Base
     let virt_addr = backing.backing_ptr().expect("module backing generic") as u64;
-    // Note: This is the raw module blob in generic id-map.
 
     if info.size >= 64 {
         let entry_point = unsafe {
@@ -248,7 +201,6 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         log::klog(Level::Info, "KERNEL", &format!("sprout entry point: {:#x}", entry_point));
 
         let elf_type = unsafe { *((virt_addr + 16) as *const u16) };
-        log::klog(Level::Info, "ELF", &format!("header type: {}", elf_type));
 
         if name.ends_with("sprout") {
             log::klog(Level::Info, "KERNEL", "init task designated");
@@ -265,7 +217,6 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             let ph_off = unsafe { *((virt_addr + 32) as *const u64) };
             let ph_num = unsafe { *((virt_addr + 56) as *const u16) };
             let ph_size = unsafe { *((virt_addr + 54) as *const u16) };
-            log::klog(Level::Info, "ELF", &format!("ph_off={:#x} ph_num={} ph_size={}", ph_off, ph_num, ph_size));
 
             // 1. Scan for Size and Min Vaddr
             let mut min_vaddr = u64::MAX;
@@ -282,17 +233,13 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
                  }
             }
 
-            // Heuristic for size: Exact range + alignment
             let total_size = (max_vaddr - min_vaddr + 4095) & !4095;
             image_size = total_size as usize;
 
-            // Create RAM Bytespace for the loaded specific instance
             let image_bs = Bytespace::new_ram(total_size as usize).expect("Sprout Image Alloc");
-            // Note: Compiler might have been confused or file desynced. Re-asserting expect logic.
             let buffer_base = image_bs.backing_ptr().expect("image backing generic") as u64;
             
             // Relocate to User Address!
-            // We Pick 0x0020_0000 (2MB) as standard Load Address for Sprout
             let user_image_base = 0x0020_0000;
             
             final_entry = user_image_base + (entry_point - min_vaddr);
@@ -408,14 +355,12 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
             });
 
         } else {
-             // Non-PIE not supported for Sprout in this refactor
              panic!("Sprout must be PIE");
         }
 
         // Dedicated Stack Bytespace
         let stack_size = 64 * 1024;
         let stack_bs = Bytespace::new_ram(stack_size).expect("Sprout Stack Alloc");
-        // let stack_base_backing = stack_bs.backing_ptr().expect("stack backing") as u64; // unused
         
         let stack_base = 0x8000_0000; // 2GB
         let stack_top = (stack_base + stack_size as u64) & !0xf;
@@ -454,24 +399,6 @@ pub fn spawn_module(_ctx: &'static BootContext, info: &ModuleInfo, backing: &Byt
         let task_thing_id = crate::sched::with_task(task_id, |t| t.thing).expect("task missing");
         grant_initial_caps(task_thing_id);
 
-
-        // Note: configure_task_context currently empty.
-        // We rely on spawn_empty + manual context fixup?
-        // Wait, spawn_empty returned a task.
-        // That task has NO CONTEXT set up (spawn_empty just made a task).
-        // spawn_kernel_task sets up context.
-        // We need to set up context for Sprout.
-        // I will add a helper call or just do it here via with_task.
-        // But context setup is arch specific and complex.
-        // For now, I'll update configure_task_context to do it?
-        // Or just re-use spawn_kernel_task logic?
-        
-        // Let's assume configure_task_context will be implemented or I update it now?
-        // I should probably manually set t.stack_ptr here to a valid frame.
-        // Since I have `stack_top` and `final_entry`.
-        // I call `crate::sched::spawn_kernel_task`-like logic here?
-        
-        // For now, simple logging of success.
         log::klog(Level::Info, "SPROUT", &format!("task ready {:#x} stack {:#x}", final_entry, stack_top));
     }
 }
@@ -487,52 +414,31 @@ pub fn spawn_module_by_name(ctx: &'static BootContext, name: &str) {
     crate::log::klog(crate::log::Level::Warn, "SYSCALL", &alloc::format!("module '{}' not found", name));
 }
 
-
 fn seed_capabilities() {
     use graph::symbols;
     use graph::store;
-    // use abi::ids::ThingId; // Unused
 
     crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: start");
-    // Ensure Capability Kinds exist
     let _ = store::thing_create(symbols::intern(b"kind.capability")); 
-    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: kind.capability created");
     
-    // Ensure Permission Symbols are interned (implied by usage, but good to likely ensure they are known)
-    // We don't usually create Things for symbols unless they are Kinds/Predicates.
-    // Permissions are just Symbols in the `permits` edge value?
-    // User requirement: "capability --[predicate.permits]--> perm.*" implies perm is a target?
-    // Or is perm an edge property?
-    // Graph semantics: Edge connects Thing -> Thing (with Kind).
-    // So `perm.*` must be a Thing (probably a Symbol Thing or just a Thing representing the perm).
-    // Or we use `relationship_create(pred, from, to)`. `to` must be a ThingId.
-    // So we MUST create Permission Things.
-    
+    // Ensure Permission Symbols are interned
     let perms = [
         "perm.log", "perm.create", "perm.link", "perm.unlink", "perm.read", "perm.watch", "perm.mem", "perm.dictator"
     ];
     
-    // Create a "Permissions" place?
     let kind_place = symbols::intern(b"kind.place");
     let place_perms = store::thing_create(kind_place);
     store::thing_register_name(place_perms, symbols::intern(b"place.permissions"));
-    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: place.permissions created");
-    // Link to root
-    // Link to root
+    
     let root_sym = symbols::intern(b"place.root");
     let root = store::find_thing_by_name(root_sym).expect("place.root missing"); 
     let pred_contains = symbols::intern(b"predicate.contains");
     store::relationship_create(pred_contains, root, place_perms);
 
-    // Create place.logs to pin logs (and capabilities)
     let place_logs = store::thing_create(kind_place);
     store::thing_register_name(place_logs, symbols::intern(b"place.logs"));
     store::relationship_create(pred_contains, root, place_logs);
-    // store::relationship_create(pred_contains, root, place_logs); // REMOVED DUPLICATE
 
-    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: place.logs created");
-
-    // Seed Inspector Places
     let place_reports = store::thing_create(kind_place);
     store::thing_register_name(place_reports, symbols::intern(b"place.reports"));
     store::relationship_create(pred_contains, root, place_reports);
@@ -540,51 +446,35 @@ fn seed_capabilities() {
     let place_snapshots = store::thing_create(kind_place);
     store::thing_register_name(place_snapshots, symbols::intern(b"place.snapshots"));
     store::relationship_create(pred_contains, root, place_snapshots);
-    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: inspector places created");
     
     let kind_perm = symbols::intern(b"kind.permission");
     
     for p in perms {
-        crate::log::klog(crate::log::Level::Info, "DEBUG", &alloc::format!("seed_capabilities: creating {}", p));
         let sym = symbols::intern(p.as_bytes());
-        // Check if exists first? (Name lookup not fully robust yet? Using create logic)
-        // Just create new ones for now, assuming idempotent seeding or fresh boot.
         let perm_thing = store::thing_create(kind_perm);
         store::thing_register_name(perm_thing, sym);
         store::relationship_create(pred_contains, place_perms, perm_thing);
     }
-    crate::log::klog(crate::log::Level::Info, "DEBUG", "seed_capabilities: done");
 }
 
 fn grant_initial_caps(task_id: abi::ids::ThingId) {
     use graph::symbols;
     use graph::store;
-    use abi::ids::ThingId; // Removed SymbolId
+    use abi::ids::ThingId;
 
-    // 1. Create a private User Place for the task
-    // place.user.<task_id>
     let kind_place = symbols::intern(b"kind.place");
     let user_place = store::thing_create(kind_place);
-    // Name it? (Optional, but nice for debug)
-    // store::thing_register_name(user_place, symbols::intern(format!("place.user.{:?}", task_id).as_bytes()));
     
-    // Link to Root (or place.tasks if it existed)
-    // Link to Root (or place.tasks if it existed)
     let root_sym = symbols::intern(b"place.root");
-    let root = store::find_thing_by_name(root_sym).expect("place.root missing");
+    let _root = store::find_thing_by_name(root_sym).expect("place.root missing");
     let pred_contains = symbols::intern(b"predicate.contains");
-    store::relationship_create(pred_contains, root, user_place);
-    
-    // 2. Grant Graph Capabilities
-    // task --[has_cap]--> cap --[target]--> user_place
-    //                       --[permits]--> perm.create, perm.link...
+    store::relationship_create(pred_contains, _root, user_place);
     
     let kind_cap = symbols::intern(b"kind.capability");
     let pred_has_cap = symbols::intern(b"predicate.has_cap");
     let pred_target = symbols::intern(b"predicate.target");
     let pred_permits = symbols::intern(b"predicate.permits");
     
-    // Helper to grant one perm
     let grant = |target: ThingId, perms: &[&str]| {
         let cap = store::thing_create(kind_cap);
         store::relationship_create(pred_has_cap, task_id, cap);
@@ -592,8 +482,6 @@ fn grant_initial_caps(task_id: abi::ids::ThingId) {
         
         for p_name in perms {
              let p_sym = symbols::intern(p_name.as_bytes());
-             // We need the ThingId of the permission!
-             // `store::find_thing_by_name` is the way.
              if let Some(p_id) = store::find_thing_by_name(p_sym) {
                  store::relationship_create(pred_permits, cap, p_id);
              } else {
@@ -602,17 +490,13 @@ fn grant_initial_caps(task_id: abi::ids::ThingId) {
         }
     };
     
-    // Grant Graph Access to User Place
     grant(user_place, &["perm.create", "perm.link", "perm.unlink", "perm.read", "perm.watch"]);
     
-    // Grant Log Access
     let place_logs_sym = symbols::intern(b"place.logs");
     if let Some(place_logs) = store::find_thing_by_name(place_logs_sym) {
         grant(place_logs, &["perm.log"]);
     }
     
-    // Grant Mem Access (Target self? For now, target None/Ignored by cap::check, but strict CapOp::MemManage check)
-    // Using task_id as target for semantics
     grant(task_id, &["perm.mem", "perm.dictator"]);
 }
 
@@ -669,7 +553,6 @@ fn seed_bloom_ontology(fb_bs_id: abi::ids::ThingId, fb: &FramebufferInfo) {
     let _place_input = create_place("place.input", sym::PLACE_INPUT);
 
     // 2. Create Display Device
-    // place.devices should exist
     let place_devices = store::find_thing_by_name(sym::PLACE_DEVICES).expect("place.devices missing");
     
     let dev_display = store::thing_create(sym::KIND_DEVICE_DISPLAY);
@@ -686,45 +569,25 @@ fn seed_bloom_ontology(fb_bs_id: abi::ids::ThingId, fb: &FramebufferInfo) {
     // Link Surface -> Backing Bytespace
     store::relationship_create(sym::PRED_BACKS, surface, fb_bs_id);
     
-    // Link Surface -> Properties (Size, Stride, Format)
-    let create_val_u32 = |val: u32| {
-        let t = store::thing_create(sym::KIND_VALUE_U32); // Use generic Value or U32?
-        // store::set_payload ... (Need 4 bytes)
-        let _ = store::thing_set_inline_payload(t, &val.to_le_bytes()); 
-        t
-    };
-
-    // Size (W, H)
-    // Note: Graph schema usually (width, height) tuple or separate?
-    // User spec: `surface.display0 --[size]--> value.u32(w), value.u32(h)` separate? Or one struct?
-    // "value.u32(w)" implies separate things? Logic needs to distinguish if multiple edges?
-    // For now, let's assume we can have multiple size edges? 
-    // Better: `pred.width` and `pred.height`.
-    // But spec said: `surface.display0 --[stride]--> value`
-    // Let's use `pred.width`? No, symbols.rs has `pred.size`. Maybe it points to a Rect or Size struct?
-    // Or we hack it: `pred.size` points to a generic value that encodes w/h?
-    // Or we rely on ordering (not guaranteed).
-    // Let's store W and H as separate things if we can distinguish, 
-    // OR create a 'Size' thing.
-    // Spec: "value.u32(w), value.u32(h)". Ambiguous.
-    // Let's use `u32( (w<<16)|h )`? No.
-    // Let's create `pred.width` and `pred.height` is safer but not in list.
-    // I'll use `pred.size` -> `RectThing(0, 0, w, h)`? 
-    // `kind.rect` exists.
+    // Link Surface -> Properties
     let rect_id = store::thing_create(sym::KIND_RECT);
     let rect_payload = [
         0u32.to_le_bytes(), 0u32.to_le_bytes(), // x, y
         (fb.width as u32).to_le_bytes(), (fb.height as u32).to_le_bytes() // w, h
     ].concat();
     store::thing_set_inline_payload(rect_id, &rect_payload);
-    store::relationship_create(sym::PRED_SIZE, surface, rect_id); // Using Size pred to point to Rect
+    store::relationship_create(sym::PRED_SIZE, surface, rect_id);
 
-    // Stride
+    let create_val_u32 = |val: u32| {
+        let t = store::thing_create(sym::KIND_VALUE_U32); 
+        let _ = store::thing_set_inline_payload(t, &val.to_le_bytes()); 
+        t
+    };
+
     let stride_val = create_val_u32(fb.pitch as u32);
     store::relationship_create(sym::PRED_STRIDE, surface, stride_val);
     
-    // Format
-    let format_val = create_val_u32(0x00FF0000); // XRGB8888 ? (Just a value for now)
+    let format_val = create_val_u32(0x00FF0000); 
     store::relationship_create(sym::PRED_FORMAT, surface, format_val);
 
     crate::log::klog(crate::log::Level::Info, "BOOT", "bloom ontology seeded");

@@ -180,3 +180,17 @@ pub fn sys_thing_register_name(id_low: u64, name_ptr: u64, name_len: u64) -> Sys
     
     SyscallResult::new(0, 0, 0)
 }
+
+pub fn sys_symbol_intern(name_ptr: u64, name_len: u64) -> SyscallResult {
+    if name_ptr == 0 || name_len == 0 || name_len > 1024 {
+        return SyscallResult::new(err::EINVAL, 0, 0);
+    }
+    
+    // Safety: User slice
+    let name_slice = unsafe {
+        core::slice::from_raw_parts(name_ptr as *const u8, name_len as usize)
+    };
+    
+    let sym_id = symbols::intern(name_slice);
+    SyscallResult::new(0, sym_id.0, 0)
+}

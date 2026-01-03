@@ -97,7 +97,28 @@ pub unsafe fn syscall(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: 
         }
     }
 
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(target_arch = "aarch64")]
+    {
+        let status: u64;
+        let val0: u64;
+        let val1: u64;
+        core::arch::asm!(
+            "svc #0",
+            in("x8") nr,
+            in("x0") a0,
+            in("x1") a1,
+            in("x2") a2,
+            in("x3") a3,
+            in("x4") a4,
+            in("x5") a5,
+            lateout("x0") status,
+            lateout("x1") val0,
+            lateout("x2") val1,
+            options(nostack, preserves_flags)
+        );
+        SyscallResult { status: status, val0, val1 }
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
         if let Some(dispatch) = SYSCALL_DISPATCH {
             dispatch(nr, a0, a1, a2, a3, a4, a5)

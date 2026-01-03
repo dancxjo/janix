@@ -4,26 +4,18 @@ use crate::syscall::{cap, graph, log, memory, watch, surface};
 use crate::syscall::cap::CapOp;
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
-// use abi::syscall::err;
 
 /// Main syscall dispatch function
 #[no_mangle]
 pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> SyscallResult {
-    // Note: We keep 7 arguments for now to match the assembly bridge, 
-    // but the reconciliation will eventually enforce a strict 6-argument limit.
-    // The ASM bridge will map (status, val0, val1) into (rax, rdx, r8).
 
     if nr == abi::syscall::nr::SYS_MACHINE {
-         crate::log::klog(crate::log::Level::Info, "SYSCALL", &alloc::format!("SYS_MACHINE called by task? nr={}", nr));
+         crate::log::klog(crate::log::Level::Info, "SYSCALL", "SYS_MACHINE called");
     }
-
-    // Resolve arguments based on calling convention (handled by caller, passed here)
 
     let result = match nr {
         // === Logging ===
         nr::SYS_LOG => {
-            // Permission Check: Log
-            // Target: place.logs (implicit)
             if let Err(e) = cap::check(CapOp::Log, None) {
                  return e;
             }
@@ -38,18 +30,7 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
 
         // === Graph Mutation ===
         nr::SYS_THING_CREATE => {
-            // Args: kind_low, parent_low
-            // Op: Create
-            // Target: parent
-            let _kind_id = a0; // Partial symbol? Or full ID handling needed?
-            // Note: Current ABI passed partials. We should move to full IDs if possible or adapt.
-            // For now, assuming lower 64 bits of SymbolId for Kind, lower 64 for Parent ThingId.
-            // But ThingId is 128 bit. 
-            // In demo, we used u64.
-            // We need to clarify if we are using Handles or just truncated IDs.
-            // Task 06 used `abi::ids::ThingId(a1 as u128)`.
-            // We will stick to that for now.
-            
+            let _kind_id = a0;
             let parent_id = abi::ids::ThingId(a1 as u128);
             if let Err(e) = cap::check(CapOp::GraphCreate, Some(parent_id)) {
                 return e;
@@ -57,26 +38,14 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
             graph::sys_thing_create(a0, a1)
         },
         nr::SYS_REL_CREATE => {
-            // Args: kind_low, from_low, to_low
             let from_id = abi::ids::ThingId(a1 as u128);
-            let _to_id = abi::ids::ThingId(a2 as u128);
             if let Err(e) = cap::check(CapOp::GraphLink, Some(from_id)) {
                 return e;
             }
-            // Optional: check 'to'?
-            // User requested: "require permission on from only... rely on containment boundaries"
-            
             graph::sys_relationship_create(a0, a1, a2)
         },
         nr::SYS_REL_DELETE => {
-            // Args: rel_id_low (or from/to/kind tuple?)
-            // We need a stable RelationshipId.
-            // Let's assume a0 is rel_id (low).
             let rel_id = abi::ids::ThingId(a0 as u128);
-            
-            // To check permissions, we need to know the 'from' of this relationship.
-            // That requires a graph lookup *inside* cap::check or before it.
-            // We must retrieve the relationship first.
             if let Some(rel) = ::graph::store::get_relationship(rel_id) {
                 if let Err(e) = cap::check(CapOp::GraphUnlink, Some(rel.from)) {
                     return e;
@@ -89,7 +58,6 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
 
         // === Graph Observation ===
         nr::SYS_THING_GET => {
-            // Target: thing
             let thing_id = abi::ids::ThingId(a0 as u128);
             if let Err(e) = cap::check(CapOp::GraphRead, Some(thing_id)) {
                  return e;
@@ -104,23 +72,18 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
             graph::sys_relationships_from(a0, a1, a2, a3)
         },
         nr::SYS_SYMBOL_RESOLVE => {
-             // Read permission? Symbols are public.
              graph::sys_symbol_resolve(a0, a1, a2)
         },
+        nr::SYS_SYMBOL_INTERN => {
+             graph::sys_symbol_intern(a0, a1)
+        },
         nr::SYS_THING_FIND => {
-            // Cap check? Find is read.
-            // Check global read cap? Or is name lookup always allowed?
-            // "Public" names.
-            // If we want to restrict visibility, we need a capability to "Read Root" or "Read Global Namespace"?
-            // For now, allow all find.
             if let Err(e) = cap::check(CapOp::GraphRead, None) {
                  return e;
             }
             graph::sys_thing_find(a0, a1)
         },
         nr::SYS_THING_REGISTER_NAME => {
-            // Args: a0=id_low, a1=ptr, a2=len
-            // Cap: Write/Modify on Thing?
             let thing_id = abi::ids::ThingId(a0 as u128);
             if let Err(e) = cap::check(CapOp::GraphWrite, Some(thing_id)) {
                  return e;
@@ -130,8 +93,6 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
         
         // === Memory ===
         nr::SYS_BYTESPACE_CREATE => {
-            // Op: MemUpdate (on self)
-            // Target: self address space (implicit)
             if let Err(e) = cap::check(CapOp::MemManage, None) {
                 return e;
             }
@@ -158,7 +119,6 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
 
         // === Watch ===
         nr::SYS_WATCH_CREATE => {
-             // Target: thing to watch
              let target = abi::ids::ThingId(a1 as u128);
              if let Err(e) = cap::check(CapOp::GraphWatch, Some(target)) {
                  return e;
@@ -166,8 +126,6 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
              watch::sys_watch_create(a0, a1)
         },
         nr::SYS_WATCH_POLL => {
-             // Target: watch handle (which is a Thing).
-             // Cap: Read on watch handle?
              let watcher = abi::ids::ThingId(a0 as u128);
              if let Err(e) = cap::check(CapOp::GraphRead, Some(watcher)) {
                  return e;
@@ -176,21 +134,20 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
         },
 
         // === Input ===
-        200 => { // nr::SYS_INPUT_READ
-            // sys_input_read(buf, len)
-            // TODO: Permissions? For now assuming if you can execute, you can read input (trusted service)
-             // or require CapOp::Hardware?
-             // User requested: "require perm.read targeting device.keyboard0 (or place.input)"
-             // But we don't have place.input ID easily here without looking it up.
-             // For v0.3 bootstrap, we trust the caller (inputd).
-             
+        nr::SYS_INPUT_READ => { 
              let buf = a0 as *mut u8;
              let len = a1 as usize;
-             // sys_input_read returns Result<usize, ()>
              match crate::syscall::input::sys_input_read(buf, len) {
                  Ok(n) => SyscallResult::new(0, n as u64, 0),
                  Err(_) => SyscallResult::new(abi::syscall::err::EFAULT, 0, 0),
              }
+        },
+
+        // === Display ===
+        nr::SYS_DISPLAY_PRIMARY => {
+             let ptr = a0 as *mut abi::display::DisplayInfo;
+             let len = a1 as usize;
+             crate::syscall::display::sys_display_primary(ptr, len)
         },
 
         // === Graphics ===
@@ -201,7 +158,6 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
             surface::sys_surface_create(a0, a1, a2)
         },
         nr::SYS_SURFACE_DRAW => {
-            // Permission check: Write on surface
             let surface_id = abi::ids::ThingId(((a1 as u128) << 64) | (a0 as u128));
             if let Err(e) = cap::check(cap::CapOp::GraphWrite, Some(surface_id)) {
                 return e;
@@ -210,14 +166,7 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
         },
 
         // === Process ===
-        // TODO: Cap checks for Spawn?
         nr::SYS_PROC_SPAWN => {
-             // Should require Cap? Yes.
-             // But let's leave it open for 'sprout' capability or similar?
-             // Kernel panic if random app tries it?
-             // For now: Only allow if task has 'cap.proc.spawn'?
-             // Implementing minimal check:
-             // Let's require MemManage for now (implicit superuser-ish)
              if let Err(e) = cap::check(CapOp::MemManage, None) {
                   return e;
              }
@@ -229,16 +178,12 @@ pub extern "C" fn dispatch(nr: u32, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64,
         
         // === Machine (Restricted) ===
         nr::SYS_MACHINE => {
-            // Kernel tasks only? Or special cap?
              if let Err(e) = cap::check(CapOp::Hardware, None) {
                   return e;
              }
-              crate::log::klog(crate::log::Level::Info, "SYS", "sys_machine called");
               crate::syscall::dispatch::sys_machine(a0, a1, a2, a3)
         },
 
-        // === Legacy / Catch-all ===
-        // nr::SYS_VERSION_GET => ...
         0 => SyscallResult::new(0, 0, 3), // Version
 
         _ => SyscallResult::new(abi::syscall::err::ENOSYS, 0, 0),
@@ -269,7 +214,6 @@ pub fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
     use crate::machine::{self, MmioFlags, MmioRange};
     
     // Define machine_op if not exists in abi
-    // assuming constants:
     const CONSOLE_WRITE: u64 = 0;
     const MMIO_MAP: u64 = 1;
 

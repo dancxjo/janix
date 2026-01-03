@@ -1,24 +1,15 @@
-//! Syscall dispatch
-//!
-//! Provides the kernel's system call interface. Syscalls are dispatched
-//! by number and return (status, val0, val1).
-
-pub mod dispatch;
 pub mod cap;
+pub mod dispatch;
 pub mod graph;
-pub mod log;
 pub mod memory;
 pub mod watch;
-pub mod input; // Added input module
 pub mod surface;
-
+pub mod input;
+pub mod log;
+pub mod display; // Added
 pub use dispatch::dispatch;
+pub use abi::syscall::{nr, err};
 
-/// Initialize syscall dispatch (if needed)
 pub fn init() {
-    // dispatch table is static
+    crate::log::klog(crate::log::Level::Info, "SYSCALL", "init");
 }
-
-// Re-export specific symbols if needed by other crates or legacy code
-pub use abi::wire::SyscallResult;
-pub use abi::syscall::nr;

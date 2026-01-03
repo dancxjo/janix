@@ -1,6 +1,4 @@
-
 use crate::trap::{self, TrapRecord, FaultKind, Arch};
-use graph::store;
 use core::arch::asm;
 
 // Align to 16 bytes so the assembly trap frame uses a 288-byte block.
@@ -84,17 +82,26 @@ pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) -> u64 {
                 return if new_sp != 0 { new_sp } else { 0 };
             }
             1 => {
-                // Supervisor Software Interrupt - just clear and return
-                // TODO: Handle IPI
+                // Supervisor Software Interrupt
+                // Clear SSIP (Supervisor Software Interrupt Pending)
+                // sip bit 1. We are in S-mode, so we write to sip (shadowed/aliased?)
+                unsafe {
+                     // Clear bit 1 of sip
+                     asm!("csrc sip, {}", in(reg) 2, options(nomem, preserves_flags));
+                }
+                
+                // TODO: Handle IPI callbacks
                 return 0;
             }
             9 => {
                 // Supervisor External Interrupt
-                // TODO: Handle external IRQ via PLIC
+                // Acknowledge PLIC if we had one.
+                crate::serial::write(b"WARN: External Interrupt\n");
                 return 0;
             }
             _ => {
                 // Unknown interrupt, just return
+                crate::serial::write(b"WARN: Unknown Interrupt\n");
                 return 0;
             }
         }
@@ -107,7 +114,7 @@ pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) -> u64 {
     }
 
     // Only record serious faults (not Timer/Breakpoint)
-    graph::store::with_store(|store| {
+    ::graph::store::with_store(|store| {
         let rec = TrapRecord {
             arch: Arch::Riscv64,
             kind,
@@ -125,11 +132,39 @@ pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) -> u64 {
 
     match kind {
         FaultKind::Syscall => {
-            // TODO: Handle syscalls
-            panic!("RISC-V syscall not implemented");
+            // Syscall convention:
+            // a7: syscall number
+            // a0-a5: arguments
+            // Return: a0, a1
+            
+            let nr = ctx.regs[16]; // x17 = a7
+            let a0 = ctx.regs[9];  // x10 = a0
+            let a1 = ctx.regs[10]; // x11 = a1
+            let a2 = ctx.regs[11]; // x12 = a2
+            let a3 = ctx.regs[12]; // x13 = a3
+            let a4 = ctx.regs[13]; // x14 = a4
+            let a5 = ctx.regs[14]; // x15 = a5
+
+            // Advance SEPC to avoid infinite loop
+            ctx.sepc += 4;
+
+            // Re-enable interrupts if they were enabled before trap? 
+            // Syscalls usually run with interrupts enabled in higher level kernels, 
+            // but for now run with whatever state we entered.
+            // TODO: explicitly enable if we want preemptible syscalls.
+            let _ = in_kernel; // Unused for now
+
+            let result = crate::syscall::dispatch::dispatch(nr as u32, a0, a1, a2, a3, a4, a5);
+
+            // Write return values
+            ctx.regs[9] = result.val0;
+            ctx.regs[10] = result.val1;
+            
+            // Return to user
+            return 0; 
         }
         _ => {
-            panic!("Unhandled RISC-V Trap: {:?} scause={:#x} sepc={:#x}", kind, scause, ctx.sepc);
+            panic!("Unhandled RISC-V Trap: {:?} scause={:#x} sepc={:#x} stval={:#x}", kind, scause, ctx.sepc, ctx.stval);
         }
     }
 }

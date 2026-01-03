@@ -35,7 +35,7 @@ impl ArchTask for AArch64Arch {
             let frame = &mut *frame_ptr;
             
             frame.elr_el1 = entry;
-            frame.x0 = arg0; // Pass arg0 to entry point
+            frame.x[0] = arg0; // Pass arg0 to entry point
             
             match mode {
                 CpuMode::Kernel => {

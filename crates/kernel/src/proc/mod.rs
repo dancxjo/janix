@@ -34,3 +34,9 @@ pub struct Thread {
     
     pub state: ThreadState,
 }
+
+pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
+    // Stub
+    crate::log::kprintln("PROC: spawn_kernel_module stub called");
+    Ok(())
+}

@@ -198,23 +198,8 @@ unsafe extern "C" fn kmain() -> ! {
             // Look for a usable region for the heap
             // Must be USABLE, big enough, and ideally not overlapping with kernel (Limine shouldn't mark kernel as usable)
             if !heap_found && entry.entry_type == limine::memory_map::EntryType::USABLE && entry.length >= heap_size_req {
-                // Check alignment? 4k is fine.
-                // We pick the first suitable hole.
-                // Note: In a real PMM, we would claim this frame. 
-                // Here, we just "take" it and tell the kernel.
-                // Does Limine modify the map if we take it? No.
-                // The kernel PMM (if it scans this later) must know we took it.
-                // For now, ThingOS typically claims all USABLE memory into the PMM.
-                // We are stealing a chunk BEFORE PMM init.
-                // But wait, the kernel heap IS the allocator.
-                // So this region BECOMES the kernel heap.
-                
                 BOOT_CTX.heap_phys_base = entry.base;
                 heap_found = true;
-                
-                // We should technically ensure we don't clobber modules if they are in "USABLE" space?
-                // Limine usually marks modules as KERNEL_AND_MODULES or similar, not USABLE.
-                // So this should be safe.
             }
         }
         BOOT_CTX.physical_memory = total_mem;
@@ -259,7 +244,7 @@ unsafe extern "C" fn kmain() -> ! {
     bran_log("BRAN: handoff to kernel");
 
     // Hand off to kernel - never returns
-    unsafe { kernel::boot(&raw mut BOOT_CTX) }
+    unsafe { kernel::boot(&mut BOOT_CTX) }
 }
 
 use core::fmt::{self, Write};

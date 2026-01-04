@@ -52,7 +52,20 @@ Use `just`. Do not use `cargo run` directly unless you know exactly why.
     3.  `target remote :1234`
 *   **Stuck/Frozen?**: Use `just die` to clean up orphaned QEMU processes.
 
-## 4. Architectural Constraints (The Strict Rules)
+## 4. File Editing Tool Workaround
+
+> [!CAUTION]
+> **The `replace_file_content` and `multi_replace_file_content` tools corrupt files** when attempting to replace multi-line blocks. They duplicate the top of the file instead of replacing the target block.
+
+**Mandatory Workarounds:**
+
+1.  **Avoid Multi-line Targets**: Never try to match large blocks of code spanning multiple lines.
+2.  **Use Single-Line Anchors**: Target a single, unique line to anchor your replacement.
+3.  **Rewrite Entire Files**: For larger changes, use `write_to_file` with `Overwrite: true` to safely replace the entire file contents.
+
+When in doubt, **rewrite the whole file**. It is safer than risking corruption.
+
+## 5. Architectural Constraints (The Strict Rules)
 
 Refer to `ARCHITECTURE.md` and `GROWTH_MODEL.md` for deep context.
 
@@ -69,14 +82,14 @@ Refer to `ARCHITECTURE.md` and `GROWTH_MODEL.md` for deep context.
     *   Do not carry POSIX assumptions. There is no `fork()`. There are no files (only ByteSpaces).
     *   Do not import `std` in kernel or drivers. Use `core` and `alloc`.
 
-## 5. What To Do When You Are Stuck
+## 6. What To Do When You Are Stuck
 
 1.  **Check the Graph**: Can you model the problem as a missing Thing?
 2.  **Check the Phase**: Are you trying to do a Bloom task in Sprout?
 3.  **Check the Logs**: Serial logs are the primary debug output.
 4.  **Reset**: `just die` is your friend if the terminal gets weird.
 
-## 6. Self-Correction Checklist
+## 7. Self-Correction Checklist
 
 Before you commit code:
 *   [ ] Did I add hidden global state? (If yes -> **Refactor to Graph**)
@@ -84,7 +97,7 @@ Before you commit code:
 *   [ ] Did I confuse a Platform (CPU) with a Machine (Board)?
 *   [ ] Did I break `just test`?
 
-## 7. Knowledge Base
+## 8. Knowledge Base
 
 *   **Philosophy**: `MANIFESTO.md`
 *   **Structure**: `ARCHITECTURE.md`

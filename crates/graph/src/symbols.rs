@@ -233,6 +233,11 @@ pub fn init() {
         "kind.Cursor",
         "rel.cursor",
         "rel.hotspot",
+        // LAPIC / Platform ontology
+        "place.platform",
+        "kind.Timer",
+        "kind.InterruptController",
+        "predicate.has_timer",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -440,6 +445,12 @@ pub mod sym {
     pub const KIND_CURSOR: SymbolId = SymbolId(147);
     pub const REL_CURSOR: SymbolId = SymbolId(148);
     pub const REL_HOTSPOT: SymbolId = SymbolId(149);
+
+    // LAPIC / Platform ontology
+    pub const PLACE_PLATFORM: SymbolId = SymbolId(150);
+    pub const KIND_TIMER: SymbolId = SymbolId(151);
+    pub const KIND_INTERRUPT_CONTROLLER: SymbolId = SymbolId(152);
+    pub const PRED_HAS_TIMER: SymbolId = SymbolId(153);
 }
 
 // symbols.rs additions will be done via sed

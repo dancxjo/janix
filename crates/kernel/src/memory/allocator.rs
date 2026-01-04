@@ -6,32 +6,49 @@ pub static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
-    crate::serial::write(b"PANIC: allocation failed. Size: ");
-    safe_print_u64(layout.size() as u64);
-    crate::serial::write(b"\n");
+    use crate::serial::{write, write_hex};
+
+    write(b"\n\n========== KERNEL ALLOCATION FAILED ==========\n");
+    write(b"Requested size: ");
+    write_hex(layout.size() as u64);
+    write(b" (");
+    print_decimal(layout.size() as u64);
+    write(b" bytes)\n");
+    write(b"Requested align: ");
+    write_hex(layout.align() as u64);
+    write(b"\n");
+
+    // Try to get heap stats
+    let stats = ALLOCATOR.lock();
+    write(b"\nHeap state:\n");
+    write(b"  Free bytes: ");
+    write_hex(stats.free() as u64);
+    write(b"\n  Used bytes: ");
+    write_hex(stats.used() as u64);
+    write(b"\n");
+    drop(stats);
+
+    write(b"\nPossible causes:\n");
+    write(b"  - Heap exhausted (increase heap size or fix leak)\n");
+    write(b"  - Fragmentation (no contiguous block available)\n");
+    write(b"  - Heap not initialized yet (too early allocation)\n");
+    write(b"================================================\n");
+
     panic!("allocation failed")
 }
 
-fn safe_print_u64(v: u64) {
-    let mut i = 0;
+fn print_decimal(mut v: u64) {
     if v == 0 {
-        crate::serial::write(b"0x0");
+        crate::serial::write(b"0");
         return;
     }
-    // write hex
-    crate::serial::write(b"0x");
-    // count leading zeros or just print?
-    // simple hex dump
-    for shift in (0..16).rev() {
-        let digit = (v >> (shift * 4)) & 0xF;
-        if digit > 0 || i > 0 || shift == 0 {
-            let c = if digit < 10 {
-                b'0' + digit as u8
-            } else {
-                b'a' + (digit - 10) as u8
-            };
-            crate::serial::write(&[c]);
-            i += 1;
-        }
+    let mut buf = [0u8; 20];
+    let mut i = 19;
+    while v > 0 {
+        buf[i] = b'0' + (v % 10) as u8;
+        v /= 10;
+        if i == 0 { break; }
+        i -= 1;
     }
+    crate::serial::write(&buf[i + 1..]);
 }

@@ -1,15 +1,11 @@
-// use x86_64::instructions::port::Port;
-// Local APIC Base Address MSR
-const _IA32_APIC_BASE: u32 = 0x1b;
+//! x86_64 Timer and Interrupt Controller Integration.
+//!
+//! This module provides the timer initialization and EOI handling for x86_64.
+//! Since we now use LAPIC for timer, this module:
+//! 1. Disables the legacy PIC (8259) completely
+//! 2. Delegates timer operations to the LAPIC
 
-// Offsets
-const _APIC_EOI: u32 = 0x0b0;
-const _APIC_SVR: u32 = 0x0f0;
-const _APIC_LVT_TIMER: u32 = 0x320;
-const _APIC_TIMER_INIT: u32 = 0x380;
-const _APIC_TIMER_CURRENT: u32 = 0x390;
-const _APIC_TIMER_DIV: u32 = 0x3e0;
-
+use super::apic::LAPIC;
 use x86_64::instructions::port::Port;
 
 // PIC ports
@@ -18,90 +14,107 @@ const PIC1_DATA: u16 = 0x21;
 const PIC2_CMD: u16 = 0xA0;
 const PIC2_DATA: u16 = 0xA1;
 
-pub unsafe fn init() {
-    // 1. Initialize PIT (already correct)
-    init_pit();
+/// Global flag indicating whether LAPIC is active.
+static mut USE_LAPIC: bool = false;
 
-    // 2. Remap PICs (Master -> 32, Slave -> 40)
+/// Initialize the timer subsystem (Phase 1: disable legacy PIC).
+///
+/// # Safety
+/// Must be called exactly once during boot.
+pub unsafe fn init() {
+    // 1. Remap PICs to vectors 32-47 (needed even if disabled)
     remap_pics();
 
-    // 3. Unmask IRQ0 on PIC
-    // Unmask IRQ0 (bit 0 of PIC1_DATA)
-    let mut data = Port::<u8>::new(PIC1_DATA);
-    let mask = data.read();
-    // Ensure only IRQ0 is unmasked? Or preserve others?
-    // Usually mask all others.
-    // Unmask IRQ0 (Timer) and IRQ1 (Keyboard)
-    // Safety: Mask 0xFC (11111100).
-    data.write(mask & 0xFC);
+    // 2. Mask all IRQs on both PICs (disable legacy PIC)
+    disable_pic();
 
-    // 4. Unmask IRQ12 on PIC2 (Mouse)
-    // IRQ12 is bit 4 on the slave PIC (12 - 8 = 4)
-    let mut data2 = Port::<u8>::new(PIC2_DATA);
-    let mask2 = data2.read();
-    data2.write(mask2 & 0xEF); // Clear bit 4
+    crate::serial::write(b"TIMER: Legacy PIC disabled\n");
 }
 
+/// Initialize LAPIC timer (Phase 2: requires HHDM).
+///
+/// # Safety
+/// Must be called after the HHDM is established.
+pub unsafe fn init_lapic(hhdm_offset: u64) {
+    LAPIC.init_with_hhdm(hhdm_offset);
+    USE_LAPIC = true;
+}
+
+/// Acknowledge timer interrupt (send EOI).
+///
+/// # Safety
+/// Must be called from interrupt context.
+pub unsafe fn ack() {
+    if USE_LAPIC {
+        LAPIC.send_eoi();
+    } else {
+        // Fallback to PIC EOI
+        let mut cmd = Port::<u8>::new(PIC1_CMD);
+        cmd.write(0x20);
+    }
+}
+
+/// Remap PICs to vectors 32-47.
 unsafe fn remap_pics() {
     let mut cmd1 = Port::<u8>::new(PIC1_CMD);
     let mut data1 = Port::<u8>::new(PIC1_DATA);
     let mut cmd2 = Port::<u8>::new(PIC2_CMD);
     let mut data2 = Port::<u8>::new(PIC2_DATA);
 
-    let _a1 = data1.read();
-    let _a2 = data2.read();
+    let a1 = data1.read();
+    let a2 = data2.read();
 
-    // ICW1: Init
+    // ICW1: Init + ICW4 needed
     cmd1.write(0x11);
     io_wait();
     cmd2.write(0x11);
     io_wait();
 
-    // ICW2: Offset
-    data1.write(0x20); // 32
+    // ICW2: Vector offsets (Master: 32, Slave: 40)
+    data1.write(0x20);
     io_wait();
-    data2.write(0x28); // 40
+    data2.write(0x28);
     io_wait();
 
-    // ICW3: Cascade
+    // ICW3: Cascade identity
     data1.write(4);
     io_wait();
     data2.write(2);
     io_wait();
 
-    // ICW4: 8086
+    // ICW4: 8086 mode
     data1.write(0x01);
     io_wait();
     data2.write(0x01);
     io_wait();
 
-    // Restore masks (or mask all?)
-    // data1.write(a1);
-    // data2.write(a2);
-
-    // Mask all for safety, then unmask specific ones later.
-    data1.write(0xff);
-    data2.write(0xff);
+    // Restore masks temporarily
+    data1.write(a1);
+    data2.write(a2);
 }
 
+/// Disable the legacy PIC by masking all IRQs.
+unsafe fn disable_pic() {
+    let mut data1 = Port::<u8>::new(PIC1_DATA);
+    let mut data2 = Port::<u8>::new(PIC2_DATA);
+    data1.write(0xFF);
+    data2.write(0xFF);
+}
+
+/// Small delay for PIC initialization.
+#[inline]
 unsafe fn io_wait() {
     let mut p = Port::<u8>::new(0x80);
     p.write(0);
 }
 
-unsafe fn init_pit() {
-    let mut command = Port::<u8>::new(0x43);
-    command.write(0x36); // Channel 0, LSB/MSB, Mode 3 (Square Wave), Binary
-
-    // 1193182 / 100 Hz = 11931
-    let divisor = 11931u16;
-    let mut data = Port::<u8>::new(0x40);
-    data.write((divisor & 0xff) as u8);
-    data.write((divisor >> 8) as u8);
+/// Get the LAPIC timer frequency in Hz.
+pub fn timer_frequency_hz() -> u32 {
+    use crate::interrupt::InterruptController;
+    LAPIC.timer_frequency_hz()
 }
 
-pub unsafe fn ack() {
-    // Send EOI to PIC1
-    let mut cmd = Port::<u8>::new(PIC1_CMD);
-    cmd.write(0x20);
+/// Get the LAPIC ID.
+pub fn lapic_id() -> u32 {
+    LAPIC.id()
 }

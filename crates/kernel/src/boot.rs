@@ -22,7 +22,6 @@ pub struct FramebufferInfo {
     pub height: u64,
     pub pitch: u64,
     pub bpp: u16,
-    // Color format info from Limine
     pub red_mask_size: u8,
     pub red_mask_shift: u8,
     pub green_mask_size: u8,
@@ -72,6 +71,9 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     graph::init();
     graph::seed_minimal();
     
+    // Platform layer handles arch-specific wiring and graph seeding
+    crate::platform::init();
+    
     seed_bloom_ontology();
     
     crate::sched::init();
@@ -95,10 +97,6 @@ pub fn spawn_module_by_name(ctx: &BootContext, name: &str) {
 }
 
 fn seed_bloom_ontology() {
-    // Initialize mouse and seed pointer Thing on x86_64
-    #[cfg(target_arch = "x86_64")]
-    crate::machine::x86_64::ps2_mouse::init();
-
     // Create place.input if not exists and seed pointer.0
     let input_place = if let Some(p) = store::find_thing_by_name(sym::PLACE_INPUT) {
         p
@@ -116,7 +114,6 @@ fn seed_bloom_ontology() {
     let pointer_name = symbols::intern(b"pointer.0");
     store::thing_register_name(pointer_thing, pointer_name);
     store::relationship_create(sym::REL_HAS_POINTER, input_place, pointer_thing);
-    // Initialize payload: x=0, y=0, buttons=0
     store::thing_set_inline_payload(pointer_thing, &[0u8; 12]);
     crate::log::kprintln("BOOT: Created pointer.0");
 
@@ -177,7 +174,6 @@ fn seed_bloom_ontology() {
         store::relationship_create(sym::PRED_PRIMARY, fb_thing, surface);
         store::relationship_create(sym::PRED_BACKS, surface, fb_bytespace);
 
-        // Set PRED_BASE_PHYS and PRED_SIZE for framebuffer
         let fb_phys_thing = store::thing_create(sym::KIND_PLACE);
         let mut fb_phys_payload = alloc::vec::Vec::new();
         fb_phys_payload.extend_from_slice(&fb.addr.to_le_bytes());
@@ -191,19 +187,17 @@ fn seed_bloom_ontology() {
         store::thing_set_inline_payload(fb_size_thing, &fb_size_payload);
         store::relationship_create(sym::PRED_SIZE, fb_bytespace, fb_size_thing);
         
-        // Store display dimensions and color format in graph as payload on display device
-        // Format: width(u32), height(u32), pitch(u32), bpp(u16), r_shift(u8), g_shift(u8), b_shift(u8)
         let mut display_payload = alloc::vec::Vec::new();
-        display_payload.extend_from_slice(&(fb.width as u32).to_le_bytes());  // 0-3
-        display_payload.extend_from_slice(&(fb.height as u32).to_le_bytes()); // 4-7
-        display_payload.extend_from_slice(&(fb.pitch as u32).to_le_bytes());  // 8-11
-        display_payload.extend_from_slice(&fb.bpp.to_le_bytes());             // 12-13
-        display_payload.push(fb.red_mask_shift);                               // 14
-        display_payload.push(fb.green_mask_shift);                             // 15
-        display_payload.push(fb.blue_mask_shift);                              // 16
-        display_payload.push(fb.red_mask_size);                                // 17
-        display_payload.push(fb.green_mask_size);                              // 18
-        display_payload.push(fb.blue_mask_size);                               // 19
+        display_payload.extend_from_slice(&(fb.width as u32).to_le_bytes());
+        display_payload.extend_from_slice(&(fb.height as u32).to_le_bytes());
+        display_payload.extend_from_slice(&(fb.pitch as u32).to_le_bytes());
+        display_payload.extend_from_slice(&fb.bpp.to_le_bytes());
+        display_payload.push(fb.red_mask_shift);
+        display_payload.push(fb.green_mask_shift);
+        display_payload.push(fb.blue_mask_shift);
+        display_payload.push(fb.red_mask_size);
+        display_payload.push(fb.green_mask_size);
+        display_payload.push(fb.blue_mask_size);
         store::thing_set_inline_payload(fb_thing, &display_payload);
         
         crate::log::kprintln(&alloc::format!(
@@ -211,9 +205,6 @@ fn seed_bloom_ontology() {
             fb.width, fb.height, fb.red_mask_shift, fb.green_mask_shift, fb.blue_mask_shift
         ));
 
-        // Initialize mouse bounds based on framebuffer
-        #[cfg(target_arch = "x86_64")]
-        crate::machine::x86_64::ps2_mouse::set_bounds(fb.width as u32, fb.height as u32);
         if let Some(devices) = store::find_thing_by_name(sym::PLACE_DEVICES) {
              store::relationship_create(sym::PRED_CONTAINS, devices, fb_thing);
         }

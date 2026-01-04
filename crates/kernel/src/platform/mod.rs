@@ -1,13 +1,17 @@
 //! Platform capability surface.
 //!
-//! The Platform trait represents the registry of capabilities available
-//! to the kernel and drivers.
+//! The Platform layer wires machine facilities to kernel services.
+//! It handles:
+//! - Driver instantiation  
+//! - Graph exposure of platform-specific Things
+//! - Registration of capability providers
 
 use alloc::vec::Vec;
-
 use alloc::boxed::Box;
-/// A handle to a capability provider.
 use spin::Mutex;
+
+#[cfg(target_arch = "x86_64")]
+mod x86_64;
 
 /// A handle to a capability provider.
 pub trait Provider: Send + Sync {
@@ -27,7 +31,6 @@ struct ConsoleProvider;
 
 impl Provider for ConsoleProvider {
     fn invoke(&self, _op: u32, payload: &[u8]) -> Result<Vec<u8>, PlatformError> {
-        // Op 0: write
         crate::machine::machine().console_write(payload);
         Ok(Vec::new())
     }
@@ -49,22 +52,29 @@ impl Platform {
         self.providers.lock().push(provider);
     }
 
-    // Simple helper for now, usually we'd dispatch by ID
     pub fn console_write(&self, bytes: &[u8]) {
-        // Optimization: direct machine call for now, or find console provider
-        // For strict correctness with "delegate":
         crate::machine::machine().console_write(bytes);
     }
 }
 
 static mut PLATFORM: Option<Platform> = None;
 
+/// Initialize the platform layer.
+///
+/// This is the ONLY place where arch-specific dispatch occurs for
+/// platform initialization. The kernel core calls this, not
+/// arch-specific code directly.
 #[allow(static_mut_refs)]
 pub fn init() -> &'static Platform {
     unsafe {
         PLATFORM = Some(Platform::new());
         let platform = PLATFORM.as_ref().unwrap();
         register_bootstrap_providers(platform);
+        
+        // Dispatch to arch-specific platform init
+        #[cfg(target_arch = "x86_64")]
+        x86_64::init();
+        
         platform
     }
 }

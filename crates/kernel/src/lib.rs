@@ -7,7 +7,7 @@ extern crate alloc;
 
 pub mod boot;
 pub mod bytespace;
-// pub mod display;
+pub mod interrupt;
 pub mod log;
 pub mod machine;
 pub mod memory;

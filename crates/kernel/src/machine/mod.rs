@@ -159,7 +159,6 @@ pub trait Machine: Sync {
     fn console_write(&self, bytes: &[u8]) -> usize;
 
     /// Map a physical MMIO range and return a virtual mapping.
-    /// Implementations must not assume an HHDM covers device ranges.
     fn mmio_map(&self, range: MmioRange, flags: MmioFlags) -> Option<MmioMapping>;
 
     /// Get monotonic nanoseconds since boot.
@@ -183,18 +182,27 @@ pub trait Machine: Sync {
     /// Entry point stub address for new tasks
     fn task_entry_stub(&self) -> u64;
 
-    /// Translate kernel virtual address to physical address in canonical zones.
-    /// This should handle:
-    /// 1. HHDM (virt >= hhdm_offset) -> virt - hhdm_offset
-    /// 2. Kernel Code/Data (virt >= kernel_virt_base) -> virt - virt_base + phys_base
+    /// Translate kernel virtual address to physical address.
     fn virt_to_phys(&self, virt: u64) -> u64;
 
-    /// Update the kernel stack for the current CPU (for syscall/interrupt entry).
+    /// Update the kernel stack for the current CPU.
     fn set_kernel_stack(&self, _top: u64) {}
 
     /// Access SIMD capabilities.
     fn simd(&self) -> &'static dyn Simd {
         &NOOP_SIMD
+    }
+
+    // --- Timer/Interrupt Info (for Platform layer) ---
+
+    /// Get the timer frequency in Hz (if applicable).
+    fn timer_frequency_hz(&self) -> u32 {
+        0
+    }
+
+    /// Get the local CPU/APIC ID (if applicable).
+    fn local_cpu_id(&self) -> u32 {
+        0
     }
 }
 
@@ -202,8 +210,7 @@ static mut MACHINE: Option<&'static dyn Machine> = None;
 
 /// Install the architecture-provided machine implementation.
 ///
-/// Safety: must be called exactly once during boot by the architecture code
-/// before any machine() calls occur.
+/// Safety: must be called exactly once during boot.
 pub unsafe fn install(machine: &'static dyn Machine) {
     MACHINE = Some(machine);
 }
@@ -238,7 +245,7 @@ pub fn smoke_fault() {
     #[cfg(target_arch = "loongarch64")]
     unsafe {
         core::arch::asm!("break 0")
-    }; // or equivalent
+    };
 }
 
 pub fn idle() {

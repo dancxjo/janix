@@ -8,6 +8,7 @@ use core::arch::asm;
 use core::arch::global_asm;
 
 pub mod abi;
+pub mod apic;
 pub mod context;
 pub mod gdt;
 pub mod idt;
@@ -67,17 +68,17 @@ pub extern "C" fn task_dispatch(dispatch_ptr: u64, entry: extern "C" fn(u64) -> 
 
 #[no_mangle]
 pub extern "C" fn keyboard_handler_asm_helper() {
+    unsafe {
+        ps2_keyboard::irq_handler();
+        timer::ack(); // Send EOI (now goes to LAPIC)
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn mouse_handler_asm_helper() {
     unsafe {
         ps2_mouse::irq_handler();
-        ps2_mouse::ack(); // Send EOI to both PICs
-    }
-}
-    unsafe {
-        ps2_keyboard::irq_handler();
-        timer::ack(); // Send EOI to PIC1
+        ps2_mouse::ack(); // Send EOI to both PICs (legacy mouse uses PIC)
     }
 }
 
@@ -110,9 +111,9 @@ impl ArchMachine {
 pub static mut PERCPU_BSP: self::percpu::x86PerCpu = self::percpu::x86PerCpu::new(0, 0);
 pub static mut BSP_GDT: self::gdt::GdtTss = self::gdt::GdtTss::new();
 
-pub fn init() {
+/// Early init (GDT, IDT, etc) - called before LAPIC
+fn init_early() {
     unsafe {
-        // use machine::{BSP_GDT, PERCPU_BSP}; // Now local
         use percpu::init_gs_base;
 
         // 1. GDT/TSS (Reloads Segments, clearing GS Base)
@@ -124,7 +125,7 @@ pub fn init() {
         // 3. IDT
         idt::init();
 
-        // 4. Timer
+        // 4. Timer (disables legacy PIC)
         timer::init();
 
         // 5. Syscall
@@ -132,8 +133,13 @@ pub fn init() {
 
         // 6. Keyboard (Arch specific init)
         crate::machine::input::init();
+    }
+}
 
-        // 7. SIMD (Deferred until heap is ready in boot.rs)
+/// Late init (LAPIC) - requires HHDM to be known
+fn init_lapic(hhdm_offset: u64) {
+    unsafe {
+        timer::init_lapic(hhdm_offset);
     }
 }
 
@@ -179,8 +185,11 @@ impl Machine for ArchMachine {
         self.kernel_virt_base
             .store(info.kernel_virt_base, core::sync::atomic::Ordering::Relaxed);
 
-        // Initialize PerCpu, GDT, IDT
-        init();
+        // Phase 1: Early init (GDT, IDT, disable PIC)
+        init_early();
+
+        // Phase 2: LAPIC init (requires HHDM offset)
+        init_lapic(info.hhdm_offset);
     }
 
     fn console_write(&self, bytes: &[u8]) -> usize {
@@ -268,6 +277,15 @@ impl Machine for ArchMachine {
             virt
         }
     }
+
+    // Timer/CPU info for platform layer
+    fn timer_frequency_hz(&self) -> u32 {
+        timer::timer_frequency_hz()
+    }
+
+    fn local_cpu_id(&self) -> u32 {
+        timer::lapic_id()
+    }
 }
 
 pub fn syscall_init() {
@@ -287,15 +305,8 @@ pub fn syscall_init() {
         let handler_addr = syscall_entry as *const () as u64;
         LStar::write(x86_64::VirtAddr::new(handler_addr));
 
-        // Manual STAR MSR Write (0xC0000081)
-        // High 32 bits: [Base(16bits)][Base(16bits)] for sysret (Wait! NO.)
-        // Intel SDM:
-        // 63:48 -> UserBase (sysret CS = Base+16, SS = Base+8)
-        // 47:32 -> KernelBase (syscall CS = Base, SS = Base+8)
-        // 31:0  -> Reserved
-
         let kernel_base = 0x0008u64;
-        let user_base = 0x0018u64; // index 3
+        let user_base = 0x0018u64;
         let star_val = (user_base << 48) | (kernel_base << 32);
 
         core::arch::asm!(
@@ -306,7 +317,6 @@ pub fn syscall_init() {
             options(nostack)
         );
 
-        // Flags mask (flags to clear on syscall)
         SFMask::write(RFlags::INTERRUPT_FLAG | RFlags::TRAP_FLAG | RFlags::DIRECTION_FLAG);
     }
 }

@@ -1,0 +1,7 @@
+{
+  "arch": "aarch64",
+  "artifacts_dir": "aarch64/swappable_display_backends/bloom_can_paint_a_solid_color_on_any_provider",
+  "feature": "Swappable display backends",
+  "scenario": "Bloom can paint a solid color on any provider",
+  "status": "pass"
+}

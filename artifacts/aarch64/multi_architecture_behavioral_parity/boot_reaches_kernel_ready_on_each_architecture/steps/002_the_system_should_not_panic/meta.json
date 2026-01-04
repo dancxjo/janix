@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "aarch64",
+  "feature": "Multi-architecture behavioral parity",
+  "scenario": "Boot reaches kernel ready on each architecture",
+  "step": {
+    "index": 2,
+    "text": "the system should not panic",
+    "status": "passed",
+    "timestamp": "2026-01-04T02:30:50.536458991+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

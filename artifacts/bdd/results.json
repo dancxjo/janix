@@ -1,27 +1,18 @@
 {
   "run": {
-    "timestamp": "2026-01-04T00:30:20.218917327+00:00"
+    "timestamp": "2026-01-04T02:30:38.834527719+00:00"
   },
   "features": {
-    "Boot contract and system bring-up": {
-      "scenarios": {
-        "Bran hands off a boot contract to the Kernel": {
-          "arches": {
-            "x86_64": "pass"
-          }
-        }
-      }
-    },
     "Multi-architecture behavioral parity": {
       "scenarios": {
         "Boot reaches kernel ready on each architecture": {
           "arches": {
-            "x86_64": "pass"
+            "aarch64": "pass"
           }
         },
         "The syscall ABI returns a structured result on each architecture": {
           "arches": {
-            "x86_64": "pass"
+            "aarch64": "pass"
           }
         }
       }
@@ -30,17 +21,12 @@
       "scenarios": {
         "Bloom can paint a solid color on any provider": {
           "arches": {
-            "x86_64": "pass"
+            "aarch64": "pass"
           }
         },
-        "Bloom cannot access display bytespace without capability": {
+        "RAMFB provider exposes the same graph contract": {
           "arches": {
-            "x86_64": "pass"
-          }
-        },
-        "Limine framebuffer provider exposes a primary display bytespace": {
-          "arches": {
-            "x86_64": "pass"
+            "aarch64": "failed"
           }
         }
       }

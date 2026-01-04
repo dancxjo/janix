@@ -24,6 +24,7 @@ impl QemuProcess {
         ovmf_code: &Path,
         ovmf_vars: &Path,
         qmp_sock_path: &Path,
+        display_provider: Option<&str>,
     ) -> Result<Self> {
         let qemu_bin = match arch {
             "x86_64" => "qemu-system-x86_64",
@@ -92,8 +93,9 @@ impl QemuProcess {
                     "virt".to_string(),
                     "-cpu".to_string(),
                     "cortex-a72".to_string(),
+
                     "-device".to_string(),
-                    "ramfb".to_string(),
+                    display_provider.unwrap_or("ramfb").to_string(),
                     "-device".to_string(),
                     "qemu-xhci".to_string(),
                     "-device".to_string(),

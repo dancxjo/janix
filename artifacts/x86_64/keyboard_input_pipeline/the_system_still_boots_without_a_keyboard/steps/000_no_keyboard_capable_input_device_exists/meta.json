@@ -7,10 +7,10 @@
     "index": 0,
     "text": "no keyboard-capable input device exists",
     "status": "failed",
-    "timestamp": "2026-01-04T05:10:25.287663938+00:00"
+    "timestamp": "2026-01-04T05:20:05.290728405+00:00"
   },
   "artifacts": {
     "screenshot": null,
-    "serial_tail": "serial_tail.txt"
+    "serial_tail": null
   }
 }

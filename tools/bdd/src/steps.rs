@@ -282,6 +282,24 @@ async fn given_boot_arch_legacy(world: &mut BootWorld, arch: String) -> Result<(
     boot_os_impl(world, None).await
 }
 
+#[when(expr = "I wait for {int} milliseconds")]
+async fn when_wait_ms(world: &mut BootWorld, ms: u64) -> Result<()> {
+    tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
+    Ok(())
+}
+
+#[when(expr = "I wait for {int} second")]
+async fn when_wait_sec_singular(world: &mut BootWorld, sec: u64) -> Result<()> {
+    tokio::time::sleep(tokio::time::Duration::from_secs(sec)).await;
+    Ok(())
+}
+
+#[when(expr = "I wait for {int} seconds")]
+async fn when_wait_sec_plural(world: &mut BootWorld, sec: u64) -> Result<()> {
+    tokio::time::sleep(tokio::time::Duration::from_secs(sec)).await;
+    Ok(())
+}
+
 #[when(expr = "{string} paints the primary display {string}")]
 async fn when_app_paints_display(world: &mut BootWorld, app: String, color: String) -> Result<()> {
     if app == "bloom" && color == "cornflower" {

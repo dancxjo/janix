@@ -4,10 +4,10 @@
   "feature": "Scheduler liveness and fairness",
   "scenario": "The scheduler switches tasks over time",
   "step": {
-    "index": 1,
-    "text": "I wait for 200 milliseconds",
+    "index": 2,
+    "text": "the serial log should contain \"TICK:\"",
     "status": "passed",
-    "timestamp": "2026-01-04T06:05:42.689082602+00:00"
+    "timestamp": "2026-01-04T06:05:43.868212814+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

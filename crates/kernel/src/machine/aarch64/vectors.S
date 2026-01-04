@@ -128,9 +128,9 @@ handle_irq_el1:
     mrs x0, tpidr_el1
     
     // Increment irq_depth
-    ldr w1, [x0, #64] // irq_depth
+    ldr w1, [x0, #72] // irq_depth
     add w1, w1, #1
-    str w1, [x0, #64]
+    str w1, [x0, #72]
 
     mov x18, sp
     mrs x0, tpidrro_el0
@@ -143,9 +143,9 @@ handle_irq_el1:
     // Decrement irq_depth
     msr tpidrro_el0, x0
     mrs x0, tpidr_el1
-    ldr w1, [x0, #64]
+    ldr w1, [x0, #72]
     sub w1, w1, #1
-    str w1, [x0, #64]
+    str w1, [x0, #72]
     mrs x0, tpidrro_el0
     
     cbz x0, 1f
@@ -156,7 +156,7 @@ handle_irq_el1:
     // EL0 -> EL1: Use TPIDR_EL1 + 104 (kernel_stack_top)
     msr tpidrro_el0, x0
     mrs x0, tpidr_el1
-    ldr x0, [x0, #104] // kernel_stack_top
+    ldr x0, [x0, #96] // kernel_stack_top
     sub x0, x0, #288
     mrs x18, sp_el0  // Incoming SP is SP_EL0
     mov sp, x0
@@ -175,9 +175,9 @@ handle_irq_el0:
     mrs x0, tpidr_el1
     
     // Increment irq_depth
-    ldr w1, [x0, #64]
+    ldr w1, [x0, #72]
     add w1, w1, #1
-    str w1, [x0, #64]
+    str w1, [x0, #72]
 
     ldr x0, [x0, #96] // kernel_stack_top
     sub x0, x0, #288
@@ -193,9 +193,9 @@ handle_irq_el0:
     // Decrement irq_depth
     msr tpidrro_el0, x0
     mrs x0, tpidr_el1
-    ldr w1, [x0, #64]
+    ldr w1, [x0, #72]
     sub w1, w1, #1
-    str w1, [x0, #64]
+    str w1, [x0, #72]
     mrs x0, tpidrro_el0
 
     cbz x0, 1f
@@ -205,6 +205,7 @@ handle_irq_el0:
 handle_fiq_el1: 
     mov x18, sp
     ldr x19, =exception_stack_top
+    ldr x19, [x19]
     mov sp, x19
     SAVE_CONTEXT
     wfi; b handle_fiq_el1
@@ -212,6 +213,7 @@ handle_fiq_el1:
 handle_serror_el1: 
     mov x18, sp
     ldr x19, =exception_stack_top
+    ldr x19, [x19]
     mov sp, x19
     SAVE_CONTEXT
     wfi; b handle_serror_el1

@@ -17,7 +17,7 @@ pub extern "C" fn main() {
             let _surf = thing_find("surface.display0").expect("surface not found");
             let bs_id = thing_find("bytespace.display0").expect("bytespace not found");
 
-            let fb_base = 0x8000_0000;
+            let fb_base = 0xA000_0000;
             let fb_size = 1920 * 1080 * 4;
             let _mapped = thing_std::memory::space_map(bs_id, fb_base, 0, fb_size);
 

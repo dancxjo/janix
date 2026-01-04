@@ -68,6 +68,9 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     
     crate::log::init(get_boot_ctx());
     
+    // Initialize PS/2 mouse (requires heap)
+    crate::machine::input::init_mouse();
+    
     graph::init();
     graph::seed_minimal();
     
@@ -116,6 +119,7 @@ fn seed_bloom_ontology() {
     store::relationship_create(sym::REL_HAS_POINTER, input_place, pointer_thing);
     store::thing_set_inline_payload(pointer_thing, &[0u8; 12]);
     crate::log::kprintln("BOOT: Created pointer.0");
+    crate::machine::input::set_pointer_thing_id(pointer_thing);
 
     let ctx = get_boot_ctx();
     
@@ -204,6 +208,10 @@ fn seed_bloom_ontology() {
             "BOOT: display0 {}x{} r_shift={} g_shift={} b_shift={}",
             fb.width, fb.height, fb.red_mask_shift, fb.green_mask_shift, fb.blue_mask_shift
         ));
+
+
+        // Set mouse bounds to match framebuffer dimensions
+        crate::machine::input::set_mouse_bounds(fb.width as u32, fb.height as u32);
 
         if let Some(devices) = store::find_thing_by_name(sym::PLACE_DEVICES) {
              store::relationship_create(sym::PRED_CONTAINS, devices, fb_thing);

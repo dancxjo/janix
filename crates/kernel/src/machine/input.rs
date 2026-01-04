@@ -6,10 +6,31 @@
 #[cfg(target_arch = "x86_64")]
 use crate::machine::x86_64::ps2_keyboard;
 
-/// Initialize the input subsystem.
+#[cfg(target_arch = "x86_64")]
+use crate::machine::x86_64::ps2_mouse;
+
+/// Initialize the input subsystem (keyboard only - early init before heap).
 pub fn init() {
     #[cfg(target_arch = "x86_64")]
     ps2_keyboard::init();
+}
+
+/// Initialize mouse (requires heap - call after heap init).
+pub fn init_mouse() {
+    #[cfg(target_arch = "x86_64")]
+    ps2_mouse::init();
+}
+
+/// Set the pointer thing ID for automatic graph publication.
+pub fn set_pointer_thing_id(id: abi::ids::ThingId) {
+    #[cfg(target_arch = "x86_64")]
+    ps2_mouse::set_pointer_thing_id(id);
+}
+
+/// Set mouse screen bounds for pointer clamping.
+pub fn set_mouse_bounds(width: u32, height: u32) {
+    #[cfg(target_arch = "x86_64")]
+    ps2_mouse::set_bounds(width, height);
 }
 
 /// Read raw scancodes from the input buffer.

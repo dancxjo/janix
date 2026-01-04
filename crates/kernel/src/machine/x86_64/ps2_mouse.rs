@@ -4,7 +4,7 @@
 //! decodes 3-byte PS/2 mouse packets, and publishes pointer state to the graph.
 
 use crate::log::{self, Level};
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU64, Ordering};
 use x86_64::instructions::interrupts;
 use x86_64::instructions::port::Port;
 
@@ -29,12 +29,26 @@ static SCREEN_HEIGHT: AtomicI32 = AtomicI32::new(720);
 static mut PACKET_IDX: usize = 0;
 static mut PACKET: [u8; 3] = [0; 3];
 
+// Debug counter for IRQ hits
+static IRQ_COUNT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+static PACKET_COUNT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+// Pointer thing ID for graph publication (low 64 bits of ThingId)
+static POINTER_THING_ID_LO: AtomicU64 = AtomicU64::new(0);
+static POINTER_THING_ID_HI: AtomicU64 = AtomicU64::new(0);
+
 /// Initialize the PS/2 mouse.
 pub fn init() {
     unsafe {
         init_mouse();
     }
     log::klog(Level::Info, "PS2", "input: discovered mouse");
+}
+
+/// Set the pointer thing ID for automatic graph publication.
+pub fn set_pointer_thing_id(id: abi::ids::ThingId) {
+    POINTER_THING_ID_LO.store(id.0 as u64, Ordering::Relaxed);
+    POINTER_THING_ID_HI.store((id.0 >> 64) as u64, Ordering::Relaxed);
 }
 
 /// Set screen bounds for pointer clamping.
@@ -115,6 +129,12 @@ unsafe fn init_mouse() {
 ///
 /// This is called from the IDT trampoline.
 pub unsafe fn irq_handler() {
+    // Increment IRQ counter
+    let count = IRQ_COUNT.fetch_add(1, Ordering::Relaxed);
+    if count < 5 {
+        crate::serial::write(b"MOUSE: IRQ received
+");
+    }
     let mut port = Port::<u8>::new(0x60);
     let byte = port.read();
 
@@ -151,8 +171,21 @@ pub fn process_packets() {
 
             if PACKET_IDX == 3 {
                 // Complete packet!
+                let pcount = PACKET_COUNT.fetch_add(1, Ordering::Relaxed);
+                if pcount < 5 {
+                    crate::serial::write(b"MOUSE: Packet decoded
+");
+                }
                 decode_packet();
                 PACKET_IDX = 0;
+                
+                // Auto-publish to graph if pointer thing ID is set
+                let lo = POINTER_THING_ID_LO.load(Ordering::Relaxed);
+                let hi = POINTER_THING_ID_HI.load(Ordering::Relaxed);
+                if lo != 0 || hi != 0 {
+                    let id = abi::ids::ThingId((hi as u128) << 64 | lo as u128);
+                    publish_to_graph_internal(id);
+                }
             }
         }
     });
@@ -202,9 +235,8 @@ pub fn get_pointer_state() -> (i32, i32, u8) {
     )
 }
 
-/// Publish pointer state to the graph.
-/// Called periodically to update the pointer Thing.
-pub fn publish_to_graph(pointer_thing_id: abi::ids::ThingId) {
+/// Publish pointer state to the graph (internal).
+fn publish_to_graph_internal(pointer_thing_id: abi::ids::ThingId) {
     let (x, y, buttons) = get_pointer_state();
 
     // Create payload: x(i32), y(i32), buttons(u8), padding(3)
@@ -215,6 +247,12 @@ pub fn publish_to_graph(pointer_thing_id: abi::ids::ThingId) {
     // bytes 9-11 are padding/reserved
 
     graph::store::thing_set_inline_payload(pointer_thing_id, &payload);
+}
+
+/// Publish pointer state to the graph.
+/// Called periodically to update the pointer Thing.
+pub fn publish_to_graph(pointer_thing_id: abi::ids::ThingId) {
+    publish_to_graph_internal(pointer_thing_id);
 }
 
 /// Send EOI to PIC2 for IRQ 12

@@ -9,7 +9,7 @@ static KERNEL_SATP: AtomicU64 = AtomicU64::new(0);
 const PAGE_SIZE: usize = 4096;
 const PAGE_SHIFT: usize = 12;
 
-/// Sv39 PTE bits
+/// Sv39/48 PTE bits
 const PTE_V: u64 = 1 << 0; // Valid
 const PTE_R: u64 = 1 << 1; // Readable
 const PTE_W: u64 = 1 << 2; // Writable
@@ -19,8 +19,9 @@ const PTE_G: u64 = 1 << 5; // Global
 const PTE_A: u64 = 1 << 6; // Accessed
 const PTE_D: u64 = 1 << 7; // Dirty
 
-/// SATP mode for Sv39
-const SATP_MODE_SV39: u64 = 8 << 60;
+/// SATP modes (RV64)
+const SATP_MODE_SV39: u64 = 8;
+const SATP_MODE_SV48: u64 = 9;
 
 /// A single page table entry (64 bits)
 #[derive(Clone, Copy)]
@@ -111,6 +112,22 @@ pub fn kernel_satp() -> u64 {
     KERNEL_SATP.load(Ordering::Acquire)
 }
 
+fn current_mode() -> u64 {
+    let mode = kernel_satp() >> 60;
+    if mode != 0 {
+        mode
+    } else {
+        SATP_MODE_SV39
+    }
+}
+
+fn levels() -> usize {
+    match current_mode() {
+        SATP_MODE_SV48 => 4, // L3 root
+        _ => 3,              // Sv39 L2 root
+    }
+}
+
 /// Get the root page table physical address from a SATP value
 fn satp_to_root_phys(satp: u64) -> u64 {
     (satp & 0xFFF_FFFF_FFFF) << PAGE_SHIFT
@@ -150,7 +167,6 @@ impl AddressSpace {
         let root_virt = root_ptr as u64;
         let root_phys = virt_to_phys(root_virt);
 
-        // Copy kernel page table entries (upper half: VPN[2] >= 256)
         let kernel_satp = kernel_satp();
         if kernel_satp != 0 {
             crate::serial::write(b"AS: kernel satp=");
@@ -168,8 +184,9 @@ impl AddressSpace {
             }
         }
 
-        // Build SATP: Mode(Sv39) | ASID(0) | PPN
-        let satp = SATP_MODE_SV39 | (root_phys >> PAGE_SHIFT);
+        // Build SATP: Mode (match kernel) | ASID(0) | PPN
+        let satp_mode = current_mode() << 60;
+        let satp = satp_mode | (root_phys >> PAGE_SHIFT);
 
         Ok(Self { root_phys, satp })
     }

@@ -7,10 +7,10 @@
     "index": 1,
     "text": "I query the graph for the root Place",
     "status": "passed",
-    "timestamp": "2026-01-04T07:02:31.901378236+00:00"
+    "timestamp": "2026-01-04T08:04:52.046407811+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

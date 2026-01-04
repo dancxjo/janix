@@ -99,6 +99,10 @@ pub fn init() {
     unsafe {
         core::arch::asm!("csrr {}, satp", out(reg) satp);
     }
+    // Debug aid: capture the boot SATP so new address spaces can mirror kernel mappings.
+    crate::serial::write(b"MMU: boot satp=");
+    crate::serial::write_hex(satp);
+    crate::serial::write(b"\n");
     KERNEL_SATP.store(satp, Ordering::Release);
 }
 
@@ -149,13 +153,17 @@ impl AddressSpace {
         // Copy kernel page table entries (upper half: VPN[2] >= 256)
         let kernel_satp = kernel_satp();
         if kernel_satp != 0 {
+            crate::serial::write(b"AS: kernel satp=");
+            crate::serial::write_hex(kernel_satp);
+            crate::serial::write(b"\n");
             let kernel_root_phys = satp_to_root_phys(kernel_satp);
             let kernel_root_virt = phys_to_virt(kernel_root_phys);
             let kernel_root = unsafe { &*(kernel_root_virt as *const PageTable) };
             let new_root = unsafe { &mut *root_ptr };
 
-            // Copy upper half (kernel space: indices 256-511)
-            for i in 256..512 {
+            // Share the kernel's mappings wholesale so traps, stacks, and HHDM stay valid
+            // after we switch SATP to a task address space.
+            for i in 0..512 {
                 new_root.entries[i] = kernel_root.entries[i];
             }
         }

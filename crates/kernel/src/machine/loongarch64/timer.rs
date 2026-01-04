@@ -9,10 +9,8 @@ pub unsafe fn init() {
     asm!("csrwr {}, 0x41", in(reg) tcfg);
 
     // 2. Enable Timer Interrupt in ECFG (CSR 0x4)
-    // Timer is IS11 (bit 11)
-    let mut ecfg: u64;
-    asm!("csrrd {}, 0x4", out(reg) ecfg);
-    ecfg |= 1 << 11;
+    // Timer is IS11 (bit 11). Reset to single vector mode (VS=0) and unmask timer.
+    let ecfg: u64 = 1 << 11;
     asm!("csrwr {}, 0x4", in(reg) ecfg);
 }
 

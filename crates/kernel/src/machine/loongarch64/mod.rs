@@ -49,8 +49,8 @@ impl Machine for LoongArchMachine {
         }
         unsafe {
             let vector_addr = core::ptr::addr_of!(loongarch64_trap_vector) as u64;
-            // Set EBASE (CSR 0x4)
-            core::arch::asm!("csrwr {}, 0x4", in(reg) vector_addr);
+            // Set exception entry base (EENTRY)
+            core::arch::asm!("csrwr {}, 0xc", in(reg) vector_addr);
 
             // Initialize KS0 to 0 (indicates kernel mode)
             core::arch::asm!("csrwr $r0, 0x30");
@@ -100,6 +100,14 @@ impl Machine for LoongArchMachine {
                 current &= !0x4;
             }
             core::arch::asm!("csrwr {}, 0x0", in(reg) current);
+        }
+    }
+
+    fn irq_enable(&self) {
+        unsafe {
+            let mut val = 4u64;
+            core::arch::asm!("csrxchg {}, {}, 0x0", inout(reg) val, in(reg) val);
+            let _ = val;
         }
     }
 

@@ -7,10 +7,10 @@
     "index": 0,
     "text": "\"logview\" is running",
     "status": "skipped",
-    "timestamp": "2026-01-04T05:09:53.396849499+00:00"
+    "timestamp": "2026-01-04T05:56:15.586606166+00:00"
   },
   "artifacts": {
     "screenshot": null,
-    "serial_tail": "serial_tail.txt"
+    "serial_tail": null
   }
 }

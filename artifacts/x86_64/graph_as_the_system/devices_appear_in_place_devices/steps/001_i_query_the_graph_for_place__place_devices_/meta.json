@@ -7,10 +7,10 @@
     "index": 1,
     "text": "I query the graph for Place \"place.devices\"",
     "status": "skipped",
-    "timestamp": "2026-01-04T05:10:18.976828802+00:00"
+    "timestamp": "2026-01-04T05:56:58.918550669+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

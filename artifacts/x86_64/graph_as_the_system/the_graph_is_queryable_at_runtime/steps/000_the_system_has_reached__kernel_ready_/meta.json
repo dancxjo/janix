@@ -7,10 +7,10 @@
     "index": 0,
     "text": "the system has reached \"kernel ready\"",
     "status": "passed",
-    "timestamp": "2026-01-04T05:10:18.964518039+00:00"
+    "timestamp": "2026-01-04T05:56:43.875135628+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

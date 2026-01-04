@@ -18,3 +18,6 @@ pub extern "C" fn main() {
         // For now, this verifies the syscall works.
         
         // Sleep for approx 1 second
+        sleep_ms(1000);
+    }
+}

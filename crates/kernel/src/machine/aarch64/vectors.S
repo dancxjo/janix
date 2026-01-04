@@ -107,14 +107,10 @@ aarch64_vectors:
 
 handle_sync_el1:
     msr tpidrro_el0, x0
-    mrs x0, tpidr_el1
-    ldr x0, [x0, #80] // exception_stack_ptr
-    sub x0, x0, #288
     mov x18, sp
-    mov sp, x0
+    SAVE_CONTEXT
     mrs x0, tpidrro_el0
     
-    SAVE_CONTEXT
     mov x0, sp
     mov x1, #4
     bl aarch64_handle_exception
@@ -136,10 +132,7 @@ handle_irq_el1:
     add w1, w1, #1
     str w1, [x0, #64]
 
-    ldr x0, [x0, #80] // exception_stack_ptr
-    sub x0, x0, #288
     mov x18, sp
-    mov sp, x0
     mrs x0, tpidrro_el0
 
     SAVE_CONTEXT

@@ -38,6 +38,9 @@ pub mod nr {
 
     pub const SYS_MACHINE: u32 = 100;
     pub const SYS_CPU_FEATURES: u32 = 110;
+    
+    // Ontology
+    pub const SYS_ONTOLOGY_GET: u32 = 120;
 
     pub const SYS_INPUT_READ: u32 = 200;
 }

@@ -136,21 +136,23 @@ pub fn run(env: &str) -> Result<()> {
 
     // 6. Build Apps (graph_smoke, log_smoke, cap_fail, inputd, echo, inspector, logview)
     let apps = [
-        "graph_smoke",
-        "log_smoke",
-        "cap_fail",
-        "inputd",
-        "echo",
-        "inspector",
-        "logview",
-        "simd_check",
+        "apps/graph_smoke",
+        "apps/log_smoke",
+        "apps/cap_fail",
+        "apps/inputd",
+        "apps/echo",
+        "apps/inspector",
+        "apps/logview",
+        "apps/simd_check",
+        "user/apps/ontology_dump",
+        "user/apps/ontology_check",
     ];
     for app in apps {
         println!("    Building {}...", app);
         let status = Command::new(&cargo)
             .arg("build")
             .arg("--manifest-path")
-            .arg(format!("apps/{}/Cargo.toml", app))
+            .arg(format!("{}/Cargo.toml", app))
             .arg("--target")
             .arg(target)
             .arg("-Z")

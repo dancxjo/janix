@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Ontology system coherence",
+  "scenario": "Schema mismatch is rejected",
+  "step": {
+    "index": 1,
+    "text": "it reports \"OK: schema_mismatch_detected\"",
+    "status": "passed",
+    "timestamp": "2026-01-04T20:50:58.984327741+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

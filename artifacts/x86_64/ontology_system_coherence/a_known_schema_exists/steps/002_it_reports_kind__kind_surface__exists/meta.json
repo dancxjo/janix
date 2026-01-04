@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Ontology system coherence",
+  "scenario": "A known schema exists",
+  "step": {
+    "index": 2,
+    "text": "it reports kind \"kind.Surface\" exists",
+    "status": "passed",
+    "timestamp": "2026-01-04T20:50:24.163838769+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

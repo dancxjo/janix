@@ -9,6 +9,7 @@ pub mod surface;
 pub mod time;
 pub mod wait;
 pub mod watch;
+pub mod ontology; // Add this
 
 pub use abi::syscall::{err, nr};
 pub use dispatch::dispatch;

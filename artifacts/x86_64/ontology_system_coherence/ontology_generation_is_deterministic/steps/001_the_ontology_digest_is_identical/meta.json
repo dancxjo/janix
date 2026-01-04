@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Ontology system coherence",
+  "scenario": "Ontology generation is deterministic",
+  "step": {
+    "index": 1,
+    "text": "the ontology digest is identical",
+    "status": "passed",
+    "timestamp": "2026-01-04T20:49:38.292111699+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

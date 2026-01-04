@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Ontology system coherence",
+  "scenario": "A model round-trips through encoding and decoding",
+  "step": {
+    "index": 0,
+    "text": "a userspace program encodes a \"Surface\" model",
+    "status": "passed",
+    "timestamp": "2026-01-04T20:50:25.279075381+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use std::process::Command;
+use std::path::Path;
 
 mod build;
 mod clean;
@@ -9,6 +10,7 @@ mod inspect;
 mod iso;
 mod run;
 mod test;
+mod ontology;
 
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Build and management tasks for ThingOS")]
@@ -26,6 +28,8 @@ enum Commands {
         #[arg(long, default_value = "x86_64")]
         env: String,
     },
+    /// Generate ontology artifacts
+    GenerateOntology,
     /// Remove fetched assets and build artifacts
     Clean,
     /// Run BDD verification suite
@@ -91,6 +95,10 @@ fn main() -> Result<()> {
     match args.command {
         Commands::Fetch => fetch::fetch(),
         Commands::Build { env } => build::run(&env),
+        Commands::GenerateOntology => {
+            ontology::generate(Path::new("."))?;
+            Ok(())
+        },
         Commands::Clean => clean::run(),
         Commands::Test {
             arch,

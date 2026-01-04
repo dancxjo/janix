@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 abi = { path = "../abi" }
+thing_macros = { path = "../thing_macros" }
+symbols = { path = "../symbols" }

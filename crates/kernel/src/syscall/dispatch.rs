@@ -1,7 +1,7 @@
 //! Syscall Dispatch Router
 
 use crate::syscall::cap::CapOp;
-use crate::syscall::{cap, cpu, graph, log, memory, surface, time, wait, watch};
+use crate::syscall::{cap, cpu, graph, log, memory, ontology, surface, time, wait, watch};
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
 
@@ -201,6 +201,9 @@ pub extern "C" fn dispatch(
         }
 
         nr::SYS_CPU_FEATURES => cpu::sys_cpu_features(a0, a1),
+
+        // === Ontology ===
+        nr::SYS_ONTOLOGY_GET => ontology::sys_ontology_get(a0, a1),
 
         0 => SyscallResult::new(0, 0, 3), // Version
 

@@ -14,6 +14,11 @@ pub extern "C" fn main() {
     process::spawn("bloom");
     log_info("SPROUT: bloom spawned");
     
+    // Spawn ontology tools if present (for testing)
+    // In a real system, init would scan /boot/modules
+    process::spawn("ontology_dump");
+    process::spawn("ontology_check");
+    
     // Orchestrator loop - keep running and yield to scheduler
     loop {
         sched_yield();

@@ -6,6 +6,8 @@ members = [
     "crates/kernel",
     "crates/models",
     "crates/sprout",
+    "crates/symbols",
+    "crates/thing_macros",
     "crates/thing_std",
     "crates/scancodes",
     "apps/bloom",
@@ -21,6 +23,8 @@ members = [
     "apps/inspector",
     "apps/logview",
     "apps/simd_check",
+    "user/apps/ontology_dump",
+    "user/apps/ontology_check",
 ]
 
 [workspace.package]

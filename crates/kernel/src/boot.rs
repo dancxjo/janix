@@ -112,14 +112,41 @@ fn seed_bloom_ontology() {
         p
     };
 
-    // Create pointer.0 Thing
+    // Create pointer.0 Thing (state mirror, updated at low rate)
     let pointer_thing = store::thing_create(sym::KIND_POINTER);
     let pointer_name = symbols::intern(b"pointer.0");
     store::thing_register_name(pointer_thing, pointer_name);
     store::relationship_create(sym::REL_HAS_POINTER, input_place, pointer_thing);
     store::thing_set_inline_payload(pointer_thing, &[0u8; 12]);
     crate::log::kprintln("BOOT: Created pointer.0");
-    crate::machine::input::set_pointer_thing_id(pointer_thing);
+    
+    // Create bytespace.mouse_input for high-throughput mouse events
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::machine::x86_64::ps2_mouse;
+        let mouse_bs = store::thing_create(sym::KIND_BYTE_SPACE);
+        let mouse_bs_name = symbols::intern(b"bytespace.mouse_input");
+        store::thing_register_name(mouse_bs, mouse_bs_name);
+        store::relationship_create(sym::PRED_CONTAINS, input_place, mouse_bs);
+        
+        // Attach physical address and size
+        let phys_addr = ps2_mouse::get_ring_phys_addr();
+        let ring_size = ps2_mouse::get_ring_size() as u64;
+        
+        let phys_thing = store::thing_create(sym::KIND_PLACE);
+        let mut phys_payload = alloc::vec::Vec::new();
+        phys_payload.extend_from_slice(&phys_addr.to_le_bytes());
+        store::thing_set_inline_payload(phys_thing, &phys_payload);
+        store::relationship_create(sym::PRED_BASE_PHYS, mouse_bs, phys_thing);
+        
+        let size_thing = store::thing_create(sym::KIND_PLACE);
+        let mut size_payload = alloc::vec::Vec::new();
+        size_payload.extend_from_slice(&ring_size.to_le_bytes());
+        store::thing_set_inline_payload(size_thing, &size_payload);
+        store::relationship_create(sym::PRED_SIZE, mouse_bs, size_thing);
+        
+        crate::log::kprintln(&alloc::format!("BOOT: Created bytespace.mouse_input phys={:#x} size={}", phys_addr, ring_size));
+    }
 
     let ctx = get_boot_ctx();
     

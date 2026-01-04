@@ -1,41 +1,64 @@
 //! PS/2 Mouse Driver for x86_64.
 //!
-//! Implements a simple ring buffer for capturing mouse packets in the IRQ handler,
-//! decodes 3-byte PS/2 mouse packets, and publishes pointer state to the graph.
+//! Uses a lock-free ring buffer of MouseSample structs for high-throughput
+//! mouse input. Bloom maps the bytespace and polls samples directly.
 
+use abi::mouse_ring::{MouseRingHeader, MouseSample, ring_bytespace_size};
 use crate::log::{self, Level};
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU64, Ordering};
-use x86_64::instructions::interrupts;
+use core::sync::atomic::{AtomicPtr, Ordering};
 use x86_64::instructions::port::Port;
 
-/// Size of the mouse byte ring buffer.
-const RING_SIZE: usize = 256;
+/// Ring buffer capacity (number of samples)
+pub const RING_CAPACITY: u32 = 256;
 
-static mut MOUSE_BUFFER: [u8; RING_SIZE] = [0; RING_SIZE];
-static mut HEAD: usize = 0; // Write index (IRQ)
-static mut TAIL: usize = 0; // Read index (processing)
-static OVERFLOWED: AtomicBool = AtomicBool::new(false);
+/// Total bytespace size for the mouse ring
+pub const RING_BYTESPACE_SIZE: usize = ring_bytespace_size(RING_CAPACITY);
 
-// Pointer state - updated after each complete 3-byte packet
-static POINTER_X: AtomicI32 = AtomicI32::new(0);
-static POINTER_Y: AtomicI32 = AtomicI32::new(0);
-static POINTER_BUTTONS: AtomicU8 = AtomicU8::new(0);
+/// Static allocation for the ring buffer (header + samples)
+#[repr(C, align(4096))]
+struct RingBuffer {
+    header: MouseRingHeader,
+    samples: [MouseSample; RING_CAPACITY as usize],
+}
 
-// Screen bounds for clamping (set during init based on framebuffer)
-static SCREEN_WIDTH: AtomicI32 = AtomicI32::new(1280);
-static SCREEN_HEIGHT: AtomicI32 = AtomicI32::new(720);
+static mut RING_BUFFER: RingBuffer = RingBuffer {
+    header: MouseRingHeader {
+        magic: abi::mouse_ring::MOUSE_RING_MAGIC,
+        version: abi::mouse_ring::MOUSE_RING_VERSION,
+        capacity: RING_CAPACITY,
+        sample_size: core::mem::size_of::<MouseSample>() as u32,
+        write: core::sync::atomic::AtomicU32::new(0),
+        dropped: core::sync::atomic::AtomicU32::new(0),
+        _reserved: [0; 2],
+    },
+    samples: [MouseSample { t_ns: 0, dx: 0, dy: 0, wheel: 0, buttons: 0 }; RING_CAPACITY as usize],
+};
 
-// Packet accumulation state
+/// Packet accumulation state for 3-byte PS/2 protocol
 static mut PACKET_IDX: usize = 0;
 static mut PACKET: [u8; 3] = [0; 3];
 
-// Debug counter for IRQ hits
-static IRQ_COUNT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-static PACKET_COUNT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+/// Get the physical address of the ring buffer for bytespace creation.
+pub fn get_ring_phys_addr() -> u64 {
+    let virt = unsafe { &RING_BUFFER as *const _ as u64 };
+    // Convert kernel virtual to physical using HHDM offset
+    let hhdm_offset = crate::boot::get_boot_ctx().hhdm_offset;
+    if virt >= 0xffff_8000_0000_0000 {
+        // HHDM address
+        virt - hhdm_offset
+    } else if virt >= 0xffff_ffff_8000_0000 {
+        // Kernel text/data - need different translation
+        // For now, use machine's virt_to_phys
+        crate::machine::machine().virt_to_phys(virt)
+    } else {
+        virt // Already physical (shouldn't happen)
+    }
+}
 
-// Pointer thing ID for graph publication (low 64 bits of ThingId)
-static POINTER_THING_ID_LO: AtomicU64 = AtomicU64::new(0);
-static POINTER_THING_ID_HI: AtomicU64 = AtomicU64::new(0);
+/// Get the size of the ring buffer bytespace.
+pub fn get_ring_size() -> usize {
+    RING_BYTESPACE_SIZE
+}
 
 /// Initialize the PS/2 mouse.
 pub fn init() {
@@ -45,26 +68,10 @@ pub fn init() {
     log::klog(Level::Info, "PS2", "input: discovered mouse");
 }
 
-/// Set the pointer thing ID for automatic graph publication.
-pub fn set_pointer_thing_id(id: abi::ids::ThingId) {
-    POINTER_THING_ID_LO.store(id.0 as u64, Ordering::Relaxed);
-    POINTER_THING_ID_HI.store((id.0 >> 64) as u64, Ordering::Relaxed);
-}
-
-/// Set screen bounds for pointer clamping.
-pub fn set_bounds(width: u32, height: u32) {
-    SCREEN_WIDTH.store(width as i32, Ordering::Relaxed);
-    SCREEN_HEIGHT.store(height as i32, Ordering::Relaxed);
-    // Center the pointer initially
-    POINTER_X.store((width / 2) as i32, Ordering::Relaxed);
-    POINTER_Y.store((height / 2) as i32, Ordering::Relaxed);
-}
-
 unsafe fn init_mouse() {
     let mut data_port = Port::<u8>::new(0x60);
     let mut cmd_port = Port::<u8>::new(0x64);
 
-    // Wait for controller input buffer to be ready
     fn wait_input() {
         let mut status = Port::<u8>::new(0x64);
         for _ in 0..100_000 {
@@ -94,27 +101,27 @@ unsafe fn init_mouse() {
     let mut status = data_port.read();
 
     // 3. Enable IRQ12 (bit 1) and clear Disable Aux (bit 5)
-    status |= 0x02;  // Enable IRQ12
-    status &= !0x20; // Clear Disable Auxiliary Device
+    status |= 0x02;
+    status &= !0x20;
 
     wait_input();
-    cmd_port.write(0x60); // Write CCB command
+    cmd_port.write(0x60);
     wait_input();
     data_port.write(status);
 
     // 4. Use defaults
     wait_input();
-    cmd_port.write(0xD4); // Next byte to aux
+    cmd_port.write(0xD4);
     wait_input();
-    data_port.write(0xF6); // Set defaults
+    data_port.write(0xF6);
     wait_output();
-    let _ack = data_port.read(); // Should be 0xFA
+    let _ack = data_port.read();
 
     // 5. Enable data reporting
     wait_input();
-    cmd_port.write(0xD4); // Next byte to aux
+    cmd_port.write(0xD4);
     wait_input();
-    data_port.write(0xF4); // Enable data reporting
+    data_port.write(0xF4);
     wait_output();
     let ack = data_port.read();
 
@@ -126,88 +133,45 @@ unsafe fn init_mouse() {
 }
 
 /// IRQ Handler for Mouse (IRQ 12).
-///
-/// This is called from the IDT trampoline.
+/// Reads byte, accumulates into 3-byte packets, writes MouseSample to ring.
 pub unsafe fn irq_handler() {
-    // Increment IRQ counter
-    let count = IRQ_COUNT.fetch_add(1, Ordering::Relaxed);
-    if count < 5 {
-        crate::serial::write(b"MOUSE: IRQ received
-");
-    }
     let mut port = Port::<u8>::new(0x60);
     let byte = port.read();
 
-    // Push to ring buffer
-    let next_head = (HEAD + 1) % RING_SIZE;
+    // Synchronization: byte 0 must have bit 3 set
+    if PACKET_IDX == 0 && (byte & 0x08) == 0 {
+        // Out of sync, skip
+        return;
+    }
 
-    if next_head == TAIL {
-        // Full! Drop and set overflow flag.
-        if !OVERFLOWED.swap(true, Ordering::Relaxed) {
-            log::klog(Level::Warn, "PS2", "Mouse Input Overflow!");
-        }
-    } else {
-        MOUSE_BUFFER[HEAD] = byte;
-        HEAD = next_head;
+    PACKET[PACKET_IDX] = byte;
+    PACKET_IDX += 1;
+
+    if PACKET_IDX == 3 {
+        // Complete packet - decode and write to ring
+        let sample = decode_packet();
+        write_sample_to_ring(sample);
+        PACKET_IDX = 0;
     }
 }
 
-/// Process pending mouse bytes into packets and update pointer state.
-/// Should be called periodically (e.g., from timer tick or dedicated task).
-pub fn process_packets() {
-    interrupts::without_interrupts(|| unsafe {
-        while TAIL != HEAD {
-            let byte = MOUSE_BUFFER[TAIL];
-            TAIL = (TAIL + 1) % RING_SIZE;
-
-            // Synchronization: byte 0 must have bit 3 set
-            if PACKET_IDX == 0 && (byte & 0x08) == 0 {
-                // Out of sync, skip this byte
-                continue;
-            }
-
-            PACKET[PACKET_IDX] = byte;
-            PACKET_IDX += 1;
-
-            if PACKET_IDX == 3 {
-                // Complete packet!
-                let pcount = PACKET_COUNT.fetch_add(1, Ordering::Relaxed);
-                if pcount < 5 {
-                    crate::serial::write(b"MOUSE: Packet decoded
-");
-                }
-                decode_packet();
-                PACKET_IDX = 0;
-                
-                // Auto-publish to graph if pointer thing ID is set
-                let lo = POINTER_THING_ID_LO.load(Ordering::Relaxed);
-                let hi = POINTER_THING_ID_HI.load(Ordering::Relaxed);
-                if lo != 0 || hi != 0 {
-                    let id = abi::ids::ThingId((hi as u128) << 64 | lo as u128);
-                    publish_to_graph_internal(id);
-                }
-            }
-        }
-    });
-}
-
-unsafe fn decode_packet() {
+/// Decode a 3-byte PS/2 packet into MouseSample
+unsafe fn decode_packet() -> MouseSample {
     let b0 = PACKET[0];
     let b1 = PACKET[1];
     let b2 = PACKET[2];
 
     // Decode buttons
-    let buttons = b0 & 0x07; // L=bit0, R=bit1, M=bit2
-    POINTER_BUTTONS.store(buttons, Ordering::Relaxed);
+    let buttons = (b0 & 0x07) as u16;
 
     // Decode X delta with sign extension
-    let mut dx: i32 = b1 as i32;
+    let mut dx: i16 = b1 as i16;
     if (b0 & 0x10) != 0 {
         dx |= !0xFF; // Sign extend
     }
 
-    // Decode Y delta with sign extension
-    let mut dy: i32 = b2 as i32;
+    // Decode Y delta with sign extension  
+    let mut dy: i16 = b2 as i16;
     if (b0 & 0x20) != 0 {
         dy |= !0xFF; // Sign extend
     }
@@ -215,51 +179,60 @@ unsafe fn decode_packet() {
     // Invert Y: PS/2 positive Y is up, screen coords positive Y is down
     dy = -dy;
 
-    // Update absolute position with clamping
-    let max_x = SCREEN_WIDTH.load(Ordering::Relaxed) - 1;
-    let max_y = SCREEN_HEIGHT.load(Ordering::Relaxed) - 1;
+    // Get timestamp (use timer ticks for now, could use HPET)
+    let t_ns = crate::sched::TIMER_TICKS.load(Ordering::Relaxed) * 1_000_000; // ~1ms per tick
 
-    let new_x = (POINTER_X.load(Ordering::Relaxed) + dx).clamp(0, max_x);
-    let new_y = (POINTER_Y.load(Ordering::Relaxed) + dy).clamp(0, max_y);
-
-    POINTER_X.store(new_x, Ordering::Relaxed);
-    POINTER_Y.store(new_y, Ordering::Relaxed);
+    MouseSample {
+        t_ns,
+        dx,
+        dy,
+        wheel: 0,
+        buttons,
+    }
 }
 
-/// Get current pointer state.
-pub fn get_pointer_state() -> (i32, i32, u8) {
-    (
-        POINTER_X.load(Ordering::Relaxed),
-        POINTER_Y.load(Ordering::Relaxed),
-        POINTER_BUTTONS.load(Ordering::Relaxed),
-    )
+/// Write a sample to the ring buffer (called from IRQ context)
+unsafe fn write_sample_to_ring(sample: MouseSample) {
+    let header = &mut RING_BUFFER.header;
+    let samples = &mut RING_BUFFER.samples;
+    
+    let write_idx = header.write.load(Ordering::Relaxed);
+    let slot = (write_idx % RING_CAPACITY) as usize;
+    
+    // Write sample to slot
+    samples[slot] = sample;
+    
+    // Increment write index (release semantics for consumers)
+    header.write.store(write_idx.wrapping_add(1), Ordering::Release);
 }
 
-/// Publish pointer state to the graph (internal).
-fn publish_to_graph_internal(pointer_thing_id: abi::ids::ThingId) {
-    let (x, y, buttons) = get_pointer_state();
-
-    // Create payload: x(i32), y(i32), buttons(u8), padding(3)
-    let mut payload = [0u8; 12];
-    payload[0..4].copy_from_slice(&x.to_le_bytes());
-    payload[4..8].copy_from_slice(&y.to_le_bytes());
-    payload[8] = buttons;
-    // bytes 9-11 are padding/reserved
-
-    graph::store::thing_set_inline_payload(pointer_thing_id, &payload);
+/// Set screen bounds (for compatibility, not used in ring model)
+pub fn set_bounds(_width: u32, _height: u32) {
+    // Bounds handling moved to consumer (Bloom)
 }
 
-/// Publish pointer state to the graph.
-/// Called periodically to update the pointer Thing.
-pub fn publish_to_graph(pointer_thing_id: abi::ids::ThingId) {
-    publish_to_graph_internal(pointer_thing_id);
+/// Deprecated: graph ID setting (not used in ring model)
+pub fn set_pointer_thing_id(_id: abi::ids::ThingId) {
+    // Graph updates handled elsewhere
 }
 
-/// Send EOI to PIC2 for IRQ 12
-pub unsafe fn ack() {
-    // IRQ 12 is on slave PIC, need to EOI both
-    let mut cmd2 = Port::<u8>::new(0xA0);
-    let mut cmd1 = Port::<u8>::new(0x20);
-    cmd2.write(0x20); // EOI to slave
-    cmd1.write(0x20); // EOI to master
+/// Deprecated: packet processing (now done in IRQ handler)
+pub fn process_packets() {
+    // No-op - processing now happens in IRQ handler
+}
+
+/// Deprecated: graph publishing (not used in ring model)
+pub fn publish_if_dirty() -> bool {
+    false
+}
+
+/// Get diagnostic info
+pub fn get_diagnostics() -> (u32, u32, bool) {
+    unsafe {
+        (
+            RING_BUFFER.header.write.load(Ordering::Relaxed),
+            RING_BUFFER.header.dropped.load(Ordering::Relaxed),
+            false,
+        )
+    }
 }

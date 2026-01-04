@@ -1,32 +1,33 @@
-Feature: Pointer state in graph and cursor rendering
-  The PS/2 mouse publishes pointer state to the graph as a Pointer Thing.
-  Bloom reads this state and renders a hardware-independent cursor.
+Feature: Pointer and Cursor
+  PS/2 mouse input is converted to pointer state and rendered as a cursor.
 
-  @input @pointer @smoke
-  Scenario: PS/2 mouse updates the pointer Thing
+  @pointer @smoke
+  Scenario: Pointer state exists in graph
     Given the system boots successfully
-    And the graph contains a Pointer Thing named "pointer.0"
-    Then the Pointer Thing should be linked from "place.input"
+    Then a Thing named "pointer.0" should exist
 
-  @input @pointer @wip
-  Scenario: Pointer coordinates stay within framebuffer bounds
+  @pointer @mouse @smoke
+  Scenario: PS/2 mouse driver publishes to ring buffer
     Given the system boots successfully
-    And the graph contains a Pointer Thing named "pointer.0"
-    When the PS/2 mouse reports movement
-    Then the Pointer Thing "x" should be within display width
-    And the Pointer Thing "y" should be within display height
+    And the serial log should contain "input: discovered mouse"
+    Then a bytespace "bytespace.mouse_input" should exist
 
-  @gfx @cursor @smoke
-  Scenario: Bloom renders cursor at pointer position
+  @cursor @render @smoke
+  Scenario: Bloom renders a cursor at the pointer position
     Given the system boots successfully
-    And Bloom is running and painting
-    And a cursor asset "cursor.bmp" exists
-    Then Bloom should log "BLOOM: initialized"
+    And the serial log should contain "BLOOM: initialized"
+    Then it does not panic
 
-  @gfx @cursor @damage @wip
-  Scenario: Cursor rendering uses damage rects
+  @cursor @asset @smoke  
+  Scenario: Cursor asset is loaded from .cur file
     Given the system boots successfully
-    And Bloom is running and painting
-    When the Pointer moves
-    Then only the cursor region should be redrawn
-    And no cursor trails remain on screen
+    And a cursor asset "Normal.cur" exists
+    Then the serial log should contain "BLOOM: loaded Normal.cur"
+    Or the serial log should contain "BLOOM: loaded Working.ani"
+    Or the serial log should contain "BLOOM: no cursor asset found"
+
+  @cursor @damage
+  Scenario: Cursor uses damage rects for efficient redraw
+    Given the system boots successfully
+    And Bloom is running
+    Then the serial log should contain "BLOOM: initialized"

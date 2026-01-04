@@ -409,6 +409,9 @@ pub fn tick(current_sp: u64) -> u64 {
         crate::serial::write(b"SCHED: first tick!\n");
     }
 
+    // NOTE: Cannot call graph operations from tick() - would deadlock on spinlock!
+    // Mouse pointer state is published directly by the driver when queried.
+
     // 1.5 handle wait timeouts
     let mut wake_list = watch::WakeList::new();
     watch::check_timeouts(ticks, &mut wake_list);

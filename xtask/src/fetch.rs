@@ -1,5 +1,4 @@
 use anyhow::{ensure, Context, Result};
-use image::{Rgba, RgbaImage};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,7 +8,6 @@ pub fn fetch() -> Result<()> {
     let root = project_root();
     let assets = root.join("assets");
 
-    // Ensure assets dir exists
     if !assets.exists() {
         fs::create_dir_all(&assets)?;
     }
@@ -47,7 +45,6 @@ fn fetch_limine(vendor: &Path) -> Result<()> {
             .arg(&limine_dir),
     )?;
 
-    // Verify
     let required = [
         "limine-bios.sys",
         "limine-bios-cd.bin",
@@ -149,7 +146,6 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
     let fonts_dir = assets.join("fonts");
     fs::create_dir_all(&fonts_dir)?;
 
-    // Hack
     let hack_dest = fonts_dir.join("Hack-Regular.ttf");
     if !hack_dest.exists() {
         println!("    Fetching Hack-Regular.ttf...");
@@ -191,7 +187,6 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
         let _ = fs::remove_dir_all(fonts_dir.join("ttf"));
     }
 
-    // Unifont
     let unifont_dest = fonts_dir.join("unifont.hex");
     if !unifont_dest.exists() {
         println!("    Fetching unifont.hex...");
@@ -223,7 +218,6 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
         }
     }
 
-    // Noto Fonts
     let noto_fonts = [
         ("NotoSans-Regular.ttf", "https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf"),
         ("NotoSerif-Regular.ttf", "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSerif/NotoSerif-Regular.ttf"),
@@ -256,7 +250,6 @@ fn fetch_icons(assets: &Path) -> Result<()> {
     let icons_dir = assets.join("icons");
     fs::create_dir_all(&icons_dir)?;
 
-    // Check if we already have them (heuristic)
     if icons_dir.join("folder.png").exists() {
         println!("    Tango icons already exist.");
         return Ok(());
@@ -310,10 +303,10 @@ fn fetch_cursors(assets: &Path) -> Result<()> {
     let cursors_dir = assets.join("cursors");
     fs::create_dir_all(&cursors_dir)?;
 
-    // 1. Plain Cursors (Public Domain)
+    // Plain Cursors (Public Domain .cur/.ani files)
     let plain_dir = cursors_dir.join("plain");
     if !plain_dir.exists() {
-        println!("    Fetching Plain Cursors...");
+        println!("    Fetching Plain Cursors (.cur/.ani)...");
         require_tool("curl")?;
         require_tool("unzip")?;
 
@@ -325,67 +318,24 @@ fn fetch_cursors(assets: &Path) -> Result<()> {
             fs::create_dir_all(&plain_dir)?;
             run_cmd(
                 Command::new("unzip")
-                    .arg("-o") // Overwrite
+                    .arg("-o")
                     .arg(&zip_path)
-                    .arg("-d") // Extract to directory
+                    .arg("-d")
                     .arg(&plain_dir),
             )?;
             let _ = fs::remove_file(&zip_path);
         } else {
             eprintln!("    [WARNING] Failed to download Plain Cursors.");
         }
-    }
-
-    // 2. Fallback Cursor (cursor.bmp)
-    let cursor_path = cursors_dir.join("cursor.bmp");
-    if cursor_path.exists() {
-        println!("    Fallback cursor.bmp already exists.");
     } else {
-        println!("    Generating fallback cursor.bmp...");
-        let img = generate_arrow_cursor(32);
-        img.save(&cursor_path)?;
+        println!("    Plain Cursors already exist.");
     }
 
     Ok(())
 }
 
-fn generate_arrow_cursor(size: u32) -> RgbaImage {
-    let mut img = RgbaImage::new(size, size);
-    for y in 0..size {
-        for x in 0..size {
-            let mut color = Rgba([0, 0, 0, 0]);
-            if x < 18 && y < 24 {
-                if x == 0 && y < 22 {
-                    color = Rgba([0, 0, 0, 255]); // Left edge
-                } else if x == y && x < 16 {
-                    color = Rgba([0, 0, 0, 255]); // Diagonal
-                } else if y == 22 && x < 6 {
-                    color = Rgba([0, 0, 0, 255]); // Bottom
-                }
-
-                // Fill
-                if x > 0 && x < y && (7 * x + 15 * y < 320) {
-                    color = Rgba([255, 255, 255, 255]);
-                }
-
-                // Border override
-                if x == 0 && y < 22 {
-                    color = Rgba([0, 0, 0, 255]);
-                } else if (x as i32 - y as i32).abs() <= 1 && x < 16 {
-                    color = Rgba([0, 0, 0, 255]);
-                } else if (7 * x + 15 * y > 310) && (7 * x + 15 * y < 340) && x < 16 && y > 10 {
-                    color = Rgba([0, 0, 0, 255]);
-                }
-            }
-            img.put_pixel(x, y, color);
-        }
-    }
-    img
-}
-
 fn require_tool(tool: &str) -> Result<()> {
     if Command::new("which").arg(tool).output().is_err() {
-        // bail! is cleaner if anyhow::bail
         anyhow::bail!("Missing required tool: {}", tool);
     }
     Ok(())

@@ -3,8 +3,8 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 
-use crate::machine::{ArchTrap, CurrentArch, TrapFrame};
 use crate::log::{self, Level};
+use crate::machine::{ArchTrap, CurrentArch, TrapFrame};
 use crate::memory::space::AddressSpace;
 use crate::watch;
 use abi::types::WakeReason;

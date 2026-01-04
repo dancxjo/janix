@@ -7,7 +7,9 @@ pub trait Thing {
     fn schema(&self) -> SymbolId;
     fn version(&self) -> u32;
     fn encode(&self) -> Vec<u8>;
-    fn decode(bytes: &[u8]) -> Result<Self, ()> where Self: Sized;
+    fn decode(bytes: &[u8]) -> Result<Self, ()>
+    where
+        Self: Sized;
 }
 
 fn read<const N: usize>(bytes: &[u8], offset: &mut usize) -> Result<[u8; N], ()> {
@@ -19,9 +21,15 @@ fn read<const N: usize>(bytes: &[u8], offset: &mut usize) -> Result<[u8; N], ()>
 }
 
 impl Thing for BytespaceBody {
-    fn kind(&self) -> SymbolId { SymbolId(0xF8FCB00535E9A405) }
-    fn schema(&self) -> SymbolId { SymbolId(0xBDFCE06BB86A2CFF) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0xF8FCB00535E9A405)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0xBDFCE06BB86A2CFF)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.len.to_le_bytes());
@@ -47,9 +55,15 @@ impl Thing for BytespaceBody {
 }
 
 impl Thing for DisplayDeviceBody {
-    fn kind(&self) -> SymbolId { SymbolId(0x46F9CB5BBE36FC35) }
-    fn schema(&self) -> SymbolId { SymbolId(0x9A57E89E659D49AB) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0x46F9CB5BBE36FC35)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0x9A57E89E659D49AB)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.framebuffer.0.to_le_bytes());
@@ -81,9 +95,15 @@ impl Thing for DisplayDeviceBody {
 }
 
 impl Thing for FramebufferBody {
-    fn kind(&self) -> SymbolId { SymbolId(0x39F61C14D039B916) }
-    fn schema(&self) -> SymbolId { SymbolId(0x2BD6128606BA3300) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0x39F61C14D039B916)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0x2BD6128606BA3300)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.bytespace.0.to_le_bytes());
@@ -112,9 +132,15 @@ impl Thing for FramebufferBody {
 }
 
 impl Thing for MonotonicClockBody {
-    fn kind(&self) -> SymbolId { SymbolId(0x92F5EACE38FBFE15) }
-    fn schema(&self) -> SymbolId { SymbolId(0xFB520DC25492C05) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0x92F5EACE38FBFE15)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0xFB520DC25492C05)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.now_ns.to_le_bytes());
@@ -140,9 +166,15 @@ impl Thing for MonotonicClockBody {
 }
 
 impl Thing for MouseStreamBody {
-    fn kind(&self) -> SymbolId { SymbolId(0x5EF2B03692E82DBA) }
-    fn schema(&self) -> SymbolId { SymbolId(0x38E3155E669F1A50) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0x5EF2B03692E82DBA)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0x38E3155E669F1A50)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.bytespace.0.to_le_bytes());
@@ -171,9 +203,15 @@ impl Thing for MouseStreamBody {
 }
 
 impl Thing for PlaceBody {
-    fn kind(&self) -> SymbolId { SymbolId(0x43E7C812F1795346) }
-    fn schema(&self) -> SymbolId { SymbolId(0xBE52087A23A917F0) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0x43E7C812F1795346)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0xBE52087A23A917F0)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.name.0.to_le_bytes());
@@ -183,16 +221,20 @@ impl Thing for PlaceBody {
         let mut offset = 0;
         let name = SymbolId(u64::from_le_bytes(read::<8>(bytes, &mut offset)?));
         let _ = offset;
-        Ok(Self {
-            name,
-        })
+        Ok(Self { name })
     }
 }
 
 impl Thing for PointerStateBody {
-    fn kind(&self) -> SymbolId { SymbolId(0xFA3502E3D80D3979) }
-    fn schema(&self) -> SymbolId { SymbolId(0x2B4B16B6345331BD) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0xFA3502E3D80D3979)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0x2B4B16B6345331BD)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.stream.0.to_le_bytes());
@@ -221,9 +263,15 @@ impl Thing for PointerStateBody {
 }
 
 impl Thing for RelationshipBody {
-    fn kind(&self) -> SymbolId { SymbolId(0x4F308BFD270391BD) }
-    fn schema(&self) -> SymbolId { SymbolId(0x37391EE2FEA08FE9) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0x4F308BFD270391BD)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0x37391EE2FEA08FE9)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.from.0.to_le_bytes());
@@ -246,9 +294,15 @@ impl Thing for RelationshipBody {
 }
 
 impl Thing for SurfaceBody {
-    fn kind(&self) -> SymbolId { SymbolId(0x4630246DF0D3FF22) }
-    fn schema(&self) -> SymbolId { SymbolId(0x55E5957BEA5E14D8) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0x4630246DF0D3FF22)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0x55E5957BEA5E14D8)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.width.to_le_bytes());
@@ -277,9 +331,15 @@ impl Thing for SurfaceBody {
 }
 
 impl Thing for SystemClockBody {
-    fn kind(&self) -> SymbolId { SymbolId(0xA8EE901286E7C6A8) }
-    fn schema(&self) -> SymbolId { SymbolId(0x5B3976096331339E) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0xA8EE901286E7C6A8)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0x5B3976096331339E)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.unix_epoch_ns.to_le_bytes());
@@ -311,9 +371,15 @@ impl Thing for SystemClockBody {
 }
 
 impl Thing for TimeOffsetBody {
-    fn kind(&self) -> SymbolId { SymbolId(0xCE1B548697AFA261) }
-    fn schema(&self) -> SymbolId { SymbolId(0x32CF808760BD0A51) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0xCE1B548697AFA261)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0x32CF808760BD0A51)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.offset_ns.to_le_bytes());
@@ -336,9 +402,15 @@ impl Thing for TimeOffsetBody {
 }
 
 impl Thing for WindowBody {
-    fn kind(&self) -> SymbolId { SymbolId(0x2AEC7E1B886B5C47) }
-    fn schema(&self) -> SymbolId { SymbolId(0x939AA0A705967517) }
-    fn version(&self) -> u32 { 1 }
+    fn kind(&self) -> SymbolId {
+        SymbolId(0x2AEC7E1B886B5C47)
+    }
+    fn schema(&self) -> SymbolId {
+        SymbolId(0x939AA0A705967517)
+    }
+    fn version(&self) -> u32 {
+        1
+    }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&self.surface.0.to_le_bytes());
@@ -371,4 +443,3 @@ impl Thing for WindowBody {
         })
     }
 }
-

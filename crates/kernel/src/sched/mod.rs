@@ -123,13 +123,14 @@ impl Scheduler {
 }
 
 pub fn init() {
-    log::klog(Level::Info, "SCHED", "initializing...");
-
+    crate::serial::write(b"SCHED: init start\n");
     // Seed Graph (scheduler.main, cpu.0, run_queue.0)
     let (_sched_thing, cpu_thing, rq_thing) = store::with_store(|s| {
+        crate::serial::write(b"SCHED: with_store interior\n");
         let place_tasks = s
             .find_by_name(sym::PLACE_TASKS)
             .expect("place.tasks missing");
+        crate::serial::write(b"SCHED: found place.tasks\n");
 
         // scheduler.main
         let sched = s.create_thing(sym::KIND_SCHEDULER).expect("create sched");
@@ -149,9 +150,12 @@ pub fn init() {
 
         (sched, cpu, rq)
     });
+    crate::serial::write(b"SCHED: with_store done\n");
 
     let sched = Scheduler::new(rq_thing, cpu_thing);
+    crate::serial::write(b"SCHED: scheduler struct created\n");
     *SCHEDULER.lock() = Some(sched);
+    crate::serial::write(b"SCHED: scheduler initialized\n");
 }
 
 pub fn run() -> ! {

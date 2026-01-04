@@ -108,6 +108,7 @@ aarch64_vectors:
 handle_sync_el1:
     msr tpidrro_el0, x0
     mov x18, sp
+    // TRACE: write "SYNC" then sp then tpidr_el1
     SAVE_CONTEXT
     mrs x0, tpidrro_el0
     

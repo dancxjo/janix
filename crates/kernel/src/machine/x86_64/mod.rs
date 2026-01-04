@@ -124,13 +124,7 @@ pub fn init() {
         // 6. Keyboard (Arch specific init)
         crate::machine::input::init();
 
-        // 7. SIMD
-        // Call directly to avoid circular dependency if machine() not yet safe
-        // But init is called FROM machine.init(), so machine() should be safe?
-        // Actually ArchMachine::init is called via Machine::init.
-        // But MACHINE is set.
-        use crate::machine::Simd;
-        simd::X86_SIMD.enable();
+        // 7. SIMD (Deferred until heap is ready in boot.rs)
     }
 }
 

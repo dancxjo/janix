@@ -78,6 +78,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         size: heap_size,
     };
     crate::memory::init_heap_raw(config).expect("heap init failed");
+    crate::machine::simd().enable();
 
     // 2. Graph Init
     crate::serial::write(b"BOOT: init graph...\n");

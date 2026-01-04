@@ -1,50 +1,50 @@
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
 TICK: switch 3 -> 1 sp=0xffff80000179e8d0
 TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff800001823240
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
 TICK: switch 3 -> 1 sp=0xffff80000179e8d0
 TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff800001823070
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
-USER: CLOCK: tick
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60

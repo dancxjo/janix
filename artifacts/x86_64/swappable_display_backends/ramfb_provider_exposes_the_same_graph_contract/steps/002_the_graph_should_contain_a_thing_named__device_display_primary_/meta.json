@@ -7,7 +7,7 @@
     "index": 2,
     "text": "the graph should contain a Thing named \"device.display.primary\"",
     "status": "passed",
-    "timestamp": "2026-01-04T21:40:47.526440922+00:00"
+    "timestamp": "2026-01-04T23:50:42.911786439+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

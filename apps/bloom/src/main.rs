@@ -52,12 +52,12 @@ pub extern "C" fn main() {
 
     loop {
         if let Some(display_id) = thing_find("device.display0") {
-            let mut buf = [0u8; 20];
+            let mut buf = [0u8; 32];
             let len = thing_std::graph::thing_get_payload(display_id, &mut buf);
 
-            let (width, height) = if len >= 8 {
-                let w = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
-                let h = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+            let (width, height) = if len >= 24 {
+                let w = u32::from_le_bytes([buf[16], buf[17], buf[18], buf[19]]);
+                let h = u32::from_le_bytes([buf[20], buf[21], buf[22], buf[23]]);
                 (w, h)
             } else {
                 (1280u32, 720u32)

@@ -266,14 +266,22 @@ fn generate_glue(descriptors: &[ThingDescriptor], root: &Path) -> Result<(), any
         content.push_str("    }\n");
 
         content.push_str("    fn decode(bytes: &[u8]) -> Result<Self, ()> {\n");
-        content.push_str("        let mut offset = 0;\n");
+        let offset_decl = if desc.fields.len() > 1 {
+            "        let mut offset = 0;\n"
+        } else {
+            "        let offset = 0;\n"
+        };
+        content.push_str(offset_decl);
 
         let mut fields_init = String::new();
-        for field in &desc.fields {
+        for (idx, field) in desc.fields.iter().enumerate() {
+            let is_last = idx + 1 == desc.fields.len();
             fields_init.push_str(&format!("        let {} = ", field.name));
             if field.type_name.contains("SymbolId") {
                 fields_init.push_str("SymbolId(u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?));\n");
-                fields_init.push_str("        offset += 8;\n");
+                if !is_last {
+                    fields_init.push_str("        offset += 8;\n");
+                }
             } else if field.type_name.contains("u64") || field.type_name.contains("i64") {
                 fields_init.push_str(
                     "u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);\n",
@@ -284,7 +292,9 @@ fn generate_glue(descriptors: &[ThingDescriptor], root: &Path) -> Result<(), any
                         field.name, field.name
                     ));
                 }
-                fields_init.push_str("        offset += 8;\n");
+                if !is_last {
+                    fields_init.push_str("        offset += 8;\n");
+                }
             } else if field.type_name.contains("u32") || field.type_name.contains("i32") {
                 fields_init.push_str(
                     "u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);\n",
@@ -295,10 +305,14 @@ fn generate_glue(descriptors: &[ThingDescriptor], root: &Path) -> Result<(), any
                         field.name, field.name
                     ));
                 }
-                fields_init.push_str("        offset += 4;\n");
+                if !is_last {
+                    fields_init.push_str("        offset += 4;\n");
+                }
             } else if field.type_name.contains("ThingId") {
                 fields_init.push_str("ThingId(u128::from_le_bytes(bytes[offset..offset+16].try_into().map_err(|_| ())?));\n");
-                fields_init.push_str("        offset += 16;\n");
+                if !is_last {
+                    fields_init.push_str("        offset += 16;\n");
+                }
             } else {
                 // Fallback or error for unknown types
                 fields_init.push_str("return Err(());\n");
@@ -306,6 +320,7 @@ fn generate_glue(descriptors: &[ThingDescriptor], root: &Path) -> Result<(), any
         }
 
         content.push_str(&fields_init);
+        content.push_str("        let _ = offset;\n");
         content.push_str("        Ok(Self {\n");
         for field in &desc.fields {
             content.push_str(&format!("            {},\n", field.name));

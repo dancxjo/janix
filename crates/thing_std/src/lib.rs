@@ -19,7 +19,6 @@ pub use process::exit as sys_exit;
 pub use process::sched_yield;
 
 pub mod event {
-    use super::*;
 }
 
 pub mod time {
@@ -402,7 +401,6 @@ fn panic(info: &PanicInfo) -> ! {
     log_info("panic: aborting process");
     log_panic_details(info);
     process::exit(-1);
-    loop {}
 }
 
 fn log_panic_details(info: &PanicInfo) {

@@ -7,7 +7,7 @@
     "index": 1,
     "text": "the serial log should contain \"DISPLAY: selected provider limine_fb\"",
     "status": "passed",
-    "timestamp": "2026-01-04T21:40:17.454434487+00:00"
+    "timestamp": "2026-01-04T23:50:12.735743587+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

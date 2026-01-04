@@ -4,7 +4,7 @@
 extern crate alloc;
 use abi::syscall::nr::SYS_ONTOLOGY_GET;
 use alloc::vec::Vec;
-use thing_std::{log_info, syscall};
+use thing_std::syscall;
 
 // Since we don't have println!
 macro_rules! println {

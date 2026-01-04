@@ -2,9 +2,8 @@
 #![no_main]
 
 extern crate alloc;
-use abi::ids::SymbolId;
+use abi::ids::{SymbolId, ThingId};
 use models::{SurfaceBody, Thing};
-use thing_std::{log_info, syscall};
 
 // Since we don't have println!
 macro_rules! println {
@@ -24,6 +23,7 @@ pub fn main() {
         height: 600,
         stride_bytes: 3200,
         format: SymbolId(0x1234),
+        bytespace: ThingId(0),
     };
 
     let encoded = surface.encode();

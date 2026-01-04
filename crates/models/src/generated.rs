@@ -10,6 +10,14 @@ pub trait Thing {
     fn decode(bytes: &[u8]) -> Result<Self, ()> where Self: Sized;
 }
 
+fn read<const N: usize>(bytes: &[u8], offset: &mut usize) -> Result<[u8; N], ()> {
+    let end = offset.checked_add(N).ok_or(())?;
+    let slice = bytes.get(*offset..end).ok_or(())?;
+    let chunk: [u8; N] = slice.try_into().map_err(|_| ())?;
+    *offset = end;
+    Ok(chunk)
+}
+
 impl Thing for BytespaceBody {
     fn kind(&self) -> SymbolId { SymbolId(0xF8FCB00535E9A405) }
     fn schema(&self) -> SymbolId { SymbolId(0xBDFCE06BB86A2CFF) }
@@ -24,14 +32,11 @@ impl Thing for BytespaceBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let len = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        offset += 8;
-        let flags = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let _pad = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let phys_base = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        offset += 8;
+        let len = u64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let flags = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let _pad = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let phys_base = u64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let _ = offset;
         Ok(Self {
             len,
             flags,
@@ -57,18 +62,13 @@ impl Thing for DisplayDeviceBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let framebuffer = ThingId(u128::from_le_bytes(bytes[offset..offset+16].try_into().map_err(|_| ())?));
-        offset += 16;
-        let width = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let height = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let stride_bytes = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let format = SymbolId(u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?));
-        offset += 8;
-        let refresh_hz = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
+        let framebuffer = ThingId(u128::from_le_bytes(read::<16>(bytes, &mut offset)?));
+        let width = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let height = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let stride_bytes = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let format = SymbolId(u64::from_le_bytes(read::<8>(bytes, &mut offset)?));
+        let refresh_hz = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let _ = offset;
         Ok(Self {
             framebuffer,
             width,
@@ -95,16 +95,12 @@ impl Thing for FramebufferBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let bytespace = ThingId(u128::from_le_bytes(bytes[offset..offset+16].try_into().map_err(|_| ())?));
-        offset += 16;
-        let width = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let height = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let stride_bytes = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let format = SymbolId(u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?));
-        offset += 8;
+        let bytespace = ThingId(u128::from_le_bytes(read::<16>(bytes, &mut offset)?));
+        let width = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let height = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let stride_bytes = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let format = SymbolId(u64::from_le_bytes(read::<8>(bytes, &mut offset)?));
+        let _ = offset;
         Ok(Self {
             bytespace,
             width,
@@ -129,14 +125,11 @@ impl Thing for MonotonicClockBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let now_ns = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        offset += 8;
-        let resolution_ns = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        offset += 8;
-        let source = SymbolId(u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?));
-        offset += 8;
-        let last_update_ns = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        offset += 8;
+        let now_ns = u64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let resolution_ns = u64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let source = SymbolId(u64::from_le_bytes(read::<8>(bytes, &mut offset)?));
+        let last_update_ns = u64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let _ = offset;
         Ok(Self {
             now_ns,
             resolution_ns,
@@ -161,16 +154,12 @@ impl Thing for MouseStreamBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let bytespace = ThingId(u128::from_le_bytes(bytes[offset..offset+16].try_into().map_err(|_| ())?));
-        offset += 16;
-        let capacity = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let sample_size = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let write_index = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let dropped = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
+        let bytespace = ThingId(u128::from_le_bytes(read::<16>(bytes, &mut offset)?));
+        let capacity = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let sample_size = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let write_index = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let dropped = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let _ = offset;
         Ok(Self {
             bytespace,
             capacity,
@@ -192,8 +181,8 @@ impl Thing for PlaceBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let name = SymbolId(u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?));
-        offset += 8;
+        let name = SymbolId(u64::from_le_bytes(read::<8>(bytes, &mut offset)?));
+        let _ = offset;
         Ok(Self {
             name,
         })
@@ -215,18 +204,12 @@ impl Thing for PointerStateBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let stream = ThingId(u128::from_le_bytes(bytes[offset..offset+16].try_into().map_err(|_| ())?));
-        offset += 16;
-        let x = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        let x = x as i32;
-        offset += 4;
-        let y = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        let y = y as i32;
-        offset += 4;
-        let buttons = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let updated_at_ns = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        offset += 8;
+        let stream = ThingId(u128::from_le_bytes(read::<16>(bytes, &mut offset)?));
+        let x = i32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let y = i32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let buttons = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let updated_at_ns = u64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let _ = offset;
         Ok(Self {
             stream,
             x,
@@ -250,12 +233,10 @@ impl Thing for RelationshipBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let from = ThingId(u128::from_le_bytes(bytes[offset..offset+16].try_into().map_err(|_| ())?));
-        offset += 16;
-        let to = ThingId(u128::from_le_bytes(bytes[offset..offset+16].try_into().map_err(|_| ())?));
-        offset += 16;
-        let predicate = SymbolId(u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?));
-        offset += 8;
+        let from = ThingId(u128::from_le_bytes(read::<16>(bytes, &mut offset)?));
+        let to = ThingId(u128::from_le_bytes(read::<16>(bytes, &mut offset)?));
+        let predicate = SymbolId(u64::from_le_bytes(read::<8>(bytes, &mut offset)?));
+        let _ = offset;
         Ok(Self {
             from,
             to,
@@ -279,16 +260,12 @@ impl Thing for SurfaceBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let width = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let height = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let stride_bytes = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let format = SymbolId(u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?));
-        offset += 8;
-        let bytespace = ThingId(u128::from_le_bytes(bytes[offset..offset+16].try_into().map_err(|_| ())?));
-        offset += 16;
+        let width = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let height = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let stride_bytes = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let format = SymbolId(u64::from_le_bytes(read::<8>(bytes, &mut offset)?));
+        let bytespace = ThingId(u128::from_le_bytes(read::<16>(bytes, &mut offset)?));
+        let _ = offset;
         Ok(Self {
             width,
             height,
@@ -315,19 +292,13 @@ impl Thing for SystemClockBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let unix_epoch_ns = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        let unix_epoch_ns = unix_epoch_ns as i64;
-        offset += 8;
-        let status = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let _pad = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let last_set_mono_ns = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        offset += 8;
-        let accuracy_ns = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        offset += 8;
-        let source = SymbolId(u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?));
-        offset += 8;
+        let unix_epoch_ns = i64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let status = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let _pad = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let last_set_mono_ns = u64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let accuracy_ns = u64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let source = SymbolId(u64::from_le_bytes(read::<8>(bytes, &mut offset)?));
+        let _ = offset;
         Ok(Self {
             unix_epoch_ns,
             status,
@@ -352,14 +323,10 @@ impl Thing for TimeOffsetBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let offset_ns = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        let offset_ns = offset_ns as i64;
-        offset += 8;
-        let rate_ppb = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        let rate_ppb = rate_ppb as i64;
-        offset += 8;
-        let updated_mono_ns = u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?);
-        offset += 8;
+        let offset_ns = i64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let rate_ppb = i64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let updated_mono_ns = u64::from_le_bytes(read::<8>(bytes, &mut offset)?);
+        let _ = offset;
         Ok(Self {
             offset_ns,
             rate_ppb,
@@ -385,23 +352,14 @@ impl Thing for WindowBody {
     }
     fn decode(bytes: &[u8]) -> Result<Self, ()> {
         let mut offset = 0;
-        let surface = ThingId(u128::from_le_bytes(bytes[offset..offset+16].try_into().map_err(|_| ())?));
-        offset += 16;
-        let x = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        let x = x as i32;
-        offset += 4;
-        let y = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        let y = y as i32;
-        offset += 4;
-        let width = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let height = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        offset += 4;
-        let z = u32::from_le_bytes(bytes[offset..offset+4].try_into().map_err(|_| ())?);
-        let z = z as i32;
-        offset += 4;
-        let title = SymbolId(u64::from_le_bytes(bytes[offset..offset+8].try_into().map_err(|_| ())?));
-        offset += 8;
+        let surface = ThingId(u128::from_le_bytes(read::<16>(bytes, &mut offset)?));
+        let x = i32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let y = i32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let width = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let height = u32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let z = i32::from_le_bytes(read::<4>(bytes, &mut offset)?);
+        let title = SymbolId(u64::from_le_bytes(read::<8>(bytes, &mut offset)?));
+        let _ = offset;
         Ok(Self {
             surface,
             x,

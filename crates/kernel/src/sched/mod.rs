@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 
+use crate::machine::{ArchTrap, CurrentArch, TrapFrame};
 use crate::log::{self, Level};
 use crate::memory::space::AddressSpace;
 use crate::watch;
@@ -251,8 +252,50 @@ pub fn exit_current_task(_code: i32) -> ! {
     if let Some(task) = current_task_handle() {
         crate::watch::unregister_wait(task);
     }
-    loop {
-        crate::machine::idle();
+
+    crate::machine::irq_disable();
+    let next_sp = {
+        let mut guard = SCHEDULER.lock();
+        let sched = guard.as_mut().expect("sched not init");
+
+        let prev = sched.cpu.current_task;
+        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == prev) {
+            task.state = TaskState::Dead;
+        }
+
+        if let Some(next) = sched.run_queue.pop_front() {
+            sched.cpu.current_task = next;
+            let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
+
+            if t.simd_used {
+                if let Some(state) = &t.simd_state {
+                    crate::machine::simd().restore(state);
+                }
+            }
+
+            t.state = TaskState::Running;
+            t.first_run = false;
+
+            crate::machine::machine().set_kernel_stack(t.stack_top);
+            let new_sp = t.stack_ptr;
+            t.address_space.activate();
+
+            Some(new_sp)
+        } else {
+            sched.cpu.current_task = TaskId(0);
+            None
+        }
+    };
+
+    match next_sp {
+        Some(sp) => unsafe {
+            CurrentArch::return_from_trap(sp as *const TrapFrame);
+        },
+        None => {
+            // No runnable tasks left; restore interrupts and halt.
+            crate::machine::irq_enable();
+            crate::machine::halt()
+        }
     }
 }
 

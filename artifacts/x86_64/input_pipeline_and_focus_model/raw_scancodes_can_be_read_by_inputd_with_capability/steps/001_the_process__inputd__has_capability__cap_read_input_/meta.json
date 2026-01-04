@@ -7,7 +7,7 @@
     "index": 1,
     "text": "the process \"inputd\" has capability \"cap.read_input\"",
     "status": "skipped",
-    "timestamp": "2026-01-04T05:57:18.084422894+00:00"
+    "timestamp": "2026-01-04T23:52:38.197571783+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

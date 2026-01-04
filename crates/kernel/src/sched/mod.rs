@@ -385,6 +385,9 @@ pub static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 /// Counter for tick log suppression - only print first N switch messages
 static TICK_LOG_COUNT: AtomicU64 = AtomicU64::new(0);
 
+/// Maximum number of tick switch messages to print before going quiet
+const TICK_LOG_LIMIT: u64 = 5;
+
 pub fn tick(current_sp: u64) -> u64 {
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut();
@@ -450,24 +453,32 @@ pub fn tick(current_sp: u64) -> u64 {
         sched.cpu.current_task = next;
         let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
 
-        crate::serial::write(b"TICK: switch ");
-        if prev_task.0 != 0 {
-            crate::serial::write_num(prev_task.0);
-        } else {
-            crate::serial::write(b"IDLE");
-        }
-        crate::serial::write(b" -> ");
-        crate::serial::write_num(next.0);
-        crate::serial::write(b" sp=");
-        crate::serial::write_hex(t.stack_ptr);
+        // Only log the first few context switches to avoid flooding logs
+        let log_count = TICK_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+        if log_count < TICK_LOG_LIMIT {
+            crate::serial::write(b"TICK: switch ");
+            if prev_task.0 != 0 {
+                crate::serial::write_num(prev_task.0);
+            } else {
+                crate::serial::write(b"IDLE");
+            }
+            crate::serial::write(b" -> ");
+            crate::serial::write_num(next.0);
+            crate::serial::write(b" sp=");
+            crate::serial::write_hex(t.stack_ptr);
 
-        if t.stack_ptr > t.stack_top {
-            crate::serial::write(b" [STACK_OVERFLOW_DETECTED]");
+            if t.stack_ptr > t.stack_top {
+                crate::serial::write(b" [STACK_OVERFLOW_DETECTED]");
+            }
+            if t.stack_ptr & 0xf != 0 {
+                crate::serial::write(b" [SP_MISALIGN]");
+            }
+            crate::serial::write(b"\n");
+
+            if log_count + 1 == TICK_LOG_LIMIT {
+                crate::serial::write(b"TICK: (further switch logs suppressed)\n");
+            }
         }
-        if t.stack_ptr & 0xf != 0 {
-            crate::serial::write(b" [SP_MISALIGN]");
-        }
-        crate::serial::write(b"\n");
 
         // SIMD Restore
         if t.simd_used {

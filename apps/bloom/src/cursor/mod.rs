@@ -1,7 +1,7 @@
 //! Cursor asset types and animation support
 //!
 //! Provides:
-//! - `CursorFrame` - Single cursor image with hotspot
+//! - `CursorFrame` - Single cursor image with hotspot and prerendered shadow
 //! - `CursorAsset` - Complete cursor (static or animated)
 //! - `CursorAnimator` - Stateful playback for animated cursors
 
@@ -11,16 +11,90 @@ use alloc::vec::Vec;
 pub mod cur;
 pub mod ani;
 
-/// A single cursor frame with premultiplied ARGB pixels
+/// Shadow configuration
+const SHADOW_OFFSET_X: i32 = 2;
+const SHADOW_OFFSET_Y: i32 = 3;
+const SHADOW_BLUR_RADIUS: u32 = 3;
+const SHADOW_OPACITY: u8 = 128;
+
+/// A single cursor frame with premultiplied ARGB pixels and prerendered shadow
 pub struct CursorFrame {
     /// Pixels in premultiplied ARGB format (0xAARRGGBB)
     pub pixels: Vec<u32>,
+    /// Prerendered shadow pixels (same dimensions, offset applied at draw time)
+    pub shadow_pixels: Vec<u32>,
     pub width: u32,
     pub height: u32,
     /// Hotspot X offset from top-left
     pub hotspot_x: i32,
     /// Hotspot Y offset from top-left
     pub hotspot_y: i32,
+    /// Shadow offset X (positive = right)
+    pub shadow_offset_x: i32,
+    /// Shadow offset Y (positive = down)
+    pub shadow_offset_y: i32,
+}
+
+impl CursorFrame {
+    /// Create a new cursor frame and prerender its shadow
+    pub fn new(pixels: Vec<u32>, width: u32, height: u32, hotspot_x: i32, hotspot_y: i32) -> Self {
+        let shadow_pixels = generate_shadow(&pixels, width, height);
+        Self {
+            pixels,
+            shadow_pixels,
+            width,
+            height,
+            hotspot_x,
+            hotspot_y,
+            shadow_offset_x: SHADOW_OFFSET_X,
+            shadow_offset_y: SHADOW_OFFSET_Y,
+        }
+    }
+}
+
+/// Generate a blurred shadow from cursor alpha channel
+fn generate_shadow(pixels: &[u32], width: u32, height: u32) -> Vec<u32> {
+    let w = width as usize;
+    let h = height as usize;
+    let mut shadow = alloc::vec![0u32; w * h];
+    
+    // Extract alpha channel and apply blur
+    let radius = SHADOW_BLUR_RADIUS as i32;
+    let kernel_size = (radius * 2 + 1) as usize;
+    let divisor = (kernel_size * kernel_size) as u32;
+    
+    for y in 0..h {
+        for x in 0..w {
+            let mut alpha_sum: u32 = 0;
+            let mut sample_count: u32 = 0;
+            
+            // Box blur: sample surrounding pixels
+            for dy in -radius..=radius {
+                for dx in -radius..=radius {
+                    let sx = x as i32 + dx;
+                    let sy = y as i32 + dy;
+                    
+                    if sx >= 0 && sx < w as i32 && sy >= 0 && sy < h as i32 {
+                        let src_idx = sy as usize * w + sx as usize;
+                        let src_alpha = (pixels[src_idx] >> 24) & 0xFF;
+                        alpha_sum += src_alpha;
+                        sample_count += 1;
+                    }
+                }
+            }
+            
+            if sample_count > 0 {
+                // Calculate blurred alpha, scale to shadow opacity
+                let blurred_alpha = alpha_sum / sample_count;
+                let shadow_alpha = ((blurred_alpha as u32 * SHADOW_OPACITY as u32) / 255) as u8;
+                
+                // Shadow is black with computed alpha (premultiplied, so all channels are 0)
+                shadow[y * w + x] = (shadow_alpha as u32) << 24;
+            }
+        }
+    }
+    
+    shadow
 }
 
 /// A cursor asset, either static or animated

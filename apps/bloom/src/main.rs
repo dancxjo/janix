@@ -10,7 +10,6 @@ mod cursor;
 
 use cursor::{CursorAsset, CursorFrame, CursorAnimator};
 
-// Global state
 static mut BACK_BUFFER: Option<Vec<u32>> = None;
 static mut WALLPAPER_CACHE: Option<Vec<u32>> = None;
 
@@ -62,14 +61,11 @@ pub extern "C" fn main() {
                 WALLPAPER_CACHE = Some(alloc::vec![0u32; buffer_size]);
             }
 
-            // Load wallpaper
             let wallpaper = thing_find("bytespace.asset.clouds.bmp")
                 .and_then(|bs_id| load_bmp(bs_id, 0x8100_0000));
 
-            // Load cursor (.cur or .ani file)
             let cursor_asset = load_cursor_asset();
 
-            // Render initial wallpaper to cache
             if let Some(ref wp) = wallpaper {
                 unsafe {
                     if let Some(ref mut cache) = WALLPAPER_CACHE {
@@ -80,7 +76,6 @@ pub extern "C" fn main() {
 
             log_info("BLOOM: initialized");
 
-            // Main compositor loop
             let fb_ptr = fb_base as *mut u32;
             let mut prev_cursor_rect: Option<Rect> = None;
             let mut prev_px: i32 = -1;
@@ -100,8 +95,15 @@ pub extern "C" fn main() {
                         if let (Some(ref mut back_buf), Some(ref cache)) = (&mut BACK_BUFFER, &WALLPAPER_CACHE) {
                             let cursor_frame = animator.as_ref().and_then(|a| a.current_frame());
                             
+                            // Calculate cursor rect (including shadow area)
                             let cursor_rect = if let Some(frame) = cursor_frame {
-                                Rect { x: px - frame.hotspot_x, y: py - frame.hotspot_y, w: frame.width, h: frame.height }
+                                // Expand rect to include shadow offset
+                                Rect {
+                                    x: px - frame.hotspot_x,
+                                    y: py - frame.hotspot_y,
+                                    w: frame.width + frame.shadow_offset_x.max(0) as u32,
+                                    h: frame.height + frame.shadow_offset_y.max(0) as u32,
+                                }
                             } else {
                                 Rect { x: px, y: py, w: 8, h: 8 }
                             };
@@ -114,6 +116,9 @@ pub extern "C" fn main() {
                             redraw_region(back_buf.as_mut_ptr(), cache.as_ptr(), width, height, dirty);
 
                             if let Some(frame) = cursor_frame {
+                                // Draw shadow first (behind cursor)
+                                draw_cursor_shadow(back_buf.as_mut_ptr(), width, height, frame, px, py);
+                                // Draw cursor on top
                                 draw_cursor_frame(back_buf.as_mut_ptr(), width, height, frame, px, py);
                             } else {
                                 draw_fallback_cursor(back_buf.as_mut_ptr(), width, height, px, py);
@@ -134,22 +139,18 @@ pub extern "C" fn main() {
 }
 
 fn load_cursor_asset() -> Option<CursorAsset> {
-    // Try .cur first (highest priority)
     if let Some(bs_id) = thing_find("bytespace.asset.Normal.cur") {
         if let Some(asset) = load_cur_asset(bs_id, 0x8200_0000) {
             log_info("BLOOM: loaded Normal.cur");
             return Some(asset);
         }
     }
-    
-    // Try animated cursor
     if let Some(bs_id) = thing_find("bytespace.asset.Working.ani") {
         if let Some(asset) = load_ani_asset(bs_id, 0x8200_0000) {
             log_info("BLOOM: loaded Working.ani");
             return Some(asset);
         }
     }
-    
     log_info("BLOOM: no cursor asset found, using fallback");
     None
 }
@@ -193,6 +194,33 @@ unsafe fn redraw_region(dest: *mut u32, src: *const u32, w: u32, h: u32, region:
     }
 }
 
+/// Draw the prerendered cursor shadow
+unsafe fn draw_cursor_shadow(dest: *mut u32, screen_w: u32, screen_h: u32, frame: &CursorFrame, px: i32, py: i32) {
+    let cx = px - frame.hotspot_x + frame.shadow_offset_x;
+    let cy = py - frame.hotspot_y + frame.shadow_offset_y;
+
+    for row in 0..frame.height {
+        let screen_y = cy + row as i32;
+        if screen_y < 0 || screen_y >= screen_h as i32 { continue; }
+
+        for col in 0..frame.width {
+            let screen_x = cx + col as i32;
+            if screen_x < 0 || screen_x >= screen_w as i32 { continue; }
+
+            let shadow_idx = (row * frame.width + col) as usize;
+            let shadow_pixel = frame.shadow_pixels[shadow_idx];
+            let alpha = (shadow_pixel >> 24) & 0xFF;
+
+            if alpha == 0 { continue; }
+
+            let dest_idx = (screen_y as u32 * screen_w + screen_x as u32) as usize;
+            let dst_pixel = *dest.add(dest_idx);
+            *dest.add(dest_idx) = blend_pixel(shadow_pixel, dst_pixel);
+        }
+    }
+}
+
+/// Draw the cursor frame
 unsafe fn draw_cursor_frame(dest: *mut u32, screen_w: u32, screen_h: u32, frame: &CursorFrame, px: i32, py: i32) {
     let cx = px - frame.hotspot_x;
     let cy = py - frame.hotspot_y;
@@ -240,6 +268,20 @@ fn blend_pixel(src: u32, dst: u32) -> u32 {
 }
 
 unsafe fn draw_fallback_cursor(dest: *mut u32, w: u32, h: u32, px: i32, py: i32) {
+    // Draw shadow first
+    for dy in 0..8i32 {
+        for dx in 0..8i32 {
+            let x = px + dx + 2;
+            let y = py + dy + 3;
+            if x >= 0 && x < w as i32 && y >= 0 && y < h as i32 {
+                let idx = (y as u32 * w + x as u32) as usize;
+                let dst = *dest.add(idx);
+                // 40% black shadow
+                *dest.add(idx) = blend_pixel(0x66000000, dst);
+            }
+        }
+    }
+    // Draw cursor
     for dy in 0..8i32 {
         for dx in 0..8i32 {
             let x = px + dx;

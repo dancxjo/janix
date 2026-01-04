@@ -11,11 +11,9 @@ pub fn load_cur(data: &[u8]) -> Option<CursorFrame> {
     let file_type = u16::from_le_bytes([data[2], data[3]]);
     let count = u16::from_le_bytes([data[4], data[5]]) as usize;
 
-    // Type 1 = icon, Type 2 = cursor
     if file_type != 2 && file_type != 1 { return None; }
     if count == 0 || data.len() < 6 + count * 16 { return None; }
 
-    // Find best entry (prefer 32bpp, then largest)
     let mut best_idx = 0;
     let mut best_bpp = 0u16;
     let mut best_size = 0u32;
@@ -50,13 +48,12 @@ pub fn load_cur(data: &[u8]) -> Option<CursorFrame> {
     if img_offset + img_size > data.len() { return None; }
     let img_data = &data[img_offset..img_offset + img_size];
 
-    // Check if PNG
     if img_data.len() >= 8 && &img_data[0..8] == &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
-        return None; // PNG not supported yet
+        return None;
     }
 
     let pixels = decode_dib(img_data, width, height)?;
-    Some(CursorFrame { pixels, width, height, hotspot_x, hotspot_y })
+    Some(CursorFrame::new(pixels, width, height, hotspot_x, hotspot_y))
 }
 
 fn detect_bpp(data: &[u8]) -> u16 {

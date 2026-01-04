@@ -121,7 +121,18 @@ pub extern "C" fn main() {
                 let (px, py, _buttons) = read_pointer_state();
                 let frame_changed = animator.as_mut().map(|a| a.advance(now_ms)).unwrap_or(false);
 
-                if px != prev_px || py != prev_py || frame_changed || prev_cursor_rect.is_none() {
+                // Force redraw every 100ms even if nothing changed, to ensure animation plays
+                static mut LAST_REDRAW_MS: u64 = 0;
+                let force_redraw = unsafe {
+                    if now_ms - LAST_REDRAW_MS > 50 {
+                        LAST_REDRAW_MS = now_ms;
+                        true
+                    } else {
+                        false
+                    }
+                };
+
+                if px != prev_px || py != prev_py || frame_changed || prev_cursor_rect.is_none() || force_redraw {
                     unsafe {
                         if let (Some(ref mut back_buf), Some(ref cache)) = (&mut BACK_BUFFER, &WALLPAPER_CACHE) {
                             let cursor_frame = animator.as_ref().and_then(|a| a.current_frame());

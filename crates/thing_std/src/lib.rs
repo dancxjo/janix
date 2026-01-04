@@ -28,6 +28,7 @@ pub use time::*;
 
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
+    debug::log("RUNTIME: _start");
     extern "C" {
         fn main();
     }
@@ -139,6 +140,7 @@ pub unsafe fn init_heap(start: usize, size: usize) {
     HEAP_CURRENT = start;
     HEAP_LIMIT = start + size;
     memory::heap_grow(size as u64);
+    debug::log("HEAP: init done");
 }
 
 unsafe impl GlobalAlloc for BumpAllocator {

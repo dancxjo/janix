@@ -78,7 +78,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
 
     // 2. Graph Init
     crate::serial::write(b"BOOT: init graph...\n");
-    graph::store::init();
+    graph::init();
 
     // 3. Seed Ontology (Display, place.tasks, etc.)
     seed_bloom_ontology(ctx);
@@ -98,7 +98,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         crate::serial::write(m.path.as_bytes());
         crate::serial::write(b"\n");
         // Spawn Sprout (init) and Bloom (compositor)
-        if m.path.contains("sprout") || m.path.contains("bloom") {
+        if m.path.contains("sprout") || m.path.contains("bloom") || m.path.contains("clock") {
             if let Err(_) = crate::proc::spawn_kernel_module(m) {
                 crate::serial::write(b"PROC: failed to spawn module\n");
             }

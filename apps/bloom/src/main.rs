@@ -178,15 +178,15 @@ pub extern "C" fn main() {
 
 fn load_cursor_asset() -> Option<CursorAsset> {
     // Try animated cursor first for testing
-    if let Some(bs_id) = thing_find("bytespace.asset.Working.ani") {
-        if let Some(asset) = load_ani_asset(bs_id, 0x8200_0000) {
-            log_info("BLOOM: loaded Working.ani");
-            return Some(asset);
-        }
-    }
     if let Some(bs_id) = thing_find("bytespace.asset.Normal.cur") {
         if let Some(asset) = load_cur_asset(bs_id, 0x8200_0000) {
             log_info("BLOOM: loaded Normal.cur");
+            return Some(asset);
+        }
+    }
+    if let Some(bs_id) = thing_find("bytespace.asset.Working.ani") {
+        if let Some(asset) = load_ani_asset(bs_id, 0x8200_0000) {
+            log_info("BLOOM: loaded Working.ani");
             return Some(asset);
         }
     }

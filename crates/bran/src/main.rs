@@ -263,12 +263,13 @@ unsafe extern "C" fn kmain() -> ! {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     bran_logln("\n========== BRAN PANIC ==========");
-    if let Some(msg) = info.message() {
-        bran_log("Message: ");
-        bran_write_fmt(*msg);
-        bran_logln("");
+    bran_log("Message: ");
+    let msg = info.message();
+    if let Some(s) = msg.as_str() {
+        bran_logln(s);
     } else {
-        bran_logln("Message: <none>");
+        bran_write_fmt(format_args!("{}", msg));
+        bran_logln("");
     }
 
     if let Some(loc) = info.location() {

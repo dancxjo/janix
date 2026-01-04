@@ -20,6 +20,7 @@ members = [
     "apps/echo",
     "apps/inspector",
     "apps/logview",
+    "apps/simd_check",
 ]
 
 [workspace.package]

@@ -77,6 +77,7 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         "echo",
         "inspector",
         "logview",
+        "simd_check",
     ];
     for app in apps {
         let src = bin_src.join(app);

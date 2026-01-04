@@ -1,4 +1,5 @@
 pub mod cap;
+pub mod cpu;
 pub mod dispatch;
 pub mod graph;
 pub mod input;

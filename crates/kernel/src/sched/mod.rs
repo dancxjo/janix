@@ -90,6 +90,13 @@ impl Scheduler {
         log::klog(Level::Info, "SCHED", "spawn: address space handled");
         let mut task = Task::new(id, task_thing, stack_ptr, address_space);
 
+        // Eager SIMD enablement
+        let simd = crate::machine::simd();
+        if simd.save_policy() == abi::cpu::SimdSavePolicy::Eager {
+            task.simd_used = true;
+            task.simd_state = Some(alloc::vec![0u8; simd.required_size()]);
+        }
+
         // Initialize state (New -> Ready)
         store::with_store(|s| task.set_state(s, TaskState::Ready));
 
@@ -407,6 +414,17 @@ pub fn tick(current_sp: u64) -> u64 {
             // first_run tasks have prepared contexts that must not be overwritten.
             if !t.first_run {
                 t.stack_ptr = current_sp;
+
+                // SIMD Save
+                if t.simd_used {
+                    let simd = crate::machine::simd();
+                    if t.simd_state.is_none() {
+                        t.simd_state = Some(alloc::vec![0u8; simd.required_size()]);
+                    }
+                    if let Some(buf) = t.simd_state.as_mut() {
+                        simd.save(buf);
+                    }
+                }
             }
             match t.state {
                 TaskState::Blocked(_) | TaskState::Dead => {}
@@ -443,6 +461,13 @@ pub fn tick(current_sp: u64) -> u64 {
             crate::serial::write(b" [SP_MISALIGN]");
         }
         crate::serial::write(b"\n");
+
+        // SIMD Restore
+        if t.simd_used {
+            if let Some(state) = &t.simd_state {
+                crate::machine::simd().restore(state);
+            }
+        }
 
         t.state = TaskState::Running;
         t.first_run = false; // Mark as having started execution

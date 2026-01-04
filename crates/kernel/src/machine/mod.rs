@@ -2,6 +2,9 @@
 //!
 pub use bitflags::bitflags;
 
+use ::abi::cpu::{SimdFamily, SimdSavePolicy};
+use alloc::vec::Vec;
+
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::abi;
 #[cfg(target_arch = "loongarch64")]
@@ -74,6 +77,43 @@ pub struct MmioMapping {
     pub virt: u64,
     pub len: usize,
 }
+
+pub trait Simd: Sync {
+    /// Detect and enable SIMD features. Returns true if successful.
+    fn enable(&self) -> bool {
+        false
+    }
+
+    /// Save SIMD state to the provided buffer.
+    fn save(&self, _state: &mut [u8]) {}
+
+    /// Restore SIMD state from the provided buffer.
+    fn restore(&self, _state: &[u8]) {}
+
+    /// Required size for SIMD state buffer.
+    fn required_size(&self) -> usize {
+        0
+    }
+
+    /// Get available SIMD families.
+    fn available_families(&self) -> Vec<SimdFamily> {
+        Vec::new()
+    }
+
+    /// Get enabled SIMD families.
+    fn enabled_families(&self) -> Vec<SimdFamily> {
+        Vec::new()
+    }
+
+    /// Get save policy.
+    fn save_policy(&self) -> SimdSavePolicy {
+        SimdSavePolicy::None
+    }
+}
+
+pub struct NoopSimd;
+impl Simd for NoopSimd {}
+static NOOP_SIMD: NoopSimd = NoopSimd;
 
 bitflags! {
     #[derive(Clone, Copy)]
@@ -151,6 +191,11 @@ pub trait Machine: Sync {
 
     /// Update the kernel stack for the current CPU (for syscall/interrupt entry).
     fn set_kernel_stack(&self, _top: u64) {}
+
+    /// Access SIMD capabilities.
+    fn simd(&self) -> &'static dyn Simd {
+        &NOOP_SIMD
+    }
 }
 
 static mut MACHINE: Option<&'static dyn Machine> = None;
@@ -166,6 +211,10 @@ pub unsafe fn install(machine: &'static dyn Machine) {
 /// Access the installed machine implementation.
 pub fn machine() -> &'static dyn Machine {
     unsafe { MACHINE.expect("machine not installed") }
+}
+
+pub fn simd() -> &'static dyn Simd {
+    machine().simd()
 }
 
 /// Trigger a benign fault (breakpoint) for smoke testing trap recording.

@@ -37,6 +37,7 @@ pub mod nr {
     pub const SYS_SLEEP_UNTIL: u32 = 173;
 
     pub const SYS_MACHINE: u32 = 100;
+    pub const SYS_CPU_FEATURES: u32 = 110;
 
     pub const SYS_INPUT_READ: u32 = 200;
 }

@@ -2,7 +2,6 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::format;
 use alloc::vec::Vec;
 use thing_std::graph::*;
 use thing_std::*;
@@ -47,20 +46,7 @@ pub extern "C" fn main() {
                             let back = buf.as_ptr() as *mut u32;
                             
                             render_wallpaper(back, width, height, &wp);
-                            
-                            // Sample multiple pixels to understand the pattern
-                            // Check position (100,100) - should be cloud based on PIL output: (216, 225, 221)
-                            let p1 = *back.add((100 * width + 100) as usize);
-                            log_info(&format!("BLOOM: (100,100): {:08x}", p1));
-                            
-                            // Check position (500,500) - should be cloud: (234, 238, 235)
-                            let p2 = *back.add((500 * width + 500) as usize);
-                            log_info(&format!("BLOOM: (500,500): {:08x}", p2));
-                            
-                            // Copy to framebuffer
-                            for i in 0..buffer_size {
-                                core::ptr::write_volatile(fb_ptr.add(i), *back.add(i));
-                            }
+                            fast_memcpy(fb_ptr as *mut u8, back as *const u8, buffer_size * 4);
                             
                             log_info("BLOOM: done");
                         }
@@ -72,6 +58,25 @@ pub extern "C" fn main() {
         }
         sched_yield();
     }
+}
+
+/// Fast memory copy using rep movsb (very efficient on modern x86)
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn fast_memcpy(dest: *mut u8, src: *const u8, len: usize) {
+    core::arch::asm!(
+        "rep movsb",
+        inout("rdi") dest => _,
+        inout("rsi") src => _,
+        inout("rcx") len => _,
+        options(nostack, preserves_flags)
+    );
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+unsafe fn fast_memcpy(dest: *mut u8, src: *const u8, len: usize) {
+    core::ptr::copy_nonoverlapping(src, dest, len);
 }
 
 struct Wallpaper {
@@ -133,7 +138,6 @@ fn render_wallpaper(dest: *mut u32, dest_w: u32, dest_h: u32, wp: &Wallpaper) {
                 let r = *src_ptr.add(2);
                 
                 let pixel = 0xFF000000u32 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
-                
                 *dest_row.add(x as usize) = pixel;
             }
         }

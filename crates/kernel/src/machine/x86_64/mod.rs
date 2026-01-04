@@ -78,7 +78,8 @@ pub extern "C" fn keyboard_handler_asm_helper() {
 pub extern "C" fn mouse_handler_asm_helper() {
     unsafe {
         ps2_mouse::irq_handler();
-        ps2_mouse::ack(); // Send EOI to both PICs (legacy mouse uses PIC)
+        ps2_mouse::process_packets(); // Decode mouse bytes into pointer movement
+        timer::ack(); // Send EOI to LAPIC (via IO-APIC routing)
     }
 }
 

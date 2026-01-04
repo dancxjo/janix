@@ -3,9 +3,10 @@
 //! This module provides the timer initialization and EOI handling for x86_64.
 //! Since we now use LAPIC for timer, this module:
 //! 1. Disables the legacy PIC (8259) completely
-//! 2. Delegates timer operations to the LAPIC
+//! 2. Initializes the IO-APIC for routing legacy IRQs
+//! 3. Delegates timer operations to the LAPIC
 
-use super::apic::LAPIC;
+use super::apic::{LAPIC, IOAPIC};
 use x86_64::instructions::port::Port;
 
 // PIC ports
@@ -31,13 +32,26 @@ pub unsafe fn init() {
     crate::serial::write(b"TIMER: Legacy PIC disabled\n");
 }
 
-/// Initialize LAPIC timer (Phase 2: requires HHDM).
+/// Initialize LAPIC and IO-APIC (Phase 2: requires HHDM).
 ///
 /// # Safety
 /// Must be called after the HHDM is established.
 pub unsafe fn init_lapic(hhdm_offset: u64) {
+    // Initialize LAPIC first
     LAPIC.init_with_hhdm(hhdm_offset);
     USE_LAPIC = true;
+
+    // Initialize IO-APIC and route legacy IRQs
+    IOAPIC.init(hhdm_offset);
+    
+    // Route keyboard (IRQ 1) to vector 33
+    let lapic_id = LAPIC.id() as u8;
+    IOAPIC.route_irq(1, 33, lapic_id);
+    
+    // Route mouse (IRQ 12) to vector 44
+    IOAPIC.route_irq(12, 44, lapic_id);
+    
+    crate::serial::write(b"TIMER: IO-APIC configured for PS/2\n");
 }
 
 /// Acknowledge timer interrupt (send EOI).

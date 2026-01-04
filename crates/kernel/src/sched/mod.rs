@@ -21,6 +21,20 @@ use task::{Task, TaskId, TaskState};
 
 pub(crate) static SCHEDULER: Mutex<Option<Scheduler>> = Mutex::new(None);
 
+pub fn with_sched<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Scheduler) -> R,
+{
+    let irq_token = crate::machine::irq_disable();
+    let res = {
+        let mut guard = SCHEDULER.lock();
+        let sched = guard.as_mut().expect("SCHEDULER not initialized");
+        f(sched)
+    };
+    crate::machine::irq_restore(irq_token);
+    res
+}
+
 pub(crate) struct Scheduler {
     pub(crate) tasks: Vec<Task>,
     pub(crate) run_queue: RunQueue,
@@ -170,21 +184,19 @@ pub fn configure_task_memory(
     _stack: (u64, u64),
     heap: (u64, u64, u64),
 ) {
-    let mut guard = SCHEDULER.lock();
-    if let Some(sched) = guard.as_mut() {
+    with_sched(|sched| {
         if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == id) {
             t.heap_base = heap.0;
             t.heap_size = heap.1;
             t.heap_brk = heap.2;
         }
-    }
+    });
 }
 
 pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
     use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
 
-    let mut guard = SCHEDULER.lock();
-    if let Some(sched) = guard.as_mut() {
+    with_sched(|sched| {
         if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
             // Use Kernel Stack Top implicitly allocated by spawn
             // TrapFrame is built on kernel stack, user_stack is stored in RSP field for user mode
@@ -221,7 +233,7 @@ pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
                 &alloc::format!("configure_ctx: finalized sp={:#x}", task.stack_ptr),
             );
         }
-    }
+    });
 }
 
 pub fn exit_current_task(_code: i32) -> ! {
@@ -237,24 +249,41 @@ pub fn with_current_task<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut Task) -> R,
 {
-    let mut guard = SCHEDULER.lock();
-    let sched = guard.as_mut()?; // Return None if not init
-    let curr = sched.cpu.current_task;
-    if curr.0 == 0 {
-        return None;
-    }
-    let t = sched.tasks.iter_mut().find(|t| t.id == curr).unwrap();
-    Some(f(t))
+    let irq_token = crate::machine::irq_disable();
+    let res = {
+        let mut guard = SCHEDULER.lock();
+        if let Some(sched) = guard.as_mut() {
+            let curr = sched.cpu.current_task;
+            if curr.0 == 0 {
+                None
+            } else {
+                let t = sched.tasks.iter_mut().find(|t| t.id == curr).unwrap();
+                Some(f(t))
+            }
+        } else {
+            None
+        }
+    };
+    crate::machine::irq_restore(irq_token);
+    res
 }
 
 pub fn with_task<F, R>(id: TaskId, f: F) -> Option<R>
 where
     F: FnOnce(&mut Task) -> R,
 {
-    let mut guard = SCHEDULER.lock();
-    let sched = guard.as_mut()?;
-    let t = sched.tasks.iter_mut().find(|t| t.id == id)?;
-    Some(f(t))
+    let irq_token = crate::machine::irq_disable();
+    let res = {
+        let mut guard = SCHEDULER.lock();
+        if let Some(sched) = guard.as_mut() {
+            let t = sched.tasks.iter_mut().find(|t| t.id == id)?;
+            Some(f(t))
+        } else {
+            None
+        }
+    };
+    crate::machine::irq_restore(irq_token);
+    res
 }
 
 pub fn current_task_id() -> Option<abi::ids::ThingId> {
@@ -298,39 +327,45 @@ pub fn current_task_handle() -> Option<TaskId> {
 pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
     use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
 
-    let mut guard = SCHEDULER.lock();
-    let sched = guard.as_mut().expect("sched not init");
+    let irq_token = crate::machine::irq_disable();
+    let res = {
+        let mut guard = SCHEDULER.lock();
+        let sched = guard.as_mut().expect("sched not init");
 
-    // Use Shared Kernel Address Space for kernel threads
-    let k_as = AddressSpace::new_kernel_share().expect("failed share kernel AS");
-    let id = sched.spawn(name, Some(Arc::new(k_as)));
+        // Use Shared Kernel Address Space for kernel threads
+        let k_as = AddressSpace::new_kernel_share().expect("failed share kernel AS");
+        let id = sched.spawn(name, Some(Arc::new(k_as)));
 
-    let task = sched.tasks.iter_mut().find(|t| t.id == id).unwrap();
+        let task = sched.tasks.iter_mut().find(|t| t.id == id).unwrap();
 
-    // Initialize task context using arch-generic trait
-    let stack_top = task.stack_ptr & !0xf; // 16-byte align
-    let mut ctx = TaskContext::default();
-    CurrentArch::init_task_context(
-        &mut ctx,
-        entry as usize as u64,
-        stack_top,
-        CpuMode::Kernel,
-        0, // arg0
-    );
+        // Initialize task context using arch-generic trait
+        let stack_top = task.stack_ptr & !0xf; // 16-byte align
+        let mut ctx = TaskContext::default();
+        CurrentArch::init_task_context(
+            &mut ctx,
+            entry as usize as u64,
+            stack_top,
+            CpuMode::Kernel,
+            0, // arg0
+        );
 
-    task.stack_ptr = ctx.sp;
+        task.stack_ptr = ctx.sp;
 
-    id
+        id
+    };
+    crate::machine::irq_restore(irq_token);
+    res
 }
 
 // Helper for Sprout (empty spawn)
 pub fn spawn_empty(name: &'static str) -> TaskId {
-    log::klog(Level::Info, "SCHED", "spawn_empty: locking...");
-    let mut guard = SCHEDULER.lock();
-    log::klog(Level::Info, "SCHED", "spawn_empty: locked");
-    let sched = guard.as_mut().expect("sched not init");
-    let res = sched.spawn(name, None);
-    log::klog(Level::Info, "SCHED", "spawn_empty: done");
+    let irq_token = crate::machine::irq_disable();
+    let res = {
+        let mut guard = SCHEDULER.lock();
+        let sched = guard.as_mut().expect("sched not init");
+        sched.spawn(name, None)
+    };
+    crate::machine::irq_restore(irq_token);
     res
 }
 

@@ -17,7 +17,7 @@ pub fn sys_bytespace_create(size: u64, _flags: u64) -> SyscallResult {
     }
 }
 
-pub fn sys_space_map(bs_id_low: u64, vaddr: u64, _len: u64, _perms: u64) -> SyscallResult {
+pub fn sys_space_map(bs_id_low: u64, vaddr: u64, offset: u64, len: u64) -> SyscallResult {
     use graph::store;
     use graph::symbols::sym;
 
@@ -44,11 +44,13 @@ pub fn sys_space_map(bs_id_low: u64, vaddr: u64, _len: u64, _perms: u64) -> Sysc
     let phys = if let Some(p) = read_prop(sym::PRED_BASE_PHYS) {
         p
     } else {
+        crate::log::klog(crate::log::Level::Error, "SYSCALL", "sys_space_map: PRED_BASE_PHYS not found");
         return SyscallResult::new(err::EINVAL, 0, 0);
     };
     let size = if let Some(s) = read_prop(sym::PRED_SIZE) {
         s
     } else {
+        crate::log::klog(crate::log::Level::Error, "SYSCALL", "sys_space_map: PRED_SIZE not found");
         return SyscallResult::new(err::EINVAL, 0, 0);
     };
 
@@ -57,15 +59,14 @@ pub fn sys_space_map(bs_id_low: u64, vaddr: u64, _len: u64, _perms: u64) -> Sysc
 
     // 4. Map it
     crate::sched::with_current_task(|task| {
-        // Round up size? Logic in Bytespace.map?
-        // map_bytespace_shared handles it?
-        if let Err(_) = task.address_space.map_bytespace_shared(
+        if let Err(e) = task.address_space.map_bytespace_shared(
             vaddr,
             &bs,
-            0,
-            size as usize,
+            offset,
+            len as usize,
             MapPerms::READ | MapPerms::WRITE | MapPerms::USER,
         ) {
+            crate::log::klog(crate::log::Level::Error, "SYSCALL", &alloc::format!("sys_space_map: map failed: {:?}", e));
             return SyscallResult::new(err::EFAULT, 0, 0);
         }
         SyscallResult::new(0, vaddr, 0)

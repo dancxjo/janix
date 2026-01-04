@@ -170,7 +170,8 @@ fn seed_bloom_ontology(ctx: &BootContext) {
             // 2. Base Phys
             let phys_thing = s.create_thing(sym::KIND_BYTESLICE).expect("phys");
             let mut buf_phys = [0u8; 8];
-            buf_phys.copy_from_slice(&fb.addr.to_le_bytes());
+            let phys_addr = fb.addr.wrapping_sub(ctx.hhdm_offset);
+            buf_phys.copy_from_slice(&phys_addr.to_le_bytes());
             s.set_payload(phys_thing, &buf_phys);
             let _ = s.create_relationship(sym::PRED_BASE_PHYS, bs, phys_thing);
 

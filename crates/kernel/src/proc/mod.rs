@@ -65,9 +65,14 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
     // 3. Spawn Task
     let name = module.path;
     let task_id = {
-        let mut guard = sched::SCHEDULER.lock();
-        let sched = guard.as_mut().ok_or(())?;
-        sched.spawn(name, Some(address_space.clone()))
+        let irq_token = crate::machine::irq_disable();
+        let res = {
+            let mut guard = sched::SCHEDULER.lock();
+            let sched = guard.as_mut().ok_or(())?;
+            Ok(sched.spawn(name, Some(address_space.clone())))
+        };
+        crate::machine::irq_restore(irq_token);
+        res?
     };
 
     // 4. Setup Stack

@@ -1,50 +1,50 @@
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff8000017eb000 stack_size=0x10000
-MMU: mapping 7ffe0000->17eb000 len 20000
-SCHED: configure_ctx: k_stack=0xffff8000017eb000 u_stack=0x80000000 entry=0x205c80
-SCHED: configure_ctx: finalized sp=0xffff8000017eaf60
-PROC: spawned
-MOD: /boot/modules/graph_smoke
-MOD: /boot/modules/log_smoke
-MOD: /boot/modules/cap_fail
-MOD: /boot/modules/clock
-PROC: spawn_kernel_module
-PROC: module phys=18e34000 offset=ffff800000000000
-MMU: new P4 phys=180d000 virt=ffff80000180d000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-MMU: mapping 200000->180e000 len 1000
-MMU: mapping 201000->1812000 len 1000
-MMU: mapping 202000->1813000 len 1000
-PROC: ELF loaded, entry
-SCHED: spawn: name=/boot/modules/clock start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=3 name=/boot/modules/clock stack_top=0xffff800001824000 stack_size=0x10000
-MMU: mapping 7ffe0000->1824000 len 20000
-SCHED: configure_ctx: k_stack=0xffff800001824000 u_stack=0x80000000 entry=0x201bc0
-SCHED: configure_ctx: finalized sp=0xffff800001823f60
-PROC: spawned
-MOD: /boot/modules/inputd
-MOD: /boot/modules/echo
-MOD: /boot/modules/inspector
-MOD: /boot/modules/logview
-Booted.
-SCHED: entering loop
-SCHED: calling irq_enable...
-SCHED: first tick!
-TICK: switch IDLE -> 1 sp=0xffff80000179ef60
-USER: RUNTIME: _start
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
 TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-USER: RUNTIME: _start
-MMU: mapping 90000000->1846000 len 100000
-USER: HEAP: init done
-USER: BLOOM: alive
-USER: BLOOM: found display0
-TICK: switch 2 -> 3 sp=0xffff800001823f60
-USER: RUNTIME: _start
-TICK: switch 3 -> 1 sp=0xffff80000179e8e0
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+TICK: switch 2 -> 3 sp=0xffff8000018238a0
+TICK: switch 3 -> 1 sp=0xffff80000179e8d0
+TICK: switch 1 -> 2 sp=0xffff8000017eaf60

@@ -7,7 +7,7 @@
     "index": 4,
     "text": "the framebuffer should change within 100 milliseconds",
     "status": "passed",
-    "timestamp": "2026-01-04T07:04:09.556796152+00:00"
+    "timestamp": "2026-01-04T08:11:01.058809130+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

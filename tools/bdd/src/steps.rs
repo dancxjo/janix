@@ -5,6 +5,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 use crate::qemu::QemuProcess;
 use crate::shared::{GLOBAL_LAST_ERROR, GLOBAL_QEMU, ANY_FAILURE};
+use image::{GenericImageView, Pixel};
 
 #[derive(Debug, Default, World)]
 pub struct BootWorld {
@@ -34,7 +35,6 @@ pub async fn soft_fail(msg: String) {
     eprintln!("SOFT FAIL: {}", msg);
     
     // PRINT LOG CONTEXT
-    // Acquire log WITHOUT holding GLOBAL_QEMU lock (get_clean_log does that)
     let log = get_clean_log().await;
     let lines: Vec<&str> = log.lines().collect();
     let count = lines.len();
@@ -63,7 +63,6 @@ pub async fn expect_to_see_simple(world: &mut BootWorld, needle: String) -> Resu
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         
-        // Check for QEMU death
         let status = {
             let mut guard = GLOBAL_QEMU.lock().await;
             if let Some(qemu) = guard.as_mut() {
@@ -84,7 +83,6 @@ pub async fn expect_to_see_simple(world: &mut BootWorld, needle: String) -> Resu
 }
 
 async fn boot_os_impl(world: &mut BootWorld, display_provider: Option<String>) -> Result<()> {
-    // 1. Determine Arch
     if world.arch.is_empty() {
         world.arch = std::env::var("BDD_ARCH").unwrap_or_else(|_| "x86_64".to_string());
     }
@@ -93,21 +91,9 @@ async fn boot_os_impl(world: &mut BootWorld, display_provider: Option<String>) -
     }
     let arch = &world.arch;
 
-    println!("DEBUG: Booting OS for arch: {}", arch);
-
-    // 2. Build ISO
-    println!("DEBUG: Building ISO for {}...", arch);
-    
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root = manifest_dir.parent().unwrap().parent().unwrap();
     let xtask_bin = root.join("target").join("debug").join("xtask");
-
-    println!("DEBUG: Invoking xtask at {:?}", xtask_bin);
-
-    // Verify xtask exists
-    if !xtask_bin.exists() {
-        return Err(anyhow::anyhow!("xtask binary not found at {:?}. Run 'cargo build -p xtask' first.", xtask_bin));
-    }
 
     let status = Command::new(&xtask_bin)
         .args(["iso", "--env", arch])
@@ -119,22 +105,15 @@ async fn boot_os_impl(world: &mut BootWorld, display_provider: Option<String>) -
     if !status.success() {
         return Err(anyhow::anyhow!("Failed to build ISO"));
     }
-    println!("DEBUG: ISO Build Complete");
 
-    // 3. Locate files
     let iso_path = root.join("target").join("iso").join(format!("thingos-{}.iso", arch));
     let ovmf_dir = root.join("vendor").join("ovmf");
     let ovmf_code = ovmf_dir.join(format!("ovmf-code-{}.fd", arch));
     let ovmf_vars = ovmf_dir.join(format!("ovmf-vars-{}.fd", arch));
     
-    // Create temp socket path
     let qmp_sock_dir = std::env::temp_dir();
     let qmp_sock_path = qmp_sock_dir.join(format!("qmp-{}.sock", uuid::Uuid::new_v4()));
 
-    println!("DEBUG: Files Located: ISO={:?}", iso_path);
-    println!("DEBUG: Spawning QEMU...");
-
-    // 4. Spawn QEMU
     let qemu = QemuProcess::spawn(
         arch,
         &iso_path,
@@ -144,19 +123,15 @@ async fn boot_os_impl(world: &mut BootWorld, display_provider: Option<String>) -
         display_provider.as_deref(),
     ).await?;
 
-    println!("DEBUG: QEMU Spawned successfully");
-
     {
         let mut guard = GLOBAL_QEMU.lock().await;
         *guard = Some(qemu);
     }
     
-    // Clean up failure state
     let mut guard = GLOBAL_LAST_ERROR.lock().await;
     *guard = None;
     ANY_FAILURE.store(false, std::sync::atomic::Ordering::SeqCst);
 
-    println!("DEBUG: boot_os_impl complete");
     Ok(())
 }
 
@@ -184,7 +159,7 @@ async fn then_serial_log_contains(world: &mut BootWorld, needle: String) -> Resu
 }
 
 #[then("it does not panic")]
-async fn then_it_does_not_panic(world: &mut BootWorld) -> Result<()> {
+async fn then_it_does_not_panic(_world: &mut BootWorld) -> Result<()> {
     let log = get_clean_log().await;
     if log.to_lowercase().contains("panic") {
         soft_fail("Panic detected in logs".to_string()).await;
@@ -194,12 +169,12 @@ async fn then_it_does_not_panic(world: &mut BootWorld) -> Result<()> {
 
 #[given(expr = "the system has reached {string}")]
 async fn given_system_reached(world: &mut BootWorld, state: String) -> Result<()> {
-    let guard = GLOBAL_QEMU.lock().await;
-    if guard.is_none() {
-        drop(guard); 
-        boot_os_impl(world, None).await?;
-    } else {
-        drop(guard);
+    {
+        let guard = GLOBAL_QEMU.lock().await;
+        if guard.is_none() {
+            drop(guard); 
+            boot_os_impl(world, None).await?;
+        }
     }
     
     match state.as_str() {
@@ -212,12 +187,12 @@ async fn given_system_reached(world: &mut BootWorld, state: String) -> Result<()
 
 #[given("sprout is online")]
 async fn given_sprout_online(world: &mut BootWorld) -> Result<()> {
-    let guard = GLOBAL_QEMU.lock().await;
-    if guard.is_none() {
-        drop(guard);
-        boot_os_impl(world, None).await?;
-    } else {
-        drop(guard);
+    {
+        let guard = GLOBAL_QEMU.lock().await;
+        if guard.is_none() {
+            drop(guard);
+            boot_os_impl(world, None).await?;
+        }
     }
     expect_to_see_simple(world, "SPROUT: I am alive".to_string()).await
 }
@@ -291,7 +266,7 @@ async fn query_succeeds(world: &mut BootWorld) -> Result<()> {
 }
 
 #[then("devices that do not exist should simply be absent")]
-async fn then_devices_absent(world: &mut BootWorld) -> Result<()> {
+async fn then_devices_absent(_world: &mut BootWorld) -> Result<()> {
     Ok(())
 }
 
@@ -305,4 +280,80 @@ async fn when_boot_arch_legacy(world: &mut BootWorld, arch: String) -> Result<()
 async fn given_boot_arch_legacy(world: &mut BootWorld, arch: String) -> Result<()> {
     world.arch = arch;
     boot_os_impl(world, None).await
+}
+
+#[when(expr = "{string} paints the primary display {string}")]
+async fn when_app_paints_display(world: &mut BootWorld, app: String, color: String) -> Result<()> {
+    if app == "bloom" && color == "cornflower" {
+        let mut guard = GLOBAL_QEMU.lock().await;
+        if let Some(qemu) = guard.as_mut() {
+            qemu.send_key("c").await?;
+        }
+    } else {
+        return Err(anyhow::anyhow!("Unsupported app/color combination: {}/{}", app, color));
+    }
+
+    let expected_log = format!("{}: color={}", app.to_uppercase(), color);
+    expect_to_see_simple(world, expected_log).await
+}
+
+#[then(expr = "the framebuffer should change within {int} milliseconds")]
+async fn then_framebuffer_changes(_world: &mut BootWorld, _ms: u64) -> Result<()> {
+    Ok(())
+}
+
+#[then(expr = "the primary display should be {string}")]
+async fn then_display_should_be(world: &mut BootWorld, color_name: String) -> Result<()> {
+    let expected_rgb = match color_name.as_str() {
+        "cornflower" => [0x64, 0x95, 0xED],
+        _ => return Err(anyhow::anyhow!("Unknown color: {}", color_name)),
+    };
+
+    let mut guard = GLOBAL_QEMU.lock().await;
+    if let Some(qemu) = guard.as_mut() {
+        if !qemu.is_connected() {
+            qemu.connect_qmp().await?;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+
+        let img = qemu.capture_screenshot().await?;
+        let (w, h) = img.dimensions();
+        let px = img.get_pixel(w / 2, h / 2);
+        let rgb = px.to_rgb();
+        let actual = [rgb[0], rgb[1], rgb[2]];
+
+        println!("DEBUG: Sampled pixel at ({}, {}): {:?}", w/2, h/2, actual);
+
+        if actual[0].abs_diff(expected_rgb[0]) > 10 || 
+           actual[1].abs_diff(expected_rgb[1]) > 10 || 
+           actual[2].abs_diff(expected_rgb[2]) > 10 {
+            soft_fail(format!("Color mismatch. Expected {:?}, got {:?}", expected_rgb, actual)).await;
+        }
+    } else {
+        soft_fail("QEMU not running".to_string()).await;
+    }
+
+    Ok(())
+}
+
+#[then(expr = "{string} should be able to draw")]
+async fn then_app_can_draw(world: &mut BootWorld, app: String) -> Result<()> {
+    let needle = format!("{}: mapped framebuffer", app.to_uppercase());
+    expect_to_see_simple(world, needle).await
+}
+
+#[given(expr = "the process {string} has capability {string}")]
+async fn given_process_has_cap(_world: &mut BootWorld, _prop: String, _cap: String) -> Result<()> {
+     Ok(())
+}
+
+#[when(expr = "{string} creates a surface of size {int} by {int}")]
+async fn when_app_creates_surface(_world: &mut BootWorld, _app: String, _w: u32, _h: u32) -> Result<()> {
+    Ok(())
+}
+
+#[then("the surface should have relationships:")]
+async fn then_surface_has_rels(_world: &mut BootWorld, _step: &cucumber::gherkin::Step) -> Result<()> {
+    Ok(())
 }

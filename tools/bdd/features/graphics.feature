@@ -8,6 +8,7 @@ Feature: Surfaces and compositing
     And the process "bloom" has capability "cap.framebuffer"
     When "bloom" paints the primary display "cornflower"
     Then the framebuffer should change within 100 milliseconds
+    And the primary display should be "cornflower"
 
   @gfx @surface @wip
   Scenario: A surface is a Thing with ownership and bounds

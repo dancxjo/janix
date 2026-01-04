@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/graph_as_the_system/tasks_are_represented_as_things",
-  "feature": "Graph as the system",
-  "scenario": "Tasks are represented as Things",
-  "status": "pass"
-}

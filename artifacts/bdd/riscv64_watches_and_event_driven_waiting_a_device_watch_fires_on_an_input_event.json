@@ -1,7 +1,0 @@
-{
-  "arch": "riscv64",
-  "artifacts_dir": "riscv64/watches_and_event_driven_waiting/a_device_watch_fires_on_an_input_event",
-  "feature": "Watches and event-driven waiting",
-  "scenario": "A device watch fires on an input event",
-  "status": "pass"
-}

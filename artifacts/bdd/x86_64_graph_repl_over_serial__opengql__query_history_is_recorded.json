@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/graph_repl_over_serial__opengql_/query_history_is_recorded",
-  "feature": "Graph REPL over Serial (OpenGQL)",
-  "scenario": "Query history is recorded",
-  "status": "pass"
-}

@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/graph_repl_over_serial__opengql_/create_a_relationship_between_things",
-  "feature": "Graph REPL over Serial (OpenGQL)",
-  "scenario": "Create a relationship between Things",
-  "status": "pass"
-}

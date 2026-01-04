@@ -1,7 +1,0 @@
-{
-  "arch": "riscv64",
-  "artifacts_dir": "riscv64/graph_as_the_system/the_graph_is_queryable_at_runtime",
-  "feature": "Graph as the system",
-  "scenario": "The graph is queryable at runtime",
-  "status": "failed"
-}

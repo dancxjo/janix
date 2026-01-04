@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/keyboard_input_pipeline/focus_determines_which_window_receives_keyboard_events",
-  "feature": "Keyboard input pipeline",
-  "scenario": "Focus determines which window receives keyboard events",
-  "status": "failed"
-}

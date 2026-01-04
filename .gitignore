@@ -23,3 +23,5 @@ crates/**/bin-*/
 
 /vendor/
 *.gdb
+artifacts/
+artifacts/

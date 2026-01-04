@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/scheduler_liveness_and_fairness/a_blocked_task_wakes_when_its_watch_fires",
-  "feature": "Scheduler liveness and fairness",
-  "scenario": "A blocked task wakes when its watch fires",
-  "status": "pass"
-}

@@ -1,7 +1,0 @@
-{
-  "arch": "aarch64",
-  "artifacts_dir": "aarch64/scheduler_liveness_and_fairness/the_scheduler_switches_tasks_over_time",
-  "feature": "Scheduler liveness and fairness",
-  "scenario": "The scheduler switches tasks over time",
-  "status": "pass"
-}

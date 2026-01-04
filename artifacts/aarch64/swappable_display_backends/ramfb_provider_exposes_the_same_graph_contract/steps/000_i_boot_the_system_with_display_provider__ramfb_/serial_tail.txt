@@ -1,1 +1,0 @@
-UEFI firmware (version  built at 23:58:55 on Oct  8 2025)

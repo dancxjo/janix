@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/capabilities_and_least_privilege/a_process_cannot_read_raw_input_without_an_input_capability",
-  "feature": "Capabilities and least privilege",
-  "scenario": "A process cannot read raw input without an input capability",
-  "status": "pass"
-}

@@ -234,6 +234,23 @@ pub fn relationships_from(from: ThingId) -> Vec<RelationshipId> {
         .to_vec()
 }
 
+pub fn linked_things(from: ThingId, predicate: SymbolId) -> Vec<ThingId> {
+    let guard = PLACE_STORE.lock();
+    let store = guard.as_ref().expect("PlaceStore not initialized");
+
+    let mut targets = Vec::new();
+    if let Some(rel_ids) = store.from_index.get(&from) {
+        for &rel_id in rel_ids {
+            if let Some(rel) = store.relationships.get(&rel_id) {
+                if rel.kind == predicate {
+                    targets.push(rel.to);
+                }
+            }
+        }
+    }
+    targets
+}
+
 pub fn get_relationship(id: RelationshipId) -> Option<Relationship> {
     let guard = PLACE_STORE.lock();
     guard

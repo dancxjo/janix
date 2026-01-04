@@ -1,7 +1,0 @@
-{
-  "arch": "loongarch64",
-  "artifacts_dir": "loongarch64/surfaces_and_compositing/a_surface_is_a_thing_with_ownership_and_bounds",
-  "feature": "Surfaces and compositing",
-  "scenario": "A surface is a Thing with ownership and bounds",
-  "status": "pass"
-}

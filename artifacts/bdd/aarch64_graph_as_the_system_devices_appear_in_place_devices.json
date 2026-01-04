@@ -1,7 +1,0 @@
-{
-  "arch": "aarch64",
-  "artifacts_dir": "aarch64/graph_as_the_system/devices_appear_in_place_devices",
-  "feature": "Graph as the system",
-  "scenario": "Devices appear in place.devices",
-  "status": "failed"
-}

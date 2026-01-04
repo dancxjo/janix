@@ -1,7 +1,0 @@
-{
-  "arch": "loongarch64",
-  "artifacts_dir": "loongarch64/graph_as_the_system/a_task_is_linked_to_its_owning_process",
-  "feature": "Graph as the system",
-  "scenario": "A task is linked to its owning process",
-  "status": "pass"
-}

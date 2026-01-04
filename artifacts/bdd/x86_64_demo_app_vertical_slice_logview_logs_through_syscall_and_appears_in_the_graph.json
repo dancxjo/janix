@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/demo_app_vertical_slice/logview_logs_through_syscall_and_appears_in_the_graph",
-  "feature": "Demo app vertical slice",
-  "scenario": "logview logs through syscall and appears in the graph",
-  "status": "pass"
-}

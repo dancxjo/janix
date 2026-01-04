@@ -34,7 +34,6 @@ pub fn init() {
     store::with_store(|s| {
         // 1. Create/Find Places
         let place_time = s.find_by_name(sym::PLACE_TIME).expect("place.time missing");
-        crate::serial::write(b"TIME: found place.time\n");
 
         let place_mono = s
             .create_thing(sym::KIND_PLACE)
@@ -42,7 +41,6 @@ pub fn init() {
         s.register_name(place_mono, sym::PLACE_TIME_MONOTONIC);
         s.create_relationship(sym::PRED_CONTAINS, place_time, place_mono)
             .expect("link place.time.monotonic");
-        crate::serial::write(b"TIME: created place.time.monotonic\n");
 
         let place_system = s
             .create_thing(sym::KIND_PLACE)

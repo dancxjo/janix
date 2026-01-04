@@ -149,15 +149,6 @@ impl Bytespace {
             use crate::boot::get_boot_ctx;
             let offset = get_boot_ctx().hhdm_offset;
 
-            // DEBUG
-            /*
-            crate::log::klog(
-                crate::log::Level::Info,
-                "BYTESPACE",
-                &alloc::format!("backing_ptr: phys={:x} offset={:x}", phys, offset),
-            );
-            */
-
             Some(phys.wrapping_add(offset) as *mut u8)
         } else {
             None

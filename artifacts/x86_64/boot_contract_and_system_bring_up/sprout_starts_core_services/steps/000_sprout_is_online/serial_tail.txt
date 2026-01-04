@@ -1,50 +1,50 @@
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=1 name=/boot/modules/sprout stack_top=0xffff8000017c2000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff8000017c2000 u_stack=0x80000000 entry=0x201460
+SCHED: configure_ctx_locked: finalized sp=0xffff8000017c1f60
+SPROUT: I am alive
+PROC: spawned
+BOOT: Handing off to scheduler
+SCHED: entering loop
+SCHED: calling irq_enable...
+SCHED: first tick!
+TICK: switch IDLE -> 1 sp=0xffff8000017c1f60
+MMU: mapping 90000000->17c2000 len 100000
+USER: SPROUT: I am alive!
+USER: SPROUT: spawning bloom
+PROC: spawn_kernel_module
+PROC: module phys=198c6000 offset=ffff800000000TICK: switch 1 -> 1 sp=0xffff8000017c1090
+000
+MMU: new P4 phys=18c5000 virt=ffff8000018c5000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+MMU: mapping 200000->18c6000 len 6000
+MMU: mapping 206000->18cf000 len 14000
+MMU: mapping 21a000->18e3000 len 1000
+MMU: mapping 21b000->18e4000 len 1000
+PROC: ELF loaded, entry
+MMU: mapping 7ffe0000->18e5000 len 20000
+SCHED: spawn: name=/boot/modules/bloom start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff800001917000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001917000 u_stack=0x80000000 entry=0x208b80
+SCHED: configure_ctx_locked: finalized sp=0xffff800001916f60
+PROC: spawned
+USER: SPROUT: bloom spawned
+TICK: switch 1 -> 2 sp=0xffff800001916f60
+MMU: mapping 90000000->1918000 len 100000
+USER: BLOOM: alive
+MMU: mapping a0000000->80000000 len 384000
 TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168e0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
+TICK: switch 1 -> 2 sp=0xffff800001916650
+TICK: (further switch logs suppressed)
+MMU: mapping 90100000->1a1d000 len 384000
+MMU: mapping 81000000->17e84000 len 400000
+USER: BLOOM: done

@@ -7,10 +7,10 @@
     "index": 2,
     "text": "the graph should contain a Thing named \"logview\"",
     "status": "passed",
-    "timestamp": "2026-01-04T18:19:26.417858810+00:00"
+    "timestamp": "2026-01-04T18:23:46.799704414+00:00"
   },
   "artifacts": {
-    "screenshot": "screen.png",
+    "screenshot": null,
     "serial_tail": "serial_tail.txt"
   }
 }

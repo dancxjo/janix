@@ -125,6 +125,14 @@ impl Machine for Riscv64Machine {
         }
     }
 
+    fn irq_enable(&self) {
+        unsafe {
+            // Set SIE (Supervisor Interrupt Enable) and ensure timer interrupts are unmasked
+            core::arch::asm!("csrsi sstatus, 0x2"); // Global S-mode interrupt enable
+            core::arch::asm!("csrs sie, {}", in(reg) 1u64 << 5); // Allow supervisor timer interrupts
+        }
+    }
+
     fn switch_to(&self, _old_ctx: &mut Context, _new_ctx: &Context) {
         // Placeholder
     }

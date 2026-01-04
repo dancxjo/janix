@@ -1,7 +1,7 @@
 //! Syscall Dispatch Router
 
 use crate::syscall::cap::CapOp;
-use crate::syscall::{cap, graph, log, memory, surface, wait, watch};
+use crate::syscall::{cap, graph, log, memory, surface, time, wait, watch};
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
 
@@ -185,6 +185,12 @@ pub extern "C" fn dispatch(
         nr::SYS_PROC_EXIT => {
             crate::sched::exit_current_task(a0 as i32);
         }
+
+        // === Time ===
+        nr::SYS_TIME_MONOTONIC_NOW => time::sys_time_monotonic_now(),
+        nr::SYS_TIME_SYSTEM_NOW => time::sys_time_system_now(),
+        nr::SYS_TIME_SET_SYSTEM => time::sys_time_set_system(a0 as i64),
+        nr::SYS_SLEEP_UNTIL => time::sys_sleep_until(a0),
 
         // === Machine (Restricted) ===
         nr::SYS_MACHINE => {

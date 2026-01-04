@@ -122,6 +122,9 @@ pub trait Machine: Sync {
     /// Implementations must not assume an HHDM covers device ranges.
     fn mmio_map(&self, range: MmioRange, flags: MmioFlags) -> Option<MmioMapping>;
 
+    /// Get monotonic nanoseconds since boot.
+    fn monotonic_now(&self) -> u64;
+
     // --- CPU (Physics) ---
 
     fn irq_disable(&self) -> u64;

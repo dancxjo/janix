@@ -68,6 +68,15 @@ impl Machine for LoongArchMachine {
         None
     }
 
+    fn monotonic_now(&self) -> u64 {
+        let time: u64;
+        unsafe {
+            core::arch::asm!("rdtime.d {}, $r0", out(reg) time);
+        }
+        // Assume 100MHz for now
+        time * 10
+    }
+
     fn irq_disable(&self) -> u64 {
         let crmd: u64;
         unsafe {

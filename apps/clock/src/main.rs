@@ -51,21 +51,44 @@ pub extern "C" fn main() {
     log_info("CLOCK: Registered window.clock and surface.clock");
 
     // Drawing Loop
-    let mut frame = 0;
+    let mut last_log = 0;
     loop {
-        let color = frame as u32; // changing color
-        unsafe {
-            for i in 0..(width * height) {
-                *buffer.add(i as usize) = 0xFF000000 | color;
-            }
+        let mono = monotonic_now();
+        let system = system_now();
+
+        if mono - last_log > 1_000_000_000 {
+            // Log every second
+            let mut msg = alloc::string::String::from("CLOCK: Mono=");
+            msg.push_str(&u64_to_str(mono));
+            msg.push_str(" System=");
+            msg.push_str(&i64_to_str(system));
+            log_info(&msg);
+            last_log = mono;
         }
 
-        if frame % 100 == 0 {
-            log_info("CLOCK: Drawing...");
-        }
-
-        frame += 1;
         // yield
-        sched_yield();
+        sleep_ms(100);
+    }
+}
+
+fn u64_to_str(mut n: u64) -> alloc::string::String {
+    if n == 0 {
+        return alloc::string::String::from("0");
+    }
+    let mut s = alloc::string::String::new();
+    while n > 0 {
+        s.push((b'0' + (n % 10) as u8) as char);
+        n /= 10;
+    }
+    s.chars().rev().collect()
+}
+
+fn i64_to_str(n: i64) -> alloc::string::String {
+    if n < 0 {
+        let mut s = alloc::string::String::from("-");
+        s.push_str(&u64_to_str(-n as u64));
+        s
+    } else {
+        u64_to_str(n as u64)
     }
 }

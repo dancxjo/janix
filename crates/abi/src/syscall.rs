@@ -31,6 +31,11 @@ pub mod nr {
     pub const SYS_PROC_EXIT: u32 = 61;
     pub const SYS_DISPLAY_PRIMARY: u32 = 160;
 
+    pub const SYS_TIME_MONOTONIC_NOW: u32 = 170;
+    pub const SYS_TIME_SYSTEM_NOW: u32 = 171;
+    pub const SYS_TIME_SET_SYSTEM: u32 = 172;
+    pub const SYS_SLEEP_UNTIL: u32 = 173;
+
     pub const SYS_MACHINE: u32 = 100;
 
     pub const SYS_INPUT_READ: u32 = 200;

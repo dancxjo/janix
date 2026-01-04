@@ -180,6 +180,12 @@ impl Machine for ArchMachine {
         None
     }
 
+    fn monotonic_now(&self) -> u64 {
+        let tsc = unsafe { core::arch::x86_64::_rdtsc() };
+        // Assume 2GHz for now (1 cycle = 0.5ns)
+        tsc / 2
+    }
+
     fn irq_disable(&self) -> u64 {
         let flags: u64;
         unsafe {

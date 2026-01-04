@@ -5,6 +5,7 @@ pub mod input;
 pub mod log;
 pub mod memory;
 pub mod surface;
+pub mod time;
 pub mod wait;
 pub mod watch;
 

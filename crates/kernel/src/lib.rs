@@ -17,6 +17,7 @@ pub mod place;
 pub mod sched;
 pub mod serial;
 pub mod syscall;
+pub mod time;
 pub mod trap;
 pub mod watch;
 

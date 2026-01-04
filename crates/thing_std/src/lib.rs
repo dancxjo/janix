@@ -20,6 +20,7 @@ pub use graph::*;
 pub use graphics::*;
 pub use input::*;
 pub use memory::*;
+pub use time::*;
 
 // ============================================================================
 // Entry Point & runtime
@@ -390,3 +391,5 @@ pub mod input {
         res.val0 as usize
     }
 }
+
+pub mod time;

@@ -192,11 +192,29 @@ pub fn init() {
         "report.boot_status",
         "place.reports",
         "place.snapshots",
+        "place.time.monotonic",
+        "place.time.system",
+        "place.devices.timers",
+        "place.services.time",
+        "place.apps.clock",
+        "kind.TimerDevice",
+        "kind.MonotonicClock",
+        "kind.SystemClock",
+        "kind.ClockSample",
+        "kind.TimeOffset",
+        "kind.ClockApp",
         "predicate.generated_by",
         "predicate.at_time",
         "predicate.summary",
         "predicate.count",
         "predicate.for_place",
+        // Time sources
+        "time_source.apic_tsc",
+        "time_source.arm_cntvct",
+        "time_source.riscv_rdtime",
+        "time_source.loongarch_rdtime",
+        "time_source.manual",
+        "time_source.rtc",
         // "predicate.bytes" reused from PRED_BACKS or similar? No, let's add specific if needed.
         // "snapshot --[bytes]--> bytespace". Reuse PRED_BACKS?
         // Or "predicate.bytes" for explicit data ref.
@@ -371,14 +389,33 @@ pub mod sym {
     pub const PLACE_REPORTS: SymbolId = SymbolId(115);
     pub const PLACE_SNAPSHOTS: SymbolId = SymbolId(116);
 
-    // PRED_FORMAT is already defined at 99
-    pub const PRED_GENERATED_BY: SymbolId = SymbolId(117);
-    pub const PRED_AT_TIME: SymbolId = SymbolId(118);
-    pub const PRED_SUMMARY: SymbolId = SymbolId(119);
-    pub const PRED_COUNT: SymbolId = SymbolId(120);
-    pub const PRED_FOR_PLACE: SymbolId = SymbolId(121);
-    pub const PRED_BYTES: SymbolId = SymbolId(122);
-    pub const TASK_STATE_YIELDED: SymbolId = SymbolId(123);
-    pub const TASK_STATE_BLOCKED_WATCH: SymbolId = SymbolId(124);
-    pub const TASK_STATE_BLOCKED_TIMEOUT: SymbolId = SymbolId(125);
+    pub const PLACE_TIME_MONOTONIC: SymbolId = SymbolId(117);
+    pub const PLACE_TIME_SYSTEM: SymbolId = SymbolId(118);
+    pub const PLACE_DEVICES_TIMERS: SymbolId = SymbolId(119);
+    pub const PLACE_SERVICES_TIME: SymbolId = SymbolId(120);
+    pub const PLACE_APPS_CLOCK: SymbolId = SymbolId(121);
+    pub const KIND_TIMER_DEVICE: SymbolId = SymbolId(122);
+    pub const KIND_MONOTONIC_CLOCK: SymbolId = SymbolId(123);
+    pub const KIND_SYSTEM_CLOCK: SymbolId = SymbolId(124);
+    pub const KIND_CLOCK_SAMPLE: SymbolId = SymbolId(125);
+    pub const KIND_TIME_OFFSET: SymbolId = SymbolId(126);
+    pub const KIND_CLOCK_APP: SymbolId = SymbolId(127);
+
+    pub const PRED_GENERATED_BY: SymbolId = SymbolId(128);
+    pub const PRED_AT_TIME: SymbolId = SymbolId(129);
+    pub const PRED_SUMMARY: SymbolId = SymbolId(130);
+    pub const PRED_COUNT: SymbolId = SymbolId(131);
+    pub const PRED_FOR_PLACE: SymbolId = SymbolId(132);
+
+    pub const TIME_SOURCE_APIC_TSC: SymbolId = SymbolId(133);
+    pub const TIME_SOURCE_ARM_CNTVCT: SymbolId = SymbolId(134);
+    pub const TIME_SOURCE_RISCV_RDTIME: SymbolId = SymbolId(135);
+    pub const TIME_SOURCE_LOONGARCH_RDTIME: SymbolId = SymbolId(136);
+    pub const TIME_SOURCE_MANUAL: SymbolId = SymbolId(137);
+    pub const TIME_SOURCE_RTC: SymbolId = SymbolId(138);
+
+    pub const PRED_BYTES: SymbolId = SymbolId(139);
+    pub const TASK_STATE_YIELDED: SymbolId = SymbolId(140);
+    pub const TASK_STATE_BLOCKED_WATCH: SymbolId = SymbolId(141);
+    pub const TASK_STATE_BLOCKED_TIMEOUT: SymbolId = SymbolId(142);
 }

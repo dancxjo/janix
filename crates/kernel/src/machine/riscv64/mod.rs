@@ -81,6 +81,15 @@ impl Machine for Riscv64Machine {
         None
     }
 
+    fn monotonic_now(&self) -> u64 {
+        let time: u64;
+        unsafe {
+            core::arch::asm!("rdtime {}", out(reg) time);
+        }
+        // QEMU RISC-V virt is 10MHz
+        time * 100
+    }
+
     fn irq_disable(&self) -> u64 {
         let sstatus: u64;
         unsafe {

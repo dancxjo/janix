@@ -442,6 +442,17 @@ impl Machine for ArchMachine {
         self.map_mmio(range, flags)
     }
 
+    fn monotonic_now(&self) -> u64 {
+        let cnt: u64;
+        let freq: u64;
+        unsafe {
+            asm!("mrs {}, cntvct_el0", out(reg) cnt);
+            asm!("mrs {}, cntfrq_el0", out(reg) freq);
+        }
+        // (cnt * 1_000_000_000) / freq
+        ((cnt as u128 * 1_000_000_000) / freq as u128) as u64
+    }
+
     fn irq_disable(&self) -> u64 {
         let flags: u64;
         unsafe {

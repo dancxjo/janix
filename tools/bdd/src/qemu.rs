@@ -319,6 +319,64 @@ impl QemuProcess {
             }
         }
     }
+
+    pub async fn send_key(&mut self, key: &str) -> Result<()> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            if let (Some(writer), Some(reader)) = (&mut self.qmp_writer, &mut self.qmp_reader) {
+                // Map character to QEMU qcode name if possible
+                let qcode = match key.to_lowercase().as_str() {
+                    "a" => "a",
+                    "b" => "b",
+                    "c" => "c",
+                    "d" => "d",
+                    "e" => "e",
+                    "f" => "f",
+                    "g" => "g",
+                    "h" => "h",
+                    "i" => "i",
+                    "j" => "j",
+                    "k" => "k",
+                    "l" => "l",
+                    "m" => "m",
+                    "n" => "n",
+                    "o" => "o",
+                    "p" => "p",
+                    "q" => "q",
+                    "r" => "r",
+                    "s" => "s",
+                    "t" => "t",
+                    "u" => "u",
+                    "v" => "v",
+                    "w" => "w",
+                    "x" => "x",
+                    "y" => "y",
+                    "z" => "z",
+                    "enter" => "ret",
+                    "space" => "spc",
+                    "esc" => "esc",
+                    _ => key, // Try literal if not mapped
+                };
+
+                let cmd = format!(
+                    r#"{{"execute": "send-key", "arguments": {{"keys": [{{"type": "qcode", "data": "{}"}}]}}}}"#,
+                    qcode
+                );
+                writer.write_all(cmd.as_bytes()).await?;
+                writer.write_all(b"\n").await?;
+
+                // Read output
+                let mut line = String::new();
+                reader.read_line(&mut line).await?;
+                if !line.contains("return") {
+                    eprintln!("QMP send-key error: {}", line);
+                }
+                return Ok(());
+            }
+            anyhow::bail!("QMP not connected")
+        })
+        .await
+        .context("Send key timed out")?
+    }
 }
 
 impl Drop for QemuProcess {

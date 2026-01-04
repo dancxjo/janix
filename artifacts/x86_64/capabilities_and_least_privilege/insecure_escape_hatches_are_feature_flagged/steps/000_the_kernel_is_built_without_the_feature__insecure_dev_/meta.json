@@ -7,7 +7,7 @@
     "index": 0,
     "text": "the kernel is built without the feature \"insecure_dev\"",
     "status": "skipped",
-    "timestamp": "2026-01-04T04:39:09.259747088+00:00"
+    "timestamp": "2026-01-04T05:03:50.382833944+00:00"
   },
   "artifacts": {
     "screenshot": null,

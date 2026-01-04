@@ -3,6 +3,7 @@ use cucumber::{World, WriterExt};
 use std::path::PathBuf;
 
 mod extra_steps;
+mod keyboard_steps;
 mod qemu;
 mod report;
 mod shared;

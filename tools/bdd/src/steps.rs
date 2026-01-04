@@ -15,7 +15,7 @@ pub struct BootWorld {
 
 // --- Helpers ---
 
-async fn get_clean_log() -> String {
+pub async fn get_clean_log() -> String {
     let guard = GLOBAL_QEMU.lock().await;
     if let Some(qemu) = guard.as_ref() {
         if let Ok(log) = qemu.log_buffer.lock() {
@@ -30,7 +30,7 @@ pub fn strip_ansi_codes(s: &str) -> String {
     re.replace_all(s, "").to_string()
 }
 
-async fn soft_fail(msg: String) {
+pub async fn soft_fail(msg: String) {
     eprintln!("SOFT FAIL: {}", msg);
     
     // PRINT LOG CONTEXT
@@ -52,7 +52,7 @@ async fn soft_fail(msg: String) {
     ANY_FAILURE.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
-async fn expect_to_see_simple(world: &mut BootWorld, needle: String) -> Result<()> {
+pub async fn expect_to_see_simple(world: &mut BootWorld, needle: String) -> Result<()> {
     let start = std::time::Instant::now();
     let timeout_duration = std::time::Duration::from_secs(30);
     

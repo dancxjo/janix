@@ -203,6 +203,80 @@
         }
       }
     },
+    "Keyboard input pipeline": {
+      "scenarios": {
+        "A layout service can convert key events to text events": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Changing focus changes routing immediately": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Delivery can be traced": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Delivery is non-blocking": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Focus determines which window receives keyboard events": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Key activity produces raw key events": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Key events are deliverable to user programs": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Keyboard events are buffered during bursts": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Keyboard events are observable as Things": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Multiple consumers can observe raw key events": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "No heavy work is required to capture key events": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Non-printing keys do not produce text": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "The system exposes a keyboard-capable input device when available": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "The system still boots without a keyboard": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
     "Multi-architecture behavioral parity": {
       "scenarios": {
         "Boot reaches kernel ready on each architecture": {

@@ -7,7 +7,7 @@
     "index": 1,
     "text": "the serial output contains \"BOOT:\"",
     "status": "passed",
-    "timestamp": "2026-01-04T08:04:38.153263770+00:00"
+    "timestamp": "2026-01-04T08:07:55.338700110+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

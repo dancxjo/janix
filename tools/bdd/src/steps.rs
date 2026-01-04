@@ -19,9 +19,8 @@ pub struct BootWorld {
 pub async fn get_clean_log() -> String {
     let guard = GLOBAL_QEMU.lock().await;
     if let Some(qemu) = guard.as_ref() {
-        if let Ok(log) = qemu.log_buffer.lock() {
-            return strip_ansi_codes(&log);
-        }
+        let log = qemu.log_buffer.lock();
+        return strip_ansi_codes(&log);
     }
     String::new()
 }
@@ -53,6 +52,7 @@ pub async fn soft_fail(msg: String) {
 }
 
 pub async fn expect_to_see_simple(world: &mut BootWorld, needle: String) -> Result<()> {
+    let _ = world; // Silence unused warning
     let start = std::time::Instant::now();
     let timeout_duration = std::time::Duration::from_secs(30);
     
@@ -138,6 +138,18 @@ async fn boot_os_impl(world: &mut BootWorld, display_provider: Option<String>) -
 
 // --- STEPS ---
 
+#[given("sprout is online")]
+async fn given_sprout_online(world: &mut BootWorld) -> Result<()> {
+    {
+        let guard = GLOBAL_QEMU.lock().await;
+        if guard.is_none() {
+            drop(guard);
+            boot_os_impl(world, None).await?;
+        }
+    }
+    expect_to_see_simple(world, "SPROUT: I am alive".to_string()).await
+}
+
 #[given("I boot the system")]
 async fn given_i_boot(world: &mut BootWorld) -> Result<()> {
     boot_os_impl(world, None).await
@@ -183,18 +195,6 @@ async fn given_system_reached(world: &mut BootWorld, state: String) -> Result<()
         _ => soft_fail(format!("Unknown state: {}", state)).await,
     }
     Ok(())
-}
-
-#[given("sprout is online")]
-async fn given_sprout_online(world: &mut BootWorld) -> Result<()> {
-    {
-        let guard = GLOBAL_QEMU.lock().await;
-        if guard.is_none() {
-            drop(guard);
-            boot_os_impl(world, None).await?;
-        }
-    }
-    expect_to_see_simple(world, "SPROUT: I am alive".to_string()).await
 }
 
 #[then(expr = "the system should reach {string}")]
@@ -354,6 +354,6 @@ async fn when_app_creates_surface(_world: &mut BootWorld, _app: String, _w: u32,
 }
 
 #[then("the surface should have relationships:")]
-async fn then_surface_has_rels(_world: &mut BootWorld, _step: &cucumber::gherkin::Step) -> Result<()> {
+async fn then_surface_has_rels(_world: &mut BootWorld) -> Result<()> {
     Ok(())
 }

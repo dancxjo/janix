@@ -1,11 +1,34 @@
-use crate::report::ArtifactMeta;
-use crate::shared::{GLOBAL_LAST_ERROR, GLOBAL_QEMU};
-use crate::steps::strip_ansi_codes;
-use cucumber::event::{Cucumber, Event};
 use cucumber::Writer;
-use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+use chrono;
+use serde::Serialize;
+use crate::shared::{GLOBAL_QEMU, slugify};
+use crate::steps::strip_ansi_codes;
+
+#[derive(Serialize, Clone, Debug)]
+pub struct StepMeta {
+    pub index: usize,
+    pub text: String,
+    pub status: String,
+    pub timestamp: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct Artifacts {
+    pub screenshot: Option<String>,
+    pub serial_tail: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ArtifactMeta {
+    pub version: i32,
+    pub arch: String,
+    pub feature: String,
+    pub scenario: String,
+    pub step: StepMeta,
+    pub artifacts: Artifacts,
+}
 
 pub struct ArtifactWriter {
     pub out_dir: PathBuf,
@@ -13,162 +36,12 @@ pub struct ArtifactWriter {
     pub _run_id: String,
     pub current_feature: String,
     pub current_scenario: String,
-    pub step_index: usize,
     pub scenario_failed: bool,
     pub current_steps: Vec<ArtifactMeta>,
+    pub step_index: usize,
 }
-
-impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter {
-    type Cli = cucumber::cli::Empty;
-
-    async fn handle_event(
-        &mut self,
-        event: cucumber::parser::Result<Event<Cucumber<World>>>,
-        _cli: &Self::Cli,
-    ) {
-        use cucumber::event::{Cucumber, Feature, Scenario, Step};
-
-        let event = match event {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("Parsing error: {:?}", e);
-                return;
-            }
-        };
-
-        match event.value {
-            Cucumber::Feature(f, feature_event) => {
-                self.current_feature = f.name.clone();
-                match feature_event {
-                    Feature::Scenario(s, retryable_scenario) => {
-                        self.current_scenario = s.name.clone();
-                        match retryable_scenario.event {
-                            Scenario::Started => {
-                                println!(
-                                    "\nFeature: {}  Scenario: {}",
-                                    self.current_feature, self.current_scenario
-                                );
-                                self.step_index = 0;
-                                self.scenario_failed = false;
-                                self.current_steps.clear();
-                            }
-                            Scenario::Step(step, step_event) => {
-                                match step_event {
-                                    Step::Started => {
-                                        println!("→ Step {}: {}", self.step_index + 1, step.value);
-                                    }
-                                    Step::Passed(..) | Step::Failed(..) | Step::Skipped => {
-                                        let mut status = match step_event {
-                                            Step::Passed(..) => "passed",
-                                            Step::Failed(..) => "failed",
-                                            Step::Skipped => "skipped",
-                                            Step::Started => unreachable!(),
-                                        };
-
-                                        if status == "passed" {
-                                            let guard = GLOBAL_LAST_ERROR.lock().await;
-                                            if guard.is_some() {
-                                                status = "failed";
-                                                println!("Writer: Soft Fail detected. Marking step as failed.");
-                                            }
-                                        }
-
-                                        if status == "failed" {
-                                            self.scenario_failed = true;
-                                        }
-
-                                        let status_label = match status {
-                                            "passed" => "PASS",
-                                            "failed" => "FAIL",
-                                            "skipped" => "SKIP",
-                                            _ => "???",
-                                        };
-                                        println!(
-                                            "[{}] Step {}: {}",
-                                            status_label,
-                                            self.step_index + 1,
-                                            step.value
-                                        );
-
-                                        self.capture_artifact(&step.value, status).await;
-
-                                        {
-                                            let mut guard = GLOBAL_LAST_ERROR.lock().await;
-                                            *guard = None;
-                                        }
-
-                                        self.step_index += 1;
-                                    }
-                                }
-                            }
-                            Scenario::Finished => {
-                                let mut guard = GLOBAL_QEMU.lock().await;
-                                if let Some(qemu) = guard.as_mut() {
-                                    println!("Scenario finished. Killing QEMU...");
-                                    let _ = qemu.kill().await;
-                                }
-                                *guard = None;
-
-                                self.write_scenario_report().await;
-                            }
-                            _ => {}
-                        }
-                    }
-                    Feature::Rule(_r, _rule_event) => {}
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-impl cucumber::writer::Normalized for ArtifactWriter {}
 
 impl ArtifactWriter {
-    async fn write_scenario_report(&self) {
-        let results_path = self.out_dir.join("bdd/results.json");
-        let mut store = crate::store::ResultsStore::load(&results_path).unwrap_or_default();
-
-        if store.run.timestamp.is_empty() {
-            store.run.timestamp = chrono::Utc::now().to_rfc3339();
-        }
-
-        let status = if self.scenario_failed { "failed" } else { "pass" };
-
-        store.update_result(
-            self.current_feature.clone(),
-            self.current_scenario.clone(),
-            self.arch.clone(),
-            status.to_string(),
-        );
-
-        let _ = store.save(&results_path);
-
-        if let Err(e) = crate::report::generate_scenario_report_from_mem(
-            &self.out_dir,
-            &self.arch,
-            &self.current_feature,
-            &self.current_scenario,
-            &self.current_steps,
-        ) {
-            eprintln!("Failed to generate incremental scenario report: {}", e);
-        }
-
-        if let Err(e) = crate::report::generate_index_from_store(&self.out_dir, &store) {
-            eprintln!("Failed to update incremental index: {}", e);
-        }
-
-        if let Ok(json) = serde_json::to_string(&store) {
-            if let Ok(docgen_store) = serde_json::from_str::<docgen::ResultsStore>(&json) {
-                let project_root = PathBuf::from(".");
-                if let Err(e) = docgen::update_readme_from_results(&docgen_store, &project_root) {
-                    eprintln!("Failed to update README incrementally: {}", e);
-                }
-            }
-        }
-    }
-
     async fn capture_artifact(&mut self, step_text: &str, status: &str) {
         let feature_slug = slugify(&self.current_feature);
         let scenario_slug = slugify(&self.current_scenario);
@@ -191,13 +64,13 @@ impl ArtifactWriter {
             arch: self.arch.clone(),
             feature: self.current_feature.clone(),
             scenario: self.current_scenario.clone(),
-            step: crate::report::StepMeta {
+            step: StepMeta {
                 index: self.step_index,
                 text: step_text.to_string(),
                 status: status.to_string(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
             },
-            artifacts: crate::report::Artifacts {
+            artifacts: Artifacts {
                 screenshot: None,
                 serial_tail: None,
             },
@@ -231,7 +104,8 @@ impl ArtifactWriter {
                 }
             }
 
-            if let Ok(log) = qemu.log_buffer.lock() {
+            {
+                let log = qemu.log_buffer.lock();
                 let cleaned_log = strip_ansi_codes(&log);
                 let tail = cleaned_log.lines().rev().take(50).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
                 let log_path = step_dir.join("serial_tail.txt");
@@ -250,6 +124,54 @@ impl ArtifactWriter {
     }
 }
 
-fn slugify(s: &str) -> String {
-    s.chars().map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
+impl<W: std::fmt::Debug + cucumber::World> Writer<W> for ArtifactWriter {
+    type Cli = cucumber::cli::Empty;
+
+    async fn handle_event(
+        &mut self,
+        event: cucumber::parser::Result<cucumber::event::Event<cucumber::event::Cucumber<W>>>,
+        _cli: &Self::Cli,
+    ) {
+        use cucumber::event::{Cucumber, Feature, Scenario, Step};
+
+        if let Ok(ev) = event {
+            match ev.into_inner() {
+                Cucumber::Feature(f, Feature::Started) => {
+                    self.current_feature = f.name.clone();
+                }
+                Cucumber::Feature(_, Feature::Scenario(sc, retryable)) => {
+                    match retryable.event {
+                        Scenario::Started => {
+                            self.current_scenario = sc.name.clone();
+                            self.current_steps.clear();
+                            self.step_index = 0;
+                            self.scenario_failed = false;
+                        }
+                        Scenario::Step(st, step_ev) => {
+                            match step_ev {
+                                Step::Passed(..) => {
+                                    self.capture_artifact(&st.value, "passed").await;
+                                    self.step_index += 1;
+                                }
+                                Step::Failed(..) => {
+                                    self.capture_artifact(&st.value, "failed").await;
+                                    self.step_index += 1;
+                                    self.scenario_failed = true;
+                                }
+                                Step::Skipped => {
+                                    self.capture_artifact(&st.value, "skipped").await;
+                                    self.step_index += 1;
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
+
+impl cucumber::writer::Normalized for ArtifactWriter {}

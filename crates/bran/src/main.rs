@@ -3,6 +3,7 @@
 #![no_std]
 #![no_main]
 
+use core::fmt::{self, Write};
 use limine::request::{
     ExecutableAddressRequest, FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest,
     RequestsEndMarker, RequestsStartMarker,
@@ -77,6 +78,21 @@ fn bran_log(msg: &str) {
 fn bran_logln(msg: &str) {
     bran_log(msg);
     early_putc(b'\n');
+}
+
+struct BranWriter;
+
+impl Write for BranWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for &b in s.as_bytes() {
+            early_putc(b);
+        }
+        Ok(())
+    }
+}
+
+fn bran_write_fmt(args: fmt::Arguments) {
+    let _ = fmt::write(&mut BranWriter, args);
 }
 
 #[repr(align(16))]
@@ -239,12 +255,20 @@ unsafe extern "C" fn kmain() -> ! {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     bran_logln("\n========== BRAN PANIC ==========");
+    if let Some(msg) = info.message() {
+        bran_log("Message: ");
+        bran_write_fmt(*msg);
+        bran_logln("");
+    } else {
+        bran_logln("Message: <none>");
+    }
+
     if let Some(loc) = info.location() {
         bran_log("Location: ");
-        bran_log(loc.file());
-        bran_log(":");
-        bran_print_num(loc.line() as u64);
+        bran_write_fmt(format_args!("{}:{}:{}", loc.file(), loc.line(), loc.column()));
         bran_logln("");
+    } else {
+        bran_logln("Location: <unknown>");
     }
     bran_logln("=================================");
     loop {}

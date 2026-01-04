@@ -161,6 +161,14 @@ pub trait Machine: Sync {
     /// Map a physical MMIO range and return a virtual mapping.
     fn mmio_map(&self, range: MmioRange, flags: MmioFlags) -> Option<MmioMapping>;
 
+    /// Read from an I/O port (8, 16, or 32 bit based on size).
+    fn port_read(&self, port: u16, size: u8) -> u32 {
+        0
+    }
+
+    /// Write to an I/O port (8, 16, or 32 bit based on size).
+    fn port_write(&self, port: u16, val: u32, size: u8) {}
+
     /// Get monotonic nanoseconds since boot.
     fn monotonic_now(&self) -> u64;
 

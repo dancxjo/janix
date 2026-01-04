@@ -200,6 +200,30 @@ impl Machine for ArchMachine {
         None
     }
 
+    fn port_read(&self, port: u16, size: u8) -> u32 {
+        use x86_64::instructions::port::Port;
+        unsafe {
+            match size {
+                1 => u32::from(Port::<u8>::new(port).read()),
+                2 => u32::from(Port::<u16>::new(port).read()),
+                4 => Port::<u32>::new(port).read(),
+                _ => 0,
+            }
+        }
+    }
+
+    fn port_write(&self, port: u16, val: u32, size: u8) {
+        use x86_64::instructions::port::Port;
+        unsafe {
+            match size {
+                1 => Port::<u8>::new(port).write(val as u8),
+                2 => Port::<u16>::new(port).write(val as u16),
+                4 => Port::<u32>::new(port).write(val),
+                _ => {},
+            }
+        }
+    }
+
     fn monotonic_now(&self) -> u64 {
         let tsc = unsafe { core::arch::x86_64::_rdtsc() };
         // Assume 2GHz for now (1 cycle = 0.5ns)

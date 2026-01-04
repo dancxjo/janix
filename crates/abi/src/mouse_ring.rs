@@ -12,6 +12,9 @@ pub const MOUSE_RING_MAGIC: u32 = 0x4D4F5553; // "MOUS"
 /// Version of the ring buffer format
 pub const MOUSE_RING_VERSION: u32 = 1;
 
+/// Symbol ID for MouseStream kind
+pub const KIND_MOUSE_STREAM: crate::ids::SymbolId = crate::ids::sym("kind.MouseStream");
+
 /// Calculate the total bytespace size for a ring buffer with given capacity.
 pub const fn ring_bytespace_size(capacity: u32) -> usize {
     core::mem::size_of::<MouseRingHeader>() + (capacity as usize * core::mem::size_of::<MouseSample>())

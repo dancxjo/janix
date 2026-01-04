@@ -11,6 +11,7 @@ use abi::wire::SyscallResult;
 pub use abi::ids::{SymbolId, ThingId};
 
 use core::alloc::{GlobalAlloc, Layout};
+use core::fmt::{self, Write};
 use core::panic::PanicInfo;
 
 pub use debug::log as log_info;
@@ -397,8 +398,76 @@ fn alloc_error(_layout: Layout) -> ! {
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    log_info("panic: aborting process");
+    log_panic_details(info);
     process::exit(-1);
+    loop {}
+}
+
+fn log_panic_details(info: &PanicInfo) {
+    log_fmt("panic message: ", format_args!("{}", info.message()));
+
+    if let Some(loc) = info.location() {
+        let mut buf = LogBuf::new();
+        let _ = buf.write_str("panic location: ");
+        let _ = buf.write_fmt(format_args!(
+            "{}:{}:{}",
+            loc.file(),
+            loc.line(),
+            loc.column()
+        ));
+        buf.flush();
+    } else {
+        log_info("panic location: <unknown>");
+    }
+}
+
+fn log_fmt(prefix: &str, args: fmt::Arguments) {
+    let mut buf = LogBuf::new();
+    let _ = buf.write_str(prefix);
+    let _ = buf.write_fmt(args);
+    buf.flush();
+}
+
+struct LogBuf {
+    buf: [u8; 192],
+    len: usize,
+}
+
+impl LogBuf {
+    const fn new() -> Self {
+        Self {
+            buf: [0; 192],
+            len: 0,
+        }
+    }
+
+    fn flush(&mut self) {
+        if self.len == 0 {
+            return;
+        }
+
+        if let Ok(s) = core::str::from_utf8(&self.buf[..self.len]) {
+            debug::log(s);
+        }
+        self.len = 0;
+    }
+}
+
+impl Write for LogBuf {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let bytes = s.as_bytes();
+        let available = self.buf.len().saturating_sub(self.len);
+        let to_copy = bytes.len().min(available);
+
+        if to_copy > 0 {
+            self.buf[self.len..self.len + to_copy].copy_from_slice(&bytes[..to_copy]);
+            self.len += to_copy;
+        }
+
+        Ok(())
+    }
 }
 
 pub mod debug {

@@ -10,3 +10,4 @@ pub mod syscall;
 pub mod types;
 pub mod wire;
 pub mod mouse_ring;
+pub mod machine;

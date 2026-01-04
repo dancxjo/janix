@@ -25,6 +25,7 @@ members = [
     "apps/simd_check",
     "user/apps/ontology_dump",
     "user/apps/ontology_check",
+    "crates/drivers/usb",
 ]
 
 [workspace.package]

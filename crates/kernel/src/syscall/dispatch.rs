@@ -237,9 +237,8 @@ pub fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
     use crate::machine::{self, MmioFlags, MmioRange};
     use abi::syscall::err;
 
-    // Define machine_op if not exists in abi
-    const CONSOLE_WRITE: u64 = 0;
-    const MMIO_MAP: u64 = 1;
+    use abi::machine::{CONSOLE_WRITE, MMIO_MAP, PORT_READ, PORT_WRITE};
+
 
     match op {
         CONSOLE_WRITE => {
@@ -267,6 +266,19 @@ pub fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
             } else {
                 SyscallResult::new(err::EFAULT, 0, 0)
             }
+        }
+        PORT_READ => {
+            let port = a1 as u16;
+            let size = a2 as u8;
+            let val = machine::machine().port_read(port, size);
+            SyscallResult::new(0, val as u64, 0)
+        }
+        PORT_WRITE => {
+            let port = a1 as u16;
+            let val = a2 as u32;
+            let size = a3 as u8;
+            machine::machine().port_write(port, val, size);
+            SyscallResult::new(0, 0, 0)
         }
         _ => SyscallResult::new(err::EINVAL, 0, 0),
     }

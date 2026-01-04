@@ -1,3 +1,5 @@
+SYM:: mapping 201000->1787000 len 1000
+SYM:: mapping 202000->1788000 len 1000
 PROC: ELF loaded, entry
 SYM:: spawn: name=/boot/modules/sprout start
 SYM:: spawn: allocating stack...
@@ -46,5 +48,3 @@ SYM:: entering loop
 SCHED: calling irq_enable...
 SCHED: first tick!
 TICK: switch IDLE -> 1 sp=0xffff800001798f60
-TICK: switch 1 -> 2 sp=0xffff8000017e4f60
-SYM:: mapping 0->1807000 len 100000

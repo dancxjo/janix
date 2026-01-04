@@ -200,6 +200,7 @@ dependencies = [
  "futures",
  "image 0.24.9",
  "lazy_static",
+ "parking_lot",
  "rand 0.8.5",
  "regex",
  "serde",

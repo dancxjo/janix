@@ -3,5 +3,5 @@
   "artifacts_dir": "x86_64/keyboard_input_pipeline/the_system_still_boots_without_a_keyboard",
   "feature": "Keyboard input pipeline",
   "scenario": "The system still boots without a keyboard",
-  "status": "pass"
+  "status": "failed"
 }

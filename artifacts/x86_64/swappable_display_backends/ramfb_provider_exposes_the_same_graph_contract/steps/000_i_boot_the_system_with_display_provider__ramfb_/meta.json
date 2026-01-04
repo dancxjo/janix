@@ -7,7 +7,7 @@
     "index": 0,
     "text": "I boot the system with display provider \"ramfb\"",
     "status": "passed",
-    "timestamp": "2026-01-04T05:03:57.409770152+00:00"
+    "timestamp": "2026-01-04T05:10:00.333741737+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

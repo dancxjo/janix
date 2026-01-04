@@ -21,6 +21,7 @@ pub fn init() {
     // We just flush the buffer.
     let _port = Port::<u8>::new(0x60);
     // Drain existing (approximate check, can't poll indefinitely without status reg)
+    log::klog(Level::Info, "PS2", "input: discovered keyboard");
 }
 
 /// IRQ Handler for Keyboard (IRQ 1).

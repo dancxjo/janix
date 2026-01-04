@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "The system exposes a keyboard-capable input device when available",
+  "step": {
+    "index": 2,
+    "text": "I can discover a device with kind \"Keyboard\"",
+    "status": "failed",
+    "timestamp": "2026-01-04T05:18:04.988805780+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

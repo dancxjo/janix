@@ -114,10 +114,7 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
 
                                         self.capture_artifact(&step.value, status).await;
 
-                                        // Clear error after handling step?
-                                        // Actually, we want to clear it so next step doesn't inherit failure.
-                                        // But if we returned Ok, cucumber continues.
-                                        // So we need to reset it.
+                                        // Clear error after handling step
                                         {
                                             let mut guard = GLOBAL_LAST_ERROR.lock().await;
                                             *guard = None;
@@ -134,6 +131,7 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                                     println!("Scenario finished. Killing QEMU...");
                                     let _ = qemu.kill().await;
                                 }
+                                *guard = None;
 
                                 // Write scenario JSON report
                                 self.write_scenario_report().await;
@@ -142,7 +140,6 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                         }
                     }
                     Feature::Rule(_r, _rule_event) => {
-                        // Handle rule if needed, ignoring for now
                     }
                     _ => {}
                 }
@@ -166,16 +163,6 @@ impl ArtifactWriter {
             return;
         }
 
-        // We need to aggregate the step statuses.
-        // For now, let's just create a simple summary.
-        // real implementation would track step results in struct.
-        // Assuming "pass" unless we know otherwise from logs/soft failure.
-
-        // Just write a simple JSON for DocGen
-        // Logic: Scan the steps dir to find artifacts?
-        // Better: Keep track in ArtifactWriter struct.
-        // But for minimal changes, we can just dump what we know.
-
         let status = if self.scenario_failed {
             "failed"
         } else {
@@ -197,11 +184,9 @@ impl ArtifactWriter {
             let _ = serde_json::to_writer_pretty(file, &meta);
         }
 
-        // --- NEW: Canonical Results Store Update ---
         let results_path = self.out_dir.join("bdd/results.json");
         let mut store = crate::store::ResultsStore::load(&results_path).unwrap_or_default();
 
-        // Update run metadata if not set
         if store.run.timestamp.is_empty() {
             store.run.timestamp = chrono::Utc::now().to_rfc3339();
         }
@@ -253,21 +238,16 @@ impl ArtifactWriter {
             },
         };
 
-        // Take screenshot and grab log
         let mut guard = GLOBAL_QEMU.lock().await;
         if let Some(qemu) = guard.as_mut() {
-            // Re-connect if steam is Missing?
             if !qemu.is_connected() {
                 let _ = qemu.connect_qmp().await;
             }
 
-            // Screenshot
             let screen_path_ppm = step_dir.join("screen.ppm");
-
             let dump_res = qemu.screendump(&screen_path_ppm).await;
 
             if let Ok(_) = dump_res {
-                // Give filesystem a moment to flush
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
                 if screen_path_ppm.exists() {
@@ -302,14 +282,12 @@ impl ArtifactWriter {
                 eprintln!("Screendump failed: {}", e);
             }
 
-            // Always clean up PPM, even on failure, as it might be partial
             if screen_path_ppm.exists() {
                 if let Err(e) = std::fs::remove_file(&screen_path_ppm) {
                     eprintln!("Failed to remove PPM: {}", e);
                 }
             }
 
-            // Log tail
             if let Ok(log) = qemu.log_buffer.lock() {
                 let cleaned_log = strip_ansi_codes(&log);
                 let tail = cleaned_log

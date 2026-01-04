@@ -7,7 +7,7 @@
     "index": 3,
     "text": "the serial log should contain \"sprout: online\"",
     "status": "failed",
-    "timestamp": "2026-01-04T05:03:49.353181762+00:00"
+    "timestamp": "2026-01-04T05:09:52.351780589+00:00"
   },
   "artifacts": {
     "screenshot": null,

@@ -267,12 +267,12 @@
         },
         "The system exposes a keyboard-capable input device when available": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "The system still boots without a keyboard": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         }
       }

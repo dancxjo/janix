@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "The system still boots without a keyboard",
+  "step": {
+    "index": 3,
+    "text": "no keyboard events are produced",
+    "status": "passed",
+    "timestamp": "2026-01-04T05:10:26.295691695+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "The system exposes a keyboard-capable input device when available",
+  "step": {
+    "index": 1,
+    "text": "I query the input devices",
+    "status": "passed",
+    "timestamp": "2026-01-04T05:17:34.917098754+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

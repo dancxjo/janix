@@ -1,5 +1,3 @@
-use abi::ids::ThingId;
-use abi::display::PixelFormat;
 use graph::symbols::{self, sym};
 use graph::store;
 use crate::PreBootInfo;
@@ -24,6 +22,13 @@ pub struct FramebufferInfo {
     pub height: u64,
     pub pitch: u64,
     pub bpp: u16,
+    // Color format info from Limine
+    pub red_mask_size: u8,
+    pub red_mask_shift: u8,
+    pub green_mask_size: u8,
+    pub green_mask_shift: u8,
+    pub blue_mask_size: u8,
+    pub blue_mask_shift: u8,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -45,12 +50,9 @@ pub fn get_boot_ctx() -> &'static BootContext {
 }
 
 pub fn pre_boot(info: PreBootInfo) {
-    // 0. Install the architecture-appropriate machine interface first
     unsafe {
         crate::machine::install(crate::machine::ARCH_MACHINE);
     }
-    
-    // 1. Initialize machine (MMU/IDT/etc)
     crate::machine::machine().init(info);
 }
 
@@ -58,7 +60,6 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     let ctx = unsafe { &*ctx_ptr };
     BOOT_CTX = Some(*ctx);
     
-    // 1. Initialize heap so we can use alloc (Vec etc)
     let heap_config = crate::memory::heap::HeapConfig {
         phys_base: ctx.heap_phys_base,
         virt_base: ctx.heap_phys_base + ctx.hhdm_offset,
@@ -66,23 +67,17 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     };
     crate::memory::heap::init(heap_config).expect("failed to init heap");
     
-    // 2. Initialize logging
     crate::log::init(get_boot_ctx());
     
-    // 3. Initialize Graph
     graph::init();
     graph::seed_minimal();
     
-    // 4. Seed Bloom Ontology (Assets, Display, etc.)
     seed_bloom_ontology();
     
-    // 5. Initialize Scheduler
     crate::sched::init();
     
-    // 6. Spawn Sprout (Init process)
     spawn_module_by_name(ctx, "sprout");
     
-    // 7. Start Scheduling
     crate::log::kprintln("BOOT: Handing off to scheduler");
     crate::sched::run();
 }
@@ -112,11 +107,9 @@ fn seed_bloom_ontology() {
     for m in ctx.modules {
         if m.path.is_empty() { continue; }
         
-        // Log "MOD:" for BDD discovery
         crate::log::kprintln(&alloc::format!("MOD: {} {}", m.path, m.cmdline));
 
         if m.path.contains("/assets/") {
-            // Register as asset
             let filename = m.path.rsplit('/').next().unwrap_or(m.path);
             let thing_name_str = alloc::format!("asset.{}", filename);
             let bs_name_str = alloc::format!("bytespace.asset.{}", filename);
@@ -130,7 +123,6 @@ fn seed_bloom_ontology() {
             store::relationship_create(sym::PRED_BACKS, asset_thing, bs);
             store::relationship_create(sym::PRED_CONTAINS, asset_root, asset_thing);
             
-            // Set base address and size via relationships for sys_space_map
             let phys_thing = store::thing_create(sym::KIND_PLACE);
             let mut phys_payload = alloc::vec::Vec::new();
             phys_payload.extend_from_slice(&m.phys_addr.to_le_bytes());
@@ -160,14 +152,13 @@ fn seed_bloom_ontology() {
         store::relationship_create(sym::PRED_PRIMARY, fb_thing, surface);
         store::relationship_create(sym::PRED_BACKS, surface, fb_bytespace);
 
-        // Set PRED_BASE_PHYS and PRED_SIZE for the framebuffer bytespace
+        // Set PRED_BASE_PHYS and PRED_SIZE for framebuffer
         let fb_phys_thing = store::thing_create(sym::KIND_PLACE);
         let mut fb_phys_payload = alloc::vec::Vec::new();
         fb_phys_payload.extend_from_slice(&fb.addr.to_le_bytes());
         store::thing_set_inline_payload(fb_phys_thing, &fb_phys_payload);
         store::relationship_create(sym::PRED_BASE_PHYS, fb_bytespace, fb_phys_thing);
 
-        // Calculate framebuffer size: height * pitch (pitch already accounts for width * bpp)
         let fb_size = fb.height * fb.pitch;
         let fb_size_thing = store::thing_create(sym::KIND_PLACE);
         let mut fb_size_payload = alloc::vec::Vec::new();
@@ -175,9 +166,24 @@ fn seed_bloom_ontology() {
         store::thing_set_inline_payload(fb_size_thing, &fb_size_payload);
         store::relationship_create(sym::PRED_SIZE, fb_bytespace, fb_size_thing);
         
+        // Store display dimensions and color format in graph as payload on display device
+        // Format: width(u32), height(u32), pitch(u32), bpp(u16), r_shift(u8), g_shift(u8), b_shift(u8)
+        let mut display_payload = alloc::vec::Vec::new();
+        display_payload.extend_from_slice(&(fb.width as u32).to_le_bytes());  // 0-3
+        display_payload.extend_from_slice(&(fb.height as u32).to_le_bytes()); // 4-7
+        display_payload.extend_from_slice(&(fb.pitch as u32).to_le_bytes());  // 8-11
+        display_payload.extend_from_slice(&fb.bpp.to_le_bytes());             // 12-13
+        display_payload.push(fb.red_mask_shift);                               // 14
+        display_payload.push(fb.green_mask_shift);                             // 15
+        display_payload.push(fb.blue_mask_shift);                              // 16
+        display_payload.push(fb.red_mask_size);                                // 17
+        display_payload.push(fb.green_mask_size);                              // 18
+        display_payload.push(fb.blue_mask_size);                               // 19
+        store::thing_set_inline_payload(fb_thing, &display_payload);
+        
         crate::log::kprintln(&alloc::format!(
-            "BOOT: Registered display0 fb_addr={:#x} size={:#x}",
-            fb.addr, fb_size
+            "BOOT: display0 {}x{} r_shift={} g_shift={} b_shift={}",
+            fb.width, fb.height, fb.red_mask_shift, fb.green_mask_shift, fb.blue_mask_shift
         ));
 
         if let Some(devices) = store::find_thing_by_name(sym::PLACE_DEVICES) {

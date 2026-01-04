@@ -1,14 +1,8 @@
 //! Bran - ThingOS Bootloader Glue (v0.3)
-//!
-//! Bran is thin boot glue that:
-//! 1. Handles Limine protocol parsing
-//! 2. Assembles a BootContext (Bag of Facts)
-//! 3. Calls kernel::boot(BootContext) and never returns
 
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
 use limine::request::{
     ExecutableAddressRequest, FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest,
     RequestsEndMarker, RequestsStartMarker,
@@ -17,10 +11,6 @@ use limine::BaseRevision;
 
 use kernel::boot::{BootContext, FramebufferInfo, ModuleInfo};
 use kernel::PreBootInfo;
-
-// =============================================================================
-// Limine Requests
-// =============================================================================
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -54,10 +44,6 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-// =============================================================================
-// Static Storage for Boot Facts
-// =============================================================================
-
 static mut MODULE_LIST: [ModuleInfo; 64] = [ModuleInfo {
     index: 0,
     path: "",
@@ -78,13 +64,6 @@ static mut BOOT_CTX: BootContext = BootContext {
     heap_phys_base: 0,
 };
 
-// =============================================================================
-// Early Bringup Utilities
-// =============================================================================
-
-/// Write a byte to the console via the kernel's Machine interface.
-///
-/// After pre_boot() is called, this routes through proper MMIO mappings.
 fn early_putc(c: u8) {
     kernel::serial::putc(c);
 }
@@ -100,18 +79,8 @@ fn bran_logln(msg: &str) {
     early_putc(b'\n');
 }
 
-// =============================================================================
-// Entry Point
-// =============================================================================
-
-// Global Allocator removed - provided by kernel
-
-// =============================================================================
-// Stack and Entry
-// =============================================================================
-
 #[repr(align(16))]
-struct Stack([u8; 262144]); // 256KB
+struct Stack([u8; 262144]);
 
 #[used]
 #[unsafe(no_mangle)]
@@ -161,22 +130,17 @@ core::arch::global_asm!(
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
-    // Verify Limine protocol
     if !BASE_REVISION.is_supported() {
         loop {}
     }
 
-    // Get HHDM offset first - needed for MMIO mapping
     let hhdm_offset = HHDM_REQUEST.get_response().map(|h| h.offset()).unwrap_or(0);
 
-    // Get kernel physical/virtual base addresses for MMIO page table setup
     let (kernel_phys_base, kernel_virt_base) = EXECUTABLE_ADDRESS_REQUEST
         .get_response()
         .map(|r| (r.physical_base(), r.virtual_base()))
         .unwrap_or((0, 0));
 
-    // Initialize Machine interface before ANY logging
-    // This maps UART MMIO on AArch64/RISC-V, making serial output safe
     kernel::boot::pre_boot(PreBootInfo {
         hhdm_offset,
         kernel_phys_base,
@@ -185,8 +149,6 @@ unsafe extern "C" fn kmain() -> ! {
 
     bran_logln("BRAN: starting V2");
 
-    // 1. Collect HHDM and Memory Map info
-    // (already obtained above for pre_boot)
     unsafe {
         BOOT_CTX.hhdm_offset = hhdm_offset;
         BOOT_CTX.kernel_phys_base = kernel_phys_base;
@@ -194,15 +156,12 @@ unsafe extern "C" fn kmain() -> ! {
     }
 
     let mut heap_found = false;
-    let heap_size_req = 64 * 1024 * 1024; // 64 MiB
+    let heap_size_req = 64 * 1024 * 1024;
 
     if let Some(mmap) = MEMORY_MAP_REQUEST.get_response() {
         let mut total_mem = 0;
         for entry in mmap.entries() {
             total_mem += entry.length;
-
-            // Look for a usable region for the heap
-            // Must be USABLE, big enough, and ideally not overlapping with kernel (Limine shouldn't mark kernel as usable)
             if !heap_found
                 && entry.entry_type == limine::memory_map::EntryType::USABLE
                 && entry.length >= heap_size_req
@@ -219,26 +178,30 @@ unsafe extern "C" fn kmain() -> ! {
         loop {}
     }
 
-    // 2. Collect Framebuffer info
-    // NOTE: fb.addr() returns a VIRTUAL address (in HHDM space).
-    // We need to convert it to a physical address by subtracting hhdm_offset.
+    // Collect Framebuffer info with color format
     if let Some(fb_res) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(fb) = fb_res.framebuffers().next() {
             let fb_virt = fb.addr() as u64;
             let fb_phys = fb_virt.wrapping_sub(hhdm_offset);
             unsafe {
                 BOOT_CTX.framebuffer = Some(FramebufferInfo {
-                    addr: fb_phys,  // Store physical address, not virtual
+                    addr: fb_phys,
                     width: fb.width(),
                     height: fb.height(),
                     pitch: fb.pitch(),
                     bpp: fb.bpp(),
+                    red_mask_size: fb.red_mask_size(),
+                    red_mask_shift: fb.red_mask_shift(),
+                    green_mask_size: fb.green_mask_size(),
+                    green_mask_shift: fb.green_mask_shift(),
+                    blue_mask_size: fb.blue_mask_size(),
+                    blue_mask_shift: fb.blue_mask_shift(),
                 });
             }
         }
     }
 
-    // 3. Collect Modules
+    // Collect Modules
     if let Some(mod_res) = MODULE_REQUEST.get_response() {
         let mut count = 0;
         let mods = mod_res.modules();
@@ -247,9 +210,7 @@ unsafe extern "C" fn kmain() -> ! {
         bran_logln("");
 
         for (i, m) in mods.iter().enumerate() {
-            if count >= 64 {
-                break;
-            }
+            if count >= 64 { break; }
             unsafe {
                 MODULE_LIST[count] = ModuleInfo {
                     index: i,
@@ -272,7 +233,6 @@ unsafe extern "C" fn kmain() -> ! {
 
     bran_logln("BRAN: handoff to kernel");
 
-    // Hand off to kernel - never returns
     unsafe { kernel::boot::boot(&raw mut BOOT_CTX) }
 }
 

@@ -5,17 +5,17 @@ use abi::ids::ThingId;
 pub struct PerCpu {
     pub cpu_id: u32,
     pub _padding: u32,
-    pub thing: ThingId, // 16 bytes
-    pub current_task: TaskId, // 0 if none
-    pub idle_task: TaskId, // 0 if none
+    pub thing: ThingId,           // 16 bytes
+    pub current_task: TaskId,     // 0 if none
+    pub idle_task: TaskId,        // 0 if none
     pub run_queue_thing: ThingId, // 16 bytes
-    
+
     /// Reentrancy guards
     pub in_switch: bool,
-    pub _padding2: [u8; 3],  // Alignment for u32
+    pub _padding2: [u8; 3], // Alignment for u32
     pub preempt_disabled: u32,
     pub irq_depth: u32,
-    
+
     /// Architecture-specific exception stack (where applicable)
     pub exception_stack_ptr: u64,
 }

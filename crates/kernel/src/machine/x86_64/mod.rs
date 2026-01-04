@@ -1,32 +1,43 @@
 //! x86_64 architecture implementation
 global_asm!(include_str!("interrupts.S"));
 
-use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange, Context, PreBootInfo};
+use self::serial::Serial;
+use crate::machine::{Context, Machine, MmioFlags, MmioMapping, MmioRange, PreBootInfo};
 use crate::sched;
 use core::arch::asm;
 use core::arch::global_asm;
-use self::serial::Serial;
 
 pub mod abi;
-pub mod serial;
-pub mod idt;
-pub mod percpu;
-pub mod timer;
-pub mod ps2_keyboard;
-pub mod gdt;
-pub mod mmu;
 pub mod context;
+pub mod gdt;
+pub mod idt;
+pub mod mmu;
+pub mod percpu;
+pub mod ps2_keyboard;
+pub mod serial;
+pub mod timer;
 pub use mmu::AddressSpace;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TrapFrame {
     // Pushed by us
-    pub rax: u64, pub rbx: u64, pub rcx: u64, pub rdx: u64,
-    pub rsi: u64, pub rdi: u64, pub rbp: u64,
-    pub r8:  u64, pub r9:  u64, pub r10: u64, pub r11: u64,
-    pub r12: u64, pub r13: u64, pub r14: u64, pub r15: u64,
-    
+    pub rax: u64,
+    pub rbx: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub rbp: u64,
+    pub r8: u64,
+    pub r9: u64,
+    pub r10: u64,
+    pub r11: u64,
+    pub r12: u64,
+    pub r13: u64,
+    pub r14: u64,
+    pub r15: u64,
+
     // Pushed by CPU
     pub rip: u64,
     pub cs: u64,
@@ -42,7 +53,9 @@ pub extern "C" fn sched_tick_asm_helper(sp: u64) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn timer_ack_asm_helper() {
-    unsafe { timer::ack(); }
+    unsafe {
+        timer::ack();
+    }
 }
 
 #[no_mangle]
@@ -91,13 +104,13 @@ pub fn init() {
     unsafe {
         // use machine::{BSP_GDT, PERCPU_BSP}; // Now local
         use percpu::init_gs_base;
-        
+
         // 1. GDT/TSS (Reloads Segments, clearing GS Base)
         gdt::init(&mut *(&raw mut BSP_GDT));
 
         // 2. PerCpu (Sets GS Base)
         init_gs_base(&mut *(&raw mut PERCPU_BSP));
-        
+
         // 3. IDT
         idt::init();
 
@@ -112,7 +125,6 @@ pub fn init() {
     }
 }
 
-
 extern "C" {
     fn x86_switch_context(old_ctx: *mut Context, new_ctx: *const Context);
     fn task_entry();
@@ -124,7 +136,7 @@ core::arch::global_asm!(
     "x86_switch_context:",
     "push rbx",
     "push rbp",
-    "push r12", 
+    "push r12",
     "push r13",
     "push r14",
     "push r15",
@@ -137,7 +149,6 @@ core::arch::global_asm!(
     "pop rbp",
     "pop rbx",
     "ret",
-
     ".global task_entry",
     "task_entry:",
     "pop rdi", // dispatch_ptr
@@ -149,9 +160,12 @@ core::arch::global_asm!(
 
 impl Machine for ArchMachine {
     fn init(&self, info: PreBootInfo) {
-        self.hhdm_offset.store(info.hhdm_offset, core::sync::atomic::Ordering::Relaxed);
-        self.kernel_phys_base.store(info.kernel_phys_base, core::sync::atomic::Ordering::Relaxed);
-        self.kernel_virt_base.store(info.kernel_virt_base, core::sync::atomic::Ordering::Relaxed);
+        self.hhdm_offset
+            .store(info.hhdm_offset, core::sync::atomic::Ordering::Relaxed);
+        self.kernel_phys_base
+            .store(info.kernel_phys_base, core::sync::atomic::Ordering::Relaxed);
+        self.kernel_virt_base
+            .store(info.kernel_virt_base, core::sync::atomic::Ordering::Relaxed);
 
         // Initialize PerCpu, GDT, IDT
         init();
@@ -184,24 +198,24 @@ impl Machine for ArchMachine {
 
     fn halt(&self) -> ! {
         loop {
-            unsafe { asm!("cli; hlt"); }
+            unsafe {
+                asm!("cli; hlt");
+            }
         }
     }
 
     fn idle(&self) {
-        unsafe { 
-            core::arch::asm!("sti; hlt"); 
+        unsafe {
+            core::arch::asm!("sti; hlt");
         }
     }
-    
-
 
     fn switch_to(&self, old_ctx: &mut Context, new_ctx: &Context) {
         unsafe {
             x86_switch_context(old_ctx, new_ctx);
         }
     }
-    
+
     fn task_entry_stub(&self) -> u64 {
         task_entry as *const () as u64
     }
@@ -216,24 +230,28 @@ impl Machine for ArchMachine {
     }
 
     fn virt_to_phys(&self, virt: u64) -> u64 {
-         let hhdm = self.hhdm_offset.load(core::sync::atomic::Ordering::Relaxed);
-         let k_virt = self.kernel_virt_base.load(core::sync::atomic::Ordering::Relaxed);
-         let k_phys = self.kernel_phys_base.load(core::sync::atomic::Ordering::Relaxed);
+        let hhdm = self.hhdm_offset.load(core::sync::atomic::Ordering::Relaxed);
+        let k_virt = self
+            .kernel_virt_base
+            .load(core::sync::atomic::Ordering::Relaxed);
+        let k_phys = self
+            .kernel_phys_base
+            .load(core::sync::atomic::Ordering::Relaxed);
 
-         if virt >= k_virt && k_virt != 0 {
-             virt - k_virt + k_phys
-         } else if virt >= hhdm && hhdm != 0 {
-             virt - hhdm
-         } else {
-             virt
-         }
+        if virt >= k_virt && k_virt != 0 {
+            virt - k_virt + k_phys
+        } else if virt >= hhdm && hhdm != 0 {
+            virt - hhdm
+        } else {
+            virt
+        }
     }
 }
 
 pub fn syscall_init() {
-    use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask}; 
+    use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask};
     use x86_64::registers::rflags::RFlags;
-    
+
     extern "C" {
         fn syscall_entry();
     }
@@ -243,21 +261,21 @@ pub fn syscall_init() {
         let mut efer = Efer::read();
         efer |= EferFlags::SYSTEM_CALL_EXTENSIONS;
         Efer::write(efer);
-        
+
         let handler_addr = syscall_entry as *const () as u64;
         LStar::write(x86_64::VirtAddr::new(handler_addr));
-        
+
         // Manual STAR MSR Write (0xC0000081)
         // High 32 bits: [Base(16bits)][Base(16bits)] for sysret (Wait! NO.)
-        // Intel SDM: 
+        // Intel SDM:
         // 63:48 -> UserBase (sysret CS = Base+16, SS = Base+8)
         // 47:32 -> KernelBase (syscall CS = Base, SS = Base+8)
         // 31:0  -> Reserved
-        
+
         let kernel_base = 0x0008u64;
         let user_base = 0x0018u64; // index 3
         let star_val = (user_base << 48) | (kernel_base << 32);
-        
+
         core::arch::asm!(
             "wrmsr",
             in("ecx") 0xC0000081u32,
@@ -265,8 +283,8 @@ pub fn syscall_init() {
             in("edx") (star_val >> 32) as u32,
             options(nostack)
         );
-        
+
         // Flags mask (flags to clear on syscall)
-        SFMask::write(RFlags::INTERRUPT_FLAG | RFlags::TRAP_FLAG | RFlags::DIRECTION_FLAG); 
+        SFMask::write(RFlags::INTERRUPT_FLAG | RFlags::TRAP_FLAG | RFlags::DIRECTION_FLAG);
     }
 }

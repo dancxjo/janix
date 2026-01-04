@@ -70,7 +70,6 @@ pub fn run(env: &str) -> Result<()> {
         .status()
         .context("Failed to build bloom")?;
 
-
     if !status.success() {
         anyhow::bail!("Bloom build failed");
     }
@@ -136,7 +135,15 @@ pub fn run(env: &str) -> Result<()> {
     }
 
     // 6. Build Apps (graph_smoke, log_smoke, cap_fail, inputd, echo, inspector, logview)
-    let apps = ["graph_smoke", "log_smoke", "cap_fail", "inputd", "echo", "inspector", "logview"];
+    let apps = [
+        "graph_smoke",
+        "log_smoke",
+        "cap_fail",
+        "inputd",
+        "echo",
+        "inspector",
+        "logview",
+    ];
     for app in apps {
         println!("    Building {}...", app);
         let status = Command::new(&cargo)
@@ -157,7 +164,6 @@ pub fn run(env: &str) -> Result<()> {
             anyhow::bail!("{} build failed", app);
         }
     }
-
 
     Ok(())
 }

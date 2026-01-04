@@ -10,7 +10,7 @@
 
 use core::arch::asm;
 use limine::request::{
-    FramebufferRequest, HhdmRequest, ExecutableAddressRequest, MemoryMapRequest, ModuleRequest,
+    ExecutableAddressRequest, FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest,
     RequestsEndMarker, RequestsStartMarker,
 };
 use limine::BaseRevision;
@@ -162,12 +162,11 @@ unsafe extern "C" fn kmain() -> ! {
     }
 
     // Get HHDM offset first - needed for MMIO mapping
-    let hhdm_offset = HHDM_REQUEST.get_response()
-        .map(|h| h.offset())
-        .unwrap_or(0);
+    let hhdm_offset = HHDM_REQUEST.get_response().map(|h| h.offset()).unwrap_or(0);
 
     // Get kernel physical/virtual base addresses for MMIO page table setup
-    let (kernel_phys_base, kernel_virt_base) = EXECUTABLE_ADDRESS_REQUEST.get_response()
+    let (kernel_phys_base, kernel_virt_base) = EXECUTABLE_ADDRESS_REQUEST
+        .get_response()
         .map(|r| (r.physical_base(), r.virtual_base()))
         .unwrap_or((0, 0));
 
@@ -194,17 +193,20 @@ unsafe extern "C" fn kmain() -> ! {
         let mut total_mem = 0;
         for entry in mmap.entries() {
             total_mem += entry.length;
-            
+
             // Look for a usable region for the heap
             // Must be USABLE, big enough, and ideally not overlapping with kernel (Limine shouldn't mark kernel as usable)
-            if !heap_found && entry.entry_type == limine::memory_map::EntryType::USABLE && entry.length >= heap_size_req {
+            if !heap_found
+                && entry.entry_type == limine::memory_map::EntryType::USABLE
+                && entry.length >= heap_size_req
+            {
                 BOOT_CTX.heap_phys_base = entry.base;
                 heap_found = true;
             }
         }
         BOOT_CTX.physical_memory = total_mem;
     }
-    
+
     if !heap_found {
         bran_log("BRAN: PANIC: Could not find 64MB for kernel heap!");
         loop {}

@@ -1,5 +1,5 @@
-use crate::machine::Context;
 use crate::machine::machine;
+use crate::machine::Context;
 
 /// Setup a new task's stack and context
 ///
@@ -9,7 +9,7 @@ pub unsafe fn setup_new_task_stack(
     stack_top: *mut u8,
     entry_point: u64,
     dispatch_ptr: u64,
-    task_ctx: &mut Context
+    task_ctx: &mut Context,
 ) {
     let mut sp = stack_top as *mut u64;
 
@@ -26,7 +26,7 @@ pub unsafe fn setup_new_task_stack(
     // sd s0,  8(sp)
     // ...
     // sd s11, 96(sp)
-    
+
     sp = sp.sub(13);
     core::ptr::write_bytes(sp as *mut u8, 0, 13 * 8);
 

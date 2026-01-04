@@ -33,8 +33,6 @@ impl Serial {
         BASE.load(Ordering::Relaxed)
     }
 
-
-
     pub fn putc(&self, c: u8) {
         // Blind write with synchronization barrier
         unsafe {

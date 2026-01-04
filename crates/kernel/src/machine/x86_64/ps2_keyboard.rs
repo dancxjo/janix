@@ -4,8 +4,8 @@
 
 use crate::log::{self, Level};
 use core::sync::atomic::{AtomicBool, Ordering};
-use x86_64::instructions::port::Port;
 use x86_64::instructions::interrupts;
+use x86_64::instructions::port::Port;
 
 /// Size of the scancode ring buffer.
 const RING_SIZE: usize = 256;
@@ -37,7 +37,7 @@ pub unsafe fn irq_handler() {
     if next_head == TAIL {
         // Full! Drop and set overflow flag.
         if !OVERFLOWED.swap(true, Ordering::Relaxed) {
-             log::klog(Level::Warn, "PS2", "Keyboard Input Overflow!");
+            log::klog(Level::Warn, "PS2", "Keyboard Input Overflow!");
         }
     } else {
         SC_BUFFER[HEAD] = scancode;
@@ -63,10 +63,13 @@ pub fn read_scancodes(dst: &mut [u8]) -> usize {
 }
 
 pub fn debug_dump() {
-    interrupts::without_interrupts(|| {
-        unsafe {
-            let msg = alloc::format!("KBD Ring: Head={} Tail={} Ovf={}", HEAD, TAIL, OVERFLOWED.load(Ordering::Relaxed));
-            log::klog(Level::Info, "PS2", &msg);
-        }
+    interrupts::without_interrupts(|| unsafe {
+        let msg = alloc::format!(
+            "KBD Ring: Head={} Tail={} Ovf={}",
+            HEAD,
+            TAIL,
+            OVERFLOWED.load(Ordering::Relaxed)
+        );
+        log::klog(Level::Info, "PS2", &msg);
     });
 }

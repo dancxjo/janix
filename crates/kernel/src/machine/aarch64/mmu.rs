@@ -1,6 +1,6 @@
 use crate::memory::map::{MapPerms, MapResult};
+use alloc::alloc::{alloc_zeroed, Layout};
 use core::arch::asm;
-use alloc::alloc::{Layout, alloc_zeroed};
 
 #[derive(Clone, Copy)]
 pub struct AddressSpace {
@@ -61,12 +61,12 @@ impl AddressSpace {
         // [9:8] SH (Shareability) -> 11 (Inner Shareable)
         // [7:6] AP (Perms). 00=RW_EL1, 01=RW_EL1/EL0, 10=RO_EL1, 11=RO_EL1/EL0
         // [5] NS
-        // [4:2] AttrIndx. 
-        // 0=Normal, 2=Device. 
+        // [4:2] AttrIndx.
+        // 0=Normal, 2=Device.
         // We assume Normal (0) for now unless mapped as Device.
         // But MapPerms doesn't specify Cacheability?
         // We usually map RAM as Normal (0).
-        
+
         let mut desc = (phys & !0xfff) | 0b11; // Page Entry
         desc |= 1 << 10; // AF
         desc |= 0b11 << 8; // Inner Shareable
@@ -82,11 +82,11 @@ impl AddressSpace {
         // EL1 RW, EL0 RW => 01
         // EL1 RO, EL0 No => 10
         // EL1 RO, EL0 RO => 11
-        
+
         // We always allow EL1 access (kernel can read user mem).
         // Since this IS AddressSpace for a Task, it implies EL0 access.
         // MapPerms usually implies "User Access" context here.
-        
+
         if perms.contains(MapPerms::WRITE) {
             desc |= 1 << 6; // AP[2:1] = 01
         } else {
@@ -105,7 +105,7 @@ impl AddressSpace {
         desc |= 0 << 2; // Normal Memory (Index 0)
 
         entry_ptr.write(desc);
-        
+
         // Invalidate TLB for this address
         unsafe {
             asm!(
@@ -117,7 +117,7 @@ impl AddressSpace {
                 options(nostack, preserves_flags)
             );
         }
-        
+
         Ok(())
     }
 }
@@ -129,7 +129,7 @@ unsafe fn alloc_subtable() -> u64 {
         panic!("MMU OOM"); // Should handle gracefully
     }
     // Convert to Phys
-    
+
     // We need virt_to_phys.
     // machine() might not be available if not init? (It is init by now)
     crate::machine::machine().virt_to_phys(ptr as u64)
@@ -145,7 +145,7 @@ fn phys_to_virt(phys: u64) -> u64 {
     // But it's not exposed in `Machine` trait.
     // We can use `crate::machine::machine()`. IT DOES NOT HAVE `phys_to_virt`.
     // It has `virt_to_phys`.
-    
+
     // Fortunately, `mmu.rs` is architecture specific.
     // We can use `super::ARCH_MACHINE.phys_to_virt(phys)`.
     // Wait, `ARCH_MACHINE` has `phys_to_virt` but it is private?
@@ -153,9 +153,9 @@ fn phys_to_virt(phys: u64) -> u64 {
     // `fn phys_to_virt(&self, phys: u64) -> u64`. It is NOT pub.
     // I need to make `phys_to_virt` public in `mod.rs` too?
     // Yes.
-    
-    // For now, I will use `crate::boot::get_boot_ctx().hhdm_offset.wrapping_add(phys)` 
-    // assuming HHDM is valid. 
+
+    // For now, I will use `crate::boot::get_boot_ctx().hhdm_offset.wrapping_add(phys)`
+    // assuming HHDM is valid.
     // Wait, get_boot_ctx() is available.
     crate::boot::get_boot_ctx().hhdm_offset.wrapping_add(phys)
 }
@@ -163,7 +163,7 @@ fn phys_to_virt(phys: u64) -> u64 {
 unsafe fn ensure_table(table: *mut u64, index: usize) -> MapResult<*mut u64> {
     let entry_ptr = table.add(index);
     let mut entry = *entry_ptr;
-    
+
     if entry & 1 == 0 {
         // Invalid, allocate
         let new_table_phys = alloc_subtable();
@@ -172,7 +172,7 @@ unsafe fn ensure_table(table: *mut u64, index: usize) -> MapResult<*mut u64> {
         entry = (new_table_phys & !0xfff) | 0b11;
         *entry_ptr = entry;
     }
-    
+
     let phys = entry & !0xfff;
     Ok(phys_to_virt(phys) as *mut u64)
-} 
+}

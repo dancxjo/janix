@@ -1,6 +1,6 @@
+use crate::machine::{Machine, PreBootInfo};
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::machine::{Machine, PreBootInfo};
 
 #[derive(Clone, Copy)]
 pub struct BootContext {
@@ -41,8 +41,8 @@ pub fn get_boot_ctx() -> &'static BootContext {
 pub fn spawn_module_by_name(ctx: &BootContext, name: &str) {
     for m in ctx.modules {
         if m.path == name || m.path.contains(name) {
-             crate::proc::spawn_kernel_module(m).ok();
-             return;
+            crate::proc::spawn_kernel_module(m).ok();
+            return;
         }
     }
 }
@@ -66,7 +66,7 @@ pub fn pre_boot(info: PreBootInfo) {
 pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     let ctx = &mut *ctx;
     BOOT_CTX = Some(*ctx);
-    
+
     // 1. Memory Init
     let heap_size = 64 * 1024 * 1024;
     let config = crate::memory::heap::HeapConfig {
@@ -75,14 +75,14 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         size: heap_size,
     };
     crate::memory::init_heap_raw(config).expect("heap init failed");
-    
+
     // 2. Graph Init
     crate::serial::write(b"BOOT: init graph...\n");
     graph::store::init();
-    
+
     // 3. Seed Ontology (Display, place.tasks, etc.)
     seed_bloom_ontology(ctx);
-    
+
     // 4. Scheduler Init
     crate::serial::write(b"BOOT: init sched...\n");
     crate::sched::init();
@@ -95,9 +95,9 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
         crate::serial::write(b"\n");
         // Spawn Sprout (init) and Bloom (compositor)
         if m.path.contains("sprout") || m.path.contains("bloom") {
-             if let Err(_) = crate::proc::spawn_kernel_module(m) {
-                 crate::serial::write(b"PROC: failed to spawn module\n");
-             }
+            if let Err(_) = crate::proc::spawn_kernel_module(m) {
+                crate::serial::write(b"PROC: failed to spawn module\n");
+            }
         }
     }
 
@@ -109,47 +109,49 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
 fn seed_bloom_ontology(ctx: &BootContext) {
     use graph::store;
     use graph::symbols::{self, sym};
-    
+
     store::with_store(|s| {
         // Ensure root places exist
         let place_root = s.create_thing(sym::KIND_PLACE).expect("place.root");
         s.register_name(place_root, sym::PLACE_ROOT);
-        
+
         let place_devices = s.create_thing(sym::KIND_PLACE).expect("place.devices");
         s.register_name(place_devices, sym::PLACE_DEVICES);
         let _ = s.create_relationship(sym::PRED_CONTAINS, place_root, place_devices);
-        
+
         let place_tasks = s.create_thing(sym::KIND_PLACE).expect("place.tasks");
         s.register_name(place_tasks, sym::PLACE_TASKS);
         let _ = s.create_relationship(sym::PRED_CONTAINS, place_root, place_tasks);
 
         // Display
         if let Some(fb) = ctx.framebuffer {
-            let dev = s.create_thing(sym::KIND_DEVICE_DISPLAY).expect("dev.display");
+            let dev = s
+                .create_thing(sym::KIND_DEVICE_DISPLAY)
+                .expect("dev.display");
             s.register_name(dev, symbols::intern(b"device.display0"));
             let _ = s.create_relationship(sym::PRED_CONTAINS, place_devices, dev);
-            
+
             let surf = s.create_thing(sym::KIND_SURFACE).expect("surface");
             s.register_name(surf, symbols::intern(b"surface.display0"));
-            
+
             let _ = s.create_relationship(sym::PRED_PRIMARY, dev, surf);
-            
+
             // Backing Bytespace
             let bs = s.create_thing(sym::KIND_BYTE_SPACE).expect("fb.bs");
             s.register_name(bs, symbols::intern(b"bytespace.display0")); // Register Name
             let _ = s.create_relationship(sym::PRED_BACKS, surf, bs);
-            
+
             // Properties for Bytespace (Required for sys_space_map)
             // 1. Size
             let size_thing = s.create_thing(sym::KIND_BYTESLICE).expect("size");
             let mut buf_size = [0u8; 8];
             // Use pitch * height as implicit size (or use explicit size if available in FB info)
             // We use pitch * height to safely cover the framebuffer
-            let linear_size = fb.pitch as u64 * fb.height as u64; 
+            let linear_size = fb.pitch as u64 * fb.height as u64;
             buf_size.copy_from_slice(&linear_size.to_le_bytes());
             s.set_payload(size_thing, &buf_size);
             let _ = s.create_relationship(sym::PRED_SIZE, bs, size_thing);
-            
+
             // 2. Base Phys
             let phys_thing = s.create_thing(sym::KIND_BYTESLICE).expect("phys");
             let mut buf_phys = [0u8; 8];
@@ -162,10 +164,10 @@ fn seed_bloom_ontology(ctx: &BootContext) {
             let mut buf_w = [0u8; 8];
             buf_w.copy_from_slice(&(fb.width as u64).to_le_bytes());
             s.set_payload(width_thing, &buf_w);
-            let _ = s.create_relationship(sym::PRED_SIZE, surf, width_thing); // Reusing PRED_SIZE constraint? Or separate? 
-            // Standard ontology suggests PRED_WIDTH, PRED_HEIGHT. Using PRED_SIZE is ambiguous on Surface.
-            // But bloom doesn't read it yet. So skipping to avoid confusion.
-            // Bloom currently hardcodes 1024x768.
+            let _ = s.create_relationship(sym::PRED_SIZE, surf, width_thing); // Reusing PRED_SIZE constraint? Or separate?
+                                                                              // Standard ontology suggests PRED_WIDTH, PRED_HEIGHT. Using PRED_SIZE is ambiguous on Surface.
+                                                                              // But bloom doesn't read it yet. So skipping to avoid confusion.
+                                                                              // Bloom currently hardcodes 1024x768.
         }
     });
 }

@@ -11,22 +11,22 @@ global_asm!(include_str!("vectors.S"));
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-pub mod exception;
 pub mod abi;
+pub mod exception;
 
-mod serial;
-pub mod gic;
-pub mod timer;
-pub mod percpu;
-pub mod mmu;
 pub mod context;
+pub mod gic;
+pub mod mmu;
+pub mod percpu;
+mod serial;
+pub mod timer;
 pub use mmu::AddressSpace;
 use percpu::ArchPerCpu;
 
 // TrapFrame alias for generic Scheduler usage
 pub type TrapFrame = exception::ExceptionContext;
-use serial::Serial;
 use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange};
+use serial::Serial;
 
 const UART_PHYS: u64 = 0x0900_0000;
 const UART_LEN: usize = 0x1000;
@@ -90,62 +90,85 @@ impl ArchMachine {
     pub fn init_machine(&self, info: crate::machine::PreBootInfo) {
         // 1. Set constants first!
         self.hhdm_offset.store(info.hhdm_offset, Ordering::Relaxed);
-        self.kernel_phys_base.store(info.kernel_phys_base, Ordering::Relaxed);
-        self.kernel_virt_base.store(info.kernel_virt_base, Ordering::Relaxed);
-        
+        self.kernel_phys_base
+            .store(info.kernel_phys_base, Ordering::Relaxed);
+        self.kernel_virt_base
+            .store(info.kernel_virt_base, Ordering::Relaxed);
+
         // 2. Map early console (UART)
         // On QEMU virt, UART is at 0x09000000
         let uart_phys = 0x0900_0000;
-        let uart_map = self.map_mmio(MmioRange { phys: uart_phys, len: 0x1000 }, MmioFlags::READ | MmioFlags::WRITE | MmioFlags::DEVICE)
+        let uart_map = self
+            .map_mmio(
+                MmioRange {
+                    phys: uart_phys,
+                    len: 0x1000,
+                },
+                MmioFlags::READ | MmioFlags::WRITE | MmioFlags::DEVICE,
+            )
             .expect("UART map fail");
-        
+
         self.serial.init(uart_map.virt);
         self.uart_base.store(uart_map.virt, Ordering::Relaxed);
 
         // 3. Install VBAR_EL1
         extern "C" {
-             static aarch64_vectors: u8; // Symbol
+            static aarch64_vectors: u8; // Symbol
         }
         unsafe {
-             let vectors_addr = core::ptr::addr_of!(aarch64_vectors) as u64;
-             asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
-             asm!("isb", options(nomem, preserves_flags));
+            let vectors_addr = core::ptr::addr_of!(aarch64_vectors) as u64;
+            asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
+            asm!("isb", options(nomem, preserves_flags));
         }
-        
+
         // 4. Initialize Hardware
         unsafe {
-             // Initialize GIC (Map Disributor and CPU Interface)
-             let flags = MmioFlags::READ | MmioFlags::WRITE | MmioFlags::DEVICE;
-             let gicd_map = self.map_mmio(MmioRange { phys: gic::GICD_PHYS, len: 0x1000 }, flags)
-                 .expect("GICD map fail");
-             let gicc_map = self.map_mmio(MmioRange { phys: gic::GICC_PHYS, len: 0x1000 }, flags)
-                 .expect("GICC map fail");
-             
-             gic::init(gicd_map.virt, gicc_map.virt);
+            // Initialize GIC (Map Disributor and CPU Interface)
+            let flags = MmioFlags::READ | MmioFlags::WRITE | MmioFlags::DEVICE;
+            let gicd_map = self
+                .map_mmio(
+                    MmioRange {
+                        phys: gic::GICD_PHYS,
+                        len: 0x1000,
+                    },
+                    flags,
+                )
+                .expect("GICD map fail");
+            let gicc_map = self
+                .map_mmio(
+                    MmioRange {
+                        phys: gic::GICC_PHYS,
+                        len: 0x1000,
+                    },
+                    flags,
+                )
+                .expect("GICC map fail");
 
-             // Initialize PerCpu
-             let cpu_thing = ::abi::ids::ThingId(0); // TODO: Real ID
-             let rq_thing = ::abi::ids::ThingId(0);
-             PERCPU_BSP = Some(ArchPerCpu::new(0, cpu_thing, rq_thing));
-             
-             let stack_top = (&raw const BSP_EXCEPTION_STACK as u64) + 16384;
-             exception_stack_top = stack_top;
+            gic::init(gicd_map.virt, gicc_map.virt);
 
-             if let Some(ref mut pc) = PERCPU_BSP {
-                 pc.core.exception_stack_ptr = stack_top;
-                 crate::serial::write(b"INIT: EXC_STACK set to ");
-                 crate::serial::write_hex(stack_top);
-                 crate::serial::write(b"\n");
-                 percpu::init_percpu(pc);
-                 let t: u64;
-                 core::arch::asm!("mrs {}, tpidr_el1", out(reg) t);
-                 crate::serial::write(b"INIT: TPIDR_EL1 set to ");
-                 crate::serial::write_hex(t);
-                 crate::serial::write(b"\n");
-             }
+            // Initialize PerCpu
+            let cpu_thing = ::abi::ids::ThingId(0); // TODO: Real ID
+            let rq_thing = ::abi::ids::ThingId(0);
+            PERCPU_BSP = Some(ArchPerCpu::new(0, cpu_thing, rq_thing));
 
-             // Initialize Timer
-             timer::init();
+            let stack_top = (&raw const BSP_EXCEPTION_STACK as u64) + 16384;
+            exception_stack_top = stack_top;
+
+            if let Some(ref mut pc) = PERCPU_BSP {
+                pc.core.exception_stack_ptr = stack_top;
+                crate::serial::write(b"INIT: EXC_STACK set to ");
+                crate::serial::write_hex(stack_top);
+                crate::serial::write(b"\n");
+                percpu::init_percpu(pc);
+                let t: u64;
+                core::arch::asm!("mrs {}, tpidr_el1", out(reg) t);
+                crate::serial::write(b"INIT: TPIDR_EL1 set to ");
+                crate::serial::write_hex(t);
+                crate::serial::write(b"\n");
+            }
+
+            // Initialize Timer
+            timer::init();
         }
     }
 
@@ -215,29 +238,29 @@ impl ArchMachine {
 
         if flags.contains(MmioFlags::DEVICE) {
             // AttrIndx=2 (Device-nGnRnE)
-            desc |= 2 << 2; 
+            desc |= 2 << 2;
         } else {
             // AttrIndx=0 (Normal Writeback)
             desc |= 0 << 2;
             // Mark as Inner Shareable explicitly (bit 8,9 -> 11)
-            desc |= 0b11 << 8; 
+            desc |= 0b11 << 8;
         }
 
         desc |= 1 << 10; // AF=1
 
         if !flags.contains(MmioFlags::READ) && !flags.contains(MmioFlags::WRITE) {
-             // Default to readable if unspecified? No, strict.
-             // But existing code did: "Default to readable if neither flag set"
-             desc |= 0 << 6;
+            // Default to readable if unspecified? No, strict.
+            // But existing code did: "Default to readable if neither flag set"
+            desc |= 0 << 6;
         }
 
         // Execute Permissions
         desc |= 1 << 53; // PXN (Privileged Execute-Never) - Default to true for now
         desc |= 1 << 54; // UXN (Unprivileged Execute-Never)
 
-        // TODO: If we want Exec, we need MmioFlags::EXEC. 
+        // TODO: If we want Exec, we need MmioFlags::EXEC.
         // For now, Heap is NX.
-        
+
         desc
     }
 
@@ -251,27 +274,30 @@ impl ArchMachine {
         let _l0_phys = if (current_ttbr1 & !0xfff) != (boot_l0_phys & !0xfff) {
             // Need to switch to our own L0 table
             let old_l0_phys = current_ttbr1 & !0xfff;
-            
+
             if self.hhdm_offset() != 0 {
                 let old_l0_virt = self.phys_to_virt(old_l0_phys) as *const u64;
                 // Copy entries
                 core::ptr::copy_nonoverlapping(old_l0_virt, boot_l0_virt as *mut u64, 512);
-                
+
                 // Switch TTBR1
                 let new_ttbr1_val = (current_ttbr1 & 0x0000_0000_0000_0FFF) | boot_l0_phys;
                 asm!("msr ttbr1_el1, {}", in(reg) new_ttbr1_val, options(nomem, preserves_flags));
-                asm!("isb; tlbi vmalle1; dsb ish; isb", options(nostack, preserves_flags));
+                asm!(
+                    "isb; tlbi vmalle1; dsb ish; isb",
+                    options(nostack, preserves_flags)
+                );
                 boot_l0_phys
             } else {
                 current_ttbr1 & !0xfff
             }
         } else {
-             current_ttbr1 & !0xfff
+            current_ttbr1 & !0xfff
         };
 
         // Now we are using BOOT_L0 (or already were)
         let l0 = boot_l0_virt as *mut u64;
-        
+
         let l0_index = ((virt >> 39) & 0x1ff) as usize;
         let l1_slot = l0.add(l0_index);
         if l1_slot.read() & 1 == 0 {
@@ -296,7 +322,13 @@ impl ArchMachine {
         Some(l3)
     }
 
-    unsafe fn map_range(&self, virt_base: u64, phys_base: u64, len: usize, flags: MmioFlags) -> bool {
+    unsafe fn map_range(
+        &self,
+        virt_base: u64,
+        phys_base: u64,
+        len: usize,
+        flags: MmioFlags,
+    ) -> bool {
         let l3 = match self.ensure_mmio_tables(virt_base) {
             Some(t) => t,
             None => return false,
@@ -350,13 +382,15 @@ impl ArchMachine {
 
         self.serial.init(mapping.virt);
         self.uart_base.store(mapping.virt, Ordering::Relaxed);
-        
-        extern "C" { static aarch64_vectors: u8; }
+
+        extern "C" {
+            static aarch64_vectors: u8;
+        }
         let vectors_addr = core::ptr::addr_of!(aarch64_vectors) as u64;
         crate::serial::write(b"VBAR=");
         crate::serial::write_hex(vectors_addr);
         crate::serial::write(b" ");
-        
+
         let daif: u64;
         let el: u64;
         unsafe {
@@ -368,8 +402,10 @@ impl ArchMachine {
         crate::serial::write(b" EL=");
         crate::serial::write_num(el >> 2);
         crate::serial::write(b"\n");
-        
-        unsafe { asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags)); }
+
+        unsafe {
+            asm!("msr vbar_el1, {}", in(reg) vectors_addr, options(nomem, preserves_flags));
+        }
 
         Some(mapping.virt)
     }
@@ -433,13 +469,17 @@ impl Machine for ArchMachine {
 
     fn halt(&self) -> ! {
         loop {
-            unsafe { asm!("wfi"); }
+            unsafe {
+                asm!("wfi");
+            }
         }
     }
 
     fn idle(&self) {
         // crate::serial::write(b"IDLE\n");
-        unsafe { core::arch::asm!("nop"); }
+        unsafe {
+            core::arch::asm!("nop");
+        }
     }
 
     fn switch_to(&self, old_ctx: &mut crate::machine::Context, new_ctx: &crate::machine::Context) {

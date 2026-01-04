@@ -134,7 +134,7 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                                     println!("Scenario finished. Killing QEMU...");
                                     let _ = qemu.kill().await;
                                 }
-                                
+
                                 // Write scenario JSON report
                                 self.write_scenario_report().await;
                             }
@@ -158,28 +158,30 @@ impl ArtifactWriter {
     async fn write_scenario_report(&self) {
         let feature_slug = slugify(&self.current_feature);
         let scenario_slug = slugify(&self.current_scenario);
-        
-        let report_dir = self
-            .out_dir
-            .join("bdd");
-            
+
+        let report_dir = self.out_dir.join("bdd");
+
         if let Err(e) = fs::create_dir_all(&report_dir) {
             eprintln!("Failed to create report dir: {}", e);
             return;
         }
 
-        // We need to aggregate the step statuses. 
+        // We need to aggregate the step statuses.
         // For now, let's just create a simple summary.
         // real implementation would track step results in struct.
         // Assuming "pass" unless we know otherwise from logs/soft failure.
-        
+
         // Just write a simple JSON for DocGen
-        // Logic: Scan the steps dir to find artifacts? 
-        // Better: Keep track in ArtifactWriter struct. 
+        // Logic: Scan the steps dir to find artifacts?
+        // Better: Keep track in ArtifactWriter struct.
         // But for minimal changes, we can just dump what we know.
-        
-        let status = if self.scenario_failed { "failed" } else { "pass" };
-        
+
+        let status = if self.scenario_failed {
+            "failed"
+        } else {
+            "pass"
+        };
+
         let meta = serde_json::json!({
             "feature": self.current_feature,
             "scenario": self.current_scenario,
@@ -187,30 +189,30 @@ impl ArtifactWriter {
             "status": status,
             "artifacts_dir": format!("{}/{}/{}", self.arch, feature_slug, scenario_slug)
         });
-        
+
         let filename = format!("{}_{}_{}.json", self.arch, feature_slug, scenario_slug);
         let path = report_dir.join(filename);
-        
+
         if let Ok(file) = fs::File::create(path) {
-             let _ = serde_json::to_writer_pretty(file, &meta);
+            let _ = serde_json::to_writer_pretty(file, &meta);
         }
 
         // --- NEW: Canonical Results Store Update ---
         let results_path = self.out_dir.join("bdd/results.json");
         let mut store = crate::store::ResultsStore::load(&results_path).unwrap_or_default();
-        
+
         // Update run metadata if not set
         if store.run.timestamp.is_empty() {
-             store.run.timestamp = chrono::Utc::now().to_rfc3339();
+            store.run.timestamp = chrono::Utc::now().to_rfc3339();
         }
-        
+
         store.update_result(
             self.current_feature.clone(),
             self.current_scenario.clone(),
             self.arch.clone(),
             status.to_string(),
         );
-        
+
         if let Err(e) = store.save(&results_path) {
             eprintln!("Failed to save canonical results.json: {}", e);
         }

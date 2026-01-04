@@ -1,7 +1,0 @@
-{
-  "arch": "aarch64",
-  "artifacts_dir": "aarch64/multi_architecture_behavioral_parity/boot_reaches_kernel_ready_on_each_architecture",
-  "feature": "Multi-architecture behavioral parity",
-  "scenario": "Boot reaches kernel ready on each architecture",
-  "status": "pass"
-}

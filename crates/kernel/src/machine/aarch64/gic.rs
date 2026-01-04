@@ -23,10 +23,10 @@ pub unsafe fn init(dist_base: u64, cpu_base: u64) {
 
     // 1. Distributor: Enable Group 0 and 1
     write_volatile((dist_base + GICD_CTLR) as *mut u32, 3);
-    
+
     // 2. CPU Interface: Enable Group 0 and 1 + Priority Mask
     write_volatile((cpu_base + GICC_PMR) as *mut u32, 0xF0); // Priority mask
-    write_volatile((cpu_base + GICC_CTLR) as *mut u32, 3);   // Enable
+    write_volatile((cpu_base + GICC_CTLR) as *mut u32, 3); // Enable
 
     let pmr = read_volatile((cpu_base + GICC_PMR) as *const u32);
     let ctlr = read_volatile((cpu_base + GICC_CTLR) as *const u32);
@@ -47,14 +47,18 @@ fn cpu() -> u64 {
 
 pub unsafe fn set_priority(id: u32, priority: u8) {
     let base = dist();
-    if base == 0 { return; }
+    if base == 0 {
+        return;
+    }
     let p_addr = (base + 0x400 + (id as u64)) as *mut u8;
     write_volatile(p_addr, priority);
 }
 
 pub unsafe fn set_group1(id: u32) {
     let base = dist();
-    if base == 0 { return; }
+    if base == 0 {
+        return;
+    }
     let n = id / 32;
     let offset = id % 32;
     let g_addr = (base + 0x080 + (n as u64 * 4)) as *mut u32;
@@ -65,7 +69,9 @@ pub unsafe fn set_group1(id: u32) {
 
 pub unsafe fn enable_irq(id: u32) {
     let base = dist();
-    if base == 0 { return; }
+    if base == 0 {
+        return;
+    }
 
     let n = id / 32;
     let offset = id % 32;
@@ -75,19 +81,21 @@ pub unsafe fn enable_irq(id: u32) {
     let val = read_volatile(addr);
     write_volatile(addr, val | (1 << offset));
     if id >= 32 {
-         let t_offset = (id / 4) * 4;
-         let t_addr = (base + GICD_ITARGETSR + t_offset as u64) as *mut u32;
-         let shift = (id % 4) * 8;
-         let mut current = read_volatile(t_addr);
-         current &= !(0xFF << shift);
-         current |= 0xFF << shift; // Broadcast to all possible CPUs (up to 8)
-         write_volatile(t_addr, current);
+        let t_offset = (id / 4) * 4;
+        let t_addr = (base + GICD_ITARGETSR + t_offset as u64) as *mut u32;
+        let shift = (id % 4) * 8;
+        let mut current = read_volatile(t_addr);
+        current &= !(0xFF << shift);
+        current |= 0xFF << shift; // Broadcast to all possible CPUs (up to 8)
+        write_volatile(t_addr, current);
     }
 }
 
 pub unsafe fn get_pending(id: u32) -> bool {
     let base = dist();
-    if base == 0 { return false; }
+    if base == 0 {
+        return false;
+    }
     let n = id / 32;
     let offset = id % 32;
     // GICD_ISPENDR is 0x200
@@ -98,12 +106,16 @@ pub unsafe fn get_pending(id: u32) -> bool {
 
 pub unsafe fn ack_irq() -> u32 {
     let base = cpu();
-    if base == 0 { return 0x3ff; } // Spurious
+    if base == 0 {
+        return 0x3ff;
+    } // Spurious
     read_volatile((base + GICC_IAR) as *const u32)
 }
 
 pub unsafe fn eoi(id: u32) {
     let base = cpu();
-    if base == 0 { return; }
+    if base == 0 {
+        return;
+    }
     write_volatile((base + GICC_EOIR) as *mut u32, id);
 }

@@ -23,24 +23,26 @@ If it’s in the graph, you can observe it, link to it, and act on it.
 
 > _This section is auto-generated from BDD test results. Do not edit by hand._
 
-### Boot milestones
+### Boot contract and system bring-up
 
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
-| Bootloader Handoff | ✅ | ✅ | ✅ | ✅ |
-| Kernel Initialization | ✅ | ✅ | ✅ | ✅ |
-| Kernel refuses premature execution | ✅ | ⚪ | ⚪ | ⚪ |
-| Ontology Seeding | ✅ | ⚪ | ⚪ | ⚪ |
-| Scheduler and Sprout | ✅ | ⚪ | ⚪ | ⚪ |
-| Serial backend is installed exactly once | ✅ | ⚪ | ⚪ | ⚪ |
-| Sprout world interaction demo | ✅ | ⚪ | ⚪ | ⚪ |
+| Bran hands off a boot contract to the Kernel | ✅ | ⚪ | ⚪ | ⚪ |
 
-### Init Contract
+### Multi-architecture behavioral parity
 
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
-| Init task is designated and alive | ✅ | ⚪ | ⚪ | ⚪ |
-| Kernel panics when init exits | ✅ | ⚪ | ⚪ | ⚪ |
+| Boot reaches kernel ready on each architecture | ✅ | ⚪ | ⚪ | ⚪ |
+| The syscall ABI returns a structured result on each architecture | ✅ | ⚪ | ⚪ | ⚪ |
+
+### Swappable display backends
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| Bloom can paint a solid color on any provider | ✅ | ⚪ | ⚪ | ⚪ |
+| Bloom cannot access display bytespace without capability | ✅ | ⚪ | ⚪ | ⚪ |
+| Limine framebuffer provider exposes a primary display bytespace | ✅ | ⚪ | ⚪ | ⚪ |
 
 <!-- DOCGEN:STATUS:END -->
 

@@ -1,15 +1,19 @@
 //! Surface and Graphics Syscalls
 
-use abi::wire::SyscallResult;
-use abi::ids::ThingId;
-use abi::syscall::err;
-use graph::symbols::sym;
-use graph::store;
 use crate::memory::bytespace::Bytespace;
 use crate::syscall::cap;
+use abi::ids::ThingId;
+use abi::syscall::err;
+use abi::wire::SyscallResult;
+use graph::store;
+use graph::symbols::sym;
 
 pub fn sys_surface_create(width: u64, height: u64, format: u64) -> SyscallResult {
-    crate::log::klog(crate::log::Level::Trace, "SURFACE", &alloc::format!("Create {}x{} format={}", width, height, format));
+    crate::log::klog(
+        crate::log::Level::Trace,
+        "SURFACE",
+        &alloc::format!("Create {}x{} format={}", width, height, format),
+    );
     // 1. Calculate size (assume 4 bytes per pixel for now)
     let bpp = 4;
     let stride = width * bpp;
@@ -39,13 +43,24 @@ pub fn sys_surface_create(width: u64, height: u64, format: u64) -> SyscallResult
     }
 
     let res = SyscallResult::new(0, surface_id.high(), surface_id.low());
-    crate::log::klog(crate::log::Level::Trace, "SURFACE", &alloc::format!("Created surface ID={:x}:{:x}", res.val0, res.val1));
+    crate::log::klog(
+        crate::log::Level::Trace,
+        "SURFACE",
+        &alloc::format!("Created surface ID={:x}:{:x}", res.val0, res.val1),
+    );
     res
 }
 
-pub fn sys_surface_draw(id_low: u64, id_high: u64, buf_ptr: u64, coords: u64, geom: u64, _format: u64) -> SyscallResult {
+pub fn sys_surface_draw(
+    id_low: u64,
+    id_high: u64,
+    buf_ptr: u64,
+    coords: u64,
+    geom: u64,
+    _format: u64,
+) -> SyscallResult {
     let surface_id = ThingId(((id_high as u128) << 64) | (id_low as u128));
-    
+
     // unpack coords and geom
     let _x = (coords >> 32) as u32;
     let _y = (coords & 0xFFFFFFFF) as u32;
@@ -79,10 +94,10 @@ pub fn sys_surface_draw(id_low: u64, id_high: u64, buf_ptr: u64, coords: u64, ge
                 return SyscallResult::new(err::EFAULT, 0, 0);
             }
         } else {
-             return SyscallResult::new(err::EFAULT, 0, 0);
+            return SyscallResult::new(err::EFAULT, 0, 0);
         }
     } else {
-         return SyscallResult::new(err::EINVAL, 0, 0);
+        return SyscallResult::new(err::EINVAL, 0, 0);
     };
 
     // 3. Map to Kernel (HHDM)
@@ -93,8 +108,10 @@ pub fn sys_surface_draw(id_low: u64, id_high: u64, buf_ptr: u64, coords: u64, ge
     // For now, simplify to a straight copy of w*h*4 bytes
     // TODO: Handle x, y, stride
     let size = (w * h * 4) as usize;
-    if buf_ptr == 0 { return SyscallResult::new(err::EFAULT, 0, 0); }
-    
+    if buf_ptr == 0 {
+        return SyscallResult::new(err::EFAULT, 0, 0);
+    }
+
     // Safety: we are in user context, buf_ptr is user VA.
     // target_ptr is kernel HHDM.
     unsafe {

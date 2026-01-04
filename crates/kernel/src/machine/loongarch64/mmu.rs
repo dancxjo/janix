@@ -1,9 +1,9 @@
 //! LoongArch64 MMU implementation
-//! 
+//!
 //! Implements 4-level page tables using PGDL/PGDH CSRs for address space management.
 
-use crate::memory::map::{MapPerms, MapResult, MapError};
-use alloc::alloc::{Layout, alloc_zeroed};
+use crate::memory::map::{MapError, MapPerms, MapResult};
+use alloc::alloc::{alloc_zeroed, Layout};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Captured kernel PGDL from bootloader - contains kernel page tables
@@ -14,7 +14,7 @@ static KERNEL_PGDL: AtomicU64 = AtomicU64::new(0);
 // CSR_PGDH = 0x1a - Page Global Directory for Higher half (kernel)
 
 /// Page table entry flags for LoongArch64
-/// 
+///
 /// PTE format: [PFN(bits 12+)] [FLAGS(bits 0-11)]
 /// - V (bit 0): Valid
 /// - D (bit 1): Dirty (writable)
@@ -25,20 +25,20 @@ static KERNEL_PGDL: AtomicU64 = AtomicU64::new(0);
 /// - W (bit 8): Writable
 /// - NR (bit 61): No Read
 /// - NX (bit 62): No Execute
-const PTE_V: u64 = 1 << 0;    // Valid
-const PTE_D: u64 = 1 << 1;    // Dirty
-const PTE_PLV_USER: u64 = 3 << 2;  // Privilege level 3 (user)
-const PTE_MAT_CC: u64 = 1 << 4;    // Coherent Cached
-const PTE_P: u64 = 1 << 7;    // Page (not table pointer)
-const PTE_W: u64 = 1 << 8;    // Writable
-const PTE_NX: u64 = 1 << 62;  // No Execute
+const PTE_V: u64 = 1 << 0; // Valid
+const PTE_D: u64 = 1 << 1; // Dirty
+const PTE_PLV_USER: u64 = 3 << 2; // Privilege level 3 (user)
+const PTE_MAT_CC: u64 = 1 << 4; // Coherent Cached
+const PTE_P: u64 = 1 << 7; // Page (not table pointer)
+const PTE_W: u64 = 1 << 8; // Writable
+const PTE_NX: u64 = 1 << 62; // No Execute
 
 /// Initialize MMU by capturing the current PGDL from bootloader.
 /// Called during kernel init before any address space switching.
 pub fn init() {
     let pgdl: u64;
     unsafe {
-        core::arch::asm!("csrrd {}, 0x19", out(reg) pgdl);  // CSR_PGDL
+        core::arch::asm!("csrrd {}, 0x19", out(reg) pgdl); // CSR_PGDL
     }
     KERNEL_PGDL.store(pgdl, Ordering::Release);
 }
@@ -58,19 +58,35 @@ impl AddressSpace {
     /// Create a new address space with its own page tables.
     /// Copies kernel mappings from the current PGDL's upper half.
     pub fn new() -> MapResult<Self> {
-        crate::log::klog(crate::log::Level::Info, "MMU", "AddressSpace::new: allocating PGD...");
+        crate::log::klog(
+            crate::log::Level::Info,
+            "MMU",
+            "AddressSpace::new: allocating PGD...",
+        );
         // Allocate L0 table (PGD)
         let phys = unsafe { alloc_subtable()? };
-        crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("AddressSpace::new: PGD allocated at {:#x}", phys));
-        
+        crate::log::klog(
+            crate::log::Level::Info,
+            "MMU",
+            &alloc::format!("AddressSpace::new: PGD allocated at {:#x}", phys),
+        );
+
         // Copy kernel half (upper 256 entries) from kernel PGDL
         let kernel_pgd = kernel_pgdl();
-        crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("AddressSpace::new: kernel_pgd={:#x}", kernel_pgd));
+        crate::log::klog(
+            crate::log::Level::Info,
+            "MMU",
+            &alloc::format!("AddressSpace::new: kernel_pgd={:#x}", kernel_pgd),
+        );
         if kernel_pgd != 0 {
             let new_table = phys_to_virt(phys) as *mut u64;
             let kernel_table = phys_to_virt(kernel_pgd) as *const u64;
-            
-            crate::log::klog(crate::log::Level::Info, "MMU", "AddressSpace::new: copying kernel entries...");
+
+            crate::log::klog(
+                crate::log::Level::Info,
+                "MMU",
+                "AddressSpace::new: copying kernel entries...",
+            );
             // Copy upper half (entries 256-511) for kernel space
             unsafe {
                 for i in 256..512 {
@@ -78,9 +94,13 @@ impl AddressSpace {
                     new_table.add(i).write(entry);
                 }
             }
-            crate::log::klog(crate::log::Level::Info, "MMU", "AddressSpace::new: kernel entries copied");
+            crate::log::klog(
+                crate::log::Level::Info,
+                "MMU",
+                "AddressSpace::new: kernel entries copied",
+            );
         }
-        
+
         Ok(Self { pgd: phys })
     }
 
@@ -93,14 +113,14 @@ impl AddressSpace {
     pub fn activate(&self) {
         let current: u64;
         unsafe {
-            core::arch::asm!("csrrd {}, 0x19", out(reg) current);  // Read PGDL
+            core::arch::asm!("csrrd {}, 0x19", out(reg) current); // Read PGDL
         }
-        
+
         // Only switch if different from current
         if current != self.pgd {
             unsafe {
-                core::arch::asm!("csrwr {}, 0x19", in(reg) self.pgd);  // Write PGDL
-                // Invalidate TLB
+                core::arch::asm!("csrwr {}, 0x19", in(reg) self.pgd); // Write PGDL
+                                                                      // Invalidate TLB
                 core::arch::asm!("invtlb 0x0, $r0, $r0");
             }
         }
@@ -115,57 +135,57 @@ impl AddressSpace {
                 self.map_page(virt + offset, phys + offset, perms)?;
             }
         }
-        
+
         // Invalidate TLB after mapping
         unsafe {
             core::arch::asm!("invtlb 0x0, $r0, $r0");
         }
-        
+
         Ok(())
     }
 
     unsafe fn map_page(&mut self, virt: u64, phys: u64, perms: MapPerms) -> MapResult<()> {
         // 4-level page table walk
         // VA structure (48-bit): [L0:9][L1:9][L2:9][L3:9][offset:12]
-        
+
         let l0 = phys_to_virt(self.pgd) as *mut u64;
         let l0_idx = ((virt >> 39) & 0x1ff) as usize;
         let l1 = ensure_table(l0, l0_idx)?;
-        
+
         let l1_idx = ((virt >> 30) & 0x1ff) as usize;
         let l2 = ensure_table(l1, l1_idx)?;
-        
+
         let l2_idx = ((virt >> 21) & 0x1ff) as usize;
         let l3 = ensure_table(l2, l2_idx)?;
-        
+
         let l3_idx = ((virt >> 12) & 0x1ff) as usize;
         let entry_ptr = l3.add(l3_idx);
-        
+
         // Build page entry with flags
         let mut desc = (phys & !0xfff) | PTE_V | PTE_P;
-        
+
         // Memory attribute: Coherent Cached for normal memory
         if !perms.contains(MapPerms::DEVICE) {
             desc |= PTE_MAT_CC;
         }
-        
+
         // User access
         if perms.contains(MapPerms::USER) {
             desc |= PTE_PLV_USER;
         }
-        
+
         // Writable
         if perms.contains(MapPerms::WRITE) {
             desc |= PTE_W | PTE_D;
         }
-        
+
         // No Execute
         if !perms.contains(MapPerms::EXEC) {
             desc |= PTE_NX;
         }
-        
+
         entry_ptr.write(desc);
-        
+
         Ok(())
     }
 }
@@ -183,14 +203,16 @@ unsafe fn alloc_subtable() -> MapResult<u64> {
 
 /// Convert physical address to virtual using HHDM
 fn phys_to_virt(phys: u64) -> u64 {
-    super::HHDM_OFFSET.load(Ordering::Relaxed).wrapping_add(phys)
+    super::HHDM_OFFSET
+        .load(Ordering::Relaxed)
+        .wrapping_add(phys)
 }
 
 /// Ensure a table entry points to a valid subtable, allocating if needed
 unsafe fn ensure_table(table: *mut u64, index: usize) -> MapResult<*mut u64> {
     let entry_ptr = table.add(index);
     let entry = entry_ptr.read();
-    
+
     if entry & PTE_V == 0 {
         // Invalid, allocate new subtable
         let new_table_phys = alloc_subtable()?;

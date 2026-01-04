@@ -59,45 +59,47 @@ async fn main() -> anyhow::Result<()> {
         } else {
             vec![arch.clone()]
         };
-        
+
         if is_smoke {
             println!("Filtering for SMOKE tests only.");
         }
-        
+
         println!("Filtering scenarios for architectures: {:?}", archs);
-        
-        runner.filter_run(feature_path, move |_, _, scenario| {
-            // If smoke test is requested, strictly require @smoke tag
-            if is_smoke {
-                 if !scenario.tags.iter().any(|t| t == "smoke") {
-                     return false;
-                 }
-            }
 
-            // If arch is all (and we are here only because of smoke), we don't filter by arch
-            if arch == "all" {
-                return true;
-            }
+        runner
+            .filter_run(feature_path, move |_, _, scenario| {
+                // If smoke test is requested, strictly require @smoke tag
+                if is_smoke {
+                    if !scenario.tags.iter().any(|t| t == "smoke") {
+                        return false;
+                    }
+                }
 
-            // Check if arch name appears in scenario name
-            for a in &archs {
-                if scenario.name.contains(a) || scenario.name.contains(&a.to_uppercase()) {
+                // If arch is all (and we are here only because of smoke), we don't filter by arch
+                if arch == "all" {
                     return true;
                 }
-            }
-            
-            // Check if any step value mentions the arch
-            for step in &scenario.steps {
+
+                // Check if arch name appears in scenario name
                 for a in &archs {
-                    // Match "arch", "\"arch\"", etc.
-                    if step.value.contains(a) || step.value.contains(&format!("\"{}\"", a)) {
+                    if scenario.name.contains(a) || scenario.name.contains(&a.to_uppercase()) {
                         return true;
                     }
                 }
-            }
-            
-            false
-        }).await;
+
+                // Check if any step value mentions the arch
+                for step in &scenario.steps {
+                    for a in &archs {
+                        // Match "arch", "\"arch\"", etc.
+                        if step.value.contains(a) || step.value.contains(&format!("\"{}\"", a)) {
+                            return true;
+                        }
+                    }
+                }
+
+                false
+            })
+            .await;
     } else {
         println!("Running all architectures.");
         runner.run(feature_path).await;

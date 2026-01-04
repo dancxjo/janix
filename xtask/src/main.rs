@@ -17,7 +17,6 @@ struct Cli {
     command: Commands,
 }
 
-
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
     /// Fetch vendor assets (Limine, OVMF, Fonts)
@@ -93,7 +92,11 @@ fn main() -> Result<()> {
         Commands::Fetch => fetch::fetch(),
         Commands::Build { env } => build::run(&env),
         Commands::Clean => clean::run(),
-        Commands::Test { arch, smoke, feature } => test::run(Some(arch), smoke, Some(feature)),
+        Commands::Test {
+            arch,
+            smoke,
+            feature,
+        } => test::run(Some(arch), smoke, Some(feature)),
 
         Commands::UpdateDocs => {
             Command::new("cargo")

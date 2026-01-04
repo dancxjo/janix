@@ -8,7 +8,7 @@ use std::process::Command;
 pub fn fetch() -> Result<()> {
     let root = project_root();
     let assets = root.join("assets");
-    
+
     // Ensure assets dir exists
     if !assets.exists() {
         fs::create_dir_all(&assets)?;
@@ -131,7 +131,7 @@ fn fetch_ovmf(vendor: &Path) -> Result<()> {
             );
             fs::copy(&src, &dest).with_context(|| format!("Failed to install {}", dest_name))?;
         } else {
-             eprintln!("    [WARNING] Missing OVMF artifact: {}", src_rel);
+            eprintln!("    [WARNING] Missing OVMF artifact: {}", src_rel);
         }
     }
 
@@ -362,7 +362,7 @@ fn generate_arrow_cursor(size: u32) -> RgbaImage {
                 } else if y == 22 && x < 6 {
                     color = Rgba([0, 0, 0, 255]); // Bottom
                 }
-                
+
                 // Fill
                 if x > 0 && x < y && (7 * x + 15 * y < 320) {
                     color = Rgba([255, 255, 255, 255]);
@@ -412,8 +412,5 @@ fn run_cmd(cmd: &mut Command) -> Result<()> {
 
 fn project_root() -> PathBuf {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    Path::new(&manifest_dir)
-        .parent()
-        .unwrap()
-        .to_path_buf()
+    Path::new(&manifest_dir).parent().unwrap().to_path_buf()
 }

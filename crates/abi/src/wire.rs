@@ -11,7 +11,11 @@ pub struct SyscallResult {
 
 impl SyscallResult {
     pub fn new(status: i32, val0: u64, val1: u64) -> Self {
-        Self { status: status as u64, val0, val1 }
+        Self {
+            status: status as u64,
+            val0,
+            val1,
+        }
     }
 }
 
@@ -23,7 +27,7 @@ pub type SyscallDispatch = extern "C" fn(u32, u64, u64, u64, u64, u64, u64) -> S
 pub enum PlaceOp<'a> {
     /// Get the root Place ID
     GetRootPlace,
-    
+
     /// Create a new Thing
     ThingCreate {
         kind: SymbolId,
@@ -31,29 +35,25 @@ pub enum PlaceOp<'a> {
         version: u32,
         payload: &'a [u8],
     },
-    
+
     /// Read a Thing's header and payload
-    ThingRead {
-        id: ThingId,
-    },
-    
+    ThingRead { id: ThingId },
+
     /// Create a relationship between two Things
     RelationshipCreate {
         from: ThingId,
         to: ThingId,
         predicate: SymbolId,
     },
-    
+
     /// Find relationships originating from a Thing
     RelationshipsFrom {
         from: ThingId,
         predicate: Option<SymbolId>,
     },
-    
+
     /// Find things contained within a Place
-    ContainedIn {
-        place: PlaceId,
-    },
+    ContainedIn { place: PlaceId },
 }
 
 /// Place operation response

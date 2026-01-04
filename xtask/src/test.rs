@@ -7,7 +7,10 @@ pub fn run(arch: Option<String>, smoke: bool, feature: Option<String>) -> Result
     let feature = feature.unwrap_or_else(|| "all".to_string());
     let root = project_root();
 
-    println!("==> Running BDD tests for arch: {}, feature: {}...", arch, feature);
+    println!(
+        "==> Running BDD tests for arch: {}, feature: {}...",
+        arch, feature
+    );
 
     let mut cmd = Command::new("cargo");
     cmd.arg("run")
@@ -30,8 +33,7 @@ pub fn run(arch: Option<String>, smoke: bool, feature: Option<String>) -> Result
         cmd.env("FEATURE_PATH", feature_path);
     }
 
-    let status = cmd.status()
-        .context("Failed to run ci-bdd-runner")?;
+    let status = cmd.status().context("Failed to run ci-bdd-runner")?;
 
     if !status.success() {
         anyhow::bail!("BDD tests failed");

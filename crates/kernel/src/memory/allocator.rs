@@ -1,5 +1,5 @@
-use linked_list_allocator::LockedHeap;
 use core::alloc::Layout;
+use linked_list_allocator::LockedHeap;
 
 #[global_allocator]
 pub static ALLOCATOR: LockedHeap = LockedHeap::empty();
@@ -13,7 +13,6 @@ fn alloc_error_handler(layout: Layout) -> ! {
 }
 
 fn safe_print_u64(v: u64) {
-
     let mut i = 0;
     if v == 0 {
         crate::serial::write(b"0x0");
@@ -21,14 +20,18 @@ fn safe_print_u64(v: u64) {
     }
     // write hex
     crate::serial::write(b"0x");
-    // count leading zeros or just print? 
+    // count leading zeros or just print?
     // simple hex dump
     for shift in (0..16).rev() {
         let digit = (v >> (shift * 4)) & 0xF;
         if digit > 0 || i > 0 || shift == 0 {
-             let c = if digit < 10 { b'0' + digit as u8 } else { b'a' + (digit - 10) as u8 };
-             crate::serial::write(&[c]);
-             i += 1;
+            let c = if digit < 10 {
+                b'0' + digit as u8
+            } else {
+                b'a' + (digit - 10) as u8
+            };
+            crate::serial::write(&[c]);
+            i += 1;
         }
     }
 }

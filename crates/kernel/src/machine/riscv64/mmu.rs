@@ -1,6 +1,6 @@
 use crate::memory::map::{MapError, MapPerms, MapResult};
-use core::sync::atomic::{AtomicU64, Ordering};
 use alloc::boxed::Box;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Captured SATP from bootloader - contains kernel page tables
 static KERNEL_SATP: AtomicU64 = AtomicU64::new(0);
@@ -10,14 +10,14 @@ const PAGE_SIZE: usize = 4096;
 const PAGE_SHIFT: usize = 12;
 
 /// Sv39 PTE bits
-const PTE_V: u64 = 1 << 0;  // Valid
-const PTE_R: u64 = 1 << 1;  // Readable
-const PTE_W: u64 = 1 << 2;  // Writable
-const PTE_X: u64 = 1 << 3;  // Executable
-const PTE_U: u64 = 1 << 4;  // User-accessible
-const PTE_G: u64 = 1 << 5;  // Global
-const PTE_A: u64 = 1 << 6;  // Accessed
-const PTE_D: u64 = 1 << 7;  // Dirty
+const PTE_V: u64 = 1 << 0; // Valid
+const PTE_R: u64 = 1 << 1; // Readable
+const PTE_W: u64 = 1 << 2; // Writable
+const PTE_X: u64 = 1 << 3; // Executable
+const PTE_U: u64 = 1 << 4; // User-accessible
+const PTE_G: u64 = 1 << 5; // Global
+const PTE_A: u64 = 1 << 6; // Accessed
+const PTE_D: u64 = 1 << 7; // Dirty
 
 /// SATP mode for Sv39
 const SATP_MODE_SV39: u64 = 8 << 60;
@@ -31,42 +31,50 @@ impl PageTableEntry {
     const fn empty() -> Self {
         Self(0)
     }
-    
+
     fn is_valid(&self) -> bool {
         self.0 & PTE_V != 0
     }
-    
+
     fn is_leaf(&self) -> bool {
         // Leaf if any of R, W, X is set
         self.0 & (PTE_R | PTE_W | PTE_X) != 0
     }
-    
+
     /// Get the physical page number (bits 10-53)
     fn ppn(&self) -> u64 {
         (self.0 >> 10) & 0xFFF_FFFF_FFFF // 44 bits
     }
-    
+
     /// Get the physical address this PTE points to
     fn phys_addr(&self) -> u64 {
         self.ppn() << PAGE_SHIFT
     }
-    
+
     /// Create a non-leaf PTE pointing to next page table
     fn new_table(phys_addr: u64) -> Self {
         let ppn = phys_addr >> PAGE_SHIFT;
         Self((ppn << 10) | PTE_V)
     }
-    
+
     /// Create a leaf PTE mapping a page
     fn new_leaf(phys_addr: u64, perms: MapPerms, user: bool) -> Self {
         let ppn = phys_addr >> PAGE_SHIFT;
         let mut flags = PTE_V | PTE_A | PTE_D; // Valid, Accessed, Dirty
-        
-        if perms.contains(MapPerms::READ) { flags |= PTE_R; }
-        if perms.contains(MapPerms::WRITE) { flags |= PTE_W; }
-        if perms.contains(MapPerms::EXEC) { flags |= PTE_X; }
-        if user { flags |= PTE_U; }
-        
+
+        if perms.contains(MapPerms::READ) {
+            flags |= PTE_R;
+        }
+        if perms.contains(MapPerms::WRITE) {
+            flags |= PTE_W;
+        }
+        if perms.contains(MapPerms::EXEC) {
+            flags |= PTE_X;
+        }
+        if user {
+            flags |= PTE_U;
+        }
+
         Self((ppn << 10) | flags)
     }
 }
@@ -137,7 +145,7 @@ impl AddressSpace {
         let root_ptr = Box::into_raw(root);
         let root_virt = root_ptr as u64;
         let root_phys = virt_to_phys(root_virt);
-        
+
         // Copy kernel page table entries (upper half: VPN[2] >= 256)
         let kernel_satp = kernel_satp();
         if kernel_satp != 0 {
@@ -145,16 +153,16 @@ impl AddressSpace {
             let kernel_root_virt = phys_to_virt(kernel_root_phys);
             let kernel_root = unsafe { &*(kernel_root_virt as *const PageTable) };
             let new_root = unsafe { &mut *root_ptr };
-            
+
             // Copy upper half (kernel space: indices 256-511)
             for i in 256..512 {
                 new_root.entries[i] = kernel_root.entries[i];
             }
         }
-        
+
         // Build SATP: Mode(Sv39) | ASID(0) | PPN
         let satp = SATP_MODE_SV39 | (root_phys >> PAGE_SHIFT);
-        
+
         Ok(Self { root_phys, satp })
     }
 
@@ -170,7 +178,7 @@ impl AddressSpace {
         unsafe {
             core::arch::asm!("csrr {}, satp", out(reg) current);
         }
-        
+
         if current != self.satp {
             unsafe {
                 core::arch::asm!("csrw satp, {}", in(reg) self.satp);
@@ -184,29 +192,29 @@ impl AddressSpace {
         let mut vaddr = virt & !(PAGE_SIZE as u64 - 1); // Page-align
         let mut paddr = phys & !(PAGE_SIZE as u64 - 1);
         let end = virt + len as u64;
-        
+
         // Determine if this is a user mapping (lower half of address space)
         let is_user = virt < 0x8000_0000_0000_0000;
-        
+
         while vaddr < end {
             self.map_page(vaddr, paddr, perms, is_user)?;
             vaddr += PAGE_SIZE as u64;
             paddr += PAGE_SIZE as u64;
         }
-        
+
         // Flush TLB after mapping
         unsafe {
             core::arch::asm!("sfence.vma");
         }
-        
+
         Ok(())
     }
-    
+
     /// Map a single 4KB page.
     fn map_page(&mut self, virt: u64, phys: u64, perms: MapPerms, user: bool) -> MapResult<()> {
         let root_virt = phys_to_virt(self.root_phys);
         let root = unsafe { &mut *(root_virt as *mut PageTable) };
-        
+
         // Walk page table, creating entries as needed
         // Level 2 (root)
         let idx2 = vpn(virt, 2);
@@ -217,11 +225,11 @@ impl AddressSpace {
             let l1_phys = virt_to_phys(l1_ptr as u64);
             root.entries[idx2] = PageTableEntry::new_table(l1_phys);
         }
-        
+
         let l1_phys = root.entries[idx2].phys_addr();
         let l1_virt = phys_to_virt(l1_phys);
         let l1 = unsafe { &mut *(l1_virt as *mut PageTable) };
-        
+
         // Level 1
         let idx1 = vpn(virt, 1);
         if !l1.entries[idx1].is_valid() {
@@ -231,15 +239,15 @@ impl AddressSpace {
             let l0_phys = virt_to_phys(l0_ptr as u64);
             l1.entries[idx1] = PageTableEntry::new_table(l0_phys);
         }
-        
+
         let l0_phys = l1.entries[idx1].phys_addr();
         let l0_virt = phys_to_virt(l0_phys);
         let l0 = unsafe { &mut *(l0_virt as *mut PageTable) };
-        
+
         // Level 0 (leaf)
         let idx0 = vpn(virt, 0);
         l0.entries[idx0] = PageTableEntry::new_leaf(phys, perms, user);
-        
+
         Ok(())
     }
 }

@@ -27,27 +27,27 @@ pub extern "C" fn main() {
     let pred_backs = symbol_intern("predicate.backs");
     let pred_targets = symbol_intern("predicate.targets");
     // let pred_primary = symbol_intern("predicate.primary");
-    
+
     // Create Surface
-    let surf = thing_create_under(kind_surface, get_root_place()); 
+    let surf = thing_create_under(kind_surface, get_root_place());
     thing_register_name(surf, "surface.clock");
-    
+
     // Link Backs
     relationship_create(surf, bs_id, pred_backs);
-    
+
     // Create Window
     let win = thing_create_under(kind_window, get_root_place());
     thing_register_name(win, "window.clock");
-    
+
     // Link Targets
     relationship_create(win, surf, pred_targets);
-    
+
     // Add to place.windows?
     if let Some(place_wins) = thing_find("place.windows") {
         let pred_contains = symbol_intern("predicate.contains");
         relationship_create(place_wins, win, pred_contains);
     }
-    
+
     log_info("CLOCK: Registered window.clock and surface.clock");
 
     // Drawing Loop
@@ -55,15 +55,15 @@ pub extern "C" fn main() {
     loop {
         let color = frame as u32; // changing color
         unsafe {
-            for i in 0..(width*height) {
+            for i in 0..(width * height) {
                 *buffer.add(i as usize) = 0xFF000000 | color;
             }
         }
-        
+
         if frame % 100 == 0 {
             log_info("CLOCK: Drawing...");
         }
-        
+
         frame += 1;
         // yield
         sched_yield();

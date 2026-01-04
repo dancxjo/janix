@@ -1,8 +1,8 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use anyhow::Result;
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct ResultsStore {
@@ -40,7 +40,13 @@ impl ResultsStore {
         Ok(())
     }
 
-    pub fn update_result(&mut self, feature: String, scenario: String, arch: String, status: String) {
+    pub fn update_result(
+        &mut self,
+        feature: String,
+        scenario: String,
+        arch: String,
+        status: String,
+    ) {
         self.features
             .entry(feature)
             .or_default()

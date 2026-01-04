@@ -6,5 +6,7 @@ use thing_std::*;
 pub extern "C" fn main() {
     init(0);
     log_info("INSPECTOR: Alive");
-    loop { sched_yield(); }
+    loop {
+        sched_yield();
+    }
 }

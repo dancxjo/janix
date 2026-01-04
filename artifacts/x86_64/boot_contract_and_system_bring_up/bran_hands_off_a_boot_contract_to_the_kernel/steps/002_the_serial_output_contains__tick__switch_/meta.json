@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "Bran hands off a boot contract to the Kernel",
+  "step": {
+    "index": 2,
+    "text": "the serial output contains \"TICK: switch\"",
+    "status": "passed",
+    "timestamp": "2026-01-04T00:30:17.449104459+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,7 +1,7 @@
 //! loongarch64 ArchContext implementation (stub).
 
 use super::TrapFrame;
-use crate::machine::context::{ArchTask, ArchTrap, CpuMode, TrapInfo, ResumeSpec};
+use crate::machine::context::{ArchTask, ArchTrap, CpuMode, ResumeSpec, TrapInfo};
 
 pub struct LoongArchArch;
 
@@ -24,18 +24,18 @@ impl ArchTask for LoongArchArch {
         let aligned_top = stack_top & !0xf;
         let layout = core::alloc::Layout::new::<TrapFrame>();
         let frame_ptr = (aligned_top - layout.size() as u64) as *mut TrapFrame;
-        
+
         unsafe {
             core::ptr::write_bytes(frame_ptr as *mut u8, 0, layout.size());
             let frame = &mut *frame_ptr;
             frame.era = entry;
             // PRMD: PPLV (0-1) = privilege, PIE (bit 2) = interrupt enable
             frame.prmd = match mode {
-                CpuMode::Kernel => 0x4, // PLV0, PIE=1
+                CpuMode::Kernel => 0x4,     // PLV0, PIE=1
                 CpuMode::User => 0x3 | 0x4, // PLV3, PIE=1
             };
         }
-        
+
         ctx.sp = frame_ptr as u64;
     }
 }
@@ -57,7 +57,11 @@ impl ArchTrap for LoongArchArch {
     fn mode(tf: &Self::TrapFrame) -> CpuMode {
         // PRMD.PPLV (bits 0-1): 0 = Kernel, 3 = User
         let pplv = tf.prmd & 0x3;
-        if pplv == 0 { CpuMode::Kernel } else { CpuMode::User }
+        if pplv == 0 {
+            CpuMode::Kernel
+        } else {
+            CpuMode::User
+        }
     }
 
     fn save_from_trap(tf: &Self::TrapFrame, out: &mut Self::TaskContext) {
@@ -66,7 +70,9 @@ impl ArchTrap for LoongArchArch {
 
     fn load_into_trap(ctx: &Self::TaskContext, tf: &mut Self::TrapFrame) {
         let saved = ctx.sp as *const TrapFrame;
-        unsafe { *tf = *saved; }
+        unsafe {
+            *tf = *saved;
+        }
     }
 
     fn apply_resume_spec(tf: &mut Self::TrapFrame, spec: ResumeSpec) {
@@ -80,7 +86,6 @@ impl ArchTrap for LoongArchArch {
             tf.prmd &= !0x4;
         }
     }
-
 
     unsafe fn return_from_trap(tf: *const Self::TrapFrame) -> ! {
         extern "C" {

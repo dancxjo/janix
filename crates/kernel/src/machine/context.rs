@@ -15,8 +15,8 @@ pub enum CpuMode {
 pub struct TrapInfo {
     pub vector: u32,
     pub mode: CpuMode,
-    pub pc: u64,   // RIP / ELR / SEPC / ERA
-    pub sp: u64,   // Stack pointer
+    pub pc: u64,    // RIP / ELR / SEPC / ERA
+    pub sp: u64,    // Stack pointer
     pub flags: u64, // RFLAGS / SPSR / SSTATUS / CRMD
 }
 

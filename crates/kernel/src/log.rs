@@ -8,9 +8,9 @@ use spin::Mutex;
 
 use crate::boot::BootContext;
 use crate::serial;
+use abi::ids::{SymbolId, ThingId};
 use graph::store;
 use graph::symbols;
-use abi::ids::{SymbolId, ThingId};
 
 /// Log level
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]

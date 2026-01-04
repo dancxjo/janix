@@ -3,12 +3,11 @@
 //! The Platform trait represents the registry of capabilities available
 //! to the kernel and drivers.
 
-
 use alloc::vec::Vec;
 
+use alloc::boxed::Box;
 /// A handle to a capability provider.
 use spin::Mutex;
-use alloc::boxed::Box;
 
 /// A handle to a capability provider.
 pub trait Provider: Send + Sync {
@@ -49,7 +48,7 @@ impl Platform {
     pub fn register(&self, provider: Box<dyn Provider>) {
         self.providers.lock().push(provider);
     }
-    
+
     // Simple helper for now, usually we'd dispatch by ID
     pub fn console_write(&self, bytes: &[u8]) {
         // Optimization: direct machine call for now, or find console provider

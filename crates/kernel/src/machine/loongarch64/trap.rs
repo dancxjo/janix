@@ -1,14 +1,13 @@
-
-use crate::trap::{self, TrapRecord, FaultKind, Arch};
+use crate::trap::{self, Arch, FaultKind, TrapRecord};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct TrapContext {
     pub regs: [u64; 31], // r1-r31 (r0 is zero)
-    pub era: u64,   // ERA (EPC)
-    pub estat: u64, // ESTAT
-    pub badv: u64,  // BADV
-    pub prmd: u64,  // PRMD
+    pub era: u64,        // ERA (EPC)
+    pub estat: u64,      // ESTAT
+    pub badv: u64,       // BADV
+    pub prmd: u64,       // PRMD
 }
 
 #[no_mangle]
@@ -16,50 +15,56 @@ pub unsafe extern "C" fn loongarch64_handle_trap(ctx: &mut TrapContext) -> u64 {
     let estat = ctx.estat;
     let ecode = (estat >> 16) & 0x3f; // ECODE is bits 16-21
     let is_interrupt = (estat & 0x1fff) != 0; // IS bits 0-12
-    
+
     let mut kind;
     let mut addr = None;
-    
+
     if is_interrupt {
         // Simple map for now.
         // IS[11] is timer? IS[12] is IPI? Depends on config.
         // Assuming implementation standard:
-        kind = FaultKind::Irq; 
-        if (estat & (1<<11)) != 0 {
-             kind = FaultKind::Timer;
+        kind = FaultKind::Irq;
+        if (estat & (1 << 11)) != 0 {
+            kind = FaultKind::Timer;
         }
     } else {
         match ecode {
-            0 => { // INT (Interrupt? Should be covered by IS check?)
-                kind = FaultKind::Irq; 
+            0 => {
+                // INT (Interrupt? Should be covered by IS check?)
+                kind = FaultKind::Irq;
             }
-            1 => { // PIL (Page Invalid Load)
+            1 => {
+                // PIL (Page Invalid Load)
                 kind = FaultKind::PageFault;
                 addr = Some(ctx.badv);
             }
-            2 => { // PIS (Page Invalid Store)
+            2 => {
+                // PIS (Page Invalid Store)
                 kind = FaultKind::PageFault;
                 addr = Some(ctx.badv);
             }
-            3 => { // PIF (Page Invalid Fetch)
+            3 => {
+                // PIF (Page Invalid Fetch)
                 kind = FaultKind::PageFault;
                 addr = Some(ctx.badv);
             }
-            4 => { // PME (Page Modification/Dirty)
+            4 => {
+                // PME (Page Modification/Dirty)
                 kind = FaultKind::PageFault;
                 addr = Some(ctx.badv);
             }
-            7 => { // ADE (Address Error)
-                 kind = FaultKind::AccessFault;
-                 addr = Some(ctx.badv);
-            } 
-            11 => kind = FaultKind::Syscall, // SYS
-            12 => kind = FaultKind::Breakpoint, // BRK
+            7 => {
+                // ADE (Address Error)
+                kind = FaultKind::AccessFault;
+                addr = Some(ctx.badv);
+            }
+            11 => kind = FaultKind::Syscall,            // SYS
+            12 => kind = FaultKind::Breakpoint,         // BRK
             13 => kind = FaultKind::IllegalInstruction, // INE
             _ => kind = FaultKind::Unknown,
         }
     }
-    
+
     // PRMD.PPLV (bits 0-1) = Previous Privilege Level. 0 = Highest (Kernel), 3 = User.
     // Actually LoongArch: 0=PLV0 (Kernel), 3=PLV3 (User).
     let prmd = ctx.prmd;
@@ -67,7 +72,7 @@ pub unsafe extern "C" fn loongarch64_handle_trap(ctx: &mut TrapContext) -> u64 {
     let in_kernel = pplv == 0;
 
     graph::store::with_store(|store| {
-         let rec = TrapRecord {
+        let rec = TrapRecord {
             arch: Arch::LoongArch64,
             kind,
             ip: ctx.era,
@@ -85,7 +90,7 @@ pub unsafe extern "C" fn loongarch64_handle_trap(ctx: &mut TrapContext) -> u64 {
 
     match kind {
         FaultKind::Breakpoint => {
-            // Advance ERA by 4? 
+            // Advance ERA by 4?
             ctx.era += 4;
             return 0;
         }

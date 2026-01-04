@@ -2,17 +2,17 @@
 //!
 pub use bitflags::bitflags;
 
-#[cfg(target_arch = "x86_64")]
-pub use x86_64::abi;
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::abi;
-#[cfg(target_arch = "riscv64")]
-pub use riscv64::abi;
 #[cfg(target_arch = "loongarch64")]
 pub use loongarch64::abi;
+#[cfg(target_arch = "riscv64")]
+pub use riscv64::abi;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::abi;
 
 pub mod context;
-pub use context::{ArchContext, ArchTask, ArchTrap, CpuMode, TrapInfo, ResumeSpec};
+pub use context::{ArchContext, ArchTask, ArchTrap, CpuMode, ResumeSpec, TrapInfo};
 
 // CurrentArch type alias - the scheduler uses this without knowing arch details
 #[cfg(target_arch = "x86_64")]
@@ -36,35 +36,32 @@ pub type TaskContext = loongarch64::context::TaskContext;
 
 pub mod input;
 
-#[cfg(target_arch = "x86_64")]
-pub use x86_64::{TrapFrame, AddressSpace};
 #[cfg(target_arch = "aarch64")]
-pub use aarch64::{TrapFrame, AddressSpace};
-#[cfg(target_arch = "riscv64")]
-pub use riscv64::{TrapFrame, AddressSpace};
+pub use aarch64::{AddressSpace, TrapFrame};
 #[cfg(target_arch = "loongarch64")]
-pub use loongarch64::{TrapFrame, AddressSpace};
-
-
+pub use loongarch64::{AddressSpace, TrapFrame};
+#[cfg(target_arch = "riscv64")]
+pub use riscv64::{AddressSpace, TrapFrame};
 #[cfg(target_arch = "x86_64")]
-pub mod x86_64;
+pub use x86_64::{AddressSpace, TrapFrame};
+
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
-#[cfg(target_arch = "riscv64")]
-pub mod riscv64;
 #[cfg(target_arch = "loongarch64")]
 pub mod loongarch64;
-
-
-
+#[cfg(target_arch = "riscv64")]
+pub mod riscv64;
 #[cfg(target_arch = "x86_64")]
-pub use x86_64::ARCH_MACHINE;
+pub mod x86_64;
+
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::ARCH_MACHINE;
-#[cfg(target_arch = "riscv64")]
-pub use riscv64::ARCH_MACHINE;
 #[cfg(target_arch = "loongarch64")]
 pub use loongarch64::ARCH_MACHINE;
+#[cfg(target_arch = "riscv64")]
+pub use riscv64::ARCH_MACHINE;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::ARCH_MACHINE;
 
 /// Physical MMIO range.
 pub struct MmioRange {
@@ -107,7 +104,7 @@ pub struct PreBootInfo {
 }
 
 /// Machine interface: Physics + Boot I/O.
-/// 
+///
 /// This trait isolates the kernel from the hardware reality.
 /// It provides:
 /// 1. CPU primitives (execution physics) required by the scheduler.
@@ -124,20 +121,22 @@ pub trait Machine: Sync {
     /// Map a physical MMIO range and return a virtual mapping.
     /// Implementations must not assume an HHDM covers device ranges.
     fn mmio_map(&self, range: MmioRange, flags: MmioFlags) -> Option<MmioMapping>;
-    
+
     // --- CPU (Physics) ---
 
     fn irq_disable(&self) -> u64;
     fn irq_restore(&self, token: u64);
     fn halt(&self) -> !;
     fn idle(&self);
-    fn cpu_id(&self) -> u32 { 0 }
-    
+    fn cpu_id(&self) -> u32 {
+        0
+    }
+
     /// Switch context from old to new
     fn switch_to(&self, old_ctx: &mut Context, new_ctx: &Context);
 
     fn irq_enable(&self) {}
-    
+
     /// Entry point stub address for new tasks
     fn task_entry_stub(&self) -> u64;
 
@@ -175,13 +174,19 @@ pub fn smoke_fault() {
     }
 
     #[cfg(target_arch = "aarch64")]
-    unsafe { core::arch::asm!("brk #0") };
+    unsafe {
+        core::arch::asm!("brk #0")
+    };
 
     #[cfg(target_arch = "riscv64")]
-    unsafe { core::arch::asm!("ebreak") };
+    unsafe {
+        core::arch::asm!("ebreak")
+    };
 
     #[cfg(target_arch = "loongarch64")]
-    unsafe { core::arch::asm!("break 0") }; // or equivalent
+    unsafe {
+        core::arch::asm!("break 0")
+    }; // or equivalent
 }
 
 pub fn idle() {
@@ -202,9 +207,9 @@ pub fn irq_enable() {
         core::arch::asm!("csrsi sstatus, 2", options(nomem, preserves_flags));
         #[cfg(target_arch = "loongarch64")]
         {
-             let mut val = 4u64;
-             core::arch::asm!("csrxchg {}, {}, 0x0", inout(reg) val, in(reg) val);
-             let _ = val;
+            let mut val = 4u64;
+            core::arch::asm!("csrxchg {}, {}, 0x0", inout(reg) val, in(reg) val);
+            let _ = val;
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::qemu::QemuProcess;
 use crate::shared::{ANY_FAILURE, GLOBAL_LAST_ERROR, GLOBAL_QEMU};
 use anyhow::{anyhow, Context, Result};
-use cucumber::{gherkin::Step, given, when, then, World};
+use cucumber::{gherkin::Step, given, then, when, World};
 use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};
@@ -27,14 +27,14 @@ fn project_root() -> PathBuf {
 pub fn strip_ansi_codes(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
-    
+
     while let Some(c) = chars.next() {
         if c == '\x1b' {
             // Skip escape sequence
             if let Some(&next) = chars.peek() {
                 if next == '[' {
                     chars.next(); // consume '['
-                    // Skip until we hit a letter (the command)
+                                  // Skip until we hit a letter (the command)
                     while let Some(&ch) = chars.peek() {
                         chars.next();
                         if ch.is_ascii_alphabetic() {
@@ -76,9 +76,9 @@ async fn wait_for_boot_completion() -> Result<String> {
 
     loop {
         let log = get_clean_log().await;
-        
+
         // Check if boot completed
-        if log.contains("Booted.") 
+        if log.contains("Booted.")
             || log.contains("userland: SPROUT: root contains expected count")
             || log.contains("SPROUT: I am alive")
         {
@@ -90,7 +90,10 @@ async fn wait_for_boot_completion() -> Result<String> {
             let mut guard = GLOBAL_QEMU.lock().await;
             if let Some(qemu) = guard.as_mut() {
                 if let Some(status) = qemu.check_status() {
-                    return Err(anyhow!("QEMU exited with status {:?} before boot completed", status));
+                    return Err(anyhow!(
+                        "QEMU exited with status {:?} before boot completed",
+                        status
+                    ));
                 }
             }
         }
@@ -142,10 +145,10 @@ async fn boot_os_impl(world: &mut BootWorld, arch: String, variant: Option<Strin
     // 1. Build ISO using xtask
     let mut build_cmd = Command::new("cargo");
     build_cmd.args(["run", "-p", "xtask", "--", "iso", "--env", &arch]);
-    
+
     println!("BDD: Running xtask iso...");
     let _ = std::io::stdout().flush();
-    
+
     if let Some(mod_name) = init_module {
         build_cmd.arg("--init-module").arg(mod_name);
     }
@@ -170,7 +173,9 @@ async fn boot_os_impl(world: &mut BootWorld, arch: String, variant: Option<Strin
         ));
     }
 
-    let iso_path = root.join("target/iso").join(format!("thingos-{}.iso", arch));
+    let iso_path = root
+        .join("target/iso")
+        .join(format!("thingos-{}.iso", arch));
     if !iso_path.exists() {
         return Err(anyhow!("ISO file not found at {}", iso_path.display()));
     }
@@ -254,7 +259,10 @@ async fn expect_serial_output(_world: &mut BootWorld, expected: String) -> Resul
 
 #[then("the serial console log must contain the following lines in order:")]
 async fn check_ordered_lines(_world: &mut BootWorld, step: &Step) -> Result<()> {
-    let table = step.table.as_ref().ok_or_else(|| anyhow!("No data table in step"))?;
+    let table = step
+        .table
+        .as_ref()
+        .ok_or_else(|| anyhow!("No data table in step"))?;
     let expected_lines: Vec<String> = table
         .rows
         .iter()
@@ -270,11 +278,11 @@ async fn check_ordered_lines(_world: &mut BootWorld, step: &Step) -> Result<()> 
 
     loop {
         let log = get_clean_log().await;
-        
+
         // Try to match all lines in order
         let mut search_pos = 0;
         let mut all_found = true;
-        
+
         for expected in &expected_lines {
             if let Some(pos) = log[search_pos..].find(expected) {
                 search_pos += pos + expected.len();
@@ -293,24 +301,24 @@ async fn check_ordered_lines(_world: &mut BootWorld, step: &Step) -> Result<()> 
             let mut guard = GLOBAL_QEMU.lock().await;
             if let Some(qemu) = guard.as_mut() {
                 if let Some(status) = qemu.check_status() {
-                     // If QEMU exited, we must have found everything already, otherwise it's a fail
-                     let err_msg = format!(
+                    // If QEMU exited, we must have found everything already, otherwise it's a fail
+                    let err_msg = format!(
                         "QEMU exited with status {:?}. Failed to match all lines in order.",
                         status
-                     );
-                     soft_fail(err_msg).await;
-                     return Ok(());
+                    );
+                    soft_fail(err_msg).await;
+                    return Ok(());
                 }
             }
         }
 
         if start.elapsed() > timeout {
-             let err_msg = format!(
+            let err_msg = format!(
                 "Timeout waiting for ordered lines.\nLast searched log size: {}\nMissing content.",
                 log.len()
-             );
-             soft_fail(err_msg).await;
-             return Ok(());
+            );
+            soft_fail(err_msg).await;
+            return Ok(());
         }
 
         sleep(Duration::from_millis(500)).await;
@@ -390,7 +398,10 @@ async fn after_point_must_see_all(world: &mut BootWorld, step: &Step) -> Result<
     let log_after = &log[anchor_pos..];
 
     // Extract expected lines from data table
-    let table = step.table.as_ref().ok_or_else(|| anyhow!("No data table in step"))?;
+    let table = step
+        .table
+        .as_ref()
+        .ok_or_else(|| anyhow!("No data table in step"))?;
     let expected_lines: Vec<String> = table
         .rows
         .iter()
@@ -451,7 +462,6 @@ async fn expect_to_see_simple(_world: &mut BootWorld, expected: String) -> Resul
     Ok(())
 }
 
-
 #[then("the system must reach steady state")]
 async fn system_reaches_steady_state(_world: &mut BootWorld) -> Result<()> {
     wait_for_boot_completion().await?;
@@ -500,9 +510,9 @@ async fn given_task_running(world: &mut BootWorld, name: String) -> Result<()> {
 #[given("the system has been running for some time")]
 #[given("the system graph contains many Places")]
 async fn given_system_running(world: &mut BootWorld) -> Result<()> {
-     boot_os_in_qemu(world, "x86_64".to_string()).await?;
-     wait_for_boot_completion().await?;
-     Ok(())
+    boot_os_in_qemu(world, "x86_64".to_string()).await?;
+    wait_for_boot_completion().await?;
+    Ok(())
 }
 
 #[given("a Task Thing has a Relationship expressing \"state.blocked\"")]
@@ -550,10 +560,16 @@ async fn graph_contains_node(_world: &mut BootWorld, node: String) -> Result<()>
         }
     };
 
-    if log.contains(&expected) || log.contains(&format!("creating {}", node)) || log.contains(&format!("created: {}", node)) {
+    if log.contains(&expected)
+        || log.contains(&format!("creating {}", node))
+        || log.contains(&format!("created: {}", node))
+    {
         Ok(())
     } else {
-        let err_msg = format!("Graph node '{}' not found in logs (searched for '{}')", node, expected);
+        let err_msg = format!(
+            "Graph node '{}' not found in logs (searched for '{}')",
+            node, expected
+        );
         soft_fail(err_msg).await;
         Ok(())
     }
@@ -584,7 +600,11 @@ async fn when_publishes_metadata(_world: &mut BootWorld) -> Result<()> {
 }
 
 #[then(expr = "the graph contains a node {word} with Kind {word}")]
-async fn graph_contains_node_kind(_world: &mut BootWorld, node: String, kind: String) -> Result<()> {
+async fn graph_contains_node_kind(
+    _world: &mut BootWorld,
+    node: String,
+    kind: String,
+) -> Result<()> {
     // Check for both node and kind in logs
     let log = wait_for_boot_completion().await?;
     if log.contains(&node) && log.contains(&kind) {
@@ -722,7 +742,11 @@ async fn task_changes_ten_times(_world: &mut BootWorld) -> Result<()> {
     let log = get_clean_log().await;
     let count = log.matches("TICK: switching to task").count();
     if count < 10 {
-        soft_fail(format!("Only {} task switches observed, expected at least 10", count)).await;
+        soft_fail(format!(
+            "Only {} task switches observed, expected at least 10",
+            count
+        ))
+        .await;
     }
     Ok(())
 }
@@ -875,7 +899,12 @@ async fn call_bytespace_create(_world: &mut BootWorld, _size: String, _kind: Str
 }
 
 #[when(expr = "maps it with sys_space_map\\(bytespace, vaddr={word}, len={word}, perms={word}\\)")]
-async fn call_space_map(_world: &mut BootWorld, _vaddr: String, _len: String, _perms: String) -> Result<()> {
+async fn call_space_map(
+    _world: &mut BootWorld,
+    _vaddr: String,
+    _len: String,
+    _perms: String,
+) -> Result<()> {
     Ok(())
 }
 
@@ -890,7 +919,11 @@ async fn unmap_faults(_world: &mut BootWorld, _addr: String) -> Result<()> {
 }
 
 #[then(expr = "the graph shows the mapping edges from space.{word} to bytespace.{word}")]
-async fn graph_shows_mapping_edges(_world: &mut BootWorld, _task: String, _id: String) -> Result<()> {
+async fn graph_shows_mapping_edges(
+    _world: &mut BootWorld,
+    _task: String,
+    _id: String,
+) -> Result<()> {
     Ok(())
 }
 
@@ -899,7 +932,7 @@ async fn map_readonly(_world: &mut BootWorld) -> Result<()> {
     Ok(())
 }
 
-#[when("it attempts to write to that region") ]
+#[when("it attempts to write to that region")]
 async fn write_to_readonly(_world: &mut BootWorld) -> Result<()> {
     Ok(())
 }
@@ -935,7 +968,11 @@ async fn links_to_surface(world: &mut BootWorld, node: String) -> Result<()> {
 }
 
 #[then(expr = "{word} links to a {word} describing the pixel memory")]
-async fn surface_links_to_pixel_mem(world: &mut BootWorld, _surface: String, bytespace: String) -> Result<()> {
+async fn surface_links_to_pixel_mem(
+    world: &mut BootWorld,
+    _surface: String,
+    bytespace: String,
+) -> Result<()> {
     graph_contains_node(world, bytespace).await
 }
 
@@ -1126,7 +1163,12 @@ async fn nodes_transition_to_exited(_world: &mut BootWorld, _app: String) -> Res
 }
 
 #[given(expr = "tasks include {word}, {word}, and {word}")]
-async fn tasks_include(_world: &mut BootWorld, _t1: String, _t2: String, _t3: String) -> Result<()> {
+async fn tasks_include(
+    _world: &mut BootWorld,
+    _t1: String,
+    _t2: String,
+    _t3: String,
+) -> Result<()> {
     Ok(())
 }
 
@@ -1146,7 +1188,12 @@ async fn bloom_remains_running(_world: &mut BootWorld) -> Result<()> {
 }
 
 #[then(expr = "{word}, {word}, and {word} remain intact")]
-async fn things_remain_intact(_world: &mut BootWorld, _p1: String, _p2: String, _p3: String) -> Result<()> {
+async fn things_remain_intact(
+    _world: &mut BootWorld,
+    _p1: String,
+    _p2: String,
+    _p3: String,
+) -> Result<()> {
     Ok(())
 }
 

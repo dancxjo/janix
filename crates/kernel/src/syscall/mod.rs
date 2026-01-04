@@ -8,5 +8,5 @@ pub mod surface;
 pub mod wait;
 pub mod watch;
 
-pub use abi::syscall::{nr, err};
+pub use abi::syscall::{err, nr};
 pub use dispatch::dispatch;

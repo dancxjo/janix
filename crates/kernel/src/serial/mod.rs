@@ -38,5 +38,5 @@ pub fn write_num(val: u64) {
         n /= 10;
         i -= 1;
     }
-    write(&buf[i+1..]);
+    write(&buf[i + 1..]);
 }

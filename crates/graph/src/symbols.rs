@@ -140,7 +140,7 @@ pub fn init() {
         "predicate.backs",
         "predicate.range",
         "predicate.perms",
-        "predicate.user",    // used as predicate or flag? "predicate.is_user"? or relationship?
+        "predicate.user", // used as predicate or flag? "predicate.is_user"? or relationship?
         "predicate.kernel",
         "perm.read",
         "perm.write",
@@ -198,7 +198,7 @@ pub fn init() {
         "predicate.count",
         "predicate.for_place",
         // "predicate.bytes" reused from PRED_BACKS or similar? No, let's add specific if needed.
-        // "snapshot --[bytes]--> bytespace". Reuse PRED_BACKS? 
+        // "snapshot --[bytes]--> bytespace". Reuse PRED_BACKS?
         // Or "predicate.bytes" for explicit data ref.
         "predicate.bytes",
         // Scheduler extended states
@@ -246,7 +246,7 @@ pub mod sym {
     pub const KIND_PLACE: SymbolId = SymbolId(9);
     pub const KIND_THING: SymbolId = SymbolId(10);
     pub const KIND_RELATIONSHIP: SymbolId = SymbolId(11);
-    
+
     pub const PRED_CONTAINS: SymbolId = SymbolId(12);
     pub const PRED_OWNS: SymbolId = SymbolId(13);
     pub const PRED_REFERENCES: SymbolId = SymbolId(14);
@@ -284,7 +284,7 @@ pub mod sym {
     pub const KIND_RUN_QUEUE: SymbolId = SymbolId(41);
     pub const KIND_CPU: SymbolId = SymbolId(42);
     pub const KIND_SCHEDULER: SymbolId = SymbolId(43);
-    
+
     pub const TASK_STATE_READY: SymbolId = SymbolId(44);
     pub const TASK_STATE_RUNNING: SymbolId = SymbolId(45);
     pub const TASK_STATE_BLOCKED: SymbolId = SymbolId(46);
@@ -348,18 +348,18 @@ pub mod sym {
     pub const PLACE_COMPOSITOR: SymbolId = SymbolId(96);
     pub const PLACE_INPUT: SymbolId = SymbolId(97);
 
-    pub const PRED_PRIMARY: SymbolId = SymbolId(98);   // device --[primary]--> surface
-    pub const PRED_FORMAT: SymbolId = SymbolId(99);    // surface --[format]--> value
-    pub const PRED_STRIDE: SymbolId = SymbolId(100);   // surface --[stride]--> value
+    pub const PRED_PRIMARY: SymbolId = SymbolId(98); // device --[primary]--> surface
+    pub const PRED_FORMAT: SymbolId = SymbolId(99); // surface --[format]--> value
+    pub const PRED_STRIDE: SymbolId = SymbolId(100); // surface --[stride]--> value
     pub const PRED_POSITION: SymbolId = SymbolId(101); // window --[position]--> rect
-    pub const PRED_Z: SymbolId = SymbolId(102);        // window --[z]--> value
-    pub const PRED_VISIBLE: SymbolId = SymbolId(103);  // window --[visible]--> value
-    pub const PRED_TITLE: SymbolId = SymbolId(104);    // window --[title]--> value
-    pub const PRED_OWNER: SymbolId = SymbolId(105);    // window --[owner]--> task
-    pub const PRED_DAMAGE: SymbolId = SymbolId(106);   // window --[damage]--> damage
+    pub const PRED_Z: SymbolId = SymbolId(102); // window --[z]--> value
+    pub const PRED_VISIBLE: SymbolId = SymbolId(103); // window --[visible]--> value
+    pub const PRED_TITLE: SymbolId = SymbolId(104); // window --[title]--> value
+    pub const PRED_OWNER: SymbolId = SymbolId(105); // window --[owner]--> task
+    pub const PRED_DAMAGE: SymbolId = SymbolId(106); // window --[damage]--> damage
     pub const PRED_PRESENTS: SymbolId = SymbolId(107); // frame --[presents]--> surface
-    pub const PRED_TARGETS: SymbolId = SymbolId(108);  // window --[targets]--> surface
-    pub const PRED_FRAME: SymbolId = SymbolId(109);    // compositor --[contains]--> frame (or just use contains)
+    pub const PRED_TARGETS: SymbolId = SymbolId(108); // window --[targets]--> surface
+    pub const PRED_FRAME: SymbolId = SymbolId(109); // compositor --[contains]--> frame (or just use contains)
 
     // Inspector
     pub const KIND_SNAPSHOT: SymbolId = SymbolId(110);
@@ -367,10 +367,10 @@ pub mod sym {
     pub const SNAPSHOT_FMT_MD: SymbolId = SymbolId(112);
     pub const KIND_REPORT: SymbolId = SymbolId(113);
     pub const REPORT_BOOT_STATUS: SymbolId = SymbolId(114);
-    
+
     pub const PLACE_REPORTS: SymbolId = SymbolId(115);
     pub const PLACE_SNAPSHOTS: SymbolId = SymbolId(116);
-    
+
     // PRED_FORMAT is already defined at 99
     pub const PRED_GENERATED_BY: SymbolId = SymbolId(117);
     pub const PRED_AT_TIME: SymbolId = SymbolId(118);
@@ -381,5 +381,4 @@ pub mod sym {
     pub const TASK_STATE_YIELDED: SymbolId = SymbolId(123);
     pub const TASK_STATE_BLOCKED_WATCH: SymbolId = SymbolId(124);
     pub const TASK_STATE_BLOCKED_TIMEOUT: SymbolId = SymbolId(125);
-
 }

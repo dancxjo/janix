@@ -1,9 +1,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
-
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct RunMeta {
@@ -16,11 +15,33 @@ struct ResultsStore {
     #[serde(default)]
     pub run: RunMeta,
     #[serde(default)]
-    pub scenarios: Vec<ScenarioResult>,
+    pub features: BTreeMap<String, FeatureResult>,
+    #[serde(default)]
+    pub scenarios: Vec<LegacyScenarioResult>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+struct FeatureResult {
+    #[serde(default)]
+    pub scenarios: BTreeMap<String, ScenarioEntry>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+struct ScenarioEntry {
+    #[serde(default)]
+    pub arches: BTreeMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct ScenarioResult {
+struct LegacyScenarioResult {
+    #[serde(default)]
+    pub feature: String,
+    pub scenario: String,
+    pub results: HashMap<String, String>, // arch -> status
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct ScenarioRow {
     pub feature: String,
     pub scenario: String,
     pub results: HashMap<String, String>, // arch -> status
@@ -29,7 +50,10 @@ struct ScenarioResult {
 fn main() -> Result<()> {
     let results_path = PathBuf::from("artifacts/bdd/results.json");
     if !results_path.exists() {
-        eprintln!("Error: canonical results.json not found at {}", results_path.display());
+        eprintln!(
+            "Error: canonical results.json not found at {}",
+            results_path.display()
+        );
         std::process::exit(1);
     }
 
@@ -37,14 +61,36 @@ fn main() -> Result<()> {
     let content = fs::read_to_string(&results_path)?;
     let store: ResultsStore = serde_json::from_str(&content)?;
 
-    println!("Found {} scenarios.", store.scenarios.len());
+    // Support both legacy flat schema and the current nested one.
+    let mut rows: Vec<ScenarioRow> = Vec::new();
+    if !store.features.is_empty() {
+        for (feature_name, feature) in &store.features {
+            for (scenario_name, scenario) in &feature.scenarios {
+                rows.push(ScenarioRow {
+                    feature: feature_name.clone(),
+                    scenario: scenario_name.clone(),
+                    results: scenario.arches.clone().into_iter().collect(),
+                });
+            }
+        }
+    } else {
+        for scen in &store.scenarios {
+            rows.push(ScenarioRow {
+                feature: scen.feature.clone(),
+                scenario: scen.scenario.clone(),
+                results: scen.results.clone(),
+            });
+        }
+    }
+
+    println!("Found {} scenarios.", rows.len());
 
     // Group by feature
-    let mut features: HashMap<String, Vec<&ScenarioResult>> = HashMap::new();
-    for scen in &store.scenarios {
+    let mut features: HashMap<String, Vec<&ScenarioRow>> = HashMap::new();
+    for scen in &rows {
         features.entry(scen.feature.clone()).or_default().push(scen);
     }
-    
+
     // Sort features for stable output
     let mut sorted_features: Vec<_> = features.keys().collect();
     sorted_features.sort();
@@ -52,15 +98,17 @@ fn main() -> Result<()> {
     // Generate Markdown
     let mut md = String::new();
     md.push_str("## Test Status\n\n");
-    md.push_str("> _This section is auto-generated from BDD test results. Do not edit by hand._\n\n");
-    
+    md.push_str(
+        "> _This section is auto-generated from BDD test results. Do not edit by hand._\n\n",
+    );
+
     let arches = vec!["x86_64", "aarch64", "riscv64", "loongarch64"];
-    
+
     for feat_name in sorted_features {
         md.push_str(&format!("### {}\n\n", feat_name));
         md.push_str("| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |\n");
         md.push_str("|----------|--------|---------|---------|-------------|\n");
-        
+
         let scenarios = &features[feat_name];
         // Sort scenarios by name
         let mut sorted_scenarios = scenarios.clone();
@@ -73,7 +121,7 @@ fn main() -> Result<()> {
                 let icon = match status {
                     "pass" => "✅",
                     "failed" => "❌",
-                    _ => "⚪"
+                    _ => "⚪",
                 };
                 md.push_str(&format!(" {} |", icon));
             }
@@ -81,9 +129,9 @@ fn main() -> Result<()> {
         }
         md.push_str("\n");
     }
-    
+
     update_readme(&md)?;
-    
+
     Ok(())
 }
 
@@ -92,23 +140,23 @@ fn update_readme(status_md: &str) -> Result<()> {
     if !readme_path.exists() {
         return Ok(());
     }
-    
+
     let content = fs::read_to_string(&readme_path)?;
     let start_marker = "<!-- DOCGEN:STATUS:BEGIN -->";
     let end_marker = "<!-- DOCGEN:STATUS:END -->";
-    
+
     if let (Some(start), Some(end)) = (content.find(start_marker), content.find(end_marker)) {
         let mut new_content = String::with_capacity(content.len());
         new_content.push_str(&content[..start + start_marker.len()]);
         new_content.push_str("\n");
         new_content.push_str(status_md);
         new_content.push_str(&content[end..]);
-        
+
         fs::write(readme_path, new_content)?;
         println!("README.md updated.");
     } else {
         println!("Markdown markers not found in README.md");
     }
-    
+
     Ok(())
 }

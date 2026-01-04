@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Multi-architecture behavioral parity",
+  "scenario": "The syscall ABI returns a structured result on each architecture",
+  "step": {
+    "index": 1,
+    "text": "a user task calls syscall \"sys_log\"",
+    "status": "skipped",
+    "timestamp": "2026-01-04T00:30:25.142012204+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -19,13 +19,17 @@ pub extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u
     unsafe {
         crate::serial::write(b"AArch64 EXCEPTION: ");
         crate::serial::write_hex(vector);
-        crate::serial::write(b"
-ELR=");
+        crate::serial::write(
+            b"
+ELR=",
+        );
         crate::serial::write_hex(ctx.elr_el1);
         crate::serial::write(b" ESR=");
         crate::serial::write_hex(ctx.esr_el1);
-        crate::serial::write(b"
-");
+        crate::serial::write(
+            b"
+",
+        );
     }
     0
 }

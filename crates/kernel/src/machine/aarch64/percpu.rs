@@ -4,10 +4,10 @@ use crate::sched::percpu::PerCpu;
 pub struct ArchPerCpu {
     /// Core scheduler state
     pub core: PerCpu,
-    
+
     /// Scratch space for exception entry
     pub scratch_x0: u64,
-    
+
     /// Kernel Stack Top for current task (for EL0 -> EL1 transition)
     pub kernel_stack_top: u64,
 }

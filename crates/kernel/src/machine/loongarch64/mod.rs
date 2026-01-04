@@ -1,9 +1,9 @@
 pub mod abi;
-pub mod trap;
-pub mod timer;
-pub mod mmu;
 pub mod context;
+pub mod mmu;
 mod serial;
+pub mod timer;
+pub mod trap;
 pub use mmu::AddressSpace;
 
 pub type TrapFrame = trap::TrapContext; // Added
@@ -11,7 +11,7 @@ pub type TrapFrame = trap::TrapContext; // Added
 use core::arch::global_asm;
 global_asm!(include_str!("vectors.S"));
 
-use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange, Context};
+use crate::machine::{Context, Machine, MmioFlags, MmioMapping, MmioRange};
 
 use core::sync::atomic::{AtomicU64, Ordering};
 pub(crate) static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
@@ -35,25 +35,27 @@ pub static KERNEL_STACK_TOP: AtomicU64 = AtomicU64::new(0);
 impl Machine for LoongArchMachine {
     fn init(&self, info: crate::machine::PreBootInfo) {
         HHDM_OFFSET.store(info.hhdm_offset, Ordering::Relaxed);
-        self.kernel_phys_base.store(info.kernel_phys_base, Ordering::Relaxed);
-        self.kernel_virt_base.store(info.kernel_virt_base, Ordering::Relaxed);
+        self.kernel_phys_base
+            .store(info.kernel_phys_base, Ordering::Relaxed);
+        self.kernel_virt_base
+            .store(info.kernel_virt_base, Ordering::Relaxed);
 
         // Capture kernel page tables before any address space switching
         mmu::init();
-        
+
         // Install trap vector
         extern "C" {
-             static loongarch64_trap_vector: u8; // Symbol
+            static loongarch64_trap_vector: u8; // Symbol
         }
         unsafe {
-             let vector_addr = core::ptr::addr_of!(loongarch64_trap_vector) as u64;
-              // Set EBASE (CSR 0x4)
-              core::arch::asm!("csrwr {}, 0x4", in(reg) vector_addr);
-              
-              // Initialize KS0 to 0 (indicates kernel mode)
-              core::arch::asm!("csrwr $r0, 0x30");
+            let vector_addr = core::ptr::addr_of!(loongarch64_trap_vector) as u64;
+            // Set EBASE (CSR 0x4)
+            core::arch::asm!("csrwr {}, 0x4", in(reg) vector_addr);
 
-              timer::init();
+            // Initialize KS0 to 0 (indicates kernel mode)
+            core::arch::asm!("csrwr $r0, 0x30");
+
+            timer::init();
         }
     }
 
@@ -69,11 +71,11 @@ impl Machine for LoongArchMachine {
     fn irq_disable(&self) -> u64 {
         let crmd: u64;
         unsafe {
-             // Read CRMD (Current Request Mode Definition) - CSR 0x0
-             core::arch::asm!("csrrd {}, 0x0", out(reg) crmd);
-             // Clear IE (Interrupt Enable) - bit 2
-             let new_crmd = crmd & !0x4;
-             core::arch::asm!("csrwr {}, 0x0", in(reg) new_crmd);
+            // Read CRMD (Current Request Mode Definition) - CSR 0x0
+            core::arch::asm!("csrrd {}, 0x0", out(reg) crmd);
+            // Clear IE (Interrupt Enable) - bit 2
+            let new_crmd = crmd & !0x4;
+            core::arch::asm!("csrwr {}, 0x0", in(reg) new_crmd);
         }
         crmd
     }
@@ -94,27 +96,30 @@ impl Machine for LoongArchMachine {
 
     fn halt(&self) -> ! {
         loop {
-            unsafe { core::arch::asm!("idle 0"); }
+            unsafe {
+                core::arch::asm!("idle 0");
+            }
         }
     }
 
     fn idle(&self) {
-        unsafe { core::arch::asm!("idle 0"); }
+        unsafe {
+            core::arch::asm!("idle 0");
+        }
     }
-
 
     fn switch_to(&self, old_ctx: &mut Context, new_ctx: &Context) {
         extern "C" {
-             fn loongarch64_switch_to(old_sp: &mut u64, new_sp: u64);
+            fn loongarch64_switch_to(old_sp: &mut u64, new_sp: u64);
         }
         unsafe {
-             loongarch64_switch_to(&mut old_ctx.sp, new_ctx.sp);
+            loongarch64_switch_to(&mut old_ctx.sp, new_ctx.sp);
         }
     }
 
     fn task_entry_stub(&self) -> u64 {
         extern "C" {
-             fn loongarch64_task_entry_stub();
+            fn loongarch64_task_entry_stub();
         }
         loongarch64_task_entry_stub as *const () as usize as u64
     }

@@ -1,7 +1,7 @@
-use crate::memory::map::{MapPerms, MapResult, MapError};
+use crate::memory::map::{MapError, MapPerms, MapResult};
 use x86_64::registers::control::{Cr3, Cr3Flags};
-use x86_64::{PhysAddr, VirtAddr};
 use x86_64::structures::paging::{PageTable, PageTableFlags, PhysFrame, Size4KiB};
+use x86_64::{PhysAddr, VirtAddr};
 
 pub struct AddressSpace {
     pub pml4_table: u64, // Physical address of PML4
@@ -14,24 +14,32 @@ impl AddressSpace {
         let phys = frame.start_address().as_u64();
         let offset = crate::boot::get_boot_ctx().hhdm_offset;
         let virt_calc = phys.wrapping_add(offset);
-        crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("new P4 phys={:x} virt={:x}", phys, virt_calc));
+        crate::log::klog(
+            crate::log::Level::Info,
+            "MMU",
+            &alloc::format!("new P4 phys={:x} virt={:x}", phys, virt_calc),
+        );
 
         let new_table = unsafe { get_table_mut(phys) };
-        
+
         // 2. Clear User Half (0..256) - Box::new(PageTable::new()) implies zeroed, but explicitly:
         // (It's already zeroed by PageTable constructor)
-        
+
         // 3. Copy Kernel Half (256..512) from current active CR3
         let (current_frame, _) = Cr3::read();
         let current_table = unsafe { get_table_mut(current_frame.start_address().as_u64()) };
-        
+
         for i in 256..512 {
             if current_table[i].flags().contains(PageTableFlags::PRESENT) {
-                 crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("copy kernel pml4[{}]", i));
-                 new_table[i] = current_table[i].clone();
+                crate::log::klog(
+                    crate::log::Level::Info,
+                    "MMU",
+                    &alloc::format!("copy kernel pml4[{}]", i),
+                );
+                new_table[i] = current_table[i].clone();
             }
         }
-        
+
         Ok(Self { pml4_table: phys })
     }
 
@@ -48,26 +56,31 @@ impl AddressSpace {
 
     pub fn map(&mut self, virt: u64, phys: u64, len: usize, perms: MapPerms) -> MapResult<()> {
         use x86_64::structures::paging::Page;
-        crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("mapping {:x}->{:x} len {:x}", virt, phys, len));
-        
+        crate::log::klog(
+            crate::log::Level::Info,
+            "MMU",
+            &alloc::format!("mapping {:x}->{:x} len {:x}", virt, phys, len),
+        );
+
         let start = VirtAddr::new(virt);
         let end_addr = start + len as u64;
         let start_page = Page::<Size4KiB>::containing_address(start);
         let end_page = Page::<Size4KiB>::containing_address(end_addr - 1u64);
 
         let pml4 = unsafe { get_table_mut(self.pml4_table) };
-        
+
         // Calculate physical address of the first page start
         // phys passed is for 'virt'. If virt is unaligned, phys is unaligned.
         // We need the page-aligned physical address.
         // phys_page_base = phys - (virt % 4096)
         let page_offset = virt % 4096;
         let start_phys = phys.checked_sub(page_offset).expect("phys addr underflow");
-        
+
         for (i, page) in Page::range_inclusive(start_page, end_page).enumerate() {
             let frame_start = start_phys + (i as u64 * 4096);
             let frame_phys = PhysAddr::new(frame_start);
-            let frame = PhysFrame::<Size4KiB>::from_start_address(frame_phys).map_err(|_| MapError::InvalidAddress)?;
+            let frame = PhysFrame::<Size4KiB>::from_start_address(frame_phys)
+                .map_err(|_| MapError::InvalidAddress)?;
 
             let p4_entry = &mut pml4[page.p4_index()];
             let pdp = ensure_table_entry(p4_entry)?;
@@ -79,16 +92,22 @@ impl AddressSpace {
             let pt = ensure_table_entry(p2_entry)?;
 
             let p1_entry = &mut pt[page.p1_index()];
-            
+
             // Flags
             let mut flags = PageTableFlags::PRESENT;
-            if perms.contains(MapPerms::WRITE) { flags |= PageTableFlags::WRITABLE; }
-            if perms.contains(MapPerms::USER) { flags |= PageTableFlags::USER_ACCESSIBLE; }
-            if !perms.contains(MapPerms::EXEC) { flags |= PageTableFlags::NO_EXECUTE; }
+            if perms.contains(MapPerms::WRITE) {
+                flags |= PageTableFlags::WRITABLE;
+            }
+            if perms.contains(MapPerms::USER) {
+                flags |= PageTableFlags::USER_ACCESSIBLE;
+            }
+            if !perms.contains(MapPerms::EXEC) {
+                flags |= PageTableFlags::NO_EXECUTE;
+            }
 
             p1_entry.set_addr(frame.start_address(), flags);
         }
-        
+
         x86_64::instructions::tlb::flush_all();
 
         Ok(())
@@ -103,12 +122,17 @@ unsafe fn get_table_mut(phys: u64) -> &'static mut PageTable {
     &mut *(virt as *mut PageTable)
 }
 
-fn ensure_table_entry(entry: &mut x86_64::structures::paging::page_table::PageTableEntry) -> MapResult<&'static mut PageTable> {
+fn ensure_table_entry(
+    entry: &mut x86_64::structures::paging::page_table::PageTableEntry,
+) -> MapResult<&'static mut PageTable> {
     if !entry.flags().contains(PageTableFlags::PRESENT) {
         let frame = allocate_frame()?;
         // User Accessible must be set on higher levels to allow User access at bottom?
         // Yes. We set full permissions for intermediate tables to be permissive.
-        entry.set_addr(frame.start_address(), PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE);
+        entry.set_addr(
+            frame.start_address(),
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE,
+        );
     }
     Ok(unsafe { get_table_mut(entry.addr().as_u64()) })
 }

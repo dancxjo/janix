@@ -5,7 +5,7 @@ use std::process::Command;
 
 pub fn run() -> Result<()> {
     let root = project_root();
-    
+
     // Cargo clean
     println!("==> Cargo cleaning...");
     Command::new("cargo")

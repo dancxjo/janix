@@ -55,13 +55,13 @@ pub unsafe fn init(gdt_tss: &'static mut GdtTss) {
     // 40: User Code 64
     let k_code = gdt_tss.gdt.add_entry(Descriptor::kernel_code_segment());
     let k_data = gdt_tss.gdt.add_entry(Descriptor::kernel_data_segment());
-    
+
     // User segments (ordered for sysretq)
     // Base selector for STAR.UserBase will be u_code32
     let _u_code32 = gdt_tss.gdt.add_entry(Descriptor::user_code_segment()); // Dummy but present
     let u_data = gdt_tss.gdt.add_entry(Descriptor::user_data_segment());
     let u_code64 = gdt_tss.gdt.add_entry(Descriptor::user_code_segment());
-    
+
     let tss = gdt_tss.gdt.add_entry(Descriptor::tss_segment(&gdt_tss.tss));
 
     gdt_tss.selectors = Selectors {

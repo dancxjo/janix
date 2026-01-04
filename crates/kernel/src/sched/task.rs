@@ -1,7 +1,6 @@
-
+use abi::ids::{SymbolId, ThingId};
 use graph::store;
 use graph::symbols::sym;
-use abi::ids::{ThingId, SymbolId};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct TaskId(pub u64);
@@ -56,7 +55,12 @@ pub struct Task {
 }
 
 impl Task {
-    pub fn new(id: TaskId, thing: ThingId, stack_ptr: u64, address_space: Arc<AddressSpace>) -> Self {
+    pub fn new(
+        id: TaskId,
+        thing: ThingId,
+        stack_ptr: u64,
+        address_space: Arc<AddressSpace>,
+    ) -> Self {
         Self {
             id,
             thing,
@@ -86,9 +90,10 @@ impl Task {
         // So we create a new Thing of that kind? Or value thing?
         // Plan said: "task --[predicate.state]--> task_state.*"
         // Let's create a new Thing with Kind = state_symbol.
-        
+
         let state_kind = new_state.to_symbol();
-        if let Ok(_state_thing) = place.create_thing(sym::KIND_THING) { // Generic thing for now or Kind=State?
+        if let Ok(_state_thing) = place.create_thing(sym::KIND_THING) {
+            // Generic thing for now or Kind=State?
             // Actually, maybe we should just set the predicate to point to a "Concept" thing or just a Thing with that kind.
             // Let's create a Thing with Kind=StateSymbol.
             // place.create_thing(state_kind) works if state_kind is a valid kind?
@@ -99,13 +104,13 @@ impl Task {
             // But `create_thing` takes a Kind.
             // Let's use KIND_THING and link it?
             // "task --[predicate.state]--> Thing(Kind=task_state.ready)"
-            
+
             // To be safe and avoid churn:
             // Remove old state edge? We don't track the edge ID.
             // We just add new edge. Old edges remain? That's bad.
             // For V0.3 Task 03, let's just add the edge.
             // A better way is to model state as a property.
-            
+
             // Re-read constraints: "task --[state]--> task_state.*"
             // Let's assume we create a Thing for the state (e.g. ephemeral) or find a canonical one.
             // Since we didn't seed canonical state things, ephemeral is safer.

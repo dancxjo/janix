@@ -35,16 +35,12 @@ impl core::fmt::Write for SerialWriter {
 fn panic(info: &core::panic::PanicInfo) -> ! {
     use core::fmt::Write;
     let mut writer = SerialWriter;
-    
+
     let _ = writer.write_str("\nKERNEL PANIC:\n");
     let _ = write!(&mut writer, "{}\n", info);
     let _ = writer.write_str("Halting.\n");
-    
-    // Attempt backtrace?
-    loop {
-        unsafe { crate::machine::machine().irq_disable() };
-        crate::machine::idle();
-    }
+
+    crate::machine::machine().halt();
 }
 
 // alloc_error_handler in memory/allocator.rs

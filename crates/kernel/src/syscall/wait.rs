@@ -10,7 +10,12 @@ use abi::wire::SyscallResult;
 
 use crate::sched::{self, BlockReason};
 
-pub fn sys_wait(watches_ptr: u64, watch_len: u64, flags_raw: u64, timeout_ticks: u64) -> SyscallResult {
+pub fn sys_wait(
+    watches_ptr: u64,
+    watch_len: u64,
+    flags_raw: u64,
+    timeout_ticks: u64,
+) -> SyscallResult {
     // 1. Validate inputs
     let count = watch_len as usize;
     if watches_ptr == 0 && count > 0 {
@@ -21,8 +26,7 @@ pub fn sys_wait(watches_ptr: u64, watch_len: u64, flags_raw: u64, timeout_ticks:
     let watches = if count == 0 {
         Vec::new()
     } else {
-        let slice =
-            unsafe { core::slice::from_raw_parts(watches_ptr as *const u64, count) };
+        let slice = unsafe { core::slice::from_raw_parts(watches_ptr as *const u64, count) };
         slice.iter().copied().map(WatchId).collect::<Vec<_>>()
     };
 

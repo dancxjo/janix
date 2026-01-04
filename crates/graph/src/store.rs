@@ -7,9 +7,9 @@
 //! - O(1) traversal via in-memory indexing.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::Mutex;
-use alloc::collections::VecDeque;
 
 use abi::ids::{RelationshipId, SymbolId, ThingId};
 
@@ -56,12 +56,12 @@ pub struct PlaceStore {
     things: BTreeMap<ThingId, Thing>,
     /// Relationship table: RelationshipId -> Relationship
     relationships: BTreeMap<RelationshipId, Relationship>,
-    
+
     /// Outbound index: from -> [rel_id]
     from_index: BTreeMap<ThingId, Vec<RelationshipId>>,
     /// Inbound index: to -> [rel_id]
     to_index: BTreeMap<ThingId, Vec<RelationshipId>>,
-    
+
     /// Name index: name (symbol ID) -> ThingId
     name_index: BTreeMap<SymbolId, ThingId>,
 
@@ -69,7 +69,7 @@ pub struct PlaceStore {
     watchers: BTreeMap<ThingId, Vec<ThingId>>,
     /// Pending events: watcher_id -> queue of event_ids
     pending_events: BTreeMap<ThingId, VecDeque<ThingId>>,
-    
+
     /// Counter for generating unique IDs (initialized from randomness or monotonic)
     next_id_high: u64,
     next_id_low: u64,
@@ -104,7 +104,7 @@ impl PlaceStore {
         if kind == SymbolId::INVALID {
             return Err("invalid kind");
         }
-        
+
         let id = self.generate_id();
         let thing = Thing::new(kind);
         self.things.insert(id, thing);
@@ -116,7 +116,12 @@ impl PlaceStore {
         self.things.get(&id)
     }
 
-    pub fn create_relationship(&mut self, kind: SymbolId, from: ThingId, to: ThingId) -> Result<RelationshipId, &'static str> {
+    pub fn create_relationship(
+        &mut self,
+        kind: SymbolId,
+        from: ThingId,
+        to: ThingId,
+    ) -> Result<RelationshipId, &'static str> {
         if !self.things.contains_key(&from) {
             return Err("source thing not found");
         }
@@ -126,16 +131,19 @@ impl PlaceStore {
 
         let id = self.generate_id();
         let rel = Relationship { kind, from, to };
-        
+
         self.relationships.insert(id, rel);
         self.from_index.entry(from).or_default().push(id);
         self.to_index.entry(to).or_default().push(id);
-        
+
         Ok(id)
     }
 
     pub fn relationships_from(&self, from: ThingId) -> &[RelationshipId] {
-        self.from_index.get(&from).map(|v| v.as_slice()).unwrap_or(&[])
+        self.from_index
+            .get(&from)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn set_payload(&mut self, id: ThingId, payload: &[u8]) -> bool {
@@ -165,11 +173,16 @@ impl PlaceStore {
 
     #[allow(dead_code)]
     fn enqueue(&mut self, watcher: ThingId, event: ThingId) {
-        self.pending_events.entry(watcher).or_default().push_back(event);
+        self.pending_events
+            .entry(watcher)
+            .or_default()
+            .push_back(event);
     }
-    
+
     fn dequeue(&mut self, watcher: ThingId) -> Option<ThingId> {
-        self.pending_events.get_mut(&watcher).and_then(|q| q.pop_front())
+        self.pending_events
+            .get_mut(&watcher)
+            .and_then(|q| q.pop_front())
     }
 }
 
@@ -187,7 +200,8 @@ pub fn is_initialized() -> bool {
 
 pub fn thing_create(kind: SymbolId) -> ThingId {
     let mut guard = PLACE_STORE.lock();
-    guard.as_mut()
+    guard
+        .as_mut()
         .expect("PlaceStore not initialized")
         .create_thing(kind)
         .expect("Failed to create thing")
@@ -195,14 +209,17 @@ pub fn thing_create(kind: SymbolId) -> ThingId {
 
 pub fn thing_exists(id: ThingId) -> bool {
     let guard = PLACE_STORE.lock();
-    guard.as_ref()
+    guard
+        .as_ref()
         .expect("PlaceStore not initialized")
-        .things.contains_key(&id)
+        .things
+        .contains_key(&id)
 }
 
 pub fn relationship_create(kind: SymbolId, from: ThingId, to: ThingId) -> RelationshipId {
     let mut guard = PLACE_STORE.lock();
-    guard.as_mut()
+    guard
+        .as_mut()
         .expect("PlaceStore not initialized")
         .create_relationship(kind, from, to)
         .expect("Failed to create relationship")
@@ -210,7 +227,8 @@ pub fn relationship_create(kind: SymbolId, from: ThingId, to: ThingId) -> Relati
 
 pub fn relationships_from(from: ThingId) -> Vec<RelationshipId> {
     let guard = PLACE_STORE.lock();
-    guard.as_ref()
+    guard
+        .as_ref()
         .expect("PlaceStore not initialized")
         .relationships_from(from)
         .to_vec()
@@ -218,28 +236,36 @@ pub fn relationships_from(from: ThingId) -> Vec<RelationshipId> {
 
 pub fn get_relationship(id: RelationshipId) -> Option<Relationship> {
     let guard = PLACE_STORE.lock();
-    guard.as_ref()
+    guard
+        .as_ref()
         .expect("PlaceStore not initialized")
-        .relationships.get(&id).cloned()
+        .relationships
+        .get(&id)
+        .cloned()
 }
 
 pub fn get_thing_header(id: ThingId) -> Option<ThingHeader> {
     let guard = PLACE_STORE.lock();
-    guard.as_ref()
+    guard
+        .as_ref()
         .expect("PlaceStore not initialized")
-        .things.get(&id).map(|t| t.header.clone())
+        .things
+        .get(&id)
+        .map(|t| t.header.clone())
 }
 
 pub fn thing_set_inline_payload(id: ThingId, payload: &[u8]) -> bool {
     let mut guard = PLACE_STORE.lock();
-    guard.as_mut()
+    guard
+        .as_mut()
         .expect("PlaceStore not initialized")
         .set_payload(id, payload)
 }
 
 pub fn get_payload(id: ThingId) -> Option<Vec<u8>> {
     let guard = PLACE_STORE.lock();
-    guard.as_ref()
+    guard
+        .as_ref()
         .expect("PlaceStore not initialized")
         .get_payload(id)
         .map(|s| s.to_vec())
@@ -247,28 +273,32 @@ pub fn get_payload(id: ThingId) -> Option<Vec<u8>> {
 
 pub fn thing_register_name(id: ThingId, name: SymbolId) {
     let mut guard = PLACE_STORE.lock();
-    guard.as_mut()
+    guard
+        .as_mut()
         .expect("PlaceStore not initialized")
         .register_name(id, name)
 }
 
 pub fn find_thing_by_name(name: SymbolId) -> Option<ThingId> {
     let guard = PLACE_STORE.lock();
-    guard.as_ref()
+    guard
+        .as_ref()
         .expect("PlaceStore not initialized")
         .find_by_name(name)
 }
 
 pub fn watch(watcher: ThingId, target: ThingId) {
     let mut guard = PLACE_STORE.lock();
-    guard.as_mut()
+    guard
+        .as_mut()
         .expect("PlaceStore not initialized")
         .watch(watcher, target)
 }
 
 pub fn dequeue_event(watcher: ThingId) -> Option<ThingId> {
     let mut guard = PLACE_STORE.lock();
-    guard.as_mut()
+    guard
+        .as_mut()
         .expect("PlaceStore not initialized")
         .dequeue(watcher)
 }

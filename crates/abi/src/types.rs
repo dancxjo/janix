@@ -1,6 +1,6 @@
 //! FFI-safe types for syscall arguments and return values.
 
-use crate::ids::{ThingId, SymbolId, WatchId};
+use crate::ids::{SymbolId, ThingId, WatchId};
 use bitflags::bitflags;
 
 #[repr(C)]
@@ -63,15 +63,30 @@ pub struct WakeReason {
 
 impl WakeReason {
     pub const fn watch(id: WatchId) -> Self {
-        Self { reason: WakeReasonCode::Watch, which: id, val0: 0, val1: 0 }
+        Self {
+            reason: WakeReasonCode::Watch,
+            which: id,
+            val0: 0,
+            val1: 0,
+        }
     }
 
     pub const fn timeout() -> Self {
-        Self { reason: WakeReasonCode::Timeout, which: WatchId(0), val0: 0, val1: 0 }
+        Self {
+            reason: WakeReasonCode::Timeout,
+            which: WatchId(0),
+            val0: 0,
+            val1: 0,
+        }
     }
 
     pub const fn cancelled() -> Self {
-        Self { reason: WakeReasonCode::Cancelled, which: WatchId(0), val0: 0, val1: 0 }
+        Self {
+            reason: WakeReasonCode::Cancelled,
+            which: WatchId(0),
+            val0: 0,
+            val1: 0,
+        }
     }
 }
 

@@ -60,7 +60,8 @@ fn run_with_timeout(mut cmd: Command, timeout: Option<u64>) -> Result<()> {
 
 fn append_common_args(cmd: &mut Command, args: &RunArgs, default_gdb_port: u16) {
     if args.debug {
-        cmd.arg("-serial").arg("unix:/tmp/thingos-serial.sock,server,nowait");
+        cmd.arg("-serial")
+            .arg("unix:/tmp/thingos-serial.sock,server,nowait");
         cmd.arg("-display").arg("none");
     } else if !args.interactive {
         cmd.arg("-nographic");
@@ -84,7 +85,7 @@ fn append_common_args(cmd: &mut Command, args: &RunArgs, default_gdb_port: u16) 
         println!("    Waiting for GDB connection (frozen)...");
         cmd.arg("-S");
     }
-    
+
     // Memory default
     cmd.arg("-m").arg("2G");
 }
@@ -110,14 +111,21 @@ fn run_qemu_x86_64(args: RunArgs) -> Result<()> {
     append_common_args(&mut cmd, &args, 1234);
 
     if args.debug {
-        cmd.arg("-device").arg("isa-debug-exit,iobase=0xf4,iosize=0x04");
+        cmd.arg("-device")
+            .arg("isa-debug-exit,iobase=0xf4,iosize=0x04");
     }
 
     if use_uefi {
-        cmd.arg("-drive").arg(format!("if=pflash,format=raw,readonly=on,file={}", ovmf_code.display()));
-        cmd.arg("-drive").arg(format!("if=pflash,format=raw,readonly=on,file={}", ovmf_vars.display()));
+        cmd.arg("-drive").arg(format!(
+            "if=pflash,format=raw,readonly=on,file={}",
+            ovmf_code.display()
+        ));
+        cmd.arg("-drive").arg(format!(
+            "if=pflash,format=raw,readonly=on,file={}",
+            ovmf_vars.display()
+        ));
     }
-    
+
     cmd.arg("-cdrom").arg(&iso_path);
     run_with_timeout(cmd, args.timeout_secs)
 }
@@ -166,8 +174,14 @@ fn run_qemu_riscv64(args: RunArgs) -> Result<()> {
 
     append_common_args(&mut cmd, &args, 3234);
 
-    cmd.arg("-drive").arg(format!("if=pflash,unit=0,format=raw,readonly=on,file={}", ovmf_code.display()));
-    cmd.arg("-drive").arg(format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()));
+    cmd.arg("-drive").arg(format!(
+        "if=pflash,unit=0,format=raw,readonly=on,file={}",
+        ovmf_code.display()
+    ));
+    cmd.arg("-drive").arg(format!(
+        "if=pflash,unit=1,format=raw,file={}",
+        ovmf_vars.display()
+    ));
     cmd.arg("-cdrom").arg(&iso_path);
 
     run_with_timeout(cmd, args.timeout_secs)
@@ -192,8 +206,14 @@ fn run_qemu_loongarch64(args: RunArgs) -> Result<()> {
 
     append_common_args(&mut cmd, &args, 4234);
 
-    cmd.arg("-drive").arg(format!("if=pflash,unit=0,format=raw,readonly=on,file={}", ovmf_code.display()));
-    cmd.arg("-drive").arg(format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars.display()));
+    cmd.arg("-drive").arg(format!(
+        "if=pflash,unit=0,format=raw,readonly=on,file={}",
+        ovmf_code.display()
+    ));
+    cmd.arg("-drive").arg(format!(
+        "if=pflash,unit=1,format=raw,file={}",
+        ovmf_vars.display()
+    ));
     cmd.arg("-cdrom").arg(&iso_path);
 
     run_with_timeout(cmd, args.timeout_secs)

@@ -7,9 +7,9 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use spin::Mutex;
 
+use crate::sched::task::TaskId;
 use abi::ids::WatchId;
 use abi::types::{WaitFlags, WakeReason, MAX_WATCH_EVENTS};
-use crate::sched::task::TaskId;
 
 struct WaitEntry {
     watches: Vec<(WatchId, bool)>, // bool = fired

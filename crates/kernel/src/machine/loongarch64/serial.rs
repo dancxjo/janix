@@ -11,8 +11,6 @@ impl Serial {
         Self
     }
 
-
-
     // Blind write for early diagnostics - prevents hangs if UART is unmapped or busy
     pub fn putc(&self, c: u8) {
         // No wait loop - blind fire

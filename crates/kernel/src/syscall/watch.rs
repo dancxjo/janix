@@ -1,7 +1,7 @@
 //! Watch Syscalls
 
-use abi::wire::SyscallResult;
 use abi::syscall::err;
+use abi::wire::SyscallResult;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_WATCH_ID: AtomicU64 = AtomicU64::new(1);

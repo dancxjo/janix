@@ -1,5 +1,5 @@
-use alloc::collections::VecDeque;
 use crate::sched::task::TaskId;
+use alloc::collections::VecDeque;
 
 use abi::ids::ThingId;
 
@@ -23,11 +23,11 @@ impl RunQueue {
     pub fn pop_front(&mut self) -> Option<TaskId> {
         self.queue.pop_front()
     }
-    
+
     pub fn len(&self) -> usize {
         self.queue.len()
     }
-    
+
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }

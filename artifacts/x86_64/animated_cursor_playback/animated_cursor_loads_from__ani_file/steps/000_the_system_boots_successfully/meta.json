@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Animated cursor playback",
+  "scenario": "Animated cursor loads from .ani file",
+  "step": {
+    "index": 0,
+    "text": "the system boots successfully",
+    "status": "skipped",
+    "timestamp": "2026-01-04T21:38:26.661739284+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

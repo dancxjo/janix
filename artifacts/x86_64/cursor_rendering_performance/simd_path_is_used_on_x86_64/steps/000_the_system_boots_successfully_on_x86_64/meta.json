@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Cursor rendering performance",
+  "scenario": "SIMD path is used on x86_64",
+  "step": {
+    "index": 0,
+    "text": "the system boots successfully on x86_64",
+    "status": "skipped",
+    "timestamp": "2026-01-04T21:38:30.534681339+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

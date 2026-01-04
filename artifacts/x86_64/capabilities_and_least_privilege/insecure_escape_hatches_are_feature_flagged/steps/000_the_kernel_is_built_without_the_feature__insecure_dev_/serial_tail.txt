@@ -1,50 +1,50 @@
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
-TICK: switch 1 -> 2 sp=0xffff8000019168d0
-TICK: switch 2 -> 1 sp=0xffff8000017c18d0
+PROC: ELF loaded, entry
+MMU: mapping 7ffe0000->1a50000 len 20000
+SCHED: spawn: name=/boot/modules/ontology_dump start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=3 name=/boot/modules/ontology_dump stack_top=0xffff800001a82000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001a82000 u_stack=0x80000000 entry=0x206d70
+SCHED: configure_ctx_locked: finalized sp=0xffff800001a81f60
+PROC: spawned
+PROC: spawn_kernel_module
+PROC: module phys=17aee000 offset=ffff800000000000
+MMU: new P4 phys=1a82000 virt=ffff800001a82000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+MMU: mapping 200000->1a83000 len 5000
+MMU: mapping 205000->1a8b000 len 15000
+MMU: mapping 21a000->1aa0000 len 1000
+MMU: mapping 21b000->1aa1000 len 1000
+PROC: ELF loaded, entry
+MMU: mapping 7ffe0000->1aa2000 len 20000
+SCHED: spawn: name=/boot/modules/ontology_check start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=4 name=/boot/modules/ontology_check stack_top=0xffff800001ad4000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001ad4000 u_stack=0x80000000 entry=0x208010
+SCHED: configure_ctx_locked: finalized sp=0xffff800001ad3f60
+PROC: spawned
+TICK: switch 1 -> 2 sp=0xffff80000192a650
+TICK: (further switch logs suppressed)
+MMU: mapping 83000000->19f34000 len 2000
+USER: BLOOM: mapped bytespace.mouse_input
+MMU: mapping 90100000->1ad6000 len 384000
+MMU: mapping 90000000->1e5d000 len 100000
+MMU: mapping 90000000->1f5f000 len 100000
+USER: Ontology Check Tool
+MMU: mapping 90484000->2062000 len 384000
+USER: Ontology Dump Tool
+USER: OK: model_roundtrip Surface
+MMU: mapping 81000000->177ed000 len 400000
+USER: ONTOLOGY_SIZE: 3258
+USER: ONTOLOGY_DIGEST: 0x4FE2464E55A4EB01
+MMU: mapping 82000000->1e7ab000 len 40000
+USER: BLOOM: loaded Normal.cur
+USER: BLOOM: initialized

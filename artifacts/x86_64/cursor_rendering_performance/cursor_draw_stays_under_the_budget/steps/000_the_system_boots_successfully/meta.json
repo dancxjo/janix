@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Cursor rendering performance",
+  "scenario": "Cursor draw stays under the budget",
+  "step": {
+    "index": 0,
+    "text": "the system boots successfully",
+    "status": "skipped",
+    "timestamp": "2026-01-04T21:38:29.558320369+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

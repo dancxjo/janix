@@ -1,6 +1,6 @@
 use crate::time;
-use abi::wire::SyscallResult;
 use abi::syscall::err;
+use abi::wire::SyscallResult;
 
 pub fn sys_time_monotonic_now() -> SyscallResult {
     let now = time::monotonic_now();

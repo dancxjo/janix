@@ -6,8 +6,8 @@
 //! - Graph exposure of platform-specific Things
 //! - Registration of capability providers
 
-use alloc::vec::Vec;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use spin::Mutex;
 
 #[cfg(target_arch = "x86_64")]
@@ -70,11 +70,11 @@ pub fn init() -> &'static Platform {
         PLATFORM = Some(Platform::new());
         let platform = PLATFORM.as_ref().unwrap();
         register_bootstrap_providers(platform);
-        
+
         // Dispatch to arch-specific platform init
         #[cfg(target_arch = "x86_64")]
         x86_64::init();
-        
+
         platform
     }
 }

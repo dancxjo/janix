@@ -72,8 +72,8 @@ impl Lapic {
         let pml4 = &mut *(pml4_virt as *mut PageTable);
 
         let virt = LAPIC_VIRT_BASE;
-        let page_flags = PageTableFlags::PRESENT 
-            | PageTableFlags::WRITABLE 
+        let page_flags = PageTableFlags::PRESENT
+            | PageTableFlags::WRITABLE
             | PageTableFlags::NO_EXECUTE
             | PageTableFlags::WRITE_THROUGH
             | PageTableFlags::NO_CACHE;
@@ -81,7 +81,7 @@ impl Lapic {
         // Walk/create page tables for LAPIC_VIRT_BASE
         // Index calculations for 0xFFFF_FFFF_FEC0_0000
         let p4_idx = ((virt >> 39) & 0x1FF) as usize; // 511
-        let p3_idx = ((virt >> 30) & 0x1FF) as usize; // 511  
+        let p3_idx = ((virt >> 30) & 0x1FF) as usize; // 511
         let p2_idx = ((virt >> 21) & 0x1FF) as usize; // 503
         let p1_idx = ((virt >> 12) & 0x1FF) as usize; // 0
 
@@ -150,7 +150,7 @@ impl Lapic {
         msr::enable_xapic();
 
         let phys_base = msr::apic_base_address();
-        
+
         crate::serial::write(b"LAPIC: phys=0x");
         crate::serial::write_hex(phys_base);
         crate::serial::write(b"\n");
@@ -165,7 +165,8 @@ impl Lapic {
 
         // Calibrate timer
         let cal = self.calibrate_timer();
-        self.timer_freq_hz.store(cal.frequency_hz, Ordering::Relaxed);
+        self.timer_freq_hz
+            .store(cal.frequency_hz, Ordering::Relaxed);
         self.ticks_per_ms.store(cal.ticks_per_ms, Ordering::Relaxed);
 
         crate::serial::write(b"LAPIC: timer freq=");
@@ -189,7 +190,10 @@ impl Lapic {
         const PIT_DIVISOR: u16 = ((PIT_FREQ * CALIBRATION_MS) / 1000) as u16;
 
         self.write(LAPIC_TIMER_DIV, TIMER_DIV_16);
-        self.write(LAPIC_LVT_TIMER, LVT_MASK | LVT_TIMER_ONESHOT | TIMER_VECTOR as u32);
+        self.write(
+            LAPIC_LVT_TIMER,
+            LVT_MASK | LVT_TIMER_ONESHOT | TIMER_VECTOR as u32,
+        );
         self.write(LAPIC_TIMER_INIT, 0xFFFF_FFFF);
 
         unsafe {
@@ -205,7 +209,9 @@ impl Lapic {
             ch2.write((PIT_DIVISOR >> 8) as u8);
 
             loop {
-                if (gate.read() & 0x20) != 0 { break; }
+                if (gate.read() & 0x20) != 0 {
+                    break;
+                }
             }
 
             gate.write(g & 0xFC);
@@ -216,7 +222,10 @@ impl Lapic {
         let ticks_per_ms = elapsed / CALIBRATION_MS;
         let frequency_hz = ticks_per_ms * 1000;
 
-        CalibrationResult { ticks_per_ms, frequency_hz }
+        CalibrationResult {
+            ticks_per_ms,
+            frequency_hz,
+        }
     }
 
     fn setup_periodic_timer(&self, freq_hz: u32) {
@@ -248,7 +257,9 @@ impl InterruptController for Lapic {
         self.write(LAPIC_LVT_TIMER, lvt | LVT_MASK);
     }
 
-    fn eoi(&self) { self.send_eoi(); }
+    fn eoi(&self) {
+        self.send_eoi();
+    }
 
     fn set_timer(&self, mode: TimerMode, ticks: u32) {
         let mode_bits = match mode {
@@ -263,7 +274,9 @@ impl InterruptController for Lapic {
         self.timer_freq_hz.load(Ordering::Relaxed)
     }
 
-    fn local_id(&self) -> u32 { self.id() }
+    fn local_id(&self) -> u32 {
+        self.id()
+    }
 }
 
 unsafe impl Send for Lapic {}

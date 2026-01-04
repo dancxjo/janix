@@ -1,5 +1,5 @@
-use abi::wire::SyscallResult;
 use abi::syscall::err;
+use abi::wire::SyscallResult;
 
 // Embed the ontology binary
 // We use include_bytes! to bake the ontology into the kernel binary
@@ -18,12 +18,12 @@ pub fn sys_ontology_get(dst_ptr: u64, dst_len: u64) -> SyscallResult {
     // Copy bytes to user buffer
     // Unsafe because we are writing to a raw pointer provided by userspace
     // In a real system, we'd need verify_area / copy_to_user helpers
-    
+
     // Check if the buffer is large enough
     if dst_len < ONTOLOGY_BIN.len() as u64 {
         return SyscallResult::new(err::ENOMEM, ONTOLOGY_BIN.len() as u64, 0);
     }
-    
+
     // Copy
     unsafe {
         let dst = core::slice::from_raw_parts_mut(dst_ptr as *mut u8, ONTOLOGY_BIN.len());

@@ -1,16 +1,16 @@
 use anyhow::Result;
 use clap::Parser;
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 mod build;
 mod clean;
 mod fetch;
 mod inspect;
 mod iso;
+mod ontology;
 mod run;
 mod test;
-mod ontology;
 
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Build and management tasks for ThingOS")]
@@ -42,6 +42,12 @@ enum Commands {
         /// Run only a specific feature (matches filename in tools/bdd/features)
         #[arg(long, default_value = "all")]
         feature: String,
+        /// Filter by specific tag (e.g. "@mouse")
+        #[arg(long)]
+        tag: Option<String>,
+        /// Force running all tests on all architectures
+        #[arg(long)]
+        force_all: bool,
     },
     /// Inspect running kernel with GDB
     Inspect {
@@ -98,13 +104,15 @@ fn main() -> Result<()> {
         Commands::GenerateOntology => {
             ontology::generate(Path::new("."))?;
             Ok(())
-        },
+        }
         Commands::Clean => clean::run(),
         Commands::Test {
             arch,
             smoke,
             feature,
-        } => test::run(Some(arch), smoke, Some(feature)),
+            tag,
+            force_all,
+        } => test::run(Some(arch), smoke, Some(feature), tag, force_all),
 
         Commands::UpdateDocs => {
             Command::new("cargo")

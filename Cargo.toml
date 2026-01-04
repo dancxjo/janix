@@ -23,6 +23,7 @@ members = [
     "apps/inspector",
     "apps/logview",
     "apps/simd_check",
+    "apps/thingcheck",
     "user/apps/ontology_dump",
     "user/apps/ontology_check",
     "crates/drivers/usb",

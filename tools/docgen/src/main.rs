@@ -1,5 +1,5 @@
 use anyhow::Result;
-use docgen::{ResultsStore, update_readme_from_results};
+use docgen::{update_readme_from_results, ResultsStore};
 use std::fs;
 use std::path::{Path, PathBuf};
 

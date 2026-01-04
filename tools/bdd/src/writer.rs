@@ -1,10 +1,10 @@
+use crate::shared::{slugify, GLOBAL_QEMU};
+use crate::steps::strip_ansi_codes;
+use chrono;
 use cucumber::Writer;
+use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
-use chrono;
-use serde::Serialize;
-use crate::shared::{GLOBAL_QEMU, slugify};
-use crate::steps::strip_ansi_codes;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct StepMeta {
@@ -95,7 +95,8 @@ impl ArtifactWriter {
                         let img = image::open(&ppm_path)?;
                         img.save(&png_path)?;
                         Ok::<(), anyhow::Error>(())
-                    }).await;
+                    })
+                    .await;
 
                     if let Ok(Ok(_)) = conversion_result {
                         meta.artifacts.screenshot = Some("screen.png".to_string());
@@ -107,7 +108,15 @@ impl ArtifactWriter {
             {
                 let log = qemu.log_buffer.lock();
                 let cleaned_log = strip_ansi_codes(&log);
-                let tail = cleaned_log.lines().rev().take(50).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+                let tail = cleaned_log
+                    .lines()
+                    .rev()
+                    .take(50)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 let log_path = step_dir.join("serial_tail.txt");
                 if let Ok(_) = fs::write(&log_path, tail) {
                     meta.artifacts.serial_tail = Some("serial_tail.txt".to_string());
@@ -139,35 +148,31 @@ impl<W: std::fmt::Debug + cucumber::World> Writer<W> for ArtifactWriter {
                 Cucumber::Feature(f, Feature::Started) => {
                     self.current_feature = f.name.clone();
                 }
-                Cucumber::Feature(_, Feature::Scenario(sc, retryable)) => {
-                    match retryable.event {
-                        Scenario::Started => {
-                            self.current_scenario = sc.name.clone();
-                            self.current_steps.clear();
-                            self.step_index = 0;
-                            self.scenario_failed = false;
+                Cucumber::Feature(_, Feature::Scenario(sc, retryable)) => match retryable.event {
+                    Scenario::Started => {
+                        self.current_scenario = sc.name.clone();
+                        self.current_steps.clear();
+                        self.step_index = 0;
+                        self.scenario_failed = false;
+                    }
+                    Scenario::Step(st, step_ev) => match step_ev {
+                        Step::Passed(..) => {
+                            self.capture_artifact(&st.value, "passed").await;
+                            self.step_index += 1;
                         }
-                        Scenario::Step(st, step_ev) => {
-                            match step_ev {
-                                Step::Passed(..) => {
-                                    self.capture_artifact(&st.value, "passed").await;
-                                    self.step_index += 1;
-                                }
-                                Step::Failed(..) => {
-                                    self.capture_artifact(&st.value, "failed").await;
-                                    self.step_index += 1;
-                                    self.scenario_failed = true;
-                                }
-                                Step::Skipped => {
-                                    self.capture_artifact(&st.value, "skipped").await;
-                                    self.step_index += 1;
-                                }
-                                _ => {}
-                            }
+                        Step::Failed(..) => {
+                            self.capture_artifact(&st.value, "failed").await;
+                            self.step_index += 1;
+                            self.scenario_failed = true;
+                        }
+                        Step::Skipped => {
+                            self.capture_artifact(&st.value, "skipped").await;
+                            self.step_index += 1;
                         }
                         _ => {}
-                    }
-                }
+                    },
+                    _ => {}
+                },
                 _ => {}
             }
         }

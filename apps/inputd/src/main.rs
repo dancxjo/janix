@@ -8,7 +8,7 @@ use thing_std::*;
 pub extern "C" fn main() {
     thing_std::init(0);
     log_info("INPUTD: Alive");
-    
+
     // Simulate discovery for BDD verification
     log_info("kind: Keyboard");
     log_info("identity: stable");

@@ -188,7 +188,6 @@ impl Machine for ArchMachine {
 
         // Phase 1: Early init (GDT, IDT, disable PIC)
         init_early();
-
     }
 
     fn console_write(&self, bytes: &[u8]) -> usize {
@@ -219,7 +218,7 @@ impl Machine for ArchMachine {
                 1 => Port::<u8>::new(port).write(val as u8),
                 2 => Port::<u16>::new(port).write(val as u16),
                 4 => Port::<u32>::new(port).write(val),
-                _ => {},
+                _ => {}
             }
         }
     }

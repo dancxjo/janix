@@ -11,7 +11,9 @@ use graph::symbols::{self, sym};
 pub fn init() {
     // Initialize LAPIC now that heap is ready
     let hhdm = crate::boot::get_boot_ctx().hhdm_offset;
-    unsafe { crate::machine::x86_64::timer::init_lapic(hhdm); }
+    unsafe {
+        crate::machine::x86_64::timer::init_lapic(hhdm);
+    }
 
     seed_platform_graph();
     crate::log::kprintln("PLATFORM: x86_64 initialized");
@@ -21,7 +23,11 @@ pub fn init() {
 fn seed_platform_graph() {
     let apic_id = machine().local_cpu_id();
     let timer_freq = machine().timer_frequency_hz();
-    let resolution_ns = if timer_freq > 0 { 1_000_000_000u64 / timer_freq as u64 } else { 0 };
+    let resolution_ns = if timer_freq > 0 {
+        1_000_000_000u64 / timer_freq as u64
+    } else {
+        0
+    };
 
     // Create place.platform
     let platform_place = if let Some(p) = store::find_thing_by_name(sym::PLACE_PLATFORM) {
@@ -73,6 +79,8 @@ fn seed_platform_graph() {
     store::thing_set_inline_payload(ic_thing, &ic_payload);
 
     crate::log::kprintln(&alloc::format!(
-        "PLATFORM: CPU apic_id={}, timer freq={}Hz", apic_id, timer_freq
+        "PLATFORM: CPU apic_id={}, timer freq={}Hz",
+        apic_id,
+        timer_freq
     ));
 }

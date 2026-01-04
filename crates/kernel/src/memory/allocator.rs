@@ -47,7 +47,9 @@ fn print_decimal(mut v: u64) {
     while v > 0 {
         buf[i] = b'0' + (v % 10) as u8;
         v /= 10;
-        if i == 0 { break; }
+        if i == 0 {
+            break;
+        }
         i -= 1;
     }
     crate::serial::write(&buf[i + 1..]);

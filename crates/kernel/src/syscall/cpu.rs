@@ -1,6 +1,6 @@
+use abi::cpu::CpuFeaturesWire;
 use abi::syscall::err;
 use abi::wire::SyscallResult;
-use abi::cpu::CpuFeaturesWire;
 
 pub fn sys_cpu_features(out_ptr: u64, out_len: u64) -> SyscallResult {
     let required = core::mem::size_of::<CpuFeaturesWire>();

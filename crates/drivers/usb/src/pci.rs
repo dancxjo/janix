@@ -38,7 +38,7 @@ impl PciAddress {
     pub fn device_id(&self) -> u16 {
         (self.read(0x00) >> 16) as u16
     }
-    
+
     pub fn class_code(&self) -> u8 {
         (self.read(0x08) >> 24) as u8
     }
@@ -46,7 +46,7 @@ impl PciAddress {
     pub fn subclass(&self) -> u8 {
         (self.read(0x08) >> 16) as u8
     }
-    
+
     pub fn prog_if(&self) -> u8 {
         (self.read(0x08) >> 8) as u8
     }
@@ -59,13 +59,19 @@ impl PciAddress {
 pub fn scan() -> Option<PciAddress> {
     for bus in 0..255 {
         for dev in 0..32 {
-            let addr = PciAddress { bus, device: dev, function: 0 };
-            if addr.vendor_id() == 0xFFFF { continue; }
-            
+            let addr = PciAddress {
+                bus,
+                device: dev,
+                function: 0,
+            };
+            if addr.vendor_id() == 0xFFFF {
+                continue;
+            }
+
             // Checks...
             // Check xHCI: Class 0x0C, Subclass 0x03, ProgIF 0x30
             if addr.class_code() == 0x0C && addr.subclass() == 0x03 && addr.prog_if() == 0x30 {
-               return Some(addr);
+                return Some(addr);
             }
         }
     }

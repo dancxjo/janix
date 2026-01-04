@@ -6,7 +6,7 @@
 //! 2. Initializes the IO-APIC for routing legacy IRQs
 //! 3. Delegates timer operations to the LAPIC
 
-use super::apic::{LAPIC, IOAPIC};
+use super::apic::{IOAPIC, LAPIC};
 use x86_64::instructions::port::Port;
 
 // PIC ports
@@ -43,14 +43,14 @@ pub unsafe fn init_lapic(hhdm_offset: u64) {
 
     // Initialize IO-APIC and route legacy IRQs
     IOAPIC.init(hhdm_offset);
-    
+
     // Route keyboard (IRQ 1) to vector 33
     let lapic_id = LAPIC.id() as u8;
     IOAPIC.route_irq(1, 33, lapic_id);
-    
+
     // Route mouse (IRQ 12) to vector 44
     IOAPIC.route_irq(12, 44, lapic_id);
-    
+
     crate::serial::write(b"TIMER: IO-APIC configured for PS/2\n");
 }
 

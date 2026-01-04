@@ -42,8 +42,16 @@ Use `just`. Do not use `cargo run` directly unless you know exactly why.
 *   **Reset Environment**: `just die` (Kills stuck QEMU/GDB instances)
 
 ### Testing
-*   **Unit & BDD Tests**: `just test` (Runs all architectures)
-*   **Architecture specific**: `just test-x86_64`
+> [!CAUTION]
+> **Do not run `just test` blindly.** It is failsafed to prevent you from running the entire test suite (4 arches * all features) which takes forever.
+> Always target your tests.
+
+*   **Targeted (Recommended)**:
+    *   `just test --tag @mouse` (Run scenarios tagged @mouse)
+    *   `just test --feature mouse` (Run features with 'mouse' in filename)
+*   **Architecture specific**: `just test-x86_64 --tag @mouse`
+*   **Smoke**: `just smoke` (Runs minimal boot test)
+*   **Emergency Override**: `just test --force-all` (If you really need everything)
 
 ### Debugging
 *   **GDB Attach**:

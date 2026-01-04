@@ -39,11 +39,17 @@ pub trait InterruptController: Send + Sync {
     /// Get the timer resolution in nanoseconds.
     fn timer_resolution_ns(&self) -> u64 {
         let freq = self.timer_frequency_hz() as u64;
-        if freq > 0 { 1_000_000_000 / freq } else { 0 }
+        if freq > 0 {
+            1_000_000_000 / freq
+        } else {
+            0
+        }
     }
 
     /// Get the controller's local ID (e.g., APIC ID for LAPIC).
-    fn local_id(&self) -> u32 { 0 }
+    fn local_id(&self) -> u32 {
+        0
+    }
 }
 
 // Global interrupt controller reference

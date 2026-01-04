@@ -13,14 +13,19 @@ pub extern "C" fn main() {
     log_info("USB: Driver starting");
 
     if let Some(addr) = pci::scan() {
-        log_info(&alloc::format!("USB: xHCI Found at {}:{}:{} BAR0={:#x}",
-            addr.bus, addr.device, addr.function, addr.bar0()));
-            
+        log_info(&alloc::format!(
+            "USB: xHCI Found at {}:{}:{} BAR0={:#x}",
+            addr.bus,
+            addr.device,
+            addr.function,
+            addr.bar0()
+        ));
+
         unsafe {
             if let Ok(mut xhc) = xhci::XhciController::new(addr.bar0() as u64) {
-                 xhc.init();
+                xhc.init();
             } else {
-                 log_info("xHCI: Failed to map memory");
+                log_info("xHCI: Failed to map memory");
             }
         }
     } else {

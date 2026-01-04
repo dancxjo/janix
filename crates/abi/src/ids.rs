@@ -66,10 +66,10 @@ mod tests {
         // "hash treaty"
         // kind.Window -> 0x2AEC7E1B886B5C47
         assert_eq!(sym("kind.Window").0, 0x2AEC7E1B886B5C47);
-        
+
         // schema.Window@1 -> 0x939AA0A705967517
         assert_eq!(sym("schema.Window@1").0, 0x939AA0A705967517);
-        
+
         // Ensure INVALID is 0 (though FNV doesn't guarantee 0 is impossible, it's unlikely)
         // Ideally we reserve 0.
         assert!(sym("something").0 != 0);

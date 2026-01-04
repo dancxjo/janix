@@ -1,7 +1,7 @@
+use crate::shared::GLOBAL_QEMU;
+use crate::steps::{expect_to_see_simple, BootWorld};
 use anyhow::Result;
 use cucumber::{given, then, when};
-use crate::steps::{BootWorld, expect_to_see_simple};
-use crate::shared::GLOBAL_QEMU;
 
 #[given("the system has booted")]
 async fn given_system_booted(world: &mut BootWorld) -> Result<()> {

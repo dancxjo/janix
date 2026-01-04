@@ -1,6 +1,11 @@
-use graph::symbols::{self, sym};
-use graph::store;
 use crate::PreBootInfo;
+use abi::bodies::BYTESPACE_FLAG_HAS_PHYS_BASE;
+use graph::store;
+use graph::symbols::{self, sym};
+use models::{
+    BytespaceBody, DisplayDeviceBody, FramebufferBody, MouseStreamBody, PointerStateBody,
+    SurfaceBody, Thing,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BootContext {
@@ -58,31 +63,31 @@ pub fn pre_boot(info: PreBootInfo) {
 pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     let ctx = unsafe { &*ctx_ptr };
     BOOT_CTX = Some(*ctx);
-    
+
     let heap_config = crate::memory::heap::HeapConfig {
         phys_base: ctx.heap_phys_base,
         virt_base: ctx.heap_phys_base + ctx.hhdm_offset,
         size: 64 * 1024 * 1024,
     };
     crate::memory::heap::init(heap_config).expect("failed to init heap");
-    
+
     crate::log::init(get_boot_ctx());
-    
+
     // Initialize PS/2 mouse (requires heap)
     crate::machine::input::init_mouse();
-    
+
     graph::init();
     graph::seed_minimal();
-    
+
     // Platform layer handles arch-specific wiring and graph seeding
     crate::platform::init();
-    
+
     seed_bloom_ontology();
-    
+
     crate::sched::init();
-    
+
     spawn_module_by_name(ctx, "sprout");
-    
+
     crate::log::kprintln("BOOT: Handing off to scheduler");
     crate::sched::run();
 }
@@ -100,6 +105,25 @@ pub fn spawn_module_by_name(ctx: &BootContext, name: &str) {
 }
 
 fn seed_bloom_ontology() {
+    let root = store::find_thing_by_name(sym::PLACE_ROOT);
+
+    let ensure_place =
+        |name: abi::ids::SymbolId, root: Option<abi::ids::ThingId>| -> abi::ids::ThingId {
+            if let Some(existing) = store::find_thing_by_name(name) {
+                existing
+            } else {
+                let p = store::thing_create(sym::KIND_PLACE);
+                store::thing_register_name(p, name);
+                if let Some(parent) = root {
+                    store::relationship_create(sym::PRED_CONTAINS, parent, p);
+                }
+                p
+            }
+        };
+
+    let display_place = ensure_place(symbols::intern(b"place.display"), root);
+    let _windows_place = ensure_place(symbols::intern(b"place.windows"), root);
+
     // Create place.input if not exists and seed pointer.0
     let input_place = if let Some(p) = store::find_thing_by_name(sym::PLACE_INPUT) {
         p
@@ -112,15 +136,8 @@ fn seed_bloom_ontology() {
         p
     };
 
-    // Create pointer.0 Thing (state mirror, updated at low rate)
-    let pointer_thing = store::thing_create(sym::KIND_POINTER);
-    let pointer_name = symbols::intern(b"pointer.0");
-    store::thing_register_name(pointer_thing, pointer_name);
-    store::relationship_create(sym::REL_HAS_POINTER, input_place, pointer_thing);
-    store::thing_set_inline_payload(pointer_thing, &[0u8; 12]);
-    crate::log::kprintln("BOOT: Created pointer.0");
-    
     // Create bytespace.mouse_input for high-throughput mouse events
+    let mut mouse_stream_id: Option<abi::ids::ThingId> = None;
     #[cfg(target_arch = "x86_64")]
     {
         use crate::machine::x86_64::ps2_mouse;
@@ -128,28 +145,86 @@ fn seed_bloom_ontology() {
         let mouse_bs_name = symbols::intern(b"bytespace.mouse_input");
         store::thing_register_name(mouse_bs, mouse_bs_name);
         store::relationship_create(sym::PRED_CONTAINS, input_place, mouse_bs);
-        
+
         // Attach physical address and size
         let phys_addr = ps2_mouse::get_ring_phys_addr();
         let ring_size = ps2_mouse::get_ring_size() as u64;
-        
+
+        let bs_payload = BytespaceBody {
+            len: ring_size,
+            flags: BYTESPACE_FLAG_HAS_PHYS_BASE,
+            _pad: 0,
+            phys_base: phys_addr,
+        };
+        store::thing_set_inline_payload(mouse_bs, &bs_payload.encode());
+
         let phys_thing = store::thing_create(sym::KIND_PLACE);
         let mut phys_payload = alloc::vec::Vec::new();
         phys_payload.extend_from_slice(&phys_addr.to_le_bytes());
         store::thing_set_inline_payload(phys_thing, &phys_payload);
         store::relationship_create(sym::PRED_BASE_PHYS, mouse_bs, phys_thing);
-        
+
         let size_thing = store::thing_create(sym::KIND_PLACE);
         let mut size_payload = alloc::vec::Vec::new();
         size_payload.extend_from_slice(&ring_size.to_le_bytes());
         store::thing_set_inline_payload(size_thing, &size_payload);
         store::relationship_create(sym::PRED_SIZE, mouse_bs, size_thing);
-        
-        crate::log::kprintln(&alloc::format!("BOOT: Created bytespace.mouse_input phys={:#x} size={}", phys_addr, ring_size));
+
+        let mouse_stream = store::thing_create(symbols::intern(b"kind.MouseStream"));
+        store::thing_register_name(mouse_stream, symbols::intern(b"mouse.stream.0"));
+        let ms_payload = MouseStreamBody {
+            bytespace: mouse_bs,
+            capacity: ps2_mouse::RING_CAPACITY,
+            sample_size: core::mem::size_of::<abi::mouse_ring::MouseSample>() as u32,
+            write_index: 0,
+            dropped: 0,
+        };
+        store::thing_set_inline_payload(mouse_stream, &ms_payload.encode());
+        store::relationship_create(sym::PRED_CONTAINS, input_place, mouse_stream);
+        store::relationship_create(sym::PRED_REFERENCES, mouse_stream, mouse_bs);
+        mouse_stream_id = Some(mouse_stream);
+
+        crate::log::kprintln(&alloc::format!(
+            "BOOT: Created bytespace.mouse_input phys={:#x} size={}",
+            phys_addr,
+            ring_size
+        ));
     }
 
+    if mouse_stream_id.is_none() {
+        let mouse_stream = store::thing_create(symbols::intern(b"kind.MouseStream"));
+        store::thing_register_name(mouse_stream, symbols::intern(b"mouse.stream.0"));
+        let ms_payload = MouseStreamBody {
+            bytespace: abi::ids::ThingId(0),
+            capacity: 0,
+            sample_size: 0,
+            write_index: 0,
+            dropped: 0,
+        };
+        store::thing_set_inline_payload(mouse_stream, &ms_payload.encode());
+        store::relationship_create(sym::PRED_CONTAINS, input_place, mouse_stream);
+        mouse_stream_id = Some(mouse_stream);
+    }
+
+    // Create pointer.0 Thing (state mirror, updated at low rate)
+    let pointer_thing = store::thing_create(sym::KIND_POINTER);
+    let pointer_name = symbols::intern(b"pointer.0");
+    store::thing_register_name(pointer_thing, pointer_name);
+    store::thing_register_name(pointer_thing, symbols::intern(b"pointer.state"));
+    store::relationship_create(sym::REL_HAS_POINTER, input_place, pointer_thing);
+    store::relationship_create(sym::PRED_CONTAINS, input_place, pointer_thing);
+    let pointer_payload = PointerStateBody {
+        stream: mouse_stream_id.unwrap_or(abi::ids::ThingId(0)),
+        x: 0,
+        y: 0,
+        buttons: 0,
+        updated_at_ns: 0,
+    };
+    store::thing_set_inline_payload(pointer_thing, &pointer_payload.encode());
+    crate::log::kprintln("BOOT: Created pointer.0");
+
     let ctx = get_boot_ctx();
-    
+
     // Create Asset Root
     let asset_root = store::thing_create(sym::KIND_PLACE);
     store::thing_register_name(asset_root, sym::PLACE_ASSETS);
@@ -158,8 +233,10 @@ fn seed_bloom_ontology() {
     }
 
     for m in ctx.modules {
-        if m.path.is_empty() { continue; }
-        
+        if m.path.is_empty() {
+            continue;
+        }
+
         crate::log::kprintln(&alloc::format!("MOD: {} {}", m.path, m.cmdline));
 
         if m.path.contains("/assets/") {
@@ -169,13 +246,13 @@ fn seed_bloom_ontology() {
 
             let asset_thing = store::thing_create(sym::KIND_ASSET);
             store::thing_register_name(asset_thing, symbols::intern(thing_name_str.as_bytes()));
-            
+
             let bs = store::thing_create(sym::KIND_BYTESPACE_MODULE);
             store::thing_register_name(bs, symbols::intern(bs_name_str.as_bytes()));
-            
+
             store::relationship_create(sym::PRED_BACKS, asset_thing, bs);
             store::relationship_create(sym::PRED_CONTAINS, asset_root, asset_thing);
-            
+
             let phys_thing = store::thing_create(sym::KIND_PLACE);
             let mut phys_payload = alloc::vec::Vec::new();
             phys_payload.extend_from_slice(&m.phys_addr.to_le_bytes());
@@ -187,7 +264,7 @@ fn seed_bloom_ontology() {
             size_payload.extend_from_slice(&m.size.to_le_bytes());
             store::thing_set_inline_payload(size_thing, &size_payload);
             store::relationship_create(sym::PRED_SIZE, bs, size_thing);
-            
+
             crate::log::kprintln(&alloc::format!("BOOT: Registered asset {}", thing_name_str));
         }
     }
@@ -196,14 +273,24 @@ fn seed_bloom_ontology() {
         let fb_thing = store::thing_create(sym::KIND_DEVICE_DISPLAY);
         let fb_name = symbols::intern(b"device.display0");
         store::thing_register_name(fb_thing, fb_name);
-        
+        store::thing_register_name(fb_thing, symbols::intern(b"display.0"));
+        store::relationship_create(sym::PRED_CONTAINS, display_place, fb_thing);
+
         let fb_bs_name = symbols::intern(b"bytespace.display0");
         let fb_bytespace = store::thing_create(sym::KIND_BYTESPACE_FRAMEBUFFER);
         store::thing_register_name(fb_bytespace, fb_bs_name);
-        
+        store::relationship_create(sym::PRED_CONTAINS, display_place, fb_bytespace);
+
         let surface = store::thing_create(sym::KIND_SURFACE);
+        store::thing_register_name(surface, symbols::intern(b"surface.display0"));
         store::relationship_create(sym::PRED_PRIMARY, fb_thing, surface);
         store::relationship_create(sym::PRED_BACKS, surface, fb_bytespace);
+        store::relationship_create(sym::PRED_CONTAINS, display_place, surface);
+
+        let framebuffer_thing = store::thing_create(symbols::intern(b"kind.Framebuffer"));
+        store::thing_register_name(framebuffer_thing, symbols::intern(b"framebuffer.display0"));
+        store::relationship_create(sym::PRED_REFERENCES, framebuffer_thing, fb_bytespace);
+        store::relationship_create(sym::PRED_CONTAINS, display_place, framebuffer_thing);
 
         let fb_phys_thing = store::thing_create(sym::KIND_PLACE);
         let mut fb_phys_payload = alloc::vec::Vec::new();
@@ -217,31 +304,57 @@ fn seed_bloom_ontology() {
         fb_size_payload.extend_from_slice(&fb_size.to_le_bytes());
         store::thing_set_inline_payload(fb_size_thing, &fb_size_payload);
         store::relationship_create(sym::PRED_SIZE, fb_bytespace, fb_size_thing);
-        
-        let mut display_payload = alloc::vec::Vec::new();
-        display_payload.extend_from_slice(&(fb.width as u32).to_le_bytes());
-        display_payload.extend_from_slice(&(fb.height as u32).to_le_bytes());
-        display_payload.extend_from_slice(&(fb.pitch as u32).to_le_bytes());
-        display_payload.extend_from_slice(&fb.bpp.to_le_bytes());
-        display_payload.push(fb.red_mask_shift);
-        display_payload.push(fb.green_mask_shift);
-        display_payload.push(fb.blue_mask_shift);
-        display_payload.push(fb.red_mask_size);
-        display_payload.push(fb.green_mask_size);
-        display_payload.push(fb.blue_mask_size);
-        store::thing_set_inline_payload(fb_thing, &display_payload);
-        
+
+        let fb_bytespace_payload = BytespaceBody {
+            len: fb_size,
+            flags: BYTESPACE_FLAG_HAS_PHYS_BASE,
+            _pad: 0,
+            phys_base: fb.addr,
+        };
+        store::thing_set_inline_payload(fb_bytespace, &fb_bytespace_payload.encode());
+
+        let framebuffer_payload = FramebufferBody {
+            bytespace: fb_bytespace,
+            width: fb.width as u32,
+            height: fb.height as u32,
+            stride_bytes: fb.pitch as u32,
+            format: symbols::intern(b"format.bgra8888"),
+        };
+        store::thing_set_inline_payload(framebuffer_thing, &framebuffer_payload.encode());
+
+        let surface_payload = SurfaceBody {
+            width: fb.width as u32,
+            height: fb.height as u32,
+            stride_bytes: fb.pitch as u32,
+            format: symbols::intern(b"format.bgra8888"),
+            bytespace: fb_bytespace,
+        };
+        store::thing_set_inline_payload(surface, &surface_payload.encode());
+
+        let display_payload = DisplayDeviceBody {
+            framebuffer: framebuffer_thing,
+            width: fb.width as u32,
+            height: fb.height as u32,
+            stride_bytes: fb.pitch as u32,
+            format: symbols::intern(b"format.bgra8888"),
+            refresh_hz: 60,
+        };
+        store::thing_set_inline_payload(fb_thing, &display_payload.encode());
+
         crate::log::kprintln(&alloc::format!(
             "BOOT: display0 {}x{} r_shift={} g_shift={} b_shift={}",
-            fb.width, fb.height, fb.red_mask_shift, fb.green_mask_shift, fb.blue_mask_shift
+            fb.width,
+            fb.height,
+            fb.red_mask_shift,
+            fb.green_mask_shift,
+            fb.blue_mask_shift
         ));
-
 
         // Set mouse bounds to match framebuffer dimensions
         crate::machine::input::set_mouse_bounds(fb.width as u32, fb.height as u32);
 
         if let Some(devices) = store::find_thing_by_name(sym::PLACE_DEVICES) {
-             store::relationship_create(sym::PRED_CONTAINS, devices, fb_thing);
+            store::relationship_create(sym::PRED_CONTAINS, devices, fb_thing);
         }
     }
 }

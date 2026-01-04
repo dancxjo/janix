@@ -1,12 +1,12 @@
+use crate::qemu::QemuProcess;
+use crate::shared::{ANY_FAILURE, GLOBAL_LAST_ERROR, GLOBAL_QEMU};
 use anyhow::{Context, Result};
 use cucumber::{given, then, when, World};
+use image::{GenericImageView, Pixel};
 use std::path::PathBuf;
+use std::process::Command as SyncCommand;
 use std::process::Stdio;
 use tokio::process::Command;
-use crate::qemu::QemuProcess;
-use crate::shared::{GLOBAL_LAST_ERROR, GLOBAL_QEMU, ANY_FAILURE};
-use image::{GenericImageView, Pixel};
-use std::process::Command as SyncCommand;
 
 #[derive(Debug, Default, World)]
 pub struct BootWorld {
@@ -33,7 +33,7 @@ pub fn strip_ansi_codes(s: &str) -> String {
 
 pub async fn soft_fail(msg: String) {
     eprintln!("SOFT FAIL: {}", msg);
-    
+
     // PRINT LOG CONTEXT
     let log = get_clean_log().await;
     let lines: Vec<&str> = log.lines().collect();
@@ -56,14 +56,14 @@ pub async fn expect_to_see_simple(world: &mut BootWorld, needle: String) -> Resu
     let _ = world; // Silence unused warning
     let start = std::time::Instant::now();
     let timeout_duration = std::time::Duration::from_secs(30);
-    
+
     while start.elapsed() < timeout_duration {
         let log = get_clean_log().await;
         if log.contains(&needle) {
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        
+
         let status = {
             let mut guard = GLOBAL_QEMU.lock().await;
             if let Some(qemu) = guard.as_mut() {
@@ -72,13 +72,13 @@ pub async fn expect_to_see_simple(world: &mut BootWorld, needle: String) -> Resu
                 None
             }
         };
-        
+
         if let Some(s) = status {
             soft_fail(format!("QEMU exited early with {}", s)).await;
             return Ok(());
         }
     }
-    
+
     soft_fail(format!("Timeout waiting for '{}'", needle)).await;
     Ok(())
 }
@@ -88,7 +88,7 @@ async fn boot_os_impl(world: &mut BootWorld, display_provider: Option<String>) -
         world.arch = std::env::var("BDD_ARCH").unwrap_or_else(|_| "x86_64".to_string());
     }
     if world.arch == "all" {
-        world.arch = "x86_64".to_string(); 
+        world.arch = "x86_64".to_string();
     }
     let arch = &world.arch;
 
@@ -102,16 +102,16 @@ async fn boot_os_impl(world: &mut BootWorld, display_provider: Option<String>) -
     } else {
         None
     };
-    
-    // We rebuild ISO only if not ontology test or force needed. 
+
+    // We rebuild ISO only if not ontology test or force needed.
     // Actually we should always build to be safe.
-    
+
     let mut cmd = Command::new(&xtask_bin);
     cmd.args(["iso", "--env", arch]);
     if let Some(c) = cmdline {
         cmd.arg("--cmdline").arg(c);
     }
-    
+
     let status = cmd
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -122,11 +122,14 @@ async fn boot_os_impl(world: &mut BootWorld, display_provider: Option<String>) -
         return Err(anyhow::anyhow!("Failed to build ISO"));
     }
 
-    let iso_path = root.join("target").join("iso").join(format!("thingos-{}.iso", arch));
+    let iso_path = root
+        .join("target")
+        .join("iso")
+        .join(format!("thingos-{}.iso", arch));
     let ovmf_dir = root.join("vendor").join("ovmf");
     let ovmf_code = ovmf_dir.join(format!("ovmf-code-{}.fd", arch));
     let ovmf_vars = ovmf_dir.join(format!("ovmf-vars-{}.fd", arch));
-    
+
     let qmp_sock_dir = std::env::temp_dir();
     let qmp_sock_path = qmp_sock_dir.join(format!("qmp-{}.sock", uuid::Uuid::new_v4()));
 
@@ -137,20 +140,20 @@ async fn boot_os_impl(world: &mut BootWorld, display_provider: Option<String>) -
         &ovmf_vars,
         &qmp_sock_path,
         display_provider.as_deref(),
-    ).await?;
+    )
+    .await?;
 
     {
         let mut guard = GLOBAL_QEMU.lock().await;
         *guard = Some(qemu);
     }
-    
+
     let mut guard = GLOBAL_LAST_ERROR.lock().await;
     *guard = None;
     ANY_FAILURE.store(false, std::sync::atomic::Ordering::SeqCst);
 
     Ok(())
 }
-
 
 // --- STEPS ---
 
@@ -200,11 +203,11 @@ async fn given_system_reached(world: &mut BootWorld, state: String) -> Result<()
     {
         let guard = GLOBAL_QEMU.lock().await;
         if guard.is_none() {
-            drop(guard); 
+            drop(guard);
             boot_os_impl(world, None).await?;
         }
     }
-    
+
     match state.as_str() {
         "kernel ready" => expect_to_see_simple(world, "Booted.".to_string()).await?,
         "userland start" => expect_to_see_simple(world, "SPROUT: I am alive".to_string()).await?,
@@ -230,16 +233,16 @@ async fn then_system_should_reach(world: &mut BootWorld, state: String) -> Resul
 #[given("the workspace has generated ontology artifacts")]
 async fn given_ontology_artifacts(world: &mut BootWorld) -> Result<()> {
     let _ = world;
-    // Just ensure xtask GenerateOntology was called. 
+    // Just ensure xtask GenerateOntology was called.
     // We can call it here.
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root = manifest_dir.parent().unwrap().parent().unwrap();
     let xtask_bin = root.join("target").join("debug").join("xtask");
-    
+
     let status = SyncCommand::new(&xtask_bin)
         .arg("generate-ontology")
         .status()?;
-        
+
     if !status.success() {
         return Err(anyhow::anyhow!("Failed to generate ontology"));
     }
@@ -264,15 +267,23 @@ async fn when_run_ontology_twice(_world: &mut BootWorld) -> Result<()> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let root = manifest_dir.parent().unwrap().parent().unwrap();
     let xtask_bin = root.join("target").join("debug").join("xtask");
-    
+
     // Run 1
-    let status1 = SyncCommand::new(&xtask_bin).arg("generate-ontology").status()?;
-    if !status1.success() { return Err(anyhow::anyhow!("Gen 1 failed")); }
-    
+    let status1 = SyncCommand::new(&xtask_bin)
+        .arg("generate-ontology")
+        .status()?;
+    if !status1.success() {
+        return Err(anyhow::anyhow!("Gen 1 failed"));
+    }
+
     // Run 2
-    let status2 = SyncCommand::new(&xtask_bin).arg("generate-ontology").status()?;
-    if !status2.success() { return Err(anyhow::anyhow!("Gen 2 failed")); }
-    
+    let status2 = SyncCommand::new(&xtask_bin)
+        .arg("generate-ontology")
+        .status()?;
+    if !status2.success() {
+        return Err(anyhow::anyhow!("Gen 2 failed"));
+    }
+
     Ok(())
 }
 
@@ -308,14 +319,14 @@ async fn when_fetch_registry(world: &mut BootWorld) -> Result<()> {
     // I should modify Sprout or use a custom init for this test?
     // Or I can just check if I can modify Sprout behavior via cmdline?
     // "sprout.start=ontology_dump" ?
-    
+
     // Let's modify sprout/src/main.rs to spawn ontology_dump if present?
-    // Or just rely on "sprout spawns everything in modules"? 
+    // Or just rely on "sprout spawns everything in modules"?
     // Sprout currently spawns bloom, clock, etc. hardcoded or by scan.
-    
+
     // Assuming sprout spawns it or I added it to the list.
     // I haven't added it to Sprout's spawn list.
-    
+
     // I will soft fail if I don't see output.
     expect_to_see_simple(world, "Ontology Dump Tool".to_string()).await
 }
@@ -333,10 +344,10 @@ async fn then_registry_digest_matches(world: &mut BootWorld) -> Result<()> {
     let root = manifest_dir.parent().unwrap().parent().unwrap();
     let lock_path = root.join("artifacts/ontology/ontology.lock");
     let content = std::fs::read_to_string(lock_path)?;
-    
+
     let digest_line = content.lines().find(|l| l.starts_with("digest =")).unwrap();
     let expected_digest = digest_line.split(" = ").nth(1).unwrap();
-    
+
     expect_to_see_simple(world, format!("ONTOLOGY_DIGEST: {}", expected_digest)).await
 }
 
@@ -356,7 +367,7 @@ async fn then_schema_exists(world: &mut BootWorld, schema: String) -> Result<()>
     // I will soft fail or comment out this expectation in feature file?
     // No, I should implement it. But I'm limited on tools.
     // I will implement "Schema mismatch" scenario instead.
-    
+
     // Wait, the feature file says: "And it reports kind ... exists".
     // I'll skip this step implementation for now or implement it as "Wait for nothing".
     Ok(())
@@ -390,6 +401,21 @@ async fn when_wrong_schema(world: &mut BootWorld) -> Result<()> {
     Ok(())
 }
 
+#[when("a userspace program checks core Things")]
+async fn when_userspace_checks_core(world: &mut BootWorld) -> Result<()> {
+    expect_to_see_simple(world, "thingcheck: start".to_string()).await
+}
+
+#[when("a userspace program checks input Things")]
+async fn when_userspace_checks_input(world: &mut BootWorld) -> Result<()> {
+    expect_to_see_simple(world, "thingcheck: start".to_string()).await
+}
+
+#[when("a userspace program checks window Things")]
+async fn when_userspace_checks_window(world: &mut BootWorld) -> Result<()> {
+    expect_to_see_simple(world, "thingcheck: start".to_string()).await
+}
+
 // --- Display / Wallpaper Steps ---
 
 #[then(expr = "the boot module list contains a module tagged {string}")]
@@ -404,7 +430,11 @@ async fn then_graph_contains_named(world: &mut BootWorld, name: String) -> Resul
 
 #[then("the Asset Thing exposes a readable bytespace of non-zero size")]
 async fn then_asset_has_bytespace(world: &mut BootWorld) -> Result<()> {
-    expect_to_see_simple(world, "register name: bytespace.asset.clouds.bmp".to_string()).await
+    expect_to_see_simple(
+        world,
+        "register name: bytespace.asset.clouds.bmp".to_string(),
+    )
+    .await
 }
 
 #[then("the framebuffer bytespace is available")]
@@ -426,7 +456,13 @@ async fn then_top_left_matches_decoded(world: &mut BootWorld, x: i32, y: i32) ->
 }
 
 #[then(expr = r"the pixel at \({int}, {int}\) matches the decoded pixel at \({int}, {int}\)")]
-async fn then_pixel_at_matches(world: &mut BootWorld, fx: i32, fy: i32, dx: i32, dy: i32) -> Result<()> {
+async fn then_pixel_at_matches(
+    world: &mut BootWorld,
+    fx: i32,
+    fy: i32,
+    dx: i32,
+    dy: i32,
+) -> Result<()> {
     let _ = (world, fx, fy, dx, dy);
     Ok(())
 }
@@ -457,7 +493,7 @@ async fn given_wait_for(world: &mut BootWorld, marker: String) -> Result<()> {
 #[then("the display should show the clouds wallpaper")]
 async fn then_display_shows_clouds(world: &mut BootWorld) -> Result<()> {
     let _ = world;
-    
+
     // Load reference BMP
     let reference = match load_reference_bmp() {
         Some(img) => img,
@@ -466,7 +502,7 @@ async fn then_display_shows_clouds(world: &mut BootWorld) -> Result<()> {
             return Ok(());
         }
     };
-    
+
     // Capture screenshot from QEMU
     let screenshot = {
         let mut guard = GLOBAL_QEMU.lock().await;
@@ -484,40 +520,45 @@ async fn then_display_shows_clouds(world: &mut BootWorld) -> Result<()> {
             }
         }
     };
-    
+
     // Reference BMP is 1024x1024
     // The image crate loads BMP with rows flipped to standard top-down order
     let ref_pixel_0_0 = reference.get_pixel(0, 0).to_rgb();
-    
+
     // Screenshot top-left should match reference pixel (0,0)
     let screen_pixel_0_0 = screenshot.get_pixel(0, 0).to_rgb();
-    
+
     // Check center of screen is not black (indicates wallpaper was painted)
     let center_x = screenshot.width() / 2;
     let center_y = screenshot.height() / 2;
     let center_pixel = screenshot.get_pixel(center_x, center_y).to_rgb();
-    
+
     // Verify pixels match with tolerance (QEMU color compression may cause slight variations)
     const TOLERANCE: u8 = 15;
-    
+
     if !pixels_match(screen_pixel_0_0, ref_pixel_0_0, TOLERANCE) {
         soft_fail(format!(
             "Top-left pixel mismatch: screen={:?} expected={:?}",
             screen_pixel_0_0, ref_pixel_0_0
-        )).await;
+        ))
+        .await;
         return Ok(());
     }
-    
+
     // Verify center is not pure black (uninitialized)
     let black = image::Rgb([0u8, 0, 0]);
     if pixels_match(center_pixel, black, 5) {
         soft_fail(format!(
             "Center pixel is black ({:?}), wallpaper may not have rendered",
             center_pixel
-        )).await;
+        ))
+        .await;
         return Ok(());
     }
-    
-    eprintln!("WALLPAPER VERIFY: top-left={:?} center={:?} - PASS", screen_pixel_0_0, center_pixel);
+
+    eprintln!(
+        "WALLPAPER VERIFY: top-left={:?} center={:?} - PASS",
+        screen_pixel_0_0, center_pixel
+    );
     Ok(())
 }

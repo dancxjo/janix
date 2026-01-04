@@ -79,7 +79,9 @@ pub fn update_readme_from_results(store: &ResultsStore, root: &Path) -> Result<(
 
     let mut md = String::new();
     md.push_str("## Test Status\n\n");
-    md.push_str("> _This section is auto-generated from BDD test results. Do not edit by hand._\n\n");
+    md.push_str(
+        "> _This section is auto-generated from BDD test results. Do not edit by hand._\n\n",
+    );
 
     let arches = vec!["x86_64", "aarch64", "riscv64", "loongarch64"];
 

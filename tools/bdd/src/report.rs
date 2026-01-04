@@ -64,7 +64,8 @@ pub fn generate_index_from_store(out_dir: &Path, store: &crate::store::ResultsSt
                 if s_res.arches.contains_key(*arch) {
                     let f_slug = slugify(feature);
                     let s_slug = slugify(scenario);
-                    report_link = format!("[View Report]({}/{}/{}/report.md)", arch, f_slug, s_slug);
+                    report_link =
+                        format!("[View Report]({}/{}/{}/report.md)", arch, f_slug, s_slug);
                     break;
                 }
             }
@@ -77,7 +78,15 @@ pub fn generate_index_from_store(out_dir: &Path, store: &crate::store::ResultsSt
 }
 
 fn slugify(s: &str) -> String {
-    s.chars().map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
+    s.chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 pub fn generate_scenario_report_from_mem(
@@ -87,7 +96,9 @@ pub fn generate_scenario_report_from_mem(
     scenario: &str,
     steps: &[ArtifactMeta],
 ) -> Result<()> {
-    if steps.is_empty() { return Ok(()); }
+    if steps.is_empty() {
+        return Ok(());
+    }
     let mut md = String::new();
     md.push_str(&format!("# Scenario: {}\n\n", scenario));
     md.push_str(&format!("**Architecture**: `{}`  \n", arch));
@@ -103,28 +114,56 @@ pub fn generate_scenario_report_from_mem(
             _ => "❓",
         };
         let mut art = String::new();
-        if meta.artifacts.screenshot.is_some() { art.push_str("�� "); }
-        if meta.artifacts.serial_tail.is_some() { art.push_str("📝 "); }
-        md.push_str(&format!("| {} | {} | {} | {} |\n", meta.step.index, meta.step.text, status_emoji, art));
+        if meta.artifacts.screenshot.is_some() {
+            art.push_str("�� ");
+        }
+        if meta.artifacts.serial_tail.is_some() {
+            art.push_str("📝 ");
+        }
+        md.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            meta.step.index, meta.step.text, status_emoji, art
+        ));
     }
     md.push_str("\n## Execution Details\n\n");
     for meta in steps {
-        md.push_str(&format!("### {}. {} {}\n\n", meta.step.index + 1, meta.step.text, if meta.step.status == "passed" { "✅" } else { "❌" }));
+        md.push_str(&format!(
+            "### {}. {} {}\n\n",
+            meta.step.index + 1,
+            meta.step.text,
+            if meta.step.status == "passed" {
+                "✅"
+            } else {
+                "❌"
+            }
+        ));
         if let Some(screen_file) = &meta.artifacts.screenshot {
             let step_slug = format!("{:03}_{}", meta.step.index, slugify(&meta.step.text));
-            md.push_str(&format!("![Screenshot](steps/{}/{})\n\n", step_slug, screen_file));
+            md.push_str(&format!(
+                "![Screenshot](steps/{}/{})\n\n",
+                step_slug, screen_file
+            ));
         }
         if let Some(log_file) = &meta.artifacts.serial_tail {
-             let step_slug = format!("{:03}_{}", meta.step.index, slugify(&meta.step.text));
-             let f_slug = slugify(feature);
-             let s_slug = slugify(scenario);
-             let log_path = out_dir.join(arch).join(f_slug).join(s_slug).join("steps").join(&step_slug).join(log_file);
-             if let Ok(content) = fs::read_to_string(&log_path) {
+            let step_slug = format!("{:03}_{}", meta.step.index, slugify(&meta.step.text));
+            let f_slug = slugify(feature);
+            let s_slug = slugify(scenario);
+            let log_path = out_dir
+                .join(arch)
+                .join(f_slug)
+                .join(s_slug)
+                .join("steps")
+                .join(&step_slug)
+                .join(log_file);
+            if let Ok(content) = fs::read_to_string(&log_path) {
                 md.push_str("```\n");
                 md.push_str(&content);
                 md.push_str("\n```\n\n");
             } else {
-                md.push_str(&format!("[Serial Log](steps/{}/{})\n\n", step_slug, log_file));
+                md.push_str(&format!(
+                    "[Serial Log](steps/{}/{})\n\n",
+                    step_slug, log_file
+                ));
             }
         }
         md.push_str("---\n\n");

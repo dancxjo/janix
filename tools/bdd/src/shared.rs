@@ -1,8 +1,8 @@
 use crate::qemu::QemuProcess;
-use tokio::sync::Mutex;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use lazy_static::lazy_static;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 lazy_static! {
     pub static ref GLOBAL_QEMU: Arc<Mutex<Option<QemuProcess>>> = Arc::new(Mutex::new(None));
@@ -11,5 +11,13 @@ lazy_static! {
 }
 
 pub fn slugify(s: &str) -> String {
-    s.chars().map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
+    s.chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }

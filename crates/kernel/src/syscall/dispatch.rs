@@ -239,7 +239,6 @@ pub fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
 
     use abi::machine::{CONSOLE_WRITE, MMIO_MAP, PORT_READ, PORT_WRITE};
 
-
     match op {
         CONSOLE_WRITE => {
             if a1 == 0 {

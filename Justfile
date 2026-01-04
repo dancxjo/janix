@@ -17,8 +17,8 @@ die:
 update-docs:
     cargo run -p xtask -- update-docs
 
-test arch="all" feature="all":
-    cargo run -p xtask -- test --arch {{arch}} --feature {{feature}}
+test +args="":
+    cargo run -p xtask -- test {{args}}
 
 smoke arch="all" feature="all":
     cargo run -p xtask -- test --arch {{arch}} --smoke --feature {{feature}}
@@ -104,13 +104,13 @@ run-loongarch64:
 
 # test aliases
 test-x86_64:
-    @just test x86_64
+    @just test --arch x86_64
 test-aarch64:
-    @just test aarch64
+    @just test --arch aarch64
 test-riscv64:
-    @just test riscv64
+    @just test --arch riscv64
 test-loongarch64:
-    @just test loongarch64
+    @just test --arch loongarch64
 
 # smoke aliases
 smoke-x86_64:

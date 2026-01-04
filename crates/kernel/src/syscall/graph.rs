@@ -35,23 +35,19 @@ pub fn sys_relationship_delete(rel_low: u64) -> SyscallResult {
 
 pub fn sys_thing_get(id_low: u64, out_ptr: u64, out_len: u64) -> SyscallResult {
     let id = ThingId(id_low as u128);
-    
+
     // Get the inline payload for this Thing
     if let Some(payload) = store::get_payload(id) {
         if out_ptr == 0 {
             // Just query length
             return SyscallResult::new(0, 0, payload.len() as u64);
         }
-        
+
         let write_len = core::cmp::min(payload.len(), out_len as usize);
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                payload.as_ptr(),
-                out_ptr as *mut u8,
-                write_len,
-            );
+            core::ptr::copy_nonoverlapping(payload.as_ptr(), out_ptr as *mut u8, write_len);
         }
-        
+
         SyscallResult::new(0, write_len as u64, payload.len() as u64)
     } else {
         // No payload, return 0 length

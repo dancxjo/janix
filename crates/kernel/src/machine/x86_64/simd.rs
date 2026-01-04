@@ -1,12 +1,12 @@
+use crate::log::{klog, Level};
 use crate::machine::Simd;
 use abi::cpu::{SimdFamily, SimdSavePolicy};
+use alloc::vec::Vec;
 use core::arch::asm;
+use core::arch::x86_64::__cpuid;
+use spin::Mutex;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 use x86_64::registers::xcontrol::{XCr0, XCr0Flags};
-use spin::Mutex;
-use alloc::vec::Vec;
-use core::arch::x86_64::__cpuid;
-use crate::log::{klog, Level};
 
 struct SimdState {
     available: Vec<SimdFamily>,
@@ -50,8 +50,12 @@ impl Simd for X86Simd {
         let has_avx = (cpuid1.ecx & (1 << 28)) != 0;
 
         state.available.clear();
-        if has_sse { state.available.push(SimdFamily::X86_SSE); }
-        if has_avx { state.available.push(SimdFamily::X86_AVX); }
+        if has_sse {
+            state.available.push(SimdFamily::X86_SSE);
+        }
+        if has_avx {
+            state.available.push(SimdFamily::X86_AVX);
+        }
 
         if !has_sse {
             return false;
@@ -105,7 +109,9 @@ impl Simd for X86Simd {
 
     fn save(&self, buffer: &mut [u8]) {
         let state = STATE.lock();
-        if state.policy == SimdSavePolicy::None { return; }
+        if state.policy == SimdSavePolicy::None {
+            return;
+        }
 
         let addr = buffer.as_mut_ptr() as usize;
         let align_offset = if state.use_xsave {
@@ -114,7 +120,9 @@ impl Simd for X86Simd {
             (16 - (addr % 16)) % 16
         };
 
-        if buffer.len() < align_offset + state.save_size { return; }
+        if buffer.len() < align_offset + state.save_size {
+            return;
+        }
         let ptr = unsafe { buffer.as_mut_ptr().add(align_offset) };
 
         unsafe {
@@ -130,7 +138,9 @@ impl Simd for X86Simd {
 
     fn restore(&self, buffer: &[u8]) {
         let state = STATE.lock();
-        if state.policy == SimdSavePolicy::None { return; }
+        if state.policy == SimdSavePolicy::None {
+            return;
+        }
 
         let addr = buffer.as_ptr() as usize;
         let align_offset = if state.use_xsave {
@@ -139,7 +149,9 @@ impl Simd for X86Simd {
             (16 - (addr % 16)) % 16
         };
 
-        if buffer.len() < align_offset + state.save_size { return; }
+        if buffer.len() < align_offset + state.save_size {
+            return;
+        }
         let ptr = unsafe { buffer.as_ptr().add(align_offset) };
 
         unsafe {
@@ -155,7 +167,11 @@ impl Simd for X86Simd {
 
     fn required_size(&self) -> usize {
         let state = STATE.lock();
-        if state.save_size == 0 { 0 } else { state.save_size + 64 } // + alignment
+        if state.save_size == 0 {
+            0
+        } else {
+            state.save_size + 64
+        } // + alignment
     }
 
     fn save_policy(&self) -> SimdSavePolicy {

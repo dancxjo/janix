@@ -3,21 +3,31 @@
 pub mod kind {
     use abi::ids::SymbolId;
     pub const KIND_BYTESPACE: SymbolId = SymbolId(0xF8FCB00535E9A405);
+    pub const KIND_DISPLAYDEVICE: SymbolId = SymbolId(0x46F9CB5BBE36FC35);
+    pub const KIND_FRAMEBUFFER: SymbolId = SymbolId(0x39F61C14D039B916);
     pub const KIND_MONOTONICCLOCK: SymbolId = SymbolId(0x92F5EACE38FBFE15);
+    pub const KIND_MOUSESTREAM: SymbolId = SymbolId(0x5EF2B03692E82DBA);
     pub const KIND_PLACE: SymbolId = SymbolId(0x43E7C812F1795346);
+    pub const KIND_POINTERSTATE: SymbolId = SymbolId(0xFA3502E3D80D3979);
     pub const KIND_RELATIONSHIP: SymbolId = SymbolId(0x4F308BFD270391BD);
     pub const KIND_SURFACE: SymbolId = SymbolId(0x4630246DF0D3FF22);
     pub const KIND_SYSTEMCLOCK: SymbolId = SymbolId(0xA8EE901286E7C6A8);
     pub const KIND_TIMEOFFSET: SymbolId = SymbolId(0xCE1B548697AFA261);
+    pub const KIND_WINDOW: SymbolId = SymbolId(0x2AEC7E1B886B5C47);
 }
 
 pub mod schema {
     use abi::ids::SymbolId;
     pub const SCHEMA_BYTESPACE: SymbolId = SymbolId(0xBDFCE06BB86A2CFF);
+    pub const SCHEMA_DISPLAYDEVICE: SymbolId = SymbolId(0x9A57E89E659D49AB);
+    pub const SCHEMA_FRAMEBUFFER: SymbolId = SymbolId(0x2BD6128606BA3300);
     pub const SCHEMA_MONOTONICCLOCK: SymbolId = SymbolId(0xFB520DC25492C05);
+    pub const SCHEMA_MOUSESTREAM: SymbolId = SymbolId(0x38E3155E669F1A50);
     pub const SCHEMA_PLACE: SymbolId = SymbolId(0xBE52087A23A917F0);
+    pub const SCHEMA_POINTERSTATE: SymbolId = SymbolId(0x2B4B16B6345331BD);
     pub const SCHEMA_RELATIONSHIP: SymbolId = SymbolId(0x37391EE2FEA08FE9);
     pub const SCHEMA_SURFACE: SymbolId = SymbolId(0x55E5957BEA5E14D8);
     pub const SCHEMA_SYSTEMCLOCK: SymbolId = SymbolId(0x5B3976096331339E);
     pub const SCHEMA_TIMEOFFSET: SymbolId = SymbolId(0x32CF808760BD0A51);
+    pub const SCHEMA_WINDOW: SymbolId = SymbolId(0x939AA0A705967517);
 }

@@ -1,11 +1,11 @@
-use parking_lot::Mutex;
 use anyhow::{Context, Result};
+use parking_lot::Mutex;
 use std::path::Path;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, Command};
 
 pub struct QemuProcess {
     pub child: Child,
@@ -24,31 +24,57 @@ impl QemuProcess {
         display_provider: Option<&str>,
     ) -> Result<Self> {
         let mut args = vec![
-            "-m".to_string(), "512M".to_string(),
-            "-drive".to_string(), format!("if=pflash,format=raw,readonly=on,file={}", ovmf_code.to_string_lossy()),
-            "-drive".to_string(), format!("if=pflash,format=raw,file={}", ovmf_vars.to_string_lossy()),
-            "-cdrom".to_string(), iso_path.to_string_lossy().to_string(),
-            "-net".to_string(), "none".to_string(),
-            "-serial".to_string(), "stdio".to_string(),
-            "-display".to_string(), "none".to_string(),
-            "-qmp".to_string(), format!("unix:{},server,nowait", qmp_sock.to_string_lossy()),
+            "-m".to_string(),
+            "512M".to_string(),
+            "-drive".to_string(),
+            format!(
+                "if=pflash,format=raw,readonly=on,file={}",
+                ovmf_code.to_string_lossy()
+            ),
+            "-drive".to_string(),
+            format!("if=pflash,format=raw,file={}", ovmf_vars.to_string_lossy()),
+            "-cdrom".to_string(),
+            iso_path.to_string_lossy().to_string(),
+            "-net".to_string(),
+            "none".to_string(),
+            "-serial".to_string(),
+            "stdio".to_string(),
+            "-display".to_string(),
+            "none".to_string(),
+            "-qmp".to_string(),
+            format!("unix:{},server,nowait", qmp_sock.to_string_lossy()),
         ];
 
         if arch == "x86_64" {
             args.extend_from_slice(&["-cpu".to_string(), "max".to_string()]);
         } else if arch == "aarch64" {
-            args.extend_from_slice(&["-machine".to_string(), "virt".to_string(), "-cpu".to_string(), "cortex-a57".to_string()]);
+            args.extend_from_slice(&[
+                "-machine".to_string(),
+                "virt".to_string(),
+                "-cpu".to_string(),
+                "cortex-a57".to_string(),
+            ]);
         } else if arch == "riscv64" {
-            args.extend_from_slice(&["-machine".to_string(), "virt".to_string(), "-cpu".to_string(), "rv64".to_string()]);
+            args.extend_from_slice(&[
+                "-machine".to_string(),
+                "virt".to_string(),
+                "-cpu".to_string(),
+                "rv64".to_string(),
+            ]);
         } else if arch == "loongarch64" {
-            args.extend_from_slice(&["-machine".to_string(), "virt".to_string(), "-cpu".to_string(), "la464".to_string()]);
+            args.extend_from_slice(&[
+                "-machine".to_string(),
+                "virt".to_string(),
+                "-cpu".to_string(),
+                "la464".to_string(),
+            ]);
         }
 
         if let Some(dp) = display_provider {
             if dp == "limine_fb" {
-                 // default
+                // default
             } else if dp == "mock_gpu" {
-                 // args.push(...)
+                // args.push(...)
             }
         }
 
@@ -68,7 +94,9 @@ impl QemuProcess {
             let mut reader = BufReader::new(stdout);
             let mut line = String::new();
             while let Ok(n) = reader.read_line(&mut line).await {
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 let mut guard = log_buffer_clone.lock();
                 guard.push_str(&line);
                 line.clear();
@@ -95,7 +123,8 @@ impl QemuProcess {
                 if let (Some(w), Some(r)) = (&mut qmp_writer, &mut qmp_reader) {
                     let mut line = String::new();
                     r.read_line(&mut line).await?; // Greeting
-                    w.write_all(b"{\"execute\": \"qmp_capabilities\"}\n").await?;
+                    w.write_all(b"{\"execute\": \"qmp_capabilities\"}\n")
+                        .await?;
                     line.clear();
                     r.read_line(&mut line).await?; // Result
                 }
@@ -150,7 +179,8 @@ impl QemuProcess {
     }
 
     pub async fn capture_screenshot(&mut self) -> Result<image::DynamicImage> {
-        let temp_ppm = std::env::temp_dir().join(format!("screendump-{}.ppm", uuid::Uuid::new_v4()));
+        let temp_ppm =
+            std::env::temp_dir().join(format!("screendump-{}.ppm", uuid::Uuid::new_v4()));
         self.screendump(&temp_ppm).await?;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -169,7 +199,7 @@ impl QemuProcess {
 
     pub async fn send_key(&mut self, key: &str) -> Result<()> {
         if let (Some(writer), Some(reader)) = (&mut self.qmp_writer, &mut self.qmp_reader) {
-             let cmd = format!(
+            let cmd = format!(
                 r#"{{"execute": "send-key", "arguments": {{"keys": [{{"type": "qcode", "data": "{}"}}]}}}}"#,
                 key
             );

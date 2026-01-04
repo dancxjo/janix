@@ -39,7 +39,9 @@ impl IoApic {
     #[inline]
     fn read(&self, reg: u32) -> u32 {
         let base = self.base_virt.load(Ordering::Relaxed);
-        if base == 0 { return 0; }
+        if base == 0 {
+            return 0;
+        }
         unsafe {
             write_volatile((base + IOREGSEL as u64) as *mut u32, reg);
             read_volatile((base + IOWIN as u64) as *const u32)
@@ -50,7 +52,9 @@ impl IoApic {
     #[inline]
     fn write(&self, reg: u32, value: u32) {
         let base = self.base_virt.load(Ordering::Relaxed);
-        if base == 0 { return; }
+        if base == 0 {
+            return;
+        }
         unsafe {
             write_volatile((base + IOREGSEL as u64) as *mut u32, reg);
             write_volatile((base + IOWIN as u64) as *mut u32, value);
@@ -85,8 +89,8 @@ impl IoApic {
         let pml4 = &mut *(pml4_virt as *mut PageTable);
 
         let virt = IOAPIC_VIRT_BASE;
-        let page_flags = PageTableFlags::PRESENT 
-            | PageTableFlags::WRITABLE 
+        let page_flags = PageTableFlags::PRESENT
+            | PageTableFlags::WRITABLE
             | PageTableFlags::NO_EXECUTE
             | PageTableFlags::WRITE_THROUGH
             | PageTableFlags::NO_CACHE;
@@ -191,9 +195,9 @@ impl IoApic {
         // - Mask: Unmasked (bit 16 = 0)
         // - Destination: LAPIC ID in bits 56-63
         let entry: u64 = (vector as u64) | ((lapic_id as u64) << 56);
-        
+
         self.write_redtbl(irq, entry);
-        
+
         crate::serial::write(b"IOAPIC: IRQ ");
         crate::serial::write_hex(irq as u64);
         crate::serial::write(b" -> vector ");

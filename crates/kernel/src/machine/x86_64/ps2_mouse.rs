@@ -3,8 +3,8 @@
 //! Uses a lock-free ring buffer of MouseSample structs for high-throughput
 //! mouse input. Bloom maps the bytespace and polls samples directly.
 
-use abi::mouse_ring::{MouseRingHeader, MouseSample, ring_bytespace_size};
 use crate::log::{self, Level};
+use abi::mouse_ring::{ring_bytespace_size, MouseRingHeader, MouseSample};
 use core::sync::atomic::{AtomicPtr, Ordering};
 use x86_64::instructions::port::Port;
 
@@ -31,7 +31,13 @@ static mut RING_BUFFER: RingBuffer = RingBuffer {
         dropped: core::sync::atomic::AtomicU32::new(0),
         _reserved: [0; 2],
     },
-    samples: [MouseSample { t_ns: 0, dx: 0, dy: 0, wheel: 0, buttons: 0 }; RING_CAPACITY as usize],
+    samples: [MouseSample {
+        t_ns: 0,
+        dx: 0,
+        dy: 0,
+        wheel: 0,
+        buttons: 0,
+    }; RING_CAPACITY as usize],
 };
 
 /// Packet accumulation state for 3-byte PS/2 protocol
@@ -161,7 +167,7 @@ unsafe fn decode_packet() -> MouseSample {
         dx |= !0xFF; // Sign extend
     }
 
-    // Decode Y delta with sign extension  
+    // Decode Y delta with sign extension
     let mut dy: i16 = b2 as i16;
     if (b0 & 0x20) != 0 {
         dy |= !0xFF; // Sign extend
@@ -186,15 +192,17 @@ unsafe fn decode_packet() -> MouseSample {
 unsafe fn write_sample_to_ring(sample: MouseSample) {
     let header = &mut RING_BUFFER.header;
     let samples = &mut RING_BUFFER.samples;
-    
+
     let write_idx = header.write.load(Ordering::Relaxed);
     let slot = (write_idx % RING_CAPACITY) as usize;
-    
+
     // Write sample to slot
     samples[slot] = sample;
-    
+
     // Increment write index (release semantics for consumers)
-    header.write.store(write_idx.wrapping_add(1), Ordering::Release);
+    header
+        .write
+        .store(write_idx.wrapping_add(1), Ordering::Release);
 }
 
 /// Set screen bounds (for compatibility, not used in ring model)

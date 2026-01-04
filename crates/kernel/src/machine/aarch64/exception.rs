@@ -35,7 +35,12 @@ pub extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u
             if ec == 0x15 {
                 let res = crate::syscall::dispatch(
                     ctx.x[8] as u32,
-                    ctx.x[0], ctx.x[1], ctx.x[2], ctx.x[3], ctx.x[4], ctx.x[5],
+                    ctx.x[0],
+                    ctx.x[1],
+                    ctx.x[2],
+                    ctx.x[3],
+                    ctx.x[4],
+                    ctx.x[5],
                 );
                 ctx.x[0] = res.status;
                 ctx.x[1] = res.val0;
@@ -91,8 +96,11 @@ fn decode_dfsc(dfsc: u64) -> &'static str {
 
 fn vector_name(v: u64) -> &'static str {
     match v {
-        4 => "Sync EL1h", 5 => "IRQ EL1h", 7 => "SError EL1h",
-        8 => "Sync EL0 (64-bit)", 9 => "IRQ EL0 (64-bit)",
+        4 => "Sync EL1h",
+        5 => "IRQ EL1h",
+        7 => "SError EL1h",
+        8 => "Sync EL0 (64-bit)",
+        9 => "IRQ EL0 (64-bit)",
         11 => "SError EL0 (64-bit)",
         _ => "Unknown",
     }
@@ -102,42 +110,74 @@ fn panic_exception(ctx: &ExceptionContext, vector: u64) -> ! {
     use crate::serial::{write, write_hex};
 
     write(b"\n\n========== AArch64 FATAL EXCEPTION ==========\n");
-    write(b"Vector: "); write_hex(vector);
-    write(b" ("); write(vector_name(vector).as_bytes()); write(b")\n");
+    write(b"Vector: ");
+    write_hex(vector);
+    write(b" (");
+    write(vector_name(vector).as_bytes());
+    write(b")\n");
 
     let ec = (ctx.esr_el1 >> 26) & 0x3F;
     let iss = ctx.esr_el1 & 0x1FFFFFF;
 
-    write(b"ESR_EL1: "); write_hex(ctx.esr_el1); write(b"\n");
-    write(b"  EC: "); write_hex(ec);
-    write(b" -> "); write(decode_ec(ec).as_bytes()); write(b"\n");
-    write(b"  ISS: "); write_hex(iss); write(b"\n");
+    write(b"ESR_EL1: ");
+    write_hex(ctx.esr_el1);
+    write(b"\n");
+    write(b"  EC: ");
+    write_hex(ec);
+    write(b" -> ");
+    write(decode_ec(ec).as_bytes());
+    write(b"\n");
+    write(b"  ISS: ");
+    write_hex(iss);
+    write(b"\n");
 
     if ec == 0x20 || ec == 0x21 || ec == 0x24 || ec == 0x25 {
         let dfsc = iss & 0x3F;
         let wnr = (iss >> 6) & 1;
-        write(b"  DFSC: "); write_hex(dfsc);
-        write(b" -> "); write(decode_dfsc(dfsc).as_bytes()); write(b"\n");
+        write(b"  DFSC: ");
+        write_hex(dfsc);
+        write(b" -> ");
+        write(decode_dfsc(dfsc).as_bytes());
+        write(b"\n");
         if ec == 0x24 || ec == 0x25 {
             write(b"  Access: ");
-            if wnr != 0 { write(b"WRITE\n"); } else { write(b"READ\n"); }
+            if wnr != 0 {
+                write(b"WRITE\n");
+            } else {
+                write(b"READ\n");
+            }
         }
     }
 
-    write(b"\nELR_EL1: "); write_hex(ctx.elr_el1);
-    write(b"\nFAR_EL1: "); write_hex(ctx.far_el1);
-    write(b"\nSPSR: "); write_hex(ctx.spsr_el1); write(b"\n");
+    write(b"\nELR_EL1: ");
+    write_hex(ctx.elr_el1);
+    write(b"\nFAR_EL1: ");
+    write_hex(ctx.far_el1);
+    write(b"\nSPSR: ");
+    write_hex(ctx.spsr_el1);
+    write(b"\n");
 
     write(b"\n--- Registers ---\n");
     for i in 0..30 {
         write(b"x");
-        if i < 10 { write(&[b'0' + i as u8]); }
-        else { write(&[b'0' + (i/10) as u8, b'0' + (i%10) as u8]); }
-        write(b"="); write_hex(ctx.x[i as usize]);
-        if (i + 1) % 4 == 0 { write(b"\n"); } else { write(b" "); }
+        if i < 10 {
+            write(&[b'0' + i as u8]);
+        } else {
+            write(&[b'0' + (i / 10) as u8, b'0' + (i % 10) as u8]);
+        }
+        write(b"=");
+        write_hex(ctx.x[i as usize]);
+        if (i + 1) % 4 == 0 {
+            write(b"\n");
+        } else {
+            write(b" ");
+        }
     }
-    write(b"\nLR="); write_hex(ctx.lr);
-    write(b" SP="); write_hex(ctx.sp); write(b"\n");
+    write(b"\nLR=");
+    write_hex(ctx.lr);
+    write(b" SP=");
+    write_hex(ctx.sp);
+    write(b"\n");
     write(b"==============================================\n");
 
     panic!("AArch64 Exception");

@@ -580,7 +580,12 @@ pub fn take_wake_reason() -> Option<WakeReason> {
 /// Configure task context while holding the scheduler lock.
 /// This is used by spawn_kernel_module to set up the task context atomically
 /// with spawning, preventing the task from being scheduled before it's ready.
-pub fn configure_task_context_locked(sched: &mut Scheduler, id: TaskId, entry: u64, user_stack: u64) {
+pub fn configure_task_context_locked(
+    sched: &mut Scheduler,
+    id: TaskId,
+    entry: u64,
+    user_stack: u64,
+) {
     use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
 
     if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {

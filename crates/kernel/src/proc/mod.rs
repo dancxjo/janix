@@ -97,7 +97,7 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
         let mut guard = sched::SCHEDULER.lock();
         let sched = guard.as_mut().ok_or(())?;
         let task_id = sched.spawn(name, Some(address_space.clone()));
-        
+
         // Configure context immediately, while still holding the lock
         // This prevents the task from being scheduled before context is set up
         sched::configure_task_context_locked(sched, task_id, entry_point, stack_top);

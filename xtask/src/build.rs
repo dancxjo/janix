@@ -143,6 +143,7 @@ pub fn run(env: &str) -> Result<()> {
         "echo",
         "inspector",
         "logview",
+        "simd_check",
     ];
     for app in apps {
         println!("    Building {}...", app);

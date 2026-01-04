@@ -39,6 +39,7 @@ impl TaskState {
 
 use crate::memory::space::AddressSpace;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 pub struct Task {
     pub id: TaskId,
@@ -52,6 +53,8 @@ pub struct Task {
     pub heap_brk: u64,
     pub wake_reason: Option<abi::types::WakeReason>,
     pub first_run: bool, // true if this task has prepared context, false if it has saved context
+    pub simd_used: bool,
+    pub simd_state: Option<Vec<u8>>,
 }
 
 impl Task {
@@ -73,6 +76,8 @@ impl Task {
             heap_brk: 0x9000_0000,
             wake_reason: None,
             first_run: true, // Starts with prepared context
+            simd_used: false,
+            simd_state: None,
         }
     }
 

@@ -15,6 +15,7 @@ pub mod mmu;
 pub mod percpu;
 pub mod ps2_keyboard;
 pub mod serial;
+pub mod simd;
 pub mod timer;
 pub use mmu::AddressSpace;
 
@@ -122,6 +123,14 @@ pub fn init() {
 
         // 6. Keyboard (Arch specific init)
         crate::machine::input::init();
+
+        // 7. SIMD
+        // Call directly to avoid circular dependency if machine() not yet safe
+        // But init is called FROM machine.init(), so machine() should be safe?
+        // Actually ArchMachine::init is called via Machine::init.
+        // But MACHINE is set.
+        use crate::machine::Simd;
+        simd::X86_SIMD.enable();
     }
 }
 
@@ -233,6 +242,10 @@ impl Machine for ArchMachine {
             core::arch::asm!("mov gs:[72], {}", in(reg) top);
             gdt::set_tss_rsp0(top);
         }
+    }
+
+    fn simd(&self) -> &'static dyn crate::machine::Simd {
+        &simd::X86_SIMD
     }
 
     fn virt_to_phys(&self, virt: u64) -> u64 {

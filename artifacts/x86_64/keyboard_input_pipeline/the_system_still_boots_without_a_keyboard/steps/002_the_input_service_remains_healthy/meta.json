@@ -7,10 +7,10 @@
     "index": 2,
     "text": "the input service remains healthy",
     "status": "failed",
-    "timestamp": "2026-01-04T05:10:26.294312679+00:00"
+    "timestamp": "2026-01-04T05:21:05.434930189+00:00"
   },
   "artifacts": {
     "screenshot": null,
-    "serial_tail": "serial_tail.txt"
+    "serial_tail": null
   }
 }

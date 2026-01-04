@@ -2,12 +2,12 @@
   "version": 1,
   "arch": "x86_64",
   "feature": "Keyboard input pipeline",
-  "scenario": "The system still boots without a keyboard",
+  "scenario": "Key activity produces raw key events",
   "step": {
-    "index": 1,
-    "text": "the system is running",
+    "index": 0,
+    "text": "a key is pressed",
     "status": "failed",
-    "timestamp": "2026-01-04T05:20:35.362597176+00:00"
+    "timestamp": "2026-01-04T05:22:35.676046540+00:00"
   },
   "artifacts": {
     "screenshot": null,

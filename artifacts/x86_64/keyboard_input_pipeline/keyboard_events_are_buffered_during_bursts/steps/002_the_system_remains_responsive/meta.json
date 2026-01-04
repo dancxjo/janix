@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "Keyboard events are buffered during bursts",
+  "step": {
+    "index": 2,
+    "text": "the system remains responsive",
+    "status": "failed",
+    "timestamp": "2026-01-04T05:43:11.246863956+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

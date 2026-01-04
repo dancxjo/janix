@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "Delivery is non-blocking",
+  "step": {
+    "index": 0,
+    "text": "an application is not currently reading input",
+    "status": "failed",
+    "timestamp": "2026-01-04T05:49:12.142623541+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

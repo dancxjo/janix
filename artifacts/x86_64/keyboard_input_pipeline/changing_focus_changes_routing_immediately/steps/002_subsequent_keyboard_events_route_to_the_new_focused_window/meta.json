@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "Changing focus changes routing immediately",
+  "step": {
+    "index": 2,
+    "text": "subsequent keyboard events route to the new focused window",
+    "status": "passed",
+    "timestamp": "2026-01-04T05:39:08.113237117+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

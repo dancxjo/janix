@@ -18,6 +18,7 @@ rand = "0.8"
 uuid = { version = "1.0", features = ["v4"] }
 image = "0.24"
 regex = "1"
+docgen = { path = "../docgen" }
 
 
 [dev-dependencies]

@@ -1,3 +1,4 @@
+use crate::report::ArtifactMeta;
 use crate::shared::{GLOBAL_LAST_ERROR, GLOBAL_QEMU};
 use crate::steps::strip_ansi_codes;
 use cucumber::event::{Cucumber, Event};
@@ -5,30 +6,6 @@ use cucumber::Writer;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
-
-#[derive(Serialize)]
-struct ArtifactMeta {
-    version: u32,
-    arch: String,
-    feature: String,
-    scenario: String,
-    step: StepMeta,
-    artifacts: Artifacts,
-}
-
-#[derive(Serialize)]
-struct StepMeta {
-    index: usize,
-    text: String,
-    status: String,
-    timestamp: String,
-}
-
-#[derive(Serialize)]
-struct Artifacts {
-    screenshot: Option<String>,
-    serial_tail: Option<String>,
-}
 
 pub struct ArtifactWriter {
     pub out_dir: PathBuf,
@@ -38,6 +15,7 @@ pub struct ArtifactWriter {
     pub current_scenario: String,
     pub step_index: usize,
     pub scenario_failed: bool,
+    pub current_steps: Vec<ArtifactMeta>,
 }
 
 impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter {
@@ -72,6 +50,7 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                                 );
                                 self.step_index = 0;
                                 self.scenario_failed = false;
+                                self.current_steps.clear();
                             }
                             Scenario::Step(step, step_event) => {
                                 match step_event {
@@ -86,7 +65,6 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                                             Step::Started => unreachable!(),
                                         };
 
-                                        // Check for soft fail
                                         if status == "passed" {
                                             let guard = GLOBAL_LAST_ERROR.lock().await;
                                             if guard.is_some() {
@@ -114,7 +92,6 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
 
                                         self.capture_artifact(&step.value, status).await;
 
-                                        // Clear error after handling step
                                         {
                                             let mut guard = GLOBAL_LAST_ERROR.lock().await;
                                             *guard = None;
@@ -125,7 +102,6 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                                 }
                             }
                             Scenario::Finished => {
-                                // Ensure QEMU is killed at the end of the scenario
                                 let mut guard = GLOBAL_QEMU.lock().await;
                                 if let Some(qemu) = guard.as_mut() {
                                     println!("Scenario finished. Killing QEMU...");
@@ -133,14 +109,12 @@ impl<World: std::fmt::Debug + cucumber::World> Writer<World> for ArtifactWriter 
                                 }
                                 *guard = None;
 
-                                // Write scenario JSON report
                                 self.write_scenario_report().await;
                             }
                             _ => {}
                         }
                     }
-                    Feature::Rule(_r, _rule_event) => {
-                    }
+                    Feature::Rule(_r, _rule_event) => {}
                     _ => {}
                 }
             }
@@ -153,43 +127,14 @@ impl cucumber::writer::Normalized for ArtifactWriter {}
 
 impl ArtifactWriter {
     async fn write_scenario_report(&self) {
-        let feature_slug = slugify(&self.current_feature);
-        let scenario_slug = slugify(&self.current_scenario);
-
-        let report_dir = self.out_dir.join("bdd");
-
-        if let Err(e) = fs::create_dir_all(&report_dir) {
-            eprintln!("Failed to create report dir: {}", e);
-            return;
-        }
-
-        let status = if self.scenario_failed {
-            "failed"
-        } else {
-            "pass"
-        };
-
-        let meta = serde_json::json!({
-            "feature": self.current_feature,
-            "scenario": self.current_scenario,
-            "arch": self.arch,
-            "status": status,
-            "artifacts_dir": format!("{}/{}/{}", self.arch, feature_slug, scenario_slug)
-        });
-
-        let filename = format!("{}_{}_{}.json", self.arch, feature_slug, scenario_slug);
-        let path = report_dir.join(filename);
-
-        if let Ok(file) = fs::File::create(path) {
-            let _ = serde_json::to_writer_pretty(file, &meta);
-        }
-
         let results_path = self.out_dir.join("bdd/results.json");
         let mut store = crate::store::ResultsStore::load(&results_path).unwrap_or_default();
 
         if store.run.timestamp.is_empty() {
             store.run.timestamp = chrono::Utc::now().to_rfc3339();
         }
+
+        let status = if self.scenario_failed { "failed" } else { "pass" };
 
         store.update_result(
             self.current_feature.clone(),
@@ -198,12 +143,33 @@ impl ArtifactWriter {
             status.to_string(),
         );
 
-        if let Err(e) = store.save(&results_path) {
-            eprintln!("Failed to save canonical results.json: {}", e);
+        let _ = store.save(&results_path);
+
+        if let Err(e) = crate::report::generate_scenario_report_from_mem(
+            &self.out_dir,
+            &self.arch,
+            &self.current_feature,
+            &self.current_scenario,
+            &self.current_steps,
+        ) {
+            eprintln!("Failed to generate incremental scenario report: {}", e);
+        }
+
+        if let Err(e) = crate::report::generate_index_from_store(&self.out_dir, &store) {
+            eprintln!("Failed to update incremental index: {}", e);
+        }
+
+        if let Ok(json) = serde_json::to_string(&store) {
+            if let Ok(docgen_store) = serde_json::from_str::<docgen::ResultsStore>(&json) {
+                let project_root = PathBuf::from(".");
+                if let Err(e) = docgen::update_readme_from_results(&docgen_store, &project_root) {
+                    eprintln!("Failed to update README incrementally: {}", e);
+                }
+            }
         }
     }
 
-    async fn capture_artifact(&self, step_text: &str, status: &str) {
+    async fn capture_artifact(&mut self, step_text: &str, status: &str) {
         let feature_slug = slugify(&self.current_feature);
         let scenario_slug = slugify(&self.current_scenario);
         let step_slug = format!("{:03}_{}", self.step_index, slugify(step_text));
@@ -216,8 +182,7 @@ impl ArtifactWriter {
             .join("steps")
             .join(&step_slug);
 
-        if let Err(e) = fs::create_dir_all(&step_dir) {
-            eprintln!("Failed to create step dir: {}", e);
+        if let Err(_) = fs::create_dir_all(&step_dir) {
             return;
         }
 
@@ -226,13 +191,13 @@ impl ArtifactWriter {
             arch: self.arch.clone(),
             feature: self.current_feature.clone(),
             scenario: self.current_scenario.clone(),
-            step: StepMeta {
+            step: crate::report::StepMeta {
                 index: self.step_index,
                 text: step_text.to_string(),
                 status: status.to_string(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
             },
-            artifacts: Artifacts {
+            artifacts: crate::report::Artifacts {
                 screenshot: None,
                 serial_tail: None,
             },
@@ -249,56 +214,26 @@ impl ArtifactWriter {
 
             if let Ok(_) = dump_res {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
                 if screen_path_ppm.exists() {
                     let ppm_path = screen_path_ppm.clone();
                     let png_path = step_dir.join("screen.png");
 
                     let conversion_result = tokio::task::spawn_blocking(move || {
-                        let res = (|| -> anyhow::Result<()> {
-                            let img = image::open(&ppm_path)
-                                .map_err(|e| anyhow::anyhow!("Open failed: {}", e))?;
-                            img.save(&png_path)
-                                .map_err(|e| anyhow::anyhow!("Save failed: {}", e))?;
-                            Ok(())
-                        })();
-                        res
-                    })
-                    .await;
+                        let img = image::open(&ppm_path)?;
+                        img.save(&png_path)?;
+                        Ok::<(), anyhow::Error>(())
+                    }).await;
 
-                    match conversion_result {
-                        Ok(Ok(_)) => {
-                            meta.artifacts.screenshot = Some("screen.png".to_string());
-                        }
-                        Ok(Err(e)) => {
-                            eprintln!("Image conversion failed: {}", e);
-                        }
-                        Err(e) => {
-                            eprintln!("Image conversion task panicked: {}", e);
-                        }
+                    if let Ok(Ok(_)) = conversion_result {
+                        meta.artifacts.screenshot = Some("screen.png".to_string());
                     }
-                }
-            } else if let Err(e) = dump_res {
-                eprintln!("Screendump failed: {}", e);
-            }
-
-            if screen_path_ppm.exists() {
-                if let Err(e) = std::fs::remove_file(&screen_path_ppm) {
-                    eprintln!("Failed to remove PPM: {}", e);
+                    let _ = std::fs::remove_file(&screen_path_ppm);
                 }
             }
 
             if let Ok(log) = qemu.log_buffer.lock() {
                 let cleaned_log = strip_ansi_codes(&log);
-                let tail = cleaned_log
-                    .lines()
-                    .rev()
-                    .take(50)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let tail = cleaned_log.lines().rev().take(50).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
                 let log_path = step_dir.join("serial_tail.txt");
                 if let Ok(_) = fs::write(&log_path, tail) {
                     meta.artifacts.serial_tail = Some("serial_tail.txt".to_string());
@@ -306,32 +241,15 @@ impl ArtifactWriter {
             }
         }
 
+        self.current_steps.push(meta.clone());
+
         let meta_path = step_dir.join("meta.json");
-        match fs::File::create(&meta_path) {
-            Ok(file) => {
-                if let Err(e) = serde_json::to_writer_pretty(file, &meta) {
-                    eprintln!("Failed to write meta.json: {}", e);
-                }
-            }
-            Err(e) => {
-                eprintln!(
-                    "Failed to create meta.json at {}: {}",
-                    meta_path.display(),
-                    e
-                );
-            }
+        if let Ok(file) = fs::File::create(&meta_path) {
+            let _ = serde_json::to_writer_pretty(file, &meta);
         }
     }
 }
 
 fn slugify(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    s.chars().map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
 }

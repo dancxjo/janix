@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "Key events are deliverable to user programs",
+  "step": {
+    "index": 0,
+    "text": "an application subscribes to keyboard events",
+    "status": "failed",
+    "timestamp": "2026-01-04T05:47:11.836212367+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

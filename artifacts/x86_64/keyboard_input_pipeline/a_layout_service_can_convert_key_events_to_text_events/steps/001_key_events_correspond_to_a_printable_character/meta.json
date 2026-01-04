@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "A layout service can convert key events to text events",
+  "step": {
+    "index": 1,
+    "text": "key events correspond to a printable character",
+    "status": "skipped",
+    "timestamp": "2026-01-04T05:40:38.320603514+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

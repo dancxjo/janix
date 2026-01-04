@@ -3,5 +3,5 @@
   "artifacts_dir": "x86_64/keyboard_input_pipeline/a_layout_service_can_convert_key_events_to_text_events",
   "feature": "Keyboard input pipeline",
   "scenario": "A layout service can convert key events to text events",
-  "status": "pass"
+  "status": "failed"
 }

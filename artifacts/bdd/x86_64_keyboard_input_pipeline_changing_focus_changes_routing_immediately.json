@@ -3,5 +3,5 @@
   "artifacts_dir": "x86_64/keyboard_input_pipeline/changing_focus_changes_routing_immediately",
   "feature": "Keyboard input pipeline",
   "scenario": "Changing focus changes routing immediately",
-  "status": "pass"
+  "status": "failed"
 }

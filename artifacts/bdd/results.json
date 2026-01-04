@@ -326,27 +326,27 @@
       "scenarios": {
         "A layout service can convert key events to text events": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Changing focus changes routing immediately": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Delivery can be traced": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Delivery is non-blocking": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Focus determines which window receives keyboard events": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Key activity produces raw key events": {
@@ -356,32 +356,32 @@
         },
         "Key events are deliverable to user programs": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Keyboard events are buffered during bursts": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Keyboard events are observable as Things": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Multiple consumers can observe raw key events": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "No heavy work is required to capture key events": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Non-printing keys do not produce text": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "The system exposes a keyboard-capable input device when available": {

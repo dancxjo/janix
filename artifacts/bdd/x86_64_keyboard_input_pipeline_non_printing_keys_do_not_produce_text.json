@@ -3,5 +3,5 @@
   "artifacts_dir": "x86_64/keyboard_input_pipeline/non_printing_keys_do_not_produce_text",
   "feature": "Keyboard input pipeline",
   "scenario": "Non-printing keys do not produce text",
-  "status": "pass"
+  "status": "failed"
 }

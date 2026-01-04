@@ -7,10 +7,10 @@
     "index": 2,
     "text": "that process should have a name \"sprout\"",
     "status": "failed",
-    "timestamp": "2026-01-04T05:09:51.849635047+00:00"
+    "timestamp": "2026-01-04T05:28:30.166656624+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

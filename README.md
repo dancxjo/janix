@@ -27,22 +27,142 @@ If it’s in the graph, you can observe it, link to it, and act on it.
 
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
-| Bran hands off a boot contract to the Kernel | ✅ | ⚪ | ⚪ | ⚪ |
+| Bran hands off a boot contract to the Kernel | ✅ | ❌ | ❌ | ❌ |
+| Sprout starts and publishes its presence in the graph | ❌ | ❌ | ❌ | ❌ |
+| Sprout starts core services | ❌ | ❌ | ❌ | ❌ |
+| The Kernel exposes a root Place and a devices Place | ❌ | ❌ | ❌ | ❌ |
+
+### Bytespaces and address spaces
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| A process can create a bytespace and map it with permissions | ✅ | ❌ | ❌ | ❌ |
+| Task stacks have explicit ownership and do not leak | ✅ | ❌ | ❌ | ❌ |
+| Unmapping removes access | ✅ | ✅ | ✅ | ✅ |
+
+### Capabilities and least privilege
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| A process cannot map memory without a mapping capability | ✅ | ✅ | ✅ | ✅ |
+| A process cannot read raw input without an input capability | ✅ | ✅ | ✅ | ✅ |
+| Framebuffer details are not exposed without explicit capability | ✅ | ✅ | ✅ | ✅ |
+| Insecure escape hatches are feature-flagged | ✅ | ✅ | ✅ | ✅ |
+
+### Demo app vertical slice
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| logview draws and receives input | ✅ | ✅ | ✅ | ✅ |
+| logview exits without tearing down the world | ✅ | ✅ | ✅ | ✅ |
+| logview logs through syscall and appears in the graph | ✅ | ✅ | ✅ | ✅ |
+| logview starts as a user task with a heap | ✅ | ✅ | ✅ | ✅ |
+
+### Graph REPL over Serial (OpenGQL)
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| Create a Thing using CREATE | ✅ | ⚪ | ⚪ | ⚪ |
+| Create a node | ✅ | ⚪ | ⚪ | ⚪ |
+| Create a relationship | ✅ | ⚪ | ⚪ | ⚪ |
+| Create a relationship between Things | ✅ | ⚪ | ⚪ | ⚪ |
+| Empty input does nothing | ✅ | ⚪ | ⚪ | ⚪ |
+| Empty input is ignored | ✅ | ⚪ | ⚪ | ⚪ |
+| Exit the REPL | ✅ | ⚪ | ⚪ | ⚪ |
+| Invalid OpenGQL syntax | ✅ | ⚪ | ⚪ | ⚪ |
+| Multi-line OpenGQL query | ✅ | ⚪ | ⚪ | ⚪ |
+| Multi-line query input | ✅ | ⚪ | ⚪ | ⚪ |
+| Query history is preserved | ✅ | ⚪ | ⚪ | ⚪ |
+| Query history is recorded | ✅ | ⚪ | ⚪ | ⚪ |
+| Query nodes using MATCH | ✅ | ⚪ | ⚪ | ⚪ |
+| Query returns no results | ✅ | ⚪ | ⚪ | ⚪ |
+| Query with no matching results | ✅ | ⚪ | ⚪ | ⚪ |
+| REPL announces readiness | ✅ | ⚪ | ⚪ | ⚪ |
+| REPL exit command | ✅ | ⚪ | ⚪ | ⚪ |
+| Semantic error handling | ✅ | ⚪ | ⚪ | ⚪ |
+| Simple MATCH query | ✅ | ⚪ | ⚪ | ⚪ |
+| Syntax error handling | ✅ | ⚪ | ⚪ | ⚪ |
+| Unknown REPL command | ✅ | ⚪ | ⚪ | ⚪ |
+| Unknown command | ✅ | ⚪ | ⚪ | ⚪ |
+| Valid syntax but invalid semantics | ✅ | ⚪ | ⚪ | ⚪ |
+
+### Graph as the system
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| A task is linked to its owning process | ✅ | ❌ | ❌ | ✅ |
+| Devices appear in place.devices | ✅ | ❌ | ❌ | ✅ |
+| Tasks are represented as Things | ✅ | ❌ | ❌ | ✅ |
+| The graph is queryable at runtime | ✅ | ❌ | ❌ | ✅ |
+
+### Input pipeline and focus model
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| Focus determines which surface receives TextEvent | ✅ | ❌ | ❌ | ❌ |
+| Raw scancodes can be read by inputd with capability | ✅ | ❌ | ❌ | ❌ |
+| inputd publishes KeyEvent Things to the graph | ✅ | ✅ | ✅ | ✅ |
+
+### Keyboard input pipeline
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| A layout service can convert key events to text events | ❌ | ⚪ | ⚪ | ⚪ |
+| Changing focus changes routing immediately | ❌ | ⚪ | ⚪ | ⚪ |
+| Delivery can be traced | ❌ | ⚪ | ⚪ | ⚪ |
+| Delivery is non-blocking | ❌ | ⚪ | ⚪ | ⚪ |
+| Focus determines which window receives keyboard events | ❌ | ⚪ | ⚪ | ⚪ |
+| Key activity produces raw key events | ❌ | ⚪ | ⚪ | ⚪ |
+| Key events are deliverable to user programs | ❌ | ⚪ | ⚪ | ⚪ |
+| Keyboard events are buffered during bursts | ❌ | ⚪ | ⚪ | ⚪ |
+| Keyboard events are observable as Things | ❌ | ⚪ | ⚪ | ⚪ |
+| Multiple consumers can observe raw key events | ❌ | ⚪ | ⚪ | ⚪ |
+| No heavy work is required to capture key events | ❌ | ⚪ | ⚪ | ⚪ |
+| Non-printing keys do not produce text | ❌ | ⚪ | ⚪ | ⚪ |
+| The system exposes a keyboard-capable input device when available | ❌ | ⚪ | ⚪ | ⚪ |
+| The system still boots without a keyboard | ❌ | ⚪ | ⚪ | ⚪ |
 
 ### Multi-architecture behavioral parity
 
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
-| Boot reaches kernel ready on each architecture | ✅ | ⚪ | ⚪ | ⚪ |
-| The syscall ABI returns a structured result on each architecture | ✅ | ⚪ | ⚪ | ⚪ |
+| Boot reaches kernel ready on each architecture | ✅ | ✅ | ✅ | ✅ |
+| Missing devices are represented as absence, not failure | ✅ | ✅ | ✅ | ✅ |
+| The syscall ABI returns a structured result on each architecture | ✅ | ✅ | ✅ | ✅ |
+
+### Scheduler liveness and fairness
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| A blocked task wakes when its watch fires | ✅ | ✅ | ✅ | ✅ |
+| A task may block on a deadline watch | ✅ | ✅ | ✅ | ✅ |
+| Runnable tasks eventually run | ✅ | ✅ | ✅ | ✅ |
+| The scheduler switches tasks over time | ✅ | ✅ | ✅ | ✅ |
+
+### Surfaces and compositing
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| A surface is a Thing with ownership and bounds | ✅ | ❌ | ❌ | ✅ |
+| Bloom can paint the screen a solid color | ✅ | ❌ | ❌ | ✅ |
+| The display backend is swappable | ✅ | ❌ | ❌ | ✅ |
 
 ### Swappable display backends
 
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
-| Bloom can paint a solid color on any provider | ✅ | ⚪ | ⚪ | ⚪ |
-| Bloom cannot access display bytespace without capability | ✅ | ⚪ | ⚪ | ⚪ |
-| Limine framebuffer provider exposes a primary display bytespace | ✅ | ⚪ | ⚪ | ⚪ |
+| Bloom can paint a solid color on any provider | ✅ | ✅ | ✅ | ✅ |
+| Bloom cannot access display bytespace without capability | ✅ | ❌ | ❌ | ✅ |
+| Limine framebuffer provider exposes a primary display bytespace | ✅ | ❌ | ❌ | ❌ |
+| RAMFB provider exposes the same graph contract | ✅ | ✅ | ✅ | ❌ |
+
+### Watches and event-driven waiting
+
+| Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
+|----------|--------|---------|---------|-------------|
+| A device watch fires on an input event | ✅ | ✅ | ✅ | ✅ |
+| A graph watch fires when a Thing is added to a Place | ✅ | ✅ | ✅ | ✅ |
+| Waiting on "any watch" returns when one fires | ✅ | ✅ | ✅ | ✅ |
 
 <!-- DOCGEN:STATUS:END -->
 

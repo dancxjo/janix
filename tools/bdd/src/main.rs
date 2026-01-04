@@ -28,6 +28,7 @@ async fn main() -> Result<()> {
         current_scenario: String::new(),
         step_index: 0,
         scenario_failed: false,
+        current_steps: Vec::new(),
     };
     
     println!("Running BDD suite from: {}", feature_dir.display());

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "Focus determines which window receives keyboard events",
+  "step": {
+    "index": 2,
+    "text": "a key is pressed",
+    "status": "passed",
+    "timestamp": "2026-01-04T05:37:37.886429732+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

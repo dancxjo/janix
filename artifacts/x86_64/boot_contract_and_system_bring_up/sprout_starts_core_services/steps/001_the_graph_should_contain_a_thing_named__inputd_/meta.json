@@ -7,10 +7,10 @@
     "index": 1,
     "text": "the graph should contain a Thing named \"inputd\"",
     "status": "failed",
-    "timestamp": "2026-01-04T05:09:52.862152074+00:00"
+    "timestamp": "2026-01-04T05:29:33.905110562+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

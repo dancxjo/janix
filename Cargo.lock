@@ -196,6 +196,7 @@ dependencies = [
  "chrono",
  "clap",
  "cucumber",
+ "docgen",
  "futures",
  "image 0.24.9",
  "lazy_static",

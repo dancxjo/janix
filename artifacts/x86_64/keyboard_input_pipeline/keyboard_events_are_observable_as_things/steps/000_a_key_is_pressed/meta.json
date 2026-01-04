@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "Keyboard events are observable as Things",
+  "step": {
+    "index": 0,
+    "text": "a key is pressed",
+    "status": "failed",
+    "timestamp": "2026-01-04T05:43:38.754649296+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "Changing focus changes routing immediately",
+  "step": {
+    "index": 0,
+    "text": "a focused window exists",
+    "status": "failed",
+    "timestamp": "2026-01-04T05:39:08.112074506+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

@@ -4,7 +4,7 @@ Feature: Boot contract and system bring-up
 
   @boot @smoke
   Scenario: Bran hands off a boot contract to the Kernel
-    Given I boot ThingOS on "x86_64"
+    Given I boot the system
     Then the serial output contains "BOOT:"
     And the serial output contains "TICK: switch"
     And the serial output contains "SPROUT: I am alive"

@@ -118,17 +118,23 @@ fn seed_bloom_ontology(ctx: &BootContext) {
         let place_devices = s.create_thing(sym::KIND_PLACE).expect("place.devices");
         s.register_name(place_devices, sym::PLACE_DEVICES);
         let _ = s.create_relationship(sym::PRED_CONTAINS, place_root, place_devices);
+        crate::serial::write(b"created: place.devices\n");
 
         let place_tasks = s.create_thing(sym::KIND_PLACE).expect("place.tasks");
         s.register_name(place_tasks, sym::PLACE_TASKS);
         let _ = s.create_relationship(sym::PRED_CONTAINS, place_root, place_tasks);
+        crate::serial::write(b"created: place.tasks\n");
 
         // Display
         if let Some(fb) = ctx.framebuffer {
+            crate::serial::write(b"DISPLAY: selected provider limine_fb\n");
+
             let dev = s
                 .create_thing(sym::KIND_DEVICE_DISPLAY)
                 .expect("dev.display");
             s.register_name(dev, symbols::intern(b"device.display0"));
+            s.register_name(dev, symbols::intern(b"device.display.primary")); // Alias for BDD/Spec
+            crate::serial::write(b"register name: device.display.primary\n");
             let _ = s.create_relationship(sym::PRED_CONTAINS, place_devices, dev);
 
             let surf = s.create_thing(sym::KIND_SURFACE).expect("surface");
@@ -165,9 +171,6 @@ fn seed_bloom_ontology(ctx: &BootContext) {
             buf_w.copy_from_slice(&(fb.width as u64).to_le_bytes());
             s.set_payload(width_thing, &buf_w);
             let _ = s.create_relationship(sym::PRED_SIZE, surf, width_thing); // Reusing PRED_SIZE constraint? Or separate?
-                                                                              // Standard ontology suggests PRED_WIDTH, PRED_HEIGHT. Using PRED_SIZE is ambiguous on Surface.
-                                                                              // But bloom doesn't read it yet. So skipping to avoid confusion.
-                                                                              // Bloom currently hardcodes 1024x768.
         }
     });
 }

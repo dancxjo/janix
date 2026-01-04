@@ -1,0 +1,7 @@
+{
+  "arch": "aarch64",
+  "artifacts_dir": "aarch64/scheduler_liveness_and_fairness/a_task_may_block_on_a_deadline_watch",
+  "feature": "Scheduler liveness and fairness",
+  "scenario": "A task may block on a deadline watch",
+  "status": "pass"
+}

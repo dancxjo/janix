@@ -1,0 +1,7 @@
+{
+  "arch": "x86_64",
+  "artifacts_dir": "x86_64/multi_architecture_behavioral_parity/missing_devices_are_represented_as_absence__not_failure",
+  "feature": "Multi-architecture behavioral parity",
+  "scenario": "Missing devices are represented as absence, not failure",
+  "status": "pass"
+}

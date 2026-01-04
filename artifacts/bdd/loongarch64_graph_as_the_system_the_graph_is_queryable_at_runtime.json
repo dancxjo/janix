@@ -1,0 +1,7 @@
+{
+  "arch": "loongarch64",
+  "artifacts_dir": "loongarch64/graph_as_the_system/the_graph_is_queryable_at_runtime",
+  "feature": "Graph as the system",
+  "scenario": "The graph is queryable at runtime",
+  "status": "pass"
+}

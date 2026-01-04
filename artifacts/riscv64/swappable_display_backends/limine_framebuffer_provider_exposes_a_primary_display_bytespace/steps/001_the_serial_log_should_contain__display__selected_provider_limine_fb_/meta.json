@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Swappable display backends",
+  "scenario": "Limine framebuffer provider exposes a primary display bytespace",
+  "step": {
+    "index": 1,
+    "text": "the serial log should contain \"DISPLAY: selected provider limine_fb\"",
+    "status": "failed",
+    "timestamp": "2026-01-04T04:46:48.876862953+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

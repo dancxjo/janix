@@ -1,0 +1,7 @@
+{
+  "arch": "x86_64",
+  "artifacts_dir": "x86_64/bytespaces_and_address_spaces/unmapping_removes_access",
+  "feature": "Bytespaces and address spaces",
+  "scenario": "Unmapping removes access",
+  "status": "pass"
+}

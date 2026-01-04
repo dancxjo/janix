@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Demo app vertical slice",
+  "scenario": "logview logs through syscall and appears in the graph",
+  "step": {
+    "index": 0,
+    "text": "\"logview\" is running",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:46:42.714159778+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "loongarch64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "Sprout starts core services",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:43:57.454904626+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

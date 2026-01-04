@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Multi-architecture behavioral parity",
+  "scenario": "Boot reaches kernel ready on each architecture",
+  "step": {
+    "index": 2,
+    "text": "the system should not panic",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:42:51.412666702+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

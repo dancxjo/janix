@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "Sprout starts core services",
+  "step": {
+    "index": 2,
+    "text": "the graph should contain a Thing named \"logview\"",
+    "status": "failed",
+    "timestamp": "2026-01-04T04:46:42.700576725+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,0 +1,1 @@
+STDERR: qemu-system-aarch64: -device limine_fb: 'limine_fb' is not a valid device model name

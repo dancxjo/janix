@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Capabilities and least privilege",
+  "scenario": "Framebuffer details are not exposed without explicit capability",
+  "step": {
+    "index": 1,
+    "text": "the process \"bloom\" has no capability \"cap.framebuffer\"",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:39:09.258241979+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

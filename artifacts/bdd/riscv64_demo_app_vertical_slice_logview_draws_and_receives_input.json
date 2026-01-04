@@ -1,0 +1,7 @@
+{
+  "arch": "riscv64",
+  "artifacts_dir": "riscv64/demo_app_vertical_slice/logview_draws_and_receives_input",
+  "feature": "Demo app vertical slice",
+  "scenario": "logview draws and receives input",
+  "status": "pass"
+}

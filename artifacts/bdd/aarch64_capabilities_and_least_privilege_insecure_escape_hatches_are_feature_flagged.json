@@ -1,0 +1,7 @@
+{
+  "arch": "aarch64",
+  "artifacts_dir": "aarch64/capabilities_and_least_privilege/insecure_escape_hatches_are_feature_flagged",
+  "feature": "Capabilities and least privilege",
+  "scenario": "Insecure escape hatches are feature-flagged",
+  "status": "pass"
+}

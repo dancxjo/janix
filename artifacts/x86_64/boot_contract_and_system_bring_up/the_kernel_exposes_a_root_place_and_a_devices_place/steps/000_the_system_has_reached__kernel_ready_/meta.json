@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "The Kernel exposes a root Place and a devices Place",
+  "step": {
+    "index": 0,
+    "text": "the system has reached \"kernel ready\"",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:38:56.172125152+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

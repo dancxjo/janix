@@ -98,19 +98,20 @@ pub unsafe fn syscall(
         lateout("a2") val1,
         options(nostack, preserves_flags)
     );
+
     #[cfg(target_arch = "loongarch64")]
     core::arch::asm!(
         "syscall 0",
-        in("") nr as u64,
-        in("") a0,
-        in("") a1,
-        in("") a2,
-        in("") a3,
-        in("") a4,
-        in("") a5,
-        lateout("") status,
-        lateout("") val0,
-        lateout("") val1,
+        in("$a7") nr as u64,
+        in("$a0") a0,
+        in("$a1") a1,
+        in("$a2") a2,
+        in("$a3") a3,
+        in("$a4") a4,
+        in("$a5") a5,
+        lateout("$a0") status,
+        lateout("$a1") val0,
+        lateout("$a2") val1,
         options(nostack, preserves_flags)
     );
 
@@ -184,7 +185,7 @@ pub mod debug {
     pub fn log(msg: &str) {
         // Syscall: SYS_LOG(level, str_ptr, str_len)
         // We use Level::Info (2) as default
-        let _ = unsafe {
+        unsafe {
             syscall(
                 nr::SYS_LOG,
                 2,
@@ -193,8 +194,8 @@ pub mod debug {
                 0,
                 0,
                 0,
-            )
-        };
+            );
+        }
     }
 }
 

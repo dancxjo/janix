@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "aarch64",
+  "feature": "Capabilities and least privilege",
+  "scenario": "Framebuffer details are not exposed without explicit capability",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:41:26.843039834+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

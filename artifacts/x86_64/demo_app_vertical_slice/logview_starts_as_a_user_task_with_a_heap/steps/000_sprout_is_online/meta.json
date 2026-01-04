@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Demo app vertical slice",
+  "scenario": "logview starts as a user task with a heap",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:39:09.262321773+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

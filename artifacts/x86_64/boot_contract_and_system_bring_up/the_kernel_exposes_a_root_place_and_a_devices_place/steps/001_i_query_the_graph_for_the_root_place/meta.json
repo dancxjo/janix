@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "The Kernel exposes a root Place and a devices Place",
+  "step": {
+    "index": 1,
+    "text": "I query the graph for the root Place",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:39:06.224975558+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

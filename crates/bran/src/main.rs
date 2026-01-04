@@ -148,9 +148,9 @@ core::arch::global_asm!(
     ".section .text",
     ".global _start",
     "_start:",
-    "la.global , BOOT_STACK",
-    "li.d , 262144",
-    "add.d , , ",
+    "la.global $sp, BOOT_STACK",
+    "li.d $t0, 262144",
+    "add.d $sp, $sp, $t0",
     "b kmain"
 );
 
@@ -182,9 +182,11 @@ unsafe extern "C" fn kmain() -> ! {
 
     // 1. Collect HHDM and Memory Map info
     // (already obtained above for pre_boot)
-    BOOT_CTX.hhdm_offset = hhdm_offset;
-    BOOT_CTX.kernel_phys_base = kernel_phys_base;
-    BOOT_CTX.kernel_virt_base = kernel_virt_base;
+    unsafe {
+        BOOT_CTX.hhdm_offset = hhdm_offset;
+        BOOT_CTX.kernel_phys_base = kernel_phys_base;
+        BOOT_CTX.kernel_virt_base = kernel_virt_base;
+    }
 
     let mut heap_found = false;
     let heap_size_req = 64 * 1024 * 1024; // 64 MiB
@@ -200,11 +202,11 @@ unsafe extern "C" fn kmain() -> ! {
                 && entry.entry_type == limine::memory_map::EntryType::USABLE
                 && entry.length >= heap_size_req
             {
-                BOOT_CTX.heap_phys_base = entry.base;
+                unsafe { BOOT_CTX.heap_phys_base = entry.base; }
                 heap_found = true;
             }
         }
-        BOOT_CTX.physical_memory = total_mem;
+        unsafe { BOOT_CTX.physical_memory = total_mem; }
     }
 
     if !heap_found {
@@ -215,13 +217,15 @@ unsafe extern "C" fn kmain() -> ! {
     // 2. Collect Framebuffer info
     if let Some(fb_res) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(fb) = fb_res.framebuffers().next() {
-            BOOT_CTX.framebuffer = Some(FramebufferInfo {
-                addr: fb.addr() as u64,
-                width: fb.width(),
-                height: fb.height(),
-                pitch: fb.pitch(),
-                bpp: fb.bpp(),
-            });
+            unsafe {
+                BOOT_CTX.framebuffer = Some(FramebufferInfo {
+                    addr: fb.addr() as u64,
+                    width: fb.width(),
+                    height: fb.height(),
+                    pitch: fb.pitch(),
+                    bpp: fb.bpp(),
+                });
+            }
         }
     }
 
@@ -232,19 +236,21 @@ unsafe extern "C" fn kmain() -> ! {
             if count >= 64 {
                 break;
             }
-            MODULE_LIST[count] = ModuleInfo {
-                index: i,
-                path: m.path().to_str().unwrap_or("unknown"),
-                phys_addr: (m.addr() as u64).wrapping_sub(BOOT_CTX.hhdm_offset),
-                size: m.size() as u64,
-            };
+            unsafe {
+                MODULE_LIST[count] = ModuleInfo {
+                    index: i,
+                    path: m.path().to_str().unwrap_or("unknown"),
+                    phys_addr: (m.addr() as u64).wrapping_sub(BOOT_CTX.hhdm_offset),
+                    size: m.size() as u64,
+                };
+            }
             count += 1;
         }
-        BOOT_CTX.modules = &MODULE_LIST[..count];
+        unsafe { BOOT_CTX.modules = &MODULE_LIST[..count]; }
     }
 
     bran_log("BRAN: handoff to kernel");
 
     // Hand off to kernel - never returns
-    unsafe { kernel::boot::boot(&mut BOOT_CTX) }
+    unsafe { kernel::boot::boot(&raw mut BOOT_CTX) }
 }

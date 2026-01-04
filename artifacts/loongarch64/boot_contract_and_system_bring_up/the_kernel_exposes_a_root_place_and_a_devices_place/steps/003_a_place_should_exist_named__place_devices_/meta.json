@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "loongarch64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "The Kernel exposes a root Place and a devices Place",
+  "step": {
+    "index": 3,
+    "text": "a Place should exist named \"place.devices\"",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:43:55.938593190+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

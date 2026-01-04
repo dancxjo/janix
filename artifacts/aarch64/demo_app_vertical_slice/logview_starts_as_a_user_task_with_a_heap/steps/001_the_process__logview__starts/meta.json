@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "aarch64",
+  "feature": "Demo app vertical slice",
+  "scenario": "logview starts as a user task with a heap",
+  "step": {
+    "index": 1,
+    "text": "the process \"logview\" starts",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:41:26.990224483+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

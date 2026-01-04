@@ -1,0 +1,50 @@
+MOD: /boot/modules/sprout
+PROC: spawn_kernel_module
+SYM:: module phys=eb67e000 offset=ffff800000000000
+SYM:: AddressSpace::new: allocating PGD...
+SYM:: AddressSpace::new: PGD allocated at 0xb1000
+SYM:: AddressSpace::new: kernel_pgd=0xebfe7000
+SYM:: AddressSpace::new: copying kernel entries...
+SYM:: AddressSpace::new: kernel entries copied
+PROC: ELF loaded, entry
+SYM:: spawn: name=/boot/modules/sprout start
+SYM:: spawn: allocating stack...
+SYM:: spawn: stack allocated
+SYM:: spawn: graph store start
+SYM:: spawn: graph store done
+SYM:: spawn: address space handled
+SYM:: spawn: finished id=1 name=/boot/modules/sprout stack_top=0xffff8000000c8000 stack_size=0x10000
+SYM:: configure_ctx: k_stack=0xffff8000000c8000 u_stack=0x80000000 entry=0x206c0
+SYM:: configure_ctx: finalized sp=0xffff8000000c7ee8
+SPROUT: I am alive
+PROC: spawned
+MOD: /boot/modules/bloom
+PROC: spawn_kernel_module
+SYM:: module phys=eb396000 offset=ffff800000000000
+SYM:: AddressSpace::new: allocating PGD...
+SYM:: AddressSpace::new: PGD allocated at 0xea000
+SYM:: AddressSpace::new: kernel_pgd=0xebfe7000
+SYM:: AddressSpace::new: copying kernel entries...
+SYM:: AddressSpace::new: kernel entries copied
+PROC: ELF loaded, entry
+SYM:: spawn: name=/boot/modules/bloom start
+SYM:: spawn: allocating stack...
+SYM:: spawn: stack allocated
+SYM:: spawn: graph store start
+SYM:: spawn: graph store done
+SYM:: spawn: address space handled
+SYM:: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff800000111000 stack_size=0x10000
+SYM:: configure_ctx: k_stack=0xffff800000111000 u_stack=0x80000000 entry=0x24340
+SYM:: configure_ctx: finalized sp=0xffff800000110ee8
+PROC: spawned
+MOD: /boot/modules/graph_smoke
+MOD: /boot/modules/log_smoke
+MOD: /boot/modules/cap_fail
+MOD: /boot/modules/clock
+MOD: /boot/modules/inputd
+MOD: /boot/modules/echo
+MOD: /boot/modules/inspector
+MOD: /boot/modules/logview
+Booted.
+SYM:: entering loop
+SCHED: calling irq_enable...

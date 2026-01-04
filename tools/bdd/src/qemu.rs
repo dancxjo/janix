@@ -86,6 +86,12 @@ impl QemuProcess {
                     "-device".to_string(),
                     "isa-debug-exit,iobase=0xf4,iosize=0x04".to_string(),
                 ]);
+                
+                if let Some(dp) = display_provider {
+                    if dp == "ramfb" {
+                        args.extend_from_slice(&["-device".to_string(), "ramfb".to_string()]);
+                    }
+                }
             }
             "aarch64" => {
                 args.extend_from_slice(&[
@@ -93,7 +99,6 @@ impl QemuProcess {
                     "virt".to_string(),
                     "-cpu".to_string(),
                     "cortex-a72".to_string(),
-
                     "-device".to_string(),
                     display_provider.unwrap_or("ramfb").to_string(),
                     "-device".to_string(),
@@ -120,7 +125,7 @@ impl QemuProcess {
                     "-cpu".to_string(),
                     "rv64".to_string(),
                     "-device".to_string(),
-                    "ramfb".to_string(),
+                    display_provider.unwrap_or("ramfb").to_string(),
                     "-device".to_string(),
                     "qemu-xhci".to_string(),
                     "-device".to_string(),

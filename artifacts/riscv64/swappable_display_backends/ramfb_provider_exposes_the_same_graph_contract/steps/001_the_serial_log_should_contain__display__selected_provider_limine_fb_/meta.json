@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Swappable display backends",
+  "scenario": "RAMFB provider exposes the same graph contract",
+  "step": {
+    "index": 1,
+    "text": "the serial log should contain \"DISPLAY: selected provider limine_fb\"",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:47:12.947931146+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

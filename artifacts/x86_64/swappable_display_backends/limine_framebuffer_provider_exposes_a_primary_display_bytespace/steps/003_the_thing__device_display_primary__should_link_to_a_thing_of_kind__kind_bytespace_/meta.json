@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Swappable display backends",
+  "scenario": "Limine framebuffer provider exposes a primary display bytespace",
+  "step": {
+    "index": 3,
+    "text": "the Thing \"device.display.primary\" should link to a Thing of kind \"kind.Bytespace\"",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:39:13.976837188+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

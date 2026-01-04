@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "aarch64",
+  "feature": "Capabilities and least privilege",
+  "scenario": "Insecure escape hatches are feature-flagged",
+  "step": {
+    "index": 0,
+    "text": "the kernel is built without the feature \"insecure_dev\"",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:41:26.901957150+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

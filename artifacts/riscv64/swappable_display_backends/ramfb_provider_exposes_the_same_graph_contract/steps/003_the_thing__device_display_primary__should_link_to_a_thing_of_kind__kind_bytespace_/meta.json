@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Swappable display backends",
+  "scenario": "RAMFB provider exposes the same graph contract",
+  "step": {
+    "index": 3,
+    "text": "the Thing \"device.display.primary\" should link to a Thing of kind \"kind.Bytespace\"",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:47:14.342639223+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Capabilities and least privilege",
+  "scenario": "A process cannot read raw input without an input capability",
+  "step": {
+    "index": 1,
+    "text": "the process \"logview\" has no capability \"cap.read_input\"",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:39:09.254745967+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,18 +1,296 @@
 {
   "run": {
-    "timestamp": "2026-01-04T02:30:38.834527719+00:00"
+    "timestamp": "2026-01-04T04:36:34.362076575+00:00"
   },
   "features": {
+    "Boot contract and system bring-up": {
+      "scenarios": {
+        "Bran hands off a boot contract to the Kernel": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "failed",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "Sprout starts and publishes its presence in the graph": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "failed",
+            "riscv64": "failed",
+            "x86_64": "failed"
+          }
+        },
+        "Sprout starts core services": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "failed",
+            "riscv64": "failed",
+            "x86_64": "failed"
+          }
+        },
+        "The Kernel exposes a root Place and a devices Place": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "failed",
+            "riscv64": "failed",
+            "x86_64": "failed"
+          }
+        }
+      }
+    },
+    "Bytespaces and address spaces": {
+      "scenarios": {
+        "A process can create a bytespace and map it with permissions": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "failed",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "Task stacks have explicit ownership and do not leak": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "failed",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "Unmapping removes access": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
+    "Capabilities and least privilege": {
+      "scenarios": {
+        "A process cannot map memory without a mapping capability": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "A process cannot read raw input without an input capability": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "Framebuffer details are not exposed without explicit capability": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "Insecure escape hatches are feature-flagged": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
+    "Demo app vertical slice": {
+      "scenarios": {
+        "logview draws and receives input": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "logview exits without tearing down the world": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "logview logs through syscall and appears in the graph": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "logview starts as a user task with a heap": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
+    "Graph as the system": {
+      "scenarios": {
+        "A task is linked to its owning process": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "pass",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "Devices appear in place.devices": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "pass",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "Tasks are represented as Things": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "pass",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "The graph is queryable at runtime": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "pass",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
+    "Input pipeline and focus model": {
+      "scenarios": {
+        "Focus determines which surface receives TextEvent": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "failed",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "Raw scancodes can be read by inputd with capability": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "failed",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "inputd publishes KeyEvent Things to the graph": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
     "Multi-architecture behavioral parity": {
       "scenarios": {
         "Boot reaches kernel ready on each architecture": {
           "arches": {
-            "aarch64": "pass"
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "Missing devices are represented as absence, not failure": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
           }
         },
         "The syscall ABI returns a structured result on each architecture": {
           "arches": {
-            "aarch64": "pass"
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
+    "Scheduler liveness and fairness": {
+      "scenarios": {
+        "A blocked task wakes when its watch fires": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "A task may block on a deadline watch": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "Runnable tasks eventually run": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "The scheduler switches tasks over time": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
+    "Surfaces and compositing": {
+      "scenarios": {
+        "A surface is a Thing with ownership and bounds": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "pass",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "Bloom can paint the screen a solid color": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "pass",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "The display backend is swappable": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "pass",
+            "riscv64": "failed",
+            "x86_64": "pass"
           }
         }
       }
@@ -21,12 +299,62 @@
       "scenarios": {
         "Bloom can paint a solid color on any provider": {
           "arches": {
-            "aarch64": "pass"
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "Bloom cannot access display bytespace without capability": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "pass",
+            "riscv64": "failed",
+            "x86_64": "pass"
+          }
+        },
+        "Limine framebuffer provider exposes a primary display bytespace": {
+          "arches": {
+            "aarch64": "failed",
+            "loongarch64": "failed",
+            "riscv64": "failed",
+            "x86_64": "pass"
           }
         },
         "RAMFB provider exposes the same graph contract": {
           "arches": {
-            "aarch64": "failed"
+            "aarch64": "pass",
+            "loongarch64": "failed",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
+    "Watches and event-driven waiting": {
+      "scenarios": {
+        "A device watch fires on an input event": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "A graph watch fires when a Thing is added to a Place": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
+          }
+        },
+        "Waiting on \"any watch\" returns when one fires": {
+          "arches": {
+            "aarch64": "pass",
+            "loongarch64": "pass",
+            "riscv64": "pass",
+            "x86_64": "pass"
           }
         }
       }

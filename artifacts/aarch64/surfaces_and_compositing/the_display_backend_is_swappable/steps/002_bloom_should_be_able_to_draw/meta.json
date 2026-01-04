@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "aarch64",
+  "feature": "Surfaces and compositing",
+  "scenario": "The display backend is swappable",
+  "step": {
+    "index": 2,
+    "text": "bloom should be able to draw",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:43:55.093988063+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "arch": "riscv64",
+  "artifacts_dir": "riscv64/multi_architecture_behavioral_parity/missing_devices_are_represented_as_absence__not_failure",
+  "feature": "Multi-architecture behavioral parity",
+  "scenario": "Missing devices are represented as absence, not failure",
+  "status": "pass"
+}

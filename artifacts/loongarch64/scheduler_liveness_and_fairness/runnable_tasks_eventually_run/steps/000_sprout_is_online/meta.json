@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "loongarch64",
+  "feature": "Scheduler liveness and fairness",
+  "scenario": "Runnable tasks eventually run",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:47:30.782546594+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

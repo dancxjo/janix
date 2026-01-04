@@ -1,0 +1,7 @@
+{
+  "arch": "aarch64",
+  "artifacts_dir": "aarch64/watches_and_event_driven_waiting/waiting_on__any_watch__returns_when_one_fires",
+  "feature": "Watches and event-driven waiting",
+  "scenario": "Waiting on \"any watch\" returns when one fires",
+  "status": "pass"
+}

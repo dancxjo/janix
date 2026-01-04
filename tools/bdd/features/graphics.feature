@@ -23,7 +23,7 @@ Feature: Surfaces and compositing
   @gfx @swap @wip
   Scenario: The display backend is swappable
     Given sprout is online
-    When I boot with display backend "limine_framebuffer"
+    Given I boot the system with display provider "limine_fb"
     Then bloom should be able to draw
-    When I boot with display backend "mock_gpu"
+    When I boot the system with display provider "mock_gpu"
     Then bloom should be able to draw

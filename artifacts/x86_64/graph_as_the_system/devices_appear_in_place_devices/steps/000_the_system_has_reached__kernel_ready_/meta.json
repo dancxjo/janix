@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Graph as the system",
+  "scenario": "Devices appear in place.devices",
+  "step": {
+    "index": 0,
+    "text": "the system has reached \"kernel ready\"",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:39:34.895261890+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

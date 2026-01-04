@@ -6,8 +6,8 @@
   "step": {
     "index": 2,
     "text": "the system should not panic",
-    "status": "passed",
-    "timestamp": "2026-01-04T02:30:50.536458991+00:00"
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:45:34.287502807+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Swappable display backends",
+  "scenario": "Bloom can paint a solid color on any provider",
+  "step": {
+    "index": 0,
+    "text": "I boot the system with display provider \"ramfb\"",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:47:32.484915142+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

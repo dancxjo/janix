@@ -1,0 +1,7 @@
+{
+  "arch": "x86_64",
+  "artifacts_dir": "x86_64/graph_as_the_system/the_graph_is_queryable_at_runtime",
+  "feature": "Graph as the system",
+  "scenario": "The graph is queryable at runtime",
+  "status": "pass"
+}

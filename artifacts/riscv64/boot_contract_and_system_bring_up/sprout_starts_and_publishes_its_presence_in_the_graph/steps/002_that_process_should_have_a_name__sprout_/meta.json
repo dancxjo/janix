@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "Sprout starts and publishes its presence in the graph",
+  "step": {
+    "index": 2,
+    "text": "that process should have a name \"sprout\"",
+    "status": "failed",
+    "timestamp": "2026-01-04T04:46:41.189880064+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

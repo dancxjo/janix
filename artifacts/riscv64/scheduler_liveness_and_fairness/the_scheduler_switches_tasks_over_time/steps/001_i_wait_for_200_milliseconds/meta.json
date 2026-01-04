@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Scheduler liveness and fairness",
+  "scenario": "The scheduler switches tasks over time",
+  "step": {
+    "index": 1,
+    "text": "I wait for 200 milliseconds",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:43:05.692053317+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

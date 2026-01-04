@@ -1,0 +1,7 @@
+{
+  "arch": "x86_64",
+  "artifacts_dir": "x86_64/input_pipeline_and_focus_model/raw_scancodes_can_be_read_by_inputd_with_capability",
+  "feature": "Input pipeline and focus model",
+  "scenario": "Raw scancodes can be read by inputd with capability",
+  "status": "pass"
+}

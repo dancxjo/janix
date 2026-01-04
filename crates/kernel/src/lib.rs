@@ -13,9 +13,11 @@ pub mod machine;
 pub mod memory;
 pub mod platform;
 pub mod proc;
+pub mod place;
 pub mod sched;
 pub mod serial;
 pub mod syscall;
+pub mod trap;
 pub mod watch;
 
 pub use machine::PreBootInfo;

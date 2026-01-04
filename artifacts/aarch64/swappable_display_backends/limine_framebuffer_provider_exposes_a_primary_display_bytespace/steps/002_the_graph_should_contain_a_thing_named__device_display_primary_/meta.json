@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "aarch64",
+  "feature": "Swappable display backends",
+  "scenario": "Limine framebuffer provider exposes a primary display bytespace",
+  "step": {
+    "index": 2,
+    "text": "the graph should contain a Thing named \"device.display.primary\"",
+    "status": "failed",
+    "timestamp": "2026-01-04T04:41:38.350093601+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "aarch64",
+  "feature": "Scheduler liveness and fairness",
+  "scenario": "A task may block on a deadline watch",
+  "step": {
+    "index": 1,
+    "text": "the task \"clock\" is runnable",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:45:48.656592240+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

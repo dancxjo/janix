@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Multi-architecture behavioral parity",
+  "scenario": "Missing devices are represented as absence, not failure",
+  "step": {
+    "index": 3,
+    "text": "devices that do not exist should simply be absent",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:43:04.985568878+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "arch": "aarch64",
+  "artifacts_dir": "aarch64/surfaces_and_compositing/the_display_backend_is_swappable",
+  "feature": "Surfaces and compositing",
+  "scenario": "The display backend is swappable",
+  "status": "failed"
+}

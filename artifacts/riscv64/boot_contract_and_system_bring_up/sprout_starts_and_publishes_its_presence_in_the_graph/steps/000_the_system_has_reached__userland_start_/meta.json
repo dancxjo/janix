@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "Sprout starts and publishes its presence in the graph",
+  "step": {
+    "index": 0,
+    "text": "the system has reached \"userland start\"",
+    "status": "passed",
+    "timestamp": "2026-01-04T04:46:40.183988529+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

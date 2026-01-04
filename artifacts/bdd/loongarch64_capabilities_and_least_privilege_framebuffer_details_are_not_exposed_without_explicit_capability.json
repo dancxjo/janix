@@ -1,0 +1,7 @@
+{
+  "arch": "loongarch64",
+  "artifacts_dir": "loongarch64/capabilities_and_least_privilege/framebuffer_details_are_not_exposed_without_explicit_capability",
+  "feature": "Capabilities and least privilege",
+  "scenario": "Framebuffer details are not exposed without explicit capability",
+  "status": "pass"
+}

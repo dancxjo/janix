@@ -1,0 +1,7 @@
+{
+  "arch": "loongarch64",
+  "artifacts_dir": "loongarch64/bytespaces_and_address_spaces/a_process_can_create_a_bytespace_and_map_it_with_permissions",
+  "feature": "Bytespaces and address spaces",
+  "scenario": "A process can create a bytespace and map it with permissions",
+  "status": "failed"
+}

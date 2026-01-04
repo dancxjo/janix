@@ -1,0 +1,7 @@
+{
+  "arch": "riscv64",
+  "artifacts_dir": "riscv64/boot_contract_and_system_bring_up/sprout_starts_core_services",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "Sprout starts core services",
+  "status": "failed"
+}

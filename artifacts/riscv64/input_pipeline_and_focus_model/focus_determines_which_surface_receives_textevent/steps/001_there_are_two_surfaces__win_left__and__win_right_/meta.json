@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Input pipeline and focus model",
+  "scenario": "Focus determines which surface receives TextEvent",
+  "step": {
+    "index": 1,
+    "text": "there are two surfaces \"win.left\" and \"win.right\"",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:41:37.820386025+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

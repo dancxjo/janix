@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Input pipeline and focus model",
+  "scenario": "Raw scancodes can be read by inputd with capability",
+  "step": {
+    "index": 1,
+    "text": "the process \"inputd\" has capability \"cap.read_input\"",
+    "status": "skipped",
+    "timestamp": "2026-01-04T04:39:37.774309517+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

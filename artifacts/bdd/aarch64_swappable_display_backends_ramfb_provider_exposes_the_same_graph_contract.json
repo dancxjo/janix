@@ -3,5 +3,5 @@
   "artifacts_dir": "aarch64/swappable_display_backends/ramfb_provider_exposes_the_same_graph_contract",
   "feature": "Swappable display backends",
   "scenario": "RAMFB provider exposes the same graph contract",
-  "status": "failed"
+  "status": "pass"
 }

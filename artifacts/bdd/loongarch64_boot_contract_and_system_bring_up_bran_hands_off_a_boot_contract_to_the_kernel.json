@@ -1,0 +1,7 @@
+{
+  "arch": "loongarch64",
+  "artifacts_dir": "loongarch64/boot_contract_and_system_bring_up/bran_hands_off_a_boot_contract_to_the_kernel",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "Bran hands off a boot contract to the Kernel",
+  "status": "failed"
+}

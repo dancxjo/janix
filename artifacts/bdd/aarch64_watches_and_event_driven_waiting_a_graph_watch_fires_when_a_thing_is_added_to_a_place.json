@@ -1,0 +1,7 @@
+{
+  "arch": "aarch64",
+  "artifacts_dir": "aarch64/watches_and_event_driven_waiting/a_graph_watch_fires_when_a_thing_is_added_to_a_place",
+  "feature": "Watches and event-driven waiting",
+  "scenario": "A graph watch fires when a Thing is added to a Place",
+  "status": "pass"
+}

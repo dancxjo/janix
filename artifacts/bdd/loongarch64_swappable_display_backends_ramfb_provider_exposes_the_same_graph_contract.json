@@ -1,0 +1,7 @@
+{
+  "arch": "loongarch64",
+  "artifacts_dir": "loongarch64/swappable_display_backends/ramfb_provider_exposes_the_same_graph_contract",
+  "feature": "Swappable display backends",
+  "scenario": "RAMFB provider exposes the same graph contract",
+  "status": "failed"
+}

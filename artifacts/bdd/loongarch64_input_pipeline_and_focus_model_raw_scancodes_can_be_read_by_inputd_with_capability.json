@@ -1,0 +1,7 @@
+{
+  "arch": "loongarch64",
+  "artifacts_dir": "loongarch64/input_pipeline_and_focus_model/raw_scancodes_can_be_read_by_inputd_with_capability",
+  "feature": "Input pipeline and focus model",
+  "scenario": "Raw scancodes can be read by inputd with capability",
+  "status": "failed"
+}

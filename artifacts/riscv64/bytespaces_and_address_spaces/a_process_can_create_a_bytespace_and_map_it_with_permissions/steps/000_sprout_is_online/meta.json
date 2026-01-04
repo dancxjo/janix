@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "riscv64",
+  "feature": "Bytespaces and address spaces",
+  "scenario": "A process can create a bytespace and map it with permissions",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "failed",
+    "timestamp": "2026-01-04T04:41:43.384817409+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "arch": "riscv64",
+  "artifacts_dir": "riscv64/capabilities_and_least_privilege/insecure_escape_hatches_are_feature_flagged",
+  "feature": "Capabilities and least privilege",
+  "scenario": "Insecure escape hatches are feature-flagged",
+  "status": "pass"
+}

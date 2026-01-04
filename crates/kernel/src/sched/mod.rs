@@ -3,21 +3,21 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 
-use abi::types::WakeReason;
 use crate::log::{self, Level};
 use crate::memory::space::AddressSpace;
 use crate::watch;
+use abi::types::WakeReason;
 use graph::store;
 use graph::symbols::sym;
 
-pub mod task;
-pub mod run_queue;
 pub mod percpu;
+pub mod run_queue;
+pub mod task;
 
-use task::{Task, TaskId, TaskState};
-pub use task::BlockReason;
-use run_queue::RunQueue;
 use percpu::PerCpu;
+use run_queue::RunQueue;
+pub use task::BlockReason;
+use task::{Task, TaskId, TaskState};
 
 pub(crate) static SCHEDULER: Mutex<Option<Scheduler>> = Mutex::new(None);
 
@@ -38,8 +38,16 @@ impl Scheduler {
         }
     }
 
-    pub(crate) fn spawn(&mut self, name: &'static str, as_opt: Option<Arc<AddressSpace>>) -> TaskId {
-        log::klog(Level::Info, "SCHED", &alloc::format!("spawn: name={} start", name));
+    pub(crate) fn spawn(
+        &mut self,
+        name: &'static str,
+        as_opt: Option<Arc<AddressSpace>>,
+    ) -> TaskId {
+        log::klog(
+            Level::Info,
+            "SCHED",
+            &alloc::format!("spawn: name={} start", name),
+        );
         let id = TaskId(self.next_id);
         self.next_id += 1;
 
@@ -50,36 +58,44 @@ impl Scheduler {
         let stack_ptr = stack.as_ptr() as u64 + stack_size as u64; // Top
         log::klog(Level::Info, "SCHED", "spawn: stack allocated");
         // Leak the stack for now
-        core::mem::forget(stack); 
+        core::mem::forget(stack);
 
         // Graph reflection
         log::klog(Level::Info, "SCHED", "spawn: graph store start");
         let task_thing = store::with_store(|s| {
             let t = s.create_thing(sym::KIND_TASK).expect("create task");
             if let Some(place_tasks) = s.find_by_name(sym::PLACE_TASKS) {
-                 let _ = s.create_relationship(sym::PRED_CONTAINS, place_tasks, t);
+                let _ = s.create_relationship(sym::PRED_CONTAINS, place_tasks, t);
             }
             t
         });
         log::klog(Level::Info, "SCHED", "spawn: graph store done");
 
-        let address_space = as_opt.unwrap_or_else(|| Arc::new(AddressSpace::new().expect("failed create AS")));
+        let address_space =
+            as_opt.unwrap_or_else(|| Arc::new(AddressSpace::new().expect("failed create AS")));
         log::klog(Level::Info, "SCHED", "spawn: address space handled");
         let mut task = Task::new(id, task_thing, stack_ptr, address_space);
-        
+
         // Initialize state (New -> Ready)
         store::with_store(|s| task.set_state(s, TaskState::Ready));
 
         self.tasks.push(task);
-        
+
         // Add to run queue
         let thing = self.tasks.last().unwrap().thing;
         self.run_queue.push_back(id, thing);
-        
-        log::klog(Level::Info, "SCHED", &alloc::format!(
-            "spawn: finished id={} name={} stack_top={:#x} stack_size={:#x}", 
-            id.0, name, stack_ptr, stack_size
-        ));
+
+        log::klog(
+            Level::Info,
+            "SCHED",
+            &alloc::format!(
+                "spawn: finished id={} name={} stack_top={:#x} stack_size={:#x}",
+                id.0,
+                name,
+                stack_ptr,
+                stack_size
+            ),
+        );
 
         id
     }
@@ -90,22 +106,26 @@ pub fn init() {
 
     // Seed Graph (scheduler.main, cpu.0, run_queue.0)
     let (_sched_thing, cpu_thing, rq_thing) = store::with_store(|s| {
-        let place_tasks = s.find_by_name(sym::PLACE_TASKS).expect("place.tasks missing");
-        
+        let place_tasks = s
+            .find_by_name(sym::PLACE_TASKS)
+            .expect("place.tasks missing");
+
         // scheduler.main
         let sched = s.create_thing(sym::KIND_SCHEDULER).expect("create sched");
         s.register_name(sched, sym::SCHEDULER_MAIN);
-        s.create_relationship(sym::PRED_CONTAINS, place_tasks, sched).ok();
+        s.create_relationship(sym::PRED_CONTAINS, place_tasks, sched)
+            .ok();
 
         // cpu.0
         let cpu = s.create_thing(sym::KIND_CPU).expect("create cpu");
         // s.register_name(cpu, \"cpu.0\"); // Need symbol
-        s.create_relationship(sym::PRED_CONTAINS, place_tasks, cpu).ok();
-        
+        s.create_relationship(sym::PRED_CONTAINS, place_tasks, cpu)
+            .ok();
+
         // run_queue.0
         let rq = s.create_thing(sym::KIND_RUN_QUEUE).expect("create rq");
         s.create_relationship(sym::PRED_CONTAINS, sched, rq).ok();
-        
+
         (sched, cpu, rq)
     });
 
@@ -113,10 +133,9 @@ pub fn init() {
     *SCHEDULER.lock() = Some(sched);
 }
 
-
 pub fn run() -> ! {
     log::klog(Level::Info, "SCHED", "entering loop");
-    
+
     // Enable interrupts
     crate::serial::write(b"SCHED: calling irq_enable...\n");
     crate::machine::machine().irq_enable();
@@ -128,7 +147,7 @@ pub fn run() -> ! {
         {
             let irq_hits = crate::machine::aarch64::exception::IRQ_COUNT.load(Ordering::Relaxed);
             if irq_hits != last_irq_check {
-                 last_irq_check = irq_hits;
+                last_irq_check = irq_hits;
             }
         }
 
@@ -137,7 +156,7 @@ pub fn run() -> ! {
 }
 
 pub fn yield_current() {
-    core::hint::spin_loop(); 
+    core::hint::spin_loop();
 }
 
 // Sprout helpers
@@ -145,7 +164,12 @@ pub fn mark_as_init(_id: TaskId) {
     // Mark in graph?
 }
 
-pub fn configure_task_memory(id: TaskId, _img: (u64, u64), _stack: (u64, u64), heap: (u64, u64, u64)) {
+pub fn configure_task_memory(
+    id: TaskId,
+    _img: (u64, u64),
+    _stack: (u64, u64),
+    heap: (u64, u64, u64),
+) {
     let mut guard = SCHEDULER.lock();
     if let Some(sched) = guard.as_mut() {
         if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == id) {
@@ -157,18 +181,25 @@ pub fn configure_task_memory(id: TaskId, _img: (u64, u64), _stack: (u64, u64), h
 }
 
 pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
-    use crate::machine::{CurrentArch, ArchTask, CpuMode, TaskContext};
-    
+    use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
+
     let mut guard = SCHEDULER.lock();
     if let Some(sched) = guard.as_mut() {
         if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
             // Use Kernel Stack Top implicitly allocated by spawn
             // TrapFrame is built on kernel stack, user_stack is stored in RSP field for user mode
             let kernel_stack_top = task.stack_ptr & !0xf;
-            
-            crate::log::klog(crate::log::Level::Info, "SCHED", 
-                &alloc::format!("configure_ctx: k_stack={:#x} u_stack={:#x} entry={:#x}", 
-                    kernel_stack_top, user_stack, entry));
+
+            crate::log::klog(
+                crate::log::Level::Info,
+                "SCHED",
+                &alloc::format!(
+                    "configure_ctx: k_stack={:#x} u_stack={:#x} entry={:#x}",
+                    kernel_stack_top,
+                    user_stack,
+                    entry
+                ),
+            );
 
             // Initialize task context using arch-generic trait
             // stack_top = kernel stack (where TrapFrame is built)
@@ -181,11 +212,14 @@ pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
                 CpuMode::User,
                 user_stack, // User stack passed via arg0 for RSP field
             );
-            
+
             task.stack_ptr = ctx.sp;
-            
-            crate::log::klog(crate::log::Level::Info, "SCHED", 
-                &alloc::format!("configure_ctx: finalized sp={:#x}", task.stack_ptr));
+
+            crate::log::klog(
+                crate::log::Level::Info,
+                "SCHED",
+                &alloc::format!("configure_ctx: finalized sp={:#x}", task.stack_ptr),
+            );
         }
     }
 }
@@ -194,19 +228,29 @@ pub fn exit_current_task(_code: i32) -> ! {
     if let Some(task) = current_task_handle() {
         crate::watch::unregister_wait(task);
     }
-    loop { crate::machine::idle(); }
+    loop {
+        crate::machine::idle();
+    }
 }
 
-pub fn with_current_task<F, R>(f: F) -> Option<R> where F: FnOnce(&mut Task) -> R {
+pub fn with_current_task<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&mut Task) -> R,
+{
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut()?; // Return None if not init
-    let curr = sched.cpu.current_task; 
-    if curr.0 == 0 { return None; }
+    let curr = sched.cpu.current_task;
+    if curr.0 == 0 {
+        return None;
+    }
     let t = sched.tasks.iter_mut().find(|t| t.id == curr).unwrap();
     Some(f(t))
 }
 
-pub fn with_task<F, R>(id: TaskId, f: F) -> Option<R> where F: FnOnce(&mut Task) -> R {
+pub fn with_task<F, R>(id: TaskId, f: F) -> Option<R>
+where
+    F: FnOnce(&mut Task) -> R,
+{
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut()?;
     let t = sched.tasks.iter_mut().find(|t| t.id == id)?;
@@ -221,7 +265,7 @@ pub fn current_task_id() -> Option<abi::ids::ThingId> {
         if let Some(sched) = guard.as_ref() {
             let tid = sched.cpu.current_task;
             if tid.0 != 0 {
-                 sched.tasks.iter().find(|t| t.id == tid).map(|t| t.thing)
+                sched.tasks.iter().find(|t| t.id == tid).map(|t| t.thing)
             } else {
                 None
             }
@@ -252,17 +296,17 @@ pub fn current_task_handle() -> Option<TaskId> {
 
 // Rename/Wrap spawn
 pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
-    use crate::machine::{CurrentArch, ArchTask, CpuMode, TaskContext};
-    
+    use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
+
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut().expect("sched not init");
-    
+
     // Use Shared Kernel Address Space for kernel threads
     let k_as = AddressSpace::new_kernel_share().expect("failed share kernel AS");
     let id = sched.spawn(name, Some(Arc::new(k_as)));
-    
+
     let task = sched.tasks.iter_mut().find(|t| t.id == id).unwrap();
-    
+
     // Initialize task context using arch-generic trait
     let stack_top = task.stack_ptr & !0xf; // 16-byte align
     let mut ctx = TaskContext::default();
@@ -273,9 +317,9 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
         CpuMode::Kernel,
         0, // arg0
     );
-    
+
     task.stack_ptr = ctx.sp;
-    
+
     id
 }
 
@@ -290,19 +334,20 @@ pub fn spawn_empty(name: &'static str) -> TaskId {
     res
 }
 
-
 pub static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 
 pub fn tick(current_sp: u64) -> u64 {
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut();
-    if sched.is_none() { return 0; }
+    if sched.is_none() {
+        return 0;
+    }
     let sched = sched.unwrap();
 
     if sched.cpu.in_switch || sched.cpu.preempt_disabled > 0 {
         return 0; // Defer if already switching or preemption disabled
     }
-    
+
     // Set in_switch guard
     sched.cpu.in_switch = true;
 
@@ -316,7 +361,7 @@ pub fn tick(current_sp: u64) -> u64 {
     let mut wake_list = watch::WakeList::new();
     watch::check_timeouts(ticks, &mut wake_list);
     apply_wake_list(sched, &wake_list);
-    
+
     let prev_task = sched.cpu.current_task;
 
     // Default: Round Robin
@@ -339,18 +384,17 @@ pub fn tick(current_sp: u64) -> u64 {
             }
         }
     }
-    
+
     // 2. Pick next
     if let Some(next) = sched.run_queue.pop_front() {
         sched.cpu.current_task = next;
         let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
-        
-        
+
         crate::serial::write(b"TICK: switch ");
         if prev_task.0 != 0 {
-             crate::serial::write_num(prev_task.0);
+            crate::serial::write_num(prev_task.0);
         } else {
-             crate::serial::write(b"IDLE");
+            crate::serial::write(b"IDLE");
         }
         crate::serial::write(b" -> ");
         crate::serial::write_num(next.0);
@@ -358,25 +402,24 @@ pub fn tick(current_sp: u64) -> u64 {
         crate::serial::write_hex(t.stack_ptr);
 
         if t.stack_ptr > t.stack_top {
-             crate::serial::write(b" [STACK_OVERFLOW_DETECTED]");
+            crate::serial::write(b" [STACK_OVERFLOW_DETECTED]");
         }
         if t.stack_ptr & 0xf != 0 {
-             crate::serial::write(b" [SP_MISALIGN]");
+            crate::serial::write(b" [SP_MISALIGN]");
         }
         crate::serial::write(b"\n");
-        
-        
+
         t.state = TaskState::Running;
         t.first_run = false; // Mark as having started execution
-        // set_on_cpu requires graph lock, skipping for now to avoid deadlock in IRQ
-        // store::with_store(|s| t.set_on_cpu(s, sched.cpu.thing));
+                             // set_on_cpu requires graph lock, skipping for now to avoid deadlock in IRQ
+                             // store::with_store(|s| t.set_on_cpu(s, sched.cpu.thing));
 
         // Set Kernel Stack for Syscall/Traps
         crate::machine::machine().set_kernel_stack(t.stack_top);
 
         let new_sp = t.stack_ptr;
         t.address_space.activate();
-        
+
         // Clear in_switch before return
         sched.cpu.in_switch = false;
         new_sp

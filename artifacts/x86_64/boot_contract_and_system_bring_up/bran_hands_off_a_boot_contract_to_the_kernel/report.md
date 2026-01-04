@@ -32,7 +32,6 @@
 ![Screenshot](steps/001_the_serial_output_contains__boot__/screen.png)
 
 ```
-TICK: switch 1 -> 2 sp=0xffff8000017e3d50
 TICK: switch 2 -> 1 sp=0xffff800001798d50
 TICK: switch 1 -> 2 sp=0xffff8000017e3d50
 TICK: switch 2 -> 1 sp=0xffff800001798d50
@@ -82,6 +81,7 @@ TICK: switch 1 -> 2 sp=0xffff8000017e3d50
 TICK: switch 2 -> 1 sp=0xffff800001798d50
 TICK: switch 1 -> 2 sp=0xffff8000017e3d50
 TICK: switch 2 -> 1 sp=0xffff800001798d50
+TICK: switch 1 -> 2 sp=0xffff8000017e3d50
 ```
 
 ---

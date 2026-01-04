@@ -29,8 +29,6 @@
 ![Screenshot](steps/001_a_user_task_calls_syscall__sys_log_/screen.png)
 
 ```
-SYM:: mapping 213000->17d3000 len 1000
-PROC: ELF loaded, entry
 SYM:: spawn: name=/boot/modules/bloom start
 SYM:: spawn: allocating stack...
 SYM:: spawn: stack allocated
@@ -68,6 +66,8 @@ KERNEL PANIC:
 panicked at crates/kernel/src/machine/x86_64/idt.rs:45:5:
 GPF
 Halting.
+TICK: switch 2 -> 1 sp=0xffff800001798d50
+TICK: switch 1 -> 2 sp=0xffff8000017e3d50
 TICK: switch 2 -> 1 sp=0xffff800001798d50
 TICK: switch 1 -> 2 sp=0xffff8000017e3d50
 TICK: switch 2 -> 1 sp=0xffff800001798d50

@@ -29,10 +29,6 @@
 ![Screenshot](steps/001_the_system_should_reach__kernel_ready_/screen.png)
 
 ```
-SYM:: mapping 212000->17d2000 len 1000
-SYM:: mapping 213000->17d3000 len 1000
-PROC: ELF loaded, entry
-SYM:: spawn: name=/boot/modules/bloom start
 SYM:: spawn: allocating stack...
 SYM:: spawn: stack allocated
 SYM:: spawn: graph store start
@@ -69,6 +65,10 @@ KERNEL PANIC:
 panicked at crates/kernel/src/machine/x86_64/idt.rs:45:5:
 GPF
 Halting.
+TICK: switch 2 -> 1 sp=0xffff800001798d50
+TICK: switch 1 -> 2 sp=0xffff8000017e3d50
+TICK: switch 2 -> 1 sp=0xffff800001798d50
+TICK: switch 1 -> 2 sp=0xffff8000017e3d50
 TICK: switch 2 -> 1 sp=0xffff800001798d50
 TICK: switch 1 -> 2 sp=0xffff8000017e3d50
 TICK: switch 2 -> 1 sp=0xffff800001798d50

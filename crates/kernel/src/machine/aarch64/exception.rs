@@ -1,5 +1,5 @@
-use core::sync::atomic::{AtomicU64, Ordering};
 use super::{gic, timer};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -18,7 +18,8 @@ pub static IRQ_COUNT: AtomicU64 = AtomicU64::new(0);
 #[no_mangle]
 pub extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u64) -> u64 {
     match vector {
-        5 | 9 => { // IRQ from EL1 or EL0
+        5 | 9 => {
+            // IRQ from EL1 or EL0
             IRQ_COUNT.fetch_add(1, Ordering::Relaxed);
             let id = unsafe { gic::ack_irq() };
             if id == timer::TIMER_IRQ {
@@ -31,9 +32,11 @@ pub extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u
             }
             0
         }
-        8 => { // Sync from EL0 (Syscall)
+        8 => {
+            // Sync from EL0 (Syscall)
             let ec = (ctx.esr_el1 >> 26) & 0x3F;
-            if ec == 0x15 { // SVC
+            if ec == 0x15 {
+                // SVC
                 let res = crate::syscall::dispatch(
                     ctx.x[8] as u32, // nr in x8
                     ctx.x[0],
@@ -48,7 +51,7 @@ pub extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u
                 ctx.x[2] = res.val1;
                 return 0;
             }
-            
+
             // Not a syscall, fall through to panic
             panic_exception(ctx, vector);
         }

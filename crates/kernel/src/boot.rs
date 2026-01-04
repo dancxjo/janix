@@ -35,7 +35,10 @@ pub struct ModuleInfo {
 static mut BOOT_CTX: Option<BootContext> = None;
 
 pub fn get_boot_ctx() -> &'static BootContext {
-    unsafe { BOOT_CTX.as_ref().expect("boot ctx not init") }
+    unsafe {
+        #[allow(static_mut_refs)]
+        BOOT_CTX.as_ref().expect("boot ctx not init")
+    }
 }
 
 pub fn spawn_module_by_name(ctx: &BootContext, name: &str) {
@@ -89,6 +92,20 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
 
     // 5. Scheduler Init
     crate::serial::write(b"BOOT: init sched...\n");
+    let sp: u64;
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        core::arch::asm!("mov {}, rsp", out(reg) sp);
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!("mov {}, sp", out(reg) sp);
+        #[cfg(target_arch = "riscv64")]
+        core::arch::asm!("mv {}, sp", out(reg) sp);
+        #[cfg(target_arch = "loongarch64")]
+        core::arch::asm!("move {}, $sp", out(reg) sp);
+    }
+    crate::serial::write(b"BOOT: current sp=");
+    crate::serial::write_hex(sp);
+    crate::serial::write(b"\n");
     crate::sched::init();
 
     // 6. Load Modules (Sprout)

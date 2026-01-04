@@ -65,6 +65,7 @@ pub fn read_scancodes(dst: &mut [u8]) -> usize {
 
 pub fn debug_dump() {
     interrupts::without_interrupts(|| unsafe {
+        #[allow(static_mut_refs)]
         let msg = alloc::format!(
             "KBD Ring: Head={} Tail={} Ovf={}",
             HEAD,

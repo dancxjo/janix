@@ -154,6 +154,7 @@ impl ArchMachine {
             let stack_top = (&raw const BSP_EXCEPTION_STACK as u64) + 16384;
             exception_stack_top = stack_top;
 
+            #[allow(static_mut_refs)]
             if let Some(ref mut pc) = PERCPU_BSP {
                 pc.core.exception_stack_ptr = stack_top;
                 crate::serial::write(b"INIT: EXC_STACK set to ");

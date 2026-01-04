@@ -106,6 +106,18 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     crate::serial::write(b"BOOT: current sp=");
     crate::serial::write_hex(sp);
     crate::serial::write(b"\n");
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let sp_el0: u64;
+        let spsel: u64;
+        core::arch::asm!("mrs {}, sp_el0", out(reg) sp_el0);
+        core::arch::asm!("mrs {}, SPSel", out(reg) spsel);
+        crate::serial::write(b"BOOT: sp_el0=");
+        crate::serial::write_hex(sp_el0);
+        crate::serial::write(b" SPSel=");
+        crate::serial::write_hex(spsel);
+        crate::serial::write(b"\n");
+    }
     crate::sched::init();
 
     // 6. Load Modules (Sprout)

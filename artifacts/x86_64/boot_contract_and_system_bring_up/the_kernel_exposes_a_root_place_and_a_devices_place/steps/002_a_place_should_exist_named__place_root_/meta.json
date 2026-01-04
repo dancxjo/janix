@@ -7,10 +7,10 @@
     "index": 2,
     "text": "a Place should exist named \"place.root\"",
     "status": "passed",
-    "timestamp": "2026-01-04T07:02:32.404088584+00:00"
+    "timestamp": "2026-01-04T08:05:22.259914353+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

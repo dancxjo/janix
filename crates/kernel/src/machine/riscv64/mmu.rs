@@ -237,41 +237,29 @@ impl AddressSpace {
 
     /// Map a single 4KB page.
     fn map_page(&mut self, virt: u64, phys: u64, perms: MapPerms, user: bool) -> MapResult<()> {
-        let root_virt = phys_to_virt(self.root_phys);
-        let root = unsafe { &mut *(root_virt as *mut PageTable) };
+        let mut table_phys = self.root_phys;
+        let mut level = levels() - 1;
 
-        // Walk page table, creating entries as needed
-        // Level 2 (root)
-        let idx2 = vpn(virt, 2);
-        if !root.entries[idx2].is_valid() {
-            // Allocate L1 page table
-            let l1 = Box::new(PageTable::new());
-            let l1_ptr = Box::into_raw(l1);
-            let l1_phys = virt_to_phys(l1_ptr as u64);
-            root.entries[idx2] = PageTableEntry::new_table(l1_phys);
+        loop {
+            let table_virt = phys_to_virt(table_phys);
+            let table = unsafe { &mut *(table_virt as *mut PageTable) };
+            let idx = vpn(virt, level);
+
+            if level == 0 {
+                table.entries[idx] = PageTableEntry::new_leaf(phys, perms, user);
+                break;
+            }
+
+            if !table.entries[idx].is_valid() {
+                let next = Box::new(PageTable::new());
+                let next_ptr = Box::into_raw(next);
+                let next_phys = virt_to_phys(next_ptr as u64);
+                table.entries[idx] = PageTableEntry::new_table(next_phys);
+            }
+
+            table_phys = table.entries[idx].phys_addr();
+            level -= 1;
         }
-
-        let l1_phys = root.entries[idx2].phys_addr();
-        let l1_virt = phys_to_virt(l1_phys);
-        let l1 = unsafe { &mut *(l1_virt as *mut PageTable) };
-
-        // Level 1
-        let idx1 = vpn(virt, 1);
-        if !l1.entries[idx1].is_valid() {
-            // Allocate L0 page table
-            let l0 = Box::new(PageTable::new());
-            let l0_ptr = Box::into_raw(l0);
-            let l0_phys = virt_to_phys(l0_ptr as u64);
-            l1.entries[idx1] = PageTableEntry::new_table(l0_phys);
-        }
-
-        let l0_phys = l1.entries[idx1].phys_addr();
-        let l0_virt = phys_to_virt(l0_phys);
-        let l0 = unsafe { &mut *(l0_virt as *mut PageTable) };
-
-        // Level 0 (leaf)
-        let idx0 = vpn(virt, 0);
-        l0.entries[idx0] = PageTableEntry::new_leaf(phys, perms, user);
 
         Ok(())
     }

@@ -7,10 +7,10 @@
     "index": 1,
     "text": "the graph should contain a Thing of kind \"kind.Process\"",
     "status": "passed",
-    "timestamp": "2026-01-04T07:02:32.911886385+00:00"
+    "timestamp": "2026-01-04T08:05:54.687125606+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

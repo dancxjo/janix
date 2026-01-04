@@ -6,11 +6,11 @@
   "step": {
     "index": 2,
     "text": "a Place should exist named \"place.root\"",
-    "status": "failed",
-    "timestamp": "2026-01-04T05:53:18.177337159+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-04T07:02:32.404088584+00:00"
   },
   "artifacts": {
-    "screenshot": "screen.png",
+    "screenshot": null,
     "serial_tail": "serial_tail.txt"
   }
 }

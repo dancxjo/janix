@@ -7,10 +7,10 @@
     "index": 4,
     "text": "it does not panic",
     "status": "passed",
-    "timestamp": "2026-01-04T05:52:05.535507580+00:00"
+    "timestamp": "2026-01-04T07:02:21.842125888+00:00"
   },
   "artifacts": {
-    "screenshot": "screen.png",
+    "screenshot": null,
     "serial_tail": "serial_tail.txt"
   }
 }

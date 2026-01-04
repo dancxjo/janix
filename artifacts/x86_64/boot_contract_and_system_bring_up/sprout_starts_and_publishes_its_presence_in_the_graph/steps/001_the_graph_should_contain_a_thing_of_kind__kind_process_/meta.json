@@ -6,11 +6,11 @@
   "step": {
     "index": 1,
     "text": "the graph should contain a Thing of kind \"kind.Process\"",
-    "status": "failed",
-    "timestamp": "2026-01-04T05:53:52.702147078+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-04T07:02:32.911886385+00:00"
   },
   "artifacts": {
-    "screenshot": "screen.png",
+    "screenshot": null,
     "serial_tail": "serial_tail.txt"
   }
 }

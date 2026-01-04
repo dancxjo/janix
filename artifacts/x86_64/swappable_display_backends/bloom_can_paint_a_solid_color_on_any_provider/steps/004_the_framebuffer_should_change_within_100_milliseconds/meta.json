@@ -4,10 +4,10 @@
   "feature": "Swappable display backends",
   "scenario": "Bloom can paint a solid color on any provider",
   "step": {
-    "index": 0,
-    "text": "I boot the system with display provider \"ramfb\"",
+    "index": 4,
+    "text": "the framebuffer should change within 100 milliseconds",
     "status": "passed",
-    "timestamp": "2026-01-04T07:03:33.241693371+00:00"
+    "timestamp": "2026-01-04T07:03:30.670065615+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

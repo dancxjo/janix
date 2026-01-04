@@ -148,7 +148,7 @@ impl Bytespace {
             // This is a specialized kernel unsafe read.
             use crate::boot::get_boot_ctx;
             let offset = get_boot_ctx().hhdm_offset;
-            
+
             // DEBUG
             /*
             crate::log::klog(

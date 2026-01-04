@@ -44,13 +44,21 @@ pub fn sys_space_map(bs_id_low: u64, vaddr: u64, offset: u64, len: u64) -> Sysca
     let phys = if let Some(p) = read_prop(sym::PRED_BASE_PHYS) {
         p
     } else {
-        crate::log::klog(crate::log::Level::Error, "SYSCALL", "sys_space_map: PRED_BASE_PHYS not found");
+        crate::log::klog(
+            crate::log::Level::Error,
+            "SYSCALL",
+            "sys_space_map: PRED_BASE_PHYS not found",
+        );
         return SyscallResult::new(err::EINVAL, 0, 0);
     };
     let size = if let Some(s) = read_prop(sym::PRED_SIZE) {
         s
     } else {
-        crate::log::klog(crate::log::Level::Error, "SYSCALL", "sys_space_map: PRED_SIZE not found");
+        crate::log::klog(
+            crate::log::Level::Error,
+            "SYSCALL",
+            "sys_space_map: PRED_SIZE not found",
+        );
         return SyscallResult::new(err::EINVAL, 0, 0);
     };
 
@@ -66,7 +74,11 @@ pub fn sys_space_map(bs_id_low: u64, vaddr: u64, offset: u64, len: u64) -> Sysca
             len as usize,
             MapPerms::READ | MapPerms::WRITE | MapPerms::USER,
         ) {
-            crate::log::klog(crate::log::Level::Error, "SYSCALL", &alloc::format!("sys_space_map: map failed: {:?}", e));
+            crate::log::klog(
+                crate::log::Level::Error,
+                "SYSCALL",
+                &alloc::format!("sys_space_map: map failed: {:?}", e),
+            );
             return SyscallResult::new(err::EFAULT, 0, 0);
         }
         SyscallResult::new(0, vaddr, 0)

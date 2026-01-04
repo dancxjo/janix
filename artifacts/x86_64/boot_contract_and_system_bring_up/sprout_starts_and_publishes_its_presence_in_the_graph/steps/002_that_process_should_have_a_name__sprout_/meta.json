@@ -6,11 +6,11 @@
   "step": {
     "index": 2,
     "text": "that process should have a name \"sprout\"",
-    "status": "failed",
-    "timestamp": "2026-01-04T05:54:22.759909763+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-04T07:02:33.415706020+00:00"
   },
   "artifacts": {
-    "screenshot": "screen.png",
+    "screenshot": null,
     "serial_tail": "serial_tail.txt"
   }
 }

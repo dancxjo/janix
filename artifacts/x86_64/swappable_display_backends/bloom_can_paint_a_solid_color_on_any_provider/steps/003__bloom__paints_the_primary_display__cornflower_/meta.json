@@ -4,10 +4,10 @@
   "feature": "Swappable display backends",
   "scenario": "Bloom can paint a solid color on any provider",
   "step": {
-    "index": 0,
-    "text": "I boot the system with display provider \"ramfb\"",
+    "index": 3,
+    "text": "\"bloom\" paints the primary display \"cornflower\"",
     "status": "passed",
-    "timestamp": "2026-01-04T07:03:33.241693371+00:00"
+    "timestamp": "2026-01-04T07:03:29.675036642+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

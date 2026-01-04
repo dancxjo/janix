@@ -7,10 +7,10 @@
     "index": 1,
     "text": "the process \"logview\" has no capability \"cap.read_input\"",
     "status": "skipped",
-    "timestamp": "2026-01-04T05:56:05.532650546+00:00"
+    "timestamp": "2026-01-04T07:02:34.933712656+00:00"
   },
   "artifacts": {
-    "screenshot": "screen.png",
+    "screenshot": null,
     "serial_tail": "serial_tail.txt"
   }
 }

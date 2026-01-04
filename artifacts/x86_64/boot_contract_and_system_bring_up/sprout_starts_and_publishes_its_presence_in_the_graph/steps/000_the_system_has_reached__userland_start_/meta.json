@@ -7,10 +7,10 @@
     "index": 0,
     "text": "the system has reached \"userland start\"",
     "status": "passed",
-    "timestamp": "2026-01-04T05:53:22.641771316+00:00"
+    "timestamp": "2026-01-04T07:02:32.408335806+00:00"
   },
   "artifacts": {
-    "screenshot": "screen.png",
+    "screenshot": null,
     "serial_tail": "serial_tail.txt"
   }
 }

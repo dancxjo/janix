@@ -179,7 +179,8 @@ impl AddressSpace {
 
             // Share the kernel's mappings wholesale so traps, stacks, and HHDM stay valid
             // after we switch SATP to a task address space.
-            for i in 0..512 {
+            // Sv39 uses 256..512 for the upper half (kernel space).
+            for i in 256..512 {
                 new_root.entries[i] = kernel_root.entries[i];
             }
         }

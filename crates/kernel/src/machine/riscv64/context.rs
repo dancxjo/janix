@@ -43,10 +43,11 @@ impl ArchTask for Riscv64Arch {
             // Set a0 (x10 = regs[9]) for first argument
             frame.regs[9] = arg0;
 
-            // sstatus: SPP (bit 8) = privilege mode, SPIE (bit 5) = enable interrupts on sret
+            // sstatus: SUM (bit 18) = allow supervisor user memory access,
+            // SPP (bit 8) = privilege mode, SPIE (bit 5) = enable interrupts on sret
             frame.sstatus = match mode {
                 CpuMode::Kernel => (1 << 8) | (1 << 5), // SPP=1 (S-mode), SPIE=1
-                CpuMode::User => (1 << 5),              // SPP=0 (U-mode), SPIE=1
+                CpuMode::User => (1 << 18) | (1 << 5),  // SUM=1, SPP=0 (U-mode), SPIE=1
             };
         }
 

@@ -25,8 +25,9 @@ riscv64_trap_vector:
     sd x1, 0(sp)
     
     // Save user sp (x2): read from sscratch if from U-mode, or use original sp
-    // For simplicity, save sscratch (which is user sp after swap, or 0 if from kernel)
-    csrr t0, sscratch
+    // For simplicity, save sscratch (which is user sp after swap, or orig sp if from kernel)
+    // CRITICAL: We MUST zero sscratch here so that nested traps follow the S-mode path.
+    csrrw t0, sscratch, zero
     sd t0, 8(sp)    // Save user/original sp
     
     sd x3, 16(sp)
@@ -144,7 +145,7 @@ riscv64_return_from_trap:
     ld x6, 40(t4)
     ld x7, 48(t4)
     ld x28, 216(t4)
-    ld x29, 224(t4)
     ld x30, 232(t4)
     ld x31, 240(t4)
+    ld x29, 224(t4) // Restore t4 last as it's our base pointer
     sret

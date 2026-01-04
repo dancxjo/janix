@@ -3,6 +3,20 @@
     "timestamp": "2026-01-04T00:15:49.139428740+00:00"
   },
   "features": {
+    "Multi-architecture behavioral parity": {
+      "scenarios": {
+        "Boot reaches kernel ready on each architecture": {
+          "arches": {
+            "aarch64": "pass"
+          }
+        },
+        "The syscall ABI returns a structured result on each architecture": {
+          "arches": {
+            "aarch64": "pass"
+          }
+        }
+      }
+    },
     "Swappable display backends": {
       "scenarios": {
         "Bloom can paint a solid color on any provider": {

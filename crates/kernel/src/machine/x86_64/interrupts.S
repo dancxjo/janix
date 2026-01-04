@@ -2,12 +2,14 @@
 .section .text
 .global timer_interrupt_trampoline
 .global keyboard_interrupt_trampoline
+.global mouse_interrupt_trampoline
 .global syscall_entry
 .global user_mode_trampoline
 .global x86_return_from_trap
 
 .extern sched_tick_asm_helper
 .extern keyboard_handler_asm_helper
+.extern mouse_handler_asm_helper
 .extern timer_ack_asm_helper
 .extern dispatch
 
@@ -104,6 +106,34 @@ keyboard_interrupt_trampoline:
 
     cld
     call keyboard_handler_asm_helper
+
+    // Decrement irq_depth
+    dec dword ptr gs:[64]
+
+    test byte ptr [rsp + 128], 3
+    jz 3f
+    swapgs
+3:
+    pop rax; pop rbx; pop rcx; pop rdx; pop rsi; pop rdi; pop rbp; pop r8
+    pop r9; pop r10; pop r11; pop r12; pop r13; pop r14; pop r15
+    DENORMALIZE
+    iretq
+
+.align 16
+mouse_interrupt_trampoline:
+    NORMALIZE mouse
+    push r15; push r14; push r13; push r12; push r11; push r10; push r9; push r8
+    push rbp; push rdi; push rsi; push rdx; push rcx; push rbx; push rax
+    
+    test byte ptr [rsp + 128], 3
+    jz 1f
+    swapgs
+1:
+    // Increment irq_depth
+    inc dword ptr gs:[64]
+
+    cld
+    call mouse_handler_asm_helper
 
     // Decrement irq_depth
     dec dword ptr gs:[64]

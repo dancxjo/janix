@@ -14,6 +14,7 @@ pub mod idt;
 pub mod mmu;
 pub mod percpu;
 pub mod ps2_keyboard;
+pub mod ps2_mouse;
 pub mod serial;
 pub mod simd;
 pub mod timer;
@@ -66,6 +67,14 @@ pub extern "C" fn task_dispatch(dispatch_ptr: u64, entry: extern "C" fn(u64) -> 
 
 #[no_mangle]
 pub extern "C" fn keyboard_handler_asm_helper() {
+
+#[no_mangle]
+pub extern "C" fn mouse_handler_asm_helper() {
+    unsafe {
+        ps2_mouse::irq_handler();
+        ps2_mouse::ack(); // Send EOI to both PICs
+    }
+}
     unsafe {
         ps2_keyboard::irq_handler();
         timer::ack(); // Send EOI to PIC1

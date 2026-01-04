@@ -92,9 +92,14 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
     let wallpapers_dir = boot_dir.join("assets");
     fs::create_dir_all(&wallpapers_dir)?;
     let clouds_bmp = root.join("assets/wallpapers/clouds.bmp");
+    let cursor_bmp = root.join("assets/cursors/cursor.bmp");
     if clouds_bmp.exists() {
         fs::copy(&clouds_bmp, wallpapers_dir.join("clouds.bmp"))
             .with_context(|| format!("Failed to copy clouds.bmp from {:?}", clouds_bmp))?;
+    }
+    if cursor_bmp.exists() {
+        fs::copy(&cursor_bmp, wallpapers_dir.join("cursor.bmp"))
+            .with_context(|| format!("Failed to copy cursor.bmp from {:?}", cursor_bmp))?;
     }
 
     // Limine Config

@@ -95,6 +95,31 @@ pub fn spawn_module_by_name(ctx: &BootContext, name: &str) {
 }
 
 fn seed_bloom_ontology() {
+    // Initialize mouse and seed pointer Thing on x86_64
+    #[cfg(target_arch = "x86_64")]
+    crate::machine::x86_64::ps2_mouse::init();
+
+    // Create place.input if not exists and seed pointer.0
+    let input_place = if let Some(p) = store::find_thing_by_name(sym::PLACE_INPUT) {
+        p
+    } else {
+        let p = store::thing_create(sym::KIND_PLACE);
+        store::thing_register_name(p, sym::PLACE_INPUT);
+        if let Some(root) = store::find_thing_by_name(sym::PLACE_ROOT) {
+            store::relationship_create(sym::PRED_CONTAINS, root, p);
+        }
+        p
+    };
+
+    // Create pointer.0 Thing
+    let pointer_thing = store::thing_create(sym::KIND_POINTER);
+    let pointer_name = symbols::intern(b"pointer.0");
+    store::thing_register_name(pointer_thing, pointer_name);
+    store::relationship_create(sym::REL_HAS_POINTER, input_place, pointer_thing);
+    // Initialize payload: x=0, y=0, buttons=0
+    store::thing_set_inline_payload(pointer_thing, &[0u8; 12]);
+    crate::log::kprintln("BOOT: Created pointer.0");
+
     let ctx = get_boot_ctx();
     
     // Create Asset Root
@@ -186,6 +211,9 @@ fn seed_bloom_ontology() {
             fb.width, fb.height, fb.red_mask_shift, fb.green_mask_shift, fb.blue_mask_shift
         ));
 
+        // Initialize mouse bounds based on framebuffer
+        #[cfg(target_arch = "x86_64")]
+        crate::machine::x86_64::ps2_mouse::set_bounds(fb.width as u32, fb.height as u32);
         if let Some(devices) = store::find_thing_by_name(sym::PLACE_DEVICES) {
              store::relationship_create(sym::PRED_CONTAINS, devices, fb_thing);
         }

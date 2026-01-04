@@ -34,6 +34,12 @@ pub unsafe fn init() {
     // Unmask IRQ0 (Timer) and IRQ1 (Keyboard)
     // Safety: Mask 0xFC (11111100).
     data.write(mask & 0xFC);
+
+    // 4. Unmask IRQ12 on PIC2 (Mouse)
+    // IRQ12 is bit 4 on the slave PIC (12 - 8 = 4)
+    let mut data2 = Port::<u8>::new(PIC2_DATA);
+    let mask2 = data2.read();
+    data2.write(mask2 & 0xEF); // Clear bit 4
 }
 
 unsafe fn remap_pics() {

@@ -227,6 +227,12 @@ pub fn init() {
         "place.assets",
         "kind.Asset",
         "predicate.cmdline",
+        // Input / Pointer ontology
+        "kind.Pointer",
+        "rel.has_pointer",
+        "kind.Cursor",
+        "rel.cursor",
+        "rel.hotspot",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -427,4 +433,13 @@ pub mod sym {
     pub const PLACE_ASSETS: SymbolId = SymbolId(142);
     pub const KIND_ASSET: SymbolId = SymbolId(143);
     pub const PRED_CMDLINE: SymbolId = SymbolId(144);
+
+    // Input / Pointer ontology
+    pub const KIND_POINTER: SymbolId = SymbolId(145);
+    pub const REL_HAS_POINTER: SymbolId = SymbolId(146);
+    pub const KIND_CURSOR: SymbolId = SymbolId(147);
+    pub const REL_CURSOR: SymbolId = SymbolId(148);
+    pub const REL_HOTSPOT: SymbolId = SymbolId(149);
 }
+
+// symbols.rs additions will be done via sed

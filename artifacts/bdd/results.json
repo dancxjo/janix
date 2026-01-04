@@ -1,138 +1,13 @@
 {
   "run": {
-    "timestamp": "2026-01-03T19:43:16.883373052+00:00"
+    "timestamp": "2026-01-03T20:30:44.291658464+00:00"
   },
   "features": {
     "Boot contract and system bring-up": {
       "scenarios": {
         "Bran hands off a boot contract to the Kernel": {
           "arches": {
-            "all": "failed"
-          }
-        },
-        "Sprout starts and publishes its presence in the graph": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "Sprout starts core services": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "The Kernel exposes a root Place and a devices Place": {
-          "arches": {
-            "all": "pass"
-          }
-        }
-      }
-    },
-    "Bytespaces and address spaces": {
-      "scenarios": {
-        "A process can create a bytespace and map it with permissions": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "Task stacks have explicit ownership and do not leak": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "Unmapping removes access": {
-          "arches": {
-            "all": "pass"
-          }
-        }
-      }
-    },
-    "Capabilities and least privilege": {
-      "scenarios": {
-        "A process cannot map memory without a mapping capability": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "A process cannot read raw input without an input capability": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "Framebuffer details are not exposed without explicit capability": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "Insecure escape hatches are feature-flagged": {
-          "arches": {
-            "all": "pass"
-          }
-        }
-      }
-    },
-    "Demo app vertical slice": {
-      "scenarios": {
-        "logview draws and receives input": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "logview exits without tearing down the world": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "logview logs through syscall and appears in the graph": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "logview starts as a user task with a heap": {
-          "arches": {
-            "all": "pass"
-          }
-        }
-      }
-    },
-    "Graph as the system": {
-      "scenarios": {
-        "A task is linked to its owning process": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "Devices appear in place.devices": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "Tasks are represented as Things": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "The graph is queryable at runtime": {
-          "arches": {
-            "all": "pass"
-          }
-        }
-      }
-    },
-    "Input pipeline and focus model": {
-      "scenarios": {
-        "Focus determines which surface receives TextEvent": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "Raw scancodes can be read by inputd with capability": {
-          "arches": {
-            "all": "pass"
-          }
-        },
-        "inputd publishes KeyEvent Things to the graph": {
-          "arches": {
-            "all": "pass"
+            "x86_64": "failed"
           }
         }
       }
@@ -141,26 +16,12 @@
       "scenarios": {
         "Boot reaches kernel ready on each architecture": {
           "arches": {
-            "all": "pass"
-          }
-        }
-      }
-    },
-    "Surfaces and compositing": {
-      "scenarios": {
-        "A surface is a Thing with ownership and bounds": {
-          "arches": {
-            "all": "pass"
+            "x86_64": "pass"
           }
         },
-        "Bloom can paint the screen a solid color": {
+        "The syscall ABI returns a structured result on each architecture": {
           "arches": {
-            "all": "pass"
-          }
-        },
-        "The display backend is swappable": {
-          "arches": {
-            "all": "pass"
+            "x86_64": "pass"
           }
         }
       }
@@ -169,22 +30,17 @@
       "scenarios": {
         "Bloom can paint a solid color on any provider": {
           "arches": {
-            "all": "pass"
+            "x86_64": "pass"
           }
         },
         "Bloom cannot access display bytespace without capability": {
           "arches": {
-            "all": "pass"
+            "x86_64": "pass"
           }
         },
         "Limine framebuffer provider exposes a primary display bytespace": {
           "arches": {
-            "all": "pass"
-          }
-        },
-        "RAMFB provider exposes the same graph contract": {
-          "arches": {
-            "all": "pass"
+            "x86_64": "pass"
           }
         }
       }

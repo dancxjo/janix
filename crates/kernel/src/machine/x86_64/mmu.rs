@@ -11,7 +11,12 @@ impl AddressSpace {
     pub fn new() -> MapResult<Self> {
         // 1. Allocate new PML4
         let frame = allocate_frame()?;
-        let new_table = unsafe { get_table_mut(frame.start_address().as_u64()) };
+        let phys = frame.start_address().as_u64();
+        let offset = crate::boot::get_boot_ctx().hhdm_offset;
+        let virt_calc = phys.wrapping_add(offset);
+        crate::log::klog(crate::log::Level::Info, "MMU", &alloc::format!("new P4 phys={:x} virt={:x}", phys, virt_calc));
+
+        let new_table = unsafe { get_table_mut(phys) };
         
         // 2. Clear User Half (0..256) - Box::new(PageTable::new()) implies zeroed, but explicitly:
         // (It's already zeroed by PageTable constructor)
@@ -27,7 +32,7 @@ impl AddressSpace {
             }
         }
         
-        Ok(Self { pml4_table: frame.start_address().as_u64() })
+        Ok(Self { pml4_table: phys })
     }
 
     pub fn from_existing(pml4: u64) -> Self {

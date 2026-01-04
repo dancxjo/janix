@@ -37,9 +37,11 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 extern "x86-interrupt" fn gp_handler(
-    stack_frame: InterruptStackFrame, _error_code: u64)
+    stack_frame: InterruptStackFrame, error_code: u64)
 {
-    crate::serial::write(b"GENERAL PROTECTION FAULT\n");
+    crate::serial::write(b"GENERAL PROTECTION FAULT: ");
+    crate::serial::write_hex(error_code);
+    crate::serial::write(b"\n");
     panic!("GPF");
 }
 

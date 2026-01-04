@@ -41,6 +41,8 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
     use alloc::alloc::{alloc, Layout};
 
     crate::log::kprintln("PROC: spawn_kernel_module");
+    let offset = crate::boot::get_boot_ctx().hhdm_offset;
+    crate::log::klog(crate::log::Level::Info, "PROC", &alloc::format!("module phys={:x} offset={:x}", module.phys_addr, offset));
 
     // 1. Create Address Space
     let address_space = Arc::new(AddressSpace::new().map_err(|_| ())?);

@@ -1,7 +1,0 @@
-{
-  "arch": "all",
-  "artifacts_dir": "all/boot_contract_and_system_bring_up/sprout_starts_and_publishes_its_presence_in_the_graph",
-  "feature": "Boot contract and system bring-up",
-  "scenario": "Sprout starts and publishes its presence in the graph",
-  "status": "pass"
-}

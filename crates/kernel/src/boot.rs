@@ -102,6 +102,7 @@ pub unsafe fn boot(ctx: *mut BootContext) -> ! {
     }
 
     // 6. Start Scheduler
+    crate::serial::write(b"Booted.\n");
     crate::sched::run()
 }
 

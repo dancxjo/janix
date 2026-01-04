@@ -1,7 +1,0 @@
-{
-  "arch": "all",
-  "artifacts_dir": "all/demo_app_vertical_slice/logview_exits_without_tearing_down_the_world",
-  "feature": "Demo app vertical slice",
-  "scenario": "logview exits without tearing down the world",
-  "status": "pass"
-}

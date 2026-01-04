@@ -1,50 +1,50 @@
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-USER: CLOCK: tick
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
+MMU: mapping 7ffe0000->18f9000 len 20000
+SCHED: spawn: name=/boot/modules/bloom start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff80000192b000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff80000192b000 u_stack=0x80000000 entry=0x2163c0
+SCHED: configure_ctx_locked: finalized sp=0xffff80000192af60
+PROC: spawned
+USER: SPROUT: bloom spawned
+PROC: spawn_kernel_module
+PROC: module phys=17e15000 offset=ffff800000000000
+MMU: new P4 phys=192b000 virt=ffff80000192b000
+MMU: copy kernel pml4[256]
+TICK: switch 1 -> 2 sp=0xffff80000192af60
+MMU: mapping 90000000->192c000 len 100000
+USER: BLOOM: alive
+MMU: mapping a0000000->80000000 len 384000
+TICK: switch 2 -> 1 sp=0xffff8000017c4eb0
+MMU: copy kernel pml4[511]
+MMU: mapping 200000->1a31000 len 5000
+MMU: mapping 205000->1a39000 len 15000
+TICK: switch 1 -> 2 sp=0xffff80000192a650
+TICK: (further switch logs suppressed)
+MMU: mapping 83000000->19f34000 len 2000
+USER: BLOOM: mapped bytespace.mouse_input
+MMU: mapping 90100000->1a50000 len 384000
+MMU: mapping 21a000->1dd6000 len 1000
+MMU: mapping 21b000->1dd7000 len 1000
+PROC: ELF loaded, entry
+MMU: mapping 7ffe0000->1dd8000 len 20000
+SCHED: spawn: name=/boot/modules/ontology_dump start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=3 name=/boot/modules/ontology_dump stack_top=0xffff800001e0a000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001e0a000 u_stack=0x80000000 entry=0x206d70
+SCHED: configure_ctx_locked: finalized sp=0xffff800001e09f60
+PROC: spawned
+PROC: spawn_kernel_module
+PROC: module phys=17aee000 offset=ffff800000000000
+MMU: new P4 phys=1e0a000 virt=ffff800001e0a000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+MMU: mapping 200000->1e0b000 len 5000
+MMU: mapping 205000->1e13000 len 15000

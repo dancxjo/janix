@@ -7,7 +7,7 @@
     "index": 3,
     "text": "the Thing \"device.display.primary\" should link to a Thing of kind \"kind.Bytespace\"",
     "status": "skipped",
-    "timestamp": "2026-01-04T08:10:15.340248316+00:00"
+    "timestamp": "2026-01-04T21:39:41.799798144+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

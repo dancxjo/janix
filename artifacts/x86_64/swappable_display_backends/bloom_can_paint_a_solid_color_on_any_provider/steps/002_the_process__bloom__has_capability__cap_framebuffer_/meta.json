@@ -6,8 +6,8 @@
   "step": {
     "index": 2,
     "text": "the process \"bloom\" has capability \"cap.framebuffer\"",
-    "status": "passed",
-    "timestamp": "2026-01-04T08:11:08.973643271+00:00"
+    "status": "skipped",
+    "timestamp": "2026-01-04T21:41:12.347431824+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

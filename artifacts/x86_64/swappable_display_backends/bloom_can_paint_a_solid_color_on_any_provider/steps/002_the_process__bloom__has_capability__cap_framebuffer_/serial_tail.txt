@@ -1,50 +1,50 @@
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-USER: CLOCK: tick
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
-TICK: switch 3 -> 1 sp=0xffff80000179e8d0
-TICK: switch 1 -> 2 sp=0xffff8000017eaf60
-TICK: switch 2 -> 3 sp=0xffff8000018238a0
+MMU: mapping 7ffe0000->1794000 len 20000
+SCHED: spawn: name=/boot/modules/sprout start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=1 name=/boot/modules/sprout stack_top=0xffff8000017c6000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff8000017c6000 u_stack=0x80000000 entry=0x2014a0
+SCHED: configure_ctx_locked: finalized sp=0xffff8000017c5f60
+SPROUT: I am alive
+PROC: spawned
+BOOT: Handing off to scheduler
+SCHED: entering loop
+SCHED: calling irq_enable...
+SCHED: first tick!
+TICK: switch IDLE -> 1 sp=0xffff8000017c5f60
+MMU: mapping 90000000->17c7000 len 100000
+TICK: switch 1 -> 1 sp=0xffff8000017c5740
+USER: SPROUT: I am alive!
+USER: SPROUT: spawning bloom
+PROC: spawn_kernel_module
+PROC: module phys=1986f000 offset=ffff800000000000
+MMU: new P4 phys=18ca000 virt=ffff8000018ca000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+MMU: mapping 200000->18cb000 len 8000
+MMU: mapping 208000->18d6000 len 21000
+MMU: mapping 229000->18f7000 len 1000
+MMU: mapping 22a000->18f8000 len 1000
+PROC: ELF loaded, entry
+MMU: mapping 7ffe0000->18f9000 len 20000
+SCHED: spawn: name=/boot/modules/bloom start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff80000192b000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff80000192b000 u_stack=0x80000000 entry=0x2163c0
+SCHED: configure_ctx_locked: finalized sp=0xffff80000192af60
+PROC: spawned
+USER: SPROUT: bloom spawned
+PROC: spawn_kernel_module
+PROC: module phys=17e15000 offset=ffff800000000000
+MMU: new P4 phys=192b000 virt=ffff80000192b000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+MMU: mapping 200000->192c000 len 5000
+TICK: switch 1 -> 2 sp=0xffff80000192af60

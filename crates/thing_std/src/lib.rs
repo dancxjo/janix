@@ -6,9 +6,9 @@
 extern crate abi;
 extern crate alloc;
 
+pub use abi::ids::{SymbolId, ThingId};
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
-pub use abi::ids::{SymbolId, ThingId};
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::fmt::{self, Write};

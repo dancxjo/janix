@@ -182,11 +182,15 @@ unsafe extern "C" fn kmain() -> ! {
                 && entry.entry_type == limine::memory_map::EntryType::USABLE
                 && entry.length >= heap_size_req
             {
-                unsafe { BOOT_CTX.heap_phys_base = entry.base; }
+                unsafe {
+                    BOOT_CTX.heap_phys_base = entry.base;
+                }
                 heap_found = true;
             }
         }
-        unsafe { BOOT_CTX.physical_memory = total_mem; }
+        unsafe {
+            BOOT_CTX.physical_memory = total_mem;
+        }
     }
 
     if !heap_found {
@@ -226,7 +230,9 @@ unsafe extern "C" fn kmain() -> ! {
         bran_logln("");
 
         for (i, m) in mods.iter().enumerate() {
-            if count >= 64 { break; }
+            if count >= 64 {
+                break;
+            }
             unsafe {
                 MODULE_LIST[count] = ModuleInfo {
                     index: i,
@@ -242,7 +248,9 @@ unsafe extern "C" fn kmain() -> ! {
             }
             count += 1;
         }
-        unsafe { BOOT_CTX.modules = &MODULE_LIST[..count]; }
+        unsafe {
+            BOOT_CTX.modules = &MODULE_LIST[..count];
+        }
     } else {
         bran_logln("BRAN: No Module Request response from Limine!");
     }
@@ -265,7 +273,12 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
     if let Some(loc) = info.location() {
         bran_log("Location: ");
-        bran_write_fmt(format_args!("{}:{}:{}", loc.file(), loc.line(), loc.column()));
+        bran_write_fmt(format_args!(
+            "{}:{}:{}",
+            loc.file(),
+            loc.line(),
+            loc.column()
+        ));
         bran_logln("");
     } else {
         bran_logln("Location: <unknown>");
@@ -275,10 +288,19 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 fn bran_print_num(v: u64) {
-    if v == 0 { early_putc(b'0'); return; }
+    if v == 0 {
+        early_putc(b'0');
+        return;
+    }
     let mut buf = [0u8; 20];
     let mut n = v;
     let mut i = 19;
-    while n > 0 && i > 0 { buf[i] = b'0' + (n % 10) as u8; n /= 10; i -= 1; }
-    for b in &buf[i+1..] { early_putc(*b); }
+    while n > 0 && i > 0 {
+        buf[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+        i -= 1;
+    }
+    for b in &buf[i + 1..] {
+        early_putc(*b);
+    }
 }

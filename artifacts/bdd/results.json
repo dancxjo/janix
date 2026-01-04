@@ -139,6 +139,125 @@
         }
       }
     },
+    "Graph REPL over Serial (OpenGQL)": {
+      "scenarios": {
+        "Create a Thing using CREATE": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Create a node": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Create a relationship": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Create a relationship between Things": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Empty input does nothing": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Empty input is ignored": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Exit the REPL": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Invalid OpenGQL syntax": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Multi-line OpenGQL query": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Multi-line query input": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Query history is preserved": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Query history is recorded": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Query nodes using MATCH": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Query returns no results": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Query with no matching results": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "REPL announces readiness": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "REPL exit command": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Semantic error handling": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Simple MATCH query": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Syntax error handling": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Unknown REPL command": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Unknown command": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        },
+        "Valid syntax but invalid semantics": {
+          "arches": {
+            "x86_64": "pass"
+          }
+        }
+      }
+    },
     "Graph as the system": {
       "scenarios": {
         "A task is linked to its owning process": {
@@ -232,7 +351,7 @@
         },
         "Key activity produces raw key events": {
           "arches": {
-            "x86_64": "pass"
+            "x86_64": "failed"
           }
         },
         "Key events are deliverable to user programs": {

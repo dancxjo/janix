@@ -1,0 +1,7 @@
+{
+  "arch": "x86_64",
+  "artifacts_dir": "x86_64/graph_repl_over_serial__opengql_/empty_input_does_nothing",
+  "feature": "Graph REPL over Serial (OpenGQL)",
+  "scenario": "Empty input does nothing",
+  "status": "pass"
+}

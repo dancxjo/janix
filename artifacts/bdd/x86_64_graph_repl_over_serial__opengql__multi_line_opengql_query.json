@@ -1,0 +1,7 @@
+{
+  "arch": "x86_64",
+  "artifacts_dir": "x86_64/graph_repl_over_serial__opengql_/multi_line_opengql_query",
+  "feature": "Graph REPL over Serial (OpenGQL)",
+  "scenario": "Multi-line OpenGQL query",
+  "status": "pass"
+}

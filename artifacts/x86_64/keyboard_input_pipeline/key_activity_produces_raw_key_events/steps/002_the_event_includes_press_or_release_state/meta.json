@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Keyboard input pipeline",
+  "scenario": "Key activity produces raw key events",
+  "step": {
+    "index": 2,
+    "text": "the event includes press-or-release state",
+    "status": "failed",
+    "timestamp": "2026-01-04T05:23:35.820845205+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

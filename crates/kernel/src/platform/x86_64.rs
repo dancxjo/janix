@@ -9,6 +9,10 @@ use graph::symbols::{self, sym};
 
 /// Initialize the x86_64 platform.
 pub fn init() {
+    // Initialize LAPIC now that heap is ready
+    let hhdm = crate::boot::get_boot_ctx().hhdm_offset;
+    unsafe { crate::machine::x86_64::timer::init_lapic(hhdm); }
+
     seed_platform_graph();
     crate::log::kprintln("PLATFORM: x86_64 initialized");
 }

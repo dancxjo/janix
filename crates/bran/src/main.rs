@@ -237,7 +237,24 @@ unsafe extern "C" fn kmain() -> ! {
 }
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    bran_logln("BRAN: PANIC!");
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    bran_logln("\n========== BRAN PANIC ==========");
+    if let Some(loc) = info.location() {
+        bran_log("Location: ");
+        bran_log(loc.file());
+        bran_log(":");
+        bran_print_num(loc.line() as u64);
+        bran_logln("");
+    }
+    bran_logln("=================================");
     loop {}
+}
+
+fn bran_print_num(v: u64) {
+    if v == 0 { early_putc(b'0'); return; }
+    let mut buf = [0u8; 20];
+    let mut n = v;
+    let mut i = 19;
+    while n > 0 && i > 0 { buf[i] = b'0' + (n % 10) as u8; n /= 10; i -= 1; }
+    for b in &buf[i+1..] { early_putc(*b); }
 }

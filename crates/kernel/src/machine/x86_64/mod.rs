@@ -188,8 +188,6 @@ impl Machine for ArchMachine {
         // Phase 1: Early init (GDT, IDT, disable PIC)
         init_early();
 
-        // Phase 2: LAPIC init (requires HHDM offset)
-        init_lapic(info.hhdm_offset);
     }
 
     fn console_write(&self, bytes: &[u8]) -> usize {

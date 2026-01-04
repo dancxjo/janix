@@ -245,7 +245,7 @@ pub mod memory {
 
     pub fn bytespace_create(size: u64) -> ThingId {
         let res = unsafe { syscall(nr::SYS_BYTESPACE_CREATE, size, 0, 0, 0, 0, 0) };
-        ThingId::from_parts(res.val0, res.val1)
+        ThingId::from_parts(res.val1, res.val0)
     }
 
     pub fn space_map(bs: ThingId, vaddr: u64, offset: u64, len: u64) -> u64 {
@@ -264,7 +264,7 @@ pub mod graph {
 
     pub fn thing_create(kind: u64, parent: ThingId) -> ThingId {
         let res = unsafe { syscall(nr::SYS_THING_CREATE, kind, parent.0 as u64, 0, 0, 0, 0) };
-        ThingId::from_parts(res.val0, res.val1)
+        ThingId::from_parts(res.val1, res.val0)
     }
 
     pub fn relationship_create(from: ThingId, to: ThingId, kind: SymbolId) {
@@ -285,7 +285,7 @@ pub mod graph {
             )
         };
         if res.status == 0 {
-            Some(ThingId::from_parts(res.val0, res.val1))
+            Some(ThingId::from_parts(res.val1, res.val0))
         } else {
             None
         }
@@ -356,7 +356,7 @@ pub mod graphics {
                 0,
             )
         };
-        ThingId::from_parts(res.val0, res.val1)
+        ThingId::from_parts(res.val1, res.val0)
     }
 
     pub fn surface_draw(id: ThingId, buf: &[u8], x: u32, y: u32, w: u32, _h: u32) {

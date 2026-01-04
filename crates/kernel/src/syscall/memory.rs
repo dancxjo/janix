@@ -27,10 +27,8 @@ pub fn sys_space_map(bs_id_low: u64, vaddr: u64, offset: u64, len: u64) -> Sysca
     // 2. Read Properties (Phys Base, Size)
     let read_prop = |pred: abi::ids::SymbolId| -> Option<u64> {
         let rels = store::relationships_from(bs_id);
-        crate::log::klog(crate::log::Level::Info, "SYSCALL", &alloc::format!("sys_space_map: checking bs={:?} rel_count={}", bs_id, rels.len()));
         for r_id in rels {
             if let Some(r) = store::get_relationship(r_id) {
-                crate::log::klog(crate::log::Level::Info, "SYSCALL", &alloc::format!("  rel kind={:?} to={:?}", r.kind, r.to));
                 if r.kind == pred {
                     if let Some(payload) = store::get_payload(r.to) {
                         if payload.len() >= 8 {

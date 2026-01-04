@@ -13,6 +13,15 @@ use cursor::{CursorAsset, CursorFrame, CursorAnimator};
 static mut BACK_BUFFER: Option<Vec<u32>> = None;
 static mut WALLPAPER_CACHE: Option<Vec<u32>> = None;
 
+// Mouse ring buffer state
+static mut MOUSE_RING_PTR: Option<*const u8> = None;
+static mut MOUSE_READ_IDX: u32 = 0;
+static mut POINTER_X: i32 = 640;
+static mut POINTER_Y: i32 = 360;
+static mut POINTER_BUTTONS: u16 = 0;
+static mut SCREEN_WIDTH: u32 = 1280;
+static mut SCREEN_HEIGHT: u32 = 720;
+
 #[derive(Clone, Copy)]
 struct Rect {
     x: i32,
@@ -48,12 +57,29 @@ pub extern "C" fn main() {
             } else {
                 (1280u32, 720u32)
             };
+            
+            // Store screen dimensions for mouse clamping
+            unsafe {
+                SCREEN_WIDTH = width;
+                SCREEN_HEIGHT = height;
+                POINTER_X = (width / 2) as i32;
+                POINTER_Y = (height / 2) as i32;
+            }
 
             let fb_base = 0xA000_0000u64;
             let fb_size: u64 = (width as u64) * (height as u64) * 4;
             
             let bs_id = thing_find("bytespace.display0").expect("bytespace not found");
             let _mapped = thing_std::memory::space_map(bs_id, fb_base, 0, fb_size);
+            
+            // Map mouse input bytespace
+            if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
+                let mouse_vaddr = 0x8300_0000u64;
+                let mouse_size = 8192u64;
+                thing_std::memory::space_map(mouse_bs_id, mouse_vaddr, 0, mouse_size);
+                unsafe { MOUSE_RING_PTR = Some(mouse_vaddr as *const u8); }
+                log_info("BLOOM: mapped bytespace.mouse_input");
+            }
 
             let buffer_size = (width * height) as usize;
             unsafe {
@@ -88,6 +114,9 @@ pub extern "C" fn main() {
             loop {
                 // Get current time in milliseconds
                 let now_ms = time::monotonic_now() / 1_000_000;
+                
+                // Consume pending mouse samples from ring buffer
+                consume_mouse_samples();
                 
                 let (px, py, _buttons) = read_pointer_state();
                 let frame_changed = animator.as_mut().map(|a| a.advance(now_ms)).unwrap_or(false);
@@ -168,17 +197,47 @@ fn load_ani_asset(bs_id: ThingId, vaddr: u64) -> Option<CursorAsset> {
     cursor::ani::load_ani(buf)
 }
 
-fn read_pointer_state() -> (i32, i32, u8) {
-    if let Some(ptr_id) = thing_find("pointer.0") {
-        let mut buf = [0u8; 12];
-        let len = thing_get_payload(ptr_id, &mut buf);
-        if len >= 9 {
-            let x = i32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
-            let y = i32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
-            return (x, y, buf[8]);
+/// Consume pending mouse samples from the ring buffer
+fn consume_mouse_samples() {
+    unsafe {
+        let ring_ptr = match MOUSE_RING_PTR {
+            Some(p) => p,
+            None => return,
+        };
+        
+        // Ring header: magic(4), version(4), capacity(4), sample_size(4), write(4), dropped(4), reserved(8)
+        const HEADER_SIZE: usize = 32;
+        const SAMPLE_SIZE: usize = 16; // sizeof(MouseSample)
+        
+        let magic = u32::from_le_bytes([*ring_ptr, *ring_ptr.add(1), *ring_ptr.add(2), *ring_ptr.add(3)]);
+        if magic != 0x4D4F5553 { return; } // "MOUS"
+        
+        let capacity = u32::from_le_bytes([*ring_ptr.add(8), *ring_ptr.add(9), *ring_ptr.add(10), *ring_ptr.add(11)]);
+        let write_ptr = ring_ptr.add(16) as *const u32;
+        let write_idx = core::ptr::read_volatile(write_ptr);
+        
+        let samples_base = ring_ptr.add(HEADER_SIZE);
+        
+        while MOUSE_READ_IDX != write_idx {
+            let slot = (MOUSE_READ_IDX % capacity) as usize;
+            let sample_ptr = samples_base.add(slot * SAMPLE_SIZE);
+            
+            // MouseSample: t_ns(8), dx(2), dy(2), wheel(2), buttons(2)
+            let dx = i16::from_le_bytes([*sample_ptr.add(8), *sample_ptr.add(9)]);
+            let dy = i16::from_le_bytes([*sample_ptr.add(10), *sample_ptr.add(11)]);
+            let buttons = u16::from_le_bytes([*sample_ptr.add(14), *sample_ptr.add(15)]);
+            
+            POINTER_X = (POINTER_X + dx as i32).clamp(0, SCREEN_WIDTH as i32 - 1);
+            POINTER_Y = (POINTER_Y + dy as i32).clamp(0, SCREEN_HEIGHT as i32 - 1);
+            POINTER_BUTTONS = buttons;
+            
+            MOUSE_READ_IDX = MOUSE_READ_IDX.wrapping_add(1);
         }
     }
-    (640, 360, 0)
+}
+
+fn read_pointer_state() -> (i32, i32, u8) {
+    unsafe { (POINTER_X, POINTER_Y, POINTER_BUTTONS as u8) }
 }
 
 unsafe fn redraw_region(dest: *mut u32, src: *const u32, w: u32, h: u32, region: Rect) {

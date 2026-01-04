@@ -41,18 +41,9 @@ static mut PACKET: [u8; 3] = [0; 3];
 /// Get the physical address of the ring buffer for bytespace creation.
 pub fn get_ring_phys_addr() -> u64 {
     let virt = unsafe { &RING_BUFFER as *const _ as u64 };
-    // Convert kernel virtual to physical using HHDM offset
-    let hhdm_offset = crate::boot::get_boot_ctx().hhdm_offset;
-    if virt >= 0xffff_8000_0000_0000 {
-        // HHDM address
-        virt - hhdm_offset
-    } else if virt >= 0xffff_ffff_8000_0000 {
-        // Kernel text/data - need different translation
-        // For now, use machine's virt_to_phys
-        crate::machine::machine().virt_to_phys(virt)
-    } else {
-        virt // Already physical (shouldn't happen)
-    }
+    // Kernel statics are in the kernel text/data region (0xffffffff80...),
+    // which has a different mapping than HHDM. Use machine's virt_to_phys.
+    crate::machine::machine().virt_to_phys(virt)
 }
 
 /// Get the size of the ring buffer bytespace.

@@ -85,7 +85,7 @@ impl PlaceStore {
             name_index: BTreeMap::new(),
             watchers: BTreeMap::new(),
             pending_events: BTreeMap::new(),
-            next_id_high: 1, // Simple counter for now, should be UUID
+            next_id_high: 0, // Simple counter for now, should be UUID
             next_id_low: 1,
         }
     }

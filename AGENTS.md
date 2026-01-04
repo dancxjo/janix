@@ -37,8 +37,8 @@ xtask/            # Build system & tooling (Rust-based make)
 Use `just`. Do not use `cargo run` directly unless you know exactly why.
 
 *   **Build everything**: `just build`
-*   **Run x86_64**: `just run-x86_64` (Graphic) or `just run-headless x86_64`
-*   **Run AArch64**: `just run-aarch64`
+*   **Run x86_64**: `just intel` (Graphic) or `just run-headless x86_64`
+*   **Run others**: `just {arm, risc, loong}`
 *   **Reset Environment**: `just die` (Kills stuck QEMU/GDB instances)
 
 ### Testing

@@ -77,6 +77,19 @@ debug-console:
 inspect env="x86_64" port="0":
     cargo run -p xtask -- inspect --env {{env}} --port {{port}}
 
+# Primary architecture aliases
+intel:
+    @just run x86_64
+
+arm:
+    @just run aarch64
+
+risc:
+    @just run riscv64
+
+loong:
+    @just run loongarch64
+
 # Aliases for tab completion
 
 # run aliases

@@ -220,8 +220,13 @@ The ISO will appear under:
 ### Run in QEMU
 
 ```sh
-just run-headless x86_64 # no screen
-just run x86_64 # qemu screen visible
+just intel     # Run x86_64 (Intel/AMD)
+just arm       # Run aarch64 (ARM64)
+just risc      # Run riscv64 (RISC-V)
+just loong     # Run loongarch64 (LoongArch)
+
+# Or for headless (no graphics):
+just run-headless x86_64
 ```
 
 You should see:

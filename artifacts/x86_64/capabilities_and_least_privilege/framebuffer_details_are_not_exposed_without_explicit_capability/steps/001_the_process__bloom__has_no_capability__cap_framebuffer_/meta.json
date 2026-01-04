@@ -7,10 +7,10 @@
     "index": 1,
     "text": "the process \"bloom\" has no capability \"cap.framebuffer\"",
     "status": "skipped",
-    "timestamp": "2026-01-04T08:10:08.082250778+00:00"
+    "timestamp": "2026-01-04T18:19:33.262759437+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

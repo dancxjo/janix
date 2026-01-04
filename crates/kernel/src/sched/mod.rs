@@ -382,6 +382,9 @@ pub fn spawn_empty(name: &'static str) -> TaskId {
 
 pub static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
 
+/// Counter for tick log suppression - only print first N switch messages
+static TICK_LOG_COUNT: AtomicU64 = AtomicU64::new(0);
+
 pub fn tick(current_sp: u64) -> u64 {
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut();

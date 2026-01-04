@@ -6,8 +6,8 @@
   "step": {
     "index": 1,
     "text": "I query the graph for the root Place",
-    "status": "passed",
-    "timestamp": "2026-01-04T08:08:09.238187043+00:00"
+    "status": "skipped",
+    "timestamp": "2026-01-04T18:18:22.304338291+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

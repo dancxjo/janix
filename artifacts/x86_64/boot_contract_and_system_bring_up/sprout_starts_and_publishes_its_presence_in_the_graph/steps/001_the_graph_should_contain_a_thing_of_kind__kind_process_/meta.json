@@ -6,8 +6,8 @@
   "step": {
     "index": 1,
     "text": "the graph should contain a Thing of kind \"kind.Process\"",
-    "status": "passed",
-    "timestamp": "2026-01-04T08:09:11.744128668+00:00"
+    "status": "skipped",
+    "timestamp": "2026-01-04T18:18:24.616880745+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

@@ -249,3 +249,94 @@ async fn then_pixel_at_matches(world: &mut BootWorld, fx: i32, fy: i32, dx: i32,
     let _ = (world, fx, fy, dx, dy);
     Ok(())
 }
+
+// --- Pixel-level Wallpaper Verification ---
+
+/// Load the reference clouds.bmp from the assets directory
+fn load_reference_bmp() -> Option<image::DynamicImage> {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let root = manifest_dir.parent()?.parent()?;
+    let bmp_path = root.join("assets/wallpapers/clouds.bmp");
+    image::open(&bmp_path).ok()
+}
+
+/// Check if two RGB values are "close enough" (tolerance for color variations)
+fn pixels_match(a: image::Rgb<u8>, b: image::Rgb<u8>, tolerance: u8) -> bool {
+    let dr = (a[0] as i16 - b[0] as i16).abs() as u8;
+    let dg = (a[1] as i16 - b[1] as i16).abs() as u8;
+    let db = (a[2] as i16 - b[2] as i16).abs() as u8;
+    dr <= tolerance && dg <= tolerance && db <= tolerance
+}
+
+#[given(expr = "I wait for {string}")]
+async fn given_wait_for(world: &mut BootWorld, marker: String) -> Result<()> {
+    expect_to_see_simple(world, marker).await
+}
+
+#[then("the display should show the clouds wallpaper")]
+async fn then_display_shows_clouds(world: &mut BootWorld) -> Result<()> {
+    let _ = world;
+    
+    // Load reference BMP
+    let reference = match load_reference_bmp() {
+        Some(img) => img,
+        None => {
+            soft_fail("Could not load reference clouds.bmp".to_string()).await;
+            return Ok(());
+        }
+    };
+    
+    // Capture screenshot from QEMU
+    let screenshot = {
+        let mut guard = GLOBAL_QEMU.lock().await;
+        match guard.as_mut() {
+            Some(qemu) => match qemu.capture_screenshot().await {
+                Ok(img) => img,
+                Err(e) => {
+                    soft_fail(format!("Failed to capture screenshot: {}", e)).await;
+                    return Ok(());
+                }
+            },
+            None => {
+                soft_fail("QEMU not running".to_string()).await;
+                return Ok(());
+            }
+        }
+    };
+    
+    // Reference BMP is 1024x1024
+    // The image crate loads BMP with rows flipped to standard top-down order
+    let ref_pixel_0_0 = reference.get_pixel(0, 0).to_rgb();
+    
+    // Screenshot top-left should match reference pixel (0,0)
+    let screen_pixel_0_0 = screenshot.get_pixel(0, 0).to_rgb();
+    
+    // Check center of screen is not black (indicates wallpaper was painted)
+    let center_x = screenshot.width() / 2;
+    let center_y = screenshot.height() / 2;
+    let center_pixel = screenshot.get_pixel(center_x, center_y).to_rgb();
+    
+    // Verify pixels match with tolerance (QEMU color compression may cause slight variations)
+    const TOLERANCE: u8 = 15;
+    
+    if !pixels_match(screen_pixel_0_0, ref_pixel_0_0, TOLERANCE) {
+        soft_fail(format!(
+            "Top-left pixel mismatch: screen={:?} expected={:?}",
+            screen_pixel_0_0, ref_pixel_0_0
+        )).await;
+        return Ok(());
+    }
+    
+    // Verify center is not pure black (uninitialized)
+    let black = image::Rgb([0u8, 0, 0]);
+    if pixels_match(center_pixel, black, 5) {
+        soft_fail(format!(
+            "Center pixel is black ({:?}), wallpaper may not have rendered",
+            center_pixel
+        )).await;
+        return Ok(());
+    }
+    
+    eprintln!("WALLPAPER VERIFY: top-left={:?} center={:?} - PASS", screen_pixel_0_0, center_pixel);
+    Ok(())
+}

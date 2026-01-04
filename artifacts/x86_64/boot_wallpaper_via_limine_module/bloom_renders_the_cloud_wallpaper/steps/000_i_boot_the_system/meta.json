@@ -1,13 +1,13 @@
 {
   "version": 1,
   "arch": "x86_64",
-  "feature": "Boot contract and system bring-up",
-  "scenario": "Bran hands off a boot contract to the Kernel",
+  "feature": "Boot wallpaper via Limine module",
+  "scenario": "Bloom renders the cloud wallpaper",
   "step": {
     "index": 0,
     "text": "I boot the system",
     "status": "passed",
-    "timestamp": "2026-01-04T18:17:41.006501739+00:00"
+    "timestamp": "2026-01-04T18:17:30.215258566+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

@@ -30,7 +30,7 @@ impl QemuProcess {
             "-cdrom".to_string(), iso_path.to_string_lossy().to_string(),
             "-net".to_string(), "none".to_string(),
             "-serial".to_string(), "stdio".to_string(),
-            "-display".to_string(), "none".to_string(),
+            "-vnc".to_string(), "none".to_string(),
             "-qmp".to_string(), format!("unix:{},server,nowait", qmp_sock.to_string_lossy()),
         ];
 

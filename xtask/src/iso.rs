@@ -88,6 +88,14 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
             eprintln!("    [WARNING] App binary not found: {:?}", src);
         }
     }
+    // Copy Wallpapers
+    let wallpapers_dir = boot_dir.join("assets");
+    fs::create_dir_all(&wallpapers_dir)?;
+    let clouds_bmp = root.join("assets/wallpapers/clouds.bmp");
+    if clouds_bmp.exists() {
+        fs::copy(&clouds_bmp, wallpapers_dir.join("clouds.bmp"))
+            .with_context(|| format!("Failed to copy clouds.bmp from {:?}", clouds_bmp))?;
+    }
 
     // Limine Config
     let conf_src = root.join("limine.conf");

@@ -223,6 +223,10 @@ pub fn init() {
         "task_state.yielded",
         "task_state.blocked.watch",
         "task_state.blocked.timeout",
+        // Wallpaper / Assets
+        "place.assets",
+        "kind.Asset",
+        "predicate.cmdline",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -418,4 +422,9 @@ pub mod sym {
     pub const TASK_STATE_YIELDED: SymbolId = SymbolId(139);
     pub const TASK_STATE_BLOCKED_WATCH: SymbolId = SymbolId(140);
     pub const TASK_STATE_BLOCKED_TIMEOUT: SymbolId = SymbolId(141);
+
+    // Wallpaper / Assets
+    pub const PLACE_ASSETS: SymbolId = SymbolId(142);
+    pub const KIND_ASSET: SymbolId = SymbolId(143);
+    pub const PRED_CMDLINE: SymbolId = SymbolId(144);
 }

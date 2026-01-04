@@ -33,17 +33,7 @@ impl core::fmt::Write for SerialWriter {
     }
 }
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    use core::fmt::Write;
-    let mut writer = SerialWriter;
-
-    let _ = writer.write_str("\nKERNEL PANIC:\n");
-    let _ = write!(&mut writer, "{}\n", info);
-    let _ = writer.write_str("Halting.\n");
-
-    crate::machine::machine().halt();
-}
+// Global panic handler removed from lib to avoid duplicate lang item in Bran
+// It should be provided by the final binary (Bran for boot, apps for userland)
 
 // alloc_error_handler in memory/allocator.rs

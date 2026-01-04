@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Boot wallpaper via Limine module",
+  "scenario": "The framebuffer is tiled with clouds.bmp",
+  "step": {
+    "index": 1,
+    "text": "the framebuffer bytespace is available",
+    "status": "skipped",
+    "timestamp": "2026-01-04T15:51:04.143690257+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

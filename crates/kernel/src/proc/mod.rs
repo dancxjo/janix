@@ -62,21 +62,8 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
     let entry_point = load_elf(elf_data, &address_space)?;
     crate::log::kprintln("PROC: ELF loaded, entry");
 
-    // 3. Spawn Task
-    let name = module.path;
-    let task_id = {
-        let irq_token = crate::machine::irq_disable();
-        let res = {
-            let mut guard = sched::SCHEDULER.lock();
-            let sched = guard.as_mut().ok_or(())?;
-            Ok(sched.spawn(name, Some(address_space.clone())))
-        };
-        crate::machine::irq_restore(irq_token);
-        res?
-    };
-
-    // 4. Setup Stack
-    let stack_top = 0x8000_0000;
+    // 3. Setup Stack BEFORE spawning
+    let stack_top = 0x8000_0000u64;
     let stack_size = 32 * 4096; // 128KB
     let stack_base = stack_top - stack_size;
 
@@ -93,7 +80,7 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
 
     let stack_phys = crate::machine::machine().virt_to_phys(stack_mem as u64);
 
-    // Map stack
+    // Map stack in the new address space
     address_space
         .map(
             stack_base,
@@ -103,8 +90,19 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
         )
         .map_err(|_| ())?;
 
-    // 5. Configure Context
-    sched::configure_task_context(task_id, entry_point, stack_top);
+    // 4. Spawn Task AND configure context atomically (with IRQs disabled)
+    let name = module.path;
+    let irq_token = crate::machine::irq_disable();
+    {
+        let mut guard = sched::SCHEDULER.lock();
+        let sched = guard.as_mut().ok_or(())?;
+        let task_id = sched.spawn(name, Some(address_space.clone()));
+        
+        // Configure context immediately, while still holding the lock
+        // This prevents the task from being scheduled before context is set up
+        sched::configure_task_context_locked(sched, task_id, entry_point, stack_top);
+    }
+    crate::machine::irq_restore(irq_token);
 
     // Announce sprout scheduling so BDD can observe userland start.
     if module.path.contains("sprout") {

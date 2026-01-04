@@ -559,3 +559,47 @@ pub fn block_current(reason: BlockReason) -> Option<TaskId> {
 pub fn take_wake_reason() -> Option<WakeReason> {
     with_current_task(|t| t.wake_reason.take()).flatten()
 }
+
+/// Configure task context while holding the scheduler lock.
+/// This is used by spawn_kernel_module to set up the task context atomically
+/// with spawning, preventing the task from being scheduled before it's ready.
+pub fn configure_task_context_locked(sched: &mut Scheduler, id: TaskId, entry: u64, user_stack: u64) {
+    use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
+
+    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
+        // Use Kernel Stack Top implicitly allocated by spawn
+        // TrapFrame is built on kernel stack, user_stack is stored in RSP field for user mode
+        let kernel_stack_top = task.stack_ptr & !0xf;
+
+        crate::log::klog(
+            crate::log::Level::Info,
+            "SCHED",
+            &alloc::format!(
+                "configure_ctx_locked: k_stack={:#x} u_stack={:#x} entry={:#x}",
+                kernel_stack_top,
+                user_stack,
+                entry
+            ),
+        );
+
+        // Initialize task context using arch-generic trait
+        // stack_top = kernel stack (where TrapFrame is built)
+        // arg0 = user stack (stored in RSP field for user mode return)
+        let mut ctx = TaskContext::default();
+        CurrentArch::init_task_context(
+            &mut ctx,
+            entry,
+            kernel_stack_top, // TrapFrame built on kernel stack
+            CpuMode::User,
+            user_stack, // User stack passed via arg0 for RSP field
+        );
+
+        task.stack_ptr = ctx.sp;
+
+        crate::log::klog(
+            crate::log::Level::Info,
+            "SCHED",
+            &alloc::format!("configure_ctx_locked: finalized sp={:#x}", task.stack_ptr),
+        );
+    }
+}

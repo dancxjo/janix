@@ -61,6 +61,7 @@ static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 static mut MODULE_LIST: [ModuleInfo; 64] = [ModuleInfo {
     index: 0,
     path: "",
+    cmdline: "",
     phys_addr: 0,
     size: 0,
 }; 64];
@@ -92,6 +93,10 @@ fn bran_log(msg: &str) {
     for &b in msg.as_bytes() {
         early_putc(b);
     }
+}
+
+fn bran_logln(msg: &str) {
+    bran_log(msg);
     early_putc(b'\n');
 }
 
@@ -178,7 +183,7 @@ unsafe extern "C" fn kmain() -> ! {
         kernel_virt_base,
     });
 
-    bran_log("BRAN: starting");
+    bran_logln("BRAN: starting V2");
 
     // 1. Collect HHDM and Memory Map info
     // (already obtained above for pre_boot)
@@ -210,16 +215,20 @@ unsafe extern "C" fn kmain() -> ! {
     }
 
     if !heap_found {
-        bran_log("BRAN: PANIC: Could not find 64MB for kernel heap!");
+        bran_logln("BRAN: PANIC: Could not find 64MB for kernel heap!");
         loop {}
     }
 
     // 2. Collect Framebuffer info
+    // NOTE: fb.addr() returns a VIRTUAL address (in HHDM space).
+    // We need to convert it to a physical address by subtracting hhdm_offset.
     if let Some(fb_res) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(fb) = fb_res.framebuffers().next() {
+            let fb_virt = fb.addr() as u64;
+            let fb_phys = fb_virt.wrapping_sub(hhdm_offset);
             unsafe {
                 BOOT_CTX.framebuffer = Some(FramebufferInfo {
-                    addr: fb.addr() as u64,
+                    addr: fb_phys,  // Store physical address, not virtual
                     width: fb.width(),
                     height: fb.height(),
                     pitch: fb.pitch(),
@@ -232,7 +241,12 @@ unsafe extern "C" fn kmain() -> ! {
     // 3. Collect Modules
     if let Some(mod_res) = MODULE_REQUEST.get_response() {
         let mut count = 0;
-        for (i, m) in mod_res.modules().iter().enumerate() {
+        let mods = mod_res.modules();
+        bran_log("BRAN: Limine reported module count: ");
+        kernel::serial::write_hex(mods.len() as u64);
+        bran_logln("");
+
+        for (i, m) in mods.iter().enumerate() {
             if count >= 64 {
                 break;
             }
@@ -240,17 +254,30 @@ unsafe extern "C" fn kmain() -> ! {
                 MODULE_LIST[count] = ModuleInfo {
                     index: i,
                     path: m.path().to_str().unwrap_or("unknown"),
+                    cmdline: core::str::from_utf8(m.cmdline()).unwrap_or(""),
                     phys_addr: (m.addr() as u64).wrapping_sub(BOOT_CTX.hhdm_offset),
                     size: m.size() as u64,
                 };
+                bran_log("BRAN: module[");
+                kernel::serial::write_hex(count as u64);
+                bran_log("] path: ");
+                bran_logln(MODULE_LIST[count].path);
             }
             count += 1;
         }
         unsafe { BOOT_CTX.modules = &MODULE_LIST[..count]; }
+    } else {
+        bran_logln("BRAN: No Module Request response from Limine!");
     }
 
-    bran_log("BRAN: handoff to kernel");
+    bran_logln("BRAN: handoff to kernel");
 
     // Hand off to kernel - never returns
     unsafe { kernel::boot::boot(&raw mut BOOT_CTX) }
+}
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    bran_logln("BRAN: PANIC!");
+    loop {}
 }

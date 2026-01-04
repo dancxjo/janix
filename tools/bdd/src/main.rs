@@ -52,9 +52,9 @@ async fn main() -> Result<()> {
             .with_writer(writer)
             .filter_run(feature_dir, move |f, _r, _s| {
                 f.path.as_ref()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.contains(&filter))
+                    .and_then(|p: &std::path::PathBuf| p.file_name())
+                    .and_then(|n: &std::ffi::OsStr| n.to_str())
+                    .map(|n: &str| n.contains(&filter))
                     .unwrap_or(false)
             })
             .await;

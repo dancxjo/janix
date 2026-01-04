@@ -1,8 +1,10 @@
-use crate::machine::{Machine, PreBootInfo};
-use alloc::string::String;
-use alloc::vec::Vec;
+use abi::ids::ThingId;
+use abi::display::PixelFormat;
+use graph::symbols::{self, sym};
+use graph::store;
+use crate::PreBootInfo;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct BootContext {
     pub hhdm_offset: u64,
     pub physical_memory: u64,
@@ -26,6 +28,7 @@ pub struct FramebufferInfo {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ModuleInfo {
+    pub cmdline: &'static str,
     pub index: usize,
     pub path: &'static str,
     pub phys_addr: u64,
@@ -41,176 +44,144 @@ pub fn get_boot_ctx() -> &'static BootContext {
     }
 }
 
-pub fn spawn_module_by_name(ctx: &BootContext, name: &str) {
-    for m in ctx.modules {
-        if m.path == name || m.path.contains(name) {
-            crate::proc::spawn_kernel_module(m).ok();
-            return;
-        }
-    }
-}
-
 pub fn pre_boot(info: PreBootInfo) {
+    // 0. Install the architecture-appropriate machine interface first
     unsafe {
-        crate::machine::install(
-            #[cfg(target_arch = "x86_64")]
-            crate::machine::x86_64::ARCH_MACHINE,
-            #[cfg(target_arch = "aarch64")]
-            crate::machine::aarch64::ARCH_MACHINE,
-            #[cfg(target_arch = "riscv64")]
-            crate::machine::riscv64::ARCH_MACHINE,
-            #[cfg(target_arch = "loongarch64")]
-            crate::machine::loongarch64::ARCH_MACHINE,
-        );
+        crate::machine::install(crate::machine::ARCH_MACHINE);
     }
+    
+    // 1. Initialize machine (MMU/IDT/etc)
     crate::machine::machine().init(info);
 }
 
-pub unsafe fn boot(ctx: *mut BootContext) -> ! {
-    let ctx = &mut *ctx;
+pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
+    let ctx = unsafe { &*ctx_ptr };
     BOOT_CTX = Some(*ctx);
-
-    // 1. Memory Init
-    let heap_size = 64 * 1024 * 1024;
-    let config = crate::memory::heap::HeapConfig {
+    
+    // 1. Initialize heap so we can use alloc (Vec etc)
+    let heap_config = crate::memory::heap::HeapConfig {
         phys_base: ctx.heap_phys_base,
-        virt_base: ctx.heap_phys_base.wrapping_add(ctx.hhdm_offset),
-        size: heap_size,
+        virt_base: ctx.heap_phys_base + ctx.hhdm_offset,
+        size: 64 * 1024 * 1024,
     };
-    crate::memory::init_heap_raw(config).expect("heap init failed");
-    crate::machine::simd().enable();
-
-    // 2. Graph Init
-    crate::serial::write(b"BOOT: init graph...\n");
+    crate::memory::heap::init(heap_config).expect("failed to init heap");
+    
+    // 2. Initialize logging
+    crate::log::init(get_boot_ctx());
+    
+    // 3. Initialize Graph
     graph::init();
-
-    // 3. Seed Ontology (Display, place.tasks, etc.)
-    seed_bloom_ontology(ctx);
-
-    // 4. Time Init
-    crate::serial::write(b"BOOT: init time...\n");
-    crate::time::init();
-
-    // 5. Scheduler Init
-    crate::serial::write(b"BOOT: init sched...\n");
-    let sp: u64;
-    unsafe {
-        #[cfg(target_arch = "x86_64")]
-        core::arch::asm!("mov {}, rsp", out(reg) sp);
-        #[cfg(target_arch = "aarch64")]
-        core::arch::asm!("mov {}, sp", out(reg) sp);
-        #[cfg(target_arch = "riscv64")]
-        core::arch::asm!("mv {}, sp", out(reg) sp);
-        #[cfg(target_arch = "loongarch64")]
-        core::arch::asm!("move {}, $sp", out(reg) sp);
-    }
-    crate::serial::write(b"BOOT: current sp=");
-    crate::serial::write_hex(sp);
-    crate::serial::write(b"\n");
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        let sp_el0: u64;
-        let spsel: u64;
-        core::arch::asm!("mrs {}, sp_el0", out(reg) sp_el0);
-        core::arch::asm!("mrs {}, SPSel", out(reg) spsel);
-        crate::serial::write(b"BOOT: sp_el0=");
-        crate::serial::write_hex(sp_el0);
-        crate::serial::write(b" SPSel=");
-        crate::serial::write_hex(spsel);
-        crate::serial::write(b"\n");
-    }
+    graph::seed_minimal();
+    
+    // 4. Seed Bloom Ontology (Assets, Display, etc.)
+    seed_bloom_ontology();
+    
+    // 5. Initialize Scheduler
     crate::sched::init();
-
-    // 6. Load Modules (Sprout)
-    crate::serial::write(b"BOOT: loading modules...\n");
-    for m in ctx.modules {
-        crate::serial::write(b"MOD: ");
-        crate::serial::write(m.path.as_bytes());
-        crate::serial::write(b"\n");
-        // Spawn Sprout (init) and Bloom (compositor)
-        if m.path.contains("sprout") || m.path.contains("bloom") || m.path.contains("clock") {
-            if let Err(_) = crate::proc::spawn_kernel_module(m) {
-                crate::serial::write(b"PROC: failed to spawn module\n");
-            }
-        }
-    }
-
-    // 6. Start Scheduler
-    crate::serial::write(b"Booted.\n");
-    crate::sched::run()
+    
+    // 6. Spawn Sprout (Init process)
+    spawn_module_by_name(ctx, "sprout");
+    
+    // 7. Start Scheduling
+    crate::log::kprintln("BOOT: Handing off to scheduler");
+    crate::sched::run();
 }
 
-fn seed_bloom_ontology(ctx: &BootContext) {
-    use graph::store;
-    use graph::symbols::{self, sym};
-
-    store::with_store(|s| {
-        // Ensure root places exist
-        let place_root = s.create_thing(sym::KIND_PLACE).expect("place.root");
-        s.register_name(place_root, sym::PLACE_ROOT);
-
-        let place_devices = s.create_thing(sym::KIND_PLACE).expect("place.devices");
-        s.register_name(place_devices, sym::PLACE_DEVICES);
-        let _ = s.create_relationship(sym::PRED_CONTAINS, place_root, place_devices);
-        crate::serial::write(b"created: place.devices\n");
-
-        let place_tasks = s.create_thing(sym::KIND_PLACE).expect("place.tasks");
-        s.register_name(place_tasks, sym::PLACE_TASKS);
-        let _ = s.create_relationship(sym::PRED_CONTAINS, place_root, place_tasks);
-        crate::serial::write(b"created: place.tasks\n");
-
-        let place_time = s.create_thing(sym::KIND_PLACE).expect("place.time");
-        s.register_name(place_time, sym::PLACE_TIME);
-        let _ = s.create_relationship(sym::PRED_CONTAINS, place_root, place_time);
-        crate::serial::write(b"created: place.time\n");
-
-        // Display
-        if let Some(fb) = ctx.framebuffer {
-            crate::serial::write(b"DISPLAY: selected provider limine_fb\n");
-
-            let dev = s
-                .create_thing(sym::KIND_DEVICE_DISPLAY)
-                .expect("dev.display");
-            s.register_name(dev, symbols::intern(b"device.display0"));
-            s.register_name(dev, symbols::intern(b"device.display.primary")); // Alias for BDD/Spec
-            crate::serial::write(b"register name: device.display.primary\n");
-            let _ = s.create_relationship(sym::PRED_CONTAINS, place_devices, dev);
-
-            let surf = s.create_thing(sym::KIND_SURFACE).expect("surface");
-            s.register_name(surf, symbols::intern(b"surface.display0"));
-
-            let _ = s.create_relationship(sym::PRED_PRIMARY, dev, surf);
-
-            // Backing Bytespace
-            let bs = s.create_thing(sym::KIND_BYTE_SPACE).expect("fb.bs");
-            s.register_name(bs, symbols::intern(b"bytespace.display0")); // Register Name
-            let _ = s.create_relationship(sym::PRED_BACKS, surf, bs);
-
-            // Properties for Bytespace (Required for sys_space_map)
-            // 1. Size
-            let size_thing = s.create_thing(sym::KIND_BYTESLICE).expect("size");
-            let mut buf_size = [0u8; 8];
-            // Use pitch * height as implicit size (or use explicit size if available in FB info)
-            // We use pitch * height to safely cover the framebuffer
-            let linear_size = fb.pitch as u64 * fb.height as u64;
-            buf_size.copy_from_slice(&linear_size.to_le_bytes());
-            s.set_payload(size_thing, &buf_size);
-            let _ = s.create_relationship(sym::PRED_SIZE, bs, size_thing);
-
-            // 2. Base Phys
-            let phys_thing = s.create_thing(sym::KIND_BYTESLICE).expect("phys");
-            let mut buf_phys = [0u8; 8];
-            let phys_addr = fb.addr.wrapping_sub(ctx.hhdm_offset);
-            buf_phys.copy_from_slice(&phys_addr.to_le_bytes());
-            s.set_payload(phys_thing, &buf_phys);
-            let _ = s.create_relationship(sym::PRED_BASE_PHYS, bs, phys_thing);
-
-            // Optional: Surface Properties (Width, Height, Stride) for Userland Metadata
-            let width_thing = s.create_thing(sym::KIND_BYTESLICE).expect("width");
-            let mut buf_w = [0u8; 8];
-            buf_w.copy_from_slice(&(fb.width as u64).to_le_bytes());
-            s.set_payload(width_thing, &buf_w);
-            let _ = s.create_relationship(sym::PRED_SIZE, surf, width_thing); // Reusing PRED_SIZE constraint? Or separate?
+pub fn spawn_module_by_name(ctx: &BootContext, name: &str) {
+    for module in ctx.modules {
+        if module.path.contains(name) {
+            if let Err(_) = crate::proc::spawn_kernel_module(module) {
+                crate::log::kprintln(&alloc::format!("BOOT: Failed to spawn module {}", name));
+            }
+            return;
         }
-    });
+    }
+    crate::log::kprintln(&alloc::format!("BOOT: Module {} not found", name));
+}
+
+fn seed_bloom_ontology() {
+    let ctx = get_boot_ctx();
+    
+    // Create Asset Root
+    let asset_root = store::thing_create(sym::KIND_PLACE);
+    store::thing_register_name(asset_root, sym::PLACE_ASSETS);
+    if let Some(root) = store::find_thing_by_name(sym::PLACE_ROOT) {
+        store::relationship_create(sym::PRED_CONTAINS, root, asset_root);
+    }
+
+    for m in ctx.modules {
+        if m.path.is_empty() { continue; }
+        
+        // Log "MOD:" for BDD discovery
+        crate::log::kprintln(&alloc::format!("MOD: {} {}", m.path, m.cmdline));
+
+        if m.path.contains("/assets/") {
+            // Register as asset
+            let filename = m.path.rsplit('/').next().unwrap_or(m.path);
+            let thing_name_str = alloc::format!("asset.{}", filename);
+            let bs_name_str = alloc::format!("bytespace.asset.{}", filename);
+
+            let asset_thing = store::thing_create(sym::KIND_ASSET);
+            store::thing_register_name(asset_thing, symbols::intern(thing_name_str.as_bytes()));
+            
+            let bs = store::thing_create(sym::KIND_BYTESPACE_MODULE);
+            store::thing_register_name(bs, symbols::intern(bs_name_str.as_bytes()));
+            
+            store::relationship_create(sym::PRED_BACKS, asset_thing, bs);
+            store::relationship_create(sym::PRED_CONTAINS, asset_root, asset_thing);
+            
+            // Set base address and size via relationships for sys_space_map
+            let phys_thing = store::thing_create(sym::KIND_PLACE);
+            let mut phys_payload = alloc::vec::Vec::new();
+            phys_payload.extend_from_slice(&m.phys_addr.to_le_bytes());
+            store::thing_set_inline_payload(phys_thing, &phys_payload);
+            store::relationship_create(sym::PRED_BASE_PHYS, bs, phys_thing);
+
+            let size_thing = store::thing_create(sym::KIND_PLACE);
+            let mut size_payload = alloc::vec::Vec::new();
+            size_payload.extend_from_slice(&m.size.to_le_bytes());
+            store::thing_set_inline_payload(size_thing, &size_payload);
+            store::relationship_create(sym::PRED_SIZE, bs, size_thing);
+            
+            crate::log::kprintln(&alloc::format!("BOOT: Registered asset {}", thing_name_str));
+        }
+    }
+
+    if let Some(fb) = ctx.framebuffer {
+        let fb_thing = store::thing_create(sym::KIND_DEVICE_DISPLAY);
+        let fb_name = symbols::intern(b"device.display0");
+        store::thing_register_name(fb_thing, fb_name);
+        
+        let fb_bs_name = symbols::intern(b"bytespace.display0");
+        let fb_bytespace = store::thing_create(sym::KIND_BYTESPACE_FRAMEBUFFER);
+        store::thing_register_name(fb_bytespace, fb_bs_name);
+        
+        let surface = store::thing_create(sym::KIND_SURFACE);
+        store::relationship_create(sym::PRED_PRIMARY, fb_thing, surface);
+        store::relationship_create(sym::PRED_BACKS, surface, fb_bytespace);
+
+        // Set PRED_BASE_PHYS and PRED_SIZE for the framebuffer bytespace
+        let fb_phys_thing = store::thing_create(sym::KIND_PLACE);
+        let mut fb_phys_payload = alloc::vec::Vec::new();
+        fb_phys_payload.extend_from_slice(&fb.addr.to_le_bytes());
+        store::thing_set_inline_payload(fb_phys_thing, &fb_phys_payload);
+        store::relationship_create(sym::PRED_BASE_PHYS, fb_bytespace, fb_phys_thing);
+
+        // Calculate framebuffer size: height * pitch (pitch already accounts for width * bpp)
+        let fb_size = fb.height * fb.pitch;
+        let fb_size_thing = store::thing_create(sym::KIND_PLACE);
+        let mut fb_size_payload = alloc::vec::Vec::new();
+        fb_size_payload.extend_from_slice(&fb_size.to_le_bytes());
+        store::thing_set_inline_payload(fb_size_thing, &fb_size_payload);
+        store::relationship_create(sym::PRED_SIZE, fb_bytespace, fb_size_thing);
+        
+        crate::log::kprintln(&alloc::format!(
+            "BOOT: Registered display0 fb_addr={:#x} size={:#x}",
+            fb.addr, fb_size
+        ));
+
+        if let Some(devices) = store::find_thing_by_name(sym::PLACE_DEVICES) {
+             store::relationship_create(sym::PRED_CONTAINS, devices, fb_thing);
+        }
+    }
 }

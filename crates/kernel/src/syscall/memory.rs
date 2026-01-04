@@ -17,12 +17,18 @@ pub fn sys_bytespace_create(size: u64, _flags: u64) -> SyscallResult {
     }
 }
 
-pub fn sys_space_map(bs_id_low: u64, vaddr: u64, offset: u64, len: u64) -> SyscallResult {
+pub fn sys_space_map(
+    bs_id_lo: u64,
+    bs_id_hi: u64,
+    vaddr: u64,
+    offset: u64,
+    len: u64,
+) -> SyscallResult {
     use graph::store;
     use graph::symbols::sym;
 
     // 1. Resolve Bytespace from Graph
-    let bs_id = abi::ids::ThingId(bs_id_low as u128);
+    let bs_id = abi::ids::ThingId::from_parts(bs_id_hi, bs_id_lo);
 
     // 2. Read Properties (Phys Base, Size)
     let read_prop = |pred: abi::ids::SymbolId| -> Option<u64> {
@@ -86,7 +92,7 @@ pub fn sys_space_map(bs_id_low: u64, vaddr: u64, offset: u64, len: u64) -> Sysca
     .unwrap_or(SyscallResult::new(err::EFAULT, 0, 0))
 }
 
-pub fn sys_space_unmap(_vaddr: u64, _len: u64) -> SyscallResult {
+pub fn sys_space_unmap(_vaddr: u64, _len: u64, _flags: u64) -> SyscallResult {
     SyscallResult::new(err::ENOSYS, 0, 0)
 }
 

@@ -105,13 +105,13 @@ pub extern "C" fn dispatch(
             if let Err(e) = cap::check(CapOp::MemManage, None) {
                 return e;
             }
-            memory::sys_space_map(a0, a1, a2, a3)
+            memory::sys_space_map(a0, a1, a2, a3, a4)
         }
         nr::SYS_SPACE_UNMAP => {
             if let Err(e) = cap::check(CapOp::MemManage, None) {
                 return e;
             }
-            memory::sys_space_unmap(a0, a1)
+            memory::sys_space_unmap(a0, a1, a2)
         }
         nr::SYS_HEAP_GROW => {
             if let Err(e) = cap::check(CapOp::MemManage, None) {

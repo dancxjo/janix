@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 thing_std = { path = "../../crates/thing_std" }
+tinybmp = "0.6.0"
+png-decoder = "0.1.1"
 
 [package.metadata.cargo-xbuild]
 memcpy = false

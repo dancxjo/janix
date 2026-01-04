@@ -8,6 +8,8 @@ extern crate alloc;
 
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
+pub use abi::ids::{SymbolId, ThingId};
+
 use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 
@@ -15,11 +17,231 @@ pub use debug::log as log_info;
 pub use process::exit as sys_exit;
 pub use process::sched_yield;
 
-// Re-exports for convenience (fixes clock app)
+pub mod event {
+    use super::*;
+}
+
+pub mod time {
+    use super::*;
+    pub fn monotonic_now() -> u64 {
+        unsafe { syscall(nr::SYS_TIME_MONOTONIC_NOW, 0, 0, 0, 0, 0, 0).status }
+    }
+
+    pub fn system_now() -> u64 {
+        unsafe { syscall(nr::SYS_TIME_SYSTEM_NOW, 0, 0, 0, 0, 0, 0).status }
+    }
+
+    pub fn sleep_ms(ms: u64) {
+        let now = monotonic_now();
+        unsafe { syscall(nr::SYS_SLEEP_UNTIL, now + ms, 0, 0, 0, 0, 0) };
+    }
+}
+
+pub mod graph {
+    use super::*;
+
+    pub fn thing_create_under(kind: SymbolId, parent: ThingId) -> ThingId {
+        thing_create(kind.0, parent)
+    }
+
+    pub fn thing_create(kind: u64, parent: ThingId) -> ThingId {
+        let res = unsafe { syscall(nr::SYS_THING_CREATE, kind, parent.0 as u64, 0, 0, 0, 0) };
+        ThingId::from_parts(res.val0, res.val1)
+    }
+
+    pub fn relationship_create(from: ThingId, to: ThingId, kind: SymbolId) {
+        let from_lo = from.0 as u64;
+        unsafe { syscall(nr::SYS_REL_CREATE, kind.0, from_lo, to.0 as u64, 0, 0, 0) };
+    }
+
+    pub fn thing_find(name: &str) -> Option<ThingId> {
+        let res = unsafe {
+            syscall(
+                nr::SYS_THING_FIND,
+                name.as_ptr() as u64,
+                name.len() as u64,
+                0,
+                0,
+                0,
+                0,
+            )
+        };
+        if res.status == 0 {
+            Some(ThingId::from_parts(res.val0, res.val1))
+        } else {
+            None
+        }
+    }
+
+    pub fn thing_register_name(id: ThingId, name: &str) {
+        unsafe {
+            syscall(
+                nr::SYS_THING_REGISTER_NAME,
+                id.0 as u64,
+                name.as_ptr() as u64,
+                name.len() as u64,
+                0,
+                0,
+                0,
+            )
+        };
+    }
+
+    pub fn symbol_intern(name: &str) -> SymbolId {
+        let res = unsafe {
+            syscall(
+                nr::SYS_SYMBOL_INTERN,
+                name.as_ptr() as u64,
+                name.len() as u64,
+                0,
+                0,
+                0,
+                0,
+            )
+        };
+        SymbolId(res.val0)
+    }
+
+    pub fn get_root_place() -> ThingId {
+        ThingId(2)
+    }
+
+    pub fn thing_get_payload(id: ThingId, buf: &mut [u8]) -> usize {
+        let res = unsafe {
+            syscall(
+                nr::SYS_THING_GET,
+                id.0 as u64,
+                buf.as_mut_ptr() as u64,
+                buf.len() as u64,
+                0,
+                0,
+                0,
+            )
+        };
+        res.val0 as usize
+    }
+}
+
+pub mod graphics {
+    use super::*;
+
+    pub fn surface_create(w: u32, h: u32, format: u32) -> ThingId {
+        let res = unsafe {
+            syscall(
+                nr::SYS_SURFACE_CREATE,
+                w as u64,
+                h as u64,
+                format as u64,
+                0,
+                0,
+                0,
+            )
+        };
+        ThingId::from_parts(res.val0, res.val1)
+    }
+
+    pub fn surface_draw(id: ThingId, buf: &[u8], x: u32, y: u32, w: u32, _h: u32) {
+        let id_lo = id.low();
+        let id_hi = id.high();
+        unsafe {
+            syscall(
+                nr::SYS_SURFACE_DRAW,
+                id_lo,
+                id_hi,
+                buf.as_ptr() as u64,
+                x as u64,
+                y as u64,
+                w as u64,
+            )
+        };
+    }
+}
+
+pub mod input {
+    use super::*;
+    pub fn read(buf: &mut [u8]) -> usize {
+        let res = unsafe {
+            syscall(
+                nr::SYS_INPUT_READ,
+                buf.as_mut_ptr() as u64,
+                buf.len() as u64,
+                0,
+                0,
+                0,
+                0,
+            )
+        };
+        res.val0 as usize
+    }
+}
+
+pub mod memory {
+    use super::*;
+
+    pub fn heap_grow(size: u64) -> u64 {
+        let res = unsafe { syscall(nr::SYS_HEAP_GROW, size, 0, 0, 0, 0, 0) };
+        if res.status == 0 {
+            res.val0
+        } else {
+            0
+        }
+    }
+
+    pub fn bytespace_create(size: u64) -> ThingId {
+        let res = unsafe { syscall(nr::SYS_BYTESPACE_CREATE, size, 0, 0, 0, 0, 0) };
+        ThingId::from_parts(res.val0, res.val1)
+    }
+
+    pub fn space_map(bs: ThingId, vaddr: u64, offset: u64, len: u64) -> u64 {
+        unsafe {
+            syscall(
+                nr::SYS_SPACE_MAP,
+                bs.low(),
+                bs.high(),
+                vaddr,
+                offset,
+                len,
+                0,
+            )
+            .val0
+        }
+    }
+}
+
+pub mod process {
+    use super::*;
+    pub fn exit(code: i32) -> ! {
+        unsafe {
+            syscall(nr::SYS_PROC_EXIT, code as u64, 0, 0, 0, 0, 0);
+        }
+        loop {}
+    }
+    pub fn spawn(name: &str) {
+        unsafe {
+            syscall(
+                nr::SYS_PROC_SPAWN,
+                name.as_ptr() as u64,
+                name.len() as u64,
+                0,
+                0,
+                0,
+                0,
+            );
+        }
+    }
+    pub fn sched_yield() {
+        unsafe {
+            syscall(nr::SYS_SCHED_YIELD, 0, 0, 0, 0, 0, 0);
+        }
+    }
+}
+
+// Re-exports
 pub use graph::*;
 pub use graphics::*;
 pub use input::*;
 pub use memory::*;
+pub use process::*;
 pub use time::*;
 
 // ============================================================================
@@ -28,7 +250,6 @@ pub use time::*;
 
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
-    debug::log("RUNTIME: _start");
     extern "C" {
         fn main();
     }
@@ -140,7 +361,6 @@ pub unsafe fn init_heap(start: usize, size: usize) {
     HEAP_CURRENT = start;
     HEAP_LIMIT = start + size;
     memory::heap_grow(size as u64);
-    debug::log("HEAP: init done");
 }
 
 unsafe impl GlobalAlloc for BumpAllocator {
@@ -173,21 +393,17 @@ unsafe impl GlobalAlloc for BumpAllocator {
 
 #[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
-    debug::log("Alloc Error");
     loop {}
 }
 
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    debug::log("PANIC");
+fn panic(_info: &PanicInfo) -> ! {
     process::exit(-1);
 }
 
 pub mod debug {
     use super::*;
     pub fn log(msg: &str) {
-        // Syscall: SYS_LOG(level, str_ptr, str_len)
-        // We use Level::Info (2) as default
         unsafe {
             syscall(
                 nr::SYS_LOG,
@@ -202,196 +418,6 @@ pub mod debug {
     }
 }
 
-pub mod process {
-    use super::*;
-    pub fn exit(code: i32) -> ! {
-        unsafe {
-            syscall(nr::SYS_PROC_EXIT, code as u64, 0, 0, 0, 0, 0);
-        }
-        loop {}
-    }
-    pub fn spawn(name: &str) {
-        unsafe {
-            syscall(
-                nr::SYS_PROC_SPAWN,
-                name.as_ptr() as u64,
-                name.len() as u64,
-                0,
-                0,
-                0,
-                0,
-            );
-        }
-    }
-    pub fn sched_yield() {
-        unsafe {
-            syscall(nr::SYS_SCHED_YIELD, 0, 0, 0, 0, 0, 0);
-        }
-    }
-}
-
-pub mod memory {
-    use super::*;
-    use abi::ids::ThingId;
-
-    pub fn heap_grow(size: u64) -> u64 {
-        let res = unsafe { syscall(nr::SYS_HEAP_GROW, size, 0, 0, 0, 0, 0) };
-        if res.status == 0 {
-            res.val0
-        } else {
-            0
-        }
-    }
-
-    pub fn bytespace_create(size: u64) -> ThingId {
-        let res = unsafe { syscall(nr::SYS_BYTESPACE_CREATE, size, 0, 0, 0, 0, 0) };
-        ThingId::from_parts(res.val0, res.val1)
-    }
-
-    pub fn space_map(bs: ThingId, vaddr: u64, offset: u64, len: u64) -> u64 {
-        unsafe { syscall(nr::SYS_SPACE_MAP, bs.0 as u64, vaddr, offset, len, 0, 0).val0 }
-    }
-}
-
-pub mod graph {
-    use super::*;
-    use abi::ids::{SymbolId, ThingId};
-
-    // Alias for thing_create to satisfy clock
-    pub fn thing_create_under(kind: SymbolId, parent: ThingId) -> ThingId {
-        thing_create(kind.0, parent)
-    }
-
-    pub fn thing_create(kind: u64, parent: ThingId) -> ThingId {
-        let res = unsafe { syscall(nr::SYS_THING_CREATE, kind, parent.0 as u64, 0, 0, 0, 0) };
-        ThingId::from_parts(res.val0, res.val1)
-    }
-
-    pub fn relationship_create(from: ThingId, to: ThingId, kind: SymbolId) {
-        let from_lo = from.0 as u64;
-        unsafe { syscall(nr::SYS_REL_CREATE, kind.0, from_lo, to.0 as u64, 0, 0, 0) };
-    }
-
-    pub fn thing_find(name: &str) -> Option<ThingId> {
-        let res = unsafe {
-            syscall(
-                nr::SYS_THING_FIND,
-                name.as_ptr() as u64,
-                name.len() as u64,
-                0,
-                0,
-                0,
-                0,
-            )
-        };
-        if res.status == 0 {
-            Some(ThingId::from_parts(res.val0, res.val1))
-        } else {
-            None
-        }
-    }
-
-    pub fn thing_register_name(id: ThingId, name: &str) {
-        unsafe {
-            syscall(
-                nr::SYS_THING_REGISTER_NAME,
-                id.0 as u64,
-                name.as_ptr() as u64,
-                name.len() as u64,
-                0,
-                0,
-                0,
-            )
-        };
-    }
-
-    pub fn symbol_intern(name: &str) -> SymbolId {
-        let res = unsafe {
-            syscall(
-                nr::SYS_SYMBOL_INTERN,
-                name.as_ptr() as u64,
-                name.len() as u64,
-                0,
-                0,
-                0,
-                0,
-            )
-        };
-        SymbolId(res.val0)
-    }
-
-    pub fn get_root_place() -> ThingId {
-        ThingId(2)
-    }
-
-    pub fn thing_get_payload(id: ThingId, buf: &mut [u8]) -> usize {
-        let res = unsafe {
-            syscall(
-                nr::SYS_THING_GET,
-                id.0 as u64,
-                buf.as_mut_ptr() as u64,
-                buf.len() as u64,
-                0,
-                0,
-                0,
-            )
-        };
-        res.val0 as usize
-    }
-}
-
-pub mod graphics {
-    use super::*;
-    use abi::ids::ThingId;
-
-    pub fn surface_create(w: u32, h: u32, format: u32) -> ThingId {
-        let res = unsafe {
-            syscall(
-                nr::SYS_SURFACE_CREATE,
-                w as u64,
-                h as u64,
-                format as u64,
-                0,
-                0,
-                0,
-            )
-        };
-        ThingId::from_parts(res.val0, res.val1)
-    }
-
-    pub fn surface_draw(id: ThingId, buf: &[u8], x: u32, y: u32, w: u32, _h: u32) {
-        let id_lo = id.0 as u64;
-        let id_hi = (id.0 >> 64) as u64;
-        unsafe {
-            syscall(
-                nr::SYS_SURFACE_DRAW,
-                id_lo,
-                id_hi,
-                buf.as_ptr() as u64,
-                x as u64,
-                y as u64,
-                w as u64,
-            )
-        };
-    }
-}
-
-pub mod input {
-    use super::*;
-    pub fn read(buf: &mut [u8]) -> usize {
-        let res = unsafe {
-            syscall(
-                nr::SYS_INPUT_READ,
-                buf.as_mut_ptr() as u64,
-                buf.len() as u64,
-                0,
-                0,
-                0,
-                0,
-            )
-        };
-        res.val0 as usize
-    }
-}
-
-pub mod time;
+// lang items
+#[lang = "eh_personality"]
+extern "C" fn eh_personality() {}

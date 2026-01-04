@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Boot wallpaper via Limine module",
+  "scenario": "The framebuffer is tiled with clouds.bmp",
+  "step": {
+    "index": 2,
+    "text": "the compositor paints the wallpaper from \"clouds.bmp\"",
+    "status": "passed",
+    "timestamp": "2026-01-04T09:10:41.090713368+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -7,10 +7,10 @@
     "index": 3,
     "text": "no keyboard events are produced",
     "status": "passed",
-    "timestamp": "2026-01-04T06:02:54.411142013+00:00"
+    "timestamp": "2026-01-05T00:15:19.409858280+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

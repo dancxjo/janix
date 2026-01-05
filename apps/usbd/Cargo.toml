@@ -1,0 +1,10 @@
+[package]
+name = "usbd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+abi = { path = "../../crates/abi" }
+thing_std = { path = "../../crates/thing_std" }
+usb_xhci = { path = "../../crates/drivers/usb_xhci" }
+log = { path = "../../crates/kernel/src/log" } # For now using kernel log if accessible, or just thing_std print

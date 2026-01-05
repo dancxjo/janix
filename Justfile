@@ -20,6 +20,10 @@ update-docs:
 test +args="":
     cargo run -p xtask -- test {{args}}
 
+test-all:
+    cargo run -p xtask -- test --force-all
+    cargo run -p xtask -- update-docs
+
 smoke arch="all" feature="all":
     cargo run -p xtask -- test --arch {{arch}} --smoke --feature {{feature}}
 

@@ -6,11 +6,11 @@
   "step": {
     "index": 0,
     "text": "no keyboard-capable input device exists",
-    "status": "failed",
-    "timestamp": "2026-01-04T06:01:54.242274600+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T00:14:17.525237866+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

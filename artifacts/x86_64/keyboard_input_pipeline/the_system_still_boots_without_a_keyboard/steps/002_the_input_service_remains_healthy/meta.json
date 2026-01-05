@@ -6,11 +6,11 @@
   "step": {
     "index": 2,
     "text": "the input service remains healthy",
-    "status": "failed",
-    "timestamp": "2026-01-04T06:02:54.410635931+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T00:15:18.291560566+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

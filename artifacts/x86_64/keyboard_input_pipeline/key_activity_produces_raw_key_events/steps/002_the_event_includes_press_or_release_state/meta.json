@@ -6,11 +6,11 @@
   "step": {
     "index": 2,
     "text": "the event includes press-or-release state",
-    "status": "failed",
-    "timestamp": "2026-01-04T06:05:24.813936441+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T00:17:51.849192466+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

@@ -13,6 +13,7 @@ pub mod context;
 pub mod gdt;
 pub mod idt;
 pub mod mmu;
+pub mod pci;
 pub mod percpu;
 pub mod ps2_keyboard;
 pub mod ps2_mouse;

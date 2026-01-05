@@ -26,7 +26,8 @@ members = [
     "apps/thingcheck",
     "user/apps/ontology_dump",
     "user/apps/ontology_check",
-    "crates/drivers/usb",
+    "crates/drivers/usb_xhci",
+
 ]
 
 [workspace.package]

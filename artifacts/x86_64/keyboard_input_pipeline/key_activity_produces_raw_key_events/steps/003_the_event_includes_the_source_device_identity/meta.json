@@ -6,11 +6,11 @@
   "step": {
     "index": 3,
     "text": "the event includes the source device identity",
-    "status": "failed",
-    "timestamp": "2026-01-04T06:05:54.890784329+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T00:18:22.138845567+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

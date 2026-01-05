@@ -6,6 +6,7 @@ use abi::types::RelationshipRef;
 use abi::wire::SyscallResult;
 use graph::store;
 use graph::symbols;
+use crate::watch;
 
 pub fn sys_thing_create(kind_low: u64, parent_low: u64) -> SyscallResult {
     let kind = SymbolId(kind_low);
@@ -15,6 +16,7 @@ pub fn sys_thing_create(kind_low: u64, parent_low: u64) -> SyscallResult {
 
     let pred_contains = symbols::intern(b"predicate.contains");
     store::relationship_create(pred_contains, parent, thing_id);
+    watch::graph_member_added(parent, thing_id);
 
     SyscallResult::new(0, thing_id.high(), thing_id.low())
 }
@@ -25,12 +27,21 @@ pub fn sys_relationship_create(pred_low: u64, from_low: u64, to_low: u64) -> Sys
     let to = ThingId(to_low as u128);
 
     let rel_id = store::relationship_create(pred, from, to);
+    if pred == symbols::intern(b"predicate.contains") {
+        watch::graph_member_added(from, to);
+    }
     SyscallResult::new(0, rel_id.high(), rel_id.low())
 }
 
 pub fn sys_relationship_delete(rel_low: u64) -> SyscallResult {
-    let _rel_id = ThingId(rel_low as u128);
-    SyscallResult::new(err::ENOSYS, 0, 0)
+    let rel_id = ThingId(rel_low as u128);
+    if let Some(rel) = store::relationship_delete(rel_id) {
+        if rel.kind == symbols::intern(b"predicate.contains") {
+            watch::graph_member_removed(rel.from, rel.to);
+        }
+        return SyscallResult::new(0, 0, 0);
+    }
+    SyscallResult::new(err::ENOENT, 0, 0)
 }
 
 pub fn sys_thing_get(id_low: u64, out_ptr: u64, out_len: u64) -> SyscallResult {
@@ -74,7 +85,10 @@ pub fn sys_thing_set_body(id_low: u64, buf_ptr: u64, buf_len: u64) -> SyscallRes
     let buf = unsafe { core::slice::from_raw_parts(buf_ptr as *const u8, buf_len as usize) };
 
     match store::thing_set_body(id, buf) {
-        Ok(()) => SyscallResult::new(0, 0, 0),
+        Ok(()) => {
+            watch::thing_updated(id);
+            SyscallResult::new(0, 0, 0)
+        }
         Err(e) => SyscallResult::new(e as i32, 0, 0),
     }
 }
@@ -99,11 +113,7 @@ pub fn sys_relationships_from(
         return SyscallResult::new(err::EINVAL, 0, total_rels);
     }
 
-    let align = core::mem::align_of::<RelationshipRef>() as u64;
-    if out_ptr & (align - 1) != 0 {
-        return SyscallResult::new(err::EINVAL, 0, total_rels);
-    }
-
+    // Copy bytes directly to avoid alignment issues with typed slices
     if out_len == 0 {
         return SyscallResult::new(0, 0, total_rels);
     }
@@ -113,21 +123,25 @@ pub fn sys_relationships_from(
         return SyscallResult::new(err::EINVAL, 0, total_rels);
     }
 
-    let mut count = 0;
-    let user_slice = unsafe {
-        core::slice::from_raw_parts_mut(out_ptr as *mut RelationshipRef, out_len as usize)
-    };
+    let mut count = 0u64;
+    let dest_base = out_ptr as *mut u8;
 
     for (i, &rel_id) in rel_ids.iter().skip(skip).enumerate() {
         if i >= out_len as usize {
             break;
         }
         if let Some(rel) = store::get_relationship(rel_id) {
-            user_slice[i] = RelationshipRef {
+            let ref_data = RelationshipRef {
                 id: rel_id,
                 kind: rel.kind,
                 target: rel.to,
             };
+            // Copy bytes directly to avoid alignment issues
+            unsafe {
+                let src_ptr = &ref_data as *const RelationshipRef as *const u8;
+                let dest_ptr = dest_base.add(i * elem_size);
+                core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, elem_size);
+            }
             count += 1;
         }
     }

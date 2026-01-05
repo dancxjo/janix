@@ -3,13 +3,16 @@
 //! Tracks which tasks are blocked on which WatchIds and produces wake lists
 //! for the scheduler without allocating in interrupt context.
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec::Vec;
 use spin::Mutex;
 
 use crate::sched::task::TaskId;
-use abi::ids::WatchId;
-use abi::types::{WaitFlags, WakeReason, MAX_WATCH_EVENTS};
+use abi::ids::{ThingId, WatchId};
+use abi::syscall::err;
+use abi::types::{
+    WaitFlags, WakeReason, WatchEvent, WatchEventKind, WatchKind, MAX_WATCH_EVENTS,
+};
 
 struct WaitEntry {
     watches: Vec<(WatchId, bool)>, // bool = fired
@@ -173,4 +176,147 @@ pub fn fire_and_wake(id: WatchId) {
     let mut list = WakeList::new();
     fire_watch(id, &mut list);
     crate::sched::wake_from_watch_list(&list);
+}
+
+// === Watch event registry ===
+
+struct WatchQueue {
+    kind: WatchKind,
+    subject: ThingId,
+    queue: VecDeque<WatchEvent>,
+}
+
+struct WatchState {
+    next_id: u64,
+    watches: BTreeMap<WatchId, WatchQueue>,
+    graph_membership: BTreeMap<ThingId, Vec<WatchId>>,
+    thing_watchers: BTreeMap<ThingId, Vec<WatchId>>,
+}
+
+impl WatchState {
+    const fn new() -> Self {
+        Self {
+            next_id: 1,
+            watches: BTreeMap::new(),
+            graph_membership: BTreeMap::new(),
+            thing_watchers: BTreeMap::new(),
+        }
+    }
+
+    fn deliver(&mut self, watch_id: WatchId, event: WatchEvent) {
+        if let Some(entry) = self.watches.get_mut(&watch_id) {
+            if entry.queue.len() >= MAX_WATCH_EVENTS {
+                entry.queue.pop_front();
+            }
+            entry.queue.push_back(event);
+            drop(entry);
+            fire_and_wake(watch_id);
+        }
+    }
+}
+
+static WATCH_STATE: Mutex<WatchState> = Mutex::new(WatchState::new());
+
+pub fn create_watch(kind: WatchKind, target: ThingId) -> WatchId {
+    let mut guard = WATCH_STATE.lock();
+    let id = WatchId(guard.next_id);
+    guard.next_id += 1;
+
+    guard.watches.insert(
+        id,
+        WatchQueue {
+            kind,
+            subject: target,
+            queue: VecDeque::new(),
+        },
+    );
+
+    match kind {
+        WatchKind::GraphMembership => guard
+            .graph_membership
+            .entry(target)
+            .or_default()
+            .push(id),
+        WatchKind::Thing => guard.thing_watchers.entry(target).or_default().push(id),
+    }
+
+    id
+}
+
+pub fn poll_watch(id: WatchId, out: &mut [WatchEvent]) -> Result<usize, i32> {
+    let mut guard = WATCH_STATE.lock();
+    let Some(queue) = guard.watches.get_mut(&id) else {
+        return Err(err::ENOENT);
+    };
+
+    let mut count = 0usize;
+    while count < out.len() {
+        if let Some(ev) = queue.queue.pop_front() {
+            out[count] = ev;
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    Ok(count)
+}
+
+fn broadcast_graph_event(graph: ThingId, event: WatchEvent) {
+    let mut guard = WATCH_STATE.lock();
+    if let Some(watchers) = guard.graph_membership.get(&graph) {
+        let ids = watchers.clone();
+        for wid in ids {
+            guard.deliver(wid, event);
+        }
+    }
+}
+
+fn broadcast_thing_event(thing: ThingId, event: WatchEvent) {
+    let mut guard = WATCH_STATE.lock();
+    if let Some(watchers) = guard.thing_watchers.get(&thing) {
+        let ids = watchers.clone();
+        for wid in ids {
+            guard.deliver(wid, event);
+        }
+    }
+}
+
+pub fn graph_member_added(graph: ThingId, member: ThingId) {
+    let ev = WatchEvent {
+        kind: WatchEventKind::GraphMemberAdded,
+        flags: 0,
+        subject: graph,
+        arg0: member,
+    };
+    broadcast_graph_event(graph, ev);
+}
+
+pub fn graph_member_removed(graph: ThingId, member: ThingId) {
+    let ev = WatchEvent {
+        kind: WatchEventKind::GraphMemberRemoved,
+        flags: 0,
+        subject: graph,
+        arg0: member,
+    };
+    broadcast_graph_event(graph, ev);
+}
+
+pub fn thing_updated(id: ThingId) {
+    let ev = WatchEvent {
+        kind: WatchEventKind::ThingUpdated,
+        flags: 0,
+        subject: id,
+        arg0: ThingId(0),
+    };
+    broadcast_thing_event(id, ev);
+}
+
+pub fn thing_deleted(id: ThingId) {
+    let ev = WatchEvent {
+        kind: WatchEventKind::ThingDeleted,
+        flags: 0,
+        subject: id,
+        arg0: ThingId(0),
+    };
+    broadcast_thing_event(id, ev);
 }

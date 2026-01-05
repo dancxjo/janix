@@ -1,4 +1,3 @@
-use abi::bodies::ThingEnvelopeV1;
 use thing_codec::Thing;
 use alloc::vec::Vec;
 

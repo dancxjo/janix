@@ -1,5 +1,5 @@
-use abi::ids::{SymbolId, ThingId};
-use abi::types::RelationshipRef;
+use abi::ids::ThingId;
+use abi::types::AlignedRelBufLarge;
 use alloc::string::String;
 use alloc::vec::Vec;
 use models::*;
@@ -25,95 +25,25 @@ pub struct WindowScene {
     pub children: Vec<WidgetKind>,
 }
 
-pub fn collect_window_scenes(client: &mut SyscallGraphClient) -> Vec<WindowScene> {
-    let mut out = Vec::new();
-    let windows_graph = if let Some(id) = thing_std::graph::thing_find("graph.windows") {
-        id
-    } else {
-        return out;
-    };
-
-    let pred_contains = symbol_intern("contains");
-    let rel_child = symbol_intern("child");
-
-    let mut buf: [RelationshipRef; abi::types::MAX_REL_BATCH] = [RelationshipRef {
-        id: ThingId(0),
-        kind: SymbolId::INVALID,
-        target: ThingId(0),
-    }; abi::types::MAX_REL_BATCH];
-    let mut child_buf: [RelationshipRef; abi::types::MAX_REL_BATCH] = [RelationshipRef {
-        id: ThingId(0),
-        kind: SymbolId::INVALID,
-        target: ThingId(0),
-    };
-        abi::types::MAX_REL_BATCH];
-
+pub fn window_ids_in_graph(graph_id: ThingId) -> Vec<ThingId> {
+    let pred_contains = symbol_intern("predicate.contains");
+    let mut aligned_buf = AlignedRelBufLarge::default();
+    let buf = &mut aligned_buf.inner;
     let mut cursor = 0u64;
+    let mut out = Vec::new();
+
     loop {
-        match relationships_from(windows_graph, cursor, &mut buf) {
+        match relationships_from(graph_id, cursor, buf) {
             Ok((count, total)) => {
                 if count == 0 {
                     break;
                 }
                 for rel in buf.iter().take(count as usize) {
-                    if rel.kind != pred_contains {
-                        continue;
-                    }
-                    if let Ok(window) = Window::read(client, rel.target) {
-                        if let Ok(layout) = Layout::read(client, window.content_root) {
-                            let mut children = Vec::new();
-                            let mut child_cursor = 0u64;
-                            loop {
-                                match relationships_from(
-                                    window.content_root,
-                                    child_cursor,
-                                    &mut child_buf,
-                                ) {
-                                    Ok((child_count, child_total)) => {
-                                        if child_count == 0 {
-                                            break;
-                                        }
-                                        for crel in child_buf.iter().take(child_count as usize) {
-                                            if crel.kind != rel_child {
-                                                continue;
-                                            }
-                                            if let Ok(label) = Label::read(client, crel.target) {
-                                                let text = symbol_resolve(label.text)
-                                                    .map(|v| {
-                                                        String::from_utf8_lossy(&v).into_owned()
-                                                    })
-                                                    .unwrap_or_else(|| String::from("Label"));
-                                                children.push(WidgetKind::Label(label, text));
-                                                continue;
-                                            }
-                                            if let Ok(button) = Button::read(client, crel.target) {
-                                                let text = symbol_resolve(button.text)
-                                                    .map(|v| {
-                                                        String::from_utf8_lossy(&v).into_owned()
-                                                    })
-                                                    .unwrap_or_else(|| String::from("Button"));
-                                                children.push(WidgetKind::Button(button, text));
-                                                continue;
-                                            }
-                                        }
-                                        if child_count as u64 + child_cursor >= child_total {
-                                            break;
-                                        }
-                                        child_cursor += child_count as u64;
-                                    }
-                                    Err(_) => break,
-                                }
-                            }
-                            out.push(WindowScene {
-                                id: rel.target,
-                                window,
-                                layout,
-                                children,
-                            });
-                        }
+                    if rel.kind == pred_contains {
+                        out.push(rel.target);
                     }
                 }
-                if count as u64 + cursor >= total {
+                if cursor + count as u64 >= total {
                     break;
                 }
                 cursor += count as u64;
@@ -121,6 +51,77 @@ pub fn collect_window_scenes(client: &mut SyscallGraphClient) -> Vec<WindowScene
             Err(_) => break,
         }
     }
+    out
+}
+
+pub fn read_window_scene(client: &mut SyscallGraphClient, window_id: ThingId) -> Option<WindowScene> {
+    let window = Window::read(client, window_id).ok()?;
+    let layout = Layout::read(client, window.content_root).ok()?;
+
+    let rel_child = symbol_intern("child");
+    let mut aligned_child = AlignedRelBufLarge::default();
+    let child_buf = &mut aligned_child.inner;
+    let mut children = Vec::new();
+    let mut child_cursor = 0u64;
+
+    loop {
+        match relationships_from(window.content_root, child_cursor, child_buf) {
+            Ok((child_count, child_total)) => {
+                if child_count == 0 {
+                    break;
+                }
+                for crel in child_buf.iter().take(child_count as usize) {
+                    if crel.kind != rel_child {
+                        continue;
+                    }
+                    if let Ok(label) = Label::read(client, crel.target) {
+                        let text = symbol_resolve(label.text)
+                            .map(|v| String::from_utf8_lossy(&v).into_owned())
+                            .unwrap_or_else(|| String::from("Label"));
+                        children.push(WidgetKind::Label(label, text));
+                        continue;
+                    }
+                    if let Ok(button) = Button::read(client, crel.target) {
+                        let text = symbol_resolve(button.text)
+                            .map(|v| String::from_utf8_lossy(&v).into_owned())
+                            .unwrap_or_else(|| String::from("Button"));
+                        children.push(WidgetKind::Button(button, text));
+                        continue;
+                    }
+                }
+                if child_cursor + child_count as u64 >= child_total {
+                    break;
+                }
+                child_cursor += child_count as u64;
+            }
+            Err(_) => break,
+        }
+    }
+
+    Some(WindowScene {
+        id: window_id,
+        window,
+        layout,
+        children,
+    })
+}
+
+pub fn collect_window_scenes(client: &mut SyscallGraphClient) -> Vec<WindowScene> {
+    let mut out = Vec::new();
+    let windows_graph = if let Some(id) = thing_std::graph::thing_find("graph.windows") {
+        thing_std::log_info(&alloc::format!("BLOOM: found graph.windows id={}", id.low()));
+        id
+    } else {
+        thing_std::log_info("BLOOM: graph.windows NOT FOUND");
+        return out;
+    };
+
+    for window_id in window_ids_in_graph(windows_graph) {
+        if let Some(scene) = read_window_scene(client, window_id) {
+            out.push(scene);
+        }
+    }
+
     out
 }
 

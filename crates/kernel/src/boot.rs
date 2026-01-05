@@ -7,10 +7,11 @@ use graph::store;
 use graph::symbols::{self, sym};
 use models::{
     Bytespace, DisplayDevice, Framebuffer, HardwareInfo, Module, MouseStream, Pointer, Service,
-    Surface, Thing,
+    Surface,
 };
 
 use alloc::vec::Vec;
+use core::ptr;
 #[cfg(target_arch = "x86_64")]
 use models::EventStream;
 
@@ -58,6 +59,11 @@ const BLOOM_WALLPAPER_DOMINANT: BootColor = BootColor {
     green: 181,
     blue: 220,
 };
+const UNIFONT_HEX: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fonts/unifont.hex"));
+const UNIFONT_GLYPH_HEIGHT: usize = 16;
+const UNIFONT_GLYPH_MAX_BYTES: usize = 32;
+const BOOT_GLYPH_SPACING: usize = 2;
 
 pub fn get_boot_ctx() -> &'static BootContext {
     unsafe {
@@ -84,9 +90,309 @@ fn boot_progress_color(step: usize) -> BootColor {
     }
 }
 
-fn indicate_progress(step: usize) {
+#[derive(Clone, Copy)]
+struct GlyphBuffer {
+    bytes: [u8; UNIFONT_GLYPH_MAX_BYTES],
+    bytes_used: usize,
+    bytes_per_row: usize,
+}
+
+impl GlyphBuffer {
+    const fn new() -> Self {
+        Self {
+            bytes: [0; UNIFONT_GLYPH_MAX_BYTES],
+            bytes_used: 0,
+            bytes_per_row: 0,
+        }
+    }
+
+    fn width(&self) -> usize {
+        self.bytes_per_row * 8
+    }
+}
+
+fn pack_color(fb: &FramebufferInfo, color: BootColor) -> Option<u32> {
+    let pack = |component: u8, size: u8, shift: u8| -> Option<u32> {
+        if size == 0 || size > 24 {
+            return None;
+        }
+        let mask = (1u32 << size) - 1;
+        let scaled = (component as u32 * mask + 127) / 255;
+        Some(scaled << shift)
+    };
+
+    Some(
+        pack(color.red, fb.red_mask_size, fb.red_mask_shift)?
+            | pack(color.green, fb.green_mask_size, fb.green_mask_shift)?
+            | pack(color.blue, fb.blue_mask_size, fb.blue_mask_shift)?,
+    )
+}
+
+fn parse_hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn parse_hex_pair(hi: u8, lo: u8) -> Option<u8> {
+    Some(parse_hex_value(hi)? << 4 | parse_hex_value(lo)?)
+}
+
+fn parse_codepoint_hex(hex: &[u8]) -> Option<u32> {
+    let mut value = 0u32;
+    for &digit in hex {
+        value = value.checked_mul(16)? + parse_hex_value(digit)? as u32;
+    }
+    Some(value)
+}
+
+fn load_glyph(ch: char, out: &mut GlyphBuffer) -> Option<()> {
+    let target = ch as u32;
+    let mut line_start = 0;
+
+    while line_start < UNIFONT_HEX.len() {
+        let mut line_end = line_start;
+        while line_end < UNIFONT_HEX.len() && UNIFONT_HEX[line_end] != b'\n' {
+            line_end += 1;
+        }
+        let line = &UNIFONT_HEX[line_start..line_end];
+        line_start = line_end.saturating_add(1);
+
+        if line.is_empty() {
+            continue;
+        }
+
+        let Some(colon) = line.iter().position(|&b| b == b':') else {
+            continue;
+        };
+
+        let Some(codepoint) = parse_codepoint_hex(&line[..colon]) else {
+            continue;
+        };
+
+        if codepoint != target {
+            continue;
+        }
+
+        let glyph_hex = &line[colon + 1..];
+        if glyph_hex.len() % 2 != 0 {
+            return None;
+        }
+
+        let glyph_bytes = glyph_hex.len() / 2;
+        if glyph_bytes == 0
+            || glyph_bytes > UNIFONT_GLYPH_MAX_BYTES
+            || glyph_bytes % UNIFONT_GLYPH_HEIGHT != 0
+        {
+            return None;
+        }
+
+        out.bytes.fill(0);
+        for idx in 0..glyph_bytes {
+            let byte = parse_hex_pair(glyph_hex[idx * 2], glyph_hex[idx * 2 + 1])?;
+            out.bytes[idx] = byte;
+        }
+        out.bytes_used = glyph_bytes;
+        out.bytes_per_row = glyph_bytes / UNIFONT_GLYPH_HEIGHT;
+        return Some(());
+    }
+
+    None
+}
+
+fn glyph_width(ch: char) -> Option<usize> {
+    let mut glyph = GlyphBuffer::new();
+    load_glyph(ch, &mut glyph)
+        .or_else(|| load_glyph('\u{FFFD}', &mut glyph))
+        .or_else(|| load_glyph('?', &mut glyph))
+        .map(|_| glyph.width())
+}
+
+struct TextSprite<'a> {
+    width: usize,
+    height: usize,
+    offset_x: usize,
+    offset_y: usize,
+    pixels: &'a [u32],
+}
+
+const BOOT_SPRITE_MAX_PIXELS: usize = 16384;
+
+fn choose_fg(bg: BootColor) -> BootColor {
+    let brightness =
+        (u32::from(bg.red) * 299 + u32::from(bg.green) * 587 + u32::from(bg.blue) * 114) / 1000;
+    // Stay light-on-dark longer for readability during boot splash.
+    if brightness > 220 {
+        BootColor {
+            red: 36,
+            green: 48,
+            blue: 64,
+        }
+    } else {
+        BootColor {
+            red: 245,
+            green: 250,
+            blue: 255,
+        }
+    }
+}
+
+fn draw_glyph_into(
+    glyph: &GlyphBuffer,
+    fg_pixel: u32,
+    shadow_pixel: u32,
+    buffer: &mut [u32],
+    buf_width: usize,
+    x: usize,
+    y: usize,
+) {
+    if glyph.bytes_used == 0 {
+        return;
+    }
+
+    let mut row_offset = 0;
+    for row in 0..UNIFONT_GLYPH_HEIGHT {
+        for byte_idx in 0..glyph.bytes_per_row {
+            let byte = glyph.bytes[row_offset + byte_idx];
+            if byte == 0 {
+                continue;
+            }
+            for bit in 0..8 {
+                if (byte & (0x80 >> bit)) != 0 {
+                    let px = x + byte_idx * 8 + bit;
+                    let py = y + row;
+                    let idx_shadow = (py + 1) * buf_width + (px + 1);
+                    let idx_fg = py * buf_width + px;
+                    if idx_shadow < buffer.len() {
+                        buffer[idx_shadow] = shadow_pixel;
+                    }
+                    if idx_fg < buffer.len() {
+                        buffer[idx_fg] = fg_pixel;
+                    }
+                }
+            }
+        }
+        row_offset += glyph.bytes_per_row;
+    }
+}
+
+fn prepare_text_sprite<'a>(
+    fb: &FramebufferInfo,
+    bg: BootColor,
+    message: &str,
+    scratch: &'a mut [u32],
+) -> Option<TextSprite<'a>> {
+    let fg = choose_fg(bg);
+    let fg_pixel = pack_color(fb, fg)?;
+    let shadow_pixel = pack_color(
+        fb,
+        BootColor {
+            red: 0,
+            green: 0,
+            blue: 0,
+        },
+    )?;
+
+    let mut total_width = 0usize;
+    let mut has_glyph = false;
+    for ch in message.chars() {
+        if let Some(width) = glyph_width(ch) {
+            if has_glyph {
+                total_width += BOOT_GLYPH_SPACING;
+            }
+            total_width += width;
+            has_glyph = true;
+        }
+    }
+    if !has_glyph {
+        return None;
+    }
+
+    let sprite_w = total_width + 1;
+    let sprite_h = UNIFONT_GLYPH_HEIGHT + 1;
+    let needed = sprite_w * sprite_h;
+    if needed > scratch.len() {
+        return None;
+    }
+    let (pixels, _rest) = scratch.split_at_mut(needed);
+    pixels.fill(0);
+
+    let mut cursor_x = 0usize;
+    let mut glyph = GlyphBuffer::new();
+    let mut first_drawn = false;
+    for ch in message.chars() {
+        let rendered = load_glyph(ch, &mut glyph)
+            .or_else(|| load_glyph('\u{FFFD}', &mut glyph))
+            .or_else(|| load_glyph('?', &mut glyph));
+        if rendered.is_none() {
+            continue;
+        }
+        if first_drawn {
+            cursor_x += BOOT_GLYPH_SPACING;
+        }
+        draw_glyph_into(&glyph, fg_pixel, shadow_pixel, pixels, sprite_w, cursor_x, 0);
+        cursor_x += glyph.width();
+        first_drawn = true;
+    }
+
+    let offset_x = (fb.width as usize).saturating_sub(sprite_w) / 2;
+    let offset_y = (fb.height as usize).saturating_sub(sprite_h) / 2;
+
+    Some(TextSprite {
+        width: sprite_w,
+        height: sprite_h,
+        offset_x,
+        offset_y,
+        pixels,
+    })
+}
+
+fn blit_text_sprite(fb: &FramebufferInfo, sprite: &TextSprite) {
+    let bytes_per_pixel = (fb.bpp / 8) as usize;
+    let width = fb.width as usize;
+    let height = fb.height as usize;
+    let pitch = fb.pitch as usize;
+    if bytes_per_pixel < 4 || width == 0 || height == 0 || pitch < width * bytes_per_pixel {
+        return;
+    }
+
+    let base = fb.addr + get_boot_ctx().hhdm_offset;
+    for row in 0..sprite.height {
+        let dst_y = sprite.offset_y + row;
+        if dst_y >= height {
+            continue;
+        }
+        for col in 0..sprite.width {
+            let dst_x = sprite.offset_x + col;
+            if dst_x >= width {
+                continue;
+            }
+            let src_pixel = sprite.pixels[row * sprite.width + col];
+            if src_pixel == 0 {
+                continue;
+            }
+            let offset =
+                dst_y as u64 * pitch as u64 + dst_x as u64 * bytes_per_pixel as u64;
+            let ptr = (base + offset) as *mut u32;
+            unsafe {
+                ptr::write_unaligned(ptr, src_pixel);
+            }
+        }
+    }
+}
+
+fn indicate_progress(step: usize, message: &str) {
     if let Some(fb) = get_boot_ctx().framebuffer {
-        crate::machine::machine().set_boot_color(&fb, boot_progress_color(step));
+        let color = boot_progress_color(step);
+        let mut scratch = [0u32; BOOT_SPRITE_MAX_PIXELS];
+        let sprite = prepare_text_sprite(&fb, color, message, &mut scratch);
+        crate::machine::machine().set_boot_color(&fb, color);
+        if let Some(sprite) = sprite {
+            blit_text_sprite(&fb, &sprite);
+        }
     }
 }
 
@@ -108,14 +414,14 @@ pub fn pre_boot(info: PreBootInfo) {
 pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     let ctx = unsafe { &*ctx_ptr };
     BOOT_CTX = Some(*ctx);
-    indicate_progress(0);
+    indicate_progress(0, "🌱 Booting ThingOS");
     let heap_config = crate::memory::heap::HeapConfig {
         phys_base: ctx.heap_phys_base,
         virt_base: ctx.heap_phys_base + ctx.hhdm_offset,
         size: 64 * 1024 * 1024,
     };
     crate::memory::heap::init(heap_config).expect("failed to init heap");
-    indicate_progress(1);
+    indicate_progress(1, "🧰 Heap ready");
     crate::log::init(get_boot_ctx());
     crate::machine::input::init_mouse();
 
@@ -124,15 +430,15 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
 
     graph::init();
     graph::seed_minimal();
-    indicate_progress(2);
+    indicate_progress(2, "🛰️ Graph seeded");
     crate::platform::init();
-    indicate_progress(3);
+    indicate_progress(3, "⚙ Platform online");
     seed_bloom_ontology();
     seed_service_plan(ctx);
-    indicate_progress(4);
+    indicate_progress(4, "🎨 Bloom scaffolded");
     crate::sched::init();
     let sprout_id = spawn_module_by_name(ctx, "sprout");
-    indicate_progress(5);
+    indicate_progress(5, "🚀 Sprout ignited");
     seed_kernel_permissions();
 
     if let Some(id) = sprout_id {
@@ -403,13 +709,13 @@ fn default_caps_for(name: &str) -> [Option<CapOp>; 8] {
             Some(CapOp::GraphWrite),
             None,
         ],
-        "hello_window" => [
+                "hello_window" => [
             Some(CapOp::Log),
+            Some(CapOp::MemManage),
             Some(CapOp::GraphCreate),
             Some(CapOp::GraphLink),
             Some(CapOp::GraphRead),
             Some(CapOp::GraphWrite),
-            None,
             None,
             None,
         ],

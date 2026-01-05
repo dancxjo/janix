@@ -3,7 +3,7 @@
 use crate::ids::{SymbolId, ThingId, WatchId};
 use bitflags::bitflags;
 
-#[repr(C)]
+#[repr(C, align(16))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RelationshipRef {
     pub id: ThingId, // actually RelationshipId but it's a type alias
@@ -93,3 +93,70 @@ impl WakeReason {
 // Limits
 pub const MAX_WATCH_EVENTS: usize = 64;
 pub const MAX_REL_BATCH: usize = 32;
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEventKind {
+    GraphMemberAdded = 1,
+    GraphMemberRemoved = 2,
+    ThingUpdated = 3,
+    ThingDeleted = 4,
+}
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchKind {
+    /// Watch membership changes of a graph (predicate.contains only)
+    GraphMembership = 1,
+    /// Watch updates/deletion of a specific Thing
+    Thing = 2,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WatchEvent {
+    pub kind: WatchEventKind,
+    pub flags: u16,
+    /// The primary subject of the event (graph for membership watches, thing for thing watches)
+    pub subject: ThingId,
+    /// Optional argument: for graph membership this is the member ThingId; for Thing events unused/0.
+    pub arg0: ThingId,
+}
+
+/// Aligned buffer wrapper for RelationshipRef to ensure 16-byte alignment on stack
+#[repr(C, align(16))]
+#[derive(Clone, Copy)]
+pub struct AlignedRelBuf {
+    pub inner: [RelationshipRef; 8],
+}
+
+impl Default for AlignedRelBuf {
+    fn default() -> Self {
+        Self {
+            inner: [RelationshipRef {
+                id: crate::ids::ThingId(0),
+                kind: crate::ids::SymbolId(0),
+                target: crate::ids::ThingId(0),
+            }; 8],
+        }
+    }
+}
+
+/// Large aligned buffer wrapper for RelationshipRef - for MAX_REL_BATCH elements
+#[repr(C, align(16))]
+#[derive(Clone, Copy)]
+pub struct AlignedRelBufLarge {
+    pub inner: [RelationshipRef; MAX_REL_BATCH],
+}
+
+impl Default for AlignedRelBufLarge {
+    fn default() -> Self {
+        Self {
+            inner: [RelationshipRef {
+                id: crate::ids::ThingId(0),
+                kind: crate::ids::SymbolId(0),
+                target: crate::ids::ThingId(0),
+            }; MAX_REL_BATCH],
+        }
+    }
+}

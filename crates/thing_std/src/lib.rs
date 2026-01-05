@@ -27,6 +27,7 @@ pub mod input;
 pub mod memory;
 pub mod process;
 pub mod time;
+pub mod watch;
 
 pub use codec::*;
 pub use graph::*;
@@ -35,6 +36,7 @@ pub use input::*;
 pub use memory::*;
 pub use process::*;
 pub use time::*;
+pub use watch::*;
 
 #[cfg(not(any(test, target_os = "linux")))]
 #[no_mangle]
@@ -176,11 +178,13 @@ unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
 }
 
+#[cfg(not(test))]
 #[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
     loop {}
 }
 
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     log_info("panic: aborting process");
@@ -247,5 +251,6 @@ pub mod debug {
     }
 }
 
+#[cfg(not(test))]
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {}

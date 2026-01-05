@@ -98,6 +98,12 @@ impl GraphStore {
         Ok(id)
     }
 
+    pub fn delete_relationship(&mut self, id: RelationshipId) -> Result<Relationship, i32> {
+        self.relationships
+            .remove(&id)
+            .ok_or(abi::syscall::err::ENOENT)
+    }
+
     pub fn relationships_from(&self, from: ThingId) -> Vec<RelationshipId> {
         self.relationships
             .values()
@@ -305,6 +311,10 @@ pub fn thing_exists(id: ThingId) -> bool {
 
 pub fn relationship_create(kind: SymbolId, from: ThingId, to: ThingId) -> RelationshipId {
     with_store(|s| s.create_relationship(kind, from, to).expect("failed to create rel"))
+}
+
+pub fn relationship_delete(id: RelationshipId) -> Option<Relationship> {
+    with_store(|s| s.delete_relationship(id).ok())
 }
 
 pub fn relationships_from(from: ThingId) -> Vec<RelationshipId> {

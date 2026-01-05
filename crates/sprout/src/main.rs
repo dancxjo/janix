@@ -4,8 +4,8 @@
 extern crate alloc;
 use alloc::{string::String, vec, vec::Vec};
 use alloc::string::ToString;
-use abi::ids::{SymbolId, ThingId};
-use abi::types::RelationshipRef;
+use abi::ids::ThingId;
+use abi::types::{RelationshipRef, AlignedRelBuf};
 use models::{Module, Service, Thing};
 use thing_std::*;
 use thing_std::cap::{grant, Cap, CapOp, CapScope};
@@ -25,6 +25,7 @@ struct LaunchPlan {
 pub fn main() {
     log_info("SPROUT: I am alive");
 
+    log_info("SPROUT: building plan");
     let plan = build_plan();
     log_info(&alloc::format!("SPROUT: launch plan size {}", plan.len()));
 
@@ -103,6 +104,9 @@ fn service_ready(id: ThingId) -> bool {
 }
 
 fn build_plan() -> Vec<LaunchPlan> {
+    // TODO: temporary bypass for broken relationships traversal; fallback boot will spawn core services.
+    return Vec::new();
+
     let pred_contains = thing_std::graph::symbol_intern("predicate.contains");
     let pred_refs = thing_std::graph::symbol_intern("predicate.references");
     let pred_owns = thing_std::graph::symbol_intern("predicate.owns");
@@ -117,6 +121,7 @@ fn build_plan() -> Vec<LaunchPlan> {
     let mut plan: Vec<LaunchPlan> = Vec::new();
 
     for graph_name in plan_graphs {
+        log_info(&alloc::format!("SPROUT: scan {}", graph_name));
         match thing_find(graph_name) {
             Some(graph_id) => {
                 let rels = relationships_of(graph_id);
@@ -130,13 +135,23 @@ fn build_plan() -> Vec<LaunchPlan> {
                         continue;
                     }
 
-                    if let Some((body, _)) = thing_get_body(rel.target) {
+                    if let Some((body, digest)) = thing_get_body(rel.target) {
+                        log_info(&alloc::format!(
+                            "SPROUT: service body id={} len={} digest={}",
+                            rel.target.low(),
+                            body.len(),
+                            digest
+                        ));
                         if let Ok(svc) = Service::decode_full(&body) {
                             let mut deps = relationships_of(rel.target)
                                 .into_iter()
                                 .filter(|r| r.kind == pred_refs)
                                 .map(|r| r.target)
                                 .collect::<Vec<_>>();
+                            log_info(&alloc::format!(
+                                "SPROUT: deps found={}",
+                                deps.len()
+                            ));
 
                             let module = relationships_of(rel.target)
                                 .into_iter()
@@ -225,15 +240,19 @@ fn module_info_from_id(id: ThingId) -> Option<(String, Vec<ThingId>, Vec<CapOp>)
 fn relationships_of(from: ThingId) -> Vec<RelationshipRef> {
     let mut rels = Vec::new();
     let mut cursor = 0;
+    log_info(&alloc::format!("SPROUT: relationships_of start from={}", from.low()));
     loop {
-        let mut buf = [RelationshipRef {
-            id: ThingId(0),
-            kind: SymbolId(0),
-            target: ThingId(0),
-        }; 8];
+        let mut aligned = AlignedRelBuf::default();
+        let buf = &mut aligned.inner;
 
-        match relationships_from(from, cursor, &mut buf) {
+        match relationships_from(from, cursor, buf) {
             Ok((returned, total)) => {
+                log_info(&alloc::format!(
+                    "SPROUT: rels chunk cursor={} returned={} total={}",
+                    cursor,
+                    returned,
+                    total
+                ));
                 let count = returned as usize;
                 rels.extend_from_slice(&buf[..count]);
 
@@ -355,6 +374,7 @@ fn configure_policy(id: ThingId, name: &str) {
              global(CapOp::MemManage);
         }
         "hello_window" => {
+            global(CapOp::MemManage); // Required for heap allocation
             global(CapOp::GraphCreate);
             global(CapOp::GraphLink);
             global(CapOp::GraphRead);

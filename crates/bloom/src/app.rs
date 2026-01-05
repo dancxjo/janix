@@ -1,14 +1,23 @@
 use crate::input::PointerInput;
 use crate::pixels::*;
 use crate::scene::Rect;
+use crate::scene_cache::{apply_watch_event, SceneCache};
 use crate::shadow::{draw_shadow_from_mask, ShadowMask, ShadowParams};
-use crate::ui::{collect_window_scenes, render_window_scenes, WindowScene, WidgetKind};
+use crate::ui::{
+    read_window_scene, render_window_scenes, window_ids_in_graph, WindowScene,
+};
+use crate::watch::WatchSet;
+use abi::ids::ThingId;
+use abi::types::{WatchEvent, WatchEventKind};
 use models::*;
 use thing_std::graph::*;
 use thing_std::*;
 
 use crate::assets::cursor::{CursorAnimator, CursorAsset, CursorFrame};
 use crate::backend::*;
+use crate::assets::bmp::Wallpaper;
+
+const WATCH_WAIT_TIMEOUT_TICKS: u64 = 2;
 
 pub fn run() {
     thing_std::init(0);
@@ -32,7 +41,7 @@ pub fn run() {
             backend.configure(SurfaceDesc {
                 width: width,
                 height: height,
-                stride_pixels: width, // Assuming stride == width for now
+                stride_pixels: width,
             });
 
             // Map mouse input bytespace
@@ -52,39 +61,59 @@ pub fn run() {
             let mut wallpaper_cache = alloc::vec![0u32; buffer_size];
 
             let wallpaper = thing_find("bytespace.asset.clouds.bmp").and_then(|id| {
-                let len = 128 * 1024 * 1024; // 128MB to support 4K+
+                let len = 128 * 1024 * 1024;
                 let buf = crate::assets::map_bytespace(id, 0x8000_0000, len);
                 crate::assets::bmp::parse_bmp(buf)
             });
 
             if let Some(ref wp) = wallpaper {
+                log_info(&alloc::format!(
+                    "BLOOM: wallpaper clouds.bmp {}x{}",
+                    wp.width,
+                    wp.height
+                ));
                 render_wallpaper_full(wallpaper_cache.as_mut_ptr(), width, height, wp);
+            } else {
+                log_info("BLOOM: no wallpaper asset found");
             }
 
-            // Seed the scene buffer with wallpaper and the initial window set
-            let mut window_scenes = collect_window_scenes(&mut graph_client);
-            let mut scene_signature = fingerprint_scene(&window_scenes);
-            rebuild_scene(
-                scene_buffer.as_mut_slice(),
-                wallpaper_cache.as_slice(),
-                width,
-                height,
-                &window_scenes,
+            let windows_graph = if let Some(id) = thing_find("graph.windows") {
+                id
+            } else {
+                log_info("BLOOM: graph.windows NOT FOUND");
+                sched_yield();
+                continue;
+            };
+
+            let mut watches = match WatchSet::new(windows_graph) {
+                Ok(set) => {
+                    log_info(&alloc::format!(
+                        "BLOOM: watch graph={} watch_id={}",
+                        windows_graph.low(),
+                        set.graph_watch.0
+                    ));
+                    set
+                }
+                Err(e) => {
+                    log_info(&alloc::format!("BLOOM: watch graph setup failed status={}", e));
+                    sched_yield();
+                    continue;
+                }
+            };
+
+            let mut scene_cache = SceneCache::new();
+            seed_scene(
+                &mut graph_client,
+                windows_graph,
+                &mut scene_cache,
+                &mut watches,
             );
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    scene_buffer.as_ptr(),
-                    frame_buffer.as_mut_ptr(),
-                    buffer_size,
-                );
-            }
 
             // Load cursor assets
             let cursor_asset = load_cursor_asset();
 
             // Use milliseconds for animation timing (monotonic_now returns nanoseconds)
             let mut animator = cursor_asset.map(|asset| CursorAnimator::new(asset, 1));
-            let mut last_scene_refresh_ms: u64 = 0;
             let mut logged_shared_shadow = false;
             let mut prev_px = 0;
             let mut prev_py = 0;
@@ -92,8 +121,42 @@ pub fn run() {
             let mut logged_window_once = false;
             let mut prev_cursor_bounds: Option<Rect> = None;
             let mut scene_dirty = true;
+            let mut window_scenes: alloc::vec::Vec<WindowScene> = scene_cache.scenes_in_order();
+            let mut events: alloc::vec::Vec<WatchEvent> = alloc::vec::Vec::new();
 
             loop {
+                if let Err(e) = watches.wait(WATCH_WAIT_TIMEOUT_TICKS) {
+                    log_info(&alloc::format!("BLOOM: watch wait error status={}", e));
+                }
+
+                if let Ok(n) = watches.drain(&mut events) {
+                    if n > 0 {
+                        log_info(&alloc::format!("BLOOM: events n={}", n));
+                        for ev in events.iter().take(n) {
+                            log_info(&alloc::format!(
+                                "BLOOM: event kind={} subject={} arg0={}",
+                                event_kind_name(ev.kind),
+                                ev.subject.low(),
+                                ev.arg0.low()
+                            ));
+                            if let Some((win_id, watch_id)) =
+                                apply_watch_event(ev, &mut scene_cache, &mut watches, &mut graph_client)
+                            {
+                                log_info(&alloc::format!(
+                                    "BLOOM: watch window={} watch_id={}",
+                                    win_id.low(),
+                                    watch_id.0
+                                ));
+                            }
+                        }
+                        events.clear();
+                    }
+                }
+
+                if scene_cache.is_dirty() {
+                    scene_dirty = true;
+                }
+
                 // Get current time in milliseconds
                 let now_ms = (monotonic_now() / 1_000_000) as u64;
 
@@ -108,17 +171,6 @@ pub fn run() {
                     false
                 };
 
-                if now_ms.saturating_sub(last_scene_refresh_ms) > 250 {
-                    let new_scenes = collect_window_scenes(&mut graph_client);
-                    let signature = fingerprint_scene(&new_scenes);
-                    if signature != scene_signature {
-                        scene_signature = signature;
-                        window_scenes = new_scenes;
-                        scene_dirty = true;
-                    }
-                    last_scene_refresh_ms = now_ms;
-                }
-
                 let cursor_frame = if let Some(anim) = animator.as_ref() {
                     anim.current_frame()
                 } else {
@@ -130,6 +182,7 @@ pub fn run() {
                 let mut dirty: Option<Rect> = None;
 
                 if scene_dirty {
+                    window_scenes = scene_cache.scenes_in_order();
                     rebuild_scene(
                         scene_buffer.as_mut_slice(),
                         wallpaper_cache.as_slice(),
@@ -157,6 +210,12 @@ pub fn run() {
                         log_info(&alloc::format!("BLOOM: rendered window {}", win_id));
                         logged_window_once = true;
                     }
+                    log_info(&alloc::format!(
+                        "BLOOM: redraw windows={} dirty={}",
+                        window_scenes.len(),
+                        scene_cache.dirty_count()
+                    ));
+                    scene_cache.clear_dirty();
                 } else if cursor_changed {
                     let damage = if let Some(prev_bounds) = prev_cursor_bounds {
                         Rect::union(prev_bounds, cursor_bounds)
@@ -192,7 +251,7 @@ pub fn run() {
                                 ShadowParams {
                                     offset_x: frame.shadow_offset_x,
                                     offset_y: frame.shadow_offset_y,
-                                    blur_radius: 0, // Frame already prerendered with blur
+                                    blur_radius: 0,
                                     color: 0xAA000000,
                                 },
                             );
@@ -246,8 +305,37 @@ pub fn run() {
     }
 }
 
+fn seed_scene(
+    client: &mut SyscallGraphClient,
+    windows_graph: ThingId,
+    scene_cache: &mut SceneCache,
+    watches: &mut WatchSet,
+) {
+    for window_id in window_ids_in_graph(windows_graph) {
+        if let Some(scene) = read_window_scene(client, window_id) {
+            scene_cache.upsert(scene);
+            if let Ok(Some(window_watch)) = watches.ensure_window_watch(window_id) {
+                log_info(&alloc::format!(
+                    "BLOOM: watch window={} watch_id={}",
+                    window_id.low(),
+                    window_watch.0
+                ));
+            }
+        }
+    }
+    scene_cache.mark_scene_dirty();
+}
+
+fn event_kind_name(kind: WatchEventKind) -> &'static str {
+    match kind {
+        WatchEventKind::GraphMemberAdded => "GRAPH_MEMBER_ADDED",
+        WatchEventKind::GraphMemberRemoved => "GRAPH_MEMBER_REMOVED",
+        WatchEventKind::ThingUpdated => "THING_UPDATED",
+        WatchEventKind::ThingDeleted => "THING_DELETED",
+    }
+}
+
 fn load_cursor_asset() -> Option<CursorAsset> {
-    // Try animated cursor first for testing
     if let Some(bs_id) = thing_find("bytespace.asset.Normal.cur") {
         if let Some(asset) = load_cur_asset(bs_id, 0x8800_0000) {
             log_info("BLOOM: loaded Normal.cur");
@@ -275,10 +363,6 @@ fn load_ani_asset(bs_id: ThingId, vaddr: u64) -> Option<CursorAsset> {
     let buf = crate::assets::map_bytespace(bs_id, vaddr, len);
     crate::assets::cursor::ani::load_ani(buf)
 }
-
-// Pixel functions removed
-
-use crate::assets::bmp::Wallpaper;
 
 fn render_wallpaper_full(dest: *mut u32, dest_w: u32, dest_h: u32, wp: &Wallpaper) {
     for y in 0..dest_h {
@@ -359,47 +443,4 @@ fn cursor_bounds(frame: Option<&CursorFrame>, px: i32, py: i32) -> Rect {
             h: 11,
         },
     }
-}
-
-fn fingerprint_scene(scenes: &[WindowScene]) -> u64 {
-    let mut hash = scenes.len() as u64;
-    for scene in scenes {
-        hash = mix(hash, scene.id.low());
-        hash = mix(hash, scene.window.x as i64 as u64);
-        hash = mix(hash, scene.window.y as i64 as u64);
-        hash = mix(hash, scene.window.width as u64);
-        hash = mix(hash, scene.window.height as u64);
-        hash = mix(hash, scene.window.style.bg_rgba as u64);
-        hash = mix(hash, scene.window.style.radius as u64);
-        hash = mix(hash, scene.window.style.shadow as u64);
-        hash = mix(hash, scene.window.style.elevation as u64);
-
-        hash = mix(hash, scene.layout.kind as u8 as u64);
-        hash = mix(hash, scene.layout.padding as u64);
-        hash = mix(hash, scene.layout.gap as u64);
-        hash = mix(hash, scene.layout.align as u64);
-
-        hash = mix(hash, scene.children.len() as u64);
-        for child in &scene.children {
-            match child {
-                WidgetKind::Label(label, text) => {
-                    hash = mix(hash, 1);
-                    hash = mix(hash, label.style.size as u64);
-                    hash = mix(hash, label.style.color_rgba as u64);
-                    hash = mix(hash, text.len() as u64);
-                }
-                WidgetKind::Button(button, text) => {
-                    hash = mix(hash, 2);
-                    hash = mix(hash, button.style.bg_rgba as u64);
-                    hash = mix(hash, button.style.radius as u64);
-                    hash = mix(hash, text.len() as u64);
-                }
-            }
-        }
-    }
-    hash
-}
-
-fn mix(seed: u64, value: u64) -> u64 {
-    seed.rotate_left(7) ^ value.wrapping_mul(0x9E3779B185EBCA87)
 }

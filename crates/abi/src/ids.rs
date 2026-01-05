@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Thing identifier - a 128-bit UUID
+#[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct ThingId(pub u128);
 

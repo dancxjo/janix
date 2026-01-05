@@ -144,8 +144,7 @@ pub extern "C" fn dispatch(
             watch::sys_watch_create(a0, a1)
         }
         nr::SYS_WATCH_POLL => {
-            let watcher = abi::ids::ThingId(a0 as u128);
-            if let Err(e) = cap::check(CapOp::GraphRead, Some(watcher)) {
+            if let Err(e) = cap::check(CapOp::GraphWatch, None) {
                 return e;
             }
             watch::sys_watch_poll(a0, a1, a2)

@@ -77,7 +77,7 @@ pub fn main() {
         pid
     });
     
-    let rel_contains = symbol_intern("contains");
+    let rel_contains = symbol_intern("predicate.contains");
     relationship_create(rel_contains, graph_windows, window_id);
 
     log_info("Hello Window Published!");

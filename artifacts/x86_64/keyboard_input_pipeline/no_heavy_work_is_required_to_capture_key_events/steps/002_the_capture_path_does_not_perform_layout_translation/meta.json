@@ -7,10 +7,10 @@
     "index": 2,
     "text": "the capture path does not perform layout translation",
     "status": "passed",
-    "timestamp": "2026-01-04T06:10:25.550350699+00:00"
+    "timestamp": "2026-01-05T00:49:00.877642935+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

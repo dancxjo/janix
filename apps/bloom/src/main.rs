@@ -126,10 +126,14 @@ pub extern "C" fn main() {
                 consume_mouse_samples();
 
                 let (px, py, _buttons) = read_pointer_state();
-                let frame_changed = animator
-                    .as_mut()
-                    .map(|a| a.advance(now_ms))
-                    .unwrap_or(false);
+                // Avoid closure-based Option combinators on AArch64: the prior
+                // map() call confused the calling convention and produced a
+                // bogus environment pointer. Expand explicitly instead.
+                let frame_changed = if let Some(anim) = animator.as_mut() {
+                    anim.advance(now_ms)
+                } else {
+                    false
+                };
 
                 // Force redraw every 100ms even if nothing changed, to ensure animation plays
                 static mut LAST_REDRAW_MS: u64 = 0;
@@ -152,7 +156,12 @@ pub extern "C" fn main() {
                         if let (Some(ref mut back_buf), Some(ref cache)) =
                             (&mut BACK_BUFFER, &WALLPAPER_CACHE)
                         {
-                            let cursor_frame = animator.as_ref().and_then(|a| a.current_frame());
+                            let cursor_frame =
+                                if let Some(anim) = animator.as_ref() {
+                                    anim.current_frame()
+                                } else {
+                                    None
+                                };
 
                             let cursor_rect = if let Some(frame) = cursor_frame {
                                 Rect {

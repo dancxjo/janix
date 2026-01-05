@@ -6,11 +6,11 @@
   "step": {
     "index": 1,
     "text": "key events are queued without loss",
-    "status": "failed",
-    "timestamp": "2026-01-04T06:07:55.188307954+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T00:46:25.953489735+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

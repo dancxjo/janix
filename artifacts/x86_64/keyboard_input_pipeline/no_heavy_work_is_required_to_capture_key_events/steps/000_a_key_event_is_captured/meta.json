@@ -6,11 +6,11 @@
   "step": {
     "index": 0,
     "text": "a key event is captured",
-    "status": "failed",
-    "timestamp": "2026-01-04T06:10:25.549860687+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T00:48:58.018574986+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

@@ -1,8 +1,35 @@
 use core::alloc::Layout;
 use linked_list_allocator::LockedHeap;
+use x86_64::instructions::interrupts;
+
+pub struct SafeLockedHeap(LockedHeap);
+
+impl SafeLockedHeap {
+    pub const fn empty() -> Self {
+        Self(LockedHeap::empty())
+    }
+}
+
+// Delegate initialization and lock()
+impl core::ops::Deref for SafeLockedHeap {
+    type Target = LockedHeap;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+unsafe impl core::alloc::GlobalAlloc for SafeLockedHeap {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        interrupts::without_interrupts(|| self.0.alloc(layout))
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        interrupts::without_interrupts(|| self.0.dealloc(ptr, layout))
+    }
+}
 
 #[global_allocator]
-pub static ALLOCATOR: LockedHeap = LockedHeap::empty();
+pub static ALLOCATOR: SafeLockedHeap = SafeLockedHeap::empty();
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
@@ -19,6 +46,8 @@ fn alloc_error_handler(layout: Layout) -> ! {
     write(b"\n");
 
     // Try to get heap stats
+    // Note: This lock might deadlock if we are in an interrupt and the lock is held.
+    // However, if we are in alloc_error_handler, we are likely panicking anyway.
     let stats = ALLOCATOR.lock();
     write(b"\nHeap state:\n");
     write(b"  Free bytes: ");

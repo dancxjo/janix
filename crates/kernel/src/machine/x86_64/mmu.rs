@@ -56,11 +56,6 @@ impl AddressSpace {
 
     pub fn map(&mut self, virt: u64, phys: u64, len: usize, perms: MapPerms) -> MapResult<()> {
         use x86_64::structures::paging::Page;
-        crate::log::klog(
-            crate::log::Level::Info,
-            "MMU",
-            &alloc::format!("mapping {:x}->{:x} len {:x}", virt, phys, len),
-        );
 
         let start = VirtAddr::new(virt);
         let end_addr = start + len as u64;

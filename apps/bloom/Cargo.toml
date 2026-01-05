@@ -1,14 +1,11 @@
 [package]
-name = "bloom"
+name = "bloom_app"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 thing_std = { path = "../../crates/thing_std" }
-models = { path = "../../crates/models" }
-symbols = { path = "../../crates/symbols" }
-tinybmp = "0.6.0"
-png-decoder = "0.1.1"
+bloom = { path = "../../crates/bloom" }
 
 [package.metadata.cargo-xbuild]
 memcpy = false

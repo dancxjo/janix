@@ -92,8 +92,10 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
     // Always output to serial for debugging
     serial_log(level, subsystem, message);
 
-    // Create graph entry if graph is initialized
-    if !store::is_initialized() {
+    // Create graph entry if graph is initialized AND lock is available.
+    // We use is_ready_for_logging() (try_lock) to avoid deadlocks where
+    // a graph operation (holding lock) triggers a log (trying to acquire lock).
+    if !store::is_ready_for_logging() {
         return None;
     }
 

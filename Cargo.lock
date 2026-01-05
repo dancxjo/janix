@@ -170,6 +170,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bloom_app"
+version = "0.1.0"
+dependencies = [
+ "bloom",
+ "thing_std",
+]
+
+[[package]]
 name = "bouncer_test"
 version = "0.1.0"
 dependencies = [

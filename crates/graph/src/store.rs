@@ -247,11 +247,42 @@ fn restore_irq(flags: usize) {
     }
 }
 
+fn try_lock_store_irq() -> Option<(spin::MutexGuard<'static, Option<PlaceStore>>, usize)> {
+    let flags = unsafe {
+        if let Some(disable) = IRQ_DISABLE {
+            disable()
+        } else {
+            0
+        }
+    };
+    
+    if let Some(guard) = PLACE_STORE.try_lock() {
+        Some((guard, flags))
+    } else {
+        restore_irq(flags);
+        None
+    }
+}
+
 pub fn is_initialized() -> bool {
+    // Blocking check
     let (guard, flags) = lock_store_irq();
     let res = guard.is_some();
+    drop(guard);
     restore_irq(flags);
     res
+}
+
+/// Non-blocking check for logging. Returns false if locked or not initialized.
+pub fn is_ready_for_logging() -> bool {
+    if let Some((guard, flags)) = try_lock_store_irq() {
+        let res = guard.is_some();
+        drop(guard);
+        restore_irq(flags);
+        res
+    } else {
+        false
+    }
 }
 
 pub fn with_store<F, R>(f: F) -> R 
@@ -259,6 +290,7 @@ where F: FnOnce(&mut PlaceStore) -> R
 {
     let (mut guard, flags) = lock_store_irq();
     let res = f(guard.as_mut().expect("PlaceStore not initialized"));
+    drop(guard);
     restore_irq(flags);
     res
 }
@@ -318,4 +350,3 @@ pub fn watch(watcher: ThingId, target: ThingId) {
 pub fn dequeue_event(watcher: ThingId) -> Option<ThingId> {
     with_store(|s| s.dequeue(watcher))
 }
-

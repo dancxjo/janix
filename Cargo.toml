@@ -11,6 +11,7 @@ members = [
     "crates/scancodes",
     "crates/thing_codec",
     "crates/thing_derive",
+    "crates/bloom",
     "apps/bloom",
     "apps/clock",
     "tools/bdd",

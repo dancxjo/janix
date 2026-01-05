@@ -1,0 +1,11 @@
+[package]
+name = "bloom"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thing_std = { path = "../thing_std" }
+models = { path = "../models" }
+symbols = { path = "../symbols" }
+tinybmp = "0.6.0"
+png-decoder = "0.1.1"

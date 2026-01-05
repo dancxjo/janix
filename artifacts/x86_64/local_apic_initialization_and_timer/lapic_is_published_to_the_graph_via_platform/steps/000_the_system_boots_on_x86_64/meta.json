@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Local APIC initialization and timer",
+  "scenario": "LAPIC is published to the graph via Platform",
+  "step": {
+    "index": 0,
+    "text": "the system boots on x86_64",
+    "status": "skipped",
+    "timestamp": "2026-01-05T06:51:46.555058703+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

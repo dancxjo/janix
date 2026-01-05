@@ -1,50 +1,50 @@
-BRAN: handoff to kernel
-SYM:: init: base=0xffff800083fff000 size=64 MiB
-BOOT: init graph...
-created: place.devices
-created: place.tasks
-DISPLAY: selected provider limine_fb
-register name: device.display.primary
-BOOT: init sched...
-SYM:: initializing...
-BOOT: loading modules...
-MOD: /boot/modules/sprout
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=4 name=/boot/modules/clock stack_top=0xffff800001b08000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001b08000 u_stack=0x80000000 entry=0x20aef0
+SCHED: configure_ctx_locked: finalized sp=0xffff800001b07f60
+USER: BLOOM: alivePROC: spawned
 PROC: spawn_kernel_module
-SYM:: module phys=fa34e000 offset=ffff800000000000
+PROC: module phys=186cb000 offset=ffff800000000000
+MMU: new P4 phys=1c0b000 virt=ffff800001c0b000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
 PROC: ELF loaded, entry
-SYM:: spawn: name=/boot/modules/sprout start
-SYM:: spawn: allocating stack...
-SYM:: spawn: stack allocated
-SYM:: spawn: graph store start
-SYM:: spawn: graph store done
-SYM:: spawn: address space handled
-SYM:: spawn: finished id=1 name=/boot/modules/sprout stack_top=0xffff800084017000 stack_size=0x10000
-SYM:: configure_ctx: k_stack=0xffff800084017000 u_stack=0x80000000 entry=0x1149c
-SYM:: configure_ctx: finalized sp=0xffff800084016ee0
-SPROUT: I am alive
+SCHED: spawn: name=/boot/modules/timed start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=5 name=/boot/modules/timed stack_top=0xffff800001c68000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001c68000 u_stack=0x80000000 entry=0x20c580
+SCHED: configure_ctx_locked: finalized sp=0xffff800001c67f60
 PROC: spawned
-MOD: /boot/modules/bloom
+USER: RTC-CMOS: Active. Time: 2026-1-5 6:52:49
+
+USER: CLOCK: ALIVE
 PROC: spawn_kernel_module
-SYM:: module phys=fa00b000 offset=ffff800000000000
+PROC: module phys=183bd000 offset=ffff800000000000
+MMU: new P4 phys=1d6c000 virt=ffff800001d6c000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
 PROC: ELF loaded, entry
-SYM:: spawn: name=/boot/modules/bloom start
-SYM:: spawn: allocating stack...
-SYM:: spawn: stack allocated
-SYM:: spawn: graph store start
-SYM:: spawn: graph store done
-SYM:: spawn: address space handled
-SYM:: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff80008405b000 stack_size=0x10000
-SYM:: configure_ctx: k_stack=0xffff80008405b000 u_stack=0x80000000 entry=0x14b24
-SYM:: configure_ctx: finalized sp=0xffff80008405aee0
+SCHED: spawn: name=/boot/modules/inputd start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=6 name=/boot/modules/inputd stack_top=0xffff800001db9000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001db9000 u_stack=0x80000000 entry=0x205490
+SCHED: configure_ctx_locked: finalized sp=0xffff800001db8f60
 PROC: spawned
-MOD: /boot/modules/graph_smoke
-MOD: /boot/modules/log_smoke
-MOD: /boot/modules/cap_fail
-MOD: /boot/modules/clock
-MOD: /boot/modules/inputd
-MOD: /boot/modules/echo
-MOD: /boot/modules/inspector
-MOD: /boot/modules/logview
-Booted.
-SYM:: entering loop
-SCHED: calling irq_enable...
+PROC: spawn_kernel_module
+PROC: module phys=17722000 offset=ffff800000000000
+MMU: new P4 phys=1db9000 virt=ffff800001db9000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+USER: INPUTD: Alive
+USER: kind: Keyboard
+PROC: ELF loaded, entry

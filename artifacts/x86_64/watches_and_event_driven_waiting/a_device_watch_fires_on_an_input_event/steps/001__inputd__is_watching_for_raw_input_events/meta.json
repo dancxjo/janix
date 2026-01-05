@@ -7,10 +7,10 @@
     "index": 1,
     "text": "\"inputd\" is watching for raw input events",
     "status": "skipped",
-    "timestamp": "2026-01-04T04:40:29.528305928+00:00"
+    "timestamp": "2026-01-05T07:00:16.734176984+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

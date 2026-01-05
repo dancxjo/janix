@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "SIMD support",
+  "scenario": "Kernel detects and enables SIMD",
+  "step": {
+    "index": 1,
+    "text": "the serial output contains \"SIMD: Detecting x86 features...\"",
+    "status": "passed",
+    "timestamp": "2026-01-05T06:53:55.526473532+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

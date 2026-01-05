@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "SIMD support",
+  "scenario": "Kernel detects and enables SIMD",
+  "step": {
+    "index": 2,
+    "text": "the serial output contains \"SIMD: SIMD Enabled (Eager)\"",
+    "status": "passed",
+    "timestamp": "2026-01-05T06:54:25.861517979+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

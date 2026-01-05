@@ -1,0 +1,50 @@
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+PROC: ELF loaded, entry
+SCHED: spawn: name=/boot/modules/sprout start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=1 name=/boot/modules/sprout stack_top=0xffff8000017e3000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff8000017e3000 u_stack=0x80000000 entry=0x207e00
+SCHED: configure_ctx_locked: finalized sp=0xffff8000017e2f60
+SPROUT: I am alive
+PROC: spawned
+BOOT: Handing off to scheduler
+SCHED: entering loop
+SCHED: calling irq_enable...
+SCHED: first tick!
+TICK: switch IDLE -> 1 sp=0xffff8000017e2f60
+TICK: switch 1 -> 1 sp=0xffff8000017e2f60
+TICK: switch 1 -> 1 sp=0xffff8000017e2620
+USER: SPROUT: I am alive
+PROC: spawn_kernel_module
+PROC: module phys=173bd000 offset=ffff800000000000
+MMU: new P4 phys=18e7000 virt=ffff8000018e7000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+TICK: switch 1 -> 1 sp=0xffff8000017e1840
+PROC: ELF loaded, entry
+SCHED: spawn: name=/boot/modules/rtc_cmos start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=2 name=/boot/modules/rtc_cmos stack_top=0xffff800001943000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001943000 u_stack=0x80000000 entry=0x20aab0
+SCHED: configure_ctx_locked: finalized sp=0xffff800001942f60
+PROC: spawned
+TICK: switch 1 -> 2 sp=0xffff800001942f60
+TICK: (further switch logs suppressed)
+USER: SPROUT: spawning services...
+PROC: spawn_kernel_module
+PROC: module phys=196d4000 offset=ffff800000000000
+MMU: new P4 phys=1944000 virt=ffff800001944000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+PROC: ELF loaded, entry
+USER: RTC-CMOS: Starting...
+USER: RTC-CMOS: Hardware found. Publishing device...

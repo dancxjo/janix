@@ -7,10 +7,10 @@
     "index": 0,
     "text": "the machine is booted",
     "status": "skipped",
-    "timestamp": "2026-01-05T06:24:42.103145678+00:00"
+    "timestamp": "2026-01-05T06:52:41.299333026+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

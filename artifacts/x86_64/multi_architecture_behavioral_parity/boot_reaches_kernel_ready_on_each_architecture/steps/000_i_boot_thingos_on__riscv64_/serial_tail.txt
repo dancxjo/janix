@@ -1,50 +1,50 @@
-Platform HART Count         : 1
-Platform IPI Device         : aclint-mswi
-Platform Timer Device       : aclint-mtimer @ 10000000Hz
-Platform Console Device     : uart8250
-Platform HSM Device         : ---
-Platform PMU Device         : ---
-Platform Reboot Device      : syscon-reboot
-Platform Shutdown Device    : syscon-poweroff
-Platform Suspend Device     : ---
-Platform CPPC Device        : ---
-Firmware Base               : 0x80000000
-Firmware Size               : 317 KB
-Firmware RW Offset          : 0x40000
-Firmware RW Size            : 61 KB
-Firmware Heap Offset        : 0x46000
-Firmware Heap Size          : 37 KB (total), 2 KB (reserved), 11 KB (used), 23 KB (free)
-Firmware Scratch Size       : 4096 B (total), 1400 B (used), 2696 B (free)
-Runtime SBI Version         : 3.0
-Standard SBI Extensions     : ipi,pmu,srst,sse,hsm,rfnc,fwft,time,base,legacy,dbcn,dbtr
-Experimental SBI Extensions : none
-
-Domain0 Name                : root
-Domain0 Boot HART           : 0
-Domain0 HARTs               : 0*
-Domain0 Region00            : 0x0000000000100000-0x0000000000100fff M: (I,R,W) S/U: (R,W)
-Domain0 Region01            : 0x0000000010000000-0x0000000010000fff M: (I,R,W) S/U: (R,W)
-Domain0 Region02            : 0x0000000002000000-0x000000000200ffff M: (I,R,W) S/U: ()
-Domain0 Region03            : 0x0000000080040000-0x000000008004ffff M: (R,W) S/U: ()
-Domain0 Region04            : 0x0000000080000000-0x000000008003ffff M: (R,X) S/U: ()
-Domain0 Region05            : 0x000000000c400000-0x000000000c5fffff M: (I,R,W) S/U: (R,W)
-Domain0 Region06            : 0x000000000c000000-0x000000000c3fffff M: (I,R,W) S/U: (R,W)
-Domain0 Region07            : 0x0000000000000000-0xffffffffffffffff M: () S/U: (R,W,X)
-Domain0 Next Address        : 0x0000000020000000
-Domain0 Next Arg1           : 0x00000000ffe00000
-Domain0 Next Mode           : S-mode
-Domain0 SysReset            : yes
-Domain0 SysSuspend          : yes
-
-Boot HART ID                : 0
-Boot HART Domain            : root
-Boot HART Priv Version      : v1.12
-Boot HART Base ISA          : rv64imafdch
-Boot HART ISA Extensions    : sstc,zicntr,zihpm,zicboz,zicbom,sdtrig,svadu
-Boot HART PMP Count         : 16
-Boot HART PMP Granularity   : 2 bits
-Boot HART PMP Address Bits  : 54
-Boot HART MHPM Info         : 16 (0x0007fff8)
-Boot HART Debug Triggers    : 2 triggers
-Boot HART MIDELEG           : 0x0000000000001666
-Boot HART MEDELEG           : 0x0000000000f4b509
+USER: CLOCK: tick 119613
+USER: CLOCK: tick 119614
+USER: CLOCK: tick 119615
+USER: CLOCK: tick 119616
+USER: CLOCK: tick 119617
+USER: CLOCK: tick 119618
+USER: CLOCK: tick 119619
+USER: CLOCK: tick 119620
+USER: CLOCK: tick 119621
+USER: CLOCK: tick 119622
+USER: CLOCK: tick 119623
+USER: CLOCK: tick 119624
+USER: CLOCK: tick 119625
+USER: CLOCK: tick 119626
+USER: CLOCK: tick 119627
+USER: CLOCK: tick 119628
+USER: CLOCK: tick 119629
+USER: CLOCK: tick 119630
+USER: CLOCK: tick 119631
+USER: CLOCK: tick 119632
+USER: CLOCK: tick 119633
+USER: CLOCK: tick 119634
+USER: CLOCK: tick 119635
+USER: CLOCK: tick 119636
+USER: CLOCK: tick 119637
+USER: CLOCK: tick 119638
+USER: CLOCK: tick 119639
+USER: CLOCK: tick 119640
+USER: CLOCK: tick 119641
+USER: CLOCK: tick 119642
+USER: CLOCK: tick 119643
+USER: CLOCK: tick 119644
+USER: CLOCK: tick 119645
+USER: CLOCK: tick 119646
+USER: CLOCK: tick 119647
+USER: CLOCK: tick 119648
+USER: CLOCK: tick 119649
+USER: CLOCK: tick 119650
+USER: CLOCK: tick 119651
+USER: CLOCK: tick 119652
+USER: CLOCK: tick 119653
+USER: CLOCK: tick 119654
+USER: CLOCK: tick 119655
+USER: CLOCK: tick 119656
+USER: CLOCK: tick 119657
+USER: CLOCK: tick 119658
+USER: CLOCK: tick 119659
+USER: CLOCK: tick 119660
+USER: CLOCK: tick 119661
+USER: CLOCK: tick 119662

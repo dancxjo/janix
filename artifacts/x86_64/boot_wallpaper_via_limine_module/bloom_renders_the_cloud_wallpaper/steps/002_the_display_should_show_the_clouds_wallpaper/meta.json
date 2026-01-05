@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Boot wallpaper via Limine module",
+  "scenario": "Bloom renders the cloud wallpaper",
+  "step": {
+    "index": 2,
+    "text": "the display should show the clouds wallpaper",
+    "status": "passed",
+    "timestamp": "2026-01-05T07:00:05.059621872+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

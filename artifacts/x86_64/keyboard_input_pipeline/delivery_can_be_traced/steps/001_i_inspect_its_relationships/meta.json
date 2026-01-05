@@ -7,10 +7,10 @@
     "index": 1,
     "text": "I inspect its relationships",
     "status": "passed",
-    "timestamp": "2026-01-04T06:03:14.024370253+00:00"
+    "timestamp": "2026-01-05T06:51:13.856739275+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

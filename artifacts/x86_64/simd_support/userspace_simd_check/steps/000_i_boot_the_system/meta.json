@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "SIMD support",
+  "scenario": "Userspace SIMD Check",
+  "step": {
+    "index": 0,
+    "text": "I boot the system",
+    "status": "passed",
+    "timestamp": "2026-01-05T06:54:33.548969347+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

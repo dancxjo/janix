@@ -7,10 +7,10 @@
     "index": 1,
     "text": "the task \"logview\" has a watch set containing:",
     "status": "skipped",
-    "timestamp": "2026-01-04T04:40:29.523037165+00:00"
+    "timestamp": "2026-01-05T07:00:08.469906874+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

@@ -7,10 +7,10 @@
     "index": 1,
     "text": "\"inspector\" is watching Place \"place.devices\"",
     "status": "skipped",
-    "timestamp": "2026-01-04T04:40:29.525650146+00:00"
+    "timestamp": "2026-01-05T07:00:12.730267981+00:00"
   },
   "artifacts": {
-    "screenshot": null,
+    "screenshot": "screen.png",
     "serial_tail": "serial_tail.txt"
   }
 }

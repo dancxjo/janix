@@ -1,50 +1,50 @@
-SYM:: mapping 201000->1787000 len 1000
-SYM:: mapping 202000->1788000 len 1000
-PROC: ELF loaded, entry
-SYM:: spawn: name=/boot/modules/sprout start
-SYM:: spawn: allocating stack...
-SYM:: spawn: stack allocated
-SYM:: spawn: graph store start
-SYM:: spawn: graph store done
-SYM:: spawn: address space handled
-SYM:: spawn: finished id=1 name=/boot/modules/sprout stack_top=0xffff800001799000 stack_size=0x10000
-SYM:: mapping 7ffe0000->179a000 len 20000
-SYM:: configure_ctx: k_stack=0xffff800001799000 u_stack=0x80000000 entry=0x201680
-SYM:: configure_ctx: finalized sp=0xffff800001798f60
-SPROUT: I am alive
-PROC: spawned
-MOD: /boot/modules/bloom
-PROC: spawn_kernel_module
-SYM:: module phys=7948d000 offset=ffff800000000000
-SYM:: new P4 phys=17bc000 virt=ffff8000017bc000
-SYM:: copy kernel pml4[256]
-SYM:: copy kernel pml4[511]
-SYM:: mapping 200000->17bd000 len 4000
-SYM:: mapping 204000->17c4000 len e000
-SYM:: mapping 212000->17d2000 len 1000
-SYM:: mapping 213000->17d3000 len 1000
-PROC: ELF loaded, entry
-SYM:: spawn: name=/boot/modules/bloom start
-SYM:: spawn: allocating stack...
-SYM:: spawn: stack allocated
-SYM:: spawn: graph store start
-SYM:: spawn: graph store done
-SYM:: spawn: address space handled
-SYM:: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff8000017e4000 stack_size=0x10000
-SYM:: mapping 7ffe0000->17e4000 len 20000
-SYM:: configure_ctx: k_stack=0xffff8000017e4000 u_stack=0x80000000 entry=0x205760
-SYM:: configure_ctx: finalized sp=0xffff8000017e3f60
-PROC: spawned
-MOD: /boot/modules/graph_smoke
-MOD: /boot/modules/log_smoke
-MOD: /boot/modules/cap_fail
-MOD: /boot/modules/clock
-MOD: /boot/modules/inputd
-MOD: /boot/modules/echo
-MOD: /boot/modules/inspector
-MOD: /boot/modules/logview
-Booted.
-SYM:: entering loop
-SCHED: calling irq_enable...
-SCHED: first tick!
-TICK: switch IDLE -> 1 sp=0xffff800001798f60
+USER: CLOCK: tick 119501
+USER: CLOCK: tick 119502
+USER: CLOCK: tick 119503
+USER: CLOCK: tick 119504
+USER: CLOCK: tick 119505
+USER: CLOCK: tick 119506
+USER: CLOCK: tick 119507
+USER: CLOCK: tick 119508
+USER: CLOCK: tick 119509
+USER: CLOCK: tick 119510
+USER: CLOCK: tick 119511
+USER: CLOCK: tick 119512
+USER: CLOCK: tick 119513
+USER: CLOCK: tick 119514
+USER: CLOCK: tick 119515
+USER: CLOCK: tick 119516
+USER: CLOCK: tick 119517
+USER: CLOCK: tick 119518
+USER: CLOCK: tick 119519
+USER: CLOCK: tick 119520
+USER: CLOCK: tick 119521
+USER: CLOCK: tick 119522
+USER: CLOCK: tick 119523
+USER: CLOCK: tick 119524
+USER: CLOCK: tick 119525
+USER: CLOCK: tick 119526
+USER: CLOCK: tick 119527
+USER: CLOCK: tick 119528
+USER: CLOCK: tick 119529
+USER: CLOCK: tick 119530
+USER: CLOCK: tick 119531
+USER: CLOCK: tick 119532
+USER: CLOCK: tick 119533
+USER: CLOCK: tick 119534
+USER: CLOCK: tick 119535
+USER: CLOCK: tick 119536
+USER: CLOCK: tick 119537
+USER: CLOCK: tick 119538
+USER: CLOCK: tick 119539
+USER: CLOCK: tick 119540
+USER: CLOCK: tick 119541
+USER: CLOCK: tick 119542
+USER: CLOCK: tick 119543
+USER: CLOCK: tick 119544
+USER: CLOCK: tick 119545
+USER: CLOCK: tick 119546
+USER: CLOCK: tick 119547
+USER: CLOCK: tick 119548
+USER: CLOCK: tick 119549
+USER: CLOCK: tick 119550

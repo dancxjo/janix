@@ -6,8 +6,8 @@
   "step": {
     "index": 0,
     "text": "I boot ThingOS on \"x86_64\"",
-    "status": "passed",
-    "timestamp": "2026-01-04T05:04:20.094025754+00:00"
+    "status": "skipped",
+    "timestamp": "2026-01-05T06:51:53.934635618+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

@@ -3,63 +3,25 @@
 
 extern crate alloc;
 use alloc::format;
+use alloc::string::String;
 use thing_std::*;
 use models::{SystemClock, Thing};
 
-fn format_time(total_seconds: u64) -> alloc::string::String {
-    let mut days = total_seconds / 86400;
-    let mut rem_seconds = total_seconds % 86400;
-    
-    let hours = rem_seconds / 3600;
-    rem_seconds %= 3600;
-    let minutes = rem_seconds / 60;
-    let seconds = rem_seconds % 60;
-    
-    let mut year = 1970;
-    loop {
-        let days_in_year = if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) { 366 } else { 365 };
-        if days < days_in_year { break; }
-        days -= days_in_year;
-        year += 1;
-    }
-    
-    let days_in_month = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut month = 1;
-    loop {
-        let mut dim = days_in_month[month];
-        if month == 2 && ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) { dim = 29; }
-        
-        if days < dim { break; }
-        days -= dim;
-        month += 1;
-    }
-    let day = days + 1;
-    
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hours, minutes, seconds)
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn main() {
-    log_info("CLOCK: ALIVE");
+    log_info("CLOCK: ALIVE - DEBUG MODE");
     
-    // Find system.time
     let mut time_thing = None;
-    for _ in 0..20 { // Try for 10 seconds (500ms * 20)
-        if let Some(id) = thing_std::graph::thing_find("system.time") {
-            time_thing = Some(id);
-            break;
-        }
-        sleep_ms(500);
-    }
-    
-    if time_thing.is_none() {
-        log_info("CLOCK: could not find system.time");
-        // Fallback to tick counter?
-    }
-    
     let mut ticks = 0;
+    
     loop {
-        ticks += 1;
+        let start = monotonic_now();
+        
+        // Try to find if not yet found
+        if time_thing.is_none() {
+            time_thing = thing_std::graph::thing_find("system.time");
+        }
+
         match time_thing {
             Some(tid) => {
                  if let Some((body, _)) = thing_std::graph::thing_get_body(tid) {
@@ -79,11 +41,60 @@ pub extern "C" fn main() {
                  }
             },
             None => {
-                log_info(&format!("CLOCK: tick {}", ticks));
+                ticks += 1;
+                log_info(&format!("CLOCK: tick {} (mono: {})", ticks, start));
             }
         }
 
-        // Sleep for approx 10 seconds
-        sleep_ms(10000);
+        let before_sleep = monotonic_now();
+        sleep_ms(10000); // 10s sleep
+        let after_sleep = monotonic_now();
+        
+        // Log if sleep was too short (< 9s)
+        if after_sleep - before_sleep < 9_000_000_000 {
+             log_info(&format!("CLOCK: Sleep too short! Request: 10s, Actual: {} ns. Start: {}, End: {}", 
+                 after_sleep - before_sleep, before_sleep, after_sleep));
+        }
     }
+}
+
+fn format_time(unix_secs: u64) -> String {
+    let days_since_epoch = unix_secs / 86400;
+    let secs_of_day = unix_secs % 86400;
+    let hours = secs_of_day / 3600;
+    let minutes = (secs_of_day % 3600) / 60;
+    let seconds = secs_of_day % 60;
+
+    let mut year = 1970;
+    let mut days = days_since_epoch;
+
+    loop {
+        let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        let days_in_year = if is_leap { 366 } else { 365 };
+
+        if days < days_in_year {
+            break;
+        }
+        days -= days_in_year;
+        year += 1;
+    }
+
+    let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let mut days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if is_leap {
+        days_in_month[1] = 29;
+    }
+
+    let mut month = 0;
+    for (i, &d) in days_in_month.iter().enumerate() {
+        if days < d {
+            month = i + 1;
+            break;
+        }
+        days -= d;
+    }
+    
+    let day = days + 1; 
+
+    format!("{}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hours, minutes, seconds)
 }

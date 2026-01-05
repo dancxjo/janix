@@ -238,6 +238,13 @@ pub fn init() {
         "kind.Timer",
         "kind.InterruptController",
         "predicate.has_timer",
+        // USB ontology
+        "kind.XhciController",
+        "kind.UsbDevice",
+        "kind.HidMouse",
+        "predicate.mmio",
+        "predicate.irq",
+        "predicate.streams",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -451,6 +458,14 @@ pub mod sym {
     pub const KIND_TIMER: SymbolId = SymbolId(151);
     pub const KIND_INTERRUPT_CONTROLLER: SymbolId = SymbolId(152);
     pub const PRED_HAS_TIMER: SymbolId = SymbolId(153);
+
+    // USB / Input
+    pub const KIND_XHCI_CONTROLLER: SymbolId = SymbolId(154);
+    pub const KIND_USB_DEVICE: SymbolId = SymbolId(155);
+    pub const KIND_HID_MOUSE: SymbolId = SymbolId(156);
+    pub const PRED_MMIO: SymbolId = SymbolId(157);
+    pub const PRED_IRQ: SymbolId = SymbolId(158);
+    pub const PRED_STREAMS: SymbolId = SymbolId(159);
 }
 
 // symbols.rs additions will be done via sed

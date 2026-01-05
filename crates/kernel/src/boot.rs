@@ -1,3 +1,4 @@
+use crate::machine::BootColor;
 use crate::PreBootInfo;
 use abi::bodies::BYTESPACE_FLAG_HAS_PHYS_BASE;
 use graph::store;
@@ -45,11 +46,46 @@ pub struct ModuleInfo {
 }
 
 static mut BOOT_CTX: Option<BootContext> = None;
+const BOOT_COLOR_STEPS: usize = 6;
+// Dominant tone sampled from assets/wallpapers/clouds.bmp (approximate average color).
+const BLOOM_WALLPAPER_DOMINANT: BootColor = BootColor {
+    red: 140,
+    green: 181,
+    blue: 220,
+};
 
 pub fn get_boot_ctx() -> &'static BootContext {
     unsafe {
         #[allow(static_mut_refs)]
         BOOT_CTX.as_ref().expect("boot ctx not init")
+    }
+}
+
+fn boot_progress_color(step: usize) -> BootColor {
+    let max_step = BOOT_COLOR_STEPS.saturating_sub(1) as u32;
+    if max_step == 0 {
+        return BootColor {
+            red: 0,
+            green: 0,
+            blue: 0,
+        };
+    }
+
+    let clamped = step.min(BOOT_COLOR_STEPS - 1) as u32;
+    let scale = |component: u8| -> u8 {
+        ((component as u32 * clamped) / max_step) as u8
+    };
+
+    BootColor {
+        red: scale(BLOOM_WALLPAPER_DOMINANT.red),
+        green: scale(BLOOM_WALLPAPER_DOMINANT.green),
+        blue: scale(BLOOM_WALLPAPER_DOMINANT.blue),
+    }
+}
+
+fn indicate_progress(step: usize) {
+    if let Some(fb) = get_boot_ctx().framebuffer {
+        crate::machine::machine().set_boot_color(&fb, boot_progress_color(step));
     }
 }
 
@@ -64,12 +100,16 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     let ctx = unsafe { &*ctx_ptr };
     BOOT_CTX = Some(*ctx);
 
+    indicate_progress(0);
+
     let heap_config = crate::memory::heap::HeapConfig {
         phys_base: ctx.heap_phys_base,
         virt_base: ctx.heap_phys_base + ctx.hhdm_offset,
         size: 64 * 1024 * 1024,
     };
     crate::memory::heap::init(heap_config).expect("failed to init heap");
+
+    indicate_progress(1);
 
     crate::log::init(get_boot_ctx());
 
@@ -79,14 +119,22 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     graph::init();
     graph::seed_minimal();
 
+    indicate_progress(2);
+
     // Platform layer handles arch-specific wiring and graph seeding
     crate::platform::init();
 
+    indicate_progress(3);
+
     seed_bloom_ontology();
+
+    indicate_progress(4);
 
     crate::sched::init();
 
     spawn_module_by_name(ctx, "sprout");
+
+    indicate_progress(5);
 
     crate::log::kprintln("BOOT: Handing off to scheduler");
     crate::sched::run();

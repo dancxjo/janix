@@ -78,6 +78,14 @@ pub struct MmioMapping {
     pub len: usize,
 }
 
+/// RGB color for boot-time screen fills.
+#[derive(Clone, Copy, Debug)]
+pub struct BootColor {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
 pub trait Simd: Sync {
     /// Detect and enable SIMD features. Returns true if successful.
     fn enable(&self) -> bool {
@@ -157,6 +165,9 @@ pub trait Machine: Sync {
 
     /// Write bytes to the early console.
     fn console_write(&self, bytes: &[u8]) -> usize;
+
+    /// Paint the boot framebuffer a solid color for life-signaling.
+    fn set_boot_color(&self, _fb: &crate::boot::FramebufferInfo, _color: BootColor) {}
 
     /// Map a physical MMIO range and return a virtual mapping.
     fn mmio_map(&self, range: MmioRange, flags: MmioFlags) -> Option<MmioMapping>;

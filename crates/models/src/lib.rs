@@ -166,7 +166,8 @@ pub struct HardwareInfo {
 pub struct RtcDevice {
     pub source: SymbolId, // "cmos", "pl031", "stub"
     pub accuracy_ns: u64,
+    pub base_seconds: u64,
+    pub base_mono_ns: u64,
     pub flags: u32,
     pub _pad: u32,
 }
-

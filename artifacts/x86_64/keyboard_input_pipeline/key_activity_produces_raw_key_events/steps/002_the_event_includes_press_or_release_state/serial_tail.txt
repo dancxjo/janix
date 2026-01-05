@@ -1,50 +1,50 @@
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=4 name=/boot/modules/ontology_check stack_top=0xffff800001f7f000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001f7f000 u_stack=0x80000000 entry=0x207720
-SCHED: configure_ctx_locked: finalized sp=0xffff800001f7ef60
-PROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=1762e000 offset=ffff800000000000
-MMU: new P4 phys=1f7f000 virt=ffff800001f7f000
-MMU: copy kernel pml4[256]
-MMU: mapping 90484000->1f80000 len 384000
-USER: Ontology Dump Tool
-MMU: mapping 90000000->2307000 len 100000
-MMU: copy kernel pml4[511]
-MMU: mapping 200000->2409000 len 6000
-MMU: mapping 206000->2412000 len 1d000
-MMU: mapping 223000->242f000 len 1000
-MMU: mapping 224000->2430000 len 1000
-PROC: ELF loaded, entry
-MMU: mapping 7ffe0000->2431000 len 20000
-SCHED: spawn: name=/boot/modules/thingcheck start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=5 name=/boot/modules/thingcheck stack_top=0xffff800002463000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800002463000 u_stack=0x80000000 entry=0x20a0c0
-SCHED: configure_ctx_locked: finalized sp=0xffff800002462f60
-PROC: spawned
-MMU: mapping 81000000->1732d000 len 400000
-USER: Ontology Check Tool
-MMU: mapping 90000000->2466000 len 100000
-MMU: mapping 82000000->1e7ab000 len 40000
-USER: ONTOLOGY_SIZE: 6597
-USER: ONTOLOGY_DIGEST: 0x7BC6152805903B6A
-USER: OK: model_roundtrip Surface
-USER: OK: schema_mismatch_detected
-USER: thingcheck: start
-USER: ONTOLOGY_DIGEST: 0x7BC6152805903B6A
-USER: OK: ontology fetched
-USER: OK: place.display present
-USER: OK: DisplayDevice decodable
-USER: OK: Framebuffer decodable
-USER: OK: Surface decodable
-USER: OK: Surface has Bytespace
-USER: OK: place.windows present
-USER: OK: MouseStream present
-USER: OK: PointerState decodable
-USER: BLOOM: loaded Normal.cur
-USER: BLOOM: initialized
+USER: CLOCK: tick 68986
+USER: CLOCK: tick 68987
+USER: CLOCK: tick 68988
+USER: CLOCK: tick 68989
+USER: CLOCK: tick 68990
+USER: CLOCK: tick 68991
+USER: CLOCK: tick 68992
+USER: CLOCK: tick 68993
+USER: CLOCK: tick 68994
+USER: CLOCK: tick 68995
+USER: CLOCK: tick 68996
+USER: CLOCK: tick 68997
+USER: CLOCK: tick 68998
+USER: CLOCK: tick 68999
+USER: CLOCK: tick 69000
+USER: CLOCK: tick 69001
+USER: CLOCK: tick 69002
+USER: CLOCK: tick 69003
+USER: CLOCK: tick 69004
+USER: CLOCK: tick 69005
+USER: CLOCK: tick 69006
+USER: CLOCK: tick 69007
+USER: CLOCK: tick 69008
+USER: CLOCK: tick 69009
+USER: CLOCK: tick 69010
+USER: CLOCK: tick 69011
+USER: CLOCK: tick 69012
+USER: CLOCK: tick 69013
+USER: CLOCK: tick 69014
+USER: CLOCK: tick 69015
+USER: CLOCK: tick 69016
+USER: CLOCK: tick 69017
+USER: CLOCK: tick 69018
+USER: CLOCK: tick 69019
+USER: CLOCK: tick 69020
+USER: CLOCK: tick 69021
+USER: CLOCK: tick 69022
+USER: CLOCK: tick 69023
+USER: CLOCK: tick 69024
+USER: CLOCK: tick 69025
+USER: CLOCK: tick 69026
+USER: CLOCK: tick 69027
+USER: CLOCK: tick 69028
+USER: CLOCK: tick 69029
+USER: CLOCK: tick 69030
+USER: CLOCK: tick 69031
+USER: CLOCK: tick 69032
+USER: CLOCK: tick 69033
+USER: CLOCK: tick 69034
+USER: CLOCK: tick 69035

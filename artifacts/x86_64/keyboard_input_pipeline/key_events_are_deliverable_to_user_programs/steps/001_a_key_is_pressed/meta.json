@@ -7,10 +7,10 @@
     "index": 1,
     "text": "a key is pressed",
     "status": "passed",
-    "timestamp": "2026-01-04T06:12:25.840568230+00:00"
+    "timestamp": "2026-01-05T06:38:47.856020936+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

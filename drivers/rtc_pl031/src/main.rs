@@ -96,21 +96,24 @@ pub fn main() {
         thing_std::graph::relationship_create(pred_contains, dp, rtc_thing);
     }
 
+    // Read initial time
+    let seconds = unsafe { read_volatile(base_ptr.add(PL031_DR) as *const u32) };
+    let mono = thing_std::monotonic_now();
+
     let payload = RtcDevice {
         source: sym_pl031,
         accuracy_ns: 1_000_000_000,
+        base_seconds: seconds as u64,
+        base_mono_ns: mono,
         flags: 0,
         _pad: 0,
     };
     let _ = thing_std::graph::thing_set_body(rtc_thing, &payload.encode_full());
 
-    log_info("RTC-PL031: Active.");
+    log_info(&alloc::format!("RTC-PL031: Active. Base Seconds: {}", seconds));
 
     loop {
-        // Read DR
-        let seconds = unsafe { read_volatile(base_ptr.add(PL031_DR) as *const u32) };
-        // log_info(&alloc::format!("RTC: {}", seconds));
-        
-        thing_std::time::sleep_ms(1000);
+        // Keep alive
+        thing_std::time::sleep_ms(10000);
     }
 }

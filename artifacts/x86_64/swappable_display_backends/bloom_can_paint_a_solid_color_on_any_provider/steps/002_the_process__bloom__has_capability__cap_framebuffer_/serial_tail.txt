@@ -1,50 +1,50 @@
-MMU: mapping 90000000->17dc000 len 100000
-USER: SPROUT: I am alive!
-TICK: switch 1 -> 1 sp=0xffff8000017da950
-USER: SPROUT: spawning bloom
 PROC: spawn_kernel_module
-PROC: module phys=19823000 offset=ffff800000000000
-MMU: new P4 phys=18df000 virt=ffff8000018df000
+PROC: module phys=1796f000 offset=ffff800000000000
+MMU: new P4 phys=1a9d000 virt=ffff800001a9d000
 MMU: copy kernel pml4[256]
+MMU: mapping 83000000->19f19000 len 2000
+USER: BLOOM: mapped bytespace.mouse_input
+MMU: mapping 90100000->1aa0000 len 384000
+MMU: mapping 90000000->1e27000 len 100000
 MMU: copy kernel pml4[511]
-MMU: mapping 200000->18e0000 len 9000
-MMU: mapping 209000->18ec000 len 22000
-MMU: mapping 22b000->190e000 len 1000
-MMU: mapping 22c000->190f000 len 1000
+MMU: mapping 200000->1f2a000 len 6000
+MMU: mapping 206000->1f33000 len 18000
+MMU: mapping 21e000->1f4b000 len 1000
+MMU: mapping 21f000->1f4c000 len 1000
 PROC: ELF loaded, entry
-MMU: mapping 7ffe0000->1910000 len 20000
-SCHED: spawn: name=/boot/modules/bloom start
+MMU: mapping 7ffe0000->1f4d000 len 20000
+SCHED: spawn: name=/boot/modules/ontology_check start
 SCHED: spawn: allocating stack...
 SCHED: spawn: stack allocated
 SCHED: spawn: graph store start
 SCHED: spawn: graph store done
 SCHED: spawn: address space handled
-SCHED: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff800001942000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001942000 u_stack=0x80000000 entry=0x216f60
-SCHED: configure_ctx_locked: finalized sp=0xffff800001941f60
+SCHED: spawn: finished id=4 name=/boot/modules/ontology_check stack_top=0xffff800001f7f000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001f7f000 u_stack=0x80000000 entry=0x207720
+SCHED: configure_ctx_locked: finalized sp=0xffff800001f7ef60
 PROC: spawned
-USER: SPROUT: bloom spawned
 PROC: spawn_kernel_module
-PROC: module phys=17ca0000 offset=ffff800000000000
-MMU: new P4 phys=1942000 virt=ffff800001942000
+PROC: module phys=1762f000 offset=ffff800000000000
+MMU: new P4 phys=1f7f000 virt=ffff800MMU: mapping 90484000->1f80000 len 384000
+MMU: mapping 90000000->2307000 len 100000
+001f7f000
 MMU: copy kernel pml4[256]
 MMU: copy kernel pml4[511]
-MMU: mapping 200000->1943000 len 6000
-MMU: mapping 206000->194c000 len 18000
-MMU: mapping 21e000->1964000 len 1000
-MMU: mapping 21f000->1965000 len 1000
+MMU: mapping 200000->2409000 len 6000
+MMU: mapping 206000->2412000 len 1d000
+MMU: mapping 223000->242f000 len 1000
+MMU: mapping 224000->2430000 len 1000
 PROC: ELF loaded, entry
-MMU: mapping 7ffe0000->1966000 len 20000
-SCHED: spawn: name=/boot/modules/ontology_dump start
+MMU: mapping 7ffe0000->2431000 len 20000
+SCHED: spawn: name=/boot/modules/thingcheck start
 SCHED: spawn: allocating stack...
 SCHED: spawn: stack allocated
 SCHED: spawn: graph store start
 SCHED: spawn: graph store done
 SCHED: spawn: address space handled
-SCHED: spawn: finished id=3 name=/boot/modules/ontology_dump stack_top=0xffff800001998000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001998000 u_stack=0x80000000 entry=0x207ae0
-SCHED: configure_ctx_locked: finalized sp=0xffff800001997f60
-TICK: switch 1 -> 2 sp=0xffff800001941f60
-MMU: mapping 90000000->1998000 len 100000
-USER: BLOOM: alive
-TICK: switch 2 -> 3 sp=0xffff800001997f60
+SCHED: spawn: finished id=5 name=/boot/modules/thingcheck stack_top=0xffff800002463000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800002463000 u_stack=0x80000000 entry=0x20a0c0
+SCHED: configure_ctx_locked: finalized sp=0xffff800002462f60
+MMU: mapping 81000000->1732e000 len 400000
+USER: Ontology Dump Tool
+USER: Ontology Check Tool

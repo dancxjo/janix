@@ -33,7 +33,7 @@ pub fn run() {
 
             // Map mouse input bytespace
             let mut input = if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
-                let mouse_vaddr = 0x8300_0000u64;
+                let mouse_vaddr = 0x8820_0000u64;
                 let mouse_size = 8192u64;
                 thing_std::memory::space_map(mouse_bs_id, mouse_vaddr, 0, mouse_size);
                 log_info("BLOOM: mapped bytespace.mouse_input");
@@ -48,13 +48,21 @@ pub fn run() {
 
             let wallpaper = thing_find("bytespace.asset.clouds.bmp")
                 .and_then(|id| {
-                    let len = 1920 * 1080 * 4 + 1024; // Approximate size
-                    let buf = crate::assets::map_bytespace(id, 0x8100_0000, len);
+                    let len = 128 * 1024 * 1024; // 128MB to support 4K+
+                    let buf = crate::assets::map_bytespace(id, 0x8000_0000, len);
                     crate::assets::bmp::parse_bmp(buf)
                 });
 
             if let Some(ref wp) = wallpaper {
                 render_wallpaper_full(wallpaper_cache.as_mut_ptr(), width, height, wp);
+                // Fix: Copy the rendered wallpaper to the back buffer so it's ready for the first frame
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        wallpaper_cache.as_ptr(),
+                        back_buffer.as_mut_ptr(),
+                        buffer_size,
+                    );
+                }
             }
 
             // Load cursor assets
@@ -94,6 +102,7 @@ pub fn run() {
                     || buttons != 0
                     || anim_changed
                     || force_redraw
+                    || prev_cursor_rect.is_none() // Fix: Force redraw on first frame
                 {
                     unsafe {
                         let back_buf = &mut back_buffer;
@@ -160,11 +169,12 @@ pub fn run() {
                                draw_cursor_frame(back_buf.as_mut_ptr(), width, height, frame, px, py);
                            }
 
+                           // Fix: resent full screen on first frame
                            backend.present(back_buf, DirtyRect {
-                               x: cursor_rect.x,
-                               y: cursor_rect.y,
-                               w: cursor_rect.w,
-                               h: cursor_rect.h
+                               x: 0,
+                               y: 0,
+                               w: width,
+                               h: height
                            });
                         }
                         
@@ -183,13 +193,13 @@ pub fn run() {
 fn load_cursor_asset() -> Option<CursorAsset> {
     // Try animated cursor first for testing
     if let Some(bs_id) = thing_find("bytespace.asset.Normal.cur") {
-        if let Some(asset) = load_cur_asset(bs_id, 0x8200_0000) {
+        if let Some(asset) = load_cur_asset(bs_id, 0x8800_0000) {
             log_info("BLOOM: loaded Normal.cur");
             return Some(asset);
         }
     }
     if let Some(bs_id) = thing_find("bytespace.asset.Working.ani") {
-        if let Some(asset) = load_ani_asset(bs_id, 0x8200_0000) {
+        if let Some(asset) = load_ani_asset(bs_id, 0x8810_0000) {
             log_info("BLOOM: loaded Working.ani");
             return Some(asset);
         }

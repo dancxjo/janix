@@ -25,6 +25,12 @@ pub extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u
                 let new_sp = crate::sched::tick(ctx as *mut _ as u64);
                 unsafe { timer::ack() };
                 return new_sp;
+            } else if id == 32 {
+                // xHCI Interrupt
+                unsafe {
+                    super::usb::xhci_irq_handler();
+                    gic::eoi(id);
+                }
             } else if id < 1022 {
                 unsafe { gic::eoi(id) };
             }

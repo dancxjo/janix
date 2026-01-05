@@ -20,6 +20,7 @@ pub mod mmu;
 pub mod percpu;
 mod serial;
 pub mod timer;
+pub mod usb;
 pub use mmu::AddressSpace;
 use percpu::ArchPerCpu;
 
@@ -170,6 +171,11 @@ impl ArchMachine {
 
             // Initialize Timer
             timer::init();
+
+            // Enable xHCI IRQ (SPI 0 = IRQ 32)
+            gic::enable_irq(32);
+            gic::set_priority(32, 0xF0);
+            gic::set_group1(32);
         }
     }
 

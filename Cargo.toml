@@ -29,6 +29,7 @@ members = [
     "apps/bouncer_test",
     "crates/drivers/usb_xhci",
     "apps/usbd",
+    "crates/drivers/usb",
 ]
 
 [workspace.package]

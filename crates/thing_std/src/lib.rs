@@ -28,6 +28,7 @@ pub mod memory;
 pub mod process;
 pub mod time;
 pub mod watch;
+pub mod thread;
 
 pub use codec::*;
 pub use graph::*;
@@ -37,6 +38,7 @@ pub use memory::*;
 pub use process::*;
 pub use time::*;
 pub use watch::*;
+pub use thread::*;
 
 #[cfg(not(any(test, target_os = "linux")))]
 #[no_mangle]

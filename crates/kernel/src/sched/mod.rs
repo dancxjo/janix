@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -14,11 +15,13 @@ use graph::symbols::sym;
 pub mod percpu;
 pub mod run_queue;
 pub mod task;
+pub mod thread_group;
 
 use percpu::PerCpu;
 use run_queue::RunQueue;
 pub use task::BlockReason;
 use task::{Task, TaskId, TaskState};
+use thread_group::ThreadGroup;
 
 pub(crate) static SCHEDULER: Mutex<Option<Scheduler>> = Mutex::new(None);
 
@@ -40,7 +43,9 @@ pub struct Scheduler {
     pub(crate) tasks: Vec<Task>,
     pub(crate) run_queue: RunQueue,
     pub(crate) cpu: PerCpu,
-    next_id: u64,
+    pub(crate) next_id: u64,
+    pub(crate) thread_groups: BTreeMap<u64, ThreadGroup>,
+    pub(crate) next_group_id: u64,
 }
 
 impl Scheduler {
@@ -50,6 +55,8 @@ impl Scheduler {
             run_queue: RunQueue::new(run_queue_thing),
             cpu: PerCpu::new(0, cpu_thing, run_queue_thing),
             next_id: 1,
+            thread_groups: BTreeMap::new(),
+            next_group_id: 1,
         }
     }
 

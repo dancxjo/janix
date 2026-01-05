@@ -160,3 +160,20 @@ impl Default for AlignedRelBufLarge {
         }
     }
 }
+
+impl WakeReason {
+    /// Create a wake reason for join completion
+    pub const fn join_completed(exit_code: u64) -> Self {
+        Self {
+            reason: WakeReasonCode::Watch,
+            which: WatchId(0),
+            val0: exit_code,
+            val1: 0,
+        }
+    }
+
+    /// Get arg0 value (for join exit code)
+    pub const fn arg0(&self) -> u64 {
+        self.val0
+    }
+}

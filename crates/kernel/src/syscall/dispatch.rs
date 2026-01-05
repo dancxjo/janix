@@ -1,7 +1,7 @@
 //! Syscall Dispatch Router
 
 use crate::syscall::cap::CapOp;
-use crate::syscall::{cap, cpu, graph, log, memory, surface, time, wait, watch};
+use crate::syscall::{cap, cpu, graph, log, memory, surface, time, wait, watch, thread};
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
 
@@ -159,6 +159,11 @@ pub extern "C" fn dispatch(
         }
 
         // === Input ===
+        // === Threads ===
+        nr::SYS_THREAD_SPAWN => thread::sys_thread_spawn(a0, a1, a2),
+        nr::SYS_THREAD_EXIT => thread::sys_thread_exit(a0 as i32),
+        nr::SYS_THREAD_JOIN => thread::sys_thread_join(a0, a1),
+        nr::SYS_THREAD_BLOCK_ON_WATCH => thread::sys_thread_block_on_watch(a0),
         nr::SYS_INPUT_READ => {
             let buf = a0 as *mut u8;
             let len = a1 as usize;

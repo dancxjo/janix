@@ -48,6 +48,12 @@ pub mod nr {
     pub const SYS_PCI_CFG_READ32: u32 = 180;
 
     pub const SYS_INPUT_READ: u32 = 200;
+
+    // Thread syscalls
+    pub const SYS_THREAD_SPAWN: u32 = 80;
+    pub const SYS_THREAD_EXIT: u32 = 81;
+    pub const SYS_THREAD_JOIN: u32 = 82;
+    pub const SYS_THREAD_BLOCK_ON_WATCH: u32 = 84;
 }
 
 pub mod err {

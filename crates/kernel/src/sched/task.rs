@@ -19,11 +19,12 @@ pub enum TaskState {
 pub enum BlockReason {
     WatchWait,
     Timeout,
+    Join(TaskId),  // Waiting for another thread to exit
     Other,
 }
 
 impl TaskState {
-    fn to_symbol(&self) -> SymbolId {
+    pub fn to_symbol(&self) -> SymbolId {
         match self {
             TaskState::New => sym::TASK_STATE_NEW,
             TaskState::Ready => sym::TASK_STATE_READY,
@@ -31,6 +32,7 @@ impl TaskState {
             TaskState::Yielded => sym::TASK_STATE_YIELDED,
             TaskState::Blocked(BlockReason::WatchWait) => sym::TASK_STATE_BLOCKED_WATCH,
             TaskState::Blocked(BlockReason::Timeout) => sym::TASK_STATE_BLOCKED_TIMEOUT,
+            TaskState::Blocked(BlockReason::Join(_)) => sym::TASK_STATE_BLOCKED,
             TaskState::Blocked(BlockReason::Other) => sym::TASK_STATE_BLOCKED,
             TaskState::Dead => sym::TASK_STATE_DEAD,
         }
@@ -52,10 +54,14 @@ pub struct Task {
     pub heap_size: u64,
     pub heap_brk: u64,
     pub wake_reason: Option<abi::types::WakeReason>,
-    pub first_run: bool, // true if this task has prepared context, false if it has saved context
+    pub first_run: bool,
     pub simd_used: bool,
     pub simd_state: Option<Vec<u8>>,
     pub caps: Vec<abi::cap::Cap>,
+    // Thread-specific fields
+    pub group_id: u64,             // Thread group ID (0 = legacy single-threaded process)
+    pub exit_code: Option<i32>,    // Set when thread exits
+    pub joiners: Vec<TaskId>,      // Tasks waiting for this thread to exit
 }
 
 impl Task {
@@ -70,17 +76,33 @@ impl Task {
             thing,
             state: TaskState::New,
             stack_ptr,
-            stack_top: stack_ptr, // Initially same as ptr (empty stack)
+            stack_top: stack_ptr,
             address_space,
             heap_base: 0x9000_0000,
             heap_size: 0,
             heap_brk: 0x9000_0000,
             wake_reason: None,
-            first_run: true, // Starts with prepared context
+            first_run: true,
             simd_used: false,
             simd_state: None,
             caps: Vec::new(),
+            group_id: 0,
+            exit_code: None,
+            joiners: Vec::new(),
         }
+    }
+
+    /// Create a new thread in an existing group with shared address space
+    pub fn new_in_group(
+        id: TaskId,
+        thing: ThingId,
+        stack_ptr: u64,
+        address_space: Arc<AddressSpace>,
+        group_id: u64,
+    ) -> Self {
+        let mut task = Self::new(id, thing, stack_ptr, address_space);
+        task.group_id = group_id;
+        task
     }
 
     pub fn set_state(&mut self, graph: &mut store::GraphStore, new_state: TaskState) {

@@ -246,6 +246,14 @@ pub fn init() {
         "predicate.irq",
         "predicate.streams",
         "bytespace_kind.dma",
+        // Thread Ontology
+        "kind.Thread",
+        "kind.ThreadGroup",
+        "kind.WaitHandle",
+        "predicate.in_group",
+        "predicate.waiting_on",
+        "predicate.exit_code",
+        "graph.threads",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -470,6 +478,16 @@ pub mod sym {
 
     // DMA
     pub const KIND_BYTESPACE_DMA: SymbolId = SymbolId(160);
+    // Thread Ontology
+    pub const KIND_THREAD: SymbolId = SymbolId(161);
+    pub const KIND_THREAD_GROUP: SymbolId = SymbolId(162);
+    pub const KIND_WAIT_HANDLE: SymbolId = SymbolId(163);
+    pub const PRED_IN_GROUP: SymbolId = SymbolId(164);
+    pub const PRED_WAITING_ON: SymbolId = SymbolId(165);
+    pub const PRED_EXIT_CODE: SymbolId = SymbolId(166);
+    pub const GRAPH_THREADS: SymbolId = SymbolId(167);
 }
 
 // symbols.rs additions will be done via sed
+
+// Thread Ontology - added by threading implementation

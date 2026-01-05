@@ -9,3 +9,4 @@ pub mod surface;
 pub mod time;
 pub mod wait;
 pub mod watch;
+pub mod thread;

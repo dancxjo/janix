@@ -7,11 +7,13 @@ use thing_std::graph::{relationships_from, symbol_intern};
 use thing_std::symbol_resolve;
 use thing_std::SyscallGraphClient;
 
-use crate::layout::{layout_widgets, PlacedWidget, TITLE_BAR_HEIGHT};
+use crate::layout::{layout_widgets, TITLE_BAR_HEIGHT};
 use crate::painter::Painter;
 use crate::scene::Rect;
-use crate::shadow::{ShadowMask, ShadowParams};
 use crate::text::draw_text_on_painter;
+
+#[cfg(feature = "shadows")]
+use crate::shadow::{ShadowMask, ShadowParams};
 
 /// Font size for window titles
 const TITLE_FONT_SIZE: f32 = 14.0;
@@ -224,11 +226,11 @@ fn render_window(painter: &mut dyn Painter, scene: &WindowScene) {
     // Paint phase: draw widgets at computed positions
     for pw in placed {
         match pw.widget {
-            WidgetKind::Label(ref label, _) => {
-                paint_label(painter, pw.rect, label);
+            WidgetKind::Label(ref label, ref text) => {
+                paint_label(painter, pw.rect, label, text);
             }
-            WidgetKind::Button(ref button, _) => {
-                paint_button(painter, pw.rect, button);
+            WidgetKind::Button(ref button, ref text) => {
+                paint_button(painter, pw.rect, button, text);
             }
         }
     }
@@ -243,55 +245,45 @@ fn render_window(painter: &mut dyn Painter, scene: &WindowScene) {
     thing_std::log_info(&alloc::format!("BLOOM: render_window TOTAL {} ms", (t4-t0)/1_000_000));
 }
 
-fn paint_label(painter: &mut dyn Painter, rect: Rect, label: &Label) {
+fn paint_label(painter: &mut dyn Painter, rect: Rect, label: &Label, text: &str) {
     let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
     if clip.is_empty() {
         return;
     }
 
-    // Simple colored lines as placeholder for label
-    let color = label.style.color_rgba;
-    let base_y = rect.y + (rect.h as i32 / 2);
-
-    for offset in 0..2 {
-        let y = base_y + offset;
-        if y < clip.y || y >= clip.y + clip.h as i32 {
-            continue;
-        }
-        for cx in clip.x..(clip.x + clip.w as i32) {
-            // Draw a colored line - we need a blend_line method but for now use fill_rect
-        }
-    }
-    // Draw as a thin colored bar for now
-    painter.fill_rect(
-        Rect { x: clip.x, y: base_y, w: clip.w, h: 2 },
-        color,
-    );
+    // Draw text centered vertically in the label rect
+    let font_size = (label.style.size as f32).max(14.0);
+    // Unifont is fixed 16px tall, so center based on that
+    let text_y = rect.y + (rect.h as i32 - 16) / 2;
+    let text_x = rect.x;
+    
+    draw_text_on_painter(painter, text_x, text_y, text, label.style.color_rgba, font_size);
 }
 
-fn paint_button(painter: &mut dyn Painter, rect: Rect, button: &Button) {
+fn paint_button(painter: &mut dyn Painter, rect: Rect, button: &Button, text: &str) {
     let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
     if clip.is_empty() {
         return;
     }
 
-    // Draw button panel
+    // Draw button panel background
     painter.fill_panel(rect, button.style.radius, button.style.bg_rgba, None);
 
-    // Draw a centered glyph line
-    let line_y = rect.y + rect.h as i32 / 2;
-    let (screen_w, screen_h) = painter.screen_size();
-    if line_y < 0 || line_y >= screen_h as i32 {
-        return;
-    }
-    let start_x = rect.x + rect.w as i32 / 2 - 6;
-    let glyph_rect = Rect {
-        x: start_x.max(0),
-        y: line_y,
-        w: 12.min(screen_w),
-        h: 1,
-    };
-    painter.fill_rect(glyph_rect, 0x55000000);
+    // Calculate text color with contrast against background
+    // Extract background luminance (simple brightness check)
+    let bg_r = ((button.style.bg_rgba >> 16) & 0xFF) as u32;
+    let bg_g = ((button.style.bg_rgba >> 8) & 0xFF) as u32;
+    let bg_b = (button.style.bg_rgba & 0xFF) as u32;
+    let luminance = (bg_r * 299 + bg_g * 587 + bg_b * 114) / 1000;
+    let text_color = if luminance > 128 { 0xFF222222 } else { 0xFFFFFFFF };
+    
+    // Center text in button - measure text width first
+    let text_width = crate::text::measure_text_width(text, 14.0);
+    let text_x = rect.x + (rect.w as i32 - text_width) / 2;
+    // Unifont is 16px tall
+    let text_y = rect.y + (rect.h as i32 - 16) / 2;
+    
+    draw_text_on_painter(painter, text_x, text_y, text, text_color, 14.0);
 }

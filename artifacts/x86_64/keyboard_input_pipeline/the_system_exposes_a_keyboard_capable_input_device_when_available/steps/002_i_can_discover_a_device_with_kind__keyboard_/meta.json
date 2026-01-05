@@ -6,11 +6,11 @@
   "step": {
     "index": 2,
     "text": "I can discover a device with kind \"Keyboard\"",
-    "status": "failed",
-    "timestamp": "2026-01-04T05:59:53.951521077+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T00:12:15.585687183+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

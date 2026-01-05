@@ -1,50 +1,50 @@
-SYM:: mapping 201000->1787000 len 1000
-SYM:: mapping 202000->1788000 len 1000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+MMU: mapping 200000->18e0000 len 9000
+MMU: mapping 209000->18ec000 len 22000
+MMU: mapping 22b000->190e000 len 1000
+MMU: mapping 22c000->190f000 len 1000
 PROC: ELF loaded, entry
-SYM:: spawn: name=/boot/modules/sprout start
-SYM:: spawn: allocating stack...
-SYM:: spawn: stack allocated
-SYM:: spawn: graph store start
-SYM:: spawn: graph store done
-SYM:: spawn: address space handled
-SYM:: spawn: finished id=1 name=/boot/modules/sprout stack_top=0xffff800001799000 stack_size=0x10000
-SYM:: mapping 7ffe0000->179a000 len 20000
-SYM:: configure_ctx: k_stack=0xffff800001799000 u_stack=0x80000000 entry=0x201680
-SYM:: configure_ctx: finalized sp=0xffff800001798f60
-SPROUT: I am alive
+MMU: mapping 7ffe0000->1910000 len 20000
+SCHED: spawn: name=/boot/modules/bloom start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff800001942000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001942000 u_stack=0x80000000 entry=0x216f60
+SCHED: configure_ctx_locked: finalized sp=0xffff800001941f60
+TICK: switch 1 -> 2 sp=0xffff800001941f60
+MMU: mapping 90000000->1942000 len 100000
+TICK: switch 2 -> 1 sp=0xffff8000017da540
 PROC: spawned
-MOD: /boot/modules/bloom
+USER: SPROUT: bloom spawned
 PROC: spawn_kernel_module
-SYM:: module phys=7948d000 offset=ffff800000000000
-SYM:: new P4 phys=17bc000 virt=ffff8000017bc000
-SYM:: copy kernel pml4[256]
-SYM:: copy kernel pml4[511]
-SYM:: mapping 200000->17bd000 len 4000
-SYM:: mapping 204000->17c4000 len e000
-SYM:: mapping 212000->17d2000 len 1000
-SYM:: mapping 213000->17d3000 len 1000
+PROC: module phys=17ca0000 offset=ffff800000000000
+MMU: new P4 phys=1a44000 virt=ffff800001a44000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+MMU: mapping 200000->1a45000 len 6000
+MMU: mapping 206000->1a4e000 len 18000
+TICK: switch 1 -> 2 sp=0xffff800001941740
+TICK: (further switch logs suppressed)
+USER: BLOOM: alive
+MMU: mapping a0000000->80000000 len 384000
+MMU: MMU: mapping 83000000->19f19000 len 2000
+USER: BLOOM: mapped bytespace.mouse_input
+MMU: mapping 90100000->1a6c000 len 384000
+mapping 21e000->1a69000 len 1000
+MMU: mapping 21f000->1df2000 len 1000
 PROC: ELF loaded, entry
-SYM:: spawn: name=/boot/modules/bloom start
-SYM:: spawn: allocating stack...
-SYM:: spawn: stack allocated
-SYM:: spawn: graph store start
-SYM:: spawn: graph store done
-SYM:: spawn: address space handled
-SYM:: spawn: finished id=2 name=/boot/modules/bloom stack_top=0xffff8000017e4000 stack_size=0x10000
-SYM:: mapping 7ffe0000->17e4000 len 20000
-SYM:: configure_ctx: k_stack=0xffff8000017e4000 u_stack=0x80000000 entry=0x205760
-SYM:: configure_ctx: finalized sp=0xffff8000017e3f60
-PROC: spawned
-MOD: /boot/modules/graph_smoke
-MOD: /boot/modules/log_smoke
-MOD: /boot/modules/cap_fail
-MOD: /boot/modules/clock
-MOD: /boot/modules/inputd
-MOD: /boot/modules/echo
-MOD: /boot/modules/inspector
-MOD: /boot/modules/logview
-Booted.
-SYM:: entering loop
-SCHED: calling irq_enable...
-SCHED: first tick!
-TICK: switch IDLE -> 1 sp=0xffff800001798f60
+MMU: mapping 7ffe0000->1df3000 len 20000
+MMU: mapping 90484000->1e15000 len 384000
+SCHED: spawn: name=/boot/modules/ontology_dump start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=3 name=/boot/modules/ontology_dump stack_top=0xffff8000021ac000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff8000021ac000 u_stack=0x80000000 entry=0x207ae0
+SCHED: configure_ctx_locked: finalized sp=0xffff8000021abf60

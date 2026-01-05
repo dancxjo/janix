@@ -7,10 +7,10 @@
     "index": 1,
     "text": "I query the input devices",
     "status": "passed",
-    "timestamp": "2026-01-04T05:59:23.886023838+00:00"
+    "timestamp": "2026-01-05T00:11:45.249456658+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

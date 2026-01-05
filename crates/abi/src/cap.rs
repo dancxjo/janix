@@ -13,15 +13,15 @@ pub enum CapOp {
     GraphWatch = 7,
     MemManage = 8,
     Hardware = 9,
-    GrantCaps = 10, // New delegation right
+    GrantCaps = 10,
     IoPort = 11,
+    PciConfigRead = 12,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CapScope {
     Global,
     Thing(ThingId),
-    // Place support can be added later or mapped to ThingId
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

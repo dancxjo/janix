@@ -1,16 +1,13 @@
 #![no_std]
+
 extern crate alloc;
 
 pub mod app;
+pub mod assets;
 pub mod backend;
 pub mod input;
+pub mod nine_slice;
 pub mod pixels;
 pub mod scene;
-pub mod assets;
-// cursor is now under assets
 
-// Other modules will be added later
-
-pub fn run() {
-    app::run();
-}
+pub use app::run;

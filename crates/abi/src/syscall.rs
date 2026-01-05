@@ -45,6 +45,8 @@ pub mod nr {
     pub const SYS_IOPORT_READ8: u32 = 130;
     pub const SYS_IOPORT_WRITE8: u32 = 131;
 
+    pub const SYS_PCI_CFG_READ32: u32 = 180;
+
     pub const SYS_INPUT_READ: u32 = 200;
 }
 

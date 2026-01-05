@@ -1,0 +1,10 @@
+[package]
+name = "pcid"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thing_std = { path = "../../crates/thing_std" }
+models = { path = "../../crates/models" }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+postcard = "1.0"

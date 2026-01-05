@@ -134,7 +134,7 @@ pub fn run(env: &str) -> Result<()> {
         anyhow::bail!("Heap Smoke build failed");
     }
 
-    // 6. Build Apps (graph_smoke, log_smoke, cap_fail, inputd, echo, inspector, logview)
+    // 6. Build Apps
     let apps = [
         "apps/graph_smoke",
         "apps/log_smoke",
@@ -148,6 +148,7 @@ pub fn run(env: &str) -> Result<()> {
         "apps/timed",
         "drivers/rtc_cmos",
         "drivers/rtc_pl031",
+        "apps/pcid",
     ];
     for app in apps {
         println!("    Building {}...", app);

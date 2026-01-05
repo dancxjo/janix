@@ -55,6 +55,25 @@ impl Platform {
     pub fn console_write(&self, bytes: &[u8]) {
         crate::machine::machine().console_write(bytes);
     }
+
+    pub fn pci_cfg_read32(&self, seg: u16, bus: u8, dev: u8, fun: u8, off: u16) -> u32 {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if seg != 0 { return 0xFFFF_FFFF; }
+            if off > 255 { return 0xFFFF_FFFF; }
+            let addr = crate::machine::x86_64::pci::PciAddress {
+                bus,
+                device: dev,
+                function: fun,
+            };
+            addr.read(off as u8)
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            // Other archs should use ECAM mapped by userland
+            0xFFFF_FFFF
+        }
+    }
 }
 
 static mut PLATFORM: Option<Platform> = None;

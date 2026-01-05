@@ -52,46 +52,24 @@ impl CursorFrame {
     }
 }
 
-/// Generate a blurred shadow from cursor alpha channel
-fn generate_shadow(pixels: &[u32], width: u32, height: u32) -> Vec<u32> {
+/// Generate a shadow using the shared 9-slice renderer
+fn generate_shadow(_pixels: &[u32], width: u32, height: u32) -> Vec<u32> {
     let w = width as usize;
     let h = height as usize;
     let mut shadow = alloc::vec![0u32; w * h];
-
-    // Extract alpha channel and apply blur
-    let radius = SHADOW_BLUR_RADIUS as i32;
-    let kernel_size = (radius * 2 + 1) as usize;
-    let divisor = (kernel_size * kernel_size) as u32;
-
-    for y in 0..h {
-        for x in 0..w {
-            let mut alpha_sum: u32 = 0;
-            let mut sample_count: u32 = 0;
-
-            // Box blur: sample surrounding pixels
-            for dy in -radius..=radius {
-                for dx in -radius..=radius {
-                    let sx = x as i32 + dx;
-                    let sy = y as i32 + dy;
-
-                    if sx >= 0 && sx < w as i32 && sy >= 0 && sy < h as i32 {
-                        let src_idx = sy as usize * w + sx as usize;
-                        let src_alpha = (pixels[src_idx] >> 24) & 0xFF;
-                        alpha_sum += src_alpha;
-                        sample_count += 1;
-                    }
-                }
-            }
-
-            if sample_count > 0 {
-                // Calculate blurred alpha, scale to shadow opacity
-                let blurred_alpha = alpha_sum / sample_count;
-                let shadow_alpha = ((blurred_alpha as u32 * SHADOW_OPACITY as u32) / 255) as u8;
-
-                // Shadow is black with computed alpha (premultiplied, so all channels are 0)
-                shadow[y * w + x] = (shadow_alpha as u32) << 24;
-            }
-        }
+    
+    // Use the restored 9-slice shadow asset
+    let slice = crate::nine_slice::default_shadow();
+    
+    // Draw the 9-slice shadow into our shadow buffer
+    unsafe {
+        crate::nine_slice::draw_nine_slice(
+            shadow.as_mut_ptr(),
+            width,
+            height,
+            &slice,
+            0, 0, width, height
+        );
     }
 
     shadow

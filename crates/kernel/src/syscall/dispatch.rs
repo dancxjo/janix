@@ -225,6 +225,20 @@ pub extern "C" fn dispatch(
             crate::machine::machine().port_write(port, val, 1);
             SyscallResult::new(0, 0, 0)
         }
+        
+        // === PCI ===
+        nr::SYS_PCI_CFG_READ32 => {
+            if let Err(e) = cap::check(CapOp::PciConfigRead, None) {
+                return e;
+            }
+            if a0 != 0 {
+                // Segment 0 only for legacy fallback
+                // If seg != 0, we can't do legacy CF8/CFC
+                return SyscallResult::new(abi::syscall::err::EINVAL, 0, 0);
+            }
+            let val = crate::platform::platform().pci_cfg_read32(a0 as u16, a1 as u8, a2 as u8, a3 as u8, a4 as u16);
+            SyscallResult::new(0, val as u64, 0)
+        }
 
         // === Machine (Restricted) ===
         nr::SYS_MACHINE => {

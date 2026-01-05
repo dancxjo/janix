@@ -83,6 +83,7 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         "timed",
         "rtc_cmos",
         "rtc_pl031",
+        "pcid",
     ];
     for app in apps {
         let src = bin_src.join(app);
@@ -130,8 +131,6 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
     let limine_dest = boot_dir.join("limine");
     fs::create_dir_all(&limine_dest)?;
 
-    // Read config and remove modules for AArch64 debug (if env == aarch64)
-    // Reverted: modules are fine, issue was MAIR.
     let mut conf_data = fs::read_to_string(&conf_src)?;
 
     if let Some(cmd) = cmdline {

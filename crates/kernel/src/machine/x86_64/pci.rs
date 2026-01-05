@@ -8,7 +8,7 @@ pub struct PciAddress {
 }
 
 impl PciAddress {
-    fn read(&self, offset: u8) -> u32 {
+    pub fn read(&self, offset: u8) -> u32 {
         let addr = 0x80000000
             | ((self.bus as u32) << 16)
             | ((self.device as u32) << 11)
@@ -39,7 +39,6 @@ impl PciAddress {
     }
 
     pub fn bar0(&self) -> u64 {
-        // Handle 64-bit BARs if needed, but for now assume 32-bit or lower half
         let low = self.read(0x10);
         let type_mask = 0x6; // Bit 1-2: 00=32, 10=64
         let is_64 = (low & type_mask) == 0x4;

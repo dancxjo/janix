@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 thing_std = { path = "../thing_std" }
 abi = { path = "../abi" }
+models = { path = "../models" }

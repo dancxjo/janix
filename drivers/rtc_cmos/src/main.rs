@@ -4,7 +4,7 @@
 extern crate alloc;
 use thing_std::*;
 use thing_std::cap::{CapOp, Cap, CapScope};
-use models::{RtcDevice, HardwareInfo, Thing}; // Added Thing trait for encode_full/decode
+use models::{RtcDevice, HardwareInfo, Thing, Service}; // Added Service
 // use graph::store; // NOT AVAILABLE
 // use graph::symbols::{self, sym}; // NOT AVAILABLE
 
@@ -151,6 +151,16 @@ pub extern "C" fn main() {
     let _ = thing_std::graph::thing_set_body(rtc_thing, &payload.encode_full());
 
     log_info(&alloc::format!("RTC-CMOS: Active. Time: {}-{}-{} {}:{}:{}", year, month, day, hour, minute, second));
+
+    // Report Ready
+    if let Some(svc_id) = thing_std::graph::thing_find("service.rtc_cmos") {
+        if let (body, _) = thing_std::graph::thing_get_body(svc_id).unwrap() {
+             if let Ok(mut svc) = Service::decode_full(&body) {
+                 svc.state = 1; // Ready
+                 let _ = thing_std::graph::thing_set_body(svc_id, &svc.encode_full());
+             }
+        }
+    }
 
     // Loop
     loop {

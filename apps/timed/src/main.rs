@@ -3,7 +3,7 @@
 
 extern crate alloc;
 use thing_std::*;
-use models::*; // RtcDevice, SystemClock, Thing
+use models::*; // RtcDevice, SystemClock, Thing, Service
 use thing_std::graph::{thing_find, thing_get_body, thing_create, thing_register_name, thing_set_body, symbol_intern};
 
 #[allow(unused)]
@@ -16,15 +16,46 @@ fn decode_rtc(id: abi::ids::ThingId) -> Option<RtcDevice> {
 pub extern "C" fn main() {
     log_info("TIMED: Starting...");
 
-    // 1. Wait/Find device.rtc0
-    // Retry loop
+    // 1. Wait for relevant RTC service
+    // We check for known RTC drivers.
+    let rtc_services = ["service.rtc_cmos", "service.rtc_pl031"];
+    let mut found_service = false;
+
+    for _ in 0..50 { // Wait up to 5 seconds for a service to appear
+        for name in rtc_services.iter() {
+            if let Some(svc_id) = thing_find(name) {
+                // Service found, wait for Ready
+                loop {
+                    if let (body, _) = thing_get_body(svc_id).unwrap() {
+                         if let Ok(svc) = Service::decode_full(&body) {
+                             if svc.state == 1 {
+                                 found_service = true;
+                                 break;
+                             }
+                         }
+                    }
+                    thing_std::time::sleep_ms(100);
+                }
+            }
+            if found_service { break; }
+        }
+        if found_service { break; }
+        thing_std::time::sleep_ms(100);
+    }
+
+    if !found_service {
+        log_info("TIMED: Warning: No ready RTC service found. Proceeding anyway...");
+    }
+
+    // 2. Find device.rtc0
+    // Retry loop just in case
     let mut rtc_id = None;
-    for _ in 0..1000 { // Try for a few seconds
+    for _ in 0..100 { 
         if let Some(id) = thing_find("device.rtc0") {
             rtc_id = Some(id);
             break;
         }
-        thing_std::time::sleep_ms(500);
+        thing_std::time::sleep_ms(100);
     }
     
     if rtc_id.is_none() {
@@ -33,7 +64,7 @@ pub extern "C" fn main() {
     }
     let rtc_id = rtc_id.unwrap();
     
-    // 2. Read Base Time
+    // 3. Read Base Time
     let rtc_dev = decode_rtc(rtc_id);
     if rtc_dev.is_none() {
         log_info("TIMED: Failed to decode RTC device body");
@@ -43,13 +74,10 @@ pub extern "C" fn main() {
     
     log_info(&alloc::format!("TIMED: Found RTC base: {}s at mono {}ns", rtc_dev.base_seconds, rtc_dev.base_mono_ns));
     
-    // 3. Create system.time
+    // 4. Create system.time
     let kind_sys_clock = symbol_intern("kind.SystemClock");
     let time_thing = thing_create(kind_sys_clock, abi::ids::ThingId(0));
     thing_register_name(time_thing, "system.time");
-    
-    // Link to place.system? Or just roam free?
-    // Let's publish it.
     
     let sys_clock = SystemClock {
         unix_epoch_ns: (rtc_dev.base_seconds as i64) * 1_000_000_000,

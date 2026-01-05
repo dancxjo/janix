@@ -95,7 +95,7 @@ pub unsafe fn draw_cursor_frame(
 }
 
 #[inline]
-fn blend_pixel(src: u32, dst: u32) -> u32 {
+pub fn blend_pixel(src: u32, dst: u32) -> u32 {
     let sa = (src >> 24) & 0xFF;
     let inv_a = 255 - sa;
     let sr = (src >> 16) & 0xFF;

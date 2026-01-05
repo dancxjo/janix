@@ -143,12 +143,9 @@ pub fn run() {
                            // Redraw from wallpaper cache to backbuffer
                             redraw_region(back_buf.as_mut_ptr(), cache.as_ptr(), width, height, clear_rect);
 
-                           // Draw cursor shadow
-                           // draw_cursor_shadow(back_buf.as_mut_ptr(), width, height, px, py);
-
-                            // Draw cursor
                            if let Some(frame) = cursor_frame {
-                               draw_cursor_frame(back_buf.as_mut_ptr(), width, height, frame, px, py);
+                               crate::pixels::draw_cursor_shadow(back_buf.as_mut_ptr(), width, height, frame, px, py);
+                               crate::pixels::draw_cursor_frame(back_buf.as_mut_ptr(), width, height, frame, px, py);
                            } else {
                                // Fallback cursor?
                            }

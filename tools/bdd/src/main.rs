@@ -64,7 +64,8 @@ async fn main() -> Result<()> {
             }
 
             // Tag filtering
-            if let Some(desired_tag) = &tag_filter {
+            if let Some(raw_tag) = &tag_filter {
+                let desired_tag = raw_tag.strip_prefix('@').unwrap_or(raw_tag);
                 let feature_tags = &f.tags;
                 let rule_tags = r.map(|r| &r.tags).into_iter().flatten();
                 let scenario_tags = &s.tags;

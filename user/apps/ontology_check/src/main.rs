@@ -51,6 +51,10 @@ pub fn main() {
     let short_bytes = [0u8; 4];
     match SurfaceBody::decode(&short_bytes) {
         Ok(_) => println!("ERR: short decode succeeded"),
-        Err(_) => println!("OK: schema_mismatch_detected"), // Using "short read" as proxy for mismatch
+        Err(_) => thing_std::log_info("OK: schema_mismatch_detected"),
     }
+
+    // Explicit clean exit to prevent runtime panic at shutdown
+    drop(encoded);
+    thing_std::sys_exit(0);
 }

@@ -146,6 +146,7 @@ pub fn run(env: &str) -> Result<()> {
         "apps/simd_check",
         "user/apps/ontology_dump",
         "user/apps/ontology_check",
+        "apps/thingcheck",
     ];
     for app in apps {
         println!("    Building {}...", app);

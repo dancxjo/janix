@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Local APIC initialization and timer",
+  "scenario": "LAPIC replaces legacy PIC",
+  "step": {
+    "index": 0,
+    "text": "the system boots on x86_64",
+    "status": "skipped",
+    "timestamp": "2026-01-05T00:06:39.439696730+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

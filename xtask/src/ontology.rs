@@ -15,7 +15,7 @@ pub struct ThingDescriptor {
 pub struct FieldDescriptor {
     pub name: String,
     pub type_name: String,
-    pub is_option: bool,
+    pub _is_option: bool,
 }
 
 pub fn generate(repo_root: &Path) -> Result<(), anyhow::Error> {
@@ -137,7 +137,7 @@ fn extract_fields(item: &syn::ItemStruct) -> Vec<FieldDescriptor> {
             fields.push(FieldDescriptor {
                 name,
                 type_name,
-                is_option,
+                _is_option: is_option,
             });
         }
     }
@@ -173,7 +173,6 @@ fn generate_symbols(descriptors: &[ThingDescriptor], root: &Path) -> Result<(), 
 
     content.push_str("pub mod schema {\n    use abi::ids::SymbolId;\n");
     for desc in descriptors {
-        let hash = symbol_hash(&desc.schema);
         let const_name = desc.schema.replace(".", "_").to_uppercase();
         // Schema constants might need the version suffix handling in name if schema name is same but version differs?
         // Assuming unique schema names for now as per "schema.Window" vs "schema.Window@1" usually implies name + version in string?

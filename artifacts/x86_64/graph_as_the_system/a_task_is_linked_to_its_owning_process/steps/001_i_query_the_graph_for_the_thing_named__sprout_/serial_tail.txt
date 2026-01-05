@@ -1,50 +1,50 @@
-MMU: mapping 206000->1a53000 len 18000
-MMU: mapping 21e000->1a6b000 len 1000
-MMU: mapping 21f000->1a6c000 len 1000
-PROC: ELF loaded, entry
-MMU: mapping 7ffe0000->1a6d000 len 20000
-SCHED: spawn: name=/boot/modules/ontology_dump start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=3 name=/boot/modules/ontology_dump stack_top=0xffff800001a9f000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001a9f000 u_stack=0x80000000 entry=0x207ae0
-SCHED: configure_ctx_locked: finalized sp=0xffff800001a9ef60
-PROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=17928000 offset=ffff800000000000
-MMU: new P4 phys=1a9f000 virt=ffff800001a9f000
-MMU: copy kernel pml4[256]
-MMU: copy TICK: switch 1 -> 2 sp=0xffff800001942620
-TICK: (further switch logs suppressed)
-MMU: mapping 83000000->19ef8000 len 2000
-USER: BLOOM: mapped bytespace.mouse_input
-MMU: mapping 90100000->1aa2000 len 384000
-MMU: mapping 90000000->1e28000 len 100000
-kernel pml4[511]
-MMU: mapping 200000->1f2b000 len 6000
-MMU: mapping 206000->1f34000 len 18000
-MMU: mapping 21e000->1f4c000 len 1000
-MMU: mapping 21f000->1f4d000 len 1000
-PROC: ELF loaded, entry
-MMU: mapping 7ffe0000->1f4e000 len 20000
-SCHED: spawn: name=/boot/modules/ontology_check start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=4 name=/boot/modules/ontology_check stack_top=0xffff800001f80000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001f80000 u_stack=0x80000000 entry=0x207820
-SCHED: configure_ctx_locked: finalized sp=0xffff800001f7ff60
-PROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=175d3000 offset=ffff800000000000
-MMU: new P4 phys=1f81000 virt=ffff800001f81000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-MMU: mapping 200000->1f82000 len 7000
-MMU: mapping 207000->1f8c000 len 20000
-MMU: mapping 227000->1fac000 len 1000
+USER: CLOCK: tick 42065
+USER: CLOCK: tick 42066
+USER: CLOCK: tick 42067
+USER: CLOCK: tick 42068
+USER: CLOCK: tick 42069
+USER: CLOCK: tick 42070
+USER: CLOCK: tick 42071
+USER: CLOCK: tick 42072
+USER: CLOCK: tick 42073
+USER: CLOCK: tick 42074
+USER: CLOCK: tick 42075
+USER: CLOCK: tick 42076
+USER: CLOCK: tick 42077
+USER: CLOCK: tick 42078
+USER: CLOCK: tick 42079
+USER: CLOCK: tick 42080
+USER: CLOCK: tick 42081
+USER: CLOCK: tick 42082
+USER: CLOCK: tick 42083
+USER: CLOCK: tick 42084
+USER: CLOCK: tick 42085
+USER: CLOCK: tick 42086
+USER: CLOCK: tick 42087
+USER: CLOCK: tick 42088
+USER: CLOCK: tick 42089
+USER: CLOCK: tick 42090
+USER: CLOCK: tick 42091
+USER: CLOCK: tick 42092
+USER: CLOCK: tick 42093
+USER: CLOCK: tick 42094
+USER: CLOCK: tick 42095
+USER: CLOCK: tick 42096
+USER: CLOCK: tick 42097
+USER: CLOCK: tick 42098
+USER: CLOCK: tick 42099
+USER: CLOCK: tick 42100
+USER: CLOCK: tick 42101
+USER: CLOCK: tick 42102
+USER: CLOCK: tick 42103
+USER: CLOCK: tick 42104
+USER: CLOCK: tick 42105
+USER: CLOCK: tick 42106
+USER: CLOCK: tick 42107
+USER: CLOCK: tick 42108
+USER: CLOCK: tick 42109
+USER: CLOCK: tick 42110
+USER: CLOCK: tick 42111
+USER: CLOCK: tick 42112
+USER: CLOCK: tick 42113
+USER: CLOCK: tick 42114

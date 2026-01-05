@@ -27,9 +27,11 @@ members = [
     "apps/simd_check",
     "apps/thingcheck",
     "apps/bouncer_test",
-    "crates/drivers/usb_xhci",
+    "drivers/usb_xhci",
     "apps/usbd",
-    "crates/drivers/usb",
+    "drivers/usb",
+    "drivers/rtc_cmos",
+    "drivers/rtc_pl031",
 ]
 
 [workspace.package]

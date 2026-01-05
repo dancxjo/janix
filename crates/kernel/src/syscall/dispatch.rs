@@ -207,6 +207,25 @@ pub extern "C" fn dispatch(
         nr::SYS_TIME_SET_SYSTEM => time::sys_time_set_system(a0 as i64),
         nr::SYS_SLEEP_UNTIL => time::sys_sleep_until(a0),
 
+        // === IO Ports ===
+        nr::SYS_IOPORT_READ8 => {
+            if let Err(e) = cap::check(CapOp::IoPort, None) {
+                return e;
+            }
+            let port = a0 as u16;
+            let val = crate::machine::machine().port_read(port, 1);
+            SyscallResult::new(0, val as u64, 0)
+        }
+        nr::SYS_IOPORT_WRITE8 => {
+            if let Err(e) = cap::check(CapOp::IoPort, None) {
+                return e;
+            }
+            let port = a0 as u16;
+            let val = a1 as u32;
+            crate::machine::machine().port_write(port, val, 1);
+            SyscallResult::new(0, 0, 0)
+        }
+
         // === Machine (Restricted) ===
         nr::SYS_MACHINE => {
             if let Err(e) = cap::check(CapOp::Hardware, None) {

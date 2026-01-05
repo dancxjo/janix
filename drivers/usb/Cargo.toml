@@ -4,5 +4,5 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-thing_std = { path = "../../thing_std" }
-abi = { path = "../../abi" }
+thing_std = { path = "../../crates/thing_std" }
+abi = { path = "../../crates/abi" }

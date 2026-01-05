@@ -14,6 +14,7 @@ pub enum CapOp {
     MemManage = 8,
     Hardware = 9,
     GrantCaps = 10, // New delegation right
+    IoPort = 11,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

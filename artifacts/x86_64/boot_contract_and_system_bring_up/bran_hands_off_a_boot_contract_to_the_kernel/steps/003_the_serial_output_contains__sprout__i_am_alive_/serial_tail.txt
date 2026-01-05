@@ -1,50 +1,50 @@
-PROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=175e6000 offset=ffff800000000000
-MMU: new P4 phys=1bf8000 virt=ffff800001bf8000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-MMU: mapping 200000->1bf9000 len 7000
-MMU: mapping 207000->1c03000 len 20000
-MMU: mapping 227000->1c23000 len 1000
-MMU: mapping 228000->1c24000 len 1000
-PROC: ELF loaded, entry
-MMU: mapping 7ffe0000->1c25000 len 20000
-SCHED: spawn: name=/boot/modules/thingcheck start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=5 name=/boot/modules/thingcheck stack_top=0xffff800001c57000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001c57000 u_stack=0x80000000 entry=0x20a750
-SCHED: configure_ctx_locked: finalized sp=0xffff800001c56f60
-PROC: spawned
-MMU: mapping 83000000->19ef9000 len 2000
-USER: BLOOM: mapped bytespace.mouse_input
-MMU: mapping 90100000->1c5a000 len 384000
-USER: ONTOLOGY_SIZE: 7579
-USER: ONTOLOGY_DIGEST: 0xFDFA2A81471AA1E2
-MMU: mapping 90000000->1fe1000 len 100000
-MMU: mapping 90000000->20e3000 len 100000
-MMU: mapping 90484000->21e6000 len 384000
-USER: Ontology Check Tool
-USER: thingcheck: start
-USER: ONTOLOGY_DIGEST: 0xFDFA2A81471AA1E2
-USER: OK: ontology fetched
-USER: OK: place.display present
-USER: OK: DisplayDevice decodable
-USER: OK: Framebuffer decodable
-USER: OK: Surface decodable
-USER: OK: Surface has Bytespace
-USER: OK: place.windows present
-MMU: mapping 81000000->172e5000 len 400000
-USER: OK: model_roundtrip Surface
-USER: panic: aborting process
-USER: OK: MouseStream present
-USER: OK: PointerState decodable
-MMU: mapping 82000000->1e7ab000 len 40000
-USER: panic message: range end index 8 out of range for slice of length 4
-USER: panic location: crates/models/src/generated.rs:319:46
-USER: BLOOM: loaded Normal.cur
-USER: BLOOM: initialized
+USER: CLOCK: tick 2458
+USER: CLOCK: tick 2459
+USER: CLOCK: tick 2460
+USER: CLOCK: tick 2461
+USER: CLOCK: tick 2462
+USER: CLOCK: tick 2463
+USER: CLOCK: tick 2464
+USER: CLOCK: tick 2465
+USER: CLOCK: tick 2466
+USER: CLOCK: tick 2467
+USER: CLOCK: tick 2468
+USER: CLOCK: tick 2469
+USER: CLOCK: tick 2470
+USER: CLOCK: tick 2471
+USER: CLOCK: tick 2472
+USER: CLOCK: tick 2473
+USER: CLOCK: tick 2474
+USER: CLOCK: tick 2475
+USER: CLOCK: tick 2476
+USER: CLOCK: tick 2477
+USER: CLOCK: tick 2478
+USER: CLOCK: tick 2479
+USER: CLOCK: tick 2480
+USER: CLOCK: tick 2481
+USER: CLOCK: tick 2482
+USER: CLOCK: tick 2483
+USER: CLOCK: tick 2484
+USER: CLOCK: tick 2485
+USER: CLOCK: tick 2486
+USER: CLOCK: tick 2487
+USER: CLOCK: tick 2488
+USER: CLOCK: tick 2489
+USER: CLOCK: tick 2490
+USER: CLOCK: tick 2491
+USER: CLOCK: tick 2492
+USER: CLOCK: tick 2493
+USER: CLOCK: tick 2494
+USER: CLOCK: tick 2495
+USER: CLOCK: tick 2496
+USER: CLOCK: tick 2497
+USER: CLOCK: tick 2498
+USER: CLOCK: tick 2499
+USER: CLOCK: tick 2500
+USER: CLOCK: tick 2501
+USER: CLOCK: tick 2502
+USER: CLOCK: tick 2503
+USER: CLOCK: tick 2504
+USER: CLOCK: tick 2505
+USER: CLOCK: tick 2506
+USER: CLOCK: tick 2507

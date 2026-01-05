@@ -4,7 +4,7 @@ use abi::bodies::{BYTESPACE_FLAG_HAS_PHYS_BASE, ThingEnvelopeV1};
 use graph::store;
 use graph::symbols::{self, sym};
 use models::{
-    Bytespace, DisplayDevice, Framebuffer, MouseStream, Pointer, Surface,
+    Bytespace, DisplayDevice, Framebuffer, MouseStream, Pointer, Surface, HardwareInfo,
 };
 
 #[cfg(target_arch = "x86_64")]
@@ -436,6 +436,42 @@ fn seed_bloom_ontology() {
         crate::machine::input::set_mouse_bounds(fb.width as u32, fb.height as u32);
         if let Some(devices) = store::find_thing_by_name(sym::PLACE_DEVICES) {
             store::relationship_create(sym::PRED_CONTAINS, devices, fb_thing);
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        let rtc_hw = store::thing_create(symbols::intern(b"kind.HardwareResource"));
+        store::thing_register_name(rtc_hw, symbols::intern(b"hw.rtc0"));
+        let rtc_info = HardwareInfo {
+            name: symbols::intern(b"cmos-rtc"),
+            resource_type: symbols::intern(b"ioport"),
+            start: 0x70,
+            end: 0x71,
+            irq: 8,
+            _pad: 0,
+        };
+        let _ = store::thing_set_body(rtc_hw, &rtc_info.encode_full());
+        if let Some(devices) = store::find_thing_by_name(sym::PLACE_DEVICES) {
+             store::relationship_create(sym::PRED_CONTAINS, devices, rtc_hw);
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        let rtc_hw = store::thing_create(symbols::intern(b"kind.HardwareResource"));
+        store::thing_register_name(rtc_hw, symbols::intern(b"hw.rtc0"));
+        let rtc_info = HardwareInfo {
+            name: symbols::intern(b"pl031"),
+            resource_type: symbols::intern(b"mmio"),
+            start: 0x09010000,
+            end: 0x09011000,
+            irq: 34,
+            _pad: 0,
+        };
+        let _ = store::thing_set_body(rtc_hw, &rtc_info.encode_full());
+        if let Some(devices) = store::find_thing_by_name(sym::PLACE_DEVICES) {
+             store::relationship_create(sym::PRED_CONTAINS, devices, rtc_hw);
         }
     }
 }

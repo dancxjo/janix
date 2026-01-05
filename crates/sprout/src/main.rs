@@ -19,6 +19,12 @@ pub fn main() {
     spawn_and_grant("thingcheck");
     // spawn_and_grant("bouncer_test");
 
+    #[cfg(target_arch = "x86_64")]
+    spawn_and_grant("rtc_cmos");
+
+    #[cfg(target_arch = "aarch64")]
+    spawn_and_grant("rtc_pl031");
+
     log_info("SPROUT: boot sequence complete.");
 }
 
@@ -72,6 +78,24 @@ fn configure_policy(id: ThingId, name: &str) {
         "thingcheck" => {
             // Inspector needs read access
             global(CapOp::GraphRead);
+        }
+        "rtc_cmos" => {
+             global(CapOp::Log);
+             global(CapOp::GraphRead); // Find hw thing
+             global(CapOp::GraphCreate); // Create device
+             global(CapOp::GraphLink);
+             global(CapOp::GraphWrite);
+             global(CapOp::IoPort);      // The important bit!
+        }
+        "rtc_pl031" => {
+             global(CapOp::Log);
+             global(CapOp::GraphRead);
+             global(CapOp::GraphCreate);
+             global(CapOp::GraphLink);
+             global(CapOp::GraphWrite);
+             global(CapOp::Hardware); // MMIO needs Hardware cap? Or MemManage?
+             // MMIO mapping via sys_space_map needs MemManage
+             global(CapOp::MemManage);
         }
         _ => {}
     }

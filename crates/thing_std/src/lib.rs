@@ -135,6 +135,20 @@ pub unsafe fn syscall(
     SyscallResult { status, val0, val1 }
 }
 
+pub unsafe fn sys_ioport_read8(port: u16) -> Option<u8> {
+    let res = syscall(nr::SYS_IOPORT_READ8, port as u64, 0, 0, 0, 0, 0);
+    if res.status == 0 {
+        Some(res.val0 as u8)
+    } else {
+        None
+    }
+}
+
+pub unsafe fn sys_ioport_write8(port: u16, val: u8) -> i32 {
+    let res = syscall(nr::SYS_IOPORT_WRITE8, port as u64, val as u64, 0, 0, 0, 0);
+    res.status as i32
+}
+
 pub fn init(_ptr: u64) {}
 
 // ============================================================================

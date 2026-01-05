@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "aarch64",
+  "feature": "RTC Driver",
+  "scenario": "RTC Driver publishes device node",
+  "step": {
+    "index": 0,
+    "text": "the machine is booted",
+    "status": "skipped",
+    "timestamp": "2026-01-05T06:24:23.639341189+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-abi = { path = "../../abi" }
+abi = { path = "../../crates/abi" }
 # log = { path = "../../kernel/src/log" } 
 # Better to pass a logger or use alloc::format.
-thing_std = { path = "../../thing_std", optional = true } 
+thing_std = { path = "../../crates/thing_std", optional = true } 
 
 [features]
 default = ["std"]

@@ -42,6 +42,9 @@ pub mod nr {
     pub const SYS_MACHINE: u32 = 100;
     pub const SYS_CPU_FEATURES: u32 = 110;
 
+    pub const SYS_IOPORT_READ8: u32 = 130;
+    pub const SYS_IOPORT_WRITE8: u32 = 131;
+
     pub const SYS_INPUT_READ: u32 = 200;
 }
 

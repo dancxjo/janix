@@ -147,3 +147,26 @@ pub struct EventStream {
 }
 
 // Aliases for transition
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.HardwareResource")]
+pub struct HardwareInfo {
+    pub name: SymbolId,
+    pub resource_type: SymbolId, // "mmio", "ioport"
+    pub start: u64,
+    pub end: u64,
+    pub irq: u32,
+    pub _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.RtcDevice")]
+pub struct RtcDevice {
+    pub source: SymbolId, // "cmos", "pl031", "stub"
+    pub accuracy_ns: u64,
+    pub flags: u32,
+    pub _pad: u32,
+}
+

@@ -189,6 +189,9 @@ fn build_plan() -> Vec<LaunchPlan> {
 }
 
 fn spawn_fallback() {
+    // Bloom first for instant feedback
+    spawn_and_grant("bloom");
+
     #[cfg(target_arch = "x86_64")]
     let rtc = Some("rtc_cmos");
     #[cfg(target_arch = "aarch64")]
@@ -203,7 +206,6 @@ fn spawn_fallback() {
     spawn_and_grant("timed");
     spawn_and_grant("clock");
     spawn_and_grant("inputd");
-    spawn_and_grant("bloom");
     spawn_and_grant("thingcheck");
     spawn_and_grant("hello_window");
 }

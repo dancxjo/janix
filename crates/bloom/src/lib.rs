@@ -6,11 +6,13 @@ pub mod app;
 pub mod assets;
 pub mod backend;
 pub mod input;
+pub mod layout;
 pub mod nine_slice;
 pub mod pixels;
 pub mod scene;
 pub mod scene_cache;
 pub mod shadow;
+pub mod text;
 pub mod ui;
 pub mod watch;
 

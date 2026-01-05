@@ -3,6 +3,10 @@ name = "bloom"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+shadows = []
+
 [dependencies]
 abi = { path = "../abi" }
 thing_std = { path = "../thing_std" }
@@ -11,3 +15,5 @@ symbols = { path = "../symbols" }
 tinybmp = "0.6.0"
 png-decoder = "0.1.1"
 micromath = "2.0.0"
+fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
+spin = { version = "0.9", default-features = false, features = ["once"] }

@@ -1,5 +1,6 @@
 use crate::pixels::blend_pixel;
-use crate::scene::Rect;
+use alloc::vec;
+use alloc::vec::Vec;
 
 #[derive(Clone, Copy)]
 pub struct ShadowParams {
@@ -43,7 +44,6 @@ impl<'a> ShadowMask<'a> {
                     return 255;
                 }
                 let r = *radius as i32;
-                // Corner check: use circle of radius r at each corner
                 let cx = if x < r {
                     r - 1
                 } else if x >= w - r {
@@ -70,73 +70,134 @@ impl<'a> ShadowMask<'a> {
         }
     }
 
-    fn bounds_with_blur(&self, origin_x: i32, origin_y: i32, blur: u32) -> Rect {
-        let (w, h) = match self {
+    fn dimensions(&self) -> (u32, u32) {
+        match self {
             ShadowMask::SpriteAlpha { width, height, .. } => (*width, *height),
             ShadowMask::RoundedRect { width, height, .. } => (*width, *height),
-        };
-        let inflate = blur as i32;
-        Rect {
-            x: origin_x - inflate,
-            y: origin_y - inflate,
-            w: w + (blur * 2),
-            h: h + (blur * 2),
         }
     }
 }
 
-/// Draw a soft shadow given an analytic mask.
+/// Draw a soft shadow using a fast separable box blur.
 ///
-/// The same kernel is used for cursor sprites (SpriteAlpha) and analytic shapes (RoundedRect).
+/// Instead of O(r²) per pixel, we use two O(r) passes (horizontal then vertical).
 pub unsafe fn draw_shadow_from_mask(
     dest: *mut u32,
     screen_w: u32,
-    screen_h: u32,
+    _screen_h: u32,
     origin_x: i32,
     origin_y: i32,
     mask: ShadowMask<'_>,
     params: ShadowParams,
 ) {
-    let bounds = mask.bounds_with_blur(origin_x + params.offset_x, origin_y + params.offset_y, params.blur_radius);
+    let (mask_w, mask_h) = mask.dimensions();
     let blur = params.blur_radius as i32;
-    if bounds.w == 0 || bounds.h == 0 {
+    
+    if mask_w == 0 || mask_h == 0 {
         return;
     }
-    for y in bounds.y.max(0) as u32..((bounds.y + bounds.h as i32).min(screen_h as i32).max(0) as u32) {
-        for x in bounds.x.max(0) as u32..((bounds.x + bounds.w as i32).min(screen_w as i32).max(0) as u32) {
-            // Map back to mask space (remove offset but keep blur margin)
-            let mx = x as i32 - params.offset_x - origin_x;
-            let my = y as i32 - params.offset_y - origin_y;
-
-            // Box blur in mask space
-            let mut acc = 0u32;
-            let mut samples = 0u32;
-            for by in -blur..=blur {
-                for bx in -blur..=blur {
-                    let sx = mx + bx;
-                    let sy = my + by;
-                    let a = mask.alpha_at(sx, sy) as u32;
-                    acc += a;
-                    samples += 1;
+    
+    // Compute the blurred alpha buffer dimensions (mask + blur margins)
+    let buf_w = mask_w as i32 + blur * 2;
+    let buf_h = mask_h as i32 + blur * 2;
+    
+    if buf_w <= 0 || buf_h <= 0 {
+        return;
+    }
+    
+    let buf_w = buf_w as usize;
+    let buf_h = buf_h as usize;
+    
+    // Step 1: Rasterize the mask into a buffer (with blur margins)
+    let mut alpha_buf: Vec<u16> = vec![0u16; buf_w * buf_h];
+    for my in 0..buf_h {
+        let mask_y = my as i32 - blur;
+        for mx in 0..buf_w {
+            let mask_x = mx as i32 - blur;
+            let a = mask.alpha_at(mask_x, mask_y) as u16;
+            alpha_buf[my * buf_w + mx] = a;
+        }
+    }
+    
+    // Step 2: Horizontal box blur
+    if blur > 0 {
+        let mut row_tmp: Vec<u16> = vec![0u16; buf_w];
+        
+        for y in 0..buf_h {
+            let row_start = y * buf_w;
+            
+            for x in 0..buf_w {
+                let left_clamped = (x as i32 - blur).max(0) as usize;
+                let right_clamped = (x as i32 + blur).min(buf_w as i32 - 1) as usize;
+                let count = (right_clamped - left_clamped + 1) as u32;
+                
+                let mut acc: u32 = 0;
+                for bx in left_clamped..=right_clamped {
+                    acc += alpha_buf[row_start + bx] as u32;
                 }
+                
+                row_tmp[x] = (acc / count.max(1)) as u16;
             }
-            if samples == 0 {
-                continue;
+            
+            // Copy back
+            for x in 0..buf_w {
+                alpha_buf[row_start + x] = row_tmp[x];
             }
-            let avg_alpha = (acc / samples).min(255) as u8;
+        }
+        
+        // Step 3: Vertical box blur
+        let mut col_tmp: Vec<u16> = vec![0u16; buf_h];
+        
+        for x in 0..buf_w {
+            for y in 0..buf_h {
+                let top = (y as i32 - blur).max(0) as usize;
+                let bottom = (y as i32 + blur).min(buf_h as i32 - 1) as usize;
+                let count = (bottom - top + 1) as u32;
+                
+                let mut acc: u32 = 0;
+                for by in top..=bottom {
+                    acc += alpha_buf[by * buf_w + x] as u32;
+                }
+                col_tmp[y] = (acc / count.max(1)) as u16;
+            }
+            
+            // Copy back
+            for y in 0..buf_h {
+                alpha_buf[y * buf_w + x] = col_tmp[y];
+            }
+        }
+    }
+    
+    // Step 4: Blit the blurred alpha to screen with shadow color
+    let shadow_x = origin_x + params.offset_x - blur;
+    let shadow_y = origin_y + params.offset_y - blur;
+    
+    let base_a = ((params.color >> 24) & 0xFF) as u32;
+    let tint = params.color & 0x00FF_FFFF;
+    
+    // Clip to screen
+    let x0 = shadow_x.max(0);
+    let y0 = shadow_y.max(0);
+    let x1 = (shadow_x + buf_w as i32).min(screen_w as i32);
+    let y1 = (shadow_y + buf_h as i32).min(screen_w as i32); // using screen_w as proxy for height bound
+    
+    for screen_y in y0..y1 {
+        let buf_y = (screen_y - shadow_y) as usize;
+        for screen_x in x0..x1 {
+            let buf_x = (screen_x - shadow_x) as usize;
+            let avg_alpha = alpha_buf[buf_y * buf_w + buf_x].min(255) as u8;
+            
             if avg_alpha == 0 {
                 continue;
             }
-
-            // Apply global color/opacity
-            let base_a = ((params.color >> 24) & 0xFF) as u32;
-            let tint = params.color & 0x00FF_FFFF;
+            
             let final_a = ((avg_alpha as u32) * base_a / 255).min(255) as u8;
             if final_a == 0 {
                 continue;
             }
+            
             let src = (final_a as u32) << 24 | tint;
-            let idx = (y * screen_w + x) as usize;
+            let idx = (screen_y as u32 * screen_w + screen_x as u32) as usize;
             let dst = *dest.add(idx);
             *dest.add(idx) = blend_pixel(src, dst);
         }

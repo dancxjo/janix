@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
     pub x: i32,
     pub y: i32,
@@ -7,6 +7,27 @@ pub struct Rect {
 }
 
 impl Rect {
+    /// An empty rectangle (zero dimensions).
+    pub fn empty() -> Self {
+        Rect { x: 0, y: 0, w: 0, h: 0 }
+    }
+
+    /// Returns true if this rectangle has zero area.
+    pub fn is_empty(&self) -> bool {
+        self.w == 0 || self.h == 0
+    }
+
+    /// Compute the intersection of two rectangles. Returns an empty Rect if disjoint.
+    pub fn intersect(self, other: Rect) -> Rect {
+        let x0 = self.x.max(other.x);
+        let y0 = self.y.max(other.y);
+        let x1 = (self.x.saturating_add(self.w as i32)).min(other.x.saturating_add(other.w as i32));
+        let y1 = (self.y.saturating_add(self.h as i32)).min(other.y.saturating_add(other.h as i32));
+        let w = (x1 - x0).max(0) as u32;
+        let h = (y1 - y0).max(0) as u32;
+        Rect { x: x0, y: y0, w, h }
+    }
+
     pub fn union(a: Rect, b: Rect) -> Rect {
         let x1 = a.x.min(b.x);
         let y1 = a.y.min(b.y);

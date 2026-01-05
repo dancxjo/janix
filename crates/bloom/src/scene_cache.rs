@@ -152,3 +152,9 @@ pub fn apply_watch_event(
     }
     None
 }
+
+impl SceneCache {
+    pub fn window_count(&self) -> usize {
+        self.windows.len()
+    }
+}

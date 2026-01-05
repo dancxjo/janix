@@ -54,9 +54,9 @@ pub struct ModuleInfo {
 static mut BOOT_CTX: Option<BootContext> = None;
 const BOOT_COLOR_STEPS: usize = 6;
 const BLOOM_WALLPAPER_DOMINANT: BootColor = BootColor {
-    red: 140,
-    green: 181,
-    blue: 220,
+    red: 0xDC,
+    green: 0xD0,
+    blue: 0xFF,
 };
 
 pub fn get_boot_ctx() -> &'static BootContext {
@@ -76,7 +76,7 @@ fn boot_progress_color(step: usize) -> BootColor {
         };
     }
     let clamped = step.min(BOOT_COLOR_STEPS - 1) as u32;
-    let scale = |component: u8| -> u8 { ((component as u32 * clamped) / max_step) as u8 };
+    let scale = |component: u8| -> u8 { ((component as u32 * clamped) / max_step / 2) as u8 };
     BootColor {
         red: scale(BLOOM_WALLPAPER_DOMINANT.red),
         green: scale(BLOOM_WALLPAPER_DOMINANT.green),

@@ -1,9 +1,9 @@
 use crate::input::PointerInput;
-use crate::pixels::*;
+use crate::painter::{Clip, CpuPainter, Painter};
 use crate::scene::Rect;
 use crate::scene_cache::{apply_watch_event, SceneCache};
 #[cfg(feature = "shadows")]
-use crate::shadow::{draw_shadow_from_mask, ShadowMask, ShadowParams};
+use crate::shadow::{ShadowMask, ShadowParams};
 use crate::ui::{
     read_window_scene, render_window_scenes, window_ids_in_graph, WindowScene,
 };
@@ -24,6 +24,10 @@ const BLOOM_FADE_DURATION_MS: u64 = 8_000;
 pub fn run() {
     thing_std::init(0);
     log_info("BLOOM: alive");
+
+    // Warm up fonts early (SIMD-intensive parsing done before render loop)
+    crate::text::ensure_font_loaded();
+    log_info("BLOOM: fonts warmed up");
 
     let mut graph_client = SyscallGraphClient;
 
@@ -55,7 +59,11 @@ pub fn run() {
             let mut background_cache = alloc::vec![0u32; buffer_size];
             let mut scene_buffer = alloc::vec![0u32; buffer_size];
 
-            paint_progress_background(frame_buffer.as_mut_ptr(), width, height, current_progress);
+            // Initial paint using CpuPainter
+            {
+                let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
+                paint_progress_background(&mut painter, current_progress);
+            }
             unsafe {
                 core::ptr::copy_nonoverlapping(frame_buffer.as_ptr(), background_cache.as_mut_ptr(), buffer_size);
             }
@@ -146,7 +154,8 @@ pub fn run() {
                 }
 
                 if current_progress != last_progress {
-                    paint_progress_background(background_cache.as_mut_ptr(), width, height, current_progress);
+                    let mut painter = CpuPainter::new(background_cache.as_mut_slice(), width, height);
+                    paint_progress_background(&mut painter, current_progress);
                     scene_dirty = true;
                     last_progress = current_progress;
                 }
@@ -202,28 +211,23 @@ pub fn run() {
                         log_info(&alloc::format!("BLOOM: START render {} windows", win_count));
                     }
                     
-                    // TIMING: rebuild_scene
-                    rebuild_scene(
-                        scene_buffer.as_mut_slice(),
-                        background_cache.as_slice(),
-                        width,
-                        height,
-                        &window_scenes,
-                    );
+                    // Rebuild scene using Painter
+                    {
+                        let mut painter = CpuPainter::new(scene_buffer.as_mut_slice(), width, height);
+                        // Copy background
+                        painter.copy_region(background_cache.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
+                        // Render windows
+                        render_window_scenes(&mut painter, &window_scenes);
+                    }
                     
                     if win_count > 0 && !logged_window_once {
                         log_info("BLOOM: rebuild_scene done");
                     }
                     
-                    // TIMING: redraw_region
-                    unsafe {
-                        redraw_region(
-                            frame_buffer.as_mut_ptr(),
-                            scene_buffer.as_ptr(),
-                            width,
-                            height,
-                            Rect { x: 0, y: 0, w: width, h: height },
-                        );
+                    // Copy scene to frame buffer
+                    {
+                        let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
+                        painter.copy_region(scene_buffer.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
                     }
                     
                     if win_count > 0 && !logged_window_once {
@@ -238,7 +242,8 @@ pub fn run() {
                         if !progress_complete {
                             current_progress = 1000;
                             progress_complete = true;
-                            paint_progress_background(background_cache.as_mut_ptr(), width, height, 1000);
+                            let mut painter = CpuPainter::new(background_cache.as_mut_slice(), width, height);
+                            paint_progress_background(&mut painter, 1000);
                         }
                     }
                     scene_cache.clear_dirty();
@@ -249,72 +254,45 @@ pub fn run() {
                     } else {
                         cursor_bounds
                     };
-                    unsafe {
-                        redraw_region(
-                            frame_buffer.as_mut_ptr(),
-                            scene_buffer.as_ptr(),
-                            width,
-                            height,
-                            damage,
-                        );
-                    }
+                    let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
+                    painter.copy_region(scene_buffer.as_slice(), width, damage);
                     merge_damage(&mut dirty, damage);
                 }
 
                 if scene_dirty || cursor_changed {
+                    let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
+                    painter.set_clip(Clip::full(width, height));
+                    
                     if let Some(frame) = cursor_frame {
-                        unsafe {
-                            #[cfg(feature = "shadows")]
-                            draw_shadow_from_mask(
-                                frame_buffer.as_mut_ptr(),
-                                width,
-                                height,
-                                px - frame.hotspot_x,
-                                py - frame.hotspot_y,
-                                ShadowMask::SpriteAlpha {
-                                    pixels: &frame.shadow_pixels,
-                                    width: frame.width,
-                                    height: frame.height,
-                                },
-                                ShadowParams {
-                                    offset_x: frame.shadow_offset_x,
-                                    offset_y: frame.shadow_offset_y,
-                                    blur_radius: 0,
-                                    color: 0xAA000000,
-                                },
-                            );
-                            draw_cursor_frame(
-                                frame_buffer.as_mut_ptr(),
-                                width,
-                                height,
-                                frame,
-                                px,
-                                py,
-                            );
-                        }
+                        #[cfg(feature = "shadows")]
+                        painter.draw_shadow_mask(
+                            px - frame.hotspot_x,
+                            py - frame.hotspot_y,
+                            ShadowMask::SpriteAlpha {
+                                pixels: &frame.shadow_pixels,
+                                width: frame.width,
+                                height: frame.height,
+                            },
+                            ShadowParams {
+                                offset_x: frame.shadow_offset_x,
+                                offset_y: frame.shadow_offset_y,
+                                blur_radius: 0,
+                                color: 0xAA000000,
+                            },
+                        );
+                        painter.draw_cursor_frame(frame, px, py);
                         if !logged_shared_shadow {
                             log_info("BLOOM: shadow kernel: shared");
                             logged_shared_shadow = true;
                         }
                     } else {
-                        unsafe {
-                            draw_fallback_cursor(
-                                frame_buffer.as_mut_ptr(),
-                                width,
-                                height,
-                                px,
-                                py,
-                            );
-                        }
+                        painter.draw_fallback_cursor(px, py);
                     }
                     merge_damage(&mut dirty, cursor_bounds);
                     prev_cursor_bounds = Some(cursor_bounds);
                 }
 
                 if let Some(rect) = dirty {
-                    if !logged_window_once || window_scenes.len() > 0 {
-                        // Log before present on first window render
-                    }
                     backend.present(
                         frame_buffer.as_mut_slice(),
                         DirtyRect {
@@ -340,7 +318,7 @@ pub fn run() {
     }
 }
 
-fn paint_progress_background(dest: *mut u32, w: u32, h: u32, progress: u32) {
+fn paint_progress_background(painter: &mut dyn Painter, progress: u32) {
     let r1 = 0x05i32; let g1 = 0x05i32; let b1 = 0x05i32;
     let r2 = 0xDCi32; let g2 = 0xD0i32; let b2 = 0xFFi32;
     let p = progress.min(1000) as i32;
@@ -348,7 +326,7 @@ fn paint_progress_background(dest: *mut u32, w: u32, h: u32, progress: u32) {
     let g = (g1 + (g2 - g1) * p / 1000) as u32;
     let b = (b1 + (b2 - b1) * p / 1000) as u32;
     let color = 0xFF000000 | (r << 16) | (g << 8) | b;
-    unsafe { fill_rect(dest, w, h, Rect { x: 0, y: 0, w, h }, color); }
+    painter.clear(color);
 }
 
 fn seed_scene(
@@ -388,13 +366,6 @@ fn load_cursor_asset() -> Option<CursorAsset> {
     }
     log_info("BLOOM: no cursor asset found, using fallback");
     None
-}
-
-fn rebuild_scene(scene_buffer: &mut [u32], background_cache: &[u32], width: u32, height: u32, scenes: &[WindowScene]) {
-    unsafe {
-        core::ptr::copy_nonoverlapping(background_cache.as_ptr(), scene_buffer.as_mut_ptr(), scene_buffer.len());
-    }
-    render_window_scenes(scene_buffer.as_mut_ptr(), width, height, scenes);
 }
 
 fn merge_damage(into: &mut Option<Rect>, rect: Rect) {

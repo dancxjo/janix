@@ -8,11 +8,10 @@ use thing_std::symbol_resolve;
 use thing_std::SyscallGraphClient;
 
 use crate::layout::{layout_widgets, PlacedWidget, TITLE_BAR_HEIGHT};
-use crate::pixels::blend_pixel;
+use crate::painter::Painter;
 use crate::scene::Rect;
-#[cfg(feature = "shadows")]
-use crate::shadow::{draw_shadow_from_mask, ShadowMask, ShadowParams};
-use crate::text::draw_text;
+use crate::shadow::{ShadowMask, ShadowParams};
+use crate::text::draw_text_on_painter;
 
 /// Font size for window titles
 const TITLE_FONT_SIZE: f32 = 14.0;
@@ -142,19 +141,21 @@ pub fn collect_window_scenes(client: &mut SyscallGraphClient) -> Vec<WindowScene
     out
 }
 
-pub fn render_window_scenes(dest: *mut u32, screen_w: u32, screen_h: u32, scenes: &[WindowScene]) {
+/// Render all window scenes using the Painter API.
+pub fn render_window_scenes(painter: &mut dyn Painter, scenes: &[WindowScene]) {
     for scene in scenes {
-        render_window(dest, screen_w, screen_h, scene);
+        render_window(painter, scene);
     }
 }
 
 /// Compute the screen bounding rect for clipping.
 #[inline]
-fn screen_rect(screen_w: u32, screen_h: u32) -> Rect {
-    Rect { x: 0, y: 0, w: screen_w, h: screen_h }
+fn screen_rect(painter: &dyn Painter) -> Rect {
+    let (w, h) = painter.screen_size();
+    Rect { x: 0, y: 0, w, h }
 }
 
-fn render_window(dest: *mut u32, screen_w: u32, screen_h: u32, scene: &WindowScene) {
+fn render_window(painter: &mut dyn Painter, scene: &WindowScene) {
     let win = &scene.window;
     let rect = Rect {
         x: win.x,
@@ -164,7 +165,7 @@ fn render_window(dest: *mut u32, screen_w: u32, screen_h: u32, scene: &WindowSce
     };
 
     // Clip to screen
-    let screen = screen_rect(screen_w, screen_h);
+    let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
 
     thing_std::log_info(&alloc::format!(
@@ -178,34 +179,33 @@ fn render_window(dest: *mut u32, screen_w: u32, screen_h: u32, scene: &WindowSce
         return;
     }
 
+    // Set clip for this window
+    painter.set_clip(crate::painter::Clip::from_rect(clip));
+
     let t0 = thing_std::monotonic_now();
     #[cfg(feature = "shadows")]
     if win.style.shadow != 0 {
-        unsafe {
-            draw_shadow_from_mask(
-                dest,
-                screen_w,
-                screen_h,
-                rect.x,
-                rect.y,
-                ShadowMask::RoundedRect {
-                    width: rect.w,
-                    height: rect.h,
-                    radius: win.style.radius,
-                },
-                ShadowParams {
-                    offset_x: 2,
-                    offset_y: 3,
-                    blur_radius: 4,
-                    color: 0x44000000,
-                },
-            );
-        }
+        painter.draw_shadow_mask(
+            rect.x,
+            rect.y,
+            ShadowMask::RoundedRect {
+                width: rect.w,
+                height: rect.h,
+                radius: win.style.radius,
+            },
+            ShadowParams {
+                offset_x: 2,
+                offset_y: 3,
+                blur_radius: 4,
+                color: 0x44000000,
+            },
+        );
     }
     let t1 = thing_std::monotonic_now();
     thing_std::log_info(&alloc::format!("BLOOM: shadow {} ms", (t1-t0)/1_000_000));
 
-    paint_panel(dest, screen_w, screen_h, rect, clip, win.style.bg_rgba, win.style.radius, Some(TITLE_BAR_HEIGHT));
+    // Paint panel background with gradient and title stripe
+    painter.fill_panel(rect, win.style.radius, win.style.bg_rgba, Some(TITLE_BAR_HEIGHT));
     let t2 = thing_std::monotonic_now();
     thing_std::log_info(&alloc::format!("BLOOM: paint_panel {} ms", (t2-t1)/1_000_000));
 
@@ -213,7 +213,7 @@ fn render_window(dest: *mut u32, screen_w: u32, screen_h: u32, scene: &WindowSce
     if !scene.title_text.is_empty() {
         let text_x = rect.x + TITLE_PADDING_X;
         let text_y = rect.y + (TITLE_BAR_HEIGHT - TITLE_FONT_SIZE as i32) / 2;
-        draw_text(dest, screen_w, screen_h, text_x, text_y, &scene.title_text, TITLE_TEXT_COLOR, TITLE_FONT_SIZE);
+        draw_text_on_painter(painter, text_x, text_y, &scene.title_text, TITLE_TEXT_COLOR, TITLE_FONT_SIZE);
     }
     let t2b = thing_std::monotonic_now();
     thing_std::log_info(&alloc::format!("BLOOM: title {} ms", (t2b-t2)/1_000_000));
@@ -225,146 +225,32 @@ fn render_window(dest: *mut u32, screen_w: u32, screen_h: u32, scene: &WindowSce
     for pw in placed {
         match pw.widget {
             WidgetKind::Label(ref label, _) => {
-                paint_label(dest, screen_w, screen_h, pw.rect, label);
+                paint_label(painter, pw.rect, label);
             }
             WidgetKind::Button(ref button, _) => {
-                paint_button(dest, screen_w, screen_h, pw.rect, button);
+                paint_button(painter, pw.rect, button);
             }
         }
     }
     let t3 = thing_std::monotonic_now();
     thing_std::log_info(&alloc::format!("BLOOM: widgets {} ms", (t3-t2b)/1_000_000));
 
-    draw_border(dest, screen_w, screen_h, rect, clip, win.style.radius);
+    // Draw border
+    painter.stroke_rounded_rect(rect, win.style.radius, 1, 0xFF404040);
     let t4 = thing_std::monotonic_now();
     thing_std::log_info(&alloc::format!("BLOOM: border {} ms", (t4-t3)/1_000_000));
 
     thing_std::log_info(&alloc::format!("BLOOM: render_window TOTAL {} ms", (t4-t0)/1_000_000));
 }
 
-fn draw_border(dest: *mut u32, screen_w: u32, _screen_h: u32, rect: Rect, clip: Rect, radius: u16) {
-    let border_color: u32 = 0xFF404040;
-    let thickness: i32 = 1;
-    let outer_r = radius;
-    let inner_r = radius.saturating_sub(thickness as u16);
-
-    for y in clip.y..(clip.y + clip.h as i32) {
-        let local_y = y - rect.y;
-        for x in clip.x..(clip.x + clip.w as i32) {
-            let local_x = x - rect.x;
-
-            if !in_round(local_x, local_y, rect.w, rect.h, outer_r) { continue; }
-
-            // inside inner rounded rect? then not border
-            let inner_x = local_x - thickness;
-            let inner_y = local_y - thickness;
-            let inner_w = rect.w.saturating_sub((thickness * 2) as u32);
-            let inner_h = rect.h.saturating_sub((thickness * 2) as u32);
-
-            if inner_x >= 0 && inner_y >= 0
-                && inner_x < inner_w as i32 && inner_y < inner_h as i32
-                && in_round(inner_x, inner_y, inner_w, inner_h, inner_r)
-            {
-                continue;
-            }
-
-            let idx = (y as u32 * screen_w + x as u32) as usize;
-            unsafe { *dest.add(idx) = border_color; }
-        }
-    }
-}
-
-fn paint_panel(
-    dest: *mut u32,
-    screen_w: u32,
-    _screen_h: u32,
-    rect: Rect,
-    clip: Rect,
-    base: u32,
-    radius: u16,
-    stripe_height: Option<i32>,
-) {
-    let light = adjust_color(base, 6);
-    let dark  = adjust_color(base, -8);
-
-    // Precompute gradient per row using integer math: grad in [-4..+4]
-    // This yields a gentle center-bright panel.
-    let h = rect.h.max(1) as i32;
-
-    for dy in 0..clip.h as i32 {
-        let y = clip.y + dy;
-        let local_y = y - rect.y;
-        // integer "tent" shape centered vertically
-        let dist = (local_y - h / 2).abs();
-        let grad = ((h / 2 - dist) * 4 / (h / 2).max(1)).clamp(0, 4) as i16;
-        let grad = grad - 2; // shift to ~[-2..+2], tweak as desired
-
-        let row_color = adjust_color(base, grad);
-
-        for dx in 0..clip.w as i32 {
-            let x = clip.x + dx;
-            let local_x = x - rect.x;
-
-            if !in_round(local_x, local_y, rect.w, rect.h, radius) { continue; }
-
-            let idx = (y as u32 * screen_w + x as u32) as usize;
-            unsafe { *dest.add(idx) = row_color; }
-        }
-    }
-
-    // Bevel: only draw within clip edges, not whole rect
-    // Top + bottom lines
-    for dx in 0..clip.w as i32 {
-        let x = clip.x + dx;
-        let local_x = x - rect.x;
-
-        let top_y = rect.y;
-        if top_y >= clip.y && top_y < (clip.y + clip.h as i32) {
-            if in_round(local_x, 0, rect.w, rect.h, radius) {
-                let idx = (top_y as u32 * screen_w + x as u32) as usize;
-                unsafe { *dest.add(idx) = light; }
-            }
-        }
-
-        let bottom_y = rect.y + rect.h as i32 - 1;
-        if bottom_y >= clip.y && bottom_y < (clip.y + clip.h as i32) {
-            if in_round(local_x, rect.h as i32 - 1, rect.w, rect.h, radius) {
-                let idx = (bottom_y as u32 * screen_w + x as u32) as usize;
-                unsafe { *dest.add(idx) = dark; }
-            }
-        }
-    }
-
-    // Optional stripes: only if stripes overlap the clip
-    if let Some(hs) = stripe_height {
-        let title_h = hs.min(rect.h as i32).max(0);
-        let stripe_a = adjust_color(base, -3);
-
-        let y0 = rect.y.max(clip.y);
-        let y1 = (rect.y + title_h).min(clip.y + clip.h as i32);
-
-        for y in y0..y1 {
-            let local_y = y - rect.y;
-            if local_y % 2 != 0 { continue; }
-
-            for x in clip.x..(clip.x + clip.w as i32) {
-                let local_x = x - rect.x;
-                if !in_round(local_x, local_y, rect.w, rect.h, radius) { continue; }
-                let idx = (y as u32 * screen_w + x as u32) as usize;
-                unsafe { *dest.add(idx) = stripe_a; }
-            }
-        }
-    }
-}
-
-
-fn paint_label(dest: *mut u32, screen_w: u32, screen_h: u32, rect: Rect, label: &Label) {
-    let screen = screen_rect(screen_w, screen_h);
+fn paint_label(painter: &mut dyn Painter, rect: Rect, label: &Label) {
+    let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
     if clip.is_empty() {
         return;
     }
 
+    // Simple colored lines as placeholder for label
     let color = label.style.color_rgba;
     let base_y = rect.y + (rect.h as i32 / 2);
 
@@ -374,84 +260,38 @@ fn paint_label(dest: *mut u32, screen_w: u32, screen_h: u32, rect: Rect, label: 
             continue;
         }
         for cx in clip.x..(clip.x + clip.w as i32) {
-            let idx = (y as u32 * screen_w + cx as u32) as usize;
-            unsafe {
-                let dst = *dest.add(idx);
-                *dest.add(idx) = blend_pixel(color, dst);
-            }
+            // Draw a colored line - we need a blend_line method but for now use fill_rect
         }
     }
+    // Draw as a thin colored bar for now
+    painter.fill_rect(
+        Rect { x: clip.x, y: base_y, w: clip.w, h: 2 },
+        color,
+    );
 }
 
-fn paint_button(dest: *mut u32, screen_w: u32, screen_h: u32, rect: Rect, button: &Button) {
-    let screen = screen_rect(screen_w, screen_h);
+fn paint_button(painter: &mut dyn Painter, rect: Rect, button: &Button) {
+    let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
     if clip.is_empty() {
         return;
     }
 
-    paint_panel(
-        dest,
-        screen_w,
-        screen_h,
-        rect,
-        clip,
-        button.style.bg_rgba,
-        button.style.radius,
-        None,
-    );
+    // Draw button panel
+    painter.fill_panel(rect, button.style.radius, button.style.bg_rgba, None);
 
-    // Minimal glyph: centered short line to read as punctuation
+    // Draw a centered glyph line
     let line_y = rect.y + rect.h as i32 / 2;
+    let (screen_w, screen_h) = painter.screen_size();
     if line_y < 0 || line_y >= screen_h as i32 {
         return;
     }
     let start_x = rect.x + rect.w as i32 / 2 - 6;
-    let glyph_start = start_x.max(0);
-    let glyph_end = (start_x + 12).min(screen_w as i32);
-
-    for x in glyph_start..glyph_end {
-        let idx = (line_y as u32 * screen_w + x as u32) as usize;
-        unsafe {
-            let dst = *dest.add(idx);
-            *dest.add(idx) = blend_pixel(0x55000000, dst);
-        }
-    }
-}
-
-fn adjust_color(color: u32, delta: i16) -> u32 {
-    let a = (color >> 24) & 0xFF;
-    let r = (((color >> 16) & 0xFF) as i16 + delta).clamp(0, 255) as u32;
-    let g = (((color >> 8) & 0xFF) as i16 + delta).clamp(0, 255) as u32;
-    let b = ((color & 0xFF) as i16 + delta).clamp(0, 255) as u32;
-    (a << 24) | (r << 16) | (g << 8) | b
-}
-
-fn in_round(x: i32, y: i32, w: u32, h: u32, radius: u16) -> bool {
-    if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
-        return false;
-    }
-    if radius == 0 {
-        return true;
-    }
-    let r = radius as i32;
-    let w_i = w as i32;
-    let h_i = h as i32;
-    let cx = if x < r {
-        r - 1
-    } else if x >= w_i - r {
-        w_i - r
-    } else {
-        x
+    let glyph_rect = Rect {
+        x: start_x.max(0),
+        y: line_y,
+        w: 12.min(screen_w),
+        h: 1,
     };
-    let cy = if y < r {
-        r - 1
-    } else if y >= h_i - r {
-        h_i - r
-    } else {
-        y
-    };
-    let dx = x - cx;
-    let dy = y - cy;
-    dx * dx + dy * dy <= r * r
+    painter.fill_rect(glyph_rect, 0x55000000);
 }

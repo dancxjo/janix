@@ -8,6 +8,7 @@ pub mod backend;
 pub mod input;
 pub mod layout;
 pub mod nine_slice;
+pub mod painter;
 pub mod pixels;
 pub mod scene;
 pub mod scene_cache;

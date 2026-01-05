@@ -1,4 +1,4 @@
-use crate::pixels::blend_pixel;
+use crate::painter::cpu::blend_pixel;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -16,7 +16,8 @@ pub enum ShadowMask<'a> {
 }
 
 impl<'a> ShadowMask<'a> {
-    fn alpha_at(&self, x: i32, y: i32) -> u8 {
+    /// Get alpha value at a point in the mask.
+    pub fn alpha_at(&self, x: i32, y: i32) -> u8 {
         match self {
             ShadowMask::SpriteAlpha { pixels, width, height } => {
                 if x < 0 || y < 0 {
@@ -70,7 +71,8 @@ impl<'a> ShadowMask<'a> {
         }
     }
 
-    fn dimensions(&self) -> (u32, u32) {
+    /// Get the dimensions of the mask.
+    pub fn dimensions(&self) -> (u32, u32) {
         match self {
             ShadowMask::SpriteAlpha { width, height, .. } => (*width, *height),
             ShadowMask::RoundedRect { width, height, .. } => (*width, *height),
@@ -81,6 +83,8 @@ impl<'a> ShadowMask<'a> {
 /// Draw a soft shadow using a fast separable box blur.
 ///
 /// Instead of O(r²) per pixel, we use two O(r) passes (horizontal then vertical).
+/// 
+/// DEPRECATED: Use Painter::draw_shadow_mask instead.
 pub unsafe fn draw_shadow_from_mask(
     dest: *mut u32,
     screen_w: u32,

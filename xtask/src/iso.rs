@@ -127,6 +127,25 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         }
     }
 
+    // Font assets (.ttf files)
+    let fonts_src = root.join("assets/fonts");
+    let font_files = [
+        "Hack-Regular.ttf",
+        "NotoSans-Regular.ttf",
+        "NotoSerif-Regular.ttf",
+        "NotoSansSymbol-Regular.ttf",
+        "NotoSansSymbol2-Regular.ttf",
+    ];
+    for font_file in font_files {
+        let src = fonts_src.join(font_file);
+        if src.exists() {
+            fs::copy(&src, assets_dir.join(font_file))
+                .with_context(|| format!("Failed to copy {} from {:?}", font_file, src))?;
+        } else {
+            eprintln!("    [WARNING] Font not found: {:?}", src);
+        }
+    }
+
     // Limine Config
     let conf_src = root.join("limine.conf");
     let limine_dest = boot_dir.join("limine");

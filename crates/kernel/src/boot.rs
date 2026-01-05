@@ -454,8 +454,15 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     crate::log::init(get_boot_ctx());
     crate::machine::input::init_mouse();
 
+    // Enable SIMD for userspace (SSE/AVX)
+    let simd = crate::machine::simd();
+    if simd.enable() {
+        crate::log::kprintln("BOOT: SIMD enabled");
+    } else {
+        crate::log::kprintln("BOOT: SIMD not available");
+    }
+
     // Register IRQ hooks for graph store to prevent deadlocks
-    graph::store::register_irq_callbacks(graph_irq_disable, graph_irq_restore);
 
     graph::init();
     graph::seed_minimal();

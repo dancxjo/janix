@@ -47,6 +47,7 @@ fn rtc_read_time() -> Option<u64> {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() {
+    thing_std::time::sleep_ms(100);
     log_info("RTC-CMOS: Starting...");
 
     // 1. Find our hardware resource

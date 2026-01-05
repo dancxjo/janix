@@ -16,6 +16,7 @@ const PL031_DR: usize = 0x000;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() {
+    thing_std::time::sleep_ms(100);
     log_info("RTC-PL031: Starting...");
 
     // 1. Find our hardware resource

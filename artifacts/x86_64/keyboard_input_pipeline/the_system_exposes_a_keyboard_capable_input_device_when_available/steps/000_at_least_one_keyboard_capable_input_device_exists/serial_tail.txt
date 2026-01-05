@@ -1,50 +1,50 @@
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=4 name=/boot/modules/ontology_check stack_top=0xffff800001f7f000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001f7f000 u_stack=0x80000000 entry=0x207720
-SCHED: configure_ctx_locked: finalized sp=0xffff800001f7ef60
-PROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=1762e000 offset=ffff800000000000
-MMU: new P4 phys=1f7f000 virt=ffff800001f7f000
-MMU: copy kernel pml4[256]
-MMU: mapping 90484000->1f80000 len 384000
-USER: Ontology Dump Tool
-MMU: mapping 90000000->2307000 len 100000
-MMU: copy kernel pml4[511]
-MMU: mapping 200000->2409000 len 6000
-MMU: mapping 206000->2412000 len 1d000
-MMU: mapping 223000->242f000 len 1000
-MMU: mapping 224000->2430000 len 1000
-PROC: ELF loaded, entry
-MMU: mapping 7ffe0000->2431000 len 20000
-SCHED: spawn: name=/boot/modules/thingcheck start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=5 name=/boot/modules/thingcheck stack_top=0xffff800002463000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800002463000 u_stack=0x80000000 entry=0x20a0c0
-SCHED: configure_ctx_locked: finalized sp=0xffff800002462f60
-PROC: spawned
-MMU: mapping 81000000->1732d000 len 400000
-USER: Ontology Check Tool
-MMU: mapping 90000000->2466000 len 100000
-MMU: mapping 82000000->1e7ab000 len 40000
-USER: ONTOLOGY_SIZE: 6597
-USER: ONTOLOGY_DIGEST: 0x7BC6152805903B6A
-USER: OK: model_roundtrip Surface
-USER: OK: schema_mismatch_detected
-USER: thingcheck: start
-USER: ONTOLOGY_DIGEST: 0x7BC6152805903B6A
-USER: OK: ontology fetched
-USER: OK: place.display present
-USER: OK: DisplayDevice decodable
-USER: OK: Framebuffer decodable
-USER: OK: Surface decodable
-USER: OK: Surface has Bytespace
-USER: OK: place.windows present
-USER: OK: MouseStream present
-USER: OK: PointerState decodable
-USER: BLOOM: loaded Normal.cur
-USER: BLOOM: initialized
+USER: CLOCK: tick 53135
+USER: CLOCK: tick 53136
+USER: CLOCK: tick 53137
+USER: CLOCK: tick 53138
+USER: CLOCK: tick 53139
+USER: CLOCK: tick 53140
+USER: CLOCK: tick 53141
+USER: CLOCK: tick 53142
+USER: CLOCK: tick 53143
+USER: CLOCK: tick 53144
+USER: CLOCK: tick 53145
+USER: CLOCK: tick 53146
+USER: CLOCK: tick 53147
+USER: CLOCK: tick 53148
+USER: CLOCK: tick 53149
+USER: CLOCK: tick 53150
+USER: CLOCK: tick 53151
+USER: CLOCK: tick 53152
+USER: CLOCK: tick 53153
+USER: CLOCK: tick 53154
+USER: CLOCK: tick 53155
+USER: CLOCK: tick 53156
+USER: CLOCK: tick 53157
+USER: CLOCK: tick 53158
+USER: CLOCK: tick 53159
+USER: CLOCK: tick 53160
+USER: CLOCK: tick 53161
+USER: CLOCK: tick 53162
+USER: CLOCK: tick 53163
+USER: CLOCK: tick 53164
+USER: CLOCK: tick 53165
+USER: CLOCK: tick 53166
+USER: CLOCK: tick 53167
+USER: CLOCK: tick 53168
+USER: CLOCK: tick 53169
+USER: CLOCK: tick 53170
+USER: CLOCK: tick 53171
+USER: CLOCK: tick 53172
+USER: CLOCK: tick 53173
+USER: CLOCK: tick 53174
+USER: CLOCK: tick 53175
+USER: CLOCK: tick 53176
+USER: CLOCK: tick 53177
+USER: CLOCK: tick 53178
+USER: CLOCK: tick 53179
+USER: CLOCK: tick 53180
+USER: CLOCK: tick 53181
+USER: CLOCK: tick 53182
+USER: CLOCK: tick 53183
+USER: CLOCK: tick 53184

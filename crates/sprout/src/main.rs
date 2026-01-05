@@ -13,6 +13,7 @@ pub fn main() {
     log_info("SPROUT: spawning services...");
     spawn_and_grant("bloom");
     spawn_and_grant("clock");
+    spawn_and_grant("timed"); // Added timed
     spawn_and_grant("inputd");
 
     // Spawn validation tools
@@ -72,8 +73,17 @@ fn configure_policy(id: ThingId, name: &str) {
         "clock" => {
             // Clock needs memory for heap! (Fixes 0x9000... crash)
             global(CapOp::MemManage);
-            // Needs to read graph? Maybe time syscalls don't need graph.
-            // But if it uses `thing_std::log`, it needs Log (granted above).
+            global(CapOp::GraphRead);
+        }
+        "timed" => {
+            // Needs heap
+            global(CapOp::MemManage);
+            // Needs to find rtc
+            global(CapOp::GraphRead);
+            // Needs to create system.time
+            global(CapOp::GraphCreate);
+            global(CapOp::GraphLink);
+            global(CapOp::GraphWrite);
         }
         "thingcheck" => {
             // Inspector needs read access
@@ -81,6 +91,7 @@ fn configure_policy(id: ThingId, name: &str) {
         }
         "rtc_cmos" => {
              global(CapOp::Log);
+             global(CapOp::MemManage); // Usually needed for heap/buffers
              global(CapOp::GraphRead); // Find hw thing
              global(CapOp::GraphCreate); // Create device
              global(CapOp::GraphLink);

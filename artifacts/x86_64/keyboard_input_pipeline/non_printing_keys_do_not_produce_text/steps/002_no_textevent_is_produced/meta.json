@@ -7,10 +7,10 @@
     "index": 2,
     "text": "no TextEvent is produced",
     "status": "passed",
-    "timestamp": "2026-01-04T05:58:43.435229040+00:00"
+    "timestamp": "2026-01-05T06:47:37.754554674+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

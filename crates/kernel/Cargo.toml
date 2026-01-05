@@ -7,6 +7,7 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [features]
+boot-progress-text = []
 fault_smoke = []
 
 [dependencies]

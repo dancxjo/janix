@@ -8,6 +8,7 @@ use spin::Mutex;
 
 use crate::boot::BootContext;
 use crate::serial;
+use crate::time;
 use abi::ids::{SymbolId, ThingId};
 use graph::store;
 use graph::symbols;
@@ -38,11 +39,14 @@ impl Level {
 
 /// Log entry payload format (inline bytes for now)
 ///
-/// Format: [level:1][subsystem_len:2][subsystem:N][message:M]
+/// Format:
+/// [level:1][subsystem:8][flags:1][arrival_ns?:8][msg_len:2][message:M]
+/// flags bit0 set => arrival_ns present
 #[derive(Clone, Debug)]
 pub struct LogEntry {
     pub level: Level,
     pub subsystem: SymbolId,
+    pub arrival_mono_ns: Option<u64>,
     pub message: Vec<u8>,
 }
 
@@ -55,6 +59,16 @@ impl LogEntry {
         // Subsystem as u64 (SymbolId)
         let sym_bytes = self.subsystem.0.to_le_bytes();
         payload.extend_from_slice(&sym_bytes);
+
+        let mut flags = 0u8;
+        if self.arrival_mono_ns.is_some() {
+            flags |= 0x1;
+        }
+        payload.push(flags);
+
+        if let Some(ns) = self.arrival_mono_ns {
+            payload.extend_from_slice(&ns.to_le_bytes());
+        }
 
         // Message length and content
         let len = self.message.len() as u16;
@@ -89,9 +103,14 @@ fn serial_write(bytes: &[u8]) {
 }
 
 /// Emit a log entry
-pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<ThingId> {
+pub(crate) fn log_emit_with_arrival(
+    level: Level,
+    subsystem: SymbolId,
+    arrival_mono_ns: u64,
+    message: &[u8],
+) -> Option<ThingId> {
     // Always output to serial for debugging
-    serial_log(level, subsystem, message);
+    serial_log(level, subsystem, Some(arrival_mono_ns), message);
 
     // Create graph entry if graph is initialized AND lock is available.
     // We use is_ready_for_logging() (try_lock) to avoid deadlocks where
@@ -115,6 +134,7 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
     let entry = LogEntry {
         level,
         subsystem,
+        arrival_mono_ns: Some(arrival_mono_ns),
         message: message.to_vec(),
     };
 
@@ -128,6 +148,12 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
     Some(id)
 }
 
+/// Emit a log entry with the current monotonic time as arrival timestamp.
+pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<ThingId> {
+    let arrival_mono_ns = time::monotonic_now();
+    log_emit_with_arrival(level, subsystem, arrival_mono_ns, message)
+}
+
 /// Kernel log helper
 pub fn klog(level: Level, subsystem: &str, message: &str) {
     let sub_sym = symbols::intern(subsystem.as_bytes());
@@ -135,7 +161,17 @@ pub fn klog(level: Level, subsystem: &str, message: &str) {
 }
 
 /// Serial output for structured logging
-fn serial_log(_level: Level, subsystem: SymbolId, message: &[u8]) {
+fn serial_log(_level: Level, subsystem: SymbolId, arrival_mono_ns: Option<u64>, message: &[u8]) {
+    if let Some(ns) = arrival_mono_ns {
+        serial::write(b"[");
+        let millis = ns / 1_000_000;
+        let micros = (ns / 1_000) % 1_000;
+        serial_write_decimal(millis);
+        serial::write(b".");
+        serial_write_padded_3(micros as u16);
+        serial::write(b" ms] ");
+    }
+
     // Format: "SUBSYSTEM: message\n"
     if let Some(sub_str) = symbols::resolve(subsystem) {
         serial::write(sub_str.as_bytes());
@@ -157,4 +193,30 @@ pub fn kprint(message: &str) {
 pub fn kprintln(message: &str) {
     kprint(message);
     kprint("\n");
+}
+
+fn serial_write_decimal(mut val: u64) {
+    if val == 0 {
+        serial::write(b"0");
+        return;
+    }
+
+    let mut buf = [0u8; 20];
+    let mut idx = buf.len();
+
+    while val > 0 {
+        idx -= 1;
+        buf[idx] = b'0' + (val % 10) as u8;
+        val /= 10;
+    }
+
+    serial::write(&buf[idx..]);
+}
+
+fn serial_write_padded_3(val: u16) {
+    let hundreds = ((val / 100) % 10) as u8;
+    let tens = ((val / 10) % 10) as u8;
+    let ones = (val % 10) as u8;
+    let buf = [b'0' + hundreds, b'0' + tens, b'0' + ones];
+    serial::write(&buf);
 }

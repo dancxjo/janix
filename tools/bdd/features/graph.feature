@@ -5,7 +5,7 @@ Feature: Graph as the system
   @graph @smoke
   Scenario: The graph is queryable at runtime
     Given the system has reached "kernel ready"
-    When I query the graph for "place.root"
+    When I query the graph for "graph.root"
     Then I should receive a valid result
 
   @graph @tasks @wip
@@ -21,8 +21,8 @@ Feature: Graph as the system
     Then it should have at least 1 relationship "owns" to a Thing of kind "kind.Task"
 
   @graph @devices @wip
-  Scenario: Devices appear in place.devices
+  Scenario: Devices appear in graph.devices
     Given the system has reached "kernel ready"
-    When I query the graph for Place "place.devices"
+    When I query the graph for graph "graph.devices"
     Then it should contain zero or more Things
-    And each Thing in that Place should have a kind
+    And each Thing in that graph should have a kind

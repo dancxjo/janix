@@ -2,7 +2,7 @@ use abi::ids::{SymbolId, ThingId};
 use graph::store;
 use graph::symbols::sym;
 
-fn create_val_u64(s: &mut store::PlaceStore, val: u64) -> ThingId {
+fn create_val_u64(s: &mut store::GraphStore, val: u64) -> ThingId {
     let id = s.create_thing(sym::KIND_VALUE_U64).unwrap();
     let _ = s.set_payload(id, &val.to_le_bytes());
     id
@@ -67,7 +67,7 @@ impl Bytespace {
             let phys_val = create_val_u64(s, phys_base);
             let _ = s.create_relationship(sym::PRED_BASE_PHYS, t, phys_val);
 
-            if let Some(mem) = s.find_by_name(sym::PLACE_MEMORY) {
+            if let Some(mem) = s.find_by_name(sym::GRAPH_MEMORY) {
                 let _ = s.create_relationship(sym::PRED_CONTAINS, mem, t);
             }
             t
@@ -118,7 +118,7 @@ impl Bytespace {
             let phys_val = create_val_u64(s, phys_base);
             let _ = s.create_relationship(sym::PRED_BASE_PHYS, t, phys_val);
 
-            if let Some(mem) = s.find_by_name(sym::PLACE_MEMORY) {
+            if let Some(mem) = s.find_by_name(sym::GRAPH_MEMORY) {
                 let _ = s.create_relationship(sym::PRED_CONTAINS, mem, t);
             }
             t
@@ -137,22 +137,22 @@ impl Bytespace {
     }
 
     pub fn new_device(phys: u64, size: usize) -> Self {
-        Self::create_external(BytespaceKind::Device, phys, size, sym::PLACE_DEVICES)
+        Self::create_external(BytespaceKind::Device, phys, size, sym::GRAPH_DEVICES)
     }
 
     pub fn new_framebuffer(phys: u64, size: usize) -> Self {
-        Self::create_external(BytespaceKind::Framebuffer, phys, size, sym::PLACE_DEVICES)
+        Self::create_external(BytespaceKind::Framebuffer, phys, size, sym::GRAPH_DEVICES)
     }
 
     pub fn new_module(phys: u64, size: usize) -> Self {
-        Self::create_external(BytespaceKind::Module, phys, size, sym::PLACE_MEMORY)
+        Self::create_external(BytespaceKind::Module, phys, size, sym::GRAPH_MEMORY)
     }
 
     pub fn new_kernel_heap(phys: u64, size: usize) -> Self {
-        Self::create_external(BytespaceKind::KernelHeap, phys, size, sym::PLACE_MEMORY)
+        Self::create_external(BytespaceKind::KernelHeap, phys, size, sym::GRAPH_MEMORY)
     }
 
-    fn create_external(kind: BytespaceKind, phys: u64, size: usize, place_sym: SymbolId) -> Self {
+    fn create_external(kind: BytespaceKind, phys: u64, size: usize, graph_sym: SymbolId) -> Self {
         let thing = store::with_store(|s| {
             let t = s
                 .create_thing(sym::KIND_BYTE_SPACE)
@@ -168,8 +168,8 @@ impl Bytespace {
             let phys_val = create_val_u64(s, phys);
             let _ = s.create_relationship(sym::PRED_BASE_PHYS, t, phys_val);
 
-            if let Some(place) = s.find_by_name(place_sym) {
-                let _ = s.create_relationship(sym::PRED_CONTAINS, place, t);
+            if let Some(graph) = s.find_by_name(graph_sym) {
+                let _ = s.create_relationship(sym::PRED_CONTAINS, graph, t);
             }
             t
         });

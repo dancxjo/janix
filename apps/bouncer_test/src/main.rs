@@ -29,7 +29,7 @@ pub fn main() {
     }
 
     // 2. Valid Envelope
-    let mut model = models::Place { name: symbol_intern("TestPlace") };
+    let mut model = models::Graph { name: symbol_intern("TestGraph") };
     let full = Codec::encode(&model);
     let res = thing_set_body(tid, &full);
     if res.is_ok() {

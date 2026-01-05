@@ -6,7 +6,7 @@ Feature: System thingification
 
   Scenario: Display device Things exist and are decodable
     When a userspace program checks core Things
-    Then it reports "OK: place.display present"
+    Then it reports "OK: graph.display present"
     And it reports "OK: DisplayDevice decodable"
     And it reports "OK: Framebuffer decodable"
 
@@ -21,4 +21,4 @@ Feature: System thingification
 
   Scenario: Window Things exist and are discoverable
     When a userspace program checks window Things
-    Then it reports "OK: place.windows present"
+    Then it reports "OK: graph.windows present"

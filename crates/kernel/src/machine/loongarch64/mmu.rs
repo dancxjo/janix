@@ -184,6 +184,14 @@ impl AddressSpace {
             desc |= PTE_NX;
         }
 
+        if perms.contains(MapPerms::USER) && perms.contains(MapPerms::EXEC) {
+            crate::log::klog(
+                crate::log::Level::Info,
+                "MMU",
+                &alloc::format!("map_page: virt={:x} phys={:x} desc={:x}", virt, phys, desc),
+            );
+        }
+
         entry_ptr.write(desc);
 
         Ok(())
@@ -217,7 +225,8 @@ unsafe fn ensure_table(table: *mut u64, index: usize) -> MapResult<*mut u64> {
         // Invalid, allocate new subtable
         let new_table_phys = alloc_subtable()?;
         // Table entry: addr | V (tables don't have P bit set)
-        let new_entry = (new_table_phys & !0xfff) | PTE_V;
+        // We set PLV=User and MAT=CC for directory entries to allow user walking
+        let new_entry = (new_table_phys & !0xfff) | PTE_V | PTE_PLV_USER | PTE_MAT_CC;
         entry_ptr.write(new_entry);
         Ok(phys_to_virt(new_table_phys) as *mut u64)
     } else {

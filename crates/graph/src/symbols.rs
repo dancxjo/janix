@@ -73,21 +73,21 @@ pub fn init() {
     // Deterministic pre-seeding
     // These MUST match the constants in the `sym` module below.
     table.preseed(&[
-        "place.root",
-        "place.kernel",
-        "place.devices",
-        "place.scheduler", // Added
-        "place.memory",
-        "place.tasks",
-        "place.logs",
-        "place.time",
-        "kind.Place",
+        "graph.root",
+        "graph.kernel",
+        "graph.devices",
+        "graph.scheduler", // Added
+        "graph.memory",
+        "graph.tasks",
+        "graph.logs",
+        "graph.time",
+        "kind.Graph",
         "kind.Thing",
         "kind.Relationship",
         "predicate.contains",
         "predicate.owns",
         "predicate.references",
-        "place.faults",
+        "graph.faults",
         "kind.Fault",
         "predicate.has_kind",
         "predicate.at_ip",
@@ -168,10 +168,10 @@ pub fn init() {
         "kind.rect",
         "kind.value_u32",
         "kind.value_rgba",
-        "place.surfaces",
-        "place.windows",
-        "place.compositor",
-        "place.input",
+        "graph.surfaces",
+        "graph.windows",
+        "graph.compositor",
+        "graph.input",
         "predicate.primary",
         "predicate.format",
         "predicate.stride",
@@ -190,13 +190,13 @@ pub fn init() {
         "snapshot.format.md",
         "kind.report",
         "report.boot_status",
-        "place.reports",
-        "place.snapshots",
-        "place.time.monotonic",
-        "place.time.system",
-        "place.devices.timers",
-        "place.services.time",
-        "place.apps.clock",
+        "graph.reports",
+        "graph.snapshots",
+        "graph.time.monotonic",
+        "graph.time.system",
+        "graph.devices.timers",
+        "graph.services.time",
+        "graph.apps.clock",
         "kind.TimerDevice",
         "kind.MonotonicClock",
         "kind.SystemClock",
@@ -207,7 +207,7 @@ pub fn init() {
         "predicate.at_time",
         "predicate.summary",
         "predicate.count",
-        "predicate.for_place",
+        "predicate.for_graph",
         // Time sources
         "time_source.apic_tsc",
         "time_source.arm_cntvct",
@@ -224,7 +224,7 @@ pub fn init() {
         "task_state.blocked.watch",
         "task_state.blocked.timeout",
         // Wallpaper / Assets
-        "place.assets",
+        "graph.assets",
         "kind.Asset",
         "predicate.cmdline",
         // Input / Pointer ontology
@@ -234,7 +234,7 @@ pub fn init() {
         "rel.cursor",
         "rel.hotspot",
         // LAPIC / Platform ontology
-        "place.platform",
+        "graph.platform",
         "kind.Timer",
         "kind.InterruptController",
         "predicate.has_timer",
@@ -275,16 +275,16 @@ pub fn resolve(id: SymbolId) -> Option<String> {
 pub mod sym {
     use abi::ids::SymbolId;
 
-    pub const PLACE_ROOT: SymbolId = SymbolId(1);
-    pub const PLACE_KERNEL: SymbolId = SymbolId(2);
-    pub const PLACE_DEVICES: SymbolId = SymbolId(3);
-    pub const PLACE_SCHEDULER: SymbolId = SymbolId(4); // New
-    pub const PLACE_MEMORY: SymbolId = SymbolId(5);
-    pub const PLACE_TASKS: SymbolId = SymbolId(6);
-    pub const PLACE_LOGS: SymbolId = SymbolId(7);
-    pub const PLACE_TIME: SymbolId = SymbolId(8);
+    pub const GRAPH_ROOT: SymbolId = SymbolId(1);
+    pub const GRAPH_KERNEL: SymbolId = SymbolId(2);
+    pub const GRAPH_DEVICES: SymbolId = SymbolId(3);
+    pub const GRAPH_SCHEDULER: SymbolId = SymbolId(4); // New
+    pub const GRAPH_MEMORY: SymbolId = SymbolId(5);
+    pub const GRAPH_TASKS: SymbolId = SymbolId(6);
+    pub const GRAPH_LOGS: SymbolId = SymbolId(7);
+    pub const GRAPH_TIME: SymbolId = SymbolId(8);
 
-    pub const KIND_PLACE: SymbolId = SymbolId(9);
+    pub const KIND_GRAPH: SymbolId = SymbolId(9);
     pub const KIND_THING: SymbolId = SymbolId(10);
     pub const KIND_RELATIONSHIP: SymbolId = SymbolId(11);
 
@@ -292,7 +292,7 @@ pub mod sym {
     pub const PRED_OWNS: SymbolId = SymbolId(13);
     pub const PRED_REFERENCES: SymbolId = SymbolId(14);
 
-    pub const PLACE_FAULTS: SymbolId = SymbolId(15);
+    pub const GRAPH_FAULTS: SymbolId = SymbolId(15);
     pub const KIND_FAULT: SymbolId = SymbolId(16);
     pub const PRED_HAS_KIND: SymbolId = SymbolId(17);
     pub const PRED_AT_IP: SymbolId = SymbolId(18);
@@ -384,10 +384,10 @@ pub mod sym {
     pub const KIND_VALUE_U32: SymbolId = SymbolId(91);
     pub const KIND_VALUE_RGBA: SymbolId = SymbolId(92);
 
-    pub const PLACE_SURFACES: SymbolId = SymbolId(93);
-    pub const PLACE_WINDOWS: SymbolId = SymbolId(94);
-    pub const PLACE_COMPOSITOR: SymbolId = SymbolId(95);
-    pub const PLACE_INPUT: SymbolId = SymbolId(96);
+    pub const GRAPH_SURFACES: SymbolId = SymbolId(93);
+    pub const GRAPH_WINDOWS: SymbolId = SymbolId(94);
+    pub const GRAPH_COMPOSITOR: SymbolId = SymbolId(95);
+    pub const GRAPH_INPUT: SymbolId = SymbolId(96);
 
     pub const PRED_PRIMARY: SymbolId = SymbolId(97); // device --[primary]--> surface
     pub const PRED_FORMAT: SymbolId = SymbolId(98); // surface --[format]--> value
@@ -409,14 +409,14 @@ pub mod sym {
     pub const KIND_REPORT: SymbolId = SymbolId(112);
     pub const REPORT_BOOT_STATUS: SymbolId = SymbolId(113);
 
-    pub const PLACE_REPORTS: SymbolId = SymbolId(114);
-    pub const PLACE_SNAPSHOTS: SymbolId = SymbolId(115);
+    pub const GRAPH_REPORTS: SymbolId = SymbolId(114);
+    pub const GRAPH_SNAPSHOTS: SymbolId = SymbolId(115);
 
-    pub const PLACE_TIME_MONOTONIC: SymbolId = SymbolId(116);
-    pub const PLACE_TIME_SYSTEM: SymbolId = SymbolId(117);
-    pub const PLACE_DEVICES_TIMERS: SymbolId = SymbolId(118);
-    pub const PLACE_SERVICES_TIME: SymbolId = SymbolId(119);
-    pub const PLACE_APPS_CLOCK: SymbolId = SymbolId(120);
+    pub const GRAPH_TIME_MONOTONIC: SymbolId = SymbolId(116);
+    pub const GRAPH_TIME_SYSTEM: SymbolId = SymbolId(117);
+    pub const GRAPH_DEVICES_TIMERS: SymbolId = SymbolId(118);
+    pub const GRAPH_SERVICES_TIME: SymbolId = SymbolId(119);
+    pub const GRAPH_APPS_CLOCK: SymbolId = SymbolId(120);
     pub const KIND_TIMER_DEVICE: SymbolId = SymbolId(121);
     pub const KIND_MONOTONIC_CLOCK: SymbolId = SymbolId(122);
     pub const KIND_SYSTEM_CLOCK: SymbolId = SymbolId(123);
@@ -428,7 +428,7 @@ pub mod sym {
     pub const PRED_AT_TIME: SymbolId = SymbolId(128);
     pub const PRED_SUMMARY: SymbolId = SymbolId(129);
     pub const PRED_COUNT: SymbolId = SymbolId(130);
-    pub const PRED_FOR_PLACE: SymbolId = SymbolId(131);
+    pub const PRED_FOR_GRAPH: SymbolId = SymbolId(131);
 
     pub const TIME_SOURCE_APIC_TSC: SymbolId = SymbolId(132);
     pub const TIME_SOURCE_ARM_CNTVCT: SymbolId = SymbolId(133);
@@ -443,7 +443,7 @@ pub mod sym {
     pub const TASK_STATE_BLOCKED_TIMEOUT: SymbolId = SymbolId(141);
 
     // Wallpaper / Assets
-    pub const PLACE_ASSETS: SymbolId = SymbolId(142);
+    pub const GRAPH_ASSETS: SymbolId = SymbolId(142);
     pub const KIND_ASSET: SymbolId = SymbolId(143);
     pub const PRED_CMDLINE: SymbolId = SymbolId(144);
 
@@ -455,7 +455,7 @@ pub mod sym {
     pub const REL_HOTSPOT: SymbolId = SymbolId(149);
 
     // LAPIC / Platform ontology
-    pub const PLACE_PLATFORM: SymbolId = SymbolId(150);
+    pub const GRAPH_PLATFORM: SymbolId = SymbolId(150);
     pub const KIND_TIMER: SymbolId = SymbolId(151);
     pub const KIND_INTERRUPT_CONTROLLER: SymbolId = SymbolId(152);
     pub const PRED_HAS_TIMER: SymbolId = SymbolId(153);

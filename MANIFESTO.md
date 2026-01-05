@@ -93,7 +93,7 @@ Schedulers, memory managers, drivers, and compositors are services, not gods.
 
 Power comes from position in the graph, not from where code lives.
 
-### 4. Memory Is a Place, Not a Side Effect
+### 4. Memory Is a Graph, Not a Side Effect
 
 Memory is modeled as Bytespaces:
 * addressable

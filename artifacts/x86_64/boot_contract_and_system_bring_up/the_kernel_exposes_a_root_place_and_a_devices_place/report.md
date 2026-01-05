@@ -11,8 +11,8 @@
 | :---: | --- | :---: | --- |
 | 0 | the system has reached "kernel ready" | ❌ | �� 📝  |
 | 1 | I query the graph for the root Place | ✅ | �� 📝  |
-| 2 | a Place should exist named "place.root" | ❌ | �� 📝  |
-| 3 | a Place should exist named "place.devices" | ✅ | �� 📝  |
+| 2 | a Place should exist named "graph.root" | ❌ | �� 📝  |
+| 3 | a Place should exist named "graph.devices" | ✅ | �� 📝  |
 
 ## Execution Details
 
@@ -85,7 +85,7 @@ TICK: switch IDLE -> 1 sp=0xffff800001798f60
 
 ---
 
-### 3. a Place should exist named "place.root" ❌
+### 3. a Place should exist named "graph.root" ❌
 
 ![Screenshot](steps/002_a_place_should_exist_named__place_root_/screen.png)
 
@@ -144,7 +144,7 @@ TICK: switch IDLE -> 1 sp=0xffff800001798f60
 
 ---
 
-### 4. a Place should exist named "place.devices" ✅
+### 4. a Place should exist named "graph.devices" ✅
 
 ![Screenshot](steps/003_a_place_should_exist_named__place_devices_/screen.png)
 

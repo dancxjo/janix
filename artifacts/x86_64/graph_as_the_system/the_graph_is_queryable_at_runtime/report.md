@@ -10,7 +10,7 @@
 | Index | Step | Status | Artifacts |
 | :---: | --- | :---: | --- |
 | 0 | the system has reached "kernel ready" | ✅ | �� 📝  |
-| 1 | I query the graph for "place.root" | ⏭️ | �� 📝  |
+| 1 | I query the graph for "graph.root" | ⏭️ | �� 📝  |
 
 ## Execution Details
 
@@ -73,7 +73,7 @@ TICK: switch IDLE -> 1 sp=0xffff800001798f60
 
 ---
 
-### 2. I query the graph for "place.root" ❌
+### 2. I query the graph for "graph.root" ❌
 
 ![Screenshot](steps/001_i_query_the_graph_for__place_root_/screen.png)
 

@@ -1,10 +1,11 @@
+use crate::input::PointerInput;
+use crate::pixels::*;
+use crate::shadow::{draw_shadow_from_mask, ShadowMask, ShadowParams};
+use crate::ui::{collect_window_scenes, render_window_scenes};
 use alloc::vec::Vec;
+use models::*;
 use thing_std::graph::*;
 use thing_std::*;
-use models::*;
-use crate::input::PointerInput;
-use crate::scene::Rect;
-use crate::pixels::*;
 
 use crate::assets::cursor::{CursorAnimator, CursorAsset, CursorFrame};
 use crate::backend::*;
@@ -13,17 +14,20 @@ pub fn run() {
     thing_std::init(0);
     log_info("BLOOM: alive");
 
+    let mut graph_client = SyscallGraphClient;
+
     loop {
         if let Some(display_id) = thing_find("device.display0") {
-            let (width, height) = if let Ok(display) = DisplayDevice::read(&SyscallGraphClient, display_id) {
-                (display.width, display.height)
-            } else {
-                (1280u32, 720u32)
-            };
+            let (width, height) =
+                if let Ok(display) = DisplayDevice::read(&SyscallGraphClient, display_id) {
+                    (display.width, display.height)
+                } else {
+                    (1280u32, 720u32)
+                };
 
             let mut backend = CpuBytespaceBackend::new(
-                 thing_find("bytespace.display0").expect("bytespace not found"),
-                 0xA000_0000u64
+                thing_find("bytespace.display0").expect("bytespace not found"),
+                0xA000_0000u64,
             );
             backend.configure(SurfaceDesc {
                 width: width,
@@ -39,19 +43,18 @@ pub fn run() {
                 log_info("BLOOM: mapped bytespace.mouse_input");
                 PointerInput::new(mouse_vaddr as *const u8, mouse_size as u32, width, height)
             } else {
-                 PointerInput::new(core::ptr::null(), 0, width, height)
+                PointerInput::new(core::ptr::null(), 0, width, height)
             };
 
             let buffer_size = (width * height) as usize;
             let mut back_buffer = alloc::vec![0u32; buffer_size];
             let mut wallpaper_cache = alloc::vec![0u32; buffer_size];
 
-            let wallpaper = thing_find("bytespace.asset.clouds.bmp")
-                .and_then(|id| {
-                    let len = 128 * 1024 * 1024; // 128MB to support 4K+
-                    let buf = crate::assets::map_bytespace(id, 0x8000_0000, len);
-                    crate::assets::bmp::parse_bmp(buf)
-                });
+            let wallpaper = thing_find("bytespace.asset.clouds.bmp").and_then(|id| {
+                let len = 128 * 1024 * 1024; // 128MB to support 4K+
+                let buf = crate::assets::map_bytespace(id, 0x8000_0000, len);
+                crate::assets::bmp::parse_bmp(buf)
+            });
 
             if let Some(ref wp) = wallpaper {
                 render_wallpaper_full(wallpaper_cache.as_mut_ptr(), width, height, wp);
@@ -67,21 +70,23 @@ pub fn run() {
 
             // Load cursor assets
             let cursor_asset = load_cursor_asset();
-            
-            // Mouse state
-            let mut prev_px = 0;
-            let mut prev_py = 0;
-            let mut prev_cursor_rect: Option<Rect> = None;
 
             // Use milliseconds for animation timing (monotonic_now returns nanoseconds)
             let mut animator = cursor_asset.map(|asset| CursorAnimator::new(asset, 1));
             let mut last_redraw_ms: u64 = 0;
+            let mut last_scene_refresh_ms: u64 = 0;
+            let mut window_scenes = collect_window_scenes(&mut graph_client);
+            let mut logged_shared_shadow = false;
+            let mut prev_px = 0;
+            let mut prev_py = 0;
+            let mut logged_window_once = false;
 
             loop {
                 // Get current time in milliseconds
                 let now_ms = (monotonic_now() / 1_000_000) as u64;
 
                 let (px, py, buttons) = input.poll();
+                let moved = px != prev_px || py != prev_py;
 
                 // Animation update
                 let anim_changed = if let Some(anim) = animator.as_mut() {
@@ -90,6 +95,11 @@ pub fn run() {
                     false
                 };
 
+                if now_ms.saturating_sub(last_scene_refresh_ms) > 250 {
+                    window_scenes = collect_window_scenes(&mut graph_client);
+                    last_scene_refresh_ms = now_ms;
+                }
+
                 let force_redraw = if now_ms - last_redraw_ms > 50 {
                     last_redraw_ms = now_ms;
                     true
@@ -97,85 +107,78 @@ pub fn run() {
                     false
                 };
 
-                if px != prev_px
-                    || py != prev_py
-                    || buttons != 0
-                    || anim_changed
-                    || force_redraw
-                    || prev_cursor_rect.is_none() // Fix: Force redraw on first frame
-                {
+                if force_redraw || anim_changed || moved || buttons != 0 {
                     unsafe {
-                        let back_buf = &mut back_buffer;
-                        let cache = &wallpaper_cache;
-                        let cursor_frame =
-                            if let Some(anim) = animator.as_ref() {
-                                anim.current_frame()
-                            } else {
-                                None
-                            };
-                        
-                        // Calculate cursor rect
-                        let (cw, ch, hot_x, hot_y) = if let Some(frame) = cursor_frame {
-                            (frame.width, frame.height, frame.hotspot_x, frame.hotspot_y)
-                        } else {
-                            (16, 24, 0, 0)
-                        };
+                        // Rebuild frame: wallpaper -> windows -> cursor
+                        core::ptr::copy_nonoverlapping(
+                            wallpaper_cache.as_ptr(),
+                            back_buffer.as_mut_ptr(),
+                            buffer_size,
+                        );
 
-                        let cursor_rect = Rect {
-                            x: px as i32 - hot_x as i32,
-                            y: py as i32 - hot_y as i32,
-                            w: cw,
-                            h: ch
-                        };
-
-                        // Clear previous cursor position
-                        if let Some(prev) = prev_cursor_rect {
-                           // Logic to restore from cache would involve DirtyRect
-                           // For now, simpler redraw strategy:
-                           // If we have separate layers, we'd redraw the under-layer.
-                           // Here we have wallpaper_cache.
-                         
-                           // Optimization: Union of old and new rect?
-                           // Actually, let's just redraw the union of separate rects.
-                           
-                           let clear_rect = Rect::union(prev, cursor_rect);
-                           
-                           // Redraw from wallpaper cache to backbuffer
-                            redraw_region(back_buf.as_mut_ptr(), cache.as_ptr(), width, height, clear_rect);
-
-                           if let Some(frame) = cursor_frame {
-                               crate::pixels::draw_cursor_shadow(back_buf.as_mut_ptr(), width, height, frame, px, py);
-                               crate::pixels::draw_cursor_frame(back_buf.as_mut_ptr(), width, height, frame, px, py);
-                           } else {
-                               // Fallback cursor?
-                           }
-                           
-                           // Present
-                           backend.present(back_buf, DirtyRect {
-                               x: clear_rect.x,
-                               y: clear_rect.y,
-                               w: clear_rect.w,
-                               h: clear_rect.h
-                           });
-                        } else {
-                             // First frame or full redraw
-                             // Only if we want to draw cursor initially
-                             
-                             // Draw cursor
-                           if let Some(frame) = cursor_frame {
-                               draw_cursor_frame(back_buf.as_mut_ptr(), width, height, frame, px, py);
-                           }
-
-                           // Fix: resent full screen on first frame
-                           backend.present(back_buf, DirtyRect {
-                               x: 0,
-                               y: 0,
-                               w: width,
-                               h: height
-                           });
+                        render_window_scenes(
+                            back_buffer.as_mut_ptr(),
+                            width,
+                            height,
+                            &window_scenes,
+                        );
+                        if !window_scenes.is_empty() && !logged_window_once {
+                            let win_id = window_scenes[0].id.low();
+                            log_info(&alloc::format!("BLOOM: rendered window {}", win_id));
+                            logged_window_once = true;
                         }
-                        
-                        prev_cursor_rect = Some(cursor_rect);
+
+                        let cursor_frame = if let Some(anim) = animator.as_ref() {
+                            anim.current_frame()
+                        } else {
+                            None
+                        };
+
+                        if let Some(frame) = cursor_frame {
+                            draw_shadow_from_mask(
+                                back_buffer.as_mut_ptr(),
+                                width,
+                                height,
+                                px - frame.hotspot_x,
+                                py - frame.hotspot_y,
+                                ShadowMask::SpriteAlpha {
+                                    pixels: &frame.shadow_pixels,
+                                    width: frame.width,
+                                    height: frame.height,
+                                },
+                                ShadowParams {
+                                    offset_x: frame.shadow_offset_x,
+                                    offset_y: frame.shadow_offset_y,
+                                    blur_radius: 1,
+                                    color: 0x33000000,
+                                },
+                            );
+                            draw_cursor_frame(
+                                back_buffer.as_mut_ptr(),
+                                width,
+                                height,
+                                frame,
+                                px,
+                                py,
+                            );
+                            if !logged_shared_shadow {
+                                log_info("BLOOM: shadow kernel: shared");
+                                logged_shared_shadow = true;
+                            }
+                        } else {
+                            draw_fallback_cursor(back_buffer.as_mut_ptr(), width, height, px, py);
+                        }
+
+                        backend.present(
+                            back_buffer.as_mut_slice(),
+                            DirtyRect {
+                                x: 0,
+                                y: 0,
+                                w: width,
+                                h: height,
+                            },
+                        );
+
                         prev_px = px;
                         prev_py = py;
                     }
@@ -217,9 +220,7 @@ fn load_ani_asset(bs_id: ThingId, vaddr: u64) -> Option<CursorAsset> {
     crate::assets::cursor::ani::load_ani(buf)
 }
 
-
 // Pixel functions removed
-
 
 use crate::assets::bmp::Wallpaper;
 

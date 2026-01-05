@@ -83,21 +83,21 @@ impl Task {
         }
     }
 
-    pub fn set_state(&mut self, place: &mut store::PlaceStore, new_state: TaskState) {
+    pub fn set_state(&mut self, graph: &mut store::GraphStore, new_state: TaskState) {
         if self.state == new_state {
             return;
         }
         self.state = new_state;
 
         let state_kind = new_state.to_symbol();
-        if let Ok(_state_thing) = place.create_thing(sym::KIND_THING) {
-            if let Ok(st) = place.create_thing(state_kind) {
-                let _ = place.create_relationship(sym::PRED_STATE, self.thing, st);
+        if let Ok(_state_thing) = graph.create_thing(sym::KIND_THING) {
+            if let Ok(st) = graph.create_thing(state_kind) {
+                let _ = graph.create_relationship(sym::PRED_STATE, self.thing, st);
             }
         }
     }
 
-    pub fn set_on_cpu(&self, place: &mut store::PlaceStore, cpu_thing: ThingId) {
-        let _ = place.create_relationship(sym::PRED_ON_CPU, self.thing, cpu_thing);
+    pub fn set_on_cpu(&self, graph: &mut store::GraphStore, cpu_thing: ThingId) {
+        let _ = graph.create_relationship(sym::PRED_ON_CPU, self.thing, cpu_thing);
     }
 }

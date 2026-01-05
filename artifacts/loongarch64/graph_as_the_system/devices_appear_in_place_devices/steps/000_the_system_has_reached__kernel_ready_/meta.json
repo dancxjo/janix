@@ -2,7 +2,7 @@
   "version": 1,
   "arch": "loongarch64",
   "feature": "Graph as the system",
-  "scenario": "Devices appear in place.devices",
+  "scenario": "Devices appear in graph.devices",
   "step": {
     "index": 0,
     "text": "the system has reached \"kernel ready\"",

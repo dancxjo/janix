@@ -32,22 +32,22 @@ pub fn init() {
     let mut state = TIME_STATE.lock();
 
     store::with_store(|s| {
-        // 1. Create/Find Places
-        let place_time = s.find_by_name(sym::PLACE_TIME).expect("place.time missing");
+        // 1. Create/Find graphs
+        let graph_time = s.find_by_name(sym::GRAPH_TIME).expect("graph.time missing");
 
-        let place_mono = s
-            .create_thing(sym::KIND_PLACE)
-            .expect("create place.time.monotonic");
-        s.register_name(place_mono, sym::PLACE_TIME_MONOTONIC);
-        s.create_relationship(sym::PRED_CONTAINS, place_time, place_mono)
-            .expect("link place.time.monotonic");
+        let graph_mono = s
+            .create_thing(sym::KIND_GRAPH)
+            .expect("create graph.time.monotonic");
+        s.register_name(graph_mono, sym::GRAPH_TIME_MONOTONIC);
+        s.create_relationship(sym::PRED_CONTAINS, graph_time, graph_mono)
+            .expect("link graph.time.monotonic");
 
-        let place_system = s
-            .create_thing(sym::KIND_PLACE)
-            .expect("create place.time.system");
-        s.register_name(place_system, sym::PLACE_TIME_SYSTEM);
-        s.create_relationship(sym::PRED_CONTAINS, place_time, place_system)
-            .expect("link place.time.system");
+        let graph_system = s
+            .create_thing(sym::KIND_GRAPH)
+            .expect("create graph.time.system");
+        s.register_name(graph_system, sym::GRAPH_TIME_SYSTEM);
+        s.create_relationship(sym::PRED_CONTAINS, graph_time, graph_system)
+            .expect("link graph.time.system");
 
         // 2. Create MonotonicClock Thing
         let source = match () {
@@ -72,7 +72,7 @@ pub fn init() {
             .create_thing(sym::KIND_MONOTONIC_CLOCK)
             .expect("create MonotonicClock");
         mono_body.write(s, mono_thing).expect("write MonotonicClock");
-        s.create_relationship(sym::PRED_CONTAINS, place_mono, mono_thing)
+        s.create_relationship(sym::PRED_CONTAINS, graph_mono, mono_thing)
             .expect("link MonotonicClock");
         state.monotonic_thing = Some(mono_thing);
 
@@ -90,7 +90,7 @@ pub fn init() {
             .create_thing(sym::KIND_SYSTEM_CLOCK)
             .expect("create SystemClock");
         sys_body.write(s, sys_thing).expect("write SystemClock");
-        s.create_relationship(sym::PRED_CONTAINS, place_system, sys_thing)
+        s.create_relationship(sym::PRED_CONTAINS, graph_system, sys_thing)
             .expect("link SystemClock");
         state.system_thing = Some(sys_thing);
     });
@@ -140,14 +140,14 @@ pub fn set_system_time(unix_epoch_ns: i64) {
         if let Some(offset_thing) = state.offset_thing {
             offset_body.write(s, offset_thing).expect("write TimeOffset");
         } else {
-            let place_system = s
-                .find_by_name(sym::PLACE_TIME_SYSTEM)
-                .expect("place.time.system missing");
+            let graph_system = s
+                .find_by_name(sym::GRAPH_TIME_SYSTEM)
+                .expect("graph.time.system missing");
             let offset_thing = s
                 .create_thing(sym::KIND_TIME_OFFSET)
                 .expect("create TimeOffset");
             offset_body.write(s, offset_thing).expect("write TimeOffset");
-            s.create_relationship(sym::PRED_CONTAINS, place_system, offset_thing)
+            s.create_relationship(sym::PRED_CONTAINS, graph_system, offset_thing)
                 .expect("link TimeOffset");
             state.offset_thing = Some(offset_thing);
         }

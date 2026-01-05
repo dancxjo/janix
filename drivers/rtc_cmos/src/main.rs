@@ -64,15 +64,15 @@ pub extern "C" fn main() {
 
     // 2. Publish device.rtc0
     let kind_rtc = thing_std::graph::symbol_intern("kind.RtcDevice");
-    let device_place = thing_std::graph::thing_find("place.devices"); // sym::PLACE_DEVICES is "place.devices"
+    let device_graph = thing_std::graph::thing_find("graph.devices"); // sym::GRAPH_DEVICES is "graph.devices"
 
     let rtc_thing = thing_std::graph::thing_create(kind_rtc, ThingId(0)); 
     
     // Register name
     thing_std::graph::thing_register_name(rtc_thing, "device.rtc0");
     
-    if let Some(dp) = device_place {
-        let pred_contains = thing_std::graph::symbol_intern("pred.contains");
+    if let Some(dp) = device_graph {
+        let pred_contains = thing_std::graph::symbol_intern("predicate.contains");
         thing_std::graph::relationship_create(pred_contains, dp, rtc_thing);
     }
     

@@ -5,7 +5,7 @@
   "scenario": "A graph watch fires when a Thing is added to a Place",
   "step": {
     "index": 1,
-    "text": "\"inspector\" is watching Place \"place.devices\"",
+    "text": "\"inspector\" is watching Place \"graph.devices\"",
     "status": "skipped",
     "timestamp": "2026-01-04T04:55:29.864770024+00:00"
   },

@@ -5,7 +5,7 @@
 
 use abi::ids::ThingId;
 use crate::log::{self, Level};
-use graph::store::{self, PlaceStore};
+use graph::store::{self, GraphStore};
 use graph::symbols::sym;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,41 +68,41 @@ pub struct TrapRecord {
     pub task: Option<ThingId>,
 }
 
-pub fn record_fault(place: &mut PlaceStore, tr: &TrapRecord) -> ThingId {
-    let fault_id = place
+pub fn record_fault(graph: &mut GraphStore, tr: &TrapRecord) -> ThingId {
+    let fault_id = graph
         .create_thing(sym::KIND_FAULT)
         .expect("failed to create fault thing");
 
-    if let Some(place_faults) = place.find_by_name(sym::PLACE_FAULTS) {
-        let _ = place.create_relationship(sym::PRED_CONTAINS, place_faults, fault_id);
+    if let Some(graph_faults) = graph.find_by_name(sym::GRAPH_FAULTS) {
+        let _ = graph.create_relationship(sym::PRED_CONTAINS, graph_faults, fault_id);
     }
 
     let kind_sym = tr.kind.to_symbol();
-    let kind_thing_id = place
+    let kind_thing_id = graph
         .create_thing(sym::KIND_THING)
         .expect("failed to create kind thing");
-    place.register_name(kind_thing_id, kind_sym);
+    graph.register_name(kind_thing_id, kind_sym);
 
-    let _ = place.create_relationship(sym::PRED_HAS_KIND, fault_id, kind_thing_id);
+    let _ = graph.create_relationship(sym::PRED_HAS_KIND, fault_id, kind_thing_id);
 
-    let ip_thing = place.create_thing(sym::KIND_THING).expect("IP thing");
-    let _ = place.set_payload(ip_thing, &tr.ip.to_le_bytes());
-    let _ = place.create_relationship(sym::PRED_AT_IP, fault_id, ip_thing);
+    let ip_thing = graph.create_thing(sym::KIND_THING).expect("IP thing");
+    let _ = graph.set_payload(ip_thing, &tr.ip.to_le_bytes());
+    let _ = graph.create_relationship(sym::PRED_AT_IP, fault_id, ip_thing);
 
-    let sp_thing = place.create_thing(sym::KIND_THING).expect("SP thing");
-    let _ = place.set_payload(sp_thing, &tr.sp.to_le_bytes());
-    let _ = place.create_relationship(sym::PRED_AT_SP, fault_id, sp_thing);
+    let sp_thing = graph.create_thing(sym::KIND_THING).expect("SP thing");
+    let _ = graph.set_payload(sp_thing, &tr.sp.to_le_bytes());
+    let _ = graph.create_relationship(sym::PRED_AT_SP, fault_id, sp_thing);
 
     if let Some(addr) = tr.addr {
-        let addr_thing = place.create_thing(sym::KIND_THING).expect("Addr thing");
-        let _ = place.set_payload(addr_thing, &addr.to_le_bytes());
-        let _ = place.create_relationship(sym::PRED_AT_ADDR, fault_id, addr_thing);
+        let addr_thing = graph.create_thing(sym::KIND_THING).expect("Addr thing");
+        let _ = graph.set_payload(addr_thing, &addr.to_le_bytes());
+        let _ = graph.create_relationship(sym::PRED_AT_ADDR, fault_id, addr_thing);
     }
 
     let mut add_field = |val: u64| {
-        if let Ok(t) = place.create_thing(sym::KIND_THING) {
-            let _ = place.set_payload(t, &val.to_le_bytes());
-            let _ = place.create_relationship(sym::PRED_HAS_FIELD, fault_id, t);
+        if let Ok(t) = graph.create_thing(sym::KIND_THING) {
+            let _ = graph.set_payload(t, &val.to_le_bytes());
+            let _ = graph.create_relationship(sym::PRED_HAS_FIELD, fault_id, t);
         }
     };
 
@@ -111,22 +111,22 @@ pub fn record_fault(place: &mut PlaceStore, tr: &TrapRecord) -> ThingId {
     add_field(tr.cpu as u64);
 
     if let Some(task_id) = tr.task {
-        let _ = place.create_relationship(sym::PRED_CAUSED_BY, fault_id, task_id);
+        let _ = graph.create_relationship(sym::PRED_CAUSED_BY, fault_id, task_id);
     }
 
     fault_id
 }
 
 pub fn debug_dump_faults(limit: usize) {
-    let place_faults = match store::find_thing_by_name(sym::PLACE_FAULTS) {
+    let graph_faults = match store::find_thing_by_name(sym::GRAPH_FAULTS) {
         Some(id) => id,
         None => {
-            log::klog(Level::Warn, "TRAP", "place.faults not found");
+            log::klog(Level::Warn, "TRAP", "graph.faults not found");
             return;
         }
     };
 
-    let faults = crate::place::contained_in(place_faults);
+    let faults = crate::graph_api::contained_in(graph_faults);
     log::klog(Level::Info, "TRAP", "Dumping faults...");
 
     for (i, fault_id) in faults.iter().take(limit).enumerate() {

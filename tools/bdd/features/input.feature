@@ -14,7 +14,7 @@ Feature: Input pipeline and focus model
     Given "inputd" is online
     When I press the key "A"
     Then the graph should contain a Thing of kind "kind.KeyEvent"
-    And the event should be linked to Place "place.input"
+    And the event should be linked to graph "graph.input"
 
   @input @focus @wip
   Scenario: Focus determines which surface receives TextEvent

@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 use abi::ids::crc64;
 use thing_codec::GraphClient;
 
-static PLACE_STORE: Mutex<Option<PlaceStore>> = Mutex::new(None);
+static GRAPH_STORE: Mutex<Option<GraphStore>> = Mutex::new(None);
 
 #[derive(Clone, Debug)]
 pub struct Relationship {
@@ -39,7 +39,7 @@ pub struct Thing {
     pub body: Vec<u8>,
 }
 
-pub struct PlaceStore {
+pub struct GraphStore {
     pub things: BTreeMap<ThingId, Thing>,
     pub relationships: BTreeMap<RelationshipId, Relationship>,
     pub name_index: BTreeMap<SymbolId, ThingId>,
@@ -48,7 +48,7 @@ pub struct PlaceStore {
     pub pending_events: BTreeMap<ThingId, VecDeque<ThingId>>,
 }
 
-impl PlaceStore {
+impl GraphStore {
     pub fn new() -> Self {
         Self {
             things: BTreeMap::new(),
@@ -177,7 +177,7 @@ impl PlaceStore {
     }
 }
 
-impl GraphClient for PlaceStore {
+impl GraphClient for GraphStore {
     fn create_thing(&mut self, kind: SymbolId) -> Result<ThingId, i32> {
         self.create_thing(kind)
     }
@@ -214,8 +214,8 @@ pub fn validate_envelope(bytes: &[u8]) -> Result<(), i32> {
 }
 
 pub fn init() {
-    let store = PlaceStore::new();
-    *PLACE_STORE.lock() = Some(store);
+    let store = GraphStore::new();
+    *GRAPH_STORE.lock() = Some(store);
 }
 
 static mut IRQ_DISABLE: Option<fn() -> usize> = None;
@@ -228,7 +228,7 @@ pub fn register_irq_callbacks(disable: fn() -> usize, restore: fn(usize)) {
     }
 }
 
-fn lock_store_irq() -> (spin::MutexGuard<'static, Option<PlaceStore>>, usize) {
+fn lock_store_irq() -> (spin::MutexGuard<'static, Option<GraphStore>>, usize) {
     let flags = unsafe {
         if let Some(disable) = IRQ_DISABLE {
             disable()
@@ -236,7 +236,7 @@ fn lock_store_irq() -> (spin::MutexGuard<'static, Option<PlaceStore>>, usize) {
             0
         }
     };
-    (PLACE_STORE.lock(), flags)
+    (GRAPH_STORE.lock(), flags)
 }
 
 fn restore_irq(flags: usize) {
@@ -247,7 +247,7 @@ fn restore_irq(flags: usize) {
     }
 }
 
-fn try_lock_store_irq() -> Option<(spin::MutexGuard<'static, Option<PlaceStore>>, usize)> {
+fn try_lock_store_irq() -> Option<(spin::MutexGuard<'static, Option<GraphStore>>, usize)> {
     let flags = unsafe {
         if let Some(disable) = IRQ_DISABLE {
             disable()
@@ -256,7 +256,7 @@ fn try_lock_store_irq() -> Option<(spin::MutexGuard<'static, Option<PlaceStore>>
         }
     };
     
-    if let Some(guard) = PLACE_STORE.try_lock() {
+    if let Some(guard) = GRAPH_STORE.try_lock() {
         Some((guard, flags))
     } else {
         restore_irq(flags);
@@ -286,10 +286,10 @@ pub fn is_ready_for_logging() -> bool {
 }
 
 pub fn with_store<F, R>(f: F) -> R 
-where F: FnOnce(&mut PlaceStore) -> R
+where F: FnOnce(&mut GraphStore) -> R
 {
     let (mut guard, flags) = lock_store_irq();
-    let res = f(guard.as_mut().expect("PlaceStore not initialized"));
+    let res = f(guard.as_mut().expect("GraphStore not initialized"));
     drop(guard);
     restore_irq(flags);
     res

@@ -68,7 +68,7 @@
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 | Report |
 | --- | :---: | :---: | :---: | :---: | :---: |
 | A task is linked to its owning process | ✅ | ❌ | ❌ | ✅ | [View Report](x86_64/graph_as_the_system/a_task_is_linked_to_its_owning_process/report.md) |
-| Devices appear in place.devices | ✅ | ❌ | ❌ | ✅ | [View Report](x86_64/graph_as_the_system/devices_appear_in_place_devices/report.md) |
+| Devices appear in graph.devices | ✅ | ❌ | ❌ | ✅ | [View Report](x86_64/graph_as_the_system/devices_appear_in_place_devices/report.md) |
 | Tasks are represented as Things | ✅ | ❌ | ❌ | ✅ | [View Report](x86_64/graph_as_the_system/tasks_are_represented_as_things/report.md) |
 | The graph is queryable at runtime | ✅ | ❌ | ❌ | ✅ | [View Report](x86_64/graph_as_the_system/the_graph_is_queryable_at_runtime/report.md) |
 

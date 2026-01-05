@@ -92,8 +92,8 @@ pub extern "C" fn main() {
     let rtc_thing = thing_std::graph::thing_create(kind_rtc, ThingId(0));
     thing_std::graph::thing_register_name(rtc_thing, "device.rtc0");
 
-    let device_place = thing_std::graph::thing_find("place.devices");
-    if let Some(dp) = device_place {
+    let device_graph = thing_std::graph::thing_find("graph.devices");
+    if let Some(dp) = device_graph {
         let pred_contains = thing_std::graph::symbol_intern("pred.contains");
         thing_std::graph::relationship_create(pred_contains, dp, rtc_thing);
     }

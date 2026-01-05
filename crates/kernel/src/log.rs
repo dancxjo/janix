@@ -11,6 +11,7 @@ use crate::serial;
 use abi::ids::{SymbolId, ThingId};
 use graph::store;
 use graph::symbols;
+use graph::symbols::sym;
 
 /// Log level
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -119,11 +120,9 @@ pub fn log_emit(level: Level, subsystem: SymbolId, message: &[u8]) -> Option<Thi
 
     store::thing_set_inline_payload(id, &entry.to_payload());
 
-    // Link to place.log
-    let place_log_sym = symbols::intern(b"place.log");
-    if let Some(place_log) = store::find_thing_by_name(place_log_sym) {
-        let pred_contains = symbols::intern(b"predicate.contains");
-        store::relationship_create(pred_contains, place_log, id);
+    // Link to graph.logs
+    if let Some(graph_logs) = store::find_thing_by_name(sym::GRAPH_LOGS) {
+        store::relationship_create(sym::PRED_CONTAINS, graph_logs, id);
     }
 
     Some(id)

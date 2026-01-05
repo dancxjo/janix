@@ -8,15 +8,15 @@ Feature: Watches and event-driven waiting
     And the task "logview" has a watch set containing:
       | kind     | detail             |
       | deadline |   250 milliseconds |
-      | graph    | place.input change |
+      | graph    | graph.input change |
     When "logview" waits on "any"
     Then it should return when the first watch fires
 
   @watch @graph @wip
-  Scenario: A graph watch fires when a Thing is added to a Place
+  Scenario: A graph watch fires when a Thing is added to a graph
     Given sprout is online
-    And "inspector" is watching Place "place.devices"
-    When a new device Thing is added to "place.devices"
+    And "inspector" is watching graph "graph.devices"
+    When a new device Thing is added to "graph.devices"
     Then the watch should fire for "inspector"
 
   @watch @device @wip

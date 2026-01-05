@@ -1,8 +1,8 @@
 BRAN: handoff to kernel
 SYM:: init: base=0xffff800083fff000 size=64 MiB
 BOOT: init graph...
-created: place.devices
-created: place.tasks
+created: graph.devices
+created: graph.tasks
 DISPLAY: selected provider limine_fb
 register name: device.display.primary
 BOOT: init sched...

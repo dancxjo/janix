@@ -25,6 +25,7 @@ pub fn main() {
 
     // Spawn validation tools
     spawn_and_grant("thingcheck");
+    spawn_and_grant("hello_window");
     // spawn_and_grant("bouncer_test");
 
     log_info("SPROUT: boot sequence complete.");
@@ -108,6 +109,12 @@ fn configure_policy(id: ThingId, name: &str) {
              global(CapOp::Hardware); // MMIO needs Hardware cap? Or MemManage?
              // MMIO mapping via sys_space_map needs MemManage
              global(CapOp::MemManage);
+        }
+        "hello_window" => {
+            global(CapOp::GraphCreate);
+            global(CapOp::GraphLink);
+            global(CapOp::GraphRead);
+            global(CapOp::GraphWrite);
         }
         _ => {}
     }

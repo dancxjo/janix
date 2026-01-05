@@ -11,11 +11,11 @@ Feature: Boot contract and system bring-up
     And it does not panic
 
   @boot @graph @wip
-  Scenario: The Kernel exposes a root Place and a devices Place
+  Scenario: The Kernel exposes a root graph and a devices graph
     Given the system has reached "kernel ready"
-    When I query the graph for the root Place
-    Then a Place should exist named "place.root"
-    And a Place should exist named "place.devices"
+    When I query the graph for the root graph
+    Then a graph should exist named "graph.root"
+    And a graph should exist named "graph.devices"
 
   @boot @sprout @wip
   Scenario: Sprout starts and publishes its presence in the graph

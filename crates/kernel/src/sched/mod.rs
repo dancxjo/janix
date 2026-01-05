@@ -79,8 +79,8 @@ impl Scheduler {
         log::klog(Level::Info, "SCHED", "spawn: graph store start");
         let task_thing = store::with_store(|s| {
             let t = s.create_thing(sym::KIND_TASK).expect("create task");
-            if let Some(place_tasks) = s.find_by_name(sym::PLACE_TASKS) {
-                let _ = s.create_relationship(sym::PRED_CONTAINS, place_tasks, t);
+            if let Some(graph_tasks) = s.find_by_name(sym::GRAPH_TASKS) {
+                let _ = s.create_relationship(sym::PRED_CONTAINS, graph_tasks, t);
             }
             t
         });
@@ -128,21 +128,21 @@ pub fn init() {
     // Seed Graph (scheduler.main, cpu.0, run_queue.0)
     let (_sched_thing, cpu_thing, rq_thing) = store::with_store(|s| {
         crate::serial::write(b"SCHED: with_store interior\n");
-        let place_tasks = s
-            .find_by_name(sym::PLACE_TASKS)
-            .expect("place.tasks missing");
-        crate::serial::write(b"SCHED: found place.tasks\n");
+        let graph_tasks = s
+            .find_by_name(sym::GRAPH_TASKS)
+            .expect("graph.tasks missing");
+        crate::serial::write(b"SCHED: found graph.tasks\n");
 
         // scheduler.main
         let sched = s.create_thing(sym::KIND_SCHEDULER).expect("create sched");
         s.register_name(sched, sym::SCHEDULER_MAIN);
-        s.create_relationship(sym::PRED_CONTAINS, place_tasks, sched)
+        s.create_relationship(sym::PRED_CONTAINS, graph_tasks, sched)
             .ok();
 
         // cpu.0
         let cpu = s.create_thing(sym::KIND_CPU).expect("create cpu");
         // s.register_name(cpu, \"cpu.0\"); // Need symbol
-        s.create_relationship(sym::PRED_CONTAINS, place_tasks, cpu)
+        s.create_relationship(sym::PRED_CONTAINS, graph_tasks, cpu)
             .ok();
 
         // run_queue.0

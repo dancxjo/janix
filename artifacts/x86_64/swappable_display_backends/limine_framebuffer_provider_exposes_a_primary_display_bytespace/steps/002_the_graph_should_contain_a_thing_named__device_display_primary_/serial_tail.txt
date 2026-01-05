@@ -32,12 +32,12 @@ USER: Ontology Check Tool
 USER: thingcheck: start
 USER: ONTOLOGY_DIGEST: 0xFDFA2A81471AA1E2
 USER: OK: ontology fetched
-USER: OK: place.display present
+USER: OK: graph.display present
 USER: OK: DisplayDevice decodable
 USER: OK: Framebuffer decodable
 USER: OK: Surface decodable
 USER: OK: Surface has Bytespace
-USER: OK: place.windows present
+USER: OK: graph.windows present
 MMU: mapping 81000000->172e4000 len 400000
 USER: OK: model_roundtrip Surface
 USER: panic: aborting process

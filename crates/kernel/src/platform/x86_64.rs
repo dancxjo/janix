@@ -34,13 +34,13 @@ fn seed_platform_graph() {
         0
     };
 
-    // Create place.platform
-    let platform_place = if let Some(p) = store::find_thing_by_name(sym::PLACE_PLATFORM) {
+    // Create graph.platform
+    let platform_graph = if let Some(p) = store::find_thing_by_name(sym::GRAPH_PLATFORM) {
         p
     } else {
-        let p = store::thing_create(sym::KIND_PLACE);
-        store::thing_register_name(p, sym::PLACE_PLATFORM);
-        if let Some(root) = store::find_thing_by_name(sym::PLACE_ROOT) {
+        let p = store::thing_create(sym::KIND_GRAPH);
+        store::thing_register_name(p, sym::GRAPH_PLATFORM);
+        if let Some(root) = store::find_thing_by_name(sym::GRAPH_ROOT) {
             store::relationship_create(sym::PRED_CONTAINS, root, p);
         }
         p
@@ -50,7 +50,7 @@ fn seed_platform_graph() {
     let cpu_thing = store::thing_create(sym::KIND_CPU);
     let cpu_name = symbols::intern(b"cpu.0");
     store::thing_register_name(cpu_thing, cpu_name);
-    store::relationship_create(sym::PRED_CONTAINS, platform_place, cpu_thing);
+    store::relationship_create(sym::PRED_CONTAINS, platform_graph, cpu_thing);
 
     let mut cpu_payload = alloc::vec::Vec::new();
     cpu_payload.extend_from_slice(&apic_id.to_le_bytes());
@@ -61,7 +61,7 @@ fn seed_platform_graph() {
     let timer_thing = store::thing_create(sym::KIND_TIMER);
     let timer_name = symbols::intern(b"lapic_timer.0");
     store::thing_register_name(timer_thing, timer_name);
-    store::relationship_create(sym::PRED_CONTAINS, platform_place, timer_thing);
+    store::relationship_create(sym::PRED_CONTAINS, platform_graph, timer_thing);
 
     let mut timer_payload = alloc::vec::Vec::new();
     timer_payload.extend_from_slice(b"lapic\0\0\0");
@@ -76,7 +76,7 @@ fn seed_platform_graph() {
     let ic_thing = store::thing_create(sym::KIND_INTERRUPT_CONTROLLER);
     let ic_name = symbols::intern(b"lapic.0");
     store::thing_register_name(ic_thing, ic_name);
-    store::relationship_create(sym::PRED_CONTAINS, platform_place, ic_thing);
+    store::relationship_create(sym::PRED_CONTAINS, platform_graph, ic_thing);
 
     let mut ic_payload = alloc::vec::Vec::new();
     ic_payload.extend_from_slice(b"lapic\0\0\0");
@@ -109,13 +109,13 @@ fn setup_xhci() {
     }
 
     // Graph plumbing
-    let devices_place = store::find_thing_by_name(sym::PLACE_DEVICES)
-        .unwrap_or_else(|| store::thing_create(sym::KIND_PLACE));
+    let devices_graph = store::find_thing_by_name(sym::GRAPH_DEVICES)
+        .unwrap_or_else(|| store::thing_create(sym::KIND_GRAPH));
 
     // MMIO bytespace
     let mmio_bs = store::thing_create(sym::KIND_BYTE_SPACE);
     store::thing_register_name(mmio_bs, symbols::intern(b"bytespace.usb.xhci0.mmio"));
-    store::relationship_create(sym::PRED_CONTAINS, devices_place, mmio_bs);
+    store::relationship_create(sym::PRED_CONTAINS, devices_graph, mmio_bs);
 
     let mmio_payload = Bytespace {
         len: XHCI_MMIO_LEN,
@@ -125,18 +125,18 @@ fn setup_xhci() {
     };
     store::thing_set_inline_payload(mmio_bs, &mmio_payload.encode());
 
-    let mmio_phys = store::thing_create(sym::KIND_PLACE);
+    let mmio_phys = store::thing_create(sym::KIND_GRAPH);
     store::thing_set_inline_payload(mmio_phys, &bar0.to_le_bytes());
     store::relationship_create(sym::PRED_BASE_PHYS, mmio_bs, mmio_phys);
 
-    let mmio_size = store::thing_create(sym::KIND_PLACE);
+    let mmio_size = store::thing_create(sym::KIND_GRAPH);
     store::thing_set_inline_payload(mmio_size, &XHCI_MMIO_LEN.to_le_bytes());
     store::relationship_create(sym::PRED_SIZE, mmio_bs, mmio_size);
 
     // IRQ bytespace (simple counter)
     let irq_bs = store::thing_create(sym::KIND_BYTE_SPACE);
     store::thing_register_name(irq_bs, symbols::intern(b"bytespace.irq.usb.xhci0"));
-    store::relationship_create(sym::PRED_CONTAINS, devices_place, irq_bs);
+    store::relationship_create(sym::PRED_CONTAINS, devices_graph, irq_bs);
 
     let irq_phys = usb::irq_counter_phys();
     let irq_len = usb::irq_bytespace_len();
@@ -148,18 +148,18 @@ fn setup_xhci() {
     };
     store::thing_set_inline_payload(irq_bs, &irq_payload.encode());
 
-    let irq_phys_thing = store::thing_create(sym::KIND_PLACE);
+    let irq_phys_thing = store::thing_create(sym::KIND_GRAPH);
     store::thing_set_inline_payload(irq_phys_thing, &irq_phys.to_le_bytes());
     store::relationship_create(sym::PRED_BASE_PHYS, irq_bs, irq_phys_thing);
 
-    let irq_size_thing = store::thing_create(sym::KIND_PLACE);
+    let irq_size_thing = store::thing_create(sym::KIND_GRAPH);
     store::thing_set_inline_payload(irq_size_thing, &irq_len.to_le_bytes());
     store::relationship_create(sym::PRED_SIZE, irq_bs, irq_size_thing);
 
     // Controller Thing
     let ctrl = store::thing_create(sym::KIND_XHCI_CONTROLLER);
     store::thing_register_name(ctrl, symbols::intern(b"device.usb.controller0"));
-    store::relationship_create(sym::PRED_CONTAINS, devices_place, ctrl);
+    store::relationship_create(sym::PRED_CONTAINS, devices_graph, ctrl);
     store::relationship_create(sym::PRED_MMIO, ctrl, mmio_bs);
     store::relationship_create(sym::PRED_IRQ, ctrl, irq_bs);
 

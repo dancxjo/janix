@@ -5,7 +5,7 @@ use abi::ids::ThingId;
 use abi::syscall::err;
 use abi::wire::SyscallResult;
 use graph::store;
-use graph::symbols;
+use graph::symbols::{self, sym};
 
 pub fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult {
     // 1. Level
@@ -39,11 +39,9 @@ pub fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult
     // 4. Set Payload (Inline String)
     store::thing_set_inline_payload(entry_id, msg);
 
-    // 5. Link to place.logs
-    let place_logs =
-        store::find_thing_by_name(symbols::intern(b"place.logs")).unwrap_or(ThingId(2)); // fallback root?
-    let pred_contains = symbols::intern(b"predicate.contains");
-    store::relationship_create(pred_contains, place_logs, entry_id);
+    // 5. Link to graph.logs
+    let graph_logs = store::find_thing_by_name(sym::GRAPH_LOGS).unwrap_or(ThingId(2)); // fallback root?
+    store::relationship_create(sym::PRED_CONTAINS, graph_logs, entry_id);
 
     // 6. Link Level?
     // Optional.

@@ -5,7 +5,7 @@
   "scenario": "The Kernel exposes a root Place and a devices Place",
   "step": {
     "index": 2,
-    "text": "a Place should exist named \"place.root\"",
+    "text": "a Place should exist named \"graph.root\"",
     "status": "failed",
     "timestamp": "2026-01-04T04:51:56.368638901+00:00"
   },

@@ -11,7 +11,7 @@ pub mod interrupt;
 pub mod log;
 pub mod machine;
 pub mod memory;
-pub mod place;
+pub mod graph_api;
 pub mod platform;
 pub mod proc;
 pub mod sched;

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+abi = { path = "../abi" }
 thing_std = { path = "../thing_std" }
 models = { path = "../models" }
 symbols = { path = "../symbols" }

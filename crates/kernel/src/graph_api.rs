@@ -1,15 +1,15 @@
-//! Place trait and high-level queries
+//! Graph trait and high-level queries
 //!
 //! Provides the primary API for interacting with system state through
-//! the Place/Thing/Relationship ontology.
-use abi::ids::{PlaceId, RelationshipId, SymbolId, ThingId};
+//! the Graph/Thing/Relationship ontology.
+use abi::ids::{GraphId, RelationshipId, SymbolId, ThingId};
 use alloc::vec::Vec;
-use graph::store;
-use graph::symbols;
+use ::graph::store;
+use ::graph::symbols;
 
 /// Core API for world interaction
-pub trait Place {
-    /// Create a new Thing within this Place
+pub trait Graph {
+    /// Create a new Thing within this graph
     fn thing_create(
         &mut self,
         kind: SymbolId,
@@ -34,12 +34,12 @@ pub trait Place {
     fn relationships_to(&self, to: ThingId, predicate: Option<SymbolId>) -> Vec<RelationshipId>;
 }
 
-/// Query which Things are contained within a Place
+/// Query which Things are contained within a graph
 ///
-/// This is a derived query over relationships_from(place, predicate.contains)
-pub fn contained_in(place: PlaceId) -> Vec<ThingId> {
+/// This is a derived query over relationships_from(graph, predicate.contains)
+pub fn contained_in(graph: GraphId) -> Vec<ThingId> {
     let pred_contains = symbols::intern(b"predicate.contains");
-    let rels = store::relationships_from(place);
+    let rels = store::relationships_from(graph);
 
     let mut things = Vec::new();
     for &rel_id in rels.iter() {

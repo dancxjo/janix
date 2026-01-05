@@ -5,7 +5,7 @@
   "scenario": "The graph is queryable at runtime",
   "step": {
     "index": 1,
-    "text": "I query the graph for \"place.root\"",
+    "text": "I query the graph for \"graph.root\"",
     "status": "skipped",
     "timestamp": "2026-01-04T04:48:03.001134105+00:00"
   },

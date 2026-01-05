@@ -1,4 +1,4 @@
-# Scenario: Devices appear in place.devices
+# Scenario: Devices appear in graph.devices
 
 **Architecture**: `x86_64`  
 **Feature**: `Graph as the system`
@@ -10,7 +10,7 @@
 | Index | Step | Status | Artifacts |
 | :---: | --- | :---: | --- |
 | 0 | the system has reached "kernel ready" | ✅ | �� 📝  |
-| 1 | I query the graph for Place "place.devices" | ⏭️ | �� 📝  |
+| 1 | I query the graph for Place "graph.devices" | ⏭️ | �� 📝  |
 
 ## Execution Details
 
@@ -73,7 +73,7 @@ TICK: switch IDLE -> 1 sp=0xffff800001798f60
 
 ---
 
-### 2. I query the graph for Place "place.devices" ❌
+### 2. I query the graph for Place "graph.devices" ❌
 
 ![Screenshot](steps/001_i_query_the_graph_for_place__place_devices_/screen.png)
 

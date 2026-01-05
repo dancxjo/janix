@@ -8,7 +8,7 @@ pub mod kind {
     pub const KIND_FRAMEBUFFER: SymbolId = SymbolId(0x39F61C14D039B916);
     pub const KIND_MONOTONICCLOCK: SymbolId = SymbolId(0x92F5EACE38FBFE15);
     pub const KIND_MOUSESTREAM: SymbolId = SymbolId(0x5EF2B03692E82DBA);
-    pub const KIND_PLACE: SymbolId = SymbolId(0x43E7C812F1795346);
+    pub const KIND_GRAPH: SymbolId = SymbolId(0xB5DD20D17358E285);
     pub const KIND_POINTERSTATE: SymbolId = SymbolId(0xFA3502E3D80D3979);
     pub const KIND_RELATIONSHIP: SymbolId = SymbolId(0x4F308BFD270391BD);
     pub const KIND_SURFACE: SymbolId = SymbolId(0x4630246DF0D3FF22);
@@ -25,7 +25,7 @@ pub mod schema {
     pub const SCHEMA_FRAMEBUFFER: SymbolId = SymbolId(0x2BD6128606BA3300);
     pub const SCHEMA_MONOTONICCLOCK: SymbolId = SymbolId(0xFB520DC25492C05);
     pub const SCHEMA_MOUSESTREAM: SymbolId = SymbolId(0x38E3155E669F1A50);
-    pub const SCHEMA_PLACE: SymbolId = SymbolId(0xBE52087A23A917F0);
+    pub const SCHEMA_GRAPH: SymbolId = SymbolId(0x7A706C2E3B1DB7CC);
     pub const SCHEMA_POINTERSTATE: SymbolId = SymbolId(0x2B4B16B6345331BD);
     pub const SCHEMA_RELATIONSHIP: SymbolId = SymbolId(0x37391EE2FEA08FE9);
     pub const SCHEMA_SURFACE: SymbolId = SymbolId(0x55E5957BEA5E14D8);

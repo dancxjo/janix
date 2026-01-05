@@ -1,6 +1,6 @@
 //! Standard identifiers for ThingOS
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Thing identifier - a 128-bit UUID
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
@@ -23,7 +23,7 @@ impl ThingId {
     }
 }
 
-pub type PlaceId = ThingId;
+pub type GraphId = ThingId;
 pub type RelationshipId = ThingId;
 
 /// Symbol identifier - a stable u64 mapping

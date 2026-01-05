@@ -19,7 +19,7 @@ Feature: Surfaces and compositing
     And the surface should have relationships:
       | rel     | target_kind  |
       | ownedBy | kind.Process |
-      | inPlace | kind.Place   |
+      | inGraph | kind.Graph   |
 
   @gfx @swap @wip
   Scenario: The display backend is swappable

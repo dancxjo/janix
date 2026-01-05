@@ -35,12 +35,12 @@ USER: OK: model_roundtrip Surface
 USER: panic: aborting process
 USER: ONTOLOGY_DIGEST: 0xFDFA2A81471AA1E2
 USER: OK: ontology fetched
-USER: OK: place.display present
+USER: OK: graph.display present
 USER: OK: DisplayDevice decodable
 USER: OK: Framebuffer decodable
 USER: OK: Surface decodable
 USER: OK: Surface has Bytespace
-USER: OK: place.windows present
+USER: OK: graph.windows present
 USER: OK: MouseStream present
 USER: OK: PointerState decodable
 MMU: mapping 82000000->1e7ab000 len 40000

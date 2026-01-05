@@ -70,15 +70,15 @@ pub fn main() {
     relationship_create(rel_child, layout_id, label_id);
     relationship_create(rel_child, layout_id, button_id);
 
-    // 5. Publish to place.windows
-    let place_windows = thing_find("place.windows").unwrap_or_else(|| {
-        let pid = thing_create(symbol_intern("kind.Place"), ThingId::from_parts(0,0));
-        thing_register_name(pid, "place.windows");
+    // 5. Publish to graph.windows
+    let graph_windows = thing_find("graph.windows").unwrap_or_else(|| {
+        let pid = thing_create(symbol_intern("kind.Graph"), ThingId::from_parts(0,0));
+        thing_register_name(pid, "graph.windows");
         pid
     });
     
     let rel_contains = symbol_intern("contains");
-    relationship_create(rel_contains, place_windows, window_id);
+    relationship_create(rel_contains, graph_windows, window_id);
 
     log_info("Hello Window Published!");
 
@@ -98,4 +98,3 @@ pub fn main() {
         thing_std::time::sleep_ms(1000);
     }
 }
-

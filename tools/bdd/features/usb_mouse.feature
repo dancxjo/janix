@@ -2,7 +2,7 @@ Feature: USB mouse input (xHCI HID)
 
   Background:
     Given the system boots on x86_64 in QEMU
-    And the graph contains place.devices
+    And the graph contains graph.devices
 
   Scenario: xHCI controller is discovered and exposed as MMIO bytespace
     Then the graph contains a Thing "device.usb.controller0" of kind "XhciController"

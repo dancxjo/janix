@@ -268,7 +268,7 @@
             "x86_64": "pass"
           }
         },
-        "Devices appear in place.devices": {
+        "Devices appear in graph.devices": {
           "arches": {
             "aarch64": "failed",
             "loongarch64": "pass",

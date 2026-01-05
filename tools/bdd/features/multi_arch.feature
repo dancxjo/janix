@@ -30,6 +30,6 @@ Feature: Multi-architecture behavioral parity
   @multiarch @graceful @wip
   Scenario: Missing devices are represented as absence, not failure
     Given I boot ThingOS on "riscv64"
-    When I debug query for Place "place.devices"
+    When I debug query for graph "graph.devices"
     Then the query should succeed
     And devices that do not exist should simply be absent

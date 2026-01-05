@@ -1,4 +1,5 @@
 use abi::ids::{RelationshipId, SymbolId, ThingId};
+use abi::types::RelationshipRef;
 use abi::syscall::nr;
 use crate::syscall;
 use alloc::vec::Vec;
@@ -68,12 +69,12 @@ impl GraphClient for SyscallGraphClient {
     }
 }
 
-pub fn thing_create(kind: SymbolId, parent: ThingId) -> ThingId {
+pub fn thing_create(kind: SymbolId, graph: ThingId) -> ThingId {
     let res = unsafe {
         syscall(
             nr::SYS_THING_CREATE,
             kind.0,
-            parent.0 as u64,
+            graph.0 as u64,
             0,
             0,
             0,
@@ -198,4 +199,32 @@ pub fn relationship_create(kind: SymbolId, from: ThingId, to: ThingId) -> Relati
         )
     };
     RelationshipId::from_parts(res.val0, res.val1)
+}
+
+/// Fetch relationships originating from a Thing.
+///
+/// Returns `(count_returned, total_available)` on success.
+pub fn relationships_from(
+    from: ThingId,
+    cursor: u64,
+    out: &mut [RelationshipRef],
+) -> Result<(u64, u64), i32> {
+    if out.is_empty() {
+        return Ok((0, 0));
+    }
+    let res = unsafe {
+        syscall(
+            nr::SYS_REL_GET_FROM,
+            from.low(),
+            cursor,
+            out.as_mut_ptr() as u64,
+            out.len() as u64,
+            0,
+            0,
+        )
+    };
+    if res.status != 0 {
+        return Err(res.status as i32);
+    }
+    Ok((res.val0, res.val1))
 }

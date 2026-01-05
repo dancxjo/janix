@@ -2,10 +2,10 @@
   "version": 1,
   "arch": "x86_64",
   "feature": "Graph as the system",
-  "scenario": "Devices appear in place.devices",
+  "scenario": "Devices appear in graph.devices",
   "step": {
     "index": 1,
-    "text": "I query the graph for Place \"place.devices\"",
+    "text": "I query the graph for Place \"graph.devices\"",
     "status": "skipped",
     "timestamp": "2026-01-05T06:28:17.040155180+00:00"
   },

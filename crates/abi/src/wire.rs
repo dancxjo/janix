@@ -1,4 +1,4 @@
-use crate::ids::{PlaceId, RelationshipId, SymbolId, ThingId};
+use crate::ids::{GraphId, RelationshipId, SymbolId, ThingId};
 
 /// Syscall result type (FFI-safe)
 #[repr(C)]
@@ -22,11 +22,11 @@ impl SyscallResult {
 /// Syscall dispatch function type
 pub type SyscallDispatch = extern "C" fn(u32, u64, u64, u64, u64, u64, u64) -> SyscallResult;
 
-/// Place operation request
+/// Graph operation request
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PlaceOp<'a> {
-    /// Get the root Place ID
-    GetRootPlace,
+pub enum GraphOp<'a> {
+    /// Get the root graph ID
+    GetRootGraph,
 
     /// Create a new Thing
     ThingCreate {
@@ -52,13 +52,13 @@ pub enum PlaceOp<'a> {
         predicate: Option<SymbolId>,
     },
 
-    /// Find things contained within a Place
-    ContainedIn { place: PlaceId },
+    /// Find things contained within a graph
+    ContainedIn { graph: GraphId },
 }
 
-/// Place operation response
+/// Graph operation response
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PlaceReply {
+pub enum GraphReply {
     /// Generic success
     Ok,
     /// Returns a ThingId

@@ -30,7 +30,7 @@ If it’s in the graph, you can observe it, link to it, and act on it.
 | Bran hands off a boot contract to the Kernel | ✅ | ❌ | ❌ | ❌ |
 | Sprout starts and publishes its presence in the graph | ❌ | ❌ | ❌ | ❌ |
 | Sprout starts core services | ❌ | ❌ | ❌ | ❌ |
-| The Kernel exposes a root Place and a devices Place | ❌ | ❌ | ❌ | ❌ |
+| The Kernel exposes a root graph and a devices graph | ❌ | ❌ | ❌ | ❌ |
 
 ### Bytespaces and address spaces
 
@@ -91,7 +91,7 @@ If it’s in the graph, you can observe it, link to it, and act on it.
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
 | A task is linked to its owning process | ✅ | ❌ | ❌ | ✅ |
-| Devices appear in place.devices | ✅ | ❌ | ❌ | ✅ |
+| Devices appear in graph.devices | ✅ | ❌ | ❌ | ✅ |
 | Tasks are represented as Things | ✅ | ❌ | ❌ | ✅ |
 | The graph is queryable at runtime | ✅ | ❌ | ❌ | ✅ |
 
@@ -161,7 +161,7 @@ If it’s in the graph, you can observe it, link to it, and act on it.
 | Scenario | x86_64 | aarch64 | riscv64 | loongarch64 |
 |----------|--------|---------|---------|-------------|
 | A device watch fires on an input event | ✅ | ✅ | ✅ | ✅ |
-| A graph watch fires when a Thing is added to a Place | ✅ | ✅ | ✅ | ✅ |
+| A graph watch fires when a Thing is added to a graph | ✅ | ✅ | ✅ | ✅ |
 | Waiting on "any watch" returns when one fires | ✅ | ✅ | ✅ | ✅ |
 
 <!-- DOCGEN:STATUS:END -->

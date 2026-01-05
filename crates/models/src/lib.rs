@@ -35,8 +35,8 @@ pub struct Framebuffer {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
-#[thing(kind = "kind.Place")]
-pub struct Place {
+#[thing(kind = "kind.Graph")]
+pub struct Graph {
     pub name: SymbolId,
 }
 

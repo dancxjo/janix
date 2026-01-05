@@ -192,6 +192,31 @@ pub mod memory {
         ThingId::from_parts(res.val0, res.val1)
     }
 
+    /// Create a DMA-safe bytespace with physically contiguous memory.
+    /// Returns (ThingId, phys_base).
+    /// Create a DMA-safe bytespace with physically contiguous memory.
+    /// Returns (ThingId, phys_base).
+    pub fn dma_bytespace_create(size: u64) -> (ThingId, u64) {
+        let res = unsafe { syscall(nr::SYS_DMA_BYTESPACE_CREATE, size, 0, 0, 0, 0, 0) };
+        if res.status != 0 {
+            return (ThingId(0), 0);
+        }
+        // val0 = id_low (we use only low bits for simplicity)
+        // val1 = phys_base
+        let id = ThingId(res.val0 as u128);
+        let phys_base = res.val1;
+        (id, phys_base)
+    }
+
+    /// Read the physical base address from a bytespace graph node.
+    pub fn bytespace_phys(bs: ThingId) -> u64 {
+        // Query relationships via PRED_BASE_PHYS
+        // For simplicity, this returns 0 and the user should map and use the graph
+        // The actual phys is stored and available via mapping
+        let _ = bs;
+        0 // TODO: implement relationship query
+    }
+
     pub fn space_map(bs: ThingId, vaddr: u64, offset: u64, len: u64) -> u64 {
         unsafe {
             syscall(

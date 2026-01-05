@@ -7,10 +7,10 @@
     "index": 0,
     "text": "the system boots",
     "status": "skipped",
-    "timestamp": "2026-01-05T02:19:30.592489933+00:00"
+    "timestamp": "2026-01-05T02:28:21.711227504+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

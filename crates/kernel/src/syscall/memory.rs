@@ -6,14 +6,36 @@ use abi::syscall::err;
 use abi::wire::SyscallResult;
 
 pub fn sys_bytespace_create(size: u64, _flags: u64) -> SyscallResult {
-    // 1. Alloc (Leak Memory)
     if let Ok(bs) = Bytespace::new_ram(size as usize) {
-        // Return ThingId
         let id = bs.id;
-        core::mem::forget(bs); // Leak handle to keep memory alive
+        core::mem::forget(bs);
         SyscallResult::new(0, id.high(), id.low())
     } else {
         SyscallResult::new(err::ENOMEM, 0, 0)
+    }
+}
+
+/// Create a DMA-safe bytespace with physically contiguous memory.
+/// Returns (0, thing_id_low, phys_base) on success.
+/// Note: We pack the ID low bits and phys into the result since we only have 3 values.
+/// Userspace can use thing_id_low (val0) to reference the bytespace.
+pub fn sys_dma_bytespace_create(size: u64, _flags: u64) -> SyscallResult {
+    if size == 0 || size % 4096 != 0 {
+        return SyscallResult::new(err::EINVAL, 0, 0);
+    }
+
+    match Bytespace::new_dma(size as usize) {
+        Ok((bs, phys_base)) => {
+            let id = bs.id;
+            // Store phys_base in bytespace's own payload for later retrieval
+            graph::store::with_store(|s| {
+                let _ = s.set_payload(id, &phys_base.to_le_bytes());
+            });
+            core::mem::forget(bs);
+            // Return: status=0, val0=id_low (for mapping), val1=phys_base (for DMA)
+            SyscallResult::new(0, id.low(), phys_base)
+        }
+        Err(_) => SyscallResult::new(err::ENOMEM, 0, 0),
     }
 }
 
@@ -27,10 +49,8 @@ pub fn sys_space_map(
     use graph::store;
     use graph::symbols::sym;
 
-    // 1. Resolve Bytespace from Graph
     let bs_id = abi::ids::ThingId::from_parts(bs_id_hi, bs_id_lo);
 
-    // 2. Read Properties (Phys Base, Size)
     let read_prop = |pred: abi::ids::SymbolId| -> Option<u64> {
         let rels = store::relationships_from(bs_id);
         for r_id in rels {
@@ -50,28 +70,37 @@ pub fn sys_space_map(
     let phys = if let Some(p) = read_prop(sym::PRED_BASE_PHYS) {
         p
     } else {
-        crate::log::klog(
-            crate::log::Level::Error,
-            "SYSCALL",
-            "sys_space_map: PRED_BASE_PHYS not found",
-        );
-        return SyscallResult::new(err::EINVAL, 0, 0);
+        // Try reading from payload (for DMA bytespaces)
+        if let Some(payload) = store::get_payload(bs_id) {
+            if payload.len() >= 8 {
+                u64::from_le_bytes(payload[0..8].try_into().unwrap())
+            } else {
+                crate::log::klog(
+                    crate::log::Level::Error,
+                    "SYSCALL",
+                    "sys_space_map: PRED_BASE_PHYS not found and no payload",
+                );
+                return SyscallResult::new(err::EINVAL, 0, 0);
+            }
+        } else {
+            crate::log::klog(
+                crate::log::Level::Error,
+                "SYSCALL",
+                "sys_space_map: PRED_BASE_PHYS not found",
+            );
+            return SyscallResult::new(err::EINVAL, 0, 0);
+        }
     };
+
     let size = if let Some(s) = read_prop(sym::PRED_SIZE) {
         s
     } else {
-        crate::log::klog(
-            crate::log::Level::Error,
-            "SYSCALL",
-            "sys_space_map: PRED_SIZE not found",
-        );
-        return SyscallResult::new(err::EINVAL, 0, 0);
+        // Default to len if size not found
+        len
     };
 
-    // 3. Create wrapper Bytespace
     let bs = Bytespace::new_device(phys, size as usize);
 
-    // 4. Map it
     crate::sched::with_current_task(|task| {
         if let Err(e) = task.address_space.map_bytespace_shared(
             vaddr,
@@ -96,7 +125,6 @@ pub fn sys_space_unmap(_vaddr: u64, _len: u64, _flags: u64) -> SyscallResult {
     SyscallResult::new(err::ENOSYS, 0, 0)
 }
 
-// Keeping Heap Grow for compatibility/smoke tests
 pub fn sys_heap_grow(increment: u64) -> SyscallResult {
     crate::sched::with_current_task(|task| {
         let old_brk = task.heap_brk;

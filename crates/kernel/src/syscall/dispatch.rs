@@ -113,6 +113,12 @@ pub extern "C" fn dispatch(
             }
             memory::sys_space_unmap(a0, a1, a2)
         }
+        nr::SYS_DMA_BYTESPACE_CREATE => {
+            if let Err(e) = cap::check(CapOp::MemManage, None) {
+                return e;
+            }
+            memory::sys_dma_bytespace_create(a0, a1)
+        }
         nr::SYS_HEAP_GROW => {
             if let Err(e) = cap::check(CapOp::MemManage, None) {
                 return e;

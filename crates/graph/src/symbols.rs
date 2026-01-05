@@ -245,6 +245,7 @@ pub fn init() {
         "predicate.mmio",
         "predicate.irq",
         "predicate.streams",
+        "bytespace_kind.dma",
     ]);
 
     *SYMBOLS.lock() = Some(table);
@@ -466,6 +467,9 @@ pub mod sym {
     pub const PRED_MMIO: SymbolId = SymbolId(157);
     pub const PRED_IRQ: SymbolId = SymbolId(158);
     pub const PRED_STREAMS: SymbolId = SymbolId(159);
+
+    // DMA
+    pub const KIND_BYTESPACE_DMA: SymbolId = SymbolId(160);
 }
 
 // symbols.rs additions will be done via sed

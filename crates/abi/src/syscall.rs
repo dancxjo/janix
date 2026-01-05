@@ -19,6 +19,7 @@ pub mod nr {
     pub const SYS_SPACE_MAP: u32 = 31;
     pub const SYS_SPACE_UNMAP: u32 = 32;
     pub const SYS_HEAP_GROW: u32 = 33;
+    pub const SYS_DMA_BYTESPACE_CREATE: u32 = 34;
 
     pub const SYS_WATCH_CREATE: u32 = 40;
     pub const SYS_WATCH_POLL: u32 = 41;

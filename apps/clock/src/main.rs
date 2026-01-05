@@ -9,14 +9,12 @@ use models::{SystemClock, Thing};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() {
-    log_info("CLOCK: ALIVE - DEBUG MODE");
+    log_info("CLOCK: Starting...");
     
     let mut time_thing = None;
     let mut ticks = 0;
     
     loop {
-        let start = monotonic_now();
-        
         // Try to find if not yet found
         if time_thing.is_none() {
             time_thing = thing_std::graph::thing_find("system.time");
@@ -42,19 +40,11 @@ pub extern "C" fn main() {
             },
             None => {
                 ticks += 1;
-                log_info(&format!("CLOCK: tick {} (mono: {})", ticks, start));
+                log_info(&format!("CLOCK: Waiting for system.time... ({})", ticks));
             }
         }
 
-        let before_sleep = monotonic_now();
-        sleep_ms(10000); // 10s sleep
-        let after_sleep = monotonic_now();
-        
-        // Log if sleep was too short (< 9s)
-        if after_sleep - before_sleep < 9_000_000_000 {
-             log_info(&format!("CLOCK: Sleep too short! Request: 10s, Actual: {} ns. Start: {}, End: {}", 
-                 after_sleep - before_sleep, before_sleep, after_sleep));
-        }
+        sleep_ms(10000);
     }
 }
 

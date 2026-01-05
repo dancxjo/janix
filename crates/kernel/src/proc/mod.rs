@@ -33,7 +33,7 @@ pub struct Thread {
     pub state: ThreadState,
 }
 
-pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
+pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<ThingId, ()> {
     use crate::memory::map::MapPerms;
     use crate::memory::space::AddressSpace;
     use crate::sched;
@@ -93,7 +93,7 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
     // 4. Spawn Task AND configure context atomically (with IRQs disabled)
     let name = module.path;
     let irq_token = crate::machine::irq_disable();
-    {
+    let task_id = {
         let mut guard = sched::SCHEDULER.lock();
         let sched = guard.as_mut().ok_or(())?;
         let task_id = sched.spawn(name, Some(address_space.clone()));
@@ -101,7 +101,22 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
         // Configure context immediately, while still holding the lock
         // This prevents the task from being scheduled before context is set up
         sched::configure_task_context_locked(sched, task_id, entry_point, stack_top);
-    }
+        
+        // Return internal TaskID to caller?
+        // Wait, sched.spawn returns TaskId (which matches ThingId).
+        // Check sched/mod.rs: pub struct TaskId(pub u64);
+        // And Task has `thing: ThingId`.
+        // We probably want to return the ThingId so we can use it in graph operations.
+        // Let's check sched/mod.rs again.
+        // TaskId is a wrapper around u64.
+        // Task struct usually has a `thing` field.
+        // `sched.spawn` returns `TaskId`.
+        
+        // Let's grab the ThingId from the task we just spawned.
+        // We are holding the lock.
+        let t = sched.tasks.iter().find(|t| t.id == task_id).ok_or(())?;
+        t.thing
+    };
     crate::machine::irq_restore(irq_token);
 
     // Announce sprout scheduling so BDD can observe userland start.
@@ -110,7 +125,7 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<(), ()> {
     }
 
     crate::log::kprintln("PROC: spawned");
-    Ok(())
+    Ok(task_id)
 }
 
 fn load_elf(data: &[u8], _as: &crate::memory::space::AddressSpace) -> Result<u64, ()> {

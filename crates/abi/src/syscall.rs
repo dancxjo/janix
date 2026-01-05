@@ -31,6 +31,7 @@ pub mod nr {
 
     pub const SYS_PROC_SPAWN: u32 = 60;
     pub const SYS_PROC_EXIT: u32 = 61;
+    pub const SYS_CAP_GRANT: u32 = 70;
     pub const SYS_DISPLAY_PRIMARY: u32 = 160;
 
     pub const SYS_TIME_MONOTONIC_NOW: u32 = 170;

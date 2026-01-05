@@ -1,6 +1,7 @@
 use core::alloc::Layout;
 use linked_list_allocator::LockedHeap;
-use x86_64::instructions::interrupts;
+// use x86_64::instructions::interrupts; // REMOVED
+
 
 pub struct SafeLockedHeap(LockedHeap);
 
@@ -20,11 +21,16 @@ impl core::ops::Deref for SafeLockedHeap {
 
 unsafe impl core::alloc::GlobalAlloc for SafeLockedHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        interrupts::without_interrupts(|| self.0.alloc(layout))
+        let token = crate::machine::irq_disable();
+        let res = self.0.alloc(layout);
+        crate::machine::irq_restore(token);
+        res
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        interrupts::without_interrupts(|| self.0.dealloc(ptr, layout))
+        let token = crate::machine::irq_disable();
+        self.0.dealloc(ptr, layout);
+        crate::machine::irq_restore(token);
     }
 }
 

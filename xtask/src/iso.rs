@@ -52,7 +52,7 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
     })?;
 
     // Copy Bloom -> /boot/modules/bloom
-    let bloom_src = bin_src.join("bloom");
+    let bloom_src = bin_src.join("bloom_app");
     fs::copy(&bloom_src, modules_dir.join("bloom"))
         .with_context(|| format!("Failed to copy bloom from {:?}", bloom_src))?;
 

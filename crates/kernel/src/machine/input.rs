@@ -22,15 +22,17 @@ pub fn init_mouse() {
 }
 
 /// Set the pointer thing ID for automatic graph publication.
-pub fn set_pointer_thing_id(id: abi::ids::ThingId) {
+pub fn set_pointer_thing_id(_id: abi::ids::ThingId) {
+
     #[cfg(target_arch = "x86_64")]
-    ps2_mouse::set_pointer_thing_id(id);
+    ps2_mouse::set_pointer_thing_id(_id);
 }
 
 /// Set mouse screen bounds for pointer clamping.
-pub fn set_mouse_bounds(width: u32, height: u32) {
+pub fn set_mouse_bounds(_width: u32, _height: u32) {
+
     #[cfg(target_arch = "x86_64")]
-    ps2_mouse::set_bounds(width, height);
+    ps2_mouse::set_bounds(_width, _height);
 }
 
 /// Read raw scancodes from the input buffer.

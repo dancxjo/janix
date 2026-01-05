@@ -29,6 +29,9 @@ pub extern "C" fn dispatch(
             log::sys_log_emit(a0, a1, a2)
         }
 
+        // === Capabilities ===
+        nr::SYS_CAP_GRANT => cap::sys_cap_grant(a0, a1, a2),
+
         // === Scheduling ===
         nr::SYS_SCHED_YIELD => {
             crate::sched::yield_current();
@@ -238,8 +241,11 @@ pub fn mod_legacy_spawn(name_ptr: u64, name_len: u64) -> SyscallResult {
     }
     let name = name.unwrap();
     let ctx = crate::boot::get_boot_ctx();
-    crate::boot::spawn_module_by_name(ctx, name);
-    SyscallResult::new(0, 0, 0)
+    if let Some(id) = crate::boot::spawn_module_by_name(ctx, name) {
+        SyscallResult::new(0, id.low(), id.high())
+    } else {
+        SyscallResult::new(abi::syscall::err::ENOENT, 0, 0)
+    }
 }
 
 pub fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {

@@ -19,6 +19,7 @@ pub use process::exit as sys_exit;
 pub use process::sched_yield;
 
 pub mod codec;
+pub mod cap;
 pub mod event;
 pub mod graph;
 pub mod graphics;
@@ -46,7 +47,7 @@ pub unsafe extern "C" fn _start() -> ! {
     extern "C" {
         fn main();
     }
-    init_heap(0x9000_0000, 1024 * 1024);
+    init_heap(1024 * 1024);
     main();
     process::exit(0);
 }
@@ -149,12 +150,20 @@ static mut HEAP_START: usize = 0;
 static mut HEAP_CURRENT: usize = 0;
 static mut HEAP_LIMIT: usize = 0;
 
-pub unsafe fn init_heap(start: usize, size: usize) {
-    HEAP_START = start;
-    HEAP_CURRENT = start;
-    HEAP_LIMIT = start + size;
+pub unsafe fn init_heap(size: usize) {
     // Check if NR exists. We use SYS_HEAP_GROW (33).
-    syscall(nr::SYS_HEAP_GROW, size as u64, 0, 0, 0, 0, 0);
+    loop {
+        let res = syscall(nr::SYS_HEAP_GROW, size as u64, 0, 0, 0, 0, 0);
+        if res.status == 0 {
+            // Kernel returns the OLD break, which is our new start
+            let start = res.val0 as usize;
+            HEAP_START = start;
+            HEAP_CURRENT = start;
+            HEAP_LIMIT = start + size;
+            break;
+        }
+        process::sched_yield();
+    }
 }
 
 unsafe impl GlobalAlloc for BumpAllocator {

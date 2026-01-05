@@ -7,9 +7,9 @@ pub fn exit(code: i32) -> ! {
     loop {}
 }
 
-pub fn spawn(name: &str) {
+pub fn spawn(name: &str) -> Result<ThingId, i32> {
     unsafe {
-        syscall(
+        let res = syscall(
             nr::SYS_PROC_SPAWN,
             name.as_ptr() as u64,
             name.len() as u64,
@@ -18,6 +18,11 @@ pub fn spawn(name: &str) {
             0,
             0,
         );
+        if res.status != 0 {
+            Err(res.status as i32)
+        } else {
+            Ok(ThingId::from_parts(res.val1, res.val0)) // High is val1!
+        }
     }
 }
 

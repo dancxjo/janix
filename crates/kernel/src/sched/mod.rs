@@ -36,7 +36,7 @@ where
     res
 }
 
-pub(crate) struct Scheduler {
+pub struct Scheduler {
     pub(crate) tasks: Vec<Task>,
     pub(crate) run_queue: RunQueue,
     pub(crate) cpu: PerCpu,

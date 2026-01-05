@@ -1,7 +1,7 @@
 #![no_std]
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 #![feature(alloc_error_handler)]
-#![feature(naked_functions)]
+
 
 extern crate alloc;
 
@@ -23,15 +23,8 @@ pub mod watch;
 
 pub use machine::PreBootInfo;
 
-/// Global panic handler
-struct SerialWriter;
 
-impl core::fmt::Write for SerialWriter {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        crate::serial::write(s.as_bytes());
-        Ok(())
-    }
-}
+
 
 // Global panic handler removed from lib to avoid duplicate lang item in Bran
 // It should be provided by the final binary (Bran for boot, apps for userland)

@@ -1,6 +1,6 @@
 use crate::machine::machine;
 use models::*;
-use abi::ids::{SymbolId, ThingId};
+use abi::ids::ThingId;
 use graph::store;
 use graph::symbols::sym;
 use spin::Mutex;

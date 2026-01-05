@@ -4,9 +4,11 @@ use abi::bodies::{BYTESPACE_FLAG_HAS_PHYS_BASE, ThingEnvelopeV1};
 use graph::store;
 use graph::symbols::{self, sym};
 use models::{
-    Bytespace, DisplayDevice, Framebuffer, EventStream, MouseStream, Pointer,
-    Surface,
+    Bytespace, DisplayDevice, Framebuffer, MouseStream, Pointer, Surface,
 };
+
+#[cfg(target_arch = "x86_64")]
+use models::EventStream;
 use alloc::vec::Vec;
 
 #[derive(Clone, Copy, Debug)]
@@ -123,22 +125,81 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     seed_bloom_ontology();
     indicate_progress(4);
     crate::sched::init();
-    spawn_module_by_name(ctx, "sprout");
+    let sprout_id = spawn_module_by_name(ctx, "sprout");
     indicate_progress(5);
+    seed_kernel_permissions();
+
+    if let Some(id) = sprout_id {
+        inject_root_caps(id);
+    }
+
     crate::log::kprintln("BOOT: Handing off to scheduler");
     crate::sched::run();
 }
 
-pub fn spawn_module_by_name(ctx: &BootContext, name: &str) {
+pub fn spawn_module_by_name(ctx: &BootContext, name: &str) -> Option<abi::ids::ThingId> {
     for module in ctx.modules {
         if module.path.contains(name) {
-            if let Err(_) = crate::proc::spawn_kernel_module(module) {
-                crate::log::kprintln(&alloc::format!("BOOT: Failed to spawn module {}", name));
+            match crate::proc::spawn_kernel_module(module) {
+                Ok(id) => return Some(id),
+                Err(_) => {
+                    crate::log::kprintln(&alloc::format!("BOOT: Failed to spawn module {}", name));
+                    return None;
+                }
             }
-            return;
         }
     }
     crate::log::kprintln(&alloc::format!("BOOT: Module {} not found", name));
+    None
+}
+
+fn inject_root_caps(task_id: abi::ids::ThingId) {
+    use abi::cap::{Cap, CapOp, CapScope};
+    let ops = [
+        CapOp::Log, CapOp::MemManage, CapOp::GrantCaps,
+        CapOp::GraphCreate, CapOp::GraphLink, CapOp::GraphUnlink,
+        CapOp::GraphRead, CapOp::GraphWrite, CapOp::GraphWatch,
+        CapOp::Hardware
+    ];
+    for op in ops {
+        crate::syscall::cap::inject_cap(task_id, Cap { op, scope: CapScope::Global });
+    }
+}
+
+fn seed_kernel_permissions() {
+    // Ensure place.permissions exists
+    let perm_place = if let Some(p) = store::find_thing_by_name(symbols::intern(b"place.permissions")) {
+        p
+    } else {
+        let p = store::thing_create(sym::KIND_PLACE);
+        store::thing_register_name(p, symbols::intern(b"place.permissions"));
+        // Link to root if possible
+        if let Some(root) = store::find_thing_by_name(sym::PLACE_ROOT) {
+            store::relationship_create(sym::PRED_CONTAINS, root, p);
+        }
+        p
+    };
+
+    let permissions = [
+        "perm.log",
+        "perm.create",
+        "perm.link",
+        "perm.unlink",
+        "perm.read",
+        "perm.write",
+        "perm.watch",
+        "perm.mem",
+        "perm.dictator",
+    ];
+
+    for perm_name in &permissions {
+        let sym = symbols::intern(perm_name.as_bytes());
+        if store::find_thing_by_name(sym).is_none() {
+            let perm = store::thing_create(symbols::intern(b"kind.permission"));
+            store::thing_register_name(perm, sym);
+            store::relationship_create(sym::PRED_CONTAINS, perm_place, perm);
+        }
+    }
 }
 
 fn wrap_raw(kind: abi::ids::SymbolId, payload: &[u8]) -> Vec<u8> {

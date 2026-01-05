@@ -55,6 +55,7 @@ pub struct Task {
     pub first_run: bool, // true if this task has prepared context, false if it has saved context
     pub simd_used: bool,
     pub simd_state: Option<Vec<u8>>,
+    pub caps: Vec<abi::cap::Cap>,
 }
 
 impl Task {
@@ -78,6 +79,7 @@ impl Task {
             first_run: true, // Starts with prepared context
             simd_used: false,
             simd_state: None,
+            caps: Vec::new(),
         }
     }
 

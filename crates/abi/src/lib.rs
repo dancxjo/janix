@@ -3,6 +3,7 @@
 extern crate alloc;
 
 pub mod bodies;
+pub mod cap; // Capabilities
 pub mod cpu; // CPU capabilities
 pub mod display;
 pub mod events; // EventStream wire format

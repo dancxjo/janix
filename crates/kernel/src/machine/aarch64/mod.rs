@@ -547,7 +547,7 @@ impl Machine for ArchMachine {
     }
 
     fn task_entry_stub(&self) -> u64 {
-        aarch64_task_entry_stub as usize as u64
+        aarch64_task_entry_stub as *const () as usize as u64
     }
 
     fn virt_to_phys(&self, virt: u64) -> u64 {

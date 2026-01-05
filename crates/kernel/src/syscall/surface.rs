@@ -38,8 +38,9 @@ pub fn sys_surface_create(width: u64, height: u64, format: u64) -> SyscallResult
 
     // Grant Write cap to current task
     if let Some(task_id) = crate::sched::current_task_id() {
-        cap::grant_perm(task_id, surface_id, "perm.write");
-        cap::grant_perm(task_id, surface_id, "perm.read");
+        use abi::cap::{Cap, CapOp, CapScope};
+        cap::inject_cap(task_id, Cap { op: CapOp::GraphWrite, scope: CapScope::Thing(surface_id) });
+        cap::inject_cap(task_id, Cap { op: CapOp::GraphRead, scope: CapScope::Thing(surface_id) });
     }
 
     let res = SyscallResult::new(0, surface_id.high(), surface_id.low());

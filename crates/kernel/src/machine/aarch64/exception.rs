@@ -33,7 +33,7 @@ pub extern "C" fn aarch64_handle_exception(ctx: &mut ExceptionContext, vector: u
         8 => {
             let ec = (ctx.esr_el1 >> 26) & 0x3F;
             if ec == 0x15 {
-                let res = crate::syscall::dispatch(
+                let res = crate::syscall::dispatch::dispatch(
                     ctx.x[8] as u32,
                     ctx.x[0],
                     ctx.x[1],

@@ -5,7 +5,7 @@ use core::sync::atomic::Ordering;
 
 use abi::ids::WatchId;
 use abi::syscall::err;
-use abi::types::{WaitFlags, WakeReasonCode};
+use abi::types::WaitFlags;
 use abi::wire::SyscallResult;
 
 use crate::sched::{self, BlockReason};

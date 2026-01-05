@@ -211,7 +211,7 @@ fn layout_widgets(
                 let w = text_width_guess(text, label.style.size).min(usable_w as i32);
                 (h.max(14), w.max(24))
             }
-            WidgetKind::Button(button, text) => {
+            WidgetKind::Button(_button, text) => {
                 let h = 32;
                 let w = text_width_guess(text, 16).max(64);
                 (h, w.min(usable_w as i32))

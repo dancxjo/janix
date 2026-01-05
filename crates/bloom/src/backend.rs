@@ -1,6 +1,5 @@
-use alloc::vec::Vec;
-use thing_std::graph::*;
-use thing_std::*;
+use abi::ids::ThingId;
+use thing_std::memory;
 
 #[derive(Clone, Copy, Debug)]
 pub struct SurfaceDesc {
@@ -51,7 +50,7 @@ impl Backend for CpuBytespaceBackend {
         self.stride = desc.stride_pixels;
         
         let fb_size: u64 = (desc.width as u64) * (desc.height as u64) * 4;
-        let _mapped = thing_std::memory::space_map(self.display_bs_id, self.fb_base, 0, fb_size);
+        let _mapped = memory::space_map(self.display_bs_id, self.fb_base, 0, fb_size);
         self.fb_ptr = self.fb_base as *mut u32;
     }
 

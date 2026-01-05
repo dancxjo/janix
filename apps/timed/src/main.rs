@@ -91,6 +91,16 @@ pub extern "C" fn main() {
     let _ = thing_set_body(time_thing, &sys_clock.encode_full());
     log_info("TIMED: Published system.time");
 
+    // Mark timed service as ready so dependents can start
+    if let Some(svc_id) = thing_find("service.timed") {
+        if let Some((body, _)) = thing_get_body(svc_id) {
+            if let Ok(mut svc) = Service::decode_full(&body) {
+                svc.state = 1;
+                let _ = thing_set_body(svc_id, &svc.encode_full());
+            }
+        }
+    }
+
     loop {
         thing_std::time::sleep_ms(10000);
     }

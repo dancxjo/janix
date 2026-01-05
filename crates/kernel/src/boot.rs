@@ -1,9 +1,14 @@
 use crate::machine::BootColor;
+use crate::memory::bytespace::Bytespace as MemBytespace;
 use crate::PreBootInfo;
+use abi::cap::CapOp;
 use abi::bodies::{ThingEnvelopeV1, BYTESPACE_FLAG_HAS_PHYS_BASE};
 use graph::store;
 use graph::symbols::{self, sym};
-use models::{Bytespace, DisplayDevice, Framebuffer, HardwareInfo, MouseStream, Pointer, Surface};
+use models::{
+    Bytespace, DisplayDevice, Framebuffer, HardwareInfo, Module, MouseStream, Pointer, Service,
+    Surface, Thing,
+};
 
 use alloc::vec::Vec;
 #[cfg(target_arch = "x86_64")]
@@ -123,6 +128,7 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     crate::platform::init();
     indicate_progress(3);
     seed_bloom_ontology();
+    seed_service_plan(ctx);
     indicate_progress(4);
     crate::sched::init();
     let sprout_id = spawn_module_by_name(ctx, "sprout");
@@ -212,6 +218,228 @@ fn seed_kernel_permissions() {
             store::thing_register_name(perm, sym);
             store::relationship_create(sym::PRED_CONTAINS, perm_graph, perm);
         }
+    }
+}
+
+fn seed_service_plan(ctx: &BootContext) {
+    let root = store::find_thing_by_name(sym::GRAPH_ROOT);
+    let ensure_graph =
+        |name: abi::ids::SymbolId, parent: Option<abi::ids::ThingId>| -> abi::ids::ThingId {
+            if let Some(existing) = store::find_thing_by_name(name) {
+                existing
+            } else {
+                let g = store::thing_create(sym::KIND_GRAPH);
+                store::thing_register_name(g, name);
+                if let Some(p) = parent {
+                    store::relationship_create(sym::PRED_CONTAINS, p, g);
+                }
+                g
+            }
+        };
+
+    let services_root = ensure_graph(symbols::intern(b"graph.services"), root);
+    let time_graph = ensure_graph(sym::GRAPH_SERVICES_TIME, Some(services_root));
+    let clock_graph = ensure_graph(sym::GRAPH_APPS_CLOCK, Some(services_root));
+    let core_graph = ensure_graph(symbols::intern(b"graph.services.core"), Some(services_root));
+
+    let svc_kind = symbols::intern(b"kind.Service");
+    let module_kind = symbols::intern(b"kind.Module");
+
+    let mut create_module =
+        |name: &str, parent: abi::ids::ThingId| -> Option<abi::ids::ThingId> {
+            let module_sym = symbols::intern(alloc::format!("module.{}", name).as_bytes());
+            if let Some(existing) = store::find_thing_by_name(module_sym) {
+                return Some(existing);
+            }
+
+            let info = ctx.modules.iter().find(|m| m.path.contains(name))?;
+            let bs = MemBytespace::new_module(info.phys_addr, info.size as usize);
+            let module_thing = store::thing_create(module_kind);
+            store::thing_register_name(module_thing, module_sym);
+
+            let mut caps = [CapOp::Log; 8];
+            let mut cap_count = 0u8;
+            for op in default_caps_for(name).into_iter().flatten() {
+                caps[cap_count as usize] = op;
+                cap_count += 1;
+            }
+
+            let mut deps = [symbols::intern(b""); 8];
+            let mut dep_count = 0u8;
+            for dep in default_deps_for(name).into_iter().flatten() {
+                deps[dep_count as usize] = dep;
+                dep_count += 1;
+            }
+
+            let module_body = Module {
+                name: symbols::intern(name.as_bytes()),
+                bytespace: bs.id,
+                size: info.size,
+                caps,
+                cap_count,
+                deps,
+                dep_count,
+                _pad: 0,
+            };
+            let _ = store::thing_set_body(module_thing, &module_body.encode_full());
+            store::relationship_create(sym::PRED_CONTAINS, parent, module_thing);
+            Some(module_thing)
+        };
+
+    let mut create_service =
+        |graph: abi::ids::ThingId, name: &str| -> Option<abi::ids::ThingId> {
+            let sym_name = symbols::intern(alloc::format!("service.{}", name).as_bytes());
+            if let Some(existing) = store::find_thing_by_name(sym_name) {
+                return Some(existing);
+            }
+
+            let s = store::thing_create(svc_kind);
+            store::thing_register_name(s, sym_name);
+            let svc_body = Service {
+                name: sym_name,
+                pid: 0,
+                state: 0,
+            };
+            let _ = store::thing_set_body(s, &svc_body.encode_full());
+            store::relationship_create(sym::PRED_CONTAINS, graph, s);
+            Some(s)
+        };
+
+    let mut wire_service =
+        |graph: abi::ids::ThingId, name: &str| -> Option<(abi::ids::ThingId, Option<abi::ids::ThingId>)> {
+            let svc = create_service(graph, name)?;
+            let module = create_module(name, graph);
+            if let Some(m) = module {
+                let _ = store::relationship_create(sym::PRED_OWNS, svc, m);
+            }
+            Some((svc, module))
+        };
+
+    // Core services visible to Sprout
+    let _ = wire_service(core_graph, "bloom");
+    let _ = wire_service(core_graph, "inputd");
+    let _ = wire_service(core_graph, "thingcheck");
+    let _ = wire_service(core_graph, "hello_window");
+
+    // Time pipeline: RTC driver -> timed -> clock app
+    let rtc_dep = {
+        #[cfg(target_arch = "x86_64")]
+        {
+            wire_service(time_graph, "rtc_cmos").map(|(svc, _)| svc)
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            wire_service(time_graph, "rtc_pl031").map(|(svc, _)| svc)
+        }
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            None
+        }
+    };
+
+    let timed = wire_service(time_graph, "timed").map(|(svc, _)| svc);
+    if let (Some(timed_id), Some(rtc_id)) = (timed, rtc_dep) {
+        let _ = store::relationship_create(sym::PRED_REFERENCES, timed_id, rtc_id);
+    }
+
+    let clock = wire_service(clock_graph, "clock").map(|(svc, _)| svc);
+    if let (Some(clock_id), Some(timed_id)) = (clock, timed) {
+        let _ = store::relationship_create(sym::PRED_REFERENCES, clock_id, timed_id);
+    }
+
+    crate::log::kprintln("BOOT: seeded service plan");
+}
+
+fn default_caps_for(name: &str) -> [Option<CapOp>; 8] {
+    match name {
+        "bloom" => [
+            Some(CapOp::Log),
+            Some(CapOp::MemManage),
+            Some(CapOp::GraphCreate),
+            Some(CapOp::GraphLink),
+            Some(CapOp::GraphUnlink),
+            Some(CapOp::GraphRead),
+            Some(CapOp::GraphWrite),
+            Some(CapOp::GraphWatch),
+        ],
+        "inputd" => [
+            Some(CapOp::Log),
+            Some(CapOp::MemManage),
+            Some(CapOp::Hardware),
+            Some(CapOp::GraphCreate),
+            Some(CapOp::GraphLink),
+            Some(CapOp::GraphRead),
+            Some(CapOp::GraphWrite),
+            None,
+        ],
+        "clock" => [Some(CapOp::Log), Some(CapOp::MemManage), Some(CapOp::GraphRead), None, None, None, None, None],
+        "timed" => [
+            Some(CapOp::Log),
+            Some(CapOp::MemManage),
+            Some(CapOp::GraphRead),
+            Some(CapOp::GraphCreate),
+            Some(CapOp::GraphLink),
+            Some(CapOp::GraphWrite),
+            None,
+            None,
+        ],
+        "rtc_cmos" => [
+            Some(CapOp::Log),
+            Some(CapOp::MemManage),
+            Some(CapOp::GraphRead),
+            Some(CapOp::GraphCreate),
+            Some(CapOp::GraphLink),
+            Some(CapOp::GraphWrite),
+            Some(CapOp::IoPort),
+            None,
+        ],
+        "rtc_pl031" => [
+            Some(CapOp::Log),
+            Some(CapOp::MemManage),
+            Some(CapOp::Hardware),
+            Some(CapOp::GraphRead),
+            Some(CapOp::GraphCreate),
+            Some(CapOp::GraphLink),
+            Some(CapOp::GraphWrite),
+            None,
+        ],
+        "hello_window" => [
+            Some(CapOp::Log),
+            Some(CapOp::GraphCreate),
+            Some(CapOp::GraphLink),
+            Some(CapOp::GraphRead),
+            Some(CapOp::GraphWrite),
+            None,
+            None,
+            None,
+        ],
+        _ => [Some(CapOp::Log), None, None, None, None, None, None, None],
+    }
+}
+
+fn default_deps_for(name: &str) -> [Option<abi::ids::SymbolId>; 8] {
+    match name {
+        "timed" => [
+            Some(symbols::intern(b"service.rtc_cmos")),
+            Some(symbols::intern(b"service.rtc_pl031")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ],
+        "clock" => [
+            Some(symbols::intern(b"service.timed")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ],
+        _ => [None; 8],
     }
 }
 

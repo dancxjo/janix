@@ -99,6 +99,20 @@ pub fn sys_relationships_from(
         return SyscallResult::new(err::EINVAL, 0, total_rels);
     }
 
+    let align = core::mem::align_of::<RelationshipRef>() as u64;
+    if out_ptr & (align - 1) != 0 {
+        return SyscallResult::new(err::EINVAL, 0, total_rels);
+    }
+
+    if out_len == 0 {
+        return SyscallResult::new(0, 0, total_rels);
+    }
+
+    let elem_size = core::mem::size_of::<RelationshipRef>();
+    if out_len as usize > (isize::MAX as usize) / elem_size {
+        return SyscallResult::new(err::EINVAL, 0, total_rels);
+    }
+
     let mut count = 0;
     let user_slice = unsafe {
         core::slice::from_raw_parts_mut(out_ptr as *mut RelationshipRef, out_len as usize)

@@ -5,6 +5,7 @@ extern crate abi;
 extern crate thing_codec;
 extern crate thing_derive;
 
+use abi::cap::CapOp;
 use serde::{Serialize, Deserialize};
 use thing_derive::Thing;
 pub use abi::ids::{SymbolId, ThingId}; 
@@ -119,14 +120,21 @@ pub struct EventStream {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
 #[thing(kind = "kind.Module")]
 pub struct Module {
+    pub name: SymbolId,
     pub bytespace: ThingId,
     pub size: u64,
+    pub caps: [CapOp; 8],
+    pub cap_count: u8,
+    pub deps: [SymbolId; 8],
+    pub dep_count: u8,
+    pub _pad: u16,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
 #[thing(kind = "kind.Service")]
 pub struct Service {
+    pub name: SymbolId,
     pub pid: u64,
     pub state: u32, // 0: Init, 1: Ready, 2: Failed
 }

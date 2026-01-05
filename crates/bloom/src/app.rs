@@ -1,8 +1,8 @@
 use crate::input::PointerInput;
 use crate::pixels::*;
+use crate::scene::Rect;
 use crate::shadow::{draw_shadow_from_mask, ShadowMask, ShadowParams};
-use crate::ui::{collect_window_scenes, render_window_scenes};
-use alloc::vec::Vec;
+use crate::ui::{collect_window_scenes, render_window_scenes, WindowScene, WidgetKind};
 use models::*;
 use thing_std::graph::*;
 use thing_std::*;
@@ -47,7 +47,8 @@ pub fn run() {
             };
 
             let buffer_size = (width * height) as usize;
-            let mut back_buffer = alloc::vec![0u32; buffer_size];
+            let mut frame_buffer = alloc::vec![0u32; buffer_size];
+            let mut scene_buffer = alloc::vec![0u32; buffer_size];
             let mut wallpaper_cache = alloc::vec![0u32; buffer_size];
 
             let wallpaper = thing_find("bytespace.asset.clouds.bmp").and_then(|id| {
@@ -58,14 +59,24 @@ pub fn run() {
 
             if let Some(ref wp) = wallpaper {
                 render_wallpaper_full(wallpaper_cache.as_mut_ptr(), width, height, wp);
-                // Fix: Copy the rendered wallpaper to the back buffer so it's ready for the first frame
-                unsafe {
-                    core::ptr::copy_nonoverlapping(
-                        wallpaper_cache.as_ptr(),
-                        back_buffer.as_mut_ptr(),
-                        buffer_size,
-                    );
-                }
+            }
+
+            // Seed the scene buffer with wallpaper and the initial window set
+            let mut window_scenes = collect_window_scenes(&mut graph_client);
+            let mut scene_signature = fingerprint_scene(&window_scenes);
+            rebuild_scene(
+                scene_buffer.as_mut_slice(),
+                wallpaper_cache.as_slice(),
+                width,
+                height,
+                &window_scenes,
+            );
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    scene_buffer.as_ptr(),
+                    frame_buffer.as_mut_ptr(),
+                    buffer_size,
+                );
             }
 
             // Load cursor assets
@@ -73,13 +84,14 @@ pub fn run() {
 
             // Use milliseconds for animation timing (monotonic_now returns nanoseconds)
             let mut animator = cursor_asset.map(|asset| CursorAnimator::new(asset, 1));
-            let mut last_redraw_ms: u64 = 0;
             let mut last_scene_refresh_ms: u64 = 0;
-            let mut window_scenes = collect_window_scenes(&mut graph_client);
             let mut logged_shared_shadow = false;
             let mut prev_px = 0;
             let mut prev_py = 0;
+            let mut prev_buttons: u16 = 0;
             let mut logged_window_once = false;
+            let mut prev_cursor_bounds: Option<Rect> = None;
+            let mut scene_dirty = true;
 
             loop {
                 // Get current time in milliseconds
@@ -87,6 +99,7 @@ pub fn run() {
 
                 let (px, py, buttons) = input.poll();
                 let moved = px != prev_px || py != prev_py;
+                let buttons_changed = buttons != prev_buttons;
 
                 // Animation update
                 let anim_changed = if let Some(anim) = animator.as_mut() {
@@ -96,47 +109,77 @@ pub fn run() {
                 };
 
                 if now_ms.saturating_sub(last_scene_refresh_ms) > 250 {
-                    window_scenes = collect_window_scenes(&mut graph_client);
+                    let new_scenes = collect_window_scenes(&mut graph_client);
+                    let signature = fingerprint_scene(&new_scenes);
+                    if signature != scene_signature {
+                        scene_signature = signature;
+                        window_scenes = new_scenes;
+                        scene_dirty = true;
+                    }
                     last_scene_refresh_ms = now_ms;
                 }
 
-                let force_redraw = if now_ms - last_redraw_ms > 50 {
-                    last_redraw_ms = now_ms;
-                    true
+                let cursor_frame = if let Some(anim) = animator.as_ref() {
+                    anim.current_frame()
                 } else {
-                    false
+                    None
                 };
+                let cursor_bounds = cursor_bounds(cursor_frame, px, py);
+                let cursor_changed = moved || anim_changed || buttons_changed;
 
-                if force_redraw || anim_changed || moved || buttons != 0 {
+                let mut dirty: Option<Rect> = None;
+
+                if scene_dirty {
+                    rebuild_scene(
+                        scene_buffer.as_mut_slice(),
+                        wallpaper_cache.as_slice(),
+                        width,
+                        height,
+                        &window_scenes,
+                    );
                     unsafe {
-                        // Rebuild frame: wallpaper -> windows -> cursor
-                        core::ptr::copy_nonoverlapping(
-                            wallpaper_cache.as_ptr(),
-                            back_buffer.as_mut_ptr(),
-                            buffer_size,
-                        );
-
-                        render_window_scenes(
-                            back_buffer.as_mut_ptr(),
+                        redraw_region(
+                            frame_buffer.as_mut_ptr(),
+                            scene_buffer.as_ptr(),
                             width,
                             height,
-                            &window_scenes,
+                            Rect {
+                                x: 0,
+                                y: 0,
+                                w: width,
+                                h: height,
+                            },
                         );
-                        if !window_scenes.is_empty() && !logged_window_once {
-                            let win_id = window_scenes[0].id.low();
-                            log_info(&alloc::format!("BLOOM: rendered window {}", win_id));
-                            logged_window_once = true;
-                        }
+                    }
+                    merge_damage(&mut dirty, Rect { x: 0, y: 0, w: width, h: height });
+                    if !window_scenes.is_empty() && !logged_window_once {
+                        let win_id = window_scenes[0].id.low();
+                        log_info(&alloc::format!("BLOOM: rendered window {}", win_id));
+                        logged_window_once = true;
+                    }
+                } else if cursor_changed {
+                    let damage = if let Some(prev_bounds) = prev_cursor_bounds {
+                        Rect::union(prev_bounds, cursor_bounds)
+                    } else {
+                        cursor_bounds
+                    };
+                    unsafe {
+                        redraw_region(
+                            frame_buffer.as_mut_ptr(),
+                            scene_buffer.as_ptr(),
+                            width,
+                            height,
+                            damage,
+                        );
+                    }
+                    merge_damage(&mut dirty, damage);
+                }
 
-                        let cursor_frame = if let Some(anim) = animator.as_ref() {
-                            anim.current_frame()
-                        } else {
-                            None
-                        };
-
-                        if let Some(frame) = cursor_frame {
+                if scene_dirty || cursor_changed {
+                    if let Some(frame) = cursor_frame {
+                        unsafe {
                             draw_shadow_from_mask(
-                                back_buffer.as_mut_ptr(),
+                                frame_buffer.as_mut_ptr(),
                                 width,
                                 height,
                                 px - frame.hotspot_x,
@@ -154,34 +197,47 @@ pub fn run() {
                                 },
                             );
                             draw_cursor_frame(
-                                back_buffer.as_mut_ptr(),
+                                frame_buffer.as_mut_ptr(),
                                 width,
                                 height,
                                 frame,
                                 px,
                                 py,
                             );
-                            if !logged_shared_shadow {
-                                log_info("BLOOM: shadow kernel: shared");
-                                logged_shared_shadow = true;
-                            }
-                        } else {
-                            draw_fallback_cursor(back_buffer.as_mut_ptr(), width, height, px, py);
                         }
-
-                        backend.present(
-                            back_buffer.as_mut_slice(),
-                            DirtyRect {
-                                x: 0,
-                                y: 0,
-                                w: width,
-                                h: height,
-                            },
-                        );
-
-                        prev_px = px;
-                        prev_py = py;
+                        if !logged_shared_shadow {
+                            log_info("BLOOM: shadow kernel: shared");
+                            logged_shared_shadow = true;
+                        }
+                    } else {
+                        unsafe {
+                            draw_fallback_cursor(
+                                frame_buffer.as_mut_ptr(),
+                                width,
+                                height,
+                                px,
+                                py,
+                            );
+                        }
                     }
+                    merge_damage(&mut dirty, cursor_bounds);
+                    prev_cursor_bounds = Some(cursor_bounds);
+                }
+
+                if let Some(rect) = dirty {
+                    backend.present(
+                        frame_buffer.as_mut_slice(),
+                        DirtyRect {
+                            x: rect.x,
+                            y: rect.y,
+                            w: rect.w,
+                            h: rect.h,
+                        },
+                    );
+                    scene_dirty = false;
+                    prev_px = px;
+                    prev_py = py;
+                    prev_buttons = buttons;
                 }
                 sched_yield();
             }
@@ -246,4 +302,104 @@ fn render_wallpaper_full(dest: *mut u32, dest_w: u32, dest_h: u32, wp: &Wallpape
             }
         }
     }
+}
+
+fn rebuild_scene(
+    scene_buffer: &mut [u32],
+    wallpaper_cache: &[u32],
+    width: u32,
+    height: u32,
+    scenes: &[WindowScene],
+) {
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            wallpaper_cache.as_ptr(),
+            scene_buffer.as_mut_ptr(),
+            scene_buffer.len(),
+        );
+    }
+    render_window_scenes(scene_buffer.as_mut_ptr(), width, height, scenes);
+}
+
+fn merge_damage(into: &mut Option<Rect>, rect: Rect) {
+    if rect.w == 0 || rect.h == 0 {
+        return;
+    }
+    *into = Some(if let Some(existing) = *into {
+        Rect::union(existing, rect)
+    } else {
+        rect
+    });
+}
+
+fn cursor_bounds(frame: Option<&CursorFrame>, px: i32, py: i32) -> Rect {
+    match frame {
+        Some(frame) => {
+            let sprite_x = px - frame.hotspot_x;
+            let sprite_y = py - frame.hotspot_y;
+            let shadow_x = sprite_x + frame.shadow_offset_x;
+            let shadow_y = sprite_y + frame.shadow_offset_y;
+
+            let min_x = sprite_x.min(shadow_x);
+            let min_y = sprite_y.min(shadow_y);
+            let max_x = (sprite_x + frame.width as i32).max(shadow_x + frame.width as i32);
+            let max_y = (sprite_y + frame.height as i32).max(shadow_y + frame.height as i32);
+
+            Rect {
+                x: min_x,
+                y: min_y,
+                w: (max_x - min_x) as u32,
+                h: (max_y - min_y) as u32,
+            }
+        }
+        None => Rect {
+            x: px,
+            y: py,
+            w: 10,
+            h: 11,
+        },
+    }
+}
+
+fn fingerprint_scene(scenes: &[WindowScene]) -> u64 {
+    let mut hash = scenes.len() as u64;
+    for scene in scenes {
+        hash = mix(hash, scene.id.low());
+        hash = mix(hash, scene.window.x as i64 as u64);
+        hash = mix(hash, scene.window.y as i64 as u64);
+        hash = mix(hash, scene.window.width as u64);
+        hash = mix(hash, scene.window.height as u64);
+        hash = mix(hash, scene.window.style.bg_rgba as u64);
+        hash = mix(hash, scene.window.style.radius as u64);
+        hash = mix(hash, scene.window.style.shadow as u64);
+        hash = mix(hash, scene.window.style.elevation as u64);
+
+        hash = mix(hash, scene.layout.kind as u8 as u64);
+        hash = mix(hash, scene.layout.padding as u64);
+        hash = mix(hash, scene.layout.gap as u64);
+        hash = mix(hash, scene.layout.align as u64);
+
+        hash = mix(hash, scene.children.len() as u64);
+        for child in &scene.children {
+            match child {
+                WidgetKind::Label(label, text) => {
+                    hash = mix(hash, 1);
+                    hash = mix(hash, label.style.size as u64);
+                    hash = mix(hash, label.style.color_rgba as u64);
+                    hash = mix(hash, text.len() as u64);
+                }
+                WidgetKind::Button(button, text) => {
+                    hash = mix(hash, 2);
+                    hash = mix(hash, button.style.bg_rgba as u64);
+                    hash = mix(hash, button.style.radius as u64);
+                    hash = mix(hash, text.len() as u64);
+                }
+            }
+        }
+    }
+    hash
+}
+
+fn mix(seed: u64, value: u64) -> u64 {
+    seed.rotate_left(7) ^ value.wrapping_mul(0x9E3779B185EBCA87)
 }

@@ -1,5 +1,3 @@
-use thing_std::*;
-
 pub struct PointerInput {
     ring_ptr: *const u8,
     capacity: u32,
@@ -47,11 +45,11 @@ impl PointerInput {
             // Actually the ring header has capacity (offset 8).
             // Code in app.rs read it from header.
             // Let's read from header to be safe or consistent.
-            let capacity = u32::from_le_bytes([
+            let header_capacity = u32::from_le_bytes([
                 *self.ring_ptr.add(8), *self.ring_ptr.add(9), *self.ring_ptr.add(10), *self.ring_ptr.add(11),
             ]);
-            // self.capacity could be used for boundary checks if we mapped that much.
-            
+            let capacity = core::cmp::min(header_capacity, self.capacity);
+
             let ring_base = self.ring_ptr.add(HEADER_SIZE);
 
             let mut offset: u32 = 0;

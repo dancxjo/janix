@@ -95,3 +95,6 @@ pub fn graph_smoke() {
         panic!("GRAPH: Smoke test failed: {}", e);
     }
 }
+
+#[cfg(test)]
+mod store_test;

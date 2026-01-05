@@ -43,6 +43,7 @@ pub struct GraphStore {
     pub things: BTreeMap<ThingId, Thing>,
     pub relationships: BTreeMap<RelationshipId, Relationship>,
     pub name_index: BTreeMap<SymbolId, ThingId>,
+    pub from_index: BTreeMap<ThingId, Vec<RelationshipId>>,
     pub next_id: u64,
     pub watchers: BTreeMap<ThingId, Vec<ThingId>>,
     pub pending_events: BTreeMap<ThingId, VecDeque<ThingId>>,
@@ -54,6 +55,7 @@ impl GraphStore {
             things: BTreeMap::new(),
             relationships: BTreeMap::new(),
             name_index: BTreeMap::new(),
+            from_index: BTreeMap::new(),
             next_id: 100,
             watchers: BTreeMap::new(),
             pending_events: BTreeMap::new(),
@@ -85,6 +87,7 @@ impl GraphStore {
         self.next_id += 1;
         let rel = Relationship { id, kind, from, to };
         self.relationships.insert(id, rel);
+        self.from_index.entry(from).or_default().push(id);
 
         if let Some(watchers) = self.watchers.get(&from) {
             for &watcher in watchers {
@@ -99,17 +102,22 @@ impl GraphStore {
     }
 
     pub fn delete_relationship(&mut self, id: RelationshipId) -> Result<Relationship, i32> {
-        self.relationships
+        let rel = self.relationships
             .remove(&id)
-            .ok_or(abi::syscall::err::ENOENT)
+            .ok_or(abi::syscall::err::ENOENT)?;
+
+        if let Some(list) = self.from_index.get_mut(&rel.from) {
+            list.retain(|&r| r != id);
+            if list.is_empty() {
+                self.from_index.remove(&rel.from);
+            }
+        }
+
+        Ok(rel)
     }
 
     pub fn relationships_from(&self, from: ThingId) -> Vec<RelationshipId> {
-        self.relationships
-            .values()
-            .filter(|r| r.from == from)
-            .map(|r| r.id)
-            .collect()
+        self.from_index.get(&from).cloned().unwrap_or_default()
     }
 
     pub fn set_body(&mut self, id: ThingId, body: &[u8]) -> Result<(), i32> {

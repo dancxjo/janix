@@ -21,6 +21,7 @@ pub mod percpu;
 mod serial;
 pub mod timer;
 pub mod usb;
+pub mod simd;
 pub use mmu::AddressSpace;
 use percpu::ArchPerCpu;
 
@@ -566,8 +567,19 @@ impl Machine for ArchMachine {
         }
     }
 
+
+    fn simd(&self) -> &'static dyn crate::machine::Simd {
+        &simd::AARCH64_SIMD
+    }
+
     fn set_kernel_stack(&self, top: u64) {
         let pc = percpu::get_local();
         pc.kernel_stack_top = top;
+    }
+}
+
+impl ArchMachine {
+    fn simd_impl(&self) -> &'static dyn crate::machine::Simd {
+        &simd::AARCH64_SIMD
     }
 }

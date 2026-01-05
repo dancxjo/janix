@@ -12,4 +12,5 @@ pub mod machine;
 pub mod mouse_ring;
 pub mod syscall;
 pub mod types;
+pub mod draw_cmd;
 pub mod wire;

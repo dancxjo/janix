@@ -303,6 +303,25 @@ pub struct Button {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.Canvas")]
+pub struct Canvas {
+    pub width: u32,
+    pub height: u32,
+    pub bytespace: ThingId,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.DrawList")]
+pub struct DrawList {
+    pub width: u32,
+    pub height: u32,
+    pub bytespace: ThingId,
+    pub cmd_count: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
 #[thing(kind = "kind.Frame")]
 pub struct Frame {
     pub window: ThingId,

@@ -182,6 +182,7 @@ dependencies = [
  "micromath",
  "models",
  "png-decoder",
+ "postcard",
  "spin",
  "symbols",
  "thing_std",
@@ -336,6 +337,7 @@ name = "clock"
 version = "0.1.0"
 dependencies = [
  "models",
+ "thing_codec",
  "thing_std",
 ]
 

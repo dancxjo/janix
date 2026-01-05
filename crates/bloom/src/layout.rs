@@ -36,6 +36,14 @@ impl FlexItem {
             WidgetKind::Button(_, _) => {
                 FlexItem { min_h: 32, pref_h: 32, grow: 0 }
             }
+            WidgetKind::Canvas(ref c) => {
+                let h = c.height;
+                FlexItem { min_h: h, pref_h: h, grow: 0 }
+            }
+            WidgetKind::DrawList(ref dl) => {
+                let h = dl.height;
+                FlexItem { min_h: h, pref_h: h, grow: 0 }
+            }
         }
     }
 }
@@ -199,6 +207,8 @@ pub fn layout_widgets_simple_column(
         let h = match child {
             WidgetKind::Label(label, _) => (label.style.size as i32 + 6).max(14),
             WidgetKind::Button(_, _) => 32,
+            WidgetKind::Canvas(c) => c.height as i32,
+            WidgetKind::DrawList(dl) => dl.height as i32,
         };
 
         let rect = Rect {

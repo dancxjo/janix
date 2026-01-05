@@ -11,6 +11,8 @@ use crate::layout::{layout_widgets, TITLE_BAR_HEIGHT};
 use crate::painter::Painter;
 use crate::scene::Rect;
 use crate::text::draw_text_on_painter;
+use crate::assets::map_bytespace;
+use abi::draw_cmd::DrawCmd;
 
 #[cfg(feature = "shadows")]
 use crate::shadow::{ShadowMask, ShadowParams};
@@ -26,6 +28,8 @@ const TITLE_PADDING_X: i32 = 8;
 pub enum WidgetKind {
     Label(Label, String),
     Button(Button, String),
+    Canvas(Canvas),
+    DrawList(DrawList),
 }
 
 #[derive(Clone)]
@@ -103,6 +107,14 @@ pub fn read_window_scene(client: &mut SyscallGraphClient, window_id: ThingId) ->
                             .map(|v| String::from_utf8_lossy(&v).into_owned())
                             .unwrap_or_else(|| String::from("Button"));
                         children.push(WidgetKind::Button(button, text));
+                        continue;
+                    }
+                    if let Ok(canvas) = Canvas::read(client, crel.target) {
+                        children.push(WidgetKind::Canvas(canvas));
+                        continue;
+                    }
+                    if let Ok(dl) = DrawList::read(client, crel.target) {
+                        children.push(WidgetKind::DrawList(dl));
                         continue;
                     }
                 }
@@ -232,6 +244,12 @@ fn render_window(painter: &mut dyn Painter, scene: &WindowScene) {
             WidgetKind::Button(ref button, ref text) => {
                 paint_button(painter, pw.rect, button, text);
             }
+            WidgetKind::Canvas(ref canvas) => {
+                paint_canvas(painter, pw.rect, canvas);
+            }
+            WidgetKind::DrawList(ref dl) => {
+                paint_drawlist(painter, pw.rect, dl);
+            }
         }
     }
     let t3 = thing_std::monotonic_now();
@@ -286,4 +304,112 @@ fn paint_button(painter: &mut dyn Painter, rect: Rect, button: &Button, text: &s
     let text_y = rect.y + (rect.h as i32 - 16) / 2;
     
     draw_text_on_painter(painter, text_x, text_y, text, text_color, 14.0);
+}
+
+fn paint_canvas(painter: &mut dyn Painter, rect: Rect, canvas: &Canvas) {
+    let screen = screen_rect(painter);
+    let clip = rect.intersect(screen);
+    if clip.is_empty() {
+        return;
+    }
+
+    // Map the bytespace
+    let size = (canvas.width * canvas.height * 4) as u64;
+    let buf = map_bytespace(canvas.bytespace, 0, size);
+
+    // Provide a way to view the buffer as u32 slice for blitting
+    let pixels = unsafe {
+        core::slice::from_raw_parts(buf.as_ptr() as *const u32, (canvas.width * canvas.height) as usize)
+    };
+
+    // Blit using painter
+    // Canvas is simple - we just copy the rect.
+    // painter.blit_rgba_alpha handles clipping.
+    // dst_x/y is rect.x/y
+    painter.blit_rgba_alpha(rect.x, rect.y, pixels, canvas.width, canvas.height);
+}
+
+fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList) {
+    let screen = screen_rect(painter);
+    let clip = rect.intersect(screen);
+    if clip.is_empty() {
+        return;
+    }
+
+    // Map command buffer
+    // Heuristic size for now, ideally DrawList would have a size field or we'd map a fix amount
+    let size = 64 * 1024; 
+    let buf = map_bytespace(dl.bytespace, 0, size);
+    
+    // Deserialize commands
+    let mut cursor = 0;
+    let mut count = 0;
+    
+    // Set clip to the widget rect for safety
+    let old_clip = painter.clip();
+    let widget_clip = old_clip.rect.intersect(rect);
+    painter.set_clip(crate::painter::Clip::from_rect(widget_clip));
+    
+    loop {
+        if count >= dl.cmd_count {
+            break;
+        }
+        
+        // Peek/Deserialize next command using postcard or manual
+        // Since we defined DrawCmd as repr(C) we might just cast, but it has a String variant...
+        // Wait, DrawCmd::Text has 'len' then bytes. It's not standard Deserialize compatible if we do custom layout.
+        // Actually I defined it using Serde. 
+        // Let's use postcard for simplicity if possible, OR manual if we want zero-copy text.
+        // My ABI definition was:
+        // Text { x, y, color, len }
+        // The implementation plan implies a custom binary format for Text.
+        // standard Deserialize might expect structure.
+        
+        // Let's assume standard postcard serialization for the enum variants, 
+        // BUT for Text specifically, how do we handle the trailing bytes?
+        // Postcard handles `&str` by copying.
+        
+        // Use take_from_bytes to get the command and the remaining slice
+        if let Ok((cmd, remaining)) = postcard::take_from_bytes(&buf[cursor..]) {
+            // Calculate how many bytes were consumed by the command itself
+            let used = buf[cursor..].len() - remaining.len();
+            cursor += used;
+            count += 1;
+            
+            match cmd {
+                DrawCmd::FillRect { x, y, w, h, color } => {
+                    painter.fill_rect(Rect { x: rect.x + x as i32, y: rect.y + y as i32, w: w as u32, h: h as u32 }, color);
+                }
+                DrawCmd::FillRoundedRect { x, y, w, h, radius, color } => {
+                     painter.fill_rounded_rect(Rect { x: rect.x + x as i32, y: rect.y + y as i32, w: w as u32, h: h as u32 }, radius, color);
+                }
+                DrawCmd::StrokeRoundedRect { x, y, w, h, radius, thickness, color } => {
+                     painter.stroke_rounded_rect(Rect { x: rect.x + x as i32, y: rect.y + y as i32, w: w as u32, h: h as u32 }, radius, thickness, color);
+                }
+                DrawCmd::Clear { color } => {
+                    painter.fill_rect(rect, color);
+                }
+                DrawCmd::Text { x, y, color, len } => {
+                    // Following bytes are text
+                    let text_bytes = &buf[cursor..cursor + len as usize];
+                    cursor += len as usize;
+                    if let Ok(text) = core::str::from_utf8(text_bytes) {
+                        draw_text_on_painter(painter, rect.x + x as i32, rect.y + y as i32, text, color, 14.0);
+                    }
+                }
+                DrawCmd::Shadow { .. } => {
+                    // Start with no-op placeholder
+                }
+                DrawCmd::Blit { .. } => {
+                    // Start with no-op placeholder
+                }
+                DrawCmd::End => break,
+            }
+        } else {
+            break;
+        }
+    }
+    
+    // Restore clip
+    painter.set_clip(old_clip);
 }

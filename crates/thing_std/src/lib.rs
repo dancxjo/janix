@@ -24,6 +24,7 @@ pub mod event;
 pub mod graph;
 pub mod graphics;
 pub mod input;
+pub mod draw;
 pub mod memory;
 pub mod process;
 pub mod time;

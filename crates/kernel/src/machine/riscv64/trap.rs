@@ -219,8 +219,9 @@ pub unsafe extern "C" fn riscv64_handle_trap(ctx: &mut TrapContext) -> u64 {
             let a5 = ctx.regs[14];
             ctx.sepc += 4;
             let res = crate::syscall::dispatch::dispatch(nr as u32, a0, a1, a2, a3, a4, a5);
-            ctx.regs[9] = res.val0;
-            ctx.regs[10] = res.val1;
+            ctx.regs[9] = res.status; // a0 = status
+            ctx.regs[10] = res.val0; // a1 = val0
+            ctx.regs[11] = res.val1; // a2 = val1
             return 0;
         }
         _ => {

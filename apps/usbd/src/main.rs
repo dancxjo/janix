@@ -38,6 +38,9 @@ pub extern "C" fn main() {
         (None, None)
     };
 
+    // Publish a HidMouse Thing that streams into the existing mouse bytespace
+    publish_mouse_thing();
+
     if let Some(ptr) = mmio_ptr {
         unsafe {
             // Capability registers
@@ -119,5 +122,18 @@ fn push_mouse_sample(
         (*hdr)
             .write
             .store(write_idx.wrapping_add(1), Ordering::Release);
+    }
+}
+
+fn publish_mouse_thing() {
+    let devices_place = thing_find("place.devices").unwrap_or_else(|| graph::get_root_place());
+    let mouse_kind = graph::symbol_intern("kind.HidMouse");
+    let streams_pred = graph::symbol_intern("predicate.streams");
+
+    let mouse = graph::thing_create(mouse_kind.0, devices_place);
+    graph::thing_register_name(mouse, "device.usb.mouse0");
+
+    if let Some(bs) = thing_find("bytespace.mouse_input") {
+        graph::relationship_create(mouse, bs, streams_pred);
     }
 }

@@ -58,7 +58,7 @@ impl PointerInput {
             let max_iters = capacity / 32;
 
             for _ in 0..max_iters {
-                if offset + (RECORD_HEADER_SIZE as u32) > capacity {
+                if (offset + (HEADER_SIZE as u32) + (RECORD_HEADER_SIZE as u32)) > capacity {
                     break;
                 }
 
@@ -66,6 +66,9 @@ impl PointerInput {
 
                 let len = u16::from_le_bytes([*rec_ptr, *rec_ptr.add(1)]);
                 if len == 0 || len < RECORD_HEADER_SIZE as u16 {
+                    break;
+                }
+                if (offset + (HEADER_SIZE as u32) + (len as u32)) > capacity {
                     break;
                 }
 

@@ -12,7 +12,7 @@ pub type TrapFrame = trap::TrapContext; // Added
 use core::arch::global_asm;
 global_asm!(include_str!("vectors.S"));
 
-use crate::machine::{Context, Machine, MmioFlags, MmioMapping, MmioRange};
+use crate::machine::{BootColor, Context, Machine, MmioFlags, MmioMapping, MmioRange};
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -75,6 +75,51 @@ impl Machine for Riscv64Machine {
     fn console_write(&self, bytes: &[u8]) -> usize {
         serial::Serial::new().write(bytes);
         bytes.len()
+    }
+
+    fn set_boot_color(&self, fb: &crate::boot::FramebufferInfo, color: BootColor) {
+        let bytes_per_pixel = (fb.bpp / 8) as usize;
+        if bytes_per_pixel < 4 || fb.width == 0 || fb.height == 0 || fb.pitch == 0 {
+            return;
+        }
+        let min_pitch = fb.width as usize * bytes_per_pixel;
+        if (fb.pitch as usize) < min_pitch {
+            return;
+        }
+
+        let pack = |component: u8, size: u8, shift: u8| -> u32 {
+            if size == 0 || size > 24 {
+                return 0;
+            }
+            let mask = (1u32 << size) - 1;
+            let scaled = (component as u32 * mask + 127) / 255;
+            scaled << shift
+        };
+
+        let pixel = pack(color.red, fb.red_mask_size, fb.red_mask_shift)
+            | pack(color.green, fb.green_mask_size, fb.green_mask_shift)
+            | pack(color.blue, fb.blue_mask_size, fb.blue_mask_shift);
+
+        let hhdm = self.hhdm_offset.load(Ordering::Relaxed);
+        let fb_base = fb.addr + hhdm;
+
+        let width = fb.width as usize;
+        let height = fb.height as usize;
+        let pitch = fb.pitch as usize;
+        let row_len_bytes = width * bytes_per_pixel;
+
+        unsafe {
+            if pitch == row_len_bytes {
+                let buf = core::slice::from_raw_parts_mut(fb_base as *mut u32, width * height);
+                buf.fill(pixel);
+            } else {
+                for row in 0..height {
+                    let row_ptr = (fb_base + (row * pitch) as u64) as *mut u32;
+                    let row_buf = core::slice::from_raw_parts_mut(row_ptr, width);
+                    row_buf.fill(pixel);
+                }
+            }
+        }
     }
 
     fn mmio_map(&self, _range: MmioRange, _flags: MmioFlags) -> Option<MmioMapping> {

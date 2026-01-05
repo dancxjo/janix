@@ -20,6 +20,9 @@ pub unsafe fn init() {
     IDT[44].set_handler_addr(x86_64::VirtAddr::new(
         mouse_interrupt_trampoline as *const () as u64,
     ));
+    IDT[45].set_handler_addr(x86_64::VirtAddr::new(
+        xhci_interrupt_trampoline as *const () as u64,
+    ));
     IDT.load();
 }
 
@@ -27,6 +30,7 @@ extern "C" {
     fn timer_interrupt_trampoline();
     fn keyboard_interrupt_trampoline();
     fn mouse_interrupt_trampoline();
+    fn xhci_interrupt_trampoline();
 }
 
 extern "x86-interrupt" fn breakpoint_handler(_sf: InterruptStackFrame) {

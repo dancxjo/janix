@@ -25,7 +25,7 @@ use percpu::ArchPerCpu;
 
 // TrapFrame alias for generic Scheduler usage
 pub type TrapFrame = exception::ExceptionContext;
-use crate::machine::{Machine, MmioFlags, MmioMapping, MmioRange};
+use crate::machine::{BootColor, Machine, MmioFlags, MmioMapping, MmioRange};
 use serial::Serial;
 
 const UART_PHYS: u64 = 0x0900_0000;
@@ -437,6 +437,50 @@ impl Machine for ArchMachine {
         }
         self.serial.write(bytes);
         bytes.len()
+    }
+
+    fn set_boot_color(&self, fb: &crate::boot::FramebufferInfo, color: BootColor) {
+        let bytes_per_pixel = (fb.bpp / 8) as usize;
+        if bytes_per_pixel < 4 || fb.width == 0 || fb.height == 0 || fb.pitch == 0 {
+            return;
+        }
+        let min_pitch = fb.width as usize * bytes_per_pixel;
+        if (fb.pitch as usize) < min_pitch {
+            return;
+        }
+
+        let pack = |component: u8, size: u8, shift: u8| -> u32 {
+            if size == 0 || size > 24 {
+                return 0;
+            }
+            let mask = (1u32 << size) - 1;
+            let scaled = (component as u32 * mask + 127) / 255;
+            scaled << shift
+        };
+
+        let pixel = pack(color.red, fb.red_mask_size, fb.red_mask_shift)
+            | pack(color.green, fb.green_mask_size, fb.green_mask_shift)
+            | pack(color.blue, fb.blue_mask_size, fb.blue_mask_shift);
+
+        let fb_base = fb.addr + self.hhdm_offset();
+
+        let width = fb.width as usize;
+        let height = fb.height as usize;
+        let pitch = fb.pitch as usize;
+        let row_len_bytes = width * bytes_per_pixel;
+
+        unsafe {
+            if pitch == row_len_bytes {
+                let buf = core::slice::from_raw_parts_mut(fb_base as *mut u32, width * height);
+                buf.fill(pixel);
+            } else {
+                for row in 0..height {
+                    let row_ptr = (fb_base + (row * pitch) as u64) as *mut u32;
+                    let row_buf = core::slice::from_raw_parts_mut(row_ptr, width);
+                    row_buf.fill(pixel);
+                }
+            }
+        }
     }
 
     fn mmio_map(&self, range: MmioRange, flags: MmioFlags) -> Option<MmioMapping> {

@@ -4,8 +4,12 @@
 //! platform-specific Things to the graph.
 
 use crate::machine::machine;
+use crate::machine::x86_64::{pci, usb};
+use abi::bodies::BYTESPACE_FLAG_HAS_PHYS_BASE;
 use graph::store;
 use graph::symbols::{self, sym};
+use models::BytespaceBody;
+use alloc::vec::Vec;
 
 /// Initialize the x86_64 platform.
 pub fn init() {
@@ -16,6 +20,7 @@ pub fn init() {
     }
 
     seed_platform_graph();
+    setup_xhci();
     crate::log::kprintln("PLATFORM: x86_64 initialized");
 }
 
@@ -82,5 +87,94 @@ fn seed_platform_graph() {
         "PLATFORM: CPU apic_id={}, timer freq={}Hz",
         apic_id,
         timer_freq
+    ));
+}
+
+/// Discover xHCI on PCI and expose it as Things/Bytespaces.
+fn setup_xhci() {
+    const XHCI_VECTOR: u8 = 45;
+    const XHCI_MMIO_LEN: u64 = 0x10000;
+
+    let Some(addr) = pci::scan_xhci() else {
+        crate::log::kprintln("PLATFORM: no xHCI controller found");
+        return;
+    };
+
+    let bar0 = addr.bar0();
+    let irq_line = addr.interrupt_line();
+
+    // Route legacy INTx line through IO-APIC to our vector.
+    unsafe {
+        crate::machine::x86_64::timer::route_irq(irq_line, XHCI_VECTOR);
+    }
+
+    // Graph plumbing
+    let devices_place = store::find_thing_by_name(sym::PLACE_DEVICES)
+        .unwrap_or_else(|| store::thing_create(sym::KIND_PLACE));
+
+    // MMIO bytespace
+    let mmio_bs = store::thing_create(sym::KIND_BYTE_SPACE);
+    store::thing_register_name(mmio_bs, symbols::intern(b"bytespace.usb.xhci0.mmio"));
+    store::relationship_create(sym::PRED_CONTAINS, devices_place, mmio_bs);
+
+    let mmio_payload = BytespaceBody {
+        len: XHCI_MMIO_LEN,
+        flags: BYTESPACE_FLAG_HAS_PHYS_BASE,
+        _pad: 0,
+        phys_base: bar0,
+    };
+    store::thing_set_inline_payload(mmio_bs, &mmio_payload.encode());
+
+    let mmio_phys = store::thing_create(sym::KIND_PLACE);
+    store::thing_set_inline_payload(mmio_phys, &bar0.to_le_bytes());
+    store::relationship_create(sym::PRED_BASE_PHYS, mmio_bs, mmio_phys);
+
+    let mmio_size = store::thing_create(sym::KIND_PLACE);
+    store::thing_set_inline_payload(mmio_size, &XHCI_MMIO_LEN.to_le_bytes());
+    store::relationship_create(sym::PRED_SIZE, mmio_bs, mmio_size);
+
+    // IRQ bytespace (simple counter)
+    let irq_bs = store::thing_create(sym::KIND_BYTE_SPACE);
+    store::thing_register_name(irq_bs, symbols::intern(b"bytespace.irq.usb.xhci0"));
+    store::relationship_create(sym::PRED_CONTAINS, devices_place, irq_bs);
+
+    let irq_phys = usb::irq_counter_phys();
+    let irq_len = usb::irq_bytespace_len();
+    let irq_payload = BytespaceBody {
+        len: irq_len,
+        flags: BYTESPACE_FLAG_HAS_PHYS_BASE,
+        _pad: 0,
+        phys_base: irq_phys,
+    };
+    store::thing_set_inline_payload(irq_bs, &irq_payload.encode());
+
+    let irq_phys_thing = store::thing_create(sym::KIND_PLACE);
+    store::thing_set_inline_payload(irq_phys_thing, &irq_phys.to_le_bytes());
+    store::relationship_create(sym::PRED_BASE_PHYS, irq_bs, irq_phys_thing);
+
+    let irq_size_thing = store::thing_create(sym::KIND_PLACE);
+    store::thing_set_inline_payload(irq_size_thing, &irq_len.to_le_bytes());
+    store::relationship_create(sym::PRED_SIZE, irq_bs, irq_size_thing);
+
+    // Controller Thing
+    let ctrl = store::thing_create(sym::KIND_XHCI_CONTROLLER);
+    store::thing_register_name(ctrl, symbols::intern(b"device.usb.controller0"));
+    store::relationship_create(sym::PRED_CONTAINS, devices_place, ctrl);
+    store::relationship_create(sym::PRED_MMIO, ctrl, mmio_bs);
+    store::relationship_create(sym::PRED_IRQ, ctrl, irq_bs);
+
+    // Inline payload: bar0 | irq line | vector
+    let mut ctrl_payload = Vec::new();
+    ctrl_payload.extend_from_slice(&bar0.to_le_bytes());
+    ctrl_payload.push(irq_line);
+    ctrl_payload.push(XHCI_VECTOR);
+    store::thing_set_inline_payload(ctrl, &ctrl_payload);
+
+    crate::log::kprintln(&alloc::format!(
+        "PLATFORM: xHCI bus={} dev={} irq_line={} bar0={:#x}",
+        addr.bus,
+        addr.device,
+        irq_line,
+        bar0
     ));
 }

@@ -132,3 +132,9 @@ pub fn timer_frequency_hz() -> u32 {
 pub fn lapic_id() -> u32 {
     LAPIC.id()
 }
+
+/// Route a legacy IRQ through the IO-APIC to a chosen vector.
+pub unsafe fn route_irq(irq: u8, vector: u8) {
+    let lapic_id = LAPIC.id() as u8;
+    IOAPIC.route_irq(irq, vector, lapic_id);
+}

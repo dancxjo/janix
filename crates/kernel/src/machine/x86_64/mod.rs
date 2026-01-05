@@ -20,6 +20,7 @@ pub mod ps2_mouse;
 pub mod serial;
 pub mod simd;
 pub mod timer;
+pub mod usb;
 pub use mmu::AddressSpace;
 
 #[repr(C)]
@@ -81,6 +82,14 @@ pub extern "C" fn mouse_handler_asm_helper() {
         ps2_mouse::irq_handler();
         ps2_mouse::process_packets(); // Decode mouse bytes into pointer movement
         timer::ack(); // Send EOI to LAPIC (via IO-APIC routing)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn xhci_handler_asm_helper() {
+    unsafe {
+        usb::xhci_irq_handler();
+        timer::ack();
     }
 }
 

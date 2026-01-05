@@ -81,6 +81,7 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         "ontology_dump",
         "ontology_check",
         "thingcheck",
+        "usbd",
     ];
     for app in apps {
         let src = bin_src.join(app);

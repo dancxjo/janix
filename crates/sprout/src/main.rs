@@ -14,6 +14,10 @@ pub extern "C" fn main() {
     process::spawn("bloom");
     log_info("SPROUT: bloom spawned");
 
+    // Spawn USB daemon (xHCI/HID bootstrap)
+    log_info("SPROUT: spawning usbd");
+    process::spawn("usbd");
+
     // Spawn ontology tools if present (for testing)
     // In a real system, init would scan /boot/modules
     process::spawn("ontology_dump");

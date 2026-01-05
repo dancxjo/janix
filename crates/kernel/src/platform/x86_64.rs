@@ -9,6 +9,7 @@ use abi::bodies::BYTESPACE_FLAG_HAS_PHYS_BASE;
 use graph::store;
 use graph::symbols::{self, sym};
 use models::BytespaceBody;
+use models::Thing;
 use alloc::vec::Vec;
 
 /// Initialize the x86_64 platform.

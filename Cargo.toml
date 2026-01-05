@@ -27,6 +27,7 @@ members = [
     "user/apps/ontology_dump",
     "user/apps/ontology_check",
     "crates/drivers/usb_xhci",
+    "apps/usbd",
 
 ]
 

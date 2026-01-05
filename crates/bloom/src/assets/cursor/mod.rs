@@ -52,24 +52,43 @@ impl CursorFrame {
     }
 }
 
-/// Generate a shadow using the shared 9-slice renderer
-fn generate_shadow(_pixels: &[u32], width: u32, height: u32) -> Vec<u32> {
+/// Generate a shadow by blurring the cursor's alpha channel
+fn generate_shadow(pixels: &[u32], width: u32, height: u32) -> Vec<u32> {
     let w = width as usize;
     let h = height as usize;
     let mut shadow = alloc::vec![0u32; w * h];
-    
-    // Use the restored 9-slice shadow asset
-    let slice = crate::nine_slice::default_shadow();
-    
-    // Draw the 9-slice shadow into our shadow buffer
-    unsafe {
-        crate::nine_slice::draw_nine_slice(
-            shadow.as_mut_ptr(),
-            width,
-            height,
-            &slice,
-            0, 0, width, height
-        );
+    let radius = SHADOW_BLUR_RADIUS as i32;
+
+    // Use a square kernel for box blur
+    let kernel_side = 2 * radius + 1;
+    let kernel_area = (kernel_side * kernel_side) as u32;
+
+    for y in 0..h {
+        for x in 0..w {
+            let mut acc_alpha = 0u32;
+
+            for ky in -radius..=radius {
+                for kx in -radius..=radius {
+                    let py = y as i32 + ky;
+                    let px = x as i32 + kx;
+
+                    if px >= 0 && px < w as i32 && py >= 0 && py < h as i32 {
+                        let idx = (py as usize) * w + (px as usize);
+                        let pixel = pixels[idx];
+                        let alpha = (pixel >> 24) & 0xFF;
+                        acc_alpha += alpha;
+                    }
+                    // Out of bounds pixels are treated as transparent (alpha 0)
+                }
+            }
+
+            let avg_alpha = acc_alpha / kernel_area;
+            // Apply global opacity
+            let final_alpha = (avg_alpha * SHADOW_OPACITY as u32) / 255;
+
+            // Shadow is black (0x000000) with calculated alpha
+            shadow[y * w + x] = final_alpha << 24;
+        }
     }
 
     shadow

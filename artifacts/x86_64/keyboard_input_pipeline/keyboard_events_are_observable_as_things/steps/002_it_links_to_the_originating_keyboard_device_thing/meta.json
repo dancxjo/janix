@@ -6,11 +6,11 @@
   "step": {
     "index": 2,
     "text": "it links to the originating keyboard device Thing",
-    "status": "failed",
-    "timestamp": "2026-01-04T06:01:13.750830973+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T06:49:40.034068925+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

@@ -19,7 +19,7 @@ pub extern "C" fn main() {
     // 1. Wait/Find device.rtc0
     // Retry loop
     let mut rtc_id = None;
-    for _ in 0..10 { // Try for a few seconds
+    for _ in 0..1000 { // Try for a few seconds
         if let Some(id) = thing_find("device.rtc0") {
             rtc_id = Some(id);
             break;

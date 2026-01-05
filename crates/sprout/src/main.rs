@@ -9,22 +9,23 @@ use thing_std::cap::{grant, Cap, CapOp, CapScope};
 pub fn main() {
     log_info("SPROUT: I am alive");
 
-    // Spawn essential services
-    log_info("SPROUT: spawning services...");
-    spawn_and_grant("bloom");
-    spawn_and_grant("clock");
-    spawn_and_grant("timed"); // Added timed
-    spawn_and_grant("inputd");
-
-    // Spawn validation tools
-    spawn_and_grant("thingcheck");
-    // spawn_and_grant("bouncer_test");
-
+    // Spawn drivers first
     #[cfg(target_arch = "x86_64")]
     spawn_and_grant("rtc_cmos");
 
     #[cfg(target_arch = "aarch64")]
     spawn_and_grant("rtc_pl031");
+
+    // Spawn essential services
+    log_info("SPROUT: spawning services...");
+    spawn_and_grant("bloom");
+    spawn_and_grant("clock");
+    spawn_and_grant("timed"); 
+    spawn_and_grant("inputd");
+
+    // Spawn validation tools
+    spawn_and_grant("thingcheck");
+    // spawn_and_grant("bouncer_test");
 
     log_info("SPROUT: boot sequence complete.");
 }

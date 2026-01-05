@@ -12,7 +12,8 @@ fn decode_rtc(id: abi::ids::ThingId) -> Option<RtcDevice> {
     RtcDevice::decode_full(&body).ok()
 }
 
-pub fn main() {
+#[unsafe(no_mangle)]
+pub extern "C" fn main() {
     log_info("TIMED: Starting...");
 
     // 1. Wait/Find device.rtc0

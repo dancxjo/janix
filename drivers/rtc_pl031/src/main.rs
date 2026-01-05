@@ -14,7 +14,8 @@ extern crate abi; // Needed for abi::machine::MMIO_MAP constants if not re-expor
 // PL031 Registers
 const PL031_DR: usize = 0x000;
 
-pub fn main() {
+#[unsafe(no_mangle)]
+pub extern "C" fn main() {
     log_info("RTC-PL031: Starting...");
 
     // 1. Find our hardware resource

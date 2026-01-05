@@ -6,11 +6,11 @@
   "step": {
     "index": 2,
     "text": "the events remain available until read",
-    "status": "failed",
-    "timestamp": "2026-01-04T05:49:42.210085595+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T06:40:50.532758306+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

@@ -45,7 +45,8 @@ fn rtc_read_time() -> Option<u64> {
     }
 }
 
-pub fn main() {
+#[unsafe(no_mangle)]
+pub extern "C" fn main() {
     log_info("RTC-CMOS: Starting...");
 
     // 1. Find our hardware resource

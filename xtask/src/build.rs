@@ -145,6 +145,9 @@ pub fn run(env: &str) -> Result<()> {
         "apps/logview",
         "apps/simd_check",
         "apps/thingcheck",
+        "apps/timed",
+        "drivers/rtc_cmos",
+        "drivers/rtc_pl031",
     ];
     for app in apps {
         println!("    Building {}...", app);

@@ -6,11 +6,11 @@
   "step": {
     "index": 2,
     "text": "both applications can observe the KeyEvent",
-    "status": "failed",
-    "timestamp": "2026-01-04T05:52:12.579434200+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T06:42:53.549699350+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

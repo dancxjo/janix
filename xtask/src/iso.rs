@@ -80,6 +80,9 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         "simd_check",
         "thingcheck",
         "usbd",
+        "timed",
+        "rtc_cmos",
+        "rtc_pl031",
     ];
     for app in apps {
         let src = bin_src.join(app);

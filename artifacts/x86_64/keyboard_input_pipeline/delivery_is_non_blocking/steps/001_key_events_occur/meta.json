@@ -7,10 +7,10 @@
     "index": 1,
     "text": "key events occur",
     "status": "passed",
-    "timestamp": "2026-01-04T05:49:12.154069359+00:00"
+    "timestamp": "2026-01-05T06:40:20.085241484+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

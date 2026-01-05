@@ -6,11 +6,11 @@
   "step": {
     "index": 3,
     "text": "the event identity is consistent between observers",
-    "status": "failed",
-    "timestamp": "2026-01-04T05:52:42.642915386+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T06:43:23.562167711+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

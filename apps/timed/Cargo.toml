@@ -10,4 +10,3 @@ thing_codec = { path = "../../crates/thing_codec" }
 abi = { path = "../../crates/abi" }
 models = { path = "../../crates/models" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-alloc = { package = "rust-freestanding-alloc", version = "0.1" }

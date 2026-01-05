@@ -6,11 +6,11 @@
   "step": {
     "index": 0,
     "text": "two applications subscribe to keyboard events",
-    "status": "failed",
-    "timestamp": "2026-01-04T05:51:42.508107892+00:00"
+    "status": "passed",
+    "timestamp": "2026-01-05T06:42:23.055626314+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

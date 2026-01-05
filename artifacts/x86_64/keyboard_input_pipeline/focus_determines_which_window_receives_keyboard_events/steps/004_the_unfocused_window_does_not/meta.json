@@ -7,10 +7,10 @@
     "index": 4,
     "text": "the unfocused window does not",
     "status": "passed",
-    "timestamp": "2026-01-04T05:54:12.846036617+00:00"
+    "timestamp": "2026-01-05T06:44:28.701563471+00:00"
   },
   "artifacts": {
-    "screenshot": null,
-    "serial_tail": null
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
   }
 }

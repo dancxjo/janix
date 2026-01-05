@@ -149,8 +149,8 @@ pub fn run() {
                                 ShadowParams {
                                     offset_x: frame.shadow_offset_x,
                                     offset_y: frame.shadow_offset_y,
-                                    blur_radius: 1,
-                                    color: 0x33000000,
+                                    blur_radius: 0, // Frame already prerendered with blur
+                                    color: 0xAA000000,
                                 },
                             );
                             draw_cursor_frame(

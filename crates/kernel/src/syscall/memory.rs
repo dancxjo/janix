@@ -51,14 +51,35 @@ pub fn sys_space_map(
 
     let bs_id = abi::ids::ThingId::from_parts(bs_id_hi, bs_id_lo);
 
+    let extract_phys = |payload: &[u8]| -> Option<u64> {
+        if payload.len() < 8 {
+            return None;
+        }
+
+        // Check for ThingEnvelopeV1
+        if payload.len() >= core::mem::size_of::<abi::bodies::ThingEnvelopeV1>() {
+             let magic = u32::from_le_bytes(payload[0..4].try_into().unwrap());
+             if magic == abi::bodies::ThingEnvelopeV1::MAGIC {
+                 let header_size = core::mem::size_of::<abi::bodies::ThingEnvelopeV1>();
+                 if payload.len() >= header_size + 8 {
+                      return Some(u64::from_le_bytes(payload[header_size..header_size+8].try_into().unwrap()));
+                 }
+                 return None;
+             }
+        }
+
+        // Fallback: raw payload
+        Some(u64::from_le_bytes(payload[0..8].try_into().unwrap()))
+    };
+
     let read_prop = |pred: abi::ids::SymbolId| -> Option<u64> {
         let rels = store::relationships_from(bs_id);
         for r_id in rels {
             if let Some(r) = store::get_relationship(r_id) {
                 if r.kind == pred {
                     if let Some(payload) = store::get_payload(r.to) {
-                        if payload.len() >= 8 {
-                            return Some(u64::from_le_bytes(payload[0..8].try_into().unwrap()));
+                        if let Some(val) = extract_phys(&payload) {
+                            return Some(val);
                         }
                     }
                 }
@@ -72,13 +93,13 @@ pub fn sys_space_map(
     } else {
         // Try reading from payload (for DMA bytespaces)
         if let Some(payload) = store::get_payload(bs_id) {
-            if payload.len() >= 8 {
-                u64::from_le_bytes(payload[0..8].try_into().unwrap())
+            if let Some(val) = extract_phys(&payload) {
+                val
             } else {
-                crate::log::klog(
+                 crate::log::klog(
                     crate::log::Level::Error,
                     "SYSCALL",
-                    "sys_space_map: PRED_BASE_PHYS not found and no payload",
+                    "sys_space_map: PRED_BASE_PHYS not found and payload invalid",
                 );
                 return SyscallResult::new(err::EINVAL, 0, 0);
             }

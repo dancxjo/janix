@@ -1,5 +1,5 @@
 use crate::machine::machine;
-use abi::bodies::{MonotonicClockBody, SystemClockBody, TimeOffsetBody};
+use models::*;
 use abi::ids::{SymbolId, ThingId};
 use graph::store;
 use graph::symbols::sym;
@@ -61,7 +61,7 @@ pub fn init() {
             _ => sym::TIME_SOURCE_LOONGARCH_RDTIME,
         };
 
-        let mono_body = MonotonicClockBody {
+        let mono_body = MonotonicClock {
             now_ns: machine().monotonic_now(),
             resolution_ns: 1, // nanoseconds
             source,
@@ -71,13 +71,13 @@ pub fn init() {
         let mono_thing = s
             .create_thing(sym::KIND_MONOTONIC_CLOCK)
             .expect("create MonotonicClock");
-        s.set_payload(mono_thing, &mono_body.to_le_bytes());
+        mono_body.write(s, mono_thing).expect("write MonotonicClock");
         s.create_relationship(sym::PRED_CONTAINS, place_mono, mono_thing)
             .expect("link MonotonicClock");
         state.monotonic_thing = Some(mono_thing);
 
         // 3. Create SystemClock Thing (Unset)
-        let sys_body = SystemClockBody {
+        let sys_body = SystemClock {
             unix_epoch_ns: 0,
             status: 0, // Unset
             _pad: 0,
@@ -89,7 +89,7 @@ pub fn init() {
         let sys_thing = s
             .create_thing(sym::KIND_SYSTEM_CLOCK)
             .expect("create SystemClock");
-        s.set_payload(sys_thing, &sys_body.to_le_bytes());
+        sys_body.write(s, sys_thing).expect("write SystemClock");
         s.create_relationship(sym::PRED_CONTAINS, place_system, sys_thing)
             .expect("link SystemClock");
         state.system_thing = Some(sys_thing);
@@ -119,7 +119,7 @@ pub fn set_system_time(unix_epoch_ns: i64) {
     // Update graph
     store::with_store(|s| {
         if let Some(sys_thing) = state.system_thing {
-            let sys_body = SystemClockBody {
+            let sys_body = SystemClock {
                 unix_epoch_ns,
                 status: 1, // Set
                 _pad: 0,
@@ -127,18 +127,18 @@ pub fn set_system_time(unix_epoch_ns: i64) {
                 accuracy_ns: 0,
                 source: sym::TIME_SOURCE_MANUAL,
             };
-            s.set_payload(sys_thing, &sys_body.to_le_bytes());
+            sys_body.write(s, sys_thing).expect("write SystemClock");
         }
 
         // Create or update TimeOffset Thing
-        let offset_body = TimeOffsetBody {
+        let offset_body = TimeOffset {
             offset_ns: state.system_offset_ns,
             rate_ppb: 0,
             updated_mono_ns: mono,
         };
 
         if let Some(offset_thing) = state.offset_thing {
-            s.set_payload(offset_thing, &offset_body.to_le_bytes());
+            offset_body.write(s, offset_thing).expect("write TimeOffset");
         } else {
             let place_system = s
                 .find_by_name(sym::PLACE_TIME_SYSTEM)
@@ -146,7 +146,7 @@ pub fn set_system_time(unix_epoch_ns: i64) {
             let offset_thing = s
                 .create_thing(sym::KIND_TIME_OFFSET)
                 .expect("create TimeOffset");
-            s.set_payload(offset_thing, &offset_body.to_le_bytes());
+            offset_body.write(s, offset_thing).expect("write TimeOffset");
             s.create_relationship(sym::PRED_CONTAINS, place_system, offset_thing)
                 .expect("link TimeOffset");
             state.offset_thing = Some(offset_thing);
@@ -173,13 +173,13 @@ pub fn update_monotonic_thing() {
                 _ => sym::TIME_SOURCE_LOONGARCH_RDTIME,
             };
 
-            let mono_body = MonotonicClockBody {
+            let mono_body = MonotonicClock {
                 now_ns: now,
                 resolution_ns: 1,
                 source,
                 last_update_ns: now,
             };
-            s.set_payload(mono_thing, &mono_body.to_le_bytes());
+            mono_body.write(s, mono_thing).expect("write MonotonicClock");
         });
     }
 }

@@ -5,27 +5,18 @@ extern crate alloc;
 use thing_std::*;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn main() {
-    thing_std::init(0);
-    log_info("SPROUT: I am alive!");
+pub fn main() {
+    log_info("SPROUT: I am alive");
 
-    // Spawn Bloom (desktop service)
-    log_info("SPROUT: spawning bloom");
-    process::spawn("bloom");
-    log_info("SPROUT: bloom spawned");
+    // Spawn essential services
+    log_info("SPROUT: spawning services...");
+    spawn("bloom");
+    spawn("clock");
+    spawn("inputd");
 
-    // Spawn USB daemon (xHCI/HID bootstrap)
-    log_info("SPROUT: spawning usbd");
-    process::spawn("usbd");
+    // Spawn validation tools
+    spawn("thingcheck");
+    spawn("bouncer_test");
 
-    // Spawn ontology tools if present (for testing)
-    // In a real system, init would scan /boot/modules
-    process::spawn("ontology_dump");
-    process::spawn("ontology_check");
-    process::spawn("thingcheck");
-
-    // Orchestrator loop - keep running and yield to scheduler
-    loop {
-        sched_yield();
-    }
+    log_info("SPROUT: boot sequence complete.");
 }

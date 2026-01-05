@@ -4,13 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-abi = { path = "../abi" }
+abi = { path = "../abi", default-features = false }
+thing_codec = { path = "../thing_codec", default-features = false, features = ["alloc"] }
 spin = "0.9"
-
-[dependencies.alloc]
-version = "1.0"
-package = "rustc-std-workspace-alloc"
-optional = true
 
 [features]
 default = []

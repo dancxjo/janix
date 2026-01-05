@@ -1,11 +1,9 @@
 //! Unified Trap Handling
 //!
-//! Normalizes interrupts/exceptions into `TrapRecord` and records them valid
-//! `fault` Things in the system graph.
+//! Normalizes interrupts/exceptions into TrapRecord and records them valid
+//! fault Things in the system graph.
 
 use abi::ids::ThingId;
-// use abi::types::{Thing, Value}; // types is unlikely, wire or ids.
-// Looking at error, I'll remove unused imports or use specific ones.
 use crate::log::{self, Level};
 use graph::store::{self, PlaceStore};
 use graph::symbols::sym;
@@ -75,18 +73,8 @@ pub fn record_fault(place: &mut PlaceStore, tr: &TrapRecord) -> ThingId {
         .create_thing(sym::KIND_FAULT)
         .expect("failed to create fault thing");
 
-    // Resolve Place.Faults ID
-    // We can't use store::find_by_name directly because we have &mut PlaceStore `place`.
-    // store::find_thing_by_name locks global.
-    // We should use `place.find_by_name` (which I exposed).
-
     if let Some(place_faults) = place.find_by_name(sym::PLACE_FAULTS) {
-        place
-            .create_relationship(sym::PRED_CONTAINS, place_faults, fault_id)
-            .expect("failed to link fault");
-    } else {
-        // Fallback or panic? For now log error but continue (orphaned fault)
-        // This likely means seed_minimal wasn't called or symbols name mismatch.
+        let _ = place.create_relationship(sym::PRED_CONTAINS, place_faults, fault_id);
     }
 
     let kind_sym = tr.kind.to_symbol();
@@ -95,33 +83,25 @@ pub fn record_fault(place: &mut PlaceStore, tr: &TrapRecord) -> ThingId {
         .expect("failed to create kind thing");
     place.register_name(kind_thing_id, kind_sym);
 
-    place
-        .create_relationship(sym::PRED_HAS_KIND, fault_id, kind_thing_id)
-        .expect("failed to link kind");
+    let _ = place.create_relationship(sym::PRED_HAS_KIND, fault_id, kind_thing_id);
 
     let ip_thing = place.create_thing(sym::KIND_THING).expect("IP thing");
-    place.set_payload(ip_thing, &tr.ip.to_le_bytes());
-    place
-        .create_relationship(sym::PRED_AT_IP, fault_id, ip_thing)
-        .expect("link IP");
+    let _ = place.set_payload(ip_thing, &tr.ip.to_le_bytes());
+    let _ = place.create_relationship(sym::PRED_AT_IP, fault_id, ip_thing);
 
     let sp_thing = place.create_thing(sym::KIND_THING).expect("SP thing");
-    place.set_payload(sp_thing, &tr.sp.to_le_bytes());
-    place
-        .create_relationship(sym::PRED_AT_SP, fault_id, sp_thing)
-        .expect("link SP");
+    let _ = place.set_payload(sp_thing, &tr.sp.to_le_bytes());
+    let _ = place.create_relationship(sym::PRED_AT_SP, fault_id, sp_thing);
 
     if let Some(addr) = tr.addr {
         let addr_thing = place.create_thing(sym::KIND_THING).expect("Addr thing");
-        place.set_payload(addr_thing, &addr.to_le_bytes());
-        place
-            .create_relationship(sym::PRED_AT_ADDR, fault_id, addr_thing)
-            .expect("link Addr");
+        let _ = place.set_payload(addr_thing, &addr.to_le_bytes());
+        let _ = place.create_relationship(sym::PRED_AT_ADDR, fault_id, addr_thing);
     }
 
     let mut add_field = |val: u64| {
         if let Ok(t) = place.create_thing(sym::KIND_THING) {
-            place.set_payload(t, &val.to_le_bytes());
+            let _ = place.set_payload(t, &val.to_le_bytes());
             let _ = place.create_relationship(sym::PRED_HAS_FIELD, fault_id, t);
         }
     };
@@ -147,16 +127,9 @@ pub fn debug_dump_faults(limit: usize) {
     };
 
     let faults = crate::place::contained_in(place_faults);
-    log::klog(Level::Info, "TRAP", "Dumping faults..."); // Replaced macro with klog
+    log::klog(Level::Info, "TRAP", "Dumping faults...");
 
     for (i, fault_id) in faults.iter().take(limit).enumerate() {
-        // log::klog_info!("Fault #{}: {:?}", i, fault_id); // Replaced macro
-        // formatting is annoying with klog, need format! or similar, but we are no_std.
-        // crate::log::klog supports &str.
-        // We can use alloc::format! if we have it? crate::log uses it.
-        // Assuming alloc::format! is available in context or we can just print ID.
-        // Actually log entry takes bytes.
-
         let msg = alloc::format!("Fault #{}: {:?}", i, fault_id);
         log::klog(Level::Info, "TRAP", &msg);
     }

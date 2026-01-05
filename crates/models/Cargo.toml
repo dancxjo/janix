@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-abi = { path = "../abi" }
-thing_macros = { path = "../thing_macros" }
+abi = { path = "../abi", default-features = false }
+thing_codec = { path = "../thing_codec", default-features = false, features = ["alloc"] }
+thing_derive = { path = "../thing_derive" }
 symbols = { path = "../symbols" }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+postcard = { version = "1.0", default-features = false, features = ["alloc"] }

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::Parser;
-use std::path::Path;
 use std::process::Command;
 
 mod build;
@@ -8,7 +7,6 @@ mod clean;
 mod fetch;
 mod inspect;
 mod iso;
-mod ontology;
 mod run;
 mod test;
 
@@ -28,8 +26,6 @@ enum Commands {
         #[arg(long, default_value = "x86_64")]
         env: String,
     },
-    /// Generate ontology artifacts
-    GenerateOntology,
     /// Remove fetched assets and build artifacts
     Clean,
     /// Run BDD verification suite
@@ -101,10 +97,6 @@ fn main() -> Result<()> {
     match args.command {
         Commands::Fetch => fetch::fetch(),
         Commands::Build { env } => build::run(&env),
-        Commands::GenerateOntology => {
-            ontology::generate(Path::new("."))?;
-            Ok(())
-        }
         Commands::Clean => clean::run(),
         Commands::Test {
             arch,
@@ -153,6 +145,4 @@ fn main() -> Result<()> {
 }
 
 fn fix_terminal() {
-    // Restore terminal cursor and cooked mode
-    // let _ = Command::new("reset").status();
 }

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Kernel-Enforced Thing Body Envelopes",
+  "scenario": "Kernel rejects malformed Thing bodies",
+  "step": {
+    "index": 2,
+    "text": "the kernel should return ERR_INVALID_THING_BODY",
+    "status": "passed",
+    "timestamp": "2026-01-05T03:14:49.357059452+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

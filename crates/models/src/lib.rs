@@ -2,21 +2,15 @@
 
 extern crate alloc;
 
-use abi::ids::{SymbolId, ThingId};
-use alloc::vec::Vec;
-use thing_macros::Thing; // Ensure we have access to Vec for glue
-
-// Include generated glue
-include!("generated.rs");
+pub use thing_codec::Thing;
+pub use abi::ids::{SymbolId, ThingId};
+use thing_derive::Thing;
+use serde::{Serialize, Deserialize};
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(
-    kind = "kind.DisplayDevice",
-    schema = "schema.DisplayDevice",
-    version = 1
-)]
-pub struct DisplayDeviceBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.DisplayDevice")]
+pub struct DisplayDevice {
     pub framebuffer: ThingId,
     pub width: u32,
     pub height: u32,
@@ -26,9 +20,9 @@ pub struct DisplayDeviceBody {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(kind = "kind.Framebuffer", schema = "schema.Framebuffer", version = 1)]
-pub struct FramebufferBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.Framebuffer")]
+pub struct Framebuffer {
     pub bytespace: ThingId,
     pub width: u32,
     pub height: u32,
@@ -37,31 +31,26 @@ pub struct FramebufferBody {
 }
 
 /// A Place is a container for Things.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(kind = "kind.Place", schema = "schema.Place", version = 1)]
-pub struct PlaceBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.Place")]
+pub struct Place {
     pub name: SymbolId,
 }
 
 /// A Relationship is a directed link between two Things with a semantic predicate.
 /// Note: Relationship is itself a Thing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(
-    kind = "kind.Relationship",
-    schema = "schema.Relationship",
-    version = 1
-)]
-pub struct RelationshipBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.Relationship")]
+pub struct Relationship {
     pub from: ThingId,
     pub to: ThingId,
     pub predicate: SymbolId,
 }
 
-// Retrofitting existing bodies
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(kind = "kind.Surface", schema = "schema.Surface", version = 1)]
-pub struct SurfaceBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.Surface")]
+pub struct Surface {
     pub width: u32,
     pub height: u32,
     pub stride_bytes: u32,
@@ -70,9 +59,9 @@ pub struct SurfaceBody {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(kind = "kind.Bytespace", schema = "schema.Bytespace", version = 1)]
-pub struct BytespaceBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.Bytespace")]
+pub struct Bytespace {
     pub len: u64,
     pub flags: u32,
     pub _pad: u32,
@@ -80,13 +69,9 @@ pub struct BytespaceBody {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(
-    kind = "kind.MonotonicClock",
-    schema = "schema.MonotonicClock",
-    version = 1
-)]
-pub struct MonotonicClockBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.MonotonicClock")]
+pub struct MonotonicClock {
     pub now_ns: u64,
     pub resolution_ns: u64,
     pub source: SymbolId,
@@ -94,9 +79,9 @@ pub struct MonotonicClockBody {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(kind = "kind.SystemClock", schema = "schema.SystemClock", version = 1)]
-pub struct SystemClockBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.SystemClock")]
+pub struct SystemClock {
     pub unix_epoch_ns: i64,
     pub status: u32, // 0: Unset, 1: Set, 2: Slewing
     pub _pad: u32,
@@ -106,18 +91,18 @@ pub struct SystemClockBody {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(kind = "kind.TimeOffset", schema = "schema.TimeOffset", version = 1)]
-pub struct TimeOffsetBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.TimeOffset")]
+pub struct TimeOffset {
     pub offset_ns: i64,
     pub rate_ppb: i64,
     pub updated_mono_ns: u64,
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(kind = "kind.MouseStream", schema = "schema.MouseStream", version = 1)]
-pub struct MouseStreamBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.MouseStream")]
+pub struct MouseStream {
     pub bytespace: ThingId,
     pub capacity: u32,
     pub sample_size: u32,
@@ -126,13 +111,9 @@ pub struct MouseStreamBody {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(
-    kind = "kind.PointerState",
-    schema = "schema.PointerState",
-    version = 1
-)]
-pub struct PointerStateBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.PointerState")]
+pub struct Pointer {
     pub stream: ThingId,
     pub x: i32,
     pub y: i32,
@@ -141,9 +122,9 @@ pub struct PointerStateBody {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(kind = "kind.Window", schema = "schema.Window", version = 1)]
-pub struct WindowBody {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.Window")]
+pub struct Window {
     pub surface: ThingId,
     pub x: i32,
     pub y: i32,
@@ -154,22 +135,15 @@ pub struct WindowBody {
 }
 
 /// EventStream: A unified ring buffer for high-frequency events.
-///
-/// The graph contract:
-/// - `event_stream.* --[stream.bytespace]--> bytespace.*`
-/// - Optional: `event_stream.* --[stream.topic]--> kind.PointerEvent` etc.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
-#[thing(kind = "kind.EventStream", schema = "schema.EventStream", version = 1)]
-pub struct EventStreamBody {
-    /// ThingId of the backing bytespace
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.EventStream")]
+pub struct EventStream {
     pub bytespace: ThingId,
-    /// Total capacity of the ring buffer in bytes (excluding header)
     pub capacity_bytes: u32,
-    /// Maximum size of a single record in bytes
     pub max_record_bytes: u16,
-    /// Flags: bit 0 = single-producer, bit 1 = overwrite-on-full
     pub flags: u16,
-    /// Optional human-readable name
     pub name: SymbolId,
 }
+
+// Aliases for transition

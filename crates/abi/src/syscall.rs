@@ -14,6 +14,7 @@ pub mod nr {
     pub const SYS_THING_REGISTER_NAME: u32 = 23;
     pub const SYS_SYMBOL_RESOLVE: u32 = 24;
     pub const SYS_SYMBOL_INTERN: u32 = 25;
+    pub const SYS_THING_SET_BODY: u32 = 26;
 
     pub const SYS_BYTESPACE_CREATE: u32 = 30;
     pub const SYS_SPACE_MAP: u32 = 31;
@@ -40,9 +41,6 @@ pub mod nr {
     pub const SYS_MACHINE: u32 = 100;
     pub const SYS_CPU_FEATURES: u32 = 110;
 
-    // Ontology
-    pub const SYS_ONTOLOGY_GET: u32 = 120;
-
     pub const SYS_INPUT_READ: u32 = 200;
 }
 
@@ -54,4 +52,5 @@ pub mod err {
     pub const ENOENT: i32 = 5;
     pub const ENOMEM: i32 = 6;
     pub const EAGAIN: i32 = 7;
+    pub const ERR_INVALID_THING_BODY: i32 = 8;
 }

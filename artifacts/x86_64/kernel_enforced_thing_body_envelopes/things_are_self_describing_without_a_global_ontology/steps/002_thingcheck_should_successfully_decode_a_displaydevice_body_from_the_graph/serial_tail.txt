@@ -1,0 +1,50 @@
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=3 name=/boot/modules/clock stack_top=0xffff800001994000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff800001994000 u_stack=0x80000000 entry=0x205340
+SCHED: configure_ctx_locked: finalized sp=0xffff800001993f60
+PROC: spawned
+PROC: spawn_kernel_module
+PROC: module phys=187c9000 offset=ffff800000000000
+MMU: new P4 phys=1994000 virt=ffff800001994000
+MMU: copy kernel pml4[256]
+MMU: copy kernel pml4[511]
+MMU: mapping 200000->1995000 len 4000
+MMU: mapping 204000->199c000 len 11000
+MMU: mapping 215000->19ad000 len 1000
+MMU: mapping 216000->19ae000 len 1000
+PROC: ELF loaded, entry
+MMU: mapping 7ffe0000->19af000 len 20000
+SCHED: spawn: name=/boot/modules/inputd start
+SCHED: spawn: allocating stack...
+SCHED: spawn: stack allocated
+SCHED: spawn: graph store start
+SCHED: spawn: graph store done
+SCHED: spawn: address space handled
+SCHED: spawn: finished id=4 name=/boot/modules/inputd stack_top=0xffff8000019e1000 stack_size=0x10000
+SCHED: configure_ctx_locked: k_stack=0xffff8000019e1000 u_stack=0x80000000 entry=0x205480
+SCHED: configure_ctx_locked: finalized sp=0xffff8000019e0f60
+TICK: switch 1 -> 2 sp=0xffff800001946f60
+MMU: mapping 90000000->19e1000 len 100000
+USER: BLOOM: alive
+TICK: switch 2 -> 3 sp=0xffff800001993f60
+MMU: mapping 90000000->1ae4000 len 100000
+USER: CLOCK: ALIVE
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USER: CLOCK: tick
+USERTICK: switch 3 -> 4 sp=0xffff8000019e0f60
+TICK: (further switch logs suppressed)

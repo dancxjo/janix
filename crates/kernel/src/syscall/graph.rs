@@ -36,22 +36,46 @@ pub fn sys_relationship_delete(rel_low: u64) -> SyscallResult {
 pub fn sys_thing_get(id_low: u64, out_ptr: u64, out_len: u64) -> SyscallResult {
     let id = ThingId(id_low as u128);
 
-    // Get the inline payload for this Thing
-    if let Some(payload) = store::get_payload(id) {
+    if let Some(body) = store::get_body(id) {
+        let header = store::get_thing_header(id).unwrap();
+        let digest = header.integrity_digest;
+
         if out_ptr == 0 {
-            // Just query length
-            return SyscallResult::new(0, 0, payload.len() as u64);
+            // Return digest in val0, required size in val1
+            return SyscallResult::new(0, digest, body.len() as u64);
         }
 
-        let write_len = core::cmp::min(payload.len(), out_len as usize);
+        let write_len = core::cmp::min(body.len(), out_len as usize);
         unsafe {
-            core::ptr::copy_nonoverlapping(payload.as_ptr(), out_ptr as *mut u8, write_len);
+            core::ptr::copy_nonoverlapping(body.as_ptr(), out_ptr as *mut u8, write_len);
         }
 
-        SyscallResult::new(0, write_len as u64, payload.len() as u64)
+        // Return digest in val0, actual write length in val1
+        SyscallResult::new(0, digest, write_len as u64)
     } else {
-        // No payload, return 0 length
         SyscallResult::new(0, 0, 0)
+    }
+}
+
+pub fn sys_thing_set_body(id_low: u64, buf_ptr: u64, buf_len: u64) -> SyscallResult {
+    let id = ThingId(id_low as u128);
+    
+    if buf_ptr == 0 || buf_len == 0 {
+        if let Err(e) = store::thing_set_body(id, &[]) {
+            return SyscallResult::new(e as i32, 0, 0);
+        }
+        return SyscallResult::new(0, 0, 0);
+    }
+
+    if buf_len > 10 * 1024 * 1024 { // 10MB limit for sanity
+        return SyscallResult::new(err::ENOMEM, 0, 0);
+    }
+
+    let buf = unsafe { core::slice::from_raw_parts(buf_ptr as *const u8, buf_len as usize) };
+
+    match store::thing_set_body(id, buf) {
+        Ok(()) => SyscallResult::new(0, 0, 0),
+        Err(e) => SyscallResult::new(e as i32, 0, 0),
     }
 }
 
@@ -71,11 +95,11 @@ pub fn sys_relationships_from(
         return SyscallResult::new(0, 0, total_rels);
     }
 
-    let mut count = 0;
     if out_ptr == 0 {
         return SyscallResult::new(err::EINVAL, 0, total_rels);
     }
 
+    let mut count = 0;
     let user_slice = unsafe {
         core::slice::from_raw_parts_mut(out_ptr as *mut RelationshipRef, out_len as usize)
     };

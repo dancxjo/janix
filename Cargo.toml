@@ -7,9 +7,10 @@ members = [
     "crates/models",
     "crates/sprout",
     "crates/symbols",
-    "crates/thing_macros",
     "crates/thing_std",
     "crates/scancodes",
+    "crates/thing_codec",
+    "crates/thing_derive",
     "apps/bloom",
     "apps/clock",
     "tools/bdd",
@@ -24,11 +25,9 @@ members = [
     "apps/logview",
     "apps/simd_check",
     "apps/thingcheck",
-    "user/apps/ontology_dump",
-    "user/apps/ontology_check",
+    "apps/bouncer_test",
     "crates/drivers/usb_xhci",
     "apps/usbd",
-
 ]
 
 [workspace.package]

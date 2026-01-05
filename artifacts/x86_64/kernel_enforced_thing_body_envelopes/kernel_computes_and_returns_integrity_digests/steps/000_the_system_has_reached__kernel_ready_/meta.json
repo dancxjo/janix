@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Kernel-Enforced Thing Body Envelopes",
+  "scenario": "Kernel computes and returns integrity digests",
+  "step": {
+    "index": 0,
+    "text": "the system has reached \"kernel ready\"",
+    "status": "passed",
+    "timestamp": "2026-01-05T03:15:20.351071920+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

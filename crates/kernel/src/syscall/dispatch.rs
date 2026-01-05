@@ -1,7 +1,7 @@
 //! Syscall Dispatch Router
 
 use crate::syscall::cap::CapOp;
-use crate::syscall::{cap, cpu, graph, log, memory, ontology, surface, time, wait, watch};
+use crate::syscall::{cap, cpu, graph, log, memory, surface, time, wait, watch};
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
 
@@ -37,12 +37,18 @@ pub extern "C" fn dispatch(
 
         // === Graph Mutation ===
         nr::SYS_THING_CREATE => {
-            let _kind_id = a0;
             let parent_id = abi::ids::ThingId(a1 as u128);
             if let Err(e) = cap::check(CapOp::GraphCreate, Some(parent_id)) {
                 return e;
             }
             graph::sys_thing_create(a0, a1)
+        }
+        nr::SYS_THING_SET_BODY => {
+            let thing_id = abi::ids::ThingId(a0 as u128);
+            if let Err(e) = cap::check(CapOp::GraphWrite, Some(thing_id)) {
+                return e;
+            }
+            graph::sys_thing_set_body(a0, a1, a2)
         }
         nr::SYS_REL_CREATE => {
             let from_id = abi::ids::ThingId(a1 as u128);
@@ -207,9 +213,6 @@ pub extern "C" fn dispatch(
         }
 
         nr::SYS_CPU_FEATURES => cpu::sys_cpu_features(a0, a1),
-
-        // === Ontology ===
-        nr::SYS_ONTOLOGY_GET => ontology::sys_ontology_get(a0, a1),
 
         0 => SyscallResult::new(0, 0, 3), // Version
 

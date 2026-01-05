@@ -8,8 +8,7 @@ use crate::machine::x86_64::{pci, usb};
 use abi::bodies::BYTESPACE_FLAG_HAS_PHYS_BASE;
 use graph::store;
 use graph::symbols::{self, sym};
-use models::BytespaceBody;
-use models::Thing;
+use models::Bytespace;
 use alloc::vec::Vec;
 
 /// Initialize the x86_64 platform.
@@ -118,7 +117,7 @@ fn setup_xhci() {
     store::thing_register_name(mmio_bs, symbols::intern(b"bytespace.usb.xhci0.mmio"));
     store::relationship_create(sym::PRED_CONTAINS, devices_place, mmio_bs);
 
-    let mmio_payload = BytespaceBody {
+    let mmio_payload = Bytespace {
         len: XHCI_MMIO_LEN,
         flags: BYTESPACE_FLAG_HAS_PHYS_BASE,
         _pad: 0,
@@ -141,7 +140,7 @@ fn setup_xhci() {
 
     let irq_phys = usb::irq_counter_phys();
     let irq_len = usb::irq_bytespace_len();
-    let irq_payload = BytespaceBody {
+    let irq_payload = Bytespace {
         len: irq_len,
         flags: BYTESPACE_FLAG_HAS_PHYS_BASE,
         _pad: 0,

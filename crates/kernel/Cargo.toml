@@ -13,7 +13,8 @@ fault_smoke = []
 spin = "0.9"
 bitflags = { version = "2", default-features = false }
 log = "0.4"
-abi = { path = "../abi" }
+abi = { path = "../abi", default-features = false }
+thing_codec = { path = "../thing_codec", default-features = false, features = ["alloc"] }
 graph = { path = "../graph" }
 models = { path = "../models" }
 linked_list_allocator = "0.10.5"

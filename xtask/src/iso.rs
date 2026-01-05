@@ -78,8 +78,6 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         "inspector",
         "logview",
         "simd_check",
-        "ontology_dump",
-        "ontology_check",
         "thingcheck",
         "usbd",
     ];

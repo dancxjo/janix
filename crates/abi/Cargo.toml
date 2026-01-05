@@ -4,4 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bitflags = "2.6"
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+bitflags = "2.4"
+
+[features]
+default = []
+std = ["serde/std"]
+
+[dev-dependencies]

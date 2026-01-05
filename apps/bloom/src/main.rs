@@ -5,6 +5,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use thing_std::graph::*;
 use thing_std::*;
+use models::*;
 
 mod cursor;
 
@@ -34,8 +35,8 @@ impl Rect {
     fn union(a: Rect, b: Rect) -> Rect {
         let x1 = a.x.min(b.x);
         let y1 = a.y.min(b.y);
-        let x2 = (a.x + a.w as i32).max(b.x + b.w as i32);
-        let y2 = (a.y + a.h as i32).max(b.y + b.h as i32);
+        let x2 = (a.x + (a.w as i32)).max(b.x + (b.w as i32));
+        let y2 = (a.y + (a.h as i32)).max(b.y + (b.h as i32));
         Rect {
             x: x1,
             y: y1,
@@ -52,13 +53,8 @@ pub extern "C" fn main() {
 
     loop {
         if let Some(display_id) = thing_find("device.display0") {
-            let mut buf = [0u8; 32];
-            let len = thing_std::graph::thing_get_payload(display_id, &mut buf);
-
-            let (width, height) = if len >= 24 {
-                let w = u32::from_le_bytes([buf[16], buf[17], buf[18], buf[19]]);
-                let h = u32::from_le_bytes([buf[20], buf[21], buf[22], buf[23]]);
-                (w, h)
+            let (width, height) = if let Ok(display) = DisplayDevice::read(&SyscallGraphClient, display_id) {
+                (display.width, display.height)
             } else {
                 (1280u32, 720u32)
             };
@@ -126,9 +122,6 @@ pub extern "C" fn main() {
                 consume_mouse_samples();
 
                 let (px, py, _buttons) = read_pointer_state();
-                // Avoid closure-based Option combinators on AArch64: the prior
-                // map() call confused the calling convention and produced a
-                // bogus environment pointer. Expand explicitly instead.
                 let frame_changed = if let Some(anim) = animator.as_mut() {
                     anim.advance(now_ms)
                 } else {
@@ -167,8 +160,8 @@ pub extern "C" fn main() {
                                 Rect {
                                     x: px - frame.hotspot_x,
                                     y: py - frame.hotspot_y,
-                                    w: frame.width + frame.shadow_offset_x.max(0) as u32,
-                                    h: frame.height + frame.shadow_offset_y.max(0) as u32,
+                                    w: frame.width + (frame.shadow_offset_x.max(0) as u32),
+                                    h: frame.height + (frame.shadow_offset_y.max(0) as u32),
                                 }
                             } else {
                                 Rect {
@@ -264,8 +257,6 @@ fn load_ani_asset(bs_id: ThingId, vaddr: u64) -> Option<CursorAsset> {
     cursor::ani::load_ani(buf)
 }
 
-/// Consume pending mouse samples from the ring buffer
-/// Consume pending mouse events from the EventStream ring buffer
 fn consume_mouse_samples() {
     unsafe {
         let ring_ptr = match MOUSE_RING_PTR {
@@ -273,10 +264,8 @@ fn consume_mouse_samples() {
             None => return,
         };
 
-        // EventStreamHeader layout:
-        // magic(4), version(2), header_bytes(2), capacity(4), write_seq(8), write_off(4), dropped(8), reserved(8)
         const HEADER_SIZE: usize = 48;
-        const RECORD_HEADER_SIZE: usize = 24; // EventRecord header
+        const RECORD_HEADER_SIZE: usize = 24; 
         const EV_POINTER_DELTA: u16 = 1;
 
         let magic = u32::from_le_bytes([
@@ -284,22 +273,19 @@ fn consume_mouse_samples() {
         ]);
         if magic != 0x544E5645 {
             return;
-        } // "EVNT"
+        } 
 
-        // Read write_seq (at offset 12, u64)
         let write_seq = u64::from_le_bytes([
             *ring_ptr.add(12), *ring_ptr.add(13), *ring_ptr.add(14), *ring_ptr.add(15),
             *ring_ptr.add(16), *ring_ptr.add(17), *ring_ptr.add(18), *ring_ptr.add(19),
         ]);
 
-        // Read capacity_bytes (at offset 8, u32)
         let capacity = u32::from_le_bytes([
             *ring_ptr.add(8), *ring_ptr.add(9), *ring_ptr.add(10), *ring_ptr.add(11),
         ]);
 
         let ring_base = ring_ptr.add(HEADER_SIZE);
 
-        // Simple linear scan - find records newer than our last read
         let mut offset: u32 = 0;
         let max_iters = capacity / 32;
 
@@ -310,37 +296,31 @@ fn consume_mouse_samples() {
 
             let rec_ptr = ring_base.add(offset as usize);
 
-            // Read record len
             let len = u16::from_le_bytes([*rec_ptr, *rec_ptr.add(1)]);
             if len == 0 || len < RECORD_HEADER_SIZE as u16 {
                 break;
             }
 
-            // Read kind
             let kind = u16::from_le_bytes([*rec_ptr.add(2), *rec_ptr.add(3)]);
 
-            // Read seq
             let seq = u64::from_le_bytes([
                 *rec_ptr.add(8), *rec_ptr.add(9), *rec_ptr.add(10), *rec_ptr.add(11),
                 *rec_ptr.add(12), *rec_ptr.add(13), *rec_ptr.add(14), *rec_ptr.add(15),
             ]);
 
-            // Only process if newer than last read
             if seq > MOUSE_READ_IDX as u64 && kind == EV_POINTER_DELTA {
-                // PointerDeltaPayload at offset 24: dx(2), dy(2), buttons(2), wheel(2), reserved(2)
                 let payload_ptr = rec_ptr.add(RECORD_HEADER_SIZE);
                 let dx = i16::from_le_bytes([*payload_ptr, *payload_ptr.add(1)]);
                 let dy = i16::from_le_bytes([*payload_ptr.add(2), *payload_ptr.add(3)]);
                 let buttons = u16::from_le_bytes([*payload_ptr.add(4), *payload_ptr.add(5)]);
 
-                POINTER_X = (POINTER_X + dx as i32).clamp(0, SCREEN_WIDTH as i32 - 1);
-                POINTER_Y = (POINTER_Y + dy as i32).clamp(0, SCREEN_HEIGHT as i32 - 1);
+                POINTER_X = (POINTER_X + (dx as i32)).clamp(0, SCREEN_WIDTH as i32 - 1);
+                POINTER_Y = (POINTER_Y + (dy as i32)).clamp(0, SCREEN_HEIGHT as i32 - 1);
                 POINTER_BUTTONS = buttons;
 
                 MOUSE_READ_IDX = seq as u32;
             }
 
-            // Move to next record (8-byte aligned)
             offset += ((len as u32) + 7) & !7;
         }
     }
@@ -353,8 +333,8 @@ fn read_pointer_state() -> (i32, i32, u8) {
 unsafe fn redraw_region(dest: *mut u32, src: *const u32, w: u32, h: u32, region: Rect) {
     let x1 = region.x.max(0) as u32;
     let y1: u32 = region.y.max(0) as u32;
-    let x2 = ((region.x + region.w as i32) as u32).min(w);
-    let y2 = ((region.y + region.h as i32) as u32).min(h);
+    let x2 = ((region.x + (region.w as i32)) as u32).min(w);
+    let y2 = ((region.y + (region.h as i32)) as u32).min(h);
     for y in y1..y2 {
         let row_start = (y * w + x1) as usize;
         let row_len = (x2 - x1) as usize;
@@ -464,8 +444,8 @@ unsafe fn draw_fallback_cursor(dest: *mut u32, w: u32, h: u32, px: i32, py: i32)
         for dx in 0..8i32 {
             let x = px + dx + 2;
             let y = py + dy + 3;
-            if x >= 0 && x < w as i32 && y >= 0 && y < h as i32 {
-                let idx = (y as u32 * w + x as u32) as usize;
+            if x >= 0 && x < (w as i32) && y >= 0 && y < (h as i32) {
+                let idx = (y as u32 * w + (x as u32)) as usize;
                 let dst = *dest.add(idx);
                 *dest.add(idx) = blend_pixel(0x66000000, dst);
             }
@@ -475,8 +455,8 @@ unsafe fn draw_fallback_cursor(dest: *mut u32, w: u32, h: u32, px: i32, py: i32)
         for dx in 0..8i32 {
             let x = px + dx;
             let y = py + dy;
-            if x >= 0 && x < w as i32 && y >= 0 && y < h as i32 {
-                let idx = (y as u32 * w + x as u32) as usize;
+            if x >= 0 && x < (w as i32) && y >= 0 && y < (h as i32) {
+                let idx = (y as u32 * w + (x as u32)) as usize;
                 let pixel = if dx == 0 || dy == 0 || dx == 7 || dy == 7 {
                     0xFF000000
                 } else {
@@ -491,8 +471,8 @@ unsafe fn draw_fallback_cursor(dest: *mut u32, w: u32, h: u32, px: i32, py: i32)
 unsafe fn copy_region_to_fb(fb: *mut u32, src: *const u32, w: u32, h: u32, region: Rect) {
     let x1 = region.x.max(0) as u32;
     let y1 = region.y.max(0) as u32;
-    let x2 = ((region.x + region.w as i32) as u32).min(w);
-    let y2 = ((region.y + region.h as i32) as u32).min(h);
+    let x2 = ((region.x + (region.w as i32)) as u32).min(w);
+    let y2 = ((region.y + (region.h as i32)) as u32).min(h);
     for y in y1..y2 {
         let row_start = (y * w + x1) as usize;
         let row_len = (x2 - x1) as usize;
@@ -523,8 +503,8 @@ fn load_bmp(bs_id: ThingId, vaddr: u64) -> Option<Wallpaper> {
     if width_i <= 0 {
         return None;
     }
-    let bytes_per_pixel = (bpp as usize + 7) / 8;
-    let row_stride = ((width_i as usize * bytes_per_pixel + 3) / 4) * 4;
+    let bytes_per_pixel = ((bpp as usize) + 7) / 8;
+    let row_stride = (((width_i as usize * bytes_per_pixel) + 3) / 4) * 4;
     let data_ptr = unsafe { (vaddr as *const u8).add(data_offset) };
     Some(Wallpaper {
         data_ptr,

@@ -152,3 +152,24 @@ pub struct WindowBody {
     pub z: i32,
     pub title: SymbolId,
 }
+
+/// EventStream: A unified ring buffer for high-frequency events.
+///
+/// The graph contract:
+/// - `event_stream.* --[stream.bytespace]--> bytespace.*`
+/// - Optional: `event_stream.* --[stream.topic]--> kind.PointerEvent` etc.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing)]
+#[thing(kind = "kind.EventStream", schema = "schema.EventStream", version = 1)]
+pub struct EventStreamBody {
+    /// ThingId of the backing bytespace
+    pub bytespace: ThingId,
+    /// Total capacity of the ring buffer in bytes (excluding header)
+    pub capacity_bytes: u32,
+    /// Maximum size of a single record in bytes
+    pub max_record_bytes: u16,
+    /// Flags: bit 0 = single-producer, bit 1 = overwrite-on-full
+    pub flags: u16,
+    /// Optional human-readable name
+    pub name: SymbolId,
+}

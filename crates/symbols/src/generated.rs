@@ -4,6 +4,7 @@ pub mod kind {
     use abi::ids::SymbolId;
     pub const KIND_BYTESPACE: SymbolId = SymbolId(0xF8FCB00535E9A405);
     pub const KIND_DISPLAYDEVICE: SymbolId = SymbolId(0x46F9CB5BBE36FC35);
+    pub const KIND_EVENTSTREAM: SymbolId = SymbolId(0xB8765FE0F814C395);
     pub const KIND_FRAMEBUFFER: SymbolId = SymbolId(0x39F61C14D039B916);
     pub const KIND_MONOTONICCLOCK: SymbolId = SymbolId(0x92F5EACE38FBFE15);
     pub const KIND_MOUSESTREAM: SymbolId = SymbolId(0x5EF2B03692E82DBA);
@@ -20,6 +21,7 @@ pub mod schema {
     use abi::ids::SymbolId;
     pub const SCHEMA_BYTESPACE: SymbolId = SymbolId(0xBDFCE06BB86A2CFF);
     pub const SCHEMA_DISPLAYDEVICE: SymbolId = SymbolId(0x9A57E89E659D49AB);
+    pub const SCHEMA_EVENTSTREAM: SymbolId = SymbolId(0x98348651E1A32F93);
     pub const SCHEMA_FRAMEBUFFER: SymbolId = SymbolId(0x2BD6128606BA3300);
     pub const SCHEMA_MONOTONICCLOCK: SymbolId = SymbolId(0xFB520DC25492C05);
     pub const SCHEMA_MOUSESTREAM: SymbolId = SymbolId(0x38E3155E669F1A50);

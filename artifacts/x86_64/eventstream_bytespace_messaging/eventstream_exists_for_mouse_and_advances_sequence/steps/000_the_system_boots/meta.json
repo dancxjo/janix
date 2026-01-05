@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "EventStream bytespace messaging",
+  "scenario": "EventStream exists for mouse and advances sequence",
+  "step": {
+    "index": 0,
+    "text": "the system boots",
+    "status": "skipped",
+    "timestamp": "2026-01-05T02:19:30.592489933+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

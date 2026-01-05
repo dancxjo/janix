@@ -265,6 +265,7 @@ fn load_ani_asset(bs_id: ThingId, vaddr: u64) -> Option<CursorAsset> {
 }
 
 /// Consume pending mouse samples from the ring buffer
+/// Consume pending mouse events from the EventStream ring buffer
 fn consume_mouse_samples() {
     unsafe {
         let ring_ptr = match MOUSE_RING_PTR {
@@ -272,45 +273,75 @@ fn consume_mouse_samples() {
             None => return,
         };
 
-        // Ring header: magic(4), version(4), capacity(4), sample_size(4), write(4), dropped(4), reserved(8)
-        const HEADER_SIZE: usize = 32;
-        const SAMPLE_SIZE: usize = 16; // sizeof(MouseSample)
+        // EventStreamHeader layout:
+        // magic(4), version(2), header_bytes(2), capacity(4), write_seq(8), write_off(4), dropped(8), reserved(8)
+        const HEADER_SIZE: usize = 48;
+        const RECORD_HEADER_SIZE: usize = 24; // EventRecord header
+        const EV_POINTER_DELTA: u16 = 1;
 
         let magic = u32::from_le_bytes([
-            *ring_ptr,
-            *ring_ptr.add(1),
-            *ring_ptr.add(2),
-            *ring_ptr.add(3),
+            *ring_ptr, *ring_ptr.add(1), *ring_ptr.add(2), *ring_ptr.add(3),
         ]);
-        if magic != 0x4D4F5553 {
+        if magic != 0x544E5645 {
             return;
-        } // "MOUS"
+        } // "EVNT"
 
-        let capacity = u32::from_le_bytes([
-            *ring_ptr.add(8),
-            *ring_ptr.add(9),
-            *ring_ptr.add(10),
-            *ring_ptr.add(11),
+        // Read write_seq (at offset 12, u64)
+        let write_seq = u64::from_le_bytes([
+            *ring_ptr.add(12), *ring_ptr.add(13), *ring_ptr.add(14), *ring_ptr.add(15),
+            *ring_ptr.add(16), *ring_ptr.add(17), *ring_ptr.add(18), *ring_ptr.add(19),
         ]);
-        let write_ptr = ring_ptr.add(16) as *const u32;
-        let write_idx = core::ptr::read_volatile(write_ptr);
 
-        let samples_base = ring_ptr.add(HEADER_SIZE);
+        // Read capacity_bytes (at offset 8, u32)
+        let capacity = u32::from_le_bytes([
+            *ring_ptr.add(8), *ring_ptr.add(9), *ring_ptr.add(10), *ring_ptr.add(11),
+        ]);
 
-        while MOUSE_READ_IDX != write_idx {
-            let slot = (MOUSE_READ_IDX % capacity) as usize;
-            let sample_ptr = samples_base.add(slot * SAMPLE_SIZE);
+        let ring_base = ring_ptr.add(HEADER_SIZE);
 
-            // MouseSample: t_ns(8), dx(2), dy(2), wheel(2), buttons(2)
-            let dx = i16::from_le_bytes([*sample_ptr.add(8), *sample_ptr.add(9)]);
-            let dy = i16::from_le_bytes([*sample_ptr.add(10), *sample_ptr.add(11)]);
-            let buttons = u16::from_le_bytes([*sample_ptr.add(14), *sample_ptr.add(15)]);
+        // Simple linear scan - find records newer than our last read
+        let mut offset: u32 = 0;
+        let max_iters = capacity / 32;
 
-            POINTER_X = (POINTER_X + dx as i32).clamp(0, SCREEN_WIDTH as i32 - 1);
-            POINTER_Y = (POINTER_Y + dy as i32).clamp(0, SCREEN_HEIGHT as i32 - 1);
-            POINTER_BUTTONS = buttons;
+        for _ in 0..max_iters {
+            if offset + (RECORD_HEADER_SIZE as u32) > capacity {
+                break;
+            }
 
-            MOUSE_READ_IDX = MOUSE_READ_IDX.wrapping_add(1);
+            let rec_ptr = ring_base.add(offset as usize);
+
+            // Read record len
+            let len = u16::from_le_bytes([*rec_ptr, *rec_ptr.add(1)]);
+            if len == 0 || len < RECORD_HEADER_SIZE as u16 {
+                break;
+            }
+
+            // Read kind
+            let kind = u16::from_le_bytes([*rec_ptr.add(2), *rec_ptr.add(3)]);
+
+            // Read seq
+            let seq = u64::from_le_bytes([
+                *rec_ptr.add(8), *rec_ptr.add(9), *rec_ptr.add(10), *rec_ptr.add(11),
+                *rec_ptr.add(12), *rec_ptr.add(13), *rec_ptr.add(14), *rec_ptr.add(15),
+            ]);
+
+            // Only process if newer than last read
+            if seq > MOUSE_READ_IDX as u64 && kind == EV_POINTER_DELTA {
+                // PointerDeltaPayload at offset 24: dx(2), dy(2), buttons(2), wheel(2), reserved(2)
+                let payload_ptr = rec_ptr.add(RECORD_HEADER_SIZE);
+                let dx = i16::from_le_bytes([*payload_ptr, *payload_ptr.add(1)]);
+                let dy = i16::from_le_bytes([*payload_ptr.add(2), *payload_ptr.add(3)]);
+                let buttons = u16::from_le_bytes([*payload_ptr.add(4), *payload_ptr.add(5)]);
+
+                POINTER_X = (POINTER_X + dx as i32).clamp(0, SCREEN_WIDTH as i32 - 1);
+                POINTER_Y = (POINTER_Y + dy as i32).clamp(0, SCREEN_HEIGHT as i32 - 1);
+                POINTER_BUTTONS = buttons;
+
+                MOUSE_READ_IDX = seq as u32;
+            }
+
+            // Move to next record (8-byte aligned)
+            offset += ((len as u32) + 7) & !7;
         }
     }
 }

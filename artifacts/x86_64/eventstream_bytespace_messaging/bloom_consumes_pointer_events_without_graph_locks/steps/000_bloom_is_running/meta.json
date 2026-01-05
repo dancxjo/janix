@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "EventStream bytespace messaging",
+  "scenario": "Bloom consumes pointer events without graph locks",
+  "step": {
+    "index": 0,
+    "text": "Bloom is running",
+    "status": "skipped",
+    "timestamp": "2026-01-05T02:19:30.592920162+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

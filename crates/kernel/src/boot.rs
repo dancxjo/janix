@@ -4,7 +4,7 @@ use abi::bodies::BYTESPACE_FLAG_HAS_PHYS_BASE;
 use graph::store;
 use graph::symbols::{self, sym};
 use models::{
-    BytespaceBody, DisplayDeviceBody, FramebufferBody, MouseStreamBody, PointerStateBody,
+    BytespaceBody, DisplayDeviceBody, FramebufferBody, EventStreamBody, MouseStreamBody, PointerStateBody,
     SurfaceBody, Thing,
 };
 
@@ -230,6 +230,20 @@ fn seed_bloom_ontology() {
         store::thing_set_inline_payload(mouse_stream, &ms_payload.encode());
         store::relationship_create(sym::PRED_CONTAINS, input_place, mouse_stream);
         store::relationship_create(sym::PRED_REFERENCES, mouse_stream, mouse_bs);
+
+        // Create event_stream.mouse (new unified EventStream format)
+        let event_stream = store::thing_create(symbols::intern(b"kind.EventStream"));
+        store::thing_register_name(event_stream, symbols::intern(b"event_stream.mouse"));
+        let es_payload = EventStreamBody {
+            bytespace: mouse_bs,
+            capacity_bytes: ps2_mouse::RING_CAPACITY,
+            max_record_bytes: 64,
+            flags: 0, // single-producer
+            name: symbols::intern(b"mouse"),
+        };
+        store::thing_set_inline_payload(event_stream, &es_payload.encode());
+        store::relationship_create(sym::PRED_CONTAINS, input_place, event_stream);
+        store::relationship_create(symbols::intern(b"stream.bytespace"), event_stream, mouse_bs);
         mouse_stream_id = Some(mouse_stream);
 
         crate::log::kprintln(&alloc::format!(

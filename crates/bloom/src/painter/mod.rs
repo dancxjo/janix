@@ -9,6 +9,8 @@ pub mod gpu;
 use crate::scene::Rect;
 use crate::shadow::{ShadowMask, ShadowParams};
 use crate::assets::cursor::CursorFrame;
+use abi::ids::ThingId;
+use crate::scene_cache::BytespaceMappingCache;
 
 /// Scissor/clip region for drawing operations.
 #[derive(Clone, Copy, Debug)]
@@ -73,6 +75,9 @@ pub trait Painter {
     /// Blit ARGB pixels with alpha blending.
     fn blit_rgba_alpha(&mut self, dst_x: i32, dst_y: i32, src: &[u32], src_w: u32, src_h: u32);
 
+    /// Blit asset from bytespace (with ID for recording, slice for immediate).
+    fn blit_asset(&mut self, dst_x: i32, dst_y: i32, id: ThingId, src_w: u32, src_h: u32, src_stride: u32, src_len: usize, cache: &mut BytespaceMappingCache);
+
     /// Copy a rectangular region from a source buffer.
     fn copy_region(&mut self, src: &[u32], src_w: u32, region: Rect);
 
@@ -88,6 +93,9 @@ pub trait Painter {
 
     /// Draw a fallback cursor (simple rectangle).
     fn draw_fallback_cursor(&mut self, px: i32, py: i32);
+
+    /// Draw a text string.
+    fn draw_text(&mut self, x: i32, y: i32, text: &str, color: u32, size_px: f32);
 }
 
 pub use cpu::CpuPainter;

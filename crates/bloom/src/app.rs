@@ -21,6 +21,10 @@ const WATCH_WAIT_TIMEOUT_TICKS: u64 = 0;
 const KERNEL_HANDOFF_PROGRESS: u32 = 500;
 const BLOOM_FADE_DURATION_MS: u64 = 8_000;
 
+const RENDER_MODE_IMMEDIATE: u8 = 0;
+const RENDER_MODE_RECORD: u8 = 1;
+const CURRENT_RENDER_MODE: u8 = RENDER_MODE_RECORD;
+
 pub fn run() {
     thing_std::init(0);
     log_info("BLOOM: alive");
@@ -213,8 +217,23 @@ pub fn run() {
                     
                     scene_cache.mapping_cache.reset_frame_stats();
 
-                    // Rebuild scene using Painter
-                    {
+                    // Rebuild scene
+                    if CURRENT_RENDER_MODE == RENDER_MODE_RECORD {
+                         // 1. Initialize buffer with background
+                        {
+                            let mut bg_painter = CpuPainter::new(scene_buffer.as_mut_slice(), width, height);
+                            bg_painter.copy_region(background_cache.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
+                        }
+                        
+                        // 2. Record commands
+                        let mut recorder = crate::command_recorder::CommandRecorder::new(width, height);
+                        render_window_scenes(&mut recorder, &window_scenes, &mut scene_cache.mapping_cache);
+                        let cmds = recorder.finish();
+                        
+                        // 3. Execute
+                        crate::executor::execute_cmds_into_scene(&cmds, scene_buffer.as_mut_slice(), width, height, &mut scene_cache.mapping_cache);
+                    } else {
+                        // Immediate Mode
                         let mut painter = CpuPainter::new(scene_buffer.as_mut_slice(), width, height);
                         // Copy background
                         painter.copy_region(background_cache.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });

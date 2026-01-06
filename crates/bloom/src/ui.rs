@@ -228,7 +228,7 @@ fn render_window(painter: &mut dyn Painter, scene: &WindowScene, mapping_cache: 
     if !scene.title_text.is_empty() {
         let text_x = rect.x + TITLE_PADDING_X;
         let text_y = rect.y + (TITLE_BAR_HEIGHT - TITLE_FONT_SIZE as i32) / 2;
-        draw_text_on_painter(painter, text_x, text_y, &scene.title_text, TITLE_TEXT_COLOR, TITLE_FONT_SIZE);
+        painter.draw_text(text_x, text_y, &scene.title_text, TITLE_TEXT_COLOR, TITLE_FONT_SIZE);
     }
     let t2b = thing_std::monotonic_now();
     thing_std::log_info(&alloc::format!("BLOOM: title {} ms", (t2b-t2)/1_000_000));
@@ -277,7 +277,7 @@ fn paint_label(painter: &mut dyn Painter, rect: Rect, label: &Label, text: &str)
     let text_y = rect.y + (rect.h as i32 - 16) / 2;
     let text_x = rect.x;
     
-    draw_text_on_painter(painter, text_x, text_y, text, label.style.color_rgba, font_size);
+    painter.draw_text(text_x, text_y, text, label.style.color_rgba, font_size);
 }
 
 fn paint_button(painter: &mut dyn Painter, rect: Rect, button: &Button, text: &str) {
@@ -304,7 +304,7 @@ fn paint_button(painter: &mut dyn Painter, rect: Rect, button: &Button, text: &s
     // Unifont is 16px tall
     let text_y = rect.y + (rect.h as i32 - 16) / 2;
     
-    draw_text_on_painter(painter, text_x, text_y, text, text_color, 14.0);
+    painter.draw_text(text_x, text_y, text, text_color, 14.0);
 }
 
 fn paint_canvas(painter: &mut dyn Painter, rect: Rect, canvas: &Canvas, mapping_cache: &mut BytespaceMappingCache) {
@@ -314,25 +314,9 @@ fn paint_canvas(painter: &mut dyn Painter, rect: Rect, canvas: &Canvas, mapping_
         return;
     }
 
-    // Map the bytespace via cache
+    // Delegate to painter (which handles mapping or recording)
     let size = (canvas.width * canvas.height * 4) as usize;
-    // We use Read-Only mapping for blitting source
-    let buf = if let Some(b) = mapping_cache.get_or_map_ro(canvas.bytespace, size) {
-        b
-    } else {
-        return;
-    };
-
-    // Provide a way to view the buffer as u32 slice for blitting
-    let pixels = unsafe {
-        core::slice::from_raw_parts(buf.as_ptr() as *const u32, (canvas.width * canvas.height) as usize)
-    };
-
-    // Blit using painter
-    // Canvas is simple - we just copy the rect.
-    // painter.blit_rgba_alpha handles clipping.
-    // dst_x/y is rect.x/y
-    painter.blit_rgba_alpha(rect.x, rect.y, pixels, canvas.width, canvas.height);
+    painter.blit_asset(rect.x, rect.y, canvas.bytespace, canvas.width, canvas.height, canvas.width, size, mapping_cache);
 }
 
 fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_cache: &mut BytespaceMappingCache) {
@@ -345,11 +329,16 @@ fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_
     // Map command buffer via cache
     // Heuristic size for now, ideally DrawList would have a size field or we'd map a fix amount
     let size = 64 * 1024; 
-    let buf = if let Some(b) = mapping_cache.get_or_map_ro(dl.bytespace, size) {
-        b
+    let (ptr, len) = if let Some(b) = mapping_cache.get_or_map_ro(dl.bytespace, size) {
+        (b.as_ptr(), b.len())
     } else {
         return;
     };
+    
+    // SAFETY: The bytespace memory is stable (OS managed) and will not move or be unmapped 
+    // even if we mutate the mapping_cache (BTreeMap) to add new mappings.
+    // We need to drop the borrow on mapping_cache so we can pass it mutably to blit_asset.
+    let buf = unsafe { core::slice::from_raw_parts(ptr, len) };
     
     // Deserialize commands
     let mut cursor = 0;
@@ -404,14 +393,17 @@ fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_
                     let text_bytes = &buf[cursor..cursor + len as usize];
                     cursor += len as usize;
                     if let Ok(text) = core::str::from_utf8(text_bytes) {
-                        draw_text_on_painter(painter, rect.x + x as i32, rect.y + y as i32, text, color, 14.0);
+                        painter.draw_text(rect.x + x as i32, rect.y + y as i32, text, color, 14.0);
                     }
                 }
                 DrawCmd::Shadow { .. } => {
                     // Start with no-op placeholder
                 }
-                DrawCmd::Blit { .. } => {
-                    // Start with no-op placeholder
+                DrawCmd::Blit { x, y, w, h, asset } => {
+                     // Assume standard asset format (stride=width, 32bpp)
+                     let stride = w as u32;
+                     let len = (w as usize) * (h as usize) * 4;
+                     painter.blit_asset(rect.x + x as i32, rect.y + y as i32, abi::ids::ThingId::from_parts(0, asset), w as u32, h as u32, stride, len, mapping_cache);
                 }
                 DrawCmd::End => break,
             }

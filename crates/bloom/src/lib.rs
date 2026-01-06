@@ -16,6 +16,8 @@ pub mod shadow;
 pub mod text;
 pub mod ui;
 pub mod draw_cmd;
+pub mod command_recorder;
+pub mod executor;
 pub mod watch;
 
 pub use app::run;

@@ -14,6 +14,7 @@ pub mod pixels;
 pub mod scene;
 pub mod scene_cache;
 pub mod shadow;
+pub mod shadow_cache;
 pub mod text;
 pub mod ui;
 pub mod draw_cmd;

@@ -17,6 +17,7 @@ use abi::ui::{HitZone, ResizeEdge};
 use crate::ui::hittest::hittest_window;
 use crate::cursor_manager::{CursorSet, CursorKind};
 use crate::cursor_overlay::CursorOverlay;
+use crate::chunked_executor::ChunkedExecutor;
 use crate::wallpaper_worker::{WALLPAPER_MBX, wallpaper_worker_entry};
 use crate::input_worker::{InputWorkerConfig, INPUT_CONFIG_MBX, INPUT_STATE, input_worker_entry, INPUT_WORKER_STARTED, INPUT_WORKER_TICKS, INPUT_EVENTS_DRAINED};
 use crate::wallpaper_worker::WALLPAPER_WORKER_STARTED;
@@ -88,6 +89,7 @@ pub fn run() {
 
             let mut cursor_set = CursorSet::new();
             cursor_set.load_all(0x8900_0000);
+            crate::shadow_cache::init_shadow_cache(8); // Default blur radius
             let mut cursor_overlay = CursorOverlay::new(width, height);
             log_info("BLOOM: cursor set loaded");
 
@@ -589,7 +591,7 @@ pub fn run() {
                         render_window_scenes(&mut recorder, &window_scenes, &mut scene_cache.mapping_cache, focused_window, (px, py));
                         let cmds = recorder.finish();
                         
-                        // 3. Execute
+                        // 3. Execute (monolithic for now - cursor updates after)
                         let exec_result = crate::executor::execute_cmds_into_scene(&cmds, scene_buffer.as_mut_slice(), width, height, &mut scene_cache.mapping_cache, &bitmap_store);
                         if exec_result.stats.bad_cmds > 0 {
                             log_info(&alloc::format!("BLOOM: Bad cmds: {}/{}", exec_result.stats.bad_cmds, exec_result.stats.cmds_total));
@@ -680,6 +682,7 @@ pub fn run() {
                 }
 
                 if let Some(rect) = dirty {
+                    
                     backend.present(
                         frame_buffer.as_mut_slice(),
                         DirtyRect {

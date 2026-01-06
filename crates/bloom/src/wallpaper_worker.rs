@@ -38,7 +38,6 @@ pub extern "C" fn wallpaper_worker_entry(_arg: u64) -> ! {
     // FIRST INSTRUCTION: set started flag (bypasses any logging issues)
     WALLPAPER_WORKER_STARTED.store(1, Ordering::Release);
     
-    trace_fn!("wallpaper_worker");
     log_info("WALLPAPER_WORKER: starting");
     
     let start = thing_std::time::monotonic_now();

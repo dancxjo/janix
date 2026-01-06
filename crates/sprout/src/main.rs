@@ -206,6 +206,7 @@ fn spawn_fallback() {
     spawn_and_grant("timed");
     spawn_and_grant("clock");
     spawn_and_grant("inputd");
+    spawn_and_grant("hello_window");
 }
 
 fn module_info_from_id(id: ThingId) -> Option<(String, Vec<ThingId>, Vec<CapOp>)> {
@@ -339,6 +340,9 @@ fn configure_policy(id: ThingId, name: &str) {
             // Clock needs memory for heap! (Fixes 0x9000... crash)
             global(CapOp::MemManage);
             global(CapOp::GraphRead);
+            global(CapOp::GraphCreate);
+            global(CapOp::GraphLink);
+            global(CapOp::GraphWrite);
         }
         "timed" => {
             // Needs heap

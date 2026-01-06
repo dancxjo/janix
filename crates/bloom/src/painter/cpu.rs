@@ -516,6 +516,47 @@ impl<'a> Painter for CpuPainter<'a> {
     fn draw_shadow_mask(&mut self, origin_x: i32, origin_y: i32, mask: ShadowMask<'_>, params: ShadowParams) {
         let (mask_w, mask_h) = mask.dimensions();
         let blur = params.blur_radius as i32;
+        
+        if mask_w == 0 || mask_h == 0 { return; }
+        
+        // Use precomputed shadow cache for massive speedup
+        if let Some(cache) = crate::shadow_cache::get_shadow_cache() {
+            let total_w = mask_w as i32 + blur * 2;
+            let total_h = mask_h as i32 + blur * 2;
+            
+            let shadow_x = origin_x + params.offset_x - blur;
+            let shadow_y = origin_y + params.offset_y - blur;
+            
+            let shadow_rect = Rect {
+                x: shadow_x,
+                y: shadow_y,
+                w: total_w as u32,
+                h: total_h as u32,
+            };
+            let clip = self.clip_rect(shadow_rect);
+            
+            let base_a = ((params.color >> 24) & 0xFF) as u32;
+            let tint = params.color & 0x00FF_FFFF;
+            
+            for screen_y in clip.y..(clip.y + clip.h as i32) {
+                let local_y = screen_y - shadow_y;
+                for screen_x in clip.x..(clip.x + clip.w as i32) {
+                    let local_x = screen_x - shadow_x;
+                    let alpha = cache.alpha_at(local_x, local_y, mask_w, mask_h);
+                    if alpha == 0 { continue; }
+                    
+                    let final_a = ((alpha as u32) * base_a / 255).min(255);
+                    if final_a == 0 { continue; }
+                    
+                    let src = (final_a << 24) | tint;
+                    self.blend_at(screen_x, screen_y, src);
+                }
+            }
+            self.merge_damage(clip);
+            return;
+        }
+        
+        // Fallback to original slow implementation if cache not initialized
 
         if mask_w == 0 || mask_h == 0 {
             return;

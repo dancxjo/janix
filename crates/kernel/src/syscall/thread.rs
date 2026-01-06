@@ -6,13 +6,14 @@ use abi::ids::WatchId;
 use abi::syscall::err;
 use abi::types::{WaitFlags, WakeReason};
 use abi::wire::SyscallResult;
+use crate::memory::map::MapPerms;
 
 /// Spawn a new thread in the same address space as the calling thread.
 /// 
 /// Arguments:
 /// - entry: Entry point function address
-/// - arg0: Argument passed to thread via register
-/// - stack_ptr_opt: If 0, kernel allocates stack; otherwise use provided stack
+/// - arg0: Argument passed to thread via register (RDI on x86_64)
+/// - stack_ptr_opt: If 0, kernel allocates user stack; otherwise use provided stack
 /// 
 /// Returns: New thread's TaskId on success, error code on failure
 pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallResult {
@@ -43,15 +44,55 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
             new_group_id
         };
 
-        // Allocate stack for new thread
-        let stack_size = 64 * 1024; // 64KB
-        let (stack_ptr, stack_top) = if stack_ptr_opt != 0 {
-            (stack_ptr_opt, stack_ptr_opt)
+        // Allocate KERNEL stack for new thread (for TrapFrame/syscall handling)
+        // This lives in kernel heap and is used for trap frames during syscalls/interrupts
+        let kernel_stack_size = 64 * 1024; // 64KB kernel stack
+        let kernel_stack = alloc::vec![0u8; kernel_stack_size];
+        let kernel_stack_top = kernel_stack.as_ptr() as u64 + kernel_stack_size as u64;
+        core::mem::forget(kernel_stack);
+
+        // Allocate USER stack in the shared address space
+        // Thread N gets stack at: 0x8F00_0000 - N * 0x10_0000 (1MB stride per thread)
+        let user_stack_size: u64 = 64 * 1024; // 64KB user stack
+        let user_stack_top: u64 = if stack_ptr_opt != 0 {
+            // User provided their own stack
+            stack_ptr_opt
         } else {
-            let stack = alloc::vec![0u8; stack_size];
-            let top = stack.as_ptr() as u64 + stack_size as u64;
-            core::mem::forget(stack);
-            (top, top)
+            // Calculate a unique stack region for this thread
+            let thread_index = sched.next_id as u64;
+            let stack_region_top = 0x8F00_0000u64 - (thread_index * 0x10_0000); // 1MB stride
+            let stack_bottom = stack_region_top - user_stack_size;
+            
+            // Allocate physical memory for the user stack
+            let phys_stack = alloc::vec![0u8; user_stack_size as usize];
+            let phys_addr = crate::machine::machine().virt_to_phys(phys_stack.as_ptr() as u64);
+            core::mem::forget(phys_stack);
+            
+            // Map it into the shared user address space
+            if let Err(e) = address_space.map(
+                stack_bottom,
+                phys_addr,
+                user_stack_size as usize,
+                MapPerms::READ | MapPerms::WRITE | MapPerms::USER,
+            ) {
+                crate::log::klog(
+                    crate::log::Level::Info,
+                    "THREAD",
+                    &alloc::format!("Failed to map user stack at {:#x}: {:?}", stack_bottom, e),
+                );
+                return Err(err::ENOMEM);
+            }
+            
+            crate::log::klog(
+                crate::log::Level::Info,
+                "THREAD",
+                &alloc::format!(
+                    "Mapped user stack: bottom={:#x} top={:#x} phys={:#x}",
+                    stack_bottom, stack_region_top, phys_addr
+                ),
+            );
+            
+            stack_region_top
         };
 
         // Create thread Thing in graph
@@ -70,24 +111,48 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
         let mut new_task = sched::task::Task::new_in_group(
             new_id,
             task_thing,
-            stack_ptr,
+            kernel_stack_top,  // This is the KERNEL stack top
             address_space,
             group_id,
         );
 
-        // Configure thread context with entry and arg0
-        use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
-        let kernel_stack_top = stack_ptr & !0xf;
+        // Configure thread context
+        // The init_task_context function uses arg0 for BOTH user RSP and RDI.
+        // We need to fix this by setting up the TrapFrame correctly:
+        // 1. RSP should be user_stack_top (16-byte aligned)
+        // 2. RDI should be the actual arg0 passed to this syscall
+        use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext, TrapFrame};
+        
+        // x86-64 ABI: RSP must be 16-byte aligned BEFORE the call instruction pushes return addr
+        // Since we're simulating entry (not a call), align to 16 bytes
+        let aligned_user_stack = user_stack_top & !0xf;
+        
         let mut ctx = TaskContext::default();
         CurrentArch::init_task_context(
             &mut ctx,
             entry,
-            kernel_stack_top,
+            kernel_stack_top & !0xf,  // Kernel stack for TrapFrame
             CpuMode::User,
-            arg0,  // Pass arg0 via register
+            aligned_user_stack,  // This sets both RSP and RDI initially
         );
+        
+        // Now fix up RDI to be the actual thread argument
+        unsafe {
+            let frame_ptr = ctx.sp as *mut TrapFrame;
+            (*frame_ptr).rdi = arg0;
+        }
+        
+        crate::log::klog(
+            crate::log::Level::Info,
+            "THREAD",
+            &alloc::format!(
+                "Thread {} context: entry={:#x} user_sp={:#x} arg0={:#x} kernel_sp={:#x}",
+                new_id.0, entry, aligned_user_stack, arg0, kernel_stack_top
+            ),
+        );
+        
         new_task.stack_ptr = ctx.sp;
-        new_task.stack_top = stack_top;
+        new_task.stack_top = kernel_stack_top;
 
         // Initialize state
         graph::store::with_store(|s| new_task.set_state(s, sched::task::TaskState::Ready));

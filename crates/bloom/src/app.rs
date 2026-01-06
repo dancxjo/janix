@@ -15,6 +15,7 @@ use thing_std::*;
 use abi::ui::{HitZone, ResizeEdge};
 use crate::ui::hittest::hittest_window;
 use crate::cursor_manager::{CursorSet, CursorKind};
+use crate::wallpaper_worker::{WALLPAPER_MBX, wallpaper_worker_entry};
 
 
 use crate::assets::cursor::CursorFrame;
@@ -83,35 +84,10 @@ pub fn run() {
             let mut bitmap_store = BitmapStore::new();
             let mut wallpaper_handle: Option<(crate::assets::bitmap::BitmapHandle, u32, u32)> = None;
 
-            if let Some((wp, _color)) = crate::assets::load_wallpaper() {
-                 let len = (wp.width * wp.height) as usize;
-                 let pixels_vec = unsafe {
-                     let slice = core::slice::from_raw_parts(wp.data_ptr, (wp.height as usize * wp.row_stride));
-                     let mut vec = alloc::vec![0u32; len];
-                     for y in 0..wp.height {
-                         let src_y = if wp.bottom_up { wp.height - 1 - y } else { y } as usize;
-                         let src_row = &slice[src_y * wp.row_stride..];
-                         for x in 0..wp.width {
-                             let offset = (x as usize) * wp.bytes_per_pixel;
-                             let b = src_row[offset];
-                             let g = src_row[offset+1];
-                             let r = src_row[offset+2];
-                             let argb = 0xFF000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
-                             vec[(y as usize * wp.width as usize) + x as usize] = argb;
-                         }
-                     }
-                     vec
-                 };
-                 
-                 let bmp = crate::assets::bitmap::Bitmap {
-                     w: wp.width,
-                     h: wp.height,
-                     pixels: alloc::sync::Arc::from(pixels_vec),
-                 };
-                 let h = bitmap_store.add(bmp);
-                 wallpaper_handle = Some((h, wp.width, wp.height));
-                 log_info("BLOOM: loaded wallpaper into BitmapStore");
-            }
+            // Spawn wallpaper worker thread (non-blocking)
+            // Worker decodes wallpaper in background, sends via WALLPAPER_MBX
+            log_info("BLOOM: spawning wallpaper worker");
+            let _wallpaper_worker = thing_std::thread::thread_spawn(wallpaper_worker_entry, 0);
             
             let mut input = if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
                 let mouse_vaddr = 0x8820_0000u64;
@@ -183,6 +159,22 @@ pub fn run() {
 
             loop {
                 let now_ns = monotonic_now();
+                
+                // Poll for wallpaper worker result (non-blocking)
+                if let Some(wp) = WALLPAPER_MBX.try_take() {
+                    log_info(&alloc::format!(
+                        "BLOOM: wallpaper ready {}x{} from worker",
+                        wp.width, wp.height
+                    ));
+                    let bmp = crate::assets::bitmap::Bitmap {
+                        w: wp.width,
+                        h: wp.height,
+                        pixels: alloc::sync::Arc::from(wp.pixels),
+                    };
+                    let h = bitmap_store.add(bmp);
+                    wallpaper_handle = Some((h, wp.width, wp.height));
+                    scene_dirty = true;
+                }
             
                 if let Ok(n) = watches.drain(&mut events) {
                     if n > 0 {
@@ -251,26 +243,29 @@ pub fn run() {
                                         log_info("BLOOM: Clicked Close Button (Request Not Implemented)");
                                         // TODO: Send WindowActionKind::Close when available
                                     } else {
-                                        log_info("BLOOM: Begin Move");
-                                        drag_mode = DragMode::Move { 
-                                            start_wx: target.window.x, 
-                                            start_wy: target.window.y, 
-                                            start_px: px, 
-                                            start_py: py 
-                                        };
-                                        captured_window = Some(target.id);
-                                        let action = WindowAction {
-                                            window: target.id,
-                                            kind: abi::ui::WindowActionKind::BeginMove,
-                                            start_x: target.window.x,
-                                            start_y: target.window.y,
-                                            dx: 0,
-                                            dy: 0,
-                                            edges: ResizeEdge::None,
-                                        };
-                                        log_info("BLOOM: Creating Move Action");
-                                        let _ = action.create(&mut graph_client);
-                                        log_info("BLOOM: Created Move Action");
+                                        #[cfg(feature = "window_moving")]
+                                        {
+                                            log_info("BLOOM: Begin Move");
+                                            drag_mode = DragMode::Move { 
+                                                start_wx: target.window.x, 
+                                                start_wy: target.window.y, 
+                                                start_px: px, 
+                                                start_py: py 
+                                            };
+                                            captured_window = Some(target.id);
+                                            let action = WindowAction {
+                                                window: target.id,
+                                                kind: abi::ui::WindowActionKind::BeginMove,
+                                                start_x: target.window.x,
+                                                start_y: target.window.y,
+                                                dx: 0,
+                                                dy: 0,
+                                                edges: ResizeEdge::None,
+                                            };
+                                            log_info("BLOOM: Creating Move Action");
+                                            let _ = action.create(&mut graph_client);
+                                            log_info("BLOOM: Created Move Action");
+                                        }
                                     }
                                 }
                                 HitZone::ResizeN | HitZone::ResizeS | HitZone::ResizeE | HitZone::ResizeW |
@@ -318,6 +313,7 @@ pub fn run() {
                         if let Some(win_id) = captured_window {
                             log_info("BLOOM: End Capture");
                             let (kind, start_x, start_y, dx, dy, edges) = match drag_mode {
+                                #[cfg(feature = "window_moving")]
                                 DragMode::Move { start_wx, start_wy, start_px, start_py } => 
                                     (abi::ui::WindowActionKind::EndMove, start_wx, start_wy, px - start_px, py - start_py, ResizeEdge::None),
                                 DragMode::Resize { start_rect, start_px, start_py, edge } => {
@@ -354,6 +350,7 @@ pub fn run() {
                     } else if moved {
                          if let Some(win_id) = captured_window {
                              match drag_mode {
+                                 #[cfg(feature = "window_moving")]
                                  DragMode::Move { start_wx, start_wy, start_px, start_py } => {
                                      let dx = px - start_px;
                                      let dy = py - start_py;
@@ -463,6 +460,7 @@ pub fn run() {
                 } else {
                     // In drag mode.
                     let kind = match drag_mode {
+                        #[cfg(feature = "window_moving")]
                         DragMode::Move { .. } => CursorKind::Move,
                         DragMode::Resize { edge, .. } => match edge {
                                  HitZone::ResizeN | HitZone::ResizeS => CursorKind::ResizeV,

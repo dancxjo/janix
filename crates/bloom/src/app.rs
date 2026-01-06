@@ -16,6 +16,7 @@ use abi::ui::{HitZone, ResizeEdge};
 use crate::ui::hittest::hittest_window;
 use crate::cursor_manager::{CursorSet, CursorKind};
 use crate::wallpaper_worker::{WALLPAPER_MBX, wallpaper_worker_entry};
+use crate::input_worker::{InputWorkerConfig, INPUT_CONFIG_MBX, INPUT_STATE, input_worker_entry};
 
 
 use crate::assets::cursor::CursorFrame;
@@ -89,15 +90,30 @@ pub fn run() {
             log_info("BLOOM: spawning wallpaper worker");
             let _wallpaper_worker = thing_std::thread::thread_spawn(wallpaper_worker_entry, 0);
             
-            let mut input = if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
+            // Spawn input worker thread (drains ringbuffer, publishes atomics)
+            if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
                 let mouse_vaddr = 0x8820_0000u64;
                 let mouse_size = 8192u64;
                 thing_std::memory::space_map(mouse_bs_id, mouse_vaddr, 0, mouse_size);
                 log_info("BLOOM: mapped bytespace.mouse_input");
-                PointerInput::new(mouse_vaddr as *const u8, mouse_size as u32, width, height)
+                
+                // Send config to worker
+                let cfg = InputWorkerConfig {
+                    ring_ptr: mouse_vaddr as *const u8,
+                    capacity: mouse_size as u32,
+                    screen_w: width,
+                    screen_h: height,
+                };
+                let _ = INPUT_CONFIG_MBX.try_send(cfg);
+                
+                // Spawn input worker
+                let _input_worker = thing_std::thread::thread_spawn(input_worker_entry, 0);
+                log_info("BLOOM: spawned input worker");
             } else {
-                PointerInput::new(core::ptr::null(), 0, width, height)
-            };
+                // No input - initialize state with screen center
+                INPUT_STATE.init(width, height);
+                log_info("BLOOM: no mouse input bytespace, using static center");
+            }
 
             let windows_graph = if let Some(id) = thing_find("graph.windows") {
                 id
@@ -199,8 +215,14 @@ pub fn run() {
 
                 let now_ms = (now_ns / 1_000_000) as u64;
 
-                let (px, py, buttons) = input.poll();
-                let moved = px != prev_px || py != prev_py;
+                let (px, py, buttons, input_seq) = INPUT_STATE.load();
+                static mut LAST_INPUT_SEQ: u32 = 0;
+                let input_seq_changed = unsafe {
+                    let changed = input_seq != LAST_INPUT_SEQ;
+                    LAST_INPUT_SEQ = input_seq;
+                    changed
+                };
+                let moved = px != prev_px || py != prev_py || input_seq_changed;
                 let buttons_changed = buttons != prev_buttons;
 
                 // Handle Input Events
@@ -416,7 +438,7 @@ pub fn run() {
                 
                 if let DragMode::None = drag_mode {
                     // Simple hit testing for cursor update
-                    let (x, y, _) = input.poll();
+                    let (x, y) = (px, py);
                     let mut found = false;
                     let mut hover_needs_update = false;
                     

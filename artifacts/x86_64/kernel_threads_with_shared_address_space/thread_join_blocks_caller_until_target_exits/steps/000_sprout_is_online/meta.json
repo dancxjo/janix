@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Kernel threads with shared address space",
+  "scenario": "Thread join blocks caller until target exits",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "passed",
+    "timestamp": "2026-01-06T09:27:45.606333229+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

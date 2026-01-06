@@ -1,50 +1,50 @@
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
-USER: CLOCK: 2026-1-1 06:52:09
+[21602.015 ms] USER: BLOOM: first paint complete
+[23323.785 ms] USER: BLOOM: cursor set loaded
+[23324.628 ms] USER: BLOOM: spawning wallpaper worker
+[23328.040 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eff0000 top=0x8f000000 active=1
+[23329.265 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x34ba000
+[23330.154 ms] THREAD: Thread 8 context: entry=0xa0c390 user_sp=0x8f000000 arg0=0x0 kernel_sp=0xffff8000034ba000
+[23410.595 ms] THREAD: Freed stack slot: group=1 top=0x8f000000 remaining=0
+[23413.992 ms] USER: BLOOM: mapped bytespace.mouse_input
+[23415.021 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eff0000 top=0x8f000000 active=1
+[23415.767 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x34dc000
+[23416.192 ms] THREAD: Thread 9 context: entry=0xa13220 user_sp=0x8f000000 arg0=0x0 kernel_sp=0xffff8000034dc000
+[23416.669 ms] USER: BLOOM: spawned input worker
+[23419.461 ms] USER: BLOOM: watch graph=126 watch_id=1
+[23540.067 ms] USER: BLOOM: watch window=539 watch_id=2
+[23652.239 ms] USER: BLOOM: watch window=564 watch_id=3
+[23654.094 ms] USER: BLOOM: seeded 2 windows
+[23659.539 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=6243 events_drained=0
+[23763.349 ms] USER: TRACE: scene_rebuild: ENTER
+[23768.657 ms] USER: BLOOM: START render 2 windows
+[23770.204 ms] USER: TRACE: render_window_scenes: ENTER
+[23771.043 ms] USER: TRACE: render_window: ENTER
+[24468.908 ms] USER: TRACE: paint_drawlist: ENTER
+[24470.140 ms] USER: TRACE: bytespace_map: ENTER
+[24472.691 ms] USER: BLOOM: failed to map bytespace
+[24473.478 ms] USER: TRACE: bytespace_map: EXIT (3.262ms)
+[24474.308 ms] USER: TRACE: paint_drawlist: EXIT (5.447ms)
+[24475.590 ms] USER: TRACE: render_window: EXIT (704.523ms)
+[24476.235 ms] USER: TRACE: render_window: ENTER
+[24480.244 ms] USER: TRACE: render_window: EXIT (3.980ms)
+[24581.778 ms] USER: TRACE: render_window_scenes: EXIT (811.541ms)
+[24582.862 ms] USER: TRACE: execute_cmds_into_scene: ENTER
+[29157.028 ms] USER: TRACE: execute_cmds_into_scene: EXIT (4573.036ms)
+[29158.731 ms] USER: BLOOM: frame maps=1 hits=0 remaps=0
+[29159.398 ms] USER: BLOOM: rebuild_scene done
+[29164.194 ms] USER: BLOOM: redraw_region done
+[29165.123 ms] USER: BLOOM: rendered window 539
+[29269.350 ms] USER: TRACE: scene_rebuild: EXIT (5505.400ms)
+[29272.654 ms] USER: BLOOM: shadow kernel: shared
+[29277.385 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=172705 events_drained=0
+[31276.325 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=231521 events_drained=0
+[33370.689 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=291244 events_drained=0
+[35370.366 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=350224 events_drained=0
+[37472.672 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=412648 events_drained=0
+[39472.551 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=471486 events_drained=0
+[41573.786 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=533339 events_drained=0
+[43574.366 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=591503 events_drained=0
+[45675.446 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=653640 events_drained=0
+[47676.996 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=711829 events_drained=0
+[49775.615 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=774082 events_drained=0
+[51777.270 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=833245 events_drained=0

@@ -1,7 +1,0 @@
-{
-  "arch": "aarch64",
-  "artifacts_dir": "aarch64/bytespaces_and_address_spaces/task_stacks_have_explicit_ownership_and_do_not_leak",
-  "feature": "Bytespaces and address spaces",
-  "scenario": "Task stacks have explicit ownership and do not leak",
-  "status": "failed"
-}

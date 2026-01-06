@@ -1,7 +1,0 @@
-{
-  "arch": "riscv64",
-  "artifacts_dir": "riscv64/surfaces_and_compositing/bloom_can_paint_the_screen_a_solid_color",
-  "feature": "Surfaces and compositing",
-  "scenario": "Bloom can paint the screen a solid color",
-  "status": "failed"
-}

@@ -1,7 +1,0 @@
-{
-  "arch": "riscv64",
-  "artifacts_dir": "riscv64/multi_architecture_behavioral_parity/the_syscall_abi_returns_a_structured_result_on_each_architecture",
-  "feature": "Multi-architecture behavioral parity",
-  "scenario": "The syscall ABI returns a structured result on each architecture",
-  "status": "pass"
-}

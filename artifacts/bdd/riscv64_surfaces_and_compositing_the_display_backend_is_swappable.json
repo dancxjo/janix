@@ -1,7 +1,0 @@
-{
-  "arch": "riscv64",
-  "artifacts_dir": "riscv64/surfaces_and_compositing/the_display_backend_is_swappable",
-  "feature": "Surfaces and compositing",
-  "scenario": "The display backend is swappable",
-  "status": "failed"
-}

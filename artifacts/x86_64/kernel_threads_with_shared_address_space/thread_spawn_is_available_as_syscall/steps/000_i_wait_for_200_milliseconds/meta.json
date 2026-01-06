@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Kernel threads with shared address space",
+  "scenario": "Thread spawn is available as syscall",
+  "step": {
+    "index": 0,
+    "text": "I wait for 200 milliseconds",
+    "status": "skipped",
+    "timestamp": "2026-01-06T09:26:42.663155345+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

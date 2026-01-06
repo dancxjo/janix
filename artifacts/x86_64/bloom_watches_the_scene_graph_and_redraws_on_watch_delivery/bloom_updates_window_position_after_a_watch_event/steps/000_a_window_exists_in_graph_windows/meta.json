@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Bloom watches the scene graph and redraws on watch delivery",
+  "scenario": "Bloom updates window position after a watch event",
+  "step": {
+    "index": 0,
+    "text": "a window exists in graph.windows",
+    "status": "skipped",
+    "timestamp": "2026-01-06T13:37:13.205831092+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

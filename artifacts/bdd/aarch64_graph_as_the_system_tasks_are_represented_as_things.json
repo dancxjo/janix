@@ -1,7 +1,0 @@
-{
-  "arch": "aarch64",
-  "artifacts_dir": "aarch64/graph_as_the_system/tasks_are_represented_as_things",
-  "feature": "Graph as the system",
-  "scenario": "Tasks are represented as Things",
-  "status": "failed"
-}

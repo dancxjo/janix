@@ -1,50 +1,50 @@
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=4 name=/boot/modules/clock stack_top=0xffff800001c0c000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001c0c000 u_stack=0x80000000 entry=0x20bbe0
-SCHED: configure_ctx_locked: finalized sp=0xffff800001c0bf60
-USER: BLOOM: alive
-PROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=186c6000 offset=ffff800000000000
-MMU: new P4 phys=1c0c000 virt=ffff800001c0c000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pUSER: RTC-CMOS: Active. Time: 2026-1-5 6:54:45
-USER: CLOCK: ALIVE
-ml4[511]
-PROC: ELF loaded, entry
-SCHED: spawn: name=/boot/modules/timed start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=5 name=/boot/modules/timed stack_top=0xffff800001d6c000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001d6c000 u_stack=0x80000000 entry=0x20c590
-SCHED: configure_ctx_locked: finalized sp=0xffff800001d6bf60
-PROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=183b8000 offset=ffff800000000000
-MMU: new P4 phys=1d6d000 virt=ffff800001d6d000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-PROC: ELF loaded, entry
-SCHED: spawn: name=/boot/modules/inputd start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=6 name=/boot/modules/inputd stack_top=0xffff800001dba000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001dba000 u_stack=0x80000000 entry=0x205490
-SCHED: configure_ctx_locked: finalized sp=0xffff800001db9f60
-USER: TIMED: Starting...
-PROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=1771d000 offset=ffff800000000000
-MMU: new P4 phys=1ebf000 virt=ffff800001ebf000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-USER: BLOOM: mapped bytespace.mouse_input
-USER: CLOCK: tick 1
-USER: CLOCK: tick 2
-PROC: ELF loaded, entry
+[26111.925 ms] USER: BLOOM: failed to map bytespace
+[26112.802 ms] USER: TRACE: bytespace_map: EXIT (3.527ms)
+[26113.686 ms] USER: TRACE: paint_drawlist: EXIT (5.935ms)
+[26115.049 ms] USER: TRACE: render_window: EXIT (712.221ms)
+[26115.731 ms] USER: TRACE: render_window: ENTER
+[26120.064 ms] USER: TRACE: render_window: EXIT (4.299ms)
+[26120.795 ms] USER: TRACE: render_window_scenes: EXIT (819.878ms)
+[26222.715 ms] USER: TRACE: execute_cmds_into_scene: ENTER
+[31147.549 ms] USER: TRACE: execute_cmds_into_scene: EXIT (4924.766ms)
+[31149.395 ms] USER: BLOOM: frame maps=1 hits=0 remaps=0
+[31150.092 ms] USER: BLOOM: rebuild_scene done
+[31155.043 ms] USER: BLOOM: redraw_region done
+[31156.016 ms] USER: BLOOM: rendered window 539
+[31159.792 ms] USER: TRACE: scene_rebuild: EXIT (5865.756ms)
+[31263.886 ms] USER: BLOOM: shadow kernel: shared
+[31269.211 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=173765 events_drained=0
+[33269.661 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=229096 events_drained=0
+[35364.002 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=287746 events_drained=0
+[37364.302 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=342852 events_drained=0
+[39467.145 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=401775 events_drained=0
+[41468.536 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=457224 events_drained=0
+[43568.272 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=516140 events_drained=0
+[45567.953 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=571367 events_drained=0
+[47670.243 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=628438 events_drained=0
+[49670.544 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=683477 events_drained=0
+[51771.768 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=740959 events_drained=0
+[53772.074 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=796096 events_drained=0
+[55873.171 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=854869 events_drained=0
+[57873.074 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=910212 events_drained=0
+[59872.914 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=965329 events_drained=0
+[61969.035 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1023545 events_drained=0
+[63968.715 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1077401 events_drained=0
+[66068.670 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1135400 events_drained=0
+[68069.588 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1190556 events_drained=0
+[70170.615 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1248792 events_drained=0
+[72170.524 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1303977 events_drained=0
+[74170.557 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1359072 events_drained=0
+[76264.879 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1417023 events_drained=0
+[78265.156 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1471749 events_drained=0
+[80264.617 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1527449 events_drained=0
+[82359.178 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1586052 events_drained=0
+[84358.503 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1640926 events_drained=0
+[86460.556 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1699476 events_drained=0
+[88462.489 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1754690 events_drained=0
+[90562.599 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1813054 events_drained=0
+[92564.559 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1867891 events_drained=0
+[94665.550 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1926219 events_drained=0
+[96666.661 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1981443 events_drained=0
+[98767.037 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=2039548 events_drained=0
+[100768.287 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=2094243 events_drained=0

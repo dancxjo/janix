@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/boot_contract_and_system_bring_up/sprout_starts_core_services",
-  "feature": "Boot contract and system bring-up",
-  "scenario": "Sprout starts core services",
-  "status": "failed"
-}

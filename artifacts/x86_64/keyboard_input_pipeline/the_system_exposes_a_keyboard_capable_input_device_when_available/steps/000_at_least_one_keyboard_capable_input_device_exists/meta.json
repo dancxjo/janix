@@ -7,7 +7,7 @@
     "index": 0,
     "text": "at least one keyboard-capable input device exists",
     "status": "passed",
-    "timestamp": "2026-01-05T06:29:29.608871478+00:00"
+    "timestamp": "2026-01-06T08:49:01.075068076+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

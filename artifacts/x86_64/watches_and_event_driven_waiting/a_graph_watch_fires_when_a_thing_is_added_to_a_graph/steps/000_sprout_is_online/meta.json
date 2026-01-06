@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Watches and event-driven waiting",
+  "scenario": "A graph watch fires when a Thing is added to a graph",
+  "step": {
+    "index": 0,
+    "text": "sprout is online",
+    "status": "passed",
+    "timestamp": "2026-01-06T09:28:54.910556751+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

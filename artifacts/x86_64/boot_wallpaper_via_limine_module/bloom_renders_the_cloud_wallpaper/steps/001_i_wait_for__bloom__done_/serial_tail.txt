@@ -1,50 +1,50 @@
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
-USER: CLOCK: 2026-01-05 06:59:48
-USER: CLOCK: Sleep too short! Request: 10s, Actual: 0 ns. Start: 0, End: 0
+[21332.994 ms] USER: TRACE: ensure_font_loaded: EXIT (7749.206ms)
+[21333.817 ms] USER: BLOOM: fonts warmed up
+[24046.149 ms] USER: BLOOM: first paint complete
+[26050.591 ms] USER: BLOOM: cursor set loaded
+[26051.497 ms] USER: BLOOM: spawning wallpaper worker
+[26055.267 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eff0000 top=0x8f000000 active=1
+[26056.565 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x34ba000
+[26057.582 ms] THREAD: Thread 8 context: entry=0xa0c390 user_sp=0x8f000000 arg0=0x0 kernel_sp=0xffff8000034ba000
+[26060.095 ms] USER: BLOOM: mapped bytespace.mouse_input
+[26061.291 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eef0000 top=0x8ef00000 active=2
+[26062.162 ms] THREAD: Mapped user stack: bottom=0x8eef0000 top=0x8ef00000 phys=0x34dc000
+[26062.661 ms] THREAD: Thread 9 context: entry=0xa13220 user_sp=0x8ef00000 arg0=0x0 kernel_sp=0xffff8000034dc000
+[26063.156 ms] USER: BLOOM: spawned input worker
+[26149.979 ms] THREAD: Freed stack slot: group=1 top=0x8f000000 remaining=1
+[26167.005 ms] USER: BLOOM: watch graph=126 watch_id=1
+[26289.853 ms] USER: BLOOM: watch window=554 watch_id=2
+[26403.102 ms] USER: BLOOM: watch window=564 watch_id=3
+[26405.248 ms] USER: BLOOM: seeded 2 windows
+[26411.162 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=8180 events_drained=0
+[26414.632 ms] USER: TRACE: scene_rebuild: ENTER
+[26521.381 ms] USER: BLOOM: START render 2 windows
+[26523.091 ms] USER: TRACE: render_window_scenes: ENTER
+[26523.996 ms] USER: TRACE: render_window: ENTER
+[27231.586 ms] USER: TRACE: paint_drawlist: ENTER
+[27232.974 ms] USER: TRACE: bytespace_map: ENTER
+[27235.861 ms] USER: BLOOM: failed to map bytespace
+[27236.736 ms] USER: TRACE: bytespace_map: EXIT (3.668ms)
+[27338.621 ms] USER: TRACE: paint_drawlist: EXIT (106.979ms)
+[27340.246 ms] USER: TRACE: render_window: EXIT (816.214ms)
+[27341.042 ms] USER: TRACE: render_window: ENTER
+[27345.601 ms] USER: TRACE: render_window: EXIT (4.524ms)
+[27346.428 ms] USER: TRACE: render_window_scenes: EXIT (823.343ms)
+[27347.547 ms] USER: TRACE: execute_cmds_into_scene: ENTER
+[32271.374 ms] USER: TRACE: execute_cmds_into_scene: EXIT (4923.667ms)
+[32273.265 ms] USER: BLOOM: frame maps=1 hits=0 remaps=0
+[32273.977 ms] USER: BLOOM: rebuild_scene done
+[32278.978 ms] USER: BLOOM: redraw_region done
+[32380.851 ms] USER: BLOOM: rendered window 554
+[32385.026 ms] USER: TRACE: scene_rebuild: EXIT (5969.769ms)
+[32388.523 ms] USER: BLOOM: shadow kernel: shared
+[32393.722 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=170563 events_drained=0
+[34493.771 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=223762 events_drained=0
+[36495.550 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=278597 events_drained=0
+[38597.192 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=334613 events_drained=0
+[40598.440 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=388136 events_drained=0
+[42598.951 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=442769 events_drained=0
+[44696.191 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=500282 events_drained=0
+[46695.554 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=555062 events_drained=0
+[48695.953 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=609151 events_drained=0
+[50792.896 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=666813 events_drained=0

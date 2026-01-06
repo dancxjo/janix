@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Kernel threads with shared address space",
+  "scenario": "Thread spawn creates a second schedulable entity",
+  "step": {
+    "index": 1,
+    "text": "a test app spawns a thread",
+    "status": "skipped",
+    "timestamp": "2026-01-06T09:27:14.567193577+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

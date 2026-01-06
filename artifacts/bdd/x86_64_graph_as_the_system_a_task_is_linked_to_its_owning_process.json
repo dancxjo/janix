@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/graph_as_the_system/a_task_is_linked_to_its_owning_process",
-  "feature": "Graph as the system",
-  "scenario": "A task is linked to its owning process",
-  "status": "pass"
-}

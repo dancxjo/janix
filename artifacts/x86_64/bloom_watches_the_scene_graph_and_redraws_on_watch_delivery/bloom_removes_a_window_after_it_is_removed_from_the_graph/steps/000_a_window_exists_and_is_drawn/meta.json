@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Bloom watches the scene graph and redraws on watch delivery",
+  "scenario": "Bloom removes a window after it is removed from the graph",
+  "step": {
+    "index": 0,
+    "text": "a window exists and is drawn",
+    "status": "skipped",
+    "timestamp": "2026-01-06T13:37:13.206145323+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/keyboard_input_pipeline/key_activity_produces_raw_key_events",
-  "feature": "Keyboard input pipeline",
-  "scenario": "Key activity produces raw key events",
-  "status": "failed"
-}

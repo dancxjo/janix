@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "hello_window renders a widget layout as Things with a shared drop shadow",
+  "scenario": "hello_window publishes a Window Thing with a widget tree and Bloom renders it",
+  "step": {
+    "index": 2,
+    "text": "\"hello_window\" creates a Layout Thing of kind \"Column\" with padding 12 and gap 10",
+    "status": "passed",
+    "timestamp": "2026-01-06T08:47:17.820266545+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

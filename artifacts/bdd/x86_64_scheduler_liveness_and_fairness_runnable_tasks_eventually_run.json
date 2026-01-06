@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/scheduler_liveness_and_fairness/runnable_tasks_eventually_run",
-  "feature": "Scheduler liveness and fairness",
-  "scenario": "Runnable tasks eventually run",
-  "status": "pass"
-}

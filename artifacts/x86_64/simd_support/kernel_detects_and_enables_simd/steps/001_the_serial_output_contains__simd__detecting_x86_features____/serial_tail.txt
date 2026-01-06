@@ -1,50 +1,50 @@
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-PROC: ELF loaded, entry
-SCHED: spawn: name=/boot/modules/sprout start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=1 name=/boot/modules/sprout stack_top=0xffff8000017e3000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff8000017e3000 u_stack=0x80000000 entry=0x207e00
-SCHED: configure_ctx_locked: finalized sp=0xffff8000017e2f60
-SPROUT: I am alive
-PROC: spawned
-BOOT: Handing off to scheduler
-SCHED: entering loop
-SCHED: calling irq_enable...
-SCHED: first tick!
-TICK: switch IDLE -> 1 sp=0xffff8000017e2f60
-TICK: switch 1 -> 1 sp=0xffff8000017e2f60
-TICK: switch 1 -> 1 sp=0xffff8000017e2620
-USER: SPROUT: I am alive
-PROC: spawn_kernel_module
-PROC: module phys=173bd000 offset=ffff800000000000
-MMU: new P4 phys=18e7000 virt=ffff8000018e7000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-TICK: switch 1 -> 1 sp=0xffff8000017e1840
-PROC: ELF loaded, entry
-SCHED: spawn: name=/boot/modules/rtc_cmos start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=2 name=/boot/modules/rtc_cmos stack_top=0xffff800001943000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001943000 u_stack=0x80000000 entry=0x20aab0
-SCHED: configure_ctx_locked: finalized sp=0xffff800001942f60
-PROC: spawned
-TICK: switch 1 -> 2 sp=0xffff800001942f60
-TICK: (further switch logs suppressed)
-USER: SPROUT: spawning services...
-PROC: spawn_kernel_module
-PROC: module phys=196d4000 offset=ffff800000000000
-MMU: new P4 phys=1944000 virt=ffff800001944000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-PROC: ELF loaded, entry
-USER: RTC-CMOS: Starting...
-USER: RTC-CMOS: Hardware found. Publishing device...
+[20041.387 ms] USER: BLOOM: fonts warmed up
+[22560.124 ms] USER: BLOOM: first paint complete
+[24467.029 ms] USER: BLOOM: cursor set loaded
+[24468.088 ms] USER: BLOOM: spawning wallpaper worker
+[24471.843 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eff0000 top=0x8f000000 active=1
+[24473.286 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x34ba000
+[24474.423 ms] THREAD: Thread 8 context: entry=0xa0c390 user_sp=0x8f000000 arg0=0x0 kernel_sp=0xffff8000034ba000
+[24562.217 ms] THREAD: Freed stack slot: group=1 top=0x8f000000 remaining=0
+[24564.323 ms] USER: BLOOM: mapped bytespace.mouse_input
+[24565.713 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eff0000 top=0x8f000000 active=1
+[24566.784 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x34dc000
+[24567.470 ms] THREAD: Thread 9 context: entry=0xa13220 user_sp=0x8f000000 arg0=0x0 kernel_sp=0xffff8000034dc000
+[24568.201 ms] USER: BLOOM: spawned input worker
+[24571.363 ms] USER: BLOOM: watch graph=126 watch_id=1
+[24693.627 ms] USER: BLOOM: watch window=558 watch_id=2
+[24807.491 ms] USER: BLOOM: watch window=552 watch_id=3
+[24809.548 ms] USER: BLOOM: seeded 2 windows
+[24916.359 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=9275 events_drained=0
+[24920.148 ms] USER: TRACE: scene_rebuild: ENTER
+[24925.774 ms] USER: BLOOM: START render 2 windows
+[24927.463 ms] USER: TRACE: render_window_scenes: ENTER
+[24928.489 ms] USER: TRACE: render_window: ENTER
+[25735.533 ms] USER: TRACE: render_window: EXIT (806.920ms)
+[25736.809 ms] USER: TRACE: render_window: ENTER
+[25738.211 ms] USER: TRACE: paint_drawlist: ENTER
+[25739.425 ms] USER: TRACE: bytespace_map: ENTER
+[25742.277 ms] USER: BLOOM: failed to map bytespace
+[25743.227 ms] USER: TRACE: bytespace_map: EXIT (3.736ms)
+[25744.217 ms] USER: TRACE: paint_drawlist: EXIT (5.987ms)
+[25745.120 ms] USER: TRACE: render_window: EXIT (8.274ms)
+[25745.979 ms] USER: TRACE: render_window_scenes: EXIT (818.531ms)
+[25747.163 ms] USER: TRACE: execute_cmds_into_scene: ENTER
+[30658.525 ms] USER: TRACE: execute_cmds_into_scene: EXIT (4911.185ms)
+[30660.584 ms] USER: BLOOM: frame maps=1 hits=0 remaps=0
+[30661.418 ms] USER: BLOOM: rebuild_scene done
+[30666.447 ms] USER: BLOOM: redraw_region done
+[30667.572 ms] USER: BLOOM: rendered window 552
+[30671.421 ms] USER: TRACE: scene_rebuild: EXIT (5750.710ms)
+[30775.631 ms] USER: BLOOM: shadow kernel: shared
+[30781.167 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=174971 events_drained=0
+[32782.138 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=231922 events_drained=0
+[34880.126 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=291320 events_drained=0
+[36880.816 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=347882 events_drained=0
+[38880.334 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=404538 events_drained=0
+[40975.776 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=464430 events_drained=0
+[42977.453 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=521100 events_drained=0
+[45078.456 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=581360 events_drained=0
+[47077.305 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=638254 events_drained=0
+[49078.457 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=694719 events_drained=0
+[51175.644 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=752576 events_drained=0

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "hello_window renders a widget layout as Things with a shared drop shadow",
+  "scenario": "drop shadow implementation is shared with cursor shadow",
+  "step": {
+    "index": 2,
+    "text": "both shadows must use the same shadow kernel implementation",
+    "status": "passed",
+    "timestamp": "2026-01-06T08:47:24.643980658+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

@@ -1,7 +1,0 @@
-{
-  "arch": "riscv64",
-  "artifacts_dir": "riscv64/graph_as_the_system/devices_appear_in_place_devices",
-  "feature": "Graph as the system",
-  "scenario": "Devices appear in graph.devices",
-  "status": "failed"
-}

@@ -1,50 +1,50 @@
-USER: CLOCK: tick 60970
-USER: CLOCK: tick 60971
-USER: CLOCK: tick 60972
-USER: CLOCK: tick 60973
-USER: CLOCK: tick 60974
-USER: CLOCK: tick 60975
-USER: CLOCK: tick 60976
-USER: CLOCK: tick 60977
-USER: CLOCK: tick 60978
-USER: CLOCK: tick 60979
-USER: CLOCK: tick 60980
-USER: CLOCK: tick 60981
-USER: CLOCK: tick 60982
-USER: CLOCK: tick 60983
-USER: CLOCK: tick 60984
-USER: CLOCK: tick 60985
-USER: CLOCK: tick 60986
-USER: CLOCK: tick 60987
-USER: CLOCK: tick 60988
-USER: CLOCK: tick 60989
-USER: CLOCK: tick 60990
-USER: CLOCK: tick 60991
-USER: CLOCK: tick 60992
-USER: CLOCK: tick 60993
-USER: CLOCK: tick 60994
-USER: CLOCK: tick 60995
-USER: CLOCK: tick 60996
-USER: CLOCK: tick 60997
-USER: CLOCK: tick 60998
-USER: CLOCK: tick 60999
-USER: CLOCK: tick 61000
-USER: CLOCK: tick 61001
-USER: CLOCK: tick 61002
-USER: CLOCK: tick 61003
-USER: CLOCK: tick 61004
-USER: CLOCK: tick 61005
-USER: CLOCK: tick 61006
-USER: CLOCK: tick 61007
-USER: CLOCK: tick 61008
-USER: CLOCK: tick 61009
-USER: CLOCK: tick 61010
-USER: CLOCK: tick 61011
-USER: CLOCK: tick 61012
-USER: CLOCK: tick 61013
-USER: CLOCK: tick 61014
-USER: CLOCK: tick 61015
-USER: CLOCK: tick 61016
-USER: CLOCK: tick 61017
-USER: CLOCK: tick 61018
-USER: CLOCK: tick 61019
+[755634.499 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=21968856 events_drained=0
+[757730.238 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22031725 events_drained=0
+[759731.139 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22091347 events_drained=0
+[761824.435 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22154495 events_drained=0
+[763824.610 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22213220 events_drained=0
+[765919.545 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22276397 events_drained=0
+[767919.543 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22336512 events_drained=0
+[770013.133 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22400792 events_drained=0
+[772013.917 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22461375 events_drained=0
+[774108.913 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22525674 events_drained=0
+[776110.165 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22586223 events_drained=0
+[778204.007 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22649717 events_drained=0
+[780204.541 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22710207 events_drained=0
+[782298.529 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22773860 events_drained=0
+[784299.482 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22834434 events_drained=0
+[786392.578 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22898652 events_drained=0
+[788392.654 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=22958996 events_drained=0
+[790486.612 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23022871 events_drained=0
+[792487.553 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23082323 events_drained=0
+[794583.249 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23145842 events_drained=0
+[796584.047 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23206711 events_drained=0
+[798677.283 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23270325 events_drained=0
+[800677.629 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23330434 events_drained=0
+[802771.885 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23394350 events_drained=0
+[804771.562 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23454703 events_drained=0
+[806867.307 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23518120 events_drained=0
+[808867.965 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23578454 events_drained=0
+[810960.905 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23641448 events_drained=0
+[812961.708 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23701571 events_drained=0
+[815055.925 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23765539 events_drained=0
+[817055.399 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23826283 events_drained=0
+[819150.599 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23890570 events_drained=0
+[821151.917 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=23950362 events_drained=0
+[823246.558 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24012812 events_drained=0
+[825247.927 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24072357 events_drained=0
+[827340.904 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24135556 events_drained=0
+[829340.464 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24194181 events_drained=0
+[831436.043 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24257045 events_drained=0
+[833436.455 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24316808 events_drained=0
+[835531.467 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24379946 events_drained=0
+[837532.009 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24439623 events_drained=0
+[839626.021 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24503333 events_drained=0
+[841625.571 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24563610 events_drained=0
+[843720.667 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24626684 events_drained=0
+[845720.507 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24687244 events_drained=0
+[847815.124 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24751232 events_drained=0
+[849815.885 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24811609 events_drained=0
+[851908.915 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24873936 events_drained=0
+[853908.833 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24934128 events_drained=0
+[856004.361 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=24996106 events_drained=0

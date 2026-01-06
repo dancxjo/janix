@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "The Kernel exposes a root graph and a devices graph",
+  "step": {
+    "index": 0,
+    "text": "the system has reached \"kernel ready\"",
+    "status": "passed",
+    "timestamp": "2026-01-06T08:44:35.559676469+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

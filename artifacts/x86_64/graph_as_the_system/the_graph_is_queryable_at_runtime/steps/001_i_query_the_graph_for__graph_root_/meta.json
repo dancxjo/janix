@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Graph as the system",
+  "scenario": "The graph is queryable at runtime",
+  "step": {
+    "index": 1,
+    "text": "I query the graph for \"graph.root\"",
+    "status": "skipped",
+    "timestamp": "2026-01-06T08:46:34.873817521+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

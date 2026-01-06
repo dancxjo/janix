@@ -1,7 +1,0 @@
-{
-  "arch": "aarch64",
-  "artifacts_dir": "aarch64/swappable_display_backends/bloom_cannot_access_display_bytespace_without_capability",
-  "feature": "Swappable display backends",
-  "scenario": "Bloom cannot access display bytespace without capability",
-  "status": "failed"
-}

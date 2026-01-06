@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "hello_window renders a widget layout as Things with a shared drop shadow",
+  "scenario": "hello_window publishes a Window Thing with a widget tree and Bloom renders it",
+  "step": {
+    "index": 1,
+    "text": "\"hello_window\" creates a Window Thing sized 480x272 titled \"Hello\"",
+    "status": "passed",
+    "timestamp": "2026-01-06T08:47:16.964184373+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

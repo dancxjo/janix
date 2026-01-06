@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/keyboard_input_pipeline/no_heavy_work_is_required_to_capture_key_events",
-  "feature": "Keyboard input pipeline",
-  "scenario": "No heavy work is required to capture key events",
-  "status": "failed"
-}

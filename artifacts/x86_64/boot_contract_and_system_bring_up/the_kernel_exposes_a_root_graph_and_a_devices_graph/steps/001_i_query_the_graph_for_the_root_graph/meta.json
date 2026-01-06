@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Boot contract and system bring-up",
+  "scenario": "The Kernel exposes a root graph and a devices graph",
+  "step": {
+    "index": 1,
+    "text": "I query the graph for the root graph",
+    "status": "skipped",
+    "timestamp": "2026-01-06T08:44:36.416622958+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

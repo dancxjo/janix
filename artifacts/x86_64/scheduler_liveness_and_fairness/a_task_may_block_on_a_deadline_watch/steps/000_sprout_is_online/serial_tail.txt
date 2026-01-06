@@ -1,50 +1,50 @@
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=4 name=/boot/modules/clock stack_top=0xffff800001b08000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001b08000 u_stack=0x80000000 entry=0x20aef0
-SCHED: configure_ctx_locked: finalized sp=0xffff800001b07f60
-USER: BLOOM: alivePROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=186cb000 offset=ffff800000000000
-MMU: new P4 phys=1c0b000 virt=ffff800001c0b000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-PROC: ELF loaded, entry
-SCHED: spawn: name=/boot/modules/timed start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=5 name=/boot/modules/timed stack_top=0xffff800001c68000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001c68000 u_stack=0x80000000 entry=0x20c580
-SCHED: configure_ctx_locked: finalized sp=0xffff800001c67f60
-PROC: spawned
-USER: RTC-CMOS: Active. Time: 2026-1-5 6:52:49
-
-USER: CLOCK: ALIVE
-PROC: spawn_kernel_module
-PROC: module phys=183bd000 offset=ffff800000000000
-MMU: new P4 phys=1d6c000 virt=ffff800001d6c000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-PROC: ELF loaded, entry
-SCHED: spawn: name=/boot/modules/inputd start
-SCHED: spawn: allocating stack...
-SCHED: spawn: stack allocated
-SCHED: spawn: graph store start
-SCHED: spawn: graph store done
-SCHED: spawn: address space handled
-SCHED: spawn: finished id=6 name=/boot/modules/inputd stack_top=0xffff800001db9000 stack_size=0x10000
-SCHED: configure_ctx_locked: k_stack=0xffff800001db9000 u_stack=0x80000000 entry=0x205490
-SCHED: configure_ctx_locked: finalized sp=0xffff800001db8f60
-PROC: spawned
-PROC: spawn_kernel_module
-PROC: module phys=17722000 offset=ffff800000000000
-MMU: new P4 phys=1db9000 virt=ffff800001db9000
-MMU: copy kernel pml4[256]
-MMU: copy kernel pml4[511]
-USER: INPUTD: Alive
-USER: kind: Keyboard
-PROC: ELF loaded, entry
+[23847.866 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x34ba000
+[23848.811 ms] THREAD: Thread 8 context: entry=0xa0c390 user_sp=0x8f000000 arg0=0x0 kernel_sp=0xffff8000034ba000
+[23851.136 ms] USER: BLOOM: mapped bytespace.mouse_input
+[23852.225 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eef0000 top=0x8ef00000 active=2
+[23853.002 ms] THREAD: Mapped user stack: bottom=0x8eef0000 top=0x8ef00000 phys=0x34dc000
+[23853.460 ms] THREAD: Thread 9 context: entry=0xa13220 user_sp=0x8ef00000 arg0=0x0 kernel_sp=0xffff8000034dc000
+[23853.951 ms] USER: BLOOM: spawned input worker
+[23856.809 ms] USER: BLOOM: watch graph=126 watch_id=1
+[23942.751 ms] THREAD: Freed stack slot: group=1 top=0x8f000000 remaining=1
+[24078.471 ms] USER: BLOOM: watch window=503 watch_id=2
+[24090.036 ms] USER: BLOOM: watch window=564 watch_id=3
+[24192.388 ms] USER: BLOOM: seeded 2 windows
+[24198.391 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=8850 events_drained=0
+[24201.698 ms] USER: TRACE: scene_rebuild: ENTER
+[24206.934 ms] USER: BLOOM: START render 2 windows
+[24208.263 ms] USER: TRACE: render_window_scenes: ENTER
+[24309.858 ms] USER: TRACE: render_window: ENTER
+[24909.797 ms] USER: TRACE: paint_drawlist: ENTER
+[25011.676 ms] USER: TRACE: bytespace_map: ENTER
+[25014.616 ms] USER: BLOOM: failed to map bytespace
+[25015.413 ms] USER: TRACE: bytespace_map: EXIT (3.733ms)
+[25016.240 ms] USER: TRACE: paint_drawlist: EXIT (106.491ms)
+[25017.682 ms] USER: TRACE: render_window: EXIT (707.863ms)
+[25018.385 ms] USER: TRACE: render_window: ENTER
+[25022.669 ms] USER: TRACE: render_window: EXIT (4.253ms)
+[25023.415 ms] USER: TRACE: render_window_scenes: EXIT (815.160ms)
+[25024.422 ms] USER: TRACE: execute_cmds_into_scene: ENTER
+[29707.889 ms] USER: TRACE: execute_cmds_into_scene: EXIT (4683.326ms)
+[29810.179 ms] USER: BLOOM: frame maps=1 hits=0 remaps=0
+[29810.929 ms] USER: BLOOM: rebuild_scene done
+[29815.699 ms] USER: BLOOM: redraw_region done
+[29816.617 ms] USER: BLOOM: rendered window 503
+[29821.234 ms] USER: TRACE: scene_rebuild: EXIT (5618.005ms)
+[29824.503 ms] USER: BLOOM: shadow kernel: shared
+[29929.965 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=173554 events_drained=0
+[31929.449 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=231197 events_drained=0
+[34022.747 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=292272 events_drained=0
+[36023.621 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=349585 events_drained=0
+[38120.741 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=410224 events_drained=0
+[40120.965 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=468179 events_drained=0
+[42215.560 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=529319 events_drained=0
+[44215.907 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=586886 events_drained=0
+[46312.178 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=647890 events_drained=0
+[48313.036 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=705590 events_drained=0
+[50407.418 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=766338 events_drained=0
+[52409.414 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=822958 events_drained=0
+[54503.998 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=884039 events_drained=0
+[56504.234 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=940538 events_drained=0
+[58598.614 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1001272 events_drained=0
+[60599.221 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=1058526 events_drained=0

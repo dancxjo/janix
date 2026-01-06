@@ -1,7 +1,0 @@
-{
-  "arch": "x86_64",
-  "artifacts_dir": "x86_64/surfaces_and_compositing/the_display_backend_is_swappable",
-  "feature": "Surfaces and compositing",
-  "scenario": "The display backend is swappable",
-  "status": "pass"
-}

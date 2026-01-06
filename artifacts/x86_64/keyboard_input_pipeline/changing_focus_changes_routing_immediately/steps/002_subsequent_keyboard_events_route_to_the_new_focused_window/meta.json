@@ -7,7 +7,7 @@
     "index": 2,
     "text": "subsequent keyboard events route to the new focused window",
     "status": "passed",
-    "timestamp": "2026-01-05T06:45:31.841421067+00:00"
+    "timestamp": "2026-01-06T09:10:54.969363492+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

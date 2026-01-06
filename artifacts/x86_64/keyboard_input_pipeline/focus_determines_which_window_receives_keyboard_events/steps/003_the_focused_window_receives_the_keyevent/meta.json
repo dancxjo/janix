@@ -7,7 +7,7 @@
     "index": 3,
     "text": "the focused window receives the KeyEvent",
     "status": "passed",
-    "timestamp": "2026-01-05T06:44:27.700547855+00:00"
+    "timestamp": "2026-01-06T09:09:20.915810760+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

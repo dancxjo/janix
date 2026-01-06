@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "Kernel threads with shared address space",
+  "scenario": "Thread can block on watch without CPU spin",
+  "step": {
+    "index": 0,
+    "text": "a thread is blocked on a watch",
+    "status": "skipped",
+    "timestamp": "2026-01-06T09:28:17.516639951+00:00"
+  },
+  "artifacts": {
+    "screenshot": "screen.png",
+    "serial_tail": "serial_tail.txt"
+  }
+}

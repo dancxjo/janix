@@ -3,6 +3,7 @@ use thing_std::memory;
 
 pub mod bmp;
 pub mod cursor;
+pub mod bitmap;
 
 
 pub fn map_bytespace(bs_id: ThingId, vaddr: u64, len: u64) -> &'static [u8] {

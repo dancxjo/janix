@@ -1,7 +1,8 @@
 //! CPU framebuffer implementation of the Painter trait.
 
 use crate::assets::cursor::CursorFrame;
-use crate::scene::Rect;
+use crate::scene::{Rect, Point};
+use crate::assets::bitmap::Bitmap;
 use crate::shadow::{ShadowMask, ShadowParams};
 use super::{Clip, Painter};
 use alloc::vec;
@@ -673,6 +674,61 @@ impl<'a> Painter for CpuPainter<'a> {
         }
         let cursor_rect = Rect { x: px, y: py, w: 10, h: 11 };
         self.merge_damage(cursor_rect);
+    }
+}
+
+impl<'a> CpuPainter<'a> {
+    pub fn draw_tiled_bitmap(&mut self, dst: Rect, bmp: &Bitmap, origin: Point) {
+        if bmp.w == 0 || bmp.h == 0 { return; }
+        let clip = self.clip_rect(dst);
+        
+        if clip.w == 0 || clip.h == 0 { return; }
+
+        let bmp_w = bmp.w as i32;
+        let bmp_h = bmp.h as i32;
+        let bmp_pixels = &bmp.pixels;
+
+        let start_x = clip.x;
+        let start_y = clip.y;
+        let end_x = clip.x + clip.w as i32;
+        let end_y = clip.y + clip.h as i32;
+
+        for y in start_y..end_y {
+            // src_y = mod_floor(y - origin.y, bmp_h)
+            let mut src_y = (y - origin.y) % bmp_h;
+            if src_y < 0 { src_y += bmp_h; }
+            
+            // Optimize: calculate src_x0 for start of row
+            let mut src_x = (start_x - origin.x) % bmp_w;
+            if src_x < 0 { src_x += bmp_w; }
+
+            let target_row_offset = (y * self.w as i32 + start_x) as usize;
+            let mut target_idx = target_row_offset;
+            let mut x = start_x;
+            
+            let bmp_row_offset = (src_y * bmp_w) as usize;
+            // Bound check for safety, though width should be consistent
+            let bmp_row = &bmp_pixels[bmp_row_offset..bmp_row_offset + bmp_w as usize];
+
+            while x < end_x {
+                let remaining_row = end_x - x;
+                let can_copy = (bmp_w - src_x).min(remaining_row);
+                
+                // Do copy
+                let src_start = src_x as usize;
+                let src_end = src_start + can_copy as usize;
+                let dst_end_idx = target_idx + can_copy as usize;
+                
+                if dst_end_idx <= self.buf.len() {
+                    self.buf[target_idx..dst_end_idx].copy_from_slice(&bmp_row[src_start..src_end]);
+                }
+                
+                target_idx += can_copy as usize;
+                x += can_copy;
+                src_x = 0; // Wrap around for next chunk
+            }
+        }
+        self.merge_damage(clip);
     }
 }
 

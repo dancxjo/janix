@@ -3,7 +3,7 @@ use crate::draw_cmd::DrawCmd;
 use crate::painter::{Painter, Clip};
 use crate::scene::Rect;
 use crate::shadow::{ShadowMask, ShadowParams};
-use alloc::string::ToString;
+
 use abi::ids::ThingId;
 
 pub struct CommandRecorder {

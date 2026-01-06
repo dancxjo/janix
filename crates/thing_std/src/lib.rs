@@ -138,6 +138,7 @@ pub fn init(_ptr: u64) {}
 
 struct BumpAllocator;
 
+#[cfg(not(any(test, target_os = "linux")))]
 #[global_allocator]
 static ALLOCATOR: BumpAllocator = BumpAllocator;
 
@@ -181,13 +182,13 @@ unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, target_os = "linux")))]
 #[alloc_error_handler]
 fn alloc_error(_layout: Layout) -> ! {
     loop {}
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, target_os = "linux")))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     log_info("panic: aborting process");
@@ -254,6 +255,6 @@ pub mod debug {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, target_os = "linux")))]
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {}

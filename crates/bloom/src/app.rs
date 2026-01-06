@@ -20,6 +20,7 @@ use crate::cursor_manager::{CursorSet, CursorKind};
 
 
 use crate::assets::cursor::CursorFrame;
+use crate::assets::bitmap::BitmapStore;
 use crate::backend::*;
 
 const WATCH_WAIT_TIMEOUT_TICKS: u64 = 0;
@@ -80,6 +81,39 @@ pub fn run() {
             let mut cursor_set = CursorSet::new();
             cursor_set.load_all(0x8900_0000);
             log_info("BLOOM: cursor set loaded");
+
+            let mut bitmap_store = BitmapStore::new();
+            let mut wallpaper_handle: Option<(crate::assets::bitmap::BitmapHandle, u32, u32)> = None;
+
+            if let Some((wp, _color)) = crate::assets::load_wallpaper() {
+                 let len = (wp.width * wp.height) as usize;
+                 let pixels_vec = unsafe {
+                     let slice = core::slice::from_raw_parts(wp.data_ptr, (wp.height as usize * wp.row_stride));
+                     let mut vec = alloc::vec![0u32; len];
+                     for y in 0..wp.height {
+                         let src_y = if wp.bottom_up { wp.height - 1 - y } else { y } as usize;
+                         let src_row = &slice[src_y * wp.row_stride..];
+                         for x in 0..wp.width {
+                             let offset = (x as usize) * wp.bytes_per_pixel;
+                             let b = src_row[offset];
+                             let g = src_row[offset+1];
+                             let r = src_row[offset+2];
+                             let argb = 0xFF000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+                             vec[(y as usize * wp.width as usize) + x as usize] = argb;
+                         }
+                     }
+                     vec
+                 };
+                 
+                 let bmp = crate::assets::bitmap::Bitmap {
+                     w: wp.width,
+                     h: wp.height,
+                     pixels: alloc::sync::Arc::from(pixels_vec),
+                 };
+                 let h = bitmap_store.add(bmp);
+                 wallpaper_handle = Some((h, wp.width, wp.height));
+                 log_info("BLOOM: loaded wallpaper into BitmapStore");
+            }
             
             let mut input = if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
                 let mouse_vaddr = 0x8820_0000u64;
@@ -473,19 +507,36 @@ pub fn run() {
 
                     // Rebuild scene
                     if CURRENT_RENDER_MODE == RENDER_MODE_RECORD {
-                         // 1. Initialize buffer with background
+                         // 1. Initialize buffer with background (REMOVED in favor of TileBitmap)
+                        /*
                         {
                             let mut bg_painter = CpuPainter::new(scene_buffer.as_mut_slice(), width, height);
                             bg_painter.copy_region(background_cache.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
                         }
+                        */
                         
                         // 2. Record commands
                         let mut recorder = crate::command_recorder::CommandRecorder::new(width, height);
+                        
+                        // Background Layer
+                        if let Some((handle, w, h)) = wallpaper_handle {
+                            recorder.cmds.push(crate::draw_cmd::DrawCmd::TileBitmap { 
+                                dst: Rect { x: 0, y: 0, w: width, h: height }, 
+                                bitmap: handle,
+                                bmp_w: w,
+                                bmp_h: h,
+                                origin: crate::scene::Point { x: 0, y: 0 },
+                                opacity: 255,
+                            });
+                        } else {
+                            recorder.clear(background_color);
+                        }
+
                         render_window_scenes(&mut recorder, &window_scenes, &mut scene_cache.mapping_cache, focused_window, (px, py));
                         let cmds = recorder.finish();
                         
                         // 3. Execute
-                        let exec_result = crate::executor::execute_cmds_into_scene(&cmds, scene_buffer.as_mut_slice(), width, height, &mut scene_cache.mapping_cache);
+                        let exec_result = crate::executor::execute_cmds_into_scene(&cmds, scene_buffer.as_mut_slice(), width, height, &mut scene_cache.mapping_cache, &bitmap_store);
                         if exec_result.stats.bad_cmds > 0 {
                             log_info(&alloc::format!("BLOOM: Bad cmds: {}/{}", exec_result.stats.bad_cmds, exec_result.stats.cmds_total));
                         }

@@ -1,7 +1,8 @@
 use crate::draw_cmd::DrawCmd;
 use crate::painter::{Painter, CpuPainter, Clip};
 use crate::scene_cache::{BytespaceMappingCache, MapResult};
-use crate::scene::Rect;
+use crate::scene::{Rect, Point};
+use crate::assets::bitmap::{Bitmap, BitmapStore};
 use alloc::vec::Vec;
 use thing_std::log_info;
 
@@ -64,6 +65,7 @@ pub fn execute_cmds_into_scene(
     width: u32,
     height: u32,
     mapping_cache: &mut BytespaceMappingCache,
+    bitmap_store: &BitmapStore,
 ) -> ExecOutput {
     let mut stats = ExecStats::default();
 
@@ -231,11 +233,23 @@ pub fn execute_cmds_into_scene(
                     log_info("BLOOM: Clip underflow");
                 }
             }
+            DrawCmd::TileBitmap { dst, bitmap, bmp_w: _, bmp_h: _, origin, opacity: _ } => {
+                if let Some(bmp) = bitmap_store.get(*bitmap) {
+                    painter.draw_tiled_bitmap(*dst, bmp, *origin);
+                    damage.add(*dst, scene_rect);
+                    stats.cmds_drawn += 1;
+                } else {
+                    stats.bad_cmds += 1;
+                }
+            }
         }
     }
     
     ExecOutput { stats, damage }
 }
+
+#[cfg(test)]
+mod executor_tests;
 
 fn validate_blit_buffer<'a>(
     mapping_cache: &'a mut BytespaceMappingCache, 

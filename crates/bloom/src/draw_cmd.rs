@@ -1,6 +1,7 @@
-use crate::scene::Rect;
+use crate::scene::{Rect, Point};
+use crate::assets::bitmap::BitmapHandle;
 use abi::ids::ThingId;
-use alloc::vec::Vec;
+
 use alloc::string::String;
 
 #[derive(Clone, Debug)]
@@ -49,6 +50,16 @@ pub enum DrawCmd {
         font_size: f32, // Simplified for v1
     },
 
+    // Tile a bitmap (e.g. wallpaper)
+    TileBitmap {
+        dst: Rect,            // destination region in target buffer coords
+        bitmap: BitmapHandle, // handle to ARGB32 pixels
+        bmp_w: u32,
+        bmp_h: u32,
+        origin: Point,        // phase/alignment
+        opacity: u8,          // 255 for now
+    },
+
     // Shadows (Internal)
     Shadow {
         x: i32, 
@@ -93,6 +104,7 @@ impl DrawCmd {
             DrawCmd::StrokeRoundedRect { rect, .. } => Some(*rect),
             DrawCmd::StrokeRoundedRectTop { rect, .. } => Some(*rect),
             DrawCmd::FillPanel { rect, .. } => Some(*rect),
+            DrawCmd::TileBitmap { dst, .. } => Some(*dst),
             DrawCmd::BlitRgbaPremulBytespace { dst_x, dst_y, src_rect, .. } => {
                 Some(Rect { x: *dst_x, y: *dst_y, w: src_rect.w, h: src_rect.h })
             }

@@ -1,4 +1,4 @@
-use alloc::string::String;
+
 use alloc::format;
 use crate::assets::cursor::{CursorAnimator, CursorAsset};
 use crate::assets::cursor::cur::load_cur;

@@ -232,19 +232,41 @@ pub fn run() {
                             // Start Drag/Resize
                             match zone {
                                 HitZone::Titlebar => {
-                                    log_info("BLOOM: Begin Move");
-                                    drag_mode = DragMode::Move { 
-                                        start_wx: target.window.x, 
-                                        start_wy: target.window.y, 
-                                        start_px: px, 
-                                        start_py: py 
+                                    // Check Close Button
+                                    let win_rect = crate::scene::Rect {
+                                        x: target.window.x,
+                                        y: target.window.y,
+                                        w: target.window.width,
+                                        h: target.window.height,
                                     };
-                                    captured_window = Some(target.id);
-                                        edges: ResizeEdge::None,
-                                    };
-                                    log_info("BLOOM: Creating Move Action");
-                                    let _ = action.create(&mut graph_client);
-                                    log_info("BLOOM: Created Move Action");
+                                    let close_rect = crate::ui::get_close_button_rect(win_rect);
+                                    if px >= close_rect.x && px < close_rect.x + close_rect.w as i32 &&
+                                       py >= close_rect.y && py < close_rect.y + close_rect.h as i32 
+                                    {
+                                        log_info("BLOOM: Clicked Close Button (Request Not Implemented)");
+                                        // TODO: Send WindowActionKind::Close when available
+                                    } else {
+                                        log_info("BLOOM: Begin Move");
+                                        drag_mode = DragMode::Move { 
+                                            start_wx: target.window.x, 
+                                            start_wy: target.window.y, 
+                                            start_px: px, 
+                                            start_py: py 
+                                        };
+                                        captured_window = Some(target.id);
+                                        let action = WindowAction {
+                                            window: target.id,
+                                            kind: abi::ui::WindowActionKind::BeginMove,
+                                            start_x: target.window.x,
+                                            start_y: target.window.y,
+                                            dx: 0,
+                                            dy: 0,
+                                            edges: ResizeEdge::None,
+                                        };
+                                        log_info("BLOOM: Creating Move Action");
+                                        let _ = action.create(&mut graph_client);
+                                        log_info("BLOOM: Created Move Action");
+                                    }
                                 }
                                 HitZone::ResizeN | HitZone::ResizeS | HitZone::ResizeE | HitZone::ResizeW |
                                 HitZone::ResizeNW | HitZone::ResizeNE | HitZone::ResizeSW | HitZone::ResizeSE => {
@@ -309,6 +331,13 @@ pub fn run() {
                                 }
                                 _ => (abi::ui::WindowActionKind::EndMove, 0, 0, 0, 0, ResizeEdge::None),
                             };
+                            let action = WindowAction {
+                                window: win_id,
+                                kind,
+                                start_x,
+                                start_y,
+                                dx,
+                                dy,
                                 edges,
                             };
                             log_info("BLOOM: Creating WindowAction");
@@ -387,6 +416,7 @@ pub fn run() {
                     // Simple hit testing for cursor update
                     let (x, y, _) = input.poll();
                     let mut found = false;
+                    let mut hover_needs_update = false;
                     
                     for scene in window_scenes.iter().rev() {
                          let (wx, wy) = (scene.window.x, scene.window.y);
@@ -396,7 +426,15 @@ pub fn run() {
                              // Hit this window
                              let (zone, _, _) = crate::ui::hittest::hittest_window(scene, x, y);
                              let kind = match zone {
-                                 HitZone::Titlebar => CursorKind::Default, // Or Move?
+                                 HitZone::Titlebar => {
+                                     // Check for close button hover trigger
+                                     // In recording mode, hover changes visual, so update dirty
+                                     // Optimization: track prev hovered window/button?
+                                     // For now, always dirty if hitting titlebar? Too expensive.
+                                     // Just depend on movement.
+                                     hover_needs_update = true;
+                                     CursorKind::Default
+                                 }, 
                                  HitZone::Border => CursorKind::Default,
                                  HitZone::ResizeN | HitZone::ResizeS => CursorKind::ResizeV,
                                  HitZone::ResizeE | HitZone::ResizeW => CursorKind::ResizeH,
@@ -414,6 +452,9 @@ pub fn run() {
                         cursor_set.set_cursor(CursorKind::Default);
                     }
                     cursor_set.set_override(None);
+                    if hover_needs_update && moved {
+                        scene_dirty = true;
+                    }
                 } else {
                     // In drag mode.
                     let kind = match drag_mode {
@@ -467,18 +508,21 @@ pub fn run() {
                         
                         // 2. Record commands
                         let mut recorder = crate::command_recorder::CommandRecorder::new(width, height);
-                        render_window_scenes(&mut recorder, &window_scenes, &mut scene_cache.mapping_cache);
+                        render_window_scenes(&mut recorder, &window_scenes, &mut scene_cache.mapping_cache, focused_window, (px, py));
                         let cmds = recorder.finish();
                         
                         // 3. Execute
-                        crate::executor::execute_cmds_into_scene(&cmds, scene_buffer.as_mut_slice(), width, height, &mut scene_cache.mapping_cache);
+                        let exec_result = crate::executor::execute_cmds_into_scene(&cmds, scene_buffer.as_mut_slice(), width, height, &mut scene_cache.mapping_cache);
+                        if exec_result.stats.bad_cmds > 0 {
+                            log_info(&alloc::format!("BLOOM: Bad cmds: {}/{}", exec_result.stats.bad_cmds, exec_result.stats.cmds_total));
+                        }
                     } else {
                         // Immediate Mode
                         let mut painter = CpuPainter::new(scene_buffer.as_mut_slice(), width, height);
                         // Copy background
                         painter.copy_region(background_cache.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
                         // Render windows
-                        render_window_scenes(&mut painter, &window_scenes, &mut scene_cache.mapping_cache);
+                        render_window_scenes(&mut painter, &window_scenes, &mut scene_cache.mapping_cache, focused_window, (px, py));
                     }
                     
                     scene_cache.mapping_cache.log_frame_stats();
@@ -544,7 +588,6 @@ pub fn run() {
                                     color: 0xAA000000,
                                 },
                             );
-                            // log_info("BLOOM: drew shadow");
                             painter.draw_cursor_frame(frame, px, py);
                             // log_info("BLOOM: drew cursor");
                             if !logged_shared_shadow {

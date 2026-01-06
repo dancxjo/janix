@@ -154,6 +154,71 @@ impl<'a> Painter for CpuPainter<'a> {
         self.merge_damage(clip);
     }
 
+    fn fill_rect_vgrad(&mut self, rect: Rect, radius: u16, top_color: u32, bottom_color: u32) {
+        let clip = self.clip_rect(rect);
+        let h = rect.h.max(1) as i32;
+
+        let r1 = ((top_color >> 16) & 0xFF) as i32;
+        let g1 = ((top_color >> 8) & 0xFF) as i32;
+        let b1 = (top_color & 0xFF) as i32;
+        let a1 = ((top_color >> 24) & 0xFF) as i32;
+
+        let r2 = ((bottom_color >> 16) & 0xFF) as i32;
+        let g2 = ((bottom_color >> 8) & 0xFF) as i32;
+        let b2 = (bottom_color & 0xFF) as i32;
+        let a2 = ((bottom_color >> 24) & 0xFF) as i32;
+        
+        // Precompute radius squared for corner checking
+        let r_sq = (radius as i32) * (radius as i32);
+        let r = radius as i32;
+        let cx1 = rect.x + r;
+        let cx2 = rect.x + rect.w as i32 - r;
+        // let cy2 = rect.y + r; // same as cy1
+
+        for y in clip.y..(clip.y + clip.h as i32) {
+            let local_y = y - rect.y;
+
+            // Check if we are in the rounded corner zone (top rows)
+            // Optimization: only check corners if radius > 0 and we are in top r rows
+            let check_corners = radius > 0 && local_y < r;
+
+            let diff_y = if check_corners { r - local_y - 1 } else { 0 }; // distance from center y
+            let diff_y_sq = diff_y * diff_y;
+
+            // Linear interpolate based on Y position in rect
+            let p = (local_y * 256) / h; // 0..256 fixed point
+            let inv_p = 256 - p;
+
+            let tr = (r1 * inv_p + r2 * p) / 256;
+            let tg = (g1 * inv_p + g2 * p) / 256;
+            let tb = (b1 * inv_p + b2 * p) / 256;
+            let ta = (a1 * inv_p + a2 * p) / 256;
+            
+            let color = ((ta as u32) << 24) | ((tr as u32) << 16) | ((tg as u32) << 8) | (tb as u32);
+
+            for x in clip.x..(clip.x + clip.w as i32) {
+                if check_corners {
+                    // Top Left
+                    if x < cx1 {
+                        let diff_x = cx1 - x - 1;
+                        if diff_x * diff_x + diff_y_sq > r_sq {
+                            continue;
+                        }
+                    }
+                    // Top Right
+                    else if x >= cx2 {
+                        let diff_x = x - cx2;
+                        if diff_x * diff_x + diff_y_sq > r_sq {
+                            continue;
+                        }
+                    }
+                }
+                self.put_pixel(x, y, color);
+            }
+        }
+        self.merge_damage(clip);
+    }
+
     fn fill_rounded_rect(&mut self, rect: Rect, radius: u16, color: u32) {
         let clip = self.clip_rect(rect);
         for y in clip.y..(clip.y + clip.h as i32) {

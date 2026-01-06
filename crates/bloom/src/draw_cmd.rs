@@ -7,6 +7,7 @@ use alloc::string::String;
 pub enum DrawCmd {
     // === Primitives (matching ABI or basic shapes) ===
     FillRect { rect: Rect, color: u32 },
+    FillRectVGrad { rect: Rect, radius: u16, top_color: u32, bottom_color: u32 },
     FillRoundedRect { rect: Rect, radius: u16, color: u32 },
     StrokeRoundedRect { rect: Rect, radius: u16, thickness: u16, color: u32 },
     Clear { color: u32 },
@@ -81,6 +82,7 @@ impl DrawCmd {
     pub fn bounds(&self) -> Rect {
         match self {
             DrawCmd::FillRect { rect, .. } => *rect,
+            DrawCmd::FillRectVGrad { rect, .. } => *rect,
             DrawCmd::FillRoundedRect { rect, .. } => *rect,
             DrawCmd::StrokeRoundedRect { rect, .. } => *rect, // stroke extends half thickness? ignore for now
             DrawCmd::Clear { .. } => Rect { x: 0, y: 0, w: 10000, h: 10000 }, // Full screen?

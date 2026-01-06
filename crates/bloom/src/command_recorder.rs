@@ -48,6 +48,10 @@ impl Painter for CommandRecorder {
         self.cmds.push(DrawCmd::FillRect { rect, color });
     }
 
+    fn fill_rect_vgrad(&mut self, rect: Rect, radius: u16, top_color: u32, bottom_color: u32) {
+        self.cmds.push(DrawCmd::FillRectVGrad { rect, radius, top_color, bottom_color });
+    }
+
     fn fill_rounded_rect(&mut self, rect: Rect, radius: u16, color: u32) {
         self.cmds.push(DrawCmd::FillRoundedRect { rect, radius, color });
     }

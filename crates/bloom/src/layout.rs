@@ -8,7 +8,40 @@ use crate::ui::WidgetKind;
 use alloc::vec::Vec;
 
 /// Title bar height in pixels (classic window manager style).
-pub const TITLE_BAR_HEIGHT: i32 = 22;
+pub const TITLE_BAR_HEIGHT: i32 = 24;
+
+/// Horizontal padding for title text
+pub const TITLE_PADDING_X: i32 = 8;
+
+/// Title bar gradient top color (focused)
+pub const TITLE_GRAD_TOP_FOCUSED: u32 = 0xFFE0E0E6; // Slightly brighter lavender-gray
+/// Title bar gradient bottom color (focused)
+pub const TITLE_GRAD_BOTTOM_FOCUSED: u32 = 0xFFD0D0D6; // Slightly darker
+/// Title bar gradient top color (unfocused)
+pub const TITLE_GRAD_TOP_UNFOCUSED: u32 = 0xFFF0F0F5; // Washed out
+/// Title bar gradient bottom color (unfocused)
+pub const TITLE_GRAD_BOTTOM_UNFOCUSED: u32 = 0xFFE5E5EA;
+
+/// Highlight line at top of title bar
+pub const TITLE_HIGHLIGHT: u32 = 0x40FFFFFF; // semi-transparent white
+/// Separator line at bottom of title bar
+pub const TITLE_SEPARATOR: u32 = 0x20000000; // semi-transparent black
+
+/// Close button size
+pub const CLOSE_BUTTON_SIZE: i32 = 16;
+/// Close button padding from right edge
+pub const CLOSE_BUTTON_RIGHT_MARGIN: i32 = 8;
+/// Close button top margin (centering helper)
+pub const CLOSE_BUTTON_TOP_MARGIN: i32 = (TITLE_BAR_HEIGHT - CLOSE_BUTTON_SIZE) / 2;
+
+/// Close button hover background
+pub const CLOSE_BG_HOVER: u32 = 0x20000000;
+/// Close button pressed background
+pub const CLOSE_BG_PRESSED: u32 = 0x40000000;
+/// Close button glyph color (normal)
+pub const CLOSE_GLYPH_COLOR: u32 = 0xFF555555;
+/// Close button glyph color (hover/press)
+pub const CLOSE_GLYPH_ACTIVE: u32 = 0xFF000000;
 
 /// A widget with its computed screen position.
 #[derive(Clone)]

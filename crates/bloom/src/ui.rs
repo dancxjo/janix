@@ -8,7 +8,15 @@ use thing_std::symbol_resolve;
 use thing_std::SyscallGraphClient;
 
 use crate::scene_cache::BytespaceMappingCache;
-use crate::layout::{layout_widgets, TITLE_BAR_HEIGHT};
+use crate::layout::{
+    layout_widgets, 
+    TITLE_BAR_HEIGHT, TITLE_PADDING_X,
+    TITLE_GRAD_TOP_FOCUSED, TITLE_GRAD_BOTTOM_FOCUSED,
+    TITLE_GRAD_TOP_UNFOCUSED, TITLE_GRAD_BOTTOM_UNFOCUSED,
+    TITLE_HIGHLIGHT, TITLE_SEPARATOR,
+    CLOSE_BUTTON_SIZE, CLOSE_BUTTON_RIGHT_MARGIN, CLOSE_BUTTON_TOP_MARGIN,
+    CLOSE_BG_HOVER, CLOSE_BG_PRESSED, CLOSE_GLYPH_COLOR, CLOSE_GLYPH_ACTIVE
+};
 use crate::painter::Painter;
 use crate::scene::Rect;
 use crate::text::draw_text_on_painter;
@@ -24,7 +32,6 @@ const TITLE_FONT_SIZE: f32 = 14.0;
 /// Title text color (dark gray for contrast)
 const TITLE_TEXT_COLOR: u32 = 0xFF333333;
 /// Horizontal padding for title text
-const TITLE_PADDING_X: i32 = 8;
 
 #[derive(Clone)]
 pub enum WidgetKind {
@@ -158,9 +165,16 @@ pub fn collect_window_scenes(client: &mut SyscallGraphClient) -> Vec<WindowScene
 }
 
 /// Render all window scenes using the Painter API.
-pub fn render_window_scenes(painter: &mut dyn Painter, scenes: &[WindowScene], mapping_cache: &mut BytespaceMappingCache) {
+pub fn render_window_scenes(
+    painter: &mut dyn Painter, 
+    scenes: &[WindowScene], 
+    mapping_cache: &mut BytespaceMappingCache,
+    focused_window: Option<ThingId>,
+    mouse_pos: (i32, i32),
+) {
     for scene in scenes {
-        render_window(painter, scene, mapping_cache);
+        let is_focused = focused_window == Some(scene.id);
+        render_window(painter, scene, mapping_cache, is_focused, mouse_pos);
     }
 }
 
@@ -171,7 +185,13 @@ fn screen_rect(painter: &dyn Painter) -> Rect {
     Rect { x: 0, y: 0, w, h }
 }
 
-fn render_window(painter: &mut dyn Painter, scene: &WindowScene, mapping_cache: &mut BytespaceMappingCache) {
+fn render_window(
+    painter: &mut dyn Painter, 
+    scene: &WindowScene, 
+    mapping_cache: &mut BytespaceMappingCache,
+    is_focused: bool,
+    mouse_pos: (i32, i32),
+) {
     let win = &scene.window;
     let rect = Rect {
         x: win.x,
@@ -184,21 +204,13 @@ fn render_window(painter: &mut dyn Painter, scene: &WindowScene, mapping_cache: 
     let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
 
-    thing_std::log_info(&alloc::format!(
-        "BLOOM: render_window rect=({},{},{},{}) clip=({},{},{},{})",
-        rect.x, rect.y, rect.w, rect.h,
-        clip.x, clip.y, clip.w, clip.h
-    ));
-
     if clip.is_empty() {
-        thing_std::log_info("BLOOM: window clipped away, skipping");
         return;
     }
 
     // Set clip for this window
     painter.set_clip(crate::painter::Clip::from_rect(clip));
 
-    let t0 = thing_std::monotonic_now();
     #[cfg(feature = "shadows")]
     if win.style.shadow != 0 {
         painter.draw_shadow_mask(
@@ -217,22 +229,90 @@ fn render_window(painter: &mut dyn Painter, scene: &WindowScene, mapping_cache: 
             },
         );
     }
-    let t1 = thing_std::monotonic_now();
-    thing_std::log_info(&alloc::format!("BLOOM: shadow {} ms", (t1-t0)/1_000_000));
 
-    // Paint panel background with gradient and title stripe
-    painter.fill_panel(rect, win.style.radius, win.style.bg_rgba, Some(TITLE_BAR_HEIGHT));
-    let t2 = thing_std::monotonic_now();
-    thing_std::log_info(&alloc::format!("BLOOM: paint_panel {} ms", (t2-t1)/1_000_000));
+    // --- Title Bar Rendering ---
+    let title_h = TITLE_BAR_HEIGHT as u32;
+    let title_rect = Rect {
+        x: rect.x,
+        y: rect.y,
+        w: rect.w,
+        h: title_h,
+    };
+
+    let (top_color, bottom_color) = if is_focused {
+        (TITLE_GRAD_TOP_FOCUSED, TITLE_GRAD_BOTTOM_FOCUSED)
+    } else {
+        (TITLE_GRAD_TOP_UNFOCUSED, TITLE_GRAD_BOTTOM_UNFOCUSED)
+    };
+
+    // 1. Title bar gradient
+    painter.fill_rect_vgrad(title_rect, win.style.radius, top_color, bottom_color);
+
+    // 2. Window body background (below title bar)
+    let body_rect = Rect {
+        x: rect.x,
+        y: rect.y + TITLE_BAR_HEIGHT,
+        w: rect.w,
+        h: rect.h.saturating_sub(title_h),
+    };
+    painter.fill_rect(body_rect, win.style.bg_rgba);
+
+    // 3. Highlight line (top edge)
+    // Inset by radius to avoid poking out of rounded corners
+    let r = win.style.radius as i32;
+    let hl_rect = if r > 0 {
+        Rect { 
+            x: rect.x + r, 
+            y: rect.y, 
+            w: (rect.w as i32 - 2*r).max(0) as u32, 
+            h: 1 
+        }
+    } else {
+        Rect { x: rect.x, y: rect.y, w: rect.w, h: 1 }
+    };
+    painter.fill_rect(hl_rect, TITLE_HIGHLIGHT); // clipped highlight
+
+    // 4. Separator line (bottom of title bar)
+    painter.fill_rect(Rect { x: rect.x, y: rect.y + TITLE_BAR_HEIGHT - 1, w: rect.w, h: 1 }, TITLE_SEPARATOR);
+
+
+    // 5. Close Button
+    let close_rect = get_close_button_rect(rect);
+
+    // Interaction check for Close Button
+    // Note: We only simulate hover state visually here. 
+    // Actual click logic is in app.rs, but visual feedback needs new recording if state changes.
+    // For now, render it based on current mouse pos.
+    let (mx, my) = mouse_pos;
+    let is_hovered = mx >= close_rect.x && mx < close_rect.x + close_rect.w as i32 &&
+                     my >= close_rect.y && my < close_rect.y + close_rect.h as i32;
+    
+    // (We assume 'pressed' state isn't tracked visually yet or passed in, just hover)
+
+    if is_hovered {
+        painter.fill_rounded_rect(close_rect, 4, CLOSE_BG_HOVER);
+    }
+
+    // Draw 'X' glyph
+    let glyph_color = if is_hovered { CLOSE_GLYPH_ACTIVE } else { CLOSE_GLYPH_COLOR };
+    
+    let close_symbol = "\u{2715}";
+    let font_size = 14.0;
+    let text_width = crate::text::measure_text_width(close_symbol, font_size);
+    let text_x = close_rect.x + (close_rect.w as i32 - text_width) / 2;
+    // Unifont glyphs are 16px tall.
+    let text_y = close_rect.y + (close_rect.h as i32 - 16) / 2;
+
+    painter.draw_text(text_x, text_y, close_symbol, glyph_color, font_size);
+
 
     // Draw window title in the title bar
     if !scene.title_text.is_empty() {
         let text_x = rect.x + TITLE_PADDING_X;
         let text_y = rect.y + (TITLE_BAR_HEIGHT - TITLE_FONT_SIZE as i32) / 2;
+        // Adjust color based on focus?
         painter.draw_text(text_x, text_y, &scene.title_text, TITLE_TEXT_COLOR, TITLE_FONT_SIZE);
     }
-    let t2b = thing_std::monotonic_now();
-    thing_std::log_info(&alloc::format!("BLOOM: title {} ms", (t2b-t2)/1_000_000));
 
     // Layout phase: compute widget positions (no graph syscalls here)
     let placed = layout_widgets(&scene.layout, &scene.children, rect);
@@ -254,15 +334,20 @@ fn render_window(painter: &mut dyn Painter, scene: &WindowScene, mapping_cache: 
             }
         }
     }
-    let t3 = thing_std::monotonic_now();
-    thing_std::log_info(&alloc::format!("BLOOM: widgets {} ms", (t3-t2b)/1_000_000));
-
     // Draw border
     painter.stroke_rounded_rect(rect, win.style.radius, 1, 0xFF404040);
-    let t4 = thing_std::monotonic_now();
-    thing_std::log_info(&alloc::format!("BLOOM: border {} ms", (t4-t3)/1_000_000));
+}
 
-    thing_std::log_info(&alloc::format!("BLOOM: render_window TOTAL {} ms", (t4-t0)/1_000_000));
+pub fn get_close_button_rect(window_rect: Rect) -> Rect {
+    let close_btn_size = CLOSE_BUTTON_SIZE as u32;
+    let close_btn_x = window_rect.x + window_rect.w as i32 - CLOSE_BUTTON_RIGHT_MARGIN - CLOSE_BUTTON_SIZE;
+    let close_btn_y = window_rect.y + CLOSE_BUTTON_TOP_MARGIN;
+    Rect {
+        x: close_btn_x,
+        y: close_btn_y,
+        w: close_btn_size,
+        h: close_btn_size,
+    }
 }
 
 fn paint_label(painter: &mut dyn Painter, rect: Rect, label: &Label, text: &str) {

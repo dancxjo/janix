@@ -372,6 +372,27 @@ impl<'a> Painter for CpuPainter<'a> {
         self.merge_damage(clip);
     }
 
+    fn blit_rgba_alpha_rect(&mut self, dst_x: i32, dst_y: i32, src: &[u32], src_stride: u32, w: u32, h: u32) {
+        let dst_rect = Rect { x: dst_x, y: dst_y, w, h };
+        let clip = self.clip_rect(dst_rect);
+
+        for y in clip.y..(clip.y + clip.h as i32) {
+            let src_y = (y - dst_y) as u32;
+            for x in clip.x..(clip.x + clip.w as i32) {
+                let src_x = (x - dst_x) as u32;
+                let src_idx = (src_y * src_stride + src_x) as usize;
+                if src_idx < src.len() {
+                    let src_px = src[src_idx];
+                    let alpha = (src_px >> 24) & 0xFF;
+                    if alpha > 0 {
+                        self.blend_at(x, y, src_px);
+                    }
+                }
+            }
+        }
+        self.merge_damage(clip);
+    }
+
     fn blit_asset(&mut self, dst_x: i32, dst_y: i32, id: abi::ids::ThingId, src_w: u32, src_h: u32, _src_stride: u32, src_len: usize, cache: &mut crate::scene_cache::BytespaceMappingCache) {
         // Immediate mode: resolve mapping and blit
         if let Some(buf) = cache.get_or_map_ro(id, src_len) {

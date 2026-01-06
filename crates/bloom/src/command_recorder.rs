@@ -131,6 +131,10 @@ impl Painter for CommandRecorder {
         });
     }
 
+    fn blit_rgba_alpha_rect(&mut self, _dst_x: i32, _dst_y: i32, _src: &[u32], _src_stride: u32, _w: u32, _h: u32) {
+        // Not supported in recording yet
+    }
+
     fn screen_size(&self) -> (u32, u32) {
         (self.screen_width, self.screen_height)
     }

@@ -81,6 +81,9 @@ pub trait Painter {
     /// Blit asset from bytespace (with ID for recording, slice for immediate).
     fn blit_asset(&mut self, dst_x: i32, dst_y: i32, id: ThingId, src_w: u32, src_h: u32, src_stride: u32, src_len: usize, cache: &mut BytespaceMappingCache);
 
+    /// Blit ARGB pixels with alpha blending using a custom source stride and rectangle.
+    fn blit_rgba_alpha_rect(&mut self, dst_x: i32, dst_y: i32, src: &[u32], src_stride: u32, w: u32, h: u32);
+
     /// Copy a rectangular region from a source buffer.
     fn copy_region(&mut self, src: &[u32], src_w: u32, region: Rect);
 

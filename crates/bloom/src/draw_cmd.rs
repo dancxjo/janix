@@ -76,6 +76,8 @@ pub enum DrawCmd {
     },
     
     SetClip { rect: Rect },
+    PushClip { rect: Rect },
+    PopClip,
 }
 
 impl DrawCmd {
@@ -105,6 +107,8 @@ impl DrawCmd {
             }
             DrawCmd::FillPanel { rect, .. } => *rect,
             DrawCmd::SetClip { .. } => Rect { x: 0, y: 0, w: 0, h: 0 },
+            DrawCmd::PushClip { .. } => Rect { x: 0, y: 0, w: 0, h: 0 },
+            DrawCmd::PopClip => Rect { x: 0, y: 0, w: 0, h: 0 },
         }
     }
 }

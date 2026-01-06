@@ -61,7 +61,9 @@ pub fn execute_cmds_into_scene(
     let scene_rect = Rect { x: 0, y: 0, w: width, h: height };
     let mut current_clip = scene_rect; 
     let mut clip_stack: Vec<Rect> = Vec::with_capacity(4);
-    clip_stack.push(current_clip);
+
+    // Initial painter clip logic is implicitly full screen, but let's be explicit
+    painter.set_clip(Clip::from_rect(current_clip));
 
     for cmd in cmds {
         stats.cmds_total += 1;
@@ -76,11 +78,11 @@ pub fn execute_cmds_into_scene(
             DrawCmd::BlitRgbaPremulBytespace { dst_x, dst_y, src_rect, .. } => {
                 Some(Rect { x: *dst_x, y: *dst_y, w: src_rect.w, h: src_rect.h })
             }
-            DrawCmd::TextRun { x, y, font_size, text, .. } => {
+            DrawCmd::TextRun { .. } => {
                  // For safety, let's not cull Text aggressively yet.
                  None
             }
-            DrawCmd::Shadow { x, y, width, height, radius, offset_x, offset_y, blur_radius, .. } => {
+            DrawCmd::Shadow { x, y, width, height, offset_x, offset_y, blur_radius, .. } => {
                 let blur = *blur_radius as i32;
                 let min_x = x + offset_x - blur;
                 let min_y = y + offset_y - blur;
@@ -94,11 +96,15 @@ pub fn execute_cmds_into_scene(
                  })
             }
             DrawCmd::Clear { .. } => Some(scene_rect),
-            DrawCmd::SetClip { .. } => None, // Always execute clip changes
+            DrawCmd::SetClip { .. } => None, 
+            DrawCmd::PushClip { .. } => None,
+            DrawCmd::PopClip => None,
         };
 
         if let Some(bounds) = cmd_bounds {
-            if bounds.intersect(current_clip).intersect(scene_rect).is_empty() {
+            // Check if bounds intersect with current clip AND scene rect.
+            let visible_clip = current_clip.intersect(scene_rect);
+            if bounds.intersect(visible_clip).is_empty() {
                 stats.cmds_skipped += 1;
                 continue;
             }
@@ -139,7 +145,7 @@ pub fn execute_cmds_into_scene(
             DrawCmd::BlitRgbaPremulBytespace { bytespace, src_rect, dst_x, dst_y, src_stride, src_len } => {
                  match validate_blit_buffer(mapping_cache, *bytespace, *src_len, *src_stride, src_rect) {
                      Ok(u32_buf) => {
-                         painter.blit_rgba_alpha(*dst_x, *dst_y, u32_buf, *src_stride, src_rect.h);
+                         painter.blit_rgba_alpha_rect(*dst_x, *dst_y, u32_buf, *src_stride, src_rect.w, src_rect.h);
                          damage.add(Rect { x: *dst_x, y: *dst_y, w: src_rect.w, h: src_rect.h });
                          stats.cmds_drawn += 1;
                      }
@@ -183,10 +189,21 @@ pub fn execute_cmds_into_scene(
                 stats.cmds_drawn += 1;
             }
             DrawCmd::SetClip { rect } => {
-                let clip_rect = *rect;
-                painter.set_clip(Clip::from_rect(clip_rect));
-                current_clip = clip_rect;
+                current_clip = *rect;
+                painter.set_clip(Clip::from_rect(current_clip));
                 stats.clip_pushes += 1;
+            }
+            DrawCmd::PushClip { rect } => {
+                clip_stack.push(current_clip);
+                current_clip = current_clip.intersect(*rect);
+                painter.set_clip(Clip::from_rect(current_clip));
+                stats.clip_pushes += 1;
+            }
+            DrawCmd::PopClip => {
+                if let Some(prev) = clip_stack.pop() {
+                    current_clip = prev;
+                    painter.set_clip(Clip::from_rect(current_clip));
+                }
             }
         }
     }

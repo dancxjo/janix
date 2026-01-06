@@ -4,6 +4,7 @@
 
 use super::TrapFrame;
 use crate::machine::context::{ArchTask, ArchTrap, CpuMode, ResumeSpec, TrapInfo};
+use core::arch::asm;
 use core::mem;
 
 /// x86_64 architecture context implementation.
@@ -18,6 +19,39 @@ pub struct TaskContext {
     pub sp: u64,
 }
 
+/// Initialize FPU/SSE state to a clean default.
+/// This MUST be called before any new thread runs code that uses SSE/AVX.
+#[inline(always)]
+pub unsafe fn init_fpu_state() {
+    // Initialize x87 FPU to clean state
+    asm!("fninit", options(nomem, nostack, preserves_flags));
+    
+    // Zero all SSE registers
+    asm!(
+        "xorps xmm0, xmm0",
+        "xorps xmm1, xmm1",
+        "xorps xmm2, xmm2",
+        "xorps xmm3, xmm3",
+        "xorps xmm4, xmm4",
+        "xorps xmm5, xmm5",
+        "xorps xmm6, xmm6",
+        "xorps xmm7, xmm7",
+        "xorps xmm8, xmm8",
+        "xorps xmm9, xmm9",
+        "xorps xmm10, xmm10",
+        "xorps xmm11, xmm11",
+        "xorps xmm12, xmm12",
+        "xorps xmm13, xmm13",
+        "xorps xmm14, xmm14",
+        "xorps xmm15, xmm15",
+        options(nomem, nostack, preserves_flags)
+    );
+    
+    // Set MXCSR to default (mask all SSE exceptions)
+    let default_mxcsr: u32 = 0x1F80;
+    asm!("ldmxcsr [{}]", in(reg) &default_mxcsr, options(nostack));
+}
+
 impl ArchTask for X86Arch {
     type TaskContext = TaskContext;
 
@@ -29,14 +63,6 @@ impl ArchTask for X86Arch {
         arg0: u64,
     ) {
         // Build a TrapFrame on the stack that the interrupt return path can restore.
-        // Stack layout (growing down):
-        //   [SS]
-        //   [RSP]
-        //   [RFLAGS]
-        //   [CS]
-        //   [RIP]
-        //   [r15] .. [rax]
-        // ctx.sp points at [rax] so the timer trampoline can pop/iretq directly.
         let aligned_top = stack_top & !0xf; // 16-byte align
         let frame_size = mem::size_of::<TrapFrame>() as u64;
         let frame_ptr = (aligned_top - frame_size) as *mut TrapFrame;
@@ -63,11 +89,15 @@ impl ArchTask for X86Arch {
                 }
             }
 
-            // Set first argument in RDI (NOT needed for TrapFrame return, but for consistency)
+            // Set first argument in RDI
             (*frame_ptr).rdi = arg0;
 
             // Return directly through the interrupt return path.
             ctx.sp = frame_ptr as u64;
+            
+            // Initialize FPU/SSE state for this new thread
+            // This ensures the thread starts with clean SIMD state
+            init_fpu_state();
         }
     }
 }
@@ -78,7 +108,7 @@ impl ArchTrap for X86Arch {
 
     fn summarize(tf: &Self::TrapFrame) -> TrapInfo {
         TrapInfo {
-            vector: 0, // Would need to be passed in or stored in frame
+            vector: 0,
             mode: Self::mode(tf),
             pc: tf.rip,
             sp: tf.rsp,
@@ -95,12 +125,10 @@ impl ArchTrap for X86Arch {
     }
 
     fn save_from_trap(tf: &Self::TrapFrame, out: &mut Self::TaskContext) {
-        // The trap frame IS the saved state. Just record where it is.
         out.sp = tf as *const TrapFrame as u64;
     }
 
     fn load_into_trap(ctx: &Self::TaskContext, tf: &mut Self::TrapFrame) {
-        // Copy saved context into the live trap frame
         let saved = ctx.sp as *const TrapFrame;
         unsafe {
             *tf = *saved;
@@ -108,11 +136,10 @@ impl ArchTrap for X86Arch {
     }
 
     fn apply_resume_spec(tf: &mut Self::TrapFrame, spec: ResumeSpec) {
-        // Set privilege level via CS
         match spec.mode {
             CpuMode::User => {
-                tf.cs = 0x2b; // User Code 64 (Index 5 | 3)
-                tf.ss = 0x23; // User Data (Index 4 | 3)
+                tf.cs = 0x2b;
+                tf.ss = 0x23;
             }
             CpuMode::Kernel => {
                 tf.cs = 0x08;
@@ -120,7 +147,6 @@ impl ArchTrap for X86Arch {
             }
         }
 
-        // Set interrupt flag
         if spec.interrupts_enabled {
             tf.rflags |= 0x200;
         } else {
@@ -129,8 +155,6 @@ impl ArchTrap for X86Arch {
     }
 
     unsafe fn return_from_trap(tf: *const Self::TrapFrame) -> ! {
-        // The trap frame must be on the stack in canonical layout.
-        // We set RSP to point at the GPR portion, restore GPRs, then iretq.
         extern "C" {
             fn x86_return_from_trap(tf: *const TrapFrame) -> !;
         }

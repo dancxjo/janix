@@ -14,11 +14,6 @@ use thing_std::{log_info, sched_yield};
 use crate::mailbox::Mailbox;
 
 /// Shared cursor state - updated by worker (single writer), read by main (many readers).
-///
-/// Protocol:
-/// - Worker stores x/y/buttons with Relaxed
-/// - Worker then increments seq with Release (publishes the batch)
-/// - Main reads seq with Acquire to get a coherent snapshot
 pub struct InputState {
     pub x: AtomicI32,
     pub y: AtomicI32,
@@ -36,7 +31,6 @@ impl InputState {
         }
     }
     
-    /// Initialize with screen center
     pub fn init(&self, screen_w: u32, screen_h: u32) {
         self.x.store((screen_w / 2) as i32, Ordering::Relaxed);
         self.y.store((screen_h / 2) as i32, Ordering::Relaxed);
@@ -44,7 +38,6 @@ impl InputState {
         self.seq.store(0, Ordering::Release);
     }
     
-    /// Load current state (for main thread). Uses Acquire on seq for coherence.
     #[inline]
     pub fn load(&self) -> (i32, i32, u16, u32) {
         let seq = self.seq.load(Ordering::Acquire);
@@ -54,30 +47,20 @@ impl InputState {
         (x, y, buttons, seq)
     }
     
-    /// Publish new state (for worker thread). Uses Release on seq after storing data.
     #[inline]
     pub fn publish(&self, x: i32, y: i32, buttons: u16) {
         self.x.store(x, Ordering::Relaxed);
         self.y.store(y, Ordering::Relaxed);
         self.buttons.store(buttons, Ordering::Relaxed);
-        // Release fence: ensures x/y/buttons are visible before seq increment
         self.seq.fetch_add(1, Ordering::Release);
     }
 }
 
-/// Global shared input state
 pub static INPUT_STATE: InputState = InputState::new();
-
-/// Diagnostics: set to 1 by worker at first instruction (bypasses logging)
 pub static INPUT_WORKER_STARTED: AtomicU32 = AtomicU32::new(0);
-
-/// Diagnostics: incremented each loop iteration by worker (proves worker is alive)
 pub static INPUT_WORKER_TICKS: AtomicU32 = AtomicU32::new(0);
-
-/// Diagnostics: total events drained from ringbuffer (proves worker is consuming input)
 pub static INPUT_EVENTS_DRAINED: AtomicU64 = AtomicU64::new(0);
 
-/// Config for input worker - passed via mailbox before spawn
 pub struct InputWorkerConfig {
     pub ring_ptr: *const u8,
     pub capacity: u32,
@@ -85,14 +68,10 @@ pub struct InputWorkerConfig {
     pub screen_h: u32,
 }
 
-// SAFETY: ring_ptr points to shared memory that outlives the worker
 unsafe impl Send for InputWorkerConfig {}
 
-/// Mailbox for config (main → worker, one-shot)
 pub static INPUT_CONFIG_MBX: Mailbox<InputWorkerConfig> = Mailbox::new();
 
-/// Drain the ringbuffer and return (x, y, buttons, events_drained).
-/// This is the hot path - inline aggressively.
 #[inline]
 fn drain_ringbuffer(
     ring_ptr: *const u8,
@@ -107,23 +86,17 @@ fn drain_ringbuffer(
     let mut drained = 0u32;
     
     unsafe {
-        if ring_ptr.is_null() {
-            return 0;
-        }
+        if ring_ptr.is_null() { return 0; }
 
         const HEADER_SIZE: usize = 48;
         const RECORD_HEADER_SIZE: usize = 24;
         const EV_POINTER_DELTA: u16 = 1;
 
-        // Validate magic
         let magic = u32::from_le_bytes([
             *ring_ptr, *ring_ptr.add(1), *ring_ptr.add(2), *ring_ptr.add(3),
         ]);
-        if magic != 0x544E5645 {
-            return 0;
-        }
+        if magic != 0x544E5645 { return 0; }
 
-        // Read capacity from header (offset 8)
         let header_capacity = u32::from_le_bytes([
             *ring_ptr.add(8), *ring_ptr.add(9), *ring_ptr.add(10), *ring_ptr.add(11),
         ]);
@@ -134,22 +107,14 @@ fn drain_ringbuffer(
         let max_iters = cap / 32;
 
         for _ in 0..max_iters {
-            if (offset + (HEADER_SIZE as u32) + (RECORD_HEADER_SIZE as u32)) > cap {
-                break;
-            }
+            if (offset + (HEADER_SIZE as u32) + (RECORD_HEADER_SIZE as u32)) > cap { break; }
 
             let rec_ptr = ring_base.add(offset as usize);
-
             let len = u16::from_le_bytes([*rec_ptr, *rec_ptr.add(1)]);
-            if len == 0 || len < RECORD_HEADER_SIZE as u16 {
-                break;
-            }
-            if (offset + (HEADER_SIZE as u32) + (len as u32)) > cap {
-                break;
-            }
+            if len == 0 || len < RECORD_HEADER_SIZE as u16 { break; }
+            if (offset + (HEADER_SIZE as u32) + (len as u32)) > cap { break; }
 
             let kind = u16::from_le_bytes([*rec_ptr.add(2), *rec_ptr.add(3)]);
-
             let seq = u64::from_le_bytes([
                 *rec_ptr.add(8), *rec_ptr.add(9), *rec_ptr.add(10), *rec_ptr.add(11),
                 *rec_ptr.add(12), *rec_ptr.add(13), *rec_ptr.add(14), *rec_ptr.add(15),
@@ -169,19 +134,15 @@ fn drain_ringbuffer(
                 drained += 1;
             }
 
-            offset += ((len as u32) + 7) & !7; // 8-byte alignment
+            offset += ((len as u32) + 7) & !7;
         }
     }
     
     drained
 }
 
-/// Simple sleep helper - yields CPU for approximately `ms` milliseconds.
-/// Uses scheduler yield in a loop since we don't have a proper sleep syscall.
 #[inline]
 fn sleep_ms(ms: u32) {
-    // Each yield is roughly 1-10ms depending on scheduler quantum
-    // For 1ms target, a single yield is sufficient
     for _ in 0..ms {
         sched_yield();
     }
@@ -190,17 +151,29 @@ fn sleep_ms(ms: u32) {
 /// Input worker entry point
 #[unsafe(no_mangle)]
 pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
-    // FIRST INSTRUCTION: set started flag (bypasses any logging issues)
+    // CRITICAL: Initialize FPU/SSE state FIRST - new threads don't inherit it!
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        use core::arch::asm;
+        asm!("fninit", options(nomem, nostack, preserves_flags));
+        asm!(
+            "xorps xmm0, xmm0", "xorps xmm1, xmm1",  "xorps xmm2, xmm2", "xorps xmm3, xmm3",
+            "xorps xmm4, xmm4", "xorps xmm5, xmm5",  "xorps xmm6, xmm6", "xorps xmm7, xmm7",
+            "xorps xmm8, xmm8", "xorps xmm9, xmm9",  "xorps xmm10, xmm10", "xorps xmm11, xmm11",
+            "xorps xmm12, xmm12", "xorps xmm13, xmm13", "xorps xmm14, xmm14", "xorps xmm15, xmm15",
+            options(nomem, nostack, preserves_flags)
+        );
+        let default_mxcsr: u32 = 0x1F80;
+        asm!("ldmxcsr [{}]", in(reg) &default_mxcsr, options(nostack));
+    }
+
     INPUT_WORKER_STARTED.store(1, Ordering::Release);
     
     thing_std::debug::log("BLOOM: input worker thread entry");
     
-    // Wait for config (blocking poll with yield)
     let config = loop {
-        if let Some(cfg) = INPUT_CONFIG_MBX.try_take() {
-            break cfg;
-        }
-        INPUT_WORKER_TICKS.fetch_add(1, Ordering::Relaxed); // prove we're alive while waiting
+        if let Some(cfg) = INPUT_CONFIG_MBX.try_take() { break cfg; }
+        INPUT_WORKER_TICKS.fetch_add(1, Ordering::Relaxed);
         sched_yield();
     };
     
@@ -209,22 +182,16 @@ pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
         config.ring_ptr as u64, config.capacity, config.screen_w, config.screen_h
     ));
     
-    // Initialize shared state with screen center
     INPUT_STATE.init(config.screen_w, config.screen_h);
     
-    // Local state for draining
     let mut read_seq: u64 = 0;
     let mut x = (config.screen_w / 2) as i32;
     let mut y = (config.screen_h / 2) as i32;
     let mut buttons: u16 = 0;
-    
-    // Stats (rate-limited logging)
     let mut total_drained: u64 = 0;
     let mut last_log_seq: u64 = 0;
     
-    // Main drain loop with backoff
     loop {
-        // Heartbeat: proves worker is alive
         INPUT_WORKER_TICKS.fetch_add(1, Ordering::Relaxed);
         
         let drained = drain_ringbuffer(
@@ -239,18 +206,13 @@ pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
         );
         
         if drained > 0 {
-            // Publish to shared state
             INPUT_STATE.publish(x, y, buttons);
             total_drained += drained as u64;
             INPUT_EVENTS_DRAINED.fetch_add(drained as u64, Ordering::Relaxed);
-            
-            // Immediately loop again to catch bursts (no sleep)
         } else {
-            // No data - backoff with 1ms sleep to avoid CPU spin
             sleep_ms(1);
         }
         
-        // Rate-limited stats logging (every ~1000 events)
         if total_drained >= last_log_seq + 1000 {
             log_info(&alloc::format!(
                 "BLOOM: input worker drained {} events total, pos=({},{})",

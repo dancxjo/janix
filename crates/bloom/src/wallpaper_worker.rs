@@ -1,17 +1,9 @@
 //! Wallpaper worker thread - decodes wallpaper off the main render loop.
-//!
-//! The worker:
-//! 1. Finds the wallpaper bytespace/module
-//! 2. Maps it at a worker-chosen VA (not fixed 0x8600_0000)
-//! 3. Decodes BMP into Vec<u32> pixels
-//! 4. Computes dominant color
-//! 5. Sends result via mailbox
-//! 6. Exits
 
 use alloc::vec::Vec;
 use alloc::format;
 use core::sync::atomic::{AtomicU32, Ordering};
-use thing_std::{log_info, thread_exit, trace_fn};
+use thing_std::{log_info, thread_exit};
 
 use crate::mailbox::Mailbox;
 
@@ -20,23 +12,19 @@ pub struct WallpaperReady {
     pub width: u32,
     pub height: u32,
     pub row_stride: usize,
-    pub dominant_rgb: u32,  // Packed 0x00RRGGBB
-    pub pixels: Vec<u32>,   // ARGB pixels, owned
+    pub dominant_rgb: u32,
+    pub pixels: Vec<u32>,
 }
 
-/// Global mailbox for wallpaper worker → main communication
 pub static WALLPAPER_MBX: Mailbox<WallpaperReady> = Mailbox::new();
-
-/// Diagnostics: set to 1 by worker at first instruction (bypasses logging)
 pub static WALLPAPER_WORKER_STARTED: AtomicU32 = AtomicU32::new(0);
+pub static WALLPAPER_WORKER_PHASE: AtomicU32 = AtomicU32::new(0);
 
-/// Worker thread entry point.
-/// 
-/// Takes no arguments (arg is unused). Decodes wallpaper and sends via mailbox.
 #[unsafe(no_mangle)]
 pub extern "C" fn wallpaper_worker_entry(_arg: u64) -> ! {
-    // FIRST INSTRUCTION: set started flag (bypasses any logging issues)
+    // FPU state is now automatically initialized by the kernel!
     WALLPAPER_WORKER_STARTED.store(1, Ordering::Release);
+    WALLPAPER_WORKER_PHASE.store(1, Ordering::Release);
     
     log_info("WALLPAPER_WORKER: starting");
     
@@ -44,18 +32,20 @@ pub extern "C" fn wallpaper_worker_entry(_arg: u64) -> ! {
     
     match decode_wallpaper() {
         Ok(result) => {
+            WALLPAPER_WORKER_PHASE.store(10, Ordering::Release);
             let elapsed_ns = thing_std::time::monotonic_now() - start;
             let elapsed_ms = elapsed_ns / 1_000_000;
             log_info(&format!(
-                "WALLPAPER_WORKER: decoded {}x{} ({} pixels) in {}ms",
+                "WALLPAPER_WORKER: decoded {}x{} ({} px) in {}ms",
                 result.width, result.height, result.pixels.len(), elapsed_ms
             ));
             
             if WALLPAPER_MBX.try_send(result).is_err() {
-                log_info("WALLPAPER_WORKER: mailbox already full (unexpected)");
+                log_info("WALLPAPER_WORKER: mailbox full");
             }
         }
         Err(reason) => {
+            WALLPAPER_WORKER_PHASE.store(20, Ordering::Release);
             log_info(&format!("WALLPAPER_WORKER: failed: {}", reason));
         }
     }
@@ -64,36 +54,42 @@ pub extern "C" fn wallpaper_worker_entry(_arg: u64) -> ! {
     thread_exit(0);
 }
 
-/// Find, map, and decode the wallpaper bytespace.
 fn decode_wallpaper() -> Result<WallpaperReady, &'static str> {
     use thing_std::graph::thing_find;
     use thing_std::memory::space_map;
     
-    // 1. Find the wallpaper asset
+    WALLPAPER_WORKER_PHASE.store(4, Ordering::Release);
+    
     let asset_name = "bytespace.asset.clouds.bmp";
     let bs_id = thing_find(asset_name).ok_or("wallpaper bytespace not found")?;
     log_info(&format!("WALLPAPER_WORKER: found {} id={}", asset_name, bs_id.low()));
     
-    // 2. Map at a worker-chosen VA (not 0x8600_0000 to avoid conflicts)
-    // Use 0x8500_0000 for the worker's wallpaper mapping
+    WALLPAPER_WORKER_PHASE.store(5, Ordering::Release);
+    
     let map_va = 0x8500_0000u64;
-    let map_size = 4 * 1024 * 1024u64; // 4MB, same as existing code
+    let map_size = 4 * 1024 * 1024u64;
     
     let result = space_map(bs_id, map_va, 0, map_size);
     if result == 0 {
         return Err("space_map failed");
     }
-    log_info(&format!("WALLPAPER_WORKER: mapped at {:#x} len={}", map_va, map_size));
+    log_info(&format!("WALLPAPER_WORKER: mapped at {:#x}", map_va));
     
-    // 3. Parse BMP and decode pixels
+    WALLPAPER_WORKER_PHASE.store(6, Ordering::Release);
+    
     let data = unsafe { 
         core::slice::from_raw_parts(map_va as *const u8, map_size as usize) 
     };
     
     let (pixels, width, height, row_stride) = parse_bmp_to_argb(data)?;
+    log_info(&format!("WALLPAPER_WORKER: parsed {}x{}", width, height));
     
-    // 4. Compute dominant color
+    WALLPAPER_WORKER_PHASE.store(7, Ordering::Release);
+    
     let dominant = compute_dominant_color(&pixels);
+    log_info(&format!("WALLPAPER_WORKER: dominant color {:#x}", dominant));
+    
+    WALLPAPER_WORKER_PHASE.store(8, Ordering::Release);
     
     Ok(WallpaperReady {
         width,
@@ -104,9 +100,7 @@ fn decode_wallpaper() -> Result<WallpaperReady, &'static str> {
     })
 }
 
-/// Parse a BMP file into ARGB pixels.
 fn parse_bmp_to_argb(data: &[u8]) -> Result<(Vec<u32>, u32, u32, usize), &'static str> {
-    // BMP header validation
     if data.len() < 54 {
         return Err("BMP too small");
     }
@@ -114,7 +108,6 @@ fn parse_bmp_to_argb(data: &[u8]) -> Result<(Vec<u32>, u32, u32, usize), &'stati
         return Err("not a BMP file");
     }
     
-    // Read header fields
     let data_offset = u32::from_le_bytes([data[10], data[11], data[12], data[13]]) as usize;
     let width = i32::from_le_bytes([data[18], data[19], data[20], data[21]]) as u32;
     let height_signed = i32::from_le_bytes([data[22], data[23], data[24], data[25]]);
@@ -127,7 +120,7 @@ fn parse_bmp_to_argb(data: &[u8]) -> Result<(Vec<u32>, u32, u32, usize), &'stati
     }
     
     let bytes_per_pixel = bits_per_pixel / 8;
-    let row_stride = ((width as usize * bytes_per_pixel + 3) / 4) * 4; // BMP rows are 4-byte aligned
+    let row_stride = ((width as usize * bytes_per_pixel + 3) / 4) * 4;
     
     let pixel_data = &data[data_offset..];
     let mut pixels = Vec::with_capacity((width * height) as usize);
@@ -147,7 +140,6 @@ fn parse_bmp_to_argb(data: &[u8]) -> Result<(Vec<u32>, u32, u32, usize), &'stati
             let r = pixel_data[px_start + 2] as u32;
             let a = if bytes_per_pixel == 4 { pixel_data[px_start + 3] as u32 } else { 255 };
             
-            // Pack as ARGB
             pixels.push((a << 24) | (r << 16) | (g << 8) | b);
         }
     }
@@ -155,17 +147,14 @@ fn parse_bmp_to_argb(data: &[u8]) -> Result<(Vec<u32>, u32, u32, usize), &'stati
     Ok((pixels, width, height, width as usize))
 }
 
-/// Compute dominant color using histogram with 5-bit quantization.
 fn compute_dominant_color(pixels: &[u32]) -> u32 {
-    // 32x32x32 = 32768 buckets
-    let mut histogram = [0u32; 32 * 32 * 32];
+    // Use Box to allocate on heap (128KB too big for 64KB stack)
+    let mut histogram: alloc::boxed::Box<[u32; 32 * 32 * 32]> = 
+        alloc::boxed::Box::new([0u32; 32 * 32 * 32]);
     
     for &px in pixels {
-        // Skip transparent pixels
         let a = (px >> 24) & 0xFF;
-        if a < 128 {
-            continue;
-        }
+        if a < 128 { continue; }
         
         let r = ((px >> 16) & 0xFF) >> 3;
         let g = ((px >> 8) & 0xFF) >> 3;
@@ -175,7 +164,6 @@ fn compute_dominant_color(pixels: &[u32]) -> u32 {
         histogram[idx] += 1;
     }
     
-    // Find max bucket
     let mut max_idx = 0;
     let mut max_count = 0;
     for (idx, &count) in histogram.iter().enumerate() {
@@ -185,7 +173,6 @@ fn compute_dominant_color(pixels: &[u32]) -> u32 {
         }
     }
     
-    // Convert back to RGB
     let r = ((max_idx / (32 * 32)) as u32) << 3;
     let g = (((max_idx / 32) % 32) as u32) << 3;
     let b = ((max_idx % 32) as u32) << 3;

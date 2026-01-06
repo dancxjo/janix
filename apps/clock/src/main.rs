@@ -26,12 +26,13 @@ pub fn main() {
     };
     layout.write(&mut client, layout_id).expect("save layout");
 
-    // 2. Create Label for time display
+    // 2. Create Label for time display with classic green digital clock color
     let kind_label = symbol_intern("kind.Label");
     let label_id = client.create_thing(kind_label).expect("create label");
+    // Classic green digital clock color: 0xFF00FF00 (RGBA: green with full opacity)
     let mut label = Label {
         text: symbol_intern("Loading..."),
-        style: TextStyle { size: 24, color_rgba: 0xFFFFFFFF },
+        style: TextStyle { size: 24, color_rgba: 0xFF00FF00 },
     };
     label.write(&mut client, label_id).expect("save label");
 
@@ -46,7 +47,7 @@ pub fn main() {
         width: 200,
         height: 100,
         style: WindowStyle {
-            bg_rgba: 0xFF222222, // Dark background
+            bg_rgba: 0xFF111111, // Darker background for contrast with green
             radius: 8,
             shadow: 1, 
             elevation: 2,
@@ -103,15 +104,16 @@ pub fn main() {
              }
         }
 
-        // --- Update Label ---
+        // --- Update Label every second ---
         label.text = symbol_intern(&time_str);
         label.write(&mut client, label_id).expect("update label");
 
-        // Emit Frame
+        // Emit Frame to trigger repaint
         frame_seq += 1;
         let frame = Frame { window: window_id, seq: frame_seq };
         frame.write(&mut client, frame_id).expect("pulse frame");
         
+        // Update every second
         sleep_ms(1000);
     }
 }

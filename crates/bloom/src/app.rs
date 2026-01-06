@@ -20,7 +20,7 @@ use crate::cursor_overlay::CursorOverlay;
 use crate::chunked_executor::ChunkedExecutor;
 use crate::wallpaper_worker::{WALLPAPER_MBX, wallpaper_worker_entry};
 use crate::input_worker::{InputWorkerConfig, INPUT_CONFIG_MBX, INPUT_STATE, input_worker_entry, INPUT_WORKER_STARTED, INPUT_WORKER_TICKS, INPUT_EVENTS_DRAINED};
-use crate::wallpaper_worker::WALLPAPER_WORKER_STARTED;
+use crate::wallpaper_worker::{WALLPAPER_WORKER_STARTED, WALLPAPER_WORKER_PHASE};
 use core::sync::atomic::Ordering;
 
 
@@ -237,8 +237,8 @@ pub fn run() {
                         let inp_started = INPUT_WORKER_STARTED.load(Ordering::Acquire);
                         let inp_ticks = INPUT_WORKER_TICKS.load(Ordering::Acquire);
                         log_info(&alloc::format!(
-                            "BLOOM DIAG: wp_started={} inp_started={} inp_ticks={} events_drained={}",
-                            wp_started, inp_started, inp_ticks, INPUT_EVENTS_DRAINED.load(Ordering::Relaxed)
+                            "BLOOM DIAG: wp_started={} wp_phase={} inp_started={} inp_ticks={} events_drained={}",
+                            wp_started, WALLPAPER_WORKER_PHASE.load(Ordering::Acquire), inp_started, inp_ticks, INPUT_EVENTS_DRAINED.load(Ordering::Relaxed)
                         ));
                         LAST_DIAG_MS = now_ms;
                     }

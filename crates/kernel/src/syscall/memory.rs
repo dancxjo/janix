@@ -137,6 +137,12 @@ pub fn sys_space_unmap(_vaddr: u64, _len: u64, _flags: u64) -> SyscallResult {
     SyscallResult::new(err::ENOSYS, 0, 0)
 }
 
+/// Heap growth syscall - GRAPH-FREE to avoid deadlock.
+/// 
+/// This function intentionally bypasses Bytespace::new_ram and the graph store
+/// to avoid a deadlock when heap allocation is triggered inside a with_store closure.
+/// The deadlock chain was:
+///   with_store -> allocation -> heap grow -> Bytespace::new_ram -> with_store (deadlock!)
 pub fn sys_heap_grow(increment: u64) -> SyscallResult {
     crate::sched::with_current_task(|task| {
         let old_brk = task.heap_brk;
@@ -144,26 +150,38 @@ pub fn sys_heap_grow(increment: u64) -> SyscallResult {
             return SyscallResult::new(0, old_brk, 0);
         }
 
-        let page_size = 4096;
+        let page_size = 4096u64;
         let alloc_size = (increment + page_size - 1) & !(page_size - 1);
 
-        match Bytespace::new_ram(alloc_size as usize) {
-            Ok(bs) => {
-                let map_addr = old_brk;
-                if let Err(_) = task.address_space.map_bytespace_shared(
-                    map_addr,
-                    &bs,
-                    0,
-                    alloc_size as usize,
-                    MapPerms::READ | MapPerms::WRITE | MapPerms::USER,
-                ) {
-                    return SyscallResult::new(err::ENOMEM, 0, 0);
-                }
-                task.heap_brk = map_addr + alloc_size;
-                SyscallResult::new(0, map_addr, 0)
-            }
-            Err(_) => SyscallResult::new(err::ENOMEM, 0, 0),
+        // Direct allocation - bypass Bytespace to avoid graph store deadlock
+        let layout = match core::alloc::Layout::from_size_align(alloc_size as usize, 4096) {
+            Ok(l) => l,
+            Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+        };
+
+        let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
+        if ptr.is_null() {
+            return SyscallResult::new(err::ENOMEM, 0, 0);
         }
+
+        // Get physical address for mapping
+        let phys = crate::machine::machine().virt_to_phys(ptr as u64);
+
+        // Direct map without graph registration
+        let map_addr = old_brk;
+        if let Err(_) = task.address_space.map(
+            map_addr,
+            phys,
+            alloc_size as usize,
+            MapPerms::READ | MapPerms::WRITE | MapPerms::USER,
+        ) {
+            // Free the allocation on failure
+            unsafe { alloc::alloc::dealloc(ptr, layout) };
+            return SyscallResult::new(err::ENOMEM, 0, 0);
+        }
+
+        task.heap_brk = map_addr + alloc_size;
+        SyscallResult::new(0, map_addr, 0)
     })
     .unwrap_or(SyscallResult::new(err::EFAULT, 0, 0))
 }

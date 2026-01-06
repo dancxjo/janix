@@ -327,3 +327,28 @@ pub struct Frame {
     pub window: ThingId,
     pub seq: u64,
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.PointerEvent")]
+pub struct PointerEvent {
+    pub phase: abi::ui::PointerPhase,
+    pub x: i32,
+    pub y: i32,
+    pub buttons: u32,
+    pub modifiers: u32,
+    pub timestamp_ns: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.WindowAction")]
+pub struct WindowAction {
+    pub window: ThingId,
+    pub kind: abi::ui::WindowActionKind,
+    pub start_x: i32,
+    pub start_y: i32,
+    pub dx: i32,
+    pub dy: i32,
+    pub edges: abi::ui::ResizeEdge,
+}

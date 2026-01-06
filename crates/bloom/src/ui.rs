@@ -12,6 +12,7 @@ use crate::layout::{layout_widgets, TITLE_BAR_HEIGHT};
 use crate::painter::Painter;
 use crate::scene::Rect;
 use crate::text::draw_text_on_painter;
+pub mod hittest;
 // use crate::assets::map_bytespace; // Removed
 use abi::draw_cmd::DrawCmd;
 

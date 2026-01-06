@@ -19,5 +19,6 @@ pub mod draw_cmd;
 pub mod command_recorder;
 pub mod executor;
 pub mod watch;
+pub mod cursor_manager;
 
 pub use app::run;

@@ -14,7 +14,12 @@ use models::*;
 use thing_std::graph::*;
 use thing_std::*;
 
-use crate::assets::cursor::{CursorAnimator, CursorAsset, CursorFrame};
+use abi::ui::{HitZone, ResizeEdge};
+use crate::ui::hittest::hittest_window;
+use crate::cursor_manager::{CursorSet, CursorKind};
+
+
+use crate::assets::cursor::CursorFrame;
 use crate::backend::*;
 
 const WATCH_WAIT_TIMEOUT_TICKS: u64 = 0;
@@ -74,13 +79,11 @@ pub fn run() {
             backend.present(frame_buffer.as_slice(), DirtyRect { x: 0, y: 0, w: width, h: height });
             log_info("BLOOM: first paint complete");
 
-            let mut animator: Option<CursorAnimator> = None;
-            if let Some(asset) = load_cursor_asset() {
-                animator = Some(CursorAnimator::new(asset, 1));
-                log_info("BLOOM: cursor loaded");
-                if !progress_complete {
-                    current_progress = current_progress.saturating_add(50).min(1000);
-                }
+            let mut cursor_set = CursorSet::new();
+            cursor_set.load_all(0x8900_0000);
+            log_info("BLOOM: cursor set loaded");
+            if !progress_complete {
+                current_progress = current_progress.saturating_add(50).min(1000);
             }
 
             let mut input = if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
@@ -143,6 +146,18 @@ pub fn run() {
             let mut events: alloc::vec::Vec<WatchEvent> = alloc::vec::Vec::new();
             let mut last_progress = current_progress;
 
+            // Input State
+            #[derive(Debug, Clone, Copy)]
+            enum DragMode {
+                None,
+                Move { start_wx: i32, start_wy: i32, start_px: i32, start_py: i32 },
+                Resize { start_rect: Rect, start_px: i32, start_py: i32, edge: HitZone },
+            }
+            let mut drag_mode = DragMode::None;
+            let mut captured_window: Option<ThingId> = None;
+            let mut focused_window: Option<ThingId> = None;
+
+
             loop {
                 let now_ns = monotonic_now();
                 
@@ -191,13 +206,238 @@ pub fn run() {
                 let moved = px != prev_px || py != prev_py;
                 let buttons_changed = buttons != prev_buttons;
 
-                let anim_changed = if let Some(anim) = animator.as_mut() {
-                    anim.advance(now_ms)
+                // Handle Input Events
+                if buttons_changed || moved {
+                    let left_down = (buttons & 1) != 0;
+                    let prev_left_down = (prev_buttons & 1) != 0;
+                    let just_pressed = left_down && !prev_left_down;
+                    let just_released = !left_down && prev_left_down;
+
+                    if just_pressed {
+                        // 1. Hit Test (Top to Bottom)
+                        // Note: window_scenes are in draw order (bottom to top), so iterate reverse
+                        let mut hit_target = None;
+                        for scene in window_scenes.iter().rev() {
+                            let (zone, _lx, _ly) = hittest_window(scene, px, py);
+                            if zone != HitZone::None {
+                                hit_target = Some((scene.clone(), zone));
+                                break;
+                            }
+                        }
+
+                        if let Some((target, zone)) = hit_target {
+                            // Focus & Raise (todo: graph reorder)
+                            focused_window = Some(target.id);
+                            
+                            // Start Drag/Resize
+                            match zone {
+                                HitZone::Titlebar => {
+                                    log_info("BLOOM: Begin Move");
+                                    drag_mode = DragMode::Move { 
+                                        start_wx: target.window.x, 
+                                        start_wy: target.window.y, 
+                                        start_px: px, 
+                                        start_py: py 
+                                    };
+                                    captured_window = Some(target.id);
+                                        edges: ResizeEdge::None,
+                                    };
+                                    log_info("BLOOM: Creating Move Action");
+                                    let _ = action.create(&mut graph_client);
+                                    log_info("BLOOM: Created Move Action");
+                                }
+                                HitZone::ResizeN | HitZone::ResizeS | HitZone::ResizeE | HitZone::ResizeW |
+                                HitZone::ResizeNW | HitZone::ResizeNE | HitZone::ResizeSW | HitZone::ResizeSE => {
+                                    log_info("BLOOM: Begin Resize");
+                                    drag_mode = DragMode::Resize {
+                                        start_rect: Rect { x: target.window.x, y: target.window.y, w: target.window.width, h: target.window.height },
+                                        start_px: px,
+                                        start_py: py,
+                                        edge: zone,
+                                    };
+                                    captured_window = Some(target.id);
+                                    let edge_flag = match zone {
+                                        HitZone::ResizeN => ResizeEdge::Top,
+                                        HitZone::ResizeS => ResizeEdge::Bottom,
+                                        HitZone::ResizeE => ResizeEdge::Right,
+                                        HitZone::ResizeW => ResizeEdge::Left,
+                                        HitZone::ResizeNW => ResizeEdge::TopLeft,
+                                        HitZone::ResizeNE => ResizeEdge::TopRight,
+                                        HitZone::ResizeSW => ResizeEdge::BottomLeft,
+                                        HitZone::ResizeSE => ResizeEdge::BottomRight,
+                                        _ => ResizeEdge::None,
+                                    };
+                                    let _ = WindowAction {
+                                        window: target.id,
+                                        kind: abi::ui::WindowActionKind::BeginResize,
+                                        start_x: target.window.x,
+                                        start_y: target.window.y,
+                                        dx: 0,
+                                        dy: 0,
+                                        edges: edge_flag,
+                                    }.create(&mut graph_client);
+                                }
+                                HitZone::Content => {
+                                    log_info("BLOOM: Content Click (TODO: Forward)");
+                                    // captured_window = Some(target.id); // Valid for app drag/selection
+                                }
+                                _ => {}
+                            }
+                        } else {
+                            // Clicked background
+                            focused_window = None;
+                        }
+                    } else if just_released {
+                        if let Some(win_id) = captured_window {
+                            log_info("BLOOM: End Capture");
+                            let (kind, start_x, start_y, dx, dy, edges) = match drag_mode {
+                                DragMode::Move { start_wx, start_wy, start_px, start_py } => 
+                                    (abi::ui::WindowActionKind::EndMove, start_wx, start_wy, px - start_px, py - start_py, ResizeEdge::None),
+                                DragMode::Resize { start_rect, start_px, start_py, edge } => {
+                                     let edge_flag = match edge {
+                                        HitZone::ResizeN => ResizeEdge::Top,
+                                        HitZone::ResizeS => ResizeEdge::Bottom,
+                                        HitZone::ResizeE => ResizeEdge::Right,
+                                        HitZone::ResizeW => ResizeEdge::Left,
+                                        HitZone::ResizeNW => ResizeEdge::TopLeft,
+                                        HitZone::ResizeNE => ResizeEdge::TopRight,
+                                        HitZone::ResizeSW => ResizeEdge::BottomLeft,
+                                        HitZone::ResizeSE => ResizeEdge::BottomRight,
+                                        _ => ResizeEdge::None,
+                                    };
+                                    (abi::ui::WindowActionKind::EndResize, start_rect.x, start_rect.y, px - start_px, py - start_py, edge_flag)
+                                }
+                                _ => (abi::ui::WindowActionKind::EndMove, 0, 0, 0, 0, ResizeEdge::None),
+                            };
+                                edges,
+                            };
+                            log_info("BLOOM: Creating WindowAction");
+                            let _ = action.create(&mut graph_client);
+                            log_info("BLOOM: Created WindowAction");
+                        }
+                        captured_window = None;
+                        drag_mode = DragMode::None;
+                    } else if moved {
+                         if let Some(win_id) = captured_window {
+                             match drag_mode {
+                                 DragMode::Move { start_wx, start_wy, start_px, start_py } => {
+                                     let dx = px - start_px;
+                                     let dy = py - start_py;
+                                     let new_x = start_wx + dx;
+                                     let new_y = start_wy + dy;
+                                     
+                                     // Update Graph
+                                     // We need to read the Window thing, update x/y, write back
+                                     // Optimization: we have the scene cached, but we should read fresh or just update safely?
+                                     // Writing back to the Thing is the source of truth.
+                                     if let Ok(mut win) = Window::read(&SyscallGraphClient, win_id) {
+                                         if win.x != new_x || win.y != new_y {
+                                             win.x = new_x;
+                                             win.y = new_y;
+                                             let _ = win.write(&mut graph_client, win_id);
+                                             // Note: This trigger a watch event, which will update SceneCache next loop
+                                         }
+                                     }
+                                 }
+                                 DragMode::Resize { start_rect, start_px, start_py, edge } => {
+                                     let dx = px - start_px;
+                                     let dy = py - start_py;
+                                     let mut new_rect = start_rect;
+                                     
+                                     const MIN_W: u32 = 50;
+                                     const MIN_H: u32 = 50;
+
+                                     match edge {
+                                         HitZone::ResizeE => {
+                                             let w = (start_rect.w as i32 + dx).max(MIN_W as i32);
+                                             new_rect.w = w as u32;
+                                         }
+                                         HitZone::ResizeS => {
+                                            let h = (start_rect.h as i32 + dy).max(MIN_H as i32);
+                                            new_rect.h = h as u32;
+                                         }
+                                         HitZone::ResizeSE => {
+                                             let w = (start_rect.w as i32 + dx).max(MIN_W as i32);
+                                             let h = (start_rect.h as i32 + dy).max(MIN_H as i32);
+                                             new_rect.w = w as u32;
+                                             new_rect.h = h as u32;
+                                         }
+                                         // TODO: Implement other edges (requires x/y shift)
+                                         _ => {}
+                                     }
+                                     
+                                     if let Ok(mut win) = Window::read(&SyscallGraphClient, win_id) {
+                                         if win.width != new_rect.w || win.height != new_rect.h {
+                                             win.width = new_rect.w;
+                                             win.height = new_rect.h;
+                                             let _ = win.write(&mut graph_client, win_id);
+                                         }
+                                     }
+                                 }
+                                 _ => {}
+                             }
+                         }
+                    }
+                }
+
+                // Input handling happens before scene update
+                // Update active cursor based on drag mode or hit
+                
+                if let DragMode::None = drag_mode {
+                    // Simple hit testing for cursor update
+                    let (x, y, _) = input.poll();
+                    let mut found = false;
+                    
+                    for scene in window_scenes.iter().rev() {
+                         let (wx, wy) = (scene.window.x, scene.window.y);
+                         let (ww, wh) = (scene.window.width, scene.window.height);
+                         
+                         if x >= wx && x < wx + ww as i32 && y >= wy && y < wy + wh as i32 {
+                             // Hit this window
+                             let (zone, _, _) = crate::ui::hittest::hittest_window(scene, x, y);
+                             let kind = match zone {
+                                 HitZone::Titlebar => CursorKind::Default, // Or Move?
+                                 HitZone::Border => CursorKind::Default,
+                                 HitZone::ResizeN | HitZone::ResizeS => CursorKind::ResizeV,
+                                 HitZone::ResizeE | HitZone::ResizeW => CursorKind::ResizeH,
+                                 HitZone::ResizeNW | HitZone::ResizeSE => CursorKind::ResizeNWSE,
+                                 HitZone::ResizeNE | HitZone::ResizeSW => CursorKind::ResizeNESW,
+                                 HitZone::Content => CursorKind::Default,
+                                 _ => CursorKind::Default,
+                             };
+                             cursor_set.set_cursor(kind);
+                             found = true;
+                             break;
+                         }
+                    }
+                    if !found {
+                        cursor_set.set_cursor(CursorKind::Default);
+                    }
+                    cursor_set.set_override(None);
+                } else {
+                    // In drag mode.
+                    let kind = match drag_mode {
+                        DragMode::Move { .. } => CursorKind::Move,
+                        DragMode::Resize { edge, .. } => match edge {
+                                 HitZone::ResizeN | HitZone::ResizeS => CursorKind::ResizeV,
+                                 HitZone::ResizeE | HitZone::ResizeW => CursorKind::ResizeH,
+                                 HitZone::ResizeNW | HitZone::ResizeSE => CursorKind::ResizeNWSE,
+                                 HitZone::ResizeNE | HitZone::ResizeSW => CursorKind::ResizeNESW,
+                                 _ => CursorKind::Default,
+                        },
+                        _ => CursorKind::Default,
+                    };
+                    cursor_set.set_override(Some(kind));
+                }
+
+                let anim_changed = if let Some(animator) = cursor_set.current_animator() {
+                    animator.advance(now_ms);
+                    true // Assume advance always changes something for simplicity or check return
                 } else {
                     false
                 };
 
-                let cursor_frame = if let Some(anim) = animator.as_ref() {
+                let cursor_frame = if let Some(anim) = cursor_set.current_animator() {
                     anim.current_frame()
                 } else {
                     None
@@ -286,27 +526,33 @@ pub fn run() {
                     let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
                     painter.set_clip(Clip::full(width, height));
                     
-                    if let Some(frame) = cursor_frame {
-                        #[cfg(feature = "shadows")]
-                        painter.draw_shadow_mask(
-                            px - frame.hotspot_x,
-                            py - frame.hotspot_y,
-                            ShadowMask::SpriteAlpha {
-                                pixels: &frame.shadow_pixels,
-                                width: frame.width,
-                                height: frame.height,
-                            },
-                            ShadowParams {
-                                offset_x: frame.shadow_offset_x,
-                                offset_y: frame.shadow_offset_y,
-                                blur_radius: 0,
-                                color: 0xAA000000,
-                            },
-                        );
-                        painter.draw_cursor_frame(frame, px, py);
-                        if !logged_shared_shadow {
-                            log_info("BLOOM: shadow kernel: shared");
-                            logged_shared_shadow = true;
+                    if let Some(animator) = cursor_set.current_animator() {
+                        if let Some(frame) = animator.current_frame() {
+                            #[cfg(feature = "shadows")]
+                            painter.draw_shadow_mask(
+                                px - frame.hotspot_x,
+                                py - frame.hotspot_y,
+                                ShadowMask::SpriteAlpha {
+                                    pixels: &frame.shadow_pixels,
+                                    width: frame.width,
+                                    height: frame.height,
+                                },
+                                ShadowParams {
+                                    offset_x: frame.shadow_offset_x,
+                                    offset_y: frame.shadow_offset_y,
+                                    blur_radius: 0,
+                                    color: 0xAA000000,
+                                },
+                            );
+                            // log_info("BLOOM: drew shadow");
+                            painter.draw_cursor_frame(frame, px, py);
+                            // log_info("BLOOM: drew cursor");
+                            if !logged_shared_shadow {
+                                log_info("BLOOM: shadow kernel: shared");
+                                logged_shared_shadow = true;
+                            }
+                        } else {
+                            painter.draw_fallback_cursor(px, py);
                         }
                     } else {
                         painter.draw_fallback_cursor(px, py);
@@ -372,24 +618,7 @@ fn seed_scene(
     count
 }
 
-fn load_cursor_asset() -> Option<CursorAsset> {
-    if let Some(bs_id) = thing_find("bytespace.asset.Normal.cur") {
-        let len: u64 = 256 * 1024;
-        let buf = crate::assets::map_bytespace(bs_id, 0x8800_0000, len);
-        if let Some(frame) = crate::assets::cursor::cur::load_cur(buf) {
-            return Some(CursorAsset::static_cursor(frame));
-        }
-    }
-    if let Some(bs_id) = thing_find("bytespace.asset.Working.ani") {
-        let len: u64 = 1024 * 1024;
-        let buf = crate::assets::map_bytespace(bs_id, 0x8810_0000, len);
-        if let Some(asset) = crate::assets::cursor::ani::load_ani(buf) {
-            return Some(asset);
-        }
-    }
-    log_info("BLOOM: no cursor asset found, using fallback");
-    None
-}
+
 
 fn merge_damage(into: &mut Option<Rect>, rect: Rect) {
     if rect.w == 0 || rect.h == 0 { return; }

@@ -13,6 +13,7 @@ pub struct CpuPainter<'a> {
     w: u32,
     h: u32,
     clip: Clip,
+    clip_stack: Vec<Clip>,
     damage: Option<Rect>,
 }
 
@@ -24,6 +25,7 @@ impl<'a> CpuPainter<'a> {
             w,
             h,
             clip: Clip::full(w, h),
+            clip_stack: Vec::new(),
             damage: None,
         }
     }
@@ -103,6 +105,40 @@ impl<'a> CpuPainter<'a> {
         dx * dx + dy * dy <= r * r
     }
 
+    /// Check if a point is inside a rounded rect corner (top only).
+    fn in_round_top(&self, x: i32, y: i32, w: u32, h: u32, radius: u16) -> bool {
+        if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+            return false;
+        }
+        if radius == 0 {
+            return true;
+        }
+        let r = radius as i32;
+
+        // Bottom area is always valid (square corners)
+        if y >= r {
+            return true;
+        }
+        
+        // Top corners check
+        let w_i = w as i32;
+        
+        let cx = if x < r {
+            r - 1
+        } else if x >= w_i - r {
+            w_i - r
+        } else {
+            // Middle top area
+            return true;
+        };
+        
+        let cy = r - 1;
+        let dx = x - cx;
+        let dy = y - cy;
+        
+        dx * dx + dy * dy <= r * r
+    }
+
     /// Adjust a color by a brightness delta.
     fn adjust_color(&self, color: u32, delta: i16) -> u32 {
         let a = (color >> 24) & 0xFF;
@@ -124,6 +160,17 @@ impl<'a> Painter for CpuPainter<'a> {
 
     fn clip(&self) -> Clip {
         self.clip
+    }
+
+    fn push_clip(&mut self, rect: Rect) {
+        self.clip_stack.push(self.clip);
+        self.clip.rect = self.clip.rect.intersect(rect);
+    }
+
+    fn pop_clip(&mut self) {
+        if let Some(prev) = self.clip_stack.pop() {
+            self.clip = prev;
+        }
     }
 
     fn damage(&mut self, rect: Rect) {
@@ -324,6 +371,45 @@ impl<'a> Painter for CpuPainter<'a> {
                     && inner_x < inner_w as i32
                     && inner_y < inner_h as i32
                     && self.in_round(inner_x, inner_y, inner_w, inner_h, inner_r)
+                {
+                    continue;
+                }
+
+                self.put_pixel(x, y, color);
+            }
+        }
+        self.merge_damage(clip);
+    }
+    
+    fn stroke_rounded_rect_top(&mut self, rect: Rect, radius: u16, thickness: u16, color: u32) {
+        let clip = self.clip_rect(rect);
+        let outer_r = radius;
+        let inner_r = radius.saturating_sub(thickness);
+        let thick = thickness as i32;
+        
+        let inner_w = rect.w.saturating_sub((thick * 2) as u32);
+        let inner_h = rect.h.saturating_sub((thick * 2) as u32);
+
+        for y in clip.y..(clip.y + clip.h as i32) {
+            let local_y = y - rect.y;
+            for x in clip.x..(clip.x + clip.w as i32) {
+                let local_x = x - rect.x;
+
+                // Must be inside outer top-rounded shape
+                if !self.in_round_top(local_x, local_y, rect.w, rect.h, outer_r) {
+                    continue;
+                }
+
+                // If strictly inside inner shape, skip (hollow)
+                // Use in_round_top logic for inner too
+                let inner_x = local_x - thick;
+                let inner_y = local_y - thick;
+                
+                if inner_x >= 0
+                    && inner_y >= 0
+                    && inner_x < inner_w as i32
+                    && inner_y < inner_h as i32
+                    && self.in_round_top(inner_x, inner_y, inner_w, inner_h, inner_r)
                 {
                     continue;
                 }

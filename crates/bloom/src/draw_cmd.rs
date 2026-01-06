@@ -10,6 +10,7 @@ pub enum DrawCmd {
     FillRectVGrad { rect: Rect, radius: u16, top_color: u32, bottom_color: u32 },
     FillRoundedRect { rect: Rect, radius: u16, color: u32 },
     StrokeRoundedRect { rect: Rect, radius: u16, thickness: u16, color: u32 },
+    StrokeRoundedRectTop { rect: Rect, radius: u16, thickness: u16, color: u32 },
     Clear { color: u32 },
     
     // === Advanced / Internal Ops ===
@@ -64,6 +65,7 @@ pub enum DrawCmd {
         offset_x: i32,
         offset_y: i32,
         blur_radius: u16,
+        top_only: bool,
     },
     
     // Panel Gradient (Specific to Bloom Window style)
@@ -81,34 +83,38 @@ pub enum DrawCmd {
 }
 
 impl DrawCmd {
-    pub fn bounds(&self) -> Rect {
+    /// Returns the bounding box of the command, if it has a fixed spatial extent.
+    /// Returns None if the command is global (Clear), state change (SetClip), or dynamic (TextRun).
+    pub fn bounds(&self) -> Option<Rect> {
         match self {
-            DrawCmd::FillRect { rect, .. } => *rect,
-            DrawCmd::FillRectVGrad { rect, .. } => *rect,
-            DrawCmd::FillRoundedRect { rect, .. } => *rect,
-            DrawCmd::StrokeRoundedRect { rect, .. } => *rect, // stroke extends half thickness? ignore for now
-            DrawCmd::Clear { .. } => Rect { x: 0, y: 0, w: 10000, h: 10000 }, // Full screen?
+            DrawCmd::FillRect { rect, .. } => Some(*rect),
+            DrawCmd::FillRectVGrad { rect, .. } => Some(*rect),
+            DrawCmd::FillRoundedRect { rect, .. } => Some(*rect),
+            DrawCmd::StrokeRoundedRect { rect, .. } => Some(*rect),
+            DrawCmd::StrokeRoundedRectTop { rect, .. } => Some(*rect),
+            DrawCmd::FillPanel { rect, .. } => Some(*rect),
             DrawCmd::BlitRgbaPremulBytespace { dst_x, dst_y, src_rect, .. } => {
-                Rect { x: *dst_x, y: *dst_y, w: src_rect.w, h: src_rect.h }
-            }
-            DrawCmd::TextRun { x, y, text, font_size, .. } => {
-                let w = (text.len() as f32 * font_size * 0.6) as u32;
-                Rect { x: *x, y: *y, w, h: *font_size as u32 }
+                Some(Rect { x: *dst_x, y: *dst_y, w: src_rect.w, h: src_rect.h })
             }
             DrawCmd::Shadow { x, y, width, height, offset_x, offset_y, blur_radius, .. } => {
-                // Shadow expands bounds
                 let blur = *blur_radius as i32;
-                Rect { 
-                    x: *x + offset_x - blur, 
-                    y: *y + offset_y - blur, 
-                    w: *width + (blur as u32 * 2), 
-                    h: *height + (blur as u32 * 2) 
-                }
+                let min_x = x + offset_x - blur;
+                let min_y = y + offset_y - blur;
+                let max_x = x + *width as i32 + offset_x + blur;
+                let max_y = y + *height as i32 + offset_y + blur;
+                Some(Rect { 
+                    x: min_x, 
+                    y: min_y, 
+                    w: (max_x - min_x).max(0) as u32, 
+                    h: (max_y - min_y).max(0) as u32 
+                })
             }
-            DrawCmd::FillPanel { rect, .. } => *rect,
-            DrawCmd::SetClip { .. } => Rect { x: 0, y: 0, w: 0, h: 0 },
-            DrawCmd::PushClip { .. } => Rect { x: 0, y: 0, w: 0, h: 0 },
-            DrawCmd::PopClip => Rect { x: 0, y: 0, w: 0, h: 0 },
+            // Clear covers everything (conceptually), but for culling we return None so the executor knows it "touches everything" or "cannot be culled by rect".
+            DrawCmd::Clear { .. } => None, 
+            DrawCmd::TextRun { .. } => None, // Text is hard to bound without font metrics, assume None (always draw)
+            DrawCmd::SetClip { .. } => None,
+            DrawCmd::PushClip { .. } => None,
+            DrawCmd::PopClip => None,
         }
     }
 }

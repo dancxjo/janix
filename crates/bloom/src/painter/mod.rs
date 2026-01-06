@@ -44,6 +44,12 @@ pub trait Painter {
     /// Get the current clip region.
     fn clip(&self) -> Clip;
 
+    /// Push a new clip region (intersected with current).
+    fn push_clip(&mut self, rect: Rect);
+
+    /// Pop the last clip region.
+    fn pop_clip(&mut self);
+
     /// Mark a region as damaged (needing present).
     fn damage(&mut self, rect: Rect);
 
@@ -69,6 +75,9 @@ pub trait Painter {
 
     /// Stroke a rounded rectangle border.
     fn stroke_rounded_rect(&mut self, rect: Rect, radius: u16, thickness: u16, color: u32);
+
+    /// Stroke a rounded rectangle border (top corners only).
+    fn stroke_rounded_rect_top(&mut self, rect: Rect, radius: u16, thickness: u16, color: u32);
 
     // ========== Blits ==========
 

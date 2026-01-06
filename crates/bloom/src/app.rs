@@ -23,8 +23,6 @@ use crate::assets::cursor::CursorFrame;
 use crate::backend::*;
 
 const WATCH_WAIT_TIMEOUT_TICKS: u64 = 0;
-const KERNEL_HANDOFF_PROGRESS: u32 = 500;
-const BLOOM_FADE_DURATION_MS: u64 = 8_000;
 
 const RENDER_MODE_IMMEDIATE: u8 = 0;
 const RENDER_MODE_RECORD: u8 = 1;
@@ -35,8 +33,12 @@ pub fn run() {
     log_info("BLOOM: alive");
 
     // Warm up fonts early (SIMD-intensive parsing done before render loop)
+    // TODO: move this to its own service process but somehow share the font cache; start loading ASAP
     crate::text::ensure_font_loaded();
     log_info("BLOOM: fonts warmed up");
+
+    // Solid background color #8cb4db
+    let background_color: u32 = 0xFF8CB4DB;
 
     let mut graph_client = SyscallGraphClient;
 
@@ -59,10 +61,6 @@ pub fn run() {
                 stride_pixels: width,
             });
 
-            let start_time_ns = monotonic_now();
-            let mut current_progress = KERNEL_HANDOFF_PROGRESS;
-            let mut progress_complete = false;
-
             let buffer_size = (width * height) as usize;
             let mut frame_buffer = alloc::vec![0u32; buffer_size];
             let mut background_cache = alloc::vec![0u32; buffer_size];
@@ -71,7 +69,7 @@ pub fn run() {
             // Initial paint using CpuPainter
             {
                 let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
-                paint_progress_background(&mut painter, current_progress);
+                painter.clear(background_color);
             }
             unsafe {
                 core::ptr::copy_nonoverlapping(frame_buffer.as_ptr(), background_cache.as_mut_ptr(), buffer_size);
@@ -82,10 +80,7 @@ pub fn run() {
             let mut cursor_set = CursorSet::new();
             cursor_set.load_all(0x8900_0000);
             log_info("BLOOM: cursor set loaded");
-            if !progress_complete {
-                current_progress = current_progress.saturating_add(50).min(1000);
-            }
-
+            
             let mut input = if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
                 let mouse_vaddr = 0x8820_0000u64;
                 let mouse_size = 8192u64;
@@ -111,9 +106,6 @@ pub fn run() {
                         windows_graph.low(),
                         set.graph_watch.0
                     ));
-                    if !progress_complete {
-                        current_progress = current_progress.saturating_add(50).min(1000);
-                    }
                     set
                 }
                 Err(e) => {
@@ -144,7 +136,6 @@ pub fn run() {
             let mut scene_dirty = true;
             let mut window_scenes: alloc::vec::Vec<WindowScene> = alloc::vec::Vec::new();
             let mut events: alloc::vec::Vec<WatchEvent> = alloc::vec::Vec::new();
-            let mut last_progress = current_progress;
 
             // Input State
             #[derive(Debug, Clone, Copy)]
@@ -160,25 +151,7 @@ pub fn run() {
 
             loop {
                 let now_ns = monotonic_now();
-                
-                if !progress_complete {
-                    let elapsed_ms = ((now_ns - start_time_ns) / 1_000_000) as u64;
-                    let time_progress = ((elapsed_ms * 500) / BLOOM_FADE_DURATION_MS).min(500) as u32;
-                    current_progress = (KERNEL_HANDOFF_PROGRESS + time_progress).max(current_progress);
-                    
-                    if current_progress >= 1000 {
-                        current_progress = 1000;
-                        progress_complete = true;
-                    }
-                }
-
-                if current_progress != last_progress {
-                    let mut painter = CpuPainter::new(background_cache.as_mut_slice(), width, height);
-                    paint_progress_background(&mut painter, current_progress);
-                    scene_dirty = true;
-                    last_progress = current_progress;
-                }
-
+            
                 if let Ok(n) = watches.drain(&mut events) {
                     if n > 0 {
                         for ev in events.iter().take(n) {
@@ -516,6 +489,13 @@ pub fn run() {
                         if exec_result.stats.bad_cmds > 0 {
                             log_info(&alloc::format!("BLOOM: Bad cmds: {}/{}", exec_result.stats.bad_cmds, exec_result.stats.cmds_total));
                         }
+                        
+                        // Merge actual damage from execution
+                        if let Some(damage_rect) = exec_result.damage.rect {
+                            merge_damage(&mut dirty, damage_rect);
+                        } else {
+                            // See comment in original file about simplified damage handling here
+                        }
                     } else {
                         // Immediate Mode
                         let mut painter = CpuPainter::new(scene_buffer.as_mut_slice(), width, height);
@@ -534,6 +514,8 @@ pub fn run() {
                     // Copy scene to frame buffer
                     {
                         let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
+                        // For now, full update because we did full background copy.
+                        // Ideally we restrict background copy to damage too.
                         painter.copy_region(scene_buffer.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
                     }
                     
@@ -541,17 +523,12 @@ pub fn run() {
                         log_info("BLOOM: redraw_region done");
                     }
                     
+                    // Present full screen
                     merge_damage(&mut dirty, Rect { x: 0, y: 0, w: width, h: height });
                     
                     if !window_scenes.is_empty() && !logged_window_once {
                         log_info(&alloc::format!("BLOOM: rendered window {}", window_scenes[0].id.low()));
                         logged_window_once = true;
-                        if !progress_complete {
-                            current_progress = 1000;
-                            progress_complete = true;
-                            let mut painter = CpuPainter::new(background_cache.as_mut_slice(), width, height);
-                            paint_progress_background(&mut painter, 1000);
-                        }
                     }
                     scene_cache.clear_dirty();
                     scene_dirty = false;
@@ -628,17 +605,6 @@ pub fn run() {
         }
         sched_yield();
     }
-}
-
-fn paint_progress_background(painter: &mut dyn Painter, progress: u32) {
-    let r1 = 0x05i32; let g1 = 0x05i32; let b1 = 0x05i32;
-    let r2 = 0xDCi32; let g2 = 0xD0i32; let b2 = 0xFFi32;
-    let p = progress.min(1000) as i32;
-    let r = (r1 + (r2 - r1) * p / 1000) as u32;
-    let g = (g1 + (g2 - g1) * p / 1000) as u32;
-    let b = (b1 + (b2 - b1) * p / 1000) as u32;
-    let color = 0xFF000000 | (r << 16) | (g << 8) | b;
-    painter.clear(color);
 }
 
 fn seed_scene(

@@ -96,19 +96,9 @@ pub fn sys_space_map(
             if let Some(val) = extract_phys(&payload) {
                 val
             } else {
-                 crate::log::klog(
-                    crate::log::Level::Error,
-                    "SYSCALL",
-                    "sys_space_map: PRED_BASE_PHYS not found and payload invalid",
-                );
                 return SyscallResult::new(err::EINVAL, 0, 0);
             }
         } else {
-            crate::log::klog(
-                crate::log::Level::Error,
-                "SYSCALL",
-                "sys_space_map: PRED_BASE_PHYS not found",
-            );
             return SyscallResult::new(err::EINVAL, 0, 0);
         }
     };
@@ -141,6 +131,7 @@ pub fn sys_space_map(
     })
     .unwrap_or(SyscallResult::new(err::EFAULT, 0, 0))
 }
+
 
 pub fn sys_space_unmap(_vaddr: u64, _len: u64, _flags: u64) -> SyscallResult {
     SyscallResult::new(err::ENOSYS, 0, 0)

@@ -44,6 +44,20 @@ impl Painter for CommandRecorder {
         self.current_clip
     }
 
+    fn push_clip(&mut self, rect: Rect) {
+        let prev = self.current_clip;
+        self.clip_stack.push(prev);
+        self.current_clip.rect = prev.rect.intersect(rect);
+        self.cmds.push(DrawCmd::PushClip { rect });
+    }
+
+    fn pop_clip(&mut self) {
+        if let Some(prev) = self.clip_stack.pop() {
+            self.current_clip = prev;
+            self.cmds.push(DrawCmd::PopClip);
+        }
+    }
+
     fn fill_rect(&mut self, rect: Rect, color: u32) {
         self.cmds.push(DrawCmd::FillRect { rect, color });
     }
@@ -58,6 +72,10 @@ impl Painter for CommandRecorder {
 
     fn stroke_rounded_rect(&mut self, rect: Rect, radius: u16, thickness: u16, color: u32) {
         self.cmds.push(DrawCmd::StrokeRoundedRect { rect, radius, thickness, color });
+    }
+
+    fn stroke_rounded_rect_top(&mut self, rect: Rect, radius: u16, thickness: u16, color: u32) {
+        self.cmds.push(DrawCmd::StrokeRoundedRectTop { rect, radius, thickness, color });
     }
 
     fn draw_cursor_frame(&mut self, _frame: &crate::assets::cursor::CursorFrame, _x: i32, _y: i32) {
@@ -83,6 +101,19 @@ impl Painter for CommandRecorder {
                     offset_x: params.offset_x,
                     offset_y: params.offset_y,
                     blur_radius: params.blur_radius as u16,
+                    top_only: false,
+                });
+            }
+            ShadowMask::RoundedRectTop { width, height, radius } => {
+                self.cmds.push(DrawCmd::Shadow {
+                    x, y, 
+                    width, height, 
+                    radius, 
+                    color: params.color,
+                    offset_x: params.offset_x,
+                    offset_y: params.offset_y,
+                    blur_radius: params.blur_radius as u16,
+                    top_only: true,
                 });
             }
             ShadowMask::SpriteAlpha { .. } => {

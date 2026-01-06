@@ -12,6 +12,45 @@ pub struct MappedRegion {
     pub mapped_len: usize,
 }
 
+pub enum MapResult<'a> {
+    Hit(&'a [u8]),
+    Mapped(&'a [u8]),
+}
+
+impl<'a> core::ops::Deref for MapResult<'a> {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        match self {
+            MapResult::Hit(s) => s,
+            MapResult::Mapped(s) => s,
+        }
+    }
+}
+
+pub enum MapResultMut<'a> {
+    Hit(&'a mut [u8]),
+    Mapped(&'a mut [u8]),
+}
+
+impl<'a> core::ops::Deref for MapResultMut<'a> {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        match self {
+            MapResultMut::Hit(s) => s,
+            MapResultMut::Mapped(s) => s,
+        }
+    }
+}
+
+impl<'a> core::ops::DerefMut for MapResultMut<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            MapResultMut::Hit(s) => s,
+            MapResultMut::Mapped(s) => s,
+        }
+    }
+}
+
 pub struct BytespaceMappingCache {
     mappings: BTreeMap<ThingId, MappedRegion>,
     // Debug stats
@@ -54,23 +93,26 @@ impl BytespaceMappingCache {
         }
     }
 
-    pub fn get_or_map_ro(&mut self, id: ThingId, len: usize) -> Option<&[u8]> {
-        self.ensure_mapped(id, len);
+    pub fn get_or_map_ro(&mut self, id: ThingId, len: usize) -> Option<MapResult<'_>> {
+        let is_new = self.ensure_mapped(id, len);
         let region = self.mappings.get(&id)?;
-        unsafe { Some(core::slice::from_raw_parts(region.ptr, len)) }
+        let slice = unsafe { core::slice::from_raw_parts(region.ptr, len) };
+        Some(if is_new { MapResult::Mapped(slice) } else { MapResult::Hit(slice) })
     }
 
-    pub fn get_or_map_rw(&mut self, id: ThingId, len: usize) -> Option<&mut [u8]> {
-         self.ensure_mapped(id, len);
+    pub fn get_or_map_rw(&mut self, id: ThingId, len: usize) -> Option<MapResultMut<'_>> {
+         let is_new = self.ensure_mapped(id, len);
          let region = self.mappings.get(&id)?;
-         unsafe { Some(core::slice::from_raw_parts_mut(region.ptr, len)) }
+         let slice = unsafe { core::slice::from_raw_parts_mut(region.ptr, len) };
+         Some(if is_new { MapResultMut::Mapped(slice) } else { MapResultMut::Hit(slice) })
     }
 
-    fn ensure_mapped(&mut self, id: ThingId, len: usize) {
+    /// Returns true if a new mapping was created or remapped, false if hit.
+    fn ensure_mapped(&mut self, id: ThingId, len: usize) -> bool {
         if let Some(region) = self.mappings.get(&id) {
             if region.mapped_len >= len {
                 self.frame_hits += 1;
-                return;
+                return false;
             }
             // Resize needed
             self.frame_remaps += 1;
@@ -125,9 +167,10 @@ impl BytespaceMappingCache {
                  ptr: mapped_addr as *mut u8,
                  mapped_len: len,
              });
+             true
         } else {
-             // Log error?
              log_info("BLOOM: failed to map bytespace");
+             false
         }
     }
 }

@@ -216,7 +216,7 @@ fn render_window(
         painter.draw_shadow_mask(
             rect.x,
             rect.y,
-            ShadowMask::RoundedRect {
+            ShadowMask::RoundedRectTop {
                 width: rect.w,
                 height: rect.h,
                 radius: win.style.radius,
@@ -335,7 +335,8 @@ fn render_window(
         }
     }
     // Draw border
-    painter.stroke_rounded_rect(rect, win.style.radius, 1, 0xFF404040);
+    // Draw border (TopRounded)
+    painter.stroke_rounded_rect_top(rect, win.style.radius, 1, 0xFF404040);
 }
 
 pub fn get_close_button_rect(window_rect: Rect) -> Rect {

@@ -41,3 +41,35 @@ impl Rect {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_intersect_disjoint() {
+        let a = Rect { x: 0, y: 0, w: 10, h: 10 };
+        let b = Rect { x: 20, y: 0, w: 10, h: 10 };
+        let i = a.intersect(b);
+        assert!(i.is_empty());
+        assert_eq!(i.w, 0);
+        assert_eq!(i.h, 0);
+    }
+
+    #[test]
+    fn test_intersect_overlap() {
+        let a = Rect { x: 0, y: 0, w: 20, h: 20 };
+        let b = Rect { x: 10, y: 10, w: 20, h: 20 };
+        let i = a.intersect(b);
+        assert!(!i.is_empty());
+        assert_eq!(i, Rect { x: 10, y: 10, w: 10, h: 10 });
+    }
+
+    #[test]
+    fn test_intersect_contained() {
+        let a = Rect { x: 0, y: 0, w: 100, h: 100 };
+        let b = Rect { x: 10, y: 10, w: 10, h: 10 };
+        let i = a.intersect(b);
+        assert_eq!(i, b);
+    }
+}

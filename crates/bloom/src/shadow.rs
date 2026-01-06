@@ -13,6 +13,7 @@ pub struct ShadowParams {
 pub enum ShadowMask<'a> {
     SpriteAlpha { pixels: &'a [u32], width: u32, height: u32 },
     RoundedRect { width: u32, height: u32, radius: u16 },
+    RoundedRectTop { width: u32, height: u32, radius: u16 },
 }
 
 impl<'a> ShadowMask<'a> {
@@ -68,6 +69,47 @@ impl<'a> ShadowMask<'a> {
                     0
                 }
             }
+            ShadowMask::RoundedRectTop { width, height, radius } => {
+                if x < 0 || y < 0 {
+                    return 0;
+                }
+                let w = *width as i32;
+                let h = *height as i32;
+                if x >= w || y >= h {
+                    return 0;
+                }
+                if *radius == 0 {
+                    return 255;
+                }
+                let r = *radius as i32;
+                
+                // Only round the top corners
+                if y >= r {
+                    // Below top radius area: simple rect logic (fully opaque inside)
+                    return 255;
+                }
+
+                // We are in the top strip (y < r). Check x corners.
+                let cx = if x < r {
+                    r - 1
+                } else if x >= w - r {
+                    w - r
+                } else {
+                     // Middle x, top y < r. Inside.
+                    return 255;
+                };
+
+                let cy = r - 1; // Top circle center y
+                
+                let dx = x - cx;
+                let dy = y - cy;
+                let dist2 = dx * dx + dy * dy;
+                if dist2 <= (r * r) {
+                    255
+                } else {
+                    0
+                }
+            }
         }
     }
 
@@ -76,6 +118,7 @@ impl<'a> ShadowMask<'a> {
         match self {
             ShadowMask::SpriteAlpha { width, height, .. } => (*width, *height),
             ShadowMask::RoundedRect { width, height, .. } => (*width, *height),
+            ShadowMask::RoundedRectTop { width, height, .. } => (*width, *height),
         }
     }
 }

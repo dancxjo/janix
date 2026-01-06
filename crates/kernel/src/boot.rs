@@ -473,6 +473,10 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     seed_service_plan(ctx);
     indicate_progress(4, "🎨 Bloom scaffolded");
     crate::sched::init();
+
+    // --- Launch Bloom ---
+
+    // --- Launch Sprout ---
     let sprout_id = spawn_module_by_name(ctx, "sprout");
     indicate_progress(5, "🚀 Sprout ignited");
     seed_kernel_permissions();
@@ -525,6 +529,7 @@ fn inject_root_caps(task_id: abi::ids::ThingId) {
         );
     }
 }
+
 
 fn seed_kernel_permissions() {
     // Ensure graph.permissions exists
@@ -973,6 +978,8 @@ fn seed_bloom_ontology() {
         let fb_bytespace = store::thing_create(sym::KIND_BYTESPACE_FRAMEBUFFER);
         store::thing_register_name(fb_bytespace, symbols::intern(b"bytespace.display0"));
         store::relationship_create(sym::PRED_CONTAINS, display_graph, fb_bytespace);
+        crate::log::kprintln(&alloc::format!("BOOT: Created fb_bytespace id={} with name bytespace.display0", fb_bytespace.low()));
+        crate::log::kprintln(&alloc::format!("BOOT: Created fb_bytespace id={} with name bytespace.display0", fb_bytespace.low()));
 
         let surface = store::thing_create(sym::KIND_SURFACE);
         store::thing_register_name(surface, symbols::intern(b"surface.display0"));

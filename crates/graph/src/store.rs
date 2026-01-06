@@ -42,6 +42,7 @@ pub struct Thing {
 pub struct GraphStore {
     pub things: BTreeMap<ThingId, Thing>,
     pub relationships: BTreeMap<RelationshipId, Relationship>,
+    pub from_index: BTreeMap<ThingId, Vec<RelationshipId>>,
     pub name_index: BTreeMap<SymbolId, ThingId>,
     pub next_id: u64,
     pub watchers: BTreeMap<ThingId, Vec<ThingId>>,
@@ -53,6 +54,7 @@ impl GraphStore {
         Self {
             things: BTreeMap::new(),
             relationships: BTreeMap::new(),
+            from_index: BTreeMap::new(),
             name_index: BTreeMap::new(),
             next_id: 100,
             watchers: BTreeMap::new(),
@@ -85,6 +87,7 @@ impl GraphStore {
         self.next_id += 1;
         let rel = Relationship { id, kind, from, to };
         self.relationships.insert(id, rel);
+        self.from_index.entry(from).or_default().push(id);
 
         if let Some(watchers) = self.watchers.get(&from) {
             for &watcher in watchers {
@@ -99,17 +102,27 @@ impl GraphStore {
     }
 
     pub fn delete_relationship(&mut self, id: RelationshipId) -> Result<Relationship, i32> {
-        self.relationships
+        let rel = self.relationships
             .remove(&id)
-            .ok_or(abi::syscall::err::ENOENT)
+            .ok_or(abi::syscall::err::ENOENT)?;
+
+        let mut empty = false;
+        if let Some(list) = self.from_index.get_mut(&rel.from) {
+            if let Some(pos) = list.iter().position(|&x| x == id) {
+                list.remove(pos);
+            }
+            empty = list.is_empty();
+        }
+
+        if empty {
+            self.from_index.remove(&rel.from);
+        }
+
+        Ok(rel)
     }
 
     pub fn relationships_from(&self, from: ThingId) -> Vec<RelationshipId> {
-        self.relationships
-            .values()
-            .filter(|r| r.from == from)
-            .map(|r| r.id)
-            .collect()
+        self.from_index.get(&from).cloned().unwrap_or_default()
     }
 
     pub fn set_body(&mut self, id: ThingId, body: &[u8]) -> Result<(), i32> {
@@ -182,6 +195,10 @@ impl GraphStore {
             .and_then(|q| q.pop_front())
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
 
 impl GraphClient for GraphStore {
     fn create_thing(&mut self, kind: SymbolId) -> Result<ThingId, i32> {

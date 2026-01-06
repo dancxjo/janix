@@ -51,8 +51,13 @@ impl<'a> core::ops::DerefMut for MapResultMut<'a> {
     }
 }
 
+/// Base address for dynamic bytespace mappings (avoid collisions with fixed mappings)
+const MAPPING_BASE: u64 = 0x8A00_0000;
+
 pub struct BytespaceMappingCache {
     mappings: BTreeMap<ThingId, MappedRegion>,
+    /// Next virtual address to allocate (grows upward from MAPPING_BASE)
+    next_vaddr: u64,
     // Debug stats
     frame_maps: usize,
     frame_hits: usize,
@@ -63,6 +68,7 @@ impl BytespaceMappingCache {
     pub fn new() -> Self {
         Self {
             mappings: BTreeMap::new(),
+            next_vaddr: MAPPING_BASE,
             frame_maps: 0,
             frame_hits: 0,
             frame_remaps: 0,
@@ -111,16 +117,22 @@ impl BytespaceMappingCache {
         // Trace mapping operations (they can be slow)
         trace_fn!("bytespace_map");
         
-        let mapped_addr = memory::space_map(id, 0, 0, len as u64);
+        // Allocate a virtual address for this mapping (1MB slots)
+        let slot_size = 1024 * 1024u64;
+        let slots = (len as u64 + slot_size - 1) / slot_size;
+        let vaddr = self.next_vaddr;
+        self.next_vaddr += slots * slot_size;
         
-        if mapped_addr != 0 {
+        let mapped_addr = memory::space_map(id, vaddr, 0, len as u64);
+        
+        if mapped_addr == vaddr {
              self.mappings.insert(id, MappedRegion {
                  ptr: mapped_addr as *mut u8,
                  mapped_len: len,
              });
              true
         } else {
-             log_info("BLOOM: failed to map bytespace");
+             log_info(&alloc::format!("BLOOM: failed to map bytespace id={} at vaddr={:#x}", id.low(), vaddr));
              false
         }
     }

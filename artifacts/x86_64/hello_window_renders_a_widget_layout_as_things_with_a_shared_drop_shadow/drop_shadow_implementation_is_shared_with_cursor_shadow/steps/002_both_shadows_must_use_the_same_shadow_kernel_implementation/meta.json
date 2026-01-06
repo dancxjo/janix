@@ -7,7 +7,7 @@
     "index": 2,
     "text": "both shadows must use the same shadow kernel implementation",
     "status": "passed",
-    "timestamp": "2026-01-06T08:47:24.643980658+00:00"
+    "timestamp": "2026-01-06T13:41:11.368960285+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

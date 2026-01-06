@@ -1,0 +1,14 @@
+--- a/crates/bloom/src/scene_cache.rs
++++ b/crates/bloom/src/scene_cache.rs
+@@ -111,9 +111,10 @@ impl BytespaceMappingCache {
+         // Trace mapping operations (they can be slow)
+         trace_fn!("bytespace_map");
+         
++        log_info(&alloc::format!("BLOOM: mapping bytespace id={}", id.low()));
+         let mapped_addr = memory::space_map(id, 0, 0, len as u64);
+         
+-        if mapped_addr != 0 {
++        if mapped_addr > 16 {  // Valid address check (avoid small error codes)
+              self.mappings.insert(id, MappedRegion {
+                  ptr: mapped_addr as *mut u8,
+                  mapped_len: len,

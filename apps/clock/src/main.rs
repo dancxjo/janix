@@ -7,10 +7,6 @@ use alloc::string::String;
 use thing_std::*;
 use models::*;
 use thing_codec::GraphClient;
-use thing_std::draw::DrawListWriter;
-
-const DRAW_BUFFER_SIZE: u64 = 64 * 1024;
-const DRAW_BUFFER_VADDR: u64 = 0xA000_0000;
 
 #[no_mangle]
 pub fn main() {
@@ -19,37 +15,27 @@ pub fn main() {
 
     let mut client = SyscallGraphClient;
 
-    // 1. Setup Draw Buffer Bytespace
-    let bs_id = thing_std::memory::bytespace_create(DRAW_BUFFER_SIZE);
-    thing_std::memory::space_map(bs_id, DRAW_BUFFER_VADDR, 0, DRAW_BUFFER_SIZE);
-    
-    // Safety: we just mapped it and own it
-    let draw_buf = unsafe { core::slice::from_raw_parts_mut(DRAW_BUFFER_VADDR as *mut u8, DRAW_BUFFER_SIZE as usize) };
-
-    // 2. Create Layout
+    // 1. Create Layout first
     let kind_layout = symbol_intern("kind.Layout");
     let layout_id = client.create_thing(kind_layout).expect("create layout");
     let layout = Layout {
         kind: LayoutKind::Column,
-        padding: 0,
-        gap: 0,
+        padding: 12,
+        gap: 10,
         align: 0,
     };
     layout.write(&mut client, layout_id).expect("save layout");
 
-    // 3. Create DrawList Widget
-    let kind_drawlist = symbol_intern("kind.DrawList");
-    let dl_id = client.create_thing(kind_drawlist).expect("create drawlist");
-    // Initial empty drawlist
-    let mut dl = DrawList {
-        width: 200,
-        height: 100,
-        bytespace: bs_id,
-        cmd_count: 0,
+    // 2. Create Label for time display
+    let kind_label = symbol_intern("kind.Label");
+    let label_id = client.create_thing(kind_label).expect("create label");
+    let mut label = Label {
+        text: symbol_intern("Loading..."),
+        style: TextStyle { size: 24, color_rgba: 0xFFFFFFFF },
     };
-    dl.write(&mut client, dl_id).expect("save drawlist");
+    label.write(&mut client, label_id).expect("save label");
 
-    // 4. Create Window
+    // 3. Create Window
     let kind_window = symbol_intern("kind.Window");
     let window_id = client.create_thing(kind_window).expect("create window");
     
@@ -69,14 +55,14 @@ pub fn main() {
     };
     window.write(&mut client, window_id).expect("save window");
 
-    // 5. Links
+    // 4. Links
     let rel_content = symbol_intern("content_root");
     relationship_create(rel_content, window_id, layout_id);
 
     let rel_child = symbol_intern("child");
-    relationship_create(rel_child, layout_id, dl_id);
+    relationship_create(rel_child, layout_id, label_id);
 
-    // 6. Publish to graph.windows
+    // 5. Publish to graph.windows
     let graph_windows = thing_find("graph.windows").unwrap_or_else(|| {
         let pid = thing_create(symbol_intern("kind.Graph"), ThingId::from_parts(0,0));
         thing_register_name(pid, "graph.windows");
@@ -86,7 +72,7 @@ pub fn main() {
     let rel_contains = symbol_intern("predicate.contains");
     relationship_create(rel_contains, graph_windows, window_id);
 
-    // 7. Frame Pulse Setup
+    // 6. Frame Pulse Setup
     let kind_frame = symbol_intern("kind.Frame");
     let frame_id = client.create_thing(kind_frame).expect("create frame");
     let rel_has_frame = symbol_intern("has_frame");
@@ -117,19 +103,9 @@ pub fn main() {
              }
         }
 
-        // --- Draw Frame ---
-        let mut writer = DrawListWriter::new(draw_buf);
-        writer.clear(0xFF222222); // Background
-        
-        // Center text roughly
-        // 14px font, let's say ~100px wide
-        let tx = 50;
-        let ty = 40;
-        writer.text(tx, ty, &time_str, 0xFFFFFFFF);
-        
-        // Update DrawList Thing with new command count
-        dl.cmd_count = writer.count();
-        dl.write(&mut client, dl_id).expect("update drawlist");
+        // --- Update Label ---
+        label.text = symbol_intern(&time_str);
+        label.write(&mut client, label_id).expect("update label");
 
         // Emit Frame
         frame_seq += 1;

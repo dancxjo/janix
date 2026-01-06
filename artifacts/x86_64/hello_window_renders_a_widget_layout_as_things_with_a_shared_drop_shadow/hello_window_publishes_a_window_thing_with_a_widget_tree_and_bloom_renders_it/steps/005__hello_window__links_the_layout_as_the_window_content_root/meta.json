@@ -7,7 +7,7 @@
     "index": 5,
     "text": "\"hello_window\" links the Layout as the Window content root",
     "status": "passed",
-    "timestamp": "2026-01-06T08:47:20.380252812+00:00"
+    "timestamp": "2026-01-06T13:41:05.388556687+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

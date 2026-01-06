@@ -7,7 +7,7 @@
     "index": 4,
     "text": "\"hello_window\" creates a Button Thing with text \"OK\"",
     "status": "passed",
-    "timestamp": "2026-01-06T08:47:19.526977995+00:00"
+    "timestamp": "2026-01-06T13:41:04.191329088+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

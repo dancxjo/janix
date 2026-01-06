@@ -8,7 +8,7 @@
 //!
 //! Main thread reads INPUT_STATE to render cursor independently of scene rebuilds.
 
-use core::sync::atomic::{AtomicI32, AtomicU16, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use thing_std::{log_info, sched_yield};
 
 use crate::mailbox::Mailbox;
@@ -73,6 +73,9 @@ pub static INPUT_WORKER_STARTED: AtomicU32 = AtomicU32::new(0);
 
 /// Diagnostics: incremented each loop iteration by worker (proves worker is alive)
 pub static INPUT_WORKER_TICKS: AtomicU32 = AtomicU32::new(0);
+
+/// Diagnostics: total events drained from ringbuffer (proves worker is consuming input)
+pub static INPUT_EVENTS_DRAINED: AtomicU64 = AtomicU64::new(0);
 
 /// Config for input worker - passed via mailbox before spawn
 pub struct InputWorkerConfig {
@@ -239,6 +242,7 @@ pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
             // Publish to shared state
             INPUT_STATE.publish(x, y, buttons);
             total_drained += drained as u64;
+            INPUT_EVENTS_DRAINED.fetch_add(drained as u64, Ordering::Relaxed);
             
             // Immediately loop again to catch bursts (no sleep)
         } else {

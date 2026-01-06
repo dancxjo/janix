@@ -16,8 +16,9 @@ use thing_std::{trace_fn, trace_enter, trace_exit};
 use abi::ui::{HitZone, ResizeEdge};
 use crate::ui::hittest::hittest_window;
 use crate::cursor_manager::{CursorSet, CursorKind};
+use crate::cursor_overlay::CursorOverlay;
 use crate::wallpaper_worker::{WALLPAPER_MBX, wallpaper_worker_entry};
-use crate::input_worker::{InputWorkerConfig, INPUT_CONFIG_MBX, INPUT_STATE, input_worker_entry, INPUT_WORKER_STARTED, INPUT_WORKER_TICKS};
+use crate::input_worker::{InputWorkerConfig, INPUT_CONFIG_MBX, INPUT_STATE, input_worker_entry, INPUT_WORKER_STARTED, INPUT_WORKER_TICKS, INPUT_EVENTS_DRAINED};
 use crate::wallpaper_worker::WALLPAPER_WORKER_STARTED;
 use core::sync::atomic::Ordering;
 
@@ -87,6 +88,7 @@ pub fn run() {
 
             let mut cursor_set = CursorSet::new();
             cursor_set.load_all(0x8900_0000);
+            let mut cursor_overlay = CursorOverlay::new(width, height);
             log_info("BLOOM: cursor set loaded");
 
             let mut bitmap_store = BitmapStore::new();
@@ -233,8 +235,8 @@ pub fn run() {
                         let inp_started = INPUT_WORKER_STARTED.load(Ordering::Acquire);
                         let inp_ticks = INPUT_WORKER_TICKS.load(Ordering::Acquire);
                         log_info(&alloc::format!(
-                            "BLOOM DIAG: wallpaper_started={} input_started={} input_ticks={}",
-                            wp_started, inp_started, inp_ticks
+                            "BLOOM DIAG: wp_started={} inp_started={} inp_ticks={} events_drained={}",
+                            wp_started, inp_started, inp_ticks, INPUT_EVENTS_DRAINED.load(Ordering::Relaxed)
                         ));
                         LAST_DIAG_MS = now_ms;
                     }

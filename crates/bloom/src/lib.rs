@@ -23,5 +23,7 @@ pub mod watch;
 pub mod cursor_manager;
 pub mod wallpaper_worker;
 pub mod input_worker;
+pub mod cursor_overlay;
+pub mod chunked_executor;
 
 pub use app::run;

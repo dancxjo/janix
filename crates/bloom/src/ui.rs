@@ -212,7 +212,6 @@ fn render_window(
     painter.set_clip(crate::painter::Clip::from_rect(clip));
 
     #[cfg(feature = "shadows")]
-    if win.style.shadow != 0 {
         painter.draw_shadow_mask(
             rect.x,
             rect.y,
@@ -228,7 +227,6 @@ fn render_window(
                 color: 0x44000000,
             },
         );
-    }
 
     // --- Title Bar Rendering ---
     let title_h = TITLE_BAR_HEIGHT as u32;

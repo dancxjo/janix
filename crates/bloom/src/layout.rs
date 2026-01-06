@@ -14,9 +14,9 @@ pub const TITLE_BAR_HEIGHT: i32 = 24;
 pub const TITLE_PADDING_X: i32 = 8;
 
 /// Title bar gradient top color (focused)
-pub const TITLE_GRAD_TOP_FOCUSED: u32 = 0xFFE0E0E6; // Slightly brighter lavender-gray
+pub const TITLE_GRAD_TOP_FOCUSED: u32 = 0xFF8CB4DB; // Slightly brighter lavender-gray
 /// Title bar gradient bottom color (focused)
-pub const TITLE_GRAD_BOTTOM_FOCUSED: u32 = 0xFFD0D0D6; // Slightly darker
+pub const TITLE_GRAD_BOTTOM_FOCUSED: u32 = 0xFF8CB4DB; // Slightly darker
 /// Title bar gradient top color (unfocused)
 pub const TITLE_GRAD_TOP_UNFOCUSED: u32 = 0xFFF0F0F5; // Washed out
 /// Title bar gradient bottom color (unfocused)

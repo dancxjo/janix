@@ -54,9 +54,9 @@ pub struct ModuleInfo {
 static mut BOOT_CTX: Option<BootContext> = None;
 const BOOT_COLOR_STEPS: usize = 6;
 const BLOOM_WALLPAPER_DOMINANT: BootColor = BootColor {
-    red: 0xDC,
-    green: 0xD0,
-    blue: 0xFF,
+    red: 0x8C,
+    green: 0xB4,
+    blue: 0xDB,
 };
 
 pub fn get_boot_ctx() -> &'static BootContext {
@@ -76,7 +76,7 @@ fn boot_progress_color(step: usize) -> BootColor {
         };
     }
     let clamped = step.min(BOOT_COLOR_STEPS - 1) as u32;
-    let scale = |component: u8| -> u8 { ((component as u32 * clamped) / max_step / 2) as u8 };
+    let scale = |component: u8| -> u8 { ((component as u32 * clamped) / max_step) as u8 };
     BootColor {
         red: scale(BLOOM_WALLPAPER_DOMINANT.red),
         green: scale(BLOOM_WALLPAPER_DOMINANT.green),
@@ -420,8 +420,8 @@ fn indicate_progress(step: usize, message: &str) {
     if let Some(fb) = get_boot_ctx().framebuffer {
         let color = boot_progress_color(step);
         crate::machine::machine().set_boot_color(&fb, color);
-        #[cfg(feature = "boot-progress-text")]
-        boot_progress_text::draw(&fb, color, message);
+        // #[cfg(feature = "boot-progress-text")]
+        //boot_progress_text::draw(&fb, color, message);
     }
 }
 

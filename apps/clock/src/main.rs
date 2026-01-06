@@ -40,7 +40,7 @@ pub fn main() {
     let kind_window = symbol_intern("kind.Window");
     let window_id = client.create_thing(kind_window).expect("create window");
     
-    let window = Window {
+    let mut window = Window {
         title: symbol_intern("Clock"),
         x: 100,
         y: 400, // Below hello_window
@@ -73,16 +73,9 @@ pub fn main() {
     let rel_contains = symbol_intern("predicate.contains");
     relationship_create(rel_contains, graph_windows, window_id);
 
-    // 6. Frame Pulse Setup
-    let kind_frame = symbol_intern("kind.Frame");
-    let frame_id = client.create_thing(kind_frame).expect("create frame");
-    let rel_has_frame = symbol_intern("has_frame");
-    relationship_create(rel_has_frame, window_id, frame_id);
-
     log_info("CLOCK: Window Published!");
 
     let mut time_thing = None;
-    let mut frame_seq = 0;
 
     loop {
         // --- Get Time ---
@@ -108,10 +101,9 @@ pub fn main() {
         label.text = symbol_intern(&time_str);
         label.write(&mut client, label_id).expect("update label");
 
-        // Emit Frame to trigger repaint
-        frame_seq += 1;
-        let frame = Frame { window: window_id, seq: frame_seq };
-        frame.write(&mut client, frame_id).expect("pulse frame");
+        // Touch window to trigger repaint (Bloom watches window Thing, not children)
+        // Simply re-write the window body to trigger a ThingUpdated event
+        window.write(&mut client, window_id).expect("touch window");
         
         // Update every second
         sleep_ms(1000);

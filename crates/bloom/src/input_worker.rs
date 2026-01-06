@@ -1,19 +1,10 @@
-//! Input worker thread - drains mouse ringbuffer at high frequency, keeping cursor live.
-//!
-//! The worker:
-//! 1. Waits for config via mailbox (blocking)
-//! 2. Drains the input ringbuffer in batches
-//! 3. Publishes latest pointer state via lock-free atomics
-//! 4. Uses 1ms sleep backoff when no data (NOT a tight loop)
-//!
-//! Main thread reads INPUT_STATE to render cursor independently of scene rebuilds.
+//! Input worker thread - drains mouse ringbuffer at high frequency.
 
 use core::sync::atomic::{AtomicI32, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use thing_std::{log_info, sched_yield};
 
 use crate::mailbox::Mailbox;
 
-/// Shared cursor state - updated by worker (single writer), read by main (many readers).
 pub struct InputState {
     pub x: AtomicI32,
     pub y: AtomicI32,
@@ -74,32 +65,21 @@ pub static INPUT_CONFIG_MBX: Mailbox<InputWorkerConfig> = Mailbox::new();
 
 #[inline]
 fn drain_ringbuffer(
-    ring_ptr: *const u8,
-    capacity: u32,
-    read_seq: &mut u64,
-    x: &mut i32,
-    y: &mut i32,
-    buttons: &mut u16,
-    screen_w: u32,
-    screen_h: u32,
+    ring_ptr: *const u8, capacity: u32, read_seq: &mut u64,
+    x: &mut i32, y: &mut i32, buttons: &mut u16,
+    screen_w: u32, screen_h: u32,
 ) -> u32 {
     let mut drained = 0u32;
-    
     unsafe {
         if ring_ptr.is_null() { return 0; }
-
         const HEADER_SIZE: usize = 48;
         const RECORD_HEADER_SIZE: usize = 24;
         const EV_POINTER_DELTA: u16 = 1;
 
-        let magic = u32::from_le_bytes([
-            *ring_ptr, *ring_ptr.add(1), *ring_ptr.add(2), *ring_ptr.add(3),
-        ]);
+        let magic = u32::from_le_bytes([*ring_ptr, *ring_ptr.add(1), *ring_ptr.add(2), *ring_ptr.add(3)]);
         if magic != 0x544E5645 { return 0; }
 
-        let header_capacity = u32::from_le_bytes([
-            *ring_ptr.add(8), *ring_ptr.add(9), *ring_ptr.add(10), *ring_ptr.add(11),
-        ]);
+        let header_capacity = u32::from_le_bytes([*ring_ptr.add(8), *ring_ptr.add(9), *ring_ptr.add(10), *ring_ptr.add(11)]);
         let cap = core::cmp::min(header_capacity, capacity);
         
         let ring_base = ring_ptr.add(HEADER_SIZE);
@@ -108,7 +88,6 @@ fn drain_ringbuffer(
 
         for _ in 0..max_iters {
             if (offset + (HEADER_SIZE as u32) + (RECORD_HEADER_SIZE as u32)) > cap { break; }
-
             let rec_ptr = ring_base.add(offset as usize);
             let len = u16::from_le_bytes([*rec_ptr, *rec_ptr.add(1)]);
             if len == 0 || len < RECORD_HEADER_SIZE as u16 { break; }
@@ -129,44 +108,24 @@ fn drain_ringbuffer(
                 *x = (*x + (dx as i32)).clamp(0, screen_w as i32 - 1);
                 *y = (*y + (dy as i32)).clamp(0, screen_h as i32 - 1);
                 *buttons = btn;
-
                 *read_seq = seq;
                 drained += 1;
             }
-
             offset += ((len as u32) + 7) & !7;
         }
     }
-    
     drained
 }
 
 #[inline]
 fn sleep_ms(ms: u32) {
-    for _ in 0..ms {
-        sched_yield();
-    }
+    for _ in 0..ms { sched_yield(); }
 }
 
 /// Input worker entry point
 #[unsafe(no_mangle)]
 pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
-    // CRITICAL: Initialize FPU/SSE state FIRST - new threads don't inherit it!
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        use core::arch::asm;
-        asm!("fninit", options(nomem, nostack, preserves_flags));
-        asm!(
-            "xorps xmm0, xmm0", "xorps xmm1, xmm1",  "xorps xmm2, xmm2", "xorps xmm3, xmm3",
-            "xorps xmm4, xmm4", "xorps xmm5, xmm5",  "xorps xmm6, xmm6", "xorps xmm7, xmm7",
-            "xorps xmm8, xmm8", "xorps xmm9, xmm9",  "xorps xmm10, xmm10", "xorps xmm11, xmm11",
-            "xorps xmm12, xmm12", "xorps xmm13, xmm13", "xorps xmm14, xmm14", "xorps xmm15, xmm15",
-            options(nomem, nostack, preserves_flags)
-        );
-        let default_mxcsr: u32 = 0x1F80;
-        asm!("ldmxcsr [{}]", in(reg) &default_mxcsr, options(nostack));
-    }
-
+    // FPU state is now automatically initialized by the kernel!
     INPUT_WORKER_STARTED.store(1, Ordering::Release);
     
     thing_std::debug::log("BLOOM: input worker thread entry");
@@ -193,16 +152,9 @@ pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
     
     loop {
         INPUT_WORKER_TICKS.fetch_add(1, Ordering::Relaxed);
-        
         let drained = drain_ringbuffer(
-            config.ring_ptr,
-            config.capacity,
-            &mut read_seq,
-            &mut x,
-            &mut y,
-            &mut buttons,
-            config.screen_w,
-            config.screen_h,
+            config.ring_ptr, config.capacity, &mut read_seq,
+            &mut x, &mut y, &mut buttons, config.screen_w, config.screen_h,
         );
         
         if drained > 0 {

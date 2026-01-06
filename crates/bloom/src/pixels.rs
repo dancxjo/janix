@@ -13,44 +13,6 @@ pub unsafe fn redraw_region(dest: *mut u32, src: *const u32, w: u32, h: u32, reg
     }
 }
 
-pub unsafe fn draw_cursor_shadow(
-    dest: *mut u32,
-    screen_w: u32,
-    screen_h: u32,
-    frame: &CursorFrame,
-    px: i32,
-    py: i32,
-) {
-    let cx = px - frame.hotspot_x + frame.shadow_offset_x;
-    let cy = py - frame.hotspot_y + frame.shadow_offset_y;
-
-    for row in 0..frame.height {
-        let screen_y = cy + row as i32;
-        if screen_y < 0 || screen_y >= screen_h as i32 {
-            continue;
-        }
-
-        for col in 0..frame.width {
-            let screen_x = cx + col as i32;
-            if screen_x < 0 || screen_x >= screen_w as i32 {
-                continue;
-            }
-
-            let shadow_idx = (row * frame.width + col) as usize;
-            let shadow_pixel = frame.shadow_pixels[shadow_idx];
-            let alpha = (shadow_pixel >> 24) & 0xFF;
-
-            if alpha == 0 {
-                continue;
-            }
-
-            let dest_idx = (screen_y as u32 * screen_w + screen_x as u32) as usize;
-            let dst_pixel = *dest.add(dest_idx);
-            *dest.add(dest_idx) = blend_pixel(shadow_pixel, dst_pixel);
-        }
-    }
-}
-
 pub unsafe fn draw_cursor_frame(
     dest: *mut u32,
     screen_w: u32,

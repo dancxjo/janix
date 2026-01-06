@@ -2,8 +2,6 @@ use crate::input::PointerInput;
 use crate::painter::{Clip, CpuPainter, Painter};
 use crate::scene::Rect;
 use crate::scene_cache::{apply_watch_event, SceneCache};
-#[cfg(feature = "shadows")]
-use crate::shadow::{ShadowMask, ShadowParams};
 use crate::ui::{
     read_window_scene, render_window_scenes, window_ids_in_graph, WindowScene,
 };
@@ -601,20 +599,12 @@ pub fn run() {
                     if let Some(animator) = cursor_set.current_animator() {
                         if let Some(frame) = animator.current_frame() {
                             #[cfg(feature = "shadows")]
-                            painter.draw_shadow_mask(
-                                px - frame.hotspot_x,
-                                py - frame.hotspot_y,
-                                ShadowMask::SpriteAlpha {
-                                    pixels: &frame.shadow_pixels,
-                                    width: frame.width,
-                                    height: frame.height,
-                                },
-                                ShadowParams {
-                                    offset_x: frame.shadow_offset_x,
-                                    offset_y: frame.shadow_offset_y,
-                                    blur_radius: 0,
-                                    color: 0xAA000000,
-                                },
+                            painter.blit_rgba_alpha(
+                                px - frame.hotspot_x + frame.shadow_offset_x,
+                                py - frame.hotspot_y + frame.shadow_offset_y,
+                                &frame.shadow_pixels,
+                                frame.width,
+                                frame.height,
                             );
                             painter.draw_cursor_frame(frame, px, py);
                             // log_info("BLOOM: drew cursor");

@@ -68,6 +68,12 @@ impl InputState {
 /// Global shared input state
 pub static INPUT_STATE: InputState = InputState::new();
 
+/// Diagnostics: set to 1 by worker at first instruction (bypasses logging)
+pub static INPUT_WORKER_STARTED: AtomicU32 = AtomicU32::new(0);
+
+/// Diagnostics: incremented each loop iteration by worker (proves worker is alive)
+pub static INPUT_WORKER_TICKS: AtomicU32 = AtomicU32::new(0);
+
 /// Config for input worker - passed via mailbox before spawn
 pub struct InputWorkerConfig {
     pub ring_ptr: *const u8,
@@ -181,6 +187,9 @@ fn sleep_ms(ms: u32) {
 /// Input worker entry point
 #[unsafe(no_mangle)]
 pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
+    // FIRST INSTRUCTION: set started flag (bypasses any logging issues)
+    INPUT_WORKER_STARTED.store(1, Ordering::Release);
+    
     thing_std::debug::log("BLOOM: input worker thread entry");
     
     // Wait for config (blocking poll with yield)
@@ -188,6 +197,7 @@ pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
         if let Some(cfg) = INPUT_CONFIG_MBX.try_take() {
             break cfg;
         }
+        INPUT_WORKER_TICKS.fetch_add(1, Ordering::Relaxed); // prove we're alive while waiting
         sched_yield();
     };
     
@@ -211,6 +221,9 @@ pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
     
     // Main drain loop with backoff
     loop {
+        // Heartbeat: proves worker is alive
+        INPUT_WORKER_TICKS.fetch_add(1, Ordering::Relaxed);
+        
         let drained = drain_ringbuffer(
             config.ring_ptr,
             config.capacity,

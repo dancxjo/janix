@@ -206,9 +206,6 @@ fn spawn_fallback() {
     spawn_and_grant("timed");
     spawn_and_grant("clock");
     spawn_and_grant("inputd");
-    spawn_and_grant("thingcheck");
-    spawn_and_grant("hello_window");
-    spawn_and_grant("thread_test");
 }
 
 fn module_info_from_id(id: ThingId) -> Option<(String, Vec<ThingId>, Vec<CapOp>)> {

@@ -10,6 +10,7 @@
 
 use alloc::vec::Vec;
 use alloc::format;
+use core::sync::atomic::{AtomicU32, Ordering};
 use thing_std::{log_info, thread_exit, trace_fn};
 
 use crate::mailbox::Mailbox;
@@ -26,11 +27,17 @@ pub struct WallpaperReady {
 /// Global mailbox for wallpaper worker → main communication
 pub static WALLPAPER_MBX: Mailbox<WallpaperReady> = Mailbox::new();
 
+/// Diagnostics: set to 1 by worker at first instruction (bypasses logging)
+pub static WALLPAPER_WORKER_STARTED: AtomicU32 = AtomicU32::new(0);
+
 /// Worker thread entry point.
 /// 
 /// Takes no arguments (arg is unused). Decodes wallpaper and sends via mailbox.
 #[unsafe(no_mangle)]
 pub extern "C" fn wallpaper_worker_entry(_arg: u64) -> ! {
+    // FIRST INSTRUCTION: set started flag (bypasses any logging issues)
+    WALLPAPER_WORKER_STARTED.store(1, Ordering::Release);
+    
     trace_fn!("wallpaper_worker");
     log_info("WALLPAPER_WORKER: starting");
     

@@ -7,11 +7,12 @@ use thing_std::graph::{relationships_from, symbol_intern};
 use thing_std::symbol_resolve;
 use thing_std::SyscallGraphClient;
 
+use crate::scene_cache::BytespaceMappingCache;
 use crate::layout::{layout_widgets, TITLE_BAR_HEIGHT};
 use crate::painter::Painter;
 use crate::scene::Rect;
 use crate::text::draw_text_on_painter;
-use crate::assets::map_bytespace;
+// use crate::assets::map_bytespace; // Removed
 use abi::draw_cmd::DrawCmd;
 
 #[cfg(feature = "shadows")]
@@ -156,9 +157,9 @@ pub fn collect_window_scenes(client: &mut SyscallGraphClient) -> Vec<WindowScene
 }
 
 /// Render all window scenes using the Painter API.
-pub fn render_window_scenes(painter: &mut dyn Painter, scenes: &[WindowScene]) {
+pub fn render_window_scenes(painter: &mut dyn Painter, scenes: &[WindowScene], mapping_cache: &mut BytespaceMappingCache) {
     for scene in scenes {
-        render_window(painter, scene);
+        render_window(painter, scene, mapping_cache);
     }
 }
 
@@ -169,7 +170,7 @@ fn screen_rect(painter: &dyn Painter) -> Rect {
     Rect { x: 0, y: 0, w, h }
 }
 
-fn render_window(painter: &mut dyn Painter, scene: &WindowScene) {
+fn render_window(painter: &mut dyn Painter, scene: &WindowScene, mapping_cache: &mut BytespaceMappingCache) {
     let win = &scene.window;
     let rect = Rect {
         x: win.x,
@@ -245,10 +246,10 @@ fn render_window(painter: &mut dyn Painter, scene: &WindowScene) {
                 paint_button(painter, pw.rect, button, text);
             }
             WidgetKind::Canvas(ref canvas) => {
-                paint_canvas(painter, pw.rect, canvas);
+                paint_canvas(painter, pw.rect, canvas, mapping_cache);
             }
             WidgetKind::DrawList(ref dl) => {
-                paint_drawlist(painter, pw.rect, dl);
+                paint_drawlist(painter, pw.rect, dl, mapping_cache);
             }
         }
     }
@@ -306,16 +307,21 @@ fn paint_button(painter: &mut dyn Painter, rect: Rect, button: &Button, text: &s
     draw_text_on_painter(painter, text_x, text_y, text, text_color, 14.0);
 }
 
-fn paint_canvas(painter: &mut dyn Painter, rect: Rect, canvas: &Canvas) {
+fn paint_canvas(painter: &mut dyn Painter, rect: Rect, canvas: &Canvas, mapping_cache: &mut BytespaceMappingCache) {
     let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
     if clip.is_empty() {
         return;
     }
 
-    // Map the bytespace
-    let size = (canvas.width * canvas.height * 4) as u64;
-    let buf = map_bytespace(canvas.bytespace, 0, size);
+    // Map the bytespace via cache
+    let size = (canvas.width * canvas.height * 4) as usize;
+    // We use Read-Only mapping for blitting source
+    let buf = if let Some(b) = mapping_cache.get_or_map_ro(canvas.bytespace, size) {
+        b
+    } else {
+        return;
+    };
 
     // Provide a way to view the buffer as u32 slice for blitting
     let pixels = unsafe {
@@ -329,17 +335,21 @@ fn paint_canvas(painter: &mut dyn Painter, rect: Rect, canvas: &Canvas) {
     painter.blit_rgba_alpha(rect.x, rect.y, pixels, canvas.width, canvas.height);
 }
 
-fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList) {
+fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_cache: &mut BytespaceMappingCache) {
     let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
     if clip.is_empty() {
         return;
     }
 
-    // Map command buffer
+    // Map command buffer via cache
     // Heuristic size for now, ideally DrawList would have a size field or we'd map a fix amount
     let size = 64 * 1024; 
-    let buf = map_bytespace(dl.bytespace, 0, size);
+    let buf = if let Some(b) = mapping_cache.get_or_map_ro(dl.bytespace, size) {
+        b
+    } else {
+        return;
+    };
     
     // Deserialize commands
     let mut cursor = 0;

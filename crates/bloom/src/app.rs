@@ -211,14 +211,18 @@ pub fn run() {
                         log_info(&alloc::format!("BLOOM: START render {} windows", win_count));
                     }
                     
+                    scene_cache.mapping_cache.reset_frame_stats();
+
                     // Rebuild scene using Painter
                     {
                         let mut painter = CpuPainter::new(scene_buffer.as_mut_slice(), width, height);
                         // Copy background
                         painter.copy_region(background_cache.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
                         // Render windows
-                        render_window_scenes(&mut painter, &window_scenes);
+                        render_window_scenes(&mut painter, &window_scenes, &mut scene_cache.mapping_cache);
                     }
+                    
+                    scene_cache.mapping_cache.log_frame_stats();
                     
                     if win_count > 0 && !logged_window_once {
                         log_info("BLOOM: rebuild_scene done");

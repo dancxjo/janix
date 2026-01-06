@@ -15,6 +15,7 @@ pub mod scene_cache;
 pub mod shadow;
 pub mod text;
 pub mod ui;
+pub mod draw_cmd;
 pub mod watch;
 
 pub use app::run;

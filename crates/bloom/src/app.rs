@@ -434,7 +434,7 @@ pub fn run() {
                                      // Optimization: track prev hovered window/button?
                                      // For now, always dirty if hitting titlebar? Too expensive.
                                      // Just depend on movement.
-                                     hover_needs_update = true;
+                                     // DISABLED: hover_needs_update = true; // causes freeze - full scene rebuild too expensive
                                      CursorKind::Default
                                  }, 
                                  HitZone::Border => CursorKind::Default,
@@ -454,7 +454,7 @@ pub fn run() {
                         cursor_set.set_cursor(CursorKind::Default);
                     }
                     cursor_set.set_override(None);
-                    if hover_needs_update && moved {
+                    if false && hover_needs_update && moved { // DISABLED: causes freeze
                         scene_dirty = true;
                     }
                 } else {

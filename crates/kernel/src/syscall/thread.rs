@@ -1,12 +1,14 @@
 //! Thread syscall implementations
 
 use crate::sched::{self, task::TaskId, BlockReason};
+use crate::sched::thread_group::{StackSlotAllocator, ThreadGroup};
 use crate::watch;
 use abi::ids::WatchId;
 use abi::syscall::err;
 use abi::types::{WaitFlags, WakeReason};
 use abi::wire::SyscallResult;
 use crate::memory::map::MapPerms;
+use alloc::alloc::Layout;
 
 /// Spawn a new thread in the same address space as the calling thread.
 /// 
@@ -37,6 +39,13 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
             let new_group_id = sched.next_group_id;
             sched.next_group_id += 1;
             
+            // Create ThreadGroup entry
+            let group_thing = graph::store::with_store(|s| {
+                s.create_thing(graph::symbols::sym::KIND_THREAD).unwrap_or(abi::ids::ThingId(0))
+            });
+            let group = ThreadGroup::new(new_group_id, group_thing, address_space.clone());
+            sched.thread_groups.insert(new_group_id, group);
+            
             // Update the current task's group_id
             if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == curr_id) {
                 t.group_id = new_group_id;
@@ -45,34 +54,67 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
         };
 
         // Allocate KERNEL stack for new thread (for TrapFrame/syscall handling)
-        // This lives in kernel heap and is used for trap frames during syscalls/interrupts
+        // Use page-aligned allocation for kernel stack too
         let kernel_stack_size = 64 * 1024; // 64KB kernel stack
-        let kernel_stack = alloc::vec![0u8; kernel_stack_size];
-        let kernel_stack_top = kernel_stack.as_ptr() as u64 + kernel_stack_size as u64;
-        core::mem::forget(kernel_stack);
+        let kernel_layout = Layout::from_size_align(kernel_stack_size, 4096)
+            .map_err(|_| err::ENOMEM)?;
+        let kernel_stack_ptr = unsafe { alloc::alloc::alloc_zeroed(kernel_layout) };
+        if kernel_stack_ptr.is_null() {
+            return Err(err::ENOMEM);
+        }
+        let kernel_stack_top = kernel_stack_ptr as u64 + kernel_stack_size as u64;
 
         // Allocate USER stack in the shared address space
-        // Thread N gets stack at: 0x8F00_0000 - N * 0x10_0000 (1MB stride per thread)
-        let user_stack_size: u64 = 64 * 1024; // 64KB user stack
-        let user_stack_top: u64 = if stack_ptr_opt != 0 {
+        let (user_stack_top, user_stack_allocated): (u64, u64) = if stack_ptr_opt != 0 {
             // User provided their own stack
-            stack_ptr_opt
+            (stack_ptr_opt, 0)
         } else {
-            // Calculate a unique stack region for this thread
-            let thread_index = sched.next_id as u64;
-            let stack_region_top = 0x8F00_0000u64 - (thread_index * 0x10_0000); // 1MB stride
-            let stack_bottom = stack_region_top - user_stack_size;
+            // Use per-group stack slot allocator
+            let group = sched.thread_groups.get_mut(&group_id)
+                .expect("group must exist");
             
-            // Allocate physical memory for the user stack
-            let phys_stack = alloc::vec![0u8; user_stack_size as usize];
-            let phys_addr = crate::machine::machine().virt_to_phys(phys_stack.as_ptr() as u64);
-            core::mem::forget(phys_stack);
+            let (stack_bottom, stack_top) = match group.stack_allocator.alloc() {
+                Some(slot) => slot,
+                None => {
+                    crate::log::klog(
+                        crate::log::Level::Info,
+                        "THREAD",
+                        &alloc::format!(
+                            "Stack slot exhausted for group {} (active: {})",
+                            group_id, group.stack_allocator.active_count()
+                        ),
+                    );
+                    return Err(err::ENOMEM);
+                }
+            };
+            
+            crate::log::klog(
+                crate::log::Level::Info,
+                "THREAD",
+                &alloc::format!(
+                    "Allocated stack slot: group={} bottom={:#x} top={:#x} active={}",
+                    group_id, stack_bottom, stack_top, group.stack_allocator.active_count()
+                ),
+            );
+            
+            // Allocate PAGE-ALIGNED physical memory for the user stack
+            let user_stack_size = StackSlotAllocator::STACK_SIZE as usize;
+            let user_layout = Layout::from_size_align(user_stack_size, 4096)
+                .map_err(|_| err::ENOMEM)?;
+            let phys_stack = unsafe { alloc::alloc::alloc_zeroed(user_layout) };
+            if phys_stack.is_null() {
+                // Free the slot since allocation failed
+                let group = sched.thread_groups.get_mut(&group_id).unwrap();
+                group.stack_allocator.free(stack_top);
+                return Err(err::ENOMEM);
+            }
+            let phys_addr = crate::machine::machine().virt_to_phys(phys_stack as u64);
             
             // Map it into the shared user address space
             if let Err(e) = address_space.map(
                 stack_bottom,
                 phys_addr,
-                user_stack_size as usize,
+                user_stack_size,
                 MapPerms::READ | MapPerms::WRITE | MapPerms::USER,
             ) {
                 crate::log::klog(
@@ -80,6 +122,9 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
                     "THREAD",
                     &alloc::format!("Failed to map user stack at {:#x}: {:?}", stack_bottom, e),
                 );
+                // Free the slot since mapping failed
+                let group = sched.thread_groups.get_mut(&group_id).unwrap();
+                group.stack_allocator.free(stack_top);
                 return Err(err::ENOMEM);
             }
             
@@ -88,11 +133,11 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
                 "THREAD",
                 &alloc::format!(
                     "Mapped user stack: bottom={:#x} top={:#x} phys={:#x}",
-                    stack_bottom, stack_region_top, phys_addr
+                    stack_bottom, stack_top, phys_addr
                 ),
             );
             
-            stack_region_top
+            (stack_top, stack_top)
         };
 
         // Create thread Thing in graph
@@ -115,16 +160,14 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
             address_space,
             group_id,
         );
+        
+        // Track user stack for reclamation on exit
+        new_task.user_stack_top = user_stack_allocated;
 
         // Configure thread context
-        // The init_task_context function uses arg0 for BOTH user RSP and RDI.
-        // We need to fix this by setting up the TrapFrame correctly:
-        // 1. RSP should be user_stack_top (16-byte aligned)
-        // 2. RDI should be the actual arg0 passed to this syscall
         use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext, TrapFrame};
         
-        // x86-64 ABI: RSP must be 16-byte aligned BEFORE the call instruction pushes return addr
-        // Since we're simulating entry (not a call), align to 16 bytes
+        // x86-64 ABI: RSP must be 16-byte aligned
         let aligned_user_stack = user_stack_top & !0xf;
         
         let mut ctx = TaskContext::default();
@@ -154,6 +197,11 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
         new_task.stack_ptr = ctx.sp;
         new_task.stack_top = kernel_stack_top;
 
+        // Increment thread count in group
+        if let Some(group) = sched.thread_groups.get_mut(&group_id) {
+            group.thread_count += 1;
+        }
+
         // Initialize state
         graph::store::with_store(|s| new_task.set_state(s, sched::task::TaskState::Ready));
 
@@ -173,11 +221,31 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
 /// Exit the current thread with the given exit code.
 /// Wakes any threads waiting to join this thread.
 pub fn sys_thread_exit(code: i32) -> ! {
-    // Mark thread as dead and set exit code
+    // Mark thread as dead and set exit code, reclaim stack slot
     if let Some(task_id) = sched::current_task_handle() {
         sched::with_sched(|sched| {
             if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == task_id) {
                 task.exit_code = Some(code);
+                
+                // Reclaim stack slot if kernel-allocated
+                let user_stack_top = task.user_stack_top;
+                let group_id = task.group_id;
+                
+                if user_stack_top != 0 && group_id != 0 {
+                    if let Some(group) = sched.thread_groups.get_mut(&group_id) {
+                        if group.stack_allocator.free(user_stack_top) {
+                            crate::log::klog(
+                                crate::log::Level::Info,
+                                "THREAD",
+                                &alloc::format!(
+                                    "Freed stack slot: group={} top={:#x} remaining={}",
+                                    group_id, user_stack_top, group.stack_allocator.active_count()
+                                ),
+                            );
+                        }
+                        group.thread_count -= 1;
+                    }
+                }
                 
                 // Wake all joiners
                 let joiners: alloc::vec::Vec<TaskId> = task.joiners.drain(..).collect();

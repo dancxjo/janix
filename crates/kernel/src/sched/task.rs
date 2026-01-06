@@ -62,6 +62,8 @@ pub struct Task {
     pub group_id: u64,             // Thread group ID (0 = legacy single-threaded process)
     pub exit_code: Option<i32>,    // Set when thread exits
     pub joiners: Vec<TaskId>,      // Tasks waiting for this thread to exit
+    /// User stack top allocated by kernel (for reclamation on exit). 0 if user-provided.
+    pub user_stack_top: u64,
 }
 
 impl Task {
@@ -89,6 +91,7 @@ impl Task {
             group_id: 0,
             exit_code: None,
             joiners: Vec::new(),
+            user_stack_top: 0,
         }
     }
 

@@ -10,7 +10,7 @@
 
 use alloc::vec::Vec;
 use alloc::format;
-use thing_std::{log_info, thread_exit};
+use thing_std::{log_info, thread_exit, trace_fn};
 
 use crate::mailbox::Mailbox;
 
@@ -31,6 +31,7 @@ pub static WALLPAPER_MBX: Mailbox<WallpaperReady> = Mailbox::new();
 /// Takes no arguments (arg is unused). Decodes wallpaper and sends via mailbox.
 #[unsafe(no_mangle)]
 pub extern "C" fn wallpaper_worker_entry(_arg: u64) -> ! {
+    trace_fn!("wallpaper_worker");
     log_info("WALLPAPER_WORKER: starting");
     
     let start = thing_std::time::monotonic_now();

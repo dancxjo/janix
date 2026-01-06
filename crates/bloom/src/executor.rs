@@ -5,6 +5,7 @@ use crate::scene::{Rect, Point};
 use crate::assets::bitmap::{Bitmap, BitmapStore};
 use alloc::vec::Vec;
 use thing_std::log_info;
+use thing_std::trace_fn;
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct ExecStats {
@@ -67,6 +68,7 @@ pub fn execute_cmds_into_scene(
     mapping_cache: &mut BytespaceMappingCache,
     bitmap_store: &BitmapStore,
 ) -> ExecOutput {
+    trace_fn!("execute_cmds_into_scene");
     let mut stats = ExecStats::default();
 
     // 0. Safety Guard

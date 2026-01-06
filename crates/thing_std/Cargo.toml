@@ -3,6 +3,10 @@ name = "thing_std"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["tracing"]
+tracing = []
+
 [dependencies]
 abi = { path = "../abi", default-features = false }
 thing_codec = { path = "../thing_codec", default-features = false, features = ["alloc"] }

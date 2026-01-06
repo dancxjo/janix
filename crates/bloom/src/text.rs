@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use spin::Once;
 use crate::painter::Painter;
+use thing_std::trace_fn;
 
 // Embed unifont.hex (8MB bitmap font covering most Unicode)
 static UNIFONT_HEX: &[u8] = include_bytes!("../../../assets/fonts/unifont.hex");
@@ -162,6 +163,7 @@ fn get_cached_glyph(ch: char) -> Option<GlyphBuffer> {
 
 /// Pre-warm the cache with common ASCII characters
 pub fn ensure_font_loaded() {
+    trace_fn!("ensure_font_loaded");
     CACHE_INIT.call_once(|| {
         // Pre-cache ASCII printable range for fast first render
         let ascii: alloc::string::String = (32u8..127u8).map(|b| b as char).collect();

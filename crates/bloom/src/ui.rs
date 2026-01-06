@@ -6,6 +6,7 @@ use models::*;
 use thing_std::graph::{relationships_from, symbol_intern};
 use thing_std::symbol_resolve;
 use thing_std::SyscallGraphClient;
+use thing_std::trace_fn;
 
 use crate::scene_cache::BytespaceMappingCache;
 use crate::layout::{
@@ -172,6 +173,7 @@ pub fn render_window_scenes(
     focused_window: Option<ThingId>,
     mouse_pos: (i32, i32),
 ) {
+    trace_fn!("render_window_scenes");
     for scene in scenes {
         let is_focused = focused_window == Some(scene.id);
         render_window(painter, scene, mapping_cache, is_focused, mouse_pos);
@@ -192,6 +194,7 @@ fn render_window(
     is_focused: bool,
     mouse_pos: (i32, i32),
 ) {
+    trace_fn!("render_window");
     let win = &scene.window;
     let rect = Rect {
         x: win.x,
@@ -405,6 +408,7 @@ fn paint_canvas(painter: &mut dyn Painter, rect: Rect, canvas: &Canvas, mapping_
 }
 
 fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_cache: &mut BytespaceMappingCache) {
+    trace_fn!("paint_drawlist");
     let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
     if clip.is_empty() {

@@ -30,6 +30,7 @@ pub mod process;
 pub mod time;
 pub mod watch;
 pub mod thread;
+pub mod tracing;
 
 pub use codec::*;
 pub use graph::*;

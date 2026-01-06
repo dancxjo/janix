@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["shadows", "window_moving"]
+default = ["shadows", "window_moving", "tracing"]
 shadows = []
 window_moving = []
+tracing = ["thing_std/tracing"]
 
 [dependencies]
 abi = { path = "../abi" }

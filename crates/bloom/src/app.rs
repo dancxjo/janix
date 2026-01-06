@@ -11,6 +11,7 @@ use abi::types::WatchEvent;
 use models::*;
 use thing_std::graph::*;
 use thing_std::*;
+use thing_std::{trace_fn, trace_enter, trace_exit};
 
 use abi::ui::{HitZone, ResizeEdge};
 use crate::ui::hittest::hittest_window;
@@ -30,6 +31,7 @@ const RENDER_MODE_RECORD: u8 = 1;
 const CURRENT_RENDER_MODE: u8 = RENDER_MODE_RECORD;
 
 pub fn run() {
+    trace_fn!("bloom_run");
     thing_std::init(0);
     log_info("BLOOM: alive");
 
@@ -527,6 +529,7 @@ pub fn run() {
                 let mut dirty: Option<Rect> = None;
 
                 if scene_dirty {
+                    let _scene_trace_ns = trace_enter!("scene_rebuild");
                     window_scenes = scene_cache.scenes_in_order();
                     let win_count = window_scenes.len();
                     
@@ -613,6 +616,7 @@ pub fn run() {
                         logged_window_once = true;
                     }
                     scene_cache.clear_dirty();
+                    trace_exit!("scene_rebuild", _scene_trace_ns);
                     scene_dirty = false;
                 } else if cursor_changed {
                     let damage = if let Some(prev_bounds) = prev_cursor_bounds {

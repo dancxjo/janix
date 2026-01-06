@@ -61,6 +61,9 @@ pub fn run() {
                 height,
                 stride_pixels: width,
             });
+            
+            // Initialize input state with screen center immediately (before first paint)
+            INPUT_STATE.init(width, height);
 
             let buffer_size = (width * height) as usize;
             let mut frame_buffer = alloc::vec![0u32; buffer_size];
@@ -91,7 +94,8 @@ pub fn run() {
             let _wallpaper_worker = thing_std::thread::thread_spawn(wallpaper_worker_entry, 0);
             
             // Spawn input worker thread (drains ringbuffer, publishes atomics)
-            if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
+            // Also keep a fallback PointerInput for main thread in case worker fails
+            let mut fallback_input = if let Some(mouse_bs_id) = thing_find("bytespace.mouse_input") {
                 let mouse_vaddr = 0x8820_0000u64;
                 let mouse_size = 8192u64;
                 thing_std::memory::space_map(mouse_bs_id, mouse_vaddr, 0, mouse_size);
@@ -109,11 +113,12 @@ pub fn run() {
                 // Spawn input worker
                 let _input_worker = thing_std::thread::thread_spawn(input_worker_entry, 0);
                 log_info("BLOOM: spawned input worker");
+                
+                PointerInput::new(mouse_vaddr as *const u8, mouse_size as u32, width, height)
             } else {
-                // No input - initialize state with screen center
-                INPUT_STATE.init(width, height);
-                log_info("BLOOM: no mouse input bytespace, using static center");
-            }
+                log_info("BLOOM: no mouse input bytespace, cursor at center");
+                PointerInput::new(core::ptr::null(), 0, width, height)
+            };
 
             let windows_graph = if let Some(id) = thing_find("graph.windows") {
                 id
@@ -215,13 +220,21 @@ pub fn run() {
 
                 let now_ms = (now_ns / 1_000_000) as u64;
 
-                let (px, py, buttons, input_seq) = INPUT_STATE.load();
+                // Try to get input from worker thread atomics first
+                let (mut px, mut py, mut buttons, input_seq) = INPUT_STATE.load();
                 static mut LAST_INPUT_SEQ: u32 = 0;
                 let input_seq_changed = unsafe {
                     let changed = input_seq != LAST_INPUT_SEQ;
                     LAST_INPUT_SEQ = input_seq;
                     changed
                 };
+                
+                // Fallback: if worker isn't producing (seq==0), poll directly
+                // This ensures cursor works even if threading has issues
+                if input_seq == 0 {
+                    (px, py, buttons) = fallback_input.poll();
+                }
+                
                 let moved = px != prev_px || py != prev_py || input_seq_changed;
                 let buttons_changed = buttons != prev_buttons;
 

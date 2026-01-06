@@ -181,7 +181,7 @@ fn sleep_ms(ms: u32) {
 /// Input worker entry point
 #[unsafe(no_mangle)]
 pub extern "C" fn input_worker_entry(_arg: u64) -> ! {
-    log_info("BLOOM: input worker started");
+    thing_std::debug::log("BLOOM: input worker thread entry");
     
     // Wait for config (blocking poll with yield)
     let config = loop {

@@ -150,6 +150,7 @@ pub fn run(env: &str) -> Result<()> {
         "drivers/rtc_pl031",
         "apps/pcid",
         "apps/hello_window",
+        "apps/thread_test",
     ];
     for app in apps {
         println!("    Building {}...", app);

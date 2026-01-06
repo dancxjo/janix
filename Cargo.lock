@@ -2097,6 +2097,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread_test"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "thing_std",
+]
+
+[[package]]
 name = "tiff"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

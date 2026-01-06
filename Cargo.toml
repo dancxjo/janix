@@ -35,6 +35,7 @@ members = [
     "drivers/rtc_pl031",
     "apps/pcid",
     "apps/hello_window",
+    "apps/thread_test",
 ]
 
 [workspace.package]

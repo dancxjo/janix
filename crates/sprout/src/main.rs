@@ -208,6 +208,7 @@ fn spawn_fallback() {
     spawn_and_grant("inputd");
     spawn_and_grant("thingcheck");
     spawn_and_grant("hello_window");
+    spawn_and_grant("thread_test");
 }
 
 fn module_info_from_id(id: ThingId) -> Option<(String, Vec<ThingId>, Vec<CapOp>)> {
@@ -374,6 +375,13 @@ fn configure_policy(id: ThingId, name: &str) {
              global(CapOp::Hardware); // MMIO needs Hardware cap? Or MemManage?
              // MMIO mapping via sys_space_map needs MemManage
              global(CapOp::MemManage);
+        }
+        "thread_test" => {
+            // Thread test needs memory for heap and bytespace creation
+            global(CapOp::MemManage);
+            global(CapOp::GraphRead);
+            global(CapOp::GraphCreate);
+            global(CapOp::GraphLink);
         }
         "hello_window" => {
             global(CapOp::MemManage); // Required for heap allocation

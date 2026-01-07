@@ -21,22 +21,45 @@ impl core::ops::Deref for SafeLockedHeap {
 
 unsafe impl core::alloc::GlobalAlloc for SafeLockedHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let token = crate::machine::irq_disable();
+        #[cfg(test)]
         let res = self.0.alloc(layout);
-        crate::machine::irq_restore(token);
+        #[cfg(not(test))]
+        let res = {
+            let token = crate::machine::irq_disable();
+            let res = self.0.alloc(layout);
+            crate::machine::irq_restore(token);
+            res
+        };
         res
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let token = crate::machine::irq_disable();
-        self.0.dealloc(ptr, layout);
-        crate::machine::irq_restore(token);
+        #[cfg(test)]
+        let res = {
+            self.0.dealloc(ptr, layout);
+        };
+        #[cfg(not(test))]
+        let res = {
+            let token = crate::machine::irq_disable();
+            self.0.dealloc(ptr, layout);
+            crate::machine::irq_restore(token);
+        };
+        res
     }
 }
 
+#[cfg(not(test))]
 #[global_allocator]
 pub static ALLOCATOR: SafeLockedHeap = SafeLockedHeap::empty();
 
+#[cfg(test)]
+#[global_allocator]
+static TEST_ALLOCATOR: std::alloc::System = std::alloc::System;
+
+#[cfg(test)]
+pub static ALLOCATOR: SafeLockedHeap = SafeLockedHeap::empty();
+
+#[cfg(not(test))]
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
     use crate::serial::{write, write_hex};
@@ -72,6 +95,7 @@ fn alloc_error_handler(layout: Layout) -> ! {
     panic!("allocation failed")
 }
 
+#[cfg(not(test))]
 fn print_decimal(mut v: u64) {
     if v == 0 {
         crate::serial::write(b"0");

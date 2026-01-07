@@ -8,8 +8,14 @@ use abi::syscall::err;
 use abi::wire::SyscallResult;
 use graph::store;
 use graph::symbols::{self, sym};
+use crate::syscall::user_mem;
+use abi::cap::CapOp;
 
 pub fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::Log, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     // 1. Level
     let _level = match level_raw {
         0 => Level::Trace,
@@ -25,7 +31,15 @@ pub fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult
     if msg_ptr == 0 || msg_len == 0 {
         return SyscallResult::new(err::EFAULT, 0, 0);
     }
-    let msg = unsafe { core::slice::from_raw_parts(msg_ptr as *const u8, msg_len as usize) };
+    let msg_len = match usize::try_from(msg_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+    };
+    let mut msg_buf = alloc::vec![0u8; msg_len];
+    if let Err(code) = user_mem::copy_from_user(&mut msg_buf, msg_ptr, msg_len) {
+        return SyscallResult::new(code, 0, 0);
+    }
+    let msg = msg_buf.as_slice();
 
     let arrival_mono_ns = time::monotonic_now();
     let subsystem = symbols::intern(b"USER");

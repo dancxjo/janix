@@ -1,14 +1,17 @@
 use abi::cpu::CpuFeaturesWire;
 use abi::syscall::err;
 use abi::wire::SyscallResult;
+use crate::syscall::user_mem;
 
 pub fn sys_cpu_features(out_ptr: u64, out_len: u64) -> SyscallResult {
     let required = core::mem::size_of::<CpuFeaturesWire>();
-    if out_ptr == 0 || out_len < required as u64 {
+    let out_len = match usize::try_from(out_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(err::EINVAL, required as u64, 0),
+    };
+    if out_ptr == 0 || out_len < required {
         return SyscallResult::new(err::EINVAL, required as u64, 0);
     }
-
-    let ptr = out_ptr as *mut CpuFeaturesWire;
 
     let simd = crate::machine::simd();
     let avail = simd.available_families();
@@ -34,8 +37,11 @@ pub fn sys_cpu_features(out_ptr: u64, out_len: u64) -> SyscallResult {
         _pad: 0,
     };
 
-    unsafe {
-        *ptr = wire;
+    let bytes = unsafe {
+        core::slice::from_raw_parts(&wire as *const CpuFeaturesWire as *const u8, required)
+    };
+    if let Err(code) = user_mem::copy_to_user(out_ptr, bytes, required) {
+        return SyscallResult::new(code, 0, 0);
     }
 
     SyscallResult::new(0, required as u64, 0)

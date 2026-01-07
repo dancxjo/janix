@@ -1,7 +1,7 @@
 //! Syscall Dispatch Router
 
 use crate::syscall::cap::CapOp;
-use crate::syscall::{cap, cpu, graph, log, memory, surface, time, wait, watch, thread};
+use crate::syscall::{cap, cpu, graph, log, memory, surface, time, wait, watch, thread, user_mem};
 use abi::syscall::nr;
 use abi::wire::SyscallResult;
 
@@ -176,7 +176,7 @@ pub extern "C" fn dispatch(
             let len = a1 as usize;
             match crate::syscall::input::sys_input_read(buf, len) {
                 Ok(n) => SyscallResult::new(0, n as u64, 0),
-                Err(_) => SyscallResult::new(abi::syscall::err::EFAULT, 0, 0),
+                Err(code) => SyscallResult::new(code, 0, 0),
             }
         }
 
@@ -274,15 +274,22 @@ pub extern "C" fn dispatch(
 
 // Temporary helpers for legacy functions not yet moved
 pub fn mod_legacy_spawn(name_ptr: u64, name_len: u64) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::MemManage, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     if name_ptr == 0 || name_len == 0 {
         return SyscallResult::new(abi::syscall::err::EINVAL, 0, 0);
     }
-    let name = unsafe {
-        core::str::from_utf8(core::slice::from_raw_parts(
-            name_ptr as *const u8,
-            name_len as usize,
-        ))
+    let name_len = match usize::try_from(name_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(abi::syscall::err::EINVAL, 0, 0),
     };
+    let name_buf = match user_mem::copy_from_user_vec(name_ptr, name_len) {
+        Ok(buf) => buf,
+        Err(code) => return SyscallResult::new(code, 0, 0),
+    };
+    let name = core::str::from_utf8(&name_buf);
     if name.is_err() {
         return SyscallResult::new(abi::syscall::err::EINVAL, 0, 0);
     }
@@ -301,13 +308,24 @@ pub fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
 
     use abi::machine::{CONSOLE_WRITE, MEMORY_JOURNAL_STATS, MMIO_MAP, PORT_READ, PORT_WRITE};
 
+    if let Err(code) = user_mem::require_current_cap(CapOp::Hardware, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     match op {
         CONSOLE_WRITE => {
             if a1 == 0 {
                 return SyscallResult::new(err::EFAULT, 0, 0);
             }
-            let bytes = unsafe { core::slice::from_raw_parts(a1 as *const u8, a2 as usize) };
-            let written = machine::machine().console_write(bytes) as u64;
+            let len = match usize::try_from(a2) {
+                Ok(len) => len,
+                Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+            };
+            let mut buf = alloc::vec![0u8; len];
+            if let Err(code) = user_mem::copy_from_user(&mut buf, a1, len) {
+                return SyscallResult::new(code, 0, 0);
+            }
+            let written = machine::machine().console_write(&buf) as u64;
             SyscallResult::new(0, written, 0)
         }
         MMIO_MAP => {

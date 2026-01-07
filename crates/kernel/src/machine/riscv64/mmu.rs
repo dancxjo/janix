@@ -264,4 +264,69 @@ impl AddressSpace {
 
         Ok(())
     }
+
+    pub fn user_range_end(&self) -> u64 {
+        0x8000_0000_0000_0000
+    }
+
+    pub fn probe_user_range(&self, start: u64, len: usize, perms: MapPerms) -> bool {
+        if len == 0 {
+            return true;
+        }
+        let Some(end) = start.checked_add(len as u64) else {
+            return false;
+        };
+        let mut addr = start & !(PAGE_SIZE as u64 - 1);
+        while addr < end {
+            if !self.probe_user_page(addr, perms) {
+                return false;
+            }
+            addr = addr.saturating_add(PAGE_SIZE as u64);
+        }
+        true
+    }
+
+    fn probe_user_page(&self, virt: u64, perms: MapPerms) -> bool {
+        let mut table_phys = self.root_phys;
+        let mut level = levels() - 1;
+
+        loop {
+            let table_virt = phys_to_virt(table_phys);
+            let table = unsafe { &*(table_virt as *const PageTable) };
+            let idx = vpn(virt, level);
+            let entry = table.entries[idx];
+
+            if !entry.is_valid() {
+                return false;
+            }
+
+            if entry.is_leaf() {
+                return entry_permits(entry, perms);
+            }
+
+            if level == 0 {
+                return false;
+            }
+
+            table_phys = entry.phys_addr();
+            level -= 1;
+        }
+    }
+}
+
+fn entry_permits(entry: PageTableEntry, perms: MapPerms) -> bool {
+    let flags = entry.0;
+    if flags & PTE_U == 0 {
+        return false;
+    }
+    if perms.contains(MapPerms::READ) && flags & PTE_R == 0 {
+        return false;
+    }
+    if perms.contains(MapPerms::WRITE) && flags & PTE_W == 0 {
+        return false;
+    }
+    if perms.contains(MapPerms::EXEC) && flags & PTE_X == 0 {
+        return false;
+    }
+    true
 }

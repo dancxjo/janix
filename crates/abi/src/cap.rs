@@ -16,6 +16,7 @@ pub enum CapOp {
     GrantCaps = 10,
     IoPort = 11,
     PciConfigRead = 12,
+    InputRead = 13,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

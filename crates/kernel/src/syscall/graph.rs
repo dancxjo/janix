@@ -7,10 +7,16 @@ use abi::wire::SyscallResult;
 use graph::store;
 use graph::symbols;
 use crate::watch;
+use crate::syscall::user_mem;
+use abi::cap::CapOp;
 
 pub fn sys_thing_create(kind_low: u64, parent_low: u64) -> SyscallResult {
     let kind = SymbolId(kind_low);
     let parent = ThingId(parent_low as u128);
+
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphCreate, Some(parent)) {
+        return SyscallResult::new(code, 0, 0);
+    }
 
     let thing_id = store::thing_create(kind);
 
@@ -26,6 +32,10 @@ pub fn sys_relationship_create(pred_low: u64, from_low: u64, to_low: u64) -> Sys
     let from = ThingId(from_low as u128);
     let to = ThingId(to_low as u128);
 
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphLink, Some(from)) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     let rel_id = store::relationship_create(pred, from, to);
     if pred == symbols::intern(b"predicate.contains") {
         watch::graph_member_added(from, to);
@@ -35,6 +45,14 @@ pub fn sys_relationship_create(pred_low: u64, from_low: u64, to_low: u64) -> Sys
 
 pub fn sys_relationship_delete(rel_low: u64) -> SyscallResult {
     let rel_id = ThingId(rel_low as u128);
+    let Some(rel) = store::get_relationship(rel_id) else {
+        return SyscallResult::new(err::ENOENT, 0, 0);
+    };
+
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphUnlink, Some(rel.from)) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     if let Some(rel) = store::relationship_delete(rel_id) {
         if rel.kind == symbols::intern(b"predicate.contains") {
             watch::graph_member_removed(rel.from, rel.to);
@@ -47,6 +65,10 @@ pub fn sys_relationship_delete(rel_low: u64) -> SyscallResult {
 pub fn sys_thing_get(id_low: u64, out_ptr: u64, out_len: u64) -> SyscallResult {
     let id = ThingId(id_low as u128);
 
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphRead, Some(id)) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     if let Some(body) = store::get_body(id) {
         let header = store::get_thing_header(id).unwrap();
         let digest = header.integrity_digest;
@@ -56,9 +78,13 @@ pub fn sys_thing_get(id_low: u64, out_ptr: u64, out_len: u64) -> SyscallResult {
             return SyscallResult::new(0, digest, body.len() as u64);
         }
 
-        let write_len = core::cmp::min(body.len(), out_len as usize);
-        unsafe {
-            core::ptr::copy_nonoverlapping(body.as_ptr(), out_ptr as *mut u8, write_len);
+        let out_len = match usize::try_from(out_len) {
+            Ok(len) => len,
+            Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+        };
+        let write_len = core::cmp::min(body.len(), out_len);
+        if let Err(code) = user_mem::copy_to_user(out_ptr, &body, write_len) {
+            return SyscallResult::new(code, 0, 0);
         }
 
         // Return digest in val0, actual write length in val1
@@ -70,7 +96,16 @@ pub fn sys_thing_get(id_low: u64, out_ptr: u64, out_len: u64) -> SyscallResult {
 
 pub fn sys_thing_set_body(id_low: u64, buf_ptr: u64, buf_len: u64) -> SyscallResult {
     let id = ThingId(id_low as u128);
+
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphWrite, Some(id)) {
+        return SyscallResult::new(code, 0, 0);
+    }
     
+    let buf_len = match usize::try_from(buf_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+    };
+
     if buf_ptr == 0 || buf_len == 0 {
         if let Err(e) = store::thing_set_body(id, &[]) {
             return SyscallResult::new(e as i32, 0, 0);
@@ -82,9 +117,12 @@ pub fn sys_thing_set_body(id_low: u64, buf_ptr: u64, buf_len: u64) -> SyscallRes
         return SyscallResult::new(err::ENOMEM, 0, 0);
     }
 
-    let buf = unsafe { core::slice::from_raw_parts(buf_ptr as *const u8, buf_len as usize) };
+    let mut buf = alloc::vec![0u8; buf_len];
+    if let Err(code) = user_mem::copy_from_user(&mut buf, buf_ptr, buf_len) {
+        return SyscallResult::new(code, 0, 0);
+    }
 
-    match store::thing_set_body(id, buf) {
+    match store::thing_set_body(id, &buf) {
         Ok(()) => {
             watch::thing_updated(id);
             SyscallResult::new(0, 0, 0)
@@ -101,6 +139,10 @@ pub fn sys_relationships_by_kind(
 ) -> SyscallResult {
     let id = ThingId(id_low as u128);
     let kind = SymbolId(kind_low);
+
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphRead, Some(id)) {
+        return SyscallResult::new(code, 0, 0);
+    }
 
     let targets = store::relationships_by_kind(id, kind);
     let total = targets.len() as u64;
@@ -122,12 +164,13 @@ pub fn sys_relationships_by_kind(
     let write_count = core::cmp::min(max_elems, targets.len());
     let write_bytes = write_count * elem_size;
 
-    unsafe {
-        core::ptr::copy_nonoverlapping(
-            targets.as_ptr() as *const u8,
-            out_ptr as *mut u8,
-            write_bytes,
-        );
+    if write_bytes > 0 {
+        let bytes = unsafe {
+            core::slice::from_raw_parts(targets.as_ptr() as *const u8, write_bytes)
+        };
+        if let Err(code) = user_mem::copy_to_user(out_ptr, bytes, write_bytes) {
+            return SyscallResult::new(code, 0, total);
+        }
     }
 
     SyscallResult::new(0, write_count as u64, total)
@@ -140,6 +183,10 @@ pub fn sys_relationships_from(
     out_len: u64,
 ) -> SyscallResult {
     let id = ThingId(id_low as u128);
+
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphRead, Some(id)) {
+        return SyscallResult::new(code, 0, 0);
+    }
 
     let rel_ids = store::relationships_from(id);
     let total_rels = rel_ids.len() as u64;
@@ -159,15 +206,23 @@ pub fn sys_relationships_from(
     }
 
     let elem_size = core::mem::size_of::<RelationshipRef>();
-    if out_len as usize > (isize::MAX as usize) / elem_size {
+    let out_len = match usize::try_from(out_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(err::EINVAL, 0, total_rels),
+    };
+    if out_len > (isize::MAX as usize) / elem_size {
         return SyscallResult::new(err::EINVAL, 0, total_rels);
     }
 
     let mut count = 0u64;
-    let dest_base = out_ptr as *mut u8;
+    let max_bytes = match out_len.checked_mul(elem_size) {
+        Some(len) => len,
+        None => return SyscallResult::new(err::EINVAL, 0, total_rels),
+    };
+    let mut scratch = alloc::vec![0u8; max_bytes];
 
     for (i, &rel_id) in rel_ids.iter().skip(skip).enumerate() {
-        if i >= out_len as usize {
+        if i >= out_len {
             break;
         }
         if let Some(rel) = store::get_relationship(rel_id) {
@@ -179,10 +234,17 @@ pub fn sys_relationships_from(
             // Copy bytes directly to avoid alignment issues
             unsafe {
                 let src_ptr = &ref_data as *const RelationshipRef as *const u8;
-                let dest_ptr = dest_base.add(i * elem_size);
+                let dest_ptr = scratch.as_mut_ptr().add(i * elem_size);
                 core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, elem_size);
             }
             count += 1;
+        }
+    }
+
+    let write_bytes = (count as usize).saturating_mul(elem_size);
+    if write_bytes > 0 {
+        if let Err(code) = user_mem::copy_to_user(out_ptr, &scratch, write_bytes) {
+            return SyscallResult::new(code, 0, total_rels);
         }
     }
 
@@ -197,12 +259,8 @@ pub fn sys_symbol_resolve(id_low: u64, out_ptr: u64, out_len: u64) -> SyscallRes
 
         if out_ptr != 0 && out_len > 0 {
             let write_len = core::cmp::min(len, out_len);
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    bytes.as_ptr(),
-                    out_ptr as *mut u8,
-                    write_len as usize,
-                );
+            if let Err(code) = user_mem::copy_to_user(out_ptr, bytes, write_len as usize) {
+                return SyscallResult::new(code, 0, 0);
             }
             SyscallResult::new(0, write_len, len)
         } else {
@@ -214,12 +272,23 @@ pub fn sys_symbol_resolve(id_low: u64, out_ptr: u64, out_len: u64) -> SyscallRes
 }
 
 pub fn sys_thing_find(name_ptr: u64, name_len: u64) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphRead, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     if name_ptr == 0 || name_len == 0 || name_len > 1024 {
         return SyscallResult::new(err::EINVAL, 0, 0);
     }
 
-    let name_slice =
-        unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len as usize) };
+    let name_len = match usize::try_from(name_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+    };
+    let mut name_buf = alloc::vec![0u8; name_len];
+    if let Err(code) = user_mem::copy_from_user(&mut name_buf, name_ptr, name_len) {
+        return SyscallResult::new(code, 0, 0);
+    }
+    let name_slice = name_buf.as_slice();
 
     let sym_id = symbols::intern(name_slice);
 
@@ -237,8 +306,19 @@ pub fn sys_thing_register_name(id_low: u64, name_ptr: u64, name_len: u64) -> Sys
 
     let thing_id = ThingId(id_low as u128);
 
-    let name_slice =
-        unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len as usize) };
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphWrite, Some(thing_id)) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
+    let name_len = match usize::try_from(name_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+    };
+    let mut name_buf = alloc::vec![0u8; name_len];
+    if let Err(code) = user_mem::copy_from_user(&mut name_buf, name_ptr, name_len) {
+        return SyscallResult::new(code, 0, 0);
+    }
+    let name_slice = name_buf.as_slice();
 
     let sym_id = symbols::intern(name_slice);
     store::thing_register_name(thing_id, sym_id);
@@ -251,8 +331,15 @@ pub fn sys_symbol_intern(name_ptr: u64, name_len: u64) -> SyscallResult {
         return SyscallResult::new(err::EINVAL, 0, 0);
     }
 
-    let name_slice =
-        unsafe { core::slice::from_raw_parts(name_ptr as *const u8, name_len as usize) };
+    let name_len = match usize::try_from(name_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+    };
+    let mut name_buf = alloc::vec![0u8; name_len];
+    if let Err(code) = user_mem::copy_from_user(&mut name_buf, name_ptr, name_len) {
+        return SyscallResult::new(code, 0, 0);
+    }
+    let name_slice = name_buf.as_slice();
 
     let sym_id = symbols::intern(name_slice);
     SyscallResult::new(0, sym_id.0, 0)

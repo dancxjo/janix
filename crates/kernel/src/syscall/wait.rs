@@ -9,6 +9,8 @@ use abi::types::WaitFlags;
 use abi::wire::SyscallResult;
 
 use crate::sched::{self, BlockReason};
+use crate::syscall::user_mem;
+use abi::cap::CapOp;
 
 pub fn sys_wait(
     watches_ptr: u64,
@@ -16,8 +18,15 @@ pub fn sys_wait(
     flags_raw: u64,
     timeout_ticks: u64,
 ) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphWatch, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     // 1. Validate inputs
-    let count = watch_len as usize;
+    let count = match usize::try_from(watch_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+    };
     if watches_ptr == 0 && count > 0 {
         return SyscallResult::new(err::EFAULT, 0, 0);
     }
@@ -26,8 +35,18 @@ pub fn sys_wait(
     let watches = if count == 0 {
         Vec::new()
     } else {
-        let slice = unsafe { core::slice::from_raw_parts(watches_ptr as *const u64, count) };
-        slice.iter().copied().map(WatchId).collect::<Vec<_>>()
+        let byte_len = match count.checked_mul(core::mem::size_of::<u64>()) {
+            Some(len) => len,
+            None => return SyscallResult::new(err::EINVAL, 0, 0),
+        };
+        let mut raw = alloc::vec![0u64; count];
+        let raw_bytes = unsafe {
+            core::slice::from_raw_parts_mut(raw.as_mut_ptr() as *mut u8, byte_len)
+        };
+        if let Err(code) = user_mem::copy_from_user(raw_bytes, watches_ptr, byte_len) {
+            return SyscallResult::new(code, 0, 0);
+        }
+        raw.into_iter().map(WatchId).collect::<Vec<_>>()
     };
 
     // 2. Compute timeout absolute tick

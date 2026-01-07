@@ -11,42 +11,18 @@ use abi::ids::ThingId;
 use abi::syscall::err;
 use abi::wire::SyscallResult;
 use crate::sched;
+use crate::syscall::user_mem;
 
 pub fn check(op: CapOp, target: Option<ThingId>) -> Result<(), SyscallResult> {
-    sched::with_current_task(|task| {
-        // Superuser bypass for kernel tasks? 
-        // For now, explicit grants only.
-        
-        for cap in &task.caps {
-            if cap.op == op {
-                match cap.scope {
-                    CapScope::Global => return Ok(()),
-                    CapScope::Thing(id) => {
-                        if let Some(req_target) = target {
-                            if req_target == id {
-                                return Ok(());
-                            }
-                        } else {
-                            // If operation doesn't require target but cap is scoped...
-                            // Usually this means "Access to Thing X", but if op is Global-like...
-                            // This branch means user asked check(Op, None) but cap is Op(Thing).
-                            // This is a mismatch unless Op implies wildcard.
-                            // Strict match for now.
-                        }
-                    }
-                }
-            }
-        }
-        
-        // No matching cap found
-        Err(SyscallResult::new(err::EPERM, 0, 0))
-    }).unwrap_or(Err(SyscallResult::new(err::EFAULT, 0, 0)))
+    sched::with_current_task(|task| user_mem::require_cap(task, op, target))
+        .unwrap_or(Err(err::EFAULT))
+        .map_err(|code| SyscallResult::new(code, 0, 0))
 }
 
 pub fn sys_cap_grant(target_low: u64, target_high: u64, cap_ptr: u64) -> SyscallResult {
     // 1. Check if caller has GrantCaps
-    if let Err(e) = check(CapOp::GrantCaps, None) {
-        return e;
+    if let Err(code) = user_mem::require_current_cap(CapOp::GrantCaps, None) {
+        return SyscallResult::new(code, 0, 0);
     }
 
     // 2. Decode Arguments
@@ -55,14 +31,19 @@ pub fn sys_cap_grant(target_low: u64, target_high: u64, cap_ptr: u64) -> Syscall
         return SyscallResult::new(err::EFAULT, 0, 0);
     }
     
-    // Safety: Userspace pointer dereference.
-    // In a real kernel we must copy_from_user / verify bounds.
-    // For now assuming identity map / valid user ptr in same address space (linear model)
-    // or manually reconstructing.
-    // Let's copy it safely.
-    let cap = unsafe {
-        *(cap_ptr as *const Cap)
+    let mut cap = Cap {
+        op: CapOp::Log,
+        scope: CapScope::Global,
     };
+    let cap_bytes = unsafe {
+        core::slice::from_raw_parts_mut(
+            &mut cap as *mut Cap as *mut u8,
+            core::mem::size_of::<Cap>(),
+        )
+    };
+    if let Err(code) = user_mem::copy_from_user(cap_bytes, cap_ptr, cap_bytes.len()) {
+        return SyscallResult::new(code, 0, 0);
+    }
 
     // 3. Apply to Target Task
     // We need to find the task by ThingId. Scheduler tracks TaskId, but Task struct has ThingId.

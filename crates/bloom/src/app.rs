@@ -32,9 +32,9 @@ use crate::backend::*;
 
 const WATCH_WAIT_TIMEOUT_TICKS: u64 = 0;
 
-const RENDER_MODE_IMMEDIATE: u8 = 0;
-const RENDER_MODE_RECORD: u8 = 1;
-const CURRENT_RENDER_MODE: u8 = RENDER_MODE_RECORD;
+// Bloom uses a fully record-then-execute rendering pipeline.
+// All scene content is recorded into DrawCmd list, then executed in a tight loop.
+// The ONLY exception is cursor overlay, which is drawn immediately for responsiveness.
 
 pub fn run() {
     trace_fn!("bloom_run");
@@ -199,7 +199,6 @@ pub fn run() {
             let mut prev_py = 0;
             let mut prev_buttons: u16 = 0;
             let mut logged_window_once = false;
-            let mut prev_cursor_bounds: Option<Rect> = None;
             let mut scene_dirty = true;
             let mut window_scenes: alloc::vec::Vec<WindowScene> = alloc::vec::Vec::new();
             let mut events: alloc::vec::Vec<WatchEvent> = alloc::vec::Vec::new();
@@ -576,7 +575,6 @@ pub fn run() {
                 } else {
                     None
                 };
-                let cursor_bounds = cursor_bounds(cursor_frame, px, py);
                 let cursor_changed = moved || anim_changed || buttons_changed;
 
                 let mut dirty: Option<Rect> = None;
@@ -594,31 +592,30 @@ pub fn run() {
                     
                     scene_cache.mapping_cache.reset_frame_stats();
 
-                    // Rebuild scene
-                    if CURRENT_RENDER_MODE == RENDER_MODE_RECORD {
-                        // 1. Record commands
-                        let mut recorder = crate::command_recorder::CommandRecorder::new(width, height);
-                        
-                        // Background Layer
-                        if let Some((handle, w, h)) = wallpaper_handle {
-                            recorder.cmds.push(crate::draw_cmd::DrawCmd::TileBitmap { 
-                                dst: Rect { x: 0, y: 0, w: width, h: height }, 
-                                bitmap: handle,
-                                bmp_w: w,
-                                bmp_h: h,
-                                origin: crate::scene::Point { x: 0, y: 0 },
-                                opacity: 255,
-                            });
-                        } else {
-                            recorder.clear(background_color);
-                        }
-
-                        render_window_scenes(&mut recorder, &window_scenes, &mut scene_cache.mapping_cache, focused_window, (px, py));
-                        let cmds = recorder.finish();
-                        
-                        // 2. Start Chunked Execution
-                        current_exec = Some(ChunkedExecutor::new(cmds, width, height));
+                    // === RECORD PHASE ===
+                    // Build command list from scene state (no pixel writes allowed here)
+                    let mut recorder = crate::command_recorder::CommandRecorder::new(width, height);
+                    
+                    // Background Layer
+                    if let Some((handle, w, h)) = wallpaper_handle {
+                        recorder.cmds.push(crate::draw_cmd::DrawCmd::TileBitmap { 
+                            dst: Rect { x: 0, y: 0, w: width, h: height }, 
+                            bitmap: handle,
+                            bmp_w: w,
+                            bmp_h: h,
+                            origin: crate::scene::Point { x: 0, y: 0 },
+                            opacity: 255,
+                        });
+                    } else {
+                        recorder.clear(background_color);
                     }
+
+                    render_window_scenes(&mut recorder, &window_scenes, &mut scene_cache.mapping_cache, focused_window, (px, py));
+                    let cmds = recorder.finish();
+                    
+                    // === EXECUTE PHASE (chunked) ===
+                    // Start execution of recorded commands
+                    current_exec = Some(ChunkedExecutor::new(cmds, width, height));
                     
                     // Clear scene_dirty now that we have captured the state into current_exec
                     // Note: If anything dirties it again while executing, we will restart at next frame
@@ -660,53 +657,35 @@ pub fn run() {
                      }
                 }
 
+                // === COMPOSITING PHASE ===
+                // 1. Copy executed scene to framebuffer (if scene changed)
                 if let Some(rect) = dirty {
                      let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
-                     // Copy from scene_buffer to frame_buffer
                      painter.copy_region(scene_buffer.as_slice(), width, rect);
-                } else if cursor_changed {
-                     // If only cursor changed, we need to restore background behind cursor.
-                     // The background source is `scene_buffer`.
-                     // `prev_cursor_bounds` is what we need to erase.
-                     // `cursor_bounds` is what we need to draw.
-                     let restore_rect = if let Some(prev_bounds) = prev_cursor_bounds {
-                         Rect::union(prev_bounds, cursor_bounds)
-                     } else {
-                         cursor_bounds
-                     };
-                     
-                     let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
-                     painter.copy_region(scene_buffer.as_slice(), width, restore_rect);
-                     merge_damage(&mut dirty, restore_rect);
                 }
-
-                if dirty.is_some() {
-                    let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
-                    painter.set_clip(Clip::full(width, height));
-                    
-                    if let Some(animator) = cursor_set.current_animator() {
-                        if let Some(frame) = animator.current_frame() {
-                            #[cfg(feature = "shadows")]
-                            painter.blit_rgba_alpha(
-                                px - frame.hotspot_x + frame.shadow_offset_x,
-                                py - frame.hotspot_y + frame.shadow_offset_y,
-                                &frame.shadow_pixels,
-                                frame.width,
-                                frame.height,
-                            );
-                            painter.draw_cursor_frame(frame, px, py);
-                            if !logged_shared_shadow {
-                                log_info("BLOOM: shadow kernel: shared");
-                                logged_shared_shadow = true;
-                            }
-                        } else {
-                            painter.draw_fallback_cursor(px, py);
-                        }
+                
+                // 2. Overlay cursor (IMMEDIATE MODE - the only exception)
+                // This must be immediate for responsiveness during long scene rebuilds
+                if cursor_changed || dirty.is_some() {
+                    let cursor_frame = if let Some(anim) = cursor_set.current_animator() {
+                        anim.current_frame()
                     } else {
-                        painter.draw_fallback_cursor(px, py);
+                        None
+                    };
+                    
+                    if let Some(cursor_dirty) = cursor_overlay.present(
+                        scene_buffer.as_slice(),
+                        frame_buffer.as_mut_slice(),
+                        px,
+                        py,
+                        cursor_frame,
+                    ) {
+                        merge_damage(&mut dirty, cursor_dirty);
+                        if !logged_shared_shadow {
+                            log_info("BLOOM: cursor overlay active with shadows");
+                            logged_shared_shadow = true;
+                        }
                     }
-                    merge_damage(&mut dirty, cursor_bounds);
-                    prev_cursor_bounds = Some(cursor_bounds);
                 }
 
                 if let Some(rect) = dirty {
@@ -762,21 +741,4 @@ fn seed_scene(
 fn merge_damage(into: &mut Option<Rect>, rect: Rect) {
     if rect.w == 0 || rect.h == 0 { return; }
     *into = Some(if let Some(existing) = *into { Rect::union(existing, rect) } else { rect });
-}
-
-fn cursor_bounds(frame: Option<&CursorFrame>, px: i32, py: i32) -> Rect {
-    match frame {
-        Some(frame) => {
-            let sprite_x = px - frame.hotspot_x;
-            let sprite_y = py - frame.hotspot_y;
-            let shadow_x = sprite_x + frame.shadow_offset_x;
-            let shadow_y = sprite_y + frame.shadow_offset_y;
-            let min_x = sprite_x.min(shadow_x);
-            let min_y = sprite_y.min(shadow_y);
-            let max_x = (sprite_x + frame.width as i32).max(shadow_x + frame.width as i32);
-            let max_y = (sprite_y + frame.height as i32).max(shadow_y + frame.height as i32);
-            Rect { x: min_x, y: min_y, w: (max_x - min_x) as u32, h: (max_y - min_y) as u32 }
-        }
-        None => Rect { x: px, y: py, w: 10, h: 11 },
-    }
 }

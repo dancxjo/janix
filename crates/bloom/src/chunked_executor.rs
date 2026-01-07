@@ -213,6 +213,9 @@ impl ChunkedExecutor {
     
     /// Execute up to `budget_cmds` commands.
     /// Returns `true` if all commands are complete, `false` if more work remains.
+    /// 
+    /// Note: This is the actual execution path used by Bloom. The EXECUTOR_ACTIVE
+    /// flag is set here to track that we're writing pixels to scene_buffer.
     pub fn step(
         &mut self,
         scene_buffer: &mut [u32],
@@ -223,6 +226,10 @@ impl ChunkedExecutor {
         if self.is_complete() {
             return true;
         }
+        
+        // RAII guard: sets EXECUTOR_ACTIVE on entry, clears on drop (even if we panic)
+        #[cfg(debug_assertions)]
+        let _guard = crate::executor::ExecPhaseGuard::enter();
         
         // Safety check
         let required_len = (self.state.width as usize) * (self.state.height as usize);

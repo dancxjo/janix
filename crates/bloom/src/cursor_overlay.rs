@@ -1,18 +1,37 @@
 //! Cursor overlay presenter - composites cursor sprite over scene buffer.
 //!
-//! The classic "sprite over background" trick:
+//! ## THE ONLY IMMEDIATE-MODE EXCEPTION
+//!
+//! The cursor overlay is the **ONLY** code in Bloom that is allowed to write
+//! pixels immediately (outside the record-execute pipeline). This is necessary
+//! for cursor responsiveness during long scene rebuilds.
+//!
+//! ## The Classic Sprite Trick
+//!
 //! 1. Restore old cursor region (copy from scene_buffer → framebuffer)
 //! 2. Draw cursor sprite at new position into framebuffer
 //! 3. Track last bounds for next restore
 //!
-//! This decouples cursor rendering from scene execution, keeping cursor
-//! responsive even during 35s scene rebuilds.
+//! This decouples cursor rendering from scene execution, keeping the cursor
+//! responsive even during 35-second scene rebuilds.
+//!
+//! ## Important Constraints
+//!
+//! - Must NOT invalidate the scene command list
+//! - Must NOT write to scene_buffer (only framebuffer)
+//! - Must track bounds accurately for clean restore
 
 use crate::scene::Rect;
 use crate::painter::{CpuPainter, Painter, Clip};
 use crate::assets::cursor::CursorFrame;
 
 /// Cursor overlay state - tracks last presented position for dirty rect restore.
+/// 
+/// ## Invariant: Must track prev_bounds internally
+/// 
+/// This struct MUST maintain `last_bounds` to restore the previous cursor region
+/// from scene_buffer before drawing the new cursor. Without this, cursor trails
+/// would appear as the old cursor sprite wouldn't be erased.
 pub struct CursorOverlay {
     last_pos: Option<(i32, i32)>,
     last_bounds: Option<Rect>,

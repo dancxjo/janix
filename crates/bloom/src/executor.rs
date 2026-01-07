@@ -1,3 +1,33 @@
+//! Command execution - the ONLY code path that writes pixels to scene buffer.
+//!
+//! ## Execution Phase
+//!
+//! This module contains the tight loop that processes `DrawCmd` lists:
+//!
+//! ```text
+//! execute_cmds_into_scene(cmds, scene_buffer, ...) -> ExecOutput
+//! ```
+//!
+//! ## Single Source of Pixel Writes
+//!
+//! All non-cursor pixel writes MUST go through `execute_cmds_into_scene`.
+//! This function:
+//! - Creates a `CpuPainter` for the scene buffer
+//! - Iterates commands with bounds culling
+//! - Tracks damage and execution stats
+//!
+//! ## Features
+//!
+//! - **Bounds culling**: Commands outside clip rect are skipped
+//! - **Damage tracking**: Accumulates dirty regions for efficient present
+//! - **Stats**: Counts commands drawn, skipped, failed
+//! - **Bytespace mapping**: Lazily maps bytespaces via cache
+//!
+//! ## Debug Invariant
+//!
+//! In debug builds, the executor sets a thread-local flag to track that
+//! we're in the execute phase, helping catch accidental immediate-mode rendering.
+
 use crate::draw_cmd::DrawCmd;
 use crate::painter::{Painter, CpuPainter, Clip};
 use crate::scene_cache::{BytespaceMappingCache, MapResult};
@@ -6,6 +36,52 @@ use crate::assets::bitmap::{Bitmap, BitmapStore};
 use alloc::vec::Vec;
 use thing_std::log_info;
 use thing_std::trace_fn;
+
+#[cfg(debug_assertions)]
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Debug helper: Track whether we're currently executing commands.
+/// This helps catch bugs where pixel writes happen during record phase.
+/// 
+/// Uses AtomicBool to be safe for future parallelism (no UB from concurrent access).
+#[cfg(debug_assertions)]
+static EXECUTOR_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// RAII guard that sets EXECUTOR_ACTIVE on creation and clears it on drop.
+/// This ensures the flag is always cleared, even if we panic during execution.
+#[cfg(debug_assertions)]
+pub(crate) struct ExecPhaseGuard;
+
+#[cfg(debug_assertions)]
+impl ExecPhaseGuard {
+    pub(crate) fn enter() -> Self {
+        EXECUTOR_ACTIVE.store(true, Ordering::Relaxed);
+        Self
+    }
+}
+
+#[cfg(debug_assertions)]
+impl Drop for ExecPhaseGuard {
+    fn drop(&mut self) {
+        EXECUTOR_ACTIVE.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Check if we're in execute phase (debug builds only).
+#[cfg(debug_assertions)]
+#[inline]
+pub fn is_executing() -> bool {
+    EXECUTOR_ACTIVE.load(Ordering::Relaxed)
+}
+
+/// Check if we're in execute phase (release builds - always false).
+/// In release, we don't track execution phase, so conservatively return false
+/// to prevent any logic from accidentally permitting pixel writes.
+#[cfg(not(debug_assertions))]
+#[inline]
+pub fn is_executing() -> bool {
+    false
+}
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct ExecStats {
@@ -60,6 +136,8 @@ struct ValidatedBlit<'a> {
 }
 
 /// Execute a list of commands into a mutable buffer.
+/// 
+/// **This is the ONLY function that should write pixels to the scene buffer.**
 pub fn execute_cmds_into_scene(
     cmds: &[DrawCmd],
     scene_buffer: &mut [u32],
@@ -69,6 +147,11 @@ pub fn execute_cmds_into_scene(
     bitmap_store: &BitmapStore,
 ) -> ExecOutput {
     trace_fn!("execute_cmds_into_scene");
+    
+    // RAII guard: sets EXECUTOR_ACTIVE on entry, clears on drop (even if we panic)
+    #[cfg(debug_assertions)]
+    let _guard = ExecPhaseGuard::enter();
+    
     let mut stats = ExecStats::default();
 
     // 0. Safety Guard

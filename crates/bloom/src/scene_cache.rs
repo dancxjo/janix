@@ -226,6 +226,7 @@ pub struct SceneCache {
     pub dirty: BTreeSet<ThingId>,
     pub dirty_scene: bool,
     pub mapping_cache: BytespaceMappingCache,
+    pub damage: Option<Rect>,
 }
 
 impl SceneCache {
@@ -235,18 +236,37 @@ impl SceneCache {
             dirty: BTreeSet::new(),
             dirty_scene: false,
             mapping_cache: BytespaceMappingCache::new(),
+            damage: None,
         }
+    }
+
+    fn merge_damage(&mut self, rect: Rect) {
+        if rect.w == 0 || rect.h == 0 { return; }
+        self.damage = Some(if let Some(existing) = self.damage {
+            Rect::union(existing, rect)
+        } else {
+            rect
+        });
+    }
+
+    pub fn take_damage(&mut self) -> Option<Rect> {
+        self.damage.take()
     }
 
     pub fn upsert(&mut self, scene: WindowScene) {
         let view = WindowView::from_scene(scene);
         let id = view.id;
+        if let Some(old) = self.windows.get(&id) {
+            self.merge_damage(old.rect);
+        }
+        self.merge_damage(view.rect);
         self.windows.insert(id, view);
         self.dirty.insert(id);
     }
 
     pub fn remove(&mut self, id: ThingId) {
-        if self.windows.remove(&id).is_some() {
+        if let Some(old) = self.windows.remove(&id) {
+            self.merge_damage(old.rect);
             self.dirty_scene = true;
         }
     }

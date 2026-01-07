@@ -225,7 +225,7 @@ pub fn execute_cmds_into_scene(
             }
             DrawCmd::Clear { color } => {
                 painter.clear(*color);
-                damage.add(scene_rect, scene_rect);
+                damage.add(current_clip, scene_rect);
                 stats.cmds_drawn += 1;
             }
             DrawCmd::TextRun { x, y, text, color, font_size } => {

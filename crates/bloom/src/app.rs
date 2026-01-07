@@ -215,6 +215,7 @@ pub fn run() {
             let mut focused_window: Option<ThingId> = None;
 
             let mut current_exec: Option<ChunkedExecutor> = None;
+            let mut target_damage: Option<Rect> = Some(Rect { x: 0, y: 0, w: width, h: height });
 
             loop {
                 let now_ns = monotonic_now();
@@ -233,6 +234,7 @@ pub fn run() {
                     let h = bitmap_store.add(bmp);
                     wallpaper_handle = Some((h, wp.width, wp.height));
                     scene_dirty = true;
+                    merge_damage(&mut target_damage, Rect { x: 0, y: 0, w: width, h: height });
                 }
             
                 if let Ok(n) = watches.drain(&mut events) {
@@ -253,6 +255,11 @@ pub fn run() {
                 }
 
                 if scene_cache.is_dirty() {
+                    scene_dirty = true;
+                }
+
+                if let Some(d) = scene_cache.take_damage() {
+                    merge_damage(&mut target_damage, d);
                     scene_dirty = true;
                 }
 
@@ -291,6 +298,7 @@ pub fn run() {
                 
                 let moved = px != prev_px || py != prev_py || input_seq_changed;
                 let buttons_changed = buttons != prev_buttons;
+                let old_focused_window = focused_window;
 
                 // Handle Input Events
                 if buttons_changed || moved {
@@ -500,6 +508,20 @@ pub fn run() {
                     }
                 }
 
+                if old_focused_window != focused_window {
+                    if let Some(id) = old_focused_window {
+                        if let Some(view) = scene_cache.windows.get(&id) {
+                            merge_damage(&mut target_damage, view.rect);
+                        }
+                    }
+                    if let Some(id) = focused_window {
+                        if let Some(view) = scene_cache.windows.get(&id) {
+                            merge_damage(&mut target_damage, view.rect);
+                        }
+                    }
+                    scene_dirty = true;
+                }
+
                 // Input handling happens before scene update
                 // Update active cursor based on drag mode or hit
                 
@@ -595,6 +617,9 @@ pub fn run() {
                     // === RECORD PHASE ===
                     // Build command list from scene state (no pixel writes allowed here)
                     let mut recorder = crate::command_recorder::CommandRecorder::new(width, height);
+
+                    let clip_rect = target_damage.take().unwrap_or(Rect { x: 0, y: 0, w: width, h: height });
+                    recorder.cmds.push(crate::draw_cmd::DrawCmd::SetClip { rect: clip_rect });
                     
                     // Background Layer
                     if let Some((handle, w, h)) = wallpaper_handle {
@@ -612,6 +637,13 @@ pub fn run() {
 
                     render_window_scenes(&mut recorder, &window_scenes, &mut scene_cache.mapping_cache, focused_window, (px, py));
                     let cmds = recorder.finish();
+
+                    let mut frame_bounds_union: Option<Rect> = None;
+                    for cmd in &cmds {
+                         if let Some(b) = cmd.bounds() {
+                             frame_bounds_union = Some(if let Some(u) = frame_bounds_union { Rect::union(u, b) } else { b });
+                         }
+                    }
                     
                     // === EXECUTE PHASE (chunked) ===
                     // Start execution of recorded commands

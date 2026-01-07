@@ -92,7 +92,7 @@ impl ExecutorState {
             }
             DrawCmd::Clear { color } => {
                 painter.clear(*color);
-                self.damage.add(self.scene_rect, self.scene_rect);
+                self.damage.add(self.current_clip, self.scene_rect);
                 self.stats.cmds_drawn += 1;
             }
             DrawCmd::TextRun { x, y, text, color, font_size } => {

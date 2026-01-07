@@ -27,7 +27,7 @@
 //! Creator ownership (e.g., surface creator gets read/write on the surface) is handled
 //! separately as a default policy in object creation syscalls.
 
-use abi::cap::{Cap, CapOp, CapScope};
+use abi::cap::Cap;
 use abi::ids::ThingId;
 use alloc::vec::Vec;
 use alloc::string::String;
@@ -118,6 +118,7 @@ pub fn clear_grants() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use abi::cap::{CapOp, CapScope};
 
     #[test]
     fn test_register_and_apply() {

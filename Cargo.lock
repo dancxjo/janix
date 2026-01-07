@@ -178,7 +178,9 @@ name = "bloom"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "cucumber",
  "fontdue",
+ "futures",
  "micromath",
  "models",
  "png-decoder",
@@ -187,6 +189,7 @@ dependencies = [
  "symbols",
  "thing_std",
  "tinybmp",
+ "tokio",
 ]
 
 [[package]]

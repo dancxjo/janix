@@ -44,8 +44,8 @@ pub fn run() {
     crate::text::ensure_font_loaded();
     log_info("BLOOM: fonts warmed up");
 
-    // Solid background color #8cb4db
-    let background_color: u32 = 0xFF8CB4DB;
+    // Solid background color #2e80d2
+    let background_color: u32 = 0xFF2E80D2;
 
     let mut graph_client = SyscallGraphClient;
 

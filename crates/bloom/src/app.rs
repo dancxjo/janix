@@ -215,6 +215,7 @@ pub fn run() {
             let mut captured_window: Option<ThingId> = None;
             let mut focused_window: Option<ThingId> = None;
 
+            let mut current_exec: Option<ChunkedExecutor> = None;
 
             loop {
                 let now_ns = monotonic_now();
@@ -580,8 +581,10 @@ pub fn run() {
 
                 let mut dirty: Option<Rect> = None;
 
+                // --- SCENE EXECUTION ---
                 if scene_dirty {
-                    let _scene_trace_ns = trace_enter!("scene_rebuild");
+                    let _scene_trace_ns = trace_enter!("scene_record");
+                    // Pre-execution Update
                     window_scenes = scene_cache.scenes_in_order();
                     let win_count = window_scenes.len();
                     
@@ -593,15 +596,7 @@ pub fn run() {
 
                     // Rebuild scene
                     if CURRENT_RENDER_MODE == RENDER_MODE_RECORD {
-                         // 1. Initialize buffer with background (REMOVED in favor of TileBitmap)
-                        /*
-                        {
-                            let mut bg_painter = CpuPainter::new(scene_buffer.as_mut_slice(), width, height);
-                            bg_painter.copy_region(background_cache.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
-                        }
-                        */
-                        
-                        // 2. Record commands
+                        // 1. Record commands
                         let mut recorder = crate::command_recorder::CommandRecorder::new(width, height);
                         
                         // Background Layer
@@ -621,67 +616,71 @@ pub fn run() {
                         render_window_scenes(&mut recorder, &window_scenes, &mut scene_cache.mapping_cache, focused_window, (px, py));
                         let cmds = recorder.finish();
                         
-                        // 3. Execute (monolithic for now - cursor updates after)
-                        let exec_result = crate::executor::execute_cmds_into_scene(&cmds, scene_buffer.as_mut_slice(), width, height, &mut scene_cache.mapping_cache, &bitmap_store);
-                        if exec_result.stats.bad_cmds > 0 {
-                            log_info(&alloc::format!("BLOOM: Bad cmds: {}/{}", exec_result.stats.bad_cmds, exec_result.stats.cmds_total));
-                        }
-                        
-                        // Merge actual damage from execution
-                        if let Some(damage_rect) = exec_result.damage.rect {
-                            merge_damage(&mut dirty, damage_rect);
-                        } else {
-                            // See comment in original file about simplified damage handling here
-                        }
-                    } else {
-                        // Immediate Mode
-                        let mut painter = CpuPainter::new(scene_buffer.as_mut_slice(), width, height);
-                        // Copy background
-                        painter.copy_region(background_cache.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
-                        // Render windows
-                        render_window_scenes(&mut painter, &window_scenes, &mut scene_cache.mapping_cache, focused_window, (px, py));
+                        // 2. Start Chunked Execution
+                        current_exec = Some(ChunkedExecutor::new(cmds, width, height));
                     }
                     
-                    scene_cache.mapping_cache.log_frame_stats();
-                    
-                    if win_count > 0 && !logged_window_once {
-                        log_info("BLOOM: rebuild_scene done");
-                    }
-                    
-                    // Copy scene to frame buffer
-                    {
-                        let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
-                        // For now, full update because we did full background copy.
-                        // Ideally we restrict background copy to damage too.
-                        painter.copy_region(scene_buffer.as_slice(), width, Rect { x: 0, y: 0, w: width, h: height });
-                    }
-                    
-                    if win_count > 0 && !logged_window_once {
-                        log_info("BLOOM: redraw_region done");
-                    }
-                    
-                    // Present full screen
-                    merge_damage(&mut dirty, Rect { x: 0, y: 0, w: width, h: height });
-                    
-                    if !window_scenes.is_empty() && !logged_window_once {
-                        log_info(&alloc::format!("BLOOM: rendered window {}", window_scenes[0].id.low()));
-                        logged_window_once = true;
-                    }
+                    // Clear scene_dirty now that we have captured the state into current_exec
+                    // Note: If anything dirties it again while executing, we will restart at next frame
                     scene_cache.clear_dirty();
-                    trace_exit!("scene_rebuild", _scene_trace_ns);
+                    trace_exit!("scene_record", _scene_trace_ns);
                     scene_dirty = false;
-                } else if cursor_changed {
-                    let damage = if let Some(prev_bounds) = prev_cursor_bounds {
-                        Rect::union(prev_bounds, cursor_bounds)
-                    } else {
-                        cursor_bounds
-                    };
-                    let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
-                    painter.copy_region(scene_buffer.as_slice(), width, damage);
-                    merge_damage(&mut dirty, damage);
                 }
 
-                if scene_dirty || cursor_changed {
+                if let Some(exec) = &mut current_exec {
+                     let _exec_trace = trace_enter!("exec_chunk");
+                     // Execute a chunk
+                     let done = exec.step(
+                         scene_buffer.as_mut_slice(), 
+                         &mut scene_cache.mapping_cache, 
+                         &bitmap_store, 
+                         256
+                     );
+                     
+                     // Accumulate damage from this chunk
+                     if let Some(damage_rect) = exec.damage().rect {
+                         merge_damage(&mut dirty, damage_rect);
+                     }
+                     trace_exit!("exec_chunk", _exec_trace);
+                     
+                     if done {
+                        // Finished!
+                        let output = current_exec.take().unwrap().finish(); 
+                        if output.stats.bad_cmds > 0 {
+                            log_info(&alloc::format!("BLOOM: Bad cmds: {}/{}", output.stats.bad_cmds, output.stats.cmds_total));
+                        }
+                        
+                        scene_cache.mapping_cache.log_frame_stats();
+                        
+                         if window_scenes.len() > 0 && !logged_window_once {
+                            log_info("BLOOM: rebuild_scene done");
+                            log_info("BLOOM: redraw_region done");
+                            logged_window_once = true;
+                        }
+                     }
+                }
+
+                if let Some(rect) = dirty {
+                     let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
+                     // Copy from scene_buffer to frame_buffer
+                     painter.copy_region(scene_buffer.as_slice(), width, rect);
+                } else if cursor_changed {
+                     // If only cursor changed, we need to restore background behind cursor.
+                     // The background source is `scene_buffer`.
+                     // `prev_cursor_bounds` is what we need to erase.
+                     // `cursor_bounds` is what we need to draw.
+                     let restore_rect = if let Some(prev_bounds) = prev_cursor_bounds {
+                         Rect::union(prev_bounds, cursor_bounds)
+                     } else {
+                         cursor_bounds
+                     };
+                     
+                     let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
+                     painter.copy_region(scene_buffer.as_slice(), width, restore_rect);
+                     merge_damage(&mut dirty, restore_rect);
+                }
+
+                if dirty.is_some() {
                     let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
                     painter.set_clip(Clip::full(width, height));
                     
@@ -696,7 +695,6 @@ pub fn run() {
                                 frame.height,
                             );
                             painter.draw_cursor_frame(frame, px, py);
-                            // log_info("BLOOM: drew cursor");
                             if !logged_shared_shadow {
                                 log_info("BLOOM: shadow kernel: shared");
                                 logged_shared_shadow = true;

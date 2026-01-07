@@ -108,6 +108,59 @@ impl AddressSpace {
         Ok(())
     }
 
+    pub fn unmap(&mut self, virt: u64, len: usize) -> MapResult<()> {
+        use x86_64::structures::paging::Page;
+
+        if len == 0 {
+            return Ok(());
+        }
+
+        let start = VirtAddr::new(virt);
+        let end_addr = start + len as u64;
+        let start_page = Page::<Size4KiB>::containing_address(start);
+        let end_page = Page::<Size4KiB>::containing_address(end_addr - 1u64);
+
+        let pml4 = unsafe { get_table_mut(self.pml4_table) };
+
+        for page in Page::range_inclusive(start_page, end_page) {
+            let p4_entry = &mut pml4[page.p4_index()];
+            if !p4_entry.flags().contains(PageTableFlags::PRESENT) {
+                continue;
+            }
+
+            let pdp = unsafe { get_table_mut(p4_entry.addr().as_u64()) };
+            let p3_entry = &mut pdp[page.p3_index()];
+            if !p3_entry.flags().contains(PageTableFlags::PRESENT) {
+                continue;
+            }
+            if p3_entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+                p3_entry.set_unused();
+                continue;
+            }
+
+            let pd = unsafe { get_table_mut(p3_entry.addr().as_u64()) };
+            let p2_entry = &mut pd[page.p2_index()];
+            if !p2_entry.flags().contains(PageTableFlags::PRESENT) {
+                continue;
+            }
+            if p2_entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+                p2_entry.set_unused();
+                continue;
+            }
+
+            let pt = unsafe { get_table_mut(p2_entry.addr().as_u64()) };
+            let p1_entry = &mut pt[page.p1_index()];
+            if !p1_entry.flags().contains(PageTableFlags::PRESENT) {
+                continue;
+            }
+            p1_entry.set_unused();
+        }
+
+        x86_64::instructions::tlb::flush_all();
+
+        Ok(())
+    }
+
     pub fn user_range_end(&self) -> u64 {
         1u64 << 47
     }

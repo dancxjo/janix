@@ -106,12 +106,39 @@ pub fn sys_space_map(
 }
 
 
-pub fn sys_space_unmap(_vaddr: u64, _len: u64, _flags: u64) -> SyscallResult {
+pub fn sys_space_unmap(vaddr: u64, len: u64, _flags: u64) -> SyscallResult {
     if let Err(code) = user_mem::require_current_cap(CapOp::MemManage, None) {
         return SyscallResult::new(code, 0, 0);
     }
 
-    SyscallResult::new(err::ENOSYS, 0, 0)
+    let len = match usize::try_from(len) {
+        Ok(len) if len > 0 => len,
+        _ => return SyscallResult::new(err::EINVAL, 0, 0),
+    };
+
+    crate::sched::with_current_task(|task| {
+        let user_end = task.address_space.user_range_end();
+        let end = match vaddr.checked_add(len as u64) {
+            Some(end) => end,
+            None => return SyscallResult::new(err::EINVAL, 0, 0),
+        };
+
+        if vaddr == 0 || vaddr >= user_end || end > user_end {
+            return SyscallResult::new(err::EFAULT, 0, 0);
+        }
+
+        if let Err(e) = task.address_space.unmap(vaddr, len) {
+            crate::log::klog(
+                crate::log::Level::Error,
+                "SYSCALL",
+                &alloc::format!("sys_space_unmap: unmap failed: {:?}", e),
+            );
+            return SyscallResult::new(err::EFAULT, 0, 0);
+        }
+
+        SyscallResult::new(0, vaddr, 0)
+    })
+    .unwrap_or(SyscallResult::new(err::EFAULT, 0, 0))
 }
 
 /// Heap growth syscall - journal-only path.

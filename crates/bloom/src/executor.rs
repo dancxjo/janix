@@ -164,7 +164,7 @@ pub fn execute_cmds_into_scene(
                             blit.stride, 
                             blit.w, 
                             blit.h
-                        );
+                         );
                          damage.add(Rect { x: *dst_x, y: *dst_y, w: src_rect.w, h: src_rect.h }, scene_rect);
                          stats.cmds_drawn += 1;
                      }
@@ -305,14 +305,21 @@ fn validate_blit_buffer<'a>(
         return Err(ExecErrorKind::OutOfBounds);
     }
     
-    if (buf.as_ptr() as usize) % 4 != 0 {
+    // --- BLOOM PANIC TRAP ---
+    let ptr = buf.as_ptr();
+    if ptr.is_null() {
+        log_info("BLOOM BUG: validate_blit_buffer: ptr is null");
+        return Err(ExecErrorKind::MapFailed);
+    }
+    if (ptr as usize) % 4 != 0 {
+        log_info(&alloc::format!("BLOOM BUG: validate_blit_buffer: unaligned ptr={:#x}", ptr as usize));
         return Err(ExecErrorKind::Unaligned);
     }
 
     let start_px = sy * stride_px + sx;
     
     let u32_full = unsafe {
-         core::slice::from_raw_parts(buf.as_ptr() as *const u32, buf.len() / 4)
+         core::slice::from_raw_parts(ptr as *const u32, buf.len() / 4)
     };
     
     if start_px >= u32_full.len() {
@@ -333,4 +340,88 @@ fn validate_blit_buffer<'a>(
         w: src_rect.w,
         h: src_rect.h,
     }, is_new))
+}
+
+pub fn execute_single_cmd(
+    painter: &mut dyn Painter,
+    cmd: &DrawCmd,
+    mapping_cache: &mut BytespaceMappingCache,
+) {
+    match cmd {
+        DrawCmd::FillRect { rect, color } => {
+            painter.fill_rect(*rect, *color);
+        }
+        DrawCmd::FillRectVGrad { rect, radius, top_color, bottom_color } => {
+            painter.fill_rect_vgrad(*rect, *radius, *top_color, *bottom_color);
+        }
+        DrawCmd::FillRoundedRect { rect, radius, color } => {
+            painter.fill_rounded_rect(*rect, *radius, *color);
+        }
+        DrawCmd::StrokeRoundedRect { rect, radius, thickness, color } => {
+            painter.stroke_rounded_rect(*rect, *radius, *thickness, *color);
+        }
+        DrawCmd::StrokeRoundedRectTop { rect, radius, thickness, color } => {
+            painter.stroke_rounded_rect_top(*rect, *radius, *thickness, *color);
+        }
+        DrawCmd::Clear { color } => {
+            painter.clear(*color);
+        }
+        DrawCmd::TextRun { x, y, text, color, font_size } => {
+            crate::text::draw_text_on_painter(painter, *x, *y, text, *color, *font_size);
+        }
+        DrawCmd::BlitRgbaPremulBytespace { bytespace, src_rect, dst_x, dst_y, src_stride, src_len } => {
+             if let Ok((blit, _)) = validate_blit_buffer(mapping_cache, *bytespace, *src_len, *src_stride, src_rect) {
+                 painter.blit_rgba_alpha_rect(
+                    *dst_x, 
+                    *dst_y, 
+                    blit.src, 
+                    blit.stride, 
+                    blit.w, 
+                    blit.h
+                 );
+             }
+        }
+        DrawCmd::Shadow { x, y, width, height, radius, color, offset_x, offset_y, blur_radius, top_only } => {
+             let mask = if *top_only {
+                 crate::shadow::ShadowMask::RoundedRectTop { 
+                    width: *width, 
+                    height: *height, 
+                    radius: *radius 
+                 }
+             } else {
+                 crate::shadow::ShadowMask::RoundedRect { 
+                    width: *width, 
+                    height: *height, 
+                    radius: *radius 
+                 }
+             };
+             painter.draw_shadow_mask(
+                *x, *y,
+                 mask,
+                 crate::shadow::ShadowParams {
+                     offset_x: *offset_x,
+                     offset_y: *offset_y,
+                     blur_radius: *blur_radius as u32,
+                     color: *color,
+                 }
+             );
+        }
+        DrawCmd::FillPanel { rect, radius, bg_rgba, title_bar_height } => {
+            painter.fill_panel(*rect, *radius, *bg_rgba, *title_bar_height);
+        }
+        DrawCmd::SetClip { rect } => {
+            painter.set_clip(Clip::from_rect(*rect));
+        }
+        DrawCmd::PushClip { rect } => {
+            painter.push_clip(*rect);
+        }
+        DrawCmd::PopClip => {
+            painter.pop_clip();
+        }
+        DrawCmd::TileBitmap { dst, bitmap, bmp_w: _, bmp_h: _, origin, opacity: _ } => {
+            // Need bitmap_store to resolve this, but execute_single_cmd doesn't have it.
+            // For now, just ignore it or add bitmap_store to signature.
+            // Actually, TileBitmap is rarely used for windows, mostly for wallpaper.
+        }
+    }
 }

@@ -41,3 +41,47 @@ pub fn boot_progress(step: u32, max_step: u32) {
         );
     }
 }
+
+use core::sync::atomic::{AtomicBool, Ordering};
+use core::cell::UnsafeCell;
+
+/// A simple one-shot communication channel that allows sending a single value.
+pub struct OneShotMailbox<T> {
+    ready: AtomicBool,
+    data: UnsafeCell<Option<T>>,
+}
+
+unsafe impl<T: Send> Sync for OneShotMailbox<T> {}
+
+impl<T> OneShotMailbox<T> {
+    pub const fn new() -> Self {
+        Self {
+            ready: AtomicBool::new(false),
+            data: UnsafeCell::new(None),
+        }
+    }
+
+    pub fn send(&self, val: T) -> Result<(), T> {
+        if self.ready.load(Ordering::Acquire) {
+            return Err(val);
+        }
+        unsafe {
+            *self.data.get() = Some(val);
+        }
+        self.ready.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    pub fn try_take(&self) -> Option<T> {
+        if !self.ready.load(Ordering::Acquire) {
+            return None;
+        }
+        let data = unsafe { (*self.data.get()).take() };
+        self.ready.store(false, Ordering::Release);
+        data
+    }
+    
+    pub fn is_ready(&self) -> bool {
+        self.ready.load(Ordering::Acquire)
+    }
+}

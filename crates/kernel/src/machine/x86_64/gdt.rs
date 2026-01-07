@@ -64,7 +64,7 @@ pub unsafe fn init(gdt_tss: &'static mut GdtTss) {
 
     let tss = gdt_tss.gdt.add_entry(Descriptor::tss_segment(&gdt_tss.tss));
 
-    gdt_tss.selectors = Selectors {
+    crate::serial::write(b"GDT: k_code="); crate::serial::write_hex(k_code.0 as u64); crate::serial::write(b" k_data="); crate::serial::write_hex(k_data.0 as u64); crate::serial::write(b" u_data="); crate::serial::write_hex(u_data.0 as u64); crate::serial::write(b" u_code64="); crate::serial::write_hex(u_code64.0 as u64); crate::serial::write(b"\n"); gdt_tss.selectors = Selectors {
         kernel_code: k_code,
         kernel_data: k_data,
         user_code: u_code64,

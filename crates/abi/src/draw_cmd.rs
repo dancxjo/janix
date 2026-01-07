@@ -1,5 +1,3 @@
-#![no_std]
-
 use serde::{Serialize, Deserialize};
 
 #[repr(C)]

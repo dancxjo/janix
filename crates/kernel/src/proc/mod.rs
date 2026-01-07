@@ -36,7 +36,8 @@ pub struct Thread {
 pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<ThingId, ()> {
     use crate::memory::map::MapPerms;
     use crate::memory::space::AddressSpace;
-    use crate::sched;
+    use crate::sched::{self, TaskId};
+    use crate::sched::task::Task;
     use alloc::alloc::{alloc, Layout};
     use alloc::sync::Arc;
 
@@ -90,32 +91,38 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<ThingId, 
         )
         .map_err(|_| ())?;
 
-    // 4. Spawn Task AND configure context atomically (with IRQs disabled)
+    // 4. PREPARE Spawn (No SCHEDULER lock held, avoids deadlock)
     let name = module.path;
+    let (task_thing_bits, kernel_stack_ptr, _as) = sched::prepare_spawn(name, Some(address_space.clone()));
+    let task_thing = ThingId(task_thing_bits);
+
+    // 5. COMMIT Spawn (With SCHEDULER lock)
     let irq_token = crate::machine::irq_disable();
-    let task_id = {
+    let res_thing = {
         let mut guard = sched::SCHEDULER.lock();
         let sched = guard.as_mut().ok_or(())?;
-        let task_id = sched.spawn(name, Some(address_space.clone()));
+        
+        let id = TaskId(sched.next_id);
+        sched.next_id += 1;
+        
+        let mut task = Task::new(id, task_thing, kernel_stack_ptr, address_space.clone());
+        
+        // Eager SIMD enablement
+        let simd = crate::machine::simd();
+        if simd.save_policy() == abi::cpu::SimdSavePolicy::Eager {
+            task.simd_used = true;
+            task.simd_state = Some(alloc::vec![0u8; simd.required_size()]);
+        }
+        
+        // Finalize state
+        task.state = crate::sched::task::TaskState::Ready;
 
         // Configure context immediately, while still holding the lock
         // This prevents the task from being scheduled before context is set up
-        sched::configure_task_context_locked(sched, task_id, entry_point, stack_top);
         
-        // Return internal TaskID to caller?
-        // Wait, sched.spawn returns TaskId (which matches ThingId).
-        // Check sched/mod.rs: pub struct TaskId(pub u64);
-        // And Task has `thing: ThingId`.
-        // We probably want to return the ThingId so we can use it in graph operations.
-        // Let's check sched/mod.rs again.
-        // TaskId is a wrapper around u64.
-        // Task struct usually has a `thing` field.
-        // `sched.spawn` returns `TaskId`.
-        
-        // Let's grab the ThingId from the task we just spawned.
-        // We are holding the lock.
-        let t = sched.tasks.iter().find(|t| t.id == task_id).ok_or(())?;
-        t.thing
+        sched.commit_task(task);
+        sched::configure_task_context_locked(sched, id, entry_point, stack_top);
+        task_thing
     };
     crate::machine::irq_restore(irq_token);
 
@@ -125,7 +132,7 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<ThingId, 
     }
 
     crate::log::kprintln("PROC: spawned");
-    Ok(task_id)
+    Ok(res_thing)
 }
 
 fn load_elf(data: &[u8], _as: &crate::memory::space::AddressSpace) -> Result<u64, ()> {

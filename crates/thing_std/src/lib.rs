@@ -13,6 +13,7 @@ use abi::wire::SyscallResult;
 use core::alloc::{GlobalAlloc, Layout};
 use core::fmt::{self, Write};
 use core::panic::PanicInfo;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub use debug::log as log_info;
 pub use process::exit as sys_exit;
@@ -144,18 +145,18 @@ struct BumpAllocator;
 #[global_allocator]
 static ALLOCATOR: BumpAllocator = BumpAllocator;
 
-static mut HEAP_START: usize = 0;
-static mut HEAP_CURRENT: usize = 0;
-static mut HEAP_LIMIT: usize = 0;
+static HEAP_START: AtomicUsize = AtomicUsize::new(0);
+static HEAP_CURRENT: AtomicUsize = AtomicUsize::new(0);
+static HEAP_LIMIT: AtomicUsize = AtomicUsize::new(0);
 
 pub unsafe fn init_heap(size: usize) {
     loop {
         let res = syscall(nr::SYS_HEAP_GROW, size as u64, 0, 0, 0, 0, 0);
         if res.status == 0 {
             let start = res.val0 as usize;
-            HEAP_START = start;
-            HEAP_CURRENT = start;
-            HEAP_LIMIT = start + size;
+            HEAP_START.store(start, Ordering::SeqCst);
+            HEAP_CURRENT.store(start, Ordering::SeqCst);
+            HEAP_LIMIT.store(start + size, Ordering::SeqCst);
             break;
         }
         process::sched_yield();
@@ -166,21 +167,37 @@ unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let align = layout.align();
         let size = layout.size();
-        let mut current = HEAP_CURRENT;
-        let padding = (align - (current % align)) % align;
-        current += padding;
-        if current + size > HEAP_LIMIT {
-            let grow_size = (size + padding).max(64 * 1024);
-            if syscall(nr::SYS_HEAP_GROW, grow_size as u64, 0, 0, 0, 0, 0).status == 0 {
-                HEAP_LIMIT += grow_size;
-            } else {
-                return core::ptr::null_mut();
+        
+        loop {
+            let current = HEAP_CURRENT.load(Ordering::Relaxed);
+            let limit = HEAP_LIMIT.load(Ordering::Relaxed);
+            
+            let padding = (align - (current % align)) % align;
+            let start = current + padding;
+            let next = start + size;
+            
+            if next > limit {
+                // Try to grow the heap
+                let grow_size = (size + padding).max(64 * 1024);
+                let res = syscall(nr::SYS_HEAP_GROW, grow_size as u64, 0, 0, 0, 0, 0);
+                if res.status == 0 {
+                    // Successfully grown heap, update limit atomically
+                    HEAP_LIMIT.fetch_add(grow_size, Ordering::SeqCst);
+                    // Continue loop to retry allocation
+                    continue;
+                } else {
+                    return core::ptr::null_mut();
+                }
             }
+            
+            // Try to claim this memory
+            if HEAP_CURRENT.compare_exchange_weak(current, next, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
+                return start as *mut u8;
+            }
+            // If failed, loop and try again
         }
-        let ptr = current as *mut u8;
-        HEAP_CURRENT = current + size;
-        ptr
     }
+    
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
 }
 
@@ -217,19 +234,25 @@ fn log_fmt(prefix: &str, args: fmt::Arguments) {
     buf.flush();
 }
 
-struct LogBuf {
+fn log_raw(msg: &str) {
+    unsafe {
+        syscall(nr::SYS_LOG, 2, msg.as_ptr() as u64, msg.len() as u64, 0, 0, 0);
+    }
+}
+
+pub struct LogBuf {
     buf: [u8; 192],
     len: usize,
 }
 
 impl LogBuf {
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self { buf: [0; 192], len: 0 }
     }
-    fn flush(&mut self) {
+    pub fn flush(&mut self) {
         if self.len == 0 { return; }
         if let Ok(s) = core::str::from_utf8(&self.buf[..self.len]) {
-            debug::log(s);
+            log_raw(s);
         }
         self.len = 0;
     }
@@ -251,9 +274,7 @@ impl Write for LogBuf {
 pub mod debug {
     use super::*;
     pub fn log(msg: &str) {
-        unsafe {
-            syscall(nr::SYS_LOG, 2, msg.as_ptr() as u64, msg.len() as u64, 0, 0, 0);
-        }
+        log_raw(msg);
     }
 }
 

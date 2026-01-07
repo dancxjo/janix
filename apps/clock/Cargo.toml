@@ -7,6 +7,8 @@ edition = "2021"
 thing_std = { path = "../../crates/thing_std" }
 models = { path = "../../crates/models" }
 thing_codec = { path = "../../crates/thing_codec" }
+abi = { path = "../../crates/abi" }
+postcard = { version = "1.0", default-features = false }
 
 [package.metadata.cargo-xbuild]
 memcpy = false

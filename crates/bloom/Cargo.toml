@@ -15,12 +15,14 @@ thing_std = { path = "../thing_std" }
 models = { path = "../models" }
 symbols = { path = "../symbols" }
 theme = { path = "../../themes/theme" }
+thing_codec = { path = "../thing_codec" }
 tinybmp = "0.6.0"
 png-decoder = "0.1.1"
 micromath = "2.0.0"
 fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
 spin = { version = "0.9", default-features = false, features = ["once"] }
 postcard = { version = "1.0", features = ["alloc"], default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 
 [dev-dependencies]
 cucumber = "0.22"

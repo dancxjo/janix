@@ -1,4 +1,4 @@
-use abi::ids::{RelationshipId, SymbolId, ThingId};
+use abi::ids::{RelationshipId, SymbolId, ThingId, sym};
 use abi::types::RelationshipRef;
 use abi::syscall::nr;
 use crate::syscall;
@@ -9,12 +9,11 @@ pub struct SyscallGraphClient;
 
 impl GraphClient for SyscallGraphClient {
     fn create_thing(&mut self, kind: SymbolId) -> Result<ThingId, i32> {
-        // We use 0 for parent in the new API for now, or we might need to adjust this
         let res = unsafe {
             syscall(
                 nr::SYS_THING_CREATE,
                 kind.0,
-                0, // No parent specified in trait API
+                0,
                 0,
                 0,
                 0,
@@ -115,6 +114,17 @@ pub fn thing_get_body(id: ThingId) -> Option<(Vec<u8>, u64)> {
     Some((buf, digest))
 }
 
+
+pub fn get_thing_header(id: ThingId) -> Option<abi::types::ThingHeader> {
+    let res = unsafe { syscall(nr::SYS_THING_GET, id.low(), 0, 0, 0, 0, 0) };
+    if res.status != 0 {
+        return None;
+    }
+    Some(abi::types::ThingHeader {
+        id,
+        kind: abi::ids::SymbolId(res.val0),
+    })
+}
 pub fn thing_register_name(id: ThingId, name: &str) {
     unsafe {
         syscall(
@@ -201,9 +211,6 @@ pub fn relationship_create(kind: SymbolId, from: ThingId, to: ThingId) -> Relati
     RelationshipId::from_parts(res.val0, res.val1)
 }
 
-/// Fetch relationships originating from a Thing.
-///
-/// Returns `(count_returned, total_available)` on success.
 pub fn relationships_from(
     from: ThingId,
     cursor: u64,
@@ -227,4 +234,21 @@ pub fn relationships_from(
         return Err(res.status as i32);
     }
     Ok((res.val0, res.val1))
+}
+
+pub fn find_child_by_kind(parent: ThingId, kind_sym: SymbolId) -> Option<ThingId> {
+    let mut out = alloc::vec![RelationshipRef { id: ThingId(0), kind: abi::ids::SymbolId(0), target: ThingId(0) }; 16];
+    let mut cursor = 0;
+    loop {
+        let (count, total) = relationships_from(parent, cursor, &mut out).ok()?;
+        if count == 0 { break; }
+        for rel in &out[0..count as usize] {
+            if rel.kind == kind_sym {
+                return Some(rel.target);
+            }
+        }
+        cursor += count;
+        if cursor >= total { break; }
+    }
+    None
 }

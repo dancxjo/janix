@@ -20,7 +20,7 @@ pub mod thread_group;
 use percpu::PerCpu;
 use run_queue::RunQueue;
 pub use task::BlockReason;
-use task::{Task, TaskId, TaskState};
+pub use task::{Task, TaskId, TaskState};
 use thread_group::ThreadGroup;
 
 pub(crate) static SCHEDULER: Mutex<Option<Scheduler>> = Mutex::new(None);
@@ -60,42 +60,22 @@ impl Scheduler {
         }
     }
 
+    /// Primary spawn entry point. 
+    /// This method is DEPRECATED in favor of prepare_spawn + commit_task
+    /// when called from contexts where GRAPH_STORE might be locked.
     pub(crate) fn spawn(
         &mut self,
-        name: &'static str,
+        _name: &'static str,
         as_opt: Option<Arc<AddressSpace>>,
     ) -> TaskId {
-        log::klog(
-            Level::Info,
-            "SCHED",
-            &alloc::format!("spawn: name={} start", name),
-        );
+        log::klog(Level::Info, "SCHED", &alloc::format!("spawn: name={} (legacy)", _name));
+        
+        let (task_thing_bits, stack_ptr, address_space) = prepare_spawn_internal(_name, as_opt);
+        let task_thing = abi::ids::ThingId(task_thing_bits);
+
         let id = TaskId(self.next_id);
         self.next_id += 1;
 
-        // Allocate stack
-        log::klog(Level::Info, "SCHED", "spawn: allocating stack...");
-        let stack_size = 64 * 1024; // 64KB
-        let stack = alloc::vec![0u8; stack_size];
-        let stack_ptr = stack.as_ptr() as u64 + stack_size as u64; // Top
-        log::klog(Level::Info, "SCHED", "spawn: stack allocated");
-        // Leak the stack for now
-        core::mem::forget(stack);
-
-        // Graph reflection
-        log::klog(Level::Info, "SCHED", "spawn: graph store start");
-        let task_thing = store::with_store(|s| {
-            let t = s.create_thing(sym::KIND_TASK).expect("create task");
-            if let Some(graph_tasks) = s.find_by_name(sym::GRAPH_TASKS) {
-                let _ = s.create_relationship(sym::PRED_CONTAINS, graph_tasks, t);
-            }
-            t
-        });
-        log::klog(Level::Info, "SCHED", "spawn: graph store done");
-
-        let address_space =
-            as_opt.unwrap_or_else(|| Arc::new(AddressSpace::new().expect("failed create AS")));
-        log::klog(Level::Info, "SCHED", "spawn: address space handled");
         let mut task = Task::new(id, task_thing, stack_ptr, address_space);
 
         // Eager SIMD enablement
@@ -105,28 +85,20 @@ impl Scheduler {
             task.simd_state = Some(alloc::vec![0u8; simd.required_size()]);
         }
 
-        // Initialize state (New -> Ready)
-        store::with_store(|s| task.set_state(s, TaskState::Ready));
+        task.state = TaskState::Ready;
+        self.commit_task(task)
+    }
 
+    /// Internal helper to finalize task spawning.
+    /// MUST be called with SCHEDULER lock held.
+    pub(crate) fn commit_task(&mut self, task: Task) -> TaskId {
+        let tid = task.id;
+        let thing = task.thing;
+        
         self.tasks.push(task);
-
-        // Add to run queue
-        let thing = self.tasks.last().unwrap().thing;
-        self.run_queue.push_back(id, thing);
-
-        log::klog(
-            Level::Info,
-            "SCHED",
-            &alloc::format!(
-                "spawn: finished id={} name={} stack_top={:#x} stack_size={:#x}",
-                id.0,
-                name,
-                stack_ptr,
-                stack_size
-            ),
-        );
-
-        id
+        self.run_queue.push_back(tid, thing);
+        
+        tid
     }
 }
 
@@ -173,14 +145,14 @@ pub fn run() -> ! {
     crate::serial::write(b"SCHED: calling irq_enable...\n");
     crate::machine::machine().irq_enable();
 
-    let mut last_irq_check = 0;
+    let mut _last_irq_check = 0;
     loop {
         // Probe A2: Check IRQ progress
         #[cfg(target_arch = "aarch64")]
         {
             let irq_hits = crate::machine::aarch64::exception::IRQ_COUNT.load(Ordering::Relaxed);
-            if irq_hits != last_irq_check {
-                last_irq_check = irq_hits;
+            if irq_hits != _last_irq_check {
+                _last_irq_check = irq_hits;
             }
         }
 
@@ -318,7 +290,7 @@ where
             if curr.0 == 0 {
                 None
             } else {
-                let t = sched.tasks.iter_mut().find(|t| t.id == curr).unwrap();
+                let t = sched.tasks.iter_mut().find(|t| t.id == curr).expect("current task not found");
                 Some(f(t))
             }
         } else {
@@ -384,22 +356,66 @@ pub fn current_task_handle() -> Option<TaskId> {
     res
 }
 
-// Rename/Wrap spawn
+/// Internal implementation helper.
+fn prepare_spawn_internal(
+    _name: &'static str,
+    as_opt: Option<Arc<AddressSpace>>,
+) -> (u128, u64, Arc<AddressSpace>) {
+    // 1. Allocate stack
+    let stack_size = 64 * 1024; // 64KB
+    let stack = alloc::vec![0u8; stack_size];
+    let stack_ptr = stack.as_ptr() as u64 + stack_size as u64; // Top
+    core::mem::forget(stack); // Leak for now
+
+    // 2. Graph reflection (can deadlock if SCHEDULER lock is already held!)
+    let task_thing = store::with_store(|s| {
+        let t = s.create_thing(sym::KIND_TASK).expect("create task");
+        if let Some(graph_tasks) = s.find_by_name(sym::GRAPH_TASKS) {
+            let _ = s.create_relationship(sym::PRED_CONTAINS, graph_tasks, t);
+        }
+        t
+    });
+
+    let address_space = as_opt.unwrap_or_else(|| Arc::new(AddressSpace::new().expect("failed create AS")));
+    
+    (task_thing.0, stack_ptr, address_space)
+}
+
+/// Public API: Prepare a task for spawning without holding the scheduler lock.
+pub fn prepare_spawn(
+    name: &'static str,
+    as_opt: Option<Arc<AddressSpace>>,
+) -> (u128, u64, Arc<AddressSpace>) {
+    prepare_spawn_internal(name, as_opt)
+}
+
 pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
     use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
 
+    // 1. Prepare (No SCHEDULER lock)
+    let k_as = Arc::new(AddressSpace::new_kernel_share().expect("failed share kernel AS"));
+    let (task_thing_bits, stack_ptr, address_space) = prepare_spawn_internal(name, Some(k_as));
+    let task_thing = abi::ids::ThingId(task_thing_bits);
+
+    // 2. Commit (SCHEDULER lock)
     let irq_token = crate::machine::irq_disable();
     let res = {
         let mut guard = SCHEDULER.lock();
         let sched = guard.as_mut().expect("sched not init");
 
-        // Use Shared Kernel Address Space for kernel threads
-        let k_as = AddressSpace::new_kernel_share().expect("failed share kernel AS");
-        let id = sched.spawn(name, Some(Arc::new(k_as)));
+        let id = TaskId(sched.next_id);
+        sched.next_id += 1;
 
-        let task = sched.tasks.iter_mut().find(|t| t.id == id).unwrap();
+        let mut task = Task::new(id, task_thing, stack_ptr, address_space);
 
-        // Initialize task context using arch-generic trait
+        // Eager SIMD enablement
+        let simd = crate::machine::simd();
+        if simd.save_policy() == abi::cpu::SimdSavePolicy::Eager {
+            task.simd_used = true;
+            task.simd_state = Some(alloc::vec![0u8; simd.required_size()]);
+        }
+
+        // Finalize task context
         let stack_top = task.stack_ptr & !0xf; // 16-byte align
         let mut ctx = TaskContext::default();
         CurrentArch::init_task_context(
@@ -409,22 +425,41 @@ pub fn spawn_kernel_task(name: &'static str, entry: extern "C" fn()) -> TaskId {
             CpuMode::Kernel,
             0, // arg0
         );
-
         task.stack_ptr = ctx.sp;
+        task.state = TaskState::Ready;
 
-        id
+        sched.commit_task(task)
     };
+    
     crate::machine::irq_restore(irq_token);
     res
 }
 
-// Helper for Sprout (empty spawn)
 pub fn spawn_empty(name: &'static str) -> TaskId {
+    // 1. Prepare (No SCHEDULER lock)
+    let (task_thing_bits, stack_ptr, address_space) = prepare_spawn_internal(name, None);
+    let task_thing = abi::ids::ThingId(task_thing_bits);
+
+    // 2. Commit (SCHEDULER lock)
     let irq_token = crate::machine::irq_disable();
     let res = {
         let mut guard = SCHEDULER.lock();
         let sched = guard.as_mut().expect("sched not init");
-        sched.spawn(name, None)
+        
+        let id = TaskId(sched.next_id);
+        sched.next_id += 1;
+        
+        let mut task = Task::new(id, task_thing, stack_ptr, address_space);
+        
+        // Eager SIMD enablement
+        let simd = crate::machine::simd();
+        if simd.save_policy() == abi::cpu::SimdSavePolicy::Eager {
+            task.simd_used = true;
+            task.simd_state = Some(alloc::vec![0u8; simd.required_size()]);
+        }
+        
+        task.state = TaskState::Ready;
+        sched.commit_task(task)
     };
     crate::machine::irq_restore(irq_token);
     res

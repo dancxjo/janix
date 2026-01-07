@@ -217,7 +217,7 @@ pub fn layout_widgets(
     rects
         .into_iter()
         .zip(children.iter())
-        .map(|(rect, widget)| PlacedWidget {
+        .map(|(rect, widget): (Rect, &WidgetKind)| PlacedWidget {
             rect,
             widget: widget.clone(),
         })

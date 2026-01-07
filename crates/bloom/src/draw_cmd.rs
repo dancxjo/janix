@@ -1,10 +1,11 @@
 use crate::scene::{Rect, Point};
 use crate::assets::bitmap::BitmapHandle;
 use abi::ids::ThingId;
+use serde::{Serialize, Deserialize};
 
 use alloc::string::String;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum DrawCmd {
     // === Primitives (matching ABI or basic shapes) ===
     FillRect { rect: Rect, color: u32 },

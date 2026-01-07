@@ -38,7 +38,7 @@ fn try_draw_with_textd(
     size_px: f32,
 ) -> bool {
     let cache = unsafe { &mut *TEXTD_CACHE.cache.get() };
-    let cache = match cache.as_mut() {
+    let cache: &mut crate::textd_glyph::TextdGlyphCaches = match cache.as_mut() {
         Some(c) => c,
         None => return false,
     };
@@ -381,7 +381,7 @@ pub fn register_textd_fonts_watch() {
 pub fn check_textd_fonts_available() -> bool {
     let cache = unsafe { &mut *TEXTD_CACHE.cache.get() };
     if let Some(c) = cache.as_mut() {
-        c.on_fonts_watch_triggered();
+        let c: &mut crate::textd_glyph::TextdGlyphCaches = c; c.on_fonts_watch_triggered();
         return c.textd_available;
     }
     false
@@ -390,7 +390,7 @@ pub fn check_textd_fonts_available() -> bool {
 /// Get the fonts watch ID for matching in the event loop
 pub fn get_textd_fonts_watch_id() -> Option<u64> {
     let cache = unsafe { &*TEXTD_CACHE.cache.get() };
-    cache.as_ref().and_then(|c| c.fonts_watch_id())
+    cache.as_ref().and_then(|c: &crate::textd_glyph::TextdGlyphCaches| c.fonts_watch_id())
 }
 
 /// Legacy draw_text function using raw buffer.

@@ -1,4 +1,4 @@
-use abi::ids::{ThingId, WatchId};
+pub use abi::ids::{ThingId, WatchId};
 use abi::syscall::nr;
 use abi::types::{WaitFlags, WakeReason, WakeReasonCode, WatchEvent, WatchKind};
 

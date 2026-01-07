@@ -482,7 +482,7 @@ impl<'a> Painter for CpuPainter<'a> {
 
     fn blit_asset(&mut self, dst_x: i32, dst_y: i32, id: abi::ids::ThingId, src_w: u32, src_h: u32, _src_stride: u32, src_len: usize, cache: &mut crate::scene_cache::BytespaceMappingCache) {
         // Immediate mode: resolve mapping and blit
-        if let Some(buf) = cache.get_or_map_ro(id, src_len) {
+        if let Some(buf) = cache.get_or_map_ro(id, src_len) { let buf: crate::scene_cache::MapResult = buf; {
             // Check alignment before creating u32 slice
             let ptr = buf.as_ptr();
             if (ptr as usize) % 4 != 0 {
@@ -496,7 +496,7 @@ impl<'a> Painter for CpuPainter<'a> {
                  core::slice::from_raw_parts(ptr as *const u32, buf.len() / 4)
             };
             self.blit_rgba_alpha(dst_x, dst_y, u32_buf, src_w, src_h);
-        }
+        }}
     }
 
     fn draw_text(&mut self, x: i32, y: i32, text: &str, color: u32, size_px: f32) {

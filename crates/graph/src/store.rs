@@ -125,6 +125,20 @@ impl GraphStore {
         self.from_index.get(&from).cloned().unwrap_or_default()
     }
 
+    pub fn relationships_from_paged(&self, from: ThingId, skip: usize, take: usize) -> (Vec<Relationship>, usize) {
+        if let Some(ids) = self.from_index.get(&from) {
+            let total = ids.len();
+            let data = ids.iter()
+                .skip(skip)
+                .take(take)
+                .filter_map(|id| self.relationships.get(id).cloned())
+                .collect();
+            (data, total)
+        } else {
+            (Vec::new(), 0)
+        }
+    }
+
     pub fn relationships_by_kind(&self, from: ThingId, kind: SymbolId) -> Vec<ThingId> {
         if let Some(ids) = self.from_index.get(&from) {
             ids.iter()
@@ -356,6 +370,10 @@ pub fn relationship_delete(id: RelationshipId) -> Option<Relationship> {
 
 pub fn relationships_from(from: ThingId) -> Vec<RelationshipId> {
     with_store(|s| s.relationships_from(from))
+}
+
+pub fn relationships_from_paged(from: ThingId, skip: usize, take: usize) -> (Vec<Relationship>, usize) {
+    with_store(|s| s.relationships_from_paged(from, skip, take))
 }
 
 pub fn relationships_by_kind(from: ThingId, kind: SymbolId) -> Vec<ThingId> {

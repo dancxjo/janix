@@ -90,6 +90,11 @@ impl AddressSpace {
         Ok(())
     }
 
+    pub fn unmap(&mut self, virt: u64, _len: usize) -> MapResult<()> {
+        self.mappings.remove(&virt);
+        Ok(())
+    }
+
     pub fn user_range_end(&self) -> u64 {
         u64::MAX
     }

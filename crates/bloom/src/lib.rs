@@ -28,3 +28,5 @@ pub mod cursor_overlay;
 pub mod chunked_executor;
 
 pub use app::run;
+#[cfg(test)]
+mod wallpaper_tests;

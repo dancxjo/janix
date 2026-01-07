@@ -239,6 +239,30 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
         }
     }
 
+    // DSEG7 - 7-segment display font (SIL OFL)
+    // https://github.com/keshikan/DSEG
+    let dseg_dest = fonts_dir.join("DSEG7Classic-Regular.ttf");
+    if !dseg_dest.exists() {
+        println!("    Fetching DSEG7Classic-Regular.ttf...");
+        let zip_path = fonts_dir.join("temp_dseg.zip");
+        download_file(
+            "https://github.com/keshikan/DSEG/releases/download/v0.46/fonts-DSEG_v046.zip",
+            &zip_path,
+        )?;
+
+        run_cmd(
+            Command::new("unzip")
+                .arg("-o")
+                .arg("-j")
+                .arg(&zip_path)
+                .arg("fonts-DSEG_v046/DSEG7-Classic/DSEG7Classic-Regular.ttf")
+                .arg("-d")
+                .arg(&fonts_dir),
+        )?;
+
+        let _ = fs::remove_file(&zip_path);
+    }
+
     Ok(())
 }
 

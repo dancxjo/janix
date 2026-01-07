@@ -5,15 +5,16 @@ extern crate alloc;
 use alloc::{string::String, vec, vec::Vec};
 use alloc::string::ToString;
 use abi::ids::ThingId;
-use abi::types::{RelationshipRef, AlignedRelBuf};
-use models::{Module, Service, Thing};
+use models::{Service, Thing};
 use thing_std::*;
 use thing_std::cap::{grant, Cap, CapOp, CapScope};
-use thing_std::graph::{
-    relationships_from, symbol_resolve, thing_find, thing_get_body,
-};
+use thing_std::graph::thing_get_body;
+
+mod plan;
+use plan::{build_launch_plan, SystemGraph, LaunchPlanItem};
 
 struct LaunchPlan {
+    #[allow(dead_code)]
     service_id: ThingId,
     name: String,
     module: Option<String>,
@@ -21,12 +22,38 @@ struct LaunchPlan {
     caps: Vec<CapOp>,
 }
 
+impl From<LaunchPlanItem> for LaunchPlan {
+    fn from(item: LaunchPlanItem) -> Self {
+        Self {
+            service_id: item.service_id,
+            name: item.name,
+            module: item.module_name,
+            deps: item.deps,
+            caps: item.caps,
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub fn main() {
     log_info("SPROUT: I am alive");
 
     log_info("SPROUT: building plan");
-    let plan = build_plan();
+    let graph = SystemGraph;
+    let plan_res = build_launch_plan(&graph);
+
+    let plan: Vec<LaunchPlan> = match plan_res {
+        Ok(items) => items.into_iter().map(LaunchPlan::from).collect(),
+        Err(e) => {
+            match e {
+                plan::PlanError::GraphMissing(g) => log_info(&alloc::format!("SPROUT: graph missing {}", g)),
+                plan::PlanError::CycleDetected(ids) => log_info(&alloc::format!("SPROUT: cycle detected in {:?}", ids)),
+                plan::PlanError::DependencyMissing(dep, dep_on) => log_info(&alloc::format!("SPROUT: dependency missing {} -> {}", dep.low(), dep_on.low())),
+            }
+            Vec::new()
+        }
+    };
+
     log_info(&alloc::format!("SPROUT: launch plan size {}", plan.len()));
 
     if plan.is_empty() {
@@ -103,90 +130,6 @@ fn service_ready(id: ThingId) -> bool {
     false
 }
 
-fn build_plan() -> Vec<LaunchPlan> {
-    // TODO: temporary bypass for broken relationships traversal; fallback boot will spawn core services.
-    return Vec::new();
-
-    let pred_contains = thing_std::graph::symbol_intern("predicate.contains");
-    let pred_refs = thing_std::graph::symbol_intern("predicate.references");
-    let pred_owns = thing_std::graph::symbol_intern("predicate.owns");
-
-    let plan_graphs = [
-        "graph.services",
-        "graph.services.time",
-        "graph.apps.clock",
-        "graph.services.core",
-    ];
-
-    let mut plan: Vec<LaunchPlan> = Vec::new();
-
-    for graph_name in plan_graphs {
-        log_info(&alloc::format!("SPROUT: scan {}", graph_name));
-        match thing_find(graph_name) {
-            Some(graph_id) => {
-                let rels = relationships_of(graph_id);
-                log_info(&alloc::format!(
-                    "SPROUT: {} has {} relationships",
-                    graph_name,
-                    rels.len()
-                ));
-                for rel in relationships_of(graph_id).into_iter().filter(|r| r.kind == pred_contains) {
-                    if plan.iter().any(|p| p.service_id == rel.target) {
-                        continue;
-                    }
-
-                    if let Some((body, digest)) = thing_get_body(rel.target) {
-                        log_info(&alloc::format!(
-                            "SPROUT: service body id={} len={} digest={}",
-                            rel.target.low(),
-                            body.len(),
-                            digest
-                        ));
-                        if let Ok(svc) = Service::decode_full(&body) {
-                            let mut deps = relationships_of(rel.target)
-                                .into_iter()
-                                .filter(|r| r.kind == pred_refs)
-                                .map(|r| r.target)
-                                .collect::<Vec<_>>();
-                            log_info(&alloc::format!(
-                                "SPROUT: deps found={}",
-                                deps.len()
-                            ));
-
-                            let module = relationships_of(rel.target)
-                                .into_iter()
-                                .find(|r| r.kind == pred_owns)
-                                .and_then(|r| module_info_from_id(r.target));
-
-                            let name = symbol_resolve(svc.name)
-                                .and_then(|bytes| String::from_utf8(bytes).ok())
-                                .unwrap_or_else(|| "service.?".to_string());
-
-                            if deps.is_empty() {
-                                if let Some((_, module_deps, _)) = module.as_ref() {
-                                    deps.extend_from_slice(module_deps);
-                                }
-                            }
-
-                            plan.push(LaunchPlan {
-                                service_id: rel.target,
-                                name,
-                                module: module.as_ref().map(|m| m.0.clone()),
-                                deps,
-                                caps: module.map(|(_, _, caps)| caps).unwrap_or_default(),
-                            });
-                        }
-                    }
-                }
-            }
-            None => {
-                log_info(&alloc::format!("SPROUT: plan graph missing: {}", graph_name));
-            }
-        }
-    }
-
-    plan
-}
 
 fn spawn_fallback() {
     // Bloom first for instant feedback
@@ -210,72 +153,6 @@ fn spawn_fallback() {
     spawn_and_grant("hello_window");
 }
 
-fn module_info_from_id(id: ThingId) -> Option<(String, Vec<ThingId>, Vec<CapOp>)> {
-    if let Some((body, _)) = thing_get_body(id) {
-        if let Ok(module) = Module::decode_full(&body) {
-            let name = symbol_resolve(module.name)
-                .and_then(|bytes| String::from_utf8(bytes).ok())?;
-
-            let mut deps = Vec::new();
-            for i in 0..module.dep_count.min(module.deps.len() as u8) {
-                let sym = module.deps[i as usize];
-                if let Some(bytes) = symbol_resolve(sym) {
-                    if let Ok(s) = String::from_utf8(bytes) {
-                        if let Some(id) = thing_find(&s) {
-                            deps.push(id);
-                        }
-                    }
-                }
-            }
-
-            let mut caps = Vec::new();
-            for i in 0..module.cap_count.min(module.caps.len() as u8) {
-                caps.push(module.caps[i as usize]);
-            }
-
-            return Some((name, deps, caps));
-        }
-    }
-    None
-}
-
-fn relationships_of(from: ThingId) -> Vec<RelationshipRef> {
-    let mut rels = Vec::new();
-    let mut cursor = 0;
-    log_info(&alloc::format!("SPROUT: relationships_of start from={}", from.low()));
-    loop {
-        let mut aligned = AlignedRelBuf::default();
-        let buf = &mut aligned.inner;
-
-        match relationships_from(from, cursor, buf) {
-            Ok((returned, total)) => {
-                log_info(&alloc::format!(
-                    "SPROUT: rels chunk cursor={} returned={} total={}",
-                    cursor,
-                    returned,
-                    total
-                ));
-                let count = returned as usize;
-                rels.extend_from_slice(&buf[..count]);
-
-                if returned == 0 || cursor + returned >= total {
-                    break;
-                }
-                cursor += returned;
-            }
-            Err(e) => {
-                log_info(&alloc::format!(
-                    "SPROUT: relationships_from failed for {:?}: {}",
-                    from,
-                    e
-                ));
-                break;
-            }
-        }
-    }
-
-    rels
-}
 
 fn spawn_and_grant(name: &str) {
     match spawn(name) {

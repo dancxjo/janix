@@ -15,6 +15,7 @@ pub mod nr {
     pub const SYS_SYMBOL_RESOLVE: u32 = 24;
     pub const SYS_SYMBOL_INTERN: u32 = 25;
     pub const SYS_THING_SET_BODY: u32 = 26;
+    pub const SYS_REL_GET_TARGETS: u32 = 27;
 
     pub const SYS_BYTESPACE_CREATE: u32 = 30;
     pub const SYS_SPACE_MAP: u32 = 31;

@@ -93,6 +93,46 @@ pub fn sys_thing_set_body(id_low: u64, buf_ptr: u64, buf_len: u64) -> SyscallRes
     }
 }
 
+pub fn sys_relationships_by_kind(
+    id_low: u64,
+    kind_low: u64,
+    out_ptr: u64,
+    out_len: u64,
+) -> SyscallResult {
+    let id = ThingId(id_low as u128);
+    let kind = SymbolId(kind_low);
+
+    let targets = store::relationships_by_kind(id, kind);
+    let total = targets.len() as u64;
+
+    if out_ptr == 0 {
+        return SyscallResult::new(0, 0, total);
+    }
+
+    if out_len == 0 {
+        return SyscallResult::new(0, 0, total);
+    }
+
+    let elem_size = core::mem::size_of::<ThingId>();
+
+    // out_len is in bytes. Calculate capacity in elements.
+    let max_elems = (out_len as usize) / elem_size;
+
+    // Determine how many items we can write (min of capacity and available)
+    let write_count = core::cmp::min(max_elems, targets.len());
+    let write_bytes = write_count * elem_size;
+
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            targets.as_ptr() as *const u8,
+            out_ptr as *mut u8,
+            write_bytes,
+        );
+    }
+
+    SyscallResult::new(0, write_count as u64, total)
+}
+
 pub fn sys_relationships_from(
     id_low: u64,
     cursor: u64,

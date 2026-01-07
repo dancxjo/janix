@@ -157,6 +157,14 @@ pub fn run() -> ! {
         }
 
         crate::machine::idle();
+        crate::serial::write(b".");
+        // Pattern B: Safe Graph Mirroring
+        let (applied, _) = crate::memory::journal::drain_memory_journal_to_graph(32);
+        if applied > 0 {
+            crate::serial::write(b"DRAIN: applied ");
+            crate::serial::write_num(applied as u64);
+            crate::serial::write(b" events\n");
+        }
     }
 }
 

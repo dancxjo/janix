@@ -145,3 +145,11 @@ inspect-riscv64:
     @just inspect riscv64
 inspect-loongarch64:
     @just inspect loongarch64
+
+# CI tripwire for graph usage in memory modules
+check-memory:
+    @bash tools/ci/no_graph_in_memory.sh
+
+# CI target to run all checks
+ci: fetch check-memory build
+    @echo "CI passed."

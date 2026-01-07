@@ -2,6 +2,8 @@ use abi::ids::ThingId;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 
+use graph::store;
+use graph::symbols::sym;
 use crate::memory::map::MapPerms;
 
 pub const EVENT_BYTESPACE_CREATED_RAM: u64 = 1;
@@ -78,9 +80,11 @@ static DROPPED_EVENTS: AtomicU64 = AtomicU64::new(0);
 pub fn journal_emit(ev: MemoryEvent) {
     if let Some(mut guard) = JOURNAL.try_lock() {
         if guard.try_push(ev) {
+            crate::serial::write(b"J");
             return;
         }
     }
+    crate::serial::write(b"X");
     DROPPED_EVENTS.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -160,4 +164,49 @@ pub fn emit_heap_grow(task_id: u64, old_brk: u64, new_brk: u64, size: u64) {
         c: new_brk,
         d: size,
     });
+}
+
+fn apply_bytespace_event_to_graph(ev: MemoryEvent) {
+    if matches!(
+        ev.kind,
+        EVENT_BYTESPACE_CREATED_RAM
+            | EVENT_BYTESPACE_CREATED_DMA
+            | EVENT_BYTESPACE_CREATED_DEVICE
+            | EVENT_BYTESPACE_CREATED_MODULE
+            | EVENT_BYTESPACE_CREATED_FRAMEBUFFER
+            | EVENT_BYTESPACE_CREATED_KERNEL_HEAP
+    ) {
+        let id = ThingId::from_parts(ev.b, ev.a);
+        let size = ev.c;
+        let phys_base = ev.d;
+
+        // 1. Mirror Physical Base if present
+        if phys_base != 0 {
+            let phys_val = store::thing_create(sym::KIND_VALUE_U64);
+            store::thing_set_inline_payload(phys_val, &phys_base.to_le_bytes());
+            store::relationship_create(sym::PRED_BASE_PHYS, id, phys_val);
+        }
+
+        // 2. Mirror Size
+        let size_val = store::thing_create(sym::KIND_VALUE_U64);
+        store::thing_set_inline_payload(size_val, &size.to_le_bytes());
+        store::relationship_create(sym::PRED_SIZE, id, size_val);
+    }
+}
+
+pub fn drain_memory_journal_to_graph(max_events: usize) -> (usize, usize) {
+    let mut applied = 0;
+    let dropped = 0;
+    if let Some(mut guard) = JOURNAL.try_lock() {
+        while applied < max_events {
+            if let Some(ev) = guard.try_pop() {
+                crate::serial::write(b"D");
+                apply_bytespace_event_to_graph(ev);
+                applied += 1;
+            } else {
+                break;
+            }
+        }
+    }
+    (applied, dropped)
 }

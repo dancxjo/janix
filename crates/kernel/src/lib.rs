@@ -14,6 +14,7 @@ pub mod memory;
 pub mod graph_api;
 pub mod platform;
 pub mod proc;
+pub mod seeding;
 pub mod sched;
 pub mod serial;
 pub mod syscall;

@@ -107,6 +107,16 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<ThingId, 
         
         let mut task = Task::new(id, task_thing, kernel_stack_ptr, address_space.clone());
         
+        // Apply boot grants before task becomes runnable
+        let grant_count = crate::boot_grants::apply_boot_grants_by_name(module.path, &mut task.caps);
+        if grant_count > 0 {
+            crate::log::klog(
+                crate::log::Level::Debug,
+                "PROC",
+                &alloc::format!("Applied {} boot grants to {} (path: {})", grant_count, module.path, module.path),
+            );
+        }
+        
         // Eager SIMD enablement
         let simd = crate::machine::simd();
         if simd.save_policy() == abi::cpu::SimdSavePolicy::Eager {

@@ -113,6 +113,21 @@ pub fn seed_service_plan(ctx: &crate::boot::BootContext) {
             };
             let _ = store::thing_set_body(module_thing, &module_body.encode_full());
             store::relationship_create(sym::PRED_CONTAINS, parent, module_thing);
+            
+            // Register boot grants for this module
+            let boot_caps: Vec<abi::cap::Cap> = caps.iter()
+                .take(cap_count as usize)
+                .map(|&op| abi::cap::Cap {
+                    op,
+                    scope: abi::cap::CapScope::Global,
+                })
+                .collect();
+            crate::boot_grants::register_module_grants(
+                module_thing,
+                Some(alloc::string::String::from(name)),
+                boot_caps
+            );
+            
             Some(module_thing)
         };
 
@@ -182,6 +197,16 @@ pub fn seed_service_plan(ctx: &crate::boot::BootContext) {
 
 fn default_caps_for(name: &str) -> [Option<CapOp>; 8] {
     match name {
+        "sprout" => [
+            Some(CapOp::Log),
+            Some(CapOp::MemManage),
+            Some(CapOp::GrantCaps),
+            Some(CapOp::GraphCreate),
+            Some(CapOp::GraphLink),
+            Some(CapOp::GraphUnlink),
+            Some(CapOp::GraphRead),
+            Some(CapOp::GraphWrite),
+        ],
         "bloom" => [
             Some(CapOp::Log),
             Some(CapOp::MemManage),

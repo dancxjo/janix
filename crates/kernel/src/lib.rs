@@ -8,6 +8,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod boot;
+pub mod boot_grants;
 pub mod bytespace;
 pub mod interrupt;
 pub mod log;

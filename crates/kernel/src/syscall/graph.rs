@@ -188,64 +188,67 @@ pub fn sys_relationships_from(
         return SyscallResult::new(code, 0, 0);
     }
 
-    let rel_ids = store::relationships_from(id);
-    let total_rels = rel_ids.len() as u64;
-
-    let skip = cursor as usize;
-    if skip >= rel_ids.len() {
-        return SyscallResult::new(0, 0, total_rels);
-    }
-
     if out_ptr == 0 {
-        return SyscallResult::new(err::EINVAL, 0, total_rels);
+        // If out_ptr is 0, we can't return data, but we might want total count.
+        // But the previous implementation required out_ptr != 0 for success unless cursor out of bounds?
+        // Actually the previous implementation returned EINVAL if out_ptr == 0.
+        // Let's preserve that, but fetch total count first to match error return style.
+        // Wait, store access is what we want to optimize.
+        // Let's call paged with 0 length if we just need total.
+        let (_, total) = store::relationships_from_paged(id, 0, 0);
+        return SyscallResult::new(err::EINVAL, 0, total as u64);
     }
 
-    // Copy bytes directly to avoid alignment issues with typed slices
+    let elem_size = core::mem::size_of::<RelationshipRef>();
+    let out_len_usize = match usize::try_from(out_len) {
+        Ok(len) => len,
+        Err(_) => {
+            let (_, total) = store::relationships_from_paged(id, 0, 0);
+            return SyscallResult::new(err::EINVAL, 0, total as u64);
+        }
+    };
+
+    // Check for excessive size request to prevent DOS/overflow issues
+    if out_len_usize > (isize::MAX as usize) / elem_size {
+         let (_, total) = store::relationships_from_paged(id, 0, 0);
+         return SyscallResult::new(err::EINVAL, 0, total as u64);
+    }
+
+    let (rels, total_rels) = store::relationships_from_paged(id, cursor as usize, out_len_usize);
+    let total_rels = total_rels as u64;
+
     if out_len == 0 {
         return SyscallResult::new(0, 0, total_rels);
     }
 
-    let elem_size = core::mem::size_of::<RelationshipRef>();
-    let out_len = match usize::try_from(out_len) {
-        Ok(len) => len,
-        Err(_) => return SyscallResult::new(err::EINVAL, 0, total_rels),
-    };
-    if out_len > (isize::MAX as usize) / elem_size {
-        return SyscallResult::new(err::EINVAL, 0, total_rels);
-    }
-
     let mut count = 0u64;
-    let max_bytes = match out_len.checked_mul(elem_size) {
-        Some(len) => len,
-        None => return SyscallResult::new(err::EINVAL, 0, total_rels),
-    };
-    let mut scratch = alloc::vec![0u8; max_bytes];
+    for (i, rel) in rels.into_iter().enumerate() {
+        let ref_data = RelationshipRef {
+            id: rel.id,
+            kind: rel.kind,
+            target: rel.to,
+        };
 
-    for (i, &rel_id) in rel_ids.iter().skip(skip).enumerate() {
-        if i >= out_len {
-            break;
-        }
-        if let Some(rel) = store::get_relationship(rel_id) {
-            let ref_data = RelationshipRef {
-                id: rel_id,
-                kind: rel.kind,
-                target: rel.to,
-            };
-            // Copy bytes directly to avoid alignment issues
-            unsafe {
-                let src_ptr = &ref_data as *const RelationshipRef as *const u8;
-                let dest_ptr = scratch.as_mut_ptr().add(i * elem_size);
-                core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, elem_size);
-            }
-            count += 1;
-        }
-    }
+        // Write item-by-item to avoid allocating a large scratch buffer.
+        // Using copy_to_user with slice::from_ref
+        // Calculate destination address
+        let dest_addr = match out_ptr.checked_add((i * elem_size) as u64) {
+            Some(addr) => addr,
+            None => break, // Should not happen given bounds checks above
+        };
 
-    let write_bytes = (count as usize).saturating_mul(elem_size);
-    if write_bytes > 0 {
-        if let Err(code) = user_mem::copy_to_user(out_ptr, &scratch, write_bytes) {
-            return SyscallResult::new(code, 0, total_rels);
+        let src_slice = unsafe {
+            core::slice::from_raw_parts(&ref_data as *const _ as *const u8, elem_size)
+        };
+
+        if let Err(code) = user_mem::copy_to_user(dest_addr, src_slice, elem_size) {
+            // If copy fails, we return the error code.
+            // Note: Partial writes are possible if we return error here.
+            // The original code failed entirely before writing anything if scratch allocation failed,
+            // or failed entirely if copy_to_user (bulk) failed.
+            return SyscallResult::new(code, count, total_rels);
         }
+        count += 1;
     }
 
     SyscallResult::new(0, count, total_rels)

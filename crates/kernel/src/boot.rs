@@ -462,13 +462,30 @@ pub unsafe fn boot(ctx_ptr: *mut BootContext) -> ! {
     // --- Launch Bloom ---
 
     // --- Launch Sprout ---
+    // Sprout is PID 1 and spawned directly, not via the service plan
+    // Register its boot grants manually
+    {
+        use abi::cap::{Cap, CapOp, CapScope};
+        let sprout_caps = alloc::vec![
+            Cap { op: CapOp::Log, scope: CapScope::Global },
+            Cap { op: CapOp::MemManage, scope: CapScope::Global },
+            Cap { op: CapOp::GrantCaps, scope: CapScope::Global },
+            Cap { op: CapOp::GraphCreate, scope: CapScope::Global },
+            Cap { op: CapOp::GraphLink, scope: CapScope::Global },
+            Cap { op: CapOp::GraphUnlink, scope: CapScope::Global },
+            Cap { op: CapOp::GraphRead, scope: CapScope::Global },
+            Cap { op: CapOp::GraphWrite, scope: CapScope::Global },
+        ];
+        // Use a dummy ThingId since we register by name
+        crate::boot_grants::register_module_grants(
+            abi::ids::ThingId(0),
+            Some(alloc::string::String::from("sprout")),
+            sprout_caps
+        );
+    }
     let sprout_id = spawn_module_by_name(ctx, "sprout");
     indicate_progress(5, "🚀 Sprout ignited");
     crate::seeding::seed_kernel_permissions();
-
-    if let Some(id) = sprout_id {
-        inject_root_caps(id);
-    }
 
     crate::log::kprintln("BOOT: Handing off to scheduler");
     crate::sched::run();
@@ -489,29 +506,3 @@ pub fn spawn_module_by_name(ctx: &BootContext, name: &str) -> Option<abi::ids::T
     crate::log::kprintln(&alloc::format!("BOOT: Module {} not found", name));
     None
 }
-
-fn inject_root_caps(task_id: abi::ids::ThingId) {
-    use abi::cap::{Cap, CapOp, CapScope};
-    let ops = [
-        CapOp::Log,
-        CapOp::MemManage,
-        CapOp::GrantCaps,
-        CapOp::GraphCreate,
-        CapOp::GraphLink,
-        CapOp::GraphUnlink,
-        CapOp::GraphRead,
-        CapOp::GraphWrite,
-        CapOp::GraphWatch,
-        CapOp::Hardware,
-    ];
-    for op in ops {
-        crate::syscall::cap::inject_cap(
-            task_id,
-            Cap {
-                op,
-                scope: CapScope::Global,
-            },
-        );
-    }
-}
-

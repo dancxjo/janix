@@ -41,12 +41,8 @@ pub fn sys_surface_create(width: u64, height: u64, format: u64) -> SyscallResult
     store::thing_set_inline_payload(format_val_id, &(format as u32).to_le_bytes());
     store::relationship_create(sym::PRED_FORMAT, surface_id, format_val_id);
 
-    // Grant Write cap to current task
-    if let Some(task_id) = crate::sched::current_task_id() {
-        use abi::cap::{Cap, CapOp, CapScope};
-        cap::inject_cap(task_id, Cap { op: CapOp::GraphWrite, scope: CapScope::Thing(surface_id) });
-        cap::inject_cap(task_id, Cap { op: CapOp::GraphRead, scope: CapScope::Thing(surface_id) });
-    }
+    // Grant creator ownership (read/write on the created surface)
+    cap::grant_creator_ownership(surface_id);
 
     let res = SyscallResult::new(0, surface_id.high(), surface_id.low());
     crate::log::klog(

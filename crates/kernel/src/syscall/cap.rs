@@ -67,11 +67,25 @@ pub fn sys_cap_grant(target_low: u64, target_high: u64, cap_ptr: u64) -> Syscall
     }
 }
 
-// Helper for boot.rs and internal grants to inject caps
-pub fn inject_cap(task_id: ThingId, cap: Cap) {
-    sched::with_sched(|sched| {
-        if let Some(task) = sched.tasks.iter_mut().find(|t| t.thing == task_id) {
-            task.caps.push(cap);
-        }
+/// Grant creator ownership capabilities on a newly created Thing.
+///
+/// This implements the default policy: when a task creates a Thing, it automatically
+/// receives read and write capabilities scoped to that Thing.
+///
+/// This is called from object creation syscalls (e.g., surface_create) to grant
+/// the creator appropriate capabilities without needing boot grants.
+pub fn grant_creator_ownership(thing_id: ThingId) {
+    use abi::cap::{Cap, CapOp, CapScope};
+    
+    crate::sched::with_current_task(|task| {
+        task.caps.push(Cap {
+            op: CapOp::GraphRead,
+            scope: CapScope::Thing(thing_id),
+        });
+        task.caps.push(Cap {
+            op: CapOp::GraphWrite,
+            scope: CapScope::Thing(thing_id),
+        });
     });
 }
+

@@ -80,5 +80,7 @@ pub mod present_loop;
 pub use app::run;
 #[cfg(test)]
 mod wallpaper_tests;
+#[cfg(test)]
+mod cursor_overlay_tests;
 pub mod text_pipeline;
 pub mod textd_glyph;

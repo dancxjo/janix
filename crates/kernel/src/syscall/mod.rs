@@ -11,3 +11,6 @@ pub mod wait;
 pub mod watch;
 pub mod thread;
 pub mod user_mem;
+
+#[cfg(test)]
+pub mod host_tests;

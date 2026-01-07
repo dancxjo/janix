@@ -238,7 +238,7 @@ impl ChunkedExecutor {
             return true;
         }
         
-        let mut painter = CpuPainter::new(scene_buffer, self.state.width, self.state.height);
+        let mut painter = CpuPainter::new_for_scene(scene_buffer, self.state.width, self.state.height);
         painter.set_clip(Clip::from_rect(self.state.current_clip));
         
         let start_index = self.state.index;

@@ -161,7 +161,7 @@ pub fn execute_cmds_into_scene(
         return ExecOutput { stats, damage: Damage::default() };
     }
 
-    let mut painter = CpuPainter::new(scene_buffer, width, height);
+    let mut painter = CpuPainter::new_for_scene(scene_buffer, width, height);
     let mut damage = Damage::default();
     
     // Initial clip is full screen

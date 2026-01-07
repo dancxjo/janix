@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
+    "themes/nebulous",
+    "themes/theme",
     "crates/abi",
     "crates/bran",
     "crates/kernel",

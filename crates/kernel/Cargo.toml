@@ -19,6 +19,7 @@ thing_codec = { path = "../thing_codec", default-features = false, features = ["
 graph = { path = "../graph" }
 models = { path = "../models" }
 linked_list_allocator = "0.10.5"
+theme = { path = "../../themes/theme" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.14.2"

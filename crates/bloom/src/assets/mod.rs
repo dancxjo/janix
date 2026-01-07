@@ -30,7 +30,7 @@ pub fn map_bytespace(bs_id: ThingId, vaddr: u64, len: u64) -> &'static [u8] {
 }
 
 pub fn load_wallpaper() -> Option<(bmp::Wallpaper, u32)> {
-    let id = thing_std::thing_find("bytespace.asset.clouds.bmp")?;
+    let id = thing_std::thing_find(theme::current::WALLPAPER_BYTESPACE)?;
     // We don't know the exact size, but we can map a generous amount or read the size from the Thing?
     // The Thing graph might have size metadata, but for now we map a safe chunk.
     // 3MB should be enough for the small clouds.bmp (it was 3MB for the big one, smaller one is ~400KB).

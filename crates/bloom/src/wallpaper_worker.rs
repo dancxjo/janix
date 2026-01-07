@@ -23,7 +23,7 @@ pub static WALLPAPER_WORKER_PHASE: AtomicU32 = AtomicU32::new(0);
 pub fn load_wallpaper_sync() -> Option<WallpaperMsg> {
     thing_std::log_info("BLOOM: loading wallpaper sync");
     
-    let bs_id = thing_find("bytespace.asset.clouds.bmp")?;
+    let bs_id = thing_find(theme::current::WALLPAPER_BYTESPACE)?;
     
     let hint_va = 0x8500_0000u64;
     let map_size = 4 * 1024 * 1024u64;

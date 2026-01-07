@@ -187,6 +187,7 @@ dependencies = [
  "postcard",
  "spin",
  "symbols",
+ "theme",
  "thing_std",
  "tinybmp",
  "tokio",
@@ -1140,6 +1141,7 @@ dependencies = [
  "log",
  "models",
  "spin",
+ "theme",
  "thing_codec",
  "x86_64",
 ]
@@ -1276,6 +1278,10 @@ dependencies = [
  "thing_codec",
  "thing_derive",
 ]
+
+[[package]]
+name = "nebulous"
+version = "0.1.0"
 
 [[package]]
 name = "nom"
@@ -2017,6 +2023,13 @@ dependencies = [
  "smawk",
  "unicode-linebreak",
  "unicode-width",
+]
+
+[[package]]
+name = "theme"
+version = "0.1.0"
+dependencies = [
+ "nebulous",
 ]
 
 [[package]]

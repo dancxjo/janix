@@ -17,6 +17,7 @@ use core::panic::PanicInfo;
 pub use debug::log as log_info;
 pub use process::exit as sys_exit;
 pub use process::sched_yield;
+pub use process::boot_progress;
 
 pub mod codec;
 pub mod cap;

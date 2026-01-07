@@ -23,6 +23,7 @@ pub mod executor;
 pub mod watch;
 pub mod cursor_manager;
 pub mod wallpaper_worker;
+pub mod boot_fade;
 pub mod input_worker;
 pub mod cursor_overlay;
 pub mod chunked_executor;

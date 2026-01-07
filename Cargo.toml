@@ -2,7 +2,9 @@
 resolver = "2"
 members = [
     "themes/nebulous",
+    "themes/without_a_cause",
     "themes/theme",
+    "crates/boot_progress",
     "crates/abi",
     "crates/bran",
     "crates/kernel",

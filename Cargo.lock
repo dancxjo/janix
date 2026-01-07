@@ -202,6 +202,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "boot_progress"
+version = "0.1.0"
+dependencies = [
+ "theme",
+]
+
+[[package]]
 name = "bouncer_test"
 version = "0.1.0"
 dependencies = [
@@ -1136,6 +1143,7 @@ version = "0.3.0"
 dependencies = [
  "abi",
  "bitflags 2.10.0",
+ "boot_progress",
  "graph",
  "linked_list_allocator",
  "log",
@@ -2030,6 +2038,7 @@ name = "theme"
 version = "0.1.0"
 dependencies = [
  "nebulous",
+ "without_a_cause",
 ]
 
 [[package]]
@@ -2597,6 +2606,10 @@ name = "wit-bindgen"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
+
+[[package]]
+name = "without_a_cause"
+version = "0.1.0"
 
 [[package]]
 name = "x86_64"

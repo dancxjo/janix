@@ -253,6 +253,9 @@ pub extern "C" fn dispatch(
         }
 
         nr::SYS_CPU_FEATURES => cpu::sys_cpu_features(a0, a1),
+        // === Boot Progress ===
+        nr::SYS_BOOT_PROGRESS => sys_boot_progress(a0, a1),
+        // === Boot Color ===
 
         0 => SyscallResult::new(0, 0, 3), // Version
 
@@ -333,4 +336,14 @@ pub fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
         }
         _ => SyscallResult::new(err::EINVAL, 0, 0),
     }
+}
+fn sys_boot_progress(step: u64, max_step: u64) -> SyscallResult {
+    let (r, g, b) = boot_progress::progress_color(step as u32, max_step as u32);
+    let color = crate::machine::BootColor { red: r, green: g, blue: b };
+    
+    if let Some(fb) = crate::boot::get_boot_ctx().framebuffer {
+        crate::machine::machine().set_boot_color(&fb, color);
+    }
+    
+    SyscallResult::new(0, 0, 0)
 }

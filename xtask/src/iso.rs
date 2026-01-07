@@ -108,6 +108,13 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
             .with_context(|| format!("Failed to copy clouds.bmp from {:?}", clouds_bmp))?;
     }
 
+    // Leather wallpaper (without_a_cause theme)
+    let leather_bmp = root.join("assets/wallpapers/leather.bmp");
+    if leather_bmp.exists() {
+        fs::copy(&leather_bmp, assets_dir.join("leather.bmp"))
+            .with_context(|| format!("Failed to copy leather.bmp from {:?}", leather_bmp))?;
+    }
+
     // Cursor assets (.cur and .ani files)
     let cursors_src = root.join("assets/cursors/plain");
     let cursor_files = [

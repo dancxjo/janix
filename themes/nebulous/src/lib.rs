@@ -18,3 +18,7 @@ pub const TITLEBAR_INACTIVE: u32 = 0xFF606060;
 // ─── Shadows ──────────────────────────────────────────────────────
 pub const SHADOW_BLUR_RADIUS: u8 = 8;
 pub const SHADOW_COLOR: u32 = 0x40000000;
+
+// ─── Boot Fade Colors ─────────────────────────────────────────────
+/// Half-brightness for boot fade start (where kernel left off)
+pub const DOMINANT_HALF_ARGB: u32 = 0xFF174069;  // #2e80d2 / 2

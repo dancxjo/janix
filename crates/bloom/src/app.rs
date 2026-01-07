@@ -19,6 +19,7 @@ use crate::cursor_manager::{CursorSet, CursorKind};
 use crate::cursor_overlay::CursorOverlay;
 use crate::chunked_executor::ChunkedExecutor;
 use crate::wallpaper_worker::{WALLPAPER_MBX, load_wallpaper_sync};
+use crate::boot_fade::{WALLPAPER_READY, CURRENT_BG_COLOR, boot_fade_entry, configure_display};
 use crate::input_worker::{InputWorkerConfig, INPUT_CONFIG_MBX, INPUT_STATE, input_worker_entry, INPUT_WORKER_STARTED, INPUT_WORKER_TICKS, INPUT_EVENTS_DRAINED};
 use crate::wallpaper_worker::{WALLPAPER_WORKER_STARTED, WALLPAPER_WORKER_PHASE};
 use core::sync::atomic::Ordering;
@@ -45,7 +46,7 @@ pub fn run() {
     log_info("BLOOM: fonts warmed up");
 
     // Solid background color #2e80d2
-    let background_color: u32 = 0xFF2E80D2;
+    let background_color: u32 = CURRENT_BG_COLOR.load(core::sync::atomic::Ordering::Relaxed);
 
     let mut graph_client = SyscallGraphClient;
 
@@ -70,6 +71,12 @@ pub fn run() {
             
             // Initialize input state with screen center immediately (before first paint)
             INPUT_STATE.init(width, height);
+
+            // Configure boot fade with display info
+            configure_display(0xA000_0000u64, width, height, width);
+            // Spawn boot fade animation thread (after display ready, avoid graph store deadlock)
+            let _fade_thread = thing_std::thread::thread_spawn(boot_fade_entry, 0);
+            log_info("BLOOM: boot fade thread spawned");
 
             let buffer_size = (width * height) as usize;
             let mut frame_buffer = alloc::vec![0u32; buffer_size];
@@ -107,6 +114,7 @@ pub fn run() {
                     pixels: alloc::sync::Arc::from(wp.pixels),
                 };
                 wallpaper_handle = Some((bitmap_store.add(bmp), wp.width, wp.height));
+                WALLPAPER_READY.store(true, core::sync::atomic::Ordering::Release);
             }
             
             // Spawn input worker thread (drains ringbuffer, publishes atomics)

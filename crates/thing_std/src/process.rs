@@ -31,3 +31,13 @@ pub fn sched_yield() {
         syscall(nr::SYS_SCHED_YIELD, 0, 0, 0, 0, 0, 0);
     }
 }
+
+/// Set boot progress (triggers screen color update from kernel)
+pub fn boot_progress(step: u32, max_step: u32) {
+    unsafe {
+        crate::syscall(
+            abi::syscall::nr::SYS_BOOT_PROGRESS,
+            step as u64, max_step as u64, 0, 0, 0, 0
+        );
+    }
+}

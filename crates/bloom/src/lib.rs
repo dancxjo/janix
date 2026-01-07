@@ -27,6 +27,7 @@ pub mod boot_fade;
 pub mod input_worker;
 pub mod cursor_overlay;
 pub mod chunked_executor;
+pub mod present_loop;
 
 pub use app::run;
 #[cfg(test)]

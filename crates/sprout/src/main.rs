@@ -205,7 +205,7 @@ fn spawn_fallback() {
 
     spawn_and_grant("timed");
     spawn_and_grant("textd");
-    spawn_and_grant("clock");
+    // spawn_and_grant("clock");
     spawn_and_grant("inputd");
     spawn_and_grant("hello_window");
 }

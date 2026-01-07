@@ -22,6 +22,7 @@ use crate::wallpaper_worker::{WALLPAPER_MBX, load_wallpaper_sync};
 use crate::boot_fade::{WALLPAPER_READY, CURRENT_BG_COLOR, boot_fade_entry, configure_display};
 use crate::input_worker::{InputWorkerConfig, INPUT_CONFIG_MBX, INPUT_STATE, input_worker_entry, INPUT_WORKER_STARTED, INPUT_WORKER_TICKS, INPUT_EVENTS_DRAINED};
 use crate::wallpaper_worker::{WALLPAPER_WORKER_STARTED, WALLPAPER_WORKER_PHASE};
+use crate::present_loop::{PresentConfig, present_loop_entry};
 use core::sync::atomic::Ordering;
 
 
@@ -73,10 +74,21 @@ pub fn run() {
             INPUT_STATE.init(width, height);
 
             // Configure boot fade with display info
-            configure_display(0xA000_0000u64, width, height, width);
-            // Spawn boot fade animation thread (after display ready, avoid graph store deadlock)
-            let _fade_thread = thing_std::thread::thread_spawn(boot_fade_entry, 0);
-            log_info("BLOOM: boot fade thread spawned");
+            // configure_display(0xA000_0000u64, width, height, width);
+            
+            // --- START PRESENT LOOP ---
+            // Allocate config on heap to ensure validity when thread reads it
+            let present_config = alloc::boxed::Box::new(PresentConfig {
+                fb_vaddr: 0xA000_0000,
+                width,
+                height,
+                stride: width, // assuming stride == width for now
+            });
+            let config_ptr = alloc::boxed::Box::into_raw(present_config) as u64;
+            
+            let _present_thread = thing_std::thread::thread_spawn(present_loop_entry, config_ptr);
+            log_info("BLOOM: present thread spawned");
+            // --------------------------
 
             let buffer_size = (width * height) as usize;
             let mut frame_buffer = alloc::vec![0u32; buffer_size];
@@ -91,7 +103,9 @@ pub fn run() {
             unsafe {
                 core::ptr::copy_nonoverlapping(frame_buffer.as_ptr(), background_cache.as_mut_ptr(), buffer_size);
             }
-            backend.present(frame_buffer.as_slice(), DirtyRect { x: 0, y: 0, w: width, h: height });
+            if crate::boot_fade::WALLPAPER_READY.load(Ordering::Acquire) {
+                backend.present(frame_buffer.as_slice(), DirtyRect { x: 0, y: 0, w: width, h: height });
+            }
             log_info("BLOOM: first paint complete");
 
             let mut cursor_set = CursorSet::new();
@@ -698,16 +712,17 @@ pub fn run() {
                 }
 
                 if let Some(rect) = dirty {
-                    
-                    backend.present(
-                        frame_buffer.as_mut_slice(),
-                        DirtyRect {
-                            x: rect.x,
-                            y: rect.y,
-                            w: rect.w,
-                            h: rect.h,
-                        },
-                    );
+                    if crate::boot_fade::WALLPAPER_READY.load(Ordering::Acquire) {
+                        backend.present(
+                            frame_buffer.as_mut_slice(),
+                            DirtyRect {
+                                x: rect.x,
+                                y: rect.y,
+                                w: rect.w,
+                                h: rect.h,
+                            },
+                        );
+                    }
                     prev_px = px;
                     prev_py = py;
                     prev_buttons = buttons;

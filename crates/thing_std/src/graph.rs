@@ -236,19 +236,52 @@ pub fn relationships_from(
     Ok((res.val0, res.val1))
 }
 
-pub fn find_child_by_kind(parent: ThingId, kind_sym: SymbolId) -> Option<ThingId> {
-    let mut out = alloc::vec![RelationshipRef { id: ThingId(0), kind: abi::ids::SymbolId(0), target: ThingId(0) }; 16];
-    let mut cursor = 0;
-    loop {
-        let (count, total) = relationships_from(parent, cursor, &mut out).ok()?;
-        if count == 0 { break; }
-        for rel in &out[0..count as usize] {
-            if rel.kind == kind_sym {
-                return Some(rel.target);
-            }
-        }
-        cursor += count;
-        if cursor >= total { break; }
+pub fn graph_outgoing(from: ThingId, kind: SymbolId) -> Vec<ThingId> {
+    // Determine total count first by passing null/0
+    // But we need a syscall that returns (count, total) for this new Op.
+    // The syscall implementation returns (0, count, total) if ptr is null.
+
+    let res = unsafe {
+        syscall(
+            nr::SYS_REL_GET_TARGETS,
+            from.low(),
+            kind.0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+
+    if res.status != 0 {
+        return Vec::new();
     }
-    None
+
+    let total = res.val1 as usize;
+    if total == 0 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::with_capacity(total);
+    unsafe {
+        let res2 = syscall(
+            nr::SYS_REL_GET_TARGETS,
+            from.low(),
+            kind.0,
+            out.as_mut_ptr() as u64,
+            (total * core::mem::size_of::<ThingId>()) as u64,
+            0,
+            0,
+        );
+        if res2.status == 0 {
+            out.set_len(res2.val0 as usize);
+        }
+    }
+
+    out
+}
+
+pub fn find_child_by_kind(parent: ThingId, kind_sym: SymbolId) -> Option<ThingId> {
+    let targets = graph_outgoing(parent, kind_sym);
+    targets.first().cloned()
 }

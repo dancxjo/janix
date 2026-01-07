@@ -87,6 +87,13 @@ pub extern "C" fn dispatch(
             }
             graph::sys_relationships_from(a0, a1, a2, a3)
         }
+        nr::SYS_REL_GET_TARGETS => {
+            let thing_id = abi::ids::ThingId(a0 as u128);
+            if let Err(e) = cap::check(CapOp::GraphRead, Some(thing_id)) {
+                return e;
+            }
+            graph::sys_relationships_by_kind(a0, a1, a2, a3)
+        }
         nr::SYS_SYMBOL_RESOLVE => graph::sys_symbol_resolve(a0, a1, a2),
         nr::SYS_SYMBOL_INTERN => graph::sys_symbol_intern(a0, a1),
         nr::SYS_THING_FIND => {

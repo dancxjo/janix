@@ -125,6 +125,23 @@ impl GraphStore {
         self.from_index.get(&from).cloned().unwrap_or_default()
     }
 
+    pub fn relationships_by_kind(&self, from: ThingId, kind: SymbolId) -> Vec<ThingId> {
+        if let Some(ids) = self.from_index.get(&from) {
+            ids.iter()
+                .filter_map(|&rel_id| {
+                    if let Some(rel) = self.relationships.get(&rel_id) {
+                        if rel.kind == kind {
+                            return Some(rel.to);
+                        }
+                    }
+                    None
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn set_body(&mut self, id: ThingId, body: &[u8]) -> Result<(), i32> {
         if let Some(thing) = self.things.get_mut(&id) {
             if !body.is_empty() {
@@ -199,6 +216,9 @@ impl GraphStore {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "tests_new.rs"]
+mod tests_new;
 
 impl GraphClient for GraphStore {
     fn create_thing(&mut self, kind: SymbolId) -> Result<ThingId, i32> {
@@ -336,6 +356,10 @@ pub fn relationship_delete(id: RelationshipId) -> Option<Relationship> {
 
 pub fn relationships_from(from: ThingId) -> Vec<RelationshipId> {
     with_store(|s| s.relationships_from(from))
+}
+
+pub fn relationships_by_kind(from: ThingId, kind: SymbolId) -> Vec<ThingId> {
+    with_store(|s| s.relationships_by_kind(from, kind))
 }
 
 pub fn get_relationship(id: RelationshipId) -> Option<Relationship> {

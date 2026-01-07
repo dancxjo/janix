@@ -4,6 +4,8 @@ use abi::ids::ThingId;
 use abi::syscall::err;
 use abi::types::{WatchEvent, WatchEventKind, WatchKind, MAX_WATCH_EVENTS};
 use abi::wire::SyscallResult;
+use crate::syscall::user_mem;
+use abi::cap::CapOp;
 
 // Local zero value to seed scratch buffers without relying on Default.
 const EMPTY_EVENT: WatchEvent = WatchEvent {
@@ -20,16 +22,27 @@ pub fn sys_watch_create(kind_raw: u64, target_low: u64) -> SyscallResult {
         _ => return SyscallResult::new(err::EINVAL, 0, 0),
     };
     let target = ThingId(target_low as u128);
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphWatch, Some(target)) {
+        return SyscallResult::new(code, 0, 0);
+    }
     let watch_id = crate::watch::create_watch(kind, target);
     SyscallResult::new(0, watch_id.0, 0)
 }
 
 pub fn sys_watch_poll(watch_id_raw: u64, out_ptr: u64, out_len: u64) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphWatch, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     if out_ptr == 0 || out_len == 0 {
         return SyscallResult::new(err::EINVAL, 0, 0);
     }
 
-    let count = core::cmp::min(out_len as usize, MAX_WATCH_EVENTS);
+    let out_len = match usize::try_from(out_len) {
+        Ok(len) => len,
+        Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
+    };
+    let count = core::cmp::min(out_len, MAX_WATCH_EVENTS);
     if count == 0 {
         return SyscallResult::new(0, 0, 0);
     }
@@ -43,12 +56,11 @@ pub fn sys_watch_poll(watch_id_raw: u64, out_ptr: u64, out_len: u64) -> SyscallR
         Ok(written) => {
             let byte_len = written * core::mem::size_of::<WatchEvent>();
             if byte_len > 0 {
-                unsafe {
-                    core::ptr::copy_nonoverlapping(
-                        out_slice.as_ptr() as *const u8,
-                        out_ptr as *mut u8,
-                        byte_len,
-                    );
+                let bytes = unsafe {
+                    core::slice::from_raw_parts(out_slice.as_ptr() as *const u8, byte_len)
+                };
+                if let Err(code) = user_mem::copy_to_user(out_ptr, bytes, byte_len) {
+                    return SyscallResult::new(code, 0, 0);
                 }
             }
             SyscallResult::new(0, written as u64, 0)

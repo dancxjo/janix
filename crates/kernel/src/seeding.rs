@@ -195,7 +195,7 @@ fn default_caps_for(name: &str) -> [Option<CapOp>; 8] {
         "inputd" => [
             Some(CapOp::Log),
             Some(CapOp::MemManage),
-            Some(CapOp::Hardware),
+            Some(CapOp::InputRead),
             Some(CapOp::GraphCreate),
             Some(CapOp::GraphLink),
             Some(CapOp::GraphRead),

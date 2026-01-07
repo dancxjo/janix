@@ -3,10 +3,16 @@
 use crate::memory::bytespace::Bytespace;
 use crate::memory::journal;
 use crate::memory::map::MapPerms;
+use crate::syscall::user_mem;
+use abi::cap::CapOp;
 use abi::syscall::err;
 use abi::wire::SyscallResult;
 
 pub fn sys_bytespace_create(size: u64, _flags: u64) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::MemManage, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     if let Ok(bs) = Bytespace::new_ram(size as usize) {
         let id = bs.id;
         core::mem::forget(bs);
@@ -21,6 +27,10 @@ pub fn sys_bytespace_create(size: u64, _flags: u64) -> SyscallResult {
 /// Note: We pack the ID low bits and phys into the result since we only have 3 values.
 /// Userspace can use thing_id_low (val0) to reference the bytespace.
 pub fn sys_dma_bytespace_create(size: u64, _flags: u64) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::MemManage, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     if size == 0 || size % 4096 != 0 {
         return SyscallResult::new(err::EINVAL, 0, 0);
     }
@@ -43,6 +53,10 @@ pub fn sys_space_map(
     offset: u64,
     len: u64,
 ) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::MemManage, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     let bs_id = abi::ids::ThingId::from_parts(bs_id_hi, bs_id_lo);
 
     let info = if let Some(info) = Bytespace::lookup(bs_id) {
@@ -93,6 +107,10 @@ pub fn sys_space_map(
 
 
 pub fn sys_space_unmap(_vaddr: u64, _len: u64, _flags: u64) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::MemManage, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     SyscallResult::new(err::ENOSYS, 0, 0)
 }
 
@@ -101,6 +119,10 @@ pub fn sys_space_unmap(_vaddr: u64, _len: u64, _flags: u64) -> SyscallResult {
 /// This function intentionally avoids graph writes and uses the memory journal
 /// to record changes. Heap growth must remain safe even when the graph is busy.
 pub fn sys_heap_grow(increment: u64) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::MemManage, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     crate::sched::with_current_task(|task| {
         let old_brk = task.heap_brk;
         if increment == 0 {

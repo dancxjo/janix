@@ -104,6 +104,7 @@ Before you commit code:
 *   [ ] Did I hardcode a machine assumption in the kernel? (If yes -> **Move to Machine**)
 *   [ ] Did I confuse a Platform (CPU) with a Machine (Board)?
 *   [ ] Did I break `just test`?
+*   [ ] Did I use real backing memory for user-pointer tests (avoid raw unmapped addresses)?
 
 ## 8. Knowledge Base
 

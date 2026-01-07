@@ -4,12 +4,71 @@ use crate::memory::id::next_thing_id;
 use crate::memory::journal;
 use crate::memory::map::{MapPerms, MapResult};
 use abi::ids::ThingId;
+use alloc::vec::Vec;
 
 use spin::Mutex;
+
+#[derive(Clone, Copy, Debug)]
+pub struct UserMapping {
+    start: u64,
+    end: u64,
+    perms: MapPerms,
+}
+
+#[derive(Debug)]
+pub struct UserMappings {
+    entries: Mutex<Vec<UserMapping>>,
+}
+
+impl UserMappings {
+    pub fn new() -> Self {
+        Self {
+            entries: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn record(&self, start: u64, len: usize, perms: MapPerms) {
+        if len == 0 {
+            return;
+        }
+        let Some(end) = start.checked_add(len as u64) else {
+            return;
+        };
+        let mapping = UserMapping { start, end, perms };
+        self.entries.lock().push(mapping);
+    }
+
+    pub fn permits(&self, start: u64, len: usize, required: MapPerms) -> bool {
+        if len == 0 {
+            return true;
+        }
+        let Some(end) = start.checked_add(len as u64) else {
+            return false;
+        };
+
+        let entries = self.entries.lock();
+        let mut cursor = start;
+        while cursor < end {
+            let mut covered = false;
+            for entry in entries.iter() {
+                if entry.start <= cursor && entry.end > cursor && entry.perms.contains(required) {
+                    cursor = core::cmp::min(end, entry.end);
+                    covered = true;
+                    break;
+                }
+            }
+            if !covered {
+                return false;
+            }
+        }
+        true
+    }
+}
 
 pub struct AddressSpace {
     pub id: ThingId,
     pub arch: Mutex<ArchAddressSpace>,
+    user_mappings: UserMappings,
 }
 
 impl AddressSpace {
@@ -18,6 +77,7 @@ impl AddressSpace {
         Ok(Self {
             id,
             arch: Mutex::new(ArchAddressSpace::new()?),
+            user_mappings: UserMappings::new(),
         })
     }
 
@@ -40,6 +100,7 @@ impl AddressSpace {
         Ok(Self {
             id,
             arch: Mutex::new(arch),
+            user_mappings: UserMappings::new(),
         })
     }
 
@@ -47,9 +108,24 @@ impl AddressSpace {
         self.arch.lock().activate();
     }
 
+    pub fn user_mappings(&self) -> &UserMappings {
+        &self.user_mappings
+    }
+
+    pub fn user_range_end(&self) -> u64 {
+        self.arch.lock().user_range_end()
+    }
+
+    pub fn probe_user_range(&self, start: u64, len: usize, perms: MapPerms) -> bool {
+        self.arch.lock().probe_user_range(start, len, perms)
+    }
+
     pub fn map(&self, virt: u64, phys: u64, len: usize, perms: MapPerms) -> MapResult<()> {
         self.arch.lock().map(virt, phys, len, perms)?;
         journal::emit_map(self.id, virt, phys, len, perms);
+        if perms.contains(MapPerms::USER) {
+            self.user_mappings.record(virt, len, perms);
+        }
         Ok(())
     }
 

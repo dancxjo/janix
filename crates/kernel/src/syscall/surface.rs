@@ -1,7 +1,8 @@
 //! Surface and Graphics Syscalls
 
 use crate::memory::bytespace::Bytespace;
-use crate::syscall::cap;
+use crate::syscall::{cap, user_mem};
+use abi::cap::CapOp;
 use abi::ids::ThingId;
 use abi::syscall::err;
 use abi::wire::SyscallResult;
@@ -9,6 +10,10 @@ use graph::store;
 use graph::symbols::sym;
 
 pub fn sys_surface_create(width: u64, height: u64, format: u64) -> SyscallResult {
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphCreate, None) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     crate::log::klog(
         crate::log::Level::Trace,
         "SURFACE",
@@ -62,6 +67,10 @@ pub fn sys_surface_draw(
 ) -> SyscallResult {
     let surface_id = ThingId(((id_high as u128) << 64) | (id_low as u128));
 
+    if let Err(code) = user_mem::require_current_cap(CapOp::GraphWrite, Some(surface_id)) {
+        return SyscallResult::new(code, 0, 0);
+    }
+
     // unpack coords and geom
     let _x = (coords >> 32) as u32;
     let _y = (coords & 0xFFFFFFFF) as u32;
@@ -97,15 +106,17 @@ pub fn sys_surface_draw(
     // 4. Copy
     // For now, simplify to a straight copy of w*h*4 bytes
     // TODO: Handle x, y, stride
-    let size = (w * h * 4) as usize;
-    if buf_ptr == 0 {
-        return SyscallResult::new(err::EFAULT, 0, 0);
-    }
+    let size = (w as usize)
+        .checked_mul(h as usize)
+        .and_then(|v| v.checked_mul(4))
+        .ok_or(err::EINVAL);
+    let Ok(size) = size else {
+        return SyscallResult::new(err::EINVAL, 0, 0);
+    };
 
-    // Safety: we are in user context, buf_ptr is user VA.
-    // target_ptr is kernel HHDM.
-    unsafe {
-        core::ptr::copy_nonoverlapping(buf_ptr as *const u8, target_ptr, size);
+    let mut target = unsafe { core::slice::from_raw_parts_mut(target_ptr, size) };
+    if let Err(code) = user_mem::copy_from_user(&mut target, buf_ptr, size) {
+        return SyscallResult::new(code, 0, 0);
     }
 
     SyscallResult::new(0, 0, 0)

@@ -107,6 +107,63 @@ impl AddressSpace {
 
         Ok(())
     }
+
+    pub fn user_range_end(&self) -> u64 {
+        1u64 << 47
+    }
+
+    pub fn probe_user_range(&self, start: u64, len: usize, perms: MapPerms) -> bool {
+        if len == 0 {
+            return true;
+        }
+        let Some(end) = start.checked_add(len as u64) else {
+            return false;
+        };
+        let mut addr = start & !0xfffu64;
+        while addr < end {
+            if !self.probe_user_page(addr, perms) {
+                return false;
+            }
+            addr = addr.saturating_add(4096);
+        }
+        true
+    }
+
+    fn probe_user_page(&self, addr: u64, perms: MapPerms) -> bool {
+        use x86_64::structures::paging::PageTableFlags;
+
+        let virt = VirtAddr::new(addr);
+        let pml4 = unsafe { get_table(self.pml4_table) };
+        let p4 = &pml4[virt.p4_index()];
+        if !p4.flags().contains(PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE) {
+            return false;
+        }
+
+        let pdp = unsafe { get_table(p4.addr().as_u64()) };
+        let p3 = &pdp[virt.p3_index()];
+        if !p3.flags().contains(PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE) {
+            return false;
+        }
+        if p3.flags().contains(PageTableFlags::HUGE_PAGE) {
+            return entry_permits(p3.flags(), perms);
+        }
+
+        let pd = unsafe { get_table(p3.addr().as_u64()) };
+        let p2 = &pd[virt.p2_index()];
+        if !p2.flags().contains(PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE) {
+            return false;
+        }
+        if p2.flags().contains(PageTableFlags::HUGE_PAGE) {
+            return entry_permits(p2.flags(), perms);
+        }
+
+        let pt = unsafe { get_table(p2.addr().as_u64()) };
+        let p1 = &pt[virt.p1_index()];
+        if !p1.flags().contains(PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE) {
+            return false;
+        }
+        entry_permits(p1.flags(), perms)
+    }
 }
 
 // Helpers
@@ -115,6 +172,22 @@ unsafe fn get_table_mut(phys: u64) -> &'static mut PageTable {
     let offset = crate::boot::get_boot_ctx().hhdm_offset;
     let virt = phys + offset;
     &mut *(virt as *mut PageTable)
+}
+
+unsafe fn get_table(phys: u64) -> &'static PageTable {
+    let offset = crate::boot::get_boot_ctx().hhdm_offset;
+    let virt = phys + offset;
+    &*(virt as *const PageTable)
+}
+
+fn entry_permits(flags: x86_64::structures::paging::PageTableFlags, perms: MapPerms) -> bool {
+    if perms.contains(MapPerms::WRITE) && !flags.contains(PageTableFlags::WRITABLE) {
+        return false;
+    }
+    if perms.contains(MapPerms::EXEC) && flags.contains(PageTableFlags::NO_EXECUTE) {
+        return false;
+    }
+    true
 }
 
 fn ensure_table_entry(

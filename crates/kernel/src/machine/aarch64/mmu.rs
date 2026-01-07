@@ -120,6 +120,55 @@ impl AddressSpace {
 
         Ok(())
     }
+
+    pub fn user_range_end(&self) -> u64 {
+        1u64 << 48
+    }
+
+    pub fn probe_user_range(&self, start: u64, len: usize, perms: MapPerms) -> bool {
+        if len == 0 {
+            return true;
+        }
+        let Some(end) = start.checked_add(len as u64) else {
+            return false;
+        };
+        let mut addr = start & !0xfffu64;
+        while addr < end {
+            if !self.probe_user_page(addr, perms) {
+                return false;
+            }
+            addr = addr.saturating_add(4096);
+        }
+        true
+    }
+
+    fn probe_user_page(&self, virt: u64, perms: MapPerms) -> bool {
+        let l0 = phys_to_virt(self.ttbr0) as *const u64;
+        let l0_idx = ((virt >> 39) & 0x1ff) as usize;
+        let entry0 = unsafe { *l0.add(l0_idx) };
+        let l1 = match table_from_entry(entry0) {
+            Some(ptr) => ptr,
+            None => return false,
+        };
+
+        let l1_idx = ((virt >> 30) & 0x1ff) as usize;
+        let entry1 = unsafe { *l1.add(l1_idx) };
+        let l2 = match table_from_entry(entry1) {
+            Some(ptr) => ptr,
+            None => return false,
+        };
+
+        let l2_idx = ((virt >> 21) & 0x1ff) as usize;
+        let entry2 = unsafe { *l2.add(l2_idx) };
+        let l3 = match table_from_entry(entry2) {
+            Some(ptr) => ptr,
+            None => return false,
+        };
+
+        let l3_idx = ((virt >> 12) & 0x1ff) as usize;
+        let entry = unsafe { *l3.add(l3_idx) };
+        entry_permits(entry, perms)
+    }
 }
 
 unsafe fn alloc_subtable() -> u64 {
@@ -175,4 +224,30 @@ unsafe fn ensure_table(table: *mut u64, index: usize) -> MapResult<*mut u64> {
 
     let phys = entry & !0xfff;
     Ok(phys_to_virt(phys) as *mut u64)
+}
+
+fn table_from_entry(entry: u64) -> Option<*const u64> {
+    if entry & 0b1 == 0 {
+        return None;
+    }
+    let phys = entry & !0xfff;
+    Some(phys_to_virt(phys) as *const u64)
+}
+
+fn entry_permits(entry: u64, perms: MapPerms) -> bool {
+    if entry & 0b1 == 0 {
+        return false;
+    }
+    let ap = (entry >> 6) & 0b11;
+    let user_access = (ap & 0b1) != 0;
+    if !user_access {
+        return false;
+    }
+    if perms.contains(MapPerms::WRITE) && (ap & 0b10) != 0 {
+        return false;
+    }
+    if perms.contains(MapPerms::EXEC) && (entry & (1 << 54)) != 0 {
+        return false;
+    }
+    true
 }

@@ -1,3 +1,21 @@
+//! Draw command enumeration for retained-mode rendering.
+//!
+//! All scene content is recorded as `DrawCmd` variants during the record phase.
+//! The executor processes these commands in a single pass to render the scene.
+//!
+//! ## Command Categories
+//!
+//! - **Primitives**: FillRect, FillRoundedRect, StrokeRoundedRect, Clear
+//! - **Blits**: BlitRgbaPremulBytespace, TileBitmap  
+//! - **Text**: TextRun (stores String for deferred rendering)
+//! - **Effects**: Shadow, FillPanel (gradient+stripe)
+//! - **Clipping**: SetClip, PushClip, PopClip
+//!
+//! ## Bounds Tracking
+//!
+//! Each command implements `bounds()` to return its spatial extent,
+//! enabling damage tracking and culling during execution.
+
 use crate::scene::{Rect, Point};
 use crate::assets::bitmap::BitmapHandle;
 use abi::ids::ThingId;

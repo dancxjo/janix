@@ -1,3 +1,28 @@
+//! Command recorder - implements Painter trait to record draw operations.
+//!
+//! ## Recording Phase
+//!
+//! The recorder is used during scene traversal to capture all drawing operations
+//! as `DrawCmd` variants. **No pixels are written during this phase.**
+//!
+//! ```text
+//! let mut recorder = CommandRecorder::new(width, height);
+//! render_window_scenes(&mut recorder, ...);  // Records commands
+//! let cmds = recorder.finish();              // Get command list
+//! ```
+//!
+//! ## Important Constraints
+//!
+//! - Must NOT touch pixel buffers
+//! - Must NOT map bytespaces (use `blit_asset` with ThingId instead)
+//! - Cursor drawing methods are no-ops (cursor is overlaid separately)
+//!
+//! ## Painter Trait Implementation
+//!
+//! All standard `Painter` methods record corresponding `DrawCmd` variants.
+//! Some methods like `blit_rgba` that take `&[u32]` require the caller to
+//! use `blit_asset` instead when working with the recorder.
+
 use alloc::vec::Vec;
 use crate::draw_cmd::DrawCmd;
 use crate::painter::{Painter, Clip};

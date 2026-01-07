@@ -224,10 +224,20 @@ impl ChunkedExecutor {
             return true;
         }
         
+        // Set debug flag to indicate we're in execute phase
+        #[cfg(debug_assertions)]
+        {
+            unsafe { crate::executor::EXECUTOR_ACTIVE = true; }
+        }
+        
         // Safety check
         let required_len = (self.state.width as usize) * (self.state.height as usize);
         if scene_buffer.len() < required_len {
             log_info("BLOOM: ChunkedExecutor buffer too small");
+            #[cfg(debug_assertions)]
+            {
+                unsafe { crate::executor::EXECUTOR_ACTIVE = false; }
+            }
             return true;
         }
         
@@ -251,6 +261,12 @@ impl ChunkedExecutor {
                 self.state.index, self.cmds.len()
             ));
             self.state.last_progress_log = self.state.index;
+        }
+        
+        // Clear debug flag before returning
+        #[cfg(debug_assertions)]
+        {
+            unsafe { crate::executor::EXECUTOR_ACTIVE = false; }
         }
         
         self.is_complete()

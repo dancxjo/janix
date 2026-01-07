@@ -1,3 +1,33 @@
+//! Command execution - the ONLY code path that writes pixels to scene buffer.
+//!
+//! ## Execution Phase
+//!
+//! This module contains the tight loop that processes `DrawCmd` lists:
+//!
+//! ```text
+//! execute_cmds_into_scene(cmds, scene_buffer, ...) -> ExecOutput
+//! ```
+//!
+//! ## Single Source of Pixel Writes
+//!
+//! All non-cursor pixel writes MUST go through `execute_cmds_into_scene`.
+//! This function:
+//! - Creates a `CpuPainter` for the scene buffer
+//! - Iterates commands with bounds culling
+//! - Tracks damage and execution stats
+//!
+//! ## Features
+//!
+//! - **Bounds culling**: Commands outside clip rect are skipped
+//! - **Damage tracking**: Accumulates dirty regions for efficient present
+//! - **Stats**: Counts commands drawn, skipped, failed
+//! - **Bytespace mapping**: Lazily maps bytespaces via cache
+//!
+//! ## Debug Invariant
+//!
+//! In debug builds, the executor sets a thread-local flag to track that
+//! we're in the execute phase, helping catch accidental immediate-mode rendering.
+
 use crate::draw_cmd::DrawCmd;
 use crate::painter::{Painter, CpuPainter, Clip};
 use crate::scene_cache::{BytespaceMappingCache, MapResult};
@@ -6,6 +36,25 @@ use crate::assets::bitmap::{Bitmap, BitmapStore};
 use alloc::vec::Vec;
 use thing_std::log_info;
 use thing_std::trace_fn;
+
+/// Debug helper: Track whether we're currently executing commands.
+/// This helps catch bugs where pixel writes happen during record phase.
+#[cfg(debug_assertions)]
+pub(crate) static mut EXECUTOR_ACTIVE: bool = false;
+
+/// Check if we're in execute phase (debug builds only).
+#[cfg(debug_assertions)]
+#[inline]
+pub fn is_executing() -> bool {
+    unsafe { EXECUTOR_ACTIVE }
+}
+
+/// Check if we're in execute phase (no-op in release builds).
+#[cfg(not(debug_assertions))]
+#[inline]
+pub fn is_executing() -> bool {
+    true // Always return true in release to allow optimization
+}
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct ExecStats {
@@ -60,6 +109,8 @@ struct ValidatedBlit<'a> {
 }
 
 /// Execute a list of commands into a mutable buffer.
+/// 
+/// **This is the ONLY function that should write pixels to the scene buffer.**
 pub fn execute_cmds_into_scene(
     cmds: &[DrawCmd],
     scene_buffer: &mut [u32],
@@ -69,12 +120,23 @@ pub fn execute_cmds_into_scene(
     bitmap_store: &BitmapStore,
 ) -> ExecOutput {
     trace_fn!("execute_cmds_into_scene");
+    
+    // Set debug flag to indicate we're in execute phase
+    #[cfg(debug_assertions)]
+    {
+        unsafe { EXECUTOR_ACTIVE = true; }
+    }
+    
     let mut stats = ExecStats::default();
 
     // 0. Safety Guard
     if scene_buffer.len() < (width as usize) * (height as usize) {
         stats.bad_cmds = cmds.len() as u32; // Mark all as bad/skipped
         log_info("BLOOM: Exec buffer too small for scene dimensions");
+        #[cfg(debug_assertions)]
+        {
+            unsafe { EXECUTOR_ACTIVE = false; }
+        }
         return ExecOutput { stats, damage: Damage::default() };
     }
 
@@ -245,6 +307,12 @@ pub fn execute_cmds_into_scene(
                 }
             }
         }
+    }
+    
+    // Clear debug flag before returning
+    #[cfg(debug_assertions)]
+    {
+        unsafe { EXECUTOR_ACTIVE = false; }
     }
     
     ExecOutput { stats, damage }

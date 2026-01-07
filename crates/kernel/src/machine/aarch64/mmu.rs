@@ -41,6 +41,22 @@ impl AddressSpace {
         Ok(())
     }
 
+    pub fn unmap(&mut self, virt: u64, len: usize) -> MapResult<()> {
+        if len == 0 {
+            return Ok(());
+        }
+
+        let pages = (len + 4095) / 4096;
+        for i in 0..pages {
+            let offset = i as u64 * 4096;
+            unsafe {
+                self.unmap_page(virt + offset)?;
+            }
+        }
+
+        Ok(())
+    }
+
     unsafe fn map_page(&mut self, virt: u64, phys: u64, perms: MapPerms) -> MapResult<()> {
         let l0 = phys_to_virt(self.ttbr0) as *mut u64;
         let l0_idx = ((virt >> 39) & 0x1ff) as usize;
@@ -117,6 +133,45 @@ impl AddressSpace {
                 options(nostack, preserves_flags)
             );
         }
+
+        Ok(())
+    }
+
+    unsafe fn unmap_page(&mut self, virt: u64) -> MapResult<()> {
+        let l0 = phys_to_virt(self.ttbr0) as *mut u64;
+        let l0_idx = ((virt >> 39) & 0x1ff) as usize;
+        let entry0 = l0.add(l0_idx).read();
+        if entry0 & 1 == 0 {
+            return Ok(());
+        }
+        let l1 = phys_to_virt(entry0 & !0xfff) as *mut u64;
+
+        let l1_idx = ((virt >> 30) & 0x1ff) as usize;
+        let entry1 = l1.add(l1_idx).read();
+        if entry1 & 1 == 0 {
+            return Ok(());
+        }
+        let l2 = phys_to_virt(entry1 & !0xfff) as *mut u64;
+
+        let l2_idx = ((virt >> 21) & 0x1ff) as usize;
+        let entry2 = l2.add(l2_idx).read();
+        if entry2 & 1 == 0 {
+            return Ok(());
+        }
+        let l3 = phys_to_virt(entry2 & !0xfff) as *mut u64;
+
+        let l3_idx = ((virt >> 12) & 0x1ff) as usize;
+        let entry_ptr = l3.add(l3_idx);
+        entry_ptr.write(0);
+
+        asm!(
+            "dsb ishst",
+            "tlbi vaae1is, {}",
+            "dsb ish",
+            "isb",
+            in(reg) virt >> 12,
+            options(nostack, preserves_flags)
+        );
 
         Ok(())
     }

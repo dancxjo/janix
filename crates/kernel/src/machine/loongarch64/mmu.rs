@@ -145,6 +145,26 @@ impl AddressSpace {
         Ok(())
     }
 
+    pub fn unmap(&mut self, virt: u64, len: usize) -> MapResult<()> {
+        if len == 0 {
+            return Ok(());
+        }
+
+        let pages = (len + 4095) / 4096;
+        for i in 0..pages {
+            let offset = i as u64 * 4096;
+            unsafe {
+                self.unmap_page(virt + offset)?;
+            }
+        }
+
+        unsafe {
+            core::arch::asm!("invtlb 0x0, $r0, $r0");
+        }
+
+        Ok(())
+    }
+
     unsafe fn map_page(&mut self, virt: u64, phys: u64, perms: MapPerms) -> MapResult<()> {
         // 4-level page table walk
         // VA structure (48-bit): [L0:9][L1:9][L2:9][L3:9][offset:12]
@@ -194,6 +214,51 @@ impl AddressSpace {
         }
 
         entry_ptr.write(desc);
+
+        Ok(())
+    }
+
+    unsafe fn unmap_page(&mut self, virt: u64) -> MapResult<()> {
+        let l0 = phys_to_virt(self.pgd) as *mut u64;
+        let l0_idx = ((virt >> 39) & 0x1ff) as usize;
+        let l0_entry_ptr = l0.add(l0_idx);
+        let entry0 = l0_entry_ptr.read();
+        if entry0 & PTE_V == 0 {
+            return Ok(());
+        }
+        if entry0 & PTE_P != 0 {
+            l0_entry_ptr.write(0);
+            return Ok(());
+        }
+        let l1 = phys_to_virt(entry0 & !0xfff) as *mut u64;
+
+        let l1_idx = ((virt >> 30) & 0x1ff) as usize;
+        let l1_entry_ptr = l1.add(l1_idx);
+        let entry1 = l1_entry_ptr.read();
+        if entry1 & PTE_V == 0 {
+            return Ok(());
+        }
+        if entry1 & PTE_P != 0 {
+            l1_entry_ptr.write(0);
+            return Ok(());
+        }
+        let l2 = phys_to_virt(entry1 & !0xfff) as *mut u64;
+
+        let l2_idx = ((virt >> 21) & 0x1ff) as usize;
+        let l2_entry_ptr = l2.add(l2_idx);
+        let entry2 = l2_entry_ptr.read();
+        if entry2 & PTE_V == 0 {
+            return Ok(());
+        }
+        if entry2 & PTE_P != 0 {
+            l2_entry_ptr.write(0);
+            return Ok(());
+        }
+        let l3 = phys_to_virt(entry2 & !0xfff) as *mut u64;
+
+        let l3_idx = ((virt >> 12) & 0x1ff) as usize;
+        let entry_ptr = l3.add(l3_idx);
+        entry_ptr.write(0);
 
         Ok(())
     }

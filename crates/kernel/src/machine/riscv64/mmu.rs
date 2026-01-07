@@ -236,6 +236,26 @@ impl AddressSpace {
         Ok(())
     }
 
+    pub fn unmap(&mut self, virt: u64, len: usize) -> MapResult<()> {
+        if len == 0 {
+            return Ok(());
+        }
+
+        let mut vaddr = virt & !(PAGE_SIZE as u64 - 1);
+        let end = virt + len as u64;
+
+        while vaddr < end {
+            self.unmap_page(vaddr)?;
+            vaddr += PAGE_SIZE as u64;
+        }
+
+        unsafe {
+            core::arch::asm!("sfence.vma");
+        }
+
+        Ok(())
+    }
+
     /// Map a single 4KB page.
     fn map_page(&mut self, virt: u64, phys: u64, perms: MapPerms, user: bool) -> MapResult<()> {
         let mut table_phys = self.root_phys;
@@ -263,6 +283,34 @@ impl AddressSpace {
         }
 
         Ok(())
+    }
+
+    fn unmap_page(&mut self, virt: u64) -> MapResult<()> {
+        let mut table_phys = self.root_phys;
+        let mut level = levels() - 1;
+
+        loop {
+            let table_virt = phys_to_virt(table_phys);
+            let table = unsafe { &mut *(table_virt as *mut PageTable) };
+            let idx = vpn(virt, level);
+            let entry = table.entries[idx];
+
+            if !entry.is_valid() {
+                return Ok(());
+            }
+
+            if entry.is_leaf() {
+                table.entries[idx] = PageTableEntry::empty();
+                return Ok(());
+            }
+
+            if level == 0 {
+                return Ok(());
+            }
+
+            table_phys = entry.phys_addr();
+            level -= 1;
+        }
     }
 
     pub fn user_range_end(&self) -> u64 {

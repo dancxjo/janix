@@ -26,6 +26,12 @@ use crate::painter::{CpuPainter, Painter, Clip};
 use crate::assets::cursor::CursorFrame;
 
 /// Cursor overlay state - tracks last presented position for dirty rect restore.
+/// 
+/// ## Invariant: Must track prev_bounds internally
+/// 
+/// This struct MUST maintain `last_bounds` to restore the previous cursor region
+/// from scene_buffer before drawing the new cursor. Without this, cursor trails
+/// would appear as the old cursor sprite wouldn't be erased.
 pub struct CursorOverlay {
     last_pos: Option<(i32, i32)>,
     last_bounds: Option<Rect>,

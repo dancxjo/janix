@@ -249,6 +249,8 @@ pub fn copy_from_user_vec(user_ptr: u64, len: usize) -> Result<Vec<u8>, SysError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sched::test_harness::{with_test_task, map_user_memory};
+    use crate::memory::map::MapPerms;
 
     struct TestCaps {
         caps: Vec<Cap>,
@@ -283,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_and_copy_roundtrip() {
+    fn validate_and_copy_roundtrip_manual() {
         let mappings = UserMappings::new();
         let mut backing = [0u8; 64];
         let base = backing.as_mut_ptr() as u64;
@@ -313,5 +315,47 @@ mod tests {
             }],
         };
         require_cap(&caps, CapOp::GraphRead, Some(ThingId(42))).unwrap();
+    }
+
+    #[test]
+    fn copy_from_user_integrated() {
+        with_test_task(|tid| {
+            let buf = [0xAAu8; 16];
+            let ptr = buf.as_ptr() as u64;
+
+            map_user_memory(tid, ptr, 16, MapPerms::READ | MapPerms::USER);
+
+            let mut dst = [0u8; 16];
+            copy_from_user(&mut dst, ptr, 16).expect("copy_from_user failed");
+            assert_eq!(dst, buf);
+        });
+    }
+
+    #[test]
+    fn copy_to_user_integrated() {
+        with_test_task(|tid| {
+            let mut buf = [0u8; 16];
+            let ptr = buf.as_mut_ptr() as u64;
+
+            map_user_memory(tid, ptr, 16, MapPerms::WRITE | MapPerms::USER);
+
+            let src = [0xBBu8; 16];
+            copy_to_user(ptr, &src, 16).expect("copy_to_user failed");
+            assert_eq!(buf, src);
+        });
+    }
+
+    #[test]
+    fn integrated_perms_check() {
+        with_test_task(|tid| {
+            let buf = [0u8; 16];
+            let ptr = buf.as_ptr() as u64;
+
+            map_user_memory(tid, ptr, 16, MapPerms::READ | MapPerms::USER);
+
+            let src = [0u8; 16];
+            let err = copy_to_user(ptr, &src, 16).unwrap_err();
+            assert_eq!(err, err::EFAULT);
+        });
     }
 }

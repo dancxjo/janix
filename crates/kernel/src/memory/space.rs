@@ -84,12 +84,15 @@ impl AddressSpace {
     pub fn new_kernel_share() -> MapResult<Self> {
         let id = next_thing_id();
 
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", not(test)))]
         let arch = {
             use x86_64::registers::control::Cr3;
             let (frame, _) = Cr3::read();
             ArchAddressSpace::from_existing(frame.start_address().as_u64())
         };
+
+        #[cfg(test)]
+        let arch = ArchAddressSpace::new()?;
 
         #[cfg(target_arch = "aarch64")]
         let arch = ArchAddressSpace::new()?; // Fallback for aarch64 pending impl

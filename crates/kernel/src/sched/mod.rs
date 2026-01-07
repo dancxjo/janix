@@ -16,6 +16,8 @@ pub mod percpu;
 pub mod run_queue;
 pub mod task;
 pub mod thread_group;
+#[cfg(test)]
+pub mod test_harness;
 
 use percpu::PerCpu;
 use run_queue::RunQueue;

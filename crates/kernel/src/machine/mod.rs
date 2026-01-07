@@ -18,35 +18,43 @@ pub mod context;
 pub use context::{ArchContext, ArchTask, ArchTrap, CpuMode, ResumeSpec, TrapInfo};
 
 // CurrentArch type alias - the scheduler uses this without knowing arch details
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(test)))]
 pub type CurrentArch = x86_64::context::X86Arch;
-#[cfg(target_arch = "aarch64")]
+#[cfg(test)]
+pub type CurrentArch = test_arch::TestArch;
+#[cfg(all(target_arch = "aarch64", not(test)))]
 pub type CurrentArch = aarch64::context::AArch64Arch;
-#[cfg(target_arch = "riscv64")]
+#[cfg(all(target_arch = "riscv64", not(test)))]
 pub type CurrentArch = riscv64::context::Riscv64Arch;
-#[cfg(target_arch = "loongarch64")]
+#[cfg(all(target_arch = "loongarch64", not(test)))]
 pub type CurrentArch = loongarch64::context::LoongArchArch;
 
 // TaskContext type alias - the per-arch task context type
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(test)))]
 pub type TaskContext = x86_64::context::TaskContext;
-#[cfg(target_arch = "aarch64")]
+#[cfg(test)]
+pub type TaskContext = test_arch::TaskContext;
+#[cfg(all(target_arch = "aarch64", not(test)))]
 pub type TaskContext = aarch64::context::TaskContext;
-#[cfg(target_arch = "riscv64")]
+#[cfg(all(target_arch = "riscv64", not(test)))]
 pub type TaskContext = riscv64::context::TaskContext;
-#[cfg(target_arch = "loongarch64")]
+#[cfg(all(target_arch = "loongarch64", not(test)))]
 pub type TaskContext = loongarch64::context::TaskContext;
 
 pub mod input;
+#[cfg(test)]
+pub mod test_arch;
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", not(test)))]
 pub use aarch64::{AddressSpace, TrapFrame};
-#[cfg(target_arch = "loongarch64")]
+#[cfg(all(target_arch = "loongarch64", not(test)))]
 pub use loongarch64::{AddressSpace, TrapFrame};
-#[cfg(target_arch = "riscv64")]
+#[cfg(all(target_arch = "riscv64", not(test)))]
 pub use riscv64::{AddressSpace, TrapFrame};
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(test)))]
 pub use x86_64::{AddressSpace, TrapFrame};
+#[cfg(test)]
+pub use test_arch::{AddressSpace, TrapFrame};
 
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;

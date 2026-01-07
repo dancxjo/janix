@@ -30,6 +30,22 @@ impl<'a> CpuPainter<'a> {
             damage: None,
         }
     }
+    
+    /// Create a new CPU painter for scene buffer writing (debug-checked).
+    /// 
+    /// This constructor adds a debug assertion to ensure we're in the execute phase.
+    /// Use this when creating a painter for scene_buffer in executors.
+    /// Use `new()` for framebuffer or other non-scene uses.
+    pub fn new_for_scene(buf: &'a mut [u32], w: u32, h: u32) -> Self {
+        #[cfg(debug_assertions)]
+        debug_assert!(
+            crate::executor::is_executing(),
+            "BLOOM DOCTRINE VIOLATION: CpuPainter::new_for_scene() called outside execute phase. \
+             Scene buffer writes must only occur during execute_cmds_into_scene or ChunkedExecutor::step."
+        );
+        
+        Self::new(buf, w, h)
+    }
 
     /// Intersect a rect with the current clip.
     #[inline]

@@ -2,19 +2,20 @@
 //!
 //! ## Execution Phase
 //!
-//! This module contains the tight loop that processes `DrawCmd` lists:
+//! This module contains executors that process `DrawCmd` lists:
 //!
 //! ```text
-//! execute_cmds_into_scene(cmds, scene_buffer, ...) -> ExecOutput
+//! execute_cmds_into_scene(cmds, scene_buffer, ...) -> ExecOutput  (batch executor)
+//! ChunkedExecutor::step(...)                                       (production executor)
 //! ```
 //!
 //! ## Single Source of Pixel Writes
 //!
-//! All non-cursor pixel writes MUST go through `execute_cmds_into_scene`.
-//! This function:
-//! - Creates a `CpuPainter` for the scene buffer
-//! - Iterates commands with bounds culling
-//! - Tracks damage and execution stats
+//! All non-cursor pixel writes MUST go through one of these executors.
+//! They:
+//! - Create a `CpuPainter` for the scene buffer using `new_for_scene()`
+//! - Iterate commands with bounds culling
+//! - Track damage and execution stats
 //!
 //! ## Features
 //!
@@ -23,10 +24,13 @@
 //! - **Stats**: Counts commands drawn, skipped, failed
 //! - **Bytespace mapping**: Lazily maps bytespaces via cache
 //!
-//! ## Debug Invariant
+//! ## Debug Enforcement
 //!
-//! In debug builds, the executor sets a thread-local flag to track that
-//! we're in the execute phase, helping catch accidental immediate-mode rendering.
+//! In debug builds, executors set a guard (ExecPhaseGuard) to track that we're
+//! in the execute phase. CpuPainter::new_for_scene() checks this guard, catching
+//! accidental scene buffer writes outside the execute phase.
+//!
+//! See also: `RENDER_DOCTRINE.md` for full details.
 
 use crate::draw_cmd::DrawCmd;
 use crate::painter::{Painter, CpuPainter, Clip};
@@ -161,7 +165,7 @@ pub fn execute_cmds_into_scene(
         return ExecOutput { stats, damage: Damage::default() };
     }
 
-    let mut painter = CpuPainter::new(scene_buffer, width, height);
+    let mut painter = CpuPainter::new_for_scene(scene_buffer, width, height);
     let mut damage = Damage::default();
     
     // Initial clip is full screen

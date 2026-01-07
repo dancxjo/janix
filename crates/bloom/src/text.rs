@@ -7,6 +7,113 @@ use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use spin::Once;
 use crate::painter::Painter;
+use crate::textd_glyph::{TextdGlyphCaches, blend_a8_pixel};
+
+/// Global textd glyph cache (single-threaded access like GLYPH_CACHE)
+struct TextdCacheHolder {
+    cache: UnsafeCell<Option<TextdGlyphCaches>>,
+}
+
+unsafe impl Sync for TextdCacheHolder {}
+
+static TEXTD_CACHE: TextdCacheHolder = TextdCacheHolder {
+    cache: UnsafeCell::new(None),
+};
+
+/// Initialize textd cache (call once at startup)
+fn init_textd_cache() {
+    let cache = unsafe { &mut *TEXTD_CACHE.cache.get() };
+    if cache.is_none() {
+        *cache = Some(TextdGlyphCaches::new());
+    }
+}
+
+/// Try to render text using textd fonts. Returns true if successful.
+fn try_draw_with_textd(
+    painter: &mut dyn Painter,
+    x: i32,
+    y: i32,
+    text: &str,
+    color: u32,
+    size_px: f32,
+) -> bool {
+    let cache = unsafe { &mut *TEXTD_CACHE.cache.get() };
+    let cache = match cache.as_mut() {
+        Some(c) => c,
+        None => return false,
+    };
+    
+    // Check if textd is online
+    cache.check_textd();
+    if !cache.textd_available {
+        return false;
+    }
+    
+    // Get default font face
+    let face_id = match cache.default_face() {
+        Some(f) => f,
+        None => return false,
+    };
+    
+    // Get or map glyph cache for this size
+    let px_size = size_px as u16;
+    let mapped_cache = match cache.get_cache(face_id, px_size) {
+        Some(c) => c,
+        None => return false,
+    };
+    
+    let ascent = mapped_cache.ascent;
+    let mut cursor_x = x;
+    
+    for ch in text.chars() {
+        if ch == '\n' {
+            break;
+        }
+        
+        let entry = match mapped_cache.get_glyph(ch) {
+            Some(e) if e.width > 0 && e.height > 0 => e,
+            _ => continue,
+        };
+        
+        let bitmap = match mapped_cache.get_glyph_bitmap(&entry) {
+            Some(b) => b,
+            None => continue,
+        };
+        
+        // Calculate glyph position
+        let glyph_x = cursor_x + entry.bearing_x as i32;
+        let glyph_y = y + ascent as i32 - entry.bearing_y as i32 - entry.height as i32;
+        
+        // Blit the A8 glyph
+        draw_a8_glyph(painter, glyph_x, glyph_y, entry.width as u32, entry.height as u32, bitmap, color);
+        
+        cursor_x += entry.advance_width as i32;
+    }
+    
+    true
+}
+
+/// Draw an A8 coverage mask glyph with color blending
+fn draw_a8_glyph(
+    painter: &mut dyn Painter,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    coverage: &[u8],
+    color: u32,
+) {
+    let mut pixels = alloc::vec![0u32; (width * height) as usize];
+    
+    for (i, &cov) in coverage.iter().enumerate() {
+        if cov > 0 {
+            pixels[i] = blend_a8_pixel(0, cov, color);
+        }
+    }
+    
+    painter.blit_rgba_alpha(x, y, &pixels, width, height);
+}
+
 use thing_std::trace_fn;
 
 // Embed unifont.hex (8MB bitmap font covering most Unicode)
@@ -172,15 +279,25 @@ pub fn ensure_font_loaded() {
     });
 }
 
-/// Draw text using the Painter API with embedded Unifont.
+/// Draw text using the Painter API.
+/// Tries textd fonts first, falls back to embedded Unifont.
 pub fn draw_text_on_painter(
     painter: &mut dyn Painter,
     x: i32,
     y: i32,
     text: &str,
     color: u32,
-    _size_px: f32, // Size is fixed at 16px for unifont
+    size_px: f32,
 ) {
+    // Initialize textd cache if needed
+    init_textd_cache();
+    
+    // Try textd rendering first
+    if try_draw_with_textd(painter, x, y, text, color, size_px) {
+        return;
+    }
+    
+    // Fallback to Unifont
     // Ensure glyphs are cached
     ensure_glyphs_cached(text);
 
@@ -247,6 +364,33 @@ pub fn measure_text_width(text: &str, _size_px: f32) -> i32 {
         }
     }
     width.saturating_sub(glyph_spacing)
+}
+
+/// Try to register a watch on textd fonts graph for availability notification
+pub fn register_textd_fonts_watch() {
+    init_textd_cache();
+    let cache = unsafe { &mut *TEXTD_CACHE.cache.get() };
+    if let Some(c) = cache.as_mut() {
+        if !c.textd_available {
+            c.register_fonts_watch();
+        }
+    }
+}
+
+/// Called when a watch event might be for the fonts graph
+pub fn check_textd_fonts_available() -> bool {
+    let cache = unsafe { &mut *TEXTD_CACHE.cache.get() };
+    if let Some(c) = cache.as_mut() {
+        c.on_fonts_watch_triggered();
+        return c.textd_available;
+    }
+    false
+}
+
+/// Get the fonts watch ID for matching in the event loop
+pub fn get_textd_fonts_watch_id() -> Option<u64> {
+    let cache = unsafe { &*TEXTD_CACHE.cache.get() };
+    cache.as_ref().and_then(|c| c.fonts_watch_id())
 }
 
 /// Legacy draw_text function using raw buffer.

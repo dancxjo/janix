@@ -38,3 +38,28 @@ pub fn space_map(bs: ThingId, vaddr: u64, offset: u64, len: u64) -> u64 {
         .val0
     }
 }
+
+pub fn space_unmap(vaddr: u64, len: usize) -> i32 {
+    unsafe {
+        syscall(
+            nr::SYS_SPACE_UNMAP,
+            vaddr,
+            len as u64,
+            0,
+            0,
+            0,
+            0,
+        )
+        .status as i32
+    }
+}
+
+/// Bytespace creation and management
+pub mod bytespace {
+    use super::*;
+
+    /// Create a RAM-backed bytespace of the given size
+    pub fn create_ram(size: usize) -> ThingId {
+        super::bytespace_create(size as u64)
+    }
+}

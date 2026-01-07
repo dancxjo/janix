@@ -151,6 +151,7 @@ pub fn run(env: &str) -> Result<()> {
         "apps/pcid",
         "apps/hello_window",
         "apps/thread_test",
+        "apps/textd",
     ];
     for app in apps {
         println!("    Building {}...", app);

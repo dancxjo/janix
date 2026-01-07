@@ -31,3 +31,5 @@ pub mod chunked_executor;
 pub use app::run;
 #[cfg(test)]
 mod wallpaper_tests;
+pub mod text_pipeline;
+pub mod textd_glyph;

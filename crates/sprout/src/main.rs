@@ -204,6 +204,7 @@ fn spawn_fallback() {
     }
 
     spawn_and_grant("timed");
+    spawn_and_grant("textd");
     // spawn_and_grant("clock"); // DISABLED FOR TESTING
     spawn_and_grant("inputd");
     spawn_and_grant("hello_window");
@@ -390,6 +391,14 @@ fn configure_policy(id: ThingId, name: &str) {
             global(CapOp::GraphLink);
             global(CapOp::GraphRead);
             global(CapOp::GraphWrite);
+        }
+        "textd" => {
+            global(CapOp::MemManage);
+            global(CapOp::GraphCreate);
+            global(CapOp::GraphLink);
+            global(CapOp::GraphRead);
+            global(CapOp::GraphWrite);
+            global(CapOp::GraphWatch);
         }
         _ => {}
     }

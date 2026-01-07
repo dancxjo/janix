@@ -1,0 +1,619 @@
+#![no_std]
+#![no_main]
+
+extern crate alloc;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use abi::ids::{SymbolId, ThingId};
+use fontdue::{Font, FontSettings};
+use models::*;
+use thing_std::graph::{
+    relationships_from, symbol_intern, symbol_resolve, thing_create, thing_find,
+    thing_get_body, thing_register_name, thing_set_body, relationship_create,
+};
+use thing_std::memory::space_map;
+use thing_std::*;
+
+// Glyph index entry: (atlas_offset, width, height, advance_width, bearing_x, bearing_y)
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct GlyphIndexEntry {
+    atlas_offset: u32,
+    width: u16,
+    height: u16,
+    advance_width: i16,
+    bearing_x: i16,
+    bearing_y: i16,
+    _pad: u16,
+}
+
+struct LoadedFont {
+    font: Font,
+    face_id: ThingId,
+    family_id: ThingId,
+    source_asset: ThingId,
+}
+
+struct TextdState {
+    fonts: Vec<LoadedFont>,
+    fonts_graph: ThingId,
+    requests_graph: ThingId,
+    glyph_caches: BTreeMap<(ThingId, u16), ThingId>, // (face_id, px_size) -> GlyphCache id
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn main() {
+    log_info("TEXTD: Starting...");
+
+    // Create graphs
+    let fonts_graph = ensure_graph("graph.text.fonts");
+    let requests_graph = ensure_graph("graph.text.requests");
+    log_info("TEXTD: Created text graphs");
+
+    let mut state = TextdState {
+        fonts: Vec::new(),
+        fonts_graph,
+        requests_graph,
+        glyph_caches: BTreeMap::new(),
+    };
+
+    // Discover and load fonts from graph.assets
+    discover_fonts(&mut state);
+
+    // Prewarm ASCII for common sizes
+    let face_ids: Vec<ThingId> = state.fonts.iter().map(|f| f.face_id).collect();
+    for face_id in face_ids {
+        for px_size in [12u16, 14, 16, 18, 24] {
+            log_info(&alloc::format!(
+                "TEXTD: Prewarming ASCII for {} at {}px",
+                face_id.low(),
+                px_size
+            ));
+            // Prewarm will create GlyphCache with ASCII glyphs
+            if let Some(cache_id) = ensure_glyph_cache(&mut state, face_id, px_size) {
+                state.glyph_caches.insert((face_id, px_size), cache_id);
+            }
+        }
+    }
+
+    log_info(&alloc::format!(
+        "TEXTD: Ready - {} fonts loaded",
+        state.fonts.len()
+    ));
+
+    // Main service loop - watch for requests
+    loop {
+        // TODO: Use watch API instead of polling
+        time::sleep_ms(100);
+        process_pending_requests(&mut state);
+    }
+}
+
+fn ensure_graph(name: &str) -> ThingId {
+    if let Some(id) = thing_find(name) {
+        return id;
+    }
+    let kind = symbol_intern("kind.Graph");
+    let id = thing_create(kind, ThingId(0));
+    thing_register_name(id, name);
+
+    // Link to root graph
+    if let Some(root) = thing_find("graph.root") {
+        let _ = relationship_create(symbol_intern("predicate.contains"), root, id);
+    }
+    id
+}
+
+fn discover_fonts(state: &mut TextdState) {
+    let Some(assets_graph) = thing_find("graph.assets") else {
+        log_info("TEXTD: graph.assets not found");
+        return;
+    };
+
+    let pred_contains = symbol_intern("predicate.contains");
+    let pred_backs = symbol_intern("predicate.backs");
+
+    // Get relationships from assets graph
+    let mut buf = [abi::types::RelationshipRef {
+        id: ThingId(0),
+        kind: SymbolId(0),
+        target: ThingId(0),
+    }; 8];
+
+    let mut cursor = 0u64;
+    loop {
+        let Ok((returned, _total)) = relationships_from(assets_graph, cursor, &mut buf) else {
+            break;
+        };
+        if returned == 0 {
+            break;
+        }
+
+        for i in 0..(returned as usize) {
+            let rel = &buf[i];
+            if rel.kind != pred_contains {
+                continue;
+            }
+
+            // Check if this is a TTF asset
+            let asset_id = rel.target;
+            let Some(asset_name) = resolve_thing_name(asset_id) else {
+                continue;
+            };
+
+            if !asset_name.ends_with(".ttf") && !asset_name.ends_with(".otf") {
+                continue;
+            }
+
+            log_info(&alloc::format!("TEXTD: Found font asset: {}", asset_name));
+
+            // Find backing bytespace
+            let mut bs_buf = [abi::types::RelationshipRef {
+                id: ThingId(0),
+                kind: SymbolId(0),
+                target: ThingId(0),
+            }; 8];
+            
+            if let Ok((n, _)) = relationships_from(asset_id, 0, &mut bs_buf) {
+                for j in 0..(n as usize) {
+                    if bs_buf[j].kind == pred_backs {
+                        let bytespace_id = bs_buf[j].target;
+                        load_font_from_bytespace(state, &asset_name, asset_id, bytespace_id);
+                    }
+                }
+            }
+        }
+
+        cursor += returned as u64;
+    }
+}
+
+fn resolve_thing_name(id: ThingId) -> Option<String> {
+    // Try common naming patterns
+    for prefix in ["asset.", "bytespace.asset."] {
+        for suffix in [".ttf", ".otf"] {
+            for name in [
+                "NotoSans-Regular", "NotoSerif-Regular", "Hack-Regular",
+                "NotoSansSymbol-Regular", "NotoSansSymbol2-Regular",
+                "DSEG7Classic-Regular",
+            ] {
+                let full_name = alloc::format!("{}{}{}", prefix, name, suffix);
+                if let Some(found_id) = thing_find(&full_name) {
+                    if found_id == id {
+                        return Some(alloc::format!("{}{}", name, suffix));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn load_font_from_bytespace(
+    state: &mut TextdState,
+    asset_name: &str,
+    asset_id: ThingId,
+    bytespace_id: ThingId,
+) {
+    // Map the bytespace directly like Bloom does - use generous size, kernel handles actual limits
+    const FONT_MAP_BASE: u64 = 0x7000_0000;
+    const MAX_FONT_SIZE: u64 = 1024 * 1024; // 1MB max per font
+    
+    let map_addr = FONT_MAP_BASE + (state.fonts.len() as u64) * 0x100000;
+
+    log_info(&alloc::format!(
+        "TEXTD: Mapping bytespace for {} at {:#x}",
+        asset_name, map_addr
+    ));
+
+    let mapped = space_map(bytespace_id, map_addr, 0, MAX_FONT_SIZE);
+    if mapped == 0 {
+        log_info(&alloc::format!(
+            "TEXTD: Failed to map bytespace for {}",
+            asset_name
+        ));
+        return;
+    }
+
+    log_info(&alloc::format!(
+        "TEXTD: Mapped {} at {:#x}",
+        asset_name, mapped
+    ));
+
+    // Parse font with fontdue - read actual size from file or use a reasonable limit
+    // For TTF, first try to detect actual size from header or use mapping size
+    let font_data = unsafe { core::slice::from_raw_parts(mapped as *const u8, MAX_FONT_SIZE as usize) };
+
+    let font = match Font::from_bytes(font_data, FontSettings::default()) {
+        Ok(f) => f,
+        Err(_) => {
+            log_info(&alloc::format!("TEXTD: Failed to parse {}", asset_name));
+            return;
+        }
+    };
+
+    // Extract family name from asset name (e.g. "NotoSans-Regular.ttf" -> "NotoSans")
+    let family_name = asset_name
+        .trim_end_matches(".ttf")
+        .trim_end_matches(".otf")
+        .split('-')
+        .next()
+        .unwrap_or(asset_name);
+
+    let style_name = asset_name
+        .trim_end_matches(".ttf")
+        .trim_end_matches(".otf")
+        .split('-')
+        .nth(1)
+        .unwrap_or("Regular");
+
+    // Create or find FontFamily
+    let family_thing_name = alloc::format!("font.family.{}", family_name);
+    let family_id = if let Some(id) = thing_find(&family_thing_name) {
+        id
+    } else {
+        let kind = symbol_intern("kind.FontFamily");
+        let id = thing_create(kind, ThingId(0));
+        thing_register_name(id, &family_thing_name);
+        let _ = relationship_create(
+            symbol_intern("predicate.contains"),
+            state.fonts_graph,
+            id,
+        );
+
+        let body = FontFamily {
+            name: symbol_intern(family_name),
+            variant_count: 0,
+            _pad: [0; 7],
+        };
+        let _ = thing_set_body(id, &body.encode_full());
+        log_info(&alloc::format!("TEXTD: Created FontFamily {}", family_thing_name));
+        id
+    };
+
+    // Create FontFace
+    let face_thing_name = alloc::format!("font.{}.{}", family_name, style_name);
+    let face_id = thing_create(symbol_intern("kind.FontFace"), ThingId(0));
+    thing_register_name(face_id, &face_thing_name);
+    let _ = relationship_create(
+        symbol_intern("predicate.contains"),
+        family_id,
+        face_id,
+    );
+    let _ = relationship_create(
+        symbol_intern("predicate.has_asset"),
+        face_id,
+        asset_id,
+    );
+
+    // Determine weight from style name
+    let weight = match style_name.to_lowercase().as_str() {
+        "bold" | "bolditalic" => 700u16,
+        "light" => 300,
+        "thin" => 100,
+        _ => 400,
+    };
+
+    let style = match style_name.to_lowercase().as_str() {
+        "italic" => 2u8,
+        "bold" => 1,
+        "bolditalic" => 3,
+        _ => 0,
+    };
+
+    let metrics = font.horizontal_line_metrics(1.0).unwrap_or(fontdue::LineMetrics { ascent: 0.0, descent: 0.0, line_gap: 0.0, new_line_size: 0.0 });
+    let face_body = FontFace {
+        name: symbol_intern(&face_thing_name),
+        family: family_id,
+        style,
+        weight,
+        units_per_em: font.units_per_em() as u16,
+        ascender: (metrics.ascent * 16.0) as i16,
+        descender: (metrics.descent * 16.0) as i16,
+        source_asset: asset_id,
+        _pad: 0,
+    };
+    let _ = thing_set_body(face_id, &face_body.encode_full());
+
+    log_info(&alloc::format!(
+        "TEXTD: Published FontFace {} (weight={}, units_per_em={})",
+        face_thing_name, weight, font.units_per_em()
+    ));
+
+    state.fonts.push(LoadedFont {
+        font,
+        face_id,
+        family_id,
+        source_asset: asset_id,
+    });
+}
+
+fn ensure_glyph_cache(state: &mut TextdState, face_id: ThingId, px_size: u16) -> Option<ThingId> {
+    // Find the font
+    let font_idx = state.fonts.iter().position(|f| f.face_id == face_id)?;
+    let font = &state.fonts[font_idx];
+
+    // Create GlyphCache Thing
+    let cache_name = alloc::format!("glyphcache.{}.{}", face_id.low(), px_size);
+    let cache_id = thing_create(symbol_intern("kind.GlyphCache"), ThingId(0));
+    thing_register_name(cache_id, &cache_name);
+
+    let _ = relationship_create(
+        symbol_intern("predicate.has_cache"),
+        face_id,
+        cache_id,
+    );
+
+    // Rasterize ASCII glyphs and build atlas
+    let ascii_chars: Vec<char> = (0x20u8..0x7Fu8).map(|b| b as char).collect();
+    let mut atlas_data: Vec<u8> = Vec::new();
+    let mut index_entries: Vec<GlyphIndexEntry> = Vec::new();
+
+    // Reserve space for all possible ASCII entries
+    index_entries.resize(128, GlyphIndexEntry::default());
+
+    let px_size_f = px_size as f32;
+
+    for ch in ascii_chars {
+        let (metrics, bitmap) = font.font.rasterize(ch, px_size_f);
+        let offset = atlas_data.len() as u32;
+
+        index_entries[ch as usize] = GlyphIndexEntry {
+            atlas_offset: offset,
+            width: metrics.width as u16,
+            height: metrics.height as u16,
+            advance_width: metrics.advance_width as i16,
+            bearing_x: metrics.xmin as i16,
+            bearing_y: metrics.ymin as i16,
+            _pad: 0,
+        };
+
+        atlas_data.extend_from_slice(&bitmap);
+    }
+
+    // Create atlas bytespace
+    let atlas_bs_name = alloc::format!("bytespace.glyphatlas.{}.{}", face_id.low(), px_size);
+    let atlas_bs_id = create_bytespace_with_data(&atlas_bs_name, &atlas_data);
+
+    // Create index bytespace
+    let index_data: &[u8] = unsafe {
+        core::slice::from_raw_parts(
+            index_entries.as_ptr() as *const u8,
+            index_entries.len() * core::mem::size_of::<GlyphIndexEntry>(),
+        )
+    };
+    let index_bs_name = alloc::format!("bytespace.glyphindex.{}.{}", face_id.low(), px_size);
+    let index_bs_id = create_bytespace_with_data(&index_bs_name, index_data);
+
+    let metrics = font.font.horizontal_line_metrics(px_size_f).unwrap_or(fontdue::LineMetrics { ascent: 0.0, descent: 0.0, line_gap: 0.0, new_line_size: 0.0 });
+
+    let cache_body = GlyphCache {
+        font_face: face_id,
+        px_size,
+        format: 0, // A8
+        glyph_count: 95, // ASCII printable range
+        ascent: metrics.ascent as i16,
+        descent: metrics.descent as i16,
+        atlas_bytespace: atlas_bs_id,
+        index_bytespace: index_bs_id,
+        _pad: 0,
+    };
+    let _ = thing_set_body(cache_id, &cache_body.encode_full());
+
+    let _ = relationship_create(
+        symbol_intern("predicate.has_atlas"),
+        cache_id,
+        atlas_bs_id,
+    );
+    let _ = relationship_create(
+        symbol_intern("predicate.has_index"),
+        cache_id,
+        index_bs_id,
+    );
+
+    log_info(&alloc::format!(
+        "TEXTD: Created GlyphCache {} ({} bytes atlas)",
+        cache_name,
+        atlas_data.len()
+    ));
+
+    Some(cache_id)
+}
+
+fn create_bytespace_with_data(name: &str, data: &[u8]) -> ThingId {
+    // Create RAM bytespace via syscall
+    let bs_id = thing_std::memory::bytespace::create_ram(data.len());
+
+    thing_register_name(bs_id, name);
+
+    // Map, write, unmap
+    const TEMP_MAP_ADDR: u64 = 0x6F00_0000;
+    let map_result = space_map(bs_id, TEMP_MAP_ADDR, 0, data.len() as u64); // RW
+    if map_result == 0 {
+        unsafe {
+            core::ptr::copy_nonoverlapping(data.as_ptr(), TEMP_MAP_ADDR as *mut u8, data.len());
+        }
+        let _ = thing_std::memory::space_unmap(TEMP_MAP_ADDR, data.len());
+    }
+
+    // Set Bytespace body
+    let bs_body = Bytespace {
+        len: data.len() as u64,
+        flags: 0,
+        _pad: 0,
+        phys_base: 0, // RAM bytespace, no fixed phys
+    };
+    let _ = thing_set_body(bs_id, &bs_body.encode_full());
+
+    bs_id
+}
+
+fn process_pending_requests(state: &mut TextdState) {
+    let pred_contains = symbol_intern("predicate.contains");
+
+    let mut buf = [abi::types::RelationshipRef {
+        id: ThingId(0),
+        kind: SymbolId(0),
+        target: ThingId(0),
+    }; 8];
+
+    let mut cursor = 0u64;
+    loop {
+        let Ok((returned, _)) = relationships_from(state.requests_graph, cursor, &mut buf) else {
+            break;
+        };
+        if returned == 0 {
+            break;
+        }
+
+        for i in 0..(returned as usize) {
+            if buf[i].kind == pred_contains {
+                process_single_request(state, buf[i].target);
+            }
+        }
+
+        cursor += returned as u64;
+    }
+}
+
+fn process_single_request(state: &mut TextdState, request_id: ThingId) {
+    // Read request body
+    let Some((body, _)) = thing_get_body(request_id) else {
+        return;
+    };
+
+    let Ok(mut request) = TextRenderRequest::decode_full(&body) else {
+        return;
+    };
+
+    // Only process Pending requests
+    if request.status != TextRenderStatus::Pending {
+        return;
+    }
+
+    log_info(&alloc::format!(
+        "TEXTD: Processing request {}",
+        request.request_id
+    ));
+
+    // Mark as Rendering
+    request.status = TextRenderStatus::Rendering;
+    let _ = thing_set_body(request_id, &request.encode_full());
+
+    // Resolve text from symbol
+    let Some(text_bytes) = symbol_resolve(request.text_symbol) else {
+        request.status = TextRenderStatus::Error;
+        request.error_code = 1; // Text symbol not found
+        let _ = thing_set_body(request_id, &request.encode_full());
+        return;
+    };
+
+    let Ok(text) = core::str::from_utf8(&text_bytes) else {
+        request.status = TextRenderStatus::Error;
+        request.error_code = 2; // Invalid UTF-8
+        let _ = thing_set_body(request_id, &request.encode_full());
+        return;
+    };
+
+    // Find font and cache
+    let font_idx = state.fonts.iter().position(|f| f.face_id == request.font_face);
+    if font_idx.is_none() {
+        request.status = TextRenderStatus::Error;
+        request.error_code = 3; // Font not found
+        let _ = thing_set_body(request_id, &request.encode_full());
+        return;
+    }
+    let font = &state.fonts[font_idx.unwrap()];
+
+    // Render text
+    let px_size_f = request.px_size as f32;
+    let mut glyphs: Vec<(i32, i32, Vec<u8>, u16, u16)> = Vec::new(); // (x, y, bitmap, w, h)
+    let mut cursor_x = 0i32;
+    let mut max_height = 0u16;
+    let metrics = font.font.horizontal_line_metrics(px_size_f).unwrap_or(fontdue::LineMetrics { ascent: 0.0, descent: 0.0, line_gap: 0.0, new_line_size: 0.0 });
+
+    for ch in text.chars() {
+        let (glyph_metrics, bitmap) = font.font.rasterize(ch, px_size_f);
+        let x = cursor_x + glyph_metrics.xmin;
+        let y = metrics.ascent as i32 - glyph_metrics.height as i32 - glyph_metrics.ymin;
+        
+        glyphs.push((
+            x,
+            y,
+            bitmap,
+            glyph_metrics.width as u16,
+            glyph_metrics.height as u16,
+        ));
+
+        cursor_x += glyph_metrics.advance_width as i32;
+        max_height = max_height.max(glyph_metrics.height as u16);
+    }
+
+    // Compose into single buffer
+    let width = cursor_x.max(1) as u16;
+    let height = (metrics.ascent - metrics.descent).max(1.0) as u16;
+    let mut composed = alloc::vec![0u8; (width as usize) * (height as usize)];
+
+    for (x, y, bitmap, w, h) in glyphs {
+        for row in 0..(h as usize) {
+            let dst_y = y as usize + row;
+            if dst_y >= height as usize {
+                continue;
+            }
+            for col in 0..(w as usize) {
+                let dst_x = x as usize + col;
+                if dst_x >= width as usize {
+                    continue;
+                }
+                let src_idx = row * (w as usize) + col;
+                let dst_idx = dst_y * (width as usize) + dst_x;
+                if src_idx < bitmap.len() && dst_idx < composed.len() {
+                    // Alpha composite (max for simplicity)
+                    composed[dst_idx] = composed[dst_idx].max(bitmap[src_idx]);
+                }
+            }
+        }
+    }
+
+    // Create result bytespace
+    let result_bs_name = alloc::format!("bytespace.textresult.{}", request.request_id);
+    let result_bs_id = create_bytespace_with_data(&result_bs_name, &composed);
+
+    // Create TextRenderResult
+    let result_id = thing_create(symbol_intern("kind.TextRenderResult"), ThingId(0));
+    let result_name = alloc::format!("textresult.{}", request.request_id);
+    thing_register_name(result_id, &result_name);
+
+    let result_body = TextRenderResult {
+        width_px: width,
+        height_px: height,
+        baseline_y: metrics.ascent as u16,
+        bytespace: result_bs_id,
+        _pad: 0,
+    };
+    let _ = thing_set_body(result_id, &result_body.encode_full());
+
+    let _ = relationship_create(
+        symbol_intern("predicate.has_bytespace"),
+        result_id,
+        result_bs_id,
+    );
+
+    // Update request
+    request.status = TextRenderStatus::Ready;
+    request.result = result_id;
+    let _ = thing_set_body(request_id, &request.encode_full());
+
+    let _ = relationship_create(
+        symbol_intern("predicate.has_result"),
+        request_id,
+        result_id,
+    );
+
+    log_info(&alloc::format!(
+        "TEXTD: Rendered '{}' -> {}x{} px",
+        text, width, height
+    ));
+}

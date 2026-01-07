@@ -40,6 +40,7 @@ members = [
     "apps/pcid",
     "apps/hello_window",
     "apps/thread_test",
+    "apps/textd",
 ]
 
 [workspace.package]

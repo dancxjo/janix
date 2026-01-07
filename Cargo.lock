@@ -2023,6 +2023,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "textd"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "fontdue",
+ "hashbrown 0.15.5",
+ "models",
+ "serde",
+ "thing_codec",
+ "thing_derive",
+ "thing_std",
+]
+
+[[package]]
 name = "textwrap"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

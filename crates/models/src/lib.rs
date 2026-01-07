@@ -352,3 +352,86 @@ pub struct WindowAction {
     pub dy: i32,
     pub edges: abi::ui::ResizeEdge,
 }
+
+// ============================================================================
+// Text Rendering Service Types
+// ============================================================================
+
+/// Status of a text render request
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TextRenderStatus {
+    Pending = 0,
+    Rendering = 1,
+    Ready = 2,
+    Error = 3,
+}
+
+/// A font family (e.g. "NotoSans" containing Regular, Bold, etc.)
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.FontFamily")]
+pub struct FontFamily {
+    pub name: SymbolId,
+    pub variant_count: u8,
+    pub _pad: [u8; 7],
+}
+
+/// A specific font variant (e.g. NotoSans-Regular)
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.FontFace")]
+pub struct FontFace {
+    pub name: SymbolId,           // e.g. "font.NotoSans.Regular"
+    pub family: ThingId,          // Link to FontFamily
+    pub style: u8,                // 0=Regular, 1=Bold, 2=Italic, 3=BoldItalic
+    pub weight: u16,              // 400=regular, 700=bold
+    pub units_per_em: u16,
+    pub ascender: i16,
+    pub descender: i16,
+    pub source_asset: ThingId,    // Original TTF asset
+    pub _pad: u16,
+}
+
+/// Glyph cache for a (FontFace, px_size) pair - glyphs stored in atlas bytespace
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.GlyphCache")]
+pub struct GlyphCache {
+    pub font_face: ThingId,
+    pub px_size: u16,
+    pub format: u8,               // 0=A8
+    pub glyph_count: u16,
+    pub ascent: i16,
+    pub descent: i16,
+    pub atlas_bytespace: ThingId, // A8 glyph atlas
+    pub index_bytespace: ThingId, // codepoint -> (offset, metrics)
+    pub _pad: u8,
+}
+
+/// Request from Bloom to textd for composed text rendering
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.TextRenderRequest")]
+pub struct TextRenderRequest {
+    pub request_id: u64,
+    pub text_symbol: SymbolId,    // Interned text content
+    pub font_face: ThingId,       // Link to FontFace
+    pub px_size: u16,
+    pub max_width_px: u16,        // 0 = no wrap
+    pub status: TextRenderStatus,
+    pub error_code: u16,
+    pub result: ThingId,          // Link to TextRenderResult when Ready
+}
+
+/// Composed text rendering result
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Thing, Serialize, Deserialize)]
+#[thing(kind = "kind.TextRenderResult")]
+pub struct TextRenderResult {
+    pub width_px: u16,
+    pub height_px: u16,
+    pub baseline_y: u16,
+    pub bytespace: ThingId,       // Composed A8 mask
+    pub _pad: u16,
+}

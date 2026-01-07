@@ -86,6 +86,7 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         "pcid",
         "hello_window",
         "thread_test",
+        "textd",
     ];
     for app in apps {
         let src = bin_src.join(app);
@@ -143,6 +144,7 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         "NotoSerif-Regular.ttf",
         "NotoSansSymbol-Regular.ttf",
         "NotoSansSymbol2-Regular.ttf",
+        "DSEG7Classic-Regular.ttf",
     ];
     for font_file in font_files {
         let src = fonts_src.join(font_file);

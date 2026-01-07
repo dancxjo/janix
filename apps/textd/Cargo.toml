@@ -1,0 +1,17 @@
+[package]
+name = "textd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thing_std = { path = "../../crates/thing_std" }
+thing_derive = { path = "../../crates/thing_derive" }
+thing_codec = { path = "../../crates/thing_codec" }
+abi = { path = "../../crates/abi" }
+models = { path = "../../crates/models" }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
+hashbrown = { version = "0.15", default-features = false }
+
+[package.metadata.cargo-xbuild]
+memcpy = false

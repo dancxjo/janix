@@ -1,9 +1,9 @@
 use crate::machine::AddressSpace as ArchAddressSpace;
 use crate::memory::bytespace::Bytespace;
+use crate::memory::id::next_thing_id;
+use crate::memory::journal;
 use crate::memory::map::{MapPerms, MapResult};
 use abi::ids::ThingId;
-use graph::store;
-use graph::symbols::sym;
 
 use spin::Mutex;
 
@@ -14,11 +14,7 @@ pub struct AddressSpace {
 
 impl AddressSpace {
     pub fn new() -> MapResult<Self> {
-        let id = store::with_store(|s| {
-            let t = s.create_thing(sym::KIND_ADDRESS_SPACE).expect("create AS");
-            // Link to something?
-            t
-        });
+        let id = next_thing_id();
         Ok(Self {
             id,
             arch: Mutex::new(ArchAddressSpace::new()?),
@@ -26,10 +22,7 @@ impl AddressSpace {
     }
 
     pub fn new_kernel_share() -> MapResult<Self> {
-        let id = store::with_store(|s| {
-            s.create_thing(sym::KIND_ADDRESS_SPACE)
-                .expect("create Kernel AS")
-        });
+        let id = next_thing_id();
 
         #[cfg(target_arch = "x86_64")]
         let arch = {
@@ -55,7 +48,9 @@ impl AddressSpace {
     }
 
     pub fn map(&self, virt: u64, phys: u64, len: usize, perms: MapPerms) -> MapResult<()> {
-        self.arch.lock().map(virt, phys, len, perms)
+        self.arch.lock().map(virt, phys, len, perms)?;
+        journal::emit_map(self.id, virt, phys, len, perms);
+        Ok(())
     }
 
     pub fn map_bytespace_shared(
@@ -81,13 +76,6 @@ impl AddressSpace {
         };
 
         self.map(virt, final_phys, len, perms)?;
-
-        // Metadata
-        store::with_store(|s| {
-            let m = s.create_thing(sym::KIND_MAPPING).unwrap();
-            let _ = s.create_relationship(sym::PRED_MAPS, self.id, m);
-            let _ = s.create_relationship(sym::PRED_BACKS, m, backing.id);
-        });
         Ok(())
     }
 }

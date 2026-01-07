@@ -4,6 +4,7 @@
 //! platform-specific Things to the graph.
 
 use crate::machine::machine;
+use crate::memory::bytespace::{Bytespace as MemBytespace, BytespaceKind};
 use crate::machine::x86_64::{pci, usb};
 use abi::bodies::BYTESPACE_FLAG_HAS_PHYS_BASE;
 use graph::store;
@@ -132,6 +133,12 @@ fn setup_xhci() {
     let mmio_size = store::thing_create(sym::KIND_GRAPH);
     store::thing_set_inline_payload(mmio_size, &XHCI_MMIO_LEN.to_le_bytes());
     store::relationship_create(sym::PRED_SIZE, mmio_bs, mmio_size);
+    MemBytespace::register_existing(
+        mmio_bs,
+        BytespaceKind::Device,
+        XHCI_MMIO_LEN as usize,
+        bar0,
+    );
 
     // IRQ bytespace (simple counter)
     let irq_bs = store::thing_create(sym::KIND_BYTE_SPACE);
@@ -155,6 +162,12 @@ fn setup_xhci() {
     let irq_size_thing = store::thing_create(sym::KIND_GRAPH);
     store::thing_set_inline_payload(irq_size_thing, &irq_len.to_le_bytes());
     store::relationship_create(sym::PRED_SIZE, irq_bs, irq_size_thing);
+    MemBytespace::register_existing(
+        irq_bs,
+        BytespaceKind::Device,
+        irq_len as usize,
+        irq_phys,
+    );
 
     // Controller Thing
     let ctrl = store::thing_create(sym::KIND_XHCI_CONTROLLER);

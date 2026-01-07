@@ -1,4 +1,5 @@
 use super::*;
+use abi::machine::MEMORY_JOURNAL_STATS;
 
 pub fn heap_grow(size: u64) -> u64 {
     let res = unsafe { syscall(nr::SYS_HEAP_GROW, size, 0, 0, 0, 0, 0) };
@@ -51,6 +52,15 @@ pub fn space_unmap(vaddr: u64, len: usize) -> i32 {
             0,
         )
         .status as i32
+    }
+}
+
+pub fn memory_journal_dropped_count() -> u64 {
+    let res = unsafe { syscall(nr::SYS_MACHINE, MEMORY_JOURNAL_STATS, 0, 0, 0, 0, 0) };
+    if res.status == 0 {
+        res.val0
+    } else {
+        0
     }
 }
 

@@ -292,7 +292,7 @@ pub fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
     use crate::machine::{self, MmioFlags, MmioRange};
     use abi::syscall::err;
 
-    use abi::machine::{CONSOLE_WRITE, MMIO_MAP, PORT_READ, PORT_WRITE};
+    use abi::machine::{CONSOLE_WRITE, MEMORY_JOURNAL_STATS, MMIO_MAP, PORT_READ, PORT_WRITE};
 
     match op {
         CONSOLE_WRITE => {
@@ -333,6 +333,10 @@ pub fn sys_machine(op: u64, a1: u64, a2: u64, a3: u64) -> SyscallResult {
             let size = a3 as u8;
             machine::machine().port_write(port, val, size);
             SyscallResult::new(0, 0, 0)
+        }
+        MEMORY_JOURNAL_STATS => {
+            let dropped = crate::memory::journal::journal_dropped_count();
+            SyscallResult::new(0, dropped, 0)
         }
         _ => SyscallResult::new(err::EINVAL, 0, 0),
     }

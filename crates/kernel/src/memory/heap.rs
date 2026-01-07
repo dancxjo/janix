@@ -14,14 +14,16 @@ pub struct HeapConfig {
 /// Caller must ensure that the memory region is valid, mapped, and unused.
 pub unsafe fn init(config: HeapConfig) -> Result<(), ()> {
     // Initialize the global allocator
-    ALLOCATOR
-        .lock()
-        .init(config.virt_base as *mut u8, config.size);
+        ALLOCATOR
+            .lock()
+            .init(config.virt_base as *mut u8, config.size);
 
-    crate::log::klog(
-        crate::log::Level::Info,
-        "HEAP",
-        &alloc::format!(
+        crate::memory::journal::emit_heap_init(config.virt_base, config.size);
+
+        crate::log::klog(
+            crate::log::Level::Info,
+            "HEAP",
+            &alloc::format!(
             "init: base={:#x} size={} MiB",
             config.virt_base,
             config.size / 1024 / 1024

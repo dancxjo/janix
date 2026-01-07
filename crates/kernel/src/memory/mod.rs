@@ -1,7 +1,9 @@
 pub mod space;
 
 pub mod bytespace;
+pub mod id;
 pub mod heap;
+pub mod journal;
 pub mod map;
 pub use heap::init as init_heap_raw;
 pub mod allocator;

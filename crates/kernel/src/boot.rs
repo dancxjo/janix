@@ -1,5 +1,5 @@
 use crate::machine::BootColor;
-use crate::memory::bytespace::Bytespace as MemBytespace;
+use crate::memory::bytespace::{Bytespace as MemBytespace, BytespaceKind};
 use crate::PreBootInfo;
 use abi::cap::CapOp;
 use abi::bodies::{ThingEnvelopeV1, BYTESPACE_FLAG_HAS_PHYS_BASE};
@@ -860,6 +860,13 @@ fn seed_bloom_ontology() {
         let phys_addr = ps2_mouse::get_ring_phys_addr();
         let ring_size = ps2_mouse::get_ring_size() as u64;
 
+        MemBytespace::register_existing(
+            mouse_bs,
+            BytespaceKind::Device,
+            ring_size as usize,
+            phys_addr,
+        );
+
         let bs_payload = Bytespace {
             len: ring_size,
             flags: BYTESPACE_FLAG_HAS_PHYS_BASE,
@@ -957,6 +964,13 @@ fn seed_bloom_ontology() {
             store::relationship_create(sym::PRED_BACKS, asset_thing, bs);
             store::relationship_create(sym::PRED_CONTAINS, asset_root, asset_thing);
 
+            MemBytespace::register_existing(
+                bs,
+                BytespaceKind::Module,
+                m.size as usize,
+                m.phys_addr,
+            );
+
             let phys_thing = store::thing_create(sym::KIND_GRAPH);
             let phys_payload = m.phys_addr.to_le_bytes();
             let _ = store::thing_set_body(phys_thing, &wrap_raw(sym::KIND_GRAPH, &phys_payload));
@@ -998,6 +1012,12 @@ fn seed_bloom_ontology() {
         store::relationship_create(sym::PRED_BASE_PHYS, fb_bytespace, fb_phys_thing);
 
         let fb_size = fb.height * fb.pitch;
+        MemBytespace::register_existing(
+            fb_bytespace,
+            BytespaceKind::Framebuffer,
+            fb_size as usize,
+            fb.addr,
+        );
         let fb_size_thing = store::thing_create(sym::KIND_GRAPH);
         let fb_size_payload = fb_size.to_le_bytes();
         let _ = store::thing_set_body(fb_size_thing, &wrap_raw(sym::KIND_GRAPH, &fb_size_payload));

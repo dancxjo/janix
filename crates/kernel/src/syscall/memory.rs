@@ -1,6 +1,7 @@
 //! Memory Syscalls
 
 use crate::memory::bytespace::Bytespace;
+use crate::memory::journal;
 use crate::memory::map::MapPerms;
 use abi::syscall::err;
 use abi::wire::SyscallResult;
@@ -27,10 +28,6 @@ pub fn sys_dma_bytespace_create(size: u64, _flags: u64) -> SyscallResult {
     match Bytespace::new_dma(size as usize) {
         Ok((bs, phys_base)) => {
             let id = bs.id;
-            // Store phys_base in bytespace's own payload for later retrieval
-            graph::store::with_store(|s| {
-                let _ = s.set_payload(id, &phys_base.to_le_bytes());
-            });
             core::mem::forget(bs);
             // Return: status=0, val0=id_low (for mapping), val1=phys_base (for DMA)
             SyscallResult::new(0, id.low(), phys_base)
@@ -46,69 +43,31 @@ pub fn sys_space_map(
     offset: u64,
     len: u64,
 ) -> SyscallResult {
-    use graph::store;
-    use graph::symbols::sym;
-
     let bs_id = abi::ids::ThingId::from_parts(bs_id_hi, bs_id_lo);
 
-    let extract_phys = |payload: &[u8]| -> Option<u64> {
-        if payload.len() < 8 {
-            return None;
-        }
-
-        // Check for ThingEnvelopeV1
-        if payload.len() >= core::mem::size_of::<abi::bodies::ThingEnvelopeV1>() {
-             let magic = u32::from_le_bytes(payload[0..4].try_into().unwrap());
-             if magic == abi::bodies::ThingEnvelopeV1::MAGIC {
-                 let header_size = core::mem::size_of::<abi::bodies::ThingEnvelopeV1>();
-                 if payload.len() >= header_size + 8 {
-                      return Some(u64::from_le_bytes(payload[header_size..header_size+8].try_into().unwrap()));
-                 }
-                 return None;
-             }
-        }
-
-        // Fallback: raw payload
-        Some(u64::from_le_bytes(payload[0..8].try_into().unwrap()))
-    };
-
-    let read_prop = |pred: abi::ids::SymbolId| -> Option<u64> {
-        let rels = store::relationships_from(bs_id);
-        for r_id in rels {
-            if let Some(r) = store::get_relationship(r_id) {
-                if r.kind == pred {
-                    if let Some(payload) = store::get_payload(r.to) {
-                        if let Some(val) = extract_phys(&payload) {
-                            return Some(val);
-                        }
-                    }
-                }
-            }
-        }
-        None
-    };
-
-    let phys = if let Some(p) = read_prop(sym::PRED_BASE_PHYS) {
-        p
+    let info = if let Some(info) = Bytespace::lookup(bs_id) {
+        info
     } else {
-        // Try reading from payload (for DMA bytespaces)
-        if let Some(payload) = store::get_payload(bs_id) {
-            if let Some(val) = extract_phys(&payload) {
-                val
-            } else {
-                return SyscallResult::new(err::EINVAL, 0, 0);
-            }
-        } else {
-            return SyscallResult::new(err::EINVAL, 0, 0);
-        }
+        crate::log::klog(
+            crate::log::Level::Error,
+            "SYSCALL",
+            "sys_space_map: bytespace not found",
+        );
+        return SyscallResult::new(err::EINVAL, 0, 0);
     };
 
-    let size = if let Some(s) = read_prop(sym::PRED_SIZE) {
-        s
+    let phys = if let Some(phys) = info.phys_base {
+        phys
     } else {
-        // Default to len if size not found
-        len
+        crate::log::klog(
+            crate::log::Level::Error,
+            "SYSCALL",
+            "sys_space_map: bytespace missing phys_base",
+        );
+        return SyscallResult::new(err::EINVAL, 0, 0);
     };
+
+    let size = if info.size == 0 { len } else { info.size as u64 };
 
     let bs = Bytespace::new_device(phys, size as usize);
 
@@ -137,12 +96,10 @@ pub fn sys_space_unmap(_vaddr: u64, _len: u64, _flags: u64) -> SyscallResult {
     SyscallResult::new(err::ENOSYS, 0, 0)
 }
 
-/// Heap growth syscall - GRAPH-FREE to avoid deadlock.
-/// 
-/// This function intentionally bypasses Bytespace::new_ram and the graph store
-/// to avoid a deadlock when heap allocation is triggered inside a with_store closure.
-/// The deadlock chain was:
-///   with_store -> allocation -> heap grow -> Bytespace::new_ram -> with_store (deadlock!)
+/// Heap growth syscall - journal-only path.
+///
+/// This function intentionally avoids graph writes and uses the memory journal
+/// to record changes. Heap growth must remain safe even when the graph is busy.
 pub fn sys_heap_grow(increment: u64) -> SyscallResult {
     crate::sched::with_current_task(|task| {
         let old_brk = task.heap_brk;
@@ -181,6 +138,7 @@ pub fn sys_heap_grow(increment: u64) -> SyscallResult {
         }
 
         task.heap_brk = map_addr + alloc_size;
+        journal::emit_heap_grow(task.id.0, old_brk, task.heap_brk, alloc_size);
         SyscallResult::new(0, map_addr, 0)
     })
     .unwrap_or(SyscallResult::new(err::EFAULT, 0, 0))

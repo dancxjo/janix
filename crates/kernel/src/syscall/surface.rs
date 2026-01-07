@@ -79,23 +79,12 @@ pub fn sys_surface_draw(
         None => return SyscallResult::new(err::EINVAL, 0, 0),
     };
 
-    // 2. Get physical base from Graph
-    let phys_base = if let Some(rel) = store::relationships_from(bs_id)
-        .into_iter()
-        .filter_map(|rid| store::get_relationship(rid))
-        .find(|rel| rel.kind == sym::PRED_BASE_PHYS)
-    {
-        let val_id = rel.to;
-        if let Some(payload) = store::get_payload(val_id) {
-            if payload.len() >= 8 {
-                let mut b = [0u8; 8];
-                b.copy_from_slice(&payload[..8]);
-                u64::from_le_bytes(b)
-            } else {
-                return SyscallResult::new(err::EFAULT, 0, 0);
-            }
+    // 2. Get physical base from registry
+    let phys_base = if let Some(info) = Bytespace::lookup(bs_id) {
+        if let Some(phys) = info.phys_base {
+            phys
         } else {
-            return SyscallResult::new(err::EFAULT, 0, 0);
+            return SyscallResult::new(err::EINVAL, 0, 0);
         }
     } else {
         return SyscallResult::new(err::EINVAL, 0, 0);

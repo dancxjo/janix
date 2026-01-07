@@ -110,10 +110,8 @@ pub fn spawn_kernel_module(module: &crate::boot::ModuleInfo) -> Result<ThingId, 
         // Apply boot grants before task becomes runnable
         let grant_count = crate::boot_grants::apply_boot_grants_by_name(module.path, &mut task.caps);
         if grant_count > 0 {
-            crate::log::klog(
-                crate::log::Level::Debug,
-                "PROC",
-                &alloc::format!("Applied {} boot grants to {} (path: {})", grant_count, module.path, module.path),
+            crate::log::kprintln(
+                &alloc::format!("PROC: Applied {} boot grants to {} (path: {})", grant_count, module.path, module.path),
             );
         }
         

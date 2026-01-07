@@ -1,5 +1,5 @@
 use crate::input::{PointerInput, InteractionEvent};
-use crate::painter::{Clip, CpuPainter, Painter};
+use crate::painter::{Clip, Painter};
 use crate::scene::Rect;
 use crate::scene_cache::{apply_watch_event, SceneCache};
 use crate::ui::{
@@ -94,12 +94,11 @@ pub fn run() {
             let mut frame_buffer = alloc::vec![0u32; buffer_size];
             let mut background_cache = alloc::vec![0u32; buffer_size];
             let mut scene_buffer = alloc::vec![0u32; buffer_size];
+            let mut cursor_overlay = CursorOverlay::new(width, height);
 
-            // Initial paint using CpuPainter
-            {
-                let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
-                painter.clear(background_color);
-            }
+
+            // Initial paint
+            cursor_overlay.clear(frame_buffer.as_mut_slice(), background_color);
             unsafe {
                 core::ptr::copy_nonoverlapping(frame_buffer.as_ptr(), background_cache.as_mut_ptr(), buffer_size);
             }
@@ -111,7 +110,6 @@ pub fn run() {
             let mut cursor_set = CursorSet::new();
             cursor_set.load_all(0x8900_0000);
             crate::shadow_cache::init_shadow_cache(8); // Default blur radius
-            let mut cursor_overlay = CursorOverlay::new(width, height);
             log_info("BLOOM: cursor set loaded");
 
             let mut bitmap_store = BitmapStore::new();
@@ -681,8 +679,7 @@ pub fn run() {
                 // === COMPOSITING PHASE ===
                 // 1. Copy executed scene to framebuffer (if scene changed)
                 if let Some(rect) = dirty {
-                     let mut painter = CpuPainter::new(frame_buffer.as_mut_slice(), width, height);
-                     painter.copy_region(scene_buffer.as_slice(), width, rect);
+                     cursor_overlay.copy_region(scene_buffer.as_slice(), frame_buffer.as_mut_slice(), rect);
                 }
                 
                 // 2. Overlay cursor (IMMEDIATE MODE - the only exception)

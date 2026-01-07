@@ -203,11 +203,9 @@ pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
             // TrapFrame is built on kernel stack, user_stack is stored in RSP field for user mode
             let kernel_stack_top = task.stack_ptr & !0xf;
 
-            crate::log::klog(
-                crate::log::Level::Info,
-                "SCHED",
+            crate::log::kprintln(
                 &alloc::format!(
-                    "configure_ctx: k_stack={:#x} u_stack={:#x} entry={:#x}",
+                    "SCHED: configure_ctx: k_stack={:#x} u_stack={:#x} entry={:#x}",
                     kernel_stack_top,
                     user_stack,
                     entry
@@ -228,10 +226,8 @@ pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
 
             task.stack_ptr = ctx.sp;
 
-            crate::log::klog(
-                crate::log::Level::Info,
-                "SCHED",
-                &alloc::format!("configure_ctx: finalized sp={:#x}", task.stack_ptr),
+            crate::log::kprintln(
+                &alloc::format!("SCHED: configure_ctx: finalized sp={:#x}", task.stack_ptr),
             );
         }
     });
@@ -688,11 +684,9 @@ pub fn configure_task_context_locked(
         // TrapFrame is built on kernel stack, user_stack is stored in RSP field for user mode
         let kernel_stack_top = task.stack_ptr & !0xf;
 
-        crate::log::klog(
-            crate::log::Level::Info,
-            "SCHED",
+        crate::log::kprintln(
             &alloc::format!(
-                "configure_ctx_locked: k_stack={:#x} u_stack={:#x} entry={:#x}",
+                "SCHED: configure_ctx_locked: k_stack={:#x} u_stack={:#x} entry={:#x}",
                 kernel_stack_top,
                 user_stack,
                 entry
@@ -713,10 +707,8 @@ pub fn configure_task_context_locked(
 
         task.stack_ptr = ctx.sp;
 
-        crate::log::klog(
-            crate::log::Level::Info,
-            "SCHED",
-            &alloc::format!("configure_ctx_locked: finalized sp={:#x}", task.stack_ptr),
+        crate::log::kprintln(
+            &alloc::format!("SCHED: configure_ctx_locked: finalized sp={:#x}", task.stack_ptr),
         );
     }
 }

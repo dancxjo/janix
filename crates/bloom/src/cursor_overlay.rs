@@ -102,7 +102,7 @@ impl CursorOverlay {
     }
 
     /// Copy a region from scene_buffer to framebuffer.
-    fn copy_region(&self, src: &[u32], dst: &mut [u32], rect: Rect) {
+    pub fn copy_region(&self, src: &[u32], dst: &mut [u32], rect: Rect) {
         // Clip to screen bounds
         let x0 = rect.x.max(0) as u32;
         let y0 = rect.y.max(0) as u32;
@@ -144,5 +144,10 @@ impl CursorOverlay {
     /// Get last presented bounds (for external damage tracking).
     pub fn last_bounds(&self) -> Option<Rect> {
         self.last_bounds
+    }
+
+    /// Clear the framebuffer with a solid color.
+    pub fn clear(&self, buffer: &mut [u32], color: u32) {
+        buffer.fill(color);
     }
 }

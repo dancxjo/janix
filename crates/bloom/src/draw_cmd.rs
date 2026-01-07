@@ -142,7 +142,14 @@ impl DrawCmd {
             }
             // Clear covers everything (conceptually), but for culling we return None so the executor knows it "touches everything" or "cannot be culled by rect".
             DrawCmd::Clear { .. } => None, 
-            DrawCmd::TextRun { .. } => None, // Text is hard to bound without font metrics, assume None (always draw)
+            DrawCmd::TextRun { x, y, text, font_size, .. } => {
+                // Integer estimation for damage/culling (matches executor logic)
+                // 0.8 width ratio is a safe over-estimate for most fonts including Unifont (0.5)
+                let avg_advance = (*font_size * 0.8) as u32;
+                let w = text.len() as u32 * avg_advance;
+                let h = *font_size as u32;
+                Some(Rect { x: *x, y: *y, w, h })
+            },
             DrawCmd::SetClip { .. } => None,
             DrawCmd::PushClip { .. } => None,
             DrawCmd::PopClip => None,

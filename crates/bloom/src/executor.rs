@@ -200,27 +200,27 @@ pub fn execute_cmds_into_scene(
         match cmd {
             DrawCmd::FillRect { rect, color } => {
                 painter.fill_rect(*rect, *color);
-                damage.add(*rect, scene_rect);
+                if let Some(r) = cmd.bounds() { damage.add(r, scene_rect); }
                 stats.cmds_drawn += 1;
             }
             DrawCmd::FillRectVGrad { rect, radius, top_color, bottom_color } => {
                 painter.fill_rect_vgrad(*rect, *radius, *top_color, *bottom_color);
-                damage.add(*rect, scene_rect);
+                if let Some(r) = cmd.bounds() { damage.add(r, scene_rect); }
                 stats.cmds_drawn += 1;
             }
             DrawCmd::FillRoundedRect { rect, radius, color } => {
                 painter.fill_rounded_rect(*rect, *radius, *color);
-                damage.add(*rect, scene_rect);
+                if let Some(r) = cmd.bounds() { damage.add(r, scene_rect); }
                 stats.cmds_drawn += 1;
             }
             DrawCmd::StrokeRoundedRect { rect, radius, thickness, color } => {
                 painter.stroke_rounded_rect(*rect, *radius, *thickness, *color);
-                damage.add(*rect, scene_rect);
+                if let Some(r) = cmd.bounds() { damage.add(r, scene_rect); }
                 stats.cmds_drawn += 1;
             }
             DrawCmd::StrokeRoundedRectTop { rect, radius, thickness, color } => {
                 painter.stroke_rounded_rect_top(*rect, *radius, *thickness, *color);
-                damage.add(*rect, scene_rect);
+                if let Some(r) = cmd.bounds() { damage.add(r, scene_rect); }
                 stats.cmds_drawn += 1;
             }
             DrawCmd::Clear { color } => {
@@ -230,12 +230,9 @@ pub fn execute_cmds_into_scene(
             }
             DrawCmd::TextRun { x, y, text, color, font_size } => {
                 crate::text::draw_text_on_painter(&mut painter, *x, *y, text, *color, *font_size);
-                // Integer estimation for damage
-                let avg_advance = (*font_size * 0.8) as u32; 
-                let w_est = text.len() as u32 * avg_advance;
-                let h_est = *font_size as u32;
-                // Assuming (x,y) is top-left approx for damage purposes (aligned with bounds check?)
-                damage.add(Rect { x: *x, y: *y, w: w_est, h: h_est }, scene_rect);
+                if let Some(r) = cmd.bounds() {
+                    damage.add(r, scene_rect);
+                }
                 stats.cmds_drawn += 1;
             }
             DrawCmd::BlitRgbaPremulBytespace { bytespace, src_rect, dst_x, dst_y, src_stride, src_len } => {
@@ -252,7 +249,9 @@ pub fn execute_cmds_into_scene(
                             blit.w, 
                             blit.h
                          );
-                         damage.add(Rect { x: *dst_x, y: *dst_y, w: src_rect.w, h: src_rect.h }, scene_rect);
+                         if let Some(r) = cmd.bounds() {
+                            damage.add(r, scene_rect);
+                         }
                          stats.cmds_drawn += 1;
                      }
                      Err(_) => {
@@ -285,7 +284,6 @@ pub fn execute_cmds_into_scene(
                          color: *color,
                      }
                  );
-                 // Reuse bounds logic for damage
                  if let Some(r) = cmd.bounds() {
                      damage.add(r, scene_rect);
                  }
@@ -293,7 +291,9 @@ pub fn execute_cmds_into_scene(
             }
             DrawCmd::FillPanel { rect, radius, bg_rgba, title_bar_height } => {
                 painter.fill_panel(*rect, *radius, *bg_rgba, *title_bar_height);
-                damage.add(*rect, scene_rect);
+                if let Some(r) = cmd.bounds() {
+                    damage.add(r, scene_rect);
+                }
                 stats.cmds_drawn += 1;
             }
             DrawCmd::SetClip { rect } => {
@@ -325,7 +325,7 @@ pub fn execute_cmds_into_scene(
             DrawCmd::TileBitmap { dst, bitmap, bmp_w: _, bmp_h: _, origin, opacity: _ } => {
                 if let Some(bmp) = bitmap_store.get(*bitmap) {
                     painter.draw_tiled_bitmap(*dst, bmp, *origin);
-                    damage.add(*dst, scene_rect);
+                    if let Some(r) = cmd.bounds() { damage.add(r, scene_rect); }
                     stats.cmds_drawn += 1;
                 } else {
                     stats.bad_cmds += 1;

@@ -67,27 +67,27 @@ impl ExecutorState {
         match cmd {
             DrawCmd::FillRect { rect, color } => {
                 painter.fill_rect(*rect, *color);
-                self.damage.add(*rect, self.scene_rect);
+                if let Some(r) = cmd.bounds() { self.damage.add(r, self.scene_rect); }
                 self.stats.cmds_drawn += 1;
             }
             DrawCmd::FillRectVGrad { rect, radius, top_color, bottom_color } => {
                 painter.fill_rect_vgrad(*rect, *radius, *top_color, *bottom_color);
-                self.damage.add(*rect, self.scene_rect);
+                if let Some(r) = cmd.bounds() { self.damage.add(r, self.scene_rect); }
                 self.stats.cmds_drawn += 1;
             }
             DrawCmd::FillRoundedRect { rect, radius, color } => {
                 painter.fill_rounded_rect(*rect, *radius, *color);
-                self.damage.add(*rect, self.scene_rect);
+                if let Some(r) = cmd.bounds() { self.damage.add(r, self.scene_rect); }
                 self.stats.cmds_drawn += 1;
             }
             DrawCmd::StrokeRoundedRect { rect, radius, thickness, color } => {
                 painter.stroke_rounded_rect(*rect, *radius, *thickness, *color);
-                self.damage.add(*rect, self.scene_rect);
+                if let Some(r) = cmd.bounds() { self.damage.add(r, self.scene_rect); }
                 self.stats.cmds_drawn += 1;
             }
             DrawCmd::StrokeRoundedRectTop { rect, radius, thickness, color } => {
                 painter.stroke_rounded_rect_top(*rect, *radius, *thickness, *color);
-                self.damage.add(*rect, self.scene_rect);
+                if let Some(r) = cmd.bounds() { self.damage.add(r, self.scene_rect); }
                 self.stats.cmds_drawn += 1;
             }
             DrawCmd::Clear { color } => {
@@ -97,10 +97,9 @@ impl ExecutorState {
             }
             DrawCmd::TextRun { x, y, text, color, font_size } => {
                 crate::text::draw_text_on_painter(painter, *x, *y, text, *color, *font_size);
-                let avg_advance = (*font_size * 0.8) as u32;
-                let w_est = text.len() as u32 * avg_advance;
-                let h_est = *font_size as u32;
-                self.damage.add(Rect { x: *x, y: *y, w: w_est, h: h_est }, self.scene_rect);
+                if let Some(r) = cmd.bounds() {
+                    self.damage.add(r, self.scene_rect);
+                }
                 self.stats.cmds_drawn += 1;
             }
             DrawCmd::BlitRgbaPremulBytespace { bytespace, src_rect, dst_x, dst_y, src_stride, src_len } => {
@@ -117,8 +116,10 @@ impl ExecutorState {
                  // I added mapping_cache argument. So I should try to support it properly?
                  // Let's copy the logic from executor.rs if possible or just stub it safely.
                  // Stub safely for now to avoid errors, as Blit isn't main target.
+                if let Some(r) = cmd.bounds() {
+                    self.damage.add(r, self.scene_rect);
+                }
                 self.stats.cmds_drawn += 1;
-                self.damage.add(Rect { x: *dst_x, y: *dst_y, w: src_rect.w, h: src_rect.h }, self.scene_rect);
             }
             DrawCmd::Shadow { x, y, width, height, radius, color, offset_x, offset_y, blur_radius, top_only } => {
                 let mask = if *top_only {
@@ -151,7 +152,7 @@ impl ExecutorState {
             }
             DrawCmd::FillPanel { rect, radius, bg_rgba, title_bar_height } => {
                 painter.fill_panel(*rect, *radius, *bg_rgba, *title_bar_height);
-                self.damage.add(*rect, self.scene_rect);
+                if let Some(r) = cmd.bounds() { self.damage.add(r, self.scene_rect); }
                 self.stats.cmds_drawn += 1;
             }
             DrawCmd::SetClip { rect } => {
@@ -178,7 +179,7 @@ impl ExecutorState {
             DrawCmd::TileBitmap { dst, bitmap, origin, .. } => {
                 if let Some(bmp) = bitmap_store.get(*bitmap) {
                     painter.draw_tiled_bitmap(*dst, bmp, *origin);
-                    self.damage.add(*dst, self.scene_rect);
+                    if let Some(r) = cmd.bounds() { self.damage.add(r, self.scene_rect); }
                     self.stats.cmds_drawn += 1;
                 } else {
                     self.stats.bad_cmds += 1;

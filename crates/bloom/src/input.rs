@@ -9,6 +9,13 @@ pub struct PointerInput {
     pub screen_h: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InteractionEvent {
+    PointerDown { x: i32, y: i32, buttons: u16 },
+    PointerMove { x: i32, y: i32, buttons: u16 },
+    PointerUp { x: i32, y: i32, buttons: u16 },
+}
+
 impl PointerInput {
     pub fn new(ring_ptr: *const u8, capacity: u32, screen_w: u32, screen_h: u32) -> Self {
         Self {

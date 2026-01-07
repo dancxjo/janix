@@ -88,25 +88,62 @@ impl BytespaceMappingCache {
     }
 
     pub fn get_or_map_ro(&mut self, id: ThingId, len: usize) -> Option<MapResult<'_>> {
-        let is_new = self.ensure_mapped(id, len);
+        let (is_new, actual_len) = self.ensure_mapped(id, len);
         let region = self.mappings.get(&id)?;
-        let slice = unsafe { core::slice::from_raw_parts(region.ptr, len) };
+        
+        // SAFETY: Use the actual mapped length, not the requested length
+        // This prevents creating slices larger than the mapped memory
+        let safe_len = actual_len.min(region.mapped_len);
+        
+        // Validate pointer before creating slice
+        if safe_len == 0 {
+            log_info(&alloc::format!("BLOOM: get_or_map_ro: safe_len=0 for id={}", id.low()));
+            return None;
+        }
+        if region.ptr.is_null() {
+            log_info(&alloc::format!("BLOOM: get_or_map_ro: null ptr for id={}", id.low()));
+            return None;
+        }
+        if (region.ptr as usize) % 4 != 0 {
+            log_info(&alloc::format!("BLOOM: get_or_map_ro: misaligned ptr={:#x} for id={}", region.ptr as usize, id.low()));
+            return None;
+        }
+        
+        let slice = unsafe { core::slice::from_raw_parts(region.ptr, safe_len) };
         Some(if is_new { MapResult::Mapped(slice) } else { MapResult::Hit(slice) })
     }
 
     pub fn get_or_map_rw(&mut self, id: ThingId, len: usize) -> Option<MapResultMut<'_>> {
-         let is_new = self.ensure_mapped(id, len);
+         let (is_new, actual_len) = self.ensure_mapped(id, len);
          let region = self.mappings.get(&id)?;
-         let slice = unsafe { core::slice::from_raw_parts_mut(region.ptr, len) };
+         
+         // SAFETY: Use the actual mapped length, not the requested length
+         let safe_len = actual_len.min(region.mapped_len);
+         
+         // Validate pointer before creating slice
+         if safe_len == 0 {
+             log_info(&alloc::format!("BLOOM: get_or_map_rw: safe_len=0 for id={}", id.low()));
+             return None;
+         }
+         if region.ptr.is_null() {
+             log_info(&alloc::format!("BLOOM: get_or_map_rw: null ptr for id={}", id.low()));
+             return None;
+         }
+         if (region.ptr as usize) % 4 != 0 {
+             log_info(&alloc::format!("BLOOM: get_or_map_rw: misaligned ptr={:#x} for id={}", region.ptr as usize, id.low()));
+             return None;
+         }
+         
+         let slice = unsafe { core::slice::from_raw_parts_mut(region.ptr, safe_len) };
          Some(if is_new { MapResultMut::Mapped(slice) } else { MapResultMut::Hit(slice) })
     }
 
-    /// Returns true if a new mapping was created or remapped, false if hit.
-    fn ensure_mapped(&mut self, id: ThingId, len: usize) -> bool {
+    /// Returns (is_new, actual_len) - is_new is true if newly mapped, actual_len is the usable size
+    fn ensure_mapped(&mut self, id: ThingId, len: usize) -> (bool, usize) {
         if let Some(region) = self.mappings.get(&id) {
             if region.mapped_len >= len {
                 self.frame_hits += 1;
-                return false;
+                return (false, region.mapped_len);
             }
             // Resize needed
             self.frame_remaps += 1;
@@ -130,10 +167,12 @@ impl BytespaceMappingCache {
                  ptr: mapped_addr as *mut u8,
                  mapped_len: len,
              });
-             true
+             (true, len)
         } else {
-             log_info(&alloc::format!("BLOOM: failed to map bytespace id={} at vaddr={:#x}", id.low(), vaddr));
-             false
+             log_info(&alloc::format!("BLOOM: failed to map bytespace id={} at vaddr={:#x} got={:#x}", id.low(), vaddr, mapped_addr));
+             // Return the old mapped_len if it exists, otherwise 0
+             let old_len = self.mappings.get(&id).map(|r| r.mapped_len).unwrap_or(0);
+             (false, old_len)
         }
     }
 }

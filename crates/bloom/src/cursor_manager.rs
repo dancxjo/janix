@@ -1,4 +1,3 @@
-
 use alloc::format;
 use crate::assets::cursor::{CursorAnimator, CursorAsset};
 use crate::assets::cursor::cur::load_cur;
@@ -58,7 +57,14 @@ impl CursorSet {
                 let vaddr = vaddr_base;
                 vaddr_base += len;
                 
-                let buf = crate::assets::map_bytespace(bs_id, vaddr, len);
+                // Use checked version to avoid creating invalid slices
+                let buf = match crate::assets::map_bytespace_checked(bs_id, vaddr, len) {
+                    Some(b) => b,
+                    None => {
+                        thing_std::log_info(&format!("BLOOM: cursor mapping failed for {}", name));
+                        return None;
+                    }
+                };
                 
                 let asset = if is_ani {
                    load_ani(buf)
@@ -67,10 +73,9 @@ impl CursorSet {
                 };
                 
                 if let Some(asset) = asset {
-                    return Some(CursorAnimator::new(asset, 1000)); // 1000 ticks/ms default? Check app.rs
+                    return Some(CursorAnimator::new(asset, 1000)); // 1000 ticks/ms default
                 }
             }
-            // thing_std::log_info(&format!("BLOOM: Failed to load cursor {}", name));
             None
         };
 

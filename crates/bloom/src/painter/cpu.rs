@@ -483,8 +483,17 @@ impl<'a> Painter for CpuPainter<'a> {
     fn blit_asset(&mut self, dst_x: i32, dst_y: i32, id: abi::ids::ThingId, src_w: u32, src_h: u32, _src_stride: u32, src_len: usize, cache: &mut crate::scene_cache::BytespaceMappingCache) {
         // Immediate mode: resolve mapping and blit
         if let Some(buf) = cache.get_or_map_ro(id, src_len) {
+            // Check alignment before creating u32 slice
+            let ptr = buf.as_ptr();
+            if (ptr as usize) % 4 != 0 {
+                thing_std::log_info(&alloc::format!("BLOOM: blit_asset: unaligned ptr={:#x} for id={}", ptr as usize, id.low()));
+                return;
+            }
+            if buf.len() < 4 {
+                return;
+            }
             let u32_buf = unsafe {
-                 core::slice::from_raw_parts(buf.as_ptr() as *const u32, buf.len() / 4)
+                 core::slice::from_raw_parts(ptr as *const u32, buf.len() / 4)
             };
             self.blit_rgba_alpha(dst_x, dst_y, u32_buf, src_w, src_h);
         }

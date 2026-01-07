@@ -18,7 +18,7 @@ use crate::ui::hittest::hittest_window;
 use crate::cursor_manager::{CursorSet, CursorKind};
 use crate::cursor_overlay::CursorOverlay;
 use crate::chunked_executor::ChunkedExecutor;
-use crate::wallpaper_worker::{WALLPAPER_MBX, wallpaper_worker_entry};
+use crate::wallpaper_worker::{WALLPAPER_MBX, load_wallpaper_sync};
 use crate::input_worker::{InputWorkerConfig, INPUT_CONFIG_MBX, INPUT_STATE, input_worker_entry, INPUT_WORKER_STARTED, INPUT_WORKER_TICKS, INPUT_EVENTS_DRAINED};
 use crate::wallpaper_worker::{WALLPAPER_WORKER_STARTED, WALLPAPER_WORKER_PHASE};
 use core::sync::atomic::Ordering;
@@ -96,10 +96,18 @@ pub fn run() {
             let mut bitmap_store = BitmapStore::new();
             let mut wallpaper_handle: Option<(crate::assets::bitmap::BitmapHandle, u32, u32)> = None;
 
-            // Spawn wallpaper worker thread (non-blocking)
-            // Worker decodes wallpaper in background, sends via WALLPAPER_MBX
-            log_info("BLOOM: spawning wallpaper worker");
-            let _wallpaper_worker = thing_std::thread::thread_spawn(wallpaper_worker_entry, 0);
+            // Load wallpaper synchronously (worker thread heap too slow)
+            if let Some(wp) = load_wallpaper_sync() {
+                log_info(&alloc::format!(
+                    "BLOOM: wallpaper loaded {}x{}", wp.width, wp.height
+                ));
+                let bmp = crate::assets::bitmap::Bitmap {
+                    w: wp.width,
+                    h: wp.height,
+                    pixels: alloc::sync::Arc::from(wp.pixels),
+                };
+                wallpaper_handle = Some((bitmap_store.add(bmp), wp.width, wp.height));
+            }
             
             // Spawn input worker thread (drains ringbuffer, publishes atomics)
             // Also keep a fallback PointerInput for main thread in case worker fails

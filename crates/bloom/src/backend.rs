@@ -1,5 +1,6 @@
 use abi::ids::ThingId;
-use thing_std::memory;
+use thing_std::{memory, log_info};
+use alloc::format;
 
 #[derive(Clone, Copy, Debug)]
 pub struct SurfaceDesc {
@@ -57,6 +58,14 @@ impl Backend for CpuBytespaceBackend {
     fn present(&mut self, backbuffer: &[u32], dirty: DirtyRect) {
         if self.fb_ptr.is_null() { return; }
         
+        // DIAG: Check fb_ptr alignment
+        let fb_addr = self.fb_ptr as usize;
+        let bb_addr = backbuffer.as_ptr() as usize;
+        if fb_addr % 4 != 0 || bb_addr % 4 != 0 {
+            log_info(&format!("BACKEND ALIGN BUG: fb={:#x}(%{}) bb={:#x}(%{})",
+                fb_addr, fb_addr % 4, bb_addr, bb_addr % 4));
+        }
+        
         unsafe {
             let x1 = dirty.x.max(0) as u32;
             let y1 = dirty.y.max(0) as u32;
@@ -67,11 +76,12 @@ impl Backend for CpuBytespaceBackend {
                 let row_start = (y * self.stride + x1) as usize;
                 let row_len = (x2 - x1) as usize;
                 
-                // Backbuffer is assumed to be packed (stride = width)
-                // But wait, backbuffer slice is just data.
-                // We need to know backbuffer stride if it differs from screen stride.
-                // For now, assume backbuffer stride == width == screen stride.
-                // The `app.rs` logic allocates backbuffer as `width * height`.
+                // Bounds check to avoid UB
+                if row_start + row_len > backbuffer.len() {
+                    log_info(&format!("BACKEND OOB: row_start={} row_len={} bb_len={}", 
+                        row_start, row_len, backbuffer.len()));
+                    continue;
+                }
                 
                 core::ptr::copy_nonoverlapping(
                     backbuffer.as_ptr().add(row_start),
@@ -82,3 +92,4 @@ impl Backend for CpuBytespaceBackend {
         }
     }
 }
+

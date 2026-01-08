@@ -526,8 +526,9 @@ impl<'a> Painter for CpuPainter<'a> {
             if buf.len() < 4 {
                 return;
             }
-            let u32_buf = unsafe {
-                 core::slice::from_raw_parts(ptr as *const u32, buf.len() / 4)
+            let u32_buf = match crate::pixels::pixels_u32(ptr, buf.len(), "cpu::blit_asset") {
+                Some(s) => s,
+                None => return, // Already logged, skip this blit
             };
             self.blit_rgba_alpha(dst_x, dst_y, u32_buf, src_w, src_h);
         }}

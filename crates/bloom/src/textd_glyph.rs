@@ -72,9 +72,11 @@ impl MappedGlyphCache {
         if codepoint >= 128 {
             return None; // Only ASCII cached for now
         }
-        let index_data = unsafe { 
-            core::slice::from_raw_parts(self.index_ptr, self.index_len) 
-        };
+        // Defensive checks for null and length
+        if self.index_ptr.is_null() || self.index_len > isize::MAX as usize {
+            return None;
+        }
+        let index_data = unsafe { core::slice::from_raw_parts(self.index_ptr, self.index_len) };
         GlyphIndexEntry::from_bytes(index_data, codepoint)
     }
     
@@ -83,6 +85,10 @@ impl MappedGlyphCache {
         let start = entry.atlas_offset as usize;
         let len = (entry.width as usize) * (entry.height as usize);
         if start + len > self.atlas_len {
+            return None;
+        }
+        // Defensive checks for null and length
+        if self.atlas_ptr.is_null() || self.atlas_len > isize::MAX as usize {
             return None;
         }
         let atlas_data = unsafe { core::slice::from_raw_parts(self.atlas_ptr, self.atlas_len) };

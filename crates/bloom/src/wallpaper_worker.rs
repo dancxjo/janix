@@ -44,6 +44,11 @@ pub fn load_wallpaper_sync() -> Option<WallpaperMsg> {
         return None;
     }
 
+    // Defensive length check
+    if (map_size as usize) > isize::MAX as usize {
+        log_info("BLOOM: wallpaper mapping size exceeds isize::MAX");
+        return None;
+    }
     let data = unsafe { 
         slice::from_raw_parts(actual_va as *const u8, map_size as usize) 
     };

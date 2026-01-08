@@ -42,10 +42,8 @@ pub fn run() {
     thing_std::init(0);
     log_info("BLOOM: alive");
 
-    // Warm up fonts early (SIMD-intensive parsing done before render loop)
-    // TODO: move this to its own service process but somehow share the font cache; start loading ASAP
+    // Initialize font system (non-blocking - uses builtin font as fallback)
     crate::text::ensure_font_loaded();
-    log_info("BLOOM: fonts warmed up");
 
     // Solid background color #2e80d2
     let background_color: u32 = CURRENT_BG_COLOR.load(core::sync::atomic::Ordering::Relaxed);
@@ -204,6 +202,7 @@ pub fn run() {
             let mut scene_dirty = true;
             let mut window_scenes: alloc::vec::Vec<WindowScene> = alloc::vec::Vec::new();
             let mut events: alloc::vec::Vec<WatchEvent> = alloc::vec::Vec::new();
+            let mut main_loop_iter: u64 = 0;  // DIAG: loop counter
 
             // Interaction Controller
             let mut interaction_controller = crate::interaction::InteractionController::new();
@@ -216,7 +215,12 @@ pub fn run() {
             let mut target_damage: Option<Rect> = Some(Rect { x: 0, y: 0, w: width, h: height });
 
             loop {
+                main_loop_iter += 1;
+                if main_loop_iter <= 3 {
+                    log_info(&alloc::format!("BLOOM LOOP: iter={}", main_loop_iter));
+                }
                 let now_ns = monotonic_now();
+                if main_loop_iter <= 3 { log_info("BLOOM STEP: after monotonic_now"); }
                 
                 // Poll for wallpaper worker result
                 if let Some(wp) = WALLPAPER_MBX.try_take() {
@@ -234,10 +238,13 @@ pub fn run() {
                     scene_dirty = true;
                     merge_damage(&mut target_damage, Rect { x: 0, y: 0, w: width, h: height });
                 }
+                if main_loop_iter <= 3 { log_info("BLOOM STEP: after wallpaper check"); }
             
                 if let Ok(n) = watches.drain(&mut events) {
+                    if main_loop_iter <= 3 { log_info(&alloc::format!("BLOOM STEP: after watches.drain n={}", n)); }
                     if n > 0 {
                         for ev in events.iter().take(n) {
+                            if main_loop_iter <= 3 { log_info("BLOOM STEP: processing event"); }
                             if let Some((win_id, watch_id)) =
                                 apply_watch_event(ev, &mut scene_cache, &mut watches, &mut graph_client)
                             {
@@ -250,6 +257,8 @@ pub fn run() {
                         }
                         events.clear();
                     }
+                } else {
+                    if main_loop_iter <= 3 { log_info("BLOOM STEP: watches.drain failed"); }
                 }
 
                 if scene_cache.is_dirty() {
@@ -578,6 +587,14 @@ pub fn run() {
                 // 2. Overlay cursor (IMMEDIATE MODE - the only exception)
                 // This must be immediate for responsiveness during long scene rebuilds
                 if cursor_changed || dirty.is_some() {
+                    // DIAG: Log buffer alignment before present
+                    let scene_ptr = scene_buffer.as_ptr() as usize;
+                    let frame_ptr = frame_buffer.as_ptr() as usize;
+                    if scene_ptr % 4 != 0 || frame_ptr % 4 != 0 {
+                        log_info(&alloc::format!("ALIGN BUG: scene={:#x}(%{}) frame={:#x}(%{})", 
+                            scene_ptr, scene_ptr % 4, frame_ptr, frame_ptr % 4));
+                    }
+                    
                     if let Some(cursor_dirty) = cursor_overlay.present(
                         scene_buffer.as_slice(),
                         frame_buffer.as_mut_slice(),
@@ -594,6 +611,10 @@ pub fn run() {
                 }
 
                 if let Some(rect) = dirty {
+                    // DIAG: reached backend present entry
+                    log_info(&alloc::format!("BLOOM DIAG: entering backend.present rect=({},{} {}x{})", 
+                        rect.x, rect.y, rect.w, rect.h));
+                    
                     if crate::boot_fade::WALLPAPER_READY.load(Ordering::Acquire) {
                         backend.present(
                             frame_buffer.as_mut_slice(),
@@ -605,6 +626,9 @@ pub fn run() {
                             },
                         );
                     }
+                    
+                    log_info("BLOOM DIAG: backend.present completed");
+                    
                     prev_px = px;
                     prev_py = py;
                     prev_buttons = buttons;

@@ -5,6 +5,8 @@ use abi::types::{
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use thing_std::watch::{watch_create, watch_poll, watch_wait};
+use thing_std::log_info;
+use alloc::format;
 
 const EMPTY_EVENT: WatchEvent = WatchEvent {
     kind: WatchEventKind::ThingUpdated,
@@ -59,18 +61,52 @@ impl WatchSet {
     }
 
     pub fn drain(&self, out: &mut Vec<WatchEvent>) -> Result<usize, i32> {
+        // DIAG: entering drain
+        static mut DRAIN_CALL: u64 = 0;
+        let call_num = unsafe { DRAIN_CALL += 1; DRAIN_CALL };
+        if call_num <= 3 {
+            log_info(&format!("DRAIN[{}]: enter", call_num));
+        }
+        
         let mut total = 0usize;
         let mut scratch = [EMPTY_EVENT; MAX_WATCH_EVENTS];
-        for watch_id in self.watch_ids() {
+        
+        if call_num <= 3 {
+            log_info(&format!("DRAIN[{}]: scratch created", call_num));
+        }
+        
+        let ids = self.watch_ids();
+        if call_num <= 3 {
+            log_info(&format!("DRAIN[{}]: watch_ids len={}", call_num, ids.len()));
+        }
+        
+        for watch_id in ids {
+            if call_num <= 3 {
+                log_info(&format!("DRAIN[{}]: polling watch {}", call_num, watch_id.0));
+            }
             loop {
                 let n = watch_poll(watch_id, &mut scratch)?;
+                if call_num <= 3 && n > 0 {
+                    log_info(&format!("DRAIN[{}]: watch_poll returned n={}", call_num, n));
+                }
                 if n == 0 {
                     break;
                 }
+                if call_num <= 3 {
+                    log_info(&format!("DRAIN[{}]: about to extend_from_slice n={}", call_num, n));
+                }
                 total += n;
                 out.extend_from_slice(&scratch[..n]);
+                if call_num <= 3 {
+                    log_info(&format!("DRAIN[{}]: extended, total={}", call_num, total));
+                }
             }
+        }
+        
+        if call_num <= 3 {
+            log_info(&format!("DRAIN[{}]: done total={}", call_num, total));
         }
         Ok(total)
     }
 }
+

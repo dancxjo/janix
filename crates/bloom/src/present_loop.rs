@@ -36,11 +36,16 @@ pub extern "C" fn present_loop_entry(arg: u64) -> ! {
         loop { sched_yield(); }
     }
     
-    let fb_slice = unsafe {
-        core::slice::from_raw_parts_mut(
-            config.fb_vaddr as *mut u32,
-            fb_len
-        )
+    let fb_slice = match crate::pixels::pixels_u32_mut(
+        config.fb_vaddr as *mut u8,
+        fb_len * 4,
+        "present_loop::fb"
+    ) {
+        Some(s) => s,
+        None => {
+            log_info("BLOOM FATAL: cannot create fb slice (alignment)");
+            loop { sched_yield(); }
+        }
     };
 
     let mut frame_count: u64 = 0;

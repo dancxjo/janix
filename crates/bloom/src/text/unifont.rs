@@ -117,7 +117,7 @@ fn draw_a8_glyph(
 use thing_std::trace_fn;
 
 // Embed unifont.hex (8MB bitmap font covering most Unicode)
-static UNIFONT_HEX: &[u8] = include_bytes!("../../../assets/fonts/unifont.hex");
+static UNIFONT_HEX: &[u8] = include_bytes!("../../../../assets/fonts/unifont.hex");
 
 const UNIFONT_GLYPH_HEIGHT: usize = 16;
 const UNIFONT_GLYPH_MAX_BYTES: usize = 32;
@@ -268,15 +268,14 @@ fn get_cached_glyph(ch: char) -> Option<GlyphBuffer> {
         .copied()
 }
 
-/// Pre-warm the cache with common ASCII characters
+/// Pre-warm the cache with common ASCII characters (DEPRECATED - now non-blocking)
+/// 
+/// This function used to block until ASCII glyphs were cached.
+/// Now the builtin font provides instant fallback, so this is a no-op.
 pub fn ensure_font_loaded() {
-    trace_fn!("ensure_font_loaded");
-    CACHE_INIT.call_once(|| {
-        // Pre-cache ASCII printable range for fast first render
-        let ascii: alloc::string::String = (32u8..127u8).map(|b| b as char).collect();
-        ensure_glyphs_cached(&ascii);
-        thing_std::log_info("BLOOM: unifont ASCII glyphs cached");
-    });
+    // No-op: Builtin font provides instant fallback for ASCII
+    // Unifont glyphs will be cached lazily on first use
+    thing_std::log_info("BLOOM: builtin font ready (lazy unifont)");
 }
 
 /// Draw text using the Painter API.
@@ -314,7 +313,31 @@ pub fn draw_text_on_painter(
             break;
         }
 
+        // Try to get unifont glyph, if not cached fall back to builtin
         let Some(glyph) = get_cached_glyph(ch) else {
+            // Fall back to builtin font for ASCII
+            if ch.is_ascii() {
+                // Use builtin font for this character
+                if let Some(bitmap) = super::builtin_font::glyph_bitmap(ch as u8) {
+                    let mut pixels = [0u32; 128]; // 8*16
+                    for (row, &row_bits) in bitmap.iter().enumerate() {
+                        for bit in 0..8 {
+                            if (row_bits & (0x80 >> bit)) != 0 {
+                                let idx = row * 8 + bit;
+                                pixels[idx] = ((color_a as u32) << 24)
+                                    | ((color_r as u32) << 16)
+                                    | ((color_g as u32) << 8)
+                                    | (color_b as u32);
+                            }
+                        }
+                    }
+                    painter.blit_rgba_alpha(cursor_x, y, &pixels, 8, 16);
+                    cursor_x += 8 + glyph_spacing;
+                    continue;
+                }
+            }
+            // Skip completely unsupported chars
+            cursor_x += 8 + glyph_spacing;
             continue;
         };
 

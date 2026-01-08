@@ -405,8 +405,9 @@ fn validate_blit_buffer<'a>(
 
     let start_px = sy * stride_px + sx;
     
-    let u32_full = unsafe {
-         core::slice::from_raw_parts(ptr as *const u32, buf.len() / 4)
+    let u32_full = match crate::pixels::pixels_u32(ptr, buf.len(), "executor::validate_blit") {
+        Some(s) => s,
+        None => return Err(ExecErrorKind::Unaligned),
     };
     
     if start_px >= u32_full.len() {

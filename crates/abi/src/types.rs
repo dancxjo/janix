@@ -112,7 +112,7 @@ pub enum WatchKind {
     Thing = 2,
 }
 
-#[repr(C)]
+#[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WatchEvent {
     pub kind: WatchEventKind,

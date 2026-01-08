@@ -75,6 +75,16 @@ impl CursorOverlay {
         
         // 2. Draw cursor sprite at new position
         {
+            // DIAG: Check frame pixels alignment
+            if let Some(f) = frame {
+                let pix_ptr = f.pixels.as_ptr() as usize;
+                let shad_ptr = f.shadow_pixels.as_ptr() as usize;
+                if pix_ptr % 4 != 0 || shad_ptr % 4 != 0 {
+                    thing_std::log_info(&alloc::format!("CURSOR ALIGN BUG: pix={:#x}(%{}) shad={:#x}(%{})",
+                        pix_ptr, pix_ptr % 4, shad_ptr, shad_ptr % 4));
+                }
+            }
+            
             let mut painter = CpuPainter::new(framebuffer, self.screen_w, self.screen_h);
             painter.set_clip(Clip::full(self.screen_w, self.screen_h));
             

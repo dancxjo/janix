@@ -1,5 +1,108 @@
+//! Pixel manipulation utilities for Bloom compositor.
+//!
+//! ## Alignment Safety Doctrine
+//!
+//! All raw pointer → u32 pixel slice conversions MUST go through:
+//! - `pixels_u32()` for immutable slices
+//! - `pixels_u32_mut()` for mutable slices
+//!
+//! These functions enforce alignment, null checks, and length validation.
+//! If validation fails, they log an `ALIGN:` diagnostic and return `None`.
+
 use crate::scene::Rect;
 use crate::assets::cursor::CursorFrame;
+use thing_std::log_info;
+use alloc::format;
+
+// =============================================================================
+// CENTRALIZED ALIGNMENT-SAFE SLICE HELPERS
+// =============================================================================
+
+/// Create an immutable u32 slice from a raw byte pointer with full validation.
+///
+/// This is the ONLY function that should call `from_raw_parts` for `&[u32]`.
+/// All other code paths MUST use this helper.
+///
+/// Returns `None` and logs `ALIGN:` if:
+/// - `ptr` is null
+/// - `ptr` is not 4-byte aligned
+/// - `len_bytes` is not a multiple of 4
+/// - `len_bytes / 4` exceeds `isize::MAX`
+#[inline]
+pub fn pixels_u32(ptr: *const u8, len_bytes: usize, label: &'static str) -> Option<&'static [u32]> {
+    if ptr.is_null() {
+        log_info(&format!("ALIGN: {} ptr=null (fallback)", label));
+        return None;
+    }
+    if (ptr as usize) % 4 != 0 {
+        log_info(&format!("ALIGN: {} ptr={:#x} misalign={} (fallback)", label, ptr as usize, (ptr as usize) & 3));
+        return None;
+    }
+    if len_bytes % 4 != 0 {
+        log_info(&format!("ALIGN: {} len_bytes={} not multiple of 4 (fallback)", label, len_bytes));
+        return None;
+    }
+    let len_u32 = len_bytes / 4;
+    if len_u32 > isize::MAX as usize {
+        log_info(&format!("ALIGN: {} len_u32={} exceeds isize::MAX (fallback)", label, len_u32));
+        return None;
+    }
+    Some(unsafe { core::slice::from_raw_parts(ptr as *const u32, len_u32) })
+}
+
+/// Create a mutable u32 slice from a raw byte pointer with full validation.
+///
+/// This is the ONLY function that should call `from_raw_parts_mut` for `&mut [u32]`.
+/// All other code paths MUST use this helper.
+#[inline]
+pub fn pixels_u32_mut(ptr: *mut u8, len_bytes: usize, label: &'static str) -> Option<&'static mut [u32]> {
+    if ptr.is_null() {
+        log_info(&format!("ALIGN: {} ptr=null (fallback)", label));
+        return None;
+    }
+    if (ptr as usize) % 4 != 0 {
+        log_info(&format!("ALIGN: {} ptr={:#x} misalign={} (fallback)", label, ptr as usize, (ptr as usize) & 3));
+        return None;
+    }
+    if len_bytes % 4 != 0 {
+        log_info(&format!("ALIGN: {} len_bytes={} not multiple of 4 (fallback)", label, len_bytes));
+        return None;
+    }
+    let len_u32 = len_bytes / 4;
+    if len_u32 > isize::MAX as usize {
+        log_info(&format!("ALIGN: {} len_u32={} exceeds isize::MAX (fallback)", label, len_u32));
+        return None;
+    }
+    Some(unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, len_u32) })
+}
+
+/// Byte-wise copy for misaligned buffers (slow but safe fallback).
+///
+/// Use this when `pixels_u32` returns `None` but you still need to copy data.
+#[inline]
+pub unsafe fn blit_bytes(dst: *mut u8, src: *const u8, len_bytes: usize) {
+    core::ptr::copy_nonoverlapping(src, dst, len_bytes);
+}
+
+/// Create an immutable u8 slice from a raw pointer with null and length validation.
+///
+/// For byte slices, alignment is not required, but we still check null and length.
+#[inline]
+pub fn bytes_checked(ptr: *const u8, len: usize, label: &'static str) -> Option<&'static [u8]> {
+    if ptr.is_null() {
+        log_info(&format!("ALIGN: {} ptr=null (fallback)", label));
+        return None;
+    }
+    if len > isize::MAX as usize {
+        log_info(&format!("ALIGN: {} len={} exceeds isize::MAX (fallback)", label, len));
+        return None;
+    }
+    Some(unsafe { core::slice::from_raw_parts(ptr, len) })
+}
+
+// =============================================================================
+// EXISTING PIXEL MANIPULATION FUNCTIONS
+// =============================================================================
 
 pub unsafe fn redraw_region(dest: *mut u32, src: *const u32, w: u32, h: u32, region: Rect) {
     let x1 = region.x.max(0) as u32;

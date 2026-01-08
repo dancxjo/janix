@@ -427,6 +427,10 @@ fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_
     // SAFETY: The bytespace memory is stable (OS managed) and will not move or be unmapped 
     // even if we mutate the mapping_cache (BTreeMap) to add new mappings.
     // We need to drop the borrow on mapping_cache so we can pass it mutably to blit_asset.
+    // Defensive checks for null and length
+    if ptr.is_null() || len > isize::MAX as usize {
+        return;
+    }
     let buf = unsafe { core::slice::from_raw_parts(ptr, len) };
     
     // Deserialize commands

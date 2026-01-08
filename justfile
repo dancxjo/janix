@@ -52,3 +52,12 @@ clean:
 # Clean everything including downloaded dependencies
 distclean:
     cargo xtask distclean
+
+# Run BDD tests
+# Examples:
+#   just bdd --feature simple-boot
+#   just bdd --tag @smoke
+#   just bdd --arch aarch64 --arch x86_64
+bdd *args:
+    cargo xtask bdd {{args}}
+

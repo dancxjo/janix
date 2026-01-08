@@ -87,6 +87,18 @@ enum Commands {
     Clean,
     /// Clean everything including downloaded dependencies
     Distclean,
+    /// Run BDD tests
+    Bdd {
+        /// Run a specific feature file (without .feature extension)
+        #[arg(long)]
+        feature: Option<String>,
+        /// Cucumber tag expression (e.g., @smoke)
+        #[arg(long, short = 't')]
+        tags: Option<String>,
+        /// Target architecture (can be specified multiple times)
+        #[arg(long, short = 'a')]
+        arch: Vec<String>,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -133,6 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Ovmf { env } => ovmf(&sh, &env)?,
         Commands::Clean => clean(&sh)?,
         Commands::Distclean => distclean(&sh)?,
+        Commands::Bdd { feature, tags, arch } => bdd(&sh, feature, tags, arch)?,
     }
 
     Ok(())
@@ -470,3 +483,42 @@ fn distclean(sh: &Shell) -> Result<(), Box<dyn std::error::Error>> {
     sh.remove_path("ovmf")?;
     Ok(())
 }
+
+fn bdd(
+    sh: &Shell,
+    feature: Option<String>,
+    _tags: Option<String>,
+    arch: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Default to x86_64 if no architectures specified
+    let architectures = if arch.is_empty() {
+        vec!["x86_64".to_string()]
+    } else {
+        arch
+    };
+
+    // Run tests for each architecture
+    for a in &architectures {
+        println!("\n=== Building and testing for {} ===\n", a);
+
+        // Build ISO
+        ovmf(sh, a)?;
+        limine(sh)?;
+        build(sh, a, "dev")?;
+        build_iso(sh, a)?;
+
+        // Run bdd with environment variables
+        let mut run_cmd = cmd!(sh, "cargo run -p bdd");
+        run_cmd = run_cmd.env("BDD_ARCH", a);
+
+        if let Some(ref f) = feature {
+            run_cmd = run_cmd.env("BDD_FEATURE", f);
+        }
+
+        run_cmd.run()?;
+    }
+
+    Ok(())
+}
+
+

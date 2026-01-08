@@ -1,3 +1,3 @@
 [workspace]
-members = ["bran", "xtask"]
+members = ["bran", "xtask", "tools/bdd"]
 resolver = "2"

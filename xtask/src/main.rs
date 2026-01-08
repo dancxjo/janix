@@ -112,9 +112,9 @@ enum Commands {
         /// Cucumber tag expression (e.g., @smoke)
         #[arg(long, short = 't')]
         tags: Option<String>,
-        /// Target architecture (default: x86_64)
-        #[arg(long, short = 'a', default_value = "x86_64")]
-        arch: Option<String>,
+        /// Target architecture(s) - can specify multiple (default: x86_64)
+        #[arg(long, short = 'a', num_args = 1.., default_value = "x86_64")]
+        arch: Vec<String>,
     },
 }
 

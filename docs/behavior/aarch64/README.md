@@ -1,6 +1,6 @@
-# BDD Test Results - x86_64
+# BDD Test Results - aarch64
 
-> Last run: 2026-01-08 12:54:32
+> Last run: 2026-01-08 12:54:53
 
 ## Summary
 

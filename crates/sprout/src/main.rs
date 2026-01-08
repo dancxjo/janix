@@ -132,7 +132,9 @@ fn service_ready(id: ThingId) -> bool {
 
 
 fn spawn_fallback() {
-    // Bloom first for instant feedback
+    // Spark first - ultra-fast SIMD display test
+    spawn_and_grant("spark");
+    // Bloom for full compositor
     spawn_and_grant("bloom");
 
     #[cfg(target_arch = "x86_64")]
@@ -276,6 +278,10 @@ fn configure_policy(id: ThingId, name: &str) {
             global(CapOp::GraphRead);
             global(CapOp::GraphWrite);
             global(CapOp::GraphWatch);
+        }
+        "spark" => {
+            global(CapOp::MemManage); // Framebuffer mapping
+            global(CapOp::GraphRead); // Find display
         }
         _ => {}
     }

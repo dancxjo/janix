@@ -41,6 +41,7 @@ members = [
     "apps/graphviewer",
     "apps/thread_test",
     "apps/textd",
+    "apps/spark",
 ]
 
 [workspace.package]

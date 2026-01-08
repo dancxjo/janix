@@ -161,10 +161,11 @@ pub fn seed_service_plan(ctx: &crate::boot::BootContext) {
         };
 
     // Core services visible to Sprout
+    let _ = wire_service(core_graph, "spark");
     let _ = wire_service(core_graph, "bloom");
     let _ = wire_service(core_graph, "inputd");
     let _ = wire_service(core_graph, "thingcheck");
-    let _ = wire_service(core_graph, "hello_window");
+    let _ = wire_service(core_graph, "graphviewer");
 
     // Time pipeline: RTC driver -> timed -> clock app
     let rtc_dep = {
@@ -267,7 +268,7 @@ fn default_caps_for(name: &str) -> [Option<CapOp>; 8] {
             Some(CapOp::GraphWrite),
             None,
         ],
-                "hello_window" => [
+                "graphviewer" => [
             Some(CapOp::Log),
             Some(CapOp::MemManage),
             Some(CapOp::GraphCreate),

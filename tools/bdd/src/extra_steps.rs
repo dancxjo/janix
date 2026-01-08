@@ -60,7 +60,7 @@ async fn wait_for_graph_summary(world: &mut BootWorld) -> Result<()> {
     expect_to_see_simple(world, "GraphViewer: Updating graph summary".to_string()).await
 }
 
-// Existing hello_window steps renamed to graphviewer
+// Existing graphviewer steps renamed to graphviewer
 #[when(regex = "\"graphviewer\" creates a Window Thing sized .*")]
 async fn graphviewer_creates_window(_world: &mut BootWorld) -> Result<()> {
     Ok(())

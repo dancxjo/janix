@@ -87,6 +87,7 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         "graphviewer",
         "thread_test",
         "textd",
+        "spark",
     ];
     for app in apps {
         let src = bin_src.join(app);

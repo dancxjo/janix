@@ -152,6 +152,7 @@ pub fn run(env: &str) -> Result<()> {
         "apps/graphviewer",
         "apps/thread_test",
         "apps/textd",
+        "apps/spark",
     ];
     for app in apps {
         println!("    Building {}...", app);

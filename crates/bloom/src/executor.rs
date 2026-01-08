@@ -482,13 +482,29 @@ pub fn execute_single_cmd(
                     radius: *radius 
                  }
              };
+             // Safety check: clamp blur radius and dimensions
+             let safe_blur = (*blur_radius).min(64);
+             let safe_w = (*width).min(2048);
+             let safe_h = (*height).min(2048);
+             
              painter.draw_shadow_mask(
                 *x, *y,
-                 mask,
+                 match mask {
+                    _ if *top_only => crate::shadow::ShadowMask::RoundedRectTop { 
+                        width: safe_w, 
+                        height: safe_h, 
+                        radius: *radius 
+                    },
+                    _ => crate::shadow::ShadowMask::RoundedRect { 
+                        width: safe_w, 
+                        height: safe_h, 
+                        radius: *radius 
+                    }
+                 },
                  crate::shadow::ShadowParams {
                      offset_x: *offset_x,
                      offset_y: *offset_y,
-                     blur_radius: *blur_radius as u32,
+                     blur_radius: safe_blur as u32,
                      color: *color,
                  }
              );

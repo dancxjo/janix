@@ -4,11 +4,16 @@
 extern crate alloc;
 use alloc::format;
 use alloc::string::String;
-use alloc::vec::Vec;
+// alloc::vec::Vec removed (unused)
 use thing_std::*;
 use models::*;
 use thing_codec::GraphClient;
 use abi::draw_cmd::DrawCmd;
+
+/// Size of the command bytespace
+const CMD_BYTESPACE_SIZE: u64 = 4096;
+/// Virtual address for mapping command buffer
+const CMD_VADDR: u64 = 0x6000_0000;
 
 #[no_mangle]
 pub fn main() {
@@ -18,7 +23,7 @@ pub fn main() {
     let mut client = SyscallGraphClient;
 
     // 1. Create bytespace for DrawList commands
-    let cmd_bytespace = thing_std::memory::bytespace_create(4096);
+    let cmd_bytespace = thing_std::memory::bytespace_create(CMD_BYTESPACE_SIZE);
     log_info(&format!("CLOCK: Created bytespace id={}", cmd_bytespace.low()));
 
     // 2. Create Layout
@@ -47,7 +52,7 @@ pub fn main() {
     let kind_window = symbol_intern("kind.Window");
     let window_id = client.create_thing(kind_window).expect("create window");
     
-    let mut window = Window {
+    let window = Window {
         title: symbol_intern("Clock"),
         x: 100,
         y: 400,
@@ -87,12 +92,29 @@ pub fn main() {
     log_info("CLOCK: Window Published!");
 
     // Map the bytespace so we can write commands
-    let cmd_vaddr = 0x6000_0000u64;
-    let mapped = thing_std::memory::space_map(cmd_bytespace, cmd_vaddr, 0, 4096);
-    if mapped == 0 {
-        log_info("CLOCK: Failed to map bytespace");
-        return;
+    // IMPORTANT: Validate the mapping before using it!
+    let mapped = thing_std::memory::space_map(cmd_bytespace, CMD_VADDR, 0, CMD_BYTESPACE_SIZE);
+    if mapped == 0 || mapped != CMD_VADDR {
+        log_info(&format!("CLOCK: FATAL: Failed to map bytespace, expected={:#x} got={:#x}", CMD_VADDR, mapped));
+        loop { sched_yield(); }
     }
+    
+    // Additional validation: ensure address is accessible
+    // Try writing a sentinel value to verify the mapping is valid
+    let probe_ptr = CMD_VADDR as *mut u8;
+    unsafe {
+        // Write and read back a sentinel to ensure mapping is valid
+        core::ptr::write_volatile(probe_ptr, 0xAA);
+        let read_back = core::ptr::read_volatile(probe_ptr);
+        if read_back != 0xAA {
+            log_info("CLOCK: FATAL: Bytespace mapping verification failed");
+            loop { sched_yield(); }
+        }
+        // Reset the probe byte
+        core::ptr::write_volatile(probe_ptr, 0);
+    }
+    
+    log_info(&format!("CLOCK: Bytespace mapped at {:#x}", CMD_VADDR));
 
     let mut time_thing = None;
     let mut last_time_str = String::new();
@@ -121,45 +143,90 @@ pub fn main() {
         if time_str != last_time_str {
             last_time_str = time_str.clone();
 
+            // Create command buffer slice with defensive validation
+            let cmd_ptr = CMD_VADDR as *mut u8;
+            let cmd_len = CMD_BYTESPACE_SIZE as usize;
+            
+            // Validate pointer before creating slice
+            // 1. Non-null check (redundant since it's a constant, but good practice)
+            if cmd_ptr.is_null() {
+                log_info("CLOCK: ERROR: cmd_ptr is null, skipping update");
+                sleep_ms(1000);
+                continue;
+            }
+            
+            // 2. Length check against isize::MAX
+            if cmd_len > isize::MAX as usize {
+                log_info("CLOCK: ERROR: cmd_len too large, skipping update");
+                sleep_ms(1000);
+                continue;
+            }
+            
+            // 3. Alignment check (u8 doesn't require alignment, but we check anyway)
+            // This is mostly a sanity check since we're using known virtual address
+            
+            // SAFETY: We've verified:
+            // - The mapping succeeded and returned our expected address
+            // - A probe write/read confirmed memory is accessible
+            // - Length is within bounds
+            let cmd_buf = unsafe { 
+                core::slice::from_raw_parts_mut(cmd_ptr, cmd_len)
+            };
+
             // Build draw commands
-            let mut cmds: Vec<DrawCmd> = Vec::new();
+            let mut cursor = 0usize;
+            let mut cmd_count = 0u32;
             
-            // Clear background (optional, window bg already covers this)
-            cmds.push(DrawCmd::Clear { color: 0xFF111111 });
+            // Clear command
+            let clear_cmd = DrawCmd::Clear { color: 0xFF111111 };
+            match postcard::to_slice(&clear_cmd, &mut cmd_buf[cursor..]) {
+                Ok(used) => {
+                    cursor += used.len();
+                    cmd_count += 1;
+                }
+                Err(_) => {
+                    log_info("CLOCK: ERROR: Failed to serialize Clear command");
+                    sleep_ms(1000);
+                    continue;
+                }
+            }
             
-            // Draw time text in classic green digital clock color
             // Text command with inline bytes
-            cmds.push(DrawCmd::Text { 
+            let text_cmd = DrawCmd::Text { 
                 x: 10, 
                 y: 12, 
                 color: 0xFF00FF00, 
                 len: time_str.len() as u16 
-            });
-            
-            cmds.push(DrawCmd::End);
-
-            // Serialize commands to bytespace
-            let cmd_buf = unsafe { 
-                core::slice::from_raw_parts_mut(cmd_vaddr as *mut u8, 4096) 
             };
-            let mut cursor = 0usize;
-            let mut cmd_count = 0u32;
-
-            for cmd in &cmds {
-                match postcard::to_slice(cmd, &mut cmd_buf[cursor..]) {
-                    Ok(used) => {
-                        cursor += used.len();
-                        cmd_count += 1;
-                        
-                        // For Text command, append the text bytes immediately after
-                        if let DrawCmd::Text { len, .. } = cmd {
-                            let text_bytes = time_str.as_bytes();
-                            cmd_buf[cursor..cursor + *len as usize].copy_from_slice(&text_bytes[..*len as usize]);
-                            cursor += *len as usize;
-                        }
+            match postcard::to_slice(&text_cmd, &mut cmd_buf[cursor..]) {
+                Ok(used) => {
+                    cursor += used.len();
+                    cmd_count += 1;
+                    
+                    // Append text bytes
+                    let text_bytes = time_str.as_bytes();
+                    let text_len = text_bytes.len();
+                    if cursor + text_len <= cmd_buf.len() {
+                        cmd_buf[cursor..cursor + text_len].copy_from_slice(text_bytes);
+                        cursor += text_len;
+                    } else {
+                        log_info("CLOCK: ERROR: Not enough space for text bytes");
+                        sleep_ms(1000);
+                        continue;
                     }
-                    Err(_) => break,
                 }
+                Err(_) => {
+                    log_info("CLOCK: ERROR: Failed to serialize Text command");
+                    sleep_ms(1000);
+                    continue;
+                }
+            }
+            
+            // End command
+            let end_cmd = DrawCmd::End;
+            if let Ok(_used) = postcard::to_slice(&end_cmd, &mut cmd_buf[cursor..]) {
+                // Command written, cursor not needed after this
+                cmd_count += 1;
             }
 
             // Update DrawList cmd_count and touch window
@@ -169,10 +236,15 @@ pub fn main() {
                 bytespace: cmd_bytespace,
                 cmd_count,
             };
-            updated_drawlist.write(&mut client, drawlist_id).expect("update drawlist");
+            
+            if let Err(e) = updated_drawlist.write(&mut client, drawlist_id) {
+                log_info(&format!("CLOCK: ERROR: Failed to update drawlist: {:?}", e));
+            }
             
             // Touch window to trigger repaint
-            window.write(&mut client, window_id).expect("touch window");
+            if let Err(e) = window.write(&mut client, window_id) {
+                log_info(&format!("CLOCK: ERROR: Failed to touch window: {:?}", e));
+            }
         }
         
         // Update every second

@@ -56,10 +56,13 @@ pub fn run() {
         if let Some(display_id) = thing_find("device.display0") {
             let (width, height) =
                 if let Ok(display) = DisplayDevice::read(&SyscallGraphClient, display_id) {
-                    (display.width, display.height)
-                } else {
-                    (1280u32, 720u32)
-                };
+                     // Sanitize display dimensions to prevent overflow/panic
+                     let w = if display.width > 4096 || display.width == 0 { 1280 } else { display.width };
+                     let h = if display.height > 4096 || display.height == 0 { 720 } else { display.height };
+                     (w, h)
+                 } else {
+                     (1280u32, 720u32)
+                 };
 
             let mut backend = CpuBytespaceBackend::new(
                 thing_find("bytespace.display0").expect("bytespace not found"),

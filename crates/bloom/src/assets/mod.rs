@@ -29,5 +29,10 @@ pub fn map_bytespace_checked(bs_id: ThingId, vaddr: u64, len: u64) -> Option<&'s
     }
 
     // SAFETY: space_map succeeded, memory at vaddr is now valid
+    // Check length constraint for slice::from_raw_parts
+    if len > isize::MAX as u64 {
+        log_info(&format!("BLOOM BUG: map_bytespace_checked: len too large {:#x}", len));
+        return None;
+    }
     Some(unsafe { slice::from_raw_parts(result as *const u8, len as usize) })
 }

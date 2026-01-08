@@ -26,10 +26,20 @@ pub extern "C" fn present_loop_entry(arg: u64) -> ! {
     
     log_info(&alloc::format!("BLOOM PRESENT: {}x{} stride={}", config.width, config.height, config.stride));
     
+    let fb_len = (config.height as usize).checked_mul(config.stride as usize).expect("fb size overflow");
+    if fb_len > isize::MAX as usize {
+        log_info("BLOOM FATAL: fb too large for slice");
+        loop { sched_yield(); }
+    }
+    if (config.fb_vaddr as usize) % 4 != 0 {
+        log_info("BLOOM FATAL: fb unaligned");
+        loop { sched_yield(); }
+    }
+    
     let fb_slice = unsafe {
         core::slice::from_raw_parts_mut(
             config.fb_vaddr as *mut u32,
-            (config.height * config.stride) as usize
+            fb_len
         )
     };
 

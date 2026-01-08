@@ -108,6 +108,10 @@ impl BytespaceMappingCache {
             log_info(&alloc::format!("BLOOM: get_or_map_ro: misaligned ptr={:#x} for id={}", region.ptr as usize, id.low()));
             return None;
         }
+        if safe_len > isize::MAX as usize {
+            log_info(&alloc::format!("BLOOM: get_or_map_ro: len too large {} for id={}", safe_len, id.low()));
+            return None;
+        }
         
         let slice = unsafe { core::slice::from_raw_parts(region.ptr, safe_len) };
         Some(if is_new { MapResult::Mapped(slice) } else { MapResult::Hit(slice) })
@@ -133,6 +137,10 @@ impl BytespaceMappingCache {
              log_info(&alloc::format!("BLOOM: get_or_map_rw: misaligned ptr={:#x} for id={}", region.ptr as usize, id.low()));
              return None;
          }
+         if safe_len > isize::MAX as usize {
+             log_info(&alloc::format!("BLOOM: get_or_map_rw: len too large {} for id={}", safe_len, id.low()));
+             return None;
+         }
          
          let slice = unsafe { core::slice::from_raw_parts_mut(region.ptr, safe_len) };
          Some(if is_new { MapResultMut::Mapped(slice) } else { MapResultMut::Hit(slice) })
@@ -151,12 +159,21 @@ impl BytespaceMappingCache {
             self.frame_maps += 1;
         }
 
+        // Check for sanity to prevent overflow or huge mappings
+        if len > isize::MAX as usize {
+             log_info(&alloc::format!("BLOOM: ensure_mapped: len too large {} for id={}", len, id.low()));
+             // Return existing if possible, else 0
+             let old_len = self.mappings.get(&id).map(|r| r.mapped_len).unwrap_or(0);
+             return (false, old_len);
+        }
+
         // Trace mapping operations (they can be slow)
         trace_fn!("bytespace_map");
         
         // Allocate a virtual address for this mapping (1MB slots)
         let slot_size = 1024 * 1024u64;
-        let slots = (len as u64 + slot_size - 1) / slot_size;
+        let len_u64 = len as u64;
+        let slots = (len_u64.saturating_add(slot_size - 1)) / slot_size;
         let vaddr = self.next_vaddr;
         self.next_vaddr += slots * slot_size;
         

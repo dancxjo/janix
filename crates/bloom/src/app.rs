@@ -7,7 +7,8 @@ use crate::ui::{
 };
 use crate::watch::WatchSet;
 use abi::ids::ThingId;
-use abi::types::WatchEvent;
+use abi::types::{WatchEvent, RelationshipRef};
+
 use models::*;
 use thing_std::graph::*;
 use thing_std::*;
@@ -201,27 +202,12 @@ pub fn run() {
             let mut window_scenes: alloc::vec::Vec<WindowScene> = alloc::vec::Vec::new();
             let mut events: alloc::vec::Vec<WatchEvent> = alloc::vec::Vec::new();
 
-            // Intent State
-            #[derive(Debug, Clone, Copy)]
-            enum Intent {
-                Idle,
-                DraggingWindow {
-                    window_id: ThingId,
-                    start_wx: i32,
-                    start_wy: i32,
-                    start_px: i32,
-                    start_py: i32,
-                },
-                ResizingWindow {
-                    window_id: ThingId,
-                    edge: HitZone,
-                    start_rect: Rect,
-                    start_px: i32,
-                    start_py: i32,
-                },
-            }
-            let mut intent = Intent::Idle;
+            // Interaction Controller
+            let mut interaction_controller = crate::interaction::InteractionController::new();
             let mut focused_window: Option<ThingId> = None;
+
+            // Initialize Shadow Cache (radius=4 matches WindowStyle in ui.rs)
+            crate::shadow_cache::init_shadow_cache(4);
 
             let mut current_exec: Option<ChunkedExecutor> = None;
             let mut target_damage: Option<Rect> = Some(Rect { x: 0, y: 0, w: width, h: height });
@@ -229,7 +215,7 @@ pub fn run() {
             loop {
                 let now_ns = monotonic_now();
                 
-                // Poll for wallpaper worker result (non-blocking)
+                // Poll for wallpaper worker result
                 if let Some(wp) = WALLPAPER_MBX.try_take() {
                     log_info(&alloc::format!(
                         "BLOOM: wallpaper ready {}x{} from worker",
@@ -274,9 +260,9 @@ pub fn run() {
 
                 let now_ms = (now_ns / 1_000_000) as u64;
 
-                // --- Worker thread diagnostics (bypasses worker logging path) ---
+                // --- Worker thread diagnostics ---
                 static mut LAST_DIAG_MS: u64 = 0;
-                let diag_interval = 2000; // Print every 2 seconds
+                let diag_interval = 2000; 
                 unsafe {
                     if now_ms >= LAST_DIAG_MS + diag_interval {
                         let wp_started = WALLPAPER_WORKER_STARTED.load(Ordering::Acquire);
@@ -290,7 +276,7 @@ pub fn run() {
                     }
                 }
 
-                // Try to get input from worker thread atomics first
+                // Try to get input from worker thread atomics
                 let (mut px, mut py, mut buttons, input_seq) = INPUT_STATE.load();
                 static mut LAST_INPUT_SEQ: u32 = 0;
                 let input_seq_changed = unsafe {
@@ -299,8 +285,6 @@ pub fn run() {
                     changed
                 };
                 
-                // Fallback: if worker isn't producing (seq==0), poll directly
-                // This ensures cursor works even if threading has issues
                 if input_seq == 0 {
                     (px, py, buttons) = fallback_input.poll();
                 }
@@ -326,179 +310,110 @@ pub fn run() {
                     }
                 }
 
-                // 2. Process Events -> Intent
+                // 2. Process Interaction using Controller
                 for event in interaction_events {
-                    match (intent, event) {
-                        (Intent::Idle, InteractionEvent::PointerDown { x, y, .. }) => {
-                             // Hit Test (Top to Bottom)
-                            let mut hit_target = None;
-                            for scene in window_scenes.iter().rev() {
-                                let (zone, _lx, _ly) = hittest_window(scene, x, y);
-                                if zone != HitZone::None {
-                                    hit_target = Some((scene.clone(), zone));
-                                    break;
+                    use crate::interaction::{InteractionEffect, Interaction};
+                    
+                    let effects = match event {
+                        InteractionEvent::PointerDown { x, y, .. } => 
+                            interaction_controller.handle_pointer_down(x, y, &window_scenes),
+                        InteractionEvent::PointerMove { x, y, .. } => 
+                            interaction_controller.handle_pointer_move(x, y, &window_scenes),
+                        InteractionEvent::PointerUp { x, y, .. } => 
+                            interaction_controller.handle_pointer_up(x, y),
+                    };
+
+                    for effect in effects {
+                        match effect {
+                            InteractionEffect::SetFocus(id) => {
+                                // 1. Unset old focus
+                                if let Some(old_id) = focused_window {
+                                    if old_id != id.unwrap_or(ThingId::from_parts(0,0)) { 
+                                         if let Ok(mut win) = Window::read(&SyscallGraphClient, old_id) {
+                                             if win.focused {
+                                                 win.focused = false;
+                                                 let _ = win.write(&mut graph_client, old_id);
+                                             }
+                                         }
+                                    }
                                 }
-                            }
-
-                            if let Some((target, zone)) = hit_target {
-                                focused_window = Some(target.id);
-
-                                match zone {
-                                    HitZone::Titlebar => {
-                                         // Check close button
-                                        let win_rect = Rect {
-                                            x: target.window.x,
-                                            y: target.window.y,
-                                            w: target.window.width,
-                                            h: target.window.height,
-                                        };
-                                        let close_rect = crate::ui::get_close_button_rect(win_rect);
-                                        if x >= close_rect.x && x < close_rect.x + close_rect.w as i32 &&
-                                           y >= close_rect.y && y < close_rect.y + close_rect.h as i32
-                                        {
-                                             // Close button clicked - for now just log
-                                             log_info("BLOOM: Clicked Close Button");
-                                        } else {
-                                            // Start Drag
-                                            intent = Intent::DraggingWindow {
-                                                window_id: target.id,
-                                                start_wx: target.window.x,
-                                                start_wy: target.window.y,
-                                                start_px: x,
-                                                start_py: y,
-                                            };
-                                            // Emit BeginMove
-                                            let _ = WindowAction {
-                                                window: target.id,
-                                                kind: abi::ui::WindowActionKind::BeginMove,
-                                                start_x: target.window.x,
-                                                start_y: target.window.y,
-                                                dx: 0,
-                                                dy: 0,
-                                                edges: ResizeEdge::None,
-                                            }.create(&mut graph_client);
+                                
+                                // 2. Set new focus
+                                if let Some(new_id) = id {
+                                    if let Ok(mut win) = Window::read(&SyscallGraphClient, new_id) {
+                                        if !win.focused {
+                                            win.focused = true;
+                                            let _ = win.write(&mut graph_client, new_id);
                                         }
                                     }
-                                    HitZone::ResizeN | HitZone::ResizeS | HitZone::ResizeE | HitZone::ResizeW |
-                                    HitZone::ResizeNW | HitZone::ResizeNE | HitZone::ResizeSW | HitZone::ResizeSE => {
-                                        intent = Intent::ResizingWindow {
-                                            window_id: target.id,
-                                            edge: zone,
-                                            start_rect: Rect { x: target.window.x, y: target.window.y, w: target.window.width, h: target.window.height },
-                                            start_px: x,
-                                            start_py: y,
-                                        };
-                                         let edge_flag = match zone {
-                                            HitZone::ResizeN => ResizeEdge::Top,
-                                            HitZone::ResizeS => ResizeEdge::Bottom,
-                                            HitZone::ResizeE => ResizeEdge::Right,
-                                            HitZone::ResizeW => ResizeEdge::Left,
-                                            HitZone::ResizeNW => ResizeEdge::TopLeft,
-                                            HitZone::ResizeNE => ResizeEdge::TopRight,
-                                            HitZone::ResizeSW => ResizeEdge::BottomLeft,
-                                            HitZone::ResizeSE => ResizeEdge::BottomRight,
-                                            _ => ResizeEdge::None,
-                                        };
-                                        let _ = WindowAction {
-                                            window: target.id,
-                                            kind: abi::ui::WindowActionKind::BeginResize,
-                                            start_x: target.window.x,
-                                            start_y: target.window.y,
-                                            dx: 0,
-                                            dy: 0,
-                                            edges: edge_flag,
-                                        }.create(&mut graph_client);
-                                    }
-                                    _ => {}
                                 }
-                            } else {
-                                focused_window = None;
+                                focused_window = id;
+                            }
+                            InteractionEffect::Raise(id) => {
+                                // Find max Z
+                                let mut max_z = 0;
+                                for s in &window_scenes {
+                                    if s.window.z > max_z {
+                                        max_z = s.window.z;
+                                    }
+                                }
+                                // Update Z
+                                if let Ok(mut win) = Window::read(&SyscallGraphClient, id) {
+                                    // Always raise to top + 1 if not already
+                                    if win.z <= max_z {
+                                        win.z = max_z + 1;
+                                        let _ = win.write(&mut graph_client, id);
+                                    }
+                                }
+                            }
+                            InteractionEffect::Close(id) => {
+                                // Unlink from graph.windows
+                                let pred_contains = symbol_intern("predicate.contains");
+                                let mut buf = alloc::vec![RelationshipRef {
+                                    id: abi::ids::RelationshipId::from_parts(0,0),
+                                    kind: abi::ids::SymbolId(0),
+                                    target: abi::ids::ThingId::from_parts(0,0),
+                                }; 64];
+                                
+                                let mut cursor = 0;
+                                loop {
+                                     let (count, total) = relationships_from(windows_graph, cursor, &mut buf).unwrap_or((0,0));
+                                     if count == 0 { break; }
+                                     
+                                     for i in 0..count as usize {
+                                         let r = &buf[i];
+                                         if r.kind == pred_contains && r.target == id {
+                                             let _ = unsafe { 
+                                                 thing_std::syscall(
+                                                     abi::syscall::nr::SYS_REL_DELETE, 
+                                                     r.id.low(), 0, 0, 0, 0, 0
+                                                 ) 
+                                             };
+                                         }
+                                     }
+                                     cursor += count;
+                                     if cursor >= total { break; }
+                                }
+                            }
+                            InteractionEffect::UpdateWindowRect { id, rect } => {
+                                 if let Ok(mut win) = Window::read(&SyscallGraphClient, id) {
+                                     if win.x != rect.x || win.y != rect.y || win.width != rect.w || win.height != rect.h {
+                                         win.x = rect.x;
+                                         win.y = rect.y;
+                                         win.width = rect.w;
+                                         win.height = rect.h;
+                                         let _ = win.write(&mut graph_client, id);
+                                     }
+                                 }
+                            }
+                            InteractionEffect::EmitAction { window, kind, start_x, start_y, dx, dy, edges } => {
+                                let _ = WindowAction {
+                                    window,
+                                    kind,
+                                    start_x, start_y, dx, dy, edges
+                                }.create(&mut graph_client);
                             }
                         }
-                        (Intent::DraggingWindow { window_id, start_wx, start_wy, start_px, start_py }, InteractionEvent::PointerMove { x, y, .. }) => {
-                             let dx = x - start_px;
-                             let dy = y - start_py;
-                             let new_x = start_wx + dx;
-                             let new_y = start_wy + dy;
-
-                             if let Ok(mut win) = Window::read(&SyscallGraphClient, window_id) {
-                                 if win.x != new_x || win.y != new_y {
-                                     win.x = new_x;
-                                     win.y = new_y;
-                                     let _ = win.write(&mut graph_client, window_id);
-                                 }
-                             }
-                        }
-                        (Intent::ResizingWindow { window_id, edge, start_rect, start_px, start_py }, InteractionEvent::PointerMove { x, y, .. }) => {
-                             let dx = x - start_px;
-                             let dy = y - start_py;
-                             let mut new_rect = start_rect;
-                             const MIN_W: u32 = 50;
-                             const MIN_H: u32 = 50;
-
-                             match edge {
-                                 HitZone::ResizeE => {
-                                     let w = (start_rect.w as i32 + dx).max(MIN_W as i32);
-                                     new_rect.w = w as u32;
-                                 }
-                                 HitZone::ResizeS => {
-                                    let h = (start_rect.h as i32 + dy).max(MIN_H as i32);
-                                    new_rect.h = h as u32;
-                                 }
-                                 HitZone::ResizeSE => {
-                                     let w = (start_rect.w as i32 + dx).max(MIN_W as i32);
-                                     let h = (start_rect.h as i32 + dy).max(MIN_H as i32);
-                                     new_rect.w = w as u32;
-                                     new_rect.h = h as u32;
-                                 }
-                                 // Simple logic for now, more complex logic can be added
-                                 _ => {}
-                             }
-
-                             if let Ok(mut win) = Window::read(&SyscallGraphClient, window_id) {
-                                 if win.width != new_rect.w || win.height != new_rect.h {
-                                     win.width = new_rect.w;
-                                     win.height = new_rect.h;
-                                     let _ = win.write(&mut graph_client, window_id);
-                                 }
-                             }
-                        }
-                        (Intent::DraggingWindow { window_id, start_wx, start_wy, start_px, start_py }, InteractionEvent::PointerUp { x, y, .. }) => {
-                            let _ = WindowAction {
-                                window: window_id,
-                                kind: abi::ui::WindowActionKind::EndMove,
-                                start_x: start_wx,
-                                start_y: start_wy,
-                                dx: x - start_px,
-                                dy: y - start_py,
-                                edges: ResizeEdge::None,
-                            }.create(&mut graph_client);
-                            intent = Intent::Idle;
-                        }
-                        (Intent::ResizingWindow { window_id, edge, start_rect, start_px, start_py }, InteractionEvent::PointerUp { x, y, .. }) => {
-                             let edge_flag = match edge {
-                                HitZone::ResizeN => ResizeEdge::Top,
-                                HitZone::ResizeS => ResizeEdge::Bottom,
-                                HitZone::ResizeE => ResizeEdge::Right,
-                                HitZone::ResizeW => ResizeEdge::Left,
-                                HitZone::ResizeNW => ResizeEdge::TopLeft,
-                                HitZone::ResizeNE => ResizeEdge::TopRight,
-                                HitZone::ResizeSW => ResizeEdge::BottomLeft,
-                                HitZone::ResizeSE => ResizeEdge::BottomRight,
-                                _ => ResizeEdge::None,
-                            };
-                            let _ = WindowAction {
-                                window: window_id,
-                                kind: abi::ui::WindowActionKind::EndResize,
-                                start_x: start_rect.x,
-                                start_y: start_rect.y,
-                                dx: x - start_px,
-                                dy: y - start_py,
-                                edges: edge_flag,
-                            }.create(&mut graph_client);
-                            intent = Intent::Idle;
-                        }
-                        _ => {}
                     }
                 }
 
@@ -516,55 +431,30 @@ pub fn run() {
                     scene_dirty = true;
                 }
 
-                // Input handling happens before scene update
-                // Update active cursor based on drag mode or hit
-                
-                if let Intent::Idle = intent {
-                    // Simple hit testing for cursor update
-                    let (x, y) = (px, py);
-                    let mut found = false;
-                    let mut hover_needs_update = false;
-                    
-                    for scene in window_scenes.iter().rev() {
-                         let (wx, wy) = (scene.window.x, scene.window.y);
-                         let (ww, wh) = (scene.window.width, scene.window.height);
-                         
-                         if x >= wx && x < wx + ww as i32 && y >= wy && y < wy + wh as i32 {
-                             // Hit this window
-                             let (zone, _, _) = crate::ui::hittest::hittest_window(scene, x, y);
-                             let kind = match zone {
-                                 HitZone::Titlebar => {
-                                     CursorKind::Default
-                                 }, 
-                                 HitZone::Border => CursorKind::Default,
-                                 HitZone::ResizeN | HitZone::ResizeS => CursorKind::ResizeV,
-                                 HitZone::ResizeE | HitZone::ResizeW => CursorKind::ResizeH,
-                                 HitZone::ResizeNW | HitZone::ResizeSE => CursorKind::ResizeNWSE,
-                                 HitZone::ResizeNE | HitZone::ResizeSW => CursorKind::ResizeNESW,
-                                 HitZone::Content => CursorKind::Default,
-                                 _ => CursorKind::Default,
-                             };
-                             cursor_set.set_cursor(kind);
-                             found = true;
-                             break;
-                         }
-                    }
-                    if !found {
-                        cursor_set.set_cursor(CursorKind::Default);
-                    }
-                    cursor_set.set_override(None);
-                    if false && hover_needs_update && moved { // DISABLED: causes freeze
-                        scene_dirty = true;
-                    }
+                if let crate::interaction::Interaction::Idle = interaction_controller.interaction {
+                     // Cursor hover logic
+                     let target = crate::ui::hittest::hit_test_scene(&window_scenes, px, py);
+                     let kind = match target {
+                         crate::ui::hittest::HitTarget::WindowResize { edge, .. } => match edge {
+                             abi::ui::ResizeEdge::Top | abi::ui::ResizeEdge::Bottom => CursorKind::ResizeV,
+                             abi::ui::ResizeEdge::Left | abi::ui::ResizeEdge::Right => CursorKind::ResizeH,
+                             abi::ui::ResizeEdge::TopLeft | abi::ui::ResizeEdge::BottomRight => CursorKind::ResizeNWSE,
+                             abi::ui::ResizeEdge::TopRight | abi::ui::ResizeEdge::BottomLeft => CursorKind::ResizeNESW,
+                             _ => CursorKind::Default,
+                         },
+                         _ => CursorKind::Default,
+                     };
+                     cursor_set.set_cursor(kind);
+                     cursor_set.set_override(None);
                 } else {
-                    // In drag mode.
-                    let kind = match intent {
-                        Intent::DraggingWindow { .. } => CursorKind::Move,
-                        Intent::ResizingWindow { edge, .. } => match edge {
-                                 HitZone::ResizeN | HitZone::ResizeS => CursorKind::ResizeV,
-                                 HitZone::ResizeE | HitZone::ResizeW => CursorKind::ResizeH,
-                                 HitZone::ResizeNW | HitZone::ResizeSE => CursorKind::ResizeNWSE,
-                                 HitZone::ResizeNE | HitZone::ResizeSW => CursorKind::ResizeNESW,
+                     // Dragging cursor
+                    let kind = match interaction_controller.interaction {
+                        crate::interaction::Interaction::DragMove { .. } => CursorKind::Move,
+                        crate::interaction::Interaction::DragResize { edge, .. } => match edge {
+                                 abi::ui::ResizeEdge::Top | abi::ui::ResizeEdge::Bottom => CursorKind::ResizeV,
+                                 abi::ui::ResizeEdge::Left | abi::ui::ResizeEdge::Right => CursorKind::ResizeH,
+                                 abi::ui::ResizeEdge::TopLeft | abi::ui::ResizeEdge::BottomRight => CursorKind::ResizeNWSE,
+                                 abi::ui::ResizeEdge::TopRight | abi::ui::ResizeEdge::BottomLeft => CursorKind::ResizeNESW,
                                  _ => CursorKind::Default,
                         },
                         _ => CursorKind::Default,

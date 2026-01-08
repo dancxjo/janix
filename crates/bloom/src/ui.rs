@@ -34,7 +34,7 @@ const TITLE_FONT_SIZE: f32 = 14.0;
 const TITLE_TEXT_COLOR: u32 = 0xFF333333;
 /// Horizontal padding for title text
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum WidgetKind {
     Label(Label, String),
     Button(Button, String),
@@ -42,7 +42,7 @@ pub enum WidgetKind {
     DrawList(DrawList),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WindowScene {
     pub id: ThingId,
     pub window: Window,

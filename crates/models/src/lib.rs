@@ -79,6 +79,10 @@ pub struct Window {
     pub y: i32,
     pub width: u32,
     pub height: u32,
+    pub z: i32,
+    pub focused: bool,
+    pub min_width: u32,
+    pub min_height: u32,
     pub style: WindowStyle,
     pub content_root: ThingId,
 }

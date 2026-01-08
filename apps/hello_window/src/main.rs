@@ -35,6 +35,10 @@ pub fn main() {
         y: 100,
         width: 480,
         height: 272,
+        z: 0,
+        focused: false,
+        min_width: 200,
+        min_height: 100,
         style: WindowStyle {
             bg_rgba: 0xF5F5F5FF, 
             radius: 10,

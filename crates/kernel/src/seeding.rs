@@ -227,7 +227,16 @@ fn default_caps_for(name: &str) -> [Option<CapOp>; 8] {
             Some(CapOp::GraphWrite),
             None,
         ],
-        "clock" => [Some(CapOp::Log), Some(CapOp::MemManage), Some(CapOp::GraphRead), None, None, None, None, None],
+        "clock" => [
+            Some(CapOp::Log),
+            Some(CapOp::MemManage),
+            Some(CapOp::GraphCreate),
+            Some(CapOp::GraphLink),
+            Some(CapOp::GraphRead),
+            Some(CapOp::GraphWrite),
+            None,
+            None
+        ],
         "timed" => [
             Some(CapOp::Log),
             Some(CapOp::MemManage),

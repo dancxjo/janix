@@ -53,6 +53,10 @@ pub fn main() {
         y: 400,
         width: 200,
         height: 100,
+        z: 0,
+        focused: false,
+        min_width: 150,
+        min_height: 80,
         style: WindowStyle {
             bg_rgba: 0xFF111111,
             radius: 8,

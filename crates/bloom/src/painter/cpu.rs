@@ -16,6 +16,9 @@ pub struct CpuPainter<'a> {
     clip: Clip,
     clip_stack: Vec<Clip>,
     damage: Option<Rect>,
+    /// If true, asserts that we are in the executor phase on every pixel write.
+    /// This prevents accidental immediate-mode rendering into the scene buffer.
+    strict_mode: bool,
 }
 
 impl<'a> CpuPainter<'a> {
@@ -28,6 +31,7 @@ impl<'a> CpuPainter<'a> {
             clip: Clip::full(w, h),
             clip_stack: Vec::new(),
             damage: None,
+            strict_mode: false,
         }
     }
     
@@ -44,7 +48,11 @@ impl<'a> CpuPainter<'a> {
              Scene buffer writes must only occur during execute_cmds_into_scene or ChunkedExecutor::step."
         );
         
-        Self::new(buf, w, h)
+        // Enable strict mode to catch any leaks where is_executing() might flip to false 
+        // mid-execution (unlikely) or if this painter is leaked/moved.
+        let mut painter = Self::new(buf, w, h);
+        painter.strict_mode = true;
+        painter
     }
 
     /// Intersect a rect with the current clip.
@@ -78,6 +86,11 @@ impl<'a> CpuPainter<'a> {
     /// Write a pixel at (x, y) with bounds checking.
     #[inline]
     fn put_pixel(&mut self, x: i32, y: i32, color: u32) {
+        #[cfg(debug_assertions)]
+        if self.strict_mode {
+            debug_assert!(crate::executor::is_executing(), "pixel write outside execute phase");
+        }
+
         if let Some(idx) = self.pixel_idx(x, y) {
             self.buf[idx] = color;
         }
@@ -86,6 +99,11 @@ impl<'a> CpuPainter<'a> {
     /// Blend a pixel at (x, y) using alpha blending.
     #[inline]
     fn blend_at(&mut self, x: i32, y: i32, src: u32) {
+        #[cfg(debug_assertions)]
+        if self.strict_mode {
+            debug_assert!(crate::executor::is_executing(), "pixel write outside execute phase");
+        }
+
         if let Some(idx) = self.pixel_idx(x, y) {
             let dst = self.buf[idx];
             self.buf[idx] = blend_pixel(src, dst);
@@ -520,6 +538,11 @@ impl<'a> Painter for CpuPainter<'a> {
     }
 
     fn copy_region(&mut self, src: &[u32], src_w: u32, region: Rect) {
+        #[cfg(debug_assertions)]
+        if self.strict_mode {
+            debug_assert!(crate::executor::is_executing(), "pixel write outside execute phase");
+        }
+
         let clip = self.clip_rect(region);
         let x1 = clip.x.max(0) as u32;
         let y1 = clip.y.max(0) as u32;
@@ -539,94 +562,127 @@ impl<'a> Painter for CpuPainter<'a> {
     }
 
     fn draw_shadow_mask(&mut self, origin_x: i32, origin_y: i32, mask: ShadowMask<'_>, params: ShadowParams) {
-        let (mask_w, mask_h) = mask.dimensions();
+        let (w, h, radius) = match mask {
+            ShadowMask::RoundedRect { width, height, radius } => (width, height, radius),
+            ShadowMask::RoundedRectTop { width, height, radius } => (width, height, radius),
+            _ => return, 
+        };
+        let mask_w = w;
+        let mask_h = h;
         let blur = params.blur_radius as i32;
         
         if mask_w == 0 || mask_h == 0 { return; }
         
         // Use precomputed shadow cache for massive speedup
         if let Some(cache) = crate::shadow_cache::get_shadow_cache() {
-            let total_w = mask_w as i32 + blur * 2;
-            let total_h = mask_h as i32 + blur * 2;
-            
-            let shadow_x = origin_x + params.offset_x - blur;
-            let shadow_y = origin_y + params.offset_y - blur;
-            
-            let shadow_rect = Rect {
-                x: shadow_x,
-                y: shadow_y,
-                w: total_w as u32,
-                h: total_h as u32,
-            };
-            let clip = self.clip_rect(shadow_rect);
-            
-            let base_a = ((params.color >> 24) & 0xFF) as u32;
-            let tint = params.color & 0x00FF_FFFF;
-            
-            for screen_y in clip.y..(clip.y + clip.h as i32) {
-                let local_y = screen_y - shadow_y;
-                for screen_x in clip.x..(clip.x + clip.w as i32) {
-                    let local_x = screen_x - shadow_x;
-                    let alpha = cache.alpha_at(local_x, local_y, mask_w, mask_h);
-                    if alpha == 0 { continue; }
-                    
-                    let final_a = ((alpha as u32) * base_a / 255).min(255);
-                    if final_a == 0 { continue; }
-                    
-                    let src = (final_a << 24) | tint;
-                    self.blend_at(screen_x, screen_y, src);
-                }
+            if cache.blur_radius == params.blur_radius as u32 {
+                 let blur = params.blur_radius as i32;
+                 let shadow_x = origin_x + params.offset_x - blur;
+                 let shadow_y = origin_y + params.offset_y - blur;
+                 let shadow_w = mask_w as i32 + 2 * blur;
+                 let shadow_h = mask_h as i32 + 2 * blur;
+                 
+                 let shadow_rect = Rect {
+                     x: shadow_x,
+                     y: shadow_y,
+                     w: shadow_w as u32,
+                     h: shadow_h as u32,
+                 };
+                 
+                 let clip = self.clip_rect(shadow_rect);
+                 if clip.w == 0 || clip.h == 0 { return; }
+
+                 let base_a = ((params.color >> 24) & 0xFF) as u32;
+                 let tint = params.color & 0x00FF_FFFF;
+                 
+                 for py in clip.y..(clip.y + clip.h as i32) {
+                     for px in clip.x..(clip.x + clip.w as i32) {
+                         let local_x = px - shadow_x;
+                         let local_y = py - shadow_y;
+                         
+                         let alpha = cache.alpha_at(local_x, local_y, mask_w, mask_h);
+                         if alpha > 0 {
+                             let final_a = ((alpha as u32) * base_a / 255).min(255);
+                             let src = (final_a << 24) | tint;
+                             self.blend_at(px, py, src);
+                         }
+                     }
+                 }
+                 self.merge_damage(clip);
+                 return;
             }
-            self.merge_damage(clip);
-            return;
         }
+
+        #[cfg(debug_assertions)]
+        if self.strict_mode {
+             // In strict mode, we might want to warn about uncached shadows as they are slow
+             // thing_std::log_info("BLOOM: uncached shadow draw (slow)");
+        }
+
+        let blur = params.blur_radius as i32;
+        if blur <= 0 { return; }
+
+        let buf_w = (w as i32 + 2 * blur) as usize;
+        let buf_h = (h as i32 + 2 * blur) as usize;
         
-        // Fallback to original slow implementation if cache not initialized
+        let mut alpha_buf: Vec<u8> = vec![0u8; buf_w * buf_h];
 
-        if mask_w == 0 || mask_h == 0 {
-            return;
-        }
-
-        let buf_w = mask_w as i32 + blur * 2;
-        let buf_h = mask_h as i32 + blur * 2;
-        if buf_w <= 0 || buf_h <= 0 {
-            return;
-        }
-        let buf_w = buf_w as usize;
-        let buf_h = buf_h as usize;
-
-        // Rasterize mask into alpha buffer
-        let mut alpha_buf: Vec<u16> = vec![0u16; buf_w * buf_h];
-        for my in 0..buf_h {
-            let mask_y = my as i32 - blur;
-            for mx in 0..buf_w {
-                let mask_x = mx as i32 - blur;
-                let a = mask.alpha_at(mask_x, mask_y) as u16;
-                alpha_buf[my * buf_w + mx] = a;
+        // Draw the base rounded rect into alpha buffer
+        // Note: this is expensive allocation and drawing
+        
+        // Rasterize base shape
+        for dy in 0..h as i32 {
+            for dx in 0..w as i32 {
+                 // Simple rounded rect test
+                 let mut in_shape = true;
+                 if radius > 0 {
+                     let r = radius as i32;
+                     // check corners
+                     if dx < r && dy < r { // TL
+                         let dist_sq = (r - dx - 1) * (r - dx - 1) + (r - dy - 1) * (r - dy - 1);
+                         if dist_sq > r * r { in_shape = false; }
+                     } else if dx >= w as i32 - r && dy < r { // TR
+                         let dist_sq = (dx - (w as i32 - r)) * (dx - (w as i32 - r)) + (r - dy - 1) * (r - dy - 1);
+                         if dist_sq > r * r { in_shape = false; }
+                     } else if dx < r && dy >= h as i32 - r { // BL
+                         let dist_sq = (r - dx - 1) * (r - dx - 1) + (dy - (h as i32 - r)) * (dy - (h as i32 - r));
+                         if dist_sq > r * r { in_shape = false; }
+                     } else if dx >= w as i32 - r && dy >= h as i32 - r { // BR
+                         let dist_sq = (dx - (w as i32 - r)) * (dx - (w as i32 - r)) + (dy - (h as i32 - r)) * (dy - (h as i32 - r));
+                         if dist_sq > r * r { in_shape = false; }
+                     }
+                 }
+                 
+                 if in_shape {
+                     let bx = (dx + blur) as usize;
+                     let by = (dy + blur) as usize;
+                     alpha_buf[by * buf_w + bx] = 255;
+                 }
             }
         }
 
         // Horizontal box blur
-        if blur > 0 {
+        {
             let mut row_tmp: Vec<u16> = vec![0u16; buf_w];
             for y in 0..buf_h {
-                let row_start = y * buf_w;
                 for x in 0..buf_w {
                     let left = (x as i32 - blur).max(0) as usize;
                     let right = (x as i32 + blur).min(buf_w as i32 - 1) as usize;
                     let count = (right - left + 1) as u32;
                     let mut acc: u32 = 0;
                     for bx in left..=right {
-                        acc += alpha_buf[row_start + bx] as u32;
+                        acc += alpha_buf[y * buf_w + bx] as u32;
                     }
                     row_tmp[x] = (acc / count.max(1)) as u16;
                 }
                 for x in 0..buf_w {
-                    alpha_buf[row_start + x] = row_tmp[x];
+                     alpha_buf[y * buf_w + x] = row_tmp[x] as u8;
                 }
             }
+        }
 
-            // Vertical box blur
+        // Vertical box blur
+        {
             let mut col_tmp: Vec<u16> = vec![0u16; buf_h];
             for x in 0..buf_w {
                 for y in 0..buf_h {
@@ -639,8 +695,8 @@ impl<'a> Painter for CpuPainter<'a> {
                     }
                     col_tmp[y] = (acc / count.max(1)) as u16;
                 }
-                for y in 0..buf_h {
-                    alpha_buf[y * buf_w + x] = col_tmp[y];
+                 for y in 0..buf_h {
+                     alpha_buf[y * buf_w + x] = col_tmp[y] as u8;
                 }
             }
         }
@@ -745,6 +801,11 @@ impl<'a> Painter for CpuPainter<'a> {
 
 impl<'a> CpuPainter<'a> {
     pub fn draw_tiled_bitmap(&mut self, dst: Rect, bmp: &Bitmap, origin: Point) {
+        #[cfg(debug_assertions)]
+        if self.strict_mode {
+            debug_assert!(crate::executor::is_executing(), "pixel write outside execute phase");
+        }
+
         if bmp.w == 0 || bmp.h == 0 { return; }
         let clip = self.clip_rect(dst);
         

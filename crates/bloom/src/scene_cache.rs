@@ -203,16 +203,28 @@ impl Clone for WindowView {
 
 impl WindowView {
     pub fn from_scene(scene: WindowScene) -> Self {
-        let rect = Rect {
+        let mut rect = Rect {
             x: scene.window.x,
             y: scene.window.y,
             w: scene.window.width,
             h: scene.window.height,
         };
+        
+        // Phase 4: Damage Tracking v1
+        // Inflate rect if shadow is enabled to ensure we dirty the shadow region too.
+        // Shadow params (ui.rs): offset(2,3), blur(4). 
+        // We use a safe margin of 8px on all sides.
+        if scene.window.style.shadow > 0 {
+            rect.x -= 8;
+            rect.y -= 8;
+            rect.w += 16;
+            rect.h += 16;
+        }
+
         Self {
             id: scene.id,
             rect,
-            z: 0,
+            z: scene.window.z,
             title: Some(scene.window.title),
             mapped_surface: None,
             flags: 0,
@@ -299,10 +311,13 @@ impl SceneCache {
     }
 
     pub fn scenes_in_order(&self) -> Vec<WindowScene> {
-        self.windows
-            .values()
+        let mut views: Vec<_> = self.windows.values().collect();
+        // Sort by Z index ascending (painter logic paints back-to-front)
+        views.sort_by(|a, b| a.z.cmp(&b.z));
+        
+        views.into_iter()
             .map(|v| v.scene.clone())
-            .collect::<Vec<_>>()
+            .collect()
     }
 }
 

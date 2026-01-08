@@ -50,8 +50,17 @@ pub fn run() {
 
     let mut graph_client = SyscallGraphClient;
 
+    log_info("BLOOM: searching for device.display0");
+    let mut search_count = 0u32;
+    
     loop {
+        search_count += 1;
+        if search_count == 1 || search_count % 100 == 0 {
+            log_info(&alloc::format!("BLOOM: display search iter {}", search_count));
+        }
+        
         if let Some(display_id) = thing_find("device.display0") {
+            log_info(&alloc::format!("BLOOM: found display0 after {} iters", search_count));
             let (width, height) =
                 if let Ok(display) = DisplayDevice::read(&SyscallGraphClient, display_id) {
                      // Sanitize display dimensions to prevent overflow/panic
@@ -62,8 +71,10 @@ pub fn run() {
                      (1280u32, 720u32)
                  };
 
+            let display_bs_id = thing_find("bytespace.display0").expect("bytespace not found");
+            
             let mut backend = CpuBytespaceBackend::new(
-                thing_find("bytespace.display0").expect("bytespace not found"),
+                display_bs_id,
                 0xA000_0000u64,
             );
             backend.configure(SurfaceDesc {
@@ -78,36 +89,33 @@ pub fn run() {
             // Configure boot fade with display info
             // configure_display(0xA000_0000u64, width, height, width);
             
-            // --- START PRESENT LOOP ---
-            // Allocate config on heap to ensure validity when thread reads it
+            // Allocate shared buffers FIRST (before present_loop spawns)
+            let buffer_size = (width * height) as usize;
+            
+            // Use Box::leak to get a 'static slice that can be shared with present_loop
+            // This backbuffer will be continuously copied to hardware FB by present_loop
+            let frame_buffer_box = alloc::vec![background_color; buffer_size].into_boxed_slice();
+            let frame_buffer_ptr = alloc::boxed::Box::leak(frame_buffer_box);
+            let frame_buffer: &'static mut [u32] = frame_buffer_ptr;
+            
+            let mut background_cache = alloc::vec![background_color; buffer_size];
+            let mut scene_buffer = alloc::vec![background_color; buffer_size];
+            let mut cursor_overlay = CursorOverlay::new(width, height);
+
+            // Present solid background immediately (before anything else!)
+            backend.present(frame_buffer, DirtyRect { x: 0, y: 0, w: width, h: height });
+            log_info("BLOOM: first paint complete");
+
+            // --- START PRESENT LOOP (cadence only) ---
             let present_config = alloc::boxed::Box::new(PresentConfig {
-                fb_vaddr: 0xA000_0000,
                 width,
                 height,
-                stride: width, // assuming stride == width for now
             });
             let config_ptr = alloc::boxed::Box::into_raw(present_config) as u64;
             
             let _present_thread = thing_std::thread::thread_spawn(present_loop_entry, config_ptr);
             log_info("BLOOM: present thread spawned");
             // --------------------------
-
-            let buffer_size = (width * height) as usize;
-            let mut frame_buffer = alloc::vec![0u32; buffer_size];
-            let mut background_cache = alloc::vec![0u32; buffer_size];
-            let mut scene_buffer = alloc::vec![0u32; buffer_size];
-            let mut cursor_overlay = CursorOverlay::new(width, height);
-
-
-            // Initial paint
-            cursor_overlay.clear(frame_buffer.as_mut_slice(), background_color);
-            unsafe {
-                core::ptr::copy_nonoverlapping(frame_buffer.as_ptr(), background_cache.as_mut_ptr(), buffer_size);
-            }
-            if crate::boot_fade::WALLPAPER_READY.load(Ordering::Acquire) {
-                backend.present(frame_buffer.as_slice(), DirtyRect { x: 0, y: 0, w: width, h: height });
-            }
-            log_info("BLOOM: first paint complete");
 
             let mut cursor_set = CursorSet::new();
             cursor_set.load_all(0x8900_0000);
@@ -579,7 +587,7 @@ pub fn run() {
                 // === COMPOSITING PHASE ===
                 // 1. Copy executed scene to framebuffer (if scene changed)
                 if let Some(rect) = dirty {
-                     cursor_overlay.copy_region(scene_buffer.as_slice(), frame_buffer.as_mut_slice(), rect);
+                     cursor_overlay.copy_region(scene_buffer.as_slice(), frame_buffer, rect);
                 }
                 
                 // 2. Overlay cursor (IMMEDIATE MODE - the only exception)
@@ -598,7 +606,7 @@ pub fn run() {
                     
                     if let Some(cursor_damage) = cursor_overlay.present(
                         scene_buffer.as_slice(),
-                        frame_buffer.as_mut_slice(),
+                        frame_buffer,
                         px,
                         py,
                         cursor_frame,
@@ -612,17 +620,25 @@ pub fn run() {
                 }
 
                 // === PRESENT DECISION ===
-                // Only present if something actually changed
+                // Call backend.present() for any changed regions
                 if let Some(rect) = dirty {
-                    // Scene damage - present the damaged region
-                    if crate::boot_fade::WALLPAPER_READY.load(Ordering::Acquire) {
+                    backend.present(
+                        frame_buffer,
+                        DirtyRect { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
+                    );
+                    prev_px = px;
+                    prev_py = py;
+                    prev_buttons = buttons;
+                    sched_yield();
+                } else if cursor_dirty {
+                    if let Some(cursor_rect) = cursor_overlay.last_bounds() {
                         backend.present(
-                            frame_buffer.as_mut_slice(),
+                            frame_buffer,
                             DirtyRect {
-                                x: rect.x,
-                                y: rect.y,
-                                w: rect.w,
-                                h: rect.h,
+                                x: cursor_rect.x,
+                                y: cursor_rect.y,
+                                w: cursor_rect.w,
+                                h: cursor_rect.h,
                             },
                         );
                     }
@@ -630,27 +646,8 @@ pub fn run() {
                     prev_py = py;
                     prev_buttons = buttons;
                     sched_yield();
-                } else if cursor_dirty {
-                    // Cursor-only change - present cursor region
-                    if let Some(cursor_rect) = cursor_overlay.last_bounds() {
-                        if crate::boot_fade::WALLPAPER_READY.load(Ordering::Acquire) {
-                            backend.present(
-                                frame_buffer.as_mut_slice(),
-                                DirtyRect {
-                                    x: cursor_rect.x,
-                                    y: cursor_rect.y,
-                                    w: cursor_rect.w,
-                                    h: cursor_rect.h,
-                                },
-                            );
-                        }
-                    }
-                    prev_px = px;
-                    prev_py = py;
-                    prev_buttons = buttons;
-                    sched_yield();
                 } else {
-                    // IDLE: Nothing to present - sleep briefly to avoid busy-spin
+                    // IDLE: Nothing changed - sleep briefly
                     thing_std::time::sleep_ms(1);
                 }
             }

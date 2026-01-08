@@ -243,6 +243,7 @@ dependencies = [
 name = "bran"
 version = "0.1.0"
 dependencies = [
+ "kernel",
  "limine",
 ]
 
@@ -963,6 +964,10 @@ dependencies = [
  "once_cell",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "kernel"
+version = "0.1.0"
 
 [[package]]
 name = "lazy-regex"

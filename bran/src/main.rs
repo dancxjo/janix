@@ -2,6 +2,7 @@
 #![no_main]
 
 use core::arch::asm;
+use kernel::BootRuntime;
 
 use limine::BaseRevision;
 use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
@@ -25,6 +26,43 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[used]
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
+
+struct SerialPort;
+
+impl BootRuntime for SerialPort {
+    fn putchar(&self, c: u8) {
+        unsafe {
+            #[cfg(target_arch = "x86_64")]
+            {
+                // Wait for transmit empty
+                while (inb(0x3F8 + 5) & 0x20) == 0 {}
+                outb(0x3F8, c);
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                // UARTDR is at offset 0x0
+                // PL011 base address is 0x09000000 for qemu-virt
+                let base = 0x09000000 as *mut u8;
+                base.write_volatile(c);
+            }
+        }
+    }
+}
+
+// x86_64 helpers
+#[cfg(target_arch = "x86_64")]
+#[inline]
+unsafe fn outb(port: u16, val: u8) {
+    asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack, preserves_flags));
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+unsafe fn inb(port: u16) -> u8 {
+    let ret: u8;
+    asm!("in al, dx", out("al") ret, in("dx") port, options(nomem, nostack, preserves_flags));
+    ret
+}
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
@@ -51,7 +89,8 @@ unsafe extern "C" fn kmain() -> ! {
         }
     }
 
-    hcf();
+    let runtime = SerialPort;
+    kernel::start(runtime);
 }
 
 #[panic_handler]

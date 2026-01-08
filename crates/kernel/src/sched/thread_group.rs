@@ -1,6 +1,6 @@
 //! Thread Group - represents a shared address space and resources.
 //!
-//! All threads in a group share the same AddressSpace, heap, and capabilities.
+//! All threads in a group share the same AddressSpace and capabilities.
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -75,12 +75,6 @@ pub struct ThreadGroup {
     pub thing: ThingId,
     /// Shared address space for all threads in the group
     pub address_space: Arc<AddressSpace>,
-    /// Heap base address
-    pub heap_base: u64,
-    /// Current heap size
-    pub heap_size: u64,
-    /// Current heap break (brk)
-    pub heap_brk: u64,
     /// Capabilities granted to this group
     pub caps: Vec<Cap>,
     /// Number of active threads in this group
@@ -96,9 +90,6 @@ impl ThreadGroup {
             id,
             thing,
             address_space,
-            heap_base: 0x9000_0000,
-            heap_size: 0,
-            heap_brk: 0x9000_0000,
             caps: Vec::new(),
             thread_count: 1,
             stack_allocator: StackSlotAllocator::new(),

@@ -70,8 +70,8 @@ impl ArchTrap for TestArch {
 }
 
 pub struct AddressSpace {
-    // Mapping from Virt -> (Size, Perms)
-    pub mappings: BTreeMap<u64, (usize, MapPerms)>,
+    // Mapping from Virt -> (Phys, Size, Perms)
+    pub mappings: BTreeMap<u64, (u64, usize, MapPerms)>,
 }
 
 impl AddressSpace {
@@ -85,8 +85,8 @@ impl AddressSpace {
 
     pub fn activate(&self) {}
 
-    pub fn map(&mut self, virt: u64, _phys: u64, len: usize, perms: MapPerms) -> MapResult<()> {
-        self.mappings.insert(virt, (len, perms));
+    pub fn map(&mut self, virt: u64, phys: u64, len: usize, perms: MapPerms) -> MapResult<()> {
+        self.mappings.insert(virt, (phys, len, perms));
         Ok(())
     }
 
@@ -103,7 +103,7 @@ impl AddressSpace {
         // Naive check: does the start address fall into any mapped region with correct perms?
         // And does that region cover the whole length?
 
-        for (base, (size, map_perms)) in self.mappings.iter() {
+        for (base, (_phys, size, map_perms)) in self.mappings.iter() {
             let end = base + *size as u64;
             if start >= *base && (start + len as u64) <= end {
                 if map_perms.contains(perms) {
@@ -112,5 +112,14 @@ impl AddressSpace {
             }
         }
         false
+    }
+
+    pub fn translate(&self, virt: u64) -> Option<u64> {
+        for (base, (phys, size, _)) in self.mappings.iter() {
+            if virt >= *base && virt < *base + *size as u64 {
+                return Some(*phys + (virt - *base));
+            }
+        }
+        None
     }
 }

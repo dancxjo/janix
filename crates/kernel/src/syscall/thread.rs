@@ -32,6 +32,7 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
         };
 
         let address_space = task.address_space.clone();
+        let parent_caps = task.caps.clone(); // Inherit capabilities from parent
         let group_id = if task.group_id != 0 {
             task.group_id
         } else {
@@ -163,6 +164,9 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
         
         // Track user stack for reclamation on exit
         new_task.user_stack_top = user_stack_allocated;
+        
+        // Inherit capabilities from parent thread
+        new_task.caps = parent_caps;
 
         // Configure thread context
         use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext, TrapFrame};

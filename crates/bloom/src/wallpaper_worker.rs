@@ -1,3 +1,8 @@
+//! Wallpaper Worker - Asynchronous wallpaper loading
+//!
+//! Loads wallpaper in a background thread so it doesn't block boot.
+//! Main thread polls WALLPAPER_MBX for the result.
+
 use thing_std::memory::space_map;
 use thing_std::graph::thing_find;
 use thing_std::log_info;
@@ -17,13 +22,38 @@ pub static WALLPAPER_WORKER_STARTED: core::sync::atomic::AtomicBool = core::sync
 pub static WALLPAPER_WORKER_PHASE: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
 pub static WALLPAPER_MBX: thing_std::process::OneShotMailbox<WallpaperMsg> = thing_std::process::OneShotMailbox::new();
 
+/// Spawn the wallpaper worker thread.
+/// Worker loads wallpaper asynchronously and sends result via WALLPAPER_MBX.
 pub fn spawn_worker() {
-    // For now, loading wallpaper synchronously in the main thread is safer 
-    // due to heap performance issues in worker threads.
+    let _worker_thread = thing_std::thread::thread_spawn(wallpaper_worker_entry, 0);
 }
 
-pub fn load_wallpaper_sync() -> Option<WallpaperMsg> {
-    log_info("BLOOM: loading wallpaper sync");
+/// Wallpaper worker thread entry point
+pub extern "C" fn wallpaper_worker_entry(_arg: u64) -> ! {
+    WALLPAPER_WORKER_STARTED.store(true, core::sync::atomic::Ordering::Release);
+    WALLPAPER_WORKER_PHASE.store(1, core::sync::atomic::Ordering::Release);
+    log_info("BLOOM WALLPAPER: worker started");
+    
+    // Do the actual loading work
+    if let Some(msg) = load_wallpaper_impl() {
+        WALLPAPER_WORKER_PHASE.store(3, core::sync::atomic::Ordering::Release);
+        log_info(&format!("BLOOM WALLPAPER: loaded {}x{}, sending to main", msg.width, msg.height));
+        let _ = WALLPAPER_MBX.send(msg);
+    } else {
+        WALLPAPER_WORKER_PHASE.store(4, core::sync::atomic::Ordering::Release);
+        log_info("BLOOM WALLPAPER: failed to load wallpaper");
+    }
+    
+    // Worker done, just idle forever (thread will be cleaned up eventually)
+    loop {
+        thing_std::sched_yield();
+    }
+}
+
+/// Load wallpaper from bytespace (called by worker thread)
+fn load_wallpaper_impl() -> Option<WallpaperMsg> {
+    WALLPAPER_WORKER_PHASE.store(2, core::sync::atomic::Ordering::Release);
+    log_info("BLOOM WALLPAPER: finding bytespace");
     
     let bs_id = thing_find(::theme::current::WALLPAPER_BYTESPACE)?;
     
@@ -32,21 +62,15 @@ pub fn load_wallpaper_sync() -> Option<WallpaperMsg> {
     
     let actual_va = space_map(bs_id, hint_va, 0, map_size);
     if actual_va == 0 {
-        log_info("BLOOM: wallpaper space_map failed");
+        log_info("BLOOM WALLPAPER: space_map failed");
         return None;
     }
     
-    log_info(&format!("BLOOM: wallpaper mapped at {:#x}", actual_va));
+    log_info(&format!("BLOOM WALLPAPER: mapped at {:#x}", actual_va));
     
-    // --- BLOOM PANIC TRAP ---
-    if actual_va == 0 {
-        log_info("BLOOM BUG: load_wallpaper_sync: actual_va is 0");
-        return None;
-    }
-
     // Defensive length check
     if (map_size as usize) > isize::MAX as usize {
-        log_info("BLOOM: wallpaper mapping size exceeds isize::MAX");
+        log_info("BLOOM WALLPAPER: mapping size exceeds isize::MAX");
         return None;
     }
     let data = unsafe { 
@@ -56,7 +80,7 @@ pub fn load_wallpaper_sync() -> Option<WallpaperMsg> {
     // Parse BMP
     let (width, height, pixels) = crate::assets::bitmap::parse_bmp_to_argb(data)?;
     
-    log_info(&format!("BLOOM: wallpaper parsed {}x{}", width, height));
+    log_info(&format!("BLOOM WALLPAPER: parsed {}x{}", width, height));
     
     let dominant = crate::assets::bitmap::compute_dominant_color(&pixels);
     
@@ -66,4 +90,11 @@ pub fn load_wallpaper_sync() -> Option<WallpaperMsg> {
         pixels,
         dominant_color: dominant,
     })
+}
+
+/// Load wallpaper synchronously (legacy, kept for fallback/testing)
+#[allow(dead_code)]
+pub fn load_wallpaper_sync() -> Option<WallpaperMsg> {
+    log_info("BLOOM: loading wallpaper sync");
+    load_wallpaper_impl()
 }

@@ -108,3 +108,49 @@ pub fn set_current_caps(tid: TaskId, caps: Vec<abi::cap::Cap>) {
     let task = sched.tasks.iter_mut().find(|t| t.id == tid).expect("test task missing");
     task.caps = caps;
 }
+
+pub fn spawn_sibling_task(parent_tid: TaskId) -> TaskId {
+    setup_test_context();
+
+    let new_tid = TaskId(NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed));
+
+    let (address_space, caps, group_id) = {
+        let guard = SCHEDULER.lock();
+        let sched = guard.as_ref().unwrap();
+        let parent = sched
+            .tasks
+            .iter()
+            .find(|t| t.id == parent_tid)
+            .expect("parent task missing");
+        (parent.address_space.clone(), parent.caps.clone(), parent.group_id)
+    };
+
+    let mut guard = SCHEDULER.lock();
+    let sched = guard.as_mut().unwrap();
+    let thing = ThingId(new_tid.0 as u128);
+    let mut task = Task::new(new_tid, thing, 0x20000, address_space);
+    task.state = TaskState::Ready;
+    task.caps = caps;
+    task.group_id = group_id;
+    sched.tasks.push(task);
+
+    new_tid
+}
+
+pub fn set_current_task(tid: TaskId) {
+    let mut guard = SCHEDULER.lock();
+    if let Some(sched) = guard.as_mut() {
+        sched.cpu.current_task = tid;
+        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == tid) {
+            task.state = TaskState::Running;
+        }
+    }
+}
+
+pub fn translate_user_virt(tid: TaskId, virt: u64) -> Option<*mut u8> {
+    let guard = SCHEDULER.lock();
+    let sched = guard.as_ref()?;
+    let task = sched.tasks.iter().find(|t| t.id == tid)?;
+    let arch = task.address_space.arch.lock();
+    arch.translate(virt).map(|p| p as *mut u8)
+}

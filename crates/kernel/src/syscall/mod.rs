@@ -14,3 +14,5 @@ pub mod user_mem;
 
 #[cfg(test)]
 pub mod host_tests;
+#[cfg(test)]
+mod memory_tests;

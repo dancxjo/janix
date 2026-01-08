@@ -53,7 +53,41 @@ pub fn parse_bmp_to_argb(data: &[u8]) -> Option<(u32, u32, Arc<[u32]>)> {
     let bpp = u16::from_le_bytes(data[28..30].try_into().ok()?) as u16;
     
     let abs_height = height.abs() as u32;
-    let mut pixels = alloc::vec![0u32; (width * abs_height) as usize];
+    
+    // Diagnostic: log what we parsed
+    thing_std::log_info(&alloc::format!(
+        "BMP: header offset={} w={} h={} bpp={} datalen={}",
+        offset, width, height, bpp, data.len()
+    ));
+    
+    // Validate dimensions - prevent insane allocations
+    const MAX_DIM: u32 = 4096;
+    if width == 0 || abs_height == 0 || width > MAX_DIM || abs_height > MAX_DIM {
+        thing_std::log_info(&alloc::format!(
+            "BMP: invalid dimensions {}x{} (max {}x{})",
+            width, abs_height, MAX_DIM, MAX_DIM
+        ));
+        return None;
+    }
+    
+    // Also validate offset is sane
+    let pixel_count = (width as usize) * (abs_height as usize);
+    let needed_bytes = if bpp == 24 { 
+        offset + pixel_count * 3 
+    } else if bpp == 32 { 
+        offset + pixel_count * 4 
+    } else {
+        return None;
+    };
+    if needed_bytes > data.len() {
+        thing_std::log_info(&alloc::format!(
+            "BMP: data too small - need {} bytes, have {}",
+            needed_bytes, data.len()
+        ));
+        return None;
+    }
+    
+    let mut pixels = alloc::vec![0u32; pixel_count];
     
     if bpp == 24 {
         let padding = (4 - (width * 3) % 4) % 4;

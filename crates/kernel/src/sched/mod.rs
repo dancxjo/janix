@@ -187,9 +187,7 @@ pub fn configure_task_memory(
 ) {
     with_sched(|sched| {
         if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == id) {
-            t.heap_base = heap.0;
-            t.heap_size = heap.1;
-            t.heap_brk = heap.2;
+            t.address_space.set_heap_state(heap.0, heap.1, heap.2);
         }
     });
 }

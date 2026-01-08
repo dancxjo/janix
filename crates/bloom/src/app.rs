@@ -19,17 +19,17 @@ use crate::ui::hittest::hittest_window;
 use crate::cursor_manager::{CursorSet, CursorKind};
 use crate::cursor_overlay::CursorOverlay;
 use crate::chunked_executor::ChunkedExecutor;
-use crate::wallpaper_worker::{WALLPAPER_MBX, load_wallpaper_sync};
-use crate::boot_fade::{WALLPAPER_READY, CURRENT_BG_COLOR, boot_fade_entry, configure_display};
+use crate::wallpaper_worker::WALLPAPER_MBX;
+use crate::boot_fade::{WALLPAPER_READY, CURRENT_BG_COLOR};
 use crate::input_worker::{InputWorkerConfig, INPUT_CONFIG_MBX, INPUT_STATE, input_worker_entry, INPUT_WORKER_STARTED, INPUT_WORKER_TICKS, INPUT_EVENTS_DRAINED};
 use crate::wallpaper_worker::{WALLPAPER_WORKER_STARTED, WALLPAPER_WORKER_PHASE};
-use crate::present_loop::{PresentConfig, present_loop_entry};
+use crate::present_loop::{PresentConfig, PresentState, present_loop_entry};
 use core::sync::atomic::Ordering;
 
 
 use crate::assets::cursor::CursorFrame;
 use crate::assets::bitmap::BitmapStore;
-use crate::backend::*;
+
 
 const WATCH_WAIT_TIMEOUT_TICKS: u64 = 0;
 
@@ -61,55 +61,57 @@ pub fn run() {
         
         if let Some(display_id) = thing_find("device.display0") {
             log_info(&alloc::format!("BLOOM: found display0 after {} iters", search_count));
+            
             let (width, height) =
                 if let Ok(display) = DisplayDevice::read(&SyscallGraphClient, display_id) {
-                     // Sanitize display dimensions to prevent overflow/panic
                      let w = if display.width > 4096 || display.width == 0 { 1280 } else { display.width };
                      let h = if display.height > 4096 || display.height == 0 { 720 } else { display.height };
                      (w, h)
                  } else {
                      (1280u32, 720u32)
                  };
+            log_info(&alloc::format!("BLOOM: display {}x{}", width, height));
 
             let display_bs_id = thing_find("bytespace.display0").expect("bytespace not found");
+            log_info("BLOOM: bytespace found");
             
-            let mut backend = CpuBytespaceBackend::new(
-                display_bs_id,
-                0xA000_0000u64,
-            );
-            backend.configure(SurfaceDesc {
-                width,
-                height,
-                stride_pixels: width,
-            });
+            // Display mapping params - present thread will do the actual mapping
+            let fb_base = 0xA000_0000u64;
+            let fb_bytes = (width as u64) * (height as u64) * 4;
             
-            // Initialize input state with screen center immediately (before first paint)
+            // NOTE: We do NOT map display here - the present thread maps it itself
+            // This proves that the shared address space works (all threads share page tables)
+            log_info(&alloc::format!("BLOOM: display will be mapped by present thread at {:#x}", fb_base));
+            
             INPUT_STATE.init(width, height);
 
-            // Configure boot fade with display info
-            // configure_display(0xA000_0000u64, width, height, width);
-            
-            // Allocate shared buffers FIRST (before present_loop spawns)
+            // Allocate shared buffers
             let buffer_size = (width * height) as usize;
+            log_info(&alloc::format!("BLOOM: allocating {}KB", buffer_size * 4 / 1024));
             
-            // Use Box::leak to get a 'static slice that can be shared with present_loop
-            // This backbuffer will be continuously copied to hardware FB by present_loop
             let frame_buffer_box = alloc::vec![background_color; buffer_size].into_boxed_slice();
             let frame_buffer_ptr = alloc::boxed::Box::leak(frame_buffer_box);
             let frame_buffer: &'static mut [u32] = frame_buffer_ptr;
             
-            let mut background_cache = alloc::vec![background_color; buffer_size];
+            let _background_cache = alloc::vec![background_color; buffer_size];
             let mut scene_buffer = alloc::vec![background_color; buffer_size];
             let mut cursor_overlay = CursorOverlay::new(width, height);
+            log_info("BLOOM: buffers allocated");
 
-            // Present solid background immediately (before anything else!)
-            backend.present(frame_buffer, DirtyRect { x: 0, y: 0, w: width, h: height });
-            log_info("BLOOM: first paint complete");
+            // --- CREATE SHARED PRESENT STATE ---
+            // Present thread will map display bytespace and set hw_fb_ptr
+            let present_state_box = alloc::boxed::Box::new(PresentState::new());
+            let present_state: &'static mut PresentState = alloc::boxed::Box::leak(present_state_box);
+            present_state.init(frame_buffer.as_ptr(), width, height);
+            log_info("BLOOM: present state initialized (dirty=true)");
 
-            // --- START PRESENT LOOP (cadence only) ---
+            // --- START PRESENT LOOP (real frame pump) ---
+            // Pass display bytespace info so present thread can map it
             let present_config = alloc::boxed::Box::new(PresentConfig {
-                width,
-                height,
+                state: present_state as *const PresentState,
+                display_bs_id: display_bs_id.0,
+                fb_vaddr: fb_base,
+                fb_bytes,
             });
             let config_ptr = alloc::boxed::Box::into_raw(present_config) as u64;
             
@@ -125,19 +127,9 @@ pub fn run() {
             let mut bitmap_store = BitmapStore::new();
             let mut wallpaper_handle: Option<(crate::assets::bitmap::BitmapHandle, u32, u32)> = None;
 
-            // Load wallpaper synchronously (worker thread heap too slow)
-            if let Some(wp) = load_wallpaper_sync() {
-                log_info(&alloc::format!(
-                    "BLOOM: wallpaper loaded {}x{}", wp.width, wp.height
-                ));
-                let bmp = crate::assets::bitmap::Bitmap {
-                    w: wp.width,
-                    h: wp.height,
-                    pixels: alloc::sync::Arc::from(wp.pixels),
-                };
-                wallpaper_handle = Some((bitmap_store.add(bmp), wp.width, wp.height));
-                WALLPAPER_READY.store(true, core::sync::atomic::Ordering::Release);
-            }
+            // Spawn wallpaper worker thread (loads asynchronously, doesn't block boot)
+            crate::wallpaper_worker::spawn_worker();
+            log_info("BLOOM: wallpaper worker spawned (async load)");
             
             // Spawn input worker thread (drains ringbuffer, publishes atomics)
             // Also keep a fallback PointerInput for main thread in case worker fails
@@ -286,11 +278,12 @@ pub fn run() {
                 unsafe {
                     if now_ms >= LAST_DIAG_MS + diag_interval {
                         let wp_started = WALLPAPER_WORKER_STARTED.load(Ordering::Acquire);
-                        let inp_started = INPUT_WORKER_STARTED.load(Ordering::Acquire);
-                        let inp_ticks = INPUT_WORKER_TICKS.load(Ordering::Acquire);
+                        let pres_alive = present_state.is_alive();
+                        let pres_frames = present_state.frames_presented.load(Ordering::Relaxed);
+                        let hw_fb = present_state.get_hw_fb_ptr() as u64;
                         log_info(&alloc::format!(
-                            "BLOOM DIAG: wp_started={} wp_phase={} inp_started={} inp_ticks={} events_drained={}",
-                            wp_started, WALLPAPER_WORKER_PHASE.load(Ordering::Acquire), inp_started, inp_ticks, INPUT_EVENTS_DRAINED.load(Ordering::Relaxed)
+                            "BLOOM DIAG: pres_alive={} pres_frames={} hw_fb={:#x} wp_phase={}",
+                            pres_alive, pres_frames, hw_fb, WALLPAPER_WORKER_PHASE.load(Ordering::Acquire)
                         ));
                         LAST_DIAG_MS = now_ms;
                     }
@@ -620,28 +613,9 @@ pub fn run() {
                 }
 
                 // === PRESENT DECISION ===
-                // Call backend.present() for any changed regions
-                if let Some(rect) = dirty {
-                    backend.present(
-                        frame_buffer,
-                        DirtyRect { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
-                    );
-                    prev_px = px;
-                    prev_py = py;
-                    prev_buttons = buttons;
-                    sched_yield();
-                } else if cursor_dirty {
-                    if let Some(cursor_rect) = cursor_overlay.last_bounds() {
-                        backend.present(
-                            frame_buffer,
-                            DirtyRect {
-                                x: cursor_rect.x,
-                                y: cursor_rect.y,
-                                w: cursor_rect.w,
-                                h: cursor_rect.h,
-                            },
-                        );
-                    }
+                // Mark dirty flag for present thread to pick up
+                if dirty.is_some() || cursor_dirty {
+                    present_state.mark_dirty();
                     prev_px = px;
                     prev_py = py;
                     prev_buttons = buttons;

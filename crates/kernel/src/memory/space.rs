@@ -9,6 +9,26 @@ use alloc::vec::Vec;
 use spin::Mutex;
 
 #[derive(Clone, Copy, Debug)]
+pub struct HeapState {
+    pub base: u64,
+    pub brk: u64,
+    /// Optional heap limit (exclusive). None means unbounded.
+    pub limit: Option<u64>,
+}
+
+impl HeapState {
+    pub const fn new(base: u64, limit: Option<u64>) -> Self {
+        Self {
+            base,
+            brk: base,
+            limit,
+        }
+    }
+}
+
+pub const DEFAULT_HEAP_BASE: u64 = 0x9000_0000;
+
+#[derive(Clone, Copy, Debug)]
 pub struct UserMapping {
     start: u64,
     end: u64,
@@ -201,6 +221,7 @@ impl UserMappings {
 pub struct AddressSpace {
     pub id: ThingId,
     pub arch: Mutex<ArchAddressSpace>,
+    heap: Mutex<HeapState>,
     user_mappings: UserMappings,
 }
 
@@ -210,6 +231,7 @@ impl AddressSpace {
         Ok(Self {
             id,
             arch: Mutex::new(ArchAddressSpace::new()?),
+            heap: Mutex::new(HeapState::new(DEFAULT_HEAP_BASE, None)),
             user_mappings: UserMappings::new(),
         })
     }
@@ -236,12 +258,32 @@ impl AddressSpace {
         Ok(Self {
             id,
             arch: Mutex::new(arch),
+            heap: Mutex::new(HeapState::new(DEFAULT_HEAP_BASE, None)),
             user_mappings: UserMappings::new(),
         })
     }
 
     pub fn activate(&self) {
         self.arch.lock().activate();
+    }
+
+    pub fn heap_state(&self) -> HeapState {
+        *self.heap.lock()
+    }
+
+    pub fn set_heap_state(&self, base: u64, size: u64, brk: u64) {
+        let mut heap = self.heap.lock();
+        heap.base = base;
+        heap.limit = size.checked_add(base);
+        heap.brk = brk.max(base);
+    }
+
+    pub fn with_heap_state<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut HeapState) -> R,
+    {
+        let mut heap = self.heap.lock();
+        f(&mut heap)
     }
 
     pub fn user_mappings(&self) -> &UserMappings {

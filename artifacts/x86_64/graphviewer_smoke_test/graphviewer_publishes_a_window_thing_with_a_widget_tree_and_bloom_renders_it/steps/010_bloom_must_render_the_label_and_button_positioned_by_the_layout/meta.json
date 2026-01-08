@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "GraphViewer smoke test",
+  "scenario": "graphviewer publishes a Window Thing with a widget tree and Bloom renders it",
+  "step": {
+    "index": 10,
+    "text": "Bloom must render the Label and Button positioned by the Layout",
+    "status": "passed",
+    "timestamp": "2026-01-08T04:49:19.994036194+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

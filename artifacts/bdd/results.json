@@ -47,6 +47,11 @@
           "arches": {
             "x86_64": "passed"
           }
+        },
+        "graphviewer publishes a Window Thing with a widget tree and Bloom renders it": {
+          "arches": {
+            "x86_64": "passed"
+          }
         }
       }
     }

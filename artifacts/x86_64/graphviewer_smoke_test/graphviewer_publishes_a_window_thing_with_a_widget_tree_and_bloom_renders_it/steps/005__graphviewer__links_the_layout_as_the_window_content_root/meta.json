@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "GraphViewer smoke test",
+  "scenario": "graphviewer publishes a Window Thing with a widget tree and Bloom renders it",
+  "step": {
+    "index": 5,
+    "text": "\"graphviewer\" links the Layout as the Window content root",
+    "status": "passed",
+    "timestamp": "2026-01-08T04:48:19.820456798+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

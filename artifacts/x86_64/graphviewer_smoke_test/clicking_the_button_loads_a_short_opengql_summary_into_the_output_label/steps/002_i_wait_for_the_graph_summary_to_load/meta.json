@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "GraphViewer smoke test",
+  "scenario": "Clicking the button loads a short OpenGQL summary into the output label",
+  "step": {
+    "index": 2,
+    "text": "I wait for the graph summary to load",
+    "status": "passed",
+    "timestamp": "2026-01-08T04:12:02.449020336+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

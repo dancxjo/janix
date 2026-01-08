@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "GraphViewer smoke test",
+  "scenario": "Clicking the button loads a short OpenGQL summary into the output label",
+  "step": {
+    "index": 4,
+    "text": "the output label should contain \"RETURN\"",
+    "status": "passed",
+    "timestamp": "2026-01-08T04:13:02.631415885+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

@@ -149,7 +149,7 @@ pub fn run(env: &str) -> Result<()> {
         "drivers/rtc_cmos",
         "drivers/rtc_pl031",
         "apps/pcid",
-        "apps/hello_window",
+        "apps/graphviewer",
         "apps/thread_test",
         "apps/textd",
     ];

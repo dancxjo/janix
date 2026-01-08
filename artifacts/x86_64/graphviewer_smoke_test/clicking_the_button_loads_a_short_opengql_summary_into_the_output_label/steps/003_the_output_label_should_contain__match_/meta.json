@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "GraphViewer smoke test",
+  "scenario": "Clicking the button loads a short OpenGQL summary into the output label",
+  "step": {
+    "index": 3,
+    "text": "the output label should contain \"MATCH\"",
+    "status": "passed",
+    "timestamp": "2026-01-08T04:12:32.537971592+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

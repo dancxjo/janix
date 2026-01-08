@@ -84,7 +84,7 @@ pub fn run(env: String, cmdline: Option<String>, init_module: Option<String>) ->
         "rtc_cmos",
         "rtc_pl031",
         "pcid",
-        "hello_window",
+        "graphviewer",
         "thread_test",
         "textd",
     ];

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "GraphViewer smoke test",
+  "scenario": "Clicking the button loads a short OpenGQL summary into the output label",
+  "step": {
+    "index": 0,
+    "text": "an app \"graphviewer\" is started as a user task",
+    "status": "passed",
+    "timestamp": "2026-01-08T04:11:32.349931214+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

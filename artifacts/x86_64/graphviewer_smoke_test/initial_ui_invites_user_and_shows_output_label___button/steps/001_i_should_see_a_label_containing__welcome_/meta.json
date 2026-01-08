@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "arch": "x86_64",
+  "feature": "GraphViewer smoke test",
+  "scenario": "Initial UI invites user and shows output label + button",
+  "step": {
+    "index": 1,
+    "text": "I should see a label containing \"Welcome\"",
+    "status": "passed",
+    "timestamp": "2026-01-08T04:09:01.883074453+00:00"
+  },
+  "artifacts": {
+    "screenshot": null,
+    "serial_tail": null
+  }
+}

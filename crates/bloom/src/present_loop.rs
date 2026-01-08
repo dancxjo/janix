@@ -33,6 +33,8 @@ pub struct PresentState {
     pub pixel_count: u32,
     /// Set by main thread when frame buffer has new content
     pub dirty: AtomicBool,
+    /// Initial fill color (used before frame_ptr is ready)
+    pub initial_color: AtomicU32,
     /// Counter for telemetry - frames successfully presented
     pub frames_presented: AtomicU32,
     /// Flag indicating if present thread is alive
@@ -53,9 +55,25 @@ impl PresentState {
             height: 0,
             pixel_count: 0,
             dirty: AtomicBool::new(false),
+            initial_color: AtomicU32::new(0xFF336699), // Default: Bloom theme blue
             frames_presented: AtomicU32::new(0),
             alive: AtomicBool::new(false),
         }
+    }
+    
+    /// Initialize early with just display info (for early thread spawn, no frame_ptr yet)
+    pub fn init_early(&mut self, width: u32, height: u32, initial_color: u32) {
+        self.width = width;
+        self.height = height;
+        self.pixel_count = width * height;
+        self.initial_color.store(initial_color, Ordering::Release);
+        // frame_ptr stays null - will be set later by set_frame_ptr
+    }
+    
+    /// Set frame_ptr after allocation (called by main thread)
+    pub fn set_frame_ptr(&mut self, frame_ptr: *const u32) {
+        self.frame_ptr = frame_ptr;
+        self.dirty.store(true, Ordering::Release); // Frame is now ready
     }
     
     /// Initialize with frame buffer info (NOT hw_fb_ptr - that's mapped by present thread)
@@ -160,11 +178,24 @@ pub extern "C" fn present_loop_entry(arg: u64) -> ! {
     state.set_hw_fb_ptr(hw_fb_ptr);
     state.frames_presented.store(2, Ordering::Release);
     
+    // IMMEDIATELY fill display with initial color - this is the "early present"!
+    let initial_color = state.initial_color.load(Ordering::Acquire);
+    let pixel_count = state.pixel_count as usize;
+    if pixel_count > 0 {
+        unsafe {
+            for i in 0..pixel_count {
+                hw_fb_ptr.add(i).write_volatile(initial_color);
+            }
+        }
+        log_info(&alloc::format!(
+            "[PRESENT] 5: showing initial color {:#x} on {}x{}",
+            initial_color, state.width, state.height
+        ));
+    }
+    
     log_info(&alloc::format!(
-        "[PRESENT] 5: ready - hw_fb={:#x}, frame={:#x}, {}x{}",
-        hw_fb_ptr as usize,
-        state.frame_ptr as usize,
-        state.width, state.height
+        "[PRESENT] 6: ready - hw_fb={:#x}, frame={:#x}",
+        hw_fb_ptr as usize, state.frame_ptr as usize
     ));
     
     let mut frame_count: u32 = 2;
@@ -172,9 +203,10 @@ pub extern "C" fn present_loop_entry(arg: u64) -> ! {
     loop {
         // Check if main thread marked frame as dirty
         if state.dirty.swap(false, Ordering::AcqRel) {
-            // Copy entire frame from backbuffer to hardware framebuffer
+            let count = state.pixel_count as usize;
+            
             if !state.frame_ptr.is_null() && !hw_fb_ptr.is_null() {
-                let count = state.pixel_count as usize;
+                // Copy from backbuffer to hardware framebuffer
                 unsafe {
                     core::ptr::copy_nonoverlapping(
                         state.frame_ptr,
@@ -182,15 +214,18 @@ pub extern "C" fn present_loop_entry(arg: u64) -> ! {
                         count,
                     );
                 }
-                
-                frame_count = frame_count.wrapping_add(1);
-                state.frames_presented.store(frame_count, Ordering::Relaxed);
-                
-                // Log periodically (every ~1 second at 60fps)
-                if frame_count % 60 == 0 {
-                    log_info(&alloc::format!("[PRESENT] frame n={}", frame_count));
+            } else if !hw_fb_ptr.is_null() {
+                // Frame buffer not ready yet - fill with initial color
+                let color = state.initial_color.load(Ordering::Relaxed);
+                unsafe {
+                    for i in 0..count {
+                        hw_fb_ptr.add(i).write_volatile(color);
+                    }
                 }
             }
+            
+            frame_count = frame_count.wrapping_add(1);
+            state.frames_presented.store(frame_count, Ordering::Relaxed);
         }
 
         thing_std::time::sleep_ms(BLOOM_TIMEFRAME_MS);

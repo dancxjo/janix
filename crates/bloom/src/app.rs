@@ -79,13 +79,29 @@ pub fn run() {
             let fb_base = 0xA000_0000u64;
             let fb_bytes = (width as u64) * (height as u64) * 4;
             
-            // NOTE: We do NOT map display here - the present thread maps it itself
-            // This proves that the shared address space works (all threads share page tables)
-            log_info(&alloc::format!("BLOOM: display will be mapped by present thread at {:#x}", fb_base));
+            // --- CREATE SHARED PRESENT STATE (EARLY) ---
+            // Spawn present thread NOW before heavy allocations - it will show initial color
+            let present_state_box = alloc::boxed::Box::new(PresentState::new());
+            let present_state: &'static mut PresentState = alloc::boxed::Box::leak(present_state_box);
+            present_state.init_early(width, height, background_color);
+            log_info("BLOOM: present state initialized (early, no frame_ptr yet)");
+            
+            // Pass display bytespace info so present thread can map it
+            let present_config = alloc::boxed::Box::new(PresentConfig {
+                state: present_state as *const PresentState,
+                display_bs_id: display_bs_id.0,
+                fb_vaddr: fb_base,
+                fb_bytes,
+            });
+            let config_ptr = alloc::boxed::Box::into_raw(present_config) as u64;
+            
+            let _present_thread = thing_std::thread::thread_spawn(present_loop_entry, config_ptr);
+            log_info("BLOOM: present thread spawned EARLY (before buffer alloc)");
+            // --------------------------
             
             INPUT_STATE.init(width, height);
 
-            // Allocate shared buffers
+            // NOW do heavy allocations - present thread is already running
             let buffer_size = (width * height) as usize;
             log_info(&alloc::format!("BLOOM: allocating {}KB", buffer_size * 4 / 1024));
             
@@ -97,27 +113,11 @@ pub fn run() {
             let mut scene_buffer = alloc::vec![background_color; buffer_size];
             let mut cursor_overlay = CursorOverlay::new(width, height);
             log_info("BLOOM: buffers allocated");
-
-            // --- CREATE SHARED PRESENT STATE ---
-            // Present thread will map display bytespace and set hw_fb_ptr
-            let present_state_box = alloc::boxed::Box::new(PresentState::new());
-            let present_state: &'static mut PresentState = alloc::boxed::Box::leak(present_state_box);
-            present_state.init(frame_buffer.as_ptr(), width, height);
-            log_info("BLOOM: present state initialized (dirty=true)");
-
-            // --- START PRESENT LOOP (real frame pump) ---
-            // Pass display bytespace info so present thread can map it
-            let present_config = alloc::boxed::Box::new(PresentConfig {
-                state: present_state as *const PresentState,
-                display_bs_id: display_bs_id.0,
-                fb_vaddr: fb_base,
-                fb_bytes,
-            });
-            let config_ptr = alloc::boxed::Box::into_raw(present_config) as u64;
             
-            let _present_thread = thing_std::thread::thread_spawn(present_loop_entry, config_ptr);
-            log_info("BLOOM: present thread spawned");
-            // --------------------------
+            // NOW set frame_ptr - present thread will start copying on next dirty
+            present_state.set_frame_ptr(frame_buffer.as_ptr());
+            log_info("BLOOM: frame_ptr set, present loop ready for real frames");
+
 
             let mut cursor_set = CursorSet::new();
             cursor_set.load_all(0x8900_0000);

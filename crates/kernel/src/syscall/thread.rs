@@ -168,6 +168,7 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
         // Inherit capabilities from parent thread
         new_task.caps = parent_caps;
 
+
         // Configure thread context
         use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext, TrapFrame};
         

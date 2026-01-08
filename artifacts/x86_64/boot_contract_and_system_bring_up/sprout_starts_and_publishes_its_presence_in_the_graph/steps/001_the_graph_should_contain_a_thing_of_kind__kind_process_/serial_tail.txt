@@ -1,50 +1,50 @@
-[41288.619 ms] THREAD: Freed stack slot: group=1 top=0x8f000000 remaining=0
-[41293.716 ms] USER: BLOOM: mapped bytespace.mouse_input
-[41295.706 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eff0000 top=0x8f000000 active=1
-[41297.071 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x34dc000
-[41297.996 ms] THREAD: Thread 9 context: entry=0xa13220 user_sp=0x8f000000 arg0=0x0 kernel_sp=0xffff8000034dc000
-[41298.884 ms] USER: BLOOM: spawned input worker
-[41406.723 ms] USER: BLOOM: watch graph=126 watch_id=1
-[41537.487 ms] USER: BLOOM: watch window=503 watch_id=2
-[41655.935 ms] USER: BLOOM: watch window=566 watch_id=3
-[41658.603 ms] USER: BLOOM: seeded 2 windows
-[41768.959 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=9634 events_drained=0
-[41773.644 ms] USER: TRACE: scene_rebuild: ENTER
-[41780.738 ms] USER: BLOOM: START render 2 windows
-[41887.351 ms] USER: TRACE: render_window_scenes: ENTER
-[41889.131 ms] USER: TRACE: render_window: ENTER
-[43083.753 ms] USER: TRACE: paint_drawlist: ENTER
-[43085.430 ms] USER: TRACE: bytespace_map: ENTER
-[43088.780 ms] USER: BLOOM: failed to map bytespace
-[43089.929 ms] USER: TRACE: bytespace_map: EXIT (4.407ms)
-[43091.184 ms] USER: TRACE: paint_drawlist: EXIT (7.470ms)
-[43093.048 ms] USER: TRACE: render_window: EXIT (1203.916ms)
-[43094.059 ms] USER: TRACE: render_window: ENTER
-[43202.458 ms] USER: TRACE: render_window: EXIT (108.291ms)
-[43203.623 ms] USER: TRACE: render_window_scenes: EXIT (1316.402ms)
-[43205.150 ms] USER: TRACE: execute_cmds_into_scene: ENTER
-[51557.437 ms] USER: TRACE: execute_cmds_into_scene: EXIT (8352.125ms)
-[51559.582 ms] USER: BLOOM: frame maps=1 hits=0 remaps=0
-[51560.442 ms] USER: BLOOM: rebuild_scene done
-[51566.947 ms] USER: BLOOM: redraw_region done
-[51569.095 ms] USER: BLOOM: rendered window 503
-[51676.751 ms] USER: TRACE: scene_rebuild: EXIT (9902.198ms)
-[51681.921 ms] USER: BLOOM: shadow kernel: shared
-[51688.748 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=171289 events_drained=0
-[53708.472 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=213962 events_drained=0
-[55736.506 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=258210 events_drained=0
-[57768.639 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=301077 events_drained=0
-[59797.762 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=345335 events_drained=0
-[61829.975 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=378031 events_drained=0
-[63859.082 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=402975 events_drained=0
-[65889.153 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=439667 events_drained=0
-[67918.096 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=467686 events_drained=0
-[69949.324 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=499277 events_drained=0
-[71977.869 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=528919 events_drained=0
-[74007.712 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=562781 events_drained=0
-[76037.805 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=599176 events_drained=0
-[78067.473 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=625617 events_drained=0
-[80098.935 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=654162 events_drained=0
-[82129.577 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=682743 events_drained=0
-[84161.028 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=707394 events_drained=0
-[86187.147 ms] USER: BLOOM DIAG: wp_started=1 inp_started=1 inp_ticks=750598 events_drained=0
+[14568.474 ms] MMU: new P4 phys=195c000 virt=ffff80000195c000
+[14568.857 ms] MMU: copy kernel pml4[256]
+[14570.345 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry
+JPROC: Applied 8 boot grants to /boot/modules/bloom (path: /boot/modules/bloom)
+SCHED: configure_ctx_locked: k_stack=0xffff800002288000 u_stack=0x80000000 entry=0xab7a90
+SCHED: configure_ctx_locked: finalized sp=0xffff800002287f60
+PROC: spawned
+JJPROC: spawn_kernel_module
+[14640.450 ms] PROC: module phys=16ba2000 offset=ffff800000000000
+[14640.895 ms] MMU: new P4 phys=238a000 virt=ffff80000238a000
+[14641.215 ms] MMU: copy kernel pml4[256]
+[14643.071 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry
+JPROC: Applied 7 boot grants to /boot/modules/inputd (path: /boot/modules/inputd)
+SCHED: configure_ctx_locked: k_stack=0xffff8000023d9000 u_stack=0x80000000 entry=0x206630
+SCHED: configure_ctx_locked: finalized sp=0xffff8000023d8f60
+PROC: spawned
+PROC: spawn_kernel_module
+[14647.784 ms] PROC: module phys=15ea6000 offset=ffff800000000000
+[14648.070 ms] MMU: new P4 phys=23da000 virt=ffff8000023da000
+[14648.260 ms] MMU: copy kernel pml4[256]
+[14650.486 ms] USER: TRACE: bloom_run: ENTER
+[14651.314 ms] USER: BLOOM: alive
+[14651.897 ms] USER: BLOOM: builtin font ready (lazy unifont)
+JJ[14666.074 ms] USER: INPUTD: Starting...
+J[14668.978 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry
+JPROC: Applied 1 boot grants to /boot/modules/thingcheck (path: /boot/modules/thingcheck)
+SCHED: configure_ctx_locked: k_stack=0xffff80000254d000 u_stack=0x80000000 entry=0x210270
+SCHED: configure_ctx_locked: finalized sp=0xffff80000254cf60
+PROC: spawned
+PROC: spawn_kernel_module
+[14673.480 ms] PROC: module phys=15b15000 offset=ffff800000000000
+[14673.756 ms] MMU: new P4 phys=254d000 virt=ffff80000254d000
+[14673.983 ms] MMU: copy kernel pml4[256]
+[14675.121 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry
+JJ[14704.416 ms] USER: INPUTD: Created bytespace.input.pointer0
+JJ[14706.673 ms] USER: INPUTD: Ready. EventStream initialized.
+JPROC: Applied 6 boot grants to /boot/modules/hello_window (path: /boot/modules/hello_window)
+SCHED: configure_ctx_locked: k_stack=0xffff8000025b0000 u_stack=0x80000000 entry=0x20e5b0
+SCHED: configure_ctx_locked: finalized sp=0xffff8000025aff60
+PROC: spawned
+PROC: spawn_kernel_module
+[14719.267 ms] PROC: module phys=14d4c000 offset=ffff800000000000
+[14719.572 ms] MMU: new P4 phys=25b1000 virt=ffff8000025b1000
+[14719.766 ms] MMU: copy kernel pml4[256]
+[14720.696 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry

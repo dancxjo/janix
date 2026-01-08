@@ -1,50 +1,50 @@
-[21165.184 ms] SCHED: spawn: finished id=5 name=/boot/modules/clock stack_top=0xffff800002530000 stack_size=0x10000
-[21165.624 ms] SCHED: configure_ctx_locked: k_stack=0xffff800002530000 u_stack=0x80000000 entry=0x210670
-[21166.072 ms] SCHED: configure_ctx_locked: finalized sp=0xffff80000252ff60
+[14568.474 ms] MMU: new P4 phys=195c000 virt=ffff80000195c000
+[14568.857 ms] MMU: copy kernel pml4[256]
+[14570.345 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry
+JPROC: Applied 8 boot grants to /boot/modules/bloom (path: /boot/modules/bloom)
+SCHED: configure_ctx_locked: k_stack=0xffff800002288000 u_stack=0x80000000 entry=0xab7a90
+SCHED: configure_ctx_locked: finalized sp=0xffff800002287f60
+PROC: spawned
+JJPROC: spawn_kernel_module
+[14640.450 ms] PROC: module phys=16ba2000 offset=ffff800000000000
+[14640.895 ms] MMU: new P4 phys=238a000 virt=ffff80000238a000
+[14641.215 ms] MMU: copy kernel pml4[256]
+[14643.071 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry
+JPROC: Applied 7 boot grants to /boot/modules/inputd (path: /boot/modules/inputd)
+SCHED: configure_ctx_locked: k_stack=0xffff8000023d9000 u_stack=0x80000000 entry=0x206630
+SCHED: configure_ctx_locked: finalized sp=0xffff8000023d8f60
 PROC: spawned
 PROC: spawn_kernel_module
-[21166.930 ms] PROC: module phys=1708d000 offset=ffff800000000000
-[21167.331 ms] MMU: new P4 phys=2531000 virt=ffff800002531000
-[21167.673 ms] MMU: copy kernel pml4[256]
-[21169.216 ms] MMU: copy kernel pml4[511]
-PROC: ELF loaded, entry
-[21172.066 ms] SCHED: spawn: name=/boot/modules/inputd start
-[21172.359 ms] SCHED: spawn: allocating stack...
-[21172.646 ms] SCHED: spawn: stack allocated
-[21172.883 ms] SCHED: spawn: graph store start
-[21173.157 ms] SCHED: spawn: graph store done
-[21173.362 ms] SCHED: spawn: address space handled
-[21174.200 ms] SCHED: spawn: finished id=6 name=/boot/modules/inputd stack_top=0xffff800002580000 stack_size=0x10000
-[21174.713 ms] SCHED: configure_ctx_locked: k_stack=0xffff800002580000 u_stack=0x80000000 entry=0x2065c0
-[21175.128 ms] SCHED: configure_ctx_locked: finalized sp=0xffff80000257ff60
-[21216.319 ms] USER: TIMED: Starting...
-[21233.094 ms] USER: CLOCK: Starting with window...
+[14647.784 ms] PROC: module phys=15ea6000 offset=ffff800000000000
+[14648.070 ms] MMU: new P4 phys=23da000 virt=ffff8000023da000
+[14648.260 ms] MMU: copy kernel pml4[256]
+[14650.486 ms] USER: TRACE: bloom_run: ENTER
+[14651.314 ms] USER: BLOOM: alive
+[14651.897 ms] USER: BLOOM: builtin font ready (lazy unifont)
+JJ[14666.074 ms] USER: INPUTD: Starting...
+J[14668.978 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry
+JPROC: Applied 1 boot grants to /boot/modules/thingcheck (path: /boot/modules/thingcheck)
+SCHED: configure_ctx_locked: k_stack=0xffff80000254d000 u_stack=0x80000000 entry=0x210270
+SCHED: configure_ctx_locked: finalized sp=0xffff80000254cf60
 PROC: spawned
 PROC: spawn_kernel_module
-[21260.372 ms] PROC: module phys=1606c000 offset=ffff800000000000
-[21261.252 ms] MMU: new P4 phys=2798000 virt=ffff800002798000
-[21261.820 ms] MMU: copy kernel pml4[256]
-[21263.537 ms] MMU: copy kernel pml4[511]
-PROC: ELF loaded, entry
-[21266.991 ms] SCHED: spawn: name=/boot/modules/hello_window start
-[21267.312 ms] SCHED: spawn: allocating stack...
-[21267.598 ms] SCHED: spawn: stack allocated
-[21267.794 ms] SCHED: spawn: graph store start
-[21268.089 ms] SCHED: spawn: graph store done
-[21268.303 ms] SCHED: spawn: address space handled
-[21268.751 ms] SCHED: spawn: finished id=7 name=/boot/modules/hello_window stack_top=0xffff8000027f7000 stack_size=0x10000
-[21269.234 ms] SCHED: configure_ctx_locked: k_stack=0xffff8000027f7000 u_stack=0x80000000 entry=0x20d3a0
-[21269.645 ms] SCHED: configure_ctx_locked: finalized sp=0xffff8000027f6f60
+[14673.480 ms] PROC: module phys=15b15000 offset=ffff800000000000
+[14673.756 ms] MMU: new P4 phys=254d000 virt=ffff80000254d000
+[14673.983 ms] MMU: copy kernel pml4[256]
+[14675.121 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry
+JJ[14704.416 ms] USER: INPUTD: Created bytespace.input.pointer0
+JJ[14706.673 ms] USER: INPUTD: Ready. EventStream initialized.
+JPROC: Applied 6 boot grants to /boot/modules/hello_window (path: /boot/modules/hello_window)
+SCHED: configure_ctx_locked: k_stack=0xffff8000025b0000 u_stack=0x80000000 entry=0x20e5b0
+SCHED: configure_ctx_locked: finalized sp=0xffff8000025aff60
 PROC: spawned
-[21270.507 ms] USER: SPROUT: boot sequence complete.
-[21276.332 ms] USER: RTC-CMOS: Starting...
-[21277.634 ms] USER: RTC-CMOS: Hardware found. Publishing device...
-[21336.803 ms] USER: INPUTD: Starting...
-[21339.145 ms] USER: INPUTD: Created bytespace.input.pointer0
-[21342.808 ms] USER: INPUTD: Ready. EventStream initialized.
-[21353.877 ms] USER: Hello Window Starting...
-[21386.593 ms] USER: RTC-CMOS: Active. Time: 2026-1-6 13:37:28
-[21418.833 ms] USER: CLOCK: Window Published!
-[21511.189 ms] USER: TIMED: Found RTC base: 1767706648s at mono 21282511255ns
-[21549.999 ms] USER: Hello Window Published!
-[21608.200 ms] USER: TIMED: Published system.time
+PROC: spawn_kernel_module
+[14719.267 ms] PROC: module phys=14d4c000 offset=ffff800000000000
+[14719.572 ms] MMU: new P4 phys=25b1000 virt=ffff8000025b1000
+[14719.766 ms] MMU: copy kernel pml4[256]
+[14720.696 ms] MMU: copy kernel pml4[511]
+JJJJPROC: ELF loaded, entry

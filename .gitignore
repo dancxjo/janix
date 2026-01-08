@@ -2,3 +2,7 @@
 /ovmf
 *.iso
 *.hdd
+
+/bran/bin-*
+/target
+/**/target

@@ -7,7 +7,7 @@ use cucumber::{given, then, when};
 use crate::world::ThingOsWorld;
 
 /// Default timeout for waiting on serial output (seconds).
-const DEFAULT_TIMEOUT_SECS: f64 = 1.0;
+const DEFAULT_TIMEOUT_SECS: f64 = 10.0;
 
 #[given("I boot the system")]
 async fn boot_system(world: &mut ThingOsWorld) {
@@ -15,8 +15,8 @@ async fn boot_system(world: &mut ThingOsWorld) {
 
     world.boot(&arch).await.expect("Failed to boot QEMU");
 
-    // Give the system a moment to start up
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // Give the system time to boot (UEFI + Limine + kernel init takes ~5-8s)
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 }
 
 #[when("I wait for the system to boot")]

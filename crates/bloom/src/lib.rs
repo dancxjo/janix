@@ -76,6 +76,7 @@ pub mod input_worker;
 pub mod cursor_overlay;
 pub mod interaction;
 pub mod chunked_executor;
+pub mod profile;
 pub mod present_loop;
 
 pub use app::run;

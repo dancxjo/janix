@@ -8,6 +8,7 @@ use thing_std::symbol_resolve;
 use thing_std::SyscallGraphClient;
 use thing_std::trace_fn;
 
+use crate::profile::{RenderWindowProfile, TimingBucket};
 use crate::scene_cache::BytespaceMappingCache;
 use crate::layout::{
     layout_widgets, 
@@ -195,6 +196,8 @@ fn render_window(
     mouse_pos: (i32, i32),
 ) {
     trace_fn!("render_window");
+    let mut prof = RenderWindowProfile::new(scene.id, scene.window.width, scene.window.height);
+    
     let win = &scene.window;
     let rect = Rect {
         x: win.x,
@@ -232,6 +235,7 @@ fn render_window(
         );
 
     // --- Title Bar Rendering ---
+    prof.span_start();
     let title_h = TITLE_BAR_HEIGHT as u32;
     let title_rect = Rect {
         x: rect.x,
@@ -304,21 +308,31 @@ fn render_window(
     // Unifont glyphs are 16px tall.
     let text_y = close_rect.y + (close_rect.h as i32 - 16) / 2;
 
+    prof.rect_fills += 4; // gradient + body + highlight + separator
+    prof.span_end(TimingBucket::Chrome);
+    
+    // Text timing span
+    prof.span_start();
     painter.draw_text(text_x, text_y, close_symbol, glyph_color, font_size);
+    prof.text_calls += 1;
+    prof.chars_drawn += close_symbol.chars().count() as u32;
 
 
     // Draw window title in the title bar
     if !scene.title_text.is_empty() {
         let text_x = rect.x + TITLE_PADDING_X;
         let text_y = rect.y + (TITLE_BAR_HEIGHT - TITLE_FONT_SIZE as i32) / 2;
-        // Adjust color based on focus?
         painter.draw_text(text_x, text_y, &scene.title_text, TITLE_TEXT_COLOR, TITLE_FONT_SIZE);
+        prof.text_calls += 1;
+        prof.chars_drawn += scene.title_text.chars().count() as u32;
     }
+    prof.span_end(TimingBucket::Text);
 
     // Layout phase: compute widget positions (no graph syscalls here)
     let placed = layout_widgets(&scene.layout, &scene.children, rect);
 
     // Paint phase: draw widgets at computed positions
+    prof.span_start();
     for pw in placed {
         match pw.widget {
             WidgetKind::Label(ref label, ref text) => {
@@ -331,13 +345,18 @@ fn render_window(
                 paint_canvas(painter, pw.rect, canvas, mapping_cache);
             }
             WidgetKind::DrawList(ref dl) => {
-                paint_drawlist(painter, pw.rect, dl, mapping_cache);
+                prof.drawlist_count += 1;
+                paint_drawlist(painter, pw.rect, dl, mapping_cache, &mut prof);
             }
         }
     }
+    prof.span_end(TimingBucket::Widgets);
+    
     // Draw border
-    // Draw border (TopRounded)
     painter.stroke_rounded_rect_top(rect, win.style.radius, 1, 0xFF404040);
+    
+    prof.finish();
+    prof.log_if_slow(50);
 }
 
 pub fn get_close_button_rect(window_rect: Rect) -> Rect {
@@ -407,7 +426,7 @@ fn paint_canvas(painter: &mut dyn Painter, rect: Rect, canvas: &Canvas, mapping_
     painter.blit_asset(rect.x, rect.y, canvas.bytespace, canvas.width, canvas.height, canvas.width, size, mapping_cache);
 }
 
-fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_cache: &mut BytespaceMappingCache) {
+fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_cache: &mut BytespaceMappingCache, prof: &mut RenderWindowProfile) {
     trace_fn!("paint_drawlist");
     let screen = screen_rect(painter);
     let clip = rect.intersect(screen);
@@ -417,12 +436,17 @@ fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_
 
     // Map command buffer via cache
     // Heuristic size for now, ideally DrawList would have a size field or we'd map a fix amount
+    prof.span_start();
     let size = 64 * 1024; 
     let (ptr, len) = if let Some(b) = mapping_cache.get_or_map_ro(dl.bytespace, size) {
+        prof.bytespace_maps += 1;
+        prof.bytespace_bytes += b.len() as u64;
         (b.as_ptr(), b.len())
     } else {
+        prof.span_end(TimingBucket::BytespaceMap);
         return;
     };
+    prof.span_end(TimingBucket::BytespaceMap);
     
     // SAFETY: The bytespace memory is stable (OS managed) and will not move or be unmapped 
     // even if we mutate the mapping_cache (BTreeMap) to add new mappings.
@@ -442,24 +466,12 @@ fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_
     let widget_clip = old_clip.rect.intersect(rect);
     painter.set_clip(crate::painter::Clip::from_rect(widget_clip));
     
+    // Drawlist iteration timing
+    prof.span_start();
     loop {
         if count >= dl.cmd_count {
             break;
         }
-        
-        // Peek/Deserialize next command using postcard or manual
-        // Since we defined DrawCmd as repr(C) we might just cast, but it has a String variant...
-        // Wait, DrawCmd::Text has 'len' then bytes. It's not standard Deserialize compatible if we do custom layout.
-        // Actually I defined it using Serde. 
-        // Let's use postcard for simplicity if possible, OR manual if we want zero-copy text.
-        // My ABI definition was:
-        // Text { x, y, color, len }
-        // The implementation plan implies a custom binary format for Text.
-        // standard Deserialize might expect structure.
-        
-        // Let's assume standard postcard serialization for the enum variants, 
-        // BUT for Text specifically, how do we handle the trailing bytes?
-        // Postcard handles `&str` by copying.
         
         // Use take_from_bytes to get the command and the remaining slice
         if let Ok((cmd, remaining)) = postcard::take_from_bytes(&buf[cursor..]) {
@@ -467,19 +479,23 @@ fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_
             let used = buf[cursor..].len() - remaining.len();
             cursor += used;
             count += 1;
+            prof.drawlist_cmds += 1;
             
             match cmd {
                 DrawCmd::FillRect { x, y, w, h, color } => {
                     painter.fill_rect(Rect { x: rect.x + x as i32, y: rect.y + y as i32, w: w as u32, h: h as u32 }, color);
+                    prof.rect_fills += 1;
                 }
                 DrawCmd::FillRoundedRect { x, y, w, h, radius, color } => {
                      painter.fill_rounded_rect(Rect { x: rect.x + x as i32, y: rect.y + y as i32, w: w as u32, h: h as u32 }, radius, color);
+                     prof.rect_fills += 1;
                 }
                 DrawCmd::StrokeRoundedRect { x, y, w, h, radius, thickness, color } => {
                      painter.stroke_rounded_rect(Rect { x: rect.x + x as i32, y: rect.y + y as i32, w: w as u32, h: h as u32 }, radius, thickness, color);
                 }
                 DrawCmd::Clear { color } => {
                     painter.fill_rect(rect, color);
+                    prof.rect_fills += 1;
                 }
                 DrawCmd::Text { x, y, color, len } => {
                     // Following bytes are text
@@ -487,6 +503,8 @@ fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_
                     cursor += len as usize;
                     if let Ok(text) = core::str::from_utf8(text_bytes) {
                         painter.draw_text(rect.x + x as i32, rect.y + y as i32, text, color, 14.0);
+                        prof.text_calls += 1;
+                        prof.chars_drawn += text.chars().count() as u32;
                     }
                 }
                 DrawCmd::Shadow { .. } => {
@@ -504,6 +522,7 @@ fn paint_drawlist(painter: &mut dyn Painter, rect: Rect, dl: &DrawList, mapping_
             break;
         }
     }
+    prof.span_end(TimingBucket::Drawlist);
     
     // Restore clip
     painter.set_clip(old_clip);

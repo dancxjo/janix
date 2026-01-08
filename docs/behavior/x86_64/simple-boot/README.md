@@ -1,6 +1,6 @@
 # ❌ Feature: Simple Boot
 
-> Last run: 2026-01-08 11:51:36
+> Last run: 2026-01-08 12:34:04
 
 ## Scenarios
 

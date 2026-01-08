@@ -150,7 +150,7 @@ fn spawn_fallback() {
     spawn_and_grant("textd");
     // spawn_and_grant("clock");
     spawn_and_grant("inputd");
-    spawn_and_grant("hello_window");
+    spawn_and_grant("graphviewer");
 }
 
 
@@ -262,7 +262,7 @@ fn configure_policy(id: ThingId, name: &str) {
             global(CapOp::GraphCreate);
             global(CapOp::GraphLink);
         }
-        "hello_window" => {
+        "graphviewer" => {
             global(CapOp::MemManage); // Required for heap allocation
             global(CapOp::GraphCreate);
             global(CapOp::GraphLink);

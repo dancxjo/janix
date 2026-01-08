@@ -1,0 +1,16 @@
+{
+  "run": {
+    "timestamp": ""
+  },
+  "features": {
+    "GraphViewer smoke test": {
+      "scenarios": {
+        "Initial UI invites user and shows output label + button": {
+          "arches": {
+            "x86_64": "passed"
+          }
+        }
+      }
+    }
+  }
+}

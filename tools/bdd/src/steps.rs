@@ -15,8 +15,17 @@ async fn boot_system(world: &mut ThingOsWorld) {
 
     world.boot(&arch).await.expect("Failed to boot QEMU");
 
-    // Give the system time to boot (UEFI + Limine + kernel init takes ~5-8s)
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    // Wait for kernel to signal boot completion (UEFI + Limine + kernel init takes ~5-8s)
+    let booted = world.wait_for_serial("System booted", 15.0).await;
+    if !booted {
+        let log = world.get_serial_log().await;
+        eprintln!("\n=== Serial Log (boot failed) ===");
+        for line in log.lines().rev().take(50).collect::<Vec<_>>().into_iter().rev() {
+            eprintln!("{}", line);
+        }
+        eprintln!("=== End Serial Log ===\n");
+        panic!("System did not boot within 15 seconds - 'System booted' not found in serial output");
+    }
 }
 
 #[when("I wait for the system to boot")]

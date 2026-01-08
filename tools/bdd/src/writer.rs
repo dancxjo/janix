@@ -1,4 +1,7 @@
+use crate::report;
 use crate::shared::{slugify, GLOBAL_QEMU};
+use crate::store::ResultsStore;
+use anyhow::Result;
 use crate::steps::strip_ansi_codes;
 use chrono;
 use cucumber::Writer;
@@ -42,6 +45,57 @@ pub struct ArtifactWriter {
 }
 
 impl ArtifactWriter {
+    fn finalize_scenario(&mut self) -> Result<()> {
+        if self.current_feature.is_empty() || self.current_scenario.is_empty() {
+            return Ok(());
+        }
+
+        let status = if self.scenario_failed { "failed" } else { "passed" };
+
+        let store_dir = self.out_dir.join("bdd");
+        fs::create_dir_all(&store_dir)?;
+        let store_path = store_dir.join("results.json");
+        let mut store = ResultsStore::load(&store_path)?;
+        store.update_result(
+            self.current_feature.clone(),
+            self.current_scenario.clone(),
+            self.arch.clone(),
+            status.to_string(),
+        );
+        store.save(&store_path)?;
+
+        let report_steps: Vec<report::ArtifactMeta> = self
+            .current_steps
+            .iter()
+            .map(|meta| report::ArtifactMeta {
+                version: meta.version as u32,
+                arch: meta.arch.clone(),
+                feature: meta.feature.clone(),
+                scenario: meta.scenario.clone(),
+                step: report::StepMeta {
+                    index: meta.step.index,
+                    text: meta.step.text.clone(),
+                    status: meta.step.status.clone(),
+                    timestamp: meta.step.timestamp.clone(),
+                },
+                artifacts: report::Artifacts {
+                    screenshot: meta.artifacts.screenshot.clone(),
+                    serial_tail: meta.artifacts.serial_tail.clone(),
+                },
+            })
+            .collect();
+
+        report::generate_scenario_report_from_mem(
+            &self.out_dir,
+            &self.arch,
+            &self.current_feature,
+            &self.current_scenario,
+            &report_steps,
+        )?;
+
+        Ok(())
+    }
+
     async fn capture_artifact(&mut self, step_text: &str, status: &str) {
         let feature_slug = slugify(&self.current_feature);
         let scenario_slug = slugify(&self.current_scenario);
@@ -171,6 +225,11 @@ impl<W: std::fmt::Debug + cucumber::World> Writer<W> for ArtifactWriter {
                         }
                         _ => {}
                     },
+                    Scenario::Finished => {
+                        if let Err(err) = self.finalize_scenario() {
+                            eprintln!("Failed to finalize scenario: {}", err);
+                        }
+                    }
                     _ => {}
                 },
                 _ => {}

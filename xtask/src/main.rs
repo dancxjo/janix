@@ -35,6 +35,9 @@ enum Commands {
         /// Run only smoke tests
         #[arg(long)]
         smoke: bool,
+        /// Run a named suite of features (comma-separated for multiple suites)
+        #[arg(long)]
+        suite: Option<String>,
         /// Run only a specific feature (matches filename in tools/bdd/features)
         #[arg(long, default_value = "all")]
         feature: String,
@@ -101,10 +104,11 @@ fn main() -> Result<()> {
         Commands::Test {
             arch,
             smoke,
+            suite,
             feature,
             tag,
             force_all,
-        } => test::run(Some(arch), smoke, Some(feature), tag, force_all),
+        } => test::run(Some(arch), smoke, suite, Some(feature), tag, force_all),
 
         Commands::UpdateDocs => {
             Command::new("cargo")

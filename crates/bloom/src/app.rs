@@ -475,8 +475,7 @@ pub fn run() {
                 }
 
                 let anim_changed = if let Some(animator) = cursor_set.current_animator() {
-                    animator.advance(now_ms);
-                    true // Assume advance always changes something for simplicity or check return
+                    animator.advance(now_ms)
                 } else {
                     false
                 };
@@ -486,7 +485,6 @@ pub fn run() {
                 } else {
                     None
                 };
-                let cursor_changed = moved || anim_changed || buttons_changed;
 
                 let mut dirty: Option<Rect> = None;
 
@@ -586,8 +584,11 @@ pub fn run() {
                 
                 // 2. Overlay cursor (IMMEDIATE MODE - the only exception)
                 // This must be immediate for responsiveness during long scene rebuilds
-                if cursor_changed || dirty.is_some() {
-                    // DIAG: Log buffer alignment before present
+                // Determine if cursor actually changed (position or animation frame)
+                let cursor_dirty = moved || anim_changed;
+
+                if cursor_dirty || dirty.is_some() {
+                    // DIAG: Log buffer alignment before present (only on actual misalignment)
                     let scene_ptr = scene_buffer.as_ptr() as usize;
                     let frame_ptr = frame_buffer.as_ptr() as usize;
                     if scene_ptr % 4 != 0 || frame_ptr % 4 != 0 {
@@ -595,14 +596,14 @@ pub fn run() {
                             scene_ptr, scene_ptr % 4, frame_ptr, frame_ptr % 4));
                     }
                     
-                    if let Some(cursor_dirty) = cursor_overlay.present(
+                    if let Some(cursor_damage) = cursor_overlay.present(
                         scene_buffer.as_slice(),
                         frame_buffer.as_mut_slice(),
                         px,
                         py,
                         cursor_frame,
                     ) {
-                        merge_damage(&mut dirty, cursor_dirty);
+                        merge_damage(&mut dirty, cursor_damage);
                         if !logged_shared_shadow {
                             log_info("BLOOM: cursor overlay active with shadows");
                             logged_shared_shadow = true;
@@ -610,11 +611,10 @@ pub fn run() {
                     }
                 }
 
+                // === PRESENT DECISION ===
+                // Only present if something actually changed
                 if let Some(rect) = dirty {
-                    // DIAG: reached backend present entry
-                    log_info(&alloc::format!("BLOOM DIAG: entering backend.present rect=({},{} {}x{})", 
-                        rect.x, rect.y, rect.w, rect.h));
-                    
+                    // Scene damage - present the damaged region
                     if crate::boot_fade::WALLPAPER_READY.load(Ordering::Acquire) {
                         backend.present(
                             frame_buffer.as_mut_slice(),
@@ -626,19 +626,33 @@ pub fn run() {
                             },
                         );
                     }
-                    
-                    log_info("BLOOM DIAG: backend.present completed");
-                    
                     prev_px = px;
                     prev_py = py;
                     prev_buttons = buttons;
-                }
-                
-                if WATCH_WAIT_TIMEOUT_TICKS > 0 {
-                    if let Err(_e) = watches.wait(WATCH_WAIT_TIMEOUT_TICKS) {
+                    sched_yield();
+                } else if cursor_dirty {
+                    // Cursor-only change - present cursor region
+                    if let Some(cursor_rect) = cursor_overlay.last_bounds() {
+                        if crate::boot_fade::WALLPAPER_READY.load(Ordering::Acquire) {
+                            backend.present(
+                                frame_buffer.as_mut_slice(),
+                                DirtyRect {
+                                    x: cursor_rect.x,
+                                    y: cursor_rect.y,
+                                    w: cursor_rect.w,
+                                    h: cursor_rect.h,
+                                },
+                            );
+                        }
                     }
+                    prev_px = px;
+                    prev_py = py;
+                    prev_buttons = buttons;
+                    sched_yield();
+                } else {
+                    // IDLE: Nothing to present - sleep briefly to avoid busy-spin
+                    thing_std::time::sleep_ms(1);
                 }
-                sched_yield();
             }
         }
         sched_yield();

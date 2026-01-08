@@ -21,11 +21,17 @@ test +args="":
     cargo run -p xtask -- test {{args}}
 
 test-all:
-    cargo run -p xtask -- test --force-all
-    cargo run -p xtask -- update-docs
+    @just test-suite core
+    @just test-suite input
+    @just test-suite bloom
+    @just test-suite apps
 
 smoke arch="all" feature="all":
     cargo run -p xtask -- test --arch {{arch}} --smoke --feature {{feature}}
+
+test-suite suite arch="all":
+    cargo run -p xtask -- test --arch {{arch}} --suite {{suite}}
+    cargo run -p xtask -- update-docs
 
 build:
     cargo run -p xtask -- build

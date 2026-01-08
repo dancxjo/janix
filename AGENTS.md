@@ -47,10 +47,15 @@ Use `just`. Do not use `cargo run` directly unless you know exactly why.
 > Always target your tests.
 
 *   **Targeted (Recommended)**:
+    *   `just test-suite core` (Boot, graph, memory, scheduler, capabilities)
+    *   `just test-suite input` (Keyboard, mouse, cursor, event stream)
+    *   `just test-suite bloom` (Graphics, display backends, wallpapers)
+    *   `just test-suite apps` (Demo app, graphviewer, repl)
     *   `just test --tag @mouse` (Run scenarios tagged @mouse)
     *   `just test --feature mouse` (Run features with 'mouse' in filename)
 *   **Architecture specific**: `just test-x86_64 --tag @mouse`
 *   **Smoke**: `just smoke` (Runs minimal boot test)
+*   **All suites**: `just test-all` (Runs suites and updates docs after each batch)
 *   **Emergency Override**: `just test --force-all` (If you really need everything)
 
 ### Debugging

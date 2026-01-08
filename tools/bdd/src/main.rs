@@ -41,21 +41,29 @@ async fn main() -> Result<()> {
 
     use crate::steps::BootWorld;
 
-    let feature_filter = std::env::var("BDD_FEATURE").unwrap_or_else(|_| "all".to_string());
+    let feature_filter_raw = std::env::var("BDD_FEATURE").unwrap_or_else(|_| "all".to_string());
     let tag_filter = std::env::var("BDD_TAG").ok();
+    let feature_filters: Vec<String> = feature_filter_raw
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    let filter_all = feature_filters.is_empty()
+        || (feature_filters.len() == 1 && feature_filters[0] == "all");
 
     BootWorld::cucumber()
         .max_concurrent_scenarios(1)
         .with_writer(writer)
         .filter_run(feature_dir, move |f, r, s| {
             // Feature filtering
-            if feature_filter != "all" {
+            if !filter_all {
                 let matches_feature = f
                     .path
                     .as_ref()
                     .and_then(|p: &std::path::PathBuf| p.file_name())
                     .and_then(|n: &std::ffi::OsStr| n.to_str())
-                    .map(|n: &str| n.contains(&feature_filter))
+                    .map(|n: &str| feature_filters.iter().any(|f| n.contains(f)))
                     .unwrap_or(false);
 
                 if !matches_feature {
@@ -84,6 +92,8 @@ async fn main() -> Result<()> {
             true
         })
         .await;
+
+    report::generate_report(&root.join("artifacts"))?;
 
     if shared::ANY_FAILURE.load(std::sync::atomic::Ordering::SeqCst) {
         std::process::exit(101);

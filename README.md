@@ -1,33 +1,90 @@
-# Limine Rust Template
+# Thing-OS
 
-This repository will demonstrate how to set up a basic kernel in Rust using Limine.
+A graph-based operating system kernel built with Rust and the Limine bootloader.
 
-## How to use this?
+## Quick Start
 
-### Dependencies
+```bash
+# Build and run
+just run
 
-Any `make` command depends on GNU make (`gmake`) and is expected to be run using it. This usually means using `make` on most GNU/Linux distros, or `gmake` on other non-GNU systems.
+# Run BDD tests
+just behave
+```
 
-All `make all*` targets depend on Rust.
+## Prerequisites
 
-Additionally, building an ISO with `make all` requires `xorriso`, and building a HDD/USB image with `make all-hdd` requires `sgdisk` (usually from `gdisk` or `gptfdisk` packages) and `mtools`.
+- Rust (with nightly toolchain)
+- [just](https://github.com/casey/just) command runner
+- `xorriso` for ISO building
+- `qemu-system-x86_64` for running
 
-### Architectural targets
+## Commands
 
-The `KARCH` make variable determines the target architecture to build the kernel and image for.
+| Command | Description |
+|---------|-------------|
+| `just run` | Build and run in QEMU |
+| `just iso` | Build bootable ISO |
+| `just behave` | Run BDD tests |
+| `just behave --feature simple-boot` | Run specific feature |
+| `just clean` | Clean build artifacts |
+| `just clear-behavior` | Clear all BDD reports |
 
-The default `KARCH` is `x86_64`. Other options include: `aarch64`, `riscv64`, and `loongarch64`.
+### Architecture Targets
 
-Other architectures will need to be enabled in kernel/rust-toolchain.toml
+Set `KARCH` environment variable to target different architectures:
 
-### Makefile targets
+```bash
+KARCH=aarch64 just run
+KARCH=riscv64 just behave
+```
 
-Running `make all` will compile the kernel (from the `kernel/` directory) and then generate a bootable ISO image.
+Supported: `x86_64` (default), `aarch64`, `riscv64`, `loongarch64`
 
-Running `make all-hdd` will compile the kernel and then generate a raw image suitable to be flashed onto a USB stick or hard drive/SSD.
+## BDD Test Reports
 
-Running `make run` will build the kernel and a bootable ISO (equivalent to make all) and then run it using `qemu` (if installed).
+Test results are saved to `docs/behavior/` and can be viewed directly on GitHub:
 
-Running `make run-hdd` will build the kernel and a raw HDD image (equivalent to make all-hdd) and then run it using `qemu` (if installed).
+📊 **[View Test Reports](./docs/behavior/)**
 
-The `run-uefi` and `run-hdd-uefi` targets are equivalent to their non `-uefi` counterparts except that they boot `qemu` using a UEFI-compatible firmware.
+Reports are organized by architecture:
+- [x86_64 Results](./docs/behavior/x86_64/) - Primary development target
+- [aarch64 Results](./docs/behavior/aarch64/) - ARM64 support
+- [riscv64 Results](./docs/behavior/riscv64/) - RISC-V support
+
+Each report includes:
+- ✅/❌ Pass/fail status per feature, scenario, and step
+- 📜 Serial console logs
+- 📷 Screenshots (when available)
+- Structured JSON results for tooling
+
+### Running Tests
+
+```bash
+# Run all tests for default arch (x86_64)
+just behave
+
+# Run specific feature
+just behave --feature simple-boot
+
+# Run for different architecture
+KARCH=aarch64 just behave
+
+# Clear all reports (before clean run)
+just clear-behavior
+```
+
+## Project Structure
+
+```
+├── bran/           # Kernel ("Boot Runtime Abstraction Node")
+├── bloom/          # Compositor/window manager
+├── apps/           # Userland applications
+├── tools/bdd/      # BDD test framework
+├── xtask/          # Build automation
+└── docs/behavior/  # Test reports (generated)
+```
+
+## License
+
+Apache 2.0

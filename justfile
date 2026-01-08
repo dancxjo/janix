@@ -61,3 +61,10 @@ distclean:
 behave *args:
     cargo xtask bdd {{args}}
 
+# Alias for behave
+bdd *args:
+    @just behave {{args}}
+
+# Clear all BDD behavior reports
+clear-behavior:
+    rm -rf docs/behavior

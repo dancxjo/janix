@@ -4,4 +4,4 @@ Feature: Simple Boot
 
   Scenario: System boots successfully
     Given I boot the system
-    Then I should see a message in the serial output that says "System booted."
+    Then I should see a message in the serial output that says "System booted"

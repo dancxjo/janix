@@ -1,50 +1,50 @@
-[18754.113 ms] USER: TRACE: bloom_run: ENTER
-[18755.048 ms] USER: BLOOM: alive
-[18756.449 ms] USER: BLOOM: builtin font ready (lazy unifont)
-[18759.657 ms] USER: INPUTD: Starting...
-J[18763.066 ms] USER: INPUTD: Created bytespace.input.pointer0
-JJ[18768.402 ms] USER: INPUTD: Ready. EventStream initialized.
-PROC: spawned
-BOOT: Module hello_window not found
-[18784.594 ms] USER: SPROUT: failed to spawn hello_window: error 5
-PROC: spawn_kernel_module
-[18785.613 ms] PROC: module phys=14d06000 offset=ffff800000000000
-[18785.906 ms] MMU: new P4 phys=254e000 virt=ffff80000254e000
-[18786.146 ms] MMU: copy kernel pml4[256]
-[18787.369 ms] MMU: copy kernel pml4[511]
-JJJJPROC: ELF loaded, entry
-JPROC: Applied 7 boot grants to /boot/modules/rtc_cmos (path: /boot/modules/rtc_cmos)
-SCHED: configure_ctx_locked: k_stack=0xffff8000025ae000 u_stack=0x80000000 entry=0x20d200
-SCHED: configure_ctx_locked: finalized sp=0xffff8000025adf60
-PROC: spawned
-JJJJ[18898.590 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eff0000 top=0x8f000000 active=1
-J[18901.715 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x26c4000
-[18903.649 ms] THREAD: Thread 6 context: entry=0xa59a30 user_sp=0x8f000000 arg0=0x90000178 kernel_sp=0xffff8000026c4000
-[18959.304 ms] USER: BLOOM: present thread spawned
-JJ[19023.382 ms] USER: RTC-CMOS: Starting...
-JJ[19208.737 ms] USER: RTC-CMOS: Hardware found. Publishing device...
-JJ[19389.426 ms] USER: RTC-CMOS: Active. Time: 2026-1-8 4:11:44
-PROC: spawn_kernel_module
-[19454.099 ms] PROC: module phys=1727b000 offset=ffff800000000000
-[19454.865 ms] MMU: new P4 phys=3166000 virt=ffff800003166000
-[19455.378 ms] MMU: copy kernel pml4[256]
-[19457.658 ms] MMU: copy kernel pml4[511]
-JJJJPROC: ELF loaded, entry
-JPROC: Applied 6 boot grants to /boot/modules/timed (path: /boot/modules/timed)
-SCHED: configure_ctx_locked: k_stack=0xffff8000031c5000 u_stack=0x80000000 entry=0x20f4c0
-SCHED: configure_ctx_locked: finalized sp=0xffff8000031c4f60
-PROC: spawned
-JJ[19737.984 ms] USER: TIMED: Starting...
-[19950.513 ms] USER: TIMED: Found RTC base: 1767845504s at mono 19214731804ns
-[19959.241 ms] USER: TIMED: Published system.time
-PROC: spawn_kernel_module
-[20033.008 ms] PROC: module phys=17644000 offset=ffff800000000000
-[20033.406 ms] MMU: new P4 phys=32c8000 virt=ffff8000032c8000
-[20033.750 ms] MMU: copy kernel pml4[256]
-[20035.834 ms] MMU: copy kernel pml4[511]
-JJJJPROC: ELF loaded, entry
-JPROC: Applied 6 boot grants to /boot/modules/clock (path: /boot/modules/clock)
-SCHED: configure_ctx_locked: k_stack=0xffff800003322000 u_stack=0x80000000 entry=0x20b830
-SCHED: configure_ctx_locked: finalized sp=0xffff800003321f60
-PROC: spawned
-[20110.259 ms] USER: SPROUT: boot sequence complete.
+[57993.599 ms] USER: CLOCK: 04:45:22
+[58585.237 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=268169 events_drained=0
+[59029.565 ms] USER: CLOCK: 04:45:23
+[60055.863 ms] USER: CLOCK: 04:45:25
+[60635.655 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=289734 events_drained=0
+[61078.851 ms] USER: CLOCK: 04:45:26
+[62102.174 ms] USER: CLOCK: 04:45:27
+[62685.354 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=308809 events_drained=0
+[63127.553 ms] USER: CLOCK: 04:45:28
+[64152.356 ms] USER: CLOCK: 04:45:29
+[64732.258 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=334661 events_drained=0
+[65176.369 ms] USER: CLOCK: 04:45:30
+[66204.261 ms] USER: CLOCK: 04:45:31
+[66782.071 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=361161 events_drained=0
+[67228.261 ms] USER: CLOCK: 04:45:32
+[68249.950 ms] USER: CLOCK: 04:45:33
+[68829.815 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=392266 events_drained=0
+[69274.299 ms] USER: CLOCK: 04:45:34
+[70298.333 ms] USER: CLOCK: 04:45:35
+[70879.035 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=437628 events_drained=0
+[71323.934 ms] USER: CLOCK: 04:45:36
+[72347.661 ms] USER: CLOCK: 04:45:37
+[72929.773 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=475394 events_drained=0
+[73372.549 ms] USER: CLOCK: 04:45:38
+[74396.486 ms] USER: CLOCK: 04:45:39
+[74977.278 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=516858 events_drained=0
+[75421.108 ms] USER: CLOCK: 04:45:40
+[76445.776 ms] USER: CLOCK: 04:45:41
+[77027.882 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=559203 events_drained=0
+[77471.555 ms] USER: CLOCK: 04:45:42
+[78494.999 ms] USER: CLOCK: 04:45:43
+[79076.072 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=601351 events_drained=0
+[79520.364 ms] USER: CLOCK: 04:45:44
+[80544.816 ms] USER: CLOCK: 04:45:45
+[81125.715 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=641230 events_drained=0
+[81570.679 ms] USER: CLOCK: 04:45:46
+[82594.342 ms] USER: CLOCK: 04:45:47
+[83174.497 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=675734 events_drained=0
+[83618.740 ms] USER: CLOCK: 04:45:48
+[84642.565 ms] USER: CLOCK: 04:45:49
+[85224.475 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=722883 events_drained=0
+[85667.235 ms] USER: CLOCK: 04:45:50
+[86696.499 ms] USER: CLOCK: 04:45:51
+[87274.286 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=748807 events_drained=0
+[87718.296 ms] USER: CLOCK: 04:45:52
+[88741.621 ms] USER: CLOCK: 04:45:53
+[89322.123 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=781326 events_drained=0
+[89776.324 ms] USER: CLOCK: 04:45:54
+[90801.860 ms] USER: CLOCK: 04:45:55
+[91381.304 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=804151 events_drained=0

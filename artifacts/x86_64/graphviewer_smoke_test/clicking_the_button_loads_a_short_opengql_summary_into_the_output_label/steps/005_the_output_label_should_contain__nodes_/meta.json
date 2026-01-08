@@ -4,10 +4,10 @@
   "feature": "GraphViewer smoke test",
   "scenario": "Clicking the button loads a short OpenGQL summary into the output label",
   "step": {
-    "index": 1,
-    "text": "the output label contains \"(graph not loaded\"",
+    "index": 5,
+    "text": "the output label should contain \"nodes\"",
     "status": "passed",
-    "timestamp": "2026-01-08T04:44:49.231833573+00:00"
+    "timestamp": "2026-01-08T04:46:49.557030660+00:00"
   },
   "artifacts": {
     "screenshot": null,

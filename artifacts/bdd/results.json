@@ -3,8 +3,46 @@
     "timestamp": ""
   },
   "features": {
+    "Boot contract and system bring-up": {
+      "scenarios": {
+        "Bran hands off a boot contract to the Kernel": {
+          "arches": {
+            "x86_64": "passed"
+          }
+        },
+        "Sprout starts and publishes its presence in the graph": {
+          "arches": {
+            "x86_64": "passed"
+          }
+        },
+        "Sprout starts core services": {
+          "arches": {
+            "x86_64": "passed"
+          }
+        },
+        "The Kernel exposes a root graph and a devices graph": {
+          "arches": {
+            "x86_64": "passed"
+          }
+        }
+      }
+    },
+    "Capabilities and least privilege": {
+      "scenarios": {
+        "A process cannot map memory without a mapping capability": {
+          "arches": {
+            "x86_64": "passed"
+          }
+        }
+      }
+    },
     "GraphViewer smoke test": {
       "scenarios": {
+        "Clicking the button loads a short OpenGQL summary into the output label": {
+          "arches": {
+            "x86_64": "passed"
+          }
+        },
         "Initial UI invites user and shows output label + button": {
           "arches": {
             "x86_64": "passed"

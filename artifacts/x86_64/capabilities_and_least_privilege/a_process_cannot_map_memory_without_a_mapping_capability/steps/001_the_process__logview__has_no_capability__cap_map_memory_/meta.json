@@ -7,7 +7,7 @@
     "index": 1,
     "text": "the process \"logview\" has no capability \"cap.map_memory\"",
     "status": "skipped",
-    "timestamp": "2026-01-08T04:13:29.800831384+00:00"
+    "timestamp": "2026-01-08T04:46:32.925749826+00:00"
   },
   "artifacts": {
     "screenshot": "screen.png",

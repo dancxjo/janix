@@ -1,0 +1,134 @@
+# Scenario: A process cannot map memory without a mapping capability
+
+**Architecture**: `x86_64`  
+**Feature**: `Capabilities and least privilege`
+
+[Back to Index](../../../../index.md)
+
+## Steps Summary
+
+| Index | Step | Status | Artifacts |
+| :---: | --- | :---: | --- |
+| 0 | sprout is online | ✅ | �� 📝  |
+| 1 | the process "logview" has no capability "cap.map_memory" | ⏭️ | �� 📝  |
+
+## Execution Details
+
+### 1. sprout is online ✅
+
+![Screenshot](steps/000_sprout_is_online/screen.png)
+
+```
+[87274.286 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=748807 events_drained=0
+[87718.296 ms] USER: CLOCK: 04:45:52
+[88741.621 ms] USER: CLOCK: 04:45:53
+[89322.123 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=781326 events_drained=0
+[89776.324 ms] USER: CLOCK: 04:45:54
+[90801.860 ms] USER: CLOCK: 04:45:55
+[91381.304 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=804151 events_drained=0
+[91826.928 ms] USER: CLOCK: 04:45:56
+[92849.343 ms] USER: CLOCK: 04:45:57
+[93431.221 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=834112 events_drained=0
+[93873.996 ms] USER: CLOCK: 04:45:58
+[94899.126 ms] USER: CLOCK: 04:45:59
+[95480.175 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=873019 events_drained=0
+[95924.109 ms] USER: CLOCK: 04:46:00
+[96948.476 ms] USER: CLOCK: 04:46:01
+[97529.810 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=915080 events_drained=0
+[97972.383 ms] USER: CLOCK: 04:46:02
+[98997.068 ms] USER: CLOCK: 04:46:03
+[99577.778 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=971802 events_drained=0
+[100021.545 ms] USER: CLOCK: 04:46:04
+[101046.391 ms] USER: CLOCK: 04:46:06
+[101628.150 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1030262 events_drained=0
+[102070.834 ms] USER: CLOCK: 04:46:07
+[103095.697 ms] USER: CLOCK: 04:46:08
+[103676.157 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1080164 events_drained=0
+[104120.092 ms] USER: CLOCK: 04:46:09
+[105144.621 ms] USER: CLOCK: 04:46:10
+[105725.344 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1137527 events_drained=0
+[106169.324 ms] USER: CLOCK: 04:46:11
+[107193.879 ms] USER: CLOCK: 04:46:12
+[107774.589 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1190630 events_drained=0
+[108219.468 ms] USER: CLOCK: 04:46:13
+[109242.983 ms] USER: CLOCK: 04:46:14
+[109823.826 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1241319 events_drained=0
+[110267.704 ms] USER: CLOCK: 04:46:15
+[111292.756 ms] USER: CLOCK: 04:46:16
+[111873.076 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1297480 events_drained=0
+[112317.173 ms] USER: CLOCK: 04:46:17
+[113341.513 ms] USER: CLOCK: 04:46:18
+[113922.239 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1342499 events_drained=0
+[114366.130 ms] USER: CLOCK: 04:46:19
+[115390.821 ms] USER: CLOCK: 04:46:20
+[115971.708 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1395829 events_drained=0
+[116415.736 ms] USER: CLOCK: 04:46:21
+[117439.914 ms] USER: CLOCK: 04:46:22
+[118020.671 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1453680 events_drained=0
+[118464.562 ms] USER: CLOCK: 04:46:23
+[119494.541 ms] USER: CLOCK: 04:46:24
+[120069.892 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1505240 events_drained=0
+[120513.779 ms] USER: CLOCK: 04:46:25
+```
+
+---
+
+### 2. the process "logview" has no capability "cap.map_memory" ❌
+
+![Screenshot](steps/001_the_process__logview__has_no_capability__cap_map_memory_/screen.png)
+
+```
+[87718.296 ms] USER: CLOCK: 04:45:52
+[88741.621 ms] USER: CLOCK: 04:45:53
+[89322.123 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=781326 events_drained=0
+[89776.324 ms] USER: CLOCK: 04:45:54
+[90801.860 ms] USER: CLOCK: 04:45:55
+[91381.304 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=804151 events_drained=0
+[91826.928 ms] USER: CLOCK: 04:45:56
+[92849.343 ms] USER: CLOCK: 04:45:57
+[93431.221 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=834112 events_drained=0
+[93873.996 ms] USER: CLOCK: 04:45:58
+[94899.126 ms] USER: CLOCK: 04:45:59
+[95480.175 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=873019 events_drained=0
+[95924.109 ms] USER: CLOCK: 04:46:00
+[96948.476 ms] USER: CLOCK: 04:46:01
+[97529.810 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=915080 events_drained=0
+[97972.383 ms] USER: CLOCK: 04:46:02
+[98997.068 ms] USER: CLOCK: 04:46:03
+[99577.778 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=971802 events_drained=0
+[100021.545 ms] USER: CLOCK: 04:46:04
+[101046.391 ms] USER: CLOCK: 04:46:06
+[101628.150 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1030262 events_drained=0
+[102070.834 ms] USER: CLOCK: 04:46:07
+[103095.697 ms] USER: CLOCK: 04:46:08
+[103676.157 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1080164 events_drained=0
+[104120.092 ms] USER: CLOCK: 04:46:09
+[105144.621 ms] USER: CLOCK: 04:46:10
+[105725.344 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1137527 events_drained=0
+[106169.324 ms] USER: CLOCK: 04:46:11
+[107193.879 ms] USER: CLOCK: 04:46:12
+[107774.589 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1190630 events_drained=0
+[108219.468 ms] USER: CLOCK: 04:46:13
+[109242.983 ms] USER: CLOCK: 04:46:14
+[109823.826 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1241319 events_drained=0
+[110267.704 ms] USER: CLOCK: 04:46:15
+[111292.756 ms] USER: CLOCK: 04:46:16
+[111873.076 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1297480 events_drained=0
+[112317.173 ms] USER: CLOCK: 04:46:17
+[113341.513 ms] USER: CLOCK: 04:46:18
+[113922.239 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1342499 events_drained=0
+[114366.130 ms] USER: CLOCK: 04:46:19
+[115390.821 ms] USER: CLOCK: 04:46:20
+[115971.708 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1395829 events_drained=0
+[116415.736 ms] USER: CLOCK: 04:46:21
+[117439.914 ms] USER: CLOCK: 04:46:22
+[118020.671 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1453680 events_drained=0
+[118464.562 ms] USER: CLOCK: 04:46:23
+[119494.541 ms] USER: CLOCK: 04:46:24
+[120069.892 ms] USER: BLOOM DIAG: wp_started=false wp_phase=0 inp_started=1 inp_ticks=1505240 events_drained=0
+[120513.779 ms] USER: CLOCK: 04:46:25
+[121539.078 ms] USER: CLOCK: 04:46:26
+```
+
+---
+

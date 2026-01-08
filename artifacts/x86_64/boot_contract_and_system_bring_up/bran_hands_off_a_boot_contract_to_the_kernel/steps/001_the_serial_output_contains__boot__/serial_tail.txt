@@ -1,50 +1,50 @@
-JJJJPROC: ELF loaded, entry
 JPROC: Applied 7 boot grants to /boot/modules/inputd (path: /boot/modules/inputd)
-SCHED: configure_ctx_locked: k_stack=0xffff8000022d7000 u_stack=0x80000000 entry=0x206630
-SCHED: configure_ctx_locked: finalized sp=0xffff8000022d6f60
-JJJJPROC: spawned
+SCHED: configure_ctx_locked: k_stack=0xffff8000023d9000 u_stack=0x80000000 entry=0x206630
+SCHED: configure_ctx_locked: finalized sp=0xffff8000023d8f60
+PROC: spawned
 PROC: spawn_kernel_module
-[18742.044 ms] PROC: module phys=15ea6000 offset=ffff800000000000
-[18742.563 ms] MMU: new P4 phys=24db000 virt=ffff8000024db000
-[18742.858 ms] MMU: copy kernel pml4[256]
-[18744.036 ms] MMU: copy kernel pml4[511]
-JJJJPROC: ELF loaded, entry
+[19654.034 ms] PROC: module phys=15ea6000 offset=ffff800000000000
+[19654.327 ms] MMU: new P4 phys=23d9000 virt=ffff8000023d9000
+[19654.559 ms] MMU: copy kernel pml4[256]
+[19655.549 ms] MMU: copy kernel pml4[511]
+JJJ[19660.485 ms] USER: TRACE: bloom_run: ENTER
+[19661.859 ms] USER: BLOOM: alive
+[19663.225 ms] USER: BLOOM: builtin font ready (lazy unifont)
+JJ[19674.109 ms] USER: INPUTD: Starting...
+J[19677.075 ms] JPROC: ELF loaded, entry
 JPROC: Applied 1 boot grants to /boot/modules/thingcheck (path: /boot/modules/thingcheck)
-SCHED: configure_ctx_locked: k_stack=0xffff80000253b000 u_stack=0x80000000 entry=0x210270
-SCHED: configure_ctx_locked: finalized sp=0xffff80000253af60
-[18754.113 ms] USER: TRACE: bloom_run: ENTER
-[18755.048 ms] USER: BLOOM: alive
-[18756.449 ms] USER: BLOOM: builtin font ready (lazy unifont)
-[18759.657 ms] USER: INPUTD: Starting...
-J[18763.066 ms] USER: INPUTD: Created bytespace.input.pointer0
-JJ[18768.402 ms] USER: INPUTD: Ready. EventStream initialized.
+SCHED: configure_ctx_locked: k_stack=0xffff80000254d000 u_stack=0x80000000 entry=0x210270
+SCHED: configure_ctx_locked: finalized sp=0xffff80000254cf60
 PROC: spawned
 BOOT: Module hello_window not found
-[18784.594 ms] USER: SPROUT: failed to spawn hello_window: error 5
+USER: INPUTD: Created bytespace.input.pointer0
+JJ[19702.404 ms] USER: INPUTD: Ready. EventStream initialized.
+[19685.384 ms] USER: SPROUT: failed to spawn hello_window: error 5
 PROC: spawn_kernel_module
-[18785.613 ms] PROC: module phys=14d06000 offset=ffff800000000000
-[18785.906 ms] MMU: new P4 phys=254e000 virt=ffff80000254e000
-[18786.146 ms] MMU: copy kernel pml4[256]
-[18787.369 ms] MMU: copy kernel pml4[511]
+[19719.521 ms] PROC: module phys=14d06000 offset=ffff800000000000
+[19720.115 ms] MMU: new P4 phys=254e000 virt=ffff80000254e000
+[19720.387 ms] MMU: copy kernel pml4[256]
+[19722.266 ms] MMU: copy kernel pml4[511]
 JJJJPROC: ELF loaded, entry
-JPROC: Applied 7 boot grants to /boot/modules/rtc_cmos (path: /boot/modules/rtc_cmos)
-SCHED: configure_ctx_locked: k_stack=0xffff8000025ae000 u_stack=0x80000000 entry=0x20d200
-SCHED: configure_ctx_locked: finalized sp=0xffff8000025adf60
+JJJPROC: Applied 7 boot grants to /boot/modules/rtc_cmos (path: /boot/modules/rtc_cmos)
+SCHED: configure_ctx_locked: k_stack=0xffff8000025b0000 u_stack=0x80000000 entry=0x20d200
+SCHED: configure_ctx_locked: finalized sp=0xffff8000025aff60
 PROC: spawned
-JJJJ[18898.590 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eff0000 top=0x8f000000 active=1
-J[18901.715 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x26c4000
-[18903.649 ms] THREAD: Thread 6 context: entry=0xa59a30 user_sp=0x8f000000 arg0=0x90000178 kernel_sp=0xffff8000026c4000
-[18959.304 ms] USER: BLOOM: present thread spawned
-JJ[19023.382 ms] USER: RTC-CMOS: Starting...
-JJ[19208.737 ms] USER: RTC-CMOS: Hardware found. Publishing device...
-JJ[19389.426 ms] USER: RTC-CMOS: Active. Time: 2026-1-8 4:11:44
+JJ[19850.354 ms] THREAD: Allocated stack slot: group=1 bottom=0x8eff0000 top=0x8f000000 active=1
+J[19853.355 ms] THREAD: Mapped user stack: bottom=0x8eff0000 top=0x8f000000 phys=0x26c4000
+[19854.604 ms] THREAD: Thread 6 context: entry=0xa59910 user_sp=0x8f000000 arg0=0x90000178 kernel_sp=0xffff8000026c4000
+[19904.468 ms] USER: BLOOM: present thread spawned
+JJJJ[20032.505 ms] USER: RTC-CMOS: Starting...
+[20033.847 ms] USER: RTC-CMOS: Hardware found. Publishing device...
+JJ[20166.727 ms] USER: RTC-CMOS: Active. Time: 2026-1-8 4:44:45
 PROC: spawn_kernel_module
-[19454.099 ms] PROC: module phys=1727b000 offset=ffff800000000000
-[19454.865 ms] MMU: new P4 phys=3166000 virt=ffff800003166000
-[19455.378 ms] MMU: copy kernel pml4[256]
-[19457.658 ms] MMU: copy kernel pml4[511]
+[20231.188 ms] PROC: module phys=1727b000 offset=ffff800000000000
+[20231.865 ms] MMU: new P4 phys=3166000 virt=ffff800003166000
+[20232.409 ms] MMU: copy kernel pml4[256]
+[20234.265 ms] MMU: copy kernel pml4[511]
 JJJJPROC: ELF loaded, entry
 JPROC: Applied 6 boot grants to /boot/modules/timed (path: /boot/modules/timed)
 SCHED: configure_ctx_locked: k_stack=0xffff8000031c5000 u_stack=0x80000000 entry=0x20f4c0
 SCHED: configure_ctx_locked: finalized sp=0xffff8000031c4f60
 PROC: spawned
+JJ[20354.762 ms] USER: TIMED: Starting...

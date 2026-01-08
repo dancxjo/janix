@@ -1,0 +1,27 @@
+//! Build task - compiles the kernel for target architectures.
+
+use xshell::{Shell, cmd};
+use crate::common::{rust_target, profile_subdir, Result};
+
+/// Build the kernel for a target architecture.
+pub fn build(sh: &Shell, arch: &str, profile: &str) -> Result<()> {
+    let target = rust_target(arch);
+    let subdir = profile_subdir(profile);
+
+    println!("Building bran kernel for {} ({} profile)...", arch, profile);
+
+    cmd!(sh, "cargo build --target {target} --profile {profile} -p bran")
+        .env("RUSTFLAGS", "-C relocation-model=static")
+        .run()?;
+
+    // Copy kernel binary to bran/bin-{arch}/
+    let bin_dir = format!("bran/bin-{}", arch);
+    sh.create_dir(&bin_dir)?;
+
+    let src = format!("target/{}/{}/bran", target, subdir);
+    let dst = format!("{}/kernel", bin_dir);
+    sh.copy_file(&src, &dst)?;
+
+    println!("Kernel built: {}", dst);
+    Ok(())
+}

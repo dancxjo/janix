@@ -53,11 +53,11 @@ clean:
 distclean:
     cargo xtask distclean
 
-# Run BDD tests
+# Run BDD tests (default: x86_64)
 # Examples:
-#   just bdd --feature simple-boot
-#   just bdd --tag @smoke
-#   just bdd --arch aarch64 --arch x86_64
-bdd *args:
+#   just behave --feature simple-boot
+#   just behave --tag @smoke
+#   just behave --arch aarch64
+behave *args:
     cargo xtask bdd {{args}}
 

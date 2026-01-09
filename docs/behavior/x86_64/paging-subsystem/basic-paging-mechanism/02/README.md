@@ -1,6 +1,6 @@
 # ✅ Then the serial output should contain "Paging subsystem test passed"
 
-**Result:** passed | **Duration:** 4147ms
+**Result:** passed | **Duration:** 5805ms
 
 ## Screenshots
 

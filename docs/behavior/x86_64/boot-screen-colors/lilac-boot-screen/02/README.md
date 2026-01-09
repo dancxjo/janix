@@ -1,6 +1,6 @@
 # ✅ When I wait for the system to boot
 
-**Result:** passed | **Duration:** 5753ms
+**Result:** passed | **Duration:** 5367ms
 
 ## Screenshots
 
@@ -53,15 +53,15 @@ XMM14=0000000000000000 0000000000000000 XMM15=0000000000000000 0000000000000000
 ```
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[16752832998] [INFO] System booted
-[16768727151] [INFO] boot: phys ranges=35 modules=0
-[16774305174] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[16780479738] [INFO] Initializing Real Frame Allocator...
-[16784950809] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
-[16787834514] [INFO] Allocating bitmap of 8073 words...
-[16797326931] [INFO] Bitmap allocated at 0xffffff8040000000
-[16802180934] [INFO] Zeroing bitmap...
-[16809475122] [INFO] Bitmap zeroed.
+[2J[01;01H[01;01H[2J[01;01H[01;01H[17498094999] [INFO] System booted
+[17511802407] [INFO] boot: phys ranges=35 modules=0
+[17513822931] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[17516172135] [INFO] Initializing Real Frame Allocator...
+[17517902259] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
+[17518534704] [INFO] Allocating bitmap of 8073 words...
+[17524870803] [INFO] Bitmap allocated at 0xffffff8040000000
+[17527786584] [INFO] Zeroing bitmap...
+[17535974346] [INFO] Bitmap zeroed.
 
 ```
 </details>

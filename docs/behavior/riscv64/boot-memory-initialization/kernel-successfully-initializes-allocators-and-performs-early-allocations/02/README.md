@@ -1,6 +1,6 @@
 # ✅ Then the serial output should contain "boot: phys ranges="
 
-**Result:** passed | **Duration:** 13520ms
+**Result:** passed | **Duration:** 10400ms
 
 ## Screenshots
 
@@ -70,26 +70,26 @@ EDK II
 UEFI v2.70 (EDK II, 0x00010000)
 [1m[33m[40mMapping table[0m[37m[40m
 [1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0c:;BLK2:
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,05C99A1D-757A-4BE5-A
-498-FB0CB69F190D)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,5588D5D0-1695-4BCC-B
+578-02EB9E58D87E)
 [1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
           VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)
 [1m[33m[40m     BLK1:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,05C99A1D-757A-4BE5-A
-49B-FB0CB69F190D)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,5588D5D0-1695-4BCC-B
+57B-02EB9E58D87E)
 [1m[33m[40m     BLK3:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,05C99A1D-757A-4BE5-A
-499-FB0CB69F190D)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,5588D5D0-1695-4BCC-B
+579-02EB9E58D87E)
 Press [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
 [1m[33m[40mShell> [0m[37m[40m\EFI\BOOT\BOOTRISCV64.EFI
-[2J[01;01H[2J[04D[136255287] [INFO] System booted
-[137031921] [INFO] boot: phys ranges=24 modules=0
-[137063475] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[137084029] [INFO] Initializing Real Frame Allocator...
-[137092391] [INFO] frame_alloc: base=0x80050000 frames=519021 words=8110
-[137134369] [INFO] Allocating bitmap of 8110 words...
-[137161065] [INFO] Bitmap allocated at 0xffffff8040000000
-[137178931] [INFO] Zeroing bitmap...
+[2J[01;01H[2J[04D[108636152] [INFO] System booted
+[108679905] [INFO] boot: phys ranges=24 modules=0
+[108690689] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[108716823] [INFO] Initializing Real Frame Allocator...
+[108724567] [INFO] frame_alloc: base=0x80050000 frames=519021 words=8110
+[108729999] [INFO] Allocating bitmap of 8110 words...
+[108756621] [INFO] Bitmap allocated at 0xffffff8040000000
+[108776443] [INFO] Zeroing bitmap...
 
 ```
 </details>

@@ -1,6 +1,6 @@
 # ✅ And the serial output should contain "System halted"
 
-**Result:** passed | **Duration:** 699ms
+**Result:** passed | **Duration:** 865ms
 
 ## Screenshots
 

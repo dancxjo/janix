@@ -1,6 +1,6 @@
 # ✅ And the serial output should contain "Running frame_alloc sanity check..."
 
-**Result:** passed | **Duration:** 660ms
+**Result:** passed | **Duration:** 737ms
 
 ## Screenshots
 

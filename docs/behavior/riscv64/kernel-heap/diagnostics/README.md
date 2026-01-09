@@ -1,6 +1,6 @@
 # ✅ Scenario: Diagnostics
 
-> Last run: 2026-01-09 10:53:08
+> Last run: 2026-01-09 10:57:12
 
 ## Steps
 
@@ -81,26 +81,26 @@ EDK II
 UEFI v2.70 (EDK II, 0x00010000)
 [1m[33m[40mMapping table[0m[37m[40m
 [1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0c:;BLK2:
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,05C99A1D-757A-4BE5-A
-498-FB0CB69F190D)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,5588D5D0-1695-4BCC-B
+578-02EB9E58D87E)
 [1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
           VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)
 [1m[33m[40m     BLK1:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,05C99A1D-757A-4BE5-A
-49B-FB0CB69F190D)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,5588D5D0-1695-4BCC-B
+57B-02EB9E58D87E)
 [1m[33m[40m     BLK3:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,05C99A1D-757A-4BE5-A
-499-FB0CB69F190D)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,5588D5D0-1695-4BCC-B
+579-02EB9E58D87E)
 Press [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
 [1m[33m[40mShell> [0m[37m[40m\EFI\BOOT\BOOTRISCV64.EFI
-[2J[01;01H[2J[04D[113448562] [INFO] System booted
-[113487915] [INFO] boot: phys ranges=24 modules=0
-[113512952] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[113549415] [INFO] Initializing Real Frame Allocator...
-[113557326] [INFO] frame_alloc: base=0x80050000 frames=519021 words=8110
-[113563185] [INFO] Allocating bitmap of 8110 words...
-[113592621] [INFO] Bitmap allocated at 0xffffff8040000000
-[113611044] [INFO] Zeroing bitmap...
+[2J[01;01H[2J[04D[100591652] [INFO] System booted
+[100651559] [INFO] boot: phys ranges=24 modules=0
+[100672852] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[100790723] [INFO] Initializing Real Frame Allocator...
+[100807780] [INFO] frame_alloc: base=0x80050000 frames=519021 words=8110
+[100826476] [INFO] Allocating bitmap of 8110 words...
+[100855648] [INFO] Bitmap allocated at 0xffffff8040000000
+[100875692] [INFO] Zeroing bitmap...
 
 ```
 </details>

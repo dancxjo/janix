@@ -1,6 +1,6 @@
 # ✅ And the serial output should contain "frame_alloc: total="
 
-**Result:** passed | **Duration:** 769ms
+**Result:** passed | **Duration:** 822ms
 
 ## Screenshots
 

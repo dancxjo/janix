@@ -1,6 +1,6 @@
 # ✅ And the serial output should contain "frame_alloc: total="
 
-**Result:** passed | **Duration:** 151ms
+**Result:** passed | **Duration:** 15ms
 
 ## Registers
 
@@ -9,15 +9,3 @@
 
 ```
 
-<details open>
-<summary>Serial Output</summary>
-
-```
-[14187970401] [INFO] frame_alloc: total=516638 free=511732 used=4906
-[14188682112] [INFO] Running frame_alloc sanity check...
-[14191723755] [INFO] frame_alloc: sanity: single ok
-[14196169284] [INFO] frame_alloc: sanity: contig(8) ok
-[14196660753] [INFO] System halted
-
-```
-</details>

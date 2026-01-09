@@ -150,7 +150,7 @@ impl ArtifactCollector {
     }
 
     /// Called when a step starts.
-    pub fn on_step_start(&mut self, keyword: &str, name: &str, serial_len: usize) {
+    pub fn on_step_start(&mut self, keyword: &str, name: &str, serial_len: usize, screenshot_before: Option<PathBuf>) {
         self.step_counter += 1;
         self.step_start_serial_len = serial_len;
         self.step_start_time = Some(std::time::Instant::now());
@@ -165,7 +165,7 @@ impl ArtifactCollector {
                     keyword: keyword.to_string(),
                     result: StepResult::Skipped,
                     dir,
-                    screenshot_before: None,
+                    screenshot_before,
                     screenshot_after: None,
                     registers: None,
                     serial_log: None,

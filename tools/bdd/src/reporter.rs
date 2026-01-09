@@ -152,8 +152,24 @@ impl ThingOsReporter {
                 self.step_start_serial_len = serial.len();
                 self.step_start_time = Some(std::time::Instant::now());
                 
+                // Try to capture a "before" screenshot
+                let screenshot_before = {
+                    let collector = artifacts::global().lock().await;
+                    let path = collector.screenshot_path("before");
+                    drop(collector);
+                    
+                    match artifacts::take_screenshot_global(&path).await {
+                        Ok(p) => Some(p),
+                        Err(e) => {
+                            // Don't spam stderr if just not ready yet, but good for debug
+                            // eprintln!("│  │  │      ⚠️ Before Screenshot: {}", e);
+                            None
+                        }
+                    }
+                };
+
                 let mut collector = artifacts::global().lock().await;
-                collector.on_step_start(step.keyword.trim(), &step.value, self.step_start_serial_len);
+                collector.on_step_start(step.keyword.trim(), &step.value, self.step_start_serial_len, screenshot_before);
             }
             event::Step::Passed(..) => {
                 eprintln!("│  │  │  └─ ✅ passed");

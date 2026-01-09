@@ -153,3 +153,39 @@ async fn check_serial_monotonic(world: &mut ThingOsWorld) {
         panic!("Timestamps were monotonic but never advanced beyond 0.0! Timer likely broken.");
     }
 }
+
+#[given("the machine is booted")]
+async fn machine_is_booted(world: &mut ThingOsWorld) {
+    turn_on_machine(world).await;
+    wait_for_boot(world).await;
+}
+
+#[then(regex = r#"^"(.+)" should appear at least (\d+) times$"#)]
+async fn check_occurrence_count(world: &mut ThingOsWorld, pattern: String, count: usize) {
+    let log = world.get_serial_log().await;
+    let occurrences = log.lines().filter(|l| l.contains(&pattern)).count();
+    if occurrences < count {
+        panic!("Expected '{}' to appear at least {} times, but found {}", pattern, count, occurrences);
+    }
+}
+
+#[then(regex = r#"^I should see "(.+)" after "(.+)"$"#)]
+async fn check_ordering(world: &mut ThingOsWorld, second: String, first: String) {
+    let log = world.get_serial_log().await;
+    let first_pos = log.lines().position(|l| l.contains(&first));
+    
+    if first_pos.is_none() { 
+        panic!("Could not find '{}'", first); 
+    }
+    let first_idx = first_pos.unwrap();
+    
+    let remainder = log.lines().skip(first_idx + 1);
+    if !remainder.into_iter().any(|l| l.contains(&second)) {
+         panic!("Did not find '{}' after '{}'", second, first);
+    }
+}
+
+#[then(regex = r#"^I should see "(.+)"$"#)]
+async fn should_see_simple(world: &mut ThingOsWorld, expected: String) {
+    check_serial(world, &expected, DEFAULT_TIMEOUT_SECS).await;
+}

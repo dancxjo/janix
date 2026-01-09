@@ -307,11 +307,42 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
         kinfo!("kheap: big allocation ok (len={})", big_vec.len());
     }
 
-    // Diagnostics
-    crate::memory::global_alloc::kernel_heap().stats();
+    // 5. Task Subsystem & Demo
+    kinfo!("Initializing Task System...");
+    crate::task::init();
 
-    kinfo!("System halted");
-    runtime.halt();
+    kinfo!("Spawning Thread A...");
+    crate::task::spawn(thread_a, 0);
+    
+    kinfo!("Spawning Thread B...");
+    crate::task::spawn(thread_b, 0);
+
+    kinfo!("Entering Scheduler Loop (Main Task)...");
+    loop {
+        crate::task::yield_now();
+        // Optional: delay to not flood logs if yield returns immediately (if only one task)
+        // But with A and B, we should switch.
+        // Also simple busy wait to pace output
+         for _ in 0..100000 { core::hint::black_box(()); }
+    }
+}
+
+extern "C" fn thread_a(arg: usize) -> ! {
+    loop {
+        let ticks = crate::runtime().mono_ticks();
+        crate::kinfo!("Thread A (arg={}) ticks={}", arg, ticks);
+        for _ in 0..500000 { core::hint::black_box(()); }
+        crate::task::yield_now();
+    }
+}
+
+extern "C" fn thread_b(arg: usize) -> ! {
+    loop {
+        let ticks = crate::runtime().mono_ticks();
+        crate::kinfo!("Thread B (arg={}) ticks={}", arg, ticks);
+        for _ in 0..500000 { core::hint::black_box(()); }
+        crate::task::yield_now();
+    }
 }
 
 pub mod simd;

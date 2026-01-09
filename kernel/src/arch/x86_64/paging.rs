@@ -1,6 +1,6 @@
 use crate::memory::boot_frame_alloc::BootFrameAllocator;
 use crate::memory::paging::PageFlags;
-use crate::memory::frame_alloc::{PhysFrame, FRAME_ALLOCATOR, FRAME_SIZE};
+use crate::memory::frame_alloc::{PhysFrame, FRAME_ALLOCATOR};
 use core::arch::asm;
 
 static mut HHDM_OFFSET: u64 = 0;
@@ -22,7 +22,7 @@ impl AddressSpace {
             alloc.alloc_contiguous(1).expect("Failed to allocate PML4").base
         });
         
-        let mut aspace = Self { root };
+        let aspace = Self { root };
         
         // 2. Initialize it
         // We need to copy the kernel half (top 256 entries) from the current CR3
@@ -79,9 +79,9 @@ impl AddressSpace {
             if flags.contains(PageFlags::WRITABLE) { hw_flags |= 2; }
             if flags.contains(PageFlags::USER_ACCESSIBLE) { hw_flags |= 4; }
             // If WriteThrough (bit 3) or CacheDisable (bit 4) required:
-            if flags.contains(PageFlags::NO_CACHE) { hw_flags |= (1 << 4); }
-             if flags.contains(PageFlags::NO_EXECUTE) { hw_flags |= (1 << 63); }
-            if flags.contains(PageFlags::GLOBAL) { hw_flags |= (1 << 8); }
+            if flags.contains(PageFlags::NO_CACHE) { hw_flags |= 1 << 4; }
+            if flags.contains(PageFlags::NO_EXECUTE) { hw_flags |= 1 << 63; }
+            if flags.contains(PageFlags::GLOBAL) { hw_flags |= 1 << 8; }
             
             let entry = phys.0 | hw_flags;
             *p1_ptr.add(p1_idx as usize) = entry;

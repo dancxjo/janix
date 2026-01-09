@@ -28,6 +28,14 @@ pub mod dummy {
             pub fn map_page(&mut self, _virt: u64, _phys: PhysFrame, _flags: PageFlags) -> Result<(), ()> { Ok(()) }
         }
     }
+
+    pub mod task {
+        #[repr(C)]
+        #[derive(Debug, Default)]
+        pub struct ArchContext { _d: u64 }
+        pub unsafe fn context_switch(_o: *mut ArchContext, _n: *const ArchContext) {}
+        pub fn context_init(_c: &mut ArchContext, _k: u64, _e: extern "C" fn(usize)->!, _a: usize) {}
+    }
 }
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "loongarch64", target_arch = "riscv64")))]
 pub use dummy as imp;

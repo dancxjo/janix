@@ -79,6 +79,23 @@ impl BootRuntime for Runtime {
     fn mono_freq_hz(&self) -> u64 {
         100_000_000
     }
+
+    fn irq_disable(&self) -> kernel::IrqState {
+        let mut val: usize = 0;
+        let mask: usize = 0x4; // CRMD.IE (bit 2)
+        unsafe {
+            asm!("csrxchg {}, {}, 0x0", inout(reg) val, in(reg) mask);
+        }
+        kernel::IrqState(val)
+    }
+
+    fn irq_restore(&self, state: kernel::IrqState) {
+        let mut val = state.0;
+        let mask: usize = 0x4; // CRMD.IE (bit 2)
+        unsafe {
+            asm!("csrxchg {}, {}, 0x0", inout(reg) val, in(reg) mask);
+        }
+    }
     
     fn phys_memory_map(&self) -> &'static [kernel::PhysRange] {
         self.init_memory_map();
@@ -121,6 +138,12 @@ impl SerialPort {
 
 /// Halt and catch fire - enters an infinite idle loop.
 pub fn hcf() -> ! {
+    // Disable interrupts to prevent waking up and crashing if handlers aren't set
+    unsafe {
+        let mut _val: usize = 0;
+        let mask: usize = 0x4; // CRMD.IE
+        asm!("csrxchg {}, {}, 0x0", inout(reg) _val, in(reg) mask);
+    }
     loop {
         unsafe { asm!("idle 0") };
     }

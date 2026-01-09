@@ -1,15 +1,16 @@
 # BDD Test Results - loongarch64
 
-> Last run: 2026-01-08 18:56:42
+> Last run: 2026-01-08 19:30:20
 
 ## Summary
 
 | Metric | Passed | Failed |
 |--------|--------|--------|
-| Features | 1 | 0 |
-| Scenarios | 2 | 0 |
-| Steps | 3 | 0 (1 skipped) |
+| Features | 1 | 1 |
+| Scenarios | 2 | 1 |
+| Steps | 4 | 1 (2 skipped) |
 
 ## Features
 
-- ✅ [Simple Boot](./simple-boot/)
+- ✅ [Boot Screen Colors](./boot-screen-colors/)
+- ❌ [Simple Boot](./simple-boot/)

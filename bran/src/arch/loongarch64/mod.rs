@@ -50,11 +50,12 @@ impl ArchRuntime for LoongArchRuntime {
     }
 
     fn irq_restore(&self, state: IrqState) {
-        let val = state.0;
+        let mut val = state.0;
         let mask: usize = 0x4; // CRMD.IE (bit 2)
         unsafe {
             asm!("csrxchg {}, {}, 0x0", inout(reg) val, in(reg) mask);
         }
+        let _ = val;
     }
 }
 

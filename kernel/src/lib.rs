@@ -166,7 +166,6 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     // 2. Real Frame Allocator Init
     //    We need to allocate backing memory for the bitmap *using* the BootHeap.
     extern crate alloc;
-    use alloc::vec;
     use crate::memory::frame_alloc::{FrameAllocator, FRAME_SIZE};
 
     kinfo!("Initializing Real Frame Allocator...");
@@ -279,9 +278,7 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     crate::memory::global_alloc::kernel_heap().init(64);
     
     // 6. Switch Allocator
-    unsafe {
         crate::memory::global_alloc::switch_to_kernel_heap();
-    }
     
     // 7. Heap Sanity Demo
     {

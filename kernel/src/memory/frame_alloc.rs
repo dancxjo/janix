@@ -1,7 +1,4 @@
-use crate::{PhysRange, PhysRangeKind, BootModuleDesc, kinfo};
-use crate::memory::boot_frame_alloc::BootFrameAllocator;
-use core::sync::atomic::{AtomicU64, Ordering};
-use core::ops::Range;
+use crate::{PhysRange, PhysRangeKind, BootModuleDesc};
 
 pub const FRAME_SIZE: u64 = 4096;
 
@@ -355,7 +352,7 @@ impl FrameAllocatorLocked {
     }
     
     pub unsafe fn init(&self, alloc: FrameAllocator) {
-        *self.inner.get() = Some(alloc);
+        unsafe { *self.inner.get() = Some(alloc); }
     }
     
 

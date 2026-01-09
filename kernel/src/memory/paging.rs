@@ -3,7 +3,7 @@
 pub struct PageFlags(u64);
 
 impl PageFlags {
-    pub const empty: Self = Self(0);
+    pub const EMPTY: Self = Self(0);
     pub const PRESENT: Self = Self(1 << 0);
     pub const WRITABLE: Self = Self(1 << 1);
     pub const USER_ACCESSIBLE: Self = Self(1 << 2);

@@ -31,7 +31,6 @@ static mut SIMD_HEAP: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 static HEAP_TOP: AtomicUsize = AtomicUsize::new(0);
 
 fn internal_alloc(layout: Layout) -> *mut u8 {
-    unsafe {
         // Simple CAS loop for thread safety (though we are mostly single threaded at boot)
         loop {
             let top = HEAP_TOP.load(Ordering::Relaxed);
@@ -50,7 +49,6 @@ fn internal_alloc(layout: Layout) -> *mut u8 {
                 return (base + top + align_offset) as *mut u8;
             }
         }
-    }
 }
 
 fn internal_dealloc(_ptr: *mut u8, _layout: Layout) {

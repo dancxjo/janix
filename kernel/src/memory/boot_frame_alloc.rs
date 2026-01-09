@@ -38,6 +38,11 @@ impl BootFrameAllocator {
             if self.current_addr < region.start {
                 self.current_addr = align_up(region.start, 4096);
             }
+            
+            // SKIP LOW MEMORY (Likely not mapped in HHDM or reserved)
+            if self.current_addr < 0x10000 {
+                self.current_addr = 0x10000;
+            }
 
             // Check if we fit in the current region
             if self.current_addr + 4096 <= region.end {

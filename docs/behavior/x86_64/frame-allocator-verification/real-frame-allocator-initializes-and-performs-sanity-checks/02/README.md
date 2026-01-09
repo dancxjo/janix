@@ -1,11 +1,6 @@
 # ✅ Then the serial output should contain "Initializing Real Frame Allocator..."
 
-**Result:** passed | **Duration:** 4088ms
-
-## Screenshots
-
-### After
-![After](./after.png)
+**Result:** passed | **Duration:** 4187ms
 
 ## Registers
 

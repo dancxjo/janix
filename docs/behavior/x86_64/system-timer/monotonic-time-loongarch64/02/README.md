@@ -1,11 +1,6 @@
 # ✅ And I wait for the system to boot
 
-**Result:** passed | **Duration:** 3926ms
-
-## Screenshots
-
-### After
-![After](./after.png)
+**Result:** passed | **Duration:** 4441ms
 
 ## Registers
 

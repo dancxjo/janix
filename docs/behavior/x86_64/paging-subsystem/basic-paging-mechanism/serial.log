@@ -1,25 +1,29 @@
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[12853051431] [INFO] System booted
-[12865988718] [INFO] boot: phys ranges=35 modules=0
-[12868356072] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[12870400257] [INFO] Initializing Real Frame Allocator...
-[12871990956] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
-[13529039667] [INFO] frame_alloc: total=516638 free=511667 used=4971
-[13530218031] [INFO] Running frame_alloc sanity check...
-[13533355902] [INFO] frame_alloc: sanity: single ok
-[13536980391] [INFO] frame_alloc: sanity: contig(8) ok
-[13537443018] [INFO] Testing paging subsystem...
-[13546163268] [INFO] Switched to new address space
-[13550236161] [INFO] Paging subsystem test passed
-[13554090264] [INFO] Paging subsystem test passed
-[13557920013] [INFO] Initializing Kernel Heap...
-[13566236079] [INFO] kheap: grew by 64 pages (phys=0x3f000, virt=0xffffa00000000000)
-[13567438698] [INFO] global_alloc: switched to kernel heap
-[13567923171] [INFO] Running heap sanity check...
-[13586588730] [INFO] kheap: sanity ok
-[13589884275] [INFO] kheap: forcing growth...
-[13595719599] [INFO] kheap: grew by 16 pages (phys=0x82000, virt=0xffffa00000040000)
-[13628905191] [INFO] kheap: big allocation ok (len=307200)
-[13646336616] [INFO] kheap: reserved=268435456 committed=327680
-[13650323577] [INFO] System halted
+[2J[01;01H[01;01H[2J[01;01H[01;01H[13602001809] [INFO] System booted
+[13615960611] [INFO] boot: phys ranges=35 modules=0
+[13622386206] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[13627860642] [INFO] Initializing Real Frame Allocator...
+[13629629013] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
+[13633662240] [INFO] Allocating bitmap of 8073 words...
+[13641229767] [INFO] Bitmap allocated at 0xffffff8040000000
+[13646457891] [INFO] Zeroing bitmap...
+[13652627802] [INFO] Bitmap zeroed.
+[14182274007] [INFO] frame_alloc: total=516638 free=450333 used=66305
+[14185672413] [INFO] Running frame_alloc sanity check...
+[14239905933] [INFO] frame_alloc: sanity: single ok
+[14245760331] [INFO] frame_alloc: sanity: contig(8) ok
+[14247090528] [INFO] Testing paging subsystem...
+[14256293172] [INFO] Switched to new address space
+[14259822984] [INFO] Paging subsystem test passed
+[14260318083] [INFO] Paging subsystem test passed
+[14260771701] [INFO] Initializing Kernel Heap...
+[14268349788] [INFO] kheap: grew by 64 pages (phys=0x1003f000, virt=0xffffa00000000000)
+[14273181879] [INFO] global_alloc: switched to kernel heap
+[14273743308] [INFO] Running heap sanity check...
+[14294627259] [INFO] kheap: sanity ok
+[14298299994] [INFO] kheap: forcing growth...
+[14302605306] [INFO] kheap: grew by 16 pages (phys=0x10082000, virt=0xffffa00000040000)
+[14331985734] [INFO] kheap: big allocation ok (len=307200)
+[14344687236] [INFO] kheap: reserved=268435456 committed=327680
+[14349473127] [INFO] System halted

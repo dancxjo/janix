@@ -1,5 +1,18 @@
-[14187970401] [INFO] frame_alloc: total=516638 free=511732 used=4906
-[14188682112] [INFO] Running frame_alloc sanity check...
-[14191723755] [INFO] frame_alloc: sanity: single ok
-[14196169284] [INFO] frame_alloc: sanity: contig(8) ok
-[14196660753] [INFO] System halted
+[15262007409] [INFO] frame_alloc: total=516638 free=509853 used=6785
+[15264503265] [INFO] Running frame_alloc sanity check...
+[15273484182] [INFO] frame_alloc: sanity: single ok
+[15280852587] [INFO] frame_alloc: sanity: contig(8) ok
+[15284426850] [INFO] Testing paging subsystem...
+[15294691929] [INFO] Switched to new address space
+[15296793435] [INFO] Paging subsystem test passed
+[15297290514] [INFO] Paging subsystem test passed
+[15297750204] [INFO] Initializing Kernel Heap...
+[15307375413] [INFO] kheap: grew by 64 pages (phys=0x17bf000, virt=0xffffa00000000000)
+[15315976830] [INFO] global_alloc: switched to kernel heap
+[15316765497] [INFO] Running heap sanity check...
+[15338074917] [INFO] kheap: sanity ok
+[15339136362] [INFO] kheap: forcing growth...
+[15342944760] [INFO] kheap: grew by 16 pages (phys=0x1802000, virt=0xffffa00000040000)
+[15370335618] [INFO] kheap: big allocation ok (len=307200)
+[15385056060] [INFO] kheap: reserved=268435456 committed=327680
+[15388869342] [INFO] System halted

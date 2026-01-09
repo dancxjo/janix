@@ -6,10 +6,17 @@ use core::arch::asm;
 static mut HHDM_OFFSET: u64 = 0;
 static mut LEVELS: usize = 3;
 
-pub fn init(hhdm_offset: u64) {
+pub fn init(_hhdm_offset: u64) {
     unsafe { 
-        HHDM_OFFSET = hhdm_offset; 
-        crate::kinfo!("LoongArch paging init: HHDM={:#x}", hhdm_offset);
+        // Configure DMW1 for direct mapping (Cached, PLV0) -> 0x9000...
+        // Virt Seg: 0x9 (1001), MAT: 1 (CC), PLV0: 1
+        let dmw_val: u64 = 0x9000_0000_0000_0011;
+        asm!("csrwr {}, 0x181", in(reg) dmw_val); // DMW1
+        
+        // Use DMW1 window for phys_to_virt instead of Limine's HHDM
+        HHDM_OFFSET = 0x9000_0000_0000_0000;
+        let hhdm = HHDM_OFFSET;
+        crate::kinfo!("LoongArch paging init: DMW1 setup, HHDM override={:#x}", hhdm);
         
         let pwch: u64;
         asm!("csrrd {}, 0x1d", out(reg) pwch);
@@ -21,10 +28,10 @@ pub fn init(hhdm_offset: u64) {
         }
     }
 }
-
+ 
 unsafe fn phys_to_virt(phys: u64) -> u64 {
     // Safety: Caller must ensure HHDM_OFFSET is initialized
-    unsafe { phys + HHDM_OFFSET }
+    unsafe { phys | HHDM_OFFSET }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,15 +127,20 @@ unsafe fn ensure_table_boot(table: *mut u64, index: u64, allocator: &mut BootFra
         crate::kinfo!("Reading table entry {:p}", table.add(index as usize));
         let entry = *table.add(index as usize);
         crate::kinfo!("Entry: {:#x}", entry);
-        if (entry & PTE_V) != 0 {
-            // Valid
+        if (entry & PTE_V) != 0 || entry != 0 {
+            // Valid or at least present (Limine weirdness workaround)
+            // If V=0 but entry!=0, it might be a table that the TLB Refill handler knows about.
+            crate::kinfo!("Reusing existing table at {:#x}", entry);
             entry & 0x0000_FFFF_FFFF_F000
         } else {
             crate::kinfo!("Allocating table...");
             let frame = allocator.alloc_frame().expect("OOM allocating page table for bootheap");
             crate::kinfo!("Allocated frame {:#x}", frame);
             let virt_ptr = phys_to_virt(frame) as *mut u64;
-            core::ptr::write_bytes(virt_ptr as *mut u8, 0, 4096);
+            
+            // Manual zeroing
+            let slice = core::slice::from_raw_parts_mut(virt_ptr as *mut u64, 512);
+            for slot in slice { *slot = 0; }
             
             let new_entry = frame | PTE_V;
             *table.add(index as usize) = new_entry;

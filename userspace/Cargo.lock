@@ -33,11 +33,14 @@ dependencies = [
 [[package]]
 name = "standard"
 version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
 
 [[package]]
 name = "stem"
 version = "0.1.0"
 dependencies = [
  "abi",
- "standard",
 ]

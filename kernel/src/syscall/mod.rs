@@ -1,5 +1,6 @@
 use crate::trap::x86_64::TrapFrame;
-use crate::user::abi::{SYSCALL_PUTCHAR, SYSCALL_TICKS, SYSCALL_YIELD, SYSCALL_EXIT, SYSCALL_SPAWN_MODULE, SYSCALL_RTC_CMOS_READ};
+use crate::user::abi::syscall::{SYSCALL_PUTCHAR, SYSCALL_TICKS, SYSCALL_YIELD, SYSCALL_EXIT, SYSCALL_SPAWN_MODULE, SYSCALL_RTC_CMOS_READ};
+
 
 #[unsafe(no_mangle)]
 pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
@@ -51,6 +52,37 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
             match crate::user::sys_rtc_cmos_read(reg) {
                 Ok(val) => val as u64,
                 Err(_) => u64::MAX,
+            }
+        },
+        SYSCALL_GRAPH_APPEND => {
+            let op_ptr = tf.rdi as *const crate::user::abi::root::JournalOp;
+            // Validate pointer
+            if op_ptr as u64 >= 0x8000_0000_0000_0000 {
+                u64::MAX
+            } else {
+                let op = unsafe { *op_ptr };
+                crate::root().append(op)
+            }
+        },
+        SYSCALL_WATCH_CREATE => {
+            crate::root().watch_create()
+        },
+        SYSCALL_WATCH_NEXT => {
+            let watch_id = tf.rdi;
+            let out_ptr = tf.rsi as *mut crate::user::abi::root::WatchEvent;
+            
+             // Validate pointer
+            if out_ptr as u64 >= 0x8000_0000_0000_0000 {
+                // -EFAULT ideally, but using i64::MAX or similar error convention
+                 u64::MAX 
+            } else {
+                match crate::root().watch_next(watch_id) {
+                    Ok(event) => {
+                        unsafe { *out_ptr = event };
+                        0 // Success
+                    }
+                    Err(e) => e as u64, // Pass through error code (e.g. -EAGAIN)
+                }
             }
         },
         _ => {

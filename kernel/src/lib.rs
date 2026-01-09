@@ -223,6 +223,14 @@ pub trait BootRuntime {
 static mut RUNTIME: Option<&'static dyn BootRuntime> = None;
 static mut MODULES: &'static [BootModuleDesc] = &[];
 
+pub mod root;
+
+static ROOT: root::Root = root::Root::new();
+
+pub fn root() -> &'static root::Root {
+    &ROOT
+}
+
 pub fn runtime() -> &'static dyn BootRuntime {
     unsafe { RUNTIME.expect("Kernel runtime not initialized") }
 }

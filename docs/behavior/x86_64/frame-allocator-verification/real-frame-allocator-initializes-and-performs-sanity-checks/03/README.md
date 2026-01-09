@@ -1,11 +1,6 @@
 # ✅ And the serial output should contain "frame_alloc: base="
 
-**Result:** passed | **Duration:** 1263ms
-
-## Screenshots
-
-### After
-![After](./after.png)
+**Result:** passed | **Duration:** 120ms
 
 ## Registers
 

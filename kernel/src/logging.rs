@@ -69,6 +69,8 @@ pub fn _print(args: fmt::Arguments) {
 pub fn _log(level: Level, args: fmt::Arguments) {
     unsafe {
         if let Some(writer) = &mut *core::ptr::addr_of_mut!(WRITER) {
+            let ticks = writer.runtime.mono_ticks();
+            let _ = writer.write_fmt(format_args!("[{}] ", ticks));
             let _ = writer.write_fmt(format_args!("[{}] ", level.as_str()));
             let _ = writer.write_fmt(args);
             let _ = writer.write_char('\n');

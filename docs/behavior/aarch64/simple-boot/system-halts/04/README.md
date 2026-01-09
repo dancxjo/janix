@@ -1,6 +1,6 @@
-# ❌ When I wait for the system to boot
+# ❌ Then I should see that the machine has halted
 
-**Result:** failed | **Duration:** 29451ms
+**Result:** failed | **Duration:** 9510ms
 
 <details open>
 <summary>Serial Output</summary>

@@ -1,15 +1,15 @@
 # ❌ Scenario: System halts
 
-> Last run: 2026-01-08 19:29:19
+> Last run: 2026-01-08 19:52:14
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | When I turn on the machine | ✅ | 297ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
-| 2 | Then I should see a message in the serial output that says "System booted" | ✅ | 197ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> - [💾](./02/registers.txt) |
-| 3 | Then I should see that the machine has halted | ✅ | 210ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
-| 4 | When I wait for the system to boot | ❌ | 29451ms | - [📜](./04/serial.log) - |
+| 1 | When I turn on the machine | ✅ | 301ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
+| 2 | When I wait for the system to boot | ✅ | 195ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> - [💾](./02/registers.txt) |
+| 3 | Then I should see a message in the serial output that says "System booted" | ✅ | 193ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
+| 4 | Then I should see that the machine has halted | ❌ | 9510ms | - [📜](./04/serial.log) - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

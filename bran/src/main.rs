@@ -36,7 +36,7 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-static SERIAL: SerialPort = SerialPort;
+static SERIAL: SerialPort = SerialPort::new();
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {

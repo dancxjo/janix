@@ -6,6 +6,12 @@ use kernel::BootRuntime;
 /// Serial port implementation for loongarch64 using NS16550A-compatible UART.
 pub struct SerialPort;
 
+impl SerialPort {
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
 impl BootRuntime for SerialPort {
     fn putchar(&self, c: u8) {
         unsafe {

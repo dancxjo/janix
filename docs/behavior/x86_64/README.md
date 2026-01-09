@@ -1,18 +1,15 @@
 # BDD Test Results - x86_64
 
-> Last run: 2026-01-08 22:39:27
+> Last run: 2026-01-08 22:41:21
 
 ## Summary
 
 | Metric | Passed | Failed |
 |--------|--------|--------|
-| Features | 4 | 0 |
-| Scenarios | 5 | 0 |
-| Steps | 17 | 0 (0 skipped) |
+| Features | 1 | 0 |
+| Scenarios | 1 | 0 |
+| Steps | 4 | 0 (0 skipped) |
 
 ## Features
 
-- ✅ [Boot Screen Colors](./boot-screen-colors/)
-- ✅ [Boot Memory Initialization](./boot-memory-initialization/)
-- ✅ [Frame Allocator Verification](./frame-allocator-verification/)
-- ✅ [Simple Boot](./simple-boot/)
+- ✅ [Paging Subsystem](./paging-subsystem/)

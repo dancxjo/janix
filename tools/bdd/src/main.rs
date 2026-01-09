@@ -23,6 +23,7 @@ fn main() {
     let feature = std::env::var("BDD_FEATURE").ok();
 
     eprintln!("[bdd] Running tests for architecture: {}", arch);
+    eprintln!("[bdd] CARGO_MANIFEST_DIR: {}", env!("CARGO_MANIFEST_DIR"));
 
     // Build features path
     // features are in docs/behavior relative to workspace root. 
@@ -36,6 +37,7 @@ fn main() {
     } else {
         features_dir
     };
+    eprintln!("[bdd] Features path: {:?}", features_path);
 
     // Create custom reporter with artifact collection
     let reporter = ThingOsReporter::new(&arch);

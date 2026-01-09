@@ -1,6 +1,6 @@
 # ✅ When I wait for the system to boot
 
-**Result:** passed | **Duration:** 4334ms
+**Result:** passed | **Duration:** 4341ms
 
 ## Screenshots
 
@@ -20,11 +20,11 @@
 ```
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[12342384483] [INFO] System booted
-[12355293159] [INFO] boot: phys ranges=35 modules=0
-[12358369815] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[12360124260] [INFO] Initializing Real Frame Allocator...
-[12364998393] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
+[2J[01;01H[01;01H[2J[01;01H[01;01H[14301359292] [INFO] System booted
+[14315205795] [INFO] boot: phys ranges=35 modules=0
+[14320381779] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[14322590370] [INFO] Initializing Real Frame Allocator...
+[14324221824] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
 
 ```
 </details>

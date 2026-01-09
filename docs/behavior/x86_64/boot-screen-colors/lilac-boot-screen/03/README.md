@@ -1,4 +1,4 @@
 # ✅ Then the screen should be filled with "Lilac"
 
-**Result:** passed | **Duration:** 2776ms
+**Result:** passed | **Duration:** 2966ms
 

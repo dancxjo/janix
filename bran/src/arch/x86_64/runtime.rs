@@ -4,6 +4,7 @@ use crate::runtime::ArchRuntime;
 
 use super::simd;
 use super::serial::{SerialPort, rdtsc};
+use super::{gdt, percpu, syscall};
 
 /// The architecture-specific runtime for x86_64.
 pub struct X86_64Runtime {
@@ -77,6 +78,21 @@ impl ArchRuntime for X86_64Runtime {
     // Barriers
     fn fence_full(&self) {
         unsafe { asm!("mfence", options(nostack, preserves_flags)) };
+    }
+
+    fn register_syscall_handler(&self, entry: u64) {
+        unsafe {
+            gdt::init();
+            percpu::init_gs_base();
+            syscall::enable(entry);
+        }
+    }
+
+    fn set_kernel_stack(&self, stack_top: u64) {
+        unsafe {
+            gdt::set_tss_rsp0(stack_top);
+            percpu::set_kernel_rsp0(stack_top);
+        }
     }
 }
 

@@ -152,6 +152,9 @@ impl Scheduler {
             old_task.simd.save(crate::runtime());
             new_task.simd.restore(crate::runtime());
 
+            // Update kernel stack for syscalls
+            crate::runtime().set_kernel_stack(new_task.kstack_top);
+
             // LOG
             // kinfo!("Switch {} -> {}", old_task.id, new_task.id);
 

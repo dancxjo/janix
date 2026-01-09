@@ -6,6 +6,9 @@ pub mod arch;
 pub mod logging;
 pub mod memory;
 pub mod time;
+pub mod trap;
+pub mod user;
+pub mod syscall;
 
 /// A physical memory range with a kind.
 #[derive(Debug, Clone, Copy)]
@@ -156,6 +159,10 @@ pub trait BootRuntime {
     // Barriers (minimal)
     fn fence_full(&self) {}
     fn icache_invalidate(&self) {}
+
+    // Syscall / Context
+    fn register_syscall_handler(&self, _entry: u64) {}
+    fn set_kernel_stack(&self, _stack_top: u64) {}
 }
 
 static mut RUNTIME: Option<&'static dyn BootRuntime> = None;
@@ -258,6 +265,7 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
         stats.used_frames
     );
 
+
     // Initialize global allocator
     unsafe {
         crate::memory::frame_alloc::FRAME_ALLOCATOR.init(local_alloc);
@@ -356,6 +364,16 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
         crate::memory::global_alloc::kernel_heap().stats();
     }
 
+    // Initialize Syscalls (x86_64)
+    #[cfg(target_arch = "x86_64")]
+    {
+        unsafe extern "C" {
+            fn syscall_entry();
+        }
+        kinfo!("Registering syscall handler...");
+        runtime.register_syscall_handler(syscall_entry as u64);
+    }
+
     // 5. Task Subsystem & Demo
     kinfo!("Initializing Task System...");
     crate::task::init();
@@ -382,12 +400,83 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
 }
 
 extern "C" fn thread_a(arg: usize) -> ! {
+    crate::kinfo!("Thread A starting (arg={})", arg);
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::kinfo!("thread_a: setting up user mode test...");
+        
+        // Minimal User Stub
+        // Putchar('U'), Yield x3, Exit(0)
+        let user_code: &[u8] = &[
+            // mov rdi, 'U' (0x55)
+            0x48, 0xC7, 0xC7, 0x55, 0x00, 0x00, 0x00,
+            // mov rax, 0 (SYSCALL_PUTCHAR)
+            0x48, 0xC7, 0xC0, 0x00, 0x00, 0x00, 0x00,
+            // syscall
+            0x0F, 0x05,
+
+            // mov rbx, 3
+            0x48, 0xC7, 0xC3, 0x03, 0x00, 0x00, 0x00,
+            // Loop:
+            // mov rax, 2 (SYSCALL_YIELD)
+            0x48, 0xC7, 0xC0, 0x02, 0x00, 0x00, 0x00,
+            // syscall
+            0x0F, 0x05,
+            // dec rbx
+            0x48, 0xFF, 0xCB,
+            // jnz Loop (offset -12 = 0xF4)
+            // syscall (2) + mov rax (7) + dec (3) = 12 bytes?
+            // "48 C7 C0 02 00 00 00" is 7. "0F 05" is 2. "48 FF CB" is 3.
+            // 7+2+3 = 12.
+            // So jnz -14 (to include the jump itself which is 2 bytes?) 
+            // -12 from AFTER the jump instruction?
+            // PC is after jnz. We want to go back 12 bytes.
+            // 0xFF - 12 + 1 = 0xF3?
+            // Let's rely on short loop being safe.
+            0x75, 0xF2, 
+
+            // mov rdi, 0
+            0x48, 0xC7, 0xC7, 0x00, 0x00, 0x00, 0x00,
+            // mov rax, 3 (SYSCALL_EXIT)
+            0x48, 0xC7, 0xC0, 0x03, 0x00, 0x00, 0x00,
+            // syscall
+            0x0F, 0x05,
+        ];
+
+        // Map User Code at 0x400000
+        use crate::memory::paging::PageFlags;
+        use crate::memory::frame_alloc::FRAME_ALLOCATOR;
+        
+        let code_frame = FRAME_ALLOCATOR.with_lock(|alloc| alloc.alloc().expect("user code alloc failed"));
+        
+        let mut aspace = crate::arch::imp::paging::AddressSpace::active();
+        unsafe {
+            let src = crate::arch::imp::paging::phys_to_virt(code_frame.0) as *mut u8;
+            core::ptr::copy_nonoverlapping(user_code.as_ptr(), src, user_code.len());
+        }
+        
+        aspace.map_page(0x400000, code_frame, PageFlags::PRESENT | PageFlags::USER_ACCESSIBLE).expect("map code failed");
+
+        // Map User Stack at 0x70000000 (Page below) -> 0x6FFFF000
+        let stack_frame = FRAME_ALLOCATOR.with_lock(|alloc| alloc.alloc().expect("user stack alloc failed"));
+        aspace.map_page(0x6FFFF000, stack_frame, PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER_ACCESSIBLE).expect("map stack failed");
+
+        crate::kinfo!("user: entered");
+        
+        let mut tf = crate::trap::x86_64::TrapFrame::default();
+        tf.user_rip = 0x400000;
+        tf.user_rsp = 0x70000000;
+        tf.user_rflags = 0x202; // IF | Reserved
+
+        unsafe {
+            crate::user::enter::enter_user_sysret(&tf);
+        }
+    }
+
     loop {
         let ticks = crate::runtime().mono_ticks();
-        crate::kinfo!("Thread A (arg={}) ticks={}", arg, ticks);
-        for _ in 0..500000 {
-            core::hint::black_box(());
-        }
+        // crate::kinfo!("Thread A (arg={}) ticks={}", arg, ticks);
         crate::task::yield_now();
     }
 }

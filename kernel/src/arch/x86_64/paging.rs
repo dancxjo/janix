@@ -182,7 +182,7 @@ unsafe fn ensure_table(table: *mut u64, index: u64) -> Result<u64, ()> {
     }
 }
 
-unsafe fn phys_to_virt(phys: u64) -> u64 {
+pub unsafe fn phys_to_virt(phys: u64) -> u64 {
     unsafe { phys + HHDM_OFFSET }
 }
 

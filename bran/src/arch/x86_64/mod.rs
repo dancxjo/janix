@@ -1,6 +1,9 @@
 mod simd;
 mod serial;
 mod runtime;
+mod gdt;
+mod percpu;
+mod syscall;
 
 pub use runtime::{Runtime, hcf};
 

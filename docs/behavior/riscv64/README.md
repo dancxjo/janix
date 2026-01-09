@@ -1,15 +1,15 @@
 # BDD Test Results - riscv64
 
-> Last run: 2026-01-08 18:56:10
+> Last run: 2026-01-08 19:19:55
 
 ## Summary
 
 | Metric | Passed | Failed |
 |--------|--------|--------|
 | Features | 0 | 1 |
-| Scenarios | 1 | 1 |
-| Steps | 2 | 1 (1 skipped) |
+| Scenarios | 0 | 1 |
+| Steps | 1 | 1 (0 skipped) |
 
 ## Features
 
-- ❌ [Simple Boot](./simple-boot/)
+- ❌ [Boot Screen Colors](./boot-screen-colors/)

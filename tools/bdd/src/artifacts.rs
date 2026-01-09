@@ -577,7 +577,7 @@ impl ArtifactCollector {
         for (i, step) in scenario.steps.iter().enumerate() {
             let step_dir = format!("{:02}", i + 1);
             let screenshot_link = if step.screenshot_after.is_some() {
-                format!("[📷](./{}/after.png)", step_dir)
+                format!("<a href=\"./{}/after.png\"><img src=\"./{}/after.png\" width=\"150\" /></a>", step_dir, step_dir)
             } else {
                 "-".to_string()
             };
@@ -606,7 +606,19 @@ impl ArtifactCollector {
             )?;
         }
         writeln!(file)?;
-        writeln!(file, "📜 [Full Serial Log](./serial.log)")?;
+
+        let log_path = scenario.dir.join("serial.log");
+        if log_path.exists() {
+             if let Ok(content) = fs::read_to_string(log_path) {
+                writeln!(file, "<details>")?;
+                writeln!(file, "<summary>📜 Full Serial Log</summary>")?;
+                writeln!(file)?;
+                writeln!(file, "```")?;
+                writeln!(file, "{}", content)?;
+                writeln!(file, "```")?;
+                writeln!(file, "</details>")?;
+             }
+        }
 
         Ok(())
     }
@@ -647,15 +659,13 @@ impl ArtifactCollector {
         }
 
         if !step.serial_excerpt.is_empty() {
-            writeln!(file, "## Serial Output")?;
+            writeln!(file, "<details open>")?;
+            writeln!(file, "<summary>Serial Output</summary>")?;
             writeln!(file)?;
             writeln!(file, "```")?;
-            let lines: Vec<_> = step.serial_excerpt.lines().collect();
-            let start = lines.len().saturating_sub(30);
-            for line in &lines[start..] {
-                writeln!(file, "{}", line)?;
-            }
+            writeln!(file, "{}", step.serial_excerpt)?;
             writeln!(file, "```")?;
+            writeln!(file, "</details>")?;
         }
 
         Ok(())

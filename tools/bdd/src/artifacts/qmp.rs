@@ -16,6 +16,64 @@ pub async fn set_qmp_stream(stream: Option<UnixStream>) {
     }
 }
 
+/// Execute a QMP command on a specific stream.
+pub async fn execute_on_stream(stream: &mut UnixStream, command: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // Helper to read a QMP line with a total timeout
+    async fn read_line(stream: &mut UnixStream, deadline: tokio::time::Instant) -> std::io::Result<String> {
+        let mut buf = [0u8; 1];
+        let mut line = String::new();
+        loop {
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                 return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "Read deadline exceeded"));
+            }
+            let remaining = deadline - now;
+            match tokio::time::timeout(remaining, stream.read(&mut buf)).await {
+                Ok(Ok(n)) if n > 0 => {
+                    let c = buf[0] as char;
+                    line.push(c);
+                    if c == '\n' { break; }
+                }
+                Ok(Ok(0)) => return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF")),
+                Ok(Err(e)) => return Err(e),
+                Err(_) => return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "Read timeout")),
+                Ok(Ok(_)) => unreachable!(),
+            }
+        }
+        Ok(line)
+    }
+
+    if let Err(e) = stream.write_all(command.as_bytes()).await {
+        return Err(format!("Failed to send QMP command: {}", e).into());
+    }
+    if let Err(e) = stream.write_all(b"\n").await {
+        return Err(format!("Failed to send QMP newline: {}", e).into());
+    }
+
+    // Set a generous deadline (5 seconds)
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    
+    // Safety break for events
+    let mut event_count = 0;
+    const MAX_EVENTS: usize = 100;
+
+    loop {
+        match read_line(stream, deadline).await {
+            Ok(res) => {
+                if res.contains(r#""event":"#) {
+                     event_count += 1;
+                     if event_count > MAX_EVENTS {
+                         return Err("Too many QMP events without response".into());
+                     }
+                     continue;
+                }
+                return Ok(res);
+            }
+            Err(e) => return Err(format!("Failed to read QMP response: {}", e).into()),
+        }
+    }
+}
+
 async fn qmp_execute(command: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let mutex = QMP_STREAM.get().ok_or("Artifacts system not initialized")?;
     let mut guard = mutex.lock().await;
@@ -24,51 +82,8 @@ async fn qmp_execute(command: &str) -> Result<String, Box<dyn std::error::Error 
         Some(s) => s,
         None => return Err("No QMP connection active".into()),
     };
-
-    // Helper to read a QMP line
-    async fn read_line(stream: &mut UnixStream) -> std::io::Result<String> {
-        let mut buf = [0u8; 1];
-        let mut line = String::new();
-        loop {
-            // Use a timeout for each byte
-            match tokio::time::timeout(std::time::Duration::from_millis(2000), stream.read(&mut buf)).await {
-                Ok(Ok(n)) if n > 0 => {
-                    let c = buf[0] as char;
-                    line.push(c);
-                    if c == '\n' {
-                        break;
-                    }
-                }
-                Ok(Ok(0)) => return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF")),
-                Ok(Err(e)) => return Err(e),
-                Err(_) => return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "Read timeout")),
-                Ok(Ok(_)) => unreachable!("Buffer is size 1"),
-            }
-        }
-        Ok(line)
-    }
-
-    // Send command
-    if let Err(e) = stream.write_all(command.as_bytes()).await {
-        return Err(format!("Failed to send QMP command: {}", e).into());
-    }
-    if let Err(e) = stream.write_all(b"\n").await {
-        return Err(format!("Failed to send QMP newline: {}", e).into());
-    }
-
-    // Read response, filtering out asynchronous events
-    loop {
-        match read_line(stream).await {
-            Ok(res) => {
-                // Ignore asynchronous events
-                if res.contains(r#""event":"#) {
-                     continue;
-                }
-                return Ok(res);
-            }
-            Err(e) => return Err(format!("Failed to read QMP response: {}", e).into()),
-        }
-    }
+    
+    execute_on_stream(stream, command).await
 }
 
 

@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
 mod types;
-mod qmp;
+pub mod qmp;
 mod collector;
 
 pub use types::*;

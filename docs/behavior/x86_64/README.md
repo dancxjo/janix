@@ -1,6 +1,6 @@
 # BDD Test Results - x86_64
 
-> Last run: 2026-01-09 00:00:57
+> Last run: 2026-01-09 10:50:17
 
 ## Summary
 
@@ -8,8 +8,8 @@
 |--------|--------|--------|
 | Features | 1 | 0 |
 | Scenarios | 1 | 0 |
-| Steps | 2 | 0 (0 skipped) |
+| Steps | 3 | 0 (0 skipped) |
 
 ## Features
 
-- ✅ [Paging Subsystem](./paging-subsystem/)
+- ✅ [Boot Screen Colors](./boot-screen-colors/)

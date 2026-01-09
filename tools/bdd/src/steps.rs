@@ -82,8 +82,8 @@ async fn then_screen_fill(_world: &mut ThingOsWorld, color_name: String) {
 
     let screenshot_path = crate::artifacts::global().lock().await.screenshot_path("check_fill");
     
-    // Use the global artifacts helper to take the screenshot
-    let png_path = crate::artifacts::take_screenshot_global(&screenshot_path).await
+    // Use the world's private QMP connection for checked screenshots
+    let png_path = _world.take_screenshot(&screenshot_path).await
         .expect("Failed to take screenshot");
 
     let img = image::open(&png_path).expect("Failed to open screenshot");
@@ -113,7 +113,6 @@ async fn then_screen_fill(_world: &mut ThingOsWorld, color_name: String) {
         }
         total_samples += 1;
     }
-
 
     if match_count < 95 { // Allow small failure rate for potential artifacts/cursors
          panic!("Screen does not look like {}! Matched {}/{} pixels. Expected RGB: {:?}. Sampled random pixels didn't match.", 

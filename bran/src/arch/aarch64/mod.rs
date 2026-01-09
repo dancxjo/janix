@@ -79,8 +79,25 @@ impl SerialPort {
     fn putchar(&self, c: u8) {
         unsafe {
             // PL011 base address is 0x09000000 for qemu-virt
-            let base = 0x09000000 as *mut u8;
-            base.write_volatile(c);
+            let base = 0x09000000 as *mut u32;
+            
+            // Registers
+            // +0x00: DR (Data Register)
+            // +0x18: FR (Flag Register)
+            let dr = base.add(0x00 / 4);
+            let fr = base.add(0x18 / 4);
+
+            // Flag Register bits
+            // Bit 5: TXFF (Transmit FIFO Full)
+            const TXFF: u32 = 1 << 5;
+
+            // Wait while TXFF is set
+            while (fr.read_volatile() & TXFF) != 0 {
+                core::hint::spin_loop();
+            }
+
+            // Write character to Data Register
+            dr.write_volatile(c as u32);
         }
     }
 }

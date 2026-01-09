@@ -137,8 +137,15 @@ pub trait BootRuntime {
     fn icache_invalidate(&self) {}
 }
 
+static mut RUNTIME: Option<&'static dyn BootRuntime> = None;
+
+pub fn runtime() -> &'static dyn BootRuntime {
+    unsafe { RUNTIME.expect("Kernel runtime not initialized") }
+}
+
 pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     unsafe {
+        RUNTIME = Some(runtime);
         logging::init(runtime);
     }
 
@@ -229,7 +236,26 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
              kinfo!("Warning: Stats mismatch after sanity? used {} vs {}", stats_after.used_frames, stats.used_frames);
              // It's possible if we didn't perfectly reclaim logic, but bitmap allocator should be exact.
         } else {
-             kinfo!("frame_alloc: sanity ok"); 
+             kinfo!("frame_alloc: sanity: single ok"); 
+        }
+
+        // 4. Contiguous Sanity Check
+        {
+            const N_CONTIG: u64 = 8;
+            let range = frame_alloc.alloc_contiguous(N_CONTIG).expect("Contig sanity alloc failed");
+            
+            // Verify addresses (optional deeper check could verify they were actually free before, but stats help)
+            if range.count != N_CONTIG { panic!("Contig alloc returned wrong count"); }
+            if range.base.0 % FRAME_SIZE != 0 { panic!("Contig alloc returned unaligned base"); }
+            
+            frame_alloc.free_contiguous(range.base, N_CONTIG);
+            
+            let stats_after = frame_alloc.stats();
+            if stats_after.used_frames != stats.used_frames {
+                 kinfo!("Warning: Stats mismatch after contig sanity? used {} vs {}", stats_after.used_frames, stats.used_frames);
+            } else {
+                 kinfo!("frame_alloc: sanity: contig({}) ok", N_CONTIG);
+            }
         }
     }
 

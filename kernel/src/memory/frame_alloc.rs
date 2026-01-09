@@ -1,12 +1,20 @@
 use crate::{PhysRange, PhysRangeKind, BootModuleDesc, kinfo};
 use crate::memory::boot_frame_alloc::BootFrameAllocator;
 use core::sync::atomic::{AtomicU64, Ordering};
+use core::ops::Range;
 
 pub const FRAME_SIZE: u64 = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PhysFrame(pub u64);
+pub struct PhysFrame(pub u64); // 4KiB-aligned physical address
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PhysFrameRange {
+    pub base: PhysFrame,
+    pub count: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct FrameStats {
     pub total_frames: u64,
     pub free_frames: u64,
@@ -14,10 +22,11 @@ pub struct FrameStats {
 }
 
 pub struct FrameAllocator {
-    base: u64,
-    frames: u64,
-    bitmap: &'static mut [u64],
-    next: u64,
+    base: u64,                 // lowest managed phys addr (aligned)
+    frames: u64,               // number of frames in index space
+    bitmap: &'static mut [u64],// bit=1 used, bit=0 free
+    next: u64,                 // next-fit cursor (frame index)
+    free_count: u64,           // maintained for O(1) stats
 }
 
 impl FrameAllocator {
@@ -39,7 +48,6 @@ impl FrameAllocator {
 
         // Align
         let base = align_up(min_usable, FRAME_SIZE);
-        // max_usable handles the "end" (exclusive), so (max_usable - base) is size
         let len_bytes = max_usable.saturating_sub(base);
         let frames = len_bytes / FRAME_SIZE;
         
@@ -57,6 +65,7 @@ impl FrameAllocator {
             frames,
             bitmap,
             next: 0,
+            free_count: 0, 
         };
 
         // 3. Free usable ranges
@@ -68,8 +77,6 @@ impl FrameAllocator {
 
         // 4. Mark excluded ranges
         // Re-iterate map to find non-Usable overlaps that might be inside our [base, max] window
-        // (Though usually map regions disjoint)
-        // Explicitly, KernelImage, Framebuffer, etc. 
         for r in map {
              if r.kind != PhysRangeKind::Usable {
                  alloc.mark_used_range(r.start, r.end);
@@ -100,15 +107,15 @@ impl FrameAllocator {
         let start_aligned = align_down(start, FRAME_SIZE);
         let end_aligned = align_up(end, FRAME_SIZE);
         
-        // Iterate frames
         let start_idx = match self.index(start_aligned) {
             Some(i) => i,
-            None => if start_aligned < self.base { 0 } else { return } // If starts before base, clamp
+            None => if start_aligned < self.base { 0 } else { return } 
         };
         
-        let end_idx = match self.index(end_aligned - 1) { // end is exclusive
-             Some(i) => i + 1, // +1 because index is for the frame, we want to include it
-             None => self.frames, // If ends after max, clamp
+        // end_aligned is exclusive end of range, so index(end_aligned - 1) + 1 gives the exclusive index bound
+        let end_idx = match self.index(end_aligned.saturating_sub(1)) {
+             Some(i) => i + 1, 
+             None => self.frames, 
         };
 
         for i in start_idx..end_idx {
@@ -117,19 +124,13 @@ impl FrameAllocator {
     }
 
     pub fn mark_free_range(&mut self, start: u64, end: u64) {
-         // Logic same as used, but set false
-        let start_aligned = align_up(start, FRAME_SIZE); // Conservative: only free fully covered frames? 
-        // Actually, for "Usable" regions provided by Limine, start/end might not be aligned?
-        // Usually they are page aligned. But let's be safe: 
-        // To be safe to free, the frame must be fully inside the range.
+        let start_aligned = align_up(start, FRAME_SIZE); // Conservative: only free fully covered frames
         
         let start_idx = match self.index(start_aligned) {
             Some(i) => i,
-             // If start is before base, start at 0
             None => if start_aligned < self.base { 0 } else { return }
         };
         
-        // For end, if end is not aligned, we discard the partial frame at end.
         let end_aligned = align_down(end, FRAME_SIZE);
          let end_idx = match self.index(end_aligned.saturating_sub(1)) {
              Some(i) => i + 1,
@@ -146,10 +147,17 @@ impl FrameAllocator {
         let word_idx = (idx / 64) as usize;
         let bit_idx = (idx % 64) as usize;
         let mask = 1 << bit_idx;
-        if val {
-            self.bitmap[word_idx] |= mask;
-        } else {
-            self.bitmap[word_idx] &= !mask;
+        
+        let old = (self.bitmap[word_idx] & mask) != 0;
+        
+        if val != old {
+            if val {
+                self.bitmap[word_idx] |= mask;
+                self.free_count -= 1;
+            } else {
+                self.bitmap[word_idx] &= !mask;
+                self.free_count += 1;
+            }
         }
     }
     
@@ -161,19 +169,104 @@ impl FrameAllocator {
     }
 
     pub fn alloc(&mut self) -> Option<PhysFrame> {
-        // Next fit scan
-        let start_scan = self.next;
+        if self.free_count == 0 { return None; }
         
+        let start_scan = self.next;
         for i in 0..self.frames {
             let idx = (start_scan + i) % self.frames;
-            if !self.get_bit(idx) {
-                // Found free
-                self.set_bit(idx, true);
-                self.next = (idx + 1) % self.frames;
-                return Some(PhysFrame(self.addr(idx)));
-            }
+             // We can optimize this by checking words, but single frame alloc is fine for now
+             if !self.get_bit(idx) {
+                 self.set_bit(idx, true);
+                 self.next = (idx + 1) % self.frames;
+                 return Some(PhysFrame(self.addr(idx)));
+             }
         }
         None
+    }
+
+    pub fn alloc_contiguous(&mut self, count: u64) -> Option<PhysFrameRange> {
+        if count == 0 { return None; }
+        if count == 1 {
+             return self.alloc().map(|f| PhysFrameRange { base: f, count: 1 });
+        }
+        if count > self.frames { return None; }
+        
+        // Scan for run of length `count`
+        let mut run_start = self.next;
+        let mut run_len = 0;
+        let mut scanned = 0;
+        
+        // We iterate `scanned` from 0 to `self.frames + count` (to handle wrap around and verify full buffer)
+        // Wait, wrap around with contiguous is tricky.
+        // "Start scan at next index (wrap around once)."
+        // "Iterate over indices"
+        
+        let mut i = self.next;
+        loop {
+            if scanned > self.frames {
+                 // Full circle completed and no run found
+                 return None;
+            }
+
+            // Word optimization:
+            // If we are aligned to 64 and run_len is 0 (or we just want to skip used words)
+            // But we only want to skip if current run is broken.
+            
+            if i % 64 == 0 && run_len == 0 {
+                 let word_idx = (i / 64) as usize;
+                 if word_idx < self.bitmap.len() && self.bitmap[word_idx] == !0 {
+                      // All used, skip 64
+                      i += 64;
+                      scanned += 64;
+                      // Update next to skip used? No, self.next isn't updated during scan.
+                      continue;
+                 }
+            }
+
+             if !self.get_bit(i % self.frames) {
+                 if run_len == 0 {
+                     run_start = i;
+                 }
+                 run_len += 1;
+                 
+                 if run_len == count {
+                     // Found it!
+                     // Commit
+                     let final_start = run_start % self.frames;
+                     
+                     // Check wrap-around case: if run wraps around end of buffer?
+                     // Physically contiguous memory DOES NOT wrap around the end of RAM.
+                     // So if (run_start % frames) + count > frames, it is NOT valid.
+                     // Because index space is linear.
+                     
+                     if final_start + count > self.frames {
+                         // This run wraps around the physical end of memory.
+                         // This is NOT physically contiguous.
+                         // Reset run.
+                         run_len = 0;
+                         // Continue scan from where we failed?
+                         // We failed at `i`. The run started at `run_start`.
+                         // We should reset run logic.
+                     } else {
+                         // Valid run.
+                         for k in 0..count {
+                             self.set_bit(final_start + k, true);
+                         }
+                         self.next = (final_start + count) % self.frames;
+                         return Some(PhysFrameRange {
+                             base: PhysFrame(self.addr(final_start)),
+                             count
+                         });
+                     }
+                 }
+             } else {
+                 // Bit is used, reset run
+                 run_len = 0;
+             }
+             
+             i += 1;
+             scanned += 1;
+        }
     }
 
     pub fn free(&mut self, frame: PhysFrame) {
@@ -183,42 +276,22 @@ impl FrameAllocator {
             }
             self.set_bit(idx, false);
         } else {
-             // Freeing unknown frame? Ignore or panic.
-             // Panic ensures correctness.
              panic!("Freeing frame {:#x} outside managed range", frame.0);
         }
     }
 
-    pub fn stats(&self) -> FrameStats {
-        let mut used = 0;
-        for i in 0..self.frames {
-            if self.get_bit(i) {
-                used += 1;
-            }
-        }
-        FrameStats {
-            total_frames: self.frames,
-            used_frames: used,
-            free_frames: self.frames - used,
+    pub fn free_contiguous(&mut self, base: PhysFrame, count: u64) {
+        for i in 0..count {
+             self.free(PhysFrame(base.0 + i * FRAME_SIZE));
         }
     }
 
-    pub fn sync_from_boot_alloc(&mut self, boot: &BootFrameAllocator) {
-         // Mark all frames allocated by boot allocator as used
-         // Boot allocator doesn't expose easy iteration, so we have to ask it, or we iterate our logic?
-         // Better: BootFrameAllocator should expose its ranges or we just rely on its "allocated" count and blindly hope? No.
-         // We need BootFrameAllocator to tell us "I allocated X at Addr Y".
-         // But BootFrameAllocator is just a cursor potentially.
-         
-         // Actually, simpler: BootFrameAllocator allocates sequentially. 
-         // But it skips used regions.
-         // We should add a method to BootFrameAllocator to iterate its allocations?
-         // Or, `BootFrameAllocator` could just dump its internal `allocated_frames` (count) logic?
-         // Wait, `BootFrameAllocator` state is: `current_region`, `current_addr`. 
-         // It doesn't track *every* allocation, it just bumps.
-         // BUT, since it bumps sequentially in regions, we can just mark everything up to `current_addr` in `current_region` as used?
-         // AND mark all frames in *previous* regions as used (if they were usable)?
-         // Yes.
+    pub fn stats(&self) -> FrameStats {
+        FrameStats {
+            total_frames: self.frames,
+            free_frames: self.free_count,
+            used_frames: self.frames - self.free_count,
+        }
     }
 }
 
@@ -253,20 +326,24 @@ impl FrameAllocatorLocked {
     pub fn with_lock<F, R>(&self, f: F) -> R
     where F: FnOnce(&mut FrameAllocator) -> R,
     {
-         // Acquire lock (disable IRQs)
-         // We need BootRuntime reference to disable IRQs... but we don't have it easily here?
-         // Or we assume we run in a context where we can just access it?
-         // Or simplest: spin loop with atomic?
-         // For now, let's just use UnsafeCell and assume single threaded boot for step 2.
-         // The step says "SpinLock uses BootRuntime::irq_disable".
-         // But passing Runtime everywhere is annoying.
-         // Let's rely on the fact that for Step 2 we are single core.
-         unsafe {
+         // We must disable IRQs to ensure safety on this core.
+         // In a multi-core scenario, this would also need a spinlock.
+         let runtime = crate::runtime();
+         let irq = runtime.irq_disable();
+         
+         // SAFETY: 
+         // 1. We disabled IRQs, so no interrupt handler can re-enter this on the same core.
+         // 2. We assume single-core boot for now, or that callers respect the lock (which is just this wrapper).
+         // 3. UnsafeCell usage relies on this exclusive access.
+         let res = unsafe {
              if let Some(inner) = &mut *self.inner.get() {
                  f(inner)
              } else {
                  panic!("FrameAllocator not initialized");
              }
-         }
+         };
+         
+         runtime.irq_restore(irq);
+         res
     }
 }

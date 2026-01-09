@@ -52,7 +52,7 @@ pub fn sys_cap_grant(target_low: u64, target_high: u64, cap_ptr: u64) -> Syscall
     // Else scan.
     
     let found = sched::with_sched(|sched| {
-        if let Some(task) = sched.tasks.iter_mut().find(|t| t.thing == target_id) {
+        if let Some(task) = sched.tasks.values_mut().find(|t| t.thing == target_id) {
             task.caps.push(cap);
             true
         } else {

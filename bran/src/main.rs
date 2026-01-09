@@ -36,7 +36,6 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-// use arch::Runtime; // Removed duplicate
 static RUNTIME: Runtime = Runtime::new();
 
 #[unsafe(no_mangle)]

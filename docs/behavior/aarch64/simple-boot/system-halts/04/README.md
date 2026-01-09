@@ -1,6 +1,6 @@
-# ❌ Then I should see that the machine has halted
+# ❌ Then I should see a message in the serial output that says "System booted"
 
-**Result:** failed | **Duration:** 29433ms
+**Result:** failed | **Duration:** 29885ms
 
 <details open>
 <summary>Serial Output</summary>

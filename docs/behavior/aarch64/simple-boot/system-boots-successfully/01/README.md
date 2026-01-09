@@ -1,14 +1,9 @@
 # ✅ When I turn on the machine
 
-**Result:** passed | **Duration:** 4490ms
+**Result:** passed | **Duration:** 751ms
 
 ## Screenshots
 
 ### After
 ![After](./after.png)
 
-## Serial Output
-
-```
-UEFI firmware (version  built at 23:58:55 on Oct  8 2025)
-```

@@ -1,6 +1,6 @@
 # ✅ When I turn on the machine
 
-**Result:** passed | **Duration:** 3259ms
+**Result:** passed | **Duration:** 726ms
 
 ## Screenshots
 

@@ -79,3 +79,13 @@ pub fn dump_stats() {
         }
     }
 }
+
+pub fn run_scheduler() -> ! {
+    loop {
+        yield_now();
+        // Simple busy wait or wfi hint could go here to save power,
+        // but for now just busy loop + yield.
+        // We can't use runtime().halt() because that kills the machine.
+        core::hint::spin_loop(); 
+    }
+}

@@ -55,3 +55,5 @@ pub mod riscv64;
 #[cfg(target_arch = "riscv64")]
 pub use riscv64 as imp;
 
+
+pub const THREADS_SUPPORTED: bool = cfg!(any(target_arch = "x86_64", target_arch = "aarch64"));

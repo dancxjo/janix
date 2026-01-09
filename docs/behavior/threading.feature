@@ -7,8 +7,8 @@ Feature: Kernel Multi-Threading
     Given the machine is booted
     Then I should see "Spawning Thread A..."
     And I should see "Spawning Thread B..."
-    And I should see "Thread A (arg=0) ticks="
-    And "Thread A (arg=0) ticks=" should appear at least 2 times
-    And I should see "Thread B (arg=0) ticks="
-    And "Thread B (arg=0) ticks=" should appear at least 2 times
-    And I should see "Thread A (arg=0) ticks=" after "Thread B (arg=0) ticks="
+    And I should see "Thread A (arg=1) ticks="
+    And "Thread A (arg=1) ticks=" should appear at least 2 times
+    And I should see "Thread B (arg=2) ticks="
+    And "Thread B (arg=2) ticks=" should appear at least 2 times
+    And I should see "Thread A (arg=1) ticks=" after "Thread B (arg=2) ticks="

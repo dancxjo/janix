@@ -360,20 +360,23 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     kinfo!("Initializing Task System...");
     crate::task::init();
 
-    kinfo!("Spawning Thread A...");
-    crate::task::spawn(thread_a, 0);
+    use crate::arch::THREADS_SUPPORTED;
 
-    kinfo!("Spawning Thread B...");
-    crate::task::spawn(thread_b, 0);
+    if THREADS_SUPPORTED {
+        kinfo!("threads: supported");
+        kinfo!("Spawning Thread A...");
+        crate::task::spawn(thread_a, 1);
 
-    kinfo!("Entering Scheduler Loop (Main Task)...");
-    loop {
-        crate::task::yield_now();
-        // Optional: delay to not flood logs if yield returns immediately (if only one task)
-        // But with A and B, we should switch.
-        // Also simple busy wait to pace output
-        for _ in 0..100000 {
-            core::hint::black_box(());
+        kinfo!("Spawning Thread B...");
+        crate::task::spawn(thread_b, 2);
+
+        kinfo!("Entering Scheduler Loop (Main Task)...");
+        crate::task::run_scheduler();
+    } else {
+        kinfo!("threads: not supported on this arch yet; continuing single-thread");
+        loop {
+            // Just idle/halt
+            crate::runtime().halt();
         }
     }
 }

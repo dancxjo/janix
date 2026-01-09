@@ -1,70 +1,76 @@
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[33009664182] [INFO] System booted
-[33026084091] [INFO] boot: phys ranges=35 modules=0
-[33028856355] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[33031339077] [INFO] Initializing Real Frame Allocator...
-[33033249645] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
-[33038846115] [INFO] Allocating bitmap of 8073 words...
-[33050822277] [INFO] Bitmap allocated at 0xffffff8040000000
-[33058459236] [INFO] Zeroing bitmap...
-[33065169588] [INFO] Bitmap zeroed.
-[33723183087] [INFO] frame_alloc: total=516638 free=511760 used=4878
-[33724269381] [INFO] Running frame_alloc sanity check...
-[33728127543] [INFO] frame_alloc: sanity: single ok
-[33732592872] [INFO] frame_alloc: sanity: contig(8) ok
-[33733197531] [INFO] Testing paging subsystem...
-[33749702118] [INFO] Switched to new address space
-[33750310407] [INFO] Paging subsystem test passed
-[33750853125] [INFO] Paging subsystem test passed
-[33751367067] [INFO] Initializing Kernel Heap...
-[33759318846] [INFO] kheap: grew by 64 pages (phys=0x4f000, virt=0xffffa00000000000)
-[33760757547] [INFO] global_alloc: switched to kernel heap
-[33763290462] [INFO] Running heap sanity check...
-[33792248523] [INFO] kheap: sanity ok
-[33792792231] [INFO] kheap: forcing growth...
-[33801060150] [INFO] kheap: grew by 16 pages (phys=0x100000, virt=0xffffa00000040000)
-[33835170006] [INFO] kheap: big allocation ok (len=307200)
-[33836266332] [INFO] kheap: reserved=268435456 committed=327680
-[33848844381] [INFO] Initializing Task System...
-[33855923277] [INFO] Spawning Thread A...
-[33891909282] [INFO] Spawning Thread B...
-[33901971378] [INFO] Entering Scheduler Loop (Main Task)...
-[33914300013] [INFO] Thread A (arg=0) ticks=33914109042
-[34220078277] [INFO] Thread B (arg=0) ticks=34219848432
-[34578129432] [INFO] Thread A (arg=0) ticks=34578091713
-[34865316816] [INFO] Thread B (arg=0) ticks=34865286687
-[35213064744] [INFO] Thread A (arg=0) ticks=35213031249
-[35531994531] [INFO] Thread B (arg=0) ticks=35531959188
-[35912646000] [INFO] Thread A (arg=0) ticks=35912613429
-[36566942148] [INFO] Thread B (arg=0) ticks=36566906607
-[37277104062] [INFO] Thread A (arg=0) ticks=37277067069
-[37705166796] [INFO] Thread B (arg=0) ticks=37705131453
-[38342627103] [INFO] Thread A (arg=0) ticks=38342591892
-[38615617293] [INFO] Thread B (arg=0) ticks=38615579079
-[39018353385] [INFO] Thread A (arg=0) ticks=39018315996
-[39524293116] [INFO] Thread B (arg=0) ticks=39524256849
-[40159024554] [INFO] Thread A (arg=0) ticks=40158988584
-[40846799796] [INFO] Thread B (arg=0) ticks=40846766004
-[41967401619] [INFO] Thread A (arg=0) ticks=41967178242
-[42986612757] [INFO] Thread B (arg=0) ticks=42986575203
-[43462222485] [INFO] Thread A (arg=0) ticks=43462186878
-[44225015769] [INFO] Thread B (arg=0) ticks=44224980162
-[45004820388] [INFO] Thread A (arg=0) ticks=45004783989
-[45788236857] [INFO] Thread B (arg=0) ticks=45788199534
-[46693409598] [INFO] Thread A (arg=0) ticks=46693371582
-[47471457000] [INFO] Thread B (arg=0) ticks=47471423109
-[48652837761] [INFO] Thread A (arg=0) ticks=48652804926
-[49679349291] [INFO] Thread B (arg=0) ticks=49679314146
-[50479800657] [INFO] Thread A (arg=0) ticks=50479767063
-[51302660508] [INFO] Thread B (arg=0) ticks=51302622624
-[51968458014] [INFO] Thread A (arg=0) ticks=51968424288
-[52589222004] [INFO] Thread B (arg=0) ticks=52589186826
-[53193807711] [INFO] Thread A (arg=0) ticks=53193772797
-[53773498251] [INFO] Thread B (arg=0) ticks=53773464525
-[54294469746] [INFO] Thread A (arg=0) ticks=54294434205
-[54592695168] [INFO] Thread B (arg=0) ticks=54592662003
-[55432532166] [INFO] Thread A (arg=0) ticks=55432497912
-[56131779792] [INFO] Thread B (arg=0) ticks=56131740687
-[57492070548] [INFO] Thread A (arg=0) ticks=57492035799
-[58244936013] [INFO] Thread B (arg=0) ticks=58244900043
+[2J[01;01H[01;01H[2J[01;01H[01;01H[12218622933] [INFO] System booted
+[12231476796] [INFO] boot: phys ranges=35 modules=0
+[12236307072] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[12241174671] [INFO] Initializing Real Frame Allocator...
+[12243098637] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
+[12246420978] [INFO] Allocating bitmap of 8073 words...
+[12253560990] [INFO] Bitmap allocated at 0xffffff8040000000
+[12258751758] [INFO] Zeroing bitmap...
+[12271599285] [INFO] Bitmap zeroed.
+[12766791444] [INFO] frame_alloc: total=516638 free=511759 used=4879
+[12771042735] [INFO] Running frame_alloc sanity check...
+[12774795462] [INFO] frame_alloc: sanity: single ok
+[12781706025] [INFO] frame_alloc: sanity: contig(8) ok
+[12784126773] [INFO] Testing paging subsystem...
+[12793153725] [INFO] Switched to new address space
+[12796119105] [INFO] Paging subsystem test passed
+[12796579125] [INFO] Paging subsystem test passed
+[12797009214] [INFO] Initializing Kernel Heap...
+[12804197406] [INFO] kheap: grew by 64 pages (phys=0x4f000, virt=0xffffa00000000000)
+[12809570169] [INFO] global_alloc: switched to kernel heap
+[12810510306] [INFO] Running heap sanity check...
+[12831064884] [INFO] kheap: sanity ok
+[12834228165] [INFO] kheap: forcing growth...
+[12838145991] [INFO] kheap: grew by 16 pages (phys=0x100000, virt=0xffffa00000040000)
+[12865065741] [INFO] kheap: big allocation ok (len=307200)
+[12868917171] [INFO] kheap: reserved=268435456 committed=327680
+[12878853141] [INFO] Initializing Task System...
+[12887105286] [INFO] threads: supported
+[12887525211] [INFO] Spawning Thread A...
+[12895738515] [INFO] Spawning Thread B...
+[12902560638] [INFO] Entering Scheduler Loop (Main Task)...
+[12909508755] [INFO] Thread A (arg=1) ticks=12909332469
+[13339796316] [INFO] Thread B (arg=2) ticks=13339594686
+[13804128954] [INFO] Thread A (arg=1) ticks=13804096284
+[14266819347] [INFO] Thread B (arg=2) ticks=14266783410
+[14730984906] [INFO] Thread A (arg=1) ticks=14730954711
+[15248252547] [INFO] Thread B (arg=2) ticks=15248220240
+[16083326292] [INFO] Thread A (arg=1) ticks=16083291972
+[16834172091] [INFO] Thread B (arg=2) ticks=16834137474
+[17277654273] [INFO] Thread A (arg=1) ticks=17277617082
+[18183784707] [INFO] Thread B (arg=2) ticks=18183750057
+[18853948212] [INFO] Thread A (arg=1) ticks=18853913397
+[19447352298] [INFO] Thread B (arg=2) ticks=19447317846
+[19715780271] [INFO] Thread A (arg=1) ticks=19715749053
+[19968209811] [INFO] Thread B (arg=2) ticks=19968180078
+[20215314141] [INFO] Thread A (arg=1) ticks=20215282098
+[20459048940] [INFO] Thread B (arg=2) ticks=20459021451
+[20739371268] [INFO] Thread A (arg=1) ticks=20739340743
+[20983517841] [INFO] Thread B (arg=2) ticks=20983496556
+[21227005437] [INFO] Thread A (arg=1) ticks=21226978608
+[21468462807] [INFO] Thread B (arg=2) ticks=21468437166
+[21711288621] [INFO] Thread A (arg=1) ticks=21711256314
+[21954885381] [INFO] Thread B (arg=2) ticks=21954869244
+[22198891869] [INFO] Thread A (arg=1) ticks=22198869000
+[22448939271] [INFO] Thread B (arg=2) ticks=22448920923
+[22692484155] [INFO] Thread A (arg=1) ticks=22692465807
+[22936651782] [INFO] Thread B (arg=2) ticks=22936628451
+[23178976458] [INFO] Thread A (arg=1) ticks=23178944547
+[23430399432] [INFO] Thread B (arg=2) ticks=23430246543
+[23693893575] [INFO] Thread A (arg=1) ticks=23693857737
+[23964196674] [INFO] Thread B (arg=2) ticks=23964163344
+[24222527076] [INFO] Thread A (arg=1) ticks=24222495099
+[24494924091] [INFO] Thread B (arg=2) ticks=24494890497
+[24767286027] [INFO] Thread A (arg=1) ticks=24767259198
+[25031441523] [INFO] Thread B (arg=2) ticks=25031405586
+[25457008797] [INFO] Thread A (arg=1) ticks=25456961805
+[25743203079] [INFO] Thread B (arg=2) ticks=25743173049
+[26026612953] [INFO] Thread A (arg=1) ticks=26026581372
+[26490708123] [INFO] Thread B (arg=2) ticks=26490673077
+[26987841243] [INFO] Thread A (arg=1) ticks=26987809035
+[27300068763] [INFO] Thread B (arg=2) ticks=27300035862
+[27798054405] [INFO] Thread A (arg=1) ticks=27798023847
+[28075851639] [INFO] Thread B (arg=2) ticks=28075819926
+[28336076109] [INFO] Thread A (arg=1) ticks=28336044528

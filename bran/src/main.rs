@@ -1,17 +1,22 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
-use kernel::BootRuntime;
+//! The Boot Runtime Abstraction Node (BRAN) is the seed coat around the kernel.
+//! It wraps the abstract kernel with the low-level mechanisms to speak to the
+//! architecture. Importantly, most hardware belongs in userspace, not here.
+//! This is just the layer between the kernel and the boot environment. All
+//! speaking with limine should happen here as well. Nothing beyond this layer
+//! should know about limine or booting, except through the implementation of
+//! the BootRuntime trait.
 
+mod arch;
+
+use arch::{hcf, SerialPort};
+use core::assert;
 use limine::BaseRevision;
 use limine::request::{FramebufferRequest, RequestsEndMarker, RequestsStartMarker};
 
-/// Sets the base revision to the latest revision supported by the crate.
-/// See specification for further info.
-/// Be sure to mark all limine requests with #[used], otherwise they may be removed by the compiler.
 #[used]
-// The .requests section allows limine to find the requests faster and more safely.
 #[unsafe(link_section = ".requests")]
 static BASE_REVISION: BaseRevision = BaseRevision::new();
 
@@ -19,65 +24,28 @@ static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[unsafe(link_section = ".requests")]
 static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
-/// Define the stand and end markers for Limine requests.
 #[used]
 #[unsafe(link_section = ".requests_start_marker")]
 static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
+
 #[used]
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-struct SerialPort;
-
-impl BootRuntime for SerialPort {
-    fn putchar(&self, c: u8) {
-        unsafe {
-            #[cfg(target_arch = "x86_64")]
-            {
-                // Wait for transmit empty
-                while (inb(0x3F8 + 5) & 0x20) == 0 {}
-                outb(0x3F8, c);
-            }
-            #[cfg(target_arch = "aarch64")]
-            {
-                // UARTDR is at offset 0x0
-                // PL011 base address is 0x09000000 for qemu-virt
-                let base = 0x09000000 as *mut u8;
-                base.write_volatile(c);
-            }
-        }
-    }
-}
-
-// x86_64 helpers
-#[cfg(target_arch = "x86_64")]
-#[inline]
-unsafe fn outb(port: u16, val: u8) {
-    asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack, preserves_flags));
-}
-
-#[cfg(target_arch = "x86_64")]
-#[inline]
-unsafe fn inb(port: u16) -> u8 {
-    let ret: u8;
-    asm!("in al, dx", out("al") ret, in("dx") port, options(nomem, nostack, preserves_flags));
-    ret
-}
-
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
-    // All limine requests must also be referenced in a called function, otherwise they may be
-    // removed by the linker.
     assert!(BASE_REVISION.is_supported());
+    indicate_progress();
+    let runtime = SerialPort;
+    kernel::start(runtime);
+}
 
+fn indicate_progress() {
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             for i in 0..100_u64 {
-                // Calculate the pixel offset using the framebuffer information we obtained above.
-                // We skip `i` scanlines (pitch is provided in bytes) and add `i * 4` to skip `i` pixels forward.
                 let pixel_offset = i * framebuffer.pitch() + i * 4;
 
-                // Write 0xFFFFFFFF to the provided pixel offset to fill it white.
                 unsafe {
                     framebuffer
                         .addr()
@@ -88,25 +56,9 @@ unsafe extern "C" fn kmain() -> ! {
             }
         }
     }
-
-    let runtime = SerialPort;
-    kernel::start(runtime);
 }
 
 #[panic_handler]
 fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
-    hcf();
-}
-
-fn hcf() -> ! {
-    loop {
-        unsafe {
-            #[cfg(target_arch = "x86_64")]
-            asm!("hlt");
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
-            asm!("wfi");
-            #[cfg(target_arch = "loongarch64")]
-            asm!("idle 0");
-        }
-    }
+    hcf()
 }

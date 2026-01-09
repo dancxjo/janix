@@ -27,7 +27,9 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
                 .run()?;
         }
         "riscv64" => {
-            cmd!(sh, "qemu-system-riscv64 -M virt -cpu rv64 -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}")
+            // riscv64 virt requires blockdev syntax with machine-level pflash assignment
+            // Also uses virtio-blk instead of -cdrom since riscv64 virt doesn't expose cdrom to UEFI properly
+            cmd!(sh, "qemu-system-riscv64 -blockdev node-name=pflash0,driver=file,read-only=on,filename={ovmf_code} -blockdev node-name=pflash1,driver=file,filename={ovmf_vars} -M virt,pflash0=pflash0,pflash1=pflash1 -cpu rv64 -m 2G -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive file={iso},format=raw,if=none,id=drive0,readonly=on -device virtio-blk-device,drive=drive0")
                 .args(&qemu_args)
                 .run()?;
         }
@@ -76,7 +78,9 @@ pub fn run_hdd(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
                 .run()?;
         }
         "riscv64" => {
-            cmd!(sh, "qemu-system-riscv64 -M virt -cpu rv64 -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}")
+            // riscv64 virt requires blockdev syntax with machine-level pflash assignment
+            // Also uses virtio-blk instead of -hda since riscv64 virt doesn't expose IDE to UEFI properly
+            cmd!(sh, "qemu-system-riscv64 -blockdev node-name=pflash0,driver=file,read-only=on,filename={ovmf_code} -blockdev node-name=pflash1,driver=file,filename={ovmf_vars} -M virt,pflash0=pflash0,pflash1=pflash1 -cpu rv64 -m 2G -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive file={hdd},format=raw,if=none,id=drive0 -device virtio-blk-device,drive=drive0")
                 .args(&qemu_args)
                 .run()?;
         }

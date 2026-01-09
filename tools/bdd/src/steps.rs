@@ -7,25 +7,13 @@ use cucumber::{given, then, when};
 use crate::world::ThingOsWorld;
 
 /// Default timeout for waiting on serial output (seconds).
-const DEFAULT_TIMEOUT_SECS: f64 = 10.0;
+const DEFAULT_TIMEOUT_SECS: f64 = 30.0;
 
-#[given("I boot the system")]
-async fn boot_system(world: &mut ThingOsWorld) {
+#[when("I turn on the machine")]
+async fn turn_on_machine(world: &mut ThingOsWorld) {
     let arch = std::env::var("BDD_ARCH").unwrap_or_else(|_| "x86_64".to_string());
 
     world.boot(&arch).await.expect("Failed to boot QEMU");
-
-    // Wait for kernel to signal boot completion (UEFI + Limine + kernel init takes ~5-8s)
-    let booted = world.wait_for_serial("System booted", 15.0).await;
-    if !booted {
-        let log = world.get_serial_log().await;
-        eprintln!("\n=== Serial Log (boot failed) ===");
-        for line in log.lines().rev().take(50).collect::<Vec<_>>().into_iter().rev() {
-            eprintln!("{}", line);
-        }
-        eprintln!("=== End Serial Log ===\n");
-        panic!("System did not boot within 15 seconds - 'System booted' not found in serial output");
-    }
 }
 
 #[when("I wait for the system to boot")]

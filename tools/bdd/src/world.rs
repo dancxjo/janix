@@ -55,13 +55,51 @@ impl ThingOsWorld {
 
         // Build QEMU command with serial output to stdio and QMP control
         let mut cmd = Command::new(qemu_bin);
-        cmd.args(["-M", if arch == "x86_64" { "q35" } else { "virt" }]);
-
-        // Add CPU for non-x86 architectures
+        
+        // Handle machine type and pflash - riscv64 requires special blockdev syntax
         match arch {
-            "aarch64" => { cmd.args(["-cpu", "cortex-a72"]); }
-            "riscv64" => { cmd.args(["-cpu", "rv64"]); }
-            "loongarch64" => { cmd.args(["-cpu", "la464"]); }
+            "x86_64" => {
+                cmd.args(["-M", "q35"]);
+                cmd.args(["-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code)]);
+                cmd.args(["-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars)]);
+                cmd.args(["-cdrom", &iso_path]);
+            }
+            "aarch64" => {
+                cmd.args(["-M", "virt"]);
+                cmd.args(["-cpu", "cortex-a72"]);
+                cmd.args(["-device", "ramfb"]);
+                cmd.args(["-device", "qemu-xhci"]);
+                cmd.args(["-device", "usb-kbd"]);
+                cmd.args(["-device", "usb-mouse"]);
+                cmd.args(["-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code)]);
+                cmd.args(["-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars)]);
+                cmd.args(["-cdrom", &iso_path]);
+            }
+            "riscv64" => {
+                // riscv64 virt requires blockdev syntax with machine-level pflash assignment
+                // Also uses virtio-blk instead of -cdrom since riscv64 virt doesn't expose cdrom to UEFI properly
+                cmd.args(["-blockdev", &format!("node-name=pflash0,driver=file,read-only=on,filename={}", ovmf_code)]);
+                cmd.args(["-blockdev", &format!("node-name=pflash1,driver=file,filename={}", ovmf_vars)]);
+                cmd.args(["-M", "virt,pflash0=pflash0,pflash1=pflash1"]);
+                cmd.args(["-cpu", "rv64"]);
+                cmd.args(["-device", "ramfb"]);
+                cmd.args(["-device", "qemu-xhci"]);
+                cmd.args(["-device", "usb-kbd"]);
+                cmd.args(["-device", "usb-mouse"]);
+                cmd.args(["-drive", &format!("file={},format=raw,if=none,id=drive0,readonly=on", iso_path)]);
+                cmd.args(["-device", "virtio-blk-device,drive=drive0"]);
+            }
+            "loongarch64" => {
+                cmd.args(["-M", "virt"]);
+                cmd.args(["-cpu", "la464"]);
+                cmd.args(["-device", "ramfb"]);
+                cmd.args(["-device", "qemu-xhci"]);
+                cmd.args(["-device", "usb-kbd"]);
+                cmd.args(["-device", "usb-mouse"]);
+                cmd.args(["-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code)]);
+                cmd.args(["-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars)]);
+                cmd.args(["-cdrom", &iso_path]);
+            }
             _ => {}
         }
 
@@ -75,10 +113,6 @@ impl ThingOsWorld {
             "-vnc", &format!(":{}", vnc_display),
             // QMP control socket (server mode, don't wait for connection)
             "-qmp", &format!("unix:{},server=on,wait=off", qmp_socket_path.display()),
-            // UEFI firmware
-            "-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code),
-            "-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars),
-            "-cdrom", &iso_path,
         ]);
 
         cmd.stdout(Stdio::piped());

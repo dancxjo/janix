@@ -1,6 +1,6 @@
-# ❌ Given I boot the system
+# ✅ When I turn on the machine
 
-**Result:** failed | **Duration:** 17754ms
+**Result:** passed | **Duration:** 4490ms
 
 ## Screenshots
 
@@ -11,6 +11,4 @@
 
 ```
 UEFI firmware (version  built at 23:58:55 on Oct  8 2025)
-[2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x2,0x0)
-BdsDxe: starting Boot0002 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x2,0x0)
 ```

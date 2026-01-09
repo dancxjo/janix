@@ -42,18 +42,46 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             cmd!(sh, "xorriso -as mkisofs --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
         }
         "riscv64" => {
-            sh.copy_file("limine/limine-uefi-cd.bin", "iso_root/boot/limine/limine-uefi-cd.bin")?;
+            // For riscv64, we need to create a custom EFI boot image since limine-uefi-cd.bin
+            // only contains x86 bootloaders. We build an arch-specific FAT image.
+            let efi_img = "iso_root/boot/limine/limine-uefi-riscv64.bin";
+            
+            // Create a 3MB FAT12 image (enough for the bootloader plus overhead)
+            cmd!(sh, "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none").run()?;
+            cmd!(sh, "mformat -i {efi_img} -f 2880 ::").run()?;
+            cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
+            cmd!(sh, "mcopy -i {efi_img} limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI").run()?;
+            
+            // Also add startup.nsh as a fallback inside the EFI image
+            sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTRISCV64.EFI\n")?;
+            cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
+
+            // Copy kernel and limine config to ISO root
             sh.copy_file("limine/BOOTRISCV64.EFI", "iso_root/EFI/BOOT/BOOTRISCV64.EFI")?;
 
             let iso = format!("{}.iso", name);
-            cmd!(sh, "xorriso -as mkisofs --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
+            cmd!(sh, "xorriso -as mkisofs --efi-boot boot/limine/limine-uefi-riscv64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
         }
         "loongarch64" => {
-            sh.copy_file("limine/limine-uefi-cd.bin", "iso_root/boot/limine/limine-uefi-cd.bin")?;
+            // For loongarch64, we need to create a custom EFI boot image since limine-uefi-cd.bin
+            // only contains x86 bootloaders. We build an arch-specific FAT image.
+            let efi_img = "iso_root/boot/limine/limine-uefi-loongarch64.bin";
+            
+            // Create a 3MB FAT12 image (enough for the bootloader plus overhead)
+            cmd!(sh, "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none").run()?;
+            cmd!(sh, "mformat -i {efi_img} -f 2880 ::").run()?;
+            cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
+            cmd!(sh, "mcopy -i {efi_img} limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI").run()?;
+            
+            // Also add startup.nsh as a fallback inside the EFI image
+            sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTLOONGARCH64.EFI\n")?;
+            cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
+
+            // Copy kernel and limine config to ISO root
             sh.copy_file("limine/BOOTLOONGARCH64.EFI", "iso_root/EFI/BOOT/BOOTLOONGARCH64.EFI")?;
 
             let iso = format!("{}.iso", name);
-            cmd!(sh, "xorriso -as mkisofs --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
+            cmd!(sh, "xorriso -as mkisofs --efi-boot boot/limine/limine-uefi-loongarch64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
         }
         _ => return Err(format!("Unsupported architecture: {}", arch).into()),
     }

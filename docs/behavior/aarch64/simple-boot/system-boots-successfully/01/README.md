@@ -1,6 +1,6 @@
 # ❌ Given I boot the system
 
-**Result:** failed | **Duration:** 19495ms
+**Result:** failed | **Duration:** 17754ms
 
 ## Screenshots
 

@@ -13,37 +13,39 @@ rust_profile := env_var_or_default("RUST_PROFILE", "dev")
 # Default target
 default: iso
 
-# Build everything (ISO)
-iso:
-    cargo xtask iso --env {{karch}} --profile {{rust_profile}}
+# Build everything (ISO) - optionally specify architecture
+# Examples: just iso, just iso aarch64
+iso arch=karch:
+    cargo xtask iso --env {{arch}} --profile {{rust_profile}}
 
 # Build HDD image
-hdd:
-    cargo xtask hdd --env {{karch}} --profile {{rust_profile}}
+hdd arch=karch:
+    cargo xtask hdd --env {{arch}} --profile {{rust_profile}}
 
 # Run with QEMU (UEFI mode)
-run:
-    cargo xtask run --env {{karch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
+# Examples: just run, just run aarch64, just run riscv64
+run arch=karch:
+    cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
 
 # Run HDD with QEMU
-run-hdd:
-    cargo xtask run-hdd --env {{karch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
+run-hdd arch=karch:
+    cargo xtask run-hdd --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
 
 # Run with BIOS (x86_64 only)
 run-bios:
     cargo xtask run-bios --qemu-flags "{{qemuflags}}"
 
 # Build the kernel
-kernel:
-    cargo xtask build --env {{karch}} --profile {{rust_profile}}
+kernel arch=karch:
+    cargo xtask build --env {{arch}} --profile {{rust_profile}}
 
 # Clone and build limine bootloader
 limine:
     cargo xtask limine
 
-# Download OVMF firmware
+# Download OVMF firmware (all architectures by default)
 ovmf:
-    cargo xtask ovmf --env {{karch}}
+    cargo xtask ovmf-all
 
 # Clean build artifacts
 clean:
@@ -53,11 +55,12 @@ clean:
 distclean:
     cargo xtask distclean
 
-# Run BDD tests (default: x86_64)
+# Run BDD tests (default: all architectures)
 # Examples:
+#   just behave                    # all architectures
+#   just behave --arch x86_64      # single architecture
 #   just behave --feature simple-boot
 #   just behave --tag @smoke
-#   just behave --arch aarch64
 behave *args:
     cargo xtask bdd {{args}}
 

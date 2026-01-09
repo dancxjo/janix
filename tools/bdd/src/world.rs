@@ -1,7 +1,7 @@
 //! BDD World - holds test state during scenario execution.
 
 use cucumber::World;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -41,8 +41,8 @@ impl ThingOsWorld {
         let qmp_socket_path = PathBuf::from(format!("/tmp/qemu-bdd-{}.sock", pid));
         self.qmp_socket = Some(qmp_socket_path.clone());
 
-        // Use a random VNC display to avoid conflicts with other QEMU instances
-        let vnc_display = ((std::process::id() % 100) + 50) as u16; // 50-149 range
+        // Use a VNC display in a high range to avoid conflicts (displays 1000-9999 = ports 6000-14999)
+        let vnc_display = ((pid % 9000) + 1000) as u16;
         self.vnc_display = Some(vnc_display);
 
         let qemu_bin = match arch {
@@ -122,7 +122,7 @@ impl ThingOsWorld {
             if qmp_socket_path.exists() {
                 match self.qmp_init().await {
                     Ok(()) => {
-                        eprintln!("[bdd] QMP initialized after {}ms", i * 100);
+                        // eprintln!("[bdd] QMP initialized after {}ms", i * 100);
                         qmp_initialized = true;
                         break;
                     }
@@ -166,62 +166,6 @@ impl ThingOsWorld {
         let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await?;
 
         Ok(())
-    }
-
-    /// Take a screenshot using QMP screendump command.
-    /// 
-    /// Saves as PNG by converting from QEMU's PPM format.
-    /// Returns the path to the saved screenshot.
-    pub async fn take_screenshot(&self, output_path: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let socket_path = self.qmp_socket.as_ref().ok_or("No QMP socket")?;
-        let mut stream = UnixStream::connect(socket_path).await?;
-
-        // Read any pending data
-        let mut buf = vec![0u8; 4096];
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
-        ).await;
-
-        // Ensure output directory exists
-        if let Some(parent) = output_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        // Use a temp file for the PPM, then convert to PNG
-        let ppm_path = output_path.with_extension("ppm");
-
-        // Send screendump command
-        let screendump_cmd = format!(
-            r#"{{"execute": "screendump", "arguments": {{"filename": "{}"}}}}"#,
-            ppm_path.display()
-        );
-        stream.write_all(screendump_cmd.as_bytes()).await?;
-        stream.write_all(b"\n").await?;
-
-        // Wait a moment for the file to be written
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-        // Read response
-        let mut response = vec![0u8; 4096];
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            tokio::io::AsyncReadExt::read(&mut stream, &mut response)
-        ).await;
-
-        if !ppm_path.exists() {
-            return Err(format!("Screenshot was not saved to {}", ppm_path.display()).into());
-        }
-
-        // Convert PPM to PNG using image crate
-        let png_path = output_path.with_extension("png");
-        let img = image::open(&ppm_path)?;
-        img.save(&png_path)?;
-
-        // Remove the temporary PPM file
-        let _ = std::fs::remove_file(&ppm_path);
-
-        Ok(png_path)
     }
 
     /// Wait for a string to appear in the serial log.

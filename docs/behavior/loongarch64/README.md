@@ -1,6 +1,6 @@
-# BDD Test Results - aarch64
+# BDD Test Results - loongarch64
 
-> Last run: 2026-01-08 13:27:44
+> Last run: 2026-01-08 13:28:28
 
 ## Summary
 

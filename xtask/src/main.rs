@@ -21,7 +21,7 @@ use crate::clean::{clean, distclean};
 use crate::common::project_root;
 use crate::image::{build_hdd, build_iso};
 use crate::limine::limine;
-use crate::ovmf::ovmf;
+use crate::ovmf::{ovmf, ovmf_all};
 use crate::run::{run, run_bios, run_hdd};
 
 /// Thing-OS build automation tool
@@ -94,12 +94,14 @@ enum Commands {
     },
     /// Clone and build Limine bootloader
     Limine,
-    /// Download OVMF firmware
+    /// Download OVMF firmware for specific architecture
     Ovmf {
         /// Target architecture
         #[arg(long, default_value = "x86_64")]
         env: String,
     },
+    /// Download OVMF firmware for all architectures
+    OvmfAll,
     /// Clean build artifacts
     Clean,
     /// Clean everything including downloaded dependencies
@@ -112,8 +114,8 @@ enum Commands {
         /// Cucumber tag expression (e.g., @smoke)
         #[arg(long, short = 't')]
         tags: Option<String>,
-        /// Target architecture(s) - can specify multiple (default: x86_64)
-        #[arg(long, short = 'a', num_args = 1.., default_value = "x86_64")]
+        /// Target architecture(s) - can specify multiple (default: all architectures)
+        #[arg(long, short = 'a', num_args = 1.., default_values_t = ["x86_64".to_string(), "aarch64".to_string(), "riscv64".to_string(), "loongarch64".to_string()])]
         arch: Vec<String>,
     },
 }
@@ -160,6 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Limine => limine(&sh)?,
         Commands::Ovmf { env } => ovmf(&sh, &env)?,
+        Commands::OvmfAll => ovmf_all(&sh)?,
         Commands::Clean => clean(&sh)?,
         Commands::Distclean => distclean(&sh)?,
         Commands::Bdd { feature, tags, arch } => bdd(&sh, feature, tags, arch)?,

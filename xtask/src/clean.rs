@@ -20,6 +20,15 @@ pub fn clean(sh: &Shell) -> Result<()> {
     sh.remove_path("bran/bin-aarch64")?;
     sh.remove_path("bran/bin-riscv64")?;
     sh.remove_path("bran/bin-loongarch64")?;
+    // Clean OVMF firmware files (but keep cached archive)
+    sh.remove_path("ovmf/ovmf-code-x86_64.fd")?;
+    sh.remove_path("ovmf/ovmf-vars-x86_64.fd")?;
+    sh.remove_path("ovmf/ovmf-code-aarch64.fd")?;
+    sh.remove_path("ovmf/ovmf-vars-aarch64.fd")?;
+    sh.remove_path("ovmf/ovmf-code-riscv64.fd")?;
+    sh.remove_path("ovmf/ovmf-vars-riscv64.fd")?;
+    sh.remove_path("ovmf/ovmf-code-loongarch64.fd")?;
+    sh.remove_path("ovmf/ovmf-vars-loongarch64.fd")?;
     Ok(())
 }
 

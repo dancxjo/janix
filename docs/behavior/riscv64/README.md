@@ -1,6 +1,6 @@
-# BDD Test Results - aarch64
+# BDD Test Results - riscv64
 
-> Last run: 2026-01-08 13:27:44
+> Last run: 2026-01-08 13:28:07
 
 ## Summary
 

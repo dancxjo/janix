@@ -9,7 +9,7 @@
 | 1 | When I turn on the machine | ✅ | 296ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
 | 2 | When I wait for the system to boot | ✅ | 193ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> - [💾](./02/registers.txt) |
 | 3 | Then I should see a message in the serial output that says "System booted" | ✅ | 192ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
-| 4 | Then I should see that the machine has halted | ❌ | 9427ms | - [📜](./04/serial.log) - |
+| 4 | Then I should see that the machine has halted | ❌ | 29881ms | - [📜](./04/serial.log) - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

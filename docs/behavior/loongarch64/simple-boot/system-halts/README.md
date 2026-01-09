@@ -1,16 +1,16 @@
 # ❌ Scenario: System halts
 
-> Last run: 2026-01-08 19:30:20
+> Last run: 2026-01-08 19:53:16
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | When I turn on the machine | ✅ | 295ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> - [💾](./01/registers.txt) |
-| 2 | When I wait for the system to boot | ✅ | 191ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> - [💾](./02/registers.txt) |
-| 3 | Then I should see that the machine has halted | ✅ | 191ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
-| 4 | Then I should see a message in the serial output that says "System booted" | ✅ | 4554ms | - [📜](./04/serial.log) - |
-| 5 | Then the screen should be filled with "Mallard Teal" | ❌ | 5ms | - - - |
+| 1 | When I turn on the machine | ✅ | 298ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> - [💾](./01/registers.txt) |
+| 2 | When I wait for the system to boot | ✅ | 201ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> - [💾](./02/registers.txt) |
+| 3 | Then I should see that the machine has halted | ✅ | 148ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
+| 4 | Then I should see a message in the serial output that says "System booted" | ✅ | 4461ms | - [📜](./04/serial.log) - |
+| 5 | Then the screen should be filled with "Mallard Teal" | ❌ | 4ms | - - - |
 
 <details>
 <summary>📜 Full Serial Log</summary>
@@ -160,8 +160,8 @@ PROGRESS CODE: V03058001 I0
 BdsDxe: starting Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x3,0x0)
 [2J[01;01H[01;01H[2J[01;01H[01;01HPROGRESS CODE: V02010004 I0
 PROGRESS CODE: V03101019 I0
-System booted
-System halted
+[0] [INFO] System booted
+[0] [INFO] System halted
 
 ```
 </details>

@@ -1,13 +1,7 @@
 use core::arch::global_asm;
 
-#[repr(C)]
-#[derive(Debug, Default)]
-pub struct ArchContext {
-    pub rsp: u64,
-}
-
 unsafe extern "C" {
-    pub fn context_switch(old: *mut ArchContext, new: *const ArchContext);
+    pub fn context_switch(old: *mut u64, new_rsp: u64);
 }
 
 // Trampoline for new threads
@@ -20,7 +14,7 @@ global_asm!(r#"
 .section .text
 .global context_switch
 context_switch:
-    // rdi = old (ptr to ArchContext), rsi = new (ptr to ArchContext)
+    // rdi = old (ptr to u64), rsi = new_rsp (value)
     
     // Save callee-saved registers
     push rbx
@@ -34,7 +28,7 @@ context_switch:
     mov [rdi], rsp
     
     // Load new stack pointer
-    mov rsp, [rsi]
+    mov rsp, rsi
     
     // Restore callee-saved registers
     pop r15
@@ -57,7 +51,7 @@ trampoline:
 "#);
 
 pub fn context_init(
-    ctx: &mut ArchContext,
+    ctx: &mut u64,
     kstack_top: u64,
     entry: extern "C" fn(arg: usize) -> !,
     arg: usize,
@@ -120,5 +114,5 @@ pub fn context_init(
     push(0); // r14
     push(0); // r15
     
-    ctx.rsp = sp;
+    *ctx = sp;
 }

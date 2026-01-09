@@ -3,7 +3,7 @@ use linked_list_allocator::LockedHeap;
 use spin::Mutex;
 use crate::memory::frame_alloc::{FRAME_ALLOCATOR, FRAME_SIZE};
 use crate::memory::layout::{KHEAP_BASE, KHEAP_SIZE};
-use crate::arch::imp::paging::{AddressSpace, tlb_flush_page};
+use crate::memory::paging::{AddressSpace, tlb_flush_page};
 use crate::memory::paging::PageFlags;
 use crate::kinfo;
 

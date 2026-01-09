@@ -1,4 +1,43 @@
-pub use crate::arch::imp::paging::AddressSpace;
+// pub use crate::arch::imp::paging::AddressSpace;
+use crate::memory::frame_alloc::PhysFrame;
+
+#[derive(Debug)]
+pub struct AddressSpace {
+    handle: usize,
+}
+
+impl AddressSpace {
+    pub fn new() -> Self {
+        let handle = crate::runtime().new_address_space();
+        Self { handle }
+    }
+
+    pub fn active() -> Self {
+        let handle = crate::runtime().current_address_space();
+        Self { handle }
+    }
+
+    pub fn switch(&self) {
+        crate::runtime().switch_address_space(self.handle);
+    }
+
+    pub fn map_page(&mut self, virt: u64, phys: PhysFrame, flags: PageFlags) -> Result<(), ()> {
+        crate::runtime().map_page(self.handle, virt, phys.0, flags.bits())
+    }
+
+    pub fn unmap_page(&mut self, virt: u64) {
+        crate::runtime().unmap_page(self.handle, virt);
+    }
+}
+
+pub fn phys_to_virt(phys: u64) -> u64 {
+    phys + crate::runtime().phys_to_virt_offset()
+}
+
+pub fn tlb_flush_page(virt: u64) {
+    crate::runtime().tlb_flush_page(virt);
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageFlags(u64);

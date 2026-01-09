@@ -71,8 +71,15 @@ impl BootHeap {
                     .expect("BootFrameAllocator OOM during BootHeap expansion!");
                 
                 // Map the page!
-                // We use the arch-specific paging implementation.
-                    crate::arch::imp::paging::map_bootheap_page(cursor, frame, self.allocator.as_mut().unwrap());
+                // We use the runtime implementation with our allocator.
+                let handle = crate::runtime().current_address_space();
+                crate::runtime().map_page_with_allocator(
+                    handle,
+                    cursor, 
+                    frame, 
+                    (crate::memory::paging::PageFlags::PRESENT | crate::memory::paging::PageFlags::WRITABLE).bits(),
+                    self.allocator.as_mut().unwrap()
+                ).expect("BootHeap: map failed");
                 
                 cursor += 4096;
             }

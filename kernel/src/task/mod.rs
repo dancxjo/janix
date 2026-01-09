@@ -1,21 +1,24 @@
-use crate::arch::imp::task::ArchContext;
-use crate::simd::SimdState;
-
+// Modules
 pub mod scheduler;
-pub use scheduler::Scheduler;
 
-pub type TaskId = u64;
+pub type TaskId = usize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskState {
-    Runnable,
     Running,
+    Runnable,
     Blocked,
-    Dead,
 }
 
+pub use scheduler::Scheduler;
+
+use crate::simd::SimdState;
 use crate::memory::paging::AddressSpace;
 use crate::trap::x86_64::TrapFrame;
+
+#[repr(transparent)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ArchContext(pub u64);
 
 pub struct Task {
     pub id: TaskId,

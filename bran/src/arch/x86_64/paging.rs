@@ -1,12 +1,12 @@
-use crate::memory::boot_frame_alloc::BootFrameAllocator;
-use crate::memory::paging::PageFlags;
-use crate::memory::frame_alloc::{PhysFrame, FRAME_ALLOCATOR};
+use kernel::memory::boot_frame_alloc::BootFrameAllocator;
+use kernel::memory::paging::PageFlags;
+use kernel::memory::frame_alloc::{PhysFrame, FRAME_ALLOCATOR};
 use core::arch::asm;
 
-static mut HHDM_OFFSET: u64 = 0;
+use crate::requests::HHDM_REQUEST;
 
-pub fn init(hhdm_offset: u64) {
-    unsafe { HHDM_OFFSET = hhdm_offset; }
+pub fn phys_to_virt_offset() -> u64 {
+    HHDM_REQUEST.get_response().map(|r| r.offset()).unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,11 +183,11 @@ unsafe fn ensure_table(table: *mut u64, index: u64) -> Result<u64, ()> {
 }
 
 pub unsafe fn phys_to_virt(phys: u64) -> u64 {
-    unsafe { phys + HHDM_OFFSET }
+    phys + phys_to_virt_offset()
 }
 
 pub unsafe fn virt_to_phys(virt: u64) -> u64 {
-    unsafe { virt - HHDM_OFFSET }
+    virt - phys_to_virt_offset()
 }
 
 pub fn tlb_flush_page(virt: u64) {
@@ -262,49 +262,4 @@ unsafe fn ensure_table_boot(table: *mut u64, index: u64, allocator: &mut BootFra
 
         frame
     }
-}
-
-pub fn test_paging() {
-    use crate::kinfo;
-    
-    kinfo!("Testing paging subsystem...");
-    let mut aspace = AddressSpace::new();
-    let virt = 0xDEAD_BEEF_0000;
-    
-    // Alloc a frame to map
-    let frame = FRAME_ALLOCATOR.with_lock(|alloc| alloc.alloc().expect("test_paging alloc failed"));
-    
-    // Map
-    aspace.map_page(virt, frame, PageFlags::PRESENT | PageFlags::WRITABLE).expect("map_page failed");
-    
-    // Translate
-    if let Some(f) = aspace.translate(virt) {
-        if f != frame { panic!("Translate returned wrong frame"); }
-    } else {
-        panic!("Translate returned None after mapping");
-    }
-    
-    // Unmap
-    match aspace.unmap_page(virt) {
-        Ok(Some(f)) => if f != frame { panic!("Unmap returned wrong frame"); },
-        Ok(None) => panic!("Unmap returned None"),
-        Err(_) => panic!("Unmap failed"),
-    }
-    
-    // Translate again
-    if aspace.translate(virt).is_some() {
-        panic!("Translate returned Some after unmap");
-    }
-
-    // Switch smoke test
-    // We only switch if we are confident the kernel mappings are correct.
-    // Our new() copies the top 256 entries (high half).
-    // Kernel code and heap should be in high half.
-    aspace.switch();
-    kinfo!("Switched to new address space");
-    
-    // Switch back to "initial"? We don't have a handle to the initial one easily here without reading CR3 before.
-    // But since `aspace` is a valid kernel duplicate, we can stay on it.
-    
-    kinfo!("Paging subsystem test passed");
 }

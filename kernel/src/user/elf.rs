@@ -1,6 +1,6 @@
 use crate::memory::paging::{AddressSpace, PageFlags};
 use crate::memory::frame_alloc::FRAME_ALLOCATOR;
-use crate::arch::imp::paging::{phys_to_virt, virt_to_phys};
+use crate::memory::paging::{phys_to_virt};
 use core::ptr;
 
 #[derive(Debug, Clone, Copy)]

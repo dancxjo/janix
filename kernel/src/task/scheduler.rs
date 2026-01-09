@@ -2,7 +2,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::alloc::Layout;
 use crate::task::{Task, TaskId, TaskState};
-use crate::arch::imp::task::{context_init, context_switch};
+// use crate::arch::imp::task::{context_init, context_switch};
 use crate::user::elf::UserImage;
 use crate::memory::paging::AddressSpace;
 
@@ -91,7 +91,7 @@ impl Scheduler {
         };
 
         // Initialize Arch Context
-        context_init(&mut task.ctx, stack_top, entry, arg);
+        crate::runtime().context_init(&mut task.ctx.0, stack_top, entry, arg);
 
         self.tasks.push(task);
         self.runq.push_back(id);
@@ -131,7 +131,7 @@ impl Scheduler {
         };
 
         // Initialize Arch Context to jump to user_entry_stub
-        context_init(&mut task.ctx, stack_top, user_entry_stub, 0);
+        crate::runtime().context_init(&mut task.ctx.0, stack_top, user_entry_stub, 0);
 
         self.tasks.push(task);
         self.runq.push_back(id);
@@ -212,7 +212,7 @@ impl Scheduler {
                 aspace.switch();
             }
             
-            context_switch(&mut old_task.ctx, &new_task.ctx);
+            crate::runtime().context_switch(&mut old_task.ctx.0, new_task.ctx.0);
         }
     }
 }

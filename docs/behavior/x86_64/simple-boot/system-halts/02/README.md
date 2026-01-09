@@ -1,6 +1,6 @@
 # ✅ Then I should see a message in the serial output that says "System booted"
 
-**Result:** passed | **Duration:** 2645ms
+**Result:** passed | **Duration:** 1001ms
 
 ## Screenshots
 
@@ -47,11 +47,3 @@ XMM14=0000000000000000 0000000000000000 XMM15=0000000000000000 0000000000000000
 
 ```
 
-## Serial Output
-
-```
-[2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01HSystem booted
-System halted
-```

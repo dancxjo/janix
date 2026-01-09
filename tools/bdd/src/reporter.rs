@@ -189,9 +189,23 @@ impl ThingOsReporter {
                 }
             }
         };
+
+        // Try to dump registers
+        let registers = {
+             let collector = artifacts::global().lock().await;
+             let path = collector.register_path();
+             drop(collector);
+
+             match artifacts::dump_registers_global(&path).await {
+                 Ok(p) => Some(p),
+                 // Don't error log if QMP isn't available or fails (e.g. strict timeout)
+                 // registers aren't critical for every step
+                 Err(_) => None,
+             }
+        };
         
         let mut collector = artifacts::global().lock().await;
-        collector.on_step_end(result, None, screenshot_after, &serial);
+        collector.on_step_end(result, None, screenshot_after, registers, &serial);
         
         // Update scenario's full serial log
         collector.set_scenario_serial(&serial);

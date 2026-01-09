@@ -1,14 +1,14 @@
 # BDD Test Results - x86_64
 
-> Last run: 2026-01-08 18:22:48
+> Last run: 2026-01-08 18:42:27
 
 ## Summary
 
 | Metric | Passed | Failed |
 |--------|--------|--------|
 | Features | 1 | 0 |
-| Scenarios | 1 | 0 |
-| Steps | 2 | 0 (0 skipped) |
+| Scenarios | 2 | 0 |
+| Steps | 3 | 0 (1 skipped) |
 
 ## Features
 

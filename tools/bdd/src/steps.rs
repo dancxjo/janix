@@ -63,3 +63,8 @@ async fn check_serial(world: &mut ThingOsWorld, expected: &str, timeout_secs: f6
 async fn shutdown_system(world: &mut ThingOsWorld) {
     world.shutdown().await;
 }
+
+#[then("I should see that the machine has halted")]
+async fn check_system_halted(world: &mut ThingOsWorld) {
+    check_serial(world, "System halted", DEFAULT_TIMEOUT_SECS).await;
+}

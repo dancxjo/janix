@@ -129,6 +129,76 @@ pub async fn take_screenshot_global(output_path: &std::path::Path) -> Result<Pat
     Ok(png_path)
 }
 
+/// Dump CPU registers using the global QMP socket (for reporter).
+pub async fn dump_registers_global(output_path: &std::path::Path) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::UnixStream;
+
+    let socket_path = QMP_SOCKET.get()
+        .and_then(|cache| cache.try_lock().ok())
+        .and_then(|guard| guard.clone())
+        .ok_or("No QMP socket available")?;
+
+    let mut stream = UnixStream::connect(&socket_path).await?; // Corrected to use socket_path
+
+    // Read QMP greeting
+    let mut buf = vec![0u8; 4096];
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_millis(200),
+        tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+    ).await;
+
+    // Send qmp_capabilities to enter command mode
+    let caps_cmd = r#"{"execute": "qmp_capabilities"}"#;
+    stream.write_all(caps_cmd.as_bytes()).await?;
+    stream.write_all(b"\n").await?;
+
+    // Read capabilities response
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_millis(200),
+        tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
+    ).await;
+
+    // Ensure output directory exists
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    // Send human-monitor-command for info registers
+    // We use human-monitor-command because qmp doesn't have a direct 'query-registers' command stable across all archs
+    let info_regs_cmd = r#"{"execute": "human-monitor-command", "arguments": {"command-line": "info registers"}}"#;
+    stream.write_all(info_regs_cmd.as_bytes()).await?;
+    stream.write_all(b"\n").await?;
+
+    // Read response
+    let mut response = vec![0u8; 16384]; // larger buffer for registers
+    let n = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        tokio::io::AsyncReadExt::read(&mut stream, &mut response)
+    ).await??;
+
+    // Parse JSON response to extract the actual output
+    let response_str = String::from_utf8_lossy(&response[..n]);
+    
+    // Simple JSON parsing to avoid pulling in serde_json dependency just for this
+    // We expect: {"return": "..."}
+    let content = if let Some(start) = response_str.find("\"return\": \"") {
+        let remainder = &response_str[start + 11..];
+        if let Some(end) = remainder.rfind("\"}") {
+            // Unescape JSON string (basic)
+            remainder[..end].replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\\"", "\"")
+        } else {
+             response_str.to_string()
+        }
+    } else {
+        response_str.to_string()
+    };
+
+    std::fs::write(output_path, content)?;
+
+    Ok(output_path.to_path_buf())
+}
+
 /// Result of a step execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepResult {
@@ -164,6 +234,7 @@ pub struct StepArtifacts {
     pub dir: PathBuf,
     pub screenshot_before: Option<PathBuf>,
     pub screenshot_after: Option<PathBuf>,
+    pub registers: Option<PathBuf>,
     pub serial_log: Option<PathBuf>,
     pub serial_excerpt: String,
     pub duration_ms: u64,
@@ -354,6 +425,7 @@ impl ArtifactCollector {
                     dir,
                     screenshot_before: None,
                     screenshot_after: None,
+                    registers: None,
                     serial_log: None,
                     serial_excerpt: String::new(),
                     duration_ms: 0,
@@ -367,12 +439,18 @@ impl ArtifactCollector {
         self.step_dir().join(format!("{}.png", phase))
     }
 
+    /// Get the path for step registers.
+    pub fn register_path(&self) -> PathBuf {
+        self.step_dir().join("registers.txt")
+    }
+
     /// Called when a step ends.
     pub fn on_step_end(
         &mut self,
         result: StepResult,
         screenshot_before: Option<PathBuf>,
         screenshot_after: Option<PathBuf>,
+        registers: Option<PathBuf>,
         full_serial: &str,
     ) {
         let duration_ms = self.step_start_time
@@ -400,6 +478,7 @@ impl ArtifactCollector {
                     step.result = result;
                     step.screenshot_before = screenshot_before;
                     step.screenshot_after = screenshot_after;
+                    step.registers = registers;
                     step.serial_log = if log_path.exists() { Some(log_path.clone()) } else { None };
                     step.serial_excerpt = step_serial;
                     step.duration_ms = duration_ms;
@@ -559,6 +638,18 @@ impl ArtifactCollector {
             }
         }
 
+        // Registers
+        if let Some(ref reg_path) = step.registers {
+             if let Ok(content) = fs::read_to_string(reg_path) {
+                writeln!(file, "## Registers")?;
+                writeln!(file)?;
+                writeln!(file, "```")?;
+                writeln!(file, "{}", content)?;
+                writeln!(file, "```")?;
+                writeln!(file)?;
+             }
+        }
+
         // Serial output
         if !step.serial_excerpt.is_empty() {
             writeln!(file, "## Serial Output")?;
@@ -576,7 +667,7 @@ impl ArtifactCollector {
         Ok(())
     }
 
-    fn count_features(&self) -> (usize, usize) {
+    pub fn count_features(&self) -> (usize, usize) {
         let passed = self.features.iter()
             .filter(|f| f.scenarios.iter().all(|s| s.passed))
             .count();

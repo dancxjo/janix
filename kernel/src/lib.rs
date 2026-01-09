@@ -2,6 +2,7 @@
 
 pub trait BootRuntime {
     fn putchar(&self, c: u8);
+    fn halt(&self) -> !;
 }
 
 pub fn start(runtime: impl BootRuntime) -> ! {
@@ -10,5 +11,5 @@ pub fn start(runtime: impl BootRuntime) -> ! {
         runtime.putchar(c);
     }
 
-    loop {}
+    runtime.halt();
 }

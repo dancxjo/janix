@@ -14,6 +14,14 @@ impl BootRuntime for SerialPort {
             base.write_volatile(c);
         }
     }
+
+    fn halt(&self) -> ! {
+        let msg = b"System halted\n";
+        for &c in msg {
+            self.putchar(c);
+        }
+        hcf()
+    }
 }
 
 /// Halt and catch fire - enters an infinite idle loop.

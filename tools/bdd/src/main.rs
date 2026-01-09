@@ -52,6 +52,26 @@ fn main() {
                 .with_writer(
                     cucumber::writer::Tee::new(reporter, json_writer)
                 )
-                .run(features_path)
-        );
+                .after(|_feature, _rule, _scenario, _ev, world| {
+            Box::pin(async move {
+                if let Some(w) = world {
+                    w.shutdown().await;
+                }
+            })
+        })
+        .run(features_path)
+    );
+
+    // Check for failures
+    let failed = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(async {
+            let collector = artifacts::global().lock().await;
+            let (_, features_failed) = collector.count_features();
+            features_failed > 0
+        });
+
+    if failed {
+        std::process::exit(1);
+    }
 }

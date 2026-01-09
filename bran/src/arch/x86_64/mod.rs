@@ -14,6 +14,14 @@ impl BootRuntime for SerialPort {
             outb(0x3F8, c);
         }
     }
+
+    fn halt(&self) -> ! {
+        let msg = b"System halted\n";
+        for &c in msg {
+            self.putchar(c);
+        }
+        hcf()
+    }
 }
 
 #[inline]

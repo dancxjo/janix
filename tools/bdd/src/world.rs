@@ -41,8 +41,12 @@ impl ThingOsWorld {
         let qmp_socket_path = PathBuf::from(format!("/tmp/qemu-bdd-{}.sock", pid));
         self.qmp_socket = Some(qmp_socket_path.clone());
 
-        // Use a VNC display in a high range to avoid conflicts (displays 1000-9999 = ports 6000-14999)
-        let vnc_display = ((pid % 9000) + 1000) as u16;
+        // Use a random VNC display to avoid conflicts with potential zombies
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        let vnc_display = ((nanos % 5000) + 1000) as u16;
         self.vnc_display = Some(vnc_display);
 
         let qemu_bin = match arch {

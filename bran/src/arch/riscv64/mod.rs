@@ -4,6 +4,9 @@ use core::arch::asm;
 use kernel::IrqState;
 use crate::runtime::ArchRuntime;
 
+mod serial;
+use serial::SerialPort;
+
 /// The architecture-specific runtime for riscv64.
 pub struct Riscv64Runtime {
     serial: SerialPort,
@@ -18,7 +21,7 @@ pub const fn create_runtime() -> Runtime {
 impl Riscv64Runtime {
     pub const fn new() -> Self {
         Self {
-            serial: SerialPort,
+            serial: SerialPort::new(),
         }
     }
 }
@@ -60,24 +63,14 @@ impl ArchRuntime for Riscv64Runtime {
             unsafe { asm!("csrrc x0, sstatus, 0x2"); } // Clear SIE
         }
     }
-}
 
-/// Serial port implementation for riscv64 using QEMU virt UART.
-pub struct SerialPort;
-
-impl SerialPort {
-    pub const fn new() -> Self {
-        Self
+    // Barriers
+    fn fence_full(&self) {
+        unsafe { asm!("sfence.vma"); }
     }
-}
 
-impl SerialPort {
-    fn putchar(&self, c: u8) {
-        unsafe {
-            // QEMU virt machine UART base address
-            let base = 0x10000000 as *mut u8;
-            base.write_volatile(c);
-        }
+    fn icache_invalidate(&self) {
+        unsafe { asm!("fence.i"); }
     }
 }
 

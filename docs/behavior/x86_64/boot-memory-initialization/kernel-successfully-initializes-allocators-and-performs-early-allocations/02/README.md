@@ -1,6 +1,6 @@
 # ✅ Then the serial output should contain "boot: phys ranges="
 
-**Result:** passed | **Duration:** 3982ms
+**Result:** passed | **Duration:** 5168ms
 
 ## Screenshots
 

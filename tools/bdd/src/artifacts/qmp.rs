@@ -31,7 +31,7 @@ async fn qmp_execute(command: &str) -> Result<String, Box<dyn std::error::Error 
         let mut line = String::new();
         loop {
             // Use a timeout for each byte
-            match tokio::time::timeout(std::time::Duration::from_millis(1000), stream.read(&mut buf)).await {
+            match tokio::time::timeout(std::time::Duration::from_millis(5000), stream.read(&mut buf)).await {
                 Ok(Ok(n)) if n > 0 => {
                     let c = buf[0] as char;
                     line.push(c);
@@ -108,9 +108,11 @@ pub async fn take_screenshot_global(output_path: &std::path::Path) -> Result<Pat
         return Err("Failed to capture screenshot after retries".into());
     }
 
-    // Wait for file to appear
-    for _ in 0..10 {
+    // Wait for file to appear - increased to 40 iterations (2s) for reliability
+    for _ in 0..40 {
         if ppm_path.exists() {
+            // Found it! Small extra sleep to ensure flushed?
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             break;
         }
         let _ = tokio::time::sleep(std::time::Duration::from_millis(50)).await;

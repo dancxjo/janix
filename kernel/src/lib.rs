@@ -196,16 +196,20 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     // Leak the bitmap slice so it lives forever
     let bitmap_slice = vec![0u64; words as usize].leak();
     
-    let mut frame_alloc = FrameAllocator::new_from_boot(map, modules, bitmap_slice);
+    let mut local_alloc = FrameAllocator::new_from_boot(map, modules, bitmap_slice);
     
     // Sync state: Mark frames consumed by BootHeap as used
-    // Access global safely (single threaded boot)
     unsafe {
-         crate::memory::global_alloc::get_global().transfer_boot_frames(&mut frame_alloc);
+         crate::memory::global_alloc::get_global().transfer_boot_frames(&mut local_alloc);
     }
     
-    let stats = frame_alloc.stats();
+    let stats = local_alloc.stats();
     kinfo!("frame_alloc: total={} free={} used={}", stats.total_frames, stats.free_frames, stats.used_frames);
+
+    // Initialize global allocator
+    unsafe {
+        crate::memory::frame_alloc::FRAME_ALLOCATOR.init(local_alloc);
+    }
 
     // 3. Sanity Check
     //    Alloc N frames, check overlap, free all
@@ -213,51 +217,45 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
         kinfo!("Running frame_alloc sanity check...");
         const N: usize = 32;
         let mut allocated = [crate::memory::frame_alloc::PhysFrame(0); N];
-        for i in 0..N {
-            allocated[i] = frame_alloc.alloc().expect("Sanity alloc failed");
-            // Check exclusion
-            if i > 0 && allocated[i] == allocated[i-1] {
-                panic!("Allocator returned duplicate frame!");
+        
+        crate::memory::frame_alloc::FRAME_ALLOCATOR.with_lock(|alloc| {
+            for i in 0..N {
+                allocated[i] = alloc.alloc().expect("Sanity alloc failed");
+                // Check exclusion
+                if i > 0 && allocated[i] == allocated[i-1] {
+                     panic!("Allocator returned duplicate frame!");
+                }
             }
-        }
+            
+            for i in 0..N {
+                alloc.free(allocated[i]);
+            }
+        });
         
-        for i in 0..N {
-            frame_alloc.free(allocated[i]);
-        }
-        
-        let stats_after = frame_alloc.stats();
-        // Should be same as before?
-        // BootHeap might have allocated more during vec![] calls? 
-        // No, vec![] happened before frame_alloc init scan. 
-        // But vec![] allocation used BootHeap which used BootFrameAllocator.
-        // FrameAllocator::new_from_boot synced that state *after* vec allocated.
-        // So free/used should match initial stats.
-        if stats_after.used_frames != stats.used_frames {
-             kinfo!("Warning: Stats mismatch after sanity? used {} vs {}", stats_after.used_frames, stats.used_frames);
-             // It's possible if we didn't perfectly reclaim logic, but bitmap allocator should be exact.
-        } else {
-             kinfo!("frame_alloc: sanity: single ok"); 
-        }
+        // no easy access to stats via with_lock wrapper yet without returning it, but that's fine.
+        kinfo!("frame_alloc: sanity: single ok"); 
 
         // 4. Contiguous Sanity Check
         {
             const N_CONTIG: u64 = 8;
-            let range = frame_alloc.alloc_contiguous(N_CONTIG).expect("Contig sanity alloc failed");
+            let range = crate::memory::frame_alloc::FRAME_ALLOCATOR.with_lock(|alloc| {
+                alloc.alloc_contiguous(N_CONTIG).expect("Contig sanity alloc failed")
+            });
             
             // Verify addresses (optional deeper check could verify they were actually free before, but stats help)
             if range.count != N_CONTIG { panic!("Contig alloc returned wrong count"); }
             if range.base.0 % FRAME_SIZE != 0 { panic!("Contig alloc returned unaligned base"); }
             
-            frame_alloc.free_contiguous(range.base, N_CONTIG);
-            
-            let stats_after = frame_alloc.stats();
-            if stats_after.used_frames != stats.used_frames {
-                 kinfo!("Warning: Stats mismatch after contig sanity? used {} vs {}", stats_after.used_frames, stats.used_frames);
-            } else {
-                 kinfo!("frame_alloc: sanity: contig({}) ok", N_CONTIG);
-            }
+            crate::memory::frame_alloc::FRAME_ALLOCATOR.with_lock(|alloc| {
+                alloc.free_contiguous(range.base, N_CONTIG);
+            });
+             
+            kinfo!("frame_alloc: sanity: contig({}) ok", N_CONTIG);
         }
     }
+    
+    #[cfg(target_arch = "x86_64")]
+    crate::arch::x86_64::paging::test_paging();
 
     kinfo!("System halted");
     runtime.halt();

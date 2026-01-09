@@ -356,6 +356,7 @@ impl FrameAllocatorLocked {
         *self.inner.get() = Some(alloc);
     }
     
+
     pub fn with_lock<F, R>(&self, f: F) -> R
     where F: FnOnce(&mut FrameAllocator) -> R,
     {
@@ -380,3 +381,5 @@ impl FrameAllocatorLocked {
          res
     }
 }
+
+pub static FRAME_ALLOCATOR: FrameAllocatorLocked = FrameAllocatorLocked::new();

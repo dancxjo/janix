@@ -1,6 +1,6 @@
 # ✅ Feature: Frame Allocator Verification
 
-> Last run: 2026-01-08 22:35:36
+> Last run: 2026-01-08 22:39:27
 
 ## Scenarios
 

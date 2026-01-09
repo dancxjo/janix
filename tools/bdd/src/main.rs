@@ -25,7 +25,12 @@ fn main() {
     eprintln!("[bdd] Running tests for architecture: {}", arch);
 
     // Build features path
-    let features_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("features");
+    // features are in docs/behavior relative to workspace root. 
+    // CARGO_MANIFEST_DIR is tools/bdd. So we need ../../docs/behavior
+    let features_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap() // tools
+        .parent().unwrap() // root
+        .join("docs/behavior");
     let features_path = if let Some(f) = feature {
         features_dir.join(format!("{}.feature", f))
     } else {

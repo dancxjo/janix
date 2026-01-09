@@ -1,6 +1,6 @@
 # ✅ And the serial output should contain "frame_alloc: sanity: single ok"
 
-**Result:** passed | **Duration:** 620ms
+**Result:** passed | **Duration:** 753ms
 
 ## Screenshots
 

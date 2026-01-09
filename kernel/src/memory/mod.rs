@@ -4,3 +4,4 @@ pub mod global_alloc;
 
 
 pub mod frame_alloc;
+pub mod paging;

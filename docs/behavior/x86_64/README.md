@@ -1,6 +1,6 @@
 # BDD Test Results - x86_64
 
-> Last run: 2026-01-08 20:51:33
+> Last run: 2026-01-08 21:09:42
 
 ## Summary
 
@@ -8,8 +8,8 @@
 |--------|--------|--------|
 | Features | 1 | 0 |
 | Scenarios | 1 | 0 |
-| Steps | 3 | 0 (0 skipped) |
+| Steps | 5 | 0 (0 skipped) |
 
 ## Features
 
-- ✅ [Boot Screen Colors](./boot-screen-colors/)
+- ✅ [Boot Memory Initialization](./boot-memory-initialization/)

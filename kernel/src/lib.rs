@@ -1,7 +1,11 @@
 #![no_std]
 
+extern crate alloc;
+
 pub mod logging;
 pub mod time;
+pub mod memory;
+pub mod arch;
 
 /// A physical memory range with a kind.
 #[derive(Debug, Clone, Copy)]
@@ -139,6 +143,53 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     }
 
     kinfo!("System booted");
+    
+    // Initialize arch paging (HHDM offset)
+    crate::arch::imp::paging::init(runtime.phys_to_virt_offset());
+
+    let map = runtime.phys_memory_map();
+    let modules = runtime.modules();
+    
+    kinfo!("boot: phys ranges={} modules={}", map.len(), modules.len());
+    
+    if map.is_empty() {
+        // This might happen if Bran didn't provide a map or we failed to read it.
+        // It's not necessarily fatal if we have defaults, but for this task we expect a map.
+        kinfo!("Warning: No physical memory map provided!");
+    }
+
+    let frame_alloc = crate::memory::boot_frame_alloc::BootFrameAllocator::new(map);
+    crate::memory::global_alloc::init(frame_alloc);
+
+    // Sanity check
+    {
+        extern crate alloc;
+        use alloc::vec::Vec;
+        use alloc::boxed::Box;
+        
+        kinfo!("Allocating Box...");
+        let b = Box::new(42);
+        kinfo!("Boxed value: {}", *b);
+        
+        kinfo!("Allocating Vec...");
+        let mut v = Vec::new();
+        for i in 0..100 {
+            v.push(i);
+        }
+        kinfo!("Vec length: {}", v.len());
+    }
+    
+    unsafe {
+         // Accessing global allocator via static for stats
+         // We can't easily access GLOBAL directly if it's not pub.
+         // But we added stats() to BootGlobalAlloc and GLOBAL is static.
+         // We didn't make GLOBAL pub in the file though. 
+         // Let's just trust the heap logs internally if we want, or make GLOBAL pub.
+         // Actually global_alloc.rs didn't make GLOBAL pub.
+         // But we can invoke a helper? No helper for stats.
+         // Let's just skip explicit stats call for now, BootHeap logs stats on OOM.
+         // Or I can add `pub fn print_stats()` to `global_alloc.rs`.
+    }
 
     kinfo!("System halted");
     runtime.halt();

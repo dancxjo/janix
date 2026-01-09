@@ -48,6 +48,21 @@ fn indicate_progress() {
 
 
 #[panic_handler]
-fn rust_panic(_info: &core::panic::PanicInfo) -> ! {
+fn rust_panic(info: &core::panic::PanicInfo) -> ! {
+    // Re-initialize logging just in case panic happened before kernel::start
+    // or if the writer was somehow corrupted (though we can't really fix corruption here).
+    // Safety: Single core boot environment.
+    unsafe { kernel::logging::init(&RUNTIME) };
+
+    kernel::kerror!("BRAN PANIC");
+    
+    if let Some(location) = info.location() {
+        kernel::kerror!("Location: {}:{}:{}", location.file(), location.line(), location.column());
+    } else {
+        kernel::kerror!("Location: unknown");
+    }
+
+    kernel::kerror!("Message: {}", info.message());
+
     hcf()
 }

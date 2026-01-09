@@ -1,6 +1,6 @@
 # ✅ When I wait for the system to boot
 
-**Result:** passed | **Duration:** 9669ms
+**Result:** passed | **Duration:** 13991ms
 
 ## Screenshots
 
@@ -27,7 +27,7 @@ CPU#0
  mtvec    00000000800004f8
  stvec    0000000000000000
  vstvec   0000000000000000
- mepc     ffffffff8000114c
+ mepc     ffffffff8000126c
  sepc     0000000000000000
  vsepc    0000000000000000
  mcause   0000000000000009
@@ -40,14 +40,14 @@ CPU#0
  mscratch 0000000080045000
  sscratch 0000000082000000
  satp     90000000000fecd4
- x0/zero  0000000000000000 x1/ra    ffffffff80005f54 x2/sp    ffff8000fa9143c0 x3/gp    0000000000000000
- x4/tp    0000000000000000 x5/t0    346dc5d63886594b x6/t1    ffffffff8000c410 x7/t2    0000000000002710
+ x0/zero  0000000000000000 x1/ra    ffffffff80006d34 x2/sp    ffff8000fa8e9310 x3/gp    0000000000000000
+ x4/tp    0000000000000000 x5/t0    346dc5d63886594b x6/t1    ffffffff8000e71a x7/t2    0000000000002710
  x8/s0    0000000000000000 x9/s1    0000000000000000 x10/a0   0000000000000000 x11/a1   ffffff8040000000
- x12/a2   000000000000fd70 x13/a3   0000000000000000 x14/a4   ffffffff80011710 x15/a5   ffffffff80004426
- x16/a6   ffff8000fa9141b8 x17/a7   0000000000000001 x18/s2   0000000000000000 x19/s3   0000000000000000
+ x12/a2   000000000000fd70 x13/a3   0000000000000000 x14/a4   ffffffff80013d08 x15/a5   ffffffff8000491c
+ x16/a6   ffff8000fa8e9108 x17/a7   0000000000000001 x18/s2   0000000000000000 x19/s3   0000000000000000
  x20/s4   0000000000000000 x21/s5   0000000000000000 x22/s6   0000000000000000 x23/s7   0000000000000000
  x24/s8   0000000000000000 x25/s9   0000000000000000 x26/s10  0000000000000000 x27/s11  0000000000000000
- x28/t3   000000000000147b x29/t4   000000000098967f x30/t5   ffffffff80012b52 x31/t6   0000000000000002
+ x28/t3   000000000000147b x29/t4   000000000098967f x30/t5   ffffffff8001581a x31/t6   0000000000000002
  fcsr     0000000000000000
  f0/ft0   ffffffff00000000 f1/ft1   ffffffff00000000 f2/ft2   ffffffff00000000 f3/ft3   ffffffff00000000
  f4/ft4   ffffffff00000000 f5/ft5   ffffffff00000000 f6/ft6   ffffffff00000000 f7/ft7   ffffffff00000000
@@ -70,19 +70,26 @@ EDK II
 UEFI v2.70 (EDK II, 0x00010000)
 [1m[33m[40mMapping table[0m[37m[40m
 [1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0c:;BLK2:
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,5588D5D0-1695-4BCC-B
-578-02EB9E58D87E)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,07D77A3A-7D25-4DC7-8
+2FB-B964D3288D1A)
 [1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
           VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)
 [1m[33m[40m     BLK1:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,5588D5D0-1695-4BCC-B
-57B-02EB9E58D87E)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,07D77A3A-7D25-4DC7-8
+2F8-B964D3288D1A)
 [1m[33m[40m     BLK3:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,5588D5D0-1695-4BCC-B
-579-02EB9E58D87E)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,07D77A3A-7D25-4DC7-8
+2FA-B964D3288D1A)
 Press [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
 [1m[33m[40mShell> [0m[37m[40m\EFI\BOOT\BOOTRISCV64.EFI
-[2J[01;01H[2J[04D[100591652] [INFO] System booted
+[2J[01;01H[2J[04D[140594596] [INFO] System booted
+[140675226] [INFO] boot: phys ranges=24 modules=0
+[140709436] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[140744245] [INFO] Initializing Real Frame Allocator...
+[140764277] [INFO] frame_alloc: base=0x80050000 frames=519021 words=8110
+[140786180] [INFO] Allocating bitmap of 8110 words...
+[140824636] [INFO] Bitmap allocated at 0xffffff8040000000
+[140859843] [INFO] Zeroing bitmap...
 
 ```
 </details>

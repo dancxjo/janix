@@ -1,11 +1,11 @@
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[17498094999] [INFO] System booted
-[17511802407] [INFO] boot: phys ranges=35 modules=0
-[17513822931] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[17516172135] [INFO] Initializing Real Frame Allocator...
-[17517902259] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
-[17518534704] [INFO] Allocating bitmap of 8073 words...
-[17524870803] [INFO] Bitmap allocated at 0xffffff8040000000
-[17527786584] [INFO] Zeroing bitmap...
-[17535974346] [INFO] Bitmap zeroed.
+[2J[01;01H[01;01H[2J[01;01H[01;01H[21872564901] [INFO] System booted
+[21900847122] [INFO] boot: phys ranges=35 modules=0
+[21904341888] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[21907237506] [INFO] Initializing Real Frame Allocator...
+[21909464148] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
+[21910284495] [INFO] Allocating bitmap of 8073 words...
+[21923168652] [INFO] Bitmap allocated at 0xffffff8040000000
+[21931157655] [INFO] Zeroing bitmap...
+[21956176044] [INFO] Bitmap zeroed.

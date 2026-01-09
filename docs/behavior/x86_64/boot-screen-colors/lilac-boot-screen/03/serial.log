@@ -1,18 +1,24 @@
-[14667369684] [INFO] frame_alloc: total=516638 free=450333 used=66305
-[14671860687] [INFO] Running frame_alloc sanity check...
-[14783576346] [INFO] frame_alloc: sanity: single ok
-[14788132920] [INFO] frame_alloc: sanity: contig(8) ok
-[14793371703] [INFO] Testing paging subsystem...
-[14810332548] [INFO] Switched to new address space
-[14816257632] [INFO] Paging subsystem test passed
-[14818616241] [INFO] Paging subsystem test passed
-[14819031876] [INFO] Initializing Kernel Heap...
-[14835289689] [INFO] kheap: grew by 64 pages (phys=0x1003f000, virt=0xffffa00000000000)
-[14840387232] [INFO] global_alloc: switched to kernel heap
-[14840876094] [INFO] Running heap sanity check...
-[14881106097] [INFO] kheap: sanity ok
-[14885409858] [INFO] kheap: forcing growth...
-[14892218418] [INFO] kheap: grew by 16 pages (phys=0x10082000, virt=0xffffa00000040000)
-[14946828237] [INFO] kheap: big allocation ok (len=307200)
-[14972117160] [INFO] kheap: reserved=268435456 committed=327680
-[14977677198] [INFO] System halted
+[25631418285] [INFO] Thread B (arg=0) ticks=25631383206
+[26440459353] [INFO] Thread A (arg=0) ticks=26440421337
+[26962804275] [INFO] Thread B (arg=0) ticks=26962770516
+[27649953243] [INFO] Thread A (arg=0) ticks=27649918824
+[27972153528] [INFO] Thread B (arg=0) ticks=27972124224
+[28375908858] [INFO] Thread A (arg=0) ticks=28375867509
+[28753897722] [INFO] Thread B (arg=0) ticks=28753865415
+[29161443366] [INFO] Thread A (arg=0) ticks=29161404822
+[29486242434] [INFO] Thread B (arg=0) ticks=29486205309
+[29908815354] [INFO] Thread A (arg=0) ticks=29908787172
+[30361584528] [INFO] Thread B (arg=0) ticks=30361552650
+[30931308309] [INFO] Thread A (arg=0) ticks=30931272669
+[31613400027] [INFO] Thread B (arg=0) ticks=31613365344
+[32127262332] [INFO] Thread A (arg=0) ticks=32127226989
+[32422109874] [INFO] Thread B (arg=0) ticks=32422071462
+[32881147893] [INFO] Thread A (arg=0) ticks=32881111131
+[33190501047] [INFO] Thread B (arg=0) ticks=33190464153
+[33603881355] [INFO] Thread A (arg=0) ticks=33603843933
+[33955859784] [INFO] Thread B (arg=0) ticks=33955824078
+[34417875822] [INFO] Thread A (arg=0) ticks=34417644459
+[34738632456] [INFO] Thread B (arg=0) ticks=34738598631
+[35137745049] [INFO] Thread A (arg=0) ticks=35137709739
+[35734209423] [INFO] Thread B (arg=0) ticks=35734173156
+[36478859109] [INFO] Thread A (arg=0) ticks=36478823766

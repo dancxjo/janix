@@ -142,237 +142,100 @@ PROGRESS CODE: V03058001 I0
 BdsDxe: starting Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x3,0x0)
 [2J[01;01H[01;01H[2J[01;01H[01;01HPROGRESS CODE: V02010004 I0
 PROGRESS CODE: V03101019 I0
-[782176069] [INFO] System booted
-[782435755] [INFO] LoongArch paging init: DMW1 setup, HHDM override=0x9000000000000000
-[782547406] [INFO] Detected 4-level paging (PWCH=0x267)
-[782658218] [INFO] boot: phys ranges=64 modules=0
-[782783283] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[782895656] [INFO] Initializing Real Frame Allocator...
-[782960792] [INFO] frame_alloc: base=0x1000 frames=983029 words=15360
-[782982223] [INFO] Allocating bitmap of 15360 words...
-[783507453] [INFO] map_bootheap_page: virt=0xffffff8040000000 phys=0xb0000 levels=4
-[783636750] [INFO] PGDH=0xebd06000
-[783655461] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[783688386] [INFO] Reading table entry 0x90000000ebd06ff8
-[783784448] [INFO] Entry: 0xebd05000
-[783829434] [INFO] Reusing existing table at 0xebd05000
-[783850202] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[783864332] [INFO] Reading table entry 0x90000000ebd05008
-[783879238] [INFO] Entry: 0x0
-[783888895] [INFO] Allocating table...
-[783932053] [INFO] Allocated frame 0xb1000
-[784048925] [INFO] Reading table entry 0x90000000000b1000
-[784063936] [INFO] Entry: 0x0
-[784072487] [INFO] Allocating table...
-[784082488] [INFO] Allocated frame 0xb2000
-[784117800] [INFO] map_bootheap_page: virt=0xffffff8040001000 phys=0xb3000 levels=4
-[784234299] [INFO] PGDH=0xebd06000
-[784243594] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[784276429] [INFO] Reading table entry 0x90000000ebd06ff8
-[784330264] [INFO] Entry: 0xebd05000
-[784339539] [INFO] Reusing existing table at 0xebd05000
-[784353278] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[784365967] [INFO] Reading table entry 0x90000000ebd05008
-[784379969] [INFO] Entry: 0xb1001
-[784388721] [INFO] Reusing existing table at 0xb1001
-[784468692] [INFO] Reading table entry 0x90000000000b1000
-[784523291] [INFO] Entry: 0xb2001
-[784531928] [INFO] Reusing existing table at 0xb2001
-[784549253] [INFO] map_bootheap_page: virt=0xffffff8040002000 phys=0xb4000 levels=4
-[784571395] [INFO] PGDH=0xebd06000
-[784580633] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[784594235] [INFO] Reading table entry 0x90000000ebd06ff8
-[784723829] [INFO] Entry: 0xebd05000
-[784732983] [INFO] Reusing existing table at 0xebd05000
-[784747487] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[784761097] [INFO] Reading table entry 0x90000000ebd05008
-[784776159] [INFO] Entry: 0xb1001
-[784784870] [INFO] Reusing existing table at 0xb1001
-[784818600] [INFO] Reading table entry 0x90000000000b1000
-[784915691] [INFO] Entry: 0xb2001
-[784925632] [INFO] Reusing existing table at 0xb2001
-[784943485] [INFO] map_bootheap_page: virt=0xffffff8040003000 phys=0xb5000 levels=4
-[784969251] [INFO] PGDH=0xebd06000
-[784978710] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[784992586] [INFO] Reading table entry 0x90000000ebd06ff8
-[785127873] [INFO] Entry: 0xebd05000
-[785141334] [INFO] Reusing existing table at 0xebd05000
-[785155747] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[785170143] [INFO] Reading table entry 0x90000000ebd05008
-[785185877] [INFO] Entry: 0xb1001
-[785194509] [INFO] Reusing existing table at 0xb1001
-[785303906] [INFO] Reading table entry 0x90000000000b1000
-[785320533] [INFO] Entry: 0xb2001
-[785330265] [INFO] Reusing existing table at 0xb2001
-[785349767] [INFO] map_bootheap_page: virt=0xffffff8040004000 phys=0xb6000 levels=4
-[785375167] [INFO] PGDH=0xebd06000
-[785385668] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[785456772] [INFO] Reading table entry 0x90000000ebd06ff8
-[785548208] [INFO] Entry: 0xebd05000
-[785557540] [INFO] Reusing existing table at 0xebd05000
-[785571406] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[785584723] [INFO] Reading table entry 0x90000000ebd05008
-[785645746] [INFO] Entry: 0xb1001
-[785692442] [INFO] Reusing existing table at 0xb1001
-[785725533] [INFO] Reading table entry 0x90000000000b1000
-[785740477] [INFO] Entry: 0xb2001
-[785750005] [INFO] Reusing existing table at 0xb2001
-[785769474] [INFO] map_bootheap_page: virt=0xffffff8040005000 phys=0xb7000 levels=4
-[785793495] [INFO] PGDH=0xebd06000
-[785882959] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[785919356] [INFO] Reading table entry 0x90000000ebd06ff8
-[785934270] [INFO] Entry: 0xebd05000
-[785943861] [INFO] Reusing existing table at 0xebd05000
-[785957848] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[785971107] [INFO] Reading table entry 0x90000000ebd05008
-[785985848] [INFO] Entry: 0xb1001
-[785994916] [INFO] Reusing existing table at 0xb1001
-[786130374] [INFO] Reading table entry 0x90000000000b1000
-[786146578] [INFO] Entry: 0xb2001
-[786156294] [INFO] Reusing existing table at 0xb2001
-[786178975] [INFO] map_bootheap_page: virt=0xffffff8040006000 phys=0xb8000 levels=4
-[786283816] [INFO] PGDH=0xebd06000
-[786310772] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[786324887] [INFO] Reading table entry 0x90000000ebd06ff8
-[786339723] [INFO] Entry: 0xebd05000
-[786349839] [INFO] Reusing existing table at 0xebd05000
-[786364513] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[786377605] [INFO] Reading table entry 0x90000000ebd05008
-[786392317] [INFO] Entry: 0xb1001
-[786460192] [INFO] Reusing existing table at 0xb1001
-[786542918] [INFO] Reading table entry 0x90000000000b1000
-[786557727] [INFO] Entry: 0xb2001
-[786565678] [INFO] Reusing existing table at 0xb2001
-[786582108] [INFO] map_bootheap_page: virt=0xffffff8040007000 phys=0xb9000 levels=4
-[786689141] [INFO] PGDH=0xebd06000
-[786713635] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[786727895] [INFO] Reading table entry 0x90000000ebd06ff8
-[786742676] [INFO] Entry: 0xebd05000
-[786752409] [INFO] Reusing existing table at 0xebd05000
-[786766674] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[786779617] [INFO] Reading table entry 0x90000000ebd05008
-[786793462] [INFO] Entry: 0xb1001
-[786879880] [INFO] Reusing existing table at 0xb1001
-[786932622] [INFO] Reading table entry 0x90000000000b1000
-[786949491] [INFO] Entry: 0xb2001
-[786959112] [INFO] Reusing existing table at 0xb2001
-[786977540] [INFO] map_bootheap_page: virt=0xffffff8040008000 phys=0xba000 levels=4
-[787071404] [INFO] PGDH=0xebd06000
-[787117879] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[787132745] [INFO] Reading table entry 0x90000000ebd06ff8
-[787149027] [INFO] Entry: 0xebd05000
-[787159757] [INFO] Reusing existing table at 0xebd05000
-[787175373] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[787190220] [INFO] Reading table entry 0x90000000ebd05008
-[787307079] [INFO] Entry: 0xb1001
-[787329709] [INFO] Reusing existing table at 0xb1001
-[787344670] [INFO] Reading table entry 0x90000000000b1000
-[787360898] [INFO] Entry: 0xb2001
-[787370449] [INFO] Reusing existing table at 0xb2001
-[787388882] [INFO] map_bootheap_page: virt=0xffffff8040009000 phys=0xbb000 levels=4
-[787519396] [INFO] PGDH=0xebd06000
-[787529566] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[787545704] [INFO] Reading table entry 0x90000000ebd06ff8
-[787562108] [INFO] Entry: 0xebd05000
-[787571705] [INFO] Reusing existing table at 0xebd05000
-[787585662] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[787626308] [INFO] Reading table entry 0x90000000ebd05008
-[787732138] [INFO] Entry: 0xb1001
-[787741547] [INFO] Reusing existing table at 0xb1001
-[787755634] [INFO] Reading table entry 0x90000000000b1000
-[787771206] [INFO] Entry: 0xb2001
-[787780132] [INFO] Reusing existing table at 0xb2001
-[787803024] [INFO] map_bootheap_page: virt=0xffffff804000a000 phys=0xbc000 levels=4
-[787914264] [INFO] PGDH=0xebd06000
-[787923255] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[787936707] [INFO] Reading table entry 0x90000000ebd06ff8
-[787951907] [INFO] Entry: 0xebd05000
-[787962101] [INFO] Reusing existing table at 0xebd05000
-[787977170] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[787991372] [INFO] Reading table entry 0x90000000ebd05008
-[788117728] [INFO] Entry: 0xb1001
-[788144312] [INFO] Reusing existing table at 0xb1001
-[788158159] [INFO] Reading table entry 0x90000000000b1000
-[788173565] [INFO] Entry: 0xb2001
-[788182850] [INFO] Reusing existing table at 0xb2001
-[788205674] [INFO] map_bootheap_page: virt=0xffffff804000b000 phys=0xbd000 levels=4
-[788317078] [INFO] PGDH=0xebd06000
-[788326970] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[788341959] [INFO] Reading table entry 0x90000000ebd06ff8
-[788357695] [INFO] Entry: 0xebd05000
-[788367865] [INFO] Reusing existing table at 0xebd05000
-[788380985] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[788393390] [INFO] Reading table entry 0x90000000ebd05008
-[788527526] [INFO] Entry: 0xb1001
-[788536881] [INFO] Reusing existing table at 0xb1001
-[788550413] [INFO] Reading table entry 0x90000000000b1000
-[788565291] [INFO] Entry: 0xb2001
-[788631810] [INFO] Reusing existing table at 0xb2001
-[788649464] [INFO] map_bootheap_page: virt=0xffffff804000c000 phys=0xbe000 levels=4
-[788673115] [INFO] PGDH=0xebd06000
-[788682838] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[788705703] [INFO] Reading table entry 0x90000000ebd06ff8
-[788805820] [INFO] Entry: 0xebd05000
-[788815641] [INFO] Reusing existing table at 0xebd05000
-[788829827] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[788843242] [INFO] Reading table entry 0x90000000ebd05008
-[788857988] [INFO] Entry: 0xb1001
-[788866760] [INFO] Reusing existing table at 0xb1001
-[788880209] [INFO] Reading table entry 0x90000000000b1000
-[788894832] [INFO] Entry: 0xb2001
-[788977785] [INFO] Reusing existing table at 0xb2001
-[789050351] [INFO] map_bootheap_page: virt=0xffffff804000d000 phys=0xbf000 levels=4
-[789074305] [INFO] PGDH=0xebd06000
-[789083156] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[789107186] [INFO] Reading table entry 0x90000000ebd06ff8
-[789191451] [INFO] Entry: 0xebd05000
-[789222957] [INFO] Reusing existing table at 0xebd05000
-[789237948] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[789251487] [INFO] Reading table entry 0x90000000ebd05008
-[789265986] [INFO] Entry: 0xb1001
-[789275311] [INFO] Reusing existing table at 0xb1001
-[789288709] [INFO] Reading table entry 0x90000000000b1000
-[789383812] [INFO] Entry: 0xb2001
-[789420273] [INFO] Reusing existing table at 0xb2001
-[789438753] [INFO] map_bootheap_page: virt=0xffffff804000e000 phys=0xc0000 levels=4
-[789463479] [INFO] PGDH=0xebd06000
-[789473326] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[789487843] [INFO] Reading table entry 0x90000000ebd06ff8
-[789588463] [INFO] Entry: 0xebd05000
-[789627354] [INFO] Reusing existing table at 0xebd05000
-[789641343] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[789655450] [INFO] Reading table entry 0x90000000ebd05008
-[789671536] [INFO] Entry: 0xb1001
-[789680971] [INFO] Reusing existing table at 0xb1001
-[789695195] [INFO] Reading table entry 0x90000000000b1000
-[789816610] [INFO] Entry: 0xb2001
-[789826310] [INFO] Reusing existing table at 0xb2001
-[789843391] [INFO] map_bootheap_page: virt=0xffffff804000f000 phys=0xc1000 levels=4
-[789867303] [INFO] PGDH=0xebd06000
-[789877557] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[789892662] [INFO] Reading table entry 0x90000000ebd06ff8
-[790024306] [INFO] Entry: 0xebd05000
-[790035007] [INFO] Reusing existing table at 0xebd05000
-[790049957] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[790063947] [INFO] Reading table entry 0x90000000ebd05008
-[790079430] [INFO] Entry: 0xb1001
-[790088375] [INFO] Reusing existing table at 0xb1001
-[790168668] [INFO] Reading table entry 0x90000000000b1000
-[790223017] [INFO] Entry: 0xb2001
-[790231891] [INFO] Reusing existing table at 0xb2001
-[790250295] [INFO] map_bootheap_page: virt=0xffffff8040010000 phys=0xc2000 levels=4
-[790275754] [INFO] PGDH=0xebd06000
-[790285018] [INFO] L3: idx=511 ptr=0x90000000ebd06000
-[790330000] [INFO] Reading table entry 0x90000000ebd06ff8
-[790430612] [INFO] Entry: 0xebd05000
-[790440153] [INFO] Reusing existing table at 0xebd05000
-[790454001] [INFO] L2: idx=1 ptr=0x90000000ebd05000
-[790467852] [INFO] Reading table entry 0x90000000ebd05008
-[790483417] [INFO] Entry: 0xb1001
-[790492636] [INFO] Reusing existing table at 0xb1001
-[790606138] [INFO] Reading table entry 0x90000000000b1000
-[790620979] [INFO] Entry: 0xb2001
-[790630186] [INFO] Reusing existing table at 0xb2001
-[790648214] [INFO] map_bootheap_page: virt=0xffffff8040011000 phys=0xc3000 levels=4
-[790672279] [INFO] PGDH=0xebd06000
-[790682056] [INFO] L3: idx=511 ptr=0x90000000ebd06000
+[871639167] [INFO] System booted
+[872203300] [INFO] LoongArch paging init: DMW1 setup, HHDM override=0x9000000000000000
+[872461131] [INFO] Detected 4-level paging (PWCH=0x267)
+[872594106] [INFO] boot: phys ranges=64 modules=0
+[872798478] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[872838236] [INFO] Initializing Real Frame Allocator...
+[872992980] [INFO] frame_alloc: base=0x1000 frames=983029 words=15360
+[873017324] [INFO] Allocating bitmap of 15360 words...
+[873233315] [INFO] map_bootheap_page: virt=0xffffff8040000000 phys=0xb0000 levels=4
+[873556441] [INFO] PGDH=0xebce6000
+[873577668] [INFO] L3: idx=511 ptr=0x90000000ebce6000
+[873614664] [INFO] Reading table entry 0x90000000ebce6ff8
+[873636210] [INFO] Entry: 0xebce5000
+[873755063] [INFO] Reusing existing table at 0xebce5000
+[873780181] [INFO] L2: idx=1 ptr=0x90000000ebce5000
+[873797214] [INFO] Reading table entry 0x90000000ebce5008
+[873814864] [INFO] Entry: 0x0
+[873826145] [INFO] Allocating table...
+[873944347] [INFO] Allocated frame 0xb1000
+[874092577] [INFO] Reading table entry 0x90000000000b1000
+[874169963] [INFO] Entry: 0x0
+[874247565] [INFO] Allocating table...
+[874259018] [INFO] Allocated frame 0xb2000
+[874290556] [INFO] map_bootheap_page: virt=0xffffff8040001000 phys=0xb3000 levels=4
+[874318172] [INFO] PGDH=0xebce6000
+[874329464] [INFO] L3: idx=511 ptr=0x90000000ebce6000
+[874499943] [INFO] Reading table entry 0x90000000ebce6ff8
+[874653213] [INFO] Entry: 0xebce5000
+[874663781] [INFO] Reusing existing table at 0xebce5000
+[874679327] [INFO] L2: idx=1 ptr=0x90000000ebce5000
+[874693877] [INFO] Reading table entry 0x90000000ebce5008
+[874710003] [INFO] Entry: 0xb1001
+[874719746] [INFO] Reusing existing table at 0xb1001
+[874734624] [INFO] Reading table entry 0x90000000000b1000
+[874853291] [INFO] Entry: 0xb2001
+[874863804] [INFO] Reusing existing table at 0xb2001
+[874882587] [INFO] map_bootheap_page: virt=0xffffff8040002000 phys=0xb4000 levels=4
+[874909040] [INFO] PGDH=0xebce6000
+[874919839] [INFO] L3: idx=511 ptr=0x90000000ebce6000
+[874936119] [INFO] Reading table entry 0x90000000ebce6ff8
+[875254326] [INFO] Entry: 0xebce5000
+[875264943] [INFO] Reusing existing table at 0xebce5000
+[875280453] [INFO] L2: idx=1 ptr=0x90000000ebce5000
+[875294945] [INFO] Reading table entry 0x90000000ebce5008
+[875311190] [INFO] Entry: 0xb1001
+[875321126] [INFO] Reusing existing table at 0xb1001
+[875336106] [INFO] Reading table entry 0x90000000000b1000
+[875353836] [INFO] Entry: 0xb2001
+[875364196] [INFO] Reusing existing table at 0xb2001
+[875382821] [INFO] map_bootheap_page: virt=0xffffff8040003000 phys=0xb5000 levels=4
+[875409288] [INFO] PGDH=0xebce6000
+[875420101] [INFO] L3: idx=511 ptr=0x90000000ebce6000
+[875436098] [INFO] Reading table entry 0x90000000ebce6ff8
+[875577451] [INFO] Entry: 0xebce5000
+[875743139] [INFO] Reusing existing table at 0xebce5000
+[875759906] [INFO] L2: idx=1 ptr=0x90000000ebce5000
+[875775491] [INFO] Reading table entry 0x90000000ebce5008
+[875792745] [INFO] Entry: 0xb1001
+[875946151] [INFO] Reusing existing table at 0xb1001
+[875959425] [INFO] Reading table entry 0x90000000000b1000
+[875972402] [INFO] Entry: 0xb2001
+[875980467] [INFO] Reusing existing table at 0xb2001
+[875999223] [INFO] map_bootheap_page: virt=0xffffff8040004000 phys=0xb6000 levels=4
+[876024059] [INFO] PGDH=0xebce6000
+[876034099] [INFO] L3: idx=511 ptr=0x90000000ebce6000
+[876151555] [INFO] Reading table entry 0x90000000ebce6ff8
+[876168735] [INFO] Entry: 0xebce5000
+[876179783] [INFO] Reusing existing table at 0xebce5000
+[876196229] [INFO] L2: idx=1 ptr=0x90000000ebce5000
+[876211642] [INFO] Reading table entry 0x90000000ebce5008
+[876228626] [INFO] Entry: 0xb1001
+[876238791] [INFO] Reusing existing table at 0xb1001
+[876385514] [INFO] Reading table entry 0x90000000000b1000
+[876402721] [INFO] Entry: 0xb2001
+[876413035] [INFO] Reusing existing table at 0xb2001
+[876431447] [INFO] map_bootheap_page: virt=0xffffff8040005000 phys=0xb7000 levels=4
+[876558609] [INFO] PGDH=0xebce6000
+[876569050] [INFO] L3: idx=511 ptr=0x90000000ebce6000
+[876584573] [INFO] Reading table entry 0x90000000ebce6ff8
+[876600918] [INFO] Entry: 0xebce5000
+[876611615] [INFO] Reusing existing table at 0xebce5000
+[876627485] [INFO] L2: idx=1 ptr=0x90000000ebce5000
+[876761823] [INFO] Reading table entry 0x90000000ebce5008
+[876919768] [INFO] Entry: 0xb1001
+[876930164] [INFO] Reusing existing table at 0xb1001
+[877047197] [INFO] Reading table entry 0x90000000000b1000
+[877064084] [INFO] Entry: 0xb2001
+[877074067] [INFO] Reusing existing table at 0xb2001
+[877092030] [INFO] map_bootheap_page: virt=0xffffff8040006000 phys=0xb8000 levels=4
+[877117790] [INFO] PGDH=0xebce6000
+[877128367] [INFO] L3: idx=511 ptr=0x90000000ebce6000
+[877245812] [INFO] Reading table entry 0x90000000ebce6ff8
+[877263169] [INFO] Entry: 0xebce5000
+[877274207] [INFO] Reusing existing table at 0xebce5000
+[877290556] [INFO] L2: idx=1 ptr=0x90000000ebce5000
+[877305822] [INFO] Reading table entry 0x90000000ebce5008
+[877322713] [INFO] Entry: 0xb1001

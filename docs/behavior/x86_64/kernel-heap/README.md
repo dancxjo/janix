@@ -1,9 +1,9 @@
 # ✅ Feature: Kernel Heap
 
-> Last run: 2026-01-09 10:55:29
+> Last run: 2026-01-09 12:06:28
 
 ## Scenarios
 
-- ✅ [Heap Initialization and Basic Allocation](./heap-initialization-and-basic-allocation) (0/1)
-- ✅ [Heap Growth on Demand](./heap-growth-on-demand) (0/1)
-- ✅ [Diagnostics](./diagnostics) (0/1)
+- ✅ [Heap Initialization and Basic Allocation](./heap-initialization-and-basic-allocation) (5/5)
+- ✅ [Heap Growth on Demand](./heap-growth-on-demand) (4/4)
+- ✅ [Diagnostics](./diagnostics) (3/3)

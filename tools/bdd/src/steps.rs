@@ -3,8 +3,8 @@
 //! Steps execute test logic. Artifact capture is handled by the reporter
 //! which receives step events from cucumber and has access to the world.
 
-use cucumber::{given, then, when};
 use crate::world::ThingOsWorld;
+use cucumber::{given, then, when};
 
 /// Default timeout for waiting on serial output (seconds).
 const DEFAULT_TIMEOUT_SECS: f64 = 30.0;
@@ -27,15 +27,28 @@ async fn wait_for_boot(world: &mut ThingOsWorld) {
     if !found {
         let log = world.get_serial_log().await;
         eprintln!("\n=== Serial Log (waiting for boot) ===");
-        for line in log.lines().rev().take(50).collect::<Vec<_>>().into_iter().rev() {
+        for line in log
+            .lines()
+            .rev()
+            .take(50)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
             eprintln!("{}", line);
         }
         panic!("System did not boot within timeout");
     }
 }
 
-#[then(regex = r#"^I should see a message in the serial output that says "(.+)" within ([0-9.]+)s$"#)]
-async fn check_serial_message_with_timeout(world: &mut ThingOsWorld, expected: String, timeout: String) {
+#[then(
+    regex = r#"^I should see a message in the serial output that says "(.+)" within ([0-9.]+)s$"#
+)]
+async fn check_serial_message_with_timeout(
+    world: &mut ThingOsWorld,
+    expected: String,
+    timeout: String,
+) {
     let timeout_secs = timeout.parse::<f64>().unwrap_or(DEFAULT_TIMEOUT_SECS);
     check_serial(world, &expected, timeout_secs).await;
 }
@@ -56,11 +69,21 @@ async fn check_serial(world: &mut ThingOsWorld, expected: &str, timeout_secs: f6
     if !found {
         let log = world.get_serial_log().await;
         eprintln!("\n=== Serial Log (last 100 lines) ===");
-        for line in log.lines().rev().take(100).collect::<Vec<_>>().into_iter().rev() {
+        for line in log
+            .lines()
+            .rev()
+            .take(100)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
             eprintln!("{}", line);
         }
         eprintln!("=== End Serial Log ===\n");
-        panic!("Expected to find '{}' in serial output, but it was not found within {}s", expected, timeout_secs);
+        panic!(
+            "Expected to find '{}' in serial output, but it was not found within {}s",
+            expected, timeout_secs
+        );
     }
 }
 
@@ -80,10 +103,15 @@ async fn then_screen_fill(_world: &mut ThingOsWorld, color_name: String) {
         _ => panic!("Unknown color: {}", color_name),
     };
 
-    let screenshot_path = crate::artifacts::global().lock().await.screenshot_path("check_fill");
-    
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("check_fill");
+
     // Use the world's private QMP connection for checked screenshots
-    let png_path = _world.take_screenshot(&screenshot_path).await
+    let png_path = _world
+        .take_screenshot(&screenshot_path)
+        .await
         .expect("Failed to take screenshot");
 
     let img = image::open(&png_path).expect("Failed to open screenshot");
@@ -92,7 +120,7 @@ async fn then_screen_fill(_world: &mut ThingOsWorld, color_name: String) {
 
     let mut match_count = 0;
     let mut total_samples = 0;
-    
+
     // Sample 100 random pixels
     use rand::Rng;
     let mut rng = rand::thread_rng();
@@ -100,23 +128,27 @@ async fn then_screen_fill(_world: &mut ThingOsWorld, color_name: String) {
     for _ in 0..100 {
         let x = rng.gen_range(0..width);
         let y = rng.gen_range(0..height);
-        
+
         let pixel = rgb.get_pixel(x, y);
         let channels = pixel.0; // [r, g, b]
 
         // Allow small compression variance (though PNG is lossless, QEMU might dither?)
         // Exact match preferred for framebuffer
-        if channels[0] == expected_color[0] && 
-           channels[1] == expected_color[1] && 
-           channels[2] == expected_color[2] {
+        if channels[0] == expected_color[0]
+            && channels[1] == expected_color[1]
+            && channels[2] == expected_color[2]
+        {
             match_count += 1;
         }
         total_samples += 1;
     }
 
-    if match_count < 95 { // Allow small failure rate for potential artifacts/cursors
-         panic!("Screen does not look like {}! Matched {}/{} pixels. Expected RGB: {:?}. Sampled random pixels didn't match.", 
-            color_name, match_count, total_samples, expected_color);
+    if match_count < 95 {
+        // Allow small failure rate for potential artifacts/cursors
+        panic!(
+            "Screen does not look like {}! Matched {}/{} pixels. Expected RGB: {:?}. Sampled random pixels didn't match.",
+            color_name, match_count, total_samples, expected_color
+        );
     }
 }
 
@@ -124,7 +156,7 @@ async fn then_screen_fill(_world: &mut ThingOsWorld, color_name: String) {
 async fn check_serial_monotonic(world: &mut ThingOsWorld) {
     let log = world.get_serial_log().await;
     let mut last_ts = 0.0;
-    
+
     // Regex to capture "[  12.345678]" -> 12.345678
     let re = regex::Regex::new(r"^\[\s*([0-9]+\.[0-9]+)\s*\]").expect("Invalid regex");
 
@@ -135,11 +167,14 @@ async fn check_serial_monotonic(world: &mut ThingOsWorld) {
         if let Some(caps) = re.captures(line) {
             let ts_str = caps.get(1).unwrap().as_str();
             let ts: f64 = ts_str.parse().expect("Failed to parse timestamp");
-            
+
             if ts < last_ts {
-                panic!("Serial log timestamps went backwards! Previous: {}, Current: {}\nLine: {}", last_ts, ts, line);
+                panic!(
+                    "Serial log timestamps went backwards! Previous: {}, Current: {}\nLine: {}",
+                    last_ts, ts, line
+                );
             }
-            
+
             last_ts = ts;
             found_any = true;
         }
@@ -165,7 +200,10 @@ async fn check_occurrence_count(world: &mut ThingOsWorld, pattern: String, count
     let log = world.get_serial_log().await;
     let occurrences = log.lines().filter(|l| l.contains(&pattern)).count();
     if occurrences < count {
-        panic!("Expected '{}' to appear at least {} times, but found {}", pattern, count, occurrences);
+        panic!(
+            "Expected '{}' to appear at least {} times, but found {}",
+            pattern, count, occurrences
+        );
     }
 }
 
@@ -173,19 +211,29 @@ async fn check_occurrence_count(world: &mut ThingOsWorld, pattern: String, count
 async fn check_ordering(world: &mut ThingOsWorld, second: String, first: String) {
     let log = world.get_serial_log().await;
     let first_pos = log.lines().position(|l| l.contains(&first));
-    
-    if first_pos.is_none() { 
-        panic!("Could not find '{}'", first); 
+
+    if first_pos.is_none() {
+        panic!("Could not find '{}'", first);
     }
     let first_idx = first_pos.unwrap();
-    
+
     let remainder = log.lines().skip(first_idx + 1);
     if !remainder.into_iter().any(|l| l.contains(&second)) {
-         panic!("Did not find '{}' after '{}'", second, first);
+        panic!("Did not find '{}' after '{}'", second, first);
     }
 }
 
 #[then(regex = r#"^I should see "(.+)"$"#)]
 async fn should_see_simple(world: &mut ThingOsWorld, expected: String) {
+    check_serial(world, &expected, DEFAULT_TIMEOUT_SECS).await;
+}
+
+#[given("the machine is booting")]
+async fn machine_is_booting(world: &mut ThingOsWorld) {
+    turn_on_machine(world).await;
+}
+
+#[then(regex = r#"^the log should contain "(.+)"$"#)]
+async fn log_contains(world: &mut ThingOsWorld, expected: String) {
     check_serial(world, &expected, DEFAULT_TIMEOUT_SECS).await;
 }

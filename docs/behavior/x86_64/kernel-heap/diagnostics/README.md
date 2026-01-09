@@ -1,12 +1,14 @@
 # ✅ Scenario: Diagnostics
 
-> Last run: 2026-01-09 10:55:29
+> Last run: 2026-01-09 12:06:28
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given the machine is booting | ⏭️ | 0ms | - - - |
+| 1 | Given the machine is booting | ✅ | 763ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> - [💾](./01/registers.txt) |
+| 2 | Then the log should contain "kheap: reserved=" | ✅ | 7828ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> - [💾](./02/registers.txt) |
+| 3 | And the log should contain "committed=" | ✅ | 248ms | - [📜](./03/serial.log) - |
 
 <details>
 <summary>📜 Full Serial Log</summary>
@@ -14,33 +16,54 @@
 ```
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[17498094999] [INFO] System booted
-[17511802407] [INFO] boot: phys ranges=35 modules=0
-[17513822931] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[17516172135] [INFO] Initializing Real Frame Allocator...
-[17517902259] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
-[17518534704] [INFO] Allocating bitmap of 8073 words...
-[17524870803] [INFO] Bitmap allocated at 0xffffff8040000000
-[17527786584] [INFO] Zeroing bitmap...
-[17535974346] [INFO] Bitmap zeroed.
-[18036286125] [INFO] frame_alloc: total=516638 free=511797 used=4841
-[18037230255] [INFO] Running frame_alloc sanity check...
-[18041120559] [INFO] frame_alloc: sanity: single ok
-[18048400656] [INFO] frame_alloc: sanity: contig(8) ok
-[18048920241] [INFO] Testing paging subsystem...
-[18057793545] [INFO] Switched to new address space
-[18062118855] [INFO] Paging subsystem test passed
-[18066333021] [INFO] Paging subsystem test passed
-[18068711100] [INFO] Initializing Kernel Heap...
-[18075788907] [INFO] kheap: grew by 64 pages (phys=0x4f000, virt=0xffffa00000000000)
-[18081791871] [INFO] global_alloc: switched to kernel heap
-[18082349604] [INFO] Running heap sanity check...
-[18102138714] [INFO] kheap: sanity ok
-[18105431586] [INFO] kheap: forcing growth...
-[18111533286] [INFO] kheap: grew by 16 pages (phys=0x100000, virt=0xffffa00000040000)
-[18140662650] [INFO] kheap: big allocation ok (len=307200)
-[18154715007] [INFO] kheap: reserved=268435456 committed=327680
-[18160072788] [INFO] System halted
+[2J[01;01H[01;01H[2J[01;01H[01;01H[25408043331] [INFO] System booted
+[25423084467] [INFO] boot: phys ranges=35 modules=0
+[25426359486] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[25428530292] [INFO] Initializing Real Frame Allocator...
+[25430245302] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
+[25430886657] [INFO] Allocating bitmap of 8073 words...
+[25437568695] [INFO] Bitmap allocated at 0xffffff8040000000
+[25443768108] [INFO] Zeroing bitmap...
+[25452446943] [INFO] Bitmap zeroed.
+[25934275950] [INFO] frame_alloc: total=516638 free=511760 used=4878
+[25935659640] [INFO] Running frame_alloc sanity check...
+[25939584792] [INFO] frame_alloc: sanity: single ok
+[25947666855] [INFO] frame_alloc: sanity: contig(8) ok
+[25949058366] [INFO] Testing paging subsystem...
+[25957985097] [INFO] Switched to new address space
+[25962915099] [INFO] Paging subsystem test passed
+[25966121280] [INFO] Paging subsystem test passed
+[25967375379] [INFO] Initializing Kernel Heap...
+[25974504006] [INFO] kheap: grew by 64 pages (phys=0x4f000, virt=0xffffa00000000000)
+[25979782719] [INFO] global_alloc: switched to kernel heap
+[25981188684] [INFO] Running heap sanity check...
+[26003021781] [INFO] kheap: sanity ok
+[26006340030] [INFO] kheap: forcing growth...
+[26013317055] [INFO] kheap: grew by 16 pages (phys=0x100000, virt=0xffffa00000040000)
+[26040535125] [INFO] kheap: big allocation ok (len=307200)
+[26042201790] [INFO] kheap: reserved=268435456 committed=327680
+[26052723312] [INFO] Initializing Task System...
+[26058806532] [INFO] Spawning Thread A...
+[26068328748] [INFO] Spawning Thread B...
+[26077736883] [INFO] Entering Scheduler Loop (Main Task)...
+[26086819935] [INFO] Thread A (arg=0) ticks=26086654869
+[26515718097] [INFO] Thread B (arg=0) ticks=26515521219
+[27435558876] [INFO] Thread A (arg=0) ticks=27435524028
+[27893644581] [INFO] Thread B (arg=0) ticks=27893610657
+[28334435316] [INFO] Thread A (arg=0) ticks=28334401557
+[29173282149] [INFO] Thread B (arg=0) ticks=29173245453
+[30534178785] [INFO] Thread A (arg=0) ticks=30534143244
+[31680188958] [INFO] Thread B (arg=0) ticks=31680155958
+[32617344441] [INFO] Thread A (arg=0) ticks=32617310715
+[33107118231] [INFO] Thread B (arg=0) ticks=33107082657
+[34005214980] [INFO] Thread A (arg=0) ticks=34005181089
+[34453365738] [INFO] Thread B (arg=0) ticks=34453331154
+[35005739736] [INFO] Thread A (arg=0) ticks=35005704393
+[36027142173] [INFO] Thread B (arg=0) ticks=36027107853
+[36757714422] [INFO] Thread A (arg=0) ticks=36757679574
+[37079918370] [INFO] Thread B (arg=0) ticks=37079888439
+[37934718558] [INFO] Thread A (arg=0) ticks=37934682786
+[38767115673] [INFO] Thread B (arg=0) ticks=38767081023
 
 ```
 </details>

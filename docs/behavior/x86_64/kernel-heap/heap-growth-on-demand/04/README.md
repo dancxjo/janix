@@ -1,0 +1,18 @@
+# ✅ And the log should contain "kheap: big allocation ok"
+
+**Result:** passed | **Duration:** 223ms
+
+<details open>
+<summary>Serial Output</summary>
+
+```
+[53773498251] [INFO] Thread B (arg=0) ticks=53773464525
+[54294469746] [INFO] Thread A (arg=0) ticks=54294434205
+[54592695168] [INFO] Thread B (arg=0) ticks=54592662003
+[55432532166] [INFO] Thread A (arg=0) ticks=55432497912
+[56131779792] [INFO] Thread B (arg=0) ticks=56131740687
+[57492070548] [INFO] Thread A (arg=0) ticks=57492035799
+[58244936013] [INFO] Thread B (arg=0) ticks=58244900043
+
+```
+</details>

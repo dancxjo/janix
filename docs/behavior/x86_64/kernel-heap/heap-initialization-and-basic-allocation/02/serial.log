@@ -1,0 +1,26 @@
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[2J[01;01H[01;01H[2J[01;01H[01;01H[33198571065] [INFO] System booted
+[33214836303] [INFO] boot: phys ranges=35 modules=0
+[33221486826] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[33226796724] [INFO] Initializing Real Frame Allocator...
+[33230961852] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
+[33232251921] [INFO] Allocating bitmap of 8073 words...
+[33239546307] [INFO] Bitmap allocated at 0xffffff8040000000
+[33242344377] [INFO] Zeroing bitmap...
+[33248767101] [INFO] Bitmap zeroed.
+[33941770038] [INFO] frame_alloc: total=516638 free=511760 used=4878
+[33942782049] [INFO] Running frame_alloc sanity check...
+[33946694529] [INFO] frame_alloc: sanity: single ok
+[33967544589] [INFO] frame_alloc: sanity: contig(8) ok
+[33972688728] [INFO] Testing paging subsystem...
+[33995215683] [INFO] Switched to new address space
+[33995844696] [INFO] Paging subsystem test passed
+[33996347154] [INFO] Paging subsystem test passed
+[33996813015] [INFO] Initializing Kernel Heap...
+[34016596053] [INFO] kheap: grew by 64 pages (phys=0x4f000, virt=0xffffa00000000000)
+[34018173156] [INFO] global_alloc: switched to kernel heap
+[34018745475] [INFO] Running heap sanity check...
+[34041046149] [INFO] kheap: sanity ok
+[34044654237] [INFO] kheap: forcing growth...
+[34052616312] [INFO] kheap: grew by 16 pages (phys=0x100000, virt=0xffffa00000040000)

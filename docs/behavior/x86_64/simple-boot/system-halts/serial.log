@@ -1,12 +1,12 @@
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[12931353732] [INFO] System booted
-[12944766087] [INFO] boot: phys ranges=35 modules=0
-[12949237851] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[12953805645] [INFO] Initializing Real Frame Allocator...
-[12955963812] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
-[13625354490] [INFO] frame_alloc: total=516638 free=511732 used=4906
-[13628406957] [INFO] Running frame_alloc sanity check...
-[13631743389] [INFO] frame_alloc: sanity: single ok
-[13636175586] [INFO] frame_alloc: sanity: contig(8) ok
-[13639647285] [INFO] System halted
+[2J[01;01H[01;01H[2J[01;01H[01;01H[11217278259] [INFO] System booted
+[11229036225] [INFO] boot: phys ranges=35 modules=0
+[11230089981] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
+[11231685135] [INFO] Initializing Real Frame Allocator...
+[11233221549] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
+[11858544390] [INFO] frame_alloc: total=516638 free=511731 used=4907
+[11859663849] [INFO] Running frame_alloc sanity check...
+[11862331536] [INFO] frame_alloc: sanity: single ok
+[11868104919] [INFO] frame_alloc: sanity: contig(8) ok
+[11870463891] [INFO] System halted

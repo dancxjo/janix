@@ -69,8 +69,18 @@ impl BootRuntime for Runtime {
     fn halt(&self) -> ! {
         hcf()
     }
+
+    fn mono_ticks(&self) -> u64 {
+        let mut count: u64;
+        unsafe { asm!("rdtime.d {}, $r0", out(reg) count) };
+        count
+    }
+
+    fn mono_freq_hz(&self) -> u64 {
+        100_000_000
+    }
     
-    fn phys_memory_map(&self) -> &'static [kernel::PhysRange] { 
+    fn phys_memory_map(&self) -> &'static [kernel::PhysRange] {
         self.init_memory_map();
         unsafe {
             let ptr = core::ptr::addr_of!(MEMORY_MAP_CACHE);

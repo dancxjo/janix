@@ -114,8 +114,43 @@ async fn then_screen_fill(_world: &mut ThingOsWorld, color_name: String) {
         total_samples += 1;
     }
 
+
     if match_count < 95 { // Allow small failure rate for potential artifacts/cursors
          panic!("Screen does not look like {}! Matched {}/{} pixels. Expected RGB: {:?}. Sampled random pixels didn't match.", 
             color_name, match_count, total_samples, expected_color);
+    }
+}
+
+#[then("the serial output should have monotonic timestamps")]
+async fn check_serial_monotonic(world: &mut ThingOsWorld) {
+    let log = world.get_serial_log().await;
+    let mut last_ts = 0.0;
+    
+    // Regex to capture "[  12.345678]" -> 12.345678
+    let re = regex::Regex::new(r"^\[\s*([0-9]+\.[0-9]+)\s*\]").expect("Invalid regex");
+
+    let mut found_any = false;
+
+    // We only care about line-by-line monotonicity for lines that *have* a timestamp.
+    for line in log.lines() {
+        if let Some(caps) = re.captures(line) {
+            let ts_str = caps.get(1).unwrap().as_str();
+            let ts: f64 = ts_str.parse().expect("Failed to parse timestamp");
+            
+            if ts < last_ts {
+                panic!("Serial log timestamps went backwards! Previous: {}, Current: {}\nLine: {}", last_ts, ts, line);
+            }
+            
+            last_ts = ts;
+            found_any = true;
+        }
+    }
+
+    if !found_any {
+        panic!("No timestamps found in serial log to verify!");
+    }
+
+    if last_ts == 0.0 {
+        panic!("Timestamps were monotonic but never advanced beyond 0.0! Timer likely broken.");
     }
 }

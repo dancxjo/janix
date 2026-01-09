@@ -221,6 +221,7 @@ dependencies = [
  "futures",
  "image",
  "rand 0.8.5",
+ "regex",
  "serde_json",
  "tokio",
 ]

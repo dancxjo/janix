@@ -187,7 +187,10 @@ impl FrameAllocator {
     pub fn alloc_contiguous(&mut self, count: u64) -> Option<PhysFrameRange> {
         if count == 0 { return None; }
         if count == 1 {
-             return self.alloc().map(|f| PhysFrameRange { base: f, count: 1 });
+             let res = self.alloc().map(|f| PhysFrameRange { base: f, count: 1 });
+             #[cfg(debug_assertions)]
+             if let Some(ref r) = res { self.verify_allocation(r.base.0, r.count); }
+             return res;
         }
         if count > self.frames { return None; }
         
@@ -249,15 +252,19 @@ impl FrameAllocator {
                          // We should reset run logic.
                      } else {
                          // Valid run.
-                         for k in 0..count {
-                             self.set_bit(final_start + k, true);
-                         }
-                         self.next = (final_start + count) % self.frames;
-                         return Some(PhysFrameRange {
-                             base: PhysFrame(self.addr(final_start)),
-                             count
-                         });
-                     }
+                          let base_addr = self.addr(final_start);
+                          #[cfg(debug_assertions)]
+                          self.verify_allocation(base_addr, count);
+
+                          for k in 0..count {
+                              self.set_bit(final_start + k, true);
+                          }
+                          self.next = (final_start + count) % self.frames;
+                          return Some(PhysFrameRange {
+                              base: PhysFrame(base_addr),
+                              count
+                          });
+                      }
                  }
              } else {
                  // Bit is used, reset run
@@ -291,6 +298,32 @@ impl FrameAllocator {
             total_frames: self.frames,
             free_frames: self.free_count,
             used_frames: self.frames - self.free_count,
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn verify_allocation(&self, start: u64, count: u64) {
+        let end = start + count * FRAME_SIZE;
+        // Verify that the entire range [start, end) is covered by Usable regions in the boot map.
+        // We access the authoritative map from the runtime.
+        let map = crate::runtime().phys_memory_map();
+        
+        let mut current = start;
+        while current < end {
+            let mut found = false;
+            for r in map {
+                // We only care about Usable memory.
+                if r.kind == PhysRangeKind::Usable && r.start <= current && r.end > current {
+                     // Found a covering region. Advance current to the end of this region or the end of our alloc.
+                     current = core::cmp::min(end, r.end);
+                     found = true;
+                     break;
+                }
+            }
+            
+            if !found {
+                 panic!("FrameAllocator: alloc_contiguous({}) returned range [{:#x}, {:#x}) which crosses non-usable boundary at {:#x}", count, start, end, current);
+            }
         }
     }
 }

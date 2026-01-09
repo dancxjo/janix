@@ -160,7 +160,7 @@ impl ThingOsReporter {
                     
                     match artifacts::take_screenshot_global(&path).await {
                         Ok(p) => Some(p),
-                        Err(e) => {
+                        Err(_e) => {
                             // Don't spam stderr if just not ready yet, but good for debug
                             // eprintln!("│  │  │      ⚠️ Before Screenshot: {}", e);
                             None

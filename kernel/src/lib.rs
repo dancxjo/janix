@@ -254,8 +254,7 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
         }
     }
     
-    #[cfg(target_arch = "x86_64")]
-    crate::arch::x86_64::paging::test_paging();
+    crate::arch::imp::paging::test_paging();
 
     kinfo!("System halted");
     runtime.halt();

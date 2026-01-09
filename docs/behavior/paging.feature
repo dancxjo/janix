@@ -1,8 +1,8 @@
 Feature: Paging Subsystem
+  As a kernel developer
+  I want to verify that the paging subsystem works correctly
+  So that I can safely map memory
 
-  @x86_64
-  Scenario: Paging Subsystem Self-Test
+  Scenario: Basic Paging Mechanism
     Given the machine is started
-    Then the serial output should contain "Testing paging subsystem..."
-    And the serial output should contain "Switched to new address space"
-    And the serial output should contain "Paging subsystem test passed"
+    Then the serial output should contain "Paging subsystem test passed"

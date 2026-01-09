@@ -1,7 +1,7 @@
 # ✅ Feature: Paging Subsystem
 
-> Last run: 2026-01-08 22:41:21
+> Last run: 2026-01-09 00:00:57
 
 ## Scenarios
 
-- ✅ [Paging Subsystem Self-Test](./paging-subsystem-self-test) (4/4)
+- ✅ [Basic Paging Mechanism](./basic-paging-mechanism) (2/2)

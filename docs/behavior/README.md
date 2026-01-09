@@ -6,7 +6,7 @@ Behavior-driven development test results organized by target architecture.
 
 | Architecture | Status | Results |
 |-------------|--------|--------|
-| loongarch64 | ❌ Failed | [📄 View Results](./loongarch64/README.md) |
+| aarch64 | ❌ Failed | [📄 View Results](./aarch64/README.md) |
 
 ---
 

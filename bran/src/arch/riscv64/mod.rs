@@ -1,14 +1,21 @@
 //! riscv64 architecture-specific implementation.
 
 use core::arch::asm;
-use kernel::BootRuntime;
+use kernel::IrqState;
+use crate::runtime::ArchRuntime;
 
-/// The BootRuntime implementation for riscv64.
-pub struct Runtime {
+/// The architecture-specific runtime for riscv64.
+pub struct Riscv64Runtime {
     serial: SerialPort,
 }
 
-impl Runtime {
+pub type Runtime = crate::runtime::Runtime<Riscv64Runtime>;
+
+pub const fn create_runtime() -> Runtime {
+    Runtime::new(Riscv64Runtime::new())
+}
+
+impl Riscv64Runtime {
     pub const fn new() -> Self {
         Self {
             serial: SerialPort,
@@ -16,7 +23,7 @@ impl Runtime {
     }
 }
 
-impl BootRuntime for Runtime {
+impl ArchRuntime for Riscv64Runtime {
     fn putchar(&self, c: u8) {
         self.serial.putchar(c);
     }
@@ -24,16 +31,35 @@ impl BootRuntime for Runtime {
     fn halt(&self) -> ! {
         hcf()
     }
-    
-    // Stubs
-    fn phys_memory_map(&self) -> &'static [kernel::PhysRange] { &[] }
-    fn modules(&self) -> &'static [kernel::BootModuleDesc] { &[] }
-    fn page_size(&self) -> usize { 4096 }
-    fn kernel_virt_base(&self) -> u64 { 0xffffffff80000000 } // high-half default
-    fn phys_to_virt_offset(&self) -> u64 { 0 }
-    fn framebuffer(&self) -> Option<kernel::FramebufferInfo> { None }
-    fn cpu_count(&self) -> usize { 1 }
-    fn boot_cpu_id(&self) -> usize { 0 }
+
+    fn mono_ticks(&self) -> u64 {
+        let time: u64;
+        unsafe {
+            asm!("csrr {}, time", out(reg) time);
+        }
+        time
+    }
+
+    fn mono_freq_hz(&self) -> u64 {
+        10_000_000 // Assumed default for QEMU virt
+    }
+
+    fn irq_disable(&self) -> IrqState {
+        let sstatus: usize;
+        unsafe {
+            // Read and clear SIE (bit 1)
+            asm!("csrrci {}, sstatus, 0x2", out(reg) sstatus);
+        }
+        IrqState((sstatus >> 1) & 1)
+    }
+
+    fn irq_restore(&self, state: IrqState) {
+        if state.0 != 0 {
+            unsafe { asm!("csrrs x0, sstatus, 0x2"); } // Set SIE
+        } else {
+            unsafe { asm!("csrrc x0, sstatus, 0x2"); } // Clear SIE
+        }
+    }
 }
 
 /// Serial port implementation for riscv64 using QEMU virt UART.

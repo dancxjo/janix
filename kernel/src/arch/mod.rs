@@ -3,7 +3,7 @@ pub mod x86_64;
 #[cfg(target_arch = "x86_64")]
 pub use x86_64 as imp;
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "loongarch64")))]
 pub mod dummy {
     pub mod paging {
         use crate::memory::boot_frame_alloc::BootFrameAllocator;
@@ -29,10 +29,16 @@ pub mod dummy {
         }
     }
 }
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "loongarch64")))]
 pub use dummy as imp;
 
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 #[cfg(target_arch = "aarch64")]
 pub use aarch64 as imp;
+
+#[cfg(target_arch = "loongarch64")]
+pub mod loongarch64;
+#[cfg(target_arch = "loongarch64")]
+pub use loongarch64 as imp;
+

@@ -13,6 +13,8 @@ mod arch;
 mod requests;
 mod framebuffer;
 mod mem;
+pub mod runtime;
+
 
 use arch::{hcf, Runtime};
 use framebuffer::Framebuffer;
@@ -26,7 +28,7 @@ use core::assert;
 // Import requests directly
 use requests::{BASE_REVISION, FRAMEBUFFER_REQUEST};
 
-static RUNTIME: Runtime = Runtime::new();
+static RUNTIME: Runtime = arch::create_runtime();
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {

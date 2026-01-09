@@ -194,7 +194,23 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     kinfo!("frame_alloc: base={:#x} frames={} words={}", base, frames, words);
 
     // Leak the bitmap slice so it lives forever
-    let bitmap_slice = vec![0u64; words as usize].leak();
+    kinfo!("Allocating bitmap of {} words...", words);
+    // Use manual alloc to debug
+    // let bitmap_slice = vec![0u64; words as usize].leak();
+    let layout = alloc::alloc::Layout::from_size_align(words as usize * 8, 8).unwrap();
+    let ptr = unsafe { alloc::alloc::alloc(layout) } as *mut u64;
+    kinfo!("Bitmap allocated at {:p}", ptr);
+    
+    if ptr.is_null() {
+        panic!("Bitmap alloc failed");
+    }
+    
+    // Zero it manually to see if write faults
+    kinfo!("Zeroing bitmap...");
+    unsafe { core::ptr::write_bytes(ptr, 0, words as usize); }
+    kinfo!("Bitmap zeroed.");
+    
+    let bitmap_slice = unsafe { core::slice::from_raw_parts_mut(ptr, words as usize) };
     
     let mut local_alloc = FrameAllocator::new_from_boot(map, modules, bitmap_slice);
     

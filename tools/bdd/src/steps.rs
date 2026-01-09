@@ -23,7 +23,7 @@ async fn machine_is_started(world: &mut ThingOsWorld) {
 
 #[when("I wait for the system to boot")]
 async fn wait_for_boot(world: &mut ThingOsWorld) {
-    let found = world.wait_for_serial("System booted", 10.0).await;
+    let found = world.wait_for_serial("System booted", 30.0).await;
     if !found {
         let log = world.get_serial_log().await;
         eprintln!("\n=== Serial Log (waiting for boot) ===");

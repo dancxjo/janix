@@ -1,11 +1,9 @@
-# ✅ And the serial output should contain "Boxed value: 42"
+# ✅ And the serial output should contain "System halted"
 
-**Result:** passed | **Duration:** 10ms
+**Result:** passed | **Duration:** 585ms
 
-## Registers
+## Screenshots
 
-```
-{"return": {}}
-
-```
+### After
+![After](./after.png)
 

@@ -1,7 +1,7 @@
 # ✅ Feature: Boot Screen Colors
 
-> Last run: 2026-01-08 21:08:14
+> Last run: 2026-01-08 22:20:16
 
 ## Scenarios
 
-- ✅ [Mallard Teal Boot Screen](./mallard-teal-boot-screen) (3/3)
+- ✅ [Lilac Boot Screen](./lilac-boot-screen) (3/3)

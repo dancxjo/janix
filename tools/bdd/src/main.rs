@@ -49,6 +49,7 @@ fn main() {
         .unwrap()
         .block_on(
             ThingOsWorld::cucumber()
+                .max_concurrent_scenarios(1) // Force sequential execution to avoid global artifact race conditions
                 .with_writer(
                     cucumber::writer::Tee::new(reporter, json_writer)
                 )

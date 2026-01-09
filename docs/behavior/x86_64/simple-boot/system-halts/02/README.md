@@ -1,19 +1,19 @@
 # ✅ Then I should see that the machine has halted
 
-**Result:** passed | **Duration:** 5691ms
+**Result:** passed | **Duration:** 6317ms
 
 <details open>
 <summary>Serial Output</summary>
 
 ```
-[13652352021] [INFO] frame_alloc: total=516638 free=511720 used=4918
-[13654745841] [INFO] Running frame_alloc sanity check...
-[13658443821] [INFO] frame_alloc: sanity: single ok
-[13664457411] [INFO] frame_alloc: sanity: contig(8) ok
-[13666690455] [INFO] Testing paging subsystem...
-[13676350182] [INFO] Switched to new address space
-[13679676450] [INFO] Paging subsystem test passed
-[13680152376] [INFO] System halted
+[16115315931] [INFO] frame_alloc: total=516638 free=511720 used=4918
+[16119114495] [INFO] Running frame_alloc sanity check...
+[16123026381] [INFO] frame_alloc: sanity: single ok
+[16131000831] [INFO] frame_alloc: sanity: contig(8) ok
+[16132361025] [INFO] Testing paging subsystem...
+[16142065170] [INFO] Switched to new address space
+[16142776254] [INFO] Paging subsystem test passed
+[16143195783] [INFO] System halted
 
 ```
 </details>

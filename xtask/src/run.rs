@@ -22,7 +22,7 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
                 .run()?;
         }
         "aarch64" => {
-            cmd!(sh, "qemu-system-aarch64 -M virt -cpu cortex-a72 -serial stdio -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}")
+            cmd!(sh, "qemu-system-aarch64 -M virt -cpu cortex-a72 -serial stdio -semihosting -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}")
                 .args(&qemu_args)
                 .run()?;
         }

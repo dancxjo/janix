@@ -39,9 +39,8 @@ fn indicate_progress() {
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
              let mut display = Framebuffer::new(&framebuffer);
-             // Mallard Teal: #00474F -> 0x0000474F (assuming strict XRGB)
-             // or Rgb888 to u32 manual pack: 0x00474F
-             display.clear(0x00_00_47_4F); 
+             // Lilac: #C8A2C8 -> 0x00C8A2C8 (assuming strict XRGB)
+             display.clear(0x00_C8_A2_C8); 
         }
     }
 }

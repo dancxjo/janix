@@ -64,7 +64,8 @@ impl BootRuntime for Runtime {
     fn boot_cpu_id(&self) -> usize { 0 }
 }
 
-/// Serial port implementation for aarch64 using PL011 UART.
+/// Serial port implementation for aarch64 using Semihosting.
+/// (PL011 MMIO requires identity mapping of 0x09000000 which may be missing)
 pub struct SerialPort {
     pub clamp: MonotonicClamp,
 }
@@ -77,27 +78,17 @@ impl SerialPort {
     }
 
     fn putchar(&self, c: u8) {
+        let ch = c;
         unsafe {
-            // PL011 base address is 0x09000000 for qemu-virt
-            let base = 0x09000000 as *mut u32;
-            
-            // Registers
-            // +0x00: DR (Data Register)
-            // +0x18: FR (Flag Register)
-            let dr = base.add(0x00 / 4);
-            let fr = base.add(0x18 / 4);
-
-            // Flag Register bits
-            // Bit 5: TXFF (Transmit FIFO Full)
-            const TXFF: u32 = 1 << 5;
-
-            // Wait while TXFF is set
-            while (fr.read_volatile() & TXFF) != 0 {
-                core::hint::spin_loop();
-            }
-
-            // Write character to Data Register
-            dr.write_volatile(c as u32);
+            // Semihosting call: SYS_WRITEC (0x03)
+            // W0 = Operation 0x03
+            // X1 = Pointer to character
+            asm!(
+                "hlt #0xF000",
+                in("w0") 0x03,
+                in("x1") &ch,
+                options(nostack, preserves_flags)
+            );
         }
     }
 }

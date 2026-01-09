@@ -53,7 +53,7 @@ fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     // Safety: Single core boot environment.
     unsafe { kernel::logging::init(&RUNTIME) };
 
-    kernel::kerror!("BRAN PANIC");
+    kernel::kerror!("KERNEL PANIC");
     
     if let Some(location) = info.location() {
         kernel::kerror!("Location: {}:{}:{}", location.file(), location.line(), location.column());

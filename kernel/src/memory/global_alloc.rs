@@ -1,71 +1,81 @@
 use core::alloc::{GlobalAlloc, Layout};
-use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, Ordering};
 use crate::memory::boot_heap::BootHeap;
 use crate::memory::boot_frame_alloc::BootFrameAllocator;
-use crate::memory::frame_alloc::FrameAllocator;
+use crate::memory::kheap::KernelHeap;
+use crate::memory::layout::KHEAP_GROW_PAGES;
+use spin::Mutex;
 
-pub struct BootGlobalAlloc {
-    inner: UnsafeCell<BootHeap>,
-}
+static BOOT_HEAP: Mutex<BootHeap> = Mutex::new(BootHeap::empty());
+static KERNEL_HEAP: KernelHeap = KernelHeap::empty();
+static USE_KERNEL_HEAP: AtomicBool = AtomicBool::new(false);
 
-unsafe impl Sync for BootGlobalAlloc {}
+pub struct GlobalAllocator;
 
-impl BootGlobalAlloc {
-    pub const fn new() -> Self {
-        Self {
-            inner: UnsafeCell::new(BootHeap::empty()),
-        }
-    }
+unsafe impl Sync for GlobalAllocator {}
 
-    /// SAFETY: Must be called only once and disjoint from any allocation.
-    pub unsafe fn init(&self, allocator: BootFrameAllocator) {
-        unsafe {
-            let heap = &mut *self.inner.get();
-            heap.init(allocator);
-        }
-    }
-    
-    pub fn stats(&self) {
-        unsafe {
-            (*self.inner.get()).stats();
-        }
-    }
-
-    /// SAFETY: Caller must ensure single threaded access during boot
-    pub unsafe fn transfer_boot_frames(&self, target: &mut FrameAllocator) {
-         let heap = &mut *self.inner.get();
-         if let Some(boot_alloc) = &heap.allocator {
-             boot_alloc.transfer_state_to(target);
-         }
-    }
-}
-
-unsafe impl GlobalAlloc for BootGlobalAlloc {
+unsafe impl GlobalAlloc for GlobalAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // In a real kernel we need critical sections.
-        // For strictly boot single-core, this is "okay" but we should disable IRQs preferably.
-        // Assuming IRQs are disabled during this early boot phase.
-        
-        unsafe {
-            let heap = &mut *self.inner.get();
-            heap.alloc(layout)
+        if USE_KERNEL_HEAP.load(Ordering::Acquire) {
+            // Kernel Heap Strategy
+            let ptr = KERNEL_HEAP.alloc(layout);
+            if !ptr.is_null() {
+                return ptr;
+            }
+            
+            // OOM? Try growing.
+            if let Ok(_) = KERNEL_HEAP.grow(KHEAP_GROW_PAGES) {
+                let ptr = KERNEL_HEAP.alloc(layout);
+                if !ptr.is_null() {
+                    return ptr;
+                }
+            }
+            
+            crate::kinfo!("Kernel Heap OOM! Request: {:?} Stats:", layout);
+            KERNEL_HEAP.stats();
+            panic!("Kernel Heap OOM");
+        } else {
+            // Boot Heap Strategy
+            // Safety: We assume single-threaded execution during boot phase.
+            // But we use a lock now for static safety.
+            BOOT_HEAP.lock().alloc(layout)
         }
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        // Leak-only allocator
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        if USE_KERNEL_HEAP.load(Ordering::Acquire) {
+            KERNEL_HEAP.dealloc(ptr, layout);
+        } else {
+             // Boot heap leaks.
+        }
     }
 }
 
 #[global_allocator]
-static GLOBAL: BootGlobalAlloc = BootGlobalAlloc::new();
+static GLOBAL: GlobalAllocator = GlobalAllocator;
 
-pub fn init(allocator: BootFrameAllocator) {
-    unsafe {
-        GLOBAL.init(allocator);
+/// Initialize the boot heap.
+pub fn init_boot(allocator: BootFrameAllocator) {
+    BOOT_HEAP.lock().init(allocator);
+}
+
+pub fn get_global() -> &'static GlobalAllocator {
+    &GLOBAL
+}
+
+/// Helper to transfer boot frames for the frame allocator transition.
+pub unsafe fn transfer_boot_frames(target: &mut crate::memory::frame_alloc::FrameAllocator) {
+    let heap = BOOT_HEAP.lock();
+    if let Some(boot_alloc) = &heap.allocator {
+            boot_alloc.transfer_state_to(target);
     }
 }
 
-pub fn get_global() -> &'static BootGlobalAlloc {
-    &GLOBAL
+pub fn switch_to_kernel_heap() {
+    USE_KERNEL_HEAP.store(true, Ordering::Release);
+    crate::kinfo!("global_alloc: switched to kernel heap");
+}
+
+pub fn kernel_heap() -> &'static KernelHeap {
+    &KERNEL_HEAP
 }

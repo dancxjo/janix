@@ -25,30 +25,28 @@ impl AddressSpace {
         unsafe {
             let virt = phys_to_virt(root.0) as *mut u64;
             core::ptr::write_bytes(virt, 0, 512); // L0 has 512 entries
-            
-            // On AArch64 with TTBR0/TTBR1 split, kernel mappings are in TTBR1.
-            // So we don't strictly need to copy them into TTBR0's table.
-            // However, the prompt asked to "AddressSpace::new() copies kernel high-half mappings".
-            // Since on AArch64 high-half is TTBR1, "switching address space" means updating TTBR0.
-            // So we just return the new empty TTBR0 root.
-            // IF we were running single-br, we would copy.
-            // We assume standard split.
         }
         
         Self { root }
     }
     
+    pub fn active() -> Self {
+        let ttbr1: u64;
+        unsafe {
+             asm!("mrs {}, ttbr1_el1", out(reg) ttbr1, options(nomem, nostack, preserves_flags));
+        }
+        // Mask out ASID or other bits if present? Usually bits [47:1] are address.
+        // But for safety let's assume it's clean physical.
+        // TTBRn_EL1: [47:1] BADDR.
+        Self { root: PhysFrame(ttbr1 & 0x0000_FFFF_FFFF_F000) }
+    }
+
     pub fn switch(&self) {
         unsafe {
             // Set TTBR0_EL1
-            // Ensure ASID is handled if we use it, for now assume 0 or ignore
             let phys = self.root.0;
-            // Write to TTBR0_EL1
             asm!("msr ttbr0_el1, {}", in(reg) phys, options(nostack, preserves_flags));
-            // ISB to ensure visibility
             asm!("isb", options(nostack, preserves_flags));
-            // TLBI if needed, but switching TTBR usually implies new ASID or flush
-            // For simplified v1, we might just flush all local TLB for lower VA
             asm!("tlbi vmalle1is", options(nostack, preserves_flags));
             asm!("dsb ish", options(nostack, preserves_flags));
             asm!("isb", options(nostack, preserves_flags));
@@ -56,11 +54,6 @@ impl AddressSpace {
     }
     
     pub fn map_page(&mut self, virt: u64, phys: PhysFrame, flags: PageFlags) -> Result<(), ()> {
-        // AArch64 4KB pages, 48-bit VA
-        // L0: 39-47
-        // L1: 30-38
-        // L2: 21-29
-        // L3: 12-20
         let l0_idx = (virt >> 39) & 0x1FF;
         let l1_idx = (virt >> 30) & 0x1FF;
         let l2_idx = (virt >> 21) & 0x1FF;
@@ -80,38 +73,26 @@ impl AddressSpace {
             
             // Descriptor bits
             // Valid=1, Table/Page=1 (for L3)
-            let mut desc = 3; // Valid(1) | Table(1) which means Page at L3
-            
-            // Attributes
-            // MAIR index. Assume 0 = Normal, 1 = Device?
-            // Need to know what MAIR is set to.
-            // Usually Limine sets it up.
-            // Let's assume AttrIndx[2:4] = 0 is safe normal memory.
-            
-            // Access Permissions (AP)
-            // AP[2]: 0=RO, 1=RW (Wait, NO)
-            // AP[2] (bit 7): 0=Read/Write, 1=Read-Only
-            // AP[1] (bit 6): 0=Kernel, 1=User
+            let mut desc = 3; 
             
             if !flags.contains(PageFlags::WRITABLE) {
-                desc |= (1 << 7); // AP[2] = 1 (RO)
+                desc |= 1 << 7; // AP[2] = 1 (RO)
             }
             
             if flags.contains(PageFlags::USER_ACCESSIBLE) {
-                desc |= (1 << 6); // AP[1] = 1 (User)
+                desc |= 1 << 6; // AP[1] = 1 (User)
             }
             
-            // NX
             if flags.contains(PageFlags::NO_EXECUTE) {
-                desc |= (1 << 53); // PXN (Privileged Execute-Never)
-                desc |= (1 << 54); // UXN (Unprivileged Execute-Never)
+                desc |= 1 << 53; // PXN (Privileged Execute-Never)
+                desc |= 1 << 54; // UXN (Unprivileged Execute-Never)
             }
             
-            // Access flag (bit 10). Must be 1 to avoid fault if management is software
-            desc |= (1 << 10);
+            // Access flag (bit 10).
+            desc |= 1 << 10;
             
             // Shareability. Inner Shareable (3<<8)
-            desc |= (3 << 8);
+            desc |= 3 << 8;
             
             let entry = phys.0 | desc;
             *l3_ptr.add(l3_idx as usize) = entry;
@@ -185,16 +166,9 @@ impl AddressSpace {
 unsafe fn ensure_table(table: *mut u64, index: u64) -> Result<u64, ()> {
     let entry = unsafe { *table.add(index as usize) };
     if (entry & 1) != 0 {
-        // Valid. Check if it's a block (huge page)
-        // For L0, L1, L2: bit 1=1 means Table. bit 1=0 means Block.
-        // We assume we are looking for tables.
-        if (entry & 2) == 0 {
-             // Block descriptor
-             return Err(());
-        }
+        if (entry & 2) == 0 { return Err(()); }
         Ok(entry & 0x0000_FFFF_FFFF_F000)
     } else {
-        // Allocate
          let frame = FRAME_ALLOCATOR.with_lock(|alloc| {
              alloc.alloc_contiguous(1).map(|r| r.base)
         }).ok_or(())?;
@@ -202,8 +176,6 @@ unsafe fn ensure_table(table: *mut u64, index: u64) -> Result<u64, ()> {
         unsafe {
             let virt_ptr = phys_to_virt(frame.0) as *mut u8;
             core::ptr::write_bytes(virt_ptr, 0, 4096);
-            
-            // Table descriptor: Valid(1) | Table(1) = 3
             let new_entry = frame.0 | 3;
             *table.add(index as usize) = new_entry;
         }
@@ -232,15 +204,83 @@ pub fn tlb_flush_all() {
     }
 }
 
-pub fn map_bootheap_page(_virt: u64, _phys: u64, _allocator: &mut BootFrameAllocator) {
-    // Stub or implementation
-    // For now, stub to allow compile if it's used
+// 4KiB page size
+const PAGE_VALID: u64 = 1;
+const PAGE_TABLE: u64 = 3; // Valid + Table
+const PAGE_ACCESS: u64 = 1 << 10;
+const PAGE_SH_INNER: u64 = 3 << 8;
+const PAGE_AP_RW: u64 = 0; // AP[2]=0 for RW (if AP[1]=0/1) - Wait.
+// AP[2] (bit 7): 0=RW, 1=RO.
+// AP[1] (bit 6): 0=Kernel, 1=User.
+// We want RW Kernel -> AP[2]=0, AP[1]=0.
+
+pub fn map_bootheap_page(virt: u64, phys: u64, allocator: &mut BootFrameAllocator) {
+    unsafe {
+        let ttbr1: u64;
+        asm!("mrs {}, ttbr1_el1", out(reg) ttbr1, options(nomem, nostack, preserves_flags));
+        
+        // Remove ASID/Attributes from TTBR to get physical base
+        let root_phys = ttbr1 & 0x0000_FFFF_FFFF_F000;
+        
+        let l0_idx = (virt >> 39) & 0x1FF;
+        let l1_idx = (virt >> 30) & 0x1FF;
+        let l2_idx = (virt >> 21) & 0x1FF;
+        let l3_idx = (virt >> 12) & 0x1FF;
+        
+        let l0_ptr = phys_to_virt(root_phys) as *mut u64;
+        let l1_phys = ensure_table_boot(l0_ptr, l0_idx, allocator);
+        
+        let l1_ptr = phys_to_virt(l1_phys) as *mut u64;
+        let l2_phys = ensure_table_boot(l1_ptr, l1_idx, allocator);
+        
+        let l2_ptr = phys_to_virt(l2_phys) as *mut u64;
+        let l3_phys = ensure_table_boot(l2_ptr, l2_idx, allocator);
+        
+        let l3_ptr = phys_to_virt(l3_phys) as *mut u64;
+        
+        // Entry bits: Valid(1) | Table/Page(3 for L3... wait, for L3: bit 1=1 is Page)
+        // At L3, bit 1=1 is "Page descriptor".
+        // Base Attrs: Valid | Page | Access | InnerShareable
+        let mut desc = PAGE_VALID | 2; // Bit 1=1 for Page at L3
+        desc |= PAGE_ACCESS;
+        desc |= PAGE_SH_INNER;
+        // Default is Kernel RW (AP=00)
+        // If we needed Execute, we are fine. For heap, usually NX, so PXN(bit 53) UXN(bit 54)
+        desc |= 1 << 53; // PXN
+        desc |= 1 << 54; // UXN
+        
+        // Mair index 0 (assuming Normal)
+        
+        let entry = phys | desc;
+        *l3_ptr.add(l3_idx as usize) = entry;
+        
+        tlb_flush_page(virt);
+    }
 }
 
-// Test function (can be shared or specific)
+unsafe fn ensure_table_boot(table: *mut u64, index: u64, allocator: &mut BootFrameAllocator) -> u64 {
+    let entry = *table.add(index as usize);
+    if (entry & 1) != 0 {
+        // Check for block mappings (which shouldn't be here for tables we traverse)
+        // For L0/L1/L2, bit 1=1 is Table. bit 1=0 is Block.
+        if (entry & 2) == 0 {
+             panic!("Huge page/Block encountered while walking tables for bootheap!");
+        }
+        entry & 0x0000_FFFF_FFFF_F000
+    } else {
+        let frame = allocator.alloc_frame().expect("OOM allocating page table for bootheap");
+        let virt_ptr = phys_to_virt(frame) as *mut u8;
+        core::ptr::write_bytes(virt_ptr, 0, 4096);
+        
+        // Table descriptor: Valid(1) | Table(1) = 3
+        let new_entry = frame | 3;
+        *table.add(index as usize) = new_entry;
+        
+        frame
+    }
+}
+
 pub fn test_paging() {
-    // Similar to x86_64 test but adapted if needed.
-    // Copy-paste for now.
     crate::kinfo!("Testing paging subsystem (aarch64)...");
     let mut aspace = AddressSpace::new();
     let virt = 0x1000_0000; // Use a lower address for TTBR0

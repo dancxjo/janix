@@ -41,6 +41,14 @@ impl AddressSpace {
         
         aspace
     }
+
+    pub fn active() -> Self {
+        let cr3: u64;
+        unsafe {
+             asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
+        }
+        Self { root: PhysFrame(cr3 & !0xFFF) }
+    }
     
     pub fn switch(&self) {
         unsafe {

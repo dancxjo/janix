@@ -113,9 +113,10 @@ impl FrameAllocator {
         };
         
         // end_aligned is exclusive end of range, so index(end_aligned - 1) + 1 gives the exclusive index bound
-        let end_idx = match self.index(end_aligned.saturating_sub(1)) {
-             Some(i) => i + 1, 
-             None => self.frames, 
+        let end_target = end_aligned.saturating_sub(1);
+        let end_idx = match self.index(end_target) {
+            Some(i) => i + 1,
+            None => if end_target < self.base { 0 } else { self.frames },
         };
 
         for i in start_idx..end_idx {
@@ -132,9 +133,10 @@ impl FrameAllocator {
         };
         
         let end_aligned = align_down(end, FRAME_SIZE);
-         let end_idx = match self.index(end_aligned.saturating_sub(1)) {
+        let end_target = end_aligned.saturating_sub(1);
+        let end_idx = match self.index(end_target) {
              Some(i) => i + 1,
-             None => self.frames,
+             None => if end_target < self.base { 0 } else { self.frames },
         };
 
         for i in start_idx..end_idx {

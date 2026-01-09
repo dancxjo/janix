@@ -1,6 +1,6 @@
 # ✅ And I wait for the system to boot
 
-**Result:** passed | **Duration:** 5161ms
+**Result:** passed | **Duration:** 3926ms
 
 ## Screenshots
 

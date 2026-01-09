@@ -161,7 +161,7 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     
     // 1. Boot Allocator Init
     let frame_alloc_boot = crate::memory::boot_frame_alloc::BootFrameAllocator::new(map);
-    crate::memory::global_alloc::init(frame_alloc_boot);
+    crate::memory::global_alloc::init_boot(frame_alloc_boot);
 
     // 2. Real Frame Allocator Init
     //    We need to allocate backing memory for the bitmap *using* the BootHeap.
@@ -200,7 +200,7 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     
     // Sync state: Mark frames consumed by BootHeap as used
     unsafe {
-         crate::memory::global_alloc::get_global().transfer_boot_frames(&mut local_alloc);
+         crate::memory::global_alloc::transfer_boot_frames(&mut local_alloc);
     }
     
     let stats = local_alloc.stats();
@@ -255,6 +255,47 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     }
     
     crate::arch::imp::paging::test_paging();
+    kinfo!("Paging subsystem test passed");
+
+    // 5. Initialize Kernel Heap
+    kinfo!("Initializing Kernel Heap...");
+    // 64 pages = 256 KiB initial commit
+    crate::memory::global_alloc::kernel_heap().init(64);
+    
+    // 6. Switch Allocator
+    unsafe {
+        crate::memory::global_alloc::switch_to_kernel_heap();
+    }
+    
+    // 7. Heap Sanity Demo
+    {
+        kinfo!("Running heap sanity check...");
+        use alloc::vec::Vec;
+        use alloc::boxed::Box;
+        
+        let mut v = Vec::new();
+        for i in 0..1000 {
+            v.push(i as u64);
+        }
+        
+        // Verify
+        for i in 0..1000 {
+            if v[i] != i as u64 { panic!("Heap sanity: Vec data corruption at {}", i); }
+        }
+        
+        let b = Box::new(42);
+        if *b != 42 { panic!("Heap sanity: Box corrupted"); }
+        
+        kinfo!("kheap: sanity ok"); 
+        
+        // Force growth
+        kinfo!("kheap: forcing growth...");
+        let big_vec: Vec<u8> = alloc::vec![0u8; 300 * 1024]; // 300 KiB > 256 KiB
+        kinfo!("kheap: big allocation ok (len={})", big_vec.len());
+    }
+
+    // Diagnostics
+    crate::memory::global_alloc::kernel_heap().stats();
 
     kinfo!("System halted");
     runtime.halt();

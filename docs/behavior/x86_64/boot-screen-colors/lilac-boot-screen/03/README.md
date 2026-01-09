@@ -1,4 +1,29 @@
 # ✅ Then the screen should be filled with "Lilac"
 
-**Result:** passed | **Duration:** 2895ms
+**Result:** passed | **Duration:** 2881ms
 
+<details open>
+<summary>Serial Output</summary>
+
+```
+[14578396833] [INFO] frame_alloc: total=516638 free=511667 used=4971
+[14586634425] [INFO] Running frame_alloc sanity check...
+[14597551782] [INFO] frame_alloc: sanity: single ok
+[14605210917] [INFO] frame_alloc: sanity: contig(8) ok
+[14608728387] [INFO] Testing paging subsystem...
+[14630202345] [INFO] Switched to new address space
+[14634242403] [INFO] Paging subsystem test passed
+[14634719814] [INFO] Paging subsystem test passed
+[14635155744] [INFO] Initializing Kernel Heap...
+[14652748902] [INFO] kheap: grew by 64 pages (phys=0x3f000, virt=0xffffa00000000000)
+[14657762691] [INFO] global_alloc: switched to kernel heap
+[14658214692] [INFO] Running heap sanity check...
+[14701350147] [INFO] kheap: sanity ok
+[14706598302] [INFO] kheap: forcing growth...
+[14711746500] [INFO] kheap: grew by 16 pages (phys=0x82000, virt=0xffffa00000040000)
+[14769414462] [INFO] kheap: big allocation ok (len=307200)
+[14788061541] [INFO] kheap: reserved=268435456 committed=327680
+[14794253859] [INFO] System halted
+
+```
+</details>

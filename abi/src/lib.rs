@@ -1,3 +1,5 @@
+#![no_std]
+
 //! User Mode v0 ABI
 //!
 //! Registers:

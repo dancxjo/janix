@@ -7,6 +7,9 @@ Behavior-driven development test results organized by target architecture.
 | Architecture | Status | Results |
 |-------------|--------|--------|
 | x86_64 | ✅ Passed | [📄 View Results](./x86_64/README.md) |
+| aarch64 | ✅ Passed | [📄 View Results](./aarch64/README.md) |
+| riscv64 | ✅ Passed | [📄 View Results](./riscv64/README.md) |
+| loongarch64 | ✅ Passed | [📄 View Results](./loongarch64/README.md) |
 
 ---
 

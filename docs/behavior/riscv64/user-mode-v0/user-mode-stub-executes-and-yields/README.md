@@ -1,6 +1,6 @@
 # ✅ Scenario: User mode stub executes and yields
 
-> Last run: 2026-01-09 13:25:55
+> Last run: 2026-01-09 13:38:01
 
 ## Steps
 

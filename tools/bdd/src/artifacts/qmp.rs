@@ -60,9 +60,6 @@ async fn qmp_execute(command: &str) -> Result<String, Box<dyn std::error::Error 
     loop {
         match read_line(stream).await {
             Ok(res) => {
-                let _trimmed = res.trim();
-                // eprintln!("QMP READ: {}", _trimmed); // Debug logging
-
                 // Ignore asynchronous events
                 if res.contains(r#""event":"#) {
                      continue;

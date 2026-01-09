@@ -1,16 +1,15 @@
 # BDD Test Results - aarch64
 
-> Last run: 2026-01-08 19:29:19
+> Last run: 2026-01-08 19:37:48
 
 ## Summary
 
 | Metric | Passed | Failed |
 |--------|--------|--------|
-| Features | 1 | 1 |
-| Scenarios | 2 | 1 |
-| Steps | 3 | 1 (2 skipped) |
+| Features | 0 | 1 |
+| Scenarios | 0 | 1 |
+| Steps | 1 | 1 (0 skipped) |
 
 ## Features
 
-- ✅ [Boot Screen Colors](./boot-screen-colors/)
-- ❌ [Simple Boot](./simple-boot/)
+- ❌ [Boot Screen Colors](./boot-screen-colors/)

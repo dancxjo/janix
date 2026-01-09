@@ -36,12 +36,13 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
+static SERIAL: SerialPort = SerialPort;
+
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
     indicate_progress();
-    let runtime = SerialPort;
-    kernel::start(runtime);
+    kernel::start(&SERIAL);
 }
 
 struct BranDisplay {

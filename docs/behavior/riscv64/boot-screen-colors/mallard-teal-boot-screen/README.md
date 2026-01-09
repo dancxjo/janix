@@ -1,13 +1,13 @@
 # ❌ Scenario: Mallard Teal Boot Screen
 
-> Last run: 2026-01-08 19:19:55
+> Last run: 2026-01-08 19:38:00
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given the machine is started | ✅ | 289ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
-| 2 | When I wait for the system to boot | ❌ | 9826ms | - [📜](./02/serial.log) - |
+| 1 | Given the machine is started | ✅ | 249ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
+| 2 | When I wait for the system to boot | ❌ | 9933ms | - [📜](./02/serial.log) - |
 
 <details>
 <summary>📜 Full Serial Log</summary>
@@ -82,16 +82,16 @@ EDK II
 UEFI v2.70 (EDK II, 0x00010000)
 [1m[33m[40mMapping table[0m[37m[40m
 [1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0c:;BLK2:
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,20172800-634D-4DBF-A
-65A-C9F05ED7043C)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,AF56D80C-6315-4CBC-9
+C53-22956A22D8BF)
 [1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
           VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)
 [1m[33m[40m     BLK1:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,20172800-634D-4DBF-A
-659-C9F05ED7043C)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,AF56D80C-6315-4CBC-9
+C50-22956A22D8BF)
 [1m[33m[40m     BLK3:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,20172800-634D-4DBF-A
-65B-C9F05ED7043C)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,AF56D80C-6315-4CBC-9
+C52-22956A22D8BF)
 Press [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
 [1m[33m[40mShell> [0m[37m[40m\EFI\BOOT\BOOTRISCV64.EFI
 [2J[01;01H[2J[04D

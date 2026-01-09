@@ -1,13 +1,13 @@
 # ❌ Scenario: Mallard Teal Boot Screen
 
-> Last run: 2026-01-08 19:19:42
+> Last run: 2026-01-08 19:37:48
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given the machine is started | ✅ | 346ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
-| 2 | When I wait for the system to boot | ❌ | 9824ms | - [📜](./02/serial.log) - |
+| 1 | Given the machine is started | ✅ | 268ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
+| 2 | When I wait for the system to boot | ❌ | 9914ms | - [📜](./02/serial.log) - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

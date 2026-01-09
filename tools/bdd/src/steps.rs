@@ -74,7 +74,7 @@ async fn check_system_halted(world: &mut ThingOsWorld) {
     check_serial(world, "System halted", DEFAULT_TIMEOUT_SECS).await;
 }
 #[then(regex = r#"^the screen should be filled with "(.+)"$"#)]
-async fn check_screen_fill(world: &mut ThingOsWorld, color_name: String) {
+async fn then_screen_fill(_world: &mut ThingOsWorld, color_name: String) {
     let expected_color = match color_name.as_str() {
         "Mallard Teal" => [0x00, 0x47, 0x4F],
         _ => panic!("Unknown color: {}", color_name),

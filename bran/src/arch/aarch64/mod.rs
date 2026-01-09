@@ -16,10 +16,6 @@ impl BootRuntime for SerialPort {
     }
 
     fn halt(&self) -> ! {
-        let msg = b"System halted\n";
-        for &c in msg {
-            self.putchar(c);
-        }
         hcf()
     }
 }

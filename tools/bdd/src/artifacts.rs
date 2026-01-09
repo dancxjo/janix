@@ -10,6 +10,8 @@ use std::io::Write;
 use std::sync::OnceLock;
 use chrono::{DateTime, Local};
 use tokio::sync::Mutex;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixStream;
 
 /// Global artifact collector instance.
 static COLLECTOR: OnceLock<Mutex<ArtifactCollector>> = OnceLock::new();
@@ -23,7 +25,7 @@ pub fn init_global(arch: &str) {
     let _ = collector.init();
     let _ = COLLECTOR.set(Mutex::new(collector));
     let _ = SERIAL_LOG.set(Mutex::new(String::new()));
-    let _ = QMP_SOCKET.set(Mutex::new(None));
+    let _ = QMP_STREAM.set(Mutex::new(None));
 }
 
 /// Get the global artifact collector.
@@ -48,76 +50,120 @@ pub async fn get_latest_serial() -> String {
     }
 }
 
-/// Global QMP socket path (for reporter access to screenshots).
-static QMP_SOCKET: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+/// Global QMP stream (for reporter access to screenshots).
+/// Kept open to avoid reconnection issues.
+static QMP_STREAM: OnceLock<Mutex<Option<UnixStream>>> = OnceLock::new();
 
-/// Set the global QMP socket path (called from world).
-pub fn set_qmp_socket(path: Option<PathBuf>) {
-    if let Some(cache) = QMP_SOCKET.get() {
-        if let Ok(mut socket) = cache.try_lock() {
-            *socket = path;
-        }
+/// Set the global QMP stream (called from world after init).
+pub async fn set_qmp_stream(stream: Option<UnixStream>) {
+    if let Some(cache) = QMP_STREAM.get() {
+        let mut guard = cache.lock().await;
+        *guard = stream;
     }
 }
 
+async fn qmp_execute(command: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let mutex = QMP_STREAM.get().ok_or("Artifacts system not initialized")?;
+    let mut guard = mutex.lock().await;
+    
+    let stream = match guard.as_mut() {
+        Some(s) => s,
+        None => return Err("No QMP connection active".into()),
+    };
+
+    // Helper to read a QMP line
+    async fn read_line(stream: &mut UnixStream) -> std::io::Result<String> {
+        let mut buf = [0u8; 1];
+        let mut line = String::new();
+        loop {
+            // Use a timeout for each byte
+            match tokio::time::timeout(std::time::Duration::from_millis(1000), stream.read(&mut buf)).await {
+                Ok(Ok(n)) if n > 0 => {
+                    let c = buf[0] as char;
+                    line.push(c);
+                    if c == '\n' {
+                        break;
+                    }
+                }
+                Ok(Ok(0)) => return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF")),
+                Ok(Err(e)) => return Err(e),
+                Err(_) => return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "Read timeout")),
+                Ok(Ok(_)) => unreachable!("Buffer is size 1"),
+            }
+        }
+        Ok(line)
+    }
+
+    // Send command
+    if let Err(e) = stream.write_all(command.as_bytes()).await {
+         return Err(format!("Failed to send QMP command: {}", e).into());
+    }
+    if let Err(e) = stream.write_all(b"\n").await {
+         return Err(format!("Failed to send QMP newline: {}", e).into());
+    }
+
+    // Read response
+    match read_line(stream).await {
+        Ok(res) => Ok(res),
+        Err(e) => Err(format!("Failed to read QMP response: {}", e).into()),
+    }
+}
+
+
 /// Take a screenshot using the global QMP socket (for reporter).
 pub async fn take_screenshot_global(output_path: &std::path::Path) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
-    use tokio::io::AsyncWriteExt;
-    use tokio::net::UnixStream;
-
-    let socket_path = QMP_SOCKET.get()
-        .and_then(|cache| cache.try_lock().ok())
-        .and_then(|guard| guard.clone())
-        .ok_or("No QMP socket available")?;
-
-    let mut stream = UnixStream::connect(&socket_path).await?;
-
-    // Read QMP greeting
-    let mut buf = vec![0u8; 4096];
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_millis(200),
-        tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
-    ).await;
-
-    // Send qmp_capabilities to enter command mode
-    let caps_cmd = r#"{"execute": "qmp_capabilities"}"#;
-    stream.write_all(caps_cmd.as_bytes()).await?;
-    stream.write_all(b"\n").await?;
-
-    // Read capabilities response
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_millis(200),
-        tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
-    ).await;
-
     // Ensure output directory exists
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-
-    // Use temp file for PPM, convert to PNG
+    
+    // Get absolute path for QEMU
     let ppm_path = output_path.with_extension("ppm");
+    let ppm_abs = std::fs::canonicalize(output_path.parent().unwrap())?
+        .join(ppm_path.file_name().unwrap());
 
-    // Send screendump command
-    let screendump_cmd = format!(
-        r#"{{"execute": "screendump", "arguments": {{"filename": "{}"}}}}"#,
-        ppm_path.display()
-    );
-    stream.write_all(screendump_cmd.as_bytes()).await?;
-    stream.write_all(b"\n").await?;
+    // Retry a few times if "device not ready" or similar transient errors occur
+    let mut success = false;
+    for _ in 0..3 {
+        let screendump_cmd = format!(
+            r#"{{"execute": "screendump", "arguments": {{"filename": "{}"}}}}"#,
+            ppm_abs.display()
+        );
 
-    // Wait for file to be written
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        match qmp_execute(&screendump_cmd).await {
+            Ok(resp) => {
+                if !resp.contains("error") {
+                    success = true;
+                    break;
+                }
+                eprintln!("[bdd-debug] QMP returned error: {}", resp);
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("No QMP connection active") || msg.contains("Broken pipe") || msg.contains("EOF") {
+                    return Err(e); // Fatal connection loss
+                }
+                eprintln!("[bdd-debug] QMP execute failed: {}", msg);
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+        }
+    }
 
-    // Read response
-    let mut response = vec![0u8; 4096];
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_millis(500),
-        tokio::io::AsyncReadExt::read(&mut stream, &mut response)
-    ).await;
+    if !success {
+        return Err("Failed to capture screenshot after retries".into());
+    }
+
+    // Wait for file to appear
+    for _ in 0..10 {
+        if ppm_path.exists() {
+            break;
+        }
+        let _ = tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 
     if !ppm_path.exists() {
-        return Err(format!("Screenshot not saved to {}", ppm_path.display()).into());
+        return Err(format!("Screenshot file not created at {}", ppm_path.display()).into());
     }
 
     // Convert PPM to PNG
@@ -131,67 +177,28 @@ pub async fn take_screenshot_global(output_path: &std::path::Path) -> Result<Pat
 
 /// Dump CPU registers using the global QMP socket (for reporter).
 pub async fn dump_registers_global(output_path: &std::path::Path) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
-    use tokio::io::AsyncWriteExt;
-    use tokio::net::UnixStream;
-
-    let socket_path = QMP_SOCKET.get()
-        .and_then(|cache| cache.try_lock().ok())
-        .and_then(|guard| guard.clone())
-        .ok_or("No QMP socket available")?;
-
-    let mut stream = UnixStream::connect(&socket_path).await?; // Corrected to use socket_path
-
-    // Read QMP greeting
-    let mut buf = vec![0u8; 4096];
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_millis(200),
-        tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
-    ).await;
-
-    // Send qmp_capabilities to enter command mode
-    let caps_cmd = r#"{"execute": "qmp_capabilities"}"#;
-    stream.write_all(caps_cmd.as_bytes()).await?;
-    stream.write_all(b"\n").await?;
-
-    // Read capabilities response
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_millis(200),
-        tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
-    ).await;
-
     // Ensure output directory exists
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
-    // Send human-monitor-command for info registers
-    // We use human-monitor-command because qmp doesn't have a direct 'query-registers' command stable across all archs
     let info_regs_cmd = r#"{"execute": "human-monitor-command", "arguments": {"command-line": "info registers"}}"#;
-    stream.write_all(info_regs_cmd.as_bytes()).await?;
-    stream.write_all(b"\n").await?;
-
-    // Read response
-    let mut response = vec![0u8; 16384]; // larger buffer for registers
-    let n = tokio::time::timeout(
-        std::time::Duration::from_millis(500),
-        tokio::io::AsyncReadExt::read(&mut stream, &mut response)
-    ).await??;
+    
+    let response_str = match qmp_execute(info_regs_cmd).await {
+        Ok(s) => s,
+        Err(e) => return Err(e),
+    };
 
     // Parse JSON response to extract the actual output
-    let response_str = String::from_utf8_lossy(&response[..n]);
-    
-    // Simple JSON parsing to avoid pulling in serde_json dependency just for this
-    // We expect: {"return": "..."}
     let content = if let Some(start) = response_str.find("\"return\": \"") {
         let remainder = &response_str[start + 11..];
         if let Some(end) = remainder.rfind("\"}") {
-            // Unescape JSON string (basic)
             remainder[..end].replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\\"", "\"")
         } else {
-             response_str.to_string()
+             response_str
         }
     } else {
-        response_str.to_string()
+        response_str
     };
 
     std::fs::write(output_path, content)?;
@@ -345,7 +352,6 @@ impl ArtifactCollector {
 
     /// Called when a feature ends.
     pub fn on_feature_end(&mut self) {
-        // Generate feature-level README
         if let Some(feature) = self.features.last() {
             let _ = self.write_feature_readme(feature);
         }
@@ -360,7 +366,6 @@ impl ArtifactCollector {
         let dir = self.scenario_dir();
         let _ = fs::create_dir_all(&dir);
 
-        // Add scenario to current feature
         if let Some(feature) = self.features.last_mut() {
             feature.scenarios.push(ScenarioArtifacts {
                 name: name.to_string(),
@@ -373,14 +378,12 @@ impl ArtifactCollector {
 
     /// Called when a scenario ends.
     pub fn on_scenario_end(&mut self, passed: bool, _full_serial: &str) {
-        // Use pending_scenario_serial which was set by the last step
         let serial_to_write = std::mem::take(&mut self.pending_scenario_serial);
         
         let scenario_to_write = if let Some(feature) = self.features.last_mut() {
             if let Some(scenario) = feature.scenarios.last_mut() {
                 scenario.passed = passed;
 
-                // Save full serial log
                 let log_path = scenario.dir.join("serial.log");
                 if !serial_to_write.is_empty() {
                     let _ = fs::write(&log_path, &serial_to_write);
@@ -394,7 +397,6 @@ impl ArtifactCollector {
             None
         };
 
-        // Write readme after mutable borrow ends
         if let Some(ref scenario) = scenario_to_write {
             let _ = self.write_scenario_readme(scenario);
         }
@@ -406,7 +408,7 @@ impl ArtifactCollector {
         self.pending_scenario_serial = serial.to_string();
     }
 
-    /// Called when a step starts. Records serial log position for excerpt.
+    /// Called when a step starts.
     pub fn on_step_start(&mut self, keyword: &str, name: &str, serial_len: usize) {
         self.step_counter += 1;
         self.step_start_serial_len = serial_len;
@@ -415,7 +417,6 @@ impl ArtifactCollector {
         let dir = self.step_dir();
         let _ = fs::create_dir_all(&dir);
 
-        // Add step placeholder to current scenario
         if let Some(feature) = self.features.last_mut() {
             if let Some(scenario) = feature.scenarios.last_mut() {
                 scenario.steps.push(StepArtifacts {
@@ -457,21 +458,18 @@ impl ArtifactCollector {
             .map(|t| t.elapsed().as_millis() as u64)
             .unwrap_or(0);
 
-        // Extract serial log excerpt for this step
         let step_serial = if self.step_start_serial_len < full_serial.len() {
             full_serial[self.step_start_serial_len..].to_string()
         } else {
             String::new()
         };
 
-        // Save step serial log to file
         let step_dir = self.step_dir();
         let log_path = step_dir.join("serial.log");
         if !step_serial.is_empty() {
             let _ = fs::write(&log_path, &step_serial);
         }
 
-        // Update step in current scenario and collect data for readme
         let step_to_write = if let Some(feature) = self.features.last_mut() {
             if let Some(scenario) = feature.scenarios.last_mut() {
                 if let Some(step) = scenario.steps.last_mut() {
@@ -493,7 +491,6 @@ impl ArtifactCollector {
             None
         };
 
-        // Write step README after mutable borrow ends
         if let Some(ref step) = step_to_write {
             let _ = self.write_step_readme(step);
         }
@@ -509,7 +506,6 @@ impl ArtifactCollector {
         writeln!(file, "> Last run: {}", self.start_time.format("%Y-%m-%d %H:%M:%S"))?;
         writeln!(file)?;
 
-        // Summary table
         let (features_passed, features_failed) = self.count_features();
         let (scenarios_passed, scenarios_failed) = self.count_scenarios();
         let (steps_passed, steps_failed, steps_skipped) = self.count_steps();
@@ -523,7 +519,6 @@ impl ArtifactCollector {
         writeln!(file, "| Steps | {} | {} ({} skipped) |", steps_passed, steps_failed, steps_skipped)?;
         writeln!(file)?;
 
-        // Feature list
         writeln!(file, "## Features")?;
         writeln!(file)?;
 
@@ -574,7 +569,6 @@ impl ArtifactCollector {
         writeln!(file, "> Last run: {}", self.start_time.format("%Y-%m-%d %H:%M:%S"))?;
         writeln!(file)?;
 
-        // Steps table
         writeln!(file, "## Steps")?;
         writeln!(file)?;
         writeln!(file, "| # | Step | Result | Duration | Artifacts |")?;
@@ -592,22 +586,26 @@ impl ArtifactCollector {
             } else {
                 "-".to_string()
             };
+            let reg_link = if step.registers.is_some() {
+                 format!("[💾](./{}/registers.txt)", step_dir)
+            } else {
+                 "-".to_string()
+            };
 
             writeln!(
                 file,
-                "| {} | {} {} | {} | {}ms | {} {} |",
+                "| {} | {} {} | {} | {}ms | {} {} {} |",
                 i + 1,
                 step.keyword,
                 step.name,
                 step.result.emoji(),
                 step.duration_ms,
                 screenshot_link,
-                log_link
+                log_link,
+                reg_link
             )?;
         }
         writeln!(file)?;
-
-        // Link to full serial log
         writeln!(file, "📜 [Full Serial Log](./serial.log)")?;
 
         Ok(())
@@ -622,7 +620,6 @@ impl ArtifactCollector {
         writeln!(file, "**Result:** {} | **Duration:** {}ms", step.result.name(), step.duration_ms)?;
         writeln!(file)?;
 
-        // Screenshots
         if step.screenshot_before.is_some() || step.screenshot_after.is_some() {
             writeln!(file, "## Screenshots")?;
             writeln!(file)?;
@@ -638,7 +635,6 @@ impl ArtifactCollector {
             }
         }
 
-        // Registers
         if let Some(ref reg_path) = step.registers {
              if let Ok(content) = fs::read_to_string(reg_path) {
                 writeln!(file, "## Registers")?;
@@ -650,12 +646,10 @@ impl ArtifactCollector {
              }
         }
 
-        // Serial output
         if !step.serial_excerpt.is_empty() {
             writeln!(file, "## Serial Output")?;
             writeln!(file)?;
             writeln!(file, "```")?;
-            // Limit to last 30 lines
             let lines: Vec<_> = step.serial_excerpt.lines().collect();
             let start = lines.len().saturating_sub(30);
             for line in &lines[start..] {
@@ -693,7 +687,6 @@ impl ArtifactCollector {
         (passed, failed, skipped)
     }
 
-    /// Convert a name to a filesystem-safe slug.
     pub fn slugify(name: &str) -> String {
         name.to_lowercase()
             .chars()

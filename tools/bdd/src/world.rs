@@ -37,8 +37,12 @@ impl ThingOsWorld {
         let ovmf_vars = format!("ovmf/ovmf-vars-{}.fd", arch);
 
         // Create unique socket path for this test run
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
         let pid = std::process::id();
-        let qmp_socket_path = PathBuf::from(format!("/tmp/qemu-bdd-{}.sock", pid));
+        let qmp_socket_path = PathBuf::from(format!("/tmp/qemu-bdd-{}-{}.sock", pid, nanos));
         self.qmp_socket = Some(qmp_socket_path.clone());
 
         // Use a random VNC display to avoid conflicts with potential zombies
@@ -111,6 +115,7 @@ impl ThingOsWorld {
             "-m", "2G",
             // Disable default display, use VNC instead
             "-display", "none",
+            "-no-shutdown",
             // Serial to stdio for log capture
             "-serial", "stdio",
             // VNC for headless graphics (needed for screenshots)
@@ -155,13 +160,13 @@ impl ThingOsWorld {
         self.qemu = Some(child);
 
         // Wait for QMP socket to become available
-        let mut qmp_initialized = false;
+        let mut qmp_stream = None;
         for i in 0..50 {
             if qmp_socket_path.exists() {
                 match self.qmp_init().await {
-                    Ok(()) => {
+                    Ok(stream) => {
                         // eprintln!("[bdd] QMP initialized after {}ms", i * 100);
-                        qmp_initialized = true;
+                        qmp_stream = Some(stream);
                         break;
                     }
                     Err(e) => {
@@ -174,18 +179,18 @@ impl ThingOsWorld {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
         
-        if !qmp_initialized {
+        if qmp_stream.is_none() {
             eprintln!("[bdd] Warning: QMP not initialized - screenshots will not work");
         } else {
-            // Store QMP socket path globally for reporter access
-            crate::artifacts::set_qmp_socket(Some(qmp_socket_path.clone()));
+            // Keep the stream open globaly for reporter access
+            crate::artifacts::set_qmp_stream(qmp_stream).await;
         }
 
         Ok(())
     }
 
     /// Initialize QMP connection (capabilities negotiation).
-    async fn qmp_init(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn qmp_init(&self) -> Result<UnixStream, Box<dyn std::error::Error>> {
         let socket_path = self.qmp_socket.as_ref().ok_or("No QMP socket")?;
         let mut stream = UnixStream::connect(socket_path).await?;
 
@@ -203,7 +208,7 @@ impl ThingOsWorld {
         let _ = stream.readable().await;
         let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await?;
 
-        Ok(())
+        Ok(stream)
     }
 
     /// Wait for a string to appear in the serial log.
@@ -237,6 +242,9 @@ impl ThingOsWorld {
         if let Some(ref mut child) = self.qemu {
             let _ = child.kill().await;
         }
+
+        // Clean up global QMP stream before removing socket file (although kill closes it)
+        crate::artifacts::set_qmp_stream(None).await;
 
         // Clean up QMP socket
         if let Some(ref socket_path) = self.qmp_socket {

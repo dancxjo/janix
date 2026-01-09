@@ -1,12 +1,10 @@
 # ✅ Then I should see that the machine has halted
 
-**Result:** passed | **Duration:** 3350ms
+**Result:** passed | **Duration:** 3255ms
 
 ## Serial Output
 
 ```
-PROGRESS CODE: V02020000 I0
-PROGRESS CODE: V02020000 I0
 PROGRESS CODE: V03051007 I0
 PROGRESS CODE: V03051001 I0
 PROGRESS CODE: V03058000 I0

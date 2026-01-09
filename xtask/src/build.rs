@@ -11,7 +11,7 @@ pub fn build(sh: &Shell, arch: &str, profile: &str) -> Result<()> {
     println!("Building bran kernel for {} ({} profile)...", arch, profile);
 
     cmd!(sh, "cargo build --target {target} --profile {profile} -p bran")
-        .env("RUSTFLAGS", "-C relocation-model=static")
+        .env("RUSTFLAGS", "-C relocation-model=static -C panic=abort")
         .run()?;
 
     // Copy kernel binary to bran/bin-{arch}/

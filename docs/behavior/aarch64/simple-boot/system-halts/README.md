@@ -1,13 +1,24 @@
 # ❌ Scenario: System halts
 
-> Last run: 2026-01-08 18:55:39
+> Last run: 2026-01-08 19:29:19
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | When I turn on the machine | ✅ | 274ms | [📷](./01/after.png) [📜](./01/serial.log) [💾](./01/registers.txt) |
-| 2 | Then I should see a message in the serial output that says "System booted" | ✅ | 190ms | [📷](./02/after.png) - [💾](./02/registers.txt) |
-| 3 | Then I should see that the machine has halted | ❌ | 29654ms | - [📜](./03/serial.log) - |
+| 1 | When I turn on the machine | ✅ | 297ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
+| 2 | Then I should see a message in the serial output that says "System booted" | ✅ | 197ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> - [💾](./02/registers.txt) |
+| 3 | Then I should see that the machine has halted | ✅ | 210ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
+| 4 | When I wait for the system to boot | ❌ | 29451ms | - [📜](./04/serial.log) - |
 
-📜 [Full Serial Log](./serial.log)
+<details>
+<summary>📜 Full Serial Log</summary>
+
+```
+UEFI firmware (version  built at 23:58:55 on Oct  8 2025)
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;031;100t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x3,0x0)
+BdsDxe: starting Boot0002 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x3,0x0)
+[2J[01;01H[01;01H[2J[01;01H[01;01H
+
+```
+</details>

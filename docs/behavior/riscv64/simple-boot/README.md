@@ -1,8 +1,9 @@
 # ❌ Feature: Simple Boot
 
-> Last run: 2026-01-08 18:56:10
+> Last run: 2026-01-08 19:29:49
 
 ## Scenarios
 
+- ✅ [Mallard Teal Boot Screen](./mallard-teal-boot-screen) (0/1)
 - ✅ [System boots successfully](./system-boots-successfully) (0/1)
-- ❌ [System halts](./system-halts) (2/3)
+- ❌ [System halts](./system-halts) (3/4)

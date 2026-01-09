@@ -1,6 +1,6 @@
-# ✅ Then I should see a message in the serial output that says "System booted"
+# ✅ When I wait for the system to boot
 
-**Result:** passed | **Duration:** 216ms
+**Result:** passed | **Duration:** 191ms
 
 ## Screenshots
 
@@ -12,41 +12,41 @@
 ```
 
 CPU#0
- PC=000000000f18dfc0  FCSR0 0x00000000
- GPR00: r0 0000000000000000 r1 000000000f28d058 r2 0000000000000000 r3 000000000f271b88
- GPR04: r4 000000000f059d98 r5 0000000000000000 r6 000000000e3c8620 r7 0000000000000000
- GPR08: r8 000000000f271a74 r9 000000000f271a74 r10 000000000000028c r11 000000000f271a50
- GPR12: r12 000000000f18c600 r13 00000000ffffffff r14 000000000f059de0 r15 0000000080000000
- GPR16: r16 000000000000103c r17 0000000000002000 r18 0000000000000001 r19 00000000000002e8
- GPR20: r20 000000000f271a04 r21 0000000000000000 r22 0000000000000000 r23 000000000f059d98
- GPR24: r24 0000000000000010 r25 0000000000000100 r26 000000000f2a6720 r27 00000000746e7665
- GPR28: r28 000000000f2a6820 r29 000000000f29ccf0 r30 000000000f29f938 r31 0000000000000000
+ PC=000000000f0cc590  FCSR0 0x00000000
+ GPR00: r0 0000000000000000 r1 000000000f0cc5f0 r2 0000000000000000 r3 000000000f271ca8
+ GPR04: r4 0000000000000000 r5 000000000f0ce039 r6 0000000000000005 r7 0000000000000bd8
+ GPR08: r8 0000000000000001 r9 0000000000000bdc r10 0000000000000bd8 r11 000000000f271cb0
+ GPR12: r12 0000000000000000 r13 000000000000006e r14 000000000000006e r15 0000000000000bd8
+ GPR16: r16 0000000000100000 r17 0000000000000be4 r18 0000000000100000 r19 0000000000000bdc
+ GPR20: r20 000000000f271c64 r21 0000000000000000 r22 0000000000090000 r23 0000000000000bd8
+ GPR24: r24 0000000000000006 r25 000000000f0ce039 r26 0000000000100000 r27 000000000f0ce03f
+ GPR28: r28 000000000000002f r29 000000000f29ccf0 r30 000000000f29f988 r31 000000000e95e2b0
 
- CSR000: CRMD   14               PRMD   4                EUEN   1                MISC   0               
- CSR004: ECFG   800              ESTAT  0                ERA    f18dfc0          BADV   d207408         
- CSR008: BADI   29bff0a6        
+ CSR000: CRMD   14               PRMD   0                EUEN   0                MISC   0               
+ CSR004: ECFG   0                ESTAT  0                ERA    0                BADV   0               
+ CSR008: BADI   2400018c        
  CSR012: EENTRY 10000           
  CSR016: TLBIDX c000000          TLBEHI 0                TLBELO0 0               TLBELO1 0              
  CSR024: ASID   a0000            PGDL   fefd000          PGDH   0                PGD    0               
  CSR028: PWCL   13e4d52c         PWCH   267              STLBPS c                RVACFG 0               
  CSR032: CPUID  0                PRCFG1 72f8             PRCFG2 3ffff000         PRCFG3 8073f2          
- CSR048: SAVE0  f271b88          SAVE1  1fe001e0         SAVE2  0                SAVE3  0               
+ CSR048: SAVE0  aee20            SAVE1  1fe001e0         SAVE2  0                SAVE3  0               
  CSR052: SAVE4  0                SAVE5  0                SAVE6  0                SAVE7  0               
- CSR064: TID    0                TCFG   f4243            TVAL   0                CNTC   0               
+ CSR064: TID    0                TCFG   0                TVAL   0                CNTC   0               
  CSR068: TICLR  0               
  CSR096: LLBCTL 0               
- CSR136: TLBRENTRY 1a000         TLBRBADV f0f2694        TLBRERA f0f2694         TLBRSAVE f0f2694       
- CSR140: TLBRELO0 f0f2051        TLBRELO1 f0f3051        TLBREHI f0f200c         TLBRPRMD 4             
+ CSR136: TLBRENTRY 1a000         TLBRBADV f0cca20        TLBRERA f0cca20         TLBRSAVE 0             
+ CSR140: TLBRELO0 f0cc051        TLBRELO1 f0cd051        TLBREHI f0cc00c         TLBRPRMD 4             
  CSR384: DMW0   0                DMW1   0                DMW2   0                DMW3   0               
 
- f0 4040800000000000 f1 ffffffffffffffff f2 ffffffffffffffff f3 ffffffffffffffff
- f4 ffffffffffffffff f5 ffffffffffffffff f6 ffffffffffffffff f7 ffffffffffffffff
- f8 ffffffffffffffff f9 ffffffffffffffff f10 ffffffffffffffff f11 ffffffffffffffff
- f12 ffffffffffffffff f13 ffffffffffffffff f14 ffffffffffffffff f15 ffffffffffffffff
- f16 ffffffffffffffff f17 ffffffffffffffff f18 ffffffffffffffff f19 ffffffffffffffff
- f20 ffffffffffffffff f21 ffffffffffffffff f22 ffffffffffffffff f23 ffffffffffffffff
- f24 ffffffffffffffff f25 ffffffffffffffff f26 ffffffffffffffff f27 ffffffffffffffff
- f28 ffffffffffffffff f29 ffffffffffffffff f30 ffffffffffffffff f31 ffffffffffffffff
+ f0 0000000000000000 f1 0000000000000000 f2 0000000000000000 f3 0000000000000000
+ f4 0000000000000000 f5 0000000000000000 f6 0000000000000000 f7 0000000000000000
+ f8 0000000000000000 f9 0000000000000000 f10 0000000000000000 f11 0000000000000000
+ f12 0000000000000000 f13 0000000000000000 f14 0000000000000000 f15 0000000000000000
+ f16 0000000000000000 f17 0000000000000000 f18 0000000000000000 f19 0000000000000000
+ f20 0000000000000000 f21 0000000000000000 f22 0000000000000000 f23 0000000000000000
+ f24 0000000000000000 f25 0000000000000000 f26 0000000000000000 f27 0000000000000000
+ f28 0000000000000000 f29 0000000000000000 f30 0000000000000000 f31 0000000000000000
 
 ```
 

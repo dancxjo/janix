@@ -5,6 +5,56 @@ use kernel::BootRuntime;
 use kernel::time::MonotonicClamp;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+mod simd;
+
+/// The BootRuntime implementation for x86_64.
+pub struct Runtime {
+    serial: SerialPort,
+}
+
+impl Runtime {
+    pub const fn new() -> Self {
+        Self {
+            serial: SerialPort::new(),
+        }
+    }
+}
+
+impl BootRuntime for Runtime {
+    fn putchar(&self, c: u8) {
+        self.serial.putchar(c);
+    }
+
+    fn halt(&self) -> ! {
+        hcf()
+    }
+
+    fn mono_ticks(&self) -> u64 {
+        let raw = unsafe { rdtsc() };
+        self.serial.clamp.clamp(raw)
+    }
+
+    fn mono_freq_hz(&self) -> u64 {
+        self.serial.calibrate()
+    }
+
+    fn simd_init_cpu(&self) {
+        simd::init_cpu();
+    }
+
+    fn simd_state_layout(&self) -> (usize, usize) {
+        simd::STATE_LAYOUT
+    }
+
+    unsafe fn simd_save(&self, dst: *mut u8) {
+        unsafe { simd::save(dst) };
+    }
+
+    unsafe fn simd_restore(&self, src: *const u8) {
+        unsafe { simd::restore(src) };
+    }
+}
+
 /// Serial port implementation for x86_64 using I/O port 0x3F8 (COM1).
 pub struct SerialPort {
     clamp: MonotonicClamp,
@@ -16,6 +66,14 @@ impl SerialPort {
         Self {
             clamp: MonotonicClamp::new(),
             freq_hz: AtomicU64::new(0),
+        }
+    }
+
+    fn putchar(&self, c: u8) {
+        unsafe {
+            // Wait for transmit empty
+            while (inb(0x3F8 + 5) & 0x20) == 0 {}
+            outb(0x3F8, c);
         }
     }
 
@@ -36,29 +94,6 @@ impl SerialPort {
         let freq = unsafe { calibrate_tsc_pit() };
         self.freq_hz.store(freq, Ordering::Relaxed);
         freq
-    }
-}
-
-impl BootRuntime for SerialPort {
-    fn putchar(&self, c: u8) {
-        unsafe {
-            // Wait for transmit empty
-            while (inb(0x3F8 + 5) & 0x20) == 0 {}
-            outb(0x3F8, c);
-        }
-    }
-
-    fn halt(&self) -> ! {
-        hcf()
-    }
-
-    fn mono_ticks(&self) -> u64 {
-        let raw = unsafe { rdtsc() };
-        self.clamp.clamp(raw)
-    }
-
-    fn mono_freq_hz(&self) -> u64 {
-        self.calibrate()
     }
 }
 

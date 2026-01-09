@@ -22,6 +22,27 @@ pub trait BootRuntime {
     fn mono_freq_hz(&self) -> u64 {
         0
     }
+    /// Per-CPU enable/config of SIMD/FPU. Idempotent.
+    fn simd_init_cpu(&self) {}
+
+    /// (size, align) required for saving one task's SIMD state.
+    /// 
+    /// Default implementation returns (0, 1) for no SIMD support.
+    fn simd_state_layout(&self) -> (usize, usize) {
+        (0, 1)
+    }
+
+    /// Save current CPU SIMD state into `dst` (must be size/align from layout).
+    /// 
+    /// # Safety
+    /// `dst` must be valid for writes of size `layout.size` and aligned to `layout.align`.
+    unsafe fn simd_save(&self, _dst: *mut u8) {}
+
+    /// Restore CPU SIMD state from `src`.
+    /// 
+    /// # Safety
+    /// `src` must be valid for reads of size `layout.size` and aligned to `layout.align`.
+    unsafe fn simd_restore(&self, _src: *const u8) {}
 }
 
 pub fn start(runtime: &'static dyn BootRuntime) -> ! {
@@ -34,3 +55,5 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     kinfo!("System halted");
     runtime.halt();
 }
+pub mod simd;
+pub mod task;

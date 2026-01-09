@@ -1,6 +1,6 @@
 # ❌ When I wait for the system to boot
 
-**Result:** failed | **Duration:** 9914ms
+**Result:** failed | **Duration:** 9823ms
 
 <details open>
 <summary>Serial Output</summary>

@@ -1,6 +1,6 @@
 # ❌ Feature: Boot Screen Colors
 
-> Last run: 2026-01-08 19:37:48
+> Last run: 2026-01-08 20:29:24
 
 ## Scenarios
 

@@ -31,7 +31,7 @@ async fn qmp_execute(command: &str) -> Result<String, Box<dyn std::error::Error 
         let mut line = String::new();
         loop {
             // Use a timeout for each byte
-            match tokio::time::timeout(std::time::Duration::from_millis(5000), stream.read(&mut buf)).await {
+            match tokio::time::timeout(std::time::Duration::from_millis(2000), stream.read(&mut buf)).await {
                 Ok(Ok(n)) if n > 0 => {
                     let c = buf[0] as char;
                     line.push(c);
@@ -56,10 +56,21 @@ async fn qmp_execute(command: &str) -> Result<String, Box<dyn std::error::Error 
         return Err(format!("Failed to send QMP newline: {}", e).into());
     }
 
-    // Read response
-    match read_line(stream).await {
-        Ok(res) => Ok(res),
-        Err(e) => Err(format!("Failed to read QMP response: {}", e).into()),
+    // Read response, filtering out asynchronous events
+    loop {
+        match read_line(stream).await {
+            Ok(res) => {
+                let _trimmed = res.trim();
+                // eprintln!("QMP READ: {}", _trimmed); // Debug logging
+
+                // Ignore asynchronous events
+                if res.contains(r#""event":"#) {
+                     continue;
+                }
+                return Ok(res);
+            }
+            Err(e) => return Err(format!("Failed to read QMP response: {}", e).into()),
+        }
     }
 }
 

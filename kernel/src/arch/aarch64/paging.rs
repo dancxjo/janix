@@ -1,6 +1,6 @@
 use crate::memory::boot_frame_alloc::BootFrameAllocator;
 use crate::memory::paging::PageFlags;
-use crate::memory::frame_alloc::{PhysFrame, FRAME_ALLOCATOR, FRAME_SIZE};
+use crate::memory::frame_alloc::{PhysFrame, FRAME_ALLOCATOR};
 use core::arch::asm;
 
 static mut HHDM_OFFSET: u64 = 0;
@@ -206,10 +206,10 @@ pub fn tlb_flush_all() {
 
 // 4KiB page size
 const PAGE_VALID: u64 = 1;
-const PAGE_TABLE: u64 = 3; // Valid + Table
+
 const PAGE_ACCESS: u64 = 1 << 10;
 const PAGE_SH_INNER: u64 = 3 << 8;
-const PAGE_AP_RW: u64 = 0; // AP[2]=0 for RW (if AP[1]=0/1) - Wait.
+
 // AP[2] (bit 7): 0=RW, 1=RO.
 // AP[1] (bit 6): 0=Kernel, 1=User.
 // We want RW Kernel -> AP[2]=0, AP[1]=0.

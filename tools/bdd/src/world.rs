@@ -239,6 +239,10 @@ impl ThingOsWorld {
 
     /// Kill the QEMU process if running.
     pub async fn shutdown(&mut self) {
+        // Wait a bit to ensure any pending screenshots/logs are captured
+        // The user specifically requested to keep QEMU open long enough.
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
         if let Some(ref mut child) = self.qemu {
             let _ = child.kill().await;
         }

@@ -1,7 +1,7 @@
 use core::arch::asm;
 
 // Legacy SBI Console Putchar Extension ID
-const SBI_EID_console_putchar: usize = 1;
+const SBI_EID_CONSOLE_PUTCHAR: usize = 1;
 
 pub struct SerialPort;
 
@@ -15,7 +15,7 @@ impl SerialPort {
             // Legacy SBI: EID=1, a0=char
             asm!(
                 "ecall",
-                in("a7") SBI_EID_console_putchar,
+                in("a7") SBI_EID_CONSOLE_PUTCHAR,
                 in("a0") c as usize,
                 options(nostack, preserves_flags)
             );

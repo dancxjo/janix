@@ -7,5 +7,5 @@ Feature: Frame Allocator Verification
     And the serial output should contain "frame_alloc: base="
     And the serial output should contain "frame_alloc: total="
     And the serial output should contain "Running frame_alloc sanity check..."
-    And the serial output should contain "frame_alloc: sanity ok"
+    And the serial output should contain "frame_alloc: sanity: single ok"
     And the serial output should contain "System halted"

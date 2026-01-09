@@ -1,16 +1,4 @@
 # ✅ Then the screen should be filled with "Lilac"
 
-**Result:** passed | **Duration:** 1381ms
+**Result:** passed | **Duration:** 1270ms
 
-<details open>
-<summary>Serial Output</summary>
-
-```
-[12621047076] [INFO] frame_alloc: total=516638 free=511732 used=4906
-[12621794262] [INFO] Running frame_alloc sanity check...
-[12624730701] [INFO] frame_alloc: sanity: single ok
-[12627285825] [INFO] frame_alloc: sanity: contig(8) ok
-[12627852963] [INFO] System halted
-
-```
-</details>

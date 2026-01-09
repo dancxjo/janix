@@ -1,6 +1,6 @@
-# ❌ Then I should see a message in the serial output that says "System booted"
+# ❌ Then I should see that the machine has halted
 
-**Result:** failed | **Duration:** 29912ms
+**Result:** failed | **Duration:** 9427ms
 
 <details open>
 <summary>Serial Output</summary>
@@ -12,16 +12,16 @@ EDK II
 UEFI v2.70 (EDK II, 0x00010000)
 [1m[33m[40mMapping table[0m[37m[40m
 [1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0c:;BLK2:
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,EBAE25A9-ACEA-45F1-9
-8AA-E04A98616338)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(2,GPT,6FCDF458-8B30-4C44-B
+BDC-58D54A318A16)
 [1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
           VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)
 [1m[33m[40m     BLK1:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,EBAE25A9-ACEA-45F1-9
-8A9-E04A98616338)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(1,GPT,6FCDF458-8B30-4C44-B
+BDF-58D54A318A16)
 [1m[33m[40m     BLK3:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
-          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,EBAE25A9-ACEA-45F1-9
-8AB-E04A98616338)
+          VenHw(837DCA9E-E874-4D82-B29A-23FE0E23D1E2,0080001000000000)/HD(3,GPT,6FCDF458-8B30-4C44-B
+BDD-58D54A318A16)
 Press [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 2 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[72DPress [1m[37m[40mESC[0m[37m[40m in 1 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
 [1m[33m[40mShell> [0m[37m[40m\EFI\BOOT\BOOTRISCV64.EFI
 [2J[01;01H[2J[04D

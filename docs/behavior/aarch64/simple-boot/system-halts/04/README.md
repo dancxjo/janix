@@ -1,6 +1,6 @@
 # ❌ Then I should see that the machine has halted
 
-**Result:** failed | **Duration:** 9510ms
+**Result:** failed | **Duration:** 29433ms
 
 <details open>
 <summary>Serial Output</summary>

@@ -14,6 +14,9 @@ pub enum TaskState {
     Dead,
 }
 
+use crate::memory::paging::AddressSpace;
+use crate::trap::x86_64::TrapFrame;
+
 pub struct Task {
     pub id: TaskId,
     pub state: TaskState,
@@ -25,10 +28,13 @@ pub struct Task {
     pub ctx: ArchContext,
 
     pub simd: SimdState,
+    
+    pub aspace: Option<AddressSpace>,
+    pub tf: TrapFrame,
 }
 
 // Global scheduler instance
-static mut SCHEDULER: Option<Scheduler> = None;
+pub static mut SCHEDULER: Option<Scheduler> = None;
 
 pub fn init() {
     unsafe {

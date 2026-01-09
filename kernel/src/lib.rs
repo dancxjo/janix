@@ -166,9 +166,14 @@ pub trait BootRuntime {
 }
 
 static mut RUNTIME: Option<&'static dyn BootRuntime> = None;
+static mut MODULES: &'static [BootModuleDesc] = &[];
 
 pub fn runtime() -> &'static dyn BootRuntime {
     unsafe { RUNTIME.expect("Kernel runtime not initialized") }
+}
+
+pub fn boot_modules() -> &'static [BootModuleDesc] {
+    unsafe { MODULES }
 }
 
 pub fn start(runtime: &'static dyn BootRuntime) -> ! {
@@ -184,6 +189,9 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
 
     let map = runtime.phys_memory_map();
     let modules = runtime.modules();
+    unsafe {
+        MODULES = modules;
+    }
 
     kinfo!("boot: phys ranges={} modules={}", map.len(), modules.len());
 
@@ -374,7 +382,7 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
         runtime.register_syscall_handler(syscall_entry as u64);
     }
 
-    // 5. Task Subsystem & Demo
+    // 5. Task Subsystem & Sprout Launch
     kinfo!("Initializing Task System...");
     crate::task::init();
 
@@ -382,11 +390,29 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
 
     if THREADS_SUPPORTED {
         kinfo!("threads: supported");
-        kinfo!("Spawning Thread A...");
-        crate::task::spawn(thread_a, 1);
-
-        kinfo!("Spawning Thread B...");
-        crate::task::spawn(thread_b, 2);
+        
+        // Find and spawn sprout
+        let mut sprout_found = false;
+        for m in modules {
+            if m.name.contains("sprout") {
+                kinfo!("Spawning sprout: {}", m.name);
+                match crate::user::sys_spawn_module_from_desc(m) {
+                    Ok(_) => { 
+                        sprout_found = true; 
+                        kinfo!("Sprout spawned successfully");
+                    }
+                    Err(e) => kerror!("Failed to spawn sprout: {}", e),
+                }
+                break;
+            }
+        }
+        
+        if !sprout_found {
+             kerror!("Sprout module not found in:");
+             for m in modules {
+                 kinfo!(" - {}", m.name);
+             }
+        }
 
         kinfo!("Entering Scheduler Loop (Main Task)...");
         crate::task::run_scheduler();
@@ -474,11 +500,7 @@ extern "C" fn thread_a(arg: usize) -> ! {
         }
     }
 
-    loop {
-        let ticks = crate::runtime().mono_ticks();
-        // crate::kinfo!("Thread A (arg={}) ticks={}", arg, ticks);
-        crate::task::yield_now();
-    }
+    // Loop is unreachable as enter_user_sysret diverges
 }
 
 extern "C" fn thread_b(arg: usize) -> ! {

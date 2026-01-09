@@ -19,6 +19,20 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, "iso_root/boot/kernel")?;
 
+    // Copy modules
+    sh.create_dir("iso_root/boot/modules")?;
+    let modules_dir = format!("bran/bin-{}/modules", arch);
+    if sh.path_exists(&modules_dir) {
+        for entry in sh.read_dir(&modules_dir)? {
+             let path = std::path::PathBuf::from(entry); // it's already a PathBuf from read_dir? No, read_dir returns Vec<PathBuf> in xshell?
+             // xshell::read_dir returns Vec<PathBuf>
+             if let Some(name) = path.file_name() {
+                  let dst = format!("iso_root/boot/modules/{}", name.to_string_lossy());
+                  sh.copy_file(&path, &dst)?;
+             }
+        }
+    }
+
     // Copy limine config
     sh.copy_file("limine.conf", "iso_root/boot/limine/limine.conf")?;
 

@@ -3,6 +3,8 @@ use alloc::vec::Vec;
 use core::alloc::Layout;
 use crate::task::{Task, TaskId, TaskState};
 use crate::arch::imp::task::{context_init, context_switch};
+use crate::user::elf::UserImage;
+use crate::memory::paging::AddressSpace;
 
 
 // 64KiB stack
@@ -47,6 +49,8 @@ impl Scheduler {
             kstack_top: 0,
             ctx: Default::default(),
             simd: crate::simd::SimdState::new(crate::runtime()),
+            aspace: None,
+            tf: Default::default(),
         };
         
         self.tasks.push(task);
@@ -82,10 +86,52 @@ impl Scheduler {
             kstack_top: stack_top,
             ctx: Default::default(),
             simd: crate::simd::SimdState::new(crate::runtime()),
+            aspace: None,
+            tf: Default::default(),
         };
 
         // Initialize Arch Context
         context_init(&mut task.ctx, stack_top, entry, arg);
+
+        self.tasks.push(task);
+        self.runq.push_back(id);
+        
+        id
+    }
+
+    pub fn spawn_user(&mut self, image: UserImage, aspace: AddressSpace) -> TaskId {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        // Allocate kernel stack for syscalls/interrupts while in this task
+        let layout = Layout::from_size_align(STACK_SIZE, STACK_ALIGN).unwrap();
+        let stack_base = unsafe { alloc::alloc::alloc(layout) };
+        if stack_base.is_null() {
+            panic!("Scheduler::spawn_user: OOM allocating stack");
+        }
+        unsafe { core::ptr::write_bytes(stack_base, 0, STACK_SIZE) };
+        let stack_top = (stack_base as u64) + (STACK_SIZE as u64);
+        let stack_top = stack_top & !0xF;
+
+        let mut tf = crate::trap::x86_64::TrapFrame::default();
+        tf.user_rip = image.entry;
+        tf.user_rsp = image.stack_top;
+        tf.user_rflags = 0x202; // IF | Reserved
+
+        let mut task = Task {
+            id,
+            state: TaskState::Runnable,
+            kstack_base: stack_base,
+            kstack_size: STACK_SIZE,
+            kstack_top: stack_top,
+            ctx: Default::default(),
+            simd: crate::simd::SimdState::new(crate::runtime()),
+            aspace: Some(aspace),
+            tf,
+        };
+
+        // Initialize Arch Context to jump to user_entry_stub
+        context_init(&mut task.ctx, stack_top, user_entry_stub, 0);
 
         self.tasks.push(task);
         self.runq.push_back(id);
@@ -160,7 +206,26 @@ impl Scheduler {
 
             // Arch Switch
             // This will return when we are switched back to.
+            
+            // Switch Address Space if needed (user task)
+            if let Some(aspace) = &new_task.aspace {
+                aspace.switch();
+            }
+            
             context_switch(&mut old_task.ctx, &new_task.ctx);
         }
+    }
+}
+
+extern "C" fn user_entry_stub(_arg: usize) -> ! {
+    let tf = unsafe {
+        let ptr = core::ptr::addr_of_mut!(crate::task::SCHEDULER);
+        let sched = (*ptr).as_mut().unwrap();
+        let curr = sched.current_id().unwrap();
+        let idx = sched.tasks.iter().position(|t| t.id == curr).unwrap();
+        sched.tasks[idx].tf.clone()
+    };
+    unsafe {
+        crate::user::enter::enter_user_sysret(&tf);
     }
 }

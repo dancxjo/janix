@@ -186,6 +186,10 @@ pub unsafe fn phys_to_virt(phys: u64) -> u64 {
     unsafe { phys + HHDM_OFFSET }
 }
 
+pub unsafe fn virt_to_phys(virt: u64) -> u64 {
+    unsafe { virt - HHDM_OFFSET }
+}
+
 pub fn tlb_flush_page(virt: u64) {
     unsafe {
         asm!("invlpg [{}]", in(reg) virt, options(nostack, preserves_flags));

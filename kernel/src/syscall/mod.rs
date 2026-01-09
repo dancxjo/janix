@@ -1,5 +1,5 @@
 use crate::trap::x86_64::TrapFrame;
-use crate::user::abi::{SYSCALL_PUTCHAR, SYSCALL_TICKS, SYSCALL_YIELD, SYSCALL_EXIT};
+use crate::user::abi::{SYSCALL_PUTCHAR, SYSCALL_TICKS, SYSCALL_YIELD, SYSCALL_EXIT, SYSCALL_SPAWN_MODULE, SYSCALL_RTC_CMOS_READ};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
@@ -23,6 +23,34 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
             // Mark task dead or just halt for now since we don't have task destruction
             loop {
                 crate::task::yield_now();
+            }
+        },
+        SYSCALL_SPAWN_MODULE => {
+            let path_ptr = tf.rdi as *const u8;
+            let path_len = tf.rsi as usize;
+            
+            // Validate user pointer (rudimentary)
+            if path_ptr as u64 >= 0x8000_0000_0000_0000 {
+                 crate::kwarn!("SpawnModule: invalid pointer {:p}", path_ptr);
+                 u64::MAX // error
+            } else {
+                 match crate::user::sys_spawn_module(path_ptr, path_len) {
+                     Ok(tid) => tid as u64,
+                     Err(e) => {
+                         crate::kwarn!("SpawnModule failed: {}", e);
+                         match e {
+                             // Map some errors to negative numbers if needed
+                             _ => u64::MAX // -1 mostly
+                         }
+                     }
+                 }
+            }
+        },
+        SYSCALL_RTC_CMOS_READ => {
+            let reg = tf.rdi as u8;
+            match crate::user::sys_rtc_cmos_read(reg) {
+                Ok(val) => val as u64,
+                Err(_) => u64::MAX,
             }
         },
         _ => {

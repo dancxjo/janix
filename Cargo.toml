@@ -1,5 +1,5 @@
 [workspace]
-members = ["bran", "xtask", "tools/bdd", "kernel", "abi"]
+members = ["bran", "xtask", "tools/bdd", "kernel", "abi", "stem"]
 resolver = "2"
 
 [profile.dev]

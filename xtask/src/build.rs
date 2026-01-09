@@ -23,5 +23,37 @@ pub fn build(sh: &Shell, arch: &str, profile: &str) -> Result<()> {
     sh.copy_file(&src, &dst)?;
 
     println!("Kernel built: {}", dst);
+
+    // Build Userspace
+    println!("Building userspace modules for {}...", arch);
+    {
+        let _p = sh.push_dir("userspace");
+        cmd!(sh, "cargo build --workspace --target {target} --profile {profile}")
+            .env("RUSTFLAGS", "-C relocation-model=static -C panic=abort")
+            .run()?;
+    }
+
+    // Copy userspace binaries
+    // We expect them in userspace/target/{target}/{profile}/
+    // We want to verify them and copy them to a staging area or directly to where image builder needs them.
+    // For now, let's copy them to bran/bin-{arch}/modules/ so image builder can pick them up.
+    let modules_dir = format!("{}/modules", bin_dir);
+    sh.create_dir(&modules_dir)?;
+
+    let user_profile_dir = if profile == "dev" { "debug" } else { profile };
+    let user_target_dir = format!("userspace/target/{}/{}", target, user_profile_dir);
+
+    for app in ["sprout", "clock", "rtc_cmos"] {
+        let src = format!("{}/{}", user_target_dir, app);
+        let dst = format!("{}/{}", modules_dir, app);
+        // On windows it might be app.exe but we are on linux
+        if sh.path_exists(&src) {
+             sh.copy_file(&src, &dst)?;
+             println!("Module built: {}", dst);
+        } else {
+             eprintln!("Warning: module binary not found at {}", src);
+        }
+    }
+
     Ok(())
 }

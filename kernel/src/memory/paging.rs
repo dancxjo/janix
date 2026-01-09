@@ -1,3 +1,4 @@
+pub use crate::arch::imp::paging::AddressSpace;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageFlags(u64);

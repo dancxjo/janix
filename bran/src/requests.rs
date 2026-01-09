@@ -1,0 +1,42 @@
+use limine::BaseRevision;
+use limine::request::{
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, MpRequest, RequestsEndMarker,
+    RequestsStartMarker,
+};
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static BASE_REVISION: BaseRevision = BaseRevision::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MODULE_REQUEST: limine::request::ModuleRequest = limine::request::ModuleRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static SMP_REQUEST: MpRequest = MpRequest::new();
+
+// Modules will be used later
+// #[used]
+// #[unsafe(link_section = ".requests")]
+// pub static MODULE_REQUEST: ModuleRequest = ModuleRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests_start_marker")]
+pub static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
+
+#[used]
+#[unsafe(link_section = ".requests_end_marker")]
+pub static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();

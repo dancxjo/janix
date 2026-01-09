@@ -1,16 +1,15 @@
 # BDD Test Results - x86_64
 
-> Last run: 2026-01-08 20:31:10
+> Last run: 2026-01-08 20:51:33
 
 ## Summary
 
 | Metric | Passed | Failed |
 |--------|--------|--------|
-| Features | 1 | 1 |
-| Scenarios | 2 | 1 |
-| Steps | 5 | 0 (2 skipped) |
+| Features | 1 | 0 |
+| Scenarios | 1 | 0 |
+| Steps | 3 | 0 (0 skipped) |
 
 ## Features
 
 - ✅ [Boot Screen Colors](./boot-screen-colors/)
-- ❌ [Simple Boot](./simple-boot/)

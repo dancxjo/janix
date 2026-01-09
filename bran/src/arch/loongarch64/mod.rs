@@ -24,6 +24,16 @@ impl BootRuntime for Runtime {
     fn halt(&self) -> ! {
         hcf()
     }
+    
+    // Stubs
+    fn phys_memory_map(&self) -> &'static [kernel::PhysRange] { &[] }
+    fn modules(&self) -> &'static [kernel::BootModuleDesc] { &[] }
+    fn page_size(&self) -> usize { 4096 }
+    fn kernel_virt_base(&self) -> u64 { 0xffffffff80000000 }
+    fn phys_to_virt_offset(&self) -> u64 { 0 }
+    fn framebuffer(&self) -> Option<kernel::FramebufferInfo> { None }
+    fn cpu_count(&self) -> usize { 1 }
+    fn boot_cpu_id(&self) -> usize { 0 }
 }
 
 /// Serial port implementation for loongarch64 using NS16550A-compatible UART.

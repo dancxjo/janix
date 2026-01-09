@@ -4,11 +4,11 @@ use crate::memory::boot_frame_alloc::BootFrameAllocator;
 use crate::kinfo;
 
 // 16 MiB boot heap
-pub const BOOTHEAP_VIRT_BASE: u64 = 0xFFFFFF80_40000000; // Arbitrary high kernel address
+pub const BOOTHEAP_VIRT_BASE: u64 = 0xFFFFFF80_40000000; 
 pub const BOOTHEAP_SIZE: usize = 16 * 1024 * 1024; 
 
 pub struct BootHeap {
-    allocator: Option<BootFrameAllocator>,
+    pub(crate) allocator: Option<BootFrameAllocator>,
     
     // Virtual range state
     start: u64,
@@ -20,12 +20,6 @@ pub struct BootHeap {
     allocated_count: usize,
     allocated_bytes: usize,
 }
-
-// Global lock for the boot heap since GlobalAlloc requires Sync.
-// We are single threaded in boot, but let's be safe(r) or just use a simple spinlock or similar.
-// Actually, since we are strictly boot single core, a RefCell-like pattern with IrqSave is best, 
-// but GlobalAlloc takes &self.
-// We will use a standard spinlock wrapper in global_alloc.rs, so here we just define the inner logic.
 
 impl BootHeap {
     pub const fn empty() -> Self {
@@ -48,7 +42,6 @@ impl BootHeap {
 
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
         if self.allocator.is_none() {
-            // Panic or return null? Panic is better to catch early init issues.
             panic!("BootHeap::alloc called before initialization!");
         }
 

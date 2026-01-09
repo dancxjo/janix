@@ -2,6 +2,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::cell::UnsafeCell;
 use crate::memory::boot_heap::BootHeap;
 use crate::memory::boot_frame_alloc::BootFrameAllocator;
+use crate::memory::frame_alloc::FrameAllocator;
 
 pub struct BootGlobalAlloc {
     inner: UnsafeCell<BootHeap>,
@@ -29,6 +30,14 @@ impl BootGlobalAlloc {
             (*self.inner.get()).stats();
         }
     }
+
+    /// SAFETY: Caller must ensure single threaded access during boot
+    pub unsafe fn transfer_boot_frames(&self, target: &mut FrameAllocator) {
+         let heap = &mut *self.inner.get();
+         if let Some(boot_alloc) = &heap.allocator {
+             boot_alloc.transfer_state_to(target);
+         }
+    }
 }
 
 unsafe impl GlobalAlloc for BootGlobalAlloc {
@@ -55,4 +64,8 @@ pub fn init(allocator: BootFrameAllocator) {
     unsafe {
         GLOBAL.init(allocator);
     }
+}
+
+pub fn get_global() -> &'static BootGlobalAlloc {
+    &GLOBAL
 }

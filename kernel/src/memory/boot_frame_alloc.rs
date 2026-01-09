@@ -1,9 +1,10 @@
 use crate::{PhysRange, PhysRangeKind};
+use crate::memory::frame_alloc::FrameAllocator;
 
 pub struct BootFrameAllocator {
-    map: &'static [PhysRange],
-    current_region: usize,
-    current_addr: u64,
+    pub map: &'static [PhysRange],
+    pub current_region: usize,
+    pub current_addr: u64,
     allocated_frames: usize,
 }
 
@@ -28,13 +29,6 @@ impl BootFrameAllocator {
 
             let region = &self.map[self.current_region];
             
-            // Initialize current_addr if entering a new region
-            // We need to ensure we align up to 4096. 
-            // Also need to handle if we just created the allocator (current_addr is 0)
-            // or if we moved to next region.
-            // But wait, if we are mid-region, current_addr should be valid.
-            // Let's use a logic where if current_addr < region.start, we snap it to start.
-            
             if region.kind != PhysRangeKind::Usable {
                 self.current_region += 1;
                 self.current_addr = 0; // Reset so we pick up start of next region
@@ -47,17 +41,8 @@ impl BootFrameAllocator {
 
             // Check if we fit in the current region
             if self.current_addr + 4096 <= region.end {
-                // We have a candidate frame!
+                // We have a candidate frame
                 let frame = self.current_addr;
-                
-                // IMPORTANT: We need to verify this frame doesn't overlap *other* excluded ranges.
-                // The map *should* have granular regions (e.g. Usable, then Kernel, then Usable)
-                // but sometimes maps are coarse.
-                // For this task, we assume the map provided by Bran is the source of truth for "Usable".
-                // HOWEVER, we must double check against MODULES if the map doesn't explicitly exclude them.
-                // The task says: "Invariant: All module pages must be excluded from allocation... Prefer map includes them as BootModule"
-                // Assuming the map is constructed correctly by Bran to mark modules as BootModule or Reserved.
-                // So we can trust `PhysRangeKind::Usable`.
                 
                 self.current_addr += 4096;
                 self.allocated_frames += 1;
@@ -76,6 +61,35 @@ impl BootFrameAllocator {
 
     pub fn bytes_allocated(&self) -> usize {
         self.allocated_frames * 4096
+    }
+
+    pub fn transfer_state_to(&self, target: &mut FrameAllocator) {
+         // Mark ranges we consumed as used.
+         // 1. All PREVIOUS usable regions are fully consumed (or skipped? logic says we fill sequentially).
+         // Actually `alloc_frame` skips regions if they are full.
+         // So for `i < current_region`, if `map[i]` is Usable, it is FULLY consumed.
+         // 2. The `current_region` is consumed up to `current_addr`.
+        
+        for i in 0..self.current_region {
+            let r = &self.map[i];
+            if r.kind == PhysRangeKind::Usable {
+                target.mark_used_range(r.start, r.end);
+            }
+        }
+
+        if self.current_region < self.map.len() {
+            let r = &self.map[self.current_region];
+            if r.kind == PhysRangeKind::Usable {
+                // Current addr is the NEXT free frame.
+                // So everything from start to current_addr is used.
+                // Be careful if current_addr was just reset (0) -> implies start.
+                let consumed_end = if self.current_addr == 0 { r.start } else { self.current_addr };
+                // Clamp to region end just in case?
+                if consumed_end > r.start {
+                    target.mark_used_range(r.start, consumed_end);
+                }
+            }
+        }
     }
 }
 

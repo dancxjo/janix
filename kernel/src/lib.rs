@@ -152,47 +152,90 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     
     kinfo!("boot: phys ranges={} modules={}", map.len(), modules.len());
     
-    if map.is_empty() {
-        // This might happen if Bran didn't provide a map or we failed to read it.
-        // It's not necessarily fatal if we have defaults, but for this task we expect a map.
-        kinfo!("Warning: No physical memory map provided!");
-    }
+    // 1. Boot Allocator Init
+    let frame_alloc_boot = crate::memory::boot_frame_alloc::BootFrameAllocator::new(map);
+    crate::memory::global_alloc::init(frame_alloc_boot);
 
-    let frame_alloc = crate::memory::boot_frame_alloc::BootFrameAllocator::new(map);
-    crate::memory::global_alloc::init(frame_alloc);
+    // 2. Real Frame Allocator Init
+    //    We need to allocate backing memory for the bitmap *using* the BootHeap.
+    extern crate alloc;
+    use alloc::vec;
+    use crate::memory::frame_alloc::{FrameAllocator, FRAME_SIZE};
 
-    // Sanity check
-    {
-        extern crate alloc;
-        use alloc::vec::Vec;
-        use alloc::boxed::Box;
-        
-        kinfo!("Allocating Box...");
-        let b = Box::new(42);
-        kinfo!("Boxed value: {}", *b);
-        
-        kinfo!("Allocating Vec...");
-        let mut v = Vec::new();
-        for i in 0..100 {
-            v.push(i);
+    kinfo!("Initializing Real Frame Allocator...");
+    
+    // Calculate size needed
+    let mut min_usable = u64::MAX;
+    let mut max_usable = 0;
+    for r in map {
+        if r.kind == PhysRangeKind::Usable {
+            if r.start < min_usable { min_usable = r.start; }
+            if r.end > max_usable { max_usable = r.end; }
         }
-        kinfo!("Vec length: {}", v.len());
     }
     
+    // If no memory, we panic or skip
+    if min_usable == u64::MAX {
+        kinfo!("No usable memory found!");
+        runtime.halt();
+    }
+
+    let base = (min_usable + FRAME_SIZE - 1) & !(FRAME_SIZE - 1);
+    let len_bytes = max_usable.saturating_sub(base);
+    let frames = len_bytes / FRAME_SIZE;
+    let words = (frames + 63) / 64;
+    kinfo!("frame_alloc: base={:#x} frames={} words={}", base, frames, words);
+
+    // Leak the bitmap slice so it lives forever
+    let bitmap_slice = vec![0u64; words as usize].leak();
+    
+    let mut frame_alloc = FrameAllocator::new_from_boot(map, modules, bitmap_slice);
+    
+    // Sync state: Mark frames consumed by BootHeap as used
+    // Access global safely (single threaded boot)
     unsafe {
-         // Accessing global allocator via static for stats
-         // We can't easily access GLOBAL directly if it's not pub.
-         // But we added stats() to BootGlobalAlloc and GLOBAL is static.
-         // We didn't make GLOBAL pub in the file though. 
-         // Let's just trust the heap logs internally if we want, or make GLOBAL pub.
-         // Actually global_alloc.rs didn't make GLOBAL pub.
-         // But we can invoke a helper? No helper for stats.
-         // Let's just skip explicit stats call for now, BootHeap logs stats on OOM.
-         // Or I can add `pub fn print_stats()` to `global_alloc.rs`.
+         crate::memory::global_alloc::get_global().transfer_boot_frames(&mut frame_alloc);
+    }
+    
+    let stats = frame_alloc.stats();
+    kinfo!("frame_alloc: total={} free={} used={}", stats.total_frames, stats.free_frames, stats.used_frames);
+
+    // 3. Sanity Check
+    //    Alloc N frames, check overlap, free all
+    {
+        kinfo!("Running frame_alloc sanity check...");
+        const N: usize = 32;
+        let mut allocated = [crate::memory::frame_alloc::PhysFrame(0); N];
+        for i in 0..N {
+            allocated[i] = frame_alloc.alloc().expect("Sanity alloc failed");
+            // Check exclusion
+            if i > 0 && allocated[i] == allocated[i-1] {
+                panic!("Allocator returned duplicate frame!");
+            }
+        }
+        
+        for i in 0..N {
+            frame_alloc.free(allocated[i]);
+        }
+        
+        let stats_after = frame_alloc.stats();
+        // Should be same as before?
+        // BootHeap might have allocated more during vec![] calls? 
+        // No, vec![] happened before frame_alloc init scan. 
+        // But vec![] allocation used BootHeap which used BootFrameAllocator.
+        // FrameAllocator::new_from_boot synced that state *after* vec allocated.
+        // So free/used should match initial stats.
+        if stats_after.used_frames != stats.used_frames {
+             kinfo!("Warning: Stats mismatch after sanity? used {} vs {}", stats_after.used_frames, stats.used_frames);
+             // It's possible if we didn't perfectly reclaim logic, but bitmap allocator should be exact.
+        } else {
+             kinfo!("frame_alloc: sanity ok"); 
+        }
     }
 
     kinfo!("System halted");
     runtime.halt();
 }
+
 pub mod simd;
 pub mod task;

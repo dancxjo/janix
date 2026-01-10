@@ -1,17 +1,17 @@
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[24451765140] [INFO] thing-os kernel v0.1.0 starting...
-[24474088584] [INFO] Intent-Mechanism paging split active
-[24474575664] [INFO] System booted
-[24486172755] [INFO] Memory map has 35 entries
-[24491499153] [INFO]   [0] 0x0 - 0xa0000 (Usable)
-[24492394608] [INFO]   [1] 0x100000 - 0x800000 (Usable)
-[24492808890] [INFO]   [2] 0x800000 - 0x808000 (Other)
-[24498883233] [INFO]   [3] 0x808000 - 0x80b000 (Usable)
-[24503239266] [INFO]   [4] 0x80b000 - 0x80c000 (Other)
-[24503644671] [INFO]   [5] 0x80c000 - 0x811000 (Usable)
-[24504053145] [INFO]   [6] 0x811000 - 0x900000 (Other)
-[24504453435] [INFO]   [7] 0x900000 - 0x1780000 (Reserved)
-[24505220520] [INFO]   [8] 0x1780000 - 0x79fa6000 (Usable)
-[24505652721] [INFO]   [9] 0x79fa6000 - 0x7a16c000 (Reserved)
-[24510259818] [INFO] HHDM Offset: 0xffff800000000000
+[2J[01;01H[01;01H[2J[01;01H[01;01H[13895474868] [INFO] thing-os kernel v0.1.0 starting...
+[13906482612] [INFO] Intent-Mechanism paging split active
+[13911151749] [INFO] System booted
+[13918210812] [INFO] Memory map has 35 entries
+[13921566285] [INFO]   [0] 0x0 - 0xa0000 (Usable)
+[13922421051] [INFO]   [1] 0x100000 - 0x800000 (Usable)
+[13922837346] [INFO]   [2] 0x800000 - 0x808000 (Other)
+[13923272880] [INFO]   [3] 0x808000 - 0x80b000 (Usable)
+[13923663963] [INFO]   [4] 0x80b000 - 0x80c000 (Other)
+[13924047555] [INFO]   [5] 0x80c000 - 0x811000 (Usable)
+[13924437615] [INFO]   [6] 0x811000 - 0x900000 (Other)
+[13924821141] [INFO]   [7] 0x900000 - 0x1780000 (Reserved)
+[13925254926] [INFO]   [8] 0x1780000 - 0x79fa6000 (Usable)
+[13925666436] [INFO]   [9] 0x79fa6000 - 0x7a16c000 (Reserved)
+[13926402270] [INFO] HHDM Offset: 0xffff800000000000

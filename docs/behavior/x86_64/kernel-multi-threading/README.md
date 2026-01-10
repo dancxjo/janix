@@ -1,6 +1,6 @@
 # ❌ Feature: Kernel Multi-Threading
 
-> Last run: 2026-01-10 11:21:55
+> Last run: 2026-01-10 11:23:49
 
 ## Scenarios
 

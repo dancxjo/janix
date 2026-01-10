@@ -1,4 +1,4 @@
-[53675459244] [INFO] Thread B (arg=2) ticks=53675426739
-[54464292564] [INFO] Thread A (arg=1) ticks=54464259630
-[55245921225] [INFO] Thread B (arg=2) ticks=55245882219
-[55960063500] [INFO] Thread A (arg=1) ticks=55960026210
+[26991317067] [INFO] Thread A (arg=1) ticks=26991288852
+[27576377169] [INFO] Thread B (arg=2) ticks=27576349053
+[28054561458] [INFO] Thread A (arg=1) ticks=28054533870
+[28501308726] [INFO] Thread B (arg=2) ticks=28501282260

@@ -1,0 +1,63 @@
+# ✅ Scenario: Lilac Boot Screen
+
+> Last run: 2026-01-10 15:24:59
+
+## Steps
+
+| # | Step | Result | Duration | Artifacts |
+|---|------|--------|----------|-----------|
+| 1 | Given the machine is started | ✅ | 318ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> - [💾](./01/registers.txt) |
+| 2 | When I wait for the system to boot | ✅ | 4339ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> [📜](./02/serial.log) [💾](./02/registers.txt) |
+| 3 | Then the screen should be filled with "Lilac" | ✅ | 1497ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
+
+<details>
+<summary>📜 Full Serial Log</summary>
+
+```
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[2J[01;01H[01;01H[2J[01;01H[01;01H[12504251298] [INFO] thing-os kernel v0.1.0 starting...
+[12512231292] [INFO] Intent-Mechanism paging split active
+[12513873240] [INFO] System booted
+[12518012001] [INFO] Memory map has 35 entries
+[12520853466] [INFO]   [0] 0x0 - 0xa0000 (Usable)
+[12522560523] [INFO]   [1] 0x100000 - 0x800000 (Usable)
+[12525007671] [INFO]   [2] 0x800000 - 0x808000 (Other)
+[12525462510] [INFO]   [3] 0x808000 - 0x80b000 (Usable)
+[12525831120] [INFO]   [4] 0x80b000 - 0x80c000 (Other)
+[12526200126] [INFO]   [5] 0x80c000 - 0x811000 (Usable)
+[12526571772] [INFO]   [6] 0x811000 - 0x900000 (Other)
+[12526934739] [INFO]   [7] 0x900000 - 0x1780000 (Reserved)
+[12527358855] [INFO]   [8] 0x1780000 - 0x79fa6000 (Usable)
+[12527746077] [INFO]   [9] 0x79fa6000 - 0x7a16c000 (Reserved)
+[12530091156] [INFO] HHDM Offset: 0xffff800000000000
+[13176339825] [INFO] Frame allocator initialized with 511944 free frames
+[13180565046] [INFO] Initializing global allocator...
+[13196942781] [INFO] Initializing tasking...
+[13197794742] [INFO]   Acquiring scheduler lock...
+[13198351254] [INFO]   Lock acquired, checking if initialized...
+[13199038512] [INFO]   Allocating scheduler...
+[13202059827] [INFO]   Leaking scheduler...
+[13205910564] [INFO]   Initializing boot task...
+[13206895284] [INFO]   Creating boot task...
+[13210314282] [INFO]   Pushing boot task to list...
+[13216672392] [INFO]   Boot task created successfully
+[13220511612] [INFO]   Storing scheduler pointer...
+[13221054231] [INFO]   Scheduler initialized
+[13221728586] [INFO] Checking threads_supported...
+[13222263417] [INFO] Spawning Thread A...
+[13225751682] [INFO] Spawning Thread B...
+[13229540709] [INFO] System initialized. Entering scheduler loop.
+[13236059067] [INFO] Thread A (arg=1) ticks=13235827803
+[13800891357] [INFO] Thread B (arg=2) ticks=13800691773
+[14558150871] [INFO] Thread A (arg=1) ticks=14558121699
+[15457363515] [INFO] Thread B (arg=2) ticks=15457344771
+[16253421294] [INFO] Thread A (arg=1) ticks=16253394069
+[16813833729] [INFO] Thread B (arg=2) ticks=16813817460
+[17421681717] [INFO] Thread A (arg=1) ticks=17421665811
+[17996083941] [INFO] Thread B (arg=2) ticks=17996073546
+[18570638394] [INFO] Thread A (arg=1) ticks=18570624600
+[19114039791] [INFO] Thread B (arg=2) ticks=19114016988
+
+```
+</details>

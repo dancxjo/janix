@@ -1,0 +1,16 @@
+[2J[04D[=3h[2J[09D[2J[04D[8;031;100t0[2J[17DRISC-V EDK2 firmware version 2.7
+Press ESCAPE within 5 seconds for boot options [2J[01;01H[2J[04D[85647313] [INFO] thing-os kernel v0.1.0 starting...
+[85677902] [INFO] Intent-Mechanism paging split active
+[85692584] [INFO] System booted
+[85708347] [INFO] Memory map has 24 entries
+[85725937] [INFO]   [0] 0x22000000 - 0x24000000 (Reserved)
+[85738519] [INFO]   [1] 0x80000000 - 0x80050000 (Reserved)
+[85749071] [INFO]   [2] 0x80050000 - 0x83278000 (Usable)
+[85758173] [INFO]   [3] 0x83278000 - 0x83fff000 (Reserved)
+[85768765] [INFO]   [4] 0x83fff000 - 0xfaaeb000 (Usable)
+[85776761] [INFO]   [5] 0xfaaeb000 - 0xfab43000 (Reserved)
+[85788924] [INFO]   [6] 0xfab43000 - 0xfab58000 (Other)
+[85793911] [INFO]   [7] 0xfab58000 - 0xfad70000 (Reserved)
+[85798283] [INFO]   [8] 0xfad70000 - 0xfed6b000 (Usable)
+[85814041] [INFO]   [9] 0xfed6b000 - 0xff1b6000 (Reserved)
+[85825552] [INFO] HHDM Offset: 0xffff800000000000

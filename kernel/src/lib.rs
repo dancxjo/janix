@@ -137,24 +137,24 @@ pub trait BootRuntime {
     // Ideally, we move PageFlags definition to a shared place, or just pass u64.
     // Let's use u64 for ABI cleanliness between kernel/runtime trait if we consider them separate,
     // but they are tightly coupled. Let's use u64 to be safe and agnostic.
-    fn map_page(&self, handle: usize, virt: u64, phys: u64, flags: u64) -> Result<(), ()> { Err(()) }
+    fn map_page(&self, _handle: usize, _virt: u64, _phys: u64, _flags: u64) -> Result<(), ()> { Err(()) }
     fn map_page_with_allocator(
         &self, 
-        handle: usize, 
-        virt: u64, 
-        phys: u64, 
-        flags: u64,
-        allocator: &mut crate::memory::boot_frame_alloc::BootFrameAllocator
+        _handle: usize, 
+        _virt: u64, 
+        _phys: u64, 
+        _flags: u64,
+        _allocator: &mut crate::memory::boot_frame_alloc::BootFrameAllocator
     ) -> Result<(), ()> { Err(()) }    
 
-    fn unmap_page(&self, handle: usize, virt: u64) {}
-    fn translate(&self, handle: usize, virt: u64) -> Option<u64> { None }
+    fn unmap_page(&self, _handle: usize, _virt: u64) {}
+    fn translate(&self, _handle: usize, _virt: u64) -> Option<u64> { None }
     
     fn new_address_space(&self) -> usize { 0 } // Returns an opaque handle (e.g. CR3 or ID)
-    fn switch_address_space(&self, handle: usize) {}
+    fn switch_address_space(&self, _handle: usize) {}
     fn current_address_space(&self) -> usize { 0 }
 
-    fn tlb_flush_page(&self, virt: u64) {}
+    fn tlb_flush_page(&self, _virt: u64) {}
     fn tlb_flush_all(&self) {}
 
     // Framebuffer
@@ -208,16 +208,16 @@ pub trait BootRuntime {
     // `arg`: The argument to the entry point.
     fn context_init(
         &self, 
-        ctx_handle: &mut u64, 
-        kstack_top: u64, 
-        entry: extern "C" fn(usize) -> !, 
-        arg: usize
+        _ctx_handle: &mut u64, 
+        _kstack_top: u64, 
+        _entry: extern "C" fn(usize) -> !, 
+        _arg: usize
     ) {}
 
     // Switch context.
     // `old_handle_ptr`: Address where existing context handle should be saved (e.g. &mut Task.ctx.handle).
     // `new_handle`: The handle of the task to switch to.
-    unsafe fn context_switch(&self, old_handle_ptr: *mut u64, new_handle: u64) {}
+    unsafe fn context_switch(&self, _old_handle_ptr: *mut u64, _new_handle: u64) {}
 
     // Enter user mode.
     // Diverges.

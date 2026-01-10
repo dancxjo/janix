@@ -62,18 +62,18 @@ Boot HART Debug Triggers    : 2 triggers
 Boot HART MIDELEG           : 0x0000000000001666
 Boot HART MEDELEG           : 0x0000000000f4b509
 [2J[04D[=3h[2J[09D[2J[04D[8;031;100t0[2J[17DRISC-V EDK2 firmware version 2.7
-Press ESCAPE within 5 seconds for boot options [2J[01;01H[2J[04D[78727768] [INFO] thing-os kernel v0.1.0 starting...
-[78750743] [INFO] Intent-Mechanism paging split active
-[78755393] [INFO] System booted
-[78769891] [INFO] Memory map has 24 entries
-[78777954] [INFO]   [0] 0x22000000 - 0x24000000 (Reserved)
-[78784033] [INFO]   [1] 0x80000000 - 0x80050000 (Reserved)
-[78788620] [INFO]   [2] 0x80050000 - 0x83278000 (Usable)
-[78793289] [INFO]   [3] 0x83278000 - 0x83fff000 (Reserved)
-[78797997] [INFO]   [4] 0x83fff000 - 0xfaaec000 (Usable)
-[78802576] [INFO]   [5] 0xfaaec000 - 0xfab44000 (Reserved)
-[78807208] [INFO]   [6] 0xfab44000 - 0xfab59000 (Other)
-[78811804] [INFO]   [7] 0xfab59000 - 0xfad70000 (Reserved)
-[78816443] [INFO]   [8] 0xfad70000 - 0xfed6b000 (Usable)
-[78821062] [INFO]   [9] 0xfed6b000 - 0xff1b6000 (Reserved)
-[78826318] [INFO] HHDM Offset: 0xffff800000000000
+Press ESCAPE within 5 seconds for boot options [2J[01;01H[2J[04D[113576892] [INFO] thing-os kernel v0.1.0 starting...
+[113621188] [INFO] Intent-Mechanism paging split active
+[113635961] [INFO] System booted
+[113652726] [INFO] Memory map has 24 entries
+[113672588] [INFO]   [0] 0x22000000 - 0x24000000 (Reserved)
+[113679427] [INFO]   [1] 0x80000000 - 0x80050000 (Reserved)
+[113698577] [INFO]   [2] 0x80050000 - 0x83278000 (Usable)
+[113709929] [INFO]   [3] 0x83278000 - 0x83fff000 (Reserved)
+[113715087] [INFO]   [4] 0x83fff000 - 0xfaaeb000 (Usable)
+[113720039] [INFO]   [5] 0xfaaeb000 - 0xfab43000 (Reserved)
+[113725210] [INFO]   [6] 0xfab43000 - 0xfab58000 (Other)
+[113730211] [INFO]   [7] 0xfab58000 - 0xfad70000 (Reserved)
+[113751933] [INFO]   [8] 0xfad70000 - 0xfed6b000 (Usable)
+[113774462] [INFO]   [9] 0xfed6b000 - 0xff1b6000 (Reserved)
+[113781702] [INFO] HHDM Offset: 0xffff800000000000

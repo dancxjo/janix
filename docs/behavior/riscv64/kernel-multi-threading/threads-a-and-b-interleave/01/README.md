@@ -1,6 +1,6 @@
 # ✅ Given the machine is booted
 
-**Result:** passed | **Duration:** 8310ms
+**Result:** passed | **Duration:** 12276ms
 
 ## Screenshots
 
@@ -13,7 +13,7 @@
 
 CPU#0
  V      =   0
- pc       ffffffff80007f42
+ pc       ffffffff800086f8
  mhartid  0000000000000000
  mstatus  8000000a00006180
  hstatus  0000000200000000
@@ -27,7 +27,7 @@ CPU#0
  mtvec    00000000800004f8
  stvec    0000000000000000
  vstvec   0000000000000000
- mepc     ffffffff8000361c
+ mepc     ffffffff80003614
  sepc     00000000fed9505a
  vsepc    0000000000000000
  mcause   0000000000000009
@@ -39,15 +39,15 @@ CPU#0
  mtval2   0000000000000000
  mscratch 0000000080045000
  sscratch 0000000082000000
- satp     90000000000fab2b
- x0/zero  0000000000000000 x1/ra    ffffffff800085fe x2/sp    ffff8000fab3bb70 x3/gp    0000000000000000
- x4/tp    0000000000000000 x5/t0    0000000000010000 x6/t1    0000000000000064 x7/t2    0000000000002710
- x8/s0    0000000000000000 x9/s1    0000000000000000 x10/a0   00000000000011d4 x11/a1   0000000000008ea8
- x12/a2   00000000000011d6 x13/a3   ffff8000fab3bc68 x14/a4   0000000000000000 x15/a5   0000000000000000
+ satp     90000000000fab2a
+ x0/zero  0000000000000000 x1/ra    ffffffff800086f8 x2/sp    ffff8000fab3ab20 x3/gp    0000000000000000
+ x4/tp    0000000000000000 x5/t0    0000000000010000 x6/t1    ffffffff800098f2 x7/t2    0000000000002710
+ x8/s0    0000000000000000 x9/s1    0000000000000000 x10/a0   0000000000000001 x11/a1   000000000000191f
+ x12/a2   0000000000001920 x13/a3   ffff8000fab3abc8 x14/a4   0000000000000000 x15/a5   0000000000000000
  x16/a6   ffffffff8000c2a8 x17/a7   0000000000010100 x18/s2   0000000000000000 x19/s3   0000000000000000
  x20/s4   0000000000000000 x21/s5   0000000000000000 x22/s6   0000000000000000 x23/s7   0000000000000000
  x24/s8   0000000000000000 x25/s9   0000000000000000 x26/s10  0000000000000000 x27/s11  0000000000000000
- x28/t3   000000000000147b x29/t4   000000000098967f x30/t5   ffffffff8000ed48 x31/t6   0000000000000000
+ x28/t3   000000000000147b x29/t4   000000000098967f x30/t5   ffffffff8000ef0a x31/t6   0000000000000002
  fcsr     0000000000000000
  f0/ft0   ffffffff00000000 f1/ft1   ffffffff00000000 f2/ft2   ffffffff00000000 f3/ft3   ffffffff00000000
  f4/ft4   ffffffff00000000 f5/ft5   ffffffff00000000 f6/ft6   ffffffff00000000 f7/ft7   ffffffff00000000
@@ -128,21 +128,21 @@ Boot HART Debug Triggers    : 2 triggers
 Boot HART MIDELEG           : 0x0000000000001666
 Boot HART MEDELEG           : 0x0000000000f4b509
 [2J[04D[=3h[2J[09D[2J[04D[8;031;100t0[2J[17DRISC-V EDK2 firmware version 2.7
-Press ESCAPE within 5 seconds for boot options [2J[01;01H[2J[04D[78727768] [INFO] thing-os kernel v0.1.0 starting...
-[78750743] [INFO] Intent-Mechanism paging split active
-[78755393] [INFO] System booted
-[78769891] [INFO] Memory map has 24 entries
-[78777954] [INFO]   [0] 0x22000000 - 0x24000000 (Reserved)
-[78784033] [INFO]   [1] 0x80000000 - 0x80050000 (Reserved)
-[78788620] [INFO]   [2] 0x80050000 - 0x83278000 (Usable)
-[78793289] [INFO]   [3] 0x83278000 - 0x83fff000 (Reserved)
-[78797997] [INFO]   [4] 0x83fff000 - 0xfaaec000 (Usable)
-[78802576] [INFO]   [5] 0xfaaec000 - 0xfab44000 (Reserved)
-[78807208] [INFO]   [6] 0xfab44000 - 0xfab59000 (Other)
-[78811804] [INFO]   [7] 0xfab59000 - 0xfad70000 (Reserved)
-[78816443] [INFO]   [8] 0xfad70000 - 0xfed6b000 (Usable)
-[78821062] [INFO]   [9] 0xfed6b000 - 0xff1b6000 (Reserved)
-[78826318] [INFO] HHDM Offset: 0xffff800000000000
+Press ESCAPE within 5 seconds for boot options [2J[01;01H[2J[04D[113576892] [INFO] thing-os kernel v0.1.0 starting...
+[113621188] [INFO] Intent-Mechanism paging split active
+[113635961] [INFO] System booted
+[113652726] [INFO] Memory map has 24 entries
+[113672588] [INFO]   [0] 0x22000000 - 0x24000000 (Reserved)
+[113679427] [INFO]   [1] 0x80000000 - 0x80050000 (Reserved)
+[113698577] [INFO]   [2] 0x80050000 - 0x83278000 (Usable)
+[113709929] [INFO]   [3] 0x83278000 - 0x83fff000 (Reserved)
+[113715087] [INFO]   [4] 0x83fff000 - 0xfaaeb000 (Usable)
+[113720039] [INFO]   [5] 0xfaaeb000 - 0xfab43000 (Reserved)
+[113725210] [INFO]   [6] 0xfab43000 - 0xfab58000 (Other)
+[113730211] [INFO]   [7] 0xfab58000 - 0xfad70000 (Reserved)
+[113751933] [INFO]   [8] 0xfad70000 - 0xfed6b000 (Usable)
+[113774462] [INFO]   [9] 0xfed6b000 - 0xff1b6000 (Reserved)
+[113781702] [INFO] HHDM Offset: 0xffff800000000000
 
 ```
 </details>

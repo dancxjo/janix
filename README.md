@@ -48,9 +48,10 @@ Test results are saved to `docs/behavior/` and can be viewed directly on GitHub:
 📊 **[View Test Reports](./docs/behavior/)**
 
 Reports are organized by architecture:
-- [x86_64 Results](./docs/behavior/x86_64/) - Primary development target
+- [x86_64 Results](./docs/behavior/x86_64/) - x86_64 support
 - [aarch64 Results](./docs/behavior/aarch64/) - ARM64 support
 - [riscv64 Results](./docs/behavior/riscv64/) - RISC-V support
+- [loongarch64 Results](./docs/behavior/loongarch64/) - LoongArch support
 
 Each report includes:
 - ✅/❌ Pass/fail status per feature, scenario, and step

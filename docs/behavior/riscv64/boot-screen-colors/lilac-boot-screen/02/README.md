@@ -1,6 +1,6 @@
 # ✅ When I wait for the system to boot
 
-**Result:** passed | **Duration:** 8929ms
+**Result:** passed | **Duration:** 8882ms
 
 ## Screenshots
 
@@ -40,10 +40,10 @@ CPU#0
  mscratch 0000000080045000
  sscratch 0000000082000000
  satp     90000000000fab2a
- x0/zero  0000000000000000 x1/ra    ffffffff800086f8 x2/sp    ffff8000fab3ab20 x3/gp    0000000000000000
+ x0/zero  0000000000000000 x1/ra    ffffffff80008766 x2/sp    ffff8000fab3aad0 x3/gp    0000000000000000
  x4/tp    0000000000000000 x5/t0    0000000000010000 x6/t1    ffffffff800098f2 x7/t2    0000000000002710
- x8/s0    0000000000000000 x9/s1    0000000000000000 x10/a0   00000000000003b8 x11/a1   0000000000000001
- x12/a2   00000000000003bb x13/a3   ffff8000fab3abc8 x14/a4   0000000000000000 x15/a5   0000000000000000
+ x8/s0    0000000000000000 x9/s1    0000000000000000 x10/a0   00000000000002d7 x11/a1   0000000000000001
+ x12/a2   00000000000002d6 x13/a3   ffff8000fab3abc8 x14/a4   0000000000000000 x15/a5   0000000000000000
  x16/a6   ffffffff8000c2a8 x17/a7   0000000000010100 x18/s2   0000000000000000 x19/s3   0000000000000000
  x20/s4   0000000000000000 x21/s5   0000000000000000 x22/s6   0000000000000000 x23/s7   0000000000000000
  x24/s8   0000000000000000 x25/s9   0000000000000000 x26/s10  0000000000000000 x27/s11  0000000000000000
@@ -65,21 +65,21 @@ CPU#0
 
 ```
 [2J[04D[=3h[2J[09D[2J[04D[8;031;100t0[2J[17DRISC-V EDK2 firmware version 2.7
-Press ESCAPE within 5 seconds for boot options [2J[01;01H[2J[04D[89528592] [INFO] thing-os kernel v0.1.0 starting...
-[89568666] [INFO] Intent-Mechanism paging split active
-[89588263] [INFO] System booted
-[89611909] [INFO] Memory map has 24 entries
-[89624286] [INFO]   [0] 0x22000000 - 0x24000000 (Reserved)
-[89630370] [INFO]   [1] 0x80000000 - 0x80050000 (Reserved)
-[89635075] [INFO]   [2] 0x80050000 - 0x83278000 (Usable)
-[89639646] [INFO]   [3] 0x83278000 - 0x83fff000 (Reserved)
-[89644306] [INFO]   [4] 0x83fff000 - 0xfaaeb000 (Usable)
-[89648759] [INFO]   [5] 0xfaaeb000 - 0xfab43000 (Reserved)
-[89659722] [INFO]   [6] 0xfab43000 - 0xfab58000 (Other)
-[89679052] [INFO]   [7] 0xfab58000 - 0xfad70000 (Reserved)
-[89699334] [INFO]   [8] 0xfad70000 - 0xfed6b000 (Usable)
-[89714896] [INFO]   [9] 0xfed6b000 - 0xff1b6000 (Reserved)
-[89720559] [INFO] HHDM Offset: 0xffff800000000000
+Press ESCAPE within 5 seconds for boot options [2J[01;01H[2J[04D[89959415] [INFO] thing-os kernel v0.1.0 starting...
+[89998059] [INFO] Intent-Mechanism paging split active
+[90016840] [INFO] System booted
+[90037910] [INFO] Memory map has 24 entries
+[90046433] [INFO]   [0] 0x22000000 - 0x24000000 (Reserved)
+[90068708] [INFO]   [1] 0x80000000 - 0x80050000 (Reserved)
+[90083277] [INFO]   [2] 0x80050000 - 0x83278000 (Usable)
+[90087868] [INFO]   [3] 0x83278000 - 0x83fff000 (Reserved)
+[90092384] [INFO]   [4] 0x83fff000 - 0xfaaeb000 (Usable)
+[90105537] [INFO]   [5] 0xfaaeb000 - 0xfab43000 (Reserved)
+[90118870] [INFO]   [6] 0xfab43000 - 0xfab58000 (Other)
+[90123360] [INFO]   [7] 0xfab58000 - 0xfad70000 (Reserved)
+[90142621] [INFO]   [8] 0xfad70000 - 0xfed6b000 (Usable)
+[90149869] [INFO]   [9] 0xfed6b000 - 0xff1b6000 (Reserved)
+[90156346] [INFO] HHDM Offset: 0xffff800000000000
 
 ```
 </details>

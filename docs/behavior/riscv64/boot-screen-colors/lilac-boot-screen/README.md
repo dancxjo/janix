@@ -1,14 +1,14 @@
 # ✅ Scenario: Lilac Boot Screen
 
-> Last run: 2026-01-10 14:36:29
+> Last run: 2026-01-10 14:41:45
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given the machine is started | ✅ | 503ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
-| 2 | When I wait for the system to boot | ✅ | 8929ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> [📜](./02/serial.log) [💾](./02/registers.txt) |
-| 3 | Then the screen should be filled with "Lilac" | ✅ | 1432ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
+| 1 | Given the machine is started | ✅ | 597ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
+| 2 | When I wait for the system to boot | ✅ | 8882ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> [📜](./02/serial.log) [💾](./02/registers.txt) |
+| 3 | Then the screen should be filled with "Lilac" | ✅ | 1399ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
 
 <details>
 <summary>📜 Full Serial Log</summary>
@@ -78,23 +78,23 @@ Boot HART Debug Triggers    : 2 triggers
 Boot HART MIDELEG           : 0x0000000000001666
 Boot HART MEDELEG           : 0x0000000000f4b509
 [2J[04D[=3h[2J[09D[2J[04D[8;031;100t0[2J[17DRISC-V EDK2 firmware version 2.7
-Press ESCAPE within 5 seconds for boot options [2J[01;01H[2J[04D[89528592] [INFO] thing-os kernel v0.1.0 starting...
-[89568666] [INFO] Intent-Mechanism paging split active
-[89588263] [INFO] System booted
-[89611909] [INFO] Memory map has 24 entries
-[89624286] [INFO]   [0] 0x22000000 - 0x24000000 (Reserved)
-[89630370] [INFO]   [1] 0x80000000 - 0x80050000 (Reserved)
-[89635075] [INFO]   [2] 0x80050000 - 0x83278000 (Usable)
-[89639646] [INFO]   [3] 0x83278000 - 0x83fff000 (Reserved)
-[89644306] [INFO]   [4] 0x83fff000 - 0xfaaeb000 (Usable)
-[89648759] [INFO]   [5] 0xfaaeb000 - 0xfab43000 (Reserved)
-[89659722] [INFO]   [6] 0xfab43000 - 0xfab58000 (Other)
-[89679052] [INFO]   [7] 0xfab58000 - 0xfad70000 (Reserved)
-[89699334] [INFO]   [8] 0xfad70000 - 0xfed6b000 (Usable)
-[89714896] [INFO]   [9] 0xfed6b000 - 0xff1b6000 (Reserved)
-[89720559] [INFO] HHDM Offset: 0xffff800000000000
-[93008100] [INFO] Frame allocator initialized with 515311 free frames
-[93040170] [INFO] Initializing global allocator...
+Press ESCAPE within 5 seconds for boot options [2J[01;01H[2J[04D[89959415] [INFO] thing-os kernel v0.1.0 starting...
+[89998059] [INFO] Intent-Mechanism paging split active
+[90016840] [INFO] System booted
+[90037910] [INFO] Memory map has 24 entries
+[90046433] [INFO]   [0] 0x22000000 - 0x24000000 (Reserved)
+[90068708] [INFO]   [1] 0x80000000 - 0x80050000 (Reserved)
+[90083277] [INFO]   [2] 0x80050000 - 0x83278000 (Usable)
+[90087868] [INFO]   [3] 0x83278000 - 0x83fff000 (Reserved)
+[90092384] [INFO]   [4] 0x83fff000 - 0xfaaeb000 (Usable)
+[90105537] [INFO]   [5] 0xfaaeb000 - 0xfab43000 (Reserved)
+[90118870] [INFO]   [6] 0xfab43000 - 0xfab58000 (Other)
+[90123360] [INFO]   [7] 0xfab58000 - 0xfad70000 (Reserved)
+[90142621] [INFO]   [8] 0xfad70000 - 0xfed6b000 (Usable)
+[90149869] [INFO]   [9] 0xfed6b000 - 0xff1b6000 (Reserved)
+[90156346] [INFO] HHDM Offset: 0xffff800000000000
+[95995477] [INFO] Frame allocator initialized with 515311 free frames
+[96028987] [INFO] Initializing global allocator...
 
 ```
 </details>

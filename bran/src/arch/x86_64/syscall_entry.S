@@ -2,6 +2,7 @@
 .global syscall_entry
 .global enter_user_sysret_asm
 .extern syscall_dispatch
+.extern check_preemption_shim
 
 // PerCpu Offsets (Must match bran/src/arch/x86_64/percpu.rs)
 // kernel_rsp0: 8
@@ -40,6 +41,10 @@ syscall_entry:
     // Call Dispatcher
     mov rdi, rsp            // &mut TrapFrame
     call syscall_dispatch
+
+    // Check preemption before restoring registers
+    call check_preemption_shim
+
 
     // Fallthrough to restore
 

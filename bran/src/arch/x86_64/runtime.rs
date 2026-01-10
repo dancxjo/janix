@@ -164,6 +164,8 @@ impl ArchRuntime for X86_64Runtime {
             gdt::init();
             percpu::init_gs_base();
             syscall::enable(entry);
+            super::interrupt::init();
+            super::timer::init();
         }
     }
 

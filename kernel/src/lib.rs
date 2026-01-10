@@ -467,9 +467,15 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
                     }
                     Err(e) => kerror!("Failed to spawn sprout: {}", e),
                 }
-                break;
+            } else if m.name.contains("interrupting_cow") {
+                kinfo!("Spawning interrupting_cow test: {}", m.name);
+                match crate::user::sys_spawn_module_from_desc(m) {
+                    Ok(_) => kinfo!("Preempt test spawned"),
+                    Err(e) => kerror!("Failed to spawn interrupting_cow: {}", e),
+                }
             }
         }
+
         
         if !sprout_found {
              kerror!("Sprout module not found in:");

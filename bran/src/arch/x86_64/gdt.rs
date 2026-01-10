@@ -155,6 +155,10 @@ pub static mut BSP_GDT: Gdt = Gdt {
     tss: TaskStateSegment::new(),
 };
 
+#[repr(align(16))]
+struct Stack([u8; 4096]);
+static mut DOUBLE_FAULT_STACK: Stack = Stack([0; 4096]);
+
 pub unsafe fn init() {
     // Avoid mutable reference to mutable static (UB)
     let gdt = unsafe { &mut *core::ptr::addr_of_mut!(BSP_GDT) };
@@ -183,12 +187,26 @@ pub unsafe fn init() {
 
     // Load TSS
     unsafe { ltr(TSS_IDX << 3) };
+    
+    // Set Double Fault Stack
+    unsafe {
+        let stack_top = core::ptr::addr_of_mut!(DOUBLE_FAULT_STACK.0) as u64 + 4096;
+        set_double_fault_stack(stack_top);
+    }
 }
 
 pub unsafe fn set_tss_rsp0(stack: u64) {
     unsafe {
         BSP_GDT.tss.rsp0_low = stack as u32;
         BSP_GDT.tss.rsp0_high = (stack >> 32) as u32;
+    }
+}
+
+pub unsafe fn set_double_fault_stack(stack: u64) {
+    unsafe {
+        // IST 1 is the first entry in reserved2 (index 0)
+        // reserved2 is [u64; 10]
+        BSP_GDT.tss.reserved2[0] = stack;
     }
 }
 

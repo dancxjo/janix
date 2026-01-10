@@ -55,7 +55,8 @@ impl Root {
 
     pub fn watch_create(&self) -> u64 {
         let mut inner = self.inner.lock();
-        inner.watches.create()
+        let id = inner.watches.create();
+        id
     }
 
     pub fn watch_next(&self, id: u64) -> Result<abi::root::WatchEvent, i64> {

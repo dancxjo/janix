@@ -4,6 +4,7 @@ members = [
     "services/sprout",
     "drivers/rtc_cmos",
     "apps/clock",
+    "apps/interrupting_cow",
 ]
 resolver = "2"
 

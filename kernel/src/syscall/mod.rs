@@ -1,10 +1,18 @@
 use crate::trap::x86_64::TrapFrame;
-use crate::user::abi::syscall::{SYSCALL_PUTCHAR, SYSCALL_TICKS, SYSCALL_YIELD, SYSCALL_EXIT, SYSCALL_SPAWN_MODULE, SYSCALL_RTC_CMOS_READ};
+use crate::user::abi::syscall::{
+    SYSCALL_PUTCHAR, SYSCALL_TICKS, SYSCALL_YIELD, SYSCALL_EXIT, SYSCALL_SPAWN_MODULE, 
+    SYSCALL_RTC_CMOS_READ, SYSCALL_GRAPH_APPEND, SYSCALL_WATCH_CREATE, SYSCALL_WATCH_NEXT
+};
 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
     let nr = tf.rax;
+    // crate::kinfo!("Syscall dispatch: nr={}", nr);
+    // Only log potentially problematic ones or all?
+    if nr >= 6 {
+         crate::kinfo!("Syscall dispatch: nr={} (Root/Complex)", nr);
+    }
     let ret = match nr {
         SYSCALL_PUTCHAR => {
             let c = tf.rdi as u8;
@@ -55,6 +63,7 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
             }
         },
         SYSCALL_GRAPH_APPEND => {
+            // crate::kinfo!("Dispatch v4: MATCH GRAPH_APPEND (const={})", SYSCALL_GRAPH_APPEND);
             let op_ptr = tf.rdi as *const crate::user::abi::root::JournalOp;
             // Validate pointer
             if op_ptr as u64 >= 0x8000_0000_0000_0000 {
@@ -65,6 +74,7 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
             }
         },
         SYSCALL_WATCH_CREATE => {
+            // crate::kinfo!("Dispatch: MATCH WATCH_CREATE (const={})", SYSCALL_WATCH_CREATE);
             crate::root().watch_create()
         },
         SYSCALL_WATCH_NEXT => {

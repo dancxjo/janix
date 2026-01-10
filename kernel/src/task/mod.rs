@@ -79,6 +79,35 @@ pub fn yield_now() {
     rt.irq_restore(irq_state);
 }
 
+pub fn set_need_resched(val: bool) {
+    unsafe {
+        let ptr = core::ptr::addr_of_mut!(SCHEDULER);
+        if let Some(sched) = (*ptr).as_ref() {
+            sched.need_resched.store(val, core::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+pub fn check_preemption() {
+    let rt = crate::runtime();
+    // We must be careful here. If we are returning to user, we are mostly safe to yield.
+    // We enter a critical section to check/clear.
+    // Actually yield_now handles the locking.
+    
+    let needed = unsafe {
+        let ptr = core::ptr::addr_of_mut!(SCHEDULER);
+        if let Some(sched) = (*ptr).as_ref() {
+            sched.need_resched.swap(false, core::sync::atomic::Ordering::Relaxed)
+        } else {
+            false
+        }
+    };
+    
+    if needed {
+        yield_now();
+    }
+}
+
 // For diagnostics
 pub fn dump_stats() {
     unsafe {

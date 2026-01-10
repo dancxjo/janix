@@ -244,6 +244,18 @@ pub fn map_bootheap_page(virt: u64, phys: u64, allocator: &mut BootFrameAllocato
     }
 }
 
+const PAGE_NO_CACHE: u64 = 0x10;
+
+pub fn map_mmio_page(virt: u64, phys: u64) {
+    let mut aspace = AddressSpace::active();
+    // kernel::kinfo!("map_mmio_page: virt={:#x} phys={:#x} cr3={:#x}", virt, phys, aspace.root.0);
+    aspace.map_page(
+        virt, 
+        PhysFrame(phys), 
+        PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::NO_CACHE
+    ).expect("Failed to map MMIO page");
+}
+
 unsafe fn ensure_table_boot(table: *mut u64, index: u64, allocator: &mut BootFrameAllocator) -> u64 {
     let entry = unsafe { *table.add(index as usize) };
     if (entry & PAGE_PRESENT) != 0 {

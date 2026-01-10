@@ -15,6 +15,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "interrupting_cow"
+version = "0.1.0"
+dependencies = [
+ "standard",
+ "stem",
+]
+
+[[package]]
 name = "rtc_cmos"
 version = "0.1.0"
 dependencies = [

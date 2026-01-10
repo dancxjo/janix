@@ -43,7 +43,7 @@ pub fn build(sh: &Shell, arch: &str, profile: &str) -> Result<()> {
     let user_profile_dir = if profile == "dev" { "debug" } else { profile };
     let user_target_dir = format!("userspace/target/{}/{}", target, user_profile_dir);
 
-    for app in ["sprout", "clock", "rtc_cmos"] {
+    for app in ["sprout", "clock", "rtc_cmos", "interrupting_cow"] {
         let src = format!("{}/{}", user_target_dir, app);
         let dst = format!("{}/{}", modules_dir, app);
         // On windows it might be app.exe but we are on linux

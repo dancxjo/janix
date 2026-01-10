@@ -5,6 +5,7 @@ use kernel::IrqState;
 use crate::runtime::ArchRuntime;
 
 mod serial;
+mod paging;
 use serial::SerialPort;
 
 /// The architecture-specific runtime for riscv64.
@@ -71,6 +72,28 @@ impl ArchRuntime for Riscv64Runtime {
 
     fn icache_invalidate(&self) {
         unsafe { asm!("fence.i"); }
+    }
+
+    // Paging Delegates
+    fn map_page(&self, _handle: usize, virt: u64, phys: u64, flags: u64) -> Result<(), ()> {
+        let pflags = kernel::memory::paging::PageFlags::from_bits_truncate(flags);
+        paging::map_page(virt, kernel::memory::frame_alloc::PhysFrame(phys), pflags)
+    }
+
+    fn unmap_page(&self, _handle: usize, virt: u64) {
+        let _ = paging::unmap_page(virt);
+    }
+
+    fn translate(&self, _handle: usize, virt: u64) -> Option<u64> {
+        paging::translate(virt).map(|f| f.0)
+    }
+    
+    fn tlb_flush_page(&self, virt: u64) {
+        paging::tlb_flush_page(virt);
+    }
+    
+    fn tlb_flush_all(&self) {
+        paging::tlb_flush_all();
     }
 }
 

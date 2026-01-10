@@ -1,0 +1,20 @@
+
+// This will be compiled as a BDD test module or added to kernel main to spawn user tasks.
+// Since we don't have a full userspace toolchain in this environment setup easily, 
+// I will modify `kernel/src/lib.rs` to spawn two kernel threads first (to test timer) 
+// OR two user tasks directly if I can load them.
+
+// PREFERENCE: Test user preemption as requested.
+// I will create a simple "interleave_test" module in `kernel` that spawns two tasks 
+// that manually switch to user mode (using a small asm stub) or just spin in kernel mode 
+// IF kernel preemption was enabled. But "No kernel preemption" is a non-goal.
+// So I MUST spawn user tasks.
+
+// I will use `kernel/src/main.rs` or `lib.rs` to spawn two "fake" user tasks.
+// These tasks will be simple asm blobs or just functions mapped in user space.
+// Since `spawn_user` takes a `UserImage`, I can craft one pointing to a function in the kernel 
+// (mapped as user accessible? No, kernel code is ring 0).
+// I need actual user code.
+
+// OPTION: Use `userspace/` crate.
+// I'll check `userspace` directory.

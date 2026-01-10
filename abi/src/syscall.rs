@@ -7,6 +7,10 @@ pub const SYSCALL_SPAWN_MODULE: u64 = 4;
 pub const SYSCALL_RTC_CMOS_READ: u64 = 5;
 
 // Root Syscalls
-pub const SYSCALL_GRAPH_APPEND: u64 = 6;
-pub const SYSCALL_WATCH_CREATE: u64 = 7;
-pub const SYSCALL_WATCH_NEXT: u64 = 8;
+// Root Syscalls
+// Root Syscalls
+// Root Syscalls
+// Root Syscalls
+pub const SYSCALL_GRAPH_APPEND: u64 = 10;
+pub const SYSCALL_WATCH_CREATE: u64 = 11;
+pub const SYSCALL_WATCH_NEXT: u64 = 12;

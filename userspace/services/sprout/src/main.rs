@@ -6,7 +6,7 @@ use stem::{sys_spawn_module, sys_yield};
 
 #[no_mangle]
 pub fn main() -> i32 {
-    println!("sprout: root init");
+    println!("sprout: root init (v2)");
 
     // Create a watch
     let watch_id = match watch_create() {

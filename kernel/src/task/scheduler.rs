@@ -1,6 +1,7 @@
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::alloc::Layout;
+use core::sync::atomic::{AtomicBool, Ordering};
 use crate::task::{Task, TaskId, TaskState};
 // use crate::arch::imp::task::{context_init, context_switch};
 use crate::user::elf::UserImage;
@@ -16,6 +17,7 @@ pub struct Scheduler {
     pub runq: VecDeque<TaskId>,
     pub tasks: Vec<Task>,
     pub next_id: TaskId,
+    pub need_resched: AtomicBool,
 }
 
 impl Scheduler {
@@ -25,6 +27,7 @@ impl Scheduler {
             runq: VecDeque::new(),
             tasks: Vec::new(),
             next_id: 1,
+            need_resched: AtomicBool::new(false),
         }
     }
 

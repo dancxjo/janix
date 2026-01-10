@@ -14,11 +14,7 @@ pub use scheduler::Scheduler;
 
 use crate::simd::SimdState;
 use crate::memory::paging::AddressSpace;
-use crate::arch::TrapFrame;
-
-#[repr(transparent)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ArchContext(pub usize);
+use crate::arch::{ArchTrapFrame, ArchContext};
 
 pub struct Task {
     pub id: TaskId,
@@ -33,7 +29,7 @@ pub struct Task {
     pub simd: SimdState,
     
     pub aspace: Option<AddressSpace>,
-    pub tf: TrapFrame,
+    pub tf: ArchTrapFrame,
 }
 
 // Global scheduler instance

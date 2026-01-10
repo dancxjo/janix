@@ -5,7 +5,6 @@ pub mod gdt;
 pub mod percpu;
 pub mod syscall;
 pub mod paging;
-pub mod task;
 pub mod idt;
 pub mod interrupt;
 pub mod timer;
@@ -15,6 +14,7 @@ use core::arch::global_asm;
 global_asm!(include_str!("syscall_entry.S"));
 global_asm!(include_str!("interrupt_entry.S"));
 global_asm!(include_str!("exception_entry.S"));
+global_asm!(include_str!("yield_entry.S"));
 
 pub use runtime::{Runtime, hcf};
 

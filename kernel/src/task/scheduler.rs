@@ -1,7 +1,7 @@
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::alloc::Layout;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::AtomicBool;
 use crate::task::{Task, TaskId, TaskState};
 // use crate::arch::imp::task::{context_init, context_switch};
 use crate::user::elf::UserImage;
@@ -94,7 +94,7 @@ impl Scheduler {
         };
 
         // Initialize Arch Context
-        task.ctx.0 = crate::runtime().context_init(stack_top, entry, arg);
+        crate::runtime().init_task_context(&mut task.ctx, stack_top, entry, arg);
 
         self.tasks.push(task);
         self.runq.push_back(id);
@@ -116,7 +116,7 @@ impl Scheduler {
         let stack_top = (stack_base as u64) + (STACK_SIZE as u64);
         let stack_top = stack_top & !0xF;
 
-        let mut tf = crate::arch::TrapFrame::new_user(image.entry, image.stack_top);
+        let tf = crate::runtime().make_user_trapframe(image.entry, image.stack_top);
 
         let mut task = Task {
             id,
@@ -131,7 +131,7 @@ impl Scheduler {
         };
 
         // Initialize Arch Context to jump to user_entry_stub
-        task.ctx.0 = crate::runtime().context_init(stack_top, user_entry_stub, 0);
+        crate::runtime().init_task_context(&mut task.ctx, stack_top, user_entry_stub, 0);
 
         self.tasks.push(task);
         self.runq.push_back(id);
@@ -140,27 +140,16 @@ impl Scheduler {
     }
 
     pub fn yield_now(&mut self) {
-        let current_id = self.current.expect("yielding without current task");
-        
-        // Mark current as runnable
-        // Find task index
-        let idx = self.tasks.iter().position(|t| t.id == current_id).expect("Current task lost");
-        self.tasks[idx].state = TaskState::Runnable;
-        
-        // Requeue
-        self.runq.push_back(current_id);
-        
-        self.schedule();
+        unsafe {
+             yield_trap();
+        }
     }
 
-    fn schedule(&mut self) {
+    pub fn schedule(&mut self, tf: &mut crate::arch::ArchTrapFrame) {
         // Pick next
         let next_id = match self.runq.pop_front() {
             Some(id) => id,
             None => {
-                // No other tasks. If current is runnable (yielded), we just continue.
-                // If current blocked/died, we would panic or idle.
-                // In yield_now(), we just pushed current back. So we should find it.
                 // If runq is empty, it means we are the only task.
                 return;
             }
@@ -194,25 +183,22 @@ impl Scheduler {
             old_task.state = TaskState::Runnable; // yield logic set it, but verify
             new_task.state = TaskState::Running;
             
-            // SIMD Save/Restore (Prompt requirement: "integrates with your SIMD state model")
+            // SIMD Save/Restore
             old_task.simd.save(crate::runtime());
             new_task.simd.restore(crate::runtime());
 
             // Update kernel stack for syscalls
             crate::runtime().set_kernel_stack(new_task.kstack_top);
 
-            // LOG
-            // kinfo!("Switch {} -> {}", old_task.id, new_task.id);
-
             // Arch Switch
-            // This will return when we are switched back to.
-            
             // Switch Address Space if needed (user task)
             if let Some(aspace) = &new_task.aspace {
                 aspace.switch();
             }
             
-            crate::runtime().context_switch(&mut old_task.ctx.0, new_task.ctx.0);
+            // Generic Trap-Based Switch
+            crate::runtime().save_from_trap(tf, &mut old_task.ctx);
+            crate::runtime().load_into_trap(&new_task.ctx, tf);
         }
     }
 }

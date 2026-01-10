@@ -21,7 +21,11 @@ impl X86_64Runtime {
     }
 }
 
+
 impl ArchRuntime for X86_64Runtime {
+    type Context = kernel::arch::x86_64::Context;
+    type TrapFrame = kernel::arch::x86_64::TrapFrame;
+
     fn putchar(&self, c: u8) {
         self.serial.putchar(c);
     }
@@ -143,79 +147,78 @@ impl ArchRuntime for X86_64Runtime {
     }
 
     // Task Context
-    fn context_init(
+    fn init_task_context(
         &self, 
+        out: &mut Self::Context,
         kstack_top: u64, 
         entry: extern "C" fn(usize) -> !, 
         arg: usize
-    ) -> usize {
-        task::context_init(kstack_top, entry, arg)
+    ) {
+         let tf = &mut out.0;
+         // Minimal kernel thread context for Trap Return
+         tf.rip = entry as u64;
+         tf.rsp = kstack_top;
+         tf.rflags = 0x202; // IF | Reserved
+         tf.cs = 0x8; // Kernel Code
+         tf.ss = 0x10; // Kernel Data
+         tf.rdi = arg as u64;
     }
 
-    unsafe fn context_switch(&self, old_handle_ptr: *mut usize, new_handle: usize) {
-        unsafe {
-             task::context_switch(old_handle_ptr as *mut u64, new_handle as u64);
-        }
+    fn save_from_trap(&self, tf: &Self::TrapFrame, out: &mut Self::Context) {
+        out.0 = tf.clone();
     }
 
-    fn register_syscall_handler(&self, entry: u64) {
-        unsafe {
-            gdt::init();
-            percpu::init_gs_base();
-            syscall::enable(entry);
-            super::interrupt::init();
-            super::timer::init();
-        }
+    fn load_into_trap(&self, ctx: &Self::Context, tf: &mut Self::TrapFrame) {
+        *tf = ctx.0.clone();
     }
 
-    fn set_kernel_stack(&self, stack_top: u64) {
-        unsafe {
-            gdt::set_tss_rsp0(stack_top);
-            percpu::set_kernel_rsp0(stack_top);
-        }
-    }
-
-    unsafe fn enter_user_mode(&self, context: &kernel::arch::TrapFrame) -> ! {
+    unsafe fn return_from_trap(&self, tf: *const Self::TrapFrame) -> ! {
         unsafe {
             core::arch::asm!(
-                "cli", // Disable interrupts
-                
-                // Point RSP to the TrapFrame logic (we treat tf ref as stack ptr)
+                "cli",
                 "mov rsp, {tf}",
                 
-                // Restore GPRs (popping from tf)
-                "pop r15",
-                "pop r14",
-                "pop r13",
-                "pop r12",
-                "pop r11",
-                "pop r10",
-                "pop r9",
-                "pop r8",
-                "pop rsi",
-                "pop rdi",
-                "pop rbp",
-                "pop rdx",
-                "pop rcx",
-                "pop rbx",
-                "pop rax",
+                // Restore GPRs
+                "pop r15", "pop r14", "pop r13", "pop r12",
+                "pop r11", "pop r10", "pop r9",  "pop r8",
+                "pop rsi", "pop rdi", "pop rbp", "pop rdx",
+                "pop rcx", "pop rbx", "pop rax",
+
+                // TrapFrame layout:
+                // ... GPRs ...
+                // trap_num (8)
+                // error_code (8)
+                // rip (8)
+                // cs (8)
+                // rflags (8)
+                // rsp (8)
+                // ss (8)
                 
-                // RSP now points to user_rip (offset 120)
-                // [rsp] = user_rip (RCX for sysret)
-                // [rsp+8] = user_rsp (New RSP)
-                // [rsp+16] = user_rflags (R11 for sysret)
+                // RSP is now at trap_num.
+                // We need to check CS (at rsp + 16 + 8).
+                // trap_num (8) + error_code (8) + rip (8) + cs (8).
+                // Offset to CS from current RSP = 24.
                 
-                "mov rcx, [rsp]",      // Load User RIP
-                "mov r11, [rsp + 16]", // Load User RFLAGS
-                "mov rsp, [rsp + 8]",  // Load User RSP (Switches stack!)
+                "cmp qword ptr [rsp+24], 0x8", // Check CS against Kernel Code Selector
+                "je 2f", 
                 
-                "swapgs",              // Switch to user GS
-                "sysretq",             // Jump to user mode
+                // Returning to User
+                "swapgs",
                 
-                tf = in(reg) context,
+                "2:",
+                // Skip trap_num and error_code to point to RIP
+                "add rsp, 16", 
+                
+                "iretq",
+                
+                tf = in(reg) tf,
                 options(noreturn)
             );
         }
+    }
+
+    fn make_user_trapframe(&self, rip: u64, rsp: u64) -> Self::TrapFrame {
+        kernel::arch::x86_64::TrapFrame::new_user(rip, rsp)
     }
 }
 

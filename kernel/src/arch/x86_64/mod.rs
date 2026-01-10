@@ -1,5 +1,11 @@
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
+pub struct Context {
+    pub tf: TrapFrame,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(C)]
 pub struct TrapFrame {
     // General purpose registers
     pub r15: u64,

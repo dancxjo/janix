@@ -7,6 +7,7 @@ static mut IDT: Idt = Idt::new();
 
 unsafe extern "C" {
     fn timer_trampoline();
+    fn yield_handler();
     fn exception_0();
     fn exception_3();
     fn exception_6();
@@ -34,6 +35,9 @@ pub unsafe fn init() {
         
         idt.entries[13].set_handler(exception_13 as u64, KERNEL_CODE_SEL, 0x8E00);
         idt.entries[14].set_handler(exception_14 as u64, KERNEL_CODE_SEL, 0x8E00);
+
+        // Yield (0x81)
+        idt.entries[0x81].set_handler(yield_handler as u64, KERNEL_CODE_SEL, 0x8E00);
 
         lidt(idt);
         kernel::kinfo!("idt: loaded");

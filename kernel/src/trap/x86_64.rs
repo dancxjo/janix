@@ -22,15 +22,27 @@ pub struct TrapFrame {
     pub rbx: u64,
     pub rax: u64,
 
-    // User-mode "return" state (SYSRETQ expects these in specific regs/order if using stack)
-    // But for our manual SYSRETQ, we pop these off and load them into regs manually.
-    //
-    // On syscall entry:
-    // RCX = user RIP
-    // R11 = user RFLAGS
-    // RSP = user RSP (we save this manually)
-    
-    pub user_rip: u64,
-    pub user_rsp: u64,
-    pub user_rflags: u64,
+    // Pushed by ISR stub
+    pub trap_num: u64,
+    pub error_code: u64,
+
+    // Pushed by CPU
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+}
+
+impl TrapFrame {
+    pub fn new_user(entry: usize, stack_top: usize) -> Self {
+        Self {
+            rip: entry as u64,
+            cs: 0x23, // User Code (Ring 3) | RPL 3
+            rflags: 0x202, // IF | Reserved
+            rsp: stack_top as u64,
+            ss: 0x1B, // User Data (Ring 3) | RPL 3
+            ..Default::default()
+        }
+    }
 }

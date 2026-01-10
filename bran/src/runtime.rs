@@ -164,7 +164,12 @@ impl LimineRuntimeData {
 
 // --- Architecture Contract ---
 
-pub trait ArchRuntime {
+// --- Architecture Contract ---
+
+pub trait ArchRuntime: Sync {
+    type Context: Default + 'static;
+    type TrapFrame: 'static;
+
     fn putchar(&self, c: u8);
     fn halt(&self) -> !;
     fn mono_ticks(&self) -> u64;
@@ -208,20 +213,26 @@ pub trait ArchRuntime {
     fn tlb_flush_all(&self) {}
     
     // Task Context
-    fn context_init(
+    fn init_task_context(
         &self, 
+        _out: &mut Self::Context,
         _kstack_top: u64, 
         _entry: extern "C" fn(usize) -> !, 
         _arg: usize
-    ) -> usize { 0 }
+    ) {}
 
-    unsafe fn context_switch(&self, _old_handle_ptr: *mut usize, _new_handle: usize) {}
+    fn save_from_trap(&self, _tf: &Self::TrapFrame, _out: &mut Self::Context) {}
+    fn load_into_trap(&self, _ctx: &Self::Context, _tf: &mut Self::TrapFrame) {}
+
+    unsafe fn return_from_trap(&self, _tf: *const Self::TrapFrame) -> ! { loop {} }
+    
+    fn make_user_trapframe(&self, _rip: u64, _rsp: u64) -> Self::TrapFrame {
+         panic!("make_user_trapframe not implemented");
+    }
 
     // Syscall / Context (Restored)
     fn register_syscall_handler(&self, _entry: u64) {}
     fn set_kernel_stack(&self, _stack_top: u64) {}
-
-    unsafe fn enter_user_mode(&self, _context: &kernel::arch::TrapFrame) -> ! { loop {} }
 }
 
 // --- Generic Runtime ---
@@ -240,7 +251,7 @@ impl<A: ArchRuntime> Runtime<A> {
     }
 }
 
-impl<A: ArchRuntime> BootRuntime for Runtime<A> {
+impl<A: ArchRuntime> BootRuntime<A::Context, A::TrapFrame> for Runtime<A> {
     fn putchar(&self, c: u8) { self.arch.putchar(c) }
     fn halt(&self) -> ! { self.arch.halt() }
 
@@ -262,10 +273,35 @@ impl<A: ArchRuntime> BootRuntime for Runtime<A> {
 
     fn register_syscall_handler(&self, entry: u64) { self.arch.register_syscall_handler(entry) }
     fn set_kernel_stack(&self, stack_top: u64) { self.arch.set_kernel_stack(stack_top) }
-    unsafe fn enter_user_mode(&self, context: &kernel::arch::TrapFrame) -> ! { unsafe { self.arch.enter_user_mode(context) } }
+    
+    fn init_task_context(
+        &self, 
+        out: &mut A::Context,
+        kstack_top: u64, 
+        entry: extern "C" fn(usize) -> !, 
+        arg: usize
+    ) {
+        self.arch.init_task_context(out, kstack_top, entry, arg)
+    }
+
+    fn save_from_trap(&self, tf: &A::TrapFrame, out: &mut A::Context) {
+        self.arch.save_from_trap(tf, out)
+    }
+
+    fn load_into_trap(&self, ctx: &A::Context, tf: &mut A::TrapFrame) {
+        self.arch.load_into_trap(ctx, tf)
+    }
+
+    unsafe fn return_from_trap(&self, tf: *const A::TrapFrame) -> ! {
+        unsafe { self.arch.return_from_trap(tf) }
+    }
+
+    fn make_user_trapframe(&self, rip: u64, rsp: u64) -> A::TrapFrame {
+        self.arch.make_user_trapframe(rip, rsp)
+    }
 
     fn phys_memory_map(&self) -> &'static [PhysRange] { self.limine.phys_memory_map() }
-    fn phys_to_virt_offset(&self) -> u64 { self.limine.phys_to_virt_offset() } // Use Limine default if arch calls it
+    fn phys_to_virt_offset(&self) -> u64 { self.limine.phys_to_virt_offset() } 
     fn modules(&self) -> &'static [BootModuleDesc] { self.limine.modules() }
     fn framebuffer(&self) -> Option<FramebufferInfo> { self.limine.framebuffer() }
 
@@ -277,54 +313,6 @@ impl<A: ArchRuntime> BootRuntime for Runtime<A> {
     fn page_size(&self) -> usize { self.arch.page_size() }
     fn kernel_virt_base(&self) -> u64 { self.arch.kernel_virt_base() }
     
-    // Note: limine.phys_to_virt_offset() uses HHDM request.
-    // If arch overrides it (like x86_64 might want to?), we should trust arch?
-    // But Limine is the source of truth for HHDM.
-    // However, x86_64 might store it differently.
-    // x86_64 `phys_to_virt_offset` impl called `paging::phys_to_virt_offset()`.
-    // My previous `x86_64/runtime.rs` implemented it.
-    // If I want `BootRuntime` to call `self.arch`, I need to expose it in `ArchRuntime`.
-    // Currently `BootRuntime` impl here calling `self.limine.phys_to_virt_offset()`.
-    // I should change it to `self.arch.phys_to_virt_offset()` AND provide default in `ArchRuntime` that calls limine? No, circular.
-    // Best: `ArchRuntime` can provide it.
-    // x86_64 provides it. Other arches use default?
-    // I added `phys_to_virt_offset` to `ArchRuntime` above (start of replacement).
-    // So here I should use `self.arch.phys_to_virt_offset()`.
-    // Wait, the `x86_64` implementation I wrote in `paging.rs` returns `HHDM_OFFSET`.
-    // `HHDM_OFFSET` is set by `paging::init`.
-    // Who calls `paging::init`?
-    // Originally `kernel`. Now `kernel` does NOT call it.
-    // So `HHDM_OFFSET` in `bran/src/arch/x86_64/paging.rs` is 0 by default.
-    // WE HAVE A PROBLEM.
-    // `kernel` used to call `paging::init(offset)`.
-    // Now usage is: `runtime().phys_to_virt_offset()`.
-    // `LimineRuntimeData` gets it from `HHDM_REQUEST`.
-    // So `bran` knows it.
-    // `x86_64` paging implementation uses `HHDM_OFFSET` static.
-    // Using `phys_to_virt` helper inside `paging.rs`.
-    // So `paging.rs` needs `init` to be called with the offset.
-    // `X86_64Runtime::new()` should verify/init it?
-    // `X86_64Runtime::new()` is const.
-    // But `HHDM_REQUEST` is available.
-    // Maybe `X86_64Runtime` (or `bran/src/main.rs`) should call `paging::init` early?
-    // `bran/src/main.rs` calls `kernel::start(&RUNTIME)`.
-    // Before that, we should ensure `paging` is initialized.
-    // But `Runtime` construction is const static. `MODULES` etc are lazy or static.
-    // `phys_to_virt_offset` in `limine` data is also lazy (calls `get_response`).
-    // So I can make `paging::init` part of `X86_64Runtime` laziness?
-    // Or just make `x86_64::paging` use `HHDM_REQUEST` directly instead of a static `HHDM_OFFSET`.
-    // Yes! `bran` has access to requests.
-    // `bran/src/requests.rs` has `HHDM_REQUEST`.
-    // So `bran/src/arch/x86_64/paging.rs` should use `crate::requests::HHDM_REQUEST.get_response()...` directly.
-    // I need to update `paging.rs` to do that. And then I don't need `init` and don't need `HHDM_OFFSET` static.
-    
-    // So back to `bran/src/runtime.rs`:
-    // `fn phys_to_virt_offset(&self) -> u64 { self.arch.phys_to_virt_offset() }`
-    // `ArchRuntime` default: `0`.
-    // `x86_64` impl: `paging::phys_to_virt_offset()`.
-    // `paging::phys_to_virt_offset` currently reads static. I will update it.
-    
-    // Delegation:
     fn map_page(&self, h: usize, v: u64, p: u64, f: u64) -> Result<(), ()> { self.arch.map_page(h, v, p, f) }
     fn map_page_with_allocator(
         &self, 
@@ -343,11 +331,4 @@ impl<A: ArchRuntime> BootRuntime for Runtime<A> {
     fn current_address_space(&self) -> usize { self.arch.current_address_space() }
     fn tlb_flush_page(&self, v: u64) { self.arch.tlb_flush_page(v) }
     fn tlb_flush_all(&self) { self.arch.tlb_flush_all() }
-    
-    fn context_init(&self, k: u64, e: extern "C" fn(usize)->!, a: usize) -> usize {
-        self.arch.context_init(k, e, a)
-    }
-    unsafe fn context_switch(&self, o: *mut usize, n: usize) {
-        unsafe { self.arch.context_switch(o, n) }
-    }
 }

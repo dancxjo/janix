@@ -26,12 +26,12 @@ fn main() {
     eprintln!("[bdd] CARGO_MANIFEST_DIR: {}", env!("CARGO_MANIFEST_DIR"));
 
     // Build features path
-    // features are in docs/behavior relative to workspace root. 
-    // CARGO_MANIFEST_DIR is tools/bdd. So we need ../../docs/behavior
+    // features are in docs/behavior/features relative to workspace root. 
+    // CARGO_MANIFEST_DIR is tools/bdd. So we need ../../docs/behavior/features
     let features_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent().unwrap() // tools
         .parent().unwrap() // root
-        .join("docs/behavior");
+        .join("docs/behavior/features");
     let features_path = if let Some(f) = feature {
         features_dir.join(format!("{}.feature", f))
     } else {

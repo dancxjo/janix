@@ -64,14 +64,14 @@ where
                 eprintln!("╚══════════════════════════════════════════════════════════════╝\n");
             }
             Cucumber::Finished => {
-                // Generate final reports
+                // Report test completion
                 let collector = artifacts::global().lock().await;
-                if let Ok(readme_path) = collector.generate_arch_readme() {
-                    eprintln!("\n══════════════════════════════════════════════════════════════════");
-                    eprintln!("                    Test Run Complete");
-                    eprintln!("══════════════════════════════════════════════════════════════════");
-                    eprintln!("\n📄 Results: {}\n", readme_path.display());
-                }
+                let (passed, failed) = collector.count_scenarios();
+                eprintln!("\n══════════════════════════════════════════════════════════════════");
+                eprintln!("                    Test Run Complete");
+                eprintln!("══════════════════════════════════════════════════════════════════");
+                eprintln!("\n📊 Scenarios: {} passed, {} failed", passed, failed);
+                eprintln!("📁 Results: {}\n", collector.base_dir.display());
             }
             Cucumber::Feature(feature, feat_event) => {
                 match feat_event {

@@ -68,6 +68,6 @@ behave *args:
 bdd *args:
     @just behave {{args}}
 
-# Clear all BDD behavior reports
+# Clear all BDD behavior reports (preserves .feature files and top-level README)
 clear-behavior:
-    rm -rf docs/behavior
+    rm -rf docs/behavior/x86_64 docs/behavior/aarch64 docs/behavior/riscv64 docs/behavior/loongarch64

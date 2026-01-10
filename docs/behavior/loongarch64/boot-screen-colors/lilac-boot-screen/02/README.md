@@ -1,6 +1,6 @@
 # ✅ When I wait for the system to boot
 
-**Result:** passed | **Duration:** 9245ms
+**Result:** passed | **Duration:** 6582ms
 
 ## Screenshots
 
@@ -13,12 +13,12 @@
 
 CPU#0
  PC=0000000000000000  FCSR0 0x00000000
- GPR00: r0 0000000000000000 r1 ffffffff8000c294 r2 0000000000000000 r3 ffff8000ebcf7310
- GPR04: r4 0000000000000000 r5 ffffff8040000000 r6 000000000001e000 r7 0000000000000000
- GPR08: r8 ffffffff800248f8 r9 0000000000110000 r10 000000000000000b r11 0000000000002710
- GPR12: r12 000000000000147b r13 0000000000000064 r14 ffff8000ebcf70dc r15 000000000098967f
- GPR16: r16 0000000000015ddc r17 0000000000003436 r18 0000000000003539 r19 ffff8000ebcf70e8
- GPR20: r20 ffffffff80017110 r21 0000000000000000 r22 0000000000000000 r23 0000000000000000
+ GPR00: r0 0000000000000000 r1 ffffffff80006968 r2 0000000000000000 r3 ffff8000ebd87af0
+ GPR04: r4 0000000000000000 r5 ffffffffb0000000 r6 0000000000000050 r7 0000000000000000
+ GPR08: r8 0000000000000000 r9 0000000000000000 r10 000000000000000b r11 0000000000002710
+ GPR12: r12 000000000000147b r13 0000000000000064 r14 ffff8000ebd878dc r15 000000000098967f
+ GPR16: r16 0000000000011561 r17 0000000000003930 r18 0000000000003031 r19 ffff8000ebd878e8
+ GPR20: r20 ffffffff800100d0 r21 0000000000000000 r22 0000000000000000 r23 0000000000000000
  GPR24: r24 0000000000000000 r25 0000000000000000 r26 0000000000000000 r27 0000000000000000
  GPR28: r28 0000000000000000 r29 0000000000000000 r30 0000000000000000 r31 0000000000000000
 
@@ -26,18 +26,18 @@ CPU#0
  CSR004: ECFG   800              ESTAT  d0000            ERA    0                BADV   0               
  CSR008: BADI   0               
  CSR012: EENTRY 0               
- CSR016: TLBIDX c000000          TLBEHI ffffff8040000000 TLBELO0 0               TLBELO1 0              
- CSR024: ASID   a0000            PGDL   ebce7000         PGDH   ebce6000         PGD    0               
+ CSR016: TLBIDX c000000          TLBEHI ffffffffb0000000 TLBELO0 0               TLBELO1 0              
+ CSR024: ASID   a0000            PGDL   ebd77000         PGDH   ebd76000         PGD    0               
  CSR028: PWCL   13e4d52c         PWCH   267              STLBPS c                RVACFG 0               
  CSR032: CPUID  0                PRCFG1 72f8             PRCFG2 3ffff000         PRCFG3 8073f2          
- CSR048: SAVE0  f271760          SAVE1  1fe001e0         SAVE2  0                SAVE3  0               
+ CSR048: SAVE0  f271780          SAVE1  1fe001e0         SAVE2  0                SAVE3  0               
  CSR052: SAVE4  0                SAVE5  0                SAVE6  0                SAVE7  0               
  CSR064: TID    0                TCFG   0                TVAL   0                CNTC   0               
  CSR068: TICLR  0               
  CSR096: LLBCTL 0               
- CSR136: TLBRENTRY d0fc000       TLBRBADV ffffff8040000000 TLBRERA ffffffff80002470 TLBRSAVE 147b          
- CSR140: TLBRELO0 0              TLBRELO1 0              TLBREHI ff804000000c    TLBRPRMD 0             
- CSR384: DMW0   11               DMW1   9000000000000011 DMW2   0                DMW3   0               
+ CSR136: TLBRENTRY d0fc000       TLBRBADV ffffffffb0000000 TLBRERA ffffffff80005028 TLBRSAVE 147b          
+ CSR140: TLBRELO0 0              TLBRELO1 0              TLBREHI ffffb000000c    TLBRPRMD 0             
+ CSR384: DMW0   11               DMW1   0                DMW2   0                DMW3   0               
 
  f0 4040800000000000 f1 ffffffffffffffff f2 ffffffffffffffff f3 ffffffffffffffff
  f4 ffffffffffffffff f5 ffffffffffffffff f6 ffffffffffffffff f7 ffffffffffffffff
@@ -198,103 +198,21 @@ PROGRESS CODE: V03058001 I0
 BdsDxe: starting Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x3,0x0)
 [2J[01;01H[01;01H[2J[01;01H[01;01HPROGRESS CODE: V02010004 I0
 PROGRESS CODE: V03101019 I0
-[871639167] [INFO] System booted
-[872203300] [INFO] LoongArch paging init: DMW1 setup, HHDM override=0x9000000000000000
-[872461131] [INFO] Detected 4-level paging (PWCH=0x267)
-[872594106] [INFO] boot: phys ranges=64 modules=0
-[872798478] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[872838236] [INFO] Initializing Real Frame Allocator...
-[872992980] [INFO] frame_alloc: base=0x1000 frames=983029 words=15360
-[873017324] [INFO] Allocating bitmap of 15360 words...
-[873233315] [INFO] map_bootheap_page: virt=0xffffff8040000000 phys=0xb0000 levels=4
-[873556441] [INFO] PGDH=0xebce6000
-[873577668] [INFO] L3: idx=511 ptr=0x90000000ebce6000
-[873614664] [INFO] Reading table entry 0x90000000ebce6ff8
-[873636210] [INFO] Entry: 0xebce5000
-[873755063] [INFO] Reusing existing table at 0xebce5000
-[873780181] [INFO] L2: idx=1 ptr=0x90000000ebce5000
-[873797214] [INFO] Reading table entry 0x90000000ebce5008
-[873814864] [INFO] Entry: 0x0
-[873826145] [INFO] Allocating table...
-[873944347] [INFO] Allocated frame 0xb1000
-[874092577] [INFO] Reading table entry 0x90000000000b1000
-[874169963] [INFO] Entry: 0x0
-[874247565] [INFO] Allocating table...
-[874259018] [INFO] Allocated frame 0xb2000
-[874290556] [INFO] map_bootheap_page: virt=0xffffff8040001000 phys=0xb3000 levels=4
-[874318172] [INFO] PGDH=0xebce6000
-[874329464] [INFO] L3: idx=511 ptr=0x90000000ebce6000
-[874499943] [INFO] Reading table entry 0x90000000ebce6ff8
-[874653213] [INFO] Entry: 0xebce5000
-[874663781] [INFO] Reusing existing table at 0xebce5000
-[874679327] [INFO] L2: idx=1 ptr=0x90000000ebce5000
-[874693877] [INFO] Reading table entry 0x90000000ebce5008
-[874710003] [INFO] Entry: 0xb1001
-[874719746] [INFO] Reusing existing table at 0xb1001
-[874734624] [INFO] Reading table entry 0x90000000000b1000
-[874853291] [INFO] Entry: 0xb2001
-[874863804] [INFO] Reusing existing table at 0xb2001
-[874882587] [INFO] map_bootheap_page: virt=0xffffff8040002000 phys=0xb4000 levels=4
-[874909040] [INFO] PGDH=0xebce6000
-[874919839] [INFO] L3: idx=511 ptr=0x90000000ebce6000
-[874936119] [INFO] Reading table entry 0x90000000ebce6ff8
-[875254326] [INFO] Entry: 0xebce5000
-[875264943] [INFO] Reusing existing table at 0xebce5000
-[875280453] [INFO] L2: idx=1 ptr=0x90000000ebce5000
-[875294945] [INFO] Reading table entry 0x90000000ebce5008
-[875311190] [INFO] Entry: 0xb1001
-[875321126] [INFO] Reusing existing table at 0xb1001
-[875336106] [INFO] Reading table entry 0x90000000000b1000
-[875353836] [INFO] Entry: 0xb2001
-[875364196] [INFO] Reusing existing table at 0xb2001
-[875382821] [INFO] map_bootheap_page: virt=0xffffff8040003000 phys=0xb5000 levels=4
-[875409288] [INFO] PGDH=0xebce6000
-[875420101] [INFO] L3: idx=511 ptr=0x90000000ebce6000
-[875436098] [INFO] Reading table entry 0x90000000ebce6ff8
-[875577451] [INFO] Entry: 0xebce5000
-[875743139] [INFO] Reusing existing table at 0xebce5000
-[875759906] [INFO] L2: idx=1 ptr=0x90000000ebce5000
-[875775491] [INFO] Reading table entry 0x90000000ebce5008
-[875792745] [INFO] Entry: 0xb1001
-[875946151] [INFO] Reusing existing table at 0xb1001
-[875959425] [INFO] Reading table entry 0x90000000000b1000
-[875972402] [INFO] Entry: 0xb2001
-[875980467] [INFO] Reusing existing table at 0xb2001
-[875999223] [INFO] map_bootheap_page: virt=0xffffff8040004000 phys=0xb6000 levels=4
-[876024059] [INFO] PGDH=0xebce6000
-[876034099] [INFO] L3: idx=511 ptr=0x90000000ebce6000
-[876151555] [INFO] Reading table entry 0x90000000ebce6ff8
-[876168735] [INFO] Entry: 0xebce5000
-[876179783] [INFO] Reusing existing table at 0xebce5000
-[876196229] [INFO] L2: idx=1 ptr=0x90000000ebce5000
-[876211642] [INFO] Reading table entry 0x90000000ebce5008
-[876228626] [INFO] Entry: 0xb1001
-[876238791] [INFO] Reusing existing table at 0xb1001
-[876385514] [INFO] Reading table entry 0x90000000000b1000
-[876402721] [INFO] Entry: 0xb2001
-[876413035] [INFO] Reusing existing table at 0xb2001
-[876431447] [INFO] map_bootheap_page: virt=0xffffff8040005000 phys=0xb7000 levels=4
-[876558609] [INFO] PGDH=0xebce6000
-[876569050] [INFO] L3: idx=511 ptr=0x90000000ebce6000
-[876584573] [INFO] Reading table entry 0x90000000ebce6ff8
-[876600918] [INFO] Entry: 0xebce5000
-[876611615] [INFO] Reusing existing table at 0xebce5000
-[876627485] [INFO] L2: idx=1 ptr=0x90000000ebce5000
-[876761823] [INFO] Reading table entry 0x90000000ebce5008
-[876919768] [INFO] Entry: 0xb1001
-[876930164] [INFO] Reusing existing table at 0xb1001
-[877047197] [INFO] Reading table entry 0x90000000000b1000
-[877064084] [INFO] Entry: 0xb2001
-[877074067] [INFO] Reusing existing table at 0xb2001
-[877092030] [INFO] map_bootheap_page: virt=0xffffff8040006000 phys=0xb8000 levels=4
-[877117790] [INFO] PGDH=0xebce6000
-[877128367] [INFO] L3: idx=511 ptr=0x90000000ebce6000
-[877245812] [INFO] Reading table entry 0x90000000ebce6ff8
-[877263169] [INFO] Entry: 0xebce5000
-[877274207] [INFO] Reusing existing table at 0xebce5000
-[877290556] [INFO] L2: idx=1 ptr=0x90000000ebce5000
-[877305822] [INFO] Reading table entry 0x90000000ebce5008
-[877322713] [INFO] Entry: 0xb1001
+[687734269] [INFO] thing-os kernel v0.1.0 starting...
+[687939415] [INFO] Intent-Mechanism paging split active
+[687955289] [INFO] System booted
+[688064311] [INFO] Memory map has 64 entries
+[688115873] [INFO]   [0] 0x0 - 0x1000 (Reserved)
+[688138759] [INFO]   [1] 0x1000 - 0x10000 (Usable)
+[688153095] [INFO]   [2] 0x10000 - 0xb0000 (Reserved)
+[688167042] [INFO]   [3] 0xb0000 - 0xd0cc000 (Usable)
+[688180934] [INFO]   [4] 0xd0cc000 - 0xd110000 (Reserved)
+[688337315] [INFO]   [5] 0xd110000 - 0xd120000 (Other)
+[688477120] [INFO]   [6] 0xd120000 - 0xd148000 (Usable)
+[688617879] [INFO]   [7] 0xd148000 - 0xd348000 (Reserved)
+[688653196] [INFO]   [8] 0xd348000 - 0xd357000 (Usable)
+[688667774] [INFO]   [9] 0xd357000 - 0xd35c000 (Reserved)
+[688692353] [INFO] HHDM Offset: 0xffff800000000000
 
 ```
 </details>

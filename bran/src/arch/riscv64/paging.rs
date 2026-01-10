@@ -30,7 +30,7 @@ pub fn map_page(
     virt: u64,
     phys: u64,
     perms: MapPerms,
-    kind: MapKind,
+    _kind: MapKind,
     allocator: &dyn FrameAllocatorHook
 ) -> Result<(), ()> {
     let mut bits = 1u64; // Valid
@@ -38,17 +38,24 @@ pub fn map_page(
     if perms.write { bits |= 1 << 2; }
     if perms.exec { bits |= 1 << 3; }
     if perms.user { bits |= 1 << 4; }
-    bits |= (1 << 6) | (1 << 7); // Accessed + Dirty (for simplicity)
+    bits |= (1 << 6) | (1 << 7); // Accessed + Dirty
 
-    let root_phys = (aspace.0 & 0x0000_0FFF_FFFF_FFFF) << 12;
+    // SATP format: [63:60]=Mode, [59:44]=ASID, [43:0]=PPN
+    // PPN * 4096 = physical address of root page table
+    let root_phys = (aspace.0 & 0x00FF_FFFF_FFFF_FFFF) << 12;
     let l2 = (root_phys + unsafe { HHDM_OFFSET }) as *mut u64;
+    
+    // Sv39: 3-level, VPN[2] = bits[38:30], VPN[1] = bits[29:21], VPN[0] = bits[20:12]
     let l1 = ensure_table(l2, (virt >> 30) & 0x1ff, allocator)?;
     let l0 = ensure_table(l1, (virt >> 21) & 0x1ff, allocator)?;
     
     let pte_idx = (virt >> 12) & 0x1ff;
+    // PTE format: [53:10]=PPN, [9:0]=flags
     unsafe {
-        *l0.add(pte_idx as usize) = (phys >> 2) | bits;
+        *l0.add(pte_idx as usize) = ((phys >> 12) << 10) | bits;
     }
+    
+    tlb_flush_page(virt);
     Ok(())
 }
 
@@ -59,11 +66,14 @@ fn ensure_table(parent: *mut u64, index: u64, allocator: &dyn FrameAllocatorHook
         unsafe {
             let virt = phys + HHDM_OFFSET;
             core::ptr::write_bytes(virt as *mut u8, 0, 4096);
-            *parent.add(index as usize) = (phys >> 2) | 1;
+            // Non-leaf PTE: V=1, R=W=X=0, PPN set
+            *parent.add(index as usize) = ((phys >> 12) << 10) | 1;
         }
         Ok((phys + unsafe { HHDM_OFFSET }) as *mut u64)
     } else {
-        Ok((((entry >> 10) << 12) + unsafe { HHDM_OFFSET }) as *mut u64)
+        // Extract PPN from existing entry: bits [53:10]
+        let ppn = (entry >> 10) & 0x00FF_FFFF_FFFF_FFFF;
+        Ok(((ppn << 12) + unsafe { HHDM_OFFSET }) as *mut u64)
     }
 }
 

@@ -212,18 +212,28 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 }
 
 extern "C" fn thread_a(arg: usize) -> ! {
+    let mut count: usize = 0;
     loop {
-        let ticks = runtime_base().mono_ticks();
-        crate::kinfo!("Thread A (arg={}) ticks={}", arg, ticks);
+        // Only log the first few iterations to avoid flooding serial output
+        if count < 5 {
+            let ticks = runtime_base().mono_ticks();
+            crate::kinfo!("Thread A (arg={}) ticks={}", arg, ticks);
+        }
+        count = count.wrapping_add(1);
         for _ in 0..1000000 { core::hint::black_box(()); }
         unsafe { crate::task::scheduler::yield_now_current(); }
     }
 }
 
 extern "C" fn thread_b(arg: usize) -> ! {
+    let mut count: usize = 0;
     loop {
-        let ticks = runtime_base().mono_ticks();
-        crate::kinfo!("Thread B (arg={}) ticks={}", arg, ticks);
+        // Only log the first few iterations to avoid flooding serial output
+        if count < 5 {
+            let ticks = runtime_base().mono_ticks();
+            crate::kinfo!("Thread B (arg={}) ticks={}", arg, ticks);
+        }
+        count = count.wrapping_add(1);
         for _ in 0..1000000 { core::hint::black_box(()); }
         unsafe { crate::task::scheduler::yield_now_current(); }
     }

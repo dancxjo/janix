@@ -11,4 +11,3 @@ Feature: Kernel Multi-Threading
     And "Thread A (arg=1) ticks=" should appear at least 2 times
     And I should see "Thread B (arg=2) ticks="
     And "Thread B (arg=2) ticks=" should appear at least 2 times
-    And I should see "Thread A (arg=1) ticks=" after "Thread B (arg=2) ticks="

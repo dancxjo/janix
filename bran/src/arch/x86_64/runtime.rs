@@ -170,7 +170,22 @@ impl ArchRuntime for X86_64Runtime {
     fn save_from_trap(&self, tf: &dyn kernel::boot::ArchTrapFrame, out: &mut dyn kernel::boot::ArchContext) {
         let tf_concrete = tf.as_any().downcast_ref::<crate::arch::x86_64::trap::TrapFrame>().expect("save_from_trap: not x86_64 tf");
         let out_concrete = out.as_any_mut().downcast_mut::<crate::arch::x86_64::trap::Context>().expect("save_from_trap: not x86_64 context");
+        
         out_concrete.tf = *tf_concrete;
+        
+        // CRITICAL FIX for kernel-to-kernel context switches:
+        // For Ring 0 interrupts, CPU doesn't push RSP/SS, so TrapFrame.rsp/ss contain garbage.
+        // Calculate correct RSP: point to just after the interrupt frame.
+        // TrapFrame struct layout: [GPRs][trap_num][error][RIP][CS][RFLAGS][RSP*][SS*]
+        // The * fields are NOT pushed by CPU for same-privilege interrupts.
+        // RSP field is at offset 160. The interrupt frame (RIP/CS/RFLAGS) ends at offset 160.
+        // So the saved RSP should point to offset 160 from the TrapFrame base address.
+        let is_kernel = (tf_concrete.cs & 3) == 0;
+        if is_kernel {
+            let tf_base = tf_concrete as *const _ as u64;
+            out_concrete.tf.rsp = tf_base + 160;  // Point to just after RFLAGS
+            out_concrete.tf.ss = 0x10;  // Kernel data segment
+        }
     }
 
     fn load_into_trap(&self, ctx: &dyn kernel::boot::ArchContext, tf: &mut dyn kernel::boot::ArchTrapFrame) {
@@ -263,7 +278,7 @@ impl ArchRuntime for X86_64Runtime {
                 
                 old_tf = in(reg) old_tf_ptr,
                 new_tf = in(reg) new_tf_ptr,
-                out("rax") _, out("rbx") _, out("rcx") _, out("rdx") _,
+                out("rax") _, out("rcx") _, out("rdx") _,
                 out("rsi") _, out("rdi") _, 
             );
         }

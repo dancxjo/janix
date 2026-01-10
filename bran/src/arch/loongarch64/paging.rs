@@ -81,8 +81,8 @@ fn flags_to_pte(flags: PageFlags) -> u64 {
     hw
 }
 
-// Assuming 4-level paging (Sv48) as address 0xFFFFFF80... requires it.
-const LEVELS: usize = 4;
+// Assuming 3-level paging (Sv39) which is standard for LoongArch64 with < 1TB RAM typical configs.
+const LEVELS: usize = 3;
 
 pub fn map_page(virt: u64, phys: PhysFrame, flags: PageFlags) -> Result<(), ()> {
     let root_phys = get_pgd();
@@ -91,8 +91,7 @@ pub fn map_page(virt: u64, phys: PhysFrame, flags: PageFlags) -> Result<(), ()> 
     let vpn = [
         (virt >> 12) & 0x1FF,
         (virt >> 21) & 0x1FF,
-        (virt >> 30) & 0x1FF,
-        (virt >> 39) & 0x1FF, 
+        (virt >> 30) & 0x1FF, 
     ];
 
     let mut table_phys = root_phys;
@@ -121,7 +120,6 @@ pub fn unmap_page(virt: u64) -> Result<Option<PhysFrame>, ()> {
         (virt >> 12) & 0x1FF,
         (virt >> 21) & 0x1FF,
         (virt >> 30) & 0x1FF, 
-        (virt >> 39) & 0x1FF,
     ];
 
     let mut table_phys = root_phys;
@@ -158,7 +156,6 @@ pub fn translate(virt: u64) -> Option<PhysFrame> {
         (virt >> 12) & 0x1FF,
         (virt >> 21) & 0x1FF,
         (virt >> 30) & 0x1FF, 
-        (virt >> 39) & 0x1FF,
     ];
 
     let mut table_phys = root_phys;
@@ -190,7 +187,6 @@ pub fn map_bootheap_page(virt: u64, phys: u64, allocator: &mut BootFrameAllocato
         (virt >> 12) & 0x1FF,
         (virt >> 21) & 0x1FF,
         (virt >> 30) & 0x1FF, 
-        (virt >> 39) & 0x1FF,
     ];
 
     let mut table_phys = root_phys;

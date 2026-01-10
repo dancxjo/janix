@@ -4,7 +4,7 @@ use crate::memory::boot_frame_alloc::BootFrameAllocator;
 use crate::kinfo;
 
 // 16 MiB boot heap
-pub const BOOTHEAP_VIRT_BASE: u64 = 0xFFFFFF80_40000000; 
+pub const BOOTHEAP_VIRT_BASE: u64 = 0xFFFFFFE0_40000000; 
 pub const BOOTHEAP_SIZE: usize = 16 * 1024 * 1024; 
 
 pub struct BootHeap {

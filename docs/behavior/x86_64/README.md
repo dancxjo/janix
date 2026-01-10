@@ -1,15 +1,15 @@
 # BDD Test Results - x86_64
 
-> Last run: 2026-01-09 12:06:28
+> Last run: 2026-01-10 11:17:34
 
 ## Summary
 
 | Metric | Passed | Failed |
 |--------|--------|--------|
-| Features | 1 | 0 |
-| Scenarios | 3 | 0 |
-| Steps | 12 | 0 (0 skipped) |
+| Features | 0 | 1 |
+| Scenarios | 0 | 1 |
+| Steps | 7 | 1 (0 skipped) |
 
 ## Features
 
-- ✅ [Kernel Heap](./kernel-heap/)
+- ❌ [Kernel Multi-Threading](./kernel-multi-threading/)

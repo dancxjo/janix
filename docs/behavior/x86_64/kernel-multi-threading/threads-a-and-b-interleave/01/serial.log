@@ -1,11 +1,17 @@
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[12810412494] [INFO] System booted
-[12822098454] [INFO] boot: phys ranges=35 modules=0
-[12824440035] [INFO] BootHeap initialized. Range: 0xffffff8040000000 - 0xffffff8041000000
-[12827331462] [INFO] Initializing Real Frame Allocator...
-[12829223880] [INFO] frame_alloc: base=0x0 frames=516638 words=8073
-[12832832925] [INFO] Allocating bitmap of 8073 words...
-[12840003825] [INFO] Bitmap allocated at 0xffffff8040000000
-[12843869742] [INFO] Zeroing bitmap...
-[12849820434] [INFO] Bitmap zeroed.
+[2J[01;01H[01;01H[2J[01;01H[01;01H[13573239240] [INFO] thing-os kernel v0.1.0 starting...
+[13584674367] [INFO] Intent-Mechanism paging split active
+[13585698027] [INFO] System booted
+[13590285687] [INFO] Memory map has 35 entries
+[13595782761] [INFO]   [0] 0x0 - 0xa0000 (Usable)
+[13597893210] [INFO]   [1] 0x100000 - 0x800000 (Usable)
+[13598311188] [INFO]   [2] 0x800000 - 0x808000 (Other)
+[13598762562] [INFO]   [3] 0x808000 - 0x80b000 (Usable)
+[13599178098] [INFO]   [4] 0x80b000 - 0x80c000 (Other)
+[13599612576] [INFO]   [5] 0x80c000 - 0x811000 (Usable)
+[13600031544] [INFO]   [6] 0x811000 - 0x900000 (Other)
+[13600445298] [INFO]   [7] 0x900000 - 0x1780000 (Reserved)
+[13600913403] [INFO]   [8] 0x1780000 - 0x79fa6000 (Usable)
+[13601352006] [INFO]   [9] 0x79fa6000 - 0x7a16c000 (Reserved)
+[13602095793] [INFO] HHDM Offset: 0xffff800000000000

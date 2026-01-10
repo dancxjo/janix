@@ -1,8 +1,10 @@
-use crate::arch::imp::task::ArchContext;
-use crate::simd::SimdState;
-
 pub mod scheduler;
+
 pub use scheduler::Scheduler;
+
+use crate::simd::SimdState;
+use crate::BootRuntime;
+use crate::BootTasking;
 
 pub type TaskId = u64;
 
@@ -14,7 +16,7 @@ pub enum TaskState {
     Dead,
 }
 
-pub struct Task {
+pub struct Task<R: BootRuntime> {
     pub id: TaskId,
     pub state: TaskState,
 
@@ -22,70 +24,31 @@ pub struct Task {
     pub kstack_size: usize,
     pub kstack_top: u64,
 
-    pub ctx: ArchContext,
+    pub ctx: <R::Tasking as BootTasking>::Context,
+    pub aspace: <R::Tasking as BootTasking>::AddressSpace,
 
     pub simd: SimdState,
 }
 
-// Global scheduler instance
-static mut SCHEDULER: Option<Scheduler> = None;
-
-pub fn init() {
-    unsafe {
-        let ptr = core::ptr::addr_of_mut!(SCHEDULER);
-        if (*ptr).is_none() {
-            // Create the boot task (Task 0)
-            let mut sched = Scheduler::new();
-            sched.init_boot_task();
-            *ptr = Some(sched);
-        }
-    }
+pub fn init<R: BootRuntime>() {
+    scheduler::init::<R>();
 }
 
-pub fn spawn(entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
-    let rt = crate::runtime();
-    let irq_state = rt.irq_disable();
-    let res = unsafe {
-        let ptr = core::ptr::addr_of_mut!(SCHEDULER);
-        if let Some(sched) = (*ptr).as_mut() {
-            sched.spawn(entry, arg)
-        } else {
-            // Panic with interrupts disabled is fine, panic handler handles it
-            panic!("Scheduler not initialized");
-        }
-    };
-    rt.irq_restore(irq_state);
-    res
+pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
+    scheduler::spawn::<R>(entry, arg)
 }
 
-pub fn yield_now() {
-    let rt = crate::runtime();
-    let irq_state = rt.irq_disable();
-    unsafe {
-        let ptr = core::ptr::addr_of_mut!(SCHEDULER);
-        if let Some(sched) = (*ptr).as_mut() {
-            sched.yield_now();
-        }
-    }
-    rt.irq_restore(irq_state);
+pub fn yield_now<R: BootRuntime>() {
+    scheduler::yield_now::<R>();
 }
 
-// For diagnostics
-pub fn dump_stats() {
-    unsafe {
-        let ptr = core::ptr::addr_of_mut!(SCHEDULER);
-        if let Some(sched) = (*ptr).as_ref() {
-            crate::kinfo!("Sched: tasks={} current={:?}", sched.task_count(), sched.current_id());
-        }
-    }
+pub fn dump_stats<R: BootRuntime>() {
+    scheduler::dump_stats::<R>();
 }
 
-pub fn run_scheduler() -> ! {
+pub fn run_scheduler<R: BootRuntime>() -> ! {
     loop {
-        yield_now();
-        // Simple busy wait or wfi hint could go here to save power,
-        // but for now just busy loop + yield.
-        // We can't use runtime().halt() because that kills the machine.
-        core::hint::spin_loop(); 
+        yield_now::<R>();
+        core::hint::spin_loop();
     }
 }

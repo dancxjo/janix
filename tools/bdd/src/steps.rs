@@ -209,16 +209,29 @@ async fn check_occurrence_count(world: &mut ThingOsWorld, pattern: String, count
 
 #[then(regex = r#"^I should see "(.+)" after "(.+)"$"#)]
 async fn check_ordering(world: &mut ThingOsWorld, second: String, first: String) {
+    // Wait a bit to ensure we have enough log data showing interleaving
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    
     let log = world.get_serial_log().await;
-    let first_pos = log.lines().position(|l| l.contains(&first));
+    let lines: Vec<&str> = log.lines().collect();
+    
+    // Find the FIRST occurrence of 'first'
+    let first_pos = lines.iter().position(|l| l.contains(&first));
 
     if first_pos.is_none() {
         panic!("Could not find '{}'", first);
     }
     let first_idx = first_pos.unwrap();
 
-    let remainder = log.lines().skip(first_idx + 1);
-    if !remainder.into_iter().any(|l| l.contains(&second)) {
+    // Check if 'second' appears ANYWHERE after that first occurrence
+    let found_after = lines.iter().skip(first_idx + 1).any(|l| l.contains(&second));
+    
+    if !found_after {
+        eprintln!("\n=== Serial Log (last 50 lines) ===");
+        for line in lines.iter().rev().take(50).rev() {
+            eprintln!("{}", line);
+        }
+        eprintln!("=== End Serial Log ===\n");
         panic!("Did not find '{}' after '{}'", second, first);
     }
 }

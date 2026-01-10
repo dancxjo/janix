@@ -1,19 +1,14 @@
 use core::arch::asm;
-use kernel::IrqState;
+use kernel::{IrqState, UserTaskSpec, FrameAllocatorHook, MapPerms, MapKind};
 use kernel::time::MonotonicClamp;
 use crate::runtime::ArchRuntime;
 
-mod simd;
+pub mod simd;
+pub mod task;
+pub mod paging;
 
-/// The architecture-specific runtime for aarch64.
 pub struct AArch64Runtime {
     serial: SerialPort,
-}
-
-pub type Runtime = crate::runtime::Runtime<AArch64Runtime>;
-
-pub const fn create_runtime() -> Runtime {
-    Runtime::new(AArch64Runtime::new())
 }
 
 impl AArch64Runtime {
@@ -24,7 +19,14 @@ impl AArch64Runtime {
     }
 }
 
+pub use task::AArch64Context;
+pub use paging::AArch64AddressSpace;
+
 impl ArchRuntime for AArch64Runtime {
+    type Context = AArch64Context;
+    type AddressSpace = AArch64AddressSpace;
+
+    fn init(&self, hhdm_offset: u64) { paging::init(hhdm_offset); }
     fn putchar(&self, c: u8) {
         self.serial.putchar(c);
     }
@@ -43,42 +45,27 @@ impl ArchRuntime for AArch64Runtime {
     }
 
     fn irq_disable(&self) -> IrqState {
-        // AArch64: Mask DAIF
         let daif: u64;
         unsafe {
             asm!("mrs {}, daif", out(reg) daif, options(nomem, nostack));
-            asm!("msr daifset, #2", options(nomem, nostack)); // Mask IRQ (bit 1)
+            asm!("msr daifset, #2", options(nomem, nostack)); 
         }
-        // Extract original I bit (bit 7 of DAIF)
         IrqState(((daif >> 7) & 1) as usize)
     }
 
     fn irq_restore(&self, state: IrqState) {
         if state.0 == 0 {
-             unsafe { asm!("msr daifclr, #2", options(nomem, nostack)); } // Unmask if it was 0
+             unsafe { asm!("msr daifclr, #2", options(nomem, nostack)); }
         } else {
-             unsafe { asm!("msr daifset, #2", options(nomem, nostack)); } // Mask if it was 1
+             unsafe { asm!("msr daifset, #2", options(nomem, nostack)); }
         }
     }
     
-    // SIMD
-    fn simd_init_cpu(&self) {
-        simd::init_cpu();
-    }
-
-    fn simd_state_layout(&self) -> (usize, usize) {
-        simd::STATE_LAYOUT
-    }
-
-    unsafe fn simd_save(&self, dst: *mut u8) {
-        unsafe { simd::save(dst) };
-    }
-
-    unsafe fn simd_restore(&self, src: *const u8) {
-        unsafe { simd::restore(src) };
-    }
+    fn simd_init_cpu(&self) { simd::init_cpu(); }
+    fn simd_state_layout(&self) -> (usize, usize) { simd::STATE_LAYOUT }
+    unsafe fn simd_save(&self, dst: *mut u8) { unsafe { simd::save(dst) } }
+    unsafe fn simd_restore(&self, src: *const u8) { unsafe { simd::restore(src) } }
     
-    // Barriers
     fn fence_full(&self) {
          unsafe { asm!("dmb sy", options(nostack, preserves_flags)); }
     }
@@ -90,10 +77,57 @@ impl ArchRuntime for AArch64Runtime {
              asm!("isb", options(nostack, preserves_flags));
          }
     }
+
+    fn threads_supported(&self) -> bool { true }
+
+    // Tasking
+    fn init_kernel_context(&self, entry: extern "C" fn(usize) -> !, stack_top: u64, arg: usize) -> Self::Context {
+        task::init_kernel_context(entry, stack_top, arg)
+    }
+
+    fn init_user_context(&self, spec: UserTaskSpec<Self::AddressSpace>, kstack_top: u64) -> Self::Context {
+        task::init_user_context(spec, kstack_top)
+    }
+
+    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
+        unsafe { task::switch(from, to) }
+    }
+
+    // Paging
+    fn make_user_address_space(&self) -> Self::AddressSpace {
+        paging::make_user_address_space(self.active_address_space(), &DumbKernelAlloc)
+    }
+
+    fn active_address_space(&self) -> Self::AddressSpace {
+        paging::active_address_space()
+    }
+    
+    fn activate_address_space(&self, aspace: Self::AddressSpace) {
+        unsafe { asm!("msr ttbr0_el1, {}", in(reg) aspace.0, options(nomem, nostack)); }
+    }
+
+    fn map_page(&self, aspace: Self::AddressSpace, virt: u64, phys: u64, perms: MapPerms, kind: MapKind, allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
+        paging::map_page(aspace, virt, phys, perms, kind, allocator)
+    }
+
+    fn unmap_page(&self, aspace: Self::AddressSpace, virt: u64) -> Result<Option<u64>, ()> {
+        paging::unmap_page(aspace, virt)
+    }
+
+    fn translate(&self, aspace: Self::AddressSpace, virt: u64) -> Option<u64> {
+        paging::translate(aspace, virt)
+    }
+
+    fn tlb_flush_page(&self, virt: u64) {
+        paging::tlb_flush_page(virt)
+    }
 }
 
-/// Serial port implementation for aarch64 using Semihosting.
-/// (PL011 MMIO requires identity mapping of 0x09000000 which may be missing)
+struct DumbKernelAlloc;
+impl FrameAllocatorHook for DumbKernelAlloc {
+    fn alloc_frame(&self) -> Option<u64> { None }
+}
+
 pub struct SerialPort {
     pub clamp: MonotonicClamp,
 }
@@ -105,12 +139,10 @@ impl SerialPort {
         }
     }
 
+    fn init(&self, hhdm_offset: u64) { paging::init(hhdm_offset); }
     fn putchar(&self, c: u8) {
         let ch = c;
         unsafe {
-            // Semihosting call: SYS_WRITEC (0x03)
-            // W0 = Operation 0x03
-            // X1 = Pointer to character
             asm!(
                 "hlt #0xF000",
                 in("w0") 0x03,
@@ -121,29 +153,22 @@ impl SerialPort {
     }
 }
 
-/// Halt and catch fire - enters an infinite wait-for-interrupt loop.
 pub fn hcf() -> ! {
     loop {
-        unsafe { asm!("wfi") };
+        unsafe { asm!("wfi", options(nomem, nostack)); }
     }
 }
 
-/// Read the virtual counter frequency (CNTFRQ_EL0)
 #[inline]
 fn read_cntfrq_el0() -> u64 {
     let val: u64;
-    unsafe {
-        asm!("mrs {}, cntfrq_el0", out(reg) val, options(nomem, nostack));
-    }
+    unsafe { asm!("mrs {}, cntfrq_el0", out(reg) val, options(nomem, nostack)); }
     val
 }
 
-/// Read the virtual counter count (CNTVCT_EL0)
 #[inline]
 fn read_cntvct_el0() -> u64 {
     let val: u64;
-    unsafe {
-        asm!("mrs {}, cntvct_el0", out(reg) val, options(nomem, nostack));
-    }
+    unsafe { asm!("mrs {}, cntvct_el0", out(reg) val, options(nomem, nostack)); }
     val
 }

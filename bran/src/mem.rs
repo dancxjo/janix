@@ -14,14 +14,12 @@ pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut
 pub unsafe extern "C" fn memmove(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     unsafe {
         if src < dest as *const u8 {
-            // copy backward
             let mut i = n;
             while i > 0 {
                 i -= 1;
                 *dest.add(i) = *src.add(i);
             }
         } else {
-            // copy forward
             let mut i = 0;
             while i < n {
                 *dest.add(i) = *src.add(i);
@@ -44,33 +42,40 @@ pub unsafe extern "C" fn memset(dest: *mut u8, c: i32, n: usize) -> *mut u8 {
     }
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
-    unsafe {
-        let mut i = 0;
-        while i < n {
-            let a = *s1.add(i);
-            let b = *s2.add(i);
-            if a != b {
-                return a as i32 - b as i32;
+pub fn memory_map() -> &'static [kernel::PhysRange] {
+    use kernel::{PhysRange, PhysRangeKind};
+    use crate::requests::MEMORY_MAP_REQUEST;
+    
+    if let Some(resp) = MEMORY_MAP_REQUEST.get_response() {
+        static mut RANGES: [PhysRange; 64] = [PhysRange { 
+            start: 0, 
+            end: 0, 
+            kind: PhysRangeKind::Other 
+        }; 64];
+        static mut COUNT: usize = 0;
+        
+        unsafe {
+            if COUNT == 0 {
+                for (i, entry) in resp.entries().into_iter().enumerate() {
+                    if i >= 64 { break; }
+                    RANGES[i] = PhysRange {
+                        start: entry.base,
+                        end: entry.base + entry.length,
+                        kind: match entry.entry_type {
+                            limine::memory_map::EntryType::USABLE => PhysRangeKind::Usable,
+                            limine::memory_map::EntryType::RESERVED => PhysRangeKind::Reserved,
+                            limine::memory_map::EntryType::ACPI_RECLAIMABLE => PhysRangeKind::Acpi,
+                            limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE => PhysRangeKind::Reserved,
+                            limine::memory_map::EntryType::FRAMEBUFFER => PhysRangeKind::Framebuffer,
+                            _ => PhysRangeKind::Other,
+                        },
+                    };
+                    COUNT += 1;
+                }
             }
-            i += 1;
+            &RANGES[..COUNT]
         }
-        0
+    } else {
+        &[]
     }
 }
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn strlen(mut s: *const u8) -> usize {
-    unsafe {
-        let mut count = 0;
-        while *s != 0 {
-            count += 1;
-            s = s.add(1);
-        }
-        count
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_eh_personality() {}

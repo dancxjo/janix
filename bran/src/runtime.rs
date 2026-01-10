@@ -1,170 +1,14 @@
-use kernel::{BootRuntime, PhysRange, PhysRangeKind, BootModuleDesc, BootModuleKind, FramebufferInfo, PixelFormat, IrqState};
-use crate::requests::{MEMORY_MAP_REQUEST, HHDM_REQUEST, MODULE_REQUEST, FRAMEBUFFER_REQUEST};
-
-// --- Shared Limine Data ---
-
-static mut MEMORY_MAP_CACHE: [PhysRange; 128] = [PhysRange { start: 0, end: 0, kind: PhysRangeKind::Other }; 128];
-static mut MEMORY_MAP_LEN: usize = 0;
-static mut MEMORY_MAP_INIT: bool = false;
-
-static mut MODULES_CACHE: [BootModuleDesc; 32] = [BootModuleDesc {
-    name: "",
-    bytes: &[],
-    phys_start: 0,
-    phys_end: 0,
-    kind: BootModuleKind::Unknown,
-}; 32];
-static mut MODULES_LEN: usize = 0;
-static mut MODULES_INIT: bool = false;
-
-pub struct LimineRuntimeData;
-
-impl LimineRuntimeData {
-    pub const fn new() -> Self { Self }
-
-    fn init_memory_map(&self) {
-        unsafe {
-            if *core::ptr::addr_of!(MEMORY_MAP_INIT) {
-                return;
-            }
-            
-            if let Some(resp) = MEMORY_MAP_REQUEST.get_response() {
-                let mut idx = 0;
-                let cache_ptr = core::ptr::addr_of_mut!(MEMORY_MAP_CACHE);
-                let capacity = 128; 
-
-                for entry in resp.entries() {
-                    if idx >= capacity {
-                        break;
-                    }
-
-                    let kind = match entry.entry_type {
-                        limine::memory_map::EntryType::USABLE => PhysRangeKind::Usable,
-                        limine::memory_map::EntryType::RESERVED => PhysRangeKind::Reserved,
-                        limine::memory_map::EntryType::ACPI_RECLAIMABLE => PhysRangeKind::Acpi,
-                        limine::memory_map::EntryType::ACPI_NVS => PhysRangeKind::Acpi,
-                        limine::memory_map::EntryType::BAD_MEMORY => PhysRangeKind::Other,
-                        limine::memory_map::EntryType::BOOTLOADER_RECLAIMABLE => PhysRangeKind::Reserved, 
-                        limine::memory_map::EntryType::EXECUTABLE_AND_MODULES => PhysRangeKind::KernelImage,
-                        limine::memory_map::EntryType::FRAMEBUFFER => PhysRangeKind::Framebuffer,
-                        _ => PhysRangeKind::Other,
-                    };
-
-                    (*cache_ptr)[idx] = PhysRange {
-                        start: entry.base,
-                        end: entry.base + entry.length,
-                        kind,
-                    };
-                    idx += 1;
-                }
-                *core::ptr::addr_of_mut!(MEMORY_MAP_LEN) = idx;
-            }
-
-            *core::ptr::addr_of_mut!(MEMORY_MAP_INIT) = true;
-        }
-    }
-
-    pub fn phys_memory_map(&self) -> &'static [PhysRange] {
-        self.init_memory_map();
-        unsafe {
-            let ptr = core::ptr::addr_of!(MEMORY_MAP_CACHE);
-            let len = *core::ptr::addr_of!(MEMORY_MAP_LEN);
-            let slice_ptr = ptr as *const PhysRange;
-            core::slice::from_raw_parts(slice_ptr, len)
-        }
-    }
-
-    fn init_modules(&self) {
-        unsafe {
-             if *core::ptr::addr_of!(MODULES_INIT) { return; }
-
-             let hhdm_offset = self.phys_to_virt_offset();
-
-             if let Some(resp) = MODULE_REQUEST.get_response() {
-                 let mut idx = 0;
-                 let cache_ptr = core::ptr::addr_of_mut!(MODULES_CACHE);
-                 let capacity = 32;
-
-                 for m in resp.modules() {
-                     if idx >= capacity { break; }
-
-                     // Convert name
-                     // Limine provides &CStr
-                     let name = m.path().to_str().unwrap_or("unknown");
-
-                     let vaddr = m.addr();
-                     let size = m.size();
-                     
-                     // Convert to slice
-                     let bytes = core::slice::from_raw_parts(vaddr as *const u8, size as usize);
-                     
-                     // Calculate physical address
-                     // vaddr = paddr + hhdm_offset  =>  paddr = vaddr - hhdm_offset
-                     let vaddr_u64 = vaddr as u64;
-                     let paddr = if vaddr_u64 >= hhdm_offset {
-                         vaddr_u64 - hhdm_offset
-                     } else {
-                         0 
-                     };
-
-                     (*cache_ptr)[idx] = BootModuleDesc {
-                        name,
-                        bytes,
-                        phys_start: paddr,
-                        phys_end: paddr + size,
-                        kind: BootModuleKind::Unknown, 
-                     };
-
-                     idx += 1;
-                 }
-                 *core::ptr::addr_of_mut!(MODULES_LEN) = idx;
-             }
-             *core::ptr::addr_of_mut!(MODULES_INIT) = true;
-        }
-    }
-
-    pub fn modules(&self) -> &'static [BootModuleDesc] {
-        self.init_modules();
-        unsafe {
-            let ptr = core::ptr::addr_of!(MODULES_CACHE);
-            let len = *core::ptr::addr_of!(MODULES_LEN);
-            let slice_ptr = ptr as *const BootModuleDesc;
-            core::slice::from_raw_parts(slice_ptr, len)
-        }
-    }
-
-    pub fn phys_to_virt_offset(&self) -> u64 {
-        HHDM_REQUEST.get_response()
-            .map(|r| r.offset())
-            .unwrap_or(0)
-    }
-
-    pub fn framebuffer(&self) -> Option<FramebufferInfo> {
-        let resp = FRAMEBUFFER_REQUEST.get_response()?;
-        let fb = resp.framebuffers().next()?;
-
-        // Convert format
-        let format = match (fb.red_mask_size(), fb.green_mask_size(), fb.blue_mask_size()) {
-            (8, 8, 8) => PixelFormat::Xrgb8888, // Simplified assumption
-            (5, 6, 5) => PixelFormat::Rgb565,
-            _ => PixelFormat::Unknown,
-        };
-
-        Some(FramebufferInfo {
-            addr: fb.addr() as u64,
-            byte_len: fb.height() as usize * fb.pitch() as usize, // approximate safe bound
-            width: fb.width() as u32,
-            height: fb.height() as u32,
-            pitch: fb.pitch() as u32,
-            bpp: fb.bpp() as u16,
-            format,
-        })
-    }
-}
-
-// --- Architecture Contract ---
+use kernel::{
+    BootRuntime, BootRuntimeBase, BootTasking, UserTaskSpec, 
+    FrameAllocatorHook, PhysRange, BootModuleDesc, FramebufferInfo, IrqState,
+    MapPerms, MapKind,
+};
 
 pub trait ArchRuntime {
+    type Context: Copy + Default;
+    type AddressSpace: Copy + Default;
+
+    fn init(&self, hhdm_offset: u64);
     fn putchar(&self, c: u8);
     fn halt(&self) -> !;
     fn mono_ticks(&self) -> u64;
@@ -179,8 +23,40 @@ pub trait ArchRuntime {
     unsafe fn simd_restore(&self, _src: *const u8) {}
 
     // Barriers - defaults
+    fn threads_supported(&self) -> bool { false }
     fn fence_full(&self) {}
     fn icache_invalidate(&self) {}
+
+    // Tasking - defaults
+    fn init_kernel_context(&self, _entry: extern "C" fn(usize) -> !, _stack_top: u64, _arg: usize) -> Self::Context {
+        Self::Context::default()
+    }
+    fn init_user_context(&self, _spec: UserTaskSpec<Self::AddressSpace>, _kstack_top: u64) -> Self::Context {
+        Self::Context::default()
+    }
+    unsafe fn switch(&self, _from: &mut Self::Context, _to: &Self::Context) {
+        // No-op
+    }
+    fn make_user_address_space(&self) -> Self::AddressSpace {
+        Self::AddressSpace::default()
+    }
+    fn active_address_space(&self) -> Self::AddressSpace {
+        Self::AddressSpace::default()
+    }
+    fn activate_address_space(&self, _aspace: Self::AddressSpace) {
+        // No-op
+    }
+
+    fn map_page(&self, _aspace: Self::AddressSpace, _virt: u64, _phys: u64, _perms: MapPerms, _kind: MapKind, _allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
+        Ok(())
+    }
+    fn unmap_page(&self, _aspace: Self::AddressSpace, _virt: u64) -> Result<Option<u64>, ()> {
+        Ok(None)
+    }
+    fn translate(&self, _aspace: Self::AddressSpace, _virt: u64) -> Option<u64> {
+        None
+    }
+    fn tlb_flush_page(&self, _virt: u64) {}
 }
 
 // --- Generic Runtime ---
@@ -199,23 +75,49 @@ impl<A: ArchRuntime> Runtime<A> {
     }
 }
 
-impl<A: ArchRuntime> BootRuntime for Runtime<A> {
+pub struct LimineRuntimeData {}
+
+impl LimineRuntimeData {
+    pub const fn new() -> Self {
+        Self {}
+    }
+
+    pub fn phys_memory_map(&self) -> &'static [PhysRange] {
+        crate::mem::memory_map()
+    }
+    
+    pub fn phys_to_virt_offset(&self) -> u64 {
+        crate::requests::HHDM_REQUEST.get_response().map(|r| r.offset()).unwrap_or(0)
+    }
+    
+    pub fn modules(&self) -> &'static [BootModuleDesc] {
+        crate::requests::get_modules()
+    }
+    
+    pub fn framebuffer(&self) -> Option<FramebufferInfo> {
+        crate::framebuffer::get_info()
+    }
+}
+
+impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn putchar(&self, c: u8) { self.arch.putchar(c) }
+    fn mono_ticks(&self) -> u64 { self.arch.mono_ticks() }
+}
+
+impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
+    type Tasking = Self;
+    fn tasking(&self) -> &Self { self }
+
     fn halt(&self) -> ! { self.arch.halt() }
 
-    fn mono_ticks(&self) -> u64 { self.arch.mono_ticks() }
     fn mono_freq_hz(&self) -> u64 { self.arch.mono_freq_hz() }
 
-    fn irq_disable(&self) -> IrqState { self.arch.irq_disable() }
-    fn irq_restore(&self, s: IrqState) { self.arch.irq_restore(s) }
-    
-    // SIMD
     fn simd_init_cpu(&self) { self.arch.simd_init_cpu() }
     fn simd_state_layout(&self) -> (usize, usize) { self.arch.simd_state_layout() }
     unsafe fn simd_save(&self, dst: *mut u8) { unsafe { self.arch.simd_save(dst) } }
     unsafe fn simd_restore(&self, src: *const u8) { unsafe { self.arch.simd_restore(src) } }
 
-    // Barriers
+    fn threads_supported(&self) -> bool { self.arch.threads_supported() }
     fn fence_full(&self) { self.arch.fence_full() }
     fn icache_invalidate(&self) { self.arch.icache_invalidate() }
 
@@ -223,10 +125,57 @@ impl<A: ArchRuntime> BootRuntime for Runtime<A> {
     fn phys_to_virt_offset(&self) -> u64 { self.limine.phys_to_virt_offset() }
     fn modules(&self) -> &'static [BootModuleDesc] { self.limine.modules() }
     fn framebuffer(&self) -> Option<FramebufferInfo> { self.limine.framebuffer() }
+    
+    fn irq_disable(&self) -> IrqState { self.arch.irq_disable() }
+    fn irq_restore(&self, state: IrqState) { self.arch.irq_restore(state) }
+}
 
-    // Defaults
-    fn page_size(&self) -> usize { 4096 }
-    fn kernel_virt_base(&self) -> u64 { 0xffffffff80000000 }
-    fn cpu_count(&self) -> usize { 1 }
-    fn boot_cpu_id(&self) -> usize { 0 }
+impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
+    type Runtime = Self;
+    type Context = A::Context;
+    type AddressSpace = A::AddressSpace;
+
+    fn init(&self, hhdm_offset: u64) {
+        self.arch.init(hhdm_offset)
+    }
+
+    fn init_kernel_context(&self, entry: extern "C" fn(usize) -> !, stack_top: u64, arg: usize) -> Self::Context {
+        self.arch.init_kernel_context(entry, stack_top, arg)
+    }
+    
+    fn init_user_context(&self, spec: UserTaskSpec<Self::AddressSpace>, kstack_top: u64) -> Self::Context {
+        self.arch.init_user_context(spec, kstack_top)
+    }
+
+    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
+        unsafe { self.arch.switch(from, to) }
+    }
+
+    fn make_user_address_space(&self) -> Self::AddressSpace {
+        self.arch.make_user_address_space()
+    }
+
+    fn active_address_space(&self) -> Self::AddressSpace {
+        self.arch.active_address_space()
+    }
+    
+    fn activate_address_space(&self, aspace: Self::AddressSpace) {
+        self.arch.activate_address_space(aspace)
+    }
+
+    fn map_page(&self, aspace: Self::AddressSpace, virt: u64, phys: u64, perms: MapPerms, kind: MapKind, allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
+        self.arch.map_page(aspace, virt, phys, perms, kind, allocator)
+    }
+
+    fn unmap_page(&self, aspace: Self::AddressSpace, virt: u64) -> Result<Option<u64>, ()> {
+        self.arch.unmap_page(aspace, virt)
+    }
+
+    fn translate(&self, aspace: Self::AddressSpace, virt: u64) -> Option<u64> {
+        self.arch.translate(aspace, virt)
+    }
+
+    fn tlb_flush_page(&self, virt: u64) {
+        self.arch.tlb_flush_page(virt)
+    }
 }

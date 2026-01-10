@@ -2,61 +2,49 @@ use crate::BootRuntime;
 use core::alloc::Layout;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-/// A guard that ensures SIMD/FPU is enabled and safe to use.
-pub struct SimdGuard<'a> {
-    _rt: &'a dyn BootRuntime,
+pub struct SimdGuard<'a, R: BootRuntime> {
+    _rt: &'a R,
 }
 
-impl<'a> SimdGuard<'a> {
-    pub fn enter(rt: &'a dyn BootRuntime) -> Self {
+impl<'a, R: BootRuntime> SimdGuard<'a, R> {
+    pub fn enter(rt: &'a R) -> Self {
         rt.simd_init_cpu();
         SimdGuard { _rt: rt }
     }
 }
 
-impl<'a> Drop for SimdGuard<'a> {
+impl<'a, R: BootRuntime> Drop for SimdGuard<'a, R> {
     fn drop(&mut self) {}
 }
 
-pub fn with_simd<R>(rt: &dyn BootRuntime, f: impl FnOnce() -> R) -> R {
+pub fn with_simd<R: BootRuntime, T>(rt: &R, f: impl FnOnce() -> T) -> T {
     let _g = SimdGuard::enter(rt);
     f()
 }
 
-// Internal Bump Allocator
-// 16KB buffer for SIMD states. 
-// Sufficient for ~30 x86_64 contexts (512 bytes) or ~30 aarch64 contexts.
 const HEAP_SIZE: usize = 16384;
 static mut SIMD_HEAP: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 static HEAP_TOP: AtomicUsize = AtomicUsize::new(0);
 
 fn internal_alloc(layout: Layout) -> *mut u8 {
-        // Simple CAS loop for thread safety (though we are mostly single threaded at boot)
-        loop {
-            let top = HEAP_TOP.load(Ordering::Relaxed);
-            // Use addr_of_mut! to avoid creating a reference to static mut
-            let base = core::ptr::addr_of_mut!(SIMD_HEAP) as usize;
-            let current_ptr = base + top;
-            
-            let align_offset = (layout.align() - (current_ptr % layout.align())) % layout.align();
-            let new_top = top + align_offset + layout.size();
-            
-            if new_top > HEAP_SIZE {
-                return core::ptr::null_mut();
-            }
-            
-            if HEAP_TOP.compare_exchange(top, new_top, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
-                return (base + top + align_offset) as *mut u8;
-            }
+    loop {
+        let top = HEAP_TOP.load(Ordering::Relaxed);
+        let base = unsafe { core::ptr::addr_of_mut!(SIMD_HEAP) as usize };
+        let current_ptr = base + top;
+        
+        let align_offset = (layout.align() - (current_ptr % layout.align())) % layout.align();
+        let new_top = top + align_offset + layout.size();
+        
+        if new_top > HEAP_SIZE {
+            return core::ptr::null_mut();
         }
+        
+        if HEAP_TOP.compare_exchange(top, new_top, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+            return (base + top + align_offset) as *mut u8;
+        }
+    }
 }
 
-fn internal_dealloc(_ptr: *mut u8, _layout: Layout) {
-    // Leaky allocator: we don't support deallocation in this simple boot-time helper.
-    // In a real system, tasks would be managed by the slab allocator.
-}
-
-/// Per-task SIMD state storage.
 pub struct SimdState {
     buffer: *mut u8,
     layout: Layout,
@@ -67,7 +55,7 @@ unsafe impl Send for SimdState {}
 unsafe impl Sync for SimdState {}
 
 impl SimdState {
-    pub fn new(rt: &dyn BootRuntime) -> Self {
+    pub fn new<R: BootRuntime>(rt: &R) -> Self {
         let (size, align) = rt.simd_state_layout();
         if size == 0 {
             return Self {
@@ -81,11 +69,9 @@ impl SimdState {
         let buffer = internal_alloc(layout);
         
         if buffer.is_null() {
-            // Panic if we run out of static SIMD heap
             panic!("OOM allocating SimdState");
         }
 
-        // Initialize to 0
         unsafe { core::ptr::write_bytes(buffer, 0, size) };
 
         Self {
@@ -95,30 +81,21 @@ impl SimdState {
         }
     }
 
-    pub fn save(&mut self, rt: &dyn BootRuntime) {
+    pub fn save<R: BootRuntime>(&mut self, rt: &R) {
         if !self.buffer.is_null() {
             unsafe { rt.simd_save(self.buffer) };
             self.valid = true;
         }
     }
 
-    pub fn restore(&self, rt: &dyn BootRuntime) {
+    pub fn restore<R: BootRuntime>(&self, rt: &R) {
         if !self.buffer.is_null() && self.valid {
             unsafe { rt.simd_restore(self.buffer) };
         }
     }
 }
 
-impl Drop for SimdState {
-    fn drop(&mut self) {
-        if !self.buffer.is_null() {
-            internal_dealloc(self.buffer, self.layout);
-        }
-    }
-}
-
-/// Run a self-test of the SIMD save/restore mechanism.
-pub fn self_test(rt: &dyn BootRuntime) {
+pub fn self_test<R: BootRuntime>(rt: &R) {
     use crate::kinfo;
 
     let (size, align) = rt.simd_state_layout();
@@ -128,10 +105,6 @@ pub fn self_test(rt: &dyn BootRuntime) {
     }
 
     with_simd(rt, || {
-        // Use stack allocation for self-test to avoid consuming heap
-        // Max size expected is usually < 1KB (512 bytes for AVX/SSE/NEON)
-        
-        // We define a struct with high alignment to ensure we cover requirements
         #[repr(align(16))]
         struct AlignedStorage([u8; 1024]);
         
@@ -143,10 +116,7 @@ pub fn self_test(rt: &dyn BootRuntime) {
              return;
         }
         
-        // Save current state
         unsafe { rt.simd_save(buffer) };
-        
-        // Restore it
         unsafe { rt.simd_restore(buffer) };
         
         kinfo!("SIMD self-test passed (save/restore cycle)");

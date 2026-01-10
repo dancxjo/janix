@@ -1,92 +1,123 @@
 use core::arch::asm;
-use kernel::IrqState;
+use kernel::{IrqState, UserTaskSpec, FrameAllocatorHook, MapPerms, MapKind};
+use kernel::time::MonotonicClamp;
 use crate::runtime::ArchRuntime;
 
-/// The architecture-specific runtime for loongarch64.
-pub struct LoongArchRuntime {
-    serial: SerialPort,
+pub mod task;
+pub mod paging;
+
+pub struct LoongArch64Runtime {
+    clamp: MonotonicClamp,
 }
 
-pub type Runtime = crate::runtime::Runtime<LoongArchRuntime>;
-
-pub const fn create_runtime() -> Runtime {
-    Runtime::new(LoongArchRuntime::new())
-}
-
-impl LoongArchRuntime {
+impl LoongArch64Runtime {
     pub const fn new() -> Self {
         Self {
-            serial: SerialPort,
+            clamp: MonotonicClamp::new(),
         }
     }
 }
 
-impl ArchRuntime for LoongArchRuntime {
+pub use task::LoongArch64Context;
+pub use paging::LoongArch64AddressSpace;
+
+impl ArchRuntime for LoongArch64Runtime {
+    type Context = LoongArch64Context;
+    type AddressSpace = LoongArch64AddressSpace;
+
+    fn init(&self, hhdm_offset: u64) { paging::init(hhdm_offset); }
     fn putchar(&self, c: u8) {
-        self.serial.putchar(c);
+        unsafe {
+             let uart = 0x1fe001e0 as *mut u8;
+             core::ptr::write_volatile(uart, c);
+        }
     }
 
-    fn halt(&self) -> ! {
-        hcf()
-    }
+    fn halt(&self) -> ! { hcf() }
 
     fn mono_ticks(&self) -> u64 {
-        let mut count: u64;
-        unsafe { asm!("rdtime.d {}, $r0", out(reg) count) };
-        count
+        let val: u64;
+        unsafe { asm!("rdtime.d {}, $r0", out(reg) val); }
+        self.clamp.clamp(val)
     }
 
-    fn mono_freq_hz(&self) -> u64 {
-        100_000_000
-    }
+    fn mono_freq_hz(&self) -> u64 { 100_000_000 }
 
     fn irq_disable(&self) -> IrqState {
-        let mut val: usize = 0;
-        let mask: usize = 0x4; // CRMD.IE (bit 2)
+        let prmd: usize;
         unsafe {
-            asm!("csrxchg {}, {}, 0x0", inout(reg) val, in(reg) mask);
+            asm!("csrrd {}, 0x1", out(reg) prmd);
+            asm!("csrwr $r0, 0x1");
         }
-        IrqState(val)
+        IrqState((prmd >> 2) & 1) 
     }
 
     fn irq_restore(&self, state: IrqState) {
-        let mut val = state.0;
-        let mask: usize = 0x4; // CRMD.IE (bit 2)
-        unsafe {
-            asm!("csrxchg {}, {}, 0x0", inout(reg) val, in(reg) mask);
-        }
-        let _ = val;
-    }
-}
-
-/// Serial port implementation for loongarch64 using NS16550A-compatible UART.
-pub struct SerialPort;
-
-impl SerialPort {
-    pub const fn new() -> Self {
-        Self
-    }
-}
-
-impl SerialPort {
-    fn putchar(&self, c: u8) {
-        unsafe {
-            // LoongArch QEMU virt machine UART base (NS16550A compatible)
-            let base = 0x1fe001e0 as *mut u8;
-            base.write_volatile(c);
+        if state.0 != 0 {
+            unsafe { 
+                asm!("csrrd $r9, 0x1");
+                asm!("ori $r9, $r9, 0x4");
+                asm!("csrwr $r9, 0x1");
+            }
+        } else {
+            unsafe {
+                asm!("csrrd $r9, 0x1");
+                asm!("andi $r9, $r9, 0xFFB");
+                asm!("csrwr $r9, 0x1");
+            }
         }
     }
+
+    fn threads_supported(&self) -> bool { true }
+
+    // Tasking
+    fn init_kernel_context(&self, entry: extern "C" fn(usize) -> !, stack_top: u64, arg: usize) -> Self::Context {
+        task::init_kernel_context(entry, stack_top, arg)
+    }
+
+    fn init_user_context(&self, spec: UserTaskSpec<Self::AddressSpace>, kstack_top: u64) -> Self::Context {
+        task::init_user_context(spec, kstack_top)
+    }
+
+    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
+        unsafe { task::switch(from, to) }
+    }
+
+    // Paging
+    fn make_user_address_space(&self) -> Self::AddressSpace {
+        paging::make_user_address_space(self.active_address_space(), &DumbKernelAlloc)
+    }
+
+    fn active_address_space(&self) -> Self::AddressSpace {
+        paging::active_address_space()
+    }
+    
+    fn activate_address_space(&self, aspace: Self::AddressSpace) {
+        unsafe { asm!("csrwr {}, 0x19", in(reg) aspace.0); }
+    }
+
+    fn map_page(&self, aspace: Self::AddressSpace, virt: u64, phys: u64, perms: MapPerms, kind: MapKind, allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
+        paging::map_page(aspace, virt, phys, perms, kind, allocator)
+    }
+
+    fn unmap_page(&self, aspace: Self::AddressSpace, virt: u64) -> Result<Option<u64>, ()> {
+        paging::unmap_page(aspace, virt)
+    }
+
+    fn translate(&self, aspace: Self::AddressSpace, virt: u64) -> Option<u64> {
+        paging::translate(aspace, virt)
+    }
+
+    fn tlb_flush_page(&self, virt: u64) {
+        paging::tlb_flush_page(virt)
+    }
 }
 
-/// Halt and catch fire - enters an infinite idle loop.
+struct DumbKernelAlloc;
+impl FrameAllocatorHook for DumbKernelAlloc {
+    fn alloc_frame(&self) -> Option<u64> { None }
+}
+
 pub fn hcf() -> ! {
-    // Disable interrupts to prevent waking up and crashing if handlers aren't set
-    unsafe {
-        let mut _val: usize = 0;
-        let mask: usize = 0x4; // CRMD.IE
-        asm!("csrxchg {}, {}, 0x0", inout(reg) _val, in(reg) mask);
-    }
-    loop {
-        unsafe { asm!("idle 0") };
-    }
+    loop { unsafe { asm!("idle 0"); } }
 }

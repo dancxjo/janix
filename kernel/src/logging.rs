@@ -1,13 +1,8 @@
-use crate::BootRuntime;
+use crate::BootRuntimeBase;
 use core::fmt::{self, Write};
 
-/// Global logger instance.
-/// Safety: This is `static mut` and currently not thread-safe.
-/// It should only be accessed by the single boot thread until a proper
-/// locking mechanism is established.
 static mut WRITER: Option<Logger> = None;
 
-/// Log levels for kernel messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {
     Error,
@@ -28,11 +23,11 @@ impl Level {
 }
 
 pub struct Logger {
-    runtime: &'static dyn BootRuntime,
+    runtime: &'static dyn BootRuntimeBase,
 }
 
 impl Logger {
-    pub const fn new(runtime: &'static dyn BootRuntime) -> Self {
+    pub const fn new(runtime: &'static dyn BootRuntimeBase) -> Self {
         Self { runtime }
     }
 }
@@ -46,23 +41,9 @@ impl fmt::Write for Logger {
     }
 }
 
-/// Initialize the global logger with a runtime.
-///
-/// # Safety
-/// This function is unsafe because it modifies a `static mut`.
-/// It should be called exactly once during kernel initialization.
-pub unsafe fn init(runtime: &'static dyn BootRuntime) {
+pub unsafe fn init(runtime: &'static dyn BootRuntimeBase) {
     unsafe {
         WRITER = Some(Logger::new(runtime));
-    }
-}
-
-#[doc(hidden)]
-pub fn _print(args: fmt::Arguments) {
-    unsafe {
-        if let Some(writer) = &mut *core::ptr::addr_of_mut!(WRITER) {
-            let _ = writer.write_fmt(args);
-        }
     }
 }
 
@@ -79,32 +60,29 @@ pub fn _log(level: Level, args: fmt::Arguments) {
 }
 
 #[macro_export]
-macro_rules! kprint {
-    ($($arg:tt)*) => ($crate::logging::_print(format_args!($($arg)*)));
-}
-
-#[macro_export]
-macro_rules! kprintln {
-    () => ($crate::kprint!("\n"));
-    ($($arg:tt)*) => ($crate::kprint!("{}\n", format_args!($($arg)*)));
+macro_rules! kinfo {
+    ($($arg:tt)*) => {
+        $crate::logging::_log($crate::logging::Level::Info, format_args!($($arg)*));
+    };
 }
 
 #[macro_export]
 macro_rules! kerror {
-    ($($arg:tt)*) => ($crate::logging::_log($crate::logging::Level::Error, format_args!($($arg)*)));
+    ($($arg:tt)*) => {
+        $crate::logging::_log($crate::logging::Level::Error, format_args!($($arg)*));
+    };
 }
 
 #[macro_export]
 macro_rules! kwarn {
-    ($($arg:tt)*) => ($crate::logging::_log($crate::logging::Level::Warn, format_args!($($arg)*)));
-}
-
-#[macro_export]
-macro_rules! kinfo {
-    ($($arg:tt)*) => ($crate::logging::_log($crate::logging::Level::Info, format_args!($($arg)*)));
+    ($($arg:tt)*) => {
+        $crate::logging::_log($crate::logging::Level::Warn, format_args!($($arg)*));
+    };
 }
 
 #[macro_export]
 macro_rules! kdebug {
-    ($($arg:tt)*) => ($crate::logging::_log($crate::logging::Level::Debug, format_args!($($arg)*)));
+    ($($arg:tt)*) => {
+        $crate::logging::_log($crate::logging::Level::Debug, format_args!($($arg)*));
+    };
 }

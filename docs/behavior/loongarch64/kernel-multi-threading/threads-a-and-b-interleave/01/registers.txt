@@ -1,0 +1,37 @@
+
+CPU#0
+ PC=0000000000000000  FCSR0 0x00000000
+ GPR00: r0 0000000000000000 r1 ffffffff800069ec r2 0000000000000000 r3 ffff8000ebd87d20
+ GPR04: r4 0000000000000000 r5 ffffffffb0000000 r6 0000000000000050 r7 0000000000000000
+ GPR08: r8 0000000000000000 r9 0000000000000000 r10 ffffffff80020b08 r11 0000000000010100
+ GPR12: r12 000000000000147b r13 0000000000000064 r14 ffff8000ebd878bc r15 000000000098967f
+ GPR16: r16 000000000007ce44 r17 0000000000003635 r18 0000000000003531 r19 ffff8000ebd878cc
+ GPR20: r20 ffffffff8000ffb0 r21 0000000000000000 r22 0000000000000000 r23 0000000000000000
+ GPR24: r24 0000000000000000 r25 0000000000000000 r26 0000000000000000 r27 0000000000000000
+ GPR28: r28 0000000000000000 r29 0000000000000000 r30 0000000000000000 r31 0000000000000000
+
+ CSR000: CRMD   b0               PRMD   0                EUEN   1                MISC   0               
+ CSR004: ECFG   800              ESTAT  d0000            ERA    0                BADV   0               
+ CSR008: BADI   0               
+ CSR012: EENTRY 0               
+ CSR016: TLBIDX c000000          TLBEHI ffffffffb0000000 TLBELO0 0               TLBELO1 0              
+ CSR024: ASID   a0000            PGDL   ebd77000         PGDH   ebd76000         PGD    0               
+ CSR028: PWCL   13e4d52c         PWCH   267              STLBPS c                RVACFG 0               
+ CSR032: CPUID  0                PRCFG1 72f8             PRCFG2 3ffff000         PRCFG3 8073f2          
+ CSR048: SAVE0  f271680          SAVE1  1fe001e0         SAVE2  0                SAVE3  0               
+ CSR052: SAVE4  0                SAVE5  0                SAVE6  0                SAVE7  0               
+ CSR064: TID    0                TCFG   0                TVAL   0                CNTC   0               
+ CSR068: TICLR  0               
+ CSR096: LLBCTL 0               
+ CSR136: TLBRENTRY d0fc000       TLBRBADV ffffffffb0000000 TLBRERA ffffffff800050c8 TLBRSAVE 147b          
+ CSR140: TLBRELO0 0              TLBRELO1 0              TLBREHI ffffb000000c    TLBRPRMD 0             
+ CSR384: DMW0   11               DMW1   0                DMW2   0                DMW3   0               
+
+ f0 4040800000000000 f1 ffffffffffffffff f2 ffffffffffffffff f3 ffffffffffffffff
+ f4 ffffffffffffffff f5 ffffffffffffffff f6 ffffffffffffffff f7 ffffffffffffffff
+ f8 ffffffffffffffff f9 ffffffffffffffff f10 ffffffffffffffff f11 ffffffffffffffff
+ f12 ffffffffffffffff f13 ffffffffffffffff f14 ffffffffffffffff f15 ffffffffffffffff
+ f16 ffffffffffffffff f17 ffffffffffffffff f18 ffffffffffffffff f19 ffffffffffffffff
+ f20 ffffffffffffffff f21 ffffffffffffffff f22 ffffffffffffffff f23 ffffffffffffffff
+ f24 ffffffffffffffff f25 ffffffffffffffff f26 ffffffffffffffff f27 ffffffffffffffff
+ f28 ffffffffffffffff f29 ffffffffffffffff f30 ffffffffffffffff f31 ffffffffffffffff

@@ -116,10 +116,7 @@ impl Scheduler {
         let stack_top = (stack_base as u64) + (STACK_SIZE as u64);
         let stack_top = stack_top & !0xF;
 
-        let mut tf = crate::trap::x86_64::TrapFrame::default();
-        tf.user_rip = image.entry;
-        tf.user_rsp = image.stack_top;
-        tf.user_rflags = 0x202; // IF | Reserved
+        let mut tf = crate::arch::TrapFrame::new_user(image.entry, image.stack_top);
 
         let mut task = Task {
             id,
@@ -229,7 +226,6 @@ extern "C" fn user_entry_stub(_arg: usize) -> ! {
         sched.tasks[idx].tf.clone()
     };
     unsafe {
-        let ptr = &tf as *const _ as *const ();
-        crate::runtime().enter_user_mode(ptr);
+        crate::runtime().enter_user_mode(&tf);
     }
 }

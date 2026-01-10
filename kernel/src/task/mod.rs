@@ -14,7 +14,7 @@ pub use scheduler::Scheduler;
 
 use crate::simd::SimdState;
 use crate::memory::paging::AddressSpace;
-use crate::trap::x86_64::TrapFrame;
+use crate::arch::TrapFrame;
 
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy)]

@@ -2,9 +2,13 @@
 
 mod panic;
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-compile_error!("Stem only supports x86_64 and aarch64");
-
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "riscv64",
+    target_arch = "loongarch64"
+)))]
+compile_error!("Stem supports x86_64, aarch64, riscv64, and loongarch64");
 
 #[cfg(target_arch = "x86_64")]
 mod arch {
@@ -29,7 +33,7 @@ mod arch {
         core::arch::asm!(
             "syscall",
             in("rax") n,
-            out("rax") ret,
+            lateout("rax") ret,
             out("rcx") _,
             out("r11") _,
             options(nostack, preserves_flags)
@@ -44,7 +48,7 @@ mod arch {
             "syscall",
             in("rax") n,
             in("rdi") a1,
-            out("rax") ret,
+            lateout("rax") ret,
             out("rcx") _,
             out("r11") _,
             options(nostack, preserves_flags)
@@ -60,7 +64,7 @@ mod arch {
             in("rax") n,
             in("rdi") a1,
             in("rsi") a2,
-            out("rax") ret,
+            lateout("rax") ret,
             out("rcx") _,
             out("r11") _,
             options(nostack, preserves_flags)
@@ -92,7 +96,7 @@ mod arch {
         core::arch::asm!(
             "svc #0",
             in("x8") n,
-            out("x0") ret,
+            lateout("x0") ret,
             options(nostack, preserves_flags)
         );
         ret
@@ -120,6 +124,120 @@ mod arch {
             in("x0") a1,
             in("x1") a2,
             lateout("x0") ret,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+mod arch {
+    use abi::syscall;
+
+    #[no_mangle]
+    #[unsafe(naked)]
+    pub unsafe extern "C" fn _start() -> ! {
+        core::arch::naked_asm!(
+            "call __standard_init",
+            "call main",
+            "mv a0, a0",
+            "li a7, {syscall_exit}",
+            "ecall",
+            syscall_exit = const syscall::SYSCALL_EXIT,
+        )
+    }
+
+    #[inline(always)]
+    pub unsafe fn syscall0(n: u64) -> u64 {
+        let ret: u64;
+        core::arch::asm!(
+            "ecall",
+            in("a7") n,
+            lateout("a0") ret,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
+
+    #[inline(always)]
+    pub unsafe fn syscall1(n: u64, a1: u64) -> u64 {
+        let ret: u64;
+        core::arch::asm!(
+            "ecall",
+            in("a7") n,
+            in("a0") a1,
+            lateout("a0") ret,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
+
+    #[inline(always)]
+    pub unsafe fn syscall2(n: u64, a1: u64, a2: u64) -> u64 {
+        let ret: u64;
+        core::arch::asm!(
+            "ecall",
+            in("a7") n,
+            in("a0") a1,
+            in("a1") a2,
+            lateout("a0") ret,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
+}
+
+#[cfg(target_arch = "loongarch64")]
+mod arch {
+    use abi::syscall;
+
+    #[no_mangle]
+    #[unsafe(naked)]
+    pub unsafe extern "C" fn _start() -> ! {
+        core::arch::naked_asm!(
+            "bl __standard_init",
+            "bl main",
+            "move $a0, $a0",
+            "li.d $a7, {syscall_exit}",
+            "syscall 0",
+            syscall_exit = const syscall::SYSCALL_EXIT,
+        )
+    }
+
+    #[inline(always)]
+    pub unsafe fn syscall0(n: u64) -> u64 {
+        let ret: u64;
+        core::arch::asm!(
+            "syscall 0",
+            in("$a7") n,
+            lateout("$a0") ret,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
+
+    #[inline(always)]
+    pub unsafe fn syscall1(n: u64, a1: u64) -> u64 {
+        let ret: u64;
+        core::arch::asm!(
+            "syscall 0",
+            in("$a7") n,
+            in("$a0") a1,
+            lateout("$a0") ret,
+            options(nostack, preserves_flags)
+        );
+        ret
+    }
+
+    #[inline(always)]
+    pub unsafe fn syscall2(n: u64, a1: u64, a2: u64) -> u64 {
+        let ret: u64;
+        core::arch::asm!(
+            "syscall 0",
+            in("$a7") n,
+            in("$a0") a1,
+            in("$a1") a2,
+            lateout("$a0") ret,
             options(nostack, preserves_flags)
         );
         ret

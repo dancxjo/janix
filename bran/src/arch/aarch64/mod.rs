@@ -103,6 +103,18 @@ impl ArchRuntime for AArch64Runtime {
         paging::map_page(virt, kernel::memory::frame_alloc::PhysFrame(phys), pflags)
     }
 
+    fn map_page_with_allocator(
+        &self, 
+        _handle: usize, 
+        virt: u64, 
+        phys: u64, 
+        _flags: u64, // BootHeap usually implies Present|Writable, we hardcoded checks in paging
+        allocator: &mut kernel::memory::boot_frame_alloc::BootFrameAllocator
+    ) -> Result<(), ()> {
+        paging::map_bootheap_page(virt, phys, allocator);
+        Ok(())
+    }
+
     fn unmap_page(&self, _handle: usize, virt: u64) {
         let _ = paging::unmap_page(virt);
     }
@@ -151,7 +163,7 @@ impl ArchRuntime for AArch64Runtime {
         // For now, we assume SP_EL1 is sufficient.
     }
 
-    unsafe fn enter_user_mode(&self, _context: *const ()) -> ! {
+    unsafe fn enter_user_mode(&self, _context: &kernel::arch::TrapFrame) -> ! {
         kernel::kinfo!("aarch64: enter_user_mode not implemented");
         loop { unsafe { core::arch::asm!("wfi") } }
     }

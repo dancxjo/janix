@@ -222,7 +222,7 @@ pub trait ArchRuntime {
     fn register_syscall_handler(&self, _entry: u64) {}
     fn set_kernel_stack(&self, _stack_top: u64) {}
 
-    unsafe fn enter_user_mode(&self, _context: *const ()) -> ! { loop {} }
+    unsafe fn enter_user_mode(&self, _context: &kernel::arch::TrapFrame) -> ! { loop {} }
 }
 
 // --- Generic Runtime ---
@@ -263,7 +263,7 @@ impl<A: ArchRuntime> BootRuntime for Runtime<A> {
 
     fn register_syscall_handler(&self, entry: u64) { self.arch.register_syscall_handler(entry) }
     fn set_kernel_stack(&self, stack_top: u64) { self.arch.set_kernel_stack(stack_top) }
-    unsafe fn enter_user_mode(&self, context: *const ()) -> ! { unsafe { self.arch.enter_user_mode(context) } }
+    unsafe fn enter_user_mode(&self, context: &kernel::arch::TrapFrame) -> ! { unsafe { self.arch.enter_user_mode(context) } }
 
     fn phys_memory_map(&self) -> &'static [PhysRange] { self.limine.phys_memory_map() }
     fn phys_to_virt_offset(&self) -> u64 { self.limine.phys_to_virt_offset() } // Use Limine default if arch calls it

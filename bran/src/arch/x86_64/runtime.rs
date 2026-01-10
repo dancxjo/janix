@@ -176,8 +176,7 @@ impl ArchRuntime for X86_64Runtime {
         }
     }
 
-    unsafe fn enter_user_mode(&self, context: *const ()) -> ! {
-        let tf = unsafe { &*(context as *const kernel::trap::x86_64::TrapFrame) };
+    unsafe fn enter_user_mode(&self, context: &kernel::arch::TrapFrame) -> ! {
         unsafe {
             core::arch::asm!(
                 "cli", // Disable interrupts
@@ -214,7 +213,7 @@ impl ArchRuntime for X86_64Runtime {
                 "swapgs",              // Switch to user GS
                 "sysretq",             // Jump to user mode
                 
-                tf = in(reg) tf,
+                tf = in(reg) context,
                 options(noreturn)
             );
         }

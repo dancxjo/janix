@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-// pub mod arch;
+pub mod arch;
 pub mod logging;
 pub mod memory;
 pub mod time;
@@ -221,9 +221,8 @@ pub trait BootRuntime {
 
     // Enter user mode.
     // Diverges.
-    // `context` is a pointer to an architecture-specific TrapFrame/Context.
-    // The layout of the context MUST match what the architecture implementation expects.
-    unsafe fn enter_user_mode(&self, _context: *const ()) -> ! {
+    // `context` is a reference to an architecture-specific TrapFrame.
+    unsafe fn enter_user_mode(&self, _context: &crate::arch::TrapFrame) -> ! {
         panic!("enter_user_mode not implemented");
     }
 }
@@ -568,14 +567,10 @@ extern "C" fn thread_a(arg: usize) -> ! {
 
         crate::kinfo!("user: entered");
         
-        let mut tf = crate::trap::x86_64::TrapFrame::default();
-        tf.user_rip = 0x400000;
-        tf.user_rsp = 0x70000000;
-        tf.user_rflags = 0x202; // IF | Reserved
+        let mut tf = crate::arch::TrapFrame::new_user(0x400000, 0x70000000);
 
         unsafe {
-            let ptr = &tf as *const _ as *const ();
-            crate::runtime().enter_user_mode(ptr);
+            crate::runtime().enter_user_mode(&tf);
         }
     }
 

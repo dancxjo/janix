@@ -134,17 +134,16 @@ impl ArchRuntime for AArch64Runtime {
     // Task Context
     fn context_init(
         &self, 
-        ctx_handle: &mut u64, 
         kstack_top: u64, 
         entry: extern "C" fn(usize) -> !, 
         arg: usize
-    ) {
-        task::context_init(ctx_handle, kstack_top, entry, arg);
+    ) -> usize {
+        task::context_init(kstack_top, entry, arg)
     }
 
-    unsafe fn context_switch(&self, old_handle_ptr: *mut u64, new_handle: u64) {
+    unsafe fn context_switch(&self, old_handle_ptr: *mut usize, new_handle: usize) {
         unsafe {
-             task::context_switch(old_handle_ptr, new_handle);
+             task::context_switch(old_handle_ptr as *mut u64, new_handle as u64);
         }
     }
 
@@ -163,9 +162,16 @@ impl ArchRuntime for AArch64Runtime {
         // For now, we assume SP_EL1 is sufficient.
     }
 
-    unsafe fn enter_user_mode(&self, _context: &kernel::arch::TrapFrame) -> ! {
-        kernel::kinfo!("aarch64: enter_user_mode not implemented");
-        loop { unsafe { core::arch::asm!("wfi") } }
+    unsafe fn enter_user_mode(&self, context: &kernel::arch::TrapFrame) -> ! {
+        unsafe {
+            let context_ptr = context as *const _ as u64;
+             asm!(
+                "mov x0, {}",
+                "b aarch64_enter_user_mode",
+                in(reg) context_ptr,
+                options(noreturn)
+            );
+        }
     }
 }
 

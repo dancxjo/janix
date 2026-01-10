@@ -3,6 +3,7 @@ use kernel::IrqState;
 use crate::runtime::ArchRuntime;
 
 mod paging;
+mod task;
 
 /// The architecture-specific runtime for loongarch64.
 pub struct LoongArchRuntime {
@@ -98,6 +99,23 @@ impl SerialPort {
             // LoongArch QEMU virt machine UART base (NS16550A compatible)
             let base = 0x1fe001e0 as *mut u8;
             base.write_volatile(c);
+        }
+    }
+}
+
+    // Task Context
+    fn context_init(
+        &self, 
+        kstack_top: u64, 
+        entry: extern "C" fn(usize) -> !, 
+        arg: usize
+    ) -> usize {
+        task::context_init(kstack_top, entry, arg)
+    }
+
+    unsafe fn context_switch(&self, old_handle_ptr: *mut usize, new_handle: usize) {
+        unsafe {
+             task::context_switch(old_handle_ptr as *mut u64, new_handle as u64);
         }
     }
 }

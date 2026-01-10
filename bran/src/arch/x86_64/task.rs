@@ -51,11 +51,10 @@ trampoline:
 "#);
 
 pub fn context_init(
-    ctx: &mut u64,
     kstack_top: u64,
     entry: extern "C" fn(arg: usize) -> !,
     arg: usize,
-) {
+) -> usize {
     let mut sp = kstack_top;
     
     // Helper to push a u64 onto the stack
@@ -114,5 +113,5 @@ pub fn context_init(
     push(0); // r14
     push(0); // r15
     
-    *ctx = sp;
+    sp as usize
 }

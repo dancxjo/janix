@@ -18,7 +18,7 @@ use crate::arch::TrapFrame;
 
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy)]
-pub struct ArchContext(pub u64);
+pub struct ArchContext(pub usize);
 
 pub struct Task {
     pub id: TaskId,

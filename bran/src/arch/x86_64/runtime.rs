@@ -145,17 +145,16 @@ impl ArchRuntime for X86_64Runtime {
     // Task Context
     fn context_init(
         &self, 
-        ctx_handle: &mut u64, 
         kstack_top: u64, 
         entry: extern "C" fn(usize) -> !, 
         arg: usize
-    ) {
-        task::context_init(ctx_handle, kstack_top, entry, arg);
+    ) -> usize {
+        task::context_init(kstack_top, entry, arg)
     }
 
-    unsafe fn context_switch(&self, old_handle_ptr: *mut u64, new_handle: u64) {
+    unsafe fn context_switch(&self, old_handle_ptr: *mut usize, new_handle: usize) {
         unsafe {
-             task::context_switch(old_handle_ptr, new_handle);
+             task::context_switch(old_handle_ptr as *mut u64, new_handle as u64);
         }
     }
 

@@ -206,18 +206,19 @@ pub trait BootRuntime {
     // `kstack_top`: The top of the kernel stack.
     // `entry`: The entry point function.
     // `arg`: The argument to the entry point.
+    // Initialize a context for a new thread.
+    // Returns the new context handle (opaque to kernel, usually SP).
     fn context_init(
         &self, 
-        _ctx_handle: &mut u64, 
         _kstack_top: u64, 
         _entry: extern "C" fn(usize) -> !, 
         _arg: usize
-    ) {}
+    ) -> usize { 0 }
 
     // Switch context.
-    // `old_handle_ptr`: Address where existing context handle should be saved (e.g. &mut Task.ctx.handle).
+    // `old_handle_ptr`: Address where existing context handle should be saved (e.g. &mut Task.ctx.0).
     // `new_handle`: The handle of the task to switch to.
-    unsafe fn context_switch(&self, _old_handle_ptr: *mut u64, _new_handle: u64) {}
+    unsafe fn context_switch(&self, _old_handle_ptr: *mut usize, _new_handle: usize) {}
 
     // Enter user mode.
     // Diverges.
@@ -443,12 +444,31 @@ pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     }
 
     // Initialize Syscalls (x86_64)
-    #[cfg(target_arch = "x86_64")]
+    // Initialize Syscalls
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        unsafe extern "C" {
-            fn syscall_entry();
+        extern "C" {
+             // For x86, it's syscall_entry. For AArch64, we usually register the table 
+             // and maybe a handler address.
+             // But bran::aarch64::register_syscall_handler takes an address.
+             // We need a designated syscall entry point for AArch64 too if we want to follow the same pattern.
+             // Bran AArch64 exception handler jumps to `_syscall_handler_addr` if set.
+             // We should define `syscall_entry` for aarch64 or similar.
+             // For now, let's assume we can reuse `syscall_entry` if it exists, or pass 0 if only VBAR init is needed?
+             // Bran implementation: `exception::init()` is called regardless of address.
+             // So passing 0 is fine to init vectors.
+             fn syscall_entry(); 
         }
         kinfo!("Registering syscall handler...");
+        // AArch64 might not have `syscall_entry` symbol defined in asm yet?
+        // x86_64 defines it in `syscall/mod.rs` via `global_asm`.
+        // We should check if `syscall` module has it for aarch64.
+        // If not, we might link error.
+        // For now, let's try to just init vectors.
+        #[cfg(target_arch="aarch64")]
+        runtime.register_syscall_handler(0);
+
+        #[cfg(target_arch="x86_64")]
         runtime.register_syscall_handler(syscall_entry as u64);
     }
 

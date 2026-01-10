@@ -6,6 +6,7 @@ use crate::runtime::ArchRuntime;
 
 mod serial;
 mod paging;
+mod task;
 use serial::SerialPort;
 
 /// The architecture-specific runtime for riscv64.
@@ -94,6 +95,23 @@ impl ArchRuntime for Riscv64Runtime {
     
     fn tlb_flush_all(&self) {
         paging::tlb_flush_all();
+    }
+}
+
+    // Task Context
+    fn context_init(
+        &self, 
+        kstack_top: u64, 
+        entry: extern "C" fn(usize) -> !, 
+        arg: usize
+    ) -> usize {
+        task::context_init(kstack_top, entry, arg)
+    }
+
+    unsafe fn context_switch(&self, old_handle_ptr: *mut usize, new_handle: usize) {
+        unsafe {
+             task::context_switch(old_handle_ptr as *mut u64, new_handle as u64);
+        }
     }
 }
 

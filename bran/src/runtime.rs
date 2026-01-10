@@ -210,13 +210,12 @@ pub trait ArchRuntime {
     // Task Context
     fn context_init(
         &self, 
-        _ctx_handle: &mut u64, 
         _kstack_top: u64, 
         _entry: extern "C" fn(usize) -> !, 
         _arg: usize
-    ) {}
+    ) -> usize { 0 }
 
-    unsafe fn context_switch(&self, _old_handle_ptr: *mut u64, _new_handle: u64) {}
+    unsafe fn context_switch(&self, _old_handle_ptr: *mut usize, _new_handle: usize) {}
 
     // Syscall / Context (Restored)
     fn register_syscall_handler(&self, _entry: u64) {}
@@ -345,10 +344,10 @@ impl<A: ArchRuntime> BootRuntime for Runtime<A> {
     fn tlb_flush_page(&self, v: u64) { self.arch.tlb_flush_page(v) }
     fn tlb_flush_all(&self) { self.arch.tlb_flush_all() }
     
-    fn context_init(&self, ch: &mut u64, k: u64, e: extern "C" fn(usize)->!, a: usize) {
-        self.arch.context_init(ch, k, e, a)
+    fn context_init(&self, k: u64, e: extern "C" fn(usize)->!, a: usize) -> usize {
+        self.arch.context_init(k, e, a)
     }
-    unsafe fn context_switch(&self, o: *mut u64, n: u64) {
+    unsafe fn context_switch(&self, o: *mut usize, n: usize) {
         unsafe { self.arch.context_switch(o, n) }
     }
 }

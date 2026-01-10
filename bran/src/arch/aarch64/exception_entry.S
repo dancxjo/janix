@@ -76,10 +76,17 @@ unhandled_exception:
     stp x30, x9, [sp, #240]  /* x30, ELR */
     str x10, [sp, #256]      /* SPSR */
     
-    /* Save SP_EL0 if needed? Usually user SP. We leave it. */
+    /* Save SP_EL0 -> Offset 264 */
+    mrs x9, sp_el0
+    str x9, [sp, #264]
 .endm
 
+/* RESTORE_CONTEXT */
 .macro RESTORE_CONTEXT
+    /* Restore User Stack Pointer from offset 264 */
+    ldr x10, [sp, #264]
+    msr sp_el0, x10
+
     ldr x10, [sp, #256]
     ldp x30, x9, [sp, #240]
     
@@ -104,6 +111,13 @@ unhandled_exception:
     
     add sp, sp, #272
 .endm
+
+.global aarch64_enter_user_mode
+aarch64_enter_user_mode:
+    /* x0 = pointer to TrapFrame */
+    mov sp, x0
+    RESTORE_CONTEXT
+    eret
 
 /* Sync EL1 Handler */
 sync_el1_handler:

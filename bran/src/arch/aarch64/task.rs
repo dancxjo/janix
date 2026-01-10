@@ -58,11 +58,10 @@ trampoline:
 "#);
 
 pub fn context_init(
-    ctx_handle: &mut u64,
     kstack_top: u64,
     entry: extern "C" fn(usize) -> !,
     arg: usize,
-) {
+) -> usize {
     // Stack must be 16-byte aligned.
     // We push 96 bytes (6 pairs of 8 bytes).
     let stack_size = 96;
@@ -95,5 +94,5 @@ pub fn context_init(
         ptr.offset(11).write(trampoline as usize as u64); // x30 (LR)
     }
     
-    *ctx_handle = sp;
+    sp as usize
 }

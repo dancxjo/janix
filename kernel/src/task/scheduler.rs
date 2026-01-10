@@ -94,7 +94,7 @@ impl Scheduler {
         };
 
         // Initialize Arch Context
-        crate::runtime().context_init(&mut task.ctx.0, stack_top, entry, arg);
+        task.ctx.0 = crate::runtime().context_init(stack_top, entry, arg);
 
         self.tasks.push(task);
         self.runq.push_back(id);
@@ -131,7 +131,7 @@ impl Scheduler {
         };
 
         // Initialize Arch Context to jump to user_entry_stub
-        crate::runtime().context_init(&mut task.ctx.0, stack_top, user_entry_stub, 0);
+        task.ctx.0 = crate::runtime().context_init(stack_top, user_entry_stub, 0);
 
         self.tasks.push(task);
         self.runq.push_back(id);

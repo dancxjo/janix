@@ -218,6 +218,14 @@ pub trait BootRuntime {
     // `old_handle_ptr`: Address where existing context handle should be saved (e.g. &mut Task.ctx.handle).
     // `new_handle`: The handle of the task to switch to.
     unsafe fn context_switch(&self, old_handle_ptr: *mut u64, new_handle: u64) {}
+
+    // Enter user mode.
+    // Diverges.
+    // `context` is a pointer to an architecture-specific TrapFrame/Context.
+    // The layout of the context MUST match what the architecture implementation expects.
+    unsafe fn enter_user_mode(&self, _context: *const ()) -> ! {
+        panic!("enter_user_mode not implemented");
+    }
 }
 
 static mut RUNTIME: Option<&'static dyn BootRuntime> = None;
@@ -566,11 +574,17 @@ extern "C" fn thread_a(arg: usize) -> ! {
         tf.user_rflags = 0x202; // IF | Reserved
 
         unsafe {
-            crate::user::enter::enter_user_sysret(&tf);
+            let ptr = &tf as *const _ as *const ();
+            crate::runtime().enter_user_mode(ptr);
         }
     }
 
-    // Loop is unreachable as enter_user_sysret diverges
+    // Loop is unreachable as enter_user_sysret diverges on x86_64.
+    // On other arches where user mode isn't implemented here yet, we loop.
+    #[allow(unreachable_code)]
+    loop {
+        crate::task::yield_now();
+    }
 }
 
 extern "C" fn thread_b(arg: usize) -> ! {

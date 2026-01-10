@@ -5,6 +5,10 @@ use crate::runtime::ArchRuntime;
 
 mod paging;
 mod simd;
+mod task;
+mod exception;
+mod timer;
+mod gic;
 
 /// The architecture-specific runtime for aarch64.
 pub struct AArch64Runtime {
@@ -95,7 +99,7 @@ impl ArchRuntime for AArch64Runtime {
     // Paging Delegates
     fn map_page(&self, _handle: usize, virt: u64, phys: u64, flags: u64) -> Result<(), ()> {
         // Convert flags if needed
-        let pflags = kernel::memory::paging::PageFlags::from_bits_truncate(flags);
+        let pflags = kernel::memory::paging::PageFlags::new(flags);
         paging::map_page(virt, kernel::memory::frame_alloc::PhysFrame(phys), pflags)
     }
 
@@ -113,6 +117,43 @@ impl ArchRuntime for AArch64Runtime {
     
     fn tlb_flush_all(&self) {
         paging::tlb_flush_all();
+    }
+
+    // Task Context
+    fn context_init(
+        &self, 
+        ctx_handle: &mut u64, 
+        kstack_top: u64, 
+        entry: extern "C" fn(usize) -> !, 
+        arg: usize
+    ) {
+        task::context_init(ctx_handle, kstack_top, entry, arg);
+    }
+
+    unsafe fn context_switch(&self, old_handle_ptr: *mut u64, new_handle: u64) {
+        unsafe {
+             task::context_switch(old_handle_ptr, new_handle);
+        }
+    }
+
+    // Syscall / Exceptions
+    fn register_syscall_handler(&self, entry: u64) {
+        unsafe {
+             exception::init();
+             exception::register_syscall_handler(entry);
+             timer::init();
+        }
+    }
+    
+    fn set_kernel_stack(&self, _stack_top: u64) {
+        // AArch64 uses SP_EL1 for kernel stack, which is switched via context_switch.
+        // If we needed to update TPIDR_EL1 or similar for a fresh trap handler stack, we would do it here.
+        // For now, we assume SP_EL1 is sufficient.
+    }
+
+    unsafe fn enter_user_mode(&self, _context: *const ()) -> ! {
+        kernel::kinfo!("aarch64: enter_user_mode not implemented");
+        loop { unsafe { core::arch::asm!("wfi") } }
     }
 }
 

@@ -229,6 +229,7 @@ extern "C" fn user_entry_stub(_arg: usize) -> ! {
         sched.tasks[idx].tf.clone()
     };
     unsafe {
-        crate::user::enter::enter_user_sysret(&tf);
+        let ptr = &tf as *const _ as *const ();
+        crate::runtime().enter_user_mode(ptr);
     }
 }

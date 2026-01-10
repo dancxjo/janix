@@ -175,6 +175,50 @@ impl ArchRuntime for X86_64Runtime {
             percpu::set_kernel_rsp0(stack_top);
         }
     }
+
+    unsafe fn enter_user_mode(&self, context: *const ()) -> ! {
+        let tf = unsafe { &*(context as *const kernel::trap::x86_64::TrapFrame) };
+        unsafe {
+            core::arch::asm!(
+                "cli", // Disable interrupts
+                
+                // Point RSP to the TrapFrame logic (we treat tf ref as stack ptr)
+                "mov rsp, {tf}",
+                
+                // Restore GPRs (popping from tf)
+                "pop r15",
+                "pop r14",
+                "pop r13",
+                "pop r12",
+                "pop r11",
+                "pop r10",
+                "pop r9",
+                "pop r8",
+                "pop rsi",
+                "pop rdi",
+                "pop rbp",
+                "pop rdx",
+                "pop rcx",
+                "pop rbx",
+                "pop rax",
+                
+                // RSP now points to user_rip (offset 120)
+                // [rsp] = user_rip (RCX for sysret)
+                // [rsp+8] = user_rsp (New RSP)
+                // [rsp+16] = user_rflags (R11 for sysret)
+                
+                "mov rcx, [rsp]",      // Load User RIP
+                "mov r11, [rsp + 16]", // Load User RFLAGS
+                "mov rsp, [rsp + 8]",  // Load User RSP (Switches stack!)
+                
+                "swapgs",              // Switch to user GS
+                "sysretq",             // Jump to user mode
+                
+                tf = in(reg) tf,
+                options(noreturn)
+            );
+        }
+    }
 }
 
 /// Halt and catch fire - enters an infinite halt loop.

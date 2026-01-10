@@ -1,5 +1,5 @@
 pub use abi;
-pub mod enter;
+
 pub mod elf;
 
 use crate::BootModuleDesc;

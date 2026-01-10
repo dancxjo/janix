@@ -39,7 +39,7 @@ unsafe fn debug_page_walk(virt: u64) {
     let pml4_phys = cr3 & !0xFFF;
     kerror!("PT DUMP: Virt {:#x} | CR3 {:#x}", virt, cr3);
 
-    let pml4 = phys_to_virt(pml4_phys) as *const u64;
+    let pml4 = unsafe { phys_to_virt(pml4_phys) } as *const u64;
     let pml4_idx = (virt >> 39) & 0x1FF;
     let pml4e = unsafe { *pml4.add(pml4_idx as usize) };
     kerror!("PML4[{}] = {:#x}", pml4_idx, pml4e);
@@ -47,7 +47,7 @@ unsafe fn debug_page_walk(virt: u64) {
     if (pml4e & 1) == 0 { return; }
     
     let pdp_phys = pml4e & 0x000FFFFFFFFFF000;
-    let pdp = phys_to_virt(pdp_phys) as *const u64;
+    let pdp = unsafe { phys_to_virt(pdp_phys) } as *const u64;
     let pdp_idx = (virt >> 30) & 0x1FF;
     let pdpe = unsafe { *pdp.add(pdp_idx as usize) };
     kerror!("PDP[{}] = {:#x}", pdp_idx, pdpe);
@@ -56,7 +56,7 @@ unsafe fn debug_page_walk(virt: u64) {
     if (pdpe & 0x80) != 0 { kerror!("PDP Huge Page"); return; }
     
     let pd_phys = pdpe & 0x000FFFFFFFFFF000;
-    let pd = phys_to_virt(pd_phys) as *const u64;
+    let pd = unsafe { phys_to_virt(pd_phys) } as *const u64;
     let pd_idx = (virt >> 21) & 0x1FF;
     let pde = unsafe { *pd.add(pd_idx as usize) };
     kerror!("PD[{}] = {:#x}", pd_idx, pde);
@@ -65,7 +65,7 @@ unsafe fn debug_page_walk(virt: u64) {
     if (pde & 0x80) != 0 { kerror!("PD Huge Page"); return; }
     
     let pt_phys = pde & 0x000FFFFFFFFFF000;
-    let pt = phys_to_virt(pt_phys) as *const u64;
+    let pt = unsafe { phys_to_virt(pt_phys) } as *const u64;
     let pt_idx = (virt >> 12) & 0x1FF;
     let pte = unsafe { *pt.add(pt_idx as usize) };
     kerror!("PT[{}] = {:#x}", pt_idx, pte);

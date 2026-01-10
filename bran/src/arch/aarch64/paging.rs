@@ -58,25 +58,27 @@ pub fn map_bootheap_page(virt: u64, phys: u64, allocator: &mut BootFrameAllocato
 }
 
 unsafe fn ensure_table_boot(table: *mut u64, index: u64, allocator: &mut BootFrameAllocator) -> u64 {
-    let entry = *table.add(index as usize);
-    if (entry & DESC_VALID) != 0 {
-        // Assume it's a table, not a block for now?
-        // Block descriptors (L1/L2) have bit 1 = 0.
-        // Table descriptors (L0-L2) have bit 1 = 1.
-        // We really hope Limine didn't map this range with Blocks if we are subdividing it.
-        // But BootHeap is usually in free space.
-        entry & 0x0000_FFFF_FFFF_F000
-    } else {
-        let frame = allocator.alloc_frame().expect("OOM allocating page table for bootheap");
-        let virt_ptr = phys_to_virt(frame) as *mut u8;
-        core::ptr::write_bytes(virt_ptr, 0, 4096);
-        
-        // Create Table Descriptor
-        // Valid | Table
-        let new_entry = frame | DESC_VALID | DESC_TABLE | DESC_AF; // AF not strictly needed for tables but good practice?
-        *table.add(index as usize) = new_entry;
-        
-        frame
+    unsafe {
+        let entry = *table.add(index as usize);
+        if (entry & DESC_VALID) != 0 {
+            // Assume it's a table, not a block for now?
+            // Block descriptors (L1/L2) have bit 1 = 0.
+            // Table descriptors (L0-L2) have bit 1 = 1.
+            // We really hope Limine didn't map this range with Blocks if we are subdividing it.
+            // But BootHeap is usually in free space.
+            entry & 0x0000_FFFF_FFFF_F000
+        } else {
+            let frame = allocator.alloc_frame().expect("OOM allocating page table for bootheap");
+            let virt_ptr = phys_to_virt(frame) as *mut u8;
+            core::ptr::write_bytes(virt_ptr, 0, 4096);
+            
+            // Create Table Descriptor
+            // Valid | Table
+            let new_entry = frame | DESC_VALID | DESC_TABLE | DESC_AF; // AF not strictly needed for tables but good practice?
+            *table.add(index as usize) = new_entry;
+            
+            frame
+        }
     }
 }
 
@@ -129,31 +131,33 @@ pub fn map_page(virt: u64, phys: PhysFrame, flags: PageFlags) -> Result<(), ()> 
 }
 
 unsafe fn ensure_table_global(table: *mut u64, index: u64) -> Result<u64, ()> {
-    let entry = *table.add(index as usize);
-    if (entry & DESC_VALID) != 0 {
-        // Assume Table
-        Ok(entry & 0x0000_FFFF_FFFF_F000)
-    } else {
-        // Allocate from Global Allocator
-        let frame = FRAME_ALLOCATOR.with_lock(|alloc| {
-             alloc.alloc_contiguous(1).map(|r| r.base.0)
-        }).ok_or(())?;
-        
-        let virt_ptr = phys_to_virt(frame) as *mut u8;
-        core::ptr::write_bytes(virt_ptr, 0, 4096);
-        
-        // Link - allow user access to table descriptors so they can reach user pages?
-        // AP for tables:
-        // "The AP/APTable bits in the descriptors for the subsequent levels of lookup."
-        // Actually AP in Table descriptor limits access for subsequent levels!
-        // APTable = 00 (No effect).
-        // UXNTable / PXNTable...
-        // We just leave them 0.
-        
-        let new_entry = frame | DESC_VALID | DESC_TABLE | DESC_AF;
-        *table.add(index as usize) = new_entry;
-        
-        Ok(frame)
+    unsafe {
+        let entry = *table.add(index as usize);
+        if (entry & DESC_VALID) != 0 {
+            // Assume Table
+            Ok(entry & 0x0000_FFFF_FFFF_F000)
+        } else {
+            // Allocate from Global Allocator
+            let frame = FRAME_ALLOCATOR.with_lock(|alloc| {
+                 alloc.alloc_contiguous(1).map(|r| r.base.0)
+            }).ok_or(())?;
+            
+            let virt_ptr = phys_to_virt(frame) as *mut u8;
+            core::ptr::write_bytes(virt_ptr, 0, 4096);
+            
+            // Link - allow user access to table descriptors so they can reach user pages?
+            // AP for tables:
+            // "The AP/APTable bits in the descriptors for the subsequent levels of lookup."
+            // Actually AP in Table descriptor limits access for subsequent levels!
+            // APTable = 00 (No effect).
+            // UXNTable / PXNTable...
+            // We just leave them 0.
+            
+            let new_entry = frame | DESC_VALID | DESC_TABLE | DESC_AF;
+            *table.add(index as usize) = new_entry;
+            
+            Ok(frame)
+        }
     }
 }
 pub fn unmap_page(_virt: u64) -> Result<Option<PhysFrame>, ()> { Ok(None) }

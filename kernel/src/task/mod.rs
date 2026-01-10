@@ -10,11 +10,12 @@ pub enum TaskState {
     Blocked,
 }
 
-pub use scheduler::Scheduler;
 
 use crate::simd::SimdState;
 use crate::memory::paging::AddressSpace;
-use crate::arch::{ArchTrapFrame, ArchContext};
+use crate::boot::{ArchTrapFrame, ArchContext};
+use crate::task::scheduler::Scheduler;
+use alloc::boxed::Box;
 
 pub struct Task {
     pub id: TaskId,
@@ -24,13 +25,16 @@ pub struct Task {
     pub kstack_size: usize,
     pub kstack_top: u64,
 
-    pub ctx: ArchContext,
+    pub ctx: Box<dyn ArchContext>,
 
     pub simd: SimdState,
     
     pub aspace: Option<AddressSpace>,
-    pub tf: ArchTrapFrame,
+    pub tf: Option<Box<dyn ArchTrapFrame>>,
 }
+
+
+
 
 // Global scheduler instance
 pub static mut SCHEDULER: Option<Scheduler> = None;
@@ -85,7 +89,7 @@ pub fn set_need_resched(val: bool) {
 }
 
 pub fn check_preemption() {
-    let rt = crate::runtime();
+    let _rt = crate::runtime();
     // We must be careful here. If we are returning to user, we are mostly safe to yield.
     // We enter a critical section to check/clear.
     // Actually yield_now handles the locking.

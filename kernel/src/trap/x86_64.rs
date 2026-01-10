@@ -34,6 +34,7 @@ pub struct TrapFrame {
     pub ss: u64,
 }
 
+
 impl TrapFrame {
     pub fn new_user(entry: usize, stack_top: usize) -> Self {
         Self {
@@ -44,5 +45,41 @@ impl TrapFrame {
             ss: 0x1B, // User Data (Ring 3) | RPL 3
             ..Default::default()
         }
+    }
+
+    pub fn syscall_num(&self) -> u64 {
+        self.rax
+    }
+
+    pub fn syscall_ret(&mut self, val: u64) {
+        self.rax = val;
+    }
+
+    pub fn syscall_arg(&self, idx: usize) -> u64 {
+        match idx {
+            0 => self.rdi,
+            1 => self.rsi,
+            2 => self.rdx,
+            3 => self.r10, // R10 used for RCX in syscall
+            4 => self.r8,
+            5 => self.r9,
+            _ => 0,
+        }
+    }
+
+    pub fn user_ip(&self) -> u64 {
+        self.rip
+    }
+
+    pub fn set_user_ip(&mut self, ip: u64) {
+        self.rip = ip;
+    }
+
+    pub fn user_stack(&self) -> u64 {
+        self.rsp
+    }
+
+    pub fn set_user_stack(&mut self, stack: u64) {
+        self.rsp = stack;
     }
 }

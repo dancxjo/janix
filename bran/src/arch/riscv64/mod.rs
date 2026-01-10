@@ -20,6 +20,8 @@ pub const fn create_runtime() -> Runtime {
     Runtime::new(Riscv64Runtime::new())
 }
 
+pub unsafe fn init() {}
+
 impl Riscv64Runtime {
     pub const fn new() -> Self {
         Self {
@@ -77,8 +79,20 @@ impl ArchRuntime for Riscv64Runtime {
 
     // Paging Delegates
     fn map_page(&self, _handle: usize, virt: u64, phys: u64, flags: u64) -> Result<(), ()> {
-        let pflags = kernel::memory::paging::PageFlags::from_bits_truncate(flags);
+        let pflags = kernel::memory::paging::PageFlags::new(flags);
         paging::map_page(virt, kernel::memory::frame_alloc::PhysFrame(phys), pflags)
+    }
+
+    fn map_page_with_allocator(
+        &self, 
+        _handle: usize, 
+        virt: u64, 
+        phys: u64, 
+        _flags: u64,
+        alloc: &mut kernel::memory::boot_frame_alloc::BootFrameAllocator
+    ) -> Result<(), ()> {
+        paging::map_bootheap_page(virt, phys, alloc);
+        Ok(())
     }
 
     fn unmap_page(&self, _handle: usize, virt: u64) {
@@ -96,21 +110,31 @@ impl ArchRuntime for Riscv64Runtime {
     fn tlb_flush_all(&self) {
         paging::tlb_flush_all();
     }
-}
 
     // Task Context
-    fn context_init(
+    fn new_context(&self) -> alloc::boxed::Box<dyn kernel::boot::ArchContext> {
+        alloc::boxed::Box::new(task::Context { sp: 0 })
+    }
+
+    fn init_task_context(
         &self, 
+        out: &mut dyn kernel::boot::ArchContext,
         kstack_top: u64, 
         entry: extern "C" fn(usize) -> !, 
         arg: usize
     ) -> usize {
-        task::context_init(kstack_top, entry, arg)
+        let sp = task::context_init(kstack_top, entry, arg);
+        let ctx = out.as_any_mut().downcast_mut::<task::Context>().unwrap();
+        ctx.sp = sp as u64;
+        sp
     }
 
-    unsafe fn context_switch(&self, old_handle_ptr: *mut usize, new_handle: usize) {
+    unsafe fn switch_tasks(&self, old: &mut dyn kernel::boot::ArchContext, new: &dyn kernel::boot::ArchContext) {
+        let old_ctx = old.as_any_mut().downcast_mut::<task::Context>().unwrap();
+        let new_ctx = new.as_any().downcast_ref::<task::Context>().unwrap();
+        
         unsafe {
-             task::context_switch(old_handle_ptr as *mut u64, new_handle as u64);
+             task::context_switch(&mut old_ctx.sp as *mut u64, new_ctx.sp);
         }
     }
 }

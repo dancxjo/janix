@@ -1,5 +1,6 @@
 
 use super::gdt;
+use super::trap::TrapFrame;
 
 pub unsafe fn enable(handler_entry: u64) {
     // Enable SCE (System Call Extensions) in EFER (0xC0000080)
@@ -44,4 +45,13 @@ pub unsafe fn enable(handler_entry: u64) {
     unsafe {
         core::arch::asm!("wrmsr", in("ecx") 0xC0000084u32, in("eax") fmask_lo, in("edx") fmask_hi);
     }
+}
+
+// Trampoline called from syscall_entry.S
+// Casts concrete TrapFrame to &mut dyn ArchTrapFrame and calls kernel
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sys_dispatch_trampoline(tf: &mut TrapFrame) {
+    // We need to call kernel::syscall::syscall_dispatch(tf)
+    // kernel::syscall_dispatch takes &mut dyn ArchTrapFrame
+    kernel::syscall::syscall_dispatch(tf);
 }

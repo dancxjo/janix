@@ -167,9 +167,6 @@ impl LimineRuntimeData {
 // --- Architecture Contract ---
 
 pub trait ArchRuntime: Sync {
-    type Context: Default + 'static;
-    type TrapFrame: 'static;
-
     fn putchar(&self, c: u8);
     fn halt(&self) -> !;
     fn mono_ticks(&self) -> u64;
@@ -204,7 +201,7 @@ pub trait ArchRuntime: Sync {
 
     fn unmap_page(&self, _handle: usize, _virt: u64) {}
     fn translate(&self, _handle: usize, _virt: u64) -> Option<u64> { None }
-
+    
     fn new_address_space(&self) -> usize { 0 }
     fn switch_address_space(&self, _handle: usize) {}
     fn current_address_space(&self) -> usize { 0 }
@@ -213,21 +210,33 @@ pub trait ArchRuntime: Sync {
     fn tlb_flush_all(&self) {}
     
     // Task Context
+    fn new_context(&self) -> alloc::boxed::Box<dyn kernel::boot::ArchContext> {
+        panic!("new_context not implemented")
+    }
+
     fn init_task_context(
         &self, 
-        _out: &mut Self::Context,
+        _out: &mut dyn kernel::boot::ArchContext,
         _kstack_top: u64, 
         _entry: extern "C" fn(usize) -> !, 
         _arg: usize
-    ) {}
+    ) -> usize { 0 }
 
-    fn save_from_trap(&self, _tf: &Self::TrapFrame, _out: &mut Self::Context) {}
-    fn load_into_trap(&self, _ctx: &Self::Context, _tf: &mut Self::TrapFrame) {}
+    fn save_from_trap(&self, _tf: &dyn kernel::boot::ArchTrapFrame, _out: &mut dyn kernel::boot::ArchContext) {}
+    fn load_into_trap(&self, _ctx: &dyn kernel::boot::ArchContext, _tf: &mut dyn kernel::boot::ArchTrapFrame) {}
 
-    unsafe fn return_from_trap(&self, _tf: *const Self::TrapFrame) -> ! { loop {} }
+    unsafe fn switch_tasks(&self, _old: &mut dyn kernel::boot::ArchContext, _new: &dyn kernel::boot::ArchContext) {
+        panic!("switch_tasks not implemented");
+    }
+
+    unsafe fn return_from_trap(&self, _tf: &dyn kernel::boot::ArchTrapFrame) -> ! { loop {} }
     
-    fn make_user_trapframe(&self, _rip: u64, _rsp: u64) -> Self::TrapFrame {
+    fn make_user_trapframe(&self, _rip: u64, _rsp: u64) -> alloc::boxed::Box<dyn kernel::boot::ArchTrapFrame> {
          panic!("make_user_trapframe not implemented");
+    }
+    
+    fn new_trapframe(&self) -> alloc::boxed::Box<dyn kernel::boot::ArchTrapFrame> {
+         panic!("new_trapframe not implemented");
     }
 
     // Syscall / Context (Restored)
@@ -251,7 +260,8 @@ impl<A: ArchRuntime> Runtime<A> {
     }
 }
 
-impl<A: ArchRuntime> BootRuntime<A::Context, A::TrapFrame> for Runtime<A> {
+
+impl<A: ArchRuntime + Send> BootRuntime for Runtime<A> {
     fn putchar(&self, c: u8) { self.arch.putchar(c) }
     fn halt(&self) -> ! { self.arch.halt() }
 
@@ -274,29 +284,42 @@ impl<A: ArchRuntime> BootRuntime<A::Context, A::TrapFrame> for Runtime<A> {
     fn register_syscall_handler(&self, entry: u64) { self.arch.register_syscall_handler(entry) }
     fn set_kernel_stack(&self, stack_top: u64) { self.arch.set_kernel_stack(stack_top) }
     
+    // Task Context Factory
+    fn new_context(&self) -> alloc::boxed::Box<dyn kernel::boot::ArchContext> {
+        self.arch.new_context()
+    }
+    
+    fn new_trapframe(&self) -> alloc::boxed::Box<dyn kernel::boot::ArchTrapFrame> {
+        self.arch.new_trapframe()
+    }
+
     fn init_task_context(
         &self, 
-        out: &mut A::Context,
-        kstack_top: u64, 
-        entry: extern "C" fn(usize) -> !, 
-        arg: usize
-    ) {
-        self.arch.init_task_context(out, kstack_top, entry, arg)
+        out: &mut dyn kernel::boot::ArchContext, 
+        k: u64, 
+        e: extern "C" fn(usize)->!, 
+        a: usize
+    ) -> usize {
+        self.arch.init_task_context(out, k, e, a)
     }
 
-    fn save_from_trap(&self, tf: &A::TrapFrame, out: &mut A::Context) {
+    fn save_from_trap(&self, tf: &dyn kernel::boot::ArchTrapFrame, out: &mut dyn kernel::boot::ArchContext) {
         self.arch.save_from_trap(tf, out)
     }
-
-    fn load_into_trap(&self, ctx: &A::Context, tf: &mut A::TrapFrame) {
+    
+    fn load_into_trap(&self, ctx: &dyn kernel::boot::ArchContext, tf: &mut dyn kernel::boot::ArchTrapFrame) {
         self.arch.load_into_trap(ctx, tf)
     }
 
-    unsafe fn return_from_trap(&self, tf: *const A::TrapFrame) -> ! {
-        unsafe { self.arch.return_from_trap(tf) }
+    unsafe fn switch_tasks(&self, old: &mut dyn kernel::boot::ArchContext, new: &dyn kernel::boot::ArchContext) {
+        unsafe { self.arch.switch_tasks(old, new) }
     }
 
-    fn make_user_trapframe(&self, rip: u64, rsp: u64) -> A::TrapFrame {
+    unsafe fn return_from_trap(&self, tf: &dyn kernel::boot::ArchTrapFrame) -> ! {
+        unsafe { self.arch.return_from_trap(tf) }
+    }
+    
+    fn make_user_trapframe(&self, rip: u64, rsp: u64) -> alloc::boxed::Box<dyn kernel::boot::ArchTrapFrame> {
         self.arch.make_user_trapframe(rip, rsp)
     }
 

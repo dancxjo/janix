@@ -6,6 +6,7 @@ use crate::runtime::ArchRuntime;
 mod paging;
 mod simd;
 mod task;
+mod trap;
 mod exception;
 mod timer;
 mod gic;
@@ -20,6 +21,8 @@ pub type Runtime = crate::runtime::Runtime<AArch64Runtime>;
 pub const fn create_runtime() -> Runtime {
     Runtime::new(AArch64Runtime::new())
 }
+
+pub unsafe fn init() {}
 
 impl AArch64Runtime {
     pub const fn new() -> Self {
@@ -132,18 +135,31 @@ impl ArchRuntime for AArch64Runtime {
     }
 
     // Task Context
-    fn context_init(
+    fn new_context(&self) -> alloc::boxed::Box<dyn kernel::boot::ArchContext> {
+        alloc::boxed::Box::new(task::Context::default())
+    }
+
+    fn init_task_context(
         &self, 
+        out: &mut dyn kernel::boot::ArchContext,
         kstack_top: u64, 
         entry: extern "C" fn(usize) -> !, 
         arg: usize
     ) -> usize {
-        task::context_init(kstack_top, entry, arg)
+        // cast out to Context
+        let ctx = out.as_any_mut().downcast_mut::<task::Context>().expect("AArch64 invalid context type");
+        ctx.sp = task::init_task_context(kstack_top, entry, arg) as u64;
+        ctx.sp as usize
     }
 
-    unsafe fn context_switch(&self, old_handle_ptr: *mut usize, new_handle: usize) {
+    unsafe fn switch_tasks(&self, old: &mut dyn kernel::boot::ArchContext, new: &dyn kernel::boot::ArchContext) {
+        let old_ctx = old.as_any_mut().downcast_mut::<task::Context>().expect("AArch64 invalid old context");
+        let new_ctx = new.as_any().downcast_ref::<task::Context>().expect("AArch64 invalid new context");
+        
         unsafe {
-             task::context_switch(old_handle_ptr as *mut u64, new_handle as u64);
+             // We pass &mut sp as *mut u64
+             // And new.sp as u64
+             task::context_switch(&mut old_ctx.sp as *mut u64, new_ctx.sp);
         }
     }
 
@@ -158,13 +174,29 @@ impl ArchRuntime for AArch64Runtime {
     
     fn set_kernel_stack(&self, _stack_top: u64) {
         // AArch64 uses SP_EL1 for kernel stack, which is switched via context_switch.
-        // If we needed to update TPIDR_EL1 or similar for a fresh trap handler stack, we would do it here.
-        // For now, we assume SP_EL1 is sufficient.
     }
 
-    unsafe fn enter_user_mode(&self, context: &kernel::arch::TrapFrame) -> ! {
+    fn new_trapframe(&self) -> alloc::boxed::Box<dyn kernel::boot::ArchTrapFrame> {
+        alloc::boxed::Box::new(trap::TrapFrame::default())
+    }
+
+    fn make_user_trapframe(&self, rip: u64, rsp: u64) -> alloc::boxed::Box<dyn kernel::boot::ArchTrapFrame> {
+        let mut tf = trap::TrapFrame::default();
+        tf.elr = rip;
+        tf.sp_el0 = rsp;
+        // User Mode SPSR
+        // EL0t = 0x0
+        // Mask IRQ/FIQ/DAIF? No, unmask them (0).
+        // 0x00000000 -> M[3:0] = 0000 (EL0t).
+        tf.spsr = 0; 
+        
+        alloc::boxed::Box::new(tf)
+    }
+
+    unsafe fn return_from_trap(&self, tf: &dyn kernel::boot::ArchTrapFrame) -> ! {
+        let tf_conc = tf.as_any().downcast_ref::<trap::TrapFrame>().expect("AArch64 invalid trapframe");
         unsafe {
-            let context_ptr = context as *const _ as u64;
+            let context_ptr = tf_conc as *const _ as u64;
              asm!(
                 "mov x0, {}",
                 "b aarch64_enter_user_mode",

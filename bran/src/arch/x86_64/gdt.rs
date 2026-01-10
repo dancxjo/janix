@@ -202,6 +202,10 @@ pub unsafe fn set_tss_rsp0(stack: u64) {
     }
 }
 
+pub unsafe fn set_kernel_stack(stack: u64) {
+    unsafe { set_tss_rsp0(stack) }
+}
+
 pub unsafe fn set_double_fault_stack(stack: u64) {
     unsafe {
         // IST 1 is the first entry in reserved2 (index 0)

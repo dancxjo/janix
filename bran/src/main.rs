@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+
+
 //! The Boot Runtime Abstraction Node (BRAN) is the seed coat around the kernel.
 //! It wraps the abstract kernel with the low-level mechanisms to speak to the
 //! architecture. Importantly, most hardware belongs in userspace, not here.
@@ -8,6 +10,8 @@
 //! speaking with limine should happen here as well. Nothing beyond this layer
 //! should know about limine or booting, except through the implementation of
 //! the BootRuntime trait.
+
+extern crate alloc;
 
 mod arch;
 mod requests;
@@ -34,6 +38,7 @@ static RUNTIME: Runtime = arch::create_runtime();
 unsafe extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
     indicate_progress();
+    unsafe { arch::init() };
     kernel::start(&RUNTIME);
 }
 

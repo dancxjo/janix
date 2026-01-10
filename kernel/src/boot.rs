@@ -1,10 +1,10 @@
-#![no_std]
+
 
 extern crate alloc;
 
-use alloc::vec::Vec;
 use alloc::boxed::Box;
-use crate::memory::frame_alloc::{FRAME_SIZE, FrameAllocator};
+use core::any::Any;
+use core::fmt::Debug;
 
 /// A physical memory range with a kind.
 #[derive(Debug, Clone, Copy)]
@@ -77,9 +77,34 @@ pub enum PixelFormat {
 #[derive(Debug, Clone, Copy)]
 pub struct IrqState(pub usize);
 
-pub trait BootRuntime<C, TF>: Sync 
-where C: Default + 'static, TF: 'static 
-{
+// Architecture Context Traits
+
+pub trait ArchContext: Any + Debug + Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+pub trait ArchTrapFrame: Any + Debug + Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    
+    // Syscall accessors
+    fn syscall_arg(&self, idx: usize) -> u64;
+    fn syscall_ret(&mut self, val: u64);
+    fn syscall_num(&self) -> u64;
+    
+    // User state accessors
+    fn set_user_stack(&mut self, stack: u64);
+    fn user_stack(&self) -> u64;
+    fn set_user_ip(&mut self, ip: u64);
+    fn user_ip(&self) -> u64;
+    
+    // Exception info
+    fn trap_num(&self) -> usize { 0 }
+    fn error_code(&self) -> usize { 0 }
+}
+
+pub trait BootRuntime: Sync + Send {
     // Output / halt
     fn putchar(&self, c: u8);
     fn halt(&self) -> !;
@@ -99,15 +124,9 @@ where C: Default + 'static, TF: 'static
     }
 
     /// Save current CPU SIMD state into `dst`.
-    ///
-    /// # Safety
-    /// `dst` must be valid for writes of size `layout.size` and aligned to `layout.align`.
     unsafe fn simd_save(&self, _dst: *mut u8) {}
 
     /// Restore CPU SIMD state from `src`.
-    ///
-    /// # Safety
-    /// `src` must be valid for reads of size `layout.size` and aligned to `layout.align`.
     unsafe fn simd_restore(&self, _src: *const u8) {}
 
     // Memory facts
@@ -183,27 +202,35 @@ where C: Default + 'static, TF: 'static
     fn register_syscall_handler(&self, _entry: u64) {}
     fn set_kernel_stack(&self, _stack_top: u64) {}
 
-    // Task Context
+    // Task Context Factory
+    fn new_context(&self) -> Box<dyn ArchContext>;
+    fn new_trapframe(&self) -> Box<dyn ArchTrapFrame>;
+
     // Initialize a context for a new thread.
     fn init_task_context(
         &self, 
-        _out: &mut C,
+        _out: &mut dyn ArchContext,
         _kstack_top: u64, 
         _entry: extern "C" fn(usize) -> !, 
         _arg: usize
-    ) {}
+    ) -> usize { 0 }
 
     // Trap <-> Context bridge
-    fn save_from_trap(&self, _tf: &TF, _out: &mut C) {}
-    fn load_into_trap(&self, _ctx: &C, _tf: &mut TF) {}
+    fn save_from_trap(&self, _tf: &dyn ArchTrapFrame, _out: &mut dyn ArchContext) {}
+    fn load_into_trap(&self, _ctx: &dyn ArchContext, _tf: &mut dyn ArchTrapFrame) {}
+
+    // Cooperative Context Switch
+    unsafe fn switch_tasks(&self, _old: &mut dyn ArchContext, _new: &dyn ArchContext) {
+        panic!("switch_tasks not implemented");
+    }
 
     // Trap return (diverges)
-    unsafe fn return_from_trap(&self, _tf: *const TF) -> ! {
+    unsafe fn return_from_trap(&self, _tf: &dyn ArchTrapFrame) -> ! {
         loop {}
     }
 
     // User entry
-    fn make_user_trapframe(&self, _rip: u64, _rsp: u64) -> TF {
-        panic!("make_user_trapframe not implemented")
+    fn make_user_trapframe(&self, _rip: u64, _rsp: u64) -> Box<dyn ArchTrapFrame> {
+         panic!("make_user_trapframe not implemented")
     }
 }

@@ -1,11 +1,11 @@
-use crate::boot::{BootRuntime, PhysRangeKind, BootModuleKind};
-use crate::arch::{ArchContext, ArchTrapFrame};
+use crate::boot::{BootRuntime, PhysRangeKind};
+
 use crate::global;
 use crate::{logging, kinfo, kerror};
 use alloc::vec::Vec;
 use alloc::boxed::Box;
 
-pub fn start(runtime: &'static dyn BootRuntime<ArchContext, ArchTrapFrame>) -> ! {
+pub fn start(runtime: &'static dyn BootRuntime) -> ! {
     unsafe {
         global::set_runtime(runtime);
         logging::init(runtime);
@@ -32,7 +32,7 @@ pub fn start(runtime: &'static dyn BootRuntime<ArchContext, ArchTrapFrame>) -> !
     kinfo!("Initializing Real Frame Allocator...");
 
     let mut min_usable = u64::MAX;
-    let mut max_usable = 0;
+    let mut max_usable: u64 = 0;
     for r in map {
         if r.kind == PhysRangeKind::Usable {
             if r.start < min_usable {
@@ -230,6 +230,7 @@ pub fn start(runtime: &'static dyn BootRuntime<ArchContext, ArchTrapFrame>) -> !
 
         kinfo!("Entering Scheduler Loop (Main Task)...");
         crate::task::run_scheduler();
+        // Unreachable
     } else {
         kinfo!("threads: not supported on this arch yet; continuing single-thread");
         loop {
@@ -238,6 +239,7 @@ pub fn start(runtime: &'static dyn BootRuntime<ArchContext, ArchTrapFrame>) -> !
     }
 }
 
+#[allow(dead_code)]
 extern "C" fn thread_a(arg: usize) -> ! {
     crate::kinfo!("Thread A starting (arg={})", arg);
 
@@ -295,7 +297,7 @@ extern "C" fn thread_a(arg: usize) -> ! {
         let tf = crate::runtime().make_user_trapframe(0x400000, 0x6FFFF000);
 
         unsafe {
-            crate::runtime().return_from_trap(&tf as *const _);
+            crate::runtime().return_from_trap(&*tf);
         }
     }
 
@@ -305,6 +307,7 @@ extern "C" fn thread_a(arg: usize) -> ! {
     }
 }
 
+#[allow(dead_code)]
 extern "C" fn thread_b(arg: usize) -> ! {
     loop {
         let ticks = crate::runtime().mono_ticks();

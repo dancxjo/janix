@@ -59,7 +59,10 @@ pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
         0
     }
 }
-
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
+    unsafe { memcmp(s1, s2, n) }
+}
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn strlen(mut s: *const u8) -> usize {
     unsafe {

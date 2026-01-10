@@ -78,6 +78,16 @@ trampoline:
     ebreak
 "#);
 
+#[derive(Debug)]
+pub struct Context {
+    pub sp: u64,
+}
+
+impl kernel::boot::ArchContext for Context {
+    fn as_any(&self) -> &dyn core::any::Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn core::any::Any { self }
+}
+
 pub fn context_init(
     kstack_top: u64,
     entry: extern "C" fn(usize) -> !,

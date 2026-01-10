@@ -3,10 +3,10 @@ use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::sync::atomic::AtomicBool;
 use crate::task::{Task, TaskId, TaskState};
-// use crate::arch::imp::task::{context_init, context_switch};
 use crate::user::elf::UserImage;
 use crate::memory::paging::AddressSpace;
-
+use crate::trap::yield_trap;
+use crate::boot::ArchTrapFrame;
 
 // 64KiB stack
 const STACK_SIZE: usize = 64 * 1024;
@@ -44,16 +44,19 @@ impl Scheduler {
         // It uses the existing stack, so we don't allocate one.
         // We just need a slot to save its state when we switch away.
         
+        // We need a context derived from the arch.
+        let ctx = crate::runtime().new_context();
+        
         let task = Task {
             id: 0,
             state: TaskState::Running,
             kstack_base: core::ptr::null_mut(),
             kstack_size: 0,
             kstack_top: 0,
-            ctx: Default::default(),
+            ctx,
             simd: crate::simd::SimdState::new(crate::runtime()),
             aspace: None,
-            tf: Default::default(),
+            tf: None, 
         };
         
         self.tasks.push(task);
@@ -81,20 +84,22 @@ impl Scheduler {
         // Align top to 16 bytes (should be already if size is aligned, but be safe)
         let stack_top = stack_top & !0xF;
 
-        let mut task = Task {
+        let mut ctx = crate::runtime().new_context();
+        
+        // Initialize Arch Context
+        crate::runtime().init_task_context(ctx.as_mut(), stack_top, entry, arg);
+
+        let task = Task {
             id,
             state: TaskState::Runnable,
             kstack_base: stack_base,
             kstack_size: STACK_SIZE,
             kstack_top: stack_top,
-            ctx: Default::default(),
+            ctx,
             simd: crate::simd::SimdState::new(crate::runtime()),
             aspace: None,
-            tf: Default::default(),
+            tf: None,
         };
-
-        // Initialize Arch Context
-        crate::runtime().init_task_context(&mut task.ctx, stack_top, entry, arg);
 
         self.tasks.push(task);
         self.runq.push_back(id);
@@ -117,21 +122,23 @@ impl Scheduler {
         let stack_top = stack_top & !0xF;
 
         let tf = crate::runtime().make_user_trapframe(image.entry, image.stack_top);
+        
+        let mut ctx = crate::runtime().new_context();
 
-        let mut task = Task {
+        // Initialize Arch Context to jump to user_entry_stub
+        crate::runtime().init_task_context(ctx.as_mut(), stack_top, user_entry_stub, 0);
+
+        let task = Task {
             id,
             state: TaskState::Runnable,
             kstack_base: stack_base,
             kstack_size: STACK_SIZE,
             kstack_top: stack_top,
-            ctx: Default::default(),
+            ctx,
             simd: crate::simd::SimdState::new(crate::runtime()),
             aspace: Some(aspace),
-            tf,
+            tf: Some(tf),
         };
-
-        // Initialize Arch Context to jump to user_entry_stub
-        crate::runtime().init_task_context(&mut task.ctx, stack_top, user_entry_stub, 0);
 
         self.tasks.push(task);
         self.runq.push_back(id);
@@ -145,7 +152,7 @@ impl Scheduler {
         }
     }
 
-    pub fn schedule(&mut self, tf: &mut crate::arch::ArchTrapFrame) {
+    pub fn schedule(&mut self, tf: &mut dyn ArchTrapFrame) {
         // Pick next
         let next_id = match self.runq.pop_front() {
             Some(id) => id,
@@ -168,9 +175,6 @@ impl Scheduler {
         // Switch needed
         self.current = Some(next_id);
         
-        // We need mutable references to old and new contexts.
-        // Since they are in the same Vec, we have to be careful.
-        
         let old_idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
         let new_idx = self.tasks.iter().position(|t| t.id == next_id).unwrap();
         
@@ -180,7 +184,7 @@ impl Scheduler {
             let old_task = &mut *tasks_ptr.add(old_idx);
             let new_task = &mut *tasks_ptr.add(new_idx);
             
-            old_task.state = TaskState::Runnable; // yield logic set it, but verify
+            old_task.state = TaskState::Runnable;
             new_task.state = TaskState::Running;
             
             // SIMD Save/Restore
@@ -197,8 +201,8 @@ impl Scheduler {
             }
             
             // Generic Trap-Based Switch
-            crate::runtime().save_from_trap(tf, &mut old_task.ctx);
-            crate::runtime().load_into_trap(&new_task.ctx, tf);
+            crate::runtime().save_from_trap(tf, old_task.ctx.as_mut());
+            crate::runtime().load_into_trap(new_task.ctx.as_ref(), tf);
         }
     }
 }
@@ -209,9 +213,9 @@ extern "C" fn user_entry_stub(_arg: usize) -> ! {
         let sched = (*ptr).as_mut().unwrap();
         let curr = sched.current_id().unwrap();
         let idx = sched.tasks.iter().position(|t| t.id == curr).unwrap();
-        sched.tasks[idx].tf.clone()
+        sched.tasks[idx].tf.take().expect("user_entry_stub called but no tf?")
     };
     unsafe {
-        crate::runtime().enter_user_mode(&tf);
+        crate::runtime().return_from_trap(&*tf);
     }
 }

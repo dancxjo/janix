@@ -1,5 +1,5 @@
 use crate::BootRuntime;
-use crate::arch::{ArchContext, ArchTrapFrame};
+
 use core::fmt::{self, Write};
 
 /// Global logger instance.
@@ -29,11 +29,11 @@ impl Level {
 }
 
 pub struct Logger {
-    runtime: &'static dyn BootRuntime<ArchContext, ArchTrapFrame>,
+    runtime: &'static dyn BootRuntime,
 }
 
 impl Logger {
-    pub const fn new(runtime: &'static dyn BootRuntime<ArchContext, ArchTrapFrame>) -> Self {
+    pub const fn new(runtime: &'static dyn BootRuntime) -> Self {
         Self { runtime }
     }
 }
@@ -52,7 +52,7 @@ impl fmt::Write for Logger {
 /// # Safety
 /// This function is unsafe because it modifies a `static mut`.
 /// It should be called exactly once during kernel initialization.
-pub unsafe fn init(runtime: &'static dyn BootRuntime<ArchContext, ArchTrapFrame>) {
+pub unsafe fn init(runtime: &'static dyn BootRuntime) {
     unsafe {
         WRITER = Some(Logger::new(runtime));
     }

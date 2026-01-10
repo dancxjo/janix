@@ -3,7 +3,8 @@ use alloc::collections::BTreeMap;
 use crate::root::journal::Journal;
 
 pub struct Watch {
-    id: u64,
+    // id: u64, // unused
+
     next_index: JournalIndex,
 }
 
@@ -24,7 +25,7 @@ impl Watches {
         let id = self.next_id;
         self.next_id += 1;
         self.items.insert(id, Watch {
-            id,
+            // id,
             next_index: 0, // Watches start from the beginning of time
         });
         id

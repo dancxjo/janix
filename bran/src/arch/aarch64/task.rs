@@ -1,4 +1,16 @@
 use core::arch::global_asm;
+use core::any::Any;
+use kernel::boot::ArchContext;
+
+#[derive(Debug, Default)]
+pub struct Context {
+    pub sp: u64,
+}
+
+impl ArchContext for Context {
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
 
 unsafe extern "C" {
     pub fn context_switch(old_handle_ptr: *mut u64, new_handle: u64);
@@ -57,7 +69,7 @@ trampoline:
     brk #0
 "#);
 
-pub fn context_init(
+pub fn init_task_context(
     kstack_top: u64,
     entry: extern "C" fn(usize) -> !,
     arg: usize,

@@ -4,6 +4,7 @@ use crate::runtime::ArchRuntime;
 
 mod paging;
 mod task;
+mod trap;
 
 /// The architecture-specific runtime for loongarch64.
 pub struct LoongArchRuntime {
@@ -15,6 +16,8 @@ pub type Runtime = crate::runtime::Runtime<LoongArchRuntime>;
 pub const fn create_runtime() -> Runtime {
     Runtime::new(LoongArchRuntime::new())
 }
+
+pub unsafe fn init() {}
 
 impl LoongArchRuntime {
     pub const fn new() -> Self {
@@ -63,8 +66,20 @@ impl ArchRuntime for LoongArchRuntime {
 
     // Paging Delegates
     fn map_page(&self, _handle: usize, virt: u64, phys: u64, flags: u64) -> Result<(), ()> {
-        let pflags = kernel::memory::paging::PageFlags::from_bits_truncate(flags);
+        let pflags = kernel::memory::paging::PageFlags::new(flags);
         paging::map_page(virt, kernel::memory::frame_alloc::PhysFrame(phys), pflags)
+    }
+
+    fn map_page_with_allocator(
+        &self, 
+        _handle: usize, 
+        virt: u64, 
+        phys: u64, 
+        _flags: u64,
+        alloc: &mut kernel::memory::boot_frame_alloc::BootFrameAllocator
+    ) -> Result<(), ()> {
+        paging::map_bootheap_page(virt, phys, alloc);
+        Ok(())
     }
 
     fn unmap_page(&self, _handle: usize, virt: u64) {
@@ -81,6 +96,52 @@ impl ArchRuntime for LoongArchRuntime {
     
     fn tlb_flush_all(&self) {
         paging::tlb_flush_all();
+    }
+
+    // Task Context
+    fn new_context(&self) -> alloc::boxed::Box<dyn kernel::boot::ArchContext> {
+        alloc::boxed::Box::new(task::Context::default())
+    }
+
+    fn new_trapframe(&self) -> alloc::boxed::Box<dyn kernel::boot::ArchTrapFrame> {
+        alloc::boxed::Box::new(trap::TrapFrame::default())
+    }
+
+    fn init_task_context(
+        &self, 
+        out: &mut dyn kernel::boot::ArchContext,
+        kstack_top: u64, 
+        entry: extern "C" fn(usize) -> !, 
+        arg: usize
+    ) -> usize {
+        let ctx = out.as_any_mut().downcast_mut::<task::Context>().expect("init_task_context: not loongarch64 context");
+        ctx.sp = task::context_init(kstack_top, entry, arg) as u64;
+        0
+    }
+
+    fn save_from_trap(&self, _tf: &dyn kernel::boot::ArchTrapFrame, _out: &mut dyn kernel::boot::ArchContext) {
+        // Unimplemented for now
+    }
+
+    fn load_into_trap(&self, _ctx: &dyn kernel::boot::ArchContext, _tf: &mut dyn kernel::boot::ArchTrapFrame) {
+        // Unimplemented for now
+    }
+
+    unsafe fn switch_tasks(&self, old: &mut dyn kernel::boot::ArchContext, new: &dyn kernel::boot::ArchContext) {
+        let old_ctx = old.as_any_mut().downcast_mut::<task::Context>().expect("switch_tasks: not loongarch64 context");
+        let new_ctx = new.as_any().downcast_ref::<task::Context>().expect("switch_tasks: not loongarch64 context");
+        
+        unsafe {
+            task::context_switch(&mut old_ctx.sp as *mut u64, new_ctx.sp);
+        }
+    }
+
+    unsafe fn return_from_trap(&self, _tf: &dyn kernel::boot::ArchTrapFrame) -> ! {
+        hcf()
+    }
+    
+    fn make_user_trapframe(&self, _rip: u64, _rsp: u64) -> alloc::boxed::Box<dyn kernel::boot::ArchTrapFrame> {
+         panic!("make_user_trapframe not implemented");
     }
 }
 
@@ -99,23 +160,6 @@ impl SerialPort {
             // LoongArch QEMU virt machine UART base (NS16550A compatible)
             let base = 0x1fe001e0 as *mut u8;
             base.write_volatile(c);
-        }
-    }
-}
-
-    // Task Context
-    fn context_init(
-        &self, 
-        kstack_top: u64, 
-        entry: extern "C" fn(usize) -> !, 
-        arg: usize
-    ) -> usize {
-        task::context_init(kstack_top, entry, arg)
-    }
-
-    unsafe fn context_switch(&self, old_handle_ptr: *mut usize, new_handle: usize) {
-        unsafe {
-             task::context_switch(old_handle_ptr as *mut u64, new_handle as u64);
         }
     }
 }

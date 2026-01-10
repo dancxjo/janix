@@ -1,4 +1,5 @@
-use crate::trap::x86_64::TrapFrame;
+// use crate::trap::x86_64::TrapFrame; // Removed specific import
+use crate::boot::ArchTrapFrame;
 use crate::user::abi::syscall::{
     SYSCALL_PUTCHAR, SYSCALL_TICKS, SYSCALL_YIELD, SYSCALL_EXIT, SYSCALL_SPAWN_MODULE, 
     SYSCALL_RTC_CMOS_READ, SYSCALL_GRAPH_APPEND, SYSCALL_WATCH_CREATE, SYSCALL_WATCH_NEXT
@@ -6,8 +7,8 @@ use crate::user::abi::syscall::{
 
 
 #[unsafe(no_mangle)]
-pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
-    let nr = tf.rax;
+pub fn syscall_dispatch(tf: &mut dyn ArchTrapFrame) {
+    let nr = tf.syscall_num();
     // crate::kinfo!("Syscall dispatch: nr={}", nr);
     // Only log potentially problematic ones or all?
     if nr >= 6 {
@@ -15,7 +16,7 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
     }
     let ret = match nr {
         SYSCALL_PUTCHAR => {
-            let c = tf.rdi as u8;
+            let c = tf.syscall_arg(0) as u8;
             crate::runtime().putchar(c);
             0
         },
@@ -27,7 +28,7 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
             0
         },
         SYSCALL_EXIT => {
-            let _code = tf.rdi as i32;
+            let _code = tf.syscall_arg(0) as i32;
             crate::kinfo!("User task exited with code {}", _code);
             // Mark task dead or just halt for now since we don't have task destruction
             loop {
@@ -35,8 +36,8 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
             }
         },
         SYSCALL_SPAWN_MODULE => {
-            let path_ptr = tf.rdi as *const u8;
-            let path_len = tf.rsi as usize;
+            let path_ptr = tf.syscall_arg(0) as *const u8;
+            let path_len = tf.syscall_arg(1) as usize;
             
             // Validate user pointer (rudimentary)
             if path_ptr as u64 >= 0x8000_0000_0000_0000 {
@@ -56,7 +57,7 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
             }
         },
         SYSCALL_RTC_CMOS_READ => {
-            let reg = tf.rdi as u8;
+            let reg = tf.syscall_arg(0) as u8;
             match crate::user::sys_rtc_cmos_read(reg) {
                 Ok(val) => val as u64,
                 Err(_) => u64::MAX,
@@ -64,29 +65,29 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
         },
         SYSCALL_GRAPH_APPEND => {
             // crate::kinfo!("Dispatch v4: MATCH GRAPH_APPEND (const={})", SYSCALL_GRAPH_APPEND);
-            let op_ptr = tf.rdi as *const crate::user::abi::root::JournalOp;
+            let op_ptr = tf.syscall_arg(0) as *const crate::user::abi::root::JournalOp;
             // Validate pointer
             if op_ptr as u64 >= 0x8000_0000_0000_0000 {
                 u64::MAX
             } else {
                 let op = unsafe { *op_ptr };
-                crate::root().append(op)
+                crate::global::root().append(op)
             }
         },
         SYSCALL_WATCH_CREATE => {
             // crate::kinfo!("Dispatch: MATCH WATCH_CREATE (const={})", SYSCALL_WATCH_CREATE);
-            crate::root().watch_create()
+            crate::global::root().watch_create()
         },
         SYSCALL_WATCH_NEXT => {
-            let watch_id = tf.rdi;
-            let out_ptr = tf.rsi as *mut crate::user::abi::root::WatchEvent;
+            let watch_id = tf.syscall_arg(0);
+            let out_ptr = tf.syscall_arg(1) as *mut crate::user::abi::root::WatchEvent;
             
              // Validate pointer
             if out_ptr as u64 >= 0x8000_0000_0000_0000 {
                 // -EFAULT ideally, but using i64::MAX or similar error convention
                  u64::MAX 
             } else {
-                match crate::root().watch_next(watch_id) {
+                match crate::global::root().watch_next(watch_id) {
                     Ok(event) => {
                         unsafe { *out_ptr = event };
                         0 // Success
@@ -100,5 +101,5 @@ pub extern "C" fn syscall_dispatch(tf: &mut TrapFrame) {
             u64::MAX
         }
     };
-    tf.rax = ret;
+    tf.syscall_ret(ret);
 }

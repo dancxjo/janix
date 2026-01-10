@@ -110,3 +110,129 @@ timer_trampoline:
     pop rax
     
     iretq
+
+
+// ============================================================================
+// Exception Stubs
+// ============================================================================
+
+.macro EXCEPTION_ERR num
+.global exception_\num
+exception_\num:
+    push \num      // Trap Num
+    jmp exception_common
+.endm
+
+.macro EXCEPTION_NOERR num
+.global exception_\num
+exception_\num:
+    push 0         // Error Code (dummy)
+    push \num      // Trap Num
+    jmp exception_common
+.endm
+
+EXCEPTION_NOERR 0
+EXCEPTION_NOERR 3
+EXCEPTION_NOERR 6
+EXCEPTION_ERR   8
+EXCEPTION_ERR   13
+EXCEPTION_ERR   14
+
+.global yield_handler
+yield_handler:
+    push 0         // Error Code
+    push 0x81      // Trap Num
+    jmp exception_common
+
+exception_common:
+    // Stack: TrapNum, Error, RIP, CS, RFLAGS, RSP, SS
+    // We match TrapFrame layout.
+    // TrapFrame: 
+    // GPRs...
+    // TrapNum
+    // Error
+    // RIP
+    // ...
+    
+    // So we just push GPRs.
+    
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+    
+    // Check SwapGS (if from user)
+    // CS is at [RSP + 120 + 8 + 8] = [RSP + 136]?
+    // GPRs(120) + Trap(8) + Error(8) = 136 used.
+    // RIP(8) + CS(8)
+    // So CS at offset 136 + 8 = 144?
+    // Wait.
+    // Pushes: Error, Trap. (2*8=16).
+    // GPRs (15*8=120).
+    // Total 136 bytes.
+    // Before pusing GPRs/Trap/Error, RSP pointed to RIP.
+    // Pushed Error, Trap. RSP -= 16.
+    // Pushed GPRs. RSP -= 120.
+    // Total RSP -= 136.
+    // Original Stack: RIP, CS, RFLAGS, RSP, SS.
+    // CS is at Original-8 + 8 = Original.
+    // Offset from current RSP to CS: 136 + 8 = 144.
+    // No.
+    // [RSP + 136] -> RIP.
+    // [RSP + 144] -> CS.
+    
+    test byte ptr [rsp + 144], 3
+    jz 1f
+    swapgs
+1:
+
+    // Call Rust (rdi = &mut TrapFrame)
+    mov rdi, rsp
+    // Align stack? System V ABI requires 16-byte alignment before call.
+    // Only if we use SSE.
+    // Pushed 15 regs + 2 (trap/err) = 17 words.
+    // + Interrupt Frame (5 words). Total 22 words.
+    // 22 * 8 = 176. Divisible by 16. So aligned? Yes.
+    
+    cld
+    call exception_dispatch_trampoline
+    
+    // Restore SwapGS
+    test byte ptr [rsp + 144], 3
+    jz 2f
+    swapgs
+2:
+
+    // Restore GPRs
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    
+    // Skip TrapNum, Error
+    add rsp, 16
+    
+    iretq
+

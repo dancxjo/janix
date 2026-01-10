@@ -1,4 +1,5 @@
 use core::arch::global_asm;
+use kernel::boot::ArchContext;
 
 unsafe extern "C" {
     pub fn context_switch(old_handle_ptr: *mut u64, new_handle: u64);
@@ -7,6 +8,21 @@ unsafe extern "C" {
 // Trampoline for new threads
 unsafe extern "C" {
     fn trampoline();
+}
+
+#[derive(Default, Debug)]
+pub struct Context {
+    pub sp: u64,
+}
+
+impl ArchContext for Context {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn core::any::Any {
+        self
+    }
 }
 
 // Based on loongarch64_switch_to from trunk, adjusted for our naming

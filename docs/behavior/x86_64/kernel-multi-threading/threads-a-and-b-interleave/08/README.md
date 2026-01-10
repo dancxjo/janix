@@ -1,17 +1,16 @@
 # ❌ And I should see "Thread A (arg=1) ticks=" after "Thread B (arg=2) ticks="
 
-**Result:** failed | **Duration:** 13ms
+**Result:** failed | **Duration:** 20ms
 
 <details open>
 <summary>Serial Output</summary>
 
 ```
-[44181994065] [INFO] Thread A (arg=1) ticks=44181966642
-[44632239729] [INFO] Thread B (arg=2) ticks=44632209765
-[45125452713] [INFO] Thread A (arg=1) ticks=45125426049
-[45631430823] [INFO] Thread B (arg=2) ticks=45631402179
-[46069000527] [INFO] Thread A (arg=1) ticks=46068973368
-[46516326153] [INFO] Thread B (arg=2) ticks=46516296981
+[87745027821] [INFO] Thread B (arg=2) ticks=87744996669
+[88751992626] [INFO] Thread A (arg=1) ticks=88751960946
+[89679806040] [INFO] Thread B (arg=2) ticks=89679776604
+[90596830236] [INFO] Thread A (arg=1) ticks=90596804133
+[91496246919] [INFO] Thread B (arg=2) ticks=91496215074
 
 ```
 </details>

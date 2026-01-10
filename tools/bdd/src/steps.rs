@@ -9,6 +9,35 @@ use cucumber::{given, then, when};
 /// Default timeout for waiting on serial output (seconds).
 const DEFAULT_TIMEOUT_SECS: f64 = 30.0;
 
+/// Capture diagnostic artifacts when a test fails or times out
+async fn capture_failure_diagnostics(world: &mut ThingOsWorld, context: &str) {
+    use crate::artifacts;
+    
+    eprintln!("│  │  │      ⏱️ Timeout waiting for: {}", context);
+    
+    // Try to capture a screenshot
+    let screenshot_path = {
+        let collector = artifacts::global().lock().await;
+        collector.screenshot_path("timeout")
+    };
+    
+    match world.take_screenshot(&screenshot_path).await {
+        Ok(path) => eprintln!("│  │  │      📸 Timeout screenshot: {}", path.display()),
+        Err(e) => eprintln!("│  │  │      ⚠️ Failed to capture timeout screenshot: {}", e),
+    }
+    
+    // Try to dump registers via QMP
+    let register_path = {
+        let collector = artifacts::global().lock().await;
+        collector.register_path()
+    };
+    
+    match artifacts::dump_registers_global(&register_path).await {
+        Ok(path) => eprintln!("│  │  │      📋 Registers: {}", path.display()),
+        Err(e) => eprintln!("│  │  │      ⚠️ Failed to capture registers: {}", e),
+    }
+}
+
 #[when("I turn on the machine")]
 async fn turn_on_machine(world: &mut ThingOsWorld) {
     let arch = std::env::var("BDD_ARCH").unwrap_or_else(|_| "x86_64".to_string());
@@ -25,6 +54,7 @@ async fn machine_is_started(world: &mut ThingOsWorld) {
 async fn wait_for_boot(world: &mut ThingOsWorld) {
     let found = world.wait_for_serial("System booted", 30.0).await;
     if !found {
+        capture_failure_diagnostics(world, "System booted").await;
         let log = world.get_serial_log().await;
         eprintln!("\n=== Serial Log (waiting for boot) ===");
         for line in log
@@ -67,6 +97,9 @@ async fn check_serial(world: &mut ThingOsWorld, expected: &str, timeout_secs: f6
     let found = world.wait_for_serial(expected, timeout_secs).await;
 
     if !found {
+        // Capture diagnostic artifacts before failing
+        capture_failure_diagnostics(world, expected).await;
+        
         let log = world.get_serial_log().await;
         eprintln!("\n=== Serial Log (last 100 lines) ===");
         for line in log

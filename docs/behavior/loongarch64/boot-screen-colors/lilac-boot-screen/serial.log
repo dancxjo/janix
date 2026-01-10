@@ -142,24 +142,24 @@ PROGRESS CODE: V03058001 I0
 BdsDxe: starting Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x3,0x0)
 [2J[01;01H[01;01H[2J[01;01H[01;01HPROGRESS CODE: V02010004 I0
 PROGRESS CODE: V03101019 I0
-[687734269] [INFO] thing-os kernel v0.1.0 starting...
-[687939415] [INFO] Intent-Mechanism paging split active
-[687955289] [INFO] System booted
-[688064311] [INFO] Memory map has 64 entries
-[688115873] [INFO]   [0] 0x0 - 0x1000 (Reserved)
-[688138759] [INFO]   [1] 0x1000 - 0x10000 (Usable)
-[688153095] [INFO]   [2] 0x10000 - 0xb0000 (Reserved)
-[688167042] [INFO]   [3] 0xb0000 - 0xd0cc000 (Usable)
-[688180934] [INFO]   [4] 0xd0cc000 - 0xd110000 (Reserved)
-[688337315] [INFO]   [5] 0xd110000 - 0xd120000 (Other)
-[688477120] [INFO]   [6] 0xd120000 - 0xd148000 (Usable)
-[688617879] [INFO]   [7] 0xd148000 - 0xd348000 (Reserved)
-[688653196] [INFO]   [8] 0xd348000 - 0xd357000 (Usable)
-[688667774] [INFO]   [9] 0xd357000 - 0xd35c000 (Reserved)
-[688692353] [INFO] HHDM Offset: 0xffff800000000000
-[709157697] [INFO] Frame allocator initialized with 511556 free frames
-[709407442] [INFO] Initializing global allocator...
-[709972394] [INFO] Initializing tasking...
-[710056127] [INFO]   Acquiring scheduler lock...
-[710075619] [INFO]   Lock acquired, checking if initialized...
-[710097977] [INFO]   Allocating scheduler...
+[563948690] [INFO] thing-os kernel v0.1.0 starting...
+[564188540] [INFO] Intent-Mechanism paging split active
+[564211703] [INFO] System booted
+[564323443] [INFO] Memory map has 64 entries
+[564444908] [INFO]   [0] 0x0 - 0x1000 (Reserved)
+[564532572] [INFO]   [1] 0x1000 - 0x10000 (Usable)
+[564574822] [INFO]   [2] 0x10000 - 0xb0000 (Reserved)
+[564589707] [INFO]   [3] 0xb0000 - 0xd0cc000 (Usable)
+[564604410] [INFO]   [4] 0xd0cc000 - 0xd110000 (Reserved)
+[564620000] [INFO]   [5] 0xd110000 - 0xd120000 (Other)
+[564636186] [INFO]   [6] 0xd120000 - 0xd148000 (Usable)
+[564651349] [INFO]   [7] 0xd148000 - 0xd348000 (Reserved)
+[564772847] [INFO]   [8] 0xd348000 - 0xd357000 (Usable)
+[564788378] [INFO]   [9] 0xd357000 - 0xd35c000 (Reserved)
+[564812066] [INFO] HHDM Offset: 0xffff800000000000
+[584267869] [INFO] Frame allocator initialized with 511556 free frames
+[584344005] [INFO] Initializing global allocator...
+[584885507] [INFO] Initializing tasking...
+[584948719] [INFO]   Acquiring scheduler lock...
+[584994151] [INFO]   Lock acquired, checking if initialized...
+[585019596] [INFO]   Allocating scheduler...

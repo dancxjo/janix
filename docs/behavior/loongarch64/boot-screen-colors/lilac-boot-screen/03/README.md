@@ -1,6 +1,6 @@
 # ✅ Then the screen should be filled with "Lilac"
 
-**Result:** passed | **Duration:** 1681ms
+**Result:** passed | **Duration:** 871ms
 
 ## Screenshots
 
@@ -17,7 +17,7 @@ CPU#0
  GPR04: r4 0000000000000000 r5 ffffffffb0000000 r6 0000000000000050 r7 0000000000000000
  GPR08: r8 0000000000000000 r9 0000000000000000 r10 000000000000000b r11 0000000000002710
  GPR12: r12 000000000000147b r13 0000000000000064 r14 ffff8000ebd878dc r15 000000000098967f
- GPR16: r16 0000000000011561 r17 0000000000003930 r18 0000000000003031 r19 ffff8000ebd878e8
+ GPR16: r16 000000000000e485 r17 0000000000003130 r18 0000000000003538 r19 ffff8000ebd878e8
  GPR20: r20 ffffffff800100d0 r21 0000000000000000 r22 0000000000000000 r23 0000000000000000
  GPR24: r24 0000000000000000 r25 0000000000000000 r26 0000000000000000 r27 0000000000000000
  GPR28: r28 0000000000000000 r29 0000000000000000 r30 0000000000000000 r31 0000000000000000
@@ -30,7 +30,7 @@ CPU#0
  CSR024: ASID   a0000            PGDL   ebd77000         PGDH   ebd76000         PGD    0               
  CSR028: PWCL   13e4d52c         PWCH   267              STLBPS c                RVACFG 0               
  CSR032: CPUID  0                PRCFG1 72f8             PRCFG2 3ffff000         PRCFG3 8073f2          
- CSR048: SAVE0  f271780          SAVE1  1fe001e0         SAVE2  0                SAVE3  0               
+ CSR048: SAVE0  f271650          SAVE1  1fe001e0         SAVE2  0                SAVE3  0               
  CSR052: SAVE4  0                SAVE5  0                SAVE6  0                SAVE7  0               
  CSR064: TID    0                TCFG   0                TVAL   0                CNTC   0               
  CSR068: TICLR  0               

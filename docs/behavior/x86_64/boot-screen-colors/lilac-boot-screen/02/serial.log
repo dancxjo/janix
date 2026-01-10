@@ -1,16 +1,17 @@
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[19655485443] [INFO] thing-os kernel v0.1.0 starting...
-[19679027280] [INFO] Intent-Mechanism paging split active
-[19679464596] [INFO] System booted
-[19683856632] [INFO] Memory map has 35 entries
-[19689184713] [INFO]   [0] 0x0 - 0xa0000 (Usable)
-[19697264829] [INFO]   [1] 0x100000 - 0x800000 (Usable)
-[19701726429] [INFO]   [2] 0x800000 - 0x808000 (Other)
-[19706135163] [INFO]   [3] 0x808000 - 0x80b000 (Usable)
-[19716100074] [INFO]   [4] 0x80b000 - 0x80c000 (Other)
-[19716483831] [INFO]   [5] 0x80c000 - 0x811000 (Usable)
-[19716869898] [INFO]   [6] 0x811000 - 0x900000 (Other)
-[19717250949] [INFO]   [7] 0x900000 - 0x1780000 (Reserved)
-[19717704963] [INFO]   [8] 0x1780000 - 0x79fa6000 (Usable)
-[19718107695] [INFO]   [9] 0x79fa6000 - 0x7a16c000 (Reserved)
+[2J[01;01H[01;01H[2J[01;01H[01;01H[13343634381] [INFO] thing-os kernel v0.1.0 starting...
+[13351586556] [INFO] Intent-Mechanism paging split active
+[13355525667] [INFO] System booted
+[13360937073] [INFO] Memory map has 35 entries
+[13364491833] [INFO]   [0] 0x0 - 0xa0000 (Usable)
+[13366135002] [INFO]   [1] 0x100000 - 0x800000 (Usable)
+[13367953500] [INFO]   [2] 0x800000 - 0x808000 (Other)
+[13368482259] [INFO]   [3] 0x808000 - 0x80b000 (Usable)
+[13368922578] [INFO]   [4] 0x80b000 - 0x80c000 (Other)
+[13369353822] [INFO]   [5] 0x80c000 - 0x811000 (Usable)
+[13372308642] [INFO]   [6] 0x811000 - 0x900000 (Other)
+[13373161494] [INFO]   [7] 0x900000 - 0x1780000 (Reserved)
+[13374147831] [INFO]   [8] 0x1780000 - 0x79fa6000 (Usable)
+[13374642435] [INFO]   [9] 0x79fa6000 - 0x7a16c000 (Reserved)
+[13375512843] [INFO] HHDM Offset: 0xffff800000000000

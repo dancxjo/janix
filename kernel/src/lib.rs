@@ -190,10 +190,13 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     kinfo!("System booted");
 
     memory::init(runtime);
+    kinfo!("Initializing global allocator...");
     memory::global_alloc::init(runtime);
 
+    kinfo!("Initializing tasking...");
     crate::task::init::<R>();
 
+    kinfo!("Checking threads_supported...");
     if runtime.threads_supported() {
         kinfo!("Spawning Thread A...");
         crate::task::spawn::<R>(thread_a, 1);

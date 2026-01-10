@@ -1,27 +1,25 @@
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use core::alloc::Layout;
-use crate::task::{Task, TaskId, TaskState};
-use crate::{BootRuntime, BootTasking};
 use spin::Mutex;
 
-const STACK_SIZE: usize = 64 * 1024;
-const STACK_ALIGN: usize = 16;
+use crate::BootRuntime;
+use crate::BootTasking;
+use crate::task::{Task, TaskId, TaskState};
 
 pub struct Scheduler<R: BootRuntime> {
-    pub current: Option<TaskId>,
-    pub runq: VecDeque<TaskId>,
-    pub tasks: Vec<Task<R>>,
-    pub next_id: TaskId,
+    tasks: Vec<Task<R>>,
+    runq: VecDeque<TaskId>,
+    current: Option<TaskId>,
+    next_id: TaskId,
 }
 
 impl<R: BootRuntime> Scheduler<R> {
     pub fn new() -> Self {
         Self {
-            current: None,
-            runq: VecDeque::new(),
             tasks: Vec::new(),
-            next_id: 1,
+            runq: VecDeque::new(),
+            current: None,
+            next_id: 0,
         }
     }
 
@@ -34,6 +32,7 @@ impl<R: BootRuntime> Scheduler<R> {
     }
 
     pub fn init_boot_task(&mut self) {
+        crate::kinfo!("  Creating boot task...");
         let task = Task {
             id: 0,
             state: TaskState::Running,
@@ -44,52 +43,50 @@ impl<R: BootRuntime> Scheduler<R> {
             aspace: Default::default(),
             simd: crate::simd::SimdState::new(crate::runtime::<R>()),
         };
-        
+        crate::kinfo!("  Pushing boot task to list...");
         self.tasks.push(task);
         self.current = Some(0);
+        crate::kinfo!("  Boot task created successfully");
     }
 
     pub fn spawn(&mut self, entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
-        let id = self.next_id;
+        let rt = crate::runtime::<R>();
+        
         self.next_id += 1;
+        let id = self.next_id;
 
-        let layout = Layout::from_size_align(STACK_SIZE, STACK_ALIGN).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
-            panic!("Scheduler::spawn: OOM allocating stack");
+            panic!("Failed to allocate stack");
         }
-        
-        unsafe { core::ptr::write_bytes(stack_base, 0, STACK_SIZE) };
 
-        let stack_top = (stack_base as u64) + (STACK_SIZE as u64);
-        let stack_top = stack_top & !0xF;
-
-        let ctx = crate::runtime::<R>().tasking().init_kernel_context(entry, stack_top, arg);
+        let stack_top = (stack_base as u64) + 16384;
+        let ctx = rt.tasking().init_kernel_context(entry, stack_top, arg);
+        let aspace = rt.tasking().active_address_space();
 
         let task = Task {
             id,
             state: TaskState::Runnable,
             kstack_base: stack_base,
-            kstack_size: STACK_SIZE,
+            kstack_size: 16384,
             kstack_top: stack_top,
             ctx,
-            aspace: Default::default(),
-            simd: crate::simd::SimdState::new(crate::runtime::<R>()),
+            aspace,
+            simd: crate::simd::SimdState::new(rt),
         };
 
         self.tasks.push(task);
         self.runq.push_back(id);
-        
         id
     }
 
     pub fn prepare_yield(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
-        let current_id = self.current.expect("yielding without current task");
+        let current_id = self.current?;
         
-        let idx = self.tasks.iter().position(|t| t.id == current_id).expect("Current task lost");
-        self.tasks[idx].state = TaskState::Runnable;
-        
+        // Re-add current task to run queue
         self.runq.push_back(current_id);
+        
         self.prepare_schedule()
     }
 
@@ -135,18 +132,25 @@ pub static SCHEDULER: Mutex<Option<usize>> = Mutex::new(None);
 static mut YIELD_HOOK: Option<unsafe fn()> = None;
 
 pub fn init<R: BootRuntime>() {
+    crate::kinfo!("  Acquiring scheduler lock...");
     let mut lock = SCHEDULER.lock();
+    crate::kinfo!("  Lock acquired, checking if initialized...");
     if lock.is_none() {
+        crate::kinfo!("  Allocating scheduler...");
         let sched = alloc::boxed::Box::new(Scheduler::<R>::new());
+        crate::kinfo!("  Leaking scheduler...");
         let s = alloc::boxed::Box::leak(sched);
+        crate::kinfo!("  Initializing boot task...");
         s.init_boot_task();
+        crate::kinfo!("  Storing scheduler pointer...");
         *lock = Some(s as *mut Scheduler<R> as usize);
         unsafe { YIELD_HOOK = Some(yield_now::<R>); }
+        crate::kinfo!("  Scheduler initialized");
     }
 }
 
 pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
-    let mut lock = SCHEDULER.lock();
+    let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
     sched.spawn(entry, arg)
@@ -157,7 +161,7 @@ pub fn yield_now<R: BootRuntime>() {
     let irq = rt.irq_disable();
     
     let switch_params = {
-        let mut lock = SCHEDULER.lock();
+        let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
         sched.prepare_yield()

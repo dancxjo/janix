@@ -36,10 +36,9 @@ impl ArchRuntime for AArch64Runtime {
     }
 
     fn mono_ticks(&self) -> u64 {
-        let raw = read_cntvct_el0();
-        self.serial.clamp.clamp(raw)
+        self.serial.clamp.clamp(read_cntvct_el0())
     }
-
+    
     fn mono_freq_hz(&self) -> u64 {
         read_cntfrq_el0()
     }
@@ -48,9 +47,9 @@ impl ArchRuntime for AArch64Runtime {
         let daif: u64;
         unsafe {
             asm!("mrs {}, daif", out(reg) daif, options(nomem, nostack));
-            asm!("msr daifset, #2", options(nomem, nostack)); 
+            asm!("msr daifset, #2", options(nomem, nostack));
         }
-        IrqState(((daif >> 7) & 1) as usize)
+        IrqState((daif >> 7) as usize & 1)
     }
 
     fn irq_restore(&self, state: IrqState) {
@@ -103,7 +102,7 @@ impl ArchRuntime for AArch64Runtime {
     }
     
     fn activate_address_space(&self, aspace: Self::AddressSpace) {
-        unsafe { asm!("msr ttbr0_el1, {}", in(reg) aspace.0, options(nomem, nostack)); }
+        unsafe { asm!("msr ttbr0_el1, {}", in(reg) aspace.0); }
     }
 
     fn map_page(&self, aspace: Self::AddressSpace, virt: u64, phys: u64, perms: MapPerms, kind: MapKind, allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
@@ -139,8 +138,8 @@ impl SerialPort {
         }
     }
 
-    fn init(&self, hhdm_offset: u64) { paging::init(hhdm_offset); }
     fn putchar(&self, c: u8) {
+        // Semihosting SYS_WRITEC operation
         let ch = c;
         unsafe {
             asm!(

@@ -10,21 +10,20 @@ pub fn init(offset: u64) {
 }
 
 pub fn active_address_space() -> AArch64AddressSpace {
-    let ttbr0: u64;
+    // For kernel use, we need TTBR1 (kernel address space)
+    let ttbr1: u64;
     unsafe {
-        core::arch::asm!("mrs {}, ttbr0_el1", out(reg) ttbr0);
+        core::arch::asm!("mrs {}, ttbr1_el1", out(reg) ttbr1);
     }
-    AArch64AddressSpace(ttbr0)
+    AArch64AddressSpace(ttbr1 & 0x0000_FFFF_FFFF_F000)
 }
 
-pub fn make_user_address_space(active: AArch64AddressSpace, allocator: &dyn FrameAllocatorHook) -> AArch64AddressSpace {
+pub fn make_user_address_space(_active: AArch64AddressSpace, allocator: &dyn FrameAllocatorHook) -> AArch64AddressSpace {
     let phys = allocator.alloc_frame().expect("No frames for User TTBR0");
     let virt = phys + unsafe { HHDM_OFFSET };
     let ptr = virt as *mut u64;
     
     unsafe {
-        // AArch64 typically split TTBR0 (user) and TTBR1 (kernel).
-        // So User AS is just a fresh Table.
         core::ptr::write_bytes(ptr, 0, 4096);
     }
     
@@ -39,20 +38,27 @@ pub fn map_page(
     kind: MapKind,
     allocator: &dyn FrameAllocatorHook
 ) -> Result<(), ()> {
-    // AArch64 attributes (4KB pages, MAIR index)
-    // 0: Normal, 1: Device
-    let mut attr = 0u64;
-    if kind == MapKind::Device { attr = 1; }
+    // AArch64 4-level, 4KB pages (48-bit VA)
+    // MAIR index: 0 = Normal WB, 1 = Device nGnRE (set in MAIR_EL1)
+    let mut attr_idx = 0u64;
+    if kind == MapKind::Device { attr_idx = 1; }
     
-    let mut desc = (phys & 0x0000_FFFF_FFFF_F000) | 0x3 | (attr << 2) | (1 << 10); // Valid + Page + AF
+    // Page descriptor bits:
+    // [1:0] = 0b11 (valid page)
+    // [4:2] = AttrIndx
+    // [6]   = AP[1] (0=EL0 accessible if AP[2]=0, 1=EL1 only)  
+    // [7]   = AP[2] (0=RW, 1=RO)
+    // [10]  = AF (Access Flag)
+    // [53]  = PXN (Privileged Execute Never)
+    // [54]  = UXN (User Execute Never)
+    let mut desc = (phys & 0x0000_FFFF_FFFF_F000) | 0x3 | (attr_idx << 2) | (1 << 10);
     
-    if !perms.write { desc |= 1 << 7; } // AP[2] = 1 (Read-only)
-    if perms.user { desc |= 1 << 6; } // AP[1] = 1 (User)
-    
-    if !perms.exec { desc |= (1 << 54) | (1 << 53); } // UXN + PXN
+    if !perms.write { desc |= 1 << 7; }
+    if !perms.user { desc |= 1 << 6; }  // EL0 not accessible for kernel pages
+    if !perms.exec { desc |= (1 << 54) | (1 << 53); }
 
-    let l0 = (aspace.0 + unsafe { HHDM_OFFSET }) as *mut u64;
-    let l1 = ensure_table(l0, (virt >> 39) & 0x1ff, allocator)?;
+    let root = (aspace.0 + unsafe { HHDM_OFFSET }) as *mut u64;
+    let l1 = ensure_table(root, (virt >> 39) & 0x1ff, allocator)?;
     let l2 = ensure_table(l1, (virt >> 30) & 0x1ff, allocator)?;
     let l3 = ensure_table(l2, (virt >> 21) & 0x1ff, allocator)?;
     
@@ -61,6 +67,7 @@ pub fn map_page(
         *l3.add(l3_idx as usize) = desc;
     }
     
+    tlb_flush_page(virt);
     Ok(())
 }
 

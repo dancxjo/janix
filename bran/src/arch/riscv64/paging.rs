@@ -6,6 +6,8 @@ pub struct RISCV64AddressSpace(pub u64);
 static mut HHDM_OFFSET: u64 = 0;
 
 pub fn init(offset: u64) {
+    if offset == 0 { kernel::kprintln!("CRITICAL: paging::init called with offset 0"); }
+    else { kernel::kprintln!("paging::init setting HHDM_OFFSET = {:x}", offset); }
     unsafe { HHDM_OFFSET = offset };
 }
 
@@ -42,7 +44,7 @@ pub fn map_page(
 
     // SATP format: [63:60]=Mode, [59:44]=ASID, [43:0]=PPN
     // PPN * 4096 = physical address of root page table
-    let root_phys = (aspace.0 & 0x00FF_FFFF_FFFF_FFFF) << 12;
+    let root_phys = (aspace.0 & 0x0000_0FFF_FFFF_FFFF) << 12;
     let l2 = (root_phys + unsafe { HHDM_OFFSET }) as *mut u64;
     
     // Sv39: 3-level, VPN[2] = bits[38:30], VPN[1] = bits[29:21], VPN[0] = bits[20:12]
@@ -65,6 +67,8 @@ fn ensure_table(parent: *mut u64, index: u64, allocator: &dyn FrameAllocatorHook
         let phys = allocator.alloc_frame().ok_or(())?;
         unsafe {
             let virt = phys + HHDM_OFFSET;
+            if HHDM_OFFSET == 0 { kernel::kprintln!("CRITICAL: HHDM_OFFSET is 0 in ensure_table!"); }
+            kernel::kprintln!("ensure_table: clearing virt={:x} (phys={:x})", virt, phys);
             core::ptr::write_bytes(virt as *mut u8, 0, 4096);
             // Non-leaf PTE: V=1, R=W=X=0, PPN set
             *parent.add(index as usize) = ((phys >> 12) << 10) | 1;
@@ -79,6 +83,6 @@ fn ensure_table(parent: *mut u64, index: u64, allocator: &dyn FrameAllocatorHook
 
 pub fn unmap_page(_aspace: RISCV64AddressSpace, _virt: u64) -> Result<Option<u64>, ()> { Ok(None) }
 pub fn translate(_aspace: RISCV64AddressSpace, _virt: u64) -> Option<u64> { None }
-pub fn tlb_flush_page(virt: u64) {
-    unsafe { core::arch::asm!("sfence.vma {}, x0", in(reg) virt); }
+pub fn tlb_flush_page(_virt: u64) {
+    unsafe { core::arch::asm!("sfence.vma"); }
 }

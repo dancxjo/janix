@@ -10,7 +10,10 @@ pub unsafe fn init() {
     let addr = trap_entry as usize;
     // ensure alignment (4 bytes)
     assert!(addr & 3 == 0);
-    unsafe { asm!("csrw stvec, {}", in(reg) addr); }
+    unsafe { 
+        asm!("csrw stvec, {}", in(reg) addr); 
+        asm!("csrw sscratch, x0"); // Initialize sscratch to 0 for kernel detection
+    }
 }
 
 global_asm!(r#"
@@ -18,104 +21,39 @@ global_asm!(r#"
 .global trap_entry
 .balign 4
 trap_entry:
-    // We are in Supervisor mode now. SP is Kernel Stack (sscratch was user sp).
-    // Wait, we need to swap sscratch and sp.
-    // sscratch usually holds Kernel TP or Kernel SP?
-    // Let's assume sscratch holds Kernel Stack Top when in User Mode.
-    // When in Kernel Mode, sscratch is 0?
-    // Common pattern:
-    //   csrrw sp, sscratch, sp
-    //   beqz sp, .Lkernel_trap
-    //   # Came from user mode
-    
-    // For v0.5 simple user mode:
-    // We assume we always come from user mode for now (since we don't have kernel interrupts enabled yet? maybe).
-    
+    // Check if coming from Kernel or User
+    // If coming from User, sscratch holds Kernel Stack.
+    // If coming from Kernel, sscratch holds 0 (convention).
     csrrw sp, sscratch, sp
+    bnez sp, 1f
+
+    // --- Came from Kernel Mode ---
+    csrrw sp, sscratch, sp   // Restore SP (it was 0 or invalid)
+    // sp is valid Kernel Stack.
+    addi sp, sp, -288
     
-    // Now SP is kernel stack. sscratch is user stack.
+    // Save partial registers to use tmps
+    sd x1, 0(sp)   // ra
+    sd x3, 16(sp)  // gp
     
-    // Allocate TrapFrame on kernel stack
-    addi sp, sp, -296  // 31 regs + status fields... 
-    // UserTrapFrame size: 31*8 (regs) + 4*8 (sstatus, sepc, stval, scause) = 248 + 32 = 280.
-    // Align to 16? 288?
-    // Let's align 288.
+    // Save Kernel SP (original value was sp + 288)
+    addi t0, sp, 288
+    sd t0, 8(sp)   // x2/sp
     
-    // Save registers
-    sd x1, 8(sp)  // ra
-    // sd x2, ... sp is saved later
-    sd x3, 24(sp) // gp
-    sd x4, 32(sp) // tp
-    sd x5, 40(sp) // t0
-    sd x6, 48(sp) // t1
-    sd x7, 56(sp) // t2
-    sd x8, 64(sp) // s0/fp
-    sd x9, 72(sp) // s1
-    sd x10, 80(sp) // a0
-    sd x11, 88(sp) // a1
-    sd x12, 96(sp) // a2
-    sd x13, 104(sp) // a3
-    sd x14, 112(sp) // a4
-    sd x15, 120(sp) // a5
-    sd x16, 128(sp) // a6
-    sd x17, 136(sp) // a7
-    sd x18, 144(sp) // s2
-    sd x19, 152(sp) // s3
-    sd x20, 160(sp) // s4
-    sd x21, 168(sp) // s5
-    sd x22, 176(sp) // s6
-    sd x23, 184(sp) // s7
-    sd x24, 192(sp) // s8
-    sd x25, 200(sp) // s9
-    sd x26, 208(sp) // s10
-    sd x27, 216(sp) // s11
-    sd x28, 224(sp) // t3
-    sd x29, 232(sp) // t4
-    sd x30, 240(sp) // t5
-    sd x31, 248(sp) // t6
+    j 2f
+
+1:  // --- Came from User Mode ---
+    // sp is now KStack. sscratch is User Stack.
+    addi sp, sp, -288
+    
+    sd x1, 0(sp)
+    sd x3, 16(sp)
     
     // Save User SP (from sscratch)
     csrr t0, sscratch
-    sd t0, 16(sp) // x2/sp slot in struct (index 2 * 8 = 16? wait struct is array 0..30? No, 1..31?)
-    // struct is regs: [usize; 31].
-    // If x1 is index 0:
-    // x1 -> 0
-    // x2 -> 1
-    // ...
-    // x31 -> 30.
-    // Map:
-    // regs[0] = x1 (ra) -> 0(sp)
-    // regs[1] = x2 (sp) -> 8(sp)
-    // regs[2] = x3 (gp) -> 16(sp)
-    // ...
-    // This implies regs is [usize; 31] where index i = reg i+1?
-    // Let's verify struct definition.
-    // "x1-x31 (x0 is zero, not saved)"
-    // "regs: [usize; 31]"
-    // So regs[0] is x1.
-    // So offset is i * 8.
-    
-    // Correct offsets:
-    // x1 (ra) -> 0
-    // x2 (sp) -> 8
-    // x3 (gp) -> 16
-    // ...
-    // x31 (t6) -> 240
-    
-    // Regs occupy 248 bytes (31*8).
-    
-    // CSRs start at 248.
-    // sstatus: 248
-    // sepc: 256
-    // stval: 264
-    // scause: 272
-    
-    // Total used: 280.
-    
-    sd x1, 0(sp)
-    // x2 saved from t0
     sd t0, 8(sp)
-    sd x3, 16(sp)
+
+2:  // --- Common Saving ---
     sd x4, 24(sp)
     sd x5, 32(sp)
     sd x6, 40(sp)
@@ -145,6 +83,7 @@ trap_entry:
     sd x30, 232(sp)
     sd x31, 240(sp)
 
+    // Save CSRs
     csrr t0, sstatus
     sd t0, 248(sp)
     
@@ -162,19 +101,15 @@ trap_entry:
     call rust_trap_handler
     
     // Restore
-    // sstatus may have changed
     ld t0, 248(sp)
     csrw sstatus, t0
     
-    // sepc
     ld t0, 256(sp)
     csrw sepc, t0
     
-    // regs
     ld x1, 0(sp)
     ld x3, 16(sp)
     ld x4, 24(sp)
-    // ... load all ...
     ld x5, 32(sp)
     ld x6, 40(sp)
     ld x7, 48(sp)
@@ -203,15 +138,38 @@ trap_entry:
     ld x30, 232(sp)
     ld x31, 240(sp)
     
+    // Check if we need to return to User or Kernel
+    // We check Previous Mode in Supervisor Status (SPP bit 8).
+    // If SPP=1 (Supervisor), we return to Kernel.
+    // If SPP=0 (User), we return to User.
+    
+    ld t0, 248(sp) // Load sstatus again (it might be modified by handler, but we restored it to CSR)
+    // Actually we should read from CSR or saved value. Saved value is reliable.
+    
+    // Check SPP bit (bit 8)
+    li t1, (1 << 8)
+    and t1, t0, t1
+    bnez t1, 3f
+    
+    // --- Return to User ---
     // Restore User SP (x2) to sscratch
     ld t0, 8(sp)
     csrw sscratch, t0
     
-    addi sp, sp, 296
-    
-    // Swap sp and sscratch again to restore user stack
+    addi sp, sp, 288
+    // Swap sp and sscratch to restore User Stack
     csrrw sp, sscratch, sp
-    
+    sret
+
+3:  // --- Return to Kernel ---
+    // Restore Kernel SP (x2) directly to sp?
+    // Wait, we are ON the kernel stack.
+    // sp points to the frame.
+    // We want sp to be (sp + 288).
+    // But we also need to restore x2 (which IS sp).
+    // The saved x2 IS (old_sp).
+    // So loading x2 from stack will restore sp!
+    ld x2, 8(sp)
     sret
 "#);
 
@@ -258,7 +216,7 @@ pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
              }
              _ => {
                  // Panic or loop
-                 kernel::kprintln!("Unexpected trap: scause={:x} sepc={:x}", scause, tf.sepc);
+                 kernel::kprintln!("Unexpected trap: scause={:x} stval={:x} sepc={:x}", scause, tf.stval, tf.sepc);
                  loop {}
              }
         }

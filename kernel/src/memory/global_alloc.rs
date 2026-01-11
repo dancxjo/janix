@@ -23,6 +23,7 @@ unsafe impl GlobalAlloc for GlobalHeap {
         
         let ptr = (heap.base + aligned_used as u64) as *mut u8;
         heap.used = aligned_used + layout.size();
+        crate::kprintln!("GlobalAlloc: Alloc {:p} (base={:x} used={:x} layout={:?})", ptr, heap.base, aligned_used, layout);
         ptr
     }
 

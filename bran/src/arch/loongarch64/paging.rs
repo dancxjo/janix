@@ -1,7 +1,10 @@
 use kernel::{MapPerms, MapKind, FrameAllocatorHook};
 
 #[derive(Clone, Copy, Default)]
-pub struct LoongArch64AddressSpace(pub u64);
+pub struct LoongArch64AddressSpace {
+    pub pgdl: u64,
+    pub pgdh: u64,
+}
 
 static mut HHDM_OFFSET: u64 = 0;
 
@@ -11,17 +14,19 @@ pub fn init(offset: u64) {
 
 pub fn active_address_space() -> LoongArch64AddressSpace {
     let pgdl: u64;
+    let pgdh: u64;
     unsafe {
         core::arch::asm!("csrrd {}, 0x19", out(reg) pgdl); // PGDL
+        core::arch::asm!("csrrd {}, 0x1a", out(reg) pgdh); // PGDH
     }
-    LoongArch64AddressSpace(pgdl)
+    LoongArch64AddressSpace { pgdl, pgdh }
 }
 
-pub fn make_user_address_space(_active: LoongArch64AddressSpace, allocator: &dyn FrameAllocatorHook) -> LoongArch64AddressSpace {
-    let phys = allocator.alloc_frame().expect("No frames for User AS");
-    let virt = phys + unsafe { HHDM_OFFSET };
+pub fn make_user_address_space(active: LoongArch64AddressSpace, allocator: &dyn FrameAllocatorHook) -> LoongArch64AddressSpace {
+    let pgdl = allocator.alloc_frame().expect("No frames for User AS");
+    let virt = pgdl + unsafe { HHDM_OFFSET };
     unsafe { core::ptr::write_bytes(virt as *mut u8, 0, 4096); }
-    LoongArch64AddressSpace(phys)
+    LoongArch64AddressSpace { pgdl, pgdh: active.pgdh }
 }
 
 pub fn map_page(
@@ -43,13 +48,16 @@ pub fn map_page(
 
     if !perms.exec { bits |= 1 << 62; } // NX
 
-    let root = (aspace.0 + unsafe { HHDM_OFFSET }) as *mut u64;
-    let l1 = ensure_table(root, (virt >> 30) & 0x1ff, allocator)?;
-    let l0 = ensure_table(l1, (virt >> 21) & 0x1ff, allocator)?;
+    let root_phys = if (virt >> 63) != 0 { aspace.pgdh } else { aspace.pgdl };
+    let root = (root_phys + unsafe { HHDM_OFFSET }) as *mut u64;
+    // LoongArch64 uses 4-level page tables (48-bit VA): L3 -> L2 -> L1 -> L0.
+    let l3 = ensure_table(root, (virt >> 39) & 0x1ff, allocator)?;
+    let l2 = ensure_table(l3, (virt >> 30) & 0x1ff, allocator)?;
+    let l1 = ensure_table(l2, (virt >> 21) & 0x1ff, allocator)?;
     
     let pte_idx = (virt >> 12) & 0x1ff;
     unsafe {
-        *l0.add(pte_idx as usize) = (phys & !0xfff) | bits;
+        *l1.add(pte_idx as usize) = (phys & !0xfff) | bits;
     }
     Ok(())
 }

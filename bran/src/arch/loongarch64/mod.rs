@@ -125,7 +125,10 @@ impl ArchRuntime for LoongArch64Runtime {
     }
     
     fn activate_address_space(&self, aspace: Self::AddressSpace) {
-        unsafe { asm!("csrwr {}, 0x19", in(reg) aspace.0); }
+        unsafe {
+            asm!("csrwr {}, 0x19", in(reg) aspace.pgdl);
+            asm!("csrwr {}, 0x1a", in(reg) aspace.pgdh);
+        }
     }
 
     fn map_page(&self, aspace: Self::AddressSpace, virt: u64, phys: u64, perms: MapPerms, kind: MapKind, allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {

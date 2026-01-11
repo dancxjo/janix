@@ -5,11 +5,9 @@ use crate::task::scheduler::{yield_now, sleep_ms};
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
     crate::kprintln!("SYSCALL EXIT: code={}", code);
-    // TODO: Actually terminate the task.
-    // For now, just spin or panic to show we got here.
-    // panic!("Task exited with code {}", code); 
-    // Or simpler:
-    loop { core::hint::spin_loop(); }
+    unsafe { crate::task::scheduler::exit_current(code); }
+    // Should not return, but to satisfy type:
+    Ok(0)
 }
 
 pub fn sys_debug_write(ptr: usize, len: usize) -> SysResult<usize> {

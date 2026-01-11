@@ -163,7 +163,9 @@ impl<R: BootRuntime> Scheduler<R> {
             let old_task = &mut *tasks_ptr.add(old_idx);
             let new_task = &mut *tasks_ptr.add(new_idx);
             
-            old_task.state = TaskState::Runnable;
+            if old_task.state == TaskState::Running {
+                old_task.state = TaskState::Runnable;
+            }
             new_task.state = TaskState::Running;
             
             old_task.simd.save(crate::runtime::<R>());
@@ -172,10 +174,28 @@ impl<R: BootRuntime> Scheduler<R> {
             Some((&mut old_task.ctx as *mut _, &new_task.ctx as *const _))
         }
     }
+
+    pub fn terminate_current(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
+        let current_id = self.current?;
+        
+        // Remove from runq if present
+        if let Some(pos) = self.runq.iter().position(|&id| id == current_id) {
+            self.runq.remove(pos);
+        }
+        
+        // Remove from tasks list
+        if let Some(pos) = self.tasks.iter().position(|t| t.id == current_id) {
+            self.tasks.remove(pos);
+        }
+        
+        self.current = None;
+        self.prepare_schedule()
+    }
 }
 
 pub static SCHEDULER: Mutex<Option<usize>> = Mutex::new(None);
 static mut YIELD_HOOK: Option<unsafe fn()> = None;
+static mut EXIT_HOOK: Option<unsafe fn(i32)> = None;
 
 pub fn init<R: BootRuntime>() {
     crate::kinfo!("  Acquiring scheduler lock...");
@@ -190,7 +210,10 @@ pub fn init<R: BootRuntime>() {
         s.init_boot_task();
         crate::kinfo!("  Storing scheduler pointer...");
         *lock = Some(s as *mut Scheduler<R> as usize);
-        unsafe { YIELD_HOOK = Some(yield_now::<R>); }
+        unsafe { 
+            YIELD_HOOK = Some(yield_now::<R>); 
+            EXIT_HOOK = Some(exit::<R>);
+        }
         crate::kinfo!("  Scheduler initialized");
     }
 }
@@ -262,6 +285,42 @@ pub unsafe fn yield_now_current() {
     unsafe {
         if let Some(hook) = YIELD_HOOK {
             hook();
+        }
+    }
+}
+
+pub fn exit<R: BootRuntime>(code: i32) {
+    let rt = crate::runtime::<R>();
+    let irq = rt.irq_disable();
+    
+    let switch_params = {
+        let lock = SCHEDULER.lock();
+        let ptr = lock.expect("Scheduler not initialized");
+        let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+        sched.terminate_current()
+    };
+    
+    if let Some((old_ctx, new_ctx)) = switch_params {
+        unsafe {
+            rt.tasking().switch(&mut *old_ctx, &*new_ctx);
+        }
+    }
+    
+    rt.irq_restore(irq);
+    
+    // If we are here, there are no other tasks to run.
+    crate::kprintln!("Task exited with code {} (last task)", code);
+    loop { core::hint::spin_loop(); }
+}
+
+pub unsafe fn exit_current(code: i32) {
+    unsafe {
+        if let Some(hook) = EXIT_HOOK {
+            hook(code);
+        } else {
+            // Fallback if no scheduler
+            crate::kprintln!("exit_current called without scheduler!");
+            loop { core::hint::spin_loop(); }
         }
     }
 }

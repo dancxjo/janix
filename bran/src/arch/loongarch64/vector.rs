@@ -199,7 +199,7 @@ trap_entry:
 pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
     let estat = tf.estat;
     let ecode = (estat >> 16) & 0x3F;
-    let _subcode = estat & 0xFFFF; // Subcode not usually used for syscall
+    let subcode = estat & 0xFFFF;
     
     if ecode == 0xB { // SYSCALL
         // Syscall num in A7 (R11).
@@ -232,7 +232,16 @@ pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
         tf.era += 4;
         
     } else {
-        kernel::kprintln!("Unexpected LoongArch trap: ESTAT={:x} ERA={:x}", estat, tf.era);
+        let isr = estat & 0x1FFF;
+        kernel::kprintln!(
+            "Unexpected LoongArch trap: ESTAT={:x} ECODE={:x} SUBCODE={:x} ISR={:x} ERA={:x} BADV={:x}",
+            estat,
+            ecode,
+            subcode,
+            isr,
+            tf.era,
+            tf.badv
+        );
         loop {}
     }
 }

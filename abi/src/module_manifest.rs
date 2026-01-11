@@ -1,6 +1,6 @@
 #![no_std]
 
-#[repr(C)]
+#[repr(u64)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModuleKind {
     Driver = 0,
@@ -11,8 +11,8 @@ pub enum ModuleKind {
 #[derive(Debug, Clone, Copy)]
 pub struct ManifestHeader {
     pub magic: u64,
-    pub kind: ModuleKind,
-    pub device_kind: [u8; 64], // Null-terminated or fixed width
+    pub kind: ModuleKind, // repr(u64) makes this 8 bytes
+    pub device_kind: [u8; 64], 
     pub version: u32,
     pub _reserved: u32,
 }

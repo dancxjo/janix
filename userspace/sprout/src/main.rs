@@ -35,7 +35,6 @@ pub extern "C" fn main(_arg0: usize) {
         if let Some(driver_name) = reg.find_driver("dev.rtc.cmos") {
              kprintln!("SPROUT: Launching driver '{}' for dev.rtc.cmos...", driver_name);
              
-             // Convert stem::ThingId to abi::ThingId
              let ctx = DriverCtx { device_id: stem::abi::types::ThingId(rtc_id.0) };
              let arg = ctx.to_raw();
              
@@ -55,8 +54,8 @@ pub extern "C" fn main(_arg0: usize) {
         kprintln!("SPROUT: Failed to launch clock: {:?}", e);
     }
 
-    kprintln!("SPROUT: Dumping Root graph...");
-    let _ = thingsys::dump_graph(4096);
+    // kprintln!("SPROUT: Dumping Root graph...");
+    // let _ = thingsys::dump_graph(4096);
     
     kprintln!("SPROUT: Done.");
     stem::syscall::exit(0);

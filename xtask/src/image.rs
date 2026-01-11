@@ -19,10 +19,24 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, "iso_root/boot/kernel")?;
 
+    // Build and copy sprout
+    println!("Building sprout for {}...", arch);
+    let target = crate::common::rust_target(arch);
+    cmd!(sh, "cargo build --target {target} --profile release -p sprout")
+         .env("RUSTFLAGS", "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort")
+         .run()?;
+    
+    let sprout_elf = format!("target/{}/release/sprout", target);
+    let sprout_bin = format!("target/{}/release/sprout.bin", target);
+    cmd!(sh, "llvm-objcopy -O binary {sprout_elf} {sprout_bin}").run()?;
+    
+    sh.copy_file(&sprout_bin, "iso_root/boot/sprout")?;
+
     // Build and copy threads_demo
     println!("Building threads_demo for {}...", arch);
-    let target = crate::common::rust_target(arch);
-    // Note: Using release profile to keep it small
+    // target is already defined above
+    // let target = crate::common::rust_target(arch); 
+    // Reuse target variable
     cmd!(sh, "cargo build --target {target} --profile release -p threads_demo")
         .env("RUSTFLAGS", "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort")
         .run()?;

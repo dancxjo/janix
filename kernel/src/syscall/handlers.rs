@@ -139,11 +139,35 @@ pub fn sys_spawn_thread(entry: usize, stack: usize) -> SysResult<usize> {
     validate_user_range(entry, 1, false)?;
     validate_user_range(stack, 1, true)?;
 
-    let tid = unsafe { crate::task::scheduler::spawn_user_thread_current(entry, stack) };
+    let tid = unsafe { crate::task::scheduler::spawn_user_thread_current(entry, stack, 0) };
     
     if let Some(tid) = tid {
         Ok(tid as usize)
     } else {
         Err(Errno::EAGAIN)
+    }
+}
+
+pub fn sys_spawn_process(name_ptr: usize, name_len: usize) -> SysResult<usize> {
+    // Limit name length for sanity
+    if name_len > 128 {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(name_ptr, name_len, false)?;
+
+    // Copy name to kernel buffer
+    let mut buf = [0u8; 128];
+    unsafe { copyin(&mut buf[..name_len], name_ptr)?; }
+    
+    let name = core::str::from_utf8(&buf[..name_len]).map_err(|_| Errno::EINVAL)?;
+    
+    let tid = unsafe { crate::task::scheduler::spawn_process_current(name) };
+    
+    if let Some(tid) = tid {
+        Ok(tid as usize)
+    } else {
+        // Use ENOENT if module not found, or EAGAIN if no resources
+        // For now we don't distinguish from None.
+        Err(Errno::ENOENT)
     }
 }

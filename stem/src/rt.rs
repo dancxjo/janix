@@ -3,12 +3,12 @@ use crate::syscall::exit;
 
 #[cfg(feature = "rt")]
 extern "Rust" {
-    fn main() -> i32;
+    fn main(arg: usize) -> i32;
 }
 
 #[cfg(feature = "rt")]
 #[no_mangle]
-pub unsafe extern "C" fn _start() -> ! {
+pub unsafe extern "C" fn _start(arg: usize) -> ! {
     // For x86_64 and likely others, we might just call a rust function if we don't need significant setup.
     // However, sticking to the standard "entry point calls main then exit" pattern.
     // Making this a naked function to avoid preamble issues, but calling inner implementation immediately.
@@ -21,11 +21,11 @@ pub unsafe extern "C" fn _start() -> ! {
     // Let's try a standard function first, marked `extern "C"`.
     // If this causes issues (e.g. using dirty stack slots), we'll upgrade to naked asm.
     
-    entry_impl()
+    entry_impl(arg)
 }
 
 #[cfg(feature = "rt")]
-unsafe fn entry_impl() -> ! {
-    let code = main();
+unsafe fn entry_impl(arg: usize) -> ! {
+    let code = main(arg);
     exit(code);
 }

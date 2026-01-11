@@ -1,4 +1,5 @@
 pub mod scheduler;
+pub mod loader;
 
 pub use scheduler::Scheduler;
 

@@ -20,6 +20,21 @@ pub unsafe fn syscall6(n: u32, a0: usize, a1: usize, a2: usize, a3: usize, a4: u
 
 // Wrappers will go here in Phase 4
 
+pub fn spawn_process(name: &str) -> Result<u64, abi::errors::Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_SPAWN_PROCESS,
+            name.as_ptr() as usize,
+            name.len(),
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u64)
+}
+
 pub fn exit(code: i32) -> ! {
     unsafe {
         raw_syscall6(SYS_EXIT, code as usize, 0, 0, 0, 0, 0);

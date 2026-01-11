@@ -237,29 +237,27 @@ syscall_entry:
     // We need to preserve RAX (syscall num) to pass as 1st arg.
     mov %rdi, %r12 // Temp save Arg0 (RDI)
     mov %rsi, %r13 // Temp save Arg1 (RSI)
+    mov %rdx, %r14 // Temp save Arg2 (RDX) - Fix: Preserve RDX before overwrite
     
     mov %rax, %rdi // 1st Arg: n
     
     mov %r12, %rsi // 2nd Arg: a0
     mov %r13, %rdx // 3rd Arg: a1
     // RDX (Arg2) needs to go to RCX (4th Arg slot for Rust function)
-    mov %rdx, %rcx 
+    mov %r14, %rcx 
     
-    // R10 (Arg3) needs to go to R8 (5th Arg slot)
-    mov %r10, %r8
+    // R9 (Arg5) needs to go to Stack (7th Arg slot/a5)
+    // We must push R9 (A5) BEFORE we overwrite it with A4 (from R8).
+    // And we must move R8 (A4) to R9 BEFORE we overwrite R8 with A3 (from R10).
     
-    // R8 (Arg4) needs to go to R9 (6th Arg slot)
-    // We saved R8 on stack at offset ... let's just trust registers are preserved enough
-    // But wait, we just pushed R8. It's on stack.
-    // We can read R8 from stack or just move it. R8 is not clobbered yet.
-    mov %r8, %r9 
-    
-    // R9 (Arg5) needs to go to Stack (7th Arg slot, which is 6th arg 'a5')
-    // push R9? No, System V ABI puts 7th+ arg on stack.
-    // But wait, dispatch(n, a0, a1, a2, a3, a4, a5) has 7 args.
-    // RDI, RSI, RDX, RCX, R8, R9. That's 6 regs.
-    // So 'a5' (7th arg) goes on stack.
+    // 1. Save A5 (R9) to Stack
     pushq %r9
+    
+    // 2. Move A4 (R8) to R9
+    mov %r8, %r9
+    
+    // 3. Move A3 (R10) to R8
+    mov %r10, %r8
     
     // Align stack? We pushed odd number of args? 
     // We pushed 1 arg (8 bytes).

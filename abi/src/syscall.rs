@@ -10,6 +10,8 @@ pub const SYS_DEVICE_CALL: u32 = 4;
 pub const SYS_YIELD: u32 = 5;
 pub const SYS_SPAWN_THREAD: u32 = 6;
 
+pub const SYS_SPAWN_PROCESS: u32 = 7;
+
 // Time/Sched (64-127) - Reserved
 // pub const SYS_TIME_NOW: u32 = 64;
 

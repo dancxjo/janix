@@ -18,7 +18,8 @@ pub enum ScheduleReason {
 // Global hooks for non-generic access
 static mut YIELD_HOOK: Option<unsafe fn()> = None;
 static mut EXIT_HOOK: Option<unsafe fn(i32)> = None;
-static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize) -> TaskId> = None;
+static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize) -> TaskId> = None;
+static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str) -> Option<TaskId>> = None;
 
 pub struct Scheduler<R: BootRuntime> {
     tasks: Vec<Task<R>>,
@@ -101,7 +102,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
 
 
-    pub fn spawn_user_thread(&mut self, entry_pc: usize, user_stack_top: usize) -> TaskId {
+    pub fn spawn_user_thread(&mut self, entry_pc: usize, user_stack_top: usize, arg: usize) -> TaskId {
          let rt = crate::runtime::<R>();
          self.next_id += 1;
          let id = self.next_id;
@@ -118,7 +119,7 @@ impl<R: BootRuntime> Scheduler<R> {
              entry_pc,
              user_sp: user_stack_top,
              // Defaults
-             arg0: 0,
+             arg0: arg,
          });
          let entry_ptr = alloc::boxed::Box::into_raw(user_entry) as usize;
 
@@ -139,6 +140,40 @@ impl<R: BootRuntime> Scheduler<R> {
          self.tasks.push(task);
          self.runq.push_back(id);
          id
+    }
+
+    pub fn spawn_user_task(&mut self, entry: UserEntry, aspace: <R::Tasking as BootTasking>::AddressSpace) -> Option<TaskId> {
+         let rt = crate::runtime::<R>();
+         self.next_id += 1;
+         let id = self.next_id;
+
+         let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
+         let stack_base = unsafe { alloc::alloc::alloc(layout) };
+         if stack_base.is_null() {
+             // panic!("Failed to allocate stack");
+             return None;
+         }
+         let stack_top = (stack_base as u64) + 16384;
+
+         let user_entry = alloc::boxed::Box::new(entry);
+         let entry_ptr = alloc::boxed::Box::into_raw(user_entry) as usize;
+
+         let ctx = rt.tasking().init_kernel_context(user_thread_trampoline::<R>, stack_top, entry_ptr);
+
+         let task: Task<R> = Task {
+             id,
+             state: TaskState::Runnable,
+             kstack_base: stack_base,
+             kstack_size: 16384,
+             kstack_top: stack_top,
+             ctx,
+             aspace,
+             simd: crate::simd::SimdState::new(rt),
+         };
+
+         self.tasks.push(task);
+         self.runq.push_back(id);
+         Some(id)
     }
     
     pub fn schedule_point(&mut self, reason: ScheduleReason) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
@@ -264,6 +299,7 @@ pub fn init<R: BootRuntime>() {
             YIELD_HOOK = Some(yield_now::<R>); 
             EXIT_HOOK = Some(exit::<R>);
             SPAWN_USER_HOOK = Some(spawn_user_thread::<R>);
+            SPAWN_PROCESS_HOOK = Some(spawn_process::<R>);
         }
         crate::kinfo!("  Scheduler initialized");
     }
@@ -276,11 +312,38 @@ pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> Ta
     sched.spawn(entry, arg)
 }
 
-pub unsafe fn spawn_user_thread<R: BootRuntime>(entry: usize, stack: usize) -> TaskId {
+pub unsafe fn spawn_user_thread<R: BootRuntime>(entry: usize, stack: usize, arg: usize) -> TaskId {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn_user_thread(entry, stack)
+    sched.spawn_user_thread(entry, stack, arg)
+}
+
+pub unsafe fn spawn_process<R: BootRuntime>(name: &str) -> Option<TaskId> {
+    let rt = crate::runtime::<R>();
+    let modules = rt.modules();
+    let module = modules.iter().find(|m| m.name.contains(name))?;
+    
+    let aspace = rt.tasking().make_user_address_space();
+    
+    let entry = crate::task::loader::load_module(rt, aspace, module)?;
+    
+    // Create the task
+    let lock = SCHEDULER.lock();
+    let ptr = lock.expect("Scheduler not initialized");
+    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+    
+    sched.spawn_user_task(entry, aspace)
+}
+
+pub unsafe fn spawn_process_current(name: &str) -> Option<TaskId> {
+    unsafe {
+        if let Some(hook) = SPAWN_PROCESS_HOOK {
+            hook(name)
+        } else {
+            None
+        }
+    }
 }
 
 pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
@@ -380,10 +443,10 @@ pub unsafe fn exit_current(code: i32) {
     }
 }
 
-pub unsafe fn spawn_user_thread_current(entry: usize, stack: usize) -> Option<TaskId> {
+pub unsafe fn spawn_user_thread_current(entry: usize, stack: usize, arg: usize) -> Option<TaskId> {
     unsafe {
         if let Some(hook) = SPAWN_USER_HOOK {
-            Some(hook(entry, stack))
+            Some(hook(entry, stack, arg))
         } else {
             None
         }

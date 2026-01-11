@@ -79,8 +79,55 @@ pub fn unmap_page(_aspace: X86_64AddressSpace, _virt: u64) -> Result<Option<u64>
     Ok(None)
 }
 
-pub fn translate(_aspace: X86_64AddressSpace, _virt: u64) -> Option<u64> {
-    None
+pub fn translate(aspace: X86_64AddressSpace, virt: u64) -> Option<u64> {
+    let pml4 = (aspace.0 + unsafe { HHDM_OFFSET }) as *const u64;
+    
+    let pml4_idx = (virt >> 39) & 0x1ff;
+    let pml4_entry = unsafe { *pml4.add(pml4_idx as usize) };
+    if pml4_entry & 1 == 0 { 
+        // kernel::kinfo!("Translate failed: PML4 entry empty for {:x} (idx {})", virt, pml4_idx); 
+        return None; 
+    }
+    
+    let pdpt = ((pml4_entry & 0x000FFFFF_FFFFF000) + unsafe { HHDM_OFFSET }) as *const u64;
+    let pdpt_idx = (virt >> 30) & 0x1ff;
+    let pdpt_entry = unsafe { *pdpt.add(pdpt_idx as usize) };
+    if pdpt_entry & 1 == 0 { 
+        // kernel::kinfo!("Translate failed: PDPT entry empty for {:x} (idx {})", virt, pdpt_idx);
+        return None; 
+    }
+    
+    if pdpt_entry & 0x80 != 0 { // 1GB Page
+         let phys_base = pdpt_entry & 0x000FFFFF_FFFFF000;
+         let offset = virt & 0x3FFF_FFFF;
+         return Some(phys_base + offset);
+    }
+
+    let pd = ((pdpt_entry & 0x000FFFFF_FFFFF000) + unsafe { HHDM_OFFSET }) as *const u64;
+    let pd_idx = (virt >> 21) & 0x1ff;
+    let pd_entry = unsafe { *pd.add(pd_idx as usize) };
+    if pd_entry & 1 == 0 { 
+        // kernel::kinfo!("Translate failed: PD entry empty for {:x} (idx {})", virt, pd_idx);
+        return None; 
+    }
+    
+    if pd_entry & 0x80 != 0 { // 2MB Page
+         let phys_base = pd_entry & 0x000FFFFF_FFFFF000;
+         let offset = virt & 0x1FFFFF;
+         return Some(phys_base + offset);
+    }
+    
+    let pt = ((pd_entry & 0x000FFFFF_FFFFF000) + unsafe { HHDM_OFFSET }) as *const u64;
+    let pt_idx = (virt >> 12) & 0x1ff;
+    let pt_entry = unsafe { *pt.add(pt_idx as usize) };
+    if pt_entry & 1 == 0 { 
+        // kernel::kinfo!("Translate failed: PT entry empty for {:x} (idx {})", virt, pt_idx);
+        return None; 
+    }
+    
+    let phys_base = pt_entry & 0x000FFFFF_FFFFF000;
+    let offset = virt & 0xFFF;
+    Some(phys_base + offset)
 }
 
 pub fn tlb_flush_page(virt: u64) {

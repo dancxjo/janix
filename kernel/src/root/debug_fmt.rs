@@ -41,10 +41,29 @@ pub fn fmt_thing(graph: &Graph, interner: &Interner, id: ThingId, w: &mut dyn Wr
             }
             
             let kname = interner.resolve(*k).unwrap_or("p");
-            if *v > 0x10000 {
-                 write!(w, "{}: 0x{:x}", kname, v)?;
+            
+            // Heuristic: if property name implies interned string, try to resolve
+            let clean_name = if kname == "name" || kname == "arch" || kname == "platform_profile" || kname == "compatible" || kname == "driver.name" || kname == "status" {
+                 if let Ok(id) = (*v).try_into() {
+                     if let Some(s) = interner.resolve(id) {
+                         write!(w, "{}: \"{}\"", kname, s)?;
+                         true
+                     } else {
+                         false
+                     }
+                 } else {
+                     false
+                 }
             } else {
-                 write!(w, "{}: {}", kname, v)?;
+                 false
+            };
+
+            if !clean_name {
+                 if *v > 0x10000 {
+                      write!(w, "{}: 0x{:x}", kname, v)?;
+                 } else {
+                      write!(w, "{}: {}", kname, v)?;
+                 }
             }
             count += 1;
         }

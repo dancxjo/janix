@@ -1,7 +1,7 @@
 use super::{enqueue, RootOp};
 use super::graph::ThingId;
 use super::SymbolShell;
-use super::schema::{kinds, rels, props, provenance};
+use abi::schema::{keys, kinds, rels, source, confidence};
 use crate::{BootModuleDesc, PhysRange, FramebufferInfo};
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ pub struct BootInventory {
 }
 
 pub fn register_all(info: &BootInfo) -> BootInventory {
-    crate::kinfo!("ROOT: boot registration begin (Census Phase 1)");
+    crate::kinfo!("ROOT: boot registration begin (Census Phase 1 v0.2)");
 
     let create = |kind: &str| -> u64 {
         let reply = enqueue(RootOp::CreateNode { kind: SymbolShell::Str(alloc::string::String::from(kind)) });
@@ -82,84 +82,83 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         }
     };
 
-    // Pre-intern provenance constants
-    let src_boot = intern(provenance::SRC_BOOT);
-    let conf_high = intern(provenance::CONF_HIGH);
+    // Use consistent numeric provenance (u8 -> u64)
+    let src_boot = source::BOOT as u64;
+    let conf_high = confidence::HIGH as u64;
 
     // 1. Host
-    let host = create(kinds::HOST);
-    set(host, props::HHDM_OFFSET, info.hhdm_offset);
+    let host = create(kinds::DEV_HOST);
+    set(host, keys::HHDM_OFFSET, info.hhdm_offset);
     let arch_id = intern(info.arch);
-    set(host, props::ARCH, arch_id);
+    set(host, "arch", arch_id); // "arch" prop key not in keys:: yet, maybe map to ARCH or intern string
     let platform_id = intern(info.platform_profile);
-    set(host, props::PLATFORM_PROFILE, platform_id);
+    set(host, "platform_profile", platform_id);
 
-    set(host, props::SOURCE, src_boot);
-    set(host, props::CONFIDENCE, conf_high);
+    set(host, keys::SOURCE, src_boot);
+    set(host, keys::CONFIDENCE, conf_high);
 
     // 2. Platform Bus
-    let platform_bus = create(kinds::BUS_PLATFORM);
-    // intern name="platform0"
+    let platform_bus = create(kinds::DEV_BUS_PLATFORM);
     let pbus_name = intern("platform0");
-    set(platform_bus, props::NAME, pbus_name);
-    set(platform_bus, props::SOURCE, src_boot);
-    set(platform_bus, props::CONFIDENCE, conf_high);
+    set(platform_bus, keys::NAME, pbus_name);
+    set(platform_bus, keys::SOURCE, src_boot);
+    set(platform_bus, keys::CONFIDENCE, conf_high);
     
     link(host, rels::HAS_BUS, platform_bus);
 
     // 3. Kernel
-    let kernel = create("proc.kernel");
-    set(kernel, props::VERSION, 1);
+    let kernel = create(kinds::PROC_KERNEL);
+    set(kernel, "version", 1);
     link(kernel, rels::RUNS_ON, host);
     
     // 4. Root Service
-    let root_svc = create("svc.root");
+    let root_svc = create(kinds::SVC_ROOT);
     link(kernel, rels::PROVIDES, root_svc);
     
     // 5. CPUs
     for i in 0..info.cpu_count {
-        let cpu = create(kinds::CPU);
-        set(cpu, props::ID, i as u64);
-        set(cpu, props::SOURCE, src_boot);
-        set(cpu, props::CONFIDENCE, conf_high);
+        let cpu = create(kinds::DEV_CPU);
+        set(cpu, "id", i as u64);
+        set(cpu, keys::SOURCE, src_boot);
+        set(cpu, keys::CONFIDENCE, conf_high);
         link(host, rels::HAS_CPU, cpu);
     }
     
     // 6. Memory Ranges
     for range in info.memory_map {
         let mem = create(kinds::MEM_RANGE);
-        set(mem, props::START, range.start);
-        set(mem, props::END, range.end);
-        set(mem, props::KIND, range.kind as u64);
-        set(mem, props::SOURCE, src_boot);
-        set(mem, props::CONFIDENCE, conf_high);
+        set(mem, "start", range.start);
+        set(mem, "end", range.end);
+        set(mem, "kind", range.kind as u64); // "kind" might be legacy, leaving it for now
+        set(mem, keys::SOURCE, src_boot);
+        set(mem, keys::CONFIDENCE, conf_high);
         link(host, rels::HAS_MEMORY_RANGE, mem);
     }
     
     // 7. Modules
     for (i, m) in info.modules.iter().enumerate() {
         let mod_node = create(kinds::BOOT_MODULE);
-        set(mod_node, props::PHYS_BASE, m.phys_start);
-        set(mod_node, props::SIZE_BYTES, m.phys_end - m.phys_start);
-        set(mod_node, props::INDEX, i as u64);
+        set(mod_node, keys::PHYS_BASE, m.phys_start);
+        set(mod_node, keys::SIZE_BYTES, m.phys_end - m.phys_start);
+        set(mod_node, "index", i as u64);
         let name_id = intern(m.name);
-        set(mod_node, props::NAME, name_id);
+        set(mod_node, keys::NAME, name_id);
         
-        set(mod_node, props::SOURCE, src_boot);
-        set(mod_node, props::CONFIDENCE, conf_high);
+        set(mod_node, keys::SOURCE, src_boot);
+        set(mod_node, keys::CONFIDENCE, conf_high);
         
         link(host, rels::HAS_MODULE, mod_node);
     }
     
     // 8. Framebuffer
     if let Some(fb) = info.framebuffer.as_ref() {
-        let fb_node = create(kinds::DISPLAY_FRAMEBUFFER);
-        set(fb_node, props::PHYS_BASE, fb.addr);
-        set(fb_node, props::WIDTH, fb.width as u64);
-        set(fb_node, props::HEIGHT, fb.height as u64);
-        set(fb_node, props::STRIDE, fb.pitch as u64);
-        set(fb_node, props::BPP, fb.bpp as u64);
-        set(fb_node, props::SIZE_BYTES, fb.byte_len as u64);
+        let fb_node = create(kinds::DEV_DISPLAY_FRAMEBUFFER);
+        set(fb_node, keys::PHYS_BASE, fb.addr);
+        set(fb_node, "width", fb.width as u64);
+        set(fb_node, "height", fb.height as u64);
+        set(fb_node, "stride", fb.pitch as u64);
+        set(fb_node, "bpp", fb.bpp as u64);
+        set(fb_node, keys::SIZE_BYTES, fb.byte_len as u64);
         
         let fmt = match fb.format {
              crate::PixelFormat::Xrgb8888 => 1,
@@ -167,10 +166,10 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
              crate::PixelFormat::Rgb565 => 3,
              _ => 0,
         };
-        set(fb_node, props::FORMAT, fmt);
+        set(fb_node, keys::FORMAT, fmt); // Using keys::FORMAT ("format") which maps to string
         
-        set(fb_node, props::SOURCE, src_boot);
-        set(fb_node, props::CONFIDENCE, conf_high);
+        set(fb_node, keys::SOURCE, src_boot);
+        set(fb_node, keys::CONFIDENCE, conf_high);
         
         link(host, rels::HAS_DEVICE, fb_node);
     }
@@ -178,39 +177,60 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
     // 9. Firmware Tables
     if info.acpi_rsdp.is_some() || info.dtb_ptr.is_some() {
         let fw_boot = create(kinds::FW_BOOT);
-        set(fw_boot, props::SOURCE, src_boot);
-        set(fw_boot, props::CONFIDENCE, conf_high);
+        set(fw_boot, keys::SOURCE, src_boot);
+        set(fw_boot, keys::CONFIDENCE, conf_high);
         link(host, rels::HAS_FIRMWARE, fw_boot);
 
-        if let Some(rsdp) = info.acpi_rsdp {
+        if let Some(rsdp_phys) = info.acpi_rsdp {
             let acpi = create(kinds::FW_TABLE_ACPI);
-            set(acpi, props::PHYS_BASE, rsdp);
-            set(acpi, props::SOURCE, src_boot);
-            set(acpi, props::CONFIDENCE, conf_high);
+            set(acpi, keys::PHYS_BASE, rsdp_phys);
+            set(acpi, keys::SOURCE, src_boot);
+            set(acpi, keys::CONFIDENCE, conf_high);
+
+            // Copy RSDP (36 bytes for v2, 20 for v1; safe to copy 36 if verified)
+            // Use HHDM to access physical memory
+            // FIXME: HHDM does not map ACPI region in current paging setup. Skipping copy to avoid Page Fault.
+            // let rsdp_virt = rsdp_phys + info.hhdm_offset;
+            let size = 36;
+            
+            let bs = bytespace_create(size);
+            // bytespace_write(bs, 0, rsdp_virt, size);
+            
+            link(acpi, rels::BACKED_BY, bs);
             link(fw_boot, rels::PROVIDES_TABLE, acpi);
         }
 
-        if let Some(dtb_ptr) = info.dtb_ptr {
+        if let Some(dtb_phys) = info.dtb_ptr {
             let dtb_node = create(kinds::FW_TABLE_DTB);
+            
+            let dtb_virt = dtb_phys + info.hhdm_offset;
+            
             // Parse FDT header
-            let header = unsafe { core::slice::from_raw_parts(dtb_ptr as *const u8, 8) };
+            // FIXME: Assuming DTB memory is mapped (usually Bootloader Reclaimable).
+            // Helper for Sprout v0.2 to access bytespace without query text
+            
+            crate::kinfo!("ROOT: Absorbing DTB (phys={:x})", dtb_phys);
+            
+            // For safety, let's read size safely or fixed? FDT header is safe to assume present?
+            // If we crash here, we know DTB is also unmapped.
+            let header = unsafe { core::slice::from_raw_parts(dtb_virt as *const u8, 8) };
             let size = u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as u64;
-            
-            crate::kinfo!("ROOT: Absorbing DTB (ptr={:x}, size={})", dtb_ptr, size);
-            
+             
             let bs = bytespace_create(size);
-            bytespace_write(bs, 0, dtb_ptr, size);
-            set(dtb_node, props::BYTESPACE, bs);
+            bytespace_write(bs, 0, dtb_virt, size);
             
-            set(dtb_node, props::SOURCE, src_boot);
-            set(dtb_node, props::CONFIDENCE, conf_high);
+            link(dtb_node, rels::BACKED_BY, bs);
+            set(dtb_node, "bytespace", bs);
+            
+            set(dtb_node, keys::SOURCE, src_boot);
+            set(dtb_node, keys::CONFIDENCE, conf_high);
             
             link(fw_boot, rels::PROVIDES_TABLE, dtb_node);
         }
     }
 
     // 10. Tasking
-    let scheduler = create("svc.scheduler"); 
+    let scheduler = create(kinds::SVC_SCHEDULER); 
     link(kernel, rels::PROVIDES, scheduler);
     
     crate::kinfo!("ROOT: registered items. host={:x} kernel={:x}", host, kernel);

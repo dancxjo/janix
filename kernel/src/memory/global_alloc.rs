@@ -5,6 +5,8 @@ use crate::BootRuntime;
 #[global_allocator]
 static ALLOCATOR: GlobalHeap = GlobalHeap;
 
+pub static TRACE_ALLOC: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
 struct GlobalHeap;
 
 unsafe impl GlobalAlloc for GlobalHeap {
@@ -23,7 +25,9 @@ unsafe impl GlobalAlloc for GlobalHeap {
         
         let ptr = (heap.base + aligned_used as u64) as *mut u8;
         heap.used = aligned_used + layout.size();
-        crate::kprintln!("GlobalAlloc: Alloc {:p} (base={:x} used={:x} layout={:?})", ptr, heap.base, aligned_used, layout);
+        if TRACE_ALLOC.load(core::sync::atomic::Ordering::Relaxed) {
+            crate::kprintln!("GlobalAlloc: Alloc {:p} (base={:x} used={:x} layout={:?})", ptr, heap.base, aligned_used, layout);
+        }
         ptr
     }
 

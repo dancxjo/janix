@@ -9,3 +9,4 @@ pub mod debug;
 pub mod names;
 pub mod symbols;
 pub mod query;
+pub mod schema;

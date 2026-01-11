@@ -101,7 +101,7 @@ impl ArchRuntime for LoongArch64Runtime {
         prmd |= 3; // Set PPLv to 3 (User - PLV3)
         prmd &= !(1 << 2); // Functionally Clear PIE (disable interrupts)
         
-        asm!(
+        unsafe { asm!(
             "csrwr {prmd}, 0x1",
             "csrwr {pc}, 0x6",
             "move $sp, {sp}",
@@ -112,7 +112,7 @@ impl ArchRuntime for LoongArch64Runtime {
             sp = in(reg) entry.user_sp,
             arg = in(reg) entry.arg0,
             options(noreturn)
-        );
+        ); }
     }
 
     // Paging

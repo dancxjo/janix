@@ -3,12 +3,12 @@ use super::trap::UserTrapFrame;
 use kernel::syscall::dispatch;
 
 pub unsafe fn init() {
-    extern "C" {
+    unsafe extern "C" {
         fn trap_entry();
     }
     let addr = trap_entry as usize;
     // Set EENTRY (CSR 0xC)
-    asm!("csrwr {}, 0xC", in(reg) addr);
+    unsafe { asm!("csrwr {}, 0xC", in(reg) addr); }
 }
 
 global_asm!(r#"
@@ -144,7 +144,7 @@ trap_entry:
     ertn
 "#);
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
     let estat = tf.estat;
     let ecode = (estat >> 16) & 0x3F;

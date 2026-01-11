@@ -1,7 +1,7 @@
 //! Image creation tasks - ISO and HDD.
 
+use crate::common::{Result, image_name};
 use xshell::{Shell, cmd};
-use crate::common::{image_name, Result};
 
 /// Build an ISO image for the target architecture.
 pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
@@ -22,25 +22,37 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     // Build and copy sprout
     println!("Building sprout for {}...", arch);
     let target = crate::common::rust_target(arch);
-    cmd!(sh, "cargo build --target {target} --profile release -p sprout")
-         .env("RUSTFLAGS", "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort")
-         .run()?;
-    
+    cmd!(
+        sh,
+        "cargo build --target {target} --profile release -p sprout"
+    )
+    .env(
+        "RUSTFLAGS",
+        "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort",
+    )
+    .run()?;
+
     let sprout_elf = format!("target/{}/release/sprout", target);
     let sprout_bin = format!("target/{}/release/sprout.bin", target);
     cmd!(sh, "llvm-objcopy -O binary {sprout_elf} {sprout_bin}").run()?;
-    
+
     sh.copy_file(&sprout_bin, "iso_root/boot/sprout")?;
 
     // Build and copy threads_demo
     println!("Building threads_demo for {}...", arch);
     // target is already defined above
-    // let target = crate::common::rust_target(arch); 
+    // let target = crate::common::rust_target(arch);
     // Reuse target variable
-    cmd!(sh, "cargo build --target {target} --profile release -p threads_demo")
-        .env("RUSTFLAGS", "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort")
-        .run()?;
-    
+    cmd!(
+        sh,
+        "cargo build --target {target} --profile release -p threads_demo"
+    )
+    .env(
+        "RUSTFLAGS",
+        "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort",
+    )
+    .run()?;
+
     // Objcopy to binary
     let demo_elf = format!("target/{}/release/threads_demo", target);
     let demo_bin = format!("target/{}/release/threads_demo.bin", target);
@@ -50,10 +62,16 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
 
     // Build and copy rtc_cmos
     println!("Building rtc_cmos for {}...", arch);
-    cmd!(sh, "cargo build --target {target} --profile release -p rtc_cmos")
-        .env("RUSTFLAGS", "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort")
-        .run()?;
-    
+    cmd!(
+        sh,
+        "cargo build --target {target} --profile release -p rtc_cmos"
+    )
+    .env(
+        "RUSTFLAGS",
+        "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort",
+    )
+    .run()?;
+
     let rtc_elf = format!("target/{}/release/rtc_cmos", target);
     let rtc_bin = format!("target/{}/release/rtc_cmos.bin", target);
     cmd!(sh, "llvm-objcopy -O binary {rtc_elf} {rtc_bin}").run()?;
@@ -62,10 +80,16 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
 
     // Build and copy clock
     println!("Building clock for {}...", arch);
-    cmd!(sh, "cargo build --target {target} --profile release -p clock")
-        .env("RUSTFLAGS", "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort")
-        .run()?;
-    
+    cmd!(
+        sh,
+        "cargo build --target {target} --profile release -p clock"
+    )
+    .env(
+        "RUSTFLAGS",
+        "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort",
+    )
+    .run()?;
+
     let clock_elf = format!("target/{}/release/clock", target);
     let clock_bin = format!("target/{}/release/clock.bin", target);
     cmd!(sh, "llvm-objcopy -O binary {clock_elf} {clock_bin}").run()?;
@@ -77,9 +101,18 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
 
     match arch {
         "x86_64" => {
-            sh.copy_file("limine/limine-bios.sys", "iso_root/boot/limine/limine-bios.sys")?;
-            sh.copy_file("limine/limine-bios-cd.bin", "iso_root/boot/limine/limine-bios-cd.bin")?;
-            sh.copy_file("limine/limine-uefi-cd.bin", "iso_root/boot/limine/limine-uefi-cd.bin")?;
+            sh.copy_file(
+                "limine/limine-bios.sys",
+                "iso_root/boot/limine/limine-bios.sys",
+            )?;
+            sh.copy_file(
+                "limine/limine-bios-cd.bin",
+                "iso_root/boot/limine/limine-bios-cd.bin",
+            )?;
+            sh.copy_file(
+                "limine/limine-uefi-cd.bin",
+                "iso_root/boot/limine/limine-uefi-cd.bin",
+            )?;
             sh.copy_file("limine/BOOTX64.EFI", "iso_root/EFI/BOOT/BOOTX64.EFI")?;
             sh.copy_file("limine/BOOTIA32.EFI", "iso_root/EFI/BOOT/BOOTIA32.EFI")?;
 
@@ -88,7 +121,10 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             cmd!(sh, "./limine/limine bios-install {iso}").run()?;
         }
         "aarch64" => {
-            sh.copy_file("limine/limine-uefi-cd.bin", "iso_root/boot/limine/limine-uefi-cd.bin")?;
+            sh.copy_file(
+                "limine/limine-uefi-cd.bin",
+                "iso_root/boot/limine/limine-uefi-cd.bin",
+            )?;
             sh.copy_file("limine/BOOTAA64.EFI", "iso_root/EFI/BOOT/BOOTAA64.EFI")?;
 
             let iso = format!("{}.iso", name);
@@ -98,19 +134,30 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             // For riscv64, we need to create a custom EFI boot image since limine-uefi-cd.bin
             // only contains x86 bootloaders. We build an arch-specific FAT image.
             let efi_img = "iso_root/boot/limine/limine-uefi-riscv64.bin";
-            
+
             // Create a 3MB FAT12 image (enough for the bootloader plus overhead)
-            cmd!(sh, "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none").run()?;
+            cmd!(
+                sh,
+                "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none"
+            )
+            .run()?;
             cmd!(sh, "mformat -i {efi_img} -f 2880 ::").run()?;
             cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
-            cmd!(sh, "mcopy -i {efi_img} limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI").run()?;
-            
+            cmd!(
+                sh,
+                "mcopy -i {efi_img} limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI"
+            )
+            .run()?;
+
             // Also add startup.nsh as a fallback inside the EFI image
             sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTRISCV64.EFI\n")?;
             cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
 
             // Copy kernel and limine config to ISO root
-            sh.copy_file("limine/BOOTRISCV64.EFI", "iso_root/EFI/BOOT/BOOTRISCV64.EFI")?;
+            sh.copy_file(
+                "limine/BOOTRISCV64.EFI",
+                "iso_root/EFI/BOOT/BOOTRISCV64.EFI",
+            )?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-riscv64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
@@ -119,19 +166,30 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             // For loongarch64, we need to create a custom EFI boot image since limine-uefi-cd.bin
             // only contains x86 bootloaders. We build an arch-specific FAT image.
             let efi_img = "iso_root/boot/limine/limine-uefi-loongarch64.bin";
-            
+
             // Create a 3MB FAT12 image (enough for the bootloader plus overhead)
-            cmd!(sh, "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none").run()?;
+            cmd!(
+                sh,
+                "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none"
+            )
+            .run()?;
             cmd!(sh, "mformat -i {efi_img} -f 2880 ::").run()?;
             cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
-            cmd!(sh, "mcopy -i {efi_img} limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI").run()?;
-            
+            cmd!(
+                sh,
+                "mcopy -i {efi_img} limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI"
+            )
+            .run()?;
+
             // Also add startup.nsh as a fallback inside the EFI image
             sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTLOONGARCH64.EFI\n")?;
             cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
 
             // Copy kernel and limine config to ISO root
-            sh.copy_file("limine/BOOTLOONGARCH64.EFI", "iso_root/EFI/BOOT/BOOTLOONGARCH64.EFI")?;
+            sh.copy_file(
+                "limine/BOOTLOONGARCH64.EFI",
+                "iso_root/EFI/BOOT/BOOTLOONGARCH64.EFI",
+            )?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-loongarch64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
@@ -160,7 +218,11 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
     }
 
     cmd!(sh, "mformat -i {hdd}@@1M").run()?;
-    cmd!(sh, "mmd -i {hdd}@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine").run()?;
+    cmd!(
+        sh,
+        "mmd -i {hdd}@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine"
+    )
+    .run()?;
 
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     cmd!(sh, "mcopy -i {hdd}@@1M {kernel_src} ::/boot").run()?;
@@ -168,7 +230,11 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
 
     match arch {
         "x86_64" => {
-            cmd!(sh, "mcopy -i {hdd}@@1M limine/limine-bios.sys ::/boot/limine").run()?;
+            cmd!(
+                sh,
+                "mcopy -i {hdd}@@1M limine/limine-bios.sys ::/boot/limine"
+            )
+            .run()?;
             cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTX64.EFI ::/EFI/BOOT").run()?;
             cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTIA32.EFI ::/EFI/BOOT").run()?;
         }
@@ -179,7 +245,11 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
             cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTRISCV64.EFI ::/EFI/BOOT").run()?;
         }
         "loongarch64" => {
-            cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT").run()?;
+            cmd!(
+                sh,
+                "mcopy -i {hdd}@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT"
+            )
+            .run()?;
         }
         _ => return Err(format!("Unsupported architecture: {}", arch).into()),
     }

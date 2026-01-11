@@ -6,11 +6,10 @@ pub use abi;
 pub mod syscall;
 // pub mod stream;
 // pub mod event;
-pub mod rt;
-pub mod panic;
 pub mod console;
 pub mod device;
-
+pub mod panic;
+pub mod rt;
 
 #[macro_export]
 macro_rules! kprint {

@@ -1,5 +1,16 @@
 [workspace]
-members = ["bran", "xtask", "tools/bdd", "kernel", "abi", "stem", "userspace/sprout", "userspace/threads_demo", "userspace/rtc_cmos", "userspace/clock"]
+members = [
+    "bran",
+    "xtask",
+    "tools/bdd",
+    "kernel",
+    "abi",
+    "stem",
+    "userspace/sprout",
+    "userspace/threads_demo",
+    "userspace/rtc_cmos",
+    "userspace/clock",
+]
 resolver = "2"
 
 [profile.dev]

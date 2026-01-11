@@ -50,6 +50,7 @@ pub enum BootModuleKind {
     Data,
 }
 
+#[derive(Clone, Copy)]
 pub struct FramebufferInfo {
     pub addr: u64,
     pub byte_len: usize,
@@ -172,6 +173,9 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     
     fn irq_disable(&self) -> IrqState;
     fn irq_restore(&self, state: IrqState);
+
+    fn acpi_rsdp(&self) -> Option<u64> { None }
+    fn dtb_ptr(&self) -> Option<u64> { None }
 }
 
 static mut RUNTIME: Option<&'static dyn core::any::Any> = None;
@@ -215,6 +219,17 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
     kinfo!("Initializing tasking...");
     crate::task::init::<R>();
+
+    // Store global boot info for syscalls
+    crate::boot_info::set(crate::boot_info::BootSyscallInfo {
+        memory_map: runtime.phys_memory_map(),
+        modules: runtime.modules(),
+        framebuffer: runtime.framebuffer(),
+        hhdm_offset: runtime.phys_to_virt_offset(),
+        acpi_rsdp: runtime.acpi_rsdp(),
+        dtb_ptr: runtime.dtb_ptr(),
+    });
+
     crate::root::init_root_service::<R>();
     // Root Boot Registration
 
@@ -225,7 +240,9 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         memory_map: runtime.phys_memory_map(),
         modules: runtime.modules(),
         framebuffer: runtime.framebuffer(),
-        hhdm_offset: runtime.phys_to_virt_offset(), // Using offset as proxy
+        hhdm_offset: runtime.phys_to_virt_offset(),
+        acpi_rsdp: runtime.acpi_rsdp(),
+        dtb_ptr: runtime.dtb_ptr(),
     };
     let inventory = crate::root::boot_register::register_all(&boot_info);
     crate::root::debug_dump::dump_all_to_console();
@@ -364,3 +381,4 @@ extern "C" fn thread_b(arg: usize) -> ! {
     }
 }
 pub fn run_fairness_test<R: BootRuntime>() { tests::fairness::run::<R>(); }
+pub mod boot_info;

@@ -27,6 +27,9 @@ pub enum RootOp {
     WatchSubscribe { target_id: u64, mask: u64 },
     StreamPoll { stream_id: u64, max: usize, out_ptr: u64 },
     PropSet { id: u64, key: SymbolShell, value: u64 },
+    PropGet { id: u64, key: SymbolShell },
+    Query { plan: alloc::vec::Vec<crate::root::query::PreparedStep>, out_buffer: u64, out_len: u64 },
+    Find { kind: SymbolShell, buffer: u64, len: u64 },
     DescribeThing { id: u64, buffer: u64, len: u64 },
     DescribeEdge { src: u64, rel: SymbolShell, dst: u64, buffer: u64, len: u64 },
     DumpEdges { id: u64, buffer: u64, len: u64 },
@@ -160,3 +163,4 @@ pub mod debug_fmt;
 pub mod boot_register;
 pub mod debug_dump;
 pub mod symbols;
+pub mod query;

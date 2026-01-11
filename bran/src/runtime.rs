@@ -102,6 +102,14 @@ impl LimineRuntimeData {
     pub fn framebuffer(&self) -> Option<FramebufferInfo> {
         crate::framebuffer::get_info()
     }
+    
+    pub fn acpi_rsdp(&self) -> Option<u64> {
+        crate::requests::RSDP_REQUEST.get_response().map(|r| r.address() as u64)
+    }
+
+    pub fn dtb_ptr(&self) -> Option<u64> {
+        crate::requests::DTB_REQUEST.get_response().map(|r| r.dtb_ptr() as u64)
+    }
 }
 
 impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
@@ -133,6 +141,9 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     
     fn irq_disable(&self) -> IrqState { self.arch.irq_disable() }
     fn irq_restore(&self, state: IrqState) { self.arch.irq_restore(state) }
+
+    fn acpi_rsdp(&self) -> Option<u64> { self.limine.acpi_rsdp() }
+    fn dtb_ptr(&self) -> Option<u64> { self.limine.dtb_ptr() }
 }
 
 impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {

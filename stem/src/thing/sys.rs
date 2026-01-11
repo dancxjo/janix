@@ -71,3 +71,21 @@ pub fn intern(s: &str) -> Result<SymbolId, Errno> {
     let ret = unsafe { syscall6(SYS_ROOT_INTERN, s.as_ptr() as usize, s.len(), 0, 0, 0, 0) };
     errno(ret).map(|v| v as u32)
 }
+
+pub fn prop_get<S: IntoSymbolRef>(id: ThingId, key: S) -> Result<u64, Errno> {
+    let wire = key.to_wire();
+    let ret = unsafe { syscall6(SYS_ROOT_PROP_GET, id.0 as usize, &wire as *const _ as usize, 0, 0, 0, 0) };
+    errno(ret).map(|v| v as u64)
+}
+
+pub fn find<S: IntoSymbolRef>(kind: S, out: &mut [ThingId]) -> Result<usize, Errno> {
+    let wire = kind.to_wire();
+    let ret = unsafe { syscall6(SYS_ROOT_FIND, &wire as *const _ as usize, out.as_mut_ptr() as usize, out.len() * 8, 0, 0, 0) };
+    errno(ret).map(|v| v as usize)
+}
+
+pub fn create_node<S: IntoSymbolRef>(kind: S) -> Result<ThingId, Errno> {
+    let wire = kind.to_wire();
+    let ret = unsafe { syscall6(SYS_ROOT_CREATE_NODE, &wire as *const _ as usize, 0, 0, 0, 0, 0) };
+    errno(ret).map(|v| ThingId(v as u64))
+}

@@ -6,7 +6,7 @@ use abi::device::RtcTime;
 
 use arch::raw_syscall6;
 
-/// Helper to expose raw syscalls safely to other modules if needed (unlikely, but here for completeness).
+/// Helper to expose raw syscalls safely to other modules if needed.
 #[inline(always)]
 pub unsafe fn syscall6(n: u32, a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize) -> isize {
     unsafe { raw_syscall6(n, a0, a1, a2, a3, a4, a5) }
@@ -59,7 +59,6 @@ pub fn monotonic_ns() -> u64 {
     let ret = unsafe {
         raw_syscall6(SYS_TIME_MONOTONIC, 0, 0, 0, 0, 0, 0)
     };
-    // If error, likely ENOSYS? But for now generic implementation assumes success or 0.
     if ret < 0 { 0 } else { ret as u64 }
 }
 

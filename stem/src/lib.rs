@@ -1,4 +1,5 @@
 #![no_std]
+extern crate alloc;
 // #![feature(asm_experimental_arch)]
 
 pub use abi;
@@ -45,3 +46,4 @@ pub fn rtc_time() -> Result<abi::device::RtcTime, abi::errors::Errno> {
 }
 pub mod thing;
 pub use thing_macros::*;
+pub mod allocator;

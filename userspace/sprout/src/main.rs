@@ -1,51 +1,74 @@
 #![no_std]
 #![no_main]
 
-use stem::syscall::exit;
+extern crate alloc;
+
 use stem::kprintln;
-use stem::{sleep, yield_now};
-use core::time::Duration;
+use stem::thing::{sys as thingsys, query};
+
+mod devtree;
 
 #[no_mangle]
-#[repr(C)]
-struct ModuleEntry {
-     name_ptr: usize,
-     name_len: usize,
-}
-
-#[no_mangle]
-pub fn main(arg: usize) -> i32 {
-    kprintln!("SPROUT: Init started.");
+pub extern "C" fn main(_arg0: usize) {
+    kprintln!("SPROUT: v0.2 starting...");
     
-    if arg == 0 {
-        kprintln!("SPROUT: No registry provided (arg == 0)");
-        return 1;
+    // 1. Initialize Context
+    let ctx = match devtree::init() {
+        Ok(c) => c,
+        Err(_) => {
+            kprintln!("SPROUT: Failed to initialize devtree context!");
+            stem::syscall::exit(1);
+        }
+    };
+    
+    // 2. Build Device Tree
+    if let Err(_) = devtree::build(&ctx) {
+        kprintln!("SPROUT: Failed to build device tree!");
+    } else {
+        kprintln!("SPROUT: Device tree build complete.");
     }
     
-    let count_ptr = arg as *const usize;
-    let count = unsafe { *count_ptr };
-    kprintln!("SPROUT: Found {} modules", count);
+    // 3. Query Demo
+    kprintln!("SPROUT: Running Queries...");
     
-    let entries = unsafe { count_ptr.add(1) as *const ModuleEntry };
-    
-    for i in 0..count {
-        let entry = unsafe { &*entries.add(i) };
-        let slice = unsafe { core::slice::from_raw_parts(entry.name_ptr as *const u8, entry.name_len) };
-        
-        if let Ok(name) = core::str::from_utf8(slice) {
-            if name.contains("sprout") { continue; }
-            
-            kprintln!("SPROUT: Spawning {}", name);
-            match stem::syscall::spawn_process(name) {
-                Ok(_) => {}, // Kernel logs success usually, or we can log here
-                Err(e) => kprintln!("SPROUT: Failed to spawn {}: {:?}", name, e),
-            }
+    // Query 1: Find all memory ranges
+    let mut mems = [stem::thing::ThingId(0); 16];
+    if let Ok(count) = query::query_nodes_by_kind("mem.range", 16, &mut mems) {
+        kprintln!("Q1: Found {} memory ranges.", count);
+        for i in 0..count {
+             kprintln!("  - ID {}", mems[i].0);
         }
     }
-
-    loop { 
-        // Supervisor loop
-        yield_now();
-        sleep(Duration::from_millis(100));
+    
+    // Query 2: Outgoing edges from Host
+    kprintln!("Q2: Edges from Host (HAS_DEVICE, etc)");
+    if let Ok(edges) = query::query_edges(ctx.host, None, 16) {
+        for (rel, dst) in edges {
+             kprintln!("  - Host --[{}]--> {}", rel, dst.0);
+        }
+    }
+    
+    // 4. Dump Entire Graph
+    kprintln!("SPROUT: Dumping Root graph (legacy dump)...");
+    let mut buf = [0u8; 512];
+    for i in 1..64 {
+        if let Ok(len) = thingsys::describe_thing(stem::thing::ThingId(i), &mut buf) {
+             if len > 0 {
+                 if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                      kprintln!("{}", s);
+                      if let Ok(elen) = thingsys::dump_edges(stem::thing::ThingId(i), &mut buf) {
+                           if let Ok(es) = core::str::from_utf8(&buf[..elen]) {
+                               kprintln!("{}", es);
+                           }
+                      }
+                 }
+             }
+        }
+    }
+    
+    kprintln!("SPROUT: Done.");
+    
+    loop {
+        stem::syscall::yield_now();
     }
 }

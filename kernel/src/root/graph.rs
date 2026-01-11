@@ -16,11 +16,16 @@ pub struct Node {
 pub struct Graph {
     pub nodes: BTreeMap<ThingId, Node>,
     pub next_id: ThingId,
+    pub kind_index: BTreeMap<SymbolId, alloc::vec::Vec<ThingId>>,
 }
 
 impl Graph {
     pub fn new() -> Self {
-        Self { nodes: BTreeMap::new(), next_id: 1 }
+        Self { 
+            nodes: BTreeMap::new(), 
+            next_id: 1,
+            kind_index: BTreeMap::new(),
+        }
     }
     
     pub fn alloc(&mut self, kind: SymbolId) -> ThingId {
@@ -33,6 +38,9 @@ impl Graph {
              watches: alloc::vec::Vec::new(),
              edges: alloc::vec::Vec::new(),
         });
+        
+        self.kind_index.entry(kind).or_default().push(id);
+        
         id
     }
     

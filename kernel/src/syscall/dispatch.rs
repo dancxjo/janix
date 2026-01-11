@@ -38,6 +38,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_TIME_MONOTONIC => handlers::sys_time_monotonic_ns(),
         SYS_RTC_READ => handlers::sys_rtc_read(args[0]),
         SYS_GET_TID => handlers::sys_get_tid(),
+        SYS_ROOT_PROP_GET => handlers::sys_root_prop_get(args[0], args[1], args[2]),
+        SYS_ROOT_FIND => handlers::sys_root_find(args[0], args[1], args[2]),
         SYS_ROOT_GET_KIND => handlers::sys_root_get_kind(args[0]),
         SYS_ROOT_BYTESPACE_CREATE => handlers::sys_root_bytespace_create(args[0], args[1], args[2]),
         SYS_ROOT_WATCH_SUBSCRIBE => handlers::sys_root_watch_subscribe(args[0], args[1]),
@@ -48,6 +50,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ROOT_DUMP_EDGES => handlers::sys_root_dump_edges(args[0], args[1], args[2]),
         abi::syscall::SYS_ROOT_INTERN => handlers::sys_root_intern(args[0], args[1]),
         SYS_ROOT_LINK => handlers::sys_root_link(args[0], args[1], args[2]),
+        abi::syscall::SYS_ROOT_QUERY => handlers::sys_root_query(args[0], args[1], args[2], args[3]),
+        SYS_ROOT_CREATE_NODE => handlers::sys_root_create_node(args[0]),
         _ => Err(Errno::ENOSYS),
     };
 

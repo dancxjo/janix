@@ -81,6 +81,70 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
             journal.append(JournalOp::CreateResult { id, kind: kid as u64 });
             (0, id)
         },
+        RootOp::PropGet { id, key } => {
+            let kid = resolve_shell(key, interner);
+            if let Some(node) = graph.get_node_mut(id) {
+                if let Some(val) = node.props.get(&kid) {
+                    (0, *val)
+                } else {
+                    (-1, 0)
+                }
+            } else {
+                (-1, 0)
+            }
+        },
+        RootOp::Query { plan, out_buffer, out_len } => {
+             // We need a kernel buffer to write results, separate from user pointer.
+             // But wait, `out_buffer` passed in Op comes from syscall handler.
+             // If syscall handler passes `out_ptr` (user), Root Service fails.
+             // Syscall handler must provide a KERNEL buffer (or physical address).
+             // Since we return `(status, value)`, we can't easily return a buffer.
+             // 
+             // Pattern used by `Find`: `buffer: u64`.
+             // `Find` handler creates a stack `kbuf`, passes pointer to it.
+             // But stack of `sys_root_find` is in the syscall stack.
+             // The Root Service runs in a DIFFERENT thread.
+             // Accessing the syscall stack of a blocked thread IS safe if memory is shared.
+             // In ThingOS, kernel memory is identity mapped and shared.
+             // So passing `kbuf.as_mut_ptr()` from one kernel thread to another IS valid.
+             // So `out_buffer` is a kernel pointer.
+             //
+             let max_rows = (out_len as usize) / core::mem::size_of::<abi::query::QueryRow>();
+             let mut krows = alloc::vec![abi::query::QueryRow::default(); max_rows];
+             
+             let res = super::query::execute(graph, &plan, &mut krows);
+             
+             if let Ok(count) = res {
+                 // Copy back to `out_buffer` (kernel ptr to kbuf in handler)
+                 unsafe {
+                     let dst = out_buffer as *mut abi::query::QueryRow;
+                     for i in 0..count {
+                         *dst.add(i) = krows[i];
+                     }
+                 }
+                 (0, count as u64)
+             } else {
+                 (-1, 0)
+             }
+        },
+        RootOp::Find { kind, buffer, len } => {
+             let kid = resolve_shell(kind, interner);
+             // Linear scan for now - cheap enough for startup enumeration
+             let mut found_count = 0;
+             let mut buf_pos = 0;
+             let out_ptr = buffer as *mut u64;
+             let max_entries = (len as usize) / 8;
+             
+             for (id, node) in &graph.nodes {
+                  if node.kind == kid {
+                       if found_count < max_entries {
+                           unsafe { *out_ptr.add(found_count) = *id; }
+                       }
+                       found_count += 1;
+                  }
+             }
+             (0, found_count as u64)
+        },
         RootOp::BytespaceCreate { len, flags: _, format: _ } => {
             // Need a symbol for Bytespace. Intern it.
             let kid = interner.intern("bytespace");

@@ -8,3 +8,4 @@ pub mod kinds;
 pub mod debug;
 pub mod names;
 pub mod symbols;
+pub mod query;

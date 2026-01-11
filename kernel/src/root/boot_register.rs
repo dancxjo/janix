@@ -1,10 +1,7 @@
 use super::{enqueue, RootOp};
 use super::graph::ThingId;
 use super::SymbolShell;
-use crate::BootRuntime;
-use crate::BootModuleDesc;
-use crate::PhysRange;
-use crate::FramebufferInfo;
+use crate::{BootModuleDesc, PhysRange, FramebufferInfo};
 
 pub struct BootInfo<'a> {
     pub cpu_count: usize,
@@ -12,6 +9,8 @@ pub struct BootInfo<'a> {
     pub modules: &'a [BootModuleDesc],
     pub framebuffer: Option<FramebufferInfo>,
     pub hhdm_offset: u64,
+    pub acpi_rsdp: Option<u64>,
+    pub dtb_ptr: Option<u64>,
 }
 
 pub struct BootInventory {
@@ -97,10 +96,34 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(fb_node, "width", fb.width as u64);
         set(fb_node, "height", fb.height as u64);
         set(fb_node, "stride", fb.pitch as u64);
+        set(fb_node, "bpp", fb.bpp as u64);
+        
+        // Format mapping (raw values for now)
+        let fmt = match fb.format {
+             crate::PixelFormat::Xrgb8888 => 1,
+             crate::PixelFormat::Argb8888 => 2,
+             crate::PixelFormat::Rgb565 => 3,
+             _ => 0,
+        };
+        set(fb_node, "format", fmt);
+        
         link(host, "HAS_DEVICE", fb_node);
     }
 
-    // 8. Tasking
+    // 8. Firmware Tables
+    if let Some(rsdp) = info.acpi_rsdp {
+        let acpi = create("fw.table.acpi");
+        set(acpi, "phys_base", rsdp);
+        link(host, "HAS_FIRMWARE", acpi);
+    }
+
+    if let Some(dtb) = info.dtb_ptr {
+        let dtb_node = create("fw.table.dtb");
+        set(dtb_node, "phys_base", dtb);
+        link(host, "HAS_FIRMWARE", dtb_node);
+    }
+
+    // 9. Tasking
     let scheduler = create("svc.scheduler"); 
     link(kernel, "PROVIDES", scheduler);
     

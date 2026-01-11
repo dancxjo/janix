@@ -335,3 +335,141 @@ pub fn sys_root_intern(ptr: usize, len: usize) -> SysResult<usize> {
     
     root_call(msg)
 }
+
+
+pub fn sys_root_prop_get(id: usize, ptr: usize, _reserved: usize) -> SysResult<usize> {
+    // id: ThingId
+    // ptr: *const SymbolRefWire
+    let sym = read_symbol(ptr)?;
+    // prop_get returns value in result
+    // RootOp::PropGet returns (0, value) or (-1, 0)
+    let msg = RootOp::PropGet { id: id as u64, key: sym };
+    
+    // root_call returns Result<usize, Errno>
+    // We want the value directly.
+    // root_call maps (0, val) to Ok(val as usize)
+    // and (-1, _) to Err(Errno::ENOENT)
+    
+    // Wait, root_call implementation:
+    // Ok(reply_value as usize)
+    // Err(Errno::EIO) if status != 0
+    // I should check root_call in handlers.rs or service interaction?
+    // root_call is in handlers.rs I think? Or generic helper?
+    // Let's rely on standard logic.
+    root_call(msg)
+}
+
+pub fn sys_root_find(ptr_kind: usize, ptr_buf: usize, len: usize) -> SysResult<usize> {
+    // ptr_kind: *const SymbolRefWire
+    // ptr_buf: *mut ThingId (u64 array)
+    // len: bytes length of buffer
+    let sym = read_symbol(ptr_kind)?;
+    validate_user_range(ptr_buf, len, true)?;
+    
+    // We need a kernel buffer for output? Or can Root service write directly to user memory?
+    // Root service runs in kernel thread. It can access physical memory if mapped.
+    // But generic RootOp usually writes to kernel virtual address provided in op.
+    // So we need copyout.
+    
+    if len > 4096 { return Err(Errno::EINVAL); }
+    let mut kbuf = [0u8; 4096];
+    
+    let msg = RootOp::Find { kind: sym, buffer: kbuf.as_mut_ptr() as u64, len: len as u64 };
+    
+    // root_call returns count of found items
+    let count = root_call(msg)?;
+    
+    // Copy back
+    // count is number of items found.
+    // But we only wrote up to min(count, buffer_capacity) items into kbuf.
+    // We should copy min(count * 8, len).
+    let bytes_to_copy = core::cmp::min(count * 8, len);
+    unsafe { copyout(ptr_buf, &kbuf[..bytes_to_copy])?; }
+    
+    Ok(count)
+}
+
+pub fn sys_root_create_node(kind_ptr: usize) -> SysResult<usize> {
+    let sym = read_symbol(kind_ptr)?;
+    root_call(RootOp::CreateNode { kind: sym })
+}
+
+pub fn sys_root_query(plan_ptr: usize, plan_len: usize, out_ptr: usize, out_cap: usize) -> SysResult<usize> {
+    use abi::query::{QueryStep, QueryRow};
+    use crate::root::query::PreparedStep;
+    
+    // Bounds check plan
+    let step_size = core::mem::size_of::<QueryStep>();
+    let total_plan_bytes = plan_len * step_size;
+    validate_user_range(plan_ptr, total_plan_bytes, false)?;
+    
+    // Copy in plan
+    // We limit plan size (e.g. 8 steps)
+    if plan_len > 8 { return Err(Errno::EINVAL); }
+    
+    let mut steps = alloc::vec::Vec::with_capacity(plan_len);
+    for i in 0..plan_len {
+        let ptr = plan_ptr + i * step_size;
+        let mut step: QueryStep = unsafe { core::mem::zeroed() };
+        let slice = unsafe { core::slice::from_raw_parts_mut(&mut step as *mut _ as *mut u8, step_size) };
+        unsafe { copyin(slice, ptr)?; }
+        
+        // Resolve symbols NOW (in user context)
+        // Similar to read_symbol logic but specialized
+        let sym_id = match step.symbol.tag {
+            abi::symbols::SYMBOL_REF_TAG_ID => step.symbol.ptr_or_id as u32,
+            abi::symbols::SYMBOL_REF_TAG_STR => {
+                 let s_ptr = step.symbol.ptr_or_id as usize;
+                 let s_len = step.symbol.len as usize;
+                 if s_len > 256 { return Err(Errno::EINVAL); }
+                 validate_user_range(s_ptr, s_len, false)?;
+                 let mut buf = [0u8; 256];
+                 unsafe { copyin(&mut buf[..s_len], s_ptr)?; }
+                 let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
+                 // Syscall must Intern?
+                 // But Intern is a RootOp. We can't easily intern synchronously inside a syscall 
+                 // without sending a message (which we are doing).
+                 // So we can send Intern op first? Or support String in PreparedStep?
+                 // RootOp::Query takes PreparedStep with SymbolId.
+                 // So we MUST have an ID.
+                 // Hack: Trigger Intern for each string first.
+                 let intern_msg = RootOp::Intern { name: alloc::string::String::from(s) };
+                 // We call root_call(intern) -> ID
+                 let id = root_call(intern_msg)?;
+                 id as u32
+            },
+            _ => return Err(Errno::EINVAL),
+        };
+        
+        steps.push(PreparedStep {
+            op: step.op,
+            arg1: step.arg1,
+            symbol: sym_id,
+        });
+    }
+
+    // Validate out buffer
+    let row_size = core::mem::size_of::<QueryRow>();
+    let total_out_bytes = out_cap * row_size;
+    validate_user_range(out_ptr, total_out_bytes, true)?;
+    
+    // Allocate kernel buffer for result
+    // We cap output size (e.g. 4KB or 1024 rows)
+    let safe_cap = core::cmp::min(out_cap, 1024);
+    let mut kbuf = alloc::vec![QueryRow::default(); safe_cap];
+    
+    let msg = RootOp::Query { 
+        plan: steps, 
+        out_buffer: kbuf.as_mut_ptr() as u64, 
+        out_len: (safe_cap * row_size) as u64 
+    };
+    
+    let count = root_call(msg)?;
+    
+    // Copy out
+    let bytes_to_copy = count * row_size;
+    let src = unsafe { core::slice::from_raw_parts(kbuf.as_ptr() as *const u8, bytes_to_copy) };
+    unsafe { copyout(out_ptr, src)?; }
+    
+    Ok(count)
+}

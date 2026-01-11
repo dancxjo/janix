@@ -11,6 +11,10 @@ pub enum DeviceKind {
 #[derive(Debug, Clone, Copy)]
 pub struct DeviceHandle(pub u32);
 
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(C)]
+pub struct RootCaps;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct DeviceCall {

@@ -82,13 +82,13 @@ pub fn rtc_read(out: &mut RtcTime) -> Result<(), Errno> {
     }
 }
 
-pub fn spawn_process(name: &str) -> Result<u64, abi::errors::Errno> {
+pub fn spawn_process(name: &str, arg: usize) -> Result<u64, abi::errors::Errno> {
     let ret = unsafe {
         raw_syscall6(
             SYS_SPAWN_PROCESS,
             name.as_ptr() as usize,
             name.len(),
-            0,
+            arg,
             0,
             0,
             0,

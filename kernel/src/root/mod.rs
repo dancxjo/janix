@@ -38,6 +38,7 @@ pub enum RootOp {
     DumpGraph { limit: u64 },
     BytespaceWrite { id: u64, offset: u64, ptr: u64, len: u64 },
     BytespaceRead { id: u64, offset: u64, ptr: u64, len: u64 },
+    BytespaceCreateFromPtr { ptr: u64, len: u64 },
     Link { src: u64, rel: SymbolShell, dst: u64 },
 }
 

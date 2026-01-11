@@ -10,3 +10,6 @@ pub mod names;
 pub mod symbols;
 pub mod query;
 pub mod schema;
+pub mod module;
+pub mod module_manifest;
+pub mod driver_ctx;

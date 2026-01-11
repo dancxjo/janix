@@ -8,6 +8,10 @@ pub struct TimeSpec {
     pub nanoseconds: u32,
 }
 
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct ThingId(pub u64);
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StreamStatus {

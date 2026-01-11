@@ -34,7 +34,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_DEVICE_CALL => handlers::sys_device_call(args[0]),
         SYS_YIELD => handlers::sys_yield(),
         SYS_SPAWN_THREAD => handlers::sys_spawn_thread(args[0], args[1]),
-        SYS_SPAWN_PROCESS => handlers::sys_spawn_process(args[0], args[1]),
+        SYS_SPAWN_PROCESS => handlers::sys_spawn_process(args[0], args[1], args[2]),
         SYS_TIME_MONOTONIC => handlers::sys_time_monotonic_ns(),
         SYS_RTC_READ => handlers::sys_rtc_read(args[0]),
         SYS_GET_TID => handlers::sys_get_tid(),

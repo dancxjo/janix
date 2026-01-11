@@ -21,3 +21,10 @@ pub fn create(len: usize) -> BytespaceHandle {
         len,
     }))
 }
+
+pub fn create_from_ptr(ptr: usize, len: usize) -> BytespaceHandle {
+    Arc::new(Mutex::new(Bytespace {
+        ptr,
+        len,
+    }))
+}

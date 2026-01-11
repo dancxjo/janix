@@ -141,6 +141,16 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
             journal.append(JournalOp::CreateResult { id, kind: kid as u64 });
             (0, id)
         }, 
+        RootOp::BytespaceCreateFromPtr { ptr, len } => {
+            let kid = interner.intern("bytespace");
+            let id = graph.alloc(kid);
+            let handle = bytespace::create_from_ptr(ptr as usize, len as usize);
+            if let Some(node) = graph.get_node_mut(id) {
+                node.resource = Some(ResourceHandle::Bytespace(handle));
+            }
+            journal.append(JournalOp::CreateResult { id, kind: kid as u64 });
+            (0, id)
+        },
         RootOp::BytespaceWrite { id, offset, ptr, len } => {
              if let Some(node) = graph.get_node_mut(id) {
                  if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {

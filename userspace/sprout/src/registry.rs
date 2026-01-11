@@ -1,0 +1,151 @@
+use alloc::vec::Vec;
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use stem::thing::sys as thingsys;
+use stem::thing::{ThingId};
+use stem::kprintln;
+use abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC, SECTION_NAME};
+use abi::schema::{kinds};
+
+pub struct Registry {
+    // device_kind -> module_name
+    drivers: BTreeMap<String, String>,
+}
+
+impl Registry {
+    pub fn new() -> Self {
+        Self {
+            drivers: BTreeMap::new(),
+        }
+    }
+
+    pub fn scan(&mut self) {
+        kprintln!("SPROUT: Scanning boot modules...");
+        
+        let mut modules = [ThingId(0); 32];
+        let count = thingsys::find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
+        
+        for i in 0..count {
+            let mod_id = modules[i];
+            self.scan_module(mod_id);
+        }
+        kprintln!("SPROUT: Registry scan complete. Found {} drivers.", self.drivers.len());
+    }
+    
+    fn scan_module(&mut self, mod_id: ThingId) {
+        // 1. Get module name from property "name" via describe_thing text parsing (hack for v0)
+        let mut buf = [0u8; 1024];
+        let mut mod_name = String::new();
+        
+        if let Ok(len) = thingsys::describe_thing(mod_id, &mut buf) {
+             let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
+             if let Some(pos) = s.find("name=\"") {
+                 let rest = &s[pos + 6..];
+                 if let Some(end) = rest.find('"') {
+                     mod_name = rest[..end].to_string();
+                 }
+             }
+        }
+        
+        if mod_name.is_empty() { return; }
+
+        let mut bs_id = ThingId(0);
+        
+        // 2. Find backing bytespace (dump_edges text parsing)
+        if let Ok(len) = thingsys::dump_edges(mod_id, &mut buf) {
+             let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
+             for line in s.lines() {
+                 if line.contains("backed_by") && line.contains("bytespace") {
+                     if let Some(arrow) = line.find("-->") {
+                         let rest = &line[arrow + 3..];
+                         let parts: Vec<&str> = rest.split_whitespace().collect();
+                         if !parts.is_empty() {
+                             if let Ok(id_val) = parts[0].parse::<u64>() {
+                                 bs_id = ThingId(id_val);
+                             }
+                         }
+                     }
+                 }
+             }
+        }
+        
+        if bs_id.0 == 0 { return; }
+        
+        // 3. Parse ELF Manifest
+        if let Some(header) = self.read_manifest(bs_id) {
+             if header.kind == ModuleKind::Driver {
+                 let raw_name = &header.device_kind;
+                 let end = raw_name.iter().position(|&c| c == 0).unwrap_or(raw_name.len());
+                 if let Ok(dk_str) = core::str::from_utf8(&raw_name[..end]) {
+                     kprintln!("SPROUT: Registering driver '{}' -> '{}'", dk_str, mod_name);
+                     self.drivers.insert(dk_str.to_string(), mod_name);
+                 }
+             }
+        }
+    }
+    
+    fn read_manifest(&self, bs: ThingId) -> Option<ManifestHeader> {
+        let mut hdr_buf = [0u8; 64];
+        if thingsys::bytespace_read(bs, 0, &mut hdr_buf).is_err() { return None; }
+        
+        // Verify ELF Magic
+        if hdr_buf[0..4] != [0x7f, 0x45, 0x4c, 0x46] { return None; }
+        
+        let shoff = u64::from_le_bytes(hdr_buf[0x28..0x30].try_into().unwrap()) as usize;
+        let shentsize = u16::from_le_bytes(hdr_buf[0x3A..0x3C].try_into().unwrap()) as usize;
+        let shnum = u16::from_le_bytes(hdr_buf[0x3C..0x3E].try_into().unwrap()) as usize;
+        let shstrndx = u16::from_le_bytes(hdr_buf[0x3E..0x40].try_into().unwrap()) as usize;
+        
+        let strtab_sh_off = shoff + (shstrndx as usize * shentsize);
+        let (strtab_off, _) = self.read_sh_info(bs, strtab_sh_off)?;
+        
+        for i in 0..shnum {
+             let off = shoff + (i * shentsize);
+             if let Some((sh_name_idx, sh_offset, sh_size)) = self.read_sh_entry(bs, off) {
+                 if let Some(name) = self.read_string(bs, strtab_off as usize, sh_name_idx as usize) {
+                     if name == SECTION_NAME {
+                         let mut m_buf = [0u8; core::mem::size_of::<ManifestHeader>()];
+                         if m_buf.len() > sh_size { return None; }
+                         if thingsys::bytespace_read(bs, sh_offset, &mut m_buf).is_ok() {
+                             let m: ManifestHeader = unsafe { core::mem::transmute(m_buf) };
+                             if m.magic == MANIFEST_MAGIC {
+                                 return Some(m);
+                             }
+                         }
+                     }
+                 }
+             }
+        }
+        
+        None
+    }
+    
+    fn read_sh_info(&self, bs: ThingId, offset: usize) -> Option<(usize, usize)> {
+        let mut buf = [0u8; 64];
+        if thingsys::bytespace_read(bs, offset, &mut buf).is_err() { return None; }
+        let sh_offset = u64::from_le_bytes(buf[0x18..0x20].try_into().ok()?) as usize;
+        let sh_size = u64::from_le_bytes(buf[0x20..0x28].try_into().ok()?) as usize;
+        Some((sh_offset, sh_size))
+    }
+    
+    fn read_sh_entry(&self, bs: ThingId, offset: usize) -> Option<(u32, usize, usize)> {
+        let mut buf = [0u8; 64];
+        if thingsys::bytespace_read(bs, offset, &mut buf).is_err() { return None; }
+        let sh_name = u32::from_le_bytes(buf[0..4].try_into().ok()?);
+        let sh_offset = u64::from_le_bytes(buf[0x18..0x20].try_into().ok()?) as usize;
+        let sh_size = u64::from_le_bytes(buf[0x20..0x28].try_into().ok()?) as usize;
+        Some((sh_name, sh_offset, sh_size))
+    }
+    
+    fn read_string(&self, bs: ThingId, strtab_off: usize, idx: usize) -> Option<String> {
+        let mut buf = [0u8; 32]; 
+        let _ = thingsys::bytespace_read(bs, strtab_off + idx, &mut buf);
+        let end = buf.iter().position(|&c| c == 0).unwrap_or(0);
+        if end == 0 { return None; }
+        core::str::from_utf8(&buf[..end]).ok().map(|s| s.to_string())
+    }
+
+    pub fn find_driver(&self, device_kind: &str) -> Option<&str> {
+        self.drivers.get(device_kind).map(|s| s.as_str())
+    }
+}

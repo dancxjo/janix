@@ -68,13 +68,13 @@ pub fn sys_spawn_thread(entry: usize, stack: usize) -> SysResult<usize> {
     if let Some(tid) = tid { Ok(tid as usize) } else { Err(Errno::EAGAIN) }
 }
 
-pub fn sys_spawn_process(name_ptr: usize, name_len: usize) -> SysResult<usize> {
+pub fn sys_spawn_process(name_ptr: usize, name_len: usize, arg: usize) -> SysResult<usize> {
     if name_len > 128 { return Err(Errno::EINVAL); }
     validate_user_range(name_ptr, name_len, false)?;
     let mut buf = [0u8; 128];
     unsafe { copyin(&mut buf[..name_len], name_ptr)?; }
     let name = core::str::from_utf8(&buf[..name_len]).map_err(|_| Errno::EINVAL)?;
-    let tid = unsafe { crate::task::scheduler::spawn_process_current(name) };
+    let tid = unsafe { crate::task::scheduler::spawn_process_current(name, arg) };
     if let Some(tid) = tid { Ok(tid as usize) } else { Err(Errno::ENOENT) }
 }
 

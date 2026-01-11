@@ -19,8 +19,9 @@ pub enum ScheduleReason {
 static mut YIELD_HOOK: Option<unsafe fn()> = None;
 static mut EXIT_HOOK: Option<unsafe fn(i32)> = None;
 static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize) -> TaskId> = None;
-static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str) -> Option<TaskId>> = None;
+static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, usize) -> Option<TaskId>> = None;
 static mut CURRENT_TID_HOOK: Option<unsafe fn() -> u64> = None;
+
 
 
 pub struct Scheduler<R: BootRuntime> {
@@ -325,10 +326,10 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(entry: usize, stack: usize, arg:
     sched.spawn_user_thread(entry, stack, arg)
 }
 
-pub unsafe fn spawn_process<R: BootRuntime>(name: &str) -> Option<TaskId> {
+pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<TaskId> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
-    crate::kinfo!("Spawn request: '{}'", name);
+    crate::kinfo!("Spawn request: '{}' arg={:x}", name, arg);
     let module = modules.iter().find(|m| {
         if m.name.contains(name) {
             crate::kinfo!("  Match candidate: '{}' @ {:x}", m.name, m.phys_start);
@@ -341,7 +342,8 @@ pub unsafe fn spawn_process<R: BootRuntime>(name: &str) -> Option<TaskId> {
     
     let aspace = rt.tasking().make_user_address_space();
     
-    let entry = crate::task::loader::load_module(rt, aspace, module)?;
+    let mut entry = crate::task::loader::load_module(rt, aspace, module)?;
+    entry.arg0 = arg;
     
     // Create the task
     let lock = SCHEDULER.lock();
@@ -351,10 +353,10 @@ pub unsafe fn spawn_process<R: BootRuntime>(name: &str) -> Option<TaskId> {
     sched.spawn_user_task(entry, aspace)
 }
 
-pub unsafe fn spawn_process_current(name: &str) -> Option<TaskId> {
+pub unsafe fn spawn_process_current(name: &str, arg: usize) -> Option<TaskId> {
     unsafe {
         if let Some(hook) = SPAWN_PROCESS_HOOK {
-            hook(name)
+            hook(name, arg)
         } else {
             None
         }

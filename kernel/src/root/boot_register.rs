@@ -148,6 +148,15 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
     }
     
     // 7. Modules
+    let bytespace_create_ptr = |ptr: u64, len: u64| -> u64 {
+        let reply = enqueue(RootOp::BytespaceCreateFromPtr { ptr, len });
+        loop {
+             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+             if done != 0 { return reply.value.load(core::sync::atomic::Ordering::Relaxed); }
+             unsafe { crate::task::scheduler::yield_now_current(); }
+        }
+    };
+
     for (i, m) in info.modules.iter().enumerate() {
         let mod_node = create(kinds::BOOT_MODULE);
         set(mod_node, keys::PHYS_BASE, m.phys_start);
@@ -155,6 +164,13 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(mod_node, "index", i as u64);
         let name_id = intern(m.name);
         set(mod_node, keys::NAME, name_id);
+        
+        // Zero-copy bytespace wrapper
+        let len = m.phys_end - m.phys_start;
+        let virt_ptr = m.phys_start.saturating_add(info.hhdm_offset);
+        let bs = bytespace_create_ptr(virt_ptr, len);
+        
+        link(mod_node, rels::BACKED_BY, bs);
         
         set(mod_node, keys::SOURCE, src_boot);
         set(mod_node, keys::CONFIDENCE, conf_high);

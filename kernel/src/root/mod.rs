@@ -34,6 +34,7 @@ pub enum RootOp {
     DescribeEdge { src: u64, rel: SymbolShell, dst: u64, buffer: u64, len: u64 },
     DumpEdges { id: u64, buffer: u64, len: u64 },
     DumpGraph { limit: u64 },
+    BytespaceWrite { id: u64, offset: u64, ptr: u64, len: u64 },
     Link { src: u64, rel: SymbolShell, dst: u64 },
 }
 

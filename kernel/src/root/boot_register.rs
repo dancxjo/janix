@@ -3,6 +3,7 @@ use super::graph::ThingId;
 use super::SymbolShell;
 use crate::{BootModuleDesc, PhysRange, FramebufferInfo};
 
+#[derive(Debug)]
 pub struct BootInfo<'a> {
     pub cpu_count: usize,
     pub memory_map: &'a [PhysRange],
@@ -11,6 +12,8 @@ pub struct BootInfo<'a> {
     pub hhdm_offset: u64,
     pub acpi_rsdp: Option<u64>,
     pub dtb_ptr: Option<u64>,
+    pub arch: &'static str,
+    pub platform_profile: &'static str,
 }
 
 pub struct BootInventory {
@@ -20,7 +23,7 @@ pub struct BootInventory {
 }
 
 pub fn register_all(info: &BootInfo) -> BootInventory {
-    crate::kinfo!("ROOT: boot registration begin");
+    crate::kinfo!("ROOT: boot registration begin (Census Phase 1)");
 
     let create = |kind: &str| -> u64 {
         let reply = enqueue(RootOp::CreateNode { kind: SymbolShell::Str(alloc::string::String::from(kind)) });
@@ -51,9 +54,40 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         }
     };
 
+    let intern = |s: &str| -> u64 {
+        let reply = enqueue(RootOp::Intern { name: alloc::string::String::from(s) });
+        loop {
+             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+             if done != 0 { return reply.value.load(core::sync::atomic::Ordering::Relaxed); }
+             unsafe { crate::task::scheduler::yield_now_current(); }
+        }
+    };
+
+    let bytespace_create = |len: u64| -> u64 {
+        let reply = enqueue(RootOp::BytespaceCreate { len, flags: 0, format: 0 });
+        loop {
+             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+             if done != 0 { return reply.value.load(core::sync::atomic::Ordering::Relaxed); }
+             unsafe { crate::task::scheduler::yield_now_current(); }
+        }
+    };
+
+    let bytespace_write = |id: u64, offset: u64, ptr: u64, len: u64| {
+        let reply = enqueue(RootOp::BytespaceWrite { id, offset, ptr, len });
+        loop {
+             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+             if done != 0 { break; }
+             unsafe { crate::task::scheduler::yield_now_current(); }
+        }
+    };
+
     // 1. Host
     let host = create("dev.host");
     set(host, "hhdm_offset", info.hhdm_offset);
+    let arch_id = intern(info.arch);
+    set(host, "arch", arch_id);
+    let platform_id = intern(info.platform_profile);
+    set(host, "platform_profile", platform_id);
 
     // 2. Kernel
     let kernel = create("proc.kernel");
@@ -86,6 +120,12 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(mod_node, "phys_base", m.phys_start);
         set(mod_node, "size_bytes", m.phys_end - m.phys_start);
         set(mod_node, "index", i as u64);
+        // Note: We might want to store path/name as a string prop or interned symbol
+        // For now, let's assume Sprout gets the name from the registry page (ModuleRegistry)
+        // or we can add it here if `intern` is cheap.
+        let name_id = intern(m.name);
+        set(mod_node, "name", name_id);
+        
         link(host, "HAS_MODULE", mod_node);
     }
     
@@ -97,6 +137,7 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(fb_node, "height", fb.height as u64);
         set(fb_node, "stride", fb.pitch as u64);
         set(fb_node, "bpp", fb.bpp as u64);
+        set(fb_node, "size_bytes", fb.byte_len as u64);
         
         // Format mapping (raw values for now)
         let fmt = match fb.format {
@@ -111,16 +152,31 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
     }
 
     // 8. Firmware Tables
-    if let Some(rsdp) = info.acpi_rsdp {
-        let acpi = create("fw.table.acpi");
-        set(acpi, "phys_base", rsdp);
-        link(host, "HAS_FIRMWARE", acpi);
-    }
+    if info.acpi_rsdp.is_some() || info.dtb_ptr.is_some() {
+        let fw_boot = create("fw.boot");
+        link(host, "HAS_FIRMWARE", fw_boot);
 
-    if let Some(dtb) = info.dtb_ptr {
-        let dtb_node = create("fw.table.dtb");
-        set(dtb_node, "phys_base", dtb);
-        link(host, "HAS_FIRMWARE", dtb_node);
+        if let Some(rsdp) = info.acpi_rsdp {
+            let acpi = create("fw.table.acpi");
+            set(acpi, "phys_base", rsdp);
+            link(fw_boot, "PROVIDES_TABLE", acpi);
+        }
+
+        if let Some(dtb_ptr) = info.dtb_ptr {
+            let dtb_node = create("fw.table.dtb");
+            // Create Bytespace
+            // Parse FDT header to get size (big-endian at offset 4)
+            let header = unsafe { core::slice::from_raw_parts(dtb_ptr as *const u8, 8) };
+            let size = u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as u64;
+            
+            crate::kinfo!("ROOT: Absorbing DTB (ptr={:x}, size={})", dtb_ptr, size);
+            
+            let bs = bytespace_create(size);
+            bytespace_write(bs, 0, dtb_ptr, size);
+            set(dtb_node, "bytespace", bs);
+            
+            link(fw_boot, "PROVIDES_TABLE", dtb_node);
+        }
     }
 
     // 9. Tasking

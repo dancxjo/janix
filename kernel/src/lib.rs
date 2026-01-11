@@ -32,7 +32,7 @@ pub enum PhysRangeKind {
     Other,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct BootModuleDesc {
     pub name: &'static str,
     pub bytes: &'static [u8],
@@ -50,7 +50,7 @@ pub enum BootModuleKind {
     Data,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct FramebufferInfo {
     pub addr: u64,
     pub byte_len: usize,
@@ -243,6 +243,12 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         hhdm_offset: runtime.phys_to_virt_offset(),
         acpi_rsdp: runtime.acpi_rsdp(),
         dtb_ptr: runtime.dtb_ptr(),
+        arch: if cfg!(target_arch = "x86_64") { "x86_64" } 
+              else if cfg!(target_arch = "aarch64") { "aarch64" }
+              else if cfg!(target_arch = "riscv64") { "riscv64" }
+              else if cfg!(target_arch = "loongarch64") { "loongarch64" }
+              else { "unknown" },
+        platform_profile: "unknown", // todo: ask runtime
     };
     let inventory = crate::root::boot_register::register_all(&boot_info);
     crate::root::debug_dump::dump_all_to_console();

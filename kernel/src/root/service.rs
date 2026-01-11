@@ -156,6 +156,32 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
             journal.append(JournalOp::CreateResult { id, kind: kid as u64 });
             (0, id)
         }, 
+        RootOp::BytespaceWrite { id, offset, ptr, len } => {
+             if let Some(node) = graph.get_node_mut(id) {
+                 if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {
+                      // This is a kernel-internal op for now (ptr is trusted kernel pointer from boot_register)
+                      // or we need to respect map permissions if coming from user.
+                      // For now, assuming kernel usage or identity map.
+                      let mut lock = handle.lock();
+                      if (offset + len) as usize <= lock.len {
+                           unsafe {
+                               core::ptr::copy_nonoverlapping(
+                                   ptr as *const u8, 
+                                   (lock.ptr as *mut u8).add(offset as usize), 
+                                   len as usize
+                               );
+                           }
+                           (0, len)
+                      } else {
+                           (-1, 0) // OOB
+                      }
+                 } else {
+                      (-1, 0) // Not a bytespace
+                 }
+             } else {
+                 (-1, 0) // ENOENT
+             }
+        },
         RootOp::WatchSubscribe { target_id, mask } => {
              // Need symbol for stream.watch
              let kid = interner.intern("stream.watch");

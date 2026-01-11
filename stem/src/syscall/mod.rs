@@ -1,4 +1,5 @@
 mod arch;
+pub mod graph;
 
 pub use abi::syscall::*;
 use abi::errors::{Errno, SysResult};

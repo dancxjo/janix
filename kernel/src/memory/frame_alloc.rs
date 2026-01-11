@@ -50,7 +50,10 @@ impl FrameAllocator {
         
         for range in map {
             if range.kind == PhysRangeKind::Usable {
-                this.mark_free_range(range.start, range.end);
+                let start = core::cmp::max(range.start, 0x80200000);
+                if start < range.end {
+                    this.mark_free_range(start, range.end);
+                }
             }
         }
         

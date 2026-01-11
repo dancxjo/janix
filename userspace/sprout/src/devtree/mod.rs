@@ -8,6 +8,61 @@ use alloc::vec::Vec;
 use alloc::vec;
 use stem::kprintln;
 
+pub fn set_str_prop(id: ThingId, key: &str, val: &str) -> Result<(), ()> {
+    let sym = thingsys::intern(val).map_err(|_| ())?;
+    thingsys::prop_set(id, key, sym as u64).map_err(|_| ())
+}
+
+// Unified Device Graph Schema Constants (v0.1)
+pub mod schema {
+    pub const DEV_HOST: &str = "dev.host";
+    pub const DEV_BUS_PLATFORM: &str = "dev.bus.platform";
+    
+    // Core
+    pub const FW_TABLE_ACPI: &str = "fw.table.acpi";
+    pub const FW_TABLE_DTB: &str = "fw.table.dtb";
+    
+    // Devices
+    pub const DEV_SERIAL_UART: &str = "dev.serial.uart";
+    pub const DEV_INTERRUPT_CONTROLLER: &str = "dev.interrupt_controller";
+    pub const DEV_TIMER: &str = "dev.timer";
+    pub const DEV_RTC_CMOS: &str = "dev.rtc.cmos";
+    
+    // Resources
+    pub const RES_MMIO_RANGE: &str = "res.mmio.range";
+    pub const RES_IO_PORT_RANGE: &str = "res.io.port_range";
+    pub const RES_IRQ: &str = "res.irq";
+    
+    // Relations
+    pub const HAS_BUS: &str = "HAS_BUS";
+    pub const HAS_DEVICE: &str = "HAS_DEVICE";
+    pub const HAS_RESOURCE: &str = "HAS_RESOURCE";
+    pub const DERIVED_FROM: &str = "DERIVED_FROM";
+    
+    // Properties
+    pub const PROP_SOURCE: &str = "source";         
+    pub const PROP_CONFIDENCE: &str = "confidence";
+    pub const PROP_NAME: &str = "name";
+    pub const PROP_COMPATIBLE: &str = "compatible";
+    pub const PROP_PATH: &str = "path";
+    pub const PROP_HHDM_OFFSET: &str = "hhdm_offset";
+    pub const PROP_BYTESPACE: &str = "bytespace";
+    pub const PROP_PHYS_BASE: &str = "phys_base";
+    pub const PROP_PHYS_LEN: &str = "phys_len"; 
+    pub const PROP_SIZE: &str = "size";
+    pub const PROP_IRQ: &str = "irq";
+    
+    pub const PROP_START: &str = "start";
+    pub const PROP_END: &str = "end";
+    
+    // Values
+    pub const SRC_DTB: &str = "dtb";
+    pub const SRC_PLATFORM: &str = "platform";
+    pub const CONFIDENCE_HIGH: &str = "high";
+    pub const CONFIDENCE_MEDIUM: &str = "medium";
+    pub const CONFIDENCE_LOW: &str = "low";
+}
+
 pub struct DevTreeCtx {
     pub host: ThingId,
     pub platform_bus: ThingId,
@@ -15,6 +70,7 @@ pub struct DevTreeCtx {
     pub acpi_rsdp: Option<usize>,
     pub dtb_ptr: Option<usize>,
     pub dtb_bytespace: Option<ThingId>,
+    pub dtb_node_id: Option<ThingId>,
 }
 
 pub fn init() -> Result<DevTreeCtx, ()> {
@@ -22,11 +78,10 @@ pub fn init() -> Result<DevTreeCtx, ()> {
 
     // 1. Find Host
     let mut hosts = [ThingId(0); 1];
-    let count = thingsys::find("dev.host", &mut hosts).map_err(|e| {
+    let count = thingsys::find(schema::DEV_HOST, &mut hosts).map_err(|e| {
         kprintln!("SPROUT: find(dev.host) failed: {:?}", e);
         ()
     })?;
-    kprintln!("SPROUT: found {} dev.host nodes", count);
     if count == 0 { 
         kprintln!("SPROUT: No dev.host node found!");
         return Err(()); 
@@ -34,65 +89,52 @@ pub fn init() -> Result<DevTreeCtx, ()> {
     let host = hosts[0];
     
     // 2. Get HHDM Offset
-    let hhdm = thingsys::prop_get(host, "hhdm_offset").map_err(|e| {
+    let hhdm = thingsys::prop_get(host, schema::PROP_HHDM_OFFSET).map_err(|e| {
         kprintln!("SPROUT: prop_get(hhdm_offset) failed: {:?}", e);
         ()
     })? as usize;
-    kprintln!("SPROUT: HHDM offset = 0x{:x}", hhdm);
     
     // 3. Find/Create Platform Bus
     let mut buses = [ThingId(0); 1];
-    let bcount = thingsys::find("dev.bus.platform", &mut buses).unwrap_or(0);
-    kprintln!("SPROUT: found {} dev.bus.platform nodes", bcount);
-
+    let bcount = thingsys::find(schema::DEV_BUS_PLATFORM, &mut buses).unwrap_or(0);
     let platform_bus = if bcount > 0 {
         buses[0]
     } else {
         kprintln!("SPROUT: Creating dev.bus.platform...");
-        // If not found, create (though kernel census should have created it)
-        let bus = thingsys::create_node("dev.bus.platform").map_err(|e| {
-            kprintln!("SPROUT: create_node(dev.bus.platform) failed: {:?}", e);
-            ()
-        })?;
-        thingsys::link(host, "HAS_BUS", bus).map_err(|e| {
-            kprintln!("SPROUT: link(HAS_BUS) failed: {:?}", e);
-            ()
-        })?;
+        let bus = thingsys::create_node(schema::DEV_BUS_PLATFORM).map_err(|_| ())?;
+        thingsys::link(host, schema::HAS_BUS, bus).map_err(|_| ())?;
         bus
     };
-    kprintln!("SPROUT: Platform bus id = {}", platform_bus.0);
     
     // 4. Check for Firmware
     let mut acpi_rsdp = None;
     let mut dtb_ptr = None;
     let mut dtb_bytespace = None;
+    let mut dtb_node_id = None;
     
     let mut fw_buf = [ThingId(0); 4];
-    if let Ok(count) = thingsys::find("fw.table.acpi", &mut fw_buf) {
-        kprintln!("SPROUT: found {} fw.table.acpi nodes", count);
+    if let Ok(count) = thingsys::find(schema::FW_TABLE_ACPI, &mut fw_buf) {
         if count > 0 {
-             if let Ok(val) = thingsys::prop_get(fw_buf[0], "phys_base") {
+             if let Ok(val) = thingsys::prop_get(fw_buf[0], schema::PROP_PHYS_BASE) {
                  acpi_rsdp = Some(val as usize);
                  kprintln!("SPROUT: ACPI RSDP = 0x{:x}", val);
              }
         }
     }
     
-    if let Ok(count) = thingsys::find("fw.table.dtb", &mut fw_buf) {
-        kprintln!("SPROUT: found {} fw.table.dtb nodes", count);
+    if let Ok(count) = thingsys::find(schema::FW_TABLE_DTB, &mut fw_buf) {
         if count > 0 {
-             if let Ok(val) = thingsys::prop_get(fw_buf[0], "phys_base") {
+             dtb_node_id = Some(fw_buf[0]);
+             if let Ok(val) = thingsys::prop_get(fw_buf[0], schema::PROP_PHYS_BASE) {
                  dtb_ptr = Some(val as usize);
-                 kprintln!("SPROUT: DTB phys = 0x{:x}", val);
              }
-             if let Ok(val) = thingsys::prop_get(fw_buf[0], "bytespace") {
+             if let Ok(val) = thingsys::prop_get(fw_buf[0], schema::PROP_BYTESPACE) {
                  dtb_bytespace = Some(ThingId(val));
                  kprintln!("SPROUT: DTB bytespace = {}", val);
              }
         }
     }
     
-    kprintln!("SPROUT: devtree::init success");
     Ok(DevTreeCtx {
         host,
         platform_bus,
@@ -100,6 +142,7 @@ pub fn init() -> Result<DevTreeCtx, ()> {
         acpi_rsdp,
         dtb_ptr,
         dtb_bytespace,
+        dtb_node_id,
     })
 }
 
@@ -107,68 +150,89 @@ pub fn build(ctx: &DevTreeCtx) -> Result<(), ()> {
     // Attempt DTB parsing if available
     if let Some(bs_id) = ctx.dtb_bytespace {
         kprintln!("SPROUT: Found DTB bytespace {}, parsing...", bs_id.0);
-        // Read header first (magic + size)
-        // DTB header is big endian. Magic is 0xd00dfeed at offset 0.
-        // Totalsize at offset 4.
         let mut header = [0u8; 8];
         if let Ok(_) = thingsys::bytespace_read(bs_id, 0, &mut header) {
             let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
             if magic == 0xd00dfeed {
                 let size = u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as usize;
                 
-                // Allocate buffer (simple vec for now, assumption: heap exists)
-                // Limit size to avoid exhausting small heap? 64KB - 128KB typical.
-                if size < 256 * 1024 {
+                if size < 512 * 1024 {
                     let mut buf = vec![0u8; size];
                     if let Ok(read_len) = thingsys::bytespace_read(bs_id, 0, &mut buf) {
                          if read_len == size {
-                             // Parse with FDT
                              if let Ok(fdt) = fdt::Fdt::new(&buf) {
                                  kprintln!("SPROUT: Valid FDT found. Iterating nodes...");
                                  
                                  for node in fdt.all_nodes() {
-                                      // Check for serial/uart
                                       let name = node.name.split('@').next().unwrap_or("");
+                                      let mut kind = "";
+                                      
                                       if name.contains("serial") || name.contains("uart") {
-                                           kprintln!("SPROUT: Found serial node: {}", node.name);
-                                           
-                                           // Create dev.serial
-                                           if let Ok(dev) = thingsys::create_node("dev.serial") {
+                                          kind = schema::DEV_SERIAL_UART;
+                                      } else if name.contains("intc") || name.contains("interrupt-controller") || name.contains("plic") || name.contains("clint") || name.contains("gic") {
+                                          kind = schema::DEV_INTERRUPT_CONTROLLER;
+                                      } else if name.contains("timer") {
+                                          kind = schema::DEV_TIMER;
+                                      }
+                                      
+                                      if !kind.is_empty() {
+                                           // Create device
+                                           if let Ok(dev) = thingsys::create_node(kind) {
+                                               // Set provenance
+                                               let _ = set_str_prop(dev, schema::PROP_SOURCE, schema::SRC_DTB);
+                                               let _ = set_str_prop(dev, schema::PROP_CONFIDENCE, schema::CONFIDENCE_HIGH);
+                                               
+                                               // Set identity
+                                               let _ = set_str_prop(dev, schema::PROP_NAME, node.name);
+                                               if let Some(compat) = node.compatible() {
+                                                   for c in compat.all() {
+                                                       let _ = set_str_prop(dev, schema::PROP_COMPATIBLE, c);
+                                                       break; // Only first one for now
+                                                   }
+                                               }
+
                                                // Link to platform bus
-                                               let _ = thingsys::link(ctx.platform_bus, "HAS_DEVICE", dev);
+                                               let _ = thingsys::link(ctx.platform_bus, schema::HAS_DEVICE, dev);
                                                
-                                               // Publish 'reg' (phys_base)
-                                               if let Some(reg) = node.reg().and_then(|mut i| i.next()) {
-                                                   let _ = thingsys::prop_set(dev, "phys_base", reg.starting_address as u64);
-                                                   let _ = thingsys::prop_set(dev, "phys_len", reg.size.unwrap_or(0) as u64);
+                                               // Link evidence
+                                               if let Some(evidence) = ctx.dtb_node_id {
+                                                   let _ = thingsys::link(dev, schema::DERIVED_FROM, evidence);
                                                }
                                                
-                                               // Publish 'interrupts' (irq)
-                                               if let Some(irq) = node.interrupts().and_then(|mut i| i.next()) {
-                                                   let _ = thingsys::prop_set(dev, "irq", irq as u64);
+                                               // Resources: MMIO
+                                               if let Some(regs) = node.reg() {
+                                                   for reg in regs {
+                                                       if let Ok(res) = thingsys::create_node(schema::RES_MMIO_RANGE) {
+                                                           let _ = set_str_prop(res, schema::PROP_SOURCE, schema::SRC_DTB);
+                                                           let _ = set_str_prop(res, schema::PROP_CONFIDENCE, schema::CONFIDENCE_HIGH);
+                                                           let _ = thingsys::prop_set(res, schema::PROP_PHYS_BASE, reg.starting_address as u64);
+                                                           let _ = thingsys::prop_set(res, schema::PROP_SIZE, reg.size.unwrap_or(0) as u64);
+                                                           let _ = thingsys::link(dev, schema::HAS_RESOURCE, res);
+                                                       }
+                                                   }
                                                }
                                                
-                                               // Mark as published
-                                               kprintln!("SPROUT: Published dev.serial {}", node.name);
+                                               // Resources: IRQ
+                                               if let Some(irqs) = node.interrupts() {
+                                                   for irq in irqs {
+                                                        if let Ok(res) = thingsys::create_node(schema::RES_IRQ) {
+                                                            let _ = set_str_prop(res, schema::PROP_SOURCE, schema::SRC_DTB);
+                                                            let _ = set_str_prop(res, schema::PROP_CONFIDENCE, schema::CONFIDENCE_HIGH);
+                                                            let _ = thingsys::prop_set(res, schema::PROP_IRQ, irq as u64);
+                                                            let _ = thingsys::link(dev, schema::HAS_RESOURCE, res);
+                                                        }
+                                                   }
+                                               }
                                            }
                                       }
                                  }
-                             } else {
-                                 kprintln!("SPROUT: FDT parse failed");
                              }
                          }
                     }
-                } else {
-                     kprintln!("SPROUT: DTB too large {}", size);
                 }
-            } else {
-                kprintln!("SPROUT: Invalid DTB magic {:x}", magic);
             }
         }
-    } else {
-        kprintln!("SPROUT: No DTB bytespace found.");
     }
-    
     
     #[cfg(target_arch = "x86_64")]
     return x86_64::enumerate(ctx);

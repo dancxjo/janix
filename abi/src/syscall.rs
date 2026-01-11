@@ -47,3 +47,4 @@ pub const SYS_ROOT_INTERN: u32 = 268;
 pub const SYS_ROOT_CREATE_NODE: u32 = 269;
 pub const SYS_ROOT_QUERY: u32 = 270;
 pub const SYS_ROOT_BYTESPACE_WRITE: u32 = 271;
+pub const SYS_ROOT_DUMP_GRAPH: u32 = 272;

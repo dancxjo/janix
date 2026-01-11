@@ -301,8 +301,12 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
         },
         RootOp::DumpGraph { limit } => {
              crate::kinfo!("ROOT DUMP NODES");
+             // Sort nodes by id for deterministic output
+             let mut ids: alloc::vec::Vec<_> = graph.nodes.keys().cloned().collect();
+             ids.sort();
+
              let mut count = 0;
-             for (id, _node) in graph.nodes.iter() {
+             for id in &ids {
                  if count >= limit { 
                      crate::kinfo!("... truncated ...");
                      break; 
@@ -318,21 +322,31 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
              
              crate::kinfo!("ROOT DUMP EDGES");
              count = 0;
-             for (id, node) in graph.nodes.iter() {
-                  for (rel, dst) in &node.edges {
-                      if count >= limit { break; }
-                      let mut buf = [0u8; 512];
-                      let mut fmt = FmtBuffer { ptr: buf.as_mut_ptr(), len: buf.len(), pos: 0 };
-                      let _ = super::debug_fmt::fmt_edge(graph, interner, *id, *rel, *dst, &mut fmt);
-                      if let Ok(s) = core::str::from_utf8(&buf[..fmt.pos]) {
-                           crate::kprint!("{}\n", s);
-                      }
-                      count += 1;
-                  }
+             
+             // Collect all edges for global sort
+             let mut all_edges = alloc::vec::Vec::new();
+             for id in &ids {
+                 if let Some(node) = graph.nodes.get(id) {
+                     for (rel, dst) in &node.edges {
+                         all_edges.push((*id, *rel, *dst));
+                     }
+                 }
+             }
+             // Tuple sort (src, rel, dst)
+             all_edges.sort();
+
+             for (src, rel, dst) in all_edges {
                   if count >= limit { 
-                      crate::kinfo!("... truncated ...");
-                      break; 
+                       crate::kinfo!("... truncated ...");
+                       break; 
                   }
+                  let mut buf = [0u8; 512];
+                  let mut fmt = FmtBuffer { ptr: buf.as_mut_ptr(), len: buf.len(), pos: 0 };
+                  let _ = super::debug_fmt::fmt_edge(graph, interner, src, rel, dst, &mut fmt);
+                  if let Ok(s) = core::str::from_utf8(&buf[..fmt.pos]) {
+                       crate::kprint!("{}\n", s);
+                  }
+                  count += 1;
              }
              (0, 0)
         },

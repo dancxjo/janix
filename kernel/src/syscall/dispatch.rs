@@ -61,6 +61,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         abi::syscall::SYS_ROOT_INTERN => handlers::sys_root_intern(args[0], args[1]),
         SYS_ROOT_LINK => handlers::sys_root_link(args[0], args[1], args[2]),
         abi::syscall::SYS_ROOT_QUERY => handlers::sys_root_query(args[0], args[1], args[2], args[3]),
+        SYS_ROOT_DUMP_GRAPH => handlers::sys_root_dump_graph(args[0]),
         SYS_ROOT_CREATE_NODE => handlers::sys_root_create_node(args[0]),
         _ => Err(Errno::ENOSYS),
     };

@@ -88,3 +88,8 @@ pub fn create_node<S: IntoSymbolRef>(kind: S) -> Result<ThingId, Errno> {
     let ret = unsafe { syscall6(SYS_ROOT_CREATE_NODE, &wire as *const _ as usize, 0, 0, 0, 0, 0) };
     errno(ret).map(|v| ThingId(v as u64))
 }
+
+pub fn dump_graph(limit: u64) -> Result<(u64, u64), Errno> {
+    let ret = unsafe { syscall6(SYS_ROOT_DUMP_GRAPH, limit as usize, 0, 0, 0, 0, 0) };
+    errno(ret).map(|_| (0, 0))
+}

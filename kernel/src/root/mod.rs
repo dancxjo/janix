@@ -9,6 +9,7 @@ pub mod graph;
 pub mod watch;
 pub mod resources;
 pub mod abi;
+pub mod schema;
 
 pub use service::root_main;
 

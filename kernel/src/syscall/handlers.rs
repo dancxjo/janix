@@ -525,3 +525,7 @@ pub fn sys_root_query(plan_ptr: usize, plan_len: usize, out_ptr: usize, out_cap:
     
     Ok(count)
 }
+
+pub fn sys_root_dump_graph(limit: usize) -> SysResult<usize> {
+    root_call(RootOp::DumpGraph { limit: limit as u64 })
+}

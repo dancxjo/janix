@@ -1,6 +1,7 @@
 use super::{enqueue, RootOp};
 use super::graph::ThingId;
 use super::SymbolShell;
+use super::schema::{kinds, rels, props, provenance};
 use crate::{BootModuleDesc, PhysRange, FramebufferInfo};
 
 #[derive(Debug)]
@@ -81,67 +82,84 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         }
     };
 
+    // Pre-intern provenance constants
+    let src_boot = intern(provenance::SRC_BOOT);
+    let conf_high = intern(provenance::CONF_HIGH);
+
     // 1. Host
-    let host = create("dev.host");
-    set(host, "hhdm_offset", info.hhdm_offset);
+    let host = create(kinds::HOST);
+    set(host, props::HHDM_OFFSET, info.hhdm_offset);
     let arch_id = intern(info.arch);
-    set(host, "arch", arch_id);
+    set(host, props::ARCH, arch_id);
     let platform_id = intern(info.platform_profile);
-    set(host, "platform_profile", platform_id);
+    set(host, props::PLATFORM_PROFILE, platform_id);
+
+    set(host, props::SOURCE, src_boot);
+    set(host, props::CONFIDENCE, conf_high);
 
     // 2. Platform Bus
-    let platform_bus = create("dev.bus.platform");
+    let platform_bus = create(kinds::BUS_PLATFORM);
     // intern name="platform0"
     let pbus_name = intern("platform0");
-    set(platform_bus, "name", pbus_name);
-    link(host, "HAS_BUS", platform_bus);
+    set(platform_bus, props::NAME, pbus_name);
+    set(platform_bus, props::SOURCE, src_boot);
+    set(platform_bus, props::CONFIDENCE, conf_high);
+    
+    link(host, rels::HAS_BUS, platform_bus);
 
     // 3. Kernel
     let kernel = create("proc.kernel");
-    set(kernel, "version", 1);
-    link(kernel, "RUNS_ON", host);
+    set(kernel, props::VERSION, 1);
+    link(kernel, rels::RUNS_ON, host);
     
     // 4. Root Service
     let root_svc = create("svc.root");
-    link(kernel, "PROVIDES", root_svc);
+    link(kernel, rels::PROVIDES, root_svc);
     
     // 5. CPUs
     for i in 0..info.cpu_count {
-        let cpu = create("dev.cpu");
-        set(cpu, "id", i as u64);
-        link(host, "HAS_CPU", cpu);
+        let cpu = create(kinds::CPU);
+        set(cpu, props::ID, i as u64);
+        set(cpu, props::SOURCE, src_boot);
+        set(cpu, props::CONFIDENCE, conf_high);
+        link(host, rels::HAS_CPU, cpu);
     }
     
     // 6. Memory Ranges
     for range in info.memory_map {
-        let mem = create("mem.range");
-        set(mem, "start", range.start);
-        set(mem, "end", range.end);
-        set(mem, "kind", range.kind as u64);
-        link(host, "HAS_MEMORY_RANGE", mem);
+        let mem = create(kinds::MEM_RANGE);
+        set(mem, props::START, range.start);
+        set(mem, props::END, range.end);
+        set(mem, props::KIND, range.kind as u64);
+        set(mem, props::SOURCE, src_boot);
+        set(mem, props::CONFIDENCE, conf_high);
+        link(host, rels::HAS_MEMORY_RANGE, mem);
     }
     
     // 7. Modules
     for (i, m) in info.modules.iter().enumerate() {
-        let mod_node = create("boot.module");
-        set(mod_node, "phys_base", m.phys_start);
-        set(mod_node, "size_bytes", m.phys_end - m.phys_start);
-        set(mod_node, "index", i as u64);
+        let mod_node = create(kinds::BOOT_MODULE);
+        set(mod_node, props::PHYS_BASE, m.phys_start);
+        set(mod_node, props::SIZE_BYTES, m.phys_end - m.phys_start);
+        set(mod_node, props::INDEX, i as u64);
         let name_id = intern(m.name);
-        set(mod_node, "name", name_id);
+        set(mod_node, props::NAME, name_id);
         
-        link(host, "HAS_MODULE", mod_node);
+        set(mod_node, props::SOURCE, src_boot);
+        set(mod_node, props::CONFIDENCE, conf_high);
+        
+        link(host, rels::HAS_MODULE, mod_node);
     }
     
     // 8. Framebuffer
     if let Some(fb) = info.framebuffer.as_ref() {
-        let fb_node = create("dev.display.framebuffer");
-        set(fb_node, "phys_base", fb.addr);
-        set(fb_node, "width", fb.width as u64);
-        set(fb_node, "height", fb.height as u64);
-        set(fb_node, "stride", fb.pitch as u64);
-        set(fb_node, "bpp", fb.bpp as u64);
-        set(fb_node, "size_bytes", fb.byte_len as u64);
+        let fb_node = create(kinds::DISPLAY_FRAMEBUFFER);
+        set(fb_node, props::PHYS_BASE, fb.addr);
+        set(fb_node, props::WIDTH, fb.width as u64);
+        set(fb_node, props::HEIGHT, fb.height as u64);
+        set(fb_node, props::STRIDE, fb.pitch as u64);
+        set(fb_node, props::BPP, fb.bpp as u64);
+        set(fb_node, props::SIZE_BYTES, fb.byte_len as u64);
         
         let fmt = match fb.format {
              crate::PixelFormat::Xrgb8888 => 1,
@@ -149,24 +167,31 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
              crate::PixelFormat::Rgb565 => 3,
              _ => 0,
         };
-        set(fb_node, "format", fmt);
+        set(fb_node, props::FORMAT, fmt);
         
-        link(host, "HAS_DEVICE", fb_node);
+        set(fb_node, props::SOURCE, src_boot);
+        set(fb_node, props::CONFIDENCE, conf_high);
+        
+        link(host, rels::HAS_DEVICE, fb_node);
     }
 
     // 9. Firmware Tables
     if info.acpi_rsdp.is_some() || info.dtb_ptr.is_some() {
-        let fw_boot = create("fw.boot");
-        link(host, "HAS_FIRMWARE", fw_boot);
+        let fw_boot = create(kinds::FW_BOOT);
+        set(fw_boot, props::SOURCE, src_boot);
+        set(fw_boot, props::CONFIDENCE, conf_high);
+        link(host, rels::HAS_FIRMWARE, fw_boot);
 
         if let Some(rsdp) = info.acpi_rsdp {
-            let acpi = create("fw.table.acpi");
-            set(acpi, "phys_base", rsdp);
-            link(fw_boot, "PROVIDES_TABLE", acpi);
+            let acpi = create(kinds::FW_TABLE_ACPI);
+            set(acpi, props::PHYS_BASE, rsdp);
+            set(acpi, props::SOURCE, src_boot);
+            set(acpi, props::CONFIDENCE, conf_high);
+            link(fw_boot, rels::PROVIDES_TABLE, acpi);
         }
 
         if let Some(dtb_ptr) = info.dtb_ptr {
-            let dtb_node = create("fw.table.dtb");
+            let dtb_node = create(kinds::FW_TABLE_DTB);
             // Parse FDT header
             let header = unsafe { core::slice::from_raw_parts(dtb_ptr as *const u8, 8) };
             let size = u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as u64;
@@ -175,15 +200,18 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
             
             let bs = bytespace_create(size);
             bytespace_write(bs, 0, dtb_ptr, size);
-            set(dtb_node, "bytespace", bs);
+            set(dtb_node, props::BYTESPACE, bs);
             
-            link(fw_boot, "PROVIDES_TABLE", dtb_node);
+            set(dtb_node, props::SOURCE, src_boot);
+            set(dtb_node, props::CONFIDENCE, conf_high);
+            
+            link(fw_boot, rels::PROVIDES_TABLE, dtb_node);
         }
     }
 
     // 10. Tasking
     let scheduler = create("svc.scheduler"); 
-    link(kernel, "PROVIDES", scheduler);
+    link(kernel, rels::PROVIDES, scheduler);
     
     crate::kinfo!("ROOT: registered items. host={:x} kernel={:x}", host, kernel);
     

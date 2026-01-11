@@ -37,8 +37,7 @@ const KERNEL_DS: u16 = 0x10;
 // SYSRET: 
 //   CS_Sel = STAR[63:48] + 16.
 //   SS_Sel = STAR[63:48] + 8.
-// If we want User CS = 0x23 (0x20|3) and User SS = 0x1B (0x18|3)? 
-//  0x1B = 27, 0x23 = 35. 
+// User SS is 0x23 (User Data selector), User CS is 0x2B (User Code64 selector).
 //  Diff is 8. So SS should be lower index than CS?
 //  Usually User Code is *after* User Data in GDT for automatic SYSRET.
 //  If User Data = 0x18, User Code = 0x20.
@@ -94,45 +93,11 @@ pub unsafe fn init() {
     
     // 3. Setup STAR
     // Kernel CS = 0x08
-    // User Base = 0x10 (Data=0x18, Code=0x20) - Wait, we need to match what task logic uses.
-    // task.rs uses:
-    //   push 0x23 // User SS (0x20 | 3) -> Index 4
-    //   push 0x1B // User CS (0x18 | 3) -> Index 3
-    // This is REVERSED from standard SYSRET requirements.
-    // If SS=0x20 and CS=0x18.
-    // SYSRET expects CS = Base+16, SS = Base+8.
-    // CS(0x18) = Base+16 => Base = 0x08.
-    // SS(0x20) = Base+8 => Base = 0x18.
-    // CONTRADICTION.
-    // Standard GDT usually has: Null, KCode, KData, UData, UCode.
-    // 0x00, 0x08, 0x10, 0x18, 0x20.
-    // If we used that:
-    //   User SS = 0x18 | 3 = 0x1B
-    //   User CS = 0x20 | 3 = 0x23
-    // But task.rs says:
-    //   push 0x23 // User SS 
-    //   push 0x1B // User CS
-    // So currently task.rs assumes CS=0x18, SS=0x20. (Code before Data? No, 0x18 is 24, 0x20 is 32)
-    // 0x18 = 0001 1000 (Index 3)
-    // 0x20 = 0010 0000 (Index 4)
-    // So Code at 3, Data at 4.
-    // SYSRET requires Code at Base+16 (Index X+2), SS at Base+8 (Index X+1).
-    // So Code must be AFTER Data.
-    // Current setup (implied by task.rs numbers): Code (3) BEFORE Data (4).
-    // SYSRET WILL NOT WORK with these selectors if we rely on the offset math.
-    // So we must fix GDT or use IRETQ for return.
-    // Using IRETQ is slower but safer for now if we don't control GDT.
-    // BUT we used the 'syscall' instruction to enter.
-    // 'syscall' saves RIP->RCX, RFLAGS->R11.
-    // We can use 'sysretq' ONLY if selectors work out.
-    // Or we can construct IRET frame and 'iretq'.
-    // Given the potential GDT mess, IRETQ is robust.
-    // So:
-    //   Entry: syscall (fast)
-    //   Exit: iretq (slower, but works with any selectors)
-    // For v0.5, this is acceptable. "Neat & Real" favors correctness first.
-    
-    let star = ((0x08 as u64) << 32) | ((0x10 as u64) << 48); // We set 48 anyway just in case
+    // User Base = 0x18 (User Data @ 0x20|3, User Code64 @ 0x28|3)
+    // STAR: [47:32] = Kernel CS (0x08). [63:48] = User CS Base (0x18).
+    // Sysret loads CS = Base + 16 = 0x28 (User Code 64).
+    // Sysret loads SS = Base + 8  = 0x20 (User Data).
+    let star = ((0x08 as u64) << 32) | ((0x18 as u64) << 48);
     wrmsr(MSR_STAR, star);
     
     // 4. Setup LSTAR (Entry point)
@@ -183,10 +148,10 @@ syscall_entry:
     // We need to manufacture SS, RSP, RFLAGS, CS, RIP
     // User SS = 0x23 (Hardcoded matches task.rs) | OR we could just save what we think it is. 
     // But 'syscall' doesn't save SS. We assume standard user SS.
-    pushq $0x23        // SS
+    pushq $0x23        // SS (User Data 64, Index 4 | 3 -> 0x23)
     pushq %gs:0         // User RSP (from scratch)
     pushq %r11          // RFLAGS
-    pushq $0x1B        // CS (Hardcoded matches task.rs)
+    pushq $0x2B        // CS (User Code 64, Index 5 | 3 -> 0x2B)
     pushq %rcx          // RIP
     
     // Error Code / Int No
@@ -207,6 +172,8 @@ syscall_entry:
     pushq %r11 // Note: R11 contains User RFLAGS
     pushq %r12
     pushq %r13
+    pushq %r14
+    pushq %r15
     // Arguments for dispatch(n, args)
     // Rust ABI: RDI, RSI.
     // dispatch signature: fn dispatch(n: usize, args: [usize; 6]) -> isize
@@ -278,8 +245,9 @@ syscall_entry:
     
     call kernel_dispatch_flat
     
-    // Cleanup stack arg
-    add $8, %rsp
+    // Cleanup stack arg and alignment padding
+    // We pushed %r9 (8 bytes) AND sub $8 (8 bytes) = 16 bytes total.
+    add $16, %rsp
     
     // RAX has return value (isize).
     // We need to put it into UserTrapFrame's RAX slot so it gets restored.
@@ -309,12 +277,21 @@ syscall_entry:
     popq %rbx
     popq %rax
     
-    // Skip error_code, int_no
-    add $16, %rsp
+    // Switch to sysretq for return (faster and assumes consistent GDT)
+    // We need to restore RCX (RIP) and R11 (RFLAGS) for sysretq.
+    // GPRs popped above restored User RCX/R11 (clobbered/arguments).
+    // The "True" RIP/RFLAGS are in the IRET frame on stack.
+    // Stack Check: [Error(0), Int(8), RIP(16), CS(24), RFLAGS(32), RSP(40), SS(48)]
     
-    // SWAPGS back to User GS
+    mov 16(%rsp), %rcx  // Load RIP into RCX
+    mov 32(%rsp), %r11  // Load RFLAGS into R11
+    
+    // Restore User Stack
+    cli
+    mov %gs:0, %rsp
+    
+    // Restore User GS
     swapgs
     
-    // IRETQ
-    iretq
+    sysretq
 "#);

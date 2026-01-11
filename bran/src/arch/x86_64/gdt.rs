@@ -2,9 +2,10 @@ use core::mem::size_of;
 
 pub const KERNEL_CODE_SEL: u16 = 0x08;
 pub const KERNEL_DATA_SEL: u16 = 0x10;
-pub const USER_CODE_SEL: u16 = 0x18 | 3; // 0x1b
-pub const USER_DATA_SEL: u16 = 0x20 | 3; // 0x23
-pub const TSS_SEL: u16 = 0x28;
+pub const USER_CODE32_SEL: u16 = 0x18 | 3; // Dummy for sysret
+pub const USER_DATA_SEL: u16 = 0x20 | 3;
+pub const USER_CODE_SEL: u16 = 0x28 | 3;
+pub const TSS_SEL: u16 = 0x30;
 
 #[repr(C, packed)]
 pub struct Tss {
@@ -82,8 +83,9 @@ struct Gdt {
     null: GdtEntry,
     kcode: GdtEntry,
     kdata: GdtEntry,
-    ucode: GdtEntry,
+    ucode32: GdtEntry,
     udata: GdtEntry,
+    ucode64: GdtEntry,
     tss: GdtSystemEntry,
 }
 
@@ -91,8 +93,9 @@ static mut GDT: Gdt = Gdt {
     null: GdtEntry::new(0, 0, 0, 0),
     kcode: GdtEntry::new(0, 0, 0x9A, 0xA0), // Present, Ring 0, Code, Exec/Read, Long Mode
     kdata: GdtEntry::new(0, 0, 0x92, 0xC0), // Present, Ring 0, Data, Read/Write
-    ucode: GdtEntry::new(0, 0, 0xFA, 0xA0), // Present, Ring 3, Code, Exec/Read, Long Mode (L=1)
+    ucode32: GdtEntry::new(0, 0xFFFFF, 0xFA, 0xCF), // Present, Ring 3, Code, 32-bit (DB=1, L=0)
     udata: GdtEntry::new(0, 0, 0xF2, 0xC0), // Present, Ring 3, Data, Read/Write
+    ucode64: GdtEntry::new(0, 0, 0xFA, 0xA0), // Present, Ring 3, Code, 64-bit (L=1)
     tss: GdtSystemEntry {
         limit_low: 0,
         base_low: 0,
@@ -161,5 +164,11 @@ pub unsafe fn init() {
 pub unsafe fn set_rsp0(rsp0: u64) {
     unsafe {
         TSS.rsp0 = rsp0;
+    }
+}
+
+pub unsafe fn set_ist1(stack_top: u64) {
+    unsafe {
+        TSS.ist1 = stack_top;
     }
 }

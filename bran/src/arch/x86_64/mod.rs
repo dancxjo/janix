@@ -76,6 +76,12 @@ impl ArchRuntime for X86_64Runtime {
     fn init(&self, hhdm_offset: u64) {
         unsafe {
             gdt::init();
+            
+            // Allocate Double Fault Stack
+            let phys = kernel::memory::alloc_frame().expect("No frames for DF stack");
+            let virt = phys + hhdm_offset + 4096; // Top of stack
+            gdt::set_ist1(virt);
+            
             idt::init();
         }
         paging::init(hhdm_offset);
@@ -134,8 +140,8 @@ impl ArchRuntime for X86_64Runtime {
         // Map required pages before entering user mode
         self.map_user_entry(&entry).expect("failed to map user entry pages");
         // x86_64 user mode entry via IRETQ
-        let user_data_sel: u64 = 0x23; // USER_DATA selector (RPL3)
-        let user_code_sel: u64 = 0x1B; // USER_CODE selector (RPL3)
+        let user_data_sel: u64 = gdt::USER_DATA_SEL as u64;
+        let user_code_sel: u64 = gdt::USER_CODE_SEL as u64;
         let rflags: u64 = 0x202; // IF + reserved
         unsafe {
             asm!(

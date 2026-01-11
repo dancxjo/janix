@@ -24,8 +24,9 @@ pub fn make_user_address_space(active: X86_64AddressSpace, allocator: &dyn Frame
     
     unsafe {
         let active_ptr = (active.0 + HHDM_OFFSET) as *const u64;
+        
         core::ptr::copy_nonoverlapping(active_ptr.add(256), ptr.add(256), 256);
-        core::ptr::write_bytes(ptr, 0, 256 * 8);
+        core::ptr::write_bytes(ptr, 0, 256);
     }
     
     X86_64AddressSpace(phys)

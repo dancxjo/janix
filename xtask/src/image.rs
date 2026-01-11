@@ -46,7 +46,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     let demo_bin = format!("target/{}/release/threads_demo.bin", target);
     cmd!(sh, "llvm-objcopy -O binary {demo_elf} {demo_bin}").run()?;
 
-    sh.copy_file(&demo_bin, "iso_root/boot/threads_demo")?;
+    sh.copy_file(&demo_bin, "iso_root/boot/threads")?;
 
     // Copy limine config
     sh.copy_file("limine.conf", "iso_root/boot/limine/limine.conf")?;
@@ -60,7 +60,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             sh.copy_file("limine/BOOTIA32.EFI", "iso_root/EFI/BOOT/BOOTIA32.EFI")?;
 
             let iso = format!("{}.iso", name);
-            cmd!(sh, "xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
+            cmd!(sh, "xorriso -as mkisofs -R -J -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
             cmd!(sh, "./limine/limine bios-install {iso}").run()?;
         }
         "aarch64" => {
@@ -68,7 +68,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             sh.copy_file("limine/BOOTAA64.EFI", "iso_root/EFI/BOOT/BOOTAA64.EFI")?;
 
             let iso = format!("{}.iso", name);
-            cmd!(sh, "xorriso -as mkisofs --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
+            cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
         }
         "riscv64" => {
             // For riscv64, we need to create a custom EFI boot image since limine-uefi-cd.bin
@@ -89,7 +89,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             sh.copy_file("limine/BOOTRISCV64.EFI", "iso_root/EFI/BOOT/BOOTRISCV64.EFI")?;
 
             let iso = format!("{}.iso", name);
-            cmd!(sh, "xorriso -as mkisofs --efi-boot boot/limine/limine-uefi-riscv64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
+            cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-riscv64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
         }
         "loongarch64" => {
             // For loongarch64, we need to create a custom EFI boot image since limine-uefi-cd.bin
@@ -110,7 +110,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             sh.copy_file("limine/BOOTLOONGARCH64.EFI", "iso_root/EFI/BOOT/BOOTLOONGARCH64.EFI")?;
 
             let iso = format!("{}.iso", name);
-            cmd!(sh, "xorriso -as mkisofs --efi-boot boot/limine/limine-uefi-loongarch64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
+            cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-loongarch64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
         }
         _ => return Err(format!("Unsupported architecture: {}", arch).into()),
     }

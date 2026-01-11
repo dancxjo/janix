@@ -52,6 +52,7 @@ impl<R: BootRuntime> Scheduler<R> {
     }
 
     pub fn init_boot_task(&mut self) {
+        let rt = crate::runtime::<R>();
         crate::kinfo!("  Creating boot task...");
         let task = Task {
             id: 0,
@@ -60,8 +61,8 @@ impl<R: BootRuntime> Scheduler<R> {
             kstack_size: 0,
             kstack_top: 0,
             ctx: Default::default(),
-            aspace: Default::default(),
-            simd: crate::simd::SimdState::new(crate::runtime::<R>()),
+            aspace: rt.tasking().active_address_space(),
+            simd: crate::simd::SimdState::new(rt),
         };
         crate::kinfo!("  Pushing boot task to list...");
         self.tasks.push(task);
@@ -176,7 +177,7 @@ impl<R: BootRuntime> Scheduler<R> {
          Some(id)
     }
     
-    pub fn schedule_point(&mut self, reason: ScheduleReason) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
+    pub fn schedule_point(&mut self, reason: ScheduleReason) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace)> {
         match reason {
             ScheduleReason::PreemptTick => {
                 if self.preempt_disable_depth > 0 {
@@ -195,7 +196,7 @@ impl<R: BootRuntime> Scheduler<R> {
         self.preempt_disable_depth += 1;
     }
 
-    pub fn preempt_enable(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
+    pub fn preempt_enable(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace)> {
         if self.preempt_disable_depth > 0 {
             self.preempt_disable_depth -= 1;
         }
@@ -208,7 +209,7 @@ impl<R: BootRuntime> Scheduler<R> {
         None
     }
 
-    pub fn prepare_yield(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
+    pub fn prepare_yield(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace)> {
         let current_id = self.current?;
         
         // Re-add current task to run queue
@@ -217,7 +218,7 @@ impl<R: BootRuntime> Scheduler<R> {
         self.prepare_schedule()
     }
 
-    fn prepare_schedule(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
+    fn prepare_schedule(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace)> {
         let next_id = match self.runq.pop_front() {
             Some(id) => id,
             None => {
@@ -252,7 +253,7 @@ impl<R: BootRuntime> Scheduler<R> {
             old_task.simd.save(crate::runtime::<R>());
             new_task.simd.restore(crate::runtime::<R>());
             
-            Some((&mut old_task.ctx as *mut _, &new_task.ctx as *const _))
+            Some((&mut old_task.ctx as *mut _, &new_task.ctx as *const _, new_task.aspace))
         }
     }
 
@@ -271,7 +272,8 @@ impl<R: BootRuntime> Scheduler<R> {
             let rt = crate::runtime::<R>();
             // We loop endlessly if schedule returns None
             loop {
-                if let Some((old, new)) = self.prepare_schedule() {
+                if let Some((old, new, aspace)) = self.prepare_schedule() {
+                    rt.tasking().activate_address_space(aspace);
                     rt.tasking().switch(&mut *old, &*new); 
                 }
             }
@@ -322,7 +324,16 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(entry: usize, stack: usize, arg:
 pub unsafe fn spawn_process<R: BootRuntime>(name: &str) -> Option<TaskId> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
-    let module = modules.iter().find(|m| m.name.contains(name))?;
+    crate::kinfo!("Spawn request: '{}'", name);
+    let module = modules.iter().find(|m| {
+        if m.name.contains(name) {
+            crate::kinfo!("  Match candidate: '{}' @ {:x}", m.name, m.phys_start);
+            true
+        } else {
+            false
+        }
+    })?;
+    crate::kinfo!("Loading module: '{}' from {:x}", module.name, module.phys_start);
     
     let aspace = rt.tasking().make_user_address_space();
     
@@ -369,8 +380,9 @@ pub fn yield_now<R: BootRuntime>() {
         sched.schedule_point(ScheduleReason::CooperativeYield)
     };
     
-    if let Some((old_ctx, new_ctx)) = switch_params {
+    if let Some((old_ctx, new_ctx, aspace)) = switch_params {
         unsafe {
+            rt.tasking().activate_address_space(aspace);
             rt.tasking().switch(&mut *old_ctx, &*new_ctx);
         }
     }
@@ -393,9 +405,10 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
              sched.schedule_point(ScheduleReason::SleepWait)
         };
         
-        if let Some((old_ctx, new_ctx)) = switch_params {
+        if let Some((old_ctx, new_ctx, aspace)) = switch_params {
              unsafe {
                  let irq = rt.irq_disable();
+                 rt.tasking().activate_address_space(aspace);
                  rt.tasking().switch(&mut *old_ctx, &*new_ctx);
                  rt.irq_restore(irq);
              }

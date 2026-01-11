@@ -15,8 +15,13 @@ struct IdtEntry {
 impl IdtEntry {
     const fn missing() -> Self {
         Self {
-            offset_low: 0, selector: 0, ist: 0, type_attr: 0,
-            offset_middle: 0, offset_high: 0, reserved: 0,
+            offset_low: 0,
+            selector: 0,
+            ist: 0,
+            type_attr: 0,
+            offset_middle: 0,
+            offset_high: 0,
+            reserved: 0,
         }
     }
 
@@ -48,6 +53,7 @@ struct IdtDescriptor {
 
 unsafe extern "C" {
     fn breakpoint_handler_shim();
+    fn double_fault_handler_shim();
     fn gp_handler_shim();
     fn pf_handler_shim();
     fn generic_handler_shim();
@@ -60,62 +66,47 @@ core::arch::global_asm!(r#"
         int3
         iretq
 
+    .global double_fault_handler_shim
+    double_fault_handler_shim:
+        // Debug 'D'
+        mov $0x3f8, %dx
+        mov $0x44, %al
+        out %al, %dx
+        // Debug 'F'
+        mov $0x46, %al
+        out %al, %dx
+        
+        cli
+        mov %rsp, %rdi
+        call rust_double_fault_handler
+    2:  hlt
+        jmp 2b
+
     .global gp_handler_shim
     gp_handler_shim:
-        cli
+        // Debug 'G'
         mov $0x3f8, %dx
         mov $0x47, %al
         out %al, %dx
+        
+        cli
+        mov %rsp, %rdi
+        call rust_gp_handler
     2:  hlt
         jmp 2b
 
     .global pf_handler_shim
     pf_handler_shim:
-        cli
-        // Read CR2 (Fault Address)
-        mov %cr2, %rax
-        
-        // Check Code (0x200000)
-        mov $0x200000, %rbx
-        // Mask offset to check page
-        and $0xFFFFFFFFFFFFF000, %rax
-        cmp %rbx, %rax
-        je 1f // Code
-
-        // Check Stack (0x3FF000 - mapped page for 0x400000 SP)
-        mov $0x3FF000, %rbx
-        cmp %rbx, %rax
-        je 2f // Stack
-        
-        // Other
-        mov $0x4F, %al // 'O'
-        jmp 3f
-
-    1: // Code
-        mov $0x43, %al // 'C'
-        jmp 3f
-    2: // Stack
-        mov $0x53, %al // 'S'
-        jmp 3f
-    
-    3:
+        // Debug 'P'
         mov $0x3f8, %dx
+        mov $0x50, %al
         out %al, %dx
-
-        // Check Error Code (Top of stack) for Present Bit (Bit 0)
-        mov (%rsp), %bl
-        test $1, %bl
-        jnz 4f // Present -> Protection Violation
-        
-        mov $0x4E, %al // 'N' (Not Present)
-        jmp 5f
-    4:
-        mov $0x50, %al // 'P' (Protection)
-    5:
-        out %al, %dx
-        
-    6:  hlt
-        jmp 6b
+    
+        cli
+        mov %rsp, %rdi
+        call rust_pf_handler
+    2:  hlt
+        jmp 2b
 
     .global generic_handler_shim
     generic_handler_shim:
@@ -127,18 +118,44 @@ core::arch::global_asm!(r#"
 "#);
 
 pub unsafe fn init() {
-    // Fill all with generic handler for now
-    let handler = generic_handler_shim as u64; 
-    
+    // Fill all vectors with a safe generic handler so hardware IRQs don't triple fault
+    let handler = generic_handler_shim as u64;
     unsafe {
-        for i in 0..32 {
-            IDT.entries[i].set_handler(handler, crate::arch::x86_64::gdt::KERNEL_CODE_SEL, 0, 0x8E);
+        let base = core::ptr::addr_of_mut!(IDT.entries) as *mut IdtEntry;
+        for i in 0..256 {
+            (*base.add(i)).set_handler(
+                handler,
+                crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+                0,
+                0x8E, // present, ring0, interrupt gate
+            );
         }
-    
-        // Specifically GPF (13) and PF (14)
-        IDT.entries[3].set_handler(breakpoint_handler_shim as u64, crate::arch::x86_64::gdt::KERNEL_CODE_SEL, 0, 0x8E);
-        IDT.entries[13].set_handler(gp_handler_shim as u64, crate::arch::x86_64::gdt::KERNEL_CODE_SEL, 0, 0x8E);
-        IDT.entries[14].set_handler(pf_handler_shim as u64, crate::arch::x86_64::gdt::KERNEL_CODE_SEL, 0, 0x8E);
+
+        // Specifically register the few exceptions we want richer handling for now
+        IDT.entries[3].set_handler(
+            breakpoint_handler_shim as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+        IDT.entries[8].set_handler(
+            double_fault_handler_shim as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            1,
+            0x8E,
+        ); // IST=1
+        IDT.entries[13].set_handler(
+            gp_handler_shim as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+        IDT.entries[14].set_handler(
+            pf_handler_shim as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
 
         let idtr = IdtDescriptor {
             size: (size_of::<Idt>() - 1) as u16,
@@ -147,4 +164,31 @@ pub unsafe fn init() {
 
         core::arch::asm!("lidt [{}]", in(reg) &idtr);
     }
+}
+
+#[repr(C)]
+pub struct InterruptStackFrame {
+    pub error_code: u64,
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) -> ! {
+    let cr2: u64;
+    unsafe { core::arch::asm!("mov {}, cr2", out(reg) cr2); }
+    panic!("PAGE FAULT at 0x{:x} RIP=0x{:x} CS=0x{:x} ERR=0x{:x}", cr2, frame.rip, frame.cs, frame.error_code);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_gp_handler(frame: &InterruptStackFrame) -> ! {
+    panic!("GPF at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}", frame.rip, frame.cs, frame.error_code, frame.rsp);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_double_fault_handler(frame: &InterruptStackFrame) -> ! {
+    panic!("DOUBLE FAULT at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}", frame.rip, frame.cs, frame.error_code, frame.rsp);
 }

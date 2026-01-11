@@ -65,8 +65,9 @@ pub fn preempt_enable<R: BootRuntime>() {
         }
     };
     
-    if let Some((old_ctx, new_ctx)) = switch_params {
+    if let Some((old_ctx, new_ctx, aspace)) = switch_params {
         unsafe {
+            rt.tasking().activate_address_space(aspace);
             rt.tasking().switch(&mut *old_ctx, &*new_ctx);
         }
     }
@@ -113,8 +114,9 @@ pub fn resched_if_needed<R: BootRuntime>() {
         }
     };
 
-    if let Some((old_ctx, new_ctx)) = switch_params {
+    if let Some((old_ctx, new_ctx, aspace)) = switch_params {
         unsafe {
+            rt.tasking().activate_address_space(aspace);
             rt.tasking().switch(&mut *old_ctx, &*new_ctx);
         }
     }

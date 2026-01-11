@@ -8,6 +8,7 @@ extern "Rust" {
 
 #[cfg(feature = "rt")]
 #[no_mangle]
+#[link_section = ".text.entry"]
 pub unsafe extern "C" fn _start(arg: usize) -> ! {
     // For x86_64 and likely others, we might just call a rust function if we don't need significant setup.
     // However, sticking to the standard "entry point calls main then exit" pattern.

@@ -3,6 +3,7 @@ use kernel::UserTaskSpec;
 use super::paging::X86_64AddressSpace;
 
 #[derive(Clone, Copy, Default)]
+#[repr(C)]
 pub struct X86_64Context {
     pub sp: usize,
     pub kstack_top: u64,
@@ -46,14 +47,23 @@ kernel_trampoline:
 
 .global user_trampoline
 user_trampoline:
+    // Debug 'T'
+    push rdx
+    push rax
+    mov dx, 0x3f8
+    mov al, 0x54
+    out dx, al
+    pop rax
+    pop rdx
+
     // r12 = user_entry, r13 = user_stack, r14 = aspace.0 (cr3), r15 = arg
     mov cr3, r14
     
-    push 0x23 // User SS
-    push r13  // User RSP
+    push 0x23  // User SS (udata selector)
+    push r13   // User RSP
     push 0x202 // RFLAGS (IF=1)
-    push 0x1B // User CS
-    push r12  // User RIP
+    push 0x2B  // User CS (ucode64 selector)
+    push r12   // User RIP
     
     mov rdi, r15
     xor rax, rax

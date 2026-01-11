@@ -1,10 +1,9 @@
+use abi::symbols::SymbolId;
 use crate::syscall::syscall6;
 use abi::syscall::*;
 use super::{ThingId, ThingKind};
 use crate::errors::{Errno, errno};
-
-// We don't have Result<T> in stem prelude? stem::lib.rs is no_std.
-// We should use core::result::Result.
+use super::symbol::IntoSymbolRef;
 
 pub fn get_kind(id: ThingId) -> Result<ThingKind, Errno> {
     let ret = unsafe { syscall6(SYS_ROOT_GET_KIND, id.0 as usize, 0, 0, 0, 0, 0) };
@@ -26,32 +25,34 @@ pub fn stream_poll(stream: ThingId, out: &mut abi::types::RootWatchEvent) -> Res
     errno(ret).map(|v| v as usize)
 }
 
-pub fn prop_set(id: ThingId, key: u64, value: u64) -> Result<(), Errno> {
-    let ret = unsafe { syscall6(SYS_ROOT_PROP_SET, id.0 as usize, key as usize, value as usize, 0, 0, 0) };
+pub fn prop_set<S: IntoSymbolRef>(id: ThingId, key: S, value: u64) -> Result<(), Errno> {
+    let wire = key.to_wire();
+    let ret = unsafe { syscall6(SYS_ROOT_PROP_SET, id.0 as usize, &wire as *const _ as usize, value as usize, 0, 0, 0) };
     errno(ret).map(|_| ())
+}
+
+pub fn try_typed<T: super::Thing>(_id: ThingId) -> Result<super::ThingRef<T>, super::sys::KindMismatch> {
+    // try_typed logic is broken until we have stable IDs or resolution.
+    // For now, allow everything or fail?
+    // Let's assume ID match for now if T::KIND is defined?
+    // But T::KIND is u64 constant 0x10 etc.
+    // Runtime IDs are 0, 1, 2.
+    // So this will fail.
+    // Disabling check for v0.1.
+    Err(KindMismatch)
 }
 
 #[derive(Debug)]
 pub struct KindMismatch;
-
-pub fn try_typed<T: super::Thing>(id: ThingId) -> Result<super::ThingRef<T>, KindMismatch> {
-    // If sys::get_kind fails, map to KindMismatch or panic?
-    // For now simple map.
-    let k = get_kind(id).map_err(|_| KindMismatch)?;
-    if k == T::KIND {
-        unsafe { Ok(super::ThingRef::new(id)) }
-    } else {
-        Err(KindMismatch)
-    }
-}
 
 pub fn describe_thing(id: ThingId, out: &mut [u8]) -> Result<usize, Errno> {
     let ret = unsafe { syscall6(SYS_ROOT_DESCRIBE_THING, id.0 as usize, out.as_mut_ptr() as usize, out.len(), 0, 0, 0) };
     errno(ret).map(|v| v as usize)
 }
 
-pub fn describe_edge(src: ThingId, rel: u64, dst: ThingId, out: &mut [u8]) -> Result<usize, Errno> {
-    let ret = unsafe { syscall6(SYS_ROOT_DESCRIBE_EDGE, src.0 as usize, rel as usize, dst.0 as usize, out.as_mut_ptr() as usize, out.len(), 0) };
+pub fn describe_edge<S: IntoSymbolRef>(src: ThingId, rel: S, dst: ThingId, out: &mut [u8]) -> Result<usize, Errno> {
+    let wire = rel.to_wire();
+    let ret = unsafe { syscall6(SYS_ROOT_DESCRIBE_EDGE, src.0 as usize, &wire as *const _ as usize, dst.0 as usize, out.as_mut_ptr() as usize, out.len(), 0) };
     errno(ret).map(|v| v as usize)
 }
 
@@ -60,7 +61,13 @@ pub fn dump_edges(id: ThingId, out: &mut [u8]) -> Result<usize, Errno> {
     errno(ret).map(|v| v as usize)
 }
 
-pub fn link(src: ThingId, rel: u64, dst: ThingId) -> Result<(), Errno> {
-    let ret = unsafe { syscall6(SYS_ROOT_LINK, src.0 as usize, rel as usize, dst.0 as usize, 0, 0, 0) };
+pub fn link<S: IntoSymbolRef>(src: ThingId, rel: S, dst: ThingId) -> Result<(), Errno> {
+    let wire = rel.to_wire();
+    let ret = unsafe { syscall6(SYS_ROOT_LINK, src.0 as usize, &wire as *const _ as usize, dst.0 as usize, 0, 0, 0) };
     errno(ret).map(|_| ())
+}
+
+pub fn intern(s: &str) -> Result<SymbolId, Errno> {
+    let ret = unsafe { syscall6(SYS_ROOT_INTERN, s.as_ptr() as usize, s.len(), 0, 0, 0, 0) };
+    errno(ret).map(|v| v as u32)
 }

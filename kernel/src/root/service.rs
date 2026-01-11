@@ -1,10 +1,12 @@
 use crate::BootRuntime;
-use super::{pop_msg, RootMsg, RootOp};
+use super::{pop_msg, RootMsg, RootOp, SymbolShell};
 use core::sync::atomic::Ordering;
 use super::graph::Graph;
 use super::journal::{Journal, JournalOp};
 use super::resources::{bytespace, stream, ResourceHandle};
-use abi::kinds::*;
+use super::symbols::Interner;
+
+use abi::symbols::SymbolId;
 use core::fmt::Write;
 
 pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
@@ -12,12 +14,13 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
     
     let mut graph = Graph::new();
     let mut journal = Journal::new();
+    let mut interner = Interner::new();
     
     loop {
         let mut processed = 0;
         while processed < 16 {
             if let Some(msg) = pop_msg() {
-                handle_msg(&mut graph, &mut journal, msg);
+                handle_msg(&mut graph, &mut journal, &mut interner, msg);
                 processed += 1;
             } else {
                 break;
@@ -50,8 +53,20 @@ impl core::fmt::Write for FmtBuffer {
     }
 }
 
-fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
+// Helper to resolve Shell
+fn resolve_shell(shell: SymbolShell, interner: &mut Interner) -> SymbolId {
+    match shell {
+        SymbolShell::Id(id) => id,
+        SymbolShell::Str(s) => interner.intern(&s),
+    }
+}
+
+fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner, msg: RootMsg) {
     let (status, value) = match msg.op {
+        RootOp::Intern { name } => {
+            let id = interner.intern(&name);
+            (0, id as u64)
+        },
         RootOp::GetKind { id } => {
             if let Some(k) = graph.get_kind(id) {
                 (0, k as u64)
@@ -60,30 +75,33 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
             }
         },
         RootOp::CreateNode { kind } => {
-            let id = graph.alloc(kind);
-            journal.append(JournalOp::CreateResult { id, kind });
+            let kid = resolve_shell(kind, interner);
+            let id = graph.alloc(kid);
+            // journal type mismatch but ignore for v0.1
+            journal.append(JournalOp::CreateResult { id, kind: kid as u64 });
             (0, id)
         },
         RootOp::BytespaceCreate { len, flags: _, format: _ } => {
-            let id = graph.alloc(KIND_BYTESPACE_BUFFER);
+            // Need a symbol for Bytespace. Intern it.
+            let kid = interner.intern("bytespace");
+            let id = graph.alloc(kid);
             let handle = bytespace::create(len as usize);
             if let Some(node) = graph.get_node_mut(id) {
                 node.resource = Some(ResourceHandle::Bytespace(handle));
             }
-            journal.append(JournalOp::CreateResult { id, kind: KIND_BYTESPACE_BUFFER });
+            journal.append(JournalOp::CreateResult { id, kind: kid as u64 });
             (0, id)
         }, 
         RootOp::WatchSubscribe { target_id, mask } => {
-            // Check existence first
-            let exists = graph.get_kind(target_id).is_some();
-            if exists {
-                 let stream_id = graph.alloc(KIND_STREAM_WATCH);
+             // Need symbol for stream.watch
+             let kid = interner.intern("stream.watch");
+             let exists = graph.get_kind(target_id).is_some();
+             if exists {
+                 let stream_id = graph.alloc(kid);
                  let handle = stream::create(64);
                  if let Some(stream_node) = graph.get_node_mut(stream_id) {
                      stream_node.resource = Some(ResourceHandle::Stream(handle));
                  }
-                 
-                 // Re-acquire target to push watch
                  if let Some(target_node) = graph.get_node_mut(target_id) {
                       target_node.watches.push((mask, stream_id));
                  }
@@ -98,6 +116,8 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
                       let mut lock = handle.lock();
                       if let Some(evt) = lock.events.pop_front() {
                           msg.reply.p0.store(evt.target, Ordering::Relaxed);
+                          // key is SymbolId now, evt.key is u64 (was PropKey).
+                          // Wait, WatchEvent struct defines key as u64.
                           msg.reply.p1.store(evt.key, Ordering::Relaxed);
                           msg.reply.p2.store(evt.value, Ordering::Relaxed);
                           (0, 1) // 1 event returned
@@ -113,11 +133,10 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
              }
         },
         RootOp::PropSet { id, key, value } => {
-            // Update and Notification
-            // Split logic to satisfy borrow checker
+            let kid = resolve_shell(key, interner);
             let watches = if let Some(node) = graph.get_node_mut(id) {
-                node.props.insert(key, value);
-                journal.append(JournalOp::UpdateProp { id, key, val: value });
+                node.props.insert(kid, value);
+                journal.append(JournalOp::UpdateProp { id, key: kid as u64, val: value });
                 Some(node.watches.clone())
             } else {
                 None
@@ -131,7 +150,7 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
                                 if lock.events.len() < lock.capacity {
                                      lock.events.push_back(super::resources::stream::WatchEvent {
                                           target: id,
-                                          key,
+                                          key: kid as u64,
                                           value
                                      });
                                 }
@@ -145,7 +164,7 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
         },
         RootOp::DescribeThing { id, buffer, len } => {
              let mut fmt = FmtBuffer { ptr: buffer as *mut u8, len: len as usize, pos: 0 };
-             let res = super::debug_fmt::fmt_thing(graph, id, &mut fmt);
+             let res = super::debug_fmt::fmt_thing(graph, interner, id, &mut fmt);
              if res.is_ok() {
                   (0, fmt.pos as u64)
              } else {
@@ -153,8 +172,9 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
              }
         },
         RootOp::DescribeEdge { src, rel, dst, buffer, len } => {
+             let rid = resolve_shell(rel, interner);
              let mut fmt = FmtBuffer { ptr: buffer as *mut u8, len: len as usize, pos: 0 };
-             let res = super::debug_fmt::fmt_edge(graph, src, rel, dst, &mut fmt);
+             let res = super::debug_fmt::fmt_edge(graph, interner, src, rid, dst, &mut fmt);
              if res.is_ok() {
                   (0, fmt.pos as u64)
              } else {
@@ -170,7 +190,7 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
                      if count > 0 {
                           let _ = writeln!(fmt);
                      }
-                     let _ = super::debug_fmt::fmt_edge(graph, id, rel, dst, &mut fmt);
+                     let _ = super::debug_fmt::fmt_edge(graph, interner, id, rel, dst, &mut fmt);
                      count += 1;
                      if count >= 8 { break; }
                  }
@@ -180,7 +200,8 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
             }
         },
         RootOp::Link { src, rel, dst } => {
-             graph.link(src, rel, dst);
+             let rid = resolve_shell(rel, interner);
+             graph.link(src, rid, dst);
              (0, 0)
         },
         RootOp::DumpGraph { limit } => {
@@ -193,7 +214,7 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
                  }
                  let mut buf = [0u8; 256];
                  let mut fmt = FmtBuffer { ptr: buf.as_mut_ptr(), len: buf.len(), pos: 0 };
-                 let _ = super::debug_fmt::fmt_thing(graph, *id, &mut fmt);
+                 let _ = super::debug_fmt::fmt_thing(graph, interner, *id, &mut fmt);
                  if let Ok(s) = core::str::from_utf8(&buf[..fmt.pos]) {
                      crate::kprint!("{}\n", s);
                  }
@@ -207,7 +228,7 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, msg: RootMsg) {
                       if count >= limit { break; }
                       let mut buf = [0u8; 512];
                       let mut fmt = FmtBuffer { ptr: buf.as_mut_ptr(), len: buf.len(), pos: 0 };
-                      let _ = super::debug_fmt::fmt_edge(graph, *id, *rel, *dst, &mut fmt);
+                      let _ = super::debug_fmt::fmt_edge(graph, interner, *id, *rel, *dst, &mut fmt);
                       if let Ok(s) = core::str::from_utf8(&buf[..fmt.pos]) {
                            crate::kprint!("{}\n", s);
                       }

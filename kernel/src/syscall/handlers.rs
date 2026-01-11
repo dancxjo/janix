@@ -1,6 +1,13 @@
 use abi::errors::{Errno, SysResult};
 use abi::device::{DeviceCall, DeviceKind};
 use super::validate::{validate_user_range, copyin, copyout};
+use crate::root::{self, RootOp, SymbolShell};
+use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR};
+use core::sync::atomic::Ordering;
+use alloc::string::String;
+
+// ... existing syscalls ... 
+// I'll just paste the whole file with updates to Root syscalls.
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
     crate::kprintln!("SYSCALL EXIT: code={}", code);
@@ -112,8 +119,7 @@ pub fn sys_get_tid() -> SysResult<usize> {
     unsafe { Ok(crate::task::scheduler::current_tid_current() as usize) }
 }
 
-use crate::root::{self, RootOp};
-use core::sync::atomic::Ordering;
+// ------ Root Syscalls ------
 
 fn root_call(op: RootOp) -> SysResult<usize> {
     let reply = root::enqueue(op);
@@ -125,10 +131,36 @@ fn root_call(op: RootOp) -> SysResult<usize> {
             return if status == 0 {
                 Ok(value as usize)
             } else {
-                 Err(Errno::EIO) 
+                Err(Errno::EIO) 
             };
         }
         unsafe { crate::task::scheduler::yield_now_current(); }
+    }
+}
+
+fn read_symbol(ptr: usize) -> SysResult<SymbolShell> {
+    let size = core::mem::size_of::<SymbolRefWire>();
+    validate_user_range(ptr, size, false)?;
+    
+    let mut wire: SymbolRefWire = unsafe { core::mem::zeroed() };
+    let slice = unsafe { core::slice::from_raw_parts_mut(&mut wire as *mut _ as *mut u8, size) };
+    unsafe { copyin(slice, ptr)?; }
+    
+    match wire.tag {
+        SYMBOL_REF_TAG_ID => Ok(SymbolShell::Id(wire.ptr_or_id as u32)),
+        SYMBOL_REF_TAG_STR => {
+            let s_ptr = wire.ptr_or_id as usize;
+            let s_len = wire.len as usize;
+            if s_len > 256 { return Err(Errno::EINVAL); } // Max len
+            
+            validate_user_range(s_ptr, s_len, false)?;
+            let mut buf = [0u8; 256]; // Stack buffer for copy
+            unsafe { copyin(&mut buf[..s_len], s_ptr)?; }
+            
+            let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
+            Ok(SymbolShell::Str(String::from(s)))
+        },
+        _ => Err(Errno::EINVAL),
     }
 }
 
@@ -183,20 +215,15 @@ pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysRes
     }
 }
 
-pub fn sys_root_prop_set(id: usize, key: usize, value: usize) -> SysResult<usize> {
-    root_call(RootOp::PropSet { id: id as u64, key: key as u64, value: value as u64 })
+pub fn sys_root_prop_set(id: usize, key_ptr: usize, value: usize) -> SysResult<usize> {
+    let key = read_symbol(key_ptr)?;
+    root_call(RootOp::PropSet { id: id as u64, key, value: value as u64 })
 }
 
 pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
     validate_user_range(out_ptr, len, true)?;
-    
-    // We cannot easily share the user pointer with the root thread if they are in different address spaces.
-    // So we use a kernel bounce buffer.
-    // 256 bytes should be enough for basic descriptions.
     let mut kbuf = [0u8; 256];
     let kbuf_len = core::cmp::min(len, kbuf.len());
-    
-    // Call root
     let reply = root::enqueue(RootOp::DescribeThing { 
         id: id as u64, 
         buffer: kbuf.as_mut_ptr() as u64, 
@@ -208,7 +235,6 @@ pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResu
         if done != 0 {
             let status = reply.status.load(Ordering::Relaxed);
             let written = reply.value.load(Ordering::Relaxed) as usize;
-            
             if status == 0 {
                 unsafe { copyout(out_ptr, &kbuf[..written])?; }
                 return Ok(written);
@@ -220,15 +246,15 @@ pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResu
     }
 }
 
-pub fn sys_root_describe_edge(src: usize, rel: usize, dst: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+pub fn sys_root_describe_edge(src: usize, rel_ptr: usize, dst: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
     validate_user_range(out_ptr, len, true)?;
-    
-    let mut kbuf = [0u8; 512]; // edges might be long
+    let rel = read_symbol(rel_ptr)?;
+
+    let mut kbuf = [0u8; 512];
     let kbuf_len = core::cmp::min(len, kbuf.len());
-    
     let reply = root::enqueue(RootOp::DescribeEdge { 
         src: src as u64, 
-        rel: rel as u64, 
+        rel, 
         dst: dst as u64,
         buffer: kbuf.as_mut_ptr() as u64, 
         len: kbuf_len as u64 
@@ -239,7 +265,6 @@ pub fn sys_root_describe_edge(src: usize, rel: usize, dst: usize, out_ptr: usize
         if done != 0 {
             let status = reply.status.load(Ordering::Relaxed);
             let written = reply.value.load(Ordering::Relaxed) as usize;
-            
             if status == 0 {
                 unsafe { copyout(out_ptr, &kbuf[..written])?; }
                 return Ok(written);
@@ -251,14 +276,13 @@ pub fn sys_root_describe_edge(src: usize, rel: usize, dst: usize, out_ptr: usize
     }
 }
 
-pub fn sys_root_link(src: usize, rel: usize, dst: usize) -> SysResult<usize> {
-     // Check permissions? For now open.
+pub fn sys_root_link(src: usize, rel_ptr: usize, dst: usize) -> SysResult<usize> {
+     let rel = read_symbol(rel_ptr)?;
      let reply = root::enqueue(RootOp::Link { 
         src: src as u64, 
-        rel: rel as u64, 
+        rel, 
         dst: dst as u64
     });
-    
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
@@ -275,10 +299,8 @@ pub fn sys_root_link(src: usize, rel: usize, dst: usize) -> SysResult<usize> {
 
 pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
     validate_user_range(out_ptr, len, true)?;
-    
-    let mut kbuf = [0u8; 1024]; // dump might be big
+    let mut kbuf = [0u8; 1024];
     let kbuf_len = core::cmp::min(len, kbuf.len());
-    
     let reply = root::enqueue(RootOp::DumpEdges { 
         id: id as u64,
         buffer: kbuf.as_mut_ptr() as u64, 
@@ -290,7 +312,6 @@ pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<u
         if done != 0 {
             let status = reply.status.load(Ordering::Relaxed);
             let written = reply.value.load(Ordering::Relaxed) as usize;
-            
             if status == 0 {
                 unsafe { copyout(out_ptr, &kbuf[..written])?; }
                 return Ok(written);
@@ -300,4 +321,17 @@ pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<u
         }
         unsafe { crate::task::scheduler::yield_now_current(); }
     }
+}
+
+pub fn sys_root_intern(ptr: usize, len: usize) -> SysResult<usize> {
+    if len > 256 { return Err(Errno::EINVAL); }
+    validate_user_range(ptr, len, false)?;
+    
+    let mut buf = [0u8; 256];
+    unsafe { copyin(&mut buf[..len], ptr)?; }
+    
+    let s = core::str::from_utf8(&buf[..len]).map_err(|_| Errno::EINVAL)?;
+    let msg = RootOp::Intern { name: alloc::string::String::from(s) };
+    
+    root_call(msg)
 }

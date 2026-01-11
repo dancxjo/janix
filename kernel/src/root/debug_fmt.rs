@@ -1,6 +1,6 @@
 use super::graph::{Graph, ThingId};
-use abi::kinds::*;
-use abi::names::*;
+use super::symbols::Interner;
+use abi::symbols::SymbolId;
 use core::fmt::{self, Write};
 
 pub struct FmtBuffer {
@@ -24,15 +24,11 @@ impl Write for FmtBuffer {
     }
 }
 
-pub fn fmt_thing(graph: &Graph, id: ThingId, w: &mut dyn Write) -> fmt::Result {
+pub fn fmt_thing(graph: &Graph, interner: &Interner, id: ThingId, w: &mut dyn Write) -> fmt::Result {
     if let Some(node) = graph.nodes.get(&id) {
-        let kind_str = kind_name(node.kind);
+        let kind_str = interner.resolve(node.kind).unwrap_or("?");
         
-        if kind_str == "unknown" {
-             write!(w, "(t{:x}:{:x} {{ ", id, node.kind)?;
-        } else {
-             write!(w, "(t{:x}:{} {{ ", id, kind_str)?;
-        }
+        write!(w, "(t{:x}:{} {{ ", id, kind_str)?;
         
         let mut count = 0;
         for (k, v) in node.props.iter() {
@@ -44,18 +40,11 @@ pub fn fmt_thing(graph: &Graph, id: ThingId, w: &mut dyn Write) -> fmt::Result {
                 break;
             }
             
-            let kname = prop_name(*k);
-            if kname == "p" {
-                 write!(w, "{}: {:x}", k, v)?;
+            let kname = interner.resolve(*k).unwrap_or("p");
+            if *v > 0x10000 {
+                 write!(w, "{}: 0x{:x}", kname, v)?;
             } else {
-                 // Try to print value heuristically? No, just hex or dec.
-                 // Assuming dec fits most numbers well, hex for addresses.
-                 // Simple heuristic: if looks like pointer (> 0x100000), print hex.
-                 if *v > 0x10000 {
-                      write!(w, "{}: 0x{:x}", kname, v)?;
-                 } else {
-                      write!(w, "{}: {}", kname, v)?;
-                 }
+                 write!(w, "{}: {}", kname, v)?;
             }
             count += 1;
         }
@@ -65,27 +54,20 @@ pub fn fmt_thing(graph: &Graph, id: ThingId, w: &mut dyn Write) -> fmt::Result {
     }
 }
 
-pub fn fmt_edge(graph: &Graph, src: ThingId, rel: RelKey, dst: ThingId, w: &mut dyn Write) -> fmt::Result {
-    // (src)--[:REL]->(dst)
-    // Minimally: (t1:Host)--[:RUNS_ON]->(t2:Kernel)
-    // Full: dump src node, rel, dst node? No, verbose.
-    // Format: (tX:Kind)--[:REL_NAME]->(tY:Kind)
-    
-    let get_kind_name = |id: ThingId| -> &'static str {
-        if let Some(n) = graph.nodes.get(&id) {
-            kind_name(n.kind)
-        } else {
-            "?"
-        }
+pub fn fmt_edge(graph: &Graph, interner: &Interner, src: ThingId, rel: SymbolId, dst: ThingId, w: &mut dyn Write) -> fmt::Result {
+    let src_kind = if let Some(n) = graph.nodes.get(&src) {
+        interner.resolve(n.kind).unwrap_or("?")
+    } else {
+        "?"
     };
 
-    let src_kind = get_kind_name(src);
-    let dst_kind = get_kind_name(dst);
-    let rname = rel_name(rel);
-    
-    if rname == "REL_UNKNOWN" {
-         write!(w, "(t{:x}:{})--[:0x{:x}]->(t{:x}:{})", src, src_kind, rel, dst, dst_kind)
+    let dst_kind = if let Some(n) = graph.nodes.get(&dst) {
+        interner.resolve(n.kind).unwrap_or("?")
     } else {
-         write!(w, "(t{:x}:{})--[:{}]->(t{:x}:{})", src, src_kind, rname, dst, dst_kind)
-    }
+        "?"
+    };
+
+    let rname = interner.resolve(rel).unwrap_or("REL?");
+    
+    write!(w, "(t{:x}:{})--[:{}]->(t{:x}:{})", src, src_kind, rname, dst, dst_kind)
 }

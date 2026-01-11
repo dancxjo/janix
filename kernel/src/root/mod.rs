@@ -13,18 +13,25 @@ pub mod abi;
 pub use service::root_main;
 
 #[derive(Debug)]
+pub enum SymbolShell {
+    Id(u32),
+    Str(alloc::string::String),
+}
+
+#[derive(Debug)]
 pub enum RootOp {
+    Intern { name: alloc::string::String },
     GetKind { id: u64 },
-    CreateNode { kind: u64 },
+    CreateNode { kind: SymbolShell },
     BytespaceCreate { len: u64, flags: u64, format: u64 },
     WatchSubscribe { target_id: u64, mask: u64 },
     StreamPoll { stream_id: u64, max: usize, out_ptr: u64 },
-    PropSet { id: u64, key: u64, value: u64 },
+    PropSet { id: u64, key: SymbolShell, value: u64 },
     DescribeThing { id: u64, buffer: u64, len: u64 },
-    DescribeEdge { src: u64, rel: u64, dst: u64, buffer: u64, len: u64 },
+    DescribeEdge { src: u64, rel: SymbolShell, dst: u64, buffer: u64, len: u64 },
     DumpEdges { id: u64, buffer: u64, len: u64 },
     DumpGraph { limit: u64 },
-    Link { src: u64, rel: u64, dst: u64 },
+    Link { src: u64, rel: SymbolShell, dst: u64 },
 }
 
 pub struct ReplyCell {
@@ -80,6 +87,7 @@ pub fn pop_msg() -> Option<RootMsg> {
 
 pub mod debug {
     use core::fmt;
+    use crate::root::SymbolShell;
     
     pub struct ThingDebug(pub u64);
     
@@ -121,7 +129,7 @@ pub mod debug {
             let mut buf = [0u8; 512];
             let reply = super::enqueue(super::RootOp::DescribeEdge { 
                 src: self.0, 
-                rel: self.1,
+                rel: SymbolShell::Id(self.1 as u32),
                 dst: self.2,
                 buffer: buf.as_mut_ptr() as u64, 
                 len: buf.len() as u64 
@@ -151,3 +159,4 @@ pub mod debug {
 pub mod debug_fmt;
 pub mod boot_register;
 pub mod debug_dump;
+pub mod symbols;

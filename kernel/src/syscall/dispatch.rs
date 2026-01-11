@@ -46,6 +46,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ROOT_DESCRIBE_THING => handlers::sys_root_describe_thing(args[0], args[1], args[2]),
         SYS_ROOT_DESCRIBE_EDGE => handlers::sys_root_describe_edge(args[0], args[1], args[2], args[3], args[4]),
         SYS_ROOT_DUMP_EDGES => handlers::sys_root_dump_edges(args[0], args[1], args[2]),
+        abi::syscall::SYS_ROOT_INTERN => handlers::sys_root_intern(args[0], args[1]),
         SYS_ROOT_LINK => handlers::sys_root_link(args[0], args[1], args[2]),
         _ => Err(Errno::ENOSYS),
     };

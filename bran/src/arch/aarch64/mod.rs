@@ -30,8 +30,8 @@ impl ArchRuntime for AArch64Runtime {
     type AddressSpace = AArch64AddressSpace;
 
     fn init(&self, hhdm_offset: u64) { 
-        paging::init(hhdm_offset); 
-        unsafe { vector::init(); }
+        paging::init(hhdm_offset);
+        // vector::init() now called in early_init() before SPx switch
     }
     fn putchar(&self, c: u8) {
         self.serial.putchar(c);

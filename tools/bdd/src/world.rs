@@ -317,3 +317,93 @@ impl ThingOsWorld {
         }
     }
 }
+
+// ===== Bag Matcher and Diagnostics Support =====
+
+/// Check if runtime diagnostics mode is enabled.
+pub fn diag_enabled() -> bool {
+    std::env::var("THINGOS_DIAG").is_ok()
+}
+
+/// Required boot signals that must ALL appear (order irrelevant).
+/// Each entry is a list of acceptable alternatives - pass if ANY in the group matches.
+pub const REQUIRED_BOOT_SIGNALS: &[&[&str]] = &[
+    // Kernel start
+    &["thing-os kernel", "starting..."],
+    // Paging boundary
+    &["Intent-Mechanism paging split active"],
+    // Memory map / allocator
+    &["Frame allocator initialized", "Initializing Real Frame Allocator..."],
+    &["Initializing global allocator...", "global_alloc:"],
+    // Tasking bring-up
+    &["Initializing tasking..."],
+    &["Scheduler initialized"],
+    &["Entering scheduler loop."],
+];
+
+/// Liveness signals - at least one of these must appear.
+pub const LIVENESS_SIGNALS: &[&str] = &[
+    "Thread A",
+    "Thread B",
+    "Thread ",
+    "BOOT: heartbeat",
+    "BOOT: ready",
+];
+
+impl ThingOsWorld {
+    /// Wait until all required signals are found in the log (unordered).
+    /// Returns Ok(()) if all found within timeout, Err with missing signals otherwise.
+    pub async fn wait_for_all_signals(
+        &self,
+        required: &[&[&str]],
+        timeout_secs: f64,
+    ) -> Result<(), Vec<String>> {
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs_f64(timeout_secs);
+
+        loop {
+            let log = self.serial_log.lock().await;
+            let missing: Vec<String> = required
+                .iter()
+                .filter(|alts| !alts.iter().any(|sig| log.contains(sig)))
+                .map(|alts| alts.join(" OR "))
+                .collect();
+
+            if missing.is_empty() {
+                return Ok(());
+            }
+
+            drop(log);
+
+            if start.elapsed() > timeout {
+                return Err(missing);
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
+    /// Check if any liveness signal is present.
+    pub async fn has_liveness_signal(&self) -> bool {
+        let log = self.serial_log.lock().await;
+        LIVENESS_SIGNALS.iter().any(|sig| log.contains(sig))
+    }
+
+    /// Wait for any liveness signal within timeout.
+    pub async fn wait_for_liveness(&self, timeout_secs: f64) -> bool {
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs_f64(timeout_secs);
+
+        loop {
+            if self.has_liveness_signal().await {
+                return true;
+            }
+
+            if start.elapsed() > timeout {
+                return false;
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+}

@@ -283,3 +283,89 @@ async fn machine_is_booting(world: &mut ThingOsWorld) {
 async fn log_contains(world: &mut ThingOsWorld, expected: String) {
     check_serial(world, &expected, DEFAULT_TIMEOUT_SECS).await;
 }
+
+// ===== Consolidated Boot Feature Steps =====
+
+use crate::world::{REQUIRED_BOOT_SIGNALS, LIVENESS_SIGNALS, diag_enabled};
+
+/// Default timeout for boot ready state (seconds).
+const BOOT_READY_TIMEOUT_SECS: f64 = 45.0;
+
+#[when("I wait for the system to reach ready state")]
+async fn wait_for_ready_state(world: &mut ThingOsWorld) {
+    // Use longer timeout in diagnostics mode
+    let timeout = if diag_enabled() {
+        BOOT_READY_TIMEOUT_SECS + 15.0
+    } else {
+        BOOT_READY_TIMEOUT_SECS
+    };
+
+    // Wait for scheduler loop entry as the primary "ready" signal
+    let found = world.wait_for_serial("Entering scheduler loop.", timeout).await;
+    
+    if !found {
+        capture_failure_diagnostics(world, "system ready state").await;
+        let log = world.get_serial_log().await;
+        eprintln!("\n=== Serial Log (last 200 lines) ===");
+        for line in log.lines().rev().take(200).collect::<Vec<_>>().into_iter().rev() {
+            eprintln!("{}", line);
+        }
+        eprintln!("=== End Serial Log ===\n");
+        panic!("System did not reach ready state within timeout");
+    }
+}
+
+#[then("the boot log should contain all required signals")]
+async fn check_required_signals(world: &mut ThingOsWorld) {
+    let result = world.wait_for_all_signals(REQUIRED_BOOT_SIGNALS, 5.0).await;
+    
+    if let Err(missing) = result {
+        capture_failure_diagnostics(world, "required boot signals").await;
+        let log = world.get_serial_log().await;
+        
+        eprintln!("\n=== Missing Boot Signals ===");
+        for sig in &missing {
+            eprintln!("  ❌ {}", sig);
+        }
+        eprintln!("\n=== Serial Log (last 200 lines) ===");
+        for line in log.lines().rev().take(200).collect::<Vec<_>>().into_iter().rev() {
+            eprintln!("{}", line);
+        }
+        eprintln!("=== End Serial Log ===\n");
+        
+        panic!("Boot log missing required signals: {:?}", missing);
+    }
+    
+    // In diagnostics mode, print what we found
+    if diag_enabled() {
+        eprintln!("\n=== Boot Signals Verified ===");
+        for alts in REQUIRED_BOOT_SIGNALS {
+            eprintln!("  ✅ {}", alts.join(" OR "));
+        }
+    }
+}
+
+#[then("the system should show liveness")]
+async fn check_liveness(world: &mut ThingOsWorld) {
+    // Give the scheduler a moment to show thread execution
+    let found = world.wait_for_liveness(10.0).await;
+    
+    if !found {
+        capture_failure_diagnostics(world, "liveness signal").await;
+        let log = world.get_serial_log().await;
+        
+        eprintln!("\n=== Liveness Check Failed ===");
+        eprintln!("Expected at least one of: {:?}", LIVENESS_SIGNALS);
+        eprintln!("\n=== Serial Log (last 100 lines) ===");
+        for line in log.lines().rev().take(100).collect::<Vec<_>>().into_iter().rev() {
+            eprintln!("{}", line);
+        }
+        eprintln!("=== End Serial Log ===\n");
+        
+        panic!("System did not show liveness (no Thread ticks or heartbeat)");
+    }
+    
+    if diag_enabled() {
+        eprintln!("  ✅ Liveness detected");
+    }
+}

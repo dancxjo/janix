@@ -95,20 +95,6 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
         },
         RootOp::Query { plan, out_buffer, out_len } => {
              // We need a kernel buffer to write results, separate from user pointer.
-             // But wait, `out_buffer` passed in Op comes from syscall handler.
-             // If syscall handler passes `out_ptr` (user), Root Service fails.
-             // Syscall handler must provide a KERNEL buffer (or physical address).
-             // Since we return `(status, value)`, we can't easily return a buffer.
-             // 
-             // Pattern used by `Find`: `buffer: u64`.
-             // `Find` handler creates a stack `kbuf`, passes pointer to it.
-             // But stack of `sys_root_find` is in the syscall stack.
-             // The Root Service runs in a DIFFERENT thread.
-             // Accessing the syscall stack of a blocked thread IS safe if memory is shared.
-             // In ThingOS, kernel memory is identity mapped and shared.
-             // So passing `kbuf.as_mut_ptr()` from one kernel thread to another IS valid.
-             // So `out_buffer` is a kernel pointer.
-             //
              let max_rows = (out_len as usize) / core::mem::size_of::<abi::query::QueryRow>();
              let mut krows = alloc::vec![abi::query::QueryRow::default(); max_rows];
              
@@ -131,7 +117,6 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
              let kid = resolve_shell(kind, interner);
              // Linear scan for now - cheap enough for startup enumeration
              let mut found_count = 0;
-             let mut buf_pos = 0;
              let out_ptr = buffer as *mut u64;
              let max_entries = (len as usize) / 8;
              
@@ -159,9 +144,6 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
         RootOp::BytespaceWrite { id, offset, ptr, len } => {
              if let Some(node) = graph.get_node_mut(id) {
                  if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {
-                      // This is a kernel-internal op for now (ptr is trusted kernel pointer from boot_register)
-                      // or we need to respect map permissions if coming from user.
-                      // For now, assuming kernel usage or identity map.
                       let mut lock = handle.lock();
                       if (offset + len) as usize <= lock.len {
                            unsafe {
@@ -180,6 +162,29 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
                  }
              } else {
                  (-1, 0) // ENOENT
+             }
+        },
+        RootOp::BytespaceRead { id, offset, ptr, len } => {
+             if let Some(node) = graph.get_node_mut(id) {
+                 if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {
+                      let lock = handle.lock();
+                      if (offset + len) as usize <= lock.len {
+                           unsafe {
+                               core::ptr::copy_nonoverlapping(
+                                   (lock.ptr as *const u8).add(offset as usize),
+                                   ptr as *mut u8, 
+                                   len as usize
+                               );
+                           }
+                           (0, len)
+                      } else {
+                           (-1, 0) 
+                      }
+                 } else {
+                      (-1, 0) 
+                 }
+             } else {
+                 (-1, 0) 
              }
         },
         RootOp::WatchSubscribe { target_id, mask } => {

@@ -6,9 +6,6 @@ use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR};
 use core::sync::atomic::Ordering;
 use alloc::string::String;
 
-// ... existing syscalls ... 
-// I'll just paste the whole file with updates to Root syscalls.
-
 pub fn sys_exit(code: i32) -> SysResult<usize> {
     crate::kprintln!("SYSCALL EXIT: code={}", code);
     unsafe { crate::task::scheduler::exit_current(code); }
@@ -119,6 +116,54 @@ pub fn sys_get_tid() -> SysResult<usize> {
     unsafe { Ok(crate::task::scheduler::current_tid_current() as usize) }
 }
 
+// ------ Device Capabilities ------
+
+pub fn sys_device_claim(_id: usize) -> SysResult<usize> {
+    // Stub for v0.1: just return fake success or NotSupported
+    // eventually checks if caller can claim device
+    Err(Errno::NotSupported)
+}
+
+pub fn sys_device_map_mmio(_id: usize, _flags: usize) -> SysResult<usize> {
+    // Stub
+    Err(Errno::NotSupported)
+}
+
+pub fn sys_device_irq_subscribe(_id: usize) -> SysResult<usize> {
+    // Stub
+    Err(Errno::NotSupported)
+}
+
+pub fn sys_device_ioport(port: usize, val: usize, write: bool, width: usize) -> SysResult<usize> {
+    // x86 only implementation example
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+         if write {
+             match width {
+                 1 => core::arch::asm!("out dx, al", in("dx") port as u16, in("al") val as u8),
+                 2 => core::arch::asm!("out dx, ax", in("dx") port as u16, in("ax") val as u16),
+                 4 => core::arch::asm!("out dx, eax", in("dx") port as u16, in("eax") val as u32),
+                 _ => return Err(Errno::EINVAL),
+             }
+             return Ok(0);
+         } else {
+             let mut ret: usize = 0;
+             match width {
+                 1 => { let v: u8; core::arch::asm!("in al, dx", out("al") v, in("dx") port as u16); ret = v as usize; },
+                 2 => { let v: u16; core::arch::asm!("in ax, dx", out("ax") v, in("dx") port as u16); ret = v as usize; },
+                 4 => { let v: u32; core::arch::asm!("in eax, dx", out("eax") v, in("dx") port as u16); ret = v as usize; },
+                 _ => return Err(Errno::EINVAL),
+             }
+             return Ok(ret);
+         }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = (port, val, write, width);
+        Err(Errno::ENOSYS)
+    }
+}
+
 // ------ Root Syscalls ------
 
 fn root_call(op: RootOp) -> SysResult<usize> {
@@ -146,21 +191,37 @@ fn read_symbol(ptr: usize) -> SysResult<SymbolShell> {
     let slice = unsafe { core::slice::from_raw_parts_mut(&mut wire as *mut _ as *mut u8, size) };
     unsafe { copyin(slice, ptr)?; }
     
+    // crate::kprintln!("SYSCALL: read_symbol wire: tag={} ptr={:x} len={}", wire.tag, wire.ptr_or_id, wire.len); // DEBUG
+
     match wire.tag {
         SYMBOL_REF_TAG_ID => Ok(SymbolShell::Id(wire.ptr_or_id as u32)),
         SYMBOL_REF_TAG_STR => {
             let s_ptr = wire.ptr_or_id as usize;
             let s_len = wire.len as usize;
-            if s_len > 256 { return Err(Errno::EINVAL); } // Max len
+            if s_len > 256 { 
+                crate::kprintln!("SYSCALL: Symbol string too long: {}", s_len);
+                return Err(Errno::EINVAL); 
+            } 
             
-            validate_user_range(s_ptr, s_len, false)?;
-            let mut buf = [0u8; 256]; // Stack buffer for copy
+            if let Err(e) = validate_user_range(s_ptr, s_len, false) {
+                 crate::kprintln!("SYSCALL: Symbol string ptr {:x} len {} validation failed: {:?}", s_ptr, s_len, e);
+                 return Err(e);
+            }
+            let mut buf = [0u8; 256]; 
             unsafe { copyin(&mut buf[..s_len], s_ptr)?; }
             
-            let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
-            Ok(SymbolShell::Str(String::from(s)))
+            match core::str::from_utf8(&buf[..s_len]) {
+                Ok(s) => Ok(SymbolShell::Str(String::from(s))),
+                Err(_) => {
+                    crate::kprintln!("SYSCALL: Symbol string invalid utf8");
+                    Err(Errno::EINVAL)
+                }
+            }
         },
-        _ => Err(Errno::EINVAL),
+        _ => {
+            crate::kprintln!("SYSCALL: Unknown symbol tag: {}", wire.tag);
+            Err(Errno::EINVAL)
+        },
     }
 }
 
@@ -170,6 +231,43 @@ pub fn sys_root_get_kind(id: usize) -> SysResult<usize> {
 
 pub fn sys_root_bytespace_create(len: usize, flags: usize, format: usize) -> SysResult<usize> {
     root_call(RootOp::BytespaceCreate { len: len as u64, flags: flags as u64, format: format as u64 })
+}
+
+pub fn sys_root_bytespace_read(id: usize, offset: usize, ptr: usize, len: usize) -> SysResult<usize> {
+    validate_user_range(ptr, len, true)?;
+    
+    let mut kbuf = [0u8; 4096];
+    let mut total_read = 0;
+    let mut curr_offset = offset;
+    let mut curr_ptr = ptr;
+    let mut remaining = len;
+    
+    // Chunked read because we use a stack buffer for copyout
+    while remaining > 0 {
+         let chunk_len = core::cmp::min(remaining, kbuf.len());
+         
+         let op = RootOp::BytespaceRead { 
+             id: id as u64, 
+             offset: curr_offset as u64, 
+             ptr: kbuf.as_mut_ptr() as u64, 
+             len: chunk_len as u64 
+         };
+         
+         let res = root_call(op)?;
+         if res == 0 { break; } // EOF or error
+         
+         // Copyout
+         unsafe { copyout(curr_ptr, &kbuf[..res])?; }
+         
+         curr_offset += res;
+         curr_ptr += res;
+         total_read += res;
+         remaining -= res;
+         
+         if res < chunk_len { break; } // Partial read implies end
+    }
+    
+    Ok(total_read)
 }
 
 pub fn sys_root_watch_subscribe(target: usize, mask: usize) -> SysResult<usize> {
@@ -338,51 +436,22 @@ pub fn sys_root_intern(ptr: usize, len: usize) -> SysResult<usize> {
 
 
 pub fn sys_root_prop_get(id: usize, ptr: usize, _reserved: usize) -> SysResult<usize> {
-    // id: ThingId
-    // ptr: *const SymbolRefWire
     let sym = read_symbol(ptr)?;
-    // prop_get returns value in result
-    // RootOp::PropGet returns (0, value) or (-1, 0)
     let msg = RootOp::PropGet { id: id as u64, key: sym };
-    
-    // root_call returns Result<usize, Errno>
-    // We want the value directly.
-    // root_call maps (0, val) to Ok(val as usize)
-    // and (-1, _) to Err(Errno::ENOENT)
-    
-    // Wait, root_call implementation:
-    // Ok(reply_value as usize)
-    // Err(Errno::EIO) if status != 0
-    // I should check root_call in handlers.rs or service interaction?
-    // root_call is in handlers.rs I think? Or generic helper?
-    // Let's rely on standard logic.
     root_call(msg)
 }
 
 pub fn sys_root_find(ptr_kind: usize, ptr_buf: usize, len: usize) -> SysResult<usize> {
-    // ptr_kind: *const SymbolRefWire
-    // ptr_buf: *mut ThingId (u64 array)
-    // len: bytes length of buffer
     let sym = read_symbol(ptr_kind)?;
     validate_user_range(ptr_buf, len, true)?;
-    
-    // We need a kernel buffer for output? Or can Root service write directly to user memory?
-    // Root service runs in kernel thread. It can access physical memory if mapped.
-    // But generic RootOp usually writes to kernel virtual address provided in op.
-    // So we need copyout.
     
     if len > 4096 { return Err(Errno::EINVAL); }
     let mut kbuf = [0u8; 4096];
     
     let msg = RootOp::Find { kind: sym, buffer: kbuf.as_mut_ptr() as u64, len: len as u64 };
     
-    // root_call returns count of found items
     let count = root_call(msg)?;
     
-    // Copy back
-    // count is number of items found.
-    // But we only wrote up to min(count, buffer_capacity) items into kbuf.
-    // We should copy min(count * 8, len).
     let bytes_to_copy = core::cmp::min(count * 8, len);
     unsafe { copyout(ptr_buf, &kbuf[..bytes_to_copy])?; }
     
@@ -398,13 +467,10 @@ pub fn sys_root_query(plan_ptr: usize, plan_len: usize, out_ptr: usize, out_cap:
     use abi::query::{QueryStep, QueryRow};
     use crate::root::query::PreparedStep;
     
-    // Bounds check plan
     let step_size = core::mem::size_of::<QueryStep>();
     let total_plan_bytes = plan_len * step_size;
     validate_user_range(plan_ptr, total_plan_bytes, false)?;
     
-    // Copy in plan
-    // We limit plan size (e.g. 8 steps)
     if plan_len > 8 { return Err(Errno::EINVAL); }
     
     let mut steps = alloc::vec::Vec::with_capacity(plan_len);
@@ -414,8 +480,6 @@ pub fn sys_root_query(plan_ptr: usize, plan_len: usize, out_ptr: usize, out_cap:
         let slice = unsafe { core::slice::from_raw_parts_mut(&mut step as *mut _ as *mut u8, step_size) };
         unsafe { copyin(slice, ptr)?; }
         
-        // Resolve symbols NOW (in user context)
-        // Similar to read_symbol logic but specialized
         let sym_id = match step.symbol.tag {
             abi::symbols::SYMBOL_REF_TAG_ID => step.symbol.ptr_or_id as u32,
             abi::symbols::SYMBOL_REF_TAG_STR => {
@@ -426,15 +490,7 @@ pub fn sys_root_query(plan_ptr: usize, plan_len: usize, out_ptr: usize, out_cap:
                  let mut buf = [0u8; 256];
                  unsafe { copyin(&mut buf[..s_len], s_ptr)?; }
                  let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
-                 // Syscall must Intern?
-                 // But Intern is a RootOp. We can't easily intern synchronously inside a syscall 
-                 // without sending a message (which we are doing).
-                 // So we can send Intern op first? Or support String in PreparedStep?
-                 // RootOp::Query takes PreparedStep with SymbolId.
-                 // So we MUST have an ID.
-                 // Hack: Trigger Intern for each string first.
                  let intern_msg = RootOp::Intern { name: alloc::string::String::from(s) };
-                 // We call root_call(intern) -> ID
                  let id = root_call(intern_msg)?;
                  id as u32
             },
@@ -448,13 +504,10 @@ pub fn sys_root_query(plan_ptr: usize, plan_len: usize, out_ptr: usize, out_cap:
         });
     }
 
-    // Validate out buffer
     let row_size = core::mem::size_of::<QueryRow>();
     let total_out_bytes = out_cap * row_size;
     validate_user_range(out_ptr, total_out_bytes, true)?;
     
-    // Allocate kernel buffer for result
-    // We cap output size (e.g. 4KB or 1024 rows)
     let safe_cap = core::cmp::min(out_cap, 1024);
     let mut kbuf = alloc::vec![QueryRow::default(); safe_cap];
     
@@ -466,7 +519,6 @@ pub fn sys_root_query(plan_ptr: usize, plan_len: usize, out_ptr: usize, out_cap:
     
     let count = root_call(msg)?;
     
-    // Copy out
     let bytes_to_copy = count * row_size;
     let src = unsafe { core::slice::from_raw_parts(kbuf.as_ptr() as *const u8, bytes_to_copy) };
     unsafe { copyout(out_ptr, src)?; }

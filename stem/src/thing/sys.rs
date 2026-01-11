@@ -15,6 +15,11 @@ pub fn bytespace_create(len: usize, flags: u64, format: u64) -> Result<ThingId, 
     errno(ret).map(|v| ThingId(v as u64))
 }
 
+pub fn bytespace_read(id: ThingId, offset: usize, out: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe { syscall6(SYS_ROOT_BYTESPACE_READ, id.0 as usize, offset, out.as_mut_ptr() as usize, out.len(), 0, 0) };
+    errno(ret).map(|v| v as usize)
+}
+
 pub fn watch_subscribe(target: ThingId, mask: u64) -> Result<ThingId, Errno> {
     let ret = unsafe { syscall6(SYS_ROOT_WATCH_SUBSCRIBE, target.0 as usize, mask as usize, 0, 0, 0, 0) };
     errno(ret).map(|v| ThingId(v as u64))
@@ -32,12 +37,6 @@ pub fn prop_set<S: IntoSymbolRef>(id: ThingId, key: S, value: u64) -> Result<(),
 }
 
 pub fn try_typed<T: super::Thing>(_id: ThingId) -> Result<super::ThingRef<T>, super::sys::KindMismatch> {
-    // try_typed logic is broken until we have stable IDs or resolution.
-    // For now, allow everything or fail?
-    // Let's assume ID match for now if T::KIND is defined?
-    // But T::KIND is u64 constant 0x10 etc.
-    // Runtime IDs are 0, 1, 2.
-    // So this will fail.
     // Disabling check for v0.1.
     Err(KindMismatch)
 }

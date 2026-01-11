@@ -24,6 +24,7 @@ pub enum RootOp {
     GetKind { id: u64 },
     CreateNode { kind: SymbolShell },
     BytespaceCreate { len: u64, flags: u64, format: u64 },
+    
     WatchSubscribe { target_id: u64, mask: u64 },
     StreamPoll { stream_id: u64, max: usize, out_ptr: u64 },
     PropSet { id: u64, key: SymbolShell, value: u64 },
@@ -35,6 +36,7 @@ pub enum RootOp {
     DumpEdges { id: u64, buffer: u64, len: u64 },
     DumpGraph { limit: u64 },
     BytespaceWrite { id: u64, offset: u64, ptr: u64, len: u64 },
+    BytespaceRead { id: u64, offset: u64, ptr: u64, len: u64 },
     Link { src: u64, rel: SymbolShell, dst: u64 },
 }
 

@@ -89,23 +89,30 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
     let platform_id = intern(info.platform_profile);
     set(host, "platform_profile", platform_id);
 
-    // 2. Kernel
+    // 2. Platform Bus
+    let platform_bus = create("dev.bus.platform");
+    // intern name="platform0"
+    let pbus_name = intern("platform0");
+    set(platform_bus, "name", pbus_name);
+    link(host, "HAS_BUS", platform_bus);
+
+    // 3. Kernel
     let kernel = create("proc.kernel");
     set(kernel, "version", 1);
     link(kernel, "RUNS_ON", host);
     
-    // 3. Root Service
+    // 4. Root Service
     let root_svc = create("svc.root");
     link(kernel, "PROVIDES", root_svc);
     
-    // 4. CPUs
+    // 5. CPUs
     for i in 0..info.cpu_count {
         let cpu = create("dev.cpu");
         set(cpu, "id", i as u64);
         link(host, "HAS_CPU", cpu);
     }
     
-    // 5. Memory Ranges
+    // 6. Memory Ranges
     for range in info.memory_map {
         let mem = create("mem.range");
         set(mem, "start", range.start);
@@ -114,22 +121,19 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         link(host, "HAS_MEMORY_RANGE", mem);
     }
     
-    // 6. Modules
+    // 7. Modules
     for (i, m) in info.modules.iter().enumerate() {
         let mod_node = create("boot.module");
         set(mod_node, "phys_base", m.phys_start);
         set(mod_node, "size_bytes", m.phys_end - m.phys_start);
         set(mod_node, "index", i as u64);
-        // Note: We might want to store path/name as a string prop or interned symbol
-        // For now, let's assume Sprout gets the name from the registry page (ModuleRegistry)
-        // or we can add it here if `intern` is cheap.
         let name_id = intern(m.name);
         set(mod_node, "name", name_id);
         
         link(host, "HAS_MODULE", mod_node);
     }
     
-    // 7. Framebuffer
+    // 8. Framebuffer
     if let Some(fb) = info.framebuffer.as_ref() {
         let fb_node = create("dev.display.framebuffer");
         set(fb_node, "phys_base", fb.addr);
@@ -139,7 +143,6 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(fb_node, "bpp", fb.bpp as u64);
         set(fb_node, "size_bytes", fb.byte_len as u64);
         
-        // Format mapping (raw values for now)
         let fmt = match fb.format {
              crate::PixelFormat::Xrgb8888 => 1,
              crate::PixelFormat::Argb8888 => 2,
@@ -151,7 +154,7 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         link(host, "HAS_DEVICE", fb_node);
     }
 
-    // 8. Firmware Tables
+    // 9. Firmware Tables
     if info.acpi_rsdp.is_some() || info.dtb_ptr.is_some() {
         let fw_boot = create("fw.boot");
         link(host, "HAS_FIRMWARE", fw_boot);
@@ -164,8 +167,7 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
 
         if let Some(dtb_ptr) = info.dtb_ptr {
             let dtb_node = create("fw.table.dtb");
-            // Create Bytespace
-            // Parse FDT header to get size (big-endian at offset 4)
+            // Parse FDT header
             let header = unsafe { core::slice::from_raw_parts(dtb_ptr as *const u8, 8) };
             let size = u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as u64;
             
@@ -179,7 +181,7 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         }
     }
 
-    // 9. Tasking
+    // 10. Tasking
     let scheduler = create("svc.scheduler"); 
     link(kernel, "PROVIDES", scheduler);
     

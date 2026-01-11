@@ -77,7 +77,6 @@ die:
     cargo xtask kill
 
 # Build sprout user app (uses build-std for bare metal)
-# Build sprout user app (uses build-std for bare metal)
 sprout arch=karch:
     #!/usr/bin/env bash
     TARGET_ARCH="{{arch}}"
@@ -87,7 +86,7 @@ sprout arch=karch:
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
     echo "Building sprout for $TARGET_ARCH using $TARGET_JSON..."
-    cargo build -Z build-std=core --target "$TARGET_JSON" -p sprout
+    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p sprout
 
 # Build rtc_cmos user app
 rtc_cmos arch=karch:
@@ -99,7 +98,7 @@ rtc_cmos arch=karch:
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
     echo "Building rtc_cmos for $TARGET_ARCH using $TARGET_JSON..."
-    cargo build -Z build-std=core --target "$TARGET_JSON" -p rtc_cmos
+    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p rtc_cmos
 
 # Build clock user app
 clock arch=karch:
@@ -111,5 +110,5 @@ clock arch=karch:
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
     echo "Building clock for $TARGET_ARCH using $TARGET_JSON..."
-    cargo build -Z build-std=core --target "$TARGET_JSON" -p clock
+    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p clock
 

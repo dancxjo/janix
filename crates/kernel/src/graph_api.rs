@@ -39,15 +39,5 @@ pub trait Graph {
 /// This is a derived query over relationships_from(graph, predicate.contains)
 pub fn contained_in(graph: GraphId) -> Vec<ThingId> {
     let pred_contains = symbols::intern(b"predicate.contains");
-    let rels = store::relationships_from(graph);
-
-    let mut things = Vec::new();
-    for &rel_id in rels.iter() {
-        if let Some(rel) = store::get_relationship(rel_id) {
-            if rel.kind == pred_contains {
-                things.push(rel.to);
-            }
-        }
-    }
-    things
+    store::relationships_by_kind(graph, pred_contains)
 }

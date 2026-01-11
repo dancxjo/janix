@@ -53,8 +53,11 @@ pub fn map_page(
     
     let pte_idx = (virt >> 12) & 0x1ff;
     // PTE format: [53:10]=PPN, [9:0]=flags
+    // PTE format: [53:10]=PPN, [9:0]=flags
+    let pte_val = ((phys >> 12) << 10) | bits;
     unsafe {
-        *l0.add(pte_idx as usize) = ((phys >> 12) << 10) | bits;
+        kernel::kprintln!("map_page: virt={:x} phys={:x} pte={:x} at l0[{}]", virt, phys, pte_val, pte_idx);
+        *l0.add(pte_idx as usize) = pte_val;
     }
     
     tlb_flush_page(virt);

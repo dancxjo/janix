@@ -53,7 +53,7 @@ impl Errno {
 }
 
 pub fn errno(ret: isize) -> Result<usize, Errno> {
-    if ret < 0 {
+    if ret < 0 && ret >= -4096 {
         // This is a rough mapping back, optimizing for common case
         // In a real impl we'd match every value.
         // For now let's just assume it's valid if negative.
@@ -63,6 +63,8 @@ pub fn errno(ret: isize) -> Result<usize, Errno> {
         let code = -ret;
         match code {
             1 => Err(Errno::EPERM),
+            2 => Err(Errno::ENOENT),
+            5 => Err(Errno::EIO),
             12 => Err(Errno::ENOMEM),
             14 => Err(Errno::EFAULT),
             22 => Err(Errno::EINVAL),

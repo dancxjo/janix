@@ -48,8 +48,8 @@ pub fn load_module<R: BootRuntime>(
          virt += 4096;
     }
     
-    // 2. Map BSS (32 pages = 128KB)
-    for _ in 0..32 {
+    // 2. Map BSS (128 pages = 512KB)
+    for _ in 0..128 {
          let phys = memory::alloc_frame().expect("OOM loading BSS");
          let hhdm_virt = phys + rt.phys_to_virt_offset();
          unsafe { core::ptr::write_bytes(hhdm_virt as *mut u8, 0, 4096); }

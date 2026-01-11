@@ -97,6 +97,7 @@ impl<R: BootRuntime> Scheduler<R> {
             simd: crate::simd::SimdState::new(rt),
         };
 
+        self.tasks.push(task);
         self.runq.push_back(id);
         id
     }

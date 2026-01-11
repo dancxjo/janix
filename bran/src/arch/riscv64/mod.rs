@@ -86,12 +86,12 @@ impl ArchRuntime for RISCV64Runtime {
         //          Safe choice: SPIE=0.
 
         let mut sstatus: usize;
-        asm!("csrr {}, sstatus", out(reg) sstatus);
+        unsafe { asm!("csrr {}, sstatus", out(reg) sstatus); }
         sstatus &= !(1 << 8); // Clear SPP (User)
         sstatus &= !(1 << 5); // Clear SPIE (Disable interrupts in user mode for now)
         // Note: bit 1 (SIE) is preserved for Supervisor, but overwritten by SPIE into SIE on sret.
         
-        asm!(
+        unsafe { asm!(
             "csrw sstatus, {sstatus}",
             "csrw sepc, {pc}",
             "mv sp, {sp}",
@@ -102,7 +102,7 @@ impl ArchRuntime for RISCV64Runtime {
             sp = in(reg) entry.user_sp,
             arg = in(reg) entry.arg0,
             options(noreturn)
-        );
+        ); }
     }
 
     // Paging

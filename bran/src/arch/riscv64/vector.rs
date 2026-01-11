@@ -3,14 +3,14 @@ use super::trap::UserTrapFrame;
 use kernel::syscall::dispatch;
 
 pub unsafe fn init() {
-    extern "C" {
+    unsafe extern "C" {
         fn trap_entry();
     }
     // Set stvec to trap_entry (Direct mode, bit 0 = 0)
     let addr = trap_entry as usize;
     // ensure alignment (4 bytes)
     assert!(addr & 3 == 0);
-    asm!("csrw stvec, {}", in(reg) addr);
+    unsafe { asm!("csrw stvec, {}", in(reg) addr); }
 }
 
 global_asm!(r#"

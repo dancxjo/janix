@@ -6,6 +6,7 @@ members = [
     "kernel",
     "abi",
     "stem",
+    "thing_macros",
     "userspace/sprout",
     "userspace/threads_demo",
     "userspace/rtc_cmos",

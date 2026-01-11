@@ -5,132 +5,54 @@ use super::validate::{validate_user_range, copyin, copyout};
 pub fn sys_exit(code: i32) -> SysResult<usize> {
     crate::kprintln!("SYSCALL EXIT: code={}", code);
     unsafe { crate::task::scheduler::exit_current(code); }
-    // Should not return, but to satisfy type:
     Ok(0)
 }
 
 pub fn sys_debug_write(ptr: usize, len: usize) -> SysResult<usize> {
-    // Validate buffer
-    let _slice = validate_user_range(ptr, len, false)?; // check read
-    if len > 1024 {
-        return Err(Errno::EINVAL);
-    }
-    
-    // Copy to stack buffer (chunked if needed, but we limited to 1024)
-    // We'll use a small buffer for safety
+    let _ = validate_user_range(ptr, len, false)?;
+    if len > 1024 { return Err(Errno::EINVAL); }
     let mut buf = [0u8; 128];
     let mut offset = 0;
-    
     while offset < len {
         let chunk_len = core::cmp::min(len - offset, buf.len());
         unsafe { copyin(&mut buf[..chunk_len], ptr + offset)?; }
-        
-        // Print it (lossy utf8 check is fine for debug)
         if let Ok(s) = core::str::from_utf8(&buf[..chunk_len]) {
              crate::kprint!("{}", s);
         } else {
              crate::kprint!("<invalid utf8>");
         }
-        
         offset += chunk_len;
     }
-    
     Ok(len)
 }
 
 pub fn sys_yield() -> SysResult<usize> {
-    // Co-operative yield
-    // Since R is not easily available here, we need help.
-    // Actually, handlers.rs doesn't know about R.
-    // But `yield_now` in `kernel::task::scheduler` requires `<R>`.
-    // Wait, the scheduler functions are generic over R.
-    // The syscall dispatch needs to know R.
-    // Currently `sys_sleep_ms` stub used `yield_now_current`.
-    // We should use `crate::task::yield_now::<R>()` but we don't have R.
-    // Solution: We need to use `yield_now_current` which uses the hook, OR `crate::task::scheduler::SCHEDULER`.
-    // But `get_scheduler()` is generic.
-    // `yield_now_current` is the safe-ish wrapper around the hook.
-    // We already have `yield_now_current` exposed in `scheduler.rs`.
-    // Let's use that for now since we are in a non-generic context.
-    
-    // Actually, `crate::task::yield_now_current()` calls `YIELD_HOOK` which is typed to `yield_now::<R>`.
-    // So this works perfectly for non-generic handlers.
-    
     unsafe { crate::task::scheduler::yield_now_current(); }
     Ok(0)
 }
 
 pub fn sys_sleep_ms(ms: u64) -> SysResult<usize> {
-    // We need a hook for sleep too if we want to avoid generics here, 
-    // OR we expose a non-generic `sleep_ms_current`.
-    // `sleep_ms` in `scheduler.rs` is generic R.
-    // We should add a hook for it too or just use `yield_now_current` loop here for v0?
-    // User plan said: "sys_sleep_ms(ms): calls sleep_until(now+ms)".
-    // The `sleep_ms` I wrote in scheduler.rs is `sleep_ms<R>`.
-    // I can't call it easily from here.
-    
-    // Option A: Add `SLEEP_HOOK` to scheduler.rs.
-    // Option B: Just loop yield_now_current here for now (Plan v0 allowed yield-loop).
-    // Option C: Make handlers generic (huge change).
-    
-    // Let's go with Option B for "v0" correctness but maybe add a TODO or helper.
-    // Actually, `sleep_until` logic is: loop { check time; yield; }.
-    // I can implement that here using `runtime_base().mono_ticks()` and `yield_now_current()`.
-    // It duplicates the logic but avoids the generic mess.
-    
-    let rt = crate::runtime_base(); // This returns &dyn BootRuntime? No, it returns ... wait.
-    // `crate::runtime::<R>()` returns `&R`.
-    // `crate::runtime_base()` ? 
-    // Let's check kernel/src/lib.rs or mod.rs. 
-    // Actually `runtime()` is commonly used.
-    // If I don't have R, I can't get the runtime easily unless there is a global or trait object.
-    // `BootRuntime` is a trait.
-    
-    // Wait, `sys_sleep_ms` in existing code used `crate::runtime_base().mono_ticks()`.
-    // Does `runtime_base` exist? 
-    // Line 50 of original file: `let start = crate::runtime_base().mono_ticks();`
-    // So yes, it exists. It probably returns `&dyn BootRuntime` or similar? 
-    // Or maybe `runtime_base()` isn't generic?
-    // Let's rely on it.
-    
-    // V0 implementation: simple loop in handler.
-    let start = crate::runtime_base().mono_ticks();
-    let freq = crate::runtime_base().mono_freq_hz();
+    let rt = crate::runtime_base();
+    let freq = rt.mono_freq_hz();
     let ticks = (ms * freq) / 1000;
+    let start = rt.mono_ticks();
     let deadline = start + ticks;
-    
     loop {
-        let now = crate::runtime_base().mono_ticks();
-        if now >= deadline {
-            break;
-        }
+        let now = rt.mono_ticks();
+        if now >= deadline { break; }
         unsafe { crate::task::scheduler::yield_now_current(); }
     }
-    
     Ok(0)
 }
 
 pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
-    // Validate the DeviceCall struct itself
     let size = core::mem::size_of::<DeviceCall>();
     validate_user_range(call_ptr, size, true)?;
-    
-    // Copy it in
     let mut call: DeviceCall = unsafe { core::mem::zeroed() };
-    let slice = unsafe { 
-        core::slice::from_raw_parts_mut(
-            &mut call as *mut _ as *mut u8, 
-            size
-        ) 
-    };
+    let slice = unsafe { core::slice::from_raw_parts_mut(&mut call as *mut _ as *mut u8, size) };
     unsafe { copyin(slice, call_ptr)?; }
-    
-    // Dispatch based on kind
     match call.kind {
-        DeviceKind::RtcCmos => {
-            // Stub: return NotSupported
-            Err(Errno::NotSupported)
-        }
+        DeviceKind::RtcCmos => Err(Errno::NotSupported),
         _ => Err(Errno::NotSupported)
     }
 }
@@ -138,47 +60,25 @@ pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
 pub fn sys_spawn_thread(entry: usize, stack: usize) -> SysResult<usize> {
     validate_user_range(entry, 1, false)?;
     validate_user_range(stack, 1, true)?;
-
     let tid = unsafe { crate::task::scheduler::spawn_user_thread_current(entry, stack, 0) };
-    
-    if let Some(tid) = tid {
-        Ok(tid as usize)
-    } else {
-        Err(Errno::EAGAIN)
-    }
+    if let Some(tid) = tid { Ok(tid as usize) } else { Err(Errno::EAGAIN) }
 }
 
 pub fn sys_spawn_process(name_ptr: usize, name_len: usize) -> SysResult<usize> {
-    // Limit name length for sanity
-    if name_len > 128 {
-        return Err(Errno::EINVAL);
-    }
+    if name_len > 128 { return Err(Errno::EINVAL); }
     validate_user_range(name_ptr, name_len, false)?;
-
-    // Copy name to kernel buffer
     let mut buf = [0u8; 128];
     unsafe { copyin(&mut buf[..name_len], name_ptr)?; }
-    
     let name = core::str::from_utf8(&buf[..name_len]).map_err(|_| Errno::EINVAL)?;
-    
     let tid = unsafe { crate::task::scheduler::spawn_process_current(name) };
-    
-    if let Some(tid) = tid {
-        Ok(tid as usize)
-    } else {
-        // Use ENOENT if module not found, or EAGAIN if no resources
-        // For now we don't distinguish from None.
-        Err(Errno::ENOENT)
-    }
+    if let Some(tid) = tid { Ok(tid as usize) } else { Err(Errno::ENOENT) }
 }
 
 pub fn sys_time_monotonic_ns() -> SysResult<usize> {
     let rt = crate::runtime_base();
     let ticks = rt.mono_ticks();
     let freq = rt.mono_freq_hz();
-    // Use u128 to prevent overflow before division
     let ns = (ticks as u128 * 1_000_000_000) / (freq as u128);
-    // Cast to usize (u64). Safe for next 292 years from boot.
     Ok(ns as usize)
 }
 
@@ -186,12 +86,7 @@ pub fn sys_rtc_read(out_ptr: usize) -> SysResult<usize> {
     validate_user_range(out_ptr, core::mem::size_of::<abi::device::RtcTime>(), true)?;
     let rt = crate::runtime_base();
     if let Some(time) = rt.read_rtc() {
-         let src = unsafe { 
-             core::slice::from_raw_parts(
-                 &time as *const _ as *const u8, 
-                 core::mem::size_of::<abi::device::RtcTime>()
-             ) 
-         };
+         let src = unsafe { core::slice::from_raw_parts(&time as *const _ as *const u8, core::mem::size_of::<abi::device::RtcTime>()) };
          unsafe { copyout(out_ptr, src)?; }
          Ok(0)
     } else {
@@ -203,19 +98,206 @@ pub fn sys_sleep_ns(ns: u64) -> SysResult<usize> {
     let rt = crate::runtime_base();
     let freq = rt.mono_freq_hz();
     let ticks = (ns as u128 * freq as u128) / 1_000_000_000;
-    
     let start = rt.mono_ticks();
     let deadline = start + ticks as u64;
-    
     loop {
          let now = rt.mono_ticks();
          if now >= deadline { break; }
          unsafe { crate::task::scheduler::yield_now_current(); }
     }
-    
     Ok(0)
 }
 
 pub fn sys_get_tid() -> SysResult<usize> {
     unsafe { Ok(crate::task::scheduler::current_tid_current() as usize) }
+}
+
+use crate::root::{self, RootOp};
+use core::sync::atomic::Ordering;
+
+fn root_call(op: RootOp) -> SysResult<usize> {
+    let reply = root::enqueue(op);
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let value = reply.value.load(Ordering::Relaxed);
+            return if status == 0 {
+                Ok(value as usize)
+            } else {
+                 Err(Errno::EIO) 
+            };
+        }
+        unsafe { crate::task::scheduler::yield_now_current(); }
+    }
+}
+
+pub fn sys_root_get_kind(id: usize) -> SysResult<usize> {
+    root_call(RootOp::GetKind { id: id as u64 })
+}
+
+pub fn sys_root_bytespace_create(len: usize, flags: usize, format: usize) -> SysResult<usize> {
+    root_call(RootOp::BytespaceCreate { len: len as u64, flags: flags as u64, format: format as u64 })
+}
+
+pub fn sys_root_watch_subscribe(target: usize, mask: usize) -> SysResult<usize> {
+    root_call(RootOp::WatchSubscribe { target_id: target as u64, mask: mask as u64 })
+}
+
+pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, max, true)?;
+    
+    let evt_size = core::mem::size_of::<abi::types::RootWatchEvent>();
+    if max < evt_size {
+        return Err(Errno::EINVAL);
+    }
+    
+    let reply = root::enqueue(RootOp::StreamPoll { stream_id: stream as u64, max, out_ptr: out_ptr as u64 });
+    
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let count = reply.value.load(Ordering::Relaxed);
+            
+            if status == 0 && count > 0 {
+                 let p0 = reply.p0.load(Ordering::Relaxed);
+                 let p1 = reply.p1.load(Ordering::Relaxed);
+                 let p2 = reply.p2.load(Ordering::Relaxed);
+                 
+                 let evt = abi::types::RootWatchEvent {
+                     target: p0,
+                     key: p1,
+                     value: p2,
+                 };
+                 
+                 let src = unsafe { core::slice::from_raw_parts(&evt as *const _ as *const u8, evt_size) };
+                 unsafe { copyout(out_ptr, src)?; }
+                 
+                 return Ok(1);
+            } else {
+                 return Ok(0);
+            }
+        }
+        unsafe { crate::task::scheduler::yield_now_current(); }
+    }
+}
+
+pub fn sys_root_prop_set(id: usize, key: usize, value: usize) -> SysResult<usize> {
+    root_call(RootOp::PropSet { id: id as u64, key: key as u64, value: value as u64 })
+}
+
+pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, len, true)?;
+    
+    // We cannot easily share the user pointer with the root thread if they are in different address spaces.
+    // So we use a kernel bounce buffer.
+    // 256 bytes should be enough for basic descriptions.
+    let mut kbuf = [0u8; 256];
+    let kbuf_len = core::cmp::min(len, kbuf.len());
+    
+    // Call root
+    let reply = root::enqueue(RootOp::DescribeThing { 
+        id: id as u64, 
+        buffer: kbuf.as_mut_ptr() as u64, 
+        len: kbuf_len as u64 
+    });
+    
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let written = reply.value.load(Ordering::Relaxed) as usize;
+            
+            if status == 0 {
+                unsafe { copyout(out_ptr, &kbuf[..written])?; }
+                return Ok(written);
+            } else {
+                 return Err(Errno::EIO);
+            }
+        }
+        unsafe { crate::task::scheduler::yield_now_current(); }
+    }
+}
+
+pub fn sys_root_describe_edge(src: usize, rel: usize, dst: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, len, true)?;
+    
+    let mut kbuf = [0u8; 512]; // edges might be long
+    let kbuf_len = core::cmp::min(len, kbuf.len());
+    
+    let reply = root::enqueue(RootOp::DescribeEdge { 
+        src: src as u64, 
+        rel: rel as u64, 
+        dst: dst as u64,
+        buffer: kbuf.as_mut_ptr() as u64, 
+        len: kbuf_len as u64 
+    });
+    
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let written = reply.value.load(Ordering::Relaxed) as usize;
+            
+            if status == 0 {
+                unsafe { copyout(out_ptr, &kbuf[..written])?; }
+                return Ok(written);
+            } else {
+                 return Err(Errno::EIO);
+            }
+        }
+        unsafe { crate::task::scheduler::yield_now_current(); }
+    }
+}
+
+pub fn sys_root_link(src: usize, rel: usize, dst: usize) -> SysResult<usize> {
+     // Check permissions? For now open.
+     let reply = root::enqueue(RootOp::Link { 
+        src: src as u64, 
+        rel: rel as u64, 
+        dst: dst as u64
+    });
+    
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            if status == 0 {
+                return Ok(0);
+            } else {
+                 return Err(Errno::EIO);
+            }
+        }
+        unsafe { crate::task::scheduler::yield_now_current(); }
+    }
+}
+
+pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, len, true)?;
+    
+    let mut kbuf = [0u8; 1024]; // dump might be big
+    let kbuf_len = core::cmp::min(len, kbuf.len());
+    
+    let reply = root::enqueue(RootOp::DumpEdges { 
+        id: id as u64,
+        buffer: kbuf.as_mut_ptr() as u64, 
+        len: kbuf_len as u64 
+    });
+    
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let written = reply.value.load(Ordering::Relaxed) as usize;
+            
+            if status == 0 {
+                unsafe { copyout(out_ptr, &kbuf[..written])?; }
+                return Ok(written);
+            } else {
+                 return Err(Errno::EIO);
+            }
+        }
+        unsafe { crate::task::scheduler::yield_now_current(); }
+    }
 }

@@ -62,28 +62,28 @@ pub fn _log(level: Level, args: fmt::Arguments) {
 #[macro_export]
 macro_rules! kinfo {
     ($($arg:tt)*) => {
-        $crate::logging::_log($crate::logging::Level::Info, format_args!($($arg)*));
+        $crate::logging::_log($crate::logging::Level::Info, format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! kerror {
     ($($arg:tt)*) => {
-        $crate::logging::_log($crate::logging::Level::Error, format_args!($($arg)*));
+        $crate::logging::_log($crate::logging::Level::Error, format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! kwarn {
     ($($arg:tt)*) => {
-        $crate::logging::_log($crate::logging::Level::Warn, format_args!($($arg)*));
+        $crate::logging::_log($crate::logging::Level::Warn, format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! kdebug {
     ($($arg:tt)*) => {
-        $crate::logging::_log($crate::logging::Level::Debug, format_args!($($arg)*));
+        $crate::logging::_log($crate::logging::Level::Debug, format_args!($($arg)*))
     };
 }
 
@@ -99,7 +99,7 @@ pub fn _print(args: fmt::Arguments) {
 #[macro_export]
 macro_rules! kprint {
     ($($arg:tt)*) => {
-        $crate::logging::_print(format_args!($($arg)*));
+        $crate::logging::_print(format_args!($($arg)*))
     };
 }
 

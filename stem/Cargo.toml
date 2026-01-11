@@ -5,8 +5,9 @@ edition = "2021"
 
 [dependencies]
 abi = { path = "../abi" }
+thing_macros = { path = "../thing_macros" }
 
 [features]
 default = []
-rt = [] # Runtime glue (e.g. _start)
-alloc = [] # Future allocator hook
+rt = []
+alloc = []

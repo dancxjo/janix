@@ -30,3 +30,14 @@ pub const SYS_WATCH_SUBSCRIBE: u32 = 192;
 pub const SYS_WATCH_READ: u32 = 193;
 
 // Root/Graph (256+) - Reserved
+
+// Root/Graph (256+)
+pub const SYS_ROOT_GET_KIND: u32 = 256;
+pub const SYS_ROOT_BYTESPACE_CREATE: u32 = 257;
+pub const SYS_ROOT_WATCH_SUBSCRIBE: u32 = 258;
+pub const SYS_ROOT_STREAM_POLL: u32 = 259;
+pub const SYS_ROOT_PROP_SET: u32 = 260;
+pub const SYS_ROOT_DESCRIBE_THING: u32 = 261;
+pub const SYS_ROOT_DESCRIBE_EDGE: u32 = 262;
+pub const SYS_ROOT_DUMP_EDGES: u32 = 263;
+pub const SYS_ROOT_LINK: u32 = 264;

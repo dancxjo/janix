@@ -4,6 +4,7 @@
 pub use abi;
 
 pub mod syscall;
+pub mod errors;
 // pub mod stream;
 // pub mod event;
 pub mod console;
@@ -42,3 +43,5 @@ pub fn rtc_time() -> Result<abi::device::RtcTime, abi::errors::Errno> {
     let mut t = abi::device::RtcTime::default();
     syscall::rtc_read(&mut t).map(|_| t)
 }
+pub mod thing;
+pub use thing_macros::*;

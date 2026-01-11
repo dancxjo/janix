@@ -32,3 +32,11 @@ pub struct EventHeader {
     pub size: u32,
     pub stream_id: StreamId,
 }
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RootWatchEvent {
+    pub target: u64,
+    pub key: u64,
+    pub value: u64,
+}

@@ -8,6 +8,7 @@ pub mod time;
 pub mod task;
 pub mod simd;
 pub mod syscall;
+pub mod root;
 pub mod tests;
 
 #[derive(Debug, Clone, Copy)]
@@ -214,6 +215,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
     kinfo!("Initializing tasking...");
     crate::task::init::<R>();
+    crate::root::init_root_service::<R>();
+    // Root Boot Registration
+    crate::root::boot_register::register_all(runtime);
+    crate::root::debug_dump::dump_all_to_console();
 
     // Check for sprout module
     let modules = runtime.modules();
@@ -314,6 +319,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         }
     }
 
+    crate::tests::root_test::run_selftest();
     kinfo!("System initialized. Entering scheduler loop.");
     loop {
         crate::task::yield_now::<R>();

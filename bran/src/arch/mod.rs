@@ -50,3 +50,11 @@ pub fn init_paging() {
     #[cfg(target_arch = "loongarch64")]
     loongarch64::paging::init(offset);
 }
+
+pub unsafe fn init_interrupts() {
+    #[cfg(target_arch = "aarch64")]
+    unsafe { aarch64::vector::init(); }
+    
+    // x86_64, riscv64, loongarch64 interrupt init to be added if needed/when identified.
+    // Assuming they are either handled elsewhere or not currently critical for this phase.
+}

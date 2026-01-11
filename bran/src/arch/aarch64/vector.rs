@@ -5,7 +5,14 @@ pub unsafe fn init() {
         static vector_table: u8;
     }
     let vbar = unsafe { &vector_table } as *const u8 as u64;
-    unsafe { asm!("msr vbar_el1, {}", in(reg) vbar); }
+    unsafe { 
+        asm!(
+            "msr vbar_el1, {vbar}",
+            "isb",
+            vbar = in(reg) vbar,
+            options(nomem, nostack, preserves_flags)
+        ); 
+    }
 }
 
 global_asm!(r#"
@@ -25,9 +32,9 @@ vector_table:
 
     // Current EL with SPx
     .balign 128
-    b unhandled_exception // Sync
+    b unhandled_curr_spx_sync // Sync
     .balign 128
-    b unhandled_exception // IRQ
+    b unhandled_curr_spx_irq  // IRQ
     .balign 128
     b unhandled_exception // FIQ
     .balign 128
@@ -37,7 +44,7 @@ vector_table:
     .balign 128
     b handle_sync_el0     // Sync (Syscalls/Traps)
     .balign 128
-    b unhandled_exception // IRQ
+    b unhandled_lower_irq // IRQ
     .balign 128
     b unhandled_exception // FIQ
     .balign 128
@@ -54,25 +61,34 @@ vector_table:
     b unhandled_exception
 
 unhandled_exception:
-    // Dump x30 (LR) and ESR to see where we came from and why
-    // We can't easily print from ASM without stack setup, but we could try semihosting if we are careful.
-    // Let's just create a stack frame and call a rust helper for panic.
-    
-    // We don't know which SP we are using (SP0 or SPx), so be careful.
-    // If we came from EL1 using SPx, we can push.
-    // If we came from EL0, we are on SPx (EL1 stack).
-    
+    mov x2, #0 // generic
+    b unhandled_common
+
+unhandled_curr_spx_sync:
+    mov x2, #1 // Curr-SPx-Sync
+    b unhandled_common
+
+unhandled_curr_spx_irq:
+    mov x2, #2 // Curr-SPx-IRQ
+    b unhandled_common
+
+unhandled_lower_irq:
+    mov x2, #3 // Lower-IRQ
+    b unhandled_common
+
+unhandled_common:
+    // Make stack frame
     sub sp, sp, #32
     stp x0, x1, [sp, #0]
     stp x29, x30, [sp, #16]
     
     mrs x0, esr_el1
     mrs x1, elr_el1
+    // x2 has origin code
+    mrs x3, spsr_el1
     
-    // Call rust helper
     bl unhandled_exception_rust
     
-    // Spin
     b .
 
 handle_sync_el0:

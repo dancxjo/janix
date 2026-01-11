@@ -10,6 +10,7 @@ pub mod runtime;
 use arch::hcf;
 use framebuffer::Framebuffer;
 use core::assert;
+use kernel::BootRuntime;
 
 use requests::{BASE_REVISION, FRAMEBUFFER_REQUEST};
 
@@ -17,10 +18,16 @@ static RUNTIME: arch::CurrentRuntime = arch::create_runtime();
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn kmain() -> ! {
+    // Architecture-specific early initialization (e.g., stack mode switching on AArch64)
+    unsafe { RUNTIME.early_init(); }
+    
     assert!(BASE_REVISION.is_supported());
     
     // Initialize architecture-specific paging (HHDM offset, etc.)
     arch::init_paging();
+    
+    // Initialize architecture-specific interrupts (VBAR, etc.)
+    unsafe { arch::init_interrupts(); }
     
     indicate_progress();
     kernel::start(&RUNTIME);

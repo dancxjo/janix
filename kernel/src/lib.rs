@@ -157,6 +157,11 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn simd_state_layout(&self) -> (usize, usize) { (0, 1) }
     unsafe fn simd_save(&self, _dst: *mut u8) {}
     unsafe fn simd_restore(&self, _src: *const u8) {}
+    
+    /// Very early architecture initialization, called before any significant stack usage.
+    /// Used for critical setup like switching stack modes on AArch64.
+    /// Default implementation does nothing.
+    unsafe fn early_init(&self) {}
 
     fn fence_full(&self) {}
     fn icache_invalidate(&self) {}

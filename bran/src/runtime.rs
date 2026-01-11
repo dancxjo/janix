@@ -22,6 +22,9 @@ pub trait ArchRuntime {
     fn simd_state_layout(&self) -> (usize, usize) { (0, 1) }
     unsafe fn simd_save(&self, _dst: *mut u8) {}
     unsafe fn simd_restore(&self, _src: *const u8) {}
+    
+    // Very early initialization (e.g., stack mode switching)
+    unsafe fn early_init(&self) {}
 
     // Barriers - defaults
     fn threads_supported(&self) -> bool { false }
@@ -129,6 +132,8 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     fn simd_state_layout(&self) -> (usize, usize) { self.arch.simd_state_layout() }
     unsafe fn simd_save(&self, dst: *mut u8) { unsafe { self.arch.simd_save(dst) } }
     unsafe fn simd_restore(&self, src: *const u8) { unsafe { self.arch.simd_restore(src) } }
+    
+    unsafe fn early_init(&self) { unsafe { self.arch.early_init() } }
 
     fn threads_supported(&self) -> bool { self.arch.threads_supported() }
     fn fence_full(&self) { self.arch.fence_full() }

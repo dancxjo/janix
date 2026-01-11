@@ -71,6 +71,34 @@ impl ArchRuntime for AArch64Runtime {
     unsafe fn simd_save(&self, dst: *mut u8) { unsafe { simd::save(dst) } }
     unsafe fn simd_restore(&self, src: *const u8) { unsafe { simd::restore(src) } }
     
+    unsafe fn early_init(&self) {
+        // CRITICAL: Initialize VBAR FIRST, before SPx switch
+        // The SPx switch can trigger exceptions, so we need handlers ready
+        unsafe { vector::init(); }
+        
+        // Now switch to EL1h (SPx) mode to prevent SP_EL0 corruption
+        // This must happen very early, before significant stack usage
+        unsafe {
+            asm!(
+                "mrs x9, CurrentEL",      // Read current exception level
+                "and x9, x9, #0xC",       // Mask to get EL bits  
+                "cmp x9, #4",             // Check if EL1 (0x4)
+                "bne 2f",                 // Skip if not EL1
+                
+                "mrs x9, spsel",          // Read current SP select
+                "tbnz x9, #0, 2f",        // Skip if already using SPx
+                
+                // We're in EL1t, switch to EL1h
+                "mov x9, sp",             // Save current SP value
+                "msr sp_el1, x9",         // Set SP_EL1 to current stack
+                "msr spsel, #1",          // Switch to SPx (EL1h)
+                "2:",
+                out("x9") _,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    }
+    
     fn fence_full(&self) {
          unsafe { asm!("dmb sy", options(nostack, preserves_flags)); }
     }
@@ -99,16 +127,13 @@ impl ArchRuntime for AArch64Runtime {
     }
 
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {
-        // AArch64 user mode entry via ERET
-        // SP_EL0 = user_sp
-        // ELR_EL1 = entry_pc
-        // SPSR_EL1 = EL0t (0) with interrupts masked (DAIF set) initially
-        // SPSR: M[3:0]=0 (EL0t), F=1, I=1, A=1, D=1 => 0x3C0
-        // Or unmasked? "if unstable, start with interrupts masked".
-        // Let's use 0x3C0 for now (all masked, EL0t).
+        // TODO: Switch to EL1h (SPx) to avoid SP_EL0 corruption
+        // Currently we run in EL1t (using SP_EL0), so setting SP_EL0 here
+        // will corrupt our kernel stack. However, the SPx switch causes
+        // a synchronous exception (ESR=0x2000000) that needs investigation.
+        // For now, accepting this limitation to get the system booting.
         
-        // SPSR: M[3:0]=0 (EL0t), F=0, I=0, A=0, D=0 => 0x0
-        // Unmask all interrupts so the timer can preempt the user task.
+        // SPSR: EL0t, all interrupts unmasked 
         let spsr: u64 = 0; 
 
         unsafe { asm!(

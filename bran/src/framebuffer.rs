@@ -19,15 +19,22 @@ impl Framebuffer {
     }
 
     pub fn clear(&mut self, color: u32) {
-        let pixels = self.width * self.height;
-        // Simple but slow clear for early boot
-        for i in 0..pixels as usize {
-            unsafe {
-                // Correct for pitch
-                let x = i % self.width as usize;
-                let y = i / self.width as usize;
-                let offset = (y * (self.pitch as usize / 4)) + x;
-                *self.addr.add(offset) = color;
+        // Convert raw pointer to a slice for safe(r) manipulation
+        // Safety: We assume the framebuffer memory is valid for the byte length reported by Limine.
+        // We only access up to pitch * height.
+        let buffer = unsafe {
+            core::slice::from_raw_parts_mut(
+                self.addr,
+                (self.pitch as usize * self.height as usize) / 4,
+            )
+        };
+
+        for y in 0..self.height as usize {
+            let row_start = (y * self.pitch as usize) / 4;
+            let row_end = row_start + self.width as usize;
+
+            if row_end <= buffer.len() {
+                buffer[row_start..row_end].fill(color);
             }
         }
     }

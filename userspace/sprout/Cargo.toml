@@ -1,0 +1,14 @@
+[package]
+name = "sprout"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stem = { path = "../../stem", features = ["rt"] }
+
+[[bin]]
+name = "sprout"
+path = "src/main.rs"
+# For userspace/sprout, test=false usually helps avoid test harness issues on bare metal if needed
+test = false
+doctest = false

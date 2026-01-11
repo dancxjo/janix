@@ -71,3 +71,15 @@ bdd *args:
 # Clear all BDD behavior reports (preserves .feature files and top-level README)
 clear-behavior:
     rm -rf docs/behavior/x86_64 docs/behavior/aarch64 docs/behavior/riscv64 docs/behavior/loongarch64
+
+# Build sprout user app (uses build-std for bare metal)
+sprout arch=karch:
+    #!/usr/bin/env bash
+    TARGET_ARCH="{{arch}}"
+    if [ "$TARGET_ARCH" == "riscv64" ]; then
+        TARGET_JSON="targets/riscv64gc-unknown-thingos.json"
+    else
+        TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
+    fi
+    echo "Building sprout for $TARGET_ARCH using $TARGET_JSON..."
+    cargo build -Z build-std=core --target "$TARGET_JSON" -p sprout

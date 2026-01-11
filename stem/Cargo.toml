@@ -1,0 +1,12 @@
+[package]
+name = "stem"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+abi = { path = "../abi" }
+
+[features]
+default = []
+rt = [] # Runtime glue (e.g. _start)
+alloc = [] # Future allocator hook

@@ -17,7 +17,7 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
 
     match arch {
         "x86_64" => {
-            cmd!(sh, "qemu-system-x86_64 -M q35 -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}")
+            cmd!(sh, "qemu-system-x86_64 -M q35 -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log")
                 .args(&qemu_args)
                 .run()?;
         }

@@ -17,9 +17,7 @@ pub fn init<R: crate::BootRuntime>(rt: &R) {
     
     kinfo!("Memory map has {} entries", map.len());
     for (i, range) in map.iter().enumerate() {
-        if i < 10 {
-            kinfo!("  [{}] 0x{:x} - 0x{:x} ({:?})", i, range.start, range.end, range.kind);
-        }
+        kinfo!("  [{}] 0x{:x} - 0x{:x} ({:?})", i, range.start, range.end, range.kind);
     }
     kinfo!("HHDM Offset: 0x{:x}", offset);
 

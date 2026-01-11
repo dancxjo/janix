@@ -8,6 +8,8 @@ pub mod trap;
 pub mod paging;
 pub mod simd;
 pub mod syscall;
+pub mod gdt;
+pub mod idt;
 
 pub struct X86_64Runtime {
     clamp: MonotonicClamp,
@@ -29,6 +31,10 @@ impl ArchRuntime for X86_64Runtime {
     type AddressSpace = X86_64AddressSpace;
 
     fn init(&self, hhdm_offset: u64) { 
+        unsafe {
+            gdt::init();
+            idt::init();
+        }
         paging::init(hhdm_offset); 
         unsafe { syscall::init(); }
     }
@@ -106,21 +112,25 @@ impl ArchRuntime for X86_64Runtime {
         let user_code_sel: u64 = 0x1B;
         let rflags: u64 = 0x202;
 
-        asm!(
-            "push {ss}",
-            "push {rsp}",
-            "push {rflags}",
-            "push {cs}",
-            "push {rip}",
-            "iretq",
-            ss = in(reg) user_data_sel,
-            rsp = in(reg) entry.user_sp,
-            rflags = in(reg) rflags,
-            cs = in(reg) user_code_sel,
-            rip = in(reg) entry.entry_pc,
-            in("rdi") entry.arg0,
-            options(noreturn)
-        );
+        unsafe {
+            asm!(
+                "cli",
+                "swapgs",
+                "push {ss}",
+                "push {rsp}",
+                "push {rflags}",
+                "push {cs}",
+                "push {rip}",
+                "iretq",
+                ss = in(reg) user_data_sel,
+                rsp = in(reg) entry.user_sp,
+                rflags = in(reg) rflags,
+                cs = in(reg) user_code_sel,
+                rip = in(reg) entry.entry_pc,
+                in("rdi") entry.arg0,
+                options(noreturn)
+            );
+        }
     }
 
     // Paging

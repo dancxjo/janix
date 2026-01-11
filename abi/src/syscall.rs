@@ -8,6 +8,7 @@ pub const SYS_DEBUG_WRITE: u32 = 2;
 pub const SYS_SLEEP_MS: u32 = 3;
 pub const SYS_DEVICE_CALL: u32 = 4;
 pub const SYS_YIELD: u32 = 5;
+pub const SYS_SPAWN_THREAD: u32 = 6;
 
 // Time/Sched (64-127) - Reserved
 // pub const SYS_TIME_NOW: u32 = 64;

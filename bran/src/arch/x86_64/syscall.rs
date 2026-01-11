@@ -172,10 +172,10 @@ syscall_entry:
     swapgs
     
     // Save User RSP to scratch (offset 0)
-    mov %gs:0, %rsp
+    mov %rsp, %gs:0
     
     // Load Kernel RSP from offset 8
-    mov %rsp, %gs:8
+    mov %gs:8, %rsp
     
     // Now on Kernel Stack.
     // Build UserTrapFrame. 
@@ -208,19 +208,9 @@ syscall_entry:
     pushq %r11 // Note: R11 contains User RFLAGS
     pushq %r12
     pushq %r13
-    pushq %r14
-    pushq %r15
-    
     // Arguments for dispatch(n, args)
     // Rust ABI: RDI, RSI.
     // dispatch signature: fn dispatch(n: usize, args: [usize; 6]) -> isize
-    // Actually args is [usize; 6], which is passed by pointer usually if large, but [usize; 6] fits in registers?
-    // No, array > 2 usize is usually indirect or spread. 
-    // Let's change dispatch signature to: 
-    //   fn dispatch(n: usize, a0, a1, a2, a3, a4, a5) -> isize
-    // That's easier for assembly.
-    // Kernel dispatch.rs defined as: fn dispatch(n: usize, args: [usize; 6]) -> isize
-    // I should update kernel dispatch to take flat args for simplicity.
     
     // Mapping:
     // Syscall ABI (Linux/Standard we chose):
@@ -324,6 +314,9 @@ syscall_entry:
     
     // Skip error_code, int_no
     add $16, %rsp
+    
+    // SWAPGS back to User GS
+    swapgs
     
     // IRETQ
     iretq

@@ -6,3 +6,5 @@
 /bran/bin-*
 /target
 /**/target
+
+*.log

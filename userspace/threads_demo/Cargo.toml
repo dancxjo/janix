@@ -1,0 +1,11 @@
+[package]
+name = "threads_demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stem = { path = "../../stem" }
+
+[profile.release]
+panic = "abort"
+lto = false

@@ -43,21 +43,27 @@ pub fn map_page(
     bits |= (1 << 6) | (1 << 7); // Accessed + Dirty
 
     // SATP format: [63:60]=Mode, [59:44]=ASID, [43:0]=PPN
+    let mode = aspace.0 >> 60;
+    
     // PPN * 4096 = physical address of root page table
     let root_phys = (aspace.0 & 0x0000_0FFF_FFFF_FFFF) << 12;
-    let l2 = (root_phys + unsafe { HHDM_OFFSET }) as *mut u64;
+    let mut table = (root_phys + unsafe { HHDM_OFFSET }) as *mut u64;
     
-    // Sv39: 3-level, VPN[2] = bits[38:30], VPN[1] = bits[29:21], VPN[0] = bits[20:12]
-    let l1 = ensure_table(l2, (virt >> 30) & 0x1ff, allocator)?;
-    let l0 = ensure_table(l1, (virt >> 21) & 0x1ff, allocator)?;
+    if mode == 9 { // Sv48 (4 levels)
+        table = ensure_table(table, (virt >> 39) & 0x1ff, allocator)?;
+    } else if mode != 8 { // Not Sv39 and not Sv48
+        // Fallback or panic? For now assume Sv39 if not Sv48.
+    }
+
+    // Sv39 levels (3 levels) or continuation of Sv48
+    let l2 = ensure_table(table, (virt >> 30) & 0x1ff, allocator)?;
+    let l1 = ensure_table(l2, (virt >> 21) & 0x1ff, allocator)?;
     
     let pte_idx = (virt >> 12) & 0x1ff;
     // PTE format: [53:10]=PPN, [9:0]=flags
-    // PTE format: [53:10]=PPN, [9:0]=flags
     let pte_val = ((phys >> 12) << 10) | bits;
     unsafe {
-        kernel::kprintln!("map_page: virt={:x} phys={:x} pte={:x} at l0[{}]", virt, phys, pte_val, pte_idx);
-        *l0.add(pte_idx as usize) = pte_val;
+        *l1.add(pte_idx as usize) = pte_val;
     }
     
     tlb_flush_page(virt);

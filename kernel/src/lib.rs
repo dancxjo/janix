@@ -192,6 +192,13 @@ pub fn runtime_base() -> &'static dyn BootRuntimeBase {
     unsafe { RUNTIME_BASE.expect("Runtime not initialized") }
 }
 
+struct GlobalAllocHook;
+impl FrameAllocatorHook for GlobalAllocHook {
+    fn alloc_frame(&self) -> Option<u64> {
+        crate::memory::alloc_frame()
+    }
+}
+
 pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     unsafe { init_runtime(runtime) };
     unsafe { crate::logging::init(runtime) };
@@ -207,12 +214,79 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     kinfo!("Initializing tasking...");
     crate::task::init::<R>();
 
-    kinfo!("Checking threads_supported...");
-    if runtime.threads_supported() {
-        kinfo!("Spawning Thread A...");
-        crate::task::spawn::<R>(thread_a, 1);
-        kinfo!("Spawning Thread B...");
-        crate::task::spawn::<R>(thread_b, 2);
+    // Check for threads_demo module
+    let modules = runtime.modules();
+    let threads_demo = modules.iter().find(|m| m.name.contains("threads_demo"));
+
+    if let Some(mod_desc) = threads_demo {
+        kinfo!("Found threads_demo module, loading...");
+        
+        let load_addr = 0x200000;
+        let stack_top = 0x400000;
+        let stack_size = 65536;
+        
+        let hook = GlobalAllocHook;
+        let aspace = runtime.tasking().active_address_space();
+        
+        // Loop module bytes
+        let mut virt = load_addr as u64;
+        for chunk in mod_desc.bytes.chunks(4096) {
+             let phys = crate::memory::alloc_frame().expect("OOM");
+             // Copy
+             let hhdm_virt = phys + runtime.phys_to_virt_offset();
+             unsafe {
+                 core::ptr::copy_nonoverlapping(chunk.as_ptr(), hhdm_virt as *mut u8, chunk.len());
+                 // Zero remaining if partial page (chk.len < 4096)
+                 if chunk.len() < 4096 {
+                     core::ptr::write_bytes((hhdm_virt as *mut u8).add(chunk.len()), 0, 4096 - chunk.len());
+                 }
+             }
+             // Map
+             runtime.tasking().map_page(aspace, virt, phys, 
+                 MapPerms { user: true, read: true, write: true, exec: true }, 
+                 MapKind::Normal, &hook).unwrap();
+             virt += 4096;
+        }
+        
+        // Map BSS (Extra 128KB to be safe)
+        for _ in 0..32 {
+             let phys = crate::memory::alloc_frame().expect("OOM");
+             // Zero it
+             let hhdm_virt = phys + runtime.phys_to_virt_offset();
+             unsafe { core::ptr::write_bytes(hhdm_virt as *mut u8, 0, 4096); }
+             
+             runtime.tasking().map_page(aspace, virt, phys, 
+                 MapPerms { user: true, read: true, write: true, exec: true }, 
+                 MapKind::Normal, &hook).unwrap();
+             virt += 4096;
+        }
+        
+        // Loop stack
+        let stack_base = (stack_top - stack_size) as u64;
+        let mut virt = stack_base;
+        let stack_limit = stack_top as u64;
+        
+        while virt < stack_limit {
+             let phys = crate::memory::alloc_frame().expect("OOM");
+             // Map
+             runtime.tasking().map_page(aspace, virt, phys,
+                  MapPerms { user: true, read: true, write: true, exec: true }, // Stack needs RW
+                  MapKind::Normal, &hook).unwrap();
+             virt += 4096;
+        }
+        
+        kinfo!("Modules loaded. Spawning user thread at 0x{:x}...", load_addr);
+        unsafe {
+             crate::task::scheduler::spawn_user_thread::<R>(load_addr, stack_top);
+        }
+    } else {
+        kinfo!("Checking threads_supported...");
+        if runtime.threads_supported() {
+            kinfo!("Spawning Thread A...");
+            crate::task::spawn::<R>(thread_a, 1);
+            kinfo!("Spawning Thread B...");
+            crate::task::spawn::<R>(thread_b, 2);
+        }
     }
 
     kinfo!("System initialized. Entering scheduler loop.");

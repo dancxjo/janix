@@ -55,3 +55,11 @@ pub fn yield_now() -> Result<(), Errno> {
     };
     abi::errors::errno(ret).map(|_| ())
 }
+
+pub fn spawn_thread(entry: extern "C" fn() -> !, stack_top: usize) -> Result<u64, Errno> {
+    let entry_addr = entry as usize;
+    let ret = unsafe {
+        raw_syscall6(SYS_SPAWN_THREAD, entry_addr, stack_top, 0, 0, 0, 0)
+    };
+    abi::errors::errno(ret).map(|v| v as u64)
+}

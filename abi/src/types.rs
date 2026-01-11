@@ -16,3 +16,19 @@ pub struct StreamStatus {
     pub closed: bool,
     pub error: bool,
 }
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct StreamId(pub u64);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct WatchId(pub u64);
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EventHeader {
+    pub type_: u32,
+    pub size: u32,
+    pub stream_id: StreamId,
+}

@@ -5,8 +5,8 @@ use spin::Mutex;
 use crate::BootRuntime;
 use crate::BootTasking;
 use crate::task::{Task, TaskId, TaskState};
+use crate::UserEntry;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduleReason {
     CooperativeYield,
     SleepWait,
@@ -14,6 +14,11 @@ pub enum ScheduleReason {
     PreemptTick,      // future
     IoWait,           // future
 }
+
+// Global hooks for non-generic access
+static mut YIELD_HOOK: Option<unsafe fn()> = None;
+static mut EXIT_HOOK: Option<unsafe fn(i32)> = None;
+static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize) -> TaskId> = None;
 
 pub struct Scheduler<R: BootRuntime> {
     tasks: Vec<Task<R>>,
@@ -79,7 +84,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let ctx = rt.tasking().init_kernel_context(entry, stack_top, arg);
         let aspace = rt.tasking().active_address_space();
 
-        let task = Task {
+        let task: Task<R> = Task {
             id,
             state: TaskState::Runnable,
             kstack_base: stack_base,
@@ -90,9 +95,50 @@ impl<R: BootRuntime> Scheduler<R> {
             simd: crate::simd::SimdState::new(rt),
         };
 
-        self.tasks.push(task);
         self.runq.push_back(id);
         id
+    }
+
+
+
+    pub fn spawn_user_thread(&mut self, entry_pc: usize, user_stack_top: usize) -> TaskId {
+         let rt = crate::runtime::<R>();
+         self.next_id += 1;
+         let id = self.next_id;
+
+         let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
+         let stack_base = unsafe { alloc::alloc::alloc(layout) };
+         if stack_base.is_null() {
+             panic!("Failed to allocate stack");
+         }
+         let stack_top = (stack_base as u64) + 16384;
+
+         // Box the UserEntry so we can pass it as a single 'arg' pointer to the trampoline
+         let user_entry = alloc::boxed::Box::new(UserEntry {
+             entry_pc,
+             user_sp: user_stack_top,
+             // Defaults
+             arg0: 0,
+         });
+         let entry_ptr = alloc::boxed::Box::into_raw(user_entry) as usize;
+
+         let ctx = rt.tasking().init_kernel_context(user_thread_trampoline::<R>, stack_top, entry_ptr);
+         let aspace = rt.tasking().active_address_space();
+
+         let task: Task<R> = Task {
+             id,
+             state: TaskState::Runnable,
+             kstack_base: stack_base,
+             kstack_size: 16384,
+             kstack_top: stack_top,
+             ctx,
+             aspace,
+             simd: crate::simd::SimdState::new(rt),
+         };
+
+         self.tasks.push(task);
+         self.runq.push_back(id);
+         id
     }
     
     pub fn schedule_point(&mut self, reason: ScheduleReason) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
@@ -144,7 +190,7 @@ impl<R: BootRuntime> Scheduler<R> {
             }
         };
 
-        let current_id = self.current.unwrap();
+        let current_id = self.current.expect("prepare_schedule called without current task");
 
         if next_id == current_id {
              let idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
@@ -175,27 +221,30 @@ impl<R: BootRuntime> Scheduler<R> {
         }
     }
 
-    pub fn terminate_current(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
-        let current_id = self.current?;
+    pub fn terminate_current(&mut self) -> ! {
+        let current_id = self.current.expect("terminate_current called with no current task");
         
-        // Remove from runq if present
-        if let Some(pos) = self.runq.iter().position(|&id| id == current_id) {
-            self.runq.remove(pos);
+        // Mark as Dead (we use Dead instead of Terminated)
+        if let Some(idx) = self.tasks.iter().position(|t| t.id == current_id) {
+            self.tasks[idx].state = TaskState::Dead;
         }
         
-        // Remove from tasks list
-        if let Some(pos) = self.tasks.iter().position(|t| t.id == current_id) {
-            self.tasks.remove(pos);
-        }
+        // Do NOT clear current.
         
-        self.current = None;
-        self.prepare_schedule()
+        // Schedule next
+        unsafe {
+            let rt = crate::runtime::<R>();
+            // We loop endlessly if schedule returns None
+            loop {
+                if let Some((old, new)) = self.prepare_schedule() {
+                    rt.tasking().switch(&mut *old, &*new); 
+                }
+            }
+        }
     }
 }
 
 pub static SCHEDULER: Mutex<Option<usize>> = Mutex::new(None);
-static mut YIELD_HOOK: Option<unsafe fn()> = None;
-static mut EXIT_HOOK: Option<unsafe fn(i32)> = None;
 
 pub fn init<R: BootRuntime>() {
     crate::kinfo!("  Acquiring scheduler lock...");
@@ -210,9 +259,11 @@ pub fn init<R: BootRuntime>() {
         s.init_boot_task();
         crate::kinfo!("  Storing scheduler pointer...");
         *lock = Some(s as *mut Scheduler<R> as usize);
+        *lock = Some(s as *mut Scheduler<R> as usize);
         unsafe { 
             YIELD_HOOK = Some(yield_now::<R>); 
             EXIT_HOOK = Some(exit::<R>);
+            SPAWN_USER_HOOK = Some(spawn_user_thread::<R>);
         }
         crate::kinfo!("  Scheduler initialized");
     }
@@ -223,6 +274,25 @@ pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> Ta
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
     sched.spawn(entry, arg)
+}
+
+pub unsafe fn spawn_user_thread<R: BootRuntime>(entry: usize, stack: usize) -> TaskId {
+    let lock = SCHEDULER.lock();
+    let ptr = lock.expect("Scheduler not initialized");
+    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+    sched.spawn_user_thread(entry, stack)
+}
+
+pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
+    crate::kinfo!("Trampoline entered. Arg: 0x{:x}", arg);
+    let rt = crate::runtime::<R>();
+    let entry_ptr = arg as *mut UserEntry;
+    let entry = unsafe { *alloc::boxed::Box::from_raw(entry_ptr) };
+    
+    crate::kinfo!("Entering user mode: PC=0x{:x} SP=0x{:x}", entry.entry_pc, entry.user_sp);
+    
+    // Safety: we are entering user mode with the provided entry point
+    unsafe { rt.tasking().enter_user(entry) }
 }
 
 pub fn yield_now<R: BootRuntime>() {
@@ -293,24 +363,10 @@ pub fn exit<R: BootRuntime>(code: i32) {
     let rt = crate::runtime::<R>();
     let irq = rt.irq_disable();
     
-    let switch_params = {
-        let lock = SCHEDULER.lock();
-        let ptr = lock.expect("Scheduler not initialized");
-        let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        sched.terminate_current()
-    };
-    
-    if let Some((old_ctx, new_ctx)) = switch_params {
-        unsafe {
-            rt.tasking().switch(&mut *old_ctx, &*new_ctx);
-        }
-    }
-    
-    rt.irq_restore(irq);
-    
-    // If we are here, there are no other tasks to run.
-    crate::kprintln!("Task exited with code {} (last task)", code);
-    loop { core::hint::spin_loop(); }
+    let lock = SCHEDULER.lock();
+    let ptr = lock.expect("Scheduler not initialized");
+    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+    sched.terminate_current()
 }
 
 pub unsafe fn exit_current(code: i32) {
@@ -320,7 +376,16 @@ pub unsafe fn exit_current(code: i32) {
         } else {
             // Fallback if no scheduler
             crate::kprintln!("exit_current called without scheduler!");
-            loop { core::hint::spin_loop(); }
+        }
+    }
+}
+
+pub unsafe fn spawn_user_thread_current(entry: usize, stack: usize) -> Option<TaskId> {
+    unsafe {
+        if let Some(hook) = SPAWN_USER_HOOK {
+            Some(hook(entry, stack))
+        } else {
+            None
         }
     }
 }

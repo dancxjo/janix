@@ -130,6 +130,9 @@ pub unsafe fn switch(from: &mut X86_64Context, to: &X86_64Context) {
         // The NEXT time we enter from user mode (syscall), we want this stack.
         asm!("mov gs:[8], {}", in(reg) kstack);
 
+        // Update TSS RSP0 for interrupts/exceptions from Ring 3
+        crate::arch::x86_64::gdt::set_rsp0(kstack);
+
         context_switch(&mut from.sp, &to.sp as *const usize);
     }
 }

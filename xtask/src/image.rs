@@ -19,6 +19,21 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, "iso_root/boot/kernel")?;
 
+    // Build and copy threads_demo
+    println!("Building threads_demo for {}...", arch);
+    let target = crate::common::rust_target(arch);
+    // Note: Using release profile to keep it small
+    cmd!(sh, "cargo build --target {target} --profile release -p threads_demo")
+        .env("RUSTFLAGS", "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort")
+        .run()?;
+    
+    // Objcopy to binary
+    let demo_elf = format!("target/{}/release/threads_demo", target);
+    let demo_bin = format!("target/{}/release/threads_demo.bin", target);
+    cmd!(sh, "llvm-objcopy -O binary {demo_elf} {demo_bin}").run()?;
+
+    sh.copy_file(&demo_bin, "iso_root/boot/threads_demo")?;
+
     // Copy limine config
     sh.copy_file("limine.conf", "iso_root/boot/limine/limine.conf")?;
 

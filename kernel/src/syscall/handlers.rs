@@ -1,7 +1,6 @@
 use abi::errors::{Errno, SysResult};
 use abi::device::{DeviceCall, DeviceKind};
 use super::validate::{validate_user_range, copyin};
-use crate::task::scheduler::{yield_now, sleep_ms};
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
     crate::kprintln!("SYSCALL EXIT: code={}", code);
@@ -11,13 +10,11 @@ pub fn sys_exit(code: i32) -> SysResult<usize> {
 }
 
 pub fn sys_debug_write(ptr: usize, len: usize) -> SysResult<usize> {
-    // Limit max write to avoid huge buffers
+    // Validate buffer
+    let _slice = validate_user_range(ptr, len, false)?; // check read
     if len > 1024 {
         return Err(Errno::EINVAL);
     }
-    
-    // Check range
-    validate_user_range(ptr, len, false)?;
     
     // Copy to stack buffer (chunked if needed, but we limited to 1024)
     // We'll use a small buffer for safety
@@ -135,5 +132,18 @@ pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
             Err(Errno::NotSupported)
         }
         _ => Err(Errno::NotSupported)
+    }
+}
+
+pub fn sys_spawn_thread(entry: usize, stack: usize) -> SysResult<usize> {
+    validate_user_range(entry, 1, false)?;
+    validate_user_range(stack, 1, true)?;
+
+    let tid = unsafe { crate::task::scheduler::spawn_user_thread_current(entry, stack) };
+    
+    if let Some(tid) = tid {
+        Ok(tid as usize)
+    } else {
+        Err(Errno::EAGAIN)
     }
 }

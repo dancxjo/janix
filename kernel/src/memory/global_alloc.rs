@@ -37,4 +37,8 @@ pub fn init<R: BootRuntime>(rt: &R) {
      let mut heap = kernel_heap().lock();
      // Expand by 2MB for safe early boot
      heap.expand::<R>(512).expect("Failed to pre-expand kernel heap");
+     
+     unsafe {
+         crate::kinfo!("Global allocator initialized");
+     }
 }

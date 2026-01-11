@@ -1,9 +1,10 @@
 use core::arch::asm;
-use kernel::{IrqState, UserTaskSpec, FrameAllocatorHook, MapPerms, MapKind};
+use kernel::{IrqState, UserTaskSpec, UserEntry, FrameAllocatorHook, MapPerms, MapKind};
 use kernel::time::MonotonicClamp;
 use crate::runtime::ArchRuntime;
 
 pub mod task;
+pub mod trap;
 pub mod paging;
 pub mod simd;
 
@@ -89,6 +90,33 @@ impl ArchRuntime for X86_64Runtime {
 
     unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
         unsafe { task::switch(from, to) }
+    }
+
+    unsafe fn enter_user(&self, entry: UserEntry) -> ! {
+        // x86_64 user mode entry via IRETQ
+        // Selectors: USER_DATA = 0x20 | 3 (RPL3) = 0x23
+        //            USER_CODE = 0x18 | 3 (RPL3) = 0x1B
+        // RFLAGS: IF (0x200) | Reserved (0x2) = 0x202
+        
+        let user_data_sel: u64 = 0x23;
+        let user_code_sel: u64 = 0x1B;
+        let rflags: u64 = 0x202;
+
+        asm!(
+            "push {ss}",
+            "push {rsp}",
+            "push {rflags}",
+            "push {cs}",
+            "push {rip}",
+            "iretq",
+            ss = in(reg) user_data_sel,
+            rsp = in(reg) entry.user_sp,
+            rflags = in(reg) rflags,
+            cs = in(reg) user_code_sel,
+            rip = in(reg) entry.entry_pc,
+            in("rdi") entry.arg0,
+            options(noreturn)
+        );
     }
 
     // Paging

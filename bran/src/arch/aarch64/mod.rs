@@ -1,10 +1,11 @@
 use core::arch::asm;
-use kernel::{IrqState, UserTaskSpec, FrameAllocatorHook, MapPerms, MapKind};
+use kernel::{IrqState, UserTaskSpec, UserEntry, FrameAllocatorHook, MapPerms, MapKind};
 use kernel::time::MonotonicClamp;
 use crate::runtime::ArchRuntime;
 
 pub mod simd;
 pub mod task;
+pub mod trap;
 pub mod paging;
 
 pub struct AArch64Runtime {
@@ -90,6 +91,31 @@ impl ArchRuntime for AArch64Runtime {
 
     unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
         unsafe { task::switch(from, to) }
+    }
+
+    unsafe fn enter_user(&self, entry: UserEntry) -> ! {
+        // AArch64 user mode entry via ERET
+        // SP_EL0 = user_sp
+        // ELR_EL1 = entry_pc
+        // SPSR_EL1 = EL0t (0) with interrupts masked (DAIF set) initially
+        // SPSR: M[3:0]=0 (EL0t), F=1, I=1, A=1, D=1 => 0x3C0
+        // Or unmasked? "if unstable, start with interrupts masked".
+        // Let's use 0x3C0 for now (all masked, EL0t).
+        
+        let spsr: u64 = 0x3C0; 
+
+        asm!(
+            "msr sp_el0, {sp}",
+            "msr elr_el1, {pc}",
+            "msr spsr_el1, {spsr}",
+            "mov x0, {arg}",
+            "eret",
+            sp = in(reg) entry.user_sp,
+            pc = in(reg) entry.entry_pc,
+            spsr = in(reg) spsr,
+            arg = in(reg) entry.arg0,
+            options(noreturn)
+        );
     }
 
     // Paging

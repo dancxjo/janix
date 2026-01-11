@@ -1,7 +1,7 @@
 ENTRY(_start)
 
 SECTIONS {
-    . = 0x400000; /* Define a fixed user base address */
+    . = 0x200000;
 
     .text : {
         *(.text .text.*)
@@ -17,5 +17,10 @@ SECTIONS {
 
     .bss : {
         *(.bss .bss.*)
+    }
+
+    /DISCARD/ : {
+        *(.eh_frame)
+        *(.comment)
     }
 }

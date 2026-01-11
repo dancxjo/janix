@@ -1,10 +1,11 @@
 use core::arch::asm;
-use kernel::{IrqState, UserTaskSpec, FrameAllocatorHook, MapPerms, MapKind};
+use kernel::{IrqState, UserTaskSpec, UserEntry, FrameAllocatorHook, MapPerms, MapKind};
 use kernel::time::MonotonicClamp;
 use crate::runtime::ArchRuntime;
 
 pub mod serial;
 pub mod task;
+pub mod trap;
 pub mod paging;
 
 pub struct RISCV64Runtime {
@@ -63,6 +64,41 @@ impl ArchRuntime for RISCV64Runtime {
 
     unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
         unsafe { task::switch(from, to) }
+    }
+
+    unsafe fn enter_user(&self, entry: UserEntry) -> ! {
+        // RISC-V user mode entry via sret
+        // sepc = entry.entry_pc
+        // sstatus: Clear SPP (bit 8) -> User Mode
+        //          Set SPIE (bit 5) -> Interrupts enabled after sret (if we want them)
+        //          Wait, user prompt: "if unstable, start with interrupts masked".
+        //          So allow timer IRQs... "after entry only when trap path known-good"
+        //          So maybe zero SPIE for now?
+        //          "set SPIE appropriately"
+        //          Let's Set SPIE to 1 (enabled) usually, but maybe 0 for safety first?
+        //          We'll set SPIE=1 so we don't block interrupts forever if we can handle them.
+        //          Actually, "interrupts masked in user until..." => SPIE=0.
+        //          If SPIE=0, after sret, SIE (bit 1) becomes 0.
+        //          Safe choice: SPIE=0.
+
+        let mut sstatus: usize;
+        asm!("csrr {}, sstatus", out(reg) sstatus);
+        sstatus &= !(1 << 8); // Clear SPP (User)
+        sstatus &= !(1 << 5); // Clear SPIE (Disable interrupts in user mode for now)
+        // Note: bit 1 (SIE) is preserved for Supervisor, but overwritten by SPIE into SIE on sret.
+        
+        asm!(
+            "csrw sstatus, {sstatus}",
+            "csrw sepc, {pc}",
+            "mv sp, {sp}",
+            "mv a0, {arg}",
+            "sret",
+            sstatus = in(reg) sstatus,
+            pc = in(reg) entry.entry_pc,
+            sp = in(reg) entry.user_sp,
+            arg = in(reg) entry.arg0,
+            options(noreturn)
+        );
     }
 
     // Paging

@@ -1,8 +1,7 @@
-/* Same as others */
 ENTRY(_start)
 
 SECTIONS {
-    . = 0x400000;
+    . = 0x200000;
 
     .text : {
         *(.text .text.*)
@@ -18,5 +17,10 @@ SECTIONS {
 
     .bss : {
         *(.bss .bss.*)
+    }
+
+    /DISCARD/ : {
+        *(.eh_frame)
+        *(.comment)
     }
 }

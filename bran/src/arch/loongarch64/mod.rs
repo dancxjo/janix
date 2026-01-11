@@ -1,9 +1,10 @@
 use core::arch::asm;
-use kernel::{IrqState, UserTaskSpec, FrameAllocatorHook, MapPerms, MapKind};
+use kernel::{IrqState, UserTaskSpec, UserEntry, FrameAllocatorHook, MapPerms, MapKind};
 use kernel::time::MonotonicClamp;
 use crate::runtime::ArchRuntime;
 
 pub mod task;
+pub mod trap;
 pub mod paging;
 
 pub struct LoongArch64Runtime {
@@ -81,6 +82,33 @@ impl ArchRuntime for LoongArch64Runtime {
 
     unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
         unsafe { task::switch(from, to) }
+    }
+
+    unsafe fn enter_user(&self, entry: UserEntry) -> ! {
+        // LoongArch64 user mode entry via ertn
+        // PRMD (0x1): PPLv (bits 1:0) = 3 (User)
+        //             PIE (bit 2) = 0 (Interrupts masked for safety, as per prompt)
+        // ERA (0x6): entry_pc
+        // $sp: user_sp
+        // $a0: arg0
+        
+        let mut prmd: usize;
+        unsafe { asm!("csrrd {}, 0x1", out(reg) prmd); }
+        prmd |= 3; // Set PPLv to 3 (User - PLV3)
+        prmd &= !(1 << 2); // Functionally Clear PIE (disable interrupts)
+        
+        asm!(
+            "csrwr {prmd}, 0x1",
+            "csrwr {pc}, 0x6",
+            "move $sp, {sp}",
+            "move $a0, {arg}",
+            "ertn",
+            prmd = in(reg) prmd,
+            pc = in(reg) entry.entry_pc,
+            sp = in(reg) entry.user_sp,
+            arg = in(reg) entry.arg0,
+            options(noreturn)
+        );
     }
 
     // Paging

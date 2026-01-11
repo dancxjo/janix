@@ -91,6 +91,14 @@ pub struct UserTaskSpec<AS> {
     pub arg: usize,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct UserEntry {
+    pub entry_pc: usize,
+    pub user_sp: usize,
+    pub arg0: usize,
+}
+
 pub trait FrameAllocatorHook {
     fn alloc_frame(&self) -> Option<u64>;
 }
@@ -105,6 +113,7 @@ pub trait BootTasking {
     fn init_user_context(&self, spec: UserTaskSpec<Self::AddressSpace>, kstack_top: u64) -> Self::Context;
     
     unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context);
+    unsafe fn enter_user(&self, entry: UserEntry) -> !;
     
     fn make_user_address_space(&self) -> Self::AddressSpace;
     fn active_address_space(&self) -> Self::AddressSpace;

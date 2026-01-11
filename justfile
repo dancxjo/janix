@@ -72,6 +72,10 @@ bdd *args:
 clear-behavior:
     rm -rf docs/behavior/x86_64 docs/behavior/aarch64 docs/behavior/riscv64 docs/behavior/loongarch64
 
+# Kill all running QEMU instances
+die:
+    cargo xtask kill
+
 # Build sprout user app (uses build-std for bare metal)
 sprout arch=karch:
     #!/usr/bin/env bash

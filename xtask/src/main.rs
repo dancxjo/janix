@@ -11,6 +11,7 @@ mod image;
 mod limine;
 mod ovmf;
 mod run;
+mod kill;
 
 use clap::{Parser, Subcommand};
 use xshell::Shell;
@@ -118,6 +119,8 @@ enum Commands {
         #[arg(long, short = 'a', num_args = 1.., default_values_t = ["x86_64".to_string(), "aarch64".to_string(), "riscv64".to_string(), "loongarch64".to_string()])]
         arch: Vec<String>,
     },
+    /// Kill running QEMU instances
+    Kill,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -166,6 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Clean => clean(&sh)?,
         Commands::Distclean => distclean(&sh)?,
         Commands::Bdd { feature, tags, arch } => bdd(&sh, feature, tags, arch)?,
+        Commands::Kill => kill::run()?,
     }
 
     Ok(())

@@ -1,5 +1,5 @@
 use kernel::{
-    BootRuntime, BootRuntimeBase, BootTasking, UserTaskSpec, 
+    BootRuntime, BootRuntimeBase, BootTasking, UserTaskSpec, UserEntry,
     FrameAllocatorHook, PhysRange, BootModuleDesc, FramebufferInfo, IrqState,
     MapPerms, MapKind,
 };
@@ -37,6 +37,10 @@ pub trait ArchRuntime {
     unsafe fn switch(&self, _from: &mut Self::Context, _to: &Self::Context) {
         // No-op
     }
+    unsafe fn enter_user(&self, _entry: UserEntry) -> ! {
+        panic!("enter_user not implemented for this architecture");
+    }
+
     fn make_user_address_space(&self) -> Self::AddressSpace {
         Self::AddressSpace::default()
     }
@@ -149,6 +153,10 @@ impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
 
     unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
         unsafe { self.arch.switch(from, to) }
+    }
+
+    unsafe fn enter_user(&self, entry: UserEntry) -> ! {
+        unsafe { self.arch.enter_user(entry) }
     }
 
     fn make_user_address_space(&self) -> Self::AddressSpace {

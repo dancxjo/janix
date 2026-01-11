@@ -125,6 +125,9 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
     }
     
     // 6. Memory Ranges
+    let mut fb_backing_range: Option<ThingId> = None;
+    let fb_phys_start = info.framebuffer.as_ref().map(|fb| fb.addr.saturating_sub(info.hhdm_offset));
+
     for range in info.memory_map {
         let mem = create(kinds::MEM_RANGE);
         set(mem, "start", range.start);
@@ -133,6 +136,15 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(mem, keys::SOURCE, src_boot);
         set(mem, keys::CONFIDENCE, conf_high);
         link(host, rels::HAS_MEMORY_RANGE, mem);
+
+        // Check if this range creates the backing for the framebuffer
+        if let Some(start) = fb_phys_start {
+             // Simple containment check: range.start <= fb_phys && range.end > fb_phys
+             // Note: Framebuffer usually is its own range or part of a larger Reserved/Framebuffer range.
+             if range.start <= start && range.end > start {
+                 fb_backing_range = Some(mem);
+             }
+        }
     }
     
     // 7. Modules
@@ -153,12 +165,22 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
     // 8. Framebuffer
     if let Some(fb) = info.framebuffer.as_ref() {
         let fb_node = create(kinds::DEV_DISPLAY_FRAMEBUFFER);
-        set(fb_node, keys::PHYS_BASE, fb.addr);
+        
+        // Fix: fb.addr is HHDM (virtual). Store as virt_base.
+        // Calculate physical by subtracting HHDM offset.
+        set(fb_node, "virt_base", fb.addr);
+        let phys_base = fb.addr.saturating_sub(info.hhdm_offset);
+        set(fb_node, keys::PHYS_BASE, phys_base);
+
         set(fb_node, "width", fb.width as u64);
         set(fb_node, "height", fb.height as u64);
         set(fb_node, "stride", fb.pitch as u64);
         set(fb_node, "bpp", fb.bpp as u64);
         set(fb_node, keys::SIZE_BYTES, fb.byte_len as u64);
+        
+        if let Some(backing_mem) = fb_backing_range {
+            link(fb_node, rels::BACKED_BY, backing_mem);
+        }
         
         let fmt = match fb.format {
              crate::PixelFormat::Xrgb8888 => 1,

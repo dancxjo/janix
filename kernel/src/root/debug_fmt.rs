@@ -1,8 +1,8 @@
-use core::fmt::{self, Write};
-use abi::kinds::*;
 use super::graph::{Graph, ThingId};
+use abi::kinds::*;
+use abi::names::*;
+use core::fmt::{self, Write};
 
-// Helper buffer for writing without allocation
 pub struct FmtBuffer {
     pub ptr: *mut u8,
     pub len: usize,
@@ -24,65 +24,68 @@ impl Write for FmtBuffer {
     }
 }
 
-pub fn fmt_kind(kind: ThingKind) -> &'static str {
-    match kind {
-        KIND_BYTESPACE_BUFFER => "bytespace",
-        KIND_STREAM_WATCH => "stream.watch",
-        KIND_TEST_NODE => "test.node",
-        _ => "unknown"
-    }
-}
-
-pub fn fmt_rel(rel: RelKey) -> &'static str {
-    match rel {
-        REL_HAS_BUS => "HAS_BUS",
-        REL_HAS_DEVICE => "HAS_DEVICE",
-        REL_HAS_RESOURCE => "HAS_RESOURCE",
-        REL_BINDS => "BINDS",
-        REL_BOUND_TO => "BOUND_TO",
-        REL_PROVIDES => "PROVIDES",
-        REL_EMITS => "EMITS",
-        _ => "REL" // or hex?
-    }
-}
-
 pub fn fmt_thing(graph: &Graph, id: ThingId, w: &mut dyn Write) -> fmt::Result {
-   if let Some(node) = graph.get_kind(id).and_then(|_| graph.nodes.get(&id)) {
-       write!(w, "(t{:x}:", id)?;
-       let kstr = fmt_kind(node.kind);
-       if kstr == "unknown" {
-           write!(w, "{:x} {{ ", node.kind)?;
-       } else {
-           write!(w, "{} {{ ", kstr)?;
-       }
-
-       let mut count = 0;
-       for (k, v) in node.props.iter() {
-           if count > 0 {
+    if let Some(node) = graph.nodes.get(&id) {
+        let kind_str = kind_name(node.kind);
+        
+        if kind_str == "unknown" {
+             write!(w, "(t{:x}:{:x} {{ ", id, node.kind)?;
+        } else {
+             write!(w, "(t{:x}:{} {{ ", id, kind_str)?;
+        }
+        
+        let mut count = 0;
+        for (k, v) in node.props.iter() {
+            if count > 0 {
                 write!(w, ", ")?;
-           }
-           if count >= 8 {
+            }
+            if count >= 8 {
                 write!(w, "...")?;
                 break;
-           }
-           write!(w, "{}: {}", k, v)?;
-           count += 1;
-       }
-       write!(w, " }})")
-   } else {
-       write!(w, "(t{:x}:<enoent>)", id)
-   }
+            }
+            
+            let kname = prop_name(*k);
+            if kname == "p" {
+                 write!(w, "{}: {:x}", k, v)?;
+            } else {
+                 // Try to print value heuristically? No, just hex or dec.
+                 // Assuming dec fits most numbers well, hex for addresses.
+                 // Simple heuristic: if looks like pointer (> 0x100000), print hex.
+                 if *v > 0x10000 {
+                      write!(w, "{}: 0x{:x}", kname, v)?;
+                 } else {
+                      write!(w, "{}: {}", kname, v)?;
+                 }
+            }
+            count += 1;
+        }
+        write!(w, " }})")
+    } else {
+        write!(w, "(t{:x}:?)", id)
+    }
 }
 
 pub fn fmt_edge(graph: &Graph, src: ThingId, rel: RelKey, dst: ThingId, w: &mut dyn Write) -> fmt::Result {
-    fmt_thing(graph, src, w)?;
-    write!(w, "--[:")?;
-    let rstr = fmt_rel(rel);
-    if rstr == "REL" {
-        write!(w, "REL={:x}", rel)?;
+    // (src)--[:REL]->(dst)
+    // Minimally: (t1:Host)--[:RUNS_ON]->(t2:Kernel)
+    // Full: dump src node, rel, dst node? No, verbose.
+    // Format: (tX:Kind)--[:REL_NAME]->(tY:Kind)
+    
+    let get_kind_name = |id: ThingId| -> &'static str {
+        if let Some(n) = graph.nodes.get(&id) {
+            kind_name(n.kind)
+        } else {
+            "?"
+        }
+    };
+
+    let src_kind = get_kind_name(src);
+    let dst_kind = get_kind_name(dst);
+    let rname = rel_name(rel);
+    
+    if rname == "REL_UNKNOWN" {
+         write!(w, "(t{:x}:{})--[:0x{:x}]->(t{:x}:{})", src, src_kind, rel, dst, dst_kind)
     } else {
-        w.write_str(rstr)?;
+         write!(w, "(t{:x}:{})--[:{}]->(t{:x}:{})", src, src_kind, rname, dst, dst_kind)
     }
-    write!(w, "]->")?;
-    fmt_thing(graph, dst, w)
 }

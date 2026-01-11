@@ -28,3 +28,24 @@ pub const REL_HAS_CPU: RelKey = 0x18;
 pub const REL_HAS_MEMORY_RANGE: RelKey = 0x19;
 pub const REL_HAS_MODULE: RelKey = 0x1A;
 pub const REL_LOGS_TO: RelKey = 0x1B;
+
+pub type PropKey = u64;
+
+pub const PROP_DUMMY: PropKey = 0x0;
+pub const PROP_ARCH: PropKey = 0x1;
+pub const PROP_BOOT_ID: PropKey = 0x2;
+pub const PROP_HHDM_OFFSET: PropKey = 0x3;
+pub const PROP_VERSION: PropKey = 0x4;
+pub const PROP_BUILD: PropKey = 0x5;
+pub const PROP_START: PropKey = 0x6;
+pub const PROP_END: PropKey = 0x7;
+pub const PROP_KIND: PropKey = 0x8; // e.g. Memory Kind
+pub const PROP_PHYS_BASE: PropKey = 0x9;
+pub const PROP_SIZE_BYTES: PropKey = 0xA;
+pub const PROP_WIDTH: PropKey = 0xB;
+pub const PROP_HEIGHT: PropKey = 0xC;
+pub const PROP_STRIDE: PropKey = 0xD;
+pub const PROP_FORMAT: PropKey = 0xE;
+pub const PROP_PATH_HASH: PropKey = 0xF; // Hash of path since no string props yet
+pub const PROP_INDEX: PropKey = 0x10;
+pub const PROP_ID: PropKey = 0x11; // CPU ID

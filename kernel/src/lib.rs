@@ -217,10 +217,19 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     crate::task::init::<R>();
     crate::root::init_root_service::<R>();
     // Root Boot Registration
-    crate::root::boot_register::register_all(runtime);
-    crate::root::debug_dump::dump_all_to_console();
 
     // Check for sprout module
+    // Root Boot Registration
+    let boot_info = crate::root::boot_register::BootInfo {
+        cpu_count: runtime.cpu_count(),
+        memory_map: runtime.phys_memory_map(),
+        modules: runtime.modules(),
+        framebuffer: runtime.framebuffer(),
+        hhdm_offset: runtime.phys_to_virt_offset(), // Using offset as proxy
+    };
+    let inventory = crate::root::boot_register::register_all(&boot_info);
+    crate::root::debug_dump::dump_all_to_console();
+    crate::kinfo!("KERNEL: root census complete: host=t{:x} kernel=t{:x} root=t{:x}", inventory.host, inventory.kernel, inventory.root);
     let modules = runtime.modules();
     let sprout = modules.iter().find(|m| m.name.contains("sprout"));
 

@@ -54,7 +54,25 @@ vector_table:
     b unhandled_exception
 
 unhandled_exception:
-    // Just spin for now
+    // Dump x30 (LR) and ESR to see where we came from and why
+    // We can't easily print from ASM without stack setup, but we could try semihosting if we are careful.
+    // Let's just create a stack frame and call a rust helper for panic.
+    
+    // We don't know which SP we are using (SP0 or SPx), so be careful.
+    // If we came from EL1 using SPx, we can push.
+    // If we came from EL0, we are on SPx (EL1 stack).
+    
+    sub sp, sp, #32
+    stp x0, x1, [sp, #0]
+    stp x29, x30, [sp, #16]
+    
+    mrs x0, esr_el1
+    mrs x1, elr_el1
+    
+    // Call rust helper
+    bl unhandled_exception_rust
+    
+    // Spin
     b .
 
 handle_sync_el0:

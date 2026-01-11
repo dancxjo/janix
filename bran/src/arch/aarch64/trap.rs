@@ -10,6 +10,11 @@ pub unsafe extern "C" fn handle_sync_el0_rust(tf: &mut UserTrapFrame, esr: u64) 
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn unhandled_exception_rust(esr: u64, elr: u64) -> ! {
+    panic!("Unhandled Exception (IRQs/Faults): ESR={:#x} ELR={:#x}", esr, elr);
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UserTrapFrame {

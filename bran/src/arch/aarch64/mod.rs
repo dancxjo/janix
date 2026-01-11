@@ -107,7 +107,9 @@ impl ArchRuntime for AArch64Runtime {
         // Or unmasked? "if unstable, start with interrupts masked".
         // Let's use 0x3C0 for now (all masked, EL0t).
         
-        let spsr: u64 = 0x3C0; 
+        // SPSR: M[3:0]=0 (EL0t), F=0, I=0, A=0, D=0 => 0x0
+        // Unmask all interrupts so the timer can preempt the user task.
+        let spsr: u64 = 0; 
 
         unsafe { asm!(
             "msr sp_el0, {sp}",

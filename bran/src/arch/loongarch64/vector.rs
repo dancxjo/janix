@@ -6,7 +6,7 @@ pub unsafe fn init() {
     unsafe extern "C" {
         fn trap_entry();
     }
-    let addr = trap_entry as usize;
+    let addr = trap_entry as *const () as usize;
     // Set EENTRY (CSR 0xC)
     unsafe { asm!("csrwr {}, 0xC", in(reg) addr); }
 }
@@ -16,24 +16,52 @@ global_asm!(r#"
 .global trap_entry
 .balign 4
 trap_entry:
-    // Swap SP with KS0 (CSR 0x30)
-    // KS0 holds kernel stack top (when in user) or 0 (when in kernel)?
-    // Similar to RISC-V sscratch pattern.
-    csrwr $sp, 0x30
+    // Save $t0 to KS1 (SCRATCH 1 - CSR 0x31) temporarily so we can use it
+    csrwr $t0, 0x31
+
+    // Check PRMD (CSR 0x1) to see if we came from User or Kernel
+    csrrd $t0, 0x1
     
-    // SP is now kernel stack. KS0 is user stack.
+    // Extract PPLv (bits 1:0). 3=User, 0=Kernel.
+    andi $t0, $t0, 3
+    
+    // Check if PPLv == 3 (User)
+    // We can't easily branch without clobbering more regs or using tricky logic.
+    // Instead, let's just do a conditional branch.
+    // We need to be careful about what registers we use.
+    // $t0 is dirty (holds PPLv). KS1 holds original $t0.
+    
+    addi.d $t0, $t0, -3
+    bnez $t0, 1f 
+    
+    // -- USER MODE TRAP --
+    // Swap SP with KS0 (User Stack <-> Kernel Stack)
+    // Current SP is User SP. KS0 is Kernel Stack.
+    csrwr $sp, 0x30
+    // Now SP is Kernel Stack.
+    
+    b 2f
+
+1:
+    // -- KERNEL MODE TRAP --
+    // SP is already Kernel Stack. Do nothing.
+
+2:
+    // Restore original $t0 from KS1 to $t0 (for saving)
+    csrrd $t0, 0x31
     
     // Alloc frame
     addi.d $sp, $sp, -288 
-    // Regs: 31*8 = 248.
-    // CSRs: 4*8 = 32.
-    // Total 280 -> 288 aligned.
     
     // Save regs (r1..r31)
     st.d $r1, $sp, 0
-    st.d $r2, $sp, 8  // r2 is tp
-    st.d $r3, $sp, 16 // r3 is sp... wait. User SP is in KS0.
-    // We save KS0 to this slot later.
+    st.d $r2, $sp, 8  
+    
+    // For r3 (SP), we need to save the value it had BEFORE we alloc'd frame.
+    // If from User, that's the User SP (now in KS0).
+    // If from Kernel, that's (current SP + 288).
+    // We'll calculate it and overwrite slot 16 later.
+    
     st.d $r4, $sp, 24
     st.d $r5, $sp, 32
     st.d $r6, $sp, 40
@@ -63,16 +91,30 @@ trap_entry:
     st.d $r30, $sp, 232
     st.d $r31, $sp, 240
     
-    // Save User SP (from KS0)
-    csrrd $t0, 0x30
-    st.d $t0, $sp, 16 // r3 slot (index 2 * 8 = 16)
+    // Handle SP saving
+    // Re-check PRMD
+    csrrd $t0, 0x1
+    andi $t0, $t0, 3
+    addi.d $t0, $t0, -3
+    bnez $t0, 3f
     
+    // User Mode: SP is in KS0
+    csrrd $t0, 0x30
+    st.d $t0, $sp, 16 
+    b 4f
+
+3:
+    // Kernel Mode: SP was `sp + 288`
+    addi.d $t0, $sp, 288
+    st.d $t0, $sp, 16
+
+4:
     // Save CSRs
-    // ERA (0x6) -> PC
+    // ERA (0x6)
     csrrd $t0, 0x6
     st.d $t0, $sp, 248
     
-    // PRMD (0x1) -> Status
+    // PRMD (0x1)
     csrrd $t0, 0x1
     st.d $t0, $sp, 256
     
@@ -88,11 +130,7 @@ trap_entry:
     move $a0, $sp
     bl rust_trap_handler
     
-    // Restore CSRs (PRMD, ERA)
-    // ESTAT is read-only mostly? We don't restore exception status.
-    // BADV neither.
-    // ERA and PRMD matter for return.
-    
+    // Restore CSRs
     ld.d $t0, $sp, 248
     csrwr $t0, 0x6
     
@@ -132,15 +170,28 @@ trap_entry:
     ld.d $r30, $sp, 232
     ld.d $r31, $sp, 240
     
-    // Restore User SP to KS0
+    // Decide if we restore User SP or just dealloc
+    ld.d $t0, $sp, 256 // PRMD
+    andi $t0, $t0, 3 // PPLv
+    addi.d $t0, $t0, -3
+    bnez $t0, 5f
+    
+    // Returning to User:
+    // Restore User SP from slot 16 to KS0
     ld.d $t0, $sp, 16
     csrwr $t0, 0x30
     
     addi.d $sp, $sp, 288
     
-    // Swap SP/KS0
+    // Swap, so $sp becomes User SP, and KS0 becomes Kernel Stack
     csrwr $sp, 0x30
     
+    ertn
+
+5:
+    // Returning to Kernel:
+    // Just dealloc. SP is maintained.
+    addi.d $sp, $sp, 288
     ertn
 "#);
 
@@ -148,7 +199,7 @@ trap_entry:
 pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
     let estat = tf.estat;
     let ecode = (estat >> 16) & 0x3F;
-    let subcode = estat & 0xFFFF; // Subcode not usually used for syscall
+    let _subcode = estat & 0xFFFF; // Subcode not usually used for syscall
     
     if ecode == 0xB { // SYSCALL
         // Syscall num in A7 (R11).

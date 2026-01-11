@@ -32,17 +32,16 @@ pub fn map_page(
     kind: MapKind,
     allocator: &dyn FrameAllocatorHook
 ) -> Result<(), ()> {
-    let mut bits = (1u64 << 0); // V
-    if perms.write { bits |= (1 << 1); } // W
-    bits |= (1 << 2); // D (Dirty)
+    let mut bits = 1u64 << 0; // V (Valid)
+    if perms.write { bits |= 1 << 1; } // D (Dirty/Writable)
     
-    // PLV=3 (User)
-    if perms.user { bits |= (3 << 3); }
+    // PLV (Privilege Level): Kernel=0, User=3
+    if perms.user { bits |= 3 << 2; } // PLV=3 (Set bits 2 and 3)
     
-    // MAT (Memory Access Type): Normal=1, Device=0
-    if kind == MapKind::Normal { bits |= (1 << 5); }
+    // MAT (Memory Access Type): Normal=1 (CC), Device=0 (SU)
+    if kind == MapKind::Normal { bits |= 1 << 4; } // MAT=1 (Coherent Cached)
 
-    if !perms.exec { bits |= (1 << 62); } // NX
+    if !perms.exec { bits |= 1 << 62; } // NX
 
     let root = (aspace.0 + unsafe { HHDM_OFFSET }) as *mut u64;
     let l1 = ensure_table(root, (virt >> 30) & 0x1ff, allocator)?;
@@ -62,11 +61,11 @@ fn ensure_table(parent: *mut u64, index: u64, allocator: &dyn FrameAllocatorHook
         unsafe {
             let virt = phys + HHDM_OFFSET;
             core::ptr::write_bytes(virt as *mut u8, 0, 4096);
-            *parent.add(index as usize) = phys;
+            *parent.add(index as usize) = phys | 1 | (1 << 1) | (1 << 4); // Valid(0) | Dirty(1) | MAT=CC(4)
         }
         Ok((phys + unsafe { HHDM_OFFSET }) as *mut u64)
     } else {
-        Ok((entry + unsafe { HHDM_OFFSET }) as *mut u64)
+        Ok(((entry & !0xFFF) + unsafe { HHDM_OFFSET }) as *mut u64)
     }
 }
 

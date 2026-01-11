@@ -31,7 +31,7 @@ impl ArchRuntime for AArch64Runtime {
 
     fn init(&self, hhdm_offset: u64) { 
         paging::init(hhdm_offset);
-        // vector::init() now called in early_init() before SPx switch
+        unsafe { vector::init(); }
     }
     fn putchar(&self, c: u8) {
         self.serial.putchar(c);
@@ -71,32 +71,11 @@ impl ArchRuntime for AArch64Runtime {
     unsafe fn simd_save(&self, dst: *mut u8) { unsafe { simd::save(dst) } }
     unsafe fn simd_restore(&self, src: *const u8) { unsafe { simd::restore(src) } }
     
+    // early_init: Keep the trait method but don't use it for now
+    // SPx switching causes hangs that need more investigation
     unsafe fn early_init(&self) {
-        // CRITICAL: Initialize VBAR FIRST, before SPx switch
-        // The SPx switch can trigger exceptions, so we need handlers ready
-        unsafe { vector::init(); }
-        
-        // Now switch to EL1h (SPx) mode to prevent SP_EL0 corruption
-        // This must happen very early, before significant stack usage
-        unsafe {
-            asm!(
-                "mrs x9, CurrentEL",      // Read current exception level
-                "and x9, x9, #0xC",       // Mask to get EL bits  
-                "cmp x9, #4",             // Check if EL1 (0x4)
-                "bne 2f",                 // Skip if not EL1
-                
-                "mrs x9, spsel",          // Read current SP select
-                "tbnz x9, #0, 2f",        // Skip if already using SPx
-                
-                // We're in EL1t, switch to EL1h
-                "mov x9, sp",             // Save current SP value
-                "msr sp_el1, x9",         // Set SP_EL1 to current stack
-                "msr spsel, #1",          // Switch to SPx (EL1h)
-                "2:",
-                out("x9") _,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
+        // TODO: EL1h (SPx) mode switch to prevent SP_EL0 corruption
+        // Currently disabled due to boot hangs - needs assembly-level entry point
     }
     
     fn fence_full(&self) {

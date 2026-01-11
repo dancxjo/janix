@@ -86,3 +86,25 @@ macro_rules! kdebug {
         $crate::logging::_log($crate::logging::Level::Debug, format_args!($($arg)*));
     };
 }
+
+
+pub fn _print(args: fmt::Arguments) {
+    unsafe {
+        if let Some(writer) = &mut *core::ptr::addr_of_mut!(WRITER) {
+            let _ = writer.write_fmt(args);
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! kprint {
+    ($($arg:tt)*) => {
+        $crate::logging::_print(format_args!($($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! kprintln {
+    () => ($crate::kprint!("\n"));
+    ($($arg:tt)*) => ($crate::kprint!("{}\n", format_args!($($arg)*)));
+}

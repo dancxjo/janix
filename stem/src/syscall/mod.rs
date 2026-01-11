@@ -48,3 +48,10 @@ pub fn sleep_ms(ms: u64) -> Result<(), Errno> {
     };
     abi::errors::errno(ret).map(|_| ())
 }
+
+pub fn yield_now() -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(SYS_YIELD, 0, 0, 0, 0, 0, 0)
+    };
+    abi::errors::errno(ret).map(|_| ())
+}

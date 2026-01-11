@@ -1,9 +1,12 @@
-use core::arch::global_asm;
+use core::arch::{global_asm, asm};
 use kernel::UserTaskSpec;
 use super::paging::X86_64AddressSpace;
 
 #[derive(Clone, Copy, Default)]
-pub struct X86_64Context(pub [usize; 1]);
+pub struct X86_64Context {
+    pub sp: usize,
+    pub kstack_top: u64,
+}
 
 unsafe extern "C" {
     pub fn context_switch(old: *mut usize, new: *const usize);
@@ -86,7 +89,10 @@ pub fn init_kernel_context(
     push(0); // r14
     push(0); // r15
     
-    X86_64Context([sp as usize])
+    X86_64Context {
+        sp: sp as usize,
+        kstack_top,
+    }
 }
 
 pub fn init_user_context(spec: UserTaskSpec<X86_64AddressSpace>, kstack_top: u64) -> X86_64Context {
@@ -104,11 +110,26 @@ pub fn init_user_context(spec: UserTaskSpec<X86_64AddressSpace>, kstack_top: u64
     push(spec.aspace.0); // r14
     push(spec.arg as u64); // r15
     
-    X86_64Context([sp as usize])
+    X86_64Context {
+        sp: sp as usize,
+        kstack_top,
+    }
 }
 
 pub unsafe fn switch(from: &mut X86_64Context, to: &X86_64Context) {
     unsafe {
-        context_switch(from.0.as_mut_ptr(), to.0.as_ptr());
+        // Update the kernel stack in GS via scratch register
+        // We assume GS base is already pointing to CpuLocal
+        // Offset 8 is kernel_rsp.
+        // But wait, we need to know if GS is active.
+        // Assuming we set up GS in mod.rs init().
+        
+        let kstack = to.kstack_top;
+        // Write to GS:8 (assuming CpuLocal layout: user_rsp: u64, kernel_rsp: u64)
+        // We do this BEFORE switching, because we are in kernel mode.
+        // The NEXT time we enter from user mode (syscall), we want this stack.
+        asm!("mov gs:[8], {}", in(reg) kstack);
+
+        context_switch(&mut from.sp, &to.sp as *const usize);
     }
 }

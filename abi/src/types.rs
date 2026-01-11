@@ -1,25 +1,18 @@
-//! Shared types for system calls.
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct StreamId(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct WatchId(pub u64);
+//! Shared types used in syscall payloads.
+//! Must be #[repr(C)] to ensure stable layout.
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct EventHeader {
-    pub seq: u64,
-    pub kind: u16,
-    pub flags: u16,
-    pub len: u32,
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TimeSpec {
+    pub seconds: u64,
+    pub nanoseconds: u32,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct MouseDelta {
-    pub dx: i32,
-    pub dy: i32,
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StreamStatus {
+    pub readable: bool,
+    pub writable: bool,
+    pub closed: bool,
+    pub error: bool,
 }

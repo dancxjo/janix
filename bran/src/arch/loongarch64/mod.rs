@@ -6,6 +6,7 @@ use crate::runtime::ArchRuntime;
 pub mod task;
 pub mod trap;
 pub mod paging;
+pub mod vector;
 
 pub struct LoongArch64Runtime {
     clamp: MonotonicClamp,
@@ -26,7 +27,10 @@ impl ArchRuntime for LoongArch64Runtime {
     type Context = LoongArch64Context;
     type AddressSpace = LoongArch64AddressSpace;
 
-    fn init(&self, hhdm_offset: u64) { paging::init(hhdm_offset); }
+    fn init(&self, hhdm_offset: u64) { 
+        paging::init(hhdm_offset); 
+        unsafe { vector::init(); }
+    }
     fn putchar(&self, c: u8) {
         unsafe {
              let uart = 0x1fe001e0 as *mut u8;

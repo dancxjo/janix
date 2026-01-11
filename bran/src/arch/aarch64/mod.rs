@@ -7,6 +7,8 @@ pub mod simd;
 pub mod task;
 pub mod trap;
 pub mod paging;
+pub mod syscall;
+pub mod vector;
 
 pub struct AArch64Runtime {
     serial: SerialPort,
@@ -27,7 +29,10 @@ impl ArchRuntime for AArch64Runtime {
     type Context = AArch64Context;
     type AddressSpace = AArch64AddressSpace;
 
-    fn init(&self, hhdm_offset: u64) { paging::init(hhdm_offset); }
+    fn init(&self, hhdm_offset: u64) { 
+        paging::init(hhdm_offset); 
+        unsafe { vector::init(); }
+    }
     fn putchar(&self, c: u8) {
         self.serial.putchar(c);
     }
@@ -104,7 +109,7 @@ impl ArchRuntime for AArch64Runtime {
         
         let spsr: u64 = 0x3C0; 
 
-        asm!(
+        unsafe { asm!(
             "msr sp_el0, {sp}",
             "msr elr_el1, {pc}",
             "msr spsr_el1, {spsr}",
@@ -115,7 +120,7 @@ impl ArchRuntime for AArch64Runtime {
             spsr = in(reg) spsr,
             arg = in(reg) entry.arg0,
             options(noreturn)
-        );
+        ); }
     }
 
     // Paging

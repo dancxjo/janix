@@ -1031,6 +1031,7 @@ dependencies = [
 name = "kernel"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "linked_list_allocator",
  "spin",
 ]

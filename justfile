@@ -77,6 +77,7 @@ die:
     cargo xtask kill
 
 # Build sprout user app (uses build-std for bare metal)
+# Build sprout user app (uses build-std for bare metal)
 sprout arch=karch:
     #!/usr/bin/env bash
     TARGET_ARCH="{{arch}}"
@@ -87,3 +88,28 @@ sprout arch=karch:
     fi
     echo "Building sprout for $TARGET_ARCH using $TARGET_JSON..."
     cargo build -Z build-std=core --target "$TARGET_JSON" -p sprout
+
+# Build rtc_cmos user app
+rtc_cmos arch=karch:
+    #!/usr/bin/env bash
+    TARGET_ARCH="{{arch}}"
+    if [ "$TARGET_ARCH" == "riscv64" ]; then
+        TARGET_JSON="targets/riscv64gc-unknown-thingos.json"
+    else
+        TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
+    fi
+    echo "Building rtc_cmos for $TARGET_ARCH using $TARGET_JSON..."
+    cargo build -Z build-std=core --target "$TARGET_JSON" -p rtc_cmos
+
+# Build clock user app
+clock arch=karch:
+    #!/usr/bin/env bash
+    TARGET_ARCH="{{arch}}"
+    if [ "$TARGET_ARCH" == "riscv64" ]; then
+        TARGET_JSON="targets/riscv64gc-unknown-thingos.json"
+    else
+        TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
+    fi
+    echo "Building clock for $TARGET_ARCH using $TARGET_JSON..."
+    cargo build -Z build-std=core --target "$TARGET_JSON" -p clock
+

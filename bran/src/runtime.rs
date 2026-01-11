@@ -106,6 +106,7 @@ impl LimineRuntimeData {
 impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn putchar(&self, c: u8) { self.arch.putchar(c) }
     fn mono_ticks(&self) -> u64 { self.arch.mono_ticks() }
+    fn mono_freq_hz(&self) -> u64 { self.arch.mono_freq_hz() }
 }
 
 impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
@@ -114,7 +115,6 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
 
     fn halt(&self) -> ! { self.arch.halt() }
 
-    fn mono_freq_hz(&self) -> u64 { self.arch.mono_freq_hz() }
 
     fn simd_init_cpu(&self) { self.arch.simd_init_cpu() }
     fn simd_state_layout(&self) -> (usize, usize) { self.arch.simd_state_layout() }

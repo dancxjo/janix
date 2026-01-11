@@ -7,6 +7,7 @@ pub mod task;
 pub mod trap;
 pub mod paging;
 pub mod simd;
+pub mod syscall;
 
 pub struct X86_64Runtime {
     clamp: MonotonicClamp,
@@ -27,7 +28,10 @@ impl ArchRuntime for X86_64Runtime {
     type Context = X86_64Context;
     type AddressSpace = X86_64AddressSpace;
 
-    fn init(&self, hhdm_offset: u64) { paging::init(hhdm_offset); }
+    fn init(&self, hhdm_offset: u64) { 
+        paging::init(hhdm_offset); 
+        unsafe { syscall::init(); }
+    }
     fn putchar(&self, c: u8) {
         unsafe {
             let port = 0x3f8;

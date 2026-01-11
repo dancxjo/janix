@@ -7,6 +7,8 @@ pub mod memory;
 pub mod time;
 pub mod task;
 pub mod simd;
+pub mod syscall;
+pub mod tests;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PhysRange {
@@ -137,6 +139,7 @@ pub trait BootTasking {
 pub trait BootRuntimeBase: 'static {
     fn putchar(&self, c: u8);
     fn mono_ticks(&self) -> u64;
+    fn mono_freq_hz(&self) -> u64 { 10_000_000 }
 }
 
 pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
@@ -145,7 +148,6 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
 
     fn halt(&self) -> !;
 
-    fn mono_freq_hz(&self) -> u64 { 10_000_000 }
 
     fn threads_supported(&self) -> bool { false }
     fn simd_init_cpu(&self) {}
@@ -247,3 +249,4 @@ extern "C" fn thread_b(arg: usize) -> ! {
         unsafe { crate::task::scheduler::yield_now_current(); }
     }
 }
+pub fn run_fairness_test<R: BootRuntime>() { tests::fairness::run::<R>(); }

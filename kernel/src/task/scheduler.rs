@@ -6,11 +6,23 @@ use crate::BootRuntime;
 use crate::BootTasking;
 use crate::task::{Task, TaskId, TaskState};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScheduleReason {
+    CooperativeYield,
+    SleepWait,
+    SyscallBlock,
+    PreemptTick,      // future
+    IoWait,           // future
+}
+
 pub struct Scheduler<R: BootRuntime> {
     tasks: Vec<Task<R>>,
     runq: VecDeque<TaskId>,
     current: Option<TaskId>,
     next_id: TaskId,
+    // Per-CPU state (conceptually, attached to this scheduler instance for v0 single-core)
+    preempt_disable_depth: u32,
+    need_resched: bool,
 }
 
 impl<R: BootRuntime> Scheduler<R> {
@@ -20,6 +32,8 @@ impl<R: BootRuntime> Scheduler<R> {
             runq: VecDeque::new(),
             current: None,
             next_id: 0,
+            preempt_disable_depth: 0,
+            need_resched: false,
         }
     }
 
@@ -79,6 +93,38 @@ impl<R: BootRuntime> Scheduler<R> {
         self.tasks.push(task);
         self.runq.push_back(id);
         id
+    }
+    
+    pub fn schedule_point(&mut self, reason: ScheduleReason) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
+        match reason {
+            ScheduleReason::PreemptTick => {
+                if self.preempt_disable_depth > 0 {
+                    self.need_resched = true;
+                    return None;
+                }
+            }
+            _ => {}
+        }
+
+        // If we are here, we are scheduling.
+        self.prepare_yield()
+    }
+
+    pub fn preempt_disable(&mut self) {
+        self.preempt_disable_depth += 1;
+    }
+
+    pub fn preempt_enable(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
+        if self.preempt_disable_depth > 0 {
+            self.preempt_disable_depth -= 1;
+        }
+        
+        if self.preempt_disable_depth == 0 && self.need_resched {
+            self.need_resched = false;
+            // Trigger deferred preemption
+            return self.schedule_point(ScheduleReason::PreemptTick);
+        }
+        None
     }
 
     pub fn prepare_yield(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context)> {
@@ -164,7 +210,7 @@ pub fn yield_now<R: BootRuntime>() {
         let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        sched.prepare_yield()
+        sched.schedule_point(ScheduleReason::CooperativeYield)
     };
     
     if let Some((old_ctx, new_ctx)) = switch_params {
@@ -174,6 +220,42 @@ pub fn yield_now<R: BootRuntime>() {
     }
     
     rt.irq_restore(irq);
+}
+
+pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
+    let rt = crate::runtime::<R>();
+    loop {
+        let now = rt.mono_ticks();
+        if now >= deadline_ticks {
+            break;
+        }
+        
+        let switch_params = {
+             let lock = SCHEDULER.lock();
+             let ptr = lock.expect("Scheduler not initialized");
+             let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+             sched.schedule_point(ScheduleReason::SleepWait)
+        };
+        
+        if let Some((old_ctx, new_ctx)) = switch_params {
+             unsafe {
+                 let irq = rt.irq_disable();
+                 rt.tasking().switch(&mut *old_ctx, &*new_ctx);
+                 rt.irq_restore(irq);
+             }
+        } else {
+             // No switch occurred, spin briefly
+             core::hint::spin_loop();
+        }
+    }
+}
+
+pub fn sleep_ms<R: BootRuntime>(ms: u64) {
+    let rt = crate::runtime::<R>();
+    let freq = rt.mono_freq_hz();
+    let ticks = (ms * freq) / 1000;
+    let deadline = rt.mono_ticks() + ticks;
+    sleep_until::<R>(deadline);
 }
 
 pub unsafe fn yield_now_current() {

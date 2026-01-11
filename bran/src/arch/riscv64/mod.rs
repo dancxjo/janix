@@ -7,6 +7,7 @@ pub mod serial;
 pub mod task;
 pub mod trap;
 pub mod paging;
+pub mod vector;
 
 pub struct RISCV64Runtime {
     serial: serial::SerialPort,
@@ -29,7 +30,10 @@ impl ArchRuntime for RISCV64Runtime {
     type Context = RISCV64Context;
     type AddressSpace = RISCV64AddressSpace;
 
-    fn init(&self, hhdm_offset: u64) { paging::init(hhdm_offset); }
+    fn init(&self, hhdm_offset: u64) { 
+        paging::init(hhdm_offset); 
+        unsafe { vector::init(); }
+    }
     fn putchar(&self, c: u8) { self.serial.putchar(c); }
     fn halt(&self) -> ! { hcf() }
 

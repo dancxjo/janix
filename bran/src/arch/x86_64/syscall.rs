@@ -1,6 +1,5 @@
 use core::arch::{asm, global_asm};
-use kernel::syscall::dispatch;
-use super::trap::UserTrapFrame;
+
 
 // MSR Constants
 const MSR_EFER: u32 = 0xC0000080;

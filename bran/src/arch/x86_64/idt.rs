@@ -54,6 +54,7 @@ unsafe extern "C" {
 }
 
 core::arch::global_asm!(r#"
+    .att_syntax
     .global breakpoint_handler_shim
     breakpoint_handler_shim:
         int3
@@ -62,17 +63,65 @@ core::arch::global_asm!(r#"
     .global gp_handler_shim
     gp_handler_shim:
         cli
+        mov $0x3f8, %dx
+        mov $0x47, %al
+        out %al, %dx
     2:  hlt
         jmp 2b
 
     .global pf_handler_shim
     pf_handler_shim:
         cli
-    2:  hlt
-        jmp 2b
+        // Read CR2 (Fault Address)
+        mov %cr2, %rax
+        
+        // Check Code (0x200000)
+        mov $0x200000, %rbx
+        // Mask offset to check page
+        and $0xFFFFFFFFFFFFF000, %rax
+        cmp %rbx, %rax
+        je 1f // Code
+
+        // Check Stack (0x3FF000 - mapped page for 0x400000 SP)
+        mov $0x3FF000, %rbx
+        cmp %rbx, %rax
+        je 2f // Stack
+        
+        // Other
+        mov $0x4F, %al // 'O'
+        jmp 3f
+
+    1: // Code
+        mov $0x43, %al // 'C'
+        jmp 3f
+    2: // Stack
+        mov $0x53, %al // 'S'
+        jmp 3f
+    
+    3:
+        mov $0x3f8, %dx
+        out %al, %dx
+
+        // Check Error Code (Top of stack) for Present Bit (Bit 0)
+        mov (%rsp), %bl
+        test $1, %bl
+        jnz 4f // Present -> Protection Violation
+        
+        mov $0x4E, %al // 'N' (Not Present)
+        jmp 5f
+    4:
+        mov $0x50, %al // 'P' (Protection)
+    5:
+        out %al, %dx
+        
+    6:  hlt
+        jmp 6b
 
     .global generic_handler_shim
     generic_handler_shim:
+        mov $0x3f8, %dx
+        mov $0x3F, %al
+        out %al, %dx
     2:  hlt
         jmp 2b
 "#);

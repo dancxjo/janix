@@ -25,7 +25,8 @@ impl X86_64Runtime {
     fn map_user_entry(&self, entry: &UserEntry) -> Result<(), ()> {
         let page_mask = !(0xFFF_u64);
         let code_base = (entry.entry_pc as u64) & page_mask;
-        let stack_base = (entry.user_sp as u64) & page_mask;
+        // Stack grows down, so mapped page is below SP
+        let stack_base = ((entry.user_sp as u64).saturating_sub(8)) & page_mask;
         
         let aspace = self.active_address_space();
 

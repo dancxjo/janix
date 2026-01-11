@@ -5,24 +5,22 @@ use core::arch::asm;
 /// This enables SSE by setting CR0.MP, CR4.OSFXSR, and CR4.OSXMMEXCPT,
 /// and clearing CR0.EM.
 pub fn init_cpu() {
-    unsafe {
-        // CR0: Clear EM (bit 2), Set MP (bit 1)
-        // EM = Emulation (if set, FPU instructions trap) - we want it clear
-        // MP = Monitor Co-processor (controls WAIT/FWAIT interaction with TS flag)
-        let mut cr0: u64;
-        unsafe { asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags)) };
-        cr0 &= !(1 << 2); 
-        cr0 |= 1 << 1;
-        unsafe { asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags)) };
+    // CR0: Clear EM (bit 2), Set MP (bit 1)
+    // EM = Emulation (if set, FPU instructions trap) - we want it clear
+    // MP = Monitor Co-processor (controls WAIT/FWAIT interaction with TS flag)
+    let mut cr0: u64;
+    unsafe { asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags)) };
+    cr0 &= !(1 << 2); 
+    cr0 |= 1 << 1;
+    unsafe { asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags)) };
 
-        // CR4: Set OSFXSR (bit 9) and OSXMMEXCPT (bit 10)
-        // OSFXSR = Enable SSE support (FXSAVE/FXRSTOR)
-        // OSXMMEXCPT = Enable unmasked SSE exceptions
-        let mut cr4: u64;
-        unsafe { asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags)) };
-        cr4 |= (1 << 9) | (1 << 10);
-        unsafe { asm!("mov cr4, {}", in(reg) cr4, options(nomem, nostack, preserves_flags)) };
-    }
+    // CR4: Set OSFXSR (bit 9) and OSXMMEXCPT (bit 10)
+    // OSFXSR = Enable SSE support (FXSAVE/FXRSTOR)
+    // OSXMMEXCPT = Enable unmasked SSE exceptions
+    let mut cr4: u64;
+    unsafe { asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags)) };
+    cr4 |= (1 << 9) | (1 << 10);
+    unsafe { asm!("mov cr4, {}", in(reg) cr4, options(nomem, nostack, preserves_flags)) };
 }
 
 /// FXSAVE area size is 512 bytes, 16-byte aligned.

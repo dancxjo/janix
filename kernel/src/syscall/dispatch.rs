@@ -13,7 +13,7 @@ use super::handlers;
 pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
      // Log trace (optional, maybe behind feature flag or debug level)
     let syscall_id = n as u32;
-    // crate::kinfo!("Syscall: {}", syscall_id); // noisy
+    crate::kinfo!("Syscall: {}", syscall_id); // noisy
 
     let result = match syscall_id {
         SYS_EXIT => handlers::sys_exit(args[0] as i32),

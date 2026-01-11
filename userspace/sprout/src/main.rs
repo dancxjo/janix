@@ -1,8 +1,10 @@
 #![no_std]
 #![no_main]
 
-use stem::syscall::{debug_write, sleep_ms, exit};
+use stem::syscall::exit;
 use stem::kprintln;
+use stem::{sleep, yield_now};
+use core::time::Duration;
 
 #[no_mangle]
 #[repr(C)]
@@ -42,6 +44,8 @@ pub fn main(arg: usize) -> i32 {
     }
 
     loop { 
-        unsafe { stem::syscall::yield_now(); }
+        // Supervisor loop
+        yield_now();
+        sleep(Duration::from_millis(100));
     }
 }

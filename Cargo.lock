@@ -255,6 +255,7 @@ dependencies = [
 name = "bran"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "embedded-graphics",
  "kernel",
  "limine",
@@ -383,6 +384,13 @@ name = "clap_lex"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
+
+[[package]]
+name = "clock"
+version = "0.1.0"
+dependencies = [
+ "stem",
+]
 
 [[package]]
 name = "color_quant"
@@ -1633,6 +1641,13 @@ name = "rgb"
 version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
+
+[[package]]
+name = "rtc_cmos"
+version = "0.1.0"
+dependencies = [
+ "stem",
+]
 
 [[package]]
 name = "rustix"

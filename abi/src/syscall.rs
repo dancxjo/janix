@@ -11,6 +11,11 @@ pub const SYS_YIELD: u32 = 5;
 pub const SYS_SPAWN_THREAD: u32 = 6;
 
 pub const SYS_SPAWN_PROCESS: u32 = 7;
+pub const SYS_TIME_MONOTONIC: u32 = 8;
+pub const SYS_RTC_READ: u32 = 9;
+pub const SYS_SLEEP_NS: u32 = 10;
+pub const SYS_LOG_WRITE: u32 = 11;
+pub const SYS_GET_TID: u32 = 12;
 
 // Time/Sched (64-127) - Reserved
 // pub const SYS_TIME_NOW: u32 = 64;

@@ -23,20 +23,20 @@ extern "C" fn _start() -> ! {
     // Become Thread A (this _start function)
     for i in 0..10 {
         kprintln!("A: tick {}", i);
-        let _ = yield_now();
-        let _ = sleep_ms(200);
+        yield_now();
+        sleep_ms(200);
     }
-    loop { yield_now().ok(); }
+    loop { yield_now(); }
 }
 
 #[no_mangle]
 extern "C" fn thread_b() -> ! {
     for i in 0..10 {
         kprintln!("B: tick {}", i);
-        let _ = yield_now();
-        let _ = sleep_ms(200);
+        yield_now();
+        sleep_ms(200);
     }
-    loop { yield_now().ok(); }
+    loop { yield_now(); }
 }
 
 // Stack for Thread B

@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 limine = "0.5"
 kernel = { path = "../kernel" }
+abi = { path = "../abi" }
 embedded-graphics = "0.8.1"

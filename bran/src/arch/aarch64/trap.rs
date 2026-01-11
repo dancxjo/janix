@@ -1,3 +1,15 @@
+use super::syscall::handle_syscall;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn handle_sync_el0_rust(tf: &mut UserTrapFrame, esr: u64) {
+    let ec = (esr >> 26) & 0x3f;
+    if ec == 0x15 {
+        handle_syscall(tf);
+    } else {
+        panic!("Unhandled Sync EL0 Exception. ESR={:#x} EC={:#x}", esr, ec);
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UserTrapFrame {

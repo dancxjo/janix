@@ -20,6 +20,8 @@ static mut YIELD_HOOK: Option<unsafe fn()> = None;
 static mut EXIT_HOOK: Option<unsafe fn(i32)> = None;
 static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize) -> TaskId> = None;
 static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str) -> Option<TaskId>> = None;
+static mut CURRENT_TID_HOOK: Option<unsafe fn() -> u64> = None;
+
 
 pub struct Scheduler<R: BootRuntime> {
     tasks: Vec<Task<R>>,
@@ -303,6 +305,7 @@ pub fn init<R: BootRuntime>() {
             EXIT_HOOK = Some(exit::<R>);
             SPAWN_USER_HOOK = Some(spawn_user_thread::<R>);
             SPAWN_PROCESS_HOOK = Some(spawn_process::<R>);
+            CURRENT_TID_HOOK = Some(current_tid::<R>);
         }
         crate::kinfo!("  Scheduler initialized");
     }
@@ -435,6 +438,27 @@ pub unsafe fn yield_now_current() {
         }
     }
 }
+
+pub unsafe fn current_tid_current() -> u64 {
+    unsafe {
+        if let Some(hook) = CURRENT_TID_HOOK {
+            hook()
+        } else {
+            0
+        }
+    }
+}
+
+pub fn current_tid<R: BootRuntime>() -> u64 {
+    let lock = SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &*(ptr as *const Scheduler<R>) };
+        sched.current_id().unwrap_or(0)
+    } else {
+        0
+    }
+}
+
 
 pub fn exit<R: BootRuntime>(code: i32) {
     let rt = crate::runtime::<R>();

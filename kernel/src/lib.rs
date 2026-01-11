@@ -140,6 +140,7 @@ pub trait BootRuntimeBase: 'static {
     fn putchar(&self, c: u8);
     fn mono_ticks(&self) -> u64;
     fn mono_freq_hz(&self) -> u64 { 10_000_000 }
+    fn read_rtc(&self) -> Option<abi::device::RtcTime> { None }
 }
 
 pub trait BootRuntime: BootRuntimeBase + Sized + 'static {

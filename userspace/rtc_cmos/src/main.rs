@@ -2,15 +2,16 @@
 #![no_main]
 
 use stem::kprintln;
-use stem::device::rtc_read_time;
-use stem::syscall::sleep_ms;
+use stem::rtc_time;
+use stem::sleep;
+use core::time::Duration;
 
 #[no_mangle]
-pub fn main() -> i32 {
-    kprintln!("RTC CMOS Driver v0");
+pub fn main(_arg: usize) -> i32 {
+    kprintln!("RTC: Driver starting");
     
     loop {
-        match rtc_read_time() {
+        match rtc_time() {
             Ok(time) => {
                  kprintln!(
                      "RTC: {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
@@ -18,10 +19,8 @@ pub fn main() -> i32 {
                      time.hour, time.minute, time.second
                  );
             }
-            Err(e) => {
-                kprintln!("RTC Error: {:?}", e);
-            }
+            Err(e) => kprintln!("RTC: Read failed {:?}", e),
         }
-        let _ = sleep_ms(1000);
+        sleep(Duration::from_secs(5));
     }
 }

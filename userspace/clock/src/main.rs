@@ -2,26 +2,22 @@
 #![no_main]
 
 use stem::kprintln;
-use stem::device::rtc_read_time;
-use stem::syscall::sleep_ms;
+use stem::rtc_time;
+use stem::sleep;
+use core::time::Duration;
 
 #[no_mangle]
-pub fn main() -> i32 {
-    kprintln!("Clock App v0");
-    let mut ticks = 0;
+pub fn main(_arg: usize) -> i32 {
+    kprintln!("CLOCK: starting");
+    
     loop {
-        if let Ok(time) = rtc_read_time() {
-             // kprintln!("\x1b[2J\x1b[H"); // clear screen
+        sleep(Duration::from_secs(3));
+        if let Ok(time) = rtc_time() {
              kprintln!(
-                 "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                 "CLOCK: {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
                  time.year, time.month, time.day,
                  time.hour, time.minute, time.second
              );
-        } else {
-             // Fallback
-             kprintln!("Tick: {}", ticks);
-             ticks += 1;
         }
-        let _ = sleep_ms(1000);
     }
 }

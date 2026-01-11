@@ -48,6 +48,30 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
 
     sh.copy_file(&demo_bin, "iso_root/boot/threads")?;
 
+    // Build and copy rtc_cmos
+    println!("Building rtc_cmos for {}...", arch);
+    cmd!(sh, "cargo build --target {target} --profile release -p rtc_cmos")
+        .env("RUSTFLAGS", "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort")
+        .run()?;
+    
+    let rtc_elf = format!("target/{}/release/rtc_cmos", target);
+    let rtc_bin = format!("target/{}/release/rtc_cmos.bin", target);
+    cmd!(sh, "llvm-objcopy -O binary {rtc_elf} {rtc_bin}").run()?;
+
+    sh.copy_file(&rtc_bin, "iso_root/boot/rtc_cmos")?;
+
+    // Build and copy clock
+    println!("Building clock for {}...", arch);
+    cmd!(sh, "cargo build --target {target} --profile release -p clock")
+        .env("RUSTFLAGS", "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort")
+        .run()?;
+    
+    let clock_elf = format!("target/{}/release/clock", target);
+    let clock_bin = format!("target/{}/release/clock.bin", target);
+    cmd!(sh, "llvm-objcopy -O binary {clock_elf} {clock_bin}").run()?;
+
+    sh.copy_file(&clock_bin, "iso_root/boot/clock")?;
+
     // Copy limine config
     sh.copy_file("limine.conf", "iso_root/boot/limine/limine.conf")?;
 

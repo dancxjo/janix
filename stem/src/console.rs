@@ -1,11 +1,11 @@
 use core::fmt;
-use crate::syscall::debug_write;
+use crate::syscall::log_write;
 
 pub struct Console;
 
 impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        let _ = debug_write(s.as_bytes());
+        let _ = log_write(s);
         Ok(())
     }
 }

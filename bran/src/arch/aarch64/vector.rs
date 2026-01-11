@@ -99,9 +99,11 @@ handle_sync_el0:
     mrs x11, spsr_el1
     str x11, [sp, #264]
     
-    // Call handler(tf: *mut UserTrapFrame)
+    // Read ESR to decide what kind of sync we took
+    mrs x1, esr_el1
+    // Call handler(tf: *mut UserTrapFrame, esr: u64)
     mov x0, sp
-    bl handle_syscall
+    bl handle_sync_el0_rust
     
     // Restore SPSR_EL1
     ldr x11, [sp, #264]

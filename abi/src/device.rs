@@ -34,4 +34,6 @@ pub struct RtcTime {
     pub hour: u8,    // 0-23
     pub minute: u8,  // 0-59
     pub second: u8,  // 0-59
+    pub weekday: u8, // 0-6
+    pub flags: u8,   // Status flags
 }

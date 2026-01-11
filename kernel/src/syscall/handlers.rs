@@ -1,6 +1,6 @@
 use abi::errors::{Errno, SysResult};
 use abi::device::{DeviceCall, DeviceKind};
-use super::validate::{validate_user_range, copyin};
+use super::validate::{validate_user_range, copyin, copyout};
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
     crate::kprintln!("SYSCALL EXIT: code={}", code);
@@ -170,4 +170,52 @@ pub fn sys_spawn_process(name_ptr: usize, name_len: usize) -> SysResult<usize> {
         // For now we don't distinguish from None.
         Err(Errno::ENOENT)
     }
+}
+
+pub fn sys_time_monotonic_ns() -> SysResult<usize> {
+    let rt = crate::runtime_base();
+    let ticks = rt.mono_ticks();
+    let freq = rt.mono_freq_hz();
+    // Use u128 to prevent overflow before division
+    let ns = (ticks as u128 * 1_000_000_000) / (freq as u128);
+    // Cast to usize (u64). Safe for next 292 years from boot.
+    Ok(ns as usize)
+}
+
+pub fn sys_rtc_read(out_ptr: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, core::mem::size_of::<abi::device::RtcTime>(), true)?;
+    let rt = crate::runtime_base();
+    if let Some(time) = rt.read_rtc() {
+         let src = unsafe { 
+             core::slice::from_raw_parts(
+                 &time as *const _ as *const u8, 
+                 core::mem::size_of::<abi::device::RtcTime>()
+             ) 
+         };
+         unsafe { copyout(out_ptr, src)?; }
+         Ok(0)
+    } else {
+         Err(Errno::ENODEV)
+    }
+}
+
+pub fn sys_sleep_ns(ns: u64) -> SysResult<usize> {
+    let rt = crate::runtime_base();
+    let freq = rt.mono_freq_hz();
+    let ticks = (ns as u128 * freq as u128) / 1_000_000_000;
+    
+    let start = rt.mono_ticks();
+    let deadline = start + ticks as u64;
+    
+    loop {
+         let now = rt.mono_ticks();
+         if now >= deadline { break; }
+         unsafe { crate::task::scheduler::yield_now_current(); }
+    }
+    
+    Ok(0)
+}
+
+pub fn sys_get_tid() -> SysResult<usize> {
+    unsafe { Ok(crate::task::scheduler::current_tid_current() as usize) }
 }

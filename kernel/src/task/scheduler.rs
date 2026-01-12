@@ -33,6 +33,15 @@ pub struct Scheduler<R: BootRuntime> {
     preempt_disable_depth: u32,
     need_resched: bool,
     idle_task: Option<TaskId>,
+    metrics: SchedMetrics,
+}
+
+pub struct SchedMetrics {
+    pub yields: u64,
+    pub pops: u64,
+    pub pushes: u64,
+    pub idle_picks: u64,
+    pub last_flush: u64,
 }
 
 impl<R: BootRuntime> Scheduler<R> {
@@ -45,6 +54,7 @@ impl<R: BootRuntime> Scheduler<R> {
             preempt_disable_depth: 0,
             need_resched: false,
             idle_task: None,
+            metrics: SchedMetrics { yields: 0, pops: 0, pushes: 0, idle_picks: 0, last_flush: 0 },
         }
     }
 
@@ -207,6 +217,41 @@ impl<R: BootRuntime> Scheduler<R> {
         self.preempt_disable_depth += 1;
     }
 
+    fn flush_metrics_if_needed(&mut self) {
+        let rt = crate::runtime::<R>();
+        let now = rt.mono_ticks();
+        let limit = rt.mono_freq_hz() * 2; // 2 seconds log window
+
+        // Initialize if 0
+        if self.metrics.last_flush == 0 {
+            self.metrics.last_flush = now;
+            return;
+        }
+
+        if now - self.metrics.last_flush > limit {
+             crate::log_event!(
+                crate::logging::LogLevel::Info,
+                "sched.activity",
+                "Scheduler Activity Rollup",
+                {
+                    yields: self.metrics.yields,
+                    pops: self.metrics.pops,
+                    pushes: self.metrics.pushes,
+                    idle_picks: self.metrics.idle_picks,
+                    runq_len: self.runq.len() as u64
+                },
+                about=[]
+             );
+             
+             // Reset
+             self.metrics.yields = 0;
+             self.metrics.pops = 0;
+             self.metrics.pushes = 0;
+             self.metrics.idle_picks = 0;
+             self.metrics.last_flush = now;
+        }
+    }
+
     pub fn preempt_enable(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace)> {
         if self.preempt_disable_depth > 0 {
             self.preempt_disable_depth -= 1;
@@ -223,36 +268,37 @@ impl<R: BootRuntime> Scheduler<R> {
     pub fn prepare_yield(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace)> {
         let current_id = self.current?;
         
+        self.metrics.yields += 1;
+
         // Re-add current task to run queue, unless it is the idle task
         if Some(current_id) != self.idle_task {
              self.runq.push_back(current_id);
-             crate::kinfo!("Sched: Yield T{}. Pushed back. Runq len={}", current_id, self.runq.len());
-        } else {
-             crate::kinfo!("Sched: Yield T{}. Idle task (not pushed).", current_id);
+             self.metrics.pushes += 1;
         }
         
         self.prepare_schedule()
     }
 
     fn prepare_schedule(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace)> {
+        self.flush_metrics_if_needed();
+
         let next_id = match self.runq.pop_front() {
             Some(id) => {
-                crate::kinfo!("Sched: Pop T{}. Runq remaining={}", id, self.runq.len());
+                self.metrics.pops += 1;
                 id
             },
             None => {
                 // If runq is empty, run idle task if available
                 if let Some(idle) = self.idle_task {
-                    // Only if we aren't already running it? 
-                    // prepare_schedule handles next_id == current_id optimization below.
-                    crate::kinfo!("Sched: Runq empty. Picking Idle T{}", idle);
+                    self.metrics.idle_picks += 1;
                     idle
                 } else {
-                    crate::kinfo!("Sched: Runq empty. No idle task. Returning None.");
                     return None;
                 }
             }
         };
+
+        // Self-link optimization handled below
 
         let current_id = self.current.expect("prepare_schedule called without current task");
 
@@ -375,16 +421,16 @@ pub unsafe fn task_status_current(id: TaskId) -> Option<(TaskState, Option<i32>)
 pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<TaskId> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
-    crate::kinfo!("Spawn request: '{}' arg={:x}", name, arg);
+    // crate::kinfo!("Spawn request: '{}' arg={:x}", name, arg);
     let module = modules.iter().find(|m| {
         if m.name.contains(name) {
-            crate::kinfo!("  Match candidate: '{}' @ {:x}", m.name, m.phys_start);
+            // crate::kinfo!("  Match candidate: '{}' @ {:x}", m.name, m.phys_start);
             true
         } else {
             false
         }
     })?;
-    crate::kinfo!("Loading module: '{}' from {:x}", module.name, module.phys_start);
+    // crate::kinfo!("Loading module: '{}' from {:x}", module.name, module.phys_start);
     
     let aspace = rt.tasking().make_user_address_space();
     

@@ -12,22 +12,45 @@ pub fn sys_exit(code: i32) -> SysResult<usize> {
     Ok(0)
 }
 
-pub fn sys_debug_write(ptr: usize, len: usize) -> SysResult<usize> {
+pub fn sys_log_write(ptr: usize, len: usize) -> SysResult<usize> {
     let _ = validate_user_range(ptr, len, false)?;
-    if len > 1024 { return Err(Errno::EINVAL); }
-    let mut buf = [0u8; 128];
-    let mut offset = 0;
-    while offset < len {
-        let chunk_len = core::cmp::min(len - offset, buf.len());
-        unsafe { copyin(&mut buf[..chunk_len], ptr + offset)?; }
-        if let Ok(s) = core::str::from_utf8(&buf[..chunk_len]) {
-             crate::kprint!("{}", s);
-        } else {
-             crate::kprint!("<invalid utf8>");
-        }
-        offset += chunk_len;
+    if len > 2048 { return Err(Errno::EINVAL); }
+    
+    // We want to log the whole message as one event if possible.
+    // Allocate a vector? Or use a fixed stack buffer.
+    // 256 is too small for some logs. Let's try 512.
+    // If message is longer, we might split it or truncate.
+    // Given we are in kernel, stack is limited.
+    // Let's alloc a vec since we are in a syscall handler (interrupts enabled? yes, usually).
+    // Syscalls run in kernel task context.
+    
+    let mut buf = alloc::vec![0u8; len];
+    unsafe { copyin(&mut buf[..len], ptr)?; }
+    
+    match core::str::from_utf8(&buf) {
+        Ok(s) => {
+            let s_trimmed = s.trim_end();
+             crate::logging::_log_event(
+                crate::logging::LogMetadata {
+                    level: crate::logging::LogLevel::Info,
+                    file: "userspace",
+                    line: 0,
+                    module: "user",
+                },
+                "user.print",
+                format_args!("{}", s_trimmed),
+                &[], // no extra fields
+                &[]  // no about edges
+            );
+        },
+        Err(_) => return Err(Errno::EINVAL),
     }
+
     Ok(len)
+}
+
+pub fn sys_debug_write(ptr: usize, len: usize) -> SysResult<usize> {
+    sys_log_write(ptr, len)
 }
 
 pub fn sys_yield() -> SysResult<usize> {
@@ -464,7 +487,7 @@ pub fn sys_root_prop_get(id: usize, ptr: usize, _reserved: usize) -> SysResult<u
 }
 
 pub fn sys_root_find(ptr_kind: usize, ptr_buf: usize, len: usize) -> SysResult<usize> {
-    // crate::kinfo!("SYSCALL: sys_root_find ptr_kind={:x}", ptr_kind);
+    // crate::kinfo!("SYSCALL: sys_root_find ptr_kind={:x} ptr_buf={:x} len={:x}", ptr_kind, ptr_buf, len);
     let sym = read_symbol(ptr_kind)?;
     // crate::kinfo!("SYSCALL: sys_root_find sym={:?}", sym);
     

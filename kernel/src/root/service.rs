@@ -268,10 +268,10 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
             }
         },
         RootOp::DescribeThing { id, buffer, len } => {
-             crate::kinfo!("ROOT: Handling DescribeThing id={}", id);
+             // crate::kinfo!("ROOT: Handling DescribeThing id={}", id);
              let mut fmt = FmtBuffer { ptr: buffer as *mut u8, len: len as usize, pos: 0 };
              let res = super::debug_fmt::fmt_thing(graph, interner, id, &mut fmt);
-             crate::kinfo!("ROOT: fmt_thing res={:?}", res);
+             // crate::kinfo!("ROOT: fmt_thing res={:?}", res);
              if res.is_ok() {
                   (0, fmt.pos as u64)
              } else {
@@ -314,8 +314,6 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
         RootOp::DumpGraph { limit } => {
              crate::kinfo!("ROOT DUMP NODES");
              let mut count = 0;
-             
-             // Stream nodes directly from BTreeMap (already sorted by ThingId)
              for (id, _) in &graph.nodes {
                  if count >= limit { 
                      crate::kinfo!("... truncated ...");
@@ -332,8 +330,6 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
              
              crate::kinfo!("ROOT DUMP EDGES");
              count = 0;
-             
-             // Stream edges: Nodes sorted by ID + Edges in insertion order = Stable Enough
              'outer: for (src, node) in &graph.nodes {
                  for (rel, dst) in &node.edges {
                       if count >= limit { 
@@ -352,10 +348,69 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
 
              (0, 0)
         },
+        RootOp::LogEvent { level, event, message, timestamp, provenance, fields, about } => {
+             // 1. Create log.Entry
+             let kind_id = interner.intern("log.Entry");
+             let entry_id = graph.alloc(kind_id);
+             
+             // 2. Props: standard
+             let p_level = interner.intern("level");
+             let p_line = interner.intern("line");
+             let p_ts = interner.intern("timestamp");
+             let p_msg = interner.intern("message");
+             let p_evt = interner.intern("event");
+
+             let event_id = resolve_shell(event, interner);
+             let msg_id = interner.intern(&message);
+
+             if let Some(node) = graph.get_node_mut(entry_id) {
+                 node.props.insert(p_level, level as u64);
+                 node.props.insert(p_line, provenance.line as u64);
+                 node.props.insert(p_ts, timestamp);
+                 node.props.insert(p_msg, msg_id as u64);
+                 node.props.insert(p_evt, event_id as u64);
+                 
+                 // 3. Props: fields
+                 for (key_shell, val) in fields {
+                     let kid = resolve_shell(key_shell, interner);
+                     node.props.insert(kid, val);
+                 }
+             }
+             
+             // 4. Edges: ABOUT (Subject)
+             let r_about = interner.intern("ABOUT");
+             for subject_id in about {
+                 graph.link(entry_id, r_about, subject_id);
+             }
+             
+             // 5. Edges: EMITTED_BY (Provenance)
+             // We don't have Task Things yet, but if we did, we'd link them.
+             // If we have a file/module, we could link to src.File/src.Module if they existed?
+             // Since this is v0, let's just create nodes for them if needed, or stick to props.
+             // The prompt asked for EMITTED_BY -> proc/thread/task when known.
+             // We have Loop of Truth: Log -> Task -> Log ...
+             // Let's defer creating Task Nodes in handler for now to avoid congestion/recursion risk?
+             // Actually, if we have tasks as things in graph, we link. If not, we skip.
+             // We don't have task things in Root graph yet (System Census not fully done).
+             // But we have .
+             // Let's just set provenance props for now as string refs.
+             let p_file = interner.intern("file");
+             let p_module = interner.intern("module");
+             let p_tid = interner.intern("tid");
+
+             if let Some(node) = graph.get_node_mut(entry_id) {
+                 let f_id = interner.intern(&provenance.file);
+                 let m_id = interner.intern(&provenance.module);
+                 node.props.insert(p_file, f_id as u64);
+                 node.props.insert(p_module, m_id as u64);
+                 node.props.insert(p_tid, provenance.tid);
+             }
+             
+             (0, entry_id)
+        },
     };
     
     msg.reply.status.store(status, Ordering::Relaxed);
     msg.reply.value.store(value, Ordering::Relaxed);
     msg.reply.done.store(1, Ordering::Release);
-    crate::kinfo!("ROOT: Finish msg handling, done=1, yielding...");
 }

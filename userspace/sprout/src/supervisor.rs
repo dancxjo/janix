@@ -66,11 +66,19 @@ impl Supervisor {
         println!("SPROUT: Discovering modules...");
         let mut modules = [ThingId(0); 32];
         let count = thingsys::find(stem::abi::schema::kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
+        println!("SPROUT: Found {} modules", count);
         
         for i in 0..count {
+            if i >= modules.len() {
+                println!("SPROUT: Module index {} out of bounds!", i);
+                break;
+            }
             let mod_id = modules[i];
             let name = self.get_module_name(mod_id);
-            if name.is_empty() { continue; }
+            if name.is_empty() { 
+                println!("SPROUT: Module {} has empty name", mod_id.0);
+                continue; 
+            }
 
             // Heuristic Partitioning
             // "Drivers live at: /boot/modules/drivers/<name>"

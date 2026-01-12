@@ -13,9 +13,9 @@ pub fn load_module<R: BootRuntime>(
     aspace: <R::Tasking as BootTasking>::AddressSpace, 
     module: &BootModuleDesc
 ) -> Option<UserEntry> {
-    crate::kinfo!("Loading module: {}", module.name);
+    // crate::kinfo!("Loading module: {}", module.name);
     if module.bytes.len() >= 16 {
-        crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
+        // crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
     }
 
     // Hardcoded load address for simple PIE/or-not-PIE loading
@@ -33,7 +33,7 @@ pub fn load_module<R: BootRuntime>(
     let mut virt = load_addr as u64;
     for chunk in module.bytes.chunks(4096) {
          let phys = memory::alloc_frame().expect("OOM loading module");
-         crate::kinfo!("  Chunk Phys: {:x}", phys);
+         // crate::kinfo!("  Chunk Phys: {:x}", phys);
          let hhdm_virt = phys + rt.phys_to_virt_offset();
          unsafe {
              core::ptr::copy_nonoverlapping(chunk.as_ptr(), hhdm_virt as *mut u8, chunk.len());

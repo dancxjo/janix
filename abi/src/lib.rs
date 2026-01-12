@@ -13,3 +13,5 @@ pub mod schema;
 pub mod module;
 pub mod module_manifest;
 pub mod driver_ctx;
+
+pub mod logging;

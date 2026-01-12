@@ -20,6 +20,15 @@ pub enum SymbolShell {
 }
 
 #[derive(Debug)]
+pub struct LogProvenance {
+    pub tid: u64,
+    pub cpu: u32,
+    pub module: alloc::string::String,
+    pub file: alloc::string::String,
+    pub line: u32,
+}
+
+#[derive(Debug)]
 pub enum RootOp {
     Intern { name: alloc::string::String },
     GetKind { id: u64 },
@@ -40,6 +49,16 @@ pub enum RootOp {
     BytespaceRead { id: u64, offset: u64, ptr: u64, len: u64 },
     BytespaceCreateFromPtr { ptr: u64, len: u64 },
     Link { src: u64, rel: SymbolShell, dst: u64 },
+    // Structured Logging
+    LogEvent { 
+        level: u8,
+        event: SymbolShell,
+        message: alloc::string::String,
+        timestamp: u64,
+        provenance: LogProvenance,
+        fields: alloc::vec::Vec<(SymbolShell, u64)>, // Scalar fields
+        about: alloc::vec::Vec<u64>, // Linked Thing IDs
+    },
 }
 
 pub struct ReplyCell {
@@ -93,6 +112,10 @@ pub fn pop_msg() -> Option<RootMsg> {
     ROOT_INBOX.lock().as_mut()?.pop_front()
 }
 
+pub fn is_inbox_ready() -> bool {
+    ROOT_INBOX.lock().is_some()
+}
+
 pub mod debug {
     use core::fmt;
     use crate::root::SymbolShell;
@@ -111,7 +134,6 @@ pub mod debug {
             crate::kinfo!("ThingDebug: Waiting for reply...");
             let mut timeout = 0;
             loop {
-                // simple wait loop
                 let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
                 if done != 0 {
                     crate::kinfo!("ThingDebug: Got reply!");
@@ -151,7 +173,6 @@ pub mod debug {
                 len: buf.len() as u64 
             });
              loop {
-                // simple wait loop
                 let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
                 if done != 0 {
                     let status = reply.status.load(core::sync::atomic::Ordering::Relaxed);

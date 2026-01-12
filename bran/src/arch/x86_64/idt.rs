@@ -180,6 +180,17 @@ pub struct InterruptStackFrame {
 pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) -> ! {
     let cr2: u64;
     unsafe { core::arch::asm!("mov {}, cr2", out(reg) cr2); }
+    
+    // Check if Fault occurred in User Mode (CPL=3)
+    if frame.cs & 3 == 3 {
+        unsafe {
+            unsafe extern "C" {
+                fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64);
+            }
+            kernel_handle_page_fault(frame.rip, cr2, frame.error_code);
+        }
+    }
+
     panic!("PAGE FAULT at 0x{:x} RIP=0x{:x} CS=0x{:x} ERR=0x{:x}", cr2, frame.rip, frame.cs, frame.error_code);
 }
 

@@ -11,6 +11,12 @@ pub mod syscall;
 pub mod root;
 pub mod tests;
 
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
+    crate::kerror!("USER PAGE FAULT at 0x{:x} RIP=0x{:x} ERR=0x{:x}", addr, rip, err);
+    unsafe { crate::task::scheduler::exit_current(-1); }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct PhysRange {
     pub start: u64,

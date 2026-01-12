@@ -12,6 +12,7 @@ pub mod console;
 pub mod device;
 pub mod panic;
 pub mod rt;
+pub mod time;
 
 #[macro_export]
 macro_rules! print {

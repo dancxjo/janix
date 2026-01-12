@@ -31,6 +31,11 @@ pub mod keys {
     pub const BPP: &str = "bpp";
     pub const BYTESPACE: &str = "bytespace"; // Used for Sprout shortcut
     pub const IRQ: &str = "irq";
+    pub const UNIX_SECONDS: &str = "unix_seconds";
+    pub const OFFSET_NS: &str = "offset_ns";
+    pub const STATE: &str = "state";
+    pub const QUALITY: &str = "quality";
+    pub const LAST_UPDATED_MONO_NS: &str = "last_updated_mono_ns";
     
     // Legacy mapping (to be deprecated or mapped)
     pub const KIND: &str = "kind";
@@ -52,6 +57,8 @@ pub mod kinds {
     pub const DEV_CPU: &str = "dev.Cpu";
     pub const SVC_SCHEDULER: &str = "svc.Scheduler";
     pub const FW_BOOT: &str = "fw.Boot";
+    pub const TIME_WALL_CLOCK_SAMPLE: &str = "time.WallClockSample";
+    pub const SVC_TIME_SYSTEM_CLOCK: &str = "svc.time.SystemClock";
 }
 
 pub mod rels {
@@ -67,4 +74,6 @@ pub mod rels {
     pub const HAS_CPU: &str = "HAS_CPU";
     pub const HAS_MEMORY_RANGE: &str = "HAS_MEMORY_RANGE";
     pub const HAS_MODULE: &str = "HAS_MODULE";
+    pub const SEEDED_BY: &str = "SEEDED_BY";
+    pub const USES: &str = "USES";
 }

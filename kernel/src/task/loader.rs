@@ -2,6 +2,7 @@ use crate::memory;
 use crate::{
     BootModuleDesc, BootRuntime, BootTasking, FrameAllocatorHook, MapKind, MapPerms, UserEntry,
 };
+use abi::types::StackInfo;
 
 struct LoaderAllocHook;
 impl FrameAllocatorHook for LoaderAllocHook {
@@ -14,7 +15,7 @@ pub fn load_module<R: BootRuntime>(
     rt: &R,
     aspace: <R::Tasking as BootTasking>::AddressSpace,
     module: &BootModuleDesc,
-) -> Option<UserEntry> {
+) -> Option<(UserEntry, StackInfo)> {
     // crate::kinfo!("Loading module: {}", module.name);
     if module.bytes.len() >= 16 {
         // crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
@@ -26,8 +27,11 @@ pub fn load_module<R: BootRuntime>(
     // So fixed address 0x200000 is fine for the main executable.
 
     let load_addr = 0x200000;
-    let stack_top = 0x400000;
-    let stack_size = 65536; // 64KB
+    let stack_top = 0x0080_0000;
+    let reserve_bytes = 2 * 1024 * 1024;
+    let guard_pages = 1usize;
+    let initial_commit_bytes = 64 * 1024;
+    let grow_chunk_bytes = 64 * 1024;
 
     let hook = LoaderAllocHook;
     let text_perms = MapPerms {
@@ -80,25 +84,57 @@ pub fn load_module<R: BootRuntime>(
         virt += 4096;
     }
 
-    // 3. Map Stack
-    let stack_base = (stack_top - stack_size) as u64;
-    let mut virt = stack_base;
-    let stack_limit = stack_top as u64;
+    // 3. Map Stack (guard + reserve with initial commit)
+    let page_size = rt.page_size() as u64;
+    let guard_bytes = (guard_pages as u64).saturating_mul(page_size);
+    let reserve_bytes = align_up_u64(reserve_bytes as u64, page_size);
+    let total = guard_bytes.saturating_add(reserve_bytes);
+    let reserve_end = stack_top as u64;
+    let base = reserve_end.saturating_sub(total);
+    let guard_start = base;
+    let guard_end = base.saturating_add(guard_bytes);
+    let reserve_start = guard_end;
+    let commit_len = align_up_u64(initial_commit_bytes as u64, page_size);
+    let commit_start = reserve_end.saturating_sub(commit_len);
 
-    while virt < stack_limit {
+    let mut virt = commit_start;
+    while virt < reserve_end {
         let phys = memory::alloc_frame().expect("OOM loading stack");
+        let hhdm_virt = phys + rt.phys_to_virt_offset();
+        unsafe {
+            core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size as usize);
+        }
         rt.tasking()
             .map_page(aspace, virt, phys, data_perms, MapKind::Normal, &hook)
             .unwrap();
-        virt += 4096;
+        virt += page_size;
     }
 
     // Ensure instruction cache sees freshly loaded code
     rt.icache_invalidate();
 
-    Some(UserEntry {
-        entry_pc: load_addr,
-        user_sp: stack_top,
-        arg0: 0,
-    })
+    let stack_info = StackInfo {
+        guard_start: guard_start as usize,
+        guard_end: guard_end as usize,
+        reserve_start: reserve_start as usize,
+        reserve_end: reserve_end as usize,
+        committed_start: commit_start as usize,
+        grow_chunk_bytes,
+    };
+
+    Some((
+        UserEntry {
+            entry_pc: load_addr,
+            user_sp: stack_top,
+            arg0: 0,
+        },
+        stack_info,
+    ))
+}
+
+fn align_up_u64(value: u64, align: u64) -> u64 {
+    if align == 0 {
+        return value;
+    }
+    (value + align - 1) & !(align - 1)
 }

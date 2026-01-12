@@ -16,16 +16,41 @@ pub fn sys_get_tid() -> SysResult<usize> {
     unsafe { Ok(crate::task::scheduler::current_tid_current() as usize) }
 }
 
-pub fn sys_spawn_thread(entry: usize, stack: usize) -> SysResult<usize> {
-    validate_user_range(entry, 1, false)?;
-    let stack_top = if stack == 0 {
-        unsafe { crate::task::scheduler::alloc_user_stack_current(0) }.ok_or(Errno::ENOMEM)?
-    } else {
-        validate_user_range(stack, 1, true)?;
-        stack
-    };
+pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
+    use abi::types::SpawnThreadReq;
 
-    let tid = unsafe { crate::task::scheduler::spawn_user_thread_current(entry, stack_top, 0) };
+    let size = core::mem::size_of::<SpawnThreadReq>();
+    validate_user_range(req_ptr, size, false)?;
+
+    let mut req: SpawnThreadReq = unsafe { core::mem::zeroed() };
+    let slice = unsafe { core::slice::from_raw_parts_mut(&mut req as *mut _ as *mut u8, size) };
+    unsafe {
+        copyin(slice, req_ptr)?;
+    }
+
+    validate_user_range(req.entry, 1, false)?;
+    validate_user_range(req.sp, 1, true)?;
+    if req.stack.guard_end != req.stack.reserve_start {
+        return Err(Errno::EINVAL);
+    }
+    if req.stack.reserve_start >= req.stack.reserve_end {
+        return Err(Errno::EINVAL);
+    }
+    if req.stack.committed_start < req.stack.reserve_start
+        || req.stack.committed_start > req.stack.reserve_end
+    {
+        return Err(Errno::EINVAL);
+    }
+    if req.sp != req.stack.reserve_end {
+        return Err(Errno::EINVAL);
+    }
+    if req.stack.grow_chunk_bytes == 0 {
+        return Err(Errno::EINVAL);
+    }
+
+    let tid = unsafe {
+        crate::task::scheduler::spawn_user_thread_current(req.entry, req.sp, 0, req.stack)
+    };
     if let Some(tid) = tid {
         Ok(tid as usize)
     } else {

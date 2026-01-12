@@ -18,14 +18,22 @@ pub enum ScheduleReason {
     IoWait,      // future
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StackFaultResult {
+    NotStack,
+    Grew,
+    Overflow,
+}
+
 // Global hooks for non-generic access
 static mut YIELD_HOOK: Option<unsafe fn()> = None;
 static mut EXIT_HOOK: Option<unsafe fn(i32)> = None;
-static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize) -> TaskId> = None;
+static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize, abi::types::StackInfo) -> TaskId> = None;
 static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, usize) -> Option<TaskId>> = None;
 static mut CURRENT_TID_HOOK: Option<unsafe fn() -> u64> = None;
 static mut TASK_STATUS_HOOK: Option<unsafe fn(TaskId) -> Option<(TaskState, Option<i32>)>> = None;
 static mut ALLOC_USER_STACK_HOOK: Option<unsafe fn(usize) -> Option<usize>> = None;
+static mut STACK_FAULT_HOOK: Option<unsafe fn(u64) -> StackFaultResult> = None;
 
 const USER_STACK_BASE: u64 = 0x0080_0000;
 const DEFAULT_USER_STACK_PAGES: usize = 4;
@@ -109,6 +117,7 @@ impl<R: BootRuntime> Scheduler<R> {
             simd: crate::simd::SimdState::new(rt),
             exit_code: None,
             is_user: false,
+            stack_info: None,
         };
         crate::kinfo!("  Pushing boot task to list...");
         self.tasks.push(task);
@@ -144,6 +153,7 @@ impl<R: BootRuntime> Scheduler<R> {
             simd: crate::simd::SimdState::new(rt),
             exit_code: None,
             is_user: false,
+            stack_info: None,
         };
 
         self.tasks.push(task);
@@ -156,6 +166,7 @@ impl<R: BootRuntime> Scheduler<R> {
         entry_pc: usize,
         user_stack_top: usize,
         arg: usize,
+        stack_info: abi::types::StackInfo,
     ) -> TaskId {
         let rt = crate::runtime::<R>();
         self.next_id += 1;
@@ -193,6 +204,7 @@ impl<R: BootRuntime> Scheduler<R> {
             simd: crate::simd::SimdState::new(rt),
             exit_code: None,
             is_user: true,
+            stack_info: Some(stack_info),
         };
 
         self.tasks.push(task);
@@ -204,6 +216,7 @@ impl<R: BootRuntime> Scheduler<R> {
         &mut self,
         entry: UserEntry,
         aspace: <R::Tasking as BootTasking>::AddressSpace,
+        stack_info: abi::types::StackInfo,
     ) -> Option<TaskId> {
         let rt = crate::runtime::<R>();
         self.next_id += 1;
@@ -235,6 +248,7 @@ impl<R: BootRuntime> Scheduler<R> {
             simd: crate::simd::SimdState::new(rt),
             exit_code: None,
             is_user: true,
+            stack_info: Some(stack_info),
         };
 
         self.tasks.push(task);
@@ -472,6 +486,8 @@ pub fn init<R: BootRuntime>() {
             TASK_STATUS_HOOK = Some(task_status::<R>);
             ALLOC_USER_STACK_HOOK = Some(alloc_user_stack::<R>);
             crate::memory::set_map_user_page_hook(map_user_page::<R>);
+            crate::memory::set_map_user_page_perms_hook(map_user_page_perms::<R>);
+            STACK_FAULT_HOOK = Some(handle_stack_fault::<R>);
         }
         init_blocking_hooks::<R>();
         crate::kinfo!("  Scheduler initialized");
@@ -485,21 +501,27 @@ pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> Ta
     sched.spawn(entry, arg)
 }
 
-pub unsafe fn spawn_user_thread<R: BootRuntime>(entry: usize, stack: usize, arg: usize) -> TaskId {
+pub unsafe fn spawn_user_thread<R: BootRuntime>(
+    entry: usize,
+    stack: usize,
+    arg: usize,
+    stack_info: abi::types::StackInfo,
+) -> TaskId {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn_user_thread(entry, stack, arg)
+    sched.spawn_user_thread(entry, stack, arg, stack_info)
 }
 
 pub unsafe fn spawn_user_task_full<R: BootRuntime>(
     entry: UserEntry,
     aspace: <R::Tasking as BootTasking>::AddressSpace,
+    stack_info: abi::types::StackInfo,
 ) -> Option<TaskId> {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn_user_task(entry, aspace)
+    sched.spawn_user_task(entry, aspace, stack_info)
 }
 
 pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>)> {
@@ -542,7 +564,7 @@ pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<Ta
 
     let aspace = rt.tasking().make_user_address_space();
 
-    let mut entry = crate::task::loader::load_module(rt, aspace, module)?;
+    let (mut entry, stack_info) = crate::task::loader::load_module(rt, aspace, module)?;
     entry.arg0 = arg;
 
     // Create the task
@@ -550,7 +572,7 @@ pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<Ta
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
-    sched.spawn_user_task(entry, aspace)
+    sched.spawn_user_task(entry, aspace, stack_info)
 }
 
 pub unsafe fn spawn_process_current(name: &str, arg: usize) -> Option<TaskId> {
@@ -707,12 +729,27 @@ pub unsafe fn exit_current(code: i32) {
     }
 }
 
-pub unsafe fn spawn_user_thread_current(entry: usize, stack: usize, arg: usize) -> Option<TaskId> {
+pub unsafe fn spawn_user_thread_current(
+    entry: usize,
+    stack: usize,
+    arg: usize,
+    stack_info: abi::types::StackInfo,
+) -> Option<TaskId> {
     unsafe {
         if let Some(hook) = SPAWN_USER_HOOK {
-            Some(hook(entry, stack, arg))
+            Some(hook(entry, stack, arg, stack_info))
         } else {
             None
+        }
+    }
+}
+
+pub unsafe fn handle_user_stack_fault_current(addr: u64) -> StackFaultResult {
+    unsafe {
+        if let Some(hook) = STACK_FAULT_HOOK {
+            hook(addr)
+        } else {
+            StackFaultResult::NotStack
         }
     }
 }
@@ -870,6 +907,116 @@ unsafe fn map_user_page<R: BootRuntime>(virt: u64, phys: u64) -> Result<(), ()> 
     rt.tasking().tlb_flush_page(virt);
     
     Ok(())
+}
+
+/// Map a user page with explicit permissions in the current address space.
+unsafe fn map_user_page_perms<R: BootRuntime>(
+    virt: u64,
+    phys: u64,
+    perms: MapPerms,
+) -> Result<(), ()> {
+    use crate::{FrameAllocatorHook, MapKind};
+
+    struct MapHook;
+    impl FrameAllocatorHook for MapHook {
+        fn alloc_frame(&self) -> Option<u64> {
+            crate::memory::alloc_frame()
+        }
+    }
+
+    let rt = crate::runtime::<R>();
+    let aspace = rt.tasking().active_address_space();
+    let hook = MapHook;
+
+    rt.tasking()
+        .map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)?;
+    rt.tasking().tlb_flush_page(virt);
+    Ok(())
+}
+
+unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult {
+    let rt = crate::runtime::<R>();
+    let page_size = rt.page_size() as u64;
+
+    let lock = SCHEDULER.lock();
+    let ptr = match *lock {
+        Some(ptr) => ptr,
+        None => return StackFaultResult::NotStack,
+    };
+    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+    let current_id = match sched.current {
+        Some(id) => id,
+        None => return StackFaultResult::NotStack,
+    };
+    let idx = match sched.tasks.iter().position(|t| t.id == current_id) {
+        Some(i) => i,
+        None => return StackFaultResult::NotStack,
+    };
+
+    let info = match sched.tasks[idx].stack_info {
+        Some(info) => info,
+        None => return StackFaultResult::NotStack,
+    };
+
+    let guard_start = info.guard_start as u64;
+    let guard_end = info.guard_end as u64;
+    let reserve_start = info.reserve_start as u64;
+    let reserve_end = info.reserve_end as u64;
+    let committed_start = info.committed_start as u64;
+
+    if addr >= guard_start && addr < guard_end {
+        return StackFaultResult::Overflow;
+    }
+
+    if addr < reserve_start || addr >= reserve_end || addr >= committed_start {
+        return StackFaultResult::NotStack;
+    }
+
+    let fault_page = addr & !(page_size - 1);
+    let grow_chunk = core::cmp::max(info.grow_chunk_bytes as u64, page_size);
+    let mut new_commit_start = committed_start.saturating_sub(grow_chunk);
+    new_commit_start &= !(page_size - 1);
+    if new_commit_start > fault_page {
+        new_commit_start = fault_page;
+    }
+    if new_commit_start < reserve_start {
+        new_commit_start = reserve_start;
+    }
+
+    if new_commit_start == committed_start {
+        return StackFaultResult::NotStack;
+    }
+
+    let hhdm = crate::boot_info::get().map(|i| i.hhdm_offset).unwrap_or(0);
+    let perms = MapPerms {
+        user: true,
+        read: true,
+        write: true,
+        exec: false,
+    };
+
+    let mut virt = new_commit_start;
+    while virt < committed_start {
+        let phys = match crate::memory::alloc_frame() {
+            Some(p) => p,
+            None => return StackFaultResult::NotStack,
+        };
+        let hhdm_virt = phys + hhdm;
+        unsafe {
+            core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size as usize);
+        }
+        if unsafe { crate::memory::map_user_page_with_perms(virt, phys, perms) }.is_err() {
+            return StackFaultResult::NotStack;
+        }
+        virt += page_size;
+    }
+
+    sched.tasks[idx].stack_info = Some(abi::types::StackInfo {
+        committed_start: new_commit_start as usize,
+        ..info
+    });
+
+    StackFaultResult::Grew
 }
 
 // ============================================================================

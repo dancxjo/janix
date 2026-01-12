@@ -21,6 +21,11 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_GET_TID => handlers::sys_get_tid(),
         SYS_TASK_POLL => handlers::sys_task_poll(args[0]),
         SYS_ALLOC_STACK => handlers::sys_alloc_stack(args[0]),
+        SYS_VM_MAP => handlers::sys_vm_map(args[0], args[1]),
+        SYS_VM_UNMAP => handlers::sys_vm_unmap(args[0], args[1]),
+        SYS_VM_PROTECT => handlers::sys_vm_protect(args[0]),
+        SYS_VM_ADVISE => handlers::sys_vm_advise(args[0]),
+        SYS_VM_QUERY => handlers::sys_vm_query(args[0], args[1]),
         SYS_TASK_WAIT => handlers::sys_task_wait(args[0]),
         
         SYS_PORT_CREATE => handlers::sys_port_create(args[0]),

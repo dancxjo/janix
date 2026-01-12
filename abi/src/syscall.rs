@@ -35,6 +35,11 @@ pub const SYS_LOG_WRITE: u32 = 0x31;
 // Block 0x40–0x4F: Memory / stacks
 // ============================================================================
 pub const SYS_ALLOC_STACK: u32 = 0x40;
+pub const SYS_VM_MAP: u32 = 0x41;
+pub const SYS_VM_UNMAP: u32 = 0x42;
+pub const SYS_VM_PROTECT: u32 = 0x43;
+pub const SYS_VM_ADVISE: u32 = 0x44;
+pub const SYS_VM_QUERY: u32 = 0x45;
 
 // ============================================================================
 // Block 0x80–0x8F: Port IPC

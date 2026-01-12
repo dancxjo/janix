@@ -1,15 +1,15 @@
 use crate::errors::Errno;
-use crate::stack::Stack;
+use crate::stack::{Stack, StackSpec};
 
 pub type ThreadId = u64;
 
 pub fn spawn(entry: extern "C" fn() -> !) -> Result<ThreadId, Errno> {
-    let stack = Stack::alloc_default()?;
+    let stack = Stack::alloc_growing_stack(StackSpec::default())?;
     spawn_on(stack, entry)
 }
 
 pub fn spawn_on(stack: Stack, entry: extern "C" fn() -> !) -> Result<ThreadId, Errno> {
-    crate::syscall::spawn_thread(entry, stack.top()).map(|id| id as ThreadId)
+    crate::syscall::spawn_thread(entry, &stack).map(|id| id as ThreadId)
 }
 
 pub fn spawn_with_stack(stack: Stack, entry: extern "C" fn() -> !) -> Result<ThreadId, Errno> {

@@ -29,7 +29,7 @@ static HEAP_TOP: AtomicUsize = AtomicUsize::new(0);
 fn internal_alloc(layout: Layout) -> *mut u8 {
     loop {
         let top = HEAP_TOP.load(Ordering::Relaxed);
-        let base = unsafe { core::ptr::addr_of_mut!(SIMD_HEAP) as usize };
+        let base = core::ptr::addr_of_mut!(SIMD_HEAP) as usize;
         let current_ptr = base + top;
 
         let align_offset = (layout.align() - (current_ptr % layout.align())) % layout.align();

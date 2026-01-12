@@ -6,6 +6,7 @@ pub use scheduler::Scheduler;
 use crate::BootRuntime;
 use crate::BootTasking;
 use crate::simd::SimdState;
+use abi::types::StackInfo;
 
 pub type TaskId = u64;
 
@@ -31,6 +32,8 @@ pub struct Task<R: BootRuntime> {
     pub aspace: <R::Tasking as BootTasking>::AddressSpace,
 
     pub simd: SimdState,
+
+    pub stack_info: Option<StackInfo>,
 }
 
 pub fn init<R: BootRuntime>() {

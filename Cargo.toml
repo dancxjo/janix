@@ -23,6 +23,8 @@ members = [
     "userspace/ps2_mouse",
     "userspace/echo",
     "userspace/inkwell",
+    "userspace/stack_grow_demo",
+    "userspace/stack_overflow_demo",
     "tools/pciids",
 ]
 resolver = "2"

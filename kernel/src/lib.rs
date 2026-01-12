@@ -22,6 +22,15 @@ pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
     let user = (err & 0x4) != 0;
     let instr_fetch = (err & 0x10) != 0;
 
+    let stack_result = if user {
+        unsafe { crate::task::scheduler::handle_user_stack_fault_current(addr) }
+    } else {
+        crate::task::scheduler::StackFaultResult::NotStack
+    };
+    if stack_result == crate::task::scheduler::StackFaultResult::Grew {
+        return;
+    }
+
     // Structured page fault logging with decoded error bits
     crate::log_event!(
         crate::logging::LogLevel::Error,
@@ -35,6 +44,10 @@ pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
         write as u8,
         instr_fetch as u8
     );
+
+    if stack_result == crate::task::scheduler::StackFaultResult::Overflow {
+        crate::kprintln!("STACK: overflow at va=0x{:x}", addr);
+    }
 
     unsafe {
         crate::task::scheduler::exit_current(-1);
@@ -404,7 +417,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         let hook = GlobalAllocHook;
 
         // Load Sprout
-        let user_entry = crate::task::loader::load_module(runtime, aspace, mod_desc)
+        let (user_entry, stack_info) = crate::task::loader::load_module(runtime, aspace, mod_desc)
             .expect("Failed to load sprout");
 
         // Prepare Module Registry Page
@@ -474,7 +487,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             kinfo!("Spawning sprout...");
             let mut entry = user_entry;
             entry.arg0 = 0x600000; // arg0 = registry ptr
-            crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace);
+            crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info);
         }
     } else {
         kinfo!("Sprout not found. Checking fallback...");
@@ -484,14 +497,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             kinfo!("Found threads_demo fallback...");
             let aspace = runtime.tasking().make_user_address_space();
             let hook = GlobalAllocHook;
-            let user_entry = crate::task::loader::load_module(runtime, aspace, mod_desc)
+            let (user_entry, stack_info) = crate::task::loader::load_module(runtime, aspace, mod_desc)
                 .expect("Failed to load threads_demo");
             unsafe {
-                crate::task::scheduler::spawn_user_thread::<R>(
-                    user_entry.entry_pc,
-                    user_entry.user_sp,
-                    0,
-                );
+                crate::task::scheduler::spawn_user_task_full::<R>(user_entry, aspace, stack_info);
             }
         } else {
             kinfo!("No modules found. Checking threads_supported...");

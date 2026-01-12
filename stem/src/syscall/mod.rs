@@ -95,9 +95,23 @@ pub fn alloc_stack(pages: usize) -> Result<usize, Errno> {
     abi::errors::errno(ret)
 }
 
-pub fn spawn_thread(entry: extern "C" fn() -> !, stack_top: usize) -> Result<u64, Errno> {
-    let entry_addr = entry as usize;
-    let ret = unsafe { raw_syscall6(SYS_SPAWN_THREAD, entry_addr, stack_top, 0, 0, 0, 0) };
+pub fn spawn_thread(entry: extern "C" fn() -> !, stack: &crate::stack::Stack) -> Result<u64, Errno> {
+    let req = abi::types::SpawnThreadReq {
+        entry: entry as usize,
+        sp: stack.sp as usize,
+        stack: stack.info,
+    };
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_SPAWN_THREAD,
+            &req as *const abi::types::SpawnThreadReq as usize,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
     abi::errors::errno(ret).map(|v| v as u64)
 }
 

@@ -17,6 +17,7 @@ pub mod stack;
 pub mod syscall;
 pub mod thread;
 pub mod time;
+pub mod vm;
 
 #[macro_export]
 macro_rules! print {

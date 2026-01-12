@@ -23,59 +23,53 @@ const ICW4_8086: u8 = 0x01;
 /// Slave PIC: vectors 0x28-0x2F
 /// Then mask all IRQs.
 pub fn disable_pic() {
-    unsafe {
-        // Save existing masks (for debugging)
-        let mask1 = ioport_read_u8(PIC1_DATA);
-        let mask2 = ioport_read_u8(PIC2_DATA);
-        
-        // ICW1: Start initialization sequence
-        ioport_write_u8(PIC1_CMD, ICW1_INIT | ICW1_ICW4);
-        io_wait();
-        ioport_write_u8(PIC2_CMD, ICW1_INIT | ICW1_ICW4);
-        io_wait();
-        
-        // ICW2: Set vector offsets
-        ioport_write_u8(PIC1_DATA, 0x20); // Master PIC starts at vector 0x20
-        io_wait();
-        ioport_write_u8(PIC2_DATA, 0x28); // Slave PIC starts at vector 0x28
-        io_wait();
-        
-        // ICW3: Configure cascading
-        ioport_write_u8(PIC1_DATA, 0x04); // Slave on IRQ2
-        io_wait();
-        ioport_write_u8(PIC2_DATA, 0x02); // Cascade identity
-        io_wait();
-        
-        // ICW4: 8086 mode
-        ioport_write_u8(PIC1_DATA, ICW4_8086);
-        io_wait();
-        ioport_write_u8(PIC2_DATA, ICW4_8086);
-        io_wait();
-        
-        // Mask all IRQs on both PICs
-        ioport_write_u8(PIC1_DATA, 0xFF);
-        io_wait();
-        ioport_write_u8(PIC2_DATA, 0xFF);
-        io_wait();
-    }
+    // Save existing masks (for debugging)
+    let _mask1 = ioport_read_u8(PIC1_DATA);
+    let _mask2 = ioport_read_u8(PIC2_DATA);
+    
+    // ICW1: Start initialization sequence
+    ioport_write_u8(PIC1_CMD, ICW1_INIT | ICW1_ICW4);
+    io_wait();
+    ioport_write_u8(PIC2_CMD, ICW1_INIT | ICW1_ICW4);
+    io_wait();
+    
+    // ICW2: Set vector offsets
+    ioport_write_u8(PIC1_DATA, 0x20); // Master PIC starts at vector 0x20
+    io_wait();
+    ioport_write_u8(PIC2_DATA, 0x28); // Slave PIC starts at vector 0x28
+    io_wait();
+    
+    // ICW3: Configure cascading
+    ioport_write_u8(PIC1_DATA, 0x04); // Slave on IRQ2
+    io_wait();
+    ioport_write_u8(PIC2_DATA, 0x02); // Cascade identity
+    io_wait();
+    
+    // ICW4: 8086 mode
+    ioport_write_u8(PIC1_DATA, ICW4_8086);
+    io_wait();
+    ioport_write_u8(PIC2_DATA, ICW4_8086);
+    io_wait();
+    
+    // Mask all IRQs on both PICs
+    ioport_write_u8(PIC1_DATA, 0xFF);
+    io_wait();
+    ioport_write_u8(PIC2_DATA, 0xFF);
+    io_wait();
 }
 
 /// Small I/O delay for PIC programming
 #[inline]
 fn io_wait() {
     // Write to unused port 0x80 for ~1µs delay
-    unsafe {
-        ioport_write_u8(0x80, 0);
-    }
+    ioport_write_u8(0x80, 0);
 }
 
 /// Send End-of-Interrupt to legacy PIC (not used when IOAPIC is active)
 #[allow(dead_code)]
 pub fn send_eoi(irq: u8) {
-    unsafe {
-        if irq >= 8 {
-            ioport_write_u8(PIC2_CMD, 0x20);
-        }
-        ioport_write_u8(PIC1_CMD, 0x20);
+    if irq >= 8 {
+        ioport_write_u8(PIC2_CMD, 0x20);
     }
+    ioport_write_u8(PIC1_CMD, 0x20);
 }

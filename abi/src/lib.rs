@@ -15,6 +15,7 @@ pub mod schema;
 pub mod symbols;
 pub mod syscall;
 pub mod types;
+pub mod vm;
 
 pub mod logging;
 pub mod hid;

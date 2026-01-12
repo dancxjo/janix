@@ -54,3 +54,22 @@ pub enum TaskStatus {
     Blocked = 3,
     Dead = 4,
 }
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StackInfo {
+    pub guard_start: usize,
+    pub guard_end: usize,
+    pub reserve_start: usize,
+    pub reserve_end: usize,
+    pub committed_start: usize,
+    pub grow_chunk_bytes: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SpawnThreadReq {
+    pub entry: usize,
+    pub sp: usize,
+    pub stack: StackInfo,
+}

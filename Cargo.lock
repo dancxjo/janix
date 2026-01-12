@@ -1959,7 +1959,9 @@ name = "stem"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "linked_list_allocator",
  "pciids",
+ "spin",
  "stem-macros",
  "thing_macros",
 ]

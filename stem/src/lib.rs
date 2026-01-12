@@ -10,6 +10,8 @@ pub mod bitset;
 pub mod console;
 pub mod device;
 pub mod errors;
+#[cfg(feature = "global-alloc")]
+pub mod heap;
 #[cfg(feature = "panic-handler")]
 pub mod panic;
 pub mod pci;

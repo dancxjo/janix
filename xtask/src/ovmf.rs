@@ -1,7 +1,7 @@
 //! OVMF firmware download and setup.
 
-use xshell::{Shell, cmd};
 use crate::common::Result;
+use xshell::{Shell, cmd};
 
 /// All supported architectures for OVMF download.
 pub const ALL_ARCHES: &[&str] = &["x86_64", "aarch64", "riscv64", "loongarch64"];
@@ -38,7 +38,7 @@ pub fn ovmf(sh: &Shell, arch: &str) -> Result<()> {
 
     // Download and extract (installs all, but we only needed this one)
     download_and_install_ovmf(sh)?;
-    
+
     // Verify we got what we needed
     if !sh.path_exists(&code_file) || !sh.path_exists(&vars_file) {
         println!("WARNING: OVMF firmware for {} not available.", arch);

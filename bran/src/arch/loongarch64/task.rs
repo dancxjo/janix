@@ -1,6 +1,6 @@
+use super::paging::LoongArch64AddressSpace;
 use core::arch::asm;
 use kernel::UserTaskSpec;
-use super::paging::LoongArch64AddressSpace;
 
 #[derive(Copy, Clone, Default)]
 pub struct LoongArch64Context(pub [u64; 12]); // ra, sp, fp, s0-s8
@@ -21,7 +21,6 @@ pub unsafe extern "C" fn context_switch(_old: *mut u64, _new: *const u64) {
             "st.d $s6, $a0, 72",
             "st.d $s7, $a0, 80",
             "st.d $s8, $a0, 88",
-
             "ld.d $ra, $a1, 0",
             "ld.d $sp, $a1, 8",
             "ld.d $fp, $a1, 16",
@@ -47,14 +46,17 @@ pub fn init_kernel_context(
 ) -> LoongArch64Context {
     let mut ctx = LoongArch64Context::default();
     ctx.0[0] = trampoline as *const () as u64; // ra
-    ctx.0[1] = stack_top;         // sp
+    ctx.0[1] = stack_top; // sp
     ctx.0[3] = entry as *const () as u64; // s0
-    ctx.0[4] = arg as u64;              // s1
+    ctx.0[4] = arg as u64; // s1
     ctx
 }
 
-pub fn init_user_context(_spec: UserTaskSpec<LoongArch64AddressSpace>, _kstack_top: u64) -> LoongArch64Context {
-    LoongArch64Context::default() 
+pub fn init_user_context(
+    _spec: UserTaskSpec<LoongArch64AddressSpace>,
+    _kstack_top: u64,
+) -> LoongArch64Context {
+    LoongArch64Context::default()
 }
 
 #[unsafe(no_mangle)]

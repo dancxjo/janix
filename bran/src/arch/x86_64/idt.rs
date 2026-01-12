@@ -59,7 +59,8 @@ unsafe extern "C" {
     fn generic_handler_shim();
 }
 
-core::arch::global_asm!(r#"
+core::arch::global_asm!(
+    r#"
     .att_syntax
     .global breakpoint_handler_shim
     breakpoint_handler_shim:
@@ -130,7 +131,8 @@ core::arch::global_asm!(r#"
         out %al, %dx
     2:  hlt
         jmp 2b
-"#);
+"#
+);
 
 pub unsafe fn init() {
     // Fill all vectors with a safe generic handler so hardware IRQs don't triple fault
@@ -194,8 +196,10 @@ pub struct InterruptStackFrame {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) -> ! {
     let cr2: u64;
-    unsafe { core::arch::asm!("mov {}, cr2", out(reg) cr2); }
-    
+    unsafe {
+        core::arch::asm!("mov {}, cr2", out(reg) cr2);
+    }
+
     // Check if Fault occurred in User Mode (CPL=3)
     if frame.cs & 3 == 3 {
         unsafe {
@@ -206,15 +210,24 @@ pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) -> ! {
         }
     }
 
-    panic!("PAGE FAULT at 0x{:x} RIP=0x{:x} CS=0x{:x} ERR=0x{:x}", cr2, frame.rip, frame.cs, frame.error_code);
+    panic!(
+        "PAGE FAULT at 0x{:x} RIP=0x{:x} CS=0x{:x} ERR=0x{:x}",
+        cr2, frame.rip, frame.cs, frame.error_code
+    );
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_gp_handler(frame: &InterruptStackFrame) -> ! {
-    panic!("GPF at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}", frame.rip, frame.cs, frame.error_code, frame.rsp);
+    panic!(
+        "GPF at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}",
+        frame.rip, frame.cs, frame.error_code, frame.rsp
+    );
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_double_fault_handler(frame: &InterruptStackFrame) -> ! {
-    panic!("DOUBLE FAULT at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}", frame.rip, frame.cs, frame.error_code, frame.rsp);
+    panic!(
+        "DOUBLE FAULT at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}",
+        frame.rip, frame.cs, frame.error_code, frame.rsp
+    );
 }

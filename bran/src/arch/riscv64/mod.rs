@@ -1,12 +1,12 @@
-use core::arch::asm;
-use kernel::{IrqState, UserTaskSpec, UserEntry, FrameAllocatorHook, MapPerms, MapKind};
-use kernel::time::MonotonicClamp;
 use crate::runtime::ArchRuntime;
+use core::arch::asm;
+use kernel::time::MonotonicClamp;
+use kernel::{FrameAllocatorHook, IrqState, MapKind, MapPerms, UserEntry, UserTaskSpec};
 
+pub mod paging;
 pub mod serial;
 pub mod task;
 pub mod trap;
-pub mod paging;
 pub mod vector;
 
 pub struct RISCV64Runtime {
@@ -23,46 +23,74 @@ impl RISCV64Runtime {
     }
 }
 
-pub use task::RISCV64Context;
 pub use paging::RISCV64AddressSpace;
+pub use task::RISCV64Context;
 
 impl ArchRuntime for RISCV64Runtime {
     type Context = RISCV64Context;
     type AddressSpace = RISCV64AddressSpace;
 
-    fn init(&self, hhdm_offset: u64) { 
-        paging::init(hhdm_offset); 
-        unsafe { vector::init(); }
+    fn init(&self, hhdm_offset: u64) {
+        paging::init(hhdm_offset);
+        unsafe {
+            vector::init();
+        }
     }
-    fn putchar(&self, c: u8) { self.serial.putchar(c); }
-    fn halt(&self) -> ! { hcf() }
+    fn putchar(&self, c: u8) {
+        self.serial.putchar(c);
+    }
+    fn halt(&self) -> ! {
+        hcf()
+    }
 
     fn mono_ticks(&self) -> u64 {
         let raw = read_time();
         self.clamp.clamp(raw)
     }
 
-    fn mono_freq_hz(&self) -> u64 { 10_000_000 }
+    fn mono_freq_hz(&self) -> u64 {
+        10_000_000
+    }
 
     fn irq_disable(&self) -> IrqState {
         let sstatus: usize;
-        unsafe { asm!("csrrci {}, sstatus, 2", out(reg) sstatus); }
+        unsafe {
+            asm!("csrrci {}, sstatus, 2", out(reg) sstatus);
+        }
         IrqState((sstatus >> 1) & 1)
     }
 
     fn irq_restore(&self, state: IrqState) {
-        if state.0 != 0 { unsafe { asm!("csrrs x0, sstatus, 2"); } }
-        else { unsafe { asm!("csrrci x0, sstatus, 2"); } }
+        if state.0 != 0 {
+            unsafe {
+                asm!("csrrs x0, sstatus, 2");
+            }
+        } else {
+            unsafe {
+                asm!("csrrci x0, sstatus, 2");
+            }
+        }
     }
 
-    fn threads_supported(&self) -> bool { true }
+    fn threads_supported(&self) -> bool {
+        true
+    }
 
     // Tasking
-    fn init_kernel_context(&self, entry: extern "C" fn(usize) -> !, stack_top: u64, arg: usize) -> Self::Context {
+    fn init_kernel_context(
+        &self,
+        entry: extern "C" fn(usize) -> !,
+        stack_top: u64,
+        arg: usize,
+    ) -> Self::Context {
         task::init_kernel_context(entry, stack_top, arg)
     }
 
-    fn init_user_context(&self, spec: UserTaskSpec<Self::AddressSpace>, kstack_top: u64) -> Self::Context {
+    fn init_user_context(
+        &self,
+        spec: UserTaskSpec<Self::AddressSpace>,
+        kstack_top: u64,
+    ) -> Self::Context {
         task::init_user_context(spec, kstack_top)
     }
 
@@ -86,23 +114,27 @@ impl ArchRuntime for RISCV64Runtime {
         //          Safe choice: SPIE=0.
 
         let mut sstatus: usize;
-        unsafe { asm!("csrr {}, sstatus", out(reg) sstatus); }
+        unsafe {
+            asm!("csrr {}, sstatus", out(reg) sstatus);
+        }
         sstatus &= !(1 << 8); // Clear SPP (User)
         sstatus &= !(1 << 5); // Clear SPIE (Disable interrupts in user mode for now)
         // Note: bit 1 (SIE) is preserved for Supervisor, but overwritten by SPIE into SIE on sret.
-        
-        unsafe { asm!(
-            "csrw sstatus, {sstatus}",
-            "csrw sepc, {pc}",
-            "mv sp, {sp}",
-            "mv a0, {arg}",
-            "sret",
-            sstatus = in(reg) sstatus,
-            pc = in(reg) entry.entry_pc,
-            sp = in(reg) entry.user_sp,
-            arg = in(reg) entry.arg0,
-            options(noreturn)
-        ); }
+
+        unsafe {
+            asm!(
+                "csrw sstatus, {sstatus}",
+                "csrw sepc, {pc}",
+                "mv sp, {sp}",
+                "mv a0, {arg}",
+                "sret",
+                sstatus = in(reg) sstatus,
+                pc = in(reg) entry.entry_pc,
+                sp = in(reg) entry.user_sp,
+                arg = in(reg) entry.arg0,
+                options(noreturn)
+            );
+        }
     }
 
     // Paging
@@ -113,16 +145,24 @@ impl ArchRuntime for RISCV64Runtime {
     fn active_address_space(&self) -> Self::AddressSpace {
         paging::active_address_space()
     }
-    
+
     fn activate_address_space(&self, aspace: Self::AddressSpace) {
         let satp = (8 << 60) | (aspace.0 >> 12); // Sv39
-        unsafe { 
+        unsafe {
             asm!("csrw satp, {}", in(reg) satp);
             asm!("sfence.vma");
         }
     }
 
-    fn map_page(&self, aspace: Self::AddressSpace, virt: u64, phys: u64, perms: MapPerms, kind: MapKind, allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
+    fn map_page(
+        &self,
+        aspace: Self::AddressSpace,
+        virt: u64,
+        phys: u64,
+        perms: MapPerms,
+        kind: MapKind,
+        allocator: &dyn FrameAllocatorHook,
+    ) -> Result<(), ()> {
         paging::map_page(aspace, virt, phys, perms, kind, allocator)
     }
 
@@ -141,16 +181,24 @@ impl ArchRuntime for RISCV64Runtime {
 
 struct DumbKernelAlloc;
 impl FrameAllocatorHook for DumbKernelAlloc {
-    fn alloc_frame(&self) -> Option<u64> { None }
+    fn alloc_frame(&self) -> Option<u64> {
+        None
+    }
 }
 
 pub fn hcf() -> ! {
-    loop { unsafe { asm!("wfi"); } }
+    loop {
+        unsafe {
+            asm!("wfi");
+        }
+    }
 }
 
 #[inline]
 fn read_time() -> u64 {
     let val: u64;
-    unsafe { asm!("csrr {}, time", out(reg) val); }
+    unsafe {
+        asm!("csrr {}, time", out(reg) val);
+    }
     val
 }

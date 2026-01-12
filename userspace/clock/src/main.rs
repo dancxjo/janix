@@ -11,6 +11,12 @@ fn print_tick(unix: u64, mono_ns: u64) {
 
 #[stem::main]
 fn main() -> ! {
+    let cpu = stem::arch::whoami();
+    info!(
+        "[clock] whoami: cs=0x{:x} ss=0x{:x} cpl={} rsp=0x{:x} rip=0x{:x} rflags=0x{:x}",
+        cpu.cs, cpu.ss, cpu.cpl, cpu.rsp, cpu.rip, cpu.rflags
+    );
+
     info!("[clock] starting");
 
     loop {

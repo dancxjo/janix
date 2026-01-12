@@ -5,17 +5,18 @@ pub unsafe fn init() {
         static vector_table: u8;
     }
     let vbar = unsafe { &vector_table } as *const u8 as u64;
-    unsafe { 
+    unsafe {
         asm!(
             "msr vbar_el1, {vbar}",
             "isb",
             vbar = in(reg) vbar,
             options(nomem, nostack, preserves_flags)
-        ); 
+        );
     }
 }
 
-global_asm!(r#"
+global_asm!(
+    r#"
 .section .text
 .balign 2048
 .global vector_table
@@ -173,4 +174,5 @@ handle_sync_el0:
     
     add sp, sp, #272
     eret
-"#);
+"#
+);

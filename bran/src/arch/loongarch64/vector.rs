@@ -1,5 +1,5 @@
-use core::arch::{asm, global_asm};
 use super::trap::UserTrapFrame;
+use core::arch::{asm, global_asm};
 use kernel::syscall::dispatch;
 
 pub unsafe fn init() {
@@ -8,10 +8,13 @@ pub unsafe fn init() {
     }
     let addr = trap_entry as *const () as usize;
     // Set EENTRY (CSR 0xC)
-    unsafe { asm!("csrwr {}, 0xC", in(reg) addr); }
+    unsafe {
+        asm!("csrwr {}, 0xC", in(reg) addr);
+    }
 }
 
-global_asm!(r#"
+global_asm!(
+    r#"
 .section .text
 .global trap_entry
 .balign 4
@@ -193,21 +196,23 @@ trap_entry:
     // Just dealloc. SP is maintained.
     addi.d $sp, $sp, 288
     ertn
-"#);
+"#
+);
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
     let estat = tf.estat;
     let ecode = (estat >> 16) & 0x3F;
     let subcode = estat & 0xFFFF;
-    
-    if ecode == 0xB { // SYSCALL
+
+    if ecode == 0xB {
+        // SYSCALL
         // Syscall num in A7 (R11).
         // R11 is index 10 (regs[10]). (r1=index 0)
         // Regs: r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11.
         // Index: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10.
         let n = tf.regs[10];
-        
+
         // Args: A0..A5
         // A0=r4 (index 3)
         // A1=r5 (index 4)
@@ -215,22 +220,21 @@ pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
         // A3=r7 (index 6)
         // A4=r8 (index 7)
         // A5=r9 (index 8)
-        
+
         let a0 = tf.regs[3];
         let a1 = tf.regs[4];
         let a2 = tf.regs[5];
         let a3 = tf.regs[6];
         let a4 = tf.regs[7];
         let a5 = tf.regs[8];
-        
+
         let ret = dispatch(n, [a0, a1, a2, a3, a4, a5]);
-        
+
         // Return value in A0 (r4, index 3)
         tf.regs[3] = ret as usize;
-        
+
         // Advance ERA by 4 (instruction size)
         tf.era += 4;
-        
     } else {
         let isr = estat & 0x1FFF;
         kernel::kprintln!(

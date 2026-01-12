@@ -48,7 +48,7 @@ impl ThingOsWorld {
         let pid = std::process::id();
         let qmp_global_path = PathBuf::from(format!("/tmp/qemu-bdd-global-{}-{}.sock", pid, nanos));
         let qmp_world_path = PathBuf::from(format!("/tmp/qemu-bdd-world-{}-{}.sock", pid, nanos));
-        
+
         // We store one of them in self for qmp_init helper (though helper needs refactor if I use it for both)
         // Actually, let's just make qmp_init take a path or just inline it.
         // For now, let's store global in qmp_socket (legacy) and handle world manually
@@ -72,13 +72,19 @@ impl ThingOsWorld {
 
         // Build QEMU command with serial output to stdio and QMP control
         let mut cmd = Command::new(qemu_bin);
-        
+
         // Handle machine type and pflash - riscv64 requires special blockdev syntax
         match arch {
             "x86_64" => {
                 cmd.args(["-M", "q35"]);
-                cmd.args(["-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code)]);
-                cmd.args(["-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars)]);
+                cmd.args([
+                    "-drive",
+                    &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code),
+                ]);
+                cmd.args([
+                    "-drive",
+                    &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars),
+                ]);
                 cmd.args(["-cdrom", &iso_path]);
             }
             "aarch64" => {
@@ -88,22 +94,40 @@ impl ThingOsWorld {
                 cmd.args(["-device", "qemu-xhci"]);
                 cmd.args(["-device", "usb-kbd"]);
                 cmd.args(["-device", "usb-mouse"]);
-                cmd.args(["-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code)]);
-                cmd.args(["-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars)]);
+                cmd.args([
+                    "-drive",
+                    &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code),
+                ]);
+                cmd.args([
+                    "-drive",
+                    &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars),
+                ]);
                 cmd.args(["-cdrom", &iso_path]);
             }
             "riscv64" => {
                 // riscv64 virt requires blockdev syntax with machine-level pflash assignment
                 // Also uses virtio-blk instead of -cdrom since riscv64 virt doesn't expose cdrom to UEFI properly
-                cmd.args(["-blockdev", &format!("node-name=pflash0,driver=file,read-only=on,filename={}", ovmf_code)]);
-                cmd.args(["-blockdev", &format!("node-name=pflash1,driver=file,filename={}", ovmf_vars)]);
+                cmd.args([
+                    "-blockdev",
+                    &format!(
+                        "node-name=pflash0,driver=file,read-only=on,filename={}",
+                        ovmf_code
+                    ),
+                ]);
+                cmd.args([
+                    "-blockdev",
+                    &format!("node-name=pflash1,driver=file,filename={}", ovmf_vars),
+                ]);
                 cmd.args(["-M", "virt,pflash0=pflash0,pflash1=pflash1"]);
                 cmd.args(["-cpu", "rv64"]);
                 cmd.args(["-device", "ramfb"]);
                 cmd.args(["-device", "qemu-xhci"]);
                 cmd.args(["-device", "usb-kbd"]);
                 cmd.args(["-device", "usb-mouse"]);
-                cmd.args(["-drive", &format!("file={},format=raw,if=none,id=drive0,readonly=on", iso_path)]);
+                cmd.args([
+                    "-drive",
+                    &format!("file={},format=raw,if=none,id=drive0,readonly=on", iso_path),
+                ]);
                 cmd.args(["-device", "virtio-blk-device,drive=drive0"]);
             }
             "loongarch64" => {
@@ -113,25 +137,37 @@ impl ThingOsWorld {
                 cmd.args(["-device", "qemu-xhci"]);
                 cmd.args(["-device", "usb-kbd"]);
                 cmd.args(["-device", "usb-mouse"]);
-                cmd.args(["-drive", &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code)]);
-                cmd.args(["-drive", &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars)]);
+                cmd.args([
+                    "-drive",
+                    &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code),
+                ]);
+                cmd.args([
+                    "-drive",
+                    &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars),
+                ]);
                 cmd.args(["-cdrom", &iso_path]);
             }
             _ => {}
         }
 
         cmd.args([
-            "-m", "2G",
+            "-m",
+            "2G",
             // Disable default display, use VNC instead
-            "-display", "none",
+            "-display",
+            "none",
             "-no-shutdown",
             // Serial to stdio for log capture
-            "-serial", "stdio",
+            "-serial",
+            "stdio",
             // VNC for headless graphics (needed for screenshots)
-            "-vnc", &format!(":{}", vnc_display),
+            "-vnc",
+            &format!(":{}", vnc_display),
             // QMP control sockets (TWO of them)
-            "-qmp", &format!("unix:{},server=on,wait=off", qmp_global_path.display()),
-            "-qmp", &format!("unix:{},server=on,wait=off", qmp_world_path.display()),
+            "-qmp",
+            &format!("unix:{},server=on,wait=off", qmp_global_path.display()),
+            "-qmp",
+            &format!("unix:{},server=on,wait=off", qmp_world_path.display()),
         ]);
 
         cmd.stdout(Stdio::piped());
@@ -175,15 +211,15 @@ impl ThingOsWorld {
 
         for _ in 0..50 {
             if global_stream.is_none() && qmp_global_path.exists() {
-               if let Ok(s) = Self::connect_qmp(&qmp_global_path).await {
-                   global_stream = Some(s);
-               }
+                if let Ok(s) = Self::connect_qmp(&qmp_global_path).await {
+                    global_stream = Some(s);
+                }
             }
-            
+
             if world_stream.is_none() && qmp_world_path.exists() {
-               if let Ok(s) = Self::connect_qmp(&qmp_world_path).await {
-                   world_stream = Some(s);
-               }
+                if let Ok(s) = Self::connect_qmp(&qmp_world_path).await {
+                    world_stream = Some(s);
+                }
             }
 
             if global_stream.is_some() && world_stream.is_some() {
@@ -199,16 +235,19 @@ impl ThingOsWorld {
         }
 
         if world_stream.is_none() {
-             eprintln!("[bdd] Warning: World QMP not initialized");
+            eprintln!("[bdd] Warning: World QMP not initialized");
         } else {
-             self.qmp_control = world_stream;
+            self.qmp_control = world_stream;
         }
 
         Ok(())
     }
 
     /// Take a screenshot using the world's private QMP connection.
-    pub async fn take_screenshot(&mut self, output_path: &std::path::Path) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn take_screenshot(
+        &mut self,
+        output_path: &std::path::Path,
+    ) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
         use crate::artifacts::qmp::execute_on_stream;
 
         // Ensure output directory exists
@@ -227,7 +266,7 @@ impl ThingOsWorld {
         );
 
         let stream = self.qmp_control.as_mut().ok_or("No world QMP connection")?;
-        
+
         let resp = execute_on_stream(stream, &cmd).await?;
         if resp.contains("error") {
             return Err(format!("QMP error: {}", resp).into());
@@ -237,7 +276,7 @@ impl ThingOsWorld {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         if !ppm_path.exists() {
-             return Err("Screenshot file not created".into());
+            return Err("Screenshot file not created".into());
         }
 
         // Convert PPM to PNG
@@ -250,9 +289,11 @@ impl ThingOsWorld {
     }
 
     /// Connect to a QMP socket and perform handshake.
-    async fn connect_qmp(socket_path: &std::path::Path) -> Result<UnixStream, Box<dyn std::error::Error>> {
+    async fn connect_qmp(
+        socket_path: &std::path::Path,
+    ) -> Result<UnixStream, Box<dyn std::error::Error>> {
         let mut stream = UnixStream::connect(socket_path).await?;
-        
+
         // Read greeting
         let mut buf = vec![0u8; 4096];
         let _ = stream.readable().await;
@@ -262,15 +303,13 @@ impl ThingOsWorld {
         let caps_cmd = r#"{"execute": "qmp_capabilities"}"#;
         stream.write_all(caps_cmd.as_bytes()).await?;
         stream.write_all(b"\n").await?;
-        
+
         // Read capability response
         let _ = stream.readable().await;
         let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await?;
 
         Ok(stream)
     }
-
-
 
     /// Wait for a string to appear in the serial log.
     pub async fn wait_for_serial(&self, needle: &str, timeout_secs: f64) -> bool {
@@ -333,7 +372,10 @@ pub const REQUIRED_BOOT_SIGNALS: &[&[&str]] = &[
     // Paging boundary
     &["Intent-Mechanism paging split active"],
     // Memory map / allocator
-    &["Frame allocator initialized", "Initializing Real Frame Allocator..."],
+    &[
+        "Frame allocator initialized",
+        "Initializing Real Frame Allocator...",
+    ],
     &["Initializing global allocator...", "global_alloc:"],
     // Tasking bring-up
     &["Initializing tasking..."],

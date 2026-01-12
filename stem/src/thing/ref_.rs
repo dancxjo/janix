@@ -1,4 +1,4 @@
-use super::{ThingId, Thing};
+use super::{Thing, ThingId};
 use core::marker::PhantomData;
 
 #[derive(Debug)]
@@ -9,7 +9,10 @@ pub struct ThingRef<T: Thing> {
 
 impl<T: Thing> Clone for ThingRef<T> {
     fn clone(&self) -> Self {
-        Self { id: self.id, _p: PhantomData }
+        Self {
+            id: self.id,
+            _p: PhantomData,
+        }
     }
 }
 
@@ -17,7 +20,10 @@ impl<T: Thing> Copy for ThingRef<T> {}
 
 impl<T: Thing> ThingRef<T> {
     pub unsafe fn new(id: ThingId) -> Self {
-        Self { id, _p: PhantomData }
+        Self {
+            id,
+            _p: PhantomData,
+        }
     }
 }
 

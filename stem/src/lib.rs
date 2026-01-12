@@ -5,17 +5,18 @@ pub use abi;
 #[cfg(feature = "rt")]
 pub use stem_macros::main;
 
-pub mod syscall;
-pub mod errors;
+pub mod arch;
 pub mod console;
 pub mod device;
+pub mod errors;
 #[cfg(feature = "panic-handler")]
 pub mod panic;
-pub mod rt;
-pub mod time;
 pub mod pci;
-pub mod thread;
+pub mod rt;
 pub mod stack;
+pub mod syscall;
+pub mod thread;
+pub mod time;
 
 #[macro_export]
 macro_rules! print {
@@ -34,27 +35,57 @@ pub fn log(s: &str) {
 
 #[macro_export]
 macro_rules! error {
-    ($($arg:tt)*) => ($crate::console::log(1, format_args!($($arg)*)));
+    ($($arg:tt)*) => {{
+        $crate::console::log_with_provenance(
+            $crate::abi::logging::Level::Error as usize,
+            module_path!(),
+            format_args!($($arg)*),
+        );
+    }};
 }
 
 #[macro_export]
 macro_rules! warn {
-    ($($arg:tt)*) => ($crate::console::log(2, format_args!($($arg)*)));
+    ($($arg:tt)*) => {{
+        $crate::console::log_with_provenance(
+            $crate::abi::logging::Level::Warn as usize,
+            module_path!(),
+            format_args!($($arg)*),
+        );
+    }};
 }
 
 #[macro_export]
 macro_rules! info {
-    ($($arg:tt)*) => ($crate::console::log(3, format_args!($($arg)*)));
+    ($($arg:tt)*) => {{
+        $crate::console::log_with_provenance(
+            $crate::abi::logging::Level::Info as usize,
+            module_path!(),
+            format_args!($($arg)*),
+        );
+    }};
 }
 
 #[macro_export]
 macro_rules! debug {
-    ($($arg:tt)*) => ($crate::console::log(4, format_args!($($arg)*)));
+    ($($arg:tt)*) => {{
+        $crate::console::log_with_provenance(
+            $crate::abi::logging::Level::Debug as usize,
+            module_path!(),
+            format_args!($($arg)*),
+        );
+    }};
 }
 
 #[macro_export]
 macro_rules! trace {
-    ($($arg:tt)*) => ($crate::console::log(5, format_args!($($arg)*)));
+    ($($arg:tt)*) => {{
+        $crate::console::log_with_provenance(
+            $crate::abi::logging::Level::Trace as usize,
+            module_path!(),
+            format_args!($($arg)*),
+        );
+    }};
 }
 
 pub fn yield_now() {

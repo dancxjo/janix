@@ -82,8 +82,8 @@ const MIN_INTEL_DEVICES: &[u16] = &[
     0x100e, 0x10d3, 0x1237, 0x2415, 0x2922, 0x7000, 0x7010, 0x7111, 0x7113,
 ];
 const MIN_VIRTIO_DEVICES: &[u16] = &[
-    0x1000, 0x1001, 0x1002, 0x1003, 0x1004, 0x1005, 0x1009, 0x1041, 0x1042, 0x1043, 0x1044,
-    0x1045, 0x1048, 0x1049,
+    0x1000, 0x1001, 0x1002, 0x1003, 0x1004, 0x1005, 0x1009, 0x1041, 0x1042, 0x1043, 0x1044, 0x1045,
+    0x1048, 0x1049,
 ];
 const MIN_QEMU_DEVICES: &[u16] = &[0x1111];
 const MIN_VMWARE_DEVICES: &[u16] = &[0x0405, 0x0790, 0x07a0];
@@ -385,7 +385,9 @@ fn parse_metadata(line: &str, snapshot: &mut SnapshotInfo) {
 }
 
 fn split_id_and_name(line: &str) -> Option<(&str, &str)> {
-    let mut iter = line.splitn(2, char::is_whitespace).filter(|s| !s.is_empty());
+    let mut iter = line
+        .splitn(2, char::is_whitespace)
+        .filter(|s| !s.is_empty());
     let id = iter.next()?;
     let name = iter.next()?.trim_start();
     if name.is_empty() {
@@ -432,10 +434,7 @@ mod tests {
     fn parses_metadata_and_records() {
         let parsed = parse_pci_ids(SAMPLE);
         assert_eq!(parsed.snapshot.version.as_deref(), Some("test-version"));
-        assert_eq!(
-            parsed.snapshot.date.as_deref(),
-            Some("2024-01-01 00:00:00")
-        );
+        assert_eq!(parsed.snapshot.date.as_deref(), Some("2024-01-01 00:00:00"));
         assert_eq!(parsed.vendors.len(), 2);
         assert_eq!(parsed.vendors[0].id, 0x1234);
         assert_eq!(parsed.vendors[0].devices.len(), 2);
@@ -462,9 +461,8 @@ mod tests {
         assert!(tables.devices.len() >= 3);
 
         let vendor_name = std::str::from_utf8(
-            &tables.strings
-                [tables.vendors[0].name_off as usize
-                    ..tables.vendors[0].name_off as usize + tables.vendors[0].name_len as usize],
+            &tables.strings[tables.vendors[0].name_off as usize
+                ..tables.vendors[0].name_off as usize + tables.vendors[0].name_len as usize],
         )
         .unwrap();
         assert_eq!(vendor_name, "Sample Vendor");

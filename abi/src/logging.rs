@@ -84,7 +84,7 @@ pub struct SpanId(pub u64);
 
 impl SpanId {
     pub const NONE: SpanId = SpanId(0);
-    
+
     pub fn is_none(&self) -> bool {
         self.0 == 0
     }

@@ -31,15 +31,18 @@ fn internal_alloc(layout: Layout) -> *mut u8 {
         let top = HEAP_TOP.load(Ordering::Relaxed);
         let base = unsafe { core::ptr::addr_of_mut!(SIMD_HEAP) as usize };
         let current_ptr = base + top;
-        
+
         let align_offset = (layout.align() - (current_ptr % layout.align())) % layout.align();
         let new_top = top + align_offset + layout.size();
-        
+
         if new_top > HEAP_SIZE {
             return core::ptr::null_mut();
         }
-        
-        if HEAP_TOP.compare_exchange(top, new_top, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+
+        if HEAP_TOP
+            .compare_exchange(top, new_top, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
             return (base + top + align_offset) as *mut u8;
         }
     }
@@ -67,7 +70,7 @@ impl SimdState {
 
         let layout = Layout::from_size_align(size, align).expect("Invalid SIMD layout");
         let buffer = internal_alloc(layout);
-        
+
         if buffer.is_null() {
             panic!("OOM allocating SimdState");
         }
@@ -107,18 +110,18 @@ pub fn self_test<R: BootRuntime>(rt: &R) {
     with_simd(rt, || {
         #[repr(align(16))]
         struct AlignedStorage([u8; 1024]);
-        
+
         let mut storage = AlignedStorage([0; 1024]);
         let buffer = storage.0.as_mut_ptr();
-        
+
         if size > 1024 || align > 16 {
-             kinfo!("SIMD self-test skipped (size/align too large for stack buffer)");
-             return;
+            kinfo!("SIMD self-test skipped (size/align too large for stack buffer)");
+            return;
         }
-        
+
         unsafe { rt.simd_save(buffer) };
         unsafe { rt.simd_restore(buffer) };
-        
+
         kinfo!("SIMD self-test passed (save/restore cycle)");
     });
 }

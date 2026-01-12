@@ -1,13 +1,13 @@
-use core::arch::asm;
-use kernel::{IrqState, UserTaskSpec, UserEntry, FrameAllocatorHook, MapPerms, MapKind};
-use kernel::time::MonotonicClamp;
 use crate::runtime::ArchRuntime;
+use core::arch::asm;
+use kernel::time::MonotonicClamp;
+use kernel::{FrameAllocatorHook, IrqState, MapKind, MapPerms, UserEntry, UserTaskSpec};
 
+pub mod paging;
 pub mod simd;
+pub mod syscall;
 pub mod task;
 pub mod trap;
-pub mod paging;
-pub mod syscall;
 pub mod vector;
 
 pub struct AArch64Runtime {
@@ -22,16 +22,18 @@ impl AArch64Runtime {
     }
 }
 
-pub use task::AArch64Context;
 pub use paging::AArch64AddressSpace;
+pub use task::AArch64Context;
 
 impl ArchRuntime for AArch64Runtime {
     type Context = AArch64Context;
     type AddressSpace = AArch64AddressSpace;
 
-    fn init(&self, hhdm_offset: u64) { 
+    fn init(&self, hhdm_offset: u64) {
         paging::init(hhdm_offset);
-        unsafe { vector::init(); }
+        unsafe {
+            vector::init();
+        }
     }
     fn putchar(&self, c: u8) {
         self.serial.putchar(c);
@@ -44,7 +46,7 @@ impl ArchRuntime for AArch64Runtime {
     fn mono_ticks(&self) -> u64 {
         self.serial.clamp.clamp(read_cntvct_el0())
     }
-    
+
     fn mono_freq_hz(&self) -> u64 {
         read_cntfrq_el0()
     }
@@ -60,41 +62,66 @@ impl ArchRuntime for AArch64Runtime {
 
     fn irq_restore(&self, state: IrqState) {
         if state.0 == 0 {
-             unsafe { asm!("msr daifclr, #2", options(nomem, nostack)); }
+            unsafe {
+                asm!("msr daifclr, #2", options(nomem, nostack));
+            }
         } else {
-             unsafe { asm!("msr daifset, #2", options(nomem, nostack)); }
+            unsafe {
+                asm!("msr daifset, #2", options(nomem, nostack));
+            }
         }
     }
-    
-    fn simd_init_cpu(&self) { simd::init_cpu(); }
-    fn simd_state_layout(&self) -> (usize, usize) { simd::STATE_LAYOUT }
-    unsafe fn simd_save(&self, dst: *mut u8) { unsafe { simd::save(dst) } }
-    unsafe fn simd_restore(&self, src: *const u8) { unsafe { simd::restore(src) } }
-    
+
+    fn simd_init_cpu(&self) {
+        simd::init_cpu();
+    }
+    fn simd_state_layout(&self) -> (usize, usize) {
+        simd::STATE_LAYOUT
+    }
+    unsafe fn simd_save(&self, dst: *mut u8) {
+        unsafe { simd::save(dst) }
+    }
+    unsafe fn simd_restore(&self, src: *const u8) {
+        unsafe { simd::restore(src) }
+    }
+
     unsafe fn early_init(&self) {
         // TODO: EL1h (SPx) mode switch during early boot
     }
-    
+
     fn fence_full(&self) {
-         unsafe { asm!("dmb sy", options(nostack, preserves_flags)); }
-    }
-    
-    fn icache_invalidate(&self) {
-         unsafe { 
-             asm!("ic ialluis", options(nostack, preserves_flags));
-             asm!("dsb ish", options(nostack, preserves_flags));
-             asm!("isb", options(nostack, preserves_flags));
-         }
+        unsafe {
+            asm!("dmb sy", options(nostack, preserves_flags));
+        }
     }
 
-    fn threads_supported(&self) -> bool { true }
+    fn icache_invalidate(&self) {
+        unsafe {
+            asm!("ic ialluis", options(nostack, preserves_flags));
+            asm!("dsb ish", options(nostack, preserves_flags));
+            asm!("isb", options(nostack, preserves_flags));
+        }
+    }
+
+    fn threads_supported(&self) -> bool {
+        true
+    }
 
     // Tasking
-    fn init_kernel_context(&self, entry: extern "C" fn(usize) -> !, stack_top: u64, arg: usize) -> Self::Context {
+    fn init_kernel_context(
+        &self,
+        entry: extern "C" fn(usize) -> !,
+        stack_top: u64,
+        arg: usize,
+    ) -> Self::Context {
         task::init_kernel_context(entry, stack_top, arg)
     }
 
-    fn init_user_context(&self, spec: UserTaskSpec<Self::AddressSpace>, kstack_top: u64) -> Self::Context {
+    fn init_user_context(
+        &self,
+        spec: UserTaskSpec<Self::AddressSpace>,
+        kstack_top: u64,
+    ) -> Self::Context {
         task::init_user_context(spec, kstack_top)
     }
 
@@ -105,9 +132,16 @@ impl ArchRuntime for AArch64Runtime {
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {
         // Debug: Read current TTBR0
         let ttbr0: u64;
-        unsafe { asm!("mrs {}, ttbr0_el1", out(reg) ttbr0, options(nomem, nostack)); }
-        kernel::kinfo!("enter_user: TTBR0={:#x} entry_pc={:#x} user_sp={:#x}", ttbr0, entry.entry_pc, entry.user_sp);
-        
+        unsafe {
+            asm!("mrs {}, ttbr0_el1", out(reg) ttbr0, options(nomem, nostack));
+        }
+        kernel::kinfo!(
+            "enter_user: TTBR0={:#x} entry_pc={:#x} user_sp={:#x}",
+            ttbr0,
+            entry.entry_pc,
+            entry.user_sp
+        );
+
         // Switch to EL1h (using SP_EL1) so we can safely set SP_EL0 for user mode.
         // We first save the current SP, then switch SPSel=1 and restore SP to SP_EL1.
         // After this, SP_EL0 can be safely written for the user task.
@@ -115,7 +149,9 @@ impl ArchRuntime for AArch64Runtime {
         // SPSR: EL0t (mode 0), all interrupts unmasked
         let spsr: u64 = 0;
         let ksp: u64;
-        unsafe { asm!("mov {}, sp", out(reg) ksp, options(nomem, nostack)); }
+        unsafe {
+            asm!("mov {}, sp", out(reg) ksp, options(nomem, nostack));
+        }
 
         unsafe {
             asm!(
@@ -139,17 +175,20 @@ impl ArchRuntime for AArch64Runtime {
     // Paging - use ProxyAllocator for real page table allocation
     fn make_user_address_space(&self) -> Self::AddressSpace {
         let aspace = paging::make_user_address_space(self.active_address_space(), &ProxyAllocator);
-        kernel::kinfo!("make_user_address_space: created aspace phys={:#x}", aspace.0);
+        kernel::kinfo!(
+            "make_user_address_space: created aspace phys={:#x}",
+            aspace.0
+        );
         aspace
     }
 
     fn active_address_space(&self) -> Self::AddressSpace {
         paging::active_address_space()
     }
-    
+
     fn activate_address_space(&self, aspace: Self::AddressSpace) {
         kernel::kinfo!("activate_address_space: setting TTBR0 to {:#x}", aspace.0);
-        unsafe { 
+        unsafe {
             asm!(
                 "msr ttbr0_el1, {ttbr}",
                 "isb",
@@ -162,7 +201,15 @@ impl ArchRuntime for AArch64Runtime {
         }
     }
 
-    fn map_page(&self, aspace: Self::AddressSpace, virt: u64, phys: u64, perms: MapPerms, kind: MapKind, allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
+    fn map_page(
+        &self,
+        aspace: Self::AddressSpace,
+        virt: u64,
+        phys: u64,
+        perms: MapPerms,
+        kind: MapKind,
+        allocator: &dyn FrameAllocatorHook,
+    ) -> Result<(), ()> {
         paging::map_page(aspace, virt, phys, perms, kind, allocator)
     }
 
@@ -182,7 +229,9 @@ impl ArchRuntime for AArch64Runtime {
 // ProxyAllocator delegates to kernel::memory::alloc_frame()
 struct ProxyAllocator;
 impl FrameAllocatorHook for ProxyAllocator {
-    fn alloc_frame(&self) -> Option<u64> { kernel::memory::alloc_frame() }
+    fn alloc_frame(&self) -> Option<u64> {
+        kernel::memory::alloc_frame()
+    }
 }
 
 pub struct SerialPort {
@@ -212,20 +261,26 @@ impl SerialPort {
 
 pub fn hcf() -> ! {
     loop {
-        unsafe { asm!("wfi", options(nomem, nostack)); }
+        unsafe {
+            asm!("wfi", options(nomem, nostack));
+        }
     }
 }
 
 #[inline]
 fn read_cntfrq_el0() -> u64 {
     let val: u64;
-    unsafe { asm!("mrs {}, cntfrq_el0", out(reg) val, options(nomem, nostack)); }
+    unsafe {
+        asm!("mrs {}, cntfrq_el0", out(reg) val, options(nomem, nostack));
+    }
     val
 }
 
 #[inline]
 fn read_cntvct_el0() -> u64 {
     let val: u64;
-    unsafe { asm!("mrs {}, cntvct_el0", out(reg) val, options(nomem, nostack)); }
+    unsafe {
+        asm!("mrs {}, cntvct_el0", out(reg) val, options(nomem, nostack));
+    }
     val
 }

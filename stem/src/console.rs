@@ -1,5 +1,5 @@
-use core::fmt;
 use crate::syscall::log_write;
+use core::fmt;
 
 struct BufConsole {
     buf: [u8; 256],
@@ -37,7 +37,7 @@ impl fmt::Write for BufConsole {
                 self.flush();
                 continue;
             }
-            
+
             let chunk_len = core::cmp::min(space, remaining.len());
             self.buf[self.len..self.len + chunk_len].copy_from_slice(&remaining[..chunk_len]);
             self.len += chunk_len;
@@ -50,6 +50,15 @@ impl fmt::Write for BufConsole {
 pub fn log(level: usize, args: fmt::Arguments) {
     use core::fmt::Write;
     let mut cons = BufConsole::new(level);
+    let _ = cons.write_fmt(args);
+    cons.flush();
+}
+
+pub fn log_with_provenance(level: usize, provenance: &str, args: fmt::Arguments) {
+    use core::fmt::Write;
+    let mut cons = BufConsole::new(level);
+    let _ = cons.write_str(provenance);
+    let _ = cons.write_str(": ");
     let _ = cons.write_fmt(args);
     cons.flush();
 }

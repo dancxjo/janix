@@ -1,7 +1,7 @@
 //! Build task - compiles the kernel for target architectures.
 
+use crate::common::{Result, profile_subdir, rust_target};
 use xshell::{Shell, cmd};
-use crate::common::{rust_target, profile_subdir, Result};
 
 /// Build the kernel for a target architecture.
 pub fn build(sh: &Shell, arch: &str, profile: &str) -> Result<()> {
@@ -10,9 +10,12 @@ pub fn build(sh: &Shell, arch: &str, profile: &str) -> Result<()> {
 
     println!("Building bran kernel for {} ({} profile)...", arch, profile);
 
-    cmd!(sh, "cargo build --target {target} --profile {profile} -p bran")
-        .env("RUSTFLAGS", "-C relocation-model=static -C panic=abort")
-        .run()?;
+    cmd!(
+        sh,
+        "cargo build --target {target} --profile {profile} -p bran"
+    )
+    .env("RUSTFLAGS", "-C relocation-model=static -C panic=abort")
+    .run()?;
 
     // Copy kernel binary to bran/bin-{arch}/
     let bin_dir = format!("bran/bin-{}", arch);

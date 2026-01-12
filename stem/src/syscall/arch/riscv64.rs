@@ -1,9 +1,17 @@
-use core::arch::asm;
 use abi::errors::Errno;
+use core::arch::asm;
 
 /// Raw syscall entry point.
 #[inline(always)]
-pub unsafe fn raw_syscall6(n: u32, a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize) -> isize {
+pub unsafe fn raw_syscall6(
+    n: u32,
+    a0: usize,
+    a1: usize,
+    a2: usize,
+    a3: usize,
+    a4: usize,
+    a5: usize,
+) -> isize {
     let ret: isize;
     asm!(
         "ecall",

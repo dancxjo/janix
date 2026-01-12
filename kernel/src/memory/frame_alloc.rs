@@ -1,7 +1,7 @@
-use spin::Mutex;
+use crate::BootModuleDesc;
 use crate::PhysRange;
 use crate::PhysRangeKind;
-use crate::BootModuleDesc;
+use spin::Mutex;
 
 pub static FRAME_ALLOCATOR: FrameAllocatorLocked = FrameAllocatorLocked::new();
 
@@ -44,10 +44,10 @@ impl FrameAllocator {
             total_frames: 0,
             free_frames: 0,
         };
-        
+
         this.total_frames = this.bitmap.len() * 64;
         this.bitmap.fill(!0);
-        
+
         for range in map {
             if range.kind == PhysRangeKind::Usable {
                 let start = core::cmp::max(range.start, 0);
@@ -56,11 +56,11 @@ impl FrameAllocator {
                 }
             }
         }
-        
+
         let bitmap_phys = (this.bitmap.as_ptr() as u64) - hhdm;
         let bitmap_len = (this.bitmap.len() * 8) as u64;
         this.mark_used_range(bitmap_phys, bitmap_phys + bitmap_len);
-        
+
         this
     }
 
@@ -68,13 +68,13 @@ impl FrameAllocator {
         self.free_frames
     }
 
-    pub fn alloc(&mut self) -> Option<(u64, )> {
+    pub fn alloc(&mut self) -> Option<(u64,)> {
         for i in 0..self.bitmap.len() {
             if self.bitmap[i] != !0 {
                 let bit = self.bitmap[i].trailing_ones() as usize;
                 self.bitmap[i] |= 1 << bit;
                 self.free_frames -= 1;
-                return Some(((i * 64 + bit) as u64 * 4096, ));
+                return Some(((i * 64 + bit) as u64 * 4096,));
             }
         }
         None

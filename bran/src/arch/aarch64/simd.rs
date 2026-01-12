@@ -10,21 +10,21 @@ pub fn init_cpu() {
         // 0b11 = Catch nothing, allow access to FP/SIMD at EL0 and EL1
         let mut cpacr: u64;
         asm!("mrs {}, cpacr_el1", out(reg) cpacr, options(nomem, nostack, preserves_flags));
-        cpacr |= 0b11 << 20; 
+        cpacr |= 0b11 << 20;
         asm!("msr cpacr_el1, {}", in(reg) cpacr, options(nomem, nostack, preserves_flags));
-        
+
         // Ensure changes are visible
         asm!("isb", options(nomem, nostack, preserves_flags));
     }
 }
 
 /// AArch64 SIMD State Layout
-/// 
+///
 /// 32 registers * 16 bytes (Q0-Q31) = 512 bytes
 /// + 8 bytes FPSR
 /// + 8 bytes FPCR
 /// = 528 bytes total.
-/// 
+///
 /// Align to 16 bytes.
 pub const STATE_LAYOUT: (usize, usize) = (528, 16);
 
@@ -67,7 +67,7 @@ pub unsafe fn save(dst: *mut u8) {
         let fpcr: u64;
         asm!("mrs {}, fpsr", out(reg) fpsr, options(nomem, nostack, preserves_flags));
         asm!("mrs {}, fpcr", out(reg) fpcr, options(nomem, nostack, preserves_flags));
-        
+
         *status_ptr = fpsr;
         *status_ptr.add(1) = fpcr;
     }
@@ -77,10 +77,10 @@ pub unsafe fn save(dst: *mut u8) {
 ///
 /// # Safety
 /// src must be valid and contain saved state.
-#[inline(never)] 
+#[inline(never)]
 pub unsafe fn restore(src: *const u8) {
     let regs = src as *const u128;
-    
+
     // Restore Q0-Q31
     unsafe {
         asm!(
@@ -110,7 +110,7 @@ pub unsafe fn restore(src: *const u8) {
         let status_ptr = src.add(512) as *const u64;
         let fpsr = *status_ptr;
         let fpcr = *status_ptr.add(1);
-        
+
         asm!("msr fpsr, {}", in(reg) fpsr, options(nomem, nostack, preserves_flags));
         asm!("msr fpcr, {}", in(reg) fpcr, options(nomem, nostack, preserves_flags));
     }

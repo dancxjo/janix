@@ -1,4 +1,4 @@
-use crate::{PhysRange, BootModuleDesc, FramebufferInfo};
+use crate::{BootModuleDesc, FramebufferInfo, PhysRange};
 use spin::RwLock;
 
 pub static BOOT_INFO: RwLock<Option<BootSyscallInfo>> = RwLock::new(None);

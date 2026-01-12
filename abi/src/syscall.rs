@@ -23,7 +23,6 @@ pub const SYS_DEVICE_IRQ_SUBSCRIBE: u32 = 15;
 pub const SYS_DEVICE_IOPORT_READ: u32 = 16;
 pub const SYS_DEVICE_IOPORT_WRITE: u32 = 17;
 
-
 // Stream syscalls (128-191)
 pub const SYS_STREAM_OPEN: u32 = 128;
 pub const SYS_STREAM_READ: u32 = 129;

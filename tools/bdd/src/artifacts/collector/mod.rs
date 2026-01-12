@@ -1,7 +1,7 @@
-use std::path::PathBuf;
-use std::fs;
-use chrono::{DateTime, Local};
 use super::types::*;
+use chrono::{DateTime, Local};
+use std::fs;
+use std::path::PathBuf;
 
 mod writer;
 
@@ -75,7 +75,8 @@ impl ArtifactCollector {
 
     /// Get directory for current step.
     pub fn step_dir(&self) -> PathBuf {
-        self.scenario_dir().join(format!("{:02}", self.step_counter))
+        self.scenario_dir()
+            .join(format!("{:02}", self.step_counter))
     }
 
     /// Called when a feature starts.
@@ -120,7 +121,7 @@ impl ArtifactCollector {
     /// Called when a scenario ends.
     pub fn on_scenario_end(&mut self, passed: bool, _full_serial: &str) {
         let serial_to_write = std::mem::take(&mut self.pending_scenario_serial);
-        
+
         let scenario_to_write = if let Some(feature) = self.features.last_mut() {
             if let Some(scenario) = feature.scenarios.last_mut() {
                 scenario.passed = passed;
@@ -150,7 +151,13 @@ impl ArtifactCollector {
     }
 
     /// Called when a step starts.
-    pub fn on_step_start(&mut self, keyword: &str, name: &str, serial_len: usize, screenshot_before: Option<PathBuf>) {
+    pub fn on_step_start(
+        &mut self,
+        keyword: &str,
+        name: &str,
+        serial_len: usize,
+        screenshot_before: Option<PathBuf>,
+    ) {
         self.step_counter += 1;
         self.step_start_serial_len = serial_len;
         self.step_start_time = Some(std::time::Instant::now());
@@ -195,7 +202,8 @@ impl ArtifactCollector {
         registers: Option<PathBuf>,
         full_serial: &str,
     ) {
-        let duration_ms = self.step_start_time
+        let duration_ms = self
+            .step_start_time
             .map(|t| t.elapsed().as_millis() as u64)
             .unwrap_or(0);
 
@@ -218,7 +226,11 @@ impl ArtifactCollector {
                     step.screenshot_before = screenshot_before;
                     step.screenshot_after = screenshot_after;
                     step.registers = registers;
-                    step.serial_log = if log_path.exists() { Some(log_path.clone()) } else { None };
+                    step.serial_log = if log_path.exists() {
+                        Some(log_path.clone())
+                    } else {
+                        None
+                    };
                     step.serial_excerpt = step_serial;
                     step.duration_ms = duration_ms;
                     Some(step.clone())
@@ -243,28 +255,39 @@ impl ArtifactCollector {
     }
 
     pub fn count_features(&self) -> (usize, usize) {
-        let passed = self.features.iter()
+        let passed = self
+            .features
+            .iter()
             .filter(|f| f.scenarios.iter().all(|s| s.passed))
             .count();
         (passed, self.features.len() - passed)
     }
 
     pub(crate) fn count_scenarios(&self) -> (usize, usize) {
-        let total: Vec<_> = self.features.iter()
-            .flat_map(|f| &f.scenarios)
-            .collect();
+        let total: Vec<_> = self.features.iter().flat_map(|f| &f.scenarios).collect();
         let passed = total.iter().filter(|s| s.passed).count();
         (passed, total.len() - passed)
     }
 
     pub(crate) fn count_steps(&self) -> (usize, usize, usize) {
-        let total: Vec<_> = self.features.iter()
+        let total: Vec<_> = self
+            .features
+            .iter()
             .flat_map(|f| &f.scenarios)
             .flat_map(|s| &s.steps)
             .collect();
-        let passed = total.iter().filter(|s| s.result == StepResult::Passed).count();
-        let failed = total.iter().filter(|s| s.result == StepResult::Failed).count();
-        let skipped = total.iter().filter(|s| s.result == StepResult::Skipped).count();
+        let passed = total
+            .iter()
+            .filter(|s| s.result == StepResult::Passed)
+            .count();
+        let failed = total
+            .iter()
+            .filter(|s| s.result == StepResult::Failed)
+            .count();
+        let skipped = total
+            .iter()
+            .filter(|s| s.result == StepResult::Skipped)
+            .count();
         (passed, failed, skipped)
     }
 

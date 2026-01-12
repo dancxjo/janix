@@ -1,5 +1,5 @@
-use core::arch::asm;
 use abi::device::RtcTime;
+use core::arch::asm;
 
 #[inline]
 unsafe fn outb(port: u16, val: u8) {
@@ -34,16 +34,16 @@ fn bcd_to_binary(val: u8) -> u8 {
 
 pub unsafe fn read_rtc() -> RtcTime {
     cmos_wait_update_in_progress();
-    
+
     let mut second = cmos_read(0x00);
     let mut minute = cmos_read(0x02);
     let mut hour = cmos_read(0x04);
     let mut day = cmos_read(0x07);
     let mut month = cmos_read(0x08);
     let mut year = cmos_read(0x09);
-    
+
     let register_b = cmos_read(0x0B);
-    
+
     // Convert BCD if needed
     if (register_b & 0x04) == 0 {
         second = bcd_to_binary(second);
@@ -53,10 +53,10 @@ pub unsafe fn read_rtc() -> RtcTime {
         month = bcd_to_binary(month);
         year = bcd_to_binary(year);
     }
-    
+
     // Century register? Without ACPI assume 2000+.
     let full_year = 2000 + (year as u16);
-    
+
     RtcTime {
         year: full_year,
         month,

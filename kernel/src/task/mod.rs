@@ -1,11 +1,11 @@
-pub mod scheduler;
 pub mod loader;
+pub mod scheduler;
 
 pub use scheduler::Scheduler;
 
-use crate::simd::SimdState;
 use crate::BootRuntime;
 use crate::BootTasking;
+use crate::simd::SimdState;
 
 pub type TaskId = u64;
 
@@ -21,6 +21,7 @@ pub struct Task<R: BootRuntime> {
     pub id: TaskId,
     pub state: TaskState,
     pub exit_code: Option<i32>,
+    pub is_user: bool,
 
     pub kstack_base: *mut u8,
     pub kstack_size: usize,
@@ -55,7 +56,7 @@ pub fn preempt_disable<R: BootRuntime>() {
 pub fn preempt_enable<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
     let irq = rt.irq_disable();
-    
+
     let switch_params = {
         let lock = scheduler::SCHEDULER.lock();
         if let Some(ptr) = *lock {
@@ -65,14 +66,25 @@ pub fn preempt_enable<R: BootRuntime>() {
             None
         }
     };
-    
-    if let Some((old_ctx, new_ctx, aspace)) = switch_params {
+
+    if let Some(switch) = switch_params {
+        #[cfg(any(feature = "sched_debug", debug_assertions))]
+        let cr3_before = scheduler::read_cr3();
+
         unsafe {
-            rt.tasking().activate_address_space(aspace);
-            rt.tasking().switch(&mut *old_ctx, &*new_ctx);
+            rt.tasking().activate_address_space(switch.to_aspace);
+        }
+
+        #[cfg(any(feature = "sched_debug", debug_assertions))]
+        let cr3_after = scheduler::read_cr3();
+        #[cfg(any(feature = "sched_debug", debug_assertions))]
+        scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
+
+        unsafe {
+            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
         }
     }
-    
+
     rt.irq_restore(irq);
 }
 
@@ -86,10 +98,10 @@ pub fn resched_if_needed<R: BootRuntime>() {
     // BUT we need to be careful about recursion.
     // For v0, let's leave it as a TODO or a simple "maybe yield".
     // "resched_if_needed at safe point" -> usually checks flags.
-    
+
     let rt = crate::runtime::<R>();
     let irq = rt.irq_disable();
-    
+
     let switch_params = {
         let lock = scheduler::SCHEDULER.lock();
         if let Some(ptr) = *lock {
@@ -99,15 +111,15 @@ pub fn resched_if_needed<R: BootRuntime>() {
             // If we are here, we are at a safe point, so we assume preemption is enabled (or we ignore depth?).
             // Actually, if we are at a safe point (e.g. syscall return), we should yield if need_resched is set.
             // But we can't access `need_resched` without the lock.
-            // Let's rely on `sched.schedule_point(PreemptTick)` to return None if disabled, 
+            // Let's rely on `sched.schedule_point(PreemptTick)` to return None if disabled,
             // OR we need a new reason `ReschedIfNeeded`?
             // For now, let's abuse `CooperativeYield` if we see the flag? No.
             // Let's allow `PreemptTick` to serve this purpose.
-            
+
             // Wait, implementation of `schedule_point` for `PreemptTick`:
             // if disable_depth > 0 { need_resched = true; return None; }
             // else { prepare_yield() }
-            
+
             // So calling it here works perfectly.
             sched.schedule_point(scheduler::ScheduleReason::PreemptTick)
         } else {
@@ -115,13 +127,24 @@ pub fn resched_if_needed<R: BootRuntime>() {
         }
     };
 
-    if let Some((old_ctx, new_ctx, aspace)) = switch_params {
+    if let Some(switch) = switch_params {
+        #[cfg(any(feature = "sched_debug", debug_assertions))]
+        let cr3_before = scheduler::read_cr3();
+
         unsafe {
-            rt.tasking().activate_address_space(aspace);
-            rt.tasking().switch(&mut *old_ctx, &*new_ctx);
+            rt.tasking().activate_address_space(switch.to_aspace);
+        }
+
+        #[cfg(any(feature = "sched_debug", debug_assertions))]
+        let cr3_after = scheduler::read_cr3();
+        #[cfg(any(feature = "sched_debug", debug_assertions))]
+        scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
+
+        unsafe {
+            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
         }
     }
-    
+
     rt.irq_restore(irq);
 }
 

@@ -1,7 +1,6 @@
 use kernel::{
-    BootRuntime, BootRuntimeBase, BootTasking, UserTaskSpec, UserEntry,
-    FrameAllocatorHook, PhysRange, BootModuleDesc, FramebufferInfo, IrqState,
-    MapPerms, MapKind,
+    BootModuleDesc, BootRuntime, BootRuntimeBase, BootTasking, FrameAllocatorHook, FramebufferInfo,
+    IrqState, MapKind, MapPerms, PhysRange, UserEntry, UserTaskSpec,
 };
 
 pub trait ArchRuntime {
@@ -18,23 +17,36 @@ pub trait ArchRuntime {
 
     // SIMD - defaults
     fn simd_init_cpu(&self) {}
-    fn simd_state_layout(&self) -> (usize, usize) { (0, 1) }
+    fn simd_state_layout(&self) -> (usize, usize) {
+        (0, 1)
+    }
     unsafe fn simd_save(&self, _dst: *mut u8) {}
     unsafe fn simd_restore(&self, _src: *const u8) {}
-    
+
     // Very early initialization (e.g., stack mode switching)
     unsafe fn early_init(&self) {}
 
     // Barriers - defaults
-    fn threads_supported(&self) -> bool { false }
+    fn threads_supported(&self) -> bool {
+        false
+    }
     fn fence_full(&self) {}
     fn icache_invalidate(&self) {}
 
     // Tasking - defaults
-    fn init_kernel_context(&self, _entry: extern "C" fn(usize) -> !, _stack_top: u64, _arg: usize) -> Self::Context {
+    fn init_kernel_context(
+        &self,
+        _entry: extern "C" fn(usize) -> !,
+        _stack_top: u64,
+        _arg: usize,
+    ) -> Self::Context {
         Self::Context::default()
     }
-    fn init_user_context(&self, _spec: UserTaskSpec<Self::AddressSpace>, _kstack_top: u64) -> Self::Context {
+    fn init_user_context(
+        &self,
+        _spec: UserTaskSpec<Self::AddressSpace>,
+        _kstack_top: u64,
+    ) -> Self::Context {
         Self::Context::default()
     }
     unsafe fn switch(&self, _from: &mut Self::Context, _to: &Self::Context) {
@@ -54,7 +66,15 @@ pub trait ArchRuntime {
         // No-op
     }
 
-    fn map_page(&self, _aspace: Self::AddressSpace, _virt: u64, _phys: u64, _perms: MapPerms, _kind: MapKind, _allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
+    fn map_page(
+        &self,
+        _aspace: Self::AddressSpace,
+        _virt: u64,
+        _phys: u64,
+        _perms: MapPerms,
+        _kind: MapKind,
+        _allocator: &dyn FrameAllocatorHook,
+    ) -> Result<(), ()> {
         Ok(())
     }
     fn unmap_page(&self, _aspace: Self::AddressSpace, _virt: u64) -> Result<Option<u64>, ()> {
@@ -92,62 +112,110 @@ impl LimineRuntimeData {
     pub fn phys_memory_map(&self) -> &'static [PhysRange] {
         crate::mem::memory_map()
     }
-    
+
     pub fn phys_to_virt_offset(&self) -> u64 {
-        crate::requests::HHDM_REQUEST.get_response().map(|r| r.offset()).unwrap_or(0)
+        crate::requests::HHDM_REQUEST
+            .get_response()
+            .map(|r| r.offset())
+            .unwrap_or(0)
     }
-    
+
     pub fn modules(&self) -> &'static [BootModuleDesc] {
         crate::requests::get_modules()
     }
-    
+
     pub fn framebuffer(&self) -> Option<FramebufferInfo> {
         crate::framebuffer::get_info()
     }
-    
+
     pub fn acpi_rsdp(&self) -> Option<u64> {
-        crate::requests::RSDP_REQUEST.get_response().map(|r| r.address() as u64)
+        crate::requests::RSDP_REQUEST
+            .get_response()
+            .map(|r| r.address() as u64)
     }
 
     pub fn dtb_ptr(&self) -> Option<u64> {
-        crate::requests::DTB_REQUEST.get_response().map(|r| r.dtb_ptr() as u64)
+        crate::requests::DTB_REQUEST
+            .get_response()
+            .map(|r| r.dtb_ptr() as u64)
     }
 }
 
 impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
-    fn putchar(&self, c: u8) { self.arch.putchar(c) }
-    fn mono_ticks(&self) -> u64 { self.arch.mono_ticks() }
-    fn mono_freq_hz(&self) -> u64 { self.arch.mono_freq_hz() }
+    fn putchar(&self, c: u8) {
+        self.arch.putchar(c)
+    }
+    fn mono_ticks(&self) -> u64 {
+        self.arch.mono_ticks()
+    }
+    fn mono_freq_hz(&self) -> u64 {
+        self.arch.mono_freq_hz()
+    }
 }
 
 impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     type Tasking = Self;
-    fn tasking(&self) -> &Self { self }
+    fn tasking(&self) -> &Self {
+        self
+    }
 
-    fn halt(&self) -> ! { self.arch.halt() }
+    fn halt(&self) -> ! {
+        self.arch.halt()
+    }
 
+    fn simd_init_cpu(&self) {
+        self.arch.simd_init_cpu()
+    }
+    fn simd_state_layout(&self) -> (usize, usize) {
+        self.arch.simd_state_layout()
+    }
+    unsafe fn simd_save(&self, dst: *mut u8) {
+        unsafe { self.arch.simd_save(dst) }
+    }
+    unsafe fn simd_restore(&self, src: *const u8) {
+        unsafe { self.arch.simd_restore(src) }
+    }
 
-    fn simd_init_cpu(&self) { self.arch.simd_init_cpu() }
-    fn simd_state_layout(&self) -> (usize, usize) { self.arch.simd_state_layout() }
-    unsafe fn simd_save(&self, dst: *mut u8) { unsafe { self.arch.simd_save(dst) } }
-    unsafe fn simd_restore(&self, src: *const u8) { unsafe { self.arch.simd_restore(src) } }
-    
-    unsafe fn early_init(&self) { unsafe { self.arch.early_init() } }
+    unsafe fn early_init(&self) {
+        unsafe { self.arch.early_init() }
+    }
 
-    fn threads_supported(&self) -> bool { self.arch.threads_supported() }
-    fn fence_full(&self) { self.arch.fence_full() }
-    fn icache_invalidate(&self) { self.arch.icache_invalidate() }
+    fn threads_supported(&self) -> bool {
+        self.arch.threads_supported()
+    }
+    fn fence_full(&self) {
+        self.arch.fence_full()
+    }
+    fn icache_invalidate(&self) {
+        self.arch.icache_invalidate()
+    }
 
-    fn phys_memory_map(&self) -> &'static [PhysRange] { self.limine.phys_memory_map() }
-    fn phys_to_virt_offset(&self) -> u64 { self.limine.phys_to_virt_offset() }
-    fn modules(&self) -> &'static [BootModuleDesc] { self.limine.modules() }
-    fn framebuffer(&self) -> Option<FramebufferInfo> { self.limine.framebuffer() }
-    
-    fn irq_disable(&self) -> IrqState { self.arch.irq_disable() }
-    fn irq_restore(&self, state: IrqState) { self.arch.irq_restore(state) }
+    fn phys_memory_map(&self) -> &'static [PhysRange] {
+        self.limine.phys_memory_map()
+    }
+    fn phys_to_virt_offset(&self) -> u64 {
+        self.limine.phys_to_virt_offset()
+    }
+    fn modules(&self) -> &'static [BootModuleDesc] {
+        self.limine.modules()
+    }
+    fn framebuffer(&self) -> Option<FramebufferInfo> {
+        self.limine.framebuffer()
+    }
 
-    fn acpi_rsdp(&self) -> Option<u64> { self.limine.acpi_rsdp() }
-    fn dtb_ptr(&self) -> Option<u64> { self.limine.dtb_ptr() }
+    fn irq_disable(&self) -> IrqState {
+        self.arch.irq_disable()
+    }
+    fn irq_restore(&self, state: IrqState) {
+        self.arch.irq_restore(state)
+    }
+
+    fn acpi_rsdp(&self) -> Option<u64> {
+        self.limine.acpi_rsdp()
+    }
+    fn dtb_ptr(&self) -> Option<u64> {
+        self.limine.dtb_ptr()
+    }
 }
 
 impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
@@ -159,11 +227,20 @@ impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
         self.arch.init(hhdm_offset)
     }
 
-    fn init_kernel_context(&self, entry: extern "C" fn(usize) -> !, stack_top: u64, arg: usize) -> Self::Context {
+    fn init_kernel_context(
+        &self,
+        entry: extern "C" fn(usize) -> !,
+        stack_top: u64,
+        arg: usize,
+    ) -> Self::Context {
         self.arch.init_kernel_context(entry, stack_top, arg)
     }
-    
-    fn init_user_context(&self, spec: UserTaskSpec<Self::AddressSpace>, kstack_top: u64) -> Self::Context {
+
+    fn init_user_context(
+        &self,
+        spec: UserTaskSpec<Self::AddressSpace>,
+        kstack_top: u64,
+    ) -> Self::Context {
         self.arch.init_user_context(spec, kstack_top)
     }
 
@@ -182,13 +259,22 @@ impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
     fn active_address_space(&self) -> Self::AddressSpace {
         self.arch.active_address_space()
     }
-    
+
     fn activate_address_space(&self, aspace: Self::AddressSpace) {
         self.arch.activate_address_space(aspace)
     }
 
-    fn map_page(&self, aspace: Self::AddressSpace, virt: u64, phys: u64, perms: MapPerms, kind: MapKind, allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
-        self.arch.map_page(aspace, virt, phys, perms, kind, allocator)
+    fn map_page(
+        &self,
+        aspace: Self::AddressSpace,
+        virt: u64,
+        phys: u64,
+        perms: MapPerms,
+        kind: MapKind,
+        allocator: &dyn FrameAllocatorHook,
+    ) -> Result<(), ()> {
+        self.arch
+            .map_page(aspace, virt, phys, perms, kind, allocator)
     }
 
     fn unmap_page(&self, aspace: Self::AddressSpace, virt: u64) -> Result<Option<u64>, ()> {

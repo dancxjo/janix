@@ -4,11 +4,10 @@
 //! and artifact collection integration.
 
 use cucumber::{
-    cli,
+    Event, Writer, cli,
     event::{self, Cucumber},
-    gherkin,
-    parser, Event, Writer,
-    writer::{Normalized, NonTransforming},
+    gherkin, parser,
+    writer::{NonTransforming, Normalized},
 };
 
 use crate::artifacts::{self, StepResult};
@@ -43,11 +42,7 @@ where
 {
     type Cli = cli::Empty;
 
-    async fn handle_event(
-        &mut self,
-        ev: parser::Result<Event<Cucumber<World>>>,
-        _cli: &Self::Cli,
-    ) {
+    async fn handle_event(&mut self, ev: parser::Result<Event<Cucumber<World>>>, _cli: &Self::Cli) {
         use event::Feature;
 
         let Ok(event) = ev else {
@@ -110,30 +105,26 @@ where
                             _ => {}
                         }
                     }
-                    Feature::Rule(rule, rule_event) => {
-                        match rule_event {
-                            event::Rule::Started => {
-                                eprintln!("│  ├─ Rule: {}", rule.name);
-                            }
-                            event::Rule::Finished => {}
-                            event::Rule::Scenario(scenario, retryable) => {
-                                match &retryable.event {
-                                    event::Scenario::Started => {
-                                        self.scenario_failed = false;
-                                        eprintln!("│  │  ├─ Scenario: {}", scenario.name);
-                                        let mut collector = artifacts::global().lock().await;
-                                        collector.on_scenario_start(&scenario.name);
-                                    }
-                                    event::Scenario::Finished => {
-                                        let serial = artifacts::get_latest_serial().await;
-                                        let mut collector = artifacts::global().lock().await;
-                                        collector.on_scenario_end(!self.scenario_failed, &serial);
-                                    }
-                                    _ => {}
-                                }
-                            }
+                    Feature::Rule(rule, rule_event) => match rule_event {
+                        event::Rule::Started => {
+                            eprintln!("│  ├─ Rule: {}", rule.name);
                         }
-                    }
+                        event::Rule::Finished => {}
+                        event::Rule::Scenario(scenario, retryable) => match &retryable.event {
+                            event::Scenario::Started => {
+                                self.scenario_failed = false;
+                                eprintln!("│  │  ├─ Scenario: {}", scenario.name);
+                                let mut collector = artifacts::global().lock().await;
+                                collector.on_scenario_start(&scenario.name);
+                            }
+                            event::Scenario::Finished => {
+                                let serial = artifacts::get_latest_serial().await;
+                                let mut collector = artifacts::global().lock().await;
+                                collector.on_scenario_end(!self.scenario_failed, &serial);
+                            }
+                            _ => {}
+                        },
+                    },
                 }
             }
             Cucumber::ParsingFinished { .. } => {}
@@ -142,22 +133,26 @@ where
 }
 
 impl ThingOsReporter {
-    async fn handle_step(&mut self, step: &gherkin::Step, step_event: &event::Step<impl cucumber::World>) {
+    async fn handle_step(
+        &mut self,
+        step: &gherkin::Step,
+        step_event: &event::Step<impl cucumber::World>,
+    ) {
         match step_event {
             event::Step::Started => {
                 eprintln!("│  │  ├─ {} {}", step.keyword.trim(), step.value);
-                
+
                 // Record step start
                 let serial = artifacts::get_latest_serial().await;
                 self.step_start_serial_len = serial.len();
                 self.step_start_time = Some(std::time::Instant::now());
-                
+
                 // Try to capture a "before" screenshot
                 let screenshot_before = {
                     let collector = artifacts::global().lock().await;
                     let path = collector.screenshot_path("before");
                     drop(collector);
-                    
+
                     match artifacts::take_screenshot_global(&path).await {
                         Ok(p) => Some(p),
                         Err(_e) => {
@@ -169,7 +164,12 @@ impl ThingOsReporter {
                 };
 
                 let mut collector = artifacts::global().lock().await;
-                collector.on_step_start(step.keyword.trim(), &step.value, self.step_start_serial_len, screenshot_before);
+                collector.on_step_start(
+                    step.keyword.trim(),
+                    &step.value,
+                    self.step_start_serial_len,
+                    screenshot_before,
+                );
             }
             event::Step::Passed(..) => {
                 eprintln!("│  │  │  └─ ✅ passed");
@@ -190,13 +190,13 @@ impl ThingOsReporter {
 
     async fn finish_step(&mut self, result: StepResult) {
         let serial = artifacts::get_latest_serial().await;
-        
+
         // Try to capture a screenshot
         let screenshot_after = {
             let collector = artifacts::global().lock().await;
             let path = collector.screenshot_path("after");
             drop(collector);
-            
+
             match artifacts::take_screenshot_global(&path).await {
                 Ok(p) => Some(p),
                 Err(e) => {
@@ -208,21 +208,21 @@ impl ThingOsReporter {
 
         // Try to dump registers
         let registers = {
-             let collector = artifacts::global().lock().await;
-             let path = collector.register_path();
-             drop(collector);
+            let collector = artifacts::global().lock().await;
+            let path = collector.register_path();
+            drop(collector);
 
-             match artifacts::dump_registers_global(&path).await {
-                 Ok(p) => Some(p),
-                 // Don't error log if QMP isn't available or fails (e.g. strict timeout)
-                 // registers aren't critical for every step
-                 Err(_) => None,
-             }
+            match artifacts::dump_registers_global(&path).await {
+                Ok(p) => Some(p),
+                // Don't error log if QMP isn't available or fails (e.g. strict timeout)
+                // registers aren't critical for every step
+                Err(_) => None,
+            }
         };
-        
+
         let mut collector = artifacts::global().lock().await;
         collector.on_step_end(result, None, screenshot_after, registers, &serial);
-        
+
         // Update scenario's full serial log
         collector.set_scenario_serial(&serial);
     }

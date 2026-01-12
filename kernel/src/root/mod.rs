@@ -1,16 +1,16 @@
-use spin::Mutex;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicI32, AtomicU64};
+use spin::Mutex;
 
-pub mod service;
-pub mod journal;
-pub mod graph;
-pub mod watch;
-pub mod resources;
 pub mod abi;
-pub mod schema;
+pub mod graph;
+pub mod journal;
 pub mod pci;
+pub mod resources;
+pub mod schema;
+pub mod service;
+pub mod watch;
 
 pub use service::root_main;
 
@@ -31,34 +31,99 @@ pub struct LogProvenance {
 
 #[derive(Debug)]
 pub enum RootOp {
-    Intern { name: alloc::string::String },
-    GetKind { id: u64 },
-    CreateNode { kind: SymbolShell },
-    BytespaceCreate { len: u64, flags: u64, format: u64 },
-    
-    WatchSubscribe { target_id: u64, mask: u64 },
-    StreamPoll { stream_id: u64, max: usize, out_ptr: u64 },
-    PropSet { id: u64, key: SymbolShell, value: u64 },
-    PropGet { id: u64, key: SymbolShell },
-    Query { plan: alloc::vec::Vec<crate::root::query::PreparedStep>, out_buffer: u64, out_len: u64 },
-    Find { kind: SymbolShell, buffer: u64, len: u64 },
-    DescribeThing { id: u64, buffer: u64, len: u64 },
-    DescribeEdge { src: u64, rel: SymbolShell, dst: u64, buffer: u64, len: u64 },
-    DumpEdges { id: u64, buffer: u64, len: u64 },
-    DumpGraph { limit: u64 },
-    BytespaceWrite { id: u64, offset: u64, ptr: u64, len: u64 },
-    BytespaceRead { id: u64, offset: u64, ptr: u64, len: u64 },
-    BytespaceCreateFromPtr { ptr: u64, len: u64 },
-    Link { src: u64, rel: SymbolShell, dst: u64 },
+    Intern {
+        name: alloc::string::String,
+    },
+    GetKind {
+        id: u64,
+    },
+    CreateNode {
+        kind: SymbolShell,
+    },
+    BytespaceCreate {
+        len: u64,
+        flags: u64,
+        format: u64,
+    },
+
+    WatchSubscribe {
+        target_id: u64,
+        mask: u64,
+    },
+    StreamPoll {
+        stream_id: u64,
+        max: usize,
+        out_ptr: u64,
+    },
+    PropSet {
+        id: u64,
+        key: SymbolShell,
+        value: u64,
+    },
+    PropGet {
+        id: u64,
+        key: SymbolShell,
+    },
+    Query {
+        plan: alloc::vec::Vec<crate::root::query::PreparedStep>,
+        out_buffer: u64,
+        out_len: u64,
+    },
+    Find {
+        kind: SymbolShell,
+        buffer: u64,
+        len: u64,
+    },
+    DescribeThing {
+        id: u64,
+        buffer: u64,
+        len: u64,
+    },
+    DescribeEdge {
+        src: u64,
+        rel: SymbolShell,
+        dst: u64,
+        buffer: u64,
+        len: u64,
+    },
+    DumpEdges {
+        id: u64,
+        buffer: u64,
+        len: u64,
+    },
+    DumpGraph {
+        limit: u64,
+    },
+    BytespaceWrite {
+        id: u64,
+        offset: u64,
+        ptr: u64,
+        len: u64,
+    },
+    BytespaceRead {
+        id: u64,
+        offset: u64,
+        ptr: u64,
+        len: u64,
+    },
+    BytespaceCreateFromPtr {
+        ptr: u64,
+        len: u64,
+    },
+    Link {
+        src: u64,
+        rel: SymbolShell,
+        dst: u64,
+    },
     // Structured Logging
-    LogEvent { 
+    LogEvent {
         level: u8,
         event: SymbolShell,
         message: alloc::string::String,
         timestamp: u64,
         provenance: LogProvenance,
         fields: alloc::vec::Vec<(SymbolShell, u64)>, // Scalar fields
-        about: alloc::vec::Vec<u64>, // Linked Thing IDs
+        about: alloc::vec::Vec<u64>,                 // Linked Thing IDs
     },
 }
 
@@ -68,7 +133,7 @@ pub struct ReplyCell {
     pub p0: AtomicU64,
     pub p1: AtomicU64,
     pub p2: AtomicU64,
-    pub done: AtomicU64, 
+    pub done: AtomicU64,
 }
 
 impl ReplyCell {
@@ -99,8 +164,11 @@ pub fn init_root_service<R: crate::BootRuntime>() {
 
 pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
     let reply = Arc::new(ReplyCell::new());
-    let msg = RootMsg { op, reply: reply.clone() };
-    
+    let msg = RootMsg {
+        op,
+        reply: reply.clone(),
+    };
+
     if let Some(q) = ROOT_INBOX.lock().as_mut() {
         q.push_back(msg);
     } else {
@@ -118,20 +186,20 @@ pub fn is_inbox_ready() -> bool {
 }
 
 pub mod debug {
-    use core::fmt;
     use crate::root::SymbolShell;
-    
+    use core::fmt;
+
     pub struct ThingDebug(pub u64);
-    
+
     impl fmt::Display for ThingDebug {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             let mut buf = [0u8; 256];
-            let reply = super::enqueue(super::RootOp::DescribeThing { 
-                id: self.0, 
-                buffer: buf.as_mut_ptr() as u64, 
-                len: buf.len() as u64 
+            let reply = super::enqueue(super::RootOp::DescribeThing {
+                id: self.0,
+                buffer: buf.as_mut_ptr() as u64,
+                len: buf.len() as u64,
             });
-            
+
             crate::kinfo!("ThingDebug: Waiting for reply...");
             let mut timeout = 0;
             loop {
@@ -141,61 +209,65 @@ pub mod debug {
                     let status = reply.status.load(core::sync::atomic::Ordering::Relaxed);
                     let written = reply.value.load(core::sync::atomic::Ordering::Relaxed) as usize;
                     if status == 0 {
-                         if let Ok(s) = core::str::from_utf8(&buf[..written]) {
-                             f.write_str(s)?;
-                         } else {
-                             f.write_str("<invalid utf8>")?;
-                         }
-                         return Ok(());
+                        if let Ok(s) = core::str::from_utf8(&buf[..written]) {
+                            f.write_str(s)?;
+                        } else {
+                            f.write_str("<invalid utf8>")?;
+                        }
+                        return Ok(());
                     } else {
-                         return f.write_str("<error>");
+                        return f.write_str("<error>");
                     }
                 }
                 timeout += 1;
                 if timeout > 10_000_000 {
-                     crate::kinfo!("ThingDebug: TIMEOUT waiting for reply (done={})", done);
-                     return f.write_str("<timeout>");
+                    crate::kinfo!("ThingDebug: TIMEOUT waiting for reply (done={})", done);
+                    return f.write_str("<timeout>");
                 }
-                unsafe { crate::task::scheduler::yield_now_current(); }
+                unsafe {
+                    crate::task::scheduler::yield_now_current();
+                }
             }
         }
     }
 
     pub struct EdgeDebug(pub u64, pub u64, pub u64);
-    
+
     impl fmt::Display for EdgeDebug {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             let mut buf = [0u8; 512];
-            let reply = super::enqueue(super::RootOp::DescribeEdge { 
-                src: self.0, 
+            let reply = super::enqueue(super::RootOp::DescribeEdge {
+                src: self.0,
                 rel: SymbolShell::Id(self.1 as u32),
                 dst: self.2,
-                buffer: buf.as_mut_ptr() as u64, 
-                len: buf.len() as u64 
+                buffer: buf.as_mut_ptr() as u64,
+                len: buf.len() as u64,
             });
-             loop {
+            loop {
                 let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
                 if done != 0 {
                     let status = reply.status.load(core::sync::atomic::Ordering::Relaxed);
                     let written = reply.value.load(core::sync::atomic::Ordering::Relaxed) as usize;
                     if status == 0 {
-                         if let Ok(s) = core::str::from_utf8(&buf[..written]) {
-                             f.write_str(s)?;
-                         } else {
-                             f.write_str("<invalid utf8>")?;
-                         }
-                         return Ok(());
+                        if let Ok(s) = core::str::from_utf8(&buf[..written]) {
+                            f.write_str(s)?;
+                        } else {
+                            f.write_str("<invalid utf8>")?;
+                        }
+                        return Ok(());
                     } else {
-                         return f.write_str("<error>");
+                        return f.write_str("<error>");
                     }
                 }
-                unsafe { crate::task::scheduler::yield_now_current(); }
+                unsafe {
+                    crate::task::scheduler::yield_now_current();
+                }
             }
         }
     }
 }
-pub mod debug_fmt;
 pub mod boot_register;
 pub mod debug_dump;
-pub mod symbols;
+pub mod debug_fmt;
 pub mod query;
+pub mod symbols;

@@ -38,7 +38,7 @@ pub enum Errno {
     ERANGE = 34,
     ENOSYS = 38,
     // Add more as needed, following Linux numbers usually helps debugging
-    
+
     // Custom/Extension
 }
 

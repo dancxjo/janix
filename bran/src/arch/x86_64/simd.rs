@@ -10,7 +10,7 @@ pub fn init_cpu() {
     // MP = Monitor Co-processor (controls WAIT/FWAIT interaction with TS flag)
     let mut cr0: u64;
     unsafe { asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags)) };
-    cr0 &= !(1 << 2); 
+    cr0 &= !(1 << 2);
     cr0 |= 1 << 1;
     unsafe { asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags)) };
 

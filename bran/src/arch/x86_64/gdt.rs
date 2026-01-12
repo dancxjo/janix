@@ -30,9 +30,17 @@ impl Tss {
     pub const fn new() -> Self {
         Self {
             reserved1: 0,
-            rsp0: 0, rsp1: 0, rsp2: 0,
+            rsp0: 0,
+            rsp1: 0,
+            rsp2: 0,
             reserved2: 0,
-            ist1: 0, ist2: 0, ist3: 0, ist4: 0, ist5: 0, ist6: 0, ist7: 0,
+            ist1: 0,
+            ist2: 0,
+            ist3: 0,
+            ist4: 0,
+            ist5: 0,
+            ist6: 0,
+            ist7: 0,
             reserved3: 0,
             reserved4: 0,
             iomap_base: size_of::<Tss>() as u16,
@@ -118,7 +126,7 @@ pub unsafe fn init() {
     // Setup TSS entry in GDT
     let tss_base = core::ptr::addr_of!(TSS) as u64;
     let tss_limit = size_of::<Tss>() as u32 - 1;
-    
+
     unsafe {
         GDT.tss.limit_low = (tss_limit & 0xFFFF) as u16;
         GDT.tss.base_low = (tss_base & 0xFFFF) as u16;
@@ -137,7 +145,7 @@ pub unsafe fn init() {
 
     unsafe {
         core::arch::asm!("lgdt [{}]", in(reg) &gdtr);
-        
+
         // Reload segments
         core::arch::asm!(
             "push {sel}",

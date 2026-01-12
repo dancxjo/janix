@@ -8,7 +8,10 @@ pub struct DebugThing<'a> {
 
 impl<'a> DebugThing<'a> {
     pub fn new(id: ThingId) -> Self {
-        Self { id, _phantom: core::marker::PhantomData }
+        Self {
+            id,
+            _phantom: core::marker::PhantomData,
+        }
     }
 }
 
@@ -19,7 +22,7 @@ impl<'a> fmt::Display for DebugThing<'a> {
             Ok(len) => {
                 let s = core::str::from_utf8(&buf[..len]).unwrap_or("<invalid utf8>");
                 f.write_str(s)
-            },
+            }
             Err(_) => {
                 // Return error? or print fallback?
                 // Requirements say: "Must compile... Must not dump infinite data".

@@ -1,4 +1,4 @@
-use crate::{runtime, BootRuntime, BootTasking, MapPerms, MapKind};
+use crate::{BootRuntime, BootTasking, MapKind, MapPerms, runtime};
 
 pub struct BootHeap {
     pub base: u64,
@@ -23,15 +23,22 @@ pub fn alloc_page<R: BootRuntime>() -> u64 {
         let rt = runtime::<R>();
         let tasking = rt.tasking();
         let frame = super::alloc_frame().expect("No frames for boot heap");
-        
-        tasking.map_page(
-            tasking.active_address_space(),
-            virt,
-            frame,
-            MapPerms { read: true, write: true, user: false, exec: false },
-            MapKind::Normal,
-            &DumbAlloc
-        ).expect("Failed to map boot heap page");
+
+        tasking
+            .map_page(
+                tasking.active_address_space(),
+                virt,
+                frame,
+                MapPerms {
+                    read: true,
+                    write: true,
+                    user: false,
+                    exec: false,
+                },
+                MapKind::Normal,
+                &DumbAlloc,
+            )
+            .expect("Failed to map boot heap page");
 
         virt
     }
@@ -39,5 +46,7 @@ pub fn alloc_page<R: BootRuntime>() -> u64 {
 
 struct DumbAlloc;
 impl crate::FrameAllocatorHook for DumbAlloc {
-    fn alloc_frame(&self) -> Option<u64> { None }
+    fn alloc_frame(&self) -> Option<u64> {
+        None
+    }
 }

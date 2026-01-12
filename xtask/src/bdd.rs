@@ -1,12 +1,12 @@
 //! BDD test runner task.
 
-use std::fs;
-use xshell::{Shell, cmd};
-use crate::common::{rust_target, Result};
 use crate::build::build;
+use crate::common::{Result, rust_target};
 use crate::image::build_iso;
 use crate::limine::limine;
 use crate::ovmf::ovmf;
+use std::fs;
+use xshell::{Shell, cmd};
 
 /// Run BDD tests for one or more architectures.
 pub fn bdd(
@@ -16,7 +16,7 @@ pub fn bdd(
     arches: Vec<String>,
 ) -> Result<()> {
     let mut results: Vec<(String, bool)> = Vec::new();
-    
+
     for arch in &arches {
         match run_single_arch(sh, feature.as_deref(), arch) {
             Ok(()) => results.push((arch.clone(), true)),
@@ -83,7 +83,8 @@ fn generate_root_readme(results: &[(String, bool)]) -> Result<()> {
 
     let mut content = String::new();
     content.push_str("# Thing-OS BDD Test Results\n\n");
-    content.push_str("Behavior-driven development test results organized by target architecture.\n\n");
+    content
+        .push_str("Behavior-driven development test results organized by target architecture.\n\n");
     content.push_str("## Architectures\n\n");
     content.push_str("| Architecture | Status | Results |\n");
     content.push_str("|-------------|--------|--------|\n");

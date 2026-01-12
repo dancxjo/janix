@@ -1,17 +1,17 @@
 #![no_std]
 
-pub mod syscall;
-pub mod errors;
-pub mod types;
-pub mod device;
-pub mod kinds;
 pub mod debug;
-pub mod names;
-pub mod symbols;
-pub mod query;
-pub mod schema;
+pub mod device;
+pub mod driver_ctx;
+pub mod errors;
+pub mod kinds;
 pub mod module;
 pub mod module_manifest;
-pub mod driver_ctx;
+pub mod names;
+pub mod query;
+pub mod schema;
+pub mod symbols;
+pub mod syscall;
+pub mod types;
 
 pub mod logging;

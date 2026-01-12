@@ -1,4 +1,3 @@
-
 use alloc::sync::Arc;
 use spin::Mutex;
 
@@ -15,7 +14,7 @@ pub fn create(len: usize) -> BytespaceHandle {
     // Real implementation would map pages.
     let layout = alloc::alloc::Layout::from_size_align(len, 4096).unwrap();
     let ptr = unsafe { alloc::alloc::alloc_zeroed(layout) };
-    
+
     Arc::new(Mutex::new(Bytespace {
         ptr: ptr as usize,
         len,
@@ -23,8 +22,5 @@ pub fn create(len: usize) -> BytespaceHandle {
 }
 
 pub fn create_from_ptr(ptr: usize, len: usize) -> BytespaceHandle {
-    Arc::new(Mutex::new(Bytespace {
-        ptr,
-        len,
-    }))
+    Arc::new(Mutex::new(Bytespace { ptr, len }))
 }

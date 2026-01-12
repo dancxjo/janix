@@ -1,7 +1,7 @@
 //! QEMU run tasks.
 
+use crate::common::{Result, image_name};
 use xshell::{Shell, cmd};
-use crate::common::{image_name, Result};
 
 /// Run ISO image in QEMU (UEFI mode).
 pub fn run(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
@@ -49,9 +49,12 @@ pub fn run_bios(sh: &Shell, qemu_flags: &str) -> Result<()> {
     let iso = "thing-os-x86_64.iso";
     let qemu_args: Vec<&str> = qemu_flags.split_whitespace().collect();
     println!("Running in QEMU BIOS mode...");
-    cmd!(sh, "qemu-system-x86_64 -M q35 -serial stdio -cdrom {iso} -boot d")
-        .args(&qemu_args)
-        .run()?;
+    cmd!(
+        sh,
+        "qemu-system-x86_64 -M q35 -serial stdio -cdrom {iso} -boot d"
+    )
+    .args(&qemu_args)
+    .run()?;
     Ok(())
 }
 

@@ -1,6 +1,6 @@
+use super::paging::RISCV64AddressSpace;
 use core::arch::asm;
 use kernel::UserTaskSpec;
-use super::paging::RISCV64AddressSpace;
 
 #[derive(Copy, Clone, Default)]
 pub struct RISCV64Context(pub [u64; 14]); // ra, sp, s0-s11
@@ -23,7 +23,6 @@ pub unsafe extern "C" fn context_switch(old: *mut u64, new: *const u64) {
             "sd s9, 88(a0)",
             "sd s10, 96(a0)",
             "sd s11, 104(a0)",
-
             "ld ra, 0(a1)",
             "ld sp, 8(a1)",
             "ld s0, 16(a1)",
@@ -51,25 +50,23 @@ pub fn init_kernel_context(
 ) -> RISCV64Context {
     let mut ctx = RISCV64Context::default();
     ctx.0[0] = trampoline as *const () as u64; // ra
-    ctx.0[1] = stack_top;         // sp
+    ctx.0[1] = stack_top; // sp
     ctx.0[2] = entry as *const () as u64; // s0
-    ctx.0[3] = arg as u64;              // s1
+    ctx.0[3] = arg as u64; // s1
     ctx
 }
 
-pub fn init_user_context(_spec: UserTaskSpec<RISCV64AddressSpace>, _kstack_top: u64) -> RISCV64Context {
+pub fn init_user_context(
+    _spec: UserTaskSpec<RISCV64AddressSpace>,
+    _kstack_top: u64,
+) -> RISCV64Context {
     RISCV64Context::default()
 }
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn trampoline() -> ! {
     unsafe {
-        asm!(
-            "mv a0, s1",
-            "jalr s0",
-            "ebreak",
-            options(noreturn)
-        );
+        asm!("mv a0, s1", "jalr s0", "ebreak", options(noreturn));
     }
 }
 

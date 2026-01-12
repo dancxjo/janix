@@ -1,5 +1,5 @@
-use crate::types::ThingId;
 use crate::device::RootCaps;
+use crate::types::ThingId;
 
 /// The section name where the manifest is stored in the ELF binary.
 pub const MANIFEST_SECTION: &str = ".thingos.manifest";
@@ -36,10 +36,10 @@ impl ManifestMatch {
 pub struct ModuleManifest {
     pub magic: u64,
     pub kind: ModuleKind,
-    pub name: [u8; 32], 
+    pub name: [u8; 32],
     pub version: u32,
     pub match_count: usize,
-    pub matches: [ManifestMatch; 4], 
+    pub matches: [ManifestMatch; 4],
 }
 
 impl ModuleManifest {
@@ -53,14 +53,14 @@ impl ModuleManifest {
         }
 
         Self {
-            magic: 0xCAFEBABE, 
+            magic: 0xCAFEBABE,
             kind: ModuleKind::Driver,
             name: name_bytes,
             version: 1,
             match_count: 1,
             matches: [
                 ManifestMatch::new(matching),
-                ManifestMatch::new(""), 
+                ManifestMatch::new(""),
                 ManifestMatch::new(""),
                 ManifestMatch::new(""),
             ],

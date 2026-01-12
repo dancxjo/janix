@@ -4,10 +4,10 @@
 //! With optional span correlation for multi-line output.
 
 use crate::BootRuntimeBase;
-use core::fmt::{self, Write};
-use spin::Mutex;
 use alloc::format;
+use core::fmt::{self, Write};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use spin::Mutex;
 
 // Re-export for macros
 pub use abi::logging::Level;
@@ -56,7 +56,7 @@ impl LogTransaction {
     pub fn begin(name: &'static str) -> Self {
         let span_id = new_span();
         set_current_span(span_id);
-        
+
         // Emit BEGIN marker
         let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
         let mut lock = GLOBAL_LOGGER.lock();
@@ -65,7 +65,7 @@ impl LogTransaction {
             let _ = writeln!(writer, "[{}] [INFO] [logging] BEGIN {}", ts, name);
         }
         drop(lock);
-        
+
         Self { span_id, name }
     }
 }
@@ -100,7 +100,7 @@ impl Logger {
     pub const fn new(runtime: &'static dyn BootRuntimeBase) -> Self {
         Self { runtime }
     }
-    
+
     #[inline]
     pub fn mono_ticks(&self) -> u64 {
         self.runtime.mono_ticks()
@@ -134,32 +134,38 @@ fn can_log_to_graph(level: Level) -> bool {
 }
 
 pub fn _log_event(
-    meta: LogMetadata, 
-    event_sym: &str, 
-    msg_fmt: fmt::Arguments, 
-    fields: &[(&str, u64)], 
-    about: &[u64]
+    meta: LogMetadata,
+    event_sym: &str,
+    msg_fmt: fmt::Arguments,
+    fields: &[(&str, u64)],
+    about: &[u64],
 ) {
     // Get sequence number first (guarantees ordering)
     let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
-    
+
     // 1. Serial Output - human-readable format: [TIME] [LEVEL] [SOURCE] Message
     {
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
             let ts = writer.runtime.mono_ticks();
-            
+
             // Human-readable format: [TIME] [LEVEL] [SOURCE] Message
-            let _ = write!(writer, "[{}] [{}] [{}] ", ts, meta.level.as_str(), event_sym);
+            let _ = write!(
+                writer,
+                "[{}] [{}] [{}] ",
+                ts,
+                meta.level.as_str(),
+                event_sym
+            );
             let _ = writer.write_fmt(msg_fmt);
-            
+
             // Append structured fields if any
             if !fields.is_empty() {
                 for (k, v) in fields {
                     let _ = write!(writer, " {}={}", k, v);
                 }
             }
-            
+
             let _ = writer.write_char('\n');
         }
     }
@@ -170,24 +176,24 @@ pub fn _log_event(
             let tid = unsafe { crate::task::scheduler::current_tid_current() };
             let timestamp = crate::runtime_base().mono_ticks();
             let message = format!("{}", msg_fmt);
-            
-            use crate::root::{RootOp, SymbolShell, LogProvenance};
-            
+
+            use crate::root::{LogProvenance, RootOp, SymbolShell};
+
             let prov = LogProvenance {
                 tid,
-                cpu: 0, 
+                cpu: 0,
                 module: alloc::string::String::from(meta.module),
                 file: alloc::string::String::from(meta.file),
                 line: meta.line,
             };
-            
+
             let mut field_vec = alloc::vec::Vec::with_capacity(fields.len());
             for (k, v) in fields {
                 field_vec.push((SymbolShell::Str(alloc::string::String::from(*k)), *v));
             }
 
             let op = RootOp::LogEvent {
-                level: meta.level as u8, 
+                level: meta.level as u8,
                 event: SymbolShell::Str(alloc::string::String::from(event_sym)),
                 message,
                 timestamp,

@@ -7,13 +7,13 @@
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
-mod types;
-pub mod qmp;
 mod collector;
+pub mod qmp;
+mod types;
 
-pub use types::*;
-pub use qmp::*;
 pub use collector::*;
+pub use qmp::*;
+pub use types::*;
 
 /// Global artifact collector instance.
 static COLLECTOR: OnceLock<Mutex<ArtifactCollector>> = OnceLock::new();
@@ -32,7 +32,9 @@ pub fn init_global(arch: &str) {
 
 /// Get the global artifact collector.
 pub fn global() -> &'static Mutex<ArtifactCollector> {
-    COLLECTOR.get().expect("ArtifactCollector not initialized - call init_global first")
+    COLLECTOR
+        .get()
+        .expect("ArtifactCollector not initialized - call init_global first")
 }
 
 /// Update the global serial log cache (called from world).

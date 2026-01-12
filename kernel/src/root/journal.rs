@@ -18,9 +18,12 @@ pub struct Journal {
 
 impl Journal {
     pub fn new() -> Self {
-        Self { entries: Vec::new(), next_seq: 1 }
+        Self {
+            entries: Vec::new(),
+            next_seq: 1,
+        }
     }
-    
+
     pub fn append(&mut self, op: JournalOp) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;

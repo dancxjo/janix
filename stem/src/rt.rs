@@ -11,7 +11,8 @@ pub unsafe extern "C" fn entry_impl(arg: usize) -> ! {
 }
 
 #[cfg(all(target_arch = "x86_64", feature = "rt"))]
-core::arch::global_asm!(r#"
+core::arch::global_asm!(
+    r#"
     .section .text.entry
     .global _start
     _start:
@@ -20,4 +21,5 @@ core::arch::global_asm!(r#"
         // CALL instruction pushes 8 bytes, so RSP becomes aligned-8.
         call entry_impl
         ud2
-"#);
+"#
+);

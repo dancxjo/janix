@@ -23,7 +23,7 @@ pub mod kinds {
     pub const FW_BOOT: &str = "fw.Boot";
     pub const FW_TABLE_ACPI: &str = "fw.table.Acpi";
     pub const FW_TABLE_DTB: &str = "fw.table.Dtb";
-    
+
     // Resources
     // Note: 'res' prefixes are for enriched resources
     pub const RES_MMIO_RANGE: &str = "res.mmio.Range";
@@ -64,7 +64,7 @@ pub mod props {
     pub const PHYS_BASE: &str = "phys_base";
     pub const PHYS_LEN: &str = "phys_len"; // Sometimes used instead of size_bytes for ranges
     pub const SIZE_BYTES: &str = "size_bytes";
-    
+
     // Display
     pub const WIDTH: &str = "width";
     pub const HEIGHT: &str = "height";

@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageFlags(u64);
 
@@ -24,7 +23,7 @@ impl PageFlags {
     pub fn bits(&self) -> u64 {
         self.0
     }
-    
+
     pub fn contains(&self, other: Self) -> bool {
         (self.0 & other.0) == other.0
     }

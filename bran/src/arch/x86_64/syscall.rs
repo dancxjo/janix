@@ -1,6 +1,5 @@
 use core::arch::{asm, global_asm};
 
-
 // MSR Constants
 const MSR_EFER: u32 = 0xC0000080;
 const MSR_STAR: u32 = 0xC0000081;
@@ -24,7 +23,7 @@ const EFER_SCE: u64 = 1; // Syscall Enable
 //  Kernel Data = 0x10
 //  User Data   = 0x18 | 3  (RPL3)
 //  User Code   = 0x20 | 3  (RPL3)
-// Limine GDT might differ. 
+// Limine GDT might differ.
 // Just for v0.5, let's hardcode what we use.
 const KERNEL_CS: u16 = 0x08;
 const KERNEL_DS: u16 = 0x10;
@@ -34,7 +33,7 @@ const KERNEL_DS: u16 = 0x10;
 // So if STAR[63:48] = 0x08 (Kernel Code), then:
 //  CS = 0x18 | 3 = User Code 32? No.
 // Let's check AMD manuals.
-// SYSRET: 
+// SYSRET:
 //   CS_Sel = STAR[63:48] + 16.
 //   SS_Sel = STAR[63:48] + 8.
 // User SS is 0x23 (User Data selector), User CS is 0x2B (User Code64 selector).
@@ -66,31 +65,31 @@ pub unsafe fn init() {
     // 1. Setup GS Base
     let gs_base = &raw mut CPU_LOCAL as *mut _ as u64;
     wrmsr(MSR_GS_BASE, gs_base);
-    // Also Kernel GS Base? No, swapgs swaps them. 
+    // Also Kernel GS Base? No, swapgs swaps them.
     // We are in kernel now. GS points to kernel struct.
     // When we go to user, we swapgs. GS points to ... user stuff (usually 0).
     // When we execute syscall (entry from user), we swapgs immediately.
-    // So MSR_KERNEL_GS_BASE should hold the address of CPU_LOCAL... 
-    // WAIT. 
+    // So MSR_KERNEL_GS_BASE should hold the address of CPU_LOCAL...
+    // WAIT.
     // Current (Kernel) GS Base = CPU_LOCAL.
     // Target (User) GS Base = 0 (or TCB).
-    // syscall instruction DOES NOT swapgs. 
+    // syscall instruction DOES NOT swapgs.
     // We do swapgs explicitly in the handler.
     // So on entry (User GS active), we swapgs -> loads Kernel GS Base (CPU_LOCAL).
     // So MSR_KERNEL_GS_BASE MUST hold CPU_LOCAL.
     // MSR_GS_BASE MUST hold User GS Base.
     // Since we are in kernel now, GS_BASE should be CPU_LOCAL.
     // So we write CPU_LOCAL to GS_BASE.
-    // And what about KERNEL_GS_BASE? 
+    // And what about KERNEL_GS_BASE?
     // If we use swapgs, it exchanges them.
     // If we are in kernel, GS_BASE=CPU_LOCAL. KERNEL_GS_BASE=UserGS.
     // On exit to user: swapgs. GS_BASE=UserGS, KERNEL_GS_BASE=CPU_LOCAL.
     // Correct.
-    
+
     // 2. Enable SCE (SysCall Extension) in EFER
     let efer = rdmsr(MSR_EFER);
     wrmsr(MSR_EFER, efer | EFER_SCE);
-    
+
     // 3. Setup STAR
     // Kernel CS = 0x08
     // User Base = 0x18 (User Data @ 0x20|3, User Code64 @ 0x28|3)
@@ -99,10 +98,10 @@ pub unsafe fn init() {
     // Sysret loads SS = Base + 8  = 0x20 (User Data).
     let star = ((0x08 as u64) << 32) | ((0x18 as u64) << 48);
     wrmsr(MSR_STAR, star);
-    
+
     // 4. Setup LSTAR (Entry point)
     wrmsr(MSR_LSTAR, syscall_entry as usize as u64);
-    
+
     // 5. Setup SFMASK (Mask Interrupts 0x200)
     wrmsr(MSR_SFMASK, 0x200);
 }
@@ -124,7 +123,8 @@ unsafe extern "C" {
     fn syscall_entry();
 }
 
-global_asm!(r#"
+global_asm!(
+    r#"
 .section .text
 .att_syntax
 .global syscall_entry
@@ -290,4 +290,5 @@ syscall_entry:
     cli
     swapgs
     sysretq
-"#);
+"#
+);

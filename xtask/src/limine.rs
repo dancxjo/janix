@@ -1,7 +1,7 @@
 //! Limine bootloader setup.
 
-use xshell::{Shell, cmd};
 use crate::common::Result;
+use xshell::{Shell, cmd};
 
 /// Clone and build Limine bootloader if not present.
 pub fn limine(sh: &Shell) -> Result<()> {
@@ -11,7 +11,11 @@ pub fn limine(sh: &Shell) -> Result<()> {
     }
 
     println!("Cloning Limine v10.x...");
-    cmd!(sh, "git clone https://github.com/limine-bootloader/limine.git --branch=v10.x-binary --depth=1").run()?;
+    cmd!(
+        sh,
+        "git clone https://github.com/limine-bootloader/limine.git --branch=v10.x-binary --depth=1"
+    )
+    .run()?;
     cmd!(sh, "make -C limine").run()?;
 
     Ok(())

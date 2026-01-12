@@ -1,8 +1,8 @@
-use super::{enqueue, RootOp};
-use super::graph::ThingId;
 use super::SymbolShell;
-use abi::schema::{keys, kinds, rels, source, confidence};
-use crate::{BootModuleDesc, PhysRange, FramebufferInfo};
+use super::graph::ThingId;
+use super::{RootOp, enqueue};
+use crate::{BootModuleDesc, FramebufferInfo, PhysRange};
+use abi::schema::{confidence, keys, kinds, rels, source};
 
 #[derive(Debug)]
 pub struct BootInfo<'a> {
@@ -27,58 +27,101 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
     crate::kinfo!("ROOT: boot registration begin (Census Phase 1 v0.2)");
 
     let create = |kind: &str| -> u64 {
-        let reply = enqueue(RootOp::CreateNode { kind: SymbolShell::Str(alloc::string::String::from(kind)) });
+        let reply = enqueue(RootOp::CreateNode {
+            kind: SymbolShell::Str(alloc::string::String::from(kind)),
+        });
         loop {
-             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-             if done != 0 {
-                  return reply.value.load(core::sync::atomic::Ordering::Relaxed);
-             }
-             unsafe { crate::task::scheduler::yield_now_current(); }
+            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+            if done != 0 {
+                return reply.value.load(core::sync::atomic::Ordering::Relaxed);
+            }
+            unsafe {
+                crate::task::scheduler::yield_now_current();
+            }
         }
     };
-    
+
     let set = |id: u64, key: &str, val: u64| {
-        let reply = enqueue(RootOp::PropSet { id, key: SymbolShell::Str(alloc::string::String::from(key)), value: val });
-         loop {
-             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-             if done != 0 { break; }
-             unsafe { crate::task::scheduler::yield_now_current(); }
+        let reply = enqueue(RootOp::PropSet {
+            id,
+            key: SymbolShell::Str(alloc::string::String::from(key)),
+            value: val,
+        });
+        loop {
+            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+            if done != 0 {
+                break;
+            }
+            unsafe {
+                crate::task::scheduler::yield_now_current();
+            }
         }
     };
 
     let link = |src: u64, rel: &str, dst: u64| {
-        let reply = enqueue(RootOp::Link { src, rel: SymbolShell::Str(alloc::string::String::from(rel)), dst });
-         loop {
-             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-             if done != 0 { break; }
-             unsafe { crate::task::scheduler::yield_now_current(); }
+        let reply = enqueue(RootOp::Link {
+            src,
+            rel: SymbolShell::Str(alloc::string::String::from(rel)),
+            dst,
+        });
+        loop {
+            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+            if done != 0 {
+                break;
+            }
+            unsafe {
+                crate::task::scheduler::yield_now_current();
+            }
         }
     };
 
     let intern = |s: &str| -> u64 {
-        let reply = enqueue(RootOp::Intern { name: alloc::string::String::from(s) });
+        let reply = enqueue(RootOp::Intern {
+            name: alloc::string::String::from(s),
+        });
         loop {
-             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-             if done != 0 { return reply.value.load(core::sync::atomic::Ordering::Relaxed); }
-             unsafe { crate::task::scheduler::yield_now_current(); }
+            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+            if done != 0 {
+                return reply.value.load(core::sync::atomic::Ordering::Relaxed);
+            }
+            unsafe {
+                crate::task::scheduler::yield_now_current();
+            }
         }
     };
 
     let bytespace_create = |len: u64| -> u64 {
-        let reply = enqueue(RootOp::BytespaceCreate { len, flags: 0, format: 0 });
+        let reply = enqueue(RootOp::BytespaceCreate {
+            len,
+            flags: 0,
+            format: 0,
+        });
         loop {
-             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-             if done != 0 { return reply.value.load(core::sync::atomic::Ordering::Relaxed); }
-             unsafe { crate::task::scheduler::yield_now_current(); }
+            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+            if done != 0 {
+                return reply.value.load(core::sync::atomic::Ordering::Relaxed);
+            }
+            unsafe {
+                crate::task::scheduler::yield_now_current();
+            }
         }
     };
 
     let bytespace_write = |id: u64, offset: u64, ptr: u64, len: u64| {
-        let reply = enqueue(RootOp::BytespaceWrite { id, offset, ptr, len });
+        let reply = enqueue(RootOp::BytespaceWrite {
+            id,
+            offset,
+            ptr,
+            len,
+        });
         loop {
-             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-             if done != 0 { break; }
-             unsafe { crate::task::scheduler::yield_now_current(); }
+            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+            if done != 0 {
+                break;
+            }
+            unsafe {
+                crate::task::scheduler::yield_now_current();
+            }
         }
     };
 
@@ -103,18 +146,18 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
     set(platform_bus, keys::NAME, pbus_name);
     set(platform_bus, keys::SOURCE, src_boot);
     set(platform_bus, keys::CONFIDENCE, conf_high);
-    
+
     link(host, rels::HAS_BUS, platform_bus);
 
     // 3. Kernel
     let kernel = create(kinds::PROC_KERNEL);
     set(kernel, "version", 1);
     link(kernel, rels::RUNS_ON, host);
-    
+
     // 4. Root Service
     let root_svc = create(kinds::SVC_ROOT);
     link(kernel, rels::PROVIDES, root_svc);
-    
+
     // 5. CPUs
     for i in 0..info.cpu_count {
         let cpu = create(kinds::DEV_CPU);
@@ -123,10 +166,13 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(cpu, keys::CONFIDENCE, conf_high);
         link(host, rels::HAS_CPU, cpu);
     }
-    
+
     // 6. Memory Ranges
     let mut fb_backing_range: Option<ThingId> = None;
-    let fb_phys_start = info.framebuffer.as_ref().map(|fb| fb.addr.saturating_sub(info.hhdm_offset));
+    let fb_phys_start = info
+        .framebuffer
+        .as_ref()
+        .map(|fb| fb.addr.saturating_sub(info.hhdm_offset));
 
     for range in info.memory_map {
         let mem = create(kinds::MEM_RANGE);
@@ -139,21 +185,25 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
 
         // Check if this range creates the backing for the framebuffer
         if let Some(start) = fb_phys_start {
-             // Simple containment check: range.start <= fb_phys && range.end > fb_phys
-             // Note: Framebuffer usually is its own range or part of a larger Reserved/Framebuffer range.
-             if range.start <= start && range.end > start {
-                 fb_backing_range = Some(mem);
-             }
+            // Simple containment check: range.start <= fb_phys && range.end > fb_phys
+            // Note: Framebuffer usually is its own range or part of a larger Reserved/Framebuffer range.
+            if range.start <= start && range.end > start {
+                fb_backing_range = Some(mem);
+            }
         }
     }
-    
+
     // 7. Modules
     let bytespace_create_ptr = |ptr: u64, len: u64| -> u64 {
         let reply = enqueue(RootOp::BytespaceCreateFromPtr { ptr, len });
         loop {
-             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-             if done != 0 { return reply.value.load(core::sync::atomic::Ordering::Relaxed); }
-             unsafe { crate::task::scheduler::yield_now_current(); }
+            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
+            if done != 0 {
+                return reply.value.load(core::sync::atomic::Ordering::Relaxed);
+            }
+            unsafe {
+                crate::task::scheduler::yield_now_current();
+            }
         }
     };
 
@@ -164,24 +214,24 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(mod_node, "index", i as u64);
         let name_id = intern(m.name);
         set(mod_node, keys::NAME, name_id);
-        
+
         // Zero-copy bytespace wrapper
         let len = m.phys_end - m.phys_start;
         let virt_ptr = m.phys_start.saturating_add(info.hhdm_offset);
         let bs = bytespace_create_ptr(virt_ptr, len);
-        
+
         link(mod_node, rels::BACKED_BY, bs);
-        
+
         set(mod_node, keys::SOURCE, src_boot);
         set(mod_node, keys::CONFIDENCE, conf_high);
-        
+
         link(host, rels::HAS_MODULE, mod_node);
     }
-    
+
     // 8. Framebuffer
     if let Some(fb) = info.framebuffer.as_ref() {
         let fb_node = create(kinds::DEV_DISPLAY_FRAMEBUFFER);
-        
+
         // Fix: fb.addr is HHDM (virtual). Store as virt_base.
         // Calculate physical by subtracting HHDM offset.
         set(fb_node, "virt_base", fb.addr);
@@ -193,22 +243,22 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(fb_node, "stride", fb.pitch as u64);
         set(fb_node, "bpp", fb.bpp as u64);
         set(fb_node, keys::SIZE_BYTES, fb.byte_len as u64);
-        
+
         if let Some(backing_mem) = fb_backing_range {
             link(fb_node, rels::BACKED_BY, backing_mem);
         }
-        
+
         let fmt = match fb.format {
-             crate::PixelFormat::Xrgb8888 => 1,
-             crate::PixelFormat::Argb8888 => 2,
-             crate::PixelFormat::Rgb565 => 3,
-             _ => 0,
+            crate::PixelFormat::Xrgb8888 => 1,
+            crate::PixelFormat::Argb8888 => 2,
+            crate::PixelFormat::Rgb565 => 3,
+            _ => 0,
         };
         set(fb_node, keys::FORMAT, fmt); // Using keys::FORMAT ("format") which maps to string
-        
+
         set(fb_node, keys::SOURCE, src_boot);
         set(fb_node, keys::CONFIDENCE, conf_high);
-        
+
         link(host, rels::HAS_DEVICE, fb_node);
     }
 
@@ -230,52 +280,60 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
             // FIXME: HHDM does not map ACPI region in current paging setup. Skipping copy to avoid Page Fault.
             // let rsdp_virt = rsdp_phys + info.hhdm_offset;
             let size = 36;
-            
+
             let bs = bytespace_create(size);
             // bytespace_write(bs, 0, rsdp_virt, size);
-            
+
             link(acpi, rels::BACKED_BY, bs);
             link(fw_boot, rels::PROVIDES_TABLE, acpi);
         }
 
         if let Some(dtb_phys) = info.dtb_ptr {
             let dtb_node = create(kinds::FW_TABLE_DTB);
-            
+
             let dtb_virt = dtb_phys + info.hhdm_offset;
-            
+
             // Parse FDT header
             // FIXME: Assuming DTB memory is mapped (usually Bootloader Reclaimable).
             // Helper for Sprout v0.2 to access bytespace without query text
-            
+
             crate::kinfo!("ROOT: Absorbing DTB (phys={:x})", dtb_phys);
-            
+
             // For safety, let's read size safely or fixed? FDT header is safe to assume present?
             // If we crash here, we know DTB is also unmapped.
             let header = unsafe { core::slice::from_raw_parts(dtb_virt as *const u8, 8) };
             let size = u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as u64;
-             
+
             let bs = bytespace_create(size);
             bytespace_write(bs, 0, dtb_virt, size);
-            
+
             link(dtb_node, rels::BACKED_BY, bs);
             set(dtb_node, "bytespace", bs);
-            
+
             set(dtb_node, keys::SOURCE, src_boot);
             set(dtb_node, keys::CONFIDENCE, conf_high);
-            
+
             link(fw_boot, rels::PROVIDES_TABLE, dtb_node);
         }
     }
 
     // 10. Tasking
-    let scheduler = create(kinds::SVC_SCHEDULER); 
+    let scheduler = create(kinds::SVC_SCHEDULER);
     link(kernel, rels::PROVIDES, scheduler);
-    
+
     // 11. PCI
     crate::kinfo!("ROOT: Census Phase 2: PCI");
     crate::root::pci::enumerate_and_publish(host, &create, &set, &link, &intern);
 
-    crate::kinfo!("ROOT: registered items. host={:x} kernel={:x}", host, kernel);
-    
-    BootInventory { host, kernel, root: root_svc }
+    crate::kinfo!(
+        "ROOT: registered items. host={:x} kernel={:x}",
+        host,
+        kernel
+    );
+
+    BootInventory {
+        host,
+        kernel,
+        root: root_svc,
+    }
 }

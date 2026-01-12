@@ -21,14 +21,14 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
 
     // Build and copy sprout
     println!("Building sprout for {}...", arch);
-    
+
     // Use target-specific userspace triple if available, otherwise fallback
     let user_target = if arch == "x86_64" {
         "x86_64-unknown-thingos".to_string()
     } else {
         crate::common::rust_target(arch).to_string()
     };
-    
+
     let target = &user_target;
 
     let cwd = std::env::current_dir().unwrap();

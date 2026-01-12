@@ -20,7 +20,7 @@ pub mod keys {
     pub const CONFIDENCE: &str = "confidence";
     pub const NAME: &str = "name";
     pub const PHYS_BASE: &str = "phys_base";
-    pub const SIZE_BYTES: &str = "size_bytes"; 
+    pub const SIZE_BYTES: &str = "size_bytes";
     pub const FORMAT: &str = "format";
     pub const HHDM_OFFSET: &str = "hhdm_offset";
     pub const START: &str = "start";
@@ -36,7 +36,7 @@ pub mod keys {
     pub const STATE: &str = "state";
     pub const QUALITY: &str = "quality";
     pub const LAST_UPDATED_MONO_NS: &str = "last_updated_mono_ns";
-    
+
     // Legacy mapping (to be deprecated or mapped)
     pub const KIND: &str = "kind";
 
@@ -83,7 +83,6 @@ pub mod kinds {
     pub const DEV_BUS_PCI: &str = "dev.bus.Pci";
     pub const DEV_PCI_FUNCTION: &str = "dev.pci.Function";
 }
-
 
 pub mod rels {
     pub const HAS_BUS: &str = "HAS_BUS";

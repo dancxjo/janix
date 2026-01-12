@@ -1,5 +1,5 @@
-use core::arch::{asm, global_asm};
 use super::trap::UserTrapFrame;
+use core::arch::{asm, global_asm};
 use kernel::syscall::dispatch;
 
 pub unsafe fn init() {
@@ -10,13 +10,14 @@ pub unsafe fn init() {
     let addr = trap_entry as usize;
     // ensure alignment (4 bytes)
     assert!(addr & 3 == 0);
-    unsafe { 
-        asm!("csrw stvec, {}", in(reg) addr); 
+    unsafe {
+        asm!("csrw stvec, {}", in(reg) addr);
         asm!("csrw sscratch, x0"); // Initialize sscratch to 0 for kernel detection
     }
 }
 
-global_asm!(r#"
+global_asm!(
+    r#"
 .section .text
 .global trap_entry
 .balign 4
@@ -171,54 +172,61 @@ trap_entry:
     // So loading x2 from stack will restore sp!
     ld x2, 8(sp)
     sret
-"#);
+"#
+);
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
     let scause = tf.scause;
     let is_interrupt = (scause >> 63) != 0;
     let code = scause & 0x7FFFFFFFFFFFFFFF;
-    
+
     if is_interrupt {
         // Ignored for now
     } else {
         match code {
-             8 => { // User mode ecall
-                 // Syscall
-                 // A7 is syscall num.
-                 // A7 is x17.
-                 // regs[0]=x1 ... regs[16]=x17.
-                 // So A7 is at index 16.
-                 let n = tf.regs[16];
-                 
-                 // Args: A0..A5
-                 // A0=x10 -> index 9
-                 // A1=x11 -> index 10
-                 // A2=x12 -> index 11
-                 // A3=x13 -> index 12
-                 // A4=x14 -> index 13
-                 // A5=x15 -> index 14
-                 
-                 let a0 = tf.regs[9];
-                 let a1 = tf.regs[10];
-                 let a2 = tf.regs[11];
-                 let a3 = tf.regs[12];
-                 let a4 = tf.regs[13];
-                 let a5 = tf.regs[14];
-                 
-                 let ret = dispatch(n, [a0, a1, a2, a3, a4, a5]);
-                 
-                 // Return value in A0 (x10, index 9)
-                 tf.regs[9] = ret as usize;
-                 
-                 // Advance SEPC by 4 (size of ecall)
-                 tf.sepc += 4;
-             }
-             _ => {
-                 // Panic or loop
-                 kernel::kprintln!("Unexpected trap: scause={:x} stval={:x} sepc={:x}", scause, tf.stval, tf.sepc);
-                 loop {}
-             }
+            8 => {
+                // User mode ecall
+                // Syscall
+                // A7 is syscall num.
+                // A7 is x17.
+                // regs[0]=x1 ... regs[16]=x17.
+                // So A7 is at index 16.
+                let n = tf.regs[16];
+
+                // Args: A0..A5
+                // A0=x10 -> index 9
+                // A1=x11 -> index 10
+                // A2=x12 -> index 11
+                // A3=x13 -> index 12
+                // A4=x14 -> index 13
+                // A5=x15 -> index 14
+
+                let a0 = tf.regs[9];
+                let a1 = tf.regs[10];
+                let a2 = tf.regs[11];
+                let a3 = tf.regs[12];
+                let a4 = tf.regs[13];
+                let a5 = tf.regs[14];
+
+                let ret = dispatch(n, [a0, a1, a2, a3, a4, a5]);
+
+                // Return value in A0 (x10, index 9)
+                tf.regs[9] = ret as usize;
+
+                // Advance SEPC by 4 (size of ecall)
+                tf.sepc += 4;
+            }
+            _ => {
+                // Panic or loop
+                kernel::kprintln!(
+                    "Unexpected trap: scause={:x} stval={:x} sepc={:x}",
+                    scause,
+                    tf.stval,
+                    tf.sepc
+                );
+                loop {}
+            }
         }
     }
 }

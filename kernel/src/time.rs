@@ -20,7 +20,9 @@ pub fn anchor_system_clock(unix_secs: u64, mono_ns: u64) {
     set_system_time_offset(offset);
     crate::kinfo!(
         "System clock anchored: unix_secs={}, mono_ns={}, offset={}ns",
-        unix_secs, mono_ns, offset
+        unix_secs,
+        mono_ns,
+        offset
     );
 }
 
@@ -30,13 +32,18 @@ pub struct MonotonicClamp {
 
 impl MonotonicClamp {
     pub const fn new() -> Self {
-        Self { last: AtomicU64::new(0) }
+        Self {
+            last: AtomicU64::new(0),
+        }
     }
 
     pub fn clamp(&self, raw: u64) -> u64 {
         let last = self.last.load(Ordering::Relaxed);
         if raw > last {
-            if let Err(actual) = self.last.compare_exchange(last, raw, Ordering::Relaxed, Ordering::Relaxed) {
+            if let Err(actual) =
+                self.last
+                    .compare_exchange(last, raw, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 if actual > raw { actual } else { raw }
             } else {
                 raw

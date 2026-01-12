@@ -6,20 +6,20 @@ pub struct UserTrapFrame {
     // Let's assume standard push order (last pushed is top of stack/first in struct).
     // If we push: rax, rbx, rcx, rdx, rsi, rdi, rbp, r8-r15
     // Then struct order is r15 first.
-    pub r15: usize, 
-    pub r14: usize, 
-    pub r13: usize, 
+    pub r15: usize,
+    pub r14: usize,
+    pub r13: usize,
     pub r12: usize,
-    pub r11: usize, 
-    pub r10: usize, 
-    pub r9: usize,  
+    pub r11: usize,
+    pub r10: usize,
+    pub r9: usize,
     pub r8: usize,
-    pub rbp: usize, 
-    pub rdi: usize, // System V: RDI is arg0 
-    pub rsi: usize, 
+    pub rbp: usize,
+    pub rdi: usize, // System V: RDI is arg0
+    pub rsi: usize,
     pub rdx: usize,
-    pub rcx: usize, 
-    pub rbx: usize, 
+    pub rcx: usize,
+    pub rbx: usize,
     pub rax: usize,
 
     // Exception info

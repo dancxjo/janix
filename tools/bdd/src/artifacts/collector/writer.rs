@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use super::super::types::*;
+use super::ArtifactCollector;
 use std::fs;
 use std::io::Write;
-use super::ArtifactCollector;
-use super::super::types::*;
+use std::path::PathBuf;
 
 /// Architecture-level README generation is disabled to avoid stale cumulative reports.
 /// The scenario-level READMEs are the authoritative source of truth.
@@ -14,12 +14,18 @@ pub fn generate_arch_readme(collector: &ArtifactCollector) -> std::io::Result<Pa
 
 /// Feature-level README generation is disabled to avoid stale cumulative reports.
 /// The scenario-level READMEs are the authoritative source of truth.
-pub fn write_feature_readme(_collector: &ArtifactCollector, _feature: &FeatureArtifacts) -> std::io::Result<()> {
+pub fn write_feature_readme(
+    _collector: &ArtifactCollector,
+    _feature: &FeatureArtifacts,
+) -> std::io::Result<()> {
     // No-op: feature READMEs are not generated to avoid overwriting/desync issues
     Ok(())
 }
 
-pub fn write_scenario_readme(collector: &ArtifactCollector, scenario: &ScenarioArtifacts) -> std::io::Result<()> {
+pub fn write_scenario_readme(
+    collector: &ArtifactCollector,
+    scenario: &ScenarioArtifacts,
+) -> std::io::Result<()> {
     let readme_path = scenario.dir.join("README.md");
     let mut file = fs::File::create(&readme_path)?;
 
@@ -27,7 +33,11 @@ pub fn write_scenario_readme(collector: &ArtifactCollector, scenario: &ScenarioA
 
     writeln!(file, "# {} Scenario: {}", icon, scenario.name)?;
     writeln!(file)?;
-    writeln!(file, "> Last run: {}", collector.start_time.format("%Y-%m-%d %H:%M:%S"))?;
+    writeln!(
+        file,
+        "> Last run: {}",
+        collector.start_time.format("%Y-%m-%d %H:%M:%S")
+    )?;
     writeln!(file)?;
 
     writeln!(file, "## Steps")?;
@@ -38,7 +48,10 @@ pub fn write_scenario_readme(collector: &ArtifactCollector, scenario: &ScenarioA
     for (i, step) in scenario.steps.iter().enumerate() {
         let step_dir = format!("{:02}", i + 1);
         let screenshot_link = if step.screenshot_after.is_some() {
-            format!("<a href=\"./{}/after.png\"><img src=\"./{}/after.png\" width=\"150\" /></a>", step_dir, step_dir)
+            format!(
+                "<a href=\"./{}/after.png\"><img src=\"./{}/after.png\" width=\"150\" /></a>",
+                step_dir, step_dir
+            )
         } else {
             "-".to_string()
         };
@@ -48,9 +61,9 @@ pub fn write_scenario_readme(collector: &ArtifactCollector, scenario: &ScenarioA
             "-".to_string()
         };
         let reg_link = if step.registers.is_some() {
-                format!("[💾](./{}/registers.txt)", step_dir)
+            format!("[💾](./{}/registers.txt)", step_dir)
         } else {
-                "-".to_string()
+            "-".to_string()
         };
 
         writeln!(
@@ -70,7 +83,7 @@ pub fn write_scenario_readme(collector: &ArtifactCollector, scenario: &ScenarioA
 
     let log_path = scenario.dir.join("serial.log");
     if log_path.exists() {
-            if let Ok(content) = fs::read_to_string(log_path) {
+        if let Ok(content) = fs::read_to_string(log_path) {
             writeln!(file, "<details>")?;
             writeln!(file, "<summary>📜 Full Serial Log</summary>")?;
             writeln!(file)?;
@@ -78,7 +91,7 @@ pub fn write_scenario_readme(collector: &ArtifactCollector, scenario: &ScenarioA
             writeln!(file, "{}", content)?;
             writeln!(file, "```")?;
             writeln!(file, "</details>")?;
-            }
+        }
     }
 
     Ok(())

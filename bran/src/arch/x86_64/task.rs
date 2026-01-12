@@ -1,6 +1,6 @@
-use core::arch::{global_asm, asm};
-use kernel::UserTaskSpec;
 use super::paging::X86_64AddressSpace;
+use core::arch::{asm, global_asm};
+use kernel::UserTaskSpec;
 
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
@@ -19,7 +19,8 @@ unsafe extern "C" {
     fn user_trampoline();
 }
 
-global_asm!(r#"
+global_asm!(
+    r#"
 .section .text
 .global context_switch
 context_switch:
@@ -78,7 +79,8 @@ user_trampoline:
     xor r11, r11
     
     iretq
-"#);
+"#
+);
 
 pub fn init_kernel_context(
     entry: extern "C" fn(arg: usize) -> !,
@@ -98,7 +100,7 @@ pub fn init_kernel_context(
     push(arg as u64); // r13
     push(0); // r14
     push(0); // r15
-    
+
     X86_64Context {
         sp: sp as usize,
         kstack_top,
@@ -119,7 +121,7 @@ pub fn init_user_context(spec: UserTaskSpec<X86_64AddressSpace>, kstack_top: u64
     push(spec.stack_top); // r13
     push(spec.aspace.0); // r14
     push(spec.arg as u64); // r15
-    
+
     X86_64Context {
         sp: sp as usize,
         kstack_top,
@@ -133,7 +135,7 @@ pub unsafe fn switch(from: &mut X86_64Context, to: &X86_64Context) {
         // Offset 8 is kernel_rsp.
         // But wait, we need to know if GS is active.
         // Assuming we set up GS in mod.rs init().
-        
+
         let kstack = to.kstack_top;
         // Write to GS:8 (assuming CpuLocal layout: user_rsp: u64, kernel_rsp: u64)
         // We do this BEFORE switching, because we are in kernel mode.

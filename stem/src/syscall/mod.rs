@@ -1,15 +1,23 @@
 mod arch;
 pub mod graph;
 
-pub use abi::syscall::*;
-use abi::errors::Errno;
 use abi::device::RtcTime;
+use abi::errors::Errno;
+pub use abi::syscall::*;
 
 use arch::raw_syscall6;
 
 /// Helper to expose raw syscalls safely to other modules if needed.
 #[inline(always)]
-pub unsafe fn syscall6(n: u32, a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize) -> isize {
+pub unsafe fn syscall6(
+    n: u32,
+    a0: usize,
+    a1: usize,
+    a2: usize,
+    a3: usize,
+    a4: usize,
+    a5: usize,
+) -> isize {
     unsafe { raw_syscall6(n, a0, a1, a2, a3, a4, a5) }
 }
 
@@ -57,24 +65,16 @@ pub fn sleep_ms(ms: u64) {
 }
 
 pub fn monotonic_ns() -> u64 {
-    let ret = unsafe {
-        raw_syscall6(SYS_TIME_MONOTONIC, 0, 0, 0, 0, 0, 0)
-    };
-    if ret < 0 { 0 } else { ret as u64 }
+    let ret = unsafe { raw_syscall6(SYS_TIME_MONOTONIC, 0, 0, 0, 0, 0, 0) };
+    if ret < 0 {
+        0
+    } else {
+        ret as u64
+    }
 }
 
 pub fn rtc_read(out: &mut RtcTime) -> Result<(), Errno> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_RTC_READ,
-            out as *mut _ as usize,
-            0,
-            0,
-            0,
-            0,
-            0,
-        )
-    };
+    let ret = unsafe { raw_syscall6(SYS_RTC_READ, out as *mut _ as usize, 0, 0, 0, 0, 0) };
     if ret < 0 {
         abi::errors::errno(ret).map(|_| ())
     } else {
@@ -104,16 +104,12 @@ pub fn alloc_stack(pages: usize) -> Result<usize, Errno> {
 
 pub fn spawn_thread(entry: extern "C" fn() -> !, stack_top: usize) -> Result<u64, Errno> {
     let entry_addr = entry as usize;
-    let ret = unsafe {
-        raw_syscall6(SYS_SPAWN_THREAD, entry_addr, stack_top, 0, 0, 0, 0)
-    };
+    let ret = unsafe { raw_syscall6(SYS_SPAWN_THREAD, entry_addr, stack_top, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| v as u64)
 }
 
 pub fn task_poll(pid: u64) -> Result<(abi::types::TaskStatus, i32), Errno> {
-    let ret = unsafe {
-        raw_syscall6(abi::syscall::SYS_TASK_POLL, pid as usize, 0, 0, 0, 0, 0)
-    };
+    let ret = unsafe { raw_syscall6(abi::syscall::SYS_TASK_POLL, pid as usize, 0, 0, 0, 0, 0) };
     if ret < 0 {
         abi::errors::errno(ret).map(|_| (abi::types::TaskStatus::Unknown, 0))
     } else {
@@ -139,10 +135,12 @@ pub fn time_anchor(unix_secs: u64) {
 }
 
 pub fn ioport_read(port: usize, width: usize) -> usize {
-    let ret = unsafe {
-        raw_syscall6(SYS_DEVICE_IOPORT_READ, port, width, 0, 0, 0, 0)
-    };
-    if ret < 0 { 0 } else { ret as usize }
+    let ret = unsafe { raw_syscall6(SYS_DEVICE_IOPORT_READ, port, width, 0, 0, 0, 0) };
+    if ret < 0 {
+        0
+    } else {
+        ret as usize
+    }
 }
 
 pub fn ioport_write(port: usize, value: usize, width: usize) {

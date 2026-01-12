@@ -10,9 +10,12 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &func.sig.ident;
 
     if func.sig.asyncness.is_some() {
-        return syn::Error::new_spanned(&func.sig.ident, "#[stem::main] does not support async functions")
-            .to_compile_error()
-            .into();
+        return syn::Error::new_spanned(
+            &func.sig.ident,
+            "#[stem::main] does not support async functions",
+        )
+        .to_compile_error()
+        .into();
     }
 
     // Ensure return type is !

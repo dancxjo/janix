@@ -8,10 +8,10 @@ mod build;
 mod clean;
 mod common;
 mod image;
+mod kill;
 mod limine;
 mod ovmf;
 mod run;
-mod kill;
 
 use clap::{Parser, Subcommand};
 use xshell::Shell;
@@ -143,7 +143,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             build(&sh, &env, &profile)?;
             build_hdd(&sh, &env)?;
         }
-        Commands::Run { env, profile, qemu_flags } => {
+        Commands::Run {
+            env,
+            profile,
+            qemu_flags,
+        } => {
             ovmf(&sh, &env)?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
@@ -156,7 +160,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             build_iso(&sh, "x86_64")?;
             run_bios(&sh, &qemu_flags)?;
         }
-        Commands::RunHdd { env, profile, qemu_flags } => {
+        Commands::RunHdd {
+            env,
+            profile,
+            qemu_flags,
+        } => {
             ovmf(&sh, &env)?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
@@ -168,7 +176,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::OvmfAll => ovmf_all(&sh)?,
         Commands::Clean => clean(&sh)?,
         Commands::Distclean => distclean(&sh)?,
-        Commands::Bdd { feature, tags, arch } => bdd(&sh, feature, tags, arch)?,
+        Commands::Bdd {
+            feature,
+            tags,
+            arch,
+        } => bdd(&sh, feature, tags, arch)?,
         Commands::Kill => kill::run()?,
     }
 

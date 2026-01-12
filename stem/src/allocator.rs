@@ -23,11 +23,11 @@ unsafe impl GlobalAlloc for BumpAllocator {
         let heap = self.heap.get();
         let start = (*heap).buf.as_ptr() as usize;
         let current = start + *next;
-        
+
         // Align
         let aligned = (current + align - 1) & !(align - 1);
         let updated = aligned + size;
-        
+
         if updated > start + HEAP_SIZE {
             core::ptr::null_mut()
         } else {
@@ -35,7 +35,7 @@ unsafe impl GlobalAlloc for BumpAllocator {
             aligned as *mut u8
         }
     }
-    
+
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
         // No-op
     }
@@ -43,6 +43,8 @@ unsafe impl GlobalAlloc for BumpAllocator {
 
 #[global_allocator]
 static ALLOCATOR: BumpAllocator = BumpAllocator {
-    heap: UnsafeCell::new(Heap { buf: [0; HEAP_SIZE] }),
+    heap: UnsafeCell::new(Heap {
+        buf: [0; HEAP_SIZE],
+    }),
     next: UnsafeCell::new(0),
 };

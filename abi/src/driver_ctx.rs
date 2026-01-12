@@ -1,4 +1,3 @@
-
 use crate::types::ThingId;
 
 #[repr(C)]

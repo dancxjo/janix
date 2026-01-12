@@ -1,4 +1,3 @@
-
 #[repr(u64)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModuleKind {
@@ -11,7 +10,7 @@ pub enum ModuleKind {
 pub struct ManifestHeader {
     pub magic: u64,
     pub kind: ModuleKind, // repr(u64) makes this 8 bytes
-    pub device_kind: [u8; 64], 
+    pub device_kind: [u8; 64],
     pub version: u32,
     pub _reserved: u32,
 }

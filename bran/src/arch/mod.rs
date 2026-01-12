@@ -1,20 +1,20 @@
-#[cfg(target_arch = "x86_64")]
-pub mod x86_64;
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
-#[cfg(target_arch = "riscv64")]
-pub mod riscv64;
 #[cfg(target_arch = "loongarch64")]
 pub mod loongarch64;
-
+#[cfg(target_arch = "riscv64")]
+pub mod riscv64;
 #[cfg(target_arch = "x86_64")]
-pub use x86_64::hcf;
+pub mod x86_64;
+
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::hcf;
-#[cfg(target_arch = "riscv64")]
-pub use riscv64::hcf;
 #[cfg(target_arch = "loongarch64")]
 pub use loongarch64::hcf;
+#[cfg(target_arch = "riscv64")]
+pub use riscv64::hcf;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::hcf;
 
 #[cfg(target_arch = "x86_64")]
 pub type CurrentRuntime = crate::runtime::Runtime<x86_64::X86_64Runtime>;
@@ -40,7 +40,10 @@ pub const fn create_runtime() -> CurrentRuntime {
 }
 
 pub fn init_paging() {
-    let offset = crate::requests::HHDM_REQUEST.get_response().map(|r| r.offset()).unwrap_or(0);
+    let offset = crate::requests::HHDM_REQUEST
+        .get_response()
+        .map(|r| r.offset())
+        .unwrap_or(0);
     #[cfg(target_arch = "x86_64")]
     x86_64::paging::init(offset);
     #[cfg(target_arch = "aarch64")]
@@ -53,8 +56,10 @@ pub fn init_paging() {
 
 pub unsafe fn init_interrupts() {
     #[cfg(target_arch = "aarch64")]
-    unsafe { aarch64::vector::init(); }
-    
+    unsafe {
+        aarch64::vector::init();
+    }
+
     // x86_64, riscv64, loongarch64 interrupt init to be added if needed/when identified.
     // Assuming they are either handled elsewhere or not currently critical for this phase.
 }

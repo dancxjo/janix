@@ -1,5 +1,5 @@
-use kernel::{FramebufferInfo, PixelFormat};
 use crate::requests::FRAMEBUFFER_REQUEST;
+use kernel::{FramebufferInfo, PixelFormat};
 
 pub struct Framebuffer {
     pub addr: *mut u32,

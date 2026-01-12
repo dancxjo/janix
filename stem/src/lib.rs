@@ -104,10 +104,6 @@ pub fn monotonic_ns() -> u64 {
     time::monotonic_ns()
 }
 
-pub fn rtc_time() -> Result<abi::device::RtcTime, abi::errors::Errno> {
-    let mut t = abi::device::RtcTime::default();
-    syscall::rtc_read(&mut t).map(|_| t)
-}
 pub mod thing;
 pub use thing_macros::*;
 #[cfg(feature = "global-alloc")]

@@ -1,60 +1,103 @@
-// Core syscalls (0-63)
-pub const SYS_EXIT: u32 = 1;
-pub const SYS_DEBUG_WRITE: u32 = 2;
-pub const SYS_SLEEP_MS: u32 = 3;
-pub const SYS_DEVICE_CALL: u32 = 4;
-pub const SYS_YIELD: u32 = 5;
-pub const SYS_SPAWN_THREAD: u32 = 6;
-pub const SYS_SPAWN_PROCESS: u32 = 7;
-pub const SYS_TIME_MONOTONIC: u32 = 8;
-pub const SYS_RTC_READ: u32 = 9;
-pub const SYS_SLEEP_NS: u32 = 10;
-pub const SYS_LOG_WRITE: u32 = 11;
-pub const SYS_GET_TID: u32 = 12;
-pub const SYS_TASK_POLL: u32 = 18;
-pub const SYS_TIME_NOW: u32 = 19;
-pub const SYS_TIME_ANCHOR: u32 = 20; // NEW: anchor system clock from userspace
-pub const SYS_ALLOC_STACK: u32 = 21;
-pub const SYS_TASK_WAIT: u32 = 22;  // Block until task exits
+//! ThingOS Syscall Constants
+//!
+//!
+// ============================================================================
+// Block 0x00–0x0F: Process lifecycle + identity
+// ============================================================================
+pub const SYS_EXIT: u32 = 0x01;
+pub const SYS_GET_TID: u32 = 0x02;
+pub const SYS_SPAWN_THREAD: u32 = 0x03;
+pub const SYS_SPAWN_PROCESS: u32 = 0x04;
+pub const SYS_TASK_WAIT: u32 = 0x05;
 
-// Device Capability Syscalls
-pub const SYS_DEVICE_CLAIM: u32 = 13;
-pub const SYS_DEVICE_MAP_MMIO: u32 = 14;
-pub const SYS_DEVICE_IRQ_SUBSCRIBE: u32 = 15;
-pub const SYS_DEVICE_IOPORT_READ: u32 = 16;
-pub const SYS_DEVICE_IOPORT_WRITE: u32 = 17;
+// ============================================================================
+// Block 0x10–0x1F: Scheduling + sleep/yield
+// ============================================================================
+pub const SYS_YIELD: u32 = 0x10;
+pub const SYS_SLEEP_NS: u32 = 0x11;
+pub const SYS_SLEEP_MS: u32 = 0x12;
+pub const SYS_TASK_POLL: u32 = 0x13;
 
-// Stream syscalls (128-191)
-pub const SYS_STREAM_OPEN: u32 = 128;
-pub const SYS_STREAM_READ: u32 = 129;
-pub const SYS_STREAM_POLL: u32 = 130;
+// ============================================================================
+// Block 0x20–0x2F: Time
+// ============================================================================
+pub const SYS_TIME_MONOTONIC: u32 = 0x20;
+pub const SYS_TIME_NOW: u32 = 0x21;
+pub const SYS_TIME_ANCHOR: u32 = 0x22;
 
-// Watch/Event syscalls (192-255)
-pub const SYS_WATCH_SUBSCRIBE: u32 = 192;
-pub const SYS_WATCH_READ: u32 = 193;
+// ============================================================================
+// Block 0x30–0x3F: Logging / debug output
+// ============================================================================
+pub const SYS_DEBUG_WRITE: u32 = 0x30;
+pub const SYS_LOG_WRITE: u32 = 0x31;
 
-// Root/Graph (256+)
-pub const SYS_ROOT_GET_KIND: u32 = 256;
-pub const SYS_ROOT_BYTESPACE_CREATE: u32 = 257;
-pub const SYS_ROOT_BYTESPACE_READ: u32 = 258;
-pub const SYS_ROOT_WATCH_SUBSCRIBE: u32 = 259;
-pub const SYS_ROOT_STREAM_POLL: u32 = 260;
-pub const SYS_ROOT_PROP_SET: u32 = 261;
-pub const SYS_ROOT_PROP_GET: u32 = 262;
-pub const SYS_ROOT_FIND: u32 = 263;
+// ============================================================================
+// Block 0x40–0x4F: Memory / stacks
+// ============================================================================
+pub const SYS_ALLOC_STACK: u32 = 0x40;
 
-pub const SYS_ROOT_DESCRIBE_THING: u32 = 264;
-pub const SYS_ROOT_DESCRIBE_EDGE: u32 = 265;
-pub const SYS_ROOT_DUMP_EDGES: u32 = 266;
-pub const SYS_ROOT_LINK: u32 = 267;
-pub const SYS_ROOT_INTERN: u32 = 268;
-pub const SYS_ROOT_CREATE_NODE: u32 = 269;
-pub const SYS_ROOT_QUERY: u32 = 270;
-pub const SYS_ROOT_BYTESPACE_WRITE: u32 = 271;
-pub const SYS_ROOT_DUMP_GRAPH: u32 = 272;
+// ============================================================================
+// Block 0x80–0x8F: Port IPC
+// ============================================================================
+pub const SYS_PORT_CREATE: u32 = 0x80;
+pub const SYS_PORT_SEND: u32 = 0x81;
+pub const SYS_PORT_RECV: u32 = 0x82;
+pub const SYS_PORT_CLOSE: u32 = 0x83;
 
-// Port IPC syscalls (32-35)
-pub const SYS_PORT_CREATE: u32 = 32;
-pub const SYS_PORT_SEND: u32 = 33;
-pub const SYS_PORT_RECV: u32 = 34;
-pub const SYS_PORT_CLOSE: u32 = 35;
+// ============================================================================
+// Block 0x90–0x9F: Streams
+// ============================================================================
+pub const SYS_STREAM_OPEN: u32 = 0x90;
+pub const SYS_STREAM_READ: u32 = 0x91;
+pub const SYS_STREAM_POLL: u32 = 0x92;
+
+// ============================================================================
+// Block 0xC0–0xCF: Device claim + generic device call
+// ============================================================================
+pub const SYS_DEVICE_CLAIM: u32 = 0xC0;
+pub const SYS_DEVICE_CALL: u32 = 0xC1;
+
+// ============================================================================
+// Block 0xD0–0xDF: Device resources (MMIO/IRQ/IOPORT)
+// ============================================================================
+pub const SYS_DEVICE_MAP_MMIO: u32 = 0xD0;
+pub const SYS_DEVICE_IRQ_SUBSCRIBE: u32 = 0xD1;
+pub const SYS_DEVICE_IOPORT_READ: u32 = 0xD2;
+pub const SYS_DEVICE_IOPORT_WRITE: u32 = 0xD3;
+
+// ============================================================================
+// Block 0x100–0x10F: Watches/events
+// ============================================================================
+pub const SYS_WATCH_SUBSCRIBE: u32 = 0x100;
+pub const SYS_WATCH_READ: u32 = 0x101;
+
+// ============================================================================
+// Block 0x140–0x1FF: Root/Graph
+// ============================================================================
+pub const SYS_ROOT_GET_KIND: u32 = 0x140;
+pub const SYS_ROOT_INTERN: u32 = 0x141;
+pub const SYS_ROOT_CREATE_NODE: u32 = 0x142;
+pub const SYS_ROOT_LINK: u32 = 0x143;
+
+// 0x148-0x14F: Properties
+pub const SYS_ROOT_PROP_GET: u32 = 0x148;
+pub const SYS_ROOT_PROP_SET: u32 = 0x149;
+
+// 0x150-0x157: Query/Find
+pub const SYS_ROOT_FIND: u32 = 0x150;
+pub const SYS_ROOT_QUERY: u32 = 0x151;
+
+// 0x158-0x15F: Debug/Describe
+pub const SYS_ROOT_DESCRIBE_THING: u32 = 0x158;
+pub const SYS_ROOT_DESCRIBE_EDGE: u32 = 0x159;
+pub const SYS_ROOT_DUMP_EDGES: u32 = 0x15A;
+pub const SYS_ROOT_DUMP_GRAPH: u32 = 0x15B;
+
+// 0x160-0x167: Bytespace
+pub const SYS_ROOT_BYTESPACE_CREATE: u32 = 0x160;
+pub const SYS_ROOT_BYTESPACE_READ: u32 = 0x161;
+pub const SYS_ROOT_BYTESPACE_WRITE: u32 = 0x162;
+
+// 0x168-0x16F: Watch/Stream (Root-specific)
+pub const SYS_ROOT_WATCH_SUBSCRIBE: u32 = 0x168;
+pub const SYS_ROOT_STREAM_POLL: u32 = 0x169;

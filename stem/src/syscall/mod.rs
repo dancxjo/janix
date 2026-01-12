@@ -2,7 +2,6 @@ mod arch;
 pub mod graph;
 pub mod port;
 
-use abi::device::RtcTime;
 use abi::errors::Errno;
 pub use abi::syscall::*;
 
@@ -72,15 +71,6 @@ pub fn monotonic_ns() -> u64 {
         0
     } else {
         ret as u64
-    }
-}
-
-pub fn rtc_read(out: &mut RtcTime) -> Result<(), Errno> {
-    let ret = unsafe { raw_syscall6(SYS_RTC_READ, out as *mut _ as usize, 0, 0, 0, 0, 0) };
-    if ret < 0 {
-        abi::errors::errno(ret).map(|_| ())
-    } else {
-        Ok(())
     }
 }
 

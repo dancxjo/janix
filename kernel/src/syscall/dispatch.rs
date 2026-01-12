@@ -5,8 +5,6 @@ use abi::syscall::*;
 pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
     let syscall_id = n as u32;
 
-    // crate::kprintln!("SYSCALL: #{} arg0={:x}", syscall_id, args[0]);
-
     let result = match syscall_id {
         SYS_EXIT => handlers::sys_exit(args[0] as i32),
         SYS_DEBUG_WRITE => handlers::sys_debug_write(args[0], args[1]),
@@ -35,7 +33,6 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_DEVICE_IRQ_SUBSCRIBE => handlers::sys_device_irq_subscribe(args[0]),
         SYS_DEVICE_IOPORT_READ => handlers::sys_device_ioport(args[0], 0, false, args[1]),
         SYS_DEVICE_IOPORT_WRITE => handlers::sys_device_ioport(args[0], args[1], true, args[2]),
-        SYS_RTC_READ => handlers::sys_rtc_read(args[0]),
 
         SYS_ROOT_GET_KIND => handlers::sys_root_get_kind(args[0]),
         SYS_ROOT_BYTESPACE_CREATE => handlers::sys_root_bytespace_create(args[0], args[1], args[2]),

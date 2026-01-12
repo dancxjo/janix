@@ -6,7 +6,7 @@ pub mod loongarch64;
 use stem::thing::{ThingId, sys as thingsys};
 // use alloc::vec::Vec;
 use alloc::vec;
-use stem::println;
+use stem::{info, warn, error};
 use abi::schema::{keys, kinds, rels, source, confidence};
 
 pub fn set_str_prop(id: ThingId, key: &str, val: &str) -> Result<(), ()> {
@@ -25,38 +25,38 @@ pub struct DevTreeCtx {
 }
 
 pub fn init() -> Result<DevTreeCtx, ()> {
-    println!("SPROUT: devtree::init entry (v0.2)");
+    info!("SPROUT: devtree::init entry (v0.2)");
 
     // 1. Find Host
-    println!("SPROUT: Step 1: Find Host");
+    info!("SPROUT: Step 1: Find Host");
     let mut hosts = [ThingId(0); 1];
     // Cast u64 -> usize is implicit in find logic or needed? 
     // root::find syscall takes SymbolShell. kinds::DEV_HOST is &str. fits.
     let count = thingsys::find(kinds::DEV_HOST, &mut hosts).map_err(|e| {
-        println!("SPROUT: find(dev.host) failed: {:?}", e);
+        info!("SPROUT: find(dev.host) failed: {:?}", e);
         ()
     })?;
     if count == 0 { 
-        println!("SPROUT: No dev.host node found!");
+        info!("SPROUT: No dev.host node found!");
         return Err(()); 
     }
     let host = hosts[0];
     
     // 2. Get HHDM Offset
-    println!("SPROUT: Step 2: HHDM");
+    info!("SPROUT: Step 2: HHDM");
     let hhdm = thingsys::prop_get(host, keys::HHDM_OFFSET).map_err(|e| {
-        println!("SPROUT: prop_get(hhdm_offset) failed: {:?}", e);
+        info!("SPROUT: prop_get(hhdm_offset) failed: {:?}", e);
         ()
     })? as usize;
     
     // 3. Find/Create Platform Bus
-    println!("SPROUT: Step 3: Platform Bus");
+    info!("SPROUT: Step 3: Platform Bus");
     let mut buses = [ThingId(0); 1];
     let bcount = thingsys::find(kinds::DEV_BUS_PLATFORM, &mut buses).unwrap_or(0);
     let platform_bus = if bcount > 0 {
         buses[0]
     } else {
-        println!("SPROUT: Creating dev.bus.platform...");
+        info!("SPROUT: Creating dev.bus.platform...");
         let bus = thingsys::create_node(kinds::DEV_BUS_PLATFORM).map_err(|_| ())?;
         thingsys::link(host, rels::HAS_BUS, bus).map_err(|_| ())?;
         
@@ -67,7 +67,7 @@ pub fn init() -> Result<DevTreeCtx, ()> {
     };
     
     // 4. Check for Firmware
-    println!("SPROUT: Step 4: Firmware");
+    info!("SPROUT: Step 4: Firmware");
     let mut acpi_rsdp = None;
     let mut dtb_ptr = None;
     let mut dtb_bytespace = None;
@@ -75,38 +75,38 @@ pub fn init() -> Result<DevTreeCtx, ()> {
     
     let mut fw_buf = [ThingId(0); 4];
 
-    println!("SPROUT: Finding ACPI...");
+    info!("SPROUT: Finding ACPI...");
     if let Ok(count) = thingsys::find(kinds::FW_TABLE_ACPI, &mut fw_buf) {
-        println!("SPROUT: Found {} ACPI nodes", count);
+        info!("SPROUT: Found {} ACPI nodes", count);
         if count > 0 {
              if let Ok(val) = thingsys::prop_get(fw_buf[0], keys::PHYS_BASE) {
                  acpi_rsdp = Some(val as usize);
-                 println!("SPROUT: ACPI RSDP = 0x{:x}", val);
+                 info!("SPROUT: ACPI RSDP = 0x{:x}", val);
              }
         }
     } else {
-        println!("SPROUT: find(ACPI) failed/returned error");
+        info!("SPROUT: find(ACPI) failed/returned error");
     }
     
-    println!("SPROUT: Finding DTB...");
+    info!("SPROUT: Finding DTB...");
     if let Ok(count) = thingsys::find(kinds::FW_TABLE_DTB, &mut fw_buf) {
-        println!("SPROUT: Found {} DTB nodes", count);
+        info!("SPROUT: Found {} DTB nodes", count);
         if count > 0 {
              dtb_node_id = Some(fw_buf[0]);
              if let Ok(val) = thingsys::prop_get(fw_buf[0], keys::PHYS_BASE) {
                  dtb_ptr = Some(val as usize);
-                 println!("SPROUT: DTB PHYS = 0x{:x}", val);
+                 info!("SPROUT: DTB PHYS = 0x{:x}", val);
              }
              if let Ok(val) = thingsys::prop_get(fw_buf[0], "bytespace") {
                  dtb_bytespace = Some(ThingId(val));
-                 println!("SPROUT: DTB Bytespace ID = {}", val);
+                 info!("SPROUT: DTB Bytespace ID = {}", val);
              }
         }
     } else {
-        println!("SPROUT: find(DTB) failed");
+        info!("SPROUT: find(DTB) failed");
     }
     
-    println!("SPROUT: Init OK, returning context");
+    info!("SPROUT: Init OK, returning context");
     Ok(DevTreeCtx {
         host,
         platform_bus,
@@ -119,10 +119,10 @@ pub fn init() -> Result<DevTreeCtx, ()> {
 }
 
 pub fn build(ctx: &DevTreeCtx) -> Result<(), ()> {
-    println!("SPROUT: build() called");
+    info!("SPROUT: build() called");
     // Attempt DTB parsing if available
     if let Some(bs_id) = ctx.dtb_bytespace {
-        println!("SPROUT: Found DTB bytespace {}, parsing...", bs_id.0);
+        info!("SPROUT: Found DTB bytespace {}, parsing...", bs_id.0);
         let mut header = [0u8; 8];
         if let Ok(_) = thingsys::bytespace_read(bs_id, 0, &mut header) {
             let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
@@ -130,17 +130,17 @@ pub fn build(ctx: &DevTreeCtx) -> Result<(), ()> {
                 let size = u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as usize;
                 
                 if size < 2 * 1024 * 1024 { // Up to 2MB DTB
-                    println!("SPROUT: Reading DTB size={}...", size);
+                    info!("SPROUT: Reading DTB size={}...", size);
                     let mut buf = vec![0u8; size];
                     if let Ok(read_len) = thingsys::bytespace_read(bs_id, 0, &mut buf) {
                          if read_len == size {
                              if let Ok(fdt) = fdt::Fdt::new(&buf) {
-                                 println!("SPROUT: Valid FDT found. Iterating nodes...");
+                                 info!("SPROUT: Valid FDT found. Iterating nodes...");
                                  
                                  for node in fdt.all_nodes() {
                                       stem::yield_now(); // Yield inside loop to be safe!
                                       let name = node.name.split('@').next().unwrap_or("");
-                                      // println!("SPROUT: NODE {}", name); // Too verbose?
+                                      // info!("SPROUT: NODE {}", name); // Too verbose?
                                       let mut kind = "";
                                       
                                       if name.contains("serial") || name.contains("uart") {

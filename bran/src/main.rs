@@ -46,10 +46,16 @@ fn indicate_progress() {
 fn rust_panic(info: &core::panic::PanicInfo) -> ! {
     // unsafe { kernel::logging::init(&RUNTIME) };
     unsafe { kernel::logging::force_unlock() };
-    kernel::kerror!("KERNEL PANIC");
     if let Some(location) = info.location() {
-        kernel::kerror!("Location: {}:{}:{}", location.file(), location.line(), location.column());
+        kernel::kerror!(
+            "KERNEL PANIC Location: {}:{}:{} Message: {}",
+            location.file(),
+            location.line(),
+            location.column(),
+            info.message()
+        );
+    } else {
+        kernel::kerror!("KERNEL PANIC Location: unknown Message: {}", info.message());
     }
-    kernel::kerror!("Message: {}", info.message());
     hcf()
 }

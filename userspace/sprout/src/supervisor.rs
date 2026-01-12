@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use alloc::string::{String, ToString};
 use alloc::format;
-use stem::println;
+use stem::{info, error, warn};
 use stem::thing::ThingId;
 use stem::thing::sys as thingsys;
 use crate::registry::Registry;
@@ -36,7 +36,7 @@ impl Supervisor {
     }
 
     pub fn run_forever(&mut self) -> ! {
-        println!("SPROUT: Supervisor starting...");
+        info!("SPROUT: Supervisor starting...");
 
         // 1. Discovery
         self.discover();
@@ -48,7 +48,7 @@ impl Supervisor {
         self.match_and_spawn_drivers();
 
         // 4. Loop
-        println!("SPROUT: Entering supervisor loop.");
+        info!("SPROUT: Entering supervisor loop.");
         loop {
             self.monitor();
             stem::yield_now();
@@ -63,20 +63,20 @@ impl Supervisor {
     }
 
     fn discover(&mut self) {
-        println!("SPROUT: Discovering modules...");
+        info!("SPROUT: Discovering modules...");
         let mut modules = [ThingId(0); 32];
         let count = thingsys::find(stem::abi::schema::kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
-        println!("SPROUT: Found {} modules", count);
+        info!("SPROUT: Found {} modules", count);
         
         for i in 0..count {
             if i >= modules.len() {
-                println!("SPROUT: Module index {} out of bounds!", i);
+                info!("SPROUT: Module index {} out of bounds!", i);
                 break;
             }
             let mod_id = modules[i];
             let name = self.get_module_name(mod_id);
             if name.is_empty() { 
-                println!("SPROUT: Module {} has empty name", mod_id.0);
+                info!("SPROUT: Module {} has empty name", mod_id.0);
                 continue; 
             }
 
@@ -96,7 +96,7 @@ impl Supervisor {
                 // Let's defer to Registry scan logic for drivers.
             } else if name.contains("/apps/") || name.ends_with("/clock") || name.ends_with("/threads_demo") || name.ends_with("/idle") {
                  // Treat as App
-                 println!("SPROUT: Discovered app: {}", name);
+                 info!("SPROUT: Discovered app: {}", name);
                  self.tasks.push(ManagedTask {
                      name: name.clone(),
                      kind: TaskKind::App,
@@ -134,13 +134,13 @@ impl Supervisor {
                 // name is full path. spawn_process expects name to match module name?
                 // spawn_process implementation in kernel matches `if m.name.contains(name)`.
                 // So passing full path is fine.
-                println!("SPROUT: Launching app '{}'", task.name);
+                info!("SPROUT: Launching app '{}'", task.name);
                 match stem::syscall::spawn_process(&task.name, 0) {
                     Ok(pid) => {
-                        println!("SPROUT: App launched (PID={})", pid);
+                        info!("SPROUT: App launched (PID={})", pid);
                         task.pid = Some(pid);
                     },
-                    Err(e) => println!("SPROUT: Failed to launch app '{}': {:?}", task.name, e),
+                    Err(e) => info!("SPROUT: Failed to launch app '{}': {:?}", task.name, e),
                 }
             }
         }
@@ -155,7 +155,7 @@ impl Supervisor {
         if let Ok(1) = thingsys::find(stem::abi::schema::kinds::DEV_RTC_CMOS, &mut buf) {
             let rtc_id = buf[0];
             if let Some(driver_name) = self.registry.find_driver("dev.rtc.Cmos") {
-                 println!("SPROUT: Found match for RTC: driver '{}'", driver_name);
+                 info!("SPROUT: Found match for RTC: driver '{}'", driver_name);
                  
                  // Check if already running?
                  // Add to managed tasks
@@ -165,7 +165,7 @@ impl Supervisor {
                  
                  match stem::syscall::spawn_process(driver_name, arg) {
                      Ok(pid) => {
-                         println!("SPROUT: Driver launched (PID={})", pid);
+                         info!("SPROUT: Driver launched (PID={})", pid);
                          self.tasks.push(ManagedTask {
                              name: driver_name.to_string(),
                              kind: TaskKind::Driver("dev.rtc.Cmos".to_string()),
@@ -174,7 +174,7 @@ impl Supervisor {
                              restarts: 0,
                          });
                      },
-                     Err(e) => println!("SPROUT: Failed to launch driver: {:?}", e),
+                     Err(e) => info!("SPROUT: Failed to launch driver: {:?}", e),
                  }
             }
         }
@@ -187,7 +187,7 @@ impl Supervisor {
                 match stem::syscall::task_poll(pid) {
                     Ok((status, code)) => {
                         if status == stem::abi::types::TaskStatus::Dead {
-                            println!("SPROUT: Task '{}' (PID {}) died with code {}. Restarting...", task.name, pid, code);
+                            info!("SPROUT: Task '{}' (PID {}) died with code {}. Restarting...", task.name, pid, code);
                             
                             // Restart logic
                             task.pid = None; // Reset
@@ -217,17 +217,17 @@ impl Supervisor {
 
                             match stem::syscall::spawn_process(&task.name, arg) {
                                 Ok(new_pid) => {
-                                    println!("SPROUT: Restarted '{}' (PID={})", task.name, new_pid);
+                                    info!("SPROUT: Restarted '{}' (PID={})", task.name, new_pid);
                                     task.pid = Some(new_pid);
                                 },
-                                Err(e) => println!("SPROUT: Failed to restart '{}': {:?}", task.name, e),
+                                Err(e) => info!("SPROUT: Failed to restart '{}': {:?}", task.name, e),
                             }
                         }
                     },
                     Err(_) => {
                         // ESRCH? maybe invalid pid?
                         // Assume dead.
-                         println!("SPROUT: Task '{}' (PID {}) vanished?", task.name, pid);
+                         info!("SPROUT: Task '{}' (PID {}) vanished?", task.name, pid);
                          task.pid = None;
                     }
                 }

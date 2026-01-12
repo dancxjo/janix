@@ -15,7 +15,7 @@
     "position-independent-executables": false,
     "static-position-independent-executables": false,
     "relocation-model": "static",
-    "features": "-mmx,-3dnow",
+    "features": "-mmx",
     "disable-redzone": true,
     "executables": true
 }

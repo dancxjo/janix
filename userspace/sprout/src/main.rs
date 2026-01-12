@@ -2,7 +2,7 @@
 #![no_main]
 
 extern crate alloc;
-use stem::println;
+use stem::{info, error};
 
 mod devtree;
 mod registry;
@@ -10,16 +10,16 @@ mod supervisor;
 
 #[no_mangle]
 pub extern "C" fn main(_arg0: usize) {
-    println!("SPROUT: v0.4 starting (Supervisor Mode)...");
+    info!("SPROUT: v0.4 starting (Supervisor Mode)...");
     
     match devtree::init() {
         Ok(ctx) => {
              if let Err(_) = devtree::build(&ctx) {
-                 println!("SPROUT: Failed to build device tree!");
+                 error!("SPROUT: Failed to build device tree!");
              }
         },
         Err(_) => {
-            println!("SPROUT: Failed to initialize devtree context! (continuing)");
+            error!("SPROUT: Failed to initialize devtree context! (continuing)");
         }
     }
 

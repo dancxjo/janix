@@ -1,7 +1,7 @@
 use super::DevTreeCtx;
-use stem::println;
+use stem::info;
 
 pub fn enumerate(_ctx: &DevTreeCtx) -> Result<(), ()> {
-    println!("SPROUT: Enumerating LoongArch64 platform (stub)...");
+    info!("SPROUT: Enumerating LoongArch64 platform (stub)...");
     Ok(())
 }

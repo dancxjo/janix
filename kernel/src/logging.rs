@@ -16,6 +16,7 @@ pub enum Level {
     Warn = 2,
     Info = 3,
     Debug = 4,
+    Trace = 5,
     Raw = 255, // No metadata, no mandatory newline
 }
 
@@ -26,6 +27,7 @@ impl Level {
             Level::Warn => "WARN",
             Level::Info => "INFO",
             Level::Debug => "DEBUG",
+            Level::Trace => "TRACE",
             Level::Raw => "RAW",
         }
     }

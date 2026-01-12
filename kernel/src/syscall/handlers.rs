@@ -12,9 +12,18 @@ pub fn sys_exit(code: i32) -> SysResult<usize> {
     Ok(0)
 }
 
-pub fn sys_log_write(ptr: usize, len: usize) -> SysResult<usize> {
+pub fn sys_log_write(ptr: usize, len: usize, level_arg: usize) -> SysResult<usize> {
     let _ = validate_user_range(ptr, len, false)?;
     if len > 2048 { return Err(Errno::EINVAL); }
+
+    let level = match level_arg {
+        1 => crate::logging::LogLevel::Error,
+        2 => crate::logging::LogLevel::Warn,
+        3 => crate::logging::LogLevel::Info,
+        4 => crate::logging::LogLevel::Debug,
+        5 => crate::logging::LogLevel::Trace,
+        _ => crate::logging::LogLevel::Info, // Default
+    };
     
     // We want to log the whole message as one event if possible.
     // Allocate a vector? Or use a fixed stack buffer.
@@ -32,7 +41,7 @@ pub fn sys_log_write(ptr: usize, len: usize) -> SysResult<usize> {
             let s_trimmed = s.trim_end();
              crate::logging::_log_event(
                 crate::logging::LogMetadata {
-                    level: crate::logging::LogLevel::Info,
+                    level,
                     file: "userspace",
                     line: 0,
                     module: "user",
@@ -50,7 +59,7 @@ pub fn sys_log_write(ptr: usize, len: usize) -> SysResult<usize> {
 }
 
 pub fn sys_debug_write(ptr: usize, len: usize) -> SysResult<usize> {
-    sys_log_write(ptr, len)
+    sys_log_write(ptr, len, 4) // Debug level
 }
 
 pub fn sys_yield() -> SysResult<usize> {
@@ -218,6 +227,12 @@ fn root_call(op: RootOp) -> SysResult<usize> {
         if done != 0 {
             let status = reply.status.load(Ordering::Relaxed);
             let value = reply.value.load(Ordering::Relaxed);
+            
+            // Debug trace for garbage values
+            // if value > 1000000 {
+                crate::kinfo!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
+            // }
+
             return if status == 0 {
                 Ok(value as usize)
             } else {
@@ -487,16 +502,19 @@ pub fn sys_root_prop_get(id: usize, ptr: usize, _reserved: usize) -> SysResult<u
 }
 
 pub fn sys_root_find(ptr_kind: usize, ptr_buf: usize, len: usize) -> SysResult<usize> {
-    // crate::kinfo!("SYSCALL: sys_root_find ptr_kind={:x} ptr_buf={:x} len={:x}", ptr_kind, ptr_buf, len);
     let sym = read_symbol(ptr_kind)?;
-    // crate::kinfo!("SYSCALL: sys_root_find sym={:?}", sym);
     
     validate_user_range(ptr_buf, len, true)?;
     
+    // Limit max buffer size to avoid OOM
     if len > 4096 { return Err(Errno::EINVAL); }
     let mut kbuf = [0u8; 4096];
     
-    let msg = RootOp::Find { kind: sym, buffer: kbuf.as_mut_ptr() as u64, len: len as u64 };
+    let msg = RootOp::Find {
+        kind: sym,
+        buffer: kbuf.as_mut_ptr() as u64,
+        len: len as u64,
+    };
     
     let count = root_call(msg)?;
     

@@ -25,7 +25,32 @@ macro_rules! println {
 }
 
 pub fn log(s: &str) {
-    let _ = syscall::log_write(s);
+    let _ = syscall::log_write(s, 3);
+}
+
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => ($crate::console::log(1, format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! warn {
+    ($($arg:tt)*) => ($crate::console::log(2, format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => ($crate::console::log(3, format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => ($crate::console::log(4, format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! trace {
+    ($($arg:tt)*) => ($crate::console::log(5, format_args!($($arg)*)));
 }
 
 pub fn yield_now() {

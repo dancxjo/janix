@@ -22,13 +22,13 @@ pub fn exit(code: i32) -> ! {
     }
 }
 
-pub fn log_write(msg: &str) -> Result<usize, Errno> {
+pub fn log_write(msg: &str, level: usize) -> Result<usize, Errno> {
     let ret = unsafe {
         raw_syscall6(
             SYS_LOG_WRITE,
             msg.as_ptr() as usize,
             msg.len(),
-            0,
+            level,
             0,
             0,
             0,

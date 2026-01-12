@@ -11,11 +11,11 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
     let result = match syscall_id {
         SYS_EXIT => handlers::sys_exit(args[0] as i32),
         SYS_DEBUG_WRITE => handlers::sys_debug_write(args[0], args[1]),
-        SYS_LOG_WRITE => handlers::sys_log_write(args[0], args[1]),
+        SYS_LOG_WRITE => handlers::sys_log_write(args[0], args[1], args[2]),
         SYS_YIELD => handlers::sys_yield(),
         SYS_SLEEP_MS => handlers::sys_sleep_ms(args[0] as u64),
         SYS_SLEEP_NS => handlers::sys_sleep_ns(args[0] as u64),
-        SYS_TIME_MONOTONIC_NS => handlers::sys_time_monotonic_ns(),
+        SYS_TIME_MONOTONIC => handlers::sys_time_monotonic_ns(),
         SYS_DEVICE_CALL => handlers::sys_device_call(args[0]),
         SYS_SPAWN_THREAD => handlers::sys_spawn_thread(args[0], args[1]),
         SYS_SPAWN_PROCESS => handlers::sys_spawn_process(args[0], args[1], args[2]),
@@ -25,7 +25,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_DEVICE_CLAIM => handlers::sys_device_claim(args[0]),
         SYS_DEVICE_MAP_MMIO => handlers::sys_device_map_mmio(args[0], args[1]),
         SYS_DEVICE_IRQ_SUBSCRIBE => handlers::sys_device_irq_subscribe(args[0]),
-        SYS_DEVICE_IOPORT => handlers::sys_device_ioport(args[0], args[1], args[2] != 0, args[3]),
+        SYS_DEVICE_IOPORT_READ => handlers::sys_device_ioport(args[0], 0, false, args[1]),
+        SYS_DEVICE_IOPORT_WRITE => handlers::sys_device_ioport(args[0], args[1], true, args[2]),
         SYS_RTC_READ => handlers::sys_rtc_read(args[0]),
         
         SYS_ROOT_GET_KIND => handlers::sys_root_get_kind(args[0]),

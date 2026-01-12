@@ -10,6 +10,7 @@ pub mod syscall;
 pub mod task;
 pub mod tests;
 pub mod time;
+pub mod ipc;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {

@@ -12,6 +12,9 @@ members = [
     "userspace/threads_demo",
     "userspace/rtc_cmos",
     "userspace/clock",
+    "userspace/ps2_kbd",
+    "userspace/thigmonasty",
+    "userspace/echo",
     "tools/pciids",
 ]
 resolver = "2"

@@ -100,6 +100,48 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
 
     sh.copy_file(&clock_bin, "iso_root/boot/clock")?;
 
+    // Build and copy ps2_kbd
+    println!("Building ps2_kbd for {}...", arch);
+    cmd!(
+        sh,
+        "cargo build --target {target} --profile release -p ps2_kbd -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
+    )
+    .env("RUST_TARGET_PATH", target_path)
+    .run()?;
+
+    let ps2_elf = format!("target/{}/release/ps2_kbd", target);
+    let ps2_bin = format!("target/{}/release/ps2_kbd.bin", target);
+    cmd!(sh, "llvm-objcopy -O binary {ps2_elf} {ps2_bin}").run()?;
+    sh.copy_file(&ps2_bin, "iso_root/boot/ps2_kbd")?;
+
+    // Build and copy thigmonasty
+    println!("Building thigmonasty for {}...", arch);
+    cmd!(
+        sh,
+        "cargo build --target {target} --profile release -p thigmonasty -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
+    )
+    .env("RUST_TARGET_PATH", target_path)
+    .run()?;
+
+    let thig_elf = format!("target/{}/release/thigmonasty", target);
+    let thig_bin = format!("target/{}/release/thigmonasty.bin", target);
+    cmd!(sh, "llvm-objcopy -O binary {thig_elf} {thig_bin}").run()?;
+    sh.copy_file(&thig_bin, "iso_root/boot/thigmonasty")?;
+
+    // Build and copy echo
+    println!("Building echo for {}...", arch);
+    cmd!(
+        sh,
+        "cargo build --target {target} --profile release -p echo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
+    )
+    .env("RUST_TARGET_PATH", target_path)
+    .run()?;
+
+    let echo_elf = format!("target/{}/release/echo", target);
+    let echo_bin = format!("target/{}/release/echo.bin", target);
+    cmd!(sh, "llvm-objcopy -O binary {echo_elf} {echo_bin}").run()?;
+    sh.copy_file(&echo_bin, "iso_root/boot/echo")?;
+
     // Copy limine config
     sh.copy_file("limine.conf", "iso_root/boot/limine/limine.conf")?;
 

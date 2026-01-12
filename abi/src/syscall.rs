@@ -52,3 +52,9 @@ pub const SYS_ROOT_CREATE_NODE: u32 = 269;
 pub const SYS_ROOT_QUERY: u32 = 270;
 pub const SYS_ROOT_BYTESPACE_WRITE: u32 = 271;
 pub const SYS_ROOT_DUMP_GRAPH: u32 = 272;
+
+// Port IPC syscalls (32-35)
+pub const SYS_PORT_CREATE: u32 = 32;
+pub const SYS_PORT_SEND: u32 = 33;
+pub const SYS_PORT_RECV: u32 = 34;
+pub const SYS_PORT_CLOSE: u32 = 35;

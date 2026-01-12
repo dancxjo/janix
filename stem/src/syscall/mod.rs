@@ -1,5 +1,6 @@
 mod arch;
 pub mod graph;
+pub mod port;
 
 use abi::device::RtcTime;
 use abi::errors::Errno;
@@ -46,6 +47,7 @@ pub fn log_write(msg: &str, level: usize) -> Result<usize, Errno> {
 }
 
 pub use log_write as debug_write;
+pub use port::{PortHandle, port_create, port_send, port_recv, port_close};
 
 pub fn yield_now() {
     unsafe {

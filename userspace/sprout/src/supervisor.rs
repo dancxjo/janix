@@ -46,6 +46,9 @@ impl Supervisor {
 
         // 3. Match and Spawn Drivers
         self.match_and_spawn_drivers();
+        
+        // 3.5. Setup keyboard pipeline
+        self.setup_keyboard_pipeline();
 
         // 4. Loop
         info!("SPROUT: Entering supervisor loop.");
@@ -302,5 +305,87 @@ impl Supervisor {
                 }
             }
         }
+    }
+    /// Setup the keyboard input pipeline using Port IPC
+    fn setup_keyboard_pipeline(&mut self) {
+        info!("SPROUT: Setting up keyboard pipeline...");
+        
+        // Create kbd_raw port (ps2_kbd -> thigmonasty)
+        let kbd_raw = match stem::syscall::port_create(4096) {
+            Ok((write_h, read_h)) => {
+                info!("SPROUT: Created kbd_raw port (w={}, r={})", write_h, read_h);
+                (write_h, read_h)
+            }
+            Err(e) => {
+                stem::error!("SPROUT: Failed to create kbd_raw port: {:?}", e);
+                return;
+            }
+        };
+        
+        // Create kbd_evt port (thigmonasty -> echo)
+        let kbd_evt = match stem::syscall::port_create(4096) {
+            Ok((write_h, read_h)) => {
+                info!("SPROUT: Created kbd_evt port (w={}, r={})", write_h, read_h);
+                (write_h, read_h)
+            }
+            Err(e) => {
+                stem::error!("SPROUT: Failed to create kbd_evt port: {:?}", e);
+                return;
+            }
+        };
+        
+        // Spawn ps2_kbd with raw write handle
+        match stem::syscall::spawn_process("/ps2_kbd", kbd_raw.0 as usize) {
+            Ok(pid) => {
+                info!("SPROUT: Spawned ps2_kbd (PID={})", pid);
+                self.tasks.push(ManagedTask {
+                    name: "/ps2_kbd".to_string(),
+                    kind: TaskKind::Driver("dev.input.ps2".to_string()),
+                    module_path: "/ps2_kbd".to_string(),
+                    pid: Some(pid),
+                    restarts: 0,
+                });
+            }
+            Err(e) => {
+                stem::error!("SPROUT: Failed to spawn ps2_kbd: {:?}", e);
+            }
+        }
+        
+        // Spawn thigmonasty with packed handles: (raw_read << 16) | evt_write
+        let thig_arg = ((kbd_raw.1 as usize) << 16) | (kbd_evt.0 as usize);
+        match stem::syscall::spawn_process("/thigmonasty", thig_arg) {
+            Ok(pid) => {
+                info!("SPROUT: Spawned thigmonasty (PID={})", pid);
+                self.tasks.push(ManagedTask {
+                    name: "/thigmonasty".to_string(),
+                    kind: TaskKind::App,
+                    module_path: "/thigmonasty".to_string(),
+                    pid: Some(pid),
+                    restarts: 0,
+                });
+            }
+            Err(e) => {
+                stem::error!("SPROUT: Failed to spawn thigmonasty: {:?}", e);
+            }
+        }
+        
+        // Spawn echo with evt read handle
+        match stem::syscall::spawn_process("/echo", kbd_evt.1 as usize) {
+            Ok(pid) => {
+                info!("SPROUT: Spawned echo (PID={})", pid);
+                self.tasks.push(ManagedTask {
+                    name: "/echo".to_string(),
+                    kind: TaskKind::App,
+                    module_path: "/echo".to_string(),
+                    pid: Some(pid),
+                    restarts: 0,
+                });
+            }
+            Err(e) => {
+                stem::error!("SPROUT: Failed to spawn echo: {:?}", e);
+            }
+        }
+        
+        info!("SPROUT: Keyboard pipeline ready");
     }
 }

@@ -37,8 +37,8 @@ impl ThingOsWorld {
         self.arch = arch.to_string();
 
         let iso_path = format!("thing-os-{}.iso", arch);
-        let ovmf_code = format!("ovmf/ovmf-code-{}.fd", arch);
-        let ovmf_vars = format!("ovmf/ovmf-vars-{}.fd", arch);
+        let ovmf_code = format!("vendor/ovmf/ovmf-code-{}.fd", arch);
+        let ovmf_vars = format!("vendor/ovmf/ovmf-vars-{}.fd", arch);
 
         // Create unique socket paths for this test run
         let nanos = std::time::SystemTime::now()

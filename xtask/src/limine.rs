@@ -5,7 +5,7 @@ use xshell::{Shell, cmd};
 
 /// Clone and build Limine bootloader if not present.
 pub fn limine(sh: &Shell) -> Result<()> {
-    if sh.path_exists("limine") {
+    if sh.path_exists("vendor/limine") {
         println!("Limine already present, skipping clone.");
         return Ok(());
     }

@@ -70,30 +70,30 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     match arch {
         "x86_64" => {
             sh.copy_file(
-                "limine/limine-bios.sys",
+                "vendor/limine/limine-bios.sys",
                 "iso_root/boot/limine/limine-bios.sys",
             )?;
             sh.copy_file(
-                "limine/limine-bios-cd.bin",
+                "vendor/limine/limine-bios-cd.bin",
                 "iso_root/boot/limine/limine-bios-cd.bin",
             )?;
             sh.copy_file(
-                "limine/limine-uefi-cd.bin",
+                "vendor/limine/limine-uefi-cd.bin",
                 "iso_root/boot/limine/limine-uefi-cd.bin",
             )?;
-            sh.copy_file("limine/BOOTX64.EFI", "iso_root/EFI/BOOT/BOOTX64.EFI")?;
-            sh.copy_file("limine/BOOTIA32.EFI", "iso_root/EFI/BOOT/BOOTIA32.EFI")?;
+            sh.copy_file("vendor/limine/BOOTX64.EFI", "iso_root/EFI/BOOT/BOOTX64.EFI")?;
+            sh.copy_file("vendor/limine/BOOTIA32.EFI", "iso_root/EFI/BOOT/BOOTIA32.EFI")?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
-            cmd!(sh, "./limine/limine bios-install {iso}").run()?;
+            cmd!(sh, "./vendor/limine/limine bios-install {iso}").run()?;
         }
         "aarch64" => {
             sh.copy_file(
-                "limine/limine-uefi-cd.bin",
+                "vendor/limine/limine-uefi-cd.bin",
                 "iso_root/boot/limine/limine-uefi-cd.bin",
             )?;
-            sh.copy_file("limine/BOOTAA64.EFI", "iso_root/EFI/BOOT/BOOTAA64.EFI")?;
+            sh.copy_file("vendor/limine/BOOTAA64.EFI", "iso_root/EFI/BOOT/BOOTAA64.EFI")?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
@@ -106,7 +106,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             cmd!(sh, "mcopy -i {efi_img} limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI").run()?;
             sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTRISCV64.EFI\n")?;
             cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
-            sh.copy_file("limine/BOOTRISCV64.EFI", "iso_root/EFI/BOOT/BOOTRISCV64.EFI")?;
+            sh.copy_file("vendor/limine/BOOTRISCV64.EFI", "iso_root/EFI/BOOT/BOOTRISCV64.EFI")?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-riscv64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
@@ -119,7 +119,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             cmd!(sh, "mcopy -i {efi_img} limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI").run()?;
             sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTLOONGARCH64.EFI\n")?;
             cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
-            sh.copy_file("limine/BOOTLOONGARCH64.EFI", "iso_root/EFI/BOOT/BOOTLOONGARCH64.EFI")?;
+            sh.copy_file("vendor/limine/BOOTLOONGARCH64.EFI", "iso_root/EFI/BOOT/BOOTLOONGARCH64.EFI")?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-loongarch64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
@@ -171,7 +171,7 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
     cmd!(sh, "sgdisk {hdd} -n 1:2048 -t 1:ef00").run()?;
 
     if arch == "x86_64" {
-        cmd!(sh, "./limine/limine bios-install {hdd}").run()?;
+        cmd!(sh, "./vendor/limine/limine bios-install {hdd}").run()?;
     }
 
     cmd!(sh, "mformat -i {hdd}@@1M").run()?;

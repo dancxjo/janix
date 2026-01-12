@@ -6,11 +6,11 @@ fn main() {
     println!("cargo:rerun-if-env-changed=PCI_IDS_MODE");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let pci_ids_path = manifest_dir.join("..").join("third_party/pci/pci.ids");
+    let pci_ids_path = manifest_dir.join("..").join("assets/pci/pci.ids");
     println!("cargo:rerun-if-changed={}", pci_ids_path.display());
 
     let contents =
-        fs::read_to_string(&pci_ids_path).expect("failed to read third_party/pci/pci.ids");
+        fs::read_to_string(&pci_ids_path).expect("failed to read assets/pci/pci.ids");
 
     let parsed = parse_pci_ids(&contents);
     let mode = Mode::from_env(env::var("PCI_IDS_MODE").ok());

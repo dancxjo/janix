@@ -3,6 +3,11 @@ name = "bloom"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["alloc"]
+alloc = []
+std = ["alloc"]
+
 [dependencies]
 stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }

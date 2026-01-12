@@ -60,6 +60,12 @@ fn fetch_limine(vendor: &Path) -> Result<()> {
             ensure!(p.exists(), "Missing Limine artifact: {}", f);
         }
     }
+    println!("    Building limine CLI tool...");
+    run_cmd(
+        Command::new("make")
+            .arg("-C")
+            .arg(&limine_dir),
+    )?;
     println!("    Limine fetched.");
     Ok(())
 }

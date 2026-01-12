@@ -7,8 +7,8 @@ use xshell::{Shell, cmd};
 pub fn run(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
     let name = image_name(arch);
     let iso = format!("{}.iso", name);
-    let ovmf_code = format!("ovmf/ovmf-code-{}.fd", arch);
-    let ovmf_vars = format!("ovmf/ovmf-vars-{}.fd", arch);
+    let ovmf_code = format!("vendor/ovmf/ovmf-code-{}.fd", arch);
+    let ovmf_vars = format!("vendor/ovmf/ovmf-vars-{}.fd", arch);
 
     println!("Running {} in QEMU...", name);
 
@@ -62,8 +62,8 @@ pub fn run_bios(sh: &Shell, qemu_flags: &str) -> Result<()> {
 pub fn run_hdd(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
     let name = image_name(arch);
     let hdd = format!("{}.hdd", name);
-    let ovmf_code = format!("ovmf/ovmf-code-{}.fd", arch);
-    let ovmf_vars = format!("ovmf/ovmf-vars-{}.fd", arch);
+    let ovmf_code = format!("vendor/ovmf/ovmf-code-{}.fd", arch);
+    let ovmf_vars = format!("vendor/ovmf/ovmf-vars-{}.fd", arch);
 
     println!("Running {} HDD in QEMU...", name);
 

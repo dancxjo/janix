@@ -6,13 +6,16 @@
 iso_root/
 *.log
 
-# Legacy paths (pre-fetch unification)
-/limine
-/ovmf
-
-# Fetched vendor assets (managed by `just fetch`)
+# Vendor dependencies (fetched by `just fetch`)
 /vendor/
-/assets/
+
+# Fetched assets (managed by `just fetch`)
+# NOTE: /assets/wallpapers/ is tracked - must come before the ignore
+!/assets/wallpapers/
+/assets/cursors/
+/assets/fonts/
+/assets/icons/
+/assets/pci/
 
 # Bran binaries
 /bran/bin-*

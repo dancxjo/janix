@@ -201,8 +201,8 @@ impl ArchRuntime for X86_64Runtime {
 
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {
         // Ensure stack alignment
-        if entry.user_sp & 0xF != 0 {
-            panic!("user_sp not 16-byte aligned");
+        if entry.user_sp & 0x7 != 0 {
+            panic!("user_sp not 8-byte aligned");
         }
         // Map required pages before entering user mode
         self.map_user_entry(&entry)

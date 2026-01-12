@@ -41,7 +41,7 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
     {
         return Err(Errno::EINVAL);
     }
-    if req.sp != req.stack.reserve_end {
+    if req.sp > req.stack.reserve_end || req.sp < req.stack.committed_start {
         return Err(Errno::EINVAL);
     }
     if req.stack.grow_chunk_bytes == 0 {

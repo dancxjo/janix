@@ -86,7 +86,7 @@ impl Stack {
         };
 
         Ok(Stack {
-            sp: reserve_end as *mut u8,
+            sp: (reserve_end.saturating_sub(8)) as *mut u8,
             reserve_start: reserve_start as *mut u8,
             reserve_end: reserve_end as *mut u8,
             committed_start: commit_start as *mut u8,

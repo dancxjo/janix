@@ -118,8 +118,8 @@ impl Supervisor {
         let mut buf = [0u8; 1024];
         if let Ok(len) = thingsys::describe_thing(mod_id, &mut buf) {
              let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
-             if let Some(pos) = s.find("name: \"") {
-                 let rest = &s[pos + 7..];
+             if let Some(pos) = s.find("name=\"") {
+                 let rest = &s[pos + 6..];
                  if let Some(end) = rest.find('"') {
                      return rest[..end].to_string();
                  }

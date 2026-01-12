@@ -71,11 +71,8 @@ impl ArchRuntime for AArch64Runtime {
     unsafe fn simd_save(&self, dst: *mut u8) { unsafe { simd::save(dst) } }
     unsafe fn simd_restore(&self, src: *const u8) { unsafe { simd::restore(src) } }
     
-    // early_init: Keep the trait method but don't use it for now
-    // SPx switching causes hangs that need more investigation
     unsafe fn early_init(&self) {
-        // TODO: EL1h (SPx) mode switch to prevent SP_EL0 corruption
-        // Currently disabled due to boot hangs - needs assembly-level entry point
+        // TODO: EL1h (SPx) mode switch during early boot
     }
     
     fn fence_full(&self) {
@@ -106,16 +103,26 @@ impl ArchRuntime for AArch64Runtime {
     }
 
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {
-        // TODO: Switch to EL1h (SPx) to avoid SP_EL0 corruption
-        // Currently we run in EL1t (using SP_EL0), so setting SP_EL0 here
-        // will corrupt our kernel stack. However, the SPx switch causes
-        // a synchronous exception (ESR=0x2000000) that needs investigation.
-        // For now, accepting this limitation to get the system booting.
+        // Debug: Read current TTBR0
+        let ttbr0: u64;
+        unsafe { asm!("mrs {}, ttbr0_el1", out(reg) ttbr0, options(nomem, nostack)); }
+        kernel::kinfo!("enter_user: TTBR0={:#x} entry_pc={:#x} user_sp={:#x}", ttbr0, entry.entry_pc, entry.user_sp);
         
-        // SPSR: EL0t, all interrupts unmasked 
-        let spsr: u64 = 0; 
+        // Switch to EL1h (using SP_EL1) so we can safely set SP_EL0 for user mode.
+        // We first save SP to a register, then switch SPSel=1, then restore SP to SP_EL1.
+        // After this, SP_EL0 can be safely written for the user task.
+        //
+        // SPSR: EL0t (mode 0), all interrupts unmasked
+        let spsr: u64 = 0;
 
         unsafe { asm!(
+            // Save current SP (which is SP_EL0 since we're in EL1t) to x9
+            "mov x9, sp",
+            // Switch to EL1h mode (now SP refers to SP_EL1)
+            "msr spsel, #1",
+            // Set SP_EL1 to our saved kernel stack pointer
+            "mov sp, x9",
+            // Now we can safely set SP_EL0 to the user stack
             "msr sp_el0, {sp}",
             "msr elr_el1, {pc}",
             "msr spsr_el1, {spsr}",
@@ -129,9 +136,11 @@ impl ArchRuntime for AArch64Runtime {
         ); }
     }
 
-    // Paging
+    // Paging - use ProxyAllocator for real page table allocation
     fn make_user_address_space(&self) -> Self::AddressSpace {
-        paging::make_user_address_space(self.active_address_space(), &DumbKernelAlloc)
+        let aspace = paging::make_user_address_space(self.active_address_space(), &ProxyAllocator);
+        kernel::kinfo!("make_user_address_space: created aspace phys={:#x}", aspace.0);
+        aspace
     }
 
     fn active_address_space(&self) -> Self::AddressSpace {
@@ -139,7 +148,18 @@ impl ArchRuntime for AArch64Runtime {
     }
     
     fn activate_address_space(&self, aspace: Self::AddressSpace) {
-        unsafe { asm!("msr ttbr0_el1, {}", in(reg) aspace.0); }
+        kernel::kinfo!("activate_address_space: setting TTBR0 to {:#x}", aspace.0);
+        unsafe { 
+            asm!(
+                "msr ttbr0_el1, {ttbr}",
+                "isb",
+                "tlbi vmalle1is",
+                "dsb ish",
+                "isb",
+                ttbr = in(reg) aspace.0,
+                options(nostack)
+            );
+        }
     }
 
     fn map_page(&self, aspace: Self::AddressSpace, virt: u64, phys: u64, perms: MapPerms, kind: MapKind, allocator: &dyn FrameAllocatorHook) -> Result<(), ()> {
@@ -159,9 +179,10 @@ impl ArchRuntime for AArch64Runtime {
     }
 }
 
-struct DumbKernelAlloc;
-impl FrameAllocatorHook for DumbKernelAlloc {
-    fn alloc_frame(&self) -> Option<u64> { None }
+// ProxyAllocator delegates to kernel::memory::alloc_frame()
+struct ProxyAllocator;
+impl FrameAllocatorHook for ProxyAllocator {
+    fn alloc_frame(&self) -> Option<u64> { kernel::memory::alloc_frame() }
 }
 
 pub struct SerialPort {

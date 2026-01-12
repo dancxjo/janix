@@ -1,14 +1,7 @@
 //! Unified Logging System v1.0
 //!
-//! Provides a canonical log format with:
-//! - ts= monotonic timestamp
-//! - lvl= level (ERROR/WARN/INFO/DEBUG/TRACE)
-//! - cpu= cpu id
-//! - tid= kernel thread id
-//! - pid= userspace process id (or - for kernel)
-//! - src= module path
-//! - span= correlation id (optional)
-//! - seq= global sequence number
+//! Human-readable format: [TIME] [LEVEL] [SOURCE] Message
+//! With optional span correlation for multi-line output.
 
 use crate::BootRuntimeBase;
 use core::fmt::{self, Write};
@@ -65,15 +58,11 @@ impl LogTransaction {
         set_current_span(span_id);
         
         // Emit BEGIN marker
-        let seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
+        let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
             let ts = writer.runtime.mono_ticks();
-            let tid = unsafe { crate::task::scheduler::current_tid_current() };
-            let _ = writeln!(writer, 
-                "[ts={} lvl=INFO cpu=0 tid={} pid=- src=kernel::logging span={}#{} seq={}] BEGIN {}",
-                ts, tid, name, span_id, seq, name
-            );
+            let _ = writeln!(writer, "[{}] [INFO] [logging] BEGIN {}", ts, name);
         }
         drop(lock);
         
@@ -84,15 +73,11 @@ impl LogTransaction {
 impl Drop for LogTransaction {
     fn drop(&mut self) {
         // Emit END marker
-        let seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
+        let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
             let ts = writer.runtime.mono_ticks();
-            let tid = unsafe { crate::task::scheduler::current_tid_current() };
-            let _ = writeln!(writer, 
-                "[ts={} lvl=INFO cpu=0 tid={} pid=- src=kernel::logging span={}#{} seq={}] END {}",
-                ts, tid, self.name, self.span_id, seq, self.name
-            );
+            let _ = writeln!(writer, "[{}] [INFO] [logging] END {}", ts, self.name);
         }
         drop(lock);
         clear_span();
@@ -119,13 +104,6 @@ impl Logger {
     #[inline]
     pub fn mono_ticks(&self) -> u64 {
         self.runtime.mono_ticks()
-    }
-    
-    /// Write a complete log line atomically
-    pub fn write_line(&mut self, s: &str) {
-        for b in s.bytes() {
-            self.runtime.putchar(b);
-        }
     }
 }
 
@@ -155,15 +133,6 @@ fn can_log_to_graph(level: Level) -> bool {
     crate::root::is_inbox_ready() && level != Level::Trace
 }
 
-/// Format PID for display (- for kernel context)
-fn format_pid(pid: u64) -> alloc::string::String {
-    if pid == abi::logging::PID_KERNEL || pid == 0 {
-        alloc::string::String::from("-")
-    } else {
-        format!("{}", pid)
-    }
-}
-
 pub fn _log_event(
     meta: LogMetadata, 
     event_sym: &str, 
@@ -172,28 +141,16 @@ pub fn _log_event(
     about: &[u64]
 ) {
     // Get sequence number first (guarantees ordering)
-    let seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
-    let span = current_span();
+    let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
     
-    // 1. Serial Output - build complete line then emit atomically
+    // 1. Serial Output - human-readable format: [TIME] [LEVEL] [SOURCE] Message
     {
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
             let ts = writer.runtime.mono_ticks();
-            let tid = unsafe { crate::task::scheduler::current_tid_current() };
             
-            // Build prefix
-            let span_part = if span != 0 {
-                format!(" span={}", span)
-            } else {
-                alloc::string::String::new()
-            };
-            
-            // Unified format: [ts=N lvl=L cpu=0 tid=T pid=P src=M seq=S (span=X)?] msg
-            let _ = write!(writer, 
-                "[ts={} lvl={} cpu=0 tid={} pid=-{} src={} seq={}] ",
-                ts, meta.level.as_str(), tid, span_part, event_sym, seq
-            );
+            // Human-readable format: [TIME] [LEVEL] [SOURCE] Message
+            let _ = write!(writer, "[{}] [{}] [{}] ", ts, meta.level.as_str(), event_sym);
             let _ = writer.write_fmt(msg_fmt);
             
             // Append structured fields if any

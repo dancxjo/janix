@@ -114,8 +114,8 @@ fn rtc_to_unix(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) 
     days * 86400 + hour as u64 * 3600 + minute as u64 * 60 + second as u64
 }
 
-#[no_mangle]
-pub extern "C" fn main(arg: usize) {
+#[stem::main]
+fn main(arg: usize) -> ! {
     println!("[rtc_cmos] Starting... arg={:x}", arg);
 
     if arg == 0 {
@@ -158,7 +158,8 @@ pub extern "C" fn main(arg: usize) {
         Ok(id) => id,
         Err(e) => {
              println!("[rtc_cmos] Failed to create time.WallClockSample: {:?}", e);
-             return;
+             stem::syscall::exit(1);
+             unreachable!();
         }
     };
     

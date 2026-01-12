@@ -28,6 +28,8 @@ pub fn load_module<R: BootRuntime>(
     let stack_size = 65536; // 64KB
     
     let hook = LoaderAllocHook;
+    let text_perms = MapPerms { user: true, read: true, write: false, exec: true };
+    let data_perms = MapPerms { user: true, read: true, write: true, exec: false };
     
     // 1. Map segments
     let mut virt = load_addr as u64;
@@ -42,9 +44,7 @@ pub fn load_module<R: BootRuntime>(
              }
          }
          
-         rt.tasking().map_page(aspace, virt, phys, 
-             MapPerms { user: true, read: true, write: true, exec: true }, 
-             MapKind::Normal, &hook).unwrap();
+         rt.tasking().map_page(aspace, virt, phys, text_perms, MapKind::Normal, &hook).unwrap();
          virt += 4096;
     }
     
@@ -54,9 +54,7 @@ pub fn load_module<R: BootRuntime>(
          let hhdm_virt = phys + rt.phys_to_virt_offset();
          unsafe { core::ptr::write_bytes(hhdm_virt as *mut u8, 0, 4096); }
          
-         rt.tasking().map_page(aspace, virt, phys, 
-             MapPerms { user: true, read: true, write: true, exec: true }, 
-             MapKind::Normal, &hook).unwrap();
+         rt.tasking().map_page(aspace, virt, phys, data_perms, MapKind::Normal, &hook).unwrap();
          virt += 4096;
     }
     
@@ -67,11 +65,12 @@ pub fn load_module<R: BootRuntime>(
     
     while virt < stack_limit {
          let phys = memory::alloc_frame().expect("OOM loading stack");
-         rt.tasking().map_page(aspace, virt, phys,
-              MapPerms { user: true, read: true, write: true, exec: true }, 
-              MapKind::Normal, &hook).unwrap();
+         rt.tasking().map_page(aspace, virt, phys, data_perms, MapKind::Normal, &hook).unwrap();
          virt += 4096;
     }
+
+    // Ensure instruction cache sees freshly loaded code
+    rt.icache_invalidate();
     
     Some(UserEntry {
         entry_pc: load_addr,

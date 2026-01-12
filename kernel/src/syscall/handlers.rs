@@ -109,9 +109,20 @@ pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
 
 pub fn sys_spawn_thread(entry: usize, stack: usize) -> SysResult<usize> {
     validate_user_range(entry, 1, false)?;
-    validate_user_range(stack, 1, true)?;
-    let tid = unsafe { crate::task::scheduler::spawn_user_thread_current(entry, stack, 0) };
+    let stack_top = if stack == 0 {
+        unsafe { crate::task::scheduler::alloc_user_stack_current(0) }.ok_or(Errno::ENOMEM)?
+    } else {
+        validate_user_range(stack, 1, true)?;
+        stack
+    };
+
+    let tid = unsafe { crate::task::scheduler::spawn_user_thread_current(entry, stack_top, 0) };
     if let Some(tid) = tid { Ok(tid as usize) } else { Err(Errno::EAGAIN) }
+}
+
+pub fn sys_alloc_stack(pages: usize) -> SysResult<usize> {
+    let top = unsafe { crate::task::scheduler::alloc_user_stack_current(pages) }.ok_or(Errno::ENOMEM)?;
+    Ok(top)
 }
 
 pub fn sys_spawn_process(name_ptr: usize, name_len: usize, arg: usize) -> SysResult<usize> {

@@ -109,31 +109,31 @@ impl ArchRuntime for AArch64Runtime {
         kernel::kinfo!("enter_user: TTBR0={:#x} entry_pc={:#x} user_sp={:#x}", ttbr0, entry.entry_pc, entry.user_sp);
         
         // Switch to EL1h (using SP_EL1) so we can safely set SP_EL0 for user mode.
-        // We first save SP to a register, then switch SPSel=1, then restore SP to SP_EL1.
+        // We first save the current SP, then switch SPSel=1 and restore SP to SP_EL1.
         // After this, SP_EL0 can be safely written for the user task.
         //
         // SPSR: EL0t (mode 0), all interrupts unmasked
         let spsr: u64 = 0;
+        let ksp: u64;
+        unsafe { asm!("mov {}, sp", out(reg) ksp, options(nomem, nostack)); }
 
-        unsafe { asm!(
-            // Save current SP (which is SP_EL0 since we're in EL1t) to x9
-            "mov x9, sp",
-            // Switch to EL1h mode (now SP refers to SP_EL1)
-            "msr spsel, #1",
-            // Set SP_EL1 to our saved kernel stack pointer
-            "mov sp, x9",
-            // Now we can safely set SP_EL0 to the user stack
-            "msr sp_el0, {sp}",
-            "msr elr_el1, {pc}",
-            "msr spsr_el1, {spsr}",
-            "mov x0, {arg}",
-            "eret",
-            sp = in(reg) entry.user_sp,
-            pc = in(reg) entry.entry_pc,
-            spsr = in(reg) spsr,
-            arg = in(reg) entry.arg0,
-            options(noreturn)
-        ); }
+        unsafe {
+            asm!(
+                "msr spsel, #1",
+                "mov sp, {ksp}",
+                "msr sp_el0, {sp}",
+                "msr elr_el1, {pc}",
+                "msr spsr_el1, {spsr}",
+                "mov x0, {arg}",
+                "eret",
+                ksp = in(reg) ksp,
+                sp = in(reg) entry.user_sp,
+                pc = in(reg) entry.entry_pc,
+                spsr = in(reg) spsr,
+                arg = in(reg) entry.arg0,
+                options(noreturn)
+            );
+        }
     }
 
     // Paging - use ProxyAllocator for real page table allocation

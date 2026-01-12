@@ -1,13 +1,23 @@
 #![no_std]
 #![no_main]
 
-// No alloc!
+use core::time::Duration;
+use stem::info;
 
-#[no_mangle]
-pub extern "C" fn main(_arg: usize) {
-    stem::syscall::debug_write("[CLOCK] v4 no alloc\n", 3).ok();
-    
+/// Print a single tick with both wall clock (if anchored) and monotonic time.
+fn print_tick(unix: u64, mono_ns: u64) {
+    info!("CLOCK: unix={} mono_ns={}", unix, mono_ns);
+}
+
+#[stem::main]
+fn main() -> ! {
+    info!("[clock] starting");
+
     loop {
-        stem::syscall::sleep_ms(5000);
+        let unix = stem::time::now_unix_seconds();
+        let mono_ns = stem::monotonic_ns();
+        print_tick(unix, mono_ns);
+
+        stem::sleep(Duration::from_secs(1));
     }
 }

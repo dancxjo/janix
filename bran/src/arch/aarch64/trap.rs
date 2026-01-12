@@ -1,4 +1,5 @@
 use super::syscall::handle_syscall;
+use core::arch::asm;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn handle_sync_el0_rust(tf: &mut UserTrapFrame, esr: u64) {
@@ -6,7 +7,12 @@ pub unsafe extern "C" fn handle_sync_el0_rust(tf: &mut UserTrapFrame, esr: u64) 
     if ec == 0x15 {
         handle_syscall(tf);
     } else {
-        panic!("Unhandled Sync EL0 Exception. ESR={:#x} EC={:#x}", esr, ec);
+        let far: u64;
+        unsafe { asm!("mrs {}, far_el1", out(reg) far, options(nomem, nostack)); }
+        panic!(
+            "Unhandled Sync EL0 Exception. ESR={:#x} EC={:#x} ELR={:#x} FAR={:#x} SPSR={:#x}",
+            esr, ec, tf.elr_el1, far, tf.spsr_el1
+        );
     }
 }
 

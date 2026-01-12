@@ -1,18 +1,21 @@
 #![no_std]
 extern crate alloc;
-// #![feature(asm_experimental_arch)]
 
 pub use abi;
+#[cfg(feature = "rt")]
+pub use stem_macros::main;
 
 pub mod syscall;
 pub mod errors;
-// pub mod stream;
-// pub mod event;
 pub mod console;
 pub mod device;
+#[cfg(feature = "panic-handler")]
 pub mod panic;
 pub mod rt;
 pub mod time;
+pub mod pci;
+pub mod thread;
+pub mod stack;
 
 #[macro_export]
 macro_rules! print {
@@ -55,19 +58,19 @@ macro_rules! trace {
 }
 
 pub fn yield_now() {
-    syscall::yield_now();
+    thread::yield_now();
 }
 
 pub fn sleep(duration: core::time::Duration) {
-    syscall::sleep_ns(duration.as_nanos() as u64);
+    time::sleep(duration);
 }
 
 pub fn sleep_ms(ms: u64) {
-    syscall::sleep_ms(ms);
+    time::sleep_ms(ms);
 }
 
 pub fn monotonic_ns() -> u64 {
-    syscall::monotonic_ns()
+    time::monotonic_ns()
 }
 
 pub fn rtc_time() -> Result<abi::device::RtcTime, abi::errors::Errno> {
@@ -76,4 +79,5 @@ pub fn rtc_time() -> Result<abi::device::RtcTime, abi::errors::Errno> {
 }
 pub mod thing;
 pub use thing_macros::*;
+#[cfg(feature = "global-alloc")]
 pub mod allocator;

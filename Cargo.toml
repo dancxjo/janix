@@ -6,11 +6,13 @@ members = [
     "kernel",
     "abi",
     "stem",
+    "stem-macros",
     "thing_macros",
     "userspace/sprout",
     "userspace/threads_demo",
     "userspace/rtc_cmos",
     "userspace/clock",
+    "tools/pciids",
 ]
 resolver = "2"
 

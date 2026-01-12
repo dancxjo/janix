@@ -8,8 +8,8 @@ mod devtree;
 mod registry;
 mod supervisor;
 
-#[no_mangle]
-pub extern "C" fn main(_arg0: usize) {
+#[stem::main]
+fn main(_arg0: usize) -> ! {
     info!("SPROUT: v0.4 starting (Supervisor Mode)...");
     
     match devtree::init() {
@@ -24,5 +24,5 @@ pub extern "C" fn main(_arg0: usize) {
     }
 
     let mut sup = supervisor::Supervisor::new();
-    sup.run_forever();
+    sup.run_forever()
 }

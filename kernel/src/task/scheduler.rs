@@ -1,9 +1,12 @@
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::Mutex;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::BootRuntime;
 use crate::BootTasking;
+use crate::{MapKind, MapPerms};
+use crate::memory;
 use crate::task::{Task, TaskId, TaskState};
 use crate::UserEntry;
 
@@ -22,6 +25,12 @@ static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize) -> TaskId> = N
 static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, usize) -> Option<TaskId>> = None;
 static mut CURRENT_TID_HOOK: Option<unsafe fn() -> u64> = None;
 static mut TASK_STATUS_HOOK: Option<unsafe fn(TaskId) -> Option<(TaskState, Option<i32>)>> = None;
+static mut ALLOC_USER_STACK_HOOK: Option<unsafe fn(usize) -> Option<usize>> = None;
+
+const USER_STACK_BASE: u64 = 0x0080_0000;
+const DEFAULT_USER_STACK_PAGES: usize = 4;
+const MAX_USER_STACK_PAGES: usize = 64;
+static NEXT_USER_STACK: AtomicU64 = AtomicU64::new(USER_STACK_BASE);
 
 
 pub struct Scheduler<R: BootRuntime> {
@@ -379,6 +388,7 @@ pub fn init<R: BootRuntime>() {
             SPAWN_PROCESS_HOOK = Some(spawn_process::<R>);
             CURRENT_TID_HOOK = Some(current_tid::<R>);
             TASK_STATUS_HOOK = Some(task_status::<R>);
+            ALLOC_USER_STACK_HOOK = Some(alloc_user_stack::<R>);
         }
         crate::kinfo!("  Scheduler initialized");
     }
@@ -595,6 +605,37 @@ pub unsafe fn spawn_user_thread_current(entry: usize, stack: usize, arg: usize) 
             None
         }
     }
+}
+
+pub unsafe fn alloc_user_stack_current(pages: usize) -> Option<usize> {
+    unsafe { ALLOC_USER_STACK_HOOK.and_then(|hook| hook(pages)) }
+}
+
+fn alloc_user_stack<R: BootRuntime>(pages: usize) -> Option<usize> {
+    let rt = crate::runtime::<R>();
+    let page_size = rt.page_size() as u64;
+
+    let requested_pages = if pages == 0 { DEFAULT_USER_STACK_PAGES } else { pages };
+    let clamped_pages = core::cmp::min(requested_pages, MAX_USER_STACK_PAGES);
+    let total_size = (clamped_pages as u64).saturating_mul(page_size);
+
+    let base = NEXT_USER_STACK.fetch_add(total_size, Ordering::SeqCst);
+    let top = base + total_size;
+
+    let aspace = rt.tasking().active_address_space();
+    let perms = MapPerms { user: true, read: true, write: true, exec: false };
+    let hook = crate::GlobalAllocHook;
+
+    let mut virt = base;
+    for _ in 0..clamped_pages {
+        let phys = memory::alloc_frame()?;
+        let hhdm_virt = phys + rt.phys_to_virt_offset();
+        unsafe { core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size as usize); }
+        rt.tasking().map_page(aspace, virt, phys, perms, MapKind::Normal, &hook).ok()?;
+        virt += page_size;
+    }
+
+    Some(top as usize)
 }
 
 pub fn dump_stats<R: BootRuntime>() {

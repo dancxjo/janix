@@ -42,6 +42,9 @@ pub mod keys {
 
     pub const VENDOR_ID: &str = "vendor_id";
     pub const DEVICE_ID: &str = "device_id";
+    pub const VENDOR_NAME: &str = "vendor_name";
+    pub const DEVICE_NAME: &str = "device_name";
+    pub const PCI_NAME_SOURCE: &str = "pci_name_source";
     pub const CLASS_CODE: &str = "class_code";
     pub const SUBCLASS_CODE: &str = "subclass_code";
     pub const PROG_IF: &str = "prog_if";

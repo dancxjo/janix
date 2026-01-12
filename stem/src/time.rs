@@ -1,4 +1,5 @@
 use crate::syscall;
+use core::time::Duration;
 
 pub fn now_unix_seconds() -> u64 {
     unsafe {
@@ -9,6 +10,14 @@ pub fn now_unix_seconds() -> u64 {
     }
 }
 
-pub fn sleep(duration: core::time::Duration) {
+pub fn sleep(duration: Duration) {
     syscall::sleep_ns(duration.as_nanos() as u64);
+}
+
+pub fn sleep_ms(ms: u64) {
+    syscall::sleep_ms(ms);
+}
+
+pub fn monotonic_ns() -> u64 {
+    syscall::monotonic_ns()
 }

@@ -23,6 +23,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_SPAWN_PROCESS => handlers::sys_spawn_process(args[0], args[1], args[2]),
         SYS_GET_TID => handlers::sys_get_tid(),
         SYS_TASK_POLL => handlers::sys_task_poll(args[0]),
+        SYS_ALLOC_STACK => handlers::sys_alloc_stack(args[0]),
         
         SYS_DEVICE_CLAIM => handlers::sys_device_claim(args[0]),
         SYS_DEVICE_MAP_MMIO => handlers::sys_device_map_mmio(args[0], args[1]),

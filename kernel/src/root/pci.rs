@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
+use alloc::format;
 use abi::schema::{keys, kinds, rels, source, confidence};
+use stem::pci;
 
 // PCI Config Space Access (Legacy Mechanism #1)
 const PCI_CONFIG_ADDRESS: u16 = 0xCF8;
@@ -123,6 +125,8 @@ where
 
     let vendor_id = (r0 & 0xFFFF) as u16;
     let device_id = (r0 >> 16) as u16;
+    let (vendor_name, device_name) = pci::lookup_names(vendor_id, device_id);
+    let name_source_sym = intern(pci::NAME_SOURCE);
     
     let revision_id = (r2 & 0xFF) as u8;
     let prog_if = ((r2 >> 8) & 0xFF) as u8;
@@ -148,6 +152,18 @@ where
     set(node, keys::SUBCLASS_CODE, subclass as u64);
     set(node, keys::PROG_IF, prog_if as u64);
     set(node, keys::REVISION_ID, revision_id as u64);
+    set(node, keys::PCI_NAME_SOURCE, name_source_sym);
+
+    if let Some(vn) = vendor_name {
+        set(node, keys::VENDOR_NAME, intern(vn));
+    }
+    if let Some(dn) = device_name {
+        set(node, keys::DEVICE_NAME, intern(dn));
+    }
+    if vendor_name.is_some() || device_name.is_some() {
+        let combined = format!("{}", pci::fmt_pci_id(vendor_id, device_id));
+        set(node, keys::NAME, intern(&combined));
+    }
     
     // Bind Hash: v1
     // Hash: (vendor, device, sub_v, sub_d, class, sub, prog, rev)
@@ -212,6 +228,19 @@ where
     set(node, keys::BIND_HASH, hash_id);
 
     link(parent_node, rels::HAS_DEVICE, node);
+    crate::kinfo!(
+        "PCI: {:02x}:{:02x}.{} {:04x}:{:04x} {} class={:02x}:{:02x} prog_if={:02x} rev={:02x}",
+        bus,
+        dev,
+        func,
+        vendor_id,
+        device_id,
+        pci::fmt_pci_id(vendor_id, device_id),
+        class_code,
+        subclass,
+        prog_if,
+        revision_id
+    );
     
     // BARs
     for i in 0..6 {

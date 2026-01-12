@@ -97,6 +97,11 @@ pub fn spawn_process(name: &str, arg: usize) -> Result<u64, abi::errors::Errno> 
     abi::errors::errno(ret).map(|v| v as u64)
 }
 
+pub fn alloc_stack(pages: usize) -> Result<usize, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_ALLOC_STACK, pages, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret)
+}
+
 pub fn spawn_thread(entry: extern "C" fn() -> !, stack_top: usize) -> Result<u64, Errno> {
     let entry_addr = entry as usize;
     let ret = unsafe {

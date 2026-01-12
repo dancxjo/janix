@@ -2,12 +2,19 @@
 name = "stem"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 abi = { path = "../abi" }
 thing_macros = { path = "../thing_macros" }
+stem-macros = { path = "../stem-macros", optional = true }
+
+[build-dependencies]
+pciids = { path = "../tools/pciids" }
 
 [features]
-default = []
-rt = []
+default = ["global-alloc", "panic-handler"]
+rt = ["stem-macros"]
 alloc = []
+global-alloc = []
+panic-handler = []

@@ -1,7 +1,7 @@
 /// Align value upwards to the given alignment.
-/// 
+///
 /// `align` must be a power of two.
-/// 
+///
 /// ```
 /// use stem::utils::align_up;
 /// assert_eq!(align_up(0, 4096), 0);
@@ -12,9 +12,9 @@ pub const fn align_up(addr: usize, align: usize) -> usize {
 }
 
 /// Align value downwards to the given alignment.
-/// 
+///
 /// `align` must be a power of two.
-/// 
+///
 /// ```
 /// use stem::utils::align_down;
 /// assert_eq!(align_down(1, 4096), 0);
@@ -25,9 +25,9 @@ pub const fn align_down(addr: usize, align: usize) -> usize {
 }
 
 /// Check if value is aligned to the given alignment.
-/// 
+///
 /// `align` must be a power of two.
-/// 
+///
 /// ```
 /// use stem::utils::is_aligned;
 /// assert!(is_aligned(4096, 4096));
@@ -41,7 +41,9 @@ pub trait RangeExt {
     fn length(&self) -> usize;
     fn contains_val(&self, val: usize) -> bool;
     fn overlaps(&self, other: &Self) -> bool;
-    fn intersection(&self, other: &Self) -> Option<Self> where Self: Sized;
+    fn intersection(&self, other: &Self) -> Option<Self>
+    where
+        Self: Sized;
 }
 
 impl RangeExt for core::ops::Range<usize> {
@@ -89,7 +91,6 @@ mod tests {
         assert_eq!(r1.intersection(&r2), Some(15..20));
         assert_eq!(r1.intersection(&r3), None);
     }
-
 
     #[test]
     fn test_align_up() {

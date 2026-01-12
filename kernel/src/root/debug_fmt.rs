@@ -1,3 +1,8 @@
+//! Structured debug formatting for graph entities
+//!
+//! Formats nodes and edges in stable key=value format suitable for
+//! parsing, diffing, and log analysis.
+
 use super::graph::{Graph, ThingId};
 use super::symbols::Interner;
 use abi::symbols::SymbolId;
@@ -24,6 +29,9 @@ impl Write for FmtBuffer {
     }
 }
 
+/// Format a graph node in structured key=value format
+/// 
+/// Output: `node id=0x{ID} kind={kind} {prop}={value}...`
 pub fn fmt_thing(
     graph: &Graph,
     interner: &Interner,
@@ -32,9 +40,89 @@ pub fn fmt_thing(
 ) -> fmt::Result {
     if let Some(node) = graph.nodes.get(&id) {
         let kind_str = interner.resolve(node.kind).unwrap_or("?");
-        let basename = kind_str.rsplit('.').next().unwrap_or(kind_str);
 
-        // Lowercase the variable name part (e.g. Host -> host)
+        // Structured format: node id=X kind=Y props...
+        write!(w, "node id=0x{:X} kind={}", id, kind_str)?;
+
+        for (k, v) in node.props.iter() {
+            let kname = interner.resolve(*k).unwrap_or("p");
+
+            // Heuristic: if property name implies interned string, try to resolve
+            let is_string_prop = kname == "name"
+                || kname == "arch"
+                || kname == "platform_profile"
+                || kname == "compatible"
+                || kname == "driver.name"
+                || kname == "status";
+
+            if is_string_prop {
+                if let Ok(sym_id) = (*v).try_into() {
+                    if let Some(s) = interner.resolve(sym_id) {
+                        write!(w, " {}=\"{}\"", kname, s)?;
+                        continue;
+                    }
+                }
+            }
+
+            // Numeric value - use hex for large values, decimal for small
+            if *v > 0xFFFF {
+                write!(w, " {}=0x{:x}", kname, v)?;
+            } else {
+                write!(w, " {}={}", kname, v)?;
+            }
+        }
+        Ok(())
+    } else {
+        write!(w, "node id=0x{:X} kind=?", id)
+    }
+}
+
+/// Format a graph edge in structured key=value format
+///
+/// Output: `edge from=0x{SRC} rel={REL} to=0x{DST}`
+pub fn fmt_edge(
+    graph: &Graph,
+    interner: &Interner,
+    src: ThingId,
+    rel: SymbolId,
+    dst: ThingId,
+    w: &mut dyn Write,
+) -> fmt::Result {
+    let src_kind = if let Some(n) = graph.nodes.get(&src) {
+        interner.resolve(n.kind).unwrap_or("?")
+    } else {
+        "?"
+    };
+
+    let dst_kind = if let Some(n) = graph.nodes.get(&dst) {
+        interner.resolve(n.kind).unwrap_or("?")
+    } else {
+        "?"
+    };
+
+    let rname = interner.resolve(rel).unwrap_or("REL?");
+
+    // Structured format: edge from=X rel=Y to=Z
+    write!(
+        w,
+        "edge from=0x{:X} from_kind={} rel={} to=0x{:X} to_kind={}",
+        src, src_kind, rname, dst, dst_kind
+    )
+}
+
+// --- Legacy Cypher-style format (for backward compat if needed) ---
+
+/// Format a node in Cypher-like syntax: (varN:kind { props })
+#[allow(dead_code)]
+pub fn fmt_thing_cypher(
+    graph: &Graph,
+    interner: &Interner,
+    id: ThingId,
+    w: &mut dyn Write,
+) -> fmt::Result {
+    if let Some(node) = graph.nodes.get(&id) {
+        let kind_str = interner.resolve(node.kind).unwrap_or("?");
+        let basename = kind_str.rsplit('.').next().unwrap_or(kind_str);
         let var_name = basename.to_lowercase();
 
         write!(w, "({}{:X}:{} {{ ", var_name, id, kind_str)?;
@@ -51,34 +139,27 @@ pub fn fmt_thing(
 
             let kname = interner.resolve(*k).unwrap_or("p");
 
-            // Heuristic: if property name implies interned string, try to resolve
-            let clean_name = if kname == "name"
+            let is_string_prop = kname == "name"
                 || kname == "arch"
                 || kname == "platform_profile"
                 || kname == "compatible"
                 || kname == "driver.name"
-                || kname == "status"
-            {
-                if let Ok(id) = (*v).try_into() {
-                    if let Some(s) = interner.resolve(id) {
-                        write!(w, "{}: \"{}\"", kname, s)?;
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
+                || kname == "status";
 
-            if !clean_name {
-                if *v > 0x10000 {
-                    write!(w, "{}: 0x{:x}", kname, v)?;
-                } else {
-                    write!(w, "{}: {}", kname, v)?;
+            if is_string_prop {
+                if let Ok(sym_id) = (*v).try_into() {
+                    if let Some(s) = interner.resolve(sym_id) {
+                        write!(w, "{}: \"{}\"", kname, s)?;
+                        count += 1;
+                        continue;
+                    }
                 }
+            }
+
+            if *v > 0x10000 {
+                write!(w, "{}: 0x{:x}", kname, v)?;
+            } else {
+                write!(w, "{}: {}", kname, v)?;
             }
             count += 1;
         }
@@ -86,43 +167,4 @@ pub fn fmt_thing(
     } else {
         write!(w, "(t{:X}:?)", id)
     }
-}
-
-pub fn fmt_edge(
-    graph: &Graph,
-    interner: &Interner,
-    src: ThingId,
-    rel: SymbolId,
-    dst: ThingId,
-    w: &mut dyn Write,
-) -> fmt::Result {
-    let src_kind = if let Some(n) = graph.nodes.get(&src) {
-        interner.resolve(n.kind).unwrap_or("?")
-    } else {
-        "?"
-    };
-    let src_basename = src_kind
-        .rsplit('.')
-        .next()
-        .unwrap_or(src_kind)
-        .to_lowercase();
-
-    let dst_kind = if let Some(n) = graph.nodes.get(&dst) {
-        interner.resolve(n.kind).unwrap_or("?")
-    } else {
-        "?"
-    };
-    let dst_basename = dst_kind
-        .rsplit('.')
-        .next()
-        .unwrap_or(dst_kind)
-        .to_lowercase();
-
-    let rname = interner.resolve(rel).unwrap_or("REL?");
-
-    write!(
-        w,
-        "({}{:X}:{})-[:{}]->({}{:X}:{})",
-        src_basename, src, src_kind, rname, dst_basename, dst, dst_kind
-    )
 }

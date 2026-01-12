@@ -13,7 +13,20 @@ pub mod tests;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
-    crate::kerror!("USER PAGE FAULT at 0x{:x} RIP=0x{:x} ERR=0x{:x}", addr, rip, err);
+    // Decode x86_64 page fault error code bits
+    let present = (err & 0x1) != 0;
+    let write = (err & 0x2) != 0;
+    let user = (err & 0x4) != 0;
+    let instr_fetch = (err & 0x10) != 0;
+    
+    // Structured page fault logging with decoded error bits
+    crate::log_event!(
+        crate::logging::LogLevel::Error,
+        "kernel::trap",
+        "user_page_fault va=0x{:016x} rip=0x{:016x} err=0x{:04x} present={} user={} write={} instr_fetch={}",
+        addr, rip, err, present as u8, user as u8, write as u8, instr_fetch as u8
+    );
+    
     unsafe { crate::task::scheduler::exit_current(-1); }
 }
 

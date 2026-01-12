@@ -311,8 +311,11 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
              graph.link(src, rid, dst);
              (0, 0)
         },
-        RootOp::DumpGraph { limit } => {
-             crate::kinfo!("ROOT DUMP NODES");
+                RootOp::DumpGraph { limit } => {
+             // Use LogTransaction for atomic multi-line output
+             let _txn = crate::logging::LogTransaction::begin("rootdump");
+             
+             crate::kinfo!("ROOT DUMP NODES count={}", graph.nodes.len());
              let mut count = 0;
              for (id, _) in &graph.nodes {
                  if count >= limit { 
@@ -345,6 +348,7 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
                       count += 1;
                  }
              }
+             // _txn drops here, emitting END marker
 
              (0, 0)
         },

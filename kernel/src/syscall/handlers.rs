@@ -247,7 +247,7 @@ fn root_call(op: RootOp) -> SysResult<usize> {
             
             // Debug trace for garbage values
             // if value > 1000000 {
-                crate::kinfo!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
+                crate::ktrace!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
             // }
 
             return if status == 0 {

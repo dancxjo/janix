@@ -544,12 +544,16 @@ pub unsafe fn current_tid_current() -> u64 {
 }
 
 pub fn current_tid<R: BootRuntime>() -> u64 {
-    let lock = SCHEDULER.lock();
-    if let Some(ptr) = *lock {
-        let sched = unsafe { &*(ptr as *const Scheduler<R>) };
-        sched.current_id().unwrap_or(0)
+    // Use try_lock to avoid deadlock when logging during scheduler init
+    if let Some(lock) = SCHEDULER.try_lock() {
+        if let Some(ptr) = *lock {
+            let sched = unsafe { &*(ptr as *const Scheduler<R>) };
+            sched.current_id().unwrap_or(0)
+        } else {
+            0
+        }
     } else {
-        0
+        0 // Lock held (probably by init), return 0
     }
 }
 

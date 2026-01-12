@@ -102,6 +102,33 @@ fn serial_write(bytes: &[u8]) {
     serial::write(bytes);
 }
 
+/// Cache for the graph.logs ThingId
+static GRAPH_LOGS_ID: Mutex<Option<ThingId>> = Mutex::new(None);
+
+fn get_graph_logs_id() -> Option<ThingId> {
+    // Fast path: Check cache
+    if let Some(guard) = GRAPH_LOGS_ID.try_lock() {
+        if let Some(id) = *guard {
+            return Some(id);
+        }
+    }
+
+    // Slow path: Look it up in the store.
+    // Note: This locks the store. If the store is already locked (e.g. by IRQ),
+    // we might wait here if `store::find_thing_by_name` waits.
+    // However, `log_emit_with_arrival` only calls us if `store::is_ready_for_logging()` returns true.
+    // So the store should be free (unless we lost the race immediately).
+    if let Some(id) = store::find_thing_by_name(sym::GRAPH_LOGS) {
+        // Update cache
+        if let Some(mut guard) = GRAPH_LOGS_ID.try_lock() {
+            *guard = Some(id);
+        }
+        Some(id)
+    } else {
+        None
+    }
+}
+
 /// Emit a log entry
 pub(crate) fn log_emit_with_arrival(
     level: Level,
@@ -141,7 +168,7 @@ pub(crate) fn log_emit_with_arrival(
     store::thing_set_inline_payload(id, &entry.to_payload());
 
     // Link to graph.logs
-    if let Some(graph_logs) = store::find_thing_by_name(sym::GRAPH_LOGS) {
+    if let Some(graph_logs) = get_graph_logs_id() {
         store::relationship_create(sym::PRED_CONTAINS, graph_logs, id);
     }
 

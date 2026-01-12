@@ -48,7 +48,7 @@ impl Supervisor {
         self.match_and_spawn_drivers();
         
         // 3.5. Setup keyboard pipeline
-        self.setup_keyboard_pipeline();
+        self.setup_input_pipeline();
 
         // 4. Loop
         info!("SPROUT: Entering supervisor loop.");
@@ -307,9 +307,9 @@ impl Supervisor {
             }
         }
     }
-    /// Setup the keyboard input pipeline using Port IPC
-    fn setup_keyboard_pipeline(&mut self) {
-        info!("SPROUT: Setting up keyboard pipeline...");
+    /// Setup the complete input pipeline using Port IPC
+    fn setup_input_pipeline(&mut self) {
+        info!("SPROUT: Setting up input pipeline (keyboard + mouse)...");
         
         // Create kbd_raw port (ps2_kbd -> bristle)
         let kbd_raw = match stem::syscall::port_create(4096) {
@@ -323,14 +323,26 @@ impl Supervisor {
             }
         };
         
-        // Create kbd_evt port (bristle -> echo)
-        let kbd_evt = match stem::syscall::port_create(4096) {
+        // Create mouse_raw port (ps2_mouse -> bristle)
+        let mouse_raw = match stem::syscall::port_create(4096) {
             Ok((write_h, read_h)) => {
-                info!("SPROUT: Created kbd_evt port (w={}, r={})", write_h, read_h);
+                info!("SPROUT: Created mouse_raw port (w={}, r={})", write_h, read_h);
                 (write_h, read_h)
             }
             Err(e) => {
-                stem::error!("SPROUT: Failed to create kbd_evt port: {:?}", e);
+                stem::error!("SPROUT: Failed to create mouse_raw port: {:?}", e);
+                return;
+            }
+        };
+        
+        // Create evt port (bristle -> echo)
+        let evt = match stem::syscall::port_create(8192) {
+            Ok((write_h, read_h)) => {
+                info!("SPROUT: Created evt port (w={}, r={})", write_h, read_h);
+                (write_h, read_h)
+            }
+            Err(e) => {
+                stem::error!("SPROUT: Failed to create evt port: {:?}", e);
                 return;
             }
         };
@@ -341,7 +353,7 @@ impl Supervisor {
                 info!("SPROUT: Spawned ps2_kbd (PID={})", pid);
                 self.tasks.push(ManagedTask {
                     name: "/ps2_kbd".to_string(),
-                    kind: TaskKind::Driver("dev.input.ps2".to_string()),
+                    kind: TaskKind::Driver("dev.input.ps2.kbd".to_string()),
                     module_path: "/ps2_kbd".to_string(),
                     pid: Some(pid),
                     restarts: 0,
@@ -352,9 +364,30 @@ impl Supervisor {
             }
         }
         
-        // Spawn bristle with packed handles: (raw_read << 16) | evt_write
-        let thig_arg = ((kbd_raw.1 as usize) << 16) | (kbd_evt.0 as usize);
-        match stem::syscall::spawn_process("/bristle", thig_arg) {
+        // Spawn ps2_mouse with raw write handle
+        match stem::syscall::spawn_process("/ps2_mouse", mouse_raw.0 as usize) {
+            Ok(pid) => {
+                info!("SPROUT: Spawned ps2_mouse (PID={})", pid);
+                self.tasks.push(ManagedTask {
+                    name: "/ps2_mouse".to_string(),
+                    kind: TaskKind::Driver("dev.input.ps2.mouse".to_string()),
+                    module_path: "/ps2_mouse".to_string(),
+                    pid: Some(pid),
+                    restarts: 0,
+                });
+            }
+            Err(e) => {
+                stem::error!("SPROUT: Failed to spawn ps2_mouse: {:?}", e);
+            }
+        }
+        
+        // Spawn bristle with packed handles:
+        // arg0 = (kbd_read << 48) | (mouse_read << 32) | (evt_write << 16) | 0
+        // Using 16-bit handle slots
+        let bristle_arg = ((kbd_raw.1 as u64) << 48) 
+                        | ((mouse_raw.1 as u64) << 32) 
+                        | ((evt.0 as u64) << 16);
+        match stem::syscall::spawn_process("/bristle", bristle_arg as usize) {
             Ok(pid) => {
                 info!("SPROUT: Spawned bristle (PID={})", pid);
                 self.tasks.push(ManagedTask {
@@ -371,7 +404,7 @@ impl Supervisor {
         }
         
         // Spawn echo with evt read handle
-        match stem::syscall::spawn_process("/echo", kbd_evt.1 as usize) {
+        match stem::syscall::spawn_process("/echo", evt.1 as usize) {
             Ok(pid) => {
                 info!("SPROUT: Spawned echo (PID={})", pid);
                 self.tasks.push(ManagedTask {
@@ -387,6 +420,6 @@ impl Supervisor {
             }
         }
         
-        info!("SPROUT: Keyboard pipeline ready");
+        info!("SPROUT: Input pipeline ready (keyboard + mouse)");
     }
 }

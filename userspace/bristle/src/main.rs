@@ -6,13 +6,16 @@
 #![no_std]
 #![no_main]
 
+mod mouse;
 mod normalizer;
 mod thigmonasty;
 
 use abi::hid::{
     BristleEventHeader, EventType, Key, KeyEventPayload, Mods,
+    PointerMovePayload, PointerButtonPayload,
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
+use mouse::{MouseState, PointerEvent};
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 use stem::thing::{sys as thingsys, ThingId};
@@ -20,7 +23,6 @@ use thigmonasty::{KeyEdge, KeyboardState};
 
 /// Register Bristle in the Root graph
 fn register_in_graph() {
-    // Create svc.Input node
     match thingsys::create_node(abi::schema::hid::SVC_INPUT) {
         Ok(node_id) => {
             info!("bristle: registered in graph as svc.Input (id={})", node_id.0);
@@ -31,13 +33,9 @@ fn register_in_graph() {
     }
 }
 
-/// Serialize a KeyDown event to wire format
+/// Serialize a KeyDown event
 fn serialize_key_down(key: Key, mods: Mods, repeat: bool, timestamp_ns: u64, buf: &mut [u8]) -> usize {
-    if buf.len() < 24 {
-        return 0;
-    }
-
-    // Header (20 bytes)
+    if buf.len() < 24 { return 0; }
     let header = BristleEventHeader {
         magic: BRISTLE_EVENT_MAGIC,
         version: BRISTLE_EVENT_VERSION,
@@ -45,37 +43,21 @@ fn serialize_key_down(key: Key, mods: Mods, repeat: bool, timestamp_ns: u64, buf
         timestamp_ns,
         payload_len: 4,
     };
-
-    // Payload (4 bytes)
     let payload = KeyEventPayload {
         key: key as u16,
         mods: mods.0,
         flags: if repeat { 1 } else { 0 },
     };
-
-    // Copy to buffer
     unsafe {
-        core::ptr::copy_nonoverlapping(
-            &header as *const _ as *const u8,
-            buf.as_mut_ptr(),
-            20,
-        );
-        core::ptr::copy_nonoverlapping(
-            &payload as *const _ as *const u8,
-            buf.as_mut_ptr().add(20),
-            4,
-        );
+        core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
+        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 4);
     }
-
     24
 }
 
-/// Serialize a KeyUp event to wire format
+/// Serialize a KeyUp event
 fn serialize_key_up(key: Key, mods: Mods, timestamp_ns: u64, buf: &mut [u8]) -> usize {
-    if buf.len() < 24 {
-        return 0;
-    }
-
+    if buf.len() < 24 { return 0; }
     let header = BristleEventHeader {
         magic: BRISTLE_EVENT_MAGIC,
         version: BRISTLE_EVENT_VERSION,
@@ -83,54 +65,104 @@ fn serialize_key_up(key: Key, mods: Mods, timestamp_ns: u64, buf: &mut [u8]) -> 
         timestamp_ns,
         payload_len: 4,
     };
-
     let payload = KeyEventPayload {
         key: key as u16,
         mods: mods.0,
         flags: 0,
     };
-
     unsafe {
-        core::ptr::copy_nonoverlapping(
-            &header as *const _ as *const u8,
-            buf.as_mut_ptr(),
-            20,
-        );
-        core::ptr::copy_nonoverlapping(
-            &payload as *const _ as *const u8,
-            buf.as_mut_ptr().add(20),
-            4,
-        );
+        core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
+        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 4);
     }
-
     24
+}
+
+/// Serialize a PointerMove event
+fn serialize_pointer_move(dx: i16, dy: i16, timestamp_ns: u64, buf: &mut [u8]) -> usize {
+    if buf.len() < 24 { return 0; }
+    let header = BristleEventHeader {
+        magic: BRISTLE_EVENT_MAGIC,
+        version: BRISTLE_EVENT_VERSION,
+        event_type: EventType::PointerMove as u16,
+        timestamp_ns,
+        payload_len: 4,
+    };
+    let payload = PointerMovePayload { dx, dy };
+    unsafe {
+        core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
+        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 4);
+    }
+    24
+}
+
+/// Serialize a PointerButtonDown event
+fn serialize_pointer_button_down(button: u8, timestamp_ns: u64, buf: &mut [u8]) -> usize {
+    if buf.len() < 24 { return 0; }
+    let header = BristleEventHeader {
+        magic: BRISTLE_EVENT_MAGIC,
+        version: BRISTLE_EVENT_VERSION,
+        event_type: EventType::PointerButtonDown as u16,
+        timestamp_ns,
+        payload_len: 2,
+    };
+    let payload = PointerButtonPayload { button, _pad: 0 };
+    unsafe {
+        core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
+        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 2);
+    }
+    22
+}
+
+/// Serialize a PointerButtonUp event
+fn serialize_pointer_button_up(button: u8, timestamp_ns: u64, buf: &mut [u8]) -> usize {
+    if buf.len() < 24 { return 0; }
+    let header = BristleEventHeader {
+        magic: BRISTLE_EVENT_MAGIC,
+        version: BRISTLE_EVENT_VERSION,
+        event_type: EventType::PointerButtonUp as u16,
+        timestamp_ns,
+        payload_len: 2,
+    };
+    let payload = PointerButtonPayload { button, _pad: 0 };
+    unsafe {
+        core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
+        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 2);
+    }
+    22
 }
 
 #[stem::main]
 fn main(packed_handles: usize) -> ! {
-    // Unpack handles: (raw_read << 16) | evt_write
-    let raw_read = ((packed_handles >> 16) & 0xFFFF) as PortHandle;
-    let evt_write = (packed_handles & 0xFFFF) as PortHandle;
+    // Unpack handles from 64-bit value:
+    // bits 48-63: kbd_read
+    // bits 32-47: mouse_read  
+    // bits 16-31: evt_write
+    let packed = packed_handles as u64;
+    let kbd_read = ((packed >> 48) & 0xFFFF) as PortHandle;
+    let mouse_read = ((packed >> 32) & 0xFFFF) as PortHandle;
+    let evt_write = ((packed >> 16) & 0xFFFF) as PortHandle;
 
-    info!("bristle: online (raw={}, evt={})", raw_read, evt_write);
+    info!("bristle: online (kbd={}, mouse={}, evt={})", kbd_read, mouse_read, evt_write);
     
-    // Register in the Root graph
     register_in_graph();
 
     let mut kbd_state = KeyboardState::new();
-    let mut recv_buf = [0u8; 64];
+    let mut mouse_state = MouseState::new();
+    let mut kbd_buf = [0u8; 64];
+    let mut mouse_buf = [0u8; 64];
     let mut send_buf = [0u8; 64];
     let mut drop_counter: u32 = 0;
     let mut event_count: u64 = 0;
 
     loop {
-        match port_recv(raw_read, &mut recv_buf) {
-            Ok(n) if n > 0 => {
-                // Get a monotonic timestamp (approximate via event count for now)
-                // TODO: Use actual monotonic time syscall
-                let timestamp_ns = event_count * 1_000_000; // fake ~1ms per event
-
-                for &byte in &recv_buf[..n] {
+        let timestamp_ns = event_count * 1_000_000;
+        let mut did_work = false;
+        
+        // Process keyboard input
+        if let Ok(n) = port_recv(kbd_read, &mut kbd_buf) {
+            if n > 0 {
+                did_work = true;
+                for &byte in &kbd_buf[..n] {
                     if let Some(edge) = kbd_state.process_ps2(byte) {
                         let len = match edge {
                             KeyEdge::Down { key, mods, repeat } => {
@@ -140,24 +172,66 @@ fn main(packed_handles: usize) -> ! {
                                 serialize_key_up(key, mods, timestamp_ns, &mut send_buf)
                             }
                         };
-
                         if len > 0 {
-                            if let Err(_) = port_send(evt_write, &send_buf[..len]) {
-                                drop_counter += 1;
-                                if drop_counter == 1 || drop_counter % 100 == 0 {
-                                    info!("bristle: event port full, dropped {} events", drop_counter);
-                                }
-                            } else {
+                            if port_send(evt_write, &send_buf[..len]).is_ok() {
                                 event_count += 1;
+                            } else {
+                                drop_counter += 1;
                             }
                         }
                     }
                 }
             }
-            _ => {
-                // No data, yield to avoid busy-spin
-                stem::yield_now();
+        }
+        
+        // Process mouse input  
+        if let Ok(n) = port_recv(mouse_read, &mut mouse_buf) {
+            if n >= 3 {
+                did_work = true;
+                // Process 3-byte packets
+                let mut offset = 0;
+                while offset + 3 <= n {
+                    let packet: [u8; 3] = [
+                        mouse_buf[offset],
+                        mouse_buf[offset + 1],
+                        mouse_buf[offset + 2],
+                    ];
+                    
+                    let (events, count) = mouse_state.process_packet(&packet);
+                    for i in 0..count {
+                        if let Some(evt) = events[i] {
+                            let len = match evt {
+                                PointerEvent::Move { dx, dy } => {
+                                    serialize_pointer_move(dx, dy, timestamp_ns, &mut send_buf)
+                                }
+                                PointerEvent::ButtonDown { button } => {
+                                    serialize_pointer_button_down(button, timestamp_ns, &mut send_buf)
+                                }
+                                PointerEvent::ButtonUp { button } => {
+                                    serialize_pointer_button_up(button, timestamp_ns, &mut send_buf)
+                                }
+                            };
+                            if len > 0 {
+                                if port_send(evt_write, &send_buf[..len]).is_ok() {
+                                    event_count += 1;
+                                } else {
+                                    drop_counter += 1;
+                                }
+                            }
+                        }
+                    }
+                    offset += 3;
+                }
             }
+        }
+        
+        if !did_work {
+            stem::yield_now();
+        }
+        
+        // Rate-limited drop logging
+        if drop_counter > 0 && drop_counter % 100 == 0 {
+            info!("bristle: dropped {} events (port full)", drop_counter);
         }
     }
 }

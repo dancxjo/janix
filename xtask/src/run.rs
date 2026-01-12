@@ -17,7 +17,7 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
 
     match arch {
         "x86_64" => {
-            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log")
+            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga  -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log")
                 .args(&qemu_args)
                 .run()?;
         }
@@ -51,7 +51,7 @@ pub fn run_bios(sh: &Shell, qemu_flags: &str) -> Result<()> {
     println!("Running in QEMU BIOS mode...");
     cmd!(
         sh,
-        "qemu-system-x86_64 -M q35 -device virtio-vga -serial stdio -cdrom {iso} -boot d"
+        "qemu-system-x86_64 -M q35 -device virtio-vga  -serial stdio -cdrom {iso} -boot d"
     )
     .args(&qemu_args)
     .run()?;
@@ -71,7 +71,7 @@ pub fn run_hdd(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
 
     match arch {
         "x86_64" => {
-            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}")
+            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga  -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}")
                 .args(&qemu_args)
                 .run()?;
         }

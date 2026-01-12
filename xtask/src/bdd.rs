@@ -4,7 +4,7 @@ use crate::build::build;
 use crate::common::{Result, rust_target};
 use crate::image::build_iso;
 use crate::limine::limine;
-use crate::ovmf::ovmf;
+use crate::fetch::fetch;
 use std::fs;
 use xshell::{Shell, cmd};
 
@@ -51,7 +51,7 @@ fn run_single_arch(sh: &Shell, feature: Option<&str>, arch: &str) -> Result<()> 
 
     // Build ISO
     println!("\n=== Building for {} ===\n", arch);
-    ovmf(sh, arch)?;
+    fetch()?;
     limine(sh)?;
     build(sh, arch, "dev")?;
     build_iso(sh, arch)?;

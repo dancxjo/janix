@@ -1,12 +1,18 @@
-/limine
-/ovmf
-*.iso
-*.hdd
-
-/bran/bin-*
+# Build outputs
 /target
 /**/target
-
+*.iso
+*.hdd
+iso_root/
 *.log
 
-iso_root/
+# Legacy paths (pre-fetch unification)
+/limine
+/ovmf
+
+# Fetched vendor assets (managed by `just fetch`)
+/vendor/
+/assets/
+
+# Bran binaries
+/bran/bin-*

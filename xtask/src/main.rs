@@ -7,10 +7,10 @@ mod bdd;
 mod build;
 mod clean;
 mod common;
+mod fetch;
 mod image;
 mod kill;
 mod limine;
-mod ovmf;
 mod run;
 
 use clap::{Parser, Subcommand};
@@ -20,9 +20,9 @@ use crate::bdd::bdd;
 use crate::build::build;
 use crate::clean::{clean, distclean};
 use crate::common::project_root;
+use crate::fetch::fetch;
 use crate::image::{build_hdd, build_iso};
 use crate::limine::limine;
-use crate::ovmf::{ovmf, ovmf_all};
 use crate::run::{run, run_bios, run_hdd};
 
 /// Thing-OS build automation tool
@@ -121,6 +121,8 @@ enum Commands {
     },
     /// Kill running QEMU instances
     Kill,
+    /// Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
+    Fetch,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -148,7 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             profile,
             qemu_flags,
         } => {
-            ovmf(&sh, &env)?;
+            fetch()?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
             build_iso(&sh, &env)?;
@@ -165,15 +167,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             profile,
             qemu_flags,
         } => {
-            ovmf(&sh, &env)?;
+            fetch()?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
             build_hdd(&sh, &env)?;
             run_hdd(&sh, &env, &qemu_flags)?;
         }
         Commands::Limine => limine(&sh)?,
-        Commands::Ovmf { env } => ovmf(&sh, &env)?,
-        Commands::OvmfAll => ovmf_all(&sh)?,
+        Commands::Ovmf { env: _ } => fetch()?,  // OVMF handled by unified fetch
+        Commands::OvmfAll => fetch()?,  // OVMF handled by unified fetch
         Commands::Clean => clean(&sh)?,
         Commands::Distclean => distclean(&sh)?,
         Commands::Bdd {
@@ -182,6 +184,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             arch,
         } => bdd(&sh, feature, tags, arch)?,
         Commands::Kill => kill::run()?,
+        Commands::Fetch => fetch()?,
     }
 
     Ok(())

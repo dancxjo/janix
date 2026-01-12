@@ -112,3 +112,6 @@ clock arch=karch:
     echo "Building clock for $TARGET_ARCH using $TARGET_JSON..."
     cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p clock
 
+# Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
+fetch:
+    cargo xtask fetch

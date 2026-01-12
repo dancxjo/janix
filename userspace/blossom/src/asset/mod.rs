@@ -21,6 +21,7 @@ pub enum AssetKind {
 pub struct AssetJob {
     pub kind: AssetKind,
     pub bytes: &'static [u8],
+    pub name: &'static str,
 }
 
 pub enum AssetUpdate {

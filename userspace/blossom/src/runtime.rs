@@ -2,6 +2,8 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use alloc::string::String;
+use core::fmt::Write;
 
 use abi::display_protocol as dispproto;
 use stem::info;
@@ -347,10 +349,12 @@ fn queue_default_assets(runtime: &AssetRuntime) {
     runtime.jobs.push(AssetJob {
         kind: AssetKind::Wallpaper,
         bytes: wallpaper_bytes,
+        name: "clouds.bmp",
     });
     runtime.jobs.push(AssetJob {
         kind: AssetKind::Cursor,
         bytes: cursor_bytes,
+        name: "Normal.cur",
     });
     info!("blossom: wallpaper job queued");
     info!("blossom: cursor job queued");
@@ -360,17 +364,32 @@ extern "C" fn asset_worker_main() -> ! {
     loop {
         let job = unsafe { ASSET_RUNTIME.and_then(|rt| rt.jobs.pop()) };
         if let Some(job) = job {
+            log_asset_header(job.name, job.bytes);
             match job.kind {
                 AssetKind::Wallpaper => {
-                    if let Some(wallpaper) = decode_bmp(job.bytes) {
-                        let update = AssetUpdate::WallpaperReady(Arc::new(wallpaper));
-                        unsafe {
-                            if let Some(rt) = ASSET_RUNTIME {
-                                rt.results.push(update);
+                    match decode_bmp(job.bytes) {
+                        Ok(wallpaper) => {
+                            info!(
+                                "blossom: wallpaper decoded ok ({}x{})",
+                                wallpaper.width, wallpaper.height
+                            );
+                            let update = AssetUpdate::WallpaperReady(Arc::new(wallpaper));
+                            unsafe {
+                                if let Some(rt) = ASSET_RUNTIME {
+                                    rt.results.push(update);
+                                }
                             }
                         }
-                    } else {
-                        info!("blossom: wallpaper decode failed");
+                        Err(err) => {
+                            info!("blossom: wallpaper decode failed: {:?}; using fallback", err);
+                            let fallback = crate::asset::wallpaper::WallpaperSurface::error_fallback();
+                            let update = AssetUpdate::WallpaperReady(Arc::new(fallback));
+                            unsafe {
+                                if let Some(rt) = ASSET_RUNTIME {
+                                    rt.results.push(update);
+                                }
+                            }
+                        }
                     }
                 }
                 AssetKind::Cursor => {
@@ -390,4 +409,29 @@ extern "C" fn asset_worker_main() -> ! {
             thread::yield_now();
         }
     }
+}
+
+fn log_asset_header(name: &str, bytes: &[u8]) {
+    let take = bytes.len().min(16);
+    let mut header = [0u8; 16];
+    if take > 0 {
+        header[..take].copy_from_slice(&bytes[..take]);
+    }
+    let mut hex = String::new();
+    if hex.try_reserve(take.saturating_mul(3)).is_ok() {
+        for i in 0..take {
+            let _ = write!(
+                &mut hex,
+                "{:02X}{}",
+                header[i],
+                if i + 1 == take { "" } else { " " }
+            );
+        }
+    }
+    info!(
+        "blossom: asset='{}' len={} header=[{}]",
+        name,
+        bytes.len(),
+        hex
+    );
 }

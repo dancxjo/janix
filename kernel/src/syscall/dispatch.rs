@@ -17,6 +17,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_SLEEP_NS => handlers::sys_sleep_ns(args[0] as u64),
         SYS_TIME_MONOTONIC => handlers::sys_time_monotonic_ns(),
         SYS_TIME_NOW => handlers::sys_time_now(),
+        SYS_TIME_ANCHOR => handlers::sys_time_anchor(args[0] as u64),
         SYS_DEVICE_CALL => handlers::sys_device_call(args[0]),
         SYS_SPAWN_THREAD => handlers::sys_spawn_thread(args[0], args[1]),
         SYS_SPAWN_PROCESS => handlers::sys_spawn_process(args[0], args[1], args[2]),

@@ -13,6 +13,7 @@ pub const SYS_LOG_WRITE: u32 = 11;
 pub const SYS_GET_TID: u32 = 12;
 pub const SYS_TASK_POLL: u32 = 18;
 pub const SYS_TIME_NOW: u32 = 19;
+pub const SYS_TIME_ANCHOR: u32 = 20; // NEW: anchor system clock from userspace
 
 // Device Capability Syscalls
 pub const SYS_DEVICE_CLAIM: u32 = 13;
@@ -34,7 +35,7 @@ pub const SYS_WATCH_READ: u32 = 193;
 // Root/Graph (256+)
 pub const SYS_ROOT_GET_KIND: u32 = 256;
 pub const SYS_ROOT_BYTESPACE_CREATE: u32 = 257;
-pub const SYS_ROOT_BYTESPACE_READ: u32 = 258; // NEW
+pub const SYS_ROOT_BYTESPACE_READ: u32 = 258;
 pub const SYS_ROOT_WATCH_SUBSCRIBE: u32 = 259;
 pub const SYS_ROOT_STREAM_POLL: u32 = 260;
 pub const SYS_ROOT_PROP_SET: u32 = 261;

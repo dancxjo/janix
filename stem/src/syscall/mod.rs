@@ -126,3 +126,22 @@ pub fn task_poll(pid: u64) -> Result<(abi::types::TaskStatus, i32), Errno> {
         Ok((status, code_val))
     }
 }
+
+pub fn time_anchor(unix_secs: u64) {
+    unsafe {
+        raw_syscall6(SYS_TIME_ANCHOR, unix_secs as usize, 0, 0, 0, 0, 0);
+    }
+}
+
+pub fn ioport_read(port: usize, width: usize) -> usize {
+    let ret = unsafe {
+        raw_syscall6(SYS_DEVICE_IOPORT_READ, port, width, 0, 0, 0, 0)
+    };
+    if ret < 0 { 0 } else { ret as usize }
+}
+
+pub fn ioport_write(port: usize, value: usize, width: usize) {
+    unsafe {
+        raw_syscall6(SYS_DEVICE_IOPORT_WRITE, port, value, width, 0, 0, 0);
+    }
+}

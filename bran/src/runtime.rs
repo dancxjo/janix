@@ -13,7 +13,6 @@ pub trait ArchRuntime {
     fn halt(&self) -> !;
     fn mono_ticks(&self) -> u64;
     fn mono_freq_hz(&self) -> u64;
-    fn read_rtc(&self) -> Option<abi::device::RtcTime> { None }
     fn irq_disable(&self) -> IrqState;
     fn irq_restore(&self, state: IrqState);
 

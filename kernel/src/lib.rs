@@ -148,7 +148,6 @@ pub trait BootRuntimeBase: 'static {
     fn putchar(&self, c: u8);
     fn mono_ticks(&self) -> u64;
     fn mono_freq_hz(&self) -> u64 { 10_000_000 }
-    fn read_rtc(&self) -> Option<abi::device::RtcTime> { None }
 }
 
 pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
@@ -228,6 +227,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
     kinfo!("Initializing SIMD...");
     runtime.simd_init_cpu();
+
 
     kinfo!("Initializing tasking...");
     crate::task::init::<R>();

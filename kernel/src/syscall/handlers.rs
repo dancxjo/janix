@@ -142,16 +142,9 @@ pub fn sys_time_now() -> SysResult<usize> {
     Ok(sys_sec as usize)
 }
 
-pub fn sys_rtc_read(out_ptr: usize) -> SysResult<usize> {
-    validate_user_range(out_ptr, core::mem::size_of::<abi::device::RtcTime>(), true)?;
-    let rt = crate::runtime_base();
-    if let Some(time) = rt.read_rtc() {
-         let src = unsafe { core::slice::from_raw_parts(&time as *const _ as *const u8, core::mem::size_of::<abi::device::RtcTime>()) };
-         unsafe { copyout(out_ptr, src)?; }
-         Ok(0)
-    } else {
-         Err(Errno::ENODEV)
-    }
+pub fn sys_rtc_read(_out_ptr: usize) -> SysResult<usize> {
+    // RTC is now handled by userspace drivers via ioport syscalls
+    Err(Errno::ENODEV)
 }
 
 pub fn sys_sleep_ns(ns: u64) -> SysResult<usize> {
@@ -618,4 +611,13 @@ pub fn sys_root_query(plan_ptr: usize, plan_len: usize, out_ptr: usize, out_cap:
 
 pub fn sys_root_dump_graph(limit: usize) -> SysResult<usize> {
     root_call(RootOp::DumpGraph { limit: limit as u64 })
+}
+
+pub fn sys_time_anchor(unix_secs: u64) -> SysResult<usize> {
+    let rt = crate::runtime_base();
+    let ticks = rt.mono_ticks();
+    let freq = rt.mono_freq_hz();
+    let mono_ns = (ticks as u128 * 1_000_000_000) / (freq as u128);
+    crate::time::anchor_system_clock(unix_secs, mono_ns as u64);
+    Ok(0)
 }

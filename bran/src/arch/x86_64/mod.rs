@@ -173,10 +173,6 @@ impl ArchRuntime for X86_64Runtime {
     fn unmap_page(&self, aspace: Self::AddressSpace, virt: u64) -> Result<Option<u64>, ()> { paging::unmap_page(aspace, virt) }
     fn translate(&self, aspace: Self::AddressSpace, virt: u64) -> Option<u64> { paging::translate(aspace, virt) }
     fn tlb_flush_page(&self, virt: u64) { paging::tlb_flush_page(virt) }
-
-    fn read_rtc(&self) -> Option<abi::device::RtcTime> {
-        unsafe { Some(cmos::read_rtc()) }
-    }
 }
 
 struct ProxyAllocator;

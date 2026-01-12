@@ -24,6 +24,7 @@ SECTIONS {
 
     .data : {
         *(.data .data.*)
+        LONG(0); 
     } :data
 
     .bss : {

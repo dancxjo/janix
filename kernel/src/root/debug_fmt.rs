@@ -37,7 +37,7 @@ pub fn fmt_thing(
         // Lowercase the variable name part (e.g. Host -> host)
         let var_name = basename.to_lowercase();
 
-        write!(w, "({}{:x}:{} {{ ", var_name, id, kind_str)?;
+        write!(w, "({}{:X}:{} {{ ", var_name, id, kind_str)?;
 
         let mut count = 0;
         for (k, v) in node.props.iter() {
@@ -84,7 +84,7 @@ pub fn fmt_thing(
         }
         write!(w, " }})")
     } else {
-        write!(w, "(t{:x}:?)", id)
+        write!(w, "(t{:X}:?)", id)
     }
 }
 
@@ -122,7 +122,7 @@ pub fn fmt_edge(
 
     write!(
         w,
-        "({}{:x}:{})-[:{}]->({}{:x}:{})",
+        "({}{:X}:{})-[:{}]->({}{:X}:{})",
         src_basename, src, src_kind, rname, dst_basename, dst, dst_kind
     )
 }

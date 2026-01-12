@@ -39,6 +39,20 @@ pub fn sys_log_write(ptr: usize, len: usize, level_arg: usize) -> SysResult<usiz
     match core::str::from_utf8(&buf) {
         Ok(s) => {
             let s_trimmed = s.trim_end();
+            
+            // Allow userspace to set provenance via "SOURCE: " prefix
+            let (provenance, msg_body) = if let Some(idx) = s_trimmed.find(": ") {
+                let (prefix, rest) = s_trimmed.split_at(idx);
+                // Simple heuristic: prefix must be reasonably short and no spaces (or limited)
+                if prefix.len() < 32 && !prefix.contains(char::is_whitespace) {
+                    (prefix, &rest[2..])
+                } else {
+                    ("user.print", s_trimmed)
+                }
+            } else {
+                ("user.print", s_trimmed)
+            };
+
              crate::logging::_log_event(
                 crate::logging::LogMetadata {
                     level,
@@ -46,8 +60,8 @@ pub fn sys_log_write(ptr: usize, len: usize, level_arg: usize) -> SysResult<usiz
                     line: 0,
                     module: "user",
                 },
-                "user.print",
-                format_args!("{}", s_trimmed),
+                provenance,
+                format_args!("{}", msg_body),
                 &[], // no extra fields
                 &[]  // no about edges
             );

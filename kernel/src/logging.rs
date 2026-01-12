@@ -33,6 +33,7 @@ impl Level {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct LogMetadata<'a> {
     pub level: Level,
     pub file: &'a str,
@@ -148,7 +149,10 @@ pub fn _log_event(
 
 // Backward compatibility shim for kinfo! etc
 pub fn _log(meta: LogMetadata, args: fmt::Arguments) {
-    _log_event(meta, "log.generic", args, &[], &[]);
+    // Clean up module path: "kernel::root::service" -> "root.service" or similar?
+    // For now, let's just use the full module path or maybe just the last part?
+    // User requested "provenance field... instead of log.generic".
+    _log_event(meta.clone(), meta.module, args, &[], &[]);
 }
 
 #[macro_export]

@@ -60,6 +60,8 @@ pub mod keys {
     pub const BAR3: &str = "bar3";
     pub const BAR4: &str = "bar4";
     pub const BAR5: &str = "bar5";
+    pub const PORT_START: &str = "port_start";
+    pub const PORT_END: &str = "port_end";
 }
 
 pub mod kinds {
@@ -82,6 +84,11 @@ pub mod kinds {
     pub const SVC_TIME_SYSTEM_CLOCK: &str = "svc.time.SystemClock";
     pub const DEV_BUS_PCI: &str = "dev.bus.Pci";
     pub const DEV_PCI_FUNCTION: &str = "dev.pci.Function";
+    // LPC / Legacy IO
+    pub const DEV_BRIDGE_LPC: &str = "dev.bridge.Lpc";
+    pub const DEV_BUS_LEGACY_IO: &str = "dev.bus.LegacyIo";
+    pub const DEV_INPUT_PS2_CONTROLLER: &str = "dev.input.Ps2Controller";
+    pub const CAP_IOPORT_RANGE: &str = "cap.ioport.Range";
 }
 
 pub mod rels {
@@ -99,4 +106,7 @@ pub mod rels {
     pub const HAS_MODULE: &str = "HAS_MODULE";
     pub const SEEDED_BY: &str = "SEEDED_BY";
     pub const USES: &str = "USES";
+    // LPC / Legacy IO
+    pub const IMPLEMENTS: &str = "IMPLEMENTS";
+    pub const USES_IOPORTS: &str = "USES_IOPORTS";
 }

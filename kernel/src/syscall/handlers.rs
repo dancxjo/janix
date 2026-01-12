@@ -231,63 +231,61 @@ pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
 
 // ------ Device Capabilities ------
 
-pub fn sys_device_claim(_id: usize) -> SysResult<usize> {
-    // Stub for v0.1: just return fake success or NotSupported
-    // eventually checks if caller can claim device
-    Err(Errno::NotSupported)
+/// Claim a device by its graph ID. Returns a claim handle on success.
+pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
+    use crate::device_registry::REGISTRY;
+    
+    let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+    
+    let mut reg = REGISTRY.lock();
+    
+    // Find device by graph ID
+    if let Some(device_idx) = reg.find_by_graph_id(graph_id as u64) {
+        // Attempt to claim it
+        if let Some(claim_handle) = reg.claim(device_idx, task_id) {
+            crate::kinfo!("DEVICE: task {} claimed device {} (handle {})", task_id, graph_id, claim_handle);
+            return Ok(claim_handle);
+        } else {
+            crate::kinfo!("DEVICE: device {} already claimed", graph_id);
+            return Err(Errno::EBUSY);
+        }
+    }
+    
+    crate::kinfo!("DEVICE: device {} not found in registry", graph_id);
+    Err(Errno::ENODEV)
 }
 
 pub fn sys_device_map_mmio(_id: usize, _flags: usize) -> SysResult<usize> {
-    // Stub
     Err(Errno::NotSupported)
 }
 
 pub fn sys_device_irq_subscribe(_id: usize) -> SysResult<usize> {
-    // Stub
     Err(Errno::NotSupported)
 }
 
+/// IO port read/write via BootRuntime (arch-specific code in Bran).
 pub fn sys_device_ioport(port: usize, val: usize, write: bool, width: usize) -> SysResult<usize> {
-    // x86 only implementation example
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        if write {
-            match width {
-                1 => core::arch::asm!("out dx, al", in("dx") port as u16, in("al") val as u8),
-                2 => core::arch::asm!("out dx, ax", in("dx") port as u16, in("ax") val as u16),
-                4 => core::arch::asm!("out dx, eax", in("dx") port as u16, in("eax") val as u32),
-                _ => return Err(Errno::EINVAL),
-            }
-            return Ok(0);
-        } else {
-            let mut ret: usize = 0;
-            match width {
-                1 => {
-                    let v: u8;
-                    core::arch::asm!("in al, dx", out("al") v, in("dx") port as u16);
-                    ret = v as usize;
-                }
-                2 => {
-                    let v: u16;
-                    core::arch::asm!("in ax, dx", out("ax") v, in("dx") port as u16);
-                    ret = v as usize;
-                }
-                4 => {
-                    let v: u32;
-                    core::arch::asm!("in eax, dx", out("eax") v, in("dx") port as u16);
-                    ret = v as usize;
-                }
-                _ => return Err(Errno::EINVAL),
-            }
-            return Ok(ret);
+    // Call through global ioport accessor (set during runtime init)
+    if write {
+        match width {
+            1 => crate::ioport_write_u8(port as u16, val as u8),
+            2 => crate::ioport_write_u16(port as u16, val as u16),
+            4 => crate::ioport_write_u32(port as u16, val as u32),
+            _ => return Err(Errno::EINVAL),
         }
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        let _ = (port, val, write, width);
-        Err(Errno::ENOSYS)
+        Ok(0)
+    } else {
+        let ret = match width {
+            1 => crate::ioport_read_u8(port as u16) as usize,
+            2 => crate::ioport_read_u16(port as u16) as usize,
+            4 => crate::ioport_read_u32(port as u16) as usize,
+            _ => return Err(Errno::EINVAL),
+        };
+        Ok(ret)
     }
 }
+
+
 
 // ------ Root Syscalls ------
 

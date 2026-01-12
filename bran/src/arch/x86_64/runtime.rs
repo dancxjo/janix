@@ -120,6 +120,37 @@ impl ArchRuntime for X86_64Runtime {
     fn tlb_flush_page(&self, virt: u64) {
         paging::tlb_flush_page(virt)
     }
+
+    // IO Port primitives - x86_64 implementation
+    fn ioport_read_u8(&self, port: u16) -> u8 {
+        let val: u8;
+        unsafe { asm!("in al, dx", out("al") val, in("dx") port, options(nostack, preserves_flags)) };
+        val
+    }
+
+    fn ioport_read_u16(&self, port: u16) -> u16 {
+        let val: u16;
+        unsafe { asm!("in ax, dx", out("ax") val, in("dx") port, options(nostack, preserves_flags)) };
+        val
+    }
+
+    fn ioport_read_u32(&self, port: u16) -> u32 {
+        let val: u32;
+        unsafe { asm!("in eax, dx", out("eax") val, in("dx") port, options(nostack, preserves_flags)) };
+        val
+    }
+
+    fn ioport_write_u8(&self, port: u16, value: u8) {
+        unsafe { asm!("out dx, al", in("dx") port, in("al") value, options(nostack, preserves_flags)) };
+    }
+
+    fn ioport_write_u16(&self, port: u16, value: u16) {
+        unsafe { asm!("out dx, ax", in("dx") port, in("ax") value, options(nostack, preserves_flags)) };
+    }
+
+    fn ioport_write_u32(&self, port: u16, value: u32) {
+        unsafe { asm!("out dx, eax", in("dx") port, in("eax") value, options(nostack, preserves_flags)) };
+    }
 }
 
 struct DumbKernelAlloc;

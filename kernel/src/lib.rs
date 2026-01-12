@@ -10,6 +10,7 @@ pub mod syscall;
 pub mod task;
 pub mod tests;
 pub mod time;
+pub mod device_registry;
 pub mod ipc;
 
 #[unsafe(no_mangle)]
@@ -237,6 +238,14 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn dtb_ptr(&self) -> Option<u64> {
         None
     }
+
+    // IO Port primitives (x86-only, stubs for other archs)
+    fn ioport_read_u8(&self, _port: u16) -> u8 { 0 }
+    fn ioport_read_u16(&self, _port: u16) -> u16 { 0 }
+    fn ioport_read_u32(&self, _port: u16) -> u32 { 0 }
+    fn ioport_write_u8(&self, _port: u16, _value: u8) {}
+    fn ioport_write_u16(&self, _port: u16, _value: u16) {}
+    fn ioport_write_u32(&self, _port: u16, _value: u32) {}
 }
 
 static mut RUNTIME: Option<&'static dyn core::any::Any> = None;
@@ -259,6 +268,65 @@ pub fn runtime<R: BootRuntime>() -> &'static R {
 pub fn runtime_base() -> &'static dyn BootRuntimeBase {
     unsafe { RUNTIME_BASE.expect("Runtime not initialized") }
 }
+
+
+// Global IO port accessor functions
+// On x86, these use inline asm. On other archs, they are no-ops.
+#[inline]
+pub fn ioport_read_u8(port: u16) -> u8 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let val: u8;
+        unsafe { core::arch::asm!("in al, dx", out("al") val, in("dx") port, options(nostack, preserves_flags)) };
+        val
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    { 0 }
+}
+
+#[inline]
+pub fn ioport_read_u16(port: u16) -> u16 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let val: u16;
+        unsafe { core::arch::asm!("in ax, dx", out("ax") val, in("dx") port, options(nostack, preserves_flags)) };
+        val
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    { 0 }
+}
+
+#[inline]
+pub fn ioport_read_u32(port: u16) -> u32 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let val: u32;
+        unsafe { core::arch::asm!("in eax, dx", out("eax") val, in("dx") port, options(nostack, preserves_flags)) };
+        val
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    { 0 }
+}
+
+#[inline]
+pub fn ioport_write_u8(port: u16, val: u8) {
+    #[cfg(target_arch = "x86_64")]
+    unsafe { core::arch::asm!("out dx, al", in("dx") port, in("al") val, options(nostack, preserves_flags)) };
+}
+
+#[inline]
+pub fn ioport_write_u16(port: u16, val: u16) {
+    #[cfg(target_arch = "x86_64")]
+    unsafe { core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nostack, preserves_flags)) };
+}
+
+#[inline]
+pub fn ioport_write_u32(port: u16, val: u32) {
+    #[cfg(target_arch = "x86_64")]
+    unsafe { core::arch::asm!("out dx, eax", in("dx") port, in("eax") val, options(nostack, preserves_flags)) };
+}
+
+
 
 struct GlobalAllocHook;
 impl FrameAllocatorHook for GlobalAllocHook {

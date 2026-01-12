@@ -22,125 +22,31 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     // Build and copy sprout
     println!("Building sprout for {}...", arch);
 
-    // Use target-specific userspace triple if available, otherwise fallback
-    let user_target = if arch == "x86_64" {
-        "x86_64-unknown-thingos".to_string()
-    } else {
-        crate::common::rust_target(arch).to_string()
-    };
-
-    let target = &user_target;
-
+    // Use absolute path to target JSON file to work around RUST_TARGET_PATH propagation issues
     let cwd = std::env::current_dir().unwrap();
-    let target_dir = cwd.join("targets");
-    let target_path = target_dir.to_str().unwrap();
-    println!("DBG: using RUST_TARGET_PATH={}", target_path);
+    let target_json = if arch == "x86_64" {
+        cwd.join("targets/x86_64-unknown-thingos.json")
+    } else {
+        cwd.join(format!("targets/{}-unknown-thingos.json", arch))
+    };
+    let target = target_json.to_str().unwrap();
 
-    cmd!(
-        sh,
-        "cargo build --target {target} --profile release -p sprout -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
-    )
+    build_userspace_app(sh, "sprout", target, "release")?;
+    build_userspace_app(sh, "threads_demo", target, "release")?;
+    build_userspace_app(sh, "rtc_cmos", target, "release")?;
+    build_userspace_app(sh, "clock", target, "dev")?;  // clock uses dev profile
+    build_userspace_app(sh, "ps2_kbd", target, "release")?;
+    build_userspace_app(sh, "thigmonasty", target, "release")?;
+    build_userspace_app(sh, "echo", target, "release")?;
 
-    .env("RUST_TARGET_PATH", target_path)
-    .run()?;
-
-    let sprout_elf = format!("target/{}/release/sprout", target);
-    let sprout_bin = format!("target/{}/release/sprout.bin", target);
-    cmd!(sh, "llvm-objcopy -O binary {sprout_elf} {sprout_bin}").run()?;
-
-    sh.copy_file(&sprout_bin, "iso_root/boot/sprout")?;
-
-    // Build and copy threads_demo
-    println!("Building threads_demo for {}...", arch);
-    // target is already defined above
-    cmd!(
-        sh,
-        "cargo build --target {target} --profile release -p threads_demo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
-    )
-
-    .env("RUST_TARGET_PATH", target_path)
-    .run()?;
-
-    // Objcopy to binary
-    let demo_elf = format!("target/{}/release/threads_demo", target);
-    let demo_bin = format!("target/{}/release/threads_demo.bin", target);
-    cmd!(sh, "llvm-objcopy -O binary {demo_elf} {demo_bin}").run()?;
-
-    sh.copy_file(&demo_bin, "iso_root/boot/threads")?;
-
-    // Build and copy rtc_cmos
-    println!("Building rtc_cmos for {}...", arch);
-    cmd!(
-        sh,
-        "cargo build --target {target} --profile release -p rtc_cmos -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
-    )
-
-    .env("RUST_TARGET_PATH", target_path)
-    .run()?;
-
-    let rtc_elf = format!("target/{}/release/rtc_cmos", target);
-    let rtc_bin = format!("target/{}/release/rtc_cmos.bin", target);
-    cmd!(sh, "llvm-objcopy -O binary {rtc_elf} {rtc_bin}").run()?;
-
-    sh.copy_file(&rtc_bin, "iso_root/boot/rtc_cmos")?;
-
-    // Build and copy clock
-    println!("Building clock for {}...", arch);
-    cmd!(
-        sh,
-        "cargo build --target {target} --profile dev -p clock -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
-    )
-
-    .env("RUST_TARGET_PATH", target_path)
-    .run()?;
-
-    let clock_elf = format!("target/{}/debug/clock", target);
-    let clock_bin = format!("target/{}/debug/clock.bin", target);
-    cmd!(sh, "llvm-objcopy -O binary {clock_elf} {clock_bin}").run()?;
-
-    sh.copy_file(&clock_bin, "iso_root/boot/clock")?;
-
-    // Build and copy ps2_kbd
-    println!("Building ps2_kbd for {}...", arch);
-    cmd!(
-        sh,
-        "cargo build --target {target} --profile release -p ps2_kbd -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
-    )
-    .env("RUST_TARGET_PATH", target_path)
-    .run()?;
-
-    let ps2_elf = format!("target/{}/release/ps2_kbd", target);
-    let ps2_bin = format!("target/{}/release/ps2_kbd.bin", target);
-    cmd!(sh, "llvm-objcopy -O binary {ps2_elf} {ps2_bin}").run()?;
-    sh.copy_file(&ps2_bin, "iso_root/boot/ps2_kbd")?;
-
-    // Build and copy thigmonasty
-    println!("Building thigmonasty for {}...", arch);
-    cmd!(
-        sh,
-        "cargo build --target {target} --profile release -p thigmonasty -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
-    )
-    .env("RUST_TARGET_PATH", target_path)
-    .run()?;
-
-    let thig_elf = format!("target/{}/release/thigmonasty", target);
-    let thig_bin = format!("target/{}/release/thigmonasty.bin", target);
-    cmd!(sh, "llvm-objcopy -O binary {thig_elf} {thig_bin}").run()?;
-    sh.copy_file(&thig_bin, "iso_root/boot/thigmonasty")?;
-
-    // Build and copy echo
-    println!("Building echo for {}...", arch);
-    cmd!(
-        sh,
-        "cargo build --target {target} --profile release -p echo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
-    )
-    .env("RUST_TARGET_PATH", target_path)
-    .run()?;
-
-    let echo_elf = format!("target/{}/release/echo", target);
-    let echo_bin = format!("target/{}/release/echo.bin", target);
-    cmd!(sh, "llvm-objcopy -O binary {echo_elf} {echo_bin}").run()?;
-    sh.copy_file(&echo_bin, "iso_root/boot/echo")?;
+    // Copy binaries to iso_root
+    copy_userspace_binary(sh, "sprout", target, "release", "iso_root/boot/sprout")?;
+    copy_userspace_binary(sh, "threads_demo", target, "release", "iso_root/boot/threads")?;
+    copy_userspace_binary(sh, "rtc_cmos", target, "release", "iso_root/boot/rtc_cmos")?;
+    copy_userspace_binary(sh, "clock", target, "debug", "iso_root/boot/clock")?;
+    copy_userspace_binary(sh, "ps2_kbd", target, "release", "iso_root/boot/ps2_kbd")?;
+    copy_userspace_binary(sh, "thigmonasty", target, "release", "iso_root/boot/thigmonasty")?;
+    copy_userspace_binary(sh, "echo", target, "release", "iso_root/boot/echo")?;
 
     // Copy limine config
     sh.copy_file("limine.conf", "iso_root/boot/limine/limine.conf")?;
@@ -177,65 +83,27 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
         }
         "riscv64" => {
-            // For riscv64, we need to create a custom EFI boot image since limine-uefi-cd.bin
-            // only contains x86 bootloaders. We build an arch-specific FAT image.
             let efi_img = "iso_root/boot/limine/limine-uefi-riscv64.bin";
-
-            // Create a 3MB FAT12 image (enough for the bootloader plus overhead)
-            cmd!(
-                sh,
-                "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none"
-            )
-            .run()?;
+            cmd!(sh, "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none").run()?;
             cmd!(sh, "mformat -i {efi_img} -f 2880 ::").run()?;
             cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
-            cmd!(
-                sh,
-                "mcopy -i {efi_img} limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI"
-            )
-            .run()?;
-
-            // Also add startup.nsh as a fallback inside the EFI image
+            cmd!(sh, "mcopy -i {efi_img} limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI").run()?;
             sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTRISCV64.EFI\n")?;
             cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
-
-            // Copy kernel and limine config to ISO root
-            sh.copy_file(
-                "limine/BOOTRISCV64.EFI",
-                "iso_root/EFI/BOOT/BOOTRISCV64.EFI",
-            )?;
+            sh.copy_file("limine/BOOTRISCV64.EFI", "iso_root/EFI/BOOT/BOOTRISCV64.EFI")?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-riscv64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
         }
         "loongarch64" => {
-            // For loongarch64, we need to create a custom EFI boot image since limine-uefi-cd.bin
-            // only contains x86 bootloaders. We build an arch-specific FAT image.
             let efi_img = "iso_root/boot/limine/limine-uefi-loongarch64.bin";
-
-            // Create a 3MB FAT12 image (enough for the bootloader plus overhead)
-            cmd!(
-                sh,
-                "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none"
-            )
-            .run()?;
+            cmd!(sh, "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none").run()?;
             cmd!(sh, "mformat -i {efi_img} -f 2880 ::").run()?;
             cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
-            cmd!(
-                sh,
-                "mcopy -i {efi_img} limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI"
-            )
-            .run()?;
-
-            // Also add startup.nsh as a fallback inside the EFI image
+            cmd!(sh, "mcopy -i {efi_img} limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI").run()?;
             sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTLOONGARCH64.EFI\n")?;
             cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
-
-            // Copy kernel and limine config to ISO root
-            sh.copy_file(
-                "limine/BOOTLOONGARCH64.EFI",
-                "iso_root/EFI/BOOT/BOOTLOONGARCH64.EFI",
-            )?;
+            sh.copy_file("limine/BOOTLOONGARCH64.EFI", "iso_root/EFI/BOOT/BOOTLOONGARCH64.EFI")?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-loongarch64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
@@ -245,6 +113,33 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
 
     sh.remove_path("iso_root")?;
     println!("ISO created: {}.iso", name);
+    Ok(())
+}
+
+/// Build a userspace application
+fn build_userspace_app(sh: &Shell, name: &str, target: &str, profile: &str) -> Result<()> {
+    println!("Building {} ...", name);
+    cmd!(
+        sh,
+        "cargo build --target {target} --profile {profile} -p {name} -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
+    )
+    .run()?;
+    Ok(())
+}
+
+/// Copy and objcopy a userspace binary
+fn copy_userspace_binary(sh: &Shell, name: &str, target: &str, profile_dir: &str, dst: &str) -> Result<()> {
+    // Extract just the target name from the path for the output directory
+    let target_name = std::path::Path::new(target)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(target);
+    
+    let elf = format!("target/{}/{}/{}", target_name, profile_dir, name);
+    let bin = format!("target/{}/{}/{}.bin", target_name, profile_dir, name);
+    
+    cmd!(sh, "llvm-objcopy -O binary {elf} {bin}").run()?;
+    sh.copy_file(&bin, dst)?;
     Ok(())
 }
 
@@ -276,11 +171,7 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
 
     match arch {
         "x86_64" => {
-            cmd!(
-                sh,
-                "mcopy -i {hdd}@@1M limine/limine-bios.sys ::/boot/limine"
-            )
-            .run()?;
+            cmd!(sh, "mcopy -i {hdd}@@1M limine/limine-bios.sys ::/boot/limine").run()?;
             cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTX64.EFI ::/EFI/BOOT").run()?;
             cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTIA32.EFI ::/EFI/BOOT").run()?;
         }
@@ -291,11 +182,7 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
             cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTRISCV64.EFI ::/EFI/BOOT").run()?;
         }
         "loongarch64" => {
-            cmd!(
-                sh,
-                "mcopy -i {hdd}@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT"
-            )
-            .run()?;
+            cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT").run()?;
         }
         _ => return Err(format!("Unsupported architecture: {}", arch).into()),
     }

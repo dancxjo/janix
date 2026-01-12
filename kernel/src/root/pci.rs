@@ -182,13 +182,6 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
     }
 
     // Bind Hash: v1
-    // Hash: (vendor, device, sub_v, sub_d, class, sub, prog, rev)
-    // Simple mixing (DJB2/FNV-ish)
-    // Actually we just need consistent bytes for binder.
-    // Let's pack them into u64s because set() takes u64.
-    // Spec says "store as 16 or 32 bytes". Graph properties are u64 or string.
-    // We can store bind_hash as a hex string.
-
     let mut hash_bytes = [0u8; 16];
     hash_bytes[0..2].copy_from_slice(&vendor_id.to_le_bytes());
     hash_bytes[2..4].copy_from_slice(&device_id.to_le_bytes());
@@ -205,34 +198,11 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         h = h.wrapping_mul(0x100000001b3);
     }
 
-    // Store as hex string
-    // Since we don't have easy hex formatting to string here without allocation and format! macro usage which creates a String...
-    // We can just use the u64 hash for now, OR rely on prop set supporting strings.
-    // set() takes u64. Oops. boot_register `set` wrapper takes u64.
-    // But RootOp::PropSet takes SymbolShell. which can be String.
-    // But `set` closure in boot_register calls `PropSet` with `value: val`. val is u64.
-
-    // Wait, `BootOp::PropSet`:
-    // `PropSet { id: u64, key: SymbolShell, value: u64 }`.
-    // The value corresponds to a PROPERTY VALUE.
-    // In ThingOS, are property values restricted to u64?
-    // In `schema.rs`, there are string properties? "name" is usually interned (SymbolId which is u64).
-    // `bind_hash`... if it's a string, we need to intern it?
-    // User said "hash ... store as 16 or 32 bytes".
-    // 16 bytes is u128. u64 is too small.
-    // Maybe `bind_hash` is intended to be a STRING?
-    // If usage of `set` limits to u64, then I must intern the string.
-
-    // Let's execute formatting manually into a buffer and intern valid ASCII/UTF8.
-    let mut hex_buf = [0u8; 16];
-    // We only use 8 bytes (u64) of hash for brevity if u64 is enough?
-    // User requested "16 or 32 bytes".
-    // I can format the u64 as hex string (16 chars).
-
     // Simple hex loop
     fn nibble(n: u8) -> u8 {
         if n < 10 { n + b'0' } else { n - 10 + b'a' }
     }
+    let mut hex_buf = [0u8; 16];
     for i in 0..8 {
         let b = (h >> (i * 8)) as u8; // Little endian
         hex_buf[i * 2] = nibble(b >> 4);
@@ -278,33 +248,102 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
         // Mask information bits
         let mask = if is_io { 0xFFFFFFFC } else { 0xFFFFFFF0 };
-        let size = (!(size_mask & mask)).wrapping_add(1);
-
-        if size > 0 {
-            // Encode BAR info into graph?
-            // "BARs (probe, restore)".
-            // Link to a resource node?
-            // For now, simple properties: "bar0" -> size? Or address?
-            // Address is in bar_val.
-
-            // set(node, keys::BAR0 + i, ...);
-
-            // Note: 64-bit BARs take two slots.
-        }
+        let _size = (!(size_mask & mask)).wrapping_add(1);
 
         if is_64 {
-            // i += 1 in loop? But `for` loop doesn't support skipping.
-            // We can just ignore next iteration logic or handle it.
-            // For exactness, we should handle it, but simple enumeration often ignores this detail.
+            // Skip next BAR for 64-bit
         }
     }
 
-    // Recursion for Bridge
+    // Recursion for PCI-to-PCI Bridge
     if class_code == 0x06 && subclass == 0x04 {
-        // PCI-to-PCI bridge
         let secondary_bus = unsafe { pci_read_config(bus, dev, func, 0x18) >> 8 } as u8;
         if secondary_bus > bus {
             scan_bus(secondary_bus, node, create, set, link, intern);
         }
     }
+
+    // LPC/ISA Bridge detection - class 0x06, subclass 0x01
+    if class_code == 0x06 && subclass == 0x01 {
+        crate::kinfo!("PCI: Found LPC/ISA bridge at {:02x}:{:02x}.{}", bus, dev, func);
+        publish_lpc_bridge(node, create, set, link, intern);
+    }
+}
+
+/// Create the LPC bridge node and legacy IO bus with child devices
+fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
+    pci_func_node: u64,
+    create: &mut FCreate,
+    set: &mut FSet,
+    link: &mut FLink,
+    intern: &mut FIntern,
+) where
+    FCreate: FnMut(&str) -> u64,
+    FSet: FnMut(u64, &str, u64),
+    FLink: FnMut(u64, &str, u64),
+    FIntern: FnMut(&str) -> u64,
+{
+    // Create LPC bridge node
+    let lpc_id = create(kinds::DEV_BRIDGE_LPC);
+    set(lpc_id, keys::SOURCE, source::PCI as u64);
+    set(lpc_id, keys::CONFIDENCE, confidence::HIGH as u64);
+    set(lpc_id, keys::NAME, intern("lpc0"));
+    link(pci_func_node, rels::IMPLEMENTS, lpc_id);
+
+    // Create Legacy IO bus
+    let lio_id = create(kinds::DEV_BUS_LEGACY_IO);
+    set(lio_id, keys::SOURCE, source::PCI as u64);
+    set(lio_id, keys::CONFIDENCE, confidence::HIGH as u64);
+    set(lio_id, keys::NAME, intern("isa0"));
+    link(lpc_id, rels::HAS_BUS, lio_id);
+
+    // Create CMOS device
+    let cmos_id = create(kinds::DEV_RTC_CMOS);
+    set(cmos_id, keys::SOURCE, source::PCI as u64);
+    set(cmos_id, keys::CONFIDENCE, confidence::HIGH as u64);
+    set(cmos_id, keys::NAME, intern("rtc0"));
+    link(lio_id, rels::HAS_DEVICE, cmos_id);
+
+    // Create CMOS port range descriptor
+    let cmos_range = create(kinds::CAP_IOPORT_RANGE);
+    set(cmos_range, keys::PORT_START, 0x70);
+    set(cmos_range, keys::PORT_END, 0x71);
+    link(cmos_id, rels::USES_IOPORTS, cmos_range);
+
+    // Register CMOS in device registry
+    {
+        use crate::device_registry::{DeviceEntry, REGISTRY, CMOS_IOPORT_RANGES};
+        let mut reg = REGISTRY.lock();
+        reg.register(DeviceEntry {
+            kind: kinds::DEV_RTC_CMOS,
+            ioport_ranges: CMOS_IOPORT_RANGES,
+            graph_id: cmos_id,
+        });
+    }
+
+    // Create PS/2 Controller device
+    let ps2_id = create(kinds::DEV_INPUT_PS2_CONTROLLER);
+    set(ps2_id, keys::SOURCE, source::PCI as u64);
+    set(ps2_id, keys::CONFIDENCE, confidence::HIGH as u64);
+    set(ps2_id, keys::NAME, intern("i8042"));
+    link(lio_id, rels::HAS_DEVICE, ps2_id);
+
+    // Create PS/2 port range descriptor
+    let ps2_range = create(kinds::CAP_IOPORT_RANGE);
+    set(ps2_range, keys::PORT_START, 0x60);
+    set(ps2_range, keys::PORT_END, 0x64);
+    link(ps2_id, rels::USES_IOPORTS, ps2_range);
+
+    // Register PS/2 in device registry
+    {
+        use crate::device_registry::{DeviceEntry, REGISTRY, PS2_IOPORT_RANGES};
+        let mut reg = REGISTRY.lock();
+        reg.register(DeviceEntry {
+            kind: kinds::DEV_INPUT_PS2_CONTROLLER,
+            ioport_ranges: PS2_IOPORT_RANGES,
+            graph_id: ps2_id,
+        });
+    }
+
+    crate::kinfo!("LPC: Created Legacy IO bus with CMOS and PS/2 controller");
 }

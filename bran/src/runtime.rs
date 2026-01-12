@@ -87,6 +87,14 @@ pub trait ArchRuntime {
         None
     }
     fn tlb_flush_page(&self, _virt: u64) {}
+
+    // IO Port primitives (x86-only, stubs for other archs)
+    fn ioport_read_u8(&self, _port: u16) -> u8 { 0 }
+    fn ioport_read_u16(&self, _port: u16) -> u16 { 0 }
+    fn ioport_read_u32(&self, _port: u16) -> u32 { 0 }
+    fn ioport_write_u8(&self, _port: u16, _value: u8) {}
+    fn ioport_write_u16(&self, _port: u16, _value: u16) {}
+    fn ioport_write_u32(&self, _port: u16, _value: u32) {}
 }
 
 // --- Generic Runtime ---
@@ -219,6 +227,26 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     }
     fn dtb_ptr(&self) -> Option<u64> {
         self.limine.dtb_ptr()
+    }
+
+    // IO Port forwarding
+    fn ioport_read_u8(&self, port: u16) -> u8 {
+        self.arch.ioport_read_u8(port)
+    }
+    fn ioport_read_u16(&self, port: u16) -> u16 {
+        self.arch.ioport_read_u16(port)
+    }
+    fn ioport_read_u32(&self, port: u16) -> u32 {
+        self.arch.ioport_read_u32(port)
+    }
+    fn ioport_write_u8(&self, port: u16, value: u8) {
+        self.arch.ioport_write_u8(port, value)
+    }
+    fn ioport_write_u16(&self, port: u16, value: u16) {
+        self.arch.ioport_write_u16(port, value)
+    }
+    fn ioport_write_u32(&self, port: u16, value: u32) {
+        self.arch.ioport_write_u32(port, value)
     }
 }
 

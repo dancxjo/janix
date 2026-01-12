@@ -292,3 +292,162 @@ pub struct ScrollPayload {
     pub dx: i16,    // Horizontal scroll
     pub dy: i16,    // Vertical scroll
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Key::from_raw tests
+    #[test]
+    fn key_from_raw_letters() {
+        assert_eq!(Key::from_raw(0x04), Key::A);
+        assert_eq!(Key::from_raw(0x1D), Key::Z);
+        assert_eq!(Key::from_raw(0x10), Key::M);
+    }
+
+    #[test]
+    fn key_from_raw_numbers() {
+        assert_eq!(Key::from_raw(0x1E), Key::Num1);
+        assert_eq!(Key::from_raw(0x27), Key::Num0);
+    }
+
+    #[test]
+    fn key_from_raw_special() {
+        assert_eq!(Key::from_raw(0x28), Key::Enter);
+        assert_eq!(Key::from_raw(0x29), Key::Escape);
+        assert_eq!(Key::from_raw(0x2A), Key::Backspace);
+        assert_eq!(Key::from_raw(0x2C), Key::Space);
+    }
+
+    #[test]
+    fn key_from_raw_function_keys() {
+        assert_eq!(Key::from_raw(0x3A), Key::F1);
+        assert_eq!(Key::from_raw(0x45), Key::F12);
+    }
+
+    #[test]
+    fn key_from_raw_modifiers() {
+        assert_eq!(Key::from_raw(0xE0), Key::LeftCtrl);
+        assert_eq!(Key::from_raw(0xE1), Key::LeftShift);
+        assert_eq!(Key::from_raw(0xE4), Key::RightCtrl);
+        assert_eq!(Key::from_raw(0xE7), Key::RightMeta);
+    }
+
+    #[test]
+    fn key_from_raw_unknown_fallback() {
+        assert_eq!(Key::from_raw(0xFF), Key::Unknown);
+        assert_eq!(Key::from_raw(0x00), Key::Unknown);
+        assert_eq!(Key::from_raw(0xFFFE), Key::Unknown);
+    }
+
+    // Key::name tests
+    #[test]
+    fn key_name_returns_correct_string() {
+        assert_eq!(Key::A.name(), "A");
+        assert_eq!(Key::Enter.name(), "Enter");
+        assert_eq!(Key::Space.name(), "Space");
+        assert_eq!(Key::F1.name(), "F1");
+        assert_eq!(Key::LeftCtrl.name(), "LCtrl");
+        assert_eq!(Key::Unknown.name(), "?");
+    }
+
+    // Mods tests
+    #[test]
+    fn mods_has_shift() {
+        let mods = Mods(Mods::SHIFT);
+        assert!(mods.has_shift());
+        assert!(!mods.has_ctrl());
+        assert!(!mods.has_alt());
+        assert!(!mods.has_meta());
+    }
+
+    #[test]
+    fn mods_combined() {
+        let mods = Mods(Mods::SHIFT | Mods::CTRL | Mods::ALT);
+        assert!(mods.has_shift());
+        assert!(mods.has_ctrl());
+        assert!(mods.has_alt());
+        assert!(!mods.has_meta());
+    }
+
+    #[test]
+    fn mods_empty() {
+        let mods = Mods(0);
+        assert!(!mods.has_shift());
+        assert!(!mods.has_ctrl());
+        assert!(!mods.has_alt());
+        assert!(!mods.has_meta());
+    }
+
+    // KeyEventPayload tests
+    #[test]
+    fn key_event_payload_is_repeat() {
+        let payload = KeyEventPayload { key: 0x04, mods: 0, flags: 0 };
+        assert!(!payload.is_repeat());
+
+        let payload_repeat = KeyEventPayload { key: 0x04, mods: 0, flags: 1 };
+        assert!(payload_repeat.is_repeat());
+    }
+
+    #[test]
+    fn key_event_payload_key() {
+        let payload = KeyEventPayload { key: 0x04, mods: 0, flags: 0 };
+        assert_eq!(payload.key(), Key::A);
+    }
+
+    #[test]
+    fn key_event_payload_mods() {
+        let payload = KeyEventPayload { key: 0x04, mods: Mods::SHIFT | Mods::CTRL, flags: 0 };
+        let mods = payload.mods();
+        assert!(mods.has_shift());
+        assert!(mods.has_ctrl());
+    }
+
+    // Struct size checks for wire compatibility
+    #[test]
+    fn bristle_event_header_size() {
+        assert_eq!(core::mem::size_of::<BristleEventHeader>(), 20);
+    }
+
+    #[test]
+    fn key_event_payload_size() {
+        assert_eq!(core::mem::size_of::<KeyEventPayload>(), 4);
+    }
+
+    #[test]
+    fn raw_input_envelope_size() {
+        assert_eq!(core::mem::size_of::<RawInputEnvelope>(), 24);
+    }
+
+    #[test]
+    fn ps2_key_payload_size() {
+        assert_eq!(core::mem::size_of::<Ps2KeyPayload>(), 2);
+    }
+
+    #[test]
+    fn pointer_move_payload_size() {
+        assert_eq!(core::mem::size_of::<PointerMovePayload>(), 4);
+    }
+
+    #[test]
+    fn pointer_button_payload_size() {
+        assert_eq!(core::mem::size_of::<PointerButtonPayload>(), 2);
+    }
+
+    #[test]
+    fn scroll_payload_size() {
+        assert_eq!(core::mem::size_of::<ScrollPayload>(), 4);
+    }
+
+    // Magic and version constants
+    #[test]
+    fn bristle_event_magic_is_hide() {
+        // 'HIDE' in ASCII = 0x48494445
+        assert_eq!(BRISTLE_EVENT_MAGIC, 0x48494445);
+    }
+
+    #[test]
+    fn bristle_event_version_is_zero() {
+        assert_eq!(BRISTLE_EVENT_VERSION, 0);
+    }
+}

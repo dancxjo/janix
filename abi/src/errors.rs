@@ -75,3 +75,78 @@ pub fn errno(ret: isize) -> Result<usize, Errno> {
         Ok(ret as usize)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn errno_as_isize_returns_negative_value() {
+        assert_eq!(Errno::EPERM.as_isize(), -1);
+        assert_eq!(Errno::ENOENT.as_isize(), -2);
+        assert_eq!(Errno::EINVAL.as_isize(), -22);
+        assert_eq!(Errno::ENOSYS.as_isize(), -38);
+    }
+
+    #[test]
+    fn errno_success_as_isize_is_zero() {
+        assert_eq!(Errno::Success.as_isize(), 0);
+    }
+
+    #[test]
+    fn errno_recognizes_eperm() {
+        assert_eq!(errno(-1), Err(Errno::EPERM));
+    }
+
+    #[test]
+    fn errno_recognizes_enoent() {
+        assert_eq!(errno(-2), Err(Errno::ENOENT));
+    }
+
+    #[test]
+    fn errno_recognizes_eio() {
+        assert_eq!(errno(-5), Err(Errno::EIO));
+    }
+
+    #[test]
+    fn errno_recognizes_enomem() {
+        assert_eq!(errno(-12), Err(Errno::ENOMEM));
+    }
+
+    #[test]
+    fn errno_recognizes_efault() {
+        assert_eq!(errno(-14), Err(Errno::EFAULT));
+    }
+
+    #[test]
+    fn errno_recognizes_einval() {
+        assert_eq!(errno(-22), Err(Errno::EINVAL));
+    }
+
+    #[test]
+    fn errno_recognizes_enosys() {
+        assert_eq!(errno(-38), Err(Errno::ENOSYS));
+    }
+
+    #[test]
+    fn errno_unknown_code_fallback_to_einval() {
+        assert_eq!(errno(-999), Err(Errno::EINVAL));
+    }
+
+    #[test]
+    fn errno_success_returns_ok() {
+        assert_eq!(errno(0), Ok(0usize));
+    }
+
+    #[test]
+    fn errno_positive_returns_ok() {
+        assert_eq!(errno(42), Ok(42usize));
+        assert_eq!(errno(1000), Ok(1000usize));
+    }
+
+    #[test]
+    fn errno_large_negative_is_fallback() {
+        // Values < -4096 are not treated as errors
+        assert_eq!(errno(-5000), Ok((-5000isize) as usize));
+    }
+}

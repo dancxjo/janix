@@ -115,3 +115,7 @@ clock arch=karch:
 # Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
 fetch:
     cargo xtask fetch
+
+# Run all unit tests (host-testable crates only)
+test *args:
+    cargo test -p abi -p pciids -p xtask {{args}}

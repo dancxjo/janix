@@ -60,7 +60,7 @@ distclean:
 #   just behave                    # all architectures
 #   just behave --arch x86_64      # single architecture
 #   just behave --feature simple-boot
-#   just behave --tag @smoke
+#   just behave --tags @smoke
 behave *args:
     cargo xtask bdd {{args}}
 
@@ -119,3 +119,7 @@ fetch:
 # Run all unit tests (host-testable crates only)
 test *args:
     cargo test -p abi -p pciids -p xtask {{args}}
+
+# Run smoke tests (quick boot validation)
+smoke:
+    cargo xtask bdd --tags @smoke

@@ -58,19 +58,19 @@ static mut MAP_USER_PAGE_PERMS_HOOK: Option<unsafe fn(u64, u64, MapPerms) -> Res
 
 /// Initialize the user page mapping hook
 pub unsafe fn set_map_user_page_hook(hook: unsafe fn(u64, u64) -> Result<(), ()>) {
-    MAP_USER_PAGE_HOOK = Some(hook);
+    unsafe { MAP_USER_PAGE_HOOK = Some(hook) };
 }
 
 /// Initialize the user page mapping hook with custom permissions.
 pub unsafe fn set_map_user_page_perms_hook(hook: unsafe fn(u64, u64, MapPerms) -> Result<(), ()>) {
-    MAP_USER_PAGE_PERMS_HOOK = Some(hook);
+    unsafe { MAP_USER_PAGE_PERMS_HOOK = Some(hook) };
 }
 
 /// Map a physical page into the current process's userspace at the given virtual address.
 /// This uses the global hook set during scheduler initialization.
 pub unsafe fn map_user_page(virt: u64, phys: u64) -> Result<(), abi::errors::Errno> {
-    if let Some(hook) = MAP_USER_PAGE_HOOK {
-        hook(virt, phys).map_err(|_| abi::errors::Errno::ENOMEM)
+    if let Some(hook) = unsafe { MAP_USER_PAGE_HOOK } {
+        unsafe { hook(virt, phys) }.map_err(|_| abi::errors::Errno::ENOMEM)
     } else {
         Err(abi::errors::Errno::EIO)
     }
@@ -82,8 +82,8 @@ pub unsafe fn map_user_page_with_perms(
     phys: u64,
     perms: MapPerms,
 ) -> Result<(), abi::errors::Errno> {
-    if let Some(hook) = MAP_USER_PAGE_PERMS_HOOK {
-        hook(virt, phys, perms).map_err(|_| abi::errors::Errno::ENOMEM)
+    if let Some(hook) = unsafe { MAP_USER_PAGE_PERMS_HOOK } {
+        unsafe { hook(virt, phys, perms) }.map_err(|_| abi::errors::Errno::ENOMEM)
     } else {
         Err(abi::errors::Errno::EIO)
     }

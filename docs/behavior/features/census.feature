@@ -1,6 +1,6 @@
 Feature: Unified Device Graph Census
 
-  @smoke
+  
   Scenario: Kernel and Sprout Census listing
     Given the machine is running
     Then the log should contain "ROOT DUMP NODES"

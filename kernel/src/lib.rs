@@ -414,7 +414,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         kinfo!("Found sprout module, loading...");
 
         let aspace = runtime.tasking().make_user_address_space();
-        let hook = GlobalAllocHook;
+        let _hook = GlobalAllocHook;
 
         // Load Sprout
         let (user_entry, stack_info) = crate::task::loader::load_module(runtime, aspace, mod_desc)
@@ -475,7 +475,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
                     exec: false,
                 },
                 MapKind::Normal,
-                &hook,
+                &GlobalAllocHook,
             )
             .unwrap();
 
@@ -496,7 +496,6 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         if let Some(mod_desc) = threads_demo {
             kinfo!("Found threads_demo fallback...");
             let aspace = runtime.tasking().make_user_address_space();
-            let hook = GlobalAllocHook;
             let (user_entry, stack_info) = crate::task::loader::load_module(runtime, aspace, mod_desc)
                 .expect("Failed to load threads_demo");
             unsafe {

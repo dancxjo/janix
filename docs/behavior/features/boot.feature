@@ -1,4 +1,4 @@
-@boot @smoke
+@boot
 Feature: Boot brings up core subsystems
   As a kernel developer
   I want to verify the kernel boots and reaches scheduler loop

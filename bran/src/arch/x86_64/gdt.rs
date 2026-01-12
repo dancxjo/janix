@@ -2,6 +2,7 @@ use core::mem::size_of;
 
 pub const KERNEL_CODE_SEL: u16 = 0x08;
 pub const KERNEL_DATA_SEL: u16 = 0x10;
+#[allow(dead_code)]
 pub const USER_CODE32_SEL: u16 = 0x18 | 3; // Dummy for sysret
 pub const USER_DATA_SEL: u16 = 0x20 | 3;
 pub const USER_CODE_SEL: u16 = 0x28 | 3;

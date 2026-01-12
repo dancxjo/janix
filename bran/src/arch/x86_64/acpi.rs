@@ -160,7 +160,7 @@ pub unsafe fn parse_madt(rsdp_virt: u64, hhdm_offset: u64) -> Option<MadtInfo> {
         let xsdt_virt = xsdt_phys + hhdm_offset;
         let length = unsafe { ptr::read_unaligned(ptr::addr_of!((*(xsdt_virt as *const AcpiSdtHeader)).length)) };
         map_phys_range(xsdt_phys, length as u64, hhdm_offset);
-        find_table_xsdt(xsdt_virt, &MADT_SIGNATURE, hhdm_offset)?
+        unsafe { find_table_xsdt(xsdt_virt, &MADT_SIGNATURE, hhdm_offset) }?
     } else {
         // ACPI 1.0: use RSDT
         let rsdt_phys = unsafe { ptr::read_unaligned(ptr::addr_of!((*rsdp).rsdt_address)) };
@@ -168,14 +168,14 @@ pub unsafe fn parse_madt(rsdp_virt: u64, hhdm_offset: u64) -> Option<MadtInfo> {
         let rsdt_virt = (rsdt_phys as u64) + hhdm_offset;
         let length = unsafe { ptr::read_unaligned(ptr::addr_of!((*(rsdt_virt as *const AcpiSdtHeader)).length)) };
         map_phys_range(rsdt_phys as u64, length as u64, hhdm_offset);
-        find_table_rsdt(rsdt_virt, &MADT_SIGNATURE, hhdm_offset)?
+        unsafe { find_table_rsdt(rsdt_virt, &MADT_SIGNATURE, hhdm_offset) }?
     };
     
     let madt_virt = madt_phys + hhdm_offset;
     map_phys_range(madt_phys, core::mem::size_of::<AcpiSdtHeader>() as u64, hhdm_offset);
     let madt_length = unsafe { ptr::read_unaligned(ptr::addr_of!((*(madt_virt as *const AcpiSdtHeader)).length)) };
     map_phys_range(madt_phys, madt_length as u64, hhdm_offset);
-    parse_madt_table(madt_virt)
+    unsafe { parse_madt_table(madt_virt) }
 }
 
 unsafe fn find_table_rsdt(rsdt_virt: u64, sig: &[u8; 4], hhdm: u64) -> Option<u64> {

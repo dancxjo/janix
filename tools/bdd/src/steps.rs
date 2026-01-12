@@ -423,3 +423,39 @@ async fn log_does_not_contain(world: &mut ThingOsWorld, pattern: String) {
 async fn log_should_not_contain(world: &mut ThingOsWorld, pattern: String) {
     log_does_not_contain(world, pattern).await;
 }
+
+// ===== Regex Pattern Matching Steps =====
+
+#[then(regex = r#"^the log should match pattern "(.+)"$"#)]
+async fn log_matches_pattern(world: &mut ThingOsWorld, pattern: String) {
+    let log = world.get_serial_log().await;
+    let re = match regex::Regex::new(&pattern) {
+        Ok(r) => r,
+        Err(e) => panic!("Invalid regex pattern '{}': {}", pattern, e),
+    };
+    
+    if !re.is_match(&log) {
+        eprintln!("\n=== Pattern Match Failed ===");
+        eprintln!("Pattern: {}", pattern);
+        eprintln!("\n=== Serial Log (last 100 lines) ===");
+        for line in log
+            .lines()
+            .rev()
+            .take(100)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
+            eprintln!("{}", line);
+        }
+        eprintln!("=== End Serial Log ===\n");
+        panic!("Log does not match pattern '{}'", pattern);
+    }
+}
+
+#[given("the machine is running")]
+async fn machine_is_running(world: &mut ThingOsWorld) {
+    // Start machine and wait for ready state
+    turn_on_machine(world).await;
+    wait_for_ready_state(world).await;
+}

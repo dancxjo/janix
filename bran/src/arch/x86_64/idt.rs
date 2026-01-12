@@ -1,4 +1,3 @@
-#![allow(asm_syntax)]
 use core::mem::size_of;
 
 #[derive(Clone, Copy)]
@@ -61,10 +60,8 @@ unsafe extern "C" {
     fn irq_common_handler_shim();
 }
 
-#[allow(named_asm_labels)]
 core::arch::global_asm!(
     r#"
-    .att_syntax
     .global breakpoint_handler_shim
     breakpoint_handler_shim:
         int3
@@ -151,7 +148,8 @@ core::arch::global_asm!(
         pop %rax
 
         iretq
-"#
+"#,
+    options(att_syntax)
 );
 
 pub unsafe fn init() {

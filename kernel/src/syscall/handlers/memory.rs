@@ -59,12 +59,11 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
         let end = virt + len as u64;
         while virt < end {
             let phys = crate::memory::alloc_frame().ok_or(Errno::ENOMEM)?;
-            if let VmBacking::Anonymous { zeroed } = req.backing {
-                if zeroed {
-                    let hhdm_virt = phys + hhdm;
-                    unsafe {
-                        core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size);
-                    }
+            let VmBacking::Anonymous { zeroed } = req.backing;
+            if zeroed {
+                let hhdm_virt = phys + hhdm;
+                unsafe {
+                    core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size);
                 }
             }
             unsafe {

@@ -12,16 +12,18 @@ const PCI_ENABLE_BIT: u32 = 0x80000000;
 #[inline]
 unsafe fn outl(port: u16, val: u32) {
     #[cfg(target_arch = "x86_64")]
-    core::arch::asm!("out dx, eax", in("dx") port, in("eax") val);
+    unsafe {
+        core::arch::asm!("out dx, eax", in("dx") port, in("eax") val);
+    }
 }
 
 #[inline]
 unsafe fn inl(port: u16) -> u32 {
     #[cfg(target_arch = "x86_64")]
-    {
+    unsafe {
         let ret: u32;
         core::arch::asm!("in eax, dx", out("eax") ret, in("dx") port);
-        ret
+        return ret;
     }
     #[cfg(not(target_arch = "x86_64"))]
     0xFFFFFFFF
@@ -33,8 +35,10 @@ pub(crate) unsafe fn pci_read_config(bus: u8, dev: u8, func: u8, offset: u8) -> 
         | ((dev as u32) << 11)
         | ((func as u32) << 8)
         | ((offset as u32) & 0xFC);
-    outl(PCI_CONFIG_ADDRESS, address);
-    inl(PCI_CONFIG_DATA)
+    unsafe {
+        outl(PCI_CONFIG_ADDRESS, address);
+        inl(PCI_CONFIG_DATA)
+    }
 }
 
 pub(crate) unsafe fn pci_write_config(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
@@ -43,8 +47,10 @@ pub(crate) unsafe fn pci_write_config(bus: u8, dev: u8, func: u8, offset: u8, va
         | ((dev as u32) << 11)
         | ((func as u32) << 8)
         | ((offset as u32) & 0xFC);
-    outl(PCI_CONFIG_ADDRESS, address);
-    outl(PCI_CONFIG_DATA, val);
+    unsafe {
+        outl(PCI_CONFIG_ADDRESS, address);
+        outl(PCI_CONFIG_DATA, val);
+    }
 }
 
 #[inline]

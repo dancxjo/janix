@@ -2,17 +2,24 @@ use abi::device::RtcTime;
 use core::arch::asm;
 
 #[inline]
+#[allow(dead_code)]
 unsafe fn outb(port: u16, val: u8) {
-    asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack, preserves_flags));
+    unsafe {
+        asm!("out dx, al", in("dx") port, in("al") val, options(nomem, nostack, preserves_flags));
+    }
 }
 
 #[inline]
+#[allow(dead_code)]
 unsafe fn inb(port: u16) -> u8 {
-    let mut val: u8;
-    asm!("in al, dx", in("dx") port, out("al") val, options(nomem, nostack, preserves_flags));
+    let val: u8;
+    unsafe {
+        asm!("in al, dx", in("dx") port, out("al") val, options(nomem, nostack, preserves_flags));
+    }
     val
 }
 
+#[allow(dead_code)]
 fn cmos_read(reg: u8) -> u8 {
     unsafe {
         outb(0x70, reg);
@@ -20,6 +27,7 @@ fn cmos_read(reg: u8) -> u8 {
     }
 }
 
+#[allow(dead_code)]
 fn cmos_wait_update_in_progress() {
     unsafe {
         outb(0x70, 0x0A);
@@ -28,10 +36,12 @@ fn cmos_wait_update_in_progress() {
 }
 
 // BCD to binary
+#[allow(dead_code)]
 fn bcd_to_binary(val: u8) -> u8 {
     (val & 0x0F) + ((val / 16) * 10)
 }
 
+#[allow(dead_code)]
 pub unsafe fn read_rtc() -> RtcTime {
     cmos_wait_update_in_progress();
 

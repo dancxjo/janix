@@ -3,6 +3,7 @@ use crate::{
     BootModuleDesc, BootRuntime, BootTasking, FrameAllocatorHook, MapKind, MapPerms, UserEntry,
 };
 use abi::types::StackInfo;
+use core::cmp::{max, min};
 
 struct LoaderAllocHook;
 impl FrameAllocatorHook for LoaderAllocHook {
@@ -21,12 +22,7 @@ pub fn load_module<R: BootRuntime>(
         // crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
     }
 
-    // Hardcoded load address for simple PIE/or-not-PIE loading
-    // For now we just load at a fixed address because we only run one process per address space?
-    // Wait, threads share address space. Different processes have different address spaces.
-    // So fixed address 0x200000 is fine for the main executable.
-
-    let load_addr = 0x200000;
+    let load_addr: u64 = 0x200000;
     let stack_top = 0x0080_0000;
     let reserve_bytes = 2 * 1024 * 1024;
     let guard_pages = 1usize;
@@ -34,12 +30,6 @@ pub fn load_module<R: BootRuntime>(
     let grow_chunk_bytes = 64 * 1024;
 
     let hook = LoaderAllocHook;
-    let text_perms = MapPerms {
-        user: true,
-        read: true,
-        write: false,
-        exec: true,
-    };
     let data_perms = MapPerms {
         user: true,
         read: true,
@@ -47,45 +37,97 @@ pub fn load_module<R: BootRuntime>(
         exec: false,
     };
 
-    // 1. Map segments
-    let mut virt = load_addr as u64;
-    for chunk in module.bytes.chunks(4096) {
-        let phys = memory::alloc_frame().expect("OOM loading module");
-        // crate::kinfo!("  Chunk Phys: {:x}", phys);
-        let hhdm_virt = phys + rt.phys_to_virt_offset();
-        unsafe {
-            core::ptr::copy_nonoverlapping(chunk.as_ptr(), hhdm_virt as *mut u8, chunk.len());
-            if chunk.len() < 4096 {
-                core::ptr::write_bytes(
-                    (hhdm_virt as *mut u8).add(chunk.len()),
-                    0,
-                    4096 - chunk.len(),
-                );
+    let page_size = rt.page_size() as u64;
+    let mut entry_pc = load_addr;
+
+    // 1. Map ELF segments when available; otherwise fall back to a simple RWX layout.
+    if let Some(elf) = parse_elf64(module.bytes) {
+        let load_bias = load_addr.saturating_sub(elf.min_vaddr);
+        entry_pc = elf.entry.saturating_add(load_bias);
+        for ph in elf.load_segments.iter() {
+            let seg_vaddr = ph.vaddr.saturating_add(load_bias);
+            let seg_mem_end = seg_vaddr.saturating_add(ph.memsz);
+            if ph.memsz == 0 {
+                continue;
+            }
+
+            let seg_start = align_down_u64(seg_vaddr, page_size);
+            let seg_end = align_up_u64(seg_mem_end, page_size);
+            let perms = MapPerms {
+                user: true,
+                read: ph.read || ph.write || ph.exec,
+                write: ph.write,
+                exec: ph.exec,
+            };
+
+            let mut virt = seg_start;
+            while virt < seg_end {
+                let phys = memory::alloc_frame().expect("OOM loading module segment");
+                let hhdm_virt = phys + rt.phys_to_virt_offset();
+                unsafe {
+                    core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size as usize);
+                }
+
+                let page_end = virt.saturating_add(page_size);
+                let file_start = seg_vaddr;
+                let file_end = seg_vaddr.saturating_add(ph.filesz);
+                let copy_start = max(virt, file_start);
+                let copy_end = min(page_end, file_end);
+                if copy_start < copy_end {
+                    let src_off = ph.offset.saturating_add(copy_start - seg_vaddr);
+                    let len = (copy_end - copy_start) as usize;
+                    let dst = (hhdm_virt + (copy_start - virt)) as *mut u8;
+                    if src_off as usize + len <= module.bytes.len() {
+                        unsafe {
+                            core::ptr::copy_nonoverlapping(
+                                module.bytes.as_ptr().add(src_off as usize),
+                                dst,
+                                len,
+                            );
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+
+                rt.tasking()
+                    .map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)
+                    .unwrap();
+                virt += page_size;
             }
         }
+    } else {
+        // Hardcoded load address for simple PIE/or-not-PIE loading.
+        // Fixed address 0x200000 is fine for the main executable today.
+        let text_perms = MapPerms {
+            user: true,
+            read: true,
+            write: true,
+            exec: true,
+        };
+        let mut virt = load_addr as u64;
+        for chunk in module.bytes.chunks(page_size as usize) {
+            let phys = memory::alloc_frame().expect("OOM loading module");
+            let hhdm_virt = phys + rt.phys_to_virt_offset();
+            unsafe {
+                core::ptr::copy_nonoverlapping(chunk.as_ptr(), hhdm_virt as *mut u8, chunk.len());
+                if chunk.len() < page_size as usize {
+                    core::ptr::write_bytes(
+                        (hhdm_virt as *mut u8).add(chunk.len()),
+                        0,
+                        page_size as usize - chunk.len(),
+                    );
+                }
+            }
 
-        rt.tasking()
-            .map_page(aspace, virt, phys, text_perms, MapKind::Normal, &hook)
-            .unwrap();
-        virt += 4096;
-    }
-
-    // 2. Map BSS (128 pages = 512KB)
-    for _ in 0..128 {
-        let phys = memory::alloc_frame().expect("OOM loading BSS");
-        let hhdm_virt = phys + rt.phys_to_virt_offset();
-        unsafe {
-            core::ptr::write_bytes(hhdm_virt as *mut u8, 0, 4096);
+            rt.tasking()
+                .map_page(aspace, virt, phys, text_perms, MapKind::Normal, &hook)
+                .unwrap();
+            virt += page_size;
         }
-
-        rt.tasking()
-            .map_page(aspace, virt, phys, data_perms, MapKind::Normal, &hook)
-            .unwrap();
-        virt += 4096;
     }
 
     // 3. Map Stack (guard + reserve with initial commit)
-    let page_size = rt.page_size() as u64;
     let guard_bytes = (guard_pages as u64).saturating_mul(page_size);
     let reserve_bytes = align_up_u64(reserve_bytes as u64, page_size);
     let total = guard_bytes.saturating_add(reserve_bytes);
@@ -124,7 +166,7 @@ pub fn load_module<R: BootRuntime>(
 
     Some((
         UserEntry {
-            entry_pc: load_addr,
+            entry_pc: entry_pc as usize,
             user_sp: stack_top,
             arg0: 0,
         },
@@ -137,4 +179,99 @@ fn align_up_u64(value: u64, align: u64) -> u64 {
         return value;
     }
     (value + align - 1) & !(align - 1)
+}
+
+fn align_down_u64(value: u64, align: u64) -> u64 {
+    if align == 0 {
+        return value;
+    }
+    value & !(align - 1)
+}
+
+struct ElfLoadSegment {
+    offset: u64,
+    vaddr: u64,
+    filesz: u64,
+    memsz: u64,
+    read: bool,
+    write: bool,
+    exec: bool,
+}
+
+struct ElfInfo {
+    entry: u64,
+    min_vaddr: u64,
+    load_segments: alloc::vec::Vec<ElfLoadSegment>,
+}
+
+fn parse_elf64(bytes: &[u8]) -> Option<ElfInfo> {
+    if bytes.len() < 64 {
+        return None;
+    }
+    if &bytes[0..4] != b"\x7fELF" {
+        return None;
+    }
+    if bytes[4] != 2 || bytes[5] != 1 {
+        return None;
+    }
+    let e_entry = read_u64(bytes, 24)?;
+    let e_phoff = read_u64(bytes, 32)?;
+    let e_phentsize = read_u16(bytes, 54)? as u64;
+    let e_phnum = read_u16(bytes, 56)? as u64;
+    if e_phoff == 0 || e_phentsize == 0 || e_phnum == 0 {
+        return None;
+    }
+
+    let mut min_vaddr = u64::MAX;
+    let mut load_segments = alloc::vec::Vec::new();
+    for i in 0..e_phnum {
+        let off = e_phoff.saturating_add(i.saturating_mul(e_phentsize)) as usize;
+        let p_type = read_u32(bytes, off)?;
+        if p_type != 1 {
+            continue;
+        }
+        let p_flags = read_u32(bytes, off + 4)?;
+        let p_offset = read_u64(bytes, off + 8)?;
+        let p_vaddr = read_u64(bytes, off + 16)?;
+        let p_filesz = read_u64(bytes, off + 32)?;
+        let p_memsz = read_u64(bytes, off + 40)?;
+
+        min_vaddr = min(min_vaddr, p_vaddr);
+        load_segments.push(ElfLoadSegment {
+            offset: p_offset,
+            vaddr: p_vaddr,
+            filesz: p_filesz,
+            memsz: p_memsz,
+            read: (p_flags & 0x4) != 0,
+            write: (p_flags & 0x2) != 0,
+            exec: (p_flags & 0x1) != 0,
+        });
+    }
+
+    if load_segments.is_empty() || min_vaddr == u64::MAX {
+        return None;
+    }
+
+    Some(ElfInfo {
+        entry: e_entry,
+        min_vaddr,
+        load_segments,
+    })
+}
+
+fn read_u16(bytes: &[u8], off: usize) -> Option<u16> {
+    let slice = bytes.get(off..off + 2)?;
+    Some(u16::from_le_bytes([slice[0], slice[1]]))
+}
+
+fn read_u32(bytes: &[u8], off: usize) -> Option<u32> {
+    let slice = bytes.get(off..off + 4)?;
+    Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
+}
+
+fn read_u64(bytes: &[u8], off: usize) -> Option<u64> {
+    let slice = bytes.get(off..off + 8)?;
+    Some(u64::from_le_bytes([
+        slice[0], slice[1], slice[2], slice[3], slice[4], slice[5], slice[6], slice[7],
+    ]))
 }

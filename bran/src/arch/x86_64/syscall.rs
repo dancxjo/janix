@@ -6,8 +6,7 @@ const MSR_STAR: u32 = 0xC0000081;
 const MSR_LSTAR: u32 = 0xC0000082;
 const MSR_SFMASK: u32 = 0xC0000084;
 const MSR_GS_BASE: u32 = 0xC0000101;
-#[allow(dead_code)]
-const _MSR_KERNEL_GS_BASE: u32 = 0xC0000102;
+const MSR_KERNEL_GS_BASE: u32 = 0xC0000102;
 
 const EFER_SCE: u64 = 1; // Syscall Enable
 
@@ -65,61 +64,70 @@ static mut CPU_LOCAL: CpuLocal = CpuLocal {
 };
 
 pub unsafe fn init() {
-    // 1. Setup GS Base
-    let gs_base = &raw mut CPU_LOCAL as *mut _ as u64;
-    wrmsr(MSR_GS_BASE, gs_base);
-    // Also Kernel GS Base? No, swapgs swaps them.
-    // We are in kernel now. GS points to kernel struct.
-    // When we go to user, we swapgs. GS points to ... user stuff (usually 0).
-    // When we execute syscall (entry from user), we swapgs immediately.
-    // So MSR_KERNEL_GS_BASE should hold the address of CPU_LOCAL...
-    // WAIT.
-    // Current (Kernel) GS Base = CPU_LOCAL.
-    // Target (User) GS Base = 0 (or TCB).
-    // syscall instruction DOES NOT swapgs.
-    // We do swapgs explicitly in the handler.
-    // So on entry (User GS active), we swapgs -> loads Kernel GS Base (CPU_LOCAL).
-    // So MSR_KERNEL_GS_BASE MUST hold CPU_LOCAL.
-    // MSR_GS_BASE MUST hold User GS Base.
-    // Since we are in kernel now, GS_BASE should be CPU_LOCAL.
-    // So we write CPU_LOCAL to GS_BASE.
-    // And what about KERNEL_GS_BASE?
-    // If we use swapgs, it exchanges them.
-    // If we are in kernel, GS_BASE=CPU_LOCAL. KERNEL_GS_BASE=UserGS.
-    // On exit to user: swapgs. GS_BASE=UserGS, KERNEL_GS_BASE=CPU_LOCAL.
-    // Correct.
+    unsafe {
+        // 1. Setup GS Base
+        let gs_base = &raw mut CPU_LOCAL as *mut _ as u64;
+        // Keep both GS base MSRs pointing at CPU_LOCAL for now so swapgs is safe.
+        // User GS is unused in v0; this avoids null gs: accesses in syscall entry.
+        wrmsr(MSR_GS_BASE, gs_base);
+        wrmsr(MSR_KERNEL_GS_BASE, gs_base);
+        // Also Kernel GS Base? No, swapgs swaps them.
+        // We are in kernel now. GS points to kernel struct.
+        // When we go to user, we swapgs. GS points to ... user stuff (usually 0).
+        // When we execute syscall (entry from user), we swapgs immediately.
+        // So MSR_KERNEL_GS_BASE should hold the address of CPU_LOCAL...
+        // WAIT.
+        // Current (Kernel) GS Base = CPU_LOCAL.
+        // Target (User) GS Base = 0 (or TCB).
+        // syscall instruction DOES NOT swapgs.
+        // We do swapgs explicitly in the handler.
+        // So on entry (User GS active), we swapgs -> loads Kernel GS Base (CPU_LOCAL).
+        // So MSR_KERNEL_GS_BASE MUST hold CPU_LOCAL.
+        // MSR_GS_BASE MUST hold User GS Base.
+        // Since we are in kernel now, GS_BASE should be CPU_LOCAL.
+        // So we write CPU_LOCAL to GS_BASE.
+        // And what about KERNEL_GS_BASE?
+        // If we use swapgs, it exchanges them.
+        // If we are in kernel, GS_BASE=CPU_LOCAL. KERNEL_GS_BASE=UserGS.
+        // On exit to user: swapgs. GS_BASE=UserGS, KERNEL_GS_BASE=CPU_LOCAL.
+        // Correct.
 
-    // 2. Enable SCE (SysCall Extension) in EFER
-    let efer = rdmsr(MSR_EFER);
-    wrmsr(MSR_EFER, efer | EFER_SCE);
+        // 2. Enable SCE (SysCall Extension) in EFER
+        let efer = rdmsr(MSR_EFER);
+        wrmsr(MSR_EFER, efer | EFER_SCE);
 
-    // 3. Setup STAR
-    // Kernel CS = 0x08
-    // User Base = 0x18 (User Data @ 0x20|3, User Code64 @ 0x28|3)
-    // STAR: [47:32] = Kernel CS (0x08). [63:48] = User CS Base (0x18).
-    // Sysret loads CS = Base + 16 = 0x28 (User Code 64).
-    // Sysret loads SS = Base + 8  = 0x20 (User Data).
-    let star = ((0x08 as u64) << 32) | ((0x18 as u64) << 48);
-    wrmsr(MSR_STAR, star);
+        // 3. Setup STAR
+        // Kernel CS = 0x08
+        // User Base = 0x18 (User Data @ 0x20|3, User Code64 @ 0x28|3)
+        // STAR: [47:32] = Kernel CS (0x08). [63:48] = User CS Base (0x18).
+        // Sysret loads CS = Base + 16 = 0x28 (User Code 64).
+        // Sysret loads SS = Base + 8  = 0x20 (User Data).
+        let star = ((0x08 as u64) << 32) | ((0x18 as u64) << 48);
+        wrmsr(MSR_STAR, star);
 
-    // 4. Setup LSTAR (Entry point)
-    wrmsr(MSR_LSTAR, syscall_entry as *const () as usize as u64);
+        // 4. Setup LSTAR (Entry point)
+        wrmsr(MSR_LSTAR, syscall_entry as *const () as usize as u64);
 
-    // 5. Setup SFMASK (Mask Interrupts 0x200)
-    wrmsr(MSR_SFMASK, 0x200);
+        // 5. Setup SFMASK (Mask Interrupts 0x200)
+        wrmsr(MSR_SFMASK, 0x200);
+    }
 }
 
 unsafe fn rdmsr(msr: u32) -> u64 {
     let low: u32;
     let high: u32;
-    asm!("rdmsr", in("ecx") msr, out("eax") low, out("edx") high);
+    unsafe {
+        asm!("rdmsr", in("ecx") msr, out("eax") low, out("edx") high);
+    }
     ((high as u64) << 32) | (low as u64)
 }
 
 unsafe fn wrmsr(msr: u32, val: u64) {
     let low = val as u32;
     let high = (val >> 32) as u32;
-    asm!("wrmsr", in("ecx") msr, in("eax") low, in("edx") high);
+    unsafe {
+        asm!("wrmsr", in("ecx") msr, in("eax") low, in("edx") high);
+    }
 }
 
 unsafe extern "C" {
@@ -129,7 +137,6 @@ unsafe extern "C" {
 global_asm!(
     r#"
 .section .text
-.att_syntax
 .global syscall_entry
 syscall_entry:
     // Enters with CS=Kernel, SS=Kernel.
@@ -293,5 +300,6 @@ syscall_entry:
     cli
     swapgs
     sysretq
-"#
+"#,
+    options(att_syntax)
 );

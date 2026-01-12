@@ -74,9 +74,7 @@ pub fn preempt_enable<R: BootRuntime>() {
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_before = scheduler::read_cr3();
 
-        unsafe {
-            rt.tasking().activate_address_space(switch.to_aspace);
-        }
+        rt.tasking().activate_address_space(switch.to_aspace);
 
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_after = scheduler::read_cr3();
@@ -134,9 +132,7 @@ pub fn resched_if_needed<R: BootRuntime>() {
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_before = scheduler::read_cr3();
 
-        unsafe {
-            rt.tasking().activate_address_space(switch.to_aspace);
-        }
+        rt.tasking().activate_address_space(switch.to_aspace);
 
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_after = scheduler::read_cr3();

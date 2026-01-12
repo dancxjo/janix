@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::{PhysRange, PhysRangeKind};
 use alloc::vec::Vec;
 

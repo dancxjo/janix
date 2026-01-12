@@ -1,22 +1,33 @@
+//! Preemptive priority-based scheduler
+
+use crate::{BootRuntime, BootTasking, MapKind, MapPerms, UserEntry, memory};
+use crate::task::{Task, TaskId, TaskState};
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-use crate::BootRuntime;
-use crate::BootTasking;
-use crate::UserEntry;
-use crate::memory;
-use crate::task::{Task, TaskId, TaskState};
-use crate::{MapKind, MapPerms};
+const DEFAULT_USER_STACK_PAGES: usize = 16;
+const MAX_USER_STACK_PAGES: usize = 256;
 
-pub enum ScheduleReason {
-    CooperativeYield,
-    SleepWait,
-    SyscallBlock,
-    PreemptTick, // future
-    IoWait,      // future
-}
+static NEXT_USER_STACK: AtomicU64 = AtomicU64::new(0x7FFF_0000_0000);
+
+#[cfg(any(feature = "sched_debug", debug_assertions))]
+static SWITCH_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+#[cfg(any(feature = "sched_debug", debug_assertions))]
+static LAST_SWITCH: AtomicU64 = AtomicU64::new(0);
+
+static mut YIELD_HOOK: Option<fn()> = None;
+static mut EXIT_HOOK: Option<fn(i32)> = None;
+static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize, abi::types::StackInfo) -> TaskId> = None;
+static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, usize) -> Option<TaskId>> = None;
+static mut CURRENT_TID_HOOK: Option<fn() -> u64> = None;
+static mut TASK_STATUS_HOOK: Option<fn(TaskId) -> Option<(TaskState, Option<i32>)>> = None;
+static mut ALLOC_USER_STACK_HOOK: Option<fn(usize) -> Option<usize>> = None;
+static mut STACK_FAULT_HOOK: Option<unsafe fn(u64) -> StackFaultResult> = None;
+
+static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> = core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> = core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StackFaultResult {
@@ -25,67 +36,57 @@ pub enum StackFaultResult {
     Overflow,
 }
 
-// Global hooks for non-generic access
-static mut YIELD_HOOK: Option<unsafe fn()> = None;
-static mut EXIT_HOOK: Option<unsafe fn(i32)> = None;
-static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize, abi::types::StackInfo) -> TaskId> = None;
-static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, usize) -> Option<TaskId>> = None;
-static mut CURRENT_TID_HOOK: Option<unsafe fn() -> u64> = None;
-static mut TASK_STATUS_HOOK: Option<unsafe fn(TaskId) -> Option<(TaskState, Option<i32>)>> = None;
-static mut ALLOC_USER_STACK_HOOK: Option<unsafe fn(usize) -> Option<usize>> = None;
-static mut STACK_FAULT_HOOK: Option<unsafe fn(u64) -> StackFaultResult> = None;
-
-const USER_STACK_BASE: u64 = 0x0080_0000;
-const DEFAULT_USER_STACK_PAGES: usize = 4;
-const MAX_USER_STACK_PAGES: usize = 64;
-static NEXT_USER_STACK: AtomicU64 = AtomicU64::new(USER_STACK_BASE);
-#[cfg(any(feature = "sched_debug", debug_assertions))]
-static SWITCH_LOG_COUNT: AtomicU64 = AtomicU64::new(0);
-#[cfg(any(feature = "sched_debug", debug_assertions))]
-static LAST_SWITCH: AtomicU64 = AtomicU64::new(u64::MAX);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScheduleReason {
+    PreemptTick,
+    CooperativeYield,
+    SleepWait,
+    BlockedOnIo,
+}
 
 pub struct SwitchParams<Ctx, AS> {
     pub from_ctx: *mut Ctx,
     pub to_ctx: *const Ctx,
     pub to_aspace: AS,
+    pub from_aspace: AS,
     pub from_tid: TaskId,
     pub to_tid: TaskId,
-    pub from_aspace: AS,
     pub from_user: bool,
     pub to_user: bool,
+}
+
+struct SchedulerMetrics {
+    yields: u64,
+    pops: u64,
+    pushes: u64,
+    idle_picks: u64,
+    last_flush: u64,
 }
 
 pub struct Scheduler<R: BootRuntime> {
     tasks: Vec<Task<R>>,
     runq: VecDeque<TaskId>,
+    wait_queue: VecDeque<TaskId>,
     current: Option<TaskId>,
     next_id: TaskId,
-    // Per-CPU state (conceptually, attached to this scheduler instance for v0 single-core)
-    preempt_disable_depth: u32,
-    need_resched: bool,
     idle_task: Option<TaskId>,
-    metrics: SchedMetrics,
-}
-
-pub struct SchedMetrics {
-    pub yields: u64,
-    pub pops: u64,
-    pub pushes: u64,
-    pub idle_picks: u64,
-    pub last_flush: u64,
+    preempt_disable_depth: usize,
+    need_resched: bool,
+    metrics: SchedulerMetrics,
 }
 
 impl<R: BootRuntime> Scheduler<R> {
     pub fn new() -> Self {
-        Self {
+        Scheduler {
             tasks: Vec::new(),
             runq: VecDeque::new(),
+            wait_queue: VecDeque::new(),
             current: None,
-            next_id: 0,
+            next_id: 1,
+            idle_task: None,
             preempt_disable_depth: 0,
             need_resched: false,
-            idle_task: None,
-            metrics: SchedMetrics {
+            metrics: SchedulerMetrics {
                 yields: 0,
                 pops: 0,
                 pushes: 0,
@@ -105,13 +106,26 @@ impl<R: BootRuntime> Scheduler<R> {
 
     pub fn init_boot_task(&mut self) {
         let rt = crate::runtime::<R>();
+
         crate::kinfo!("  Creating boot task...");
-        let task = Task {
+
+        // Boot task needs a valid kernel stack for syscall handling.
+        // Even though boot task is a kernel task, if it ever gets scheduled
+        // (e.g., via yield), switch() will write its kstack_top to CPU_LOCAL.
+        // If kstack_top is 0, subsequent syscalls will crash.
+        let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
+        let stack_base = unsafe { alloc::alloc::alloc(layout) };
+        if stack_base.is_null() {
+            panic!("Failed to allocate stack for boot task");
+        }
+        let stack_top = (stack_base as u64) + 16384;
+
+        let task: Task<R> = Task {
             id: 0,
             state: TaskState::Running,
-            kstack_base: core::ptr::null_mut(),
-            kstack_size: 0,
-            kstack_top: 0,
+            kstack_base: stack_base,
+            kstack_size: 16384,
+            kstack_top: stack_top,
             ctx: Default::default(),
             aspace: rt.tasking().active_address_space(),
             simd: crate::simd::SimdState::new(rt),
@@ -119,28 +133,34 @@ impl<R: BootRuntime> Scheduler<R> {
             is_user: false,
             stack_info: None,
         };
-        crate::kinfo!("  Pushing boot task to list...");
         self.tasks.push(task);
         self.current = Some(0);
-        // self.idle_task = Some(0); // Task 0 does boot work, can't be idle
-        crate::kinfo!("  Boot task created successfully (ID=0, Idle)");
+        crate::kinfo!("  Creating idle task...");
+
+        // Spawn an idle task
+        let idle_id = self.spawn(idle_task::<R>, 0);
+        self.idle_task = Some(idle_id);
+
+        // Remove idle from runq since we handle it specially
+        if let Some(pos) = self.runq.iter().position(|&id| id == idle_id) {
+            self.runq.remove(pos);
+        }
+        crate::kinfo!("  Boot task initialized");
     }
 
     pub fn spawn(&mut self, entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
         let rt = crate::runtime::<R>();
-
-        self.next_id += 1;
         let id = self.next_id;
+        self.next_id += 1;
 
         let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
-            panic!("Failed to allocate stack");
+            panic!("Failed to allocate stack for task {}", id);
         }
-
         let stack_top = (stack_base as u64) + 16384;
+
         let ctx = rt.tasking().init_kernel_context(entry, stack_top, arg);
-        let aspace = rt.tasking().active_address_space();
 
         let task: Task<R> = Task {
             id,
@@ -149,7 +169,7 @@ impl<R: BootRuntime> Scheduler<R> {
             kstack_size: 16384,
             kstack_top: stack_top,
             ctx,
-            aspace,
+            aspace: rt.tasking().active_address_space(),
             simd: crate::simd::SimdState::new(rt),
             exit_code: None,
             is_user: false,
@@ -163,42 +183,39 @@ impl<R: BootRuntime> Scheduler<R> {
 
     pub fn spawn_user_thread(
         &mut self,
-        entry_pc: usize,
-        user_stack_top: usize,
+        entry: usize,
+        stack: usize,
         arg: usize,
         stack_info: abi::types::StackInfo,
     ) -> TaskId {
         let rt = crate::runtime::<R>();
-        self.next_id += 1;
         let id = self.next_id;
+        self.next_id += 1;
 
         let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
-            panic!("Failed to allocate stack");
+            panic!("Failed to allocate kernel stack for user thread {}", id);
         }
-        let stack_top = (stack_base as u64) + 16384;
+        let kstack_top = (stack_base as u64) + 16384;
 
-        // Box the UserEntry so we can pass it as a single 'arg' pointer to the trampoline
-        let user_entry = alloc::boxed::Box::new(UserEntry {
-            entry_pc,
-            user_sp: user_stack_top,
-            // Defaults
-            arg0: arg,
-        });
-        let entry_ptr = alloc::boxed::Box::into_raw(user_entry) as usize;
-
-        let ctx =
-            rt.tasking()
-                .init_kernel_context(user_thread_trampoline::<R>, stack_top, entry_ptr);
         let aspace = rt.tasking().active_address_space();
+
+        let spec = crate::UserTaskSpec {
+            entry: entry as u64,
+            stack_top: stack as u64,
+            aspace,
+            arg,
+        };
+
+        let ctx = rt.tasking().init_user_context(spec, kstack_top);
 
         let task: Task<R> = Task {
             id,
             state: TaskState::Runnable,
             kstack_base: stack_base,
             kstack_size: 16384,
-            kstack_top: stack_top,
+            kstack_top,
             ctx,
             aspace,
             simd: crate::simd::SimdState::new(rt),
@@ -219,9 +236,9 @@ impl<R: BootRuntime> Scheduler<R> {
         stack_info: abi::types::StackInfo,
     ) -> Option<TaskId> {
         let rt = crate::runtime::<R>();
-        self.next_id += 1;
         let id = self.next_id;
 
+        self.next_id += 1;
         let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
@@ -539,12 +556,10 @@ pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>
 }
 
 pub unsafe fn task_status_current(id: TaskId) -> Option<(TaskState, Option<i32>)> {
-    unsafe {
-        if let Some(hook) = TASK_STATUS_HOOK {
-            hook(id)
-        } else {
-            None
-        }
+    if let Some(hook) = unsafe { TASK_STATUS_HOOK } {
+        hook(id)
+    } else {
+        None
     }
 }
 
@@ -576,12 +591,10 @@ pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<Ta
 }
 
 pub unsafe fn spawn_process_current(name: &str, arg: usize) -> Option<TaskId> {
-    unsafe {
-        if let Some(hook) = SPAWN_PROCESS_HOOK {
-            hook(name, arg)
-        } else {
-            None
-        }
+    if let Some(hook) = unsafe { SPAWN_PROCESS_HOOK } {
+        unsafe { hook(name, arg) }
+    } else {
+        None
     }
 }
 
@@ -616,9 +629,7 @@ pub fn yield_now<R: BootRuntime>() {
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_before = read_cr3();
 
-        unsafe {
-            rt.tasking().activate_address_space(switch.to_aspace);
-        }
+        rt.tasking().activate_address_space(switch.to_aspace);
 
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_after = read_cr3();
@@ -677,20 +688,16 @@ pub fn sleep_ms<R: BootRuntime>(ms: u64) {
 }
 
 pub unsafe fn yield_now_current() {
-    unsafe {
-        if let Some(hook) = YIELD_HOOK {
-            hook();
-        }
+    if let Some(hook) = unsafe { YIELD_HOOK } {
+        hook();
     }
 }
 
 pub unsafe fn current_tid_current() -> u64 {
-    unsafe {
-        if let Some(hook) = CURRENT_TID_HOOK {
-            hook()
-        } else {
-            0
-        }
+    if let Some(hook) = unsafe { CURRENT_TID_HOOK } {
+        hook()
+    } else {
+        0
     }
 }
 
@@ -719,13 +726,11 @@ pub fn exit<R: BootRuntime>(code: i32) {
 }
 
 pub unsafe fn exit_current(code: i32) {
-    unsafe {
-        if let Some(hook) = EXIT_HOOK {
-            hook(code);
-        } else {
-            // Fallback if no scheduler
-            crate::kprintln!("exit_current called without scheduler!");
-        }
+    if let Some(hook) = unsafe { EXIT_HOOK } {
+        hook(code);
+    } else {
+        // Fallback if no scheduler
+        crate::kprintln!("exit_current called without scheduler!");
     }
 }
 
@@ -735,22 +740,18 @@ pub unsafe fn spawn_user_thread_current(
     arg: usize,
     stack_info: abi::types::StackInfo,
 ) -> Option<TaskId> {
-    unsafe {
-        if let Some(hook) = SPAWN_USER_HOOK {
-            Some(hook(entry, stack, arg, stack_info))
-        } else {
-            None
-        }
+    if let Some(hook) = unsafe { SPAWN_USER_HOOK } {
+        Some(unsafe { hook(entry, stack, arg, stack_info) })
+    } else {
+        None
     }
 }
 
 pub unsafe fn handle_user_stack_fault_current(addr: u64) -> StackFaultResult {
-    unsafe {
-        if let Some(hook) = STACK_FAULT_HOOK {
-            hook(addr)
-        } else {
-            StackFaultResult::NotStack
-        }
+    if let Some(hook) = unsafe { STACK_FAULT_HOOK } {
+        unsafe { hook(addr) }
+    } else {
+        StackFaultResult::NotStack
     }
 }
 
@@ -828,7 +829,7 @@ pub(crate) fn log_context_switch<R: BootRuntime>(
 }
 
 pub unsafe fn alloc_user_stack_current(pages: usize) -> Option<usize> {
-    unsafe { ALLOC_USER_STACK_HOOK.and_then(|hook| hook(pages)) }
+    unsafe { ALLOC_USER_STACK_HOOK }.and_then(|hook| hook(pages))
 }
 
 fn alloc_user_stack<R: BootRuntime>(pages: usize) -> Option<usize> {
@@ -1020,15 +1021,9 @@ unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult {
 }
 
 // ============================================================================
-// IRQ blocking support
+// BLOCKING PRIMITIVES
 // ============================================================================
 
-static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> = 
-    core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
-static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> = 
-    core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
-
-/// Block the current task - removes it from run queue and yields
 pub fn block_current<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
@@ -1037,21 +1032,39 @@ pub fn block_current<R: BootRuntime>() {
         let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        
-        // Mark current as blocked (don't add to runqueue)
-        if let Some(current_id) = sched.current {
-            if let Some(idx) = sched.tasks.iter().position(|t| t.id == current_id) {
-                sched.tasks[idx].state = TaskState::Blocked;
+
+        let current_id = match sched.current {
+            Some(id) => id,
+            None => {
+                rt.irq_restore(_irq);
+                return;
             }
+        };
+
+        // Move current from Running to Blocked
+        if let Some(idx) = sched.tasks.iter().position(|t| t.id == current_id) {
+            sched.tasks[idx].state = TaskState::Blocked;
         }
-        
-        // Schedule next without requeueing current
+
+        // Add to wait queue
+        sched.wait_queue.push_back(current_id);
+
+        // Schedule next
         sched.prepare_schedule()
     };
 
     if let Some(switch) = switch_params {
+        #[cfg(any(feature = "sched_debug", debug_assertions))]
+        let cr3_before = read_cr3();
+
+        rt.tasking().activate_address_space(switch.to_aspace);
+
+        #[cfg(any(feature = "sched_debug", debug_assertions))]
+        let cr3_after = read_cr3();
+        #[cfg(any(feature = "sched_debug", debug_assertions))]
+        log_context_switch::<R>(&switch, cr3_before, cr3_after);
+
         unsafe {
-            rt.tasking().activate_address_space(switch.to_aspace);
             rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
         }
     }
@@ -1059,17 +1072,26 @@ pub fn block_current<R: BootRuntime>() {
     rt.irq_restore(_irq);
 }
 
-/// Wake a blocked task by ID - adds it back to run queue
-pub fn wake_task<R: BootRuntime>(task_id: usize) {
+pub fn wake_task<R: BootRuntime>(id: usize) {
     let lock = SCHEDULER.lock();
-    if let Some(ptr) = *lock {
-        let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        
-        if let Some(idx) = sched.tasks.iter().position(|t| t.id ==  task_id as u64) {
-            if sched.tasks[idx].state == TaskState::Blocked {
-                sched.tasks[idx].state = TaskState::Runnable;
-                sched.runq.push_back(task_id as u64);
-            }
+    let ptr = match *lock {
+        Some(p) => p,
+        None => return,
+    };
+    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+
+    let tid = id as TaskId;
+
+    // Remove from wait queue if present
+    if let Some(pos) = sched.wait_queue.iter().position(|&wid| wid == tid) {
+        sched.wait_queue.remove(pos);
+    }
+
+    // Update state to Runnable and add to runq
+    if let Some(idx) = sched.tasks.iter().position(|t| t.id == tid) {
+        if sched.tasks[idx].state == TaskState::Blocked {
+            sched.tasks[idx].state = TaskState::Runnable;
+            sched.runq.push_back(tid);
         }
     }
 }
@@ -1078,7 +1100,7 @@ pub fn wake_task<R: BootRuntime>(task_id: usize) {
 pub unsafe fn block_current_erased() {
     let ptr = BLOCK_CURRENT_HOOK.load(core::sync::atomic::Ordering::SeqCst);
     if !ptr.is_null() {
-        let hook: fn() = core::mem::transmute(ptr);
+        let hook: fn() = unsafe { core::mem::transmute(ptr) };
         hook();
     }
 }
@@ -1087,7 +1109,7 @@ pub unsafe fn block_current_erased() {
 pub unsafe fn wake_task_erased(id: usize) {
     let ptr = WAKE_TASK_HOOK.load(core::sync::atomic::Ordering::SeqCst);
     if !ptr.is_null() {
-        let hook: fn(usize) = core::mem::transmute(ptr);
+        let hook: fn(usize) = unsafe { core::mem::transmute(ptr) };
         hook(id);
     }
 }
@@ -1102,4 +1124,11 @@ pub fn init_blocking_hooks<R: BootRuntime>() {
         wake_task::<R> as *mut (),
         core::sync::atomic::Ordering::SeqCst,
     );
+}
+
+extern "C" fn idle_task<R: BootRuntime>(_: usize) -> ! {
+    let rt = crate::runtime::<R>();
+    loop {
+        rt.wait_for_interrupt();
+    }
 }
